@@ -2,6 +2,11 @@ apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
   name: openshift-controller-manager
+  annotations:
+    hypershift.openshift.io/metrics-job: controller-manager
+    hypershift.openshift.io/metrics-namespace: openshift-controller-manager
+    hypershift.openshift.io/metrics-service: controller-manager
+    hypershift.openshift.io/metrics-endpoint: https
 spec:
   endpoints:
   - metricRelabelings:

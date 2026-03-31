@@ -46,7 +46,6 @@ func run() error {
 	builder.WriteString("# HyperShift Documentation (Aggregated)\n\n")
 	builder.WriteString("This file contains all HyperShift documentation aggregated into a single file\n")
 	builder.WriteString("for use with AI tools like NotebookLM.\n\n")
-	builder.WriteString(fmt.Sprintf("Total documents: %d\n\n", len(mdFiles)))
 
 	// Process each file
 	for _, filePath := range mdFiles {

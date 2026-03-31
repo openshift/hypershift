@@ -11,8 +11,10 @@ metadata:
     pipelinesascode.tekton.dev/on-cel-expression: |
       event == "pull_request"
       && target_branch == "main"
-      && (files.all.exists(x, !x.matches('^(?:docs|examples|enhancements|contrib)/|\\.md$|^(?:.*/)?(?:\\.gitignore|OWNERS|PROJECT|LICENSE|renovate\\.json)$'))
-         || ".tekton/pipelines/common-operator-build.yaml".pathChanged())
+      && (files.all.exists(x, !x.matches('^(?:docs|examples|enhancements|contrib|hack|\\.tekton|\\.github|\\.claude)/|\\.md$|^(?:Dockerfile|Containerfile)\\b|^(?:.*/)?(?:\\.gitignore|OWNERS|PROJECT|LICENSE|renovate\\.json)$'))
+         || "Containerfile.operator".pathChanged()
+         || ".tekton/pipelines/common-operator-build.yaml".pathChanged()
+         || ".tekton/hypershift-operator-main-pull-request.yaml".pathChanged())
     pipelinesascode.tekton.dev/pipeline: ".tekton/pipelines/common-operator-build.yaml"
   creationTimestamp:
   labels:

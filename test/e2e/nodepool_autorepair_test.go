@@ -97,8 +97,8 @@ func (ar *NodePoolAutoRepairTest) Run(t *testing.T, nodePool hyperv1.NodePool, n
 }
 
 func ec2Client(awsCredsFile, region string) *ec2.Client {
-	awsSession := awsutil.NewSessionV2(context.Background(), "hypershift-e2e", awsCredsFile, "", "", region)
-	awsConfig := awsutil.NewConfigV2()
+	awsSession := awsutil.NewSession(context.Background(), "hypershift-e2e", awsCredsFile, "", "", region)
+	awsConfig := awsutil.NewConfig()
 	return ec2.NewFromConfig(*awsSession, func(o *ec2.Options) {
 		o.Retryer = awsConfig()
 	})

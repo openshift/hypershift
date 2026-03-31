@@ -17,10 +17,14 @@ limitations under the License.
 
 package v1beta1
 
+import (
+	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+)
+
 // GCPResourceReferenceApplyConfiguration represents a declarative configuration of the GCPResourceReference type for use
 // with apply.
 type GCPResourceReferenceApplyConfiguration struct {
-	Name *string `json:"name,omitempty"`
+	Name *hypershiftv1beta1.GCPResourceName `json:"name,omitempty"`
 }
 
 // GCPResourceReferenceApplyConfiguration constructs a declarative configuration of the GCPResourceReference type for use with
@@ -32,7 +36,7 @@ func GCPResourceReference() *GCPResourceReferenceApplyConfiguration {
 // WithName sets the Name field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the Name field is set to the value of the last call.
-func (b *GCPResourceReferenceApplyConfiguration) WithName(value string) *GCPResourceReferenceApplyConfiguration {
+func (b *GCPResourceReferenceApplyConfiguration) WithName(value hypershiftv1beta1.GCPResourceName) *GCPResourceReferenceApplyConfiguration {
 	b.Name = &value
 	return b
 }

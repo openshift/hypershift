@@ -856,7 +856,15 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	// Copy the platform status from the hostedcontrolplane
 	if hcp != nil {
 		hcluster.Status.Platform = hcp.Status.Platform
+		hcluster.Status.AutoNode = hcp.Status.AutoNode
 	}
+
+	// Copy the control plane version status from the hostedcontrolplane
+	propagateControlPlaneVersion(hcluster, hcp)
+
+	// Set the AutoNodeEnabled condition reflecting both spec intent and actual component rollout progress.
+	meta.SetStatusCondition(&hcluster.Status.Conditions,
+		r.reconcileAutoNodeEnabledCondition(ctx, hcluster, controlPlaneNamespace.Name))
 
 	// Copy the AWSDefaultSecurityGroupCreated condition from the hostedcontrolplane
 	if hcluster.Spec.Platform.Type == hyperv1.AWSPlatform {
@@ -3301,6 +3309,10 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.Hosted
 		return false, err
 	}
 
+	if err := r.resolveKarpenterFinalizer(ctx, hc); err != nil {
+		return false, fmt.Errorf("failed to resolve karpenter finalizer: %w", err)
+	}
+
 	// ensure that the cleanup annotation has been propagated to the hcp if it is set
 	if hc.Annotations[hyperv1.CleanupCloudResourcesAnnotation] == "true" {
 		hcp := controlplaneoperator.HostedControlPlane(controlPlaneNamespace, hc.Name)
@@ -5206,4 +5218,14 @@ func computeGCPPSCCondition(gcpPSCList hyperv1.GCPPrivateServiceConnectList, con
 		Reason:  hyperv1.GCPSuccessReason,
 		Message: hyperv1.AllIsWellMessage,
 	}
+}
+
+// propagateControlPlaneVersion copies the ControlPlaneVersion status from the
+// HostedControlPlane to the HostedCluster using DeepCopy for value safety.
+// When HCP is nil (not yet created) the existing HC value is preserved.
+func propagateControlPlaneVersion(hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) {
+	if hcp == nil {
+		return
+	}
+	hcluster.Status.ControlPlaneVersion = *hcp.Status.ControlPlaneVersion.DeepCopy()
 }

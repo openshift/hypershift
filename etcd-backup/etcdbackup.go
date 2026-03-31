@@ -22,6 +22,7 @@ import (
 
 const (
 	DefaultEtcdClientTimeout = 5 * time.Minute
+	DefaultCertsDir          = "/etc/etcd-certs"
 )
 
 type options struct {
@@ -43,9 +44,9 @@ type options struct {
 func NewStartCommand() *cobra.Command {
 	opts := options{
 		backupDir:          "/tmp",
-		etcdClientCertFile: "/etc/etcd/tls/client/etcd-client.crt",
-		etcdClientKeyFile:  "/etc/etcd/tls/client/etcd-client.key",
-		etcdCAFile:         "/etc/etcd/tls/etcd-ca/ca.crt",
+		etcdClientCertFile: filepath.Join(DefaultCertsDir, "etcd-client.crt"),
+		etcdClientKeyFile:  filepath.Join(DefaultCertsDir, "etcd-client.key"),
+		etcdCAFile:         filepath.Join(DefaultCertsDir, "ca.crt"),
 	}
 
 	cmd := &cobra.Command{
@@ -59,11 +60,11 @@ func NewStartCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&opts.backupDir, "backup-dir", "", "the directory where etcd snapshots are stored")
-	cmd.Flags().StringVar(&opts.etcdEndpoint, "etcd-endpoint", "", "endpoint of the etcd cluster to backup.")
-	cmd.Flags().StringVar(&opts.etcdClientCertFile, "etcd-client-cert", "", "etcd client cert file.")
-	cmd.Flags().StringVar(&opts.etcdClientKeyFile, "etcd-client-key", "", "etcd client cert key file.")
-	cmd.Flags().StringVar(&opts.etcdCAFile, "etcd-ca-cert", "", "etcd trusted CA cert file.")
+	cmd.Flags().StringVar(&opts.backupDir, "backup-dir", opts.backupDir, "directory where the etcd snapshot is stored")
+	cmd.Flags().StringVar(&opts.etcdEndpoint, "etcd-endpoint", "", "endpoint of the etcd cluster to backup")
+	cmd.Flags().StringVar(&opts.etcdClientCertFile, "etcd-client-cert", opts.etcdClientCertFile, "etcd client cert file")
+	cmd.Flags().StringVar(&opts.etcdClientKeyFile, "etcd-client-key", opts.etcdClientKeyFile, "etcd client cert key file")
+	cmd.Flags().StringVar(&opts.etcdCAFile, "etcd-ca-cert", opts.etcdCAFile, "etcd trusted CA cert file")
 	cmd.Flags().StringVar(&opts.s3BucketName, "s3-bucket-name", "", "name of the S3 bucket to store etcd backups.")
 	cmd.Flags().StringVar(&opts.s3BucketRegion, "s3-bucket-region", "", "AWS region of the S3 bucket to store etcd backups.")
 	cmd.Flags().StringVar(&opts.s3KeyPrefix, "s3-key-prefix", "", "S3 snapshot key prefix.")

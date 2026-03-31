@@ -300,6 +300,23 @@ func GetSupportedOCPVersions(ctx context.Context, namespace string, client crcli
 	}
 }
 
+// GetLatestSupportedOCPVersion returns the latest supported OCP version advertised
+// by the HyperShift operator's supported-versions ConfigMap in the "hypershift" namespace.
+func GetLatestSupportedOCPVersion(ctx context.Context, client crclient.Client) (semver.Version, error) {
+	supportedVersions, _, err := GetSupportedOCPVersions(ctx, "hypershift", client, nil)
+	if err != nil {
+		return semver.Version{}, err
+	}
+	if len(supportedVersions.Versions) == 0 {
+		return semver.Version{}, fmt.Errorf("no supported OCP versions found")
+	}
+	latest, err := semver.Parse(supportedVersions.Versions[0] + ".0")
+	if err != nil {
+		return semver.Version{}, fmt.Errorf("failed to parse version %q: %w", supportedVersions.Versions[0], err)
+	}
+	return latest, nil
+}
+
 type ocpTags struct {
 	Name string       `json:"name"`
 	Tags []ocpVersion `json:"tags"`

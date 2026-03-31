@@ -6,10 +6,10 @@ import (
 	"path/filepath"
 	"testing"
 
-	awsv2 "github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/aws"
 )
 
-func TestNewSessionV2(t *testing.T) {
+func TestNewSession(t *testing.T) {
 	ctx := context.Background()
 
 	testCases := []struct {
@@ -22,7 +22,7 @@ func TestNewSessionV2(t *testing.T) {
 		setupFunc       func(t *testing.T) string
 		cleanupFunc     func(t *testing.T, path string)
 		expectNonNil    bool
-		validateConfig  func(t *testing.T, cfg *awsv2.Config)
+		validateConfig  func(t *testing.T, cfg *aws.Config)
 	}{
 		{
 			name:          "When given static credentials and region, it should create config with region",
@@ -31,7 +31,7 @@ func TestNewSessionV2(t *testing.T) {
 			credSecretKey: "test-secret",
 			region:        "us-east-1",
 			expectNonNil:  true,
-			validateConfig: func(t *testing.T, cfg *awsv2.Config) {
+			validateConfig: func(t *testing.T, cfg *aws.Config) {
 				if cfg.Region != "us-east-1" {
 					t.Errorf("Expected region us-east-1, got %s", cfg.Region)
 				}
@@ -55,9 +55,47 @@ aws_secret_access_key = test-secret-key
 				}
 				return credsFile
 			},
-			validateConfig: func(t *testing.T, cfg *awsv2.Config) {
+			validateConfig: func(t *testing.T, cfg *aws.Config) {
 				if cfg.Region != "us-west-2" {
 					t.Errorf("Expected region us-west-2, got %s", cfg.Region)
+				}
+			},
+		},
+		{
+			// Regression test: --aws-creds file must be used as both a shared config file
+			// and a shared credentials file. Previously only WithSharedConfigFiles was set,
+			// so credentials were never read from the provided file and fell back to
+			// AWS_* env vars or ~/.aws/credentials.
+			name:         "When given credentials file, it should read credentials from the file not from env vars",
+			agent:        "test-agent",
+			region:       "us-east-1",
+			expectNonNil: true,
+			setupFunc: func(t *testing.T) string {
+				// Ensure AWS env vars don't shadow the file credentials.
+				for _, env := range []string{"AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN", "AWS_SHARED_CREDENTIALS_FILE", "AWS_CONFIG_FILE"} {
+					t.Setenv(env, "")
+				}
+				tmpDir := t.TempDir()
+				credsFile := filepath.Join(tmpDir, "credentials")
+				content := `[default]
+aws_access_key_id = file-access-key
+aws_secret_access_key = file-secret-key
+`
+				if err := os.WriteFile(credsFile, []byte(content), 0600); err != nil {
+					t.Fatalf("Failed to create temp credentials file: %v", err)
+				}
+				return credsFile
+			},
+			validateConfig: func(t *testing.T, cfg *aws.Config) {
+				creds, err := cfg.Credentials.Retrieve(context.Background())
+				if err != nil {
+					t.Fatalf("Failed to retrieve credentials: %v", err)
+				}
+				if creds.AccessKeyID != "file-access-key" {
+					t.Errorf("Expected AccessKeyID %q from file, got %q — credentials were not loaded from the provided file", "file-access-key", creds.AccessKeyID)
+				}
+				if creds.SecretAccessKey != "file-secret-key" {
+					t.Errorf("Expected SecretAccessKey from file, got different value")
 				}
 			},
 		},
@@ -68,7 +106,7 @@ aws_secret_access_key = test-secret-key
 			credSecretKey: "test-secret",
 			region:        "",
 			expectNonNil:  true,
-			validateConfig: func(t *testing.T, cfg *awsv2.Config) {
+			validateConfig: func(t *testing.T, cfg *aws.Config) {
 				// Region should be empty or default
 				// We just verify the config is created
 				if cfg == nil {
@@ -80,7 +118,7 @@ aws_secret_access_key = test-secret-key
 			name:         "When given minimal configuration, it should create valid config",
 			agent:        "minimal-agent",
 			expectNonNil: true,
-			validateConfig: func(t *testing.T, cfg *awsv2.Config) {
+			validateConfig: func(t *testing.T, cfg *aws.Config) {
 				if cfg == nil {
 					t.Error("Expected non-nil config")
 				}
@@ -103,7 +141,7 @@ aws_secret_access_key = test-secret-key
 				tc.credentialsFile = credsFile
 			}
 
-			cfg := NewSessionV2(ctx, tc.agent, tc.credentialsFile, tc.credKey, tc.credSecretKey, tc.region)
+			cfg := NewSession(ctx, tc.agent, tc.credentialsFile, tc.credKey, tc.credSecretKey, tc.region)
 
 			if tc.expectNonNil && cfg == nil {
 				t.Error("Expected non-nil config, got nil")
@@ -122,31 +160,31 @@ aws_secret_access_key = test-secret-key
 	}
 }
 
-func TestNewSessionV2_UserAgent(t *testing.T) {
+func TestNewSession_UserAgent(t *testing.T) {
 	ctx := context.Background()
 	agent := "test-user-agent"
 
-	cfg := NewSessionV2(ctx, agent, "", "test-key", "test-secret", "us-east-1")
+	cfg := NewSession(ctx, agent, "", "test-key", "test-secret", "us-east-1")
 
 	if cfg == nil {
 		t.Fatal("Expected non-nil config")
 	}
 }
 
-func TestNewSessionV2_ContextPropagation(t *testing.T) {
+func TestNewSession_ContextPropagation(t *testing.T) {
 	// Create a context with a specific value to verify it's being used
 	type ctxKey string
 	testKey := ctxKey("test")
 	ctx := context.WithValue(context.Background(), testKey, "test-value")
 
-	cfg := NewSessionV2(ctx, "test-agent", "", "test-key", "test-secret", "us-east-1")
+	cfg := NewSession(ctx, "test-agent", "", "test-key", "test-secret", "us-east-1")
 
 	if cfg == nil {
 		t.Error("Expected non-nil config")
 	}
 }
 
-func TestGetSessionV2(t *testing.T) {
+func TestGetSession(t *testing.T) {
 	ctx := context.Background()
 
 	testCases := []struct {
@@ -194,7 +232,7 @@ aws_secret_access_key = test-secret-key
 				tc.opts.AWSCredentialsFile = credsFile
 			}
 
-			cfg, err := tc.opts.GetSessionV2(ctx, tc.agent, nil, tc.region)
+			cfg, err := tc.opts.GetSession(ctx, tc.agent, nil, tc.region)
 
 			if tc.expectError {
 				if err == nil {

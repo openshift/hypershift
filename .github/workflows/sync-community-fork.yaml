@@ -1,0 +1,23 @@
+name: Sync Community Fork
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  sync-community-fork:
+    name: Sync Community Fork
+    runs-on: arc-runner-set
+    timeout-minutes: 10
+    steps:
+      # Use the community fork token for checkout so that the credential helper
+      # is configured with it for all github.com requests. This allows the push
+      # to the community fork to authenticate correctly instead of using the
+      # default GITHUB_TOKEN (which only has access to the source repo).
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.COMMUNITY_FORK_TOKEN }}
+      - run: |
+          git remote add community https://github.com/hypershift-community/hypershift.git
+          git push community main

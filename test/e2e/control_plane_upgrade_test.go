@@ -40,6 +40,7 @@ func TestUpgradeControlPlane(t *testing.T) {
 		var startingVersion string
 		if len(hostedCluster.Status.Version.History) > 0 {
 			startingVersion = hostedCluster.Status.Version.History[0].Version
+			t.Logf("Starting version: %s", startingVersion)
 		}
 
 		// Set the semantic version to the latest release image for version gating tests
@@ -67,8 +68,13 @@ func TestUpgradeControlPlane(t *testing.T) {
 			e2eutil.WaitForControlPlaneComponentRollout(t, ctx, mgtClient, hostedCluster, startingVersion)
 		})
 
-		// Wait for the new rollout to be complete
-		e2eutil.WaitForImageRollout(t, ctx, mgtClient, hostedCluster)
+		t.Run("Wait for control plane version to complete rollout", func(t *testing.T) {
+			e2eutil.AtLeast(t, e2eutil.Version422)
+			e2eutil.WaitForControlPlaneRollout(t, ctx, mgtClient, hostedCluster)
+		})
+
+		// Wait for the data plane (CVO) rollout to complete
+		e2eutil.WaitForDataPlaneRollout(t, ctx, mgtClient, hostedCluster)
 		err = mgtClient.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
 		g.Expect(err).NotTo(HaveOccurred(), "failed to get hostedcluster")
 
@@ -78,5 +84,5 @@ func TestUpgradeControlPlane(t *testing.T) {
 		e2eutil.EnsureMachineDeploymentGeneration(t, ctx, mgtClient, hostedCluster, 1)
 		// TODO (cewong): enable this test once the fix for KAS->Kubelet communication has merged
 		// e2eutil.EnsureNodeCommunication(t, ctx, client, hostedCluster)
-	}).WithAssetReader(content.ReadFile).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "control-plane-upgrade", globalOpts.ServiceAccountSigningKey)
+	}).WithAssetReader(content.ReadFile).WithUpgradeTarget(globalOpts.LatestReleaseImage).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "control-plane-upgrade", globalOpts.ServiceAccountSigningKey)
 }

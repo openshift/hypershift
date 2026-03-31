@@ -1,6 +1,11 @@
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
+  annotations:
+    hypershift.openshift.io/metrics-endpoint: https
+    hypershift.openshift.io/metrics-job: apiserver
+    hypershift.openshift.io/metrics-namespace: default
+    hypershift.openshift.io/metrics-service: kubernetes
   name: kube-apiserver
   namespace: hcp-namespace
   ownerReferences:

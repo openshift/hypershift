@@ -79,6 +79,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.APIServerNetworkingApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AutoNode"):
 		return &hypershiftv1beta1.AutoNodeApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("AutoNodeStatus"):
+		return &hypershiftv1beta1.AutoNodeStatusApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AWSCloudProviderConfig"):
 		return &hypershiftv1beta1.AWSCloudProviderConfigApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AWSKMSAuthSpec"):
@@ -119,6 +121,16 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.AzureNodePoolPlatformApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AzurePlatformSpec"):
 		return &hypershiftv1beta1.AzurePlatformSpecApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("AzurePrivateLinkService"):
+		return &hypershiftv1beta1.AzurePrivateLinkServiceApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("AzurePrivateLinkServiceSpec"):
+		return &hypershiftv1beta1.AzurePrivateLinkServiceSpecApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("AzurePrivateLinkServiceStatus"):
+		return &hypershiftv1beta1.AzurePrivateLinkServiceStatusApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("AzurePrivateLinkSpec"):
+		return &hypershiftv1beta1.AzurePrivateLinkSpecApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("AzurePrivateSpec"):
+		return &hypershiftv1beta1.AzurePrivateSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AzureResourceManagedIdentities"):
 		return &hypershiftv1beta1.AzureResourceManagedIdentitiesApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AzureVMImage"):
@@ -149,6 +161,10 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.ConfigurationStatusApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ControlPlaneManagedIdentities"):
 		return &hypershiftv1beta1.ControlPlaneManagedIdentitiesApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("ControlPlaneUpdateHistory"):
+		return &hypershiftv1beta1.ControlPlaneUpdateHistoryApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("ControlPlaneVersionStatus"):
+		return &hypershiftv1beta1.ControlPlaneVersionStatusApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("DataPlaneManagedIdentities"):
 		return &hypershiftv1beta1.DataPlaneManagedIdentitiesApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("Diagnostics"):
@@ -401,6 +417,12 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &applyconfigurationkarpenterv1beta1.BlockDeviceApplyConfiguration{}
 	case karpenterv1beta1.SchemeGroupVersion.WithKind("BlockDeviceMapping"):
 		return &applyconfigurationkarpenterv1beta1.BlockDeviceMappingApplyConfiguration{}
+	case karpenterv1beta1.SchemeGroupVersion.WithKind("CapacityReservation"):
+		return &applyconfigurationkarpenterv1beta1.CapacityReservationApplyConfiguration{}
+	case karpenterv1beta1.SchemeGroupVersion.WithKind("CapacityReservationSelectorTerm"):
+		return &applyconfigurationkarpenterv1beta1.CapacityReservationSelectorTermApplyConfiguration{}
+	case karpenterv1beta1.SchemeGroupVersion.WithKind("MetadataOptions"):
+		return &applyconfigurationkarpenterv1beta1.MetadataOptionsApplyConfiguration{}
 	case karpenterv1beta1.SchemeGroupVersion.WithKind("OpenshiftEC2NodeClass"):
 		return &applyconfigurationkarpenterv1beta1.OpenshiftEC2NodeClassApplyConfiguration{}
 	case karpenterv1beta1.SchemeGroupVersion.WithKind("OpenshiftEC2NodeClassSpec"):

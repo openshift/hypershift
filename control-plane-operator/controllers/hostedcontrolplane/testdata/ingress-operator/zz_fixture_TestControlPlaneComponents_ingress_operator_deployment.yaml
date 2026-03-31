@@ -137,32 +137,6 @@ spec:
           name: konnectivity-proxy-ca
         - mountPath: /tmp
           name: tmp-dir
-      - args:
-        - --token-audience=openshift
-        - --service-account-namespace=openshift-ingress-operator
-        - --service-account-name=ingress-operator
-        - --token-file=/var/run/secrets/openshift/serviceaccount/token
-        - --kubeconfig=/etc/kubernetes/kubeconfig
-        command:
-        - /usr/bin/control-plane-operator
-        - token-minter
-        image: token-minter
-        imagePullPolicy: IfNotPresent
-        name: cloud-token-minter
-        resources:
-          requests:
-            cpu: 10m
-            memory: 30Mi
-        securityContext:
-          readOnlyRootFilesystem: true
-        terminationMessagePolicy: FallbackToLogsOnError
-        volumeMounts:
-        - mountPath: /var/run/secrets/openshift/serviceaccount
-          name: cloud-token
-        - mountPath: /etc/kubernetes
-          name: admin-kubeconfig
-        - mountPath: /tmp
-          name: tmp-dir
       initContainers:
       - command:
         - /usr/bin/control-plane-operator
@@ -179,6 +153,37 @@ spec:
         volumeMounts:
         - mountPath: /var/kubeconfig
           name: service-account-kubeconfig
+      - args:
+        - --token-audience=openshift
+        - --service-account-namespace=openshift-ingress-operator
+        - --service-account-name=ingress-operator
+        - --token-file=/var/run/secrets/openshift/serviceaccount/token
+        - --kubeconfig=/etc/kubernetes/kubeconfig
+        command:
+        - /usr/bin/control-plane-operator
+        - token-minter
+        image: token-minter
+        imagePullPolicy: IfNotPresent
+        name: cloud-token-minter
+        resources:
+          requests:
+            cpu: 10m
+            memory: 30Mi
+        restartPolicy: Always
+        startupProbe:
+          exec:
+            command:
+            - test
+            - -f
+            - /var/run/secrets/openshift/serviceaccount/token
+          failureThreshold: 30
+          periodSeconds: 1
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /var/run/secrets/openshift/serviceaccount
+          name: cloud-token
+        - mountPath: /etc/kubernetes
+          name: admin-kubeconfig
       priorityClassName: hypershift-control-plane
       tolerations:
       - effect: NoSchedule

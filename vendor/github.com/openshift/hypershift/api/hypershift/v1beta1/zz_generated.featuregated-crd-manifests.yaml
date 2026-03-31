@@ -19,6 +19,43 @@ awsendpointservices.hypershift.openshift.io:
   TopLevelFeatureGates: []
   Version: v1beta1
 
+azureprivatelinkservices.hypershift.openshift.io:
+  Annotations: {}
+  ApprovedPRNumber: ""
+  CRDName: azureprivatelinkservices.hypershift.openshift.io
+  Capability: ""
+  Category: ""
+  FeatureGates: []
+  FilenameOperatorName: ""
+  FilenameOperatorOrdering: ""
+  FilenameRunLevel: ""
+  GroupName: hypershift.openshift.io
+  HasStatus: true
+  KindName: AzurePrivateLinkService
+  Labels: {}
+  PluralName: azureprivatelinkservices
+  PrinterColumns:
+  - description: Globally unique PLS alias
+    jsonPath: .status.privateLinkServiceAlias
+    name: PLS Alias
+    type: string
+  - description: IP address of the Private Endpoint
+    jsonPath: .status.privateEndpointIP
+    name: Endpoint IP
+    type: string
+  - description: PLS availability status
+    jsonPath: .status.conditions[?(@.type=="AzurePrivateLinkServiceAvailable")].status
+    name: Available
+    type: string
+  - jsonPath: .metadata.creationTimestamp
+    name: Age
+    type: date
+  Scope: Namespaced
+  ShortNames:
+  - azpls
+  TopLevelFeatureGates: []
+  Version: v1beta1
+
 certificatesigningrequestapprovals.hypershift.openshift.io:
   Annotations: {}
   ApprovedPRNumber: ""
@@ -178,7 +215,6 @@ hostedclusters.hypershift.openshift.io:
   - HyperShiftOnlyDynamicResourceAllocation
   - ImageStreamImportMode
   - KMSEncryptionProvider
-  - NetworkDiagnosticsConfig
   - OpenStack
   FilenameOperatorName: ""
   FilenameOperatorOrdering: ""
@@ -192,6 +228,10 @@ hostedclusters.hypershift.openshift.io:
   - description: Version
     jsonPath: .status.version.history[?(@.state=="Completed")].version
     name: Version
+    type: string
+  - description: Control Plane Version
+    jsonPath: .status.controlPlaneVersion.history[?(@.state=="Completed")].version
+    name: CP Version
     type: string
   - description: KubeConfig Secret
     jsonPath: .status.kubeconfig.name
@@ -212,6 +252,16 @@ hostedclusters.hypershift.openshift.io:
   - description: Message
     jsonPath: .status.conditions[?(@.type=="Available")].message
     name: Message
+    type: string
+  - description: Control Plane Progress
+    jsonPath: .status.controlPlaneVersion.history[0].state
+    name: CP Progress
+    priority: 1
+    type: string
+  - description: Data Plane Progress
+    jsonPath: .status.version.history[0].state
+    name: DP Progress
+    priority: 1
     type: string
   Scope: Namespaced
   ShortNames:
@@ -238,7 +288,6 @@ hostedcontrolplanes.hypershift.openshift.io:
   - HyperShiftOnlyDynamicResourceAllocation
   - ImageStreamImportMode
   - KMSEncryptionProvider
-  - NetworkDiagnosticsConfig
   - OpenStack
   FilenameOperatorName: ""
   FilenameOperatorOrdering: ""

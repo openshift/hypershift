@@ -256,8 +256,8 @@ func getEC2Client() (awsapi.EC2API, error) {
 		return nil, fmt.Errorf("AWS credentials not set")
 	}
 
-	awsSession := awsutil.NewSessionV2(context.Background(), "karpenter-operator", "", "", "", "")
-	awsConfig := awsutil.NewConfigV2()
+	awsSession := awsutil.NewSession(context.Background(), "karpenter-operator", "", "", "", "")
+	awsConfig := awsutil.NewConfig()
 	ec2Client := ec2.NewFromConfig(*awsSession, func(o *ec2.Options) {
 		o.Retryer = awsConfig()
 	})

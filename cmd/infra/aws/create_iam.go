@@ -191,7 +191,7 @@ func (o *CreateIAMOptions) CreateIAM(ctx context.Context, client crclient.Client
 		return nil, err
 	}
 
-	awsSession, err := o.AWSCredentialsOpts.GetSessionV2(ctx, "cli-create-iam", o.CredentialsSecretData, o.Region)
+	awsSession, err := o.AWSCredentialsOpts.GetSession(ctx, "cli-create-iam", o.CredentialsSecretData, o.Region)
 	if err != nil {
 		return nil, err
 	}
@@ -201,7 +201,7 @@ func (o *CreateIAMOptions) CreateIAM(ctx context.Context, client crclient.Client
 		sharedVPC = true
 	}
 
-	awsConfig := awsutil.NewConfigV2()
+	awsConfig := awsutil.NewConfig()
 	iamClient := iam.NewFromConfig(*awsSession, func(o *iam.Options) {
 		o.Retryer = awsConfig()
 	})
@@ -212,7 +212,7 @@ func (o *CreateIAMOptions) CreateIAM(ctx context.Context, client crclient.Client
 	}
 
 	if sharedVPC {
-		vpcOwnerAWSSession, err := o.VPCOwnerCredentialsOpts.GetSessionV2(ctx, "cli-create-iam", nil, o.Region)
+		vpcOwnerAWSSession, err := o.VPCOwnerCredentialsOpts.GetSession(ctx, "cli-create-iam", nil, o.Region)
 		if err != nil {
 			return nil, err
 		}

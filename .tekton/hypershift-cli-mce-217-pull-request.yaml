@@ -8,7 +8,12 @@ metadata:
     build.appstudio.redhat.com/target_branch: '{{target_branch}}'
     pipelinesascode.tekton.dev/cancel-in-progress: "true"
     pipelinesascode.tekton.dev/max-keep-runs: "3"
-    pipelinesascode.tekton.dev/on-cel-expression: event == "pull_request" && ( target_branch == "release-4.22" || target_branch == "main" )
+    pipelinesascode.tekton.dev/on-cel-expression: |
+      event == "pull_request"
+      && (target_branch == "release-4.22" || target_branch == "main")
+      && (files.all.exists(x, !x.matches('^(?:docs|examples|enhancements|contrib|hack|\\.tekton|\\.github|\\.claude)/|\\.md$|^(?:Dockerfile|Containerfile)\\b|^(?:.*/)?(?:\\.gitignore|OWNERS|PROJECT|LICENSE|renovate\\.json)$'))
+         || "Containerfile.cli".pathChanged()
+         || ".tekton/hypershift-cli-mce-217-pull-request.yaml".pathChanged())
   creationTimestamp:
   labels:
     appstudio.openshift.io/application: release-mce-217

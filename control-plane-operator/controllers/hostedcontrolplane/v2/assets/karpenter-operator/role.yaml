@@ -46,6 +46,7 @@ rules:
     resources:
       - "hostedcontrolplanes"
       - "hostedcontrolplanes/finalizers"
+      - "hostedcontrolplanes/status"
     verbs:
       - "*"
   - apiGroups:

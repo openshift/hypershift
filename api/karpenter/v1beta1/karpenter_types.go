@@ -203,6 +203,18 @@ type OpenshiftEC2NodeClassSpec struct {
 	// +optional
 	SecurityGroupSelectorTerms []SecurityGroupSelectorTerm `json:"securityGroupSelectorTerms,omitempty"`
 
+	// capacityReservationSelectorTerms is a list of capacity reservation selector terms. The terms are ORed.
+	// Each term must specify at least one of: tags, id, ownerID, or instanceMatchCriteria.
+	// The id field is mutually exclusive and cannot be combined with tags, ownerID, or instanceMatchCriteria
+	// within the same term.
+	// +kubebuilder:validation:XValidation:message="expected at least one, got none, ['tags', 'id', 'ownerID', 'instanceMatchCriteria']",rule="self.all(x, has(x.tags) || has(x.id) || has(x.ownerID) || has(x.instanceMatchCriteria))"
+	// +kubebuilder:validation:XValidation:message="'id' is mutually exclusive, cannot be set along with other fields in a capacity reservation selector term",rule="!self.all(x, has(x.id) && (has(x.tags) || has(x.ownerID) || has(x.instanceMatchCriteria)))"
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems:=30
+	// +listType=atomic
+	// +optional
+	CapacityReservationSelectorTerms []CapacityReservationSelectorTerm `json:"capacityReservationSelectorTerms,omitempty"`
+
 	// ipAddressAssociation controls the IP address assignment for instances launched with the nodeclass.
 	// Valid values are:
 	// - "Public": assigns public IP addresses to instances, allowing direct internet access.
@@ -244,6 +256,15 @@ type OpenshiftEC2NodeClassSpec struct {
 	// When unset, the cloud provider's default basic monitoring behavior is used.
 	// +optional
 	Monitoring MonitoringState `json:"monitoring,omitempty"`
+
+	// metadataOptions contains parameters for specifying the exposure of the
+	// Instance Metadata Service to provisioned EC2 nodes.
+	// When omitted, the platform preserves control over default behaviour
+	// which is subject to change over time. Currently defaults to access
+	// HTTPEndpoint, httpIPProtocol IPv4, httpPutResponseHopLimit of 1,
+	// and httpTokens Required (IMDSv2).
+	// +optional
+	MetadataOptions MetadataOptions `json:"metadataOptions,omitzero"`
 
 	// version is an OpenShift version (e.g., "4.20.1") specifying the release version
 	// for nodes managed by this NodeClass. When set, the controller resolves this to a
@@ -306,6 +327,55 @@ type SecurityGroupSelectorTerm struct {
 	// +optional
 	Name string `json:"name,omitempty"`
 }
+
+// CapacityReservationSelectorTerm defines selection logic for a capacity reservation used by Karpenter to launch nodes.
+// If multiple fields are used for selection, the requirements are ANDed.
+// +kubebuilder:validation:MinProperties=1
+type CapacityReservationSelectorTerm struct {
+	// tags is a map of key/value tags used to select capacity reservations.
+	// Specifying '*' for a value selects all values for a given tag key.
+	// +kubebuilder:validation:XValidation:message="empty tag keys or values aren't supported",rule="self.all(k, k != '' && self[k] != '')"
+	// +kubebuilder:validation:MaxProperties:=20
+	// +kubebuilder:validation:MinProperties=1
+	// +optional
+	Tags map[string]string `json:"tags,omitempty"`
+
+	// id is the capacity reservation id in EC2.
+	// +kubebuilder:validation:XValidation:rule="self.matches('^cr-[0-9a-z]+$')",message="id must match the pattern cr-[0-9a-z]+"
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=256
+	// +optional
+	ID string `json:"id,omitempty"`
+
+	// ownerID is the owner account id for the capacity reservation.
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[0-9]{12}$')",message="ownerID must be a 12-digit AWS account ID"
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=12
+	// +optional
+	OwnerID string `json:"ownerID,omitempty"`
+
+	// instanceMatchCriteria filters capacity reservations by how they match instances.
+	// When set to "Open", only selects reservations that any instance with matching
+	// attributes (instance type, platform, Availability Zone) can use automatically.
+	// When set to "Targeted", only selects reservations that require instances to
+	// explicitly target them by ID.
+	// When omitted, selects both Open and Targeted reservations (no filtering on this attribute).
+	// +optional
+	InstanceMatchCriteria InstanceMatchCriteria `json:"instanceMatchCriteria,omitempty"`
+}
+
+// InstanceMatchCriteria specifies how instances are matched to capacity reservations.
+// +kubebuilder:validation:Enum=Open;Targeted
+type InstanceMatchCriteria string
+
+const (
+	// InstanceMatchCriteriaOpen indicates instances with matching attributes run in
+	// the capacity reservation automatically.
+	InstanceMatchCriteriaOpen InstanceMatchCriteria = "Open"
+	// InstanceMatchCriteriaTargeted indicates instances must explicitly target the
+	// capacity reservation by ID.
+	InstanceMatchCriteriaTargeted InstanceMatchCriteria = "Targeted"
+)
 
 // BlockDeviceMapping defines a block device mapping for a node.
 // +kubebuilder:validation:MinProperties=1
@@ -400,10 +470,147 @@ type BlockDevice struct {
 	VolumeType VolumeType `json:"volumeType,omitempty"`
 }
 
+// MetadataAccess specifies how the instance metadata endpoint is accessed on provisioned nodes.
+// +kubebuilder:validation:Enum=HTTPEndpoint;None
+type MetadataAccess string
+
+const (
+	// MetadataAccessHTTPEndpoint enables access to instance metadata via the HTTP endpoint.
+	MetadataAccessHTTPEndpoint MetadataAccess = "HTTPEndpoint"
+	// MetadataAccessNone disables access to instance metadata.
+	MetadataAccessNone MetadataAccess = "None"
+)
+
+// MetadataHTTPProtocol specifies the IP protocol version for the instance metadata service endpoint.
+// +kubebuilder:validation:Enum=IPv4;IPv6
+type MetadataHTTPProtocol string
+
+const (
+	// MetadataHTTPProtocolIPv4 uses the IPv4 endpoint for the instance metadata service.
+	MetadataHTTPProtocolIPv4 MetadataHTTPProtocol = "IPv4"
+	// MetadataHTTPProtocolIPv6 uses the IPv6 endpoint for the instance metadata service.
+	MetadataHTTPProtocolIPv6 MetadataHTTPProtocol = "IPv6"
+)
+
+// MetadataHTTPTokensState determines the state of token usage for instance metadata requests.
+// +kubebuilder:validation:Enum=Required;Optional
+type MetadataHTTPTokensState string
+
+const (
+	// MetadataHTTPTokensStateRequired requires a signed token header for metadata requests (IMDSv2).
+	MetadataHTTPTokensStateRequired MetadataHTTPTokensState = "Required"
+	// MetadataHTTPTokensStateOptional allows metadata retrieval with or without a token (IMDSv1/v2).
+	MetadataHTTPTokensStateOptional MetadataHTTPTokensState = "Optional"
+)
+
+// MetadataOptions contains parameters for specifying the exposure of the
+// Instance Metadata Service to provisioned EC2 nodes.
+// When omitted, the platform preserves control over default behaviour which
+// is subject to change over time. Currently defaults to HTTP endpoint access
+// with IPv4, a hop limit of 1, and required tokens (IMDSv2).
+// +kubebuilder:validation:MinProperties=1
+type MetadataOptions struct {
+	// access specifies how the instance metadata endpoint is accessed on
+	// provisioned nodes. Valid values are "HTTPEndpoint" and "None".
+	// When set to "HTTPEndpoint", the instance metadata service is accessible
+	// via the HTTP endpoint. When set to "None", instance metadata is not
+	// accessible on the node.
+	// When omitted, the platform defaults to HTTP endpoint access.
+	// +optional
+	Access MetadataAccess `json:"access,omitempty"`
+	// httpIPProtocol specifies the IP protocol version for the instance metadata
+	// service endpoint on provisioned nodes. Valid values are "IPv4" and "IPv6".
+	// When set to "IPv4", the metadata endpoint uses the IPv4 protocol.
+	// When set to "IPv6", the metadata endpoint uses the IPv6 protocol.
+	// When omitted, the platform defaults to IPv4.
+	// +optional
+	HTTPIPProtocol MetadataHTTPProtocol `json:"httpIPProtocol,omitempty"`
+	// httpPutResponseHopLimit is the desired HTTP PUT response hop limit for
+	// instance metadata requests. Possible values are integers from 1 to 64.
+	// A value of 1 restricts IMDS access to the EC2 instance only, preventing
+	// pods from reaching it. A value of 2 allows pods to access IMDS through
+	// the container network bridge. Values above 2 are for advanced networking
+	// scenarios such as nested virtualization.
+	// When omitted, the platform defaults to a hop limit of 1.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=64
+	// +optional
+	HTTPPutResponseHopLimit int64 `json:"httpPutResponseHopLimit,omitempty"`
+	// httpTokens determines the state of token usage for instance metadata
+	// requests. Valid values are "Required" and "Optional".
+	// When set to "Required", a signed token header (IMDSv2) must be used for
+	// all metadata requests. When set to "Optional", metadata can be retrieved
+	// with or without a token (IMDSv1/v2).
+	// When omitted, the platform defaults to requiring tokens (IMDSv2).
+	// +optional
+	HTTPTokens MetadataHTTPTokensState `json:"httpTokens,omitempty"`
+}
+
+// CapacityReservation contains resolved CapacityReservation selector values utilized for node launch
+type CapacityReservation struct {
+	// availabilityZone is the availability zone the capacity reservation is available in.
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=64
+	AvailabilityZone string `json:"availabilityZone,omitempty"`
+	// endTime is the time at which the capacity reservation expires. Once expired, the reserved capacity is released and Karpenter
+	// will no longer be able to launch instances into that reservation.
+	// +optional
+	EndTime metav1.Time `json:"endTime,omitempty,omitzero"`
+	// id is the id for the capacity reservation.
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=256
+	ID string `json:"id,omitempty"`
+	// instanceMatchCriteria indicates the type of instance launches the capacity reservation accepts.
+	// +required
+	InstanceMatchCriteria InstanceMatchCriteria `json:"instanceMatchCriteria,omitempty"`
+	// instanceType is the instance type for the capacity reservation.
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=256
+	InstanceType string `json:"instanceType,omitempty"`
+	// ownerID is the ID of the AWS account that owns the capacity reservation.
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=12
+	OwnerID string `json:"ownerID,omitempty"`
+	// reservationType is the type of capacity reservation.
+	// +optional
+	ReservationType CapacityReservationType `json:"reservationType,omitempty"`
+	// state is the state of the capacity reservation.
+	// +optional
+	State CapacityReservationState `json:"state,omitempty"`
+}
+
+// CapacityReservationType is the type of capacity reservation.
+// +kubebuilder:validation:Enum=Default;CapacityBlock
+type CapacityReservationType string
+
+const (
+	// CapacityReservationTypeDefault is a standard on-demand capacity reservation.
+	CapacityReservationTypeDefault CapacityReservationType = "Default"
+	// CapacityReservationTypeCapacityBlock is a capacity block reservation.
+	CapacityReservationTypeCapacityBlock CapacityReservationType = "CapacityBlock"
+)
+
+// CapacityReservationState is the state of a capacity reservation.
+// +kubebuilder:validation:Enum=Active;Expiring
+type CapacityReservationState string
+
+const (
+	// CapacityReservationStateActive indicates the capacity reservation is active.
+	CapacityReservationStateActive CapacityReservationState = "Active"
+	// CapacityReservationStateExpiring indicates the capacity reservation is within
+	// the EC2 reclamation window. Only capacity-block reservations may be in this state.
+	CapacityReservationStateExpiring CapacityReservationState = "Expiring"
+)
+
 // OpenshiftEC2NodeClassStatus defines the observed state of OpenshiftEC2NodeClass.
 // +kubebuilder:validation:MinProperties=1
 type OpenshiftEC2NodeClassStatus struct {
 	// conditions contain signals for health and readiness.
+
 	// +optional
 	// +listType=map
 	// +listMapKey=type
@@ -440,6 +647,14 @@ type OpenshiftEC2NodeClassStatus struct {
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=64
 	Version string `json:"version,omitempty"`
+
+	// capacityReservations contains the current Capacity Reservation values that are available to the
+	// cluster under the capacityReservationSelectorTerms.
+	// +optional
+	// +listType=atomic
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=100
+	CapacityReservations []CapacityReservation `json:"capacityReservations,omitempty"`
 }
 
 // +genclient

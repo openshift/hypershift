@@ -194,14 +194,14 @@ func (o *CreateCLIRoleOptions) Run(ctx context.Context, logger logr.Logger) erro
 		return err
 	}
 
-	awsSessionv2 := awsutil.NewSessionV2(ctx, "cli-create-role", o.AWSCredentialsFile, "", "", "")
-	awsConfigv2 := awsutil.NewConfigV2()
+	awsSession := awsutil.NewSession(ctx, "cli-create-role", o.AWSCredentialsFile, "", "", "")
+	awsConfig := awsutil.NewConfig()
 
-	iamClient := iam.NewFromConfig(*awsSessionv2, func(o *iam.Options) {
-		o.Retryer = awsConfigv2()
+	iamClient := iam.NewFromConfig(*awsSession, func(o *iam.Options) {
+		o.Retryer = awsConfig()
 	})
-	stsClient := sts.NewFromConfig(*awsSessionv2, func(o *sts.Options) {
-		o.Retryer = awsConfigv2()
+	stsClient := sts.NewFromConfig(*awsSession, func(o *sts.Options) {
+		o.Retryer = awsConfig()
 	})
 
 	trustPolicy, err := assumeRoleTrustPolicy(ctx, stsClient)

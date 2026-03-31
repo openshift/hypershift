@@ -107,30 +107,31 @@ func gcpMachineTemplateSpec(
 	// Configure labels
 	labels := configureGCPLabels(hcGCPPlatform, gcpPlatform, infraName, hostedCluster.Name)
 
-	// Configure network tags
-	networkTags := configureGCPNetworkTags(gcpPlatform.NetworkTags, infraName)
+	// Configure network tags - convert []GCPResourceName to []string for configureGCPNetworkTags
+	var networkTagStrings []string
+	for _, tag := range gcpPlatform.NetworkTags {
+		networkTagStrings = append(networkTagStrings, string(tag))
+	}
+	networkTags := configureGCPNetworkTags(networkTagStrings, infraName)
 
 	// Configure maintenance behavior
 	onHostMaintenance := configureGCPMaintenanceBehavior(gcpPlatform.OnHostMaintenance, gcpPlatform.ProvisioningModel)
 
 	// Determine preemptible setting and provisioning model for CAPG
-	preemptible := gcpPlatform.ProvisioningModel != nil &&
-		*gcpPlatform.ProvisioningModel == hyperv1.GCPProvisioningModelPreemptible
+	preemptible := gcpPlatform.ProvisioningModel == hyperv1.GCPProvisioningModelPreemptible
 
 	// Map hypershift provisioning model to CAPG provisioning model
 	// CAPG uses ProvisioningModel for Spot VMs (separate from Preemptible boolean)
 	var provisioningModel *capigcp.ProvisioningModel
-	if gcpPlatform.ProvisioningModel != nil {
-		switch *gcpPlatform.ProvisioningModel {
-		case hyperv1.GCPProvisioningModelSpot:
-			spot := capigcp.ProvisioningModelSpot
-			provisioningModel = &spot
-		case hyperv1.GCPProvisioningModelStandard:
-			standard := capigcp.ProvisioningModelStandard
-			provisioningModel = &standard
-			// For Preemptible, we use the Preemptible boolean field (legacy)
-			// and don't set ProvisioningModel
-		}
+	switch gcpPlatform.ProvisioningModel {
+	case hyperv1.GCPProvisioningModelSpot:
+		spot := capigcp.ProvisioningModelSpot
+		provisioningModel = &spot
+	case hyperv1.GCPProvisioningModelStandard:
+		standard := capigcp.ProvisioningModelStandard
+		provisioningModel = &standard
+		// For Preemptible, we use the Preemptible boolean field (legacy)
+		// and don't set ProvisioningModel
 	}
 
 	spec := &capigcp.GCPMachineSpec{
@@ -162,8 +163,8 @@ func resolveGCPImage(nodePool *hyperv1.NodePool, releaseImage *releaseinfo.Relea
 	gcpPlatform := nodePool.Spec.Platform.GCP
 
 	// If user specified a custom image, use it
-	if gcpPlatform.Image != nil && *gcpPlatform.Image != "" {
-		return *gcpPlatform.Image, nil
+	if gcpPlatform.Image != "" {
+		return gcpPlatform.Image, nil
 	}
 
 	// Resolve image from release metadata
@@ -182,12 +183,12 @@ func resolveGCPSubnet(gcpPlatform *hyperv1.GCPNodePoolPlatform, hcGCPPlatform *h
 	if gcpPlatform != nil && gcpPlatform.Subnet != "" {
 		// CAPG will automatically prepend "projects/{project}/regions/{region}/subnetworks/"
 		// so we only provide the subnet name
-		return gcpPlatform.Subnet, nil
+		return string(gcpPlatform.Subnet), nil
 	}
 
 	// Fall back to HostedCluster PrivateServiceConnectSubnet if configured
 	if hcGCPPlatform.NetworkConfig.PrivateServiceConnectSubnet.Name != "" {
-		return hcGCPPlatform.NetworkConfig.PrivateServiceConnectSubnet.Name, nil
+		return string(hcGCPPlatform.NetworkConfig.PrivateServiceConnectSubnet.Name), nil
 	}
 
 	// Default to using the default subnet name - CAPG will construct the full path
@@ -218,8 +219,8 @@ func configureGCPServiceAccount(saConfig *hyperv1.GCPNodeServiceAccount) *capigc
 	}
 
 	email := ""
-	if saConfig.Email != nil {
-		email = *saConfig.Email
+	if saConfig.Email != "" {
+		email = string(saConfig.Email)
 	}
 	return &capigcp.ServiceAccount{
 		Email:  email,
@@ -240,11 +241,11 @@ func configureGCPBootDisk(bootDiskConfig *hyperv1.GCPBootDisk) GCPBootDiskConfig
 	diskType := capigcp.DiskType("pd-balanced") // Default type (matches API +kubebuilder:default="pd-balanced")
 
 	if bootDiskConfig != nil {
-		if bootDiskConfig.DiskSizeGB != nil && *bootDiskConfig.DiskSizeGB > 0 {
-			diskSizeGB = *bootDiskConfig.DiskSizeGB
+		if bootDiskConfig.DiskSizeGB > 0 {
+			diskSizeGB = bootDiskConfig.DiskSizeGB
 		}
-		if bootDiskConfig.DiskType != nil && *bootDiskConfig.DiskType != "" {
-			diskType = capigcp.DiskType(*bootDiskConfig.DiskType)
+		if bootDiskConfig.DiskType != "" {
+			diskType = capigcp.DiskType(bootDiskConfig.DiskType)
 		}
 	}
 
@@ -254,7 +255,7 @@ func configureGCPBootDisk(bootDiskConfig *hyperv1.GCPBootDisk) GCPBootDiskConfig
 	}
 
 	// Configure encryption if specified
-	if bootDiskConfig != nil && bootDiskConfig.EncryptionKey != nil {
+	if bootDiskConfig != nil && bootDiskConfig.EncryptionKey.KMSKeyName != "" {
 		config.EncryptionKey = &capigcp.CustomerEncryptionKey{
 			KeyType: capigcp.CustomerManagedKey,
 			ManagedKey: &capigcp.ManagedKey{
@@ -307,16 +308,16 @@ func configureGCPNetworkTags(userTags []string, infraID string) []string {
 }
 
 // configureGCPMaintenanceBehavior determines the host maintenance behavior.
-func configureGCPMaintenanceBehavior(userMaintenance *string, provisioningModel *hyperv1.GCPProvisioningModel) capigcp.HostMaintenancePolicy {
-	if userMaintenance != nil && *userMaintenance != "" {
-		if *userMaintenance == string(hyperv1.GCPOnHostMaintenanceTerminate) {
+func configureGCPMaintenanceBehavior(userMaintenance hyperv1.GCPOnHostMaintenance, provisioningModel hyperv1.GCPProvisioningModel) capigcp.HostMaintenancePolicy {
+	if userMaintenance != "" {
+		if userMaintenance == hyperv1.GCPOnHostMaintenanceTerminate {
 			return capigcp.HostMaintenancePolicyTerminate
 		}
 		return capigcp.HostMaintenancePolicyMigrate
 	}
 
 	// For preemptible or spot instances, must use TERMINATE
-	if provisioningModel != nil && (*provisioningModel == hyperv1.GCPProvisioningModelPreemptible || *provisioningModel == hyperv1.GCPProvisioningModelSpot) {
+	if provisioningModel == hyperv1.GCPProvisioningModelPreemptible || provisioningModel == hyperv1.GCPProvisioningModelSpot {
 		return capigcp.HostMaintenancePolicyTerminate
 	}
 

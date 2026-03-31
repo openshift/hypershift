@@ -16,15 +16,15 @@ import (
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
 
-	awsv2 "github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/aws"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
-	configv2 "github.com/aws/aws-sdk-go-v2/config"
-	stscredsv2 "github.com/aws/aws-sdk-go-v2/credentials/stscreds"
-	ec2v2 "github.com/aws/aws-sdk-go-v2/service/ec2"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
-	route53v2 "github.com/aws/aws-sdk-go-v2/service/route53"
+	"github.com/aws/aws-sdk-go-v2/service/route53"
 	route53types "github.com/aws/aws-sdk-go-v2/service/route53/types"
-	stsv2 "github.com/aws/aws-sdk-go-v2/service/sts"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
 
@@ -207,14 +207,14 @@ type clientBuilder struct {
 	localZoneID                    string
 }
 
-func (b *clientBuilder) awsConfig(ctx context.Context) (awsv2.Config, error) {
-	cfg, err := configv2.LoadDefaultConfig(ctx,
-		configv2.WithAPIOptions([]func(*middleware.Stack) error{
+func (b *clientBuilder) awsConfig(ctx context.Context) (aws.Config, error) {
+	cfg, err := awsconfig.LoadDefaultConfig(ctx,
+		awsconfig.WithAPIOptions([]func(*middleware.Stack) error{
 			awsmiddleware.AddUserAgentKeyValue("openshift.io hypershift", "control-plane-operator"),
 		}),
 	)
 	if err != nil {
-		return awsv2.Config{}, fmt.Errorf("failed to create AWS config: %w", err)
+		return aws.Config{}, fmt.Errorf("failed to create AWS config: %w", err)
 	}
 	return cfg, nil
 }
@@ -239,20 +239,20 @@ func (b *clientBuilder) getClients(ctx context.Context) (awsapi.EC2API, awsapi.R
 
 	// When sharedVPC we need assume these additional roles
 	if b.assumeSharedVPCEndpointRoleARN != "" {
-		stsClient := stsv2.NewFromConfig(ec2Cfg)
-		ec2Cfg.Credentials = awsv2.NewCredentialsCache(
-			stscredsv2.NewAssumeRoleProvider(stsClient, b.assumeSharedVPCEndpointRoleARN),
+		stsClient := sts.NewFromConfig(ec2Cfg)
+		ec2Cfg.Credentials = aws.NewCredentialsCache(
+			stscreds.NewAssumeRoleProvider(stsClient, b.assumeSharedVPCEndpointRoleARN),
 		)
 	}
 	if b.assumeSharedVPCRoute53RoleARN != "" {
-		stsClient := stsv2.NewFromConfig(route53Cfg)
-		route53Cfg.Credentials = awsv2.NewCredentialsCache(
-			stscredsv2.NewAssumeRoleProvider(stsClient, b.assumeSharedVPCRoute53RoleARN),
+		stsClient := sts.NewFromConfig(route53Cfg)
+		route53Cfg.Credentials = aws.NewCredentialsCache(
+			stscreds.NewAssumeRoleProvider(stsClient, b.assumeSharedVPCRoute53RoleARN),
 		)
 	}
 
-	ec2Client := ec2v2.NewFromConfig(ec2Cfg)
-	route53Client := route53v2.NewFromConfig(route53Cfg)
+	ec2Client := ec2.NewFromConfig(ec2Cfg)
+	route53Client := route53.NewFromConfig(route53Cfg)
 
 	return ec2Client, route53Client, nil
 }
@@ -544,7 +544,7 @@ func (r *AWSEndpointServiceReconciler) reconcileAWSEndpointService(ctx context.C
 	var endpointDNSEntries []ec2types.DnsEntry
 	if endpointID != "" {
 		// check if Endpoint exists in AWS
-		output, err := ec2Client.DescribeVpcEndpoints(ctx, &ec2v2.DescribeVpcEndpointsInput{
+		output, err := ec2Client.DescribeVpcEndpoints(ctx, &ec2.DescribeVpcEndpointsInput{
 			VpcEndpointIds: []string{endpointID},
 		})
 		if err != nil {
@@ -562,17 +562,17 @@ func (r *AWSEndpointServiceReconciler) reconcileAWSEndpointService(ctx context.C
 			return err
 		}
 
-		if awsv2.ToString(output.VpcEndpoints[0].ServiceName) != awsEndpointService.Status.EndpointServiceName {
-			log.Info("endpoint links to wrong endpointservice, deleting...", "LinkedVPCEndpointServiceName", awsv2.ToString(output.VpcEndpoints[0].ServiceName), "WantedVPCEndpointService", awsEndpointService.Status.EndpointServiceName)
-			if _, err := ec2Client.DeleteVpcEndpoints(ctx, &ec2v2.DeleteVpcEndpointsInput{
-				VpcEndpointIds: []string{awsv2.ToString(output.VpcEndpoints[0].VpcEndpointId)},
+		if aws.ToString(output.VpcEndpoints[0].ServiceName) != awsEndpointService.Status.EndpointServiceName {
+			log.Info("endpoint links to wrong endpointservice, deleting...", "LinkedVPCEndpointServiceName", aws.ToString(output.VpcEndpoints[0].ServiceName), "WantedVPCEndpointService", awsEndpointService.Status.EndpointServiceName)
+			if _, err := ec2Client.DeleteVpcEndpoints(ctx, &ec2.DeleteVpcEndpointsInput{
+				VpcEndpointIds: []string{aws.ToString(output.VpcEndpoints[0].VpcEndpointId)},
 			}); err != nil {
-				log.Error(err, "failed to delete vpc endpoint", "id", awsv2.ToString(output.VpcEndpoints[0].VpcEndpointId))
+				log.Error(err, "failed to delete vpc endpoint", "id", aws.ToString(output.VpcEndpoints[0].VpcEndpointId))
 				return fmt.Errorf("error deleting AWSEndpoint: %w", err)
 			}
 
 			// Once the VPC Endpoint is deleted, we need to send an error in order to reexecute the reconcilliation
-			return fmt.Errorf("current endpoint %s is not pointing to the existing .Status.EndpointServiceName, reconciling by deleting endpoint", awsv2.ToString(output.VpcEndpoints[0].ServiceName))
+			return fmt.Errorf("current endpoint %s is not pointing to the existing .Status.EndpointServiceName, reconciling by deleting endpoint", aws.ToString(output.VpcEndpoints[0].ServiceName))
 		}
 
 		if len(output.VpcEndpoints) == 0 {
@@ -590,14 +590,14 @@ func (r *AWSEndpointServiceReconciler) reconcileAWSEndpointService(ctx context.C
 		// Ensure endpoint has the right SG.
 		existingSG := make([]string, 0)
 		for _, group := range output.VpcEndpoints[0].Groups {
-			existingSG = append(existingSG, awsv2.ToString(group.GroupId))
+			existingSG = append(existingSG, aws.ToString(group.GroupId))
 		}
 		addedSG, _ := diffIDs([]string{awsEndpointService.Status.SecurityGroupID}, existingSG)
 
 		if addedSubnet != nil || removedSubnet != nil || addedSG != nil {
 			log.Info("endpoint subnets or security groups have changed")
-			_, err := ec2Client.ModifyVpcEndpoint(ctx, &ec2v2.ModifyVpcEndpointInput{
-				VpcEndpointId:       awsv2.String(endpointID),
+			_, err := ec2Client.ModifyVpcEndpoint(ctx, &ec2.ModifyVpcEndpointInput{
+				VpcEndpointId:       aws.String(endpointID),
 				AddSubnetIds:        addedSubnet,
 				RemoveSubnetIds:     removedSubnet,
 				AddSecurityGroupIds: addedSG,
@@ -624,7 +624,7 @@ func (r *AWSEndpointServiceReconciler) reconcileAWSEndpointService(ctx context.C
 		// Verify there is not already an Endpoint that we can adopt
 		// This can happen if we have a stale status on AWSEndpointService or encountered
 		// an error updating the AWSEndpointService on the previous reconcile
-		output, err := ec2Client.DescribeVpcEndpoints(ctx, &ec2v2.DescribeVpcEndpointsInput{
+		output, err := ec2Client.DescribeVpcEndpoints(ctx, &ec2.DescribeVpcEndpointsInput{
 			Filters: apiTagToEC2Filter(awsEndpointService.Name, hcp.Spec.Platform.AWS.ResourceTags),
 		})
 		if err != nil {
@@ -637,19 +637,19 @@ func (r *AWSEndpointServiceReconciler) reconcileAWSEndpointService(ctx context.C
 			return fmt.Errorf("failed to describe vpc endpoints: %s", msg)
 		}
 		if len(output.VpcEndpoints) != 0 {
-			if awsv2.ToString(output.VpcEndpoints[0].ServiceName) != awsEndpointService.Status.EndpointServiceName {
-				log.Info("endpoint links to wrong endpointservice, deleting...", "LinkedVPCEndpointServiceName", awsv2.ToString(output.VpcEndpoints[0].ServiceName), "WantedVPCEndpointService", awsEndpointService.Status.EndpointServiceName)
-				if _, err := ec2Client.DeleteVpcEndpoints(ctx, &ec2v2.DeleteVpcEndpointsInput{
-					VpcEndpointIds: []string{awsv2.ToString(output.VpcEndpoints[0].VpcEndpointId)},
+			if aws.ToString(output.VpcEndpoints[0].ServiceName) != awsEndpointService.Status.EndpointServiceName {
+				log.Info("endpoint links to wrong endpointservice, deleting...", "LinkedVPCEndpointServiceName", aws.ToString(output.VpcEndpoints[0].ServiceName), "WantedVPCEndpointService", awsEndpointService.Status.EndpointServiceName)
+				if _, err := ec2Client.DeleteVpcEndpoints(ctx, &ec2.DeleteVpcEndpointsInput{
+					VpcEndpointIds: []string{aws.ToString(output.VpcEndpoints[0].VpcEndpointId)},
 				}); err != nil {
-					log.Error(err, "failed to delete vpc endpoint", "id", awsv2.ToString(output.VpcEndpoints[0].VpcEndpointId))
+					log.Error(err, "failed to delete vpc endpoint", "id", aws.ToString(output.VpcEndpoints[0].VpcEndpointId))
 					return fmt.Errorf("error deleting AWSEndpoint: %w", err)
 				}
 
 				// Once the VPC Endpoint is deleted, we need to send an error in order to reexecute the reconcilliation
-				return fmt.Errorf("current endpoint %s is not pointing to the existing .Status.EndpointServiceName, reconciling by deleting endpoint", awsv2.ToString(output.VpcEndpoints[0].ServiceName))
+				return fmt.Errorf("current endpoint %s is not pointing to the existing .Status.EndpointServiceName, reconciling by deleting endpoint", aws.ToString(output.VpcEndpoints[0].ServiceName))
 			}
-			endpointID = awsv2.ToString(output.VpcEndpoints[0].VpcEndpointId)
+			endpointID = aws.ToString(output.VpcEndpoints[0].VpcEndpointId)
 			log.Info("endpoint already exists, adopting", "endpointID", endpointID)
 			awsEndpointService.Status.EndpointID = endpointID
 			endpointDNSEntries = output.VpcEndpoints[0].DnsEntries
@@ -659,10 +659,10 @@ func (r *AWSEndpointServiceReconciler) reconcileAWSEndpointService(ctx context.C
 			if awsEndpointService.Status.SecurityGroupID == "" {
 				return fmt.Errorf("security group ID doesn't exist yet for the endpoint to use")
 			}
-			output, err := ec2Client.CreateVpcEndpoint(ctx, &ec2v2.CreateVpcEndpointInput{
+			output, err := ec2Client.CreateVpcEndpoint(ctx, &ec2.CreateVpcEndpointInput{
 				SecurityGroupIds: []string{awsEndpointService.Status.SecurityGroupID},
-				ServiceName:      awsv2.String(awsEndpointService.Status.EndpointServiceName),
-				VpcId:            awsv2.String(hcp.Spec.Platform.AWS.CloudProviderConfig.VPC),
+				ServiceName:      aws.String(awsEndpointService.Status.EndpointServiceName),
+				VpcId:            aws.String(hcp.Spec.Platform.AWS.CloudProviderConfig.VPC),
 				VpcEndpointType:  ec2types.VpcEndpointTypeInterface,
 				SubnetIds:        awsEndpointService.Spec.SubnetIDs,
 				TagSpecifications: []ec2types.TagSpecification{{
@@ -683,7 +683,7 @@ func (r *AWSEndpointServiceReconciler) reconcileAWSEndpointService(ctx context.C
 				return fmt.Errorf("CreateVpcEndpoint output is nil")
 			}
 
-			endpointID = awsv2.ToString(output.VpcEndpoint.VpcEndpointId)
+			endpointID = aws.ToString(output.VpcEndpoint.VpcEndpointId)
 			log.Info("endpoint created", "endpointID", endpointID)
 			awsEndpointService.Status.EndpointID = endpointID
 			endpointDNSEntries = output.VpcEndpoint.DnsEntries
@@ -717,7 +717,7 @@ func (r *AWSEndpointServiceReconciler) reconcileAWSEndpointService(ctx context.C
 	for _, recordName := range recordNames {
 		fqdn := fmt.Sprintf("%s.%s", recordName, zoneName)
 		fqdns = append(fqdns, fqdn)
-		err = CreateRecord(ctx, route53Client, zoneID, fqdn, awsv2.ToString(endpointDNSEntries[0].DnsName), route53types.RRTypeCname)
+		err = CreateRecord(ctx, route53Client, zoneID, fqdn, aws.ToString(endpointDNSEntries[0].DnsName), route53types.RRTypeCname)
 		if err != nil {
 			return err
 		}
@@ -741,7 +741,7 @@ func (r *AWSEndpointServiceReconciler) reconcileAWSEndpointService(ctx context.C
 			}
 			if _, err := r.CreateOrUpdate(ctx, r, svc, func() error {
 				log.Info("Reconciling external name service", "service", svc.Name, "externalName", externalName)
-				return reconcileExternalService(svc, hcp, externalName, awsv2.ToString(endpointDNSEntries[0].DnsName))
+				return reconcileExternalService(svc, hcp, externalName, aws.ToString(endpointDNSEntries[0].DnsName))
 			}); err != nil {
 				errs = append(errs, fmt.Errorf("failed to reconcile %s external service: %w", svcType, err))
 			}
@@ -785,7 +785,7 @@ func (r *AWSEndpointServiceReconciler) reconcileAWSEndpointSecurityGroup(ctx con
 		return err
 	}
 	if sg != nil {
-		sgID = awsv2.ToString(sg.GroupId)
+		sgID = aws.ToString(sg.GroupId)
 		if awsEndpointService.Status.SecurityGroupID != sgID {
 			log.Info("WARNING: found existing security group, but it doesn't match status id, updating", "id", sgID)
 			awsEndpointService.Status.SecurityGroupID = sgID
@@ -796,7 +796,7 @@ func (r *AWSEndpointServiceReconciler) reconcileAWSEndpointSecurityGroup(ctx con
 		if sg, err = r.createSecurityGroup(ctx, ec2Client, awsEndpointService, hcp); err != nil {
 			return err
 		}
-		sgID = awsv2.ToString(sg.GroupId)
+		sgID = aws.ToString(sg.GroupId)
 		awsEndpointService.Status.SecurityGroupID = sgID
 	}
 	machineCIDRs := make([]string, len(hcp.Spec.Networking.MachineNetwork))
@@ -806,8 +806,8 @@ func (r *AWSEndpointServiceReconciler) reconcileAWSEndpointSecurityGroup(ctx con
 	ingressPermissions := supportawsutil.VPCEndpointSecurityGroupRules(machineCIDRs, vpcEndpointPort(awsEndpointService))
 	missingPermissions := diffPermissions(sg.IpPermissions, ingressPermissions)
 	if len(missingPermissions) > 0 {
-		if _, err = ec2Client.AuthorizeSecurityGroupIngress(ctx, &ec2v2.AuthorizeSecurityGroupIngressInput{
-			GroupId:       awsv2.String(sgID),
+		if _, err = ec2Client.AuthorizeSecurityGroupIngress(ctx, &ec2.AuthorizeSecurityGroupIngressInput{
+			GroupId:       aws.String(sgID),
 			IpPermissions: missingPermissions,
 		}); err != nil {
 			if supportawsutil.AWSErrorCode(err) != "InvalidPermission.Duplicate" {
@@ -839,28 +839,28 @@ func (r *AWSEndpointServiceReconciler) createSecurityGroup(ctx context.Context, 
 	for _, tag := range hcp.Spec.Platform.AWS.ResourceTags {
 		tagKeys.Insert(tag.Key)
 		tags = append(tags, ec2types.Tag{
-			Key:   awsv2.String(tag.Key),
-			Value: awsv2.String(tag.Value),
+			Key:   aws.String(tag.Key),
+			Value: aws.String(tag.Value),
 		})
 	}
 	clusterKey := fmt.Sprintf("kubernetes.io/cluster/%s", hcp.Spec.InfraID)
 	if !tagKeys.Has(clusterKey) {
 		tags = append(tags, ec2types.Tag{
-			Key:   awsv2.String(clusterKey),
-			Value: awsv2.String("owned"),
+			Key:   aws.String(clusterKey),
+			Value: aws.String("owned"),
 		})
 	}
 	name := vpcEndpointSecurityGroupName(hcp.Spec.InfraID, awsEndpointService.Name)
 	if !tagKeys.Has("Name") {
 		tags = append(tags, ec2types.Tag{
-			Key:   awsv2.String("Name"),
-			Value: awsv2.String(name),
+			Key:   aws.String("Name"),
+			Value: aws.String(name),
 		})
 	}
-	createSGResult, err := ec2Client.CreateSecurityGroup(ctx, &ec2v2.CreateSecurityGroupInput{
-		GroupName:   awsv2.String(name),
-		Description: awsv2.String("VPC endpoint security group"),
-		VpcId:       awsv2.String(hcp.Spec.Platform.AWS.CloudProviderConfig.VPC),
+	createSGResult, err := ec2Client.CreateSecurityGroup(ctx, &ec2.CreateSecurityGroupInput{
+		GroupName:   aws.String(name),
+		Description: aws.String("VPC endpoint security group"),
+		VpcId:       aws.String(hcp.Spec.Platform.AWS.CloudProviderConfig.VPC),
 		TagSpecifications: []ec2types.TagSpecification{
 			{
 				ResourceType: ec2types.ResourceTypeSecurityGroup,
@@ -872,11 +872,11 @@ func (r *AWSEndpointServiceReconciler) createSecurityGroup(ctx context.Context, 
 		log.Error(err, "failed to create security group for aws endpoint", "name", name, "vpc", hcp.Spec.Platform.AWS.CloudProviderConfig.VPC)
 		return nil, fmt.Errorf("failed to create security group, code: %s", supportawsutil.AWSErrorCode(err))
 	}
-	sgID := awsv2.ToString(createSGResult.GroupId)
+	sgID := aws.ToString(createSGResult.GroupId)
 
 	// Fetch just-created SG using the SecurityGroupExistsWaiter
-	waiter := ec2v2.NewSecurityGroupExistsWaiter(ec2Client)
-	if err = waiter.Wait(ctx, &ec2v2.DescribeSecurityGroupsInput{
+	waiter := ec2.NewSecurityGroupExistsWaiter(ec2Client)
+	if err = waiter.Wait(ctx, &ec2.DescribeSecurityGroupsInput{
 		GroupIds: []string{sgID},
 	}, 30*time.Second); err != nil {
 		log.Error(err, "failed to wait for security group to exist", "id", sgID)
@@ -898,11 +898,11 @@ func (r *AWSEndpointServiceReconciler) createSecurityGroup(ctx context.Context, 
 func vpcEndpointSecurityGroupFilter(infraID, endpointName string) []ec2types.Filter {
 	return []ec2types.Filter{
 		{
-			Name:   awsv2.String(fmt.Sprintf("tag:kubernetes.io/cluster/%s", infraID)),
+			Name:   aws.String(fmt.Sprintf("tag:kubernetes.io/cluster/%s", infraID)),
 			Values: []string{"owned"},
 		},
 		{
-			Name:   awsv2.String("tag:Name"),
+			Name:   aws.String("tag:Name"),
 			Values: []string{vpcEndpointSecurityGroupName(infraID, endpointName)},
 		},
 	}
@@ -972,9 +972,9 @@ func recordsForService(awsEndpointService *hyperv1.AWSEndpointService, hcp *hype
 func apiTagToEC2Tag(name string, in []hyperv1.AWSResourceTag) []ec2types.Tag {
 	result := make([]ec2types.Tag, 0, len(in)+1)
 	for _, val := range in {
-		result = append(result, ec2types.Tag{Key: awsv2.String(val.Key), Value: awsv2.String(val.Value)})
+		result = append(result, ec2types.Tag{Key: aws.String(val.Key), Value: aws.String(val.Value)})
 	}
-	result = append(result, ec2types.Tag{Key: awsv2.String("AWSEndpointService"), Value: awsv2.String(name)})
+	result = append(result, ec2types.Tag{Key: aws.String("AWSEndpointService"), Value: aws.String(name)})
 
 	return result
 }
@@ -982,9 +982,9 @@ func apiTagToEC2Tag(name string, in []hyperv1.AWSResourceTag) []ec2types.Tag {
 func apiTagToEC2Filter(name string, in []hyperv1.AWSResourceTag) []ec2types.Filter {
 	result := make([]ec2types.Filter, 0, len(in)+1)
 	for _, val := range in {
-		result = append(result, ec2types.Filter{Name: awsv2.String("tag:" + val.Key), Values: []string{val.Value}})
+		result = append(result, ec2types.Filter{Name: aws.String("tag:" + val.Key), Values: []string{val.Value}})
 	}
-	result = append(result, ec2types.Filter{Name: awsv2.String("tag:AWSEndpointService"), Values: []string{name}})
+	result = append(result, ec2types.Filter{Name: aws.String("tag:AWSEndpointService"), Values: []string{name}})
 
 	return result
 }
@@ -997,14 +997,14 @@ func (r *AWSEndpointServiceReconciler) delete(ctx context.Context, awsEndpointSe
 
 	endpointID := awsEndpointService.Status.EndpointID
 	if endpointID != "" {
-		if _, err := ec2Client.DeleteVpcEndpoints(ctx, &ec2v2.DeleteVpcEndpointsInput{
+		if _, err := ec2Client.DeleteVpcEndpoints(ctx, &ec2.DeleteVpcEndpointsInput{
 			VpcEndpointIds: []string{endpointID},
 		}); err != nil {
 			return false, err
 		}
 
 		// check if Endpoint exists in AWS
-		output, err := ec2Client.DescribeVpcEndpoints(ctx, &ec2v2.DescribeVpcEndpointsInput{
+		output, err := ec2Client.DescribeVpcEndpoints(ctx, &ec2.DescribeVpcEndpointsInput{
 			VpcEndpointIds: []string{endpointID},
 		})
 		if err != nil {
@@ -1064,7 +1064,7 @@ func (r *AWSEndpointServiceReconciler) delete(ctx context.Context, awsEndpointSe
 
 func (r *AWSEndpointServiceReconciler) deleteSecurityGroup(ctx context.Context, ec2Client awsapi.EC2API, sgID string) error {
 	log := ctrl.LoggerFrom(ctx)
-	describeSGResult, err := ec2Client.DescribeSecurityGroups(ctx, &ec2v2.DescribeSecurityGroupsInput{GroupIds: []string{sgID}})
+	describeSGResult, err := ec2Client.DescribeSecurityGroups(ctx, &ec2.DescribeSecurityGroupsInput{GroupIds: []string{sgID}})
 	if err != nil {
 		if supportawsutil.AWSErrorCode(err) == "InvalidGroup.NotFound" {
 			return nil
@@ -1077,31 +1077,31 @@ func (r *AWSEndpointServiceReconciler) deleteSecurityGroup(ctx context.Context, 
 	sg := describeSGResult.SecurityGroups[0]
 
 	if len(sg.IpPermissions) > 0 {
-		if _, err = ec2Client.RevokeSecurityGroupIngress(ctx, &ec2v2.RevokeSecurityGroupIngressInput{
+		if _, err = ec2Client.RevokeSecurityGroupIngress(ctx, &ec2.RevokeSecurityGroupIngressInput{
 			GroupId:       sg.GroupId,
 			IpPermissions: sg.IpPermissions,
 		}); err != nil {
-			log.Error(err, "failed to revoke security group ingress permissions", "SecurityGroupID", awsv2.ToString(sg.GroupId), "code", supportawsutil.AWSErrorCode(err))
+			log.Error(err, "failed to revoke security group ingress permissions", "SecurityGroupID", aws.ToString(sg.GroupId), "code", supportawsutil.AWSErrorCode(err))
 
 			return fmt.Errorf("failed to revoke security group ingress rules: %s", supportawsutil.AWSErrorCode(err))
 		}
 	}
 
 	if len(sg.IpPermissionsEgress) > 0 {
-		if _, err = ec2Client.RevokeSecurityGroupEgress(ctx, &ec2v2.RevokeSecurityGroupEgressInput{
+		if _, err = ec2Client.RevokeSecurityGroupEgress(ctx, &ec2.RevokeSecurityGroupEgressInput{
 			GroupId:       sg.GroupId,
 			IpPermissions: sg.IpPermissionsEgress,
 		}); err != nil {
-			log.Error(err, "failed to revoke security group egress permissions", "SecurityGroupID", awsv2.ToString(sg.GroupId), "code", supportawsutil.AWSErrorCode(err))
+			log.Error(err, "failed to revoke security group egress permissions", "SecurityGroupID", aws.ToString(sg.GroupId), "code", supportawsutil.AWSErrorCode(err))
 			return fmt.Errorf("failed to revoke security group egress rules: %s", supportawsutil.AWSErrorCode(err))
 		}
 	}
 
-	if _, err = ec2Client.DeleteSecurityGroup(ctx, &ec2v2.DeleteSecurityGroupInput{
+	if _, err = ec2Client.DeleteSecurityGroup(ctx, &ec2.DeleteSecurityGroupInput{
 		GroupId: sg.GroupId,
 	}); err != nil {
-		log.Error(err, "failed to delete security group", "SecurityGroupID", awsv2.ToString(sg.GroupId), "code", supportawsutil.AWSErrorCode(err))
-		return fmt.Errorf("failed to delete security group %s: %s", awsv2.ToString(sg.GroupId), supportawsutil.AWSErrorCode(err))
+		log.Error(err, "failed to delete security group", "SecurityGroupID", aws.ToString(sg.GroupId), "code", supportawsutil.AWSErrorCode(err))
+		return fmt.Errorf("failed to delete security group %s: %s", aws.ToString(sg.GroupId), supportawsutil.AWSErrorCode(err))
 	}
 
 	return nil
@@ -1119,9 +1119,9 @@ func diffPermissions(actual, required []ec2types.IpPermission) []ec2types.IpPerm
 
 func isPermissionPresent(perm ec2types.IpPermission, list []ec2types.IpPermission) bool {
 	for _, existing := range list {
-		if awsv2.ToInt32(existing.FromPort) == awsv2.ToInt32(perm.FromPort) &&
-			awsv2.ToInt32(existing.ToPort) == awsv2.ToInt32(perm.ToPort) &&
-			awsv2.ToString(existing.IpProtocol) == awsv2.ToString(perm.IpProtocol) &&
+		if aws.ToInt32(existing.FromPort) == aws.ToInt32(perm.FromPort) &&
+			aws.ToInt32(existing.ToPort) == aws.ToInt32(perm.ToPort) &&
+			aws.ToString(existing.IpProtocol) == aws.ToString(perm.IpProtocol) &&
 			equalIPRanges(existing.IpRanges, perm.IpRanges) {
 			return true
 		}
@@ -1134,8 +1134,8 @@ func equalIPRanges(a, b []ec2types.IpRange) bool {
 		return false
 	}
 	for i := range a {
-		if awsv2.ToString(a[i].Description) != awsv2.ToString(b[i].Description) ||
-			awsv2.ToString(a[i].CidrIp) != awsv2.ToString(b[i].CidrIp) {
+		if aws.ToString(a[i].Description) != aws.ToString(b[i].Description) ||
+			aws.ToString(a[i].CidrIp) != aws.ToString(b[i].CidrIp) {
 			return false
 		}
 	}

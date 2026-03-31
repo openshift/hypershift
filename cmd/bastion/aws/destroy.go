@@ -111,8 +111,8 @@ func (o *DestroyBastionOpts) Run(ctx context.Context, logger logr.Logger) error 
 		region = o.Region
 	}
 
-	awsSession := awsutil.NewSessionV2(ctx, "cli-destroy-bastion", o.AWSCredentialsFile, o.AWSKey, o.AWSSecretKey, region)
-	awsConfig := awsutil.NewConfigV2()
+	awsSession := awsutil.NewSession(ctx, "cli-destroy-bastion", o.AWSCredentialsFile, o.AWSKey, o.AWSSecretKey, region)
+	awsConfig := awsutil.NewConfig()
 	ec2Client := ec2.NewFromConfig(*awsSession, func(o *ec2.Options) {
 		o.Retryer = awsConfig()
 	})

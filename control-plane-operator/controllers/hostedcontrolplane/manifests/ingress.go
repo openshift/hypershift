@@ -119,6 +119,15 @@ func MetricsForwarderRoute(ns string) *routev1.Route {
 	}
 }
 
+func MetricsProxyRoute(ns string) *routev1.Route {
+	return &routev1.Route{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "metrics-proxy",
+			Namespace: ns,
+		},
+	}
+}
+
 func RouterPodDisruptionBudget(ns string) *policyv1.PodDisruptionBudget {
 	return &policyv1.PodDisruptionBudget{
 		ObjectMeta: metav1.ObjectMeta{

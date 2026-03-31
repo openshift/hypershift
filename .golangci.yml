@@ -43,6 +43,10 @@ linters:
         source: 'github.com/onsi/gomega'
       - linters:
           - staticcheck
+        text: 'ST1001: should not use dot imports'
+        source: 'github.com/onsi/ginkgo'
+      - linters:
+          - staticcheck
         text: 'ST1005: error strings should not be capitalized'
         source: 'Konnectivity'
       - linters:

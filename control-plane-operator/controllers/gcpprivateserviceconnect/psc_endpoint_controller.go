@@ -576,7 +576,7 @@ func (r *GCPPrivateServiceConnectReconciler) ensureIPAddress(ctx context.Context
 		log.Info("Previously allocated IP no longer exists, allocating new one")
 	}
 
-	pscSubnet := hcp.Spec.Platform.GCP.NetworkConfig.PrivateServiceConnectSubnet.Name
+	pscSubnet := string(hcp.Spec.Platform.GCP.NetworkConfig.PrivateServiceConnectSubnet.Name)
 	if pscSubnet == "" {
 		return ctrl.Result{}, fmt.Errorf("PrivateServiceConnectSubnet not specified in HostedControlPlane")
 	}
@@ -686,8 +686,8 @@ func (r *GCPPrivateServiceConnectReconciler) reconcilePSCEndpoint(ctx context.Co
 	endpoint := &compute.ForwardingRule{
 		Name:        endpointName,
 		Description: fmt.Sprintf("PSC endpoint for HyperShift cluster %s", gcpPSC.Name),
-		Network:     r.constructNetworkURL(hcp.Spec.Platform.GCP.NetworkConfig.Network.Name, customerProject),
-		Subnetwork:  r.constructSubnetURL(hcp.Spec.Platform.GCP.NetworkConfig.PrivateServiceConnectSubnet.Name, customerProject, region),
+		Network:     r.constructNetworkURL(string(hcp.Spec.Platform.GCP.NetworkConfig.Network.Name), customerProject),
+		Subnetwork:  r.constructSubnetURL(string(hcp.Spec.Platform.GCP.NetworkConfig.PrivateServiceConnectSubnet.Name), customerProject, region),
 		Target:      gcpPSC.Status.ServiceAttachmentURI,                     // From management-side
 		IPAddress:   r.constructAddressURL(ipName, customerProject, region), // Reserved IP resource URL
 		// LoadBalancingScheme not set for PSC endpoints - it's implicit and setting it causes API errors

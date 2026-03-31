@@ -129,8 +129,8 @@ func DumpJournals(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluster, 
 	}
 
 	// Find worker machine IPs
-	awsSession := awsutil.NewSessionV2(ctx, "cli-destroy-bastion", awsCreds, "", "", hc.Spec.Platform.AWS.Region)
-	awsConfig := awsutil.NewConfigV2()
+	awsSession := awsutil.NewSession(ctx, "cli-destroy-bastion", awsCreds, "", "", hc.Spec.Platform.AWS.Region)
+	awsConfig := awsutil.NewConfig()
 	ec2Client := ec2.NewFromConfig(*awsSession, func(o *ec2.Options) {
 		o.Retryer = awsConfig()
 	})

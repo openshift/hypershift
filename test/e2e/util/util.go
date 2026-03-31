@@ -46,7 +46,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
-	route53v2 "github.com/aws/aws-sdk-go-v2/service/route53"
+	"github.com/aws/aws-sdk-go-v2/service/route53"
 	route53types "github.com/aws/aws-sdk-go-v2/service/route53/types"
 
 	k8sadmissionv1 "k8s.io/api/admissionregistration/v1"
@@ -133,9 +133,6 @@ var (
 		"network-node-identity": 1,
 		// temporary workaround for https://issues.redhat.com/browse/CNV-76520
 		"kubevirt-cloud-controller-manager": 2,
-		// Allow 1 restart for token-minter sidecar race condition: https://issues.redhat.com/browse/GCP-441
-		// TODO(GCP-447): Remove this toleration once token-minter is injected as a native sidecar init container.
-		"gcp-cloud-controller-manager": 1,
 		// Allow 5 restarts for dns-operator due to new RBAC rollout out by CVO trailing dns-operator rollout
 		// https://redhat.atlassian.net/browse/OCPBUGS-78539
 		// https://redhat.atlassian.net/browse/NE-2500
@@ -597,7 +594,11 @@ func WaitForNReadyNodesWithOptions(t *testing.T, ctx context.Context, client crc
 	return nodes.Items
 }
 
-func WaitForImageRollout(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+// WaitForDataPlaneRollout waits for the data plane (CVO) version to reach Completed state.
+// This was renamed from WaitForImageRollout to clarify that it checks HC.Status.Version
+// (data-plane CVO rollout), in contrast to WaitForControlPlaneRollout which checks
+// HC.Status.ControlPlaneVersion (management-side components).
+func WaitForDataPlaneRollout(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	var lastVersionCompletionTime *metav1.Time
 	if hostedCluster.Status.Version != nil &&
 		len(hostedCluster.Status.Version.History) > 0 {
@@ -640,6 +641,33 @@ func WaitForImageRollout(t *testing.T, ctx context.Context, client crclient.Clie
 	)
 }
 
+// WaitForImageRollout is a deprecated alias for WaitForDataPlaneRollout.
+// Deprecated: Use WaitForDataPlaneRollout instead.
+func WaitForImageRollout(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	WaitForDataPlaneRollout(t, ctx, client, hostedCluster)
+}
+
+// WaitForControlPlaneRollout waits for HC.Status.ControlPlaneVersion to reach Completed state
+// with the desired image. This checks management-side component rollout independently from CVO.
+// Must be gated with AtLeast(t, Version422) at call sites since older clusters lack this field.
+func WaitForControlPlaneRollout(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	EventuallyObject(t, ctx, fmt.Sprintf("HostedCluster %s/%s controlPlaneVersion to complete", hostedCluster.Namespace, hostedCluster.Name),
+		func(ctx context.Context) (*hyperv1.HostedCluster, error) {
+			hc := &hyperv1.HostedCluster{}
+			err := client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hc)
+			return hc, err
+		},
+		[]Predicate[*hyperv1.HostedCluster]{
+			isControlPlaneVersionCompleted,
+		},
+		WithTimeout(30*time.Minute),
+		WithInterval(10*time.Second),
+	)
+}
+
+// WaitForControlPlaneComponentRollout waits for all ControlPlaneComponent resources to report
+// RolloutComplete=True and a version different from initialVersion. This provides a belt-and-suspenders
+// check alongside WaitForControlPlaneRollout by directly inspecting individual component status.
 func WaitForControlPlaneComponentRollout(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, initialVersion string) {
 	controlPlaneComponents := &hyperv1.ControlPlaneComponentList{}
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
@@ -1950,6 +1978,30 @@ func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclie
 		nodeCount := *np.Spec.Replicas
 		t.Logf("NodePool replicas: %d", nodeCount)
 
+		// Verify that nodes from Replace NodePools have the globalPS label applied via CAPI propagation.
+		// This label is set on the MachineDeployment template so it flows to Nodes at creation time.
+		t.Run("Check Replace nodes have globalPS label from CAPI propagation", func(t *testing.T) {
+			globalPSLabelKey := "hypershift.openshift.io/nodepool-globalps-enabled"
+			g.Eventually(func() error {
+				nodeList := &corev1.NodeList{}
+				if err := guestClient.List(ctx, nodeList, crclient.MatchingLabels{
+					hyperv1.NodePoolLabel: np.Name,
+				}); err != nil {
+					return fmt.Errorf("failed to list nodes: %w", err)
+				}
+				if len(nodeList.Items) != int(nodeCount) {
+					return fmt.Errorf("expected %d nodes for NodePool %s, got %d", nodeCount, np.Name, len(nodeList.Items))
+				}
+				for _, node := range nodeList.Items {
+					if node.Labels[globalPSLabelKey] != "true" {
+						return fmt.Errorf("node %s does not have the globalPS label", node.Name)
+					}
+				}
+				t.Logf("All %d nodes have the globalPS label", len(nodeList.Items))
+				return nil
+			}, 30*time.Second, 5*time.Second).Should(Succeed())
+		})
+
 		// Create the additional-pull-secret secret in the DataPlane using the dummy pull secret.
 		// The dummy pull secret is not authorized to pull restricted images.
 		err = createAdditionalPullSecret(ctx, guestClient, additionalPullSecretDummyData, additionalPullSecretName, additionalPullSecretNamespace)
@@ -2746,11 +2798,11 @@ func createIngressRoute53Record(t *testing.T, ctx context.Context, client crclie
 	routerDefaultIP, err := getIngressRouterDefaultIP(t, ctx, client, hostedCluster)
 	g.Expect(err).ToNot(HaveOccurred(), "failed to get router-default service IP")
 
-	awsSessionv2, err := clusterOpts.AWSPlatform.Credentials.GetSessionV2(ctx, "e2e-openstack-dns-record-on-aws", nil, awsRegion)
+	awsSession, err := clusterOpts.AWSPlatform.Credentials.GetSession(ctx, "e2e-openstack-dns-record-on-aws", nil, awsRegion)
 	g.Expect(err).ToNot(HaveOccurred(), "failed to create AWS session")
 
-	route53Client := route53v2.NewFromConfig(*awsSessionv2, func(o *route53v2.Options) {
-		o.Retryer = awsutil.NewRoute53ConfigV2()()
+	route53Client := route53.NewFromConfig(*awsSession, func(o *route53.Options) {
+		o.Retryer = awsutil.NewRoute53Config()()
 	})
 	g.Expect(route53Client).ToNot(BeNil(), "failed to create Route53 client")
 
@@ -2779,11 +2831,11 @@ func deleteIngressRoute53Records(t *testing.T, ctx context.Context, hostedCluste
 	// This is hardcoded too in aws CreateInfraOptions
 	awsRegion := "us-east-1"
 
-	awsSessionv2, err := clusterOpts.AWSPlatform.Credentials.GetSessionV2(ctx, "e2e-openstack-dns-record-on-aws", nil, awsRegion)
+	awsSession, err := clusterOpts.AWSPlatform.Credentials.GetSession(ctx, "e2e-openstack-dns-record-on-aws", nil, awsRegion)
 	g.Expect(err).ToNot(HaveOccurred(), "failed to create AWS session")
 
-	route53Client := route53v2.NewFromConfig(*awsSessionv2, func(o *route53v2.Options) {
-		o.Retryer = awsutil.NewRoute53ConfigV2()()
+	route53Client := route53.NewFromConfig(*awsSession, func(o *route53.Options) {
+		o.Retryer = awsutil.NewRoute53Config()()
 	})
 	g.Expect(route53Client).ToNot(BeNil(), "failed to create Route53 client")
 
@@ -2811,7 +2863,7 @@ func deleteIngressRoute53Records(t *testing.T, ctx context.Context, hostedCluste
 	}
 }
 
-func ValidatePublicCluster(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, clusterOpts *PlatformAgnosticOptions) {
+func ValidatePublicCluster(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, clusterOpts *PlatformAgnosticOptions, upgradeContext *UpgradeContext) {
 	g := NewWithT(t)
 
 	// Sanity check the cluster by waiting for the nodes to report ready
@@ -2853,7 +2905,7 @@ func ValidatePublicCluster(t *testing.T, ctx context.Context, client crclient.Cl
 	if numNodes == 0 {
 		timeout = 20 * time.Minute
 	}
-	ValidateHostedClusterConditions(t, ctx, client, hostedCluster, numNodes > 0, timeout)
+	ValidateHostedClusterConditions(t, ctx, client, hostedCluster, numNodes > 0, timeout, upgradeContext)
 
 	EnsureNodeCountMatchesNodePoolReplicas(t, ctx, client, guestClient, hostedCluster.Spec.Platform.Type, hostedCluster.Namespace)
 	EnsureNoCrashingPods(t, ctx, client, hostedCluster)
@@ -2871,7 +2923,7 @@ func ValidatePublicCluster(t *testing.T, ctx context.Context, client crclient.Cl
 	ValidateConfigurationStatus(t, ctx, client, guestClient, hostedCluster)
 }
 
-func ValidatePrivateCluster(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, clusterOpts *PlatformAgnosticOptions) {
+func ValidatePrivateCluster(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, clusterOpts *PlatformAgnosticOptions, upgradeContext *UpgradeContext) {
 	g := NewWithT(t)
 
 	// We can't wait for a guest client since we don't have connectivity to the API server
@@ -2904,7 +2956,7 @@ func ValidatePrivateCluster(t *testing.T, ctx context.Context, client crclient.C
 	if numNodes == 0 {
 		timeout = 20 * time.Minute
 	}
-	ValidateHostedClusterConditions(t, ctx, client, hostedCluster, numNodes > 0, timeout)
+	ValidateHostedClusterConditions(t, ctx, client, hostedCluster, numNodes > 0, timeout, upgradeContext)
 
 	EnsureNoCrashingPods(t, ctx, client, hostedCluster)
 	EnsureOAPIMountsTrustBundle(t, context.Background(), client, hostedCluster)
@@ -2914,7 +2966,9 @@ func ValidatePrivateCluster(t *testing.T, ctx context.Context, client crclient.C
 	}
 }
 
-func ValidateHostedClusterConditions(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, hasWorkerNodes bool, timeout time.Duration) {
+// ValidateHostedClusterConditions checks that a HostedCluster's conditions and status fields
+// match expected values. Pass nil for uc when calling outside of an upgrade test context.
+func ValidateHostedClusterConditions(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, hasWorkerNodes bool, timeout time.Duration, upgradeContext *UpgradeContext) {
 	expectedConditions := conditions.ExpectedHCConditions(hostedCluster)
 	// OCPBUGS-59885: Ignore KubeVirtNodesLiveMigratable in e2e; CI envs may lack RWX-capable PVCs, causing false failures
 	delete(expectedConditions, hyperv1.KubeVirtNodesLiveMigratable)
@@ -2946,6 +3000,20 @@ func ValidateHostedClusterConditions(t *testing.T, ctx context.Context, client c
 			Status: conditionStatus,
 		}))
 	}
+
+	if IsGreaterThanOrEqualTo(Version422) {
+		cpvFieldPath := "status.controlPlaneVersion"
+		cpvEnforce := controlPlaneVersionSteadyState(hasWorkerNodes)
+
+		if upgradeContext != nil {
+			predicates = append(predicates, UpgradeSafeFieldCheck(
+				t, ctx, client, cpvFieldPath, upgradeContext, cpvEnforce,
+			))
+		} else {
+			predicates = append(predicates, cpvEnforce)
+		}
+	}
+
 	EventuallyObject(t, ctx, fmt.Sprintf("HostedCluster %s/%s to have valid conditions", hostedCluster.Namespace, hostedCluster.Name),
 		func(ctx context.Context) (*hyperv1.HostedCluster, error) {
 			hc := &hyperv1.HostedCluster{}
@@ -3980,7 +4048,7 @@ func EnsureCNOOperatorConfiguration(t *testing.T, ctx context.Context, mgmtClien
 			},
 			WithTimeout(10*time.Minute),
 		)
-		ValidateHostedClusterConditions(t, ctx, mgmtClient, hostedCluster, true, 5*time.Minute)
+		ValidateHostedClusterConditions(t, ctx, mgmtClient, hostedCluster, true, 5*time.Minute, nil)
 		// Check that the Network.operator.openshift.io resource in the guest cluster reflects our changes
 		EventuallyObject(t, ctx, "Network.operator.openshift.io/cluster in guest cluster to reflect the custom subnet changes",
 			func(ctx context.Context) (*operatorv1.Network, error) {

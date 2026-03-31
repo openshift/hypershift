@@ -32,7 +32,7 @@ Automatically update outdated Konflux Tekton tasks based on enterprise contract 
      - Extract all outdated Tekton task warnings that mention "newer version exists"
      - Parse out task names, current digests, and latest digests
    - If no log file is provided:
-     - Run `hack/tools/scripts/update_trusted_task_bundles.py .tekton/*.yaml --dry-run --json`
+     - Run `hack/tools/scripts/update_trusted_task_bundles.py $(find .tekton -name '*.yaml') --dry-run --json --upgrade-versions`
      - Parse the JSON output to identify tasks needing updates
      - The JSON output contains updates and available_upgrades per file with task_name, current_version, current_digest, latest_version, latest_digest, and is_version_bump fields
 
@@ -53,14 +53,7 @@ Automatically update outdated Konflux Tekton tasks based on enterprise contract 
    - Report if "No action required" or list specific migration steps
 
 4. **Update Pipeline Files**:
-   - Update all Tekton pipeline YAML files in `.tekton/` directory:
-     - `hypershift-operator-main-push.yaml`
-     - `hypershift-operator-main-pull-request.yaml`
-     - `hypershift-operator-main-tag.yaml`
-     - `control-plane-operator-main-push.yaml`
-     - `control-plane-operator-main-pull-request.yaml`
-     - `hypershift-shared-ingress-main-push.yaml`
-     - `hypershift-shared-ingress-main-pull-request.yaml`
+   - Discover all Tekton pipeline YAML files using the glob `.tekton/**/*.yaml`
    - Replace old `quay.io/konflux-ci/tekton-catalog/task-{name}:{old-version}@{old-digest}` with new versions
    - Use MultiEdit for efficiency when updating multiple tasks per file
 

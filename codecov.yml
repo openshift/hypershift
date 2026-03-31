@@ -1,0 +1,8 @@
+codecov:
+  branch: main
+  notify:
+    wait_for_ci: false
+
+comment:
+  layout: "condensed_header, diff, files, flags, components"
+  behavior: default

@@ -94,4 +94,19 @@ func adaptConfig(cfg *openshiftcpv1.OpenShiftAPIServerConfig, hcp *hyperv1.Hoste
 	if len(featureGates) > 0 {
 		cfg.APIServerArguments["feature-gates"] = featureGates
 	}
+
+	// Override WatchList feature gate to disabled
+	if cfg.APIServerArguments["feature-gates"] == nil {
+		cfg.APIServerArguments["feature-gates"] = []string{}
+	}
+	// Filter out any existing WatchList settings
+	var filteredGates []string
+	for _, gate := range cfg.APIServerArguments["feature-gates"] {
+		if gate != "WatchList=true" && gate != "WatchList=false" {
+			filteredGates = append(filteredGates, gate)
+		}
+	}
+	// Set WatchList to disabled
+	filteredGates = append(filteredGates, "WatchList=false")
+	cfg.APIServerArguments["feature-gates"] = filteredGates
 }

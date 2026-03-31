@@ -157,7 +157,7 @@ func (r *GCPPrivateServiceConnectReconciler) reconcileGCPPrivateServiceConnectSp
 		if err != nil {
 			return fmt.Errorf("failed to lookup ForwardingRule: %w", err)
 		}
-		gcpPSC.Spec.ForwardingRuleName = forwardingRuleName
+		gcpPSC.Spec.ForwardingRuleName = hyperv1.GCPResourceName(forwardingRuleName)
 	}
 
 	// Set NAT Subnet if not already populated
@@ -166,7 +166,7 @@ func (r *GCPPrivateServiceConnectReconciler) reconcileGCPPrivateServiceConnectSp
 		if err != nil {
 			return fmt.Errorf("failed to discover NAT subnet: %w", err)
 		}
-		gcpPSC.Spec.NATSubnet = natSubnet
+		gcpPSC.Spec.NATSubnet = hyperv1.GCPResourceName(natSubnet)
 	}
 
 	return nil
@@ -239,7 +239,7 @@ func (r *GCPPrivateServiceConnectReconciler) discoverNATSubnet(ctx context.Conte
 	// 1. Check if NATSubnet already specified in CR
 	if gcpPSC.Spec.NATSubnet != "" {
 		log.Info("Using specified NAT subnet", "subnet", gcpPSC.Spec.NATSubnet)
-		return gcpPSC.Spec.NATSubnet, nil
+		return string(gcpPSC.Spec.NATSubnet), nil
 	}
 
 	// 2. List subnets with PRIVATE_SERVICE_CONNECT purpose
@@ -308,10 +308,10 @@ func (r *GCPPrivateServiceConnectReconciler) reconcileServiceAttachment(ctx cont
 	serviceAttachment := &compute.ServiceAttachment{
 		Name:                 serviceAttachmentName,
 		Description:          fmt.Sprintf("Service Attachment for HyperShift cluster %s", gcpPSC.Name),
-		TargetService:        r.constructForwardingRuleURL(gcpPSC.Spec.ForwardingRuleName),
+		TargetService:        r.constructForwardingRuleURL(string(gcpPSC.Spec.ForwardingRuleName)),
 		ConnectionPreference: "ACCEPT_MANUAL",
 		ConsumerAcceptLists:  r.buildConsumerAcceptLists(gcpPSC.Spec.ConsumerAcceptList),
-		NatSubnets:           []string{r.constructSubnetURL(gcpPSC.Spec.NATSubnet)},
+		NatSubnets:           []string{r.constructSubnetURL(string(gcpPSC.Spec.NATSubnet))},
 		EnableProxyProtocol:  false,
 	}
 

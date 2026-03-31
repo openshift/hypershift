@@ -9,7 +9,7 @@ import (
 
 	"github.com/openshift/hypershift/support/awsapi"
 
-	awsv2 "github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancing"
 	elbtypes "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancing/types"
 	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
@@ -36,18 +36,18 @@ func TestEmptyBucket(t *testing.T) {
 				m.EXPECT().ListObjectsV2(gomock.Any(), gomock.Any(), gomock.Any()).Return(
 					&s3.ListObjectsV2Output{
 						Contents: []s3types.Object{
-							{Key: awsv2.String("file1.txt")},
-							{Key: awsv2.String("file2.txt")},
-							{Key: awsv2.String("file3.txt")},
+							{Key: aws.String("file1.txt")},
+							{Key: aws.String("file2.txt")},
+							{Key: aws.String("file3.txt")},
 						},
 					}, nil,
 				)
 				m.EXPECT().DeleteObjects(gomock.Any(), gomock.Any(), gomock.Any()).Return(
 					&s3.DeleteObjectsOutput{
 						Deleted: []s3types.DeletedObject{
-							{Key: awsv2.String("file1.txt")},
-							{Key: awsv2.String("file2.txt")},
-							{Key: awsv2.String("file3.txt")},
+							{Key: aws.String("file1.txt")},
+							{Key: aws.String("file2.txt")},
+							{Key: aws.String("file3.txt")},
 						},
 					}, nil,
 				)
@@ -61,23 +61,23 @@ func TestEmptyBucket(t *testing.T) {
 				m.EXPECT().ListObjectsV2(gomock.Any(), gomock.Any(), gomock.Any()).Return(
 					&s3.ListObjectsV2Output{
 						Contents: []s3types.Object{
-							{Key: awsv2.String("file1.txt")},
-							{Key: awsv2.String("file2.txt")},
-							{Key: awsv2.String("file3.txt")},
+							{Key: aws.String("file1.txt")},
+							{Key: aws.String("file2.txt")},
+							{Key: aws.String("file3.txt")},
 						},
 					}, nil,
 				)
 				m.EXPECT().DeleteObjects(gomock.Any(), gomock.Any(), gomock.Any()).Return(
 					&s3.DeleteObjectsOutput{
 						Deleted: []s3types.DeletedObject{
-							{Key: awsv2.String("file1.txt")},
-							{Key: awsv2.String("file2.txt")},
+							{Key: aws.String("file1.txt")},
+							{Key: aws.String("file2.txt")},
 						},
 						Errors: []s3types.Error{
 							{
-								Key:     awsv2.String("file3.txt"),
-								Code:    awsv2.String("AccessDenied"),
-								Message: awsv2.String("Access Denied"),
+								Key:     aws.String("file3.txt"),
+								Code:    aws.String("AccessDenied"),
+								Message: aws.String("Access Denied"),
 							},
 						},
 					}, nil,
@@ -91,7 +91,7 @@ func TestEmptyBucket(t *testing.T) {
 			bucketName: "non-existent-bucket",
 			setupMock: func(m *awsapi.MockS3API) {
 				m.EXPECT().ListObjectsV2(gomock.Any(), gomock.Any(), gomock.Any()).Return(
-					nil, &s3types.NoSuchBucket{Message: awsv2.String("The specified bucket does not exist")},
+					nil, &s3types.NoSuchBucket{Message: aws.String("The specified bucket does not exist")},
 				)
 			},
 			expectError: false,
@@ -148,13 +148,13 @@ func TestEmptyBucket_Pagination(t *testing.T) {
 		// First page: 1000 objects
 		firstPageObjects := make([]s3types.Object, 1000)
 		for i := 0; i < 1000; i++ {
-			firstPageObjects[i] = s3types.Object{Key: awsv2.String(fmt.Sprintf("file-%d.txt", i))}
+			firstPageObjects[i] = s3types.Object{Key: aws.String(fmt.Sprintf("file-%d.txt", i))}
 		}
 		mockS3.EXPECT().ListObjectsV2(gomock.Any(), gomock.Any(), gomock.Any()).Return(
 			&s3.ListObjectsV2Output{
 				Contents:              firstPageObjects,
-				IsTruncated:           awsv2.Bool(true),
-				NextContinuationToken: awsv2.String("token1"),
+				IsTruncated:           aws.Bool(true),
+				NextContinuationToken: aws.String("token1"),
 			}, nil,
 		)
 		mockS3.EXPECT().DeleteObjects(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
@@ -170,13 +170,13 @@ func TestEmptyBucket_Pagination(t *testing.T) {
 		// Second page: 1000 objects
 		secondPageObjects := make([]s3types.Object, 1000)
 		for i := 1000; i < 2000; i++ {
-			secondPageObjects[i-1000] = s3types.Object{Key: awsv2.String(fmt.Sprintf("file-%d.txt", i))}
+			secondPageObjects[i-1000] = s3types.Object{Key: aws.String(fmt.Sprintf("file-%d.txt", i))}
 		}
 		mockS3.EXPECT().ListObjectsV2(gomock.Any(), gomock.Any(), gomock.Any()).Return(
 			&s3.ListObjectsV2Output{
 				Contents:              secondPageObjects,
-				IsTruncated:           awsv2.Bool(true),
-				NextContinuationToken: awsv2.String("token2"),
+				IsTruncated:           aws.Bool(true),
+				NextContinuationToken: aws.String("token2"),
 			}, nil,
 		)
 		mockS3.EXPECT().DeleteObjects(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
@@ -192,7 +192,7 @@ func TestEmptyBucket_Pagination(t *testing.T) {
 		// Third page: 500 objects (final page)
 		thirdPageObjects := make([]s3types.Object, 500)
 		for i := 2000; i < 2500; i++ {
-			thirdPageObjects[i-2000] = s3types.Object{Key: awsv2.String(fmt.Sprintf("file-%d.txt", i))}
+			thirdPageObjects[i-2000] = s3types.Object{Key: aws.String(fmt.Sprintf("file-%d.txt", i))}
 		}
 		mockS3.EXPECT().ListObjectsV2(gomock.Any(), gomock.Any(), gomock.Any()).Return(
 			&s3.ListObjectsV2Output{
@@ -232,13 +232,13 @@ func TestDestroyV1ELBs(t *testing.T) {
 				m.EXPECT().DescribeLoadBalancers(gomock.Any(), gomock.Any(), gomock.Any()).Return(
 					&elasticloadbalancing.DescribeLoadBalancersOutput{
 						LoadBalancerDescriptions: []elbtypes.LoadBalancerDescription{
-							{LoadBalancerName: awsv2.String("lb-target"), VPCId: awsv2.String(targetVPC)},
-							{LoadBalancerName: awsv2.String("lb-other"), VPCId: awsv2.String("vpc-other")},
+							{LoadBalancerName: aws.String("lb-target"), VPCId: aws.String(targetVPC)},
+							{LoadBalancerName: aws.String("lb-other"), VPCId: aws.String("vpc-other")},
 						},
 					}, nil,
 				)
 				m.EXPECT().DeleteLoadBalancer(gomock.Any(), &elasticloadbalancing.DeleteLoadBalancerInput{
-					LoadBalancerName: awsv2.String("lb-target"),
+					LoadBalancerName: aws.String("lb-target"),
 				}, gomock.Any()).Return(&elasticloadbalancing.DeleteLoadBalancerOutput{}, nil)
 			},
 			expectErrCount: 0,
@@ -250,15 +250,15 @@ func TestDestroyV1ELBs(t *testing.T) {
 					m.EXPECT().DescribeLoadBalancers(gomock.Any(), gomock.Any(), gomock.Any()).Return(
 						&elasticloadbalancing.DescribeLoadBalancersOutput{
 							LoadBalancerDescriptions: []elbtypes.LoadBalancerDescription{
-								{LoadBalancerName: awsv2.String("lb-page1"), VPCId: awsv2.String(targetVPC)},
+								{LoadBalancerName: aws.String("lb-page1"), VPCId: aws.String(targetVPC)},
 							},
-							NextMarker: awsv2.String("token1"),
+							NextMarker: aws.String("token1"),
 						}, nil,
 					),
 					m.EXPECT().DescribeLoadBalancers(gomock.Any(), gomock.Any(), gomock.Any()).Return(
 						&elasticloadbalancing.DescribeLoadBalancersOutput{
 							LoadBalancerDescriptions: []elbtypes.LoadBalancerDescription{
-								{LoadBalancerName: awsv2.String("lb-page2"), VPCId: awsv2.String(targetVPC)},
+								{LoadBalancerName: aws.String("lb-page2"), VPCId: aws.String(targetVPC)},
 							},
 						}, nil,
 					),
@@ -284,16 +284,16 @@ func TestDestroyV1ELBs(t *testing.T) {
 				m.EXPECT().DescribeLoadBalancers(gomock.Any(), gomock.Any(), gomock.Any()).Return(
 					&elasticloadbalancing.DescribeLoadBalancersOutput{
 						LoadBalancerDescriptions: []elbtypes.LoadBalancerDescription{
-							{LoadBalancerName: awsv2.String("lb-fail"), VPCId: awsv2.String(targetVPC)},
-							{LoadBalancerName: awsv2.String("lb-ok"), VPCId: awsv2.String(targetVPC)},
+							{LoadBalancerName: aws.String("lb-fail"), VPCId: aws.String(targetVPC)},
+							{LoadBalancerName: aws.String("lb-ok"), VPCId: aws.String(targetVPC)},
 						},
 					}, nil,
 				)
 				m.EXPECT().DeleteLoadBalancer(gomock.Any(), &elasticloadbalancing.DeleteLoadBalancerInput{
-					LoadBalancerName: awsv2.String("lb-fail"),
+					LoadBalancerName: aws.String("lb-fail"),
 				}, gomock.Any()).Return(nil, errors.New("delete failed"))
 				m.EXPECT().DeleteLoadBalancer(gomock.Any(), &elasticloadbalancing.DeleteLoadBalancerInput{
-					LoadBalancerName: awsv2.String("lb-ok"),
+					LoadBalancerName: aws.String("lb-ok"),
 				}, gomock.Any()).Return(&elasticloadbalancing.DeleteLoadBalancerOutput{}, nil)
 			},
 			expectErrCount: 1,
@@ -331,24 +331,24 @@ func TestDestroyV2ELBs(t *testing.T) {
 				m.EXPECT().DescribeLoadBalancers(gomock.Any(), gomock.Any(), gomock.Any()).Return(
 					&elasticloadbalancingv2.DescribeLoadBalancersOutput{
 						LoadBalancers: []elbv2types.LoadBalancer{
-							{LoadBalancerArn: awsv2.String("arn:lb:1"), LoadBalancerName: awsv2.String("lb-1"), VpcId: awsv2.String(targetVPC)},
-							{LoadBalancerArn: awsv2.String("arn:lb:other"), LoadBalancerName: awsv2.String("lb-other"), VpcId: awsv2.String("vpc-other")},
+							{LoadBalancerArn: aws.String("arn:lb:1"), LoadBalancerName: aws.String("lb-1"), VpcId: aws.String(targetVPC)},
+							{LoadBalancerArn: aws.String("arn:lb:other"), LoadBalancerName: aws.String("lb-other"), VpcId: aws.String("vpc-other")},
 						},
 					}, nil,
 				)
 				m.EXPECT().DeleteLoadBalancer(gomock.Any(), &elasticloadbalancingv2.DeleteLoadBalancerInput{
-					LoadBalancerArn: awsv2.String("arn:lb:1"),
+					LoadBalancerArn: aws.String("arn:lb:1"),
 				}, gomock.Any()).Return(&elasticloadbalancingv2.DeleteLoadBalancerOutput{}, nil)
 				m.EXPECT().DescribeTargetGroups(gomock.Any(), gomock.Any(), gomock.Any()).Return(
 					&elasticloadbalancingv2.DescribeTargetGroupsOutput{
 						TargetGroups: []elbv2types.TargetGroup{
-							{TargetGroupArn: awsv2.String("arn:tg:1"), TargetGroupName: awsv2.String("tg-1"), VpcId: awsv2.String(targetVPC)},
-							{TargetGroupArn: awsv2.String("arn:tg:other"), TargetGroupName: awsv2.String("tg-other"), VpcId: awsv2.String("vpc-other")},
+							{TargetGroupArn: aws.String("arn:tg:1"), TargetGroupName: aws.String("tg-1"), VpcId: aws.String(targetVPC)},
+							{TargetGroupArn: aws.String("arn:tg:other"), TargetGroupName: aws.String("tg-other"), VpcId: aws.String("vpc-other")},
 						},
 					}, nil,
 				)
 				m.EXPECT().DeleteTargetGroup(gomock.Any(), &elasticloadbalancingv2.DeleteTargetGroupInput{
-					TargetGroupArn: awsv2.String("arn:tg:1"),
+					TargetGroupArn: aws.String("arn:tg:1"),
 				}, gomock.Any()).Return(&elasticloadbalancingv2.DeleteTargetGroupOutput{}, nil)
 			},
 			expectErrCount: 0,
@@ -360,15 +360,15 @@ func TestDestroyV2ELBs(t *testing.T) {
 					m.EXPECT().DescribeLoadBalancers(gomock.Any(), gomock.Any(), gomock.Any()).Return(
 						&elasticloadbalancingv2.DescribeLoadBalancersOutput{
 							LoadBalancers: []elbv2types.LoadBalancer{
-								{LoadBalancerArn: awsv2.String("arn:lb:p1"), LoadBalancerName: awsv2.String("lb-p1"), VpcId: awsv2.String(targetVPC)},
+								{LoadBalancerArn: aws.String("arn:lb:p1"), LoadBalancerName: aws.String("lb-p1"), VpcId: aws.String(targetVPC)},
 							},
-							NextMarker: awsv2.String("token1"),
+							NextMarker: aws.String("token1"),
 						}, nil,
 					),
 					m.EXPECT().DescribeLoadBalancers(gomock.Any(), gomock.Any(), gomock.Any()).Return(
 						&elasticloadbalancingv2.DescribeLoadBalancersOutput{
 							LoadBalancers: []elbv2types.LoadBalancer{
-								{LoadBalancerArn: awsv2.String("arn:lb:p2"), LoadBalancerName: awsv2.String("lb-p2"), VpcId: awsv2.String(targetVPC)},
+								{LoadBalancerArn: aws.String("arn:lb:p2"), LoadBalancerName: aws.String("lb-p2"), VpcId: aws.String(targetVPC)},
 							},
 						}, nil,
 					),
@@ -412,7 +412,7 @@ func TestDestroyV2ELBs(t *testing.T) {
 				m.EXPECT().DescribeLoadBalancers(gomock.Any(), gomock.Any(), gomock.Any()).Return(
 					&elasticloadbalancingv2.DescribeLoadBalancersOutput{
 						LoadBalancers: []elbv2types.LoadBalancer{
-							{LoadBalancerArn: awsv2.String("arn:lb:fail"), LoadBalancerName: awsv2.String("lb-fail"), VpcId: awsv2.String(targetVPC)},
+							{LoadBalancerArn: aws.String("arn:lb:fail"), LoadBalancerName: aws.String("lb-fail"), VpcId: aws.String(targetVPC)},
 						},
 					}, nil,
 				)

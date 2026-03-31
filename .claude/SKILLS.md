@@ -78,6 +78,29 @@ This directory contains Claude Code skills that are automatically applied when w
 - Promotes best practices for concurrency and error handling
 - Provides quick reference during code reviews
 
+### Konflux Archived PipelineRuns
+
+**Location:** `.claude/skills/konflux-ec-violations/`
+
+**Description:** Accesses archived Konflux PipelineRuns, TaskRuns, and pod logs via KubeArchive. Also analyzes enterprise contract violations.
+
+**Auto-applies when:**
+- Checking results of any completed Konflux PipelineRun
+- Investigating Konflux enterprise contract check failures
+- Retrieving logs from finished Konflux CI builds or tests
+- A PipelineRun is not found via `oc get` in the Konflux namespace
+
+**Covers:**
+- Accessing archived PipelineRuns, TaskRuns, and pod logs via KubeArchive REST API
+- Identifying failing EC checks from GitHub PR check runs
+- Fetching and parsing EC violation logs from archived pods
+- Grouping and presenting violations by rule code
+
+**Benefits:**
+- Retrieves details from PipelineRuns that are no longer available via `oc get`
+- Provides structured violation summaries for quick triage
+- Works without Konflux UI access
+
 ### Debug Cluster
 
 **Location:** `.claude/skills/debug-cluster/`
@@ -116,6 +139,28 @@ Skills are automatically invoked by Claude based on context. You don't need to d
 ## Available Commands
 
 Commands are manually invoked using `/command-name` syntax.
+
+### Restructure Commits
+
+**Location:** `.claude/commands/restructure-commits.md`
+
+**Description:** Reorganizes all commits on a feature branch into logical, component-based commits that match HyperShift's architecture.
+
+**Usage:**
+```
+/restructure-commits
+```
+
+**Use when:**
+- User asks to "redo commits", "restructure commits", "squash by component", or "organize commits"
+- Preparing a branch for PR review with clean commit history
+- Branch has many small/WIP commits that should be consolidated
+
+**Covers:**
+- Component-based commit grouping (API, Vendor, CLI, HO, CPO, E2E, Docs)
+- Soft reset and re-staging workflow
+- Conventional commit messages with correct type/scope per component
+- Edge cases for file categorization (support/, testdata/, API tests)
 
 ### Fix HyperShift Repo Robot PR
 

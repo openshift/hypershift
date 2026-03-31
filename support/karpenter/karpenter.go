@@ -12,12 +12,21 @@ import (
 )
 
 const (
+	// KarpenterFinalizer is the finalizer added to HostedControlPlane resources by the karpenter-operator.
+	// This allows time for Karpenter to delete all NodePools and NodeClaims before the HostedControlPlane is deleted.
+	KarpenterFinalizer = "hypershift.openshift.io/karpenter-finalizer"
+
 	// ManagedByKarpenterLabel is a label set on the userData secrets as being managed by Karpenter Operator
 	ManagedByKarpenterLabel = "hypershift.openshift.io/managed-by-karpenter"
 )
 
-// KarpenterTaintConfigMapName is the name of the configmap containing the karpenter taint config
-const KarpenterTaintConfigMapName = "set-karpenter-taint"
+const (
+	// KarpenterTaintConfigMapName is the name of the configmap containing the karpenter taint config
+	KarpenterTaintConfigMapName = "set-karpenter-taint"
+	// KarpenterSubnetsConfigMapName is the name of the configmap containing the aggregated subnet IDs
+	// from all user-defined OpenshiftEC2NodeClass resources.
+	KarpenterSubnetsConfigMapName = "karpenter-subnets"
+)
 
 // ErrHCPNotFound is returned when no HostedControlPlane is found in the namespace.
 var ErrHCPNotFound = errors.New("hostedcontrolplane not found")

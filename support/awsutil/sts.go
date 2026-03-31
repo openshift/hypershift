@@ -6,8 +6,8 @@ import (
 	"fmt"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	credentialsv2 "github.com/aws/aws-sdk-go-v2/credentials"
-	stsv2 "github.com/aws/aws-sdk-go-v2/service/sts"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
 )
 
 var (
@@ -16,8 +16,8 @@ var (
 )
 
 func AssumeRoleWithWebIdentity(ctx context.Context, cfg *aws.Config, roleSessionName, roleArn, token string) (*aws.Credentials, error) {
-	client := stsv2.NewFromConfig(*cfg)
-	resp, err := client.AssumeRoleWithWebIdentity(ctx, &stsv2.AssumeRoleWithWebIdentityInput{
+	client := sts.NewFromConfig(*cfg)
+	resp, err := client.AssumeRoleWithWebIdentity(ctx, &sts.AssumeRoleWithWebIdentityInput{
 		RoleArn:          aws.String(roleArn),
 		RoleSessionName:  aws.String(roleSessionName),
 		WebIdentityToken: aws.String(token),
@@ -29,17 +29,17 @@ func AssumeRoleWithWebIdentity(ctx context.Context, cfg *aws.Config, roleSession
 		return nil, ErrEmptyCredentials
 	}
 
-	credentials, err := credentialsv2.NewStaticCredentialsProvider(
+	creds, err := credentials.NewStaticCredentialsProvider(
 		aws.ToString(resp.Credentials.AccessKeyId),
 		aws.ToString(resp.Credentials.SecretAccessKey),
 		aws.ToString(resp.Credentials.SessionToken),
 	).Retrieve(ctx)
-	return &credentials, err
+	return &creds, err
 }
 
 func AssumeRole(ctx context.Context, cfg aws.Config, roleSessionName, roleArn string) (*aws.Credentials, error) {
-	client := stsv2.NewFromConfig(cfg)
-	resp, err := client.AssumeRole(ctx, &stsv2.AssumeRoleInput{
+	client := sts.NewFromConfig(cfg)
+	resp, err := client.AssumeRole(ctx, &sts.AssumeRoleInput{
 		RoleArn:         aws.String(roleArn),
 		RoleSessionName: aws.String(roleSessionName),
 	})
@@ -50,10 +50,10 @@ func AssumeRole(ctx context.Context, cfg aws.Config, roleSessionName, roleArn st
 		return nil, ErrEmptyCredentials
 	}
 
-	credentials, err := credentialsv2.NewStaticCredentialsProvider(
+	creds, err := credentials.NewStaticCredentialsProvider(
 		aws.ToString(resp.Credentials.AccessKeyId),
 		aws.ToString(resp.Credentials.SecretAccessKey),
 		aws.ToString(resp.Credentials.SessionToken),
 	).Retrieve(ctx)
-	return &credentials, err
+	return &creds, err
 }

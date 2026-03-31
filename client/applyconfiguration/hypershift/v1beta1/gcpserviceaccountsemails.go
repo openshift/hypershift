@@ -17,14 +17,18 @@ limitations under the License.
 
 package v1beta1
 
+import (
+	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+)
+
 // GCPServiceAccountsEmailsApplyConfiguration represents a declarative configuration of the GCPServiceAccountsEmails type for use
 // with apply.
 type GCPServiceAccountsEmailsApplyConfiguration struct {
-	NodePool        *string `json:"nodePool,omitempty"`
-	ControlPlane    *string `json:"controlPlane,omitempty"`
-	CloudController *string `json:"cloudController,omitempty"`
-	Storage         *string `json:"storage,omitempty"`
-	ImageRegistry   *string `json:"imageRegistry,omitempty"`
+	NodePool        *hypershiftv1beta1.GCPServiceAccountEmail `json:"nodePool,omitempty"`
+	ControlPlane    *hypershiftv1beta1.GCPServiceAccountEmail `json:"controlPlane,omitempty"`
+	CloudController *hypershiftv1beta1.GCPServiceAccountEmail `json:"cloudController,omitempty"`
+	Storage         *hypershiftv1beta1.GCPServiceAccountEmail `json:"storage,omitempty"`
+	ImageRegistry   *hypershiftv1beta1.GCPServiceAccountEmail `json:"imageRegistry,omitempty"`
 }
 
 // GCPServiceAccountsEmailsApplyConfiguration constructs a declarative configuration of the GCPServiceAccountsEmails type for use with
@@ -36,7 +40,7 @@ func GCPServiceAccountsEmails() *GCPServiceAccountsEmailsApplyConfiguration {
 // WithNodePool sets the NodePool field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the NodePool field is set to the value of the last call.
-func (b *GCPServiceAccountsEmailsApplyConfiguration) WithNodePool(value string) *GCPServiceAccountsEmailsApplyConfiguration {
+func (b *GCPServiceAccountsEmailsApplyConfiguration) WithNodePool(value hypershiftv1beta1.GCPServiceAccountEmail) *GCPServiceAccountsEmailsApplyConfiguration {
 	b.NodePool = &value
 	return b
 }
@@ -44,7 +48,7 @@ func (b *GCPServiceAccountsEmailsApplyConfiguration) WithNodePool(value string) 
 // WithControlPlane sets the ControlPlane field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the ControlPlane field is set to the value of the last call.
-func (b *GCPServiceAccountsEmailsApplyConfiguration) WithControlPlane(value string) *GCPServiceAccountsEmailsApplyConfiguration {
+func (b *GCPServiceAccountsEmailsApplyConfiguration) WithControlPlane(value hypershiftv1beta1.GCPServiceAccountEmail) *GCPServiceAccountsEmailsApplyConfiguration {
 	b.ControlPlane = &value
 	return b
 }
@@ -52,7 +56,7 @@ func (b *GCPServiceAccountsEmailsApplyConfiguration) WithControlPlane(value stri
 // WithCloudController sets the CloudController field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the CloudController field is set to the value of the last call.
-func (b *GCPServiceAccountsEmailsApplyConfiguration) WithCloudController(value string) *GCPServiceAccountsEmailsApplyConfiguration {
+func (b *GCPServiceAccountsEmailsApplyConfiguration) WithCloudController(value hypershiftv1beta1.GCPServiceAccountEmail) *GCPServiceAccountsEmailsApplyConfiguration {
 	b.CloudController = &value
 	return b
 }
@@ -60,7 +64,7 @@ func (b *GCPServiceAccountsEmailsApplyConfiguration) WithCloudController(value s
 // WithStorage sets the Storage field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the Storage field is set to the value of the last call.
-func (b *GCPServiceAccountsEmailsApplyConfiguration) WithStorage(value string) *GCPServiceAccountsEmailsApplyConfiguration {
+func (b *GCPServiceAccountsEmailsApplyConfiguration) WithStorage(value hypershiftv1beta1.GCPServiceAccountEmail) *GCPServiceAccountsEmailsApplyConfiguration {
 	b.Storage = &value
 	return b
 }
@@ -68,7 +72,7 @@ func (b *GCPServiceAccountsEmailsApplyConfiguration) WithStorage(value string) *
 // WithImageRegistry sets the ImageRegistry field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the ImageRegistry field is set to the value of the last call.
-func (b *GCPServiceAccountsEmailsApplyConfiguration) WithImageRegistry(value string) *GCPServiceAccountsEmailsApplyConfiguration {
+func (b *GCPServiceAccountsEmailsApplyConfiguration) WithImageRegistry(value hypershiftv1beta1.GCPServiceAccountEmail) *GCPServiceAccountsEmailsApplyConfiguration {
 	b.ImageRegistry = &value
 	return b
 }

@@ -534,11 +534,14 @@ spec:
                               ciphers:
                                 description: |-
                                   ciphers is used to specify the cipher algorithms that are negotiated
-                                  during the TLS handshake.  Operators may remove entries their operands
-                                  do not support.  For example, to use DES-CBC3-SHA  (yaml):
+                                  during the TLS handshake. Operators may remove entries that their operands
+                                  do not support. For example, to use only ECDHE-RSA-AES128-GCM-SHA256 (yaml):
 
                                     ciphers:
-                                      - DES-CBC3-SHA
+                                      - ECDHE-RSA-AES128-GCM-SHA256
+
+                                  TLS 1.3 cipher suites (e.g. TLS_AES_128_GCM_SHA256) are not configurable
+                                  and are always enabled when TLS 1.3 is negotiated.
                                 items:
                                   type: string
                                 type: array
@@ -563,9 +566,6 @@ spec:
                               legacy clients and want to remain highly secure while being compatible with
                               most clients currently in use.
 
-                              The cipher list includes TLS 1.3 ciphers for forward compatibility, followed
-                              by the "intermediate" profile ciphers.
-
                               This profile is equivalent to a Custom profile specified as:
                                 minTLSVersion: VersionTLS12
                                 ciphers:
@@ -578,8 +578,6 @@ spec:
                                   - ECDHE-RSA-AES256-GCM-SHA384
                                   - ECDHE-ECDSA-CHACHA20-POLY1305
                                   - ECDHE-RSA-CHACHA20-POLY1305
-                                  - DHE-RSA-AES128-GCM-SHA256
-                                  - DHE-RSA-AES256-GCM-SHA384
                             nullable: true
                             type: object
                           modern:
@@ -600,9 +598,6 @@ spec:
                               old is a TLS profile for use when services need to be accessed by very old
                               clients or libraries and should be used only as a last resort.
 
-                              The cipher list includes TLS 1.3 ciphers for forward compatibility, followed
-                              by the "old" profile ciphers.
-
                               This profile is equivalent to a Custom profile specified as:
                                 minTLSVersion: VersionTLS10
                                 ciphers:
@@ -615,23 +610,15 @@ spec:
                                   - ECDHE-RSA-AES256-GCM-SHA384
                                   - ECDHE-ECDSA-CHACHA20-POLY1305
                                   - ECDHE-RSA-CHACHA20-POLY1305
-                                  - DHE-RSA-AES128-GCM-SHA256
-                                  - DHE-RSA-AES256-GCM-SHA384
-                                  - DHE-RSA-CHACHA20-POLY1305
                                   - ECDHE-ECDSA-AES128-SHA256
                                   - ECDHE-RSA-AES128-SHA256
                                   - ECDHE-ECDSA-AES128-SHA
                                   - ECDHE-RSA-AES128-SHA
-                                  - ECDHE-ECDSA-AES256-SHA384
-                                  - ECDHE-RSA-AES256-SHA384
                                   - ECDHE-ECDSA-AES256-SHA
                                   - ECDHE-RSA-AES256-SHA
-                                  - DHE-RSA-AES128-SHA256
-                                  - DHE-RSA-AES256-SHA256
                                   - AES128-GCM-SHA256
                                   - AES256-GCM-SHA384
                                   - AES128-SHA256
-                                  - AES256-SHA256
                                   - AES128-SHA
                                   - AES256-SHA
                                   - DES-CBC3-SHA
@@ -642,9 +629,10 @@ spec:
                               type is one of Old, Intermediate, Modern or Custom. Custom provides the
                               ability to specify individual TLS security profile parameters.
 
-                              The profiles are currently based on version 5.0 of the Mozilla Server Side TLS
-                              configuration guidelines (released 2019-06-28) with TLS 1.3 ciphers added for
-                              forward compatibility. See: https://ssl-config.mozilla.org/guidelines/5.0.json
+                              The profiles are based on version 5.7 of the Mozilla Server Side TLS
+                              configuration guidelines. The cipher lists consist of the configuration's
+                              "ciphersuites" followed by the Go-specific "ciphers" from the guidelines.
+                              See: https://ssl-config.mozilla.org/guidelines/5.7.json
 
                               The profiles are intent based, so they may change over time as new ciphers are
                               developed and existing ciphers are found to be insecure. Depending on
@@ -1295,6 +1283,152 @@ spec:
                                 x-kubernetes-list-type: atomic
                             type: object
                         type: object
+                      networkDiagnostics:
+                        description: |-
+                          networkDiagnostics defines network diagnostics configuration.
+
+                          Takes precedence over spec.disableNetworkDiagnostics in network.operator.openshift.io.
+                          If networkDiagnostics is not specified or is empty,
+                          and the spec.disableNetworkDiagnostics flag in network.operator.openshift.io is set to true,
+                          the network diagnostics feature will be disabled.
+                        properties:
+                          mode:
+                            description: |-
+                              mode controls the network diagnostics mode
+
+                              When omitted, this means the user has no opinion and the platform is left
+                              to choose reasonable defaults. These defaults are subject to change over time.
+                              The current default is All.
+                            enum:
+                            - ""
+                            - All
+                            - Disabled
+                            type: string
+                          sourcePlacement:
+                            description: |-
+                              sourcePlacement controls the scheduling of network diagnostics source deployment
+
+                              See NetworkDiagnosticsSourcePlacement for more details about default values.
+                            properties:
+                              nodeSelector:
+                                additionalProperties:
+                                  type: string
+                                description: |-
+                                  nodeSelector is the node selector applied to network diagnostics components
+
+                                  When omitted, this means the user has no opinion and the platform is left
+                                  to choose reasonable defaults. These defaults are subject to change over time.
+                                  The current default is `kubernetes.io/os: linux`.
+                                type: object
+                              tolerations:
+                                description: |-
+                                  tolerations is a list of tolerations applied to network diagnostics components
+
+                                  When omitted, this means the user has no opinion and the platform is left
+                                  to choose reasonable defaults. These defaults are subject to change over time.
+                                  The current default is an empty list.
+                                items:
+                                  description: |-
+                                    The pod this Toleration is attached to tolerates any taint that matches
+                                    the triple <key,value,effect> using the matching operator <operator>.
+                                  properties:
+                                    effect:
+                                      description: |-
+                                        Effect indicates the taint effect to match. Empty means match all taint effects.
+                                        When specified, allowed values are NoSchedule, PreferNoSchedule and NoExecute.
+                                      type: string
+                                    key:
+                                      description: |-
+                                        Key is the taint key that the toleration applies to. Empty means match all taint keys.
+                                        If the key is empty, operator must be Exists; this combination means to match all values and all keys.
+                                      type: string
+                                    operator:
+                                      description: |-
+                                        Operator represents a key's relationship to the value.
+                                        Valid operators are Exists and Equal. Defaults to Equal.
+                                        Exists is equivalent to wildcard for value, so that a pod can
+                                        tolerate all taints of a particular category.
+                                      type: string
+                                    tolerationSeconds:
+                                      description: |-
+                                        TolerationSeconds represents the period of time the toleration (which must be
+                                        of effect NoExecute, otherwise this field is ignored) tolerates the taint. By default,
+                                        it is not set, which means tolerate the taint forever (do not evict). Zero and
+                                        negative values will be treated as 0 (evict immediately) by the system.
+                                      format: int64
+                                      type: integer
+                                    value:
+                                      description: |-
+                                        Value is the taint value the toleration matches to.
+                                        If the operator is Exists, the value should be empty, otherwise just a regular string.
+                                      type: string
+                                  type: object
+                                type: array
+                                x-kubernetes-list-type: atomic
+                            type: object
+                          targetPlacement:
+                            description: |-
+                              targetPlacement controls the scheduling of network diagnostics target daemonset
+
+                              See NetworkDiagnosticsTargetPlacement for more details about default values.
+                            properties:
+                              nodeSelector:
+                                additionalProperties:
+                                  type: string
+                                description: |-
+                                  nodeSelector is the node selector applied to network diagnostics components
+
+                                  When omitted, this means the user has no opinion and the platform is left
+                                  to choose reasonable defaults. These defaults are subject to change over time.
+                                  The current default is `kubernetes.io/os: linux`.
+                                type: object
+                              tolerations:
+                                description: |-
+                                  tolerations is a list of tolerations applied to network diagnostics components
+
+                                  When omitted, this means the user has no opinion and the platform is left
+                                  to choose reasonable defaults. These defaults are subject to change over time.
+                                  The current default is `- operator: "Exists"` which means that all taints are tolerated.
+                                items:
+                                  description: |-
+                                    The pod this Toleration is attached to tolerates any taint that matches
+                                    the triple <key,value,effect> using the matching operator <operator>.
+                                  properties:
+                                    effect:
+                                      description: |-
+                                        Effect indicates the taint effect to match. Empty means match all taint effects.
+                                        When specified, allowed values are NoSchedule, PreferNoSchedule and NoExecute.
+                                      type: string
+                                    key:
+                                      description: |-
+                                        Key is the taint key that the toleration applies to. Empty means match all taint keys.
+                                        If the key is empty, operator must be Exists; this combination means to match all values and all keys.
+                                      type: string
+                                    operator:
+                                      description: |-
+                                        Operator represents a key's relationship to the value.
+                                        Valid operators are Exists and Equal. Defaults to Equal.
+                                        Exists is equivalent to wildcard for value, so that a pod can
+                                        tolerate all taints of a particular category.
+                                      type: string
+                                    tolerationSeconds:
+                                      description: |-
+                                        TolerationSeconds represents the period of time the toleration (which must be
+                                        of effect NoExecute, otherwise this field is ignored) tolerates the taint. By default,
+                                        it is not set, which means tolerate the taint forever (do not evict). Zero and
+                                        negative values will be treated as 0 (evict immediately) by the system.
+                                      format: int64
+                                      type: integer
+                                    value:
+                                      description: |-
+                                        Value is the taint value the toleration matches to.
+                                        If the operator is Exists, the value should be empty, otherwise just a regular string.
+                                      type: string
+                                  type: object
+                                type: array
+                                x-kubernetes-list-type: atomic
+                            type: object
+                        type: object
                       networkType:
                         description: |-
                           networkType is the plugin that is to be deployed (e.g. OVNKubernetes).
@@ -1324,6 +1458,12 @@ spec:
                         pattern: ^([0-9]{1,4}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])-([0-9]{1,4}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])$
                         type: string
                     type: object
+                    x-kubernetes-validations:
+                    - message: cannot set networkDiagnostics.sourcePlacement and networkDiagnostics.targetPlacement
+                        when networkDiagnostics.mode is Disabled
+                      rule: '!has(self.networkDiagnostics) || !has(self.networkDiagnostics.mode)
+                        || self.networkDiagnostics.mode!=''Disabled'' || !has(self.networkDiagnostics.sourcePlacement)
+                        && !has(self.networkDiagnostics.targetPlacement)'
                   oauth:
                     description: |-
                       oauth holds cluster-wide information about OAuth.
@@ -2225,7 +2365,13 @@ spec:
                       privateZoneID is the Hosted Zone ID where all the DNS records that are only available internally to the cluster exist.
                       This field is optional and mainly leveraged in cloud environments where the DNS records for the .baseDomain are created by controllers in this zone.
                       Once set, this value is immutable.
-                    maxLength: 253
+
+                      On Azure, this is a full Azure resource ID for a Private DNS Zone in the format:
+                        /subscriptions/{subscriptionID}/resourceGroups/{resourceGroup}/providers/Microsoft.Network/privateDnsZones/{zoneName}
+                      The maximum length of 265 is derived from Azure resource naming limits
+                      (see https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/resource-name-rules):
+                        /subscriptions/ (15) + UUID (36) + /resourceGroups/ (16) + resource group name (90)
+                    maxLength: 265
                     minLength: 1
                     type: string
                     x-kubernetes-validations:
@@ -2236,7 +2382,13 @@ spec:
                       publicZoneID is the Hosted Zone ID where all the DNS records that are publicly accessible to the internet exist.
                       This field is optional and mainly leveraged in cloud environments where the DNS records for the .baseDomain are created by controllers in this zone.
                       Once set, this value is immutable.
-                    maxLength: 253
+
+                      On Azure, this is a full Azure resource ID for a DNS Zone in the format:
+                        /subscriptions/{subscriptionID}/resourceGroups/{resourceGroup}/providers/Microsoft.Network/dnsZones/{zoneName}
+                      The maximum length of 258 is derived from Azure resource naming limits
+                      (see https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/resource-name-rules):
+                        /subscriptions/ (15) + UUID (36) + /resourceGroups/ (16) + resource group name (90)
+                    maxLength: 258
                     minLength: 1
                     type: string
                     x-kubernetes-validations:
@@ -4511,6 +4663,27 @@ spec:
                                 required:
                                 - clientID
                                 type: object
+                              controlPlaneOperator:
+                                description: |-
+                                  controlPlaneOperator is the client ID of a federated managed identity, associated with control-plane-operator,
+                                  used in workload identity authentication for Azure Private Link Service operations.
+                                properties:
+                                  clientID:
+                                    description: clientID is client ID of a federated
+                                      managed identity used in workload identity authentication
+                                    maxLength: 36
+                                    minLength: 36
+                                    pattern: ^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
+                                    type: string
+                                    x-kubernetes-validations:
+                                    - message: the client ID of a managed identity
+                                        must be a valid UUID. It should be 5 groups
+                                        of hyphen separated hexadecimal characters
+                                        in the form 8-4-4-4-12.
+                                      rule: self.matches('^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$')
+                                required:
+                                - clientID
+                                type: object
                               disk:
                                 description: |-
                                   disk is the client ID of a federated managed identity, associated with cluster-storage-operator-disk,
@@ -4679,6 +4852,80 @@ spec:
                         x-kubernetes-validations:
                         - message: Location is immutable
                           rule: self == oldSelf
+                      private:
+                        description: |-
+                          private configures private connectivity to the hosted cluster's API server.
+                          This field is required when topology is Private or PublicAndPrivate, and must
+                          not be set when topology is Public.
+                          Once set at cluster creation, this field cannot be removed, and it cannot be
+                          added to an existing cluster that was created without it.
+                        properties:
+                          privateLink:
+                            description: |-
+                              privateLink configures Azure Private Link Service for private API server access.
+                              This field is required when type is "PrivateLink" and must not be set otherwise.
+                            minProperties: 1
+                            properties:
+                              additionalAllowedSubscriptions:
+                                description: |-
+                                  additionalAllowedSubscriptions is an optional list of additional Azure subscription IDs
+                                  permitted to create Private Endpoints to the Private Link Service. The guest cluster's
+                                  own subscription is always automatically allowed, so it does not need to be listed here.
+                                  Each item must be a valid UUID consisting of lowercase hexadecimal characters and hyphens,
+                                  in the format xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+                                  (e.g., "550e8400-e29b-41d4-a716-446655440000"). A maximum of 50 subscriptions may be specified.
+                                items:
+                                  description: |-
+                                    AzureSubscriptionID is an Azure subscription ID in UUID format.
+                                    Must be exactly 36 characters consisting of hexadecimal digits [0-9a-fA-F] and hyphens
+                                    in the format xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx (e.g., "550e8400-e29b-41d4-a716-446655440000").
+                                  maxLength: 36
+                                  minLength: 36
+                                  type: string
+                                  x-kubernetes-validations:
+                                  - message: must be a valid UUID (e.g., 550e8400-e29b-41d4-a716-446655440000)
+                                    rule: self.matches('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$')
+                                maxItems: 50
+                                minItems: 1
+                                type: array
+                                x-kubernetes-list-type: set
+                              natSubnetID:
+                                description: |-
+                                  natSubnetID is the Azure resource ID of the subnet used for Private Link Service NAT IP allocation.
+                                  This subnet must have privateLinkServiceNetworkPolicies disabled.
+                                  If not provided, the controller will auto-create a NAT subnet in the HC's VNet.
+                                  The expected format is:
+                                    /subscriptions/{subscriptionID}/resourceGroups/{resourceGroup}/providers/Microsoft.Network/virtualNetworks/{vnetName}/subnets/{subnetName}
+                                  The maximum length is 355 characters.
+                                maxLength: 355
+                                minLength: 1
+                                type: string
+                                x-kubernetes-validations:
+                                - message: natSubnetID is immutable once set
+                                  rule: self == oldSelf
+                                - message: must be a valid Azure subnet resource ID
+                                    (e.g., /subscriptions/{sub}/resourceGroups/{rg}/providers/Microsoft.Network/virtualNetworks/{vnet}/subnets/{subnet})
+                                  rule: self.matches('^/subscriptions/[^/]+/resourceGroups/[^/]+/providers/Microsoft\\.Network/virtualNetworks/[^/]+/subnets/[^/]+$')
+                            type: object
+                          type:
+                            description: |-
+                              type specifies the private connectivity mechanism used for the hosted cluster's API server.
+                              "PrivateLink" selects Azure Private Link Service for private API server access.
+                              This field is immutable once set.
+                            enum:
+                            - PrivateLink
+                            type: string
+                            x-kubernetes-validations:
+                            - message: type is immutable
+                              rule: self == oldSelf
+                        required:
+                        - type
+                        type: object
+                        x-kubernetes-validations:
+                        - message: privateLink is required when type is PrivateLink,
+                            and forbidden otherwise
+                          rule: 'self.type == ''PrivateLink'' ? has(self.privateLink)
+                            : !has(self.privateLink)'
                       resourceGroup:
                         default: default
                         description: |-
@@ -4761,6 +5008,23 @@ spec:
                           where Azure resources will be created and managed in.
                         maxLength: 255
                         type: string
+                      topology:
+                        description: |-
+                          topology specifies the network topology of the API server endpoint for the hosted cluster.
+                          - Public: The API server is accessible only via a public endpoint.
+                          - PublicAndPrivate: The API server is accessible via both public and private endpoints.
+                          - Private: The API server is accessible only via a private endpoint.
+                          When omitted, this means no opinion and the platform is left to choose a reasonable
+                          default, which is subject to change over time. The current default is Public.
+                          This field must be set explicitly for self-hosted environments (WorkloadIdentities).
+                          Transitions between PublicAndPrivate and Private are allowed after creation.
+                          Transitions from Public to non-Public (or vice versa) are not allowed.
+                          When set to Private or PublicAndPrivate, the private field must be provided.
+                        enum:
+                        - Public
+                        - PublicAndPrivate
+                        - Private
+                        type: string
                       vnetID:
                         description: |-
                           vnetID is the ID of an existing VNET to use in creating VMs. The VNET can exist in a different resource group
@@ -4785,6 +5049,23 @@ spec:
                     - tenantID
                     - vnetID
                     type: object
+                    x-kubernetes-validations:
+                    - message: private cannot be added or removed after cluster creation
+                      rule: has(self.private) == has(oldSelf.private)
+                    - message: transitions between Public and non-Public topology
+                        are not supported
+                      rule: '!has(self.topology) || !has(oldSelf.topology) || (self.topology
+                        == ''Public'') == (oldSelf.topology == ''Public'')'
+                    - message: private is required when topology is Private or PublicAndPrivate,
+                        and forbidden otherwise
+                      rule: '!has(self.topology) || ((self.topology == ''Private''
+                        || self.topology == ''PublicAndPrivate'') ? has(self.private)
+                        : !has(self.private))'
+                    - message: workloadIdentities.controlPlaneOperator is required
+                        when Private Link is configured with WorkloadIdentities authentication
+                      rule: '!has(self.private) || !has(self.private.privateLink)
+                        || self.azureAuthenticationConfig.azureAuthenticationConfigType
+                        != ''WorkloadIdentities'' || has(self.azureAuthenticationConfig.workloadIdentities.controlPlaneOperator)'
                   ibmcloud:
                     description: ibmcloud defines IBMCloud specific settings for components
                     properties:
@@ -5972,6 +6253,117 @@ spec:
                 required:
                 - host
                 - port
+                type: object
+              controlPlaneVersion:
+                description: |-
+                  controlPlaneVersion tracks the rollout status of the control plane
+                  components running on the management cluster, independently from
+                  the data-plane version reported in the version field.
+                properties:
+                  desired:
+                    description: |-
+                      desired is the release version that the control plane is reconciling towards.
+                      It is derived from the HostedControlPlane release image fields.
+                    properties:
+                      channels:
+                        description: |-
+                          channels is the set of Cincinnati channels to which the release
+                          currently belongs.
+                        items:
+                          type: string
+                        type: array
+                        x-kubernetes-list-type: set
+                      image:
+                        description: |-
+                          image is a container image location that contains the update. When this
+                          field is part of spec, image is optional if version is specified and the
+                          availableUpdates field contains a matching version.
+                        type: string
+                      url:
+                        description: |-
+                          url contains information about this release. This URL is set by
+                          the 'url' metadata property on a release or the metadata returned by
+                          the update API and should be displayed as a link in user
+                          interfaces. The URL field may not be set for test or nightly
+                          releases.
+                        type: string
+                      version:
+                        description: |-
+                          version is a semantic version identifying the update version. When this
+                          field is part of spec, version is optional if image is specified.
+                        type: string
+                    required:
+                    - image
+                    - version
+                    type: object
+                  history:
+                    description: |-
+                      history contains a list of versions applied to management-side control plane components. The newest entry is
+                      first in the list. Entries have state Completed when all ControlPlaneComponent resources report the target
+                      version with RolloutComplete=True. Entries have state Partial when the rollout is in progress or has failed.
+                    items:
+                      description: |-
+                        ControlPlaneUpdateHistory is a record of a single version transition for management-side
+                        control plane components. Each entry captures the target version, its release image, when
+                        the rollout started, and when (or whether) it completed.
+                      properties:
+                        completionTime:
+                          description: |-
+                            completionTime is the time at which the update completed. It is set
+                            when all management-side components have reached the target version.
+                            It is not set while the update is in progress.
+                          format: date-time
+                          type: string
+                        image:
+                          description: image is the release image pullspec used for
+                            this update.
+                          maxLength: 447
+                          minLength: 1
+                          type: string
+                        startedTime:
+                          description: startedTime is the time at which the update
+                            was started.
+                          format: date-time
+                          type: string
+                        state:
+                          description: |-
+                            state reflects whether the update was fully applied. The Partial state
+                            indicates the update is not fully applied, while the Completed state
+                            indicates the update was successfully rolled out.
+                          enum:
+                          - Completed
+                          - Partial
+                          type: string
+                        version:
+                          description: |-
+                            version is a semantic version string identifying the update version
+                            (e.g. "4.20.1").
+                          maxLength: 64
+                          minLength: 1
+                          type: string
+                          x-kubernetes-validations:
+                          - message: version must start with semantic version prefix
+                              x.y.z
+                            rule: self.matches('^\\d+\\.\\d+\\.\\d+.*')
+                      required:
+                      - image
+                      - startedTime
+                      - state
+                      - version
+                      type: object
+                    maxItems: 100
+                    minItems: 1
+                    type: array
+                    x-kubernetes-list-type: atomic
+                  observedGeneration:
+                    description: observedGeneration reports which generation of the
+                      HostedControlPlane spec is being synced.
+                    format: int64
+                    maximum: 9007199254740992
+                    minimum: 1
+                    type: integer
+                required:
+                - desired
                 type: object
               customKubeconfig:
                 description: |-

@@ -2,6 +2,11 @@ apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
   name: olm-operator
+  annotations:
+    hypershift.openshift.io/metrics-job: olm-operator-metrics
+    hypershift.openshift.io/metrics-namespace: openshift-operator-lifecycle-manager
+    hypershift.openshift.io/metrics-service: olm-operator-metrics
+    hypershift.openshift.io/metrics-endpoint: https-metrics
 spec:
   endpoints:
   - scheme: https

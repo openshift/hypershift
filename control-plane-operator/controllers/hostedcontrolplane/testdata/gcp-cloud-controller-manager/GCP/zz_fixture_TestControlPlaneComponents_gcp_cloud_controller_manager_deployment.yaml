@@ -18,7 +18,7 @@ spec:
   revisionHistoryLimit: 2
   selector:
     matchLabels:
-      app: gcp-cloud-controller-manager
+      app: cloud-controller-manager
   strategy:
     type: Recreate
   template:
@@ -28,7 +28,7 @@ spec:
         component.hypershift.openshift.io/config-hash: eafd03f7
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       labels:
-        app: gcp-cloud-controller-manager
+        app: cloud-controller-manager
         hypershift.openshift.io/control-plane-component: gcp-cloud-controller-manager
         hypershift.openshift.io/hosted-control-plane: hcp-namespace
     spec:
@@ -104,6 +104,7 @@ spec:
           name: cloud-token
         - mountPath: /tmp
           name: tmp-dir
+      initContainers:
       - args:
         - --token-audience=openshift
         - --service-account-namespace=kube-system
@@ -120,21 +121,27 @@ spec:
           requests:
             cpu: 10m
             memory: 30Mi
+        restartPolicy: Always
         securityContext:
           allowPrivilegeEscalation: false
           capabilities:
             drop:
             - ALL
-          readOnlyRootFilesystem: true
           runAsNonRoot: true
+        startupProbe:
+          exec:
+            command:
+            - test
+            - -f
+            - /var/run/secrets/openshift/serviceaccount/token
+          failureThreshold: 30
+          periodSeconds: 1
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /var/run/secrets/openshift/serviceaccount
           name: cloud-token
         - mountPath: /etc/kubernetes
           name: kubeconfig
-        - mountPath: /tmp
-          name: tmp-dir
       priorityClassName: hypershift-control-plane
       tolerations:
       - effect: NoSchedule

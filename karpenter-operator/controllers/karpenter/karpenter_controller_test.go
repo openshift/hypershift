@@ -48,7 +48,7 @@ func TestKarpenterDeletion(t *testing.T) {
 						Time: now,
 					},
 					Finalizers: []string{
-						karpenterFinalizer,
+						karpenterutil.KarpenterFinalizer,
 						"some-other-finalizer",
 					},
 				},
@@ -67,7 +67,7 @@ func TestKarpenterDeletion(t *testing.T) {
 						Time: now,
 					},
 					Finalizers: []string{
-						karpenterFinalizer,
+						karpenterutil.KarpenterFinalizer,
 						"some-other-finalizer",
 					},
 				},
@@ -97,7 +97,7 @@ func TestKarpenterDeletion(t *testing.T) {
 						Time: now,
 					},
 					Finalizers: []string{
-						karpenterFinalizer,
+						karpenterutil.KarpenterFinalizer,
 						"some-other-finalizer",
 					},
 				},
@@ -124,7 +124,7 @@ func TestKarpenterDeletion(t *testing.T) {
 						Time: now,
 					},
 					Finalizers: []string{
-						karpenterFinalizer,
+						karpenterutil.KarpenterFinalizer,
 						"some-other-finalizer",
 					},
 				},
@@ -171,7 +171,7 @@ func TestKarpenterDeletion(t *testing.T) {
 						Time: now,
 					},
 					Finalizers: []string{
-						karpenterFinalizer,
+						karpenterutil.KarpenterFinalizer,
 					},
 				},
 			},
@@ -205,7 +205,7 @@ func TestKarpenterDeletion(t *testing.T) {
 						Time: now,
 					},
 					Finalizers: []string{
-						karpenterFinalizer,
+						karpenterutil.KarpenterFinalizer,
 					},
 				},
 			},
@@ -271,9 +271,9 @@ func TestKarpenterDeletion(t *testing.T) {
 			hcp, err := karpenterutil.GetHCP(ctx, r.ManagementClient, r.Namespace)
 			g.Expect(err).NotTo(HaveOccurred())
 			if tc.eventuallyKarpenterFinalizerRemoved {
-				g.Expect(hcp.Finalizers).NotTo(ContainElement(karpenterFinalizer))
+				g.Expect(hcp.Finalizers).NotTo(ContainElement(karpenterutil.KarpenterFinalizer))
 			} else {
-				g.Expect(hcp.Finalizers).To(ContainElement(karpenterFinalizer))
+				g.Expect(hcp.Finalizers).To(ContainElement(karpenterutil.KarpenterFinalizer))
 			}
 
 			// verify NodePool count

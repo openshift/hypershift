@@ -26,6 +26,24 @@ func (spec OpenshiftEC2NodeClassSpec) KarpenterBlockDeviceMapping() []*awskarpen
 	return blockDeviceMapping
 }
 
+func (spec OpenshiftEC2NodeClassSpec) KarpenterCapacityReservationSelectorTerms() []awskarpenterv1.CapacityReservationSelectorTerm {
+	if spec.CapacityReservationSelectorTerms == nil {
+		return nil
+	}
+	var terms []awskarpenterv1.CapacityReservationSelectorTerm
+	for _, term := range spec.CapacityReservationSelectorTerms {
+		terms = append(terms, awskarpenterv1.CapacityReservationSelectorTerm{
+			Tags:    term.Tags,
+			ID:      term.ID,
+			OwnerID: term.OwnerID,
+			// Our API uses PascalCase enum values (Open, Targeted) while upstream
+			// karpenter uses lowercase (open, targeted), so we convert here.
+			InstanceMatchCriteria: strings.ToLower(string(term.InstanceMatchCriteria)),
+		})
+	}
+	return terms
+}
+
 func (spec OpenshiftEC2NodeClassSpec) KarpenterInstanceStorePolicy() *awskarpenterv1.InstanceStorePolicy {
 	if spec.InstanceStorePolicy == "" {
 		return nil
@@ -42,6 +60,36 @@ func (spec OpenshiftEC2NodeClassSpec) KarpenterAssociatePublicIPAddress() *bool 
 	default:
 		return nil
 	}
+}
+
+func (spec OpenshiftEC2NodeClassSpec) KarpenterMetadataOptions() *awskarpenterv1.MetadataOptions {
+	mo := spec.MetadataOptions
+	if mo.Access == "" && mo.HTTPIPProtocol == "" && mo.HTTPPutResponseHopLimit == 0 && mo.HTTPTokens == "" {
+		return nil
+	}
+	opts := &awskarpenterv1.MetadataOptions{}
+	switch mo.Access {
+	case MetadataAccessHTTPEndpoint:
+		opts.HTTPEndpoint = ptr.To("enabled")
+	case MetadataAccessNone:
+		opts.HTTPEndpoint = ptr.To("disabled")
+	}
+	switch mo.HTTPIPProtocol {
+	case MetadataHTTPProtocolIPv6:
+		opts.HTTPProtocolIPv6 = ptr.To("enabled")
+	case MetadataHTTPProtocolIPv4:
+		opts.HTTPProtocolIPv6 = ptr.To("disabled")
+	}
+	if mo.HTTPPutResponseHopLimit != 0 {
+		opts.HTTPPutResponseHopLimit = ptr.To(mo.HTTPPutResponseHopLimit)
+	}
+	switch mo.HTTPTokens {
+	case MetadataHTTPTokensStateRequired:
+		opts.HTTPTokens = ptr.To("required")
+	case MetadataHTTPTokensStateOptional:
+		opts.HTTPTokens = ptr.To("optional")
+	}
+	return opts
 }
 
 func (spec OpenshiftEC2NodeClassSpec) KarpenterDetailedMonitoring() *bool {

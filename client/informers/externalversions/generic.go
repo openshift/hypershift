@@ -66,6 +66,8 @@ func (f *sharedInformerFactory) ForResource(resource schema.GroupVersionResource
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Certificates().V1alpha1().CertificateSigningRequestApprovals().Informer()}, nil
 
 		// Group=hypershift.openshift.io, Version=v1beta1
+	case v1beta1.SchemeGroupVersion.WithResource("azureprivatelinkservices"):
+		return &genericInformer{resource: resource.GroupResource(), informer: f.Hypershift().V1beta1().AzurePrivateLinkServices().Informer()}, nil
 	case v1beta1.SchemeGroupVersion.WithResource("certificatesigningrequestapprovals"):
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Hypershift().V1beta1().CertificateSigningRequestApprovals().Informer()}, nil
 	case v1beta1.SchemeGroupVersion.WithResource("gcpprivateserviceconnects"):

@@ -45,6 +45,8 @@ spec:
           done
 
           exec /usr/bin/cluster-image-registry-operator \
+            --config=/var/run/configmaps/image-registry-controller-config/config.yaml \
+            --files=/var/run/configmaps/image-registry-controller-config/config.yaml \
             --files="/etc/secrets/tls.crt" \
             --files="/etc/secrets/tls.key"
         command:
@@ -81,6 +83,8 @@ spec:
           name: ca-bundle
         - mountPath: /etc/secrets
           name: serving-cert
+        - mountPath: /var/run/configmaps/image-registry-controller-config
+          name: image-registry-controller-config
       priorityClassName: hypershift-control-plane
       volumes:
       - name: serving-cert
@@ -95,3 +99,6 @@ spec:
         secret:
           defaultMode: 416
           secretName: root-ca
+      - configMap:
+          name: image-registry-controller-config
+        name: image-registry-controller-config

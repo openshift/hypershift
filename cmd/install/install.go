@@ -794,6 +794,10 @@ func setupCRDs(ctx context.Context, client crclient.Client, opts Options, operat
 	crds = append(
 		crds, assets.CustomResourceDefinitions(
 			func(path string, crd *apiextensionsv1.CustomResourceDefinition) bool {
+				// Skip non-CRD files (featuregate manifests, envtest suites).
+				if strings.Contains(path, "payload-manifests") || strings.Contains(path, "tests/") {
+					return false
+				}
 				if strings.Contains(path, "etcd") && opts.ExcludeEtcdManifests {
 					return false
 				}
@@ -801,6 +805,9 @@ func setupCRDs(ctx context.Context, client crclient.Client, opts Options, operat
 				if strings.Contains(path, "zz_generated.crd-manifests") {
 					if strings.Contains(path, "awsendpointservices") {
 						return isAWSPlatformEnabled(opts.PlatformsToInstall)
+					}
+					if strings.Contains(path, "azureprivatelinkservices") {
+						return isAzurePlatformEnabled(opts.PlatformsToInstall)
 					}
 					if opts.TechPreviewNoUpgrade {
 						// Skip all featureSets but TechPreviewNoUpgrade.
@@ -877,6 +884,18 @@ func isAWSPlatformEnabled(platformsToInstall []string) bool {
 	}
 	for _, platform := range platformsToInstall {
 		if strings.Contains("aws", strings.ToLower(platform)) {
+			return true
+		}
+	}
+	return false
+}
+
+func isAzurePlatformEnabled(platformsToInstall []string) bool {
+	if len(platformsToInstall) == 0 {
+		return true
+	}
+	for _, platform := range platformsToInstall {
+		if strings.Contains("azure", strings.ToLower(platform)) {
 			return true
 		}
 	}

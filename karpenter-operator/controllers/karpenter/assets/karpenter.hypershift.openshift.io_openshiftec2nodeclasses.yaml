@@ -3,7 +3,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.15.0
+    controller-gen.kubebuilder.io/version: v0.17.0
   name: openshiftec2nodeclasses.karpenter.hypershift.openshift.io
 spec:
   group: karpenter.hypershift.openshift.io
@@ -174,6 +174,73 @@ spec:
                 - message: must have only one blockDeviceMappings with rootVolume
                   rule: self.filter(x, has(x.rootVolume)?x.rootVolume=='RootVolume':false).size()
                     <= 1
+              capacityReservationSelectorTerms:
+                description: |-
+                  capacityReservationSelectorTerms is a list of capacity reservation selector terms. The terms are ORed.
+                  Each term must specify at least one of: tags, id, ownerID, or instanceMatchCriteria.
+                  The id field is mutually exclusive and cannot be combined with tags, ownerID, or instanceMatchCriteria
+                  within the same term.
+                items:
+                  description: |-
+                    CapacityReservationSelectorTerm defines selection logic for a capacity reservation used by Karpenter to launch nodes.
+                    If multiple fields are used for selection, the requirements are ANDed.
+                  minProperties: 1
+                  properties:
+                    id:
+                      description: id is the capacity reservation id in EC2.
+                      maxLength: 256
+                      minLength: 1
+                      type: string
+                      x-kubernetes-validations:
+                      - message: id must match the pattern cr-[0-9a-z]+
+                        rule: self.matches('^cr-[0-9a-z]+$')
+                    instanceMatchCriteria:
+                      description: |-
+                        instanceMatchCriteria filters capacity reservations by how they match instances.
+                        When set to "Open", only selects reservations that any instance with matching
+                        attributes (instance type, platform, Availability Zone) can use automatically.
+                        When set to "Targeted", only selects reservations that require instances to
+                        explicitly target them by ID.
+                        When omitted, selects both Open and Targeted reservations (no filtering on this attribute).
+                      enum:
+                      - Open
+                      - Targeted
+                      type: string
+                    ownerID:
+                      description: ownerID is the owner account id for the capacity
+                        reservation.
+                      maxLength: 12
+                      minLength: 1
+                      type: string
+                      x-kubernetes-validations:
+                      - message: ownerID must be a 12-digit AWS account ID
+                        rule: self.matches('^[0-9]{12}$')
+                    tags:
+                      additionalProperties:
+                        type: string
+                      description: |-
+                        tags is a map of key/value tags used to select capacity reservations.
+                        Specifying '*' for a value selects all values for a given tag key.
+                      maxProperties: 20
+                      minProperties: 1
+                      type: object
+                      x-kubernetes-validations:
+                      - message: empty tag keys or values aren't supported
+                        rule: self.all(k, k != '' && self[k] != '')
+                  type: object
+                maxItems: 30
+                minItems: 1
+                type: array
+                x-kubernetes-list-type: atomic
+                x-kubernetes-validations:
+                - message: expected at least one, got none, ['tags', 'id', 'ownerID',
+                    'instanceMatchCriteria']
+                  rule: self.all(x, has(x.tags) || has(x.id) || has(x.ownerID) ||
+                    has(x.instanceMatchCriteria))
+                - message: '''id'' is mutually exclusive, cannot be set along with
+                    other fields in a capacity reservation selector term'
+                  rule: '!self.all(x, has(x.id) && (has(x.tags) || has(x.ownerID)
+                    || has(x.instanceMatchCriteria)))'
               instanceStorePolicy:
                 description: instanceStorePolicy specifies how to handle instance-store
                   disks.
@@ -191,6 +258,65 @@ spec:
                 - Public
                 - SubnetDefault
                 type: string
+              metadataOptions:
+                description: |-
+                  metadataOptions contains parameters for specifying the exposure of the
+                  Instance Metadata Service to provisioned EC2 nodes.
+                  When omitted, the platform preserves control over default behaviour
+                  which is subject to change over time. Currently defaults to access
+                  HTTPEndpoint, httpIPProtocol IPv4, httpPutResponseHopLimit of 1,
+                  and httpTokens Required (IMDSv2).
+                minProperties: 1
+                properties:
+                  access:
+                    description: |-
+                      access specifies how the instance metadata endpoint is accessed on
+                      provisioned nodes. Valid values are "HTTPEndpoint" and "None".
+                      When set to "HTTPEndpoint", the instance metadata service is accessible
+                      via the HTTP endpoint. When set to "None", instance metadata is not
+                      accessible on the node.
+                      When omitted, the platform defaults to HTTP endpoint access.
+                    enum:
+                    - HTTPEndpoint
+                    - None
+                    type: string
+                  httpIPProtocol:
+                    description: |-
+                      httpIPProtocol specifies the IP protocol version for the instance metadata
+                      service endpoint on provisioned nodes. Valid values are "IPv4" and "IPv6".
+                      When set to "IPv4", the metadata endpoint uses the IPv4 protocol.
+                      When set to "IPv6", the metadata endpoint uses the IPv6 protocol.
+                      When omitted, the platform defaults to IPv4.
+                    enum:
+                    - IPv4
+                    - IPv6
+                    type: string
+                  httpPutResponseHopLimit:
+                    description: |-
+                      httpPutResponseHopLimit is the desired HTTP PUT response hop limit for
+                      instance metadata requests. Possible values are integers from 1 to 64.
+                      A value of 1 restricts IMDS access to the EC2 instance only, preventing
+                      pods from reaching it. A value of 2 allows pods to access IMDS through
+                      the container network bridge. Values above 2 are for advanced networking
+                      scenarios such as nested virtualization.
+                      When omitted, the platform defaults to a hop limit of 1.
+                    format: int64
+                    maximum: 64
+                    minimum: 1
+                    type: integer
+                  httpTokens:
+                    description: |-
+                      httpTokens determines the state of token usage for instance metadata
+                      requests. Valid values are "Required" and "Optional".
+                      When set to "Required", a signed token header (IMDSv2) must be used for
+                      all metadata requests. When set to "Optional", metadata can be retrieved
+                      with or without a token (IMDSv1/v2).
+                      When omitted, the platform defaults to requiring tokens (IMDSv2).
+                    enum:
+                    - Required
+                    - Optional
+                    type: string
+                type: object
               monitoring:
                 description: |-
                   monitoring controls the monitoring level for instances that are launched.
@@ -341,8 +467,74 @@ spec:
             description: status defines the observed state of the OpenshiftEC2NodeClass.
             minProperties: 1
             properties:
+              capacityReservations:
+                description: |-
+                  capacityReservations contains the current Capacity Reservation values that are available to the
+                  cluster under the capacityReservationSelectorTerms.
+                items:
+                  description: CapacityReservation contains resolved CapacityReservation
+                    selector values utilized for node launch
+                  properties:
+                    availabilityZone:
+                      description: availabilityZone is the availability zone the capacity
+                        reservation is available in.
+                      maxLength: 64
+                      minLength: 1
+                      type: string
+                    endTime:
+                      description: |-
+                        endTime is the time at which the capacity reservation expires. Once expired, the reserved capacity is released and Karpenter
+                        will no longer be able to launch instances into that reservation.
+                      format: date-time
+                      type: string
+                    id:
+                      description: id is the id for the capacity reservation.
+                      maxLength: 256
+                      minLength: 1
+                      type: string
+                    instanceMatchCriteria:
+                      description: instanceMatchCriteria indicates the type of instance
+                        launches the capacity reservation accepts.
+                      enum:
+                      - Open
+                      - Targeted
+                      type: string
+                    instanceType:
+                      description: instanceType is the instance type for the capacity
+                        reservation.
+                      maxLength: 256
+                      minLength: 1
+                      type: string
+                    ownerID:
+                      description: ownerID is the ID of the AWS account that owns
+                        the capacity reservation.
+                      maxLength: 12
+                      minLength: 1
+                      type: string
+                    reservationType:
+                      description: reservationType is the type of capacity reservation.
+                      enum:
+                      - Default
+                      - CapacityBlock
+                      type: string
+                    state:
+                      description: state is the state of the capacity reservation.
+                      enum:
+                      - Active
+                      - Expiring
+                      type: string
+                  required:
+                  - availabilityZone
+                  - id
+                  - instanceMatchCriteria
+                  - instanceType
+                  - ownerID
+                  type: object
+                maxItems: 100
+                minItems: 1
+                type: array
+                x-kubernetes-list-type: atomic
               conditions:
-                description: conditions contain signals for health and readiness.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.

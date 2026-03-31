@@ -184,6 +184,13 @@ func getBackendsForHostedCluster(ctx context.Context, hc hyperv1.HostedCluster, 
 				SVCIP:        svc.Spec.ClusterIP,
 				SVCPort:      6443,
 				AllowedCIDRs: allowedCIDRs})
+		case manifests.MetricsProxyRoute("").Name:
+			externalDNSBackends = append(externalDNSBackends, externalDNSBackendDesc{
+				Name:         route.Namespace + "-metrics-proxy",
+				HostName:     route.Spec.Host,
+				SVCIP:        svc.Spec.ClusterIP,
+				SVCPort:      443,
+				AllowedCIDRs: allowedCIDRs})
 		}
 	}
 

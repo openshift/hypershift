@@ -1,0 +1,30 @@
+name: Envtest Vanilla Kube API Validation
+
+on:
+  push:
+    branches: [main]
+    # TODO: uncomment paths filter after validating workflow
+    # paths:
+    #   - 'api/**'
+    #   - 'test/envtest/**'
+    #   - 'cmd/install/assets/hypershift-operator/tests/**'
+  pull_request:
+    branches: [main]
+    # paths:
+    #   - 'api/**'
+    #   - 'test/envtest/**'
+    #   - 'cmd/install/assets/hypershift-operator/tests/**'
+  workflow_dispatch: {}
+
+jobs:
+  envtest-kube:
+    name: Envtest Vanilla Kube ${{ matrix.version }}
+    runs-on: arc-runner-set
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        version: ["1.31.0", "1.32.0", "1.33.0", "1.34.0", "1.35.0"]
+    steps:
+      - uses: actions/checkout@v6
+      - run: make test-envtest-kube ENVTEST_KUBE_VERSIONS="${{ matrix.version }}"

@@ -150,8 +150,8 @@ func (o *CreateBastionOpts) Run(ctx context.Context, logger logr.Logger) (string
 		}
 	}
 
-	awsSession := awsutil.NewSessionV2(ctx, "cli-create-bastion", o.AWSCredentialsFile, o.AWSKey, o.AWSSecretKey, region)
-	awsConfig := awsutil.NewConfigV2()
+	awsSession := awsutil.NewSession(ctx, "cli-create-bastion", o.AWSCredentialsFile, o.AWSKey, o.AWSSecretKey, region)
+	awsConfig := awsutil.NewConfig()
 	ec2Client := ec2.NewFromConfig(*awsSession, func(o *ec2.Options) {
 		o.Retryer = awsConfig()
 	})

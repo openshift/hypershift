@@ -27,6 +27,10 @@ type FakeHypershiftV1beta1 struct {
 	*testing.Fake
 }
 
+func (c *FakeHypershiftV1beta1) AzurePrivateLinkServices(namespace string) v1beta1.AzurePrivateLinkServiceInterface {
+	return newFakeAzurePrivateLinkServices(c, namespace)
+}
+
 func (c *FakeHypershiftV1beta1) CertificateSigningRequestApprovals(namespace string) v1beta1.CertificateSigningRequestApprovalInterface {
 	return newFakeCertificateSigningRequestApprovals(c, namespace)
 }

@@ -17,7 +17,7 @@ import (
 	"github.com/openshift/hypershift/support/infraid"
 	"github.com/openshift/hypershift/support/oidc"
 
-	awsv2 "github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
@@ -219,21 +219,21 @@ func (o *DrOidcIamOptions) validate() error {
 	return nil
 }
 
-func (o *DrOidcIamOptions) getAWSConfig(ctx context.Context, agent string, region string) (*awsv2.Config, error) {
+func (o *DrOidcIamOptions) getAWSConfig(ctx context.Context, agent string, region string) (*aws.Config, error) {
 	if o.AWSCredentialsFile != "" {
 		if _, err := os.Stat(o.AWSCredentialsFile); err != nil {
 			return nil, fmt.Errorf("failed to read AWS credentials file %s: %w", o.AWSCredentialsFile, err)
 		}
-		return awsutil.NewSessionV2(ctx, agent, o.AWSCredentialsFile, "", "", region), nil
+		return awsutil.NewSession(ctx, agent, o.AWSCredentialsFile, "", "", region), nil
 	}
 
 	if o.STSCredentialsFile != "" {
-		creds, err := awsutil.ParseSTSCredentialsFileV2(o.STSCredentialsFile)
+		creds, err := awsutil.ParseSTSCredentialsFile(o.STSCredentialsFile)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse STS credentials: %w", err)
 		}
 
-		return awsutil.NewSTSSessionV2(ctx, agent, o.RoleArn, region, creds)
+		return awsutil.NewSTSSession(ctx, agent, o.RoleArn, region, creds)
 	}
 
 	return nil, fmt.Errorf("no credentials provided")
@@ -431,7 +431,7 @@ func (o *DrOidcIamOptions) Run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to create AWS config: %w", err)
 	}
-	retryerFn := awsutil.NewConfigV2()
+	retryerFn := awsutil.NewConfig()
 	iamClient := iam.NewFromConfig(*iamCfg, func(o *iam.Options) {
 		o.Retryer = retryerFn()
 	})
@@ -640,8 +640,8 @@ func (o *DrOidcIamOptions) checkOIDCDocumentsExist(ctx context.Context, s3Client
 
 	for _, doc := range documents {
 		_, err := s3Client.HeadObject(ctx, &s3.HeadObjectInput{
-			Bucket: awsv2.String(o.OIDCStorageProviderS3Bucket),
-			Key:    awsv2.String(doc),
+			Bucket: aws.String(o.OIDCStorageProviderS3Bucket),
+			Key:    aws.String(doc),
 		})
 		if err != nil {
 			return false
@@ -654,12 +654,12 @@ func (o *DrOidcIamOptions) checkOIDCDocumentsExist(ctx context.Context, s3Client
 // disabling the Block Public Access settings and applying a read-all policy.
 func configureBucketPublicAccess(ctx context.Context, s3Client *s3.Client, bucketName string) error {
 	_, err := s3Client.PutPublicAccessBlock(ctx, &s3.PutPublicAccessBlockInput{
-		Bucket: awsv2.String(bucketName),
+		Bucket: aws.String(bucketName),
 		PublicAccessBlockConfiguration: &s3types.PublicAccessBlockConfiguration{
-			BlockPublicAcls:       awsv2.Bool(false),
-			BlockPublicPolicy:     awsv2.Bool(false),
-			IgnorePublicAcls:      awsv2.Bool(false),
-			RestrictPublicBuckets: awsv2.Bool(false),
+			BlockPublicAcls:       aws.Bool(false),
+			BlockPublicPolicy:     aws.Bool(false),
+			IgnorePublicAcls:      aws.Bool(false),
+			RestrictPublicBuckets: aws.Bool(false),
 		},
 	})
 	if err != nil {
@@ -667,8 +667,8 @@ func configureBucketPublicAccess(ctx context.Context, s3Client *s3.Client, bucke
 	}
 
 	_, err = s3Client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
-		Bucket: awsv2.String(bucketName),
-		Policy: awsv2.String(fmt.Sprintf(`{
+		Bucket: aws.String(bucketName),
+		Policy: aws.String(fmt.Sprintf(`{
 			"Version": "2012-10-17",
 			"Statement": [
 				{
@@ -689,7 +689,7 @@ func configureBucketPublicAccess(ctx context.Context, s3Client *s3.Client, bucke
 
 func (o *DrOidcIamOptions) ensureOIDCBucket(ctx context.Context, s3Client *s3.Client) error {
 	_, err := s3Client.HeadBucket(ctx, &s3.HeadBucketInput{
-		Bucket: awsv2.String(o.OIDCStorageProviderS3Bucket),
+		Bucket: aws.String(o.OIDCStorageProviderS3Bucket),
 	})
 
 	if err == nil {
@@ -718,7 +718,7 @@ func (o *DrOidcIamOptions) ensureOIDCBucket(ctx context.Context, s3Client *s3.Cl
 	}
 
 	createBucketInput := &s3.CreateBucketInput{
-		Bucket: awsv2.String(o.OIDCStorageProviderS3Bucket),
+		Bucket: aws.String(o.OIDCStorageProviderS3Bucket),
 	}
 
 	// Use the OIDC bucket region for LocationConstraint, not the cluster region.
@@ -775,10 +775,10 @@ func (o *DrOidcIamOptions) generateAndUploadOIDCDocuments(ctx context.Context, k
 			return fmt.Errorf("failed to generate OIDC document %s: %w", path, err)
 		}
 		_, err = s3Client.PutObject(ctx, &s3.PutObjectInput{
-			Bucket:      awsv2.String(o.OIDCStorageProviderS3Bucket),
-			Key:         awsv2.String(o.InfraID + path),
+			Bucket:      aws.String(o.OIDCStorageProviderS3Bucket),
+			Key:         aws.String(o.InfraID + path),
 			Body:        bodyReader,
-			ContentType: awsv2.String("application/json"),
+			ContentType: aws.String("application/json"),
 		})
 		if err != nil {
 			return fmt.Errorf("failed to upload OIDC document %s: %w", path, err)
@@ -854,7 +854,7 @@ func (o *DrOidcIamOptions) deleteOIDCProviderIfExists(ctx context.Context, iamCl
 		return nil
 	}
 	_, err := iamClient.DeleteOpenIDConnectProvider(ctx, &iam.DeleteOpenIDConnectProviderInput{
-		OpenIDConnectProviderArn: awsv2.String(providerARN),
+		OpenIDConnectProviderArn: aws.String(providerARN),
 	})
 	if err != nil {
 		return fmt.Errorf("failed to remove existing OIDC provider %s: %w", providerARN, err)
@@ -871,7 +871,7 @@ func (o *DrOidcIamOptions) createOIDCProvider(ctx context.Context, iamClient *ia
 		ThumbprintList: []string{
 			thumbprint,
 		},
-		Url: awsv2.String(o.Issuer),
+		Url: aws.String(o.Issuer),
 	}
 
 	var output *iam.CreateOpenIDConnectProviderOutput

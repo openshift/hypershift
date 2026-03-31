@@ -118,6 +118,7 @@ data:
       - VSphereMultiNetworks=false
       - VolumeAttributesClass=false
       - VolumeGroupSnapshot=false
+      - WatchList=false
       shutdown-delay-duration:
       - 15s
     apiServers:

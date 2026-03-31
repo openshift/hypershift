@@ -1,0 +1,28 @@
+name: Verify
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify:
+    name: Verify
+    runs-on: arc-runner-set
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+      - run: make generate update
+      - run: |
+          git update-index --refresh
+          git diff-index --cached --quiet --ignore-submodules HEAD --
+          git diff-files --quiet --ignore-submodules
+          git diff --exit-code HEAD --
+          STATUS=$(git status -s)
+          if [ -n "$STATUS" ]; then
+            echo "untracked files detected:"
+            echo "$STATUS"
+            exit 1
+          fi
+      - run: make staticcheck
+      - run: make fmt
+      - run: make vet

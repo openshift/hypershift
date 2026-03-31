@@ -358,6 +358,11 @@ type AzureNodePoolOSDisk struct {
 // your own (BYO) cloud infrastructure resources. For example, resources like a resource group, a subnet, or a vnet
 // would be pre-created and then their names would be used respectively in the ResourceGroupName, SubnetName, VnetName
 // fields of the Hosted Cluster CR. An existing cloud resource is expected to exist under the same SubscriptionID.
+//
+// +kubebuilder:validation:XValidation:rule="has(self.private) == has(oldSelf.private)",message="private cannot be added or removed after cluster creation"
+// +kubebuilder:validation:XValidation:rule="!has(self.topology) || !has(oldSelf.topology) || (self.topology == 'Public') == (oldSelf.topology == 'Public')",message="transitions between Public and non-Public topology are not supported"
+// +kubebuilder:validation:XValidation:rule="!has(self.topology) || ((self.topology == 'Private' || self.topology == 'PublicAndPrivate') ? has(self.private) : !has(self.private))",message="private is required when topology is Private or PublicAndPrivate, and forbidden otherwise"
+// +kubebuilder:validation:XValidation:rule="!has(self.private) || !has(self.private.privateLink) || self.azureAuthenticationConfig.azureAuthenticationConfigType != 'WorkloadIdentities' || has(self.azureAuthenticationConfig.workloadIdentities.controlPlaneOperator)",message="workloadIdentities.controlPlaneOperator is required when Private Link is configured with WorkloadIdentities authentication"
 type AzurePlatformSpec struct {
 	// cloud is the cloud environment identifier, valid values could be found here: https://github.com/Azure/go-autorest/blob/4c0e21ca2bbb3251fe7853e6f9df6397f53dd419/autorest/azure/environments.go#L33
 	//
@@ -462,6 +467,29 @@ type AzurePlatformSpec struct {
 	// +required
 	// +kubebuilder:validation:MaxLength=255
 	TenantID string `json:"tenantID"`
+
+	// topology specifies the network topology of the API server endpoint for the hosted cluster.
+	// - Public: The API server is accessible only via a public endpoint.
+	// - PublicAndPrivate: The API server is accessible via both public and private endpoints.
+	// - Private: The API server is accessible only via a private endpoint.
+	// When omitted, this means no opinion and the platform is left to choose a reasonable
+	// default, which is subject to change over time. The current default is Public.
+	// This field must be set explicitly for self-hosted environments (WorkloadIdentities).
+	// Transitions between PublicAndPrivate and Private are allowed after creation.
+	// Transitions from Public to non-Public (or vice versa) are not allowed.
+	// When set to Private or PublicAndPrivate, the private field must be provided.
+	//
+	// +optional
+	Topology AzureTopologyType `json:"topology,omitempty"`
+
+	// private configures private connectivity to the hosted cluster's API server.
+	// This field is required when topology is Private or PublicAndPrivate, and must
+	// not be set when topology is Public.
+	// Once set at cluster creation, this field cannot be removed, and it cannot be
+	// added to an existing cluster that was created without it.
+	//
+	// +optional
+	Private AzurePrivateSpec `json:"private,omitzero"`
 }
 
 // objectEncoding represents the encoding for the Azure Key Vault secret containing the certificate related to
@@ -554,6 +582,11 @@ type AzureWorkloadIdentities struct {
 	// workload identity authentication.
 	// +required
 	Network WorkloadIdentity `json:"network"`
+
+	// controlPlaneOperator is the client ID of a federated managed identity, associated with control-plane-operator,
+	// used in workload identity authentication for Azure Private Link Service operations.
+	// +optional
+	ControlPlaneOperator WorkloadIdentity `json:"controlPlaneOperator,omitzero"`
 }
 
 // ManagedIdentity contains the client ID, and its certificate name, of a managed identity. This managed identity is
@@ -601,6 +634,85 @@ type WorkloadIdentity struct {
 	//
 	// +required
 	ClientID AzureClientID `json:"clientID"`
+}
+
+// AzureTopologyType specifies the network topology of the Azure API server endpoint.
+// +kubebuilder:validation:Enum=Public;PublicAndPrivate;Private
+type AzureTopologyType string
+
+const (
+	// AzureTopologyPublic indicates the API server is accessible only via a public endpoint.
+	AzureTopologyPublic AzureTopologyType = "Public"
+	// AzureTopologyPublicAndPrivate indicates the API server is accessible via both public and private endpoints.
+	AzureTopologyPublicAndPrivate AzureTopologyType = "PublicAndPrivate"
+	// AzureTopologyPrivate indicates the API server is accessible only via a private endpoint.
+	AzureTopologyPrivate AzureTopologyType = "Private"
+)
+
+// AzurePrivateType specifies the type of private connectivity mechanism used for the Azure
+// hosted cluster's API server. This acts as the discriminator for the AzurePrivateSpec union.
+//
+// +kubebuilder:validation:Enum=PrivateLink
+type AzurePrivateType string
+
+const (
+	// AzurePrivateTypePrivateLink specifies private connectivity using Azure Private Link Service.
+	// In this mode, the operator creates a Private Link Service backed by the management cluster's
+	// internal load balancer, and a Private Endpoint in the guest VNet for private API server access.
+	AzurePrivateTypePrivateLink AzurePrivateType = "PrivateLink"
+)
+
+// AzurePrivateSpec configures private connectivity to an Azure hosted cluster's API server.
+// It is a discriminated union keyed on the type field, which selects the private connectivity
+// mechanism. Currently only PrivateLink is supported; additional mechanisms (e.g., Swift) may
+// be added in the future.
+//
+// +kubebuilder:validation:XValidation:rule="self.type == 'PrivateLink' ? has(self.privateLink) : !has(self.privateLink)",message="privateLink is required when type is PrivateLink, and forbidden otherwise"
+// +union
+type AzurePrivateSpec struct {
+	// type specifies the private connectivity mechanism used for the hosted cluster's API server.
+	// "PrivateLink" selects Azure Private Link Service for private API server access.
+	// This field is immutable once set.
+	//
+	// +unionDiscriminator
+	// +required
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="type is immutable"
+	Type AzurePrivateType `json:"type,omitempty"`
+
+	// privateLink configures Azure Private Link Service for private API server access.
+	// This field is required when type is "PrivateLink" and must not be set otherwise.
+	//
+	// +optional
+	// +unionMember
+	PrivateLink AzurePrivateLinkSpec `json:"privateLink,omitzero"`
+}
+
+// AzurePrivateLinkSpec configures Azure Private Link Service connectivity.
+// +kubebuilder:validation:MinProperties=1
+type AzurePrivateLinkSpec struct {
+	// natSubnetID is the Azure resource ID of the subnet used for Private Link Service NAT IP allocation.
+	// This subnet must have privateLinkServiceNetworkPolicies disabled.
+	// If not provided, the controller will auto-create a NAT subnet in the HC's VNet.
+	// The expected format is:
+	//   /subscriptions/{subscriptionID}/resourceGroups/{resourceGroup}/providers/Microsoft.Network/virtualNetworks/{vnetName}/subnets/{subnetName}
+	// The maximum length is 355 characters.
+	//
+	// +optional
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="natSubnetID is immutable once set"
+	NATSubnetID AzureSubnetResourceID `json:"natSubnetID,omitempty"`
+
+	// additionalAllowedSubscriptions is an optional list of additional Azure subscription IDs
+	// permitted to create Private Endpoints to the Private Link Service. The guest cluster's
+	// own subscription is always automatically allowed, so it does not need to be listed here.
+	// Each item must be a valid UUID consisting of lowercase hexadecimal characters and hyphens,
+	// in the format xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+	// (e.g., "550e8400-e29b-41d4-a716-446655440000"). A maximum of 50 subscriptions may be specified.
+	//
+	// +optional
+	// +listType=set
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=50
+	AdditionalAllowedSubscriptions []AzureSubscriptionID `json:"additionalAllowedSubscriptions,omitempty"`
 }
 
 // ControlPlaneManagedIdentities contains the managed identities on the HCP control plane needing to authenticate with

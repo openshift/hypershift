@@ -44,7 +44,7 @@ const (
 func BreakHostedClusterPreservingMachines(testCtx *internal.TestContext, logger logr.Logger) error {
 	// Step 1: Force delete HCP namespace (without waiting for completion)
 	// This removes the CAPI controller early, leaving machine resources orphaned
-	if err := deleteControlPlaneNamespace(testCtx, false); err != nil {
+	if err := deleteControlPlaneNamespace(testCtx, 0); err != nil {
 		return fmt.Errorf("failed to delete control plane namespace: %w", err)
 	}
 
@@ -60,7 +60,7 @@ func BreakHostedClusterPreservingMachines(testCtx *internal.TestContext, logger 
 	}
 
 	// Step 4: Delete HostedCluster namespace (without waiting for completion)
-	if err := deleteHostedClusterNamespace(testCtx, false); err != nil {
+	if err := deleteHostedClusterNamespace(testCtx, 0); err != nil {
 		return fmt.Errorf("failed to delete hosted cluster namespace: %w", err)
 	}
 
@@ -69,14 +69,35 @@ func BreakHostedClusterPreservingMachines(testCtx *internal.TestContext, logger 
 		return fmt.Errorf("failed to remove orphaned resource finalizers: %w", err)
 	}
 
-	// Step 6: Wait for control plane namespace to be fully deleted
-	if err := deleteControlPlaneNamespace(testCtx, true); err != nil {
-		return fmt.Errorf("failed to delete control plane namespace: %w", err)
+	// Step 6: Wait for control plane namespace to be fully deleted.
+	// First attempt with a short timeout. If it doesn't delete within one minute,
+	// some resources may have been recreated with new finalizers by controllers,
+	// so we strip finalizers again and retry with the standard timeout.
+	if err := deleteControlPlaneNamespace(testCtx, 1*time.Minute); err != nil {
+		if !wait.Interrupted(err) {
+			return fmt.Errorf("failed to delete control plane namespace: %w", err)
+		}
+		logger.Info("Control plane namespace did not delete within initial timeout, removing finalizers again and retrying")
+		if err := removeNamespaceObjectFinalizers(testCtx, testCtx.ControlPlaneNamespace, logger); err != nil {
+			return fmt.Errorf("failed to remove finalizers on retry: %w", err)
+		}
+		if err := deleteControlPlaneNamespace(testCtx, DeletionTimeout); err != nil {
+			return fmt.Errorf("failed to delete control plane namespace after retry: %w", err)
+		}
 	}
 
-	// Step 7: Wait for hosted cluster namespace to be fully deleted
-	if err := deleteHostedClusterNamespace(testCtx, true); err != nil {
-		return fmt.Errorf("failed to wait for hosted cluster namespace deletion: %w", err)
+	// Step 7: Delete hosted cluster namespace
+	if err := deleteHostedClusterNamespace(testCtx, 1*time.Minute); err != nil {
+		if !wait.Interrupted(err) {
+			return fmt.Errorf("failed to delete hosted cluster namespace: %w", err)
+		}
+		logger.Info("Hosted cluster namespace did not delete within initial timeout, removing finalizers again and retrying")
+		if err := removeNamespaceObjectFinalizers(testCtx, testCtx.ClusterNamespace, logger); err != nil {
+			return fmt.Errorf("failed to remove finalizers on retry: %w", err)
+		}
+		if err := deleteHostedClusterNamespace(testCtx, DeletionTimeout); err != nil {
+			return fmt.Errorf("failed to delete hosted cluster namespace after retry: %w", err)
+		}
 	}
 
 	return nil
@@ -282,8 +303,9 @@ func removeObjectFinalizers(testCtx *internal.TestContext, obj crclient.Object) 
 
 // deleteNamespace deletes a namespace with optional grace period and wait.
 // Set gracePeriodSeconds to 0 for immediate termination.
-// Set waitForDeletion to true if you want to wait for the namespace to be fully removed.
-func deleteNamespace(testCtx *internal.TestContext, namespace string, gracePeriodSeconds int64, waitForDeletion bool) error {
+// If timeout is 0, the function returns immediately after issuing the delete.
+// Otherwise, it waits up to timeout for the namespace to be fully removed.
+func deleteNamespace(testCtx *internal.TestContext, namespace string, gracePeriodSeconds int64, timeout time.Duration) error {
 	if namespace == "" {
 		return fmt.Errorf("namespace is not set")
 	}
@@ -309,12 +331,12 @@ func deleteNamespace(testCtx *internal.TestContext, namespace string, gracePerio
 		return fmt.Errorf("failed to delete namespace %s: %w", namespace, err)
 	}
 
-	if !waitForDeletion {
+	if timeout == 0 {
 		return nil
 	}
 
 	// Wait for namespace deletion
-	return wait.PollUntilContextTimeout(testCtx.Context, PollInterval, DeletionTimeout, true, func(ctx context.Context) (bool, error) {
+	return wait.PollUntilContextTimeout(testCtx.Context, PollInterval, timeout, true, func(ctx context.Context) (bool, error) {
 		err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKey{Name: namespace}, nsObj)
 		if err != nil {
 			if apierrors.IsNotFound(err) {
@@ -330,21 +352,23 @@ func deleteNamespace(testCtx *internal.TestContext, namespace string, gracePerio
 }
 
 // deleteControlPlaneNamespace deletes the HCP namespace.
-// Set waitForDeletion to true if you want to wait for the namespace to be fully removed.
-func deleteControlPlaneNamespace(testCtx *internal.TestContext, waitForDeletion bool) error {
+// If timeout is 0, the function returns immediately after issuing the delete.
+// Otherwise, it waits up to timeout for the namespace to be fully removed.
+func deleteControlPlaneNamespace(testCtx *internal.TestContext, timeout time.Duration) error {
 	namespace := testCtx.ControlPlaneNamespace
 	if namespace == "" {
 		return fmt.Errorf("control plane namespace is not set in test context")
 	}
-	return deleteNamespace(testCtx, namespace, 0, waitForDeletion)
+	return deleteNamespace(testCtx, namespace, 0, timeout)
 }
 
 // deleteHostedClusterNamespace deletes the HostedCluster namespace.
-// Set waitForDeletion to true if you want to wait for the namespace to be fully removed.
-func deleteHostedClusterNamespace(testCtx *internal.TestContext, waitForDeletion bool) error {
+// If timeout is 0, the function returns immediately after issuing the delete.
+// Otherwise, it waits up to timeout for the namespace to be fully removed.
+func deleteHostedClusterNamespace(testCtx *internal.TestContext, timeout time.Duration) error {
 	namespace := testCtx.ClusterNamespace
 	if namespace == "" {
 		return fmt.Errorf("cluster namespace is not set in test context")
 	}
-	return deleteNamespace(testCtx, namespace, -1, waitForDeletion)
+	return deleteNamespace(testCtx, namespace, -1, timeout)
 }

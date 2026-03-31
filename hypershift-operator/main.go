@@ -375,10 +375,10 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		OpenShiftTrustedCAFilePath:              "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem",
 	}
 	if opts.OIDCStorageProviderS3BucketName != "" {
-		awsSessionv2 := awsutil.NewSessionV2(ctx, "hypershift-operator-oidc-bucket", opts.OIDCStorageProviderS3Credentials, "", "", opts.OIDCStorageProviderS3Region)
-		awsConfigv2 := awsutil.NewConfigV2()
-		s3Client := s3.NewFromConfig(*awsSessionv2, func(o *s3.Options) {
-			o.Retryer = awsConfigv2()
+		awsSession := awsutil.NewSession(ctx, "hypershift-operator-oidc-bucket", opts.OIDCStorageProviderS3Credentials, "", "", opts.OIDCStorageProviderS3Region)
+		awsConfig := awsutil.NewConfig()
+		s3Client := s3.NewFromConfig(*awsSession, func(o *s3.Options) {
+			o.Retryer = awsConfig()
 		})
 		hostedClusterReconciler.S3Client = s3Client
 		hostedClusterReconciler.OIDCStorageProviderS3BucketName = opts.OIDCStorageProviderS3BucketName
@@ -417,8 +417,8 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	var ec2Client awsapi.EC2API
 
 	if hyperv1.PlatformType(opts.PrivatePlatform) == hyperv1.AWSPlatform {
-		awsSession := awsutil.NewSessionV2(ctx, "hypershift-operator", "", "", "", "")
-		awsConfig := awsutil.NewConfigV2()
+		awsSession := awsutil.NewSession(ctx, "hypershift-operator", "", "", "", "")
+		awsConfig := awsutil.NewConfig()
 		ec2Client = ec2.NewFromConfig(*awsSession, func(o *ec2.Options) {
 			o.Retryer = awsConfig()
 		})
@@ -431,8 +431,8 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	if opts.ScaleFromZeroCreds != "" && opts.ScaleFromZeroProvider != "" {
 		switch strings.ToLower(opts.ScaleFromZeroProvider) {
 		case "aws":
-			awsSession := awsutil.NewSessionV2(ctx, "hypershift-operator-scale-from-zero", opts.ScaleFromZeroCreds, "", "", "")
-			awsConfig := awsutil.NewConfigV2()
+			awsSession := awsutil.NewSession(ctx, "hypershift-operator-scale-from-zero", opts.ScaleFromZeroCreds, "", "", "")
+			awsConfig := awsutil.NewConfig()
 			scaleFromZeroEC2Client := ec2.NewFromConfig(*awsSession, func(o *ec2.Options) {
 				o.Retryer = awsConfig()
 			})

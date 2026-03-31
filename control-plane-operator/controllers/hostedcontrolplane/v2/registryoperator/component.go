@@ -40,6 +40,10 @@ func NewComponent() component.ControlPlaneComponent {
 			component.WithAdaptFunction(adaptPodMonitor),
 		).
 		WithManifestAdapter(
+			"controller-config.yaml",
+			component.WithAdaptFunction(adaptControllerConfig),
+		).
+		WithManifestAdapter(
 			"azure-secretprovider.yaml",
 			component.WithAdaptFunction(adaptAzureSecretProvider),
 			component.WithPredicate(isAroHCP),

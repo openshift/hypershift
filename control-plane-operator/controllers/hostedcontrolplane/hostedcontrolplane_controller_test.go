@@ -16,11 +16,13 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/infra"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	endpointresolverv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/endpoint_resolver"
 	etcdv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/etcd"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/fg"
 	ignitionserverv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/ignitionserver"
 	ignitionproxyv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/ignitionserver_proxy"
 	kasv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kas"
+	metricsproxyv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/metrics_proxy"
 	oapiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oapi"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/awsapi"
@@ -723,6 +725,7 @@ func TestEventHandling(t *testing.T) {
 		ManagementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
 		ReleaseProvider:               mockedProviderWithOpenshiftImageRegistryOverrides,
 		UserReleaseProvider:           &fakereleaseprovider.FakeReleaseProvider{},
+		ImageMetadataProvider:         &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProviderHCCO{},
 		reconcileInfrastructureStatus: func(context.Context, *hyperv1.HostedControlPlane) (infra.InfrastructureStatus, error) {
 			return readyInfraStatus, nil
 		},
@@ -806,6 +809,7 @@ func TestNonReadyInfraTriggersRequeueAfter(t *testing.T) {
 		ManagementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
 		ReleaseProvider:               mockedProviderWithOpenshiftImageRegistryOverrides,
 		UserReleaseProvider:           &fakereleaseprovider.FakeReleaseProvider{},
+		ImageMetadataProvider:         &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProviderHCCO{},
 		reconcileInfrastructureStatus: func(context.Context, *hyperv1.HostedControlPlane) (infra.InfrastructureStatus, error) {
 			return infra.InfrastructureStatus{}, nil
 		},
@@ -1228,9 +1232,10 @@ func TestControlPlaneComponents(t *testing.T) {
 				},
 				Manifest: fakeimagemetadataprovider.FakeManifest{},
 			},
-			HCP:                    hcp,
-			SkipPredicate:          true,
-			SkipCertificateSigning: true,
+			HCP:                            hcp,
+			SkipPredicate:                  true,
+			SkipCertificateSigning:         true,
+			NativeSidecarContainersEnabled: true,
 		}
 
 		cpContext.HCP.Spec.Configuration.FeatureGate.FeatureGateSelection.FeatureSet = tt.featureSet
@@ -1511,6 +1516,11 @@ func componentsFakeDependencies(componentName string, namespace string) []client
 
 	if componentName == ignitionproxyv2.ComponentName {
 		fakeComponentTemplate.Name = ignitionserverv2.ComponentName
+		fakeComponents = append(fakeComponents, fakeComponentTemplate.DeepCopy())
+	}
+
+	if componentName == metricsproxyv2.ComponentName {
+		fakeComponentTemplate.Name = endpointresolverv2.ComponentName
 		fakeComponents = append(fakeComponents, fakeComponentTemplate.DeepCopy())
 	}
 

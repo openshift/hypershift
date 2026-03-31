@@ -53,6 +53,7 @@ import (
 	konnectivityv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/konnectivity_agent"
 	schedulerv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kube_scheduler"
 	machineapproverv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/machine_approver"
+	metricsproxyv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/metrics_proxy"
 	ntov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/nto"
 	oapiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oapi"
 	oauthv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oauth"
@@ -116,6 +117,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/workqueue"
+	"k8s.io/utils/clock"
 	"k8s.io/utils/ptr"
 
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -184,9 +186,13 @@ type HostedControlPlaneReconciler struct {
 	ImageMetadataProvider                   util.ImageMetadataProvider
 	cpoAzureCredentialsLoaded               sync.Map
 	kmsAzureCredentialsLoaded               sync.Map
+	clock                                   clock.Clock
 }
 
 func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpdate upsert.CreateOrUpdateFN, hcp *hyperv1.HostedControlPlane) error {
+	if r.clock == nil {
+		r.clock = clock.RealClock{}
+	}
 	r.setup(createOrUpdate)
 	b := ctrl.NewControllerManagedBy(mgr).
 		For(&hyperv1.HostedControlPlane{}).
@@ -267,6 +273,7 @@ func (r *HostedControlPlaneReconciler) registerComponents(hcp *hyperv1.HostedCon
 		ignitionserverv2.NewComponent(r.ReleaseProvider, r.DefaultIngressDomain),
 		ignitionproxyv2.NewComponent(r.DefaultIngressDomain),
 		endpointresolverv2.NewComponent(),
+		metricsproxyv2.NewComponent(r.DefaultIngressDomain),
 	)
 	r.components = append(r.components,
 		olmv2.NewComponents(r.ManagementClusterCapabilities.Has(capabilities.CapabilityImageStream))...,
@@ -278,12 +285,12 @@ func GetEC2Client(ctx context.Context) (awsapi.EC2API, *aws.Config) {
 	// when reconciling an AWS hosted control plane
 	if os.Getenv("AWS_SHARED_CREDENTIALS_FILE") != "" {
 		// v2
-		awsSessionV2 := awsutil.NewSessionV2(ctx, "control-plane-operator", "", "", "", "")
-		awsConfigV2 := awsutil.NewConfigV2()
-		ec2Client := ec2.NewFromConfig(*awsSessionV2, func(o *ec2.Options) {
-			o.Retryer = awsConfigV2()
+		awsSession := awsutil.NewSession(ctx, "control-plane-operator", "", "", "", "")
+		awsConfig := awsutil.NewConfig()
+		ec2Client := ec2.NewFromConfig(*awsSession, func(o *ec2.Options) {
+			o.Retryer = awsConfig()
 		})
-		return ec2Client, awsSessionV2
+		return ec2Client, awsSession
 	}
 	return nil, nil
 }
@@ -767,6 +774,40 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return reconcile.Result{}, fmt.Errorf("failed to look up release image metadata: %w", err)
 	}
 
+	// Reconcile controlPlaneVersion status.
+	// This runs after LookupReleaseImage so we can use the version and resolved
+	// digest from the release image metadata.
+	{
+		clk := r.clock
+		if clk == nil {
+			clk = clock.RealClock{}
+		}
+		// Resolve the release image to its digest so controlPlaneVersion records
+		// the immutable image reference, consistent with how CVO records images.
+		pullSecret := common.PullSecret(hostedControlPlane.Namespace)
+		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
+			return reconcile.Result{}, fmt.Errorf("failed to get pull secret for version reconciliation: %w", err)
+		}
+		_, resolvedRef, err := r.ImageMetadataProvider.GetDigest(ctx, util.HCPControlPlaneReleaseImage(hostedControlPlane), pullSecret.Data[corev1.DockerConfigJsonKey])
+		if err != nil {
+			return reconcile.Result{}, fmt.Errorf("failed to resolve control plane release image digest: %w", err)
+		}
+		resolvedImage := resolvedRef.String()
+
+		componentsList := &hyperv1.ControlPlaneComponentList{}
+		if listErr := r.Client.List(ctx, componentsList, client.InNamespace(hostedControlPlane.Namespace)); listErr != nil {
+			// On list failure, ensure a Partial entry exists so consumers
+			// know an upgrade was attempted. Preserve observedGeneration.
+			hostedControlPlane.Status.ControlPlaneVersion = ensureControlPlaneVersionPartial(hostedControlPlane, clk, releaseImage.Version(), resolvedImage)
+			// Persist the Partial entry before returning the error.
+			if patchErr := r.Client.Status().Patch(ctx, hostedControlPlane, client.MergeFromWithOptions(originalHostedControlPlane, client.MergeFromWithOptimisticLock{})); patchErr != nil {
+				return reconcile.Result{}, fmt.Errorf("failed to patch status after component list failure: %w (list error: %v)", patchErr, listErr)
+			}
+			return reconcile.Result{}, fmt.Errorf("failed to list control plane components for version reconciliation: %w", listErr)
+		}
+		hostedControlPlane.Status.ControlPlaneVersion = reconcileControlPlaneVersion(hostedControlPlane, componentsList.Items, clk, releaseImage.Version(), resolvedImage)
+	}
+
 	hostedControlPlane.Status.Initialized = true
 
 	meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, util.GenerateReconciliationActiveCondition(hostedControlPlane.Spec.PausedUntil, hostedControlPlane.Generation))
@@ -1172,19 +1213,20 @@ func (r *HostedControlPlaneReconciler) reconcileCPOV2(ctx context.Context, hcp *
 	}
 
 	cpContext := component.ControlPlaneContext{
-		Context:                   ctx,
-		Client:                    r.Client,
-		GVKAccessChecker:          r.GVKAccessChecker,
-		HCP:                       hcp,
-		ApplyProvider:             upsert.NewApplyProvider(r.EnableCIDebugOutput),
-		InfraStatus:               infraStatus,
-		ReleaseImageProvider:      releaseImageProvider,
-		UserReleaseImageProvider:  userReleaseImageProvider,
-		SetDefaultSecurityContext: r.SetDefaultSecurityContext,
-		DefaultSecurityContextUID: r.DefaultSecurityContextUID,
-		MetricsSet:                r.MetricsSet,
-		EnableCIDebugOutput:       r.EnableCIDebugOutput,
-		ImageMetadataProvider:     r.ImageMetadataProvider,
+		Context:                        ctx,
+		Client:                         r.Client,
+		GVKAccessChecker:               r.GVKAccessChecker,
+		HCP:                            hcp,
+		ApplyProvider:                  upsert.NewApplyProvider(r.EnableCIDebugOutput),
+		InfraStatus:                    infraStatus,
+		ReleaseImageProvider:           releaseImageProvider,
+		UserReleaseImageProvider:       userReleaseImageProvider,
+		SetDefaultSecurityContext:      r.SetDefaultSecurityContext,
+		DefaultSecurityContextUID:      r.DefaultSecurityContextUID,
+		MetricsSet:                     r.MetricsSet,
+		EnableCIDebugOutput:            r.EnableCIDebugOutput,
+		ImageMetadataProvider:          r.ImageMetadataProvider,
+		NativeSidecarContainersEnabled: r.ManagementClusterCapabilities.Has(capabilities.CapabilityNativeSidecarContainers),
 	}
 
 	var errs []error
@@ -1731,6 +1773,20 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 			return fmt.Errorf("failed to reconcile %s secret: %w", azureWorkloadIdentityWebhookServingCert.Name, err)
 		}
 
+		// Azure-disk CSI driver Operator metrics Serving Cert
+		AzureDiskCsiDriverOperatorServingCert := manifests.AzureDiskCSIDriverOperatorServingCertSecret(hcp.Namespace)
+		AzureDiskCsiDriverOperatorService := manifests.AzureDiskCSIDriverOperatorMetricsService(hcp.Namespace)
+		err := removeServiceCAAnnotationAndSecret(ctx, r.Client, AzureDiskCsiDriverOperatorService, AzureDiskCsiDriverOperatorServingCert)
+		if err != nil {
+			r.Log.Error(err, "failed to remove service ca annotation and secret: %w")
+		}
+		if _, err = createOrUpdate(ctx, r, AzureDiskCsiDriverOperatorServingCert, func() error {
+			z := pki.ReconcileAzureDiskCsiDriverOperatorMetricsServingCertSecret(AzureDiskCsiDriverOperatorServingCert, rootCASecret, p.OwnerRef)
+			return z
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile azure-disk csi driver operator serving cert: %w", err)
+		}
+
 		azureDiskCsiDriverControllerMetricsService := manifests.AzureDiskCsiDriverControllerMetricsService(hcp.Namespace)
 		if err = r.Get(ctx, client.ObjectKeyFromObject(azureDiskCsiDriverControllerMetricsService), azureDiskCsiDriverControllerMetricsService); err != nil {
 			if !apierrors.IsNotFound(err) {
@@ -1751,6 +1807,20 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 			}); err != nil {
 				return fmt.Errorf("failed to reconcile azure disk csi driver controller metrics serving cert: %w", err)
 			}
+		}
+
+		// Azure-file CSI driver Operator metrics Serving Cert
+		AzureFileCsiDriverOperatorServingCert := manifests.AzureFileCSIDriverOperatorServingCertSecret(hcp.Namespace)
+		AzureFileCsiDriverOperatorService := manifests.AzureFileCSIDriverOperatorMetricsService(hcp.Namespace)
+		err = removeServiceCAAnnotationAndSecret(ctx, r.Client, AzureFileCsiDriverOperatorService, AzureFileCsiDriverOperatorServingCert)
+		if err != nil {
+			r.Log.Error(err, "failed to remove service ca annotation and secret: %w")
+		}
+		if _, err = createOrUpdate(ctx, r, AzureFileCsiDriverOperatorServingCert, func() error {
+			z := pki.ReconcileAzureFileCsiDriverOperatorMetricsServingCertSecret(AzureFileCsiDriverOperatorServingCert, rootCASecret, p.OwnerRef)
+			return z
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile azure-file csi driver operator serving cert: %w", err)
 		}
 
 		azureFileCsiDriverControllerMetricsService := manifests.AzureFileCsiDriverControllerMetricsService(hcp.Namespace)

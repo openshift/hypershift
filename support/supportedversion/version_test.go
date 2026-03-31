@@ -28,6 +28,64 @@ func TestSupportedVersions(t *testing.T) {
 	g.Expect(Supported()).To(Equal([]string{"4.22", "4.21", "4.20", "4.19", "4.18", "4.17", "4.16", "4.15", "4.14"}))
 }
 
+func TestString(t *testing.T) {
+	g := NewGomegaWithT(t)
+	result := String()
+	g.Expect(result).To(ContainSubstring("openshift/hypershift:"))
+	g.Expect(result).To(ContainSubstring("Latest supported OCP:"))
+	g.Expect(result).To(ContainSubstring(LatestSupportedVersion.String()))
+}
+
+func TestGetRevision(t *testing.T) {
+	g := NewGomegaWithT(t)
+	revision := GetRevision()
+	g.Expect(revision).ToNot(BeEmpty())
+}
+
+func TestGetKubeVersionForSupportedVersion(t *testing.T) {
+	testCases := []struct {
+		name            string
+		ocpVersion      string
+		expectedKubeVer string
+		expectErr       bool
+	}{
+		{
+			name:            "When OCP 4.18 is provided it should return Kubernetes 1.31",
+			ocpVersion:      "4.18.0",
+			expectedKubeVer: "1.31.0",
+		},
+		{
+			name:            "When OCP 4.14 is provided it should return Kubernetes 1.27",
+			ocpVersion:      "4.14.0",
+			expectedKubeVer: "1.27.0",
+		},
+		{
+			name:            "When OCP 4.21 is provided it should return Kubernetes 1.34",
+			ocpVersion:      "4.21.0",
+			expectedKubeVer: "1.34.0",
+		},
+		{
+			name:       "When an unmapped OCP version is provided it should return an error",
+			ocpVersion: "4.99.0",
+			expectErr:  true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			ver := semver.MustParse(tc.ocpVersion)
+			kubeVer, err := GetKubeVersionForSupportedVersion(ver)
+			if tc.expectErr {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(kubeVer.String()).To(Equal(tc.expectedKubeVer))
+			}
+		})
+	}
+}
+
 func TestIsValidReleaseVersion(t *testing.T) {
 	v := func(str string) *semver.Version {
 		result := semver.MustParse(str)
@@ -981,6 +1039,128 @@ func TestFindLatestSupportedVersionWithSorting(t *testing.T) {
 				g.Expect(err).ToNot(HaveOccurred())
 				g.Expect(version.Name).To(Equal(tc.expectedVersion))
 				g.Expect(version.PullSpec).To(Equal(tc.expectedPullSpec))
+			}
+		})
+	}
+}
+
+func TestGetLatestSupportedOCPVersion(t *testing.T) {
+	validVersions := SupportedVersions{
+		Versions: []string{"4.22", "4.21", "4.20"},
+	}
+	validVersionsJSON, err := json.Marshal(validVersions)
+	if err != nil {
+		t.Fatalf("failed to marshal valid versions: %v", err)
+	}
+
+	validCM := func(namespace string) *corev1.ConfigMap {
+		return &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "supported-versions",
+				Namespace: namespace,
+				Labels:    map[string]string{"hypershift.openshift.io/supported-versions": "true"},
+			},
+			Data: map[string]string{
+				config.ConfigMapVersionsKey:      string(validVersionsJSON),
+				config.ConfigMapServerVersionKey: "test-server-version",
+			},
+		}
+	}
+
+	testCases := []struct {
+		name            string
+		objects         []client.Object
+		expectErr       bool
+		expectedErrMsg  string
+		expectedVersion string
+	}{
+		{
+			name:            "When a valid ConfigMap exists it should return the latest version",
+			objects:         []client.Object{validCM("hypershift")},
+			expectedVersion: "4.22.0",
+		},
+		{
+			name:           "When the ConfigMap is in a non-default namespace it should return an error",
+			objects:        []client.Object{validCM("custom-namespace")},
+			expectErr:      true,
+			expectedErrMsg: "failed to find supported versions on the server",
+		},
+		{
+			name:           "When no ConfigMap exists it should return an error",
+			objects:        []client.Object{},
+			expectErr:      true,
+			expectedErrMsg: "failed to find supported versions on the server",
+		},
+		{
+			name: "When the versions list is empty it should return an error",
+			objects: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "supported-versions",
+						Namespace: "hypershift",
+						Labels:    map[string]string{"hypershift.openshift.io/supported-versions": "true"},
+					},
+					Data: map[string]string{
+						config.ConfigMapVersionsKey:      `{"versions": []}`,
+						config.ConfigMapServerVersionKey: "test-server-version",
+					},
+				},
+			},
+			expectErr:      true,
+			expectedErrMsg: "no supported OCP versions found",
+		},
+		{
+			name: "When the version string is unparsable it should return an error",
+			objects: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "supported-versions",
+						Namespace: "hypershift",
+						Labels:    map[string]string{"hypershift.openshift.io/supported-versions": "true"},
+					},
+					Data: map[string]string{
+						config.ConfigMapVersionsKey:      `{"versions": ["not-a-version"]}`,
+						config.ConfigMapServerVersionKey: "test-server-version",
+					},
+				},
+			},
+			expectErr:      true,
+			expectedErrMsg: "failed to parse version",
+		},
+		{
+			name: "When the ConfigMap has no label it should still be found by name and namespace",
+			objects: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "supported-versions",
+						Namespace: "hypershift",
+					},
+					Data: map[string]string{
+						config.ConfigMapVersionsKey:      string(validVersionsJSON),
+						config.ConfigMapServerVersionKey: "test-server-version",
+					},
+				},
+			},
+			expectedVersion: "4.22.0",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			scheme := api.Scheme
+			g.Expect(corev1.AddToScheme(scheme)).To(Succeed())
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(tc.objects...).Build()
+
+			version, err := GetLatestSupportedOCPVersion(t.Context(), fakeClient)
+
+			if tc.expectErr {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring(tc.expectedErrMsg))
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(version.String()).To(Equal(tc.expectedVersion))
 			}
 		})
 	}

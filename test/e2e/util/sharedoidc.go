@@ -12,7 +12,7 @@ import (
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/oidc"
 
-	awsv2 "github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 
 	"github.com/go-logr/logr"
@@ -86,8 +86,8 @@ func SetupSharedOIDCProvider(opts *Options, artifactDir string) error {
 		}
 		_, err = s3Client.PutObject(ctx, &s3.PutObjectInput{
 			Body:   bodyReader,
-			Bucket: awsv2.String(opts.ConfigurableClusterOptions.AWSOidcS3BucketName),
-			Key:    awsv2.String(providerID + path),
+			Bucket: aws.String(opts.ConfigurableClusterOptions.AWSOidcS3BucketName),
+			Key:    aws.String(providerID + path),
 		})
 		if err != nil {
 			wrapped := fmt.Errorf("failed to upload %s to the %s s3 bucket: %w", path, opts.ConfigurableClusterOptions.AWSOidcS3BucketName, err)

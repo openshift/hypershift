@@ -1,0 +1,37 @@
+FROM ghcr.io/actions/actions-runner@sha256:1ad983536759ceec39ed75a2c8f007ca8c37b66eee35ed86f13623b29a4db97d
+
+USER root
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        make \
+        gcc \
+        libc6-dev \
+        git \
+        curl \
+        ca-certificates \
+        python3-pip \
+    && rm -rf /var/lib/apt/lists/*
+
+ARG TARGETARCH
+ARG GO_VERSION=1.25.3
+RUN curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-${TARGETARCH}.tar.gz" | tar -C /usr/local -xz
+
+RUN OCP_ARCH=$([ "$TARGETARCH" = "amd64" ] && echo "x86_64" || echo "aarch64") && \
+    curl -fsSL "https://mirror.openshift.com/pub/openshift-v4/${OCP_ARCH}/clients/ocp/stable/openshift-client-linux.tar.gz" | tar -C /usr/local/bin -xz oc kubectl
+
+ENV PATH="/usr/local/go/bin:${PATH}"
+ENV GOPATH="/home/runner/go"
+ENV PATH="${GOPATH}/bin:${PATH}"
+
+# Pre-build lint tools (golangci-lint and kube-api-linter plugin)
+COPY hack/tools/ /tmp/tools/
+RUN cd /tmp/tools && \
+    mkdir -p /opt/lint-tools && \
+    GO111MODULE=on GOWORK=off GOFLAGS=-mod=vendor go build -tags=tools \
+        -o /opt/lint-tools/golangci-lint github.com/golangci/golangci-lint/v2/cmd/golangci-lint && \
+    CGO_ENABLED=1 GO111MODULE=on GOWORK=off GOFLAGS=-mod=vendor go build -buildmode=plugin \
+        -o /opt/lint-tools/kube-api-linter.so sigs.k8s.io/kube-api-linter/pkg/plugin && \
+    rm -rf /tmp/tools
+
+USER runner

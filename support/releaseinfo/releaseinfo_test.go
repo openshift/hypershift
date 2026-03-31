@@ -3,7 +3,11 @@ package releaseinfo
 import (
 	"testing"
 
+	. "github.com/onsi/gomega"
+
 	"github.com/openshift/hypershift/support/releaseinfo/fixtures"
+
+	imageapi "github.com/openshift/api/image/v1"
 )
 
 func TestParseComponentVersionsLabel(t *testing.T) {
@@ -63,6 +67,73 @@ func TestParseComponentVersionsLabel(t *testing.T) {
 			if cv.DisplayName != tt.expectName {
 				t.Errorf("expected display name %q, got %q", tt.expectName, cv.DisplayName)
 			}
+		})
+	}
+}
+
+func TestReadComponentVersions(t *testing.T) {
+	tests := []struct {
+		name        string
+		tags        []imageapi.TagReference
+		expectError bool
+		expectKey   string
+	}{
+		{
+			name: "When multiple machine-os versions exist it should not return an error",
+			tags: []imageapi.TagReference{
+				{
+					Name: "machine-os-content",
+					Annotations: map[string]string{
+						annotationBuildVersions:             "machine-os=1.0.0",
+						annotationBuildVersionsDisplayNames: "machine-os=Machine OS 1",
+					},
+				},
+				{
+					Name: "machine-os-content-2",
+					Annotations: map[string]string{
+						annotationBuildVersions:             "machine-os=2.0.0",
+						annotationBuildVersionsDisplayNames: "machine-os=Machine OS 2",
+					},
+				},
+			},
+			expectKey: "machine-os",
+		},
+		{
+			name: "When multiple non-machine-os versions exist it should return an error",
+			tags: []imageapi.TagReference{
+				{
+					Name: "component-a",
+					Annotations: map[string]string{
+						annotationBuildVersions: "other-component=1.0.0",
+					},
+				},
+				{
+					Name: "component-b",
+					Annotations: map[string]string{
+						annotationBuildVersions: "other-component=2.0.0",
+					},
+				},
+			},
+			expectError: true,
+			expectKey:   "other-component",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			is := &imageapi.ImageStream{
+				Spec: imageapi.ImageStreamSpec{
+					Tags: tt.tags,
+				},
+			}
+			versions, errs := readComponentVersions(is)
+			if tt.expectError {
+				g.Expect(errs).NotTo(BeEmpty(), "expected errors but got none")
+			} else {
+				g.Expect(errs).To(BeEmpty(), "expected no errors but got: %v", errs)
+			}
+			g.Expect(versions).To(HaveKey(tt.expectKey))
 		})
 	}
 }

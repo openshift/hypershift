@@ -6,6 +6,9 @@ This section of the Hypershift documentation contains pages that show how to per
 
 ## Available Guides
 
+### [Prerequisites](prerequisites.md)
+Required prerequisites for all disaster recovery operations, including HostedCluster service publishing strategy requirements for cross-management-cluster restore.
+
 ### [DR CLI Domain](dr-cli.md)
 Use the HyperShift CLI disaster recovery commands with platform-aware backup creation and OADP integration.
 

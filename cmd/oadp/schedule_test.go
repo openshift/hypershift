@@ -95,7 +95,7 @@ func TestGenerateScheduleObject(t *testing.T) {
 		SkipImmediately:          false,
 	}
 
-	schedule, scheduleName, err := opts.GenerateScheduleObject("AWS")
+	schedule, _, err := opts.GenerateScheduleObject("AWS")
 	if err != nil {
 		t.Errorf("GenerateScheduleObject() error = %v", err)
 		return
@@ -103,6 +103,7 @@ func TestGenerateScheduleObject(t *testing.T) {
 
 	// Check schedule name format - should be auto-generated since no custom name was provided
 	// Format should be: {hcName}-{hcNamespace}-{randomSuffix}
+	scheduleName := schedule.GetName()
 	expectedPattern := "test-cluster-test-cluster-ns-"
 	if !strings.HasPrefix(scheduleName, expectedPattern) {
 		t.Errorf("Expected schedule name to start with '%s', got '%s'", expectedPattern, scheduleName)
@@ -119,10 +120,6 @@ func TestGenerateScheduleObject(t *testing.T) {
 
 	if schedule.GetKind() != "Schedule" {
 		t.Errorf("Expected kind 'Schedule', got %s", schedule.GetKind())
-	}
-
-	if schedule.GetName() != scheduleName {
-		t.Errorf("Expected schedule name %s, got %s", scheduleName, schedule.GetName())
 	}
 
 	if schedule.GetNamespace() != opts.OADPNamespace {
@@ -309,14 +306,14 @@ func TestGenerateScheduleObjectComprehensive(t *testing.T) {
 				SkipImmediately:          tt.skipImmediately,
 			}
 
-			schedule, scheduleName, err := opts.GenerateScheduleObject(tt.platform)
+			schedule, _, err := opts.GenerateScheduleObject(tt.platform)
 			if err != nil {
 				t.Errorf("GenerateScheduleObject() error = %v", err)
 				return
 			}
 
 			// Basic validation
-			if len(scheduleName) == 0 {
+			if len(schedule.GetName()) == 0 {
 				t.Errorf("Expected schedule name to be generated, got empty string")
 			}
 
@@ -409,6 +406,94 @@ func TestGenerateScheduleObjectComprehensive(t *testing.T) {
 			for _, expected := range tt.expectedPlatformSpecific {
 				if !strings.Contains(resourcesStr, expected) {
 					t.Errorf("Expected %s schedule to contain platform-specific resource '%s'", tt.platform, expected)
+				}
+			}
+		})
+	}
+}
+
+// TestGenerateScheduleObjectWithKubeVirtResourcePolicy verifies that for KubeVirt platform,
+// the schedule template contains a resourcePolicy referencing a ConfigMap, and a ConfigMap is returned.
+// For non-KubeVirt platforms, no resourcePolicy should be set and no ConfigMap should be returned.
+func TestGenerateScheduleObjectWithKubeVirtResourcePolicy(t *testing.T) {
+	tests := []struct {
+		name                 string
+		platform             string
+		expectResourcePolicy bool
+	}{
+		{
+			name:                 "When platform is KubeVirt it should have resourcePolicy in template",
+			platform:             "KUBEVIRT",
+			expectResourcePolicy: true,
+		},
+		{
+			name:                 "When platform is lowercase kubevirt it should have resourcePolicy in template",
+			platform:             "kubevirt",
+			expectResourcePolicy: true,
+		},
+		{
+			name:                 "When platform is AWS it should not have resourcePolicy in template",
+			platform:             "AWS",
+			expectResourcePolicy: false,
+		},
+		{
+			name:                 "When platform is AGENT it should not have resourcePolicy in template",
+			platform:             "AGENT",
+			expectResourcePolicy: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			opts := &CreateOptions{
+				HCName:          "test-cluster",
+				HCNamespace:     "test-ns",
+				OADPNamespace:   "openshift-adp",
+				StorageLocation: "default",
+				TTL:             2 * time.Hour,
+				Schedule:        "0 2 * * *",
+			}
+
+			schedule, resourcePolicyCM, err := opts.GenerateScheduleObject(tt.platform)
+			if err != nil {
+				t.Fatalf("GenerateScheduleObject() failed: %v", err)
+			}
+
+			// Check resourcePolicy in schedule spec.template
+			rpInterface, rpFound, _ := unstructured.NestedFieldNoCopy(schedule.Object, "spec", "template", "resourcePolicy")
+
+			if tt.expectResourcePolicy {
+				if !rpFound {
+					t.Fatal("Expected spec.template.resourcePolicy to be set for KubeVirt platform")
+				}
+				rpMap, ok := rpInterface.(map[string]interface{})
+				if !ok {
+					t.Fatalf("Expected resourcePolicy to be a map, got %T", rpInterface)
+				}
+				if rpMap["kind"] != "configmap" {
+					t.Errorf("Expected resourcePolicy.kind to be 'configmap', got %v", rpMap["kind"])
+				}
+				if rpMap["name"] == nil || rpMap["name"] == "" {
+					t.Error("Expected resourcePolicy.name to be set")
+				}
+
+				// Verify ConfigMap is returned
+				if resourcePolicyCM == nil {
+					t.Fatal("Expected resource policy ConfigMap to be returned for KubeVirt platform")
+				}
+				if resourcePolicyCM.GetKind() != "ConfigMap" {
+					t.Errorf("Expected ConfigMap kind, got %s", resourcePolicyCM.GetKind())
+				}
+				// Verify the ConfigMap name matches the schedule template's resourcePolicy name
+				if rpMap["name"] != resourcePolicyCM.GetName() {
+					t.Errorf("Expected resourcePolicy.name '%v' to match ConfigMap name '%s'", rpMap["name"], resourcePolicyCM.GetName())
+				}
+			} else {
+				if rpFound {
+					t.Errorf("Expected no resourcePolicy for platform %s, but found %v", tt.platform, rpInterface)
+				}
+				if resourcePolicyCM != nil {
+					t.Errorf("Expected no ConfigMap for platform %s, but got one", tt.platform)
 				}
 			}
 		})

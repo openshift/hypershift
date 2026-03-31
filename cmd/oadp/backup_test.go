@@ -76,7 +76,7 @@ func TestGenerateBackupObject(t *testing.T) {
 		DefaultVolumesToFsBackup: false,
 	}
 
-	backup, backupName, err := opts.GenerateBackupObjectWithPlatform("AWS")
+	backup, _, err := opts.GenerateBackupObject("AWS")
 	if err != nil {
 		t.Errorf("generateBackupObject() error = %v", err)
 		return
@@ -84,6 +84,7 @@ func TestGenerateBackupObject(t *testing.T) {
 
 	// Check backup name is auto-generated since no custom name was provided
 	// Format should be: {hcName}-{hcNamespace}-{randomSuffix}
+	backupName := backup.GetName()
 	expectedPattern := "test-cluster-test-cluster-ns-"
 	if !strings.HasPrefix(backupName, expectedPattern) {
 		t.Errorf("Expected backup name to start with '%s', got '%s'", expectedPattern, backupName)
@@ -251,14 +252,14 @@ func TestGenerateBackupObjectComprehensive(t *testing.T) {
 				IncludedResources:        tt.includedResources,
 			}
 
-			backup, backupName, err := opts.GenerateBackupObjectWithPlatform(tt.platform)
+			backup, _, err := opts.GenerateBackupObject(tt.platform)
 			if err != nil {
-				t.Errorf("GenerateBackupObjectWithPlatform() error = %v", err)
+				t.Errorf("GenerateBackupObject() error = %v", err)
 				return
 			}
 
 			// Basic validation
-			if len(backupName) == 0 {
+			if len(backup.GetName()) == 0 {
 				t.Errorf("Expected backup name to be generated, got empty string")
 			}
 
@@ -549,20 +550,15 @@ func TestGenerateBackupObjectWithCustomName(t *testing.T) {
 				TTL:              2 * time.Hour,
 			}
 
-			backup, backupName, err := opts.GenerateBackupObjectWithPlatform("AWS")
+			backup, _, err := opts.GenerateBackupObject("AWS")
 			if err != nil {
-				t.Fatalf("GenerateBackupObjectWithPlatform() failed: %v", err)
+				t.Fatalf("GenerateBackupObject() failed: %v", err)
 			}
 
 			// Verify the backup name matches expected pattern
+			backupName := backup.GetName()
 			if !tt.expectedNameCheck(backupName) {
 				t.Errorf("Backup name '%s' does not match expected pattern", backupName)
-			}
-
-			// Verify the name is set correctly in the backup object
-			actualName := backup.GetName()
-			if actualName != backupName {
-				t.Errorf("Expected backup object name '%s', got '%s'", backupName, actualName)
 			}
 
 			// Basic object validation
@@ -639,9 +635,9 @@ func TestGenerateBackupObjectWithIncludedNamespaces(t *testing.T) {
 				IncludeNamespaces: tt.includeNamespaces,
 			}
 
-			backup, _, err := opts.GenerateBackupObjectWithPlatform("AWS")
+			backup, _, err := opts.GenerateBackupObject("AWS")
 			if err != nil {
-				t.Fatalf("GenerateBackupObjectWithPlatform() failed: %v", err)
+				t.Fatalf("GenerateBackupObject() failed: %v", err)
 			}
 
 			// Extract included namespaces from the generated backup
@@ -673,6 +669,106 @@ func TestGenerateBackupObjectWithIncludedNamespaces(t *testing.T) {
 			for i, expected := range tt.expectedNamespaces {
 				if i >= len(includedNamespaces) || includedNamespaces[i] != expected {
 					t.Errorf("Expected namespace %d to be '%s', got '%s'", i, expected, includedNamespaces[i])
+				}
+			}
+		})
+	}
+}
+
+// TestGenerateBackupObjectWithKubeVirtResourcePolicy verifies that for KubeVirt platform,
+// the backup spec contains a resourcePolicy referencing a ConfigMap, and a ConfigMap is returned.
+// For non-KubeVirt platforms, no resourcePolicy should be set and no ConfigMap should be returned.
+func TestGenerateBackupObjectWithKubeVirtResourcePolicy(t *testing.T) {
+	tests := []struct {
+		name                 string
+		platform             string
+		expectResourcePolicy bool
+	}{
+		{
+			name:                 "When platform is KubeVirt it should have resourcePolicy and ConfigMap",
+			platform:             "KUBEVIRT",
+			expectResourcePolicy: true,
+		},
+		{
+			name:                 "When platform is lowercase kubevirt it should have resourcePolicy and ConfigMap",
+			platform:             "kubevirt",
+			expectResourcePolicy: true,
+		},
+		{
+			name:                 "When platform is AWS it should not have resourcePolicy",
+			platform:             "AWS",
+			expectResourcePolicy: false,
+		},
+		{
+			name:                 "When platform is AGENT it should not have resourcePolicy",
+			platform:             "AGENT",
+			expectResourcePolicy: false,
+		},
+		{
+			name:                 "When platform is AZURE it should not have resourcePolicy",
+			platform:             "AZURE",
+			expectResourcePolicy: false,
+		},
+		{
+			name:                 "When platform is OPENSTACK it should not have resourcePolicy",
+			platform:             "OPENSTACK",
+			expectResourcePolicy: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			opts := &CreateOptions{
+				HCName:          "test-cluster",
+				HCNamespace:     "test-ns",
+				OADPNamespace:   "openshift-adp",
+				StorageLocation: "default",
+				TTL:             2 * time.Hour,
+			}
+
+			backup, resourcePolicyCM, err := opts.GenerateBackupObject(tt.platform)
+			if err != nil {
+				t.Fatalf("GenerateBackupObject() failed: %v", err)
+			}
+
+			// Check resourcePolicy in backup spec
+			rpInterface, rpFound, _ := unstructured.NestedFieldNoCopy(backup.Object, "spec", "resourcePolicy")
+
+			if tt.expectResourcePolicy {
+				if !rpFound {
+					t.Fatal("Expected spec.resourcePolicy to be set for KubeVirt platform")
+				}
+				rpMap, ok := rpInterface.(map[string]interface{})
+				if !ok {
+					t.Fatalf("Expected resourcePolicy to be a map, got %T", rpInterface)
+				}
+				if rpMap["kind"] != "configmap" {
+					t.Errorf("Expected resourcePolicy.kind to be 'configmap', got %v", rpMap["kind"])
+				}
+				if rpMap["name"] == nil || rpMap["name"] == "" {
+					t.Error("Expected resourcePolicy.name to be set")
+				}
+
+				// Verify ConfigMap is returned
+				if resourcePolicyCM == nil {
+					t.Fatal("Expected resource policy ConfigMap to be returned for KubeVirt platform")
+				}
+				if resourcePolicyCM.GetKind() != "ConfigMap" {
+					t.Errorf("Expected ConfigMap kind, got %s", resourcePolicyCM.GetKind())
+				}
+				if resourcePolicyCM.GetNamespace() != "openshift-adp" {
+					t.Errorf("Expected ConfigMap namespace 'openshift-adp', got %s", resourcePolicyCM.GetNamespace())
+				}
+				// Verify the ConfigMap name matches the backup's resourcePolicy name
+				if rpMap["name"] != resourcePolicyCM.GetName() {
+					t.Errorf("Expected resourcePolicy.name '%v' to match ConfigMap name '%s'", rpMap["name"], resourcePolicyCM.GetName())
+				}
+			} else {
+				if rpFound {
+					t.Errorf("Expected no resourcePolicy for platform %s, but found %v", tt.platform, rpInterface)
+				}
+				if resourcePolicyCM != nil {
+					t.Errorf("Expected no ConfigMap for platform %s, but got one", tt.platform)
 				}
 			}
 		})

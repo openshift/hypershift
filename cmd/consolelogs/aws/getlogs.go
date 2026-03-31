@@ -82,11 +82,11 @@ func (o *ConsoleLogOpts) Run(ctx context.Context) error {
 	infraID := hostedCluster.Spec.InfraID
 	region := hostedCluster.Spec.Platform.AWS.Region
 
-	awsSession, err := o.AWSCredentialsOpts.GetSessionV2(ctx, "cli-console-logs", nil, region)
+	awsSession, err := o.AWSCredentialsOpts.GetSession(ctx, "cli-console-logs", nil, region)
 	if err != nil {
 		return err
 	}
-	awsConfig := awsutil.NewConfigV2()
+	awsConfig := awsutil.NewConfig()
 	ec2Client := ec2.NewFromConfig(*awsSession, func(o *ec2.Options) {
 		o.Retryer = awsConfig()
 	})

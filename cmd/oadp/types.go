@@ -74,6 +74,7 @@ var (
 	}
 	kubevirtResources = []string{
 		"kubevirtclusters.infrastructure.cluster.x-k8s.io", "kubevirtmachinetemplates.infrastructure.cluster.x-k8s.io",
+		"datavolumes.cdi.kubevirt.io",
 	}
 	openstackResources = []string{
 		"openstackclusters.infrastructure.cluster.x-k8s.io", "openstackmachinetemplates.infrastructure.cluster.x-k8s.io", "openstackmachines.infrastructure.cluster.x-k8s.io",

@@ -17,6 +17,8 @@ limitations under the License.
 
 package v1beta1
 
+type AzurePrivateLinkServiceExpansion interface{}
+
 type CertificateSigningRequestApprovalExpansion interface{}
 
 type GCPPrivateServiceConnectExpansion interface{}

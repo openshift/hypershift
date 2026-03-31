@@ -164,6 +164,8 @@ spec:
           name: svc-kubeconfig
         - mountPath: /tmp
           name: tmp-dir
+      enableServiceLinks: false
+      initContainers:
       - args:
         - --token-audience=openshift
         - --service-account-namespace=kube-system
@@ -180,17 +182,21 @@ spec:
           requests:
             cpu: 10m
             memory: 30Mi
-        securityContext:
-          readOnlyRootFilesystem: true
+        restartPolicy: Always
+        startupProbe:
+          exec:
+            command:
+            - test
+            - -f
+            - /var/run/secrets/openshift/serviceaccount/token
+          failureThreshold: 30
+          periodSeconds: 1
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /var/run/secrets/openshift/serviceaccount
           name: cloud-token
         - mountPath: /etc/kubernetes
           name: svc-kubeconfig
-        - mountPath: /tmp
-          name: tmp-dir
-      enableServiceLinks: false
       nodeSelector:
         kubernetes.io/os: linux
       priorityClassName: hypershift-control-plane

@@ -19,10 +19,12 @@ import (
 	endpointresolver "github.com/openshift/hypershift/control-plane-operator/endpoint-resolver"
 	"github.com/openshift/hypershift/control-plane-operator/featuregates"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator"
+	metricsproxy "github.com/openshift/hypershift/control-plane-operator/metrics-proxy"
 	pkiconfig "github.com/openshift/hypershift/control-plane-pki-operator/config"
 	"github.com/openshift/hypershift/dnsresolver"
 	etcdbackup "github.com/openshift/hypershift/etcd-backup"
 	etcddefrag "github.com/openshift/hypershift/etcd-defrag"
+	etcdupload "github.com/openshift/hypershift/etcd-upload"
 	ignitionserver "github.com/openshift/hypershift/ignition-server/cmd"
 	kasbootstrap "github.com/openshift/hypershift/kas-bootstrap"
 	konnectivityhttpsproxy "github.com/openshift/hypershift/konnectivity-https-proxy"
@@ -97,12 +99,18 @@ func commandFor(name string) *cobra.Command {
 		cmd = tokenminter.NewStartCommand()
 	case "etcd-defrag-controller":
 		cmd = etcddefrag.NewStartCommand()
+	case "etcd-upload":
+		cmd = etcdupload.NewStartCommand()
 	case "sync-fg-configmap":
 		cmd = syncfgconfigmap.NewRunCommand()
 	case "sync-global-pullsecret":
 		cmd = syncglobalpullsecret.NewRunCommand()
+	case "fetch-etcd-certs":
+		cmd = etcdbackup.NewFetchCertsCommand()
 	case "endpoint-resolver":
 		cmd = endpointresolver.NewStartCommand()
+	case "metrics-proxy":
+		cmd = metricsproxy.NewStartCommand()
 	default:
 		// for the default case, there is no need
 		// to convert flags, return immediately
@@ -153,10 +161,13 @@ func defaultCommand() *cobra.Command {
 	cmd.AddCommand(kubernetesdefaultproxy.NewStartCommand())
 	cmd.AddCommand(dnsresolver.NewCommand())
 	cmd.AddCommand(etcdbackup.NewStartCommand())
+	cmd.AddCommand(etcdbackup.NewFetchCertsCommand())
+	cmd.AddCommand(etcdupload.NewStartCommand())
 	cmd.AddCommand(kasbootstrap.NewRunCommand())
 	cmd.AddCommand(syncfgconfigmap.NewRunCommand())
 	cmd.AddCommand(syncglobalpullsecret.NewRunCommand())
 	cmd.AddCommand(endpointresolver.NewStartCommand())
+	cmd.AddCommand(metricsproxy.NewStartCommand())
 	return cmd
 }
 
@@ -255,6 +266,7 @@ func NewStartCommand() *cobra.Command {
 			setupLog.Error(err, "unable to detect cluster capabilities")
 			os.Exit(1)
 		}
+		setupLog.Info("Native sidecar containers support", "enabled", mgmtClusterCaps.Has(capabilities.CapabilityNativeSidecarContainers))
 
 		hcpClient, err := hyperclient.NewForConfig(mgr.GetConfig())
 		if err != nil {

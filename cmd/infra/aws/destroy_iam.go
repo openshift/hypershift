@@ -86,11 +86,11 @@ func (o *DestroyIAMOptions) Run(ctx context.Context) error {
 }
 
 func (o *DestroyIAMOptions) DestroyIAM(ctx context.Context) error {
-	awsSession, err := o.AWSCredentialsOpts.GetSessionV2(ctx, "cli-destroy-iam", o.CredentialsSecretData, o.Region)
+	awsSession, err := o.AWSCredentialsOpts.GetSession(ctx, "cli-destroy-iam", o.CredentialsSecretData, o.Region)
 	if err != nil {
 		return err
 	}
-	awsConfig := awsutil.NewConfigV2()
+	awsConfig := awsutil.NewConfig()
 	iamClient := iam.NewFromConfig(*awsSession, func(o *iam.Options) {
 		o.Retryer = awsConfig()
 	})
@@ -105,7 +105,7 @@ func (o *DestroyIAMOptions) DestroyIAM(ctx context.Context) error {
 	}
 
 	if o.VPCOwnerCredentialsOpts.AWSCredentialsFile != "" {
-		vpcOwnerAWSSession, err := o.VPCOwnerCredentialsOpts.GetSessionV2(ctx, "cli-destroy-iam", nil, o.Region)
+		vpcOwnerAWSSession, err := o.VPCOwnerCredentialsOpts.GetSession(ctx, "cli-destroy-iam", nil, o.Region)
 		if err != nil {
 			return err
 		}

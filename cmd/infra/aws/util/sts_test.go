@@ -6,10 +6,10 @@ import (
 	"strings"
 	"testing"
 
-	awsv2 "github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/aws"
 )
 
-func TestNewSTSSessionV2_Validation(t *testing.T) {
+func TestNewSTSSession_Validation(t *testing.T) {
 	ctx := context.Background()
 
 	testCases := []struct {
@@ -17,7 +17,7 @@ func TestNewSTSSessionV2_Validation(t *testing.T) {
 		agent           string
 		roleArn         string
 		region          string
-		assumeRoleCreds *awsv2.Credentials
+		assumeRoleCreds *aws.Credentials
 		expectError     bool
 		errorContains   string
 	}{
@@ -35,7 +35,7 @@ func TestNewSTSSessionV2_Validation(t *testing.T) {
 			agent:   "test-agent",
 			roleArn: "",
 			region:  "us-east-1",
-			assumeRoleCreds: &awsv2.Credentials{
+			assumeRoleCreds: &aws.Credentials{
 				AccessKeyID:     "test-key",
 				SecretAccessKey: "test-secret",
 			},
@@ -47,7 +47,7 @@ func TestNewSTSSessionV2_Validation(t *testing.T) {
 			agent:   "",
 			roleArn: "arn:aws:iam::123456789012:role/TestRole",
 			region:  "us-east-1",
-			assumeRoleCreds: &awsv2.Credentials{
+			assumeRoleCreds: &aws.Credentials{
 				AccessKeyID:     "test-key",
 				SecretAccessKey: "test-secret",
 			},
@@ -59,7 +59,7 @@ func TestNewSTSSessionV2_Validation(t *testing.T) {
 			agent:   "test-agent",
 			roleArn: "arn:aws:iam::123456789012:role/TestRole",
 			region:  "us-east-1",
-			assumeRoleCreds: &awsv2.Credentials{
+			assumeRoleCreds: &aws.Credentials{
 				AccessKeyID:     "test-key",
 				SecretAccessKey: "test-secret",
 				SessionToken:    "test-token",
@@ -71,7 +71,7 @@ func TestNewSTSSessionV2_Validation(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			cfg, err := NewSTSSessionV2(ctx, tc.agent, tc.roleArn, tc.region, tc.assumeRoleCreds)
+			cfg, err := NewSTSSession(ctx, tc.agent, tc.roleArn, tc.region, tc.assumeRoleCreds)
 
 			if tc.expectError {
 				if err == nil {
@@ -96,14 +96,14 @@ func TestNewSTSSessionV2_Validation(t *testing.T) {
 	}
 }
 
-func TestNewSTSSessionV2_ValidationOrder(t *testing.T) {
+func TestNewSTSSession_ValidationOrder(t *testing.T) {
 	ctx := context.Background()
 
 	// Test that validation happens in the correct order
 	// and returns the first validation error
 
 	// Should return assumeRoleCreds error first
-	_, err := NewSTSSessionV2(ctx, "", "", "us-east-1", nil)
+	_, err := NewSTSSession(ctx, "", "", "us-east-1", nil)
 	if err == nil {
 		t.Fatal("Expected error but got nil")
 	}
@@ -112,7 +112,7 @@ func TestNewSTSSessionV2_ValidationOrder(t *testing.T) {
 	}
 
 	// Should return roleArn error when credentials are valid
-	_, err = NewSTSSessionV2(ctx, "", "", "us-east-1", &awsv2.Credentials{
+	_, err = NewSTSSession(ctx, "", "", "us-east-1", &aws.Credentials{
 		AccessKeyID:     "test",
 		SecretAccessKey: "test",
 	})
@@ -124,7 +124,7 @@ func TestNewSTSSessionV2_ValidationOrder(t *testing.T) {
 	}
 
 	// Should return agent error when credentials and roleArn are valid
-	_, err = NewSTSSessionV2(ctx, "", "arn:aws:iam::123456789012:role/TestRole", "us-east-1", &awsv2.Credentials{
+	_, err = NewSTSSession(ctx, "", "arn:aws:iam::123456789012:role/TestRole", "us-east-1", &aws.Credentials{
 		AccessKeyID:     "test",
 		SecretAccessKey: "test",
 	})
@@ -136,14 +136,14 @@ func TestNewSTSSessionV2_ValidationOrder(t *testing.T) {
 	}
 }
 
-func TestParseSTSCredentialsFileV2(t *testing.T) {
+func TestParseSTSCredentialsFile(t *testing.T) {
 	testCases := []struct {
 		name          string
 		fileContent   string
 		setupFunc     func(t *testing.T) string
 		expectError   bool
 		errorContains string
-		validateCreds func(t *testing.T, creds *awsv2.Credentials)
+		validateCreds func(t *testing.T, creds *aws.Credentials)
 	}{
 		{
 			name: "When given valid STS credentials file, it should parse successfully",
@@ -156,7 +156,7 @@ func TestParseSTSCredentialsFileV2(t *testing.T) {
   }
 }`,
 			expectError: false,
-			validateCreds: func(t *testing.T, creds *awsv2.Credentials) {
+			validateCreds: func(t *testing.T, creds *aws.Credentials) {
 				if creds.AccessKeyID != "ASIA1234567890EXAMPLE" {
 					t.Errorf("Expected AccessKeyID ASIA1234567890EXAMPLE, got %s", creds.AccessKeyID)
 				}
@@ -179,7 +179,7 @@ func TestParseSTSCredentialsFileV2(t *testing.T) {
   }
 }`,
 			expectError: false,
-			validateCreds: func(t *testing.T, creds *awsv2.Credentials) {
+			validateCreds: func(t *testing.T, creds *aws.Credentials) {
 				if creds.AccessKeyID != "TESTKEY123" {
 					t.Errorf("Expected AccessKeyID TESTKEY123, got %s", creds.AccessKeyID)
 				}
@@ -211,7 +211,7 @@ func TestParseSTSCredentialsFileV2(t *testing.T) {
   "SomeOtherField": "value"
 }`,
 			expectError: false,
-			validateCreds: func(t *testing.T, creds *awsv2.Credentials) {
+			validateCreds: func(t *testing.T, creds *aws.Credentials) {
 				// When Credentials field is missing, all fields will be empty strings
 				if creds.AccessKeyID != "" {
 					t.Errorf("Expected empty AccessKeyID, got %s", creds.AccessKeyID)
@@ -230,7 +230,7 @@ func TestParseSTSCredentialsFileV2(t *testing.T) {
   }
 }`,
 			expectError: false,
-			validateCreds: func(t *testing.T, creds *awsv2.Credentials) {
+			validateCreds: func(t *testing.T, creds *aws.Credentials) {
 				if creds.AccessKeyID != "PARTIALKEY" {
 					t.Errorf("Expected AccessKeyID PARTIALKEY, got %s", creds.AccessKeyID)
 				}
@@ -266,7 +266,7 @@ func TestParseSTSCredentialsFileV2(t *testing.T) {
 				tmpFile.Close()
 			}
 
-			creds, err := ParseSTSCredentialsFileV2(filePath)
+			creds, err := ParseSTSCredentialsFile(filePath)
 
 			if tc.expectError {
 				if err == nil {
@@ -296,7 +296,7 @@ func TestParseSTSCredentialsFileV2(t *testing.T) {
 	}
 }
 
-func TestParseSTSCredentialsFileV2_RealWorldFormat(t *testing.T) {
+func TestParseSTSCredentialsFile_RealWorldFormat(t *testing.T) {
 	realWorldJSON := `{
   "Credentials": {
     "AccessKeyId": "ASIAIOSFODNN7EXAMPLE",
@@ -316,7 +316,7 @@ func TestParseSTSCredentialsFileV2_RealWorldFormat(t *testing.T) {
 		t.Fatalf("Failed to write to temp file: %v", err)
 	}
 
-	creds, err := ParseSTSCredentialsFileV2(tmpFile.Name())
+	creds, err := ParseSTSCredentialsFile(tmpFile.Name())
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 		return
