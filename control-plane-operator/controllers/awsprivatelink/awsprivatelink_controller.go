@@ -536,6 +536,11 @@ func (r *AWSEndpointServiceReconciler) reconcileAWSEndpointService(ctx context.C
 		return nil
 	}
 
+	// Deduplicate SubnetIDs to prevent AWS API errors.
+	// Older resources or direct API edits may contain duplicates that
+	// would cause CreateVpcEndpoint/ModifyVpcEndpoint to fail.
+	awsEndpointService.Spec.SubnetIDs = sets.List(sets.New[string](awsEndpointService.Spec.SubnetIDs...))
+
 	if err := r.reconcileAWSEndpointSecurityGroup(ctx, ec2Client, awsEndpointService, hcp); err != nil {
 		return err
 	}

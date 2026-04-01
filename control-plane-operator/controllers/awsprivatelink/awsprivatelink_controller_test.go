@@ -13,6 +13,7 @@ import (
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
 
 	"github.com/google/go-cmp/cmp"
 )
@@ -86,6 +87,48 @@ func Test_diffIDs(t *testing.T) {
 			if !reflect.DeepEqual(gotRemoved, tt.wantRemoved) {
 				t.Errorf("diffSubnetIDs() gotRemoved = %v, want %v", gotRemoved, tt.wantRemoved)
 			}
+		})
+	}
+}
+
+func TestDeduplicateSubnetIDs(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    []string
+		expected []string
+	}{
+		{
+			name:     "When SubnetIDs has no duplicates it should return the same list sorted",
+			input:    []string{"subnet-b", "subnet-a"},
+			expected: []string{"subnet-a", "subnet-b"},
+		},
+		{
+			name:     "When SubnetIDs has duplicates it should remove them",
+			input:    []string{"subnet-a", "subnet-b", "subnet-a"},
+			expected: []string{"subnet-a", "subnet-b"},
+		},
+		{
+			name:     "When SubnetIDs has all identical entries it should collapse to one",
+			input:    []string{"subnet-a", "subnet-a", "subnet-a"},
+			expected: []string{"subnet-a"},
+		},
+		{
+			name:     "When SubnetIDs is empty it should return empty",
+			input:    []string{},
+			expected: []string{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			awsEndpointService := &hyperv1.AWSEndpointService{
+				Spec: hyperv1.AWSEndpointServiceSpec{
+					SubnetIDs: tt.input,
+				},
+			}
+			awsEndpointService.Spec.SubnetIDs = sets.List(sets.New[string](awsEndpointService.Spec.SubnetIDs...))
+			g.Expect(awsEndpointService.Spec.SubnetIDs).To(Equal(tt.expected))
 		})
 	}
 }
