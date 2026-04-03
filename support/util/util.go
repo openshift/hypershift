@@ -17,6 +17,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -632,17 +633,43 @@ func GetPullSecretBytes(ctx context.Context, c client.Client, hc *hyperv1.Hosted
 	return pullSecretBytes, nil
 }
 
+// cpoBinaryPath is the expected location of the control-plane-operator binary
+const cpoBinaryPath = "/usr/bin/control-plane-operator"
+
+var (
+	cpoBinaryExistsOnce   sync.Once
+	cpoBinaryExistsResult bool
+	// cpoBinaryExistsFunc is used for testing to override the binary existence check.
+	// When nil, the actual file system check is performed.
+	cpoBinaryExistsFunc func() bool
+)
+
+// cpoBinaryExistsInHOImage checks if the control-plane-operator binary exists in
+// the current container image. This is used to determine if the HO image can be
+// used as the CPO image for 4.20+ clusters. The result is cached after the first check.
+func cpoBinaryExistsInHOImage() bool {
+	if cpoBinaryExistsFunc != nil {
+		return cpoBinaryExistsFunc()
+	}
+	cpoBinaryExistsOnce.Do(func() {
+		_, err := os.Stat(cpoBinaryPath)
+		cpoBinaryExistsResult = err == nil
+	})
+	return cpoBinaryExistsResult
+}
+
 // GetControlPlaneOperatorImage resolves the appropriate control plane operator
 // image based on the following order of precedence (from most to least
 // preferred):
 //
 //  1. The image specified by the ControlPlaneOperatorImageAnnotation on the
 //     HostedCluster resource itself
-//  2. The hypershift image specified in the release payload indicated by the
+//  2. If CPO overrides are enabled, the override image for the platform and version
+//  3. For release versions 4.20+, the hypershift-operator's own image (if it
+//     contains the control-plane-operator binary)
+//  4. The hypershift image specified in the release payload indicated by the
 //     HostedCluster's release field
-//  3. The hypershift-operator's own image for release versions 4.9 and 4.10
-//  4. The registry.ci.openshift.org/hypershift/hypershift:4.8 image for release
-//     version 4.8
+//  5. The hypershift-operator's own image for release versions 4.9+
 //
 // If no image can be found according to these rules, an error is returned.
 func GetControlPlaneOperatorImage(ctx context.Context, hc *hyperv1.HostedCluster, releaseProvider releaseinfo.Provider, hypershiftOperatorImage string, pullSecret []byte) (string, error) {
@@ -662,6 +689,17 @@ func GetControlPlaneOperatorImage(ctx context.Context, hc *hyperv1.HostedCluster
 		if overrideImage != "" {
 			return overrideImage, nil
 		}
+	}
+
+	// For 4.20+, use the hypershift-operator image directly if it contains the
+	// control-plane-operator binary. This enables faster feature delivery and
+	// simplified hotfix processes, as the CPO is delivered with the HO rather
+	// than being tied to the OCP release payload.
+	minVersionForHOImage := semver.Version{Major: 4, Minor: 20, Patch: 0}
+	// Compare only Major.Minor.Patch, ignoring pre-release info (e.g., 4.20.0-rc.1 should match >= 4.20.0)
+	versionWithoutPrerelease := semver.Version{Major: version.Major, Minor: version.Minor, Patch: version.Patch}
+	if versionWithoutPrerelease.GTE(minVersionForHOImage) && cpoBinaryExistsInHOImage() {
+		return hypershiftOperatorImage, nil
 	}
 
 	if hypershiftImage, exists := releaseInfo.ComponentImages()["hypershift"]; exists {
