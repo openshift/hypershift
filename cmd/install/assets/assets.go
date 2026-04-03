@@ -31,6 +31,26 @@ var recordingRules embed.FS
 
 const capiLabel = "cluster.x-k8s.io/v1beta1"
 
+// CAPICRDOverrides configures CAPI CRDs that have both v1beta1 and v1beta2 versions.
+// These CRDs need conversion webhooks during the v1beta1 -> v1beta2 transition period
+// to ensure v1beta1 clients (e.g. older CPO versions) can still operate correctly.
+var CAPICRDOverrides = map[string]struct {
+	NeedsConversion bool
+}{
+	"clusterclasses.cluster.x-k8s.io":                    {NeedsConversion: true},
+	"clusters.cluster.x-k8s.io":                          {NeedsConversion: true},
+	"machinedeployments.cluster.x-k8s.io":                {NeedsConversion: true},
+	"machinedrainrules.cluster.x-k8s.io":                 {NeedsConversion: true},
+	"machinehealthchecks.cluster.x-k8s.io":               {NeedsConversion: true},
+	"machinepools.cluster.x-k8s.io":                      {NeedsConversion: true},
+	"machines.cluster.x-k8s.io":                          {NeedsConversion: true},
+	"machinesets.cluster.x-k8s.io":                       {NeedsConversion: true},
+	"ipaddressclaims.ipam.cluster.x-k8s.io":              {NeedsConversion: true},
+	"ipaddresses.ipam.cluster.x-k8s.io":                  {NeedsConversion: true},
+	"clusterresourcesetbindings.addons.cluster.x-k8s.io": {NeedsConversion: true},
+	"clusterresourcesets.addons.cluster.x-k8s.io":        {NeedsConversion: true},
+}
+
 // capiResources specifies which CRDs should get labeled with capiLabel
 // to satisfy CAPI contracts. There might be a way to achieve this during CRD
 // generation, but for now we're just post-processing at runtime here.
