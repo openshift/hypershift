@@ -7,13 +7,12 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"os/signal"
-	"syscall"
 
 	cmdutil "github.com/openshift/hypershift/cmd/util"
 
 	corev1 "k8s.io/api/core/v1"
 
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	"github.com/spf13/cobra"
@@ -44,13 +43,7 @@ func NewRunCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.Name, "name", opts.Name, "The name of the feature gate configmap.")
 	cmd.Flags().StringVar(&opts.PayloadVersion, "payload-version", opts.PayloadVersion, "The payload version of the control plane.")
 	cmd.Run = func(cmd *cobra.Command, args []string) {
-		ctx, cancel := context.WithCancel(context.Background())
-		sigs := make(chan os.Signal, 1)
-		signal.Notify(sigs, syscall.SIGINT)
-		go func() {
-			<-sigs
-			cancel()
-		}()
+		ctx := ctrl.SetupSignalHandler()
 
 		if err := opts.run(ctx); err != nil {
 			log.Fatal(err)
