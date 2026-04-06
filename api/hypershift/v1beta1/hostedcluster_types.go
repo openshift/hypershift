@@ -641,9 +641,8 @@ type HostedClusterSpec struct {
 	// autoNode specifies the configuration for automatic node provisioning and lifecycle management.
 	// When set, the provisioner(e.g. Karpenter) will be used to provision nodes for targeted workloads.
 	//
-	// +openshift:enable:FeatureGate=AutoNodeKarpenter
 	// +optional
-	AutoNode *AutoNode `json:"autoNode,omitempty"`
+	AutoNode AutoNode `json:"autoNode,omitzero"`
 
 	// etcd specifies configuration for the control plane etcd cluster. The
 	// default managementType is Managed. Once set, the managementType cannot be
@@ -1397,7 +1396,7 @@ type ProvisionerConfig struct {
 	//
 	// +optional
 	// +unionMember
-	Karpenter *KarpenterConfig `json:"karpenter,omitempty"`
+	Karpenter KarpenterConfig `json:"karpenter,omitzero"`
 }
 
 // KarpenterConfig specifies the configuration for the Karpenter provisioner
@@ -1417,7 +1416,7 @@ type KarpenterConfig struct {
 	//
 	// +optional
 	// +unionMember
-	AWS *KarpenterAWSConfig `json:"aws,omitempty"`
+	AWS KarpenterAWSConfig `json:"aws,omitzero"`
 }
 
 // KarpenterAWSConfig specifies AWS-specific configuration for the Karpenter provisioner.
@@ -2170,7 +2169,6 @@ type HostedClusterStatus struct {
 	Platform *PlatformStatus `json:"platform,omitempty"`
 
 	// autoNode contains the observed state of the autoNode (Karpenter) provisioner.
-	// +openshift:enable:FeatureGate=AutoNodeKarpenter
 	// +optional
 	AutoNode AutoNodeStatus `json:"autoNode,omitzero"`
 

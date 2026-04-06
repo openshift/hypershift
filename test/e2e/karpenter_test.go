@@ -19,7 +19,7 @@ import (
 	"github.com/blang/semver"
 	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1beta1"
+	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1"
 	karpentercpov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/karpenter"
 	karpenteroperatorcpov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/karpenteroperator"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
@@ -42,9 +42,6 @@ import (
 
 func TestKarpenter(t *testing.T) {
 	e2eutil.AtLeast(t, e2eutil.Version419)
-	if os.Getenv("TECH_PREVIEW_NO_UPGRADE") != "true" {
-		t.Skipf("Only tested when CI sets TECH_PREVIEW_NO_UPGRADE=true and the Hypershift Operator is installed with --tech-preview-no-upgrade")
-	}
 	if globalOpts.Platform != hyperv1.AWSPlatform {
 		t.Skip("test only supported on platform AWS")
 	}
@@ -827,9 +824,7 @@ func TestKarpenter(t *testing.T) {
 
 			// AutoNode.Provisioner.Karpenter.AWS is required at the API level when karpenter
 			// is configured, so this should never happen/never be nil for a valid karpenter cluster.
-			if hostedCluster.Spec.AutoNode == nil ||
-				hostedCluster.Spec.AutoNode.Provisioner.Karpenter == nil ||
-				hostedCluster.Spec.AutoNode.Provisioner.Karpenter.AWS == nil {
+			if hostedCluster.Spec.AutoNode.Provisioner.Karpenter.AWS == (hyperv1.KarpenterAWSConfig{}) {
 				t.Skip("HostedCluster does not have a Karpenter AWS role configured, skipping capacity reservation test")
 			}
 
@@ -1301,7 +1296,7 @@ func TestKarpenter(t *testing.T) {
 			// Disable Karpenter.
 			t.Log("Disabling AutoNode (Karpenter) on HostedCluster")
 			err = e2eutil.UpdateObject(t, ctx, mgtClient, hostedCluster, func(obj *hyperv1.HostedCluster) {
-				obj.Spec.AutoNode = nil
+				obj.Spec.AutoNode = hyperv1.AutoNode{}
 			})
 			g.Expect(err).NotTo(HaveOccurred(), "failed to disable AutoNode")
 

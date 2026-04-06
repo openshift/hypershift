@@ -230,9 +230,8 @@ type HostedControlPlaneSpec struct {
 	// using the specified provisioner (e.g. Karpenter) instead of requiring
 	// manual NodePool management.
 	//
-	// +openshift:enable:FeatureGate=AutoNodeKarpenter
 	// +optional
-	AutoNode *AutoNode `json:"autoNode,omitempty"`
+	AutoNode AutoNode `json:"autoNode,omitzero"`
 
 	// nodeSelector when specified, must be true for the pods managed by the HostedCluster to be scheduled.
 	//
@@ -414,7 +413,6 @@ type HostedControlPlaneStatus struct {
 	NodeCount *int `json:"nodeCount,omitempty"`
 
 	// autoNode contains the observed state of the autoNode (Karpenter) provisioner.
-	// +openshift:enable:FeatureGate=AutoNodeKarpenter
 	// +optional
 	AutoNode AutoNodeStatus `json:"autoNode,omitzero"`
 
