@@ -1367,10 +1367,10 @@ func TestAWSSecurityGroupTags(t *testing.T) {
 					Platform: hyperv1.PlatformSpec{
 						AWS: &hyperv1.AWSPlatformSpec{},
 					},
-					AutoNode: &hyperv1.AutoNode{
+					AutoNode: hyperv1.AutoNode{
 						Provisioner: hyperv1.ProvisionerConfig{
 							Name: hyperv1.ProvisionerKarpenter,
-							Karpenter: &hyperv1.KarpenterConfig{
+							Karpenter: hyperv1.KarpenterConfig{
 								Platform: hyperv1.AWSPlatform,
 							},
 						},

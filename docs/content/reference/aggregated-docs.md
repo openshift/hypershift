@@ -30239,7 +30239,7 @@ associated with this HostedCluster.</p>
 </tr>
 <tr>
 <td>
-<code>autoNode</code></br>
+<code>autoNode,omitzero</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.AutoNode">
 AutoNode
@@ -38475,7 +38475,7 @@ associated with this HostedCluster.</p>
 </tr>
 <tr>
 <td>
-<code>autoNode</code></br>
+<code>autoNode,omitzero</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.AutoNode">
 AutoNode
@@ -39459,7 +39459,7 @@ associated with the control plane.</p>
 </tr>
 <tr>
 <td>
-<code>autoNode</code></br>
+<code>autoNode,omitzero</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.AutoNode">
 AutoNode
@@ -40656,7 +40656,7 @@ PlatformType
 </tr>
 <tr>
 <td>
-<code>aws</code></br>
+<code>aws,omitzero</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.KarpenterAWSConfig">
 KarpenterAWSConfig
@@ -44741,7 +44741,7 @@ Provisioner
 </tr>
 <tr>
 <td>
-<code>karpenter</code></br>
+<code>karpenter,omitzero</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.KarpenterConfig">
 KarpenterConfig

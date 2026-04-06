@@ -23,10 +23,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
-var autoNode = &hyperv1.AutoNode{
+var autoNode = hyperv1.AutoNode{
 	Provisioner: hyperv1.ProvisionerConfig{
 		Name: hyperv1.ProvisionerKarpenter,
-		Karpenter: &hyperv1.KarpenterConfig{
+		Karpenter: hyperv1.KarpenterConfig{
 			Platform: hyperv1.AWSPlatform,
 		},
 	},
@@ -252,10 +252,10 @@ func kasDeployment(namespace string, available bool) *appsv1.Deployment {
 func TestReconcileAutoNodeEnabledCondition(t *testing.T) {
 	hcpNamespace := "clusters-test"
 
-	karpenterEnabledAutoNode := &hyperv1.AutoNode{
+	karpenterEnabledAutoNode := hyperv1.AutoNode{
 		Provisioner: hyperv1.ProvisionerConfig{
 			Name: hyperv1.ProvisionerKarpenter,
-			Karpenter: &hyperv1.KarpenterConfig{
+			Karpenter: hyperv1.KarpenterConfig{
 				Platform: hyperv1.AWSPlatform,
 			},
 		},
@@ -274,7 +274,7 @@ func TestReconcileAutoNodeEnabledCondition(t *testing.T) {
 	}
 
 	tests := map[string]struct {
-		autoNode    *hyperv1.AutoNode
+		autoNode    hyperv1.AutoNode
 		components  []hyperv1.ControlPlaneComponent
 		deployments []appsv1.Deployment
 		want        metav1.Condition
@@ -339,7 +339,7 @@ func TestReconcileAutoNodeEnabledCondition(t *testing.T) {
 			},
 		},
 		"When karpenter is disabled and deployments are still present it should report progressing": {
-			autoNode: nil,
+			autoNode: hyperv1.AutoNode{},
 			deployments: []appsv1.Deployment{
 				{ObjectMeta: metav1.ObjectMeta{Name: karpenterv2.ComponentName, Namespace: hcpNamespace}},
 				{ObjectMeta: metav1.ObjectMeta{Name: karpenteroperatorv2.ComponentName, Namespace: hcpNamespace}},
@@ -351,7 +351,7 @@ func TestReconcileAutoNodeEnabledCondition(t *testing.T) {
 			},
 		},
 		"When karpenter is disabled and only the karpenter deployment remains it should report progressing": {
-			autoNode: nil,
+			autoNode: hyperv1.AutoNode{},
 			deployments: []appsv1.Deployment{
 				{ObjectMeta: metav1.ObjectMeta{Name: karpenterv2.ComponentName, Namespace: hcpNamespace}},
 			},
@@ -363,7 +363,7 @@ func TestReconcileAutoNodeEnabledCondition(t *testing.T) {
 		},
 		"When karpenter is disabled and CPC CRs remain but deployments are gone it should report not configured": {
 			// CPC CRs are deleted before pods terminate; once Deployments are gone teardown is complete.
-			autoNode: nil,
+			autoNode: hyperv1.AutoNode{},
 			components: []hyperv1.ControlPlaneComponent{
 				{
 					ObjectMeta: metav1.ObjectMeta{Name: karpenteroperatorv2.ComponentName, Namespace: hcpNamespace},
@@ -378,7 +378,7 @@ func TestReconcileAutoNodeEnabledCondition(t *testing.T) {
 			},
 		},
 		"When karpenter is disabled and no deployments are present it should report not configured": {
-			autoNode: nil,
+			autoNode: hyperv1.AutoNode{},
 			want: metav1.Condition{
 				Type:   string(hyperv1.AutoNodeEnabled),
 				Status: metav1.ConditionFalse,

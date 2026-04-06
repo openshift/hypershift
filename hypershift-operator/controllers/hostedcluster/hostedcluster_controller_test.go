@@ -4638,12 +4638,12 @@ func TestReconcileComponents(t *testing.T) {
 				AWS:  &hyperv1.AWSPlatformSpec{},
 			},
 			ReleaseImage: "quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64",
-			AutoNode: &hyperv1.AutoNode{
+			AutoNode: hyperv1.AutoNode{
 				Provisioner: hyperv1.ProvisionerConfig{
 					Name: "test-provisioner",
-					Karpenter: &hyperv1.KarpenterConfig{
+					Karpenter: hyperv1.KarpenterConfig{
 						Platform: hyperv1.AWSPlatform,
-						AWS: &hyperv1.KarpenterAWSConfig{
+						AWS: hyperv1.KarpenterAWSConfig{
 							RoleARN: "some-fake-arn",
 						},
 					},

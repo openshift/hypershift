@@ -16,9 +16,6 @@
             {
                 "disabled": [
                     {
-                        "name": "AutoNodeKarpenter",
-                    },
-                    {
                         "name": "ExternalOIDCWithUpstreamParity"
                     },
                     {
