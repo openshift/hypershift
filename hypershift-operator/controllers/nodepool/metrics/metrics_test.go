@@ -550,3 +550,85 @@ func TestErrorCache(t *testing.T) {
 		g.Expect(ec2CallCount).To(Equal(2), "EC2 API should be retried when its error was transient")
 	})
 }
+
+func TestVCpusCountForKubeVirtPlatform(t *testing.T) {
+	t.Run("When nodePool platform is KubeVirt, it should return -1 without logging", func(t *testing.T) {
+		hcluster := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "hc",
+				Namespace: "any",
+			},
+			Spec: hyperv1.HostedClusterSpec{
+				ClusterID: "id",
+				Platform: hyperv1.PlatformSpec{
+					Type: hyperv1.KubevirtPlatform,
+				},
+			},
+		}
+
+		nodePool := &hyperv1.NodePool{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "np",
+				Namespace: "any",
+			},
+			Spec: hyperv1.NodePoolSpec{
+				ClusterName: "hc",
+				Platform: hyperv1.NodePoolPlatform{
+					Type: hyperv1.KubevirtPlatform,
+				},
+			},
+			Status: hyperv1.NodePoolStatus{
+				Replicas: 2,
+			},
+		}
+
+		client := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hcluster, nodePool).Build()
+
+		reg := prometheus.NewPedanticRegistry()
+		reg.MustRegister(createNodePoolsMetricsCollector(client, nil, clock.RealClock{}))
+
+		allMetricsValues, err := reg.Gather()
+		if err != nil {
+			t.Fatalf("gathering metrics failed: %v", err)
+		}
+
+		var vCpusCountMetricValue *dto.MetricFamily
+		var vCpusComputationErrorMetricValue *dto.MetricFamily
+
+		for _, metricValue := range allMetricsValues {
+			if metricValue != nil && metricValue.Name != nil {
+				switch *metricValue.Name {
+				case VCpusCountByHClusterMetricName:
+					vCpusCountMetricValue = metricValue
+				case VCpusComputationErrorByHClusterMetricName:
+					vCpusComputationErrorMetricValue = metricValue
+				}
+			}
+		}
+
+		// Verify vCPU count is -1 for KubeVirt platform
+		if vCpusCountMetricValue == nil || len(vCpusCountMetricValue.Metric) == 0 {
+			t.Fatal("expected vCPU count metric to be present")
+		}
+		actualVCpuCount := vCpusCountMetricValue.Metric[0].Gauge.GetValue()
+		if actualVCpuCount != -1 {
+			t.Errorf("expected vCPU count to be -1 for KubeVirt platform, got %v", actualVCpuCount)
+		}
+
+		// Verify error reason is "unsupported platform"
+		if vCpusComputationErrorMetricValue == nil || len(vCpusComputationErrorMetricValue.Metric) == 0 {
+			t.Fatal("expected vCPU computation error metric to be present")
+		}
+
+		foundReasonLabel := false
+		for _, label := range vCpusComputationErrorMetricValue.Metric[0].Label {
+			if label.GetName() == "reason" && label.GetValue() == "unsupported platform" {
+				foundReasonLabel = true
+				break
+			}
+		}
+		if !foundReasonLabel {
+			t.Error("expected error reason to be 'unsupported platform' for KubeVirt platform")
+		}
+	})
+}
