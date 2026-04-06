@@ -57,9 +57,6 @@ func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 }
 
 func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error {
-	if o.AWSPlatform.PostDeleteAction != nil {
-		o.AWSPlatform.PostDeleteAction()
-	}
 	infraID := o.InfraID
 	baseDomain := o.AWSPlatform.BaseDomain
 	baseDomainPrefix := o.AWSPlatform.BaseDomainPrefix
@@ -92,6 +89,13 @@ func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error
 	}
 	if err := destroyInfraOpts.Run(ctx); err != nil {
 		return fmt.Errorf("failed to destroy infrastructure: %w", err)
+	}
+
+	// Run PostDeleteAction after infrastructure destruction so that resources
+	// like orphaned S3 buckets (OCPBUGS-81750) are cleaned up by DestroyInfra
+	// before this validation checks for remaining guest cluster resources.
+	if o.AWSPlatform.PostDeleteAction != nil {
+		o.AWSPlatform.PostDeleteAction()
 	}
 
 	if !o.AWSPlatform.PreserveIAM {

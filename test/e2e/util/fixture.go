@@ -299,16 +299,14 @@ func validateAWSGuestResourcesDeletedFunc(ctx context.Context, t *testing.T, inf
 		})
 		var lastOutput *resourcegroupstaggingapi.GetResourcesOutput
 
-		// Find load balancers or persistent volumes belonging to the guest cluster.
-		// S3 buckets are excluded because they are managed by the cluster-image-registry-operator
-		// and cleaned up by DestroyS3Buckets in DestroyInfra. A race condition in CIRO (OCPBUGS-81750)
-		// can create orphaned S3 buckets that cause this validation to time out.
+		// Find load balancers, persistent volumes, or S3 buckets belonging to the guest cluster.
 		err := wait.PollUntilContextTimeout(ctx, 20*time.Second, 15*time.Minute, false, func(ctx context.Context) (bool, error) {
 			// Filter get cluster resources.
 			output, err := taggingClient.GetResources(ctx, &resourcegroupstaggingapi.GetResourcesInput{
 				ResourceTypeFilters: []string{
 					"elasticloadbalancing:loadbalancer",
 					"ec2:volume",
+					"s3",
 				},
 				TagFilters: []resourcegroupstaggingapitypes.TagFilter{
 					{
