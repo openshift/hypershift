@@ -204,8 +204,24 @@ linters:
         text: 'arrayofstruct: OpenStackPlatformSpec.Subnets is an array of structs, but the struct has no required fields. At least one field should be marked as required to prevent ambiguous YAML configurations'
       - linters:
           - kubeapilinter
-        path: karpenter/v1beta1/karpenter_types.go
+        path: karpenter/v1/karpenter_types.go
         text: 'arrayofstruct: OpenshiftEC2NodeClassSpec.CapacityReservationSelectorTerms is an array of structs, but the struct has no required fields. At least one field should be marked as required to prevent ambiguous YAML configurations'
+      - linters:
+          - kubeapilinter
+        path: karpenter/v1/karpenter_types.go
+        text: 'arrayofstruct: OpenshiftEC2NodeClassSpec.SubnetSelectorTerms is an array of structs, but the struct has no required fields. At least one field should be marked as required to prevent ambiguous YAML configurations'
+      - linters:
+          - kubeapilinter
+        path: karpenter/v1/karpenter_types.go
+        text: 'arrayofstruct: OpenshiftEC2NodeClassSpec.SecurityGroupSelectorTerms is an array of structs, but the struct has no required fields. At least one field should be marked as required to prevent ambiguous YAML configurations'
+      - linters:
+          - kubeapilinter
+        path: karpenter/v1/karpenter_types.go
+        text: 'arrayofstruct: OpenshiftEC2NodeClassSpec.BlockDeviceMappings is an array of structs, but the struct has no required fields. At least one field should be marked as required to prevent ambiguous YAML configurations'
+      - linters:
+          - kubeapilinter
+        path: karpenter/v1/karpenter_types.go
+        text: 'commentstart: godoc for field OpenshiftEC2NodeClassStatus.Conditions should start with'
 
       # conditions (1 issue)
       - linters:

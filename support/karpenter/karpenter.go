@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1beta1"
+	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -43,10 +43,8 @@ func SupportedArchitectures(platform hyperv1.PlatformType) ([]string, error) {
 
 // IsKarpenterEnabled checks if Karpenter is enabled for the given AutoNode configuration.
 // Note that we may eventually support other platforms, but for now we only support AWS.
-func IsKarpenterEnabled(autoNode *hyperv1.AutoNode) bool {
-	return autoNode != nil &&
-		autoNode.Provisioner.Name == hyperv1.ProvisionerKarpenter &&
-		autoNode.Provisioner.Karpenter != nil &&
+func IsKarpenterEnabled(autoNode hyperv1.AutoNode) bool {
+	return autoNode.Provisioner.Name == hyperv1.ProvisionerKarpenter &&
 		autoNode.Provisioner.Karpenter.Platform == hyperv1.AWSPlatform
 }
 

@@ -10,7 +10,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1beta1"
+	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1"
 	"github.com/openshift/hypershift/api/util/ipnet"
 	"github.com/openshift/hypershift/support/api"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
@@ -99,10 +99,10 @@ func TestReconcile(t *testing.T) {
 			PullSecret: corev1.LocalObjectReference{
 				Name: "pull-secret",
 			},
-			AutoNode: &hyperv1.AutoNode{
+			AutoNode: hyperv1.AutoNode{
 				Provisioner: hyperv1.ProvisionerConfig{
 					Name: hyperv1.ProvisionerKarpenter,
-					Karpenter: &hyperv1.KarpenterConfig{
+					Karpenter: hyperv1.KarpenterConfig{
 						Platform: hyperv1.AWSPlatform,
 					},
 				},
@@ -414,10 +414,10 @@ func TestReconcileVersionResolution(t *testing.T) {
 				PullSecret: corev1.LocalObjectReference{
 					Name: "pull-secret",
 				},
-				AutoNode: &hyperv1.AutoNode{
+				AutoNode: hyperv1.AutoNode{
 					Provisioner: hyperv1.ProvisionerConfig{
 						Name: hyperv1.ProvisionerKarpenter,
-						Karpenter: &hyperv1.KarpenterConfig{
+						Karpenter: hyperv1.KarpenterConfig{
 							Platform: hyperv1.AWSPlatform,
 						},
 					},

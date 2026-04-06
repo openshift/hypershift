@@ -273,12 +273,12 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 		},
 	}
 	if o.AutoNode {
-		cluster.Spec.AutoNode = &hyperv1.AutoNode{
+		cluster.Spec.AutoNode = hyperv1.AutoNode{
 			Provisioner: hyperv1.ProvisionerConfig{
 				Name: hyperv1.ProvisionerKarpenter,
-				Karpenter: &hyperv1.KarpenterConfig{
+				Karpenter: hyperv1.KarpenterConfig{
 					Platform: hyperv1.AWSPlatform,
-					AWS: &hyperv1.KarpenterAWSConfig{
+					AWS: hyperv1.KarpenterAWSConfig{
 						RoleARN: o.iamInfo.KarpenterRoleARN,
 					},
 				},
