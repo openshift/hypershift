@@ -1,0 +1,675 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.17.0
+  name: openshiftec2nodeclasses.karpenter.hypershift.openshift.io
+spec:
+  group: karpenter.hypershift.openshift.io
+  names:
+    kind: OpenshiftEC2NodeClass
+    listKind: OpenshiftEC2NodeClassList
+    plural: openshiftec2nodeclasses
+    shortNames:
+    - oec2nc
+    - oec2ncs
+    singular: openshiftec2nodeclass
+  scope: Cluster
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.conditions[?(@.type=="Ready")].status
+      name: Ready
+      type: string
+    name: v1
+    schema:
+      openAPIV3Schema:
+        description: OpenshiftEC2NodeClass defines the desired state of OpenshiftEC2NodeClass.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: spec defines the desired state of the OpenshiftEC2NodeClass.
+            minProperties: 1
+            properties:
+              blockDeviceMappings:
+                description: |-
+                  blockDeviceMappings to be applied to provisioned nodes.
+                  For OpenShift nodes, a default root volume size of 120Gi and type gp3 is set if no blockDeviceMapping overrides are specified.
+                items:
+                  description: BlockDeviceMapping defines a block device mapping for
+                    a node.
+                  minProperties: 1
+                  properties:
+                    deviceName:
+                      description: deviceName is the device name (for example, /dev/sdh
+                        or xvdh).
+                      maxLength: 256
+                      minLength: 1
+                      type: string
+                    ebs:
+                      description: ebs contains parameters used to automatically set
+                        up EBS volumes when an instance is launched.
+                      minProperties: 1
+                      properties:
+                        deleteOnTermination:
+                          description: deleteOnTermination indicates whether the EBS
+                            volume is deleted on instance termination.
+                          enum:
+                          - Delete
+                          - Retain
+                          type: string
+                        encrypted:
+                          description: |-
+                            encrypted indicates whether the EBS volume is encrypted. Encrypted volumes can only
+                            be attached to instances that support Amazon EBS encryption. If you are creating
+                            a volume from a snapshot, you can't specify an encryption value.
+                          enum:
+                          - Encrypted
+                          - Unencrypted
+                          type: string
+                        iops:
+                          description: |-
+                            iops is the number of I/O operations per second (IOPS). For gp3, io1, and io2 volumes,
+                            this represents the number of IOPS that are provisioned for the volume. For
+                            gp2 volumes, this represents the baseline performance of the volume and the
+                            rate at which the volume accumulates I/O credits for bursting.
+
+                            The following are the supported values for each volume type:
+
+                               * gp3: 3,000-16,000 IOPS
+
+                               * io1: 100-64,000 IOPS
+
+                               * io2: 100-64,000 IOPS
+
+                            For io1 and io2 volumes, we guarantee 64,000 IOPS only for Instances built
+                            on the Nitro System (https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instance-types.html#ec2-nitro-instances).
+                            Other instance families guarantee performance up to 32,000 IOPS.
+
+                            This parameter is supported for io1, io2, and gp3 volumes only. This parameter
+                            is not supported for gp2, st1, sc1, or standard volumes.
+                          format: int64
+                          type: integer
+                        kmsKeyID:
+                          description: kmsKeyID is the ARN of the symmetric Key Management
+                            Service (KMS) CMK used for encryption.
+                          maxLength: 2048
+                          minLength: 1
+                          type: string
+                        snapshotID:
+                          description: snapshotID is the ID of an EBS snapshot.
+                          maxLength: 256
+                          minLength: 1
+                          type: string
+                        throughput:
+                          description: |-
+                            throughput to provision for a gp3 volume, with a maximum of 1,000 MiB/s.
+                            Valid Range: Minimum value of 125. Maximum value of 1000.
+                          format: int64
+                          type: integer
+                        volumeSizeGiB:
+                          description: |-
+                            volumeSizeGiB is the size of the volume in GiB. You must specify either a snapshot ID or
+                            a volume size. The following are the supported volume sizes for each volume type:
+
+                               * gp2 and gp3: 1-16,384
+
+                               * io1 and io2: 4-16,384
+
+                               * st1 and sc1: 125-16,384
+
+                               * standard: 1-1,024
+                          format: int64
+                          maximum: 65536
+                          minimum: 1
+                          type: integer
+                        volumeType:
+                          description: |-
+                            volumeType is the type of the block device.
+                            For more information, see Amazon EBS volume types (https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/EBSVolumeTypes.html)
+                            in the Amazon Elastic Compute Cloud User Guide.
+                          enum:
+                          - Standard
+                          - IO1
+                          - IO2
+                          - GP2
+                          - SC1
+                          - ST1
+                          - GP3
+                          type: string
+                      type: object
+                      x-kubernetes-validations:
+                      - message: snapshotID or volumeSizeGiB must be defined
+                        rule: has(self.snapshotID) || has(self.volumeSizeGiB)
+                    rootVolume:
+                      description: |-
+                        rootVolume indicates whether this device is mounted as kubelet root dir. You can
+                        configure at most one root volume in BlockDeviceMappings.
+                      enum:
+                      - RootVolume
+                      - NotRootVolume
+                      type: string
+                  type: object
+                maxItems: 50
+                minItems: 1
+                type: array
+                x-kubernetes-list-type: atomic
+                x-kubernetes-validations:
+                - message: must have only one blockDeviceMappings with rootVolume
+                  rule: self.filter(x, has(x.rootVolume)?x.rootVolume=='RootVolume':false).size()
+                    <= 1
+              capacityReservationSelectorTerms:
+                description: |-
+                  capacityReservationSelectorTerms is a list of capacity reservation selector terms. The terms are ORed.
+                  Each term must specify at least one of: tags, id, ownerID, or instanceMatchCriteria.
+                  The id field is mutually exclusive and cannot be combined with tags, ownerID, or instanceMatchCriteria
+                  within the same term.
+                items:
+                  description: |-
+                    CapacityReservationSelectorTerm defines selection logic for a capacity reservation used by Karpenter to launch nodes.
+                    If multiple fields are used for selection, the requirements are ANDed.
+                  minProperties: 1
+                  properties:
+                    id:
+                      description: id is the capacity reservation id in EC2.
+                      maxLength: 256
+                      minLength: 1
+                      type: string
+                      x-kubernetes-validations:
+                      - message: id must match the pattern cr-[0-9a-z]+
+                        rule: self.matches('^cr-[0-9a-z]+$')
+                    instanceMatchCriteria:
+                      description: |-
+                        instanceMatchCriteria filters capacity reservations by how they match instances.
+                        When set to "Open", only selects reservations that any instance with matching
+                        attributes (instance type, platform, Availability Zone) can use automatically.
+                        When set to "Targeted", only selects reservations that require instances to
+                        explicitly target them by ID.
+                        When omitted, selects both Open and Targeted reservations (no filtering on this attribute).
+                      enum:
+                      - Open
+                      - Targeted
+                      type: string
+                    ownerID:
+                      description: ownerID is the owner account id for the capacity
+                        reservation.
+                      maxLength: 12
+                      minLength: 1
+                      type: string
+                      x-kubernetes-validations:
+                      - message: ownerID must be a 12-digit AWS account ID
+                        rule: self.matches('^[0-9]{12}$')
+                    tags:
+                      additionalProperties:
+                        type: string
+                      description: |-
+                        tags is a map of key/value tags used to select capacity reservations.
+                        Specifying '*' for a value selects all values for a given tag key.
+                      maxProperties: 20
+                      minProperties: 1
+                      type: object
+                      x-kubernetes-validations:
+                      - message: empty tag keys or values aren't supported
+                        rule: self.all(k, k != '' && self[k] != '')
+                  type: object
+                maxItems: 30
+                minItems: 1
+                type: array
+                x-kubernetes-list-type: atomic
+                x-kubernetes-validations:
+                - message: expected at least one, got none, ['tags', 'id', 'ownerID',
+                    'instanceMatchCriteria']
+                  rule: self.all(x, has(x.tags) || has(x.id) || has(x.ownerID) ||
+                    has(x.instanceMatchCriteria))
+                - message: '''id'' is mutually exclusive, cannot be set along with
+                    other fields in a capacity reservation selector term'
+                  rule: '!self.all(x, has(x.id) && (has(x.tags) || has(x.ownerID)
+                    || has(x.instanceMatchCriteria)))'
+              instanceStorePolicy:
+                description: instanceStorePolicy specifies how to handle instance-store
+                  disks.
+                enum:
+                - RAID0
+                type: string
+              ipAddressAssociation:
+                description: |-
+                  ipAddressAssociation controls the IP address assignment for instances launched with the nodeclass.
+                  Valid values are:
+                  - "Public": assigns public IP addresses to instances, allowing direct internet access.
+                  - "SubnetDefault": defers IP address assignment to the subnet configuration.
+                  When unset, the cloud provider's subnet default behavior is used.
+                enum:
+                - Public
+                - SubnetDefault
+                type: string
+              metadataOptions:
+                description: |-
+                  metadataOptions contains parameters for specifying the exposure of the
+                  Instance Metadata Service to provisioned EC2 nodes.
+                  When omitted, the platform preserves control over default behaviour
+                  which is subject to change over time. Currently defaults to access
+                  HTTPEndpoint, httpIPProtocol IPv4, httpPutResponseHopLimit of 1,
+                  and httpTokens Required (IMDSv2).
+                minProperties: 1
+                properties:
+                  access:
+                    description: |-
+                      access specifies how the instance metadata endpoint is accessed on
+                      provisioned nodes. Valid values are "HTTPEndpoint" and "None".
+                      When set to "HTTPEndpoint", the instance metadata service is accessible
+                      via the HTTP endpoint. When set to "None", instance metadata is not
+                      accessible on the node.
+                      When omitted, the platform defaults to HTTP endpoint access.
+                    enum:
+                    - HTTPEndpoint
+                    - None
+                    type: string
+                  httpIPProtocol:
+                    description: |-
+                      httpIPProtocol specifies the IP protocol version for the instance metadata
+                      service endpoint on provisioned nodes. Valid values are "IPv4" and "IPv6".
+                      When set to "IPv4", the metadata endpoint uses the IPv4 protocol.
+                      When set to "IPv6", the metadata endpoint uses the IPv6 protocol.
+                      When omitted, the platform defaults to IPv4.
+                    enum:
+                    - IPv4
+                    - IPv6
+                    type: string
+                  httpPutResponseHopLimit:
+                    description: |-
+                      httpPutResponseHopLimit is the desired HTTP PUT response hop limit for
+                      instance metadata requests. Possible values are integers from 1 to 64.
+                      A value of 1 restricts IMDS access to the EC2 instance only, preventing
+                      pods from reaching it. A value of 2 allows pods to access IMDS through
+                      the container network bridge. Values above 2 are for advanced networking
+                      scenarios such as nested virtualization.
+                      When omitted, the platform defaults to a hop limit of 1.
+                    format: int64
+                    maximum: 64
+                    minimum: 1
+                    type: integer
+                  httpTokens:
+                    description: |-
+                      httpTokens determines the state of token usage for instance metadata
+                      requests. Valid values are "Required" and "Optional".
+                      When set to "Required", a signed token header (IMDSv2) must be used for
+                      all metadata requests. When set to "Optional", metadata can be retrieved
+                      with or without a token (IMDSv1/v2).
+                      When omitted, the platform defaults to requiring tokens (IMDSv2).
+                    enum:
+                    - Required
+                    - Optional
+                    type: string
+                type: object
+              monitoring:
+                description: |-
+                  monitoring controls the monitoring level for instances that are launched.
+                  For more information, see Basic monitoring and detailed monitoring
+                  (https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/cloudwatch-metrics-basic-detailed.html).
+                  Valid values are:
+                  - "Detailed": enables detailed monitoring.
+                  - "Basic": enables basic monitoring.
+                  When unset, the cloud provider's default basic monitoring behavior is used.
+                enum:
+                - Detailed
+                - Basic
+                type: string
+              securityGroupSelectorTerms:
+                description: securityGroupSelectorTerms is a list of or security group
+                  selector terms. The terms are ORed.
+                items:
+                  description: |-
+                    SecurityGroupSelectorTerm defines selection logic for a security group used by Karpenter to launch nodes.
+                    If multiple fields are used for selection, the requirements are ANDed.
+                  minProperties: 1
+                  properties:
+                    id:
+                      description: |-
+                        id is the security group id in EC2.
+                        The expected format is "sg-" followed by alphanumeric characters, e.g. "sg-0a1b2c3d4e5f".
+                      maxLength: 256
+                      minLength: 1
+                      type: string
+                      x-kubernetes-validations:
+                      - message: id must match the pattern sg-[0-9a-z]+
+                        rule: self.matches('^sg-[0-9a-z]+$')
+                    name:
+                      description: |-
+                        name is the security group name in EC2.
+                        This value is the name field, which is different from the name tag.
+                      maxLength: 256
+                      minLength: 1
+                      type: string
+                    tags:
+                      additionalProperties:
+                        type: string
+                      description: |-
+                        tags is a map of key/value tags used to select security groups.
+                        Specifying '*' for a value selects all values for a given tag key.
+                        The expected format is {"key1": "value1", "key2": "*"}.
+                      maxProperties: 20
+                      minProperties: 1
+                      type: object
+                      x-kubernetes-validations:
+                      - message: empty tag keys or values aren't supported
+                        rule: self.all(k, k != '' && self[k] != '')
+                  type: object
+                maxItems: 30
+                minItems: 1
+                type: array
+                x-kubernetes-list-type: atomic
+                x-kubernetes-validations:
+                - message: securityGroupSelectorTerms cannot be empty
+                  rule: self.size() != 0
+                - message: expected at least one, got none, ['tags', 'id', 'name']
+                  rule: self.all(x, has(x.tags) || has(x.id) || has(x.name))
+                - message: '''id'' is mutually exclusive, cannot be set with a combination
+                    of other fields in securityGroupSelectorTerms'
+                  rule: '!self.all(x, has(x.id) && (has(x.tags) || has(x.name)))'
+                - message: '''name'' is mutually exclusive, cannot be set with a combination
+                    of other fields in securityGroupSelectorTerms'
+                  rule: '!self.all(x, has(x.name) && (has(x.tags) || has(x.id)))'
+              subnetSelectorTerms:
+                description: subnetSelectorTerms is a list of or subnet selector terms.
+                  The terms are ORed.
+                items:
+                  description: |-
+                    SubnetSelectorTerm defines selection logic for a subnet used by Karpenter to launch nodes.
+                    If multiple fields are used for selection, the requirements are ANDed.
+                  minProperties: 1
+                  properties:
+                    id:
+                      description: |-
+                        id is the subnet id in EC2.
+                        The expected format is "subnet-" followed by alphanumeric characters, e.g. "subnet-0a1b2c3d4e5f".
+                      maxLength: 256
+                      minLength: 1
+                      type: string
+                      x-kubernetes-validations:
+                      - message: id must match the pattern subnet-[0-9a-z]+
+                        rule: self.matches('^subnet-[0-9a-z]+$')
+                    tags:
+                      additionalProperties:
+                        type: string
+                      description: |-
+                        tags is a map of key/value tags used to select subnets.
+                        Specifying '*' for a value selects all values for a given tag key.
+                        The expected format is {"key1": "value1", "key2": "*"}.
+                      maxProperties: 20
+                      minProperties: 1
+                      type: object
+                      x-kubernetes-validations:
+                      - message: empty tag keys or values aren't supported
+                        rule: self.all(k, k != '' && self[k] != '')
+                  type: object
+                maxItems: 30
+                minItems: 1
+                type: array
+                x-kubernetes-list-type: atomic
+                x-kubernetes-validations:
+                - message: subnetSelectorTerms cannot be empty
+                  rule: self.size() != 0
+                - message: expected at least one, got none, ['tags', 'id']
+                  rule: self.all(x, has(x.tags) || has(x.id))
+                - message: '''id'' is mutually exclusive, cannot be set with a combination
+                    of other fields in subnetSelectorTerms'
+                  rule: '!self.all(x, has(x.id) && has(x.tags))'
+              tags:
+                additionalProperties:
+                  type: string
+                description: tags to be applied on ec2 resources like instances and
+                  launch templates.
+                minProperties: 1
+                type: object
+                x-kubernetes-validations:
+                - message: empty tag keys aren't supported
+                  rule: self.all(k, k != '')
+                - message: tag contains a restricted tag matching eks:eks-cluster-name
+                  rule: self.all(k, k !='eks:eks-cluster-name')
+                - message: tag contains a restricted tag matching kubernetes.io/cluster/
+                  rule: self.all(k, !k.startsWith('kubernetes.io/cluster') )
+                - message: tag contains a restricted tag matching karpenter.sh/nodepool
+                  rule: self.all(k, k != 'karpenter.sh/nodepool')
+                - message: tag contains a restricted tag matching karpenter.sh/nodeclaim
+                  rule: self.all(k, k !='karpenter.sh/nodeclaim')
+                - message: tag contains a restricted tag matching karpenter.k8s.aws/ec2nodeclass
+                  rule: self.all(k, k !='karpenter.k8s.aws/ec2nodeclass')
+              version:
+                description: |-
+                  version is an OpenShift version (e.g., "4.20.1") specifying the release version
+                  for nodes managed by this NodeClass. When set, the controller resolves this to a
+                  release image via the Cincinnati graph API. When not set, nodes use the control plane's
+                  release image.
+                maxLength: 64
+                minLength: 5
+                type: string
+                x-kubernetes-validations:
+                - message: version must be a valid semantic version (e.g., 4.20.1)
+                  rule: self.matches('^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)$')
+            type: object
+          status:
+            description: status defines the observed state of the OpenshiftEC2NodeClass.
+            minProperties: 1
+            properties:
+              capacityReservations:
+                description: |-
+                  capacityReservations contains the current Capacity Reservation values that are available to the
+                  cluster under the capacityReservationSelectorTerms.
+                items:
+                  description: CapacityReservation contains resolved CapacityReservation
+                    selector values utilized for node launch
+                  properties:
+                    availabilityZone:
+                      description: availabilityZone is the availability zone the capacity
+                        reservation is available in.
+                      maxLength: 64
+                      minLength: 1
+                      type: string
+                    endTime:
+                      description: |-
+                        endTime is the time at which the capacity reservation expires. Once expired, the reserved capacity is released and Karpenter
+                        will no longer be able to launch instances into that reservation.
+                      format: date-time
+                      type: string
+                    id:
+                      description: id is the id for the capacity reservation.
+                      maxLength: 256
+                      minLength: 1
+                      type: string
+                    instanceMatchCriteria:
+                      description: instanceMatchCriteria indicates the type of instance
+                        launches the capacity reservation accepts.
+                      enum:
+                      - Open
+                      - Targeted
+                      type: string
+                    instanceType:
+                      description: instanceType is the instance type for the capacity
+                        reservation.
+                      maxLength: 256
+                      minLength: 1
+                      type: string
+                    ownerID:
+                      description: ownerID is the ID of the AWS account that owns
+                        the capacity reservation.
+                      maxLength: 12
+                      minLength: 1
+                      type: string
+                    reservationType:
+                      description: reservationType is the type of capacity reservation.
+                      enum:
+                      - Default
+                      - CapacityBlock
+                      type: string
+                    state:
+                      description: state is the state of the capacity reservation.
+                      enum:
+                      - Active
+                      - Expiring
+                      type: string
+                  required:
+                  - availabilityZone
+                  - id
+                  - instanceMatchCriteria
+                  - instanceType
+                  - ownerID
+                  type: object
+                maxItems: 100
+                minItems: 1
+                type: array
+                x-kubernetes-list-type: atomic
+              conditions:
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                maxItems: 100
+                minItems: 1
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              releaseImage:
+                description: |-
+                  releaseImage is the fully qualified release image resolved either from spec.version, or inherited from
+                  the HostedControlPlane's spec.ReleaseImage.
+                  Of the format "quay.io/openshift-release-dev/ocp-release@sha256:<digest>".
+                maxLength: 512
+                minLength: 1
+                type: string
+              securityGroups:
+                description: |-
+                  securityGroups contains the current Security Groups values that are available to the
+                  cluster under the SecurityGroups selectors.
+                items:
+                  description: SecurityGroup contains resolved SecurityGroup selector
+                    values utilized for node launch
+                  properties:
+                    id:
+                      description: id is the ID of the security group.
+                      maxLength: 256
+                      minLength: 1
+                      type: string
+                    name:
+                      description: name is the name of the security group.
+                      maxLength: 256
+                      minLength: 1
+                      type: string
+                  required:
+                  - id
+                  type: object
+                maxItems: 100
+                minItems: 1
+                type: array
+                x-kubernetes-list-type: atomic
+              subnets:
+                description: |-
+                  subnets contains the current Subnet values that are available to the
+                  cluster under the subnet selectors.
+                items:
+                  description: Subnet contains resolved Subnet selector values utilized
+                    for node launch
+                  properties:
+                    id:
+                      description: id is the ID of the subnet.
+                      maxLength: 256
+                      minLength: 1
+                      type: string
+                    zone:
+                      description: zone is the associated availability zone.
+                      maxLength: 256
+                      minLength: 1
+                      type: string
+                    zoneID:
+                      description: zoneID is the associated availability zone ID.
+                      maxLength: 256
+                      minLength: 1
+                      type: string
+                  required:
+                  - id
+                  - zone
+                  type: object
+                maxItems: 100
+                minItems: 1
+                type: array
+                x-kubernetes-list-type: atomic
+              version:
+                description: version is the resolved OpenShift version corresponding
+                  to the status.releaseImage.
+                maxLength: 64
+                minLength: 1
+                type: string
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
