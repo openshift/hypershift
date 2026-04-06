@@ -59,6 +59,7 @@ func (r *WebhookCertReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpdat
 	r.createOrUpdate = createOrUpdate.CreateOrUpdate
 
 	return ctrl.NewControllerManagedBy(mgr).
+		Named("webhookcerts").
 		For(&corev1.Secret{}, builder.WithPredicates(predicate.NewPredicateFuncs(func(o client.Object) bool {
 			return o.GetNamespace() == r.Namespace &&
 				(o.GetName() == CASecretName || o.GetName() == ServingCertSecretName)
