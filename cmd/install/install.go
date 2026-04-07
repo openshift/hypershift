@@ -679,10 +679,22 @@ func hyperShiftOperatorManifests(ctx context.Context, client crclient.Client, op
 	operatorServiceAccount, rbacObjs := setupRBAC(opts, operatorNamespace)
 	objects = append(objects, rbacObjs...)
 
+	// Generate self-managed webhook CA and serving cert when any webhook is enabled.
+	var webhookCABundle []byte
+	if opts.EnableDefaultingWebhook || opts.EnableConversionWebhook || opts.EnableValidatingWebhook || opts.EnableAuditLogPersistence {
+		caSecret, servingSecret, caBundle, err := webhookcerts.GenerateInitialWebhookCerts(operatorNamespace.Name, assets.HypershiftOperatorName)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to generate webhook certs: %w", err)
+		}
+		objects = append(objects, caSecret, servingSecret)
+		webhookCABundle = caBundle
+	}
+
 	if opts.EnableDefaultingWebhook || opts.EnableAuditLogPersistence {
 		mutatingWebhookConfiguration := assets.HyperShiftMutatingWebhookConfiguration{
 			Namespace:                 operatorNamespace,
 			EnableAuditLogPersistence: opts.EnableAuditLogPersistence,
+			CABundle:                  webhookCABundle,
 		}.Build()
 		objects = append(objects, mutatingWebhookConfiguration)
 	}
@@ -690,6 +702,7 @@ func hyperShiftOperatorManifests(ctx context.Context, client crclient.Client, op
 	if opts.EnableValidatingWebhook {
 		validatingWebhookConfiguration := assets.HyperShiftValidatingWebhookConfiguration{
 			Namespace: operatorNamespace.Name,
+			CABundle:  webhookCABundle,
 		}.Build()
 		objects = append(objects, validatingWebhookConfiguration)
 	}
@@ -739,17 +752,6 @@ func hyperShiftOperatorManifests(ctx context.Context, client crclient.Client, op
 	if opts.ManagedService == hyperv1.AroHCP {
 		sharedIngressObjs := setupSharedIngress()
 		objects = append(objects, sharedIngressObjs...)
-	}
-
-	// Generate self-managed webhook CA and serving cert when any webhook is enabled.
-	var webhookCABundle []byte
-	if opts.EnableDefaultingWebhook || opts.EnableConversionWebhook || opts.EnableValidatingWebhook || opts.EnableAuditLogPersistence {
-		caSecret, servingSecret, caBundle, err := webhookcerts.GenerateInitialWebhookCerts(operatorNamespace.Name, operatorService.Name)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to generate webhook certs: %w", err)
-		}
-		objects = append(objects, caSecret, servingSecret)
-		webhookCABundle = caBundle
 	}
 
 	crds, err = setupCRDs(ctx, client, opts, operatorNamespace, operatorService, webhookCABundle)
