@@ -26,22 +26,23 @@ import (
 // HostedControlPlaneStatusApplyConfiguration represents a declarative configuration of the HostedControlPlaneStatus type for use
 // with apply.
 type HostedControlPlaneStatusApplyConfiguration struct {
-	Conditions                     []v1.ConditionApplyConfiguration        `json:"conditions,omitempty"`
-	Ready                          *bool                                   `json:"ready,omitempty"`
-	Initialized                    *bool                                   `json:"initialized,omitempty"`
-	ExternalManagedControlPlane    *bool                                   `json:"externalManagedControlPlane,omitempty"`
-	ControlPlaneEndpoint           *APIEndpointApplyConfiguration          `json:"controlPlaneEndpoint,omitempty"`
-	OAuthCallbackURLTemplate       *string                                 `json:"oauthCallbackURLTemplate,omitempty"`
-	VersionStatus                  *ClusterVersionStatusApplyConfiguration `json:"versionStatus,omitempty"`
-	Version                        *string                                 `json:"version,omitempty"`
-	ReleaseImage                   *string                                 `json:"releaseImage,omitempty"`
-	LastReleaseImageTransitionTime *metav1.Time                            `json:"lastReleaseImageTransitionTime,omitempty"`
-	KubeConfig                     *KubeconfigSecretRefApplyConfiguration  `json:"kubeConfig,omitempty"`
-	CustomKubeconfig               *KubeconfigSecretRefApplyConfiguration  `json:"customKubeconfig,omitempty"`
-	KubeadminPassword              *corev1.LocalObjectReference            `json:"kubeadminPassword,omitempty"`
-	Platform                       *PlatformStatusApplyConfiguration       `json:"platform,omitempty"`
-	NodeCount                      *int                                    `json:"nodeCount,omitempty"`
-	Configuration                  *ConfigurationStatusApplyConfiguration  `json:"configuration,omitempty"`
+	Conditions                     []v1.ConditionApplyConfiguration             `json:"conditions,omitempty"`
+	Ready                          *bool                                        `json:"ready,omitempty"`
+	Initialized                    *bool                                        `json:"initialized,omitempty"`
+	ExternalManagedControlPlane    *bool                                        `json:"externalManagedControlPlane,omitempty"`
+	ControlPlaneEndpoint           *APIEndpointApplyConfiguration               `json:"controlPlaneEndpoint,omitempty"`
+	OAuthCallbackURLTemplate       *string                                      `json:"oauthCallbackURLTemplate,omitempty"`
+	ControlPlaneVersion            *ControlPlaneVersionStatusApplyConfiguration `json:"controlPlaneVersion,omitempty"`
+	VersionStatus                  *ClusterVersionStatusApplyConfiguration      `json:"versionStatus,omitempty"`
+	Version                        *string                                      `json:"version,omitempty"`
+	ReleaseImage                   *string                                      `json:"releaseImage,omitempty"`
+	LastReleaseImageTransitionTime *metav1.Time                                 `json:"lastReleaseImageTransitionTime,omitempty"`
+	KubeConfig                     *KubeconfigSecretRefApplyConfiguration       `json:"kubeConfig,omitempty"`
+	CustomKubeconfig               *KubeconfigSecretRefApplyConfiguration       `json:"customKubeconfig,omitempty"`
+	KubeadminPassword              *corev1.LocalObjectReference                 `json:"kubeadminPassword,omitempty"`
+	Platform                       *PlatformStatusApplyConfiguration            `json:"platform,omitempty"`
+	NodeCount                      *int                                         `json:"nodeCount,omitempty"`
+	Configuration                  *ConfigurationStatusApplyConfiguration       `json:"configuration,omitempty"`
 }
 
 // HostedControlPlaneStatusApplyConfiguration constructs a declarative configuration of the HostedControlPlaneStatus type for use with
@@ -100,6 +101,14 @@ func (b *HostedControlPlaneStatusApplyConfiguration) WithControlPlaneEndpoint(va
 // If called multiple times, the OAuthCallbackURLTemplate field is set to the value of the last call.
 func (b *HostedControlPlaneStatusApplyConfiguration) WithOAuthCallbackURLTemplate(value string) *HostedControlPlaneStatusApplyConfiguration {
 	b.OAuthCallbackURLTemplate = &value
+	return b
+}
+
+// WithControlPlaneVersion sets the ControlPlaneVersion field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the ControlPlaneVersion field is set to the value of the last call.
+func (b *HostedControlPlaneStatusApplyConfiguration) WithControlPlaneVersion(value *ControlPlaneVersionStatusApplyConfiguration) *HostedControlPlaneStatusApplyConfiguration {
+	b.ControlPlaneVersion = value
 	return b
 }
 

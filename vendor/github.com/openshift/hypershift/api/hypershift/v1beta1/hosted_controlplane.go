@@ -349,6 +349,12 @@ type HostedControlPlaneStatus struct {
 	// +kubebuilder:validation:MaxLength=255
 	OAuthCallbackURLTemplate string `json:"oauthCallbackURLTemplate,omitempty"`
 
+	// controlPlaneVersion tracks the rollout status of the control plane
+	// components running on the management cluster, independently from
+	// the data-plane version reported in the version field.
+	// +optional
+	ControlPlaneVersion ControlPlaneVersionStatus `json:"controlPlaneVersion,omitzero"`
+
 	// versionStatus is the status of the release version applied by the
 	// hosted control plane operator.
 	// +optional
