@@ -93,6 +93,8 @@ type hypershiftTest struct {
 
 	upgradeContext    *UpgradeContext
 	hasBeenTornedDown bool
+	startTime         time.Time
+	opts              *PlatformAgnosticOptions
 }
 
 func NewHypershiftTest(t *testing.T, ctx context.Context, test hypershiftTestFunc) *hypershiftTest {
@@ -137,6 +139,8 @@ func (h *hypershiftTest) WithHOUpgrade() *hypershiftTest {
 }
 
 func (h *hypershiftTest) Execute(opts *PlatformAgnosticOptions, platform hyperv1.PlatformType, artifactDir, name string, serviceAccountSigningKey []byte) {
+	h.startTime = time.Now()
+	h.opts = opts
 	artifactDir = filepath.Join(artifactDir, artifactSubdirFor(h.T))
 
 	// create a hypershift cluster for the test
@@ -250,6 +254,14 @@ func (h *hypershiftTest) after(hostedCluster *hyperv1.HostedCluster, platform hy
 
 		if platform == hyperv1.AWSPlatform {
 			EnsureHCPPodsAffinitiesAndTolerations(t, context.Background(), h.client, hostedCluster)
+			if h.opts != nil && h.opts.AWSPlatform.Credentials.AWSCredentialsFile != "" {
+				NoticeCloudTrailPermissionDenied(t, context.Background(),
+					h.client,
+					h.opts.AWSPlatform.Credentials.AWSCredentialsFile,
+					h.opts.AWSPlatform.Region,
+					h.startTime,
+					hostedCluster)
+			}
 		}
 		EnsureSATokenNotMountedUnlessNecessary(t, context.Background(), h.client, hostedCluster)
 		// HCCO installs the admission policies, however, NonePlatform clusters can be ready before
