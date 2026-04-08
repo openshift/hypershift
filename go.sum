@@ -116,6 +116,8 @@ github.com/aws/aws-sdk-go-v2/internal/v4a v1.4.32 h1:0MrUL35H/Y4kdFfItoR5jCgtDQ4
 github.com/aws/aws-sdk-go-v2/internal/v4a v1.4.32/go.mod h1:2tNZkuWz54arj8mHVf+8Y7cKkcD8Wr/fBpENgEXpjLc=
 github.com/aws/aws-sdk-go-v2/service/arczonalshift v1.23.4 h1:x/EXnx0dgcEKUl3PiRit5SrtEsUhHdH790yoTTwcIv8=
 github.com/aws/aws-sdk-go-v2/service/arczonalshift v1.23.4/go.mod h1:YSU4/5F36xo+TEzX+SUQf9woQ9skp3z4Z6bt3NY3VsU=
+github.com/aws/aws-sdk-go-v2/service/cloudtrail v1.52.0 h1:Wgjh6Igu7HS57d8AjRIG0bHjybt015dBTc+zh2L/P3E=
+github.com/aws/aws-sdk-go-v2/service/cloudtrail v1.52.0/go.mod h1:TSIIBxkIwUawJ9JyiymBksYZYsvIv8GIF2DkrlcTc5o=
 github.com/aws/aws-sdk-go-v2/service/ec2 v1.317.0 h1:IkqA16g2hkQntk/K5+srT65TueoTDa7vGhZwqG9w6T4=
 github.com/aws/aws-sdk-go-v2/service/ec2 v1.317.0/go.mod h1:dmz3SHr11/hwUijR6xfE/xDRNHcjJwJWZ9ASZdkjGeg=
 github.com/aws/aws-sdk-go-v2/service/eks v1.84.5 h1:erqzVPMSmQkBWSovla49E0svTFhyLPRGljZy4hMisIo=
