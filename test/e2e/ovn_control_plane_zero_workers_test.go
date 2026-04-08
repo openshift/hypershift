@@ -270,7 +270,7 @@ func TestOVNControlPlaneZeroWorkers(t *testing.T) {
 			t.Logf("Verifying network ClusterOperator is healthy with zero workers")
 
 			// Get kubeconfig for hosted cluster
-			hostedClient := e2eutil.WaitForGuestClient(t, testContext, mgtClient, hostedCluster)
+			hostedClient := e2eutil.WaitForGuestClient(t, ctx, mgtClient, hostedCluster)
 
 			// Wait for network ClusterOperator to become healthy
 			timeout := 10 * time.Minute
@@ -304,9 +304,23 @@ func TestOVNControlPlaneZeroWorkers(t *testing.T) {
 				degraded := true
 
 				for _, cond := range conditions {
-					condMap := cond.(map[string]interface{})
-					condType := condMap["type"].(string)
-					condStatus := condMap["status"].(string)
+					condMap, ok := cond.(map[string]interface{})
+					if !ok {
+						t.Logf("Invalid condition type, skipping")
+						continue
+					}
+
+					condType, ok := condMap["type"].(string)
+					if !ok {
+						t.Logf("Condition type is not a string, skipping")
+						continue
+					}
+
+					condStatus, ok := condMap["status"].(string)
+					if !ok {
+						t.Logf("Condition status is not a string, skipping")
+						continue
+					}
 
 					switch condType {
 					case "Available":
@@ -318,7 +332,7 @@ func TestOVNControlPlaneZeroWorkers(t *testing.T) {
 					}
 				}
 
-				t.Logf("[Network CO] Available=%t Progressing=%t Degraded=%t", available, !progressing, !degraded)
+				t.Logf("[Network CO] Available=%t Progressing=%t Degraded=%t", available, progressing, degraded)
 
 				return available && !progressing && !degraded
 			}, timeout, interval).Should(BeTrue(), "network ClusterOperator should be healthy")
@@ -368,5 +382,5 @@ func TestOVNControlPlaneZeroWorkers(t *testing.T) {
 		t.Logf("✅ All validation steps completed successfully")
 		t.Logf("========================================")
 
-	}).WithAssetReader(content.ReadFile).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "ovn-zero-workers", globalOpts.ServiceAccountSigningKey)
+	}).WithAssetReader(content.ReadFile).Execute(&clusterOpts, hyperv1.NonePlatform, globalOpts.ArtifactDir, "ovn-zero-workers", globalOpts.ServiceAccountSigningKey)
 }
