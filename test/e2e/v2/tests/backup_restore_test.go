@@ -174,6 +174,17 @@ var _ = Describe("BackupRestore", Label("backup-restore"), Ordered, Serial, func
 
 	Context(ContextBackup, func() {
 		It("should create backup and schedule successfully", func() {
+			if testCtx.GetHostedCluster().Spec.Platform.Type == hyperv1.AgentPlatform {
+				By("Pausing AgentMachine and AgentCluster CRs")
+				err := backuprestore.PauseAgentCAPIResources(testCtx, GinkgoLogr.WithName("backup-restore"))
+				Expect(err).NotTo(HaveOccurred())
+				DeferCleanup(func() {
+					if err := backuprestore.UnpauseAgentCAPIResources(testCtx, GinkgoLogr.WithName("backup-restore")); err != nil {
+						GinkgoWriter.Printf("Failed to unpause Agent CAPI resources during cleanup: %v\n", err)
+					}
+				})
+			}
+
 			// Create schedule first to test parallel execution of backup and schedule and
 			// to speed up the test execution.
 			By("Creating schedule")
@@ -219,6 +230,7 @@ var _ = Describe("BackupRestore", Label("backup-restore"), Ordered, Serial, func
 			By("Waiting for schedule to have one backup completed")
 			err = backuprestore.WaitForScheduleCompletion(testCtx, scheduleName)
 			Expect(err).NotTo(HaveOccurred())
+
 		})
 	})
 
@@ -340,6 +352,12 @@ func executeRestore(testCtx *internal.TestContext, restoreOpts *backuprestore.OA
 	By("Waiting for restore to complete")
 	err = backuprestore.WaitForRestoreCompletion(testCtx, restoreOpts.Name)
 	Expect(err).NotTo(HaveOccurred())
+
+	if testCtx.GetHostedCluster().Spec.Platform.Type == hyperv1.AgentPlatform {
+		By("Unpausing AgentMachine and AgentCluster CRs again as the Restore brings back paused resources")
+		err = backuprestore.UnpauseAgentCAPIResources(testCtx, GinkgoLogr.WithName("backup-restore"))
+		Expect(err).NotTo(HaveOccurred())
+	}
 
 	if postRestoreHook != nil {
 		By("Running platform-specific post-restore operations")
