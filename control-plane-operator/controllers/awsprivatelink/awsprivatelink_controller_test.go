@@ -11,7 +11,9 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/api/util/ipnet"
 	"github.com/openshift/hypershift/support/awsapi"
+	"github.com/openshift/hypershift/support/upsert"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	ec2v2 "github.com/aws/aws-sdk-go-v2/service/ec2"
@@ -31,6 +33,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/google/go-cmp/cmp"
+	dto "github.com/prometheus/client_model/go"
 	"go.uber.org/mock/gomock"
 )
 
@@ -907,6 +910,157 @@ func TestReconcileDeletionSharedVPC(t *testing.T) {
 			}, updatedService)
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(controllerutil.ContainsFinalizer(updatedService, finalizer)).To(Equal(tc.expectFinalizer))
+		})
+	}
+}
+
+func getHistogramSampleCount() uint64 {
+	var m dto.Metric
+	if err := endpointProvisioningDuration.Write(&m); err != nil {
+		return 0
+	}
+	return m.Histogram.GetSampleCount()
+}
+
+func TestEndpointProvisioningDurationMetric(t *testing.T) {
+	testCases := []struct {
+		name               string
+		existingConditions []metav1.Condition
+		expectObservation  bool
+	}{
+		{
+			name:               "When endpoint becomes available for the first time it should observe the provisioning duration",
+			existingConditions: nil,
+			expectObservation:  true,
+		},
+		{
+			name: "When endpoint is already available it should not observe the provisioning duration again",
+			existingConditions: []metav1.Condition{
+				{
+					Type:   string(hyperv1.AWSEndpointAvailable),
+					Status: metav1.ConditionTrue,
+					Reason: hyperv1.AWSSuccessReason,
+				},
+			},
+			expectObservation: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			mockCtrl := gomock.NewController(t)
+
+			scheme := runtime.NewScheme()
+			_ = hyperv1.AddToScheme(scheme)
+
+			awsEndpointSvc := &hyperv1.AWSEndpointService{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "kube-apiserver-private",
+					Namespace:         "clusters-test",
+					Finalizers:        []string{finalizer},
+					CreationTimestamp: metav1.NewTime(time.Now().Add(-2 * time.Minute)),
+				},
+				Spec: hyperv1.AWSEndpointServiceSpec{
+					NetworkLoadBalancerName: "test-nlb",
+				},
+				Status: hyperv1.AWSEndpointServiceStatus{
+					EndpointServiceName: "com.amazonaws.vpce-svc.test",
+					EndpointID:          "vpce-12345",
+					SecurityGroupID:     "sg-12345",
+					Conditions:          tc.existingConditions,
+				},
+			}
+
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test",
+					Namespace: "clusters-test",
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					InfraID: "test-infra",
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+						AWS: &hyperv1.AWSPlatformSpec{
+							CloudProviderConfig: &hyperv1.AWSCloudProviderConfig{
+								VPC: "vpc-12345",
+								Subnet: &hyperv1.AWSResourceReference{
+									ID: aws.String("subnet-12345"),
+								},
+							},
+							EndpointAccess: hyperv1.Private,
+						},
+					},
+					Networking: hyperv1.ClusterNetworking{
+						MachineNetwork: []hyperv1.MachineNetworkEntry{
+							{CIDR: *ipnet.MustParseCIDR("10.0.0.0/16")},
+						},
+					},
+				},
+			}
+
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(awsEndpointSvc, hcp).
+				WithStatusSubresource(awsEndpointSvc).
+				Build()
+
+			mockBuilder := NewMockawsClientProvider(mockCtrl)
+			mockEC2 := awsapi.NewMockEC2API(mockCtrl)
+			mockRoute53 := awsapi.NewMockROUTE53API(mockCtrl)
+
+			mockBuilder.EXPECT().initializeWithHCP(gomock.Any(), gomock.Any())
+			mockBuilder.EXPECT().getClients(gomock.Any()).Return(mockEC2, mockRoute53, nil)
+
+			// Security group already exists with correct permissions
+			mockEC2.EXPECT().DescribeSecurityGroups(gomock.Any(), gomock.Any()).Return(&ec2v2.DescribeSecurityGroupsOutput{
+				SecurityGroups: []ec2types.SecurityGroup{{
+					GroupId: aws.String("sg-12345"),
+					IpPermissions: []ec2types.IpPermission{{
+						FromPort:   aws.Int32(6443),
+						ToPort:     aws.Int32(6443),
+						IpProtocol: aws.String("tcp"),
+						IpRanges:   []ec2types.IpRange{{CidrIp: aws.String("10.0.0.0/16"), Description: aws.String("Control plane service")}},
+					}},
+				}},
+			}, nil)
+
+			// Endpoint exists with no DNS entries (skips DNS record creation)
+			mockEC2.EXPECT().DescribeVpcEndpoints(gomock.Any(), gomock.Any()).Return(&ec2v2.DescribeVpcEndpointsOutput{
+				VpcEndpoints: []ec2types.VpcEndpoint{{
+					VpcEndpointId: aws.String("vpce-12345"),
+					ServiceName:   aws.String("com.amazonaws.vpce-svc.test"),
+					SubnetIds:     []string{},
+					Groups:        []ec2types.SecurityGroupIdentifier{{GroupId: aws.String("sg-12345")}},
+					DnsEntries:    []ec2types.DnsEntry{},
+				}},
+			}, nil)
+
+			reconciler := &AWSEndpointServiceReconciler{
+				Client:                 fakeClient,
+				CreateOrUpdateProvider: upsert.New(false),
+				awsClientBuilder:       mockBuilder,
+			}
+
+			countBefore := getHistogramSampleCount()
+
+			ctx := ctrl.LoggerInto(context.Background(), ctrl.Log.WithName("test"))
+			result, err := reconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{
+					Name:      awsEndpointSvc.Name,
+					Namespace: awsEndpointSvc.Namespace,
+				},
+			})
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(result.RequeueAfter).To(Equal(5 * time.Minute))
+
+			countAfter := getHistogramSampleCount()
+
+			if tc.expectObservation {
+				g.Expect(countAfter).To(Equal(countBefore+1), "expected histogram sample count to increase by 1")
+			} else {
+				g.Expect(countAfter).To(Equal(countBefore), "expected histogram sample count to remain unchanged")
+			}
 		})
 	}
 }

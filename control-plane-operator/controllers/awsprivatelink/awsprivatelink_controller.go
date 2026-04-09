@@ -47,10 +47,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
+	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"github.com/go-logr/logr"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 const (
@@ -195,6 +197,18 @@ const (
 	hypershiftLocalZone                    = "hypershift.local"
 	routerDomain                           = "apps"
 )
+
+var (
+	endpointProvisioningDuration = prometheus.NewHistogram(prometheus.HistogramOpts{
+		Name:    "hypershift_aws_endpoint_provisioning_duration_seconds",
+		Help:    "Time in seconds from AWSEndpointService creation to AWSEndpointAvailable condition becoming true.",
+		Buckets: []float64{5, 10, 20, 30, 60, 90, 120, 180, 240, 300, 360, 480, 600},
+	})
+)
+
+func init() {
+	ctrlmetrics.Registry.MustRegister(endpointProvisioningDuration)
+}
 
 // AWSEndpointServiceReconciler watches AWSEndpointService resources and reconciles
 // the existence of AWS Endpoints for it in the guest cluster infrastructure.
@@ -509,12 +523,20 @@ func (r *AWSEndpointServiceReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, err
 	}
 
+	wasAvailable := meta.IsStatusConditionTrue(oldStatus.Conditions, string(hyperv1.AWSEndpointAvailable))
+
 	meta.SetStatusCondition(&awsEndpointService.Status.Conditions, metav1.Condition{
 		Type:    string(hyperv1.AWSEndpointAvailable),
 		Status:  metav1.ConditionTrue,
 		Reason:  hyperv1.AWSSuccessReason,
 		Message: "",
 	})
+
+	if !wasAvailable {
+		duration := time.Since(awsEndpointService.CreationTimestamp.Time).Seconds()
+		endpointProvisioningDuration.Observe(duration)
+		log.Info("endpoint provisioning duration observed", "durationSeconds", duration)
+	}
 
 	if !equality.Semantic.DeepEqual(*oldStatus, awsEndpointService.Status) {
 		if err := r.Status().Update(ctx, awsEndpointService); err != nil {
