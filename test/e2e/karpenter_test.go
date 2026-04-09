@@ -28,13 +28,14 @@ import (
 	"github.com/openshift/hypershift/support/releaseinfo"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	dto "github.com/prometheus/client_model/go"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/utils/ptr"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/yaml"
@@ -63,30 +64,26 @@ func TestKarpenter(t *testing.T) {
 	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 		guestClient := e2eutil.WaitForGuestClient(t, ctx, mgtClient, hostedCluster)
 
-		// Unmarshal Karpenter NodePool.
-		karpenterNodePool := &unstructured.Unstructured{}
-		yamlFile, err := content.ReadFile(fmt.Sprintf("assets/%s", "karpenter-nodepool.yaml"))
+		karpenterNodePool := &karpenterv1.NodePool{}
+		yamlFile, err := content.ReadFile("assets/karpenter-nodepool.yaml")
 		g.Expect(err).NotTo(HaveOccurred())
 		err = yaml.Unmarshal(yamlFile, karpenterNodePool)
 		g.Expect(err).NotTo(HaveOccurred())
 
-		// Unmarshal workloads.
-		workLoads := &unstructured.Unstructured{}
-		yamlFile, err = content.ReadFile(fmt.Sprintf("assets/%s", "karpenter-workloads.yaml"))
+		workLoads := &appsv1.Deployment{}
+		yamlFile, err = content.ReadFile("assets/karpenter-workloads.yaml")
 		g.Expect(err).NotTo(HaveOccurred())
 		err = yaml.Unmarshal(yamlFile, workLoads)
 		g.Expect(err).NotTo(HaveOccurred())
 
-		// Unmarshal ARM64 NodePool.
-		armNodePool := &unstructured.Unstructured{}
-		yamlFile, err = content.ReadFile(fmt.Sprintf("assets/%s", "karpenter/arm-nodepool.yaml"))
+		armNodePool := &karpenterv1.NodePool{}
+		yamlFile, err = content.ReadFile("assets/karpenter/arm-nodepool.yaml")
 		g.Expect(err).NotTo(HaveOccurred())
 		err = yaml.Unmarshal(yamlFile, armNodePool)
 		g.Expect(err).NotTo(HaveOccurred())
 
-		// Unmarshal ARM64 workloads.
-		armWorkLoads := &unstructured.Unstructured{}
-		yamlFile, err = content.ReadFile(fmt.Sprintf("assets/%s", "karpenter/arm-workloads.yaml"))
+		armWorkLoads := &appsv1.Deployment{}
+		yamlFile, err = content.ReadFile("assets/karpenter/arm-workloads.yaml")
 		g.Expect(err).NotTo(HaveOccurred())
 		err = yaml.Unmarshal(yamlFile, armWorkLoads)
 		g.Expect(err).NotTo(HaveOccurred())
@@ -219,7 +216,7 @@ func TestKarpenter(t *testing.T) {
 			t.Logf("machine-os version(s) in latest release: %v", expectedRHCOSVersions)
 
 			replicas := 1
-			workLoads.Object["spec"].(map[string]interface{})["replicas"] = replicas
+			workLoads.Spec.Replicas = ptr.To(int32(replicas))
 
 			// Apply both Karpenter NodePool and workloads.
 			defer guestClient.Delete(ctx, karpenterNodePool)
@@ -382,13 +379,13 @@ func TestKarpenter(t *testing.T) {
 			// Create copies to avoid polluting shared test objects
 			testNodePool := karpenterNodePool.DeepCopy()
 			testWorkLoads := workLoads.DeepCopy()
-			testNodePool.SetResourceVersion("")
-			testWorkLoads.SetResourceVersion("")
+			testNodePool.ResourceVersion = ""
+			testWorkLoads.ResourceVersion = ""
 
 			replicas := 1
-			testWorkLoads.Object["spec"].(map[string]interface{})["replicas"] = replicas
-			testNodePool.SetName("instance-profile-test")
-			testWorkLoads.SetName("instance-profile-web-app")
+			testWorkLoads.Spec.Replicas = ptr.To(int32(replicas))
+			testNodePool.Name = "instance-profile-test"
+			testWorkLoads.Name = "instance-profile-web-app"
 
 			g.Expect(guestClient.Create(ctx, testNodePool)).To(Succeed())
 			t.Logf("Created Karpenter NodePool")
@@ -628,23 +625,20 @@ func TestKarpenter(t *testing.T) {
 
 			// Create a Karpenter NodePool that references the custom EC2NodeClass
 			testNodePool := karpenterNodePool.DeepCopy()
-			testNodePool.SetResourceVersion("")
-			testNodePool.SetName("version-test")
-			spec := testNodePool.Object["spec"].(map[string]interface{})
-			template := spec["template"].(map[string]interface{})
-			templateSpec := template["spec"].(map[string]interface{})
-			templateSpec["nodeClassRef"] = map[string]interface{}{
-				"group": "karpenter.k8s.aws",
-				"kind":  "EC2NodeClass",
-				"name":  nc.Name,
+			testNodePool.ResourceVersion = ""
+			testNodePool.Name = "version-test"
+			testNodePool.Spec.Template.Spec.NodeClassRef = &karpenterv1.NodeClassReference{
+				Group: "karpenter.k8s.aws",
+				Kind:  "EC2NodeClass",
+				Name:  nc.Name,
 			}
 
 			// Create workload to trigger provisioning
 			testWorkLoads := workLoads.DeepCopy()
-			testWorkLoads.SetResourceVersion("")
-			testWorkLoads.SetName("version-test-app")
+			testWorkLoads.ResourceVersion = ""
+			testWorkLoads.Name = "version-test-app"
 			replicas := 1
-			testWorkLoads.Object["spec"].(map[string]interface{})["replicas"] = replicas
+			testWorkLoads.Spec.Replicas = ptr.To(int32(replicas))
 
 			g.Expect(guestClient.Create(ctx, testNodePool)).To(Succeed())
 			t.Logf("Created Karpenter NodePool %q", testNodePool.GetName())
@@ -926,25 +920,16 @@ func TestKarpenter(t *testing.T) {
 			// Create a dedicated NodePool that targets the capacity-reservation-test NodeClass and requires
 			// capacity-type=reserved so karpenter launches the instance into the reservation (not alongside it).
 			crNodePool := karpenterNodePool.DeepCopy()
-			crNodePool.SetResourceVersion("")
-			crNodePool.SetName("capacity-reservation-test")
-			crNodePool.Object["spec"].(map[string]interface{})["template"].(map[string]interface{})["spec"].(map[string]interface{})["nodeClassRef"] = map[string]interface{}{
-				"group": "karpenter.k8s.aws",
-				"kind":  "EC2NodeClass",
-				"name":  "capacity-reservation-test",
+			crNodePool.ResourceVersion = ""
+			crNodePool.Name = "capacity-reservation-test"
+			crNodePool.Spec.Template.Spec.NodeClassRef = &karpenterv1.NodeClassReference{
+				Group: "karpenter.k8s.aws",
+				Kind:  "EC2NodeClass",
+				Name:  "capacity-reservation-test",
 			}
-			// Require t3.large (matches the CR) and capacity-type=reserved so karpenter uses the targeted reservation.
-			crNodePool.Object["spec"].(map[string]interface{})["template"].(map[string]interface{})["spec"].(map[string]interface{})["requirements"] = []interface{}{
-				map[string]interface{}{
-					"key":      "node.kubernetes.io/instance-type",
-					"operator": "In",
-					"values":   []interface{}{"t3.large"},
-				},
-				map[string]interface{}{
-					"key":      "karpenter.sh/capacity-type",
-					"operator": "In",
-					"values":   []interface{}{"reserved"},
-				},
+			crNodePool.Spec.Template.Spec.Requirements = []karpenterv1.NodeSelectorRequirementWithMinValues{
+				{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: "node.kubernetes.io/instance-type", Operator: corev1.NodeSelectorOpIn, Values: []string{"t3.large"}}},
+				{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: "karpenter.sh/capacity-type", Operator: corev1.NodeSelectorOpIn, Values: []string{"reserved"}}},
 			}
 			defer func() {
 				if err := guestClient.Delete(ctx, crNodePool); err != nil {
@@ -960,10 +945,10 @@ func TestKarpenter(t *testing.T) {
 				"karpenter.sh/nodepool": crNodePool.GetName(),
 			}
 			crWorkload := workLoads.DeepCopy()
-			crWorkload.SetResourceVersion("")
-			crWorkload.SetName("capacity-reservation-web-app")
-			crWorkload.Object["spec"].(map[string]interface{})["replicas"] = 1
-			crWorkload.Object["spec"].(map[string]interface{})["template"].(map[string]interface{})["spec"].(map[string]interface{})["nodeSelector"] = crNodeLabels
+			crWorkload.ResourceVersion = ""
+			crWorkload.Name = "capacity-reservation-web-app"
+			crWorkload.Spec.Replicas = ptr.To(int32(1))
+			crWorkload.Spec.Template.Spec.NodeSelector = crNodeLabels
 
 			defer func() {
 				if err := guestClient.Delete(ctx, crWorkload); err != nil {
@@ -1231,22 +1216,19 @@ func TestKarpenter(t *testing.T) {
 
 			// Launch a node in the custom subnet to verify it's functional.
 			testNodePool := karpenterNodePool.DeepCopy()
-			testNodePool.SetResourceVersion("")
-			testNodePool.SetName("arbitrary-subnet-test")
-			spec := testNodePool.Object["spec"].(map[string]interface{})
-			template := spec["template"].(map[string]interface{})
-			templateSpec := template["spec"].(map[string]interface{})
-			templateSpec["nodeClassRef"] = map[string]interface{}{
-				"group": "karpenter.k8s.aws",
-				"kind":  "EC2NodeClass",
-				"name":  customNodeClass.Name,
+			testNodePool.ResourceVersion = ""
+			testNodePool.Name = "arbitrary-subnet-test"
+			testNodePool.Spec.Template.Spec.NodeClassRef = &karpenterv1.NodeClassReference{
+				Group: "karpenter.k8s.aws",
+				Kind:  "EC2NodeClass",
+				Name:  customNodeClass.Name,
 			}
 
 			testWorkLoads := workLoads.DeepCopy()
-			testWorkLoads.SetResourceVersion("")
-			testWorkLoads.SetName("arbitrary-subnet-web-app")
+			testWorkLoads.ResourceVersion = ""
+			testWorkLoads.Name = "arbitrary-subnet-web-app"
 			replicas := 1
-			testWorkLoads.Object["spec"].(map[string]interface{})["replicas"] = replicas
+			testWorkLoads.Spec.Replicas = ptr.To(int32(replicas))
 
 			g.Expect(guestClient.Create(ctx, testNodePool)).To(Succeed())
 			t.Logf("Created Karpenter NodePool %q", testNodePool.GetName())
@@ -1377,9 +1359,9 @@ func TestKarpenter(t *testing.T) {
 		t.Run("Test basic provisioning and de-provisioning", func(t *testing.T) {
 			// Test that we can provision as many nodes as needed (in this case, we need 3 nodes for 3 replicas)
 			replicas := 3
-			workLoads.Object["spec"].(map[string]interface{})["replicas"] = replicas
-			workLoads.SetResourceVersion("")
-			karpenterNodePool.SetResourceVersion("")
+			workLoads.Spec.Replicas = ptr.To(int32(replicas))
+			workLoads.ResourceVersion = ""
+			karpenterNodePool.ResourceVersion = ""
 
 			// Leave dangling resources, and hope the teardown is not blocked, else the test will fail.
 			g.Expect(guestClient.Create(ctx, karpenterNodePool)).To(Succeed())
