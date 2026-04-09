@@ -152,12 +152,18 @@ func TestOVNControlPlaneZeroWorkers(t *testing.T) {
 			t.Logf("Verifying OVN control-plane pods roll out to new image")
 
 			// Get baseline image before rollout
-			var baselineImage string
+			var (
+				baselineImage      string
+				baselineGeneration int64
+			)
 			deployment := &appsv1.Deployment{}
 			err := mgtClient.Get(ctx, crclient.ObjectKey{
 				Name:      "ovnkube-control-plane",
 				Namespace: controlPlaneNS,
 			}, deployment)
+			if err == nil {
+				baselineGeneration = deployment.Generation
+			}
 			if err == nil && len(deployment.Spec.Template.Spec.Containers) > 0 {
 				baselineImage = deployment.Spec.Template.Spec.Containers[0].Image
 				t.Logf("Baseline OVN image: %s", baselineImage)
@@ -176,6 +182,15 @@ func TestOVNControlPlaneZeroWorkers(t *testing.T) {
 				}, deployment)
 				if err != nil {
 					t.Logf("Failed to get deployment: %v", err)
+					return false
+				}
+
+				if deployment.Generation == baselineGeneration {
+					return false
+				}
+				if baselineImage != "" &&
+					len(deployment.Spec.Template.Spec.Containers) > 0 &&
+					deployment.Spec.Template.Spec.Containers[0].Image == baselineImage {
 					return false
 				}
 
