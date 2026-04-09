@@ -319,918 +319,925 @@ func TestKarpenter(t *testing.T) {
 			_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, 0, nodeLabels)
 		})
 
-		t.Run("Instance profile annotation propagation", func(t *testing.T) {
-			// Get the current HostedCluster
-			err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
-			g.Expect(err).NotTo(HaveOccurred())
-
-			// Use the default worker instance profile (typically {infraID}-worker)
-			workerInstanceProfile := hostedCluster.Spec.InfraID + "-worker"
-
-			// Apply the annotation to the HostedCluster
-			err = e2eutil.UpdateObject(t, ctx, mgtClient, hostedCluster, func(obj *hyperv1.HostedCluster) {
-				if obj.Annotations == nil {
-					obj.Annotations = make(map[string]string)
-				}
-				obj.Annotations[hyperv1.AWSKarpenterDefaultInstanceProfile] = workerInstanceProfile
-
-			})
-			g.Expect(err).NotTo(HaveOccurred())
-			t.Logf("Applied annotation %s=%s to HostedCluster", hyperv1.AWSKarpenterDefaultInstanceProfile, workerInstanceProfile)
-
-			// Wait for the EC2NodeClass to have the InstanceProfile field set
-			t.Logf("Waiting for EC2NodeClass to have InstanceProfile set to %s", workerInstanceProfile)
-			g.Eventually(func(g Gomega) {
-				ec2NodeClassList := &awskarpenterv1.EC2NodeClassList{}
-				err := guestClient.List(ctx, ec2NodeClassList)
+		t.Run("Parallel provisioning tests", func(t *testing.T) {
+			t.Run("Instance profile annotation propagation", func(t *testing.T) {
+				t.Parallel()
+				// Get the current HostedCluster
+				err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
 				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(ec2NodeClassList.Items).NotTo(BeEmpty())
 
-				// Find the default EC2NodeClass
-				var defaultEC2NodeClass *awskarpenterv1.EC2NodeClass
-				for i := range ec2NodeClassList.Items {
-					if ec2NodeClassList.Items[i].Name == "default" {
-						defaultEC2NodeClass = &ec2NodeClassList.Items[i]
+				// Use the default worker instance profile (typically {infraID}-worker)
+				workerInstanceProfile := hostedCluster.Spec.InfraID + "-worker"
+
+				// Apply the annotation to the HostedCluster
+				err = e2eutil.UpdateObject(t, ctx, mgtClient, hostedCluster, func(obj *hyperv1.HostedCluster) {
+					if obj.Annotations == nil {
+						obj.Annotations = make(map[string]string)
+					}
+					obj.Annotations[hyperv1.AWSKarpenterDefaultInstanceProfile] = workerInstanceProfile
+
+				})
+				g.Expect(err).NotTo(HaveOccurred())
+				t.Logf("Applied annotation %s=%s to HostedCluster", hyperv1.AWSKarpenterDefaultInstanceProfile, workerInstanceProfile)
+
+				// Wait for the EC2NodeClass to have the InstanceProfile field set
+				t.Logf("Waiting for EC2NodeClass to have InstanceProfile set to %s", workerInstanceProfile)
+				g.Eventually(func(g Gomega) {
+					ec2NodeClassList := &awskarpenterv1.EC2NodeClassList{}
+					err := guestClient.List(ctx, ec2NodeClassList)
+					g.Expect(err).NotTo(HaveOccurred())
+					g.Expect(ec2NodeClassList.Items).NotTo(BeEmpty())
+
+					// Find the default EC2NodeClass
+					var defaultEC2NodeClass *awskarpenterv1.EC2NodeClass
+					for i := range ec2NodeClassList.Items {
+						if ec2NodeClassList.Items[i].Name == "default" {
+							defaultEC2NodeClass = &ec2NodeClassList.Items[i]
+							break
+						}
+					}
+					g.Expect(defaultEC2NodeClass).NotTo(BeNil(), "default EC2NodeClass should exist")
+					g.Expect(defaultEC2NodeClass.Spec.InstanceProfile).NotTo(BeNil(), "InstanceProfile should be set")
+					g.Expect(*defaultEC2NodeClass.Spec.InstanceProfile).To(Equal(workerInstanceProfile))
+				}).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
+				t.Logf("EC2NodeClass has InstanceProfile set correctly")
+
+				// Now provision actual nodes to verify EC2 instances get the instance profile
+				t.Logf("Creating Karpenter NodePool and workloads to provision nodes")
+
+				testNodePool := baseNodePool("instance-profile-test")
+				testWorkLoads := testWorkload("instance-profile-web-app", 1, map[string]string{
+					"karpenter.sh/nodepool": testNodePool.Name,
+				})
+
+				g.Expect(guestClient.Create(ctx, testNodePool)).To(Succeed())
+				t.Logf("Created Karpenter NodePool")
+				g.Expect(guestClient.Create(ctx, testWorkLoads)).To(Succeed())
+				t.Logf("Created workloads")
+
+				defer func() {
+					_ = guestClient.Delete(ctx, testWorkLoads)
+					_ = guestClient.Delete(ctx, testNodePool)
+				}()
+
+				testNodeLabels := map[string]string{
+					"karpenter.sh/nodepool": testNodePool.Name,
+				}
+
+				nodes := e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, 1, testNodeLabels)
+				t.Logf("Karpenter nodes are ready")
+
+				// Verify EC2 instances have the correct instance profile
+				ec2client := ec2Client(clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile, clusterOpts.AWSPlatform.Region)
+
+				for _, node := range nodes {
+					// Extract instance ID from providerID (format: aws:///region/instance-id)
+					providerID := node.Spec.ProviderID
+					g.Expect(providerID).NotTo(BeEmpty(), "node should have a providerID")
+
+					// Parse instance ID from providerID
+					parts := strings.Split(providerID, "/")
+					g.Expect(parts).To(HaveLen(5), "providerID should have 5 parts")
+					instanceID := parts[4]
+					t.Logf("Checking instance profile for node %s (instance %s)", node.Name, instanceID)
+
+					// Get EC2 instance details
+					result, err := ec2client.DescribeInstances(ctx, &ec2.DescribeInstancesInput{
+						InstanceIds: []string{instanceID},
+					})
+					g.Expect(err).NotTo(HaveOccurred(), "failed to describe EC2 instance")
+					g.Expect(result.Reservations).NotTo(BeEmpty(), "expected at least one reservation")
+					g.Expect(result.Reservations[0].Instances).NotTo(BeEmpty(), "expected at least one instance")
+
+					instance := result.Reservations[0].Instances[0]
+					g.Expect(instance.IamInstanceProfile).NotTo(BeNil(), "instance should have an IAM instance profile")
+
+					// Extract instance profile name from ARN (format: arn:aws:iam::account-id:instance-profile/profile-name)
+					profileArn := *instance.IamInstanceProfile.Arn
+					profileParts := strings.Split(profileArn, "/")
+					g.Expect(profileParts).To(HaveLen(2), "instance profile ARN should have 2 parts")
+					actualInstanceProfile := profileParts[1]
+
+					g.Expect(actualInstanceProfile).To(Equal(workerInstanceProfile),
+						"instance %s should have instance profile %s, but has %s", instanceID, workerInstanceProfile, actualInstanceProfile)
+					t.Logf("Instance %s has correct instance profile: %s", instanceID, actualInstanceProfile)
+				}
+
+				// Wait for nodes to be deleted
+				t.Logf("Waiting for Karpenter nodes to be deleted")
+				g.Expect(guestClient.Delete(ctx, testWorkLoads)).To(Succeed())
+				g.Expect(guestClient.Delete(ctx, testNodePool)).To(Succeed())
+				_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, 0, testNodeLabels)
+
+				// Remove the annotation and verify it gets cleared from EC2NodeClass
+				err = mgtClient.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
+				g.Expect(err).NotTo(HaveOccurred())
+
+				err = e2eutil.UpdateObject(t, ctx, mgtClient, hostedCluster, func(obj *hyperv1.HostedCluster) {
+					delete(obj.Annotations, hyperv1.AWSKarpenterDefaultInstanceProfile)
+				})
+				g.Expect(err).NotTo(HaveOccurred())
+				t.Logf("Removed annotation %s from HostedCluster", hyperv1.AWSKarpenterDefaultInstanceProfile)
+
+				// Wait for the EC2NodeClass to have InstanceProfile cleared
+				t.Logf("Waiting for EC2NodeClass to have InstanceProfile cleared")
+				g.Eventually(func(g Gomega) {
+					ec2NodeClass := &awskarpenterv1.EC2NodeClass{}
+					err := guestClient.Get(ctx, crclient.ObjectKey{Name: "default"}, ec2NodeClass)
+					g.Expect(err).NotTo(HaveOccurred())
+					g.Expect(ec2NodeClass.Spec.InstanceProfile).To(BeNil(), "InstanceProfile should be cleared")
+				}).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
+				t.Logf("EC2NodeClass InstanceProfile cleared successfully")
+			})
+
+			t.Run("OpenshiftEC2NodeClass version field", func(t *testing.T) {
+				t.Parallel()
+				g := NewWithT(t)
+
+				// Re-fetch the hosted cluster to get the latest version status
+				err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(hostedCluster.Status.Version).NotTo(BeNil(), "hostedCluster.Status.Version should not be nil")
+				g.Expect(hostedCluster.Status.Version.Desired.Version).NotTo(BeEmpty(), "hostedCluster.Status.Version.Desired.Version should not be empty")
+
+				cpVersion, err := semver.Parse(hostedCluster.Status.Version.Desired.Version)
+				g.Expect(err).NotTo(HaveOccurred(), "failed to parse control plane version")
+				t.Logf("Control plane version: %s", cpVersion.String())
+
+				// Verify the default OpenshiftEC2NodeClass (version unset) uses the control plane release image
+				t.Log("Verifying default OpenshiftEC2NodeClass uses control plane release image")
+				e2eutil.EventuallyObject(t, ctx, "default OpenshiftEC2NodeClass to have VersionResolved=True",
+					func(ctx context.Context) (*hyperkarpenterv1.OpenshiftEC2NodeClass, error) {
+						nc := &hyperkarpenterv1.OpenshiftEC2NodeClass{}
+						err := guestClient.Get(ctx, crclient.ObjectKey{Name: "default"}, nc)
+						return nc, err
+					},
+					[]e2eutil.Predicate[*hyperkarpenterv1.OpenshiftEC2NodeClass]{
+						e2eutil.ConditionPredicate[*hyperkarpenterv1.OpenshiftEC2NodeClass](e2eutil.Condition{
+							Type:   hyperkarpenterv1.ConditionTypeVersionResolved,
+							Status: metav1.ConditionTrue,
+							Reason: "VersionNotSpecified",
+						}),
+						e2eutil.ConditionPredicate[*hyperkarpenterv1.OpenshiftEC2NodeClass](e2eutil.Condition{
+							Type:   hyperkarpenterv1.ConditionTypeSupportedVersionSkew,
+							Status: metav1.ConditionTrue,
+							Reason: "VersionNotSpecified",
+						}),
+						e2eutil.Predicate[*hyperkarpenterv1.OpenshiftEC2NodeClass](func(nc *hyperkarpenterv1.OpenshiftEC2NodeClass) (done bool, reasons string, err error) {
+							if nc.Status.ReleaseImage == "" {
+								return false, "status.releaseImage is empty", nil
+							}
+							if nc.Status.ReleaseImage != hostedCluster.Spec.Release.Image {
+								return false, fmt.Sprintf("expected status.releaseImage %q to match hostedCluster.Spec.Release.Image %q", nc.Status.ReleaseImage, hostedCluster.Spec.Release.Image), nil
+							}
+							return true, fmt.Sprintf("status.releaseImage matches control plane: %s", nc.Status.ReleaseImage), nil
+						}),
+					},
+					e2eutil.WithTimeout(2*time.Minute),
+				)
+				t.Log("Default OpenshiftEC2NodeClass has correct version status")
+
+				// Use previous minor version (e.g., 4.21.0 for CP 4.22.x) to test a genuinely different version.
+				nodeClassVersion := fmt.Sprintf("%d.%d.0", cpVersion.Major, cpVersion.Minor-1)
+
+				// Create a custom OpenshiftEC2NodeClass with the version field set to the previous minor.
+				nc := &hyperkarpenterv1.OpenshiftEC2NodeClass{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "version-test",
+					},
+					Spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{
+						Version: nodeClassVersion,
+						SubnetSelectorTerms: []hyperkarpenterv1.SubnetSelectorTerm{
+							{Tags: map[string]string{"karpenter.sh/discovery": hostedCluster.Spec.InfraID}},
+						},
+						SecurityGroupSelectorTerms: []hyperkarpenterv1.SecurityGroupSelectorTerm{
+							{Tags: map[string]string{"karpenter.sh/discovery": hostedCluster.Spec.InfraID}},
+						},
+						MetadataOptions: hyperkarpenterv1.MetadataOptions{
+							Access:                  hyperkarpenterv1.MetadataAccessHTTPEndpoint,
+							HTTPIPProtocol:          hyperkarpenterv1.MetadataHTTPProtocolIPv4,
+							HTTPPutResponseHopLimit: 2,
+							HTTPTokens:              hyperkarpenterv1.MetadataHTTPTokensStateRequired,
+						},
+					},
+				}
+				g.Expect(guestClient.Create(ctx, nc)).To(Succeed())
+				t.Logf("Created OpenshiftEC2NodeClass %q with version %s (CP version: %s)", nc.Name, nodeClassVersion, cpVersion)
+				defer func() {
+					_ = guestClient.Delete(ctx, nc)
+				}()
+
+				// Wait for version resolution and get the resolved release image
+				var resolvedReleaseImage string
+				t.Log("Waiting for OpenshiftEC2NodeClass version resolution")
+				e2eutil.EventuallyObject(t, ctx, "OpenshiftEC2NodeClass version-test to resolve version",
+					func(ctx context.Context) (*hyperkarpenterv1.OpenshiftEC2NodeClass, error) {
+						result := &hyperkarpenterv1.OpenshiftEC2NodeClass{}
+						err := guestClient.Get(ctx, crclient.ObjectKey{Name: nc.Name}, result)
+						return result, err
+					},
+					[]e2eutil.Predicate[*hyperkarpenterv1.OpenshiftEC2NodeClass]{
+						e2eutil.ConditionPredicate[*hyperkarpenterv1.OpenshiftEC2NodeClass](e2eutil.Condition{
+							Type:   hyperkarpenterv1.ConditionTypeVersionResolved,
+							Status: metav1.ConditionTrue,
+							Reason: "VersionResolved",
+						}),
+						e2eutil.ConditionPredicate[*hyperkarpenterv1.OpenshiftEC2NodeClass](e2eutil.Condition{
+							Type:   hyperkarpenterv1.ConditionTypeSupportedVersionSkew,
+							Status: metav1.ConditionTrue,
+							Reason: "AsExpected",
+						}),
+						e2eutil.Predicate[*hyperkarpenterv1.OpenshiftEC2NodeClass](func(nc *hyperkarpenterv1.OpenshiftEC2NodeClass) (done bool, reasons string, err error) {
+							if nc.Status.ReleaseImage == "" {
+								return false, "status.releaseImage is empty", nil
+							}
+							resolvedReleaseImage = nc.Status.ReleaseImage
+							return true, fmt.Sprintf("status.releaseImage resolved to: %s", nc.Status.ReleaseImage), nil
+						}),
+					},
+					e2eutil.WithTimeout(5*time.Minute),
+				)
+				t.Log("OpenshiftEC2NodeClass version resolved successfully")
+
+				// Verify MetadataOptions propagated to the downstream EC2NodeClass
+				t.Log("Verifying MetadataOptions propagated to EC2NodeClass")
+				e2eutil.EventuallyObject(t, ctx, "EC2NodeClass to have MetadataOptions propagated",
+					func(ctx context.Context) (*awskarpenterv1.EC2NodeClass, error) {
+						ec2NodeClass := &awskarpenterv1.EC2NodeClass{}
+						err := guestClient.Get(ctx, crclient.ObjectKey{Name: nc.Name}, ec2NodeClass)
+						return ec2NodeClass, err
+					},
+					[]e2eutil.Predicate[*awskarpenterv1.EC2NodeClass]{
+						e2eutil.Predicate[*awskarpenterv1.EC2NodeClass](func(ec2nc *awskarpenterv1.EC2NodeClass) (done bool, reasons string, err error) {
+							if ec2nc.Spec.MetadataOptions == nil {
+								return false, "MetadataOptions is nil", nil
+							}
+							if ec2nc.Spec.MetadataOptions.HTTPEndpoint == nil || *ec2nc.Spec.MetadataOptions.HTTPEndpoint != "enabled" {
+								return false, fmt.Sprintf("expected HTTPEndpoint=enabled, got %v", ec2nc.Spec.MetadataOptions.HTTPEndpoint), nil
+							}
+							if ec2nc.Spec.MetadataOptions.HTTPProtocolIPv6 == nil || *ec2nc.Spec.MetadataOptions.HTTPProtocolIPv6 != "disabled" {
+								return false, fmt.Sprintf("expected HTTPProtocolIPv6=disabled, got %v", ec2nc.Spec.MetadataOptions.HTTPProtocolIPv6), nil
+							}
+							if ec2nc.Spec.MetadataOptions.HTTPPutResponseHopLimit == nil || *ec2nc.Spec.MetadataOptions.HTTPPutResponseHopLimit != 2 {
+								return false, fmt.Sprintf("expected HTTPPutResponseHopLimit=2, got %v", ec2nc.Spec.MetadataOptions.HTTPPutResponseHopLimit), nil
+							}
+							if ec2nc.Spec.MetadataOptions.HTTPTokens == nil || *ec2nc.Spec.MetadataOptions.HTTPTokens != "required" {
+								return false, fmt.Sprintf("expected HTTPTokens=required, got %v", ec2nc.Spec.MetadataOptions.HTTPTokens), nil
+							}
+							return true, "MetadataOptions propagated correctly", nil
+						}),
+					},
+					e2eutil.WithTimeout(2*time.Minute),
+				)
+				t.Log("MetadataOptions propagated correctly to EC2NodeClass")
+
+				// Look up the expected kubelet version from the resolved release image
+				pullSecret, err := os.ReadFile(clusterOpts.PullSecretFile)
+				g.Expect(err).NotTo(HaveOccurred())
+				releaseProvider := &releaseinfo.RegistryClientProvider{}
+				resolvedRelease, err := releaseProvider.Lookup(ctx, resolvedReleaseImage, pullSecret)
+				g.Expect(err).NotTo(HaveOccurred(), "failed to look up resolved release image %s", resolvedReleaseImage)
+				componentVersions, err := resolvedRelease.ComponentVersions()
+				g.Expect(err).NotTo(HaveOccurred(), "failed to get component versions from resolved release")
+				expectedKubeletVersion := componentVersions["kubernetes"]
+				g.Expect(expectedKubeletVersion).NotTo(BeEmpty(), "resolved release should have a kubernetes version")
+				t.Logf("Expected kubelet version for %s: v%s", nodeClassVersion, expectedKubeletVersion)
+
+				// Create a Karpenter NodePool that references the custom EC2NodeClass
+				testNodePool := baseNodePool("version-test")
+				testNodePool.Spec.Template.Spec.NodeClassRef = &karpenterv1.NodeClassReference{
+					Group: "karpenter.k8s.aws",
+					Kind:  "EC2NodeClass",
+					Name:  nc.Name,
+				}
+
+				testWorkLoads := testWorkload("version-test-app", 1, map[string]string{
+					"karpenter.sh/nodepool": testNodePool.Name,
+				})
+
+				g.Expect(guestClient.Create(ctx, testNodePool)).To(Succeed())
+				t.Logf("Created Karpenter NodePool %q", testNodePool.Name)
+				g.Expect(guestClient.Create(ctx, testWorkLoads)).To(Succeed())
+				t.Logf("Created workload %q", testWorkLoads.Name)
+
+				defer func() {
+					_ = guestClient.Delete(ctx, testWorkLoads)
+					_ = guestClient.Delete(ctx, testNodePool)
+				}()
+
+				// Use only the nodepool label to select nodes exclusively tied to our version-test nodeclass.
+				testNodeLabels := map[string]string{
+					"karpenter.sh/nodepool": testNodePool.GetName(),
+				}
+
+				// Log diagnostic info about the version-test NodeClass infrastructure.
+				hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+				secretList := &corev1.SecretList{}
+				if err := mgtClient.List(ctx, secretList,
+					crclient.InNamespace(hcpNamespace),
+					crclient.MatchingLabels{"hypershift.openshift.io/managed-by-karpenter": "true"},
+				); err != nil {
+					t.Logf("WARNING: failed to list karpenter secrets in %s: %v", hcpNamespace, err)
+				} else {
+					foundUserData := false
+					for _, s := range secretList.Items {
+						npAnnotation := s.Annotations["hypershift.openshift.io/nodePool"]
+						if strings.Contains(npAnnotation, "version-test") {
+							t.Logf("Found karpenter secret %q for nodepool %q (labels: %v)", s.Name, npAnnotation, s.Labels)
+							foundUserData = true
+						}
+					}
+					if !foundUserData {
+						t.Log("WARNING: no user-data secret found for version-test NodeClass. Token creation may be failing - check karpenter-operator logs.")
+					}
+				}
+
+				// Wait for node to be provisioned and verify it has the correct kubelet version
+				nodes := e2eutil.WaitForNReadyNodesWithOptions(t, ctx, guestClient, 1, hyperv1.AWSPlatform, "",
+					e2eutil.WithClientOptions(
+						crclient.MatchingLabelsSelector{Selector: labels.SelectorFromSet(labels.Set(testNodeLabels))},
+					),
+					e2eutil.WithPredicates(
+						e2eutil.Predicate[*corev1.Node](func(node *corev1.Node) (done bool, reasons string, err error) {
+							kubeletVersion := node.Status.NodeInfo.KubeletVersion
+							if !strings.Contains(kubeletVersion, expectedKubeletVersion) {
+								return false, fmt.Sprintf("node %s kubelet version %q does not contain expected %q", node.Name, kubeletVersion, expectedKubeletVersion), nil
+							}
+							return true, fmt.Sprintf("node %s has expected kubelet version %s", node.Name, kubeletVersion), nil
+						}),
+					),
+				)
+				t.Logf("Node provisioned with correct kubelet version (v%s) for NodeClass version %s", expectedKubeletVersion, nodeClassVersion)
+
+				// Verify MetadataOptions propagated to the actual EC2 instance
+				t.Log("Verifying MetadataOptions on EC2 instance via DescribeInstances")
+				ec2client := ec2Client(clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile, clusterOpts.AWSPlatform.Region)
+				for _, node := range nodes {
+					providerID := node.Spec.ProviderID
+					g.Expect(providerID).NotTo(BeEmpty(), "node should have a providerID")
+
+					parts := strings.Split(providerID, "/")
+					g.Expect(parts).To(HaveLen(5), "providerID should have 5 parts")
+					instanceID := parts[4]
+					t.Logf("Checking MetadataOptions for node %s (instance %s)", node.Name, instanceID)
+
+					result, err := ec2client.DescribeInstances(ctx, &ec2.DescribeInstancesInput{
+						InstanceIds: []string{instanceID},
+					})
+					g.Expect(err).NotTo(HaveOccurred(), "failed to describe EC2 instance")
+					g.Expect(result.Reservations).NotTo(BeEmpty(), "expected at least one reservation")
+					g.Expect(result.Reservations[0].Instances).NotTo(BeEmpty(), "expected at least one instance")
+
+					instance := result.Reservations[0].Instances[0]
+					g.Expect(instance.MetadataOptions).NotTo(BeNil(), "instance should have MetadataOptions")
+					g.Expect(string(instance.MetadataOptions.HttpEndpoint)).To(Equal("enabled"),
+						"instance %s HttpEndpoint mismatch", instanceID)
+					g.Expect(string(instance.MetadataOptions.HttpProtocolIpv6)).To(Equal("disabled"),
+						"instance %s HttpProtocolIpv6 mismatch", instanceID)
+					g.Expect(*instance.MetadataOptions.HttpPutResponseHopLimit).To(Equal(int32(2)),
+						"instance %s HttpPutResponseHopLimit mismatch", instanceID)
+					g.Expect(string(instance.MetadataOptions.HttpTokens)).To(Equal("required"),
+						"instance %s HttpTokens mismatch", instanceID)
+					t.Logf("Instance %s has correct MetadataOptions: HttpTokens=%s, HttpEndpoint=%s, HttpPutResponseHopLimit=%d",
+						instanceID, instance.MetadataOptions.HttpTokens, instance.MetadataOptions.HttpEndpoint, *instance.MetadataOptions.HttpPutResponseHopLimit)
+				}
+
+				// Clean up
+				g.Expect(guestClient.Delete(ctx, testWorkLoads)).To(Succeed())
+				g.Expect(guestClient.Delete(ctx, testNodePool)).To(Succeed())
+				t.Log("Waiting for version-test nodes to be removed")
+				_ = e2eutil.WaitForNReadyNodesWithOptions(t, ctx, guestClient, 0, hyperv1.AWSPlatform, "",
+					e2eutil.WithClientOptions(
+						crclient.MatchingLabelsSelector{Selector: labels.SelectorFromSet(labels.Set(testNodeLabels))},
+					),
+				)
+				t.Log("Version-test nodes removed successfully")
+			})
+
+			t.Run("OpenshiftEC2NodeClass with version exceeding allowed skew sets SupportedVersionSkew condition", func(t *testing.T) {
+				t.Parallel()
+				g := NewWithT(t)
+
+				// Re-fetch the hosted cluster to get the latest version status
+				err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(hostedCluster.Status.Version).NotTo(BeNil(), "hostedCluster.Status.Version should not be nil")
+				g.Expect(hostedCluster.Status.Version.Desired.Version).NotTo(BeEmpty(), "hostedCluster.Status.Version.Desired.Version should not be empty")
+
+				cpVersion, err := semver.Parse(hostedCluster.Status.Version.Desired.Version)
+				g.Expect(err).NotTo(HaveOccurred(), "failed to parse control plane version")
+
+				// Compute a version that exceeds the n-3 skew (cpMinor - 4)
+				skewMinor := cpVersion.Minor - 4
+				if skewMinor <= 14 {
+					t.Skipf("Skipping: computed skew version 4.%d.0 would be at or below MinSupportedVersion (4.14.0), which would be caught by minimum version check instead", skewMinor)
+				}
+				skewPatch := 1 // There are cases where x.y.0 doesn't exist, so arbitrarily stick with x.y.1 for test consistency
+				skewVersion := fmt.Sprintf("%d.%d.%d", cpVersion.Major, skewMinor, skewPatch)
+
+				nc := &hyperkarpenterv1.OpenshiftEC2NodeClass{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "version-skew-test",
+					},
+					Spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{
+						Version: skewVersion,
+						SubnetSelectorTerms: []hyperkarpenterv1.SubnetSelectorTerm{
+							{Tags: map[string]string{"test": "version-skew"}},
+						},
+						SecurityGroupSelectorTerms: []hyperkarpenterv1.SecurityGroupSelectorTerm{
+							{Tags: map[string]string{"test": "version-skew"}},
+						},
+					},
+				}
+				g.Expect(guestClient.Create(ctx, nc)).To(Succeed())
+				t.Logf("Created OpenshiftEC2NodeClass %q with version %s (CP version: %s)", nc.Name, skewVersion, cpVersion)
+				defer func() {
+					_ = guestClient.Delete(ctx, nc)
+					t.Logf("Cleaned up OpenshiftEC2NodeClass %q", nc.Name)
+				}()
+
+				// Version should still resolve successfully despite the skew
+				t.Log("Waiting for VersionResolved=True and SupportedVersionSkew=False")
+				e2eutil.EventuallyObject(t, ctx, "OpenshiftEC2NodeClass version-skew-test to have SupportedVersionSkew=False",
+					func(ctx context.Context) (*hyperkarpenterv1.OpenshiftEC2NodeClass, error) {
+						result := &hyperkarpenterv1.OpenshiftEC2NodeClass{}
+						err := guestClient.Get(ctx, crclient.ObjectKey{Name: nc.Name}, result)
+						return result, err
+					},
+					[]e2eutil.Predicate[*hyperkarpenterv1.OpenshiftEC2NodeClass]{
+						e2eutil.ConditionPredicate[*hyperkarpenterv1.OpenshiftEC2NodeClass](e2eutil.Condition{
+							Type:   hyperkarpenterv1.ConditionTypeVersionResolved,
+							Status: metav1.ConditionTrue,
+							Reason: "VersionResolved",
+						}),
+						e2eutil.ConditionPredicate[*hyperkarpenterv1.OpenshiftEC2NodeClass](e2eutil.Condition{
+							Type:   hyperkarpenterv1.ConditionTypeSupportedVersionSkew,
+							Status: metav1.ConditionFalse,
+							Reason: "UnsupportedSkew",
+						}),
+						e2eutil.Predicate[*hyperkarpenterv1.OpenshiftEC2NodeClass](func(nc *hyperkarpenterv1.OpenshiftEC2NodeClass) (done bool, reasons string, err error) {
+							for _, c := range nc.Status.Conditions {
+								if c.Type == hyperkarpenterv1.ConditionTypeSupportedVersionSkew && c.Status == metav1.ConditionFalse {
+									if strings.Contains(c.Message, "minor version") {
+										return true, fmt.Sprintf("SupportedVersionSkew condition message describes skew issue: %s", c.Message), nil
+									}
+									return false, fmt.Sprintf("expected SupportedVersionSkew message to mention version skew, got %q", c.Message), nil
+								}
+							}
+							return false, "SupportedVersionSkew=False condition not found", nil
+						}),
+					},
+					e2eutil.WithTimeout(2*time.Minute),
+				)
+				t.Logf("OpenshiftEC2NodeClass %q has SupportedVersionSkew=False for version %s (exceeds n-3 skew from CP %s)", nc.Name, skewVersion, cpVersion)
+			})
+
+			t.Run("Capacity reservation selector propagation", func(t *testing.T) {
+				t.Parallel()
+				g := NewWithT(t)
+
+				// AutoNode.Provisioner.Karpenter.AWS is required at the API level when karpenter
+				// is configured, so this should never happen/never be nil for a valid karpenter cluster.
+				if hostedCluster.Spec.AutoNode == nil ||
+					hostedCluster.Spec.AutoNode.Provisioner.Karpenter == nil ||
+					hostedCluster.Spec.AutoNode.Provisioner.Karpenter.AWS == nil {
+					t.Skip("HostedCluster does not have a Karpenter AWS role configured, skipping capacity reservation test")
+				}
+
+				// Determine an availability zone to use: pick the AZ from the first subnet in the cluster.
+				defaultNodeClass := &hyperkarpenterv1.OpenshiftEC2NodeClass{}
+				g.Expect(guestClient.Get(ctx, crclient.ObjectKey{Name: "default"}, defaultNodeClass)).To(Succeed())
+				g.Expect(defaultNodeClass.Status.Subnets).NotTo(BeEmpty(), "default OpenshiftEC2NodeClass should have resolved subnets")
+				targetAZ := defaultNodeClass.Status.Subnets[0].Zone
+				t.Logf("Using availability zone %s for capacity reservation", targetAZ)
+
+				// Create a real EC2 capacity reservation with 1 instance of t3.large in targeted mode.
+				// We use t3.large to match the instance type used by the other karpenter tests — OpenShift
+				// platform daemonsets consume enough overhead that smaller types (t3.small, t3.medium) don't
+				// have enough free memory to satisfy karpenter's scheduling check.
+				// We need a real reservation because karpenter 1.8 runs with ReservedCapacity=true by default,
+				// so selector terms that match nothing would cause CapacityReservationsReady=False on the
+				// EC2NodeClass and block provisioning.
+				crID, cleanupCR, err := e2eutil.CreateCapacityReservation(
+					ctx,
+					clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile,
+					clusterOpts.AWSPlatform.Region,
+					"t3.large",
+					targetAZ,
+					1,
+				)
+				g.Expect(err).NotTo(HaveOccurred(), "failed to create capacity reservation")
+				t.Logf("Created capacity reservation %s in %s", crID, targetAZ)
+				defer func() {
+					if err := cleanupCR(); err != nil {
+						t.Logf("warning: failed to cancel capacity reservation %s: %v", crID, err)
+					}
+				}()
+
+				// Create a new OpenshiftEC2NodeClass (not "default") pointing to the capacity reservation by ID.
+				// Using a separate object avoids contaminating the shared "default" class used by other sub-tests.
+				crNodeClass := &hyperkarpenterv1.OpenshiftEC2NodeClass{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "capacity-reservation-test",
+					},
+					Spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{
+						CapacityReservationSelectorTerms: []hyperkarpenterv1.CapacityReservationSelectorTerm{
+							{ID: crID},
+						},
+					},
+				}
+				g.Expect(guestClient.Create(ctx, crNodeClass)).To(Succeed())
+				t.Logf("Created OpenshiftEC2NodeClass capacity-reservation-test with CapacityReservationSelectorTerms ID=%s", crID)
+				defer func() {
+					if err := guestClient.Delete(ctx, crNodeClass); err != nil {
+						t.Logf("warning: failed to delete OpenshiftEC2NodeClass capacity-reservation-test: %v", err)
+					}
+				}()
+
+				// Verify the downstream EC2NodeClass has the CapacityReservationSelectorTerms propagated.
+				e2eutil.EventuallyObject(
+					t, ctx, "EC2NodeClass capacity-reservation-test to have CapacityReservationSelectorTerms set",
+					func(ctx context.Context) (*awskarpenterv1.EC2NodeClass, error) {
+						ec2nc := &awskarpenterv1.EC2NodeClass{}
+						return ec2nc, guestClient.Get(ctx, crclient.ObjectKey{Name: "capacity-reservation-test"}, ec2nc)
+					},
+					[]e2eutil.Predicate[*awskarpenterv1.EC2NodeClass]{
+						func(ec2nc *awskarpenterv1.EC2NodeClass) (done bool, reasons string, err error) {
+							if len(ec2nc.Spec.CapacityReservationSelectorTerms) == 1 &&
+								ec2nc.Spec.CapacityReservationSelectorTerms[0].ID == crID {
+								return true, "", nil
+							}
+							return false, fmt.Sprintf("expected CapacityReservationSelectorTerms[0].ID=%s, got %+v",
+								crID, ec2nc.Spec.CapacityReservationSelectorTerms), nil
+						},
+					},
+					e2eutil.WithTimeout(2*time.Minute), e2eutil.WithInterval(5*time.Second),
+				)
+
+				// Verify karpenter resolves the capacity reservation and reflects it in the OpenshiftEC2NodeClass status.
+				e2eutil.EventuallyObject(
+					t, ctx, fmt.Sprintf("OpenshiftEC2NodeClass capacity-reservation-test to have capacity reservation %s in status", crID),
+					func(ctx context.Context) (*hyperkarpenterv1.OpenshiftEC2NodeClass, error) {
+						updated := &hyperkarpenterv1.OpenshiftEC2NodeClass{}
+						return updated, guestClient.Get(ctx, crclient.ObjectKey{Name: "capacity-reservation-test"}, updated)
+					},
+					[]e2eutil.Predicate[*hyperkarpenterv1.OpenshiftEC2NodeClass]{
+						func(updated *hyperkarpenterv1.OpenshiftEC2NodeClass) (done bool, reasons string, err error) {
+							if len(updated.Status.CapacityReservations) > 0 &&
+								updated.Status.CapacityReservations[0].ID == crID {
+								return true, "", nil
+							}
+							return false, fmt.Sprintf("expected at least one resolved capacity reservation with ID=%s in status, got %+v",
+								crID, updated.Status.CapacityReservations), nil
+						},
+					},
+					e2eutil.WithTimeout(5*time.Minute), e2eutil.WithInterval(10*time.Second),
+				)
+
+				// Create a dedicated NodePool that targets the capacity-reservation-test NodeClass and requires
+				// capacity-type=reserved so karpenter launches the instance into the reservation (not alongside it).
+				crNodePool := baseNodePool("capacity-reservation-test")
+				crNodePool.Spec.Template.Spec.NodeClassRef = &karpenterv1.NodeClassReference{
+					Group: "karpenter.k8s.aws",
+					Kind:  "EC2NodeClass",
+					Name:  "capacity-reservation-test",
+				}
+				crNodePool.Spec.Template.Spec.Requirements = []karpenterv1.NodeSelectorRequirementWithMinValues{
+					{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: "node.kubernetes.io/instance-type", Operator: corev1.NodeSelectorOpIn, Values: []string{"t3.large"}}},
+					{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: "karpenter.sh/capacity-type", Operator: corev1.NodeSelectorOpIn, Values: []string{"reserved"}}},
+				}
+				defer func() {
+					if err := guestClient.Delete(ctx, crNodePool); err != nil {
+						t.Logf("warning: failed to delete NodePool capacity-reservation-test: %v", err)
+					}
+				}()
+				g.Expect(guestClient.Create(ctx, crNodePool)).To(Succeed())
+				t.Logf("Created NodePool capacity-reservation-test targeting capacity reservation %s", crID)
+
+				crNodeLabels := map[string]string{
+					"karpenter.sh/nodepool": crNodePool.Name,
+				}
+				crWorkload := testWorkload("capacity-reservation-web-app", 1, crNodeLabels)
+
+				defer func() {
+					if err := guestClient.Delete(ctx, crWorkload); err != nil {
+						t.Logf("warning: failed to delete workload capacity-reservation-web-app: %v", err)
+					}
+				}()
+				g.Expect(guestClient.Create(ctx, crWorkload)).To(Succeed())
+				t.Logf("Created workload capacity-reservation-web-app to trigger node provisioning")
+
+				// Wait for the node to be ready.
+				nodes := e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, 1, crNodeLabels)
+				g.Expect(nodes).To(HaveLen(1))
+				t.Logf("Node provisioned by capacity-reservation-test NodePool is ready")
+
+				// Verify the EC2 instance was launched into the capacity reservation.
+				ec2client := ec2Client(clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile, clusterOpts.AWSPlatform.Region)
+
+				node := nodes[0]
+				providerID := node.Spec.ProviderID
+				g.Expect(providerID).NotTo(BeEmpty(), "node should have a providerID")
+
+				parts := strings.Split(providerID, "/")
+				g.Expect(parts).To(HaveLen(5), "providerID should have 5 parts")
+				instanceID := parts[4]
+				t.Logf("Verifying EC2 instance %s was launched into capacity reservation %s", instanceID, crID)
+
+				result, err := ec2client.DescribeInstances(ctx, &ec2.DescribeInstancesInput{
+					InstanceIds: []string{instanceID},
+				})
+				g.Expect(err).NotTo(HaveOccurred(), "failed to describe EC2 instance %s", instanceID)
+				g.Expect(result.Reservations).NotTo(BeEmpty())
+				g.Expect(result.Reservations[0].Instances).NotTo(BeEmpty())
+
+				instance := result.Reservations[0].Instances[0]
+				g.Expect(instance.CapacityReservationId).NotTo(BeNil(), "instance %s should have a CapacityReservationId", instanceID)
+				g.Expect(aws.ToString(instance.CapacityReservationId)).To(Equal(crID),
+					"instance %s should have been launched into capacity reservation %s", instanceID, crID)
+				t.Logf("Instance %s correctly launched into capacity reservation %s", instanceID, crID)
+			})
+
+			t.Run("Arbitrary subnet propagation", func(t *testing.T) {
+				t.Parallel()
+				g := NewWithT(t)
+
+				// Get VPC ID and find an AZ that is:
+				// (a) supported by the VPC endpoint service (to avoid InvalidParameter), and
+				// (b) not already occupied by a VPC subnet (to avoid DuplicateSubnetsInSameZone).
+				// This exercises the real scenario: a customer brings a subnet in a new AZ,
+				// it propagates to the VPC endpoint, and nodes in that AZ can reach the cluster.
+				ec2client := ec2Client(clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile, clusterOpts.AWSPlatform.Region)
+				vpcID := hostedCluster.Spec.Platform.AWS.CloudProviderConfig.VPC
+				subnetsOut, err := ec2client.DescribeSubnets(ctx, &ec2.DescribeSubnetsInput{
+					Filters: []ec2types.Filter{{Name: aws.String("vpc-id"), Values: []string{vpcID}}},
+				})
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(subnetsOut.Subnets).NotTo(BeEmpty())
+
+				// Collect AZs already occupied by VPC subnets.
+				usedAZs := map[string]bool{}
+				for _, s := range subnetsOut.Subnets {
+					usedAZs[aws.ToString(s.AvailabilityZone)] = true
+				}
+
+				// Get the AZs supported by the VPC endpoint service.
+				hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+				esList := &hyperv1.AWSEndpointServiceList{}
+				g.Expect(mgtClient.List(ctx, esList, crclient.InNamespace(hcpNamespace))).To(Succeed())
+				g.Expect(esList.Items).NotTo(BeEmpty(), "expected at least one AWSEndpointService")
+
+				var endpointServiceName string
+				for _, es := range esList.Items {
+					if es.Status.EndpointServiceName != "" {
+						endpointServiceName = es.Status.EndpointServiceName
 						break
 					}
 				}
-				g.Expect(defaultEC2NodeClass).NotTo(BeNil(), "default EC2NodeClass should exist")
-				g.Expect(defaultEC2NodeClass.Spec.InstanceProfile).NotTo(BeNil(), "InstanceProfile should be set")
-				g.Expect(*defaultEC2NodeClass.Spec.InstanceProfile).To(Equal(workerInstanceProfile))
-			}).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
-			t.Logf("EC2NodeClass has InstanceProfile set correctly")
+				g.Expect(endpointServiceName).NotTo(BeEmpty(), "no AWSEndpointService has an endpoint service name yet")
 
-			// Now provision actual nodes to verify EC2 instances get the instance profile
-			t.Logf("Creating Karpenter NodePool and workloads to provision nodes")
-
-			testNodePool := baseNodePool("instance-profile-test")
-			testWorkLoads := testWorkload("instance-profile-web-app", 1, map[string]string{
-				"karpenter.sh/nodepool": testNodePool.Name,
-			})
-
-			g.Expect(guestClient.Create(ctx, testNodePool)).To(Succeed())
-			t.Logf("Created Karpenter NodePool")
-			g.Expect(guestClient.Create(ctx, testWorkLoads)).To(Succeed())
-			t.Logf("Created workloads")
-
-			defer func() {
-				_ = guestClient.Delete(ctx, testWorkLoads)
-				_ = guestClient.Delete(ctx, testNodePool)
-			}()
-
-			testNodeLabels := map[string]string{
-				"karpenter.sh/nodepool": testNodePool.Name,
-			}
-
-			nodes := e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, 1, testNodeLabels)
-			t.Logf("Karpenter nodes are ready")
-
-			// Verify EC2 instances have the correct instance profile
-			ec2client := ec2Client(clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile, clusterOpts.AWSPlatform.Region)
-
-			for _, node := range nodes {
-				// Extract instance ID from providerID (format: aws:///region/instance-id)
-				providerID := node.Spec.ProviderID
-				g.Expect(providerID).NotTo(BeEmpty(), "node should have a providerID")
-
-				// Parse instance ID from providerID
-				parts := strings.Split(providerID, "/")
-				g.Expect(parts).To(HaveLen(5), "providerID should have 5 parts")
-				instanceID := parts[4]
-				t.Logf("Checking instance profile for node %s (instance %s)", node.Name, instanceID)
-
-				// Get EC2 instance details
-				result, err := ec2client.DescribeInstances(ctx, &ec2.DescribeInstancesInput{
-					InstanceIds: []string{instanceID},
+				svcOut, err := ec2client.DescribeVpcEndpointServices(ctx, &ec2.DescribeVpcEndpointServicesInput{
+					ServiceNames: []string{endpointServiceName},
 				})
-				g.Expect(err).NotTo(HaveOccurred(), "failed to describe EC2 instance")
-				g.Expect(result.Reservations).NotTo(BeEmpty(), "expected at least one reservation")
-				g.Expect(result.Reservations[0].Instances).NotTo(BeEmpty(), "expected at least one instance")
-
-				instance := result.Reservations[0].Instances[0]
-				g.Expect(instance.IamInstanceProfile).NotTo(BeNil(), "instance should have an IAM instance profile")
-
-				// Extract instance profile name from ARN (format: arn:aws:iam::account-id:instance-profile/profile-name)
-				profileArn := *instance.IamInstanceProfile.Arn
-				profileParts := strings.Split(profileArn, "/")
-				g.Expect(profileParts).To(HaveLen(2), "instance profile ARN should have 2 parts")
-				actualInstanceProfile := profileParts[1]
-
-				g.Expect(actualInstanceProfile).To(Equal(workerInstanceProfile),
-					"instance %s should have instance profile %s, but has %s", instanceID, workerInstanceProfile, actualInstanceProfile)
-				t.Logf("Instance %s has correct instance profile: %s", instanceID, actualInstanceProfile)
-			}
-
-			// Wait for nodes to be deleted
-			t.Logf("Waiting for Karpenter nodes to be deleted")
-			g.Expect(guestClient.Delete(ctx, testWorkLoads)).To(Succeed())
-			g.Expect(guestClient.Delete(ctx, testNodePool)).To(Succeed())
-			_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, 0, testNodeLabels)
-
-			// Remove the annotation and verify it gets cleared from EC2NodeClass
-			err = mgtClient.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
-			g.Expect(err).NotTo(HaveOccurred())
-
-			err = e2eutil.UpdateObject(t, ctx, mgtClient, hostedCluster, func(obj *hyperv1.HostedCluster) {
-				delete(obj.Annotations, hyperv1.AWSKarpenterDefaultInstanceProfile)
-			})
-			g.Expect(err).NotTo(HaveOccurred())
-			t.Logf("Removed annotation %s from HostedCluster", hyperv1.AWSKarpenterDefaultInstanceProfile)
-
-			// Wait for the EC2NodeClass to have InstanceProfile cleared
-			t.Logf("Waiting for EC2NodeClass to have InstanceProfile cleared")
-			g.Eventually(func(g Gomega) {
-				ec2NodeClass := &awskarpenterv1.EC2NodeClass{}
-				err := guestClient.Get(ctx, crclient.ObjectKey{Name: "default"}, ec2NodeClass)
 				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(ec2NodeClass.Spec.InstanceProfile).To(BeNil(), "InstanceProfile should be cleared")
-			}).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
-			t.Logf("EC2NodeClass InstanceProfile cleared successfully")
-		})
+				g.Expect(svcOut.ServiceDetails).NotTo(BeEmpty())
+				supportedAZs := svcOut.ServiceDetails[0].AvailabilityZones
+				t.Logf("VPC endpoint service %s supports AZs: %v", endpointServiceName, supportedAZs)
 
-		t.Run("OpenshiftEC2NodeClass version field", func(t *testing.T) {
-			g := NewWithT(t)
-
-			// Re-fetch the hosted cluster to get the latest version status
-			err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
-			g.Expect(err).NotTo(HaveOccurred())
-			g.Expect(hostedCluster.Status.Version).NotTo(BeNil(), "hostedCluster.Status.Version should not be nil")
-			g.Expect(hostedCluster.Status.Version.Desired.Version).NotTo(BeEmpty(), "hostedCluster.Status.Version.Desired.Version should not be empty")
-
-			cpVersion, err := semver.Parse(hostedCluster.Status.Version.Desired.Version)
-			g.Expect(err).NotTo(HaveOccurred(), "failed to parse control plane version")
-			t.Logf("Control plane version: %s", cpVersion.String())
-
-			// Verify the default OpenshiftEC2NodeClass (version unset) uses the control plane release image
-			t.Log("Verifying default OpenshiftEC2NodeClass uses control plane release image")
-			e2eutil.EventuallyObject(t, ctx, "default OpenshiftEC2NodeClass to have VersionResolved=True",
-				func(ctx context.Context) (*hyperkarpenterv1.OpenshiftEC2NodeClass, error) {
-					nc := &hyperkarpenterv1.OpenshiftEC2NodeClass{}
-					err := guestClient.Get(ctx, crclient.ObjectKey{Name: "default"}, nc)
-					return nc, err
-				},
-				[]e2eutil.Predicate[*hyperkarpenterv1.OpenshiftEC2NodeClass]{
-					e2eutil.ConditionPredicate[*hyperkarpenterv1.OpenshiftEC2NodeClass](e2eutil.Condition{
-						Type:   hyperkarpenterv1.ConditionTypeVersionResolved,
-						Status: metav1.ConditionTrue,
-						Reason: "VersionNotSpecified",
-					}),
-					e2eutil.ConditionPredicate[*hyperkarpenterv1.OpenshiftEC2NodeClass](e2eutil.Condition{
-						Type:   hyperkarpenterv1.ConditionTypeSupportedVersionSkew,
-						Status: metav1.ConditionTrue,
-						Reason: "VersionNotSpecified",
-					}),
-					e2eutil.Predicate[*hyperkarpenterv1.OpenshiftEC2NodeClass](func(nc *hyperkarpenterv1.OpenshiftEC2NodeClass) (done bool, reasons string, err error) {
-						if nc.Status.ReleaseImage == "" {
-							return false, "status.releaseImage is empty", nil
-						}
-						if nc.Status.ReleaseImage != hostedCluster.Spec.Release.Image {
-							return false, fmt.Sprintf("expected status.releaseImage %q to match hostedCluster.Spec.Release.Image %q", nc.Status.ReleaseImage, hostedCluster.Spec.Release.Image), nil
-						}
-						return true, fmt.Sprintf("status.releaseImage matches control plane: %s", nc.Status.ReleaseImage), nil
-					}),
-				},
-				e2eutil.WithTimeout(2*time.Minute),
-			)
-			t.Log("Default OpenshiftEC2NodeClass has correct version status")
-
-			// Use previous minor version (e.g., 4.21.0 for CP 4.22.x) to test a genuinely different version.
-			nodeClassVersion := fmt.Sprintf("%d.%d.0", cpVersion.Major, cpVersion.Minor-1)
-
-			// Create a custom OpenshiftEC2NodeClass with the version field set to the previous minor.
-			nc := &hyperkarpenterv1.OpenshiftEC2NodeClass{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "version-test",
-				},
-				Spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{
-					Version: nodeClassVersion,
-					SubnetSelectorTerms: []hyperkarpenterv1.SubnetSelectorTerm{
-						{Tags: map[string]string{"karpenter.sh/discovery": hostedCluster.Spec.InfraID}},
-					},
-					SecurityGroupSelectorTerms: []hyperkarpenterv1.SecurityGroupSelectorTerm{
-						{Tags: map[string]string{"karpenter.sh/discovery": hostedCluster.Spec.InfraID}},
-					},
-					MetadataOptions: hyperkarpenterv1.MetadataOptions{
-						Access:                  hyperkarpenterv1.MetadataAccessHTTPEndpoint,
-						HTTPIPProtocol:          hyperkarpenterv1.MetadataHTTPProtocolIPv4,
-						HTTPPutResponseHopLimit: 2,
-						HTTPTokens:              hyperkarpenterv1.MetadataHTTPTokensStateRequired,
-					},
-				},
-			}
-			g.Expect(guestClient.Create(ctx, nc)).To(Succeed())
-			t.Logf("Created OpenshiftEC2NodeClass %q with version %s (CP version: %s)", nc.Name, nodeClassVersion, cpVersion)
-			defer func() {
-				_ = guestClient.Delete(ctx, nc)
-			}()
-
-			// Wait for version resolution and get the resolved release image
-			var resolvedReleaseImage string
-			t.Log("Waiting for OpenshiftEC2NodeClass version resolution")
-			e2eutil.EventuallyObject(t, ctx, "OpenshiftEC2NodeClass version-test to resolve version",
-				func(ctx context.Context) (*hyperkarpenterv1.OpenshiftEC2NodeClass, error) {
-					result := &hyperkarpenterv1.OpenshiftEC2NodeClass{}
-					err := guestClient.Get(ctx, crclient.ObjectKey{Name: nc.Name}, result)
-					return result, err
-				},
-				[]e2eutil.Predicate[*hyperkarpenterv1.OpenshiftEC2NodeClass]{
-					e2eutil.ConditionPredicate[*hyperkarpenterv1.OpenshiftEC2NodeClass](e2eutil.Condition{
-						Type:   hyperkarpenterv1.ConditionTypeVersionResolved,
-						Status: metav1.ConditionTrue,
-						Reason: "VersionResolved",
-					}),
-					e2eutil.ConditionPredicate[*hyperkarpenterv1.OpenshiftEC2NodeClass](e2eutil.Condition{
-						Type:   hyperkarpenterv1.ConditionTypeSupportedVersionSkew,
-						Status: metav1.ConditionTrue,
-						Reason: "AsExpected",
-					}),
-					e2eutil.Predicate[*hyperkarpenterv1.OpenshiftEC2NodeClass](func(nc *hyperkarpenterv1.OpenshiftEC2NodeClass) (done bool, reasons string, err error) {
-						if nc.Status.ReleaseImage == "" {
-							return false, "status.releaseImage is empty", nil
-						}
-						resolvedReleaseImage = nc.Status.ReleaseImage
-						return true, fmt.Sprintf("status.releaseImage resolved to: %s", nc.Status.ReleaseImage), nil
-					}),
-				},
-				e2eutil.WithTimeout(5*time.Minute),
-			)
-			t.Log("OpenshiftEC2NodeClass version resolved successfully")
-
-			// Verify MetadataOptions propagated to the downstream EC2NodeClass
-			t.Log("Verifying MetadataOptions propagated to EC2NodeClass")
-			e2eutil.EventuallyObject(t, ctx, "EC2NodeClass to have MetadataOptions propagated",
-				func(ctx context.Context) (*awskarpenterv1.EC2NodeClass, error) {
-					ec2NodeClass := &awskarpenterv1.EC2NodeClass{}
-					err := guestClient.Get(ctx, crclient.ObjectKey{Name: nc.Name}, ec2NodeClass)
-					return ec2NodeClass, err
-				},
-				[]e2eutil.Predicate[*awskarpenterv1.EC2NodeClass]{
-					e2eutil.Predicate[*awskarpenterv1.EC2NodeClass](func(ec2nc *awskarpenterv1.EC2NodeClass) (done bool, reasons string, err error) {
-						if ec2nc.Spec.MetadataOptions == nil {
-							return false, "MetadataOptions is nil", nil
-						}
-						if ec2nc.Spec.MetadataOptions.HTTPEndpoint == nil || *ec2nc.Spec.MetadataOptions.HTTPEndpoint != "enabled" {
-							return false, fmt.Sprintf("expected HTTPEndpoint=enabled, got %v", ec2nc.Spec.MetadataOptions.HTTPEndpoint), nil
-						}
-						if ec2nc.Spec.MetadataOptions.HTTPProtocolIPv6 == nil || *ec2nc.Spec.MetadataOptions.HTTPProtocolIPv6 != "disabled" {
-							return false, fmt.Sprintf("expected HTTPProtocolIPv6=disabled, got %v", ec2nc.Spec.MetadataOptions.HTTPProtocolIPv6), nil
-						}
-						if ec2nc.Spec.MetadataOptions.HTTPPutResponseHopLimit == nil || *ec2nc.Spec.MetadataOptions.HTTPPutResponseHopLimit != 2 {
-							return false, fmt.Sprintf("expected HTTPPutResponseHopLimit=2, got %v", ec2nc.Spec.MetadataOptions.HTTPPutResponseHopLimit), nil
-						}
-						if ec2nc.Spec.MetadataOptions.HTTPTokens == nil || *ec2nc.Spec.MetadataOptions.HTTPTokens != "required" {
-							return false, fmt.Sprintf("expected HTTPTokens=required, got %v", ec2nc.Spec.MetadataOptions.HTTPTokens), nil
-						}
-						return true, "MetadataOptions propagated correctly", nil
-					}),
-				},
-				e2eutil.WithTimeout(2*time.Minute),
-			)
-			t.Log("MetadataOptions propagated correctly to EC2NodeClass")
-
-			// Look up the expected kubelet version from the resolved release image
-			pullSecret, err := os.ReadFile(clusterOpts.PullSecretFile)
-			g.Expect(err).NotTo(HaveOccurred())
-			releaseProvider := &releaseinfo.RegistryClientProvider{}
-			resolvedRelease, err := releaseProvider.Lookup(ctx, resolvedReleaseImage, pullSecret)
-			g.Expect(err).NotTo(HaveOccurred(), "failed to look up resolved release image %s", resolvedReleaseImage)
-			componentVersions, err := resolvedRelease.ComponentVersions()
-			g.Expect(err).NotTo(HaveOccurred(), "failed to get component versions from resolved release")
-			expectedKubeletVersion := componentVersions["kubernetes"]
-			g.Expect(expectedKubeletVersion).NotTo(BeEmpty(), "resolved release should have a kubernetes version")
-			t.Logf("Expected kubelet version for %s: v%s", nodeClassVersion, expectedKubeletVersion)
-
-			// Create a Karpenter NodePool that references the custom EC2NodeClass
-			testNodePool := baseNodePool("version-test")
-			testNodePool.Spec.Template.Spec.NodeClassRef = &karpenterv1.NodeClassReference{
-				Group: "karpenter.k8s.aws",
-				Kind:  "EC2NodeClass",
-				Name:  nc.Name,
-			}
-
-			testWorkLoads := testWorkload("version-test-app", 1, map[string]string{
-				"karpenter.sh/nodepool": testNodePool.Name,
-			})
-
-			g.Expect(guestClient.Create(ctx, testNodePool)).To(Succeed())
-			t.Logf("Created Karpenter NodePool %q", testNodePool.Name)
-			g.Expect(guestClient.Create(ctx, testWorkLoads)).To(Succeed())
-			t.Logf("Created workload %q", testWorkLoads.Name)
-
-			defer func() {
-				_ = guestClient.Delete(ctx, testWorkLoads)
-				_ = guestClient.Delete(ctx, testNodePool)
-			}()
-
-			// Use only the nodepool label to select nodes exclusively tied to our version-test nodeclass.
-			testNodeLabels := map[string]string{
-				"karpenter.sh/nodepool": testNodePool.GetName(),
-			}
-
-			// Log diagnostic info about the version-test NodeClass infrastructure.
-			hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
-			secretList := &corev1.SecretList{}
-			if err := mgtClient.List(ctx, secretList,
-				crclient.InNamespace(hcpNamespace),
-				crclient.MatchingLabels{"hypershift.openshift.io/managed-by-karpenter": "true"},
-			); err != nil {
-				t.Logf("WARNING: failed to list karpenter secrets in %s: %v", hcpNamespace, err)
-			} else {
-				foundUserData := false
-				for _, s := range secretList.Items {
-					npAnnotation := s.Annotations["hypershift.openshift.io/nodePool"]
-					if strings.Contains(npAnnotation, "version-test") {
-						t.Logf("Found karpenter secret %q for nodepool %q (labels: %v)", s.Name, npAnnotation, s.Labels)
-						foundUserData = true
+				// Pick an AZ supported by the endpoint service but not already in the VPC.
+				var az string
+				for _, supportedAZ := range supportedAZs {
+					if !usedAZs[supportedAZ] {
+						az = supportedAZ
+						break
 					}
 				}
-				if !foundUserData {
-					t.Log("WARNING: no user-data secret found for version-test NodeClass. Token creation may be failing - check karpenter-operator logs.")
-				}
-			}
+				g.Expect(az).NotTo(BeEmpty(),
+					"no AZ found that is supported by VPC endpoint service %s and not already occupied in VPC %s (supported: %v, used: %v)",
+					endpointServiceName, vpcID, supportedAZs, usedAZs)
+				t.Logf("Selected AZ %s for test subnet (supported by endpoint service, not in VPC)", az)
 
-			// Wait for node to be provisioned and verify it has the correct kubelet version
-			nodes := e2eutil.WaitForNReadyNodesWithOptions(t, ctx, guestClient, 1, hyperv1.AWSPlatform, "",
-				e2eutil.WithClientOptions(
-					crclient.MatchingLabelsSelector{Selector: labels.SelectorFromSet(labels.Set(testNodeLabels))},
-				),
-				e2eutil.WithPredicates(
-					e2eutil.Predicate[*corev1.Node](func(node *corev1.Node) (done bool, reasons string, err error) {
-						kubeletVersion := node.Status.NodeInfo.KubeletVersion
-						if !strings.Contains(kubeletVersion, expectedKubeletVersion) {
-							return false, fmt.Sprintf("node %s kubelet version %q does not contain expected %q", node.Name, kubeletVersion, expectedKubeletVersion), nil
-						}
-						return true, fmt.Sprintf("node %s has expected kubelet version %s", node.Name, kubeletVersion), nil
-					}),
-				),
-			)
-			t.Logf("Node provisioned with correct kubelet version (v%s) for NodeClass version %s", expectedKubeletVersion, nodeClassVersion)
+				// Create a small test subnet in the VPC.
+				subnetID, cleanupSubnet := e2eutil.CreateTestSubnet(ctx, t, ec2client, vpcID, az, hostedCluster.Spec.InfraID)
+				t.Logf("Created test subnet %s in AZ %s", subnetID, az)
 
-			// Verify MetadataOptions propagated to the actual EC2 instance
-			t.Log("Verifying MetadataOptions on EC2 instance via DescribeInstances")
-			ec2client := ec2Client(clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile, clusterOpts.AWSPlatform.Region)
-			for _, node := range nodes {
-				providerID := node.Spec.ProviderID
-				g.Expect(providerID).NotTo(BeEmpty(), "node should have a providerID")
-
-				parts := strings.Split(providerID, "/")
-				g.Expect(parts).To(HaveLen(5), "providerID should have 5 parts")
-				instanceID := parts[4]
-				t.Logf("Checking MetadataOptions for node %s (instance %s)", node.Name, instanceID)
-
-				result, err := ec2client.DescribeInstances(ctx, &ec2.DescribeInstancesInput{
-					InstanceIds: []string{instanceID},
-				})
-				g.Expect(err).NotTo(HaveOccurred(), "failed to describe EC2 instance")
-				g.Expect(result.Reservations).NotTo(BeEmpty(), "expected at least one reservation")
-				g.Expect(result.Reservations[0].Instances).NotTo(BeEmpty(), "expected at least one instance")
-
-				instance := result.Reservations[0].Instances[0]
-				g.Expect(instance.MetadataOptions).NotTo(BeNil(), "instance should have MetadataOptions")
-				g.Expect(string(instance.MetadataOptions.HttpEndpoint)).To(Equal("enabled"),
-					"instance %s HttpEndpoint mismatch", instanceID)
-				g.Expect(string(instance.MetadataOptions.HttpProtocolIpv6)).To(Equal("disabled"),
-					"instance %s HttpProtocolIpv6 mismatch", instanceID)
-				g.Expect(*instance.MetadataOptions.HttpPutResponseHopLimit).To(Equal(int32(2)),
-					"instance %s HttpPutResponseHopLimit mismatch", instanceID)
-				g.Expect(string(instance.MetadataOptions.HttpTokens)).To(Equal("required"),
-					"instance %s HttpTokens mismatch", instanceID)
-				t.Logf("Instance %s has correct MetadataOptions: HttpTokens=%s, HttpEndpoint=%s, HttpPutResponseHopLimit=%d",
-					instanceID, instance.MetadataOptions.HttpTokens, instance.MetadataOptions.HttpEndpoint, *instance.MetadataOptions.HttpPutResponseHopLimit)
-			}
-
-			// Clean up
-			g.Expect(guestClient.Delete(ctx, testWorkLoads)).To(Succeed())
-			g.Expect(guestClient.Delete(ctx, testNodePool)).To(Succeed())
-			t.Log("Waiting for version-test nodes to be removed")
-			_ = e2eutil.WaitForNReadyNodesWithOptions(t, ctx, guestClient, 0, hyperv1.AWSPlatform, "",
-				e2eutil.WithClientOptions(
-					crclient.MatchingLabelsSelector{Selector: labels.SelectorFromSet(labels.Set(testNodeLabels))},
-				),
-			)
-			t.Log("Version-test nodes removed successfully")
-		})
-
-		t.Run("OpenshiftEC2NodeClass with version exceeding allowed skew sets SupportedVersionSkew condition", func(t *testing.T) {
-			g := NewWithT(t)
-
-			// Re-fetch the hosted cluster to get the latest version status
-			err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
-			g.Expect(err).NotTo(HaveOccurred())
-			g.Expect(hostedCluster.Status.Version).NotTo(BeNil(), "hostedCluster.Status.Version should not be nil")
-			g.Expect(hostedCluster.Status.Version.Desired.Version).NotTo(BeEmpty(), "hostedCluster.Status.Version.Desired.Version should not be empty")
-
-			cpVersion, err := semver.Parse(hostedCluster.Status.Version.Desired.Version)
-			g.Expect(err).NotTo(HaveOccurred(), "failed to parse control plane version")
-
-			// Compute a version that exceeds the n-3 skew (cpMinor - 4)
-			skewMinor := cpVersion.Minor - 4
-			if skewMinor <= 14 {
-				t.Skipf("Skipping: computed skew version 4.%d.0 would be at or below MinSupportedVersion (4.14.0), which would be caught by minimum version check instead", skewMinor)
-			}
-			skewPatch := 1 // There are cases where x.y.0 doesn't exist, so arbitrarily stick with x.y.1 for test consistency
-			skewVersion := fmt.Sprintf("%d.%d.%d", cpVersion.Major, skewMinor, skewPatch)
-
-			nc := &hyperkarpenterv1.OpenshiftEC2NodeClass{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "version-skew-test",
-				},
-				Spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{
-					Version: skewVersion,
-					SubnetSelectorTerms: []hyperkarpenterv1.SubnetSelectorTerm{
-						{Tags: map[string]string{"test": "version-skew"}},
+				// Create an OpenshiftEC2NodeClass that selects the subnet by ID.
+				customNodeClass := &hyperkarpenterv1.OpenshiftEC2NodeClass{
+					ObjectMeta: metav1.ObjectMeta{Name: "arbitrary-subnet-test"},
+					Spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{
+						SubnetSelectorTerms: []hyperkarpenterv1.SubnetSelectorTerm{{ID: subnetID}},
+						SecurityGroupSelectorTerms: []hyperkarpenterv1.SecurityGroupSelectorTerm{
+							{Tags: map[string]string{"karpenter.sh/discovery": hostedCluster.Spec.InfraID}},
+						},
 					},
-					SecurityGroupSelectorTerms: []hyperkarpenterv1.SecurityGroupSelectorTerm{
-						{Tags: map[string]string{"test": "version-skew"}},
-					},
-				},
-			}
-			g.Expect(guestClient.Create(ctx, nc)).To(Succeed())
-			t.Logf("Created OpenshiftEC2NodeClass %q with version %s (CP version: %s)", nc.Name, skewVersion, cpVersion)
-			defer func() {
-				_ = guestClient.Delete(ctx, nc)
-				t.Logf("Cleaned up OpenshiftEC2NodeClass %q", nc.Name)
-			}()
-
-			// Version should still resolve successfully despite the skew
-			t.Log("Waiting for VersionResolved=True and SupportedVersionSkew=False")
-			e2eutil.EventuallyObject(t, ctx, "OpenshiftEC2NodeClass version-skew-test to have SupportedVersionSkew=False",
-				func(ctx context.Context) (*hyperkarpenterv1.OpenshiftEC2NodeClass, error) {
-					result := &hyperkarpenterv1.OpenshiftEC2NodeClass{}
-					err := guestClient.Get(ctx, crclient.ObjectKey{Name: nc.Name}, result)
-					return result, err
-				},
-				[]e2eutil.Predicate[*hyperkarpenterv1.OpenshiftEC2NodeClass]{
-					e2eutil.ConditionPredicate[*hyperkarpenterv1.OpenshiftEC2NodeClass](e2eutil.Condition{
-						Type:   hyperkarpenterv1.ConditionTypeVersionResolved,
-						Status: metav1.ConditionTrue,
-						Reason: "VersionResolved",
-					}),
-					e2eutil.ConditionPredicate[*hyperkarpenterv1.OpenshiftEC2NodeClass](e2eutil.Condition{
-						Type:   hyperkarpenterv1.ConditionTypeSupportedVersionSkew,
-						Status: metav1.ConditionFalse,
-						Reason: "UnsupportedSkew",
-					}),
-					e2eutil.Predicate[*hyperkarpenterv1.OpenshiftEC2NodeClass](func(nc *hyperkarpenterv1.OpenshiftEC2NodeClass) (done bool, reasons string, err error) {
-						for _, c := range nc.Status.Conditions {
-							if c.Type == hyperkarpenterv1.ConditionTypeSupportedVersionSkew && c.Status == metav1.ConditionFalse {
-								if strings.Contains(c.Message, "minor version") {
-									return true, fmt.Sprintf("SupportedVersionSkew condition message describes skew issue: %s", c.Message), nil
-								}
-								return false, fmt.Sprintf("expected SupportedVersionSkew message to mention version skew, got %q", c.Message), nil
-							}
-						}
-						return false, "SupportedVersionSkew=False condition not found", nil
-					}),
-				},
-				e2eutil.WithTimeout(2*time.Minute),
-			)
-			t.Logf("OpenshiftEC2NodeClass %q has SupportedVersionSkew=False for version %s (exceeds n-3 skew from CP %s)", nc.Name, skewVersion, cpVersion)
-		})
-
-		t.Run("Capacity reservation selector propagation", func(t *testing.T) {
-			g := NewWithT(t)
-
-			// AutoNode.Provisioner.Karpenter.AWS is required at the API level when karpenter
-			// is configured, so this should never happen/never be nil for a valid karpenter cluster.
-			if hostedCluster.Spec.AutoNode == nil ||
-				hostedCluster.Spec.AutoNode.Provisioner.Karpenter == nil ||
-				hostedCluster.Spec.AutoNode.Provisioner.Karpenter.AWS == nil {
-				t.Skip("HostedCluster does not have a Karpenter AWS role configured, skipping capacity reservation test")
-			}
-
-			// Determine an availability zone to use: pick the AZ from the first subnet in the cluster.
-			defaultNodeClass := &hyperkarpenterv1.OpenshiftEC2NodeClass{}
-			g.Expect(guestClient.Get(ctx, crclient.ObjectKey{Name: "default"}, defaultNodeClass)).To(Succeed())
-			g.Expect(defaultNodeClass.Status.Subnets).NotTo(BeEmpty(), "default OpenshiftEC2NodeClass should have resolved subnets")
-			targetAZ := defaultNodeClass.Status.Subnets[0].Zone
-			t.Logf("Using availability zone %s for capacity reservation", targetAZ)
-
-			// Create a real EC2 capacity reservation with 1 instance of t3.large in targeted mode.
-			// We use t3.large to match the instance type used by the other karpenter tests — OpenShift
-			// platform daemonsets consume enough overhead that smaller types (t3.small, t3.medium) don't
-			// have enough free memory to satisfy karpenter's scheduling check.
-			// We need a real reservation because karpenter 1.8 runs with ReservedCapacity=true by default,
-			// so selector terms that match nothing would cause CapacityReservationsReady=False on the
-			// EC2NodeClass and block provisioning.
-			crID, cleanupCR, err := e2eutil.CreateCapacityReservation(
-				ctx,
-				clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile,
-				clusterOpts.AWSPlatform.Region,
-				"t3.large",
-				targetAZ,
-				1,
-			)
-			g.Expect(err).NotTo(HaveOccurred(), "failed to create capacity reservation")
-			t.Logf("Created capacity reservation %s in %s", crID, targetAZ)
-			defer func() {
-				if err := cleanupCR(); err != nil {
-					t.Logf("warning: failed to cancel capacity reservation %s: %v", crID, err)
 				}
-			}()
-
-			// Create a new OpenshiftEC2NodeClass (not "default") pointing to the capacity reservation by ID.
-			// Using a separate object avoids contaminating the shared "default" class used by other sub-tests.
-			crNodeClass := &hyperkarpenterv1.OpenshiftEC2NodeClass{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "capacity-reservation-test",
-				},
-				Spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{
-					CapacityReservationSelectorTerms: []hyperkarpenterv1.CapacityReservationSelectorTerm{
-						{ID: crID},
-					},
-				},
-			}
-			g.Expect(guestClient.Create(ctx, crNodeClass)).To(Succeed())
-			t.Logf("Created OpenshiftEC2NodeClass capacity-reservation-test with CapacityReservationSelectorTerms ID=%s", crID)
-			defer func() {
-				if err := guestClient.Delete(ctx, crNodeClass); err != nil {
-					t.Logf("warning: failed to delete OpenshiftEC2NodeClass capacity-reservation-test: %v", err)
-				}
-			}()
-
-			// Verify the downstream EC2NodeClass has the CapacityReservationSelectorTerms propagated.
-			e2eutil.EventuallyObject(
-				t, ctx, "EC2NodeClass capacity-reservation-test to have CapacityReservationSelectorTerms set",
-				func(ctx context.Context) (*awskarpenterv1.EC2NodeClass, error) {
-					ec2nc := &awskarpenterv1.EC2NodeClass{}
-					return ec2nc, guestClient.Get(ctx, crclient.ObjectKey{Name: "capacity-reservation-test"}, ec2nc)
-				},
-				[]e2eutil.Predicate[*awskarpenterv1.EC2NodeClass]{
-					func(ec2nc *awskarpenterv1.EC2NodeClass) (done bool, reasons string, err error) {
-						if len(ec2nc.Spec.CapacityReservationSelectorTerms) == 1 &&
-							ec2nc.Spec.CapacityReservationSelectorTerms[0].ID == crID {
-							return true, "", nil
-						}
-						return false, fmt.Sprintf("expected CapacityReservationSelectorTerms[0].ID=%s, got %+v",
-							crID, ec2nc.Spec.CapacityReservationSelectorTerms), nil
-					},
-				},
-				e2eutil.WithTimeout(2*time.Minute), e2eutil.WithInterval(5*time.Second),
-			)
-
-			// Verify karpenter resolves the capacity reservation and reflects it in the OpenshiftEC2NodeClass status.
-			e2eutil.EventuallyObject(
-				t, ctx, fmt.Sprintf("OpenshiftEC2NodeClass capacity-reservation-test to have capacity reservation %s in status", crID),
-				func(ctx context.Context) (*hyperkarpenterv1.OpenshiftEC2NodeClass, error) {
-					updated := &hyperkarpenterv1.OpenshiftEC2NodeClass{}
-					return updated, guestClient.Get(ctx, crclient.ObjectKey{Name: "capacity-reservation-test"}, updated)
-				},
-				[]e2eutil.Predicate[*hyperkarpenterv1.OpenshiftEC2NodeClass]{
-					func(updated *hyperkarpenterv1.OpenshiftEC2NodeClass) (done bool, reasons string, err error) {
-						if len(updated.Status.CapacityReservations) > 0 &&
-							updated.Status.CapacityReservations[0].ID == crID {
-							return true, "", nil
-						}
-						return false, fmt.Sprintf("expected at least one resolved capacity reservation with ID=%s in status, got %+v",
-							crID, updated.Status.CapacityReservations), nil
-					},
-				},
-				e2eutil.WithTimeout(5*time.Minute), e2eutil.WithInterval(10*time.Second),
-			)
-
-			// Create a dedicated NodePool that targets the capacity-reservation-test NodeClass and requires
-			// capacity-type=reserved so karpenter launches the instance into the reservation (not alongside it).
-			crNodePool := baseNodePool("capacity-reservation-test")
-			crNodePool.Spec.Template.Spec.NodeClassRef = &karpenterv1.NodeClassReference{
-				Group: "karpenter.k8s.aws",
-				Kind:  "EC2NodeClass",
-				Name:  "capacity-reservation-test",
-			}
-			crNodePool.Spec.Template.Spec.Requirements = []karpenterv1.NodeSelectorRequirementWithMinValues{
-				{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: "node.kubernetes.io/instance-type", Operator: corev1.NodeSelectorOpIn, Values: []string{"t3.large"}}},
-				{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: "karpenter.sh/capacity-type", Operator: corev1.NodeSelectorOpIn, Values: []string{"reserved"}}},
-			}
-			defer func() {
-				if err := guestClient.Delete(ctx, crNodePool); err != nil {
-					t.Logf("warning: failed to delete NodePool capacity-reservation-test: %v", err)
-				}
-			}()
-			g.Expect(guestClient.Create(ctx, crNodePool)).To(Succeed())
-			t.Logf("Created NodePool capacity-reservation-test targeting capacity reservation %s", crID)
-
-			crNodeLabels := map[string]string{
-				"karpenter.sh/nodepool": crNodePool.Name,
-			}
-			crWorkload := testWorkload("capacity-reservation-web-app", 1, crNodeLabels)
-
-			defer func() {
-				if err := guestClient.Delete(ctx, crWorkload); err != nil {
-					t.Logf("warning: failed to delete workload capacity-reservation-web-app: %v", err)
-				}
-			}()
-			g.Expect(guestClient.Create(ctx, crWorkload)).To(Succeed())
-			t.Logf("Created workload capacity-reservation-web-app to trigger node provisioning")
-
-			// Wait for the node to be ready.
-			nodes := e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, 1, crNodeLabels)
-			g.Expect(nodes).To(HaveLen(1))
-			t.Logf("Node provisioned by capacity-reservation-test NodePool is ready")
-
-			// Verify the EC2 instance was launched into the capacity reservation.
-			ec2client := ec2Client(clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile, clusterOpts.AWSPlatform.Region)
-
-			node := nodes[0]
-			providerID := node.Spec.ProviderID
-			g.Expect(providerID).NotTo(BeEmpty(), "node should have a providerID")
-
-			parts := strings.Split(providerID, "/")
-			g.Expect(parts).To(HaveLen(5), "providerID should have 5 parts")
-			instanceID := parts[4]
-			t.Logf("Verifying EC2 instance %s was launched into capacity reservation %s", instanceID, crID)
-
-			result, err := ec2client.DescribeInstances(ctx, &ec2.DescribeInstancesInput{
-				InstanceIds: []string{instanceID},
-			})
-			g.Expect(err).NotTo(HaveOccurred(), "failed to describe EC2 instance %s", instanceID)
-			g.Expect(result.Reservations).NotTo(BeEmpty())
-			g.Expect(result.Reservations[0].Instances).NotTo(BeEmpty())
-
-			instance := result.Reservations[0].Instances[0]
-			g.Expect(instance.CapacityReservationId).NotTo(BeNil(), "instance %s should have a CapacityReservationId", instanceID)
-			g.Expect(aws.ToString(instance.CapacityReservationId)).To(Equal(crID),
-				"instance %s should have been launched into capacity reservation %s", instanceID, crID)
-			t.Logf("Instance %s correctly launched into capacity reservation %s", instanceID, crID)
-		})
-
-		t.Run("Arbitrary subnet propagation", func(t *testing.T) {
-			g := NewWithT(t)
-
-			// Get VPC ID and find an AZ that is:
-			// (a) supported by the VPC endpoint service (to avoid InvalidParameter), and
-			// (b) not already occupied by a VPC subnet (to avoid DuplicateSubnetsInSameZone).
-			// This exercises the real scenario: a customer brings a subnet in a new AZ,
-			// it propagates to the VPC endpoint, and nodes in that AZ can reach the cluster.
-			ec2client := ec2Client(clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile, clusterOpts.AWSPlatform.Region)
-			vpcID := hostedCluster.Spec.Platform.AWS.CloudProviderConfig.VPC
-			subnetsOut, err := ec2client.DescribeSubnets(ctx, &ec2.DescribeSubnetsInput{
-				Filters: []ec2types.Filter{{Name: aws.String("vpc-id"), Values: []string{vpcID}}},
-			})
-			g.Expect(err).NotTo(HaveOccurred())
-			g.Expect(subnetsOut.Subnets).NotTo(BeEmpty())
-
-			// Collect AZs already occupied by VPC subnets.
-			usedAZs := map[string]bool{}
-			for _, s := range subnetsOut.Subnets {
-				usedAZs[aws.ToString(s.AvailabilityZone)] = true
-			}
-
-			// Get the AZs supported by the VPC endpoint service.
-			hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
-			esList := &hyperv1.AWSEndpointServiceList{}
-			g.Expect(mgtClient.List(ctx, esList, crclient.InNamespace(hcpNamespace))).To(Succeed())
-			g.Expect(esList.Items).NotTo(BeEmpty(), "expected at least one AWSEndpointService")
-
-			var endpointServiceName string
-			for _, es := range esList.Items {
-				if es.Status.EndpointServiceName != "" {
-					endpointServiceName = es.Status.EndpointServiceName
-					break
-				}
-			}
-			g.Expect(endpointServiceName).NotTo(BeEmpty(), "no AWSEndpointService has an endpoint service name yet")
-
-			svcOut, err := ec2client.DescribeVpcEndpointServices(ctx, &ec2.DescribeVpcEndpointServicesInput{
-				ServiceNames: []string{endpointServiceName},
-			})
-			g.Expect(err).NotTo(HaveOccurred())
-			g.Expect(svcOut.ServiceDetails).NotTo(BeEmpty())
-			supportedAZs := svcOut.ServiceDetails[0].AvailabilityZones
-			t.Logf("VPC endpoint service %s supports AZs: %v", endpointServiceName, supportedAZs)
-
-			// Pick an AZ supported by the endpoint service but not already in the VPC.
-			var az string
-			for _, supportedAZ := range supportedAZs {
-				if !usedAZs[supportedAZ] {
-					az = supportedAZ
-					break
-				}
-			}
-			g.Expect(az).NotTo(BeEmpty(),
-				"no AZ found that is supported by VPC endpoint service %s and not already occupied in VPC %s (supported: %v, used: %v)",
-				endpointServiceName, vpcID, supportedAZs, usedAZs)
-			t.Logf("Selected AZ %s for test subnet (supported by endpoint service, not in VPC)", az)
-
-			// Create a small test subnet in the VPC.
-			subnetID, cleanupSubnet := e2eutil.CreateTestSubnet(ctx, t, ec2client, vpcID, az, hostedCluster.Spec.InfraID)
-			t.Logf("Created test subnet %s in AZ %s", subnetID, az)
-
-			// Create an OpenshiftEC2NodeClass that selects the subnet by ID.
-			customNodeClass := &hyperkarpenterv1.OpenshiftEC2NodeClass{
-				ObjectMeta: metav1.ObjectMeta{Name: "arbitrary-subnet-test"},
-				Spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{
-					SubnetSelectorTerms: []hyperkarpenterv1.SubnetSelectorTerm{{ID: subnetID}},
-					SecurityGroupSelectorTerms: []hyperkarpenterv1.SecurityGroupSelectorTerm{
-						{Tags: map[string]string{"karpenter.sh/discovery": hostedCluster.Spec.InfraID}},
-					},
-				},
-			}
-			g.Expect(guestClient.Create(ctx, customNodeClass)).To(Succeed())
-			t.Cleanup(func() {
-				// Delete the NodeClass first so controllers stop referencing the subnet.
-				if err := guestClient.Delete(ctx, customNodeClass); err != nil {
-					t.Logf("cleanup: failed to delete OpenshiftEC2NodeClass %q: %v", customNodeClass.Name, err)
-				}
-				// Wait for the subnet to be removed from the karpenter-subnets ConfigMap.
-				// The karpenter-operator removes it during NodeClass deletion reconciliation.
-				hcpNS := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
-				if err := wait.PollUntilContextTimeout(ctx, 5*time.Second, 2*time.Minute, true, func(ctx context.Context) (bool, error) {
-					cm := &corev1.ConfigMap{}
-					if err := mgtClient.Get(ctx, crclient.ObjectKey{
-						Namespace: hcpNS,
-						Name:      karpenterutil.KarpenterSubnetsConfigMapName,
-					}, cm); err != nil {
-						return false, nil
+				g.Expect(guestClient.Create(ctx, customNodeClass)).To(Succeed())
+				t.Cleanup(func() {
+					// Delete the NodeClass first so controllers stop referencing the subnet.
+					if err := guestClient.Delete(ctx, customNodeClass); err != nil {
+						t.Logf("cleanup: failed to delete OpenshiftEC2NodeClass %q: %v", customNodeClass.Name, err)
 					}
-					var ids []string
-					if err := json.Unmarshal([]byte(cm.Data["subnetIDs"]), &ids); err != nil {
-						return false, nil
-					}
-					for _, id := range ids {
-						if id == subnetID {
+					// Wait for the subnet to be removed from the karpenter-subnets ConfigMap.
+					// The karpenter-operator removes it during NodeClass deletion reconciliation.
+					hcpNS := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+					if err := wait.PollUntilContextTimeout(ctx, 5*time.Second, 2*time.Minute, true, func(ctx context.Context) (bool, error) {
+						cm := &corev1.ConfigMap{}
+						if err := mgtClient.Get(ctx, crclient.ObjectKey{
+							Namespace: hcpNS,
+							Name:      karpenterutil.KarpenterSubnetsConfigMapName,
+						}, cm); err != nil {
 							return false, nil
 						}
-					}
-					return true, nil
-				}); err != nil {
-					t.Logf("cleanup: timed out waiting for subnet %s to leave ConfigMap: %v", subnetID, err)
-				} else {
-					t.Logf("cleanup: subnet %s removed from karpenter-subnets ConfigMap", subnetID)
-				}
-				// Wait for the subnet to be removed from all AWSEndpointService.Spec.SubnetIDs.
-				// The hypershift-operator watches the ConfigMap and reconciles Spec.SubnetIDs.
-				if err := wait.PollUntilContextTimeout(ctx, 5*time.Second, 2*time.Minute, true, func(ctx context.Context) (bool, error) {
-					list := &hyperv1.AWSEndpointServiceList{}
-					if err := mgtClient.List(ctx, list, crclient.InNamespace(hcpNS)); err != nil {
-						return false, nil
-					}
-					for _, es := range list.Items {
-						for _, id := range es.Spec.SubnetIDs {
+						var ids []string
+						if err := json.Unmarshal([]byte(cm.Data["subnetIDs"]), &ids); err != nil {
+							return false, nil
+						}
+						for _, id := range ids {
 							if id == subnetID {
 								return false, nil
 							}
 						}
+						return true, nil
+					}); err != nil {
+						t.Logf("cleanup: timed out waiting for subnet %s to leave ConfigMap: %v", subnetID, err)
+					} else {
+						t.Logf("cleanup: subnet %s removed from karpenter-subnets ConfigMap", subnetID)
 					}
-					return true, nil
-				}); err != nil {
-					t.Logf("cleanup: timed out waiting for subnet %s to leave AWSEndpointService specs: %v", subnetID, err)
-				} else {
-					t.Logf("cleanup: subnet %s removed from all AWSEndpointService specs", subnetID)
-				}
-				// Wait for AWSEndpointAvailable=True to confirm the CPO has finished
-				// reconciling the VPC endpoint (subnet actually removed from AWS).
-				if err := wait.PollUntilContextTimeout(ctx, 5*time.Second, 3*time.Minute, true, func(ctx context.Context) (bool, error) {
+					// Wait for the subnet to be removed from all AWSEndpointService.Spec.SubnetIDs.
+					// The hypershift-operator watches the ConfigMap and reconciles Spec.SubnetIDs.
+					if err := wait.PollUntilContextTimeout(ctx, 5*time.Second, 2*time.Minute, true, func(ctx context.Context) (bool, error) {
+						list := &hyperv1.AWSEndpointServiceList{}
+						if err := mgtClient.List(ctx, list, crclient.InNamespace(hcpNS)); err != nil {
+							return false, nil
+						}
+						for _, es := range list.Items {
+							for _, id := range es.Spec.SubnetIDs {
+								if id == subnetID {
+									return false, nil
+								}
+							}
+						}
+						return true, nil
+					}); err != nil {
+						t.Logf("cleanup: timed out waiting for subnet %s to leave AWSEndpointService specs: %v", subnetID, err)
+					} else {
+						t.Logf("cleanup: subnet %s removed from all AWSEndpointService specs", subnetID)
+					}
+					// Wait for AWSEndpointAvailable=True to confirm the CPO has finished
+					// reconciling the VPC endpoint (subnet actually removed from AWS).
+					if err := wait.PollUntilContextTimeout(ctx, 5*time.Second, 3*time.Minute, true, func(ctx context.Context) (bool, error) {
+						list := &hyperv1.AWSEndpointServiceList{}
+						if err := mgtClient.List(ctx, list, crclient.InNamespace(hcpNS)); err != nil {
+							return false, nil
+						}
+						for _, es := range list.Items {
+							for _, cond := range es.Status.Conditions {
+								if cond.Type == string(hyperv1.AWSEndpointAvailable) && cond.Status != metav1.ConditionTrue {
+									return false, nil
+								}
+							}
+						}
+						return true, nil
+					}); err != nil {
+						t.Logf("cleanup: timed out waiting for AWSEndpointAvailable=True after subnet removal: %v", err)
+					} else {
+						t.Logf("cleanup: all AWSEndpointServices have AWSEndpointAvailable=True")
+					}
+					cleanupSubnet()
+				})
+				t.Logf("Created OpenshiftEC2NodeClass %q selecting subnet %s", customNodeClass.Name, subnetID)
+
+				// Wait for OpenshiftEC2NodeClass.Status.Subnets to contain the subnet ID.
+				t.Logf("Waiting for OpenshiftEC2NodeClass status to reflect subnet %s", subnetID)
+				g.Eventually(func(g Gomega) {
+					nc := &hyperkarpenterv1.OpenshiftEC2NodeClass{}
+					g.Expect(guestClient.Get(ctx, crclient.ObjectKeyFromObject(customNodeClass), nc)).To(Succeed())
+					subnetIDs := make([]string, 0, len(nc.Status.Subnets))
+					for _, s := range nc.Status.Subnets {
+						subnetIDs = append(subnetIDs, s.ID)
+					}
+					g.Expect(subnetIDs).To(ContainElement(subnetID), "status.subnets should contain the test subnet")
+				}).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
+				t.Logf("OpenshiftEC2NodeClass status.subnets contains %s", subnetID)
+
+				// Wait for the karpenter-subnets ConfigMap in the HCP namespace to contain the subnet ID.
+				// hcpNamespace was already set above during AZ selection.
+				t.Logf("Waiting for karpenter-subnets ConfigMap in %s to contain subnet %s", hcpNamespace, subnetID)
+				g.Eventually(func(g Gomega) {
+					cm := &corev1.ConfigMap{}
+					g.Expect(mgtClient.Get(ctx, crclient.ObjectKey{
+						Namespace: hcpNamespace,
+						Name:      karpenterutil.KarpenterSubnetsConfigMapName,
+					}, cm)).To(Succeed())
+					g.Expect(cm.Data).To(HaveKey("subnetIDs"))
+					var cmSubnetIDs []string
+					g.Expect(json.Unmarshal([]byte(cm.Data["subnetIDs"]), &cmSubnetIDs)).To(Succeed())
+					g.Expect(cmSubnetIDs).To(ContainElement(subnetID), "karpenter-subnets ConfigMap should contain the test subnet")
+				}).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
+				t.Logf("karpenter-subnets ConfigMap contains subnet %s", subnetID)
+
+				// Wait for any AWSEndpointService in the HCP namespace to include the subnet ID.
+				// Which AWSEndpointService resources exist depends on the APIServer publishing
+				// strategy: with LoadBalancer publishing, "kube-apiserver-private" is created;
+				// with Route publishing (used when ExternalDNS is configured), only
+				// "private-router" exists. We check all of them to be independent of the
+				// publishing strategy.
+				t.Logf("Waiting for any AWSEndpointService in %s to include subnet %s", hcpNamespace, subnetID)
+				g.Eventually(func(g Gomega) {
 					list := &hyperv1.AWSEndpointServiceList{}
-					if err := mgtClient.List(ctx, list, crclient.InNamespace(hcpNS)); err != nil {
-						return false, nil
-					}
+					g.Expect(mgtClient.List(ctx, list, crclient.InNamespace(hcpNamespace))).To(Succeed())
+					g.Expect(list.Items).NotTo(BeEmpty(), "expected at least one AWSEndpointService in namespace %s", hcpNamespace)
+					found := false
 					for _, es := range list.Items {
-						for _, cond := range es.Status.Conditions {
-							if cond.Type == string(hyperv1.AWSEndpointAvailable) && cond.Status != metav1.ConditionTrue {
-								return false, nil
+						for _, id := range es.Spec.SubnetIDs {
+							if id == subnetID {
+								t.Logf("AWSEndpointService %q includes subnet %s", es.Name, subnetID)
+								found = true
+								break
 							}
 						}
 					}
-					return true, nil
-				}); err != nil {
-					t.Logf("cleanup: timed out waiting for AWSEndpointAvailable=True after subnet removal: %v", err)
-				} else {
-					t.Logf("cleanup: all AWSEndpointServices have AWSEndpointAvailable=True")
-				}
-				cleanupSubnet()
-			})
-			t.Logf("Created OpenshiftEC2NodeClass %q selecting subnet %s", customNodeClass.Name, subnetID)
+					g.Expect(found).To(BeTrue(), "no AWSEndpointService in %s contains subnet %s", hcpNamespace, subnetID)
+				}).WithTimeout(3 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
 
-			// Wait for OpenshiftEC2NodeClass.Status.Subnets to contain the subnet ID.
-			t.Logf("Waiting for OpenshiftEC2NodeClass status to reflect subnet %s", subnetID)
-			g.Eventually(func(g Gomega) {
-				nc := &hyperkarpenterv1.OpenshiftEC2NodeClass{}
-				g.Expect(guestClient.Get(ctx, crclient.ObjectKeyFromObject(customNodeClass), nc)).To(Succeed())
-				subnetIDs := make([]string, 0, len(nc.Status.Subnets))
-				for _, s := range nc.Status.Subnets {
-					subnetIDs = append(subnetIDs, s.ID)
-				}
-				g.Expect(subnetIDs).To(ContainElement(subnetID), "status.subnets should contain the test subnet")
-			}).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
-			t.Logf("OpenshiftEC2NodeClass status.subnets contains %s", subnetID)
-
-			// Wait for the karpenter-subnets ConfigMap in the HCP namespace to contain the subnet ID.
-			// hcpNamespace was already set above during AZ selection.
-			t.Logf("Waiting for karpenter-subnets ConfigMap in %s to contain subnet %s", hcpNamespace, subnetID)
-			g.Eventually(func(g Gomega) {
-				cm := &corev1.ConfigMap{}
-				g.Expect(mgtClient.Get(ctx, crclient.ObjectKey{
-					Namespace: hcpNamespace,
-					Name:      karpenterutil.KarpenterSubnetsConfigMapName,
-				}, cm)).To(Succeed())
-				g.Expect(cm.Data).To(HaveKey("subnetIDs"))
-				var cmSubnetIDs []string
-				g.Expect(json.Unmarshal([]byte(cm.Data["subnetIDs"]), &cmSubnetIDs)).To(Succeed())
-				g.Expect(cmSubnetIDs).To(ContainElement(subnetID), "karpenter-subnets ConfigMap should contain the test subnet")
-			}).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
-			t.Logf("karpenter-subnets ConfigMap contains subnet %s", subnetID)
-
-			// Wait for any AWSEndpointService in the HCP namespace to include the subnet ID.
-			// Which AWSEndpointService resources exist depends on the APIServer publishing
-			// strategy: with LoadBalancer publishing, "kube-apiserver-private" is created;
-			// with Route publishing (used when ExternalDNS is configured), only
-			// "private-router" exists. We check all of them to be independent of the
-			// publishing strategy.
-			t.Logf("Waiting for any AWSEndpointService in %s to include subnet %s", hcpNamespace, subnetID)
-			g.Eventually(func(g Gomega) {
-				list := &hyperv1.AWSEndpointServiceList{}
-				g.Expect(mgtClient.List(ctx, list, crclient.InNamespace(hcpNamespace))).To(Succeed())
-				g.Expect(list.Items).NotTo(BeEmpty(), "expected at least one AWSEndpointService in namespace %s", hcpNamespace)
-				found := false
-				for _, es := range list.Items {
-					for _, id := range es.Spec.SubnetIDs {
-						if id == subnetID {
-							t.Logf("AWSEndpointService %q includes subnet %s", es.Name, subnetID)
-							found = true
-							break
+				// Wait for all AWSEndpointServices to have AWSEndpointAvailable=True.
+				// This confirms the CPO successfully created/modified the VPC endpoint
+				// with the new subnet — the feature actually works end-to-end.
+				t.Logf("Waiting for AWSEndpointAvailable=True on all AWSEndpointServices in %s", hcpNamespace)
+				g.Eventually(func(g Gomega) {
+					list := &hyperv1.AWSEndpointServiceList{}
+					g.Expect(mgtClient.List(ctx, list, crclient.InNamespace(hcpNamespace))).To(Succeed())
+					for _, es := range list.Items {
+						available := false
+						for _, cond := range es.Status.Conditions {
+							if cond.Type == string(hyperv1.AWSEndpointAvailable) {
+								g.Expect(cond.Status).To(Equal(metav1.ConditionTrue),
+									"AWSEndpointService %q has AWSEndpointAvailable=%s: %s",
+									es.Name, cond.Status, cond.Message)
+								available = true
+								break
+							}
 						}
+						g.Expect(available).To(BeTrue(),
+							"AWSEndpointService %q has no AWSEndpointAvailable condition", es.Name)
 					}
+				}).WithTimeout(5 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
+				t.Logf("All AWSEndpointServices have AWSEndpointAvailable=True")
+
+				// Launch a node in the custom subnet to verify it's functional.
+				testNodePool := baseNodePool("arbitrary-subnet-test")
+				testNodePool.Spec.Template.Spec.NodeClassRef = &karpenterv1.NodeClassReference{
+					Group: "karpenter.k8s.aws",
+					Kind:  "EC2NodeClass",
+					Name:  customNodeClass.Name,
 				}
-				g.Expect(found).To(BeTrue(), "no AWSEndpointService in %s contains subnet %s", hcpNamespace, subnetID)
-			}).WithTimeout(3 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
 
-			// Wait for all AWSEndpointServices to have AWSEndpointAvailable=True.
-			// This confirms the CPO successfully created/modified the VPC endpoint
-			// with the new subnet — the feature actually works end-to-end.
-			t.Logf("Waiting for AWSEndpointAvailable=True on all AWSEndpointServices in %s", hcpNamespace)
-			g.Eventually(func(g Gomega) {
-				list := &hyperv1.AWSEndpointServiceList{}
-				g.Expect(mgtClient.List(ctx, list, crclient.InNamespace(hcpNamespace))).To(Succeed())
-				for _, es := range list.Items {
-					available := false
-					for _, cond := range es.Status.Conditions {
-						if cond.Type == string(hyperv1.AWSEndpointAvailable) {
-							g.Expect(cond.Status).To(Equal(metav1.ConditionTrue),
-								"AWSEndpointService %q has AWSEndpointAvailable=%s: %s",
-								es.Name, cond.Status, cond.Message)
-							available = true
-							break
-						}
-					}
-					g.Expect(available).To(BeTrue(),
-						"AWSEndpointService %q has no AWSEndpointAvailable condition", es.Name)
-				}
-			}).WithTimeout(5 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
-			t.Logf("All AWSEndpointServices have AWSEndpointAvailable=True")
-
-			// Launch a node in the custom subnet to verify it's functional.
-			testNodePool := baseNodePool("arbitrary-subnet-test")
-			testNodePool.Spec.Template.Spec.NodeClassRef = &karpenterv1.NodeClassReference{
-				Group: "karpenter.k8s.aws",
-				Kind:  "EC2NodeClass",
-				Name:  customNodeClass.Name,
-			}
-
-			testWorkLoads := testWorkload("arbitrary-subnet-web-app", 1, map[string]string{
-				"karpenter.sh/nodepool": testNodePool.Name,
-			})
-
-			g.Expect(guestClient.Create(ctx, testNodePool)).To(Succeed())
-			t.Logf("Created Karpenter NodePool %q", testNodePool.Name)
-			g.Expect(guestClient.Create(ctx, testWorkLoads)).To(Succeed())
-			t.Logf("Created workload %q", testWorkLoads.Name)
-			defer func() {
-				_ = guestClient.Delete(ctx, testWorkLoads)
-				_ = guestClient.Delete(ctx, testNodePool)
-			}()
-
-			testNodeLabels := map[string]string{
-				"karpenter.sh/nodepool": testNodePool.Name,
-			}
-			nodes := e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, 1, testNodeLabels)
-			t.Logf("Node launched in arbitrary subnet, verifying it used subnet %s", subnetID)
-
-			// Verify the launched node's EC2 instance is in the expected subnet.
-			for _, node := range nodes {
-				providerID := node.Spec.ProviderID
-				g.Expect(providerID).NotTo(BeEmpty(), "node should have a providerID")
-				parts := strings.Split(providerID, "/")
-				g.Expect(parts).To(HaveLen(5), "providerID should have 5 parts")
-				instanceID := parts[4]
-
-				result, err := ec2client.DescribeInstances(ctx, &ec2.DescribeInstancesInput{
-					InstanceIds: []string{instanceID},
+				testWorkLoads := testWorkload("arbitrary-subnet-web-app", 1, map[string]string{
+					"karpenter.sh/nodepool": testNodePool.Name,
 				})
-				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(result.Reservations).NotTo(BeEmpty())
-				g.Expect(result.Reservations[0].Instances).NotTo(BeEmpty())
-				instance := result.Reservations[0].Instances[0]
-				g.Expect(aws.ToString(instance.SubnetId)).To(Equal(subnetID),
-					"instance %s should be in subnet %s", instanceID, subnetID)
-				t.Logf("Instance %s confirmed in subnet %s", instanceID, subnetID)
-			}
 
-			// Clean up NodePool and workload; subnet cleanup is registered via t.Cleanup.
-			g.Expect(guestClient.Delete(ctx, testWorkLoads)).To(Succeed())
-			g.Expect(guestClient.Delete(ctx, testNodePool)).To(Succeed())
-			t.Logf("Waiting for arbitrary-subnet-test nodes to be removed")
-			_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, 0, testNodeLabels)
-		})
+				g.Expect(guestClient.Create(ctx, testNodePool)).To(Succeed())
+				t.Logf("Created Karpenter NodePool %q", testNodePool.Name)
+				g.Expect(guestClient.Create(ctx, testWorkLoads)).To(Succeed())
+				t.Logf("Created workload %q", testWorkLoads.Name)
+				defer func() {
+					_ = guestClient.Delete(ctx, testWorkLoads)
+					_ = guestClient.Delete(ctx, testNodePool)
+				}()
+
+				testNodeLabels := map[string]string{
+					"karpenter.sh/nodepool": testNodePool.Name,
+				}
+				nodes := e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, 1, testNodeLabels)
+				t.Logf("Node launched in arbitrary subnet, verifying it used subnet %s", subnetID)
+
+				// Verify the launched node's EC2 instance is in the expected subnet.
+				for _, node := range nodes {
+					providerID := node.Spec.ProviderID
+					g.Expect(providerID).NotTo(BeEmpty(), "node should have a providerID")
+					parts := strings.Split(providerID, "/")
+					g.Expect(parts).To(HaveLen(5), "providerID should have 5 parts")
+					instanceID := parts[4]
+
+					result, err := ec2client.DescribeInstances(ctx, &ec2.DescribeInstancesInput{
+						InstanceIds: []string{instanceID},
+					})
+					g.Expect(err).NotTo(HaveOccurred())
+					g.Expect(result.Reservations).NotTo(BeEmpty())
+					g.Expect(result.Reservations[0].Instances).NotTo(BeEmpty())
+					instance := result.Reservations[0].Instances[0]
+					g.Expect(aws.ToString(instance.SubnetId)).To(Equal(subnetID),
+						"instance %s should be in subnet %s", instanceID, subnetID)
+					t.Logf("Instance %s confirmed in subnet %s", instanceID, subnetID)
+				}
+
+				// Clean up NodePool and workload; subnet cleanup is registered via t.Cleanup.
+				g.Expect(guestClient.Delete(ctx, testWorkLoads)).To(Succeed())
+				g.Expect(guestClient.Delete(ctx, testNodePool)).To(Succeed())
+				t.Logf("Waiting for arbitrary-subnet-test nodes to be removed")
+				_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, 0, testNodeLabels)
+			})
+		}) // end "Parallel provisioning tests"
 
 		t.Run("AutoNode enable/disable lifecycle", func(t *testing.T) {
 			g := NewWithT(t)
