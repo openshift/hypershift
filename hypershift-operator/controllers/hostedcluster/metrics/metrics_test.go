@@ -1351,7 +1351,7 @@ func TestReportTransitionDurationForAWSEndpointConditions(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name:              "hc",
 					Namespace:         "any",
-					CreationTimestamp:  metav1.Time{Time: now},
+					CreationTimestamp: metav1.Time{Time: now},
 				},
 				Spec: hyperv1.HostedClusterSpec{
 					ClusterID: "id",
