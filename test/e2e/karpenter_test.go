@@ -702,16 +702,10 @@ func TestKarpenter(t *testing.T) {
 						instanceID, instance.MetadataOptions.HttpTokens, instance.MetadataOptions.HttpEndpoint, *instance.MetadataOptions.HttpPutResponseHopLimit)
 				}
 
-				// Clean up
+				// Trigger cleanup; the defer handles final deletion.
+				// No need to wait for node deprovisioning — subsequent tests use isolated NodePools.
 				g.Expect(guestClient.Delete(ctx, testWorkLoads)).To(Succeed())
 				g.Expect(guestClient.Delete(ctx, testNodePool)).To(Succeed())
-				t.Log("Waiting for version-test nodes to be removed")
-				_ = e2eutil.WaitForNReadyNodesWithOptions(t, ctx, guestClient, 0, hyperv1.AWSPlatform, "",
-					e2eutil.WithClientOptions(
-						crclient.MatchingLabelsSelector{Selector: labels.SelectorFromSet(labels.Set(testNodeLabels))},
-					),
-				)
-				t.Log("Version-test nodes removed successfully")
 			})
 
 			t.Run("OpenshiftEC2NodeClass with version exceeding allowed skew sets SupportedVersionSkew condition", func(t *testing.T) {
@@ -1231,11 +1225,10 @@ func TestKarpenter(t *testing.T) {
 					t.Logf("Instance %s confirmed in subnet %s", instanceID, subnetID)
 				}
 
-				// Clean up NodePool and workload; subnet cleanup is registered via t.Cleanup.
+				// Trigger cleanup; the t.Cleanup handles final subnet removal.
+				// No need to wait for node deprovisioning — subsequent tests use isolated NodePools.
 				g.Expect(guestClient.Delete(ctx, testWorkLoads)).To(Succeed())
 				g.Expect(guestClient.Delete(ctx, testNodePool)).To(Succeed())
-				t.Logf("Waiting for arbitrary-subnet-test nodes to be removed")
-				_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, 0, testNodeLabels)
 			})
 		}) // end "Parallel provisioning tests"
 
@@ -1320,13 +1313,11 @@ func TestKarpenter(t *testing.T) {
 			)
 		})
 
-		// TODO(jkyros): This test doesn't clean up after itself (I think intentionally) so we can test general cluster
-		// cleanup, but as a result it needs to run last, otherwise it will pollute any other cases that come after it
-		// and its "on-demand" nodepool may service requests that are not intended for it
-		t.Run("Test basic provisioning and de-provisioning", func(t *testing.T) {
+		// This test intentionally leaves dangling resources so cluster teardown must
+		// force-terminate nodes despite a blocking PDB. It must run last.
+		t.Run("Karpenter consolidation and cluster deletion with blocking PDB", func(t *testing.T) {
 			karpenterNodePool := baseNodePool("on-demand")
-			replicas := 3
-			workLoads := testWorkload("web-app", int32(replicas), map[string]string{
+			workLoads := testWorkload("web-app", 2, map[string]string{
 				"node.kubernetes.io/instance-type": "t3.large",
 			})
 			nodeLabels := map[string]string{
@@ -1334,13 +1325,24 @@ func TestKarpenter(t *testing.T) {
 				"karpenter.sh/nodepool":            karpenterNodePool.Name,
 			}
 
-			// Leave dangling resources, and hope the teardown is not blocked, else the test will fail.
 			g.Expect(guestClient.Create(ctx, karpenterNodePool)).To(Succeed())
 			t.Logf("Created Karpenter NodePool")
 			g.Expect(guestClient.Create(ctx, workLoads)).To(Succeed())
-			t.Logf("Created workloads")
+			t.Logf("Created workloads with 2 replicas")
 
-			// Create a blocking PDB to validate karpenter-operator will terminates stuck nodes forcefully to unblock cluster deletion.
+			_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, 2, nodeLabels)
+			t.Logf("Both nodes ready, scaling workload to 1 replica to verify deprovisioning and consolidation")
+
+			err := e2eutil.UpdateObject(t, ctx, guestClient, workLoads, func(obj *appsv1.Deployment) {
+				obj.Spec.Replicas = ptr.To(int32(1))
+			})
+			g.Expect(err).NotTo(HaveOccurred())
+
+			_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, 1, nodeLabels)
+			t.Logf("Karpenter consolidated the extra node")
+
+			// Create a blocking PDB and leave everything dangling so cluster teardown
+			// must force-terminate the remaining node.
 			pdb := &policyv1.PodDisruptionBudget{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "blocking-pdb",
@@ -1360,8 +1362,6 @@ func TestKarpenter(t *testing.T) {
 			}
 			g.Expect(guestClient.Create(ctx, pdb)).To(Succeed())
 			t.Logf("Created cluster-deletion-blocking PodDisruptionBudget")
-
-			_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, int32(replicas), nodeLabels)
 		})
 
 	}).WithUpgradeTarget(globalOpts.LatestReleaseImage).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "karpenter", globalOpts.ServiceAccountSigningKey)
@@ -1370,7 +1370,7 @@ func TestKarpenter(t *testing.T) {
 func waitForReadyKarpenterPods(t *testing.T, ctx context.Context, client crclient.Client, nodes []corev1.Node, n int) []corev1.Pod {
 	pods := &corev1.PodList{}
 	waitTimeout := 20 * time.Minute
-	e2eutil.EventuallyObjects(t, ctx, fmt.Sprintf("Pods to be scheduled on provisioned Karpenter nodes"),
+	e2eutil.EventuallyObjects(t, ctx, "Pods to be scheduled on provisioned Karpenter nodes",
 		func(ctx context.Context) ([]*corev1.Pod, error) {
 			err := client.List(ctx, pods, crclient.InNamespace("default"))
 			items := make([]*corev1.Pod, len(pods.Items))
@@ -1414,7 +1414,7 @@ func waitForReadyKarpenterPods(t *testing.T, ctx context.Context, client crclien
 func waitForReadyNodeClaims(t *testing.T, ctx context.Context, client crclient.Client, n int) *karpenterv1.NodeClaimList {
 	nodeClaims := &karpenterv1.NodeClaimList{}
 	waitTimeout := 5 * time.Minute
-	e2eutil.EventuallyObjects(t, ctx, fmt.Sprintf("NodeClaims to be ready"),
+	e2eutil.EventuallyObjects(t, ctx, "NodeClaims to be ready",
 		func(ctx context.Context) ([]*karpenterv1.NodeClaim, error) {
 			err := client.List(ctx, nodeClaims)
 			if err != nil {
