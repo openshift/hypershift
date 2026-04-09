@@ -382,5 +382,5 @@ func TestOVNControlPlaneZeroWorkers(t *testing.T) {
 		t.Logf("✅ All validation steps completed successfully")
 		t.Logf("========================================")
 
-	}).WithAssetReader(content.ReadFile).Execute(&clusterOpts, hyperv1.NonePlatform, globalOpts.ArtifactDir, "ovn-zero-workers", globalOpts.ServiceAccountSigningKey)
+	}).WithAssetReader(content.ReadFile).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "ovn-zero-workers", globalOpts.ServiceAccountSigningKey)
 }
