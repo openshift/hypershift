@@ -31,6 +31,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -38,7 +39,6 @@ import (
 	"k8s.io/utils/ptr"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
-	"sigs.k8s.io/yaml"
 )
 
 func TestKarpenter(t *testing.T) {
@@ -64,39 +64,19 @@ func TestKarpenter(t *testing.T) {
 	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 		guestClient := e2eutil.WaitForGuestClient(t, ctx, mgtClient, hostedCluster)
 
-		karpenterNodePool := &karpenterv1.NodePool{}
-		yamlFile, err := content.ReadFile("assets/karpenter-nodepool.yaml")
-		g.Expect(err).NotTo(HaveOccurred())
-		err = yaml.Unmarshal(yamlFile, karpenterNodePool)
-		g.Expect(err).NotTo(HaveOccurred())
-
-		workLoads := &appsv1.Deployment{}
-		yamlFile, err = content.ReadFile("assets/karpenter-workloads.yaml")
-		g.Expect(err).NotTo(HaveOccurred())
-		err = yaml.Unmarshal(yamlFile, workLoads)
-		g.Expect(err).NotTo(HaveOccurred())
-
-		armNodePool := &karpenterv1.NodePool{}
-		yamlFile, err = content.ReadFile("assets/karpenter/arm-nodepool.yaml")
-		g.Expect(err).NotTo(HaveOccurred())
-		err = yaml.Unmarshal(yamlFile, armNodePool)
-		g.Expect(err).NotTo(HaveOccurred())
-
-		armWorkLoads := &appsv1.Deployment{}
-		yamlFile, err = content.ReadFile("assets/karpenter/arm-workloads.yaml")
-		g.Expect(err).NotTo(HaveOccurred())
-		err = yaml.Unmarshal(yamlFile, armWorkLoads)
-		g.Expect(err).NotTo(HaveOccurred())
-
-		nodeLabels := map[string]string{
-			"node.kubernetes.io/instance-type": "t3.large",
-			"karpenter.sh/nodepool":            karpenterNodePool.GetName(),
-		}
-
 		t.Run("Test ARM64 instance provisioning", func(t *testing.T) {
 			if !globalOpts.ConfigurableClusterOptions.AWSMultiArch && !globalOpts.ConfigurableClusterOptions.AzureMultiArch {
 				t.Skip("test only supported on multi-arch clusters")
 			}
+
+			armNodePool := baseNodePool("arm-nodepool")
+			armNodePool.Spec.Template.Spec.Requirements = []karpenterv1.NodeSelectorRequirementWithMinValues{
+				{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: "node.kubernetes.io/instance-type", Operator: corev1.NodeSelectorOpIn, Values: []string{"m6g.xlarge"}}},
+				{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: "kubernetes.io/arch", Operator: corev1.NodeSelectorOpIn, Values: []string{"arm64"}}},
+				{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: "karpenter.sh/capacity-type", Operator: corev1.NodeSelectorOpIn, Values: []string{"on-demand"}}},
+			}
+			armWorkLoads := testWorkload("arm-app", 1, map[string]string{"karpenter.sh/nodepool": armNodePool.Name})
+
 			t.Cleanup(func() {
 				_ = guestClient.Delete(ctx, armWorkLoads)
 				_ = guestClient.Delete(ctx, armNodePool)
@@ -108,7 +88,7 @@ func TestKarpenter(t *testing.T) {
 			t.Logf("Created ARM64 workloads")
 
 			armNodeLabels := map[string]string{
-				"karpenter.sh/nodepool": armNodePool.GetName(),
+				"karpenter.sh/nodepool": armNodePool.Name,
 				"kubernetes.io/arch":    "arm64",
 			}
 
@@ -202,6 +182,16 @@ func TestKarpenter(t *testing.T) {
 		t.Run("Control plane upgrade and Karpenter Drift", func(t *testing.T) {
 			g := NewWithT(t)
 
+			karpenterNodePool := baseNodePool("on-demand")
+			replicas := 1
+			workLoads := testWorkload("web-app", int32(replicas), map[string]string{
+				"node.kubernetes.io/instance-type": "t3.large",
+			})
+			nodeLabels := map[string]string{
+				"node.kubernetes.io/instance-type": "t3.large",
+				"karpenter.sh/nodepool":            karpenterNodePool.Name,
+			}
+
 			t.Logf("Starting Karpenter control plane upgrade. FromImage: %s, toImage: %s", globalOpts.PreviousReleaseImage, globalOpts.LatestReleaseImage)
 
 			releaseProvider := &releaseinfo.RegistryClientProvider{}
@@ -214,9 +204,6 @@ func TestKarpenter(t *testing.T) {
 			expectedRHCOSVersions := machineOSVersions(latestReleaseImage)
 			g.Expect(expectedRHCOSVersions).NotTo(BeEmpty())
 			t.Logf("machine-os version(s) in latest release: %v", expectedRHCOSVersions)
-
-			replicas := 1
-			workLoads.Spec.Replicas = ptr.To(int32(replicas))
 
 			// Apply both Karpenter NodePool and workloads.
 			defer guestClient.Delete(ctx, karpenterNodePool)
@@ -376,36 +363,26 @@ func TestKarpenter(t *testing.T) {
 			// Now provision actual nodes to verify EC2 instances get the instance profile
 			t.Logf("Creating Karpenter NodePool and workloads to provision nodes")
 
-			// Create copies to avoid polluting shared test objects
-			testNodePool := karpenterNodePool.DeepCopy()
-			testWorkLoads := workLoads.DeepCopy()
-			testNodePool.ResourceVersion = ""
-			testWorkLoads.ResourceVersion = ""
-
-			replicas := 1
-			testWorkLoads.Spec.Replicas = ptr.To(int32(replicas))
-			testNodePool.Name = "instance-profile-test"
-			testWorkLoads.Name = "instance-profile-web-app"
+			testNodePool := baseNodePool("instance-profile-test")
+			testWorkLoads := testWorkload("instance-profile-web-app", 1, map[string]string{
+				"karpenter.sh/nodepool": testNodePool.Name,
+			})
 
 			g.Expect(guestClient.Create(ctx, testNodePool)).To(Succeed())
 			t.Logf("Created Karpenter NodePool")
 			g.Expect(guestClient.Create(ctx, testWorkLoads)).To(Succeed())
 			t.Logf("Created workloads")
 
-			// Ensure cleanup happens even if assertions fail
 			defer func() {
 				_ = guestClient.Delete(ctx, testWorkLoads)
 				_ = guestClient.Delete(ctx, testNodePool)
 			}()
 
-			// Update node labels to match the unique NodePool name
 			testNodeLabels := map[string]string{
-				"node.kubernetes.io/instance-type": "t3.large",
-				"karpenter.sh/nodepool":            testNodePool.GetName(),
+				"karpenter.sh/nodepool": testNodePool.Name,
 			}
 
-			// Wait for nodes to be provisioned
-			nodes := e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, int32(replicas), testNodeLabels)
+			nodes := e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, 1, testNodeLabels)
 			t.Logf("Karpenter nodes are ready")
 
 			// Verify EC2 instances have the correct instance profile
@@ -624,26 +601,21 @@ func TestKarpenter(t *testing.T) {
 			t.Logf("Expected kubelet version for %s: v%s", nodeClassVersion, expectedKubeletVersion)
 
 			// Create a Karpenter NodePool that references the custom EC2NodeClass
-			testNodePool := karpenterNodePool.DeepCopy()
-			testNodePool.ResourceVersion = ""
-			testNodePool.Name = "version-test"
+			testNodePool := baseNodePool("version-test")
 			testNodePool.Spec.Template.Spec.NodeClassRef = &karpenterv1.NodeClassReference{
 				Group: "karpenter.k8s.aws",
 				Kind:  "EC2NodeClass",
 				Name:  nc.Name,
 			}
 
-			// Create workload to trigger provisioning
-			testWorkLoads := workLoads.DeepCopy()
-			testWorkLoads.ResourceVersion = ""
-			testWorkLoads.Name = "version-test-app"
-			replicas := 1
-			testWorkLoads.Spec.Replicas = ptr.To(int32(replicas))
+			testWorkLoads := testWorkload("version-test-app", 1, map[string]string{
+				"karpenter.sh/nodepool": testNodePool.Name,
+			})
 
 			g.Expect(guestClient.Create(ctx, testNodePool)).To(Succeed())
-			t.Logf("Created Karpenter NodePool %q", testNodePool.GetName())
+			t.Logf("Created Karpenter NodePool %q", testNodePool.Name)
 			g.Expect(guestClient.Create(ctx, testWorkLoads)).To(Succeed())
-			t.Logf("Created workload %q with %d replica(s)", testWorkLoads.GetName(), replicas)
+			t.Logf("Created workload %q", testWorkLoads.Name)
 
 			defer func() {
 				_ = guestClient.Delete(ctx, testWorkLoads)
@@ -678,7 +650,7 @@ func TestKarpenter(t *testing.T) {
 			}
 
 			// Wait for node to be provisioned and verify it has the correct kubelet version
-			nodes := e2eutil.WaitForNReadyNodesWithOptions(t, ctx, guestClient, int32(replicas), hyperv1.AWSPlatform, "",
+			nodes := e2eutil.WaitForNReadyNodesWithOptions(t, ctx, guestClient, 1, hyperv1.AWSPlatform, "",
 				e2eutil.WithClientOptions(
 					crclient.MatchingLabelsSelector{Selector: labels.SelectorFromSet(labels.Set(testNodeLabels))},
 				),
@@ -919,9 +891,7 @@ func TestKarpenter(t *testing.T) {
 
 			// Create a dedicated NodePool that targets the capacity-reservation-test NodeClass and requires
 			// capacity-type=reserved so karpenter launches the instance into the reservation (not alongside it).
-			crNodePool := karpenterNodePool.DeepCopy()
-			crNodePool.ResourceVersion = ""
-			crNodePool.Name = "capacity-reservation-test"
+			crNodePool := baseNodePool("capacity-reservation-test")
 			crNodePool.Spec.Template.Spec.NodeClassRef = &karpenterv1.NodeClassReference{
 				Group: "karpenter.k8s.aws",
 				Kind:  "EC2NodeClass",
@@ -939,16 +909,10 @@ func TestKarpenter(t *testing.T) {
 			g.Expect(guestClient.Create(ctx, crNodePool)).To(Succeed())
 			t.Logf("Created NodePool capacity-reservation-test targeting capacity reservation %s", crID)
 
-			// Use the existing workload yaml but pin it to our capacity-reservation NodePool instead of
-			// the default instance-type nodeSelector, so karpenter satisfies it from the CR NodePool.
 			crNodeLabels := map[string]string{
-				"karpenter.sh/nodepool": crNodePool.GetName(),
+				"karpenter.sh/nodepool": crNodePool.Name,
 			}
-			crWorkload := workLoads.DeepCopy()
-			crWorkload.ResourceVersion = ""
-			crWorkload.Name = "capacity-reservation-web-app"
-			crWorkload.Spec.Replicas = ptr.To(int32(1))
-			crWorkload.Spec.Template.Spec.NodeSelector = crNodeLabels
+			crWorkload := testWorkload("capacity-reservation-web-app", 1, crNodeLabels)
 
 			defer func() {
 				if err := guestClient.Delete(ctx, crWorkload); err != nil {
@@ -1215,34 +1179,30 @@ func TestKarpenter(t *testing.T) {
 			t.Logf("All AWSEndpointServices have AWSEndpointAvailable=True")
 
 			// Launch a node in the custom subnet to verify it's functional.
-			testNodePool := karpenterNodePool.DeepCopy()
-			testNodePool.ResourceVersion = ""
-			testNodePool.Name = "arbitrary-subnet-test"
+			testNodePool := baseNodePool("arbitrary-subnet-test")
 			testNodePool.Spec.Template.Spec.NodeClassRef = &karpenterv1.NodeClassReference{
 				Group: "karpenter.k8s.aws",
 				Kind:  "EC2NodeClass",
 				Name:  customNodeClass.Name,
 			}
 
-			testWorkLoads := workLoads.DeepCopy()
-			testWorkLoads.ResourceVersion = ""
-			testWorkLoads.Name = "arbitrary-subnet-web-app"
-			replicas := 1
-			testWorkLoads.Spec.Replicas = ptr.To(int32(replicas))
+			testWorkLoads := testWorkload("arbitrary-subnet-web-app", 1, map[string]string{
+				"karpenter.sh/nodepool": testNodePool.Name,
+			})
 
 			g.Expect(guestClient.Create(ctx, testNodePool)).To(Succeed())
-			t.Logf("Created Karpenter NodePool %q", testNodePool.GetName())
+			t.Logf("Created Karpenter NodePool %q", testNodePool.Name)
 			g.Expect(guestClient.Create(ctx, testWorkLoads)).To(Succeed())
-			t.Logf("Created workload %q with %d replica(s)", testWorkLoads.GetName(), replicas)
+			t.Logf("Created workload %q", testWorkLoads.Name)
 			defer func() {
 				_ = guestClient.Delete(ctx, testWorkLoads)
 				_ = guestClient.Delete(ctx, testNodePool)
 			}()
 
 			testNodeLabels := map[string]string{
-				"karpenter.sh/nodepool": testNodePool.GetName(),
+				"karpenter.sh/nodepool": testNodePool.Name,
 			}
-			nodes := e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, int32(replicas), testNodeLabels)
+			nodes := e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, 1, testNodeLabels)
 			t.Logf("Node launched in arbitrary subnet, verifying it used subnet %s", subnetID)
 
 			// Verify the launched node's EC2 instance is in the expected subnet.
@@ -1357,11 +1317,15 @@ func TestKarpenter(t *testing.T) {
 		// cleanup, but as a result it needs to run last, otherwise it will pollute any other cases that come after it
 		// and its "on-demand" nodepool may service requests that are not intended for it
 		t.Run("Test basic provisioning and de-provisioning", func(t *testing.T) {
-			// Test that we can provision as many nodes as needed (in this case, we need 3 nodes for 3 replicas)
+			karpenterNodePool := baseNodePool("on-demand")
 			replicas := 3
-			workLoads.Spec.Replicas = ptr.To(int32(replicas))
-			workLoads.ResourceVersion = ""
-			karpenterNodePool.ResourceVersion = ""
+			workLoads := testWorkload("web-app", int32(replicas), map[string]string{
+				"node.kubernetes.io/instance-type": "t3.large",
+			})
+			nodeLabels := map[string]string{
+				"node.kubernetes.io/instance-type": "t3.large",
+				"karpenter.sh/nodepool":            karpenterNodePool.Name,
+			}
 
 			// Leave dangling resources, and hope the teardown is not blocked, else the test will fail.
 			g.Expect(guestClient.Create(ctx, karpenterNodePool)).To(Succeed())
@@ -1525,6 +1489,78 @@ func waitForNodeClaimDrifted(t *testing.T, ctx context.Context, client crclient.
 		},
 		e2eutil.WithTimeout(waitTimeout),
 	)
+}
+
+func baseNodePool(name string) *karpenterv1.NodePool {
+	return &karpenterv1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{Name: name},
+		Spec: karpenterv1.NodePoolSpec{
+			Template: karpenterv1.NodeClaimTemplate{
+				ObjectMeta: karpenterv1.ObjectMeta{
+					Labels: map[string]string{
+						"hypershift.openshift.io/nodepool-globalps-enabled": "true",
+					},
+				},
+				Spec: karpenterv1.NodeClaimTemplateSpec{
+					Requirements: []karpenterv1.NodeSelectorRequirementWithMinValues{
+						{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: "node.kubernetes.io/instance-type", Operator: corev1.NodeSelectorOpIn, Values: []string{"t3.large"}}},
+						{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: "karpenter.sh/capacity-type", Operator: corev1.NodeSelectorOpIn, Values: []string{"on-demand"}}},
+					},
+					NodeClassRef: &karpenterv1.NodeClassReference{
+						Group: "karpenter.k8s.aws",
+						Kind:  "EC2NodeClass",
+						Name:  "default",
+					},
+				},
+			},
+		},
+	}
+}
+
+func testWorkload(name string, replicas int32, nodeSelector map[string]string) *appsv1.Deployment {
+	appLabel := map[string]string{"app": name}
+	return &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: "default",
+		},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: ptr.To(replicas),
+			Selector: &metav1.LabelSelector{MatchLabels: appLabel},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{Labels: appLabel},
+				Spec: corev1.PodSpec{
+					Affinity: &corev1.Affinity{
+						PodAntiAffinity: &corev1.PodAntiAffinity{
+							RequiredDuringSchedulingIgnoredDuringExecution: []corev1.PodAffinityTerm{{
+								LabelSelector: &metav1.LabelSelector{MatchLabels: appLabel},
+								TopologyKey:   "kubernetes.io/hostname",
+							}},
+						},
+					},
+					SecurityContext: &corev1.PodSecurityContext{
+						RunAsUser:  ptr.To(int64(1000)),
+						RunAsGroup: ptr.To(int64(3000)),
+						FSGroup:    ptr.To(int64(2000)),
+					},
+					Containers: []corev1.Container{{
+						Name:  name,
+						Image: "quay.io/openshift/origin-pod:4.22.0",
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceCPU:    resource.MustParse("250m"),
+								corev1.ResourceMemory: resource.MustParse("256M"),
+							},
+						},
+						SecurityContext: &corev1.SecurityContext{
+							AllowPrivilegeEscalation: ptr.To(false),
+						},
+					}},
+					NodeSelector: nodeSelector,
+				},
+			},
+		},
+	}
 }
 
 // getNodeNames returns the names of the nodes in the list
