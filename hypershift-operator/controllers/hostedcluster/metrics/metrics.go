@@ -338,7 +338,7 @@ func (c *hostedClustersMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 			}
 
 			// transitionDurationMetric - aggregation
-			for _, conditionType := range []hyperv1.ConditionType{hyperv1.EtcdAvailable, hyperv1.InfrastructureReady, hyperv1.ExternalDNSReachable} {
+			for _, conditionType := range []hyperv1.ConditionType{hyperv1.EtcdAvailable, hyperv1.InfrastructureReady, hyperv1.ExternalDNSReachable, hyperv1.AWSEndpointServiceAvailable, hyperv1.AWSEndpointAvailable} {
 				condition := meta.FindStatusCondition(hcluster.Status.Conditions, string(conditionType))
 
 				if condition != nil && condition.Status == metav1.ConditionTrue {
