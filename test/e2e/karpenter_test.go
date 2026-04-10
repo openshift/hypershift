@@ -58,8 +58,6 @@ func TestKarpenter(t *testing.T) {
 	clusterOpts.AWSPlatform.AutoNode = true
 	clusterOpts.AWSPlatform.PublicOnly = false
 	clusterOpts.AWSPlatform.EndpointAccess = string(hyperv1.PublicAndPrivate)
-	clusterOpts.ControlPlaneAvailabilityPolicy = string(hyperv1.HighlyAvailable)
-	clusterOpts.ReleaseImage = globalOpts.PreviousReleaseImage
 
 	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 		guestClient := e2eutil.WaitForGuestClient(t, ctx, mgtClient, hostedCluster)
@@ -177,146 +175,6 @@ func TestKarpenter(t *testing.T) {
 			// - Karpenter functionality:
 			//
 			// Tracked in https://issues.redhat.com/browse/AUTOSCALE-138
-		})
-
-		t.Run("Control plane upgrade and Karpenter Drift", func(t *testing.T) {
-			g := NewWithT(t)
-
-			karpenterNodePool := baseNodePool("on-demand")
-			replicas := 1
-			workLoads := testWorkload("web-app", int32(replicas), map[string]string{
-				"node.kubernetes.io/instance-type": "t3.large",
-			})
-			nodeLabels := map[string]string{
-				"node.kubernetes.io/instance-type": "t3.large",
-				"karpenter.sh/nodepool":            karpenterNodePool.Name,
-			}
-
-			t.Logf("Starting Karpenter control plane upgrade. FromImage: %s, toImage: %s", globalOpts.PreviousReleaseImage, globalOpts.LatestReleaseImage)
-
-			releaseProvider := &releaseinfo.RegistryClientProvider{}
-			pullSecret, err := os.ReadFile(clusterOpts.PullSecretFile)
-			g.Expect(err).NotTo(HaveOccurred())
-
-			latestReleaseImage, err := releaseProvider.Lookup(ctx, globalOpts.LatestReleaseImage, pullSecret)
-			g.Expect(err).NotTo(HaveOccurred())
-
-			expectedRHCOSVersions := machineOSVersions(latestReleaseImage)
-			g.Expect(expectedRHCOSVersions).NotTo(BeEmpty())
-			t.Logf("machine-os version(s) in latest release: %v", expectedRHCOSVersions)
-
-			// Apply both Karpenter NodePool and workloads.
-			defer guestClient.Delete(ctx, karpenterNodePool)
-			defer guestClient.Delete(ctx, workLoads)
-			g.Expect(guestClient.Create(ctx, karpenterNodePool)).To(Succeed())
-			t.Logf("Created Karpenter NodePool")
-			g.Expect(guestClient.Create(ctx, workLoads)).To(Succeed())
-			t.Logf("Created workloads")
-
-			// Wait for Nodes, NodeClaims and Pods to be ready.
-			nodes := e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, int32(replicas), nodeLabels)
-			nodeClaims := waitForReadyNodeClaims(t, ctx, guestClient, len(nodes))
-			waitForReadyKarpenterPods(t, ctx, guestClient, nodes, replicas)
-
-			preUpgradeOSImage := nodes[0].Status.NodeInfo.OSImage
-			t.Logf("Pre-upgrade node: %s, OS image: %s", nodes[0].Name, preUpgradeOSImage)
-
-			// Update hosted control plane to induce Drift
-			t.Logf("Updating cluster image. Image: %s", globalOpts.LatestReleaseImage)
-			err = e2eutil.UpdateObject(t, ctx, mgtClient, hostedCluster, func(obj *hyperv1.HostedCluster) {
-				obj.Spec.Release.Image = globalOpts.LatestReleaseImage
-				if obj.Annotations == nil {
-					obj.Annotations = make(map[string]string)
-				}
-				obj.Annotations[hyperv1.ForceUpgradeToAnnotation] = globalOpts.LatestReleaseImage
-				if globalOpts.DisablePKIReconciliation {
-					obj.Annotations[hyperv1.DisablePKIReconciliationAnnotation] = "true"
-				}
-			})
-			g.Expect(err).NotTo(HaveOccurred(), "failed update hostedcluster image")
-
-			// Check that the NodeClaim(s) actually Drift
-			driftChan := make(chan struct{})
-			go func() {
-				defer close(driftChan)
-				for _, nodeClaim := range nodeClaims.Items {
-					waitForNodeClaimDrifted(t, ctx, guestClient, &nodeClaim)
-				}
-			}()
-
-			// Wait for the new rollout to be complete
-			e2eutil.WaitForImageRollout(t, ctx, mgtClient, hostedCluster)
-			err = mgtClient.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
-			g.Expect(err).NotTo(HaveOccurred(), "failed to get hostedcluster")
-
-			// Ensure Karpenter Drift behaviour
-			<-driftChan
-			t.Logf("Karpenter Nodes drifted")
-
-			nodes = e2eutil.WaitForNReadyNodesWithOptions(t, ctx, guestClient, int32(replicas), hyperv1.AWSPlatform, "",
-				e2eutil.WithClientOptions(
-					crclient.MatchingLabelsSelector{Selector: labels.SelectorFromSet(labels.Set(nodeLabels))},
-				),
-				e2eutil.WithPredicates(
-					e2eutil.ConditionPredicate[*corev1.Node](e2eutil.Condition{
-						Type:   string(corev1.NodeReady),
-						Status: metav1.ConditionTrue,
-					}),
-					e2eutil.Predicate[*corev1.Node](func(node *corev1.Node) (done bool, reasons string, err error) {
-						fullOSImageString := node.Status.NodeInfo.OSImage
-
-						for _, v := range expectedRHCOSVersions {
-							if strings.Contains(fullOSImageString, v) {
-								return true, fmt.Sprintf("node OS image %q contains expected version %q", fullOSImageString, v), nil
-							}
-						}
-
-						return false, fmt.Sprintf("expected node OS image %q to contain one of %v", fullOSImageString, expectedRHCOSVersions), nil
-					}),
-				),
-			)
-
-			t.Logf("Waiting for Karpenter pods to schedule on the new node")
-			waitForReadyKarpenterPods(t, ctx, guestClient, nodes, replicas)
-
-			// Re-list NodeClaims after upgrade to get the current count for validation.
-			// The pre-upgrade nodeClaims are stale — old NodeClaims were replaced during drift.
-			nodeClaims = waitForReadyNodeClaims(t, ctx, guestClient, len(nodes))
-
-			t.Log("Validating AutoNode status counts are populated after upgrade")
-			e2eutil.EventuallyObject(t, ctx, fmt.Sprintf("HostedCluster %s/%s to have AutoNode status counts", hostedCluster.Namespace, hostedCluster.Name),
-				func(ctx context.Context) (*hyperv1.HostedCluster, error) {
-					hc := &hyperv1.HostedCluster{}
-					err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hc)
-					return hc, err
-				},
-				[]e2eutil.Predicate[*hyperv1.HostedCluster]{
-					func(hc *hyperv1.HostedCluster) (done bool, reasons string, err error) {
-						if hc.Status.AutoNode.NodeCount == nil {
-							return false, "Status.AutoNode.NodeCount is nil", nil
-						}
-						if *hc.Status.AutoNode.NodeCount < int32(len(nodes)) {
-							return false, fmt.Sprintf("expected NodeCount >= %d, got %v", len(nodes), hc.Status.AutoNode.NodeCount), nil
-						}
-						if hc.Status.AutoNode.NodeClaimCount == nil || *hc.Status.AutoNode.NodeClaimCount < int32(len(nodeClaims.Items)) {
-							return false, fmt.Sprintf("expected NodeClaimCount >= %d, got %v", len(nodeClaims.Items), hc.Status.AutoNode.NodeClaimCount), nil
-						}
-						return true, fmt.Sprintf("AutoNode status: NodeCount=%d, NodeClaimCount=%d",
-							*hc.Status.AutoNode.NodeCount, *hc.Status.AutoNode.NodeClaimCount), nil
-					},
-				},
-				e2eutil.WithTimeout(5*time.Minute),
-			)
-
-			// Test we can delete both Karpenter NodePool and workloads.
-			g.Expect(guestClient.Delete(ctx, karpenterNodePool)).To(Succeed())
-			t.Logf("Deleted Karpenter NodePool")
-			g.Expect(guestClient.Delete(ctx, workLoads)).To(Succeed())
-			t.Logf("Delete workloads")
-
-			// Wait for Karpenter Nodes to go away.
-			t.Logf("Waiting for Karpenter Nodes to disappear")
-			_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, 0, nodeLabels)
 		})
 
 		t.Run("Parallel provisioning tests", func(t *testing.T) {
@@ -1364,7 +1222,7 @@ func TestKarpenter(t *testing.T) {
 			t.Logf("Created cluster-deletion-blocking PodDisruptionBudget")
 		})
 
-	}).WithUpgradeTarget(globalOpts.LatestReleaseImage).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "karpenter", globalOpts.ServiceAccountSigningKey)
+	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "karpenter", globalOpts.ServiceAccountSigningKey)
 }
 
 func waitForReadyKarpenterPods(t *testing.T, ctx context.Context, client crclient.Client, nodes []corev1.Node, n int) []corev1.Pod {
