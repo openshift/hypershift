@@ -188,18 +188,13 @@ func testARM64Provisioning(ctx context.Context, guestClient crclient.Client, hos
 		g.Expect(guestClient.Create(ctx, armNodeClass)).To(Succeed())
 		t.Logf("Created ARM64 OpenshiftEC2NodeClass")
 
-		armNodePool := baseNodePool("arm-nodepool")
-		armNodePool.Spec.Template.Spec.NodeClassRef = &karpenterv1.NodeClassReference{
-			Group: "karpenter.k8s.aws",
-			Kind:  "EC2NodeClass",
-			Name:  armNodeClass.Name,
-		}
+		armNodePool := baseNodePool("arm-nodepool", armNodeClass.Name)
 		armNodePool.Spec.Template.Spec.Requirements = []karpenterv1.NodeSelectorRequirementWithMinValues{
 			{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: "node.kubernetes.io/instance-type", Operator: corev1.NodeSelectorOpIn, Values: []string{"m6g.xlarge"}}},
 			{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: "kubernetes.io/arch", Operator: corev1.NodeSelectorOpIn, Values: []string{"arm64"}}},
-			{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: "karpenter.sh/capacity-type", Operator: corev1.NodeSelectorOpIn, Values: []string{"on-demand"}}},
+			{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: karpenterv1.CapacityTypeLabelKey, Operator: corev1.NodeSelectorOpIn, Values: []string{karpenterv1.CapacityTypeOnDemand}}},
 		}
-		armWorkLoads := testWorkload("arm-app", 1, map[string]string{"karpenter.sh/nodepool": armNodePool.Name})
+		armWorkLoads := testWorkload("arm-app", 1, map[string]string{karpenterv1.NodePoolLabelKey: armNodePool.Name})
 
 		t.Cleanup(func() {
 			_ = guestClient.Delete(ctx, armWorkLoads)
@@ -213,7 +208,7 @@ func testARM64Provisioning(ctx context.Context, guestClient crclient.Client, hos
 		t.Logf("Created ARM64 workloads")
 
 		armNodeLabels := map[string]string{
-			"karpenter.sh/nodepool": armNodePool.Name,
+			karpenterv1.NodePoolLabelKey: armNodePool.Name,
 			"kubernetes.io/arch":    "arm64",
 		}
 
@@ -256,45 +251,33 @@ func testInstanceProfileAnnotation(ctx context.Context, mgtClient, guestClient c
 		// Wait for the EC2NodeClass to have the InstanceProfile field set
 		t.Logf("Waiting for EC2NodeClass to have InstanceProfile set to %s", workerInstanceProfile)
 		g.Eventually(func(g Gomega) {
-			ec2NodeClassList := &awskarpenterv1.EC2NodeClassList{}
-			err := guestClient.List(ctx, ec2NodeClassList)
+			ec2NodeClass := &awskarpenterv1.EC2NodeClass{}
+			err := guestClient.Get(ctx, crclient.ObjectKey{Name: "default"}, ec2NodeClass)
 			g.Expect(err).NotTo(HaveOccurred())
-			g.Expect(ec2NodeClassList.Items).NotTo(BeEmpty())
-
-			// Find the default EC2NodeClass
-			var defaultEC2NodeClass *awskarpenterv1.EC2NodeClass
-			for i := range ec2NodeClassList.Items {
-				if ec2NodeClassList.Items[i].Name == "default" {
-					defaultEC2NodeClass = &ec2NodeClassList.Items[i]
-					break
-				}
-			}
-			g.Expect(defaultEC2NodeClass).NotTo(BeNil(), "default EC2NodeClass should exist")
-			g.Expect(defaultEC2NodeClass.Spec.InstanceProfile).NotTo(BeNil(), "InstanceProfile should be set")
-			g.Expect(*defaultEC2NodeClass.Spec.InstanceProfile).To(Equal(workerInstanceProfile))
+			g.Expect(ec2NodeClass.Spec.InstanceProfile).NotTo(BeNil(), "InstanceProfile should be set")
+			g.Expect(*ec2NodeClass.Spec.InstanceProfile).To(Equal(workerInstanceProfile))
 		}).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
 		t.Logf("EC2NodeClass has InstanceProfile set correctly")
 
 		// Now provision actual nodes to verify EC2 instances get the instance profile
 		t.Logf("Creating Karpenter NodePool and workloads to provision nodes")
 
-		testNodePool := baseNodePool("instance-profile-test")
+		testNodePool := baseNodePool("instance-profile-test", "default")
 		testWorkLoads := testWorkload("instance-profile-web-app", 1, map[string]string{
-			"karpenter.sh/nodepool": testNodePool.Name,
+			karpenterv1.NodePoolLabelKey: testNodePool.Name,
 		})
 
 		g.Expect(guestClient.Create(ctx, testNodePool)).To(Succeed())
 		t.Logf("Created Karpenter NodePool")
 		g.Expect(guestClient.Create(ctx, testWorkLoads)).To(Succeed())
 		t.Logf("Created workloads")
-
-		defer func() {
+		t.Cleanup(func() {
 			_ = guestClient.Delete(ctx, testWorkLoads)
 			_ = guestClient.Delete(ctx, testNodePool)
-		}()
+		})
 
 		testNodeLabels := map[string]string{
-			"karpenter.sh/nodepool": testNodePool.Name,
+			karpenterv1.NodePoolLabelKey: testNodePool.Name,
 		}
 
 		nodes := e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, 1, testNodeLabels)
@@ -304,25 +287,8 @@ func testInstanceProfileAnnotation(ctx context.Context, mgtClient, guestClient c
 		ec2client := ec2Client(awsCredsFile, awsRegion)
 
 		for _, node := range nodes {
-			// Extract instance ID from providerID (format: aws:///region/instance-id)
-			providerID := node.Spec.ProviderID
-			g.Expect(providerID).NotTo(BeEmpty(), "node should have a providerID")
-
-			// Parse instance ID from providerID
-			parts := strings.Split(providerID, "/")
-			g.Expect(parts).To(HaveLen(5), "providerID should have 5 parts")
-			instanceID := parts[4]
+			instance, instanceID := describeEC2Instance(ctx, g, ec2client, node)
 			t.Logf("Checking instance profile for node %s (instance %s)", node.Name, instanceID)
-
-			// Get EC2 instance details
-			result, err := ec2client.DescribeInstances(ctx, &ec2.DescribeInstancesInput{
-				InstanceIds: []string{instanceID},
-			})
-			g.Expect(err).NotTo(HaveOccurred(), "failed to describe EC2 instance")
-			g.Expect(result.Reservations).NotTo(BeEmpty(), "expected at least one reservation")
-			g.Expect(result.Reservations[0].Instances).NotTo(BeEmpty(), "expected at least one instance")
-
-			instance := result.Reservations[0].Instances[0]
 			g.Expect(instance.IamInstanceProfile).NotTo(BeNil(), "instance should have an IAM instance profile")
 
 			// Extract instance profile name from ARN (format: arn:aws:iam::account-id:instance-profile/profile-name)
@@ -438,9 +404,9 @@ func testNodeClassVersionField(ctx context.Context, mgtClient, guestClient crcli
 		}
 		g.Expect(guestClient.Create(ctx, nc)).To(Succeed())
 		t.Logf("Created OpenshiftEC2NodeClass %q with version %s (CP version: %s)", nc.Name, nodeClassVersion, cpVersion)
-		defer func() {
+		t.Cleanup(func() {
 			_ = guestClient.Delete(ctx, nc)
-		}()
+		})
 
 		// Wait for version resolution and get the resolved release image
 		var resolvedReleaseImage string
@@ -519,30 +485,24 @@ func testNodeClassVersionField(ctx context.Context, mgtClient, guestClient crcli
 		t.Logf("Expected kubelet version for %s: v%s", nodeClassVersion, expectedKubeletVersion)
 
 		// Create a Karpenter NodePool that references the custom EC2NodeClass
-		testNodePool := baseNodePool("version-test")
-		testNodePool.Spec.Template.Spec.NodeClassRef = &karpenterv1.NodeClassReference{
-			Group: "karpenter.k8s.aws",
-			Kind:  "EC2NodeClass",
-			Name:  nc.Name,
-		}
+		testNodePool := baseNodePool("version-test", nc.Name)
 
 		testWorkLoads := testWorkload("version-test-app", 1, map[string]string{
-			"karpenter.sh/nodepool": testNodePool.Name,
+			karpenterv1.NodePoolLabelKey: testNodePool.Name,
 		})
 
 		g.Expect(guestClient.Create(ctx, testNodePool)).To(Succeed())
 		t.Logf("Created Karpenter NodePool %q", testNodePool.Name)
 		g.Expect(guestClient.Create(ctx, testWorkLoads)).To(Succeed())
 		t.Logf("Created workload %q", testWorkLoads.Name)
-
-		defer func() {
+		t.Cleanup(func() {
 			_ = guestClient.Delete(ctx, testWorkLoads)
 			_ = guestClient.Delete(ctx, testNodePool)
-		}()
+		})
 
 		// Use only the nodepool label to select nodes exclusively tied to our version-test nodeclass.
 		testNodeLabels := map[string]string{
-			"karpenter.sh/nodepool": testNodePool.GetName(),
+			karpenterv1.NodePoolLabelKey: testNodePool.GetName(),
 		}
 
 		// Log diagnostic info about the version-test NodeClass infrastructure.
@@ -588,22 +548,8 @@ func testNodeClassVersionField(ctx context.Context, mgtClient, guestClient crcli
 		t.Log("Verifying MetadataOptions on EC2 instance via DescribeInstances")
 		ec2client := ec2Client(awsCredsFile, awsRegion)
 		for _, node := range nodes {
-			providerID := node.Spec.ProviderID
-			g.Expect(providerID).NotTo(BeEmpty(), "node should have a providerID")
-
-			parts := strings.Split(providerID, "/")
-			g.Expect(parts).To(HaveLen(5), "providerID should have 5 parts")
-			instanceID := parts[4]
+			instance, instanceID := describeEC2Instance(ctx, g, ec2client, node)
 			t.Logf("Checking MetadataOptions for node %s (instance %s)", node.Name, instanceID)
-
-			result, err := ec2client.DescribeInstances(ctx, &ec2.DescribeInstancesInput{
-				InstanceIds: []string{instanceID},
-			})
-			g.Expect(err).NotTo(HaveOccurred(), "failed to describe EC2 instance")
-			g.Expect(result.Reservations).NotTo(BeEmpty(), "expected at least one reservation")
-			g.Expect(result.Reservations[0].Instances).NotTo(BeEmpty(), "expected at least one instance")
-
-			instance := result.Reservations[0].Instances[0]
 			g.Expect(instance.MetadataOptions).NotTo(BeNil(), "instance should have MetadataOptions")
 			g.Expect(string(instance.MetadataOptions.HttpEndpoint)).To(Equal("enabled"),
 				"instance %s HttpEndpoint mismatch", instanceID)
@@ -617,8 +563,7 @@ func testNodeClassVersionField(ctx context.Context, mgtClient, guestClient crcli
 				instanceID, instance.MetadataOptions.HttpTokens, instance.MetadataOptions.HttpEndpoint, *instance.MetadataOptions.HttpPutResponseHopLimit)
 		}
 
-		// Trigger cleanup; the defer handles final deletion.
-		// No need to wait for node deprovisioning — subsequent tests use isolated NodePools.
+		// Trigger cleanup; the t.Cleanup handles final deletion.
 		g.Expect(guestClient.Delete(ctx, testWorkLoads)).To(Succeed())
 		g.Expect(guestClient.Delete(ctx, testNodePool)).To(Succeed())
 
@@ -646,10 +591,10 @@ func testNodeClassVersionField(ctx context.Context, mgtClient, guestClient crcli
 			}
 			g.Expect(guestClient.Create(ctx, skewNC)).To(Succeed())
 			t.Logf("Created OpenshiftEC2NodeClass %q with version %s (CP version: %s)", skewNC.Name, skewVersion, cpVersion)
-			defer func() {
+			t.Cleanup(func() {
 				_ = guestClient.Delete(ctx, skewNC)
 				t.Logf("Cleaned up OpenshiftEC2NodeClass %q", skewNC.Name)
-			}()
+			})
 
 			t.Log("Waiting for VersionResolved=True and SupportedVersionSkew=False")
 			e2eutil.EventuallyObject(t, ctx, "OpenshiftEC2NodeClass version-skew-test to have SupportedVersionSkew=False",
@@ -708,8 +653,8 @@ func testCapacityReservation(ctx context.Context, mgtClient, guestClient crclien
 		targetAZ := defaultNodeClass.Status.Subnets[0].Zone
 		t.Logf("Using availability zone %s for capacity reservation", targetAZ)
 
-		// Create a real EC2 capacity reservation with 1 instance of t3.large in targeted mode.
-		// We use t3.large to match the instance type used by the other karpenter tests — OpenShift
+		// Create a real EC2 capacity reservation with 1 instance of t3.xlarge in targeted mode.
+		// We use t3.xlarge to match the instance type used by the other karpenter tests — OpenShift
 		// platform daemonsets consume enough overhead that smaller types (t3.small, t3.medium) don't
 		// have enough free memory to satisfy karpenter's scheduling check.
 		// We need a real reservation because karpenter 1.8 runs with ReservedCapacity=true by default,
@@ -719,17 +664,17 @@ func testCapacityReservation(ctx context.Context, mgtClient, guestClient crclien
 			ctx,
 			awsCredsFile,
 			awsRegion,
-			"t3.large",
+			"t3.xlarge",
 			targetAZ,
 			1,
 		)
 		g.Expect(err).NotTo(HaveOccurred(), "failed to create capacity reservation")
 		t.Logf("Created capacity reservation %s in %s", crID, targetAZ)
-		defer func() {
+		t.Cleanup(func() {
 			if err := cleanupCR(); err != nil {
 				t.Logf("warning: failed to cancel capacity reservation %s: %v", crID, err)
 			}
-		}()
+		})
 
 		// Create a new OpenshiftEC2NodeClass (not "default") pointing to the capacity reservation by ID.
 		// Using a separate object avoids contaminating the shared "default" class used by other sub-tests.
@@ -745,11 +690,11 @@ func testCapacityReservation(ctx context.Context, mgtClient, guestClient crclien
 		}
 		g.Expect(guestClient.Create(ctx, crNodeClass)).To(Succeed())
 		t.Logf("Created OpenshiftEC2NodeClass capacity-reservation-test with CapacityReservationSelectorTerms ID=%s", crID)
-		defer func() {
+		t.Cleanup(func() {
 			if err := guestClient.Delete(ctx, crNodeClass); err != nil {
 				t.Logf("warning: failed to delete OpenshiftEC2NodeClass capacity-reservation-test: %v", err)
 			}
-		}()
+		})
 
 		// Verify the downstream EC2NodeClass has the CapacityReservationSelectorTerms propagated.
 		e2eutil.EventuallyObject(
@@ -793,35 +738,30 @@ func testCapacityReservation(ctx context.Context, mgtClient, guestClient crclien
 
 		// Create a dedicated NodePool that targets the capacity-reservation-test NodeClass and requires
 		// capacity-type=reserved so karpenter launches the instance into the reservation (not alongside it).
-		crNodePool := baseNodePool("capacity-reservation-test")
-		crNodePool.Spec.Template.Spec.NodeClassRef = &karpenterv1.NodeClassReference{
-			Group: "karpenter.k8s.aws",
-			Kind:  "EC2NodeClass",
-			Name:  "capacity-reservation-test",
-		}
+		crNodePool := baseNodePool("capacity-reservation-test", "capacity-reservation-test")
 		crNodePool.Spec.Template.Spec.Requirements = []karpenterv1.NodeSelectorRequirementWithMinValues{
-			{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: "node.kubernetes.io/instance-type", Operator: corev1.NodeSelectorOpIn, Values: []string{"t3.large"}}},
-			{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: "karpenter.sh/capacity-type", Operator: corev1.NodeSelectorOpIn, Values: []string{"reserved"}}},
+			{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: "node.kubernetes.io/instance-type", Operator: corev1.NodeSelectorOpIn, Values: []string{"t3.xlarge"}}},
+			{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: karpenterv1.CapacityTypeLabelKey, Operator: corev1.NodeSelectorOpIn, Values: []string{karpenterv1.CapacityTypeReserved}}},
 		}
-		defer func() {
+		g.Expect(guestClient.Create(ctx, crNodePool)).To(Succeed())
+		t.Logf("Created NodePool capacity-reservation-test targeting capacity reservation %s", crID)
+		t.Cleanup(func() {
 			if err := guestClient.Delete(ctx, crNodePool); err != nil {
 				t.Logf("warning: failed to delete NodePool capacity-reservation-test: %v", err)
 			}
-		}()
-		g.Expect(guestClient.Create(ctx, crNodePool)).To(Succeed())
-		t.Logf("Created NodePool capacity-reservation-test targeting capacity reservation %s", crID)
+		})
 
 		crNodeLabels := map[string]string{
-			"karpenter.sh/nodepool": crNodePool.Name,
+			karpenterv1.NodePoolLabelKey: crNodePool.Name,
 		}
 		crWorkload := testWorkload("capacity-reservation-web-app", 1, crNodeLabels)
 
-		defer func() {
+		g.Expect(guestClient.Create(ctx, crWorkload)).To(Succeed())
+		t.Cleanup(func() {
 			if err := guestClient.Delete(ctx, crWorkload); err != nil {
 				t.Logf("warning: failed to delete workload capacity-reservation-web-app: %v", err)
 			}
-		}()
-		g.Expect(guestClient.Create(ctx, crWorkload)).To(Succeed())
+		})
 		t.Logf("Created workload capacity-reservation-web-app to trigger node provisioning")
 
 		// Wait for the node to be ready.
@@ -832,23 +772,8 @@ func testCapacityReservation(ctx context.Context, mgtClient, guestClient crclien
 		// Verify the EC2 instance was launched into the capacity reservation.
 		ec2client := ec2Client(awsCredsFile, awsRegion)
 
-		node := nodes[0]
-		providerID := node.Spec.ProviderID
-		g.Expect(providerID).NotTo(BeEmpty(), "node should have a providerID")
-
-		parts := strings.Split(providerID, "/")
-		g.Expect(parts).To(HaveLen(5), "providerID should have 5 parts")
-		instanceID := parts[4]
+		instance, instanceID := describeEC2Instance(ctx, g, ec2client, nodes[0])
 		t.Logf("Verifying EC2 instance %s was launched into capacity reservation %s", instanceID, crID)
-
-		result, err := ec2client.DescribeInstances(ctx, &ec2.DescribeInstancesInput{
-			InstanceIds: []string{instanceID},
-		})
-		g.Expect(err).NotTo(HaveOccurred(), "failed to describe EC2 instance %s", instanceID)
-		g.Expect(result.Reservations).NotTo(BeEmpty())
-		g.Expect(result.Reservations[0].Instances).NotTo(BeEmpty())
-
-		instance := result.Reservations[0].Instances[0]
 		g.Expect(instance.CapacityReservationId).NotTo(BeNil(), "instance %s should have a CapacityReservationId", instanceID)
 		g.Expect(aws.ToString(instance.CapacityReservationId)).To(Equal(crID),
 			"instance %s should have been launched into capacity reservation %s", instanceID, crID)
@@ -1084,47 +1009,30 @@ func testArbitrarySubnet(ctx context.Context, mgtClient, guestClient crclient.Cl
 		t.Logf("All AWSEndpointServices have AWSEndpointAvailable=True")
 
 		// Launch a node in the custom subnet to verify it's functional.
-		testNodePool := baseNodePool("arbitrary-subnet-test")
-		testNodePool.Spec.Template.Spec.NodeClassRef = &karpenterv1.NodeClassReference{
-			Group: "karpenter.k8s.aws",
-			Kind:  "EC2NodeClass",
-			Name:  customNodeClass.Name,
-		}
+		testNodePool := baseNodePool("arbitrary-subnet-test", customNodeClass.Name)
 
 		testWorkLoads := testWorkload("arbitrary-subnet-web-app", 1, map[string]string{
-			"karpenter.sh/nodepool": testNodePool.Name,
+			karpenterv1.NodePoolLabelKey: testNodePool.Name,
 		})
 
 		g.Expect(guestClient.Create(ctx, testNodePool)).To(Succeed())
 		t.Logf("Created Karpenter NodePool %q", testNodePool.Name)
 		g.Expect(guestClient.Create(ctx, testWorkLoads)).To(Succeed())
 		t.Logf("Created workload %q", testWorkLoads.Name)
-		defer func() {
+		t.Cleanup(func() {
 			_ = guestClient.Delete(ctx, testWorkLoads)
 			_ = guestClient.Delete(ctx, testNodePool)
-		}()
+		})
 
 		testNodeLabels := map[string]string{
-			"karpenter.sh/nodepool": testNodePool.Name,
+			karpenterv1.NodePoolLabelKey: testNodePool.Name,
 		}
 		nodes := e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, 1, testNodeLabels)
 		t.Logf("Node launched in arbitrary subnet, verifying it used subnet %s", subnetID)
 
 		// Verify the launched node's EC2 instance is in the expected subnet.
 		for _, node := range nodes {
-			providerID := node.Spec.ProviderID
-			g.Expect(providerID).NotTo(BeEmpty(), "node should have a providerID")
-			parts := strings.Split(providerID, "/")
-			g.Expect(parts).To(HaveLen(5), "providerID should have 5 parts")
-			instanceID := parts[4]
-
-			result, err := ec2client.DescribeInstances(ctx, &ec2.DescribeInstancesInput{
-				InstanceIds: []string{instanceID},
-			})
-			g.Expect(err).NotTo(HaveOccurred())
-			g.Expect(result.Reservations).NotTo(BeEmpty())
-			g.Expect(result.Reservations[0].Instances).NotTo(BeEmpty())
-			instance := result.Reservations[0].Instances[0]
+			instance, instanceID := describeEC2Instance(ctx, g, ec2client, node)
 			g.Expect(aws.ToString(instance.SubnetId)).To(Equal(subnetID),
 				"instance %s should be in subnet %s", instanceID, subnetID)
 			t.Logf("Instance %s confirmed in subnet %s", instanceID, subnetID)
@@ -1224,13 +1132,12 @@ func testConsolidationAndPDB(ctx context.Context, guestClient crclient.Client, h
 	return func(t *testing.T) {
 		g := NewWithT(t)
 
-		karpenterNodePool := baseNodePool("on-demand")
+		karpenterNodePool := baseNodePool("on-demand", "default")
 		workLoads := testWorkload("web-app", 2, map[string]string{
-			"node.kubernetes.io/instance-type": "t3.large",
+			karpenterv1.NodePoolLabelKey: karpenterNodePool.Name,
 		})
 		nodeLabels := map[string]string{
-			"node.kubernetes.io/instance-type": "t3.large",
-			"karpenter.sh/nodepool":            karpenterNodePool.Name,
+			karpenterv1.NodePoolLabelKey: karpenterNodePool.Name,
 		}
 
 		g.Expect(guestClient.Create(ctx, karpenterNodePool)).To(Succeed())
@@ -1250,7 +1157,7 @@ func testConsolidationAndPDB(ctx context.Context, guestClient crclient.Client, h
 		t.Logf("Karpenter consolidated the extra node")
 
 		// Create a blocking PDB and leave everything dangling so cluster teardown
-		// must force-terminate the remaining node.
+		// must force-terminate nodes despite a blocking PDB.
 		pdb := &policyv1.PodDisruptionBudget{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "blocking-pdb",
@@ -1404,10 +1311,13 @@ func waitForNodeClaimDrifted(t *testing.T, ctx context.Context, client crclient.
 	)
 }
 
-func baseNodePool(name string) *karpenterv1.NodePool {
+func baseNodePool(name, nodeClassName string) *karpenterv1.NodePool {
 	return &karpenterv1.NodePool{
 		ObjectMeta: metav1.ObjectMeta{Name: name},
 		Spec: karpenterv1.NodePoolSpec{
+			Disruption: karpenterv1.Disruption{
+				ConsolidateAfter: karpenterv1.MustParseNillableDuration("0s"),
+			},
 			Template: karpenterv1.NodeClaimTemplate{
 				ObjectMeta: karpenterv1.ObjectMeta{
 					Labels: map[string]string{
@@ -1416,13 +1326,13 @@ func baseNodePool(name string) *karpenterv1.NodePool {
 				},
 				Spec: karpenterv1.NodeClaimTemplateSpec{
 					Requirements: []karpenterv1.NodeSelectorRequirementWithMinValues{
-						{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: "node.kubernetes.io/instance-type", Operator: corev1.NodeSelectorOpIn, Values: []string{"t3.large"}}},
-						{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: "karpenter.sh/capacity-type", Operator: corev1.NodeSelectorOpIn, Values: []string{"on-demand"}}},
+						{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: "node.kubernetes.io/instance-type", Operator: corev1.NodeSelectorOpIn, Values: []string{"t3.xlarge"}}},
+						{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: karpenterv1.CapacityTypeLabelKey, Operator: corev1.NodeSelectorOpIn, Values: []string{karpenterv1.CapacityTypeOnDemand}}},
 					},
 					NodeClassRef: &karpenterv1.NodeClassReference{
 						Group: "karpenter.k8s.aws",
 						Kind:  "EC2NodeClass",
-						Name:  "default",
+						Name:  nodeClassName,
 					},
 				},
 			},
@@ -1474,6 +1384,25 @@ func testWorkload(name string, replicas int32, nodeSelector map[string]string) *
 			},
 		},
 	}
+}
+
+// describeEC2Instance extracts the instance ID from a node's providerID and calls
+// DescribeInstances to return the full EC2 instance details.
+func describeEC2Instance(ctx context.Context, g Gomega, ec2client *ec2.Client, node corev1.Node) (ec2types.Instance, string) {
+	providerID := node.Spec.ProviderID
+	g.Expect(providerID).NotTo(BeEmpty(), "node should have a providerID")
+
+	parts := strings.Split(providerID, "/")
+	g.Expect(parts).To(HaveLen(5), "providerID should have 5 parts")
+	instanceID := parts[4]
+
+	result, err := ec2client.DescribeInstances(ctx, &ec2.DescribeInstancesInput{
+		InstanceIds: []string{instanceID},
+	})
+	g.Expect(err).NotTo(HaveOccurred(), "failed to describe EC2 instance %s", instanceID)
+	g.Expect(result.Reservations).NotTo(BeEmpty(), "expected at least one reservation")
+	g.Expect(result.Reservations[0].Instances).NotTo(BeEmpty(), "expected at least one instance")
+	return result.Reservations[0].Instances[0], instanceID
 }
 
 // getNodeNames returns the names of the nodes in the list

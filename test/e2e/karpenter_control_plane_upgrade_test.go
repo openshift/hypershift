@@ -18,6 +18,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 )
 
 func TestKarpenterUpgradeControlPlane(t *testing.T) {
@@ -43,15 +44,12 @@ func TestKarpenterUpgradeControlPlane(t *testing.T) {
 	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 		guestClient := e2eutil.WaitForGuestClient(t, ctx, mgtClient, hostedCluster)
 
-		karpenterNodePool := baseNodePool("on-demand")
+		karpenterNodePool := baseNodePool("on-demand", "default")
 		replicas := 1
-		workLoads := testWorkload("web-app", int32(replicas), map[string]string{
-			"node.kubernetes.io/instance-type": "t3.large",
-		})
 		nodeLabels := map[string]string{
-			"node.kubernetes.io/instance-type": "t3.large",
-			"karpenter.sh/nodepool":            karpenterNodePool.Name,
+			karpenterv1.NodePoolLabelKey: karpenterNodePool.Name,
 		}
+		workLoads := testWorkload("web-app", int32(replicas), nodeLabels)
 
 		t.Logf("Starting Karpenter control plane upgrade. FromImage: %s, toImage: %s", globalOpts.PreviousReleaseImage, globalOpts.LatestReleaseImage)
 
