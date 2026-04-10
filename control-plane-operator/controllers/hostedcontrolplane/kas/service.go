@@ -63,16 +63,17 @@ func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingSt
 		svc.Annotations = map[string]string{}
 	}
 
+	// Remove stale AWS NLB annotation before reconciling.
+	// It will be re-added only when the service is actually a LoadBalancer.
+	delete(svc.Annotations, "service.beta.kubernetes.io/aws-load-balancer-type")
+
 	switch strategy.Type {
 	case hyperv1.LoadBalancer:
-		// Apply AWS NLB annotation only for LoadBalancer services.
-		// Previously this was set unconditionally, but it is only relevant
-		// when the service type is LoadBalancer.
-		if hcp.Spec.Platform.Type == hyperv1.AWSPlatform {
-			svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-type"] = "nlb"
-		}
 		if isPublic {
 			svc.Spec.Type = corev1.ServiceTypeLoadBalancer
+			if hcp.Spec.Platform.Type == hyperv1.AWSPlatform {
+				svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-type"] = "nlb"
+			}
 			if strategy.LoadBalancer != nil && strategy.LoadBalancer.Hostname != "" {
 				svc.Annotations[hyperv1.ExternalDNSHostnameAnnotation] = strategy.LoadBalancer.Hostname
 			}
