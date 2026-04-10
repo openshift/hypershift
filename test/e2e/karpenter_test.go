@@ -62,46 +62,6 @@ func TestKarpenter(t *testing.T) {
 	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 		guestClient := e2eutil.WaitForGuestClient(t, ctx, mgtClient, hostedCluster)
 
-		t.Run("Test ARM64 instance provisioning", func(t *testing.T) {
-			if !globalOpts.ConfigurableClusterOptions.AWSMultiArch && !globalOpts.ConfigurableClusterOptions.AzureMultiArch {
-				t.Skip("test only supported on multi-arch clusters")
-			}
-
-			armNodePool := baseNodePool("arm-nodepool")
-			armNodePool.Spec.Template.Spec.Requirements = []karpenterv1.NodeSelectorRequirementWithMinValues{
-				{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: "node.kubernetes.io/instance-type", Operator: corev1.NodeSelectorOpIn, Values: []string{"m6g.xlarge"}}},
-				{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: "kubernetes.io/arch", Operator: corev1.NodeSelectorOpIn, Values: []string{"arm64"}}},
-				{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: "karpenter.sh/capacity-type", Operator: corev1.NodeSelectorOpIn, Values: []string{"on-demand"}}},
-			}
-			armWorkLoads := testWorkload("arm-app", 1, map[string]string{"karpenter.sh/nodepool": armNodePool.Name})
-
-			t.Cleanup(func() {
-				_ = guestClient.Delete(ctx, armWorkLoads)
-				_ = guestClient.Delete(ctx, armNodePool)
-			})
-
-			g.Expect(guestClient.Create(ctx, armNodePool)).To(Succeed())
-			t.Logf("Created ARM64 NodePool")
-			g.Expect(guestClient.Create(ctx, armWorkLoads)).To(Succeed())
-			t.Logf("Created ARM64 workloads")
-
-			armNodeLabels := map[string]string{
-				"karpenter.sh/nodepool": armNodePool.Name,
-				"kubernetes.io/arch":    "arm64",
-			}
-
-			nodes := e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, 1, armNodeLabels)
-			waitForReadyKarpenterPods(t, ctx, guestClient, nodes, 1)
-
-			g.Expect(guestClient.Delete(ctx, armNodePool)).To(Succeed())
-			t.Logf("Deleted ARM64 NodePool")
-			g.Expect(guestClient.Delete(ctx, armWorkLoads)).To(Succeed())
-			t.Logf("Deleted ARM64 workloads")
-
-			t.Logf("Waiting for Karpenter ARM64 Nodes to disappear")
-			_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, 0, armNodeLabels)
-		})
-
 		t.Run("Karpenter operator plumbing and smoketesting", func(t *testing.T) {
 			karpenterMetrics := []string{
 				karpenterassets.KarpenterBuildInfoMetricName,
@@ -177,9 +137,77 @@ func TestKarpenter(t *testing.T) {
 			// Tracked in https://issues.redhat.com/browse/AUTOSCALE-138
 		})
 
+		// Parallel subtests that provision nodes must create their own OpenshiftEC2NodeClass
+		// rather than using the "default" class, because the instance-profile test mutates
+		// the default EC2NodeClass which would trigger NodeClassDrift on any NodeClaims referencing it.
 		t.Run("Parallel provisioning tests", func(t *testing.T) {
+			t.Run("ARM64 instance provisioning", func(t *testing.T) {
+				t.Parallel()
+				g := NewWithT(t)
+
+				if !globalOpts.ConfigurableClusterOptions.AWSMultiArch && !globalOpts.ConfigurableClusterOptions.AzureMultiArch {
+					t.Skip("test only supported on multi-arch clusters")
+				}
+
+				armNodeClass := &hyperkarpenterv1.OpenshiftEC2NodeClass{
+					ObjectMeta: metav1.ObjectMeta{Name: "arm-nodeclass"},
+					Spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{
+						SubnetSelectorTerms: []hyperkarpenterv1.SubnetSelectorTerm{
+							{Tags: map[string]string{"karpenter.sh/discovery": hostedCluster.Spec.InfraID}},
+						},
+						SecurityGroupSelectorTerms: []hyperkarpenterv1.SecurityGroupSelectorTerm{
+							{Tags: map[string]string{"karpenter.sh/discovery": hostedCluster.Spec.InfraID}},
+						},
+					},
+				}
+				g.Expect(guestClient.Create(ctx, armNodeClass)).To(Succeed())
+				t.Logf("Created ARM64 OpenshiftEC2NodeClass")
+
+				armNodePool := baseNodePool("arm-nodepool")
+				armNodePool.Spec.Template.Spec.NodeClassRef = &karpenterv1.NodeClassReference{
+					Group: "karpenter.k8s.aws",
+					Kind:  "EC2NodeClass",
+					Name:  armNodeClass.Name,
+				}
+				armNodePool.Spec.Template.Spec.Requirements = []karpenterv1.NodeSelectorRequirementWithMinValues{
+					{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: "node.kubernetes.io/instance-type", Operator: corev1.NodeSelectorOpIn, Values: []string{"m6g.xlarge"}}},
+					{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: "kubernetes.io/arch", Operator: corev1.NodeSelectorOpIn, Values: []string{"arm64"}}},
+					{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: "karpenter.sh/capacity-type", Operator: corev1.NodeSelectorOpIn, Values: []string{"on-demand"}}},
+				}
+				armWorkLoads := testWorkload("arm-app", 1, map[string]string{"karpenter.sh/nodepool": armNodePool.Name})
+
+				t.Cleanup(func() {
+					_ = guestClient.Delete(ctx, armWorkLoads)
+					_ = guestClient.Delete(ctx, armNodePool)
+					_ = guestClient.Delete(ctx, armNodeClass)
+				})
+
+				g.Expect(guestClient.Create(ctx, armNodePool)).To(Succeed())
+				t.Logf("Created ARM64 NodePool")
+				g.Expect(guestClient.Create(ctx, armWorkLoads)).To(Succeed())
+				t.Logf("Created ARM64 workloads")
+
+				armNodeLabels := map[string]string{
+					"karpenter.sh/nodepool": armNodePool.Name,
+					"kubernetes.io/arch":    "arm64",
+				}
+
+				nodes := e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, 1, armNodeLabels)
+				waitForReadyKarpenterPods(t, ctx, guestClient, nodes, 1)
+
+				g.Expect(guestClient.Delete(ctx, armNodePool)).To(Succeed())
+				t.Logf("Deleted ARM64 NodePool")
+				g.Expect(guestClient.Delete(ctx, armWorkLoads)).To(Succeed())
+				t.Logf("Deleted ARM64 workloads")
+
+				t.Logf("Waiting for Karpenter ARM64 Nodes to disappear")
+				_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, 0, armNodeLabels)
+			})
+
 			t.Run("Instance profile annotation propagation", func(t *testing.T) {
 				t.Parallel()
+				g := NewWithT(t)
+
 				// Get the current HostedCluster
 				err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
 				g.Expect(err).NotTo(HaveOccurred())
