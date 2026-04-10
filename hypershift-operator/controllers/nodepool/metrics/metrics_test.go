@@ -96,6 +96,7 @@ func (c *Ec2ClientMock) DescribeInstanceTypes(ctx context.Context, input *ec2v2.
 func TestReportVCpusCountByHCluster(t *testing.T) {
 	testCases := []struct {
 		name      string
+		platform  hyperv1.PlatformType
 		npsParams []nodePoolParams
 		configMap *corev1.ConfigMap
 
@@ -229,10 +230,26 @@ func TestReportVCpusCountByHCluster(t *testing.T) {
 			expectedVCpusCount:            16,
 			expectedVCpusCountErrorReason: "",
 		},
+		{
+			name:     "When nodePool platform is KubeVirt, it should return -1 with unsupported platform error",
+			platform: hyperv1.KubevirtPlatform,
+			npsParams: []nodePoolParams{
+				{availableNodesCount: 2},
+			},
+			expectedVCpusCount:            -1,
+			expectedVCpusCountErrorReason: "unsupported platform",
+		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			platform := tc.platform
+			if platform == "" {
+				platform = hyperv1.AWSPlatform
+			}
+
 			hcluster := &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "hc",
@@ -241,7 +258,7 @@ func TestReportVCpusCountByHCluster(t *testing.T) {
 				Spec: hyperv1.HostedClusterSpec{
 					ClusterID: "id",
 					Platform: hyperv1.PlatformSpec{
-						Type: hyperv1.AWSPlatform,
+						Type: platform,
 					},
 				},
 			}
@@ -263,15 +280,18 @@ func TestReportVCpusCountByHCluster(t *testing.T) {
 					Spec: hyperv1.NodePoolSpec{
 						ClusterName: "hc",
 						Platform: hyperv1.NodePoolPlatform{
-							Type: hyperv1.AWSPlatform,
-							AWS: &hyperv1.AWSNodePoolPlatform{
-								InstanceType: npParam.ec2InstanceType,
-							},
+							Type: platform,
 						},
 					},
 					Status: hyperv1.NodePoolStatus{
 						Replicas: npParam.availableNodesCount,
 					},
+				}
+
+				if platform == hyperv1.AWSPlatform {
+					nodePool.Spec.Platform.AWS = &hyperv1.AWSNodePoolPlatform{
+						InstanceType: npParam.ec2InstanceType,
+					}
 				}
 
 				clientBuilder = clientBuilder.WithObjects(nodePool)
@@ -281,9 +301,7 @@ func TestReportVCpusCountByHCluster(t *testing.T) {
 			reg.MustRegister(createNodePoolsMetricsCollector(clientBuilder.Build(), ec2MockedClient, clock.RealClock{}))
 
 			allMetricsValues, err := reg.Gather()
-			if err != nil {
-				t.Fatalf("gathering metrics failed: %v", err)
-			}
+			g.Expect(err).ToNot(HaveOccurred())
 
 			var vCpusCountMetricValue *dto.MetricFamily
 			var vCpusComputationErrorMetricValue *dto.MetricFamily
@@ -311,7 +329,7 @@ func TestReportVCpusCountByHCluster(t *testing.T) {
 					Name: ptr.To("namespace"), Value: ptr.To("any"),
 				},
 				{
-					Name: ptr.To("platform"), Value: ptr.To(string(hyperv1.AWSPlatform)),
+					Name: ptr.To("platform"), Value: ptr.To(string(platform)),
 				},
 			}
 
@@ -339,15 +357,8 @@ func TestReportVCpusCountByHCluster(t *testing.T) {
 				}
 			}
 
-			if diff := cmp.Diff(vCpusCountMetricValue, expectedVCpusCountMetricValue, ignoreUnexportedDto); diff != "" {
-				t.Errorf("result differs from actual: %s", diff)
-			}
-
-			if diff := cmp.Diff(vCpusComputationErrorMetricValue, expectedVCpusComputationErrorMetricValue, ignoreUnexportedDto); diff != "" {
-				t.Errorf("result differs from actual: %s, expected %+v, got %+v", diff,
-					expectedVCpusComputationErrorMetricValue,
-					vCpusComputationErrorMetricValue)
-			}
+			g.Expect(cmp.Diff(vCpusCountMetricValue, expectedVCpusCountMetricValue, ignoreUnexportedDto)).To(BeEmpty())
+			g.Expect(cmp.Diff(vCpusComputationErrorMetricValue, expectedVCpusComputationErrorMetricValue, ignoreUnexportedDto)).To(BeEmpty())
 		})
 	}
 }
@@ -548,87 +559,5 @@ func TestErrorCache(t *testing.T) {
 		collector.Collect(ch)
 		close(ch)
 		g.Expect(ec2CallCount).To(Equal(2), "EC2 API should be retried when its error was transient")
-	})
-}
-
-func TestVCpusCountForKubeVirtPlatform(t *testing.T) {
-	t.Run("When nodePool platform is KubeVirt, it should return -1 without logging", func(t *testing.T) {
-		hcluster := &hyperv1.HostedCluster{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "hc",
-				Namespace: "any",
-			},
-			Spec: hyperv1.HostedClusterSpec{
-				ClusterID: "id",
-				Platform: hyperv1.PlatformSpec{
-					Type: hyperv1.KubevirtPlatform,
-				},
-			},
-		}
-
-		nodePool := &hyperv1.NodePool{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "np",
-				Namespace: "any",
-			},
-			Spec: hyperv1.NodePoolSpec{
-				ClusterName: "hc",
-				Platform: hyperv1.NodePoolPlatform{
-					Type: hyperv1.KubevirtPlatform,
-				},
-			},
-			Status: hyperv1.NodePoolStatus{
-				Replicas: 2,
-			},
-		}
-
-		client := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hcluster, nodePool).Build()
-
-		reg := prometheus.NewPedanticRegistry()
-		reg.MustRegister(createNodePoolsMetricsCollector(client, nil, clock.RealClock{}))
-
-		allMetricsValues, err := reg.Gather()
-		if err != nil {
-			t.Fatalf("gathering metrics failed: %v", err)
-		}
-
-		var vCpusCountMetricValue *dto.MetricFamily
-		var vCpusComputationErrorMetricValue *dto.MetricFamily
-
-		for _, metricValue := range allMetricsValues {
-			if metricValue != nil && metricValue.Name != nil {
-				switch *metricValue.Name {
-				case VCpusCountByHClusterMetricName:
-					vCpusCountMetricValue = metricValue
-				case VCpusComputationErrorByHClusterMetricName:
-					vCpusComputationErrorMetricValue = metricValue
-				}
-			}
-		}
-
-		// Verify vCPU count is -1 for KubeVirt platform
-		if vCpusCountMetricValue == nil || len(vCpusCountMetricValue.Metric) == 0 {
-			t.Fatal("expected vCPU count metric to be present")
-		}
-		actualVCpuCount := vCpusCountMetricValue.Metric[0].Gauge.GetValue()
-		if actualVCpuCount != -1 {
-			t.Errorf("expected vCPU count to be -1 for KubeVirt platform, got %v", actualVCpuCount)
-		}
-
-		// Verify error reason is "unsupported platform"
-		if vCpusComputationErrorMetricValue == nil || len(vCpusComputationErrorMetricValue.Metric) == 0 {
-			t.Fatal("expected vCPU computation error metric to be present")
-		}
-
-		foundReasonLabel := false
-		for _, label := range vCpusComputationErrorMetricValue.Metric[0].Label {
-			if label.GetName() == "reason" && label.GetValue() == "unsupported platform" {
-				foundReasonLabel = true
-				break
-			}
-		}
-		if !foundReasonLabel {
-			t.Error("expected error reason to be 'unsupported platform' for KubeVirt platform")
-		}
 	})
 }
