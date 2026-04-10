@@ -7,6 +7,8 @@ package models
 
 import (
 	"context"
+	"encoding/json"
+	stderrors "errors"
 	"strconv"
 
 	"github.com/go-openapi/errors"
@@ -23,6 +25,9 @@ type SAPCreate struct {
 	// Indicates if the boot volume should be replication enabled or not
 	BootVolumeReplicationEnabled *bool `json:"bootVolumeReplicationEnabled,omitempty"`
 
+	// default IAM trusted profile to use for this virtual server instance
+	DefaultTrustedProfile *TrustedProfile `json:"defaultTrustedProfile,omitempty"`
+
 	// The deployment of a dedicated host
 	DeploymentTarget *DeploymentTarget `json:"deploymentTarget,omitempty"`
 
@@ -35,6 +40,9 @@ type SAPCreate struct {
 
 	// instances
 	Instances *PVMInstanceMultiCreate `json:"instances,omitempty"`
+
+	// The metadata service configuration
+	MetadataService *MetadataService `json:"metadataService,omitempty"`
 
 	// Name of the sap pvm-instance
 	// Required: true
@@ -50,12 +58,20 @@ type SAPCreate struct {
 	// The placement group for the server
 	PlacementGroup string `json:"placementGroup,omitempty"`
 
+	// Preferred processor compatibility mode
+	PreferredProcessorCompatibilityMode string `json:"preferredProcessorCompatibilityMode,omitempty"`
+
 	// SAP Profile ID for the amount of cores and memory
 	// Required: true
+	// Pattern: ^[\s]*[A-Za-z][A-Za-z0-9\-]{3,}$
 	ProfileID *string `json:"profileID"`
 
 	// Indicates the replication site of the boot volume
 	ReplicationSites []string `json:"replicationSites"`
+
+	// Defines the enforcement action when NUMA affinity for the PVM instance is not satisfied
+	// Enum: ["fail","warn","none"]
+	SapHANAAffinityAction *string `json:"sapHANAAffinityAction,omitempty"`
 
 	// The name of the SSH Key to provide to the server for authenticating
 	SSHKeyName string `json:"sshKeyName,omitempty"`
@@ -72,10 +88,10 @@ type SAPCreate struct {
 	// Storage type for server deployment; if storageType is not provided the storage type will default to 'tier3'.
 	StorageType string `json:"storageType,omitempty"`
 
-	// System type used to host the instance. Only e880, e980, e1080 are supported
+	// System type used to host the instance. Only e980, s1022, e1050, e1080, s1122, e1150, and e1180 are supported
 	SysType string `json:"sysType,omitempty"`
 
-	// Cloud init user defined data; For FLS, only cloud-config instance-data is supported and data must not be compressed or exceed 63K
+	// Cloud init user defined data; For FLS, only cloud-config user-data is supported and data must not be compressed or exceed 63K
 	UserData string `json:"userData,omitempty"`
 
 	// user tags
@@ -83,11 +99,18 @@ type SAPCreate struct {
 
 	// List of Volume IDs to attach to the pvm-instance on creation
 	VolumeIDs []string `json:"volumeIDs"`
+
+	// The vPMEM volumes information. Only one volume is supported at this time.
+	VpmemVolumes []*VPMemVolumeCreate `json:"vpmemVolumes"`
 }
 
 // Validate validates this s a p create
 func (m *SAPCreate) Validate(formats strfmt.Registry) error {
 	var res []error
+
+	if err := m.validateDefaultTrustedProfile(formats); err != nil {
+		res = append(res, err)
+	}
 
 	if err := m.validateDeploymentTarget(formats); err != nil {
 		res = append(res, err)
@@ -98,6 +121,10 @@ func (m *SAPCreate) Validate(formats strfmt.Registry) error {
 	}
 
 	if err := m.validateInstances(formats); err != nil {
+		res = append(res, err)
+	}
+
+	if err := m.validateMetadataService(formats); err != nil {
 		res = append(res, err)
 	}
 
@@ -117,6 +144,10 @@ func (m *SAPCreate) Validate(formats strfmt.Registry) error {
 		res = append(res, err)
 	}
 
+	if err := m.validateSapHANAAffinityAction(formats); err != nil {
+		res = append(res, err)
+	}
+
 	if err := m.validateStorageAffinity(formats); err != nil {
 		res = append(res, err)
 	}
@@ -125,9 +156,36 @@ func (m *SAPCreate) Validate(formats strfmt.Registry) error {
 		res = append(res, err)
 	}
 
+	if err := m.validateVpmemVolumes(formats); err != nil {
+		res = append(res, err)
+	}
+
 	if len(res) > 0 {
 		return errors.CompositeValidationError(res...)
 	}
+	return nil
+}
+
+func (m *SAPCreate) validateDefaultTrustedProfile(formats strfmt.Registry) error {
+	if swag.IsZero(m.DefaultTrustedProfile) { // not required
+		return nil
+	}
+
+	if m.DefaultTrustedProfile != nil {
+		if err := m.DefaultTrustedProfile.Validate(formats); err != nil {
+			ve := new(errors.Validation)
+			if stderrors.As(err, &ve) {
+				return ve.ValidateName("defaultTrustedProfile")
+			}
+			ce := new(errors.CompositeError)
+			if stderrors.As(err, &ce) {
+				return ce.ValidateName("defaultTrustedProfile")
+			}
+
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -138,11 +196,15 @@ func (m *SAPCreate) validateDeploymentTarget(formats strfmt.Registry) error {
 
 	if m.DeploymentTarget != nil {
 		if err := m.DeploymentTarget.Validate(formats); err != nil {
-			if ve, ok := err.(*errors.Validation); ok {
+			ve := new(errors.Validation)
+			if stderrors.As(err, &ve) {
 				return ve.ValidateName("deploymentTarget")
-			} else if ce, ok := err.(*errors.CompositeError); ok {
+			}
+			ce := new(errors.CompositeError)
+			if stderrors.As(err, &ce) {
 				return ce.ValidateName("deploymentTarget")
 			}
+
 			return err
 		}
 	}
@@ -166,11 +228,38 @@ func (m *SAPCreate) validateInstances(formats strfmt.Registry) error {
 
 	if m.Instances != nil {
 		if err := m.Instances.Validate(formats); err != nil {
-			if ve, ok := err.(*errors.Validation); ok {
+			ve := new(errors.Validation)
+			if stderrors.As(err, &ve) {
 				return ve.ValidateName("instances")
-			} else if ce, ok := err.(*errors.CompositeError); ok {
+			}
+			ce := new(errors.CompositeError)
+			if stderrors.As(err, &ce) {
 				return ce.ValidateName("instances")
 			}
+
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (m *SAPCreate) validateMetadataService(formats strfmt.Registry) error {
+	if swag.IsZero(m.MetadataService) { // not required
+		return nil
+	}
+
+	if m.MetadataService != nil {
+		if err := m.MetadataService.Validate(formats); err != nil {
+			ve := new(errors.Validation)
+			if stderrors.As(err, &ve) {
+				return ve.ValidateName("metadataService")
+			}
+			ce := new(errors.CompositeError)
+			if stderrors.As(err, &ce) {
+				return ce.ValidateName("metadataService")
+			}
+
 			return err
 		}
 	}
@@ -200,11 +289,15 @@ func (m *SAPCreate) validateNetworks(formats strfmt.Registry) error {
 
 		if m.Networks[i] != nil {
 			if err := m.Networks[i].Validate(formats); err != nil {
-				if ve, ok := err.(*errors.Validation); ok {
+				ve := new(errors.Validation)
+				if stderrors.As(err, &ve) {
 					return ve.ValidateName("networks" + "." + strconv.Itoa(i))
-				} else if ce, ok := err.(*errors.CompositeError); ok {
+				}
+				ce := new(errors.CompositeError)
+				if stderrors.As(err, &ce) {
 					return ce.ValidateName("networks" + "." + strconv.Itoa(i))
 				}
+
 				return err
 			}
 		}
@@ -220,11 +313,15 @@ func (m *SAPCreate) validatePinPolicy(formats strfmt.Registry) error {
 	}
 
 	if err := m.PinPolicy.Validate(formats); err != nil {
-		if ve, ok := err.(*errors.Validation); ok {
+		ve := new(errors.Validation)
+		if stderrors.As(err, &ve) {
 			return ve.ValidateName("pinPolicy")
-		} else if ce, ok := err.(*errors.CompositeError); ok {
+		}
+		ce := new(errors.CompositeError)
+		if stderrors.As(err, &ce) {
 			return ce.ValidateName("pinPolicy")
 		}
+
 		return err
 	}
 
@@ -234,6 +331,55 @@ func (m *SAPCreate) validatePinPolicy(formats strfmt.Registry) error {
 func (m *SAPCreate) validateProfileID(formats strfmt.Registry) error {
 
 	if err := validate.Required("profileID", "body", m.ProfileID); err != nil {
+		return err
+	}
+
+	if err := validate.Pattern("profileID", "body", *m.ProfileID, `^[\s]*[A-Za-z][A-Za-z0-9\-]{3,}$`); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+var sAPCreateTypeSapHANAAffinityActionPropEnum []any
+
+func init() {
+	var res []string
+	if err := json.Unmarshal([]byte(`["fail","warn","none"]`), &res); err != nil {
+		panic(err)
+	}
+	for _, v := range res {
+		sAPCreateTypeSapHANAAffinityActionPropEnum = append(sAPCreateTypeSapHANAAffinityActionPropEnum, v)
+	}
+}
+
+const (
+
+	// SAPCreateSapHANAAffinityActionFail captures enum value "fail"
+	SAPCreateSapHANAAffinityActionFail string = "fail"
+
+	// SAPCreateSapHANAAffinityActionWarn captures enum value "warn"
+	SAPCreateSapHANAAffinityActionWarn string = "warn"
+
+	// SAPCreateSapHANAAffinityActionNone captures enum value "none"
+	SAPCreateSapHANAAffinityActionNone string = "none"
+)
+
+// prop value enum
+func (m *SAPCreate) validateSapHANAAffinityActionEnum(path, location string, value string) error {
+	if err := validate.EnumCase(path, location, value, sAPCreateTypeSapHANAAffinityActionPropEnum, true); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (m *SAPCreate) validateSapHANAAffinityAction(formats strfmt.Registry) error {
+	if swag.IsZero(m.SapHANAAffinityAction) { // not required
+		return nil
+	}
+
+	// value enum
+	if err := m.validateSapHANAAffinityActionEnum("sapHANAAffinityAction", "body", *m.SapHANAAffinityAction); err != nil {
 		return err
 	}
 
@@ -247,11 +393,15 @@ func (m *SAPCreate) validateStorageAffinity(formats strfmt.Registry) error {
 
 	if m.StorageAffinity != nil {
 		if err := m.StorageAffinity.Validate(formats); err != nil {
-			if ve, ok := err.(*errors.Validation); ok {
+			ve := new(errors.Validation)
+			if stderrors.As(err, &ve) {
 				return ve.ValidateName("storageAffinity")
-			} else if ce, ok := err.(*errors.CompositeError); ok {
+			}
+			ce := new(errors.CompositeError)
+			if stderrors.As(err, &ce) {
 				return ce.ValidateName("storageAffinity")
 			}
+
 			return err
 		}
 	}
@@ -265,12 +415,46 @@ func (m *SAPCreate) validateUserTags(formats strfmt.Registry) error {
 	}
 
 	if err := m.UserTags.Validate(formats); err != nil {
-		if ve, ok := err.(*errors.Validation); ok {
+		ve := new(errors.Validation)
+		if stderrors.As(err, &ve) {
 			return ve.ValidateName("userTags")
-		} else if ce, ok := err.(*errors.CompositeError); ok {
+		}
+		ce := new(errors.CompositeError)
+		if stderrors.As(err, &ce) {
 			return ce.ValidateName("userTags")
 		}
+
 		return err
+	}
+
+	return nil
+}
+
+func (m *SAPCreate) validateVpmemVolumes(formats strfmt.Registry) error {
+	if swag.IsZero(m.VpmemVolumes) { // not required
+		return nil
+	}
+
+	for i := 0; i < len(m.VpmemVolumes); i++ {
+		if swag.IsZero(m.VpmemVolumes[i]) { // not required
+			continue
+		}
+
+		if m.VpmemVolumes[i] != nil {
+			if err := m.VpmemVolumes[i].Validate(formats); err != nil {
+				ve := new(errors.Validation)
+				if stderrors.As(err, &ve) {
+					return ve.ValidateName("vpmemVolumes" + "." + strconv.Itoa(i))
+				}
+				ce := new(errors.CompositeError)
+				if stderrors.As(err, &ce) {
+					return ce.ValidateName("vpmemVolumes" + "." + strconv.Itoa(i))
+				}
+
+				return err
+			}
+		}
+
 	}
 
 	return nil
@@ -280,11 +464,19 @@ func (m *SAPCreate) validateUserTags(formats strfmt.Registry) error {
 func (m *SAPCreate) ContextValidate(ctx context.Context, formats strfmt.Registry) error {
 	var res []error
 
+	if err := m.contextValidateDefaultTrustedProfile(ctx, formats); err != nil {
+		res = append(res, err)
+	}
+
 	if err := m.contextValidateDeploymentTarget(ctx, formats); err != nil {
 		res = append(res, err)
 	}
 
 	if err := m.contextValidateInstances(ctx, formats); err != nil {
+		res = append(res, err)
+	}
+
+	if err := m.contextValidateMetadataService(ctx, formats); err != nil {
 		res = append(res, err)
 	}
 
@@ -304,9 +496,38 @@ func (m *SAPCreate) ContextValidate(ctx context.Context, formats strfmt.Registry
 		res = append(res, err)
 	}
 
+	if err := m.contextValidateVpmemVolumes(ctx, formats); err != nil {
+		res = append(res, err)
+	}
+
 	if len(res) > 0 {
 		return errors.CompositeValidationError(res...)
 	}
+	return nil
+}
+
+func (m *SAPCreate) contextValidateDefaultTrustedProfile(ctx context.Context, formats strfmt.Registry) error {
+
+	if m.DefaultTrustedProfile != nil {
+
+		if swag.IsZero(m.DefaultTrustedProfile) { // not required
+			return nil
+		}
+
+		if err := m.DefaultTrustedProfile.ContextValidate(ctx, formats); err != nil {
+			ve := new(errors.Validation)
+			if stderrors.As(err, &ve) {
+				return ve.ValidateName("defaultTrustedProfile")
+			}
+			ce := new(errors.CompositeError)
+			if stderrors.As(err, &ce) {
+				return ce.ValidateName("defaultTrustedProfile")
+			}
+
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -319,11 +540,15 @@ func (m *SAPCreate) contextValidateDeploymentTarget(ctx context.Context, formats
 		}
 
 		if err := m.DeploymentTarget.ContextValidate(ctx, formats); err != nil {
-			if ve, ok := err.(*errors.Validation); ok {
+			ve := new(errors.Validation)
+			if stderrors.As(err, &ve) {
 				return ve.ValidateName("deploymentTarget")
-			} else if ce, ok := err.(*errors.CompositeError); ok {
+			}
+			ce := new(errors.CompositeError)
+			if stderrors.As(err, &ce) {
 				return ce.ValidateName("deploymentTarget")
 			}
+
 			return err
 		}
 	}
@@ -340,11 +565,40 @@ func (m *SAPCreate) contextValidateInstances(ctx context.Context, formats strfmt
 		}
 
 		if err := m.Instances.ContextValidate(ctx, formats); err != nil {
-			if ve, ok := err.(*errors.Validation); ok {
+			ve := new(errors.Validation)
+			if stderrors.As(err, &ve) {
 				return ve.ValidateName("instances")
-			} else if ce, ok := err.(*errors.CompositeError); ok {
+			}
+			ce := new(errors.CompositeError)
+			if stderrors.As(err, &ce) {
 				return ce.ValidateName("instances")
 			}
+
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (m *SAPCreate) contextValidateMetadataService(ctx context.Context, formats strfmt.Registry) error {
+
+	if m.MetadataService != nil {
+
+		if swag.IsZero(m.MetadataService) { // not required
+			return nil
+		}
+
+		if err := m.MetadataService.ContextValidate(ctx, formats); err != nil {
+			ve := new(errors.Validation)
+			if stderrors.As(err, &ve) {
+				return ve.ValidateName("metadataService")
+			}
+			ce := new(errors.CompositeError)
+			if stderrors.As(err, &ce) {
+				return ce.ValidateName("metadataService")
+			}
+
 			return err
 		}
 	}
@@ -363,11 +617,15 @@ func (m *SAPCreate) contextValidateNetworks(ctx context.Context, formats strfmt.
 			}
 
 			if err := m.Networks[i].ContextValidate(ctx, formats); err != nil {
-				if ve, ok := err.(*errors.Validation); ok {
+				ve := new(errors.Validation)
+				if stderrors.As(err, &ve) {
 					return ve.ValidateName("networks" + "." + strconv.Itoa(i))
-				} else if ce, ok := err.(*errors.CompositeError); ok {
+				}
+				ce := new(errors.CompositeError)
+				if stderrors.As(err, &ce) {
 					return ce.ValidateName("networks" + "." + strconv.Itoa(i))
 				}
+
 				return err
 			}
 		}
@@ -384,11 +642,15 @@ func (m *SAPCreate) contextValidatePinPolicy(ctx context.Context, formats strfmt
 	}
 
 	if err := m.PinPolicy.ContextValidate(ctx, formats); err != nil {
-		if ve, ok := err.(*errors.Validation); ok {
+		ve := new(errors.Validation)
+		if stderrors.As(err, &ve) {
 			return ve.ValidateName("pinPolicy")
-		} else if ce, ok := err.(*errors.CompositeError); ok {
+		}
+		ce := new(errors.CompositeError)
+		if stderrors.As(err, &ce) {
 			return ce.ValidateName("pinPolicy")
 		}
+
 		return err
 	}
 
@@ -404,11 +666,15 @@ func (m *SAPCreate) contextValidateStorageAffinity(ctx context.Context, formats 
 		}
 
 		if err := m.StorageAffinity.ContextValidate(ctx, formats); err != nil {
-			if ve, ok := err.(*errors.Validation); ok {
+			ve := new(errors.Validation)
+			if stderrors.As(err, &ve) {
 				return ve.ValidateName("storageAffinity")
-			} else if ce, ok := err.(*errors.CompositeError); ok {
+			}
+			ce := new(errors.CompositeError)
+			if stderrors.As(err, &ce) {
 				return ce.ValidateName("storageAffinity")
 			}
+
 			return err
 		}
 	}
@@ -419,12 +685,45 @@ func (m *SAPCreate) contextValidateStorageAffinity(ctx context.Context, formats 
 func (m *SAPCreate) contextValidateUserTags(ctx context.Context, formats strfmt.Registry) error {
 
 	if err := m.UserTags.ContextValidate(ctx, formats); err != nil {
-		if ve, ok := err.(*errors.Validation); ok {
+		ve := new(errors.Validation)
+		if stderrors.As(err, &ve) {
 			return ve.ValidateName("userTags")
-		} else if ce, ok := err.(*errors.CompositeError); ok {
+		}
+		ce := new(errors.CompositeError)
+		if stderrors.As(err, &ce) {
 			return ce.ValidateName("userTags")
 		}
+
 		return err
+	}
+
+	return nil
+}
+
+func (m *SAPCreate) contextValidateVpmemVolumes(ctx context.Context, formats strfmt.Registry) error {
+
+	for i := 0; i < len(m.VpmemVolumes); i++ {
+
+		if m.VpmemVolumes[i] != nil {
+
+			if swag.IsZero(m.VpmemVolumes[i]) { // not required
+				return nil
+			}
+
+			if err := m.VpmemVolumes[i].ContextValidate(ctx, formats); err != nil {
+				ve := new(errors.Validation)
+				if stderrors.As(err, &ve) {
+					return ve.ValidateName("vpmemVolumes" + "." + strconv.Itoa(i))
+				}
+				ce := new(errors.CompositeError)
+				if stderrors.As(err, &ce) {
+					return ce.ValidateName("vpmemVolumes" + "." + strconv.Itoa(i))
+				}
+
+				return err
+			}
+		}
+
 	}
 
 	return nil

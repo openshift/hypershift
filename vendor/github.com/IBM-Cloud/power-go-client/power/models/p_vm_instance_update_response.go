@@ -8,6 +8,7 @@ package models
 import (
 	"context"
 	"encoding/json"
+	stderrors "errors"
 
 	"github.com/go-openapi/errors"
 	"github.com/go-openapi/strfmt"
@@ -20,14 +21,23 @@ import (
 // swagger:model PVMInstanceUpdateResponse
 type PVMInstanceUpdateResponse struct {
 
-	// The VTL license repository capacity TB value
+	// default IAM trusted profile to use for this virtual server instance
+	DefaultTrustedProfile *UpdateTrustedProfile `json:"defaultTrustedProfile,omitempty"`
+
+	// The VTL license repository capacity TiB value
 	LicenseRepositoryCapacity int64 `json:"licenseRepositoryCapacity,omitempty"`
 
-	// Amount of memory allocated (in GB)
+	// Amount of memory allocated (in GiB)
 	Memory float64 `json:"memory,omitempty"`
+
+	// The metadata service configuration
+	MetadataService *UpdateMetadataService `json:"metadataService,omitempty"`
 
 	// pin policy
 	PinPolicy PinPolicy `json:"pinPolicy,omitempty"`
+
+	// Preferred processor compatibility mode
+	PreferredProcessorCompatibilityMode string `json:"preferredProcessorCompatibilityMode,omitempty"`
 
 	// Processor type (dedicated, shared, capped)
 	// Enum: ["dedicated","shared","capped"]
@@ -35,6 +45,12 @@ type PVMInstanceUpdateResponse struct {
 
 	// Number of processors allocated
 	Processors float64 `json:"processors,omitempty"`
+
+	// Defines the enforcement action when NUMA affinity for the PVM instance is not satisfied
+	SapHANAAffinityAction *string `json:"sapHANAAffinityAction,omitempty"`
+
+	// Indicates whether the SAP HANA PVM instance is adhering to the specified NUMA affinity requirement
+	SapHANAAffinityComplianceStatus *string `json:"sapHANAAffinityComplianceStatus,omitempty"`
 
 	// Name of the server
 	ServerName string `json:"serverName,omitempty"`
@@ -52,6 +68,14 @@ type PVMInstanceUpdateResponse struct {
 // Validate validates this p VM instance update response
 func (m *PVMInstanceUpdateResponse) Validate(formats strfmt.Registry) error {
 	var res []error
+
+	if err := m.validateDefaultTrustedProfile(formats); err != nil {
+		res = append(res, err)
+	}
+
+	if err := m.validateMetadataService(formats); err != nil {
+		res = append(res, err)
+	}
 
 	if err := m.validatePinPolicy(formats); err != nil {
 		res = append(res, err)
@@ -71,24 +95,74 @@ func (m *PVMInstanceUpdateResponse) Validate(formats strfmt.Registry) error {
 	return nil
 }
 
+func (m *PVMInstanceUpdateResponse) validateDefaultTrustedProfile(formats strfmt.Registry) error {
+	if swag.IsZero(m.DefaultTrustedProfile) { // not required
+		return nil
+	}
+
+	if m.DefaultTrustedProfile != nil {
+		if err := m.DefaultTrustedProfile.Validate(formats); err != nil {
+			ve := new(errors.Validation)
+			if stderrors.As(err, &ve) {
+				return ve.ValidateName("defaultTrustedProfile")
+			}
+			ce := new(errors.CompositeError)
+			if stderrors.As(err, &ce) {
+				return ce.ValidateName("defaultTrustedProfile")
+			}
+
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (m *PVMInstanceUpdateResponse) validateMetadataService(formats strfmt.Registry) error {
+	if swag.IsZero(m.MetadataService) { // not required
+		return nil
+	}
+
+	if m.MetadataService != nil {
+		if err := m.MetadataService.Validate(formats); err != nil {
+			ve := new(errors.Validation)
+			if stderrors.As(err, &ve) {
+				return ve.ValidateName("metadataService")
+			}
+			ce := new(errors.CompositeError)
+			if stderrors.As(err, &ce) {
+				return ce.ValidateName("metadataService")
+			}
+
+			return err
+		}
+	}
+
+	return nil
+}
+
 func (m *PVMInstanceUpdateResponse) validatePinPolicy(formats strfmt.Registry) error {
 	if swag.IsZero(m.PinPolicy) { // not required
 		return nil
 	}
 
 	if err := m.PinPolicy.Validate(formats); err != nil {
-		if ve, ok := err.(*errors.Validation); ok {
+		ve := new(errors.Validation)
+		if stderrors.As(err, &ve) {
 			return ve.ValidateName("pinPolicy")
-		} else if ce, ok := err.(*errors.CompositeError); ok {
+		}
+		ce := new(errors.CompositeError)
+		if stderrors.As(err, &ce) {
 			return ce.ValidateName("pinPolicy")
 		}
+
 		return err
 	}
 
 	return nil
 }
 
-var pVmInstanceUpdateResponseTypeProcTypePropEnum []interface{}
+var pVmInstanceUpdateResponseTypeProcTypePropEnum []any
 
 func init() {
 	var res []string
@@ -140,11 +214,15 @@ func (m *PVMInstanceUpdateResponse) validateVirtualCores(formats strfmt.Registry
 
 	if m.VirtualCores != nil {
 		if err := m.VirtualCores.Validate(formats); err != nil {
-			if ve, ok := err.(*errors.Validation); ok {
+			ve := new(errors.Validation)
+			if stderrors.As(err, &ve) {
 				return ve.ValidateName("virtualCores")
-			} else if ce, ok := err.(*errors.CompositeError); ok {
+			}
+			ce := new(errors.CompositeError)
+			if stderrors.As(err, &ce) {
 				return ce.ValidateName("virtualCores")
 			}
+
 			return err
 		}
 	}
@@ -155,6 +233,14 @@ func (m *PVMInstanceUpdateResponse) validateVirtualCores(formats strfmt.Registry
 // ContextValidate validate this p VM instance update response based on the context it is used
 func (m *PVMInstanceUpdateResponse) ContextValidate(ctx context.Context, formats strfmt.Registry) error {
 	var res []error
+
+	if err := m.contextValidateDefaultTrustedProfile(ctx, formats); err != nil {
+		res = append(res, err)
+	}
+
+	if err := m.contextValidateMetadataService(ctx, formats); err != nil {
+		res = append(res, err)
+	}
 
 	if err := m.contextValidatePinPolicy(ctx, formats); err != nil {
 		res = append(res, err)
@@ -170,6 +256,56 @@ func (m *PVMInstanceUpdateResponse) ContextValidate(ctx context.Context, formats
 	return nil
 }
 
+func (m *PVMInstanceUpdateResponse) contextValidateDefaultTrustedProfile(ctx context.Context, formats strfmt.Registry) error {
+
+	if m.DefaultTrustedProfile != nil {
+
+		if swag.IsZero(m.DefaultTrustedProfile) { // not required
+			return nil
+		}
+
+		if err := m.DefaultTrustedProfile.ContextValidate(ctx, formats); err != nil {
+			ve := new(errors.Validation)
+			if stderrors.As(err, &ve) {
+				return ve.ValidateName("defaultTrustedProfile")
+			}
+			ce := new(errors.CompositeError)
+			if stderrors.As(err, &ce) {
+				return ce.ValidateName("defaultTrustedProfile")
+			}
+
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (m *PVMInstanceUpdateResponse) contextValidateMetadataService(ctx context.Context, formats strfmt.Registry) error {
+
+	if m.MetadataService != nil {
+
+		if swag.IsZero(m.MetadataService) { // not required
+			return nil
+		}
+
+		if err := m.MetadataService.ContextValidate(ctx, formats); err != nil {
+			ve := new(errors.Validation)
+			if stderrors.As(err, &ve) {
+				return ve.ValidateName("metadataService")
+			}
+			ce := new(errors.CompositeError)
+			if stderrors.As(err, &ce) {
+				return ce.ValidateName("metadataService")
+			}
+
+			return err
+		}
+	}
+
+	return nil
+}
+
 func (m *PVMInstanceUpdateResponse) contextValidatePinPolicy(ctx context.Context, formats strfmt.Registry) error {
 
 	if swag.IsZero(m.PinPolicy) { // not required
@@ -177,11 +313,15 @@ func (m *PVMInstanceUpdateResponse) contextValidatePinPolicy(ctx context.Context
 	}
 
 	if err := m.PinPolicy.ContextValidate(ctx, formats); err != nil {
-		if ve, ok := err.(*errors.Validation); ok {
+		ve := new(errors.Validation)
+		if stderrors.As(err, &ve) {
 			return ve.ValidateName("pinPolicy")
-		} else if ce, ok := err.(*errors.CompositeError); ok {
+		}
+		ce := new(errors.CompositeError)
+		if stderrors.As(err, &ce) {
 			return ce.ValidateName("pinPolicy")
 		}
+
 		return err
 	}
 
@@ -197,11 +337,15 @@ func (m *PVMInstanceUpdateResponse) contextValidateVirtualCores(ctx context.Cont
 		}
 
 		if err := m.VirtualCores.ContextValidate(ctx, formats); err != nil {
-			if ve, ok := err.(*errors.Validation); ok {
+			ve := new(errors.Validation)
+			if stderrors.As(err, &ve) {
 				return ve.ValidateName("virtualCores")
-			} else if ce, ok := err.(*errors.CompositeError); ok {
+			}
+			ce := new(errors.CompositeError)
+			if stderrors.As(err, &ce) {
 				return ce.ValidateName("virtualCores")
 			}
+
 			return err
 		}
 	}

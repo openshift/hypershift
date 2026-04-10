@@ -23,6 +23,9 @@ type SystemResources struct {
 	// Required: true
 	Cores *float64 `json:"cores"`
 
+	// The host MTMS name
+	HostMTMSName string `json:"hostMTMSName,omitempty"`
+
 	// The host identifier
 	// Required: true
 	ID *int64 `json:"id"`
@@ -43,7 +46,7 @@ type SystemResources struct {
 	// Required: true
 	TotalPhysCores *float64 `json:"totalPhysCores"`
 
-	// Total amount of physical memory in the Pod (GB)
+	// Total amount of physical memory in the Pod (GiB)
 	// Required: true
 	TotalPhysMemory *int64 `json:"totalPhysMemory"`
 }

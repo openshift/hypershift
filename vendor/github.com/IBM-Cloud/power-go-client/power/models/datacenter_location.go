@@ -19,6 +19,10 @@ import (
 // swagger:model DatacenterLocation
 type DatacenterLocation struct {
 
+	// The IBM Cloud Region of the datacenter (e.g., dal, wdc, fra, tok, mon)
+	// Example: dal
+	CloudRegion string `json:"cloudRegion,omitempty"`
+
 	// The Datacenter location region zone
 	// Required: true
 	Region *string `json:"region"`

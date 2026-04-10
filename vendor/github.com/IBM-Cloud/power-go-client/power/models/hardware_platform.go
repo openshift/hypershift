@@ -7,6 +7,7 @@ package models
 
 import (
 	"context"
+	stderrors "errors"
 	"strconv"
 
 	"github.com/go-openapi/errors"
@@ -25,10 +26,10 @@ type HardwarePlatform struct {
 	// The DataCenter list of servers and their available resources
 	HostsResources []*HostResources `json:"hostsResources"`
 
-	// Configured Memory GB
+	// Configured Memory GiB
 	Memory float64 `json:"memory,omitempty"`
 
-	// Processor to Memory (GB) Ratio
+	// Processor to Memory (GiB) Ratio
 	ProcessorMemoryRatio float64 `json:"processorMemoryRatio,omitempty"`
 
 	// Configured Processors
@@ -67,11 +68,15 @@ func (m *HardwarePlatform) validateHostsResources(formats strfmt.Registry) error
 
 		if m.HostsResources[i] != nil {
 			if err := m.HostsResources[i].Validate(formats); err != nil {
-				if ve, ok := err.(*errors.Validation); ok {
+				ve := new(errors.Validation)
+				if stderrors.As(err, &ve) {
 					return ve.ValidateName("hostsResources" + "." + strconv.Itoa(i))
-				} else if ce, ok := err.(*errors.CompositeError); ok {
+				}
+				ce := new(errors.CompositeError)
+				if stderrors.As(err, &ce) {
 					return ce.ValidateName("hostsResources" + "." + strconv.Itoa(i))
 				}
+
 				return err
 			}
 		}
@@ -106,11 +111,15 @@ func (m *HardwarePlatform) contextValidateHostsResources(ctx context.Context, fo
 			}
 
 			if err := m.HostsResources[i].ContextValidate(ctx, formats); err != nil {
-				if ve, ok := err.(*errors.Validation); ok {
+				ve := new(errors.Validation)
+				if stderrors.As(err, &ve) {
 					return ve.ValidateName("hostsResources" + "." + strconv.Itoa(i))
-				} else if ce, ok := err.(*errors.CompositeError); ok {
+				}
+				ce := new(errors.CompositeError)
+				if stderrors.As(err, &ce) {
 					return ce.ValidateName("hostsResources" + "." + strconv.Itoa(i))
 				}
+
 				return err
 			}
 		}

@@ -38,7 +38,7 @@ type CloudInstanceCreate struct {
 	// Required: true
 	Region *string `json:"region"`
 
-	// Amount of storage allowed (TB)
+	// Amount of storage allowed (TiB)
 	Storage *float64 `json:"storage,omitempty"`
 
 	// The tenant ID that owns this cloud instance

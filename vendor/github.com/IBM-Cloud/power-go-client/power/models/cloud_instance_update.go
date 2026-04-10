@@ -29,7 +29,7 @@ type CloudInstanceUpdate struct {
 	// Number of processors allowed
 	Processors *float64 `json:"processors,omitempty"`
 
-	// Amount of storage allowed (TB)
+	// Amount of storage allowed (TiB)
 	Storage *float64 `json:"storage,omitempty"`
 }
 

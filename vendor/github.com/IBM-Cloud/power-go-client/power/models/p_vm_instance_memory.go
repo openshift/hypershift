@@ -23,10 +23,10 @@ type PVMInstanceMemory struct {
 	// Required: true
 	Assigned *float64 `json:"assigned"`
 
-	// The maximum amount of memory that can be allocated (in GB, for resize)
+	// The maximum amount of memory that can be allocated (in GiB, for resize)
 	Maximum float64 `json:"maximum,omitempty"`
 
-	// The minimum amount of memory that can be allocated (in GB, for resize)
+	// The minimum amount of memory that can be allocated (in GiB, for resize)
 	Minimum float64 `json:"minimum,omitempty"`
 }
 
