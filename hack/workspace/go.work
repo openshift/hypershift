@@ -1,6 +1,8 @@
-go 1.25.3
+go 1.25.6
 
 use (
 	./hypershift
 	./hypershift/api
 )
+
+replace sigs.k8s.io/karpenter => github.com/openshift/kubernetes-sigs-karpenter v0.0.0-20260310165629-67e201b559d5

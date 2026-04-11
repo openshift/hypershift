@@ -419,7 +419,7 @@ func TestSanitizeIgnitionPayload(t *testing.T) {
 }
 
 func TestGetMgmtClusterCPUArch(t *testing.T) {
-	fakeKubeClient := fakekubeclient.NewSimpleClientset()
+	fakeKubeClient := fakekubeclient.NewClientset()
 	fakeDiscovery, ok := fakeKubeClient.Discovery().(*fakediscovery.FakeDiscovery)
 
 	if !ok {
