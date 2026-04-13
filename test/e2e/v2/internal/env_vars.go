@@ -159,4 +159,15 @@ func init() {
 		false,
 		filepath.Join(os.Getenv("HOME"), ".aws", "credentials"),
 	)
+	// Azure self-managed test environment variables
+	RegisterEnvVar(
+		"AZURE_PRIVATE_NAT_SUBNET_ID",
+		"Azure resource ID of the NAT subnet for Private Link Service. Auto-created by PLS controller if not set.",
+		false,
+	)
+	RegisterEnvVar(
+		"AZURE_PRIVATE_ADDITIONAL_ALLOWED_SUBSCRIPTIONS",
+		"Comma-separated list of Azure subscription IDs permitted to create Private Endpoints.",
+		false,
+	)
 }

@@ -129,7 +129,7 @@ func TestCreateCluster(t *testing.T) {
 
 		if globalOpts.Platform == hyperv1.AzurePlatform || globalOpts.Platform == hyperv1.AWSPlatform {
 			// ensure Ingress Operator configuration is properly applied
-			e2eutil.EnsureIngressOperatorConfiguration(t, ctx, mgtClient, guestClient, hostedCluster)
+			e2eutil.EnsureIngressOperatorConfiguration(t, ctx, guestClient, hostedCluster)
 		}
 
 		e2eutil.EnsureAWSCCMWithCustomizations(t, ctx, &e2eutil.AWSCCMTestConfig{
