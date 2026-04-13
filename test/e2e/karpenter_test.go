@@ -209,7 +209,7 @@ func testARM64Provisioning(ctx context.Context, guestClient crclient.Client, hos
 
 		armNodeLabels := map[string]string{
 			karpenterv1.NodePoolLabelKey: armNodePool.Name,
-			"kubernetes.io/arch":    "arm64",
+			"kubernetes.io/arch":         "arm64",
 		}
 
 		nodes := e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, 1, armNodeLabels)
