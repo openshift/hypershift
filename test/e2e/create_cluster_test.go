@@ -126,7 +126,7 @@ func TestCreateCluster(t *testing.T) {
 
 		if globalOpts.Platform == hyperv1.AzurePlatform || globalOpts.Platform == hyperv1.AWSPlatform {
 			// ensure Ingress Operator configuration is properly applied
-			e2eutil.EnsureIngressOperatorConfiguration(t, ctx, mgtClient, guestClient, hostedCluster)
+			e2eutil.EnsureIngressOperatorConfiguration(t, ctx, guestClient, hostedCluster)
 		}
 	}).WithAssetReader(content.ReadFile).
 		Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "create-cluster", globalOpts.ServiceAccountSigningKey)
