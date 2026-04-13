@@ -100,8 +100,8 @@ func (tc *TestContext) GetHostedClusterClient() crclient.Client {
 		}
 
 		kubeconfigData, ok := kubeconfigSecret.Data["kubeconfig"]
-		if !ok {
-			panic(fmt.Sprintf("kubeconfig secret %s/%s does not contain 'kubeconfig' key", hc.Namespace, hc.Status.KubeConfig.Name))
+		if !ok || len(kubeconfigData) == 0 {
+			panic(fmt.Sprintf("kubeconfig key not found or empty in secret %s/%s", hc.Namespace, hc.Status.KubeConfig.Name))
 		}
 
 		restConfig, err := clientcmd.RESTConfigFromKubeConfig(kubeconfigData)
