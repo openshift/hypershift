@@ -567,6 +567,10 @@ run-operator-locally-aws-dev:
 verify-docs-nav: $(PYYAML_STAMP) ## Verify docs nav entries are sorted alphabetically.
 	PYTHONPATH=$(TOOLS_BIN_DIR)/$(PYYAML_DIST_DIR) python3 hack/verify-docs-nav-order.py
 
+.PHONY: verify-override-multiarch
+verify-override-multiarch: ## Verify all CPO override images have multiarch manifest lists (amd64 + arm64).
+	$(GO) test -tags validate_override_images -run TestOverrideImagesMultiArch -count=1 -timeout 10m ./hypershift-operator/controlplaneoperator-overrides/
+
 .PHONY: verify-codespell
 verify-codespell: codespell ## Verify codespell.
 	@$(CODESPELL) --count --ignore-words=./.codespellignore --skip="./hack/tools/bin/codespell_dist,./docs/site/*,./vendor/*,./api/vendor/*,./hack/tools/vendor/*,./api/hypershift/v1alpha1/*,./support/thirdparty/*,./docs/content/reference/*,./hack/tools/bin/*,./cmd/install/assets/*,./go.sum,./hack/workspace/go.work.sum,./api/hypershift/v1beta1/zz_generated.featuregated-crd-manifests,./hack/tools/go.mod,./hack/tools/go.sum,./karpenter-operator/controllers/karpenter/assets/*.yaml,./dev/*"
