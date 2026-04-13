@@ -17726,6 +17726,7 @@ hypershift create cluster gcp \
   --cloud-controller-service-account=<cloud-controller-sa-email> \
   --storage-service-account=<storage-sa-email> \
   --image-registry-service-account=<image-registry-sa-email> \
+  --network-service-account=<network-sa-email> \
   --service-account-signing-key-path=<path-to-sa-signer.key> \
   --oidc-issuer-url=<oidc-issuer-url> \
   --base-domain=<your-dns-domain> \
@@ -17765,6 +17766,7 @@ hypershift create cluster gcp \
 | `--cloud-controller-service-account` | Yes | Cloud Controller Manager SA email |
 | `--storage-service-account` | Yes | GCP PD CSI Driver SA email |
 | `--image-registry-service-account` | Yes | Image Registry Operator SA email |
+| `--network-service-account` | Yes | Cloud Network Config Controller SA email |
 | `--service-account-signing-key-path` | Yes | Path to RSA private key for OIDC token signing |
 | `--oidc-issuer-url` | Yes | OIDC issuer URL |
 | `--node-pool-replicas` | Yes | Number of worker nodes (default: 0) |
@@ -17916,6 +17918,7 @@ The `hypershift create iam gcp` command creates WIF resources in the hosted clus
   - `cloud-controller` — Cloud Controller Manager (load balancer admin, security admin, compute viewer)
   - `storage` — GCP PD CSI Driver (storage admin, instance admin)
   - `image-registry` — Image Registry Operator (storage admin)
+  - `cloud-network` — Cloud Network Config Controller (instance admin, network user)
 
 ```bash
 hypershift create iam gcp \
@@ -17966,7 +17969,8 @@ The command outputs JSON with the WIF configuration:
     "nodepool-mgmt": "my-cluster-nodepool-mgmt@my-hc-project.iam.gserviceaccount.com",
     "cloud-controller": "my-cluster-cloud-controller@my-hc-project.iam.gserviceaccount.com",
     "gcp-pd-csi": "my-cluster-gcp-pd-csi@my-hc-project.iam.gserviceaccount.com",
-    "image-registry": "my-cluster-image-registry@my-hc-project.iam.gserviceaccount.com"
+    "image-registry": "my-cluster-image-registry@my-hc-project.iam.gserviceaccount.com",
+    "cloud-network": "my-cluster-cloud-network@my-hc-project.iam.gserviceaccount.com"
   }
 }
 ```
@@ -38980,6 +38984,28 @@ GCPServiceAccountEmail
 that manages GCS storage for the internal container image registry.
 This GSA requires the following IAM roles:
 - roles/storage.admin (Storage Admin - for creating and managing GCS buckets and objects)
+See cmd/infra/gcp/iam-bindings.json for the authoritative role definitions.
+Format: service-account-name@project-id.iam.gserviceaccount.com</p>
+<p>This is a user-provided value referencing a pre-created Google Service Account.
+Typically obtained from the output of <code>hypershift infra create gcp</code> which creates
+the required service accounts with appropriate IAM roles and WIF bindings.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>network</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.GCPServiceAccountEmail">
+GCPServiceAccountEmail
+</a>
+</em>
+</td>
+<td>
+<p>network is the Google Service Account email for the Cloud Network Config Controller
+that manages cloud-level network configurations (egress IPs, subnets).
+This GSA requires the following IAM roles:
+- roles/compute.instanceAdmin.v1 (Compute Instance Admin - for managing network interfaces)
+- roles/compute.networkUser (Compute Network User - for using subnets)
 See cmd/infra/gcp/iam-bindings.json for the authoritative role definitions.
 Format: service-account-name@project-id.iam.gserviceaccount.com</p>
 <p>This is a user-provided value referencing a pre-created Google Service Account.

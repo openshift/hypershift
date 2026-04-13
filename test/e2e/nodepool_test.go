@@ -470,7 +470,7 @@ func validateCAPIConditionBubblingDuringProvisioning(t *testing.T, ctx context.C
 	machinesUnreadyObserved := pollForConditionFalseWithAggregatedMessage(t, ctx, client, nodePool,
 		hyperv1.NodePoolAllMachinesReadyConditionType, "ready")
 	if !machinesUnreadyObserved {
-		t.Logf("AllMachinesReady was not observed as False with aggregated message during provisioning "+
+		t.Logf("AllMachinesReady was not observed as False with aggregated message during provisioning " +
 			"(CAPI provider may have set Ready condition before we could observe nil state)")
 	}
 }

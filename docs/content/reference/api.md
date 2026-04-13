@@ -7970,6 +7970,28 @@ Typically obtained from the output of <code>hypershift infra create gcp</code> w
 the required service accounts with appropriate IAM roles and WIF bindings.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>network</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.GCPServiceAccountEmail">
+GCPServiceAccountEmail
+</a>
+</em>
+</td>
+<td>
+<p>network is the Google Service Account email for the Cloud Network Config Controller
+that manages cloud-level network configurations (egress IPs, subnets).
+This GSA requires the following IAM roles:
+- roles/compute.instanceAdmin.v1 (Compute Instance Admin - for managing network interfaces)
+- roles/compute.networkUser (Compute Network User - for using subnets)
+See cmd/infra/gcp/iam-bindings.json for the authoritative role definitions.
+Format: service-account-name@project-id.iam.gserviceaccount.com</p>
+<p>This is a user-provided value referencing a pre-created Google Service Account.
+Typically obtained from the output of <code>hypershift infra create gcp</code> which creates
+the required service accounts with appropriate IAM roles and WIF bindings.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###GCPWorkloadIdentityConfig { #hypershift.openshift.io/v1beta1.GCPWorkloadIdentityConfig }

@@ -2431,7 +2431,7 @@ func (r *reconciler) reconcileOLM(ctx context.Context, hcp *hyperv1.HostedContro
 				olm.ReconcilePackageServerEndpoints(packageServerEndpoints, cpService.Spec.ClusterIP)
 				return nil
 			}); err != nil {
-				errs = append(errs, fmt.Errorf("failed to reconcile OLM packageserver service: %w", err))
+				errs = append(errs, fmt.Errorf("failed to reconcile OLM packageserver endpoints: %w", err))
 				packageServerBackendReady = false
 			}
 		}
