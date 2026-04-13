@@ -3504,9 +3504,11 @@ string
 <td>
 <em>(Optional)</em>
 <p>publisher is the name of the organization that created the image.
-It must be between 3 and 50 characters in length, and consist of only lowercase letters, numbers, and hyphens (-) and underscores (_).
+For example, &ldquo;azureopenshift&rdquo;, &ldquo;canonical&rdquo;, or &ldquo;redhat&rdquo;.
+It must be between 3 and 50 characters in length, and consist of only lowercase letters, numbers, hyphens (-), and underscores (_).
 It must start with a lowercase letter or a number.
-TODO: Can we explain where a user might find this value, or provide an example of one they might want to use</p>
+See <a href="https://learn.microsoft.com/en-us/azure/virtual-machines/linux/cli-ps-findimage">https://learn.microsoft.com/en-us/azure/virtual-machines/linux/cli-ps-findimage</a> for more
+information on Azure Marketplace image publishers.</p>
 </td>
 </tr>
 <tr>
@@ -3519,7 +3521,12 @@ string
 <td>
 <em>(Optional)</em>
 <p>offer specifies the name of a group of related images created by the publisher.
-TODO: What is the valid character set for this field? What about minimum and maximum lengths?</p>
+For example, &ldquo;RHEL&rdquo;, &ldquo;WindowsServer&rdquo;, or &ldquo;0001-com-ubuntu-server-jammy&rdquo;.
+The value must consist of only alphanumeric characters (a-z, A-Z, 0-9),
+hyphens (-), underscores (_), and periods (.).
+It must start with an alphanumeric character.
+See <a href="https://learn.microsoft.com/en-us/azure/virtual-machines/linux/cli-ps-findimage">https://learn.microsoft.com/en-us/azure/virtual-machines/linux/cli-ps-findimage</a> for more
+information on Azure Marketplace image offers.</p>
 </td>
 </tr>
 <tr>
@@ -3533,8 +3540,10 @@ string
 <em>(Optional)</em>
 <p>sku specifies an instance of an offer, such as a major release of a distribution.
 For example, 22<em>04-lts-gen2, 8-lvm-gen2.
-The value must consist only of lowercase letters, numbers, and hyphens (-) and underscores (</em>).
-TODO: What about length limits?</p>
+The value must be between 1 and 255 characters in length, and consist of only lowercase
+letters, numbers, hyphens (-), and underscores (</em>).
+See <a href="https://learn.microsoft.com/en-us/azure/virtual-machines/linux/cli-ps-findimage">https://learn.microsoft.com/en-us/azure/virtual-machines/linux/cli-ps-findimage</a> for more
+information on Azure Marketplace image SKUs.</p>
 </td>
 </tr>
 <tr>
@@ -4553,7 +4562,12 @@ string
 <td>
 <em>(Optional)</em>
 <p>imageID is the Azure resource ID of a VHD image to use to boot the Azure VMs from.
-TODO: What is the valid character set for this field? What about minimum and maximum lengths?</p>
+The expected format is an Azure resource ID string. This can be a managed image or an
+Azure Compute Gallery image version, for example:
+/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Compute/images/{imageName}
+/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Compute/galleries/{galleryName}/images/{imageDefinitionName}/versions/{imageVersionName}
+See <a href="https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/resource-name-rules">https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/resource-name-rules</a> for
+Azure resource naming rules and restrictions.</p>
 </td>
 </tr>
 <tr>

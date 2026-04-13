@@ -171,7 +171,7 @@ type AzureMarketplaceImage struct {
 	ImageGeneration *AzureVMImageGeneration `json:"imageGeneration,omitempty"`
 
 	// publisher is the name of the organization that created the image.
-	// For example, "azureopenshift", "Canonical", or "RedHat".
+	// For example, "azureopenshift", "canonical", or "redhat".
 	// It must be between 3 and 50 characters in length, and consist of only lowercase letters, numbers, hyphens (-), and underscores (_).
 	// It must start with a lowercase letter or a number.
 	// See https://learn.microsoft.com/en-us/azure/virtual-machines/linux/cli-ps-findimage for more
