@@ -42,9 +42,8 @@ spec:
             description: spec is the specification for the AWSEndpointService.
             properties:
               networkLoadBalancerName:
-                description: |-
-                  networkLoadBalancerName is the name of the NLB for which an Endpoint Service should be configured
-                  NetworkLoadBalancerName is the name of the network load balancer.
+                description: networkLoadBalancerName is the name of the NLB for which
+                  an Endpoint Service should be configured.
                 maxLength: 255
                 type: string
               resourceTags:
@@ -181,9 +180,7 @@ spec:
                 maxLength: 255
                 type: string
               securityGroupID:
-                description: |-
-                  securityGroupID is the ID for the VPC endpoint SecurityGroup
-                  SecurityGroupID is the ID of the security group.
+                description: securityGroupID is the ID for the VPC endpoint SecurityGroup.
                 maxLength: 255
                 type: string
             type: object

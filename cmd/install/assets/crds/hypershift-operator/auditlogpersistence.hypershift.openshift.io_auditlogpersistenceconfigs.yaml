@@ -47,12 +47,12 @@ spec:
               AuditLogPersistenceConfig
             properties:
               auditLog:
-                description: AuditLog defines audit log settings that will be applied
+                description: auditLog defines audit log settings that will be applied
                   to kube-apiserver.
                 properties:
                   maxBackup:
                     description: |-
-                      MaxBackup is the maximum number of old audit log files to retain.
+                      maxBackup is the maximum number of old audit log files to retain.
                       This corresponds to the --audit-log-maxbackup kube-apiserver argument.
                       If not specified, defaults to 10.
                     format: int32
@@ -60,7 +60,7 @@ spec:
                     type: integer
                   maxSize:
                     description: |-
-                      MaxSize is the maximum size in megabytes of the audit log file before it gets rotated.
+                      maxSize is the maximum size in megabytes of the audit log file before it gets rotated.
                       This corresponds to the --audit-log-maxsize kube-apiserver argument.
                       If not specified, defaults to 200.
                     format: int32
@@ -69,21 +69,21 @@ spec:
                 type: object
               enabled:
                 description: |-
-                  Enabled enables or disables the audit log persistence feature globally.
+                  enabled enables or disables the audit log persistence feature globally.
                   When disabled, no PVCs will be created and no snapshots will be taken.
                   Defaults to false.
                 type: boolean
               snapshots:
-                description: Snapshots defines snapshot configuration for crash recovery.
+                description: snapshots defines snapshot configuration for crash recovery.
                 properties:
                   enabled:
                     description: |-
-                      Enabled enables or disables automatic snapshot creation on pod crashes.
+                      enabled enables or disables automatic snapshot creation on pod crashes.
                       Defaults to false.
                     type: boolean
                   minInterval:
                     description: |-
-                      MinInterval is the minimum time interval between snapshots for the same pod.
+                      minInterval is the minimum time interval between snapshots for the same pod.
                       This prevents creating too many snapshots in rapid succession.
                       Must be a valid duration string (e.g., "1h", "30m").
                       Defaults to "1h".
@@ -91,7 +91,7 @@ spec:
                     type: string
                   namespaceRetentionCount:
                     description: |-
-                      NamespaceRetentionCount is the maximum total number of snapshots to retain per namespace.
+                      namespaceRetentionCount is the maximum total number of snapshots to retain per namespace.
                       When this limit is reached, the oldest snapshot in the namespace will be deleted.
                       If not specified, defaults to 50.
                     format: int32
@@ -99,7 +99,7 @@ spec:
                     type: integer
                   perPodRetentionCount:
                     description: |-
-                      PerPodRetentionCount is the maximum number of snapshots to retain per PVC.
+                      perPodRetentionCount is the maximum number of snapshots to retain per PVC.
                       When this limit is reached, the oldest snapshot for that PVC will be deleted.
                       If not specified, defaults to 10.
                     format: int32
@@ -107,27 +107,27 @@ spec:
                     type: integer
                   volumeSnapshotClassName:
                     description: |-
-                      VolumeSnapshotClassName is the name of the VolumeSnapshotClass to use for creating snapshots.
+                      volumeSnapshotClassName is the name of the VolumeSnapshotClass to use for creating snapshots.
                       If not specified, the system will attempt to match the PVC's StorageClass provisioner
                       to an appropriate VolumeSnapshotClass.
                     type: string
                 type: object
               storage:
-                description: Storage defines the PVC configuration for audit log storage.
+                description: storage defines the PVC configuration for audit log storage.
                 properties:
                   size:
                     anyOf:
                     - type: integer
                     - type: string
                     description: |-
-                      Size is the size of each PVC created for kube-apiserver pods.
+                      size is the size of each PVC created for kube-apiserver pods.
                       Must be a valid Kubernetes quantity (e.g., "5Gi", "10Gi").
                       Defaults to "5Gi".
                     pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                     x-kubernetes-int-or-string: true
                   storageClassName:
                     description: |-
-                      StorageClassName is the name of the StorageClass to use for PVCs.
+                      storageClassName is the name of the StorageClass to use for PVCs.
                       If not specified, the default storage class will be used.
                     type: string
                 type: object
@@ -137,7 +137,7 @@ spec:
               of AuditLogPersistenceConfig
             properties:
               conditions:
-                description: Conditions represent the latest available observations
+                description: conditions represent the latest available observations
                   of the configuration's state.
                 items:
                   description: Condition contains details for one aspect of the current
