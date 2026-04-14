@@ -109,6 +109,20 @@ type operand struct {
 	ReleaseImageKey string
 }
 
+// platformHasCloudNetworkConfigController returns true for platforms where the
+// cluster-network-operator deploys a cloud-network-config-controller.
+// This controller manages cloud-specific network configurations (e.g. EgressIP)
+// and requires cloud API credentials. Non-cloud platforms (KubeVirt, Agent, etc.)
+// do not have this deployment.
+func platformHasCloudNetworkConfigController(platformType hyperv1.PlatformType) bool {
+	switch platformType {
+	case hyperv1.AWSPlatform, hyperv1.AzurePlatform, hyperv1.GCPPlatform, hyperv1.OpenStackPlatform:
+		return true
+	default:
+		return false
+	}
+}
+
 func checkOperandsRolloutStatus(cpContext component.WorkloadContext) (bool, error) {
 	var operandsDeploymentsList []operand
 
@@ -125,11 +139,17 @@ func checkOperandsRolloutStatus(cpContext component.WorkloadContext) (bool, erro
 				ContainerName:   "approver",
 				ReleaseImageKey: "ovn-kubernetes",
 			},
-			{
+		}
+
+		// cloud-network-config-controller is only deployed by CNO on cloud platforms
+		// that have cloud APIs for network management (AWS, Azure, GCP, OpenStack).
+		// Non-cloud platforms like KubeVirt, Agent, None, etc. do not have this deployment.
+		if platformHasCloudNetworkConfigController(cpContext.HCP.Spec.Platform.Type) {
+			operandsDeploymentsList = append(operandsDeploymentsList, operand{
 				DeploymentName:  "cloud-network-config-controller",
 				ContainerName:   "controller",
 				ReleaseImageKey: "cloud-network-config-controller",
-			},
+			})
 		}
 	}
 
