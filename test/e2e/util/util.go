@@ -649,9 +649,84 @@ func WaitForDataPlaneRollout(t testing.TB, ctx context.Context, client crclient.
 	)
 }
 
-// WaitForImageRollout is a deprecated alias for WaitForDataPlaneRollout.
-// Deprecated: Use WaitForDataPlaneRollout instead.
-func WaitForImageRollout(t testing.TB, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+// WaitForControlPlaneAvailable waits for the HostedCluster Available condition to
+// transition to True and measures the control plane rollout time. The rollout time
+// is the delta between the HostedCluster's creationTimestamp and the Available
+// condition's lastTransitionTime. This metric enables establishing SLOs for HCP
+// readiness and comparing performance between ROSA HCP and ARO HCP deployments.
+func WaitForControlPlaneAvailable(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	t.Helper()
+	EventuallyObject(t, ctx, fmt.Sprintf("HostedCluster %s/%s control plane to become available", hostedCluster.Namespace, hostedCluster.Name),
+		func(ctx context.Context) (*hyperv1.HostedCluster, error) {
+			hc := &hyperv1.HostedCluster{}
+			err := client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hc)
+			return hc, err
+		},
+		[]Predicate[*hyperv1.HostedCluster]{
+			ConditionPredicate[*hyperv1.HostedCluster](Condition{
+				Type:   string(hyperv1.HostedClusterAvailable),
+				Status: metav1.ConditionTrue,
+			}),
+		},
+		WithTimeout(30*time.Minute),
+		WithInterval(10*time.Second),
+	)
+
+	// Fetch the latest HC to get accurate condition timestamps.
+	hc := &hyperv1.HostedCluster{}
+	if err := client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hc); err != nil {
+		t.Logf("WARNING: failed to fetch HostedCluster for control plane rollout metric: %v", err)
+		return
+	}
+
+	LogControlPlaneRolloutMetric(t, hc)
+}
+
+// LogControlPlaneRolloutMetric computes and logs the control plane rollout duration
+// from the HostedCluster's creationTimestamp to the Available condition's lastTransitionTime.
+// This metric is informational and does not fail the test; SLO enforcement can be added later.
+func LogControlPlaneRolloutMetric(t *testing.T, hc *hyperv1.HostedCluster) {
+	t.Helper()
+
+	availableCondition := meta.FindStatusCondition(hc.Status.Conditions, string(hyperv1.HostedClusterAvailable))
+	if availableCondition == nil || availableCondition.Status != metav1.ConditionTrue {
+		t.Logf("WARNING: HostedCluster %s/%s Available condition not found or not True, skipping control plane rollout metric",
+			hc.Namespace, hc.Name)
+		return
+	}
+
+	creationTime := hc.CreationTimestamp.Time
+	// NOTE: LastTransitionTime records the last time the condition status changed.
+	// If the Available condition flaps (True→False→True), this timestamp reflects
+	// the most recent transition, which may overstate the initial rollout duration.
+	availableTime := availableCondition.LastTransitionTime.Time
+	rolloutDuration := availableTime.Sub(creationTime)
+
+	t.Logf("METRIC [ControlPlaneRolloutTime] HostedCluster=%s/%s Platform=%s ReleaseImage=%s Duration=%s CreationTimestamp=%s AvailableTimestamp=%s",
+		hc.Namespace, hc.Name,
+		hc.Spec.Platform.Type,
+		hc.Spec.Release.Image,
+		rolloutDuration.Round(time.Second),
+		creationTime.Format(time.RFC3339),
+		availableTime.Format(time.RFC3339),
+	)
+}
+
+// WaitForImageRollout waits for the control plane to become available and then for the
+// full data plane (CVO) rollout to complete. It first independently measures the control
+// plane rollout time, then waits for the complete cluster rollout including nodes and CVO.
+func WaitForImageRollout(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	t.Helper()
+	// Wait for the control plane to become available and measure the rollout time.
+	WaitForControlPlaneAvailable(t, ctx, client, hostedCluster)
+
+	// For clusters running 4.20+, also verify that individual ControlPlaneComponent
+	// resources report RolloutComplete=True. This provides a belt-and-suspenders check
+	// on the control plane rollout using the granular per-component status.
+	if IsGreaterThanOrEqualTo(Version420) {
+		WaitForControlPlaneComponentRollout(t, ctx, client, hostedCluster, "")
+	}
+
 	WaitForDataPlaneRollout(t, ctx, client, hostedCluster)
 }
 
