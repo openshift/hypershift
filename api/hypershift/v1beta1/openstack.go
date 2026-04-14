@@ -228,7 +228,7 @@ type RouterFilter struct {
 	// +kubebuilder:validation:MaxLength=255
 	ProjectID string `json:"projectID,omitempty"`
 
-	// FilterByNeutronTags specifies tags to filter by.
+	// filterByNeutronTags specifies tags to filter by.
 	//
 	// +optional
 	FilterByNeutronTags `json:",inline"`
@@ -272,7 +272,7 @@ type NetworkFilter struct {
 	// +kubebuilder:validation:MaxLength=255
 	ProjectID string `json:"projectID,omitempty"`
 
-	// FilterByNeutronTags specifies tags to filter by.
+	// filterByNeutronTags specifies tags to filter by.
 	//
 	// +optional
 	FilterByNeutronTags `json:",inline"`
@@ -388,7 +388,7 @@ type SubnetFilter struct {
 	// +kubebuilder:validation:MaxLength=255
 	IPv6RAMode string `json:"ipv6RAMode,omitempty"`
 
-	// FilterByNeutronTags specifies tags to filter by.
+	// filterByNeutronTags specifies tags to filter by.
 	//
 	// +optional
 	FilterByNeutronTags `json:",inline"`

@@ -31,9 +31,8 @@ const (
 
 // AWSEndpointServiceSpec defines the desired state of AWSEndpointService
 type AWSEndpointServiceSpec struct {
-	// networkLoadBalancerName is the name of the NLB for which an Endpoint Service should be configured
+	// networkLoadBalancerName is the name of the NLB for which an Endpoint Service should be configured.
 	// +kubebuilder:validation:MaxLength=255
-	// NetworkLoadBalancerName is the name of the network load balancer.
 	// +required
 	NetworkLoadBalancerName string `json:"networkLoadBalancerName"`
 
@@ -87,9 +86,8 @@ type AWSEndpointServiceStatus struct {
 	// +kubebuilder:validation:MaxLength=255
 	DNSZoneID string `json:"dnsZoneID,omitempty"`
 
-	// securityGroupID is the ID for the VPC endpoint SecurityGroup
+	// securityGroupID is the ID for the VPC endpoint SecurityGroup.
 	// +kubebuilder:validation:MaxLength=255
-	// SecurityGroupID is the ID of the security group.
 	// +optional
 	SecurityGroupID string `json:"securityGroupID,omitempty"`
 }
@@ -119,9 +117,8 @@ type AWSEndpointServiceList struct {
 	// metadata is standard list metadata.
 	// +optional
 	metav1.ListMeta `json:"metadata,omitempty"`
-	// items is a list of AWSEndpointService.
-	// +kubebuilder:validation:MaxItems=100
 	// items is the list of AWSEndpointServices.
+	// +kubebuilder:validation:MaxItems=100
 	// +required
 	Items []AWSEndpointService `json:"items"`
 }
