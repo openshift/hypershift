@@ -56,7 +56,7 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 		if cpContext.HCP.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
 			noProxy := []string{
 				manifests.KubeAPIServerService("").Name, config.AuditWebhookService,
-				"iam.cloud.ibm.com", "iam.test.cloud.ibm.com",
+				"iam.cloud.ibm.com", "iam.test.cloud.ibm.com", "eu-fr2-ha.iam.cloud.ibm.com",
 			}
 			util.UpsertEnvVar(c, corev1.EnvVar{
 				Name:  "NO_PROXY",
