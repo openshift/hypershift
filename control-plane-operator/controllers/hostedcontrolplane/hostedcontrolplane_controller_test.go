@@ -2629,3 +2629,211 @@ func TestEtcdStatefulSetCondition(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateConfigAndClusterCapabilities(t *testing.T) {
+	testCases := []struct {
+		name           string
+		hcp            *hyperv1.HostedControlPlane
+		caps           capabilities.CapabiltyChecker
+		setup          func(t *testing.T)
+		expectedReason string
+		expectError    bool
+		errorContains  string
+	}{
+		{
+			name: "When all validation passes it should return no error and empty reason",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.APIServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.LoadBalancer,
+							},
+						},
+					},
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
+				},
+			},
+			caps:           &fakecapabilities.FakeSupportAllCapabilities{},
+			expectedReason: "",
+			expectError:    false,
+		},
+		{
+			name: "When a Route service is configured but cluster lacks Route capability it should return InsufficientClusterCapabilities",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.APIServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.Route,
+							},
+						},
+					},
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
+				},
+			},
+			caps:           fakecapabilities.NewSupportAllExcept(capabilities.CapabilityRoute),
+			expectedReason: hyperv1.InsufficientClusterCapabilitiesReason,
+			expectError:    true,
+			errorContains:  "cluster does not support Routes",
+		},
+		{
+			name: "When multiple Route services are configured but cluster lacks Route capability it should return InsufficientClusterCapabilities for the first",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.Konnectivity,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.Route,
+							},
+						},
+						{
+							Service: hyperv1.OAuthServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.Route,
+							},
+						},
+					},
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
+				},
+			},
+			caps:           fakecapabilities.NewSupportAllExcept(capabilities.CapabilityRoute),
+			expectedReason: hyperv1.InsufficientClusterCapabilitiesReason,
+			expectError:    true,
+			errorContains:  "Konnectivity",
+		},
+		{
+			name: "When Route services are configured and cluster has Route capability it should return no error",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.APIServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.Route,
+							},
+						},
+					},
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
+				},
+			},
+			caps:           &fakecapabilities.FakeSupportAllCapabilities{},
+			expectedReason: "",
+			expectError:    false,
+		},
+		{
+			name: "When Authentication spec has an unknown type it should return InvalidConfiguration",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "test-ns",
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Services: []hyperv1.ServicePublishingStrategyMapping{},
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
+					Configuration: &hyperv1.ClusterConfiguration{
+						Authentication: &configv1.AuthenticationSpec{
+							Type: "InvalidAuthType",
+						},
+					},
+				},
+			},
+			caps:           &fakecapabilities.FakeSupportAllCapabilities{},
+			expectedReason: hyperv1.InvalidConfigurationReason,
+			expectError:    true,
+			errorContains:  "unknown type",
+		},
+		{
+			name: "When no services are configured it should return no error",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Services: []hyperv1.ServicePublishingStrategyMapping{},
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
+				},
+			},
+			caps:           &fakecapabilities.FakeSupportAllCapabilities{},
+			expectedReason: "",
+			expectError:    false,
+		},
+		{
+			name: "When platform is Azure but not ARO HCP it should skip Azure validation and return no error",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Services: []hyperv1.ServicePublishingStrategyMapping{},
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+					},
+				},
+			},
+			caps:           &fakecapabilities.FakeSupportAllCapabilities{},
+			expectedReason: "",
+			expectError:    false,
+		},
+		{
+			name:  "When platform is Azure ARO HCP with invalid cloud name it should return InvalidConfiguration",
+			setup: azureutil.SetAsAroHCPTest,
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Services: []hyperv1.ServicePublishingStrategyMapping{},
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							Cloud: "InvalidCloud",
+							AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+								ManagedIdentities: &hyperv1.AzureResourceManagedIdentities{},
+							},
+						},
+					},
+				},
+			},
+			caps:           &fakecapabilities.FakeSupportAllCapabilities{},
+			expectedReason: hyperv1.InvalidConfigurationReason,
+			expectError:    true,
+			errorContains:  "cloud name in the HostedControlPlane spec is valid",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			if tc.setup != nil {
+				tc.setup(t)
+			}
+
+			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
+
+			r := &HostedControlPlaneReconciler{
+				Client:                        fakeClient,
+				ManagementClusterCapabilities: tc.caps,
+			}
+
+			reason, err := r.validateConfigAndClusterCapabilities(t.Context(), tc.hcp)
+
+			if tc.expectError {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(reason).To(Equal(tc.expectedReason))
+				if tc.errorContains != "" {
+					g.Expect(err.Error()).To(ContainSubstring(tc.errorContains))
+				}
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(reason).To(BeEmpty())
+			}
+		})
+	}
+}

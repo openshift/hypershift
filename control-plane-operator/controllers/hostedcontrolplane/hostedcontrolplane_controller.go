@@ -458,10 +458,10 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 			Type:               string(hyperv1.ValidHostedControlPlaneConfiguration),
 			ObservedGeneration: hostedControlPlane.Generation,
 		}
-		if err := r.validateConfigAndClusterCapabilities(ctx, hostedControlPlane); err != nil {
+		if reason, err := r.validateConfigAndClusterCapabilities(ctx, hostedControlPlane); err != nil {
 			condition.Status = metav1.ConditionFalse
 			condition.Message = err.Error()
-			condition.Reason = hyperv1.InsufficientClusterCapabilitiesReason
+			condition.Reason = reason
 		} else {
 			condition.Status = metav1.ConditionTrue
 			condition.Message = "Configuration passes validation"
@@ -1015,26 +1015,30 @@ func (r *HostedControlPlaneReconciler) controlPlaneComponentsAvailable(ctx conte
 	return "", nil
 }
 
-func (r *HostedControlPlaneReconciler) validateConfigAndClusterCapabilities(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+// validateConfigAndClusterCapabilities validates the HostedControlPlane configuration and cluster capabilities.
+// It returns a reason string suitable for use in a condition and an error if validation fails.
+// The reason distinguishes between cluster capability issues (e.g., missing Route support) and
+// configuration errors (e.g., invalid Azure credentials, authentication misconfiguration).
+func (r *HostedControlPlaneReconciler) validateConfigAndClusterCapabilities(ctx context.Context, hcp *hyperv1.HostedControlPlane) (string, error) {
 	for _, svc := range hcp.Spec.Services {
 		if svc.Type == hyperv1.Route && !r.ManagementClusterCapabilities.Has(capabilities.CapabilityRoute) {
-			return fmt.Errorf("cluster does not support Routes, but service %q is exposed via a Route", svc.Service)
+			return hyperv1.InsufficientClusterCapabilitiesReason, fmt.Errorf("cluster does not support Routes, but service %q is exposed via a Route", svc.Service)
 		}
 	}
 
 	if hcp.Spec.Platform.Type == hyperv1.AzurePlatform && hyperazureutil.IsAroHCP() {
 		if err := r.verifyResourceGroupLocationsMatch(ctx, hcp); err != nil {
-			return err
+			return hyperv1.InvalidConfigurationReason, err
 		}
 	}
 
 	if hcp.Spec.Configuration != nil && hcp.Spec.Configuration.Authentication != nil {
 		if err := validations.ValidateAuthenticationSpec(ctx, r.Client, hcp.Spec.Configuration.Authentication, hcp.Namespace, []string{hcp.Spec.IssuerURL}); err != nil {
-			return err
+			return hyperv1.InvalidConfigurationReason, err
 		}
 	}
 
-	return nil
+	return "", nil
 }
 
 func (r *HostedControlPlaneReconciler) LookupReleaseImage(ctx context.Context, hcp *hyperv1.HostedControlPlane) (*releaseinfo.ReleaseImage, error) {
@@ -3078,11 +3082,11 @@ func (r *HostedControlPlaneReconciler) verifyResourceGroupLocationsMatch(ctx con
 		certPath := config.ManagedAzureCertificatePath + hcp.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.ControlPlaneOperator.CredentialsSecretName
 		cloudConfig, err := hyperazureutil.GetAzureCloudConfiguration(hcp.Spec.Platform.Azure.Cloud)
 		if err != nil {
-			return fmt.Errorf("failed to get Azure cloud configuration: %v", err)
+			return fmt.Errorf("failed to get Azure cloud configuration for cloud %q: ensure the cloud name in the HostedControlPlane spec is valid: %v", hcp.Spec.Platform.Azure.Cloud, err)
 		}
 		creds, err = dataplane.NewUserAssignedIdentityCredential(ctx, certPath, dataplane.WithClientOpts(azcore.ClientOptions{Cloud: cloudConfig}), dataplane.WithLogger(&log))
 		if err != nil {
-			return fmt.Errorf("failed to create azure creds to verify resource group locations: %v", err)
+			return fmt.Errorf("failed to create Azure credentials from path %q: verify the credential secret name is set correctly and the credential file is mounted as a file (not a directory) at the expected path: %v", certPath, err)
 		}
 
 		r.cpoAzureCredentialsLoaded.Store(key, creds)
