@@ -28,6 +28,7 @@ func testScheme() *runtime.Scheme {
 	return s
 }
 
+//nolint:unparam // test helper parameter kept for readability
 func testCPContext(t *testing.T, checker GVKAccessChecker, objects ...client.Object) ControlPlaneContext {
 	t.Helper()
 	return ControlPlaneContext{

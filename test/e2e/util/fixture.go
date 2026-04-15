@@ -41,7 +41,9 @@ import (
 // know or care about in advance.
 //
 // TODO: Mutates the input, instead should use a copy of the input options
-func createClusterOpts(ctx context.Context, client crclient.Client, hc *hyperv1.HostedCluster, opts *PlatformAgnosticOptions) (*PlatformAgnosticOptions, error) {
+//
+//nolint:unparam // return type is part of the function contract
+func createClusterOpts(_ context.Context, _ crclient.Client, hc *hyperv1.HostedCluster, opts *PlatformAgnosticOptions) (*PlatformAgnosticOptions, error) {
 	opts.Namespace = hc.Namespace
 	opts.Name = hc.Name
 

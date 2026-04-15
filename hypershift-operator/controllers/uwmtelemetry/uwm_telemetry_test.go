@@ -85,6 +85,7 @@ matches:
 
 func TestReconcileUWMConfigContent(t *testing.T) {
 	// helper to locate the telemetry remote write entry and validate core fields
+	//nolint:unparam // return type is part of the function contract
 	validateTelemetryRemoteWrite := func(g *WithT, parsed map[string]interface{}) map[string]interface{} {
 		remoteWrite, found, err := unstructured.NestedSlice(parsed, "prometheus", "remoteWrite")
 		g.Expect(err).ToNot(HaveOccurred())

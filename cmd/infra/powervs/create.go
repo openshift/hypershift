@@ -1213,7 +1213,7 @@ func isDHCPServerActive(logger logr.Logger, client *instance.IBMPIDhcpClient, dh
 }
 
 // createPowerVSDhcp creates a new dhcp server in powervs
-func (infra *Infra) createPowerVSDhcp(ctx context.Context, logger logr.Logger, options *CreateInfraOptions, client *instance.IBMPIDhcpClient) (*models.DHCPServerDetail, error) {
+func (infra *Infra) createPowerVSDhcp(ctx context.Context, logger logr.Logger, _ *CreateInfraOptions, client *instance.IBMPIDhcpClient) (*models.DHCPServerDetail, error) {
 	startTime := time.Now()
 	var dhcpServer *models.DHCPServerDetail
 

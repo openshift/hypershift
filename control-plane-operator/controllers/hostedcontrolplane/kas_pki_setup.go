@@ -21,7 +21,7 @@ func (r *HostedControlPlaneReconciler) setupKASClientSigners(
 	hcp *hyperv1.HostedControlPlane,
 	p *pki.PKIParams,
 	createOrUpdate upsert.CreateOrUpdateFN,
-	rootCASecret *corev1.Secret,
+	_ *corev1.Secret,
 	additionalClientCAs ...*corev1.ConfigMap,
 ) error {
 	reconcileSigner := func(s *corev1.Secret, reconciler signerReconciler) (*corev1.Secret, error) {
@@ -35,6 +35,7 @@ func (r *HostedControlPlaneReconciler) setupKASClientSigners(
 		return s, nil
 	}
 
+	//nolint:unparam // return type is part of the function contract
 	reconcileSub := func(target, ca *corev1.Secret, reconciler subReconciler) (*corev1.Secret, error) {
 		applyFunc := func() error {
 			return reconciler(target, ca, p.OwnerRef)

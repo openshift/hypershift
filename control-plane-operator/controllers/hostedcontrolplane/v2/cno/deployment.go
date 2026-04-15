@@ -69,6 +69,7 @@ if [[ -n $sc ]]; then kubectl --kubeconfig $kc delete --ignore-not-found validat
 	return nil
 }
 
+//nolint:unparam // return type is part of the function contract
 func buildCNOEnvVars(cpContext component.WorkloadContext) ([]corev1.EnvVar, error) {
 	hcp := cpContext.HCP
 	releaseImageProvider := cpContext.ReleaseImageProvider

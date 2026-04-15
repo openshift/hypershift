@@ -1628,6 +1628,7 @@ region = us-east-1
 	}
 }
 
+//nolint:unparam // test helper parameter kept for readability
 func makeKubeletConfigConfigMap(name, namespace, data string) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{

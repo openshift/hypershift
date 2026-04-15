@@ -2234,6 +2234,8 @@ func (r *reconciler) reconcileOpenStackCredentialsSecret(ctx context.Context, pl
 // reconcileOperatorHub gets the OperatorHubConfig from the HCP, for now the controller only reconcile over the DisableAllDefaultSources field and only once.
 // After that the HCCO checks the OperatorHub object in the HC to manage the OLM resources.
 // TODO (jparrill): Include in the reconciliation the OperatorHub.Sources to disable only the selected sources.
+//
+//nolint:unparam // return type is part of the function contract
 func (r *reconciler) reconcileOperatorHub(ctx context.Context, operatorHub *configv1.OperatorHub, hcp *hyperv1.HostedControlPlane) []error {
 	log := ctrl.LoggerFrom(ctx)
 	log.Info("Reconciling HCP OperatorHub config")
@@ -3289,6 +3291,8 @@ func isConnectionError(err error) bool {
 // cleanupResources generically deletes resources of a given type using an optional filter
 // function. The result is a boolean indicating whether resources were found that match
 // the filter and an error if one occurred.
+//
+//nolint:unparam // return type is part of the function contract
 func cleanupResources(ctx context.Context, c client.Client, list client.ObjectList, filter func(client.Object) bool, force bool) (bool, error) {
 	log := ctrl.LoggerFrom(ctx)
 	if err := c.List(ctx, list); err != nil {

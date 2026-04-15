@@ -1404,6 +1404,7 @@ var testFeatureGateYAML string
 //go:embed testdata/featuregate-generator/feature-gate-tech-preview-no-upgrade.yaml
 var testFeatureGateTechPreviewNoUpgradeYAML string
 
+//nolint:unparam // return type is part of the function contract
 func componentsFakeObjects(namespace string, featureSet configv1.FeatureSet) ([]client.Object, error) {
 	rootCA := manifests.RootCASecret(namespace)
 	rootCA.Data = map[string][]byte{

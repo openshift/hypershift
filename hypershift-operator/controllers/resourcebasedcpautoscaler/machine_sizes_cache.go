@@ -103,6 +103,8 @@ func sizeMemoryCapacityAvailable(csc *schedulingv1alpha1.ClusterSizingConfigurat
 
 // updateSizesFromConfig populates the cache using capacity information directly
 // from the ClusterSizingConfiguration.
+//
+//nolint:unparam // return type is part of the function contract
 func (s *machineSizesCache) updateSizesFromConfig(csc *schedulingv1alpha1.ClusterSizingConfiguration) error {
 	sizes := map[string]machineResources{}
 	for _, sizeConfig := range csc.Spec.Sizes {

@@ -495,7 +495,7 @@ func (r *Reconciler) reconcileHCPRouterServices(ctx context.Context, hcp *hyperv
 	return nil
 }
 
-func reconcileAROPrivateRouterService(svc *corev1.Service, hcp *hyperv1.HostedControlPlane) error {
+func reconcileAROPrivateRouterService(svc *corev1.Service, _ *hyperv1.HostedControlPlane) error {
 	svc.Labels = map[string]string{"app": "private-router"}
 	svc.Spec.Type = corev1.ServiceTypeClusterIP
 	svc.Spec.Selector = map[string]string{"app": "private-router"}

@@ -130,6 +130,7 @@ func newHostedControlPlane() *hyperv1.HostedControlPlane {
 	}
 }
 
+//nolint:unparam // test helper parameter kept for readability
 func newEtcdStatefulSet(ready int32, replicas int32) *appsv1.StatefulSet {
 	return &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{

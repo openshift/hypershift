@@ -355,7 +355,7 @@ func (a Azure) DeleteCredentials(ctx context.Context, c client.Client, hcluster 
 	return nil
 }
 
-func reconcileAzureCluster(azureCluster *capiazure.AzureCluster, hcluster *hyperv1.HostedCluster, apiEndpoint hyperv1.APIEndpoint, azureClusterIdentity *capiazure.AzureClusterIdentity, controlPlaneNamespace string) error {
+func reconcileAzureCluster(azureCluster *capiazure.AzureCluster, hcluster *hyperv1.HostedCluster, apiEndpoint hyperv1.APIEndpoint, azureClusterIdentity *capiazure.AzureClusterIdentity, _ string) error {
 	if azureCluster.Annotations == nil {
 		azureCluster.Annotations = map[string]string{}
 	}
@@ -393,7 +393,7 @@ func reconcileAzureCluster(azureCluster *capiazure.AzureCluster, hcluster *hyper
 // resource type can be found here: https://capz.sigs.k8s.io/topics/identities.
 //
 // For non-managed Azure deployments, the AzureClusterIdentity is created using WorkloadIdentity.
-func reconcileAzureClusterIdentity(hc *hyperv1.HostedCluster, azureClusterIdentity *capiazure.AzureClusterIdentity, controlPlaneNamespace string, payloadVersion *semver.Version) error {
+func reconcileAzureClusterIdentity(hc *hyperv1.HostedCluster, azureClusterIdentity *capiazure.AzureClusterIdentity, controlPlaneNamespace string, _ *semver.Version) error {
 	if azureutil.IsAroHCP() {
 		azureCloudType, err := parseCloudType(hc.Spec.Platform.Azure.Cloud)
 		if err != nil {

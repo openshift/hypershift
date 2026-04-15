@@ -1203,6 +1203,7 @@ func assertDV(g Gomega, dvs []v1beta1.DataVolume, expectedDVNamePrefix string, b
 
 type nodePoolOption func(kvNodePool *hyperv1.KubevirtNodePoolPlatform)
 
+//nolint:unparam // test helper parameter kept for readability
 func memoryNPOption(memory string) nodePoolOption {
 	return func(kvNodePool *hyperv1.KubevirtNodePoolPlatform) {
 		if kvNodePool.Compute == nil {
@@ -1214,6 +1215,7 @@ func memoryNPOption(memory string) nodePoolOption {
 	}
 }
 
+//nolint:unparam // test helper parameter kept for readability
 func coresNPOption(cores uint32) nodePoolOption {
 	return func(kvNodePool *hyperv1.KubevirtNodePoolPlatform) {
 		if kvNodePool.Compute == nil {
@@ -1235,6 +1237,7 @@ func qosClassGuaranteedNPOption() nodePoolOption {
 	}
 }
 
+//nolint:unparam // test helper parameter kept for readability
 func imageNPOption(image string) nodePoolOption {
 	return func(kvNodePool *hyperv1.KubevirtNodePoolPlatform) {
 		if kvNodePool.RootVolume == nil {
@@ -1247,6 +1250,7 @@ func imageNPOption(image string) nodePoolOption {
 	}
 }
 
+//nolint:unparam // test helper parameter kept for readability
 func volumeNPOption(volumeSize string) nodePoolOption {
 	volumeSizeQuantity := apiresource.MustParse(volumeSize)
 
@@ -1307,6 +1311,7 @@ func cpuTmpltOpt(cores uint32) nodeTemplateOption {
 	}
 }
 
+//nolint:unparam // test helper parameter kept for readability
 func memoryTmpltOpt(memory string) nodeTemplateOption {
 	guestQuantity := apiresource.MustParse(memory)
 
@@ -1315,6 +1320,7 @@ func memoryTmpltOpt(memory string) nodeTemplateOption {
 	}
 }
 
+//nolint:unparam // test helper parameter kept for readability
 func storageTmpltOpt(volumeSize string) nodeTemplateOption {
 	storage := &v1beta1.StorageSpec{
 		Resources: corev1.VolumeResourceRequirements{

@@ -1163,7 +1163,7 @@ func (c *CAPI) spotMachineHealthCheck() *capiv1.MachineHealthCheck {
 
 // reconcileSpotMachineHealthCheck reconciles a MachineHealthCheck specifically for spot instances.
 // This MHC selects machines with the interruptibleInstanceLabel.
-func (c *CAPI) reconcileSpotMachineHealthCheck(ctx context.Context, mhc *capiv1.MachineHealthCheck) error {
+func (c *CAPI) reconcileSpotMachineHealthCheck(_ context.Context, mhc *capiv1.MachineHealthCheck) error {
 	// Spot instances need shorter timeouts for faster response to interruption
 	maxUnhealthy := intstr.FromString("100%")
 	timeOut := 8 * time.Minute

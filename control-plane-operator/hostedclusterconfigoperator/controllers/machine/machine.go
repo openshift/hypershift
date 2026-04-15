@@ -95,7 +95,7 @@ func (r *reconciler) findKubevirtPassthroughServices(ctx context.Context, hcp *h
 	return kubevirtPassthroughServices, nil
 }
 
-func (r *reconciler) reconcileKubevirtPassthroughService(ctx context.Context, hcp *hyperv1.HostedControlPlane, machineKey types.NamespacedName, cpService *corev1.Service) error {
+func (r *reconciler) reconcileKubevirtPassthroughService(ctx context.Context, _ *hyperv1.HostedControlPlane, machineKey types.NamespacedName, cpService *corev1.Service) error {
 	log := ctrl.LoggerFrom(ctx)
 
 	// If there is a selector endpoints should not be generated

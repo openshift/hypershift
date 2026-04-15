@@ -18,7 +18,7 @@ import (
 
 // gcpMachineTemplate creates a GCPMachineTemplate for the given NodePool.
 // This follows the AWS and Azure patterns for CAPI machine template generation.
-func (c *CAPI) gcpMachineTemplate(ctx context.Context, templateNameGenerator func(spec any) (string, error)) (client.Object, error) {
+func (c *CAPI) gcpMachineTemplate(_ context.Context, templateNameGenerator func(spec any) (string, error)) (client.Object, error) {
 	nodePool := c.nodePool
 	hc := c.hostedCluster
 
@@ -178,6 +178,8 @@ func resolveGCPImage(nodePool *hyperv1.NodePool, releaseImage *releaseinfo.Relea
 
 // resolveGCPSubnet configures the subnet for node placement.
 // Priority: NodePool subnet > HostedCluster PSC subnet > "default"
+//
+//nolint:unparam // return type is part of the function contract
 func resolveGCPSubnet(gcpPlatform *hyperv1.GCPNodePoolPlatform, hcGCPPlatform *hyperv1.GCPPlatformSpec) (string, error) {
 	// NodePool-specified subnet takes precedence
 	if gcpPlatform != nil && gcpPlatform.Subnet != "" {

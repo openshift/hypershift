@@ -33,6 +33,8 @@ func testRole(name string) *iamtypes.Role {
 }
 
 // testInstanceProfile returns an iamtypes.InstanceProfile for use in mock responses.
+//
+//nolint:unparam // test helper parameter kept for readability
 func testInstanceProfile(name string, roles ...iamtypes.Role) *iamtypes.InstanceProfile {
 	return &iamtypes.InstanceProfile{
 		InstanceProfileName: aws.String(name),

@@ -38,7 +38,7 @@ func adaptConfigMap(cpContext component.WorkloadContext, cm *corev1.ConfigMap) e
 	return nil
 }
 
-func adaptConfig(cfg *openshiftcpv1.OpenShiftControllerManagerConfig, configuration *hyperv1.ClusterConfiguration, caps *hyperv1.Capabilities) {
+func adaptConfig(cfg *openshiftcpv1.OpenShiftControllerManagerConfig, configuration *hyperv1.ClusterConfiguration, _ *hyperv1.Capabilities) {
 	// network config
 	if cidrs := configuration.GetAutoAssignCIDRs(); len(cidrs) > 0 {
 		cfg.Ingress.IngressIPNetworkCIDR = cidrs[0]

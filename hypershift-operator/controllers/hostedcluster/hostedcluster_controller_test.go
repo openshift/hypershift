@@ -1382,7 +1382,8 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 			},
 		},
 	}
-	deserializeFunc := func(payload []byte) (*manifestlist.DeserializedManifestList, error) {
+	//nolint:unparam // return type is part of the function contract
+	deserializeFunc := func(_ []byte) (*manifestlist.DeserializedManifestList, error) {
 		return &manifestlist.DeserializedManifestList{
 			ManifestList: manifestlist.ManifestList{
 				Manifests: manifests,

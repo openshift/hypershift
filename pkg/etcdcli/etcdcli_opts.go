@@ -8,6 +8,7 @@ type ClientOptions struct {
 	dialTimeout time.Duration
 }
 
+//nolint:unparam // return type is part of the function contract
 func newClientOpts(opts ...ClientOption) (*ClientOptions, error) {
 	clientOpts := &ClientOptions{
 		dialTimeout: DefaultDialTimeout,

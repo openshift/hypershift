@@ -169,6 +169,7 @@ func newTestScheme(t *testing.T, g Gomega) *runtime.Scheme {
 	return scheme
 }
 
+//nolint:unparam // test helper parameter kept for readability
 func newTestAzurePLS(t *testing.T, name, namespace string) *hyperv1.AzurePrivateLinkService {
 	t.Helper()
 	return &hyperv1.AzurePrivateLinkService{
@@ -196,6 +197,7 @@ func newTestAzurePLS(t *testing.T, name, namespace string) *hyperv1.AzurePrivate
 	}
 }
 
+//nolint:unparam // test helper parameter kept for readability
 func newTestHCP(t *testing.T, name, namespace, kasHostname string) *hyperv1.HostedControlPlane {
 	t.Helper()
 	return &hyperv1.HostedControlPlane{

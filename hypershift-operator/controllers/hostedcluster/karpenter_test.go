@@ -217,7 +217,7 @@ func TestIsKASAvailable(t *testing.T) {
 	}
 }
 
-func hcpWithFinalizer(name, namespace string) *hyperv1.HostedControlPlane {
+func hcpWithFinalizer(name, namespace string) *hyperv1.HostedControlPlane { //nolint:unparam // test helper uses named parameter for readability
 	hcp := &hyperv1.HostedControlPlane{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,

@@ -381,6 +381,7 @@ func withCreationTimestamp(t time.Time, indices ...int) func([]corev1.Node) {
 	}
 }
 
+//nolint:unparam // test helper parameter kept for readability
 func withReplicas(replicas int32, indices ...int) func(machineSets []machinev1beta1.MachineSet) {
 	return func(machineSets []machinev1beta1.MachineSet) {
 		if len(indices) == 0 {
