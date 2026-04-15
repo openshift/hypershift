@@ -3,8 +3,13 @@ run:
   allow-parallel-runners: true
 linters:
   enable:
+    - govet
     - misspell
+    - unparam
   settings:
+    govet:
+      enable:
+        - nilness
     misspell:
       # The use of US spelling over other English spellings, like UK, is inline with the OpenShift conventions:
       # https://github.com/openshift/enhancements/blob/master/CONVENTIONS.md#terminology-grammar-and-spelling
@@ -66,6 +71,7 @@ linters:
       - third_party$
       - builtin$
       - examples$
+      - support/thirdparty/
 severity:
   default: error
 formatters:
