@@ -457,6 +457,7 @@ func (kh *konnectivityHealth) isHealthy() bool {
 // actually end up proxying or not depends on the env for this binary.
 // DNS domains. The API list can be found below:
 // AWS: https://docs.aws.amazon.com/general/latest/gr/rande.html#regional-endpoints
+// AWS ISO: https://docs.aws.amazon.com/general/latest/gr/aws-iso_region.html
 // AZURE: https://docs.microsoft.com/en-us/rest/api/azure/#how-to-call-azure-rest-apis-with-curl
 // IBMCLOUD: https://cloud.ibm.com/apidocs/iam-identity-token-api#endpoints
 func (p *konnectivityProxy) IsCloudAPI(host string) bool {
@@ -475,6 +476,9 @@ func (p *konnectivityProxy) IsCloudAPI(host string) bool {
 		return false
 	}
 	if strings.HasSuffix(host, ".amazonaws.com") ||
+		strings.HasSuffix(host, ".c2s.ic.gov") ||
+		strings.HasSuffix(host, ".hci.ic.gov") ||
+		strings.HasSuffix(host, ".sc2s.sgov.gov") ||
 		strings.HasSuffix(host, ".microsoftonline.com") ||
 		strings.HasSuffix(host, ".azure.com") ||
 		strings.HasSuffix(host, ".cloud.ibm.com") {

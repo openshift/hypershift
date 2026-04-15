@@ -306,6 +306,26 @@ func TestIsCloudAPI(t *testing.T) {
 			description: "IBM Cloud API endpoints should be detected",
 		},
 
+		// Valid AWS ISO cloud API hosts
+		{
+			name:        "When host is valid AWS ISO C2S API it should return true",
+			host:        "s3.c2s.ic.gov",
+			expected:    true,
+			description: "AWS ISO C2S endpoints should be detected",
+		},
+		{
+			name:        "When host is valid AWS ISO HCI API it should return true",
+			host:        "iam.hci.ic.gov",
+			expected:    true,
+			description: "AWS ISO HCI endpoints should be detected",
+		},
+		{
+			name:        "When host is valid AWS ISO-B SC2S API it should return true",
+			host:        "s3.sc2s.sgov.gov",
+			expected:    true,
+			description: "AWS ISO-B SC2S endpoints should be detected",
+		},
+
 		// False positive scenarios that were fixed
 		{
 			name:        "When host contains azure.com but is not azure.com it should return false",
