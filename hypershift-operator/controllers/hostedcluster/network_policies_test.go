@@ -204,14 +204,6 @@ func verifyPrivateRouterNetworkPolicy(t *testing.T, policy *networkingv1.Network
 
 func TestGCPPrivateRouterNetworkPolicy_IngressOnly(t *testing.T) {
 	// Test GCP platform with ingressOnly parameter functionality
-	hcluster := &hyperv1.HostedCluster{
-		Spec: hyperv1.HostedClusterSpec{
-			Platform: hyperv1.PlatformSpec{
-				Type: hyperv1.GCPPlatform,
-			},
-		},
-	}
-
 	//nolint:staticcheck // SA1019: corev1.Endpoints is intentionally used for backward compatibility
 	kubernetesEndpoint := &corev1.Endpoints{
 		//nolint:staticcheck // SA1019: corev1.EndpointSubset is intentionally used for backward compatibility
@@ -227,7 +219,7 @@ func TestGCPPrivateRouterNetworkPolicy_IngressOnly(t *testing.T) {
 	policy := networkpolicy.PrivateRouterNetworkPolicy("test-namespace")
 
 	// Test with ingressOnly = true
-	err := reconcilePrivateRouterNetworkPolicy(policy, hcluster, kubernetesEndpoint, false, nil, true)
+	err := reconcilePrivateRouterNetworkPolicy(policy, kubernetesEndpoint, false, nil, true)
 	if err != nil {
 		t.Fatalf("reconcilePrivateRouterNetworkPolicy with ingressOnly=true failed: %v", err)
 	}

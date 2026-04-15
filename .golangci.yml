@@ -71,6 +71,7 @@ linters:
       - third_party$
       - builtin$
       - examples$
+      # vendored forks of upstream libraries (library-go, docker, kubernetes, oc) that we do not own
       - support/thirdparty/
 severity:
   default: error

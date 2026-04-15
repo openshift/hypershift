@@ -4513,6 +4513,9 @@ func (r *HostedClusterReconciler) reconcileAWSResourceTags(ctx context.Context, 
 	return nil
 }
 
+// TODO(CNTRLPLANE-635): reconcileAWSSubnets collects subnet IDs from NodePools but never
+// writes them back. The createOrUpdate, infraCR, and hcpNamespace parameters were unused.
+// This function appears to be dead/incomplete code — consider completing or removing it.
 func (r *HostedClusterReconciler) reconcileAWSSubnets(ctx context.Context, _ upsert.CreateOrUpdateFN,
 	_ client.Object, namespace, clusterName, _ string,
 ) error {
@@ -4527,7 +4530,6 @@ func (r *HostedClusterReconciler) reconcileAWSSubnets(ctx context.Context, _ ups
 			subnetIDs = append(subnetIDs, *nodePool.Spec.Platform.AWS.Subnet.ID)
 		}
 	}
-	// Sort for stable update detection (is this needed?)
 	sort.Strings(subnetIDs)
 	return nil
 }

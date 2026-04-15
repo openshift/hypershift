@@ -113,7 +113,7 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 		// Let all ingress from shared-ingress namespace.
 		policy := networkpolicy.SharedIngressNetworkPolicy(controlPlaneNamespaceName)
 		if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
-			return reconcileSharedIngressNetworkPolicy(policy, hcluster)
+			return reconcileSharedIngressNetworkPolicy(policy)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile sharedingress network policy: %w", err)
 		}
@@ -122,7 +122,7 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 	// Reconcile openshift-monitoring Network Policy
 	policy = networkpolicy.OpenshiftMonitoringNetworkPolicy(controlPlaneNamespaceName)
 	if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
-		return reconcileOpenshiftMonitoringNetworkPolicy(policy, hcluster)
+		return reconcileOpenshiftMonitoringNetworkPolicy(policy)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile monitoring network policy: %w", err)
 	}
@@ -135,7 +135,7 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 		// only setup ingress rules (and not egress rules) when version is < 4.14
 		ingressOnly := version.Major == 4 && version.Minor < 14
 		if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
-			return reconcilePrivateRouterNetworkPolicy(policy, hcluster, kubernetesEndpoint, r.ManagementClusterCapabilities.Has(capabilities.CapabilityDNS), managementClusterNetwork, ingressOnly)
+			return reconcilePrivateRouterNetworkPolicy(policy, kubernetesEndpoint, r.ManagementClusterCapabilities.Has(capabilities.CapabilityDNS), managementClusterNetwork, ingressOnly)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile private router network policy: %w", err)
 		}
@@ -158,7 +158,7 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 				// Reconcile nodeport-oauth Network Policy
 				policy = networkpolicy.NodePortOauthNetworkPolicy(controlPlaneNamespaceName)
 				if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
-					return reconcileNodePortOauthNetworkPolicy(policy, hcluster)
+					return reconcileNodePortOauthNetworkPolicy(policy)
 				}); err != nil {
 					return fmt.Errorf("failed to reconcile oauth server nodeport network policy: %w", err)
 				}
@@ -177,14 +177,14 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 				// Reconcile nodeport-ignition Network Policy
 				policy = networkpolicy.NodePortIgnitionNetworkPolicy(controlPlaneNamespaceName)
 				if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
-					return reconcileNodePortIgnitionNetworkPolicy(policy, hcluster)
+					return reconcileNodePortIgnitionNetworkPolicy(policy)
 				}); err != nil {
 					return fmt.Errorf("failed to reconcile ignition nodeport network policy: %w", err)
 				}
 				// Reconcile nodeport-ignition-proxy Network Policy
 				policy = networkpolicy.NodePortIgnitionProxyNetworkPolicy(controlPlaneNamespaceName)
 				if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
-					return reconcileNodePortIgnitionProxyNetworkPolicy(policy, hcluster)
+					return reconcileNodePortIgnitionProxyNetworkPolicy(policy)
 				}); err != nil {
 					return fmt.Errorf("failed to reconcile ignition proxy nodeport network policy: %w", err)
 				}
@@ -194,7 +194,7 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 				// Reconcile nodeport-konnectivity Network Policy
 				policy = networkpolicy.NodePortKonnectivityNetworkPolicy(controlPlaneNamespaceName)
 				if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
-					return reconcileNodePortKonnectivityNetworkPolicy(policy, hcluster)
+					return reconcileNodePortKonnectivityNetworkPolicy(policy)
 				}); err != nil {
 					return fmt.Errorf("failed to reconcile konnectivity nodeport network policy: %w", err)
 				}
@@ -202,7 +202,7 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 				// Reconcile nodeport-konnectivity Network Policy when konnectivity is hosted in the kas pod
 				policy = networkpolicy.NodePortKonnectivityKASNetworkPolicy(controlPlaneNamespaceName)
 				if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
-					return reconcileNodePortKonnectivityKASNetworkPolicy(policy, hcluster)
+					return reconcileNodePortKonnectivityKASNetworkPolicy(policy)
 				}); err != nil {
 					return fmt.Errorf("failed to reconcile konnectivity nodeport network policy: %w", err)
 				}
@@ -258,7 +258,7 @@ func reconcileKASNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyp
 }
 
 //nolint:staticcheck // SA1019: corev1.Endpoints is intentionally used for backward compatibility
-func reconcilePrivateRouterNetworkPolicy(policy *networkingv1.NetworkPolicy, _ *hyperv1.HostedCluster, kubernetesEndpoint *corev1.Endpoints, isOpenShiftDNS bool, managementClusterNetwork *configv1.Network, ingressOnly bool) error {
+func reconcilePrivateRouterNetworkPolicy(policy *networkingv1.NetworkPolicy, kubernetesEndpoint *corev1.Endpoints, isOpenShiftDNS bool, managementClusterNetwork *configv1.Network, ingressOnly bool) error {
 	httpPort := intstr.FromInt(8080)
 	httpsPort := intstr.FromInt(8443)
 	protocol := corev1.ProtocolTCP
@@ -381,7 +381,7 @@ func reconcilePrivateRouterNetworkPolicy(policy *networkingv1.NetworkPolicy, _ *
 	return nil
 }
 
-func reconcileNodePortOauthNetworkPolicy(policy *networkingv1.NetworkPolicy, _ *hyperv1.HostedCluster) error {
+func reconcileNodePortOauthNetworkPolicy(policy *networkingv1.NetworkPolicy) error {
 	port := intstr.FromInt(6443)
 	protocol := corev1.ProtocolTCP
 	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{
@@ -427,7 +427,7 @@ func reconcileLoadBalancerOauthNetworkPolicy(policy *networkingv1.NetworkPolicy)
 	return nil
 }
 
-func reconcileNodePortIgnitionProxyNetworkPolicy(policy *networkingv1.NetworkPolicy, _ *hyperv1.HostedCluster) error {
+func reconcileNodePortIgnitionProxyNetworkPolicy(policy *networkingv1.NetworkPolicy) error {
 	port := intstr.FromInt(8443)
 	protocol := corev1.ProtocolTCP
 	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{
@@ -450,7 +450,7 @@ func reconcileNodePortIgnitionProxyNetworkPolicy(policy *networkingv1.NetworkPol
 	return nil
 }
 
-func reconcileNodePortIgnitionNetworkPolicy(policy *networkingv1.NetworkPolicy, _ *hyperv1.HostedCluster) error {
+func reconcileNodePortIgnitionNetworkPolicy(policy *networkingv1.NetworkPolicy) error {
 	port := intstr.FromInt(9090)
 	protocol := corev1.ProtocolTCP
 	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{
@@ -473,7 +473,7 @@ func reconcileNodePortIgnitionNetworkPolicy(policy *networkingv1.NetworkPolicy, 
 	return nil
 }
 
-func reconcileNodePortKonnectivityKASNetworkPolicy(policy *networkingv1.NetworkPolicy, _ *hyperv1.HostedCluster) error {
+func reconcileNodePortKonnectivityKASNetworkPolicy(policy *networkingv1.NetworkPolicy) error {
 	port := intstr.FromInt(8091)
 	protocol := corev1.ProtocolTCP
 	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{
@@ -496,7 +496,7 @@ func reconcileNodePortKonnectivityKASNetworkPolicy(policy *networkingv1.NetworkP
 	return nil
 }
 
-func reconcileNodePortKonnectivityNetworkPolicy(policy *networkingv1.NetworkPolicy, _ *hyperv1.HostedCluster) error {
+func reconcileNodePortKonnectivityNetworkPolicy(policy *networkingv1.NetworkPolicy) error {
 	port := intstr.FromInt(8091)
 	protocol := corev1.ProtocolTCP
 	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{
@@ -519,7 +519,7 @@ func reconcileNodePortKonnectivityNetworkPolicy(policy *networkingv1.NetworkPoli
 	return nil
 }
 
-func reconcileOpenshiftMonitoringNetworkPolicy(policy *networkingv1.NetworkPolicy, _ *hyperv1.HostedCluster) error {
+func reconcileOpenshiftMonitoringNetworkPolicy(policy *networkingv1.NetworkPolicy) error {
 	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{
 		{
 			From: []networkingv1.NetworkPolicyPeer{
@@ -538,7 +538,7 @@ func reconcileOpenshiftMonitoringNetworkPolicy(policy *networkingv1.NetworkPolic
 	return nil
 }
 
-func reconcileSharedIngressNetworkPolicy(policy *networkingv1.NetworkPolicy, _ *hyperv1.HostedCluster) error {
+func reconcileSharedIngressNetworkPolicy(policy *networkingv1.NetworkPolicy) error {
 	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{
 		{
 			From: []networkingv1.NetworkPolicyPeer{
