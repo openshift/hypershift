@@ -452,7 +452,7 @@ func defaultContainerPort(original, mutated *corev1.ContainerPort) {
 	}
 }
 
-func defaultCRDSpec(original, mutated *apiextensionsv1.CustomResourceDefinitionSpec) {
+func defaultCRDSpec(_, mutated *apiextensionsv1.CustomResourceDefinitionSpec) {
 	if mutated.Conversion == nil {
 		mutated.Conversion = &apiextensionsv1.CustomResourceConversion{
 			Strategy: apiextensionsv1.NoneConverter,

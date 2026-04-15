@@ -272,7 +272,7 @@ func (p GCP) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hype
 
 // buildVolumes creates all volumes needed for CAPG deployment including
 // credentials and webhook certificates.
-func (p GCP) buildVolumes(hcluster *hyperv1.HostedCluster) []corev1.Volume {
+func (p GCP) buildVolumes(_ *hyperv1.HostedCluster) []corev1.Volume {
 	defaultMode := int32(0640)
 	return []corev1.Volume{
 		{

@@ -25,6 +25,7 @@ func createTempSnapshot(t *testing.T) string {
 	return path
 }
 
+//nolint:unparam // test helper
 func newTestS3Uploader(bucket, region, kmsKeyARN string, client S3TransferAPI) *S3Uploader {
 	return &S3Uploader{
 		bucket:    bucket,

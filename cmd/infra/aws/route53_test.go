@@ -54,6 +54,8 @@ func soaRecordFor(name string) *route53.ListResourceRecordSetsOutput {
 }
 
 // publicZonePage returns a single-page ListHostedZones response with one public zone.
+//
+//nolint:unparam // test helper
 func publicZonePage(id, name string) *route53.ListHostedZonesOutput {
 	return &route53.ListHostedZonesOutput{
 		HostedZones: []route53types.HostedZone{

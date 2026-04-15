@@ -21,6 +21,7 @@ import (
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 )
 
+//nolint:unparam // test helper
 func newServiceMonitor(name, namespace, svcLabel, portOrTargetPort, scheme, serverName, caConfigMapName, caKey, certSecretName, certKey, keySecretName, keyKey string) *prometheusoperatorv1.ServiceMonitor {
 	ep := prometheusoperatorv1.Endpoint{
 		Scheme: (*prometheusoperatorv1.Scheme)(ptr.To(scheme)),
@@ -90,6 +91,7 @@ func newService(name, namespace, appLabel, portName string, portNum int32) *core
 	}
 }
 
+//nolint:unparam // test helper
 func newPodMonitor(name, namespace, portName, scheme string, tlsCfg *prometheusoperatorv1.SafeTLSConfig) *prometheusoperatorv1.PodMonitor {
 	ep := prometheusoperatorv1.PodMetricsEndpoint{
 		Port:   ptr.To(portName),
@@ -112,6 +114,7 @@ func newPodMonitor(name, namespace, portName, scheme string, tlsCfg *prometheuso
 	}
 }
 
+//nolint:unparam // test helper
 func newDeployment(name, namespace, portName string, portNum int32) *appsv1.Deployment {
 	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{

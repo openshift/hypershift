@@ -13,6 +13,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 )
 
+//nolint:unparam // test helper
 func newPod(name, namespace string, podLabels map[string]string, ip string, phase corev1.PodPhase, ready corev1.ConditionStatus) *corev1.Pod {
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -33,6 +34,7 @@ func newPod(name, namespace string, podLabels map[string]string, ip string, phas
 	}
 }
 
+//nolint:unparam // test helper
 func newFakePodLister(namespace string, pods []*corev1.Pod) corev1listers.PodNamespaceLister {
 	indexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
 	for _, pod := range pods {

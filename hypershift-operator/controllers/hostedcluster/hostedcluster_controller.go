@@ -3288,7 +3288,7 @@ func deleteAWSEndpointServices(ctx context.Context, c client.Client, hc *hyperv1
 
 // deleteGCPPrivateServiceConnect loops over GCPPrivateServiceConnectList items and sends a delete request for each.
 // It returns true if len(gcpPrivateServiceConnectList.Items) != 0.
-func deleteGCPPrivateServiceConnect(ctx context.Context, c client.Client, hc *hyperv1.HostedCluster, namespace string) (bool, error) {
+func deleteGCPPrivateServiceConnect(ctx context.Context, c client.Client, _ *hyperv1.HostedCluster, namespace string) (bool, error) {
 	log := ctrl.LoggerFrom(ctx)
 	var gcpPrivateServiceConnectList hyperv1.GCPPrivateServiceConnectList
 	if err := c.List(ctx, &gcpPrivateServiceConnectList, &client.ListOptions{Namespace: namespace}); err != nil && !apierrors.IsNotFound(err) {
@@ -4513,8 +4513,8 @@ func (r *HostedClusterReconciler) reconcileAWSResourceTags(ctx context.Context, 
 	return nil
 }
 
-func (r *HostedClusterReconciler) reconcileAWSSubnets(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN,
-	infraCR client.Object, namespace, clusterName, hcpNamespace string,
+func (r *HostedClusterReconciler) reconcileAWSSubnets(ctx context.Context, _ upsert.CreateOrUpdateFN,
+	_ client.Object, namespace, clusterName, _ string,
 ) error {
 	nodePools, err := listNodePools(ctx, r.Client, namespace, clusterName)
 	if err != nil {

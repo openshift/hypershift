@@ -398,6 +398,7 @@ func TestValidateAndGetHostedClusterPlatform(t *testing.T) {
 
 // Helper functions to create test objects
 
+//nolint:unparam // test helper
 func createDPAWithCondition(name, namespace, conditionType, status string) *unstructured.Unstructured {
 	dpa := &unstructured.Unstructured{}
 	dpa.SetGroupVersionKind(schema.GroupVersionKind{
@@ -431,6 +432,7 @@ func createDPAWithoutStatus(name, namespace string) *unstructured.Unstructured {
 	return dpa
 }
 
+//nolint:unparam // test helper
 func createDPAWithPlugins(name, namespace string, plugins []string) *unstructured.Unstructured {
 	dpa := &unstructured.Unstructured{}
 	dpa.SetGroupVersionKind(schema.GroupVersionKind{

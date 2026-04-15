@@ -230,7 +230,7 @@ func TestReconcileCredentials(t *testing.T) {
 
 	// Mock createOrUpdate function
 	var createdSecrets []*corev1.Secret
-	mockCreateOrUpdate := func(ctx context.Context, client client.Client, obj client.Object, mutate controllerutil.MutateFn) (controllerutil.OperationResult, error) {
+	mockCreateOrUpdate := func(_ context.Context, _ client.Client, obj client.Object, mutate controllerutil.MutateFn) (controllerutil.OperationResult, error) {
 		secret, ok := obj.(*corev1.Secret)
 		if !ok {
 			return controllerutil.OperationResultNone, fmt.Errorf("expected Secret, got %T", obj)

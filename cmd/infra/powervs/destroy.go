@@ -514,14 +514,14 @@ func destroyVpc(ctx context.Context, logger logr.Logger, options *DestroyInfraOp
 }
 
 // deleteVpc deletes the vpc id passed
-func deleteVpc(ctx context.Context, logger logr.Logger, id string, v1 *vpcv1.VpcV1, infraID string) error {
+func deleteVpc(ctx context.Context, logger logr.Logger, id string, v1 *vpcv1.VpcV1, _ string) error {
 	logger.Info("Deleting VPC", "id", id)
 	_, err := v1.DeleteVPCWithContext(ctx, &vpcv1.DeleteVPCOptions{ID: &id})
 	return err
 }
 
 // destroyVpcSubnet destroying vpc subnet
-func destroyVpcSubnet(ctx context.Context, logger logr.Logger, options *DestroyInfraOptions, infra *Infra, resourceGroupID string, v1 *vpcv1.VpcV1, infraID string) error {
+func destroyVpcSubnet(ctx context.Context, logger logr.Logger, options *DestroyInfraOptions, infra *Infra, resourceGroupID string, v1 *vpcv1.VpcV1, _ string) error {
 	if infra != nil && infra.VPCSubnetID != "" {
 		return deleteVpcSubnet(ctx, logger, infra.VPCSubnetID, v1, options)
 	}

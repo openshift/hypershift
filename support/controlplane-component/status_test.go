@@ -375,6 +375,7 @@ func TestCheckDependencies(t *testing.T) {
 	}
 }
 
+//nolint:unparam // test helper
 func createMockOperandDeployment(name string, ready bool, version string, componentName string) *appsv1.Deployment {
 	var replicas int32 = 3
 	generation := int64(1)

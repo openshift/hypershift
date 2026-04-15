@@ -604,7 +604,7 @@ func ValidateCreateCredentialInfo(opts awsutil.AWSCredentialsOptions, credential
 }
 
 // validateAWSOptions validates different AWS flag parameters
-func validateAWSOptions(ctx context.Context, opts *core.CreateOptions, awsOpts *RawCreateOptions) error {
+func validateAWSOptions(_ context.Context, opts *core.CreateOptions, awsOpts *RawCreateOptions) error {
 	if err := ValidateCreateCredentialInfo(awsOpts.Credentials, awsOpts.CredentialSecretName, opts.Namespace, opts.PullSecretFile); err != nil {
 		return err
 	}
