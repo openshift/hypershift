@@ -35,7 +35,7 @@ func (r *HostedControlPlaneReconciler) setupKASClientSigners(
 		return s, nil
 	}
 
-	reconcileSub := func(target, ca *corev1.Secret, reconciler subReconciler) (*corev1.Secret, error) { //nolint:unparam
+	reconcileSub := func(target, ca *corev1.Secret, reconciler subReconciler) (*corev1.Secret, error) { //nolint:unparam // error return follows reconciler pattern
 		applyFunc := func() error {
 			return reconciler(target, ca, p.OwnerRef)
 		}

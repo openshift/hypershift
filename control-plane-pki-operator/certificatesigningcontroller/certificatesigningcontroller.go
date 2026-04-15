@@ -107,7 +107,7 @@ func (c *CertificateSigningController) syncCertificateSigningRequest(ctx context
 
 const backdate = 5 * time.Minute
 
-//nolint:unparam
+//nolint:unparam // result follows reconciler pattern
 func (c *CertificateSigningController) processCertificateSigningRequest(ctx context.Context, name string, now func() time.Time) (*certificatesv1applyconfigurations.CertificateSigningRequestApplyConfiguration, bool, error, error) {
 	csr, err := c.getCSR(name)
 	if apierrors.IsNotFound(err) {
@@ -227,7 +227,7 @@ func duration(certTTL time.Duration, expirationSeconds *int32) time.Duration {
 //	Short-lived certificates set NotAfter = Now() + TTL.
 //	All certificates truncate NotAfter to the expiration date of the signer.
 //
-//nolint:unparam
+//nolint:unparam // error return reserved for future boundary validation
 func boundaries(now func() time.Time, ttl, backdate, horizon time.Duration, signerNotAfter time.Time) (time.Time, time.Time, error) {
 	if now == nil {
 		now = time.Now

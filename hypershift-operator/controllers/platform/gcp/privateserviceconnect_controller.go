@@ -386,7 +386,7 @@ func (r *GCPPrivateServiceConnectReconciler) buildConsumerAcceptLists(acceptList
 
 // updateStatusFromServiceAttachment updates the CR status based on Service Attachment state
 //
-//nolint:unparam
+//nolint:unparam // result follows reconciler pattern
 func (r *GCPPrivateServiceConnectReconciler) updateStatusFromServiceAttachment(ctx context.Context, gcpPSC *hyperv1.GCPPrivateServiceConnect, serviceAttachment *compute.ServiceAttachment) (ctrl.Result, error) {
 	patch := client.MergeFrom(gcpPSC.DeepCopy())
 
@@ -466,7 +466,7 @@ func (r *GCPPrivateServiceConnectReconciler) delete(ctx context.Context, gcpPSC 
 
 // handleGCPError handles GCP API errors with appropriate retry logic
 //
-//nolint:unparam
+//nolint:unparam // result follows reconciler pattern
 func (r *GCPPrivateServiceConnectReconciler) handleGCPError(ctx context.Context, gcpPSC *hyperv1.GCPPrivateServiceConnect, reason string, err error) (ctrl.Result, error) {
 	log := r.Log.WithValues("gcpprivateserviceconnect", gcpPSC.Name)
 

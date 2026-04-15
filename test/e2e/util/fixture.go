@@ -42,7 +42,7 @@ import (
 //
 // TODO: Mutates the input, instead should use a copy of the input options
 //
-//nolint:unparam
+//nolint:unparam // error return reserved for future platform validation
 func createClusterOpts(_ context.Context, _ crclient.Client, hc *hyperv1.HostedCluster, opts *PlatformAgnosticOptions) (*PlatformAgnosticOptions, error) {
 	opts.Namespace = hc.Namespace
 	opts.Name = hc.Name

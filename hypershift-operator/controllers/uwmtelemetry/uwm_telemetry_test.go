@@ -85,7 +85,7 @@ matches:
 
 func TestReconcileUWMConfigContent(t *testing.T) {
 	// helper to locate the telemetry remote write entry and validate core fields
-	validateTelemetryRemoteWrite := func(g *WithT, parsed map[string]interface{}) map[string]interface{} { //nolint:unparam
+	validateTelemetryRemoteWrite := func(g *WithT, parsed map[string]interface{}) map[string]interface{} { //nolint:unparam // test helper
 		remoteWrite, found, err := unstructured.NestedSlice(parsed, "prometheus", "remoteWrite")
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(found).To(BeTrue())

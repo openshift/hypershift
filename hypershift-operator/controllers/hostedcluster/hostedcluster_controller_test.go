@@ -1382,7 +1382,7 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 			},
 		},
 	}
-	deserializeFunc := func(_ []byte) (*manifestlist.DeserializedManifestList, error) { //nolint:unparam
+	deserializeFunc := func(_ []byte) (*manifestlist.DeserializedManifestList, error) { //nolint:unparam // test helper
 		return &manifestlist.DeserializedManifestList{
 			ManifestList: manifestlist.ManifestList{
 				Manifests: manifests,

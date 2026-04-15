@@ -103,7 +103,7 @@ func (c *CertificateSigningRequestApprovalController) syncCertificateSigningRequ
 	return nil
 }
 
-//nolint:unparam
+//nolint:unparam // result follows reconciler pattern
 func (c *CertificateSigningRequestApprovalController) processCertificateSigningRequest(name string) (*certificatesv1.CertificateSigningRequest, bool, error) {
 	csr, err := c.getCSR(name)
 	if apierrors.IsNotFound(err) {

@@ -179,7 +179,7 @@ func resolveGCPImage(nodePool *hyperv1.NodePool, releaseImage *releaseinfo.Relea
 // resolveGCPSubnet configures the subnet for node placement.
 // Priority: NodePool subnet > HostedCluster PSC subnet > "default"
 //
-//nolint:unparam
+//nolint:unparam // error return reserved for future subnet validation
 func resolveGCPSubnet(gcpPlatform *hyperv1.GCPNodePoolPlatform, hcGCPPlatform *hyperv1.GCPPlatformSpec) (string, error) {
 	// NodePool-specified subnet takes precedence
 	if gcpPlatform != nil && gcpPlatform.Subnet != "" {
