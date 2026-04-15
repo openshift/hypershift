@@ -76,6 +76,12 @@ func TestAPIServerHAProxyConfig(t *testing.T) {
 			noProxy:  "localhost,127.0.0.1," + externalAddress,
 		},
 		{
+			name:     "when noproxy has leading-dot domain matching external kas address it should create an haproxy",
+			proxy:    "proxy",
+			platform: "fakePlatform",
+			noProxy:  "localhost,.example.com",
+		},
+		{
 			name:             "when use shared router it should use proxy protocol",
 			proxy:            "",
 			noProxy:          "",
@@ -106,6 +112,112 @@ func TestAPIServerHAProxyConfig(t *testing.T) {
 				t.Fatalf("cannot convert to yaml: %v", err)
 			}
 			testutil.CompareWithFixture(t, yamlConfig)
+		})
+	}
+}
+
+func TestShouldSkipProxyForKAS(t *testing.T) {
+	const (
+		externalAddress = "api.test.example.com"
+		internalAddress = "172.20.0.1"
+		serviceNetwork  = "10.134.0.0/16"
+		clusterNetwork  = "10.128.0.0/14"
+	)
+
+	testCases := []struct {
+		name     string
+		noProxy  string
+		expected bool
+	}{
+		{
+			name:     "When noProxy is empty it should not skip proxy",
+			noProxy:  "",
+			expected: false,
+		},
+		{
+			name:     "When noProxy contains exact external address it should skip proxy",
+			noProxy:  "localhost,127.0.0.1," + externalAddress,
+			expected: true,
+		},
+		{
+			name:     "When noProxy contains exact internal address it should skip proxy",
+			noProxy:  "localhost,127.0.0.1," + internalAddress,
+			expected: true,
+		},
+		{
+			name:     "When noProxy contains leading-dot domain matching external address it should skip proxy",
+			noProxy:  "localhost,.example.com",
+			expected: true,
+		},
+		{
+			name:     "When noProxy contains bare parent domain matching external address it should skip proxy",
+			noProxy:  "localhost,example.com",
+			expected: true,
+		},
+		{
+			name:     "When noProxy contains leading-dot partial domain matching external address it should skip proxy",
+			noProxy:  "localhost,.test.example.com",
+			expected: true,
+		},
+		{
+			name:     "When noProxy contains CIDR covering internal address it should skip proxy",
+			noProxy:  "localhost,172.16.0.0/12",
+			expected: true,
+		},
+		{
+			name:     "When noProxy contains kubernetes keyword it should skip proxy",
+			noProxy:  "localhost,kubernetes.svc,127.0.0.1",
+			expected: true,
+		},
+		{
+			name:     "When noProxy contains exact service network CIDR it should skip proxy",
+			noProxy:  "localhost," + serviceNetwork,
+			expected: true,
+		},
+		{
+			name:     "When noProxy contains exact cluster network CIDR it should skip proxy",
+			noProxy:  "localhost," + clusterNetwork,
+			expected: true,
+		},
+		{
+			name:     "When noProxy contains wildcard it should skip proxy",
+			noProxy:  "*",
+			expected: true,
+		},
+		{
+			name:     "When noProxy contains unrelated entries it should not skip proxy",
+			noProxy:  "localhost,127.0.0.1,.other-domain.com,192.168.0.0/16",
+			expected: false,
+		},
+		{
+			name:     "When noProxy has extra whitespace around entries it should still match",
+			noProxy:  " localhost , .example.com , 127.0.0.1 ",
+			expected: true,
+		},
+		{
+			name:     "When noProxy contains port-qualified domain matching KAS port it should skip proxy",
+			noProxy:  "localhost,api.test.example.com:6443",
+			expected: true,
+		},
+		{
+			name:     "When noProxy contains port-qualified IP matching KAS port it should skip proxy",
+			noProxy:  "localhost,172.20.0.1:6443",
+			expected: true,
+		},
+		{
+			name:     "When noProxy contains port-qualified domain with non-matching port it should not skip proxy",
+			noProxy:  "localhost,api.test.example.com:8080",
+			expected: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := shouldSkipProxyForKAS(tc.noProxy, externalAddress, 6443, internalAddress, 6443, serviceNetwork, clusterNetwork)
+			if result != tc.expected {
+				t.Errorf("shouldSkipProxyForKAS(%q, %q, %q, %q, %q) = %v, want %v",
+					tc.noProxy, externalAddress, internalAddress, serviceNetwork, clusterNetwork, result, tc.expected)
+			}
 		})
 	}
 }
