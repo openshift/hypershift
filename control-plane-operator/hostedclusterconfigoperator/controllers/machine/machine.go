@@ -126,6 +126,10 @@ func (r *reconciler) reconcileKubevirtPassthroughService(ctx context.Context, hc
 			if err != nil {
 				return fmt.Errorf("parsing machine address (%s) in machine %s: %w", machineAddress.Address, machine.Name, err)
 			}
+			if parsedAddr.IsLinkLocalUnicast() {
+				log.Info("Skipping link-local address for EndpointSlice", "address", machineAddress.Address, "machine", machine.Name)
+				continue
+			}
 			if parsedAddr.Is4() {
 				ipv4MachineAddresses = append(ipv4MachineAddresses, machineAddress.Address)
 			} else {
