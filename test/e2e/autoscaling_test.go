@@ -3,6 +3,7 @@
 package e2e
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"strings"
@@ -20,6 +21,8 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
+	kubeclient "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/utils/ptr"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
@@ -77,6 +80,8 @@ func TestAutoscaling(t *testing.T) {
 	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 		t.Run("TestAutoscaling", testAutoscaling(ctx, mgtClient, hostedCluster, clusterOpts.NodePoolReplicas, clusterOpts.NodePoolReplicas+2))
 
+		t.Run("TestAutoscalerRespectsNodePoolPause", testAutoscalerRespectsNodePoolPause(ctx, mgtClient, hostedCluster, clusterOpts.NodePoolReplicas, clusterOpts.NodePoolReplicas+2))
+
 		t.Run("TestAutoscalingBalancing", testAutoscalingBalancing(ctx, mgtClient, hostedCluster, clusterOpts.NodePoolReplicas*2, additionalNP))
 	}).WithAssetReader(content.ReadFile).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "autoscaling", globalOpts.ServiceAccountSigningKey)
 
@@ -89,14 +94,7 @@ func testAutoscaling(ctx context.Context, mgtClient crclient.Client, hostedClust
 		defer cancel()
 
 		// Get the newly created NodePool
-		nodepools := &hyperv1.NodePoolList{}
-		if err := mgtClient.List(ctx, nodepools, crclient.InNamespace(hostedCluster.Namespace)); err != nil {
-			t.Fatalf("failed to list nodepools in namespace %s: %v", hostedCluster.Namespace, err)
-		}
-		if len(nodepools.Items) != 1 {
-			t.Fatalf("expected exactly one nodepool, got %d", len(nodepools.Items))
-		}
-		nodepool := &nodepools.Items[0]
+		nodepool := getOnlyNodePool(t, ctx, mgtClient, hostedCluster.Namespace)
 
 		// Perform some very basic assertions about the guest cluster
 		guestClient := e2eutil.WaitForGuestClient(t, ctx, mgtClient, hostedCluster)
@@ -173,14 +171,7 @@ func testAutoscalingBalancing(ctx context.Context, mgtClient crclient.Client, ho
 		e2eutil.AtLeast(t, e2eutil.Version420)
 
 		// Get the newly created NodePool
-		nodepools := &hyperv1.NodePoolList{}
-		if err := mgtClient.List(ctx, nodepools, crclient.InNamespace(hostedCluster.Namespace)); err != nil {
-			t.Fatalf("failed to list nodepools in namespace %s: %v", hostedCluster.Namespace, err)
-		}
-		if len(nodepools.Items) != 1 {
-			t.Fatalf("expected exactly one nodepool, got %d", len(nodepools.Items))
-		}
-		defaultNodePool := &nodepools.Items[0]
+		defaultNodePool := getOnlyNodePool(t, ctx, mgtClient, hostedCluster.Namespace)
 
 		// create additional NodePool
 		if additionalNP != nil {
@@ -257,22 +248,7 @@ func testAutoscalingBalancing(ctx context.Context, mgtClient crclient.Client, ho
 		// Wait for autoscaler deployment to have autoscaling settings and be ready
 		// TODO (cewong): This should be reported in the HostedCluster as a condition
 		controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
-		e2eutil.EventuallyObject(t, ctx, "autoscaler deployment to have autoscaling settings and be ready", func(ctx context.Context) (*appsv1.Deployment, error) {
-			autoscalerDeployment := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Namespace: controlPlaneNamespace, Name: "cluster-autoscaler"}}
-			err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(autoscalerDeployment), autoscalerDeployment)
-			return autoscalerDeployment, err
-		}, []e2eutil.Predicate[*appsv1.Deployment]{func(autoscalerDeployment *appsv1.Deployment) (done bool, reasons string, err error) {
-			hasBalancingIgnoreLabel := false
-			for _, arg := range autoscalerDeployment.Spec.Template.Spec.Containers[0].Args {
-				if strings.Contains(arg, "custom.ignore.label") {
-					hasBalancingIgnoreLabel = true
-				}
-			}
-			if !hasBalancingIgnoreLabel {
-				return false, "autoscaler deployment does not have balancing ignore label", nil
-			}
-			return podspec.IsDeploymentReady(ctx, autoscalerDeployment), "autoscaler deployment not ready", nil
-		}}, e2eutil.WithInterval(10*time.Second), e2eutil.WithTimeout(5*time.Minute))
+		waitForAutoscalerDeploymentReady(t, ctx, mgtClient, controlPlaneNamespace, []string{"custom.ignore.label"})
 
 		// Generate workload.
 		memCapacity := nodes[0].Status.Allocatable[corev1.ResourceMemory]
@@ -385,6 +361,316 @@ func newWorkLoad(njobs int32, memoryRequest resource.Quantity, nodeSelector, ima
 		}
 	}
 	return job
+}
+
+const (
+	aggressiveDelayAfterAddSeconds    int32 = 30
+	aggressiveUnneededDurationSeconds int32 = 60
+	casScaleDownWaitDuration                = time.Duration(aggressiveUnneededDurationSeconds+aggressiveDelayAfterAddSeconds)*time.Second + 90*time.Second
+	casLogPollInterval                      = 5 * time.Second
+	casPausedLogMessage                     = "discovered a paused node group"
+)
+
+// getOnlyNodePool lists NodePools in the given namespace and asserts exactly one exists.
+// It returns the single NodePool, failing the test if zero or more than one are found.
+func getOnlyNodePool(t *testing.T, ctx context.Context, mgtClient crclient.Client, namespace string) *hyperv1.NodePool {
+	t.Helper()
+	g := NewWithT(t)
+	nodepools := &hyperv1.NodePoolList{}
+	err := mgtClient.List(ctx, nodepools, crclient.InNamespace(namespace))
+	g.Expect(err).NotTo(HaveOccurred(), "failed to list nodepools")
+	g.Expect(nodepools.Items).To(HaveLen(1), "expected exactly one nodepool")
+	return &nodepools.Items[0]
+}
+
+// waitForAutoscalerDeploymentReady waits for the cluster-autoscaler deployment in the given
+// control plane namespace to contain all requiredArgs and be ready.
+func waitForAutoscalerDeploymentReady(t *testing.T, ctx context.Context, mgtClient crclient.Client, controlPlaneNamespace string, requiredArgs []string) {
+	t.Helper()
+	e2eutil.EventuallyObject(t, ctx, "autoscaler deployment to have required settings and be ready",
+		func(ctx context.Context) (*appsv1.Deployment, error) {
+			dep := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Namespace: controlPlaneNamespace, Name: "cluster-autoscaler"}}
+			err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(dep), dep)
+			return dep, err
+		},
+		[]e2eutil.Predicate[*appsv1.Deployment]{
+			func(dep *appsv1.Deployment) (done bool, reasons string, err error) {
+				for _, required := range requiredArgs {
+					found := false
+					for _, arg := range dep.Spec.Template.Spec.Containers[0].Args {
+						if strings.Contains(arg, required) {
+							found = true
+							break
+						}
+					}
+					if !found {
+						return false, fmt.Sprintf("autoscaler deployment missing %s arg", required), nil
+					}
+				}
+				return podspec.IsDeploymentReady(ctx, dep), "autoscaler deployment not ready", nil
+			},
+		},
+		e2eutil.WithInterval(10*time.Second),
+		e2eutil.WithTimeout(5*time.Minute),
+	)
+}
+
+// pollCASLogsForPausedNodeGroup polls the cluster-autoscaler pod logs for the
+// "discovered a paused node group" message, which the CAS fix emits at klog.V(4)
+// when it skips a paused MachineDeployment. Returns true if the message was found
+// before the timeout, false otherwise.
+func pollCASLogsForPausedNodeGroup(t *testing.T, ctx context.Context, controlPlaneNamespace string, timeout time.Duration) bool {
+	t.Helper()
+
+	cfg, err := e2eutil.GetConfig()
+	if err != nil {
+		t.Fatalf("Failed to get management cluster config: %v", err)
+	}
+	kubeClient := kubeclient.NewForConfigOrDie(cfg)
+
+	sinceTime := metav1.Now()
+	t.Logf("Polling CAS logs for paused node group detection (timeout=%s)...", timeout)
+
+	err = wait.PollUntilContextTimeout(ctx, casLogPollInterval, timeout, true, func(ctx context.Context) (bool, error) {
+		pods, err := kubeClient.CoreV1().Pods(controlPlaneNamespace).List(ctx, metav1.ListOptions{
+			LabelSelector: "app=cluster-autoscaler",
+		})
+		if err != nil || len(pods.Items) == 0 {
+			return false, nil
+		}
+
+		stream, err := kubeClient.CoreV1().Pods(controlPlaneNamespace).GetLogs(pods.Items[0].Name, &corev1.PodLogOptions{
+			Container: "cluster-autoscaler",
+			SinceTime: &sinceTime,
+		}).Stream(ctx)
+		if err != nil {
+			return false, nil
+		}
+		defer stream.Close()
+
+		scanner := bufio.NewScanner(stream)
+		for scanner.Scan() {
+			if strings.Contains(scanner.Text(), casPausedLogMessage) {
+				return true, nil
+			}
+		}
+		return false, nil
+	})
+
+	if err != nil {
+		t.Logf("Timeout waiting for CAS paused node group log — proceeding with replica verification")
+		return false
+	}
+	t.Logf("CAS log confirms paused node group was detected and skipped")
+	return true
+}
+
+// testAutoscalerRespectsNodePoolPause is a regression test for OCPBUGS-78152 / CNTRLPLANE-3040.
+//
+// It verifies that the Cluster Autoscaler does NOT decrement MachineDeployment.spec.replicas
+// on paused MachineDeployments. Without the CAS fix, CAS would accumulate replica decrements
+// while the MachineDeployment is paused (because machines are never deleted), causing
+// catastrophic scale-down on unpause.
+//
+// Test flow:
+// 1. Enable autoscaling on the NodePool (self-contained)
+// 2. Configure aggressive CAS scale-down timers
+// 3. Scale up the NodePool to max nodes with workload
+// 4. Pause the NodePool (propagates cluster.x-k8s.io/paused to MachineDeployment)
+// 5. Delete the workload so nodes become unneeded
+// 6. Poll CAS logs for "discovered a paused node group" (or timeout)
+// 7. Verify MachineDeployment.spec.replicas has NOT been decremented
+// 8. Unpause and wait for clean convergence to numNodes
+func testAutoscalerRespectsNodePoolPause(ctx context.Context, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster, numNodes, max int32) func(t *testing.T) {
+	return func(t *testing.T) {
+		g := NewWithT(t)
+		ctx, cancel := context.WithCancel(ctx)
+		defer cancel()
+
+		// Get the NodePool.
+		nodepool := getOnlyNodePool(t, ctx, mgtClient, hostedCluster.Namespace)
+
+		// Step 1: Ensure autoscaling is enabled on the NodePool so this test is
+		// self-contained and does not depend on a prior subtest.
+		err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+			if err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(nodepool), nodepool); err != nil {
+				return err
+			}
+			nodepool.Spec.AutoScaling = &hyperv1.NodePoolAutoScaling{
+				Min: ptr.To[int32](numNodes),
+				Max: max,
+			}
+			nodepool.Spec.Replicas = nil
+			return mgtClient.Update(ctx, nodepool)
+		})
+		g.Expect(err).NotTo(HaveOccurred(), "failed to enable autoscaling on NodePool")
+		t.Logf("Enabled autoscaling on NodePool %s (min=%d, max=%d)", nodepool.Name, numNodes, max)
+
+		guestClient := e2eutil.WaitForGuestClient(t, ctx, mgtClient, hostedCluster)
+		nodes := e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes, hostedCluster.Spec.Platform.Type)
+		t.Logf("Cluster has %d ready nodes", len(nodes))
+
+		// Step 2: Configure aggressive CAS scale-down timers on the HostedCluster.
+		err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
+			if err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster); err != nil {
+				return err
+			}
+			hostedCluster.Spec.Autoscaling = hyperv1.ClusterAutoscaling{
+				Scaling: hyperv1.ScaleUpAndScaleDown,
+				ScaleDown: &hyperv1.ScaleDownConfig{
+					DelayAfterAddSeconds:        ptr.To(aggressiveDelayAfterAddSeconds),
+					UnneededDurationSeconds:     ptr.To(aggressiveUnneededDurationSeconds),
+					UtilizationThresholdPercent: ptr.To[int32](50),
+				},
+			}
+			return mgtClient.Update(ctx, hostedCluster)
+		})
+		g.Expect(err).NotTo(HaveOccurred(), "failed to configure autoscaling on HostedCluster")
+		t.Log("Configured aggressive CAS scale-down timers (unneeded=60s, delayAfterAdd=30s)")
+
+		// Wait for autoscaler deployment to have the aggressive scale-down args and be ready.
+		controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+		waitForAutoscalerDeploymentReady(t, ctx, mgtClient, controlPlaneNamespace, []string{
+			"--scale-down-unneeded-time=60s",
+			"--scale-down-delay-after-add=30s",
+		})
+		t.Log("Autoscaler deployment is ready with aggressive scale-down settings")
+
+		// Step 3: Generate workload to scale up to max nodes.
+		memCapacity := nodes[0].Status.Allocatable[corev1.ResourceMemory]
+		g.Expect(memCapacity).ShouldNot(BeNil())
+		g.Expect(memCapacity.String()).ShouldNot(BeEmpty())
+		bytes, ok := memCapacity.AsInt64()
+		g.Expect(ok).Should(BeTrue())
+
+		// 50% - enough that the existing and new nodes will be used, not enough to have more than 1 pod per node.
+		workloadMemRequest := resource.MustParse(fmt.Sprintf("%v", 0.5*float32(bytes)))
+		workload := newWorkLoad(max, workloadMemRequest, "", globalOpts.LatestReleaseImage)
+		err = guestClient.Create(ctx, workload)
+		g.Expect(err).NotTo(HaveOccurred())
+		t.Logf("Created workload. Node: %s, memcapacity: %s", nodes[0].Name, memCapacity.String())
+		defer func() {
+			cascadeDelete := metav1.DeletePropagationForeground
+			if err := guestClient.Delete(ctx, workload, &crclient.DeleteOptions{
+				PropagationPolicy: &cascadeDelete,
+			}); err != nil {
+				t.Logf("cleanup: failed to delete workload: %v", err)
+			}
+		}()
+
+		// Wait for max nodes.
+		_ = e2eutil.WaitForNReadyNodes(t, ctx, guestClient, max, hostedCluster.Spec.Platform.Type)
+		t.Logf("Scaled up to %d nodes", max)
+
+		// Step 4: Pause the NodePool. This propagates cluster.x-k8s.io/paused to the MachineDeployment.
+		err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
+			if err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(nodepool), nodepool); err != nil {
+				return err
+			}
+			nodepool.Spec.PausedUntil = ptr.To("true")
+			return mgtClient.Update(ctx, nodepool)
+		})
+		g.Expect(err).NotTo(HaveOccurred(), "failed to pause NodePool")
+		t.Logf("Paused NodePool %s", nodepool.Name)
+		defer func() {
+			if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+				if err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(nodepool), nodepool); err != nil {
+					return err
+				}
+				if nodepool.Spec.PausedUntil == nil {
+					return nil
+				}
+				nodepool.Spec.PausedUntil = nil
+				return mgtClient.Update(ctx, nodepool)
+			}); err != nil {
+				t.Logf("cleanup: failed to unpause NodePool %s: %v", nodepool.Name, err)
+			}
+		}()
+
+		// Verify the MachineDeployment has the pause annotation.
+		md := &capiv1.MachineDeployment{}
+		e2eutil.EventuallyObject(t, ctx, "MachineDeployment to be paused",
+			func(ctx context.Context) (*capiv1.MachineDeployment, error) {
+				err := mgtClient.Get(ctx, crclient.ObjectKey{Namespace: controlPlaneNamespace, Name: nodepool.Name}, md)
+				return md, err
+			},
+			[]e2eutil.Predicate[*capiv1.MachineDeployment]{
+				func(md *capiv1.MachineDeployment) (done bool, reasons string, err error) {
+					if md.Annotations[capiv1.PausedAnnotation] == "true" {
+						return true, "MachineDeployment is paused", nil
+					}
+					return false, "MachineDeployment not yet paused", nil
+				},
+			},
+			e2eutil.WithTimeout(2*time.Minute),
+		)
+
+		// Record the replica count before CAS has a chance to act.
+		replicasBeforePause := *md.Spec.Replicas
+		t.Logf("MachineDeployment is paused with %d replicas", replicasBeforePause)
+
+		// Step 5: Delete workload so nodes become unneeded.
+		cascadeDelete := metav1.DeletePropagationForeground
+		err = guestClient.Delete(ctx, workload, &crclient.DeleteOptions{
+			PropagationPolicy: &cascadeDelete,
+		})
+		g.Expect(err).NotTo(HaveOccurred())
+		t.Logf("Deleted workload")
+
+		// Step 6: Poll CAS pod logs for evidence it evaluated the paused node group.
+		// The CAS fix logs "discovered a paused node group" at klog.V(4) when it
+		// skips a paused MachineDeployment. We poll for this line instead of blindly
+		// sleeping, which is both faster and deterministic.
+		pauseDetected := pollCASLogsForPausedNodeGroup(t, ctx, controlPlaneNamespace, casScaleDownWaitDuration)
+
+		// Step 7: Verify MachineDeployment replicas have NOT been decremented.
+		err = mgtClient.Get(ctx, crclient.ObjectKey{Namespace: controlPlaneNamespace, Name: nodepool.Name}, md)
+		g.Expect(err).NotTo(HaveOccurred(), "failed to get MachineDeployment")
+
+		replicasAfterWait := *md.Spec.Replicas
+		if pauseDetected {
+			t.Logf("CAS confirmed paused node group — replicas after CAS evaluation: %d (was %d before pause)", replicasAfterWait, replicasBeforePause)
+		} else {
+			t.Logf("CAS log not detected within timeout — replicas after wait: %d (was %d before pause)", replicasAfterWait, replicasBeforePause)
+		}
+		g.Expect(replicasAfterWait).To(Equal(replicasBeforePause),
+			"MachineDeployment replicas should not change while paused — CAS should not decrement replicas on paused MachineDeployments (regression for OCPBUGS-78152)")
+
+		// Step 8: Unpause the NodePool.
+		err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
+			if err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(nodepool), nodepool); err != nil {
+				return err
+			}
+			nodepool.Spec.PausedUntil = nil
+			return mgtClient.Update(ctx, nodepool)
+		})
+		g.Expect(err).NotTo(HaveOccurred(), "failed to unpause NodePool")
+		t.Logf("Unpaused NodePool %s", nodepool.Name)
+
+		// Verify the MachineDeployment pause annotation is removed.
+		e2eutil.EventuallyObject(t, ctx, "MachineDeployment to be unpaused",
+			func(ctx context.Context) (*capiv1.MachineDeployment, error) {
+				err := mgtClient.Get(ctx, crclient.ObjectKey{Namespace: controlPlaneNamespace, Name: nodepool.Name}, md)
+				return md, err
+			},
+			[]e2eutil.Predicate[*capiv1.MachineDeployment]{
+				func(md *capiv1.MachineDeployment) (done bool, reasons string, err error) {
+					if md.Annotations[capiv1.PausedAnnotation] != "true" {
+						return true, "MachineDeployment is unpaused", nil
+					}
+					return false, "MachineDeployment still paused", nil
+				},
+			},
+			e2eutil.WithTimeout(2*time.Minute),
+		)
+		t.Log("MachineDeployment is unpaused")
+
+		// After unpause, CAS may resume normal scale-down immediately since the
+		// workload is gone and aggressive timers are satisfied. Verify the cluster
+		// converges cleanly back to the autoscaling minimum.
+		_ = e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes, hostedCluster.Spec.Platform.Type)
+		t.Logf("Scaled down to %d nodes after unpause — clean state for next test", numNodes)
+	}
 }
 
 func TestNodePoolAutoscalingScaleFromZero(t *testing.T) {
