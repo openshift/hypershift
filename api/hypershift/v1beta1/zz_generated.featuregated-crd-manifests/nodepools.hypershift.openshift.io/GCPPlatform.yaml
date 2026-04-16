@@ -847,8 +847,12 @@ spec:
                                   information on Azure Marketplace image offers.
                                 maxLength: 255
                                 minLength: 1
-                                pattern: ^[a-zA-Z0-9][a-zA-Z0-9._-]*$
                                 type: string
+                                x-kubernetes-validations:
+                                - message: offer must consist of alphanumeric characters,
+                                    hyphens, underscores, and periods, and must start
+                                    with an alphanumeric character
+                                  rule: self.matches('^[a-zA-Z0-9][a-zA-Z0-9._-]*$')
                               publisher:
                                 description: |-
                                   publisher is the name of the organization that created the image.

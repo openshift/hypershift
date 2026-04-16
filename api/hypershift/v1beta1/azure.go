@@ -191,7 +191,7 @@ type AzureMarketplaceImage struct {
 	// See https://learn.microsoft.com/en-us/azure/virtual-machines/linux/cli-ps-findimage for more
 	// information on Azure Marketplace image offers.
 	//
-	// +kubebuilder:validation:Pattern=`^[a-zA-Z0-9][a-zA-Z0-9._-]*$`
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-zA-Z0-9][a-zA-Z0-9._-]*$')",message="offer must consist of alphanumeric characters, hyphens, underscores, and periods, and must start with an alphanumeric character"
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=255
 	// +optional
