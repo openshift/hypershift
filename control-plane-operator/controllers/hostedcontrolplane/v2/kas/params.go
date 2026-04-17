@@ -2,6 +2,7 @@ package kas
 
 import (
 	"fmt"
+	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/aws"
@@ -25,33 +26,33 @@ const (
 )
 
 type KubeAPIServerConfigParams struct {
-	ExternalIPConfig             *configv1.ExternalIPConfig
-	ClusterNetwork               []string
-	ServiceNetwork               []string
-	NamedCertificates            []configv1.APIServerNamedServingCert
-	KASPodPort                   int32
-	TLSSecurityProfile           *configv1.TLSSecurityProfile
-	AdditionalCORSAllowedOrigins []string
-	InternalRegistryHostName     string
-	ExternalRegistryHostNames    []string
+	ExternalIPConfig                 *configv1.ExternalIPConfig
+	ClusterNetwork                   []string
+	ServiceNetwork                   []string
+	NamedCertificates                []configv1.APIServerNamedServingCert
+	KASPodPort                       int32
+	TLSSecurityProfile               *configv1.TLSSecurityProfile
+	AdditionalCORSAllowedOrigins     []string
+	InternalRegistryHostName         string
+	ExternalRegistryHostNames        []string
 	DefaultNodeSelector              string
 	AdvertiseAddress                 string
 	ServiceAccountIssuerURL          string
 	ServiceAccountMaxTokenExpiration string
 	CloudProvider                    string
-	CloudProviderConfigRef       *corev1.LocalObjectReference
-	EtcdURL                      string
-	EtcdShardOverrides           map[string]string // maps resource prefix to URL
-	FeatureGates                 []string
-	NodePortRange                string
-	AuditWebhookEnabled          bool
-	ConsolePublicURL             string
-	DisableProfiling             bool
-	APIServerSTSDirectives       string
-	Authentication               *configv1.AuthenticationSpec
-	MaxRequestsInflight          string
-	MaxMutatingRequestsInflight  string
-	GoAwayChance                 string
+	CloudProviderConfigRef           *corev1.LocalObjectReference
+	EtcdURL                          string
+	EtcdShardOverrides               map[string]string // maps resource prefix to URL
+	FeatureGates                     []string
+	NodePortRange                    string
+	AuditWebhookEnabled              bool
+	ConsolePublicURL                 string
+	DisableProfiling                 bool
+	APIServerSTSDirectives           string
+	Authentication                   *configv1.AuthenticationSpec
+	MaxRequestsInflight              string
+	MaxMutatingRequestsInflight      string
+	GoAwayChance                     string
 }
 
 func NewConfigParams(hcp *hyperv1.HostedControlPlane, featureGates []string) KubeAPIServerConfigParams {
@@ -221,6 +222,27 @@ func newKMSImages(hcp *hyperv1.HostedControlPlane) kmsImages {
 	return images
 }
 
+// normalizeOverridePrefix converts a resource prefix from the API format to the
+// format expected by KAS --etcd-servers-overrides.
+//
+// API prefixes use the form /group/resource# for non-core groups and /resource# for
+// core (empty) group resources. KAS expects:
+//   - Core resources:     /resource#servers   (leading slash preserved)
+//   - Non-core resources: group/resource#servers (leading slash stripped)
+//
+// Non-core groups are identified by a dot in the group segment (e.g., coordination.k8s.io).
+func normalizeOverridePrefix(prefix string) string {
+	withoutSlash := strings.TrimPrefix(prefix, "/")
+	firstSegment := withoutSlash
+	if idx := strings.Index(withoutSlash, "/"); idx != -1 {
+		firstSegment = withoutSlash[:idx]
+	}
+	if strings.Contains(firstSegment, ".") {
+		return withoutSlash
+	}
+	return prefix
+}
+
 // buildManagedEtcdConfig constructs etcd URLs for managed etcd shards
 func buildManagedEtcdConfig(shards []hyperv1.ManagedEtcdShardSpec, namespace string) (string, map[string]string) {
 	var defaultURL string
@@ -241,10 +263,10 @@ func buildManagedEtcdConfig(shards []hyperv1.ManagedEtcdShardSpec, namespace str
 			if prefix == "/" {
 				defaultURL = url
 			} else {
-				// Resource prefixes in API include trailing '#' (e.g., "/events#")
-				// --etcd-servers-overrides expects format: /events#https://url
-				// So we use prefix as-is (it already has the '#')
-				overrides[prefix] = url
+				// Resource prefixes in the API use /resource# for core resources and
+				// /group/resource# for non-core groups. KAS --etcd-servers-overrides
+				// expects the leading slash stripped for non-core groups.
+				overrides[normalizeOverridePrefix(prefix)] = url
 			}
 		}
 	}
@@ -262,7 +284,7 @@ func buildUnmanagedEtcdConfig(shards []hyperv1.UnmanagedEtcdShardSpec) (string, 
 			if prefix == "/" {
 				defaultURL = shard.Endpoint
 			} else {
-				overrides[prefix] = shard.Endpoint
+				overrides[normalizeOverridePrefix(prefix)] = shard.Endpoint
 			}
 		}
 	}

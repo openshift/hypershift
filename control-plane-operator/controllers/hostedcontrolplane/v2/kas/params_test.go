@@ -369,3 +369,110 @@ func TestNewConfigParams(t *testing.T) {
 		})
 	}
 }
+
+func TestNormalizeOverridePrefix(t *testing.T) {
+	tests := []struct {
+		name     string
+		prefix   string
+		expected string
+	}{
+		{
+			name:     "When core resource prefix is given it should keep the leading slash",
+			prefix:   "/events#",
+			expected: "/events#",
+		},
+		{
+			name:     "When core resource pods prefix is given it should keep the leading slash",
+			prefix:   "/pods#",
+			expected: "/pods#",
+		},
+		{
+			name:     "When non-core group prefix coordination.k8s.io is given it should strip the leading slash",
+			prefix:   "/coordination.k8s.io/leases#",
+			expected: "coordination.k8s.io/leases#",
+		},
+		{
+			name:     "When non-core group prefix events.k8s.io is given it should strip the leading slash",
+			prefix:   "/events.k8s.io/events#",
+			expected: "events.k8s.io/events#",
+		},
+		{
+			name:     "When non-core group prefix apps without dot is given it should keep the leading slash",
+			prefix:   "/apps/deployments#",
+			expected: "/apps/deployments#",
+		},
+		{
+			name:     "When non-core group prefix with custom domain is given it should strip the leading slash",
+			prefix:   "/custom.io/resources#",
+			expected: "custom.io/resources#",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			g.Expect(normalizeOverridePrefix(tc.prefix)).To(Equal(tc.expected))
+		})
+	}
+}
+
+func TestBuildManagedEtcdConfig(t *testing.T) {
+	tests := []struct {
+		name              string
+		shards            []hyperv1.ManagedEtcdShardSpec
+		namespace         string
+		expectedDefault   string
+		expectedOverrides map[string]string
+	}{
+		{
+			name:      "When shards include core and non-core resources it should produce correct override keys",
+			namespace: "test-ns",
+			shards: []hyperv1.ManagedEtcdShardSpec{
+				{
+					Name:             "default",
+					ResourcePrefixes: []string{"/"},
+				},
+				{
+					Name:             "leases",
+					ResourcePrefixes: []string{"/coordination.k8s.io/leases#"},
+				},
+				{
+					Name:             "events",
+					ResourcePrefixes: []string{"/events#"},
+				},
+			},
+			expectedDefault: "https://etcd-client.test-ns.svc:2379",
+			expectedOverrides: map[string]string{
+				"coordination.k8s.io/leases#": "https://etcd-client-leases.test-ns.svc:2379",
+				"/events#":                    "https://etcd-client-events.test-ns.svc:2379",
+			},
+		},
+		{
+			name:      "When shard has events.k8s.io non-core prefix it should strip the leading slash",
+			namespace: "test-ns",
+			shards: []hyperv1.ManagedEtcdShardSpec{
+				{
+					Name:             "default",
+					ResourcePrefixes: []string{"/"},
+				},
+				{
+					Name:             "k8s-events",
+					ResourcePrefixes: []string{"/events.k8s.io/events#"},
+				},
+			},
+			expectedDefault: "https://etcd-client.test-ns.svc:2379",
+			expectedOverrides: map[string]string{
+				"events.k8s.io/events#": "https://etcd-client-k8s-events.test-ns.svc:2379",
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			defaultURL, overrides := buildManagedEtcdConfig(tc.shards, tc.namespace)
+			g.Expect(defaultURL).To(Equal(tc.expectedDefault))
+			g.Expect(overrides).To(Equal(tc.expectedOverrides))
+		})
+	}
+}
