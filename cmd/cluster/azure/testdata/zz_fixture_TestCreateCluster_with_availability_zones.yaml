@@ -73,31 +73,31 @@ spec:
           controlPlane:
             cloudProvider:
               credentialsSecretName: ""
-              objectEncoding: utf-8
+              objectEncoding: ""
             controlPlaneOperator:
               credentialsSecretName: ""
-              objectEncoding: utf-8
+              objectEncoding: ""
             disk:
               credentialsSecretName: ""
-              objectEncoding: utf-8
+              objectEncoding: ""
             file:
               credentialsSecretName: ""
-              objectEncoding: utf-8
+              objectEncoding: ""
             imageRegistry:
               credentialsSecretName: ""
-              objectEncoding: utf-8
+              objectEncoding: ""
             ingress:
               credentialsSecretName: ""
-              objectEncoding: utf-8
+              objectEncoding: ""
             managedIdentitiesKeyVault:
               name: ""
               tenantID: ""
             network:
               credentialsSecretName: ""
-              objectEncoding: utf-8
+              objectEncoding: ""
             nodePoolManagement:
               credentialsSecretName: ""
-              objectEncoding: utf-8
+              objectEncoding: ""
           dataPlane:
             diskMSIClientID: ""
             fileMSIClientID: ""

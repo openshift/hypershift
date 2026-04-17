@@ -2,6 +2,7 @@ package azure
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"slices"
@@ -335,6 +336,22 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 		},
 	}
 
+	// Self-managed Azure: honor --workload-identities-file before topology/auth. Infra from inline create infra Run()
+	// already unmarshals this file; infra from --infra-json may omit workloadIdentities or carry stale controlPlaneMIs.
+	// This reload is authoritative and clears stray managed-identities state that would yield invalid empty objectEncoding.
+	if o.WorkloadIdentitiesFile != "" {
+		workloadIdentitiesRaw, err := os.ReadFile(o.WorkloadIdentitiesFile)
+		if err != nil {
+			return fmt.Errorf("failed to read workload identities file %s: %w", o.WorkloadIdentitiesFile, err)
+		}
+		wi := &hyperv1.AzureWorkloadIdentities{}
+		if err := json.Unmarshal(workloadIdentitiesRaw, wi); err != nil {
+			return fmt.Errorf("failed to unmarshal workload identities file %s: %w", o.WorkloadIdentitiesFile, err)
+		}
+		o.infra.WorkloadIdentities = wi
+		o.infra.ControlPlaneMIs = nil
+	}
+
 	if o.EndpointAccess != "" && o.EndpointAccess != string(hyperv1.AzureTopologyPublic) {
 		cluster.Spec.Platform.Azure.Topology = hyperv1.AzureTopologyType(o.EndpointAccess)
 		additionalSubs := make([]hyperv1.AzureSubscriptionID, len(o.EndpointAccessPrivateAdditionalAllowedSubscriptions))
@@ -371,14 +388,32 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 		if o.infra.ControlPlaneMIs != nil {
 			cluster.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.DataPlane = o.infra.DataPlaneIdentities
 
-			cluster.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.CloudProvider.ObjectEncoding = ObjectEncoding
-			cluster.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.NodePoolManagement.ObjectEncoding = ObjectEncoding
-			cluster.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.ControlPlaneOperator.ObjectEncoding = ObjectEncoding
-			cluster.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.ImageRegistry.ObjectEncoding = ObjectEncoding
-			cluster.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.Ingress.ObjectEncoding = ObjectEncoding
-			cluster.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.Network.ObjectEncoding = ObjectEncoding
-			cluster.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.Disk.ObjectEncoding = ObjectEncoding
-			cluster.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.File.ObjectEncoding = ObjectEncoding
+			// Only set ObjectEncoding for components that have valid credentials secret names
+			// to avoid generating invalid empty objectEncoding fields
+			if o.infra.ControlPlaneMIs.ControlPlane.CloudProvider.CredentialsSecretName != "" {
+				cluster.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.CloudProvider.ObjectEncoding = ObjectEncoding
+			}
+			if o.infra.ControlPlaneMIs.ControlPlane.NodePoolManagement.CredentialsSecretName != "" {
+				cluster.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.NodePoolManagement.ObjectEncoding = ObjectEncoding
+			}
+			if o.infra.ControlPlaneMIs.ControlPlane.ControlPlaneOperator.CredentialsSecretName != "" {
+				cluster.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.ControlPlaneOperator.ObjectEncoding = ObjectEncoding
+			}
+			if o.infra.ControlPlaneMIs.ControlPlane.ImageRegistry.CredentialsSecretName != "" {
+				cluster.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.ImageRegistry.ObjectEncoding = ObjectEncoding
+			}
+			if o.infra.ControlPlaneMIs.ControlPlane.Ingress.CredentialsSecretName != "" {
+				cluster.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.Ingress.ObjectEncoding = ObjectEncoding
+			}
+			if o.infra.ControlPlaneMIs.ControlPlane.Network.CredentialsSecretName != "" {
+				cluster.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.Network.ObjectEncoding = ObjectEncoding
+			}
+			if o.infra.ControlPlaneMIs.ControlPlane.Disk.CredentialsSecretName != "" {
+				cluster.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.Disk.ObjectEncoding = ObjectEncoding
+			}
+			if o.infra.ControlPlaneMIs.ControlPlane.File.CredentialsSecretName != "" {
+				cluster.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.File.ObjectEncoding = ObjectEncoding
+			}
 		}
 	}
 
