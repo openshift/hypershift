@@ -12347,22 +12347,6 @@ unless overridden per-shard.</p>
 </tr>
 <tr>
 <td>
-<code>shards</code></br>
-<em>
-<a href="#hypershift.openshift.io/v1beta1.ManagedEtcdShardSpec">
-[]ManagedEtcdShardSpec
-</a>
-</em>
-</td>
-<td>
-<em>(Optional)</em>
-<p>shards configures etcd sharding by Kubernetes resource kind.
-When not specified, a default single shard accepting all prefixes is used.
-When specified, exactly one shard must have &ldquo;/&rdquo; in its resourcePrefixes.</p>
-</td>
-</tr>
-<tr>
-<td>
 <code>backup,omitzero</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupConfig">
@@ -12375,6 +12359,22 @@ HCPEtcdBackupConfig
 <p>backup defines the backup configuration for managed etcd, including
 optional KMS key settings for artifact encryption in cloud storage.
 This configuration is only used when an HCPEtcdBackup CR exists.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>shards</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ManagedEtcdShardSpec">
+[]ManagedEtcdShardSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>shards configures etcd sharding by Kubernetes resource kind.
+When not specified, a default single shard accepting all prefixes is used.
+When specified, exactly one shard must have &ldquo;/&rdquo; in its resourcePrefixes.</p>
 </td>
 </tr>
 </tbody>

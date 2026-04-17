@@ -191,6 +191,11 @@ func TestNewConfigParams(t *testing.T) {
 			hcp: func() *hyperv1.HostedControlPlane {
 				hcp := createDefaultHostedControlPlane()
 				hcp.Spec.Etcd.ManagementType = hyperv1.Managed
+				hcp.Spec.Etcd.Managed = &hyperv1.ManagedEtcdSpec{
+					Storage: hyperv1.ManagedEtcdStorageSpec{
+						Type: hyperv1.PersistentVolumeEtcdStorage,
+					},
+				}
 				hcp.Namespace = "test-namespace"
 				return hcp
 			}(),
@@ -198,6 +203,7 @@ func TestNewConfigParams(t *testing.T) {
 				params := defaultKubeAPIServerConfigParams()
 				params.FeatureGates = featureGates
 				params.EtcdURL = "https://etcd-client.test-namespace.svc:2379"
+				params.EtcdShardOverrides = map[string]string{}
 				return params
 			},
 		},
@@ -215,6 +221,7 @@ func TestNewConfigParams(t *testing.T) {
 				params := defaultKubeAPIServerConfigParams()
 				params.FeatureGates = featureGates
 				params.EtcdURL = "https://external-etcd:2379"
+				params.EtcdShardOverrides = map[string]string{}
 				return params
 			},
 		},

@@ -163,8 +163,8 @@ func TestReconcileStatefulSet_NamedShard(t *testing.T) {
 	}
 
 	// Verify ServiceName includes shard name
-	if sts.Spec.ServiceName != "etcd-events-discovery" {
-		t.Errorf("Expected ServiceName to be 'etcd-events-discovery', got: %s", sts.Spec.ServiceName)
+	if sts.Spec.ServiceName != "etcd-discovery-events" {
+		t.Errorf("Expected ServiceName to be 'etcd-discovery-events', got: %s", sts.Spec.ServiceName)
 	}
 
 	// Verify replicas from shard spec

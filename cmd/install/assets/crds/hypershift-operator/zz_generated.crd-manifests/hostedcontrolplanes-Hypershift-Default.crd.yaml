@@ -2999,6 +2999,11 @@ spec:
                                   - message: RestoreSnapshotURL shouldn't contain
                                       more than 1 entry
                                     rule: self.size() <= 1
+                                  - message: restoreSnapshotURL is immutable
+                                    rule: self == oldSelf
+                                  - message: restoreSnapshotURL must be a valid URL
+                                      with scheme https or s3
+                                    rule: self.size() == 0 || self[0].matches('^(https|s3)://.*')
                                 type:
                                   description: |-
                                     type is the kind of persistent storage implementation to use for etcd.

@@ -10,6 +10,8 @@ import (
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/upsert"
 
+	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
@@ -28,6 +30,7 @@ func TestReconcileEtcdShards_SingleShard(t *testing.T) {
 	_ = corev1.AddToScheme(scheme)
 	_ = policyv1.AddToScheme(scheme)
 	_ = hyperv1.AddToScheme(scheme)
+	_ = prometheusoperatorv1.AddToScheme(scheme)
 
 	hcp := &hyperv1.HostedControlPlane{
 		ObjectMeta: metav1.ObjectMeta{
@@ -93,6 +96,7 @@ func TestReconcileEtcdShards_MultipleShards(t *testing.T) {
 	_ = corev1.AddToScheme(scheme)
 	_ = policyv1.AddToScheme(scheme)
 	_ = hyperv1.AddToScheme(scheme)
+	_ = prometheusoperatorv1.AddToScheme(scheme)
 
 	hcp := &hyperv1.HostedControlPlane{
 		ObjectMeta: metav1.ObjectMeta{
@@ -279,7 +283,9 @@ func TestCleanupOrphanedShards(t *testing.T) {
 	scheme := runtime.NewScheme()
 	_ = appsv1.AddToScheme(scheme)
 	_ = corev1.AddToScheme(scheme)
+	_ = policyv1.AddToScheme(scheme)
 	_ = hyperv1.AddToScheme(scheme)
+	_ = prometheusoperatorv1.AddToScheme(scheme)
 
 	hcp := &hyperv1.HostedControlPlane{
 		ObjectMeta: metav1.ObjectMeta{
