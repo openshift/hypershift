@@ -29,6 +29,99 @@ func TestAdaptDeployment(t *testing.T) {
 		validate func(*testing.T, *GomegaWithT, *hyperv1.HostedControlPlane)
 	}{
 		{
+			name: "When managed etcd has a default-named shard, it should use etcd-client service (not etcd-client-default)",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-hcp",
+					Namespace: "test-ns",
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
+					IssuerURL: "https://test-issuer.example.com",
+					Etcd: hyperv1.EtcdSpec{
+						ManagementType: hyperv1.Managed,
+						Managed: &hyperv1.ManagedEtcdSpec{
+							Shards: []hyperv1.ManagedEtcdShardSpec{
+								{
+									Name:             "default",
+									ResourcePrefixes: []string{"/"},
+								},
+								{
+									Name:             "events",
+									ResourcePrefixes: []string{"/events#"},
+								},
+							},
+						},
+					},
+				},
+			},
+			validate: func(t *testing.T, g *GomegaWithT, hcp *hyperv1.HostedControlPlane) {
+				deployment, loadErr := assets.LoadDeploymentManifest(ComponentName)
+				g.Expect(loadErr).ToNot(HaveOccurred())
+
+				cpContext := component.WorkloadContext{
+					Client: fake.NewClientBuilder().WithScheme(api.Scheme).Build(),
+					HCP:    hcp,
+				}
+
+				err := adaptDeployment(cpContext, deployment)
+				g.Expect(err).ToNot(HaveOccurred())
+
+				container := util.FindContainer(ComponentName, deployment.Spec.Template.Spec.Containers)
+				g.Expect(container).ToNot(BeNil())
+				g.Expect(container.Args).To(ContainElement("--etcd-servers=https://etcd-client.test-ns.svc:2379"))
+				g.Expect(container.Args).ToNot(ContainElement(ContainSubstring("etcd-client-default")))
+			},
+		},
+		{
+			name: "When managed etcd has a non-default-named shard with root prefix, it should use etcd-client-{name} service",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-hcp",
+					Namespace: "test-ns",
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
+					IssuerURL: "https://test-issuer.example.com",
+					Etcd: hyperv1.EtcdSpec{
+						ManagementType: hyperv1.Managed,
+						Managed: &hyperv1.ManagedEtcdSpec{
+							Shards: []hyperv1.ManagedEtcdShardSpec{
+								{
+									Name:             "core",
+									ResourcePrefixes: []string{"/"},
+								},
+								{
+									Name:             "events",
+									ResourcePrefixes: []string{"/events#"},
+								},
+							},
+						},
+					},
+				},
+			},
+			validate: func(t *testing.T, g *GomegaWithT, hcp *hyperv1.HostedControlPlane) {
+				deployment, loadErr := assets.LoadDeploymentManifest(ComponentName)
+				g.Expect(loadErr).ToNot(HaveOccurred())
+
+				cpContext := component.WorkloadContext{
+					Client: fake.NewClientBuilder().WithScheme(api.Scheme).Build(),
+					HCP:    hcp,
+				}
+
+				err := adaptDeployment(cpContext, deployment)
+				g.Expect(err).ToNot(HaveOccurred())
+
+				container := util.FindContainer(ComponentName, deployment.Spec.Template.Spec.Containers)
+				g.Expect(container).ToNot(BeNil())
+				g.Expect(container.Args).To(ContainElement("--etcd-servers=https://etcd-client-core.test-ns.svc:2379"))
+			},
+		},
+		{
 			name: "When etcd is managed, it should configure default etcd URL",
 			hcp: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{

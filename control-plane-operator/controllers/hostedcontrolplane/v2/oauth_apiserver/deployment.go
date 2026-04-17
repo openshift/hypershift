@@ -36,14 +36,19 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 		etcdURL = cpContext.HCP.Spec.Etcd.Unmanaged.Endpoint
 	} else {
 		// For managed etcd, determine the URL based on sharding configuration
-		if len(cpContext.HCP.Spec.Etcd.Managed.Shards) > 0 {
+		if cpContext.HCP.Spec.Etcd.Managed != nil && len(cpContext.HCP.Spec.Etcd.Managed.Shards) > 0 {
 			// When sharded, find the default shard (one containing "/" prefix)
 			namespace := cpContext.HCP.Namespace
 			for _, shard := range cpContext.HCP.Spec.Etcd.Managed.Shards {
 				for _, prefix := range shard.ResourcePrefixes {
 					if prefix == "/" {
-						// Found the default shard
-						serviceName := fmt.Sprintf("etcd-client-%s", shard.Name)
+						// Found the default shard - use same naming as resourceNameForShard() in manifests/etcd.go
+						var serviceName string
+						if shard.Name == "default" {
+							serviceName = "etcd-client"
+						} else {
+							serviceName = fmt.Sprintf("etcd-client-%s", shard.Name)
+						}
 						etcdURL = fmt.Sprintf("https://%s.%s.svc:2379", serviceName, namespace)
 						etcdHostname = serviceName
 						break
@@ -69,8 +74,8 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 
 	noProxy := []string{
 		manifests.KubeAPIServerService("").Name,
-		etcdHostname,       // Short name for backwards compatibility
-		etcdFQDN,          // FQDN that's actually used in connections
+		etcdHostname, // Short name for backwards compatibility
+		etcdFQDN,     // FQDN that's actually used in connections
 		config.AuditWebhookService,
 	}
 
