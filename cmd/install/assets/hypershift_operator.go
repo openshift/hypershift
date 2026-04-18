@@ -1483,6 +1483,11 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 				ResourceNames: []string{hyperv1.GroupVersion.Group},
 			},
 			{
+				APIGroups: []string{"admissionregistration.k8s.io"},
+				Resources: []string{"mutatingwebhookconfigurations", "validatingwebhookconfigurations"},
+				Verbs:     []string{"get", "list", "watch", "update"},
+			},
+			{
 				APIGroups: []string{"certificates.k8s.io"},
 				Resources: []string{"certificatesigningrequests"},
 				Verbs:     []string{"get", "list", "watch"},
