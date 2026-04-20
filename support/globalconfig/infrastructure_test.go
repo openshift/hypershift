@@ -7,6 +7,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/aws"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/openstack"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -191,6 +192,21 @@ func TestReconcileInfrastructure(t *testing.T) {
 				g.Expect(infra.Spec.PlatformSpec.AWS).ToNot(BeNil())
 				g.Expect(infra.Status.PlatformStatus.AWS).ToNot(BeNil())
 				g.Expect(infra.Status.PlatformStatus.AWS.Region).To(Equal("us-east-1"))
+			},
+		},
+		{
+			name:       "When AWS platform is specified, it should set CloudConfig name and key",
+			inputInfra: InfrastructureConfig(),
+			inputHCP: func() *hyperv1.HostedControlPlane {
+				hcp := baseHCP(hyperv1.AWSPlatform)
+				hcp.Spec.Platform.AWS = &hyperv1.AWSPlatformSpec{
+					Region: "us-east-1",
+				}
+				return hcp
+			}(),
+			verify: func(g Gomega, infra *configv1.Infrastructure) {
+				g.Expect(infra.Spec.CloudConfig.Name).To(Equal("cloud-provider-config"))
+				g.Expect(infra.Spec.CloudConfig.Key).To(Equal(aws.ProviderConfigKey))
 			},
 		},
 		{
