@@ -9,6 +9,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/aws"
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/support/certs"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -33,7 +34,7 @@ func TestReconcileCloudConfig_AWS(t *testing.T) {
 	fakeUserCABundle := func() *corev1.ConfigMap {
 		cm := cpomanifests.UserCAConfigMap(hcpNamespace)
 		cm.Data = map[string]string{
-			"ca-bundle.crt": "-----BEGIN CERTIFICATE-----\nfake-ca-bundle\n-----END CERTIFICATE-----\n",
+			certs.UserCABundleMapKey: "-----BEGIN CERTIFICATE-----\nfake-ca-bundle\n-----END CERTIFICATE-----\n",
 		}
 		return cm
 	}
@@ -43,6 +44,7 @@ func TestReconcileCloudConfig_AWS(t *testing.T) {
 		hcp          *hyperv1.HostedControlPlane
 		cpObjects    []client.Object
 		guestObjects []client.Object
+		expectError  bool
 		verify       func(g Gomega, guestClient client.Client)
 	}{
 		{
@@ -143,6 +145,111 @@ func TestReconcileCloudConfig_AWS(t *testing.T) {
 				g.Expect(cm.Data).ToNot(HaveKey(aws.CABundleKey))
 			},
 		},
+		{
+			name: "When aws-cloud-config ConfigMap is missing, it should return an error",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test",
+					Namespace: hcpNamespace,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
+				},
+			},
+			cpObjects:   []client.Object{},
+			expectError: true,
+		},
+		{
+			name: "When additionalTrustBundle is set but user-ca-bundle ConfigMap is missing, it should sync base config without CA bundle",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test",
+					Namespace: hcpNamespace,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
+					AdditionalTrustBundle: &corev1.LocalObjectReference{
+						Name: "user-ca-bundle",
+					},
+				},
+			},
+			cpObjects: []client.Object{
+				fakeAWSCloudConfig(),
+			},
+			verify: func(g Gomega, guestClient client.Client) {
+				cm := &corev1.ConfigMap{}
+				err := guestClient.Get(context.Background(), client.ObjectKey{
+					Namespace: ConfigNamespace,
+					Name:      CloudProviderCMName,
+				}, cm)
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(cm.Data).To(HaveKeyWithValue(aws.ProviderConfigKey, "[Global]\nZone = us-east-1a\nVPC = vpc-123\n"))
+				g.Expect(cm.Data).ToNot(HaveKey(aws.CABundleKey))
+			},
+		},
+		{
+			name: "When aws-cloud-config ConfigMap is missing the provider config key, it should return an error",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test",
+					Namespace: hcpNamespace,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
+				},
+			},
+			cpObjects: []client.Object{
+				func() *corev1.ConfigMap {
+					cm := cpomanifests.AWSProviderConfig(hcpNamespace)
+					cm.Data = map[string]string{}
+					return cm
+				}(),
+			},
+			expectError: true,
+		},
+		{
+			name: "When additionalTrustBundle has empty ca-bundle.crt value, it should not set CA bundle key",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test",
+					Namespace: hcpNamespace,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
+					AdditionalTrustBundle: &corev1.LocalObjectReference{
+						Name: "user-ca-bundle",
+					},
+				},
+			},
+			cpObjects: []client.Object{
+				fakeAWSCloudConfig(),
+				func() *corev1.ConfigMap {
+					cm := cpomanifests.UserCAConfigMap(hcpNamespace)
+					cm.Data = map[string]string{
+						certs.UserCABundleMapKey: "",
+					}
+					return cm
+				}(),
+			},
+			verify: func(g Gomega, guestClient client.Client) {
+				cm := &corev1.ConfigMap{}
+				err := guestClient.Get(context.Background(), client.ObjectKey{
+					Namespace: ConfigNamespace,
+					Name:      CloudProviderCMName,
+				}, cm)
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(cm.Data).To(HaveKeyWithValue(aws.ProviderConfigKey, "[Global]\nZone = us-east-1a\nVPC = vpc-123\n"))
+				g.Expect(cm.Data).ToNot(HaveKey(aws.CABundleKey))
+			},
+		},
 	}
 
 	for _, tc := range testCases {
@@ -161,6 +268,10 @@ func TestReconcileCloudConfig_AWS(t *testing.T) {
 			}
 
 			err := r.reconcileCloudConfig(context.Background(), tc.hcp)
+			if tc.expectError {
+				g.Expect(err).To(HaveOccurred())
+				return
+			}
 			g.Expect(err).ToNot(HaveOccurred())
 
 			tc.verify(g, guestClient)

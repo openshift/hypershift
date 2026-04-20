@@ -50,6 +50,7 @@ import (
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/capabilities"
+	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/k8sutil"
@@ -2504,14 +2505,22 @@ func (r *reconciler) reconcileCloudConfig(ctx context.Context, hcp *hyperv1.Host
 		if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(reference), reference); err != nil {
 			return fmt.Errorf("failed to fetch %s/%s configmap from management cluster: %w", reference.Namespace, reference.Name, err)
 		}
+		providerConfig, ok := reference.Data[aws.ProviderConfigKey]
+		if !ok || strings.TrimSpace(providerConfig) == "" {
+			return fmt.Errorf("source configmap %s/%s is missing required key %q", reference.Namespace, reference.Name, aws.ProviderConfigKey)
+		}
 
 		var caBundle string
 		if hcp.Spec.AdditionalTrustBundle != nil {
 			cpUserCAConfigMap := cpomanifests.UserCAConfigMap(hcp.Namespace)
 			if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(cpUserCAConfigMap), cpUserCAConfigMap); err != nil {
-				return fmt.Errorf("failed to fetch user CA bundle from management cluster: %w", err)
+				if !apierrors.IsNotFound(err) {
+					return fmt.Errorf("failed to fetch user CA bundle from management cluster: %w", err)
+				}
+				ctrl.LoggerFrom(ctx).Info("user CA bundle ConfigMap not found, skipping CA bundle sync", "configmap", client.ObjectKeyFromObject(cpUserCAConfigMap))
+			} else {
+				caBundle = cpUserCAConfigMap.Data[certs.UserCABundleMapKey]
 			}
-			caBundle = cpUserCAConfigMap.Data["ca-bundle.crt"]
 		}
 
 		cm := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: ConfigNamespace, Name: CloudProviderCMName}}
@@ -2519,7 +2528,7 @@ func (r *reconciler) reconcileCloudConfig(ctx context.Context, hcp *hyperv1.Host
 			if cm.Data == nil {
 				cm.Data = map[string]string{}
 			}
-			cm.Data[aws.ProviderConfigKey] = reference.Data[aws.ProviderConfigKey]
+			cm.Data[aws.ProviderConfigKey] = providerConfig
 			if caBundle != "" {
 				cm.Data[aws.CABundleKey] = caBundle
 			} else {
