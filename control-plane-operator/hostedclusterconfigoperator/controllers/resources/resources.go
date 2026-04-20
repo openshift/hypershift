@@ -2417,6 +2417,52 @@ func (r *reconciler) reconcileObservedConfiguration(ctx context.Context, hcp *hy
 func (r *reconciler) reconcileCloudConfig(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
 
 	switch hcp.Spec.Platform.Type {
+	case hyperv1.AWSPlatform:
+		if hcp.Spec.AdditionalTrustBundle != nil {
+			cpUserCAConfigMap := cpomanifests.UserCAConfigMap(hcp.Namespace)
+			if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(cpUserCAConfigMap), cpUserCAConfigMap); err != nil {
+				return fmt.Errorf("failed to fetch %s/%s configmap from management cluster: %w", cpUserCAConfigMap.Namespace, cpUserCAConfigMap.Name, err)
+			}
+
+			caBundleData := cpUserCAConfigMap.Data["ca-bundle.crt"]
+			if caBundleData != "" {
+				cm := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: ConfigNamespace, Name: CloudProviderCMName}}
+				if _, err := r.CreateOrUpdate(ctx, r.client, cm, func() error {
+					if cm.Data == nil {
+						cm.Data = map[string]string{}
+					}
+					cm.Data["ca-bundle.pem"] = caBundleData
+					return nil
+				}); err != nil {
+					return fmt.Errorf("failed to reconcile the %s/%s configmap: %w", cm.Namespace, cm.Name, err)
+				}
+
+				// Create kube-cloud-config in openshift-config-managed for the
+				// cloud-network-config-controller (CNO). In HyperShift, the CCCMO
+				// config-sync-controllers are not deployed, so we handle this directly.
+				cmKCC := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: ConfigManagedNamespace, Name: "kube-cloud-config"}}
+				if _, err := r.CreateOrUpdate(ctx, r.client, cmKCC, func() error {
+					if cmKCC.Data == nil {
+						cmKCC.Data = map[string]string{}
+					}
+					cmKCC.Data["ca-bundle.pem"] = caBundleData
+					return nil
+				}); err != nil {
+					return fmt.Errorf("failed to reconcile the %s/%s configmap: %w", cmKCC.Namespace, cmKCC.Name, err)
+				}
+			}
+		} else {
+			// Clean up cloud-provider-config and kube-cloud-config if they exist
+			// when no additional trust bundle is configured.
+			cm := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: ConfigNamespace, Name: CloudProviderCMName}}
+			if _, err := util.DeleteIfNeeded(ctx, r.client, cm); err != nil {
+				return fmt.Errorf("failed to delete unused %s/%s configmap: %w", cm.Namespace, cm.Name, err)
+			}
+			cmKCC := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: ConfigManagedNamespace, Name: "kube-cloud-config"}}
+			if _, err := util.DeleteIfNeeded(ctx, r.client, cmKCC); err != nil {
+				return fmt.Errorf("failed to delete unused %s/%s configmap: %w", cmKCC.Namespace, cmKCC.Name, err)
+			}
+		}
 	case hyperv1.AzurePlatform:
 		// This is needed for the e2e tests and only for Azure: https://github.com/openshift/origin/blob/625733dd1ce7ebf40c3dd0abd693f7bb54f2d580/test/extended/util/cluster/cluster.go#L186
 		reference := cpomanifests.AzureProviderConfig(hcp.Namespace)
