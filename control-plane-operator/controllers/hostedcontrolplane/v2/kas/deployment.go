@@ -97,6 +97,9 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 	case hyperv1.Unmanaged:
 		util.RemoveInitContainer("wait-for-etcd", &deployment.Spec.Template.Spec)
 	case hyperv1.Managed:
+		if hcp.Spec.Etcd.Managed == nil {
+			break
+		}
 		// Update wait-for-etcd init container to wait for ALL shard services
 		util.UpdateContainer("wait-for-etcd", deployment.Spec.Template.Spec.InitContainers, func(c *corev1.Container) {
 			shards := hcp.Spec.Etcd.Managed.EffectiveShards(hcp)

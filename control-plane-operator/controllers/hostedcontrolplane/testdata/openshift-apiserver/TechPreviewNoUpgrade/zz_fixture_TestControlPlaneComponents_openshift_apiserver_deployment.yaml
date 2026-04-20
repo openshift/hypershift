@@ -93,7 +93,7 @@ spec:
         - name: HTTPS_PROXY
           value: http://127.0.0.1:8090
         - name: NO_PROXY
-          value: kube-apiserver,etcd-client,audit-webhook
+          value: kube-apiserver,audit-webhook,etcd-client
         image: openshift-apiserver
         imagePullPolicy: IfNotPresent
         livenessProbe:
