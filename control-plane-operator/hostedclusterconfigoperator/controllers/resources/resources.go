@@ -101,6 +101,9 @@ const (
 	ConfigNamespace        = "openshift-config"
 	ConfigManagedNamespace = "openshift-config-managed"
 	CloudProviderCMName    = "cloud-provider-config"
+	KubeCloudConfigCMName  = "kube-cloud-config"
+	caBundleCertKey        = "ca-bundle.crt"
+	caBundlePEMKey         = "ca-bundle.pem"
 	awsCredentialsTemplate = `[default]
 role_arn = %s
 web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
@@ -2424,14 +2427,14 @@ func (r *reconciler) reconcileCloudConfig(ctx context.Context, hcp *hyperv1.Host
 				return fmt.Errorf("failed to fetch %s/%s configmap from management cluster: %w", cpUserCAConfigMap.Namespace, cpUserCAConfigMap.Name, err)
 			}
 
-			caBundleData := cpUserCAConfigMap.Data["ca-bundle.crt"]
+			caBundleData := cpUserCAConfigMap.Data[caBundleCertKey]
 			if caBundleData != "" {
 				cm := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: ConfigNamespace, Name: CloudProviderCMName}}
 				if _, err := r.CreateOrUpdate(ctx, r.client, cm, func() error {
 					if cm.Data == nil {
 						cm.Data = map[string]string{}
 					}
-					cm.Data["ca-bundle.pem"] = caBundleData
+					cm.Data[caBundlePEMKey] = caBundleData
 					return nil
 				}); err != nil {
 					return fmt.Errorf("failed to reconcile the %s/%s configmap: %w", cm.Namespace, cm.Name, err)
@@ -2440,28 +2443,29 @@ func (r *reconciler) reconcileCloudConfig(ctx context.Context, hcp *hyperv1.Host
 				// Create kube-cloud-config in openshift-config-managed for the
 				// cloud-network-config-controller (CNO). In HyperShift, the CCCMO
 				// config-sync-controllers are not deployed, so we handle this directly.
-				cmKCC := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: ConfigManagedNamespace, Name: "kube-cloud-config"}}
+				cmKCC := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: ConfigManagedNamespace, Name: KubeCloudConfigCMName}}
 				if _, err := r.CreateOrUpdate(ctx, r.client, cmKCC, func() error {
 					if cmKCC.Data == nil {
 						cmKCC.Data = map[string]string{}
 					}
-					cmKCC.Data["ca-bundle.pem"] = caBundleData
+					cmKCC.Data[caBundlePEMKey] = caBundleData
 					return nil
 				}); err != nil {
 					return fmt.Errorf("failed to reconcile the %s/%s configmap: %w", cmKCC.Namespace, cmKCC.Name, err)
 				}
+				return nil
 			}
-		} else {
-			// Clean up cloud-provider-config and kube-cloud-config if they exist
-			// when no additional trust bundle is configured.
-			cm := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: ConfigNamespace, Name: CloudProviderCMName}}
-			if _, err := util.DeleteIfNeeded(ctx, r.client, cm); err != nil {
-				return fmt.Errorf("failed to delete unused %s/%s configmap: %w", cm.Namespace, cm.Name, err)
-			}
-			cmKCC := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: ConfigManagedNamespace, Name: "kube-cloud-config"}}
-			if _, err := util.DeleteIfNeeded(ctx, r.client, cmKCC); err != nil {
-				return fmt.Errorf("failed to delete unused %s/%s configmap: %w", cmKCC.Namespace, cmKCC.Name, err)
-			}
+			// Fall through to cleanup when ca-bundle.crt data is empty
+		}
+		// Clean up cloud-provider-config and kube-cloud-config if they exist
+		// when no additional trust bundle is configured or ca-bundle.crt data is empty.
+		cm := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: ConfigNamespace, Name: CloudProviderCMName}}
+		if _, err := util.DeleteIfNeeded(ctx, r.client, cm); err != nil {
+			return fmt.Errorf("failed to delete unused %s/%s configmap: %w", cm.Namespace, cm.Name, err)
+		}
+		cmKCC := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: ConfigManagedNamespace, Name: KubeCloudConfigCMName}}
+		if _, err := util.DeleteIfNeeded(ctx, r.client, cmKCC); err != nil {
+			return fmt.Errorf("failed to delete unused %s/%s configmap: %w", cmKCC.Namespace, cmKCC.Name, err)
 		}
 	case hyperv1.AzurePlatform:
 		// This is needed for the e2e tests and only for Azure: https://github.com/openshift/origin/blob/625733dd1ce7ebf40c3dd0abd693f7bb54f2d580/test/extended/util/cluster/cluster.go#L186
@@ -2506,7 +2510,7 @@ func (r *reconciler) reconcileCloudConfig(ctx context.Context, hcp *hyperv1.Host
 		// to create the kube-cloud-config ConfigMap for cloud-network-config-controller.
 		// This is particular to OpenStack because in the case of a cloud using a self-signed
 		// CA, the CA bundle is needed to be passed to the cloud-network-config-controller.
-		cmKCC := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: ConfigManagedNamespace, Name: "kube-cloud-config"}}
+		cmKCC := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: ConfigManagedNamespace, Name: KubeCloudConfigCMName}}
 		if _, err := r.CreateOrUpdate(ctx, r.client, cmKCC, func() error {
 			if cmKCC.Data == nil {
 				cmKCC.Data = map[string]string{}

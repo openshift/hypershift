@@ -6,6 +6,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	assets "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 
@@ -16,6 +17,7 @@ import (
 )
 
 func TestAdaptDeployment(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name                   string
 		hcp                    *hyperv1.HostedControlPlane
@@ -79,6 +81,7 @@ func TestAdaptDeployment(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			g := NewGomegaWithT(t)
 
 			deployment := &appsv1.Deployment{}
@@ -91,42 +94,53 @@ func TestAdaptDeployment(t *testing.T) {
 			err = adaptDeployment(cpContext, deployment)
 			g.Expect(err).ToNot(HaveOccurred())
 
-			// Check for trusted-ca volume
-			hasVolume := false
-			for _, v := range deployment.Spec.Template.Spec.Volumes {
-				if v.Name == trustedCAVolumeName {
-					hasVolume = true
-					g.Expect(v.ConfigMap).ToNot(BeNil())
-					g.Expect(v.ConfigMap.Name).To(Equal("user-ca-bundle"))
-					g.Expect(v.ConfigMap.Items).To(HaveLen(1))
-					g.Expect(v.ConfigMap.Items[0].Key).To(Equal(caBundleKey))
-					g.Expect(v.ConfigMap.Items[0].Path).To(Equal(caBundlePath))
+			// Verify trusted-ca volume
+			if tt.expectTrustBundleMount {
+				g.Expect(deployment.Spec.Template.Spec.Volumes).To(ContainElement(SatisfyAll(
+					HaveField("Name", trustedCAVolumeName),
+					HaveField("VolumeSource.ConfigMap.Name", cpomanifests.UserCAConfigMap("test-namespace").Name),
+					HaveField("VolumeSource.ConfigMap.Items", ConsistOf(corev1.KeyToPath{Key: caBundleKey, Path: caBundlePath})),
+					HaveField("VolumeSource.ConfigMap.Optional", ptr.To(true)),
+				)))
+			} else {
+				g.Expect(deployment.Spec.Template.Spec.Volumes).ToNot(
+					ContainElement(HaveField("Name", trustedCAVolumeName)),
+				)
+			}
+
+			// Find the CCM container
+			var ccmContainer *corev1.Container
+			for i := range deployment.Spec.Template.Spec.Containers {
+				if deployment.Spec.Template.Spec.Containers[i].Name == containerName {
+					ccmContainer = &deployment.Spec.Template.Spec.Containers[i]
+					break
 				}
 			}
-			g.Expect(hasVolume).To(Equal(tt.expectTrustBundleMount))
+			g.Expect(ccmContainer).ToNot(BeNil(), "expected CCM container to exist")
 
-			// Check for volume mount and env var on the CCM container
-			for _, c := range deployment.Spec.Template.Spec.Containers {
-				if c.Name == containerName {
-					hasMount := false
-					for _, vm := range c.VolumeMounts {
-						if vm.Name == trustedCAVolumeName {
-							hasMount = true
-							g.Expect(vm.MountPath).To(Equal(caDir))
-							g.Expect(vm.ReadOnly).To(BeTrue())
-						}
-					}
-					g.Expect(hasMount).To(Equal(tt.expectTrustBundleMount))
+			// Verify volume mount on the CCM container
+			if tt.expectTrustBundleMount {
+				g.Expect(ccmContainer.VolumeMounts).To(ContainElement(SatisfyAll(
+					HaveField("Name", trustedCAVolumeName),
+					HaveField("MountPath", caDir),
+					HaveField("ReadOnly", true),
+				)))
+			} else {
+				g.Expect(ccmContainer.VolumeMounts).ToNot(
+					ContainElement(HaveField("Name", trustedCAVolumeName)),
+				)
+			}
 
-					hasEnv := false
-					for _, env := range c.Env {
-						if env.Name == "AWS_CA_BUNDLE" {
-							hasEnv = true
-							g.Expect(env.Value).To(Equal(caDir + "/" + caBundlePath))
-						}
-					}
-					g.Expect(hasEnv).To(Equal(tt.expectAWSCABundleEnv))
-				}
+			// Verify AWS_CA_BUNDLE env var on the CCM container
+			if tt.expectAWSCABundleEnv {
+				g.Expect(ccmContainer.Env).To(ContainElement(SatisfyAll(
+					HaveField("Name", "AWS_CA_BUNDLE"),
+					HaveField("Value", caDir+"/"+caBundlePath),
+				)))
+			} else {
+				g.Expect(ccmContainer.Env).ToNot(
+					ContainElement(HaveField("Name", "AWS_CA_BUNDLE")),
+				)
 			}
 		})
 	}
