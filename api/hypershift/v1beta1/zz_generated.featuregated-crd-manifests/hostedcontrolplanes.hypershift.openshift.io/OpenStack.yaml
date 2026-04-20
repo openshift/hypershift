@@ -2399,6 +2399,7 @@ spec:
                                 If empty, uses priority-based default or disables backups
                                 Examples: "*/30 * * * *" (every 30 min), "0 * * * *" (hourly)
                               maxLength: 100
+                              minLength: 1
                               type: string
                             name:
                               description: |-
@@ -2406,8 +2407,11 @@ spec:
                                 Must be DNS-1035 compliant (lowercase alphanumeric + hyphens)
                                 Used for resource naming: etcd-{name}, etcd-{name}-client, etc.
                               maxLength: 15
-                              pattern: ^[a-z]([-a-z0-9]*[a-z0-9])?$
+                              minLength: 1
                               type: string
+                              x-kubernetes-validations:
+                              - message: name must be DNS-1035 compliant
+                                rule: self.matches('^[a-z]([-a-z0-9]*[a-z0-9])?$')
                             priority:
                               default: Medium
                               description: |-
@@ -2439,6 +2443,7 @@ spec:
                                 Exactly one shard must have "/" as a prefix
                               items:
                                 maxLength: 255
+                                minLength: 1
                                 type: string
                               maxItems: 50
                               minItems: 1
@@ -2627,8 +2632,11 @@ spec:
                           Used only when shards is not specified (legacy single-etcd mode).
                           When shards are specified, this field is ignored.
                         maxLength: 255
-                        pattern: ^https://
+                        minLength: 1
                         type: string
+                        x-kubernetes-validations:
+                        - message: endpoint must start with https://
+                          rule: self.startsWith('https://')
                       shards:
                         description: |-
                           shards configures etcd sharding by Kubernetes resource kind.
@@ -2650,8 +2658,11 @@ spec:
                                 name is the unique identifier for this shard
                                 Must be DNS-1035 compliant (lowercase alphanumeric + hyphens)
                               maxLength: 15
-                              pattern: ^[a-z]([-a-z0-9]*[a-z0-9])?$
+                              minLength: 1
                               type: string
+                              x-kubernetes-validations:
+                              - message: name must be DNS-1035 compliant
+                                rule: self.matches('^[a-z]([-a-z0-9]*[a-z0-9])?$')
                             priority:
                               default: Medium
                               description: priority determines operational importance
@@ -2669,6 +2680,7 @@ spec:
                                 Exactly one shard must have "/" as a prefix
                               items:
                                 maxLength: 255
+                                minLength: 1
                                 type: string
                               maxItems: 50
                               minItems: 1

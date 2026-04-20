@@ -1329,8 +1329,8 @@ func parseInlineShard(def string) (hyperv1.ManagedEtcdShardSpec, error) {
 			r := int32(replicas)
 			shard.Replicas = &r
 		case "storage-size":
-			if shard.Storage == nil {
-				shard.Storage = &hyperv1.ManagedEtcdStorageSpec{
+			if shard.Storage.Type == "" {
+				shard.Storage = hyperv1.ManagedEtcdStorageSpec{
 					Type:             hyperv1.PersistentVolumeEtcdStorage,
 					PersistentVolume: &hyperv1.PersistentVolumeEtcdStorageSpec{},
 				}
@@ -1341,15 +1341,15 @@ func parseInlineShard(def string) (hyperv1.ManagedEtcdShardSpec, error) {
 			}
 			shard.Storage.PersistentVolume.Size = &size
 		case "storage-class":
-			if shard.Storage == nil {
-				shard.Storage = &hyperv1.ManagedEtcdStorageSpec{
+			if shard.Storage.Type == "" {
+				shard.Storage = hyperv1.ManagedEtcdStorageSpec{
 					Type:             hyperv1.PersistentVolumeEtcdStorage,
 					PersistentVolume: &hyperv1.PersistentVolumeEtcdStorageSpec{},
 				}
 			}
 			shard.Storage.PersistentVolume.StorageClassName = ptr.To(value)
 		case "backup-schedule":
-			shard.BackupSchedule = ptr.To(value)
+			shard.BackupSchedule = value
 		default:
 			return shard, fmt.Errorf("unknown key: %s", key)
 		}
@@ -1374,14 +1374,14 @@ func applyGlobalDefaults(shards []hyperv1.ManagedEtcdShardSpec, opts *CreateOpti
 		}
 
 		// Apply global storage defaults if shard doesn't have storage config
-		if shards[i].Storage == nil && (opts.EtcdStorageClass != "" || opts.EtcdStorageSize != "") {
-			shards[i].Storage = &hyperv1.ManagedEtcdStorageSpec{
+		if shards[i].Storage.Type == "" && (opts.EtcdStorageClass != "" || opts.EtcdStorageSize != "") {
+			shards[i].Storage = hyperv1.ManagedEtcdStorageSpec{
 				Type:             hyperv1.PersistentVolumeEtcdStorage,
 				PersistentVolume: &hyperv1.PersistentVolumeEtcdStorageSpec{},
 			}
 		}
 
-		if shards[i].Storage != nil && shards[i].Storage.PersistentVolume != nil {
+		if shards[i].Storage.Type != "" && shards[i].Storage.PersistentVolume != nil {
 			// Apply global storage class if not specified in shard
 			if shards[i].Storage.PersistentVolume.StorageClassName == nil && opts.EtcdStorageClass != "" {
 				shards[i].Storage.PersistentVolume.StorageClassName = ptr.To(opts.EtcdStorageClass)

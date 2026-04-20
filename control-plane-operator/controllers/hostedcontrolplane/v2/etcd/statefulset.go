@@ -131,8 +131,8 @@ func adaptStatefulSet(cpContext component.WorkloadContext, sts *appsv1.StatefulS
 
 	// adapt PersistentVolume using shard-specific storage or default
 	storage := managedEtcdSpec.Storage
-	if defaultShard.Storage != nil {
-		storage = *defaultShard.Storage
+	if defaultShard.Storage.Type != "" {
+		storage = defaultShard.Storage
 	}
 
 	if storage.Type == hyperv1.PersistentVolumeEtcdStorage {

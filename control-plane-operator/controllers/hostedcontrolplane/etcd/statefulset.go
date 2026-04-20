@@ -208,8 +208,8 @@ func ReconcileStatefulSet(
 
 	// Adapt PersistentVolume using shard-specific storage or default
 	storage := managedEtcdSpec.Storage
-	if shard.Storage != nil {
-		storage = *shard.Storage
+	if shard.Storage.Type != "" {
+		storage = shard.Storage
 	}
 
 	if storage.Type == hyperv1.PersistentVolumeEtcdStorage {

@@ -12270,7 +12270,7 @@ Medium/Low: Default backup disabled</p>
 </tr>
 <tr>
 <td>
-<code>storage</code></br>
+<code>storage,omitzero</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.ManagedEtcdStorageSpec">
 ManagedEtcdStorageSpec
@@ -16527,7 +16527,7 @@ When shards are specified, this field is ignored.</p>
 </tr>
 <tr>
 <td>
-<code>tls</code></br>
+<code>tls,omitzero</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.EtcdTLSConfig">
 EtcdTLSConfig

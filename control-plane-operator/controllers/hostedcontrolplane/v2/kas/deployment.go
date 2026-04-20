@@ -93,9 +93,10 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 	// With managed etcd, we should wait for the known etcd client service name to
 	// at least resolve before starting up to avoid futile connection attempts and
 	// pod crashing. For unmanaged, make no assumptions.
-	if hcp.Spec.Etcd.ManagementType == hyperv1.Unmanaged {
+	switch hcp.Spec.Etcd.ManagementType {
+	case hyperv1.Unmanaged:
 		util.RemoveInitContainer("wait-for-etcd", &deployment.Spec.Template.Spec)
-	} else if hcp.Spec.Etcd.ManagementType == hyperv1.Managed {
+	case hyperv1.Managed:
 		// Update wait-for-etcd init container to wait for ALL shard services
 		util.UpdateContainer("wait-for-etcd", deployment.Spec.Template.Spec.InitContainers, func(c *corev1.Container) {
 			shards := hcp.Spec.Etcd.Managed.EffectiveShards(hcp)
