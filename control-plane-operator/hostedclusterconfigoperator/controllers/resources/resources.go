@@ -14,6 +14,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/aws"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/azure"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/openstack"
 	kubevirtcsi "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/csi/kubevirt"
@@ -2528,6 +2529,36 @@ func (r *reconciler) reconcileObservedConfiguration(ctx context.Context, hcp *hy
 func (r *reconciler) reconcileCloudConfig(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
 
 	switch hcp.Spec.Platform.Type {
+	case hyperv1.AWSPlatform:
+		reference := cpomanifests.AWSProviderConfig(hcp.Namespace)
+		if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(reference), reference); err != nil {
+			return fmt.Errorf("failed to fetch %s/%s configmap from management cluster: %w", reference.Namespace, reference.Name, err)
+		}
+
+		var caBundle string
+		if hcp.Spec.AdditionalTrustBundle != nil {
+			cpUserCAConfigMap := cpomanifests.UserCAConfigMap(hcp.Namespace)
+			if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(cpUserCAConfigMap), cpUserCAConfigMap); err != nil {
+				return fmt.Errorf("failed to fetch user CA bundle from management cluster: %w", err)
+			}
+			caBundle = cpUserCAConfigMap.Data["ca-bundle.crt"]
+		}
+
+		cm := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: ConfigNamespace, Name: CloudProviderCMName}}
+		if _, err := r.CreateOrUpdate(ctx, r.client, cm, func() error {
+			if cm.Data == nil {
+				cm.Data = map[string]string{}
+			}
+			cm.Data[aws.ProviderConfigKey] = reference.Data[aws.ProviderConfigKey]
+			if caBundle != "" {
+				cm.Data[aws.CABundleKey] = caBundle
+			} else {
+				delete(cm.Data, aws.CABundleKey)
+			}
+			return nil
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile the %s/%s configmap: %w", cm.Namespace, cm.Name, err)
+		}
 	case hyperv1.AzurePlatform:
 		// This is needed for the e2e tests and only for Azure: https://github.com/openshift/origin/blob/625733dd1ce7ebf40c3dd0abd693f7bb54f2d580/test/extended/util/cluster/cluster.go#L186
 		reference := cpomanifests.AzureProviderConfig(hcp.Namespace)
