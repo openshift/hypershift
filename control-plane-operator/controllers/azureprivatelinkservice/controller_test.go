@@ -1433,7 +1433,7 @@ func TestReconcile_WhenNonPrivateRouterCR_ItShouldSkipHypershiftLocalDNS(t *test
 	g.Expect(updated.Status.DNSZoneName).To(Equal("test-hcp.hypershift.local"), "non-private-router CRs should persist DNSZoneName for delete-path cleanup")
 }
 
-func TestReconcileBaseDomainDNS_WhenPrivateRouterWithNoSibling_ItShouldCreateBothRecords(t *testing.T) {
+func TestReconcileBaseDomainDNS_WhenPrivateRouterWithNoSibling_ItShouldCreateAllRecords(t *testing.T) {
 	g := NewGomegaWithT(t)
 	scheme := newTestScheme(t, g)
 
@@ -1462,12 +1462,12 @@ func TestReconcileBaseDomainDNS_WhenPrivateRouterWithNoSibling_ItShouldCreateBot
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(result.IsZero()).To(BeTrue())
 
-	// When no sibling OAuth CR exists, private-router should create both api and oauth records
-	g.Expect(mockRecords.createCallCount).To(Equal(2), "should create two A records (api and oauth)")
-	g.Expect(mockRecords.createdRecordNames).To(ConsistOf("api-test-hcp", "oauth-test-hcp"), "should create api and oauth base domain records")
+	// When no sibling OAuth CR exists, private-router should create api, *.apps, and oauth records
+	g.Expect(mockRecords.createCallCount).To(Equal(3), "should create three A records (api, *.apps, and oauth)")
+	g.Expect(mockRecords.createdRecordNames).To(ConsistOf("api-test-hcp", "*.apps.test-hcp", "oauth-test-hcp"), "should create api, *.apps, and oauth base domain records")
 }
 
-func TestReconcileBaseDomainDNS_WhenPrivateRouterWithSiblingOAuth_ItShouldOnlyCreateAPIRecord(t *testing.T) {
+func TestReconcileBaseDomainDNS_WhenPrivateRouterWithSiblingOAuth_ItShouldCreateApiAndAppsRecords(t *testing.T) {
 	g := NewGomegaWithT(t)
 	scheme := newTestScheme(t, g)
 
@@ -1500,9 +1500,9 @@ func TestReconcileBaseDomainDNS_WhenPrivateRouterWithSiblingOAuth_ItShouldOnlyCr
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(result.IsZero()).To(BeTrue())
 
-	// When a sibling OAuth CR exists, private-router should only create the api record
-	g.Expect(mockRecords.createCallCount).To(Equal(1), "should create only one A record (api)")
-	g.Expect(mockRecords.createdRecordNames).To(ConsistOf("api-test-hcp"), "should only create api base domain record")
+	// When a sibling OAuth CR exists, private-router should create api and *.apps records (not oauth)
+	g.Expect(mockRecords.createCallCount).To(Equal(2), "should create two A records (api and *.apps)")
+	g.Expect(mockRecords.createdRecordNames).To(ConsistOf("api-test-hcp", "*.apps.test-hcp"), "should create api and *.apps base domain records")
 }
 
 func TestReconcileBaseDomainDNS_WhenOAuthCR_ItShouldOnlyCreateOAuthRecord(t *testing.T) {
@@ -1576,11 +1576,11 @@ func TestReconcileDelete_WhenSiblingCRsExist_ItShouldNotDeleteBaseDomainZone(t *
 	err := r.reconcileDelete(context.Background(), azPLS, testr.New(t))
 	g.Expect(err).ToNot(HaveOccurred())
 
-	// A records should only include the api record (sibling OAuth owns the oauth record)
+	// A records should include api and *.apps records (sibling OAuth owns the oauth record)
 	g.Expect(mockRecords.deleteCalled).To(BeTrue(), "should delete A records")
-	// The hypershift.local records (api, *.apps) + only api-test-hcp from base domain = 3
-	g.Expect(mockRecords.deletedRecordNames).To(ConsistOf("api", "*.apps", "api-test-hcp"),
-		"should delete hypershift.local records and only api base domain record (sibling owns oauth)")
+	// The hypershift.local records (api, *.apps) + api-test-hcp and *.apps.test-hcp from base domain = 4
+	g.Expect(mockRecords.deletedRecordNames).To(ConsistOf("api", "*.apps", "api-test-hcp", "*.apps.test-hcp"),
+		"should delete hypershift.local records and api + *.apps base domain records (sibling owns oauth)")
 
 	// VNet link deletion should include hypershift.local link + base domain link
 	g.Expect(mockLinks.deletedLinkNames).To(ConsistOf("private-router-vnet-link", "private-router-basedomain-vnet-link"),
@@ -1629,10 +1629,10 @@ func TestReconcileDelete_WhenNoSiblingCRs_ItShouldDeleteBaseDomainZone(t *testin
 	err := r.reconcileDelete(context.Background(), azPLS, testr.New(t))
 	g.Expect(err).ToNot(HaveOccurred())
 
-	// With no siblings, private-router should delete both api and oauth base domain records
+	// With no siblings, private-router should delete api, *.apps, and oauth base domain records
 	g.Expect(mockRecords.deleteCalled).To(BeTrue(), "should delete A records")
-	g.Expect(mockRecords.deletedRecordNames).To(ConsistOf("api", "*.apps", "api-test-hcp", "oauth-test-hcp"),
-		"should delete hypershift.local records and both api+oauth base domain records when no siblings")
+	g.Expect(mockRecords.deletedRecordNames).To(ConsistOf("api", "*.apps", "api-test-hcp", "*.apps.test-hcp", "oauth-test-hcp"),
+		"should delete hypershift.local records and all base domain records when no siblings")
 
 	// Both zones should be deleted (last CR using them)
 	g.Expect(mockDNS.deletedZoneNames).To(ConsistOf("test-hcp.hypershift.local", "example.com"),

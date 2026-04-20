@@ -745,15 +745,17 @@ func (r *AzurePrivateLinkServiceReconciler) reconcileDNS(ctx context.Context, az
 }
 
 // reconcileBaseDomainDNS creates a Private DNS Zone for the cluster's base domain,
-// links it to the guest VNet, and creates A records for the API and/or OAuth hostnames.
-// This enables worker VMs to resolve api-<name>.<basedomain> and oauth-<name>.<basedomain>
-// to the Private Endpoint IP, which is required for the console OAuth flow and other
-// services that use the external API/OAuth hostnames from within the private network.
+// links it to the guest VNet, and creates A records for the API, *.apps, and/or OAuth
+// hostnames. This enables worker VMs to resolve api-<name>.<basedomain>,
+// *.apps.<name>.<basedomain>, and oauth-<name>.<basedomain> to the Private Endpoint IP,
+// which is required for the console, OAuth flow, and other services that use the external
+// hostnames from within the private network.
 //
 // Record selection depends on the CR name:
-//   - private-router: Creates api-<name> record. Also creates oauth-<name> record
-//     ONLY if no sibling OAuth AzurePrivateLinkService CR exists in the same namespace
-//     (backward compatibility for clusters without a separate OAuth PLS).
+//   - private-router: Creates api-<name> and *.apps.<name> records. Also creates
+//     oauth-<name> record ONLY if no sibling OAuth AzurePrivateLinkService CR exists
+//     in the same namespace (backward compatibility for clusters without a separate
+//     OAuth PLS).
 //   - Any other CR (e.g., oauth-openshift): Creates only oauth-<name> record, pointing
 //     to this CR's own PE IP.
 func (r *AzurePrivateLinkServiceReconciler) reconcileBaseDomainDNS(ctx context.Context, azPLS *hyperv1.AzurePrivateLinkService, clusterName string, log logr.Logger) (ctrl.Result, error) {
@@ -784,15 +786,19 @@ func (r *AzurePrivateLinkServiceReconciler) reconcileBaseDomainDNS(ctx context.C
 }
 
 // recordNamesForCR determines which DNS A records this CR is responsible for.
-// The private-router CR creates the api record and, for backward compatibility,
-// the oauth record when no sibling OAuth CR exists. All other CRs create only
-// the oauth record.
+// The private-router CR creates the api record, the *.apps wildcard record,
+// and for backward compatibility, the oauth record when no sibling OAuth CR
+// exists. All other CRs create only the oauth record.
 func (r *AzurePrivateLinkServiceReconciler) recordNamesForCR(ctx context.Context, azPLS *hyperv1.AzurePrivateLinkService, clusterName string, log logr.Logger) ([]string, error) {
 	if azPLS.Name != privateRouterCRName {
 		return []string{oauthBaseDomainRecordPrefix + clusterName}, nil
 	}
 
-	records := []string{kasBaseDomainRecordPrefix + clusterName}
+	// The *.apps wildcard in the base domain zone enables guest cluster services
+	// (e.g., console, monitoring) to resolve *.apps.<cluster>.<basedomain> to the
+	// Private Endpoint IP. On private clusters, all *.apps traffic flows through
+	// the private-router via the passthrough ingress route.
+	records := []string{kasBaseDomainRecordPrefix + clusterName, appsARecordName + "." + clusterName}
 
 	hasSiblingOAuth, err := r.hasSiblingCR(ctx, azPLS)
 	if err != nil {
@@ -941,6 +947,7 @@ func (r *AzurePrivateLinkServiceReconciler) reconcileDelete(ctx context.Context,
 			var baseDomainRecords []string
 			if azPLS.Name == privateRouterCRName {
 				baseDomainRecords = append(baseDomainRecords, kasBaseDomainRecordPrefix+clusterName)
+				baseDomainRecords = append(baseDomainRecords, appsARecordName+"."+clusterName)
 				// Only delete the oauth record if there is no sibling OAuth CR that
 				// owns it. This prevents the private-router deletion from removing
 				// an oauth record that now belongs to the dedicated OAuth CR.
