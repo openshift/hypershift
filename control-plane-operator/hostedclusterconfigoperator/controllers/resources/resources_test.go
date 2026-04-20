@@ -634,6 +634,133 @@ func TestReconcileUserCertCABundle(t *testing.T) {
 	}
 }
 
+func TestReconcileCloudConfigAWS(t *testing.T) {
+	testNamespace := "master-cluster1"
+	testHCPName := "cluster1"
+	tests := map[string]struct {
+		inputHCP                  *hyperv1.HostedControlPlane
+		inputObjects              []client.Object
+		existingGuestObjects      []client.Object
+		expectCloudProviderConfig bool
+		expectKubeCloudConfig     bool
+		expectedCABundle          string
+	}{
+		"When AdditionalTrustBundle is set, it should create cloud-provider-config and kube-cloud-config": {
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testHCPName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
+					AdditionalTrustBundle: &corev1.LocalObjectReference{
+						Name: cpomanifests.UserCAConfigMap(testNamespace).Name,
+					},
+				},
+			},
+			inputObjects: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: cpomanifests.UserCAConfigMap(testNamespace).ObjectMeta,
+					Data: map[string]string{
+						"ca-bundle.crt": "test-ca-cert-data",
+					},
+				},
+			},
+			existingGuestObjects:      []client.Object{},
+			expectCloudProviderConfig: true,
+			expectKubeCloudConfig:     true,
+			expectedCABundle:          "test-ca-cert-data",
+		},
+		"When AdditionalTrustBundle is not set, it should not create cloud-provider-config": {
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testHCPName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
+				},
+			},
+			inputObjects:              []client.Object{},
+			existingGuestObjects:      []client.Object{},
+			expectCloudProviderConfig: false,
+			expectKubeCloudConfig:     false,
+		},
+		"When AdditionalTrustBundle is removed, it should delete existing cloud-provider-config": {
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testHCPName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
+				},
+			},
+			inputObjects: []client.Object{},
+			existingGuestObjects: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: ConfigNamespace,
+						Name:      CloudProviderCMName,
+					},
+					Data: map[string]string{
+						"ca-bundle.pem": "old-ca-cert-data",
+					},
+				},
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: ConfigManagedNamespace,
+						Name:      "kube-cloud-config",
+					},
+					Data: map[string]string{
+						"ca-bundle.pem": "old-ca-cert-data",
+					},
+				},
+			},
+			expectCloudProviderConfig: false,
+			expectKubeCloudConfig:     false,
+		},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			r := &reconciler{
+				client:                 fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(test.existingGuestObjects...).Build(),
+				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
+				cpClient:               fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(append(test.inputObjects, test.inputHCP)...).Build(),
+				hcpName:                testHCPName,
+				hcpNamespace:           testNamespace,
+			}
+			err := r.reconcileCloudConfig(t.Context(), test.inputHCP)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			cloudProviderCM := &corev1.ConfigMap{}
+			err = r.client.Get(t.Context(), client.ObjectKey{Namespace: ConfigNamespace, Name: CloudProviderCMName}, cloudProviderCM)
+			if test.expectCloudProviderConfig {
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(cloudProviderCM.Data["ca-bundle.pem"]).To(Equal(test.expectedCABundle))
+			} else {
+				g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+			}
+
+			kubeCloudCM := &corev1.ConfigMap{}
+			err = r.client.Get(t.Context(), client.ObjectKey{Namespace: ConfigManagedNamespace, Name: "kube-cloud-config"}, kubeCloudCM)
+			if test.expectKubeCloudConfig {
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(kubeCloudCM.Data["ca-bundle.pem"]).To(Equal(test.expectedCABundle))
+			} else {
+				g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+			}
+		})
+	}
+}
+
 var _ manifestReconciler = manifestAndReconcile[*rbacv1.ClusterRole]{}
 
 func TestDestroyCloudResources(t *testing.T) {
