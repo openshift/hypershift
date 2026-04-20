@@ -1931,12 +1931,6 @@ func (r *HostedControlPlaneReconciler) reconcileEtcdShards(ctx context.Context, 
 		return fmt.Errorf("failed to cleanup orphaned shards: %w", err)
 	}
 
-	// Create/update ControlPlaneComponent resource so other v2 components can depend on etcd
-	etcdVersion := releaseImageProvider.Version()
-	if err := etcd.ReconcileControlPlaneComponent(ctx, hcp, shards, r.Client, etcdVersion); err != nil {
-		return fmt.Errorf("failed to reconcile etcd ControlPlaneComponent: %w", err)
-	}
-
 	return nil
 }
 
