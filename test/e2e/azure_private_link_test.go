@@ -10,8 +10,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/privatedns/armprivatedns"
+	"github.com/go-logr/logr"
 	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	cmdutil "github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/support/azureutil"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
@@ -208,6 +212,84 @@ func TestAzurePrivateTopology(t *testing.T) {
 				e2eutil.WithTimeout(15*time.Minute),
 				e2eutil.WithInterval(15*time.Second),
 			)
+		})
+
+		// Verify the base domain Private DNS zone contains the expected A records.
+		// The private-router CR always creates api-<cluster> and *.apps.<cluster>
+		// records, and conditionally creates oauth-<cluster> when no sibling OAuth
+		// CR exists. Without *.apps, guest cluster services (console, monitoring)
+		// fail to resolve *.apps.<cluster>.<basedomain>. See OCPBUGS-83730.
+		t.Run("BaseDomainDNSRecordsExist", func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			// Wait for BaseDomainDNSZoneID to be populated on private-router CR
+			var baseDomainZoneID string
+			e2eutil.EventuallyObject(t, ctx, "private-router has BaseDomainDNSZoneID",
+				func(ctx context.Context) (*hyperv1.AzurePrivateLinkService, error) {
+					pls := &hyperv1.AzurePrivateLinkService{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: controlPlaneNamespace,
+							Name:      "private-router",
+						},
+					}
+					err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(pls), pls)
+					if err == nil {
+						baseDomainZoneID = pls.Status.BaseDomainDNSZoneID
+					}
+					return pls, err
+				},
+				[]e2eutil.Predicate[*hyperv1.AzurePrivateLinkService]{
+					func(pls *hyperv1.AzurePrivateLinkService) (done bool, reasons string, err error) {
+						if pls.Status.BaseDomainDNSZoneID == "" {
+							return false, "BaseDomainDNSZoneID is empty", nil
+						}
+						return true, fmt.Sprintf("BaseDomainDNSZoneID is %q", pls.Status.BaseDomainDNSZoneID), nil
+					},
+				},
+				e2eutil.WithTimeout(15*time.Minute),
+				e2eutil.WithInterval(15*time.Second),
+			)
+
+			// Parse the zone resource ID to extract subscription, RG, and zone name
+			zoneResource, err := arm.ParseResourceID(baseDomainZoneID)
+			g.Expect(err).ToNot(HaveOccurred(), "failed to parse BaseDomainDNSZoneID: %s", baseDomainZoneID)
+
+			// Create Azure Private DNS RecordSets client using the cluster Azure credentials.
+			// The CPO creates DNS zones via workload identity; use the cluster credentials
+			// (which have access to the guest subscription) to query the zones.
+			azureCredsFile := globalOpts.ConfigurableClusterOptions.AzureCredentialsFile
+			g.Expect(azureCredsFile).ToNot(BeEmpty(), "azure-credentials-file is required for DNS record validation")
+
+			_, azureCreds, err := cmdutil.SetupAzureCredentials(logr.Discard(), nil, azureCredsFile)
+			g.Expect(err).ToNot(HaveOccurred(), "failed to set up Azure credentials")
+
+			recordSetsClient, err := armprivatedns.NewRecordSetsClient(zoneResource.SubscriptionID, azureCreds, nil)
+			g.Expect(err).ToNot(HaveOccurred(), "failed to create RecordSets client")
+
+			// Query Azure DNS for the expected A records with retries,
+			// as record visibility can lag after the zone ID is set.
+			clusterName := hostedCluster.Name
+			expectedRecords := []string{
+				"api-" + clusterName,
+				"*.apps." + clusterName,
+			}
+			g.Eventually(func(gg Gomega) {
+				var recordNames []string
+				pager := recordSetsClient.NewListByTypePager(zoneResource.ResourceGroupName, zoneResource.Name, armprivatedns.RecordTypeA, nil)
+				for pager.More() {
+					page, err := pager.NextPage(ctx)
+					gg.Expect(err).ToNot(HaveOccurred(), "failed to list A records in base domain zone")
+					for _, rs := range page.Value {
+						if rs.Name != nil {
+							recordNames = append(recordNames, *rs.Name)
+						}
+					}
+				}
+				for _, expected := range expectedRecords {
+					gg.Expect(recordNames).To(ContainElement(expected),
+						"base domain zone %q missing expected A record %q; found records: %v", zoneResource.Name, expected, recordNames)
+				}
+			}, 5*time.Minute, 15*time.Second).Should(Succeed())
 		})
 	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "azure-private-topology", globalOpts.ServiceAccountSigningKey)
 }
