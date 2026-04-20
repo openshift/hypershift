@@ -5,6 +5,7 @@ package e2e
 import (
 	"context"
 	"os"
+	"strings"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -107,6 +108,80 @@ func TestExternalOIDC(t *testing.T) {
 				g.Expect(err).NotTo(HaveOccurred())
 				_, err = client.ConfigV1().ClusterOperators().Get(ctx, "image-registry", metav1.GetOptions{})
 				g.Expect(err).To(HaveOccurred())
+			})
+		}
+
+		if featuregates.Gate().Enabled(featuregates.ExternalOIDCWithUpstreamParity) {
+			t.Run("[OCPFeatureGate:ExternalOIDCWithUpstreamParity] Test CEL username expression mapping", func(t *testing.T) {
+				g := NewWithT(t)
+				t.Logf("begin to test CEL username expression mapping")
+				g.Expect(selfSubjectReview.Status.UserInfo.Username).NotTo(BeEmpty())
+				// Username should be the email prefix (before @) since we configured expression: claims.email.split('@')[0]
+				// doesn't contain substring
+				g.Expect(selfSubjectReview.Status.UserInfo.Username).NotTo(ContainSubstring("@"))
+				// equals the actual email prefix
+				// e2eutil.ExternalOIDCExtraKeyFoo --> claims.email expression
+				emailValues := selfSubjectReview.Status.UserInfo.Extra[e2eutil.ExternalOIDCExtraKeyFoo]
+				g.Expect(emailValues).NotTo(BeEmpty())
+				email := emailValues[0]
+				expectedUserName := strings.Split(email, "@")[0]
+				g.Expect(selfSubjectReview.Status.UserInfo.Username).Should(Equal(expectedUserName))
+				t.Logf("CEL username expression successfully mapped to: %s", selfSubjectReview.Status.UserInfo.Username)
+			})
+
+			t.Run("[OCPFeatureGate:ExternalOIDCWithUpstreamParity] Test CEL groups expression mapping", func(t *testing.T) {
+				g := NewWithT(t)
+				t.Logf("begin to test CEL groups expression mapping")
+				// Groups expression uses: claims.?groups.orValue([])
+				// If the token has groups, they should be present without prefix (no prefix in CEL expression)
+				g.Expect(hostedCluster.Spec.Configuration.Authentication.OIDCProviders[0].ClaimMappings.Groups.Expression).NotTo(BeEmpty())
+				t.Logf("CEL groups expression configured: %s", hostedCluster.Spec.Configuration.Authentication.OIDCProviders[0].ClaimMappings.Groups.Expression)
+				// Verify the groups are actually mapped correctly - should exist and have no prefix
+				g.Expect(selfSubjectReview.Status.UserInfo.Groups).NotTo(BeEmpty())
+				// Groups should NOT contain the prefix since we're using CEL expression without prefix
+				for _, group := range selfSubjectReview.Status.UserInfo.Groups {
+					g.Expect(group).NotTo(HavePrefix(clusterOpts.ExtOIDCConfig.GroupPrefix))
+				}
+				t.Logf("CEL groups expression successfully mapped groups without prefix: %v", selfSubjectReview.Status.UserInfo.Groups)
+			})
+
+			t.Run("[OCPFeatureGate:ExternalOIDCWithUpstreamParity] Test claim validation rules", func(t *testing.T) {
+				g := NewWithT(t)
+				t.Logf("begin to test claim validation rules")
+				g.Expect(hostedCluster.Spec.Configuration.Authentication.OIDCProviders[0].ClaimValidationRules).NotTo(BeEmpty())
+				claimRules := hostedCluster.Spec.Configuration.Authentication.OIDCProviders[0].ClaimValidationRules
+				g.Expect(claimRules).Should(HaveLen(2))
+
+				// Verify configuration - rules should be CEL type with expected expressions
+				g.Expect(claimRules[0].Type).Should(Equal(configv1.TokenValidationRuleTypeCEL))
+				g.Expect(claimRules[0].CEL.Expression).Should(Equal(e2eutil.ClaimValidationExprEmailExists))
+
+				g.Expect(claimRules[1].Type).Should(Equal(configv1.TokenValidationRuleTypeCEL))
+				g.Expect(claimRules[1].CEL.Expression).Should(Equal(e2eutil.ClaimValidationExprEmailVerified))
+
+				// Verify behavior - authentication succeeded, proving claim validation rules passed
+				// Rule 1 validates email exists and is non-empty
+				emailValues := selfSubjectReview.Status.UserInfo.Extra[e2eutil.ExternalOIDCExtraKeyFoo]
+				g.Expect(emailValues).NotTo(BeEmpty(), "email claim should exist (validated by rule 1)")
+				g.Expect(emailValues[0]).NotTo(BeEmpty(), "email claim should be non-empty (validated by rule 1)")
+				// Rule 2 validates email_verified == true (implicit - authentication succeeded)
+				t.Logf("Claim validation rules successfully validated token with email: %s", emailValues[0])
+			})
+
+			t.Run("[OCPFeatureGate:ExternalOIDCWithUpstreamParity] Test user validation rules", func(t *testing.T) {
+				g := NewWithT(t)
+				t.Logf("begin to test user validation rules")
+				g.Expect(hostedCluster.Spec.Configuration.Authentication.OIDCProviders[0].UserValidationRules).NotTo(BeEmpty())
+				userRules := hostedCluster.Spec.Configuration.Authentication.OIDCProviders[0].UserValidationRules
+				g.Expect(userRules).Should(HaveLen(1))
+
+				// Verify configuration - rule should use expected CEL expression
+				g.Expect(userRules[0].Expression).Should(Equal(e2eutil.UserValidationExprNoSystemPrefix))
+
+				// Verify behavior - authentication succeeded, proving user validation rule passed
+				// Rule validates username doesn't start with 'system:'
+				g.Expect(selfSubjectReview.Status.UserInfo.Username).NotTo(HavePrefix("system:"), "username should not have system: prefix (validated by user rule)")
+				t.Logf("User validation rules successfully validated user: %s", selfSubjectReview.Status.UserInfo.Username)
 			})
 		}
 	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "external-oidc", globalOpts.ServiceAccountSigningKey)

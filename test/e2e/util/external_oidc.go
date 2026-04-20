@@ -49,6 +49,13 @@ const (
 	ExternalOIDCExtraKeyBarValueExpression = "extra-test-mark"
 	ExternalOIDCExtraKeyFoo                = "extratest.openshift.com/foo"
 	ExternalOIDCExtraKeyFooValueExpression = "claims.email" // This is a variable, not a string literal
+
+	// CEL expressions for claim validation rules
+	ClaimValidationExprEmailExists   = "has(claims.email) && claims.email != ''"
+	ClaimValidationExprEmailVerified = "claims.email_verified == true"
+
+	// CEL expression for user validation rule
+	UserValidationExprNoSystemPrefix = "!user.username.startsWith('system:')"
 )
 
 type ExtOIDCConfig struct {
@@ -156,6 +163,57 @@ func (config *ExtOIDCConfig) GetAuthenticationConfig() *configv1.AuthenticationS
 		)
 	}
 
+	if featuregates.Gate().Enabled(featuregates.ExternalOIDCWithUpstreamParity) {
+		// Check if ExternalOIDCWithUIDAndExtraClaimMappings feature gate is enabled.
+		// If not, we will need to add extra mapping to access email for username
+		// verification later.
+		if !featuregates.Gate().Enabled(featuregates.ExternalOIDCWithUIDAndExtraClaimMappings) {
+			authnSpec.OIDCProviders[0].ClaimMappings.Extra = append(authnSpec.OIDCProviders[0].ClaimMappings.Extra,
+				configv1.ExtraMapping{
+					Key:             ExternalOIDCExtraKeyFoo,
+					ValueExpression: ExternalOIDCExtraKeyFooValueExpression,
+				},
+			)
+		}
+		// Use CEL expression for username mapping instead of static claim
+		authnSpec.OIDCProviders[0].ClaimMappings.Username = configv1.UsernameClaimMapping{
+			Expression: "claims.email.split('@')[0]",
+		}
+
+		// Use CEL expression for groups mapping instead of static claim
+		authnSpec.OIDCProviders[0].ClaimMappings.Groups = configv1.PrefixedClaimMapping{
+			TokenClaimMapping: configv1.TokenClaimMapping{
+				Expression: "claims.?groups.orValue([])",
+			},
+		}
+
+		// Add claim validation rules
+		authnSpec.OIDCProviders[0].ClaimValidationRules = []configv1.TokenClaimValidationRule{
+			{
+				Type: configv1.TokenValidationRuleTypeCEL,
+				CEL: configv1.TokenClaimValidationCELRule{
+					Expression: ClaimValidationExprEmailExists,
+					Message:    "email claim must be present and non-empty",
+				},
+			},
+			{
+				Type: configv1.TokenValidationRuleTypeCEL,
+				CEL: configv1.TokenClaimValidationCELRule{
+					Expression: ClaimValidationExprEmailVerified,
+					Message:    "email_verified claim must be true",
+				},
+			},
+		}
+
+		// Add user validation rules
+		authnSpec.OIDCProviders[0].UserValidationRules = []configv1.TokenUserValidationRule{
+			{
+				Expression: UserValidationExprNoSystemPrefix,
+				Message:    "username cannot use reserved system: prefix",
+			},
+		}
+	}
+
 	return authnSpec
 }
 
@@ -180,8 +238,11 @@ func ValidateAuthenticationSpec(t testing.TB, ctx context.Context, client crclie
 	actualAuth := hostedCluster.Spec.Configuration.Authentication
 	g.Expect(actualAuth.OIDCProviders).NotTo(BeEmpty())
 
-	if featuregates.Gate().Enabled(featuregates.ExternalOIDCWithUIDAndExtraClaimMappings) {
+	if featuregates.Gate().Enabled(featuregates.ExternalOIDCWithUpstreamParity) || featuregates.Gate().Enabled(featuregates.ExternalOIDCWithUIDAndExtraClaimMappings) {
 		g.Expect(actualAuth.OIDCProviders[0].ClaimMappings.Extra).NotTo(BeEmpty())
+	}
+
+	if featuregates.Gate().Enabled(featuregates.ExternalOIDCWithUIDAndExtraClaimMappings) {
 		g.Expect(actualAuth.OIDCProviders[0].ClaimMappings.UID).NotTo(BeNil())
 	}
 
