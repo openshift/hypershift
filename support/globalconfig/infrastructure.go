@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/aws"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/openstack"
 	"github.com/openshift/hypershift/support/netutil"
 
@@ -57,6 +58,8 @@ func ReconcileInfrastructure(infra *configv1.Infrastructure, hcp *hyperv1.Hosted
 
 	switch platformType {
 	case hyperv1.AWSPlatform:
+		infra.Spec.CloudConfig.Name = "cloud-provider-config"
+		infra.Spec.CloudConfig.Key = aws.ProviderConfigKey
 		if infra.Spec.PlatformSpec.AWS == nil {
 			infra.Spec.PlatformSpec.AWS = &configv1.AWSPlatformSpec{}
 		}
