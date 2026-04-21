@@ -940,6 +940,9 @@ func TestReconcileOAuthService(t *testing.T) {
 				Namespace:       targetNamespace,
 				Name:            manifests.OauthServerService(targetNamespace).Name,
 				OwnerReferences: []metav1.OwnerReference{ownerRef},
+				Labels: map[string]string{
+					"app": "oauth-openshift",
+				},
 			},
 			Spec: corev1.ServiceSpec{
 				Type:           corev1.ServiceTypeClusterIP,

@@ -76,6 +76,8 @@ routes:
 services:
   items:
   - metadata:
+      labels:
+        app: konnectivity-server
       name: konnectivity-server
       namespace: test-namespace
       ownerReferences:
@@ -124,6 +126,8 @@ services:
   - metadata:
       annotations:
         service.beta.kubernetes.io/azure-load-balancer-internal: "true"
+      labels:
+        app: oauth-openshift
       name: oauth-openshift
       namespace: test-namespace
       ownerReferences:
