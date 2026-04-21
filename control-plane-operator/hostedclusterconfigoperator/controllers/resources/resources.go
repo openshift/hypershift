@@ -106,7 +106,7 @@ const (
 	ControllerName            = "resources"
 	ConfigNamespace           = "openshift-config"
 	ConfigManagedNamespace    = "openshift-config-managed"
-	CloudProviderCMName       = "cloud-provider-config"
+	CloudProviderCMName       = globalconfig.CloudProviderCMName
 	maxConditionMessageLength = 1024
 	awsCredentialsTemplate    = `[default]
 role_arn = %s
@@ -2540,16 +2540,19 @@ func (r *reconciler) reconcileCloudConfig(ctx context.Context, hcp *hyperv1.Host
 			return fmt.Errorf("source configmap %s/%s is missing required key %q", reference.Namespace, reference.Name, aws.ProviderConfigKey)
 		}
 
+		// Use the aggregated trust bundle that combines spec.AdditionalTrustBundle
+		// and spec.Configuration.Proxy.TrustedCA, managed by the HCP controller.
 		var caBundle string
-		if hcp.Spec.AdditionalTrustBundle != nil {
-			cpUserCAConfigMap := cpomanifests.UserCAConfigMap(hcp.Namespace)
-			if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(cpUserCAConfigMap), cpUserCAConfigMap); err != nil {
+		if hcp.Spec.AdditionalTrustBundle != nil ||
+			(hcp.Spec.Configuration != nil && hcp.Spec.Configuration.Proxy != nil && hcp.Spec.Configuration.Proxy.TrustedCA.Name != "") {
+			managedTrustBundle := cpomanifests.TrustedCABundleConfigMap(hcp.Namespace)
+			if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(managedTrustBundle), managedTrustBundle); err != nil {
 				if !apierrors.IsNotFound(err) {
-					return fmt.Errorf("failed to fetch user CA bundle from management cluster: %w", err)
+					return fmt.Errorf("failed to fetch managed trusted CA bundle from management cluster: %w", err)
 				}
-				ctrl.LoggerFrom(ctx).Info("user CA bundle ConfigMap not found, skipping CA bundle sync", "configmap", client.ObjectKeyFromObject(cpUserCAConfigMap))
+				ctrl.LoggerFrom(ctx).Info("managed trusted CA bundle ConfigMap not found, skipping CA bundle sync", "configmap", client.ObjectKeyFromObject(managedTrustBundle))
 			} else {
-				caBundle = cpUserCAConfigMap.Data[certs.UserCABundleMapKey]
+				caBundle = managedTrustBundle.Data[certs.UserCABundleMapKey]
 			}
 		}
 

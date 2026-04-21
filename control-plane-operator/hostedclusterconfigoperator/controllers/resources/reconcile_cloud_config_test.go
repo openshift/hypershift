@@ -6,6 +6,7 @@ import (
 
 	. "github.com/onsi/gomega"
 
+	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/aws"
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
@@ -31,10 +32,10 @@ func TestReconcileCloudConfig_AWS(t *testing.T) {
 		return cm
 	}
 
-	fakeUserCABundle := func() *corev1.ConfigMap {
-		cm := cpomanifests.UserCAConfigMap(hcpNamespace)
+	fakeManagedTrustBundle := func(caData string) *corev1.ConfigMap {
+		cm := cpomanifests.TrustedCABundleConfigMap(hcpNamespace)
 		cm.Data = map[string]string{
-			certs.UserCABundleMapKey: "-----BEGIN CERTIFICATE-----\nfake-ca-bundle\n-----END CERTIFICATE-----\n",
+			certs.UserCABundleMapKey: caData,
 		}
 		return cm
 	}
@@ -65,7 +66,7 @@ func TestReconcileCloudConfig_AWS(t *testing.T) {
 			},
 			cpObjects: []client.Object{
 				fakeAWSCloudConfig(),
-				fakeUserCABundle(),
+				fakeManagedTrustBundle("-----BEGIN CERTIFICATE-----\nfake-ca-bundle\n-----END CERTIFICATE-----\n"),
 			},
 			verify: func(g Gomega, guestClient client.Client) {
 				cm := &corev1.ConfigMap{}
@@ -79,7 +80,42 @@ func TestReconcileCloudConfig_AWS(t *testing.T) {
 			},
 		},
 		{
-			name: "When AWS platform without additionalTrustBundle, it should create cloud-provider-config without CA bundle",
+			name: "When AWS platform with proxy TrustedCA, it should create cloud-provider-config with CA bundle",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test",
+					Namespace: hcpNamespace,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
+					Configuration: &hyperv1.ClusterConfiguration{
+						Proxy: &configv1.ProxySpec{
+							TrustedCA: configv1.ConfigMapNameReference{
+								Name: "proxy-trusted-ca",
+							},
+						},
+					},
+				},
+			},
+			cpObjects: []client.Object{
+				fakeAWSCloudConfig(),
+				fakeManagedTrustBundle("-----BEGIN CERTIFICATE-----\nproxy-ca-bundle\n-----END CERTIFICATE-----\n"),
+			},
+			verify: func(g Gomega, guestClient client.Client) {
+				cm := &corev1.ConfigMap{}
+				err := guestClient.Get(context.Background(), client.ObjectKey{
+					Namespace: ConfigNamespace,
+					Name:      CloudProviderCMName,
+				}, cm)
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(cm.Data).To(HaveKeyWithValue(aws.ProviderConfigKey, "[Global]\nZone = us-east-1a\nVPC = vpc-123\n"))
+				g.Expect(cm.Data).To(HaveKeyWithValue(aws.CABundleKey, "-----BEGIN CERTIFICATE-----\nproxy-ca-bundle\n-----END CERTIFICATE-----\n"))
+			},
+		},
+		{
+			name: "When AWS platform without any trust bundle, it should create cloud-provider-config without CA bundle",
 			hcp: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test",
@@ -162,7 +198,7 @@ func TestReconcileCloudConfig_AWS(t *testing.T) {
 			expectError: true,
 		},
 		{
-			name: "When additionalTrustBundle is set but user-ca-bundle ConfigMap is missing, it should sync base config without CA bundle",
+			name: "When additionalTrustBundle is set but managed trust bundle ConfigMap is missing, it should sync base config without CA bundle",
 			hcp: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test",
@@ -214,7 +250,7 @@ func TestReconcileCloudConfig_AWS(t *testing.T) {
 			expectError: true,
 		},
 		{
-			name: "When additionalTrustBundle has empty ca-bundle.crt value, it should not set CA bundle key",
+			name: "When managed trust bundle has empty ca-bundle.crt value, it should not set CA bundle key",
 			hcp: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test",
@@ -231,13 +267,7 @@ func TestReconcileCloudConfig_AWS(t *testing.T) {
 			},
 			cpObjects: []client.Object{
 				fakeAWSCloudConfig(),
-				func() *corev1.ConfigMap {
-					cm := cpomanifests.UserCAConfigMap(hcpNamespace)
-					cm.Data = map[string]string{
-						certs.UserCABundleMapKey: "",
-					}
-					return cm
-				}(),
+				fakeManagedTrustBundle(""),
 			},
 			verify: func(g Gomega, guestClient client.Client) {
 				cm := &corev1.ConfigMap{}

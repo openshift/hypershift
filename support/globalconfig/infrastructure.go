@@ -14,6 +14,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+const (
+	// CloudProviderCMName is the name of the ConfigMap used to store cloud provider configuration
+	// in the guest cluster's openshift-config namespace.
+	CloudProviderCMName = "cloud-provider-config"
+)
+
 func InfrastructureConfig() *configv1.Infrastructure {
 	infra := &configv1.Infrastructure{
 		ObjectMeta: metav1.ObjectMeta{
@@ -58,7 +64,7 @@ func ReconcileInfrastructure(infra *configv1.Infrastructure, hcp *hyperv1.Hosted
 
 	switch platformType {
 	case hyperv1.AWSPlatform:
-		infra.Spec.CloudConfig.Name = "cloud-provider-config"
+		infra.Spec.CloudConfig.Name = CloudProviderCMName
 		infra.Spec.CloudConfig.Key = aws.ProviderConfigKey
 		if infra.Spec.PlatformSpec.AWS == nil {
 			infra.Spec.PlatformSpec.AWS = &configv1.AWSPlatformSpec{}
@@ -101,7 +107,7 @@ func ReconcileInfrastructure(infra *configv1.Infrastructure, hcp *hyperv1.Hosted
 	case hyperv1.OpenStackPlatform:
 		infra.Spec.PlatformSpec.OpenStack = &configv1.OpenStackPlatformSpec{}
 		// This ConfigMap is populated by the local ignition provider and given to MCO
-		infra.Spec.CloudConfig.Name = "cloud-provider-config"
+		infra.Spec.CloudConfig.Name = CloudProviderCMName
 		infra.Spec.CloudConfig.Key = openstack.CloudConfigKey
 		infra.Status.PlatformStatus.OpenStack = &configv1.OpenStackPlatformStatus{
 			CloudName:            "openstack",
