@@ -26,6 +26,12 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - uses: actions/setup-go@v5
+        env:
+          HOME: /tmp
+        with:
+          go-version-file: go.mod
+          cache: false
       - name: Check for non-contrib changes
         id: changes
         run: |

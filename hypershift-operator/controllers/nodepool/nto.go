@@ -12,6 +12,7 @@ import (
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/backwardcompat"
 	supportutil "github.com/openshift/hypershift/support/util"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -441,6 +442,8 @@ func getMirrorConfigForManifest(manifest []byte) (*MirrorConfig, error) {
 	_ = v1alpha1.Install(scheme)
 	_ = configv1.Install(scheme)
 	_ = configv1alpha1.Install(scheme)
+
+	manifest = backwardcompat.NormalizeV1Alpha1ClusterImagePolicy(manifest)
 
 	yamlSerializer := serializer.NewSerializerWithOptions(
 		serializer.DefaultMetaFactory, scheme, scheme,

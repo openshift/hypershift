@@ -296,9 +296,9 @@ func testARM64Provisioning(ctx context.Context, guestClient crclient.Client, hos
 
 		armNodePool := baseNodePool("arm-nodepool", armNodeClass.Name)
 		armNodePool.Spec.Template.Spec.Requirements = []karpenterv1.NodeSelectorRequirementWithMinValues{
-			{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: "node.kubernetes.io/instance-type", Operator: corev1.NodeSelectorOpIn, Values: []string{"m6g.xlarge"}}},
-			{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: "kubernetes.io/arch", Operator: corev1.NodeSelectorOpIn, Values: []string{"arm64"}}},
-			{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: karpenterv1.CapacityTypeLabelKey, Operator: corev1.NodeSelectorOpIn, Values: []string{karpenterv1.CapacityTypeOnDemand}}},
+			{Key: "node.kubernetes.io/instance-type", Operator: corev1.NodeSelectorOpIn, Values: []string{"m6g.xlarge"}},
+			{Key: "kubernetes.io/arch", Operator: corev1.NodeSelectorOpIn, Values: []string{"arm64"}},
+			{Key: karpenterv1.CapacityTypeLabelKey, Operator: corev1.NodeSelectorOpIn, Values: []string{karpenterv1.CapacityTypeOnDemand}},
 		}
 		armWorkLoads := testWorkload("arm-app", 1, map[string]string{karpenterv1.NodePoolLabelKey: armNodePool.Name})
 
@@ -850,8 +850,8 @@ func testCapacityReservation(ctx context.Context, mgtClient, guestClient crclien
 		// capacity-type=reserved so karpenter launches the instance into the reservation (not alongside it).
 		crNodePool := baseNodePool("capacity-reservation-test", "capacity-reservation-test")
 		crNodePool.Spec.Template.Spec.Requirements = []karpenterv1.NodeSelectorRequirementWithMinValues{
-			{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: "node.kubernetes.io/instance-type", Operator: corev1.NodeSelectorOpIn, Values: []string{"t3.xlarge"}}},
-			{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: karpenterv1.CapacityTypeLabelKey, Operator: corev1.NodeSelectorOpIn, Values: []string{karpenterv1.CapacityTypeReserved}}},
+			{Key: "node.kubernetes.io/instance-type", Operator: corev1.NodeSelectorOpIn, Values: []string{"t3.xlarge"}},
+			{Key: karpenterv1.CapacityTypeLabelKey, Operator: corev1.NodeSelectorOpIn, Values: []string{karpenterv1.CapacityTypeReserved}},
 		}
 		g.Expect(guestClient.Create(ctx, crNodePool)).To(Succeed())
 		t.Logf("Created NodePool capacity-reservation-test targeting capacity reservation %s", crID)
@@ -1436,8 +1436,8 @@ func baseNodePool(name, nodeClassName string) *karpenterv1.NodePool {
 				},
 				Spec: karpenterv1.NodeClaimTemplateSpec{
 					Requirements: []karpenterv1.NodeSelectorRequirementWithMinValues{
-						{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: "node.kubernetes.io/instance-type", Operator: corev1.NodeSelectorOpIn, Values: []string{"t3.xlarge"}}},
-						{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: karpenterv1.CapacityTypeLabelKey, Operator: corev1.NodeSelectorOpIn, Values: []string{karpenterv1.CapacityTypeOnDemand}}},
+						{Key: "node.kubernetes.io/instance-type", Operator: corev1.NodeSelectorOpIn, Values: []string{"t3.xlarge"}},
+						{Key: karpenterv1.CapacityTypeLabelKey, Operator: corev1.NodeSelectorOpIn, Values: []string{karpenterv1.CapacityTypeOnDemand}},
 					},
 					NodeClassRef: &karpenterv1.NodeClassReference{
 						Group: "karpenter.k8s.aws",

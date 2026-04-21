@@ -462,7 +462,7 @@ func validateAuthConfig(authConfig *AuthenticationConfiguration, disallowIssuers
 	if err != nil {
 		return fmt.Errorf("parsing kubernetes version %q", kubeVersion.String())
 	}
-	celCompiler := authenticationcel.NewCompiler(environment.MustBaseEnvSet(envVersion, true))
+	celCompiler := authenticationcel.NewCompiler(environment.MustBaseEnvSet(envVersion))
 
 	apiServerAuthConfig, err := HCPAuthConfigToAPIServerAuthConfig(authConfig)
 	if err != nil {
