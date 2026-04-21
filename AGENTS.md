@@ -9,13 +9,15 @@ Project documentation is published via MkDocs. The site structure and navigation
 ## Architecture
 
 ### Core Components
+
 - **hypershift-operator**: Main operator managing HostedCluster and NodePool resources
-- **control-plane-operator**: Manages control plane components for hosted clusters  
+- **control-plane-operator**: Manages control plane components for hosted clusters. See support/controlplane-component/README.md
 - **control-plane-pki-operator**: Handles PKI and certificate management
 - **karpenter-operator**: Manages Karpenter resources for auto-scaling
 - **ignition-server**: Serves ignition configs for node bootstrapping
 
 ### Key Directories
+
 - `api/`: API definitions and CRDs for hypershift, scheduling, certificates, and karpenter
 - `cmd/`: CLI commands for cluster/nodepool management and infrastructure operations
 - `hypershift-operator/`: Main operator controllers and logic
@@ -24,9 +26,11 @@ Project documentation is published via MkDocs. The site structure and navigation
 - `test/`: E2E and integration tests
 
 ### Platform Support
+
 The codebase supports multiple platforms:
+
 - AWS (primary platform) - both self-managed and managed control plane (aka ROSA HCP)
-- Azure - only managed control plane (aka ARO HCP)
+- Azure - both self-managed and managed control plane (aka ARO HCP)
 - IBM Cloud (PowerVS)
 - KubeVirt
 - OpenStack
@@ -35,6 +39,7 @@ The codebase supports multiple platforms:
 ## Development Commands
 
 ### Building
+
 ```bash
 make build                    # Build all binaries
 make hypershift-operator      # Build hypershift-operator
@@ -43,6 +48,7 @@ make hypershift               # Build CLI
 ```
 
 ### Testing
+
 ```bash
 make test                     # Run unit tests with race detection
 make e2e                      # Build E2E test binaries
@@ -50,6 +56,7 @@ make tests                    # Compile all tests
 ```
 
 ### Code Quality
+
 ```bash
 make lint                     # Run golangci-lint
 make lint-fix                 # Auto-fix linting issues
@@ -60,6 +67,7 @@ make vet                      # Run go vet
 ```
 
 ### API and Code Generation
+
 ```bash
 make api                      # Regenerate all API resources and CRDs
 make generate                 # Run go generate
@@ -68,21 +76,19 @@ make update                   # Full update (api-deps, workspace-sync, deps, api
 ```
 
 ### Development Workflow
-```bash
-make hypershift-install-aws-dev       # Install HyperShift for AWS development
-make run-operator-locally-aws-dev     # Run operator locally for AWS development
-bin/hypershift install --development # Install in development mode
-bin/hypershift-operator run          # Run operator locally
-```
+
+See .claude/skills.dev
 
 ## Testing Strategy
 
 ### Unit Tests
+
 - Located throughout the codebase alongside source files
 - Use race detection and parallel execution
 - Run with `make test`
 
 ### E2E Tests
+
 - Located in `test/e2e/`
 - Platform-specific tests for cluster lifecycle
 - Nodepool management and upgrade scenarios
@@ -90,6 +96,7 @@ bin/hypershift-operator run          # Run operator locally
 - v2 framework standards and patterns: see [test/e2e/v2/AGENTS.md](test/e2e/v2/AGENTS.md)
 
 ### Envtest (API Validation Tests)
+
 - Located in `test/envtest/` with build tag `envtest`
 - Tests CRD validation rules (CEL, OpenAPI schema) against real kube-apiserver + etcd
 - Test cases are YAML-driven following the openshift/api convention
@@ -101,63 +108,49 @@ bin/hypershift-operator run          # Run operator locally
 See test/envtest/README.md for details
 
 ### Integration Tests
+
 - Located in `test/integration/`
 - Focus on controller behavior and API interactions
 
 ## Key Development Patterns
 
 ### Code quality, formatting and conventions
+
 Please see /hypershift/.cursor/rules/code-formatting.mdc
 
 ### Operator Controllers
+
 - Follow standard controller-runtime patterns
 - Controllers in `hypershift-operator/controllers/` and `control-plane-operator/controllers/`
 - Use reconcile loops with proper error handling and requeuing
 
 ### Platform Abstraction
+
 - Platform-specific logic isolated in separate packages
 - Common interfaces defined in `support/` packages
 - Platform implementations in respective controller subdirectories
 
 ### Resource Management
+
 - Use `support/upsert/` for safe resource creation/updates
 - Follow owner reference patterns for proper garbage collection
 - Leverage controller-runtime's structured logging
 
 ### CRD API Machinery Fundamentals
+See api/AGENTS.md
 
-These are non-obvious behaviors of the Kubernetes API machinery that affect how CRD types in `api/` must be written. These are not style preferences or conventions — they are fundamental facts and reasoning about how the system works.
+### Design Invariants
 
-For conventions read https://github.com/openshift/enhancements/blob/master/dev-guide/api-conventions.md
+See [docs/content/reference/goals-and-design-invariants.md](docs/content/reference/goals-and-design-invariants.md) for security and architectural invariants that all code changes must respect.
 
-`make api-lint-fix` will enforce most conventions and best practices.
+### Versioning
 
-#### API Versioning
-- APIs primarily in v1beta1
-- Any new API should GA as v1
-- Use feature gates for experimental functionality
-- CRD generation via controller-gen with OpenShift-specific tooling
-
-#### Serialization
-- **`omitempty` does nothing for non-pointer structs.** Only `omitzero` correctly omits a struct field when it equals its zero value. This is a Go encoding/json behavior, not a Kubernetes convention.
-- **The only reason to use a pointer in a CRD is when the zero value is a valid, distinct user choice.** If the struct has a required field, `{}` can never be valid user input, so there is no ambiguity to resolve and no pointer is needed. `omitzero` on a non-pointer struct will correctly omit the key from serialized output. `MinProperties`/`MaxProperties` on the parent counts serialized keys — it has no concept of whether the Go field is a pointer.
-- **`// +default` must be paired with `// +optional`** because the required check runs before defaulting. A required field with a default will be rejected before the default is ever applied.
-
-#### Validation Execution
-- **OpenAPI schema validation only runs when a key is present in the serialized object.** if a field is omitted, the validation never executes. This is why `MinLength=1` on an optional field is safe: the constraint only fires when the user actually provides a value.
-- **Optionality and min constraints are independent concerns.** An optional field with `MinLength=1` means "you don't have to set this, but if you do, it can't be empty." These do not conflict.
-- **Admission-time validation rejects the write immediately.** Controller-time validation accepts the write, the user assumes success, and discovers the problem later via conditions or logs. Always prefer admission-time via CEL over controller-time validation.
-
-#### Immutability
-- **Immutable + optional creates a two-step bypass.** A user can (1) remove the optional field, then (2) re-add it with a different value. To prevent this, add a CEL rule at the parent level that forbids removing the field once set: `oldSelf.has(field) ? self.has(field) : true`.
-- **"Once set, cannot be removed" and "once set, cannot be changed" are separate constraints.** You typically need both together, and they require separate CEL rules.
-
-#### Defaulting and Transitions
-- **Ratcheting validation**: when adding new validation to existing fields, verify that existing clusters with values that predate the new validation can still be updated. CRD validation ratchets (allows unchanged invalid values through), but only for fields that are literally unchanged in the update.
+See [docs/content/reference/versioning-support.md](docs/content/reference/versioning-support.md) for release cycle, version skew policies, and support matrices for the HyperShift Operator, CPO, and other components.
 
 ## Dependencies and Modules
 
 This is a Go 1.25+ project using:
+
 - Kubernetes 0.34.x APIs
 - Controller-runtime 0.22.x
 - Various cloud provider SDKs (AWS, Azure, IBM)
@@ -170,6 +163,7 @@ The project uses vendoring (`go mod vendor`) and includes workspace configuratio
 This repository contains **multiple Go modules**. The `api/` directory is a **separate Go module** with its own `api/go.mod` (module path: `github.com/openshift/hypershift/api`). The main module at the repository root consumes the `api/` module through vendoring.
 
 This means:
+
 - Edits to files under `api/` (e.g. `api/hypershift/v1beta1/`) are **not visible** to the main module until the vendored copy is updated.
 - After modifying any types, constants, or functions in `api/`, you **must** run `make update` to regenerate CRDs, revendor dependencies, and sync everything. `make update` runs the full sequence: `api-deps` → `workspace-sync` → `deps` → `api` → `api-docs` → `clients` → `docs-aggregate`. Without this, the main module build will fail with `undefined` errors for any new symbols added in `api/`.
 - **Do not modify `vendor/` directories directly.** The `vendor/` directories are managed by `go mod vendor` (via `make deps` and `make api-deps`). Always use `make update` to keep them in sync.
@@ -185,6 +179,7 @@ This means:
 - E2E tests need proper cloud infrastructure setup (S3 buckets, DNS zones, etc.).
 
 ## Commit Messages
+
 Please see /hypershift/.cursor/rules/git-commit-format.mdc for information on how commit messages should be generated or formatted
 in this project.
 
@@ -194,11 +189,13 @@ in this project.
 - gitlint can be run by using this command `make run-gitlint`
 - Ensure all commit messages pass gitlint validation
 - Common gitlint rules to follow:
-    - Conventional commit format
-    - Proper line length limits
-    - Required footers
-    - No trailing whitespace
+  - Conventional commit format
+  - Proper line length limits
+  - Required footers
+  - No trailing whitespace
 
 ## Code conventions
+
 - Prefer Gherkin Syntax to define unit test cases, e.g. "When... it should..."
 - Prefer gomega for unit test assertions
+
