@@ -101,6 +101,22 @@ func (r *EC2NodeClassReconciler) SetupWithManager(ctx context.Context, mgr ctrl.
 			},
 		)).
 		Watches(&awskarpenterv1.EC2NodeClass{}, &handler.EnqueueRequestForObject{}).
+		Watches(&admissionv1.ValidatingAdmissionPolicy{}, handler.EnqueueRequestsFromMapFunc(
+			func(ctx context.Context, o client.Object) []ctrl.Request {
+				if o.GetName() != "karpenter.ec2nodeclass.hypershift.io" {
+					return nil
+				}
+				return r.mapToOpenShiftEC2NodeClasses(ctx, o)
+			},
+		)).
+		Watches(&admissionv1.ValidatingAdmissionPolicyBinding{}, handler.EnqueueRequestsFromMapFunc(
+			func(ctx context.Context, o client.Object) []ctrl.Request {
+				if o.GetName() != "karpenter-binding.ec2nodeclass.hypershift.io" {
+					return nil
+				}
+				return r.mapToOpenShiftEC2NodeClasses(ctx, o)
+			},
+		)).
 		// Watch secrets in the management cluster and reconcile all ec2nodeclasses
 		WatchesRawSource(source.Kind[client.Object](managementCluster.GetCache(), &corev1.Secret{},
 			handler.EnqueueRequestsFromMapFunc(r.mapToOpenShiftEC2NodeClasses),
