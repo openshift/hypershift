@@ -32,6 +32,41 @@ The codebase supports multiple platforms:
 - OpenStack
 - Agent
 
+### Private Cluster Ingress Design
+
+Control plane (CP) ingress and guest cluster (data plane) ingress are two orthogonal concerns. They are handled by separate components and have separate implementations.
+
+#### Control Plane Ingress
+- Handled by HyperShift via the Private Link controllers.
+- A dedicated `private-router` (HAProxy pod) is deployed in the Hosted Control Plane namespace on the management cluster.
+- Exposed to the guest cluster's private network via a cloud-specific Private Link (AWS PrivateLink / Azure Private Link Service).
+- Uses SNI-based routing to forward traffic to the appropriate CP service (KAS, OAuth, Konnectivity, Ignition).
+
+#### Data Plane (Guest Cluster) Ingress
+- Application traffic under `*.apps` is handled by the **ingress operator** running inside the guest cluster.
+- This is standard OpenShift ingress, not something HyperShift's CP infrastructure manages.
+- The CP `private-router` lives on the management side and **does not know how to resolve guest cluster workloads**.
+
+#### Private Topology Scope
+- A private topology (`endpointAccess: Private`) dictates how CP ingress endpoints are exposed (e.g. only via Private Link, not a public LB).
+- It may also influence the desired visibility of guest cluster ingress, but the two are not inherently linked.
+
+#### DNS: `hypershift.local` Zone
+- DNS for private clusters uses a synthetic, non-configurable `<cluster-name>.hypershift.local` zone managed automatically by HyperShift.
+- Records in this zone include:
+  - `api.<cluster-name>.hypershift.local` → private endpoint IP
+  - `*.apps.<cluster-name>.hypershift.local` → private endpoint IP
+- The `*.apps` records in the `.hypershift.local` zone exist for CP-resident services exposed as routes (OAuth, Ignition, Konnectivity), **not** for guest cluster application traffic.
+- The `.hypershift.local` `*.apps` wildcard is distinct from `*.apps.<cluster>.<basedomain>`. The former resolves CP service routes via the private endpoint. The latter is the guest cluster's application ingress domain, managed by the ingress operator on the data plane.
+
+#### Historical Context: AWS `*.apps` in `hypershift.local`
+- On AWS, both `api` and `*.apps` records exist in the `.hypershift.local` zone because initially there was support for KAS having its own LB, requiring two different private endpoints and therefore two distinct domain resolutions.
+- A similar pattern may be needed in the future for Azure if OAuth gets its own LB, but that is a separate concern from guest cluster traffic routing.
+
+#### Testing Guidance for Private Ingress Changes
+- PRs modifying private DNS should validate traffic flow, not just DNS records.
+- E2E tests should demonstrate that a traffic journey previously blocked is now enabled by the change, rather than simply asserting that DNS records exist in infrastructure.
+
 ## Development Commands
 
 ### Building
