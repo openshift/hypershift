@@ -19,7 +19,9 @@ import (
 
 	awskarpenterv1 "github.com/aws/karpenter-provider-aws/pkg/apis/v1"
 
+	admissionv1 "k8s.io/api/admissionregistration/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -1489,4 +1491,49 @@ func TestReconcileKarpenterSubnetsConfigMap(t *testing.T) {
 			g.Expect(subnetIDs).To(ConsistOf(tc.expectedSubnets))
 		})
 	}
+}
+
+func TestReconcileVAPRecreatesDeletedResources(t *testing.T) {
+	g := NewWithT(t)
+
+	guestClient := fake.NewClientBuilder().
+		WithScheme(hyperapi.Scheme).
+		Build()
+
+	r := &EC2NodeClassReconciler{
+		guestClient:            guestClient,
+		CreateOrUpdateProvider: upsert.New(false),
+	}
+
+	ctx := context.Background()
+	vapKey := client.ObjectKey{Name: "karpenter.ec2nodeclass.hypershift.io"}
+	bindingKey := client.ObjectKey{Name: "karpenter-binding.ec2nodeclass.hypershift.io"}
+
+	// When reconcileVAP is called it should create the VAP and binding
+	g.Expect(r.reconcileVAP(ctx)).To(Succeed())
+
+	vap := &admissionv1.ValidatingAdmissionPolicy{}
+	g.Expect(guestClient.Get(ctx, vapKey, vap)).To(Succeed())
+
+	binding := &admissionv1.ValidatingAdmissionPolicyBinding{}
+	g.Expect(guestClient.Get(ctx, bindingKey, binding)).To(Succeed())
+	g.Expect(binding.Spec.PolicyName).To(Equal(vapKey.Name))
+
+	// When the VAP and binding are deleted and reconcileVAP is called again it should recreate them
+	g.Expect(guestClient.Delete(ctx, vap)).To(Succeed())
+	g.Expect(guestClient.Delete(ctx, binding)).To(Succeed())
+
+	g.Expect(apierrors.IsNotFound(guestClient.Get(ctx, vapKey, vap))).To(BeTrue())
+	g.Expect(apierrors.IsNotFound(guestClient.Get(ctx, bindingKey, binding))).To(BeTrue())
+
+	g.Expect(r.reconcileVAP(ctx)).To(Succeed())
+
+	recreatedVAP := &admissionv1.ValidatingAdmissionPolicy{}
+	g.Expect(guestClient.Get(ctx, vapKey, recreatedVAP)).To(Succeed())
+	g.Expect(recreatedVAP.Spec.Validations).To(HaveLen(1))
+
+	recreatedBinding := &admissionv1.ValidatingAdmissionPolicyBinding{}
+	g.Expect(guestClient.Get(ctx, bindingKey, recreatedBinding)).To(Succeed())
+	g.Expect(recreatedBinding.Spec.PolicyName).To(Equal(vapKey.Name))
+	g.Expect(recreatedBinding.Spec.ValidationActions).To(ContainElement(admissionv1.Deny))
 }
