@@ -27,6 +27,7 @@ import (
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
 	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	"sigs.k8s.io/cluster-api/util/conversion"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
@@ -3275,6 +3276,147 @@ func TestNewCAPI(t *testing.T) {
 				g.Expect(capi.Token).To(BeEquivalentTo(tc.token))
 				g.Expect(capi.capiClusterName).To(Equal(tc.capiClusterName))
 			}
+		})
+	}
+}
+
+func TestMachineDeploymentComplete(t *testing.T) {
+	two := int32(2)
+	three := int32(3)
+
+	conversionData := func(replicas, upToDate, available int32, observedGen int64) string {
+		data := map[string]any{
+			"apiVersion": "cluster.x-k8s.io/v1beta2",
+			"kind":       "MachineDeployment",
+			"spec":       map[string]any{"replicas": replicas},
+			"status": map[string]any{
+				"observedGeneration": observedGen,
+				"replicas":           replicas,
+				"upToDateReplicas":   upToDate,
+				"availableReplicas":  available,
+			},
+		}
+		raw, _ := json.Marshal(data)
+		return string(raw)
+	}
+
+	testCases := []struct {
+		name     string
+		md       *capiv1.MachineDeployment
+		expected bool
+	}{
+		{
+			name: "When all v1beta1 and v1beta2 fields agree it should return true",
+			md: &capiv1.MachineDeployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Generation: 2,
+					Annotations: map[string]string{
+						conversion.DataAnnotation: conversionData(2, 2, 2, 2),
+					},
+				},
+				Spec:   capiv1.MachineDeploymentSpec{Replicas: &two},
+				Status: capiv1.MachineDeploymentStatus{Replicas: 2, UpdatedReplicas: 2, AvailableReplicas: 2, ObservedGeneration: 2},
+			},
+			expected: true,
+		},
+		{
+			name: "When v1beta1 looks complete but v1beta2 upToDateReplicas disagrees it should return false",
+			md: &capiv1.MachineDeployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Generation: 2,
+					Annotations: map[string]string{
+						conversion.DataAnnotation: conversionData(2, 0, 2, 2),
+					},
+				},
+				Spec:   capiv1.MachineDeploymentSpec{Replicas: &two},
+				Status: capiv1.MachineDeploymentStatus{Replicas: 2, UpdatedReplicas: 2, AvailableReplicas: 2, ObservedGeneration: 2},
+			},
+			expected: false,
+		},
+		{
+			name: "When v1beta1 looks complete but v1beta2 replicas shows surge it should return false",
+			md: &capiv1.MachineDeployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Generation: 2,
+					Annotations: map[string]string{
+						conversion.DataAnnotation: conversionData(3, 2, 2, 2),
+					},
+				},
+				Spec:   capiv1.MachineDeploymentSpec{Replicas: &two},
+				Status: capiv1.MachineDeploymentStatus{Replicas: 2, UpdatedReplicas: 2, AvailableReplicas: 2, ObservedGeneration: 2},
+			},
+			expected: false,
+		},
+		{
+			name: "When v1beta1 looks complete but v1beta2 observedGeneration is stale it should return false",
+			md: &capiv1.MachineDeployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Generation: 2,
+					Annotations: map[string]string{
+						conversion.DataAnnotation: conversionData(2, 2, 2, 1),
+					},
+				},
+				Spec:   capiv1.MachineDeploymentSpec{Replicas: &two},
+				Status: capiv1.MachineDeploymentStatus{Replicas: 2, UpdatedReplicas: 2, AvailableReplicas: 2, ObservedGeneration: 2},
+			},
+			expected: false,
+		},
+		{
+			name: "When v1beta1 is not complete it should return false without checking conversion data",
+			md: &capiv1.MachineDeployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Generation: 2,
+				},
+				Spec:   capiv1.MachineDeploymentSpec{Replicas: &two},
+				Status: capiv1.MachineDeploymentStatus{Replicas: 3, UpdatedReplicas: 1, AvailableReplicas: 2, ObservedGeneration: 2},
+			},
+			expected: false,
+		},
+		{
+			name: "When no conversion-data annotation exists it should fall back to v1beta1 only",
+			md: &capiv1.MachineDeployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Generation: 1,
+				},
+				Spec:   capiv1.MachineDeploymentSpec{Replicas: &two},
+				Status: capiv1.MachineDeploymentStatus{Replicas: 2, UpdatedReplicas: 2, AvailableReplicas: 2, ObservedGeneration: 1},
+			},
+			expected: true,
+		},
+		{
+			name: "When conversion-data annotation is malformed it should fall back to v1beta1 result",
+			md: &capiv1.MachineDeployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Generation: 1,
+					Annotations: map[string]string{
+						conversion.DataAnnotation: "not-valid-json",
+					},
+				},
+				Spec:   capiv1.MachineDeploymentSpec{Replicas: &two},
+				Status: capiv1.MachineDeploymentStatus{Replicas: 2, UpdatedReplicas: 2, AvailableReplicas: 2, ObservedGeneration: 1},
+			},
+			expected: true,
+		},
+		{
+			name: "When v1beta1 replicas does not match spec it should return false",
+			md: &capiv1.MachineDeployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Generation: 2,
+					Annotations: map[string]string{
+						conversion.DataAnnotation: conversionData(3, 2, 2, 2),
+					},
+				},
+				Spec:   capiv1.MachineDeploymentSpec{Replicas: &three},
+				Status: capiv1.MachineDeploymentStatus{Replicas: 2, UpdatedReplicas: 2, AvailableReplicas: 2, ObservedGeneration: 2},
+			},
+			expected: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			g.Expect(MachineDeploymentComplete(tc.md)).To(Equal(tc.expected))
 		})
 	}
 }

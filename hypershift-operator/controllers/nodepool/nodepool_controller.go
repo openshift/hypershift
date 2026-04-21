@@ -2,6 +2,7 @@ package nodepool
 
 import (
 	"context"
+	"encoding/json"
 	coreerrors "errors"
 	"fmt"
 	"os"
@@ -36,12 +37,14 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
+	"k8s.io/utils/ptr"
 
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	capiopenstackv1beta1 "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
 	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
 	"sigs.k8s.io/cluster-api/util"
+	"sigs.k8s.io/cluster-api/util/conversion"
 	"sigs.k8s.io/cluster-api/util/patch"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -112,12 +115,10 @@ type CPOCapabilities struct {
 	CreateDefaultAWSSecurityGroup bool
 }
 
-var (
-	// when using the conditions.SetSummary, with the WithStepCounter or WithStepCounterIf(true) options,
-	// the result Ready condition message is something like "1 of 2 completed". If we want to use this kind
-	// of messages for our own condition message, this is not useful. This regexp finds these condition messages
-	isSetupCounterCondMessage = regexp.MustCompile(`\d+ of \d+ completed`)
-)
+// when using the conditions.SetSummary, with the WithStepCounter or WithStepCounterIf(true) options,
+// the result Ready condition message is something like "1 of 2 completed". If we want to use this kind
+// of messages for our own condition message, this is not useful. This regexp finds these condition messages
+var isSetupCounterCondMessage = regexp.MustCompile(`\d+ of \d+ completed`)
 
 var capiRelatedNodePoolManagedResourcesToWatch = []client.Object{
 	&capiaws.AWSMachineTemplate{},
@@ -776,12 +777,55 @@ func defaultNodePoolGCPImage(specifiedArch string, releaseImage *releaseinfo.Rel
 
 // MachineDeploymentComplete considers a MachineDeployment to be complete once all of its desired replicas
 // are updated and available, and no old machines are running.
+//
+// In CAPI v1.11+, the controller writes status natively in v1beta2 and the v1beta1 status
+// fields come from conversion. The converted v1beta1 fields (especially UpdatedReplicas,
+// which maps from deprecated.v1beta1.updatedReplicas rather than the native upToDateReplicas)
+// can transiently disagree with the v1beta2 native fields. To guard against this, when the
+// v1beta1 fields indicate completion we cross-check against the authoritative v1beta2 status
+// stored in the conversion-data annotation.
 func MachineDeploymentComplete(deployment *capiv1.MachineDeployment) bool {
 	newStatus := &deployment.Status
-	return newStatus.UpdatedReplicas == *(deployment.Spec.Replicas) &&
+	v1beta1Complete := newStatus.UpdatedReplicas == *(deployment.Spec.Replicas) &&
 		newStatus.Replicas == *(deployment.Spec.Replicas) &&
 		newStatus.AvailableReplicas == *(deployment.Spec.Replicas) &&
 		newStatus.ObservedGeneration >= deployment.Generation
+	if !v1beta1Complete {
+		return false
+	}
+	return machineDeploymentCompleteFromConversionData(deployment)
+}
+
+// machineDeploymentCompleteFromConversionData parses the v1beta2 conversion-data annotation
+// and verifies that the native v1beta2 status also indicates completion. If the annotation
+// is absent (e.g. CAPI < v1.11), returns true to preserve backwards compatibility.
+func machineDeploymentCompleteFromConversionData(deployment *capiv1.MachineDeployment) bool {
+	raw, ok := deployment.Annotations[conversion.DataAnnotation]
+	if !ok {
+		return true
+	}
+
+	var v1beta2MD struct {
+		Spec struct {
+			Replicas *int32 `json:"replicas"`
+		} `json:"spec"`
+		Status struct {
+			ObservedGeneration int64  `json:"observedGeneration"`
+			Replicas           *int32 `json:"replicas"`
+			AvailableReplicas  *int32 `json:"availableReplicas"`
+			UpToDateReplicas   *int32 `json:"upToDateReplicas"`
+		} `json:"status"`
+	}
+	if err := json.Unmarshal([]byte(raw), &v1beta2MD); err != nil {
+		ctrl.Log.WithName("nodepool").Error(err, "Failed to unmarshal conversion-data annotation, falling back to v1beta1 status")
+		return true
+	}
+
+	desired := ptr.Deref(v1beta2MD.Spec.Replicas, 0)
+	return ptr.Deref(v1beta2MD.Status.UpToDateReplicas, 0) == desired &&
+		ptr.Deref(v1beta2MD.Status.Replicas, 0) == desired &&
+		ptr.Deref(v1beta2MD.Status.AvailableReplicas, 0) == desired &&
+		v1beta2MD.Status.ObservedGeneration >= deployment.Generation
 }
 
 // GetHostedClusterByName finds and return a HostedCluster object using the specified params.
@@ -956,6 +1000,7 @@ func (r *NodePoolReconciler) listSecrets(ctx context.Context, nodePool *hyperv1.
 	}
 	return filtered, nil
 }
+
 func isAutomatedMachineManagement(nodePool *hyperv1.NodePool) bool {
 	return !(isIBMUPI(nodePool) || isPlatformNone(nodePool))
 }
