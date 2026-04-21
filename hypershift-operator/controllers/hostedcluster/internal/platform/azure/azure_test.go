@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"testing"
+	"time"
 
 	. "github.com/onsi/gomega"
 
@@ -17,6 +18,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
+	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -524,6 +526,201 @@ func TestReconcileKMSConfigSecret(t *testing.T) {
 			g.Expect(cfg.LoadBalancerSku).To(Equal("standard"))
 
 			tc.validate(g, cfg)
+		})
+	}
+}
+
+func TestDeleteOrphanedMachines(t *testing.T) {
+	controlPlaneNamespace := "test-cp-namespace"
+
+	managedIdentitiesHC := &hyperv1.HostedCluster{
+		Spec: hyperv1.HostedClusterSpec{
+			Platform: hyperv1.PlatformSpec{
+				Azure: &hyperv1.AzurePlatformSpec{
+					AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+						ManagedIdentities: &hyperv1.AzureResourceManagedIdentities{},
+					},
+				},
+			},
+		},
+	}
+
+	// staleDeletionTimestamp simulates a machine that has been pending deletion beyond the threshold.
+	staleDeletionTimestamp := metav1.NewTime(time.Now().Add(-(deletionFailedThreshold + time.Minute)))
+	recentDeletionTimestamp := metav1.NewTime(time.Now())
+
+	deletionFailedConditions := capiv1.Conditions{
+		{
+			Type:   capiv1.ReadyCondition,
+			Status: corev1.ConditionFalse,
+			Reason: capiazure.DeletionFailedReason,
+		},
+	}
+
+	testCases := []struct {
+		name                      string
+		hostedCluster             *hyperv1.HostedCluster
+		azureMachines             []capiazure.AzureMachine
+		expectedFinalizersRemoved bool
+		expectedError             bool
+	}{
+		{
+			name: "when ManagedIdentities is nil it should return early without modifying machines",
+			hostedCluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Azure: &hyperv1.AzurePlatformSpec{
+							AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{},
+						},
+					},
+				},
+			},
+			azureMachines: []capiazure.AzureMachine{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:              "machine-1",
+						Namespace:         controlPlaneNamespace,
+						Finalizers:        []string{capiazure.MachineFinalizer},
+						DeletionTimestamp: &staleDeletionTimestamp,
+					},
+					Status: capiazure.AzureMachineStatus{
+						Conditions: deletionFailedConditions,
+					},
+				},
+			},
+			expectedFinalizersRemoved: false,
+			expectedError:             false,
+		},
+		{
+			name:                      "when there are no machines it should succeed",
+			hostedCluster:             managedIdentitiesHC,
+			azureMachines:             []capiazure.AzureMachine{},
+			expectedFinalizersRemoved: false,
+			expectedError:             false,
+		},
+		{
+			name:          "when a machine has a stale DeletionTimestamp with DeletionFailed condition it should remove finalizers",
+			hostedCluster: managedIdentitiesHC,
+			azureMachines: []capiazure.AzureMachine{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:              "machine-1",
+						Namespace:         controlPlaneNamespace,
+						Finalizers:        []string{capiazure.MachineFinalizer},
+						DeletionTimestamp: &staleDeletionTimestamp,
+					},
+					Status: capiazure.AzureMachineStatus{
+						Conditions: deletionFailedConditions,
+					},
+				},
+			},
+			expectedFinalizersRemoved: true,
+			expectedError:             false,
+		},
+		{
+			name:          "when a machine has a recent DeletionTimestamp with DeletionFailed condition it should not remove finalizers",
+			hostedCluster: managedIdentitiesHC,
+			azureMachines: []capiazure.AzureMachine{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:              "machine-1",
+						Namespace:         controlPlaneNamespace,
+						Finalizers:        []string{capiazure.MachineFinalizer},
+						DeletionTimestamp: &recentDeletionTimestamp,
+					},
+					Status: capiazure.AzureMachineStatus{
+						Conditions: deletionFailedConditions,
+					},
+				},
+			},
+			expectedFinalizersRemoved: false,
+			expectedError:             false,
+		},
+		{
+			name:          "when a machine has a stale DeletionTimestamp without DeletionFailed condition it should not remove finalizers",
+			hostedCluster: managedIdentitiesHC,
+			azureMachines: []capiazure.AzureMachine{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:              "machine-1",
+						Namespace:         controlPlaneNamespace,
+						Finalizers:        []string{capiazure.MachineFinalizer},
+						DeletionTimestamp: &staleDeletionTimestamp,
+					},
+					Status: capiazure.AzureMachineStatus{
+						Conditions: capiv1.Conditions{
+							{
+								Type:   capiv1.ReadyCondition,
+								Status: corev1.ConditionTrue,
+							},
+						},
+					},
+				},
+			},
+			expectedFinalizersRemoved: false,
+			expectedError:             false,
+		},
+		{
+			name:          "when a machine is not pending deletion it should not remove finalizers regardless of conditions",
+			hostedCluster: managedIdentitiesHC,
+			azureMachines: []capiazure.AzureMachine{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:       "machine-1",
+						Namespace:  controlPlaneNamespace,
+						Finalizers: []string{capiazure.MachineFinalizer},
+					},
+					Status: capiazure.AzureMachineStatus{
+						Conditions: deletionFailedConditions,
+					},
+				},
+			},
+			expectedFinalizersRemoved: false,
+			expectedError:             false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+			ctx := context.Background()
+
+			objects := make([]client.Object, len(tc.azureMachines))
+			for i := range tc.azureMachines {
+				objects[i] = &tc.azureMachines[i]
+			}
+
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				WithObjects(objects...).
+				WithStatusSubresource(objects...).
+				Build()
+
+			azure := Azure{}
+
+			err := azure.DeleteOrphanedMachines(ctx, fakeClient, tc.hostedCluster, controlPlaneNamespace)
+
+			if tc.expectedError {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+			}
+
+			azureMachineList := &capiazure.AzureMachineList{}
+			g.Expect(fakeClient.List(ctx, azureMachineList, client.InNamespace(controlPlaneNamespace))).To(Succeed())
+
+			if tc.expectedFinalizersRemoved {
+				for _, machine := range azureMachineList.Items {
+					if !machine.DeletionTimestamp.IsZero() {
+						g.Expect(machine.Finalizers).To(BeEmpty(), "finalizers should be removed for machines with DeletionFailed condition")
+					}
+				}
+			} else {
+				for _, machine := range azureMachineList.Items {
+					g.Expect(machine.Finalizers).To(Equal(tc.azureMachines[0].Finalizers), "finalizers should not be modified")
+				}
+			}
 		})
 	}
 }
