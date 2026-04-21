@@ -205,7 +205,7 @@ func TestReconcileInfrastructure(t *testing.T) {
 				return hcp
 			}(),
 			verify: func(g Gomega, infra *configv1.Infrastructure) {
-				g.Expect(infra.Spec.CloudConfig.Name).To(Equal("cloud-provider-config"))
+				g.Expect(infra.Spec.CloudConfig.Name).To(Equal(CloudProviderCMName))
 				g.Expect(infra.Spec.CloudConfig.Key).To(Equal(aws.ProviderConfigKey))
 			},
 		},
@@ -315,7 +315,7 @@ func TestReconcileInfrastructure(t *testing.T) {
 			verify: func(g Gomega, infra *configv1.Infrastructure) {
 				g.Expect(infra.Status.Platform).To(Equal(configv1.OpenStackPlatformType))
 				g.Expect(infra.Spec.PlatformSpec.OpenStack).ToNot(BeNil())
-				g.Expect(infra.Spec.CloudConfig.Name).To(Equal("cloud-provider-config"))
+				g.Expect(infra.Spec.CloudConfig.Name).To(Equal(CloudProviderCMName))
 				g.Expect(infra.Spec.CloudConfig.Key).To(Equal(openstack.CloudConfigKey))
 			},
 		},
