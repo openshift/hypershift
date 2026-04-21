@@ -762,7 +762,8 @@ spec:
                                       description: |-
                                         prefix is an optional field that configures the prefix that will be applied to the cluster identity attribute during the process of mapping JWT claims to cluster identity attributes.
 
-                                        When omitted (""), no prefix is applied to the cluster identity attribute.
+                                        When omitted or set to an empty string (""), no prefix is applied to the cluster identity attribute.
+                                        Must not be set to a non-empty value when expression is set.
 
                                         Example: if `prefix` is set to "myoidc:" and the `claim` in JWT contains an array of strings "a", "b" and "c", the mapping will result in an array of string "myoidc:a", "myoidc:b" and "myoidc:c".
                                       type: string
@@ -809,11 +810,9 @@ spec:
                                         Allowed values are 'Prefix', 'NoPrefix', and omitted (not provided or an empty string).
 
                                         When set to 'Prefix', the value specified in the prefix field will be prepended to the value of the JWT claim.
-
                                         The prefix field must be set when prefixPolicy is 'Prefix'.
-
+                                        Must not be set to 'Prefix' when expression is set.
                                         When set to 'NoPrefix', no prefix will be prepended to the value of the JWT claim.
-
                                         When omitted, this means no opinion and the platform is left to choose any prefixes that are applied which is subject to change over time.
                                         Currently, the platform prepends `{issuerURL}#` to the value of the JWT claim when the claim is not 'email'.
 
@@ -1394,6 +1393,9 @@ spec:
 
                           Once set, changing domain is not currently supported.
                         type: string
+                        x-kubernetes-validations:
+                        - message: domain is immutable once set
+                          rule: self == oldSelf
                       loadBalancer:
                         description: |-
                           loadBalancer contains the load balancer details in general which are not only specific to the underlying infrastructure
@@ -1733,9 +1735,10 @@ spec:
                                     operator:
                                       description: |-
                                         Operator represents a key's relationship to the value.
-                                        Valid operators are Exists and Equal. Defaults to Equal.
+                                        Valid operators are Exists, Equal, Lt, and Gt. Defaults to Equal.
                                         Exists is equivalent to wildcard for value, so that a pod can
                                         tolerate all taints of a particular category.
+                                        Lt and Gt perform numeric comparisons (requires feature gate TaintTolerationComparisonOperators).
                                       type: string
                                     tolerationSeconds:
                                       description: |-
@@ -1795,9 +1798,10 @@ spec:
                                     operator:
                                       description: |-
                                         Operator represents a key's relationship to the value.
-                                        Valid operators are Exists and Equal. Defaults to Equal.
+                                        Valid operators are Exists, Equal, Lt, and Gt. Defaults to Equal.
                                         Exists is equivalent to wildcard for value, so that a pod can
                                         tolerate all taints of a particular category.
+                                        Lt and Gt perform numeric comparisons (requires feature gate TaintTolerationComparisonOperators).
                                       type: string
                                     tolerationSeconds:
                                       description: |-
@@ -6594,9 +6598,10 @@ spec:
                     operator:
                       description: |-
                         Operator represents a key's relationship to the value.
-                        Valid operators are Exists and Equal. Defaults to Equal.
+                        Valid operators are Exists, Equal, Lt, and Gt. Defaults to Equal.
                         Exists is equivalent to wildcard for value, so that a pod can
                         tolerate all taints of a particular category.
+                        Lt and Gt perform numeric comparisons (requires feature gate TaintTolerationComparisonOperators).
                       type: string
                     tolerationSeconds:
                       description: |-

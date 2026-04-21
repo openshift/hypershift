@@ -779,6 +779,42 @@ spec:
                             type: array
                             x-kubernetes-list-type: atomic
                         type: object
+                      tlsAdherence:
+                        description: |-
+                          tlsAdherence controls if components in the cluster adhere to the TLS security profile
+                          configured on this APIServer resource.
+
+                          Valid values are "LegacyAdheringComponentsOnly" and "StrictAllComponents".
+
+                          When set to "LegacyAdheringComponentsOnly", components that already honor the
+                          cluster-wide TLS profile continue to do so. Components that do not already honor
+                          it continue to use their individual TLS configurations.
+
+                          When set to "StrictAllComponents", all components must honor the configured TLS
+                          profile unless they have a component-specific TLS configuration that overrides
+                          it. This mode is recommended for security-conscious deployments and is required
+                          for certain compliance frameworks.
+
+                          Note: Some components such as Kubelet and IngressController have their own
+                          dedicated TLS configuration mechanisms via KubeletConfig and IngressController
+                          CRs respectively. When these component-specific TLS configurations are set,
+                          they take precedence over the cluster-wide tlsSecurityProfile. When not set,
+                          these components fall back to the cluster-wide default.
+
+                          Components that encounter an unknown value for tlsAdherence should treat it
+                          as "StrictAllComponents" and log a warning to ensure forward compatibility
+                          while defaulting to the more secure behavior.
+
+                          This field is optional.
+                          When omitted, this means the user has no opinion and the platform is left
+                          to choose reasonable defaults. These defaults are subject to change over time.
+                          The current default is LegacyAdheringComponentsOnly.
+
+                          Once set, this field may be changed to a different value, but may not be removed.
+                        enum:
+                        - LegacyAdheringComponentsOnly
+                        - StrictAllComponents
+                        type: string
                       tlsSecurityProfile:
                         description: |-
                           tlsSecurityProfile specifies settings for TLS connections for externally exposed servers.
@@ -914,6 +950,10 @@ spec:
                             type: string
                         type: object
                     type: object
+                    x-kubernetes-validations:
+                    - message: tlsAdherence may not be removed once set
+                      rule: 'has(oldSelf.tlsAdherence) ? has(self.tlsAdherence) :
+                        true'
                   authentication:
                     description: |-
                       authentication specifies cluster-wide settings for authentication (like OAuth and
@@ -1086,12 +1126,18 @@ spec:
                                       description: |-
                                         prefix is an optional field that configures the prefix that will be applied to the cluster identity attribute during the process of mapping JWT claims to cluster identity attributes.
 
-                                        When omitted (""), no prefix is applied to the cluster identity attribute.
+                                        When omitted or set to an empty string (""), no prefix is applied to the cluster identity attribute.
+                                        Must not be set to a non-empty value when expression is set.
 
                                         Example: if `prefix` is set to "myoidc:" and the `claim` in JWT contains an array of strings "a", "b" and "c", the mapping will result in an array of string "myoidc:a", "myoidc:b" and "myoidc:c".
                                       type: string
                                   type: object
                                   x-kubernetes-validations:
+                                  - message: prefix must not be set to a non-empty
+                                      value when expression is set
+                                    rule: 'has(self.expression) && size(self.expression)
+                                      > 0 ? (!has(self.prefix) || size(self.prefix)
+                                      == 0) : true'
                                   - message: expression must not be set if claim is
                                       specified and is not an empty string
                                     rule: '(size(self.?claim.orValue("")) > 0) ? !has(self.expression)
@@ -1191,11 +1237,9 @@ spec:
                                         Allowed values are 'Prefix', 'NoPrefix', and omitted (not provided or an empty string).
 
                                         When set to 'Prefix', the value specified in the prefix field will be prepended to the value of the JWT claim.
-
                                         The prefix field must be set when prefixPolicy is 'Prefix'.
-
+                                        Must not be set to 'Prefix' when expression is set.
                                         When set to 'NoPrefix', no prefix will be prepended to the value of the JWT claim.
-
                                         When omitted, this means no opinion and the platform is left to choose any prefixes that are applied which is subject to change over time.
                                         Currently, the platform prepends `{issuerURL}#` to the value of the JWT claim when the claim is not 'email'.
 
@@ -1217,6 +1261,11 @@ spec:
                                       must be set
                                     rule: 'has(self.claim) ? !has(self.expression)
                                       : has(self.expression)'
+                                  - message: prefixPolicy must not be set to 'Prefix'
+                                      when expression is set
+                                    rule: 'has(self.expression) && size(self.expression)
+                                      > 0 ? !has(self.prefixPolicy) || self.prefixPolicy
+                                      != ''Prefix'' : true'
                                   - message: prefix must be set if prefixPolicy is
                                       'Prefix', but must remain unset otherwise
                                     rule: 'has(self.prefixPolicy) && self.prefixPolicy
@@ -1892,6 +1941,9 @@ spec:
 
                           Once set, changing domain is not currently supported.
                         type: string
+                        x-kubernetes-validations:
+                        - message: domain is immutable once set
+                          rule: self == oldSelf
                       loadBalancer:
                         description: |-
                           loadBalancer contains the load balancer details in general which are not only specific to the underlying infrastructure
@@ -2231,9 +2283,10 @@ spec:
                                     operator:
                                       description: |-
                                         Operator represents a key's relationship to the value.
-                                        Valid operators are Exists and Equal. Defaults to Equal.
+                                        Valid operators are Exists, Equal, Lt, and Gt. Defaults to Equal.
                                         Exists is equivalent to wildcard for value, so that a pod can
                                         tolerate all taints of a particular category.
+                                        Lt and Gt perform numeric comparisons (requires feature gate TaintTolerationComparisonOperators).
                                       type: string
                                     tolerationSeconds:
                                       description: |-
@@ -2293,9 +2346,10 @@ spec:
                                     operator:
                                       description: |-
                                         Operator represents a key's relationship to the value.
-                                        Valid operators are Exists and Equal. Defaults to Equal.
+                                        Valid operators are Exists, Equal, Lt, and Gt. Defaults to Equal.
                                         Exists is equivalent to wildcard for value, so that a pod can
                                         tolerate all taints of a particular category.
+                                        Lt and Gt perform numeric comparisons (requires feature gate TaintTolerationComparisonOperators).
                                       type: string
                                     tolerationSeconds:
                                       description: |-
@@ -8186,9 +8240,10 @@ spec:
                     operator:
                       description: |-
                         Operator represents a key's relationship to the value.
-                        Valid operators are Exists and Equal. Defaults to Equal.
+                        Valid operators are Exists, Equal, Lt, and Gt. Defaults to Equal.
                         Exists is equivalent to wildcard for value, so that a pod can
                         tolerate all taints of a particular category.
+                        Lt and Gt perform numeric comparisons (requires feature gate TaintTolerationComparisonOperators).
                       type: string
                     tolerationSeconds:
                       description: |-

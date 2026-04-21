@@ -216,6 +216,7 @@ hostedclusters.hypershift.openshift.io:
   - ImageStreamImportMode
   - KMSEncryptionProvider
   - OpenStack
+  - TLSAdherence
   FilenameOperatorName: ""
   FilenameOperatorOrdering: ""
   FilenameRunLevel: ""
@@ -289,6 +290,7 @@ hostedcontrolplanes.hypershift.openshift.io:
   - ImageStreamImportMode
   - KMSEncryptionProvider
   - OpenStack
+  - TLSAdherence
   FilenameOperatorName: ""
   FilenameOperatorOrdering: ""
   FilenameRunLevel: ""
