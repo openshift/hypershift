@@ -77,7 +77,7 @@ make update                   # Full update (api-deps, workspace-sync, deps, api
 
 ### Development Workflow
 
-See .claude/skills.dev
+See .claude/skills/dev
 
 ## Testing Strategy
 

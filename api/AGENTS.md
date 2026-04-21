@@ -66,7 +66,7 @@ When modifying API types, add serialization compatibility tests that:
 
 See `api/hypershift/v1beta1/nodepool_types_test.go` for an example of this pattern.
 
-All API CEL validations must be covered with envtests, see See test/envtest/README.md for details
+All API CEL validations must be covered with envtests, see test/envtest/README.md for details
 
 
 
