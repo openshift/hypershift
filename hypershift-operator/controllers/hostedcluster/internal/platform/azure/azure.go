@@ -8,6 +8,7 @@ import (
 	"os"
 	"path"
 	"strings"
+	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/azure"
@@ -24,11 +25,14 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/utils/ptr"
 
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	"github.com/blang/semver"
 )
@@ -353,6 +357,71 @@ func (a Azure) CAPIProviderPolicyRules() []rbacv1.PolicyRule {
 
 func (a Azure) DeleteCredentials(ctx context.Context, c client.Client, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error {
 	return nil
+}
+
+// deletionFailedThreshold is the minimum duration a machine must have had a non-zero
+// DeletionTimestamp before it is considered permanently stuck and eligible for orphaning.
+// This guards against orphaning machines that hit transient failures (e.g. rate limiting).
+const deletionFailedThreshold = 10 * time.Minute
+
+// DeleteOrphanedMachines removes the finalizer from AzureMachines that are stuck in deletion
+// due to credential failures. This is detected by checking each AzureMachine's Status.Conditions
+// for a Ready=False condition with Reason=DeletionFailed. Orphaning the machine allows management
+// cluster cleanup to proceed without requiring valid cloud credentials.
+func (Azure) DeleteOrphanedMachines(ctx context.Context, c client.Client, hc *hyperv1.HostedCluster, controlPlaneNamespace string) error {
+	// This orphaning behavior is intended for managed-identity cleanup flow.
+	if hc.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities == nil {
+		return nil
+	}
+
+	azureMachineList := capiazure.AzureMachineList{}
+	if err := c.List(ctx, &azureMachineList, client.InNamespace(controlPlaneNamespace)); err != nil {
+		return fmt.Errorf("failed to list AzureMachines in %s: %w", controlPlaneNamespace, err)
+	}
+
+	logger := ctrl.LoggerFrom(ctx)
+	var errs []error
+
+	for i := range azureMachineList.Items {
+		azureMachine := &azureMachineList.Items[i]
+		if azureMachine.DeletionTimestamp.IsZero() {
+			continue
+		}
+		if time.Since(azureMachine.DeletionTimestamp.Time) < deletionFailedThreshold {
+			continue
+		}
+		if !hasDeletionFailedCondition(azureMachine) {
+			continue
+		}
+		// Remove the AzureMachine finalizer to orphan the machine, leaving Azure
+		// infrastructure intact rather than attempting cloud API calls with invalid credentials.
+		if removed := controllerutil.RemoveFinalizer(azureMachine, capiazure.MachineFinalizer); !removed {
+			continue
+		}
+		if err := c.Update(ctx, azureMachine); err != nil {
+			errs = append(errs, fmt.Errorf("failed to orphan machine %s/%s: %w",
+				azureMachine.Namespace, azureMachine.Name, err))
+			continue
+		}
+		logger.Info("orphaning azuremachine stuck in deletion due to credential failure",
+			"machine", client.ObjectKeyFromObject(azureMachine))
+	}
+
+	return utilerrors.NewAggregate(errs)
+}
+
+// hasDeletionFailedCondition returns true if the AzureMachine has a Ready condition with
+// Status=False and Reason=DeletionFailed, indicating the cloud provider could not delete
+// the underlying VM (e.g., due to invalid or expired credentials).
+func hasDeletionFailedCondition(azureMachine *capiazure.AzureMachine) bool {
+	for _, condition := range azureMachine.Status.Conditions {
+		if condition.Type == capiv1.ReadyCondition &&
+			condition.Status == corev1.ConditionFalse &&
+			condition.Reason == capiazure.DeletionFailedReason {
+			return true
+		}
+	}
+	return false
 }
 
 func reconcileAzureCluster(azureCluster *capiazure.AzureCluster, hcluster *hyperv1.HostedCluster, apiEndpoint hyperv1.APIEndpoint, azureClusterIdentity *capiazure.AzureClusterIdentity, _ string) error {
