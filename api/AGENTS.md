@@ -8,7 +8,7 @@ These are non-obvious behaviors of the Kubernetes API machinery that affect how 
 
 For conventions read [https://github.com/openshift/enhancements/blob/master/dev-guide/api-conventions.md](https://github.com/openshift/enhancements/blob/master/dev-guide/api-conventions.md)
 
-`make api-lint-fix` will enforce most conventions and best practices.
+`make api-lint-fix` will enforce most conventions and best practices. **Do not suppress or work around its findings** — they exist because violations have caused production issues. If a finding seems wrong, understand why the rule exists before dismissing it.
 
 ### API Versioning
 
@@ -16,6 +16,16 @@ For conventions read [https://github.com/openshift/enhancements/blob/master/dev-
 - Any new API should GA as v1
 - Use feature gates for experimental functionality
 - CRD generation via controller-gen with OpenShift-specific tooling
+
+Key make targets for API work:
+
+```bash
+make api               # Regenerate all CRDs, deepcopy, clients
+make api-lint-fix      # Run API linter and auto-fix violations
+make verify            # Full verification (includes api, fmt, vet, lint)
+make update            # Full update (api-deps, workspace-sync, deps, api, api-docs, clients)
+ENVTEST_OCP_K8S_VERSIONS=1.35.0 make test-envtest-ocp # Run envtest for CEL validations
+```
 
 ### Serialization
 
@@ -47,7 +57,7 @@ Every change to an API type must be safe for both:
 - **N+1 (forward):** New code reading data written by old code
 - **N-1 (rollback):** Old code reading data written by new code
 
-This matters because consumers like ARO-HCP embed these types directly into their own structs and serialize them to storage (e.g., Cosmos DB) outside of CRD validation. If a consumer must revert to a previous code level, they need to deserialize data that was written by the newer version without errors or data corruption.
+This matters because consumers like ARO-HCP embed these types directly into their own structs and serialize them to storage (e.g., Cosmos DB) outside CRD validation. If a consumer must revert to a previous code level, they need to deserialize data that was written by the newer version without errors or data corruption.
 
 ### Common Pitfalls
 
@@ -67,6 +77,4 @@ When modifying API types, add serialization compatibility tests that:
 See `api/hypershift/v1beta1/nodepool_types_test.go` for an example of this pattern.
 
 All API CEL validations must be covered with envtests, see test/envtest/README.md for details
-
-
 
