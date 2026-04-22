@@ -891,7 +891,6 @@ spec:
                               The resourceGroupName should be between 1 and 90 characters, consisting only of alphanumeric characters, hyphens, underscores, periods and parenthesis and must not end with a period (.) character.
                               The imageName should be between 1 and 80 characters, consisting only of alphanumeric characters, hyphens, underscores and periods.
                             maxLength: 285
-                            minLength: 1
                             type: string
                             x-kubernetes-validations:
                             - message: imageID must be in the format `/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Compute/images/{imageName}`

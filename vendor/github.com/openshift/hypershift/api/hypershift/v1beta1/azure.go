@@ -144,7 +144,6 @@ type AzureVMImage struct {
 	// +kubebuilder:validation:XValidation:rule="oldSelf.hasValue() && oldSelf.value() == self || size(self.split('/')) == 9 && !self.split('/')[4].endsWith('.')",message="the resourceGroupName in the imageID must not end with a period (.) character",optionalOldSelf=true
 	// +kubebuilder:validation:XValidation:rule=`oldSelf.hasValue() && oldSelf.value() == self || size(self.split('/')) == 9 && self.split('/')[8].matches('^[a-zA-Z0-9-_\\.]{1,80}$')`,message="the imageName should be between 1 and 80 characters, consisting only of alphanumeric characters, hyphens, underscores and periods",optionalOldSelf=true
 	// +kubebuilder:validation:XValidation:rule="oldSelf.hasValue() && oldSelf.value() == self || size(self.split('/')) == 9 && !self.split('/')[8].endsWith('.')",message="the imageName in the imageID must not end with a period (.) character",optionalOldSelf=true
-	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=285
 	ImageID *string `json:"imageID,omitempty"`
 
