@@ -47,6 +47,7 @@ func TestReconcileCloudConfig_AWS(t *testing.T) {
 		cpObjects    []client.Object
 		guestObjects []client.Object
 		expectError  bool
+		errContains  string
 		verify       func(g Gomega, guestClient client.Client)
 	}{
 		{
@@ -197,6 +198,7 @@ func TestReconcileCloudConfig_AWS(t *testing.T) {
 			},
 			cpObjects:   []client.Object{},
 			expectError: true,
+			errContains: "not found",
 		},
 		{
 			name: "When additionalTrustBundle is set but managed trust bundle ConfigMap is missing, it should sync base config without CA bundle",
@@ -249,6 +251,66 @@ func TestReconcileCloudConfig_AWS(t *testing.T) {
 				}(),
 			},
 			expectError: true,
+			errContains: aws.ProviderConfigKey,
+		},
+		{
+			name: "When aws-cloud-config ConfigMap has whitespace-only provider config, it should return an error",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test",
+					Namespace: hcpNamespace,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
+				},
+			},
+			cpObjects: []client.Object{
+				func() *corev1.ConfigMap {
+					cm := cpomanifests.AWSProviderConfig(hcpNamespace)
+					cm.Data = map[string]string{
+						aws.ProviderConfigKey: "   \n\t",
+					}
+					return cm
+				}(),
+			},
+			expectError: true,
+			errContains: aws.ProviderConfigKey,
+		},
+		{
+			name: "When proxy TrustedCA is set but managed trust bundle ConfigMap is missing, it should sync base config without CA bundle",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test",
+					Namespace: hcpNamespace,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
+					Configuration: &hyperv1.ClusterConfiguration{
+						Proxy: &configv1.ProxySpec{
+							TrustedCA: configv1.ConfigMapNameReference{
+								Name: "proxy-trusted-ca",
+							},
+						},
+					},
+				},
+			},
+			cpObjects: []client.Object{
+				fakeAWSCloudConfig(),
+			},
+			verify: func(g Gomega, guestClient client.Client) {
+				cm := &corev1.ConfigMap{}
+				err := guestClient.Get(context.Background(), client.ObjectKey{
+					Namespace: ConfigNamespace,
+					Name:      CloudProviderCMName,
+				}, cm)
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(cm.Data).To(HaveKeyWithValue(aws.ProviderConfigKey, "[Global]\nZone = us-east-1a\nVPC = vpc-123\n"))
+				g.Expect(cm.Data).ToNot(HaveKey(aws.CABundleKey))
+			},
 		},
 		{
 			name: "When managed trust bundle has empty ca-bundle.crt value, it should not set CA bundle key",
@@ -301,6 +363,9 @@ func TestReconcileCloudConfig_AWS(t *testing.T) {
 			err := r.reconcileCloudConfig(context.Background(), tc.hcp)
 			if tc.expectError {
 				g.Expect(err).To(HaveOccurred())
+				if tc.errContains != "" {
+					g.Expect(err.Error()).To(ContainSubstring(tc.errContains))
+				}
 				return
 			}
 			g.Expect(err).ToNot(HaveOccurred())
