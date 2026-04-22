@@ -17,6 +17,10 @@ import (
 )
 
 func main() {
+	if _, ok := os.LookupEnv("KUBE_FEATURE_WatchListClient"); !ok {
+		os.Setenv("KUBE_FEATURE_WatchListClient", "false")
+	}
+
 	command := NewOperatorCommand(context.Background())
 	code := cli.Run(command)
 	os.Exit(code)

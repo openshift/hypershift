@@ -569,6 +569,10 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 			Name:  "CERT_ROTATION_SCALE",
 			Value: o.CertRotationScale.String(),
 		},
+		{
+			Name:  "KUBE_FEATURE_WatchListClient",
+			Value: "false",
+		},
 	}
 
 	// Add any additional environment variables specified if they don't already exist.

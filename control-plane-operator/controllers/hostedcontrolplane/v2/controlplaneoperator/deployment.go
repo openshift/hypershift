@@ -148,6 +148,15 @@ func (cpo *ControlPlaneOperatorOptions) adaptDeployment(cpContext component.Work
 			)
 		}
 
+		if watchListClient := os.Getenv("KUBE_FEATURE_WatchListClient"); watchListClient != "" {
+			c.Env = append(c.Env,
+				corev1.EnvVar{
+					Name:  "KUBE_FEATURE_WatchListClient",
+					Value: watchListClient,
+				},
+			)
+		}
+
 		if managedServiceType, ok := os.LookupEnv(managedServiceEnvVar); ok {
 			c.Env = append(c.Env,
 				corev1.EnvVar{

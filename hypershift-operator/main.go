@@ -96,6 +96,15 @@ import (
 )
 
 func main() {
+	// Ensure compatibility with Kubernetes API servers that do not fully support the
+	// 'sendInitialEvents' watch parameter by disabling the WatchListClient feature by default.
+	// This must be set before any informers are initialized, as the environment variable
+	// is only evaluated during the initial feature gate check.
+	// If the KUBE_FEATURE_WatchListClient variable is unset, default it to "false".
+	if _, ok := os.LookupEnv("KUBE_FEATURE_WatchListClient"); !ok {
+		os.Setenv("KUBE_FEATURE_WatchListClient", "false")
+	}
+
 	ctrl.SetLogger(zap.New(zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
 		o.EncodeTime = zapcore.RFC3339TimeEncoder
 	})))
