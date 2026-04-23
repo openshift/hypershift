@@ -3304,6 +3304,43 @@ applications and dev/test.</p>
 </td>
 </tr></tbody>
 </table>
+###AzureImageRegistryCredentials { #hypershift.openshift.io/v1beta1.AzureImageRegistryCredentials }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzureNodePoolPlatform">AzureNodePoolPlatform</a>)
+</p>
+<p>
+<p>AzureImageRegistryCredentials configures the kubelet credential provider for ACR
+authentication using a user-assigned managed identity on worker node VMs.
+The credential provider is configured with wildcard patterns covering all standard Azure
+Container Registry endpoints (*.azurecr.io, *.azurecr.cn, *.azurecr.de, *.azurecr.us).
+The identity must have the AcrPull role granted on the target ACR registry(ies).</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>managedIdentity,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.UserAssignedManagedIdentity">
+UserAssignedManagedIdentity
+</a>
+</em>
+</td>
+<td>
+<p>managedIdentity specifies the user-assigned managed identity that will be assigned to
+worker node VMs/VMSS. The credential provider plugin running on each node will use this
+identity to authenticate to ACR via the Azure Instance Metadata Service (IMDS).</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###AzureKMSKey { #hypershift.openshift.io/v1beta1.AzureKMSKey }
 <p>
 (<em>Appears on:</em>
@@ -3456,6 +3493,17 @@ and traffic must be routed through the private router (Swift).</p>
 </td>
 </tr></tbody>
 </table>
+###AzureManagedIdentityResourceID { #hypershift.openshift.io/v1beta1.AzureManagedIdentityResourceID }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.UserAssignedManagedIdentity">UserAssignedManagedIdentity</a>)
+</p>
+<p>
+<p>AzureManagedIdentityResourceID is a full Azure resource ID for a user-assigned managed identity.
+The expected format is:</p>
+<pre><code>/subscriptions/{subscriptionID}/resourceGroups/{resourceGroup}/providers/Microsoft.ManagedIdentity/userAssignedIdentities/{identityName}
+</code></pre>
+</p>
 ###AzureMarketplaceImage { #hypershift.openshift.io/v1beta1.AzureMarketplaceImage }
 <p>
 (<em>Appears on:</em>
@@ -3775,6 +3823,26 @@ Diagnostics
 <em>(Optional)</em>
 <p>diagnostics specifies the diagnostics settings for a virtual machine.
 If not specified, then Boot diagnostics will be disabled.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>imageRegistryCredentials,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureImageRegistryCredentials">
+AzureImageRegistryCredentials
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>imageRegistryCredentials specifies configuration for enabling kubelet&rsquo;s image credential
+provider to authenticate to Azure Container Registry (ACR) using a managed identity.
+When configured, worker nodes will use the acr-credential-provider plugin to obtain
+short-lived tokens for ACR image pulls instead of relying on static pull secrets.
+Changing this field will trigger a node rollout.
+When not configured, no additional image credential provider is set up and worker nodes
+use the default pull secret for image authentication.</p>
 </td>
 </tr>
 </tbody>
@@ -16354,6 +16422,40 @@ additional node capacity requirements.</p>
 capacity.</p>
 </td>
 </tr></tbody>
+</table>
+###UserAssignedManagedIdentity { #hypershift.openshift.io/v1beta1.UserAssignedManagedIdentity }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzureImageRegistryCredentials">AzureImageRegistryCredentials</a>)
+</p>
+<p>
+<p>UserAssignedManagedIdentity specifies a user-assigned managed identity for Azure resource
+authentication. The resourceID is required for VMSS identity attachment and is also used
+for the kubelet credential provider configuration.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>resourceID</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureManagedIdentityResourceID">
+AzureManagedIdentityResourceID
+</a>
+</em>
+</td>
+<td>
+<p>resourceID is the ARM resource ID of the user-assigned managed identity.</p>
+<p>Format: /subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.ManagedIdentity/userAssignedIdentities/{identityName}</p>
+</td>
+</tr>
+</tbody>
 </table>
 ###UserManagedDiagnostics { #hypershift.openshift.io/v1beta1.UserManagedDiagnostics }
 <p>
