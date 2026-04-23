@@ -14,6 +14,7 @@ import (
 	"k8s.io/utils/ptr"
 
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
+	capzutil "sigs.k8s.io/cluster-api-provider-azure/util/azure"
 
 	"github.com/blang/semver"
 )
@@ -245,6 +246,16 @@ func azureMachineTemplateSpec(nodePool *hyperv1.NodePool) (*capiazure.AzureMachi
 	}
 
 	azureMachineTemplate.Template.Spec.SSHPublicKey = dummySSHKey
+
+	// NOTE: This replaces any existing identity on the AzureMachineTemplate.
+	// If additional user-assigned identities are needed in the future,
+	// refactor to append to the existing list instead of replacing.
+	if nodePool.Spec.Platform.Azure.ImageRegistryCredentials.ManagedIdentity.ResourceID != "" {
+		azureMachineTemplate.Template.Spec.Identity = capiazure.VMIdentityUserAssigned
+		azureMachineTemplate.Template.Spec.UserAssignedIdentities = []capiazure.UserAssignedIdentity{{
+			ProviderID: capzutil.ProviderIDPrefix + string(nodePool.Spec.Platform.Azure.ImageRegistryCredentials.ManagedIdentity.ResourceID),
+		}}
+	}
 
 	return azureMachineTemplate, nil
 }

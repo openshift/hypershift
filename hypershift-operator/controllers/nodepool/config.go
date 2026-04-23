@@ -158,6 +158,12 @@ func (cg *ConfigGenerator) generateMCORawConfig(ctx context.Context, caps *hyper
 		configs = append(configs, nodeTuningGeneratedConfigs...)
 	}
 
+	acrConfigs, err := cg.getACRCredentialProviderConfig()
+	if err != nil {
+		return "", err
+	}
+	configs = append(configs, acrConfigs...)
+
 	return cg.parse(configs)
 }
 
@@ -221,6 +227,43 @@ type MissingCoreConfigError struct {
 
 func (e *MissingCoreConfigError) Error() string {
 	return fmt.Sprintf("expected %d core ignition configs, found %d", e.Expected, e.Got)
+}
+
+// getACRCredentialProviderConfig generates a ConfigMap-wrapped MachineConfig for ACR
+// credential provider configuration when the nodepool is Azure and has ImageRegistryCredentials set.
+func (cg *ConfigGenerator) getACRCredentialProviderConfig() ([]corev1.ConfigMap, error) {
+	if cg.nodePool.Spec.Platform.Type != hyperv1.AzurePlatform {
+		return nil, nil
+	}
+	if cg.nodePool.Spec.Platform.Azure == nil || cg.nodePool.Spec.Platform.Azure.ImageRegistryCredentials.ManagedIdentity.ResourceID == "" {
+		return nil, nil
+	}
+	if cg.hostedCluster.Spec.Platform.Azure == nil {
+		return nil, fmt.Errorf("hostedCluster platform Azure spec must be set for Azure node pools with imageRegistryCredentials")
+	}
+
+	azureSpec := cg.hostedCluster.Spec.Platform.Azure
+	mc, err := generateACRCredentialProviderMachineConfig(
+		&cg.nodePool.Spec.Platform.Azure.ImageRegistryCredentials,
+		azureSpec.Cloud,
+		azureSpec.TenantID,
+		azureSpec.SubscriptionID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate ACR credential provider config: %w", err)
+	}
+
+	mcYAML, err := api.CompatibleYAMLEncode(mc, api.YamlSerializer)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode ACR MachineConfig: %w", err)
+	}
+
+	cm := corev1.ConfigMap{
+		Data: map[string]string{
+			TokenSecretConfigKey: string(mcYAML),
+		},
+	}
+	return []corev1.ConfigMap{cm}, nil
 }
 
 // parse loops over a slice of configMaps and returns a string with the concatenated content if they are MCO consumable APIs.
