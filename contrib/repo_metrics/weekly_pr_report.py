@@ -1649,19 +1649,20 @@ class PRReportGenerator:
         return scored_prs[:limit]
 
     def print_scored_prs(self, scored_prs: List[Dict]):
-        """Print scored PRs in a readable format with priority and topic."""
+        """Print scored PRs in a readable format with priority, author, and topic."""
         print("\nPR Selection by Importance Score:")
-        print("-" * 120)
-        print(f"{'#':<3} {'Score':<6} {'Priority':<10} {'Repo':<12} {'PR':<7} {'Topic':<14} {'Title':<60}")
-        print("-" * 120)
+        print("-" * 140)
+        print(f"{'#':<3} {'Score':<6} {'Priority':<10} {'Author':<20} {'Repo':<12} {'PR':<7} {'Topic':<14} {'Title':<50}")
+        print("-" * 140)
 
         for i, pr in enumerate(scored_prs, 1):
             repo_short = pr['repo'].replace('openshift/', '').replace('openshift-eng/', '')
-            title_trunc = pr['title'][:58] + '..' if len(pr['title']) > 60 else pr['title']
+            title_trunc = pr['title'][:48] + '..' if len(pr['title']) > 50 else pr['title']
             topic = pr.get('topic', '-')[:14]
-            print(f"{i:<3} {pr['score']:<6} {pr.get('priority', '-'):<10} {repo_short:<12} #{pr['number']:<6} {topic:<14} {title_trunc}")
+            author = pr.get('author', '-')[:18]
+            print(f"{i:<3} {pr['score']:<6} {pr.get('priority', '-'):<10} {author:<20} {repo_short:<12} #{pr['number']:<6} {topic:<14} {title_trunc}")
 
-        print("-" * 120)
+        print("-" * 140)
         print(f"Selected {len(scored_prs)} PRs for deep analysis\n")
 
     async def fetch_pr_diffs(self, pr_list: List[Tuple[str, int]]) -> Dict[str, Dict]:
@@ -1940,6 +1941,7 @@ async def main():
         scored_output = [{
             'repo': pr['repo'],
             'number': pr['number'],
+            'author': pr['author'],
             'title': pr['title'],
             'score': pr['score'],
             'score_reasons': pr['score_reasons'],
