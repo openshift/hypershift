@@ -449,38 +449,13 @@ func (o *DrOidcIamOptions) Run(ctx context.Context) error {
 		o.Retryer = retryerFn()
 	})
 
-	// Step 1: Check if OIDC documents exist in S3
-	fmt.Println("Step 1: Checking OIDC documents in S3")
-	oidcDocsExist := o.checkOIDCDocumentsExist(ctx, s3Client)
-	if oidcDocsExist && !o.ForceRecreate {
-		fmt.Printf("- (%s) OIDC documents found in S3\n", greenCheck())
-	} else {
-		if o.ForceRecreate {
-			fmt.Printf("- (%s) Force recreate enabled - will regenerate OIDC documents\n", yellowForce())
-		} else {
-			fmt.Printf("- (%s) OIDC documents missing in S3 - will create them\n", redX())
-		}
-	}
-
-	// Step 2: Check if OIDC identity provider exists in IAM
-	fmt.Println("Step 2: Checking OIDC identity provider in IAM")
-	providerARN, exists, err := o.checkOIDCProvider(ctx, iamClient)
+	oidcDocsExist, providerARN, exists, err := o.checkOIDCState(ctx, s3Client, iamClient)
 	if err != nil {
-		return fmt.Errorf("failed to check OIDC provider: %w", err)
+		return err
 	}
-
-	if exists && !o.ForceRecreate {
-		fmt.Printf("- (%s) OIDC identity provider exists\n", greenCheck())
-		if oidcDocsExist {
-			fmt.Println("\nAll OIDC components are in place - no action needed!")
-			return nil
-		}
-	} else {
-		if o.ForceRecreate {
-			fmt.Printf("- (%s) Force recreate enabled - will regenerate OIDC provider\n", yellowForce())
-		} else {
-			fmt.Printf("- (%s) OIDC identity provider missing - needs to be recreated\n", redX())
-		}
+	if oidcDocsExist && exists && !o.ForceRecreate {
+		fmt.Println("\nAll OIDC components are in place - no action needed!")
+		return nil
 	}
 
 	// Step 3: Create/ensure S3 bucket exists
@@ -490,20 +465,8 @@ func (o *DrOidcIamOptions) Run(ctx context.Context) error {
 	}
 	fmt.Printf("- (%s) S3 bucket ready with public access enabled\n", greenCheck())
 
-	// Step 4: Generate and upload OIDC documents using the EXISTING cluster key
-	if !oidcDocsExist || o.ForceRecreate {
-		fmt.Println("Step 4: Generating and uploading OIDC documents")
-		if o.DryRun {
-			fmt.Printf("- (%s) DRY RUN: Would generate and upload OIDC documents using existing cluster signing key\n", yellowQuestion())
-		} else {
-			if err := o.generateAndUploadOIDCDocuments(ctx, k8sClient, s3Client); err != nil {
-				return fmt.Errorf("failed to generate OIDC documents: %w", err)
-			}
-			fmt.Printf("- (%s) OIDC documents generated and uploaded\n", greenCheck())
-		}
-	} else {
-		fmt.Println("Step 4: OIDC documents")
-		fmt.Printf("- (%s) OIDC documents already exist\n", greenCheck())
+	if err := o.ensureOIDCDocuments(ctx, k8sClient, s3Client, oidcDocsExist); err != nil {
+		return err
 	}
 
 	// Step 5: Get SSL certificate thumbprint
@@ -514,26 +477,8 @@ func (o *DrOidcIamOptions) Run(ctx context.Context) error {
 	}
 	fmt.Printf("- (%s) SSL certificate thumbprint retrieved\n", greenCheck())
 
-	// Step 6: Create/recreate OIDC provider
-	if !exists || o.ForceRecreate {
-		fmt.Println("Step 6: Creating/recreating OIDC identity provider")
-		if o.DryRun {
-			fmt.Printf("- (%s) DRY RUN: Would create OIDC provider\n", yellowQuestion())
-			fmt.Printf("    Issuer: %s\n", o.Issuer)
-			fmt.Printf("    Thumbprint: %s\n", thumbprint)
-			fmt.Printf("    Allowed clients: openshift, sts.amazonaws.com\n")
-		} else {
-			if err := o.deleteOIDCProviderIfExists(ctx, iamClient, providerARN); err != nil {
-				return fmt.Errorf("failed to delete existing OIDC provider: %w", err)
-			}
-			if _, err := o.createOIDCProvider(ctx, iamClient, thumbprint); err != nil {
-				return fmt.Errorf("failed to create OIDC provider: %w", err)
-			}
-			fmt.Printf("- (%s) OIDC identity provider successfully created\n", greenCheck())
-		}
-	} else {
-		fmt.Println("Step 6: OIDC identity provider")
-		fmt.Printf("- (%s) OIDC identity provider already exists\n", greenCheck())
+	if err := o.ensureOIDCProvider(ctx, iamClient, providerARN, thumbprint, exists); err != nil {
+		return err
 	}
 
 	// Step 7: Verify configuration and update HostedCluster
@@ -545,6 +490,80 @@ func (o *DrOidcIamOptions) Run(ctx context.Context) error {
 
 	fmt.Println("\nOIDC identity provider disaster recovery completed successfully!")
 
+	return nil
+}
+
+func (o *DrOidcIamOptions) checkOIDCState(ctx context.Context, s3Client *s3.Client, iamClient *iam.Client) (bool, string, bool, error) {
+	fmt.Println("Step 1: Checking OIDC documents in S3")
+	oidcDocsExist := o.checkOIDCDocumentsExist(ctx, s3Client)
+	if oidcDocsExist && !o.ForceRecreate {
+		fmt.Printf("- (%s) OIDC documents found in S3\n", greenCheck())
+	} else if o.ForceRecreate {
+		fmt.Printf("- (%s) Force recreate enabled - will regenerate OIDC documents\n", yellowForce())
+	} else {
+		fmt.Printf("- (%s) OIDC documents missing in S3 - will create them\n", redX())
+	}
+
+	fmt.Println("Step 2: Checking OIDC identity provider in IAM")
+	providerARN, exists, err := o.checkOIDCProvider(ctx, iamClient)
+	if err != nil {
+		return false, "", false, fmt.Errorf("failed to check OIDC provider: %w", err)
+	}
+
+	if exists && !o.ForceRecreate {
+		fmt.Printf("- (%s) OIDC identity provider exists\n", greenCheck())
+	} else if o.ForceRecreate {
+		fmt.Printf("- (%s) Force recreate enabled - will regenerate OIDC provider\n", yellowForce())
+	} else {
+		fmt.Printf("- (%s) OIDC identity provider missing - needs to be recreated\n", redX())
+	}
+
+	return oidcDocsExist, providerARN, exists, nil
+}
+
+func (o *DrOidcIamOptions) ensureOIDCDocuments(ctx context.Context, k8sClient client.Client, s3Client *s3.Client, oidcDocsExist bool) error {
+	if oidcDocsExist && !o.ForceRecreate {
+		fmt.Println("Step 4: OIDC documents")
+		fmt.Printf("- (%s) OIDC documents already exist\n", greenCheck())
+		return nil
+	}
+
+	fmt.Println("Step 4: Generating and uploading OIDC documents")
+	if o.DryRun {
+		fmt.Printf("- (%s) DRY RUN: Would generate and upload OIDC documents using existing cluster signing key\n", yellowQuestion())
+		return nil
+	}
+
+	if err := o.generateAndUploadOIDCDocuments(ctx, k8sClient, s3Client); err != nil {
+		return fmt.Errorf("failed to generate OIDC documents: %w", err)
+	}
+	fmt.Printf("- (%s) OIDC documents generated and uploaded\n", greenCheck())
+	return nil
+}
+
+func (o *DrOidcIamOptions) ensureOIDCProvider(ctx context.Context, iamClient *iam.Client, providerARN, thumbprint string, exists bool) error {
+	if exists && !o.ForceRecreate {
+		fmt.Println("Step 6: OIDC identity provider")
+		fmt.Printf("- (%s) OIDC identity provider already exists\n", greenCheck())
+		return nil
+	}
+
+	fmt.Println("Step 6: Creating/recreating OIDC identity provider")
+	if o.DryRun {
+		fmt.Printf("- (%s) DRY RUN: Would create OIDC provider\n", yellowQuestion())
+		fmt.Printf("    Issuer: %s\n", o.Issuer)
+		fmt.Printf("    Thumbprint: %s\n", thumbprint)
+		fmt.Printf("    Allowed clients: openshift, sts.amazonaws.com\n")
+		return nil
+	}
+
+	if err := o.deleteOIDCProviderIfExists(ctx, iamClient, providerARN); err != nil {
+		return fmt.Errorf("failed to delete existing OIDC provider: %w", err)
+	}
+	if _, err := o.createOIDCProvider(ctx, iamClient, thumbprint); err != nil {
+		return fmt.Errorf("failed to create OIDC provider: %w", err)
+	}
+	fmt.Printf("- (%s) OIDC identity provider successfully created\n", greenCheck())
 	return nil
 }
 

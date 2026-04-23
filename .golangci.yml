@@ -3,6 +3,7 @@ run:
   allow-parallel-runners: true
 linters:
   enable:
+    - gocyclo
     - misspell
     - unparam
   settings:
