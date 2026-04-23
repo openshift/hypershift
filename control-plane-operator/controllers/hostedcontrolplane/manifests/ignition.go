@@ -49,3 +49,20 @@ func ImageContentPolicyIgnitionConfig(ns string) *corev1.ConfigMap {
 		},
 	}
 }
+
+func MachineConfigImageRegistryCA() *mcfgv1.MachineConfig {
+	return &mcfgv1.MachineConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "99-worker-image-registry-ca",
+		},
+	}
+}
+
+func IgnitionImageRegistryCAConfig(ns string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "ignition-config-image-registry-ca",
+			Namespace: ns,
+		},
+	}
+}
