@@ -109,6 +109,52 @@ type AzureNodePoolPlatform struct {
 	// If not specified, then Boot diagnostics will be disabled.
 	// +optional
 	Diagnostics *Diagnostics `json:"diagnostics,omitempty"`
+
+	// imageRegistryCredentials specifies configuration for enabling kubelet's image credential
+	// provider to authenticate to Azure Container Registry (ACR) using a managed identity.
+	// When configured, worker nodes will use the acr-credential-provider plugin to obtain
+	// short-lived tokens for ACR image pulls instead of relying on static pull secrets.
+	// Changing this field will trigger a node rollout.
+	// When not configured, no additional image credential provider is set up and worker nodes
+	// use the default pull secret for image authentication.
+	// +optional
+	ImageRegistryCredentials AzureImageRegistryCredentials `json:"imageRegistryCredentials,omitzero"`
+}
+
+// AzureManagedIdentityResourceID is a full Azure resource ID for a user-assigned managed identity.
+// The expected format is:
+//
+//	/subscriptions/{subscriptionID}/resourceGroups/{resourceGroup}/providers/Microsoft.ManagedIdentity/userAssignedIdentities/{identityName}
+//
+// +kubebuilder:validation:MinLength=1
+// +kubebuilder:validation:MaxLength=512
+// +kubebuilder:validation:XValidation:rule="self.matches('^/subscriptions/[^/]+/resourceGroups/[^/]+/providers/Microsoft\\\\.ManagedIdentity/userAssignedIdentities/[^/]+$')",message="must be a valid ARM resource ID for a user-assigned managed identity (e.g., /subscriptions/{sub}/resourceGroups/{rg}/providers/Microsoft.ManagedIdentity/userAssignedIdentities/{name})"
+type AzureManagedIdentityResourceID string
+
+// UserAssignedManagedIdentity specifies a user-assigned managed identity for Azure resource
+// authentication. The resourceID is required for VMSS identity attachment and is also used
+// for the kubelet credential provider configuration.
+type UserAssignedManagedIdentity struct {
+	// resourceID is the ARM resource ID of the user-assigned managed identity.
+	//
+	// Format: /subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.ManagedIdentity/userAssignedIdentities/{identityName}
+	//
+	// +required
+	ResourceID AzureManagedIdentityResourceID `json:"resourceID,omitempty"`
+}
+
+// AzureImageRegistryCredentials configures the kubelet credential provider for ACR
+// authentication using a user-assigned managed identity on worker node VMs.
+// The credential provider is configured with wildcard patterns covering all standard Azure
+// Container Registry endpoints (*.azurecr.io, *.azurecr.cn, *.azurecr.de, *.azurecr.us).
+// The identity must have the AcrPull role granted on the target ACR registry(ies).
+type AzureImageRegistryCredentials struct {
+	// managedIdentity specifies the user-assigned managed identity that will be assigned to
+	// worker node VMs/VMSS. The credential provider plugin running on each node will use this
+	// identity to authenticate to ACR via the Azure Instance Metadata Service (IMDS).
+	//
+	// +required
+	ManagedIdentity UserAssignedManagedIdentity `json:"managedIdentity,omitzero"`
 }
 
 // AzureVMImage represents the different types of boot image sources that can be provided for an Azure VM.

@@ -915,6 +915,40 @@ spec:
                             AzureMarketplace
                           rule: 'has(self.type) && self.type == ''AzureMarketplace''
                             ?  true : !has(self.azureMarketplace)'
+                      imageRegistryCredentials:
+                        description: |-
+                          imageRegistryCredentials specifies configuration for enabling kubelet's image credential
+                          provider to authenticate to Azure Container Registry (ACR) using a managed identity.
+                          When configured, worker nodes will use the acr-credential-provider plugin to obtain
+                          short-lived tokens for ACR image pulls instead of relying on static pull secrets.
+                          Changing this field will trigger a node rollout.
+                          When not configured, no additional image credential provider is set up and worker nodes
+                          use the default pull secret for image authentication.
+                        properties:
+                          managedIdentity:
+                            description: |-
+                              managedIdentity specifies the user-assigned managed identity that will be assigned to
+                              worker node VMs/VMSS. The credential provider plugin running on each node will use this
+                              identity to authenticate to ACR via the Azure Instance Metadata Service (IMDS).
+                            properties:
+                              resourceID:
+                                description: |-
+                                  resourceID is the ARM resource ID of the user-assigned managed identity.
+
+                                  Format: /subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.ManagedIdentity/userAssignedIdentities/{identityName}
+                                maxLength: 512
+                                minLength: 1
+                                type: string
+                                x-kubernetes-validations:
+                                - message: must be a valid ARM resource ID for a user-assigned
+                                    managed identity (e.g., /subscriptions/{sub}/resourceGroups/{rg}/providers/Microsoft.ManagedIdentity/userAssignedIdentities/{name})
+                                  rule: self.matches('^/subscriptions/[^/]+/resourceGroups/[^/]+/providers/Microsoft\\.ManagedIdentity/userAssignedIdentities/[^/]+$')
+                            required:
+                            - resourceID
+                            type: object
+                        required:
+                        - managedIdentity
+                        type: object
                       osDisk:
                         description: |-
                           osDisk provides configuration for the OS disk for the nodepool.
