@@ -20,13 +20,14 @@ package v1beta1
 // AzureNodePoolPlatformApplyConfiguration represents a declarative configuration of the AzureNodePoolPlatform type for use
 // with apply.
 type AzureNodePoolPlatformApplyConfiguration struct {
-	VMSize           *string                                `json:"vmSize,omitempty"`
-	Image            *AzureVMImageApplyConfiguration        `json:"image,omitempty"`
-	OSDisk           *AzureNodePoolOSDiskApplyConfiguration `json:"osDisk,omitempty"`
-	AvailabilityZone *string                                `json:"availabilityZone,omitempty"`
-	EncryptionAtHost *string                                `json:"encryptionAtHost,omitempty"`
-	SubnetID         *string                                `json:"subnetID,omitempty"`
-	Diagnostics      *DiagnosticsApplyConfiguration         `json:"diagnostics,omitempty"`
+	VMSize                   *string                                          `json:"vmSize,omitempty"`
+	Image                    *AzureVMImageApplyConfiguration                  `json:"image,omitempty"`
+	OSDisk                   *AzureNodePoolOSDiskApplyConfiguration           `json:"osDisk,omitempty"`
+	AvailabilityZone         *string                                          `json:"availabilityZone,omitempty"`
+	EncryptionAtHost         *string                                          `json:"encryptionAtHost,omitempty"`
+	SubnetID                 *string                                          `json:"subnetID,omitempty"`
+	Diagnostics              *DiagnosticsApplyConfiguration                   `json:"diagnostics,omitempty"`
+	ImageRegistryCredentials *AzureImageRegistryCredentialsApplyConfiguration `json:"imageRegistryCredentials,omitempty"`
 }
 
 // AzureNodePoolPlatformApplyConfiguration constructs a declarative configuration of the AzureNodePoolPlatform type for use with
@@ -88,5 +89,13 @@ func (b *AzureNodePoolPlatformApplyConfiguration) WithSubnetID(value string) *Az
 // If called multiple times, the Diagnostics field is set to the value of the last call.
 func (b *AzureNodePoolPlatformApplyConfiguration) WithDiagnostics(value *DiagnosticsApplyConfiguration) *AzureNodePoolPlatformApplyConfiguration {
 	b.Diagnostics = value
+	return b
+}
+
+// WithImageRegistryCredentials sets the ImageRegistryCredentials field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the ImageRegistryCredentials field is set to the value of the last call.
+func (b *AzureNodePoolPlatformApplyConfiguration) WithImageRegistryCredentials(value *AzureImageRegistryCredentialsApplyConfiguration) *AzureNodePoolPlatformApplyConfiguration {
+	b.ImageRegistryCredentials = value
 	return b
 }
