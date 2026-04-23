@@ -191,3 +191,196 @@ tests:
             subnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
           type: Azure
     expectedError: "publisher, offer, sku and version must either be all set, or all omitted"
+
+  # --- ACR image registry credentials validation ---
+  - name: when imageRegistryCredentials is not set it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: NodePool
+      spec:
+        arch: amd64
+        clusterName: some-cluster
+        management:
+          autoRepair: false
+          upgradeType: Replace
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
+        replicas: 0
+        platform:
+          azure:
+            vmSize: Standard_D4s_v5
+            image:
+              type: ImageID
+              imageID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Compute/images/test-image"
+            osDisk:
+              diskStorageAccountType: Premium_LRS
+            subnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+          type: Azure
+
+  - name: when imageRegistryCredentials has a valid managedIdentity it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: NodePool
+      spec:
+        arch: amd64
+        clusterName: some-cluster
+        management:
+          autoRepair: false
+          upgradeType: Replace
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
+        replicas: 0
+        platform:
+          azure:
+            vmSize: Standard_D4s_v5
+            image:
+              type: ImageID
+              imageID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Compute/images/test-image"
+            osDisk:
+              diskStorageAccountType: Premium_LRS
+            subnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+            imageRegistryCredentials:
+              managedIdentity:
+                resourceID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/acr-pull"
+          type: Azure
+
+  - name: when imageRegistryCredentials has lowercase resourcegroups it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: NodePool
+      spec:
+        arch: amd64
+        clusterName: some-cluster
+        management:
+          autoRepair: false
+          upgradeType: Replace
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
+        replicas: 0
+        platform:
+          azure:
+            vmSize: Standard_D4s_v5
+            image:
+              type: ImageID
+              imageID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Compute/images/test-image"
+            osDisk:
+              diskStorageAccountType: Premium_LRS
+            subnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+            imageRegistryCredentials:
+              managedIdentity:
+                resourceID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourcegroups/test-rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/acr-pull"
+          type: Azure
+    expectedError: "must be a valid ARM resource ID for a user-assigned managed identity"
+
+  - name: when imageRegistryCredentials has an invalid managedIdentity format it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: NodePool
+      spec:
+        arch: amd64
+        clusterName: some-cluster
+        management:
+          autoRepair: false
+          upgradeType: Replace
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
+        replicas: 0
+        platform:
+          azure:
+            vmSize: Standard_D4s_v5
+            image:
+              type: ImageID
+              imageID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Compute/images/test-image"
+            osDisk:
+              diskStorageAccountType: Premium_LRS
+            subnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+            imageRegistryCredentials:
+              managedIdentity:
+                resourceID: "not-a-valid-arm-resource-id"
+          type: Azure
+    expectedError: "must be a valid ARM resource ID for a user-assigned managed identity"
+
+  - name: when imageRegistryCredentials has a wrong provider type it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: NodePool
+      spec:
+        arch: amd64
+        clusterName: some-cluster
+        management:
+          autoRepair: false
+          upgradeType: Replace
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
+        replicas: 0
+        platform:
+          azure:
+            vmSize: Standard_D4s_v5
+            image:
+              type: ImageID
+              imageID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Compute/images/test-image"
+            osDisk:
+              diskStorageAccountType: Premium_LRS
+            subnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+            imageRegistryCredentials:
+              managedIdentity:
+                resourceID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Compute/virtualMachines/my-vm"
+          type: Azure
+    expectedError: "must be a valid ARM resource ID for a user-assigned managed identity"
+
+  - name: when imageRegistryCredentials has a resourceID missing the identity name it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: NodePool
+      spec:
+        arch: amd64
+        clusterName: some-cluster
+        management:
+          autoRepair: false
+          upgradeType: Replace
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
+        replicas: 0
+        platform:
+          azure:
+            vmSize: Standard_D4s_v5
+            image:
+              type: ImageID
+              imageID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Compute/images/test-image"
+            osDisk:
+              diskStorageAccountType: Premium_LRS
+            subnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+            imageRegistryCredentials:
+              managedIdentity:
+                resourceID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/"
+          type: Azure
+    expectedError: "must be a valid ARM resource ID for a user-assigned managed identity"
+
+  - name: when imageRegistryCredentials has a resourceID with extra path segments it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: NodePool
+      spec:
+        arch: amd64
+        clusterName: some-cluster
+        management:
+          autoRepair: false
+          upgradeType: Replace
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
+        replicas: 0
+        platform:
+          azure:
+            vmSize: Standard_D4s_v5
+            image:
+              type: ImageID
+              imageID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Compute/images/test-image"
+            osDisk:
+              diskStorageAccountType: Premium_LRS
+            subnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+            imageRegistryCredentials:
+              managedIdentity:
+                resourceID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/my-identity/extra"
+          type: Azure
+    expectedError: "must be a valid ARM resource ID for a user-assigned managed identity"
+
