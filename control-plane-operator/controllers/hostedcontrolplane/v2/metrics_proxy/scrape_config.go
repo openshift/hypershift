@@ -31,7 +31,6 @@ const (
 )
 
 func adaptScrapeConfig(cpContext component.WorkloadContext, cm *corev1.ConfigMap) error {
-	log := logr.FromContextOrDiscard(cpContext)
 	namespace := cpContext.HCP.Namespace
 
 	endpointResolverURL := fmt.Sprintf("https://endpoint-resolver.%s.svc", namespace)
@@ -43,149 +42,17 @@ func adaptScrapeConfig(cpContext component.WorkloadContext, cm *corev1.ConfigMap
 		},
 	}
 
-	// Process ServiceMonitors.
-	smList := &prometheusoperatorv1.ServiceMonitorList{}
-	if err := cpContext.Client.List(cpContext, smList, client.InNamespace(namespace)); err != nil {
-		return fmt.Errorf("failed to list ServiceMonitors: %w", err)
+	smComponents, err := componentsFromServiceMonitors(cpContext, namespace)
+	if err != nil {
+		return err
 	}
+	cfg.Components = append(cfg.Components, smComponents...)
 
-	for i := range smList.Items {
-		sm := &smList.Items[i]
-		if len(sm.Spec.Endpoints) == 0 {
-			continue
-		}
-		ep := sm.Spec.Endpoints[0]
-
-		serviceName, podSelector, err := findServiceForMonitor(cpContext, namespace, sm.Name, sm.Spec.Selector)
-		if err != nil {
-			log.V(4).Info("skipping ServiceMonitor: service not found", "serviceMonitor", sm.Name, "error", err)
-			continue
-		}
-		if len(podSelector) == 0 {
-			log.V(4).Info("skipping ServiceMonitor: service has no pod selector", "serviceMonitor", sm.Name, "service", serviceName)
-			continue
-		}
-
-		portRef := ep.Port
-		if portRef == "" && ep.TargetPort != nil {
-			portRef = ep.TargetPort.String()
-		}
-		if portRef == "" {
-			log.V(4).Info("skipping ServiceMonitor: no port reference", "serviceMonitor", sm.Name)
-			continue
-		}
-
-		port, err := resolveServicePort(cpContext, namespace, serviceName, portRef, podSelector)
-		if err != nil {
-			log.V(4).Info("skipping ServiceMonitor: port not resolvable", "serviceMonitor", sm.Name, "port", portRef, "error", err)
-			continue
-		}
-
-		scheme := "http"
-		if ep.Scheme != nil {
-			scheme = ep.Scheme.String()
-		}
-
-		metricsPath := "/metrics"
-		if ep.Path != "" {
-			metricsPath = ep.Path
-		}
-
-		var serverName string
-		if ep.TLSConfig != nil && ep.TLSConfig.ServerName != nil {
-			serverName = *ep.TLSConfig.ServerName
-		}
-
-		comp := metricsproxybin.ComponentFileConfig{
-			Selector:      podSelector,
-			MetricsPort:   port,
-			MetricsPath:   metricsPath,
-			MetricsScheme: scheme,
-			TLSServerName: serverName,
-		}
-
-		if ep.TLSConfig != nil {
-			comp.CAFile = certFilePathFromSecretOrConfigMap(ep.TLSConfig.CA)
-			comp.CertFile = certFilePathFromSecretOrConfigMap(ep.TLSConfig.Cert)
-			if ep.TLSConfig.KeySecret != nil {
-				comp.KeyFile = filepath.Join(certBasePath, ep.TLSConfig.KeySecret.Name, ep.TLSConfig.KeySecret.Key)
-			}
-		}
-
-		comp.Name = sm.Name
-		populateMetricsLabelsFromAnnotations(&comp, sm.Annotations)
-		cfg.Components = append(cfg.Components, comp)
+	pmComponents, err := componentsFromPodMonitors(cpContext, namespace)
+	if err != nil {
+		return err
 	}
-
-	// Process PodMonitors.
-	pmList := &prometheusoperatorv1.PodMonitorList{}
-	if err := cpContext.Client.List(cpContext, pmList, client.InNamespace(namespace)); err != nil {
-		return fmt.Errorf("failed to list PodMonitors: %w", err)
-	}
-
-	for i := range pmList.Items {
-		pm := &pmList.Items[i]
-		if len(pm.Spec.PodMetricsEndpoints) == 0 {
-			continue
-		}
-		ep := pm.Spec.PodMetricsEndpoints[0]
-
-		portName := ""
-		if ep.Port != nil {
-			portName = *ep.Port
-		}
-		if portName == "" {
-			log.V(4).Info("skipping PodMonitor: no port name", "podMonitor", pm.Name)
-			continue
-		}
-
-		// Resolve the port number from a Pod matching the PodMonitor's selector.
-		podSelector, err := metav1.LabelSelectorAsSelector(&pm.Spec.Selector)
-		if err != nil {
-			log.V(4).Info("skipping PodMonitor: invalid selector", "podMonitor", pm.Name, "error", err)
-			continue
-		}
-		port, err := resolvePodPort(cpContext, namespace, podSelector, portName)
-		if err != nil {
-			log.V(4).Info("skipping PodMonitor: port not resolvable", "podMonitor", pm.Name, "port", portName, "error", err)
-			continue
-		}
-
-		scheme := "http"
-		if ep.Scheme != nil {
-			scheme = ep.Scheme.String()
-		}
-
-		metricsPath := "/metrics"
-		if ep.Path != "" {
-			metricsPath = ep.Path
-		}
-
-		var serverName string
-		if ep.TLSConfig != nil && ep.TLSConfig.ServerName != nil {
-			serverName = *ep.TLSConfig.ServerName
-		}
-
-		comp := metricsproxybin.ComponentFileConfig{
-			Selector:      pm.Spec.Selector.MatchLabels,
-			MetricsPort:   port,
-			MetricsPath:   metricsPath,
-			MetricsScheme: scheme,
-			TLSServerName: serverName,
-		}
-
-		if ep.TLSConfig != nil {
-			comp.CAFile = certFilePathFromSecretOrConfigMap(ep.TLSConfig.CA)
-			comp.CertFile = certFilePathFromSecretOrConfigMap(ep.TLSConfig.Cert)
-			if ep.TLSConfig.KeySecret != nil {
-				comp.KeyFile = filepath.Join(certBasePath, ep.TLSConfig.KeySecret.Name, ep.TLSConfig.KeySecret.Key)
-			}
-		}
-
-		comp.Name = pm.Name
-		populateMetricsLabelsFromAnnotations(&comp, pm.Annotations)
-		cfg.Components = append(cfg.Components, comp)
-	}
+	cfg.Components = append(cfg.Components, pmComponents...)
 
 	sort.Slice(cfg.Components, func(i, j int) bool {
 		return cfg.Components[i].Name < cfg.Components[j].Name
@@ -201,6 +68,167 @@ func adaptScrapeConfig(cpContext component.WorkloadContext, cm *corev1.ConfigMap
 	}
 	cm.Data["config.yaml"] = string(data)
 	return nil
+}
+
+func componentsFromServiceMonitors(cpContext component.WorkloadContext, namespace string) ([]metricsproxybin.ComponentFileConfig, error) {
+	log := logr.FromContextOrDiscard(cpContext)
+
+	smList := &prometheusoperatorv1.ServiceMonitorList{}
+	if err := cpContext.Client.List(cpContext, smList, client.InNamespace(namespace)); err != nil {
+		return nil, fmt.Errorf("failed to list ServiceMonitors: %w", err)
+	}
+
+	var components []metricsproxybin.ComponentFileConfig
+	for i := range smList.Items {
+		comp, ok := componentFromServiceMonitor(cpContext, log, namespace, &smList.Items[i])
+		if ok {
+			components = append(components, comp)
+		}
+	}
+	return components, nil
+}
+
+func componentFromServiceMonitor(cpContext component.WorkloadContext, log logr.Logger, namespace string, sm *prometheusoperatorv1.ServiceMonitor) (metricsproxybin.ComponentFileConfig, bool) {
+	if len(sm.Spec.Endpoints) == 0 {
+		return metricsproxybin.ComponentFileConfig{}, false
+	}
+	ep := sm.Spec.Endpoints[0]
+
+	serviceName, podSelector, err := findServiceForMonitor(cpContext, namespace, sm.Name, sm.Spec.Selector)
+	if err != nil {
+		log.V(4).Info("skipping ServiceMonitor: service not found", "serviceMonitor", sm.Name, "error", err)
+		return metricsproxybin.ComponentFileConfig{}, false
+	}
+	if len(podSelector) == 0 {
+		log.V(4).Info("skipping ServiceMonitor: service has no pod selector", "serviceMonitor", sm.Name, "service", serviceName)
+		return metricsproxybin.ComponentFileConfig{}, false
+	}
+
+	portRef := ep.Port
+	if portRef == "" && ep.TargetPort != nil {
+		portRef = ep.TargetPort.String()
+	}
+	if portRef == "" {
+		log.V(4).Info("skipping ServiceMonitor: no port reference", "serviceMonitor", sm.Name)
+		return metricsproxybin.ComponentFileConfig{}, false
+	}
+
+	port, err := resolveServicePort(cpContext, namespace, serviceName, portRef, podSelector)
+	if err != nil {
+		log.V(4).Info("skipping ServiceMonitor: port not resolvable", "serviceMonitor", sm.Name, "port", portRef, "error", err)
+		return metricsproxybin.ComponentFileConfig{}, false
+	}
+
+	comp := metricsproxybin.ComponentFileConfig{
+		Selector:      podSelector,
+		MetricsPort:   port,
+		MetricsPath:   endpointMetricsPath(ep.Path),
+		MetricsScheme: endpointScheme(ep.Scheme),
+		TLSServerName: safeTLSServerName(ep.TLSConfig),
+	}
+
+	if ep.TLSConfig != nil {
+		populateTLSFilePaths(&comp, ep.TLSConfig.CA, ep.TLSConfig.Cert, ep.TLSConfig.KeySecret)
+	}
+
+	comp.Name = sm.Name
+	populateMetricsLabelsFromAnnotations(&comp, sm.Annotations)
+	return comp, true
+}
+
+func componentsFromPodMonitors(cpContext component.WorkloadContext, namespace string) ([]metricsproxybin.ComponentFileConfig, error) {
+	log := logr.FromContextOrDiscard(cpContext)
+
+	pmList := &prometheusoperatorv1.PodMonitorList{}
+	if err := cpContext.Client.List(cpContext, pmList, client.InNamespace(namespace)); err != nil {
+		return nil, fmt.Errorf("failed to list PodMonitors: %w", err)
+	}
+
+	var components []metricsproxybin.ComponentFileConfig
+	for i := range pmList.Items {
+		comp, ok := componentFromPodMonitor(cpContext, log, namespace, &pmList.Items[i])
+		if ok {
+			components = append(components, comp)
+		}
+	}
+	return components, nil
+}
+
+func componentFromPodMonitor(cpContext component.WorkloadContext, log logr.Logger, namespace string, pm *prometheusoperatorv1.PodMonitor) (metricsproxybin.ComponentFileConfig, bool) {
+	if len(pm.Spec.PodMetricsEndpoints) == 0 {
+		return metricsproxybin.ComponentFileConfig{}, false
+	}
+	ep := pm.Spec.PodMetricsEndpoints[0]
+
+	portName := ""
+	if ep.Port != nil {
+		portName = *ep.Port
+	}
+	if portName == "" {
+		log.V(4).Info("skipping PodMonitor: no port name", "podMonitor", pm.Name)
+		return metricsproxybin.ComponentFileConfig{}, false
+	}
+
+	podSelector, err := metav1.LabelSelectorAsSelector(&pm.Spec.Selector)
+	if err != nil {
+		log.V(4).Info("skipping PodMonitor: invalid selector", "podMonitor", pm.Name, "error", err)
+		return metricsproxybin.ComponentFileConfig{}, false
+	}
+	port, err := resolvePodPort(cpContext, namespace, podSelector, portName)
+	if err != nil {
+		log.V(4).Info("skipping PodMonitor: port not resolvable", "podMonitor", pm.Name, "port", portName, "error", err)
+		return metricsproxybin.ComponentFileConfig{}, false
+	}
+
+	var serverName string
+	if ep.TLSConfig != nil && ep.TLSConfig.ServerName != nil {
+		serverName = *ep.TLSConfig.ServerName
+	}
+
+	comp := metricsproxybin.ComponentFileConfig{
+		Selector:      pm.Spec.Selector.MatchLabels,
+		MetricsPort:   port,
+		MetricsPath:   endpointMetricsPath(ep.Path),
+		MetricsScheme: endpointScheme(ep.Scheme),
+		TLSServerName: serverName,
+	}
+
+	if ep.TLSConfig != nil {
+		populateTLSFilePaths(&comp, ep.TLSConfig.CA, ep.TLSConfig.Cert, ep.TLSConfig.KeySecret)
+	}
+
+	comp.Name = pm.Name
+	populateMetricsLabelsFromAnnotations(&comp, pm.Annotations)
+	return comp, true
+}
+
+func endpointScheme(scheme *prometheusoperatorv1.Scheme) string {
+	if scheme != nil {
+		return scheme.String()
+	}
+	return "http"
+}
+
+func endpointMetricsPath(path string) string {
+	if path != "" {
+		return path
+	}
+	return "/metrics"
+}
+
+func safeTLSServerName(tlsCfg *prometheusoperatorv1.TLSConfig) string {
+	if tlsCfg != nil && tlsCfg.ServerName != nil {
+		return *tlsCfg.ServerName
+	}
+	return ""
+}
+
+func populateTLSFilePaths(comp *metricsproxybin.ComponentFileConfig, ca, cert prometheusoperatorv1.SecretOrConfigMap, keySecret *corev1.SecretKeySelector) {
+	comp.CAFile = certFilePathFromSecretOrConfigMap(ca)
+	comp.CertFile = certFilePathFromSecretOrConfigMap(cert)
+	if keySecret != nil {
+		comp.KeyFile = filepath.Join(certBasePath, keySecret.Name, keySecret.Key)
+	}
 }
 
 // certFilePathFromSecretOrConfigMap returns the file path for a volume-mounted

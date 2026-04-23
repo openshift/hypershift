@@ -38,7 +38,9 @@ import (
 	"github.com/openshift/hypershift/support/releaseinfo/testutils"
 	"github.com/openshift/hypershift/support/testutil"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
+	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/reference"
 	"github.com/openshift/hypershift/support/upsert"
+	"github.com/openshift/hypershift/support/util"
 	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -54,6 +56,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/util/workqueue"
+	"k8s.io/utils/clock"
+	testingclock "k8s.io/utils/clock/testing"
 	"k8s.io/utils/ptr"
 
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -67,7 +71,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/yaml"
 
+	"github.com/docker/distribution"
 	"github.com/go-logr/zapr"
+	"github.com/opencontainers/go-digest"
 	"go.uber.org/mock/gomock"
 	"go.uber.org/zap/zaptest"
 )
@@ -2873,3 +2879,1409 @@ func TestRemoveCloudResources(t *testing.T) {
 		})
 	}
 }
+func TestReconcileEtcdStatus(t *testing.T) {
+	testNamespace := "test-namespace"
+
+	testCases := []struct {
+		name              string
+		hcp               *hyperv1.HostedControlPlane
+		existingObjects   []client.Object
+		expectedCondType  string
+		expectedCondition metav1.Condition
+		expectError       bool
+	}{
+		{
+			name: "When etcd management type is Unmanaged, it should set EtcdAvailable to True",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "test-hcp",
+					Namespace:  testNamespace,
+					Generation: 3,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Etcd: hyperv1.EtcdSpec{
+						ManagementType: hyperv1.Unmanaged,
+					},
+				},
+			},
+			expectedCondition: metav1.Condition{
+				Type:               string(hyperv1.EtcdAvailable),
+				Status:             metav1.ConditionTrue,
+				Reason:             "EtcdRunning",
+				Message:            "Etcd cluster is assumed to be running in unmanaged state",
+				ObservedGeneration: 3,
+			},
+		},
+		{
+			name: "When etcd management type is Managed and StatefulSet is not found, it should set EtcdAvailable to False with NotFound reason",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "test-hcp",
+					Namespace:  testNamespace,
+					Generation: 5,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Etcd: hyperv1.EtcdSpec{
+						ManagementType: hyperv1.Managed,
+					},
+				},
+			},
+			existingObjects: []client.Object{},
+			expectedCondition: metav1.Condition{
+				Type:               string(hyperv1.EtcdAvailable),
+				Status:             metav1.ConditionFalse,
+				Reason:             hyperv1.EtcdStatefulSetNotFoundReason,
+				ObservedGeneration: 5,
+			},
+		},
+		{
+			name: "When etcd management type is Managed and StatefulSet exists with quorum, it should set EtcdAvailable to True",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "test-hcp",
+					Namespace:  testNamespace,
+					Generation: 2,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Etcd: hyperv1.EtcdSpec{
+						ManagementType: hyperv1.Managed,
+					},
+				},
+			},
+			existingObjects: []client.Object{
+				&appsv1.StatefulSet{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "etcd",
+						Namespace: testNamespace,
+					},
+					Spec: appsv1.StatefulSetSpec{
+						Replicas: ptr.To[int32](3),
+					},
+					Status: appsv1.StatefulSetStatus{
+						ReadyReplicas: 3,
+					},
+				},
+			},
+			expectedCondition: metav1.Condition{
+				Type:               string(hyperv1.EtcdAvailable),
+				Status:             metav1.ConditionTrue,
+				Reason:             hyperv1.EtcdQuorumAvailableReason,
+				ObservedGeneration: 2,
+			},
+		},
+		{
+			name: "When etcd management type is Managed and StatefulSet has no quorum, it should set EtcdAvailable to False",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "test-hcp",
+					Namespace:  testNamespace,
+					Generation: 4,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Etcd: hyperv1.EtcdSpec{
+						ManagementType: hyperv1.Managed,
+					},
+				},
+			},
+			existingObjects: []client.Object{
+				&appsv1.StatefulSet{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "etcd",
+						Namespace: testNamespace,
+					},
+					Spec: appsv1.StatefulSetSpec{
+						Replicas: ptr.To[int32](3),
+					},
+					Status: appsv1.StatefulSetStatus{
+						ReadyReplicas: 0,
+					},
+				},
+			},
+			expectedCondition: metav1.Condition{
+				Type:               string(hyperv1.EtcdAvailable),
+				Status:             metav1.ConditionFalse,
+				Reason:             hyperv1.EtcdWaitingForQuorumReason,
+				ObservedGeneration: 4,
+			},
+		},
+		{
+			name: "When etcd management type is Managed and Get returns unexpected error, it should return error",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "test-hcp",
+					Namespace:  testNamespace,
+					Generation: 1,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Etcd: hyperv1.EtcdSpec{
+						ManagementType: hyperv1.Managed,
+					},
+				},
+			},
+			expectError: true,
+		},
+		{
+			name: "When etcd management type is Managed with RestoreSnapshotURL and StatefulSet has ready pods, it should set EtcdSnapshotRestored condition",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "test-hcp",
+					Namespace:  testNamespace,
+					Generation: 6,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Etcd: hyperv1.EtcdSpec{
+						ManagementType: hyperv1.Managed,
+						Managed: &hyperv1.ManagedEtcdSpec{
+							Storage: hyperv1.ManagedEtcdStorageSpec{
+								RestoreSnapshotURL: []string{"https://example.com/snapshot"},
+							},
+						},
+					},
+				},
+			},
+			existingObjects: []client.Object{
+				&appsv1.StatefulSet{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "etcd",
+						Namespace: testNamespace,
+					},
+					Spec: appsv1.StatefulSetSpec{
+						Replicas: ptr.To[int32](1),
+					},
+					Status: appsv1.StatefulSetStatus{
+						ReadyReplicas: 1,
+					},
+				},
+				&corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "etcd-0",
+						Namespace: testNamespace,
+						Labels: map[string]string{
+							"app": "etcd",
+						},
+					},
+					Status: corev1.PodStatus{
+						InitContainerStatuses: []corev1.ContainerStatus{
+							{
+								Name:  "etcd-init",
+								Ready: true,
+							},
+						},
+					},
+				},
+			},
+			expectedCondition: metav1.Condition{
+				Type:               string(hyperv1.EtcdAvailable),
+				Status:             metav1.ConditionTrue,
+				Reason:             hyperv1.EtcdQuorumAvailableReason,
+				ObservedGeneration: 6,
+			},
+		},
+		{
+			name: "When etcd management type is empty, it should set condition to Unknown",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "test-hcp",
+					Namespace:  testNamespace,
+					Generation: 1,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Etcd: hyperv1.EtcdSpec{
+						ManagementType: "",
+					},
+				},
+			},
+			expectedCondition: metav1.Condition{
+				Type:               string(hyperv1.EtcdAvailable),
+				Status:             metav1.ConditionUnknown,
+				Reason:             hyperv1.StatusUnknownReason,
+				ObservedGeneration: 1,
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			var c client.Client
+			if tc.expectError {
+				c = fake.NewClientBuilder().
+					WithScheme(api.Scheme).
+					WithInterceptorFuncs(interceptor.Funcs{
+						Get: func(ctx context.Context, client client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+							return fmt.Errorf("simulated get error")
+						},
+					}).
+					Build()
+			} else {
+				c = fake.NewClientBuilder().
+					WithScheme(api.Scheme).
+					WithObjects(tc.existingObjects...).
+					Build()
+			}
+
+			r := &HostedControlPlaneReconciler{
+				Client: c,
+				Log:    zapr.NewLogger(zaptest.NewLogger(t)),
+			}
+
+			err := r.reconcileEtcdStatus(t.Context(), tc.hcp)
+			if tc.expectError {
+				g.Expect(err).To(HaveOccurred())
+				return
+			}
+			g.Expect(err).ToNot(HaveOccurred())
+
+			cond := meta.FindStatusCondition(tc.hcp.Status.Conditions, string(hyperv1.EtcdAvailable))
+			g.Expect(cond).ToNot(BeNil())
+			g.Expect(cond.Type).To(Equal(tc.expectedCondition.Type))
+			g.Expect(cond.Status).To(Equal(tc.expectedCondition.Status))
+			g.Expect(cond.Reason).To(Equal(tc.expectedCondition.Reason))
+			g.Expect(cond.ObservedGeneration).To(Equal(tc.expectedCondition.ObservedGeneration))
+			if tc.expectedCondition.Message != "" {
+				g.Expect(cond.Message).To(Equal(tc.expectedCondition.Message))
+			}
+
+			// For the restore snapshot test case, also verify EtcdSnapshotRestored condition
+			if tc.name == "When etcd management type is Managed with RestoreSnapshotURL and StatefulSet has ready pods, it should set EtcdSnapshotRestored condition" {
+				restoreCond := meta.FindStatusCondition(tc.hcp.Status.Conditions, string(hyperv1.EtcdSnapshotRestored))
+				g.Expect(restoreCond).ToNot(BeNil())
+				g.Expect(restoreCond.Status).To(Equal(metav1.ConditionTrue))
+				g.Expect(restoreCond.Reason).To(Equal(hyperv1.AsExpectedReason))
+			}
+		})
+	}
+}
+
+func TestReconcileKASStatus(t *testing.T) {
+	testNamespace := "test-namespace"
+
+	testCases := []struct {
+		name              string
+		hcp               *hyperv1.HostedControlPlane
+		existingObjects   []client.Object
+		expectedCondition metav1.Condition
+		expectError       bool
+	}{
+		{
+			name: "When KAS deployment is not found, it should set KubeAPIServerAvailable to False with NotFound reason",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "test-hcp",
+					Namespace:  testNamespace,
+					Generation: 3,
+				},
+			},
+			existingObjects: []client.Object{},
+			expectedCondition: metav1.Condition{
+				Type:               string(hyperv1.KubeAPIServerAvailable),
+				Status:             metav1.ConditionFalse,
+				Reason:             hyperv1.NotFoundReason,
+				Message:            "Kube APIServer deployment not found",
+				ObservedGeneration: 3,
+			},
+		},
+		{
+			name: "When KAS deployment exists and is Available, it should set KubeAPIServerAvailable to True",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "test-hcp",
+					Namespace:  testNamespace,
+					Generation: 5,
+				},
+			},
+			existingObjects: []client.Object{
+				&appsv1.Deployment{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "kube-apiserver",
+						Namespace: testNamespace,
+					},
+					Status: appsv1.DeploymentStatus{
+						Conditions: []appsv1.DeploymentCondition{
+							{
+								Type:   appsv1.DeploymentAvailable,
+								Status: corev1.ConditionTrue,
+							},
+						},
+					},
+				},
+			},
+			expectedCondition: metav1.Condition{
+				Type:               string(hyperv1.KubeAPIServerAvailable),
+				Status:             metav1.ConditionTrue,
+				Reason:             hyperv1.AsExpectedReason,
+				Message:            "Kube APIServer deployment is available",
+				ObservedGeneration: 5,
+			},
+		},
+		{
+			name: "When KAS deployment exists but Available condition is False, it should set KubeAPIServerAvailable to False with WaitingForAvailable reason",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "test-hcp",
+					Namespace:  testNamespace,
+					Generation: 7,
+				},
+			},
+			existingObjects: []client.Object{
+				&appsv1.Deployment{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "kube-apiserver",
+						Namespace: testNamespace,
+					},
+					Status: appsv1.DeploymentStatus{
+						Conditions: []appsv1.DeploymentCondition{
+							{
+								Type:   appsv1.DeploymentAvailable,
+								Status: corev1.ConditionFalse,
+							},
+						},
+					},
+				},
+			},
+			expectedCondition: metav1.Condition{
+				Type:               string(hyperv1.KubeAPIServerAvailable),
+				Status:             metav1.ConditionFalse,
+				Reason:             hyperv1.WaitingForAvailableReason,
+				Message:            "Waiting for Kube APIServer deployment to become available",
+				ObservedGeneration: 7,
+			},
+		},
+		{
+			name: "When KAS deployment exists but has no Available condition, it should set KubeAPIServerAvailable to False with StatusUnknown reason",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "test-hcp",
+					Namespace:  testNamespace,
+					Generation: 2,
+				},
+			},
+			existingObjects: []client.Object{
+				&appsv1.Deployment{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "kube-apiserver",
+						Namespace: testNamespace,
+					},
+					Status: appsv1.DeploymentStatus{
+						Conditions: []appsv1.DeploymentCondition{
+							{
+								Type:   appsv1.DeploymentProgressing,
+								Status: corev1.ConditionTrue,
+							},
+						},
+					},
+				},
+			},
+			expectedCondition: metav1.Condition{
+				Type:               string(hyperv1.KubeAPIServerAvailable),
+				Status:             metav1.ConditionFalse,
+				Reason:             hyperv1.StatusUnknownReason,
+				ObservedGeneration: 2,
+			},
+		},
+		{
+			name: "When KAS deployment exists with empty conditions, it should set KubeAPIServerAvailable to False with StatusUnknown reason",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "test-hcp",
+					Namespace:  testNamespace,
+					Generation: 1,
+				},
+			},
+			existingObjects: []client.Object{
+				&appsv1.Deployment{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "kube-apiserver",
+						Namespace: testNamespace,
+					},
+					Status: appsv1.DeploymentStatus{},
+				},
+			},
+			expectedCondition: metav1.Condition{
+				Type:               string(hyperv1.KubeAPIServerAvailable),
+				Status:             metav1.ConditionFalse,
+				Reason:             hyperv1.StatusUnknownReason,
+				ObservedGeneration: 1,
+			},
+		},
+		{
+			name: "When Get returns unexpected error, it should return error",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "test-hcp",
+					Namespace:  testNamespace,
+					Generation: 1,
+				},
+			},
+			expectError: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			var c client.Client
+			if tc.expectError {
+				c = fake.NewClientBuilder().
+					WithScheme(api.Scheme).
+					WithInterceptorFuncs(interceptor.Funcs{
+						Get: func(ctx context.Context, client client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+							return fmt.Errorf("simulated get error")
+						},
+					}).
+					Build()
+			} else {
+				c = fake.NewClientBuilder().
+					WithScheme(api.Scheme).
+					WithObjects(tc.existingObjects...).
+					Build()
+			}
+
+			r := &HostedControlPlaneReconciler{
+				Client: c,
+				Log:    zapr.NewLogger(zaptest.NewLogger(t)),
+			}
+
+			err := r.reconcileKASStatus(t.Context(), tc.hcp)
+			if tc.expectError {
+				g.Expect(err).To(HaveOccurred())
+				return
+			}
+			g.Expect(err).ToNot(HaveOccurred())
+
+			cond := meta.FindStatusCondition(tc.hcp.Status.Conditions, string(hyperv1.KubeAPIServerAvailable))
+			g.Expect(cond).ToNot(BeNil())
+			g.Expect(cond.Type).To(Equal(tc.expectedCondition.Type))
+			g.Expect(cond.Status).To(Equal(tc.expectedCondition.Status))
+			g.Expect(cond.Reason).To(Equal(tc.expectedCondition.Reason))
+			g.Expect(cond.ObservedGeneration).To(Equal(tc.expectedCondition.ObservedGeneration))
+			if tc.expectedCondition.Message != "" {
+				g.Expect(cond.Message).To(Equal(tc.expectedCondition.Message))
+			}
+		})
+	}
+}
+
+func TestReconcileDegradedStatus(t *testing.T) {
+	testNamespace := "test-namespace"
+
+	testCases := []struct {
+		name              string
+		hcp               *hyperv1.HostedControlPlane
+		existingObjects   []client.Object
+		expectedCondition metav1.Condition
+		expectError       bool
+	}{
+		{
+			name: "When no CPO-managed deployments exist, it should set Degraded to False",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "test-hcp",
+					Namespace:  testNamespace,
+					Generation: 2,
+				},
+			},
+			existingObjects: []client.Object{},
+			expectedCondition: metav1.Condition{
+				Type:               string(hyperv1.HostedControlPlaneDegraded),
+				Status:             metav1.ConditionFalse,
+				Reason:             hyperv1.AsExpectedReason,
+				ObservedGeneration: 2,
+			},
+		},
+		{
+			name: "When all CPO-managed deployments are fully available, it should set Degraded to False",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "test-hcp",
+					Namespace:  testNamespace,
+					Generation: 3,
+				},
+			},
+			existingObjects: []client.Object{
+				&appsv1.Deployment{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "kube-apiserver",
+						Namespace: testNamespace,
+						Labels: map[string]string{
+							controlplanecomponent.ManagedByLabel: "control-plane-operator",
+						},
+					},
+					Status: appsv1.DeploymentStatus{
+						UnavailableReplicas: 0,
+					},
+				},
+				&appsv1.Deployment{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "kube-controller-manager",
+						Namespace: testNamespace,
+						Labels: map[string]string{
+							controlplanecomponent.ManagedByLabel: "control-plane-operator",
+						},
+					},
+					Status: appsv1.DeploymentStatus{
+						UnavailableReplicas: 0,
+					},
+				},
+			},
+			expectedCondition: metav1.Condition{
+				Type:               string(hyperv1.HostedControlPlaneDegraded),
+				Status:             metav1.ConditionFalse,
+				Reason:             hyperv1.AsExpectedReason,
+				ObservedGeneration: 3,
+			},
+		},
+		{
+			name: "When a single CPO-managed deployment has unavailable replicas, it should set Degraded to True",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "test-hcp",
+					Namespace:  testNamespace,
+					Generation: 4,
+				},
+			},
+			existingObjects: []client.Object{
+				&appsv1.Deployment{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "kube-apiserver",
+						Namespace: testNamespace,
+						Labels: map[string]string{
+							controlplanecomponent.ManagedByLabel: "control-plane-operator",
+						},
+					},
+					Status: appsv1.DeploymentStatus{
+						UnavailableReplicas: 2,
+					},
+				},
+			},
+			expectedCondition: metav1.Condition{
+				Type:               string(hyperv1.HostedControlPlaneDegraded),
+				Status:             metav1.ConditionTrue,
+				Reason:             "UnavailableReplicas",
+				Message:            "kube-apiserver deployment has 2 unavailable replicas",
+				ObservedGeneration: 4,
+			},
+		},
+		{
+			name: "When multiple CPO-managed deployments have unavailable replicas, it should aggregate all errors in message",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "test-hcp",
+					Namespace:  testNamespace,
+					Generation: 5,
+				},
+			},
+			existingObjects: []client.Object{
+				&appsv1.Deployment{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "kube-apiserver",
+						Namespace: testNamespace,
+						Labels: map[string]string{
+							controlplanecomponent.ManagedByLabel: "control-plane-operator",
+						},
+					},
+					Status: appsv1.DeploymentStatus{
+						UnavailableReplicas: 1,
+					},
+				},
+				&appsv1.Deployment{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "kube-controller-manager",
+						Namespace: testNamespace,
+						Labels: map[string]string{
+							controlplanecomponent.ManagedByLabel: "control-plane-operator",
+						},
+					},
+					Status: appsv1.DeploymentStatus{
+						UnavailableReplicas: 3,
+					},
+				},
+			},
+			expectedCondition: metav1.Condition{
+				Type:               string(hyperv1.HostedControlPlaneDegraded),
+				Status:             metav1.ConditionTrue,
+				Reason:             "UnavailableReplicas",
+				ObservedGeneration: 5,
+			},
+		},
+		{
+			name: "When deployments exist without the CPO managed-by label, it should ignore them and set Degraded to False",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "test-hcp",
+					Namespace:  testNamespace,
+					Generation: 6,
+				},
+			},
+			existingObjects: []client.Object{
+				&appsv1.Deployment{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "unmanaged-deployment",
+						Namespace: testNamespace,
+						Labels: map[string]string{
+							"app": "something-else",
+						},
+					},
+					Status: appsv1.DeploymentStatus{
+						UnavailableReplicas: 5,
+					},
+				},
+			},
+			expectedCondition: metav1.Condition{
+				Type:               string(hyperv1.HostedControlPlaneDegraded),
+				Status:             metav1.ConditionFalse,
+				Reason:             hyperv1.AsExpectedReason,
+				ObservedGeneration: 6,
+			},
+		},
+		{
+			name: "When List returns unexpected error, it should return error",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "test-hcp",
+					Namespace:  testNamespace,
+					Generation: 1,
+				},
+			},
+			expectError: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			var c client.Client
+			if tc.expectError {
+				c = fake.NewClientBuilder().
+					WithScheme(api.Scheme).
+					WithInterceptorFuncs(interceptor.Funcs{
+						List: func(ctx context.Context, client client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
+							return fmt.Errorf("simulated list error")
+						},
+					}).
+					Build()
+			} else {
+				c = fake.NewClientBuilder().
+					WithScheme(api.Scheme).
+					WithObjects(tc.existingObjects...).
+					Build()
+			}
+
+			r := &HostedControlPlaneReconciler{
+				Client: c,
+				Log:    zapr.NewLogger(zaptest.NewLogger(t)),
+			}
+
+			err := r.reconcileDegradedStatus(t.Context(), tc.hcp)
+			if tc.expectError {
+				g.Expect(err).To(HaveOccurred())
+				return
+			}
+			g.Expect(err).ToNot(HaveOccurred())
+
+			cond := meta.FindStatusCondition(tc.hcp.Status.Conditions, string(hyperv1.HostedControlPlaneDegraded))
+			g.Expect(cond).ToNot(BeNil())
+			g.Expect(cond.Type).To(Equal(tc.expectedCondition.Type))
+			g.Expect(cond.Status).To(Equal(tc.expectedCondition.Status))
+			g.Expect(cond.Reason).To(Equal(tc.expectedCondition.Reason))
+			g.Expect(cond.ObservedGeneration).To(Equal(tc.expectedCondition.ObservedGeneration))
+			if tc.expectedCondition.Message != "" {
+				g.Expect(cond.Message).To(ContainSubstring(tc.expectedCondition.Message))
+			}
+
+			// For the multi-deployment case, verify that both deployment names appear in the message
+			if tc.name == "When multiple CPO-managed deployments have unavailable replicas, it should aggregate all errors in message" {
+				g.Expect(cond.Message).To(ContainSubstring("kube-apiserver"))
+				g.Expect(cond.Message).To(ContainSubstring("kube-controller-manager"))
+			}
+		})
+	}
+}
+
+func TestReconcileInfrastructureStatusCondition(t *testing.T) {
+	testNamespace := "test-namespace"
+
+	testCases := []struct {
+		name                string
+		hcp                 *hyperv1.HostedControlPlane
+		infraStatus         infra.InfrastructureStatus
+		infraErr            error
+		expectedCondStatus  metav1.ConditionStatus
+		expectedCondReason  string
+		expectedEndpoint    hyperv1.APIEndpoint
+		expectOAuthCallback bool
+	}{
+		{
+			name: "When infrastructure is ready, it should set InfrastructureReady to True and populate endpoint",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "test-hcp",
+					Namespace:  testNamespace,
+					Generation: 3,
+				},
+			},
+			infraStatus: infra.InfrastructureStatus{
+				APIHost:          "api.example.com",
+				APIPort:          6443,
+				KonnectivityHost: "konnectivity.example.com",
+				KonnectivityPort: 8091,
+			},
+			expectedCondStatus: metav1.ConditionTrue,
+			expectedCondReason: hyperv1.AsExpectedReason,
+			expectedEndpoint: hyperv1.APIEndpoint{
+				Host: "api.example.com",
+				Port: 6443,
+			},
+		},
+		{
+			name: "When infrastructure is not ready, it should set InfrastructureReady to False",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "test-hcp",
+					Namespace:  testNamespace,
+					Generation: 4,
+				},
+			},
+			infraStatus: infra.InfrastructureStatus{
+				APIHost: "",
+				APIPort: 0,
+				Message: "Load balancer pending",
+			},
+			expectedCondStatus: metav1.ConditionFalse,
+			expectedCondReason: hyperv1.WaitingOnInfrastructureReadyReason,
+		},
+		{
+			name: "When infrastructure status returns error, it should set InfrastructureReady to Unknown",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "test-hcp",
+					Namespace:  testNamespace,
+					Generation: 5,
+				},
+			},
+			infraErr:           fmt.Errorf("failed to get infrastructure status"),
+			expectedCondStatus: metav1.ConditionUnknown,
+			expectedCondReason: hyperv1.InfraStatusFailureReason,
+		},
+		{
+			name: "When infrastructure is not ready with empty message, it should use default provisioning message",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "test-hcp",
+					Namespace:  testNamespace,
+					Generation: 6,
+				},
+			},
+			infraStatus: infra.InfrastructureStatus{
+				APIHost: "",
+				APIPort: 0,
+			},
+			expectedCondStatus: metav1.ConditionFalse,
+			expectedCondReason: hyperv1.WaitingOnInfrastructureReadyReason,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			r := &HostedControlPlaneReconciler{
+				Client: fake.NewClientBuilder().WithScheme(api.Scheme).Build(),
+				Log:    zapr.NewLogger(zaptest.NewLogger(t)),
+				reconcileInfrastructureStatus: func(ctx context.Context, hcp *hyperv1.HostedControlPlane) (infra.InfrastructureStatus, error) {
+					return tc.infraStatus, tc.infraErr
+				},
+			}
+
+			r.reconcileInfrastructureStatusCondition(t.Context(), tc.hcp)
+
+			cond := meta.FindStatusCondition(tc.hcp.Status.Conditions, string(hyperv1.InfrastructureReady))
+			g.Expect(cond).ToNot(BeNil())
+			g.Expect(cond.Status).To(Equal(tc.expectedCondStatus))
+			g.Expect(cond.Reason).To(Equal(tc.expectedCondReason))
+			g.Expect(cond.ObservedGeneration).To(Equal(tc.hcp.Generation))
+
+			if tc.expectedCondStatus == metav1.ConditionTrue {
+				g.Expect(tc.hcp.Status.ControlPlaneEndpoint).To(Equal(tc.expectedEndpoint))
+			}
+
+			if tc.expectedCondStatus == metav1.ConditionFalse && tc.infraStatus.Message == "" {
+				g.Expect(cond.Message).To(Equal("Cluster infrastructure is still provisioning"))
+			}
+			if tc.expectedCondStatus == metav1.ConditionFalse && tc.infraStatus.Message != "" {
+				g.Expect(cond.Message).To(Equal(tc.infraStatus.Message))
+			}
+		})
+	}
+}
+
+func TestReconcileExternalDNSStatusCondition(t *testing.T) {
+	testNamespace := "test-namespace"
+
+	testCases := []struct {
+		name               string
+		hcp                *hyperv1.HostedControlPlane
+		expectedCondStatus metav1.ConditionStatus
+		expectedCondReason string
+		expectedMessage    string
+	}{
+		{
+			name: "When no external DNS hostname is configured, it should set ExternalDNSReachable to Unknown",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "test-hcp",
+					Namespace:  testNamespace,
+					Generation: 1,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Networking: hyperv1.ClusterNetworking{
+						APIServer: &hyperv1.APIServerNetworking{
+							Port: ptr.To[int32](6443),
+						},
+					},
+				},
+			},
+			expectedCondStatus: metav1.ConditionUnknown,
+			expectedCondReason: hyperv1.StatusUnknownReason,
+			expectedMessage:    "External DNS is not configured",
+		},
+		{
+			name: "When HCP is private (no PublicZoneID), it should set ExternalDNSReachable to Unknown",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "test-hcp",
+					Namespace:  testNamespace,
+					Generation: 2,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+						AWS: &hyperv1.AWSPlatformSpec{
+							EndpointAccess: hyperv1.Private,
+						},
+					},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.APIServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.LoadBalancer,
+								LoadBalancer: &hyperv1.LoadBalancerPublishingStrategy{
+									Hostname: "api.example.com",
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedCondStatus: metav1.ConditionUnknown,
+			expectedCondReason: hyperv1.StatusUnknownReason,
+			expectedMessage:    "External DNS is not configured",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			r := &HostedControlPlaneReconciler{
+				Client: fake.NewClientBuilder().WithScheme(api.Scheme).Build(),
+				Log:    zapr.NewLogger(zaptest.NewLogger(t)),
+			}
+
+			r.reconcileExternalDNSStatusCondition(t.Context(), tc.hcp)
+
+			cond := meta.FindStatusCondition(tc.hcp.Status.Conditions, string(hyperv1.ExternalDNSReachable))
+			g.Expect(cond).ToNot(BeNil())
+			g.Expect(cond.Status).To(Equal(tc.expectedCondStatus))
+			g.Expect(cond.Reason).To(Equal(tc.expectedCondReason))
+			g.Expect(cond.ObservedGeneration).To(Equal(tc.hcp.Generation))
+			if tc.expectedMessage != "" {
+				g.Expect(cond.Message).To(Equal(tc.expectedMessage))
+			}
+		})
+	}
+}
+
+func TestReconcileAvailabilityAndReadyStatus(t *testing.T) {
+	testNamespace := "test-namespace"
+
+	testCases := []struct {
+		name               string
+		hcp                *hyperv1.HostedControlPlane
+		existingObjects    []client.Object
+		expectedReady      bool
+		expectedCondStatus metav1.ConditionStatus
+		expectedCondReason string
+	}{
+		{
+			name: "When no status conditions exist and no kubeconfig, it should set not ready with Unknown reason",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "test-hcp",
+					Namespace:  testNamespace,
+					Generation: 1,
+				},
+			},
+			expectedReady:      false,
+			expectedCondStatus: metav1.ConditionFalse,
+			expectedCondReason: hyperv1.StatusUnknownReason,
+		},
+		{
+			name: "When infrastructure condition is False, it should propagate infrastructure failure",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "test-hcp",
+					Namespace:  testNamespace,
+					Generation: 2,
+				},
+				Status: hyperv1.HostedControlPlaneStatus{
+					KubeConfig: &hyperv1.KubeconfigSecretRef{
+						Name: "admin-kubeconfig",
+						Key:  "kubeconfig",
+					},
+					Conditions: []metav1.Condition{
+						{
+							Type:   string(hyperv1.InfrastructureReady),
+							Status: metav1.ConditionFalse,
+							Reason: hyperv1.WaitingOnInfrastructureReadyReason,
+						},
+						{
+							Type:   string(hyperv1.EtcdAvailable),
+							Status: metav1.ConditionTrue,
+							Reason: hyperv1.EtcdQuorumAvailableReason,
+						},
+						{
+							Type:   string(hyperv1.KubeAPIServerAvailable),
+							Status: metav1.ConditionTrue,
+							Reason: hyperv1.AsExpectedReason,
+						},
+					},
+				},
+			},
+			expectedReady:      false,
+			expectedCondStatus: metav1.ConditionFalse,
+			expectedCondReason: hyperv1.WaitingOnInfrastructureReadyReason,
+		},
+		{
+			name: "When health check fails but no conditions are set, it should report KAS LB not reachable",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "test-hcp",
+					Namespace:  testNamespace,
+					Generation: 3,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					// No service strategy for APIServer - health check returns error
+					Services: []hyperv1.ServicePublishingStrategyMapping{},
+				},
+				Status: hyperv1.HostedControlPlaneStatus{
+					KubeConfig: &hyperv1.KubeconfigSecretRef{
+						Name: "admin-kubeconfig",
+						Key:  "kubeconfig",
+					},
+					Conditions: []metav1.Condition{
+						{
+							Type:   string(hyperv1.InfrastructureReady),
+							Status: metav1.ConditionTrue,
+							Reason: hyperv1.AsExpectedReason,
+						},
+						{
+							Type:   string(hyperv1.EtcdAvailable),
+							Status: metav1.ConditionTrue,
+							Reason: hyperv1.EtcdQuorumAvailableReason,
+						},
+						{
+							Type:   string(hyperv1.KubeAPIServerAvailable),
+							Status: metav1.ConditionTrue,
+							Reason: hyperv1.AsExpectedReason,
+						},
+					},
+				},
+			},
+			expectedReady:      false,
+			expectedCondStatus: metav1.ConditionFalse,
+			expectedCondReason: hyperv1.KASLoadBalancerNotReachableReason,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			objs := []client.Object{}
+			objs = append(objs, tc.existingObjects...)
+
+			c := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				WithObjects(objs...).
+				Build()
+
+			r := &HostedControlPlaneReconciler{
+				Client: c,
+				Log:    zapr.NewLogger(zaptest.NewLogger(t)),
+			}
+
+			r.reconcileAvailabilityAndReadyStatus(t.Context(), tc.hcp)
+
+			g.Expect(tc.hcp.Status.Ready).To(Equal(tc.expectedReady))
+
+			cond := meta.FindStatusCondition(tc.hcp.Status.Conditions, string(hyperv1.HostedControlPlaneAvailable))
+			g.Expect(cond).ToNot(BeNil())
+			g.Expect(cond.Status).To(Equal(tc.expectedCondStatus))
+			g.Expect(cond.Reason).To(Equal(tc.expectedCondReason))
+			g.Expect(cond.ObservedGeneration).To(Equal(tc.hcp.Generation))
+		})
+	}
+}
+
+func TestReconcileKubeadminPasswordStatus(t *testing.T) {
+	testNamespace := "test-namespace"
+
+	testCases := []struct {
+		name                string
+		hcp                 *hyperv1.HostedControlPlane
+		existingObjects     []client.Object
+		expectedPasswordRef *corev1.LocalObjectReference
+		expectError         bool
+	}{
+		{
+			name: "When explicit OAuth config is specified, it should clear kubeadmin password status",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-hcp",
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						OAuth: &configv1.OAuthSpec{
+							IdentityProviders: []configv1.IdentityProvider{
+								{
+									Name: "test-idp",
+									IdentityProviderConfig: configv1.IdentityProviderConfig{
+										Type: configv1.IdentityProviderTypeOpenID,
+									},
+								},
+							},
+						},
+					},
+				},
+				Status: hyperv1.HostedControlPlaneStatus{
+					KubeadminPassword: &corev1.LocalObjectReference{
+						Name: "old-kubeadmin-password",
+					},
+				},
+			},
+			expectedPasswordRef: nil,
+		},
+		{
+			name: "When no OAuth config and kubeadmin password secret exists, it should set password status",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-hcp",
+					Namespace: testNamespace,
+				},
+			},
+			existingObjects: []client.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "kubeadmin-password",
+						Namespace: testNamespace,
+					},
+					Data: map[string][]byte{
+						"password": []byte("test-password"),
+					},
+				},
+			},
+			expectedPasswordRef: &corev1.LocalObjectReference{
+				Name: "kubeadmin-password",
+			},
+		},
+		{
+			name: "When no OAuth config and kubeadmin password secret does not exist, it should leave password status nil",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-hcp",
+					Namespace: testNamespace,
+				},
+			},
+			existingObjects:     []client.Object{},
+			expectedPasswordRef: nil,
+		},
+		{
+			name: "When no OAuth config and Get returns unexpected error, it should return error",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-hcp",
+					Namespace: testNamespace,
+				},
+			},
+			expectError: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			var c client.Client
+			if tc.expectError {
+				c = fake.NewClientBuilder().
+					WithScheme(api.Scheme).
+					WithInterceptorFuncs(interceptor.Funcs{
+						Get: func(ctx context.Context, client client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+							return fmt.Errorf("simulated get error")
+						},
+					}).
+					Build()
+			} else {
+				c = fake.NewClientBuilder().
+					WithScheme(api.Scheme).
+					WithObjects(tc.existingObjects...).
+					Build()
+			}
+
+			r := &HostedControlPlaneReconciler{
+				Client: c,
+				Log:    zapr.NewLogger(zaptest.NewLogger(t)),
+			}
+
+			err := r.reconcileKubeadminPasswordStatus(t.Context(), tc.hcp)
+			if tc.expectError {
+				g.Expect(err).To(HaveOccurred())
+				return
+			}
+			g.Expect(err).ToNot(HaveOccurred())
+
+			if tc.expectedPasswordRef == nil {
+				g.Expect(tc.hcp.Status.KubeadminPassword).To(BeNil())
+			} else {
+				g.Expect(tc.hcp.Status.KubeadminPassword).ToNot(BeNil())
+				g.Expect(tc.hcp.Status.KubeadminPassword.Name).To(Equal(tc.expectedPasswordRef.Name))
+			}
+		})
+	}
+}
+
+// fakeVersionImageMetadataProvider is a simple test double for ImageMetadataProvider
+// that returns deterministic results without contacting a registry.
+type fakeVersionImageMetadataProvider struct {
+	fakeDigest string
+	fakeRef    *reference.DockerImageReference
+	digestErr  error
+}
+
+func (f *fakeVersionImageMetadataProvider) ImageMetadata(_ context.Context, _ string, _ []byte) (*dockerv1client.DockerImageConfig, error) {
+	return &dockerv1client.DockerImageConfig{}, nil
+}
+
+func (f *fakeVersionImageMetadataProvider) GetManifest(_ context.Context, _ string, _ []byte) (distribution.Manifest, error) {
+	return nil, nil
+}
+
+func (f *fakeVersionImageMetadataProvider) GetDigest(_ context.Context, _ string, _ []byte) (digest.Digest, *reference.DockerImageReference, error) {
+	if f.digestErr != nil {
+		return "", nil, f.digestErr
+	}
+	return digest.Digest(f.fakeDigest), f.fakeRef, nil
+}
+
+func (f *fakeVersionImageMetadataProvider) GetMetadata(_ context.Context, _ string, _ []byte) (*dockerv1client.DockerImageConfig, []distribution.Descriptor, distribution.BlobStore, error) {
+	return &dockerv1client.DockerImageConfig{}, nil, nil, nil
+}
+
+func (f *fakeVersionImageMetadataProvider) GetOverride(_ context.Context, _ string, _ []byte) (*reference.DockerImageReference, error) {
+	return f.fakeRef, nil
+}
+
+func TestReconcileControlPlaneVersionStatus(t *testing.T) {
+	testNamespace := "test-namespace"
+	fakeClock := testingclock.NewFakeClock(time.Date(2026, 4, 22, 12, 0, 0, 0, time.UTC))
+
+	testCases := []struct {
+		name            string
+		hcp             *hyperv1.HostedControlPlane
+		existingObjects []client.Object
+		digestErr       error
+		expectError     bool
+		expectedDesired configv1.Release
+		expectedState   configv1.UpdateState
+	}{
+		{
+			name: "When pull secret exists and components are listed successfully with first population, it should create Partial history entry",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "test-hcp",
+					Namespace:  testNamespace,
+					Generation: 1,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					ReleaseImage: "quay.io/openshift-release-dev/ocp-release:4.20.0",
+				},
+			},
+			existingObjects: []client.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "pull-secret",
+						Namespace: testNamespace,
+					},
+					Data: map[string][]byte{
+						corev1.DockerConfigJsonKey: []byte("{}"),
+					},
+				},
+			},
+			expectedDesired: configv1.Release{
+				Version: "4.20.0",
+				Image:   "quay.io/openshift-release-dev/ocp-release@sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+			},
+			expectedState: configv1.PartialUpdate,
+		},
+		{
+			name: "When pull secret is missing, it should return error",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "test-hcp",
+					Namespace:  testNamespace,
+					Generation: 1,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					ReleaseImage: "quay.io/openshift-release-dev/ocp-release:4.20.0",
+				},
+			},
+			existingObjects: []client.Object{},
+			expectError:     true,
+		},
+		{
+			name: "When GetDigest fails, it should return error",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "test-hcp",
+					Namespace:  testNamespace,
+					Generation: 1,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					ReleaseImage: "quay.io/openshift-release-dev/ocp-release:4.20.0",
+				},
+			},
+			existingObjects: []client.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "pull-secret",
+						Namespace: testNamespace,
+					},
+					Data: map[string][]byte{
+						corev1.DockerConfigJsonKey: []byte("{}"),
+					},
+				},
+			},
+			digestErr:   fmt.Errorf("failed to resolve digest"),
+			expectError: true,
+		},
+		{
+			name: "When component list fails, it should set partial version and return error",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "test-hcp",
+					Namespace:  testNamespace,
+					Generation: 2,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					ReleaseImage: "quay.io/openshift-release-dev/ocp-release:4.20.0",
+				},
+			},
+			existingObjects: []client.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "pull-secret",
+						Namespace: testNamespace,
+					},
+					Data: map[string][]byte{
+						corev1.DockerConfigJsonKey: []byte("{}"),
+					},
+				},
+			},
+			expectError: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			releaseImage := testutils.InitReleaseImageOrDie("4.20.0")
+
+			resolvedRef := &reference.DockerImageReference{
+				Registry:  "quay.io",
+				Namespace: "openshift-release-dev",
+				Name:      "ocp-release",
+				ID:        "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+			}
+
+			imgProvider := &fakeVersionImageMetadataProvider{
+				fakeDigest: "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+				fakeRef:    resolvedRef,
+				digestErr:  tc.digestErr,
+			}
+
+			clientBuilder := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				WithObjects(tc.existingObjects...)
+
+			// For the "component list fails" case, intercept the List call to fail
+			if tc.name == "When component list fails, it should set partial version and return error" {
+				clientBuilder = clientBuilder.WithInterceptorFuncs(interceptor.Funcs{
+					List: func(ctx context.Context, c client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
+						if _, ok := list.(*hyperv1.ControlPlaneComponentList); ok {
+							return fmt.Errorf("simulated list error")
+						}
+						return c.List(ctx, list, opts...)
+					},
+				})
+				// Also need to add status subresource for patching
+				clientBuilder = clientBuilder.WithStatusSubresource(tc.hcp)
+			}
+
+			c := clientBuilder.Build()
+
+			// For the component list failure case, we need the HCP to exist in the fake client
+			if tc.name == "When component list fails, it should set partial version and return error" {
+				g.Expect(c.Create(t.Context(), tc.hcp)).To(Succeed())
+			}
+
+			r := &HostedControlPlaneReconciler{
+				Client:                c,
+				Log:                   zapr.NewLogger(zaptest.NewLogger(t)),
+				ImageMetadataProvider: imgProvider,
+				clock:                 fakeClock,
+			}
+
+			originalHCP := tc.hcp.DeepCopy()
+			err := r.reconcileControlPlaneVersionStatus(t.Context(), tc.hcp, originalHCP, releaseImage)
+			if tc.expectError {
+				g.Expect(err).To(HaveOccurred())
+
+				// For the component list failure case, verify partial status was still populated
+				if tc.name == "When component list fails, it should set partial version and return error" {
+					g.Expect(tc.hcp.Status.ControlPlaneVersion.Desired.Version).To(Equal("4.20.0"))
+					g.Expect(tc.hcp.Status.ControlPlaneVersion.Desired.Image).ToNot(BeEmpty())
+					g.Expect(tc.hcp.Status.ControlPlaneVersion.History).ToNot(BeEmpty())
+				}
+				return
+			}
+			g.Expect(err).ToNot(HaveOccurred())
+
+			g.Expect(tc.hcp.Status.ControlPlaneVersion.Desired.Version).To(Equal(tc.expectedDesired.Version))
+			g.Expect(tc.hcp.Status.ControlPlaneVersion.Desired.Image).To(Equal(tc.expectedDesired.Image))
+			g.Expect(tc.hcp.Status.ControlPlaneVersion.History).ToNot(BeEmpty())
+			g.Expect(tc.hcp.Status.ControlPlaneVersion.History[0].State).To(Equal(tc.expectedState))
+		})
+	}
+}
+
+// Compile-time assertion that fakeVersionImageMetadataProvider satisfies the interface.
+var _ util.ImageMetadataProvider = &fakeVersionImageMetadataProvider{}
+
+// Compile-time assertion for clock interface used by tests.
+var _ clock.Clock = &testingclock.FakeClock{}
