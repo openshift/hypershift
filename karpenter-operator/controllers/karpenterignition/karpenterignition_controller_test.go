@@ -184,6 +184,15 @@ kind: Config`),
 			},
 		},
 	}
+	coreConfig3 := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "core-ignition-config-3",
+			Namespace: testNamespace,
+			Labels: map[string]string{
+				"hypershift.openshift.io/core-ignition-config": "true",
+			},
+		},
+	}
 
 	karpenterTaintConfig := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
@@ -207,7 +216,7 @@ kind: Config`),
 
 	fakeManagementClient := fake.NewClientBuilder().
 		WithScheme(scheme).
-		WithObjects(hcp, pullSecret, kubeconfigSecret, coreConfig1, coreConfig2, karpenterTaintConfig, ignitionServerCACert).
+		WithObjects(hcp, pullSecret, kubeconfigSecret, coreConfig1, coreConfig2, coreConfig3, karpenterTaintConfig, ignitionServerCACert).
 		Build()
 
 	fakeGuestClient := fake.NewClientBuilder().
@@ -478,6 +487,12 @@ kind: Config`),
 			&corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "core-ignition-config-2", Namespace: testNamespace,
+					Labels: map[string]string{"hypershift.openshift.io/core-ignition-config": "true"},
+				},
+			},
+			&corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "core-ignition-config-3", Namespace: testNamespace,
 					Labels: map[string]string{"hypershift.openshift.io/core-ignition-config": "true"},
 				},
 			},

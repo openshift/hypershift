@@ -165,7 +165,7 @@ func TestUpdatingConfigCondition(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := t.Context()
 
-			pullSecret, ignitionServerCACert, machineConfig, ignitionConfig, ignitionConfig2, ignitionConfig3 := setupTestObjects()
+			pullSecret, ignitionServerCACert, machineConfig, ignitionConfig, ignitionConfig2, ignitionConfig3, ignitionConfig4 := setupTestObjects()
 
 			hostedCluster := &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{Name: "cluster-name", Namespace: "myns"},
@@ -189,7 +189,7 @@ func TestUpdatingConfigCondition(t *testing.T) {
 					Name:      "nodepool-name",
 					Namespace: "myns",
 					Annotations: map[string]string{
-						nodePoolAnnotationCurrentConfig: "08e4f890",
+						nodePoolAnnotationCurrentConfig: "1a2800e5",
 					},
 				},
 				Spec: hyperv1.NodePoolSpec{
@@ -217,6 +217,7 @@ func TestUpdatingConfigCondition(t *testing.T) {
 				ignitionConfig,
 				ignitionConfig2,
 				ignitionConfig3,
+				ignitionConfig4,
 			).Build()
 
 			r := &NodePoolReconciler{
@@ -319,7 +320,7 @@ func TestUpdatingVersionCondition(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := t.Context()
 
-			pullSecret, ignitionServerCACert, machineConfig, ignitionConfig, ignitionConfig2, ignitionConfig3 := setupTestObjects()
+			pullSecret, ignitionServerCACert, machineConfig, ignitionConfig, ignitionConfig2, ignitionConfig3, ignitionConfig4 := setupTestObjects()
 
 			hostedCluster := &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{Name: "cluster-name", Namespace: "myns"},
@@ -367,6 +368,7 @@ func TestUpdatingVersionCondition(t *testing.T) {
 				ignitionConfig,
 				ignitionConfig2,
 				ignitionConfig3,
+				ignitionConfig4,
 			).Build()
 
 			r := &NodePoolReconciler{
@@ -404,7 +406,7 @@ func TestUpdatingVersionCondition(t *testing.T) {
 	}
 }
 
-func setupTestObjects() (*corev1.Secret, *corev1.Secret, *corev1.ConfigMap, *corev1.ConfigMap, *corev1.ConfigMap, *corev1.ConfigMap) {
+func setupTestObjects() (*corev1.Secret, *corev1.Secret, *corev1.ConfigMap, *corev1.ConfigMap, *corev1.ConfigMap, *corev1.ConfigMap, *corev1.ConfigMap) {
 	coreMachineConfig := `
 apiVersion: machineconfiguration.openshift.io/v1
 kind: MachineConfig
@@ -471,6 +473,18 @@ spec:
 			TokenSecretConfigKey: coreMachineConfig,
 		},
 	}
+	ignitionConfig4 := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "core-machineconfig-4",
+			Namespace: "myns-cluster-name",
+			Labels: map[string]string{
+				nodePoolCoreIgnitionConfigLabel: "true",
+			},
+		},
+		Data: map[string]string{
+			TokenSecretConfigKey: coreMachineConfig,
+		},
+	}
 
 	ignitionServerCACert := ignitionserver.IgnitionCACertSecret("myns-cluster-name")
 	ignitionServerCACert.Data = map[string][]byte{
@@ -484,7 +498,7 @@ spec:
 		},
 	}
 
-	return pullSecret, ignitionServerCACert, machineConfig, ignitionConfig, ignitionConfig2, ignitionConfig3
+	return pullSecret, ignitionServerCACert, machineConfig, ignitionConfig, ignitionConfig2, ignitionConfig3, ignitionConfig4
 }
 
 func setUpDummyMachineSet(nodePool *hyperv1.NodePool, hostedCluster *hyperv1.HostedCluster, machineSetUpgradeFail bool) *v1beta1.MachineSet {
