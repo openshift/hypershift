@@ -14,6 +14,7 @@ import sys
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Set, Tuple
 import subprocess
+import time
 
 # API pagination and limit constants
 GITHUB_CONTRIBUTORS_PER_PAGE = 100
@@ -31,14 +32,6 @@ class RepoFetchError(Exception):
         super().__init__(f"Failed to fetch PRs from {repo}: {message}" if message else
                          f"Failed to fetch PRs from {repo}")
 
-
-# HyperShift-related paths in openshift/release repository
-HYPERSHIFT_RELEASE_PATHS = [
-    'ci-operator/config/openshift/hypershift/',
-    'ci-operator/jobs/openshift/hypershift/',
-    'ci-operator/step-registry/hypershift/',
-    'clusters/app.ci/openshift/hypershift/',
-]
 
 # Default report period
 DEFAULT_DAYS_AGO = 7
@@ -148,7 +141,7 @@ class JiraClient:
                             print(f"  Rate limited {MAX_RETRIES} times, giving up on {url}")
                             return None
                         print("  Rate limited! Waiting 30 seconds...")
-                        await asyncio.sleep(30)
+                        time.sleep(30)
                         return await self._fetch_json(url, json_body=json_body, _retry_count=_retry_count + 1)
                     else:
                         return None
@@ -346,6 +339,7 @@ class JiraClient:
             epic_key = epic_summary = epic_description = None
             feature_key = feature_summary = None
 
+            effective_priority = data.get('priority')
             seen = {key}
             current = data
             while current.get('parentKey') and current['parentKey'] not in seen:
@@ -357,6 +351,9 @@ class JiraClient:
 
                 ptype = parent.get('typeName', '')
                 plevel = parent.get('hierarchyLevel')
+
+                if not effective_priority:
+                    effective_priority = parent.get('priority')
 
                 if (plevel == 1 or ptype == 'Epic') and not epic_key:
                     epic_key = pk
@@ -372,7 +369,7 @@ class JiraClient:
                 'summary': data.get('summary', ''),
                 'description': data.get('description', ''),
                 'labels': data.get('labels', []),
-                'priority': data.get('priority'),
+                'priority': effective_priority,
                 'status': data.get('status'),
                 'epic': epic_key,
                 'epicSummary': epic_summary,
@@ -402,8 +399,13 @@ class PRReportGenerator:
         self.hypershift_authors: Set[str] = set()
         self.repo_fetch_status: Dict[str, str] = {}  # repo -> "ok" | "failed"
 
-    # Bot authors to tag in release repo PRs
-    RELEASE_BOT_AUTHORS = {'renovate[bot]', 'dependabot[bot]'}
+    BOT_PATTERNS = ['-bot', '-robot', '[bot]']
+    BOT_LOGINS = {'coderabbitai', 'hypershift-jira-solve-ci'}
+
+    @classmethod
+    def is_bot(cls, login: str) -> bool:
+        login_lower = login.lower()
+        return login_lower in cls.BOT_LOGINS or any(p in login_lower for p in cls.BOT_PATTERNS)
 
     async def _github_graphql_request(self, session, query: str, variables: Dict,
                                        headers: Dict, max_retries: int = 3) -> Optional[Dict]:
@@ -442,19 +444,19 @@ class PRReportGenerator:
                     if response.status_code in (403, 429):
                         retry_after = int(response.headers.get('Retry-After', 60))
                         print(f"  Rate limited (HTTP {response.status_code}), waiting {retry_after}s...")
-                        await asyncio.sleep(retry_after)
+                        time.sleep(retry_after)
                         continue
                     if response.status_code != 200:
                         print(f"  GitHub API returned {response.status_code}")
                         if attempt < max_retries:
-                            await asyncio.sleep(2)
+                            time.sleep(2)
                             continue
                         return None
                     return response.json()
             except Exception as e:
                 print(f"  Request error: {e}")
                 if attempt < max_retries:
-                    await asyncio.sleep(2)
+                    time.sleep(2)
                     continue
                 return None
         return None
@@ -584,7 +586,14 @@ class PRReportGenerator:
             while True:
                 variables = {"searchQuery": search_query, "cursor": cursor}
                 data = await self._github_graphql_request(session, query, variables, headers)
-                if not data or 'data' not in data or not data['data']['search']:
+                if not data:
+                    break
+
+                if 'errors' in data:
+                    print(f"GraphQL errors: {data['errors']}")
+                    break
+
+                if 'data' not in data or not data['data']['search']:
                     break
 
                 got_any_page = True
@@ -739,7 +748,7 @@ class PRReportGenerator:
                             pr_data = self._process_pr_data(pr, f"{repo_owner}/{repo_name}")
                             # Tag bot-authored PRs
                             author = pr.get('author', {}).get('login', '') if pr.get('author') else ''
-                            if author in self.RELEASE_BOT_AUTHORS:
+                            if self.is_bot(author):
                                 pr_data['is_bot'] = True
                                 bot_count += 1
                             prs.append(pr_data)
@@ -747,7 +756,7 @@ class PRReportGenerator:
                             if await check_remaining_files_async(session, pr['number']):
                                 pr_data = self._process_pr_data(pr, f"{repo_owner}/{repo_name}")
                                 author = pr.get('author', {}).get('login', '') if pr.get('author') else ''
-                                if author in self.RELEASE_BOT_AUTHORS:
+                                if self.is_bot(author):
                                     pr_data['is_bot'] = True
                                     bot_count += 1
                                 prs.append(pr_data)
@@ -1106,7 +1115,7 @@ class PRReportGenerator:
             f.write(f"- Total unique reviewers: {len(all_reviewers)}\n")
             f.write("- Most active reviewers:\n")
             for reviewer, count in sorted(all_reviewers.items(), key=lambda x: x[1], reverse=True)[:5]:
-                bot_marker = " (bot)" if reviewer.lower() in ['coderabbitai', 'dependabot', 'renovate'] else ""
+                bot_marker = " (bot)" if self.is_bot(reviewer) else ""
                 f.write(f"  - @{reviewer}: {count} PRs{bot_marker}\n")
             f.write("\n")
 
@@ -1580,9 +1589,6 @@ class PRReportGenerator:
             'Undefined': 5,
         }
 
-        # Bot patterns to detect automated PRs
-        bot_patterns = ['bot', 'robot', 'renovate', 'dependabot']
-
         scored_prs = []
 
         for pr in self.prs:
@@ -1593,14 +1599,12 @@ class PRReportGenerator:
             topic = self._get_pr_topic(pr)
             priority = self._get_pr_jira_priority(pr)
 
-            # Score based on Jira ticket priority
-            for ticket in pr.get('jiraTickets', []):
-                if ticket in self.jira_hierarchy:
-                    ticket_priority = self.jira_hierarchy[ticket].get('priority', 'Undefined')
-                    pscore = priority_scores.get(ticket_priority, 5)
-                    score += pscore
-                    if pscore >= 50:
-                        reasons.append(ticket_priority)
+            # Score based on highest Jira ticket priority (once per PR)
+            if priority != '-':
+                pscore = priority_scores.get(priority, 5)
+                score += pscore
+                if pscore >= 50:
+                    reasons.append(priority)
 
             # Bonus for SDK/API/migration work (significant changes)
             title_lower = pr.get('title', '').lower()
@@ -1627,9 +1631,7 @@ class PRReportGenerator:
 
             # For release repo, prefer non-bot PRs (manual CI changes)
             if pr['repo'] == 'openshift/release':
-                author_lower = pr.get('author', '').lower()
-                is_bot = any(bot in author_lower for bot in bot_patterns)
-                if not is_bot:
+                if not self.is_bot(pr.get('author', '')):
                     score += 10
                     reasons.append('manual-CI')
 
@@ -1805,6 +1807,14 @@ class PRReportGenerator:
         print(f"Wrote {written} per-PR JSON files to {output_dir}/")
 
 
+def _valid_date(value: str) -> str:
+    try:
+        datetime.strptime(value, '%Y-%m-%d')
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"Invalid date: {value}. Use YYYY-MM-DD format.")
+    return value
+
+
 def parse_args():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(
@@ -1843,12 +1853,14 @@ Scoring criteria (higher = more important):
     parser.add_argument(
         'since_date',
         nargs='?',
+        type=_valid_date,
         default=(datetime.now() - timedelta(days=DEFAULT_DAYS_AGO)).strftime('%Y-%m-%d'),
         help='Start date in YYYY-MM-DD format (default: 7 days ago)'
     )
     parser.add_argument(
         '--end',
         dest='end_date',
+        type=_valid_date,
         default=datetime.now().strftime('%Y-%m-%d'),
         help='End date in YYYY-MM-DD format (default: today)'
     )
@@ -1885,7 +1897,6 @@ Scoring criteria (higher = more important):
 
 
 async def main():
-    import time
     start_time = time.time()
 
     args = parse_args()
@@ -1950,7 +1961,8 @@ async def main():
         if pr_list:
             print(f"\nFetching diffs for {len(pr_list)} PRs...")
             diffs = await generator.fetch_pr_diffs(pr_list)
-            generator.write_deep_pr_files(diffs)
+            deep_dir = os.path.join(output_dir, 'pr_deep')
+            generator.write_deep_pr_files(diffs, output_dir=deep_dir)
 
             # Print deep analysis summary
             successful = {k: v for k, v in diffs.items() if 'error' not in v}
@@ -1973,9 +1985,4 @@ async def main():
 
 
 if __name__ == '__main__':
-    if HAS_AIOHTTP:
-        asyncio.run(main())
-    else:
-        # Python 3.6 compatibility
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(main())
+    asyncio.run(main())

@@ -200,7 +200,9 @@ community members following the project.]
 
 ## Notable PRs
 
-[Deep-dive on 3-5 high-impact PRs. For each:]
+[Deep-dive on 3-5 high-impact PRs, selected by highest importance score from the
+`$OUTPUT_DIR/pr_scored.json` output (Jira priority, SDK/API changes, bug fixes,
+manual CI work). For each:]
 
 ### PR #XXXX: [Title]
 
