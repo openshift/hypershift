@@ -44,9 +44,63 @@ const (
 func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, log logr.Logger, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, version semver.Version, controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel bool) error {
 	controlPlaneNamespaceName := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 
-	// Reconcile openshift-ingress Network Policy.
-	// Only needed when routes are served by the management cluster's default ingress controller,
-	// i.e., when routes are NOT labeled for the HCP router.
+	if err := r.reconcileIngressNetworkPolicy(ctx, createOrUpdate, hcp, controlPlaneNamespaceName); err != nil {
+		return err
+	}
+
+	policy := networkpolicy.SameNamespaceNetworkPolicy(controlPlaneNamespaceName)
+	if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
+		return reconcileSameNamespaceNetworkPolicy(policy)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile same namespace network policy: %w", err)
+	}
+
+	managementClusterNetwork, err := r.getManagementClusterNetwork(ctx)
+	if err != nil {
+		return err
+	}
+
+	policy = networkpolicy.KASNetworkPolicy(controlPlaneNamespaceName)
+	if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
+		return reconcileKASNetworkPolicy(policy, hcluster, r.ManagementClusterCapabilities.Has(capabilities.CapabilityDNS), managementClusterNetwork)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile kube-apiserver network policy: %w", err)
+	}
+
+	//nolint:staticcheck // SA1019: corev1.Endpoints is intentionally used for backward compatibility
+	kubernetesEndpoint := &corev1.Endpoints{ObjectMeta: metav1.ObjectMeta{Name: "kubernetes", Namespace: "default"}}
+	if err := r.Get(ctx, client.ObjectKeyFromObject(kubernetesEndpoint), kubernetesEndpoint); err != nil {
+		return fmt.Errorf("failed to get management cluster network config: %w", err)
+	}
+
+	if err := r.reconcileManagementKASPolicies(ctx, createOrUpdate, hcluster, hcp, controlPlaneNamespaceName, managementClusterNetwork, kubernetesEndpoint, controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel); err != nil {
+		return err
+	}
+
+	if sharedingress.UseSharedIngress() {
+		policy := networkpolicy.SharedIngressNetworkPolicy(controlPlaneNamespaceName)
+		if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
+			return reconcileSharedIngressNetworkPolicy(policy, hcluster)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile sharedingress network policy: %w", err)
+		}
+	}
+
+	policy = networkpolicy.OpenshiftMonitoringNetworkPolicy(controlPlaneNamespaceName)
+	if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
+		return reconcileOpenshiftMonitoringNetworkPolicy(policy, hcluster)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile monitoring network policy: %w", err)
+	}
+
+	if err := r.reconcilePlatformNetworkPolicies(ctx, log, createOrUpdate, hcluster, kubernetesEndpoint, managementClusterNetwork, version, controlPlaneNamespaceName); err != nil {
+		return err
+	}
+
+	return r.reconcileServiceNetworkPolicies(ctx, createOrUpdate, hcluster, controlPlaneNamespaceName)
+}
+
+func (r *HostedClusterReconciler) reconcileIngressNetworkPolicy(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcp *hyperv1.HostedControlPlane, controlPlaneNamespaceName string) error {
 	policy := networkpolicy.OpenshiftIngressNetworkPolicy(controlPlaneNamespaceName)
 	if !netutil.LabelHCPRoutes(hcp) {
 		if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
@@ -59,84 +113,50 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 			return fmt.Errorf("failed to delete ingress network policy: %w", err)
 		}
 	}
+	return nil
+}
 
-	// Reconcile same-namespace Network Policy
-	policy = networkpolicy.SameNamespaceNetworkPolicy(controlPlaneNamespaceName)
-	if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
-		return reconcileSameNamespaceNetworkPolicy(policy)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile same namespace network policy: %w", err)
+func (r *HostedClusterReconciler) getManagementClusterNetwork(ctx context.Context) (*configv1.Network, error) {
+	if !r.ManagementClusterCapabilities.Has(capabilities.CapabilityNetworks) {
+		return nil, nil
+	}
+	managementClusterNetwork := &configv1.Network{ObjectMeta: metav1.ObjectMeta{Name: "cluster"}}
+	if err := r.Get(ctx, client.ObjectKeyFromObject(managementClusterNetwork), managementClusterNetwork); err != nil {
+		return nil, fmt.Errorf("failed to get management cluster network config: %w", err)
+	}
+	return managementClusterNetwork, nil
+}
+
+//nolint:staticcheck // SA1019: corev1.Endpoints is intentionally used for backward compatibility
+func (r *HostedClusterReconciler) reconcileManagementKASPolicies(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, controlPlaneNamespaceName string, managementClusterNetwork *configv1.Network, kubernetesEndpoint *corev1.Endpoints, controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel bool) error {
+	if !controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel || hcluster.Spec.Platform.Type != hyperv1.AWSPlatform {
+		return nil
 	}
 
-	// Reconcile KAS Network Policy
-	var managementClusterNetwork *configv1.Network
-	if r.ManagementClusterCapabilities.Has(capabilities.CapabilityNetworks) {
-		managementClusterNetwork = &configv1.Network{ObjectMeta: metav1.ObjectMeta{Name: "cluster"}}
-		if err := r.Get(ctx, client.ObjectKeyFromObject(managementClusterNetwork), managementClusterNetwork); err != nil {
-			return fmt.Errorf("failed to get management cluster network config: %w", err)
-		}
-	}
-	policy = networkpolicy.KASNetworkPolicy(controlPlaneNamespaceName)
+	policy := networkpolicy.ManagementKASNetworkPolicy(controlPlaneNamespaceName)
 	if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
-		return reconcileKASNetworkPolicy(policy, hcluster, r.ManagementClusterCapabilities.Has(capabilities.CapabilityDNS), managementClusterNetwork)
+		return reconcileManagementKASNetworkPolicy(policy, managementClusterNetwork, kubernetesEndpoint, r.ManagementClusterCapabilities.Has(capabilities.CapabilityDNS))
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile kube-apiserver network policy: %w", err)
 	}
 
-	// Reconcile management KAS network policy
-	//nolint:staticcheck // SA1019: corev1.Endpoints is intentionally used for backward compatibility
-	kubernetesEndpoint := &corev1.Endpoints{ObjectMeta: metav1.ObjectMeta{Name: "kubernetes", Namespace: "default"}}
-	if err := r.Get(ctx, client.ObjectKeyFromObject(kubernetesEndpoint), kubernetesEndpoint); err != nil {
-		return fmt.Errorf("failed to get management cluster network config: %w", err)
-	}
-
-	// ManagementKASNetworkPolicy restricts traffic for pods unless they have a known annotation.
-	if controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel && hcluster.Spec.Platform.Type == hyperv1.AWSPlatform {
-		policy = networkpolicy.ManagementKASNetworkPolicy(controlPlaneNamespaceName)
+	enableMetricsAccess := r.EnableCVOManagementClusterMetricsAccess || (os.Getenv(rhobsmonitoring.EnvironmentVariable) == "1" && awsutil.IsROSAHCP(hcp))
+	if enableMetricsAccess {
+		policy = networkpolicy.MetricsServerNetworkPolicy(controlPlaneNamespaceName)
 		if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
-			return reconcileManagementKASNetworkPolicy(policy, managementClusterNetwork, kubernetesEndpoint, r.ManagementClusterCapabilities.Has(capabilities.CapabilityDNS))
+			return reconcileMetricsServerNetworkPolicy(policy, hcp)
 		}); err != nil {
-			return fmt.Errorf("failed to reconcile kube-apiserver network policy: %w", err)
-		}
-
-		// Allow egress communication to the HCP metrics server for pods that have a known annotation.
-		// Enable if either RHOBS monitoring is enabled for ROSA HCP or the explicit flag is set.
-		enableMetricsAccess := r.EnableCVOManagementClusterMetricsAccess || (os.Getenv(rhobsmonitoring.EnvironmentVariable) == "1" && awsutil.IsROSAHCP(hcp))
-		if enableMetricsAccess {
-			policy = networkpolicy.MetricsServerNetworkPolicy(controlPlaneNamespaceName)
-			if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
-				return reconcileMetricsServerNetworkPolicy(policy, hcp)
-			}); err != nil {
-				return fmt.Errorf("failed to reconcile metrics server network policy: %w", err)
-			}
+			return fmt.Errorf("failed to reconcile metrics server network policy: %w", err)
 		}
 	}
+	return nil
+}
 
-	if sharedingress.UseSharedIngress() {
-		// Reconcile shared-ingress Network Policy.
-		// Let all ingress from shared-ingress namespace.
-		policy := networkpolicy.SharedIngressNetworkPolicy(controlPlaneNamespaceName)
-		if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
-			return reconcileSharedIngressNetworkPolicy(policy, hcluster)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile sharedingress network policy: %w", err)
-		}
-	}
-
-	// Reconcile openshift-monitoring Network Policy
-	policy = networkpolicy.OpenshiftMonitoringNetworkPolicy(controlPlaneNamespaceName)
-	if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
-		return reconcileOpenshiftMonitoringNetworkPolicy(policy, hcluster)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile monitoring network policy: %w", err)
-	}
-
-	// Reconcile private-router Network Policy
+//nolint:staticcheck // SA1019: corev1.Endpoints is intentionally used for backward compatibility
+func (r *HostedClusterReconciler) reconcilePlatformNetworkPolicies(ctx context.Context, log logr.Logger, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, kubernetesEndpoint *corev1.Endpoints, managementClusterNetwork *configv1.Network, version semver.Version, controlPlaneNamespaceName string) error {
 	switch hcluster.Spec.Platform.Type {
 	case hyperv1.AWSPlatform, hyperv1.AzurePlatform, hyperv1.GCPPlatform:
-		policy = networkpolicy.PrivateRouterNetworkPolicy(controlPlaneNamespaceName)
-		// TODO: Network policy code should move to the control plane operator. For now,
-		// only setup ingress rules (and not egress rules) when version is < 4.14
+		policy := networkpolicy.PrivateRouterNetworkPolicy(controlPlaneNamespaceName)
 		ingressOnly := version.Major == 4 && version.Minor < 14
 		if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
 			return reconcilePrivateRouterNetworkPolicy(policy, hcluster, kubernetesEndpoint, r.ManagementClusterCapabilities.Has(capabilities.CapabilityDNS), managementClusterNetwork, ingressOnly)
@@ -146,152 +166,97 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 	case hyperv1.KubevirtPlatform:
 		if hcluster.Spec.Platform.Kubevirt.Credentials == nil {
 			// Centralized infra: policy targets the control plane namespace on the management cluster
-			policy = networkpolicy.VirtLauncherNetworkPolicy(controlPlaneNamespaceName)
+			policy := networkpolicy.VirtLauncherNetworkPolicy(controlPlaneNamespaceName)
 			if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
 				return reconcileVirtLauncherNetworkPolicy(log, policy, hcluster, managementClusterNetwork)
 			}); err != nil {
 				return fmt.Errorf("failed to reconcile virt launcher policy: %w", err)
 			}
 		} else {
-			// External infra: policy targets the infra namespace on the infrastructure cluster
-			kvInfraClient, err := r.KubevirtInfraClients.DiscoverKubevirtClusterClient(ctx,
-				r.Client,
-				hcluster.Spec.InfraID,
-				hcluster.Spec.Platform.Kubevirt.Credentials,
-				hcluster.Namespace,
-				hcluster.Namespace)
-			if err != nil {
-				return fmt.Errorf("failed to get kubevirt infra client for network policy: %w", err)
-			}
-
-			infraClient := kvInfraClient.GetInfraClient()
-			infraNamespace := kvInfraClient.GetInfraNamespace()
-
-			// networks.config.openshift.io is cluster-scoped, so the infra
-			// kubeconfig needs a ClusterRole with get permission on that
-			// resource. When the permission is missing we still create the
-			// NetworkPolicy but without CIDR-based egress blocking, and
-			// surface the RBAC gap as a condition on the HostedCluster.
-			var infraClusterNetwork *configv1.Network
-			networkObj := &configv1.Network{ObjectMeta: metav1.ObjectMeta{Name: "cluster"}}
-			if err := infraClient.Get(ctx, client.ObjectKeyFromObject(networkObj), networkObj); err != nil {
-				if apierrors.IsForbidden(err) || apierrors.IsNotFound(err) || meta.IsNoMatchError(err) {
-					rbacMsg := fmt.Sprintf(
-						"The external infrastructure kubeconfig lacks permission to read "+
-							"networks.config.openshift.io/cluster. The virt-launcher NetworkPolicy "+
-							"has been created without CIDR-based egress restrictions, resulting in "+
-							"weaker tenant isolation. Grant a ClusterRole with get on "+
-							"networks.config.openshift.io to the infra service account for full isolation. "+
-							"Error: %v", err)
-					log.Info(rbacMsg)
-					meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
-						Type:               string(hyperv1.ValidKubeVirtInfraNetworkPolicyRBAC),
-						Status:             metav1.ConditionFalse,
-						Reason:             hyperv1.InfraClusterNetworkReadFailedReason,
-						ObservedGeneration: hcluster.Generation,
-						Message:            rbacMsg,
-					})
-					emitInfraClusterWarningEvent(ctx, infraClient, infraNamespace, hcluster.Spec.InfraID, rbacMsg, log)
-				} else {
-					return fmt.Errorf("failed to get infrastructure cluster network config: %w", err)
-				}
-			} else {
-				infraClusterNetwork = networkObj
-				meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
-					Type:               string(hyperv1.ValidKubeVirtInfraNetworkPolicyRBAC),
-					Status:             metav1.ConditionTrue,
-					Reason:             hyperv1.AsExpectedReason,
-					ObservedGeneration: hcluster.Generation,
-					Message:            "Infrastructure cluster network configuration is readable; CIDR-based egress restrictions are active.",
-				})
-			}
-
-			policy = networkpolicy.VirtLauncherNetworkPolicy(infraNamespace)
-			if _, err := createOrUpdate(ctx, infraClient, policy, func() error {
-				return reconcileVirtLauncherNetworkPolicyExternalInfra(log, policy, hcluster, infraClusterNetwork)
-			}); err != nil {
-				if apierrors.IsForbidden(err) {
-					rbacMsg := fmt.Sprintf(
-						"Unable to create/update virt-launcher NetworkPolicy on the infrastructure cluster: "+
-							"the external infra kubeconfig lacks networking.k8s.io/networkpolicies permissions. "+
-							"Grant create/update/get/list/watch on networkpolicies in the infra namespace. "+
-							"Error: %v", err)
-					log.Info(rbacMsg)
-					meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
-						Type:               string(hyperv1.ValidKubeVirtInfraNetworkPolicyRBAC),
-						Status:             metav1.ConditionFalse,
-						Reason:             hyperv1.InfraClusterNetworkPolicyCreateFailedReason,
-						ObservedGeneration: hcluster.Generation,
-						Message:            rbacMsg,
-					})
-					emitInfraClusterWarningEvent(ctx, infraClient, infraNamespace, hcluster.Spec.InfraID, rbacMsg, log)
-				} else {
-					return fmt.Errorf("failed to reconcile virt launcher policy on external infra: %w", err)
-				}
+			// External infra (credentials != nil): policy targets the infra namespace on the infrastructure cluster
+			if err := r.reconcileExternalInfraVirtLauncherPolicy(ctx, log, createOrUpdate, hcluster); err != nil {
+				return err
 			}
 		}
 	}
+	return nil
+}
 
+func (r *HostedClusterReconciler) reconcileServiceNetworkPolicies(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, controlPlaneNamespaceName string) error {
 	for _, svc := range hcluster.Spec.Services {
 		switch svc.Service {
 		case hyperv1.OAuthServer:
-			if svc.ServicePublishingStrategy.Type == hyperv1.NodePort {
-				// Reconcile nodeport-oauth Network Policy
-				policy = networkpolicy.NodePortOauthNetworkPolicy(controlPlaneNamespaceName)
-				if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
-					return reconcileNodePortOauthNetworkPolicy(policy, hcluster)
-				}); err != nil {
-					return fmt.Errorf("failed to reconcile oauth server nodeport network policy: %w", err)
-				}
-			}
-			if svc.ServicePublishingStrategy.Type == hyperv1.LoadBalancer {
-				// Reconcile loadbalancer-oauth Network Policy
-				policy = networkpolicy.LoadBalancerOauthNetworkPolicy(controlPlaneNamespaceName)
-				if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
-					return reconcileLoadBalancerOauthNetworkPolicy(policy)
-				}); err != nil {
-					return fmt.Errorf("failed to reconcile oauth server loadbalancer network policy: %w", err)
-				}
+			if err := r.reconcileOAuthNetworkPolicies(ctx, createOrUpdate, hcluster, svc, controlPlaneNamespaceName); err != nil {
+				return err
 			}
 		case hyperv1.Ignition:
-			if svc.ServicePublishingStrategy.Type == hyperv1.NodePort {
-				// Reconcile nodeport-ignition Network Policy
-				policy = networkpolicy.NodePortIgnitionNetworkPolicy(controlPlaneNamespaceName)
-				if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
-					return reconcileNodePortIgnitionNetworkPolicy(policy, hcluster)
-				}); err != nil {
-					return fmt.Errorf("failed to reconcile ignition nodeport network policy: %w", err)
-				}
-				// Reconcile nodeport-ignition-proxy Network Policy
-				policy = networkpolicy.NodePortIgnitionProxyNetworkPolicy(controlPlaneNamespaceName)
-				if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
-					return reconcileNodePortIgnitionProxyNetworkPolicy(policy, hcluster)
-				}); err != nil {
-					return fmt.Errorf("failed to reconcile ignition proxy nodeport network policy: %w", err)
-				}
+			if err := r.reconcileIgnitionNetworkPolicies(ctx, createOrUpdate, hcluster, svc, controlPlaneNamespaceName); err != nil {
+				return err
 			}
 		case hyperv1.Konnectivity:
-			if svc.ServicePublishingStrategy.Type == hyperv1.NodePort {
-				// Reconcile nodeport-konnectivity Network Policy
-				policy = networkpolicy.NodePortKonnectivityNetworkPolicy(controlPlaneNamespaceName)
-				if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
-					return reconcileNodePortKonnectivityNetworkPolicy(policy, hcluster)
-				}); err != nil {
-					return fmt.Errorf("failed to reconcile konnectivity nodeport network policy: %w", err)
-				}
-
-				// Reconcile nodeport-konnectivity Network Policy when konnectivity is hosted in the kas pod
-				policy = networkpolicy.NodePortKonnectivityKASNetworkPolicy(controlPlaneNamespaceName)
-				if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
-					return reconcileNodePortKonnectivityKASNetworkPolicy(policy, hcluster)
-				}); err != nil {
-					return fmt.Errorf("failed to reconcile konnectivity nodeport network policy: %w", err)
-				}
-
+			if err := r.reconcileKonnectivityNetworkPolicies(ctx, createOrUpdate, hcluster, svc, controlPlaneNamespaceName); err != nil {
+				return err
 			}
 		}
 	}
+	return nil
+}
 
+func (r *HostedClusterReconciler) reconcileOAuthNetworkPolicies(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, svc hyperv1.ServicePublishingStrategyMapping, controlPlaneNamespaceName string) error {
+	if svc.ServicePublishingStrategy.Type == hyperv1.NodePort {
+		policy := networkpolicy.NodePortOauthNetworkPolicy(controlPlaneNamespaceName)
+		if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
+			return reconcileNodePortOauthNetworkPolicy(policy, hcluster)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile oauth server nodeport network policy: %w", err)
+		}
+	}
+	if svc.ServicePublishingStrategy.Type == hyperv1.LoadBalancer {
+		policy := networkpolicy.LoadBalancerOauthNetworkPolicy(controlPlaneNamespaceName)
+		if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
+			return reconcileLoadBalancerOauthNetworkPolicy(policy)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile oauth server loadbalancer network policy: %w", err)
+		}
+	}
+	return nil
+}
+
+func (r *HostedClusterReconciler) reconcileIgnitionNetworkPolicies(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, svc hyperv1.ServicePublishingStrategyMapping, controlPlaneNamespaceName string) error {
+	if svc.ServicePublishingStrategy.Type != hyperv1.NodePort {
+		return nil
+	}
+	policy := networkpolicy.NodePortIgnitionNetworkPolicy(controlPlaneNamespaceName)
+	if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
+		return reconcileNodePortIgnitionNetworkPolicy(policy, hcluster)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile ignition nodeport network policy: %w", err)
+	}
+	policy = networkpolicy.NodePortIgnitionProxyNetworkPolicy(controlPlaneNamespaceName)
+	if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
+		return reconcileNodePortIgnitionProxyNetworkPolicy(policy, hcluster)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile ignition proxy nodeport network policy: %w", err)
+	}
+	return nil
+}
+
+func (r *HostedClusterReconciler) reconcileKonnectivityNetworkPolicies(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, svc hyperv1.ServicePublishingStrategyMapping, controlPlaneNamespaceName string) error {
+	if svc.ServicePublishingStrategy.Type != hyperv1.NodePort {
+		return nil
+	}
+	policy := networkpolicy.NodePortKonnectivityNetworkPolicy(controlPlaneNamespaceName)
+	if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
+		return reconcileNodePortKonnectivityNetworkPolicy(policy, hcluster)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile konnectivity nodeport network policy: %w", err)
+	}
+	policy = networkpolicy.NodePortKonnectivityKASNetworkPolicy(controlPlaneNamespaceName)
+	if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
+		return reconcileNodePortKonnectivityKASNetworkPolicy(policy, hcluster)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile konnectivity nodeport network policy: %w", err)
+	}
 	return nil
 }
 
@@ -684,16 +649,6 @@ func reconcileVirtLauncherNetworkPolicy(log logr.Logger, policy *networkingv1.Ne
 	return buildVirtLauncherNetworkPolicyBase(log, policy, hcluster, blockedIPv4Networks, blockedIPv6Networks, controlPlanePeers)
 }
 
-// reconcileVirtLauncherNetworkPolicyExternalInfra builds the virt-launcher
-// NetworkPolicy for deployments where the KubeVirt VMs run on a separate
-// infrastructure cluster. Unlike the centralized variant, this omits egress
-// rules for control-plane pods (kube-apiserver, oauth, ignition-server-proxy)
-// because those pods reside on the management cluster and are reached via
-// external IPs already permitted by the broad 0.0.0.0/0 allow rule.
-//
-// infraClusterNetwork may be nil when the infra kubeconfig lacks cluster-
-// scoped read access to networks.config.openshift.io. In that case the
-// policy is still created but without CIDR-based egress blocking.
 func reconcileVirtLauncherNetworkPolicyExternalInfra(log logr.Logger, policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster, infraClusterNetwork *configv1.Network) error {
 	blockedIPv4Networks := []string{}
 	blockedIPv6Networks := []string{}
@@ -709,9 +664,8 @@ func reconcileVirtLauncherNetworkPolicyExternalInfra(log logr.Logger, policy *ne
 	return buildVirtLauncherNetworkPolicyBase(log, policy, hcluster, blockedIPv4Networks, blockedIPv6Networks, nil)
 }
 
-// buildVirtLauncherNetworkPolicyBase constructs the common virt-launcher
-// NetworkPolicy structure shared by both centralized and external infra
-// deployments. extraEgressPeers are appended to the primary egress rule
+// buildVirtLauncherNetworkPolicyBase constructs the virt-launcher
+// NetworkPolicy structure. extraEgressPeers are appended to the primary egress rule
 // (e.g. control-plane pod selectors for centralized infra).
 func buildVirtLauncherNetworkPolicyBase(log logr.Logger, policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster, blockedIPv4Networks, blockedIPv6Networks []string, extraEgressPeers []networkingv1.NetworkPolicyPeer) error {
 	protocolTCP := corev1.ProtocolTCP
@@ -1063,6 +1017,88 @@ func reconcileMetricsServerNetworkPolicy(policy *networkingv1.NetworkPolicy, hcp
 	}
 
 	return nil
+}
+
+// reconcileExternalInfraVirtLauncherPolicy discovers the KubeVirt infra client
+// and creates/updates the virt-launcher NetworkPolicy on the infrastructure cluster.
+// It handles RBAC errors gracefully by setting status conditions.
+func (r *HostedClusterReconciler) reconcileExternalInfraVirtLauncherPolicy(ctx context.Context, log logr.Logger, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster) error {
+	kvInfraClient, err := r.KubevirtInfraClients.DiscoverKubevirtClusterClient(ctx,
+		r.Client,
+		hcluster.Spec.InfraID,
+		hcluster.Spec.Platform.Kubevirt.Credentials,
+		hcluster.Namespace,
+		hcluster.Namespace)
+	if err != nil {
+		return fmt.Errorf("failed to get kubevirt infra client for network policy: %w", err)
+	}
+
+	infraClient := kvInfraClient.GetInfraClient()
+	infraNamespace := kvInfraClient.GetInfraNamespace()
+
+	infraClusterNetwork := fetchInfraClusterNetwork(ctx, infraClient, hcluster, log)
+
+	policy := networkpolicy.VirtLauncherNetworkPolicy(infraNamespace)
+	if _, err := createOrUpdate(ctx, infraClient, policy, func() error {
+		return reconcileVirtLauncherNetworkPolicyExternalInfra(log, policy, hcluster, infraClusterNetwork)
+	}); err != nil {
+		if apierrors.IsForbidden(err) {
+			rbacMsg := fmt.Sprintf(
+				"Unable to create/update virt-launcher NetworkPolicy on the infrastructure cluster: "+
+					"the external infra kubeconfig lacks networking.k8s.io/networkpolicies permissions. "+
+					"Grant create/update/get/list/watch on networkpolicies in the infra namespace. "+
+					"Error: %v", err)
+			log.Info(rbacMsg)
+			meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
+				Type:               string(hyperv1.ValidKubeVirtInfraNetworkPolicyRBAC),
+				Status:             metav1.ConditionFalse,
+				Reason:             hyperv1.InfraClusterNetworkPolicyCreateFailedReason,
+				ObservedGeneration: hcluster.Generation,
+				Message:            rbacMsg,
+			})
+			emitInfraClusterWarningEvent(ctx, infraClient, infraNamespace, hcluster.Spec.InfraID, rbacMsg, log)
+		} else {
+			return fmt.Errorf("failed to reconcile virt launcher policy on external infra: %w", err)
+		}
+	}
+	return nil
+}
+
+// fetchInfraClusterNetwork reads networks.config.openshift.io/cluster from the
+// infrastructure cluster. When the permission is missing we still allow the
+// NetworkPolicy to be created but without CIDR-based egress blocking, and
+// surface the RBAC gap as a condition on the HostedCluster.
+func fetchInfraClusterNetwork(ctx context.Context, infraClient client.Client, hcluster *hyperv1.HostedCluster, log logr.Logger) *configv1.Network {
+	networkObj := &configv1.Network{ObjectMeta: metav1.ObjectMeta{Name: "cluster"}}
+	if err := infraClient.Get(ctx, client.ObjectKeyFromObject(networkObj), networkObj); err != nil {
+		if apierrors.IsForbidden(err) || apierrors.IsNotFound(err) || meta.IsNoMatchError(err) {
+			rbacMsg := fmt.Sprintf(
+				"The external infrastructure kubeconfig lacks permission to read "+
+					"networks.config.openshift.io/cluster. The virt-launcher NetworkPolicy "+
+					"has been created without CIDR-based egress restrictions, resulting in "+
+					"weaker tenant isolation. Grant a ClusterRole with get on "+
+					"networks.config.openshift.io to the infra service account for full isolation. "+
+					"Error: %v", err)
+			log.Info(rbacMsg)
+			meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
+				Type:               string(hyperv1.ValidKubeVirtInfraNetworkPolicyRBAC),
+				Status:             metav1.ConditionFalse,
+				Reason:             hyperv1.InfraClusterNetworkReadFailedReason,
+				ObservedGeneration: hcluster.Generation,
+				Message:            rbacMsg,
+			})
+			emitInfraClusterWarningEvent(ctx, infraClient, hcluster.Namespace, hcluster.Spec.InfraID, rbacMsg, log)
+		}
+		return nil
+	}
+	meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
+		Type:               string(hyperv1.ValidKubeVirtInfraNetworkPolicyRBAC),
+		Status:             metav1.ConditionTrue,
+		Reason:             hyperv1.AsExpectedReason,
+		ObservedGeneration: hcluster.Generation,
+		Message:            "Infrastructure cluster network configuration is readable; CIDR-based egress restrictions are active.",
+	})
+	return networkObj
 }
 
 // emitInfraClusterWarningEvent creates or updates a warning Event in the

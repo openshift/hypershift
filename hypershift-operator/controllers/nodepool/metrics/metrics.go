@@ -337,81 +337,17 @@ func (c *nodePoolsMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 	defer c.mu.Unlock()
 	ctx := context.Background()
 	currentCollectTime := c.clock.Now()
-	log := ctrllog.Log
 
-	// Data retrieved from objects other than node pools in below loops
-	hclusterPathToData := make(map[string]*hclusterData)
-	machineSetPathToReplicasCount := make(map[string]int32)
-	machineDeploymentPathToReplicasCount := make(map[string]int32)
+	hclusterPathToData := c.collectHostedClusterData(ctx)
+	machineSetPathToReplicasCount := c.collectMachineSetReplicas(ctx)
+	machineDeploymentPathToReplicasCount := c.collectMachineDeploymentReplicas(ctx)
 
-	// Hosted clusters loop
-	{
-		hclusters := &hyperv1.HostedClusterList{}
-
-		if err := c.List(ctx, hclusters); err != nil {
-			log.Error(err, "failed to list hosted clusters while collecting metrics")
-		}
-
-		for k := range hclusters.Items {
-			hcluster := &hclusters.Items[k]
-
-			data := &hclusterData{
-				id:        hcluster.Spec.ClusterID,
-				namespace: hcluster.Namespace,
-				name:      hcluster.Name,
-				platform:  hcluster.Spec.Platform.Type,
-			}
-			// Seed with Karpenter-managed vCPUs from AutoNode status.
-			// Native NodePool vCPUs accumulate on top in the NodePool loop below.
-			if hcluster.Status.AutoNode.VCPUs != nil {
-				data.vCpusCount = *hcluster.Status.AutoNode.VCPUs
-			}
-			hclusterPathToData[hcluster.Namespace+"/"+hcluster.Name] = data
-		}
-	}
-
-	// Machine sets loop
-	{
-		machineSets := &capiv1.MachineSetList{}
-
-		if err := c.List(ctx, machineSets); err != nil {
-			log.Error(err, "failed to list machine sets while collecting metrics")
-		}
-
-		for k := range machineSets.Items {
-			machineSet := &machineSets.Items[k]
-			msPath := machineSet.Namespace + "/" + machineSet.Name
-
-			machineSetPathToReplicasCount[msPath] = *machineSet.Spec.Replicas
-		}
-	}
-
-	// Machine deployments loop
-	{
-		machineDeployments := &capiv1.MachineDeploymentList{}
-
-		if err := c.List(ctx, machineDeployments); err != nil {
-			log.Error(err, "failed to list machine deployments while collecting metrics")
-		}
-
-		for k := range machineDeployments.Items {
-			machineDeployment := &machineDeployments.Items[k]
-			mdPath := machineDeployment.Namespace + "/" + machineDeployment.Name
-
-			machineDeploymentPathToReplicasCount[mdPath] = *machineDeployment.Spec.Replicas
-		}
-	}
-
-	// countByPlatformMetric - init
 	platformToNodePoolsCount := make(map[hyperv1.PlatformType]int)
-
 	for k := range knownPlatforms {
 		platformToNodePoolsCount[knownPlatforms[k]] = 0
 	}
 
-	// countByPlatformAndFailureConditionMetric - init
 	platformToFailureConditionToNodePoolsCount := make(map[hyperv1.PlatformType]*map[string]int)
-
 	for k := range knownPlatforms {
 		platformToFailureConditionToNodePoolsCount[knownPlatforms[k]] = createFailureConditionToNodePoolsCountMap(conditions.ExpectedNodePoolConditions(&hyperv1.NodePool{
 			Spec: hyperv1.NodePoolSpec{
@@ -422,151 +358,179 @@ func (c *nodePoolsMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 		}))
 	}
 
-	// MAIN LOOP - node pools loop
-	{
-		npList := &hyperv1.NodePoolList{}
-
-		if err := c.List(ctx, npList); err != nil {
-			log.Error(err, "failed to list node pools while collecting metrics")
-		}
-
-		for k := range npList.Items {
-			nodePool := &npList.Items[k]
-			hclusterId := ""
-
-			// countByPlatformMetric - aggregation
-			platform := nodePool.Spec.Platform.Type
-			platformToNodePoolsCount[platform] += 1
-
-			// countByPlatformAndFailureConditionMetric - aggregation
-			{
-				knownConditionToExpectedStatus := conditions.ExpectedNodePoolConditions(nodePool)
-				_, isKnownPlatform := platformToFailureConditionToNodePoolsCount[platform]
-
-				if !isKnownPlatform {
-					platformToFailureConditionToNodePoolsCount[platform] = createFailureConditionToNodePoolsCountMap(knownConditionToExpectedStatus)
-				}
-
-				failureConditionToNodePoolsCount := platformToFailureConditionToNodePoolsCount[platform]
-
-				for _, condition := range nodePool.Status.Conditions {
-					expectedStatus, isKnownCondition := knownConditionToExpectedStatus[condition.Type]
-
-					if isKnownCondition && condition.Status != expectedStatus {
-						failureCondPrefix := ""
-
-						if expectedStatus == corev1.ConditionTrue {
-							failureCondPrefix = "not_"
-						}
-
-						failureCondition := failureCondPrefix + condition.Type
-
-						(*failureConditionToNodePoolsCount)[failureCondition] += 1
-					}
-				}
-			}
-
-			if hclusterData := hclusterPathToData[nodePool.Namespace+"/"+nodePool.Spec.ClusterName]; hclusterData != nil {
-				hclusterId = hclusterData.id
-
-				// countByHClusterMetric - aggregation
-				hclusterData.nodePoolsCount += 1
-
-				// vCpusCountByHClusterMetric - aggregation
-				if hclusterData.vCpusCount >= 0 && nodePool.Status.Replicas > 0 {
-					nodeVCpus, err := c.retrieveVCpusDetailsPerNode(ctx, nodePool)
-					if err != nil {
-						hclusterData.vCpusCount = -1
-						hclusterData.vCpusCountErr = err
-					} else {
-						hclusterData.vCpusCount += nodeVCpus * nodePool.Status.Replicas
-					}
-				}
-			}
-
-			// transitionDurationMetric - aggregation
-			for i := range nodePool.Status.Conditions {
-				condition := &nodePool.Status.Conditions[i]
-				if _, isRetained := transitionDurationMetricConditions[condition.Type]; isRetained {
-					if condition.Status == corev1.ConditionTrue {
-						t := condition.LastTransitionTime.Time
-
-						if c.lastCollectTime.Before(t) && (t.Before(currentCollectTime) || t.Equal(currentCollectTime)) {
-							c.transitionDurationMetric.With(map[string]string{"condition": condition.Type}).Observe(t.Sub(nodePool.CreationTimestamp.Time).Seconds())
-						}
-					}
-				}
-			}
-
-			nodePoolLabelValues := []string{nodePool.Namespace, nodePool.Name, hclusterId, nodePool.Spec.ClusterName, string(nodePool.Spec.Platform.Type)}
-
-			// initialRollingOutDurationMetric
-			if nodePool.Status.Version == "" {
-				initializingDuration := c.clock.Since(nodePool.CreationTimestamp.Time).Seconds()
-
-				ch <- prometheus.MustNewConstMetric(
-					initialRollingOutDurationMetricDesc,
-					prometheus.GaugeValue,
-					initializingDuration,
-					nodePoolLabelValues...,
-				)
-			}
-
-			// sizeMetric
-			{
-				var pathToReplicasCount *map[string]int32
-
-				switch nodePool.Spec.Management.UpgradeType {
-				case hyperv1.UpgradeTypeInPlace:
-					// we use machineSet.Spec.Replicas because .Spec.Replicas will not be set if autoscaling is enabled
-					pathToReplicasCount = &machineSetPathToReplicasCount
-				case hyperv1.UpgradeTypeReplace:
-					// we use machineDeployment.Spec.Replicas because .Spec.Replicas will not be set if autoscaling is enabled
-					pathToReplicasCount = &machineDeploymentPathToReplicasCount
-				}
-
-				if pathToReplicasCount != nil {
-					hcpNs := manifests.HostedControlPlaneNamespace(nodePool.Namespace, nodePool.Spec.ClusterName)
-					wishedReplicas := float64((*pathToReplicasCount)[hcpNs+"/"+nodePool.Name])
-
-					ch <- prometheus.MustNewConstMetric(
-						sizeMetricDesc,
-						prometheus.GaugeValue,
-						wishedReplicas,
-						nodePoolLabelValues...,
-					)
-				}
-			}
-
-			// availableReplicasMetric
-			{
-				availableReplicas := float64(nodePool.Status.Replicas)
-
-				ch <- prometheus.MustNewConstMetric(
-					availableReplicasMetricDesc,
-					prometheus.GaugeValue,
-					availableReplicas,
-					nodePoolLabelValues...,
-				)
-			}
-
-			// deletingDurationMetric
-			if !nodePool.DeletionTimestamp.IsZero() {
-				deletingDuration := c.clock.Since(nodePool.DeletionTimestamp.Time).Seconds()
-
-				ch <- prometheus.MustNewConstMetric(
-					deletingDurationMetricDesc,
-					prometheus.GaugeValue,
-					deletingDuration,
-					nodePoolLabelValues...,
-				)
-			}
-		}
+	npList := &hyperv1.NodePoolList{}
+	if err := c.List(ctx, npList); err != nil {
+		ctrllog.Log.Error(err, "failed to list node pools while collecting metrics")
 	}
 
-	// AGGREGATED METRICS
+	for k := range npList.Items {
+		nodePool := &npList.Items[k]
+		hclusterId := ""
 
-	// countByPlatformMetric
+		platform := nodePool.Spec.Platform.Type
+		platformToNodePoolsCount[platform] += 1
+
+		c.aggregateFailureConditions(nodePool, platform, platformToFailureConditionToNodePoolsCount)
+
+		if hcData := hclusterPathToData[nodePool.Namespace+"/"+nodePool.Spec.ClusterName]; hcData != nil {
+			hclusterId = hcData.id
+			hcData.nodePoolsCount += 1
+			c.aggregateVCpus(ctx, nodePool, hcData)
+		}
+
+		c.observeTransitionDurations(nodePool, currentCollectTime)
+
+		nodePoolLabelValues := []string{nodePool.Namespace, nodePool.Name, hclusterId, nodePool.Spec.ClusterName, string(nodePool.Spec.Platform.Type)}
+		c.collectPerNodePoolMetrics(ch, nodePool, nodePoolLabelValues, machineSetPathToReplicasCount, machineDeploymentPathToReplicasCount)
+	}
+
+	c.emitAggregatedMetrics(ch, platformToNodePoolsCount, platformToFailureConditionToNodePoolsCount, hclusterPathToData)
+
+	c.transitionDurationMetric.Collect(ch)
+	c.lastCollectTime = currentCollectTime
+}
+
+func (c *nodePoolsMetricsCollector) collectHostedClusterData(ctx context.Context) map[string]*hclusterData {
+	hclusterPathToData := make(map[string]*hclusterData)
+	hclusters := &hyperv1.HostedClusterList{}
+	if err := c.List(ctx, hclusters); err != nil {
+		ctrllog.Log.Error(err, "failed to list hosted clusters while collecting metrics")
+	}
+	for k := range hclusters.Items {
+		hcluster := &hclusters.Items[k]
+		data := &hclusterData{
+			id:        hcluster.Spec.ClusterID,
+			namespace: hcluster.Namespace,
+			name:      hcluster.Name,
+			platform:  hcluster.Spec.Platform.Type,
+		}
+		// Seed with Karpenter-managed vCPUs from AutoNode status.
+		// Native NodePool vCPUs accumulate on top in the NodePool loop below.
+		if hcluster.Status.AutoNode.VCPUs != nil {
+			data.vCpusCount = *hcluster.Status.AutoNode.VCPUs
+		}
+		hclusterPathToData[hcluster.Namespace+"/"+hcluster.Name] = data
+	}
+	return hclusterPathToData
+}
+
+func (c *nodePoolsMetricsCollector) collectMachineSetReplicas(ctx context.Context) map[string]int32 {
+	result := make(map[string]int32)
+	machineSets := &capiv1.MachineSetList{}
+	if err := c.List(ctx, machineSets); err != nil {
+		ctrllog.Log.Error(err, "failed to list machine sets while collecting metrics")
+	}
+	for k := range machineSets.Items {
+		machineSet := &machineSets.Items[k]
+		result[machineSet.Namespace+"/"+machineSet.Name] = *machineSet.Spec.Replicas
+	}
+	return result
+}
+
+func (c *nodePoolsMetricsCollector) collectMachineDeploymentReplicas(ctx context.Context) map[string]int32 {
+	result := make(map[string]int32)
+	machineDeployments := &capiv1.MachineDeploymentList{}
+	if err := c.List(ctx, machineDeployments); err != nil {
+		ctrllog.Log.Error(err, "failed to list machine deployments while collecting metrics")
+	}
+	for k := range machineDeployments.Items {
+		md := &machineDeployments.Items[k]
+		result[md.Namespace+"/"+md.Name] = *md.Spec.Replicas
+	}
+	return result
+}
+
+func (c *nodePoolsMetricsCollector) aggregateFailureConditions(nodePool *hyperv1.NodePool, platform hyperv1.PlatformType, platformMap map[hyperv1.PlatformType]*map[string]int) {
+	knownConditionToExpectedStatus := conditions.ExpectedNodePoolConditions(nodePool)
+	if _, isKnownPlatform := platformMap[platform]; !isKnownPlatform {
+		platformMap[platform] = createFailureConditionToNodePoolsCountMap(knownConditionToExpectedStatus)
+	}
+	failureConditionToNodePoolsCount := platformMap[platform]
+	for _, condition := range nodePool.Status.Conditions {
+		expectedStatus, isKnownCondition := knownConditionToExpectedStatus[condition.Type]
+		if isKnownCondition && condition.Status != expectedStatus {
+			failureCondPrefix := ""
+			if expectedStatus == corev1.ConditionTrue {
+				failureCondPrefix = "not_"
+			}
+			(*failureConditionToNodePoolsCount)[failureCondPrefix+condition.Type] += 1
+		}
+	}
+}
+
+func (c *nodePoolsMetricsCollector) aggregateVCpus(ctx context.Context, nodePool *hyperv1.NodePool, hcData *hclusterData) {
+	if hcData.vCpusCount >= 0 && nodePool.Status.Replicas > 0 {
+		nodeVCpus, err := c.retrieveVCpusDetailsPerNode(ctx, nodePool)
+		if err != nil {
+			hcData.vCpusCount = -1
+			hcData.vCpusCountErr = err
+		} else {
+			hcData.vCpusCount += nodeVCpus * nodePool.Status.Replicas
+		}
+	}
+}
+
+func (c *nodePoolsMetricsCollector) observeTransitionDurations(nodePool *hyperv1.NodePool, currentCollectTime time.Time) {
+	for i := range nodePool.Status.Conditions {
+		condition := &nodePool.Status.Conditions[i]
+		if _, isRetained := transitionDurationMetricConditions[condition.Type]; !isRetained {
+			continue
+		}
+		if condition.Status != corev1.ConditionTrue {
+			continue
+		}
+		t := condition.LastTransitionTime.Time
+		if c.lastCollectTime.Before(t) && (t.Before(currentCollectTime) || t.Equal(currentCollectTime)) {
+			c.transitionDurationMetric.With(map[string]string{"condition": condition.Type}).Observe(t.Sub(nodePool.CreationTimestamp.Time).Seconds())
+		}
+	}
+}
+
+func (c *nodePoolsMetricsCollector) collectPerNodePoolMetrics(ch chan<- prometheus.Metric, nodePool *hyperv1.NodePool, labelValues []string, msReplicas, mdReplicas map[string]int32) {
+	if nodePool.Status.Version == "" {
+		ch <- prometheus.MustNewConstMetric(
+			initialRollingOutDurationMetricDesc,
+			prometheus.GaugeValue,
+			c.clock.Since(nodePool.CreationTimestamp.Time).Seconds(),
+			labelValues...,
+		)
+	}
+
+	var pathToReplicasCount *map[string]int32
+	switch nodePool.Spec.Management.UpgradeType {
+	case hyperv1.UpgradeTypeInPlace:
+		pathToReplicasCount = &msReplicas
+	case hyperv1.UpgradeTypeReplace:
+		pathToReplicasCount = &mdReplicas
+	}
+	if pathToReplicasCount != nil {
+		hcpNs := manifests.HostedControlPlaneNamespace(nodePool.Namespace, nodePool.Spec.ClusterName)
+		ch <- prometheus.MustNewConstMetric(
+			sizeMetricDesc,
+			prometheus.GaugeValue,
+			float64((*pathToReplicasCount)[hcpNs+"/"+nodePool.Name]),
+			labelValues...,
+		)
+	}
+
+	ch <- prometheus.MustNewConstMetric(
+		availableReplicasMetricDesc,
+		prometheus.GaugeValue,
+		float64(nodePool.Status.Replicas),
+		labelValues...,
+	)
+
+	if !nodePool.DeletionTimestamp.IsZero() {
+		ch <- prometheus.MustNewConstMetric(
+			deletingDurationMetricDesc,
+			prometheus.GaugeValue,
+			c.clock.Since(nodePool.DeletionTimestamp.Time).Seconds(),
+			labelValues...,
+		)
+	}
+}
+
+func (c *nodePoolsMetricsCollector) emitAggregatedMetrics(ch chan<- prometheus.Metric, platformToNodePoolsCount map[hyperv1.PlatformType]int, platformToFailureConditionToNodePoolsCount map[hyperv1.PlatformType]*map[string]int, hclusterPathToData map[string]*hclusterData) {
 	for platform, nodePoolsCount := range platformToNodePoolsCount {
 		ch <- prometheus.MustNewConstMetric(
 			countByPlatformMetricDesc,
@@ -576,7 +540,6 @@ func (c *nodePoolsMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 		)
 	}
 
-	// countByPlatformAndFailureConditionMetric
 	for platform, failureConditionToNodePoolsCount := range platformToFailureConditionToNodePoolsCount {
 		for failureCondition, nodePoolsCount := range *failureConditionToNodePoolsCount {
 			ch <- prometheus.MustNewConstMetric(
@@ -589,38 +552,27 @@ func (c *nodePoolsMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 		}
 	}
 
-	for _, hclusterData := range hclusterPathToData {
-		hclusterLabelValues := []string{hclusterData.namespace, hclusterData.name, hclusterData.id, string(hclusterData.platform)}
-
-		// countByHClusterMetric
+	for _, hcData := range hclusterPathToData {
+		hclusterLabelValues := []string{hcData.namespace, hcData.name, hcData.id, string(hcData.platform)}
 		ch <- prometheus.MustNewConstMetric(
 			countByHClusterMetricDesc,
 			prometheus.GaugeValue,
-			float64(hclusterData.nodePoolsCount),
+			float64(hcData.nodePoolsCount),
 			hclusterLabelValues...,
 		)
-
-		// vCpusCountByHClusterMetric
 		ch <- prometheus.MustNewConstMetric(
 			vCpusCountByHClusterMetricDesc,
 			prometheus.GaugeValue,
-			float64(hclusterData.vCpusCount),
+			float64(hcData.vCpusCount),
 			hclusterLabelValues...,
 		)
-
-		// vCpusCountByHClusterMetric
-		if hclusterData.vCpusCountErr != nil {
+		if hcData.vCpusCountErr != nil {
 			ch <- prometheus.MustNewConstMetric(
 				vCpusComputationErrorByHClusterMetricDesc,
 				prometheus.GaugeValue,
 				1.0,
-				append(hclusterLabelValues, hclusterData.vCpusCountErr.Error())...,
+				append(hclusterLabelValues, hcData.vCpusCountErr.Error())...,
 			)
 		}
 	}
-
-	// transitionDurationMetric
-	c.transitionDurationMetric.Collect(ch)
-
-	c.lastCollectTime = currentCollectTime
 }

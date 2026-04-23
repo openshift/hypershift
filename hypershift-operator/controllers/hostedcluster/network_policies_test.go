@@ -9,6 +9,8 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/networkpolicy"
+	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
+	"github.com/openshift/hypershift/support/capabilities"
 	fakecapabilities "github.com/openshift/hypershift/support/capabilities/fake"
 	"github.com/openshift/hypershift/support/upsert"
 
@@ -622,6 +624,703 @@ func TestReconcileLoadBalancerOauthNetworkPolicy(t *testing.T) {
 			g.Expect(policy.Spec.Ingress[0].Ports).To(HaveLen(1))
 			g.Expect(policy.Spec.Ingress[0].Ports[0].Port).To(Equal(&expectedPort))
 			g.Expect(policy.Spec.Ingress[0].Ports[0].Protocol).To(Equal(&expectedProtocol))
+		})
+	}
+}
+
+func TestGetManagementClusterNetwork(t *testing.T) {
+	testCases := []struct {
+		name          string
+		capabilities  fakecapabilities.FakeCapabilitiesSupportAllExcept
+		objects       []client.Object
+		expectNetwork bool
+		expectError   bool
+		expectedName  string
+	}{
+		{
+			name:          "When CapabilityNetworks is not supported, it should return nil",
+			capabilities:  fakecapabilities.FakeCapabilitiesSupportAllExcept{NotSupported: map[capabilities.CapabilityType]struct{}{capabilities.CapabilityNetworks: {}}},
+			objects:       nil,
+			expectNetwork: false,
+		},
+		{
+			name:         "When CapabilityNetworks is supported and network exists, it should return the network",
+			capabilities: fakecapabilities.FakeCapabilitiesSupportAllExcept{NotSupported: map[capabilities.CapabilityType]struct{}{}},
+			objects: []client.Object{
+				&configv1.Network{
+					ObjectMeta: metav1.ObjectMeta{Name: "cluster"},
+					Spec: configv1.NetworkSpec{
+						ClusterNetwork: []configv1.ClusterNetworkEntry{{CIDR: "10.128.0.0/14"}},
+					},
+				},
+			},
+			expectNetwork: true,
+			expectedName:  "cluster",
+		},
+		{
+			name:         "When CapabilityNetworks is supported but network does not exist, it should return an error",
+			capabilities: fakecapabilities.FakeCapabilitiesSupportAllExcept{NotSupported: map[capabilities.CapabilityType]struct{}{}},
+			objects:      nil,
+			expectError:  true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			scheme := runtime.NewScheme()
+			g.Expect(corev1.AddToScheme(scheme)).To(Succeed())
+			g.Expect(configv1.AddToScheme(scheme)).To(Succeed())
+
+			builder := fake.NewClientBuilder().WithScheme(scheme)
+			if tc.objects != nil {
+				builder = builder.WithObjects(tc.objects...)
+			}
+			fakeClient := builder.Build()
+
+			reconciler := &HostedClusterReconciler{
+				Client:                        fakeClient,
+				ManagementClusterCapabilities: &tc.capabilities,
+			}
+
+			network, err := reconciler.getManagementClusterNetwork(t.Context())
+
+			if tc.expectError {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+			}
+
+			if tc.expectNetwork {
+				g.Expect(network).ToNot(BeNil())
+				g.Expect(network.Name).To(Equal(tc.expectedName))
+			} else if !tc.expectError {
+				g.Expect(network).To(BeNil())
+			}
+		})
+	}
+}
+
+func TestReconcileManagementKASPolicies(t *testing.T) {
+	testCases := []struct {
+		name                                                       string
+		platformType                                               hyperv1.PlatformType
+		controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel bool
+		enableCVOManagementClusterMetricsAccess                    bool
+		expectManagementKAS                                        bool
+		expectMetricsServer                                        bool
+	}{
+		{
+			name:         "When label is not applied, it should create no policies",
+			platformType: hyperv1.AWSPlatform,
+			controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel: false,
+			expectManagementKAS: false,
+			expectMetricsServer: false,
+		},
+		{
+			name:         "When platform is not AWS, it should create no policies",
+			platformType: hyperv1.AzurePlatform,
+			controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel: true,
+			expectManagementKAS: false,
+			expectMetricsServer: false,
+		},
+		{
+			name:         "When AWS platform with label applied, it should create management-kas policy",
+			platformType: hyperv1.AWSPlatform,
+			controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel: true,
+			expectManagementKAS: true,
+			expectMetricsServer: false,
+		},
+		{
+			name:         "When AWS platform with label and CVO metrics enabled, it should create both policies",
+			platformType: hyperv1.AWSPlatform,
+			controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel: true,
+			enableCVOManagementClusterMetricsAccess:                    true,
+			expectManagementKAS:                                        true,
+			expectMetricsServer:                                        true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			controlPlaneNamespaceName := "test-cp-ns"
+			hcluster := &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{Type: tc.platformType},
+				},
+			}
+			hcp := &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{Type: tc.platformType},
+				},
+			}
+
+			managementClusterNetwork := &configv1.Network{
+				ObjectMeta: metav1.ObjectMeta{Name: "cluster"},
+				Spec: configv1.NetworkSpec{
+					ClusterNetwork: []configv1.ClusterNetworkEntry{{CIDR: "10.128.0.0/14"}},
+				},
+			}
+
+			//nolint:staticcheck // SA1019: corev1.Endpoints is intentionally used for backward compatibility
+			kubernetesEndpoint := &corev1.Endpoints{
+				ObjectMeta: metav1.ObjectMeta{Name: "kubernetes", Namespace: "default"},
+				//nolint:staticcheck // SA1019: corev1.EndpointSubset is intentionally used for backward compatibility
+				Subsets: []corev1.EndpointSubset{
+					{Addresses: []corev1.EndpointAddress{{IP: "10.0.0.1"}}},
+				},
+			}
+
+			scheme := runtime.NewScheme()
+			g.Expect(corev1.AddToScheme(scheme)).To(Succeed())
+			g.Expect(networkingv1.AddToScheme(scheme)).To(Succeed())
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+
+			reconciler := &HostedClusterReconciler{
+				Client:                                  fakeClient,
+				ManagementClusterCapabilities:           fakecapabilities.NewSupportAllExcept(),
+				EnableCVOManagementClusterMetricsAccess: tc.enableCVOManagementClusterMetricsAccess,
+			}
+
+			createdPolicies := make(map[string]*networkingv1.NetworkPolicy)
+			createOrUpdate := upsert.CreateOrUpdateFN(func(ctx context.Context, c client.Client, obj client.Object, f controllerutil.MutateFn) (controllerutil.OperationResult, error) {
+				netPol, ok := obj.(*networkingv1.NetworkPolicy)
+				if !ok {
+					t.Fatalf("unexpected object type: %T", obj)
+				}
+				if err := f(); err != nil {
+					return controllerutil.OperationResultNone, err
+				}
+				createdPolicies[netPol.Name] = netPol
+				return controllerutil.OperationResultCreated, nil
+			})
+
+			err := reconciler.reconcileManagementKASPolicies(t.Context(), createOrUpdate, hcluster, hcp, controlPlaneNamespaceName, managementClusterNetwork, kubernetesEndpoint, tc.controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			_, hasManagementKAS := createdPolicies["management-kas"]
+			g.Expect(hasManagementKAS).To(Equal(tc.expectManagementKAS), "management-kas policy presence mismatch")
+
+			_, hasMetricsServer := createdPolicies["metrics-server"]
+			g.Expect(hasMetricsServer).To(Equal(tc.expectMetricsServer), "metrics-server policy presence mismatch")
+		})
+	}
+}
+
+func TestReconcilePlatformNetworkPolicies(t *testing.T) {
+	testCases := []struct {
+		name                string
+		platformType        hyperv1.PlatformType
+		kubevirtCredentials *hyperv1.KubevirtPlatformCredentials
+		version             string
+		expectPrivateRouter bool
+		expectVirtLauncher  bool
+		expectIngressOnly   bool
+	}{
+		{
+			name:                "When platform is AWS, it should create private-router policy",
+			platformType:        hyperv1.AWSPlatform,
+			version:             "4.15.0",
+			expectPrivateRouter: true,
+		},
+		{
+			name:                "When platform is Azure, it should create private-router policy",
+			platformType:        hyperv1.AzurePlatform,
+			version:             "4.15.0",
+			expectPrivateRouter: true,
+		},
+		{
+			name:                "When platform is GCP, it should create private-router policy",
+			platformType:        hyperv1.GCPPlatform,
+			version:             "4.15.0",
+			expectPrivateRouter: true,
+		},
+		{
+			name:                "When platform is AWS with version < 4.14, it should create ingress-only private-router policy",
+			platformType:        hyperv1.AWSPlatform,
+			version:             "4.13.0",
+			expectPrivateRouter: true,
+			expectIngressOnly:   true,
+		},
+		{
+			name:               "When platform is KubeVirt without credentials, it should create virt-launcher policy",
+			platformType:       hyperv1.KubevirtPlatform,
+			version:            "4.15.0",
+			expectVirtLauncher: true,
+		},
+		{
+			name:                "When platform is KubeVirt with credentials, it should create virt-launcher policy on external infra",
+			platformType:        hyperv1.KubevirtPlatform,
+			kubevirtCredentials: &hyperv1.KubevirtPlatformCredentials{},
+			version:             "4.15.0",
+			expectVirtLauncher:  true,
+		},
+		{
+			name:                "When platform is IBMCloud, it should not create private-router or virt-launcher policies",
+			platformType:        hyperv1.IBMCloudPlatform,
+			version:             "4.15.0",
+			expectPrivateRouter: false,
+			expectVirtLauncher:  false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			controlPlaneNamespaceName := "test-cp-ns"
+			hcluster := &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{Type: tc.platformType},
+					InfraID:  "test-infra",
+				},
+			}
+			if tc.platformType == hyperv1.KubevirtPlatform {
+				hcluster.Spec.Platform.Kubevirt = &hyperv1.KubevirtPlatformSpec{
+					Credentials: tc.kubevirtCredentials,
+				}
+			}
+
+			managementClusterNetwork := &configv1.Network{
+				ObjectMeta: metav1.ObjectMeta{Name: "cluster"},
+				Spec: configv1.NetworkSpec{
+					ClusterNetwork: []configv1.ClusterNetworkEntry{{CIDR: "10.128.0.0/14"}},
+					ServiceNetwork: []string{"172.30.0.0/16"},
+				},
+			}
+
+			//nolint:staticcheck // SA1019: corev1.Endpoints is intentionally used for backward compatibility
+			kubernetesEndpoint := &corev1.Endpoints{
+				ObjectMeta: metav1.ObjectMeta{Name: "kubernetes", Namespace: "default"},
+				//nolint:staticcheck // SA1019: corev1.EndpointSubset is intentionally used for backward compatibility
+				Subsets: []corev1.EndpointSubset{
+					{Addresses: []corev1.EndpointAddress{{IP: "10.0.0.1"}}},
+				},
+			}
+
+			scheme := runtime.NewScheme()
+			g.Expect(corev1.AddToScheme(scheme)).To(Succeed())
+			g.Expect(networkingv1.AddToScheme(scheme)).To(Succeed())
+			g.Expect(configv1.AddToScheme(scheme)).To(Succeed())
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+
+			reconciler := &HostedClusterReconciler{
+				Client:                        fakeClient,
+				ManagementClusterCapabilities: fakecapabilities.NewSupportAllExcept(),
+			}
+			if tc.kubevirtCredentials != nil {
+				reconciler.KubevirtInfraClients = kvinfra.NewMockKubevirtInfraClientMap(fakeClient, "1.0.0", "1.30.0")
+			}
+
+			createdPolicies := make(map[string]*networkingv1.NetworkPolicy)
+			createOrUpdate := upsert.CreateOrUpdateFN(func(ctx context.Context, c client.Client, obj client.Object, f controllerutil.MutateFn) (controllerutil.OperationResult, error) {
+				netPol, ok := obj.(*networkingv1.NetworkPolicy)
+				if !ok {
+					t.Fatalf("unexpected object type: %T", obj)
+				}
+				if err := f(); err != nil {
+					return controllerutil.OperationResultNone, err
+				}
+				createdPolicies[netPol.Name] = netPol
+				return controllerutil.OperationResultCreated, nil
+			})
+
+			log := ctrl.Log.WithName("test")
+			version := semver.MustParse(tc.version)
+
+			err := reconciler.reconcilePlatformNetworkPolicies(t.Context(), log, createOrUpdate, hcluster, kubernetesEndpoint, managementClusterNetwork, version, controlPlaneNamespaceName)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			_, hasPrivateRouter := createdPolicies["private-router"]
+			g.Expect(hasPrivateRouter).To(Equal(tc.expectPrivateRouter), "private-router policy presence mismatch")
+
+			if tc.expectIngressOnly && hasPrivateRouter {
+				policy := createdPolicies["private-router"]
+				g.Expect(policy.Spec.PolicyTypes).To(Equal([]networkingv1.PolicyType{networkingv1.PolicyTypeIngress}))
+				g.Expect(policy.Spec.Egress).To(BeEmpty())
+			}
+
+			_, hasVirtLauncher := createdPolicies["virt-launcher"]
+			g.Expect(hasVirtLauncher).To(Equal(tc.expectVirtLauncher), "virt-launcher policy presence mismatch")
+		})
+	}
+}
+
+func TestReconcileServiceNetworkPolicies(t *testing.T) {
+	testCases := []struct {
+		name             string
+		services         []hyperv1.ServicePublishingStrategyMapping
+		expectedPolicies []string
+		absentPolicies   []string
+	}{
+		{
+			name: "When OAuth uses NodePort, it should create nodeport-oauth policy",
+			services: []hyperv1.ServicePublishingStrategyMapping{
+				{
+					Service:                   hyperv1.OAuthServer,
+					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.NodePort, NodePort: &hyperv1.NodePortPublishingStrategy{Address: "10.0.0.1"}},
+				},
+			},
+			expectedPolicies: []string{"nodeport-oauth"},
+			absentPolicies:   []string{"loadbalancer-oauth"},
+		},
+		{
+			name: "When OAuth uses LoadBalancer, it should create loadbalancer-oauth policy",
+			services: []hyperv1.ServicePublishingStrategyMapping{
+				{
+					Service:                   hyperv1.OAuthServer,
+					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.LoadBalancer},
+				},
+			},
+			expectedPolicies: []string{"loadbalancer-oauth"},
+			absentPolicies:   []string{"nodeport-oauth"},
+		},
+		{
+			name: "When Ignition uses NodePort, it should create ignition and ignition-proxy policies",
+			services: []hyperv1.ServicePublishingStrategyMapping{
+				{
+					Service:                   hyperv1.Ignition,
+					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.NodePort, NodePort: &hyperv1.NodePortPublishingStrategy{Address: "10.0.0.1"}},
+				},
+			},
+			expectedPolicies: []string{"nodeport-ignition", "nodeport-ignition-proxy"},
+		},
+		{
+			name: "When Ignition uses Route, it should not create ignition policies",
+			services: []hyperv1.ServicePublishingStrategyMapping{
+				{
+					Service:                   hyperv1.Ignition,
+					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.Route},
+				},
+			},
+			absentPolicies: []string{"nodeport-ignition", "nodeport-ignition-proxy"},
+		},
+		{
+			name: "When Konnectivity uses NodePort, it should create konnectivity and konnectivity-kas policies",
+			services: []hyperv1.ServicePublishingStrategyMapping{
+				{
+					Service:                   hyperv1.Konnectivity,
+					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.NodePort, NodePort: &hyperv1.NodePortPublishingStrategy{Address: "10.0.0.1"}},
+				},
+			},
+			expectedPolicies: []string{"nodeport-konnectivity", "nodeport-konnectivity-kas"},
+		},
+		{
+			name: "When Konnectivity uses Route, it should not create konnectivity policies",
+			services: []hyperv1.ServicePublishingStrategyMapping{
+				{
+					Service:                   hyperv1.Konnectivity,
+					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.Route},
+				},
+			},
+			absentPolicies: []string{"nodeport-konnectivity", "nodeport-konnectivity-kas"},
+		},
+		{
+			name: "When multiple services use NodePort, it should create all corresponding policies",
+			services: []hyperv1.ServicePublishingStrategyMapping{
+				{
+					Service:                   hyperv1.OAuthServer,
+					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.NodePort, NodePort: &hyperv1.NodePortPublishingStrategy{Address: "10.0.0.1"}},
+				},
+				{
+					Service:                   hyperv1.Ignition,
+					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.NodePort, NodePort: &hyperv1.NodePortPublishingStrategy{Address: "10.0.0.1"}},
+				},
+				{
+					Service:                   hyperv1.Konnectivity,
+					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.NodePort, NodePort: &hyperv1.NodePortPublishingStrategy{Address: "10.0.0.1"}},
+				},
+			},
+			expectedPolicies: []string{"nodeport-oauth", "nodeport-ignition", "nodeport-ignition-proxy", "nodeport-konnectivity", "nodeport-konnectivity-kas"},
+		},
+		{
+			name:           "When no services are specified, it should create no service policies",
+			services:       []hyperv1.ServicePublishingStrategyMapping{},
+			absentPolicies: []string{"nodeport-oauth", "loadbalancer-oauth", "nodeport-ignition", "nodeport-ignition-proxy", "nodeport-konnectivity", "nodeport-konnectivity-kas"},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			controlPlaneNamespaceName := "test-cp-ns"
+			hcluster := &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+					Services: tc.services,
+				},
+			}
+
+			scheme := runtime.NewScheme()
+			g.Expect(corev1.AddToScheme(scheme)).To(Succeed())
+			g.Expect(networkingv1.AddToScheme(scheme)).To(Succeed())
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+
+			reconciler := &HostedClusterReconciler{
+				Client:                        fakeClient,
+				ManagementClusterCapabilities: fakecapabilities.NewSupportAllExcept(),
+			}
+
+			createdPolicies := make(map[string]*networkingv1.NetworkPolicy)
+			createOrUpdate := upsert.CreateOrUpdateFN(func(ctx context.Context, c client.Client, obj client.Object, f controllerutil.MutateFn) (controllerutil.OperationResult, error) {
+				netPol, ok := obj.(*networkingv1.NetworkPolicy)
+				if !ok {
+					t.Fatalf("unexpected object type: %T", obj)
+				}
+				if err := f(); err != nil {
+					return controllerutil.OperationResultNone, err
+				}
+				createdPolicies[netPol.Name] = netPol
+				return controllerutil.OperationResultCreated, nil
+			})
+
+			err := reconciler.reconcileServiceNetworkPolicies(t.Context(), createOrUpdate, hcluster, controlPlaneNamespaceName)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			for _, expected := range tc.expectedPolicies {
+				_, found := createdPolicies[expected]
+				g.Expect(found).To(BeTrue(), "expected %s policy to be created", expected)
+			}
+
+			for _, absent := range tc.absentPolicies {
+				_, found := createdPolicies[absent]
+				g.Expect(found).To(BeFalse(), "expected %s policy to NOT be created", absent)
+			}
+		})
+	}
+}
+
+func TestReconcileOAuthNetworkPolicies(t *testing.T) {
+	testCases := []struct {
+		name                    string
+		serviceType             hyperv1.PublishingStrategyType
+		expectNodePortOauth     bool
+		expectLoadBalancerOauth bool
+	}{
+		{
+			name:                    "When OAuth uses NodePort, it should create nodeport-oauth policy only",
+			serviceType:             hyperv1.NodePort,
+			expectNodePortOauth:     true,
+			expectLoadBalancerOauth: false,
+		},
+		{
+			name:                    "When OAuth uses LoadBalancer, it should create loadbalancer-oauth policy only",
+			serviceType:             hyperv1.LoadBalancer,
+			expectNodePortOauth:     false,
+			expectLoadBalancerOauth: true,
+		},
+		{
+			name:                    "When OAuth uses Route, it should create no OAuth policies",
+			serviceType:             hyperv1.Route,
+			expectNodePortOauth:     false,
+			expectLoadBalancerOauth: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			controlPlaneNamespaceName := "test-cp-ns"
+			hcluster := &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+				},
+			}
+			svc := hyperv1.ServicePublishingStrategyMapping{
+				Service:                   hyperv1.OAuthServer,
+				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: tc.serviceType},
+			}
+
+			scheme := runtime.NewScheme()
+			g.Expect(corev1.AddToScheme(scheme)).To(Succeed())
+			g.Expect(networkingv1.AddToScheme(scheme)).To(Succeed())
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+
+			reconciler := &HostedClusterReconciler{
+				Client:                        fakeClient,
+				ManagementClusterCapabilities: fakecapabilities.NewSupportAllExcept(),
+			}
+
+			createdPolicies := make(map[string]*networkingv1.NetworkPolicy)
+			createOrUpdate := upsert.CreateOrUpdateFN(func(ctx context.Context, c client.Client, obj client.Object, f controllerutil.MutateFn) (controllerutil.OperationResult, error) {
+				netPol, ok := obj.(*networkingv1.NetworkPolicy)
+				if !ok {
+					t.Fatalf("unexpected object type: %T", obj)
+				}
+				if err := f(); err != nil {
+					return controllerutil.OperationResultNone, err
+				}
+				createdPolicies[netPol.Name] = netPol
+				return controllerutil.OperationResultCreated, nil
+			})
+
+			err := reconciler.reconcileOAuthNetworkPolicies(t.Context(), createOrUpdate, hcluster, svc, controlPlaneNamespaceName)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			_, hasNodePort := createdPolicies["nodeport-oauth"]
+			g.Expect(hasNodePort).To(Equal(tc.expectNodePortOauth), "nodeport-oauth policy presence mismatch")
+
+			_, hasLoadBalancer := createdPolicies["loadbalancer-oauth"]
+			g.Expect(hasLoadBalancer).To(Equal(tc.expectLoadBalancerOauth), "loadbalancer-oauth policy presence mismatch")
+		})
+	}
+}
+
+func TestReconcileIgnitionNetworkPolicies(t *testing.T) {
+	testCases := []struct {
+		name                string
+		serviceType         hyperv1.PublishingStrategyType
+		expectIgnition      bool
+		expectIgnitionProxy bool
+	}{
+		{
+			name:                "When Ignition uses NodePort, it should create both ignition and ignition-proxy policies",
+			serviceType:         hyperv1.NodePort,
+			expectIgnition:      true,
+			expectIgnitionProxy: true,
+		},
+		{
+			name:                "When Ignition uses Route, it should create no ignition policies",
+			serviceType:         hyperv1.Route,
+			expectIgnition:      false,
+			expectIgnitionProxy: false,
+		},
+		{
+			name:                "When Ignition uses LoadBalancer, it should create no ignition policies",
+			serviceType:         hyperv1.LoadBalancer,
+			expectIgnition:      false,
+			expectIgnitionProxy: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			controlPlaneNamespaceName := "test-cp-ns"
+			hcluster := &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+				},
+			}
+			svc := hyperv1.ServicePublishingStrategyMapping{
+				Service:                   hyperv1.Ignition,
+				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: tc.serviceType},
+			}
+
+			scheme := runtime.NewScheme()
+			g.Expect(corev1.AddToScheme(scheme)).To(Succeed())
+			g.Expect(networkingv1.AddToScheme(scheme)).To(Succeed())
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+
+			reconciler := &HostedClusterReconciler{
+				Client:                        fakeClient,
+				ManagementClusterCapabilities: fakecapabilities.NewSupportAllExcept(),
+			}
+
+			createdPolicies := make(map[string]*networkingv1.NetworkPolicy)
+			createOrUpdate := upsert.CreateOrUpdateFN(func(ctx context.Context, c client.Client, obj client.Object, f controllerutil.MutateFn) (controllerutil.OperationResult, error) {
+				netPol, ok := obj.(*networkingv1.NetworkPolicy)
+				if !ok {
+					t.Fatalf("unexpected object type: %T", obj)
+				}
+				if err := f(); err != nil {
+					return controllerutil.OperationResultNone, err
+				}
+				createdPolicies[netPol.Name] = netPol
+				return controllerutil.OperationResultCreated, nil
+			})
+
+			err := reconciler.reconcileIgnitionNetworkPolicies(t.Context(), createOrUpdate, hcluster, svc, controlPlaneNamespaceName)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			_, hasIgnition := createdPolicies["nodeport-ignition"]
+			g.Expect(hasIgnition).To(Equal(tc.expectIgnition), "nodeport-ignition policy presence mismatch")
+
+			_, hasProxy := createdPolicies["nodeport-ignition-proxy"]
+			g.Expect(hasProxy).To(Equal(tc.expectIgnitionProxy), "nodeport-ignition-proxy policy presence mismatch")
+		})
+	}
+}
+
+func TestReconcileKonnectivityNetworkPolicies(t *testing.T) {
+	testCases := []struct {
+		name                  string
+		serviceType           hyperv1.PublishingStrategyType
+		expectKonnectivity    bool
+		expectKonnectivityKAS bool
+	}{
+		{
+			name:                  "When Konnectivity uses NodePort, it should create both konnectivity and konnectivity-kas policies",
+			serviceType:           hyperv1.NodePort,
+			expectKonnectivity:    true,
+			expectKonnectivityKAS: true,
+		},
+		{
+			name:                  "When Konnectivity uses Route, it should create no konnectivity policies",
+			serviceType:           hyperv1.Route,
+			expectKonnectivity:    false,
+			expectKonnectivityKAS: false,
+		},
+		{
+			name:                  "When Konnectivity uses LoadBalancer, it should create no konnectivity policies",
+			serviceType:           hyperv1.LoadBalancer,
+			expectKonnectivity:    false,
+			expectKonnectivityKAS: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			controlPlaneNamespaceName := "test-cp-ns"
+			hcluster := &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+				},
+			}
+			svc := hyperv1.ServicePublishingStrategyMapping{
+				Service:                   hyperv1.Konnectivity,
+				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: tc.serviceType},
+			}
+
+			scheme := runtime.NewScheme()
+			g.Expect(corev1.AddToScheme(scheme)).To(Succeed())
+			g.Expect(networkingv1.AddToScheme(scheme)).To(Succeed())
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+
+			reconciler := &HostedClusterReconciler{
+				Client:                        fakeClient,
+				ManagementClusterCapabilities: fakecapabilities.NewSupportAllExcept(),
+			}
+
+			createdPolicies := make(map[string]*networkingv1.NetworkPolicy)
+			createOrUpdate := upsert.CreateOrUpdateFN(func(ctx context.Context, c client.Client, obj client.Object, f controllerutil.MutateFn) (controllerutil.OperationResult, error) {
+				netPol, ok := obj.(*networkingv1.NetworkPolicy)
+				if !ok {
+					t.Fatalf("unexpected object type: %T", obj)
+				}
+				if err := f(); err != nil {
+					return controllerutil.OperationResultNone, err
+				}
+				createdPolicies[netPol.Name] = netPol
+				return controllerutil.OperationResultCreated, nil
+			})
+
+			err := reconciler.reconcileKonnectivityNetworkPolicies(t.Context(), createOrUpdate, hcluster, svc, controlPlaneNamespaceName)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			_, hasKonnectivity := createdPolicies["nodeport-konnectivity"]
+			g.Expect(hasKonnectivity).To(Equal(tc.expectKonnectivity), "nodeport-konnectivity policy presence mismatch")
+
+			_, hasKonnectivityKAS := createdPolicies["nodeport-konnectivity-kas"]
+			g.Expect(hasKonnectivityKAS).To(Equal(tc.expectKonnectivityKAS), "nodeport-konnectivity-kas policy presence mismatch")
 		})
 	}
 }

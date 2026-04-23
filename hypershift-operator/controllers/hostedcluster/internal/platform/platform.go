@@ -88,6 +88,8 @@ type OrphanDeleter interface {
 }
 
 // GetPlatform gets and initializes the cloud platform the hosted cluster was created on
+//
+//nolint:gocyclo
 func GetPlatform(ctx context.Context, hcluster *hyperv1.HostedCluster, releaseProvider releaseinfo.Provider, utilitiesImage string, pullSecretBytes []byte) (Platform, error) {
 	var (
 		platform          Platform

@@ -390,10 +390,6 @@ func machineSetsToScaleUp(pods []corev1.Pod, machineSets []machinev1beta1.Machin
 	requiredNodeCounts := determineRequiredNodes(pendingPods, pods, nodes)
 
 	var placeHoldersNeeded []nodeRequirement
-
-	// First, the easy ones. If a specific pair label is required,
-	// find the corresponding machinesets that are not already
-	// scaled up.
 	for _, r := range requiredNodeCounts {
 		if r.pairLabel != "" {
 			machineSetsToScale := filterMachineSets(machineSets, func(ms *machinev1beta1.MachineSet) bool {
@@ -404,8 +400,6 @@ func machineSetsToScaleUp(pods []corev1.Pod, machineSets []machinev1beta1.Machin
 			result = append(result, machineSetsToScale...)
 			continue
 		}
-
-		// Otherwise, we need to find placeholders without a specific pair label
 		placeHoldersNeeded = append(placeHoldersNeeded, r)
 	}
 
@@ -413,10 +407,17 @@ func machineSetsToScaleUp(pods []corev1.Pod, machineSets []machinev1beta1.Machin
 		return result, pendingPods, requiredNodeCounts
 	}
 
-	// Determine which pair labels we cannot
-	// use to schedule additional placeholders
-	// 1 - pair labels used by a cluster
-	// 2 - pair labels where a placeholder is already scheduled
+	takenPairLabels := collectTakenPairLabels(pods, nodes)
+
+	for _, r := range placeHoldersNeeded {
+		scaled := scaleMachineSetsForRequirement(r, machineSets, machines, nodes, takenPairLabels)
+		result = append(result, scaled...)
+	}
+
+	return result, pendingPods, requiredNodeCounts
+}
+
+func collectTakenPairLabels(pods []corev1.Pod, nodes []corev1.Node) sets.Set[string] {
 	takenPairLabels := sets.New[string]()
 	for _, n := range nodes {
 		if n.Labels[hyperv1.HostedClusterLabel] != "" {
@@ -428,101 +429,83 @@ func machineSetsToScaleUp(pods []corev1.Pod, machineSets []machinev1beta1.Machin
 			takenPairLabels.Insert(pairLabel)
 		}
 	}
+	return takenPairLabels
+}
 
-	for _, r := range placeHoldersNeeded {
-		needCount := r.count
-		// First, find any available nodes of the specified size
-		// These are nodes that are created but may not be ready
-		// but will allow scheduling of the pods soon.
-		// Available nodes must:
-		// 1 - have the request serving label
-		// 2 - have matching size label
-		// 3 - have a pair label that is not already taken
-		availableNodes := filterNodes(nodes, func(n *corev1.Node) bool {
-			return n.Labels[hyperv1.RequestServingComponentLabel] != "" &&
-				n.Labels[hyperv1.NodeSizeLabel] == r.sizeLabel &&
-				!takenPairLabels.Has(n.Labels[OSDFleetManagerPairedNodesLabel])
-		})
-		needCount -= len(availableNodes)
+func scaleMachineSetsForRequirement(r nodeRequirement, machineSets []machinev1beta1.MachineSet, machines []machinev1beta1.Machine, nodes []corev1.Node, takenPairLabels sets.Set[string]) []machinev1beta1.MachineSet {
+	var result []machinev1beta1.MachineSet
+	needCount := r.count
 
-		availableNodeMachineSets := sets.New[string]()
-		for i := range availableNodes {
-			msName := nodeMachineSet(&availableNodes[i], machines)
-			if msName == "" {
-				continue
-			}
+	availableNodes := filterNodes(nodes, func(n *corev1.Node) bool {
+		return n.Labels[hyperv1.RequestServingComponentLabel] != "" &&
+			n.Labels[hyperv1.NodeSizeLabel] == r.sizeLabel &&
+			!takenPairLabels.Has(n.Labels[OSDFleetManagerPairedNodesLabel])
+	})
+	needCount -= len(availableNodes)
+
+	availableNodeMachineSets := sets.New[string]()
+	for i := range availableNodes {
+		msName := nodeMachineSet(&availableNodes[i], machines)
+		if msName != "" {
 			availableNodeMachineSets.Insert(msName)
 		}
-
-		// Second, find any machinesets that have already been scaled up
-		// but do not have any nodes yet.
-		// Pending machinesets must:
-		// 1 - have the request serving label
-		// 2 - have matching size label
-		// 3 - be scaled up without available replicas
-		// 4 - not correspond to any available nodes
-		// 5 - not have a pair label that is assigned to a cluster
-		pendingMachineSets := filterMachineSets(machineSets, func(ms *machinev1beta1.MachineSet) bool {
-			return isRequestServingMachineSet(ms) &&
-				machineSetSize(ms) == r.sizeLabel &&
-				ptr.Deref(ms.Spec.Replicas, 0) > 0 &&
-				ms.Status.AvailableReplicas == 0 &&
-				!availableNodeMachineSets.Has(ms.Name) &&
-				!takenPairLabels.Has(machineSetPairLabel(ms))
-		})
-		needCount -= len(pendingMachineSets)
-
-		if needCount < 1 {
-			continue
-		}
-
-		// Determine if there are pending machinesets that need the machineSet pair to also be scaled up
-		// and scale those up first
-		for _, ms := range pendingMachineSets {
-			if pairedMachineSet := matchingMachineSet(&ms, machineSets); pairedMachineSet != nil {
-				if ptr.Deref(pairedMachineSet.Spec.Replicas, 0) == 0 {
-					result = append(result, *pairedMachineSet)
-					needCount--
-				}
-			}
-		}
-
-		if needCount < 1 {
-			continue
-		}
-
-		// Finally, pick random pairs from available machinesets
-		// Available machinesets must:
-		// 1 - have the request serving label
-		// 2 - have the corresponding size label
-		// 3 - not be scaled up
-		// 4 - have a pair label that is not already taken
-		availableMachineSets := filterMachineSets(machineSets, func(ms *machinev1beta1.MachineSet) bool {
-			return isRequestServingMachineSet(ms) &&
-				machineSetSize(ms) == r.sizeLabel &&
-				ptr.Deref(ms.Spec.Replicas, 0) == 0 &&
-				!takenPairLabels.Has(machineSetPairLabel(ms))
-		})
-		var machineSetsToScaleUp []machinev1beta1.MachineSet
-		toSkip := sets.New[string]()
-		for _, ms := range availableMachineSets {
-			if toSkip.Has(ms.Name) {
-				continue
-			}
-			pairMachineSet := matchingMachineSet(&ms, availableMachineSets)
-			if pairMachineSet == nil {
-				continue
-			}
-			toSkip.Insert(pairMachineSet.Name)
-			machineSetsToScaleUp = append(machineSetsToScaleUp, ms, *pairMachineSet)
-			if len(machineSetsToScaleUp) >= needCount {
-				break
-			}
-		}
-		result = append(result, machineSetsToScaleUp...)
 	}
 
-	return result, pendingPods, requiredNodeCounts
+	pendingMachineSets := filterMachineSets(machineSets, func(ms *machinev1beta1.MachineSet) bool {
+		return isRequestServingMachineSet(ms) &&
+			machineSetSize(ms) == r.sizeLabel &&
+			ptr.Deref(ms.Spec.Replicas, 0) > 0 &&
+			ms.Status.AvailableReplicas == 0 &&
+			!availableNodeMachineSets.Has(ms.Name) &&
+			!takenPairLabels.Has(machineSetPairLabel(ms))
+	})
+	needCount -= len(pendingMachineSets)
+
+	if needCount < 1 {
+		return nil
+	}
+
+	for _, ms := range pendingMachineSets {
+		if pairedMachineSet := matchingMachineSet(&ms, machineSets); pairedMachineSet != nil {
+			if ptr.Deref(pairedMachineSet.Spec.Replicas, 0) == 0 {
+				result = append(result, *pairedMachineSet)
+				needCount--
+			}
+		}
+	}
+
+	if needCount < 1 {
+		return result
+	}
+
+	result = append(result, pickAvailableMachineSetPairs(r.sizeLabel, needCount, machineSets, takenPairLabels)...)
+	return result
+}
+
+func pickAvailableMachineSetPairs(sizeLabel string, needCount int, machineSets []machinev1beta1.MachineSet, takenPairLabels sets.Set[string]) []machinev1beta1.MachineSet {
+	availableMachineSets := filterMachineSets(machineSets, func(ms *machinev1beta1.MachineSet) bool {
+		return isRequestServingMachineSet(ms) &&
+			machineSetSize(ms) == sizeLabel &&
+			ptr.Deref(ms.Spec.Replicas, 0) == 0 &&
+			!takenPairLabels.Has(machineSetPairLabel(ms))
+	})
+	var result []machinev1beta1.MachineSet
+	toSkip := sets.New[string]()
+	for _, ms := range availableMachineSets {
+		if toSkip.Has(ms.Name) {
+			continue
+		}
+		pairMachineSet := matchingMachineSet(&ms, availableMachineSets)
+		if pairMachineSet == nil {
+			continue
+		}
+		toSkip.Insert(pairMachineSet.Name)
+		result = append(result, ms, *pairMachineSet)
+		if len(result) >= needCount {
+			break
+		}
+	}
+	return result
 }
 
 type nodeRequirement struct {

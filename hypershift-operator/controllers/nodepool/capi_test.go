@@ -2331,6 +2331,618 @@ func TestPause(t *testing.T) {
 	g.Expect(ms.Annotations).To(HaveKeyWithValue(capiv1.PausedAnnotation, "true"))
 }
 
+func TestSetMachineDeploymentMetadata(t *testing.T) {
+	testCases := []struct {
+		name                string
+		nodePool            *hyperv1.NodePool
+		machineDeployment   *capiv1.MachineDeployment
+		capiClusterName     string
+		expectAnnotationKey string
+		expectAnnotationVal string
+		expectLabelKey      string
+		expectLabelVal      string
+		expectPausedRemoved bool
+	}{
+		{
+			name: "When MachineDeployment has nil annotations and labels, it should initialize them and set nodePool annotation and cluster label",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "my-nodepool",
+					Namespace: "my-ns",
+				},
+			},
+			machineDeployment: &capiv1.MachineDeployment{},
+			capiClusterName:   "my-cluster",
+		},
+		{
+			name: "When MachineDeployment has existing annotations including paused, it should remove paused annotation and set nodePool annotation",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "my-nodepool",
+					Namespace: "my-ns",
+				},
+			},
+			machineDeployment: &capiv1.MachineDeployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						capiv1.PausedAnnotation: "true",
+						"existing-key":          "existing-value",
+					},
+					Labels: map[string]string{
+						"existing-label": "val",
+					},
+				},
+			},
+			capiClusterName:     "my-cluster",
+			expectPausedRemoved: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			capi := &CAPI{
+				Token: &Token{
+					ConfigGenerator: &ConfigGenerator{
+						nodePool: tc.nodePool,
+					},
+				},
+				capiClusterName: tc.capiClusterName,
+			}
+
+			capi.setMachineDeploymentMetadata(tc.machineDeployment, tc.capiClusterName)
+
+			g.Expect(tc.machineDeployment.Annotations).To(HaveKeyWithValue(
+				nodePoolAnnotation, client.ObjectKeyFromObject(tc.nodePool).String()))
+			g.Expect(tc.machineDeployment.Annotations).ToNot(HaveKey(capiv1.PausedAnnotation))
+			g.Expect(tc.machineDeployment.Labels).To(HaveKeyWithValue(
+				capiv1.ClusterNameLabel, tc.capiClusterName))
+		})
+	}
+}
+
+func TestSetMachineDeploymentFailureDomain(t *testing.T) {
+	testCases := []struct {
+		name                  string
+		nodePool              *hyperv1.NodePool
+		expectedFailureDomain *string
+	}{
+		{
+			name: "When platform is OpenStack with AvailabilityZone set, it should set failure domain",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.OpenStackPlatform,
+						OpenStack: &hyperv1.OpenStackNodePoolPlatform{
+							AvailabilityZone: "az-1",
+						},
+					},
+				},
+			},
+			expectedFailureDomain: ptr.To("az-1"),
+		},
+		{
+			name: "When platform is OpenStack with empty AvailabilityZone, it should not set failure domain",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.OpenStackPlatform,
+						OpenStack: &hyperv1.OpenStackNodePoolPlatform{
+							AvailabilityZone: "",
+						},
+					},
+				},
+			},
+			expectedFailureDomain: nil,
+		},
+		{
+			name: "When platform is GCP with Zone set, it should set failure domain",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.GCPPlatform,
+						GCP: &hyperv1.GCPNodePoolPlatform{
+							Zone: "us-central1-a",
+						},
+					},
+				},
+			},
+			expectedFailureDomain: ptr.To("us-central1-a"),
+		},
+		{
+			name: "When platform is GCP with empty Zone, it should not set failure domain",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.GCPPlatform,
+						GCP: &hyperv1.GCPNodePoolPlatform{
+							Zone: "",
+						},
+					},
+				},
+			},
+			expectedFailureDomain: nil,
+		},
+		{
+			name: "When platform is AWS, it should not set failure domain",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AWSPlatform,
+						AWS:  &hyperv1.AWSNodePoolPlatform{},
+					},
+				},
+			},
+			expectedFailureDomain: nil,
+		},
+		{
+			name: "When platform is OpenStack but spec is nil, it should not set failure domain",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.OpenStackPlatform,
+					},
+				},
+			},
+			expectedFailureDomain: nil,
+		},
+		{
+			name: "When platform is GCP but spec is nil, it should not set failure domain",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.GCPPlatform,
+					},
+				},
+			},
+			expectedFailureDomain: nil,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			md := &capiv1.MachineDeployment{}
+			setMachineDeploymentFailureDomain(tc.nodePool, md)
+			g.Expect(md.Spec.Template.Spec.FailureDomain).To(Equal(tc.expectedFailureDomain))
+		})
+	}
+}
+
+func TestPropagateVersionAndTemplate(t *testing.T) {
+	testCases := []struct {
+		name                 string
+		currentBootstrapName string
+		currentVersion       string
+		templateName         string
+		currentInfraRefName  string
+		useDifferentUserData bool
+		expectedUpdating     bool
+		expectedInfraRefName string
+	}{
+		{
+			name:                 "When user data secret name differs from current bootstrap, it should propagate version and return true",
+			currentBootstrapName: "old-userdata",
+			currentVersion:       "4.16.0",
+			templateName:         "template-1",
+			currentInfraRefName:  "template-1",
+			useDifferentUserData: true,
+			expectedUpdating:     true,
+			expectedInfraRefName: "template-1",
+		},
+		{
+			name:                 "When machine template name differs from infra ref, it should propagate template and return true",
+			currentBootstrapName: "", // will be set to match computed name
+			currentVersion:       "4.17.0",
+			templateName:         "new-template",
+			currentInfraRefName:  "old-template",
+			expectedUpdating:     true,
+			expectedInfraRefName: "new-template",
+		},
+		{
+			name:                 "When both user data and template differ, it should propagate both and return true",
+			currentBootstrapName: "old-userdata",
+			currentVersion:       "4.16.0",
+			templateName:         "new-template",
+			currentInfraRefName:  "old-template",
+			useDifferentUserData: true,
+			expectedUpdating:     true,
+			expectedInfraRefName: "new-template",
+		},
+		{
+			name:                 "When nothing differs, it should not update and return false",
+			currentBootstrapName: "", // will be set to match computed name
+			currentVersion:       "4.17.0",
+			templateName:         "same-template",
+			currentInfraRefName:  "same-template",
+			expectedUpdating:     false,
+			expectedInfraRefName: "same-template",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			nodePool := &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-np",
+					Namespace: "test-ns",
+				},
+			}
+
+			capi := &CAPI{
+				Token: &Token{
+					ConfigGenerator: &ConfigGenerator{
+						nodePool:              nodePool,
+						controlplaneNamespace: "cp-ns",
+						rolloutConfig: &rolloutConfig{
+							releaseImage: &releaseinfo.ReleaseImage{
+								ImageStream: &imageapi.ImageStream{
+									ObjectMeta: metav1.ObjectMeta{
+										Name: "4.17.0",
+									},
+								},
+							},
+						},
+					},
+				},
+			}
+
+			// Compute the actual UserDataSecret name from the CAPI struct.
+			computedUserDataName := capi.UserDataSecret().Name
+
+			// If the test wants the current bootstrap to match, use the computed name.
+			bootstrapName := tc.currentBootstrapName
+			if !tc.useDifferentUserData && bootstrapName == "" {
+				bootstrapName = computedUserDataName
+			}
+
+			md := &capiv1.MachineDeployment{
+				Spec: capiv1.MachineDeploymentSpec{
+					Template: capiv1.MachineTemplateSpec{
+						Spec: capiv1.MachineSpec{
+							Bootstrap: capiv1.Bootstrap{
+								DataSecretName: ptr.To(bootstrapName),
+							},
+							InfrastructureRef: corev1.ObjectReference{
+								Name: tc.currentInfraRefName,
+							},
+							Version: ptr.To(tc.currentVersion),
+						},
+					},
+				},
+			}
+
+			templateCR := &capiaws.AWSMachineTemplate{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: tc.templateName,
+				},
+			}
+
+			result := capi.propagateVersionAndTemplate(logr.Discard(), md, templateCR)
+			g.Expect(result).To(Equal(tc.expectedUpdating))
+			g.Expect(md.Spec.Template.Spec.InfrastructureRef.Name).To(Equal(tc.expectedInfraRefName))
+
+			if tc.expectedUpdating && tc.useDifferentUserData {
+				// When updating, bootstrap should be set to the computed user data name.
+				g.Expect(*md.Spec.Template.Spec.Bootstrap.DataSecretName).To(Equal(computedUserDataName))
+				g.Expect(*md.Spec.Template.Spec.Version).To(Equal("4.17.0"))
+			}
+		})
+	}
+}
+
+func TestReconcileMachineDeploymentStatus(t *testing.T) {
+	testCases := []struct {
+		name                         string
+		machineDeployment            *capiv1.MachineDeployment
+		nodePoolVersion              string
+		nodePoolAnnotations          map[string]string
+		targetVersion                string
+		expectedVersion              string
+		expectedReplicas             int32
+		expectedConfigAnnotation     bool
+		expectedTemplateAnnotation   bool
+		expectedReadyConditionStatus corev1.ConditionStatus
+		expectedReadyConditionSet    bool
+	}{
+		{
+			name: "When MachineDeployment is complete, it should update nodePool version and annotations",
+			machineDeployment: &capiv1.MachineDeployment{
+				ObjectMeta: metav1.ObjectMeta{Generation: 1},
+				Spec: capiv1.MachineDeploymentSpec{
+					Replicas: ptr.To[int32](3),
+				},
+				Status: capiv1.MachineDeploymentStatus{
+					Replicas:           3,
+					UpdatedReplicas:    3,
+					ReadyReplicas:      3,
+					AvailableReplicas:  3,
+					ObservedGeneration: 1,
+				},
+			},
+			nodePoolVersion:            "",
+			nodePoolAnnotations:        map[string]string{},
+			targetVersion:              "4.17.0",
+			expectedVersion:            "4.17.0",
+			expectedReplicas:           3,
+			expectedConfigAnnotation:   true,
+			expectedTemplateAnnotation: true,
+		},
+		{
+			name: "When MachineDeployment is not complete, it should only update replicas",
+			machineDeployment: &capiv1.MachineDeployment{
+				ObjectMeta: metav1.ObjectMeta{Generation: 2},
+				Spec: capiv1.MachineDeploymentSpec{
+					Replicas: ptr.To[int32](3),
+				},
+				Status: capiv1.MachineDeploymentStatus{
+					Replicas:           3,
+					UpdatedReplicas:    1,
+					ReadyReplicas:      1,
+					AvailableReplicas:  2,
+					ObservedGeneration: 1,
+				},
+			},
+			nodePoolVersion:            "4.16.0",
+			nodePoolAnnotations:        map[string]string{},
+			targetVersion:              "4.17.0",
+			expectedVersion:            "4.16.0",
+			expectedReplicas:           2,
+			expectedConfigAnnotation:   false,
+			expectedTemplateAnnotation: false,
+		},
+		{
+			name: "When MachineDeployment has Ready condition, it should propagate it to nodePool",
+			machineDeployment: &capiv1.MachineDeployment{
+				ObjectMeta: metav1.ObjectMeta{Generation: 2},
+				Spec: capiv1.MachineDeploymentSpec{
+					Replicas: ptr.To[int32](3),
+				},
+				Status: capiv1.MachineDeploymentStatus{
+					AvailableReplicas: 2,
+					Conditions: capiv1.Conditions{
+						{
+							Type:    capiv1.ReadyCondition,
+							Status:  corev1.ConditionTrue,
+							Reason:  "SomeReason",
+							Message: "all good",
+						},
+					},
+				},
+			},
+			nodePoolVersion:              "4.16.0",
+			nodePoolAnnotations:          map[string]string{},
+			targetVersion:                "4.17.0",
+			expectedVersion:              "4.16.0",
+			expectedReplicas:             2,
+			expectedReadyConditionSet:    true,
+			expectedReadyConditionStatus: corev1.ConditionTrue,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			nodePool := &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        "test-np",
+					Namespace:   "test-ns",
+					Annotations: tc.nodePoolAnnotations,
+				},
+				Status: hyperv1.NodePoolStatus{
+					Version: tc.nodePoolVersion,
+				},
+			}
+
+			capi := &CAPI{
+				Token: &Token{
+					ConfigGenerator: &ConfigGenerator{
+						nodePool:              nodePool,
+						controlplaneNamespace: "cp-ns",
+						rolloutConfig: &rolloutConfig{
+							releaseImage: &releaseinfo.ReleaseImage{
+								ImageStream: &imageapi.ImageStream{
+									ObjectMeta: metav1.ObjectMeta{
+										Name: tc.targetVersion,
+									},
+								},
+							},
+						},
+					},
+				},
+			}
+
+			templateCR := &capiaws.AWSMachineTemplate{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "template-name",
+				},
+			}
+
+			capi.reconcileMachineDeploymentStatus(logr.Discard(), tc.machineDeployment, templateCR)
+
+			g.Expect(nodePool.Status.Replicas).To(Equal(tc.expectedReplicas))
+			g.Expect(nodePool.Status.Version).To(Equal(tc.expectedVersion))
+
+			if tc.expectedConfigAnnotation {
+				g.Expect(nodePool.Annotations).To(HaveKey(nodePoolAnnotationCurrentConfig))
+			}
+			if tc.expectedTemplateAnnotation {
+				g.Expect(nodePool.Annotations).To(HaveKeyWithValue(
+					nodePoolAnnotationPlatformMachineTemplate, "template-name"))
+			}
+
+			if tc.expectedReadyConditionSet {
+				readyCond := FindStatusCondition(nodePool.Status.Conditions, hyperv1.NodePoolReadyConditionType)
+				g.Expect(readyCond).ToNot(BeNil())
+				g.Expect(readyCond.Status).To(Equal(tc.expectedReadyConditionStatus))
+			}
+		})
+	}
+}
+
+func TestPropagateLabelsAndTaintsToMachines(t *testing.T) {
+	testCases := []struct {
+		name             string
+		nodePool         *hyperv1.NodePool
+		machines         []capiv1.Machine
+		expectLabels     map[string]string
+		expectTaintsJSON string
+	}{
+		{
+			name: "When NodePool has labels and taints on AWS platform, it should propagate them to owned machines with globalPS label",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-np",
+					Namespace: "test-ns",
+				},
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AWSPlatform,
+					},
+					NodeLabels: map[string]string{
+						"custom-label": "custom-value",
+					},
+					Taints: []hyperv1.Taint{
+						{Key: "key1", Value: "val1", Effect: "NoSchedule"},
+					},
+				},
+			},
+			machines: []capiv1.Machine{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "machine-1",
+						Namespace: "cp-ns",
+						Annotations: map[string]string{
+							nodePoolAnnotation: "test-ns/test-np",
+						},
+					},
+				},
+			},
+			expectLabels: map[string]string{
+				"managed.hypershift.openshift.io.custom-label":                                      "custom-value",
+				"managed.hypershift.openshift.io.hypershift.openshift.io/nodepool-globalps-enabled": "true",
+			},
+			expectTaintsJSON: `[{"key":"key1","value":"val1","effect":"NoSchedule"}]`,
+		},
+		{
+			name: "When NodePool is on KubeVirt platform, it should propagate labels but not globalPS label",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-np",
+					Namespace: "test-ns",
+				},
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.KubevirtPlatform,
+					},
+					NodeLabels: map[string]string{
+						"my-label": "my-value",
+					},
+				},
+			},
+			machines: []capiv1.Machine{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "machine-1",
+						Namespace: "cp-ns",
+						Annotations: map[string]string{
+							nodePoolAnnotation: "test-ns/test-np",
+						},
+					},
+				},
+			},
+			expectLabels: map[string]string{
+				"managed.hypershift.openshift.io.my-label": "my-value",
+			},
+		},
+		{
+			name: "When machine does not belong to the NodePool, it should not be modified",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-np",
+					Namespace: "test-ns",
+				},
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AWSPlatform,
+					},
+					NodeLabels: map[string]string{
+						"custom-label": "custom-value",
+					},
+				},
+			},
+			machines: []capiv1.Machine{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "other-machine",
+						Namespace: "cp-ns",
+						Annotations: map[string]string{
+							nodePoolAnnotation: "other-ns/other-np",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			var objects []client.Object
+			for i := range tc.machines {
+				objects = append(objects, &tc.machines[i])
+			}
+
+			c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).Build()
+
+			capi := &CAPI{
+				Token: &Token{
+					ConfigGenerator: &ConfigGenerator{
+						Client:   c,
+						nodePool: tc.nodePool,
+					},
+				},
+			}
+
+			md := &capiv1.MachineDeployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "cp-ns",
+				},
+			}
+
+			err := capi.propagateLabelsAndTaintsToMachines(t.Context(), logr.Discard(), md)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			// Check machines that belong to the NodePool.
+			machineList := &capiv1.MachineList{}
+			g.Expect(c.List(t.Context(), machineList, client.InNamespace("cp-ns"))).To(Succeed())
+
+			npKey := client.ObjectKeyFromObject(tc.nodePool).String()
+			for _, m := range machineList.Items {
+				if m.Annotations[nodePoolAnnotation] != npKey {
+					// Machine doesn't belong to this NodePool - should have no managed labels.
+					for k := range m.Labels {
+						g.Expect(k).ToNot(HavePrefix(labelManagedPrefix))
+					}
+					continue
+				}
+
+				for k, v := range tc.expectLabels {
+					g.Expect(m.Labels).To(HaveKeyWithValue(k, v))
+				}
+
+				if tc.expectTaintsJSON != "" {
+					g.Expect(m.Annotations).To(HaveKeyWithValue(nodePoolAnnotationTaints, tc.expectTaintsJSON))
+				}
+			}
+		})
+	}
+}
+
 func TestNewCAPI(t *testing.T) {
 	t.Parallel()
 	testCases := []struct {

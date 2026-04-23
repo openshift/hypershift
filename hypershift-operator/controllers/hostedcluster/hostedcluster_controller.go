@@ -383,6 +383,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	return res, err
 }
 
+//nolint:gocyclo
 func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Request, log logr.Logger, hcluster *hyperv1.HostedCluster) (ctrl.Result, error) {
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespaceObject(hcluster.Namespace, hcluster.Name)
 	hcp := controlplaneoperator.HostedControlPlane(controlPlaneNamespace.Name, hcluster.Name)
@@ -3334,6 +3335,7 @@ func deleteControlPlaneOperatorRBAC(ctx context.Context, c client.Client, rbacNa
 	return nil
 }
 
+//nolint:gocyclo
 func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.HostedCluster) (bool, error) {
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name)
 	log := ctrl.LoggerFrom(ctx)
