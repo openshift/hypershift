@@ -102,7 +102,7 @@ func ValidateAzureWorkloadIdentityWebhookMutation(t testing.TB, ctx context.Cont
 
 func EnsureAzureWorkloadIdentityWebhookMutation(t *testing.T, ctx context.Context, guestClient crclient.Client) {
 	t.Run("EnsureAzureWorkloadIdentityWebhookMutation", func(t *testing.T) {
-		AtLeast(t, Version422)
+		AtLeast(t, Version420)
 		ValidateAzureWorkloadIdentityWebhookMutation(t, ctx, guestClient)
 	})
 }
