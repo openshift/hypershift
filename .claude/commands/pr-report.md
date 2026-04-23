@@ -63,6 +63,11 @@ This command generates **two reports** (with two optional additions):
 - Provides actionable recommendations (revert, fix, document, accept)
 - Written for management cluster operators and senior SREs
 
+### 6. Collaboration Report (always generated with --deep)
+- Groups contributors into clusters based on review relationships and shared topics
+- Identifies bridge nodes who connect clusters
+- Super short format: one paragraph per cluster
+
 ## Output Files
 
 | File | Description |
@@ -77,6 +82,7 @@ This command generates **two reports** (with two optional additions):
 | `.work/pr_deep_aggregated.json` | (--deep mode) Aggregated analysis findings |
 | `$OUTPUT_DIR/hypershift_progress_report_YYYY-MM-DD.md` | (--progress-report) Narrative progress report (blog-style) |
 | `$OUTPUT_DIR/breaking_changes_report_YYYY-MM-DD.md` | (--breaking-changes) Breaking change assessment for SREs |
+| `$OUTPUT_DIR/collaboration_report_YYYY-MM-DD.md` | (--deep) Contributor collaboration clusters |
 
 ## Implementation
 
@@ -662,6 +668,25 @@ before upgrading:
 | Medium | Changes observable behavior but has workarounds. Should be addressed in upgrade planning. |
 | Low | Minor behavioral change unlikely to affect most operators. Document for awareness. |
 
+### Step 5c: Generate Collaboration Report (always with --deep)
+
+Generate a short collaboration report grouping contributors into clusters based on who reviews
+whom and who works on the same topics. Write to `$OUTPUT_DIR/collaboration_report_YYYY-MM-DD.md`.
+
+**Data sources:**
+- `$OUTPUT_DIR/hypershift_pr_details_fast.json` for reviewer and author relationships
+- `.work/pr_deep/*_analysis.json` for topic/component grouping
+
+**Format:** Keep it super short -- one paragraph per cluster, plus a closing line identifying
+bridge nodes (people who connect clusters).
+
+**How to identify clusters:**
+1. Build a graph of author <-> reviewer relationships from PR data
+2. Group contributors who frequently review each other or work on the same component/topic
+3. Name each cluster by its primary focus area (e.g., "OADP & Envtest", "Karpenter / AutoNode")
+4. List the members in bold, then one sentence describing what they worked on together
+5. End with a "Bridge nodes" line identifying contributors who span multiple clusters
+
 ### Step 6: Present Results
 
 After generating reports, provide the user with:
@@ -672,6 +697,7 @@ After generating reports, provide the user with:
 4. (--deep mode) Summary of deep analysis findings (the script prints a summary table with PR count, files, lines changed, and vendor files skipped)
 5. (--progress-report mode) Mention the progress report location
 6. (--breaking-changes mode) Summarize breaking changes found and their severity
+7. (--deep mode) Mention the collaboration report location
 
 ## Script Features
 
