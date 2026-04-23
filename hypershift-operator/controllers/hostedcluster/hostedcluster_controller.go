@@ -1426,6 +1426,8 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		// Enable observability operator monitoring
 		metrics.EnableOBOMonitoring(controlPlaneNamespace)
 
+		propagateAzureResourceIDAnnotation(hcluster, controlPlaneNamespace)
+
 		return nil
 	})
 	if err != nil {
@@ -5410,6 +5412,22 @@ func computeGCPPSCCondition(gcpPSCList hyperv1.GCPPrivateServiceConnectList, con
 		resourceConditions[i] = psc.Status.Conditions
 	}
 	return computeEndpointServiceCondition(resourceConditions, conditionType, hyperv1.GCPErrorReason, hyperv1.GCPSuccessReason, "GCPPrivateServiceConnect conditions not found")
+}
+
+// propagateAzureResourceIDAnnotation copies the Azure resource ID annotation set by Cluster Service
+// on the HostedCluster CR to the control plane namespace, or removes it if no longer present.
+// This annotation is consumed by ARO-HCP logging and observability components to correlate the
+// HostedCluster with the corresponding Azure resources.
+func propagateAzureResourceIDAnnotation(hcluster *hyperv1.HostedCluster, ns *corev1.Namespace) {
+	resourceID := hcluster.Annotations[hyperv1.ManagedAzureResourceIDAnnotation]
+	if azureutil.IsAroHCP() && resourceID != "" {
+		if ns.Annotations == nil {
+			ns.Annotations = make(map[string]string)
+		}
+		ns.Annotations[hyperv1.ManagedAzureResourceIDAnnotation] = resourceID
+	} else {
+		delete(ns.Annotations, hyperv1.ManagedAzureResourceIDAnnotation)
+	}
 }
 
 func computeAzurePLSCondition(azPLSList hyperv1.AzurePrivateLinkServiceList, conditionType hyperv1.ConditionType) metav1.Condition {
