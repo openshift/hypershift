@@ -1910,7 +1910,7 @@ func EnsureGuestWebhooksValidated(t *testing.T, ctx context.Context, guestClient
 	})
 }
 
-func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclient.Client, entryHostedCluster *hyperv1.HostedCluster) {
+func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclient.Client, entryHostedCluster *hyperv1.HostedCluster, additionalPullSecretFile string) {
 	t.Run("EnsureGlobalPullSecret", func(t *testing.T) {
 		AtLeast(t, Version419)
 		// TODO (jparrill): Change check of release version `releaseVersion.GT(Version420)` to `releaseVersion.GE(Version420)`
@@ -1938,19 +1938,26 @@ func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclie
 			t.Skip("test only supported on public clusters")
 		}
 
+		if additionalPullSecretFile == "" {
+			t.Skip("additional pull secret file not provided via --e2e.additional-pull-secret-file")
+		}
+
+		additionalPullSecretReadOnlyE2EData, err := os.ReadFile(additionalPullSecretFile)
+		if err != nil {
+			t.Fatalf("unable to read additional pull secret file %s: %v", additionalPullSecretFile, err)
+		}
+
 		var (
 			dummyImageTagMultiarch = "quay.io/hypershift/sleep:multiarch"
 			dummyImageTag12        = "quay.io/hypershift/sleep:1.2.0"
-			err                    error
 
 			// Additional Pull Secret
-			additionalPullSecretName            = "additional-pull-secret"
-			additionalPullSecretNamespace       = "kube-system"
-			additionalPullSecretDummyData       = []byte(`{"auths": {"quay.io": {"auth": "YWRtaW46cGFzc3dvcmQ="}}}`)
-			additionalPullSecretReadOnlyE2EData = []byte(`{"auths": {"quay.io/hypershift": {"auth": "aHlwZXJzaGlmdCtlMmVfcmVhZG9ubHk6R1U2V0ZDTzVaVkJHVDJPREE1VVAxT0lCOVlNMFg2TlY0UkZCT1lJSjE3TDBWOFpTVlFGVE5BS0daNTNNQVAzRA=="}}}`)
-			oldglobalPullSecretData             []byte
-			dsImage                             string
-			g                                   = NewWithT(t)
+			additionalPullSecretName      = "additional-pull-secret"
+			additionalPullSecretNamespace = "kube-system"
+			additionalPullSecretDummyData = []byte(`{"auths": {"quay.io": {"auth": "YWRtaW46cGFzc3dvcmQ="}}}`)
+			oldglobalPullSecretData       []byte
+			dsImage                       string
+			g                             = NewWithT(t)
 		)
 
 		guestClient := WaitForGuestClient(t, ctx, mgmtClient, entryHostedCluster)
