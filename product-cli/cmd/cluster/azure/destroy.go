@@ -20,8 +20,10 @@ func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 	cmd.Flags().StringVar(&opts.AzurePlatform.Location, "location", opts.AzurePlatform.Location, util.LocationDestroyDescription)
 	cmd.Flags().StringVar(&opts.AzurePlatform.ResourceGroupName, "resource-group-name", opts.AzurePlatform.ResourceGroupName, util.ResourceGroupNameDestroyDescription)
 	cmd.Flags().BoolVar(&opts.AzurePlatform.PreserveResourceGroup, "preserve-resource-group", opts.AzurePlatform.PreserveResourceGroup, util.PreserveResourceGroupDescription)
+	cmd.Flags().StringVar(&opts.AzurePlatform.DNSZoneRGName, "dns-zone-rg-name", opts.AzurePlatform.DNSZoneRGName, util.DNSZoneRGNameDestroyDescription)
 
 	_ = cmd.MarkFlagRequired("azure-creds")
+	_ = cmd.MarkFlagRequired("dns-zone-rg-name")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		return hypershiftazure.DestroyCluster(cmd.Context(), opts)
