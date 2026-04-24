@@ -157,7 +157,11 @@ To destroy the workload identities that were created:
 ```bash
 hypershift destroy iam azure \
     --azure-creds AZURE_CREDENTIALS_FILE \
-    --workload-identities-file workload-identities.json
+    --workload-identities-file workload-identities.json \
+    --resource-group-name RESOURCE_GROUP \
+    --name CLUSTER_NAME \
+    --infra-id INFRA_ID \
+    --dns-zone-rg-name DNS_ZONE_RG
 ```
 
 The destroy command reads the output file from create to identify which identities to delete.
@@ -194,6 +198,10 @@ Both the managed identities and their federated credentials are removed.
 |------|-------------|
 | `--azure-creds` | Path to Azure credentials JSON file |
 | `--workload-identities-file` | Path to workload identities JSON file |
+| `--resource-group-name` | Resource group containing the identities |
+| `--name` | Name of the HostedCluster |
+| `--infra-id` | Unique infrastructure identifier |
+| `--dns-zone-rg-name` | Resource group containing the Azure DNS zone |
 
 ### Optional Flags for `destroy iam azure`
 
@@ -250,7 +258,10 @@ hypershift create cluster azure \
 # --- Cleanup ---
 
 # 6. Destroy the cluster
-hypershift destroy cluster azure --name ${NAME}
+hypershift destroy cluster azure \
+    --name ${NAME} \
+    --azure-creds ${AZURE_CREDS} \
+    --dns-zone-rg-name ${DNS_ZONE_RG}
 
 # 7. Destroy infrastructure
 hypershift destroy infra azure \
@@ -261,7 +272,11 @@ hypershift destroy infra azure \
 # 8. Destroy IAM resources
 hypershift destroy iam azure \
     --azure-creds ${AZURE_CREDS} \
-    --workload-identities-file workload-identities.json
+    --workload-identities-file workload-identities.json \
+    --resource-group-name ${RESOURCE_GROUP} \
+    --name ${NAME} \
+    --infra-id ${INFRA_ID} \
+    --dns-zone-rg-name ${DNS_ZONE_RG}
 ```
 
 ## See Also

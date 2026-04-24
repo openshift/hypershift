@@ -389,7 +389,8 @@ To delete a private HostedCluster:
 hypershift destroy cluster azure \
     --name ${CLUSTER_NAME} \
     --azure-creds ${AZURE_CREDS} \
-    --resource-group-name ${MANAGED_RG_NAME}
+    --resource-group-name ${MANAGED_RG_NAME} \
+    --dns-zone-rg-name ${DNS_ZONE_RG_NAME}
 ```
 
 The deletion process automatically cleans up Private Link resources in the correct order:
