@@ -67,6 +67,7 @@ func adaptStatefulSet(cpContext component.WorkloadContext, sts *appsv1.StatefulS
 		c.Args = append(c.Args,
 			fmt.Sprintf("--listen-addr=%s:2383", loInterface),
 			fmt.Sprintf("--metrics-addr=https://%s:2381", allInterfaces),
+			"--advertise-client-url=",
 		)
 	})
 
