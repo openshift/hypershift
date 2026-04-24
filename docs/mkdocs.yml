@@ -338,6 +338,7 @@ nav:
     - 'Replace the default CRI-O runtime': recipes/common/replace-crio-runtime.md
     - 'Configure SPO with Audit Logging and Seccomp': recipes/common/spo-audit-logging-seccomp.md
     - 'ACM/MCE HyperShift Operator Overrides': recipes/common/acm-mce-hypershift-operator-overrides.md
+    - 'Control Plane Metrics Forwarding': recipes/common/control-plane-metrics-forwarding.md
 - 'Reference':
   - 'Architecture':
     - reference/architecture/index.md
