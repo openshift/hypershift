@@ -438,7 +438,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 
 // supportedScaleFromZeroPlatform checks if the platform supports scale-from-zero functionality.
 func supportedScaleFromZeroPlatform(platform hyperv1.PlatformType) bool {
-	return platform == hyperv1.AWSPlatform
+	return platform == hyperv1.AWSPlatform || platform == hyperv1.AzurePlatform
 }
 
 func (r *NodePoolReconciler) token(ctx context.Context, hcluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool) (*Token, error) {
@@ -1266,16 +1266,15 @@ func (r *NodePoolReconciler) reconcileScaleFromZeroAnnotations(ctx context.Conte
 		}
 		machineTemplate = awsMachineTemplate
 
-	// Future platform support can be added here:
-	// case hyperv1.AzurePlatform:
-	//     azureTemplate := &capiazure.AzureMachineTemplate{}
-	//     if err := capi.getExistingMachineTemplate(ctx, azureTemplate); err != nil {
-	//         if apierrors.IsNotFound(err) {
-	//             return nil
-	//         }
-	//         return fmt.Errorf("failed to get AzureMachineTemplate: %w", err)
-	//     }
-	//     machineTemplate = azureTemplate
+	case hyperv1.AzurePlatform:
+		azureTemplate := &capiazure.AzureMachineTemplate{}
+		if err := capi.getExistingMachineTemplate(ctx, azureTemplate); err != nil {
+			if apierrors.IsNotFound(err) {
+				return nil
+			}
+			return fmt.Errorf("failed to get AzureMachineTemplate: %w", err)
+		}
+		machineTemplate = azureTemplate
 
 	default:
 		return fmt.Errorf("unsupported platform for scale-from-zero: %s", nodePool.Spec.Platform.Type)

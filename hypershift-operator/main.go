@@ -18,6 +18,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"encoding/json"
 	"net"
 	"os"
 	"strings"
@@ -36,6 +37,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/instancetype"
 	awsinstancetype "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/instancetype/aws"
+	azureinstancetype "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/instancetype/azure"
 	npmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/metrics"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/platform/aws"
 	azureplatform "github.com/openshift/hypershift/hypershift-operator/controllers/platform/azure"
@@ -72,6 +74,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v5"
 
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
@@ -366,7 +369,7 @@ func validateStartOptions(opts *StartOptions, log logr.Logger) error {
 		return fmt.Errorf("--etcd-backup-max-count must be at least 1, got %d", opts.EtcdBackupMaxCount)
 	}
 
-	supportedProviders := set.New("aws")
+	supportedProviders := set.New("aws", "azure")
 	if opts.ScaleFromZeroCreds != "" {
 		if opts.ScaleFromZeroProvider == "" {
 			return fmt.Errorf("--scale-from-zero-provider is required when using --scale-from-zero-creds")
@@ -622,6 +625,34 @@ func setupNodePoolController(ctx context.Context, mgr ctrl.Manager, opts *StartO
 			})
 			instanceTypeProvider = awsinstancetype.NewProvider(scaleFromZeroEC2Client)
 			log.Info("Instance type provider initialized", "provider", opts.ScaleFromZeroProvider)
+		case "azure":
+			raw, err := os.ReadFile(opts.ScaleFromZeroCreds)
+			if err != nil {
+				return fmt.Errorf("failed to read Azure scale-from-zero credentials: %w", err)
+			}
+			var azureCreds struct {
+				SubscriptionID string `json:"subscriptionId"`
+				ClientID       string `json:"clientId"`
+				ClientSecret   string `json:"clientSecret"`
+				TenantID       string `json:"tenantId"`
+				Location       string `json:"location"`
+			}
+			if err := json.Unmarshal(raw, &azureCreds); err != nil {
+				return fmt.Errorf("failed to parse Azure scale-from-zero credentials: %w", err)
+			}
+			if azureCreds.Location == "" {
+				return fmt.Errorf("Azure scale-from-zero credentials must include 'location'")
+			}
+			cred, err := azidentity.NewClientSecretCredential(azureCreds.TenantID, azureCreds.ClientID, azureCreds.ClientSecret, nil)
+			if err != nil {
+				return fmt.Errorf("failed to create Azure credentials for scale-from-zero: %w", err)
+			}
+			skuClient, err := armcompute.NewResourceSKUsClient(azureCreds.SubscriptionID, cred, nil)
+			if err != nil {
+				return fmt.Errorf("failed to create Azure ResourceSKUs client: %w", err)
+			}
+			instanceTypeProvider = azureinstancetype.NewProvider(skuClient, azureCreds.Location)
+			log.Info("Instance type provider initialized", "provider", opts.ScaleFromZeroProvider, "location", azureCreds.Location)
 		default:
 			log.Info("WARNING: Unsupported scale-from-zero provider", "provider", opts.ScaleFromZeroProvider)
 		}

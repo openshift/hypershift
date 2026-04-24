@@ -773,7 +773,7 @@ func setMachineDeploymentReplicas(nodePool *hyperv1.NodePool, machineDeployment 
 		// NodePools from being permanently stuck at 0 replicas on platforms that don't support
 		// scale-from-zero metadata.
 		effectiveMin := ptr.Deref(nodePool.Spec.AutoScaling.Min, 0)
-		if effectiveMin == 0 && nodePool.Spec.Platform.Type != hyperv1.AWSPlatform {
+		if effectiveMin == 0 && nodePool.Spec.Platform.Type != hyperv1.AWSPlatform && nodePool.Spec.Platform.Type != hyperv1.AzurePlatform {
 			effectiveMin = 1
 		}
 
@@ -1081,7 +1081,7 @@ func setMachineSetReplicas(nodePool *hyperv1.NodePool, machineSet *capiv1.Machin
 		// NodePools from being permanently stuck at 0 replicas on platforms that don't support
 		// scale-from-zero metadata.
 		effectiveMin := ptr.Deref(nodePool.Spec.AutoScaling.Min, 0)
-		if effectiveMin == 0 && nodePool.Spec.Platform.Type != hyperv1.AWSPlatform {
+		if effectiveMin == 0 && nodePool.Spec.Platform.Type != hyperv1.AWSPlatform && nodePool.Spec.Platform.Type != hyperv1.AzurePlatform {
 			effectiveMin = 1
 		}
 

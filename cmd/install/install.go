@@ -304,18 +304,15 @@ func (o *Options) validateScaleFromZeroConfig() []error {
 		return nil
 	}
 	var errs []error
-	supportedProviders := set.New("aws")
-	// Check mutual exclusivity - only one of file or secret should be provided
+	supportedProviders := set.New("aws", "azure")
 	if len(o.ScaleFromZeroCreds) != 0 && len(o.ScaleFromZeroCredentialsSecret) != 0 {
 		errs = append(errs, fmt.Errorf("only one of --scale-from-zero-creds or --scale-from-zero-secret is supported"))
 	}
-	// Provider is required when using scale-from-zero credentials
 	if len(o.ScaleFromZeroProvider) == 0 {
 		errs = append(errs, fmt.Errorf("--scale-from-zero-provider is required when using scale-from-zero credentials"))
 	} else if !supportedProviders.Has(o.ScaleFromZeroProvider) {
 		errs = append(errs, fmt.Errorf("invalid --scale-from-zero-provider: %s (must be one of: %v)", o.ScaleFromZeroProvider, supportedProviders.UnsortedList()))
 	}
-	// Validate credentials file exists and is accessible if provided
 	if len(o.ScaleFromZeroCreds) > 0 {
 		if _, err := os.Stat(o.ScaleFromZeroCreds); err != nil {
 			if os.IsNotExist(err) {

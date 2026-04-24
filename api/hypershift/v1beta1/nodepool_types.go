@@ -107,7 +107,7 @@ type NodePool struct {
 // +kubebuilder:validation:XValidation:rule="!has(self.replicas) || !has(self.autoScaling)", message="Both replicas or autoScaling should not be set"
 // +kubebuilder:validation:XValidation:rule="self.arch != 's390x' || has(self.platform.kubevirt)", message="s390x is only supported on KubeVirt platform"
 // +kubebuilder:validation:XValidation:rule="!has(self.platform.aws) || !has(self.platform.aws.imageType) || self.platform.aws.imageType != 'Windows' || self.arch == 'amd64'", message="ImageType 'Windows' requires arch 'amd64' (AWS only)"
-// +kubebuilder:validation:XValidation:rule="!has(self.autoScaling) || self.autoScaling.min > 0 || self.platform.type == 'AWS'", message="Scale-from-zero (autoScaling.min=0) is currently only supported for AWS platform"
+// +kubebuilder:validation:XValidation:rule="!has(self.autoScaling) || self.autoScaling.min > 0 || self.platform.type == 'AWS' || self.platform.type == 'Azure'", message="Scale-from-zero (autoScaling.min=0) is currently only supported for AWS and Azure platforms"
 type NodePoolSpec struct {
 	// clusterName is the name of the HostedCluster this NodePool belongs to.
 	// If a HostedCluster with this name doesn't exist, the controller will no-op until it exists.
