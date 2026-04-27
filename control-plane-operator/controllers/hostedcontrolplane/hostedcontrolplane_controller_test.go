@@ -26,6 +26,7 @@ import (
 	oapiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oapi"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/awsapi"
+	supportconfig "github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/capabilities"
 	fakecapabilities "github.com/openshift/hypershift/support/capabilities/fake"
@@ -2625,6 +2626,156 @@ func TestEtcdStatefulSetCondition(t *testing.T) {
 			g.Expect(condition.Reason).To(Equal(tc.expectedCondition.Reason))
 			if tc.expectedCondition.Message != "" {
 				g.Expect(condition.Message).To(Equal(tc.expectedCondition.Message))
+			}
+		})
+	}
+}
+
+func TestReconcileImageRegistryCAIgnitionConfig(t *testing.T) {
+	targetNamespace := "test"
+
+	ownerRef := supportconfig.OwnerRef{
+		Reference: &metav1.OwnerReference{
+			APIVersion: "hypershift.openshift.io/v1beta1",
+			Kind:       "HostedControlPlane",
+			Name:       "test",
+			UID:        "test-uid",
+		},
+	}
+
+	testCases := []struct {
+		name           string
+		hcp            *hyperv1.HostedControlPlane
+		existingObjs   []client.Object
+		expectError    bool
+		expectCreated  bool
+		expectDeleted  bool
+		errorSubstring string
+	}{
+		{
+			name: "When image registry capability is disabled it should delete the ignition config",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: targetNamespace,
+					Name:      "test",
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Capabilities: &hyperv1.Capabilities{
+						Disabled: []hyperv1.OptionalCapability{hyperv1.ImageRegistryCapability},
+					},
+				},
+			},
+			expectDeleted: true,
+		},
+		{
+			name: "When service-serving-ca ConfigMap is not found it should create a no-op ignition config",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: targetNamespace,
+					Name:      "test",
+				},
+			},
+			expectCreated: true,
+		},
+		{
+			name: "When service-serving-ca ConfigMap exists but key is missing it should return error",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: targetNamespace,
+					Name:      "test",
+				},
+			},
+			existingObjs: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "service-serving-ca",
+						Namespace: targetNamespace,
+					},
+					Data: map[string]string{
+						"wrong-key": "some-data",
+					},
+				},
+			},
+			expectError:    true,
+			errorSubstring: "is missing",
+		},
+		{
+			name: "When service-serving-ca ConfigMap exists but key is empty it should return error",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: targetNamespace,
+					Name:      "test",
+				},
+			},
+			existingObjs: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "service-serving-ca",
+						Namespace: targetNamespace,
+					},
+					Data: map[string]string{
+						manifests.ServiceCAKey: "",
+					},
+				},
+			},
+			expectError:    true,
+			errorSubstring: "is missing",
+		},
+		{
+			name: "When service-serving-ca ConfigMap has valid CA data it should create the ignition config",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: targetNamespace,
+					Name:      "test",
+				},
+			},
+			existingObjs: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "service-serving-ca",
+						Namespace: targetNamespace,
+					},
+					Data: map[string]string{
+						manifests.ServiceCAKey: "-----BEGIN CERTIFICATE-----\ntest\n-----END CERTIFICATE-----\n",
+					},
+				},
+			},
+			expectCreated: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			objs := append([]client.Object{}, tc.existingObjs...)
+			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objs...).Build()
+			r := &HostedControlPlaneReconciler{
+				Client: fakeClient,
+				Log:    ctrl.LoggerFrom(t.Context()),
+			}
+
+			err := r.reconcileImageRegistryCAIgnitionConfig(t.Context(), tc.hcp, ownerRef, controllerutil.CreateOrUpdate)
+			if tc.expectError {
+				g.Expect(err).To(HaveOccurred())
+				if tc.errorSubstring != "" {
+					g.Expect(err.Error()).To(ContainSubstring(tc.errorSubstring))
+				}
+				return
+			}
+			g.Expect(err).ToNot(HaveOccurred())
+
+			resultCM := manifests.IgnitionImageRegistryCAConfig(targetNamespace)
+			getErr := fakeClient.Get(t.Context(), client.ObjectKeyFromObject(resultCM), resultCM)
+			if tc.expectDeleted {
+				g.Expect(apierrors.IsNotFound(getErr)).To(BeTrue(), "expected ignition config to be deleted")
+				return
+			}
+			if tc.expectCreated {
+				g.Expect(getErr).ToNot(HaveOccurred(), "expected ignition config to be created")
+				g.Expect(resultCM.Data).To(HaveKey("config"))
+				g.Expect(resultCM.Data["config"]).ToNot(BeEmpty())
+				g.Expect(resultCM.Labels).To(HaveKeyWithValue("hypershift.openshift.io/core-ignition-config", "true"))
 			}
 		})
 	}

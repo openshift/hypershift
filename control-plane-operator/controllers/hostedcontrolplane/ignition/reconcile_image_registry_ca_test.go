@@ -56,6 +56,12 @@ func TestReconcileImageRegistryCAIgnitionConfig(t *testing.T) {
 			err := ReconcileImageRegistryCAIgnitionConfig(cm, ownerRef, tc.serviceCA)
 			g.Expect(err).ToNot(HaveOccurred())
 
+			// Verify the OwnerReference is set correctly
+			g.Expect(cm.OwnerReferences).To(HaveLen(1))
+			g.Expect(cm.OwnerReferences[0].APIVersion).To(Equal("hypershift.openshift.io/v1beta1"))
+			g.Expect(cm.OwnerReferences[0].Kind).To(Equal("HostedControlPlane"))
+			g.Expect(cm.OwnerReferences[0].Name).To(Equal("test"))
+
 			// Verify the ConfigMap has the expected labels
 			g.Expect(cm.Labels).To(HaveKeyWithValue("hypershift.openshift.io/core-ignition-config", "true"))
 
@@ -82,9 +88,10 @@ func TestReconcileImageRegistryCAIgnitionConfig(t *testing.T) {
 			g.Expect(ignConfig.Ignition.Version).To(Equal("3.2.0"))
 
 			if tc.serviceCA != "" {
-				// When CA is provided, verify the file is present
+				// When CA is provided, verify the CA cert file exists with the correct path
 				g.Expect(ignConfig.Storage.Files).To(HaveLen(1))
 				g.Expect(ignConfig.Storage.Files[0].Path).To(Equal(imageRegistryCertPath))
+				g.Expect(ignConfig.Storage.Files[0].Path).To(Equal("/etc/docker/certs.d/image-registry.openshift-image-registry.svc:5000/ca.crt"))
 				g.Expect(ignConfig.Storage.Files[0].Overwrite).ToNot(BeNil())
 				g.Expect(*ignConfig.Storage.Files[0].Overwrite).To(BeTrue())
 				g.Expect(ignConfig.Storage.Files[0].Mode).ToNot(BeNil())

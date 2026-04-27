@@ -2121,6 +2121,11 @@ func (r *HostedControlPlaneReconciler) reconcileCoreIgnitionConfig(ctx context.C
 // them to trust the internal image registry's TLS certificate. The service-serving-ca
 // ConfigMap is synced from the guest cluster by ManagedCAObserver.
 // When image registry capability is disabled, the ignition ConfigMap is cleaned up.
+//
+// NOTE: This relies on the guest cluster's service-ca-operator to sign the
+// image registry's serving certificate. If HyperShift moves away from
+// service-ca-operator in the future, this will need to use whatever
+// replaces it as the CA source.
 func (r *HostedControlPlaneReconciler) reconcileImageRegistryCAIgnitionConfig(ctx context.Context, hcp *hyperv1.HostedControlPlane, ownerRef config.OwnerRef, createOrUpdate upsert.CreateOrUpdateFN) error {
 	imageRegistryCAConfig := manifests.IgnitionImageRegistryCAConfig(hcp.Namespace)
 
@@ -2134,7 +2139,6 @@ func (r *HostedControlPlaneReconciler) reconcileImageRegistryCAIgnitionConfig(ct
 	// Fetch the service-serving-ca ConfigMap which is synced from the guest cluster
 	// by ManagedCAObserver. This CA signs the image registry's serving certificate
 	// via the guest cluster's service-ca-operator.
-	const serviceCAKey = "service-ca.crt"
 	serviceServingCA := manifests.ServiceServingCA(hcp.Namespace)
 	serviceCA := ""
 	if err := r.Get(ctx, client.ObjectKeyFromObject(serviceServingCA), serviceServingCA); err != nil {
@@ -2145,9 +2149,9 @@ func (r *HostedControlPlaneReconciler) reconcileImageRegistryCAIgnitionConfig(ct
 		// The ConfigMap will be synced from the guest cluster by ManagedCAObserver once available.
 		r.Log.Info("service-serving-ca configmap not found, creating image registry CA ignition config without CA data")
 	} else {
-		caData, hasCA := serviceServingCA.Data[serviceCAKey]
+		caData, hasCA := serviceServingCA.Data[manifests.ServiceCAKey]
 		if !hasCA || len(caData) == 0 {
-			return fmt.Errorf("service-serving-ca configmap %s/%s is missing %q", serviceServingCA.Namespace, serviceServingCA.Name, serviceCAKey)
+			return fmt.Errorf("service-serving-ca configmap %s/%s is missing %q", serviceServingCA.Namespace, serviceServingCA.Name, manifests.ServiceCAKey)
 		}
 		serviceCA = caData
 	}
