@@ -82,15 +82,16 @@ func NewCertRotationController(
 	certRotator := certrotation.NewCertRotationController(
 		rotatorName,
 		certrotation.RotatedSigningCASecret{
-			Namespace:     hostedControlPlane.Namespace,
-			Name:          pkimanifests.CustomerSystemAdminSigner(hostedControlPlane.Namespace).Name,
-			Validity:      7 * rotationDay,
-			Refresh:       2 * rotationDay,
-			Informer:      kubeInformersForNamespaces.InformersFor(hostedControlPlane.Namespace).Core().V1().Secrets(),
-			Lister:        kubeInformersForNamespaces.InformersFor(hostedControlPlane.Namespace).Core().V1().Secrets().Lister(),
-			Client:        kubeClient.CoreV1(),
-			EventRecorder: eventRecorder,
-			Owner:         ownerRef,
+			Namespace:       hostedControlPlane.Namespace,
+			Name:            pkimanifests.CustomerSystemAdminSigner(hostedControlPlane.Namespace).Name,
+			CertificateName: "control-plane-pki.customer-admin-signer",
+			Validity:        7 * rotationDay,
+			Refresh:         2 * rotationDay,
+			Informer:        kubeInformersForNamespaces.InformersFor(hostedControlPlane.Namespace).Core().V1().Secrets(),
+			Lister:          kubeInformersForNamespaces.InformersFor(hostedControlPlane.Namespace).Core().V1().Secrets().Lister(),
+			Client:          kubeClient.CoreV1(),
+			EventRecorder:   eventRecorder,
+			Owner:           ownerRef,
 			AdditionalAnnotations: certrotation.AdditionalAnnotations{
 				JiraComponent: "HOSTEDCP",
 				Description:   "Root signer for customer break-glass credentials.",
@@ -110,10 +111,11 @@ func NewCertRotationController(
 			},
 		},
 		certrotation.RotatedSelfSignedCertKeySecret{
-			Namespace: hostedControlPlane.Namespace,
-			Name:      pkimanifests.CustomerSystemAdminClientCertSecret(hostedControlPlane.Namespace).Name,
-			Validity:  36 * rotationDay / 24,
-			Refresh:   6 * rotationDay / 24,
+			Namespace:       hostedControlPlane.Namespace,
+			Name:            pkimanifests.CustomerSystemAdminClientCertSecret(hostedControlPlane.Namespace).Name,
+			CertificateName: "control-plane-pki.customer-admin-client",
+			Validity:        36 * rotationDay / 24,
+			Refresh:         6 * rotationDay / 24,
 			CertCreator: &certrotation.ClientRotation{
 				UserInfo: &user.DefaultInfo{
 					Name:   certificates.CommonNamePrefix(certificates.CustomerBreakGlassSigner) + userNameSuffix,
@@ -140,15 +142,16 @@ func NewCertRotationController(
 	sreCertRotator := certrotation.NewCertRotationController(
 		sreRotatorName,
 		certrotation.RotatedSigningCASecret{
-			Namespace:     hostedControlPlane.Namespace,
-			Name:          pkimanifests.SRESystemAdminSigner(hostedControlPlane.Namespace).Name,
-			Validity:      7 * rotationDay,
-			Refresh:       2 * rotationDay,
-			Informer:      kubeInformersForNamespaces.InformersFor(hostedControlPlane.Namespace).Core().V1().Secrets(),
-			Lister:        kubeInformersForNamespaces.InformersFor(hostedControlPlane.Namespace).Core().V1().Secrets().Lister(),
-			Client:        kubeClient.CoreV1(),
-			EventRecorder: eventRecorder,
-			Owner:         ownerRef,
+			Namespace:       hostedControlPlane.Namespace,
+			Name:            pkimanifests.SRESystemAdminSigner(hostedControlPlane.Namespace).Name,
+			CertificateName: "control-plane-pki.sre-admin-signer",
+			Validity:        7 * rotationDay,
+			Refresh:         2 * rotationDay,
+			Informer:        kubeInformersForNamespaces.InformersFor(hostedControlPlane.Namespace).Core().V1().Secrets(),
+			Lister:          kubeInformersForNamespaces.InformersFor(hostedControlPlane.Namespace).Core().V1().Secrets().Lister(),
+			Client:          kubeClient.CoreV1(),
+			EventRecorder:   eventRecorder,
+			Owner:           ownerRef,
 			AdditionalAnnotations: certrotation.AdditionalAnnotations{
 				JiraComponent: "HOSTEDCP",
 				Description:   "Root signer for SRE break-glass credentials.",
@@ -168,10 +171,11 @@ func NewCertRotationController(
 			},
 		},
 		certrotation.RotatedSelfSignedCertKeySecret{
-			Namespace: hostedControlPlane.Namespace,
-			Name:      pkimanifests.SRESystemAdminClientCertSecret(hostedControlPlane.Namespace).Name,
-			Validity:  36 * rotationDay / 24,
-			Refresh:   6 * rotationDay / 24,
+			Namespace:       hostedControlPlane.Namespace,
+			Name:            pkimanifests.SRESystemAdminClientCertSecret(hostedControlPlane.Namespace).Name,
+			CertificateName: "control-plane-pki.sre-admin-client",
+			Validity:        36 * rotationDay / 24,
+			Refresh:         6 * rotationDay / 24,
 			CertCreator: &certrotation.ClientRotation{
 				UserInfo: &user.DefaultInfo{
 					Name:   certificates.CommonNamePrefix(certificates.SREBreakGlassSigner) + userNameSuffix,
