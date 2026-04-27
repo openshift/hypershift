@@ -19,6 +19,7 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/util/retry"
 	"k8s.io/utils/ptr"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -457,6 +458,165 @@ func testSingleMemberRecovery(parentCtx context.Context, client crclient.Client,
 		}}, e2eutil.WithInterval(5*time.Second), e2eutil.WithTimeout(30*time.Minute))
 
 	}
+}
+
+// TestPullSecretUnavailable validates that the HostedCluster reconciler continues
+// to propagate critical spec fields (like NodeSelector and
+// RequestServingNodeAdditionalSelector) to the HostedControlPlane even when the
+// pull secret is corrupted. This is a regression test for OCPBUGS-77268.
+func TestPullSecretUnavailable(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(testContext)
+	defer cancel()
+
+	clusterOpts := globalOpts.DefaultClusterOptions(t)
+	clusterOpts.ControlPlaneAvailabilityPolicy = string(hyperv1.HighlyAvailable)
+	clusterOpts.NodePoolReplicas = 0
+
+	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+		controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+
+		// Get the current pull secret and save original data for restoration
+		pullSecret := &corev1.Secret{}
+		err := mgtClient.Get(ctx, crclient.ObjectKey{
+			Namespace: hostedCluster.Namespace,
+			Name:      hostedCluster.Spec.PullSecret.Name,
+		}, pullSecret)
+		g.Expect(err).NotTo(HaveOccurred(), "failed to get pull secret")
+		originalData := pullSecret.Data[".dockerconfigjson"]
+		g.Expect(originalData).NotTo(BeEmpty(), "pull secret should have .dockerconfigjson data")
+
+		// Save original values of test-owned keys for cleanup
+		err = mgtClient.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
+		g.Expect(err).NotTo(HaveOccurred(), "failed to get hostedcluster")
+		originalSelectorVal, hadSelector := hostedCluster.Spec.NodeSelector["ocpbugs-77268-test"]
+		originalAnnotationVal, hadAnnotation := hostedCluster.Annotations[hyperv1.RequestServingNodeAdditionalSelectorAnnotation]
+
+		// Ensure pull secret and test-owned keys are restored even if the test fails mid-way
+		t.Cleanup(func() {
+			t.Log("Cleanup: restoring pull secret and test-owned HostedCluster keys...")
+			secret := &corev1.Secret{}
+			if err := mgtClient.Get(ctx, crclient.ObjectKey{
+				Namespace: hostedCluster.Namespace,
+				Name:      hostedCluster.Spec.PullSecret.Name,
+			}, secret); err == nil {
+				if secret.Data == nil {
+					secret.Data = map[string][]byte{}
+				}
+				secret.Data[".dockerconfigjson"] = originalData
+				if err := mgtClient.Update(ctx, secret); err != nil {
+					t.Logf("WARNING: failed to restore pull secret during cleanup: %v", err)
+				}
+			}
+			hc := &hyperv1.HostedCluster{}
+			if err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hc); err == nil {
+				if hadSelector {
+					if hc.Spec.NodeSelector == nil {
+						hc.Spec.NodeSelector = map[string]string{}
+					}
+					hc.Spec.NodeSelector["ocpbugs-77268-test"] = originalSelectorVal
+				} else {
+					delete(hc.Spec.NodeSelector, "ocpbugs-77268-test")
+				}
+				if hadAnnotation {
+					if hc.Annotations == nil {
+						hc.Annotations = map[string]string{}
+					}
+					hc.Annotations[hyperv1.RequestServingNodeAdditionalSelectorAnnotation] = originalAnnotationVal
+				} else {
+					delete(hc.Annotations, hyperv1.RequestServingNodeAdditionalSelectorAnnotation)
+				}
+				if err := mgtClient.Update(ctx, hc); err != nil {
+					t.Logf("WARNING: failed to restore hostedcluster keys during cleanup: %v", err)
+				}
+			}
+		})
+
+		// Wait for the first successful reconcile so the HCP exists with all
+		// fields populated before we corrupt the pull secret.
+		e2eutil.EventuallyObject(t, ctx, "HostedCluster to reconcile successfully",
+			func(ctx context.Context) (*hyperv1.HostedCluster, error) {
+				hc := &hyperv1.HostedCluster{}
+				err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hc)
+				return hc, err
+			},
+			[]e2eutil.Predicate[*hyperv1.HostedCluster]{
+				func(hc *hyperv1.HostedCluster) (done bool, reasons string, err error) {
+					for _, c := range hc.Status.Conditions {
+						if c.Type == string(hyperv1.ReconciliationSucceeded) && c.Status == metav1.ConditionTrue {
+							return true, "ReconciliationSucceeded=True", nil
+						}
+					}
+					return false, "waiting for ReconciliationSucceeded=True", nil
+				},
+			},
+			e2eutil.WithInterval(5*time.Second),
+			e2eutil.WithTimeout(5*time.Minute),
+		)
+
+		// Remove the pull secret key so GetPullSecretBytes fails and the
+		// recovery reconcileHostedControlPlane path is exercised.
+		t.Log("Removing pull secret key...")
+		err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
+			if err := mgtClient.Get(ctx, crclient.ObjectKey{
+				Namespace: hostedCluster.Namespace,
+				Name:      hostedCluster.Spec.PullSecret.Name,
+			}, pullSecret); err != nil {
+				return err
+			}
+			delete(pullSecret.Data, ".dockerconfigjson")
+			return mgtClient.Update(ctx, pullSecret)
+		})
+		g.Expect(err).NotTo(HaveOccurred(), "failed to corrupt pull secret")
+
+		// Mutate NodeSelector and RequestServingNodeAdditionalSelector while pull secret is broken.
+		// If reconcileHostedControlPlane still runs, these changes should propagate to the HCP.
+		t.Log("Updating HostedCluster NodeSelector and annotations while pull secret is corrupted...")
+		err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
+			if err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster); err != nil {
+				return err
+			}
+			if hostedCluster.Spec.NodeSelector == nil {
+				hostedCluster.Spec.NodeSelector = map[string]string{}
+			}
+			hostedCluster.Spec.NodeSelector["ocpbugs-77268-test"] = "true"
+			if hostedCluster.Annotations == nil {
+				hostedCluster.Annotations = map[string]string{}
+			}
+			hostedCluster.Annotations[hyperv1.RequestServingNodeAdditionalSelectorAnnotation] = `{"ocpbugs-77268-test":"true"}`
+			return mgtClient.Update(ctx, hostedCluster)
+		})
+		g.Expect(err).NotTo(HaveOccurred(), "failed to update hostedcluster")
+
+		// Verify both mutations propagated to the HCP even with a bad pull secret
+		e2eutil.EventuallyObject(t, ctx, "HCP spec updated despite corrupted pull secret",
+			func(ctx context.Context) (*hyperv1.HostedControlPlane, error) {
+				h := &hyperv1.HostedControlPlane{}
+				err := mgtClient.Get(ctx, crclient.ObjectKey{
+					Namespace: controlPlaneNamespace,
+					Name:      hostedCluster.Name,
+				}, h)
+				return h, err
+			},
+			[]e2eutil.Predicate[*hyperv1.HostedControlPlane]{
+				func(h *hyperv1.HostedControlPlane) (done bool, reasons string, err error) {
+					val, ok := h.Spec.NodeSelector["ocpbugs-77268-test"]
+					if !ok || val != "true" {
+						return false, "NodeSelector not yet propagated to HCP", nil
+					}
+					ann, ok := h.Annotations[hyperv1.RequestServingNodeAdditionalSelectorAnnotation]
+					if !ok || ann != `{"ocpbugs-77268-test":"true"}` {
+						return false, "RequestServingNodeAdditionalSelector not yet propagated to HCP", nil
+					}
+					return true, "NodeSelector and RequestServingNodeAdditionalSelector propagated to HCP", nil
+				},
+			},
+			e2eutil.WithInterval(5*time.Second),
+			e2eutil.WithTimeout(2*time.Minute),
+		)
+
+	}).Execute(&clusterOpts, hyperv1.NonePlatform, globalOpts.ArtifactDir, "pull-secret-unavailable", globalOpts.ServiceAccountSigningKey)
 }
 
 // TODO: Generics :-)
