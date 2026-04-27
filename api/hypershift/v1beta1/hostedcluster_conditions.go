@@ -191,6 +191,13 @@ const (
 	// A failure here often means a software bug or a non-stable cluster.
 	ReconciliationSucceeded ConditionType = "ReconciliationSucceeded"
 
+	// ConfigOperatorReconciliationSucceeded bubbles up from HCP. It indicates
+	// whether the HostedCluster Config Operator (HCCO) reconciliation succeeded.
+	// When False, the HCCO encountered errors reconciling resources into the
+	// hosted cluster. The condition message contains the error details.
+	// A failure here often means a software bug or a non-stable cluster.
+	ConfigOperatorReconciliationSucceeded ConditionType = "ConfigOperatorReconciliationSucceeded"
+
 	// EtcdRecoveryActive indicates that the Etcd cluster is failing and the
 	// recovery job was triggered.
 	EtcdRecoveryActive ConditionType = "EtcdRecoveryActive"
