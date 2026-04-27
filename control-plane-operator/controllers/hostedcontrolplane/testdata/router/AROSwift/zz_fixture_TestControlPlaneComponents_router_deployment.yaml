@@ -95,10 +95,8 @@ spec:
             path: /haproxy_ready
             port: 9444
             scheme: HTTP
-          initialDelaySeconds: 50
           periodSeconds: 10
-          successThreshold: 1
-          timeoutSeconds: 1
+          timeoutSeconds: 5
         name: router
         ports:
         - containerPort: 8443
@@ -113,6 +111,14 @@ spec:
             add:
             - NET_BIND_SERVICE
           readOnlyRootFilesystem: true
+        startupProbe:
+          failureThreshold: 30
+          httpGet:
+            path: /haproxy_ready
+            port: 9444
+            scheme: HTTP
+          periodSeconds: 10
+          timeoutSeconds: 5
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /usr/local/etc/haproxy/haproxy.cfg
