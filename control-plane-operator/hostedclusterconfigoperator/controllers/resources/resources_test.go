@@ -341,6 +341,59 @@ func TestReconcileOLM(t *testing.T) {
 	}
 }
 
+func TestReconcileConfigOperatorReconciliationSucceededCondition(t *testing.T) {
+	imageMetaDataProvider := fakeimagemetadataprovider.FakeRegistryClientImageMetadataProviderHCCO{}
+	ctx := logr.NewContext(context.Background(), zapr.NewLogger(zaptest.NewLogger(t)))
+
+	testCases := []struct {
+		name           string
+		expectedStatus metav1.ConditionStatus
+		expectedReason string
+	}{
+		{
+			name:           "When reconciliation succeeds, it should set ConfigOperatorReconciliationSucceeded to True",
+			expectedStatus: metav1.ConditionTrue,
+			expectedReason: hyperv1.AsExpectedReason,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			hcp := fakeHCP()
+			cpClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(cpObjects...).WithStatusSubresource(&hyperv1.HostedControlPlane{}).Build()
+
+			r := &reconciler{
+				client:                 fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(initialObjects...).WithStatusSubresource(&configv1.Infrastructure{}).Build(),
+				uncachedClient:         fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects().Build(),
+				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
+				platformType:           hyperv1.NonePlatform,
+				clusterSignerCA:        "foobar",
+				cpClient:               cpClient,
+				hcpName:                "foo",
+				hcpNamespace:           "bar",
+				releaseProvider: &fakereleaseprovider.FakeReleaseProvider{
+					Components: map[string]string{
+						"cli": "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:cli-fake",
+					},
+				},
+				ImageMetaDataProvider: &imageMetaDataProvider,
+			}
+			_, _ = r.Reconcile(ctx, controllerruntime.Request{})
+
+			// Fetch the updated HCP to verify the condition was set
+			updatedHCP := &hyperv1.HostedControlPlane{}
+			err := cpClient.Get(ctx, client.ObjectKeyFromObject(hcp), updatedHCP)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			cond := meta.FindStatusCondition(updatedHCP.Status.Conditions, string(hyperv1.ConfigOperatorReconciliationSucceeded))
+			g.Expect(cond).ToNot(BeNil(), "ConfigOperatorReconciliationSucceeded condition should be set on HCP")
+			g.Expect(cond.Status).To(Equal(tc.expectedStatus))
+			g.Expect(cond.Reason).To(Equal(tc.expectedReason))
+		})
+	}
+}
+
 type simpleCreateOrUpdater struct{}
 
 func (*simpleCreateOrUpdater) CreateOrUpdate(ctx context.Context, c client.Client, obj client.Object, f controllerutil.MutateFn) (controllerutil.OperationResult, error) {
