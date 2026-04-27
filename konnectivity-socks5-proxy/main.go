@@ -3,6 +3,7 @@ package konnectivitysocks5proxy
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/openshift/hypershift/support/konnectivityproxy"
 	"github.com/openshift/hypershift/support/supportedversion"
@@ -16,6 +17,31 @@ import (
 	"github.com/spf13/cobra"
 	"go.uber.org/zap/zapcore"
 )
+
+const (
+	// startupMaxRetries is the maximum number of retry attempts during startup
+	// for creating the Kubernetes client and initializing the konnectivity dialer.
+	startupMaxRetries = 30
+	// startupRetryInterval is the time to wait between retry attempts.
+	startupRetryInterval = 10 * time.Second
+)
+
+// retryWithBackoff calls fn up to maxRetries times, sleeping retryInterval between
+// attempts. It returns the first nil error from fn, or the last error if all
+// attempts fail.
+func retryWithBackoff(maxRetries int, retryInterval time.Duration, fn func() error) error {
+	var lastErr error
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		lastErr = fn()
+		if lastErr == nil {
+			return nil
+		}
+		if attempt < maxRetries {
+			time.Sleep(retryInterval)
+		}
+	}
+	return lastErr
+}
 
 func NewStartCommand() *cobra.Command {
 	l := log.Log.WithName("konnectivity-socks5-proxy")
@@ -51,18 +77,34 @@ func NewStartCommand() *cobra.Command {
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		l.Info("Starting proxy", "version", supportedversion.String())
-		client, err := client.New(ctrl.GetConfigOrDie(), client.Options{})
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: cannot get client: %v", err)
+
+		cfg := ctrl.GetConfigOrDie()
+		var c client.Client
+		if err := retryWithBackoff(startupMaxRetries, startupRetryInterval, func() error {
+			var err error
+			c, err = client.New(cfg, client.Options{})
+			if err != nil {
+				l.Info("Failed to create client, retrying", "error", err)
+			}
+			return err
+		}); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: cannot get client after %d attempts: %v", startupMaxRetries, err)
 			os.Exit(1)
 		}
 
-		opts.Client = client
+		opts.Client = c
 		opts.Log = l
 
-		dialer, err := konnectivityproxy.NewKonnectivityDialer(opts)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: cannot initialize konnectivity dialer: %v", err)
+		var dialer konnectivityproxy.ProxyDialer
+		if err := retryWithBackoff(startupMaxRetries, startupRetryInterval, func() error {
+			var err error
+			dialer, err = konnectivityproxy.NewKonnectivityDialer(opts)
+			if err != nil {
+				l.Info("Failed to initialize konnectivity dialer, retrying", "error", err)
+			}
+			return err
+		}); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: cannot initialize konnectivity dialer after %d attempts: %v", startupMaxRetries, err)
 			os.Exit(1)
 		}
 
