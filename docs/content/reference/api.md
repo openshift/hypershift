@@ -5744,6 +5744,13 @@ created in the guest VPC</p>
 <td><p>AWSEndpointServiceAvailable indicates whether the AWS Endpoint Service
 has been created for the specified NLB in the management VPC</p>
 </td>
+</tr><tr><td><p>&#34;AggregatedAPIServicesAvailable&#34;</p></td>
+<td><p>AggregatedAPIServicesAvailable indicates whether all aggregated APIServices
+in the guest cluster are available. This includes OpenShift API Server,
+OAuth API Server (when enabled), and OLM PackageServer APIServices.
+This condition is an HCP implementation detail set by the HCCO and is not
+bubbled up to the HostedCluster level.</p>
+</td>
 </tr><tr><td><p>&#34;AutoNodeEnabled&#34;</p></td>
 <td><p>AutoNodeEnabled indicates whether AutoNode is configured and operational for this HostedCluster.
 <strong>True</strong> means AutoNode is configured in the HostedCluster spec and the Karpenter components are fully rolled out and ready.

@@ -2202,6 +2202,12 @@ func TestRemoveHCPIngressFromRoutes(t *testing.T) {
 }
 
 func TestReconcileAvailabilityStatus(t *testing.T) {
+	allHealthyConditions := []metav1.Condition{
+		{Type: string(hyperv1.InfrastructureReady), Status: metav1.ConditionTrue, Reason: hyperv1.AsExpectedReason},
+		{Type: string(hyperv1.EtcdAvailable), Status: metav1.ConditionTrue, Reason: hyperv1.EtcdQuorumAvailableReason},
+		{Type: string(hyperv1.KubeAPIServerAvailable), Status: metav1.ConditionTrue, Reason: hyperv1.AsExpectedReason},
+	}
+
 	testCases := []struct {
 		name                      string
 		conditions                []metav1.Condition
@@ -2209,6 +2215,7 @@ func TestReconcileAvailabilityStatus(t *testing.T) {
 		healthCheckErr            error
 		componentsNotAvailableMsg string
 		componentsErr             error
+		alreadyAvailable          bool
 		generation                int64
 		expectedReady             bool
 		expectedReason            string
@@ -2414,6 +2421,11 @@ func TestReconcileAvailabilityStatus(t *testing.T) {
 					Status: metav1.ConditionTrue,
 					Reason: hyperv1.AsExpectedReason,
 				},
+				{
+					Type:   string(hyperv1.AggregatedAPIServicesAvailable),
+					Status: metav1.ConditionTrue,
+					Reason: hyperv1.AsExpectedReason,
+				},
 			},
 			kubeConfigAvailable: true,
 			expectedReady:       true,
@@ -2425,6 +2437,11 @@ func TestReconcileAvailabilityStatus(t *testing.T) {
 			conditions: []metav1.Condition{
 				{
 					Type:   string(hyperv1.InfrastructureReady),
+					Status: metav1.ConditionTrue,
+					Reason: hyperv1.AsExpectedReason,
+				},
+				{
+					Type:   string(hyperv1.AggregatedAPIServicesAvailable),
 					Status: metav1.ConditionTrue,
 					Reason: hyperv1.AsExpectedReason,
 				},
@@ -2442,6 +2459,59 @@ func TestReconcileAvailabilityStatus(t *testing.T) {
 			expectedReason:  hyperv1.StatusUnknownReason,
 			expectedMessage: "",
 		},
+		{
+			name: "When AggregatedAPIServicesAvailable condition is False and not already available, it should block availability",
+			conditions: append(append([]metav1.Condition{}, allHealthyConditions...),
+				metav1.Condition{Type: string(hyperv1.AggregatedAPIServicesAvailable), Status: metav1.ConditionFalse, Reason: hyperv1.AggregatedAPIServicesNotAvailableReason, Message: "Unavailable APIServices: v1.apps.openshift.io"},
+			),
+			kubeConfigAvailable: true,
+			alreadyAvailable:    false,
+			expectedReady:       false,
+			expectedReason:      hyperv1.AggregatedAPIServicesNotAvailableReason,
+			expectedMessage:     "Unavailable APIServices: v1.apps.openshift.io",
+		},
+		{
+			name:                "When AggregatedAPIServicesAvailable condition is nil and not already available, it should block availability",
+			conditions:          append([]metav1.Condition{}, allHealthyConditions...),
+			kubeConfigAvailable: true,
+			alreadyAvailable:    false,
+			expectedReady:       false,
+			expectedReason:      hyperv1.AggregatedAPIServicesNotAvailableReason,
+			expectedMessage:     "Waiting for aggregated API services to be available",
+		},
+		{
+			name: "When AggregatedAPIServicesAvailable condition is True, it should allow availability",
+			conditions: append(append([]metav1.Condition{}, allHealthyConditions...),
+				metav1.Condition{Type: string(hyperv1.AggregatedAPIServicesAvailable), Status: metav1.ConditionTrue, Reason: hyperv1.AsExpectedReason},
+			),
+			kubeConfigAvailable: true,
+			alreadyAvailable:    false,
+			expectedReady:       true,
+			expectedReason:      hyperv1.AsExpectedReason,
+			expectedMessage:     "",
+		},
+		{
+			name: "When already available and AggregatedAPIServicesAvailable is False, it should not regress availability",
+			conditions: append(append([]metav1.Condition{}, allHealthyConditions...),
+				metav1.Condition{Type: string(hyperv1.AggregatedAPIServicesAvailable), Status: metav1.ConditionFalse, Reason: hyperv1.AggregatedAPIServicesNotAvailableReason},
+			),
+			kubeConfigAvailable: true,
+			alreadyAvailable:    true,
+			expectedReady:       true,
+			expectedReason:      hyperv1.AsExpectedReason,
+			expectedMessage:     "",
+		},
+		{
+			name: "When AggregatedAPIServicesAvailable is Unknown and not already available, it should block availability",
+			conditions: append(append([]metav1.Condition{}, allHealthyConditions...),
+				metav1.Condition{Type: string(hyperv1.AggregatedAPIServicesAvailable), Status: metav1.ConditionUnknown, Reason: hyperv1.ReconcileErrorReason},
+			),
+			kubeConfigAvailable: true,
+			alreadyAvailable:    false,
+			expectedReady:       false,
+			expectedReason:      hyperv1.AggregatedAPIServicesNotAvailableReason,
+			expectedMessage:     "",
+		},
 	}
 
 	for _, tc := range testCases {
@@ -2454,6 +2524,7 @@ func TestReconcileAvailabilityStatus(t *testing.T) {
 				tc.healthCheckErr,
 				tc.componentsNotAvailableMsg,
 				tc.componentsErr,
+				tc.alreadyAvailable,
 				tc.generation,
 			)
 
