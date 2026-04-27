@@ -30,7 +30,10 @@ func ReconcileRouterService(svc *corev1.Service, internal, crossZoneLoadBalancin
 			svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-internal"] = "true"
 		}
 		if crossZoneLoadBalancingEnabled {
+			// In-tree AWS cloud provider annotation for cross-zone load balancing (OpenShift management clusters).
 			svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled"] = "true"
+			// AWS Load Balancer Controller annotation for cross-zone load balancing (EKS Auto Mode).
+			svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-attributes"] = "load_balancing.cross_zone.enabled=true"
 		}
 		util.ApplyAWSLoadBalancerTargetNodesAnnotation(svc, hcp)
 	}

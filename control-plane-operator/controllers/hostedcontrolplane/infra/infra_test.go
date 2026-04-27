@@ -1212,6 +1212,7 @@ func TestReconcileAPIServerService(t *testing.T) {
 	}
 	withCrossZoneAnnotation := func(svc *corev1.Service) {
 		svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled"] = "true"
+		svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-attributes"] = "load_balancing.cross_zone.enabled=true"
 	}
 	withLoadBalancerSourceRanges := func(svc *corev1.Service) {
 		svc.Spec.LoadBalancerSourceRanges = allowCIDRString
@@ -1491,6 +1492,7 @@ func TestReconcileHCPRouterServices(t *testing.T) {
 	}
 	withCrossZoneAnnotation := func(svc *corev1.Service) {
 		svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled"] = "true"
+		svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-attributes"] = "load_balancing.cross_zone.enabled=true"
 	}
 	tests := []struct {
 		name                         string
