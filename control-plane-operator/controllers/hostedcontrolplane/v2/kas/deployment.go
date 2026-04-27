@@ -379,7 +379,9 @@ func applyAzureWorkloadIdentityWebhookContainer(podSpec *corev1.PodSpec, hcp *hy
 					Scheme: corev1.URISchemeHTTP,
 				},
 			},
-			PeriodSeconds: 20,
+			PeriodSeconds:    20,
+			TimeoutSeconds:   5,
+			FailureThreshold: 3,
 		},
 		ReadinessProbe: &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{
@@ -391,6 +393,8 @@ func applyAzureWorkloadIdentityWebhookContainer(podSpec *corev1.PodSpec, hcp *hy
 			},
 			InitialDelaySeconds: 5,
 			PeriodSeconds:       10,
+			TimeoutSeconds:      5,
+			FailureThreshold:    3,
 		},
 		VolumeMounts: []corev1.VolumeMount{
 			{Name: azureWorkloadIdentityWebhookServingCertVolumeName, MountPath: "/var/run/app/certs"},

@@ -334,19 +334,23 @@ spec:
         image: azure-workload-identity-webhook
         imagePullPolicy: IfNotPresent
         livenessProbe:
+          failureThreshold: 3
           httpGet:
             path: /healthz
             port: 9440
             scheme: HTTP
           periodSeconds: 20
+          timeoutSeconds: 5
         name: azure-workload-identity-webhook
         readinessProbe:
+          failureThreshold: 3
           httpGet:
             path: /readyz
             port: 9440
             scheme: HTTP
           initialDelaySeconds: 5
           periodSeconds: 10
+          timeoutSeconds: 5
         resources:
           requests:
             cpu: 10m

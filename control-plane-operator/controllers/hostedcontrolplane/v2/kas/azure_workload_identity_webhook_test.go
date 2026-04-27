@@ -125,10 +125,15 @@ func TestApplyAzureWorkloadIdentityWebhookContainer(t *testing.T) {
 				g.Expect(webhookContainer.LivenessProbe).NotTo(BeNil())
 				g.Expect(webhookContainer.LivenessProbe.HTTPGet.Path).To(Equal("/healthz"))
 				g.Expect(webhookContainer.LivenessProbe.HTTPGet.Port.IntValue()).To(Equal(9440))
+				g.Expect(webhookContainer.LivenessProbe.PeriodSeconds).To(Equal(int32(20)))
+				g.Expect(webhookContainer.LivenessProbe.TimeoutSeconds).To(Equal(int32(5)))
+				g.Expect(webhookContainer.LivenessProbe.FailureThreshold).To(Equal(int32(3)))
 
 				g.Expect(webhookContainer.ReadinessProbe).NotTo(BeNil())
 				g.Expect(webhookContainer.ReadinessProbe.HTTPGet.Path).To(Equal("/readyz"))
 				g.Expect(webhookContainer.ReadinessProbe.HTTPGet.Port.IntValue()).To(Equal(9440))
+				g.Expect(webhookContainer.ReadinessProbe.TimeoutSeconds).To(Equal(int32(5)))
+				g.Expect(webhookContainer.ReadinessProbe.FailureThreshold).To(Equal(int32(3)))
 			},
 		},
 		{
