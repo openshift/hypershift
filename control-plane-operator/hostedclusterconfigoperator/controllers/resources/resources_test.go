@@ -341,19 +341,50 @@ func TestReconcileOLM(t *testing.T) {
 	}
 }
 
-func TestReconcileConfigOperatorReconciliationSucceededCondition(t *testing.T) {
+func newTestReconciler(cpClient client.Client, components map[string]string) *reconciler {
 	imageMetaDataProvider := fakeimagemetadataprovider.FakeRegistryClientImageMetadataProviderHCCO{}
+	return &reconciler{
+		client:                 fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(initialObjects...).WithStatusSubresource(&configv1.Infrastructure{}).Build(),
+		uncachedClient:         fake.NewClientBuilder().WithScheme(api.Scheme).Build(),
+		CreateOrUpdateProvider: &simpleCreateOrUpdater{},
+		platformType:           hyperv1.NonePlatform,
+		clusterSignerCA:        "foobar",
+		cpClient:               cpClient,
+		hcpName:                "foo",
+		hcpNamespace:           "bar",
+		releaseProvider: &fakereleaseprovider.FakeReleaseProvider{
+			Components: components,
+		},
+		ImageMetaDataProvider: &imageMetaDataProvider,
+	}
+}
+
+func TestReconcileConfigOperatorReconciliationSucceededCondition(t *testing.T) {
 	ctx := logr.NewContext(context.Background(), zapr.NewLogger(zaptest.NewLogger(t)))
 
 	testCases := []struct {
-		name           string
-		expectedStatus metav1.ConditionStatus
-		expectedReason string
+		name               string
+		components         map[string]string
+		expectedStatus     metav1.ConditionStatus
+		expectedReason     string
+		expectedMessage    string
+		expectReconcileErr bool
 	}{
 		{
-			name:           "When reconciliation succeeds, it should set ConfigOperatorReconciliationSucceeded to True",
-			expectedStatus: metav1.ConditionTrue,
-			expectedReason: hyperv1.AsExpectedReason,
+			name: "When reconciliation succeeds, it should set ConfigOperatorReconciliationSucceeded to True",
+			components: map[string]string{
+				"cli": "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:cli-fake",
+			},
+			expectedStatus:  metav1.ConditionTrue,
+			expectedReason:  hyperv1.AsExpectedReason,
+			expectedMessage: hyperv1.AllIsWellMessage,
+		},
+		{
+			name:               "When reconciliation errors occur, it should set ConfigOperatorReconciliationSucceeded to False",
+			components:         map[string]string{},
+			expectedStatus:     metav1.ConditionFalse,
+			expectedReason:     hyperv1.ReconcileErrorReason,
+			expectReconcileErr: true,
 		},
 	}
 
@@ -363,33 +394,26 @@ func TestReconcileConfigOperatorReconciliationSucceededCondition(t *testing.T) {
 			hcp := fakeHCP()
 			cpClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(cpObjects...).WithStatusSubresource(&hyperv1.HostedControlPlane{}).Build()
 
-			r := &reconciler{
-				client:                 fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(initialObjects...).WithStatusSubresource(&configv1.Infrastructure{}).Build(),
-				uncachedClient:         fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects().Build(),
-				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
-				platformType:           hyperv1.NonePlatform,
-				clusterSignerCA:        "foobar",
-				cpClient:               cpClient,
-				hcpName:                "foo",
-				hcpNamespace:           "bar",
-				releaseProvider: &fakereleaseprovider.FakeReleaseProvider{
-					Components: map[string]string{
-						"cli": "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:cli-fake",
-					},
-				},
-				ImageMetaDataProvider: &imageMetaDataProvider,
+			r := newTestReconciler(cpClient, tc.components)
+			_, reconcileErr := r.Reconcile(ctx, controllerruntime.Request{})
+			if tc.expectReconcileErr {
+				g.Expect(reconcileErr).To(HaveOccurred())
 			}
-			_, _ = r.Reconcile(ctx, controllerruntime.Request{})
 
-			// Fetch the updated HCP to verify the condition was set
 			updatedHCP := &hyperv1.HostedControlPlane{}
-			err := cpClient.Get(ctx, client.ObjectKeyFromObject(hcp), updatedHCP)
-			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(cpClient.Get(ctx, client.ObjectKeyFromObject(hcp), updatedHCP)).To(Succeed())
 
 			cond := meta.FindStatusCondition(updatedHCP.Status.Conditions, string(hyperv1.ConfigOperatorReconciliationSucceeded))
 			g.Expect(cond).ToNot(BeNil(), "ConfigOperatorReconciliationSucceeded condition should be set on HCP")
 			g.Expect(cond.Status).To(Equal(tc.expectedStatus))
 			g.Expect(cond.Reason).To(Equal(tc.expectedReason))
+			g.Expect(cond.ObservedGeneration).To(Equal(hcp.Generation))
+			if tc.expectedMessage != "" {
+				g.Expect(cond.Message).To(Equal(tc.expectedMessage))
+			}
+			if tc.expectReconcileErr {
+				g.Expect(cond.Message).ToNot(BeEmpty())
+			}
 		})
 	}
 }

@@ -107,6 +107,7 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 sts_regional_endpoints = regional
 region = %s
 `
+	maxConditionMessageLength = 3000
 )
 
 var (
@@ -878,12 +879,16 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 		ObservedGeneration: hcp.Generation,
 		Status:             metav1.ConditionTrue,
 		Reason:             hyperv1.AsExpectedReason,
-		Message:            "Reconciliation completed successfully",
+		Message:            hyperv1.AllIsWellMessage,
 	}
 	if reconcileErr != nil {
 		reconcileCondition.Status = metav1.ConditionFalse
 		reconcileCondition.Reason = hyperv1.ReconcileErrorReason
-		reconcileCondition.Message = reconcileErr.Error()
+		msg := reconcileErr.Error()
+		if len(msg) > maxConditionMessageLength {
+			msg = msg[:maxConditionMessageLength]
+		}
+		reconcileCondition.Message = msg
 	}
 	if err := r.patchHCPStatusCondition(ctx, hcp, reconcileCondition); err != nil {
 		return ctrl.Result{}, utilerrors.NewAggregate([]error{reconcileErr, err})
