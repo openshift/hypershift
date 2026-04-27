@@ -122,10 +122,9 @@ spec:
             path: healthz
             port: 8443
             scheme: HTTPS
-          initialDelaySeconds: 30
           periodSeconds: 10
           successThreshold: 1
-          timeoutSeconds: 1
+          timeoutSeconds: 5
         name: openshift-oauth-apiserver
         readinessProbe:
           failureThreshold: 10
@@ -135,7 +134,7 @@ spec:
             scheme: HTTPS
           periodSeconds: 10
           successThreshold: 1
-          timeoutSeconds: 1
+          timeoutSeconds: 5
         resources:
           requests:
             cpu: 150m
@@ -147,6 +146,15 @@ spec:
             - ALL
           readOnlyRootFilesystem: true
           runAsNonRoot: true
+        startupProbe:
+          failureThreshold: 30
+          httpGet:
+            path: healthz
+            port: 8443
+            scheme: HTTPS
+          periodSeconds: 5
+          successThreshold: 1
+          timeoutSeconds: 10
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /etc/kubernetes/certs/aggregator-client-ca

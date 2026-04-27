@@ -56,16 +56,24 @@ spec:
           value: kube-apiserver,etcd-client,audit-webhook
         image: oauth-apiserver
         imagePullPolicy: IfNotPresent
+        startupProbe:
+          httpGet:
+            path: healthz
+            port: 8443
+            scheme: HTTPS
+          periodSeconds: 5
+          timeoutSeconds: 10
+          successThreshold: 1
+          failureThreshold: 30
         livenessProbe:
           failureThreshold: 3
           httpGet:
             path: healthz
             port: 8443
             scheme: HTTPS
-          initialDelaySeconds: 30
           periodSeconds: 10
           successThreshold: 1
-          timeoutSeconds: 1
+          timeoutSeconds: 5
         name: openshift-oauth-apiserver
         readinessProbe:
           failureThreshold: 10
@@ -75,7 +83,7 @@ spec:
             scheme: HTTPS
           periodSeconds: 10
           successThreshold: 1
-          timeoutSeconds: 1
+          timeoutSeconds: 5
         resources:
           requests:
             cpu: 150m
