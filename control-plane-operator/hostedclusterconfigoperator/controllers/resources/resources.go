@@ -870,7 +870,26 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 		log.Info("successfully updated hcp status with recovery finished condition")
 	}
 
-	return ctrl.Result{}, utilerrors.NewAggregate(errs)
+	// Surface HCCO reconciliation status as a condition on the HostedControlPlane.
+	// This follows the same pattern used by the HyperShift Operator for ReconciliationSucceeded.
+	reconcileErr := utilerrors.NewAggregate(errs)
+	reconcileCondition := &metav1.Condition{
+		Type:               string(hyperv1.ConfigOperatorReconciliationSucceeded),
+		ObservedGeneration: hcp.Generation,
+		Status:             metav1.ConditionTrue,
+		Reason:             hyperv1.AsExpectedReason,
+		Message:            "Reconciliation completed successfully",
+	}
+	if reconcileErr != nil {
+		reconcileCondition.Status = metav1.ConditionFalse
+		reconcileCondition.Reason = hyperv1.ReconcileErrorReason
+		reconcileCondition.Message = reconcileErr.Error()
+	}
+	if err := r.patchHCPStatusCondition(ctx, hcp, reconcileCondition); err != nil {
+		return ctrl.Result{}, utilerrors.NewAggregate([]error{reconcileErr, err})
+	}
+
+	return ctrl.Result{}, reconcileErr
 }
 
 func (r *reconciler) reconcileCSIDriver(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) error {
