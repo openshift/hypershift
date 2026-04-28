@@ -34358,6 +34358,24 @@ string
 </tr>
 <tr>
 <td>
+<code>acrImagePullManagedIdentityID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>acrImagePullManagedIdentityID is the resource ID of a user-assigned managed identity
+that will be used by worker nodes to pull images from Azure Container Registry (ACR).
+When set, the identity is attached to worker VM scale sets and configured in the worker
+cloud provider config so kubelet&rsquo;s credential provider can authenticate to ACR without
+image pull secrets. The identity must have the AcrPull role assigned on the target ACR(s).</p>
+<p>The expected format is:
+/subscriptions/{subscriptionID}/resourceGroups/{resourceGroupName}/providers/Microsoft.ManagedIdentity/userAssignedIdentities/{identityName}</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>topology</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.AzureTopologyType">
