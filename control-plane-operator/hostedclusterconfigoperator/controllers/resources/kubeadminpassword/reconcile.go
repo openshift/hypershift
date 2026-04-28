@@ -9,13 +9,15 @@ import (
 )
 
 func ReconcileKubeadminPasswordHashSecret(secret *corev1.Secret, passwordSecret *corev1.Secret) error {
+	password := passwordSecret.Data["password"]
 	if secret.Data != nil {
 		hash, hasHash := secret.Data["kubeadmin"]
 		if hasHash && len(hash) > 0 {
-			return nil
+			if bcrypt.CompareHashAndPassword(hash, password) == nil {
+				return nil
+			}
 		}
 	}
-	password := passwordSecret.Data["password"]
 	passwordHash, err := bcrypt.GenerateFromPassword(password, bcrypt.DefaultCost)
 	if err != nil {
 		return fmt.Errorf("failed to generate password hash: %w", err)
