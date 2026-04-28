@@ -289,3 +289,92 @@ tests:
           apiServer:
             additionalCORSAllowedOrigins:
             - "https://example.com"
+
+  - name: When loadBalancer hostname is set and apiServer has servingCerts but no namedCertificates it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: LoadBalancer
+            loadBalancer:
+              hostname: kas.example.com
+        - service: Ignition
+          servicePublishingStrategy:
+            type: NodePort
+            nodePort:
+              address: "127.0.0.1"
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: NodePort
+            nodePort:
+              address: "fd2e:6f44:5dd8:c956::14"
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: NodePort
+            nodePort:
+              address: "fd2e:6f44:5dd8:c956:0000:0000:0000:0014"
+        configuration:
+          apiServer:
+            servingCerts: {}
+
+  - name: When loadBalancer hostname is set and namedCertificates entry has no names it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: LoadBalancer
+            loadBalancer:
+              hostname: kas.example.com
+        - service: Ignition
+          servicePublishingStrategy:
+            type: NodePort
+            nodePort:
+              address: "127.0.0.1"
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: NodePort
+            nodePort:
+              address: "fd2e:6f44:5dd8:c956::14"
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: NodePort
+            nodePort:
+              address: "fd2e:6f44:5dd8:c956:0000:0000:0000:0014"
+        configuration:
+          apiServer:
+            servingCerts:
+              namedCertificates:
+              - servingCertificate:
+                  name: my-cert
