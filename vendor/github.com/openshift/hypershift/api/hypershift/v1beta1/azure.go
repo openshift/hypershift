@@ -469,6 +469,21 @@ type AzurePlatformSpec struct {
 	// +kubebuilder:validation:MaxLength=255
 	TenantID string `json:"tenantID"`
 
+	// acrImagePullManagedIdentityID is the resource ID of a user-assigned managed identity
+	// that will be used by worker nodes to pull images from Azure Container Registry (ACR).
+	// When set, the identity is attached to worker VM scale sets and configured in the worker
+	// cloud provider config so kubelet's credential provider can authenticate to ACR without
+	// image pull secrets. The identity must have the AcrPull role assigned on the target ACR(s).
+	//
+	// The expected format is:
+	//   /subscriptions/{subscriptionID}/resourceGroups/{resourceGroupName}/providers/Microsoft.ManagedIdentity/userAssignedIdentities/{identityName}
+	//
+	// +kubebuilder:validation:XValidation:rule="self.lowerAscii().matches('^/subscriptions/[^/]+/resourcegroups/[^/]+/providers/microsoft.managedidentity/userassignedidentities/[^/]+$')",message="acrImagePullManagedIdentityID must be an ARM resource ID in the format /subscriptions/{subscriptionID}/resourceGroups/{resourceGroupName}/providers/Microsoft.ManagedIdentity/userAssignedIdentities/{identityName}"
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=512
+	// +optional
+	AcrImagePullManagedIdentityID string `json:"acrImagePullManagedIdentityID,omitempty"`
+
 	// topology specifies the network topology of the API server endpoint for the hosted cluster.
 	// - Public: The API server is accessible only via a public endpoint.
 	// - PublicAndPrivate: The API server is accessible via both public and private endpoints.

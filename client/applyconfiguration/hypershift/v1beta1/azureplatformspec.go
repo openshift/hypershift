@@ -24,17 +24,18 @@ import (
 // AzurePlatformSpecApplyConfiguration represents a declarative configuration of the AzurePlatformSpec type for use
 // with apply.
 type AzurePlatformSpecApplyConfiguration struct {
-	Cloud                     *string                                             `json:"cloud,omitempty"`
-	Location                  *string                                             `json:"location,omitempty"`
-	ResourceGroupName         *string                                             `json:"resourceGroup,omitempty"`
-	VnetID                    *string                                             `json:"vnetID,omitempty"`
-	SubnetID                  *string                                             `json:"subnetID,omitempty"`
-	SubscriptionID            *string                                             `json:"subscriptionID,omitempty"`
-	SecurityGroupID           *string                                             `json:"securityGroupID,omitempty"`
-	AzureAuthenticationConfig *AzureAuthenticationConfigurationApplyConfiguration `json:"azureAuthenticationConfig,omitempty"`
-	TenantID                  *string                                             `json:"tenantID,omitempty"`
-	Topology                  *hypershiftv1beta1.AzureTopologyType                `json:"topology,omitempty"`
-	Private                   *AzurePrivateSpecApplyConfiguration                 `json:"private,omitempty"`
+	Cloud                         *string                                             `json:"cloud,omitempty"`
+	Location                      *string                                             `json:"location,omitempty"`
+	ResourceGroupName             *string                                             `json:"resourceGroup,omitempty"`
+	VnetID                        *string                                             `json:"vnetID,omitempty"`
+	SubnetID                      *string                                             `json:"subnetID,omitempty"`
+	SubscriptionID                *string                                             `json:"subscriptionID,omitempty"`
+	SecurityGroupID               *string                                             `json:"securityGroupID,omitempty"`
+	AzureAuthenticationConfig     *AzureAuthenticationConfigurationApplyConfiguration `json:"azureAuthenticationConfig,omitempty"`
+	TenantID                      *string                                             `json:"tenantID,omitempty"`
+	AcrImagePullManagedIdentityID *string                                             `json:"acrImagePullManagedIdentityID,omitempty"`
+	Topology                      *hypershiftv1beta1.AzureTopologyType                `json:"topology,omitempty"`
+	Private                       *AzurePrivateSpecApplyConfiguration                 `json:"private,omitempty"`
 }
 
 // AzurePlatformSpecApplyConfiguration constructs a declarative configuration of the AzurePlatformSpec type for use with
@@ -112,6 +113,14 @@ func (b *AzurePlatformSpecApplyConfiguration) WithAzureAuthenticationConfig(valu
 // If called multiple times, the TenantID field is set to the value of the last call.
 func (b *AzurePlatformSpecApplyConfiguration) WithTenantID(value string) *AzurePlatformSpecApplyConfiguration {
 	b.TenantID = &value
+	return b
+}
+
+// WithAcrImagePullManagedIdentityID sets the AcrImagePullManagedIdentityID field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the AcrImagePullManagedIdentityID field is set to the value of the last call.
+func (b *AzurePlatformSpecApplyConfiguration) WithAcrImagePullManagedIdentityID(value string) *AzurePlatformSpecApplyConfiguration {
+	b.AcrImagePullManagedIdentityID = &value
 	return b
 }
 
