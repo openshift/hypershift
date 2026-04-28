@@ -4143,6 +4143,23 @@ spec:
                   azure:
                     description: azure defines azure specific settings
                     properties:
+                      acrImagePullManagedIdentityID:
+                        description: |-
+                          acrImagePullManagedIdentityID is the resource ID of a user-assigned managed identity
+                          that will be used by worker nodes to pull images from Azure Container Registry (ACR).
+                          When set, the identity is attached to worker VM scale sets and configured in the worker
+                          cloud provider config so kubelet's credential provider can authenticate to ACR without
+                          image pull secrets. The identity must have the AcrPull role assigned on the target ACR(s).
+
+                          The expected format is:
+                            /subscriptions/{subscriptionID}/resourceGroups/{resourceGroupName}/providers/Microsoft.ManagedIdentity/userAssignedIdentities/{identityName}
+                        maxLength: 512
+                        minLength: 1
+                        type: string
+                        x-kubernetes-validations:
+                        - message: acrImagePullManagedIdentityID must be an ARM resource
+                            ID in the format /subscriptions/{subscriptionID}/resourceGroups/{resourceGroupName}/providers/Microsoft.ManagedIdentity/userAssignedIdentities/{identityName}
+                          rule: self.lowerAscii().matches('^/subscriptions/[^/]+/resourcegroups/[^/]+/providers/microsoft.managedidentity/userassignedidentities/[^/]+$')
                       azureAuthenticationConfig:
                         description: |-
                           azureAuthenticationConfig is the type of Azure authentication configuration to use to authenticate with Azure's
