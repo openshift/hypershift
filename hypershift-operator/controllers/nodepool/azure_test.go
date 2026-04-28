@@ -22,6 +22,7 @@ func TestAzureMachineTemplateSpec(t *testing.T) {
 	testCases := []struct {
 		name                             string
 		nodePool                         *hyperv1.NodePool
+		hostedCluster                    *hyperv1.HostedCluster
 		expectedAzureMachineTemplateSpec *capiazure.AzureMachineTemplateSpec
 		expectedErr                      bool
 		expectedErrMsg                   string
@@ -507,12 +508,185 @@ func TestAzureMachineTemplateSpec(t *testing.T) {
 			expectedErr:    true,
 			expectedErrMsg: "failed to determine subnet name for Azure machine: failed to parse subnet name from \"/subscriptions/testSubscriptionID/resourceGroups/testResourceGroupName/providers/Microsoft.Network/virtualNetworks/testVnetName/subnets/\"",
 		},
+		{
+			name: "When HostedCluster has AcrImagePullManagedIdentityID set it should set UserAssigned identity",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzureNodePoolPlatform{
+							Image: hyperv1.AzureVMImage{
+								Type:    hyperv1.ImageID,
+								ImageID: ptr.To("testImageID"),
+							},
+							SubnetID: "/subscriptions/testSubscriptionID/resourceGroups/testResourceGroupName/providers/Microsoft.Network/virtualNetworks/testVnetName/subnets/testSubnetName",
+							VMSize:   "Standard_D2_v2",
+							OSDisk: hyperv1.AzureNodePoolOSDisk{
+								SizeGiB:                30,
+								DiskStorageAccountType: "Standard_LRS",
+							},
+						},
+					},
+				},
+			},
+			hostedCluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							AcrImagePullManagedIdentityID: "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/test-mi",
+						},
+					},
+				},
+			},
+			expectedAzureMachineTemplateSpec: &capiazure.AzureMachineTemplateSpec{
+				Template: capiazure.AzureMachineTemplateResource{
+					ObjectMeta: clusterv1.ObjectMeta{Labels: nil, Annotations: nil},
+					Spec: capiazure.AzureMachineSpec{
+						ProviderID:    nil,
+						VMSize:        "Standard_D2_v2",
+						FailureDomain: nil,
+						Image: &capiazure.Image{
+							ID:             ptr.To("testImageID"),
+							SharedGallery:  nil,
+							Marketplace:    nil,
+							ComputeGallery: nil,
+						},
+						Identity: capiazure.VMIdentityUserAssigned,
+						UserAssignedIdentities: []capiazure.UserAssignedIdentity{
+							{ProviderID: "azure:///subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/test-mi"},
+						},
+						SystemAssignedIdentityRole: nil,
+						RoleAssignmentName:         "",
+						OSDisk: capiazure.OSDisk{
+							OSType:     "",
+							DiskSizeGB: ptr.To[int32](30),
+							ManagedDisk: &capiazure.ManagedDiskParameters{
+								StorageAccountType: "Standard_LRS",
+								DiskEncryptionSet:  nil,
+								SecurityProfile:    nil,
+							},
+							DiffDiskSettings: nil,
+							CachingType:      "",
+						},
+						DataDisks:              nil,
+						SSHPublicKey:           dummySSHKey,
+						AdditionalTags:         nil,
+						AdditionalCapabilities: nil,
+						AllocatePublicIP:       false,
+						EnableIPForwarding:     false,
+						AcceleratedNetworking:  nil,
+						Diagnostics:            nil,
+						SpotVMOptions:          nil,
+						SecurityProfile:        nil,
+						SubnetName:             "",
+						DNSServers:             nil,
+						VMExtensions:           nil,
+						NetworkInterfaces: []capiazure.NetworkInterface{
+							{
+								SubnetName:            "testSubnetName",
+								PrivateIPConfigs:      0,
+								AcceleratedNetworking: nil,
+							},
+						},
+						CapacityReservationGroupID: nil,
+					},
+				},
+			},
+			expectedErr: false,
+		},
+		{
+			name: "When HostedCluster has empty AcrImagePullManagedIdentityID it should not set UserAssigned identity",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzureNodePoolPlatform{
+							Image: hyperv1.AzureVMImage{
+								Type:    hyperv1.ImageID,
+								ImageID: ptr.To("testImageID"),
+							},
+							SubnetID: "/subscriptions/testSubscriptionID/resourceGroups/testResourceGroupName/providers/Microsoft.Network/virtualNetworks/testVnetName/subnets/testSubnetName",
+							VMSize:   "Standard_D2_v2",
+							OSDisk: hyperv1.AzureNodePoolOSDisk{
+								SizeGiB:                30,
+								DiskStorageAccountType: "Standard_LRS",
+							},
+						},
+					},
+				},
+			},
+			hostedCluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type:  hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{},
+					},
+				},
+			},
+			expectedAzureMachineTemplateSpec: &capiazure.AzureMachineTemplateSpec{
+				Template: capiazure.AzureMachineTemplateResource{
+					ObjectMeta: clusterv1.ObjectMeta{Labels: nil, Annotations: nil},
+					Spec: capiazure.AzureMachineSpec{
+						ProviderID:    nil,
+						VMSize:        "Standard_D2_v2",
+						FailureDomain: nil,
+						Image: &capiazure.Image{
+							ID:             ptr.To("testImageID"),
+							SharedGallery:  nil,
+							Marketplace:    nil,
+							ComputeGallery: nil,
+						},
+						UserAssignedIdentities:     nil,
+						SystemAssignedIdentityRole: nil,
+						RoleAssignmentName:         "",
+						OSDisk: capiazure.OSDisk{
+							OSType:     "",
+							DiskSizeGB: ptr.To[int32](30),
+							ManagedDisk: &capiazure.ManagedDiskParameters{
+								StorageAccountType: "Standard_LRS",
+								DiskEncryptionSet:  nil,
+								SecurityProfile:    nil,
+							},
+							DiffDiskSettings: nil,
+							CachingType:      "",
+						},
+						DataDisks:              nil,
+						SSHPublicKey:           dummySSHKey,
+						AdditionalTags:         nil,
+						AdditionalCapabilities: nil,
+						AllocatePublicIP:       false,
+						EnableIPForwarding:     false,
+						AcceleratedNetworking:  nil,
+						Diagnostics:            nil,
+						SpotVMOptions:          nil,
+						SecurityProfile:        nil,
+						SubnetName:             "",
+						DNSServers:             nil,
+						VMExtensions:           nil,
+						NetworkInterfaces: []capiazure.NetworkInterface{
+							{
+								SubnetName:            "testSubnetName",
+								PrivateIPConfigs:      0,
+								AcceleratedNetworking: nil,
+							},
+						},
+						CapacityReservationGroupID: nil,
+					},
+				},
+			},
+			expectedErr: false,
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
 
-			azureSpec, err := azureMachineTemplateSpec(tc.nodePool)
+			hc := tc.hostedCluster
+			if hc == nil {
+				hc = &hyperv1.HostedCluster{}
+			}
+			azureSpec, err := azureMachineTemplateSpec(tc.nodePool, hc)
 			if tc.expectedErr {
 				g.Expect(err.Error()).To(ContainSubstring(tc.expectedErrMsg))
 			} else {

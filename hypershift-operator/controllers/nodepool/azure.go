@@ -14,6 +14,7 @@ import (
 	"k8s.io/utils/ptr"
 
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
+	capzutil "sigs.k8s.io/cluster-api-provider-azure/util/azure"
 
 	"github.com/blang/semver"
 )
@@ -167,7 +168,7 @@ func getAzureMarketplaceMetadata(releaseImage *releaseinfo.ReleaseImage, arch st
 	return result, nil
 }
 
-func azureMachineTemplateSpec(nodePool *hyperv1.NodePool) (*capiazure.AzureMachineTemplateSpec, error) {
+func azureMachineTemplateSpec(nodePool *hyperv1.NodePool, hostedCluster *hyperv1.HostedCluster) (*capiazure.AzureMachineTemplateSpec, error) {
 	subnetName, err := azureutil.GetSubnetNameFromSubnetID(nodePool.Spec.Platform.Azure.SubnetID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to determine subnet name for Azure machine: %w", err)
@@ -244,6 +245,16 @@ func azureMachineTemplateSpec(nodePool *hyperv1.NodePool) (*capiazure.AzureMachi
 		}
 	}
 
+	if hostedCluster != nil && hostedCluster.Spec.Platform.Azure != nil && hostedCluster.Spec.Platform.Azure.AcrImagePullManagedIdentityID != "" {
+		azureMachineTemplate.Template.Spec.Identity = capiazure.VMIdentityUserAssigned
+		azureMachineTemplate.Template.Spec.UserAssignedIdentities = append(
+			azureMachineTemplate.Template.Spec.UserAssignedIdentities,
+			capiazure.UserAssignedIdentity{
+				ProviderID: capzutil.ProviderIDPrefix + hostedCluster.Spec.Platform.Azure.AcrImagePullManagedIdentityID,
+			},
+		)
+	}
+
 	azureMachineTemplate.Template.Spec.SSHPublicKey = dummySSHKey
 
 	return azureMachineTemplate, nil
@@ -255,7 +266,7 @@ func (c *CAPI) azureMachineTemplate(ctx context.Context, templateNameGenerator f
 		return nil, fmt.Errorf("failed to apply Azure image defaults: %w", err)
 	}
 
-	spec, err := azureMachineTemplateSpec(c.nodePool)
+	spec, err := azureMachineTemplateSpec(c.nodePool, c.hostedCluster)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate AzureMachineTemplateSpec: %w", err)
 	}
