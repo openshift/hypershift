@@ -77,6 +77,53 @@ func newTestHCP(annotations map[string]string) *hyperv1.HostedControlPlane {
 	}
 }
 
+func TestConfigWithAcrMI(t *testing.T) {
+	hcp := newTestHCP(nil)
+	hcp.Namespace = "HCP_NAMESPACE"
+	hcp.Spec.Platform.Azure.AcrImagePullManagedIdentityID = "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/test-mi"
+
+	cm := &corev1.ConfigMap{}
+	_, _, err := assets.LoadManifestInto(ComponentName, "config.yaml", cm)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	cpContext := component.WorkloadContext{
+		HCP: hcp,
+	}
+	err = adaptConfig(cpContext, cm)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	yaml, err := util.SerializeResource(cm, api.Scheme)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	testutil.CompareWithFixture(t, yaml)
+}
+
+func TestConfigSecretDoesNotContainAcrMI(t *testing.T) {
+	hcp := newTestHCP(nil)
+	hcp.Namespace = "HCP_NAMESPACE"
+	hcp.Spec.Platform.Azure.AcrImagePullManagedIdentityID = "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/test-mi"
+
+	secret := &corev1.Secret{
+		Data: map[string][]byte{},
+	}
+	cpContext := component.WorkloadContext{
+		HCP: hcp,
+	}
+	err := adaptConfigSecret(cpContext, secret)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	cloudConf := string(secret.Data[ConfigKey])
+	if strings.Contains(cloudConf, "userAssignedIdentityID") {
+		t.Fatalf("CP secret should NOT contain userAssignedIdentityID, got: %s", cloudConf)
+	}
+}
+
 func TestConfigErrorStates(t *testing.T) {
 	tests := []struct {
 		name        string

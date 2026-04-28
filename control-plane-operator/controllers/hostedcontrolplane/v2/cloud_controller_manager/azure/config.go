@@ -28,6 +28,10 @@ func adaptConfig(cpContext component.WorkloadContext, cm *corev1.ConfigMap) erro
 		return err
 	}
 
+	if cpContext.HCP.Spec.Platform.Azure.AcrImagePullManagedIdentityID != "" {
+		cfg.UserAssignedIdentityID = cpContext.HCP.Spec.Platform.Azure.AcrImagePullManagedIdentityID
+	}
+
 	serializedConfig, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to serialize cloudconfig: %w", err)
@@ -199,4 +203,5 @@ type AzureConfig struct {
 	ClusterServiceLoadBalancerHealthProbeMode       string `json:"clusterServiceLoadBalancerHealthProbeMode"`
 	ClusterServiceSharedLoadBalancerHealthProbePath string `json:"clusterServiceSharedLoadBalancerHealthProbePath,omitempty"`
 	ClusterServiceSharedLoadBalancerHealthProbePort int32  `json:"clusterServiceSharedLoadBalancerHealthProbePort,omitempty"`
+	UserAssignedIdentityID                          string `json:"userAssignedIdentityID,omitempty"`
 }
