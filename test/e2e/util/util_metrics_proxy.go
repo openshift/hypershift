@@ -185,7 +185,7 @@ func execInGuestPod(ctx context.Context, guestConfig *rest.Config, namespace, po
 // targetsAPIResponse wraps the Prometheus /api/v1/targets JSON envelope
 // around the upstream TargetsResult type.
 type targetsAPIResponse struct {
-	Status string                    `json:"status"`
+	Status string                     `json:"status"`
 	Data   prometheusv1.TargetsResult `json:"data"`
 }
 
@@ -198,4 +198,3 @@ type queryAPIResponse struct {
 		Result     model.Vector `json:"result"`
 	} `json:"data"`
 }
-
