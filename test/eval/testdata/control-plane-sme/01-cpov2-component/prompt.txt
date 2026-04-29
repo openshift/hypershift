@@ -1,15 +1,5 @@
-I need to add a new control plane component called "audit-logger"
-that runs as a deployment in the hosted control plane namespace.
-It needs to read the kube-apiserver audit logs and forward them
-to an external endpoint configured by the cluster admin.
-How should I implement this following HyperShift patterns?
+We want to add a new control plane component called "policy-engine" that enforces admission policies on the hosted cluster. The component needs to behave differently depending on the OCP version of the hosted control plane — in 4.18+ it should use ValidatingAdmissionPolicy (native K8s), but in 4.17 and below it should fall back to a webhook-based approach.
 
-Assume it will use a sidecar container on the kube-apiserver pod
-that reads audit logs from a shared volume and forwards them via
-HTTPS to a user-configured webhook endpoint.
+The HyperShift Operator needs to know which variant to configure when reconciling the HostedCluster, and the CPO needs to deploy the right version of the component.
 
-IMPORTANT: Write your COMPLETE analysis and guidance as your direct response text.
-Do NOT enter plan mode. Do NOT write to a plan file. Do NOT say "the plan is ready"
-or refer to any plan file. Instead, include ALL details -- API definitions, code
-patterns, cpov2 framework usage, resource considerations, security concerns --
-directly in your response output.
+How should we implement this considering HyperShift's versioning model and the HO/CPO version skew constraints?

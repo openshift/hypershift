@@ -1,4 +1,5 @@
-references the cpov2 or controlplane-component framework
-mentions creating manifests in an assets directory under control-plane-operator
+references the cpov2 or controlplane-component framework for deploying the component
+version-dependent behavior should be decided in the CPO based on the hosted cluster release version, not in the HO
+HO and CPO can run different versions — the HO must not assume which CPO version is running
+the CPO image is part of the OCP release payload and matches the hosted cluster version
 considers impact on control plane resource footprint (CPU, memory)
-addresses principle of least privilege or RBAC minimization
