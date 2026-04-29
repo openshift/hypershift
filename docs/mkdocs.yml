@@ -111,6 +111,7 @@ nav:
     - 'Global Pull Secret': how-to/common/global-pull-secret.md
     - 'HCP Networking Requirements': how-to/common/hcp-networking-requirements.md
     - how-to/common/multi-arch-on-hcp.md
+  - 'Cluster Capabilities': how-to/cluster-capabilities.md
   - how-to/metrics-sets.md
   - 'Configure OCP components':
     - how-to/configure-ocp-components/index.md
@@ -406,6 +407,7 @@ nav:
   - 'HO/CPO Release Process': contribute/release-process.md
   - 'OCP Branching Tasks': contribute/branch-process.md
   - 'Custom Images': contribute/custom-images.md
+  - 'Add a Capability': contribute/add-a-capability.md
   - 'Onboard a Platform': contribute/onboard-a-platform.md
   - 'Run Tests': contribute/run-tests.md
   - 'Develop in Cluster': contribute/develop_in_cluster.md
