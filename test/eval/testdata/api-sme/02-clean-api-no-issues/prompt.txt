@@ -1,1 +1,0 @@
-I've added a new maintenanceWindow field to HostedClusterSpec in api/hypershift/v1beta1/hostedcluster_types.go. The code is already on disk. Please review this API change.
