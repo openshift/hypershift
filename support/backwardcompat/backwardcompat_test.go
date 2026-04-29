@@ -18,6 +18,108 @@ import (
 	"github.com/blang/semver"
 )
 
+func TestNormalizeV1Alpha1ClusterImagePolicy(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name: "When manifest is a v1alpha1 ClusterImagePolicy it should rewrite apiVersion to v1",
+			input: `apiVersion: config.openshift.io/v1alpha1
+kind: ClusterImagePolicy
+metadata:
+  name: test-policy
+spec:
+  scopes:
+    - example.com
+`,
+			expected: `apiVersion: config.openshift.io/v1
+kind: ClusterImagePolicy
+metadata:
+  name: test-policy
+spec:
+  scopes:
+    - example.com
+`,
+		},
+		{
+			name: "When manifest is already v1 ClusterImagePolicy it should return it unchanged",
+			input: `apiVersion: config.openshift.io/v1
+kind: ClusterImagePolicy
+metadata:
+  name: test-policy
+`,
+			expected: `apiVersion: config.openshift.io/v1
+kind: ClusterImagePolicy
+metadata:
+  name: test-policy
+`,
+		},
+		{
+			name: "When manifest is a v1alpha1 ImagePolicy it should return it unchanged",
+			input: `apiVersion: config.openshift.io/v1alpha1
+kind: ImagePolicy
+metadata:
+  name: test-policy
+`,
+			expected: `apiVersion: config.openshift.io/v1alpha1
+kind: ImagePolicy
+metadata:
+  name: test-policy
+`,
+		},
+		{
+			name: "When manifest is a different resource it should return it unchanged",
+			input: `apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: test-cm
+`,
+			expected: `apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: test-cm
+`,
+		},
+		{
+			name:     "When manifest is invalid YAML it should return it unchanged",
+			input:    `not: valid: yaml: [`,
+			expected: `not: valid: yaml: [`,
+		},
+		{
+			name:     "When manifest is empty it should return it unchanged",
+			input:    ``,
+			expected: ``,
+		},
+		{
+			name: "When manifest has v1alpha1 in a value it should only replace the apiVersion occurrence",
+			input: `apiVersion: config.openshift.io/v1alpha1
+kind: ClusterImagePolicy
+metadata:
+  name: test-policy
+  annotations:
+    source: config.openshift.io/v1alpha1
+`,
+			expected: `apiVersion: config.openshift.io/v1
+kind: ClusterImagePolicy
+metadata:
+  name: test-policy
+  annotations:
+    source: config.openshift.io/v1alpha1
+`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := NormalizeV1Alpha1ClusterImagePolicy([]byte(tt.input))
+			if string(result) != tt.expected {
+				t.Errorf("NormalizeV1Alpha1ClusterImagePolicy() =\n%s\nwant:\n%s", string(result), tt.expected)
+			}
+		})
+	}
+}
+
 func TestGetBackwardCompatibleConfigHash(t *testing.T) {
 	tests := []struct {
 		name                   string
