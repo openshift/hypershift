@@ -12,12 +12,47 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v5"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/utils/ptr"
 )
+
+// CPOUserAgent is the User-Agent identifier for the Control Plane Operator.
+// Azure SDK has a 24-character limit for ApplicationID, and spaces are replaced with "/".
+const CPOUserAgent = "hypershift-cpo"
+
+// GetAzureCloudConfiguration converts a cloud name string to the Azure SDK cloud.Configuration.
+// This function maps the cloud names used in the HyperShift API to the corresponding Azure SDK cloud configurations.
+// Valid cloud names are: AzurePublicCloud, AzureUSGovernmentCloud, AzureChinaCloud, and empty string (defaults to AzurePublicCloud).
+func GetAzureCloudConfiguration(cloudName string) (cloud.Configuration, error) {
+	switch cloudName {
+	case "AzurePublicCloud", "":
+		return cloud.AzurePublic, nil
+	case "AzureUSGovernmentCloud":
+		return cloud.AzureGovernment, nil
+	case "AzureChinaCloud":
+		return cloud.AzureChina, nil
+	default:
+		return cloud.Configuration{}, fmt.Errorf("unknown Azure cloud: %s", cloudName)
+	}
+}
+
+// NewARMClientOptions creates Azure ARM client options with proper cloud configuration
+// and telemetry settings for the Control Plane Operator.
+func NewARMClientOptions(cloudConfig cloud.Configuration) *arm.ClientOptions {
+	return &arm.ClientOptions{
+		ClientOptions: azcore.ClientOptions{
+			Cloud: cloudConfig,
+			Telemetry: policy.TelemetryOptions{
+				ApplicationID: CPOUserAgent,
+			},
+		},
+	}
+}
 
 // GetSubnetNameFromSubnetID extracts the subnet name from a subnet ID
 // Example subnet ID: /subscriptions/<subscriptionID>/resourceGroups/<resourceGroupName>/providers/Microsoft.Network/virtualNetworks/<vnetName>/subnets/<subnetName>
@@ -85,8 +120,8 @@ func GetVnetNameAndResourceGroupFromVnetID(vnetID string) (string, string, error
 }
 
 // GetVnetInfoFromVnetID extracts the full information on a VNET from a VNET ID by first getting the VNET name and
-// its resource group's name and then using those parameters to query the full information on the VNET using Azure's SDK
-func GetVnetInfoFromVnetID(ctx context.Context, vnetID string, subscriptionID string, azureCreds azcore.TokenCredential) (armnetwork.VirtualNetworksClientGetResponse, error) {
+// its resource group's name and then using those parameters to query the full information on the VNET using Azure's SDK.
+func GetVnetInfoFromVnetID(ctx context.Context, vnetID string, subscriptionID string, azureCreds azcore.TokenCredential, cloudName string) (armnetwork.VirtualNetworksClientGetResponse, error) {
 	partialVnetInfo, err := arm.ParseResourceID(vnetID)
 	if err != nil {
 		return armnetwork.VirtualNetworksClientGetResponse{}, fmt.Errorf("failed to parse vnet information from vnet ID %q: %v", vnetID, err)
@@ -104,7 +139,7 @@ func GetVnetInfoFromVnetID(ctx context.Context, vnetID string, subscriptionID st
 		return armnetwork.VirtualNetworksClientGetResponse{}, fmt.Errorf("failed to parse vnet resource group name from %q", vnetID)
 	}
 
-	vnet, err := getFullVnetInfo(ctx, subscriptionID, partialVnetInfo.ResourceGroupName, partialVnetInfo.Name, azureCreds)
+	vnet, err := getFullVnetInfo(ctx, subscriptionID, partialVnetInfo.ResourceGroupName, partialVnetInfo.Name, azureCreds, cloudName)
 	if err != nil {
 		return armnetwork.VirtualNetworksClientGetResponse{}, err
 	}
@@ -112,9 +147,14 @@ func GetVnetInfoFromVnetID(ctx context.Context, vnetID string, subscriptionID st
 	return vnet, nil
 }
 
-// getFullVnetInfo gets the full information on a VNET
-func getFullVnetInfo(ctx context.Context, subscriptionID string, vnetResourceGroupName string, clientVnetName string, azureCreds azcore.TokenCredential) (armnetwork.VirtualNetworksClientGetResponse, error) {
-	networksClient, err := armnetwork.NewVirtualNetworksClient(subscriptionID, azureCreds, nil)
+// getFullVnetInfo gets the full information on a VNET.
+func getFullVnetInfo(ctx context.Context, subscriptionID string, vnetResourceGroupName string, clientVnetName string, azureCreds azcore.TokenCredential, cloudName string) (armnetwork.VirtualNetworksClientGetResponse, error) {
+	cloudConfig, err := GetAzureCloudConfiguration(cloudName)
+	if err != nil {
+		return armnetwork.VirtualNetworksClientGetResponse{}, fmt.Errorf("failed to get Azure cloud configuration: %w", err)
+	}
+
+	networksClient, err := armnetwork.NewVirtualNetworksClient(subscriptionID, azureCreds, NewARMClientOptions(cloudConfig))
 	if err != nil {
 		return armnetwork.VirtualNetworksClientGetResponse{}, fmt.Errorf("failed to create new virtual networks client: %w", err)
 	}
@@ -147,14 +187,19 @@ func getFullVnetInfo(ctx context.Context, subscriptionID string, vnetResourceGro
 	return vnet, nil
 }
 
-// GetNetworkSecurityGroupInfo gets the full information on a network security group based on its ID
-func GetNetworkSecurityGroupInfo(ctx context.Context, nsgID string, subscriptionID string, azureCreds azcore.TokenCredential) (armnetwork.SecurityGroupsClientGetResponse, error) {
+// GetNetworkSecurityGroupInfo gets the full information on a network security group based on its ID.
+func GetNetworkSecurityGroupInfo(ctx context.Context, nsgID string, subscriptionID string, azureCreds azcore.TokenCredential, cloudName string) (armnetwork.SecurityGroupsClientGetResponse, error) {
 	partialNSGInfo, err := arm.ParseResourceID(nsgID)
 	if err != nil {
 		return armnetwork.SecurityGroupsClientGetResponse{}, fmt.Errorf("failed to parse network security group id %q: %v", nsgID, err)
 	}
 
-	securityGroupClient, err := armnetwork.NewSecurityGroupsClient(subscriptionID, azureCreds, nil)
+	cloudConfig, err := GetAzureCloudConfiguration(cloudName)
+	if err != nil {
+		return armnetwork.SecurityGroupsClientGetResponse{}, fmt.Errorf("failed to get Azure cloud configuration: %w", err)
+	}
+
+	securityGroupClient, err := armnetwork.NewSecurityGroupsClient(subscriptionID, azureCreds, NewARMClientOptions(cloudConfig))
 	if err != nil {
 		return armnetwork.SecurityGroupsClientGetResponse{}, fmt.Errorf("failed to create security group client: %w", err)
 	}
@@ -167,9 +212,14 @@ func GetNetworkSecurityGroupInfo(ctx context.Context, nsgID string, subscription
 	return nsg, nil
 }
 
-// GetResourceGroupInfo gets the full information on a resource group based on its name
-func GetResourceGroupInfo(ctx context.Context, rgName string, subscriptionID string, azureCreds azcore.TokenCredential) (armresources.ResourceGroupsClientGetResponse, error) {
-	resourceGroupClient, err := armresources.NewResourceGroupsClient(subscriptionID, azureCreds, nil)
+// GetResourceGroupInfo gets the full information on a resource group based on its name.
+func GetResourceGroupInfo(ctx context.Context, rgName string, subscriptionID string, azureCreds azcore.TokenCredential, cloudName string) (armresources.ResourceGroupsClientGetResponse, error) {
+	cloudConfig, err := GetAzureCloudConfiguration(cloudName)
+	if err != nil {
+		return armresources.ResourceGroupsClientGetResponse{}, fmt.Errorf("failed to get Azure cloud configuration: %w", err)
+	}
+
+	resourceGroupClient, err := armresources.NewResourceGroupsClient(subscriptionID, azureCreds, NewARMClientOptions(cloudConfig))
 	if err != nil {
 		return armresources.ResourceGroupsClientGetResponse{}, fmt.Errorf("failed to create new resource groups client: %w", err)
 	}
