@@ -22,6 +22,12 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 			Name: "CANARY_IMAGE", Value: cpContext.UserReleaseImageProvider.GetImage("cluster-ingress-operator"),
 		})
 
+		if cpContext.HCP.Spec.FIPS {
+			podspec.UpsertEnvVar(c, corev1.EnvVar{
+				Name: "FIPS_ENABLED", Value: "true",
+			})
+		}
+
 		// For managed Azure deployments, we pass an environment variable, MANAGED_AZURE_HCP_CREDENTIALS_FILE_PATH, so
 		// we authenticate with Azure API through UserAssignedCredential authentication. We also mount the
 		// SecretProviderClass for the Secrets Store CSI driver to use; it will grab the JSON object stored in the
