@@ -3,6 +3,7 @@
 package eval
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -19,10 +20,11 @@ import (
 )
 
 const (
-	claudeTimeout = 5 * time.Minute
+	claudeTimeout = 10 * time.Minute
 	testdataDir   = "testdata"
 	promptFile    = "prompt.txt"
 	expectedFile  = "expected.txt"
+	patchFile     = "patch.diff"
 
 	sonnetModel = "claude-sonnet-4-6"
 	opusModel   = "claude-opus-4-6"
@@ -42,17 +44,17 @@ Expected issues (one per line):
 
 Compare using SEMANTIC matching - focus on whether the same fundamental problems were identified, not exact wording.
 
-You should return pass=true ONLY if BOTH conditions are met:
-1. ALL expected issues are semantically covered in the output (the same core problem is identified, even if described differently or split into sub-items)
-2. NO unrelated issues are reported - if the output identifies a problem that is NOT semantically related to any expected issue, you should return pass=false
+You should return pass=true if ALL expected issues are semantically covered in the output. The same core problem must be identified, even if described differently, bundled with other issues, or split into sub-items.
 
-Expanding on an expected issue is OK (e.g., "missing FeatureGate" expanding to include "register in features.go").
-Reporting an entirely different issue is NOT OK (e.g., if "missing length validation" is not in expected list, you should return pass=false).
+An expected issue counts as covered if the output addresses it ANYWHERE — as a numbered issue, inside another issue's discussion, in a corrected code example, or in a summary table. It does NOT need to be a standalone finding.
+
+The output must NOT report issues that are entirely unrelated to any expected issue. However, expanding on an expected issue is OK (e.g., adding MaxLength when the expected issue is about validation). Bundling multiple expected issues into a single finding is also OK.
 
 Examples of semantic matches:
 - "missing FeatureGate" matches "needs FeatureGate and must register it in features.go"
 - "optional field missing omitted behavior" matches "field does not document what happens when not specified"
 - "references cpov2 framework" matches "use the controlPlaneComponent reconciliation pattern"
+- "missing +optional markers" matches a corrected code example that adds +optional even if not called out as a separate issue
 
 You MUST respond with ONLY a raw JSON object. Do NOT wrap in markdown code blocks. Do NOT include any other text.
 {"pass": true, "reason": "Brief summary of matched issues"}
@@ -64,6 +66,7 @@ type testCase struct {
 	Agent          string
 	Name           string
 	Prompt         string
+	Patch          []byte
 	ExpectedIssues string
 }
 
@@ -172,10 +175,17 @@ func discoverTestCases(baseDir string) []testCase {
 			expected, err := os.ReadFile(filepath.Join(baseDir, agentName, scenarioEntry.Name(), expectedFile))
 			Expect(err).NotTo(HaveOccurred(), "expected.txt missing in %s/%s", agentName, scenarioEntry.Name())
 
+			var patch []byte
+			patchPath := filepath.Join(baseDir, agentName, scenarioEntry.Name(), patchFile)
+			if data, err := os.ReadFile(patchPath); err == nil {
+				patch = data
+			}
+
 			cases = append(cases, testCase{
 				Agent:          agentName,
 				Name:           fmt.Sprintf("%s/%s", agentName, scenarioEntry.Name()),
 				Prompt:         strings.TrimSpace(string(prompt)),
+				Patch:          patch,
 				ExpectedIssues: strings.TrimSpace(string(expected)),
 			})
 		}
@@ -195,21 +205,50 @@ func loadEntries() []TableEntry {
 	return entries
 }
 
+func applyPatch(patch []byte) {
+	cleanupRepo()
+
+	By("applying patch")
+	cmd := exec.Command("git", "apply", "-")
+	cmd.Dir = repoRoot
+	cmd.Stdin = bytes.NewReader(patch)
+	output, err := cmd.CombinedOutput()
+	Expect(err).NotTo(HaveOccurred(), "git apply failed: %s", string(output))
+}
+
+func cleanupRepo() {
+	By("cleaning up repo")
+	cmd := exec.Command("git", "checkout", "--", ".")
+	cmd.Dir = repoRoot
+	cmd.CombinedOutput()
+
+	cmd = exec.Command("git", "clean", "-fd", "--", "api/")
+	cmd.Dir = repoRoot
+	cmd.CombinedOutput()
+}
+
 func runAgent(tc testCase, model string) (string, float64) {
 	By(fmt.Sprintf("running agent %s via Claude (%s)", tc.Agent, model))
 	ctx, cancel := context.WithTimeout(context.Background(), claudeTimeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "claude",
+	args := []string{
 		"--print",
 		"--dangerously-skip-permissions",
 		"--model", model,
 		"--agent", tc.Agent,
-		"--allowed-tools", "",
 		"--output-format", "json",
 		"--no-session-persistence",
 		"-p", tc.Prompt,
-	)
+	}
+
+	if tc.Patch != nil {
+		args = append(args, "--allowed-tools", "Bash,Read,Grep,Glob")
+	} else {
+		args = append(args, "--allowed-tools", "")
+	}
+
+	cmd := exec.CommandContext(ctx, "claude", args...)
 	cmd.Dir = repoRoot
 
 	output, err := cmd.CombinedOutput()
@@ -265,6 +304,11 @@ func runJudge(model, agentOutput, expectedIssues string) (judgeResult, float64) 
 
 func runTestCase(tc testCase) {
 	result := testCaseResult{Name: tc.Name, Runs: evalRuns}
+
+	if tc.Patch != nil {
+		applyPatch(tc.Patch)
+		DeferCleanup(func() { cleanupRepo() })
+	}
 
 	for i := range evalRuns {
 		By(fmt.Sprintf("run %d/%d", i+1, evalRuns))

@@ -1,0 +1,27 @@
+diff --git a/api/hypershift/v1beta1/foo_types.go b/api/hypershift/v1beta1/foo_types.go
+new file mode 100644
+--- /dev/null
++++ b/api/hypershift/v1beta1/foo_types.go
+@@ -0,0 +1,22 @@
++package v1beta1
++
++// FooSpec is the foo configuration for the cluster.
++type FooSpec struct {
++	// foo_ip is an IP address.
++	Foo_IP string `json:"foo_ip"`
++
++	// fooConfig is the foo configuration for the cluster.
++	FooConfig *FooConfig `json:"fooConfig,omitempty"`
++
++	// fooID is the unique foo identifier for the cluster.
++	// This field is immutable once set.
++	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="fooID is immutable"
++	// +optional
++	FooID string `json:"fooID,omitempty"`
++}
++
++// FooConfig foo config.
++type FooConfig struct {
++	// fooDomains is a list of DNS search domains.
++	FooDomains []string `json:"FooDomains,omitempty"`
++}
