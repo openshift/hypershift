@@ -377,7 +377,6 @@ EVAL_RUNS ?= 1
 EVAL_THRESHOLD ?= 0.8
 EVAL_FOCUS ?=
 EVAL_VERBOSE ?=
-
 .PHONY: eval-agents
 eval-agents: ## Run agent eval tests (requires claude CLI and API key)
 	cd test/eval && EVAL_MODEL=$(EVAL_MODEL) EVAL_JUDGE_MODEL=$(EVAL_JUDGE_MODEL) EVAL_RUNS=$(EVAL_RUNS) EVAL_THRESHOLD=$(EVAL_THRESHOLD) \

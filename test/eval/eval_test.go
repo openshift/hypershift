@@ -224,18 +224,6 @@ func discoverTestCases(baseDir string) []testCase {
 	return cases
 }
 
-func loadEntries() []TableEntry {
-	cwd, err := os.Getwd()
-	Expect(err).NotTo(HaveOccurred())
-
-	cases := discoverTestCases(filepath.Join(cwd, testdataDir))
-	var entries []TableEntry
-	for _, tc := range cases {
-		entries = append(entries, Entry(tc.Name, tc))
-	}
-	return entries
-}
-
 func applyPatch(patch []byte) {
 	cleanupRepo()
 
@@ -381,12 +369,13 @@ func runTestCase(tc testCase) {
 }
 
 var _ = Describe("Agent Evaluation", func() {
-	Context("When evaluating SME agents", func() {
-		DescribeTable("it should correctly address expected issues",
-			func(tc testCase) {
-				runTestCase(tc)
-			},
-			loadEntries(),
-		)
-	})
+	cwd, _ := os.Getwd()
+	cases := discoverTestCases(filepath.Join(cwd, testdataDir))
+
+	for _, tc := range cases {
+		tc := tc
+		It(tc.Name, func() {
+			runTestCase(tc)
+		})
+	}
 })
