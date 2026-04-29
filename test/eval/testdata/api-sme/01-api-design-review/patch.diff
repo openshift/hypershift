@@ -1,12 +1,12 @@
-diff --git a/api/hypershift/v1beta1/foo_types.go b/api/hypershift/v1beta1/foo_types.go
-new file mode 100644
---- /dev/null
-+++ b/api/hypershift/v1beta1/foo_types.go
-@@ -0,0 +1,22 @@
-+package v1beta1
+diff --git a/api/hypershift/v1beta1/hostedcluster_types.go b/api/hypershift/v1beta1/hostedcluster_types.go
+index d99f765f09..49ca51d7c3 100644
+--- a/api/hypershift/v1beta1/hostedcluster_types.go
++++ b/api/hypershift/v1beta1/hostedcluster_types.go
+@@ -833,6 +833,24 @@ type HostedClusterSpec struct {
+ 	// +kubebuilder:default={}
+ 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="Capabilities is immutable. Changes might result in unpredictable and disruptive behavior."
+ 	Capabilities *Capabilities `json:"capabilities,omitempty"`
 +
-+// FooSpec is the foo configuration for the cluster.
-+type FooSpec struct {
 +	// foo_ip is an IP address.
 +	Foo_IP string `json:"foo_ip"`
 +
@@ -24,4 +24,6 @@ new file mode 100644
 +type FooConfig struct {
 +	// fooDomains is a list of DNS search domains.
 +	FooDomains []string `json:"FooDomains,omitempty"`
-+}
+ }
+ 
+ // OLMCatalogPlacement is an enum specifying the placement of OLM catalog components.
