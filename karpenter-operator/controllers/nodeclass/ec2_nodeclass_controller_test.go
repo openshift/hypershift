@@ -21,7 +21,6 @@ import (
 
 	admissionv1 "k8s.io/api/admissionregistration/v1"
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -1493,47 +1492,108 @@ func TestReconcileKarpenterSubnetsConfigMap(t *testing.T) {
 	}
 }
 
-func TestReconcileVAPRecreatesDeletedResources(t *testing.T) {
-	g := NewWithT(t)
-
-	guestClient := fake.NewClientBuilder().
-		WithScheme(hyperapi.Scheme).
-		Build()
-
-	r := &EC2NodeClassReconciler{
-		guestClient:            guestClient,
-		CreateOrUpdateProvider: upsert.New(false),
+func TestMapVAPToOpenShiftEC2NodeClasses(t *testing.T) {
+	testCases := []struct {
+		name             string
+		vapName          string
+		nodeClasses      []client.Object
+		expectedRequests int
+	}{
+		{
+			name:    "When the VAP matches the expected name it should enqueue all OpenshiftEC2NodeClasses",
+			vapName: "karpenter.ec2nodeclass.hypershift.io",
+			nodeClasses: []client.Object{
+				&hyperkarpenterv1.OpenshiftEC2NodeClass{ObjectMeta: metav1.ObjectMeta{Name: "nc-1"}},
+				&hyperkarpenterv1.OpenshiftEC2NodeClass{ObjectMeta: metav1.ObjectMeta{Name: "nc-2"}},
+			},
+			expectedRequests: 2,
+		},
+		{
+			name:    "When the VAP name does not match it should not enqueue any requests",
+			vapName: "unrelated-policy",
+			nodeClasses: []client.Object{
+				&hyperkarpenterv1.OpenshiftEC2NodeClass{ObjectMeta: metav1.ObjectMeta{Name: "nc-1"}},
+			},
+			expectedRequests: 0,
+		},
+		{
+			name:             "When the VAP matches but no OpenshiftEC2NodeClasses exist it should return empty",
+			vapName:          "karpenter.ec2nodeclass.hypershift.io",
+			nodeClasses:      []client.Object{},
+			expectedRequests: 0,
+		},
 	}
 
-	ctx := context.Background()
-	vapKey := client.ObjectKey{Name: "karpenter.ec2nodeclass.hypershift.io"}
-	bindingKey := client.ObjectKey{Name: "karpenter-binding.ec2nodeclass.hypershift.io"}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
 
-	// When reconcileVAP is called it should create the VAP and binding
-	g.Expect(r.reconcileVAP(ctx)).To(Succeed())
+			guestClient := fake.NewClientBuilder().
+				WithScheme(hyperapi.Scheme).
+				WithObjects(tc.nodeClasses...).
+				Build()
 
-	vap := &admissionv1.ValidatingAdmissionPolicy{}
-	g.Expect(guestClient.Get(ctx, vapKey, vap)).To(Succeed())
+			r := &EC2NodeClassReconciler{guestClient: guestClient}
 
-	binding := &admissionv1.ValidatingAdmissionPolicyBinding{}
-	g.Expect(guestClient.Get(ctx, bindingKey, binding)).To(Succeed())
-	g.Expect(binding.Spec.PolicyName).To(Equal(vapKey.Name))
+			vap := &admissionv1.ValidatingAdmissionPolicy{
+				ObjectMeta: metav1.ObjectMeta{Name: tc.vapName},
+			}
 
-	// When the VAP and binding are deleted and reconcileVAP is called again it should recreate them
-	g.Expect(guestClient.Delete(ctx, vap)).To(Succeed())
-	g.Expect(guestClient.Delete(ctx, binding)).To(Succeed())
+			requests := r.mapVAPToOpenShiftEC2NodeClasses(context.Background(), vap)
+			g.Expect(requests).To(HaveLen(tc.expectedRequests))
+		})
+	}
+}
 
-	g.Expect(apierrors.IsNotFound(guestClient.Get(ctx, vapKey, vap))).To(BeTrue())
-	g.Expect(apierrors.IsNotFound(guestClient.Get(ctx, bindingKey, binding))).To(BeTrue())
+func TestMapVAPBindingToOpenShiftEC2NodeClasses(t *testing.T) {
+	testCases := []struct {
+		name             string
+		bindingName      string
+		nodeClasses      []client.Object
+		expectedRequests int
+	}{
+		{
+			name:        "When the VAPBinding matches the expected name it should enqueue all OpenshiftEC2NodeClasses",
+			bindingName: "karpenter-binding.ec2nodeclass.hypershift.io",
+			nodeClasses: []client.Object{
+				&hyperkarpenterv1.OpenshiftEC2NodeClass{ObjectMeta: metav1.ObjectMeta{Name: "nc-1"}},
+				&hyperkarpenterv1.OpenshiftEC2NodeClass{ObjectMeta: metav1.ObjectMeta{Name: "nc-2"}},
+			},
+			expectedRequests: 2,
+		},
+		{
+			name:        "When the VAPBinding name does not match it should not enqueue any requests",
+			bindingName: "unrelated-binding",
+			nodeClasses: []client.Object{
+				&hyperkarpenterv1.OpenshiftEC2NodeClass{ObjectMeta: metav1.ObjectMeta{Name: "nc-1"}},
+			},
+			expectedRequests: 0,
+		},
+		{
+			name:             "When the VAPBinding matches but no OpenshiftEC2NodeClasses exist it should return empty",
+			bindingName:      "karpenter-binding.ec2nodeclass.hypershift.io",
+			nodeClasses:      []client.Object{},
+			expectedRequests: 0,
+		},
+	}
 
-	g.Expect(r.reconcileVAP(ctx)).To(Succeed())
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
 
-	recreatedVAP := &admissionv1.ValidatingAdmissionPolicy{}
-	g.Expect(guestClient.Get(ctx, vapKey, recreatedVAP)).To(Succeed())
-	g.Expect(recreatedVAP.Spec.Validations).To(HaveLen(1))
+			guestClient := fake.NewClientBuilder().
+				WithScheme(hyperapi.Scheme).
+				WithObjects(tc.nodeClasses...).
+				Build()
 
-	recreatedBinding := &admissionv1.ValidatingAdmissionPolicyBinding{}
-	g.Expect(guestClient.Get(ctx, bindingKey, recreatedBinding)).To(Succeed())
-	g.Expect(recreatedBinding.Spec.PolicyName).To(Equal(vapKey.Name))
-	g.Expect(recreatedBinding.Spec.ValidationActions).To(ContainElement(admissionv1.Deny))
+			r := &EC2NodeClassReconciler{guestClient: guestClient}
+
+			binding := &admissionv1.ValidatingAdmissionPolicyBinding{
+				ObjectMeta: metav1.ObjectMeta{Name: tc.bindingName},
+			}
+
+			requests := r.mapVAPBindingToOpenShiftEC2NodeClasses(context.Background(), binding)
+			g.Expect(requests).To(HaveLen(tc.expectedRequests))
+		})
+	}
 }

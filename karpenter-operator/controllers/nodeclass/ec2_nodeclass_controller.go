@@ -101,22 +101,8 @@ func (r *EC2NodeClassReconciler) SetupWithManager(ctx context.Context, mgr ctrl.
 			},
 		)).
 		Watches(&awskarpenterv1.EC2NodeClass{}, &handler.EnqueueRequestForObject{}).
-		Watches(&admissionv1.ValidatingAdmissionPolicy{}, handler.EnqueueRequestsFromMapFunc(
-			func(ctx context.Context, o client.Object) []ctrl.Request {
-				if o.GetName() != "karpenter.ec2nodeclass.hypershift.io" {
-					return nil
-				}
-				return r.mapToOpenShiftEC2NodeClasses(ctx, o)
-			},
-		)).
-		Watches(&admissionv1.ValidatingAdmissionPolicyBinding{}, handler.EnqueueRequestsFromMapFunc(
-			func(ctx context.Context, o client.Object) []ctrl.Request {
-				if o.GetName() != "karpenter-binding.ec2nodeclass.hypershift.io" {
-					return nil
-				}
-				return r.mapToOpenShiftEC2NodeClasses(ctx, o)
-			},
-		)).
+		Watches(&admissionv1.ValidatingAdmissionPolicy{}, handler.EnqueueRequestsFromMapFunc(r.mapVAPToOpenShiftEC2NodeClasses)).
+		Watches(&admissionv1.ValidatingAdmissionPolicyBinding{}, handler.EnqueueRequestsFromMapFunc(r.mapVAPBindingToOpenShiftEC2NodeClasses)).
 		// Watch secrets in the management cluster and reconcile all ec2nodeclasses
 		WatchesRawSource(source.Kind[client.Object](managementCluster.GetCache(), &corev1.Secret{},
 			handler.EnqueueRequestsFromMapFunc(r.mapToOpenShiftEC2NodeClasses),
@@ -688,6 +674,20 @@ func (r *EC2NodeClassReconciler) hcpAnnotationPredicate() predicate.Predicate {
 		DeleteFunc:  func(e event.DeleteEvent) bool { return false },
 		GenericFunc: func(e event.GenericEvent) bool { return false },
 	}
+}
+
+func (r *EC2NodeClassReconciler) mapVAPToOpenShiftEC2NodeClasses(ctx context.Context, o client.Object) []ctrl.Request {
+	if o.GetName() != "karpenter.ec2nodeclass.hypershift.io" {
+		return nil
+	}
+	return r.mapToOpenShiftEC2NodeClasses(ctx, o)
+}
+
+func (r *EC2NodeClassReconciler) mapVAPBindingToOpenShiftEC2NodeClasses(ctx context.Context, o client.Object) []ctrl.Request {
+	if o.GetName() != "karpenter-binding.ec2nodeclass.hypershift.io" {
+		return nil
+	}
+	return r.mapToOpenShiftEC2NodeClasses(ctx, o)
 }
 
 // mapToOpenShiftEC2NodeClasses maps a request to all OpenshiftEC2NodeClass resources
