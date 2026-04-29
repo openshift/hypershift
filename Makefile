@@ -371,9 +371,19 @@ test-shard: generate
 	@echo "Running shard tests for packages: $(TEST_PACKAGES)"
 	$(GO) test -race -parallel=$(NUM_CORES) -count=1 -timeout=30m $(TEST_PACKAGES) -coverprofile $(COVER_PROFILE)
 
+EVAL_MODEL ?= claude-opus-4-6
+EVAL_JUDGE_MODEL ?= claude-opus-4-6
+EVAL_RUNS ?= 1
+EVAL_THRESHOLD ?= 0.8
+EVAL_FOCUS ?=
+EVAL_VERBOSE ?=
+
 .PHONY: eval-agents
 eval-agents: ## Run agent eval tests (requires claude CLI and API key)
-	cd test/eval && $(GO) test -v -tags eval -count=1 -timeout=30m ./...
+	cd test/eval && EVAL_MODEL=$(EVAL_MODEL) EVAL_JUDGE_MODEL=$(EVAL_JUDGE_MODEL) EVAL_RUNS=$(EVAL_RUNS) EVAL_THRESHOLD=$(EVAL_THRESHOLD) \
+		$(GO) test -v -tags eval -count=1 -timeout=30m ./... \
+		$(if $(EVAL_FOCUS),-ginkgo.focus="$(EVAL_FOCUS)") \
+		$(if $(EVAL_VERBOSE),-ginkgo.v)
 
 # OCP envtest index for downstream kubebuilder assets
 ENVTEST_OCP_INDEX := https://raw.githubusercontent.com/openshift/api/master/envtest-releases.yaml
