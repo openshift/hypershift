@@ -163,9 +163,15 @@ func discoverTestCases(baseDir string) []testCase {
 		if !agentEntry.IsDir() {
 			continue
 		}
-		agentName := agentEntry.Name()
+		dirName := agentEntry.Name()
 
-		scenarioDirs, err := os.ReadDir(filepath.Join(baseDir, agentName))
+		// Directories starting with _ are convention tests (no agent)
+		agentName := dirName
+		if strings.HasPrefix(dirName, "_") {
+			agentName = ""
+		}
+
+		scenarioDirs, err := os.ReadDir(filepath.Join(baseDir, dirName))
 		Expect(err).NotTo(HaveOccurred())
 
 		for _, scenarioEntry := range scenarioDirs {
@@ -173,21 +179,21 @@ func discoverTestCases(baseDir string) []testCase {
 				continue
 			}
 
-			prompt, err := os.ReadFile(filepath.Join(baseDir, agentName, scenarioEntry.Name(), promptFile))
-			Expect(err).NotTo(HaveOccurred(), "prompt.txt missing in %s/%s", agentName, scenarioEntry.Name())
+			prompt, err := os.ReadFile(filepath.Join(baseDir, dirName, scenarioEntry.Name(), promptFile))
+			Expect(err).NotTo(HaveOccurred(), "prompt.txt missing in %s/%s", dirName, scenarioEntry.Name())
 
-			expected, err := os.ReadFile(filepath.Join(baseDir, agentName, scenarioEntry.Name(), expectedFile))
-			Expect(err).NotTo(HaveOccurred(), "expected.txt missing in %s/%s", agentName, scenarioEntry.Name())
+			expected, err := os.ReadFile(filepath.Join(baseDir, dirName, scenarioEntry.Name(), expectedFile))
+			Expect(err).NotTo(HaveOccurred(), "expected.txt missing in %s/%s", dirName, scenarioEntry.Name())
 
 			var patch []byte
-			patchPath := filepath.Join(baseDir, agentName, scenarioEntry.Name(), patchFile)
+			patchPath := filepath.Join(baseDir, dirName, scenarioEntry.Name(), patchFile)
 			if data, err := os.ReadFile(patchPath); err == nil {
 				patch = data
 			}
 
 			cases = append(cases, testCase{
 				Agent:          agentName,
-				Name:           fmt.Sprintf("%s/%s", agentName, scenarioEntry.Name()),
+				Name:           fmt.Sprintf("%s/%s", dirName, scenarioEntry.Name()),
 				Prompt:         strings.TrimSpace(string(prompt)),
 				Patch:          patch,
 				ExpectedIssues: strings.TrimSpace(string(expected)),
@@ -240,10 +246,13 @@ func runAgent(tc testCase, model string) (string, float64) {
 		"--print",
 		"--dangerously-skip-permissions",
 		"--model", model,
-		"--agent", tc.Agent,
 		"--output-format", "json",
 		"--no-session-persistence",
 		"-p", tc.Prompt,
+	}
+
+	if tc.Agent != "" {
+		args = append(args, "--agent", tc.Agent)
 	}
 
 	if tc.Patch != nil {

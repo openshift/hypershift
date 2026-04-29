@@ -1,0 +1,1 @@
+Write a unit test for a function called ValidateNodePoolName that checks if a name is a valid DNS-1123 subdomain. It should reject empty strings, strings longer than 253 characters, and strings with uppercase letters. It should accept valid names like "my-nodepool" and "test-123".
