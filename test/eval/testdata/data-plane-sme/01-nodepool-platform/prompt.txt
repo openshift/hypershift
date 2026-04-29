@@ -1,0 +1,11 @@
+We want to improve spot/preemptible instance support in NodePools.
+Currently users can request spot instances on AWS, but we want to
+ensure consistent behavior across platforms. How should the NodePool
+API and controllers handle instance interruption events, and what
+changes are needed for the data plane upgrade flow to account for
+spot instance characteristics?
+IMPORTANT: Write your COMPLETE analysis and guidance as your direct response text.
+Do NOT enter plan mode. Do NOT write to a plan file. Do NOT say "the plan is ready"
+or refer to any plan file. Instead, include ALL details -- API changes, controller
+logic, interruption handling, upgrade flow considerations, CAPI integration --
+directly in your response output.

@@ -1,0 +1,15 @@
+I need to add a new control plane component called "audit-logger"
+that runs as a deployment in the hosted control plane namespace.
+It needs to read the kube-apiserver audit logs and forward them
+to an external endpoint configured by the cluster admin.
+How should I implement this following HyperShift patterns?
+
+Assume it will use a sidecar container on the kube-apiserver pod
+that reads audit logs from a shared volume and forwards them via
+HTTPS to a user-configured webhook endpoint.
+
+IMPORTANT: Write your COMPLETE analysis and guidance as your direct response text.
+Do NOT enter plan mode. Do NOT write to a plan file. Do NOT say "the plan is ready"
+or refer to any plan file. Instead, include ALL details -- API definitions, code
+patterns, cpov2 framework usage, resource considerations, security concerns --
+directly in your response output.

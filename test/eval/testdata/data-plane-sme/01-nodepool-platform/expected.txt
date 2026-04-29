@@ -1,0 +1,4 @@
+discusses NodePool API abstraction for spot across platforms (AWS Spot, Azure Spot VMs, GCP Preemptible/Spot)
+addresses instance interruption lifecycle (node drain, workload rescheduling, machine replacement)
+considers impact of spot instances on rolling upgrade strategy
+references ClusterAPI (CAPI) resources or controllers (MachineSet, MachineDeployment, Machine)

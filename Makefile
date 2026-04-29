@@ -371,6 +371,10 @@ test-shard: generate
 	@echo "Running shard tests for packages: $(TEST_PACKAGES)"
 	$(GO) test -race -parallel=$(NUM_CORES) -count=1 -timeout=30m $(TEST_PACKAGES) -coverprofile $(COVER_PROFILE)
 
+.PHONY: eval-agents
+eval-agents: ## Run agent eval tests (requires claude CLI and API key)
+	cd test/eval && $(GO) test -v -tags eval -count=1 -timeout=30m ./...
+
 # OCP envtest index for downstream kubebuilder assets
 ENVTEST_OCP_INDEX := https://raw.githubusercontent.com/openshift/api/master/envtest-releases.yaml
 # OCP version to Kubernetes version mapping (OCP 4.x -> K8s 1.(x+13))

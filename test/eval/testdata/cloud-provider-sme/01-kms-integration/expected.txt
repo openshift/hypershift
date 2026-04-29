@@ -1,0 +1,4 @@
+mentions platform-specific KMS services (AWS KMS and Azure Key Vault)
+proposes API-level abstraction for cross-platform KMS configuration
+addresses IAM or credential requirements for KMS access
+references Kubernetes EncryptionConfiguration or etcd encryption provider mechanism

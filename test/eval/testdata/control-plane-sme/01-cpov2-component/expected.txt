@@ -1,0 +1,4 @@
+references the cpov2 or controlplane-component framework
+mentions creating manifests in an assets directory under control-plane-operator
+considers impact on control plane resource footprint (CPU, memory)
+addresses principle of least privilege or RBAC minimization
