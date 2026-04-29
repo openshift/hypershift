@@ -1,1 +1,3 @@
-I've added new foo fields to HostedClusterSpec in api/hypershift/v1beta1/hostedcluster_types.go. The code is already on disk. Please review the change.
+I've added new foo fields to HostedClusterSpec in
+api/hypershift/v1beta1/hostedcluster_types.go. The code is already
+on disk. Please review the change.
