@@ -381,9 +381,9 @@ EVAL_VERBOSE ?=
 EVAL_GO_TEST = cd test/eval && EVAL_MODEL=$(EVAL_MODEL) EVAL_JUDGE_MODEL=$(EVAL_JUDGE_MODEL) EVAL_RUNS=$(EVAL_RUNS) EVAL_THRESHOLD=$(EVAL_THRESHOLD) \
 	$(GO) test -v -tags eval -count=1 -timeout=30m ./... $(if $(EVAL_VERBOSE),-ginkgo.v)
 
-# Discover eval scenario categories from testdata directory structure
-EVAL_SCENARIOS := $(notdir $(wildcard test/eval/testdata/sme-agents/*)) $(notdir $(wildcard test/eval/testdata/conventions))
-EVAL_TARGETS := $(addprefix eval-,$(EVAL_SCENARIOS))
+# Discover eval categories: top-level dirs (conventions, etc.) + subdirs under sme-agents/
+EVAL_CATEGORIES := $(filter-out sme-agents,$(notdir $(wildcard test/eval/testdata/*))) $(notdir $(wildcard test/eval/testdata/sme-agents/*))
+EVAL_TARGETS := $(addprefix eval-,$(EVAL_CATEGORIES))
 
 .PHONY: eval-agents
 eval-agents: ## Run all agent eval tests (use -j for parallel). Requires claude CLI and API key.
