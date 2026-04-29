@@ -50,6 +50,8 @@ An expected issue counts as covered if the output addresses it ANYWHERE — as a
 
 The output must NOT report issues that are entirely unrelated to any expected issue. However, expanding on an expected issue is OK (e.g., adding MaxLength when the expected issue is about validation). Bundling multiple expected issues into a single finding is also OK.
 
+If the expected issues list is EMPTY, the agent should report NO issues. Return pass=true only if the output confirms the API change looks correct or has no significant problems. Return pass=false if the output reports any issues — this means the agent is hallucinating problems in clean code.
+
 Examples of semantic matches:
 - "missing FeatureGate" matches "needs FeatureGate and must register it in features.go"
 - "optional field missing omitted behavior" matches "field does not document what happens when not specified"
