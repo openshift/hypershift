@@ -616,52 +616,43 @@ class PRReportGenerator:
     async def fetch_release_prs_graphql(self) -> List[Dict]:
         """Fetch PRs from openshift/release that touch HyperShift-related paths.
 
-        Uses GitHub GraphQL API to fetch merged PRs, then filters by file paths
-        to identify HyperShift-related changes. Raises RepoFetchError on failure.
+        Uses a two-pass approach because openshift/release has hundreds of PRs
+        per week, and fetching full details (reviews, timeline, files) for all
+        of them exceeds GitHub's GraphQL complexity limit (502).
+
+        Pass 1: Use "hypershift" as a search keyword to pre-filter PRs (GitHub
+                searches titles, bodies, and file paths). This reduces ~300 PRs
+                to ~30-40 candidates. Fetch files to confirm path match.
+        Pass 2: Fetch full details (reviews, timeline) only for confirmed
+                matches using node IDs.
         """
         repo_owner = 'openshift'
         repo_name = 'release'
-        search_query = f"repo:{repo_owner}/{repo_name} is:pr is:merged merged:{self.since_date}..{self.end_date}"
+        # Add "hypershift" keyword to pre-filter at the GitHub search level
+        search_query = (
+            f"repo:{repo_owner}/{repo_name} is:pr is:merged "
+            f"merged:{self.since_date}..{self.end_date} hypershift"
+        )
 
-        # Include files in the query for path-based filtering
-        query = f"""
+        # Pass 1: fetch candidates with files for path verification
+        filter_query = f"""
         query($searchQuery: String!, $cursor: String) {{
-          search(query: $searchQuery, type: ISSUE, first: {GITHUB_PR_SEARCH_LIMIT}, after: $cursor) {{
+          search(query: $searchQuery, type: ISSUE, first: 100, after: $cursor) {{
             pageInfo {{
               hasNextPage
               endCursor
             }}
             nodes {{
               ... on PullRequest {{
+                id
                 number
                 title
-                url
-                author {{ login }}
-                createdAt
-                mergedAt
-                isDraft
-                body
                 files(first: {GITHUB_FILES_LIMIT}) {{
                   pageInfo {{
                     hasNextPage
                   }}
                   nodes {{
                     path
-                  }}
-                }}
-                labels(first: {GITHUB_LABELS_LIMIT}) {{ nodes {{ name }} }}
-                reviews(first: {GITHUB_REVIEWS_LIMIT}) {{
-                  nodes {{
-                    author {{ login }}
-                    state
-                    submittedAt
-                  }}
-                }}
-                timelineItems(first: {GITHUB_TIMELINE_ITEMS_LIMIT}, itemTypes: [READY_FOR_REVIEW_EVENT, CONVERT_TO_DRAFT_EVENT]) {{
-                  nodes {{
-                    __typename
-                    ... on ReadyForReviewEvent {{ createdAt }}
-                    ... on ConvertToDraftEvent {{ createdAt }}
                   }}
                 }}
               }}
@@ -675,18 +666,11 @@ class PRReportGenerator:
             "Content-Type": "application/json"
         }
 
-        prs = []
-        cursor = None
-        total_scanned = 0
-        retry_count = 0
-        max_retries = 3
-
         def is_hypershift_related(pr_data: Dict) -> bool:
             """Check if PR touches any HyperShift-related paths."""
             files = pr_data.get('files', {}).get('nodes', [])
             for file_node in files:
                 path = file_node.get('path', '')
-                # Check if path contains 'hypershift' anywhere
                 if 'hypershift' in path.lower():
                     return True
             return False
@@ -723,18 +707,22 @@ class PRReportGenerator:
                 page += 1
             return False
 
-        session = aiohttp.ClientSession() if HAS_AIOHTTP else None
-        bot_count = 0
+        # Pass 1: find HyperShift-related PR node IDs
+        matched_ids = []
+        cursor = None
+        total_scanned = 0
         got_any_page = False
+
+        session = aiohttp.ClientSession() if HAS_AIOHTTP else None
         try:
             while True:
                 variables = {"searchQuery": search_query, "cursor": cursor}
-                data = await self._github_graphql_request(session, query, variables, headers)
+                data = await self._github_graphql_request(session, filter_query, variables, headers)
                 if not data:
                     break
 
                 if 'errors' in data:
-                    print(f"GraphQL errors: {data['errors']}")
+                    print(f"  Pass 1 GraphQL errors: {data['errors']}")
                     break
 
                 if 'data' not in data or not data['data']['search']:
@@ -745,21 +733,10 @@ class PRReportGenerator:
                     if pr:
                         total_scanned += 1
                         if is_hypershift_related(pr):
-                            pr_data = self._process_pr_data(pr, f"{repo_owner}/{repo_name}")
-                            # Tag bot-authored PRs
-                            author = pr.get('author', {}).get('login', '') if pr.get('author') else ''
-                            if self.is_bot(author):
-                                pr_data['is_bot'] = True
-                                bot_count += 1
-                            prs.append(pr_data)
+                            matched_ids.append(pr['id'])
                         elif files_incomplete(pr):
                             if await check_remaining_files_async(session, pr['number']):
-                                pr_data = self._process_pr_data(pr, f"{repo_owner}/{repo_name}")
-                                author = pr.get('author', {}).get('login', '') if pr.get('author') else ''
-                                if self.is_bot(author):
-                                    pr_data['is_bot'] = True
-                                    bot_count += 1
-                                prs.append(pr_data)
+                                matched_ids.append(pr['id'])
 
                 page_info = data['data']['search']['pageInfo']
                 if not page_info['hasNextPage']:
@@ -771,6 +748,69 @@ class PRReportGenerator:
 
         if not got_any_page:
             raise RepoFetchError(f"{repo_owner}/{repo_name}", "API returned no data")
+
+        print(f"  Pass 1: scanned {total_scanned} candidates, {len(matched_ids)} confirmed by file path")
+
+        if not matched_ids:
+            return []
+
+        # Pass 2: fetch full details for matched PRs by node ID
+        prs = []
+        bot_count = 0
+        batch_size = 20
+        session = aiohttp.ClientSession() if HAS_AIOHTTP else None
+        try:
+            for i in range(0, len(matched_ids), batch_size):
+                batch_ids = matched_ids[i:i + batch_size]
+                node_fragments = ""
+                for j, node_id in enumerate(batch_ids):
+                    node_fragments += f"""
+                    pr{j}: node(id: "{node_id}") {{
+                      ... on PullRequest {{
+                        number
+                        title
+                        url
+                        author {{ login }}
+                        createdAt
+                        mergedAt
+                        isDraft
+                        body
+                        labels(first: {GITHUB_LABELS_LIMIT}) {{ nodes {{ name }} }}
+                        reviews(first: {GITHUB_REVIEWS_LIMIT}) {{
+                          nodes {{
+                            author {{ login }}
+                            state
+                            submittedAt
+                          }}
+                        }}
+                        timelineItems(first: {GITHUB_TIMELINE_ITEMS_LIMIT}, itemTypes: [READY_FOR_REVIEW_EVENT, CONVERT_TO_DRAFT_EVENT]) {{
+                          nodes {{
+                            __typename
+                            ... on ReadyForReviewEvent {{ createdAt }}
+                            ... on ConvertToDraftEvent {{ createdAt }}
+                          }}
+                        }}
+                      }}
+                    }}
+                    """
+                detail_query = f"query {{ {node_fragments} }}"
+                data = await self._github_graphql_request(session, detail_query, {}, headers)
+                if not data or 'data' not in data:
+                    print(f"  Pass 2: failed to fetch batch {i // batch_size + 1}")
+                    continue
+
+                for j in range(len(batch_ids)):
+                    pr = data['data'].get(f'pr{j}')
+                    if pr:
+                        pr_data = self._process_pr_data(pr, f"{repo_owner}/{repo_name}")
+                        author = pr.get('author', {}).get('login', '') if pr.get('author') else ''
+                        if self.is_bot(author):
+                            pr_data['is_bot'] = True
+                            bot_count += 1
+                        prs.append(pr_data)
+        finally:
+            if session:
+                await session.close()
 
         bot_note = f", {bot_count} bot-authored" if bot_count else ""
         print(f"  Scanned {total_scanned} release PRs, found {len(prs)} HyperShift-related{bot_note}")
