@@ -1,50 +1,38 @@
-diff --git a/api/hypershift/v1beta1/bar_types.go b/api/hypershift/v1beta1/bar_types.go
-new file mode 100644
---- /dev/null
-+++ b/api/hypershift/v1beta1/bar_types.go
-@@ -0,0 +1,45 @@
-+package v1beta1
+diff --git a/api/hypershift/v1beta1/hostedcluster_types.go b/api/hypershift/v1beta1/hostedcluster_types.go
+index d99f765f09..034fa6c07a 100644
+--- a/api/hypershift/v1beta1/hostedcluster_types.go
++++ b/api/hypershift/v1beta1/hostedcluster_types.go
+@@ -833,6 +833,33 @@ type HostedClusterSpec struct {
+ 	// +kubebuilder:default={}
+ 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="Capabilities is immutable. Changes might result in unpredictable and disruptive behavior."
+ 	Capabilities *Capabilities `json:"capabilities,omitempty"`
 +
-+// BarSpec defines the bar configuration for a hosted cluster.
++	// maintenanceWindow specifies the preferred maintenance window for automated
++	// control plane operations such as certificate rotation and minor upgrades.
++	// When omitted, no maintenance window preference is applied and operations
++	// may occur at any time.
++	// +optional
++	MaintenanceWindow MaintenanceWindowSpec `json:"maintenanceWindow,omitzero"`
++}
++
++// MaintenanceWindowSpec defines the preferred maintenance window for a hosted cluster.
 +// +kubebuilder:validation:MinProperties=1
-+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.barID) || has(self.barID)",message="barID cannot be removed once set"
-+type BarSpec struct {
-+	// endpoint is the URL of the bar service endpoint.
-+	// Must be a valid HTTPS URL.
++type MaintenanceWindowSpec struct {
++	// schedule is a cron expression defining when maintenance operations are
++	// permitted. Must be a valid 5-field cron expression (minute hour day month weekday).
 +	// +required
-+	// +kubebuilder:validation:MinLength=1
-+	// +kubebuilder:validation:MaxLength=2048
-+	// +kubebuilder:validation:XValidation:rule="self.matches('^https://.*')",message="endpoint must be a valid HTTPS URL"
-+	Endpoint string `json:"endpoint,omitempty"`
++	// +kubebuilder:validation:MinLength=9
++	// +kubebuilder:validation:MaxLength=256
++	// +kubebuilder:validation:XValidation:rule="self.matches('^[0-9*/,-]+ [0-9*/,-]+ [0-9*/,-]+ [0-9*/,-]+ [0-9*/,-]+$')",message="schedule must be a valid 5-field cron expression"
++	Schedule string `json:"schedule,omitempty"`
 +
-+	// barID is the unique identifier for this bar instance.
-+	// This field is immutable once set.
-+	// +optional
-+	// +kubebuilder:validation:MinLength=1
-+	// +kubebuilder:validation:MaxLength=253
-+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="barID is immutable"
-+	BarID string `json:"barID,omitempty"`
-+
-+	// config contains the bar operational configuration.
-+	// +optional
-+	Config BarConfig `json:"config,omitzero"`
-+}
-+
-+// BarConfig defines the operational configuration for the bar feature.
-+// +kubebuilder:validation:MinProperties=1
-+type BarConfig struct {
-+	// targets is a list of target identifiers for the bar service.
-+	// +optional
-+	// +listType=atomic
-+	// +kubebuilder:validation:MaxItems=10
-+	// +kubebuilder:validation:items:MinLength=1
-+	// +kubebuilder:validation:items:MaxLength=253
-+	Targets []string `json:"targets,omitempty"`
-+
-+	// retryCount is the number of retry attempts for bar operations.
-+	// When omitted, the default retry count is used.
-+	// +optional
-+	// +kubebuilder:validation:Minimum=0
-+	// +kubebuilder:validation:Maximum=10
-+	RetryCount *int32 `json:"retryCount,omitempty"`
-+}
++	// durationMinutes is the maximum duration in minutes for the maintenance window.
++	// Operations that cannot complete within this window will be deferred to the
++	// next window.
++	// +required
++	// +kubebuilder:validation:Minimum=30
++	// +kubebuilder:validation:Maximum=480
++	DurationMinutes int32 `json:"durationMinutes,omitempty"`
+ }
+ 
+ // OLMCatalogPlacement is an enum specifying the placement of OLM catalog components.
