@@ -71,6 +71,7 @@ const (
 	LocationDestroyDescription          = "Azure region of the cluster. Inferred from the HostedCluster if it exists; only required if the cluster resource has already been deleted."
 	AzureCredsDestroyDescription        = "Path to an Azure credentials file (JSON format) used to authenticate and delete Azure resources."
 	ResourceGroupNameDestroyDescription = "Name of the resource group containing the cluster resources to delete. Inferred from the HostedCluster if it exists; only required if the cluster resource has already been deleted."
+	DNSZoneRGNameDestroyDescription     = "Name of the resource group containing the Azure DNS zone (required). Used to clean up DNS zone role assignments during cluster or IAM destruction."
 
 	// Infrastructure command specific flags
 	AssignIdentityRolesDescription          = "Automatically assign required Azure RBAC roles to workload identities. This grants the identities permissions to manage Azure resources."

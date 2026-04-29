@@ -32,12 +32,14 @@ func NewDestroyIAMCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.Cloud, "cloud", opts.Cloud, util.CloudDescription)
 	cmd.Flags().StringVar(&opts.Name, "name", opts.Name, util.NameDescription)
 	cmd.Flags().StringVar(&opts.InfraID, "infra-id", opts.InfraID, util.InfraIDDescription)
+	cmd.Flags().StringVar(&opts.DNSZoneRG, "dns-zone-rg-name", opts.DNSZoneRG, util.DNSZoneRGNameDestroyDescription)
 
 	_ = cmd.MarkFlagRequired("workload-identities-file")
 	_ = cmd.MarkFlagRequired("azure-creds")
 	_ = cmd.MarkFlagRequired("resource-group-name")
 	_ = cmd.MarkFlagRequired("name")
 	_ = cmd.MarkFlagRequired("infra-id")
+	_ = cmd.MarkFlagRequired("dns-zone-rg-name")
 
 	l := log.Log
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
@@ -70,6 +72,7 @@ func BindDestroyIAMProductFlags(opts *DestroyIAMOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.Cloud, "cloud", opts.Cloud, util.CloudDescription)
 	flags.StringVar(&opts.Name, "name", opts.Name, util.NameDescription)
 	flags.StringVar(&opts.InfraID, "infra-id", opts.InfraID, util.InfraIDDescription)
+	flags.StringVar(&opts.DNSZoneRG, "dns-zone-rg-name", opts.DNSZoneRG, "The resource group name where the DNS zone resides (used to clean up role assignments)")
 }
 
 // Validate validates the DestroyIAMOptions
@@ -88,6 +91,9 @@ func (o *DestroyIAMOptions) Validate() error {
 	}
 	if o.InfraID == "" {
 		return fmt.Errorf("infra-id is required")
+	}
+	if o.DNSZoneRG == "" {
+		return fmt.Errorf("dns-zone-rg-name is required")
 	}
 	return nil
 }
@@ -109,6 +115,19 @@ func (o *DestroyIAMOptions) Run(ctx context.Context, l logr.Logger) error {
 		"clusterName", o.Name,
 		"infraID", o.InfraID,
 		"resourceGroup", o.ResourceGroupName)
+
+	// Clean up role assignments before destroying identities to avoid orphans.
+	// Match the create path resource-group names: {name}-nsg and {name}-vnet.
+	nsgRG := o.Name + "-nsg"
+	vnetRG := o.Name + "-vnet"
+
+	rbacManager := NewRBACManager(subscriptionID, azureCreds)
+	// assignCustomHCPRoles=false is safe: GetServicePrincipalScopes only uses the flag to select
+	// the role definition ID, not to modify the scopes list. Cleanup derives role assignment names
+	// from infraID + component + scope, so the role ID is irrelevant.
+	if err := rbacManager.CleanupRoleAssignments(ctx, l, o.InfraID, o.ResourceGroupName, nsgRG, vnetRG, o.DNSZoneRG, false); err != nil {
+		l.Error(err, "Failed to clean up some role assignments, continuing with identity deletion")
+	}
 
 	// Create the identity manager
 	identityManager := NewIdentityManager(subscriptionID, azureCreds, o.Cloud)

@@ -19,14 +19,25 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	azureauth "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2"
 
 	"k8s.io/utils/ptr"
+
+	"github.com/go-logr/logr"
 )
 
 const (
 	graphAPIEndpoint = "https://graph.microsoft.com/v1.0/servicePrincipals"
 )
+
+// roleAssignmentClient abstracts the Azure role assignment operations for testability.
+type roleAssignmentClient interface {
+	Get(ctx context.Context, scope string, roleAssignmentName string, options *azureauth.RoleAssignmentsClientGetOptions) (azureauth.RoleAssignmentsClientGetResponse, error)
+	Delete(ctx context.Context, scope string, roleAssignmentName string, options *azureauth.RoleAssignmentsClientDeleteOptions) (azureauth.RoleAssignmentsClientDeleteResponse, error)
+	Create(ctx context.Context, scope string, roleAssignmentName string, parameters azureauth.RoleAssignmentCreateParameters, options *azureauth.RoleAssignmentsClientCreateOptions) (azureauth.RoleAssignmentsClientCreateResponse, error)
+	NewListForScopePager(scope string, options *azureauth.RoleAssignmentsClientListForScopeOptions) *runtime.Pager[azureauth.RoleAssignmentsClientListForScopeResponse]
+}
 
 // RBACManager handles Azure RBAC operations
 type RBACManager struct {
@@ -100,6 +111,11 @@ func (r *RBACManager) assignRolesForComponents(ctx context.Context, opts *Create
 		return err
 	}
 
+	raClient, err := azureauth.NewRoleAssignmentsClient(r.subscriptionID, r.creds, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create role assignments client: %w", err)
+	}
+
 	for component, clientID := range components {
 		objectID, err := r.getObjectIDFromClientID(string(clientID), token)
 		if err != nil {
@@ -109,7 +125,7 @@ func (r *RBACManager) assignRolesForComponents(ctx context.Context, opts *Create
 		role, scopes := azureutil.GetServicePrincipalScopes(r.subscriptionID, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName, opts.DNSZoneRG, component, opts.AssignCustomHCPRoles)
 
 		for _, scope := range scopes {
-			if err := r.assignRole(ctx, opts.InfraID, component, objectID, role, scope); err != nil {
+			if err := r.assignRole(ctx, raClient, opts.InfraID, component, objectID, role, scope); err != nil {
 				return fmt.Errorf("failed to perform role assignment: %w", err)
 			}
 		}
@@ -128,12 +144,17 @@ func (r *RBACManager) AssignDataPlaneRoles(ctx context.Context, opts *CreateInfr
 		return err
 	}
 
+	raClient, err := azureauth.NewRoleAssignmentsClient(r.subscriptionID, r.creds, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create role assignments client: %w", err)
+	}
+
 	// Setup Data Plane MI role assignments
 	objectID, err := r.getObjectIDFromClientID(dataPlaneIdentities.ImageRegistryMSIClientID, token)
 	if err != nil {
 		return err
 	}
-	err = r.assignRole(ctx, opts.InfraID, config.CIRO+"WI", objectID, config.ImageRegistryRoleDefinitionID, managedRG)
+	err = r.assignRole(ctx, raClient, opts.InfraID, config.CIRO+"WI", objectID, config.ImageRegistryRoleDefinitionID, managedRG)
 	if err != nil {
 		return err
 	}
@@ -142,7 +163,7 @@ func (r *RBACManager) AssignDataPlaneRoles(ctx context.Context, opts *CreateInfr
 	if err != nil {
 		return err
 	}
-	err = r.assignRole(ctx, opts.InfraID, config.AzureDisk+"WI", objectID, config.AzureDiskRoleDefinitionID, managedRG)
+	err = r.assignRole(ctx, raClient, opts.InfraID, config.AzureDisk+"WI", objectID, config.AzureDiskRoleDefinitionID, managedRG)
 	if err != nil {
 		return err
 	}
@@ -151,7 +172,7 @@ func (r *RBACManager) AssignDataPlaneRoles(ctx context.Context, opts *CreateInfr
 	if err != nil {
 		return err
 	}
-	err = r.assignRole(ctx, opts.InfraID, config.AzureFile+"WI", objectID, config.AzureFileRoleDefinitionID, managedRG)
+	err = r.assignRole(ctx, raClient, opts.InfraID, config.AzureFile+"WI", objectID, config.AzureFileRoleDefinitionID, managedRG)
 	if err != nil {
 		return err
 	}
@@ -160,12 +181,7 @@ func (r *RBACManager) AssignDataPlaneRoles(ctx context.Context, opts *CreateInfr
 }
 
 // assignRole assigns a scoped role to the service principal assignee
-func (r *RBACManager) assignRole(ctx context.Context, infraID, component, assigneeID, role, scope string) error {
-	roleAssignmentClient, err := azureauth.NewRoleAssignmentsClient(r.subscriptionID, r.creds, nil)
-	if err != nil {
-		return fmt.Errorf("failed to create new role assignments client: %w", err)
-	}
-
+func (r *RBACManager) assignRole(ctx context.Context, client roleAssignmentClient, infraID, component, assigneeID, role, scope string) error {
 	// Generate the role assignment name
 	roleAssignmentName := util.GenerateRoleAssignmentName(infraID, component, scope)
 
@@ -184,7 +200,7 @@ func (r *RBACManager) assignRole(ctx context.Context, infraID, component, assign
 	// Robust existence check:
 	// 1) List assignments for this principalId at or around this scope and
 	//    verify one matches both the exact scope and role definition ID.
-	pager := roleAssignmentClient.NewListForScopePager(scope, &azureauth.RoleAssignmentsClientListForScopeOptions{
+	pager := client.NewListForScopePager(scope, &azureauth.RoleAssignmentsClientListForScopeOptions{
 		// Use atScope() to reliably list assignments at this scope, then match in code
 		Filter: ptr.To("atScope()"),
 	})
@@ -208,25 +224,47 @@ func (r *RBACManager) assignRole(ctx context.Context, infraID, component, assign
 	}
 
 	// 2) Fallback to a direct GET by our deterministic name; create only if 404.
-	_, err = roleAssignmentClient.Get(ctx, scope, roleAssignmentName, nil)
+	//    If the assignment exists but points to a different principal (stale/orphaned from a
+	//    previous cluster with the same infraID), delete it and fall through to create a new one.
+	existing, err := client.Get(ctx, scope, roleAssignmentName, nil)
 	if err == nil {
-		log.Log.Info("Skipping role assignment creation, role assignment already exists.", "role", role, "assigneeID", assigneeID, "scope", scope)
-		return nil
-	}
-	var respErr *azcore.ResponseError
-	if errors.As(err, &respErr) {
-		if respErr.StatusCode == http.StatusNotFound {
-			// proceed to create
-		} else if respErr.StatusCode == http.StatusForbidden || strings.EqualFold(respErr.ErrorCode, "AuthorizationFailed") {
-			log.Log.Info("Get not permitted; will attempt create and rely on 409 for idempotency.", "role", role, "assigneeID", assigneeID, "scope", scope)
-		} else {
-			return fmt.Errorf("failed checking role assignment existence: %w", err)
+		if existing.Properties != nil &&
+			existing.Properties.PrincipalID != nil &&
+			existing.Properties.RoleDefinitionID != nil &&
+			strings.EqualFold(*existing.Properties.PrincipalID, assigneeID) &&
+			strings.EqualFold(*existing.Properties.RoleDefinitionID, roleDefinitionID) {
+			log.Log.Info("Skipping role assignment creation, role assignment already exists.", "role", role, "assigneeID", assigneeID, "scope", scope)
+			return nil
 		}
+		// Stale assignment — different principal owns this deterministic name.
+		stalePrincipal := "<nil>"
+		if existing.Properties != nil && existing.Properties.PrincipalID != nil {
+			stalePrincipal = *existing.Properties.PrincipalID
+		}
+		log.Log.Info("Deleting stale role assignment with mismatched principal",
+			"role", role, "expectedPrincipal", assigneeID,
+			"stalePrincipal", stalePrincipal,
+			"scope", scope)
+		if _, err := client.Delete(ctx, scope, roleAssignmentName, nil); err != nil {
+			return fmt.Errorf("failed to delete stale role assignment: %w", err)
+		}
+		// Fall through to create a fresh assignment below.
 	} else {
-		return fmt.Errorf("failed to check role assignment existence: %w", err)
+		var respErr *azcore.ResponseError
+		if errors.As(err, &respErr) {
+			if respErr.StatusCode == http.StatusNotFound {
+				// proceed to create
+			} else if respErr.StatusCode == http.StatusForbidden || strings.EqualFold(respErr.ErrorCode, "AuthorizationFailed") {
+				log.Log.Info("Get not permitted; will attempt create and rely on 409 for idempotency.", "role", role, "assigneeID", assigneeID, "scope", scope)
+			} else {
+				return fmt.Errorf("failed checking role assignment existence: %w", err)
+			}
+		} else {
+			return fmt.Errorf("failed to check role assignment existence: %w", err)
+		}
 	}
 
-	_, err = roleAssignmentClient.Create(ctx, scope, roleAssignmentName, roleAssignmentProperties, nil)
+	_, err = client.Create(ctx, scope, roleAssignmentName, roleAssignmentProperties, nil)
 	if err != nil {
 		var respErr *azcore.ResponseError
 		if errors.As(err, &respErr) && (respErr.StatusCode == http.StatusConflict || strings.EqualFold(respErr.ErrorCode, "RoleAssignmentExists")) {
@@ -236,6 +274,84 @@ func (r *RBACManager) assignRole(ctx context.Context, infraID, component, assign
 		return fmt.Errorf("failed to create role assignment: %w", err)
 	}
 	log.Log.Info("successfully created role assignment", "role", role, "assigneeID", assigneeID, "scope", scope)
+	return nil
+}
+
+// CleanupRoleAssignments deletes all role assignments created for a cluster's workload identities.
+// It regenerates the deterministic role assignment names from the infraID, component names, and scopes,
+// then deletes each one. This must be called before destroying managed identities to avoid orphaned
+// role assignments that cause naming collisions on re-creation.
+func (r *RBACManager) CleanupRoleAssignments(ctx context.Context, l logr.Logger, infraID string, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName, dnsZoneRG string, assignCustomHCPRoles bool) error {
+	raClient, err := azureauth.NewRoleAssignmentsClient(r.subscriptionID, r.creds, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create role assignments client: %w", err)
+	}
+	return r.cleanupRoleAssignments(ctx, l, raClient, infraID, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName, dnsZoneRG, assignCustomHCPRoles)
+}
+
+// cleanupRoleAssignments is the testable inner method that performs the actual cleanup.
+func (r *RBACManager) cleanupRoleAssignments(ctx context.Context, l logr.Logger, client roleAssignmentClient, infraID string, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName, dnsZoneRG string, assignCustomHCPRoles bool) error {
+	// All components that may have role assignments
+	components := []string{
+		config.CPO,
+		config.NodePoolMgmt,
+		config.CloudProvider,
+		config.AzureFile,
+		config.AzureDisk,
+		config.Ingress,
+		config.CNCC,
+		config.CIRO,
+	}
+
+	// Data plane components use a "WI" suffix
+	dataPlaneComponents := []string{
+		config.CIRO + "WI",
+		config.AzureDisk + "WI",
+		config.AzureFile + "WI",
+	}
+
+	var deleteErrors []error
+
+	// Cleanup control plane and workload identity role assignments
+	for _, component := range components {
+		_, scopes := azureutil.GetServicePrincipalScopes(r.subscriptionID, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName, dnsZoneRG, component, assignCustomHCPRoles)
+		for _, scope := range scopes {
+			name := util.GenerateRoleAssignmentName(infraID, component, scope)
+			if err := r.deleteRoleAssignmentByName(ctx, l, client, scope, name, component); err != nil {
+				deleteErrors = append(deleteErrors, err)
+			}
+		}
+	}
+
+	// Cleanup data plane role assignments (only scoped to managed RG)
+	managedRG := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", r.subscriptionID, resourceGroupName)
+	for _, component := range dataPlaneComponents {
+		name := util.GenerateRoleAssignmentName(infraID, component, managedRG)
+		if err := r.deleteRoleAssignmentByName(ctx, l, client, managedRG, name, component); err != nil {
+			deleteErrors = append(deleteErrors, err)
+		}
+	}
+
+	if len(deleteErrors) > 0 {
+		return fmt.Errorf("failed to delete %d role assignments during cleanup: %w", len(deleteErrors), errors.Join(deleteErrors...))
+	}
+
+	l.Info("Successfully cleaned up all role assignments", "infraID", infraID)
+	return nil
+}
+
+func (r *RBACManager) deleteRoleAssignmentByName(ctx context.Context, l logr.Logger, client roleAssignmentClient, scope, name, component string) error {
+	_, err := client.Delete(ctx, scope, name, nil)
+	if err != nil {
+		var respErr *azcore.ResponseError
+		if errors.As(err, &respErr) && respErr.StatusCode == http.StatusNotFound {
+			l.Info("Role assignment not found, skipping", "component", component, "scope", scope)
+			return nil
+		}
+		l.Error(err, "Failed to delete role assignment", "component", component, "scope", scope)
+		return err
+	}
+	l.Info("Deleted role assignment", "component", component, "scope", scope)
 	return nil
 }
 

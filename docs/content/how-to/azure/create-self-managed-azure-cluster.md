@@ -294,7 +294,8 @@ To delete the HostedCluster:
 hypershift destroy cluster azure \
     --name $CLUSTER_NAME \
     --azure-creds $AZURE_CREDS \
-    --resource-group-name $MANAGED_RG_NAME
+    --resource-group-name $MANAGED_RG_NAME \
+    --dns-zone-rg-name $PERSISTENT_RG_NAME
 ```
 
 !!! note "Resource Cleanup"

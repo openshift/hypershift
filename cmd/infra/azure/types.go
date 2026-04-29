@@ -66,5 +66,6 @@ type DestroyIAMOptions struct {
 	CredentialsFile        string
 	Credentials            *util.AzureCreds
 	ResourceGroupName      string
+	DNSZoneRG              string
 	Cloud                  string
 }
