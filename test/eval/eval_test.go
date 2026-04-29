@@ -59,9 +59,14 @@ Examples of semantic matches:
 - "missing +optional markers" matches a corrected code example that adds +optional even if not called out as a separate issue
 
 You MUST respond with ONLY a raw JSON object. Do NOT wrap in markdown code blocks. Do NOT include any other text.
-{"pass": true, "reason": "Brief summary of matched issues"}
-or
-{"pass": false, "reason": "Explanation of what was missing or what unexpected issue was found"}`
+{
+  "pass": true or false,
+  "issues": [
+    {"issue": "expected issue text", "covered": true, "reason": "how it was covered"},
+    {"issue": "expected issue text", "covered": false, "reason": "why it was not covered"}
+  ]
+}
+pass is true only if ALL issues have covered=true AND no entirely unrelated issues were reported.`
 )
 
 type testCase struct {
@@ -86,9 +91,15 @@ type claudeOutput struct {
 	TotalCostUSD float64 `json:"total_cost_usd"`
 }
 
+type issueVerdict struct {
+	Issue   string `json:"issue"`
+	Covered bool   `json:"covered"`
+	Reason  string `json:"reason"`
+}
+
 type judgeResult struct {
-	Pass   bool   `json:"pass"`
-	Reason string `json:"reason"`
+	Pass   bool           `json:"pass"`
+	Issues []issueVerdict `json:"issues"`
 }
 
 var (
@@ -344,12 +355,24 @@ func runTestCase(tc testCase) {
 
 		GinkgoWriter.Printf("Run %d/%d: pass=%v, Agent=$%.4f, Judge=$%.4f\n",
 			i+1, evalRuns, judge.Pass, agentCost, judgeCost)
-		GinkgoWriter.Printf("Judge reason: %s\n", judge.Reason)
+		for _, iv := range judge.Issues {
+			status := "COVERED"
+			if !iv.Covered {
+				status = "MISSED"
+			}
+			GinkgoWriter.Printf("  [%s] %s — %s\n", status, iv.Issue, iv.Reason)
+		}
 
 		if judge.Pass {
 			result.Passed++
 		} else {
-			result.Failures = append(result.Failures, fmt.Sprintf("run %d: %s", i+1, judge.Reason))
+			var missed []string
+			for _, iv := range judge.Issues {
+				if !iv.Covered {
+					missed = append(missed, fmt.Sprintf("[MISSED] %s — %s", iv.Issue, iv.Reason))
+				}
+			}
+			result.Failures = append(result.Failures, fmt.Sprintf("run %d:\n      %s", i+1, strings.Join(missed, "\n      ")))
 		}
 	}
 
