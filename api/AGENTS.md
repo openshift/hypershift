@@ -47,7 +47,7 @@ Don't use the other existing APIs as examples as they might have many legacy con
 
 ### Field Grouping
 
-**When multiple fields on a spec share a common prefix or relate to the same feature, they MUST be grouped into a dedicated struct.** Top-level specs like HostedClusterSpec and NodePoolSpec should only contain fields that are independently meaningful. If removing one field would make another field meaningless, they belong together in a sub-struct. A common signal is fields that share a name prefix (e.g., `FooIP`, `FooConfig`, `FooID` all relate to "Foo" and should be a single `Foo` field with a `FooSpec` struct).
+**When multiple fields on a spec share a common prefix or relate to the same feature, they MUST be grouped into a dedicated struct.** Top-level specs like HostedClusterSpec and NodePoolSpec should only contain fields that are independently meaningful. If removing one field would make another field meaningless, they belong together in a sub-struct. A common signal is fields that share a name prefix (e.g., `BarEndpoint`, `BarConfig`, `BarID` all relate to "Bar" and should be a single `Bar` field with a `BarSpec` struct).
 
 ### N-1 and N+1 Compatibility
 
