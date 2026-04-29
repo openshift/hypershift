@@ -918,20 +918,33 @@ func TestSetEncryptionMetadata(t *testing.T) {
 }
 
 func TestBuildUploadArgs(t *testing.T) {
-	t.Run("When storage type is S3 it should build S3 upload args", func(t *testing.T) {
+	t.Run("When storage type is S3 with static credentials it should build S3 upload args with credentials-file", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 		backup := newHCPEtcdBackup()
 		r := newReconciler(backup)
+		creds := resolvedCredentials{Mode: credentialModeAWSStatic, SecretName: "aws-creds"}
 
-		args, credSecret, err := r.buildUploadArgs(backup)
+		args, err := r.buildUploadArgs(backup, creds)
 		g.Expect(err).ToNot(HaveOccurred())
-		g.Expect(credSecret).To(Equal("aws-creds"))
 		g.Expect(args).To(ContainElements(
 			"--storage-type", "S3",
 			"--aws-bucket", "my-bucket",
 			"--aws-region", "us-east-1",
 			"--key-prefix", "backups/test",
+			"--credentials-file",
 		))
+	})
+
+	t.Run("When storage type is S3 with STS credentials it should omit credentials-file", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		backup := newHCPEtcdBackup()
+		r := newReconciler(backup)
+		creds := resolvedCredentials{Mode: credentialModeAWSSTS, SecretName: "aws-creds", RoleARN: "arn:aws:iam::123:role/test"}
+
+		args, err := r.buildUploadArgs(backup, creds)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(args).To(ContainElements("--storage-type", "S3"))
+		g.Expect(args).ToNot(ContainElement("--credentials-file"))
 	})
 
 	t.Run("When S3 has KMS key it should include kms-key-arn flag", func(t *testing.T) {
@@ -939,13 +952,14 @@ func TestBuildUploadArgs(t *testing.T) {
 		backup := newHCPEtcdBackup()
 		backup.Spec.Storage.S3.KMSKeyARN = "arn:aws:kms:us-east-1:123456789012:key/test"
 		r := newReconciler(backup)
+		creds := resolvedCredentials{Mode: credentialModeAWSStatic, SecretName: "aws-creds"}
 
-		args, _, err := r.buildUploadArgs(backup)
+		args, err := r.buildUploadArgs(backup, creds)
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(args).To(ContainElements("--aws-kms-key-arn", "arn:aws:kms:us-east-1:123456789012:key/test"))
 	})
 
-	t.Run("When storage type is AzureBlob it should build Azure upload args", func(t *testing.T) {
+	t.Run("When storage type is AzureBlob with client-secret it should include credentials-file and azure-auth-type", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 		backup := &hyperv1.HCPEtcdBackup{
 			Spec: hyperv1.HCPEtcdBackupSpec{
@@ -961,15 +975,42 @@ func TestBuildUploadArgs(t *testing.T) {
 			},
 		}
 		r := newReconciler()
+		creds := resolvedCredentials{Mode: credentialModeAzureClientSecret, SecretName: "azure-creds"}
 
-		args, credSecret, err := r.buildUploadArgs(backup)
+		args, err := r.buildUploadArgs(backup, creds)
 		g.Expect(err).ToNot(HaveOccurred())
-		g.Expect(credSecret).To(Equal("azure-creds"))
 		g.Expect(args).To(ContainElements(
 			"--storage-type", "AzureBlob",
 			"--azure-container", "my-container",
 			"--azure-storage-account", "mystorageaccount",
+			"--credentials-file",
+			"--azure-auth-type", "client-secret",
 		))
+	})
+
+	t.Run("When storage type is AzureBlob with workload-identity it should omit credentials-file and azure-auth-type", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		backup := &hyperv1.HCPEtcdBackup{
+			Spec: hyperv1.HCPEtcdBackupSpec{
+				Storage: hyperv1.HCPEtcdBackupStorage{
+					StorageType: hyperv1.AzureBlobBackupStorage,
+					AzureBlob: hyperv1.HCPEtcdBackupAzureBlob{
+						Container:      "my-container",
+						StorageAccount: "mystorageaccount",
+						KeyPrefix:      "backups",
+						Credentials:    hyperv1.SecretReference{Name: "azure-creds"},
+					},
+				},
+			},
+		}
+		r := newReconciler()
+		creds := resolvedCredentials{Mode: credentialModeAzureWorkloadIdentity, SecretName: "azure-creds", ClientID: "client-123"}
+
+		args, err := r.buildUploadArgs(backup, creds)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(args).To(ContainElements("--storage-type", "AzureBlob"))
+		g.Expect(args).ToNot(ContainElement("--credentials-file"))
+		g.Expect(args).ToNot(ContainElement("--azure-auth-type"))
 	})
 }
 
@@ -1035,7 +1076,7 @@ func TestEnforceRetention(t *testing.T) {
 		for i := range 3 {
 			b := &hyperv1.HCPEtcdBackup{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "backup-" + string(rune('a'+i)),
+					Name:      fmt.Sprintf("backup-%d", i),
 					Namespace: testHCPNamespace,
 				},
 				Status: hyperv1.HCPEtcdBackupStatus{
@@ -1155,7 +1196,8 @@ func TestCreateBackupJob(t *testing.T) {
 		r := newReconciler(backup, hcp, pullSecret, credSecret)
 		ctx := context.Background()
 
-		err := r.createBackupJob(ctx, backup, hcp)
+		creds := resolvedCredentials{Mode: credentialModeAWSStatic, SecretName: "aws-creds"}
+		err := r.createBackupJob(ctx, backup, hcp, creds)
 		g.Expect(err).ToNot(HaveOccurred())
 
 		// Find the created Job
@@ -1234,7 +1276,8 @@ func TestCreateBackupJob(t *testing.T) {
 		r := newReconciler(backup, hcp, pullSecret)
 		ctx := context.Background()
 
-		err := r.createBackupJob(ctx, backup, hcp)
+		creds := resolvedCredentials{Mode: credentialModeAWSStatic, SecretName: "aws-creds"}
+		err := r.createBackupJob(ctx, backup, hcp, creds)
 		g.Expect(err).ToNot(HaveOccurred())
 
 		jobList := &batchv1.JobList{}
@@ -1283,7 +1326,8 @@ func TestCreateBackupJob(t *testing.T) {
 		r := newReconciler(backup, hcp, pullSecret, credSecret)
 		ctx := context.Background()
 
-		err := r.createBackupJob(ctx, backup, hcp)
+		creds := resolvedCredentials{Mode: credentialModeAzureClientSecret, SecretName: "azure-creds"}
+		err := r.createBackupJob(ctx, backup, hcp, creds)
 		g.Expect(err).ToNot(HaveOccurred())
 
 		jobList := &batchv1.JobList{}
@@ -1308,7 +1352,8 @@ func TestCreateBackupJob(t *testing.T) {
 		r := newReconciler(backup, hcp)
 		ctx := context.Background()
 
-		err := r.createBackupJob(ctx, backup, hcp)
+		creds := resolvedCredentials{Mode: credentialModeAWSStatic, SecretName: "aws-creds"}
+		err := r.createBackupJob(ctx, backup, hcp, creds)
 		g.Expect(err).To(HaveOccurred())
 		g.Expect(err.Error()).To(ContainSubstring("pull secret"))
 	})
@@ -1336,7 +1381,8 @@ func TestCreateBackupJob(t *testing.T) {
 		r := newReconciler(backup, hcp, pullSecret, credSecret)
 		ctx := context.Background()
 
-		err := r.createBackupJob(ctx, backup, hcp)
+		creds := resolvedCredentials{Mode: credentialModeAWSStatic, SecretName: "aws-creds"}
+		err := r.createBackupJob(ctx, backup, hcp, creds)
 		g.Expect(err).ToNot(HaveOccurred())
 
 		jobList := &batchv1.JobList{}
@@ -1345,6 +1391,230 @@ func TestCreateBackupJob(t *testing.T) {
 
 		upload := jobList.Items[0].Spec.Template.Spec.Containers[0]
 		g.Expect(upload.Command).To(ContainElements("--aws-kms-key-arn", "arn:aws:kms:us-east-1:123456789012:key/test-key"))
+	})
+
+	t.Run("When AWS STS mode it should create Job with projected token volume and env vars", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		backup := newHCPEtcdBackup()
+		hcp := newHostedControlPlane()
+		pullSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: pullSecretName, Namespace: testHCPNamespace},
+			Data:       map[string][]byte{corev1.DockerConfigJsonKey: []byte(`{"auths":{}}`)},
+		}
+		credSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: "aws-creds", Namespace: testHONamespace},
+		}
+		r := newReconciler(backup, hcp, pullSecret, credSecret)
+		ctx := context.Background()
+
+		creds := resolvedCredentials{
+			Mode:       credentialModeAWSSTS,
+			SecretName: "aws-creds",
+			RoleARN:    "arn:aws:iam::123456789012:role/etcd-backup",
+		}
+		err := r.createBackupJob(ctx, backup, hcp, creds)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		jobList := &batchv1.JobList{}
+		g.Expect(r.List(ctx, jobList, client.InNamespace(testHONamespace))).To(Succeed())
+		g.Expect(jobList.Items).To(HaveLen(1))
+
+		podSpec := jobList.Items[0].Spec.Template.Spec
+
+		// Should NOT have credentials volume
+		for _, v := range podSpec.Volumes {
+			g.Expect(v.Name).ToNot(Equal(volumeCredentials), "credentials volume should not be present in STS mode")
+		}
+
+		// Should have projected token volume
+		var tokenVolume *corev1.Volume
+		for i := range podSpec.Volumes {
+			if podSpec.Volumes[i].Name == volumeAWSIAMToken {
+				tokenVolume = &podSpec.Volumes[i]
+				break
+			}
+		}
+		g.Expect(tokenVolume).ToNot(BeNil(), "projected token volume should be present")
+		g.Expect(tokenVolume.Projected).ToNot(BeNil())
+		g.Expect(tokenVolume.Projected.Sources).To(HaveLen(1))
+		g.Expect(tokenVolume.Projected.Sources[0].ServiceAccountToken.Audience).To(Equal("sts.amazonaws.com"))
+
+		// Upload container env vars
+		upload := podSpec.Containers[0]
+		g.Expect(upload.Env).To(ContainElements(
+			corev1.EnvVar{Name: "AWS_ROLE_ARN", Value: "arn:aws:iam::123456789012:role/etcd-backup"},
+			corev1.EnvVar{Name: "AWS_WEB_IDENTITY_TOKEN_FILE", Value: mountPathAWSIAMToken + "/token"},
+		))
+
+		// Upload container should mount token volume, not credentials
+		var hasCreds, hasToken bool
+		for _, m := range upload.VolumeMounts {
+			if m.Name == volumeCredentials {
+				hasCreds = true
+			}
+			if m.Name == volumeAWSIAMToken {
+				hasToken = true
+			}
+		}
+		g.Expect(hasCreds).To(BeFalse(), "credentials mount should not be present in STS mode")
+		g.Expect(hasToken).To(BeTrue(), "token mount should be present in STS mode")
+
+		// Upload args should NOT have --credentials-file
+		g.Expect(upload.Command).ToNot(ContainElement("--credentials-file"))
+	})
+
+	t.Run("When Azure Workload Identity mode it should create Job with WI pod label and no credentials volume", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		backup := &hyperv1.HCPEtcdBackup{
+			ObjectMeta: metav1.ObjectMeta{Name: testBackupName, Namespace: testHCPNamespace},
+			Spec: hyperv1.HCPEtcdBackupSpec{
+				Storage: hyperv1.HCPEtcdBackupStorage{
+					StorageType: hyperv1.AzureBlobBackupStorage,
+					AzureBlob: hyperv1.HCPEtcdBackupAzureBlob{
+						Container:      "my-container",
+						StorageAccount: "mystorageaccount",
+						KeyPrefix:      "backups/test",
+						Credentials:    hyperv1.SecretReference{Name: "azure-creds"},
+					},
+				},
+			},
+		}
+		hcp := newHostedControlPlane()
+		pullSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: pullSecretName, Namespace: testHCPNamespace},
+			Data:       map[string][]byte{corev1.DockerConfigJsonKey: []byte(`{"auths":{}}`)},
+		}
+		credSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: "azure-creds", Namespace: testHONamespace},
+		}
+		r := newReconciler(backup, hcp, pullSecret, credSecret)
+		ctx := context.Background()
+
+		creds := resolvedCredentials{
+			Mode:       credentialModeAzureWorkloadIdentity,
+			SecretName: "azure-creds",
+			ClientID:   "client-789",
+		}
+		err := r.createBackupJob(ctx, backup, hcp, creds)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		jobList := &batchv1.JobList{}
+		g.Expect(r.List(ctx, jobList, client.InNamespace(testHONamespace))).To(Succeed())
+		g.Expect(jobList.Items).To(HaveLen(1))
+
+		podSpec := jobList.Items[0].Spec.Template.Spec
+
+		// Should NOT have credentials volume
+		for _, v := range podSpec.Volumes {
+			g.Expect(v.Name).ToNot(Equal(volumeCredentials), "credentials volume should not be present in WI mode")
+		}
+
+		// Pod template should have WI label
+		podLabels := jobList.Items[0].Spec.Template.Labels
+		g.Expect(podLabels["azure.workload.identity/use"]).To(Equal("true"))
+
+		// Upload container should NOT mount credentials
+		upload := podSpec.Containers[0]
+		for _, m := range upload.VolumeMounts {
+			g.Expect(m.Name).ToNot(Equal(volumeCredentials), "credentials mount should not be present in WI mode")
+		}
+
+		// Upload args should NOT have --credentials-file or --azure-auth-type
+		g.Expect(upload.Command).ToNot(ContainElement("--credentials-file"))
+		g.Expect(upload.Command).ToNot(ContainElement("--azure-auth-type"))
+	})
+
+	t.Run("When Azure managed-identity mode it should include credentials-file and azure-auth-type managed-identity", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		backup := &hyperv1.HCPEtcdBackup{
+			ObjectMeta: metav1.ObjectMeta{Name: testBackupName, Namespace: testHCPNamespace},
+			Spec: hyperv1.HCPEtcdBackupSpec{
+				Storage: hyperv1.HCPEtcdBackupStorage{
+					StorageType: hyperv1.AzureBlobBackupStorage,
+					AzureBlob: hyperv1.HCPEtcdBackupAzureBlob{
+						Container:      "my-container",
+						StorageAccount: "mystorageaccount",
+						KeyPrefix:      "backups/test",
+						Credentials:    hyperv1.SecretReference{Name: "azure-creds"},
+					},
+				},
+			},
+		}
+		hcp := newHostedControlPlane()
+		pullSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: pullSecretName, Namespace: testHCPNamespace},
+			Data:       map[string][]byte{corev1.DockerConfigJsonKey: []byte(`{"auths":{}}`)},
+		}
+		credSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: "azure-creds", Namespace: testHONamespace},
+		}
+		r := newReconciler(backup, hcp, pullSecret, credSecret)
+		ctx := context.Background()
+
+		creds := resolvedCredentials{Mode: credentialModeAzureManagedIdentity, SecretName: "azure-creds"}
+		err := r.createBackupJob(ctx, backup, hcp, creds)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		jobList := &batchv1.JobList{}
+		g.Expect(r.List(ctx, jobList, client.InNamespace(testHONamespace))).To(Succeed())
+		g.Expect(jobList.Items).To(HaveLen(1))
+
+		upload := jobList.Items[0].Spec.Template.Spec.Containers[0]
+		g.Expect(upload.Command).To(ContainElements("--credentials-file"))
+		g.Expect(upload.Command).To(ContainElements("--azure-auth-type", "managed-identity"))
+
+		// Pod template should NOT have WI label
+		podLabels := jobList.Items[0].Spec.Template.Labels
+		g.Expect(podLabels).ToNot(HaveKey("azure.workload.identity/use"))
+	})
+}
+
+func TestEnsureServiceAccountWithCredentials(t *testing.T) {
+	t.Run("When Azure Workload Identity mode it should annotate the ServiceAccount", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		r := newReconciler()
+		ctx := context.Background()
+
+		creds := resolvedCredentials{
+			Mode:     credentialModeAzureWorkloadIdentity,
+			ClientID: "client-789",
+		}
+		g.Expect(r.ensureServiceAccount(ctx, creds)).To(Succeed())
+
+		sa := &corev1.ServiceAccount{}
+		g.Expect(r.Get(ctx, types.NamespacedName{Name: jobServiceAccountName, Namespace: testHONamespace}, sa)).To(Succeed())
+		g.Expect(sa.Annotations["azure.workload.identity/client-id"]).To(Equal("client-789"))
+	})
+
+	t.Run("When non-WI mode it should not annotate the ServiceAccount", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		r := newReconciler()
+		ctx := context.Background()
+
+		creds := resolvedCredentials{Mode: credentialModeAWSStatic}
+		g.Expect(r.ensureServiceAccount(ctx, creds)).To(Succeed())
+
+		sa := &corev1.ServiceAccount{}
+		g.Expect(r.Get(ctx, types.NamespacedName{Name: jobServiceAccountName, Namespace: testHONamespace}, sa)).To(Succeed())
+		g.Expect(sa.Annotations).ToNot(HaveKey("azure.workload.identity/client-id"))
+	})
+
+	t.Run("When switching from WI to static mode it should remove the annotation", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		r := newReconciler()
+		ctx := context.Background()
+
+		// First: create with WI
+		wiCreds := resolvedCredentials{Mode: credentialModeAzureWorkloadIdentity, ClientID: "client-789"}
+		g.Expect(r.ensureServiceAccount(ctx, wiCreds)).To(Succeed())
+
+		// Then: update with static
+		staticCreds := resolvedCredentials{Mode: credentialModeAWSStatic}
+		g.Expect(r.ensureServiceAccount(ctx, staticCreds)).To(Succeed())
+
+		sa := &corev1.ServiceAccount{}
+		g.Expect(r.Get(ctx, types.NamespacedName{Name: jobServiceAccountName, Namespace: testHONamespace}, sa)).To(Succeed())
+		g.Expect(sa.Annotations).ToNot(HaveKey("azure.workload.identity/client-id"))
 	})
 }
 

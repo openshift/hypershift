@@ -65,11 +65,13 @@ const (
 	volumeEtcdCerts   = "etcd-certs"
 	volumeEtcdBackup  = "etcd-backup"
 	volumeCredentials = "backup-credentials"
+	volumeAWSIAMToken = "aws-iam-token"
 
 	// Mount paths.
 	mountPathEtcdCerts   = "/etc/etcd-certs"
 	mountPathEtcdBackup  = "/etc/etcd-backup"
 	mountPathCredentials = "/etc/etcd-backup-creds"
+	mountPathAWSIAMToken = "/var/run/secrets/aws-iam-token"
 
 	requeueInterval = 10 * time.Second
 )
@@ -149,9 +151,24 @@ func (r *HCPEtcdBackupReconciler) validatePrerequisites(ctx context.Context, bac
 
 func (r *HCPEtcdBackupReconciler) createResourcesAndJob(ctx context.Context, backup *hyperv1.HCPEtcdBackup, hcp *hyperv1.HostedControlPlane) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
-	logger.Info("creating backup resources", "backup", backup.Name, "namespace", backup.Namespace)
 
-	if err := r.ensureServiceAccount(ctx); err != nil {
+	credentialSecretName, err := r.getCredentialSecretName(backup)
+	if err != nil {
+		return r.setFailedConditionAndUpdate(ctx, backup, hyperv1.BackupFailedReason, err.Error())
+	}
+	credSecret := &corev1.Secret{}
+	if err := r.Get(ctx, types.NamespacedName{Name: credentialSecretName, Namespace: r.OperatorNamespace}, credSecret); err != nil {
+		if apierrors.IsNotFound(err) {
+			return r.setFailedConditionAndUpdate(ctx, backup, hyperv1.BackupFailedReason,
+				fmt.Sprintf("credential Secret %q not found in namespace %q", credentialSecretName, r.OperatorNamespace))
+		}
+		return ctrl.Result{}, fmt.Errorf("failed to get credential Secret: %w", err)
+	}
+
+	creds := resolveCredentials(backup.Spec.Storage.StorageType, credSecret)
+	logger.Info("creating backup resources", "backup", backup.Name, "namespace", backup.Namespace, "credentialMode", creds.Mode)
+
+	if err := r.ensureServiceAccount(ctx, creds); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to ensure ServiceAccount: %w", err)
 	}
 
@@ -163,7 +180,7 @@ func (r *HCPEtcdBackupReconciler) createResourcesAndJob(ctx context.Context, bac
 		return ctrl.Result{}, fmt.Errorf("failed to ensure NetworkPolicy: %w", err)
 	}
 
-	if err := r.createBackupJob(ctx, backup, hcp); err != nil {
+	if err := r.createBackupJob(ctx, backup, hcp, creds); err != nil {
 		if apierrors.IsNotFound(err) {
 			// Clean up RBAC and NetworkPolicy created above before marking terminal.
 			if cleanupErr := r.cleanupResources(ctx, backup); cleanupErr != nil {
@@ -538,7 +555,8 @@ func (r *HCPEtcdBackupReconciler) setEncryptionMetadata(backup *hyperv1.HCPEtcdB
 }
 
 // ensureServiceAccount creates the ServiceAccount for backup Jobs in the HO namespace.
-func (r *HCPEtcdBackupReconciler) ensureServiceAccount(ctx context.Context) error {
+// For Azure Workload Identity mode, it adds the required client-id annotation.
+func (r *HCPEtcdBackupReconciler) ensureServiceAccount(ctx context.Context, creds resolvedCredentials) error {
 	sa := &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      jobServiceAccountName,
@@ -546,6 +564,14 @@ func (r *HCPEtcdBackupReconciler) ensureServiceAccount(ctx context.Context) erro
 		},
 	}
 	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, sa, func() error {
+		if creds.Mode == credentialModeAzureWorkloadIdentity {
+			if sa.Annotations == nil {
+				sa.Annotations = map[string]string{}
+			}
+			sa.Annotations["azure.workload.identity/client-id"] = creds.ClientID
+		} else {
+			delete(sa.Annotations, "azure.workload.identity/client-id")
+		}
 		return nil
 	})
 	return err
@@ -719,7 +745,7 @@ func (r *HCPEtcdBackupReconciler) cleanupResources(ctx context.Context, backup *
 
 // createBackupJob creates the backup Job in the HO namespace with the 3-container
 // PodSpec: fetch-etcd-certs (init), etcdctl snapshot save (init), etcd-upload (main).
-func (r *HCPEtcdBackupReconciler) createBackupJob(ctx context.Context, backup *hyperv1.HCPEtcdBackup, hcp *hyperv1.HostedControlPlane) error {
+func (r *HCPEtcdBackupReconciler) createBackupJob(ctx context.Context, backup *hyperv1.HCPEtcdBackup, hcp *hyperv1.HostedControlPlane, creds resolvedCredentials) error {
 	// Resolve images
 	pullSecret := &corev1.Secret{}
 	if err := r.Get(ctx, types.NamespacedName{Name: pullSecretName, Namespace: backup.Namespace}, pullSecret); err != nil {
@@ -740,8 +766,8 @@ func (r *HCPEtcdBackupReconciler) createBackupJob(ctx context.Context, backup *h
 		return fmt.Errorf("failed to resolve etcd image: %w", err)
 	}
 
-	// Build upload args based on storage type
-	uploadArgs, credentialSecretName, err := r.buildUploadArgs(backup)
+	// Build upload args based on storage type and credential mode
+	uploadArgs, err := r.buildUploadArgs(backup, creds)
 	if err != nil {
 		return fmt.Errorf("failed to build upload args: %w", err)
 	}
@@ -751,6 +777,14 @@ func (r *HCPEtcdBackupReconciler) createBackupJob(ctx context.Context, backup *h
 		labelHCP:          hcp.Name,
 		LabelBackupName:   backup.Name,
 		LabelHCPNamespace: backup.Namespace,
+	}
+
+	podLabels := make(map[string]string, len(jobLabels)+1)
+	for k, v := range jobLabels {
+		podLabels[k] = v
+	}
+	if creds.Mode == credentialModeAzureWorkloadIdentity {
+		podLabels["azure.workload.identity/use"] = "true"
 	}
 
 	job := &batchv1.Job{
@@ -765,33 +799,12 @@ func (r *HCPEtcdBackupReconciler) createBackupJob(ctx context.Context, backup *h
 			BackoffLimit:            ptr.To[int32](0),
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels: jobLabels,
+					Labels: podLabels,
 				},
 				Spec: corev1.PodSpec{
 					ServiceAccountName: jobServiceAccountName,
 					RestartPolicy:      corev1.RestartPolicyNever,
-					Volumes: []corev1.Volume{
-						{
-							Name: volumeEtcdCerts,
-							VolumeSource: corev1.VolumeSource{
-								EmptyDir: &corev1.EmptyDirVolumeSource{},
-							},
-						},
-						{
-							Name: volumeEtcdBackup,
-							VolumeSource: corev1.VolumeSource{
-								EmptyDir: &corev1.EmptyDirVolumeSource{},
-							},
-						},
-						{
-							Name: volumeCredentials,
-							VolumeSource: corev1.VolumeSource{
-								Secret: &corev1.SecretVolumeSource{
-									SecretName: credentialSecretName,
-								},
-							},
-						},
-					},
+					Volumes:            r.buildJobVolumes(creds),
 					InitContainers: []corev1.Container{
 						{
 							Name:  "fetch-certs",
@@ -837,23 +850,7 @@ func (r *HCPEtcdBackupReconciler) createBackupJob(ctx context.Context, backup *h
 						},
 					},
 					Containers: []corev1.Container{
-						{
-							Name:    "upload",
-							Image:   cpoImage,
-							Command: uploadArgs,
-							VolumeMounts: []corev1.VolumeMount{
-								{
-									Name:      volumeEtcdBackup,
-									MountPath: mountPathEtcdBackup,
-									ReadOnly:  true,
-								},
-								{
-									Name:      volumeCredentials,
-									MountPath: mountPathCredentials,
-									ReadOnly:  true,
-								},
-							},
-						},
+						r.buildUploadContainer(cpoImage, uploadArgs, creds),
 					},
 				},
 			},
@@ -898,9 +895,94 @@ func (r *HCPEtcdBackupReconciler) getCredentialSecretName(backup *hyperv1.HCPEtc
 	return "", fmt.Errorf("unsupported storage type: %s", backup.Spec.Storage.StorageType)
 }
 
-// buildUploadArgs constructs the command args for the etcd-upload container
-// and returns the credential Secret name.
-func (r *HCPEtcdBackupReconciler) buildUploadArgs(backup *hyperv1.HCPEtcdBackup) ([]string, string, error) {
+func (r *HCPEtcdBackupReconciler) buildJobVolumes(creds resolvedCredentials) []corev1.Volume {
+	volumes := []corev1.Volume{
+		{
+			Name: volumeEtcdCerts,
+			VolumeSource: corev1.VolumeSource{
+				EmptyDir: &corev1.EmptyDirVolumeSource{},
+			},
+		},
+		{
+			Name: volumeEtcdBackup,
+			VolumeSource: corev1.VolumeSource{
+				EmptyDir: &corev1.EmptyDirVolumeSource{},
+			},
+		},
+	}
+
+	if creds.needsCredentialsFile() {
+		volumes = append(volumes, corev1.Volume{
+			Name: volumeCredentials,
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: creds.SecretName,
+				},
+			},
+		})
+	}
+
+	if creds.Mode == credentialModeAWSSTS {
+		volumes = append(volumes, corev1.Volume{
+			Name: volumeAWSIAMToken,
+			VolumeSource: corev1.VolumeSource{
+				Projected: &corev1.ProjectedVolumeSource{
+					Sources: []corev1.VolumeProjection{
+						{
+							ServiceAccountToken: &corev1.ServiceAccountTokenProjection{
+								Audience:          "sts.amazonaws.com",
+								ExpirationSeconds: ptr.To[int64](3600),
+								Path:              "token",
+							},
+						},
+					},
+				},
+			},
+		})
+	}
+
+	return volumes
+}
+
+func (r *HCPEtcdBackupReconciler) buildUploadContainer(image string, args []string, creds resolvedCredentials) corev1.Container {
+	container := corev1.Container{
+		Name:    "upload",
+		Image:   image,
+		Command: args,
+		VolumeMounts: []corev1.VolumeMount{
+			{
+				Name:      volumeEtcdBackup,
+				MountPath: mountPathEtcdBackup,
+				ReadOnly:  true,
+			},
+		},
+	}
+
+	if creds.needsCredentialsFile() {
+		container.VolumeMounts = append(container.VolumeMounts, corev1.VolumeMount{
+			Name:      volumeCredentials,
+			MountPath: mountPathCredentials,
+			ReadOnly:  true,
+		})
+	}
+
+	if creds.Mode == credentialModeAWSSTS {
+		container.Env = []corev1.EnvVar{
+			{Name: "AWS_ROLE_ARN", Value: creds.RoleARN},
+			{Name: "AWS_WEB_IDENTITY_TOKEN_FILE", Value: mountPathAWSIAMToken + "/token"},
+		}
+		container.VolumeMounts = append(container.VolumeMounts, corev1.VolumeMount{
+			Name:      volumeAWSIAMToken,
+			MountPath: mountPathAWSIAMToken,
+			ReadOnly:  true,
+		})
+	}
+
+	return container
+}
+
+// buildUploadArgs constructs the command args for the etcd-upload container.
+func (r *HCPEtcdBackupReconciler) buildUploadArgs(backup *hyperv1.HCPEtcdBackup, creds resolvedCredentials) ([]string, error) {
 	args := []string{
 		"control-plane-operator", "etcd-upload",
 		"--snapshot-path", mountPathEtcdBackup + "/snapshot.db",
@@ -914,12 +996,14 @@ func (r *HCPEtcdBackupReconciler) buildUploadArgs(backup *hyperv1.HCPEtcdBackup)
 			"--aws-bucket", s3.Bucket,
 			"--aws-region", s3.Region,
 			"--key-prefix", s3.KeyPrefix,
-			"--credentials-file", mountPathCredentials+"/credentials",
 		)
+		if creds.needsCredentialsFile() {
+			args = append(args, "--credentials-file", mountPathCredentials+"/credentials")
+		}
 		if s3.KMSKeyARN != "" {
 			args = append(args, "--aws-kms-key-arn", s3.KMSKeyARN)
 		}
-		return args, s3.Credentials.Name, nil
+		return args, nil
 
 	case hyperv1.AzureBlobBackupStorage:
 		azure := backup.Spec.Storage.AzureBlob
@@ -928,15 +1012,23 @@ func (r *HCPEtcdBackupReconciler) buildUploadArgs(backup *hyperv1.HCPEtcdBackup)
 			"--azure-container", azure.Container,
 			"--azure-storage-account", azure.StorageAccount,
 			"--key-prefix", azure.KeyPrefix,
-			"--credentials-file", mountPathCredentials+"/credentials",
 		)
+		if creds.needsCredentialsFile() {
+			args = append(args, "--credentials-file", mountPathCredentials+"/credentials")
+		}
+		switch creds.Mode {
+		case credentialModeAzureClientSecret:
+			args = append(args, "--azure-auth-type", "client-secret")
+		case credentialModeAzureManagedIdentity:
+			args = append(args, "--azure-auth-type", "managed-identity")
+		}
 		if azure.EncryptionKeyURL != "" {
 			args = append(args, "--azure-encryption-scope", azure.EncryptionKeyURL)
 		}
-		return args, azure.Credentials.Name, nil
+		return args, nil
 	}
 
-	return nil, "", fmt.Errorf("unsupported storage type: %s", backup.Spec.Storage.StorageType)
+	return nil, fmt.Errorf("unsupported storage type: %s", backup.Spec.Storage.StorageType)
 }
 
 // enforceRetention deletes the oldest completed HCPEtcdBackup CRs if the count
