@@ -159,3 +159,7 @@ Step-by-step description of the backup process: how the OADP plugin triggers the
 ### [Restore Flow](restore-flow.md)
 
 Step-by-step description of the restore process: how the OADP plugin injects the snapshot URL, how the Control Plane Operator restores etcd, and how the cluster recovers.
+
+### [Managed Services Credentials](managed-services-credentials.md)
+
+Credential configuration for managed platforms (ROSA HCP and ARO HCP) that use federated credentials (AWS STS/IRSA and Azure Workload Identity) instead of static keys. Covers auto-detection logic, Secret format requirements, and infrastructure prerequisites.
