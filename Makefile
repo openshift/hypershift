@@ -381,33 +381,17 @@ EVAL_VERBOSE ?=
 EVAL_GO_TEST = cd test/eval && EVAL_MODEL=$(EVAL_MODEL) EVAL_JUDGE_MODEL=$(EVAL_JUDGE_MODEL) EVAL_RUNS=$(EVAL_RUNS) EVAL_THRESHOLD=$(EVAL_THRESHOLD) \
 	$(GO) test -v -tags eval -count=1 -timeout=30m ./... $(if $(EVAL_VERBOSE),-ginkgo.v)
 
+# Discover eval scenario categories from testdata directory structure
+EVAL_SCENARIOS := $(notdir $(wildcard test/eval/testdata/sme-agents/*)) $(notdir $(wildcard test/eval/testdata/conventions))
+EVAL_TARGETS := $(addprefix eval-,$(EVAL_SCENARIOS))
+
 .PHONY: eval-agents
 eval-agents: ## Run all agent eval tests (use -j for parallel). Requires claude CLI and API key.
-	$(if $(EVAL_FOCUS),$(EVAL_GO_TEST) -ginkgo.focus="$(EVAL_FOCUS)",$(MAKE) -j eval-api-sme eval-cloud-provider-sme eval-control-plane-sme eval-data-plane-sme eval-hcp-architect-sme eval-conventions)
+	$(if $(EVAL_FOCUS),$(EVAL_GO_TEST) -ginkgo.focus="$(EVAL_FOCUS)",$(MAKE) -j $(EVAL_TARGETS))
 
-.PHONY: eval-api-sme
-eval-api-sme:
-	$(EVAL_GO_TEST) -ginkgo.focus="api-sme"
-
-.PHONY: eval-cloud-provider-sme
-eval-cloud-provider-sme:
-	$(EVAL_GO_TEST) -ginkgo.focus="cloud-provider-sme"
-
-.PHONY: eval-control-plane-sme
-eval-control-plane-sme:
-	$(EVAL_GO_TEST) -ginkgo.focus="control-plane-sme"
-
-.PHONY: eval-data-plane-sme
-eval-data-plane-sme:
-	$(EVAL_GO_TEST) -ginkgo.focus="data-plane-sme"
-
-.PHONY: eval-hcp-architect-sme
-eval-hcp-architect-sme:
-	$(EVAL_GO_TEST) -ginkgo.focus="hcp-architect-sme"
-
-.PHONY: eval-conventions
-eval-conventions:
-	$(EVAL_GO_TEST) -ginkgo.focus="conventions"
+.PHONY: $(EVAL_TARGETS)
+$(EVAL_TARGETS): eval-%:
+	$(EVAL_GO_TEST) -ginkgo.focus="$*"
 
 # OCP envtest index for downstream kubebuilder assets
 ENVTEST_OCP_INDEX := https://raw.githubusercontent.com/openshift/api/master/envtest-releases.yaml
