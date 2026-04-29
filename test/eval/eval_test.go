@@ -154,50 +154,71 @@ var _ = AfterSuite(func() {
 		totalAgentCost+totalJudgeCost, totalAgentCost, totalJudgeCost)
 })
 
+func loadScenario(dir, name, agent string) testCase {
+	prompt, err := os.ReadFile(filepath.Join(dir, promptFile))
+	Expect(err).NotTo(HaveOccurred(), "prompt.txt missing in %s", name)
+
+	expected, err := os.ReadFile(filepath.Join(dir, expectedFile))
+	Expect(err).NotTo(HaveOccurred(), "expected.txt missing in %s", name)
+
+	var patch []byte
+	if data, err := os.ReadFile(filepath.Join(dir, patchFile)); err == nil {
+		patch = data
+	}
+
+	return testCase{
+		Agent:          agent,
+		Name:           name,
+		Prompt:         strings.TrimSpace(string(prompt)),
+		Patch:          patch,
+		ExpectedIssues: strings.TrimSpace(string(expected)),
+	}
+}
+
 func discoverTestCases(baseDir string) []testCase {
-	agentDirs, err := os.ReadDir(baseDir)
+	topDirs, err := os.ReadDir(baseDir)
 	Expect(err).NotTo(HaveOccurred(), "failed to read testdata directory")
 
 	var cases []testCase
-	for _, agentEntry := range agentDirs {
-		if !agentEntry.IsDir() {
+	for _, topEntry := range topDirs {
+		if !topEntry.IsDir() {
 			continue
 		}
-		dirName := agentEntry.Name()
+		topName := topEntry.Name()
+		topPath := filepath.Join(baseDir, topName)
 
-		// Directories starting with _ are convention tests (no agent)
-		agentName := dirName
-		if strings.HasPrefix(dirName, "_") {
-			agentName = ""
-		}
-
-		scenarioDirs, err := os.ReadDir(filepath.Join(baseDir, dirName))
-		Expect(err).NotTo(HaveOccurred())
-
-		for _, scenarioEntry := range scenarioDirs {
-			if !scenarioEntry.IsDir() {
-				continue
+		if topName == "sme-agents" {
+			// sme-agents/<agent-name>/<scenario>/ — three levels, agent from dir name
+			agentDirs, err := os.ReadDir(topPath)
+			Expect(err).NotTo(HaveOccurred())
+			for _, agentEntry := range agentDirs {
+				if !agentEntry.IsDir() {
+					continue
+				}
+				agentName := agentEntry.Name()
+				scenarioDirs, err := os.ReadDir(filepath.Join(topPath, agentName))
+				Expect(err).NotTo(HaveOccurred())
+				for _, scenarioEntry := range scenarioDirs {
+					if !scenarioEntry.IsDir() {
+						continue
+					}
+					name := fmt.Sprintf("%s/%s/%s", topName, agentName, scenarioEntry.Name())
+					dir := filepath.Join(topPath, agentName, scenarioEntry.Name())
+					cases = append(cases, loadScenario(dir, name, agentName))
+				}
 			}
-
-			prompt, err := os.ReadFile(filepath.Join(baseDir, dirName, scenarioEntry.Name(), promptFile))
-			Expect(err).NotTo(HaveOccurred(), "prompt.txt missing in %s/%s", dirName, scenarioEntry.Name())
-
-			expected, err := os.ReadFile(filepath.Join(baseDir, dirName, scenarioEntry.Name(), expectedFile))
-			Expect(err).NotTo(HaveOccurred(), "expected.txt missing in %s/%s", dirName, scenarioEntry.Name())
-
-			var patch []byte
-			patchPath := filepath.Join(baseDir, dirName, scenarioEntry.Name(), patchFile)
-			if data, err := os.ReadFile(patchPath); err == nil {
-				patch = data
+		} else {
+			// <category>/<scenario>/ — two levels, no agent
+			scenarioDirs, err := os.ReadDir(topPath)
+			Expect(err).NotTo(HaveOccurred())
+			for _, scenarioEntry := range scenarioDirs {
+				if !scenarioEntry.IsDir() {
+					continue
+				}
+				name := fmt.Sprintf("%s/%s", topName, scenarioEntry.Name())
+				dir := filepath.Join(topPath, scenarioEntry.Name())
+				cases = append(cases, loadScenario(dir, name, ""))
 			}
-
-			cases = append(cases, testCase{
-				Agent:          agentName,
-				Name:           fmt.Sprintf("%s/%s", dirName, scenarioEntry.Name()),
-				Prompt:         strings.TrimSpace(string(prompt)),
-				Patch:          patch,
-				ExpectedIssues: strings.TrimSpace(string(expected)),
-			})
 		}
 	}
 	return cases
