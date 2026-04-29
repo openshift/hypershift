@@ -39,11 +39,15 @@ For conventions, always trust the kube-api-linter (`make api-lint-fix`). Do not 
 
 ## API Type Change Guidelines
 
-### Best practices pattern
+### Best Practices and Patterns
 
 Use api/karpenter/v1beta1/karpenter_types.go and api/hypershift/v1beta1/etcdbackup_types.go as examples of best practices and patterns.
 
 Don't use the other existing APIs as examples as they might have many legacy constraints.
+
+### Field Grouping
+
+**When multiple fields on a spec share a common prefix or relate to the same feature, they MUST be grouped into a dedicated struct.** Top-level specs like HostedClusterSpec and NodePoolSpec should only contain fields that are independently meaningful. If removing one field would make another field meaningless, they belong together in a sub-struct. A common signal is fields that share a name prefix (e.g., `FooIP`, `FooConfig`, `FooID` all relate to "Foo" and should be a single `Foo` field with a `FooSpec` struct).
 
 ### N-1 and N+1 Compatibility
 
