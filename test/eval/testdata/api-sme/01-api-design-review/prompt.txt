@@ -1,27 +1,25 @@
 I want to add a new field to the hostedClusterSpec to allow users to
-specify a custom DNS resolver. Here is my proposed API change:
+specify a custom foo config. Here is my proposed API change:
 
 ```go
-type hostedClusterSpec struct {
+type HostedClusterSpec struct {
     // ...existing fields...
 
-    // dns_resolver is the IP address of a custom DNS server.
-    // When set, nodes will use this DNS server instead of the
-    // default cluster DNS.
-    DNS_Resolver string `json:"dns_resolver"`
+    // foo_ip is an IP address.
+    Foo_IP string `json:"foo_ip"`
 
-    // dnsConfig is the DNS configuration for the cluster.
-    DNSConfig *DNSConfig `json:"dnsConfig,omitempty"`
+    // fooConfig is the foo configuration for the cluster.
+    FooConfig *FooConfig `json:"fooConfig,omitempty"`
 
-    // clusterID is the unique identifier for the cluster.
+    // fooID is the unique foo identifier for the cluster.
     // This field is immutable once set.
-    // +kubebuilder:validation:XValidation:rule="self == oldSelf",message="clusterID is immutable"
+    // +kubebuilder:validation:XValidation:rule="self == oldSelf",message="fooID is immutable"
     // +optional
-    ClusterID string `json:"clusterID,omitempty"`
+    FooID string `json:"fooID,omitempty"`
 }
 
-type DNSConfig struct {
-    // searchDomains is a list of DNS search domains.
-    SearchDomains []string `json:"searchDomains,omitempty"`
+type FooConfig struct {
+    // fooDomains is a list of DNS search domains.
+    FooDomains []string `json:"FooDomains,omitempty"`
 }
 ```

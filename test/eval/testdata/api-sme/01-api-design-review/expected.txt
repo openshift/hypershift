@@ -1,11 +1,8 @@
-hostedClusterSpec has wrong casing — Go exported types must use UpperCamelCase (HostedClusterSpec)
-DNS_Resolver should use Go MixedCaps naming (no underscores)
-JSON tag should use camelCase (dnsResolver) not snake_case (dns_resolver)
-optional field should use +optional marker and pointer type (*string) if zero value and nil have different meaning
-Go doc comment should start with the field name
-missing validation markers for IP address field
-DNSConfig should not be a pointer — use value type with omitzero instead
-clusterID immutability rule needs ratcheting guard — must use oldSelf.has(field) to handle existing objects where the field was not yet present
-consider consolidating DNS fields into a single struct or extending existing DNSSpec
-missing N-1/N+1 serialization compatibility tests
-missing envtest coverage for CEL validation rules
+Foo_IP should use Go PascalCase naming (no underscores)
+JSON tags must use lowerCamelCase (not snake_case or PascalCase)
+missing omitempty or omitzero on every field
+missing IP address format validation (CEL or kubebuilder)
+FooConfig should not be a pointer — use value type with omitzero instead
+missing +listType marker on slice field for server-side apply
+FooID immutability rule is incomplete — self == oldSelf either blocks initial set or allows remove-then-set bypass on optional fields
+missing +optional or +required markers on fields

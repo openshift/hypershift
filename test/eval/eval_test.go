@@ -28,8 +28,8 @@ const (
 	opusModel   = "claude-opus-4-6"
 	haikuModel  = "claude-haiku-4-5-20251001"
 
-	defaultModel      = sonnetModel
-	defaultJudgeModel = haikuModel
+	defaultModel      = opusModel
+	defaultJudgeModel = opusModel
 	defaultThreshold  = 0.8
 
 	judgePromptTemplate = `You are a judge evaluating an agent output against expected issues.

@@ -15,16 +15,6 @@ For conventions, always trust the kube-api-linter (`make api-lint-fix`). Do not 
 - Use feature gates for experimental functionality
 - CRD generation via controller-gen with OpenShift-specific tooling
 
-Key make targets for API work:
-
-```bash
-make api               # Regenerate all CRDs, deepcopy, clients
-make api-lint-fix      # Run API linter and auto-fix violations
-make verify            # Full verification (includes api, fmt, vet, lint)
-make update            # Full update (api-deps, workspace-sync, deps, api, api-docs, clients)
-ENVTEST_OCP_K8S_VERSIONS=1.35.0 make test-envtest-ocp # Run envtest for CEL validations
-```
-
 ### Serialization
 
 - **Always set `omitempty` or `omitzero` on every field, regardless of whether it is `+required` or `+optional`.** `omitempty`/`omitzero` tags control serialization, not validation. `+required` is a schema constraint enforced at admission time; the serialization tag controls what goes on the wire. Without a tag, a zero-value field serializes as an explicit value (e.g., `"pullSecret": {"name": ""}`), which makes the API server unable to distinguish "not set" from "explicitly set to empty." This breaks defaulting, server-side apply field ownership, and strategic merge patch — all of which rely on field absence to mean "don't touch this." Additionally, without omission a structured client serializes the empty object, which passes the `+required` check (based on key presence) without validating the value — so a user can forget to set a required field, it passes admission, and the reader sees a required field with an unexpected empty value.
@@ -48,6 +38,12 @@ ENVTEST_OCP_K8S_VERSIONS=1.35.0 make test-envtest-ocp # Run envtest for CEL vali
 - **Ratcheting validation**: when adding new validation to existing fields, verify that existing clusters with values that predate the new validation can still be updated. CRD validation ratchets (allows unchanged invalid values through), but only for fields that are literally unchanged in the update.
 
 ## API Type Change Guidelines
+
+### Best practices pattern
+
+Use api/karpenter/v1beta1/karpenter_types.go and api/hypershift/v1beta1/etcdbackup_types.go as examples of best practices and patterns.
+
+Don't use the other existing APIs as examples as they might have many legacy constraints.
 
 ### N-1 and N+1 Compatibility
 
@@ -77,3 +73,14 @@ See `api/hypershift/v1beta1/nodepool_types_test.go` for an example of this patte
 
 All API CEL validations must be covered with envtests, see test/envtest/README.md for details
 
+#### Key make targets for API work:
+
+```bash
+make api               # Regenerate all CRDs, deepcopy, clients
+make api-lint-fix      # Run API linter and auto-fix violations
+make verify            # Full verification (includes api, fmt, vet, lint)
+make update            # Full update (api-deps, workspace-sync, deps, api, api-docs, clients)
+ENVTEST_OCP_K8S_VERSIONS=1.35.0 make test-envtest-ocp # Run envtest for CEL validations
+```
+
+All these must pass for any change before creating a PR
