@@ -134,16 +134,18 @@ var _ = BeforeSuite(func() {
 
 var _ = AfterSuite(func() {
 	if len(allResults) > 0 {
-		fmt.Printf("\n%-50s | %6s | %4s | %s\n", "Test Case", "Passed", "Runs", "Rate")
-		fmt.Printf("%s\n", strings.Repeat("-", 75))
+		fmt.Printf("\n=== Eval Results (threshold: %.0f%%) ===\n\n", evalThreshold*100)
 		for _, r := range allResults {
-			line := fmt.Sprintf("%-50s | %6d | %4d | %3.0f%%", r.Name, r.Passed, r.Runs, r.Rate*100)
+			status := "PASS"
 			if r.Rate < evalThreshold {
-				line += " <- FAIL"
+				status = "FAIL"
 			}
-			fmt.Println(line)
+			fmt.Printf("  - [%s] %s — %d/%d passed (%.0f%%)\n", status, r.Name, r.Passed, r.Runs, r.Rate*100)
+			for _, f := range r.Failures {
+				fmt.Printf("      - %s\n", f)
+			}
 		}
-		fmt.Printf("\nThreshold: %.0f%%\n", evalThreshold*100)
+		fmt.Println()
 	}
 
 	fmt.Printf("Total Cost: $%.4f (Agent: $%.4f, Judge: $%.4f)\n",
@@ -337,9 +339,13 @@ func runTestCase(tc testCase) {
 	GinkgoWriter.Printf("Result: %d/%d passed (%.0f%%), threshold: %.0f%%\n",
 		result.Passed, result.Runs, result.Rate*100, evalThreshold*100)
 
+	failureList := ""
+	for _, f := range result.Failures {
+		failureList += fmt.Sprintf("  - %s\n", f)
+	}
 	Expect(result.Rate).To(BeNumerically(">=", evalThreshold),
 		"pass rate %.0f%% below threshold %.0f%% for %s.\nFailures:\n%s",
-		result.Rate*100, evalThreshold*100, tc.Name, strings.Join(result.Failures, "\n"))
+		result.Rate*100, evalThreshold*100, tc.Name, failureList)
 }
 
 var _ = Describe("Agent Evaluation", func() {
