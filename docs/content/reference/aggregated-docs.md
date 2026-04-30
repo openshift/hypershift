@@ -36381,6 +36381,7 @@ string
 <td>
 <em>(Optional)</em>
 <p>imageID is the Azure resource ID of a VHD image to use to boot the Azure VMs from.
+The imageID must be between 1 and 285 characters in length.
 The imageID should be in the format <code>/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Compute/images/{imageName}</code>.
 The subscriptionId in the imageID must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12.
 The resourceGroupName should be between 1 and 90 characters, consisting only of alphanumeric characters, hyphens, underscores, periods and parenthesis and must not end with a period (.) character.
