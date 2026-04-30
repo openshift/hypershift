@@ -1,0 +1,4 @@
+We want to implement customer-managed encryption key support for
+etcd data at rest in hosted control planes. The feature should work
+across AWS and Azure. How should we design this in HyperShift?
+What API changes and controller logic are needed?

@@ -1,0 +1,9 @@
+Foo_IP should use Go PascalCase naming (no underscores)
+JSON tags must use lowerCamelCase (not snake_case or PascalCase)
+missing omitempty or omitzero on every field
+missing IP address format validation (CEL or kubebuilder)
+FooConfig should not be a pointer — use value type with omitzero instead
+missing +listType marker on slice field for server-side apply
+FooID immutability rule is incomplete — self == oldSelf either blocks initial set or allows remove-then-set bypass on optional fields
+missing +optional or +required markers on fields
+fields sharing a common prefix should be grouped into a dedicated struct rather than scattered on the parent spec

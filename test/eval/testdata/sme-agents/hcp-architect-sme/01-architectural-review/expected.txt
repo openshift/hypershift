@@ -1,0 +1,3 @@
+flags violation of unidirectional communication principle (management to hosted, never reverse)
+raises security or tenant isolation concerns
+suggests an alternative architecture that respects unidirectional communication

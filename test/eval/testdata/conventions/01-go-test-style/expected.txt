@@ -1,0 +1,2 @@
+test names use Gherkin syntax with "When... it should..." pattern
+uses gomega matchers for assertions (Expect, BeTrue, BeFalse, HaveOccurred, etc.)

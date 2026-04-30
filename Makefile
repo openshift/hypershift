@@ -375,6 +375,28 @@ test-shard: generate
 	@echo "Running shard tests for packages: $(TEST_PACKAGES)"
 	$(GO) test -race -parallel=$(NUM_CORES) -count=1 -timeout=30m $(TEST_PACKAGES) -coverprofile $(COVER_PROFILE)
 
+EVAL_MODEL ?= claude-opus-4-6
+EVAL_JUDGE_MODEL ?= claude-opus-4-6
+EVAL_RUNS ?= 1
+EVAL_THRESHOLD ?= 0.8
+EVAL_FOCUS ?=
+EVAL_VERBOSE ?=
+
+EVAL_GO_TEST = cd test/eval && EVAL_MODEL=$(EVAL_MODEL) EVAL_JUDGE_MODEL=$(EVAL_JUDGE_MODEL) EVAL_RUNS=$(EVAL_RUNS) EVAL_THRESHOLD=$(EVAL_THRESHOLD) \
+	$(GO) test -v -tags eval -count=1 -timeout=30m ./... $(if $(EVAL_VERBOSE),-ginkgo.v)
+
+# Discover eval categories: top-level dirs (conventions, etc.) + subdirs under sme-agents/
+EVAL_CATEGORIES := $(filter-out sme-agents,$(notdir $(wildcard test/eval/testdata/*))) $(notdir $(wildcard test/eval/testdata/sme-agents/*))
+EVAL_TARGETS := $(addprefix eval-,$(EVAL_CATEGORIES))
+
+.PHONY: eval-agents
+eval-agents: ## Run all agent eval tests (use -j for parallel). Requires claude CLI and API key.
+	$(if $(EVAL_FOCUS),$(EVAL_GO_TEST) -ginkgo.focus="$(EVAL_FOCUS)",$(MAKE) -j $(EVAL_TARGETS))
+
+.PHONY: $(EVAL_TARGETS)
+$(EVAL_TARGETS): eval-%:
+	$(EVAL_GO_TEST) -ginkgo.focus="$*"
+
 # OCP envtest index for downstream kubebuilder assets
 ENVTEST_OCP_INDEX := https://raw.githubusercontent.com/openshift/api/master/envtest-releases.yaml
 # OCP version to Kubernetes version mapping (OCP 4.x -> K8s 1.(x+13))
