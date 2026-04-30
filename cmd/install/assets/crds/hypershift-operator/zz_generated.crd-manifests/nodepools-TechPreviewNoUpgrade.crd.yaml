@@ -889,6 +889,7 @@ spec:
                           imageID:
                             description: |-
                               imageID is the Azure resource ID of a VHD image to use to boot the Azure VMs from.
+                              The imageID must be between 1 and 285 characters in length.
                               The imageID should be in the format `/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Compute/images/{imageName}`.
                               The subscriptionId in the imageID must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12.
                               The resourceGroupName should be between 1 and 90 characters, consisting only of alphanumeric characters, hyphens, underscores, periods and parenthesis and must not end with a period (.) character.
@@ -905,13 +906,13 @@ spec:
                                 hexadecimal characters in the form 8-4-4-4-12
                               optionalOldSelf: true
                               rule: oldSelf.hasValue() && oldSelf.value() == self
-                                || size(self.split('/')) == 9 && self.split('/')[2].matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')
+                                || size(self.split('/')) == 9 && self.split('/')[2].matches('^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$')
                             - message: the resourceGroupName should be between 1 and
                                 90 characters, consisting only of alphanumeric characters,
                                 hyphens, underscores, periods and parenthesis
                               optionalOldSelf: true
                               rule: oldSelf.hasValue() && oldSelf.value() == self
-                                || size(self.split('/')) == 9 && self.split('/')[4].matches('^[a-zA-Z0-9-_\\(\\)\\.]{1,90}$')
+                                || size(self.split('/')) == 9 && self.split('/')[4].matches('^[a-zA-Z0-9_\\(\\)\\.-]{1,90}$')
                             - message: the resourceGroupName in the imageID must not
                                 end with a period (.) character
                               optionalOldSelf: true
@@ -922,7 +923,7 @@ spec:
                                 underscores and periods
                               optionalOldSelf: true
                               rule: oldSelf.hasValue() && oldSelf.value() == self
-                                || size(self.split('/')) == 9 && self.split('/')[8].matches('^[a-zA-Z0-9-_\\.]{1,80}$')
+                                || size(self.split('/')) == 9 && self.split('/')[8].matches('^[a-zA-Z0-9_\\.-]{1,80}$')
                             - message: the imageName in the imageID must not end with
                                 a period (.) character
                               optionalOldSelf: true
@@ -999,7 +1000,7 @@ spec:
                             - message: the subscriptionId in the encryptionSetID must
                                 be a valid UUID. It should be 5 groups of hyphen separated
                                 hexadecimal characters in the form 8-4-4-4-12
-                              rule: self.split('/')[2].matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')
+                              rule: self.split('/')[2].matches('^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$')
                             - message: The resourceGroupName should be between 1 and
                                 90 characters, consisting only of alphanumeric characters,
                                 hyphens, underscores, periods and parenthesis
@@ -1055,7 +1056,7 @@ spec:
                         - message: the subscriptionId in the subnetID must be a valid
                             UUID. It should be 5 groups of hyphen separated hexadecimal
                             characters in the form 8-4-4-4-12
-                          rule: self.split('/')[2].matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')
+                          rule: self.split('/')[2].matches('^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$')
                         - message: The resourceGroupName should be between 1 and 90
                             characters, consisting only of alphanumeric characters,
                             hyphens, underscores, periods and parenthesis

@@ -5148,7 +5148,7 @@ spec:
                         - message: the subscriptionId in the subnetID must be a valid
                             UUID. It should be 5 groups of hyphen separated hexadecimal
                             characters in the form 8-4-4-4-12
-                          rule: self.split('/')[2].matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')
+                          rule: self.split('/')[2].matches('^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$')
                         - message: The resourceGroupName should be between 1 and 90
                             characters, consisting only of alphanumeric characters,
                             hyphens, underscores, periods and parenthesis
