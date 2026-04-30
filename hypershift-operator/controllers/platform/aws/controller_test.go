@@ -20,6 +20,7 @@ import (
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
 	elbv2types "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2/types"
+	"github.com/aws/smithy-go"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -180,6 +181,128 @@ func TestReconcileAWSEndpointServiceStatus(t *testing.T) {
 				if _, ok := actualToRemove[arn]; !ok {
 					t.Errorf("expected %v to be added as allowed principals, actual: %v", test.expectedPrincipalsToRemove, actualToRemove)
 				}
+			}
+		})
+	}
+}
+
+func TestReconcileAWSEndpointServiceStatusCreationErrors(t *testing.T) {
+	const (
+		mockControlPlaneOperatorRoleArn = "arn:aws:12345678910::iam:role/fakeRoleARN"
+		testLBArn                       = "arn:aws:elasticloadbalancing:us-east-1:123456789:loadbalancer/net/test-lb/abc123"
+	)
+
+	activeLB := &elasticloadbalancingv2.DescribeLoadBalancersOutput{
+		LoadBalancers: []elbv2types.LoadBalancer{{
+			LoadBalancerArn: aws.String(testLBArn),
+			State:           &elbv2types.LoadBalancerState{Code: elbv2types.LoadBalancerStateEnumActive},
+		}},
+	}
+
+	hostedCluster := &hyperv1.HostedCluster{
+		Spec: hyperv1.HostedClusterSpec{
+			Platform: hyperv1.PlatformSpec{
+				AWS: &hyperv1.AWSPlatformSpec{
+					RolesRef: hyperv1.AWSRolesRef{
+						ControlPlaneOperatorARN: mockControlPlaneOperatorRoleArn,
+					},
+				},
+			},
+		},
+	}
+
+	tests := []struct {
+		name                string
+		createErr           error
+		adoptionDescribeOut *ec2.DescribeVpcEndpointServiceConfigurationsOutput
+		adoptionDescribeErr error
+		wantErrContains     string
+		wantServiceName     string
+	}{
+		{
+			name:      "When CreateVpcEndpointServiceConfiguration fails with InvalidParameter and adoption succeeds, it should use the adopted service",
+			createErr: &smithy.GenericAPIError{Code: "InvalidParameter", Message: "LBs are already associated with another VPC Endpoint Service"},
+			adoptionDescribeOut: &ec2.DescribeVpcEndpointServiceConfigurationsOutput{
+				ServiceConfigurations: []ec2types.ServiceConfiguration{{
+					ServiceName:             aws.String("com.amazonaws.vpce.adopted-service"),
+					ServiceId:               aws.String("vpce-svc-adopted"),
+					NetworkLoadBalancerArns: []string{testLBArn},
+				}},
+			},
+			wantServiceName: "com.amazonaws.vpce.adopted-service",
+		},
+		{
+			name:      "When CreateVpcEndpointServiceConfiguration fails with InvalidParameter and no matching service exists, it should return the adoption error",
+			createErr: &smithy.GenericAPIError{Code: "InvalidParameter", Message: "LBs are already associated with another VPC Endpoint Service"},
+			adoptionDescribeOut: &ec2.DescribeVpcEndpointServiceConfigurationsOutput{
+				ServiceConfigurations: []ec2types.ServiceConfiguration{},
+			},
+			wantErrContains: "endpoint service adoption failed",
+		},
+		{
+			name:                "When CreateVpcEndpointServiceConfiguration fails with InvalidParameter and DescribeVpcEndpointServiceConfigurations also fails, it should return the adoption error",
+			createErr:           &smithy.GenericAPIError{Code: "InvalidParameter", Message: "LBs are already associated with another VPC Endpoint Service"},
+			adoptionDescribeErr: fmt.Errorf("describe configurations unavailable"),
+			wantErrContains:     "endpoint service adoption failed",
+		},
+		{
+			name:            "When CreateVpcEndpointServiceConfiguration fails with a non-InvalidParameter API error, it should return the API error code",
+			createErr:       &smithy.GenericAPIError{Code: "AccessDenied", Message: "not authorized"},
+			wantErrContains: "AccessDenied",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			mockCtrl := gomock.NewController(t)
+
+			elbClient := awsapi.NewMockELBV2API(mockCtrl)
+			elbClient.EXPECT().DescribeLoadBalancers(gomock.Any(), gomock.Any()).Return(activeLB, nil)
+
+			infra := &configv1.Infrastructure{
+				ObjectMeta: metav1.ObjectMeta{Name: "cluster"},
+				Status:     configv1.InfrastructureStatus{InfrastructureName: "management-cluster-infra-id"},
+			}
+			fakeClient := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithObjects(infra).Build()
+
+			mockEC2 := awsapi.NewMockEC2API(mockCtrl)
+			mockEC2.EXPECT().CreateVpcEndpointServiceConfiguration(gomock.Any(), gomock.Any()).
+				Return(nil, tt.createErr)
+
+			// Set up adoption-related mocks only for InvalidParameter cases.
+			if tt.adoptionDescribeOut != nil || tt.adoptionDescribeErr != nil {
+				mockEC2.EXPECT().DescribeVpcEndpointServiceConfigurations(gomock.Any(), gomock.Any()).
+					Return(tt.adoptionDescribeOut, tt.adoptionDescribeErr)
+			}
+
+			// When adoption succeeds, the function continues to reconcile permissions.
+			isAdoptionSuccess := tt.wantErrContains == "" && tt.adoptionDescribeOut != nil
+			if isAdoptionSuccess {
+				mockEC2.EXPECT().DescribeVpcEndpointServicePermissions(gomock.Any(), gomock.Any()).
+					Return(&ec2.DescribeVpcEndpointServicePermissionsOutput{}, nil)
+				mockEC2.EXPECT().ModifyVpcEndpointServicePermissions(gomock.Any(), gomock.Any()).
+					Return(&ec2.ModifyVpcEndpointServicePermissionsOutput{}, nil)
+			}
+
+			r := AWSEndpointServiceReconciler{
+				Client: fakeClient,
+				ManagementClusterCapabilities: &capabilities.MockCapabilityChecker{
+					MockHas: func(caps ...capabilities.CapabilityType) bool {
+						return false
+					},
+				},
+			}
+			awsEPS := &hyperv1.AWSEndpointService{}
+
+			err := r.reconcileAWSEndpointServiceStatus(t.Context(), awsEPS, hostedCluster, mockEC2, elbClient)
+
+			if tt.wantErrContains != "" {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring(tt.wantErrContains))
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(awsEPS.Status.EndpointServiceName).To(Equal(tt.wantServiceName))
 			}
 		})
 	}

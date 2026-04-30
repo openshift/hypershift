@@ -581,7 +581,7 @@ func (r *AWSEndpointServiceReconciler) reconcileAWSEndpointServiceStatus(ctx con
 					serviceName, serviceID, err = findExistingVpcEndpointService(ctx, ec2Client, aws.ToString(lbARN))
 					if err != nil {
 						log.Info("existing endpoint service not found, adoption failed", "err", err)
-						return errors.New(apiErr.ErrorCode())
+						return fmt.Errorf("endpoint service adoption failed: %v", err)
 					}
 				} else {
 					return errors.New(apiErr.ErrorCode())
