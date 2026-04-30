@@ -739,7 +739,7 @@ func TestEnsureUnmanagedCRDs(t *testing.T) {
 			}
 			client := builder.Build()
 
-			err := ensureUnmanagedCRDs(t.Context(), io.Discard, client, tc.crds)
+			_, err := ensureUnmanagedCRDs(t.Context(), io.Discard, client, tc.crds)
 			g.Expect(err).ToNot(HaveOccurred())
 
 			if tc.expectNoChange {
@@ -767,12 +767,13 @@ func TestEnsureUnmanagedCRDs(t *testing.T) {
 
 func TestWaitForCAPIOperatorSync(t *testing.T) {
 	tests := []struct {
-		name          string
-		config        *operatorv1alpha1.ClusterAPI
-		expectSuccess bool
+		name            string
+		config          *operatorv1alpha1.ClusterAPI
+		patchGeneration int64
+		expectSuccess   bool
 	}{
 		{
-			name: "When revision controller has observed the generation and installer has applied it should succeed",
+			name: "When revision controller has observed the patch generation and installer has applied it should succeed",
 			config: &operatorv1alpha1.ClusterAPI{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       "cluster",
@@ -787,14 +788,15 @@ func TestWaitForCAPIOperatorSync(t *testing.T) {
 					},
 				},
 			},
-			expectSuccess: true,
+			patchGeneration: 2,
+			expectSuccess:   true,
 		},
 		{
-			name: "When observedRevisionGeneration is ahead of generation it should succeed",
+			name: "When observedRevisionGeneration is ahead of patch generation it should succeed",
 			config: &operatorv1alpha1.ClusterAPI{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       "cluster",
-					Generation: 2,
+					Generation: 3,
 				},
 				Status: operatorv1alpha1.ClusterAPIStatus{
 					ObservedRevisionGeneration: 3,
@@ -805,10 +807,11 @@ func TestWaitForCAPIOperatorSync(t *testing.T) {
 					},
 				},
 			},
-			expectSuccess: true,
+			patchGeneration: 2,
+			expectSuccess:   true,
 		},
 		{
-			name: "When revision controller has not observed the generation it should time out",
+			name: "When revision controller has not observed the patch generation it should time out",
 			config: &operatorv1alpha1.ClusterAPI{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       "cluster",
@@ -823,7 +826,27 @@ func TestWaitForCAPIOperatorSync(t *testing.T) {
 					},
 				},
 			},
-			expectSuccess: false,
+			patchGeneration: 3,
+			expectSuccess:   false,
+		},
+		{
+			name: "When reading a stale object from before the patch it should time out",
+			config: &operatorv1alpha1.ClusterAPI{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "cluster",
+					Generation: 1,
+				},
+				Status: operatorv1alpha1.ClusterAPIStatus{
+					ObservedRevisionGeneration: 1,
+					DesiredRevision:            "rev-1",
+					CurrentRevision:            "rev-1",
+					Revisions: []operatorv1alpha1.ClusterAPIInstallerRevision{
+						{Name: "rev-1", Revision: 1, ContentID: "content-1"},
+					},
+				},
+			},
+			patchGeneration: 2,
+			expectSuccess:   false,
 		},
 		{
 			name: "When currentRevision does not match desiredRevision it should time out",
@@ -842,7 +865,8 @@ func TestWaitForCAPIOperatorSync(t *testing.T) {
 					},
 				},
 			},
-			expectSuccess: false,
+			patchGeneration: 2,
+			expectSuccess:   false,
 		},
 		{
 			name: "When currentRevision is empty it should time out",
@@ -859,7 +883,8 @@ func TestWaitForCAPIOperatorSync(t *testing.T) {
 					},
 				},
 			},
-			expectSuccess: false,
+			patchGeneration: 1,
+			expectSuccess:   false,
 		},
 	}
 
@@ -875,7 +900,7 @@ func TestWaitForCAPIOperatorSync(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
 			defer cancel()
 
-			err := waitForCAPIOperatorSync(ctx, io.Discard, client)
+			err := waitForCAPIOperatorSync(ctx, io.Discard, client, tc.patchGeneration)
 			if tc.expectSuccess {
 				g.Expect(err).ToNot(HaveOccurred())
 			} else {

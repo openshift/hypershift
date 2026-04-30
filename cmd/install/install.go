@@ -17,6 +17,7 @@ package install
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -449,11 +450,14 @@ func InstallHyperShiftOperator(ctx context.Context, out io.Writer, opts Options)
 	}
 	if registered {
 		fmt.Fprintf(out, "ClusterAPI API detected, coordinating with Cluster CAPI Operator\n")
-		if err := ensureUnmanagedCRDs(ctx, out, client, crds); err != nil {
+		generation, err := ensureUnmanagedCRDs(ctx, out, client, crds)
+		if err != nil {
 			return err
 		}
-		if err := waitForCAPIOperatorSync(ctx, out, client); err != nil {
-			return err
+		if generation > 0 {
+			if err := waitForCAPIOperatorSync(ctx, out, client, generation); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -992,8 +996,9 @@ func isClusterAPIRegistered(discoveryClient groupVersionDiscoverer) (bool, error
 // the Cluster CAPI Operator to skip these CRDs during its own installation.
 // Server-Side Apply is used so the API server handles create-or-update atomically and
 // merges set entries across field owners without conflicts.
-func ensureUnmanagedCRDs(ctx context.Context, out io.Writer, client crclient.Client, capiCRDs []crclient.Object) error {
-	// Collect CAPI CRD names (groups ending in .cluster.x-k8s.io)
+// Returns the metadata.generation of the applied ClusterAPI resource so the caller
+// can wait for the CAPI Operator to reconcile this specific version.
+func ensureUnmanagedCRDs(ctx context.Context, out io.Writer, c crclient.Client, capiCRDs []crclient.Object) (int64, error) {
 	capiCRDNames := set.New[string]()
 	for _, crd := range capiCRDs {
 		name := crd.GetName()
@@ -1002,7 +1007,24 @@ func ensureUnmanagedCRDs(ctx context.Context, out io.Writer, client crclient.Cli
 		}
 	}
 	if capiCRDNames.Len() == 0 {
-		return nil
+		return 0, nil
+	}
+
+	// Build the SSA patch payload as a map so only the fields we intend to own
+	// are included. ApplyConfiguration types for operator/v1alpha1 are not yet
+	// available in openshift/client-go.
+	patchData, err := json.Marshal(map[string]any{
+		"apiVersion": operatorv1alpha1.GroupVersion.String(),
+		"kind":       "ClusterAPI",
+		"metadata": map[string]any{
+			"name": "cluster",
+		},
+		"spec": map[string]any{
+			"unmanagedCustomResourceDefinitions": capiCRDNames.SortedList(),
+		},
+	})
+	if err != nil {
+		return 0, fmt.Errorf("failed to marshal ClusterAPI config: %w", err)
 	}
 
 	clusterAPI := &operatorv1alpha1.ClusterAPI{
@@ -1013,25 +1035,22 @@ func ensureUnmanagedCRDs(ctx context.Context, out io.Writer, client crclient.Cli
 			UnmanagedCustomResourceDefinitions: capiCRDNames.SortedList(),
 		},
 	}
-
-	var buf bytes.Buffer
-	if err := hyperapi.YamlSerializer.Encode(clusterAPI, &buf); err != nil {
-		return fmt.Errorf("failed to encode ClusterAPI config: %w", err)
-	}
-	if err := client.Patch(ctx, clusterAPI, crclient.RawPatch(types.ApplyPatchType, buf.Bytes()),
+	if err := c.Patch(ctx, clusterAPI, crclient.RawPatch(types.ApplyPatchType, patchData),
 		crclient.ForceOwnership, crclient.FieldOwner("hypershift"),
 	); err != nil {
-		return fmt.Errorf("failed to apply ClusterAPI config: %w", err)
+		return 0, fmt.Errorf("failed to apply ClusterAPI config: %w", err)
 	}
 	fmt.Fprintf(out, "Applied ClusterAPI config with %d unmanaged CRDs\n", capiCRDNames.Len())
-	return nil
+	return clusterAPI.Generation, nil
 }
 
 // waitForCAPIOperatorSync waits for the Cluster CAPI Operator to fully reconcile after
 // unmanaged CRDs are set in the ClusterAPI config. It polls until:
-// 1. status.observedRevisionGeneration >= metadata.generation
+// 1. status.observedRevisionGeneration >= generation (from the patch response)
 // 2. status.currentRevision == status.desiredRevision
-func waitForCAPIOperatorSync(ctx context.Context, out io.Writer, c crclient.Client) error {
+// The generation parameter must be the metadata.generation returned by the SSA patch
+// to avoid false positives from reading a stale object.
+func waitForCAPIOperatorSync(ctx context.Context, out io.Writer, c crclient.Client, generation int64) error {
 	waitCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 
@@ -1042,7 +1061,7 @@ func waitForCAPIOperatorSync(ctx context.Context, out io.Writer, c crclient.Clie
 			return false, fmt.Errorf("failed to get ClusterAPI config: %w", err)
 		}
 
-		if clusterAPI.Status.ObservedRevisionGeneration < clusterAPI.Generation {
+		if clusterAPI.Status.ObservedRevisionGeneration < generation {
 			return false, nil
 		}
 		if clusterAPI.Status.CurrentRevision == "" || clusterAPI.Status.CurrentRevision != clusterAPI.Status.DesiredRevision {
