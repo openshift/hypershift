@@ -101,11 +101,12 @@ import (
 )
 
 const (
-	ControllerName         = "resources"
-	ConfigNamespace        = "openshift-config"
-	ConfigManagedNamespace = "openshift-config-managed"
-	CloudProviderCMName    = "cloud-provider-config"
-	awsCredentialsTemplate = `[default]
+	ControllerName            = "resources"
+	ConfigNamespace           = "openshift-config"
+	ConfigManagedNamespace    = "openshift-config-managed"
+	CloudProviderCMName       = "cloud-provider-config"
+	maxConditionMessageLength = 1024
+	awsCredentialsTemplate    = `[default]
 role_arn = %s
 web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 sts_regional_endpoints = regional
@@ -340,7 +341,7 @@ func namespacedNamePredicateFunc(namespace, name string) func(client.Object) boo
 	}
 }
 
-func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result, error) {
+func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (result ctrl.Result, returnErr error) {
 	log := ctrl.LoggerFrom(ctx)
 
 	hcp := manifests.HostedControlPlane(r.hcpNamespace, r.hcpName)
@@ -360,6 +361,12 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 		log.Info("releaseImage is " + hcp.Spec.ReleaseImage + ", but this operator is configured for " + r.operateOnReleaseImage + ", skipping reconciliation")
 		return ctrl.Result{}, nil
 	}
+
+	defer func() {
+		if err := r.reconcileConfigOperatorReconciliationCondition(ctx, hcp, returnErr); err != nil {
+			log.Error(err, "failed to update ConfigOperatorReconciliationSucceeded condition")
+		}
+	}()
 
 	pullSecret := manifests.PullSecret(hcp.Namespace)
 	if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
@@ -960,6 +967,27 @@ func (r *reconciler) reconcileNetworkingAndSecrets(ctx context.Context, hcp *hyp
 	}
 
 	return errs
+}
+
+func (r *reconciler) reconcileConfigOperatorReconciliationCondition(ctx context.Context, hcp *hyperv1.HostedControlPlane, reconcileErr error) error {
+	condition := &metav1.Condition{
+		Type:               string(hyperv1.ConfigOperatorReconciliationSucceeded),
+		ObservedGeneration: hcp.Generation,
+	}
+	if reconcileErr != nil {
+		condition.Status = metav1.ConditionFalse
+		condition.Reason = hyperv1.ReconcileErrorReason
+		msg := reconcileErr.Error()
+		if len(msg) > maxConditionMessageLength {
+			msg = msg[:maxConditionMessageLength-3] + "..."
+		}
+		condition.Message = msg
+	} else {
+		condition.Status = metav1.ConditionTrue
+		condition.Reason = hyperv1.AsExpectedReason
+		condition.Message = hyperv1.AllIsWellMessage
+	}
+	return r.patchHCPStatusCondition(ctx, hcp, condition)
 }
 
 func (r *reconciler) reconcileMetricsForwarder(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) error {

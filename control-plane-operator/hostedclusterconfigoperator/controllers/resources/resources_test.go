@@ -4377,3 +4377,101 @@ func TestReconcileRegistryAndIngress_ServiceAccountPullSecretsController(t *test
 		})
 	}
 }
+
+func TestReconcileConfigOperatorReconciliationCondition(t *testing.T) {
+	testCases := []struct {
+		name                   string
+		reconcileErr           error
+		existingCondition      *metav1.Condition
+		expectedConditionState metav1.ConditionStatus
+		expectedReason         string
+		expectedMessage        string
+	}{
+		{
+			name:                   "When reconciliation succeeds it should set condition to True",
+			reconcileErr:           nil,
+			expectedConditionState: metav1.ConditionTrue,
+			expectedReason:         hyperv1.AsExpectedReason,
+			expectedMessage:        hyperv1.AllIsWellMessage,
+		},
+		{
+			name:                   "When reconciliation fails it should set condition to False with error message",
+			reconcileErr:           fmt.Errorf("failed to reconcile crds: connection refused"),
+			expectedConditionState: metav1.ConditionFalse,
+			expectedReason:         hyperv1.ReconcileErrorReason,
+			expectedMessage:        "failed to reconcile crds: connection refused",
+		},
+		{
+			name:         "When reconciliation recovers from error it should transition condition to True",
+			reconcileErr: nil,
+			existingCondition: &metav1.Condition{
+				Type:    string(hyperv1.ConfigOperatorReconciliationSucceeded),
+				Status:  metav1.ConditionFalse,
+				Reason:  hyperv1.ReconcileErrorReason,
+				Message: "previous error",
+			},
+			expectedConditionState: metav1.ConditionTrue,
+			expectedReason:         hyperv1.AsExpectedReason,
+			expectedMessage:        hyperv1.AllIsWellMessage,
+		},
+		{
+			name:         "When reconciliation fails after success it should transition condition to False",
+			reconcileErr: fmt.Errorf("failed to reconcile namespaces: context deadline exceeded"),
+			existingCondition: &metav1.Condition{
+				Type:    string(hyperv1.ConfigOperatorReconciliationSucceeded),
+				Status:  metav1.ConditionTrue,
+				Reason:  hyperv1.AsExpectedReason,
+				Message: hyperv1.AllIsWellMessage,
+			},
+			expectedConditionState: metav1.ConditionFalse,
+			expectedReason:         hyperv1.ReconcileErrorReason,
+			expectedMessage:        "failed to reconcile namespaces: context deadline exceeded",
+		},
+		{
+			name:                   "When error message exceeds max length it should be truncated",
+			reconcileErr:           fmt.Errorf("%s", strings.Repeat("a", 2000)),
+			expectedConditionState: metav1.ConditionFalse,
+			expectedReason:         hyperv1.ReconcileErrorReason,
+			expectedMessage:        strings.Repeat("a", maxConditionMessageLength-3) + "...",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			hcp := fakeHCP()
+			hcp.Generation = 7
+			if tc.existingCondition != nil {
+				meta.SetStatusCondition(&hcp.Status.Conditions, *tc.existingCondition)
+			}
+
+			cpClient := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				WithObjects(hcp).
+				WithStatusSubresource(&hyperv1.HostedControlPlane{}).
+				Build()
+
+			r := &reconciler{
+				cpClient:     cpClient,
+				hcpName:      hcp.Name,
+				hcpNamespace: hcp.Namespace,
+			}
+
+			ctx := logr.NewContext(t.Context(), zapr.NewLogger(zaptest.NewLogger(t)))
+			err := r.reconcileConfigOperatorReconciliationCondition(ctx, hcp, tc.reconcileErr)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			updatedHCP := &hyperv1.HostedControlPlane{}
+			err = cpClient.Get(ctx, client.ObjectKeyFromObject(hcp), updatedHCP)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			condition := meta.FindStatusCondition(updatedHCP.Status.Conditions, string(hyperv1.ConfigOperatorReconciliationSucceeded))
+			g.Expect(condition).ToNot(BeNil(), "ConfigOperatorReconciliationSucceeded condition should be present")
+			g.Expect(condition.Status).To(Equal(tc.expectedConditionState))
+			g.Expect(condition.Reason).To(Equal(tc.expectedReason))
+			g.Expect(condition.Message).To(Equal(tc.expectedMessage))
+			g.Expect(condition.ObservedGeneration).To(Equal(hcp.Generation))
+		})
+	}
+}
