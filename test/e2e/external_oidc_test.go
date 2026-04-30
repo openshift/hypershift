@@ -129,6 +129,108 @@ func TestExternalOIDC(t *testing.T) {
 				t.Logf("CEL username expression successfully mapped to: %s", selfSubjectReview.Status.UserInfo.Username)
 			})
 
+			t.Run("[OCPFeatureGate:ExternalOIDCWithUpstreamParity] Test CEL username expression mapping 1", func(t *testing.T) {
+				g := NewWithT(t)
+				t.Logf("begin to test CEL username expression mapping with manually created user/group")
+
+				// Get admin credentials from environment variables
+				adminUser := os.Getenv("KEYCLOAK_ADMIN_USER")
+				adminPass := os.Getenv("KEYCLOAK_ADMIN_PASS")
+				if adminUser == "" || adminPass == "" {
+					t.Skip("KEYCLOAK_ADMIN_USER and KEYCLOAK_ADMIN_PASS environment variables must be set")
+				}
+
+				// Create admin client
+				kc := e2eutil.NewKeycloakAdminClient(clusterOpts.ExtOIDCConfig.IssuerURL, adminUser, adminPass, clusterOpts.ExtOIDCConfig.IssuerCABundleFile)
+				err := kc.GetAdminToken(ctx)
+				g.Expect(err).NotTo(HaveOccurred(), "failed to get admin token")
+
+				// Create test resources tracker for automatic cleanup
+				testResources := e2eutil.NewTestResources(kc)
+				defer testResources.Cleanup(ctx, t)
+
+				// Create a test group
+				testGroupName := "cel-test-group-" + e2eutil.GenerateRandomPassword(8)
+				groupID, err := testResources.CreateTestGroup(ctx, t, testGroupName)
+				g.Expect(err).NotTo(HaveOccurred(), "failed to create test group")
+				t.Logf("Created test group: %s (ID: %s)", testGroupName, groupID)
+
+				// Create a test user with specific email
+				testUsername := "cel-test-user-" + e2eutil.GenerateRandomPassword(8)
+				testEmail := testUsername + "@cel-test.example.com"
+				testPassword := e2eutil.GenerateRandomPassword(16)
+				userID, err := testResources.CreateTestUser(ctx, t, testUsername, testEmail, testPassword)
+				g.Expect(err).NotTo(HaveOccurred(), "failed to create test user")
+				t.Logf("Created test user: %s (email: %s, ID: %s)", testUsername, testEmail, userID)
+
+				// Add user to group
+				err = kc.AddUserToGroup(ctx, userID, groupID)
+				g.Expect(err).NotTo(HaveOccurred(), "failed to add user to group")
+				t.Logf("Added user %s to group %s", testUsername, testGroupName)
+
+				// Create a temporary auth config for this test user
+				testAuthConfig := *clusterOpts.ExtOIDCConfig
+				testAuthConfig.TestUsers = testUsername + ":" + testPassword
+
+				// Authenticate as the test user
+				testUserKubeConfig := e2eutil.ChangeUserForKeycloakExtOIDC(t, ctx, clientCfg, &testAuthConfig)
+				testAuthClient, err := kauthnv1typedclient.NewForConfig(testUserKubeConfig)
+				g.Expect(err).NotTo(HaveOccurred(), "failed to create auth client for test user")
+
+				// Verify username expression mapping
+				testSelfSubjectReview, err := testAuthClient.SelfSubjectReviews().Create(ctx, &kauthnv1.SelfSubjectReview{}, metav1.CreateOptions{})
+				g.Expect(err).NotTo(HaveOccurred(), "failed to get self subject review")
+				t.Logf("Test user self subject review: %+v", testSelfSubjectReview.Status.UserInfo)
+
+				// Verify username is the email prefix (before @)
+				expectedUsername := strings.Split(testEmail, "@")[0]
+				g.Expect(testSelfSubjectReview.Status.UserInfo.Username).Should(Equal(expectedUsername),
+					"username should be email prefix from CEL expression: claims.email.split('@')[0]")
+				g.Expect(testSelfSubjectReview.Status.UserInfo.Username).NotTo(ContainSubstring("@"),
+					"username should not contain @ symbol")
+				t.Logf("CEL username expression correctly mapped '%s' to '%s'", testEmail, testSelfSubjectReview.Status.UserInfo.Username)
+
+				// Verify groups are mapped without prefix (due to CEL expression)
+				g.Expect(testSelfSubjectReview.Status.UserInfo.Groups).NotTo(BeEmpty(),
+					"user should have groups from Keycloak")
+				hasTestGroup := false
+				for _, group := range testSelfSubjectReview.Status.UserInfo.Groups {
+					if group == testGroupName {
+						hasTestGroup = true
+					}
+					// Groups should not have prefix when using CEL expression
+					g.Expect(group).NotTo(HavePrefix(clusterOpts.ExtOIDCConfig.GroupPrefix),
+						"groups should not have prefix when using CEL expression")
+				}
+				g.Expect(hasTestGroup).To(BeTrue(), "user should be member of test group: %s", testGroupName)
+				t.Logf("CEL groups expression correctly mapped groups: %v", testSelfSubjectReview.Status.UserInfo.Groups)
+
+				// Clean up resources (will be called by defer, but we'll do it explicitly to verify deletion)
+				t.Logf("Deleting test user and group")
+				err = kc.DeleteUser(ctx, userID)
+				g.Expect(err).NotTo(HaveOccurred(), "failed to delete test user")
+				t.Logf("✓ Deleted user: %s", userID)
+
+				err = kc.DeleteGroup(ctx, groupID)
+				g.Expect(err).NotTo(HaveOccurred(), "failed to delete test group")
+				t.Logf("✓ Deleted group: %s", groupID)
+
+				// Verify deletion - trying to get user/group should fail
+				t.Logf("Verifying user deletion")
+				_, err = kc.GetUserByUsername(ctx, testUsername)
+				g.Expect(err).To(HaveOccurred(), "user should not exist after deletion")
+				g.Expect(err.Error()).To(ContainSubstring("user not found"), "error should indicate user not found")
+				t.Logf("Verified user deletion: user %s not found", testUsername)
+
+				t.Logf("Verifying group deletion")
+				_, err = kc.GetGroupByName(ctx, testGroupName)
+				g.Expect(err).To(HaveOccurred(), "group should not exist after deletion")
+				g.Expect(err.Error()).To(ContainSubstring("group not found"), "error should indicate group not found")
+				t.Logf("Verified group deletion: group %s not found", testGroupName)
+
+				t.Logf("Test completed successfully: CEL username expression mapping verified with manual user/group creation and cleanup")
+			})
+
 			t.Run("[OCPFeatureGate:ExternalOIDCWithUpstreamParity] Test CEL groups expression mapping", func(t *testing.T) {
 				g := NewWithT(t)
 				t.Logf("begin to test CEL groups expression mapping")
