@@ -784,3 +784,39 @@ func ReconcileCloudNetworkConfigControllerServiceAccountClusterRoleBinding(r *rb
 	}
 	return nil
 }
+
+// ReconcileNodeCredentialProviderTokenAudienceClusterRole grants system:nodes
+// permission to request service account tokens for the credential provider
+// audience used by KEP-4412 projected service account tokens for image pulls.
+// Required by the ServiceAccountNodeAudienceRestriction feature gate (K8s 1.33+).
+func ReconcileNodeCredentialProviderTokenAudienceClusterRole(r *rbacv1.ClusterRole) error {
+	r.Rules = []rbacv1.PolicyRule{
+		{
+			APIGroups: []string{""},
+			Resources: []string{"serviceaccounts/token"},
+			Verbs:     []string{"create"},
+		},
+		{
+			APIGroups: []string{""},
+			Resources: []string{"api://AzureADTokenExchange"},
+			Verbs:     []string{"request-serviceaccounts-token-audience"},
+		},
+	}
+	return nil
+}
+
+func ReconcileNodeCredentialProviderTokenAudienceClusterRoleBinding(r *rbacv1.ClusterRoleBinding) error {
+	r.RoleRef = rbacv1.RoleRef{
+		APIGroup: rbacv1.SchemeGroupVersion.Group,
+		Kind:     "ClusterRole",
+		Name:     "system:node:credential-provider-token-audience",
+	}
+	r.Subjects = []rbacv1.Subject{
+		{
+			APIGroup: rbacv1.SchemeGroupVersion.Group,
+			Kind:     "Group",
+			Name:     "system:nodes",
+		},
+	}
+	return nil
+}

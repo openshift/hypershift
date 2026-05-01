@@ -1182,6 +1182,9 @@ func (r *reconciler) reconcileRBAC(ctx context.Context, hcp *hyperv1.HostedContr
 
 			manifestAndReconcile[*rbacv1.ClusterRole]{manifest: manifests.CloudNetworkConfigControllerServiceAccountRole, reconcile: rbac.ReconcileCloudNetworkConfigControllerServiceAccountClusterRole},
 			manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: manifests.CloudNetworkConfigControllerServiceAccountRoleBinding, reconcile: rbac.ReconcileCloudNetworkConfigControllerServiceAccountClusterRoleBinding},
+
+			manifestAndReconcile[*rbacv1.ClusterRole]{manifest: manifests.NodeCredentialProviderTokenAudienceClusterRole, reconcile: rbac.ReconcileNodeCredentialProviderTokenAudienceClusterRole},
+			manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: manifests.NodeCredentialProviderTokenAudienceClusterRoleBinding, reconcile: rbac.ReconcileNodeCredentialProviderTokenAudienceClusterRoleBinding},
 		)
 	}
 
