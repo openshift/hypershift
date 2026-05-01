@@ -11,7 +11,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	awsscheduler "github.com/openshift/hypershift/hypershift-operator/controllers/scheduler/aws"
 	hyperapi "github.com/openshift/hypershift/support/api"
-	supportutil "github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/k8sutil"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -130,7 +130,7 @@ func TearDownNodePools(ctx context.Context, t *testing.T, kubeconfigPath string,
 	var errs []error
 	for _, np := range nodePools {
 		t.Logf("Tearing down custom nodepool %s/%s", np.Namespace, np.Name)
-		_, err := supportutil.DeleteIfNeeded(ctx, mgmtParentClient, np)
+		_, err := k8sutil.DeleteIfNeeded(ctx, mgmtParentClient, np)
 		if err != nil {
 			errs = append(errs, err)
 		}
