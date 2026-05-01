@@ -24,8 +24,8 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/gcputil"
 	"github.com/openshift/hypershift/support/images"
+	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/upsert"
-	supportutil "github.com/openshift/hypershift/support/util"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -156,9 +156,9 @@ func (p GCP) reconcileGCPCluster(gcpCluster *capigcp.GCPCluster, hcluster *hyper
 	if gcpCluster.Spec.AdditionalLabels == nil {
 		gcpCluster.Spec.AdditionalLabels = make(map[string]string)
 	}
-	gcpCluster.Spec.AdditionalLabels[supportutil.GCPLabelCluster] = hcluster.Name
+	gcpCluster.Spec.AdditionalLabels[k8sutil.GCPLabelCluster] = hcluster.Name
 	if hcluster.Spec.InfraID != "" {
-		gcpCluster.Spec.AdditionalLabels[supportutil.GCPLabelInfraID] = hcluster.Spec.InfraID
+		gcpCluster.Spec.AdditionalLabels[k8sutil.GCPLabelInfraID] = hcluster.Spec.InfraID
 	}
 
 	// Set control plane endpoint (following AWS pattern)

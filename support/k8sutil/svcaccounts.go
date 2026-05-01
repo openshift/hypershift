@@ -1,4 +1,4 @@
-package util
+package k8sutil
 
 import (
 	"context"
@@ -9,7 +9,13 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
 )
+
+type ServiceAccountTokenCreator interface {
+	Get(ctx context.Context, name string, opts metav1.GetOptions) (*corev1.ServiceAccount, error)
+	CreateToken(ctx context.Context, name string, tokenRequest *authenticationv1.TokenRequest, opts metav1.CreateOptions) (*authenticationv1.TokenRequest, error)
+}
 
 func EnsurePullSecret(serviceAccount *corev1.ServiceAccount, secretName string) {
 	for _, secretRef := range serviceAccount.ImagePullSecrets {
@@ -23,8 +29,15 @@ func EnsurePullSecret(serviceAccount *corev1.ServiceAccount, secretName string) 
 	})
 }
 
-func CreateTokenForServiceAccount(ctx context.Context, serviceAccount *corev1.ServiceAccount, client *kubernetes.Clientset) (string, error) {
-	serviceAccount, err := client.CoreV1().ServiceAccounts(serviceAccount.Namespace).Get(ctx, serviceAccount.Name, metav1.GetOptions{})
+func ServiceAccountClient(client kubernetes.Interface, namespace string) corev1client.ServiceAccountInterface {
+	return client.CoreV1().ServiceAccounts(namespace)
+}
+
+func CreateTokenForServiceAccount(ctx context.Context, serviceAccount *corev1.ServiceAccount, saClient ServiceAccountTokenCreator) (string, error) {
+	if serviceAccount == nil {
+		return "", fmt.Errorf("serviceaccount is nil")
+	}
+	serviceAccount, err := saClient.Get(ctx, serviceAccount.Name, metav1.GetOptions{})
 	if err != nil {
 		if !apierrors.IsNotFound(err) {
 			return "", fmt.Errorf("failed to get serviceaccount: %w", err)
@@ -38,8 +51,7 @@ func CreateTokenForServiceAccount(ctx context.Context, serviceAccount *corev1.Se
 		},
 	}
 
-	// Create the service account token
-	token, err := client.CoreV1().ServiceAccounts(serviceAccount.Namespace).CreateToken(ctx, serviceAccount.Name, treq, metav1.CreateOptions{})
+	token, err := saClient.CreateToken(ctx, serviceAccount.Name, treq, metav1.CreateOptions{})
 	if err != nil {
 		return "", fmt.Errorf("failed to create token: %w", err)
 	}

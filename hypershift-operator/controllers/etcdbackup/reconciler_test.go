@@ -11,8 +11,8 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/featuregate"
+	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/releaseinfo"
-	hyperutil "github.com/openshift/hypershift/support/util"
 
 	configv1 "github.com/openshift/api/config/v1"
 	imageapi "github.com/openshift/api/image/v1"
@@ -118,7 +118,7 @@ func newHostedControlPlane() *hyperv1.HostedControlPlane {
 			Name:      testHCPName,
 			Namespace: testHCPNamespace,
 			Annotations: map[string]string{
-				hyperutil.HostedClusterAnnotation: testHCNamespace + "/" + testHCName,
+				k8sutil.HostedClusterAnnotation: testHCNamespace + "/" + testHCName,
 			},
 		},
 		Spec: hyperv1.HostedControlPlaneSpec{

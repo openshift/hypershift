@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/openshift/hypershift/support/api"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/k8sutil"
 
 	configv1 "github.com/openshift/api/config/v1"
 
@@ -28,7 +28,7 @@ type ObservedConfig struct {
 }
 
 func ReconcileObservedConfig(cm *corev1.ConfigMap, config runtime.Object) error {
-	serializedConfig, err := util.SerializeResource(config, api.Scheme)
+	serializedConfig, err := k8sutil.SerializeResource(config, api.Scheme)
 	if err != nil {
 		return fmt.Errorf("cannot serialize config: %w", err)
 	}
@@ -41,7 +41,7 @@ func deserializeObservedConfig(cm *corev1.ConfigMap, config runtime.Object) erro
 	if !exists {
 		return fmt.Errorf("observed config key not found in configmap")
 	}
-	return util.DeserializeResource(serializedConfig, config, api.Scheme)
+	return k8sutil.DeserializeResource(serializedConfig, config, api.Scheme)
 }
 
 // ReadObservedConfig reads global configuration resources from configmaps that

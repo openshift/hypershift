@@ -14,6 +14,7 @@ import (
 	"github.com/openshift/hypershift/support/awsapi"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/globalconfig"
+	"github.com/openshift/hypershift/support/k8sutil"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	"github.com/openshift/hypershift/support/upsert"
 	supportutil "github.com/openshift/hypershift/support/util"
@@ -382,7 +383,7 @@ func reconcileAWSEndpointService(ctx context.Context, c client.Client, awsEndpoi
 	if awsEndpointService.Annotations == nil {
 		awsEndpointService.Annotations = make(map[string]string)
 	}
-	awsEndpointService.Annotations[supportutil.HostedClusterAnnotation] = fmt.Sprintf("%s/%s", hc.Namespace, hc.Name)
+	awsEndpointService.Annotations[k8sutil.HostedClusterAnnotation] = fmt.Sprintf("%s/%s", hc.Namespace, hc.Name)
 	return reconcileAWSEndpointServiceSubnetIDs(ctx, c, awsEndpointService, hc)
 }
 
@@ -840,7 +841,7 @@ func (r *AWSEndpointServiceReconciler) hostedControlPlane(ctx context.Context, h
 }
 
 func hostedClusterNamespaceAndName(hcp *hyperv1.HostedControlPlane) (string, string) {
-	hcNamespaceName, exists := hcp.Annotations[supportutil.HostedClusterAnnotation]
+	hcNamespaceName, exists := hcp.Annotations[k8sutil.HostedClusterAnnotation]
 	if !exists {
 		return "", ""
 	}

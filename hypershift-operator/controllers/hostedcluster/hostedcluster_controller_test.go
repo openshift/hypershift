@@ -35,6 +35,7 @@ import (
 	fakecapabilities "github.com/openshift/hypershift/support/capabilities/fake"
 	"github.com/openshift/hypershift/support/config"
 	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
 	"github.com/openshift/hypershift/support/releaseinfo/testutils"
@@ -633,7 +634,7 @@ func TestReconcileHostedControlPlaneAnnotations(t *testing.T) {
 			},
 			expectedAnnotations: map[string]string{
 				hyperv1.SwiftPodNetworkInstanceAnnotation:          "swift-network-instance",
-				hyperutil.HostedClusterAnnotation:                  hcKey,
+				k8sutil.HostedClusterAnnotation:                    hcKey,
 				hyperv1.DisableClusterAutoscalerAnnotation:         "true",
 				hyperv1.DisableAWSNodeTerminationHandlerAnnotation: "true",
 			},
@@ -646,7 +647,7 @@ func TestReconcileHostedControlPlaneAnnotations(t *testing.T) {
 			expectedAnnotations: map[string]string{
 				hyperv1.RestartDateAnnotation:                      "01012024",
 				previouslySyncedRestartDateAnnotation:              "01012024",
-				hyperutil.HostedClusterAnnotation:                  hcKey,
+				k8sutil.HostedClusterAnnotation:                    hcKey,
 				hyperv1.DisableClusterAutoscalerAnnotation:         "true",
 				hyperv1.DisableAWSNodeTerminationHandlerAnnotation: "true",
 			},
@@ -663,7 +664,7 @@ func TestReconcileHostedControlPlaneAnnotations(t *testing.T) {
 			expectedAnnotations: map[string]string{
 				hyperv1.RestartDateAnnotation:                      "05012024",
 				previouslySyncedRestartDateAnnotation:              "05012024",
-				hyperutil.HostedClusterAnnotation:                  hcKey,
+				k8sutil.HostedClusterAnnotation:                    hcKey,
 				hyperv1.DisableClusterAutoscalerAnnotation:         "true",
 				hyperv1.DisableAWSNodeTerminationHandlerAnnotation: "true",
 			},
@@ -680,7 +681,7 @@ func TestReconcileHostedControlPlaneAnnotations(t *testing.T) {
 			expectedAnnotations: map[string]string{
 				hyperv1.RestartDateAnnotation:                      "some other value",
 				previouslySyncedRestartDateAnnotation:              "01012024",
-				hyperutil.HostedClusterAnnotation:                  hcKey,
+				k8sutil.HostedClusterAnnotation:                    hcKey,
 				hyperv1.DisableClusterAutoscalerAnnotation:         "true",
 				hyperv1.DisableAWSNodeTerminationHandlerAnnotation: "true",
 			},
@@ -697,7 +698,7 @@ func TestReconcileHostedControlPlaneAnnotations(t *testing.T) {
 			expectedAnnotations: map[string]string{
 				hyperv1.RestartDateAnnotation:                      "05012024",
 				previouslySyncedRestartDateAnnotation:              "05012024",
-				hyperutil.HostedClusterAnnotation:                  hcKey,
+				k8sutil.HostedClusterAnnotation:                    hcKey,
 				hyperv1.DisableClusterAutoscalerAnnotation:         "true",
 				hyperv1.DisableAWSNodeTerminationHandlerAnnotation: "true",
 			},
@@ -705,7 +706,7 @@ func TestReconcileHostedControlPlaneAnnotations(t *testing.T) {
 		{
 			name: "Initial reconcile",
 			hcAnnotations: map[string]string{
-				hyperutil.DebugDeploymentsAnnotation:                         "control-plane-operator",
+				k8sutil.DebugDeploymentsAnnotation:                           "control-plane-operator",
 				hyperv1.EtcdPriorityClass:                                    "high-priority",
 				hyperv1.RequestServingNodeAdditionalSelectorAnnotation:       "node-size=m5xl",
 				hyperv1.IdentityProviderOverridesAnnotationPrefix + "-test1": "test1",
@@ -714,13 +715,13 @@ func TestReconcileHostedControlPlaneAnnotations(t *testing.T) {
 				"foo":                                                        "bar", // should not be copied
 			},
 			expectedAnnotations: map[string]string{
-				hyperutil.DebugDeploymentsAnnotation:                         "control-plane-operator",
+				k8sutil.DebugDeploymentsAnnotation:                           "control-plane-operator",
 				hyperv1.EtcdPriorityClass:                                    "high-priority",
 				hyperv1.IdentityProviderOverridesAnnotationPrefix + "-test1": "test1",
 				hyperv1.IdentityProviderOverridesAnnotationPrefix + "-test2": "test2",
 				hyperv1.KubeAPIServerGoAwayChance:                            "0.001",
 				hyperv1.RequestServingNodeAdditionalSelectorAnnotation:       "node-size=m5xl",
-				hyperutil.HostedClusterAnnotation:                            hcKey,
+				k8sutil.HostedClusterAnnotation:                              hcKey,
 				hyperv1.DisableClusterAutoscalerAnnotation:                   "true",
 				hyperv1.DisableAWSNodeTerminationHandlerAnnotation:           "true",
 			},
@@ -728,7 +729,7 @@ func TestReconcileHostedControlPlaneAnnotations(t *testing.T) {
 		{
 			name: "Initial reconcile - autoscaling needed",
 			hcAnnotations: map[string]string{
-				hyperutil.DebugDeploymentsAnnotation:                         "control-plane-operator",
+				k8sutil.DebugDeploymentsAnnotation:                           "control-plane-operator",
 				hyperv1.EtcdPriorityClass:                                    "high-priority",
 				hyperv1.RequestServingNodeAdditionalSelectorAnnotation:       "node-size=m5xl",
 				hyperv1.IdentityProviderOverridesAnnotationPrefix + "-test1": "test1",
@@ -736,12 +737,12 @@ func TestReconcileHostedControlPlaneAnnotations(t *testing.T) {
 				"foo": "bar",
 			},
 			expectedAnnotations: map[string]string{
-				hyperutil.DebugDeploymentsAnnotation:                         "control-plane-operator",
+				k8sutil.DebugDeploymentsAnnotation:                           "control-plane-operator",
 				hyperv1.EtcdPriorityClass:                                    "high-priority",
 				hyperv1.IdentityProviderOverridesAnnotationPrefix + "-test1": "test1",
 				hyperv1.IdentityProviderOverridesAnnotationPrefix + "-test2": "test2",
 				hyperv1.RequestServingNodeAdditionalSelectorAnnotation:       "node-size=m5xl",
-				hyperutil.HostedClusterAnnotation:                            hcKey,
+				k8sutil.HostedClusterAnnotation:                              hcKey,
 				hyperv1.DisableAWSNodeTerminationHandlerAnnotation:           "true",
 			},
 			isAutoscalingNeeded: true,
@@ -749,14 +750,14 @@ func TestReconcileHostedControlPlaneAnnotations(t *testing.T) {
 		{
 			name: "Existing disable autoscaling annotation, autoscaling no longer needed",
 			hcAnnotations: map[string]string{
-				hyperutil.DebugDeploymentsAnnotation: "control-plane-operator",
+				k8sutil.DebugDeploymentsAnnotation: "control-plane-operator",
 			},
 			hcpAnnotations: map[string]string{
 				hyperv1.DisableClusterAutoscalerAnnotation: "true",
 			},
 			expectedAnnotations: map[string]string{
-				hyperutil.DebugDeploymentsAnnotation:               "control-plane-operator",
-				hyperutil.HostedClusterAnnotation:                  hcKey,
+				k8sutil.DebugDeploymentsAnnotation:                 "control-plane-operator",
+				k8sutil.HostedClusterAnnotation:                    hcKey,
 				hyperv1.DisableAWSNodeTerminationHandlerAnnotation: "true",
 			},
 			isAutoscalingNeeded: true,
@@ -773,7 +774,7 @@ func TestReconcileHostedControlPlaneAnnotations(t *testing.T) {
 				"foo": "bar",
 			},
 			hcpAnnotations: map[string]string{
-				hyperutil.DebugDeploymentsAnnotation:                           "control-plane-operator",
+				k8sutil.DebugDeploymentsAnnotation:                             "control-plane-operator",
 				hyperv1.IdentityProviderOverridesAnnotationPrefix + "-test1":   "test1",
 				hyperv1.IdentityProviderOverridesAnnotationPrefix + "-test3":   "test3",
 				hyperv1.ResourceRequestOverrideAnnotationPrefix + "-override4": "override4",
@@ -787,7 +788,7 @@ func TestReconcileHostedControlPlaneAnnotations(t *testing.T) {
 				hyperv1.IdentityProviderOverridesAnnotationPrefix + "-test2":   "test2",
 				hyperv1.ResourceRequestOverrideAnnotationPrefix + "-override1": "override1",
 				hyperv1.ResourceRequestOverrideAnnotationPrefix + "-override2": "override2",
-				hyperutil.HostedClusterAnnotation:                              hcKey,
+				k8sutil.HostedClusterAnnotation:                                hcKey,
 				hyperv1.DisableClusterAutoscalerAnnotation:                     "true",
 				hyperv1.DisableAWSNodeTerminationHandlerAnnotation:             "true",
 				"unrelated": "test",
@@ -800,7 +801,7 @@ func TestReconcileHostedControlPlaneAnnotations(t *testing.T) {
 			},
 			hcpAnnotations: map[string]string{},
 			expectedAnnotations: map[string]string{
-				hyperutil.HostedClusterAnnotation:                  hcKey,
+				k8sutil.HostedClusterAnnotation:                    hcKey,
 				hyperv1.AWSKarpenterDefaultInstanceProfile:         "test-instance-profile",
 				hyperv1.DisableClusterAutoscalerAnnotation:         "true",
 				hyperv1.DisableAWSNodeTerminationHandlerAnnotation: "true",
@@ -812,7 +813,7 @@ func TestReconcileHostedControlPlaneAnnotations(t *testing.T) {
 			hcAnnotations:                     map[string]string{},
 			hcpAnnotations:                    map[string]string{},
 			expectedAnnotations: map[string]string{
-				hyperutil.HostedClusterAnnotation:          hcKey,
+				k8sutil.HostedClusterAnnotation:            hcKey,
 				hyperv1.DisableClusterAutoscalerAnnotation: "true",
 			},
 		},
@@ -822,7 +823,7 @@ func TestReconcileHostedControlPlaneAnnotations(t *testing.T) {
 			hcAnnotations:                     map[string]string{},
 			hcpAnnotations:                    map[string]string{},
 			expectedAnnotations: map[string]string{
-				hyperutil.HostedClusterAnnotation:                  hcKey,
+				k8sutil.HostedClusterAnnotation:                    hcKey,
 				hyperv1.DisableClusterAutoscalerAnnotation:         "true",
 				hyperv1.DisableAWSNodeTerminationHandlerAnnotation: "true",
 			},
@@ -835,7 +836,7 @@ func TestReconcileHostedControlPlaneAnnotations(t *testing.T) {
 				hyperv1.DisableAWSNodeTerminationHandlerAnnotation: "true",
 			},
 			expectedAnnotations: map[string]string{
-				hyperutil.HostedClusterAnnotation:          hcKey,
+				k8sutil.HostedClusterAnnotation:            hcKey,
 				hyperv1.DisableClusterAutoscalerAnnotation: "true",
 			},
 		},
@@ -1152,7 +1153,7 @@ func TestReconcileCAPICluster(t *testing.T) {
 			expectedCAPICluster: &v1beta1.Cluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
-						hyperutil.HostedClusterAnnotation: "master/cluster1",
+						k8sutil.HostedClusterAnnotation: "master/cluster1",
 					},
 					Namespace: "master-cluster1",
 					Name:      "cluster1",
@@ -1210,7 +1211,7 @@ func TestReconcileCAPICluster(t *testing.T) {
 			expectedCAPICluster: &v1beta1.Cluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
-						hyperutil.HostedClusterAnnotation: "master/cluster1",
+						k8sutil.HostedClusterAnnotation: "master/cluster1",
 					},
 					Namespace: "master-cluster1",
 					Name:      "cluster1",
@@ -4746,7 +4747,7 @@ func TestReconcileComponents(t *testing.T) {
 			t.Fatalf("failed to get deployment: %v", err)
 		}
 
-		yaml, err := hyperutil.SerializeResource(deployment, api.Scheme)
+		yaml, err := k8sutil.SerializeResource(deployment, api.Scheme)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -4768,7 +4769,7 @@ func TestReconcileComponents(t *testing.T) {
 			controlPaneComponent.Status.Conditions[i].LastTransitionTime = metav1.Time{}
 		}
 
-		yaml, err = hyperutil.SerializeResource(controlPaneComponent, api.Scheme)
+		yaml, err = k8sutil.SerializeResource(controlPaneComponent, api.Scheme)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}

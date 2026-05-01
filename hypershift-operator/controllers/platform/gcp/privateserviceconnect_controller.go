@@ -8,8 +8,8 @@ import (
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/upsert"
-	supportutil "github.com/openshift/hypershift/support/util"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -127,7 +127,7 @@ func (r *GCPPrivateServiceConnectReconciler) Reconcile(ctx context.Context, req 
 	}
 
 	// 4. Find the hosted cluster using annotation (set by customer-side controller)
-	hc, err := supportutil.HostedClusterFromAnnotation(ctx, r.Client, gcpPSC)
+	hc, err := k8sutil.HostedClusterFromAnnotation(ctx, r.Client, gcpPSC)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to get hosted cluster: %w", err)
 	}

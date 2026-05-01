@@ -61,6 +61,7 @@ import (
 	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/infraid"
+	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/oidc"
@@ -266,21 +267,21 @@ func (r *HostedClusterReconciler) managedResources() []client.Object {
 
 	// Watch based on platforms installed
 	if platformsInstalled := os.Getenv("PLATFORMS_INSTALLED"); len(platformsInstalled) > 0 {
-		managedResources = append(managedResources, hyperutil.GetHostedClusterManagedResources(platformsInstalled)...)
+		managedResources = append(managedResources, k8sutil.GetHostedClusterManagedResources(platformsInstalled)...)
 	} else {
-		managedResources = append(managedResources, hyperutil.BaseResources...)
-		managedResources = append(managedResources, hyperutil.AWSResources...)
-		managedResources = append(managedResources, hyperutil.AzureResources...)
-		managedResources = append(managedResources, hyperutil.IBMCloudResources...)
-		managedResources = append(managedResources, hyperutil.KubevirtResources...)
-		managedResources = append(managedResources, hyperutil.AgentResources...)
-		managedResources = append(managedResources, hyperutil.OpenStackResources...)
+		managedResources = append(managedResources, k8sutil.BaseResources...)
+		managedResources = append(managedResources, k8sutil.AWSResources...)
+		managedResources = append(managedResources, k8sutil.AzureResources...)
+		managedResources = append(managedResources, k8sutil.IBMCloudResources...)
+		managedResources = append(managedResources, k8sutil.KubevirtResources...)
+		managedResources = append(managedResources, k8sutil.AgentResources...)
+		managedResources = append(managedResources, k8sutil.OpenStackResources...)
 	}
 
 	// Only watch managed Azure resources if the HO is explicitly configured to do so. Otherwise, the HO will fail to
 	// reconcile HostedClusters since some CRs are only installed in the managed Azure use case.
 	if azureutil.IsAroHCP() {
-		managedResources = append(managedResources, hyperutil.ManagedAzure...)
+		managedResources = append(managedResources, k8sutil.ManagedAzure...)
 	}
 
 	// Watch if etcd recovery is enabled
@@ -1918,7 +1919,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 						Name:      hcluster.Status.CustomKubeconfig.Name,
 					},
 				}
-				if _, err := hyperutil.DeleteIfNeeded(ctx, r.Client, customKubeconfig); err != nil {
+				if _, err := k8sutil.DeleteIfNeeded(ctx, r.Client, customKubeconfig); err != nil {
 					return ctrl.Result{}, fmt.Errorf("failed to delete custom external kubeconfig secret %q: %w", client.ObjectKeyFromObject(customKubeconfig), err)
 				}
 				hcluster.Status.CustomKubeconfig = nil
@@ -2314,7 +2315,7 @@ func reconcileHostedControlPlaneAnnotations(hcp *hyperv1.HostedControlPlane, hcl
 		hcp.Annotations = map[string]string{}
 	}
 
-	hcp.Annotations[hyperutil.HostedClusterAnnotation] = client.ObjectKeyFromObject(hcluster).String()
+	hcp.Annotations[k8sutil.HostedClusterAnnotation] = client.ObjectKeyFromObject(hcluster).String()
 
 	// These annotations are copied from the HostedCluster
 	mirroredAnnotations := []string{
@@ -2326,7 +2327,7 @@ func reconcileHostedControlPlaneAnnotations(hcp *hyperv1.HostedControlPlane, hcl
 		hyperv1.IBMCloudKMSProviderImage,
 		hyperv1.AWSKMSProviderImage,
 		hyperv1.PortierisImageAnnotation,
-		hyperutil.DebugDeploymentsAnnotation,
+		k8sutil.DebugDeploymentsAnnotation,
 		hyperv1.DisableProfilingAnnotation,
 		hyperv1.PrivateIngressControllerAnnotation,
 		hyperv1.IngressControllerLoadBalancerScope,
@@ -2613,7 +2614,7 @@ func (r *HostedClusterReconciler) reconcileCAPIProvider(cpContext controlplaneco
 	}
 	if err == nil {
 		if capiProviderDeployment.Spec.Template.ObjectMeta.Labels[hyperv1.ControlPlaneComponentLabel] != "capi-provider" {
-			_, err = hyperutil.DeleteIfNeeded(cpContext, cpContext.Client, capiProviderDeployment)
+			_, err = k8sutil.DeleteIfNeeded(cpContext, cpContext.Client, capiProviderDeployment)
 			// Always return an error so we can retry when the cache is updated
 			return fmt.Errorf("provider with outdated labels exists, delete result: %w", err)
 		}
@@ -2944,7 +2945,7 @@ func reconcileCAPICluster(cluster *capiv1.Cluster, hcluster *hyperv1.HostedClust
 	}
 
 	cluster.Annotations = map[string]string{
-		hyperutil.HostedClusterAnnotation: client.ObjectKeyFromObject(hcluster).String(),
+		k8sutil.HostedClusterAnnotation: client.ObjectKeyFromObject(hcluster).String(),
 	}
 	cluster.Spec = capiv1.ClusterSpec{
 		ControlPlaneEndpoint: capiv1.APIEndpoint{},
@@ -3324,10 +3325,10 @@ func deleteGCPPrivateServiceConnect(ctx context.Context, c client.Client, _ *hyp
 }
 
 func deleteControlPlaneOperatorRBAC(ctx context.Context, c client.Client, rbacNamespace string, controlPlaneNamespace string) error {
-	if _, err := hyperutil.DeleteIfNeeded(ctx, c, &rbacv1.Role{ObjectMeta: metav1.ObjectMeta{Name: "control-plane-operator-" + controlPlaneNamespace, Namespace: rbacNamespace}}); err != nil {
+	if _, err := k8sutil.DeleteIfNeeded(ctx, c, &rbacv1.Role{ObjectMeta: metav1.ObjectMeta{Name: "control-plane-operator-" + controlPlaneNamespace, Namespace: rbacNamespace}}); err != nil {
 		return err
 	}
-	if _, err := hyperutil.DeleteIfNeeded(ctx, c, &rbacv1.RoleBinding{ObjectMeta: metav1.ObjectMeta{Name: "control-plane-operator-" + controlPlaneNamespace, Namespace: rbacNamespace}}); err != nil {
+	if _, err := k8sutil.DeleteIfNeeded(ctx, c, &rbacv1.RoleBinding{ObjectMeta: metav1.ObjectMeta{Name: "control-plane-operator-" + controlPlaneNamespace, Namespace: rbacNamespace}}); err != nil {
 		return err
 	}
 	return nil
@@ -3375,7 +3376,7 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.Hosted
 		return false, err
 	}
 	if hc != nil && len(hc.Spec.InfraID) > 0 {
-		exists, err := hyperutil.DeleteIfNeeded(ctx, r.Client, &capiv1.Cluster{
+		exists, err := k8sutil.DeleteIfNeeded(ctx, r.Client, &capiv1.Cluster{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      hc.Spec.InfraID,
 				Namespace: controlPlaneNamespace,
@@ -3459,7 +3460,7 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.Hosted
 		}
 	}
 
-	_, err = hyperutil.DeleteIfNeeded(ctx, r.Client, clusterapi.CAPIManagerClusterRoleBinding(controlPlaneNamespace))
+	_, err = k8sutil.DeleteIfNeeded(ctx, r.Client, clusterapi.CAPIManagerClusterRoleBinding(controlPlaneNamespace))
 	if err != nil {
 		return false, err
 	}
@@ -3468,7 +3469,7 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.Hosted
 	// We want to ensure the HCP resource is deleted before deleting the Namespace.
 	// Otherwise the CPO will be deleted leaving the HCP in a perpetual terminating state preventing further progress.
 	// NOTE: The advancing case is when Get() or Delete() returns an error that the HCP is not found
-	exists, err := hyperutil.DeleteIfNeeded(ctx, r.Client, controlplaneoperator.HostedControlPlane(controlPlaneNamespace, hc.Name))
+	exists, err := k8sutil.DeleteIfNeeded(ctx, r.Client, controlplaneoperator.HostedControlPlane(controlPlaneNamespace, hc.Name))
 	if err != nil {
 		return false, err
 	}
@@ -3489,7 +3490,7 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.Hosted
 
 	// Block until the namespace is deleted, so that if a hostedcluster is deleted and then re-created with the same name
 	// we don't error initially because we can not create new content in a namespace that is being deleted.
-	exists, err = hyperutil.DeleteIfNeeded(ctx, r.Client, &corev1.Namespace{
+	exists, err = k8sutil.DeleteIfNeeded(ctx, r.Client, &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{Name: controlPlaneNamespace},
 	})
 	if err != nil {
@@ -3511,7 +3512,7 @@ func enqueueHostedClustersFunc(metricsSet metrics.MetricsSet, operatorNamespace 
 			requests := []reconcile.Request{}
 			annotations := obj.GetAnnotations()
 			if annotations != nil {
-				hostedClusterName := obj.GetAnnotations()[hyperutil.HostedClusterAnnotation]
+				hostedClusterName := obj.GetAnnotations()[k8sutil.HostedClusterAnnotation]
 				if hostedClusterName != "" {
 					return []reconcile.Request{
 						{NamespacedName: hyperutil.ParseNamespacedName(hostedClusterName)},
@@ -3557,7 +3558,7 @@ func enqueueHostedClustersFunc(metricsSet metrics.MetricsSet, operatorNamespace 
 				return []reconcile.Request{}
 			}
 			if len(hcpList.Items) == 1 {
-				hcAnnotation := hcpList.Items[0].Annotations[hyperutil.HostedClusterAnnotation]
+				hcAnnotation := hcpList.Items[0].Annotations[k8sutil.HostedClusterAnnotation]
 				if hcAnnotation != "" {
 					return []reconcile.Request{{NamespacedName: hyperutil.ParseNamespacedName(hcAnnotation)}}
 				}
@@ -3589,7 +3590,7 @@ func enqueueHostedClustersFunc(metricsSet metrics.MetricsSet, operatorNamespace 
 							log.Error(err, "failed to get hcp")
 							return []reconcile.Request{}
 						}
-						if hcAnnotation := hcp.Annotations[hyperutil.HostedClusterAnnotation]; hcAnnotation != "" {
+						if hcAnnotation := hcp.Annotations[k8sutil.HostedClusterAnnotation]; hcAnnotation != "" {
 							return []reconcile.Request{{NamespacedName: hyperutil.ParseNamespacedName(hcAnnotation)}}
 						}
 						return []reconcile.Request{}
@@ -5105,7 +5106,7 @@ func ensureReferencedResourceAnnotation(ctx context.Context, client client.Clien
 }
 
 func ensureHostedResourcesAreEmpty(ctx context.Context, crclient client.Client, hcluster *hyperv1.HostedCluster, obj client.Object) error {
-	if !azureutil.IsAroHCP() || !hyperutil.HasAnnotationWithValue(obj, hyperv1.HostedClusterSourcedAnnotation, "true") {
+	if !azureutil.IsAroHCP() || !k8sutil.HasAnnotationWithValue(obj, hyperv1.HostedClusterSourcedAnnotation, "true") {
 		return nil
 	}
 	var cm corev1.Secret
@@ -5144,7 +5145,7 @@ func (r *HostedClusterReconciler) reconcileAdditionalTrustBundle(ctx context.Con
 	dest := controlplaneoperator.UserCABundle(controlPlaneNamespace)
 	if hcluster.Spec.AdditionalTrustBundle == nil {
 		// If the HostedCluster has no additional trust bundle, delete the destination ConfigMap if it exists
-		if _, err := hyperutil.DeleteIfNeeded(ctx, r.Client, dest); err != nil {
+		if _, err := k8sutil.DeleteIfNeeded(ctx, r.Client, dest); err != nil {
 			return fmt.Errorf("failed to delete unused additionalTrustBundle: %w", err)
 		}
 		return nil

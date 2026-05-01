@@ -19,6 +19,7 @@ import (
 	"github.com/openshift/hypershift/support/awsapi"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/images"
+	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/supportedversion"
 	"github.com/openshift/hypershift/support/upsert"
@@ -169,7 +170,7 @@ func (r *NodePoolReconciler) managedResources() []client.Object {
 
 	if platformsInstalled := os.Getenv("PLATFORMS_INSTALLED"); len(platformsInstalled) > 0 {
 		// Watch based on platforms installed
-		managedResources = append(managedResources, supportutil.GetNodePoolManagedResources(platformsInstalled)...)
+		managedResources = append(managedResources, k8sutil.GetNodePoolManagedResources(platformsInstalled)...)
 	} else {
 		// Watch all CAPI platform related resources
 		managedResources = append(managedResources, capiRelatedNodePoolManagedResourcesToWatch...)
@@ -907,7 +908,7 @@ func (r *NodePoolReconciler) getNodePoolNamespacedName(nodePoolName string, cont
 	}); err != nil || len(hcpList.Items) < 1 {
 		return types.NamespacedName{Name: nodePoolName}, err
 	}
-	hostedCluster, ok := hcpList.Items[0].Annotations[supportutil.HostedClusterAnnotation]
+	hostedCluster, ok := hcpList.Items[0].Annotations[k8sutil.HostedClusterAnnotation]
 	if !ok {
 		return types.NamespacedName{Name: nodePoolName}, fmt.Errorf("failed to get Hosted Cluster name for HostedControlPlane %s", hcpList.Items[0].Name)
 	}
@@ -1188,7 +1189,7 @@ func deleteConfigByLabel(ctx context.Context, c client.Client, lbl map[string]st
 	}
 	for i := range cmList.Items {
 		cm := &cmList.Items[i]
-		if _, err := supportutil.DeleteIfNeeded(ctx, c, cm); err != nil {
+		if _, err := k8sutil.DeleteIfNeeded(ctx, c, cm); err != nil {
 			return err
 		}
 	}

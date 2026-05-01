@@ -5,8 +5,8 @@ import (
 	"fmt"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/releaseinfo"
-	supportutil "github.com/openshift/hypershift/support/util"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
@@ -60,7 +60,7 @@ func (c *CAPI) gcpMachineTemplate(_ context.Context, templateNameGenerator func(
 			Labels: map[string]string{
 				capiv1.ClusterNameLabel:                 c.capiClusterName,
 				hyperv1.NodePoolLabel:                   c.nodePool.Name,
-				supportutil.HostedClusterAnnotation:     hc.Name,
+				k8sutil.HostedClusterAnnotation:         hc.Name,
 				capiv1.TemplateClonedFromNameAnnotation: templateName,
 			},
 		},
@@ -282,9 +282,9 @@ func configureGCPLabels(hcGCPPlatform *hyperv1.GCPPlatformSpec, gcpPlatform *hyp
 	}
 
 	// Add HyperShift-specific labels for resource identification
-	labels[supportutil.GCPLabelCluster] = clusterName
+	labels[k8sutil.GCPLabelCluster] = clusterName
 	if infraID != "" {
-		labels[supportutil.GCPLabelInfraID] = infraID
+		labels[k8sutil.GCPLabelInfraID] = infraID
 	}
 
 	return labels

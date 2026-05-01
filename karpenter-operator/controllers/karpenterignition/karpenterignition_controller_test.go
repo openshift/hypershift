@@ -13,11 +13,11 @@ import (
 	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1"
 	"github.com/openshift/hypershift/api/util/ipnet"
 	"github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/k8sutil"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/releaseinfo/testutils"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
-	supportutil "github.com/openshift/hypershift/support/util"
 	fakeimagemetadataprovider "github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -248,7 +248,7 @@ kind: Config`),
 		if strings.HasPrefix(secret.Name, tokenPrefix) {
 			initialTokenSecretName = secret.Name
 			g.Expect(secret.Data).To(HaveKey("token"))
-			g.Expect(secret.Annotations).To(HaveKey(supportutil.HostedClusterAnnotation), "token secret should have HostedClusterAnnotation")
+			g.Expect(secret.Annotations).To(HaveKey(k8sutil.HostedClusterAnnotation), "token secret should have HostedClusterAnnotation")
 			g.Expect(secret.Labels).To(HaveKeyWithValue(karpenterutil.ManagedByKarpenterLabel, "true"), "token secret should have ManagedByKarpenterLabel")
 		}
 		if strings.HasPrefix(secret.Name, userDataPrefix) {

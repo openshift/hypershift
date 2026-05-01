@@ -10,6 +10,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/infra"
 	assets "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/upsert"
@@ -205,7 +206,7 @@ func (c *controlPlaneWorkload[T]) delete(cpContext ControlPlaneContext) error {
 	workloadObj.SetName(c.Name())
 	workloadObj.SetNamespace(cpContext.HCP.Namespace)
 
-	_, err := util.DeleteIfNeeded(cpContext, cpContext.Client, workloadObj)
+	_, err := k8sutil.DeleteIfNeeded(cpContext, cpContext.Client, workloadObj)
 	if err != nil {
 		return err
 	}
@@ -228,7 +229,7 @@ func (c *controlPlaneWorkload[T]) delete(cpContext ControlPlaneContext) error {
 			}
 		}
 
-		_, err = util.DeleteIfNeeded(cpContext, cpContext.Client, obj)
+		_, err = k8sutil.DeleteIfNeeded(cpContext, cpContext.Client, obj)
 		return err
 	}); err != nil {
 		return err
@@ -240,7 +241,7 @@ func (c *controlPlaneWorkload[T]) delete(cpContext ControlPlaneContext) error {
 			Namespace: cpContext.HCP.Namespace,
 		},
 	}
-	_, err = util.DeleteIfNeeded(cpContext, cpContext.Client, component)
+	_, err = k8sutil.DeleteIfNeeded(cpContext, cpContext.Client, component)
 	return err
 }
 
@@ -267,7 +268,7 @@ func (c *controlPlaneWorkload[T]) update(cpContext ControlPlaneContext) error {
 				}
 			}
 		case *corev1.ServiceAccount:
-			util.EnsurePullSecret(typedObj, common.PullSecret("").Name)
+			k8sutil.EnsurePullSecret(typedObj, common.PullSecret("").Name)
 		}
 
 		adapter, exist := c.manifestsAdapters[manifestName]

@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"maps"
 
+	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/netutil"
-	"github.com/openshift/hypershift/support/util"
 
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
@@ -81,14 +81,14 @@ func (p *applyProvider) ApplyManifest(ctx context.Context, c crclient.Client, ob
 		switch typedObj := obj.(type) {
 		case *batchv1.Job:
 			existingTyped := existing.(*batchv1.Job)
-			failed := util.FindJobCondition(existingTyped, batchv1.JobFailed)
+			failed := k8sutil.FindJobCondition(existingTyped, batchv1.JobFailed)
 			if failed == nil || failed.Status == corev1.ConditionFalse {
 				if equality.Semantic.DeepDerivative(typedObj.Spec, existingTyped.Spec) {
 					return controllerutil.OperationResultNone, nil
 				}
 			}
 			// Delete the job if it has failed or it needs to be updated
-			_, err := util.DeleteIfNeededWithOptions(ctx, c, obj, crclient.PropagationPolicy(metav1.DeletePropagationForeground))
+			_, err := k8sutil.DeleteIfNeededWithOptions(ctx, c, obj, crclient.PropagationPolicy(metav1.DeletePropagationForeground))
 			return controllerutil.OperationResultNone, err
 		}
 	}

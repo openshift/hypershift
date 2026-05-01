@@ -2,7 +2,7 @@ package config
 
 import (
 	"github.com/openshift/hypershift/support/api"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/k8sutil"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -15,7 +15,7 @@ type OwnerRef struct {
 }
 
 func (c OwnerRef) ApplyTo(obj client.Object) {
-	util.EnsureOwnerRef(obj, c.Reference)
+	k8sutil.EnsureOwnerRef(obj, c.Reference)
 }
 
 func OwnerRefFrom(obj client.Object) OwnerRef {

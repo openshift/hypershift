@@ -8,8 +8,8 @@ import (
 	"github.com/openshift/hypershift/control-plane-pki-operator/certificates"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplanepkioperator"
 	"github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/testutil"
-	"github.com/openshift/hypershift/support/util"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -23,7 +23,7 @@ func TestReconcileCSRApproverClusterRole(t *testing.T) {
 	if err := controlplanepkioperator.ReconcileCSRApproverClusterRole(clusterRole, hostedCluster, certificates.CustomerBreakGlassSigner, certificates.SREBreakGlassSigner); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	clusterRoleYaml, err := util.SerializeResource(clusterRole, api.Scheme)
+	clusterRoleYaml, err := k8sutil.SerializeResource(clusterRole, api.Scheme)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -39,7 +39,7 @@ func TestReconcileCSRSignerClusterRole(t *testing.T) {
 	if err := controlplanepkioperator.ReconcileCSRSignerClusterRole(clusterRole, hostedCluster, certificates.CustomerBreakGlassSigner, certificates.SREBreakGlassSigner); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	clusterRoleYaml, err := util.SerializeResource(clusterRole, api.Scheme)
+	clusterRoleYaml, err := k8sutil.SerializeResource(clusterRole, api.Scheme)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -57,7 +57,7 @@ func TestReconcileCSRApproverClusterRoleBinding(t *testing.T) {
 	if err := controlplanepkioperator.ReconcileClusterRoleBinding(clusterRoleBinding, clusterRole, serviceAccount); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	clusterRoleBindingYaml, err := util.SerializeResource(clusterRoleBinding, api.Scheme)
+	clusterRoleBindingYaml, err := k8sutil.SerializeResource(clusterRoleBinding, api.Scheme)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -75,7 +75,7 @@ func TestReconcileCSRSignerClusterRoleBinding(t *testing.T) {
 	if err := controlplanepkioperator.ReconcileClusterRoleBinding(clusterRoleBinding, clusterRole, serviceAccount); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	clusterRoleBindingYaml, err := util.SerializeResource(clusterRoleBinding, api.Scheme)
+	clusterRoleBindingYaml, err := k8sutil.SerializeResource(clusterRoleBinding, api.Scheme)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

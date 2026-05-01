@@ -12,6 +12,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	karpenterassets "github.com/openshift/hypershift/karpenter-operator/controllers/karpenter/assets"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/util"
 
@@ -306,7 +307,7 @@ func (c *controlPlaneWorkload[T]) setControlPlaneIsolation(podTemplate *corev1.P
 
 		var additionalRequestServingNodeSelector map[string]string
 		if hcp.Annotations[hyperv1.RequestServingNodeAdditionalSelectorAnnotation] != "" {
-			additionalRequestServingNodeSelector = util.ParseNodeSelector(hcp.Annotations[hyperv1.RequestServingNodeAdditionalSelectorAnnotation])
+			additionalRequestServingNodeSelector = k8sutil.ParseNodeSelector(hcp.Annotations[hyperv1.RequestServingNodeAdditionalSelectorAnnotation])
 		}
 		for key, value := range additionalRequestServingNodeSelector {
 			nodeSelectorRequirements = append(nodeSelectorRequirements, corev1.NodeSelectorRequirement{
@@ -668,7 +669,7 @@ func DefaultReplicas(hcp *hyperv1.HostedControlPlane, options ComponentOptions, 
 // debugDeploymentsAnnotation value, indicating the Component should be considered to
 // be in development mode.
 func debugComponentsSet(hcp *hyperv1.HostedControlPlane) sets.Set[string] {
-	val, exists := hcp.Annotations[util.DebugDeploymentsAnnotation]
+	val, exists := hcp.Annotations[k8sutil.DebugDeploymentsAnnotation]
 	if !exists {
 		return nil
 	}

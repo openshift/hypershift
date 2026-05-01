@@ -13,7 +13,7 @@ import (
 	"time"
 
 	hyperapi "github.com/openshift/hypershift/support/api"
-	hyperutil "github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/k8sutil"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -382,12 +382,12 @@ func recoverEtcd(ctx context.Context, opt options, status etcdStatus) error {
 		return err
 	}
 	log.Info("Deleting pvc", "pvc", crclient.ObjectKeyFromObject(pvc))
-	if _, err := hyperutil.DeleteIfNeeded(ctx, kclient, pvc); err != nil {
+	if _, err := k8sutil.DeleteIfNeeded(ctx, kclient, pvc); err != nil {
 		log.Error(err, "failed to delete pvc", "pvc", crclient.ObjectKeyFromObject(pvc))
 	}
 
 	log.Info("Deleting pod", "pod", crclient.ObjectKeyFromObject(pod))
-	if _, err := hyperutil.DeleteIfNeeded(ctx, kclient, pod); err != nil {
+	if _, err := k8sutil.DeleteIfNeeded(ctx, kclient, pod); err != nil {
 		log.Error(err, "failed to delete pod", "pod", crclient.ObjectKeyFromObject(pod))
 	}
 

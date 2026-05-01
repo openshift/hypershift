@@ -10,6 +10,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/featuregate"
 	supportconfig "github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	hyperutil "github.com/openshift/hypershift/support/util"
 
@@ -325,7 +326,7 @@ func (r *HCPEtcdBackupReconciler) updateHCPBackupCondition(ctx context.Context, 
 // (TTLSecondsAfterFinished) before the next reconcile extracts it.
 func (r *HCPEtcdBackupReconciler) updateHostedClusterBackupURL(ctx context.Context, hcp *hyperv1.HostedControlPlane, snapshotURL string) error {
 	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		hc, err := hyperutil.HostedClusterFromAnnotation(ctx, r.Client, hcp)
+		hc, err := k8sutil.HostedClusterFromAnnotation(ctx, r.Client, hcp)
 		if err != nil {
 			return err
 		}

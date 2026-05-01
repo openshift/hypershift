@@ -23,9 +23,9 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
 	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/k8sutil"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	"github.com/openshift/hypershift/support/upsert"
-	hyperutil "github.com/openshift/hypershift/support/util"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -92,7 +92,7 @@ spec:
 			}
 		}
 		// Also delete the taint ConfigMap — it is only valid while Karpenter is enabled.
-		if _, err := hyperutil.DeleteIfNeeded(cpContext, r.Client, &corev1.ConfigMap{
+		if _, err := k8sutil.DeleteIfNeeded(cpContext, r.Client, &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      karpenterutil.KarpenterTaintConfigMapName,
 				Namespace: cpContext.HCP.Namespace,

@@ -2,7 +2,7 @@ package controlplanecomponent
 
 import (
 	assets "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/k8sutil"
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -58,12 +58,12 @@ func (c *jobProvider) IsReady(job *batchv1.Job) (status metav1.ConditionStatus, 
 // It checks if the job is complete or failed and returns the corresponding status.
 // If the job is neither complete nor failed, it returns unknown status.
 func JobCompletionStatus(job *batchv1.Job) (status metav1.ConditionStatus, reason string, message string) {
-	complete := util.FindJobCondition(job, batchv1.JobComplete)
+	complete := k8sutil.FindJobCondition(job, batchv1.JobComplete)
 	if complete != nil && complete.Status == corev1.ConditionTrue {
 		return metav1.ConditionTrue, "JobComplete", "Job completed successfully"
 	}
 
-	failed := util.FindJobCondition(job, batchv1.JobFailed)
+	failed := k8sutil.FindJobCondition(job, batchv1.JobFailed)
 	if failed != nil && failed.Status == corev1.ConditionTrue {
 		// If the job failed, we return false and the reason and message from the condition to provide more context.
 		// we set default values for the reason and message if not set to avoid errors as reason and message are required fields
