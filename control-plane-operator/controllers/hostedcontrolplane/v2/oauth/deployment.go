@@ -94,9 +94,13 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 
 		identityProviders := configuration.OAuth.IdentityProviders
 		if len(identityProviders) > 0 {
-			_, volumeMountInfo, _ := ConvertIdentityProviders(cpContext, identityProviders, providerOverrides(cpContext.HCP), cpContext.Client, deployment.Namespace)
-			// Ignore the error here, since we don't want to fail the deployment if the identity providers are invalid
-			// A condition will be set on the HC to indicate the error
+			_, volumeMountInfo, err := ConvertIdentityProviders(cpContext, identityProviders, providerOverrides(cpContext.HCP), cpContext.Client, deployment.Namespace)
+			if err != nil {
+				// Return the error to trigger reconciliation retry. This ensures that after OADP restore,
+				// if IDP conversion fails due to transient issues, it will be retried until successful.
+				// The HCP controller separately validates IDPs and sets a ValidIDPConfiguration condition.
+				return fmt.Errorf("failed to convert identity providers: %w", err)
+			}
 			if len(volumeMountInfo.Volumes) > 0 {
 				deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes, volumeMountInfo.Volumes...)
 				podspec.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {

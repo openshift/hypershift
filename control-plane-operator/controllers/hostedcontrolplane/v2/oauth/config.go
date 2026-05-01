@@ -51,7 +51,9 @@ func adaptConfigMap(cpContext component.WorkloadContext, cm *corev1.ConfigMap) e
 		return fmt.Errorf("failed to decode existing oauth server configuration: %w", err)
 	}
 
-	adaptOAuthConfig(cpContext, oauthConfig)
+	if err := adaptOAuthConfig(cpContext, oauthConfig); err != nil {
+		return err
+	}
 	serializedConfig, err := util.SerializeResource(oauthConfig, api.Scheme)
 	if err != nil {
 		return fmt.Errorf("failed to serialize oauth server configuration: %w", err)
@@ -60,7 +62,7 @@ func adaptConfigMap(cpContext component.WorkloadContext, cm *corev1.ConfigMap) e
 	return nil
 }
 
-func adaptOAuthConfig(cpContext component.WorkloadContext, cfg *osinv1.OsinServerConfig) {
+func adaptOAuthConfig(cpContext component.WorkloadContext, cfg *osinv1.OsinServerConfig) error {
 	configuration := cpContext.HCP.Spec.Configuration
 
 	cfg.GenericAPIServerConfig.ServingInfo.NamedCertificates = globalconfig.GetConfigNamedCertificates(configuration.GetNamedCertificates(), oauthNamedCertificateMountPathPrefix)
@@ -85,11 +87,16 @@ func adaptOAuthConfig(cpContext component.WorkloadContext, cfg *osinv1.OsinServe
 
 	// var identityProviders []osinv1.IdentityProvider
 	if configuration != nil && configuration.OAuth != nil {
-		// Ignore the error here since we don't want to fail the deployment if the identity providers are invalid
-		// A condition will be set on the HC to indicate the error
-		identityProviders, _, _ := ConvertIdentityProviders(cpContext, configuration.OAuth.IdentityProviders, providerOverrides(cpContext.HCP), cpContext.Client, cpContext.HCP.Namespace)
+		identityProviders, _, err := ConvertIdentityProviders(cpContext, configuration.OAuth.IdentityProviders, providerOverrides(cpContext.HCP), cpContext.Client, cpContext.HCP.Namespace)
+		if err != nil {
+			// Return the error to trigger reconciliation retry. This ensures that after OADP restore,
+			// if IDP conversion fails due to transient issues, it will be retried until successful.
+			// The HCP controller separately validates IDPs and sets a ValidIDPConfiguration condition.
+			return fmt.Errorf("failed to convert identity providers: %w", err)
+		}
 		cfg.OAuthConfig.IdentityProviders = identityProviders
 	}
+	return nil
 }
 
 func providerOverrides(hcp *hyperv1.HostedControlPlane) map[string]*ConfigOverride {
