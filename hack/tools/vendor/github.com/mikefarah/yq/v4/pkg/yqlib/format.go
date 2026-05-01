@@ -3,6 +3,7 @@ package yqlib
 import (
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -18,6 +19,12 @@ type Format struct {
 
 var YamlFormat = &Format{"yaml", []string{"y", "yml"},
 	func() Encoder { return NewYamlEncoder(ConfiguredYamlPreferences) },
+	func() Decoder { return NewYamlDecoder(ConfiguredYamlPreferences) },
+}
+
+var KYamlFormat = &Format{"kyaml", []string{"ky"},
+	func() Encoder { return NewKYamlEncoder(ConfiguredKYamlPreferences) },
+	// KYaml is stricter YAML
 	func() Decoder { return NewYamlDecoder(ConfiguredYamlPreferences) },
 }
 
@@ -62,8 +69,13 @@ var ShFormat = &Format{"", nil,
 }
 
 var TomlFormat = &Format{"toml", []string{},
-	func() Encoder { return NewTomlEncoder() },
+	func() Encoder { return NewTomlEncoderWithPrefs(ConfiguredTomlPreferences) },
 	func() Decoder { return NewTomlDecoder() },
+}
+
+var HclFormat = &Format{"hcl", []string{"h", "tf"},
+	func() Encoder { return NewHclEncoder(ConfiguredHclPreferences) },
+	func() Decoder { return NewHclDecoder() },
 }
 
 var ShellVariablesFormat = &Format{"shell", []string{"s", "sh"},
@@ -76,8 +88,14 @@ var LuaFormat = &Format{"lua", []string{"l"},
 	func() Decoder { return NewLuaDecoder(ConfiguredLuaPreferences) },
 }
 
+var INIFormat = &Format{"ini", []string{"i"},
+	func() Encoder { return NewINIEncoder() },
+	func() Decoder { return NewINIDecoder() },
+}
+
 var Formats = []*Format{
 	YamlFormat,
+	KYamlFormat,
 	JSONFormat,
 	PropertiesFormat,
 	CSVFormat,
@@ -87,20 +105,17 @@ var Formats = []*Format{
 	UriFormat,
 	ShFormat,
 	TomlFormat,
+	HclFormat,
 	ShellVariablesFormat,
 	LuaFormat,
+	INIFormat,
 }
 
 func (f *Format) MatchesName(name string) bool {
 	if f.FormalName == name {
 		return true
 	}
-	for _, n := range f.Names {
-		if n == name {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(f.Names, name)
 }
 
 func (f *Format) GetConfiguredEncoder() Encoder {
@@ -111,7 +126,7 @@ func FormatStringFromFilename(filename string) string {
 	if filename != "" {
 		GetLogger().Debugf("checking filename '%s' for auto format detection", filename)
 		ext := filepath.Ext(filename)
-		if ext != "" && ext[0] == '.' {
+		if len(ext) >= 2 && ext[0] == '.' {
 			format := strings.ToLower(ext[1:])
 			GetLogger().Debugf("detected format '%s'", format)
 			return format
