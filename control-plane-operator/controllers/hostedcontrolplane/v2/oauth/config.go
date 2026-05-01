@@ -10,7 +10,7 @@ import (
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/globalconfig"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/k8sutil"
 
 	osinv1 "github.com/openshift/api/osin/v1"
 
@@ -47,12 +47,12 @@ func adaptConfigMap(cpContext component.WorkloadContext, cm *corev1.ConfigMap) e
 	}
 
 	oauthConfig := &osinv1.OsinServerConfig{}
-	if err := util.DeserializeResource(cm.Data[oauthServerConfigKey], oauthConfig, api.Scheme); err != nil {
+	if err := k8sutil.DeserializeResource(cm.Data[oauthServerConfigKey], oauthConfig, api.Scheme); err != nil {
 		return fmt.Errorf("failed to decode existing oauth server configuration: %w", err)
 	}
 
 	adaptOAuthConfig(cpContext, oauthConfig)
-	serializedConfig, err := util.SerializeResource(oauthConfig, api.Scheme)
+	serializedConfig, err := k8sutil.SerializeResource(oauthConfig, api.Scheme)
 	if err != nil {
 		return fmt.Errorf("failed to serialize oauth server configuration: %w", err)
 	}

@@ -79,6 +79,7 @@ import (
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/events"
 	"github.com/openshift/hypershift/support/globalconfig"
+	"github.com/openshift/hypershift/support/k8sutil"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/netutil"
@@ -1135,7 +1136,7 @@ func (r *HostedControlPlaneReconciler) reconcileCPOV2(ctx context.Context, hcp *
 		roleBinding := ignitionmanifests.ProxyRoleBinding(hcp.Namespace)
 
 		for _, resource := range []client.Object{role, sa, roleBinding} {
-			if _, err := util.DeleteIfNeeded(ctx, r.Client, resource); err != nil {
+			if _, err := k8sutil.DeleteIfNeeded(ctx, r.Client, resource); err != nil {
 				r.Log.Error(err, "Failed to delete deprecated resource", "resource", client.ObjectKeyFromObject(resource).String())
 			}
 		}
@@ -1251,7 +1252,7 @@ func IsStorageAndCSIManaged(hostedControlPlane *hyperv1.HostedControlPlane) bool
 func (r *HostedControlPlaneReconciler) reconcileDefaultServiceAccount(ctx context.Context, hcp *hyperv1.HostedControlPlane, createOrUpdate upsert.CreateOrUpdateFN) error {
 	defaultSA := common.DefaultServiceAccount(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r.Client, defaultSA, func() error {
-		util.EnsurePullSecret(defaultSA, common.PullSecret(hcp.Namespace).Name)
+		k8sutil.EnsurePullSecret(defaultSA, common.PullSecret(hcp.Namespace).Name)
 		return nil
 	}); err != nil {
 		return err
@@ -1885,7 +1886,7 @@ func (r *HostedControlPlaneReconciler) reconcileUnmanagedEtcd(ctx context.Contex
 func (r *HostedControlPlaneReconciler) cleanupOldKonnectivityServerDeployment(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
 	serverDeployment := manifests.KonnectivityServerDeployment(hcp.Namespace)
 	// Remove the konnectivity-server deployment if it exists
-	if _, err := util.DeleteIfNeeded(ctx, r, serverDeployment); err != nil {
+	if _, err := k8sutil.DeleteIfNeeded(ctx, r, serverDeployment); err != nil {
 		return fmt.Errorf("failed to remove konnectivity-server deployment: %w", err)
 	}
 	return nil
@@ -1899,7 +1900,7 @@ func (r *HostedControlPlaneReconciler) cleanupOldPKIOperatorDeployment(ctx conte
 		},
 	}
 	// Remove the pki-operator deployment if it exists with outdated selector.
-	if _, err := util.DeleteIfNeededWithPredicate(ctx, r, deployment, func(d *appsv1.Deployment) bool {
+	if _, err := k8sutil.DeleteIfNeededWithPredicate(ctx, r, deployment, func(d *appsv1.Deployment) bool {
 		return d.Spec.Selector != nil && d.Spec.Selector.MatchLabels["name"] == "control-plane-pki-operator"
 	}); err != nil {
 		return fmt.Errorf("failed to remove pki-operator deployment: %w", err)
@@ -1963,18 +1964,18 @@ func (r *HostedControlPlaneReconciler) cleanupClusterNetworkOperatorResources(ct
 
 	// Clean up ovnkube-sbdb Route if exists
 	if hasRouteCap {
-		if _, err := util.DeleteIfNeeded(ctx, r.Client, manifests.OVNKubeSBDBRoute(hcp.Namespace)); err != nil {
+		if _, err := k8sutil.DeleteIfNeeded(ctx, r.Client, manifests.OVNKubeSBDBRoute(hcp.Namespace)); err != nil {
 			return fmt.Errorf("failed to clean up ovnkube-sbdb route: %w", err)
 		}
 	}
 
 	// Clean up ovnkube-master-external Service if exists
-	if _, err := util.DeleteIfNeeded(ctx, r.Client, manifests.MasterExternalService(hcp.Namespace)); err != nil {
+	if _, err := k8sutil.DeleteIfNeeded(ctx, r.Client, manifests.MasterExternalService(hcp.Namespace)); err != nil {
 		return fmt.Errorf("failed to clean up ovnkube-master-external service: %w", err)
 	}
 
 	// Clean up ovnkube-master-internal Service if exists
-	if _, err := util.DeleteIfNeeded(ctx, r.Client, manifests.MasterInternalService(hcp.Namespace)); err != nil {
+	if _, err := k8sutil.DeleteIfNeeded(ctx, r.Client, manifests.MasterInternalService(hcp.Namespace)); err != nil {
 		return fmt.Errorf("failed to clean up ovnkube-master-internal service: %w", err)
 	}
 
@@ -2086,7 +2087,7 @@ func (r *HostedControlPlaneReconciler) reconcileCoreIgnitionConfig(ctx context.C
 	// Ensure the imageDigestMirrorSet configmap has been removed if no longer needed
 	imageContentPolicyIgnitionConfig := manifests.ImageContentPolicyIgnitionConfig(hcp.GetNamespace())
 	if !p.HasImageMirrorPolicies {
-		_, err := util.DeleteIfNeeded(ctx, r.Client, imageContentPolicyIgnitionConfig)
+		_, err := k8sutil.DeleteIfNeeded(ctx, r.Client, imageContentPolicyIgnitionConfig)
 		if err != nil {
 			return fmt.Errorf("failed to delete image content source policy configuration configmap: %w", err)
 		}
@@ -2122,7 +2123,7 @@ func (r *HostedControlPlaneReconciler) cleanupOldRouterResources(ctx context.Con
 		manifests.RouterRoleBinding(hcp.Namespace),
 	}
 	for _, resource := range oldRouterResources {
-		if _, err := util.DeleteIfNeeded(ctx, r.Client, resource); err != nil {
+		if _, err := k8sutil.DeleteIfNeeded(ctx, r.Client, resource); err != nil {
 			return fmt.Errorf("failed to delete %T %s: %w", resource, resource.GetName(), err)
 		}
 	}
@@ -2227,7 +2228,7 @@ func removeServiceCASecret(ctx context.Context, c client.Client, secret *corev1.
 	} else {
 		_, ok := secret.Annotations["service.alpha.openshift.io/originating-service-name"]
 		if ok {
-			_, err := util.DeleteIfNeeded(ctx, c, secret)
+			_, err := k8sutil.DeleteIfNeeded(ctx, c, secret)
 			if err != nil {
 				return fmt.Errorf("failed to delete secret generated by service-ca: %w", err)
 			}
@@ -2235,7 +2236,7 @@ func removeServiceCASecret(ctx context.Context, c client.Client, secret *corev1.
 
 		_, ok = secret.Annotations["service.beta.openshift.io/originating-service-name"]
 		if ok {
-			_, err := util.DeleteIfNeeded(ctx, c, secret)
+			_, err := k8sutil.DeleteIfNeeded(ctx, c, secret)
 			if err != nil {
 				return fmt.Errorf("failed to delete secret generated by service-ca: %w", err)
 			}
@@ -2520,7 +2521,7 @@ func (r *HostedControlPlaneReconciler) reconcileDefaultSecurityGroup(ctx context
 
 		// Update the last-applied-security-group-tags annotation on the HCP with the tags applied to the SG.
 		// This is used to track changes to the tags and update them if necessary.
-		if err := util.UpdateObject(ctx, r.Client, hcp, func() error {
+		if err := k8sutil.UpdateObject(ctx, r.Client, hcp, func() error {
 			if err := updateLastAppliedSecurityGroupTagsAnnotation(hcp, desiredTags); err != nil {
 				return fmt.Errorf("failed to update last applied security group tags annotation")
 			}
@@ -2551,7 +2552,7 @@ func (r *HostedControlPlaneReconciler) reconcileDefaultSecurityGroup(ctx context
 	} else {
 		// Ensure the last-applied-security-group-tags annotation is set on the HCP on SG creation.
 		// This is used to track changes to the tags and update them if necessary.
-		if err := util.UpdateObject(ctx, r.Client, hcp, func() error {
+		if err := k8sutil.UpdateObject(ctx, r.Client, hcp, func() error {
 			if err := updateLastAppliedSecurityGroupTagsAnnotation(hcp, appliedTags); err != nil {
 				return fmt.Errorf("failed to update last applied security group tags annotation")
 			}
@@ -2847,7 +2848,8 @@ func (r *HostedControlPlaneReconciler) validateAWSKMSConfig(ctx context.Context,
 		return
 	}
 
-	token, err := util.CreateTokenForServiceAccount(ctx, manifests.KASContainerAWSKMSProviderServiceAccount(), guestClient)
+	sa := manifests.KASContainerAWSKMSProviderServiceAccount()
+	token, err := k8sutil.CreateTokenForServiceAccount(ctx, sa, k8sutil.ServiceAccountClient(guestClient, sa.Namespace))
 	if err != nil {
 		// service account might not be created in the guest cluster or KAS is not operational.
 		condition := metav1.Condition{

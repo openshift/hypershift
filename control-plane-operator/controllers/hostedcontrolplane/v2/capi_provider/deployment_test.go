@@ -8,7 +8,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	assets "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
 	component "github.com/openshift/hypershift/support/controlplane-component"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/k8sutil"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -63,14 +63,14 @@ func TestAdaptDeployment(t *testing.T) {
 				},
 			},
 			hcpAnnotations: map[string]string{
-				util.HostedClusterAnnotation: "test-namespace/test-cluster",
+				k8sutil.HostedClusterAnnotation: "test-namespace/test-cluster",
 			},
 			expectedServiceAcct: "capi-provider",
 			expectedLabels: map[string]string{
 				"control-plane": "capi-provider-controller-manager",
 				"app":           "capi-provider-controller-manager",
 			},
-			expectedAnnotKey: util.HostedClusterAnnotation,
+			expectedAnnotKey: k8sutil.HostedClusterAnnotation,
 		},
 	}
 
@@ -191,7 +191,7 @@ func TestAdaptDeployment_WithNilAnnotations(t *testing.T) {
 			Name:      "test-hcp",
 			Namespace: "test-namespace",
 			Annotations: map[string]string{
-				util.HostedClusterAnnotation: "test-namespace/test-cluster",
+				k8sutil.HostedClusterAnnotation: "test-namespace/test-cluster",
 			},
 		},
 	}
@@ -229,5 +229,5 @@ func TestAdaptDeployment_WithNilAnnotations(t *testing.T) {
 
 	// Should create annotations map and set the annotation
 	g.Expect(deployment.Annotations).ToNot(BeNil())
-	g.Expect(deployment.Annotations[util.HostedClusterAnnotation]).To(Equal("test-namespace/test-cluster"))
+	g.Expect(deployment.Annotations[k8sutil.HostedClusterAnnotation]).To(Equal("test-namespace/test-cluster"))
 }

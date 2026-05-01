@@ -5,8 +5,8 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/azureutil"
+	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/netutil"
-	"github.com/openshift/hypershift/support/util"
 
 	routev1 "github.com/openshift/api/route/v1"
 
@@ -33,7 +33,7 @@ func ReconcileRouterService(svc *corev1.Service, internal, crossZoneLoadBalancin
 		if crossZoneLoadBalancingEnabled {
 			svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled"] = "true"
 		}
-		util.ApplyAWSLoadBalancerTargetNodesAnnotation(svc, hcp)
+		k8sutil.ApplyAWSLoadBalancerTargetNodesAnnotation(svc, hcp)
 	}
 
 	if hcp.Spec.Platform.Type == hyperv1.GCPPlatform {

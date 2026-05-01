@@ -11,6 +11,7 @@ import (
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/images"
+	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/proxy"
@@ -186,7 +187,7 @@ func (cpo *ControlPlaneOperatorOptions) adaptDeployment(cpContext component.Work
 	if deployment.Annotations == nil {
 		deployment.Annotations = make(map[string]string)
 	}
-	deployment.Annotations[util.HostedClusterAnnotation] = hcp.Annotations[util.HostedClusterAnnotation]
+	deployment.Annotations[k8sutil.HostedClusterAnnotation] = hcp.Annotations[k8sutil.HostedClusterAnnotation]
 
 	return nil
 }

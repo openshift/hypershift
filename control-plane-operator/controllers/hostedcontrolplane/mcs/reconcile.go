@@ -3,7 +3,7 @@ package mcs
 import (
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/certs"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/k8sutil"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 
@@ -69,7 +69,7 @@ func ReconcileMachineConfigServerConfig(cm *corev1.ConfigMap, p *MCSParams) erro
 }
 
 func serialize(obj client.Object) (string, error) {
-	return util.SerializeResource(obj, api.Scheme)
+	return k8sutil.SerializeResource(obj, api.Scheme)
 }
 
 var (
@@ -81,7 +81,7 @@ func init() {
 }
 
 func serializeConfigPool(obj client.Object) (string, error) {
-	return util.SerializeResource(obj, machineConfigPoolScheme)
+	return k8sutil.SerializeResource(obj, machineConfigPoolScheme)
 }
 
 func masterConfigPool() *mcfgv1.MachineConfigPool {

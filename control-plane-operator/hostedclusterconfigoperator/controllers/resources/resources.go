@@ -50,6 +50,7 @@ import (
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/globalconfig"
+	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
@@ -334,14 +335,14 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 
 			// Delete binding first to avoid dangling reference
 			binding := manifests.ValidatingAdmissionPolicyBinding(fmt.Sprintf("%s-binding", registryConfigManagementStateAdmissionPolicy.Name))
-			_, err := util.DeleteIfNeeded(ctx, r.client, binding)
+			_, err := k8sutil.DeleteIfNeeded(ctx, r.client, binding)
 			if err != nil {
 				return ctrl.Result{}, fmt.Errorf("failed to delete ValidatingAdmissionPolicyBinding %s: %v", binding.Name, err)
 			}
 
 			// Delete policy
 			vap := manifests.ValidatingAdmissionPolicy(registryConfigManagementStateAdmissionPolicy.Name)
-			if _, err := util.DeleteIfNeeded(ctx, r.client, vap); err != nil {
+			if _, err := k8sutil.DeleteIfNeeded(ctx, r.client, vap); err != nil {
 				return ctrl.Result{}, fmt.Errorf("failed to delete ValidatingAdmissionPolicy %s: %v", vap.Name, err)
 			}
 		}
@@ -484,13 +485,13 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 					}
 					config := &openshiftcpv1.OpenShiftControllerManagerConfig{}
 					if configStr, exists := ocmConfigMap.Data[ocm.ConfigKey]; exists && len(configStr) > 0 {
-						err := util.DeserializeResource(configStr, config, api.Scheme)
+						err := k8sutil.DeserializeResource(configStr, config, api.Scheme)
 						if err != nil {
 							return fmt.Errorf("unable to decode existing openshift controller manager configuration: %w", err)
 						}
 					}
 					config.Controllers = []string{"*", fmt.Sprintf("-%s", openshiftcpv1.OpenShiftServiceAccountPullSecretsController)}
-					configStr, err := util.SerializeResource(config, api.Scheme)
+					configStr, err := k8sutil.SerializeResource(config, api.Scheme)
 					if err != nil {
 						return fmt.Errorf("failed to serialize openshift controller manager configuration: %w", err)
 					}
@@ -896,10 +897,10 @@ func (r *reconciler) reconcileMetricsForwarder(ctx context.Context, hcp *hyperv1
 	podMonitor := manifests.MetricsForwarderPodMonitor()
 
 	if _, disabled := hcp.Annotations[hyperv1.DisableMonitoringServices]; disabled {
-		return util.DeleteAllIfNeeded(ctx, r.client, deployment, cm, servingCA, podMonitor)
+		return k8sutil.DeleteAllIfNeeded(ctx, r.client, deployment, cm, servingCA, podMonitor)
 	}
 	if _, enabled := hcp.Annotations[hyperv1.EnableMetricsForwarding]; !enabled {
-		return util.DeleteAllIfNeeded(ctx, r.client, deployment, cm, servingCA, podMonitor)
+		return k8sutil.DeleteAllIfNeeded(ctx, r.client, deployment, cm, servingCA, podMonitor)
 	}
 
 	route := &routev1.Route{}
@@ -1442,7 +1443,7 @@ func (r *reconciler) reconcileAuthOIDC(ctx context.Context, hcp *hyperv1.HostedC
 						errs = append(errs, fmt.Errorf("failed to get OIDCClient secret %s: %w", oidcClient.ClientSecret.Name, err))
 						continue
 					}
-					if azureutil.IsAroHCP() && util.HasAnnotationWithValue(&src, hyperv1.HostedClusterSourcedAnnotation, "true") {
+					if azureutil.IsAroHCP() && k8sutil.HasAnnotationWithValue(&src, hyperv1.HostedClusterSourcedAnnotation, "true") {
 						// This is a day-2 secret. We shouldn't copy it, instead it'll be provided by the end-user on the hosted cluster.
 						continue
 					}
@@ -1496,7 +1497,7 @@ func (r *reconciler) reconcileKonnectivityAgent(ctx context.Context, hcp *hyperv
 	} else {
 		hostedKonnectivityCA := manifests.KonnectivityHostedCAConfigMap()
 		if _, err := r.CreateOrUpdate(ctx, r.client, hostedKonnectivityCA, func() error {
-			util.CopyConfigMap(hostedKonnectivityCA, controlPlaneKonnectivityCA)
+			k8sutil.CopyConfigMap(hostedKonnectivityCA, controlPlaneKonnectivityCA)
 			return nil
 		}); err != nil {
 			errs = append(errs, fmt.Errorf("failed to reconcile konnectivity CA config map: %w", err))
@@ -1996,7 +1997,7 @@ func (r *reconciler) reconcileUserCertCABundle(ctx context.Context, hcp *hyperv1
 		}
 	} else {
 		// If the HostedControlPlane has no additional trust bundle, delete the user-ca-bundle ConfigMap if it exists
-		if deleted, err := util.DeleteIfNeeded(ctx, r.client, userCAConfigMap); err != nil {
+		if deleted, err := k8sutil.DeleteIfNeeded(ctx, r.client, userCAConfigMap); err != nil {
 			return fmt.Errorf("failed to delete unused user-ca-bundle ConfigMap: %w", err)
 		} else if deleted {
 			log.Info("deleted unused user-ca-bundle ConfigMap", "name", userCAConfigMap.Name, "namespace", userCAConfigMap.Namespace)
@@ -2021,7 +2022,7 @@ func (r *reconciler) reconcileProxyCABundle(ctx context.Context, hcp *hyperv1.Ho
 			return fmt.Errorf("failed to reconcile the proxy CA bundle ConfigMap: %w", err)
 		}
 	} else {
-		if _, err := util.DeleteIfNeeded(ctx, r.client, proxyCADestination); err != nil {
+		if _, err := k8sutil.DeleteIfNeeded(ctx, r.client, proxyCADestination); err != nil {
 			return err
 		}
 	}
@@ -2309,7 +2310,7 @@ func (r *reconciler) reconcileOLM(ctx context.Context, hcp *hyperv1.HostedContro
 	for _, catalog := range catalogs {
 		cs := catalog.manifest()
 		if operatorHub.Spec.DisableAllDefaultSources {
-			if _, err := util.DeleteIfNeeded(ctx, r.client, cs); err != nil {
+			if _, err := k8sutil.DeleteIfNeeded(ctx, r.client, cs); err != nil {
 				if !apierrors.IsNotFound(err) {
 					errs = append(errs, fmt.Errorf("failed to delete catalogSource %s/%s: %w", cs.Namespace, cs.Name, err))
 				}
@@ -2945,7 +2946,7 @@ func (r *reconciler) reconcileKubeletConfig(ctx context.Context) error {
 			continue
 		}
 		log.Info("delete mirror config ConfigMap", "config", client.ObjectKeyFromObject(cm).String())
-		if _, err := util.DeleteIfNeeded(ctx, r.client, cm); err != nil {
+		if _, err := k8sutil.DeleteIfNeeded(ctx, r.client, cm); err != nil {
 			return fmt.Errorf("failed to delete ConfigMap %s: %w", client.ObjectKeyFromObject(cm).String(), err)
 		}
 	}
@@ -2966,7 +2967,7 @@ func (r *reconciler) deleteImmutableConfigMapIfNeeded(ctx context.Context, log l
 
 	if existingCM.Immutable != nil && *existingCM.Immutable {
 		log.Info("deleting immutable KubeletConfig ConfigMap to recreate as mutable", "configMap", client.ObjectKeyFromObject(existingCM).String())
-		if _, err := util.DeleteIfNeeded(ctx, r.client, existingCM); err != nil {
+		if _, err := k8sutil.DeleteIfNeeded(ctx, r.client, existingCM); err != nil {
 			return fmt.Errorf("failed to delete immutable ConfigMap %s: %w", client.ObjectKeyFromObject(existingCM).String(), err)
 		}
 	}
@@ -3415,7 +3416,7 @@ func (r *reconciler) reconcileImageContentPolicyType(ctx context.Context, hcp *h
 	icsp := globalconfig.ImageContentSourcePolicy()
 
 	// Delete any current ICSP
-	_, err := util.DeleteIfNeeded(ctx, r.client, icsp)
+	_, err := k8sutil.DeleteIfNeeded(ctx, r.client, icsp)
 	if err != nil {
 		return fmt.Errorf("failed to delete image content source policy configuration configmap: %w", err)
 	}
