@@ -7,6 +7,8 @@ linters:
     - misspell
     - unparam
   settings:
+    gocyclo:
+      min-complexity: 30
     govet:
       enable:
         - nilness

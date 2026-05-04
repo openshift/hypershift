@@ -16,8 +16,8 @@ import (
 	"github.com/openshift/hypershift/cmd/install/assets"
 	crdassets "github.com/openshift/hypershift/cmd/install/assets/crds"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
-	"github.com/openshift/hypershift/support/metrics"
 	hyperapi "github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/metrics"
 
 	operatorv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 

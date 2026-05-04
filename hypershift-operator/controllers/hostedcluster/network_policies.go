@@ -615,6 +615,9 @@ func addToBlockedNetworks(network string, blockedIPv4Networks []string, blockedI
 func reconcileVirtLauncherNetworkPolicy(log logr.Logger, policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster, managementClusterNetwork *configv1.Network) error {
 	blockedIPv4Networks := []string{}
 	blockedIPv6Networks := []string{}
+	if managementClusterNetwork == nil {
+		return buildVirtLauncherNetworkPolicyBase(log, policy, hcluster, blockedIPv4Networks, blockedIPv6Networks, nil)
+	}
 	for _, network := range managementClusterNetwork.Spec.ClusterNetwork {
 		blockedIPv4Networks, blockedIPv6Networks = addToBlockedNetworks(network.CIDR, blockedIPv4Networks, blockedIPv6Networks)
 	}
