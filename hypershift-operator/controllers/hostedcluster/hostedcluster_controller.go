@@ -59,6 +59,7 @@ import (
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
 	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/gcpapi"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/infraid"
 	"github.com/openshift/hypershift/support/k8sutil"
@@ -185,6 +186,9 @@ type HostedClusterReconciler struct {
 
 	OIDCStorageProviderS3BucketName string
 	S3Client                        awsapi.S3API
+
+	GCPOIDCStorageBucketName string
+	GCSClient                gcpapi.GCSAPI
 
 	MetricsSet    metrics.MetricsSet
 	SREConfigHash string
@@ -2092,6 +2096,32 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 				}
 			}
 		}
+	case hyperv1.GCPPlatform:
+		if r.GCPOIDCStorageBucketName != "" && r.GCSClient != nil {
+			if err := r.reconcileGCPOIDCDocuments(ctx, log, hcluster, hcp); err != nil {
+				meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
+					Type:               string(hyperv1.ValidOIDCConfiguration),
+					Status:             metav1.ConditionFalse,
+					Reason:             hyperv1.OIDCConfigurationInvalidReason,
+					ObservedGeneration: hcluster.Generation,
+					Message:            err.Error(),
+				})
+				if statusErr := r.Client.Status().Update(ctx, hcluster); statusErr != nil {
+					return ctrl.Result{}, fmt.Errorf("failed to reconcile GCP OIDC documents: %s, failed to update status: %w", err, statusErr)
+				}
+				return ctrl.Result{}, fmt.Errorf("failed to reconcile the GCP OIDC documents: %w", err)
+			}
+			meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
+				Type:               string(hyperv1.ValidOIDCConfiguration),
+				Status:             metav1.ConditionTrue,
+				Reason:             hyperv1.AsExpectedReason,
+				ObservedGeneration: hcluster.Generation,
+				Message:            "OIDC configuration is valid",
+			})
+			if err := r.Client.Status().Update(ctx, hcluster); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
+			}
+		}
 	}
 
 	if err := r.reconcileKarpenterOperator(cpContext, hcluster, r.HypershiftOperatorImage, controlPlaneOperatorImage); err != nil {
@@ -3486,6 +3516,10 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.Hosted
 
 	if err := r.cleanupOIDCBucketData(ctx, log, hc); err != nil {
 		return false, fmt.Errorf("failed to clean up OIDC bucket data: %w", err)
+	}
+
+	if err := r.cleanupGCPOIDCBucketData(ctx, log, hc); err != nil {
+		return false, fmt.Errorf("failed to clean up GCP OIDC bucket data: %w", err)
 	}
 
 	r.KubevirtInfraClients.Delete(hc.Spec.InfraID)
