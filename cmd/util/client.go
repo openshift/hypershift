@@ -8,6 +8,7 @@ import (
 	hyperapi "github.com/openshift/hypershift/support/api"
 
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
 
 	cr "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -22,7 +23,20 @@ const (
 
 // GetConfig creates a REST config from current context
 func GetConfig() (*rest.Config, error) {
-	cfg, err := cr.GetConfig()
+	return GetConfigFromKubeconfig("")
+}
+
+// GetConfigFromKubeconfig creates a REST config from the specified kubeconfig path.
+// When kubeconfig is empty, it falls back to the default controller-runtime config
+// resolution (KUBECONFIG env var, in-cluster config, or ~/.kube/config).
+func GetConfigFromKubeconfig(kubeconfig string) (*rest.Config, error) {
+	var cfg *rest.Config
+	var err error
+	if kubeconfig != "" {
+		cfg, err = clientcmd.BuildConfigFromFlags("", kubeconfig)
+	} else {
+		cfg, err = cr.GetConfig()
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -33,11 +47,19 @@ func GetConfig() (*rest.Config, error) {
 
 // GetClient creates a controller-runtime client for Kubernetes
 func GetClient() (crclient.Client, error) {
+	return GetClientFromKubeconfig("")
+}
+
+// GetClientFromKubeconfig creates a controller-runtime client for Kubernetes using the
+// specified kubeconfig path. When kubeconfig is empty, it falls back to the default
+// controller-runtime config resolution (KUBECONFIG env var, in-cluster config, or
+// ~/.kube/config).
+func GetClientFromKubeconfig(kubeconfig string) (crclient.Client, error) {
 	if os.Getenv("FAKE_CLIENT") == "true" {
 		return fake.NewFakeClient(), nil
 	}
 
-	config, err := GetConfig()
+	config, err := GetConfigFromKubeconfig(kubeconfig)
 	if err != nil {
 		return nil, fmt.Errorf("unable to get kubernetes config: %w", err)
 	}
