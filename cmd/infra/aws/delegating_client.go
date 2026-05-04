@@ -559,6 +559,15 @@ type route53Client struct {
 func (c *route53Client) ChangeResourceRecordSets(ctx context.Context, input *route53.ChangeResourceRecordSetsInput, optFns ...func(*route53.Options)) (*route53.ChangeResourceRecordSetsOutput, error) {
 	return c.controlPlaneOperator.route53Client.ChangeResourceRecordSets(ctx, input, optFns...)
 }
+func (c *route53Client) CreateHostedZone(ctx context.Context, input *route53.CreateHostedZoneInput, optFns ...func(*route53.Options)) (*route53.CreateHostedZoneOutput, error) {
+	return c.controlPlaneOperator.route53Client.CreateHostedZone(ctx, input, optFns...)
+}
+func (c *route53Client) DeleteHostedZone(ctx context.Context, input *route53.DeleteHostedZoneInput, optFns ...func(*route53.Options)) (*route53.DeleteHostedZoneOutput, error) {
+	return c.controlPlaneOperator.route53Client.DeleteHostedZone(ctx, input, optFns...)
+}
+func (c *route53Client) GetHostedZone(ctx context.Context, input *route53.GetHostedZoneInput, optFns ...func(*route53.Options)) (*route53.GetHostedZoneOutput, error) {
+	return c.controlPlaneOperator.route53Client.GetHostedZone(ctx, input, optFns...)
+}
 func (c *route53Client) ListHostedZones(ctx context.Context, input *route53.ListHostedZonesInput, optFns ...func(*route53.Options)) (*route53.ListHostedZonesOutput, error) {
 	return c.controlPlaneOperator.route53Client.ListHostedZones(ctx, input, optFns...)
 }

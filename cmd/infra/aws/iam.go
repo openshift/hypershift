@@ -695,6 +695,9 @@ func controlPlaneOperatorPolicy(hostedZone string, sharedVPC bool) policyBinding
 						"ec2:DeleteVpcEndpoints",
 						"ec2:CreateTags",
 						"route53:ListHostedZones",
+						"route53:CreateHostedZone",
+						"route53:DeleteHostedZone",
+						"route53:GetHostedZone",
 						"ec2:CreateSecurityGroup",
 						"ec2:AuthorizeSecurityGroupIngress",
 						"ec2:AuthorizeSecurityGroupEgress",
@@ -735,6 +738,8 @@ func sharedVPCRoute53Role(allowedRoles []string) sharedVPCPolicyBinding {
             "Action": [
                 "route53:ListHostedZones",
                 "route53:ListHostedZonesByName",
+                "route53:CreateHostedZone",
+                "route53:DeleteHostedZone",
                 "route53:ChangeTagsForResource",
                 "route53:GetAccountLimit",
                 "route53:GetChange",
