@@ -1036,7 +1036,10 @@ func (r *HostedClusterReconciler) reconcileExternalInfraVirtLauncherPolicy(ctx c
 	infraClient := kvInfraClient.GetInfraClient()
 	infraNamespace := kvInfraClient.GetInfraNamespace()
 
-	infraClusterNetwork := fetchInfraClusterNetwork(ctx, infraClient, hcluster, log)
+	infraClusterNetwork, err := fetchInfraClusterNetwork(ctx, infraClient, infraNamespace, hcluster, log)
+	if err != nil {
+		return err
+	}
 
 	policy := networkpolicy.VirtLauncherNetworkPolicy(infraNamespace)
 	if _, err := createOrUpdate(ctx, infraClient, policy, func() error {
@@ -1068,7 +1071,7 @@ func (r *HostedClusterReconciler) reconcileExternalInfraVirtLauncherPolicy(ctx c
 // infrastructure cluster. When the permission is missing we still allow the
 // NetworkPolicy to be created but without CIDR-based egress blocking, and
 // surface the RBAC gap as a condition on the HostedCluster.
-func fetchInfraClusterNetwork(ctx context.Context, infraClient client.Client, hcluster *hyperv1.HostedCluster, log logr.Logger) *configv1.Network {
+func fetchInfraClusterNetwork(ctx context.Context, infraClient client.Client, infraNamespace string, hcluster *hyperv1.HostedCluster, log logr.Logger) (*configv1.Network, error) {
 	networkObj := &configv1.Network{ObjectMeta: metav1.ObjectMeta{Name: "cluster"}}
 	if err := infraClient.Get(ctx, client.ObjectKeyFromObject(networkObj), networkObj); err != nil {
 		if apierrors.IsForbidden(err) || apierrors.IsNotFound(err) || meta.IsNoMatchError(err) {
@@ -1087,9 +1090,10 @@ func fetchInfraClusterNetwork(ctx context.Context, infraClient client.Client, hc
 				ObservedGeneration: hcluster.Generation,
 				Message:            rbacMsg,
 			})
-			emitInfraClusterWarningEvent(ctx, infraClient, hcluster.Namespace, hcluster.Spec.InfraID, rbacMsg, log)
+			emitInfraClusterWarningEvent(ctx, infraClient, infraNamespace, hcluster.Spec.InfraID, rbacMsg, log)
+			return nil, nil
 		}
-		return nil
+		return nil, fmt.Errorf("failed to get infrastructure cluster network config: %w", err)
 	}
 	meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
 		Type:               string(hyperv1.ValidKubeVirtInfraNetworkPolicyRBAC),
@@ -1098,7 +1102,7 @@ func fetchInfraClusterNetwork(ctx context.Context, infraClient client.Client, hc
 		ObservedGeneration: hcluster.Generation,
 		Message:            "Infrastructure cluster network configuration is readable; CIDR-based egress restrictions are active.",
 	})
-	return networkObj
+	return networkObj, nil
 }
 
 // emitInfraClusterWarningEvent creates or updates a warning Event in the

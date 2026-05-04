@@ -44,15 +44,6 @@ ignore:
   - "hypershift-operator/controllers/nodepool/instancetype/instancetype.go"
   - "api/ibmcapi/types.go"
 
-coverage:
-  status:
-    project:
-      default:
-        informational: true
-    patch:
-      default:
-        informational: true
-
 comment:
   layout: "condensed_header, diff, files, flags, components"
   behavior: default

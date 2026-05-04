@@ -232,7 +232,7 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context, l logr.Logger) (*C
 		return nil, err
 	}
 
-	publicSubnetIDs, endpointRouteTableIds, err := o.createPerZoneResources(ctx, l, ec2Client, result, igwID)
+	publicSubnetIDs, err := o.createPerZoneResources(ctx, l, ec2Client, result, igwID)
 	if err != nil {
 		return nil, err
 	}
@@ -256,7 +256,6 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context, l logr.Logger) (*C
 		return nil, err
 	}
 
-	_ = endpointRouteTableIds
 	return result, nil
 }
 
@@ -318,10 +317,10 @@ func (o *CreateInfraOptions) createVPCResources(ctx context.Context, l logr.Logg
 	return igwID, nil
 }
 
-func (o *CreateInfraOptions) createPerZoneResources(ctx context.Context, l logr.Logger, ec2Client awsapi.EC2API, result *CreateInfraOutput, igwID string) ([]string, []string, error) {
+func (o *CreateInfraOptions) createPerZoneResources(ctx context.Context, l logr.Logger, ec2Client awsapi.EC2API, result *CreateInfraOutput, igwID string) ([]string, error) {
 	_, cidrNetwork, err := net.ParseCIDR(o.VPCCIDR)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	publicNetwork := copyIPNet(cidrNetwork)
 	publicNetwork.Mask = net.CIDRMask(20, 32)
@@ -338,24 +337,24 @@ func (o *CreateInfraOptions) createPerZoneResources(ctx context.Context, l logr.
 		if !o.PublicOnly {
 			privateSubnetID, err = o.CreatePrivateSubnet(ctx, l, ec2Client, result.VPCID, zone, privateNetwork.String())
 			if err != nil {
-				return nil, nil, err
+				return nil, err
 			}
 		}
 		publicSubnetID, err := o.CreatePublicSubnet(ctx, l, ec2Client, result.VPCID, zone, publicNetwork.String())
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		publicSubnetIDs = append(publicSubnetIDs, publicSubnetID)
 		if !o.PublicOnly && !o.EnableProxy && !o.EnableSecureProxy && ((natGatewayID == "" && o.SingleNATGateway) || !o.SingleNATGateway) {
 			natGatewayID, err = o.CreateNATGateway(ctx, l, ec2Client, publicSubnetID, zone)
 			if err != nil {
-				return nil, nil, err
+				return nil, err
 			}
 		}
 		if !o.PublicOnly {
 			privateRouteTable, err := o.CreatePrivateRouteTable(ctx, l, ec2Client, result.VPCID, natGatewayID, privateSubnetID, zone)
 			if err != nil {
-				return nil, nil, err
+				return nil, err
 			}
 			endpointRouteTableIds = append(endpointRouteTableIds, privateRouteTable)
 		}
@@ -372,14 +371,14 @@ func (o *CreateInfraOptions) createPerZoneResources(ctx context.Context, l logr.
 	}
 	publicRouteTable, err := o.CreatePublicRouteTable(ctx, l, ec2Client, result.VPCID, igwID, publicSubnetIDs)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	endpointRouteTableIds = append(endpointRouteTableIds, publicRouteTable)
 	err = o.CreateVPCS3Endpoint(ctx, l, ec2Client, result.VPCID, endpointRouteTableIds)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	return publicSubnetIDs, endpointRouteTableIds, nil
+	return publicSubnetIDs, nil
 }
 
 func (o *CreateInfraOptions) createDNSZones(ctx context.Context, l logr.Logger, clusterCreatorEC2Client awsapi.EC2API, route53Client, vpcOwnerRoute53Client awsapi.ROUTE53API, result *CreateInfraOutput) error {

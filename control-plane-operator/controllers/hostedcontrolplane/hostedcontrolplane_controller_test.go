@@ -47,7 +47,10 @@ import (
 	"github.com/openshift/api/image/docker10"
 	routev1 "github.com/openshift/api/route/v1"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	"github.com/aws/smithy-go"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -4276,6 +4279,146 @@ func TestReconcileControlPlaneVersionStatus(t *testing.T) {
 			g.Expect(tc.hcp.Status.ControlPlaneVersion.Desired.Image).To(Equal(tc.expectedDesired.Image))
 			g.Expect(tc.hcp.Status.ControlPlaneVersion.History).ToNot(BeEmpty())
 			g.Expect(tc.hcp.Status.ControlPlaneVersion.History[0].State).To(Equal(tc.expectedState))
+		})
+	}
+}
+
+func TestReconcileDeletion(t *testing.T) {
+	tests := []struct {
+		name           string
+		setupEC2Mock   func(*gomock.Controller) *awsapi.MockEC2API
+		wantErr        bool
+		wantCondStatus metav1.ConditionStatus
+	}{
+		{
+			name: "When destroyAWSDefaultSecurityGroup returns UnauthorizedOperation, it should skip gracefully and not return error",
+			setupEC2Mock: func(mockCtrl *gomock.Controller) *awsapi.MockEC2API {
+				m := awsapi.NewMockEC2API(mockCtrl)
+				m.EXPECT().DescribeSecurityGroups(gomock.Any(), gomock.Any()).Return(&ec2.DescribeSecurityGroupsOutput{
+					SecurityGroups: []ec2types.SecurityGroup{
+						{GroupId: aws.String("sg-123")},
+					},
+				}, nil)
+				m.EXPECT().DeleteSecurityGroup(gomock.Any(), gomock.Any()).Return(nil,
+					&smithy.GenericAPIError{Code: "UnauthorizedOperation", Message: "not authorized"})
+				return m
+			},
+			wantErr:        false,
+			wantCondStatus: metav1.ConditionFalse,
+		},
+		{
+			name: "When destroyAWSDefaultSecurityGroup returns DependencyViolation, it should skip gracefully and not return error",
+			setupEC2Mock: func(mockCtrl *gomock.Controller) *awsapi.MockEC2API {
+				m := awsapi.NewMockEC2API(mockCtrl)
+				m.EXPECT().DescribeSecurityGroups(gomock.Any(), gomock.Any()).Return(&ec2.DescribeSecurityGroupsOutput{
+					SecurityGroups: []ec2types.SecurityGroup{
+						{GroupId: aws.String("sg-123")},
+					},
+				}, nil)
+				m.EXPECT().DeleteSecurityGroup(gomock.Any(), gomock.Any()).Return(nil,
+					&smithy.GenericAPIError{Code: "DependencyViolation", Message: "resource has dependent object"})
+				return m
+			},
+			wantErr:        false,
+			wantCondStatus: metav1.ConditionFalse,
+		},
+		{
+			name: "When destroyAWSDefaultSecurityGroup returns unexpected error, it should propagate the error",
+			setupEC2Mock: func(mockCtrl *gomock.Controller) *awsapi.MockEC2API {
+				m := awsapi.NewMockEC2API(mockCtrl)
+				m.EXPECT().DescribeSecurityGroups(gomock.Any(), gomock.Any()).Return(&ec2.DescribeSecurityGroupsOutput{
+					SecurityGroups: []ec2types.SecurityGroup{
+						{GroupId: aws.String("sg-123")},
+					},
+				}, nil)
+				m.EXPECT().DeleteSecurityGroup(gomock.Any(), gomock.Any()).Return(nil,
+					&smithy.GenericAPIError{Code: "InternalError", Message: "something broke"})
+				return m
+			},
+			wantErr:        true,
+			wantCondStatus: metav1.ConditionFalse,
+		},
+		{
+			name: "When destroyAWSDefaultSecurityGroup succeeds, it should set condition to true",
+			setupEC2Mock: func(mockCtrl *gomock.Controller) *awsapi.MockEC2API {
+				m := awsapi.NewMockEC2API(mockCtrl)
+				// First call: find the SG
+				m.EXPECT().DescribeSecurityGroups(gomock.Any(), gomock.Any()).Return(&ec2.DescribeSecurityGroupsOutput{
+					SecurityGroups: []ec2types.SecurityGroup{
+						{GroupId: aws.String("sg-123")},
+					},
+				}, nil)
+				m.EXPECT().DeleteSecurityGroup(gomock.Any(), gomock.Any()).Return(&ec2.DeleteSecurityGroupOutput{}, nil)
+				// Second call: verify SG is gone
+				m.EXPECT().DescribeSecurityGroups(gomock.Any(), gomock.Any()).Return(&ec2.DescribeSecurityGroupsOutput{
+					SecurityGroups: []ec2types.SecurityGroup{},
+				}, nil)
+				return m
+			},
+			wantErr:        false,
+			wantCondStatus: metav1.ConditionTrue,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			mockCtrl := gomock.NewController(t)
+			mockEC2 := tt.setupEC2Mock(mockCtrl)
+
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-hcp",
+					Namespace: "test-ns",
+					Annotations: map[string]string{
+						hyperv1.CleanupCloudResourcesAnnotation: "true",
+					},
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					InfraID: "test-infra",
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+						AWS:  &hyperv1.AWSPlatformSpec{},
+					},
+				},
+				Status: hyperv1.HostedControlPlaneStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:   string(hyperv1.CloudResourcesDestroyed),
+							Status: metav1.ConditionTrue,
+							Reason: hyperv1.AsExpectedReason,
+						},
+					},
+				},
+			}
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				WithObjects(hcp).
+				WithStatusSubresource(&hyperv1.HostedControlPlane{}).
+				Build()
+
+			ctx := ctrl.LoggerInto(t.Context(), ctrl.Log.WithName("test"))
+
+			// Re-read from fake client so the object has a ResourceVersion for OptimisticLock
+			g.Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(hcp), hcp)).To(Succeed())
+			originalHCP := hcp.DeepCopy()
+
+			r := &HostedControlPlaneReconciler{
+				Client:    fakeClient,
+				Log:       ctrl.Log.WithName("test"),
+				ec2Client: mockEC2,
+			}
+
+			_, err := r.reconcileDeletion(ctx, hcp, originalHCP)
+			if tt.wantErr {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+			}
+
+			cond := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.AWSDefaultSecurityGroupDeleted))
+			g.Expect(cond).ToNot(BeNil())
+			g.Expect(cond.Status).To(Equal(tt.wantCondStatus))
 		})
 	}
 }

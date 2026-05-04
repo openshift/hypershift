@@ -1395,6 +1395,91 @@ func TestModifyEndpointIfNeeded(t *testing.T) {
 	}
 }
 
+func TestReconcileExistingEndpoint(t *testing.T) {
+	tests := []struct {
+		name             string
+		endpointID       string
+		setupEC2Mock     func(*gomock.Controller) *awsapi.MockEC2API
+		expectError      bool
+		expectEndpointID string
+	}{
+		{
+			name:       "When DescribeVpcEndpoints returns empty results, it should reset EndpointID and return error",
+			endpointID: "vpce-123",
+			setupEC2Mock: func(mockCtrl *gomock.Controller) *awsapi.MockEC2API {
+				m := awsapi.NewMockEC2API(mockCtrl)
+				m.EXPECT().DescribeVpcEndpoints(gomock.Any(), gomock.Any()).Return(&ec2v2.DescribeVpcEndpointsOutput{
+					VpcEndpoints: []ec2types.VpcEndpoint{},
+				}, nil)
+				return m
+			},
+			expectError:      true,
+			expectEndpointID: "",
+		},
+		{
+			name:       "When DescribeVpcEndpoints returns NotFound API error, it should reset EndpointID and return error",
+			endpointID: "vpce-gone",
+			setupEC2Mock: func(mockCtrl *gomock.Controller) *awsapi.MockEC2API {
+				m := awsapi.NewMockEC2API(mockCtrl)
+				m.EXPECT().DescribeVpcEndpoints(gomock.Any(), gomock.Any()).Return(nil, &smithy.GenericAPIError{Code: "InvalidVpcEndpointId.NotFound", Message: "not found"})
+				return m
+			},
+			expectError:      true,
+			expectEndpointID: "",
+		},
+		{
+			name:       "When endpoint exists and matches service, it should return the endpoint ID",
+			endpointID: "vpce-active",
+			setupEC2Mock: func(mockCtrl *gomock.Controller) *awsapi.MockEC2API {
+				m := awsapi.NewMockEC2API(mockCtrl)
+				m.EXPECT().DescribeVpcEndpoints(gomock.Any(), gomock.Any()).Return(&ec2v2.DescribeVpcEndpointsOutput{
+					VpcEndpoints: []ec2types.VpcEndpoint{
+						{
+							VpcEndpointId: aws.String("vpce-active"),
+							ServiceName:   aws.String("com.amazonaws.vpce-svc-test"),
+							SubnetIds:     []string{"subnet-1"},
+							Groups:        []ec2types.SecurityGroupIdentifier{{GroupId: aws.String("sg-test")}},
+						},
+					},
+				}, nil)
+				return m
+			},
+			expectError:      false,
+			expectEndpointID: "vpce-active",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			mockCtrl := gomock.NewController(t)
+			mockEC2 := tt.setupEC2Mock(mockCtrl)
+
+			awsEndpointService := &hyperv1.AWSEndpointService{
+				Status: hyperv1.AWSEndpointServiceStatus{
+					EndpointID:          tt.endpointID,
+					EndpointServiceName: "com.amazonaws.vpce-svc-test",
+					SecurityGroupID:     "sg-test",
+				},
+				Spec: hyperv1.AWSEndpointServiceSpec{
+					SubnetIDs: []string{"subnet-1"},
+				},
+			}
+
+			r := &AWSEndpointServiceReconciler{}
+			ctx := ctrl.LoggerInto(t.Context(), ctrl.Log.WithName("test"))
+			resultID, _, err := r.reconcileExistingEndpoint(ctx, mockEC2, awsEndpointService, tt.endpointID, ctrl.Log.WithName("test"))
+			if tt.expectError {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+			}
+			g.Expect(resultID).To(Equal(tt.expectEndpointID))
+			g.Expect(awsEndpointService.Status.EndpointID).To(Equal(tt.expectEndpointID))
+		})
+	}
+}
+
 func TestReconcileDeletionSharedVPC(t *testing.T) {
 	now := metav1.NewTime(time.Now())
 

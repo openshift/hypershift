@@ -2,6 +2,7 @@ package hostedcluster
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -21,11 +22,13 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	"github.com/blang/semver"
@@ -1474,4 +1477,125 @@ func TestReconcileNetworkPolicies_LoadBalancerOauth(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestFetchInfraClusterNetwork(t *testing.T) {
+	t.Parallel()
+
+	infraNetworkScheme := runtime.NewScheme()
+	_ = configv1.Install(infraNetworkScheme)
+	_ = corev1.AddToScheme(infraNetworkScheme)
+
+	newTestCluster := func() *hyperv1.HostedCluster {
+		return &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       "test-cluster",
+				Namespace:  "clusters",
+				Generation: 1,
+			},
+			Spec: hyperv1.HostedClusterSpec{
+				InfraID: "test-infra-id",
+			},
+		}
+	}
+
+	tests := []struct {
+		name             string
+		existingNetwork  *configv1.Network
+		interceptorErr   error
+		infraNamespace   string
+		expectNetwork    bool
+		expectErr        bool
+		expectErrMsg     string
+		expectCondStatus metav1.ConditionStatus
+	}{
+		{
+			name: "When infra cluster network is readable, it should return the network object and set condition to true",
+			existingNetwork: &configv1.Network{
+				ObjectMeta: metav1.ObjectMeta{Name: "cluster"},
+				Spec: configv1.NetworkSpec{
+					ClusterNetwork: []configv1.ClusterNetworkEntry{{CIDR: "10.128.0.0/14"}},
+					ServiceNetwork: []string{"172.30.0.0/16"},
+				},
+			},
+			infraNamespace:   "test-infra-ns",
+			expectNetwork:    true,
+			expectCondStatus: metav1.ConditionTrue,
+		},
+		{
+			name:             "When infra client gets a Forbidden error, it should return nil network without error and set condition to false",
+			interceptorErr:   apierrors.NewForbidden(schema.GroupResource{Group: "config.openshift.io", Resource: "networks"}, "cluster", fmt.Errorf("forbidden")),
+			infraNamespace:   "test-infra-ns",
+			expectNetwork:    false,
+			expectCondStatus: metav1.ConditionFalse,
+		},
+		{
+			name:             "When infra client gets a NotFound error, it should return nil network without error and set condition to false",
+			interceptorErr:   apierrors.NewNotFound(schema.GroupResource{Group: "config.openshift.io", Resource: "networks"}, "cluster"),
+			infraNamespace:   "test-infra-ns",
+			expectNetwork:    false,
+			expectCondStatus: metav1.ConditionFalse,
+		},
+		{
+			name:           "When infra client gets an unexpected error, it should propagate the error for retry",
+			interceptorErr: fmt.Errorf("connection timeout"),
+			infraNamespace: "test-infra-ns",
+			expectErr:      true,
+			expectErrMsg:   "failed to get infrastructure cluster network config",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			hcluster := newTestCluster()
+			log := ctrl.Log.WithName("test")
+
+			builder := fake.NewClientBuilder().WithScheme(infraNetworkScheme)
+			if tt.existingNetwork != nil {
+				builder = builder.WithObjects(tt.existingNetwork)
+			}
+			if tt.interceptorErr != nil {
+				builder = builder.WithInterceptorFuncs(interceptor.Funcs{
+					Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+						return tt.interceptorErr
+					},
+				})
+			}
+			infraClient := builder.Build()
+
+			network, err := fetchInfraClusterNetwork(t.Context(), infraClient, tt.infraNamespace, hcluster, log)
+
+			if tt.expectErr {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring(tt.expectErrMsg))
+				return
+			}
+			g.Expect(err).ToNot(HaveOccurred())
+
+			if tt.expectNetwork {
+				g.Expect(network).ToNot(BeNil())
+				g.Expect(network.Spec.ClusterNetwork).ToNot(BeEmpty())
+			} else {
+				g.Expect(network).To(BeNil())
+			}
+
+			cond := findConditionByType(hcluster.Status.Conditions, string(hyperv1.ValidKubeVirtInfraNetworkPolicyRBAC))
+			if tt.expectCondStatus != "" {
+				g.Expect(cond).ToNot(BeNil(), "expected condition %s to be set", hyperv1.ValidKubeVirtInfraNetworkPolicyRBAC)
+				g.Expect(cond.Status).To(Equal(tt.expectCondStatus))
+			}
+		})
+	}
+}
+
+func findConditionByType(conditions []metav1.Condition, condType string) *metav1.Condition {
+	for i := range conditions {
+		if conditions[i].Type == condType {
+			return &conditions[i]
+		}
+	}
+	return nil
 }
