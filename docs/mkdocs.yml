@@ -131,6 +131,7 @@ nav:
       - how-to/aws/external-dns.md
       - 'Global Pull Secret': how-to/aws/global-pull-secret.md
       - 'Other SDN providers': how-to/aws/other-sdn-providers.md
+      - how-to/aws/managed-ingress-dns.md
       - how-to/aws/shared-vpc.md
       - 'Troubleshooting':
         - how-to/aws/troubleshooting/index.md

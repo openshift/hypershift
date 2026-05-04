@@ -1537,6 +1537,33 @@ private node communication with the control plane.</p>
 </td>
 </tr></tbody>
 </table>
+###AWSIngressDNSManagement { #hypershift.openshift.io/v1beta1.AWSIngressDNSManagement }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AWSPlatformSpec">AWSPlatformSpec</a>)
+</p>
+<p>
+<p>AWSIngressDNSManagement specifies whether the control plane operator manages
+Route53 hosted zones for ingress DNS in the customer&rsquo;s AWS account.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;Managed&#34;</p></td>
+<td><p>AWSIngressDNSManaged means the control plane operator creates public and private
+Route53 hosted zones for ingress, creates a DNSEndpoint CR for NS delegation,
+and creates an _acme-challenge CNAME for cert-manager DNS01 CNAME-follow.</p>
+</td>
+</tr><tr><td><p>&#34;Unmanaged&#34;</p></td>
+<td><p>AWSIngressDNSUnmanaged means the control plane operator does not create
+public/private ingress hosted zones. Only the .hypershift.local zone is managed.</p>
+</td>
+</tr></tbody>
+</table>
 ###AWSKMSAuthSpec { #hypershift.openshift.io/v1beta1.AWSKMSAuthSpec }
 <p>
 (<em>Appears on:</em>
@@ -2017,6 +2044,25 @@ AWSSharedVPC
 <p>sharedVPC contains fields that must be specified if the HostedCluster must use a VPC that is
 created in a different AWS account and is shared with the AWS account where the HostedCluster
 will be created.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>ingressDNSManagement</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AWSIngressDNSManagement">
+AWSIngressDNSManagement
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>ingressDNSManagement specifies whether the control plane operator manages
+Route53 hosted zones for ingress DNS in the customer&rsquo;s AWS account.
+When set to &ldquo;Managed&rdquo;, the CPO creates public and private ingress zones,
+a DNSEndpoint CR for NS delegation, and an _acme-challenge CNAME for
+cert-manager DNS01 CNAME-follow.
+When set to &ldquo;Unmanaged&rdquo; (the default), only the .hypershift.local zone is managed.</p>
 </td>
 </tr>
 <tr>
@@ -5759,6 +5805,10 @@ created in the guest VPC</p>
 </tr><tr><td><p>&#34;AWSEndpointServiceAvailable&#34;</p></td>
 <td><p>AWSEndpointServiceAvailable indicates whether the AWS Endpoint Service
 has been created for the specified NLB in the management VPC</p>
+</td>
+</tr><tr><td><p>&#34;AWSIngressDNSAvailable&#34;</p></td>
+<td><p>AWSIngressDNSAvailable indicates whether the Route53 ingress DNS zones
+and records have been successfully created in the customer&rsquo;s AWS account.</p>
 </td>
 </tr><tr><td><p>&#34;AutoNodeEnabled&#34;</p></td>
 <td><p>AutoNodeEnabled indicates whether AutoNode is configured and operational for this HostedCluster.
