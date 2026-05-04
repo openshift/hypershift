@@ -151,6 +151,11 @@ See [docs/content/reference/versioning-support.md](docs/content/reference/versio
 
 See [docs/content/how-to/upgrades.md](docs/content/how-to/upgrades.md) for Control Plane and Data Plane upgrades
 
+### Pull secret cycling
+
+When changing how workers and the guest cluster authenticate to registries, treat **HostedCluster** `spec.pullSecret`, **management-cluster** Secret data, **HCCO** reconciliation into the data plane, and optional **Global Pull Secret** (`kube-system/additional-pull-secret`) as one system. Changing only the Secret bytes in place does not change `spec.pullSecret` and therefore does not drive a **NodePool** rollout, but controllers can still propagate credentials into the control plane namespace, guest `openshift-config`, `kube-system/original-pull-secret`, and (where the Global Pull Secret DaemonSet is scheduled) kubelet configuration.
+
+See [docs/content/how-to/common/global-pull-secret.md](docs/content/how-to/common/global-pull-secret.md) for behavior, platform and NodePool eligibility (AWS/Azure Replace vs InPlace and other platforms), merge semantics, and operational guidance.
 
 ## Dependencies and Modules
 
