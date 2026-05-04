@@ -47,21 +47,21 @@ func TestResolveKarpenterFinalizer(t *testing.T) {
 		expectError     bool
 	}{
 		{
-			name: "karpenter not enabled, no-op",
+			name: "When karpenter is not enabled and HCP has no finalizer it should no-op",
 			hc: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace},
 				Spec:       hyperv1.HostedClusterSpec{},
 			},
 		},
 		{
-			name: "HCP not found, no-op",
+			name: "When HCP is not found it should no-op",
 			hc: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace},
 				Spec:       hyperv1.HostedClusterSpec{AutoNode: autoNode},
 			},
 		},
 		{
-			name: "HCP exists without finalizer, no-op",
+			name: "When HCP exists without finalizer it should no-op",
 			hc: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace},
 				Spec:       hyperv1.HostedClusterSpec{AutoNode: autoNode},
@@ -74,7 +74,7 @@ func TestResolveKarpenterFinalizer(t *testing.T) {
 			expectFinalizer: ptr.To(false),
 		},
 		{
-			name: "KAS available, finalizer retained",
+			name: "When karpenter is enabled and KAS is available it should retain the finalizer",
 			hc: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace},
 				Spec:       hyperv1.HostedClusterSpec{AutoNode: autoNode},
@@ -86,7 +86,7 @@ func TestResolveKarpenterFinalizer(t *testing.T) {
 			expectFinalizer: ptr.To(true),
 		},
 		{
-			name: "KAS deployment missing, finalizer removed",
+			name: "When karpenter is enabled and KAS deployment is missing it should remove the finalizer",
 			hc: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace},
 				Spec:       hyperv1.HostedClusterSpec{AutoNode: autoNode},
@@ -97,7 +97,7 @@ func TestResolveKarpenterFinalizer(t *testing.T) {
 			expectFinalizer: ptr.To(false),
 		},
 		{
-			name: "KAS exists but not available, finalizer removed",
+			name: "When karpenter is enabled and KAS exists but is not available it should remove the finalizer",
 			hc: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace},
 				Spec:       hyperv1.HostedClusterSpec{AutoNode: autoNode},
@@ -109,7 +109,7 @@ func TestResolveKarpenterFinalizer(t *testing.T) {
 			expectFinalizer: ptr.To(false),
 		},
 		{
-			name: "KAS exists but no Available condition, finalizer removed",
+			name: "When karpenter is enabled and KAS exists but has no Available condition it should remove the finalizer",
 			hc: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace},
 				Spec:       hyperv1.HostedClusterSpec{AutoNode: autoNode},
@@ -122,6 +122,29 @@ func TestResolveKarpenterFinalizer(t *testing.T) {
 						Namespace: cpNamespace,
 					},
 				},
+			},
+			expectFinalizer: ptr.To(false),
+		},
+		{
+			name: "When karpenter is disabled and HCP has a stale finalizer it should remove the finalizer immediately",
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace},
+				Spec:       hyperv1.HostedClusterSpec{},
+			},
+			objects: []crclient.Object{
+				hcpWithFinalizer(hcName, cpNamespace),
+			},
+			expectFinalizer: ptr.To(false),
+		},
+		{
+			name: "When karpenter is disabled and KAS is still available it should remove the finalizer immediately",
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace},
+				Spec:       hyperv1.HostedClusterSpec{},
+			},
+			objects: []crclient.Object{
+				hcpWithFinalizer(hcName, cpNamespace),
+				kasDeployment(cpNamespace, true),
 			},
 			expectFinalizer: ptr.To(false),
 		},
