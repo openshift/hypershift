@@ -311,7 +311,23 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 		return fmt.Errorf("failed to watch Route: %w", err)
 	}
 
+	// Watch HostedControlPlane namespace pull-secret on the control plane cluster so guest pull secrets
+	// (openshift-config, openshift) reconcile promptly when the hypershift-operator
+	// syncs in-place updates from HostedCluster.spec.pullSecret.
+	// The globalps controller has its own CP pull-secret watch for kube-system/original-pull-secret.
+	cpPullSecret := manifests.PullSecret(opts.Namespace)
+	cpPullSecretPredicate := predicate.NewPredicateFuncs(namespacedNamePredicateFunc(cpPullSecret.Namespace, cpPullSecret.Name))
+	if err := c.Watch(source.Kind[client.Object](opts.CPCluster.GetCache(), &corev1.Secret{}, eventHandler(), cpPullSecretPredicate)); err != nil {
+		return fmt.Errorf("failed to watch control plane pull secret: %w", err)
+	}
+
 	return nil
+}
+
+func namespacedNamePredicateFunc(namespace, name string) func(client.Object) bool {
+	return func(o client.Object) bool {
+		return o.GetNamespace() == namespace && o.GetName() == name
+	}
 }
 
 func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result, error) {
