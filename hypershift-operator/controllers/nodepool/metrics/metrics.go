@@ -285,7 +285,7 @@ func extractCPUFromInstanceTypeNameViaConfigMap(ctx context.Context, instanceTyp
 
 func (c *nodePoolsMetricsCollector) retrieveVCpusDetailsPerNode(ctx context.Context, nodePool *hyperv1.NodePool) (int32, error) {
 	if nodePool.Spec.Platform.Type != hyperv1.AWSPlatform {
-		ctrllog.Log.Info("cannot retrieve the number of vCPUs for " + nodePool.Name + " node pool as its platform is not supported (supported platforms: AWS)")
+		// vCPU counting only supported for AWS platform
 		return -1, errUnsupportedPlatform
 	}
 
