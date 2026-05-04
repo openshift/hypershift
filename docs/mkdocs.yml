@@ -343,6 +343,7 @@ nav:
     - "Agent": reference/infrastructure/agent.md
   - reference/index.md
   - reference/konnectivity.md
+  - 'Network Topology': reference/network-topology.md
   - 'Manifests':
     - reference/manifests/index.md
     - 'IBM Cloud':

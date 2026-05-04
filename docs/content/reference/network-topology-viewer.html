@@ -1,0 +1,932 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HyperShift Network Topology</title>
+<script src="https://unpkg.com/cytoscape@3.30.4/dist/cytoscape.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: #0f1117;
+    color: #e0e0e0;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+  }
+  .toolbar {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 12px 20px;
+    background: #1a1d27;
+    border-bottom: 1px solid #2a2d3a;
+    flex-wrap: wrap;
+  }
+  .toolbar h1 {
+    font-size: 18px;
+    font-weight: 600;
+    color: #fff;
+    margin-right: 12px;
+  }
+  .toolbar select, .toolbar button {
+    padding: 6px 14px;
+    border-radius: 6px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .toolbar select {
+    background: #2a2d3a;
+    color: #e0e0e0;
+    border: 1px solid #3a3d4a;
+  }
+  .toolbar button {
+    background: #3b82f6;
+    color: #fff;
+    border: none;
+    font-weight: 500;
+  }
+  .toolbar button:hover { background: #2563eb; }
+  .toolbar button.secondary {
+    background: #374151;
+  }
+  .toolbar button.secondary:hover { background: #4b5563; }
+  #cy {
+    flex: 1;
+    background: #0f1117;
+  }
+  .legend {
+    display: flex;
+    gap: 20px;
+    padding: 10px 20px;
+    background: #1a1d27;
+    border-top: 1px solid #2a2d3a;
+    flex-wrap: wrap;
+    font-size: 12px;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .legend-swatch {
+    width: 30px;
+    height: 4px;
+    border-radius: 2px;
+  }
+  .legend-swatch.dashed {
+    background: repeating-linear-gradient(90deg,
+      var(--color) 0, var(--color) 6px,
+      transparent 6px, transparent 10px);
+  }
+  .legend-swatch.thick {
+    height: 8px;
+    border-radius: 4px;
+    opacity: 0.4;
+  }
+  .legend-node {
+    width: 14px;
+    height: 14px;
+    border-radius: 3px;
+    border: 2px solid;
+  }
+  .tooltip {
+    position: absolute;
+    background: #1e2130;
+    border: 1px solid #3a3d4a;
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 12px;
+    max-width: 320px;
+    pointer-events: none;
+    z-index: 100;
+    display: none;
+    line-height: 1.5;
+  }
+  .tooltip .tt-title {
+    font-weight: 600;
+    color: #fff;
+    margin-bottom: 4px;
+  }
+  .tooltip .tt-desc {
+    color: #9ca3af;
+  }
+</style>
+</head>
+<body>
+
+<div class="toolbar">
+  <h1>HyperShift Network Topology</h1>
+  <select id="topology-select">
+    <optgroup label="AWS">
+      <option value="aws-public" selected>AWS Public (no ext DNS)</option>
+      <option value="aws-public-extdns">AWS Public (ext DNS)</option>
+      <option value="aws-private">AWS Private</option>
+    </optgroup>
+    <optgroup label="Azure">
+      <option value="azure-aro-hcp">Azure ARO HCP (Managed)</option>
+      <option value="azure-self-managed">Azure Self-Managed</option>
+    </optgroup>
+    <optgroup label="Other">
+      <option value="agent-nodeport">Agent / Bare Metal (NodePort)</option>
+    </optgroup>
+  </select>
+  <button class="secondary" id="btn-fit">Fit View</button>
+  <button id="btn-export">Export PNG</button>
+</div>
+
+<div id="cy"></div>
+<div id="tooltip" class="tooltip">
+  <div class="tt-title"></div>
+  <div class="tt-desc"></div>
+</div>
+
+<div class="legend">
+  <div class="legend-item">
+    <div class="legend-swatch" style="background: #3b82f6;"></div>
+    <span>Direct flow (data plane &rarr; control plane)</span>
+  </div>
+  <div class="legend-item">
+    <div class="legend-swatch" style="background: #f59e0b;"></div>
+    <span>Tunneled flow (via Konnectivity)</span>
+  </div>
+  <div class="legend-item">
+    <div class="legend-swatch thick" style="background: #f59e0b;"></div>
+    <span>Konnectivity tunnel</span>
+  </div>
+  <div class="legend-item">
+    <div class="legend-swatch dashed" style="--color: #10b981;"></div>
+    <span>Tunnel establishment</span>
+  </div>
+  <div class="legend-item">
+    <div class="legend-swatch" style="background: #8b5cf6;"></div>
+    <span>Private link / PSC / Swift</span>
+  </div>
+  <div class="legend-item">
+    <div class="legend-swatch thick" style="background: #e879a0;"></div>
+    <span>Network boundary</span>
+  </div>
+</div>
+
+<script>
+// ── Grid helper ──
+const COL_W = 180;
+const ROW_H = 60;
+function pos(col, row) {
+  return { x: col * COL_W, y: row * ROW_H };
+}
+
+// Network line: a very wide thin node representing a network boundary
+function netLine(id, label, row, color) {
+  return {
+    data: {
+      id,
+      label,
+      type: 'network-line',
+      netColor: color,
+    },
+    position: pos(2.5, row),
+  };
+}
+
+const STYLES = [
+  // ── Network boundary lines ──
+  {
+    selector: 'node[type="network-line"]',
+    style: {
+      'shape': 'rectangle',
+      'width': 2400,
+      'height': 4,
+      'background-color': 'data(netColor)',
+      'background-opacity': 0.5,
+      'border-width': 0,
+      'label': 'data(label)',
+      'text-valign': 'top',
+      'text-halign': 'left',
+      'font-size': '11px',
+      'font-weight': '700',
+      'color': 'data(netColor)',
+      'text-margin-y': -6,
+      'text-margin-x': 0,
+      'z-index': 0,
+      'events': 'no',
+    }
+  },
+  // ── Compound nodes (zones) ──
+  {
+    selector: 'node[type="zone"]',
+    style: {
+      'shape': 'round-rectangle',
+      'background-color': '#141720',
+      'border-color': '#2a2d3a',
+      'border-width': 1,
+      'border-opacity': 0.5,
+      'label': 'data(label)',
+      'text-valign': 'top',
+      'text-halign': 'center',
+      'font-size': '12px',
+      'color': '#4b5563',
+      'font-weight': '600',
+      'padding': '22px',
+      'text-margin-y': '-5px',
+      'background-opacity': 0.6,
+    }
+  },
+  {
+    selector: 'node[type="zone"][zone="mgmt"]',
+    style: {
+      'border-color': '#374151',
+      'background-color': '#111318',
+      'background-opacity': 0.4,
+    }
+  },
+  {
+    selector: 'node[type="zone"][zone="hcp"]',
+    style: {
+      'border-color': '#1e3a5f',
+      'background-color': '#0d1525',
+      'background-opacity': 0.5,
+    }
+  },
+  {
+    selector: 'node[type="zone"][zone="tunnel-consumers"]',
+    style: {
+      'border-color': '#92400e',
+      'background-color': 'rgba(245, 158, 11, 0.04)',
+      'border-width': 1,
+      'border-style': 'dashed',
+      'font-size': '10px',
+      'color': '#78350f',
+      'padding': '18px',
+    }
+  },
+  {
+    selector: 'node[type="zone"][zone="dataplane"]',
+    style: {
+      'border-color': '#1a4731',
+      'background-color': '#0d1a14',
+      'background-opacity': 0.5,
+    }
+  },
+  {
+    selector: 'node[type="zone"][zone="shared-ingress"]',
+    style: {
+      'border-color': '#374151',
+      'background-color': 'rgba(16, 185, 129, 0.04)',
+      'border-width': 1,
+      'border-style': 'dashed',
+      'font-size': '10px',
+      'color': '#4b5563',
+      'padding': '18px',
+    }
+  },
+  // ── Component nodes ──
+  {
+    selector: 'node[type="component"]',
+    style: {
+      'shape': 'round-rectangle',
+      'background-color': '#1e3a5f',
+      'border-color': '#3b82f6',
+      'border-width': 2,
+      'label': 'data(label)',
+      'text-valign': 'center',
+      'text-halign': 'center',
+      'font-size': '11px',
+      'color': '#e0e0e0',
+      'width': 'label',
+      'height': '30px',
+      'padding': '12px',
+      'font-weight': '500',
+      'z-index': 10,
+    }
+  },
+  {
+    selector: 'node[type="component"][role="konnectivity"]',
+    style: {
+      'background-color': '#3a2a1a',
+      'border-color': '#f59e0b',
+    }
+  },
+  {
+    selector: 'node[type="component"][role="infra"]',
+    style: {
+      'background-color': '#1a2a1a',
+      'border-color': '#10b981',
+    }
+  },
+  {
+    selector: 'node[type="component"][role="external"]',
+    style: {
+      'background-color': '#2a1a3a',
+      'border-color': '#8b5cf6',
+    }
+  },
+  {
+    selector: 'node[type="component"][role="user"]',
+    style: {
+      'background-color': '#1a1a2a',
+      'border-color': '#6366f1',
+      'shape': 'ellipse',
+      'width': 'label',
+      'height': '30px',
+      'padding': '14px',
+    }
+  },
+  {
+    selector: 'node[type="component"][role="sidecar-label"]',
+    style: {
+      'background-color': 'rgba(245, 158, 11, 0.15)',
+      'border-color': '#92400e',
+      'border-width': 1,
+      'border-style': 'dashed',
+      'font-size': '9px',
+      'color': '#d97706',
+      'height': '22px',
+      'padding': '8px',
+      'z-index': 10,
+    }
+  },
+  // ── Edges ──
+  {
+    selector: 'edge',
+    style: {
+      'width': 1.5,
+      'line-color': '#3b82f6',
+      'target-arrow-color': '#3b82f6',
+      'target-arrow-shape': 'triangle',
+      'curve-style': 'bezier',
+      'arrow-scale': 0.7,
+      'label': 'data(label)',
+      'font-size': '9px',
+      'color': '#6b7280',
+      'text-rotation': 'autorotate',
+      'text-margin-y': -8,
+      'text-background-color': '#0f1117',
+      'text-background-opacity': 0.85,
+      'text-background-padding': '2px',
+    }
+  },
+  {
+    selector: 'edge[flow="tunneled"]',
+    style: {
+      'line-color': '#f59e0b',
+      'target-arrow-color': '#f59e0b',
+    }
+  },
+  {
+    selector: 'edge[flow="tunnel-pipe"]',
+    style: {
+      'line-color': '#f59e0b',
+      'target-arrow-color': '#f59e0b',
+      'width': 10,
+      'opacity': 0.25,
+      'target-arrow-shape': 'none',
+      'source-arrow-shape': 'none',
+      'label': 'KONNECTIVITY TUNNEL',
+      'font-size': '9px',
+      'font-weight': '700',
+      'color': '#d97706',
+      'text-opacity': 1,
+      'text-background-opacity': 0,
+      'text-margin-y': 0,
+    }
+  },
+  {
+    selector: 'edge[flow="tunnel-establish"]',
+    style: {
+      'line-color': '#10b981',
+      'target-arrow-color': '#10b981',
+      'line-style': 'dashed',
+      'line-dash-pattern': [6, 4],
+    }
+  },
+  {
+    selector: 'edge[flow="private"]',
+    style: {
+      'line-color': '#8b5cf6',
+      'target-arrow-color': '#8b5cf6',
+    }
+  },
+  {
+    selector: 'edge[flow="internal"]',
+    style: {
+      'line-color': '#4b5563',
+      'target-arrow-color': '#4b5563',
+      'width': 1,
+    }
+  },
+  // ── Hover effects ──
+  {
+    selector: 'node:active, node:selected',
+    style: { 'overlay-opacity': 0 }
+  },
+  {
+    selector: '.highlighted',
+    style: { 'opacity': 1 }
+  },
+  {
+    selector: '.dimmed',
+    style: { 'opacity': 0.12 }
+  },
+  {
+    selector: 'node[type="network-line"].dimmed',
+    style: { 'opacity': 0.06 }
+  },
+];
+
+// ── Topology definitions ──
+
+function awsPublicTopology() {
+  return {
+    nodes: [
+      // Network boundary lines
+      netLine('net-external', 'External / Internet', -0.5, '#e879a0'),
+      netLine('net-mgmt', 'Management Cluster Network', 1.2, '#60a5fa'),
+      netLine('net-hcp', 'HCP Pod Network (konnectivity-server-local :8090)', 4, '#f59e0b'),
+      netLine('net-customer', 'Customer VPC Network', 9.8, '#34d399'),
+
+      // Zones
+      { data: { id: 'mgmt', label: 'Management Cluster (Provider VPC)', type: 'zone', zone: 'mgmt' } },
+      { data: { id: 'hcp', label: 'Hosted Control Plane Namespace', type: 'zone', zone: 'hcp', parent: 'mgmt' } },
+      { data: { id: 'tc', label: 'Tunnel consumers (via konnectivity proxy sidecars)', type: 'zone', zone: 'tunnel-consumers', parent: 'hcp' } },
+      { data: { id: 'dp', label: 'Data Plane (Customer VPC)', type: 'zone', zone: 'dataplane' } },
+
+      // External
+      { data: { id: 'users', label: 'External Users', type: 'component', role: 'user',
+          desc: 'End users / administrators accessing the hosted cluster API' },
+        position: pos(2.5, -1.5) },
+
+      // On management cluster network
+      { data: { id: 'kas-lb', label: 'KAS LoadBalancer', type: 'component', role: 'infra', parent: 'mgmt',
+          desc: 'AWS NLB/ELB exposing the Kubernetes API Server externally on :6443' },
+        position: pos(0.5, 2.5) },
+      { data: { id: 'mc-ingress', label: 'MC Ingress (Router)', type: 'component', role: 'infra', parent: 'mgmt',
+          desc: 'Management cluster OpenShift ingress controller (shared router). Exposes OAuth, Konnectivity, Ignition via Routes.' },
+        position: pos(3, 2.5) },
+
+      // HCP components (on HCP pod network)
+      { data: { id: 'kas', label: 'kube-apiserver', type: 'component', parent: 'hcp',
+          desc: 'Kubernetes API Server. Uses egress-selector config to route cluster traffic through Konnectivity.' },
+        position: pos(0, 5.5) },
+      { data: { id: 'etcd', label: 'etcd', type: 'component', parent: 'hcp',
+          desc: 'Cluster state store, accessed only by KAS' },
+        position: pos(-1, 5.5) },
+      { data: { id: 'konn-server', label: 'konnectivity-server', type: 'component', role: 'konnectivity', parent: 'hcp',
+          desc: 'Sidecar in KAS pod. Server endpoint :8090 (local, via konnectivity-server-local svc). Cluster endpoint :8091 (external, via Route/LB).' },
+        position: pos(1.2, 7) },
+      { data: { id: 'sidecar-label', label: '(sidecar in KAS pod)', type: 'component', role: 'sidecar-label', parent: 'hcp' },
+        position: pos(1.2, 8) },
+      { data: { id: 'konn-agent-cp', label: 'konnectivity-agent (CP)', type: 'component', role: 'konnectivity', parent: 'hcp',
+          desc: 'CP-side agent routing APIService traffic for aggregated APIs (openshift-apiserver, oauth, package-server) back to CP.' },
+        position: pos(3.5, 5.5) },
+
+      // Tunnel consumers
+      { data: { id: 'oapi', label: 'openshift-apiserver', type: 'component', parent: 'tc',
+          desc: 'Serves OpenShift resources (ImageStreams, etc). Uses konnectivity-https-proxy sidecar.' },
+        position: pos(3.5, 7) },
+      { data: { id: 'oauth', label: 'oauth-apiserver', type: 'component', parent: 'tc',
+          desc: 'Handles authentication. Uses both socks5 and https konnectivity proxies.' },
+        position: pos(3.5, 8) },
+      { data: { id: 'cno', label: 'cluster-network-operator', type: 'component', parent: 'tc',
+          desc: 'Manages cluster networking. Uses konnectivity-socks5-proxy for DP readiness checks.' },
+        position: pos(5, 7) },
+      { data: { id: 'ovn', label: 'ovnkube-control-plane', type: 'component', parent: 'tc',
+          desc: 'OVN control plane. Uses konnectivity-socks5-proxy for OVN interconnect.' },
+        position: pos(5, 8) },
+      { data: { id: 'ingress-op', label: 'ingress-operator', type: 'component', parent: 'tc',
+          desc: 'Manages ingress. Uses konnectivity-https-proxy for route health checks in DP.' },
+        position: pos(6.5, 7) },
+      { data: { id: 'olm', label: 'OLM (operator-lifecycle)', type: 'component', parent: 'tc',
+          desc: 'OLM operator + catalog operator + package-server. Uses konnectivity-socks5-proxy for GRPC to in-cluster catalogs.' },
+        position: pos(6.5, 8) },
+
+      // Data Plane (on customer VPC network)
+      { data: { id: 'konn-agent', label: 'konnectivity-agent', type: 'component', role: 'konnectivity', parent: 'dp',
+          desc: 'DaemonSet on every worker node. Establishes outbound tunnel to konnectivity-server on port 8091.' },
+        position: pos(1.2, 11) },
+      { data: { id: 'kubelet', label: 'kubelet', type: 'component', parent: 'dp',
+          desc: 'Node agent - serves logs, exec, port-forward requests via Konnectivity tunnel.' },
+        position: pos(3.5, 11) },
+      { data: { id: 'services', label: 'workload services', type: 'component', parent: 'dp',
+          desc: 'User workloads, webhooks, aggregated API endpoints in the data plane.' },
+        position: pos(5, 11) },
+      { data: { id: 'ovn-agent', label: 'OVN agents', type: 'component', parent: 'dp',
+          desc: 'ovnkube-node DaemonSet - network plugin agents on worker nodes.' },
+        position: pos(6.5, 11) },
+    ],
+    edges: [
+      { data: { source: 'users', target: 'kas-lb', label: 'kubectl / oc', flow: 'direct' } },
+      { data: { source: 'users', target: 'mc-ingress', label: 'OAuth login', flow: 'direct' } },
+      { data: { source: 'kas-lb', target: 'kas', label: ':6443', flow: 'direct' } },
+      { data: { source: 'mc-ingress', target: 'oauth', label: 'Route', flow: 'direct' } },
+      { data: { source: 'mc-ingress', target: 'konn-server', label: 'Route :8091', flow: 'direct' } },
+      { data: { source: 'kas', target: 'etcd', label: ':2379', flow: 'internal' } },
+      { data: { source: 'kas', target: 'konn-server', label: 'egress-selector', flow: 'tunneled' } },
+      { data: { source: 'kubelet', target: 'kas-lb', label: 'API registration', flow: 'direct' } },
+      { data: { source: 'konn-agent', target: 'mc-ingress', label: 'tunnel init :8091', flow: 'tunnel-establish' } },
+      { data: { source: 'konn-server', target: 'konn-agent', flow: 'tunnel-pipe' } },
+      { data: { source: 'konn-agent', target: 'kubelet', label: 'logs / exec / port-fwd', flow: 'tunneled' } },
+      { data: { source: 'konn-agent', target: 'services', label: 'webhooks', flow: 'tunneled' } },
+      { data: { source: 'konn-agent', target: 'ovn-agent', label: 'OVN interconnect', flow: 'tunneled' } },
+      { data: { source: 'oapi', target: 'konn-server', label: 'https-proxy', flow: 'tunneled' } },
+      { data: { source: 'oauth', target: 'konn-server', label: 'socks5 / https', flow: 'tunneled' } },
+      { data: { source: 'cno', target: 'konn-server', label: 'socks5', flow: 'tunneled' } },
+      { data: { source: 'ovn', target: 'konn-server', label: 'socks5', flow: 'tunneled' } },
+      { data: { source: 'ingress-op', target: 'konn-server', label: 'https-proxy', flow: 'tunneled' } },
+      { data: { source: 'olm', target: 'konn-server', label: 'socks5 (GRPC)', flow: 'tunneled' } },
+      { data: { source: 'konn-server', target: 'konn-agent-cp', label: 'APIService traffic', flow: 'tunneled' } },
+      { data: { source: 'konn-agent-cp', target: 'oapi', flow: 'tunneled' } },
+      { data: { source: 'konn-agent-cp', target: 'oauth', flow: 'tunneled' } },
+    ],
+  };
+}
+
+function awsPublicExtDnsTopology() {
+  return {
+    nodes: [
+      netLine('net-external', 'External / Internet', -0.5, '#e879a0'),
+      netLine('net-mgmt', 'Management Cluster Network', 1.2, '#60a5fa'),
+      netLine('net-hcp', 'HCP Pod Network', 4, '#f59e0b'),
+      netLine('net-customer', 'Customer VPC Network', 9.8, '#34d399'),
+
+      { data: { id: 'mgmt', label: 'Management Cluster (Provider VPC)', type: 'zone', zone: 'mgmt' } },
+      { data: { id: 'hcp', label: 'Hosted Control Plane Namespace', type: 'zone', zone: 'hcp', parent: 'mgmt' } },
+      { data: { id: 'tc', label: 'Tunnel consumers (via proxy sidecars)', type: 'zone', zone: 'tunnel-consumers', parent: 'hcp' } },
+      { data: { id: 'dp', label: 'Data Plane (Customer VPC)', type: 'zone', zone: 'dataplane' } },
+
+      { data: { id: 'users', label: 'External Users', type: 'component', role: 'user' }, position: pos(2, -1.5) },
+      { data: { id: 'hcp-router', label: 'HCP Router (ext LB)', type: 'component', role: 'infra', parent: 'hcp',
+          desc: 'Dedicated router with external LB, routes all services via external DNS hostnames' }, position: pos(1.5, 2.5) },
+
+      { data: { id: 'kas', label: 'kube-apiserver', type: 'component', parent: 'hcp' }, position: pos(0, 5.5) },
+      { data: { id: 'etcd', label: 'etcd', type: 'component', parent: 'hcp' }, position: pos(-1, 5.5) },
+      { data: { id: 'konn-server', label: 'konnectivity-server', type: 'component', role: 'konnectivity', parent: 'hcp' }, position: pos(1.2, 7) },
+      { data: { id: 'sidecar-label', label: '(sidecar in KAS pod)', type: 'component', role: 'sidecar-label', parent: 'hcp' }, position: pos(1.2, 8) },
+      { data: { id: 'konn-agent-cp', label: 'konnectivity-agent (CP)', type: 'component', role: 'konnectivity', parent: 'hcp' }, position: pos(3.5, 5.5) },
+
+      { data: { id: 'oapi', label: 'openshift-apiserver', type: 'component', parent: 'tc' }, position: pos(3.5, 7) },
+      { data: { id: 'oauth', label: 'oauth-apiserver', type: 'component', parent: 'tc' }, position: pos(3.5, 8) },
+      { data: { id: 'cno', label: 'cluster-network-operator', type: 'component', parent: 'tc' }, position: pos(5, 7) },
+      { data: { id: 'ovn', label: 'ovnkube-control-plane', type: 'component', parent: 'tc' }, position: pos(5, 8) },
+      { data: { id: 'ingress-op', label: 'ingress-operator', type: 'component', parent: 'tc' }, position: pos(6.5, 7) },
+      { data: { id: 'olm', label: 'OLM (operator-lifecycle)', type: 'component', parent: 'tc' }, position: pos(6.5, 8) },
+
+      { data: { id: 'konn-agent', label: 'konnectivity-agent', type: 'component', role: 'konnectivity', parent: 'dp' }, position: pos(1.2, 11) },
+      { data: { id: 'kubelet', label: 'kubelet', type: 'component', parent: 'dp' }, position: pos(3.5, 11) },
+      { data: { id: 'services', label: 'workload services', type: 'component', parent: 'dp' }, position: pos(5, 11) },
+      { data: { id: 'ovn-agent', label: 'OVN agents', type: 'component', parent: 'dp' }, position: pos(6.5, 11) },
+    ],
+    edges: [
+      { data: { source: 'users', target: 'hcp-router', label: 'api.cluster.example.com', flow: 'direct' } },
+      { data: { source: 'hcp-router', target: 'kas', label: 'Route', flow: 'direct' } },
+      { data: { source: 'hcp-router', target: 'oauth', label: 'Route', flow: 'direct' } },
+      { data: { source: 'hcp-router', target: 'konn-server', label: 'Route :8091', flow: 'direct' } },
+      { data: { source: 'kas', target: 'etcd', label: ':2379', flow: 'internal' } },
+      { data: { source: 'kas', target: 'konn-server', label: 'egress-selector', flow: 'tunneled' } },
+      { data: { source: 'kubelet', target: 'hcp-router', label: 'API registration', flow: 'direct' } },
+      { data: { source: 'konn-agent', target: 'hcp-router', label: 'tunnel init :8091', flow: 'tunnel-establish' } },
+      { data: { source: 'konn-server', target: 'konn-agent', flow: 'tunnel-pipe' } },
+      { data: { source: 'konn-agent', target: 'kubelet', label: 'logs / exec', flow: 'tunneled' } },
+      { data: { source: 'konn-agent', target: 'services', label: 'webhooks', flow: 'tunneled' } },
+      { data: { source: 'konn-agent', target: 'ovn-agent', label: 'OVN interconnect', flow: 'tunneled' } },
+      { data: { source: 'oapi', target: 'konn-server', label: 'https-proxy', flow: 'tunneled' } },
+      { data: { source: 'oauth', target: 'konn-server', label: 'socks5 / https', flow: 'tunneled' } },
+      { data: { source: 'cno', target: 'konn-server', label: 'socks5', flow: 'tunneled' } },
+      { data: { source: 'ovn', target: 'konn-server', label: 'socks5', flow: 'tunneled' } },
+      { data: { source: 'ingress-op', target: 'konn-server', label: 'https-proxy', flow: 'tunneled' } },
+      { data: { source: 'olm', target: 'konn-server', label: 'socks5 (GRPC)', flow: 'tunneled' } },
+      { data: { source: 'konn-server', target: 'konn-agent-cp', label: 'APIService traffic', flow: 'tunneled' } },
+      { data: { source: 'konn-agent-cp', target: 'oapi', flow: 'tunneled' } },
+      { data: { source: 'konn-agent-cp', target: 'oauth', flow: 'tunneled' } },
+    ],
+  };
+}
+
+function awsPrivateTopology() {
+  return {
+    nodes: [
+      netLine('net-mgmt', 'Management Cluster Network (Provider VPC)', 1.2, '#60a5fa'),
+      netLine('net-hcp', 'HCP Pod Network', 4, '#f59e0b'),
+      netLine('net-privatelink', 'AWS PrivateLink Boundary', 9.5, '#a78bfa'),
+      netLine('net-customer', 'Customer VPC Network', 10.5, '#34d399'),
+
+      { data: { id: 'mgmt', label: 'Management Cluster (Provider VPC)', type: 'zone', zone: 'mgmt' } },
+      { data: { id: 'hcp', label: 'Hosted Control Plane Namespace', type: 'zone', zone: 'hcp', parent: 'mgmt' } },
+      { data: { id: 'tc', label: 'Tunnel consumers (via proxy sidecars)', type: 'zone', zone: 'tunnel-consumers', parent: 'hcp' } },
+      { data: { id: 'dp', label: 'Data Plane (Customer VPC)', type: 'zone', zone: 'dataplane' } },
+
+      { data: { id: 'users', label: 'External Users (VPN)', type: 'component', role: 'user' }, position: pos(-0.5, -1.5) },
+      { data: { id: 'privatelink', label: 'AWS PrivateLink Endpoint', type: 'component', role: 'external',
+          desc: 'VPC endpoint service connecting customer VPC to provider VPC privately' }, position: pos(1.5, 10) },
+      { data: { id: 'hcp-router', label: 'HCP Router (internal LB)', type: 'component', role: 'infra', parent: 'hcp',
+          desc: 'Dedicated router with internal LB only, all traffic via PrivateLink' }, position: pos(1.5, 2.5) },
+
+      { data: { id: 'kas', label: 'kube-apiserver', type: 'component', parent: 'hcp' }, position: pos(0, 5.5) },
+      { data: { id: 'etcd', label: 'etcd', type: 'component', parent: 'hcp' }, position: pos(-1, 5.5) },
+      { data: { id: 'konn-server', label: 'konnectivity-server', type: 'component', role: 'konnectivity', parent: 'hcp' }, position: pos(1.2, 7) },
+      { data: { id: 'sidecar-label', label: '(sidecar in KAS pod)', type: 'component', role: 'sidecar-label', parent: 'hcp' }, position: pos(1.2, 8) },
+      { data: { id: 'konn-agent-cp', label: 'konnectivity-agent (CP)', type: 'component', role: 'konnectivity', parent: 'hcp' }, position: pos(3.5, 5.5) },
+
+      { data: { id: 'oapi', label: 'openshift-apiserver', type: 'component', parent: 'tc' }, position: pos(3.5, 7) },
+      { data: { id: 'oauth', label: 'oauth-apiserver', type: 'component', parent: 'tc' }, position: pos(3.5, 8) },
+      { data: { id: 'cno', label: 'cluster-network-operator', type: 'component', parent: 'tc' }, position: pos(5, 7) },
+      { data: { id: 'ovn', label: 'ovnkube-control-plane', type: 'component', parent: 'tc' }, position: pos(5, 8) },
+      { data: { id: 'ingress-op', label: 'ingress-operator', type: 'component', parent: 'tc' }, position: pos(6.5, 7) },
+      { data: { id: 'olm', label: 'OLM (operator-lifecycle)', type: 'component', parent: 'tc' }, position: pos(6.5, 8) },
+
+      { data: { id: 'konn-agent', label: 'konnectivity-agent', type: 'component', role: 'konnectivity', parent: 'dp' }, position: pos(1.2, 12) },
+      { data: { id: 'kubelet', label: 'kubelet', type: 'component', parent: 'dp' }, position: pos(3.5, 12) },
+      { data: { id: 'services', label: 'workload services', type: 'component', parent: 'dp' }, position: pos(5, 12) },
+      { data: { id: 'ovn-agent', label: 'OVN agents', type: 'component', parent: 'dp' }, position: pos(6.5, 12) },
+    ],
+    edges: [
+      { data: { source: 'users', target: 'privatelink', label: 'VPN / Direct Connect', flow: 'private' } },
+      { data: { source: 'privatelink', target: 'hcp-router', label: 'PrivateLink', flow: 'private' } },
+      { data: { source: 'kubelet', target: 'privatelink', label: 'API access', flow: 'private' } },
+      { data: { source: 'konn-agent', target: 'privatelink', label: 'tunnel init', flow: 'tunnel-establish' } },
+      { data: { source: 'hcp-router', target: 'kas', label: 'Route', flow: 'direct' } },
+      { data: { source: 'hcp-router', target: 'oauth', label: 'Route', flow: 'direct' } },
+      { data: { source: 'hcp-router', target: 'konn-server', label: 'Route :8091', flow: 'direct' } },
+      { data: { source: 'kas', target: 'etcd', label: ':2379', flow: 'internal' } },
+      { data: { source: 'kas', target: 'konn-server', label: 'egress-selector', flow: 'tunneled' } },
+      { data: { source: 'konn-server', target: 'konn-agent', flow: 'tunnel-pipe' } },
+      { data: { source: 'konn-agent', target: 'kubelet', label: 'logs / exec', flow: 'tunneled' } },
+      { data: { source: 'konn-agent', target: 'services', label: 'webhooks', flow: 'tunneled' } },
+      { data: { source: 'konn-agent', target: 'ovn-agent', label: 'OVN interconnect', flow: 'tunneled' } },
+      { data: { source: 'oapi', target: 'konn-server', label: 'https-proxy', flow: 'tunneled' } },
+      { data: { source: 'oauth', target: 'konn-server', label: 'socks5 / https', flow: 'tunneled' } },
+      { data: { source: 'cno', target: 'konn-server', label: 'socks5', flow: 'tunneled' } },
+      { data: { source: 'ovn', target: 'konn-server', label: 'socks5', flow: 'tunneled' } },
+      { data: { source: 'ingress-op', target: 'konn-server', label: 'https-proxy', flow: 'tunneled' } },
+      { data: { source: 'olm', target: 'konn-server', label: 'socks5 (GRPC)', flow: 'tunneled' } },
+      { data: { source: 'konn-server', target: 'konn-agent-cp', label: 'APIService traffic', flow: 'tunneled' } },
+      { data: { source: 'konn-agent-cp', target: 'oapi', flow: 'tunneled' } },
+      { data: { source: 'konn-agent-cp', target: 'oauth', flow: 'tunneled' } },
+    ],
+  };
+}
+
+function azureAroHcpTopology() {
+  return {
+    nodes: [
+      netLine('net-external', 'External / Internet', -0.5, '#e879a0'),
+      netLine('net-aks', 'AKS Management Cluster Network', 1.2, '#60a5fa'),
+      netLine('net-hcp', 'HCP Pod Network', 4, '#f59e0b'),
+      netLine('net-swift', 'Azure Swift (Service Networking)', 9.5, '#a78bfa'),
+      netLine('net-customer', 'Customer VNet', 10.5, '#34d399'),
+
+      { data: { id: 'mgmt', label: 'AKS Management Cluster', type: 'zone', zone: 'mgmt' } },
+      { data: { id: 'hcp', label: 'Hosted Control Plane Namespace', type: 'zone', zone: 'hcp', parent: 'mgmt' } },
+      { data: { id: 'tc', label: 'Tunnel consumers (via proxy sidecars)', type: 'zone', zone: 'tunnel-consumers', parent: 'hcp' } },
+      { data: { id: 'shared-ingress', label: 'Shared Ingress (hypershift-sharedingress ns)', type: 'zone', zone: 'shared-ingress', parent: 'mgmt' } },
+      { data: { id: 'dp', label: 'Data Plane (Customer VNet)', type: 'zone', zone: 'dataplane' } },
+
+      { data: { id: 'users', label: 'External Users', type: 'component', role: 'user' }, position: pos(0, -1.5) },
+      { data: { id: 'azure-lb', label: 'Azure LoadBalancer', type: 'component', role: 'infra', parent: 'shared-ingress',
+          desc: 'Single Azure LB fronting all hosted clusters' }, position: pos(-0.5, 2.5) },
+      { data: { id: 'haproxy', label: 'HAProxy (SNI routing)', type: 'component', role: 'infra', parent: 'shared-ingress',
+          desc: 'Central HAProxy with SNI-based hostname routing, shared across all hosted clusters' }, position: pos(1, 2.5) },
+      { data: { id: 'private-router', label: 'Private Router (Swift)', type: 'component', role: 'external', parent: 'mgmt',
+          desc: 'Swift-enabled pod bridging AKS and customer VNet. Routes Konnectivity and Ignition traffic via hypershift.local DNS.' }, position: pos(3, 2.5) },
+
+      { data: { id: 'kas', label: 'kube-apiserver', type: 'component', parent: 'hcp' }, position: pos(0, 5.5) },
+      { data: { id: 'etcd', label: 'etcd', type: 'component', parent: 'hcp' }, position: pos(-1, 5.5) },
+      { data: { id: 'konn-server', label: 'konnectivity-server', type: 'component', role: 'konnectivity', parent: 'hcp' }, position: pos(1.2, 7) },
+      { data: { id: 'sidecar-label', label: '(sidecar in KAS pod)', type: 'component', role: 'sidecar-label', parent: 'hcp' }, position: pos(1.2, 8) },
+      { data: { id: 'konn-agent-cp', label: 'konnectivity-agent (CP)', type: 'component', role: 'konnectivity', parent: 'hcp' }, position: pos(3.5, 5.5) },
+
+      { data: { id: 'oapi', label: 'openshift-apiserver', type: 'component', parent: 'tc' }, position: pos(3.5, 7) },
+      { data: { id: 'oauth', label: 'oauth-apiserver', type: 'component', parent: 'tc' }, position: pos(3.5, 8) },
+      { data: { id: 'cno', label: 'cluster-network-operator', type: 'component', parent: 'tc' }, position: pos(5, 7) },
+      { data: { id: 'ovn', label: 'ovnkube-control-plane', type: 'component', parent: 'tc' }, position: pos(5, 8) },
+      { data: { id: 'olm', label: 'OLM', type: 'component', parent: 'tc' }, position: pos(6.5, 7.5) },
+
+      { data: { id: 'konn-agent', label: 'konnectivity-agent', type: 'component', role: 'konnectivity', parent: 'dp' }, position: pos(1.2, 12) },
+      { data: { id: 'kubelet', label: 'kubelet', type: 'component', parent: 'dp' }, position: pos(3.5, 12) },
+      { data: { id: 'services', label: 'workload services', type: 'component', parent: 'dp' }, position: pos(5, 12) },
+      { data: { id: 'ovn-agent', label: 'OVN agents', type: 'component', parent: 'dp' }, position: pos(6.5, 12) },
+    ],
+    edges: [
+      { data: { source: 'users', target: 'azure-lb', label: 'HTTPS', flow: 'direct' } },
+      { data: { source: 'azure-lb', target: 'haproxy', flow: 'direct' } },
+      { data: { source: 'haproxy', target: 'kas', label: 'SNI routing', flow: 'direct' } },
+      { data: { source: 'haproxy', target: 'oauth', label: 'SNI routing', flow: 'direct' } },
+      { data: { source: 'kubelet', target: 'private-router', label: 'hypershift.local', flow: 'private' } },
+      { data: { source: 'konn-agent', target: 'private-router', label: 'Swift tunnel init', flow: 'tunnel-establish' } },
+      { data: { source: 'private-router', target: 'konn-server', label: 'Konnectivity Route', flow: 'private' } },
+      { data: { source: 'private-router', target: 'kas', label: 'API Route', flow: 'private' } },
+      { data: { source: 'kas', target: 'etcd', label: ':2379', flow: 'internal' } },
+      { data: { source: 'kas', target: 'konn-server', label: 'egress-selector', flow: 'tunneled' } },
+      { data: { source: 'konn-server', target: 'konn-agent', flow: 'tunnel-pipe' } },
+      { data: { source: 'konn-agent', target: 'kubelet', label: 'logs / exec', flow: 'tunneled' } },
+      { data: { source: 'konn-agent', target: 'services', label: 'webhooks', flow: 'tunneled' } },
+      { data: { source: 'konn-agent', target: 'ovn-agent', label: 'OVN interconnect', flow: 'tunneled' } },
+      { data: { source: 'oapi', target: 'konn-server', label: 'https-proxy', flow: 'tunneled' } },
+      { data: { source: 'oauth', target: 'konn-server', label: 'socks5 / https', flow: 'tunneled' } },
+      { data: { source: 'cno', target: 'konn-server', label: 'socks5', flow: 'tunneled' } },
+      { data: { source: 'ovn', target: 'konn-server', label: 'socks5', flow: 'tunneled' } },
+      { data: { source: 'olm', target: 'konn-server', label: 'socks5 (GRPC)', flow: 'tunneled' } },
+      { data: { source: 'konn-server', target: 'konn-agent-cp', label: 'APIService traffic', flow: 'tunneled' } },
+      { data: { source: 'konn-agent-cp', target: 'oapi', flow: 'tunneled' } },
+      { data: { source: 'konn-agent-cp', target: 'oauth', flow: 'tunneled' } },
+    ],
+  };
+}
+
+function azureSelfManagedTopology() {
+  return {
+    nodes: [
+      netLine('net-external', 'External / Internet', -0.5, '#e879a0'),
+      netLine('net-mgmt', 'Management Cluster Network (OpenShift on Azure)', 1.2, '#60a5fa'),
+      netLine('net-hcp', 'HCP Pod Network', 4, '#f59e0b'),
+      netLine('net-customer', 'Customer VNet', 9.8, '#34d399'),
+
+      { data: { id: 'mgmt', label: 'Management Cluster (OpenShift on Azure)', type: 'zone', zone: 'mgmt' } },
+      { data: { id: 'hcp', label: 'Hosted Control Plane Namespace', type: 'zone', zone: 'hcp', parent: 'mgmt' } },
+      { data: { id: 'tc', label: 'Tunnel consumers (via proxy sidecars)', type: 'zone', zone: 'tunnel-consumers', parent: 'hcp' } },
+      { data: { id: 'dp', label: 'Data Plane (Customer VNet)', type: 'zone', zone: 'dataplane' } },
+
+      { data: { id: 'users', label: 'External Users', type: 'component', role: 'user' }, position: pos(2, -1.5) },
+      { data: { id: 'mc-ingress', label: 'MC Ingress Controller', type: 'component', role: 'infra', parent: 'mgmt' }, position: pos(1.5, 2.5) },
+
+      { data: { id: 'kas', label: 'kube-apiserver', type: 'component', parent: 'hcp' }, position: pos(0, 5.5) },
+      { data: { id: 'etcd', label: 'etcd', type: 'component', parent: 'hcp' }, position: pos(-1, 5.5) },
+      { data: { id: 'konn-server', label: 'konnectivity-server', type: 'component', role: 'konnectivity', parent: 'hcp' }, position: pos(1.2, 7) },
+      { data: { id: 'sidecar-label', label: '(sidecar in KAS pod)', type: 'component', role: 'sidecar-label', parent: 'hcp' }, position: pos(1.2, 8) },
+      { data: { id: 'konn-agent-cp', label: 'konnectivity-agent (CP)', type: 'component', role: 'konnectivity', parent: 'hcp' }, position: pos(3.5, 5.5) },
+
+      { data: { id: 'oapi', label: 'openshift-apiserver', type: 'component', parent: 'tc' }, position: pos(3.5, 7) },
+      { data: { id: 'oauth', label: 'oauth-apiserver', type: 'component', parent: 'tc' }, position: pos(3.5, 8) },
+      { data: { id: 'cno', label: 'cluster-network-operator', type: 'component', parent: 'tc' }, position: pos(5, 7) },
+      { data: { id: 'ovn', label: 'ovnkube-control-plane', type: 'component', parent: 'tc' }, position: pos(5, 8) },
+      { data: { id: 'olm', label: 'OLM', type: 'component', parent: 'tc' }, position: pos(6.5, 7.5) },
+
+      { data: { id: 'konn-agent', label: 'konnectivity-agent', type: 'component', role: 'konnectivity', parent: 'dp' }, position: pos(1.2, 11) },
+      { data: { id: 'kubelet', label: 'kubelet', type: 'component', parent: 'dp' }, position: pos(3.5, 11) },
+      { data: { id: 'services', label: 'workload services', type: 'component', parent: 'dp' }, position: pos(5, 11) },
+    ],
+    edges: [
+      { data: { source: 'users', target: 'mc-ingress', label: 'External DNS', flow: 'direct' } },
+      { data: { source: 'kubelet', target: 'mc-ingress', label: 'External DNS', flow: 'direct' } },
+      { data: { source: 'konn-agent', target: 'mc-ingress', label: 'tunnel init', flow: 'tunnel-establish' } },
+      { data: { source: 'mc-ingress', target: 'kas', label: 'Route', flow: 'direct' } },
+      { data: { source: 'mc-ingress', target: 'oauth', label: 'Route', flow: 'direct' } },
+      { data: { source: 'mc-ingress', target: 'konn-server', label: 'Route :8091', flow: 'direct' } },
+      { data: { source: 'kas', target: 'etcd', label: ':2379', flow: 'internal' } },
+      { data: { source: 'kas', target: 'konn-server', label: 'egress-selector', flow: 'tunneled' } },
+      { data: { source: 'konn-server', target: 'konn-agent', flow: 'tunnel-pipe' } },
+      { data: { source: 'konn-agent', target: 'kubelet', label: 'logs / exec', flow: 'tunneled' } },
+      { data: { source: 'konn-agent', target: 'services', label: 'webhooks', flow: 'tunneled' } },
+      { data: { source: 'oapi', target: 'konn-server', label: 'https-proxy', flow: 'tunneled' } },
+      { data: { source: 'oauth', target: 'konn-server', label: 'socks5 / https', flow: 'tunneled' } },
+      { data: { source: 'cno', target: 'konn-server', label: 'socks5', flow: 'tunneled' } },
+      { data: { source: 'ovn', target: 'konn-server', label: 'socks5', flow: 'tunneled' } },
+      { data: { source: 'olm', target: 'konn-server', label: 'socks5 (GRPC)', flow: 'tunneled' } },
+      { data: { source: 'konn-server', target: 'konn-agent-cp', label: 'APIService traffic', flow: 'tunneled' } },
+      { data: { source: 'konn-agent-cp', target: 'oapi', flow: 'tunneled' } },
+      { data: { source: 'konn-agent-cp', target: 'oauth', flow: 'tunneled' } },
+    ],
+  };
+}
+
+function agentNodeportTopology() {
+  return {
+    nodes: [
+      netLine('net-external', 'External Network', -0.5, '#e879a0'),
+      netLine('net-mgmt', 'Management Cluster Network', 1.2, '#60a5fa'),
+      netLine('net-hcp', 'HCP Pod Network', 4, '#f59e0b'),
+      netLine('net-customer', 'Bare Metal / Customer Network', 9.8, '#34d399'),
+
+      { data: { id: 'mgmt', label: 'Management Cluster (Bare Metal / On-Prem)', type: 'zone', zone: 'mgmt' } },
+      { data: { id: 'hcp', label: 'Hosted Control Plane Namespace', type: 'zone', zone: 'hcp', parent: 'mgmt' } },
+      { data: { id: 'tc', label: 'Tunnel consumers', type: 'zone', zone: 'tunnel-consumers', parent: 'hcp' } },
+      { data: { id: 'dp', label: 'Data Plane (Bare Metal Nodes)', type: 'zone', zone: 'dataplane' } },
+
+      { data: { id: 'users', label: 'External Users', type: 'component', role: 'user' }, position: pos(1, -1.5) },
+      { data: { id: 'mgmt-node', label: 'Management Node (10.0.0.100)', type: 'component', role: 'infra', parent: 'mgmt',
+          desc: 'NodePorts exposed on management cluster node IPs' }, position: pos(1.5, 2.5) },
+
+      { data: { id: 'kas', label: 'kube-apiserver', type: 'component', parent: 'hcp' }, position: pos(0, 5.5) },
+      { data: { id: 'etcd', label: 'etcd', type: 'component', parent: 'hcp' }, position: pos(-1, 5.5) },
+      { data: { id: 'konn-server', label: 'konnectivity-server', type: 'component', role: 'konnectivity', parent: 'hcp' }, position: pos(1.2, 7) },
+      { data: { id: 'sidecar-label', label: '(sidecar in KAS pod)', type: 'component', role: 'sidecar-label', parent: 'hcp' }, position: pos(1.2, 8) },
+      { data: { id: 'ignition', label: 'ignition-server', type: 'component', parent: 'hcp',
+          desc: 'Serves ignition configs for node bootstrapping, exposed via NodePort :8443' }, position: pos(-1, 7) },
+      { data: { id: 'konn-agent-cp', label: 'konnectivity-agent (CP)', type: 'component', role: 'konnectivity', parent: 'hcp' }, position: pos(3.5, 5.5) },
+
+      { data: { id: 'oapi', label: 'openshift-apiserver', type: 'component', parent: 'tc' }, position: pos(3.5, 7) },
+      { data: { id: 'oauth', label: 'oauth-apiserver', type: 'component', parent: 'tc' }, position: pos(3.5, 8) },
+
+      { data: { id: 'konn-agent', label: 'konnectivity-agent', type: 'component', role: 'konnectivity', parent: 'dp' }, position: pos(1.2, 11) },
+      { data: { id: 'kubelet', label: 'kubelet', type: 'component', parent: 'dp' }, position: pos(3.5, 11) },
+      { data: { id: 'services', label: 'workload services', type: 'component', parent: 'dp' }, position: pos(5, 11) },
+    ],
+    edges: [
+      { data: { source: 'users', target: 'mgmt-node', label: 'NodePort :30000', flow: 'direct' } },
+      { data: { source: 'kubelet', target: 'mgmt-node', label: 'NodePort :30000', flow: 'direct' } },
+      { data: { source: 'konn-agent', target: 'mgmt-node', label: 'NodePort :8091', flow: 'tunnel-establish' } },
+      { data: { source: 'mgmt-node', target: 'kas', label: 'KAS NodePort', flow: 'direct' } },
+      { data: { source: 'mgmt-node', target: 'oauth', label: 'OAuth NodePort', flow: 'direct' } },
+      { data: { source: 'mgmt-node', target: 'konn-server', label: 'Konn NodePort', flow: 'direct' } },
+      { data: { source: 'mgmt-node', target: 'ignition', label: 'Ignition :8443', flow: 'direct' } },
+      { data: { source: 'kas', target: 'etcd', label: ':2379', flow: 'internal' } },
+      { data: { source: 'kas', target: 'konn-server', label: 'egress-selector', flow: 'tunneled' } },
+      { data: { source: 'konn-server', target: 'konn-agent', flow: 'tunnel-pipe' } },
+      { data: { source: 'konn-agent', target: 'kubelet', label: 'logs / exec', flow: 'tunneled' } },
+      { data: { source: 'konn-agent', target: 'services', label: 'webhooks', flow: 'tunneled' } },
+      { data: { source: 'oapi', target: 'konn-server', label: 'https-proxy', flow: 'tunneled' } },
+      { data: { source: 'oauth', target: 'konn-server', label: 'socks5 / https', flow: 'tunneled' } },
+      { data: { source: 'konn-server', target: 'konn-agent-cp', label: 'APIService traffic', flow: 'tunneled' } },
+      { data: { source: 'konn-agent-cp', target: 'oapi', flow: 'tunneled' } },
+      { data: { source: 'konn-agent-cp', target: 'oauth', flow: 'tunneled' } },
+    ],
+  };
+}
+
+const TOPOLOGIES = {
+  'aws-public': awsPublicTopology,
+  'aws-public-extdns': awsPublicExtDnsTopology,
+  'aws-private': awsPrivateTopology,
+  'azure-aro-hcp': azureAroHcpTopology,
+  'azure-self-managed': azureSelfManagedTopology,
+  'agent-nodeport': agentNodeportTopology,
+};
+
+// ── App ──
+
+let cy;
+
+function renderTopology(key) {
+  const topo = TOPOLOGIES[key]();
+
+  if (cy) cy.destroy();
+
+  cy = cytoscape({
+    container: document.getElementById('cy'),
+    elements: { nodes: topo.nodes, edges: topo.edges },
+    style: STYLES,
+    layout: { name: 'preset' },
+    minZoom: 0.3,
+    maxZoom: 3,
+    wheelSensitivity: 0.3,
+  });
+
+  cy.fit(undefined, 50);
+
+  const tooltip = document.getElementById('tooltip');
+
+  cy.on('mouseover', 'node[type="component"]', (e) => {
+    const node = e.target;
+    if (node.data('role') === 'sidecar-label') return;
+
+    const connected = node.connectedEdges().connectedNodes();
+    const neighborhood = node.connectedEdges().union(connected).union(node);
+
+    cy.elements().addClass('dimmed');
+    neighborhood.removeClass('dimmed').addClass('highlighted');
+    neighborhood.parents().removeClass('dimmed');
+
+    const desc = node.data('desc');
+    if (desc) {
+      tooltip.querySelector('.tt-title').textContent = node.data('label');
+      tooltip.querySelector('.tt-desc').textContent = desc;
+      tooltip.style.display = 'block';
+    }
+  });
+
+  cy.on('mousemove', 'node[type="component"]', (e) => {
+    if (tooltip.style.display === 'block') {
+      tooltip.style.left = (e.originalEvent.clientX + 14) + 'px';
+      tooltip.style.top = (e.originalEvent.clientY + 14) + 'px';
+    }
+  });
+
+  cy.on('mouseout', 'node[type="component"]', () => {
+    cy.elements().removeClass('dimmed').removeClass('highlighted');
+    tooltip.style.display = 'none';
+  });
+}
+
+document.getElementById('topology-select').addEventListener('change', (e) => {
+  renderTopology(e.target.value);
+});
+
+document.getElementById('btn-fit').addEventListener('click', () => {
+  cy.fit(undefined, 50);
+});
+
+document.getElementById('btn-export').addEventListener('click', () => {
+  const png = cy.png({ output: 'blob', bg: '#0f1117', scale: 3, full: true });
+  const url = URL.createObjectURL(png);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `hypershift-network-${document.getElementById('topology-select').value}.png`;
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
+renderTopology('aws-public');
+</script>
+</body>
+</html>
