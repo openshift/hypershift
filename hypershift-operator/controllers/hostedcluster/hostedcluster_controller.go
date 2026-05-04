@@ -959,6 +959,10 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		} else {
 			meta.SetStatusCondition(&hcluster.Status.Conditions, computeAWSEndpointServiceCondition(awsEndpointServiceList, hyperv1.AWSEndpointAvailable))
 			meta.SetStatusCondition(&hcluster.Status.Conditions, computeAWSEndpointServiceCondition(awsEndpointServiceList, hyperv1.AWSEndpointServiceAvailable))
+			if hcluster.Spec.Platform.AWS != nil &&
+				hcluster.Spec.Platform.AWS.IngressDNSManagement == hyperv1.AWSIngressDNSManaged {
+				meta.SetStatusCondition(&hcluster.Status.Conditions, computeAWSEndpointServiceCondition(awsEndpointServiceList, hyperv1.AWSIngressDNSAvailable))
+			}
 		}
 	}
 
