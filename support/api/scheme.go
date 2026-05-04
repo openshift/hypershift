@@ -16,6 +16,7 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	imagev1 "github.com/openshift/api/image/v1"
+	imageregistryv1 "github.com/openshift/api/imageregistry/v1"
 	kcpv1 "github.com/openshift/api/kubecontrolplane/v1"
 	machinev1beta1 "github.com/openshift/api/machine/v1beta1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
@@ -118,6 +119,7 @@ func init() {
 		_ = configv1.AddToScheme(scheme)
 		_ = securityv1.AddToScheme(scheme)
 		_ = operatorv1.AddToScheme(scheme)
+		_ = imageregistryv1.AddToScheme(scheme)
 		_ = oauthv1.AddToScheme(scheme)
 		_ = osinv1.AddToScheme(scheme)
 		_ = routev1.AddToScheme(scheme)
