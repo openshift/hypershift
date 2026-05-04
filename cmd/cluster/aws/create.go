@@ -126,7 +126,7 @@ func (o *ValidatedCreateOptions) Complete(ctx context.Context, opts *core.Create
 		opts.EtcdStorageClass = "gp3-csi"
 	}
 
-	client, err := util.GetClient()
+	client, err := util.GetClientFromKubeconfig(opts.Kubeconfig)
 	if err != nil {
 		return nil, err
 	}

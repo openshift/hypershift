@@ -65,6 +65,7 @@ func BindOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 }
 
 func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
+	flags.StringVar(&opts.Kubeconfig, "kubeconfig", opts.Kubeconfig, "Path to a kubeconfig file for the management cluster. If not specified, the default kubeconfig resolution is used (KUBECONFIG env var, in-cluster config, or ~/.kube/config)")
 	flags.StringVar(&opts.Namespace, "namespace", opts.Namespace, "A namespace to contain the generated resources")
 	flags.StringVar(&opts.Name, "name", opts.Name, "A name for the cluster")
 	flags.StringVar(&opts.BaseDomain, "base-domain", opts.BaseDomain, "The ingress base domain for the cluster")
@@ -141,6 +142,7 @@ type RawCreateOptions struct {
 	InfrastructureAvailabilityPolicy string
 	InfrastructureJSON               string
 	InfraID                          string
+	Kubeconfig                       string
 	Name                             string
 	Namespace                        string
 	BaseDomain                       string
@@ -238,7 +240,7 @@ func prototypeResources(ctx context.Context, opts *CreateOptions) (*resources, e
 	prototype := &resources{}
 	// allow client side defaulting when release image is empty but release stream is set.
 	if len(opts.ReleaseImage) == 0 && len(opts.ReleaseStream) != 0 {
-		client, err := util.GetClient()
+		client, err := util.GetClientFromKubeconfig(opts.Kubeconfig)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get client: %w", err)
 		}
@@ -574,8 +576,8 @@ func prototypeResources(ctx context.Context, opts *CreateOptions) (*resources, e
 	return prototype, nil
 }
 
-func apply(ctx context.Context, l logr.Logger, infraID string, objects []crclient.Object, waitForRollout bool, mutate func(crclient.Object)) error {
-	client, err := util.GetClient()
+func apply(ctx context.Context, l logr.Logger, infraID string, objects []crclient.Object, waitForRollout bool, mutate func(crclient.Object), kubeconfig string) error {
+	client, err := util.GetClientFromKubeconfig(kubeconfig)
 	if err != nil {
 		return err
 	}
@@ -626,7 +628,7 @@ func apply(ctx context.Context, l logr.Logger, infraID string, objects []crclien
 	return nil
 }
 
-func GetAPIServerAddressByNode(ctx context.Context, l logr.Logger) (string, error) {
+func GetAPIServerAddressByNode(ctx context.Context, l logr.Logger, kubeconfig string) (string, error) {
 	// Fetch a single node and determine possible DNS or IP entries to use
 	// for external node-port communication.
 	// Possible values are considered with the following priority based on the address type:
@@ -634,7 +636,7 @@ func GetAPIServerAddressByNode(ctx context.Context, l logr.Logger) (string, erro
 	// - NodeExternalIP
 	// - NodeInternalIP
 	apiServerAddress := ""
-	config, err := util.GetConfig()
+	config, err := util.GetConfigFromKubeconfig(kubeconfig)
 	if err != nil {
 		return "", err
 	}
@@ -687,7 +689,7 @@ func (opts *RawCreateOptions) Validate(ctx context.Context) (*ValidatedCreateOpt
 
 	if opts.VersionCheck {
 		versionCLI := supportedversion.GetRevision()
-		client, err := util.GetClient()
+		client, err := util.GetClientFromKubeconfig(opts.Kubeconfig)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get client: %w", err)
 		}
@@ -708,7 +710,7 @@ func (opts *RawCreateOptions) Validate(ctx context.Context) (*ValidatedCreateOpt
 	}
 
 	if !opts.Render {
-		client, err := util.GetClient()
+		client, err := util.GetClientFromKubeconfig(opts.Kubeconfig)
 		if err != nil {
 			return nil, err
 		}
@@ -721,7 +723,7 @@ func (opts *RawCreateOptions) Validate(ctx context.Context) (*ValidatedCreateOpt
 		}
 
 		// Validate multi-arch aspects
-		kc, err := hyperutil.GetKubeClientSet()
+		kc, err := hyperutil.GetKubeClientSetFromKubeconfig(opts.Kubeconfig)
 		if err != nil {
 			return nil, fmt.Errorf("could not retrieve kube clientset: %w", err)
 		}
@@ -955,7 +957,7 @@ func CreateCluster(ctx context.Context, rawOpts *RawCreateOptions, rawPlatform P
 	}
 
 	// Otherwise, apply the objects
-	return apply(ctx, opts.Log, resources.Cluster.Spec.InfraID, resources.asObjects(), opts.Wait, opts.BeforeApply)
+	return apply(ctx, opts.Log, resources.Cluster.Spec.InfraID, resources.asObjects(), opts.Wait, opts.BeforeApply, opts.Kubeconfig)
 }
 
 type DefaultNodePoolConstructor func(platformType hyperv1.PlatformType, suffix string) *hyperv1.NodePool
