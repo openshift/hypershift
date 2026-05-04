@@ -49,7 +49,7 @@ import (
 )
 
 func TestKarpenter(t *testing.T) {
-	e2eutil.AtLeast(t, e2eutil.Version419)
+	e2eutil.AtLeast(t, e2eutil.Version422)
 	if globalOpts.Platform != hyperv1.AWSPlatform {
 		t.Skip("test only supported on platform AWS")
 	}
