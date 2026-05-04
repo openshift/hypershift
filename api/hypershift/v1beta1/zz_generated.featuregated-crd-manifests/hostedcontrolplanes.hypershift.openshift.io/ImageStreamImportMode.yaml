@@ -3920,6 +3920,22 @@ spec:
                         - PublicAndPrivate
                         - Private
                         type: string
+                      ingressDNSManagement:
+                        default: Unmanaged
+                        description: |-
+                          ingressDNSManagement specifies whether the control plane operator manages
+                          Route53 hosted zones for ingress DNS in the customer's AWS account.
+                          When set to "Managed", the CPO creates public and private ingress zones,
+                          a DNSEndpoint CR for NS delegation, and an _acme-challenge CNAME for
+                          cert-manager DNS01 CNAME-follow.
+                          When set to "Unmanaged" (the default), only the .hypershift.local zone is managed.
+                        enum:
+                        - Unmanaged
+                        - Managed
+                        type: string
+                        x-kubernetes-validations:
+                        - message: ingressDNSManagement is immutable
+                          rule: self == oldSelf
                       multiArch:
                         default: false
                         description: |-

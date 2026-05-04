@@ -180,6 +180,18 @@ spec:
                   management VPC
                 maxLength: 255
                 type: string
+              ingressPrivateZoneID:
+                description: |-
+                  ingressPrivateZoneID is the Route53 hosted zone ID for the private ingress zone
+                  created when IngressDNSManagement is Managed.
+                maxLength: 32
+                type: string
+              ingressPublicZoneID:
+                description: |-
+                  ingressPublicZoneID is the Route53 hosted zone ID for the public ingress zone
+                  created when IngressDNSManagement is Managed.
+                maxLength: 32
+                type: string
               securityGroupID:
                 description: |-
                   securityGroupID is the ID for the VPC endpoint SecurityGroup
