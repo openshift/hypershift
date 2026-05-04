@@ -47,6 +47,7 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
 	"go.uber.org/zap/zaptest"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type testClient struct {
@@ -69,11 +70,16 @@ var initialObjects = []client.Object{
 	globalconfig.ProjectConfig(),
 	globalconfig.BuildConfig(),
 	globalconfig.ProxyConfig(),
-	// Not running bcrypt hashing for the kubeadmin secret massively speeds up the tests, 4s vs 0.1s (and for -race its ~10x that)
+	// Use a valid bcrypt hash of "test" (matching fakeKubeadminPasswordSecret) so the
+	// CompareHashAndPassword check passes and avoids re-hashing on every reconcile.
+	// MinCost keeps the tests fast (~0.1s vs ~4s with DefaultCost, ~10x worse with -race).
 	&corev1.Secret{
 		ObjectMeta: manifests.KubeadminPasswordHashSecret().ObjectMeta,
 		Data: map[string][]byte{
-			"kubeadmin": []byte("something"),
+			"kubeadmin": func() []byte {
+				h, _ := bcrypt.GenerateFromPassword([]byte("test"), bcrypt.MinCost)
+				return h
+			}(),
 		},
 	},
 	manifests.NodeTuningClusterOperator(),
@@ -483,7 +489,9 @@ func TestReconcileKubeadminPasswordHashSecret(t *testing.T) {
 	tests := map[string]struct {
 		inputHCP                                 *hyperv1.HostedControlPlane
 		inputObjects                             []client.Object
+		existingHashSecret                       *corev1.Secret
 		expectKubeadminPasswordHashSecretToExist bool
+		expectHashPreserved                      bool
 	}{
 		"when kubeadminPasswordSecret exists the hash secret is created": {
 			inputHCP: &hyperv1.HostedControlPlane{
@@ -505,6 +513,62 @@ func TestReconcileKubeadminPasswordHashSecret(t *testing.T) {
 			},
 			expectKubeadminPasswordHashSecretToExist: true,
 		},
+		"When existing hash does not match the password it should regenerate the hash": {
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testHCPName,
+					Namespace: testNamespace,
+				},
+			},
+			inputObjects: []client.Object{
+				&corev1.Secret{
+					ObjectMeta: manifests.KubeadminPasswordSecret(testNamespace).ObjectMeta,
+					Data: map[string][]byte{
+						"password": []byte(`adminpass`),
+					},
+				},
+				&appsv1.Deployment{
+					ObjectMeta: manifests.OAuthDeployment(testNamespace).ObjectMeta,
+				},
+			},
+			existingHashSecret: &corev1.Secret{
+				ObjectMeta: manifests.KubeadminPasswordHashSecret().ObjectMeta,
+				Data: map[string][]byte{
+					"kubeadmin": []byte("stale-non-matching-hash"),
+				},
+			},
+			expectKubeadminPasswordHashSecretToExist: true,
+		},
+		"When hash already matches password it should not regenerate": {
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testHCPName,
+					Namespace: testNamespace,
+				},
+			},
+			inputObjects: []client.Object{
+				&corev1.Secret{
+					ObjectMeta: manifests.KubeadminPasswordSecret(testNamespace).ObjectMeta,
+					Data: map[string][]byte{
+						"password": []byte(`adminpass`),
+					},
+				},
+				&appsv1.Deployment{
+					ObjectMeta: manifests.OAuthDeployment(testNamespace).ObjectMeta,
+				},
+			},
+			existingHashSecret: &corev1.Secret{
+				ObjectMeta: manifests.KubeadminPasswordHashSecret().ObjectMeta,
+				Data: map[string][]byte{
+					"kubeadmin": func() []byte {
+						h, _ := bcrypt.GenerateFromPassword([]byte("adminpass"), bcrypt.MinCost)
+						return h
+					}(),
+				},
+			},
+			expectKubeadminPasswordHashSecretToExist: true,
+			expectHashPreserved:                      true,
+		},
 		"when kubeadminPasswordSecret doesn't exist the hash secret is not created": {
 			inputHCP: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
@@ -523,8 +587,12 @@ func TestReconcileKubeadminPasswordHashSecret(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
+			guestClientBuilder := fake.NewClientBuilder().WithScheme(api.Scheme)
+			if test.existingHashSecret != nil {
+				guestClientBuilder = guestClientBuilder.WithObjects(test.existingHashSecret)
+			}
 			r := &reconciler{
-				client:                 fake.NewClientBuilder().WithScheme(api.Scheme).Build(),
+				client:                 guestClientBuilder.Build(),
 				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
 				cpClient:               fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(append(test.inputObjects, test.inputHCP)...).Build(),
 				hcpName:                testHCPName,
@@ -536,7 +604,17 @@ func TestReconcileKubeadminPasswordHashSecret(t *testing.T) {
 				actualKubeAdminSecret := manifests.KubeadminPasswordHashSecret()
 				err := r.client.Get(t.Context(), client.ObjectKeyFromObject(actualKubeAdminSecret), actualKubeAdminSecret)
 				g.Expect(err).To(BeNil())
-				g.Expect(len(actualKubeAdminSecret.Data["kubeadmin"]) > 0).To(BeTrue())
+				g.Expect(actualKubeAdminSecret.Data["kubeadmin"]).ToNot(BeEmpty())
+				if test.expectHashPreserved {
+					g.Expect(actualKubeAdminSecret.Data["kubeadmin"]).To(Equal(test.existingHashSecret.Data["kubeadmin"]))
+				}
+				passwordSecret := manifests.KubeadminPasswordSecret(testNamespace)
+				err = r.cpClient.Get(t.Context(), client.ObjectKeyFromObject(passwordSecret), passwordSecret)
+				g.Expect(err).To(BeNil())
+				g.Expect(bcrypt.CompareHashAndPassword(
+					actualKubeAdminSecret.Data["kubeadmin"],
+					passwordSecret.Data["password"],
+				)).To(BeNil())
 			} else {
 				actualKubeAdminSecret := manifests.KubeadminPasswordHashSecret()
 				err := r.client.Get(t.Context(), client.ObjectKeyFromObject(actualKubeAdminSecret), actualKubeAdminSecret)
