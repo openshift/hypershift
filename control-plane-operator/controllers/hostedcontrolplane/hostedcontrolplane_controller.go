@@ -1745,6 +1745,19 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 			return fmt.Errorf("failed to reconcile %s secret: %w", awsPodIdentityWebhookServingCert.Name, err)
 		}
 
+		// AWS EBS CSI driver operator serving cert
+		awsEBSCsiDriverOperatorServingCert := manifests.AWSEBSCsiDriverOperatorServingCert(hcp.Namespace)
+		awsEBSCsiDriverOperatorService := manifests.AWSEBSCsiDriverOperatorMetricsService(hcp.Namespace)
+		err = removeServiceCAAnnotationAndSecret(ctx, r.Client, awsEBSCsiDriverOperatorService, awsEBSCsiDriverOperatorServingCert)
+		if err != nil {
+			r.Log.Error(err, "failed to remove service ca annotation and secret")
+		}
+		if _, err = createOrUpdate(ctx, r, awsEBSCsiDriverOperatorServingCert, func() error {
+			return pki.ReconcileAWSEBSCsiDriverOperatorMetricsServingCertSecret(awsEBSCsiDriverOperatorServingCert, rootCASecret, p.OwnerRef)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile aws ebs csi driver operator serving cert: %w", err)
+		}
+
 		awsEBSCsiDriverControllerMetricsService := manifests.AWSEBSCsiDriverControllerMetricsService(hcp.Namespace)
 		if err = r.Get(ctx, client.ObjectKeyFromObject(awsEBSCsiDriverControllerMetricsService), awsEBSCsiDriverControllerMetricsService); err != nil {
 			if !apierrors.IsNotFound(err) {
