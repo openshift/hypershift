@@ -23,7 +23,41 @@ import (
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	"github.com/spf13/pflag"
 )
+
+func TestBindOptions(t *testing.T) {
+	t.Run("When flags are parsed it should populate the options struct", func(t *testing.T) {
+		g := NewWithT(t)
+		opts := DefaultOptions()
+		flags := pflag.NewFlagSet("test", pflag.ContinueOnError)
+		BindOptions(opts, flags)
+
+		err := flags.Parse([]string{
+			"--base-domain=example.com",
+			"--name=my-cluster",
+			"--namespace=my-ns",
+		})
+
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(opts.BaseDomain).To(Equal("example.com"))
+		g.Expect(opts.Name).To(Equal("my-cluster"))
+		g.Expect(opts.Namespace).To(Equal("my-ns"))
+	})
+
+	t.Run("When base-domain flag is omitted the pflag default should be empty", func(t *testing.T) {
+		g := NewWithT(t)
+		opts := DefaultOptions()
+		flags := pflag.NewFlagSet("test", pflag.ContinueOnError)
+		BindOptions(opts, flags)
+
+		err := flags.Parse([]string{})
+
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(opts.BaseDomain).To(BeEmpty())
+	})
+}
 
 func TestValidateMgmtClusterAndNodePoolCPUArchitectures(t *testing.T) {
 	ctx := t.Context()
