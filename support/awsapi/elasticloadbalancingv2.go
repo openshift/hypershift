@@ -36,6 +36,7 @@ type ELBV2API interface {
 	ModifyTargetGroup(ctx context.Context, input *elasticloadbalancingv2.ModifyTargetGroupInput, optFns ...func(*elasticloadbalancingv2.Options)) (*elasticloadbalancingv2.ModifyTargetGroupOutput, error)
 	ModifyTargetGroupAttributes(ctx context.Context, input *elasticloadbalancingv2.ModifyTargetGroupAttributesInput, optFns ...func(*elasticloadbalancingv2.Options)) (*elasticloadbalancingv2.ModifyTargetGroupAttributesOutput, error)
 	RegisterTargets(ctx context.Context, input *elasticloadbalancingv2.RegisterTargetsInput, optFns ...func(*elasticloadbalancingv2.Options)) (*elasticloadbalancingv2.RegisterTargetsOutput, error)
+	SetSecurityGroups(ctx context.Context, input *elasticloadbalancingv2.SetSecurityGroupsInput, optFns ...func(*elasticloadbalancingv2.Options)) (*elasticloadbalancingv2.SetSecurityGroupsOutput, error)
 }
 
 // Ensure *elasticloadbalancingv2.Client implements ELBV2API

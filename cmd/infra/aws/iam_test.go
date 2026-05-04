@@ -3,6 +3,7 @@ package aws
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -575,6 +576,110 @@ func TestCreateWorkerInstanceProfile(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestCreateOIDCResources(t *testing.T) {
+	const (
+		providerName = "s3.example.com/" + testInfraID
+		providerARN  = "arn:aws:iam::123456789012:oidc-provider/" + providerName
+		baseDomain   = "example.com"
+	)
+
+	mockOIDCRoleCreation := func(m *awsapi.MockIAMAPI, roleCount int) {
+		m.EXPECT().GetRole(gomock.Any(), gomock.Any(), gomock.Any()).
+			DoAndReturn(func(_ context.Context, input *iam.GetRoleInput, _ ...func(*iam.Options)) (*iam.GetRoleOutput, error) {
+				return nil, noSuchEntity()
+			}).Times(roleCount)
+		m.EXPECT().CreateRole(gomock.Any(), gomock.Any(), gomock.Any()).
+			DoAndReturn(func(_ context.Context, input *iam.CreateRoleInput, _ ...func(*iam.Options)) (*iam.CreateRoleOutput, error) {
+				return &iam.CreateRoleOutput{Role: testRole(*input.RoleName)}, nil
+			}).Times(roleCount)
+		m.EXPECT().AttachRolePolicy(gomock.Any(), gomock.Any(), gomock.Any()).
+			Return(&iam.AttachRolePolicyOutput{}, nil).Times(7)
+	}
+
+	mockOIDCProviderLookup := func(m *awsapi.MockIAMAPI) {
+		m.EXPECT().ListOpenIDConnectProviders(gomock.Any(), gomock.Any(), gomock.Any()).
+			Return(&iam.ListOpenIDConnectProvidersOutput{
+				OpenIDConnectProviderList: []iamtypes.OpenIDConnectProviderListEntry{
+					{Arn: aws.String(providerARN)},
+				},
+			}, nil)
+	}
+
+	t.Run("When using ROSA managed policies with separate roles it should create inline policies with SetSecurityGroups", func(t *testing.T) {
+		g := NewWithT(t)
+		ctrl := gomock.NewController(t)
+		mockIAM := awsapi.NewMockIAMAPI(ctrl)
+
+		mockOIDCProviderLookup(mockIAM)
+		mockOIDCRoleCreation(mockIAM, 7)
+
+		var policyDocuments []string
+		mockIAM.EXPECT().PutRolePolicy(gomock.Any(), gomock.Any(), gomock.Any()).
+			DoAndReturn(func(_ context.Context, input *iam.PutRolePolicyInput, _ ...func(*iam.Options)) (*iam.PutRolePolicyOutput, error) {
+				policyDocuments = append(policyDocuments, *input.PolicyDocument)
+				return &iam.PutRolePolicyOutput{}, nil
+			}).Times(2)
+
+		opts := &CreateIAMOptions{
+			InfraID:                testInfraID,
+			IssuerURL:              testIssuerURL,
+			BaseDomain:             baseDomain,
+			UseROSAManagedPolicies: true,
+		}
+		output, err := opts.CreateOIDCResources(context.Background(), mockIAM, logr.Discard(), false)
+
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(output).NotTo(BeNil())
+		g.Expect(output.Roles.IngressARN).NotTo(Equal(output.Roles.KubeCloudControllerARN))
+
+		hasSetSecurityGroups := false
+		for _, doc := range policyDocuments {
+			if strings.Contains(doc, "elasticloadbalancing:SetSecurityGroups") {
+				hasSetSecurityGroups = true
+			}
+		}
+		g.Expect(hasSetSecurityGroups).To(BeTrue())
+	})
+
+	t.Run("When using ROSA managed policies with shared role it should create merged inline policy with SetSecurityGroups", func(t *testing.T) {
+		g := NewWithT(t)
+		ctrl := gomock.NewController(t)
+		mockIAM := awsapi.NewMockIAMAPI(ctrl)
+
+		mockOIDCProviderLookup(mockIAM)
+
+		sharedRoleName := testInfraID + "-shared-role"
+		mockIAM.EXPECT().GetRole(gomock.Any(), gomock.Any(), gomock.Any()).
+			Return(nil, noSuchEntity())
+		mockIAM.EXPECT().CreateRole(gomock.Any(), gomock.Any(), gomock.Any()).
+			Return(&iam.CreateRoleOutput{Role: testRole(sharedRoleName)}, nil)
+		mockIAM.EXPECT().AttachRolePolicy(gomock.Any(), gomock.Any(), gomock.Any()).
+			Return(&iam.AttachRolePolicyOutput{}, nil).Times(7)
+
+		var policyDocument string
+		mockIAM.EXPECT().PutRolePolicy(gomock.Any(), gomock.Any(), gomock.Any()).
+			DoAndReturn(func(_ context.Context, input *iam.PutRolePolicyInput, _ ...func(*iam.Options)) (*iam.PutRolePolicyOutput, error) {
+				policyDocument = *input.PolicyDocument
+				return &iam.PutRolePolicyOutput{}, nil
+			})
+
+		opts := &CreateIAMOptions{
+			InfraID:                testInfraID,
+			IssuerURL:              testIssuerURL,
+			BaseDomain:             baseDomain,
+			UseROSAManagedPolicies: true,
+			SharedRole:             true,
+		}
+		output, err := opts.CreateOIDCResources(context.Background(), mockIAM, logr.Discard(), false)
+
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(output).NotTo(BeNil())
+		g.Expect(output.Roles.IngressARN).To(Equal(output.Roles.KubeCloudControllerARN))
+		g.Expect(policyDocument).To(ContainSubstring("elasticloadbalancing:SetSecurityGroups"))
+		g.Expect(policyDocument).To(ContainSubstring("route53:ChangeResourceRecordSets"))
+	})
 }
 
 func TestEnsureHostedZonePrefix(t *testing.T) {
