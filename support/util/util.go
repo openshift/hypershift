@@ -427,6 +427,7 @@ func ApplyAWSLoadBalancerTargetNodesAnnotation(svc *corev1.Service, hcp *hyperv1
 	}
 }
 
+// GetKubeClientSet creates a Kubernetes clientset using the default config resolution.
 func GetKubeClientSet() (kubeclient.Interface, error) {
 	return GetKubeClientSetFromKubeconfig("")
 }
@@ -436,12 +437,12 @@ func GetKubeClientSet() (kubeclient.Interface, error) {
 func GetKubeClientSetFromKubeconfig(kubeconfig string) (kubeclient.Interface, error) {
 	cfg, err := cmdutil.GetConfigFromKubeconfig(kubeconfig)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("unable to get kubernetes config: %w", err)
 	}
 
 	kc, err := kubeclient.NewForConfig(cfg)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("unable to create kubernetes clientset: %w", err)
 	}
 
 	return kc, nil

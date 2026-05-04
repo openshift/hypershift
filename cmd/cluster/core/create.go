@@ -42,6 +42,8 @@ import (
 	"github.com/spf13/pflag"
 )
 
+const KubeconfigFlagHelp = "Path to a kubeconfig file for the management cluster. If not specified, the default kubeconfig resolution is used (KUBECONFIG env var, in-cluster config, or ~/.kube/config)"
+
 func DefaultOptions() *RawCreateOptions {
 	return &RawCreateOptions{
 		Namespace:                      "clusters",
@@ -65,7 +67,7 @@ func BindOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 }
 
 func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
-	flags.StringVar(&opts.Kubeconfig, "kubeconfig", opts.Kubeconfig, "Path to a kubeconfig file for the management cluster. If not specified, the default kubeconfig resolution is used (KUBECONFIG env var, in-cluster config, or ~/.kube/config)")
+	flags.StringVar(&opts.Kubeconfig, "kubeconfig", opts.Kubeconfig, KubeconfigFlagHelp)
 	flags.StringVar(&opts.Namespace, "namespace", opts.Namespace, "A namespace to contain the generated resources")
 	flags.StringVar(&opts.Name, "name", opts.Name, "A name for the cluster")
 	flags.StringVar(&opts.BaseDomain, "base-domain", opts.BaseDomain, "The ingress base domain for the cluster")
@@ -628,7 +630,11 @@ func apply(ctx context.Context, l logr.Logger, infraID string, objects []crclien
 	return nil
 }
 
-func GetAPIServerAddressByNode(ctx context.Context, l logr.Logger, kubeconfig string) (string, error) {
+func GetAPIServerAddressByNode(ctx context.Context, l logr.Logger) (string, error) {
+	return GetAPIServerAddressByNodeFromKubeconfig(ctx, l, "")
+}
+
+func GetAPIServerAddressByNodeFromKubeconfig(ctx context.Context, l logr.Logger, kubeconfig string) (string, error) {
 	// Fetch a single node and determine possible DNS or IP entries to use
 	// for external node-port communication.
 	// Possible values are considered with the following priority based on the address type:

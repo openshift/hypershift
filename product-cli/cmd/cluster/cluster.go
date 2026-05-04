@@ -54,7 +54,7 @@ func NewDestroyCommands() *cobra.Command {
 		SilenceUsage: true,
 	}
 
-	cmd.PersistentFlags().StringVar(&opts.Kubeconfig, "kubeconfig", opts.Kubeconfig, "Path to a kubeconfig file for the management cluster. If not specified, the default kubeconfig resolution is used (KUBECONFIG env var, in-cluster config, or ~/.kube/config)")
+	cmd.PersistentFlags().StringVar(&opts.Kubeconfig, "kubeconfig", opts.Kubeconfig, core.KubeconfigFlagHelp)
 	cmd.PersistentFlags().DurationVar(&opts.ClusterGracePeriod, "cluster-grace-period", opts.ClusterGracePeriod, "Period of time to wait for the HostedCluster to be deleted before forcibly destroying its infrastructure.")
 	cmd.PersistentFlags().BoolVar(&opts.DestroyCloudResources, "destroy-cloud-resources", opts.DestroyCloudResources, "If true, cloud resources, such as load balancers and persistent storage disks, created by the HostedCluster during its lifetime are removed.")
 	cmd.PersistentFlags().StringVar(&opts.InfraID, "infra-id", opts.InfraID, "The HostedCluster's infrastructure ID. This is inferred from the HostedCluster by default.")

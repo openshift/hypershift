@@ -74,6 +74,15 @@ func TestNewCreateCommands(t *testing.T) {
 				g.Expect(defaultDualFlag.Annotations["cobra_annotation_mutually_exclusive"]).To(ContainElement("cluster-cidr default-dual"))
 			},
 		},
+		{
+			name: "When create cluster command is created, it should register a --kubeconfig persistent flag",
+			test: func(t *testing.T, cmd *cobra.Command) {
+				g := NewWithT(t)
+				kubeconfigFlag := cmd.Flag("kubeconfig")
+				g.Expect(kubeconfigFlag).ToNot(BeNil())
+				g.Expect(kubeconfigFlag.DefValue).To(Equal(""))
+			},
+		},
 	}
 
 	for _, tt := range tests {

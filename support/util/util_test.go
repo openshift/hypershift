@@ -3,6 +3,8 @@ package util
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 	"unicode/utf8"
 
@@ -903,5 +905,73 @@ func TestDeleteAllIfNeeded(t *testing.T) {
 
 		err := DeleteAllIfNeeded(context.Background(), c, cm)
 		g.Expect(err).ToNot(HaveOccurred())
+	})
+}
+
+func TestGetKubeClientSetFromKubeconfig(t *testing.T) {
+	t.Run("When kubeconfig points to a non-existent file it should return an error with context", func(t *testing.T) {
+		t.Parallel()
+		g := NewGomegaWithT(t)
+		_, err := GetKubeClientSetFromKubeconfig("/nonexistent/path/kubeconfig")
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("unable to get kubernetes config"))
+	})
+
+	t.Run("When kubeconfig points to a valid file it should create a clientset", func(t *testing.T) {
+		t.Parallel()
+		g := NewGomegaWithT(t)
+		kubeconfigPath := filepath.Join(t.TempDir(), "kubeconfig")
+		kubeconfigContent := `apiVersion: v1
+kind: Config
+clusters:
+- cluster:
+    server: https://localhost:6443
+  name: test-cluster
+contexts:
+- context:
+    cluster: test-cluster
+    user: test-user
+  name: test-context
+current-context: test-context
+users:
+- name: test-user
+  user:
+    token: test-token
+`
+		err := os.WriteFile(kubeconfigPath, []byte(kubeconfigContent), 0600)
+		g.Expect(err).NotTo(HaveOccurred())
+
+		kc, err := GetKubeClientSetFromKubeconfig(kubeconfigPath)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(kc).NotTo(BeNil())
+	})
+
+	t.Run("When kubeconfig is empty it should delegate to default config resolution", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		kubeconfigPath := filepath.Join(t.TempDir(), "kubeconfig")
+		kubeconfigContent := `apiVersion: v1
+kind: Config
+clusters:
+- cluster:
+    server: https://localhost:6443
+  name: test-cluster
+contexts:
+- context:
+    cluster: test-cluster
+    user: test-user
+  name: test-context
+current-context: test-context
+users:
+- name: test-user
+  user:
+    token: test-token
+`
+		err := os.WriteFile(kubeconfigPath, []byte(kubeconfigContent), 0600)
+		g.Expect(err).NotTo(HaveOccurred())
+
+		t.Setenv("KUBECONFIG", kubeconfigPath)
+		kc, err := GetKubeClientSetFromKubeconfig("")
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(kc).NotTo(BeNil())
 	})
 }

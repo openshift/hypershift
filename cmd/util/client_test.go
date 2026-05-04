@@ -8,29 +8,10 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func TestGetConfigFromKubeconfig(t *testing.T) {
-	t.Run("When kubeconfig is empty it should fall back to default config resolution", func(t *testing.T) {
-		g := NewGomegaWithT(t)
-		// This test verifies the empty-path codepath does not panic.
-		// It may fail to find a config in CI, but should not panic.
-		_, err := GetConfigFromKubeconfig("")
-		// We don't assert success because there may be no default kubeconfig in the test environment.
-		// We only assert it doesn't panic and returns an error if no config is available.
-		_ = err
-		g.Expect(true).To(BeTrue())
-	})
-
-	t.Run("When kubeconfig points to a non-existent file it should return an error", func(t *testing.T) {
-		g := NewGomegaWithT(t)
-		_, err := GetConfigFromKubeconfig("/nonexistent/path/kubeconfig")
-		g.Expect(err).To(HaveOccurred())
-	})
-
-	t.Run("When kubeconfig points to a valid file it should return a config", func(t *testing.T) {
-		g := NewGomegaWithT(t)
-		tmpDir := t.TempDir()
-		kubeconfigPath := filepath.Join(tmpDir, "kubeconfig")
-		kubeconfigContent := `apiVersion: v1
+func writeTestKubeconfig(t *testing.T) string {
+	t.Helper()
+	kubeconfigPath := filepath.Join(t.TempDir(), "kubeconfig")
+	kubeconfigContent := `apiVersion: v1
 kind: Config
 clusters:
 - cluster:
@@ -47,8 +28,35 @@ users:
   user:
     token: test-token
 `
-		err := os.WriteFile(kubeconfigPath, []byte(kubeconfigContent), 0600)
+	if err := os.WriteFile(kubeconfigPath, []byte(kubeconfigContent), 0600); err != nil {
+		t.Fatalf("failed to write test kubeconfig: %v", err)
+	}
+	return kubeconfigPath
+}
+
+func TestGetConfigFromKubeconfig(t *testing.T) {
+	t.Run("When kubeconfig is empty it should use KUBECONFIG env var for config resolution", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		kubeconfigPath := writeTestKubeconfig(t)
+		t.Setenv("KUBECONFIG", kubeconfigPath)
+
+		cfg, err := GetConfigFromKubeconfig("")
 		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(cfg).NotTo(BeNil())
+		g.Expect(cfg.Host).To(Equal("https://localhost:6443"))
+	})
+
+	t.Run("When kubeconfig points to a non-existent file it should return an error", func(t *testing.T) {
+		t.Parallel()
+		g := NewGomegaWithT(t)
+		_, err := GetConfigFromKubeconfig("/nonexistent/path/kubeconfig")
+		g.Expect(err).To(HaveOccurred())
+	})
+
+	t.Run("When kubeconfig points to a valid file it should return a config", func(t *testing.T) {
+		t.Parallel()
+		g := NewGomegaWithT(t)
+		kubeconfigPath := writeTestKubeconfig(t)
 
 		cfg, err := GetConfigFromKubeconfig(kubeconfigPath)
 		g.Expect(err).NotTo(HaveOccurred())
@@ -56,6 +64,17 @@ users:
 		g.Expect(cfg.Host).To(Equal("https://localhost:6443"))
 		g.Expect(cfg.QPS).To(Equal(float32(100)))
 		g.Expect(cfg.Burst).To(Equal(100))
+	})
+
+	t.Run("When kubeconfig points to a file with malformed content it should return an error", func(t *testing.T) {
+		t.Parallel()
+		g := NewGomegaWithT(t)
+		kubeconfigPath := filepath.Join(t.TempDir(), "kubeconfig")
+		err := os.WriteFile(kubeconfigPath, []byte("not-valid-yaml: ["), 0600)
+		g.Expect(err).NotTo(HaveOccurred())
+
+		_, err = GetConfigFromKubeconfig(kubeconfigPath)
+		g.Expect(err).To(HaveOccurred())
 	})
 }
 
@@ -79,27 +98,7 @@ func TestGetClientFromKubeconfig(t *testing.T) {
 	t.Run("When kubeconfig points to a valid file it should create a client", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 		t.Setenv("FAKE_CLIENT", "false")
-		tmpDir := t.TempDir()
-		kubeconfigPath := filepath.Join(tmpDir, "kubeconfig")
-		kubeconfigContent := `apiVersion: v1
-kind: Config
-clusters:
-- cluster:
-    server: https://localhost:6443
-  name: test-cluster
-contexts:
-- context:
-    cluster: test-cluster
-    user: test-user
-  name: test-context
-current-context: test-context
-users:
-- name: test-user
-  user:
-    token: test-token
-`
-		err := os.WriteFile(kubeconfigPath, []byte(kubeconfigContent), 0600)
-		g.Expect(err).NotTo(HaveOccurred())
+		kubeconfigPath := writeTestKubeconfig(t)
 
 		client, err := GetClientFromKubeconfig(kubeconfigPath)
 		g.Expect(err).NotTo(HaveOccurred())

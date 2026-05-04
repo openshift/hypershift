@@ -80,7 +80,7 @@ func (o *RawCreateOptions) Validate(ctx context.Context, opts *core.CreateOption
 	}
 	if o.APIServerAddress == "" && o.ServicePublishingStrategy == NodePortServicePublishingStrategy && !opts.Render {
 		var err error
-		if o.APIServerAddress, err = core.GetAPIServerAddressByNode(ctx, opts.Log, opts.Kubeconfig); err != nil {
+		if o.APIServerAddress, err = core.GetAPIServerAddressByNodeFromKubeconfig(ctx, opts.Log, opts.Kubeconfig); err != nil {
 			return nil, err
 		}
 	}
