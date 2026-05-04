@@ -81,7 +81,10 @@ func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingSt
 				// To ensure that requirement is satisfied in Regions with more than 3 zones, managed services create subnets in all of them.
 				// That and having this enabled in the load balancers would make the private link communication to always succeed.
 				// Without this the connection might go to a subnet without Node and so it would be rejected.
+				// In-tree AWS cloud provider annotation for cross-zone load balancing (OpenShift management clusters).
 				svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled"] = "true"
+				// AWS Load Balancer Controller annotation for cross-zone load balancing (EKS Auto Mode).
+				svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-attributes"] = "load_balancing.cross_zone.enabled=true"
 			}
 		} else {
 			svc.Spec.Type = corev1.ServiceTypeClusterIP
@@ -209,7 +212,10 @@ func ReconcilePrivateService(svc *corev1.Service, hcp *hyperv1.HostedControlPlan
 	case hyperv1.AzurePlatform:
 		svc.Annotations[azureutil.InternalLoadBalancerAnnotation] = azureutil.InternalLoadBalancerValue
 	default:
+		// In-tree AWS cloud provider annotation for cross-zone load balancing (OpenShift management clusters).
 		svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled"] = "true"
+		// AWS Load Balancer Controller annotation for cross-zone load balancing (EKS Auto Mode).
+		svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-attributes"] = "load_balancing.cross_zone.enabled=true"
 		svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-internal"] = "true"
 		svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-type"] = "nlb"
 	}

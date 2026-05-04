@@ -48,6 +48,9 @@ func TestReconcileRouterServiceAnnotations(t *testing.T) {
 	if got := svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled"]; got != "true" {
 		t.Fatalf("expected cross-zone load balancing annotation to be 'true', got %q", got)
 	}
+	if got := svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-attributes"]; got != "load_balancing.cross_zone.enabled=true" {
+		t.Fatalf("expected load balancer attributes annotation, got %q", got)
+	}
 	if got := svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-target-node-labels"]; got != targetNodesLabel {
 		t.Fatalf("expected target node labels annotation to be '%s', got %q", targetNodesLabel, got)
 	}
