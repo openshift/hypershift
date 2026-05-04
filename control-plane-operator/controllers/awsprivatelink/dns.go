@@ -63,6 +63,9 @@ func createOrGetPublicHostedZone(ctx context.Context, client awsapi.ROUTE53API, 
 		if getErr != nil {
 			return "", nil, fmt.Errorf("failed to get public zone %s: %w", zoneID, getErr)
 		}
+		if getOutput.HostedZone == nil || aws.ToString(getOutput.HostedZone.CallerReference) != callerRef {
+			return "", nil, fmt.Errorf("public zone %s exists but has unexpected CallerReference, refusing to adopt", zoneID)
+		}
 		var ns []string
 		if getOutput.DelegationSet != nil {
 			ns = getOutput.DelegationSet.NameServers
@@ -109,6 +112,9 @@ func createOrGetPrivateHostedZone(ctx context.Context, client awsapi.ROUTE53API,
 		})
 		if getErr != nil {
 			return "", fmt.Errorf("failed to get private zone %s: %w", zoneID, getErr)
+		}
+		if getOutput.HostedZone == nil || aws.ToString(getOutput.HostedZone.CallerReference) != callerRef {
+			return "", fmt.Errorf("private zone %s exists but has unexpected CallerReference, refusing to adopt", zoneID)
 		}
 		vpcAssociated := false
 		for _, v := range getOutput.VPCs {
@@ -204,12 +210,50 @@ func reconcileIngressDNS(ctx context.Context, route53Client awsapi.ROUTE53API, h
 		}
 	}
 
-	if existingPrivateZoneID == "" {
-		awsSpec := hcp.Spec.Platform.AWS
-		vpcID := ""
-		if awsSpec.CloudProviderConfig != nil {
-			vpcID = awsSpec.CloudProviderConfig.VPC
+	awsSpec := hcp.Spec.Platform.AWS
+	vpcID := ""
+	if awsSpec.CloudProviderConfig != nil {
+		vpcID = awsSpec.CloudProviderConfig.VPC
+	}
+
+	if existingPrivateZoneID != "" {
+		getOutput, err := route53Client.GetHostedZone(ctx, &route53.GetHostedZoneInput{
+			Id: aws.String(existingPrivateZoneID),
+		})
+		if err != nil {
+			var noSuchZone *route53types.NoSuchHostedZone
+			if errors.As(err, &noSuchZone) {
+				log.Info("Existing private zone no longer exists, will recreate", "zoneID", existingPrivateZoneID)
+				existingPrivateZoneID = ""
+				result.PrivateZoneID = ""
+			} else {
+				return nil, fmt.Errorf("failed to validate existing private zone %s: %w", existingPrivateZoneID, err)
+			}
+		} else if vpcID != "" {
+			vpcAssociated := false
+			for _, v := range getOutput.VPCs {
+				if aws.ToString(v.VPCId) == vpcID {
+					vpcAssociated = true
+					break
+				}
+			}
+			if !vpcAssociated {
+				log.Info("Existing private zone missing VPC association, re-associating", "zoneID", existingPrivateZoneID, "vpcID", vpcID)
+				_, assocErr := route53Client.AssociateVPCWithHostedZone(ctx, &route53.AssociateVPCWithHostedZoneInput{
+					HostedZoneId: aws.String(existingPrivateZoneID),
+					VPC: &route53types.VPC{
+						VPCId:     aws.String(vpcID),
+						VPCRegion: route53types.VPCRegion(awsSpec.Region),
+					},
+				})
+				if assocErr != nil {
+					return nil, fmt.Errorf("failed to re-associate VPC %s with private zone %s: %w", vpcID, existingPrivateZoneID, assocErr)
+				}
+			}
 		}
+	}
+
+	if existingPrivateZoneID == "" {
 		if vpcID == "" {
 			return nil, fmt.Errorf("VPC ID is required for private ingress zone creation")
 		}

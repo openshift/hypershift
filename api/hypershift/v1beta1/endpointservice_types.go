@@ -60,7 +60,7 @@ type AWSEndpointServiceStatus struct {
 	// exist, then the Available condition will be false, reason AWSErrorReason,
 	// and the error reported in the message.
 	//
-	// Current condition types are: "Available"
+	// Current condition types are: "AWSEndpointServiceAvailable", "AWSEndpointAvailable", "AWSIngressDNSAvailable"
 	// +optional
 	// +listType=map
 	// +listMapKey=type

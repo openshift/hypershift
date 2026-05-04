@@ -1142,17 +1142,29 @@ func (r *AWSEndpointServiceReconciler) delete(ctx context.Context, awsEndpointSe
 		}
 		log.Info("ingress DNS zones cleaned up")
 
-		for _, ref := range awsEndpointService.OwnerReferences {
-			if ref.Kind == "HostedControlPlane" {
-				ep := &unstructured.Unstructured{}
-				ep.SetGroupVersionKind(dnsEndpointGVK)
-				ep.SetName(dnsEndpointName(ref.Name))
-				ep.SetNamespace(awsEndpointService.Namespace)
-				if err := r.Delete(ctx, ep); err != nil && !apierrors.IsNotFound(err) {
-					log.Info("Failed to delete DNSEndpoint during cleanup", "name", ep.GetName(), "error", err.Error())
+		var hcpName string
+		hcpList := &hyperv1.HostedControlPlaneList{}
+		if err := r.List(ctx, hcpList, &client.ListOptions{Namespace: awsEndpointService.Namespace}); err == nil && len(hcpList.Items) == 1 {
+			hcpName = hcpList.Items[0].Name
+		}
+		if hcpName == "" {
+			for _, ref := range awsEndpointService.OwnerReferences {
+				if ref.Kind == "HostedControlPlane" {
+					hcpName = ref.Name
+					break
 				}
-				break
 			}
+		}
+		if hcpName != "" {
+			ep := &unstructured.Unstructured{}
+			ep.SetGroupVersionKind(dnsEndpointGVK)
+			ep.SetName(dnsEndpointName(hcpName))
+			ep.SetNamespace(awsEndpointService.Namespace)
+			if err := r.Delete(ctx, ep); err != nil && !apierrors.IsNotFound(err) {
+				log.Info("Failed to delete DNSEndpoint during cleanup", "name", ep.GetName(), "error", err.Error())
+			}
+		} else {
+			log.Info("Could not determine HCP name for DNSEndpoint cleanup, skipping")
 		}
 	}
 

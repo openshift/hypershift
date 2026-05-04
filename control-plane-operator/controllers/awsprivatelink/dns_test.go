@@ -120,7 +120,7 @@ func TestCreateOrGetPublicHostedZone(t *testing.T) {
 			expectNS:     []string{"ns-1.awsdns.com", "ns-2.awsdns.com"},
 		},
 		{
-			name: "When zone already exists it should look it up and return zone ID and NS records",
+			name: "When zone already exists with matching CallerReference it should return zone ID and NS records",
 			setupMock: func(m *awsapi.MockROUTE53API) {
 				m.EXPECT().CreateHostedZone(gomock.Any(), gomock.Any(), gomock.Any()).Return(
 					nil, &route53types.HostedZoneAlreadyExists{Message: aws.String("exists")},
@@ -141,7 +141,8 @@ func TestCreateOrGetPublicHostedZone(t *testing.T) {
 				m.EXPECT().GetHostedZone(gomock.Any(), gomock.Any(), gomock.Any()).Return(
 					&route53.GetHostedZoneOutput{
 						HostedZone: &route53types.HostedZone{
-							Id: aws.String("/hostedzone/Z456"),
+							Id:              aws.String("/hostedzone/Z456"),
+							CallerReference: aws.String("callerref"),
 						},
 						DelegationSet: &route53types.DelegationSet{
 							NameServers: []string{"ns-3.awsdns.com"},
@@ -151,6 +152,37 @@ func TestCreateOrGetPublicHostedZone(t *testing.T) {
 			},
 			expectZoneID: "Z456",
 			expectNS:     []string{"ns-3.awsdns.com"},
+		},
+		{
+			name: "When zone already exists with mismatched CallerReference it should refuse to adopt",
+			setupMock: func(m *awsapi.MockROUTE53API) {
+				m.EXPECT().CreateHostedZone(gomock.Any(), gomock.Any(), gomock.Any()).Return(
+					nil, &route53types.HostedZoneAlreadyExists{Message: aws.String("exists")},
+				)
+				m.EXPECT().ListHostedZonesByName(gomock.Any(), gomock.Any(), gomock.Any()).Return(
+					&route53.ListHostedZonesByNameOutput{
+						HostedZones: []route53types.HostedZone{
+							{
+								Id:   aws.String("/hostedzone/ZOTHER"),
+								Name: aws.String("test.example.com."),
+								Config: &route53types.HostedZoneConfig{
+									PrivateZone: false,
+								},
+							},
+						},
+					}, nil,
+				)
+				m.EXPECT().GetHostedZone(gomock.Any(), gomock.Any(), gomock.Any()).Return(
+					&route53.GetHostedZoneOutput{
+						HostedZone: &route53types.HostedZone{
+							Id:              aws.String("/hostedzone/ZOTHER"),
+							CallerReference: aws.String("someone-elses-ref"),
+						},
+					}, nil,
+				)
+			},
+			expectError:   true,
+			errorContains: "unexpected CallerReference",
 		},
 		{
 			name: "When create fails with non-exists error it should return the error",
@@ -209,7 +241,7 @@ func TestCreateOrGetPrivateHostedZone(t *testing.T) {
 			expectZoneID: "ZPRIV1",
 		},
 		{
-			name: "When zone already exists with correct VPC it should look it up and return zone ID",
+			name: "When zone already exists with correct VPC and matching CallerReference it should return zone ID",
 			setupMock: func(m *awsapi.MockROUTE53API) {
 				m.EXPECT().CreateHostedZone(gomock.Any(), gomock.Any(), gomock.Any()).Return(
 					nil, &route53types.HostedZoneAlreadyExists{Message: aws.String("exists")},
@@ -229,7 +261,10 @@ func TestCreateOrGetPrivateHostedZone(t *testing.T) {
 				)
 				m.EXPECT().GetHostedZone(gomock.Any(), gomock.Any(), gomock.Any()).Return(
 					&route53.GetHostedZoneOutput{
-						HostedZone: &route53types.HostedZone{Id: aws.String("/hostedzone/ZPRIV2")},
+						HostedZone: &route53types.HostedZone{
+							Id:              aws.String("/hostedzone/ZPRIV2"),
+							CallerReference: aws.String("callerref"),
+						},
 						VPCs: []route53types.VPC{
 							{VPCId: aws.String("vpc-123"), VPCRegion: route53types.VPCRegionUsEast1},
 						},
@@ -259,7 +294,10 @@ func TestCreateOrGetPrivateHostedZone(t *testing.T) {
 				)
 				m.EXPECT().GetHostedZone(gomock.Any(), gomock.Any(), gomock.Any()).Return(
 					&route53.GetHostedZoneOutput{
-						HostedZone: &route53types.HostedZone{Id: aws.String("/hostedzone/ZPRIV3")},
+						HostedZone: &route53types.HostedZone{
+							Id:              aws.String("/hostedzone/ZPRIV3"),
+							CallerReference: aws.String("callerref"),
+						},
 						VPCs: []route53types.VPC{
 							{VPCId: aws.String("vpc-other"), VPCRegion: route53types.VPCRegionUsEast1},
 						},
@@ -381,15 +419,57 @@ func TestReconcileIngressDNS(t *testing.T) {
 			},
 		},
 		{
-			name:              "When both zones already exist it should skip creation and fetch NS records",
+			name:              "When both zones already exist it should validate and fetch NS records",
 			hcp:               baseHCP(),
 			existingPublicID:  "ZPUB-EXISTING",
 			existingPrivateID: "ZPRIV-EXISTING",
 			setupMock: func(m *awsapi.MockROUTE53API) {
-				m.EXPECT().GetHostedZone(gomock.Any(), gomock.Any(), gomock.Any()).Return(
-					&route53.GetHostedZoneOutput{
-						HostedZone:    &route53types.HostedZone{Id: aws.String("ZPUB-EXISTING")},
-						DelegationSet: &route53types.DelegationSet{NameServers: []string{"ns-existing.awsdns.com"}},
+				m.EXPECT().GetHostedZone(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
+					func(_ context.Context, input *route53.GetHostedZoneInput, _ ...func(*route53.Options)) (*route53.GetHostedZoneOutput, error) {
+						if aws.ToString(input.Id) == "ZPUB-EXISTING" {
+							return &route53.GetHostedZoneOutput{
+								HostedZone:    &route53types.HostedZone{Id: aws.String("ZPUB-EXISTING")},
+								DelegationSet: &route53types.DelegationSet{NameServers: []string{"ns-existing.awsdns.com"}},
+							}, nil
+						}
+						return &route53.GetHostedZoneOutput{
+							HostedZone: &route53types.HostedZone{Id: aws.String("ZPRIV-EXISTING")},
+							VPCs: []route53types.VPC{
+								{VPCId: aws.String("vpc-123"), VPCRegion: route53types.VPCRegionUsEast1},
+							},
+						}, nil
+					},
+				).Times(2)
+				m.EXPECT().ChangeResourceRecordSets(gomock.Any(), gomock.Any(), gomock.Any()).Return(
+					&route53.ChangeResourceRecordSetsOutput{}, nil,
+				)
+			},
+			validateResult: func(g *GomegaWithT, result *ingressDNSResult) {
+				g.Expect(result.PublicZoneID).To(Equal("ZPUB-EXISTING"))
+				g.Expect(result.PrivateZoneID).To(Equal("ZPRIV-EXISTING"))
+				g.Expect(result.NSRecords).To(Equal([]string{"ns-existing.awsdns.com"}))
+			},
+		},
+		{
+			name:              "When existing private zone is deleted it should recreate it",
+			hcp:               baseHCP(),
+			existingPublicID:  "ZPUB-EXISTING",
+			existingPrivateID: "ZPRIV-GONE",
+			setupMock: func(m *awsapi.MockROUTE53API) {
+				m.EXPECT().GetHostedZone(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
+					func(_ context.Context, input *route53.GetHostedZoneInput, _ ...func(*route53.Options)) (*route53.GetHostedZoneOutput, error) {
+						if aws.ToString(input.Id) == "ZPUB-EXISTING" {
+							return &route53.GetHostedZoneOutput{
+								HostedZone:    &route53types.HostedZone{Id: aws.String("ZPUB-EXISTING")},
+								DelegationSet: &route53types.DelegationSet{NameServers: []string{"ns-existing.awsdns.com"}},
+							}, nil
+						}
+						return nil, &route53types.NoSuchHostedZone{Message: aws.String("not found")}
+					},
+				).Times(2)
+				m.EXPECT().CreateHostedZone(gomock.Any(), gomock.Any(), gomock.Any()).Return(
+					&route53.CreateHostedZoneOutput{
+						HostedZone: &route53types.HostedZone{Id: aws.String("/hostedzone/ZPRIV-NEW")},
 					}, nil,
 				)
 				m.EXPECT().ChangeResourceRecordSets(gomock.Any(), gomock.Any(), gomock.Any()).Return(
@@ -398,7 +478,7 @@ func TestReconcileIngressDNS(t *testing.T) {
 			},
 			validateResult: func(g *GomegaWithT, result *ingressDNSResult) {
 				g.Expect(result.PublicZoneID).To(Equal("ZPUB-EXISTING"))
-				g.Expect(result.PrivateZoneID).To(Equal("ZPRIV-EXISTING"))
+				g.Expect(result.PrivateZoneID).To(Equal("ZPRIV-NEW"))
 				g.Expect(result.NSRecords).To(Equal([]string{"ns-existing.awsdns.com"}))
 			},
 		},

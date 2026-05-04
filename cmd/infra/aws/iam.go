@@ -657,8 +657,7 @@ func ingressPermPolicy(publicZone, privateZone string, sharedVPC bool) policyBin
 	}
 }
 
-func controlPlaneOperatorPolicy(hostedZone string, sharedVPC bool) policyBinding {
-	hostedZone = ensureHostedZonePrefix(hostedZone)
+func controlPlaneOperatorPolicy(_ string, sharedVPC bool) policyBinding {
 	var policy string
 	if sharedVPC {
 		policy = `{
@@ -683,7 +682,7 @@ func controlPlaneOperatorPolicy(hostedZone string, sharedVPC bool) policyBinding
 			]
 		}`
 	} else {
-		policy = fmt.Sprintf(`{
+		policy = `{
 			"Version": "2012-10-17",
 			"Statement": [
 				{
@@ -695,6 +694,7 @@ func controlPlaneOperatorPolicy(hostedZone string, sharedVPC bool) policyBinding
 						"ec2:DeleteVpcEndpoints",
 						"ec2:CreateTags",
 						"route53:ListHostedZones",
+						"route53:ListHostedZonesByName",
 						"route53:CreateHostedZone",
 						"route53:DeleteHostedZone",
 						"route53:GetHostedZone",
@@ -715,10 +715,10 @@ func controlPlaneOperatorPolicy(hostedZone string, sharedVPC bool) policyBinding
 						"route53:ChangeResourceRecordSets",
 						"route53:ListResourceRecordSets"
 					],
-					"Resource": "arn:aws:route53:::%s"
+					"Resource": "arn:aws:route53:::hostedzone/*"
 				}
 			]
-		}`, hostedZone)
+		}`
 	}
 	return policyBinding{
 		name:                 "control-plane-operator",
