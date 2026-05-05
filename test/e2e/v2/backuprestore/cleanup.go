@@ -20,7 +20,26 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/discovery"
+	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+)
+
+var (
+	agentMachineGVK = schema.GroupVersionKind{
+		Group:   "capi-provider.agent-install.openshift.io",
+		Version: "v1beta1",
+		Kind:    "AgentMachine",
+	}
+	agentClusterGVK = schema.GroupVersionKind{
+		Group:   "capi-provider.agent-install.openshift.io",
+		Version: "v1beta1",
+		Kind:    "AgentCluster",
+	}
+	clusterDeploymentGVK = schema.GroupVersionKind{
+		Group:   "hive.openshift.io",
+		Version: "v1",
+		Kind:    "ClusterDeployment",
+	}
 )
 
 const (
@@ -372,21 +391,11 @@ func PauseAgentCAPIResources(testCtx *internal.TestContext, logger logr.Logger) 
 	ns := testCtx.ControlPlaneNamespace
 	logger.Info("Pausing Agent CAPI resources", "namespace", ns)
 
-	agentMachineGVK := schema.GroupVersionKind{
-		Group:   "capi-provider.agent-install.openshift.io",
-		Version: "v1beta1",
-		Kind:    "AgentMachine",
-	}
-	if err := setAnnotationOnResources(testCtx, ns, agentMachineGVK, "cluster.x-k8s.io/paused", "true", logger); err != nil {
+	patch := []byte(fmt.Sprintf(`{"metadata":{"annotations":{%q:%q}}}`, capiv1.PausedAnnotation, "true"))
+	if err := patchResourcesByGVK(testCtx, ns, agentMachineGVK, patch, logger); err != nil {
 		return fmt.Errorf("failed to pause AgentMachine resources: %w", err)
 	}
-
-	agentClusterGVK := schema.GroupVersionKind{
-		Group:   "capi-provider.agent-install.openshift.io",
-		Version: "v1beta1",
-		Kind:    "AgentCluster",
-	}
-	if err := setAnnotationOnResources(testCtx, ns, agentClusterGVK, "cluster.x-k8s.io/paused", "true", logger); err != nil {
+	if err := patchResourcesByGVK(testCtx, ns, agentClusterGVK, patch, logger); err != nil {
 		return fmt.Errorf("failed to pause AgentCluster resources: %w", err)
 	}
 
@@ -399,21 +408,11 @@ func UnpauseAgentCAPIResources(testCtx *internal.TestContext, logger logr.Logger
 	ns := testCtx.ControlPlaneNamespace
 	logger.Info("Unpausing Agent CAPI resources", "namespace", ns)
 
-	agentMachineGVK := schema.GroupVersionKind{
-		Group:   "capi-provider.agent-install.openshift.io",
-		Version: "v1beta1",
-		Kind:    "AgentMachine",
-	}
-	if err := removeAnnotationFromResources(testCtx, ns, agentMachineGVK, "cluster.x-k8s.io/paused", logger); err != nil {
+	patch := []byte(fmt.Sprintf(`{"metadata":{"annotations":{%q:null}}}`, capiv1.PausedAnnotation))
+	if err := patchResourcesByGVK(testCtx, ns, agentMachineGVK, patch, logger); err != nil {
 		return fmt.Errorf("failed to unpause AgentMachine resources: %w", err)
 	}
-
-	agentClusterGVK := schema.GroupVersionKind{
-		Group:   "capi-provider.agent-install.openshift.io",
-		Version: "v1beta1",
-		Kind:    "AgentCluster",
-	}
-	if err := removeAnnotationFromResources(testCtx, ns, agentClusterGVK, "cluster.x-k8s.io/paused", logger); err != nil {
+	if err := patchResourcesByGVK(testCtx, ns, agentClusterGVK, patch, logger); err != nil {
 		return fmt.Errorf("failed to unpause AgentCluster resources: %w", err)
 	}
 
@@ -450,45 +449,21 @@ func annotateAgentsSkipSpokeCleanup(testCtx *internal.TestContext, agentNamespac
 		Version: "v1beta1",
 		Kind:    "Agent",
 	}
-	return setAnnotationOnResources(testCtx, agentNamespace, agentGVK,
-		"agent.agent-install.openshift.io/skip-spoke-cleanup", "true", logger)
+	patch := []byte(fmt.Sprintf(`{"metadata":{"annotations":{%q:%q}}}`,
+		"agent.agent-install.openshift.io/skip-spoke-cleanup", "true"))
+	return patchResourcesByGVK(testCtx, agentNamespace, agentGVK, patch, logger)
 }
 
 // setClusterDeploymentPreserveOnDelete sets spec.preserveOnDelete=true on all ClusterDeployment
 // CRs in the given namespace. This prevents agents from being unbound when the ClusterDeployment
 // is deleted, avoiding Ironic-triggered node reboots.
 func setClusterDeploymentPreserveOnDelete(testCtx *internal.TestContext, namespace string, logger logr.Logger) error {
-	cdGVK := schema.GroupVersionKind{
-		Group:   "hive.openshift.io",
-		Version: "v1",
-		Kind:    "ClusterDeployment",
-	}
-
-	list := &unstructured.UnstructuredList{}
-	list.SetGroupVersionKind(schema.GroupVersionKind{
-		Group:   cdGVK.Group,
-		Version: cdGVK.Version,
-		Kind:    cdGVK.Kind + "List",
-	})
-
-	if err := testCtx.MgmtClient.List(testCtx.Context, list, crclient.InNamespace(namespace)); err != nil {
-		return fmt.Errorf("failed to list ClusterDeployments in namespace %s: %w", namespace, err)
-	}
-
-	patch := []byte(`{"spec":{"preserveOnDelete":true}}`)
-	for i := range list.Items {
-		obj := &list.Items[i]
-		logger.Info("Setting preserveOnDelete on ClusterDeployment", "name", obj.GetName(), "namespace", obj.GetNamespace())
-		if err := testCtx.MgmtClient.Patch(testCtx.Context, obj, crclient.RawPatch(types.MergePatchType, patch)); err != nil {
-			return fmt.Errorf("failed to patch ClusterDeployment %s: %w", obj.GetName(), err)
-		}
-	}
-
-	return nil
+	return patchResourcesByGVK(testCtx, namespace, clusterDeploymentGVK,
+		[]byte(`{"spec":{"preserveOnDelete":true}}`), logger)
 }
 
-// setAnnotationOnResources adds an annotation to all resources of the given GVK in the namespace.
-func setAnnotationOnResources(testCtx *internal.TestContext, namespace string, gvk schema.GroupVersionKind, annotation, value string, logger logr.Logger) error {
+// patchResourcesByGVK applies a merge patch to all resources of the given GVK in the namespace.
+func patchResourcesByGVK(testCtx *internal.TestContext, namespace string, gvk schema.GroupVersionKind, patch []byte, logger logr.Logger) error {
 	list := &unstructured.UnstructuredList{}
 	list.SetGroupVersionKind(schema.GroupVersionKind{
 		Group:   gvk.Group,
@@ -500,35 +475,9 @@ func setAnnotationOnResources(testCtx *internal.TestContext, namespace string, g
 		return fmt.Errorf("failed to list %s in namespace %s: %w", gvk.Kind, namespace, err)
 	}
 
-	patch := []byte(fmt.Sprintf(`{"metadata":{"annotations":{%q:%q}}}`, annotation, value))
 	for i := range list.Items {
 		obj := &list.Items[i]
-		logger.Info("Setting annotation on resource", "kind", gvk.Kind, "name", obj.GetName(), "annotation", annotation)
-		if err := testCtx.MgmtClient.Patch(testCtx.Context, obj, crclient.RawPatch(types.MergePatchType, patch)); err != nil {
-			return fmt.Errorf("failed to patch %s %s: %w", gvk.Kind, obj.GetName(), err)
-		}
-	}
-
-	return nil
-}
-
-// removeAnnotationFromResources removes an annotation from all resources of the given GVK in the namespace.
-func removeAnnotationFromResources(testCtx *internal.TestContext, namespace string, gvk schema.GroupVersionKind, annotation string, logger logr.Logger) error {
-	list := &unstructured.UnstructuredList{}
-	list.SetGroupVersionKind(schema.GroupVersionKind{
-		Group:   gvk.Group,
-		Version: gvk.Version,
-		Kind:    gvk.Kind + "List",
-	})
-
-	if err := testCtx.MgmtClient.List(testCtx.Context, list, crclient.InNamespace(namespace)); err != nil {
-		return fmt.Errorf("failed to list %s in namespace %s: %w", gvk.Kind, namespace, err)
-	}
-
-	patch := []byte(fmt.Sprintf(`{"metadata":{"annotations":{%q:null}}}`, annotation))
-	for i := range list.Items {
-		obj := &list.Items[i]
-		logger.Info("Removing annotation from resource", "kind", gvk.Kind, "name", obj.GetName(), "annotation", annotation)
+		logger.Info("Patching resource", "kind", gvk.Kind, "name", obj.GetName(), "namespace", obj.GetNamespace())
 		if err := testCtx.MgmtClient.Patch(testCtx.Context, obj, crclient.RawPatch(types.MergePatchType, patch)); err != nil {
 			return fmt.Errorf("failed to patch %s %s: %w", gvk.Kind, obj.GetName(), err)
 		}

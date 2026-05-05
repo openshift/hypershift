@@ -84,7 +84,10 @@ var backupRestorePlatforms = map[hyperv1.PlatformType]backupRestorePlatformConfi
 	},
 	hyperv1.AgentPlatform: {
 		excludeWorkloads: []string{"router", "karpenter", "karpenter-operator", "cloud-network-config-controller"},
-		postRestoreHook:  nil,
+		postRestoreHook: func(testCtx *internal.TestContext) error {
+			// Restore brings back paused CAPI resources; unpause them so reconciliation resumes.
+			return backuprestore.UnpauseAgentCAPIResources(testCtx, GinkgoLogr.WithName("backup-restore"))
+		},
 	},
 	hyperv1.KubevirtPlatform: {
 		excludeWorkloads: []string{"router", "karpenter", "karpenter-operator", "cloud-network-config-controller"},
@@ -352,12 +355,6 @@ func executeRestore(testCtx *internal.TestContext, restoreOpts *backuprestore.OA
 	By("Waiting for restore to complete")
 	err = backuprestore.WaitForRestoreCompletion(testCtx, restoreOpts.Name)
 	Expect(err).NotTo(HaveOccurred())
-
-	if testCtx.GetHostedCluster().Spec.Platform.Type == hyperv1.AgentPlatform {
-		By("Unpausing AgentMachine and AgentCluster CRs again as the Restore brings back paused resources")
-		err = backuprestore.UnpauseAgentCAPIResources(testCtx, GinkgoLogr.WithName("backup-restore"))
-		Expect(err).NotTo(HaveOccurred())
-	}
 
 	if postRestoreHook != nil {
 		By("Running platform-specific post-restore operations")
