@@ -1,0 +1,13 @@
+name: AI SBOM
+
+on:
+  pull_request:
+    branches:
+      - main
+      - release-4.22
+
+jobs:
+  ai-sbom:
+    uses: openshift/hypershift/.github/workflows/ai-sbom-reusable.yaml@main
+    permissions:
+      contents: read

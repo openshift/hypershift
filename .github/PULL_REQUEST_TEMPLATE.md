@@ -27,3 +27,13 @@ Fixes
 - [ ] Relevant issues have been referenced.
 - [ ] This change includes docs. 
 - [ ] This change includes unit tests.
+
+## AI Assistance
+<!--
+Declare AI tool usage. Use `none` if no AI tools were used.
+See: https://github.com/openshift-eng/ai-helpers/blob/main/plugins/ai-sbom/docs/AI_SBOM.md
+-->
+
+```ai-assisted
+none
+```
