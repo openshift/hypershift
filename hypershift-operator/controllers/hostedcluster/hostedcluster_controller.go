@@ -148,6 +148,7 @@ const (
 	previouslySyncedRestartDateAnnotation = "hypershift.openshift.io/previous-restart-date"
 	kasServingCertHashAnnotation          = "hypershift.openshift.io/kas-serving-cert-hash"
 	referencedResourceAnnotationPrefix    = "referenced-resource.hypershift.openshift.io/"
+	releaseImageValidationSkippedReason   = "ReleaseImageValidationSkipped"
 )
 
 var (
@@ -1206,13 +1207,19 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		// This check can be expensive looking up release image versions
 		// (hopefully they are cached).  Skip if we have already observed for
 		// this generation.
-		if condition == nil || condition.ObservedGeneration != hcluster.Generation || condition.Status != metav1.ConditionTrue {
+		if shouldValidateReleaseImage(hcluster, condition) {
 			condition := metav1.Condition{
 				Type:               string(hyperv1.ValidReleaseImage),
 				ObservedGeneration: hcluster.Generation,
 			}
+			skipReleaseImageValidation := hasSkipReleaseImageValidationAnnotation(hcluster)
 			err := r.validateReleaseImage(ctx, hcluster, releaseProvider)
-			if err != nil {
+			switch {
+			case skipReleaseImageValidation:
+				condition.Status = metav1.ConditionTrue
+				condition.Message = "Release image validation is skipped by annotation"
+				condition.Reason = releaseImageValidationSkippedReason
+			case err != nil:
 				condition.Status = metav1.ConditionFalse
 				condition.Message = err.Error()
 
@@ -1221,7 +1228,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 				} else {
 					condition.Reason = hyperv1.InvalidImageReason
 				}
-			} else {
+			default:
 				condition.Status = metav1.ConditionTrue
 				condition.Message = "Release image is valid"
 				condition.Reason = hyperv1.AsExpectedReason
@@ -3743,7 +3750,7 @@ func (r *HostedClusterReconciler) validateUserCAConfigMaps(ctx context.Context, 
 }
 
 func (r *HostedClusterReconciler) validateReleaseImage(ctx context.Context, hc *hyperv1.HostedCluster, releaseProvider releaseinfo.ProviderWithOpenShiftImageRegistryOverrides) error {
-	if _, exists := hc.Annotations[hyperv1.SkipReleaseImageValidation]; exists {
+	if hasSkipReleaseImageValidationAnnotation(hc) {
 		return nil
 	}
 	pullSecretBytes, err := hyperutil.GetPullSecretBytes(ctx, r.Client, hc)
@@ -3776,6 +3783,24 @@ func (r *HostedClusterReconciler) validateReleaseImage(ctx context.Context, hc *
 	minSupportedVersion := supportedversion.GetMinSupportedVersion(hc)
 
 	return supportedversion.IsValidReleaseVersion(&version, currentVersion, &supportedversion.LatestSupportedVersion, &minSupportedVersion, hc.Spec.Networking.NetworkType, hc.Spec.Platform.Type)
+}
+
+func shouldValidateReleaseImage(hcluster *hyperv1.HostedCluster, condition *metav1.Condition) bool {
+	if condition == nil || condition.ObservedGeneration != hcluster.Generation || condition.Status != metav1.ConditionTrue {
+		return true
+	}
+
+	skipReleaseImageValidation := hasSkipReleaseImageValidationAnnotation(hcluster)
+	if skipReleaseImageValidation {
+		return condition.Reason != releaseImageValidationSkippedReason
+	}
+
+	return condition.Reason == releaseImageValidationSkippedReason
+}
+
+func hasSkipReleaseImageValidationAnnotation(hcluster *hyperv1.HostedCluster) bool {
+	_, exists := hcluster.Annotations[hyperv1.SkipReleaseImageValidation]
+	return exists
 }
 
 func isProgressing(hc *hyperv1.HostedCluster, releaseImage *releaseinfo.ReleaseImage, refWithDigest func() (string, error)) (bool, error) {
