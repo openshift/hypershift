@@ -8,8 +8,8 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	assets "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
 	component "github.com/openshift/hypershift/support/controlplane-component"
-	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/testutil"
+	"github.com/openshift/hypershift/support/util"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -70,7 +70,7 @@ func TestAdaptDeployment(t *testing.T) {
 			err = adaptDeployment(cpContext, deployment)
 			g.Expect(err).ToNot(HaveOccurred())
 
-			container := podspec.FindContainer(ComponentName, deployment.Spec.Template.Spec.Containers)
+			container := util.FindContainer(ComponentName, deployment.Spec.Template.Spec.Containers)
 			g.Expect(container).ToNot(BeNil(), "ingress-operator container should exist")
 
 			tc.validate(g, container)

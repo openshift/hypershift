@@ -23,7 +23,7 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 		})
 
 		if cpContext.HCP.Spec.FIPS {
-			podspec.UpsertEnvVar(c, corev1.EnvVar{
+			util.UpsertEnvVar(c, corev1.EnvVar{
 				Name: "FIPS_ENABLED", Value: "true",
 			})
 		}
