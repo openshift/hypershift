@@ -2831,6 +2831,12 @@ func TestRemoveCloudResources(t *testing.T) {
 				Client: c,
 			}
 
+			var originalCloudResourcesCond *metav1.Condition
+			if cond := meta.FindStatusCondition(tc.hcp.Status.Conditions, string(hyperv1.CloudResourcesDestroyed)); cond != nil {
+				copied := *cond
+				originalCloudResourcesCond = &copied
+			}
+
 			ctx := ctrl.LoggerInto(t.Context(), zapr.NewLogger(zaptest.NewLogger(t)))
 			done, err := r.removeCloudResources(ctx, tc.hcp)
 
@@ -2850,11 +2856,19 @@ func TestRemoveCloudResources(t *testing.T) {
 				g.Expect(condition.Reason).To(Equal(tc.expectedCondition.Reason))
 				g.Expect(condition.Message).To(ContainSubstring("Giving up on cloud resource deletion"))
 
-				prevCond := meta.FindStatusCondition(tc.hcp.Status.Conditions, string(hyperv1.CloudResourcesDestroyed))
-				if prevCond != nil && prevCond.Message != "" && prevCond.Reason != string(hyperv1.CloudResourcesDeletionTimedOutReason) {
+				if originalCloudResourcesCond != nil &&
+					originalCloudResourcesCond.Message != "" &&
+					originalCloudResourcesCond.Reason != string(hyperv1.CloudResourcesDeletionTimedOutReason) {
 					g.Expect(condition.Message).To(ContainSubstring("last status:"))
-					g.Expect(condition.Message).To(ContainSubstring(prevCond.Message))
+					g.Expect(condition.Message).To(ContainSubstring(originalCloudResourcesCond.Message))
 				}
+			}
+
+			if tc.cvoDeployment != nil {
+				updatedCVO := &appsv1.Deployment{}
+				g.Expect(c.Get(ctx, client.ObjectKeyFromObject(tc.cvoDeployment), updatedCVO)).To(Succeed())
+				g.Expect(updatedCVO.Spec.Replicas).ToNot(BeNil())
+				g.Expect(*updatedCVO.Spec.Replicas).To(Equal(int32(0)))
 			}
 		})
 	}
