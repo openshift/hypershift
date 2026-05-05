@@ -1,0 +1,160 @@
+description: "HyperShift agent and convention evals"
+
+extensions:
+  - file://hooks.js:extensionHook
+
+providers:
+  - id: "exec: ./run-agent.sh"
+    label: claude
+
+prompts:
+  - "{{prompt}}"
+
+defaultTest:
+  options:
+    provider:
+      id: vertex:claude-opus-4-6
+      config:
+        projectId: "{{ env.ANTHROPIC_VERTEX_PROJECT_ID }}"
+        region: global
+        temperature: 0
+
+tests:
+  # --- api-sme ---
+  - description: "api-sme/01-api-design-review"
+    vars:
+      agent: api-sme
+      tools: "Bash,Read,Grep,Glob"
+      patchFile: "testdata/sme-agents/api-sme/01-api-design-review/patch.diff"
+      prompt: |
+        I've added new foo fields to HostedClusterSpec in
+        api/hypershift/v1beta1/hostedcluster_types.go. The code is already
+        on disk. Please review the change.
+    assert:
+      - type: llm-rubric
+        value: "The output identifies that Foo_IP should use Go PascalCase naming (no underscores)"
+      - type: llm-rubric
+        value: "The output identifies that JSON tags must use lowerCamelCase (not snake_case or PascalCase)"
+      - type: llm-rubric
+        value: "The output identifies missing omitempty or omitzero on every field"
+      - type: llm-rubric
+        value: "The output identifies missing IP address format validation (CEL or kubebuilder)"
+      - type: llm-rubric
+        value: "The output identifies that FooConfig should not be a pointer — use value type with omitzero instead"
+      - type: llm-rubric
+        value: "The output identifies missing +listType marker on slice field for server-side apply"
+      - type: llm-rubric
+        value: "The output identifies that FooID immutability rule is incomplete — self == oldSelf either blocks initial set or allows remove-then-set bypass on optional fields"
+      - type: llm-rubric
+        value: "The output identifies missing +optional or +required markers on fields"
+      - type: llm-rubric
+        value: "The output identifies that fields sharing a common prefix should be consolidated into a single struct rather than scattered on the parent spec"
+
+  # --- cloud-provider-sme ---
+  - description: "cloud-provider-sme/01-kms-integration"
+    vars:
+      agent: cloud-provider-sme
+      prompt: |
+        We want to implement customer-managed encryption key support for
+        etcd data at rest in hosted control planes. The feature should work
+        across AWS and Azure. How should we design this in HyperShift?
+        What API changes and controller logic are needed?
+    assert:
+      - type: llm-rubric
+        value: "The output mentions platform-specific KMS services (AWS KMS and Azure Key Vault)"
+      - type: llm-rubric
+        value: "The output proposes an API-level abstraction for cross-platform KMS configuration"
+      - type: llm-rubric
+        value: "The output addresses IAM or credential requirements for KMS access"
+      - type: llm-rubric
+        value: "The output references Kubernetes EncryptionConfiguration or etcd encryption provider mechanism"
+
+  # --- control-plane-sme ---
+  - description: "control-plane-sme/01-ho-cpo-version-skew"
+    vars:
+      agent: control-plane-sme
+      prompt: |
+        We want to add a new control plane component called "policy-engine"
+        that enforces admission policies on the hosted cluster. The
+        component needs to behave differently depending on the OCP version
+        of the hosted control plane — in 4.18+ it should use
+        ValidatingAdmissionPolicy (native K8s), but in 4.17 and below it
+        should fall back to a webhook-based approach.
+
+        The HyperShift Operator needs to know which variant to configure
+        when reconciling the HostedCluster, and the CPO needs to deploy
+        the right version of the component.
+
+        How should we implement this considering HyperShift's versioning
+        model and the HO/CPO version skew constraints?
+    assert:
+      - type: llm-rubric
+        value: "The output references the cpov2 or controlplane-component framework for deploying the component"
+      - type: llm-rubric
+        value: "The output states that version-dependent behavior should be decided in the CPO based on the hosted cluster release version, not in the HO"
+      - type: llm-rubric
+        value: "The output explains that HO and CPO can run different versions and the HO must not assume which CPO version is running"
+      - type: llm-rubric
+        value: "The output states that the CPO image is part of the OCP release payload and matches the hosted cluster version"
+      - type: llm-rubric
+        value: "The output considers impact on control plane resource footprint (CPU, memory)"
+
+  # --- data-plane-sme ---
+  - description: "data-plane-sme/01-spot-instance-lifecycle"
+    vars:
+      agent: data-plane-sme
+      prompt: |
+        We want to improve spot/preemptible instance support in NodePools.
+        Currently users can request spot instances on AWS, but we want to
+        ensure consistent behavior across platforms. How should the NodePool
+        API and controllers handle instance interruption events, and what
+        changes are needed for the data plane upgrade flow to account for
+        spot instance characteristics?
+    assert:
+      - type: llm-rubric
+        value: "The output discusses NodePool API abstraction for spot across platforms (AWS Spot, Azure Spot VMs, GCP Preemptible/Spot)"
+      - type: llm-rubric
+        value: "The output addresses instance interruption lifecycle (node drain, workload rescheduling, machine replacement)"
+      - type: llm-rubric
+        value: "The output considers impact of spot instances on rolling upgrade strategy"
+      - type: llm-rubric
+        value: "The output references ClusterAPI (CAPI) resources or controllers (MachineSet, MachineDeployment, Machine)"
+
+  # --- hcp-architect-sme ---
+  - description: "hcp-architect-sme/01-architectural-review"
+    vars:
+      agent: hcp-architect-sme
+      prompt: |
+        We are considering a design where the hosted cluster's worker
+        nodes send status updates directly to the hypershift-operator in
+        the management cluster via a webhook. The worker node would call
+        a REST endpoint on the hypershift-operator to report node health
+        metrics. This way we get real-time health data without polling.
+
+        What do you think of this approach?
+    assert:
+      - type: llm-rubric
+        value: "The output flags violation of unidirectional communication principle (management to hosted, never reverse)"
+      - type: llm-rubric
+        value: "The output raises security or tenant isolation concerns"
+      - type: llm-rubric
+        value: "The output suggests an alternative architecture that respects unidirectional communication"
+
+  # --- conventions ---
+  - description: "conventions/01-go-test-style"
+    vars:
+      prompt: |
+        Write a unit test for a function called ParseMaintenanceWindow that
+        takes a cron string and duration in minutes, and returns a
+        MaintenanceWindow struct or an error. It should reject empty cron
+        strings, durations less than 30 minutes, and durations greater than
+        480 minutes. It should accept valid inputs like "0 2 * * 6" with
+        duration 120. Just write the test, not the function itself.
+    assert:
+      - type: llm-rubric
+        value: "The generated test code uses Gherkin syntax with 'When... it should...' pattern in test names"
+      - type: llm-rubric
+        value: "The generated test code uses gomega matchers for assertions (Expect, BeTrue, BeFalse, HaveOccurred, etc.) rather than standard testing package assertions"
+
+evaluateOptions:
+  maxConcurrency: 6

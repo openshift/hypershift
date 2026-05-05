@@ -619,6 +619,19 @@ cpo-container-sync:
 karpenter-upstream-e2e:
 	./karpenter-operator/e2e/upstream-e2e.sh
 
+EVAL_REPEAT ?= 1
+EVAL_PASS_RATE_THRESHOLD ?= 100
+PROMPTFOO_VERSION ?= 0.121.9
+
+.PHONY: eval-agents
+eval-agents: ## Run agent evals with promptfoo
+	cd test/eval && PROMPTFOO_PASS_RATE_THRESHOLD=$(EVAL_PASS_RATE_THRESHOLD) \
+		npx promptfoo@$(PROMPTFOO_VERSION) eval \
+		$(if $(EVAL_FILTER),--filter-pattern "$(EVAL_FILTER)") \
+		$(if $(EVAL_OUTPUT),--output "$(EVAL_OUTPUT)") \
+		--repeat $(EVAL_REPEAT) \
+		--no-cache
+
 ## --------------------------------------
 ## Tooling Binaries
 ## --------------------------------------
