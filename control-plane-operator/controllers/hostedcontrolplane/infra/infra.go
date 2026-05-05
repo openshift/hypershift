@@ -18,6 +18,7 @@ import (
 	hyperazureutil "github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/events"
+	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
@@ -358,7 +359,7 @@ func (r *Reconciler) reconcileOAuthServerService(ctx context.Context, hcp *hyper
 	oauthExternalPrivateRoute := manifests.OauthServerExternalPrivateRoute(hcp.Namespace)
 	if netutil.IsPublicHCP(hcp) {
 		// Remove the external private route if it exists
-		_, err := util.DeleteIfNeeded(ctx, r.Client, oauthExternalPrivateRoute)
+		_, err := k8sutil.DeleteIfNeeded(ctx, r.Client, oauthExternalPrivateRoute)
 		if err != nil {
 			return fmt.Errorf("failed to delete OAuth external private route: %w", err)
 		}
@@ -375,7 +376,7 @@ func (r *Reconciler) reconcileOAuthServerService(ctx context.Context, hcp *hyper
 		}
 	} else {
 		// Remove the external public route if it exists
-		_, err := util.DeleteIfNeeded(ctx, r.Client, oauthExternalPublicRoute)
+		_, err := k8sutil.DeleteIfNeeded(ctx, r.Client, oauthExternalPublicRoute)
 		if err != nil {
 			return fmt.Errorf("failed to delete OAuth external public route: %w", err)
 		}
@@ -389,7 +390,7 @@ func (r *Reconciler) reconcileOAuthServerService(ctx context.Context, hcp *hyper
 			}
 		} else {
 			// Remove the external private route if it exists when hostname is not specified
-			_, err := util.DeleteIfNeeded(ctx, r.Client, oauthExternalPrivateRoute)
+			_, err := k8sutil.DeleteIfNeeded(ctx, r.Client, oauthExternalPrivateRoute)
 			if err != nil {
 				return fmt.Errorf("failed to delete OAuth external private route: %w", err)
 			}
@@ -444,10 +445,10 @@ func (r *Reconciler) reconcileHCPRouterServices(ctx context.Context, hcp *hyperv
 	pubSvc := manifests.RouterPublicService(hcp.Namespace)
 	privSvc := manifests.PrivateRouterService(hcp.Namespace)
 	if !routerutil.UseHCPRouter(hcp) {
-		if _, err := util.DeleteIfNeeded(ctx, r.Client, pubSvc); err != nil {
+		if _, err := k8sutil.DeleteIfNeeded(ctx, r.Client, pubSvc); err != nil {
 			return fmt.Errorf("failed to delete public router service: %w", err)
 		}
-		if _, err := util.DeleteIfNeeded(ctx, r.Client, privSvc); err != nil {
+		if _, err := k8sutil.DeleteIfNeeded(ctx, r.Client, privSvc); err != nil {
 			return fmt.Errorf("failed to delete private router service: %w", err)
 		}
 		return nil
@@ -456,7 +457,7 @@ func (r *Reconciler) reconcileHCPRouterServices(ctx context.Context, hcp *hyperv
 	// ARO HCP doesn't need LB services; Swift handles connectivity.
 	// Only reconcile a ClusterIP private router service.
 	if hyperazureutil.IsAroHCP() {
-		if _, err := util.DeleteIfNeeded(ctx, r.Client, pubSvc); err != nil {
+		if _, err := k8sutil.DeleteIfNeeded(ctx, r.Client, pubSvc); err != nil {
 			return fmt.Errorf("failed to delete public router service: %w", err)
 		}
 		if _, err := createOrUpdate(ctx, r.Client, privSvc, func() error {
@@ -475,7 +476,7 @@ func (r *Reconciler) reconcileHCPRouterServices(ctx context.Context, hcp *hyperv
 			return fmt.Errorf("failed to reconcile private router service: %w", err)
 		}
 	} else {
-		if _, err := util.DeleteIfNeeded(ctx, r.Client, privSvc); err != nil {
+		if _, err := k8sutil.DeleteIfNeeded(ctx, r.Client, privSvc); err != nil {
 			return fmt.Errorf("failed to delete private router service: %w", err)
 		}
 	}
@@ -489,7 +490,7 @@ func (r *Reconciler) reconcileHCPRouterServices(ctx context.Context, hcp *hyperv
 			return fmt.Errorf("failed to reconcile router service: %w", err)
 		}
 	} else {
-		if _, err := util.DeleteIfNeeded(ctx, r.Client, pubSvc); err != nil {
+		if _, err := k8sutil.DeleteIfNeeded(ctx, r.Client, pubSvc); err != nil {
 			return fmt.Errorf("failed to delete public router service: %w", err)
 		}
 	}
@@ -707,7 +708,7 @@ func (r *Reconciler) reconcileRouterServiceStatus(ctx context.Context, svc *core
 		err = fmt.Errorf("failed to get router service (%s): %w", svc.Name, err)
 		return
 	}
-	if message, err = util.CollectLBMessageIfNotProvisioned(svc, messageCollector); err != nil || message != "" {
+	if message, err = k8sutil.CollectLBMessageIfNotProvisioned(svc, messageCollector); err != nil || message != "" {
 		return
 	}
 	switch {

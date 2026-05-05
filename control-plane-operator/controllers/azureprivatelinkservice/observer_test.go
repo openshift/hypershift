@@ -8,7 +8,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	supportutil "github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/k8sutil"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -79,7 +79,7 @@ func TestReconcile(t *testing.T) {
 				Namespace: testNamespace,
 				UID:       testHCPUID,
 				Annotations: map[string]string{
-					supportutil.HostedClusterAnnotation: "clusters/test-cluster",
+					k8sutil.HostedClusterAnnotation: "clusters/test-cluster",
 				},
 			},
 			Spec: hyperv1.HostedControlPlaneSpec{
@@ -343,7 +343,7 @@ func TestReconcile(t *testing.T) {
 				g.Expect(azurePLS.OwnerReferences[0].Name).To(Equal(testHCPName))
 
 				// Verify HostedCluster annotation is copied
-				g.Expect(azurePLS.Annotations).To(HaveKeyWithValue(supportutil.HostedClusterAnnotation, "clusters/test-cluster"))
+				g.Expect(azurePLS.Annotations).To(HaveKeyWithValue(k8sutil.HostedClusterAnnotation, "clusters/test-cluster"))
 			} else {
 				// Verify no AzurePrivateLinkService was created
 				azurePLSList := &hyperv1.AzurePrivateLinkServiceList{}

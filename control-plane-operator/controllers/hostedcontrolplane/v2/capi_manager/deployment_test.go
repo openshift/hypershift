@@ -8,9 +8,9 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	assets "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
 	component "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/testutil"
-	"github.com/openshift/hypershift/support/util"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -58,11 +58,11 @@ func TestAdaptDeployment(t *testing.T) {
 			name:    "When HCP has hosted cluster annotation, it should set deployment annotation",
 			version: "4.19.0",
 			hcpAnnotations: map[string]string{
-				util.HostedClusterAnnotation: "test-namespace/test-cluster",
+				k8sutil.HostedClusterAnnotation: "test-namespace/test-cluster",
 			},
 			expectedArgs:     []string{"--feature-gates=MachineSetPreflightChecks=false"},
 			expectedImage:    "cluster-capi-controllers",
-			expectedAnnotKey: util.HostedClusterAnnotation,
+			expectedAnnotKey: k8sutil.HostedClusterAnnotation,
 		},
 	}
 

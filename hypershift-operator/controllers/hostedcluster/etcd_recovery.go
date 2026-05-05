@@ -11,8 +11,8 @@ import (
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	etcdrecoverymanifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests/etcdrecovery"
+	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/upsert"
-	hyperutil "github.com/openshift/hypershift/support/util"
 
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
@@ -152,7 +152,7 @@ func (r *HostedClusterReconciler) reconcileETCDMemberRecovery(ctx context.Contex
 
 	recoverySA := etcdrecoverymanifests.EtcdRecoveryServiceAccount(hcpNS)
 	if _, err := createOrUpdate(ctx, r.Client, recoverySA, func() error {
-		hyperutil.EnsurePullSecret(recoverySA, common.PullSecret("").Name)
+		k8sutil.EnsurePullSecret(recoverySA, common.PullSecret("").Name)
 		return nil
 	}); err != nil {
 		return nil, fmt.Errorf("failed to reconcile etcd-recovery job service account: %w", err)
@@ -233,22 +233,22 @@ func (r *HostedClusterReconciler) cleanupEtcdRecoveryObjects(ctx context.Context
 	hcpNS := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 
 	recoveryJob := etcdrecoverymanifests.EtcdRecoveryJob(hcpNS)
-	if _, err := hyperutil.DeleteIfNeededWithOptions(ctx, r.Client, recoveryJob, crclient.PropagationPolicy(metav1.DeletePropagationBackground)); err != nil {
+	if _, err := k8sutil.DeleteIfNeededWithOptions(ctx, r.Client, recoveryJob, crclient.PropagationPolicy(metav1.DeletePropagationBackground)); err != nil {
 		return fmt.Errorf("failed to cleanup etcd recovery job: %w", err)
 	}
 
 	recoverySA := etcdrecoverymanifests.EtcdRecoveryServiceAccount(hcpNS)
-	if _, err := hyperutil.DeleteIfNeeded(ctx, r.Client, recoverySA); err != nil {
+	if _, err := k8sutil.DeleteIfNeeded(ctx, r.Client, recoverySA); err != nil {
 		return fmt.Errorf("failed to cleanup etcd-recovery job service account: %w", err)
 	}
 
 	recoveryRoleBinding := etcdrecoverymanifests.EtcdRecoveryRoleBinding(hcpNS)
-	if _, err := hyperutil.DeleteIfNeeded(ctx, r.Client, recoveryRoleBinding); err != nil {
+	if _, err := k8sutil.DeleteIfNeeded(ctx, r.Client, recoveryRoleBinding); err != nil {
 		return fmt.Errorf("failed to cleanup etcd-recovery role binding: %w", err)
 	}
 
 	recoveryRole := etcdrecoverymanifests.EtcdRecoveryRole(hcpNS)
-	if _, err := hyperutil.DeleteIfNeeded(ctx, r.Client, recoveryRole); err != nil {
+	if _, err := k8sutil.DeleteIfNeeded(ctx, r.Client, recoveryRole); err != nil {
 		return fmt.Errorf("failed to cleanup etcd-recovery role: %w", err)
 	}
 

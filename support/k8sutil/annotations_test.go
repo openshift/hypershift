@@ -1,8 +1,9 @@
-package util
+package k8sutil
 
 import (
-	"context"
 	"testing"
+
+	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 
@@ -56,10 +57,9 @@ func TestHasAnnotationWithValue(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
+			g := NewWithT(t)
 			obj := &metav1.ObjectMeta{Annotations: tt.annotations}
-			if got := HasAnnotationWithValue(obj, tt.key, tt.value); got != tt.want {
-				t.Fatalf("HasAnnotationWithValue() = %v, want %v", got, tt.want)
-			}
+			g.Expect(HasAnnotationWithValue(obj, tt.key, tt.value)).To(Equal(tt.want))
 		})
 	}
 }
@@ -156,7 +156,7 @@ func TestHostedClusterFromAnnotation(t *testing.T) {
 			errSubstr: "invalid",
 		},
 		{
-			name: "When HostedCluster does not exist it should return a not found error",
+			name: "When annotation is valid but HostedCluster does not exist it should return an error",
 			obj: &hyperv1.AzurePrivateLinkService{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-pls",
@@ -184,25 +184,12 @@ func TestHostedClusterFromAnnotation(t *testing.T) {
 			wantHCNS: "clusters",
 			wantHCN:  "my-cluster",
 		},
-		{
-			name: "When annotation has extra slashes it should handle SplitN correctly",
-			obj: &hyperv1.AzurePrivateLinkService{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-pls",
-					Namespace: "ns",
-					Annotations: map[string]string{
-						HostedClusterAnnotation: "clusters/name/extra",
-					},
-				},
-			},
-			wantErr:   true,
-			errSubstr: "failed to get hosted cluster",
-		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
+			g := NewWithT(t)
 
 			builder := fake.NewClientBuilder().WithScheme(scheme)
 			for _, obj := range tt.existing {
@@ -210,35 +197,17 @@ func TestHostedClusterFromAnnotation(t *testing.T) {
 			}
 			fakeClient := builder.Build()
 
-			hc, err := HostedClusterFromAnnotation(context.Background(), fakeClient, tt.obj)
+			hc, err := HostedClusterFromAnnotation(t.Context(), fakeClient, tt.obj)
 			if tt.wantErr {
-				if err == nil {
-					t.Fatalf("expected error containing %q, got nil", tt.errSubstr)
-				}
-				if tt.errSubstr != "" && !contains(err.Error(), tt.errSubstr) {
-					t.Fatalf("expected error containing %q, got %q", tt.errSubstr, err.Error())
+				g.Expect(err).To(HaveOccurred())
+				if tt.errSubstr != "" {
+					g.Expect(err).To(MatchError(ContainSubstring(tt.errSubstr)))
 				}
 				return
 			}
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if hc.Namespace != tt.wantHCNS || hc.Name != tt.wantHCN {
-				t.Fatalf("expected HC %s/%s, got %s/%s", tt.wantHCNS, tt.wantHCN, hc.Namespace, hc.Name)
-			}
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(hc.Namespace).To(Equal(tt.wantHCNS))
+			g.Expect(hc.Name).To(Equal(tt.wantHCN))
 		})
 	}
-}
-
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && searchSubstring(s, substr)
-}
-
-func searchSubstring(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
 }

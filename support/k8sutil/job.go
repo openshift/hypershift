@@ -1,4 +1,4 @@
-package util
+package k8sutil
 
 import (
 	batchv1 "k8s.io/api/batch/v1"

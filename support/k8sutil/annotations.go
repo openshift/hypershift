@@ -1,4 +1,4 @@
-package util
+package k8sutil
 
 import (
 	"context"

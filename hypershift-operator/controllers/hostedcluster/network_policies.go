@@ -15,10 +15,10 @@ import (
 	"github.com/openshift/hypershift/support/awsutil"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/rhobsmonitoring"
 	"github.com/openshift/hypershift/support/upsert"
-	hyperutil "github.com/openshift/hypershift/support/util"
 
 	configv1 "github.com/openshift/api/config/v1"
 
@@ -55,7 +55,7 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 			return fmt.Errorf("failed to reconcile ingress network policy: %w", err)
 		}
 	} else {
-		if _, err := hyperutil.DeleteIfNeeded(ctx, r.Client, policy); err != nil {
+		if _, err := k8sutil.DeleteIfNeeded(ctx, r.Client, policy); err != nil {
 			return fmt.Errorf("failed to delete ingress network policy: %w", err)
 		}
 	}

@@ -22,6 +22,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/certs"
+	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
 	"github.com/openshift/hypershift/support/util"
@@ -483,7 +484,7 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage, cu
 			corev1.DockerConfigJsonKey: pullSecret,
 		}
 		pullSecretObject.Type = corev1.SecretTypeDockerConfigJson
-		serializedPullSecret, err := util.SerializeResource(pullSecretObject, api.Scheme)
+		serializedPullSecret, err := k8sutil.SerializeResource(pullSecretObject, api.Scheme)
 		if err != nil {
 			return fmt.Errorf("failed to serialize pull-secret.yaml: %w", err)
 		}

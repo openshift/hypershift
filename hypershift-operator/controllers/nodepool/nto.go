@@ -13,8 +13,8 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/backwardcompat"
+	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/netutil"
-	supportutil "github.com/openshift/hypershift/support/util"
 
 	configv1 "github.com/openshift/api/config/v1"
 	configv1alpha1 "github.com/openshift/api/config/v1alpha1"
@@ -85,7 +85,7 @@ func (r *NodePoolReconciler) reconcileMirroredConfigs(ctx context.Context, logr 
 		if !toDelete.Has(existingConfig.Name) {
 			continue
 		}
-		_, err := supportutil.DeleteIfNeeded(ctx, r.Client, existingConfig)
+		_, err := k8sutil.DeleteIfNeeded(ctx, r.Client, existingConfig)
 		if err != nil {
 			return fmt.Errorf("failed to delete ConfigMap %s: %w", client.ObjectKeyFromObject(existingConfig).String(), err)
 		}
@@ -518,7 +518,7 @@ func (r *NodePoolReconciler) ntoReconcile(ctx context.Context, nodePool *hyperv1
 
 	tunedConfigMap := TunedConfigMap(controlPlaneNamespace, nodePool.Name)
 	if tunedConfig == "" {
-		if _, err := supportutil.DeleteIfNeeded(ctx, r.Client, tunedConfigMap); err != nil {
+		if _, err := k8sutil.DeleteIfNeeded(ctx, r.Client, tunedConfigMap); err != nil {
 			return fmt.Errorf("failed to delete tunedConfig ConfigMap: %w", err)
 		}
 	} else {
@@ -557,7 +557,7 @@ func (r *NodePoolReconciler) ntoReconcile(ctx context.Context, nodePool *hyperv1
 		for i := range existingPerformanceProfileConfigMapList.Items {
 			ppConfigMap := &existingPerformanceProfileConfigMapList.Items[i]
 			if ppConfigMap.Name != performanceProfileConfigMap.Name {
-				if _, err := supportutil.DeleteIfNeeded(ctx, r.Client, ppConfigMap); err != nil {
+				if _, err := k8sutil.DeleteIfNeeded(ctx, r.Client, ppConfigMap); err != nil {
 					return fmt.Errorf("failed to delete performanceProfile ConfigMap: %w", err)
 				}
 			}

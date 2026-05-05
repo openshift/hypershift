@@ -7,7 +7,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	component "github.com/openshift/hypershift/support/controlplane-component"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/k8sutil"
 
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -93,10 +93,10 @@ func TestAdaptRole(t *testing.T) {
 				},
 			},
 			hcpAnnotations: map[string]string{
-				util.HostedClusterAnnotation: "test-namespace/test-cluster",
+				k8sutil.HostedClusterAnnotation: "test-namespace/test-cluster",
 			},
 			expectedTotalRules:   2,
-			expectedAnnotKey:     util.HostedClusterAnnotation,
+			expectedAnnotKey:     k8sutil.HostedClusterAnnotation,
 			expectedAnnotValue:   "test-namespace/test-cluster",
 			shouldAppendPlatform: true,
 		},
@@ -192,7 +192,7 @@ func TestAdaptRole_WithNilAnnotations(t *testing.T) {
 			Name:      "test-hcp",
 			Namespace: "test-namespace",
 			Annotations: map[string]string{
-				util.HostedClusterAnnotation: "test-namespace/test-cluster",
+				k8sutil.HostedClusterAnnotation: "test-namespace/test-cluster",
 			},
 		},
 	}
@@ -211,5 +211,5 @@ func TestAdaptRole_WithNilAnnotations(t *testing.T) {
 
 	// Should create annotations map and set the annotation
 	g.Expect(role.Annotations).ToNot(BeNil())
-	g.Expect(role.Annotations[util.HostedClusterAnnotation]).To(Equal("test-namespace/test-cluster"))
+	g.Expect(role.Annotations[k8sutil.HostedClusterAnnotation]).To(Equal("test-namespace/test-cluster"))
 }

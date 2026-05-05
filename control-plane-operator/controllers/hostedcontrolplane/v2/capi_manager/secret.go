@@ -7,7 +7,7 @@ import (
 
 	"github.com/openshift/hypershift/support/certs"
 	component "github.com/openshift/hypershift/support/controlplane-component"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/k8sutil"
 
 	corev1 "k8s.io/api/core/v1"
 )
@@ -16,7 +16,7 @@ func adaptWebhookTLSSecret(cpContext component.WorkloadContext, secret *corev1.S
 	if secret.Annotations == nil {
 		secret.Annotations = make(map[string]string)
 	}
-	secret.Annotations[util.HostedClusterAnnotation] = cpContext.HCP.Annotations[util.HostedClusterAnnotation]
+	secret.Annotations[k8sutil.HostedClusterAnnotation] = cpContext.HCP.Annotations[k8sutil.HostedClusterAnnotation]
 
 	existingPrivateKeyKey := secret.Data[corev1.TLSPrivateKeyKey]
 	existingTLSCertKey := secret.Data[corev1.TLSCertKey]

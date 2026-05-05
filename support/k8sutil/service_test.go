@@ -1,7 +1,9 @@
-package util
+package k8sutil
 
 import (
 	"testing"
+
+	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 
@@ -18,6 +20,12 @@ func TestExtractLoadBalancerIP(t *testing.T) {
 		wantIP string
 		wantOK bool
 	}{
+		{
+			name:   "When service is nil it should return empty and false",
+			svc:    nil,
+			wantIP: "",
+			wantOK: false,
+		},
 		{
 			name: "When service has a valid ingress IP it should return the IP and true",
 			svc: &corev1.Service{
@@ -79,9 +87,10 @@ func TestExtractLoadBalancerIP(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			if got, ok := ExtractLoadBalancerIP(tt.svc); got != tt.wantIP || ok != tt.wantOK {
-				t.Errorf("ExtractLoadBalancerIP() = (%q, %v), want (%q, %v)", got, ok, tt.wantIP, tt.wantOK)
-			}
+			g := NewWithT(t)
+			gotIP, gotOK := ExtractLoadBalancerIP(tt.svc)
+			g.Expect(gotIP).To(Equal(tt.wantIP))
+			g.Expect(gotOK).To(Equal(tt.wantOK))
 		})
 	}
 }
@@ -163,9 +172,8 @@ func TestExtractHostedControlPlaneOwnerName(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			if got := ExtractHostedControlPlaneOwnerName(tt.ownerRefs); got != tt.want {
-				t.Errorf("ExtractHostedControlPlaneOwnerName() = %q, want %q", got, tt.want)
-			}
+			g := NewWithT(t)
+			g.Expect(ExtractHostedControlPlaneOwnerName(tt.ownerRefs)).To(Equal(tt.want))
 		})
 	}
 }

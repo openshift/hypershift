@@ -30,8 +30,8 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/azureutil"
+	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/upsert"
-	supportutil "github.com/openshift/hypershift/support/util"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -98,14 +98,14 @@ func (r *AzurePrivateLinkServiceObserver) Reconcile(ctx context.Context, req ctr
 	}
 
 	// Extract LoadBalancer IP and validate it's ready
-	loadBalancerIP, hasValidIP := supportutil.ExtractLoadBalancerIP(svc)
+	loadBalancerIP, hasValidIP := k8sutil.ExtractLoadBalancerIP(svc)
 	if !hasValidIP {
 		logger.Info("LoadBalancer IP not ready yet, will retry")
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 
 	// Find HostedControlPlane from service OwnerReference
-	hcpName := supportutil.ExtractHostedControlPlaneOwnerName(svc.OwnerReferences)
+	hcpName := k8sutil.ExtractHostedControlPlaneOwnerName(svc.OwnerReferences)
 	if hcpName == "" {
 		return ctrl.Result{}, fmt.Errorf("service does not have HostedControlPlane owner reference")
 	}
@@ -157,8 +157,8 @@ func (r *AzurePrivateLinkServiceObserver) reconcileAzurePrivateLinkService(ctx c
 		if azurePLS.Annotations == nil {
 			azurePLS.Annotations = make(map[string]string)
 		}
-		if hcAnnotation, exists := hcp.Annotations[supportutil.HostedClusterAnnotation]; exists {
-			azurePLS.Annotations[supportutil.HostedClusterAnnotation] = hcAnnotation
+		if hcAnnotation, exists := hcp.Annotations[k8sutil.HostedClusterAnnotation]; exists {
+			azurePLS.Annotations[k8sutil.HostedClusterAnnotation] = hcAnnotation
 		}
 
 		// Set spec fields from HCP Azure platform configuration

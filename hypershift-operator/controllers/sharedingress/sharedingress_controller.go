@@ -13,9 +13,9 @@ import (
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/capabilities"
 	supportconfig "github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/upsert"
-	"github.com/openshift/hypershift/support/util"
 
 	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
@@ -275,7 +275,7 @@ func (r *SharedIngressReconciler) reconcileDefaultServiceAccount(ctx context.Con
 	defaultSA := common.DefaultServiceAccount(RouterNamespace)
 	if _, err := r.createOrUpdate(ctx, r.Client, defaultSA, func() error {
 		if pullSecretPresent {
-			util.EnsurePullSecret(defaultSA, PullSecret().Name)
+			k8sutil.EnsurePullSecret(defaultSA, PullSecret().Name)
 		}
 		return nil
 	}); err != nil {
@@ -288,7 +288,7 @@ func (r *SharedIngressReconciler) reconcileConfigGeneratorControllerRBAC(ctx con
 	sa := RouterServiceAccount()
 	if _, err := r.createOrUpdate(ctx, r.Client, sa, func() error {
 		if pullSecretPresent {
-			util.EnsurePullSecret(sa, PullSecret().Name)
+			k8sutil.EnsurePullSecret(sa, PullSecret().Name)
 		}
 		return nil
 	}); err != nil {

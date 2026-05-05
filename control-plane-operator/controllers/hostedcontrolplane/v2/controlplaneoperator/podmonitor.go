@@ -2,6 +2,7 @@ package controlplaneoperator
 
 import (
 	component "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/util"
 
@@ -18,7 +19,7 @@ func (cpo *ControlPlaneOperatorOptions) adaptPodMonitor(cpContext component.Work
 	if podMonitor.Annotations == nil {
 		podMonitor.Annotations = map[string]string{}
 	}
-	podMonitor.Annotations[util.HostedClusterAnnotation] = client.ObjectKeyFromObject(cpo.HostedCluster).String()
+	podMonitor.Annotations[k8sutil.HostedClusterAnnotation] = client.ObjectKeyFromObject(cpo.HostedCluster).String()
 
 	return nil
 }

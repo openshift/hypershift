@@ -11,7 +11,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/api"
 	component "github.com/openshift/hypershift/support/controlplane-component"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/k8sutil"
 
 	kcpv1 "github.com/openshift/api/kubecontrolplane/v1"
 
@@ -53,7 +53,7 @@ func TestAdaptConfig(t *testing.T) {
 				g.Expect(cm.Data).To(HaveKey(KubeControllerManagerConfigKey))
 
 				config := &kcpv1.KubeControllerManagerConfig{}
-				decodeErr := util.DeserializeResource(cm.Data[KubeControllerManagerConfigKey], config, api.Scheme)
+				decodeErr := k8sutil.DeserializeResource(cm.Data[KubeControllerManagerConfigKey], config, api.Scheme)
 				g.Expect(decodeErr).ToNot(HaveOccurred())
 				g.Expect(config.ServiceServingCert.CertFile).To(Equal("/etc/kubernetes/certs/service-ca/service-ca.crt"))
 			},
@@ -68,7 +68,7 @@ func TestAdaptConfig(t *testing.T) {
 				g.Expect(cm.Data).To(HaveKey(KubeControllerManagerConfigKey))
 
 				config := &kcpv1.KubeControllerManagerConfig{}
-				decodeErr := util.DeserializeResource(cm.Data[KubeControllerManagerConfigKey], config, api.Scheme)
+				decodeErr := k8sutil.DeserializeResource(cm.Data[KubeControllerManagerConfigKey], config, api.Scheme)
 				g.Expect(decodeErr).ToNot(HaveOccurred())
 				g.Expect(config.ServiceServingCert.CertFile).To(BeEmpty())
 			},

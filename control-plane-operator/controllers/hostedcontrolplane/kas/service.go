@@ -10,8 +10,8 @@ import (
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/events"
+	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/netutil"
-	"github.com/openshift/hypershift/support/util"
 
 	routev1 "github.com/openshift/api/route/v1"
 
@@ -31,7 +31,7 @@ func kasLabels() map[string]string {
 func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingStrategy, owner *metav1.OwnerReference, apiServerServicePort int, apiAllowedCIDRBlocks []string, hcp *hyperv1.HostedControlPlane) error {
 	isPublic := netutil.IsPublicHCP(hcp)
 	isPrivate := netutil.IsPrivateHCP(hcp)
-	util.EnsureOwnerRef(svc, owner)
+	k8sutil.EnsureOwnerRef(svc, owner)
 	if svc.Spec.Selector == nil {
 		svc.Spec.Selector = kasLabels()
 	}
@@ -107,7 +107,7 @@ func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingSt
 }
 
 func ReconcileServiceClusterIP(svc *corev1.Service, owner *metav1.OwnerReference) error {
-	util.EnsureOwnerRef(svc, owner)
+	k8sutil.EnsureOwnerRef(svc, owner)
 	if svc.Spec.Selector == nil {
 		svc.Spec.Selector = kasLabels()
 	}
@@ -141,7 +141,7 @@ func ReconcileServiceClusterIP(svc *corev1.Service, owner *metav1.OwnerReference
 func ReconcileServiceStatus(svc *corev1.Service, strategy *hyperv1.ServicePublishingStrategy, apiServerPort int, messageCollector events.MessageCollector) (host string, port int32, message string, err error) {
 	switch strategy.Type {
 	case hyperv1.LoadBalancer:
-		if message, err := util.CollectLBMessageIfNotProvisioned(svc, messageCollector); err != nil || message != "" {
+		if message, err := k8sutil.CollectLBMessageIfNotProvisioned(svc, messageCollector); err != nil || message != "" {
 			return host, port, message, err
 		}
 		port = int32(apiServerPort)
@@ -167,7 +167,7 @@ func ReconcileServiceStatus(svc *corev1.Service, strategy *hyperv1.ServicePublis
 		port = svc.Spec.Ports[0].NodePort
 		host = strategy.NodePort.Address
 	case hyperv1.Route:
-		if message, err := util.CollectLBMessageIfNotProvisioned(svc, messageCollector); err != nil || message != "" {
+		if message, err := k8sutil.CollectLBMessageIfNotProvisioned(svc, messageCollector); err != nil || message != "" {
 			return host, port, message, err
 		}
 		host = strategy.Route.Hostname
@@ -177,7 +177,7 @@ func ReconcileServiceStatus(svc *corev1.Service, strategy *hyperv1.ServicePublis
 }
 
 func ReconcilePrivateService(svc *corev1.Service, hcp *hyperv1.HostedControlPlane, owner *metav1.OwnerReference) error {
-	util.EnsureOwnerRef(svc, owner)
+	k8sutil.EnsureOwnerRef(svc, owner)
 	svc.Spec.Selector = kasLabels()
 
 	// Setting this to PreferDualStack will make the service to be created with IPv4 and IPv6 addresses if the management cluster is dual stack.
@@ -243,7 +243,7 @@ func reconcileExternalRoute(route *routev1.Route, owner *metav1.OwnerReference, 
 	if hostname == "" {
 		return fmt.Errorf("route hostname is required for service APIServer")
 	}
-	util.EnsureOwnerRef(route, owner)
+	k8sutil.EnsureOwnerRef(route, owner)
 	netutil.AddHCPRouteLabel(route)
 	route.Spec.Host = hostname
 	route.Spec.To = routev1.RouteTargetReference{
@@ -260,7 +260,7 @@ func reconcileExternalRoute(route *routev1.Route, owner *metav1.OwnerReference, 
 }
 
 func ReconcileInternalRoute(route *routev1.Route, owner *metav1.OwnerReference) error {
-	util.EnsureOwnerRef(route, owner)
+	k8sutil.EnsureOwnerRef(route, owner)
 	route.Spec.Host = fmt.Sprintf("api.%s.hypershift.local", owner.Name)
 	// Assumes owner is the HCP
 	return netutil.ReconcileInternalRoute(route, "", manifests.KubeAPIServerService("").Name)

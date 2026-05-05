@@ -10,6 +10,7 @@ import (
 	schedulingv1alpha1 "github.com/openshift/hypershift/api/scheduling/v1alpha1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
 	schedulerutil "github.com/openshift/hypershift/hypershift-operator/controllers/scheduler/util"
+	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
@@ -764,7 +765,7 @@ func (r *DedicatedServingComponentSchedulerAndSizer) ensureHostedClusterLabelAnd
 
 func (r *DedicatedServingComponentSchedulerAndSizer) deletePlaceholderDeployment(ctx context.Context, hc *hyperv1.HostedCluster) error {
 	deployment := placeholderDeployment(hc)
-	_, err := util.DeleteIfNeeded(ctx, r, deployment)
+	_, err := k8sutil.DeleteIfNeeded(ctx, r, deployment)
 	return err
 }
 

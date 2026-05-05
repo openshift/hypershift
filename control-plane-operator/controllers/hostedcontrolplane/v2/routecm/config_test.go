@@ -7,8 +7,8 @@ import (
 	assets "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
 	"github.com/openshift/hypershift/support/api"
 	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/testutil"
-	"github.com/openshift/hypershift/support/util"
 
 	v1 "github.com/openshift/api/config/v1"
 
@@ -48,7 +48,7 @@ func TestReconcileOpenShiftRouteControllerManagerConfig(t *testing.T) {
 	if err := adaptConfigMap(controlplanecomponent.WorkloadContext{HCP: hcp}, configMap); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	configMapYaml, err := util.SerializeResource(configMap, api.Scheme)
+	configMapYaml, err := k8sutil.SerializeResource(configMap, api.Scheme)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

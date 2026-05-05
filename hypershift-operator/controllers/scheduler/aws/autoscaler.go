@@ -12,7 +12,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	schedulingv1alpha1 "github.com/openshift/hypershift/api/scheduling/v1alpha1"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/k8sutil"
 
 	machinev1beta1 "github.com/openshift/api/machine/v1beta1"
 
@@ -239,7 +239,7 @@ func hostedClusterMachineSetsToScaleDown(ctx context.Context, hostedCluster *hyp
 	var result []machinev1beta1.MachineSet
 	log := ctrl.LoggerFrom(ctx)
 
-	additionalNodeSelector := util.ParseNodeSelector(hostedCluster.Annotations[hyperv1.RequestServingNodeAdditionalSelectorAnnotation])
+	additionalNodeSelector := k8sutil.ParseNodeSelector(hostedCluster.Annotations[hyperv1.RequestServingNodeAdditionalSelectorAnnotation])
 	var sizeLabelSelector map[string]string
 	if sizeLabel := hostedCluster.Labels[hyperv1.HostedClusterSizeLabel]; sizeLabel != "" {
 		sizeLabelSelector = map[string]string{hyperv1.NodeSizeLabel: sizeLabel}

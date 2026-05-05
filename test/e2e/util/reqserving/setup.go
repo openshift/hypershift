@@ -17,7 +17,7 @@ import (
 	scheduleraws "github.com/openshift/hypershift/hypershift-operator/controllers/scheduler/aws"
 	schedulerutil "github.com/openshift/hypershift/hypershift-operator/controllers/scheduler/util"
 	"github.com/openshift/hypershift/support/api"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/k8sutil"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -171,7 +171,7 @@ func ConfigureClusterAutoscaler(ctx context.Context, client crclient.Client, dry
 		if err := client.Get(ctx, crclient.ObjectKeyFromObject(autoscaler), autoscaler); err != nil {
 			return fmt.Errorf("failed to get cluster autoscaler resource: %w", err)
 		}
-		yaml, err := util.SerializeResource(autoscaler, api.Scheme)
+		yaml, err := k8sutil.SerializeResource(autoscaler, api.Scheme)
 		if err != nil {
 			return fmt.Errorf("failed to serialize cluster autoscaler resource: %w", err)
 		}
@@ -216,7 +216,7 @@ func ConfigureMachineHealthCheck(ctx context.Context, client crclient.Client, dr
 		if err := client.Get(ctx, crclient.ObjectKeyFromObject(mhc), mhc); err != nil {
 			return fmt.Errorf("failed to get machine health check resource: %w", err)
 		}
-		yaml, err := util.SerializeResource(mhc, api.Scheme)
+		yaml, err := k8sutil.SerializeResource(mhc, api.Scheme)
 		if err != nil {
 			return fmt.Errorf("failed to serialize machine health check resource: %w", err)
 		}
@@ -434,9 +434,9 @@ func ConfigureControlPlaneMachineSets(ctx context.Context, client crclient.Clien
 			if err := updateClient.List(ctx, machineSetList, crclient.InNamespace("openshift-machine-api")); err != nil {
 				return fmt.Errorf("failed to list machinesets: %w", err)
 			}
-			yaml, err := util.SerializeResource(machineSetList, api.Scheme)
+			yaml, err := k8sutil.SerializeResource(machineSetList, api.Scheme)
 			if err != nil {
-				return fmt.Errorf("failed to serialize cluster sizing configuration resource: %w", err)
+				return fmt.Errorf("failed to serialize machine set list: %w", err)
 			}
 			if err := os.WriteFile(outputFile, []byte(yaml), 0644); err != nil {
 				return fmt.Errorf("failed to write machine sets to file: %w", err)
@@ -448,7 +448,7 @@ func ConfigureControlPlaneMachineSets(ctx context.Context, client crclient.Clien
 			if err := updateClient.List(ctx, machineAutoscalerList, crclient.InNamespace("openshift-machine-api")); err != nil {
 				return fmt.Errorf("failed to list machine autoscalers: %w", err)
 			}
-			yaml, err := util.SerializeResource(machineAutoscalerList, api.Scheme)
+			yaml, err := k8sutil.SerializeResource(machineAutoscalerList, api.Scheme)
 			if err != nil {
 				return fmt.Errorf("failed to serialize machine autoscalers: %w", err)
 			}
@@ -507,7 +507,7 @@ func ConfigureClusterSizingConfiguration(ctx context.Context, dryRunOpts *DryRun
 		if err := updateClient.Get(ctx, crclient.ObjectKeyFromObject(csc), csc); err != nil {
 			return fmt.Errorf("failed to get cluster sizing configuration: %w", err)
 		}
-		yaml, err := util.SerializeResource(csc, api.Scheme)
+		yaml, err := k8sutil.SerializeResource(csc, api.Scheme)
 		if err != nil {
 			return fmt.Errorf("failed to serialize cluster sizing configuration resource: %w", err)
 		}

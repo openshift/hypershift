@@ -15,6 +15,7 @@ import (
 	"github.com/openshift/hypershift/karpenter-operator/controllers/karpenter/assets"
 	supportassets "github.com/openshift/hypershift/support/assets"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/k8sutil"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
@@ -152,7 +153,7 @@ func (r *EC2NodeClassReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	}
 
 	if !openshiftEC2NodeClass.DeletionTimestamp.IsZero() {
-		exists, err := util.DeleteIfNeeded(ctx, r.guestClient, ec2NodeClass)
+		exists, err := k8sutil.DeleteIfNeeded(ctx, r.guestClient, ec2NodeClass)
 		if err != nil {
 			return ctrl.Result{}, err
 		}
@@ -485,7 +486,7 @@ func (r *EC2NodeClassReconciler) reconcileKarpenterSubnetsConfigMap(ctx context.
 	// delete the ConfigMap (no NodeClasses exist, or none have subnets in status yet).
 	// The ConfigMap is also cleaned up automatically via owner reference when HCP is deleted.
 	if subnetIDSet.Len() == 0 {
-		if _, err := util.DeleteIfNeeded(ctx, r.managementClient, configMap); err != nil {
+		if _, err := k8sutil.DeleteIfNeeded(ctx, r.managementClient, configMap); err != nil {
 			return fmt.Errorf("failed to delete karpenter subnets configmap: %w", err)
 		}
 		log.Info("Deleted karpenter subnets configmap (no OpenshiftEC2NodeClass resources with resolved subnets)")

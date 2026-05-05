@@ -6,7 +6,7 @@ import (
 
 	"github.com/openshift/hypershift/support/api"
 	component "github.com/openshift/hypershift/support/controlplane-component"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/k8sutil"
 
 	kcpv1 "github.com/openshift/api/kubecontrolplane/v1"
 
@@ -21,7 +21,7 @@ const (
 func adaptConfig(cpContext component.WorkloadContext, cm *corev1.ConfigMap) error {
 	data := cm.Data[KubeControllerManagerConfigKey]
 	config := &kcpv1.KubeControllerManagerConfig{}
-	if err := util.DeserializeResource(data, config, api.Scheme); err != nil {
+	if err := k8sutil.DeserializeResource(data, config, api.Scheme); err != nil {
 		return fmt.Errorf("unable to decode existing KubeControllerManager configuration: %w", err)
 	}
 
@@ -33,7 +33,7 @@ func adaptConfig(cpContext component.WorkloadContext, cm *corev1.ConfigMap) erro
 		config.ServiceServingCert.CertFile = "/etc/kubernetes/certs/service-ca/service-ca.crt"
 	}
 
-	configStr, err := util.SerializeResource(config, api.Scheme)
+	configStr, err := k8sutil.SerializeResource(config, api.Scheme)
 	if err != nil {
 		return fmt.Errorf("failed to serialize KubeControllerManager configuration: %w", err)
 	}

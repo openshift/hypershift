@@ -1,4 +1,4 @@
-package util
+package k8sutil
 
 import (
 	"strings"
@@ -118,7 +118,7 @@ func GetNodePoolManagedResources(platformsInstalled string) []client.Object {
 
 	platformsInstalledList := strings.Split(platformsInstalled, ",")
 	for _, platform := range platformsInstalledList {
-		platform = strings.ToLower(strings.TrimSpace(platform))
+		platform = strings.TrimSpace(platform)
 		switch {
 		case strings.EqualFold(platform, string(hyperv1.AWSPlatform)):
 			managedResources = append(managedResources, AWSNodePoolResources...)

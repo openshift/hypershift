@@ -7,7 +7,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	component "github.com/openshift/hypershift/support/controlplane-component"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/k8sutil"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -94,24 +94,24 @@ func TestAdaptWebhookTLSSecret(t *testing.T) {
 			name:         "When HCP has hosted cluster annotation, it should set secret annotation",
 			existingData: map[string][]byte{},
 			hcpAnnotations: map[string]string{
-				util.HostedClusterAnnotation: "test-namespace/test-cluster",
+				k8sutil.HostedClusterAnnotation: "test-namespace/test-cluster",
 			},
 			validate: func(t *testing.T, g *WithT, secret *corev1.Secret, err error) {
 				g.Expect(err).ToNot(HaveOccurred())
-				g.Expect(secret.Annotations).To(HaveKey(util.HostedClusterAnnotation))
-				g.Expect(secret.Annotations[util.HostedClusterAnnotation]).To(Equal("test-namespace/test-cluster"))
+				g.Expect(secret.Annotations).To(HaveKey(k8sutil.HostedClusterAnnotation))
+				g.Expect(secret.Annotations[k8sutil.HostedClusterAnnotation]).To(Equal("test-namespace/test-cluster"))
 			},
 		},
 		{
 			name:         "When secret has no annotations field, it should create annotations map",
 			existingData: map[string][]byte{},
 			hcpAnnotations: map[string]string{
-				util.HostedClusterAnnotation: "test-namespace/test-cluster",
+				k8sutil.HostedClusterAnnotation: "test-namespace/test-cluster",
 			},
 			validate: func(t *testing.T, g *WithT, secret *corev1.Secret, err error) {
 				g.Expect(err).ToNot(HaveOccurred())
 				g.Expect(secret.Annotations).ToNot(BeNil())
-				g.Expect(secret.Annotations[util.HostedClusterAnnotation]).To(Equal("test-namespace/test-cluster"))
+				g.Expect(secret.Annotations[k8sutil.HostedClusterAnnotation]).To(Equal("test-namespace/test-cluster"))
 			},
 		},
 	}
