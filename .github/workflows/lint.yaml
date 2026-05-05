@@ -23,3 +23,5 @@ jobs:
             touch hack/tools/bin/golangci-lint hack/tools/bin/kube-api-linter.so
           fi
       - run: make lint
+        env:
+          PULL_BASE_SHA: ${{ github.event.pull_request.base.sha }}
