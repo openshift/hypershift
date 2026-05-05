@@ -2419,9 +2419,10 @@ func (r *HostedControlPlaneReconciler) removeCloudResources(ctx context.Context,
 		return true, nil
 	}
 
-	// check if cleanup has been skipped
+	// check if cleanup has been skipped or timed out
 	if resourcesDestroyedCond != nil && resourcesDestroyedCond.Status == metav1.ConditionFalse &&
-		resourcesDestroyedCond.Reason == string(hyperv1.CloudResourcesCleanupSkippedReason) {
+		(resourcesDestroyedCond.Reason == string(hyperv1.CloudResourcesCleanupSkippedReason) ||
+			resourcesDestroyedCond.Reason == string(hyperv1.CloudResourcesDeletionTimedOutReason)) {
 		log.Info("Cleanup has been skipped", "reason", resourcesDestroyedCond.Message)
 		return true, nil
 	}
@@ -2441,6 +2442,19 @@ func (r *HostedControlPlaneReconciler) removeCloudResources(ctx context.Context,
 
 		if timeElapsed > resourceDeletionTimeout {
 			log.Info("Giving up on resource deletion after timeout", "timeElapsed", duration.ShortHumanDuration(timeElapsed))
+			message := fmt.Sprintf("Giving up on cloud resource deletion after %s", duration.ShortHumanDuration(timeElapsed))
+			if resourcesDestroyedCond != nil && resourcesDestroyedCond.Message != "" {
+				message = fmt.Sprintf("%s (last status: %s)", message, resourcesDestroyedCond.Message)
+			}
+			meta.SetStatusCondition(&hcp.Status.Conditions, metav1.Condition{
+				Type:    string(hyperv1.CloudResourcesDestroyed),
+				Status:  metav1.ConditionFalse,
+				Reason:  string(hyperv1.CloudResourcesDeletionTimedOutReason),
+				Message: message,
+			})
+			if err := r.Status().Update(ctx, hcp); err != nil {
+				return false, fmt.Errorf("failed to update cloud resources destroyed condition: %w", err)
+			}
 			return true, nil
 		}
 		return false, nil
