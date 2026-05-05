@@ -380,10 +380,6 @@ func AzureFileCsiDriverControllerMetricsServingCert(ns string) *corev1.Secret {
 	return secretFor(ns, "azure-file-csi-driver-controller-metrics-serving-cert")
 }
 
-func AWSEBSCsiDriverOperatorServingCert(ns string) *corev1.Secret {
-	return secretFor(ns, "aws-ebs-csi-driver-operator-serving-cert")
-}
-
 func AWSEBSCsiDriverControllerMetricsServingCert(ns string) *corev1.Secret {
 	return secretFor(ns, "aws-ebs-csi-driver-controller-metrics-serving-cert")
 }
