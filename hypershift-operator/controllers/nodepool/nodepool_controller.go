@@ -181,7 +181,6 @@ func (r *NodePoolReconciler) managedResources() []client.Object {
 
 func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := ctrl.LoggerFrom(ctx)
-	log.Info("Reconciling")
 
 	// Fetch the nodePool instance
 	nodePool := &hyperv1.NodePool{}

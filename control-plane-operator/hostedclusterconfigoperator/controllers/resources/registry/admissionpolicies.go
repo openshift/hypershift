@@ -38,9 +38,6 @@ var (
 )
 
 func ReconcileRegistryConfigValidatingAdmissionPolicies(ctx context.Context, hcp *hyperv1.HostedControlPlane, client client.Client, createOrUpdate upsert.CreateOrUpdateFN) error {
-	log := ctrl.LoggerFrom(ctx)
-	log.Info("reconciling image registry config validating admission policies")
-
 	if err := reconcileRegistryConfigManagementStateValidatingAdmissionPolicy(ctx, hcp, client, createOrUpdate); err != nil {
 		return fmt.Errorf("failed to reconcile ManagementState Validating Admission Policy: %v", err)
 	}

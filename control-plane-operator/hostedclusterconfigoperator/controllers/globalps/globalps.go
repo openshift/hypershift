@@ -47,9 +47,6 @@ type Reconciler struct {
 }
 
 func (r *Reconciler) Reconcile(ctx context.Context, req crreconcile.Request) (crreconcile.Result, error) {
-	log := ctrl.LoggerFrom(ctx)
-	log.Info("reconciling global pull secret")
-
 	// Reconcile GlobalPullSecret
 	if err := r.reconcileGlobalPullSecret(ctx); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile global pull secret: %w", err)
@@ -77,7 +74,6 @@ func (r *Reconciler) reconcileGlobalPullSecret(ctx context.Context) error {
 		ok                          bool
 	)
 	log := ctrl.LoggerFrom(ctx)
-	log.Info("reconciling global pull secret")
 
 	// Create ServiceAccount for global-pull-secret-syncer
 	serviceAccount := manifests.GlobalPullSecretServiceAccount()
@@ -180,9 +176,6 @@ func (r *Reconciler) reconcileGlobalPullSecret(ctx context.Context) error {
 }
 
 func reconcileDaemonSet(ctx context.Context, daemonSet *appsv1.DaemonSet, globalPullSecretName string, originalPullSecretName string, configSeed string, c crclient.Client, createOrUpdate upsert.CreateOrUpdateFN, hccoImage string) error {
-	log := ctrl.LoggerFrom(ctx)
-	log.Info("Reconciling global pull secret daemon set")
-
 	if _, err := createOrUpdate(ctx, c, daemonSet, func() error {
 		daemonSet.Spec = appsv1.DaemonSetSpec{
 			Selector: &metav1.LabelSelector{

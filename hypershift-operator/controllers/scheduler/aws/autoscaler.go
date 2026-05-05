@@ -342,8 +342,6 @@ func (r *RequestServingNodeAutoscaler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, nil
 	}
 	log := ctrl.LoggerFrom(ctx)
-	log.Info("Reconciling")
-
 	podList := &corev1.PodList{}
 	if err := r.List(ctx, podList, client.InNamespace(placeholderNamespace), client.HasLabels{PlaceholderLabel}); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to list placeholder pods: %w", err)
