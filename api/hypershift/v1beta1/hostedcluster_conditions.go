@@ -252,6 +252,12 @@ const (
 	// **False / AutoNodeProgressing** means AutoNode is being enabled or disabled — the operation is in progress.
 	// **False / AutoNodeNotConfigured** means AutoNode is not configured in the spec and all Karpenter components have been removed.
 	AutoNodeEnabled ConditionType = "AutoNodeEnabled"
+
+	// HostedClusterDeleting indicates whether the HostedCluster is being deleted and
+	// provides first-class visibility into which phase of deletion the cluster is in.
+	// **False / AsExpected** means the cluster is not being deleted.
+	// **True** means deletion is in progress; the Reason and Message indicate the current phase.
+	HostedClusterDeleting ConditionType = "HostedClusterDeleting"
 )
 
 // Reasons.
@@ -336,6 +342,15 @@ const (
 	AutoNodeNotConfiguredReason    = "AutoNodeNotConfigured"
 	AutoNodeProgressingReason      = "AutoNodeProgressing"
 	AutoNodeEvaluationFailedReason = "AutoNodeEvaluationFailed"
+
+	// HostedClusterDeleting reasons.
+	DeletionWaitingForNodePoolDeletionReason        = "WaitingForNodePoolDeletion"
+	DeletionWaitingForCAPIClusterDeletionReason     = "WaitingForCAPIClusterDeletion"
+	DeletionWaitingForEndpointServiceDeletionReason = "WaitingForEndpointServiceDeletion"
+	DeletionWaitingForPrivateConnectDeletionReason  = "WaitingForPrivateConnectDeletion"
+	DeletionWaitingForControlPlaneDeletionReason    = "WaitingForControlPlaneDeletion"
+	DeletionWaitingForNamespaceDeletionReason       = "WaitingForNamespaceDeletion"
+	DeletionCompletedReason                         = "DeletionCompleted"
 )
 
 // Messages.

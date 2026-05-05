@@ -490,6 +490,20 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
+	// Ensure HostedClusterDeleting condition always exists.
+	if meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.HostedClusterDeleting)) == nil {
+		meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
+			Type:               string(hyperv1.HostedClusterDeleting),
+			Status:             metav1.ConditionFalse,
+			Reason:             hyperv1.AsExpectedReason,
+			Message:            "HostedCluster is not being deleted",
+			ObservedGeneration: hcluster.Generation,
+		})
+		if err := r.Client.Status().Update(ctx, hcluster); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to initialize HostedClusterDeleting condition: %w", err)
+		}
+	}
+
 	// If deleted, clean up and return early.
 	if !hcluster.DeletionTimestamp.IsZero() {
 		// This new condition is necessary for OCM personnel to report any cloud dangling objects to the user.
@@ -3337,6 +3351,22 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.Hosted
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name)
 	log := ctrl.LoggerFrom(ctx)
 
+	setDeletionProgress := func(reason, message string) error {
+		condition := metav1.Condition{
+			Type:               string(hyperv1.HostedClusterDeleting),
+			Status:             metav1.ConditionTrue,
+			Reason:             reason,
+			Message:            message,
+			ObservedGeneration: hc.Generation,
+		}
+		old := meta.FindStatusCondition(hc.Status.Conditions, string(hyperv1.HostedClusterDeleting))
+		if old != nil && old.Reason == condition.Reason && old.Message == condition.Message {
+			return nil
+		}
+		meta.SetStatusCondition(&hc.Status.Conditions, condition)
+		return r.Client.Status().Update(ctx, hc)
+	}
+
 	// Unpause CAPI cluster to allow deletion to proceed
 	if err := pauseCAPICluster(ctx, r.Client, hc, false); err != nil {
 		return false, err
@@ -3393,6 +3423,10 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.Hosted
 
 		if exists {
 			log.Info("Waiting for cluster deletion", "clusterName", hc.Spec.InfraID, "controlPlaneNamespace", controlPlaneNamespace)
+			if err := setDeletionProgress(hyperv1.DeletionWaitingForCAPIClusterDeletionReason,
+				fmt.Sprintf("Waiting for CAPI cluster %s/%s to be deleted", controlPlaneNamespace, hc.Spec.InfraID)); err != nil {
+				return false, fmt.Errorf("failed to update deletion progress: %w", err)
+			}
 			return false, nil
 		} else {
 			// once infra is deleted remove finalizers.
@@ -3432,6 +3466,10 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.Hosted
 		}
 		if exists {
 			log.Info("Waiting for awsendpointservice deletion", "controlPlaneNamespace", controlPlaneNamespace)
+			if err := setDeletionProgress(hyperv1.DeletionWaitingForEndpointServiceDeletionReason,
+				fmt.Sprintf("Waiting for AWS endpoint services in %s to be deleted", controlPlaneNamespace)); err != nil {
+				return false, fmt.Errorf("failed to update deletion progress: %w", err)
+			}
 			return false, nil
 		}
 	}
@@ -3443,6 +3481,10 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.Hosted
 		}
 		if exists {
 			log.Info("Waiting for gcpprivateserviceconnect deletion", "controlPlaneNamespace", controlPlaneNamespace)
+			if err := setDeletionProgress(hyperv1.DeletionWaitingForPrivateConnectDeletionReason,
+				fmt.Sprintf("Waiting for GCP Private Service Connect resources in %s to be deleted", controlPlaneNamespace)); err != nil {
+				return false, fmt.Errorf("failed to update deletion progress: %w", err)
+			}
 			return false, nil
 		}
 	}
@@ -3474,6 +3516,10 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.Hosted
 	}
 	if exists {
 		log.Info("Waiting for hostedcontrolplane deletion", "controlPlaneNamespace", controlPlaneNamespace)
+		if err := setDeletionProgress(hyperv1.DeletionWaitingForControlPlaneDeletionReason,
+			fmt.Sprintf("Waiting for HostedControlPlane %s/%s to be deleted", controlPlaneNamespace, hc.Name)); err != nil {
+			return false, fmt.Errorf("failed to update deletion progress: %w", err)
+		}
 		return false, nil
 	}
 
@@ -3484,6 +3530,9 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.Hosted
 	r.KubevirtInfraClients.Delete(hc.Spec.InfraID)
 
 	if skipNSDeletion := hc.Annotations[hyperv1.SkipControlPlaneNamespaceDeletionAnnotation]; skipNSDeletion == "true" {
+		if err := setDeletionProgress(hyperv1.DeletionCompletedReason, "Deletion completed (namespace deletion skipped)"); err != nil {
+			return false, fmt.Errorf("failed to update deletion progress: %w", err)
+		}
 		return true, nil
 	}
 
@@ -3496,10 +3545,45 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.Hosted
 		return false, err
 	}
 	if exists {
-		log.Info("Waiting for namespace deletion", "controlPlaneNamespace", controlPlaneNamespace)
+		message := fmt.Sprintf("Waiting for namespace %s to be deleted", controlPlaneNamespace)
+
+		// Fetch the namespace to inspect its phase and conditions
+		ns := &corev1.Namespace{}
+		if getErr := r.Client.Get(ctx, types.NamespacedName{Name: controlPlaneNamespace}, ns); getErr == nil {
+			message = fmt.Sprintf("Waiting for namespace %s to be deleted (phase: %s)", controlPlaneNamespace, ns.Status.Phase)
+			var details []string
+			for _, cond := range ns.Status.Conditions {
+				switch cond.Type {
+				case corev1.NamespaceContentRemaining,
+					corev1.NamespaceFinalizersRemaining,
+					corev1.NamespaceDeletionContentFailure:
+					if cond.Status == corev1.ConditionTrue {
+						details = append(details, fmt.Sprintf("%s: %s", cond.Type, cond.Message))
+						log.Info("Namespace deletion blocked",
+							"controlPlaneNamespace", controlPlaneNamespace,
+							"conditionType", cond.Type,
+							"reason", cond.Reason,
+							"message", cond.Message,
+						)
+					}
+				}
+			}
+			if len(details) > 0 {
+				message = fmt.Sprintf("Waiting for namespace %s to be deleted (phase: %s): %s",
+					controlPlaneNamespace, ns.Status.Phase, strings.Join(details, "; "))
+			}
+		}
+
+		log.Info(message, "controlPlaneNamespace", controlPlaneNamespace)
+		if err := setDeletionProgress(hyperv1.DeletionWaitingForNamespaceDeletionReason, message); err != nil {
+			return false, fmt.Errorf("failed to update deletion progress: %w", err)
+		}
 		return false, nil
 	}
 
+	if err := setDeletionProgress(hyperv1.DeletionCompletedReason, "Deletion completed"); err != nil {
+		return false, fmt.Errorf("failed to update deletion progress: %w", err)
+	}
 	return true, nil
 }
 
