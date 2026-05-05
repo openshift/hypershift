@@ -32,7 +32,6 @@ const (
 
 func (r *reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
 	log := ctrl.LoggerFrom(ctx)
-	log.Info("Reconciling")
 
 	hcp := &hyperv1.HostedControlPlane{}
 	if err := r.client.Get(ctx, r.hcpKey, hcp); err != nil {

@@ -64,8 +64,6 @@ func (r *GCPPrivateServiceObserver) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{}, nil
 	}
 
-	r.log.Info("reconciling")
-
 	// Fetch the Service
 	svc := &corev1.Service{}
 	if err := r.Get(ctx, req.NamespacedName, svc); err != nil {
@@ -114,7 +112,6 @@ func (r *GCPPrivateServiceObserver) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile GCPPrivateServiceConnect: %w", err)
 	}
 
-	r.log.Info("reconcile complete", "request", req, "loadBalancerIP", loadBalancerIP)
 	return ctrl.Result{}, nil
 }
 

@@ -16,7 +16,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	metav1applyconfigurations "k8s.io/client-go/applyconfigurations/meta/v1"
 
-	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
@@ -27,9 +26,6 @@ type validator struct {
 }
 
 func (r *validator) Reconcile(ctx context.Context, request reconcile.Request) (reconcile.Result, error) {
-	log := ctrl.LoggerFrom(ctx)
-	log.Info("Reconciling")
-
 	config := schedulingv1alpha1.ClusterSizingConfiguration{}
 	if err := r.lister.Get(ctx, request.NamespacedName, &config); err != nil {
 		return reconcile.Result{}, fmt.Errorf("failed to get cluster sizing configuration %s: %w", request.NamespacedName.String(), err)
