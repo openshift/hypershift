@@ -17,6 +17,7 @@ package install
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -37,6 +38,7 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	imageapi "github.com/openshift/api/image/v1"
+	operatorv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -49,6 +51,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/apimachinery/pkg/util/yaml"
+	"k8s.io/client-go/discovery"
 	"k8s.io/utils/ptr"
 	"k8s.io/utils/set"
 
@@ -423,6 +426,39 @@ func InstallHyperShiftOperator(ctx context.Context, out io.Writer, opts Options)
 	crds, objects, err := hyperShiftOperatorManifests(ctx, client, opts)
 	if err != nil {
 		return err
+	}
+
+	// Validate all CRDs via dry-run before applying
+	if err := dryRunValidateCRDs(ctx, out, crds); err != nil {
+		return err
+	}
+
+	// Coordinate with Cluster CAPI Operator if the ClusterAPI API is available.
+	// This is done after dry-run so the ClusterAPI config is not mutated if CRDs
+	// cannot be applied.
+	config, err := util.GetConfig()
+	if err != nil {
+		return fmt.Errorf("failed to get kubernetes config: %w", err)
+	}
+	discoveryClient, err := discovery.NewDiscoveryClientForConfig(config)
+	if err != nil {
+		return fmt.Errorf("failed to create discovery client: %w", err)
+	}
+	registered, err := isClusterAPIRegistered(discoveryClient)
+	if err != nil {
+		return err
+	}
+	if registered {
+		fmt.Fprintf(out, "ClusterAPI API detected, coordinating with Cluster CAPI Operator\n")
+		generation, err := ensureUnmanagedCRDs(ctx, out, client, crds)
+		if err != nil {
+			return err
+		}
+		if generation > 0 {
+			if err := waitForCAPIOperatorSync(ctx, out, client, generation); err != nil {
+				return err
+			}
+		}
 	}
 
 	err = apply(ctx, out, crds)
@@ -925,6 +961,148 @@ func isAzurePlatformEnabled(platformsToInstall []string) bool {
 		}
 	}
 	return false
+}
+
+// groupVersionDiscoverer is a subset of discovery.ServerResourcesInterface
+// used for checking if a specific API group version has a given resource.
+type groupVersionDiscoverer interface {
+	ServerResourcesForGroupVersion(groupVersion string) (*metav1.APIResourceList, error)
+}
+
+// isClusterAPIRegistered checks whether the ClusterAPI API resource (clusterapis)
+// is served on the management cluster via the discovery API. This indicates that the
+// cluster knows about the ClusterAPI config type, independent of whether a config
+// instance exists.
+func isClusterAPIRegistered(discoveryClient groupVersionDiscoverer) (bool, error) {
+	apis, err := discoveryClient.ServerResourcesForGroupVersion(operatorv1alpha1.GroupVersion.String())
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("failed to discover API resources for %s: %w", operatorv1alpha1.GroupVersion, err)
+	}
+	if apis != nil {
+		for _, api := range apis.APIResources {
+			if api.Kind == "ClusterAPI" {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
+}
+
+// ensureUnmanagedCRDs ensures the singleton ClusterAPI config resource exists and has
+// HyperShift's CAPI CRD names listed in unmanagedCustomResourceDefinitions. This tells
+// the Cluster CAPI Operator to skip these CRDs during its own installation.
+// Server-Side Apply is used so the API server handles create-or-update atomically and
+// merges set entries across field owners without conflicts.
+// Returns the metadata.generation of the applied ClusterAPI resource so the caller
+// can wait for the CAPI Operator to reconcile this specific version.
+func ensureUnmanagedCRDs(ctx context.Context, out io.Writer, c crclient.Client, capiCRDs []crclient.Object) (int64, error) {
+	capiCRDNames := set.New[string]()
+	for _, crd := range capiCRDs {
+		name := crd.GetName()
+		if strings.HasSuffix(name, ".cluster.x-k8s.io") {
+			capiCRDNames.Insert(name)
+		}
+	}
+	if capiCRDNames.Len() == 0 {
+		return 0, nil
+	}
+
+	// Build the SSA patch payload as a map so only the fields we intend to own
+	// are included. ApplyConfiguration types for operator/v1alpha1 are not yet
+	// available in openshift/client-go.
+	patchData, err := json.Marshal(map[string]any{
+		"apiVersion": operatorv1alpha1.GroupVersion.String(),
+		"kind":       "ClusterAPI",
+		"metadata": map[string]any{
+			"name": "cluster",
+		},
+		"spec": map[string]any{
+			"unmanagedCustomResourceDefinitions": capiCRDNames.SortedList(),
+		},
+	})
+	if err != nil {
+		return 0, fmt.Errorf("failed to marshal ClusterAPI config: %w", err)
+	}
+
+	clusterAPI := &operatorv1alpha1.ClusterAPI{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "cluster",
+		},
+		Spec: &operatorv1alpha1.ClusterAPISpec{
+			UnmanagedCustomResourceDefinitions: capiCRDNames.SortedList(),
+		},
+	}
+	if err := c.Patch(ctx, clusterAPI, crclient.RawPatch(types.ApplyPatchType, patchData),
+		crclient.ForceOwnership, crclient.FieldOwner("hypershift"),
+	); err != nil {
+		return 0, fmt.Errorf("failed to apply ClusterAPI config: %w", err)
+	}
+	fmt.Fprintf(out, "Applied ClusterAPI config with %d unmanaged CRDs\n", capiCRDNames.Len())
+	return clusterAPI.Generation, nil
+}
+
+// waitForCAPIOperatorSync waits for the Cluster CAPI Operator to fully reconcile after
+// unmanaged CRDs are set in the ClusterAPI config. It polls until:
+// 1. status.observedRevisionGeneration >= generation (from the patch response)
+// 2. status.currentRevision == status.desiredRevision
+// The generation parameter must be the metadata.generation returned by the SSA patch
+// to avoid false positives from reading a stale object.
+func waitForCAPIOperatorSync(ctx context.Context, out io.Writer, c crclient.Client, generation int64) error {
+	waitCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer cancel()
+
+	fmt.Fprintf(out, "Waiting for Cluster CAPI Operator to sync...\n")
+	return wait.PollUntilContextCancel(waitCtx, 2*time.Second, true, func(ctx context.Context) (bool, error) {
+		clusterAPI := &operatorv1alpha1.ClusterAPI{}
+		if err := c.Get(ctx, crclient.ObjectKey{Name: "cluster"}, clusterAPI); err != nil {
+			return false, fmt.Errorf("failed to get ClusterAPI config: %w", err)
+		}
+
+		if clusterAPI.Status.ObservedRevisionGeneration < generation {
+			return false, nil
+		}
+		if clusterAPI.Status.CurrentRevision == "" || clusterAPI.Status.CurrentRevision != clusterAPI.Status.DesiredRevision {
+			return false, nil
+		}
+
+		fmt.Fprintf(out, "Cluster CAPI Operator synced successfully\n")
+		return true, nil
+	})
+}
+
+// dryRunValidateCRDs validates all CRDs through the API server's admission webhooks
+// using server-side dry-run. This catches malformed CRDs, webhook rejections, and
+// schema conflicts before any CRDs are persisted.
+func dryRunValidateCRDs(ctx context.Context, out io.Writer, crds []crclient.Object) error {
+	client, err := util.GetClient()
+	if err != nil {
+		return err
+	}
+
+	var errs []error
+	for _, crd := range crds {
+		var objectBytes bytes.Buffer
+		if err := hyperapi.YamlSerializer.Encode(crd, &objectBytes); err != nil {
+			errs = append(errs, fmt.Errorf("failed to encode CRD %s: %w", crd.GetName(), err))
+			continue
+		}
+		// Use a deep copy so the dry-run response (which includes managedFields)
+		// does not mutate the original CRD objects passed to apply().
+		crdCopy := crd.DeepCopyObject().(crclient.Object)
+		if err := client.Patch(ctx, crdCopy, crclient.RawPatch(types.ApplyPatchType, objectBytes.Bytes()),
+			crclient.ForceOwnership, crclient.FieldOwner("hypershift"), crclient.DryRunAll,
+		); err != nil {
+			errs = append(errs, fmt.Errorf("dry-run validation failed for CRD %s: %w", crd.GetName(), err))
+		}
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("CRD dry-run validation failed:\n%w", errors.NewAggregate(errs))
+	}
+	fmt.Fprintf(out, "All %d CRDs passed dry-run validation\n", len(crds))
+	return nil
 }
 
 // setupMonitoring creates the Prometheus resources for monitoring
