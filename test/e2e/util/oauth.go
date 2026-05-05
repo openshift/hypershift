@@ -93,7 +93,7 @@ func EnsureOAuthWithIdentityProvider(t *testing.T, ctx context.Context, client c
 	})
 }
 
-func guestRestConfig(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) (*restclient.Config, error) {
+func guestRestConfig(t testing.TB, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) (*restclient.Config, error) {
 	guestKubeConfigSecretData := WaitForGuestKubeConfig(t, ctx, client, hostedCluster)
 	guestConfig, err := clientcmd.RESTConfigFromKubeConfig(guestKubeConfigSecretData)
 	if err != nil {
@@ -111,7 +111,7 @@ func WaitForOAuthToken(t *testing.T, ctx context.Context, oauthRoute *routev1.Ro
 
 // WaitForOAuthTokenByHost performs the OAuth token request flow against the given host.
 // This supports both Route-based and LoadBalancer-based OAuth endpoints.
-func WaitForOAuthTokenByHost(t *testing.T, ctx context.Context, oauthHost string, restConfig *restclient.Config, username, password string) string {
+func WaitForOAuthTokenByHost(t testing.TB, ctx context.Context, oauthHost string, restConfig *restclient.Config, username, password string) string {
 	g := NewWithT(t)
 
 	oauthClient := configmanifests.OAuthServerChallengingClient().Name
@@ -125,7 +125,10 @@ func WaitForOAuthTokenByHost(t *testing.T, ctx context.Context, oauthHost string
 	transport, err := restclient.TransportFor(restclient.AnonymousClientConfig(restConfig))
 	g.Expect(err).ToNot(HaveOccurred(), "error getting transport")
 
-	httpClient := &http.Client{Transport: transport}
+	httpClient := &http.Client{
+		Transport: transport,
+		Timeout:   15 * time.Second,
+	}
 	httpClient.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 		// don't resolve redirects and return the response instead
 		return http.ErrUseLastResponse
@@ -133,7 +136,8 @@ func WaitForOAuthTokenByHost(t *testing.T, ctx context.Context, oauthHost string
 
 	var access_token string
 	err = wait.PollUntilContextTimeout(ctx, time.Second, time.Minute*2, true, func(ctx context.Context) (done bool, err error) {
-		resp, err := httpClient.Do(request)
+		req := request.Clone(ctx)
+		resp, err := httpClient.Do(req)
 		if err != nil {
 			t.Logf("Waiting for OAuth token request to succeed")
 			return false, nil
@@ -240,7 +244,7 @@ func extractAccessToken(resp *http.Response) (string, error) {
 
 const OAuthServerConfigKey = "config.yaml"
 
-func WaitForOauthConfig(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+func WaitForOauthConfig(t testing.TB, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	g := NewWithT(t)
 
 	hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
@@ -306,7 +310,7 @@ func validateClusterPreIDP(t *testing.T, ctx context.Context, client crclient.Cl
 // external endpoint allocated and for the /healthz endpoint to return HTTP 200.
 // It returns the OAuth hostname from the HostedCluster's service publishing strategy,
 // which matches the TLS certificate SANs, rather than the raw LoadBalancer IP.
-func WaitForOAuthLoadBalancerReady(t *testing.T, ctx context.Context, client crclient.Client, restConfig *restclient.Config, hostedCluster *hyperv1.HostedCluster) string {
+func WaitForOAuthLoadBalancerReady(t testing.TB, ctx context.Context, client crclient.Client, restConfig *restclient.Config, hostedCluster *hyperv1.HostedCluster) string {
 	g := NewWithT(t)
 
 	// Get the OAuth hostname from the HostedCluster's service publishing strategy.
@@ -374,83 +378,87 @@ func WaitForOAuthLoadBalancerReady(t *testing.T, ctx context.Context, client crc
 	return oauthHost
 }
 
+func ValidateOAuthWithIdentityProviderViaLoadBalancer(t testing.TB, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	g := NewWithT(t)
+
+	guestConfig, err := guestRestConfig(t, ctx, client, hostedCluster)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	// Wait for OAuth LoadBalancer to be ready
+	oauthHost := WaitForOAuthLoadBalancerReady(t, ctx, client, guestConfig, hostedCluster)
+
+	// Validate kubeadmin login through the LoadBalancer (works without IDPs)
+	hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+	kubeadminPasswordSecret := configmanifests.KubeadminPasswordSecret(hcpNamespace)
+	err = client.Get(ctx, crclient.ObjectKeyFromObject(kubeadminPasswordSecret), kubeadminPasswordSecret)
+	g.Expect(err).ToNot(HaveOccurred())
+	password := string(kubeadminPasswordSecret.Data["password"])
+	accessToken := WaitForOAuthTokenByHost(t, ctx, oauthHost, guestConfig, "kubeadmin", password)
+
+	user, err := GetUserForToken(guestConfig, accessToken)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(user.Name).To(Equal("kube:admin"))
+
+	// Set up htpasswd identity provider
+	secret := corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "htpasswd",
+			Namespace: hostedCluster.Namespace,
+		},
+		Data: map[string][]byte{
+			"htpasswd": []byte("testuser:$2y$05$0Fk2s.0FbLy0FZ82JAqajOV/kbT/wqKX5/QFKgps6J69J2jY6r5ZG"),
+		},
+	}
+	err = client.Create(ctx, &secret)
+	g.Expect(err).ToNot(HaveOccurred(), "failed to create htpasswd secret")
+
+	err = UpdateObject(t, ctx, client, hostedCluster, func(obj *hyperv1.HostedCluster) {
+		if obj.Spec.Configuration == nil {
+			obj.Spec.Configuration = &hyperv1.ClusterConfiguration{}
+		}
+		obj.Spec.Configuration.OAuth = &v1.OAuthSpec{
+			IdentityProviders: []v1.IdentityProvider{
+				{
+					Name:          "my_htpasswd_provider",
+					MappingMethod: v1.MappingMethodClaim,
+					IdentityProviderConfig: v1.IdentityProviderConfig{
+						Type: v1.IdentityProviderTypeHTPasswd,
+						HTPasswd: &v1.HTPasswdIdentityProvider{
+							FileData: v1.SecretNameReference{
+								Name: secret.Name,
+							},
+						},
+					},
+				},
+			},
+		}
+	})
+	g.Expect(err).ToNot(HaveOccurred(), "failed to update hostedcluster identity providers")
+
+	// Wait for OAuth config to pick up the new identity provider
+	WaitForOauthConfig(t, ctx, client, hostedCluster)
+
+	// Validate testuser login through the LoadBalancer
+	accessToken = WaitForOAuthTokenByHost(t, ctx, oauthHost, guestConfig, "testuser", "password")
+
+	user, err = GetUserForToken(guestConfig, accessToken)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(user.Name).To(Equal("testuser"))
+
+	// Validate kubeadmin secret was removed after IDP was added
+	validateClusterPostIDP(t, ctx, client, hostedCluster)
+}
+
 // EnsureOAuthWithIdentityProviderViaLoadBalancer is the LoadBalancer equivalent of
 // EnsureOAuthWithIdentityProvider. It validates the OAuth flow when the OAuthServer
 // is published via a LoadBalancer Service instead of a Route.
 func EnsureOAuthWithIdentityProviderViaLoadBalancer(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	t.Run("EnsureOAuthWithIdentityProviderViaLoadBalancer", func(t *testing.T) {
-		g := NewWithT(t)
-
-		guestConfig, err := guestRestConfig(t, ctx, client, hostedCluster)
-		g.Expect(err).ToNot(HaveOccurred())
-
-		// Wait for OAuth LoadBalancer to be ready
-		oauthHost := WaitForOAuthLoadBalancerReady(t, ctx, client, guestConfig, hostedCluster)
-
-		// Validate kubeadmin login through the LoadBalancer (works without IDPs)
-		hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
-		kubeadminPasswordSecret := configmanifests.KubeadminPasswordSecret(hcpNamespace)
-		err = client.Get(ctx, crclient.ObjectKeyFromObject(kubeadminPasswordSecret), kubeadminPasswordSecret)
-		g.Expect(err).ToNot(HaveOccurred())
-		password := string(kubeadminPasswordSecret.Data["password"])
-		accessToken := WaitForOAuthTokenByHost(t, ctx, oauthHost, guestConfig, "kubeadmin", password)
-
-		user, err := GetUserForToken(guestConfig, accessToken)
-		g.Expect(err).ToNot(HaveOccurred())
-		g.Expect(user.Name).To(Equal("kube:admin"))
-
-		// Set up htpasswd identity provider
-		secret := corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "htpasswd",
-				Namespace: hostedCluster.Namespace,
-			},
-			Data: map[string][]byte{
-				"htpasswd": []byte("testuser:$2y$05$0Fk2s.0FbLy0FZ82JAqajOV/kbT/wqKX5/QFKgps6J69J2jY6r5ZG"),
-			},
-		}
-		err = client.Create(ctx, &secret)
-		g.Expect(err).ToNot(HaveOccurred(), "failed to create htpasswd secret")
-
-		err = UpdateObject(t, ctx, client, hostedCluster, func(obj *hyperv1.HostedCluster) {
-			if obj.Spec.Configuration == nil {
-				obj.Spec.Configuration = &hyperv1.ClusterConfiguration{}
-			}
-			obj.Spec.Configuration.OAuth = &v1.OAuthSpec{
-				IdentityProviders: []v1.IdentityProvider{
-					{
-						Name:          "my_htpasswd_provider",
-						MappingMethod: v1.MappingMethodClaim,
-						IdentityProviderConfig: v1.IdentityProviderConfig{
-							Type: v1.IdentityProviderTypeHTPasswd,
-							HTPasswd: &v1.HTPasswdIdentityProvider{
-								FileData: v1.SecretNameReference{
-									Name: secret.Name,
-								},
-							},
-						},
-					},
-				},
-			}
-		})
-		g.Expect(err).ToNot(HaveOccurred(), "failed to update hostedcluster identity providers")
-
-		// Wait for OAuth config to pick up the new identity provider
-		WaitForOauthConfig(t, ctx, client, hostedCluster)
-
-		// Validate testuser login through the LoadBalancer
-		accessToken = WaitForOAuthTokenByHost(t, ctx, oauthHost, guestConfig, "testuser", "password")
-
-		user, err = GetUserForToken(guestConfig, accessToken)
-		g.Expect(err).ToNot(HaveOccurred())
-		g.Expect(user.Name).To(Equal("testuser"))
-
-		// Validate kubeadmin secret was removed after IDP was added
-		validateClusterPostIDP(t, ctx, client, hostedCluster)
+		ValidateOAuthWithIdentityProviderViaLoadBalancer(t, ctx, client, hostedCluster)
 	})
 }
 
-func validateClusterPostIDP(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+func validateClusterPostIDP(t testing.TB, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	g := NewWithT(t)
 
 	// update HC status

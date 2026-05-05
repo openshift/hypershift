@@ -168,7 +168,7 @@ func InitGuestClients(ctx context.Context, t *testing.T, g Gomega, mgtClient crc
 	}
 }
 
-func UpdateObject[T crclient.Object](t *testing.T, ctx context.Context, client crclient.Client, original T, mutate func(obj T)) error {
+func UpdateObject[T crclient.Object](t testing.TB, ctx context.Context, client crclient.Client, original T, mutate func(obj T)) error {
 	return wait.PollUntilContextTimeout(ctx, time.Second, time.Minute*1, true, func(ctx context.Context) (done bool, err error) {
 		if err := client.Get(ctx, crclient.ObjectKeyFromObject(original), original); err != nil {
 			t.Logf("failed to retrieve object %s, will retry: %v", original.GetName(), err)
@@ -292,7 +292,7 @@ func WaitForCustomKubeconfig(t *testing.T, ctx context.Context, client crclient.
 	return data
 }
 
-func WaitForGuestKubeConfig(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) []byte {
+func WaitForGuestKubeConfig(t testing.TB, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) []byte {
 	var guestKubeConfigSecretRef crclient.ObjectKey
 	EventuallyObject(t, ctx, fmt.Sprintf("kubeconfig to be published for HostedCluster %s/%s", hostedCluster.Namespace, hostedCluster.Name),
 		func(ctx context.Context) (*hyperv1.HostedCluster, error) {
@@ -3486,33 +3486,80 @@ func EnsureDefaultSecurityGroupTags(t *testing.T, ctx context.Context, client cr
 	})
 }
 
+func ValidateKubeAPIServerAllowedCIDRs(t testing.TB, ctx context.Context, mgmtClient crclient.Client, guestConfig *rest.Config, hc *hyperv1.HostedCluster) {
+	g := NewWithT(t)
+
+	// Save original APIServer networking to restore after test
+	var originalAPIServer *hyperv1.APIServerNetworking
+	if hc.Spec.Networking.APIServer != nil {
+		originalAPIServer = hc.Spec.Networking.APIServer.DeepCopy()
+	}
+	defer func() {
+		err := UpdateObject(t, ctx, mgmtClient, hc, func(obj *hyperv1.HostedCluster) {
+			if originalAPIServer != nil {
+				obj.Spec.Networking.APIServer = originalAPIServer.DeepCopy()
+			} else {
+				obj.Spec.Networking.APIServer = nil
+			}
+		})
+		g.Expect(err).NotTo(HaveOccurred(), "failed to restore HostedCluster API server CIDRs")
+	}()
+
+	kubeClient, err := kubeclient.NewForConfig(guestConfig)
+	g.Expect(err).NotTo(HaveOccurred())
+
+	// ensure that kube-apiserver is not reachable from anywhere
+	ensureAPIServerAllowedCIDRs(ctx, t, g, mgmtClient, kubeClient, hc, []string{"0.0.0.0/32"}, false)
+	// ensure kube-apiserver is reachable when allowed CIDRs allow access from everywhere
+	// This is useful for testing purposes, as it allows us to access the kube-apiserver from any IP
+	// In a production environment, this should be restricted to specific CIDRs
+	ensureAPIServerAllowedCIDRs(ctx, t, g, mgmtClient, kubeClient, hc, append([]string{"0.0.0.0/0"}, generateTestCIDRs250()...), true)
+}
+
 func EnsureKubeAPIServerAllowedCIDRs(t *testing.T, ctx context.Context, mgmtClient crclient.Client, guestConfig *rest.Config, hc *hyperv1.HostedCluster) {
 	t.Run("EnsureKubeAPIServerAllowedCIDRs", func(t *testing.T) {
-		g := NewWithT(t)
-
-		kubeClient, err := kubeclient.NewForConfig(guestConfig)
-		g.Expect(err).NotTo(HaveOccurred())
-
-		// ensure that kube-apiserver is not reachable from anywhere
-		ensureAPIServerAllowedCIDRs(ctx, t, g, mgmtClient, kubeClient, hc, []string{"0.0.0.0/32"}, false)
-		// ensure kube-apiserver is reachable when allowed CIDRs allow access from everywhere
-		// This is useful for testing purposes, as it allows us to access the kube-apiserver from any IP
-		// In a production environment, this should be restricted to specific CIDRs
-		ensureAPIServerAllowedCIDRs(ctx, t, g, mgmtClient, kubeClient, hc, append([]string{"0.0.0.0/0"}, generateTestCIDRs250()...), true)
+		ValidateKubeAPIServerAllowedCIDRs(t, ctx, mgmtClient, guestConfig, hc)
 	})
 }
 
-func ensureAPIServerAllowedCIDRs(ctx context.Context, t *testing.T, g Gomega, mgmtClient crclient.Client, guestClient *kubeclient.Clientset, hc *hyperv1.HostedCluster, allowedCIDRs []string, shouldBeReachable bool) {
+func ensureAPIServerAllowedCIDRs(ctx context.Context, t testing.TB, g Gomega, mgmtClient crclient.Client, guestClient *kubeclient.Clientset, hc *hyperv1.HostedCluster, allowedCIDRs []string, shouldBeReachable bool) {
+	expectedCIDRs := make([]hyperv1.CIDRBlock, len(allowedCIDRs))
+	for i, cidr := range allowedCIDRs {
+		expectedCIDRs[i] = hyperv1.CIDRBlock(cidr)
+	}
+
 	err := UpdateObject(t, ctx, mgmtClient, hc, func(obj *hyperv1.HostedCluster) {
 		if obj.Spec.Networking.APIServer == nil {
 			obj.Spec.Networking.APIServer = &hyperv1.APIServerNetworking{}
 		}
-		obj.Spec.Networking.APIServer.AllowedCIDRBlocks = nil
-		for _, cidr := range allowedCIDRs {
-			obj.Spec.Networking.APIServer.AllowedCIDRBlocks = append(obj.Spec.Networking.APIServer.AllowedCIDRBlocks, hyperv1.CIDRBlock(cidr))
-		}
+		obj.Spec.Networking.APIServer.AllowedCIDRBlocks = expectedCIDRs
 	})
 	g.Expect(err).To(Not(HaveOccurred()), "failed to update HostedCluster with allowed CIDRs")
+
+	// Wait for the HostedControlPlane to reflect the updated AllowedCIDRBlocks.
+	// The HO uses an informer cache that may not see the HC spec change immediately,
+	// so the reconciliation triggered by the initial update may read stale data. We
+	// poll the HCP and, on each retry, touch the HC to generate a new watch event that
+	// forces the HO to reconcile with an up-to-date cache.
+	hcpNamespace := manifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name)
+	g.Eventually(func(g Gomega) {
+		hcp := &hyperv1.HostedControlPlane{}
+		err := mgmtClient.Get(ctx, crclient.ObjectKey{Namespace: hcpNamespace, Name: hc.Name}, hcp)
+		g.Expect(err).ToNot(HaveOccurred(), "failed to get HostedControlPlane")
+		if hcp.Spec.Networking.APIServer == nil ||
+			!reflect.DeepEqual(hcp.Spec.Networking.APIServer.AllowedCIDRBlocks, expectedCIDRs) {
+			// Touch the HC to trigger a new HO reconciliation with an up-to-date cache.
+			_ = UpdateObject(t, ctx, mgmtClient, hc, func(obj *hyperv1.HostedCluster) {
+				if obj.Annotations == nil {
+					obj.Annotations = map[string]string{}
+				}
+				obj.Annotations["e2e.hypershift.openshift.io/cidr-trigger"] = time.Now().Format(time.RFC3339)
+			})
+		}
+		g.Expect(hcp.Spec.Networking.APIServer).ToNot(BeNil(), "HCP APIServer networking should be set")
+		g.Expect(hcp.Spec.Networking.APIServer.AllowedCIDRBlocks).To(Equal(expectedCIDRs),
+			"HCP AllowedCIDRBlocks should match the HostedCluster spec")
+	}).WithContext(ctx).WithTimeout(time.Minute * 3).WithPolling(time.Second * 5).Should(Succeed())
 
 	g.Eventually(func(g Gomega) {
 		_, err = guestClient.ServerVersion()

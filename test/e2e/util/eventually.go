@@ -82,7 +82,7 @@ func WithFilteredConditionDump(matchers ...Condition) EventuallyOption {
 }
 
 // EventuallyObject polls until the predicate is fulfilled on the object.
-func EventuallyObject[T client.Object](t *testing.T, ctx context.Context, objective string, getter func(context.Context) (T, error), predicates []Predicate[T], options ...EventuallyOption) {
+func EventuallyObject[T client.Object](t testing.TB, ctx context.Context, objective string, getter func(context.Context) (T, error), predicates []Predicate[T], options ...EventuallyOption) {
 	t.Helper()
 	opts := defaultOptions()
 	for _, option := range options {
@@ -209,7 +209,7 @@ func summarizePredicteResults(results []predicateResult) bool {
 	return done
 }
 
-func printStatus[T client.Object](t *testing.T, lastTimestamp time.Time, object T, done bool, reasons []string) {
+func printStatus[T client.Object](t testing.TB, lastTimestamp time.Time, object T, done bool, reasons []string) {
 	if len(reasons) == 0 {
 		return
 	}
@@ -236,7 +236,7 @@ type predicateResult struct {
 }
 
 // EventuallyObjects polls until the predicate is fulfilled on each of a set of objects.
-func EventuallyObjects[T client.Object](t *testing.T, ctx context.Context, objective string, getter func(context.Context) ([]T, error), groupPredicates []Predicate[[]T], predicates []Predicate[T], options ...EventuallyOption) {
+func EventuallyObjects[T client.Object](t testing.TB, ctx context.Context, objective string, getter func(context.Context) ([]T, error), groupPredicates []Predicate[[]T], predicates []Predicate[T], options ...EventuallyOption) {
 	t.Helper()
 	opts := defaultOptions()
 	for _, option := range options {
@@ -376,7 +376,7 @@ type predicateReasons struct {
 	reasons []string
 }
 
-func printCollectionStatus[T client.Object](t *testing.T, lastTimestamp time.Time, done bool, reasons map[types.NamespacedName]predicateReasons) {
+func printCollectionStatus[T client.Object](t testing.TB, lastTimestamp time.Time, done bool, reasons map[types.NamespacedName]predicateReasons) {
 	prefix := ""
 	if !done {
 		prefix = "in"
@@ -522,7 +522,7 @@ func adaptConditions(in []metav1.Condition) []Condition {
 }
 
 // EventuallyNotFound polls until the object is not found (deleted).
-func EventuallyNotFound[T client.Object](t *testing.T, ctx context.Context, c client.Client, obj T, options ...EventuallyOption) {
+func EventuallyNotFound[T client.Object](t testing.TB, ctx context.Context, c client.Client, obj T, options ...EventuallyOption) {
 	t.Helper()
 	opts := defaultOptions()
 	for _, option := range options {
