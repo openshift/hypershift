@@ -30,7 +30,6 @@ import (
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1"
 	"github.com/openshift/hypershift/api/util/configrefs"
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
@@ -243,7 +242,7 @@ func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpd
 	// namespaces, the events are filtered to enqueue only those resources which
 	// are annotated as being associated with a hostedcluster (using an annotation).
 	bldr := ctrl.NewControllerManagedBy(mgr).
-		For(&hyperv1.HostedCluster{}, builder.WithPredicates(hyperutil.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()))).
+		For(&hyperv1.HostedCluster{}, builder.WithPredicates(hostedClusterPrimaryPredicate(mgr.GetClient()))).
 		WithOptions(controller.Options{
 			RateLimiter:             workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](1*time.Second, 10*time.Second),
 			MaxConcurrentReconciles: 10,
@@ -2340,57 +2339,7 @@ func reconcileHostedControlPlaneAnnotations(hcp *hyperv1.HostedControlPlane, hcl
 	hcp.Annotations[k8sutil.HostedClusterAnnotation] = client.ObjectKeyFromObject(hcluster).String()
 
 	// These annotations are copied from the HostedCluster
-	mirroredAnnotations := []string{
-		hyperv1.DisablePKIReconciliationAnnotation,
-		hyperv1.OauthLoginURLOverrideAnnotation,
-		hyperv1.KonnectivityAgentImageAnnotation,
-		hyperv1.KonnectivityServerImageAnnotation,
-		hyperv1.ClusterAutoscalerImage,
-		hyperv1.IBMCloudKMSProviderImage,
-		hyperv1.AWSKMSProviderImage,
-		hyperv1.PortierisImageAnnotation,
-		k8sutil.DebugDeploymentsAnnotation,
-		hyperv1.DisableProfilingAnnotation,
-		hyperv1.PrivateIngressControllerAnnotation,
-		hyperv1.IngressControllerLoadBalancerScope,
-		hyperv1.CleanupCloudResourcesAnnotation,
-		hyperv1.ControlPlanePriorityClass,
-		hyperv1.APICriticalPriorityClass,
-		hyperv1.EtcdPriorityClass,
-		hyperv1.EnsureExistsPullSecretReconciliation,
-		hyperv1.TopologyAnnotation,
-		hyperv1.DisableMachineManagement,
-		hyperv1.CertifiedOperatorsCatalogImageAnnotation,
-		hyperv1.CommunityOperatorsCatalogImageAnnotation,
-		hyperv1.RedHatMarketplaceCatalogImageAnnotation,
-		hyperv1.RedHatOperatorsCatalogImageAnnotation,
-		hyperv1.OLMCatalogsISRegistryOverridesAnnotation,
-		hyperv1.KubeAPIServerGOGCAnnotation,
-		hyperv1.KubeAPIServerGOMemoryLimitAnnotation,
-		hyperv1.RequestServingNodeAdditionalSelectorAnnotation,
-		hyperv1.AWSLoadBalancerSubnetsAnnotation,
-		hyperv1.AWSLoadBalancerTargetNodesAnnotation,
-		hyperv1.AWSLoadBalancerHealthProbeModeAnnotation,
-		hyperv1.AzureLoadBalancerHealthProbeModeAnnotation,
-		hyperv1.SharedLoadBalancerHealthProbePathAnnotation,
-		hyperv1.SharedLoadBalancerHealthProbePortAnnotation,
-		hyperv1.ManagementPlatformAnnotation,
-		hyperv1.KubeAPIServerVerbosityLevelAnnotation,
-		hyperv1.KubeAPIServerMaximumRequestsInFlight,
-		hyperv1.KubeAPIServerMaximumMutatingRequestsInFlight,
-		hyperv1.DisableIgnitionServerAnnotation,
-		hyperv1.AWSMachinePublicIPs,
-		hyperv1.AWSKarpenterDefaultInstanceProfile,
-		hyperkarpenterv1.KarpenterProviderAWSImage,
-		hyperv1.KubeAPIServerGoAwayChance,
-		hyperv1.KubeAPIServerServiceAccountTokenMaxExpiration,
-		hyperv1.HostedClusterRestoredFromBackupAnnotation,
-		// TODO: Remove this once the input is in the HostedCluster AWS API.
-		"hypershift.openshift.io/aws-termination-handler-queue-url",
-		hyperv1.SwiftPodNetworkInstanceAnnotation,
-		hyperv1.EnableMetricsForwarding,
-	}
-	for _, key := range mirroredAnnotations {
+	for _, key := range hostedClusterMirroredAnnotations {
 		val, hasVal := hcluster.Annotations[key]
 		if hasVal {
 			hcp.Annotations[key] = val
@@ -2399,22 +2348,17 @@ func reconcileHostedControlPlaneAnnotations(hcp *hyperv1.HostedControlPlane, hcl
 		}
 	}
 
-	prefixesToSync := []string{
-		hyperv1.IdentityProviderOverridesAnnotationPrefix,
-		hyperv1.ResourceRequestOverrideAnnotationPrefix,
-	}
-
 	// All annotations on the HostedCluster with prefixes to sync
 	// should be synced
 	for key := range hcp.Annotations {
-		for _, prefix := range prefixesToSync {
+		for _, prefix := range hostedClusterActionableAnnotationPrefixes {
 			if strings.HasPrefix(key, prefix) {
 				delete(hcp.Annotations, key)
 			}
 		}
 	}
 	for key, val := range hcluster.Annotations {
-		for _, prefix := range prefixesToSync {
+		for _, prefix := range hostedClusterActionableAnnotationPrefixes {
 			if strings.HasPrefix(key, prefix) {
 				hcp.Annotations[key] = val
 			}
