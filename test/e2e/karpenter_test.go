@@ -672,9 +672,11 @@ func testNodeClassVersionField(ctx context.Context, mgtClient, guestClient crcli
 				instanceID, instance.MetadataOptions.HttpTokens, instance.MetadataOptions.HttpEndpoint, *instance.MetadataOptions.HttpPutResponseHopLimit)
 		}
 
-		// Trigger cleanup; the t.Cleanup handles final deletion.
+		// Trigger cleanup and wait for nodes to fully terminate so stale
+		// NodeClaims don't leak vCPUs into subsequent sequential tests.
 		g.Expect(guestClient.Delete(ctx, testWorkLoads)).To(Succeed())
 		g.Expect(guestClient.Delete(ctx, testNodePool)).To(Succeed())
+		_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, 0, testNodeLabels)
 
 		// Verify that a version exceeding the allowed n-3 skew sets SupportedVersionSkew=False.
 		skewMajor, skewMinor, err := supportedversion.PreviousMinorVersion(cpVersion, 4)
@@ -887,6 +889,12 @@ func testCapacityReservation(ctx context.Context, mgtClient, guestClient crclien
 		g.Expect(aws.ToString(instance.CapacityReservationId)).To(Equal(crID),
 			"instance %s should have been launched into capacity reservation %s", instanceID, crID)
 		t.Logf("Instance %s correctly launched into capacity reservation %s", instanceID, crID)
+
+		// Delete workload and NodePool, then wait for nodes to fully terminate
+		// so stale NodeClaims don't leak vCPUs into subsequent sequential tests.
+		g.Expect(guestClient.Delete(ctx, crWorkload)).To(Succeed())
+		g.Expect(guestClient.Delete(ctx, crNodePool)).To(Succeed())
+		_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, 0, crNodeLabels)
 	}
 }
 
