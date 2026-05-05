@@ -3609,6 +3609,171 @@ func TestIsProgressing(t *testing.T) {
 	}
 }
 
+func TestComputeAWSDefaultSGDeletedCondition(t *testing.T) {
+	t.Parallel()
+
+	deletionTime := metav1.Now()
+
+	tests := []struct {
+		name        string
+		hcluster    *hyperv1.HostedCluster
+		hcp         *hyperv1.HostedControlPlane
+		wantChanged bool
+		wantStatus  metav1.ConditionStatus
+	}{
+		{
+			name: "When platform is Azure, it should not set the condition",
+			hcluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AzurePlatform},
+				},
+			},
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{DeletionTimestamp: &deletionTime},
+			},
+			wantChanged: false,
+		},
+		{
+			name: "When platform is KubeVirt, it should not set the condition",
+			hcluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.KubevirtPlatform},
+				},
+			},
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{DeletionTimestamp: &deletionTime},
+			},
+			wantChanged: false,
+		},
+		{
+			name: "When platform is AWS and HCP is nil, it should not set the condition",
+			hcluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+				},
+			},
+			hcp:         nil,
+			wantChanged: false,
+		},
+		{
+			name: "When platform is AWS and HCP is not being deleted, it should not set the condition",
+			hcluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+				},
+			},
+			hcp:         &hyperv1.HostedControlPlane{},
+			wantChanged: false,
+		},
+		{
+			name: "When platform is AWS and HCP is being deleted with no SG condition, it should set Unknown condition",
+			hcluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+				},
+			},
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{DeletionTimestamp: &deletionTime},
+			},
+			wantChanged: true,
+			wantStatus:  metav1.ConditionUnknown,
+		},
+		{
+			name: "When platform is AWS and HCP has SG deleted condition, it should propagate that condition",
+			hcluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+				},
+			},
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{DeletionTimestamp: &deletionTime},
+				Status: hyperv1.HostedControlPlaneStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:    string(hyperv1.AWSDefaultSecurityGroupDeleted),
+							Status:  metav1.ConditionTrue,
+							Reason:  "Deleted",
+							Message: "Security group deleted",
+						},
+					},
+				},
+			},
+			wantChanged: true,
+			wantStatus:  metav1.ConditionTrue,
+		},
+		{
+			name: "When platform is AWS and HCP has SG deletion blocked, it should propagate the False condition",
+			hcluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+				},
+			},
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{DeletionTimestamp: &deletionTime},
+				Status: hyperv1.HostedControlPlaneStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:    string(hyperv1.AWSDefaultSecurityGroupDeleted),
+							Status:  metav1.ConditionFalse,
+							Reason:  "DeletionBlocked",
+							Message: "security group still in use",
+						},
+					},
+				},
+			},
+			wantChanged: true,
+			wantStatus:  metav1.ConditionFalse,
+		},
+		{
+			name: "When HC already has the same condition message, it should not report a change",
+			hcluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:    string(hyperv1.AWSDefaultSecurityGroupDeleted),
+							Status:  metav1.ConditionTrue,
+							Reason:  "Deleted",
+							Message: "Security group deleted",
+						},
+					},
+				},
+			},
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{DeletionTimestamp: &deletionTime},
+				Status: hyperv1.HostedControlPlaneStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:    string(hyperv1.AWSDefaultSecurityGroupDeleted),
+							Status:  metav1.ConditionTrue,
+							Reason:  "Deleted",
+							Message: "Security group deleted",
+						},
+					},
+				},
+			},
+			wantChanged: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			condition, changed := computeAWSDefaultSGDeletedCondition(tt.hcluster, tt.hcp)
+			g.Expect(changed).To(Equal(tt.wantChanged))
+			if tt.wantChanged {
+				g.Expect(condition).ToNot(BeNil())
+				g.Expect(condition.Type).To(Equal(string(hyperv1.AWSDefaultSecurityGroupDeleted)))
+				g.Expect(condition.Status).To(Equal(tt.wantStatus))
+			}
+		})
+	}
+}
+
 func TestComputeAWSEndpointServiceCondition(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
