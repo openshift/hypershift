@@ -31,6 +31,7 @@ Fixes
 ## AI Assistance
 <!--
 Declare AI tool usage. Use `none` if no AI tools were used.
+If you use Claude Code with the ai-helpers plugin, run /ai-sbom:generate to fill this in automatically.
 See: https://github.com/openshift-eng/ai-helpers/blob/main/plugins/ai-sbom/docs/AI_SBOM.md
 -->
 
