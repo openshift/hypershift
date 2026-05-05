@@ -2,6 +2,11 @@ name: AI SBOM
 
 on:
   pull_request:
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - edited
     branches:
       - main
       - release-4.22
