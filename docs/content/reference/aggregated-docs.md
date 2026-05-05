@@ -47764,6 +47764,73 @@ The value must be in proper IPV4 CIDR format</p>
 </tr>
 </tbody>
 </table>
+###OVNIPv6Config { #hypershift.openshift.io/v1beta1.OVNIPv6Config }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.OVNKubernetesConfig">OVNKubernetesConfig</a>)
+</p>
+<p>
+<p>OVNIPv6Config contains IPv6-specific configuration options for OVN-Kubernetes.
+<a href="https://github.com/openshift/api/blob/6d3c4e25a8d3aeb57ad61649d80c38cbd27d1cc8/operator/v1/types_network.go#L541-L570">https://github.com/openshift/api/blob/6d3c4e25a8d3aeb57ad61649d80c38cbd27d1cc8/operator/v1/types_network.go#L541-L570</a></p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>internalTransitSwitchSubnet</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>internalTransitSwitchSubnet is a v6 subnet in IPv6 CIDR format used internally
+by OVN-Kubernetes for the distributed transit switch in the OVN Interconnect
+architecture that connects the cluster routers on each node together to enable
+east west traffic. The subnet chosen should not overlap with other networks
+specified for OVN-Kubernetes as well as other networks used on the host.
+When omitted, this means no opinion and the platform is left to choose a reasonable
+default which is subject to change over time.
+The current default subnet is fd97::/64.
+The subnet must be large enough to accommodate one IP per node in your cluster.
+The value must be a valid IPv6 CIDR (e.g. fd97::/64). IPv4 addresses,
+IPv4-mapped IPv6 addresses, and dual-stack addresses are not permitted.
+The prefix length must be in the range /0 to /125 inclusive.
+This field is immutable once set.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>internalJoinSubnet</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>internalJoinSubnet is a v6 subnet used internally by ovn-kubernetes in case the
+default one is being already used by something else. It must not overlap with
+any other subnet being used by OpenShift or by the node network. The size of the
+subnet must be larger than the number of nodes.
+The current default value is fd98::/64.
+For KubeVirt hosted clusters, if this field is not set, HyperShift will
+automatically use fd99::/64 to avoid collisions with the management cluster&rsquo;s
+default join subnet (fd98::/64).
+The subnet must be large enough to accommodate one IP per node in your cluster.
+The value must be a valid IPv6 CIDR (e.g. fd98::/64). IPv4 addresses,
+IPv4-mapped IPv6 addresses, and dual-stack addresses are not permitted.
+The prefix length must be in the range /0 to /125 inclusive.
+This field is immutable once set.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###OVNKubernetesConfig { #hypershift.openshift.io/v1beta1.OVNKubernetesConfig }
 <p>
 (<em>Appears on:</em>
@@ -47795,6 +47862,25 @@ OVNIPv4Config
 <p>ipv4 allows users to configure IP settings for IPv4 connections. When omitted,
 this means no opinions and the default configuration is used. Check individual
 fields within ipv4 for details of default values.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>ipv6,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.OVNIPv6Config">
+OVNIPv6Config
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>ipv6 allows users to configure IP settings for IPv6 connections. When omitted,
+this means no opinions and the default configuration is used. Check individual
+fields within ipv6 for details of default values.
+For KubeVirt hosted clusters using dual-stack networking, it is recommended to
+set ipv6.internalJoinSubnet to a value different from the management cluster&rsquo;s
+join subnet (default fd98::/64) to avoid IPv6 routing conflicts.</p>
 </td>
 </tr>
 <tr>
