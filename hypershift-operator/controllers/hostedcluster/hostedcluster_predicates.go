@@ -5,6 +5,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1"
+	"github.com/openshift/hypershift/support/k8sutil"
 	hyperutil "github.com/openshift/hypershift/support/util"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -23,7 +24,7 @@ var hostedClusterMirroredAnnotations = []string{
 	hyperv1.IBMCloudKMSProviderImage,
 	hyperv1.AWSKMSProviderImage,
 	hyperv1.PortierisImageAnnotation,
-	hyperutil.DebugDeploymentsAnnotation,
+	k8sutil.DebugDeploymentsAnnotation,
 	hyperv1.DisableProfilingAnnotation,
 	hyperv1.PrivateIngressControllerAnnotation,
 	hyperv1.IngressControllerLoadBalancerScope,
@@ -89,7 +90,7 @@ var hostedClusterAdditionalActionableAnnotations = []string{
 	hyperv1.SkipReleaseImageValidation,
 	hyperv1.SkipKASConflicSANValidation,
 	hyperv1.SkipControlPlaneNamespaceDeletionAnnotation,
-	hyperutil.HostedClustersScopeAnnotation,
+	k8sutil.HostedClustersScopeAnnotation,
 }
 
 var hostedClusterActionableLabelPrefixes = []string{

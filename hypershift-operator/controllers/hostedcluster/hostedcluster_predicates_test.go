@@ -5,7 +5,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/api"
-	hyperutil "github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/k8sutil"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -132,10 +132,10 @@ func TestHostedClusterActionableAnnotationChanged_WhenAnnotationsChangeItShouldR
 		{
 			name: "When the scope annotation changes, it should return true",
 			oldAnnotations: map[string]string{
-				hyperutil.HostedClustersScopeAnnotation: "one",
+				k8sutil.HostedClustersScopeAnnotation: "one",
 			},
 			newAnnotations: map[string]string{
-				hyperutil.HostedClustersScopeAnnotation: "two",
+				k8sutil.HostedClustersScopeAnnotation: "two",
 			},
 			expected: true,
 		},
@@ -190,8 +190,8 @@ func TestHostedClusterActionableAnnotationChanged_WhenAPlatformProviderOverrideC
 }
 
 func TestHostedClusterPrimaryPredicate_WhenHostedClusterUpdatesItShouldFilterMeaningfulChanges(t *testing.T) {
-	t.Setenv(hyperutil.EnableHostedClustersAnnotationScopingEnv, "")
-	t.Setenv(hyperutil.HostedClustersScopeAnnotationEnv, "")
+	t.Setenv(k8sutil.EnableHostedClustersAnnotationScopingEnv, "")
+	t.Setenv(k8sutil.HostedClustersScopeAnnotationEnv, "")
 
 	predicate := hostedClusterPrimaryPredicate(fake.NewClientBuilder().WithScheme(api.Scheme).Build())
 
@@ -271,10 +271,10 @@ func TestHostedClusterPrimaryPredicate_WhenHostedClusterUpdatesItShouldFilterMea
 		{
 			name: "When the scope annotation changes, it should allow the update",
 			oldHC: newHostedClusterForPredicateTests(1, map[string]string{
-				hyperutil.HostedClustersScopeAnnotation: "one",
+				k8sutil.HostedClustersScopeAnnotation: "one",
 			}),
 			newHC: newHostedClusterForPredicateTests(1, map[string]string{
-				hyperutil.HostedClustersScopeAnnotation: "two",
+				k8sutil.HostedClustersScopeAnnotation: "two",
 			}),
 			expected: true,
 		},
@@ -344,16 +344,16 @@ func TestHostedClusterPrimaryPredicate_WhenHostedClusterUpdatesItShouldFilterMea
 }
 
 func TestHostedClusterPrimaryPredicate_WhenAHostedClusterBecomesInScopeItShouldAllowTheUpdate(t *testing.T) {
-	t.Setenv(hyperutil.EnableHostedClustersAnnotationScopingEnv, "true")
-	t.Setenv(hyperutil.HostedClustersScopeAnnotationEnv, "team-a")
+	t.Setenv(k8sutil.EnableHostedClustersAnnotationScopingEnv, "true")
+	t.Setenv(k8sutil.HostedClustersScopeAnnotationEnv, "team-a")
 
 	predicate := hostedClusterPrimaryPredicate(fake.NewClientBuilder().WithScheme(api.Scheme).Build())
 
 	oldHC := newHostedClusterForPredicateTests(1, map[string]string{
-		hyperutil.HostedClustersScopeAnnotation: "team-b",
+		k8sutil.HostedClustersScopeAnnotation: "team-b",
 	})
 	newHC := newHostedClusterForPredicateTests(1, map[string]string{
-		hyperutil.HostedClustersScopeAnnotation: "team-a",
+		k8sutil.HostedClustersScopeAnnotation: "team-a",
 	})
 
 	if !predicate.Update(event.UpdateEvent{
