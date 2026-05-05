@@ -2423,7 +2423,9 @@ func (r *HostedControlPlaneReconciler) removeCloudResources(ctx context.Context,
 	if resourcesDestroyedCond != nil && resourcesDestroyedCond.Status == metav1.ConditionFalse &&
 		(resourcesDestroyedCond.Reason == string(hyperv1.CloudResourcesCleanupSkippedReason) ||
 			resourcesDestroyedCond.Reason == string(hyperv1.CloudResourcesDeletionTimedOutReason)) {
-		log.Info("Cleanup has been skipped", "reason", resourcesDestroyedCond.Message)
+		log.Info("Cloud resource cleanup reached terminal state",
+			"reason", resourcesDestroyedCond.Reason,
+			"message", resourcesDestroyedCond.Message)
 		return true, nil
 	}
 
