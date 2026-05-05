@@ -181,7 +181,7 @@ func TestReconcilePrivateService(t *testing.T) {
 	azureILBAnnotation := azureutil.InternalLoadBalancerAnnotation
 	awsCrossZoneAnnotation := "service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled"
 	awsInternalAnnotation := "service.beta.kubernetes.io/aws-load-balancer-internal"
-	awsNLBAnnotation := "service.beta.kubernetes.io/aws-load-balancer-type"
+	awsNLBAnnotation := AWSNLBAnnotation
 
 	testCases := []struct {
 		name                    string
