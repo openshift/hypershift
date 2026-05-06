@@ -46,6 +46,7 @@ import (
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/errors"
@@ -1050,21 +1051,28 @@ func ensureUnmanagedCRDs(ctx context.Context, out io.Writer, c crclient.Client, 
 // 2. status.currentRevision == status.desiredRevision
 // The generation parameter must be the metadata.generation returned by the SSA patch
 // to avoid false positives from reading a stale object.
+//
+// Uses unstructured access for status.observedRevisionGeneration because the field
+// may not be present in the vendored operatorv1alpha1.ClusterAPIStatus type.
 func waitForCAPIOperatorSync(ctx context.Context, out io.Writer, c crclient.Client, generation int64) error {
 	waitCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 
 	fmt.Fprintf(out, "Waiting for Cluster CAPI Operator to sync...\n")
 	return wait.PollUntilContextCancel(waitCtx, 2*time.Second, true, func(ctx context.Context) (bool, error) {
-		clusterAPI := &operatorv1alpha1.ClusterAPI{}
-		if err := c.Get(ctx, crclient.ObjectKey{Name: "cluster"}, clusterAPI); err != nil {
+		obj := &unstructured.Unstructured{}
+		obj.SetGroupVersionKind(operatorv1alpha1.GroupVersion.WithKind("ClusterAPI"))
+		if err := c.Get(ctx, crclient.ObjectKey{Name: "cluster"}, obj); err != nil {
 			return false, fmt.Errorf("failed to get ClusterAPI config: %w", err)
 		}
 
-		if clusterAPI.Status.ObservedRevisionGeneration < generation {
+		observedGen, _, _ := unstructured.NestedInt64(obj.Object, "status", "observedRevisionGeneration")
+		if observedGen < generation {
 			return false, nil
 		}
-		if clusterAPI.Status.CurrentRevision == "" || clusterAPI.Status.CurrentRevision != clusterAPI.Status.DesiredRevision {
+		currentRevision, _, _ := unstructured.NestedString(obj.Object, "status", "currentRevision")
+		desiredRevision, _, _ := unstructured.NestedString(obj.Object, "status", "desiredRevision")
+		if currentRevision == "" || currentRevision != desiredRevision {
 			return false, nil
 		}
 

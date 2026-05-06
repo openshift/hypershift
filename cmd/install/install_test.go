@@ -23,6 +23,8 @@ import (
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/set"
 
@@ -766,123 +768,72 @@ func TestEnsureUnmanagedCRDs(t *testing.T) {
 }
 
 func TestWaitForCAPIOperatorSync(t *testing.T) {
+	clusterAPIGVK := schema.GroupVersionKind{
+		Group:   operatorv1alpha1.GroupVersion.Group,
+		Version: operatorv1alpha1.GroupVersion.Version,
+		Kind:    "ClusterAPI",
+	}
+
+	makeConfig := func(t *testing.T, generation, observedRevisionGeneration int64, currentRevision, desiredRevision string) *unstructured.Unstructured {
+		t.Helper()
+		g := NewGomegaWithT(t)
+		obj := &unstructured.Unstructured{}
+		obj.SetGroupVersionKind(clusterAPIGVK)
+		obj.SetName("cluster")
+		obj.SetGeneration(generation)
+		status := map[string]any{
+			"observedRevisionGeneration": observedRevisionGeneration,
+			"desiredRevision":            desiredRevision,
+			"revisions": []any{
+				map[string]any{"name": desiredRevision, "revision": observedRevisionGeneration, "contentID": "content"},
+			},
+		}
+		if currentRevision != "" {
+			status["currentRevision"] = currentRevision
+		}
+		g.Expect(unstructured.SetNestedField(obj.Object, status, "status")).To(Succeed())
+		return obj
+	}
+
 	tests := []struct {
 		name            string
-		config          *operatorv1alpha1.ClusterAPI
+		config          *unstructured.Unstructured
 		patchGeneration int64
 		expectSuccess   bool
 	}{
 		{
-			name: "When revision controller has observed the patch generation and installer has applied it should succeed",
-			config: &operatorv1alpha1.ClusterAPI{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:       "cluster",
-					Generation: 2,
-				},
-				Status: operatorv1alpha1.ClusterAPIStatus{
-					ObservedRevisionGeneration: 2,
-					DesiredRevision:            "rev-2",
-					CurrentRevision:            "rev-2",
-					Revisions: []operatorv1alpha1.ClusterAPIInstallerRevision{
-						{Name: "rev-2", Revision: 2, ContentID: "content-2"},
-					},
-				},
-			},
+			name:            "When revision controller has observed the patch generation and installer has applied it should succeed",
+			config:          makeConfig(t, 2, 2, "rev-2", "rev-2"),
 			patchGeneration: 2,
 			expectSuccess:   true,
 		},
 		{
-			name: "When observedRevisionGeneration is ahead of patch generation it should succeed",
-			config: &operatorv1alpha1.ClusterAPI{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:       "cluster",
-					Generation: 3,
-				},
-				Status: operatorv1alpha1.ClusterAPIStatus{
-					ObservedRevisionGeneration: 3,
-					DesiredRevision:            "rev-3",
-					CurrentRevision:            "rev-3",
-					Revisions: []operatorv1alpha1.ClusterAPIInstallerRevision{
-						{Name: "rev-3", Revision: 3, ContentID: "content-3"},
-					},
-				},
-			},
+			name:            "When observedRevisionGeneration is ahead of patch generation it should succeed",
+			config:          makeConfig(t, 3, 3, "rev-3", "rev-3"),
 			patchGeneration: 2,
 			expectSuccess:   true,
 		},
 		{
-			name: "When revision controller has not observed the patch generation it should time out",
-			config: &operatorv1alpha1.ClusterAPI{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:       "cluster",
-					Generation: 3,
-				},
-				Status: operatorv1alpha1.ClusterAPIStatus{
-					ObservedRevisionGeneration: 2,
-					DesiredRevision:            "rev-2",
-					CurrentRevision:            "rev-2",
-					Revisions: []operatorv1alpha1.ClusterAPIInstallerRevision{
-						{Name: "rev-2", Revision: 2, ContentID: "content-2"},
-					},
-				},
-			},
+			name:            "When revision controller has not observed the patch generation it should time out",
+			config:          makeConfig(t, 3, 2, "rev-2", "rev-2"),
 			patchGeneration: 3,
 			expectSuccess:   false,
 		},
 		{
-			name: "When reading a stale object from before the patch it should time out",
-			config: &operatorv1alpha1.ClusterAPI{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:       "cluster",
-					Generation: 1,
-				},
-				Status: operatorv1alpha1.ClusterAPIStatus{
-					ObservedRevisionGeneration: 1,
-					DesiredRevision:            "rev-1",
-					CurrentRevision:            "rev-1",
-					Revisions: []operatorv1alpha1.ClusterAPIInstallerRevision{
-						{Name: "rev-1", Revision: 1, ContentID: "content-1"},
-					},
-				},
-			},
+			name:            "When reading a stale object from before the patch it should time out",
+			config:          makeConfig(t, 1, 1, "rev-1", "rev-1"),
 			patchGeneration: 2,
 			expectSuccess:   false,
 		},
 		{
-			name: "When currentRevision does not match desiredRevision it should time out",
-			config: &operatorv1alpha1.ClusterAPI{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:       "cluster",
-					Generation: 2,
-				},
-				Status: operatorv1alpha1.ClusterAPIStatus{
-					ObservedRevisionGeneration: 2,
-					DesiredRevision:            "rev-2",
-					CurrentRevision:            "rev-1",
-					Revisions: []operatorv1alpha1.ClusterAPIInstallerRevision{
-						{Name: "rev-1", Revision: 1, ContentID: "content-1"},
-						{Name: "rev-2", Revision: 2, ContentID: "content-2"},
-					},
-				},
-			},
+			name:            "When currentRevision does not match desiredRevision it should time out",
+			config:          makeConfig(t, 2, 2, "rev-1", "rev-2"),
 			patchGeneration: 2,
 			expectSuccess:   false,
 		},
 		{
-			name: "When currentRevision is empty it should time out",
-			config: &operatorv1alpha1.ClusterAPI{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:       "cluster",
-					Generation: 1,
-				},
-				Status: operatorv1alpha1.ClusterAPIStatus{
-					ObservedRevisionGeneration: 1,
-					DesiredRevision:            "rev-1",
-					Revisions: []operatorv1alpha1.ClusterAPIInstallerRevision{
-						{Name: "rev-1", Revision: 1, ContentID: "content-1"},
-					},
-				},
-			},
+			name:            "When currentRevision is empty it should time out",
+			config:          makeConfig(t, 1, 1, "", "rev-1"),
 			patchGeneration: 1,
 			expectSuccess:   false,
 		},
@@ -891,10 +842,22 @@ func TestWaitForCAPIOperatorSync(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
+			// Use an interceptor to return the unstructured object directly,
+			// bypassing the fake client's typed round-trip which would drop
+			// the observedRevisionGeneration field not present in the vendored type.
+			config := tc.config
 			client := fake.NewClientBuilder().
 				WithScheme(hyperapi.Scheme).
-				WithObjects(tc.config).
-				WithStatusSubresource(&operatorv1alpha1.ClusterAPI{}).
+				WithInterceptorFuncs(interceptor.Funcs{
+					Get: func(ctx context.Context, c crclient.WithWatch, key crclient.ObjectKey, obj crclient.Object, opts ...crclient.GetOption) error {
+						u, ok := obj.(*unstructured.Unstructured)
+						if !ok {
+							return c.Get(ctx, key, obj, opts...)
+						}
+						u.Object = config.DeepCopy().Object
+						return nil
+					},
+				}).
 				Build()
 
 			ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
