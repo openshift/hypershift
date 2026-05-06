@@ -1570,7 +1570,32 @@ func TestCreateBackupJob(t *testing.T) {
 }
 
 func TestEnsureServiceAccountWithCredentials(t *testing.T) {
-	t.Run("When Azure Workload Identity mode it should annotate the ServiceAccount", func(t *testing.T) {
+	t.Run("When Azure Workload Identity mode and SA has pre-configured annotation it should preserve it", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		preConfiguredSA := &corev1.ServiceAccount{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      jobServiceAccountName,
+				Namespace: testHONamespace,
+				Annotations: map[string]string{
+					"azure.workload.identity/client-id": "preconfigured-client-id",
+				},
+			},
+		}
+		r := newReconciler(preConfiguredSA)
+		ctx := context.Background()
+
+		creds := resolvedCredentials{
+			Mode:     credentialModeAzureWorkloadIdentity,
+			ClientID: "different-client-id-from-secret",
+		}
+		g.Expect(r.ensureServiceAccount(ctx, creds)).To(Succeed())
+
+		sa := &corev1.ServiceAccount{}
+		g.Expect(r.Get(ctx, types.NamespacedName{Name: jobServiceAccountName, Namespace: testHONamespace}, sa)).To(Succeed())
+		g.Expect(sa.Annotations["azure.workload.identity/client-id"]).To(Equal("preconfigured-client-id"))
+	})
+
+	t.Run("When Azure Workload Identity mode and SA has no annotation it should set it from credential secret", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 		r := newReconciler()
 		ctx := context.Background()
@@ -1601,11 +1626,20 @@ func TestEnsureServiceAccountWithCredentials(t *testing.T) {
 
 	t.Run("When switching from WI to static mode it should remove the annotation", func(t *testing.T) {
 		g := NewGomegaWithT(t)
-		r := newReconciler()
+		preConfiguredSA := &corev1.ServiceAccount{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      jobServiceAccountName,
+				Namespace: testHONamespace,
+				Annotations: map[string]string{
+					"azure.workload.identity/client-id": "client-789",
+				},
+			},
+		}
+		r := newReconciler(preConfiguredSA)
 		ctx := context.Background()
 
-		// First: create with WI
-		wiCreds := resolvedCredentials{Mode: credentialModeAzureWorkloadIdentity, ClientID: "client-789"}
+		// First: verify WI preserves annotation
+		wiCreds := resolvedCredentials{Mode: credentialModeAzureWorkloadIdentity, ClientID: "ignored"}
 		g.Expect(r.ensureServiceAccount(ctx, wiCreds)).To(Succeed())
 
 		// Then: update with static

@@ -555,7 +555,9 @@ func (r *HCPEtcdBackupReconciler) setEncryptionMetadata(backup *hyperv1.HCPEtcdB
 }
 
 // ensureServiceAccount creates the ServiceAccount for backup Jobs in the HO namespace.
-// For Azure Workload Identity mode, it adds the required client-id annotation.
+// For Azure Workload Identity mode, if the SA already has a
+// azure.workload.identity/client-id annotation (e.g., set by infrastructure/Helm),
+// it is preserved. Otherwise, the annotation is set from the credential secret.
 func (r *HCPEtcdBackupReconciler) ensureServiceAccount(ctx context.Context, creds resolvedCredentials) error {
 	sa := &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
@@ -568,7 +570,9 @@ func (r *HCPEtcdBackupReconciler) ensureServiceAccount(ctx context.Context, cred
 			if sa.Annotations == nil {
 				sa.Annotations = map[string]string{}
 			}
-			sa.Annotations["azure.workload.identity/client-id"] = creds.ClientID
+			if sa.Annotations["azure.workload.identity/client-id"] == "" {
+				sa.Annotations["azure.workload.identity/client-id"] = creds.ClientID
+			}
 		} else {
 			delete(sa.Annotations, "azure.workload.identity/client-id")
 		}
