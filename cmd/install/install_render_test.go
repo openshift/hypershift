@@ -65,7 +65,7 @@ func TestMultiDocYamlRendering(t *testing.T) {
 }
 
 func TestTemplateYamlRendering(t *testing.T) {
-	template, err := ExecuteTemplateYamlGenerationCommand([]string{"--oidc-storage-provider-s3-bucket-name", "bucket", "--oidc-storage-provider-s3-region", "us-east-1", "--oidc-storage-provider-s3-secret", "secret", "render", "--format", "yaml", "--template"})
+	template, err := ExecuteTemplateYamlGenerationCommand([]string{"--oidc-storage-provider-s3-bucket-name", "bucket", "--oidc-storage-provider-s3-region", "us-east-1", "--oidc-storage-provider-s3-secret", "secret", "render", "--format", "yaml", "--template", "--render-sensitive"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,6 +104,17 @@ func ExecuteJsonGenerationCommand(args []string) (map[string]interface{}, error)
 	return doc, nil
 }
 
+func TestWhenTemplateWithoutRenderSensitiveItShouldFail(t *testing.T) {
+	_, err := ExecuteTestCommand([]string{"--oidc-storage-provider-s3-bucket-name", "bucket", "--oidc-storage-provider-s3-region", "us-east-1", "--oidc-storage-provider-s3-secret", "secret", "render", "--format", "yaml", "--template"})
+	if err == nil {
+		t.Fatal("expected error when using --template without --render-sensitive")
+	}
+	expectedMsg := "--template requires --render-sensitive=true because Template output can embed Secret objects"
+	if err.Error() != expectedMsg {
+		t.Fatalf("expected error message %q, got %q", expectedMsg, err.Error())
+	}
+}
+
 func TestJsonListRendering(t *testing.T) {
 	doc, err := ExecuteJsonGenerationCommand([]string{"--oidc-storage-provider-s3-bucket-name", "bucket", "--oidc-storage-provider-s3-region", "us-east-1", "--oidc-storage-provider-s3-secret", "secret", "render", "--format", "json"})
 	if err != nil {
@@ -120,7 +131,7 @@ func TestJsonListRendering(t *testing.T) {
 }
 
 func TestJsonTemplateRendering(t *testing.T) {
-	doc, err := ExecuteJsonGenerationCommand([]string{"--oidc-storage-provider-s3-bucket-name", "bucket", "--oidc-storage-provider-s3-region", "us-east-1", "--oidc-storage-provider-s3-secret", "secret", "render", "--format", "json", "--template"})
+	doc, err := ExecuteJsonGenerationCommand([]string{"--oidc-storage-provider-s3-bucket-name", "bucket", "--oidc-storage-provider-s3-region", "us-east-1", "--oidc-storage-provider-s3-secret", "secret", "render", "--format", "json", "--template", "--render-sensitive"})
 	if err != nil {
 		t.Fatal(err)
 	}

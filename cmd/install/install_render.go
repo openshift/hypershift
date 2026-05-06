@@ -105,6 +105,10 @@ func RenderHyperShiftOperator(ctx context.Context, cmdOut io.Writer, opts *Optio
 		return err
 	}
 
+	if opts.Template && !opts.RenderSensitive {
+		return fmt.Errorf("--template requires --render-sensitive=true because Template output can embed Secret objects")
+	}
+
 	var crds []crclient.Object
 	var objects []crclient.Object
 
