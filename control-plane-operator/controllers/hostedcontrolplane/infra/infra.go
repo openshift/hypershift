@@ -698,7 +698,8 @@ func (r *Reconciler) reconcileExternalRouterServiceStatus(ctx context.Context, h
 	return r.reconcileRouterServiceStatus(ctx, manifests.RouterPublicService(hcp.Namespace), events.NewMessageCollector(ctx, r.Client))
 }
 
-func (r *Reconciler) reconcileRouterServiceStatus(ctx context.Context, svc *corev1.Service, messageCollector events.MessageCollector) (host string, needed bool, message string, err error) {
+func (r *Reconciler) reconcileRouterServiceStatus(ctx context.Context, svc *corev1.Service, messageCollector events.MessageCollector) (host string,
+	needed bool, message string, err error) {
 	needed = true
 	if err = r.Client.Get(ctx, client.ObjectKeyFromObject(svc), svc); err != nil {
 		if apierrors.IsNotFound(err) {
@@ -708,6 +709,14 @@ func (r *Reconciler) reconcileRouterServiceStatus(ctx context.Context, svc *core
 		err = fmt.Errorf("failed to get router service (%s): %w", svc.Name, err)
 		return
 	}
+
+	if svc.Spec.Type == corev1.ServiceTypeNodePort {
+		if len(svc.Spec.Ports) > 0 && svc.Spec.Ports[0].NodePort != 0 {
+			host = svc.Spec.ClusterIP
+		}
+		return
+	}
+
 	if message, err = k8sutil.CollectLBMessageIfNotProvisioned(svc, messageCollector); err != nil || message != "" {
 		return
 	}

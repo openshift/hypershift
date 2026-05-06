@@ -13,6 +13,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 func TestReconcileService(t *testing.T) {
@@ -437,4 +439,65 @@ func TestKonnectivityServiceReconcile(t *testing.T) {
 			}
 		})
 	}
+}
+func TestReconcileServiceStatus(t *testing.T) {
+	tests := []struct {
+		name         string
+		svc          *corev1.Service
+		strategy     *hyperv1.ServicePublishingStrategy
+		expectedHost string
+		expectedPort int32
+	}{
+		{
+			name: "When Route strategy with NodePort service it should return route hostname",
+			svc: &corev1.Service{
+				Spec: corev1.ServiceSpec{
+					Type: corev1.ServiceTypeNodePort,
+					Ports: []corev1.ServicePort{
+						{Port: 443, NodePort: 31443},
+					},
+				},
+			},
+			strategy: &hyperv1.ServicePublishingStrategy{
+				Type:  hyperv1.Route,
+				Route: &hyperv1.RoutePublishingStrategy{Hostname: "api.example.com"},
+			},
+			expectedHost: "api.example.com",
+			expectedPort: 443,
+		},
+		{
+			name: "When Route strategy with NodePort service without assigned port it should return empty host",
+			svc: &corev1.Service{
+				Spec: corev1.ServiceSpec{
+					Type: corev1.ServiceTypeNodePort,
+					Ports: []corev1.ServicePort{
+						{Port: 443},
+					},
+				},
+			},
+			strategy: &hyperv1.ServicePublishingStrategy{
+				Type:  hyperv1.Route,
+				Route: &hyperv1.RoutePublishingStrategy{Hostname: "api.example.com"},
+			},
+			expectedHost: "",
+			expectedPort: 0,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			msgCollector := &fakeMessageCollector{}
+			host, port, msg, err := ReconcileServiceStatus(tc.svc, tc.strategy, 6443, msgCollector)
+			g.Expect(err).To(BeNil())
+			g.Expect(msg).To(BeEmpty())
+			g.Expect(host).To(Equal(tc.expectedHost))
+			g.Expect(port).To(Equal(tc.expectedPort))
+		})
+	}
+}
+
+type fakeMessageCollector struct{}
+
+func (c *fakeMessageCollector) ErrorMessages(_ client.Object) ([]string, error) {
+	return nil, nil
 }

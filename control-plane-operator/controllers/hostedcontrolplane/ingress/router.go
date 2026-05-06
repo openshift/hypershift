@@ -64,7 +64,14 @@ func ReconcileRouterService(svc *corev1.Service, internal, crossZoneLoadBalancin
 	for k, v := range hcpRouterLabels() {
 		svc.Labels[k] = v
 	}
-	svc.Spec.Type = corev1.ServiceTypeLoadBalancer
+	if svc.Spec.Type == "" {
+		switch hcp.Spec.Platform.Type {
+		case hyperv1.AgentPlatform, hyperv1.KubevirtPlatform, hyperv1.NonePlatform:
+			svc.Spec.Type = corev1.ServiceTypeNodePort
+		default:
+			svc.Spec.Type = corev1.ServiceTypeLoadBalancer
+		}
+	}
 	svc.Spec.Selector = hcpRouterLabels()
 	foundHTTPS := false
 
@@ -89,7 +96,7 @@ func ReconcileRouterService(svc *corev1.Service, internal, crossZoneLoadBalancin
 	// Apply LoadBalancerSourceRanges for external router services to restrict CIDR access
 	// Only apply for external (non-internal) services and when not running on ARO HCP
 	allowedCIDRBlocks := netutil.AllowedCIDRBlocks(hcp)
-	if !internal && !azureutil.IsAroHCP() {
+	if !internal && !azureutil.IsAroHCP() && svc.Spec.Type == corev1.ServiceTypeLoadBalancer {
 		svc.Spec.LoadBalancerSourceRanges = allowedCIDRBlocks
 	}
 

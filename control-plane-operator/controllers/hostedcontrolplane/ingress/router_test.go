@@ -1,6 +1,7 @@
 package ingress
 
 import (
+	"fmt"
 	"testing"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -176,5 +177,78 @@ func TestReconcileRouterService_GCPInternalLoadBalancer(t *testing.T) {
 	}
 	if svc.Spec.Selector["app"] != "private-router" {
 		t.Fatalf("expected service selector app to be 'private-router', got %q", svc.Spec.Selector["app"])
+	}
+}
+
+// Test that non-cloud platforms use NodePort
+func TestReconcileRouterService_NonCloudPlatformsUseNodePort(t *testing.T) {
+	platforms := []hyperv1.PlatformType{
+		hyperv1.AgentPlatform,
+		hyperv1.KubevirtPlatform,
+		hyperv1.NonePlatform,
+	}
+
+	for _, platform := range platforms {
+		t.Run(fmt.Sprintf("When platform is %s it should use NodePort", platform), func(t *testing.T) {
+			hcp := &hyperv1.HostedControlPlane{}
+			hcp.Spec.Platform.Type = platform
+
+			svc := &corev1.Service{}
+
+			if err := ReconcileRouterService(svc, false, false, hcp); err != nil {
+				t.Fatalf("ReconcileRouterService returned error: %v", err)
+			}
+
+			if svc.Spec.Type != corev1.ServiceTypeNodePort {
+				t.Fatalf("expected service type to be NodePort for %s platform, got %v", platform, svc.Spec.Type)
+			}
+		})
+	}
+}
+
+// Test that existing service type is preserved on reconcile
+func TestReconcileRouterService_ExistingServicePreservesType(t *testing.T) {
+	t.Run("When existing service is LoadBalancer on non-cloud platform it should not change type", func(t *testing.T) {
+		hcp := &hyperv1.HostedControlPlane{}
+		hcp.Spec.Platform.Type = hyperv1.AgentPlatform
+
+		svc := &corev1.Service{}
+		svc.Spec.Type = corev1.ServiceTypeLoadBalancer
+
+		if err := ReconcileRouterService(svc, false, false, hcp); err != nil {
+			t.Fatalf("ReconcileRouterService returned error: %v", err)
+		}
+
+		if svc.Spec.Type != corev1.ServiceTypeLoadBalancer {
+			t.Fatalf("expected existing LoadBalancer type to be preserved, got %v", svc.Spec.Type)
+		}
+	})
+}
+
+// Test that cloud platforms use LoadBalancer
+func TestReconcileRouterService_CloudPlatformsUseLoadBalancer(t *testing.T) {
+	platforms := []hyperv1.PlatformType{
+		hyperv1.AWSPlatform,
+		hyperv1.GCPPlatform,
+		hyperv1.AzurePlatform,
+		hyperv1.PowerVSPlatform,
+		hyperv1.OpenStackPlatform,
+	}
+
+	for _, platform := range platforms {
+		t.Run(fmt.Sprintf("When platform is %s it should use LoadBalancer", platform), func(t *testing.T) {
+			hcp := &hyperv1.HostedControlPlane{}
+			hcp.Spec.Platform.Type = platform
+
+			svc := &corev1.Service{}
+
+			if err := ReconcileRouterService(svc, false, false, hcp); err != nil {
+				t.Fatalf("ReconcileRouterService returned error: %v", err)
+			}
+
+			if svc.Spec.Type != corev1.ServiceTypeLoadBalancer {
+				t.Fatalf("expected service type to be LoadBalancer for %s platform, got %v", platform, svc.Spec.Type)
+			}
+		})
 	}
 }

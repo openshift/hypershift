@@ -1738,6 +1738,41 @@ func TestReconcileRouterServiceStatus(t *testing.T) {
 			},
 			expectedHost: "1.2.3.4",
 		},
+		{
+			name: "When NodePort service with assigned port it should return ClusterIP as host",
+			svc: &corev1.Service{
+				ObjectMeta: metav1.ObjectMeta{Name: svcName, Namespace: namespace},
+				Spec: corev1.ServiceSpec{
+					Type:      corev1.ServiceTypeNodePort,
+					ClusterIP: "10.0.0.100",
+					Ports: []corev1.ServicePort{
+						{
+							Name:     "https",
+							Port:     443,
+							NodePort: 31443,
+						},
+					},
+				},
+			},
+			expectedHost: "10.0.0.100",
+		},
+		{
+			name: "When NodePort service without assigned port it should return empty host",
+			svc: &corev1.Service{
+				ObjectMeta: metav1.ObjectMeta{Name: svcName, Namespace: namespace},
+				Spec: corev1.ServiceSpec{
+					Type:      corev1.ServiceTypeNodePort,
+					ClusterIP: "10.0.0.100",
+					Ports: []corev1.ServicePort{
+						{
+							Name: "https",
+							Port: 443,
+						},
+					},
+				},
+			},
+			expectedHost: "",
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

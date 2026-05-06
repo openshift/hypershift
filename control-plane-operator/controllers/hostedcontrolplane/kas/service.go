@@ -174,10 +174,21 @@ func ReconcileServiceStatus(svc *corev1.Service, strategy *hyperv1.ServicePublis
 		port = svc.Spec.Ports[0].NodePort
 		host = strategy.NodePort.Address
 	case hyperv1.Route:
+		if svc.Spec.Type == corev1.ServiceTypeNodePort {
+			if len(svc.Spec.Ports) > 0 && svc.Spec.Ports[0].NodePort != 0 {
+				if strategy.Route != nil {
+					host = strategy.Route.Hostname
+					port = 443
+				}
+			}
+			return
+		}
 		if message, err := k8sutil.CollectLBMessageIfNotProvisioned(svc, messageCollector); err != nil || message != "" {
 			return host, port, message, err
 		}
-		host = strategy.Route.Hostname
+		if strategy.Route != nil {
+			host = strategy.Route.Hostname
+		}
 		port = 443
 	}
 	return
