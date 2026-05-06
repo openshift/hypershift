@@ -25,9 +25,9 @@ const (
 	// defaultOIDCAudience is the default audience for OIDC providers.
 	defaultOIDCAudience = "openshift"
 
-	// iamPropagationTimeout is the maximum time to wait for IAM eventual consistency.
-	// GCP IAM changes typically propagate in 5-30 seconds, we allow 60 seconds to be safe.
-	iamPropagationTimeout = 60 * time.Second
+	// iamPropagationTimeout is the maximum time to wait for IAM eventual consistency and rate limit recovery.
+	// GCP IAM changes typically propagate in 5-30 seconds; 120 seconds gives room for rate limit backoff.
+	iamPropagationTimeout = 120 * time.Second
 
 	// iamPropagationInitialBackoff is the initial backoff duration for IAM retry operations.
 	iamPropagationInitialBackoff = 2 * time.Second
@@ -348,8 +348,13 @@ func (c *IAMManager) CreateServiceAccounts(ctx context.Context) (map[string]stri
 	for _, def := range definitions {
 		c.logger.Info("Processing service account", "name", def.Name)
 
-		// Create the GSA
-		email, err := c.createServiceAccount(ctx, def)
+		// Create the GSA (with retry for rate limiting)
+		var email string
+		err = c.retryWithExponentialBackoff(ctx, fmt.Sprintf("createServiceAccount-%s", def.Name), func() error {
+			var createErr error
+			email, createErr = c.createServiceAccount(ctx, def)
+			return createErr
+		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to create service account %s: %w", def.Name, err)
 		}
@@ -708,6 +713,9 @@ func isTransientIAMError(err error) bool {
 		switch apiErr.Code {
 		case 404:
 			// Not found - resource may not have propagated yet
+			return true
+		case 429:
+			// Rate limited - retry after backoff
 			return true
 		case 400:
 			// Bad request - sometimes occurs during IAM propagation

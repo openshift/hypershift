@@ -1,6 +1,7 @@
 package gcp
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/go-logr/logr"
 	"google.golang.org/api/cloudresourcemanager/v1"
+	"google.golang.org/api/googleapi"
 	"google.golang.org/api/iam/v1"
 )
 
@@ -386,6 +388,57 @@ func TestLoadServiceAccountDefinitions(t *testing.T) {
 			K8sServiceAccountRef{Namespace: "openshift-image-registry", Name: "registry"},
 		))
 	})
+}
+
+func TestIsTransientIAMError(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		expected bool
+	}{
+		{
+			name:     "When error is nil it should return false",
+			err:      nil,
+			expected: false,
+		},
+		{
+			name:     "When error is a 429 rate limit error it should return true",
+			err:      &googleapi.Error{Code: 429, Message: "A quota has been reached"},
+			expected: true,
+		},
+		{
+			name:     "When error is a 404 not found error it should return true",
+			err:      &googleapi.Error{Code: 404, Message: "Not found"},
+			expected: true,
+		},
+		{
+			name:     "When error is a 403 permission error it should return true",
+			err:      &googleapi.Error{Code: 403, Message: "Permission denied"},
+			expected: true,
+		},
+		{
+			name:     "When error is a 403 non-permission error it should return false",
+			err:      &googleapi.Error{Code: 403, Message: "Forbidden"},
+			expected: false,
+		},
+		{
+			name:     "When error is a 500 server error it should return false",
+			err:      &googleapi.Error{Code: 500, Message: "Internal server error"},
+			expected: false,
+		},
+		{
+			name:     "When error is a non-googleapi error it should return false",
+			err:      fmt.Errorf("some other error"),
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			g.Expect(isTransientIAMError(tt.err)).To(Equal(tt.expected))
+		})
+	}
 }
 
 func TestIsAlreadyExistsError(t *testing.T) {
