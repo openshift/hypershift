@@ -2397,13 +2397,19 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 	// All labels on the HostedCluster with this special prefix are copied
 	// Those are labels set by OCM
 	for key := range hcp.Labels {
-		if strings.HasPrefix(key, "api.openshift.com") {
-			delete(hcp.Labels, key)
+		for _, prefix := range hostedClusterActionableLabelPrefixes {
+			if strings.HasPrefix(key, prefix) {
+				delete(hcp.Labels, key)
+				break
+			}
 		}
 	}
 	for key, val := range hcluster.Labels {
-		if strings.HasPrefix(key, "api.openshift.com") {
-			hcp.Labels[key] = val
+		for _, prefix := range hostedClusterActionableLabelPrefixes {
+			if strings.HasPrefix(key, prefix) {
+				hcp.Labels[key] = val
+				break
+			}
 		}
 	}
 
