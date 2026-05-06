@@ -2638,3 +2638,238 @@ func TestEtcdStatefulSetCondition(t *testing.T) {
 		})
 	}
 }
+
+func TestRemoveCloudResources(t *testing.T) {
+	t.Parallel()
+	testNamespace := "test-namespace"
+
+	testCases := []struct {
+		name              string
+		hcp               *hyperv1.HostedControlPlane
+		cvoDeployment     *appsv1.Deployment
+		expectedDone      bool
+		expectedError     bool
+		expectedCondition *metav1.Condition
+	}{
+		{
+			name: "When CloudResourcesDestroyed is True, it should return done",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-hcp",
+					Namespace: testNamespace,
+				},
+				Status: hyperv1.HostedControlPlaneStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:   string(hyperv1.CloudResourcesDestroyed),
+							Status: metav1.ConditionTrue,
+							Reason: hyperv1.AsExpectedReason,
+						},
+					},
+				},
+			},
+			expectedDone: true,
+		},
+		{
+			name: "When CloudResourcesDestroyed reason is CloudResourcesCleanupSkipped, it should return done",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-hcp",
+					Namespace: testNamespace,
+				},
+				Status: hyperv1.HostedControlPlaneStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:    string(hyperv1.CloudResourcesDestroyed),
+							Status:  metav1.ConditionFalse,
+							Reason:  string(hyperv1.CloudResourcesCleanupSkippedReason),
+							Message: "Cleanup was skipped by annotation",
+						},
+					},
+				},
+			},
+			expectedDone: true,
+		},
+		{
+			name: "When CloudResourcesDestroyed reason is CloudResourcesDeletionTimedOut, it should return done",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-hcp",
+					Namespace: testNamespace,
+				},
+				Status: hyperv1.HostedControlPlaneStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:    string(hyperv1.CloudResourcesDestroyed),
+							Status:  metav1.ConditionFalse,
+							Reason:  string(hyperv1.CloudResourcesDeletionTimedOutReason),
+							Message: "Giving up on cloud resource deletion after 10m",
+						},
+					},
+				},
+			},
+			expectedDone: true,
+		},
+		{
+			name: "When CVO is scaled down and deletion has timed out, it should set CloudResourcesDeletionTimedOut condition",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-hcp",
+					Namespace: testNamespace,
+				},
+				Status: hyperv1.HostedControlPlaneStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:               string(hyperv1.CVOScaledDown),
+							Status:             metav1.ConditionTrue,
+							Reason:             "CVOScaledDown",
+							LastTransitionTime: metav1.NewTime(time.Now().Add(-15 * time.Minute)),
+						},
+					},
+				},
+			},
+			expectedDone: true,
+			expectedCondition: &metav1.Condition{
+				Type:   string(hyperv1.CloudResourcesDestroyed),
+				Status: metav1.ConditionFalse,
+				Reason: string(hyperv1.CloudResourcesDeletionTimedOutReason),
+			},
+		},
+		{
+			name: "When CVO is scaled down and deletion has timed out with existing condition, it should include last status in message",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-hcp",
+					Namespace: testNamespace,
+				},
+				Status: hyperv1.HostedControlPlaneStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:               string(hyperv1.CVOScaledDown),
+							Status:             metav1.ConditionTrue,
+							Reason:             "CVOScaledDown",
+							LastTransitionTime: metav1.NewTime(time.Now().Add(-15 * time.Minute)),
+						},
+						{
+							Type:               string(hyperv1.CloudResourcesDestroyed),
+							Status:             metav1.ConditionFalse,
+							Reason:             "InProgress",
+							Message:            "Deleting load balancers",
+							LastTransitionTime: metav1.NewTime(time.Now().Add(-15 * time.Minute)),
+						},
+					},
+				},
+			},
+			expectedDone: true,
+			expectedCondition: &metav1.Condition{
+				Type:   string(hyperv1.CloudResourcesDestroyed),
+				Status: metav1.ConditionFalse,
+				Reason: string(hyperv1.CloudResourcesDeletionTimedOutReason),
+			},
+		},
+		{
+			name: "When CVO is scaled down and deletion has not timed out, it should return not done",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-hcp",
+					Namespace: testNamespace,
+				},
+				Status: hyperv1.HostedControlPlaneStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:               string(hyperv1.CVOScaledDown),
+							Status:             metav1.ConditionTrue,
+							Reason:             "CVOScaledDown",
+							LastTransitionTime: metav1.NewTime(time.Now().Add(-5 * time.Minute)),
+						},
+					},
+				},
+			},
+			expectedDone: false,
+		},
+		{
+			name: "When CVO deployment exists with replicas, it should scale it down",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-hcp",
+					Namespace: testNamespace,
+				},
+			},
+			cvoDeployment: &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "cluster-version-operator",
+					Namespace: testNamespace,
+				},
+				Spec: appsv1.DeploymentSpec{
+					Replicas: ptr.To[int32](1),
+				},
+				Status: appsv1.DeploymentStatus{
+					Replicas: 1,
+				},
+			},
+			expectedDone: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			objs := []client.Object{tc.hcp}
+			if tc.cvoDeployment != nil {
+				objs = append(objs, tc.cvoDeployment)
+			}
+
+			c := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				WithObjects(objs...).
+				WithStatusSubresource(&hyperv1.HostedControlPlane{}).
+				Build()
+
+			r := &HostedControlPlaneReconciler{
+				Client: c,
+			}
+
+			var originalCloudResourcesCond *metav1.Condition
+			if cond := meta.FindStatusCondition(tc.hcp.Status.Conditions, string(hyperv1.CloudResourcesDestroyed)); cond != nil {
+				copied := *cond
+				originalCloudResourcesCond = &copied
+			}
+
+			ctx := ctrl.LoggerInto(t.Context(), zapr.NewLogger(zaptest.NewLogger(t)))
+			done, err := r.removeCloudResources(ctx, tc.hcp)
+
+			if tc.expectedError {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+			}
+			g.Expect(done).To(Equal(tc.expectedDone))
+
+			if tc.expectedCondition != nil {
+				updatedHCP := &hyperv1.HostedControlPlane{}
+				g.Expect(c.Get(ctx, client.ObjectKeyFromObject(tc.hcp), updatedHCP)).To(Succeed())
+				condition := meta.FindStatusCondition(updatedHCP.Status.Conditions, tc.expectedCondition.Type)
+				g.Expect(condition).ToNot(BeNil())
+				g.Expect(condition.Status).To(Equal(tc.expectedCondition.Status))
+				g.Expect(condition.Reason).To(Equal(tc.expectedCondition.Reason))
+				g.Expect(condition.Message).To(ContainSubstring("Giving up on cloud resource deletion"))
+
+				if originalCloudResourcesCond != nil &&
+					originalCloudResourcesCond.Message != "" &&
+					originalCloudResourcesCond.Reason != string(hyperv1.CloudResourcesDeletionTimedOutReason) {
+					g.Expect(condition.Message).To(ContainSubstring("last status:"))
+					g.Expect(condition.Message).To(ContainSubstring(originalCloudResourcesCond.Message))
+				}
+			}
+
+			if tc.cvoDeployment != nil {
+				updatedCVO := &appsv1.Deployment{}
+				g.Expect(c.Get(ctx, client.ObjectKeyFromObject(tc.cvoDeployment), updatedCVO)).To(Succeed())
+				g.Expect(updatedCVO.Spec.Replicas).ToNot(BeNil())
+				g.Expect(*updatedCVO.Spec.Replicas).To(Equal(int32(0)))
+			}
+		})
+	}
+}

@@ -315,6 +315,8 @@ const (
 
 	CloudResourcesCleanupSkippedReason = "CloudResourcesCleanupSkipped"
 
+	CloudResourcesDeletionTimedOutReason = "CloudResourcesDeletionTimedOut"
+
 	DataPlaneConnectionNoKonnectivityAgentPodsNotFoundReason = "KonnectivityAgentPodsNotFound"
 
 	DataPlaneConnectionLogsAccessFailedReason = "LogsAccessFailed"
