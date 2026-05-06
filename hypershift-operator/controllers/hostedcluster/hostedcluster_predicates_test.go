@@ -13,15 +13,18 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/event"
 )
 
-var platformProviderOverrideAnnotations = []string{
-	hyperv1.ClusterAPIProviderAWSImage,
-	hyperv1.ClusterAPIAzureProviderImage,
-	hyperv1.ClusterAPIGCPProviderImage,
-	hyperv1.ClusterAPIAgentProviderImage,
-	hyperv1.ClusterAPIKubeVirtProviderImage,
-	hyperv1.ClusterAPIPowerVSProviderImage,
-	hyperv1.ClusterAPIOpenStackProviderImage,
-	hyperv1.OpenStackResourceControllerImage,
+var platformProviderOverrideAnnotations = []struct {
+	name       string
+	annotation string
+}{
+	{name: "When the AWS provider image override changes, it should return true", annotation: hyperv1.ClusterAPIProviderAWSImage},
+	{name: "When the Azure provider image override changes, it should return true", annotation: hyperv1.ClusterAPIAzureProviderImage},
+	{name: "When the GCP provider image override changes, it should return true", annotation: hyperv1.ClusterAPIGCPProviderImage},
+	{name: "When the agent provider image override changes, it should return true", annotation: hyperv1.ClusterAPIAgentProviderImage},
+	{name: "When the KubeVirt provider image override changes, it should return true", annotation: hyperv1.ClusterAPIKubeVirtProviderImage},
+	{name: "When the PowerVS provider image override changes, it should return true", annotation: hyperv1.ClusterAPIPowerVSProviderImage},
+	{name: "When the OpenStack provider image override changes, it should return true", annotation: hyperv1.ClusterAPIOpenStackProviderImage},
+	{name: "When the OpenStack resource controller image override changes, it should return true", annotation: hyperv1.OpenStackResourceControllerImage},
 }
 
 func TestHostedClusterActionableAnnotationChanged_WhenAnnotationsChangeItShouldReturnExpectedResult(t *testing.T) {
@@ -175,15 +178,15 @@ func TestHostedClusterActionableAnnotationChanged_WhenAnnotationsChangeItShouldR
 func TestHostedClusterActionableAnnotationChanged_WhenAPlatformProviderOverrideChangesItShouldReturnTrue(t *testing.T) {
 	t.Parallel()
 
-	for _, annotation := range platformProviderOverrideAnnotations {
-		t.Run("When "+annotation+" changes, it should return true", func(t *testing.T) {
+	for _, tc := range platformProviderOverrideAnnotations {
+		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
 			if actual := hostedClusterActionableAnnotationChanged(
-				map[string]string{annotation: "old"},
-				map[string]string{annotation: "new"},
+				map[string]string{tc.annotation: "old"},
+				map[string]string{tc.annotation: "new"},
 			); !actual {
-				t.Fatalf("expected annotation %s to be actionable", annotation)
+				t.Fatalf("expected annotation %s to be actionable", tc.annotation)
 			}
 		})
 	}
