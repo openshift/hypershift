@@ -366,6 +366,26 @@ func TestLoadServiceAccountDefinitions(t *testing.T) {
 		g.Expect(cloudNetworkDef).NotTo(BeNil(), "expected to find cloud-network service account definition")
 		g.Expect(cloudNetworkDef.Roles).NotTo(BeEmpty())
 	})
+
+	t.Run("When loading image-registry definition it should have both operator and server K8s SAs", func(t *testing.T) {
+		g := NewWithT(t)
+		definitions, err := loadServiceAccountDefinitions()
+		g.Expect(err).NotTo(HaveOccurred())
+
+		var imageRegistryDef *ServiceAccountDefinition
+		for i := range definitions {
+			if definitions[i].Name == "image-registry" {
+				imageRegistryDef = &definitions[i]
+				break
+			}
+		}
+		g.Expect(imageRegistryDef).NotTo(BeNil(), "expected to find image-registry service account definition")
+		g.Expect(imageRegistryDef.K8sServiceAccounts).To(HaveLen(2), "image-registry should have 2 K8s SA bindings")
+		g.Expect(imageRegistryDef.K8sServiceAccounts).To(ContainElements(
+			K8sServiceAccountRef{Namespace: "openshift-image-registry", Name: "cluster-image-registry-operator"},
+			K8sServiceAccountRef{Namespace: "openshift-image-registry", Name: "registry"},
+		))
+	})
 }
 
 func TestIsAlreadyExistsError(t *testing.T) {

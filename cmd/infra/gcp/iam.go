@@ -53,8 +53,8 @@ type ServiceAccountDefinition struct {
 	// Roles are the GCP IAM roles to assign to this GSA
 	Roles []string `json:"roles"`
 
-	// K8sServiceAccount contains the namespace and name of the K8s SA for WIF binding
-	K8sServiceAccount *K8sServiceAccountRef `json:"k8sServiceAccount,omitempty"`
+	// K8sServiceAccounts contains the namespace and name of each K8s SA for WIF binding
+	K8sServiceAccounts []K8sServiceAccountRef `json:"k8sServiceAccounts,omitempty"`
 }
 
 // K8sServiceAccountRef identifies a Kubernetes ServiceAccount for WIF binding.
@@ -365,10 +365,10 @@ func (c *IAMManager) CreateServiceAccounts(ctx context.Context) (map[string]stri
 			}
 		}
 
-		// Create WIF binding if K8s SA is specified (with retry for IAM propagation)
-		if def.K8sServiceAccount != nil {
-			err := c.retryWithExponentialBackoff(ctx, fmt.Sprintf("createWIFBinding-%s", def.Name), func() error {
-				return c.createWorkloadIdentityBinding(ctx, email, def.K8sServiceAccount)
+		// Create WIF bindings for each K8s SA (with retry for IAM propagation)
+		for i, k8sSA := range def.K8sServiceAccounts {
+			err := c.retryWithExponentialBackoff(ctx, fmt.Sprintf("createWIFBinding-%s-%d", def.Name, i), func() error {
+				return c.createWorkloadIdentityBinding(ctx, email, &k8sSA)
 			})
 			if err != nil {
 				return nil, fmt.Errorf("failed to create WIF binding for %s: %w", def.Name, err)
