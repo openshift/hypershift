@@ -3,6 +3,9 @@ package oauth
 import (
 	"encoding/json"
 	"fmt"
+	"net"
+	"net/url"
+	"strconv"
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -68,11 +71,23 @@ func adaptOAuthConfig(cpContext component.WorkloadContext, cfg *osinv1.OsinServe
 	cfg.ServingInfo.MinTLSVersion = config.MinTLSVersion(configuration.GetTLSSecurityProfile())
 	cfg.ServingInfo.CipherSuites = config.CipherSuites(configuration.GetTLSSecurityProfile())
 
-	masterUrl := fmt.Sprintf("https://%s:%d", cpContext.InfraStatus.OAuthHost, cpContext.InfraStatus.OAuthPort)
+	masterUrl := (&url.URL{
+		Scheme: "https",
+		Host:   net.JoinHostPort(cpContext.InfraStatus.OAuthHost, strconv.Itoa(int(cpContext.InfraStatus.OAuthPort))),
+	}).String()
 	controlPlaneEndpoint := cpContext.HCP.Status.ControlPlaneEndpoint
 	cfg.OAuthConfig.MasterURL = masterUrl
 	cfg.OAuthConfig.MasterPublicURL = masterUrl
-	cfg.OAuthConfig.LoginURL = fmt.Sprintf("https://%s:%d", controlPlaneEndpoint.Host, controlPlaneEndpoint.Port)
+
+	loginHost := controlPlaneEndpoint.Host
+	if customDNS := cpContext.HCP.Spec.KubeAPIServerDNSName; len(customDNS) > 0 {
+		loginHost = customDNS
+	}
+	cfg.OAuthConfig.LoginURL = (&url.URL{
+		Scheme: "https",
+		Host:   net.JoinHostPort(loginHost, strconv.Itoa(int(controlPlaneEndpoint.Port))),
+	}).String()
+
 	// loginURLOverride can be used to specify an override for the oauth config login url. The need for this arises
 	// when the login a provider uses doesn't conform to the standard login url in hypershift. The only supported use case
 	// for this is IBMCloud Red Hat Openshift
