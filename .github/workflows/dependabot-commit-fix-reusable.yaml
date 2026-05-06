@@ -1,0 +1,73 @@
+name: Fix Dependabot Commit Messages (Reusable)
+
+on:
+  workflow_call:
+    inputs:
+      head_sha:
+        description: "The commit SHA to check out and amend"
+        required: true
+        type: string
+      head_branch:
+        description: "The branch to push the amended commit to"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  fix-commit-message:
+    name: Fix dependabot commit body
+    runs-on: arc-runner-set
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ inputs.head_sha }}
+          fetch-depth: 2
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Rewrite commit body
+        env:
+          HEAD_BRANCH: ${{ inputs.head_branch }}
+        run: |
+          SUBJECT=$(git log -1 --format='%s')
+          BODY=$(git log -1 --format='%b')
+
+          # Extract "Updates `lib` from X to Y" lines (sed -nE avoids grep exit-code 1 under set -eo pipefail)
+          UPDATES=$(printf '%s\n' "$BODY" | \
+            sed -nE 's/^Updates `([^`]+)` from (.+) to (.+)$/\1|\2|\3/p')
+
+          SIGNOFF=$(printf '%s\n' "$BODY" | grep '^Signed-off-by:' | head -1 || true)
+          BODY_NO_SIGNOFF=$(printf '%s\n' "$BODY" | sed '/^Signed-off-by:/d')
+
+          if [ -z "$UPDATES" ]; then
+            echo "No Updates lines found, falling back to fold wrapping"
+            WRAPPED=$(printf '%s\n' "$BODY_NO_SIGNOFF" | fold -s -w 140 | sed 's/[[:space:]]*$//')
+            if [ "$BODY_NO_SIGNOFF" = "$WRAPPED" ]; then
+              echo "Body already compliant, nothing to fix."
+              exit 0
+            fi
+            NEW_BODY="$WRAPPED"
+          else
+            NEW_BODY=""
+            while IFS='|' read -r lib source target; do
+              short=$(basename "$lib")
+              NEW_BODY+="- ${short}: ${source} => ${target}"$'\n'
+            done <<< "$UPDATES"
+          fi
+
+          {
+            echo "$SUBJECT"
+            echo ""
+            echo "$NEW_BODY"
+            if [ -n "$SIGNOFF" ]; then
+              echo "$SIGNOFF"
+            fi
+          } > /tmp/commit-msg.txt
+
+          git config user.name "dependabot[bot]"
+          git config user.email "49699333+dependabot[bot]@users.noreply.github.com"
+          git commit --amend -F /tmp/commit-msg.txt
+          git push --force-with-lease origin HEAD:"${HEAD_BRANCH}"
