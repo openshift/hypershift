@@ -527,16 +527,19 @@ func TestRenderHyperShiftOperator_RenderSensitive(t *testing.T) {
 			g.Expect(err).ToNot(HaveOccurred())
 
 			var secretNames []string
+			decodedCount := 0
 			for doc := range strings.SplitSeq(buf.String(), "\n---\n") {
-				obj, _, err := hyperapi.YamlSerializer.Decode([]byte(doc), nil, nil)
-				if err != nil {
+				if strings.TrimSpace(doc) == "" {
 					continue
 				}
+				obj, _, err := hyperapi.YamlSerializer.Decode([]byte(doc), nil, nil)
+				g.Expect(err).ToNot(HaveOccurred(), "failed to decode rendered manifest")
+				decodedCount++
 				if secret, ok := obj.(*corev1.Secret); ok {
 					secretNames = append(secretNames, secret.Name)
 				}
 			}
-
+			g.Expect(decodedCount).To(BeNumerically(">", 0), "expected rendered manifests to be decodable")
 			if tc.expectSecrets {
 				g.Expect(secretNames).ToNot(BeEmpty(), "expected secrets in rendered output")
 			} else {
