@@ -2419,15 +2419,19 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 	// These labels are managed by OCM. Delete-then-copy ensures removals
 	// on the HostedCluster (e.g., clearing limited-support) propagate to the HCP.
 	for key := range hcp.Labels {
-		if strings.HasPrefix(key, apiOpenShiftComLabelPrefix) {
-			if _, exists := hcluster.Labels[key]; !exists {
+		for _, prefix := range hostedClusterActionableLabelPrefixes {
+			if strings.HasPrefix(key, prefix) {
 				delete(hcp.Labels, key)
+				break
 			}
 		}
 	}
 	for key, val := range hcluster.Labels {
-		if strings.HasPrefix(key, apiOpenShiftComLabelPrefix) {
-			hcp.Labels[key] = val
+		for _, prefix := range hostedClusterActionableLabelPrefixes {
+			if strings.HasPrefix(key, prefix) {
+				hcp.Labels[key] = val
+				break
+			}
 		}
 	}
 
