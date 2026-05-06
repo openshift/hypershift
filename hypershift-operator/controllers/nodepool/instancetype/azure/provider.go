@@ -61,7 +61,7 @@ func (p *Provider) GetInstanceTypeInfo(ctx context.Context, instanceType string)
 }
 
 func (p *Provider) loadSKUs(ctx context.Context) error {
-	p.cache = make(map[string]*instancetype.InstanceTypeInfo)
+	nextCache := make(map[string]*instancetype.InstanceTypeInfo)
 
 	filter := fmt.Sprintf("location eq '%s'", p.location)
 	pager := p.skuClient.NewListPager(&armcompute.ResourceSKUsClientListOptions{
@@ -83,10 +83,11 @@ func (p *Provider) loadSKUs(ctx context.Context) error {
 			if err != nil {
 				continue
 			}
-			p.cache[info.InstanceType] = info
+			nextCache[info.InstanceType] = info
 		}
 	}
 
+	p.cache = nextCache
 	return nil
 }
 

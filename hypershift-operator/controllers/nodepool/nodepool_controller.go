@@ -104,6 +104,7 @@ type NodePoolReconciler struct {
 	KubevirtInfraClients    kvinfra.KubevirtInfraClientMap
 	EC2Client               awsapi.EC2API
 	InstanceTypeProvider    instancetype.Provider
+	ScaleFromZeroPlatform   hyperv1.PlatformType
 }
 
 type NotReadyError struct {
@@ -426,7 +427,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 
 	// Set scale-from-zero annotations if provider is configured and platform is supported
 	// This works for both Replace (MachineDeployment) and InPlace (MachineSet) upgrade types
-	if isAutoscalingEnabled(nodePool) && r.InstanceTypeProvider != nil && supportedScaleFromZeroPlatform(nodePool.Spec.Platform.Type) {
+	if isAutoscalingEnabled(nodePool) && r.InstanceTypeProvider != nil && r.ScaleFromZeroPlatform == nodePool.Spec.Platform.Type {
 		if err = r.reconcileScaleFromZeroAnnotations(ctx, nodePool, capi); err != nil {
 			log.Error(err, "Failed to set scale-from-zero annotations, will retry")
 			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
@@ -434,11 +435,6 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	}
 
 	return ctrl.Result{}, nil
-}
-
-// supportedScaleFromZeroPlatform checks if the platform supports scale-from-zero functionality.
-func supportedScaleFromZeroPlatform(platform hyperv1.PlatformType) bool {
-	return platform == hyperv1.AWSPlatform || platform == hyperv1.AzurePlatform
 }
 
 func (r *NodePoolReconciler) token(ctx context.Context, hcluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool) (*Token, error) {

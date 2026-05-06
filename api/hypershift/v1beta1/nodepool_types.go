@@ -546,7 +546,7 @@ type NodePoolManagement struct {
 // +kubebuilder:validation:XValidation:rule="self.max >= self.min", message="max must be equal or greater than min"
 type NodePoolAutoScaling struct {
 	// min is the minimum number of nodes to maintain in the pool.
-	// Can be set to 0 for scale-from-zero for AWS platform.
+	// Can be set to 0 for scale-from-zero for AWS and Azure platforms.
 	// Must be >= 0 and <= .Max.
 	//
 	// +kubebuilder:validation:Minimum=0

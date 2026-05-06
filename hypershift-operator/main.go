@@ -615,6 +615,8 @@ func setupEC2Client(ctx context.Context, opts *StartOptions) awsapi.EC2API {
 
 func setupNodePoolController(ctx context.Context, mgr ctrl.Manager, opts *StartOptions, operatorImage string, createOrUpdate upsert.CreateOrUpdateProvider, registryProvider globalconfig.CommonRegistryProvider, ec2Client awsapi.EC2API, log logr.Logger) error {
 	var instanceTypeProvider instancetype.Provider
+	var scaleFromZeroPlatform hyperv1.PlatformType
+
 	if opts.ScaleFromZeroCreds != "" && opts.ScaleFromZeroProvider != "" {
 		switch strings.ToLower(opts.ScaleFromZeroProvider) {
 		case "aws":
@@ -624,6 +626,7 @@ func setupNodePoolController(ctx context.Context, mgr ctrl.Manager, opts *StartO
 				o.Retryer = awsConfig()
 			})
 			instanceTypeProvider = awsinstancetype.NewProvider(scaleFromZeroEC2Client)
+			scaleFromZeroPlatform = hyperv1.AWSPlatform
 			log.Info("Instance type provider initialized", "provider", opts.ScaleFromZeroProvider)
 		case "azure":
 			raw, err := os.ReadFile(opts.ScaleFromZeroCreds)
@@ -640,8 +643,24 @@ func setupNodePoolController(ctx context.Context, mgr ctrl.Manager, opts *StartO
 			if err := json.Unmarshal(raw, &azureCreds); err != nil {
 				return fmt.Errorf("failed to parse Azure scale-from-zero credentials: %w", err)
 			}
+			var missing []string
+			if azureCreds.SubscriptionID == "" {
+				missing = append(missing, "subscriptionId")
+			}
+			if azureCreds.ClientID == "" {
+				missing = append(missing, "clientId")
+			}
+			if azureCreds.ClientSecret == "" {
+				missing = append(missing, "clientSecret")
+			}
+			if azureCreds.TenantID == "" {
+				missing = append(missing, "tenantId")
+			}
 			if azureCreds.Location == "" {
-				return fmt.Errorf("Azure scale-from-zero credentials must include 'location'")
+				missing = append(missing, "location")
+			}
+			if len(missing) > 0 {
+				return fmt.Errorf("Azure scale-from-zero credentials missing required fields: %s", strings.Join(missing, ", "))
 			}
 			cred, err := azidentity.NewClientSecretCredential(azureCreds.TenantID, azureCreds.ClientID, azureCreds.ClientSecret, nil)
 			if err != nil {
@@ -652,6 +671,7 @@ func setupNodePoolController(ctx context.Context, mgr ctrl.Manager, opts *StartO
 				return fmt.Errorf("failed to create Azure ResourceSKUs client: %w", err)
 			}
 			instanceTypeProvider = azureinstancetype.NewProvider(skuClient, azureCreds.Location)
+			scaleFromZeroPlatform = hyperv1.AzurePlatform
 			log.Info("Instance type provider initialized", "provider", opts.ScaleFromZeroProvider, "location", azureCreds.Location)
 		default:
 			log.Info("WARNING: Unsupported scale-from-zero provider", "provider", opts.ScaleFromZeroProvider)
@@ -667,6 +687,7 @@ func setupNodePoolController(ctx context.Context, mgr ctrl.Manager, opts *StartO
 		KubevirtInfraClients:    kvinfra.NewKubevirtInfraClientMap(),
 		EC2Client:               ec2Client,
 		InstanceTypeProvider:    instanceTypeProvider,
+		ScaleFromZeroPlatform:   scaleFromZeroPlatform,
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create controller: %w", err)
 	}
