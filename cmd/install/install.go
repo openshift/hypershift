@@ -155,6 +155,7 @@ type Options struct {
 	ScaleFromZeroCreds                        string
 	ScaleFromZeroCredentialsSecret            string
 	ScaleFromZeroCredentialsSecretKey         string
+	RenderSensitive                           bool
 }
 
 func (o *Options) Validate() error {
