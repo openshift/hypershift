@@ -78,9 +78,15 @@ So, we need to check over the Step registry config and make sure that the hypers
 
 [Example Release Repo PR](https://github.com/openshift/release/pull/59120/files)
 
-We should also ensure that the latest release branch is using the Hypershift Operator and e2e from main.
+We should also ensure that the latest release branch is using the Hypershift Operator and e2e from main. Specifically, the release branch CI config should import `hypershift-tests` as a pre-built base image from the `hypershift` namespace rather than building it from `Dockerfile.e2e` in the release branch source. This ensures the e2e binary comes from main and keeps release branch configs consistent. The changes needed are:
 
-[Example Release Branch PR](https://github.com/openshift/release/pull/69341/files)
+1. Add `hypershift-tests` to the `base_images` section (namespace: `hypershift`, tag: `latest`)
+2. Remove the `Dockerfile.e2e` entry from the `images` section
+3. Remove `hypershift-tests` from the promotion exclusion list (since it is no longer built)
+
+[Example Release Branch PR (4.21)](https://github.com/openshift/release/pull/69341/files)
+
+[Example Release Branch PR (4.22)](https://github.com/openshift/release/pull/78912/files)
 
 ---
 
