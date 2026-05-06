@@ -2,8 +2,11 @@ package azure
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"slices"
 	"strings"
+	"time"
 
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
@@ -15,10 +18,68 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 
+	"k8s.io/apimachinery/pkg/util/wait"
+
 	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
+
+// nonRetriableError matches the Azure SDK's errorinfo.NonRetriable interface
+// for use with errors.As without importing the internal package.
+type nonRetriableError interface {
+	error
+	NonRetriable()
+}
+
+const (
+	DefaultInfraGracePeriod         = 5 * time.Minute
+	defaultRetryInterval            = 10 * time.Second
+	fallbackAzureResourceAPIVersion = "2021-04-01"
+)
+
+// resourceDeleter abstracts Azure resource listing and deletion for testability.
+type resourceDeleter interface {
+	ListByResourceGroup(ctx context.Context, resourceGroup string) ([]resourceToDelete, error)
+	DeleteByID(ctx context.Context, id string, apiVersion string) error
+}
+
+// azureResourceDeleter wraps *armresources.Client to implement resourceDeleter.
+type azureResourceDeleter struct {
+	client *armresources.Client
+}
+
+func (a *azureResourceDeleter) ListByResourceGroup(ctx context.Context, resourceGroup string) ([]resourceToDelete, error) {
+	pager := a.client.NewListByResourceGroupPager(resourceGroup, nil)
+	var resources []resourceToDelete
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list resources in resource group %s: %w", resourceGroup, err)
+		}
+		for _, resource := range page.Value {
+			if resource.ID == nil || resource.Name == nil || resource.Type == nil {
+				continue
+			}
+			resources = append(resources, resourceToDelete{
+				id:           *resource.ID,
+				apiVersion:   getAPIVersionForResourceType(*resource.Type),
+				name:         *resource.Name,
+				resourceType: *resource.Type,
+			})
+		}
+	}
+	return resources, nil
+}
+
+func (a *azureResourceDeleter) DeleteByID(ctx context.Context, id string, apiVersion string) error {
+	poller, err := a.client.BeginDeleteByID(ctx, id, apiVersion, nil)
+	if err != nil {
+		return err
+	}
+	_, err = poller.PollUntilDone(ctx, nil)
+	return err
+}
 
 type DestroyInfraOptions struct {
 	Name                  string
@@ -29,6 +90,9 @@ type DestroyInfraOptions struct {
 	ResourceGroupName     string
 	PreserveResourceGroup bool
 	Cloud                 string
+	AzureInfraGracePeriod time.Duration
+
+	retryInterval time.Duration // test-only: overrides defaultRetryInterval for faster test execution
 }
 
 func NewDestroyCommand() *cobra.Command {
@@ -50,6 +114,7 @@ func NewDestroyCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.Name, "name", opts.Name, "A name for the cluster")
 	cmd.Flags().StringVar(&opts.ResourceGroupName, "resource-group-name", opts.ResourceGroupName, "The name of the resource group containing the HostedCluster infrastructure resources that need to be destroyed.")
 	cmd.Flags().BoolVar(&opts.PreserveResourceGroup, "preserve-resource-group", opts.PreserveResourceGroup, "When true, the managed/main resource group will not be deleted during cluster destroy. Only cluster-specific resources within the resource group will be cleaned up.")
+	cmd.Flags().DurationVar(&opts.AzureInfraGracePeriod, "azure-infra-grace-period", DefaultInfraGracePeriod, util.AzureInfraGracePeriodDescription)
 
 	_ = cmd.MarkFlagRequired("infra-id")
 	_ = cmd.MarkFlagRequired("azure-creds")
@@ -57,6 +122,9 @@ func NewDestroyCommand() *cobra.Command {
 
 	logger := log.Log
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		if err := opts.Validate(); err != nil {
+			return err
+		}
 		if err := opts.Run(cmd.Context(), logger); err != nil {
 			logger.Error(err, "Failed to destroy infrastructure")
 			return err
@@ -92,6 +160,7 @@ func BindDestroyProductFlags(opts *DestroyInfraOptions, flags *pflag.FlagSet) {
 	// Resource group
 	flags.StringVar(&opts.ResourceGroupName, "resource-group-name", opts.ResourceGroupName, util.ResourceGroupNameDescription)
 	flags.BoolVar(&opts.PreserveResourceGroup, "preserve-resource-group", opts.PreserveResourceGroup, util.PreserveResourceGroupDescription)
+	flags.DurationVar(&opts.AzureInfraGracePeriod, "azure-infra-grace-period", DefaultInfraGracePeriod, util.AzureInfraGracePeriodDescription)
 }
 
 // Validate validates the DestroyInfraOptions before running the destroy operation.
@@ -104,6 +173,9 @@ func (o *DestroyInfraOptions) Validate() error {
 	}
 	if o.CredentialsFile == "" && o.Credentials == nil {
 		return fmt.Errorf("azure-creds is required")
+	}
+	if o.AzureInfraGracePeriod < 0 {
+		return fmt.Errorf("azure-infra-grace-period must be >= 0")
 	}
 	return nil
 }
@@ -140,12 +212,14 @@ func (o *DestroyInfraOptions) Run(ctx context.Context, logger logr.Logger) error
 		return fmt.Errorf("failed to create new resources client: %w", err)
 	}
 
-	mainResourceGroup := o.GetResourceGroupName()
+	mainResourceGroup := o.getResourceGroupName()
+
+	deleter := &azureResourceDeleter{client: resourcesClient}
 
 	// Handle main resource group based on preserve flag
 	if o.PreserveResourceGroup {
 		logger.Info("Preserving main resource group, deleting only cluster-specific resources", "resource-group", mainResourceGroup)
-		if err := o.deleteClusterResourcesInGroup(ctx, logger, resourcesClient, mainResourceGroup); err != nil {
+		if err := o.retryDeleteClusterResources(ctx, logger, deleter, mainResourceGroup); err != nil {
 			return fmt.Errorf("failed to delete cluster resources in resource group %s: %w", mainResourceGroup, err)
 		}
 		logger.Info("Successfully cleaned up cluster resources, resource group preserved", "resource-group", mainResourceGroup)
@@ -191,7 +265,12 @@ func (o *DestroyInfraOptions) Run(ctx context.Context, logger logr.Logger) error
 	return nil
 }
 
-// resourceToDelete represents a resource to be deleted with its ID, API version, and type.
+func (o *DestroyInfraOptions) isClusterResource(name string) bool {
+	return strings.Contains(name, o.InfraID) ||
+		strings.HasPrefix(name, o.Name+"-azurecluster.")
+}
+
+// resourceToDelete is an internal transfer object for resource deletion operations.
 type resourceToDelete struct {
 	id           string
 	apiVersion   string
@@ -199,71 +278,89 @@ type resourceToDelete struct {
 	resourceType string
 }
 
-// deleteClusterResourcesInGroup deletes cluster-specific resources within a resource group
-// while preserving the resource group itself and any non-cluster resources.
-// Resources are identified as cluster-specific if they contain the infraID in their name OR
-// if they match the cluster naming pattern (e.g., {name}-azurecluster.{baseDomain} for DNS zones).
-// Resources are deleted in dependency order to avoid conflicts.
-func (o *DestroyInfraOptions) deleteClusterResourcesInGroup(ctx context.Context, logger logr.Logger, resourcesClient *armresources.Client, resourceGroupName string) error {
-	// List all resources in the resource group
-	pager := resourcesClient.NewListByResourceGroupPager(resourceGroupName, nil)
+func (o *DestroyInfraOptions) retryDeleteClusterResources(ctx context.Context, logger logr.Logger, deleter resourceDeleter, resourceGroupName string) error {
+	gracePeriod := o.AzureInfraGracePeriod
+	retryInterval := o.retryInterval
+	if retryInterval == 0 {
+		retryInterval = defaultRetryInterval
+	}
 
-	var resourcesToDelete []resourceToDelete
-	for pager.More() {
-		page, err := pager.NextPage(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to list resources in resource group %s: %w", resourceGroupName, err)
+	infraCtx, cancel := context.WithTimeout(ctx, gracePeriod)
+	defer cancel()
+
+	logger.Info("Starting cluster resource cleanup with retry", "resource-group", resourceGroupName, "grace-period", gracePeriod)
+
+	pollErr := wait.PollUntilContextCancel(infraCtx, retryInterval, true, func(pollCtx context.Context) (bool, error) {
+		err := o.deleteClusterResourcesInGroup(pollCtx, logger, deleter, resourceGroupName)
+		if err == nil {
+			return true, nil
 		}
 
-		for _, resource := range page.Value {
-			if resource.ID == nil || resource.Name == nil || resource.Type == nil {
-				continue
-			}
+		var nre nonRetriableError
+		if errors.As(err, &nre) {
+			return false, err
+		}
 
-			// Only delete resources that are cluster-specific
-			// Resources are identified as cluster-specific if they contain the InfraID OR
-			// if they match the cluster naming pattern (e.g., {name}-azurecluster.{baseDomain} for DNS zones)
-			isClusterResource := strings.Contains(*resource.Name, o.InfraID) ||
-				strings.HasPrefix(*resource.Name, o.Name+"-azurecluster.")
+		var respErr *azcore.ResponseError
+		if errors.As(err, &respErr) && respErr.StatusCode == 429 {
+			logger.Info("Azure API throttling detected, will retry", "error", err.Error())
+		} else {
+			logger.Info("Error during cluster resource cleanup, will retry", "error", err.Error())
+		}
+		return false, nil
+	})
 
-			if isClusterResource {
-				apiVersion := getAPIVersionForResourceType(*resource.Type)
-				resourcesToDelete = append(resourcesToDelete, resourceToDelete{
-					id:           *resource.ID,
-					apiVersion:   apiVersion,
-					name:         *resource.Name,
-					resourceType: *resource.Type,
-				})
-				logger.Info("Marking cluster resource for deletion", "resource", *resource.Name, "id", *resource.ID, "type", *resource.Type)
-			} else {
-				logger.Info("Preserving non-cluster resource", "resource", *resource.Name)
+	if pollErr != nil {
+		if errors.Is(pollErr, context.DeadlineExceeded) {
+			// Use the parent ctx (not infraCtx) since infraCtx is the one that timed out.
+			listCtx, listCancel := context.WithTimeout(ctx, 30*time.Second)
+			defer listCancel()
+			remaining, listErr := deleter.ListByResourceGroup(listCtx, resourceGroupName)
+			if listErr == nil {
+				for _, r := range remaining {
+					if o.isClusterResource(r.name) {
+						logger.Info("Cluster resource still exists after timeout", "resource-id", r.id, "resource-type", r.resourceType)
+					}
+				}
 			}
+			return fmt.Errorf("timed out after %s waiting for cluster resource cleanup in resource group %s: %w", gracePeriod, resourceGroupName, pollErr)
+		}
+		return pollErr
+	}
+	return nil
+}
+
+func (o *DestroyInfraOptions) deleteClusterResourcesInGroup(ctx context.Context, logger logr.Logger, deleter resourceDeleter, resourceGroupName string) error {
+	allResources, err := deleter.ListByResourceGroup(ctx, resourceGroupName)
+	if err != nil {
+		return err
+	}
+
+	var resourcesToDelete []resourceToDelete
+	for _, resource := range allResources {
+		if o.isClusterResource(resource.name) {
+			resourcesToDelete = append(resourcesToDelete, resource)
+			logger.Info("Marking cluster resource for deletion", "resource", resource.name, "id", resource.id, "type", resource.resourceType)
+		} else {
+			logger.Info("Preserving non-cluster resource", "resource", resource.name)
 		}
 	}
 
-	// Sort resources by deletion priority to handle basic dependencies
 	sortResourcesByDeletionOrder(resourcesToDelete)
 
-	// Delete the identified cluster resources in order
 	var deletionErrors []error
 	successfulDeletions := 0
 
 	for _, resource := range resourcesToDelete {
 		logger.Info("Deleting cluster resource", "resource-id", resource.id, "resource-type", resource.resourceType)
-		poller, err := resourcesClient.BeginDeleteByID(ctx, resource.id, resource.apiVersion, nil)
-		if err != nil {
-			if strings.Contains(err.Error(), "ResourceNotFound") {
+		if err := deleter.DeleteByID(ctx, resource.id, resource.apiVersion); err != nil {
+			var respErr *azcore.ResponseError
+			if errors.As(err, &respErr) && respErr.StatusCode == 404 {
 				logger.Info("Resource not found, skipping", "resource-id", resource.id)
 				continue
 			}
-			logger.Error(err, "Failed to start deletion for resource, continuing with remaining resources", "resource-id", resource.id, "resource-name", resource.name)
-			deletionErrors = append(deletionErrors, fmt.Errorf("failed to start deletion for resource %s (%s): %w", resource.name, resource.id, err))
-			continue
-		}
-
-		if _, err = poller.PollUntilDone(ctx, nil); err != nil {
-			logger.Error(err, "Failed to complete deletion for resource, continuing with remaining resources", "resource-id", resource.id, "resource-name", resource.name)
-			deletionErrors = append(deletionErrors, fmt.Errorf("failed to complete deletion for resource %s (%s): %w", resource.name, resource.id, err))
+			logger.Error(err, "Failed to delete resource, continuing with remaining resources", "resource-id", resource.id, "resource-name", resource.name)
+			deletionErrors = append(deletionErrors, fmt.Errorf("failed to delete resource %s (%s): %w", resource.name, resource.id, err))
 			continue
 		}
 		logger.Info("Successfully deleted cluster resource", "resource-id", resource.id)
@@ -272,33 +369,33 @@ func (o *DestroyInfraOptions) deleteClusterResourcesInGroup(ctx context.Context,
 
 	logger.Info("Cluster resource cleanup summary", "resources-deleted", successfulDeletions, "total-resources", len(resourcesToDelete), "errors", len(deletionErrors))
 
-	// If there were any deletion errors, log them
 	if len(deletionErrors) > 0 {
-		logger.Info("Some resources failed to delete, but continuing with destroy operation", "failed-count", len(deletionErrors))
-		for i, err := range deletionErrors {
-			logger.Error(err, "Deletion error", "error-number", i+1)
-		}
-		// Return nil to allow the destroy operation to continue
-		// The errors have been logged for user visibility
+		// If any deletion returns a NonRetriable error (e.g., auth/permission failure),
+		// errors.As in the retry loop will match it in the joined error and stop retrying.
+		// This is correct because such errors typically affect all resources equally.
+		// A resource-specific NonRetriable error would also stop retries for other resources,
+		// which is an acceptable trade-off to avoid masking systemic failures.
+		return errors.Join(deletionErrors...)
 	}
 
 	return nil
 }
 
-// sortResourcesByDeletionOrder sorts resources so that dependencies are deleted before their dependents.
-// The deletion order is:
-// 1. Virtual network links (child resources)
+// sortResourcesByDeletionOrder sorts resources so that child/dependent resources are deleted
+// before their parents. The deletion order is:
+// 1. Virtual network links (child of DNS zones)
 // 2. Virtual machines
 // 3. Network interfaces
 // 4. Load balancers
 // 5. Public IP addresses
 // 6. Disks
-// 7. Network security groups
-// 8. Virtual networks
-// 9. Private DNS zones (parent resources)
-// 10. Storage accounts
-// 11. Managed identities
-// 12. Everything else
+// 7. Subnets (child of virtual networks)
+// 8. Network security groups
+// 9. Virtual networks
+// 10. Private DNS zones
+// 11. Storage accounts
+// 12. Managed identities
+// 13. Everything else
 func sortResourcesByDeletionOrder(resources []resourceToDelete) {
 	priority := func(resourceType string) int {
 		switch {
@@ -314,29 +411,26 @@ func sortResourcesByDeletionOrder(resources []resourceToDelete) {
 			return 5
 		case strings.Contains(resourceType, "disks"):
 			return 6
-		case strings.Contains(resourceType, "networkSecurityGroups"):
+		case strings.Contains(resourceType, "subnets"):
 			return 7
-		case strings.Contains(resourceType, "virtualNetworks"):
+		case strings.Contains(resourceType, "networkSecurityGroups"):
 			return 8
-		case strings.Contains(resourceType, "privateDnsZones") && !strings.Contains(resourceType, "virtualNetworkLinks"):
+		case strings.Contains(resourceType, "virtualNetworks") && !strings.Contains(resourceType, "virtualNetworkLinks"):
 			return 9
-		case strings.Contains(resourceType, "storageAccounts"):
+		case strings.Contains(resourceType, "privateDnsZones") && !strings.Contains(resourceType, "virtualNetworkLinks"):
 			return 10
-		case strings.Contains(resourceType, "userAssignedIdentities"):
+		case strings.Contains(resourceType, "storageAccounts"):
 			return 11
+		case strings.Contains(resourceType, "userAssignedIdentities"):
+			return 12
 		default:
 			return 99
 		}
 	}
 
-	// Sort by priority (lower number = delete first)
-	for i := 0; i < len(resources); i++ {
-		for j := i + 1; j < len(resources); j++ {
-			if priority(resources[i].resourceType) > priority(resources[j].resourceType) {
-				resources[i], resources[j] = resources[j], resources[i]
-			}
-		}
-	}
+	slices.SortFunc(resources, func(a, b resourceToDelete) int {
+		return priority(a.resourceType) - priority(b.resourceType)
+	})
 }
 
 // getAPIVersionForResourceType returns the appropriate API version for a given Azure resource type.
@@ -349,6 +443,7 @@ func getAPIVersionForResourceType(resourceType string) string {
 		"Microsoft.Network/networkInterfaces":                   "2023-11-01",
 		"Microsoft.Network/networkSecurityGroups":               "2023-11-01",
 		"Microsoft.Network/virtualNetworks":                     "2023-11-01",
+		"Microsoft.Network/virtualNetworks/subnets":             "2023-11-01",
 		"Microsoft.Network/privateDnsZones":                     "2020-06-01",
 		"Microsoft.Network/privateDnsZones/virtualNetworkLinks": "2020-06-01",
 		"Microsoft.Compute/virtualMachines":                     "2024-03-01",
@@ -363,13 +458,13 @@ func getAPIVersionForResourceType(resourceType string) string {
 	}
 
 	// Default to a common API version that works for most resource types
-	return "2021-04-01"
+	return fallbackAzureResourceAPIVersion
 }
 
-// GetResourceGroupName returns the resource group name to use for destroy operations.
+// getResourceGroupName returns the resource group name to use for destroy operations.
 // If a custom resource group name was provided, it is returned; otherwise, the default
 // name format of {name}-{infraID} is used.
-func (o *DestroyInfraOptions) GetResourceGroupName() string {
+func (o *DestroyInfraOptions) getResourceGroupName() string {
 	if len(o.ResourceGroupName) > 0 {
 		return o.ResourceGroupName
 	}

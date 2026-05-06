@@ -66,6 +66,7 @@ const (
 
 	// Destroy options
 	PreserveResourceGroupDescription = "Keep the resource group after cluster deletion. Only cluster-specific resources within the group will be removed."
+	AzureInfraGracePeriodDescription = "Timeout for retrying Azure resource cleanup when using --preserve-resource-group. Set to 0 to disable retries."
 
 	// Destroy-specific location and resource group descriptions
 	LocationDestroyDescription          = "Azure region of the cluster. Inferred from the HostedCluster if it exists; only required if the cluster resource has already been deleted."
