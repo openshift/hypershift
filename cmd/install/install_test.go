@@ -1,22 +1,36 @@
 package install
 
 import (
+	"context"
+	"io"
 	"io/fs"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	crdassets "github.com/openshift/hypershift/cmd/install/assets/crds"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
+	hyperapi "github.com/openshift/hypershift/support/api"
+
+	operatorv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/set"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 )
 
 func TestOptions_Validate(t *testing.T) {
@@ -547,6 +561,313 @@ func TestHyperShiftOperatorManifests_SharedIngress(t *testing.T) {
 				g.Expect(hasSharedIngressNamespace).To(BeFalse(), "expected shared ingress namespace to not be present")
 				g.Expect(hasSharedIngressClusterRole).To(BeFalse(), "expected shared ingress ClusterRole to not be present")
 				g.Expect(hasSharedIngressClusterRoleBinding).To(BeFalse(), "expected shared ingress ClusterRoleBinding to not be present")
+			}
+		})
+	}
+}
+
+// fakeDiscovery implements discovery.ServerResourcesInterface for testing.
+type fakeDiscovery struct {
+	resources []*metav1.APIResourceList
+}
+
+func (f *fakeDiscovery) ServerResourcesForGroupVersion(groupVersion string) (*metav1.APIResourceList, error) {
+	for _, rl := range f.resources {
+		if rl.GroupVersion == groupVersion {
+			return rl, nil
+		}
+	}
+	return nil, &apierrors.StatusError{
+		ErrStatus: metav1.Status{
+			Status: metav1.StatusFailure,
+			Reason: metav1.StatusReasonNotFound,
+		},
+	}
+}
+
+func TestIsClusterAPIRegistered(t *testing.T) {
+	tests := []struct {
+		name           string
+		resources      []*metav1.APIResourceList
+		expectedResult bool
+	}{
+		{
+			name: "When ClusterAPI API is registered it should detect CCAPIO presence",
+			resources: []*metav1.APIResourceList{
+				{
+					GroupVersion: "operator.openshift.io/v1alpha1",
+					APIResources: []metav1.APIResource{
+						{Name: "imagecontentsourcepolicies", Kind: "ImageContentSourcePolicy"},
+						{Name: "clusterapis", Kind: "ClusterAPI"},
+					},
+				},
+			},
+			expectedResult: true,
+		},
+		{
+			name:           "When ClusterAPI API is not registered it should skip CCAPIO coordination",
+			resources:      nil,
+			expectedResult: false,
+		},
+		{
+			name: "When operator.openshift.io/v1alpha1 exists but ClusterAPI kind is not present it should return false",
+			resources: []*metav1.APIResourceList{
+				{
+					GroupVersion: "operator.openshift.io/v1alpha1",
+					APIResources: []metav1.APIResource{
+						{Name: "imagecontentsourcepolicies", Kind: "ImageContentSourcePolicy"},
+					},
+				},
+			},
+			expectedResult: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			disco := &fakeDiscovery{resources: tc.resources}
+
+			registered, err := isClusterAPIRegistered(disco)
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(registered).To(Equal(tc.expectedResult))
+		})
+	}
+}
+
+func TestEnsureUnmanagedCRDs(t *testing.T) {
+	capiCRDs := []crclient.Object{
+		&apiextensionsv1.CustomResourceDefinition{ObjectMeta: metav1.ObjectMeta{Name: "clusters.cluster.x-k8s.io"}},
+		&apiextensionsv1.CustomResourceDefinition{ObjectMeta: metav1.ObjectMeta{Name: "machines.cluster.x-k8s.io"}},
+		&apiextensionsv1.CustomResourceDefinition{ObjectMeta: metav1.ObjectMeta{Name: "nodepools.hypershift.openshift.io"}},
+	}
+
+	// ssaInterceptor converts SSA Patch calls into Create/Update for the fake client,
+	// which does not support ApplyPatchType natively.
+	ssaInterceptor := interceptor.Funcs{
+		Patch: func(ctx context.Context, c crclient.WithWatch, obj crclient.Object, patch crclient.Patch, opts ...crclient.PatchOption) error {
+			if patch.Type() != types.ApplyPatchType {
+				return c.Patch(ctx, obj, patch, opts...)
+			}
+			existing := obj.DeepCopyObject().(crclient.Object)
+			err := c.Get(ctx, crclient.ObjectKeyFromObject(obj), existing)
+			if apierrors.IsNotFound(err) {
+				return c.Create(ctx, obj)
+			}
+			if err != nil {
+				return err
+			}
+			obj.SetResourceVersion(existing.GetResourceVersion())
+			return c.Update(ctx, obj)
+		},
+	}
+
+	tests := []struct {
+		name             string
+		existingConfig   *operatorv1alpha1.ClusterAPI
+		crds             []crclient.Object
+		expectedCRDNames []string
+		expectNoChange   bool
+	}{
+		{
+			name:           "When ClusterAPI config does not exist it should create it with unmanaged CRDs",
+			existingConfig: nil,
+			crds:           capiCRDs,
+			expectedCRDNames: []string{
+				"clusters.cluster.x-k8s.io",
+				"machines.cluster.x-k8s.io",
+			},
+		},
+		{
+			name: "When ClusterAPI config exists it should apply unmanaged CRDs",
+			existingConfig: &operatorv1alpha1.ClusterAPI{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "cluster",
+				},
+				Spec: &operatorv1alpha1.ClusterAPISpec{
+					UnmanagedCustomResourceDefinitions: []string{
+						"clusters.cluster.x-k8s.io",
+						"machinesets.cluster.x-k8s.io",
+					},
+				},
+			},
+			crds: capiCRDs,
+			// SSA with listType=set would merge entries from different field owners on a real
+			// API server. Since the fake client cannot simulate set-based merge semantics,
+			// this test verifies that HyperShift's apply succeeds and contains its own entries.
+			expectedCRDNames: []string{
+				"clusters.cluster.x-k8s.io",
+				"machines.cluster.x-k8s.io",
+			},
+		},
+		{
+			name: "When all CRDs already listed it should apply idempotently",
+			existingConfig: &operatorv1alpha1.ClusterAPI{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "cluster",
+				},
+				Spec: &operatorv1alpha1.ClusterAPISpec{
+					UnmanagedCustomResourceDefinitions: []string{
+						"clusters.cluster.x-k8s.io",
+						"machines.cluster.x-k8s.io",
+					},
+				},
+			},
+			crds: capiCRDs,
+			expectedCRDNames: []string{
+				"clusters.cluster.x-k8s.io",
+				"machines.cluster.x-k8s.io",
+			},
+		},
+		{
+			name:           "When populating unmanaged CRDs it should only include CAPI CRDs",
+			existingConfig: nil,
+			crds: []crclient.Object{
+				&apiextensionsv1.CustomResourceDefinition{ObjectMeta: metav1.ObjectMeta{Name: "nodepools.hypershift.openshift.io"}},
+				&apiextensionsv1.CustomResourceDefinition{ObjectMeta: metav1.ObjectMeta{Name: "hostedclusters.hypershift.openshift.io"}},
+			},
+			expectNoChange: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			builder := fake.NewClientBuilder().
+				WithScheme(hyperapi.Scheme).
+				WithInterceptorFuncs(ssaInterceptor)
+			if tc.existingConfig != nil {
+				builder = builder.WithObjects(tc.existingConfig)
+			}
+			client := builder.Build()
+
+			_, err := ensureUnmanagedCRDs(t.Context(), io.Discard, client, tc.crds)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			if tc.expectNoChange {
+				config := &operatorv1alpha1.ClusterAPI{}
+				err := client.Get(t.Context(), crclient.ObjectKey{Name: "cluster"}, config)
+				if tc.existingConfig == nil {
+					g.Expect(err).To(HaveOccurred(), "expected no ClusterAPI config to be created")
+					return
+				}
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(config.Spec).ToNot(BeNil())
+				g.Expect(config.Spec.UnmanagedCustomResourceDefinitions).
+					To(ConsistOf(tc.existingConfig.Spec.UnmanagedCustomResourceDefinitions))
+				return
+			}
+
+			config := &operatorv1alpha1.ClusterAPI{}
+			err = client.Get(t.Context(), crclient.ObjectKey{Name: "cluster"}, config)
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(config.Spec).ToNot(BeNil())
+			g.Expect(config.Spec.UnmanagedCustomResourceDefinitions).To(ConsistOf(tc.expectedCRDNames))
+		})
+	}
+}
+
+func TestWaitForCAPIOperatorSync(t *testing.T) {
+	clusterAPIGVK := schema.GroupVersionKind{
+		Group:   operatorv1alpha1.GroupVersion.Group,
+		Version: operatorv1alpha1.GroupVersion.Version,
+		Kind:    "ClusterAPI",
+	}
+
+	makeConfig := func(t *testing.T, generation, observedRevisionGeneration int64, currentRevision, desiredRevision string) *unstructured.Unstructured {
+		t.Helper()
+		g := NewGomegaWithT(t)
+		obj := &unstructured.Unstructured{}
+		obj.SetGroupVersionKind(clusterAPIGVK)
+		obj.SetName("cluster")
+		obj.SetGeneration(generation)
+		status := map[string]any{
+			"observedRevisionGeneration": observedRevisionGeneration,
+			"desiredRevision":            desiredRevision,
+			"revisions": []any{
+				map[string]any{"name": desiredRevision, "revision": observedRevisionGeneration, "contentID": "content"},
+			},
+		}
+		if currentRevision != "" {
+			status["currentRevision"] = currentRevision
+		}
+		g.Expect(unstructured.SetNestedField(obj.Object, status, "status")).To(Succeed())
+		return obj
+	}
+
+	tests := []struct {
+		name            string
+		config          *unstructured.Unstructured
+		patchGeneration int64
+		expectSuccess   bool
+	}{
+		{
+			name:            "When revision controller has observed the patch generation and installer has applied it should succeed",
+			config:          makeConfig(t, 2, 2, "rev-2", "rev-2"),
+			patchGeneration: 2,
+			expectSuccess:   true,
+		},
+		{
+			name:            "When observedRevisionGeneration is ahead of patch generation it should succeed",
+			config:          makeConfig(t, 3, 3, "rev-3", "rev-3"),
+			patchGeneration: 2,
+			expectSuccess:   true,
+		},
+		{
+			name:            "When revision controller has not observed the patch generation it should time out",
+			config:          makeConfig(t, 3, 2, "rev-2", "rev-2"),
+			patchGeneration: 3,
+			expectSuccess:   false,
+		},
+		{
+			name:            "When reading a stale object from before the patch it should time out",
+			config:          makeConfig(t, 1, 1, "rev-1", "rev-1"),
+			patchGeneration: 2,
+			expectSuccess:   false,
+		},
+		{
+			name:            "When currentRevision does not match desiredRevision it should time out",
+			config:          makeConfig(t, 2, 2, "rev-1", "rev-2"),
+			patchGeneration: 2,
+			expectSuccess:   false,
+		},
+		{
+			name:            "When currentRevision is empty it should time out",
+			config:          makeConfig(t, 1, 1, "", "rev-1"),
+			patchGeneration: 1,
+			expectSuccess:   false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			// Use an interceptor to return the unstructured object directly,
+			// bypassing the fake client's typed round-trip which would drop
+			// the observedRevisionGeneration field not present in the vendored type.
+			config := tc.config
+			client := fake.NewClientBuilder().
+				WithScheme(hyperapi.Scheme).
+				WithInterceptorFuncs(interceptor.Funcs{
+					Get: func(ctx context.Context, c crclient.WithWatch, key crclient.ObjectKey, obj crclient.Object, opts ...crclient.GetOption) error {
+						u, ok := obj.(*unstructured.Unstructured)
+						if !ok {
+							return c.Get(ctx, key, obj, opts...)
+						}
+						u.Object = config.DeepCopy().Object
+						return nil
+					},
+				}).
+				Build()
+
+			ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+			defer cancel()
+
+			err := waitForCAPIOperatorSync(ctx, io.Discard, client, tc.patchGeneration)
+			if tc.expectSuccess {
+				g.Expect(err).ToNot(HaveOccurred())
+			} else {
+				g.Expect(err).To(HaveOccurred())
 			}
 		})
 	}
