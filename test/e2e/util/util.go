@@ -1911,37 +1911,42 @@ func EnsureGuestWebhooksValidated(t *testing.T, ctx context.Context, guestClient
 	})
 }
 
+func skipGlobalPullSecretPreconditions(t *testing.T, entryHostedCluster *hyperv1.HostedCluster, additionalPullSecretFile string) {
+	t.Helper()
+	AtLeast(t, Version419)
+	// TODO (jparrill): Change check of release version `releaseVersion.GT(Version420)` to `releaseVersion.GE(Version420)`
+	// during the backport to 4.20 of this PR https://github.com/openshift/hypershift/pull/6736
+	if entryHostedCluster.Spec.Platform.Type != hyperv1.AzurePlatform && entryHostedCluster.Spec.Platform.Type != hyperv1.AWSPlatform {
+		t.Skip("test only supported on platform ARO or AWS")
+	}
+
+	if entryHostedCluster.Spec.Platform.Type == hyperv1.AWSPlatform && releaseVersion.LE(Version420) {
+		t.Skip("AWS platform not supported on version 4.20 or less")
+	}
+
+	if strings.Contains(t.Name(), "TestAutoscaling") || strings.Contains(t.Name(), "TestAutoscalingBalancing") || strings.Contains(t.Name(), "TestNodePool") {
+		t.Skip("Skip GlobalPullSecret test for NodePool and Autoscaling tests to avoid issues with the daemon set")
+	}
+
+	// due to this bug: https://issues.redhat.com/browse/OCPBUGS-63743 we should skip the TestCreateClusterCustomConfig
+	// This tests adds a custom network configuration to operatorConfiguration that causes the ovnkube-node and multus DS to crashLoop
+	// after the triggers the kubelet restart
+	if strings.Contains(t.Name(), "TestCreateClusterCustomConfig") {
+		t.Skip("Skip GlobalPullSecret test for TestCreateClusterCustomConfig to avoid issues with OVN")
+	}
+
+	if !netutil.IsPublicHC(entryHostedCluster) {
+		t.Skip("test only supported on public clusters")
+	}
+
+	if additionalPullSecretFile == "" {
+		t.Skip("additional pull secret file not provided via --e2e.additional-pull-secret-file")
+	}
+}
+
 func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclient.Client, entryHostedCluster *hyperv1.HostedCluster, additionalPullSecretFile string) {
 	t.Run("EnsureGlobalPullSecret", func(t *testing.T) {
-		AtLeast(t, Version419)
-		// TODO (jparrill): Change check of release version `releaseVersion.GT(Version420)` to `releaseVersion.GE(Version420)`
-		// during the backport to 4.20 of this PR https://github.com/openshift/hypershift/pull/6736
-		if entryHostedCluster.Spec.Platform.Type != hyperv1.AzurePlatform && entryHostedCluster.Spec.Platform.Type != hyperv1.AWSPlatform {
-			t.Skip("test only supported on platform ARO or AWS")
-		}
-
-		if entryHostedCluster.Spec.Platform.Type == hyperv1.AWSPlatform && releaseVersion.LE(Version420) {
-			t.Skip("AWS platform not supported on version 4.20 or less")
-		}
-
-		if strings.Contains(t.Name(), "TestAutoscaling") || strings.Contains(t.Name(), "TestAutoscalingBalancing") || strings.Contains(t.Name(), "TestNodePool") {
-			t.Skip("Skip GlobalPullSecret test for NodePool and Autoscaling tests to avoid issues with the daemon set")
-		}
-
-		// due to this bug: https://issues.redhat.com/browse/OCPBUGS-63743 we should skip the TestCreateClusterCustomConfig
-		// This tests adds a custom network configuration to operatorConfiguration that causes the ovnkube-node and multus DS to crashLoop
-		// after the triggers the kubelet restart
-		if strings.Contains(t.Name(), "TestCreateClusterCustomConfig") {
-			t.Skip("Skip GlobalPullSecret test for TestCreateClusterCustomConfig to avoid issues with OVN")
-		}
-
-		if !netutil.IsPublicHC(entryHostedCluster) {
-			t.Skip("test only supported on public clusters")
-		}
-
-		if additionalPullSecretFile == "" {
-			t.Skip("additional pull secret file not provided via --e2e.additional-pull-secret-file")
-		}
+		skipGlobalPullSecretPreconditions(t, entryHostedCluster, additionalPullSecretFile)
 
 		additionalPullSecretReadOnlyE2EData, err := os.ReadFile(additionalPullSecretFile)
 		if err != nil {
