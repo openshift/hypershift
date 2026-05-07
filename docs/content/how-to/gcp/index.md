@@ -27,6 +27,7 @@ GCP hosted clusters use a **two-project model** that mirrors the production arch
 - [Create GCP Infrastructure](create-gcp-infra.md) — Create network infrastructure (VPC, subnet)
 - [Create GCP IAM Resources](create-gcp-iam.md) — Create WIF pool, OIDC provider, and service accounts
 - [Create a GCP Hosted Cluster](create-gcp-hosted-cluster.md) — Deploy your first hosted cluster
+- [Configure Image Registry](configure-image-registry.md) — Verify, configure, or troubleshoot the GCS-backed image registry
 - [E2E GKE CI Job](e2e-gke-ci-job.md) — CI job for validating GCP platform changes
 
 ## Prerequisites

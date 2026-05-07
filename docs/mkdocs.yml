@@ -160,6 +160,7 @@ nav:
       - how-to/gcp/create-gcp-hosted-cluster.md
       - how-to/gcp/create-gcp-iam.md
       - how-to/gcp/create-gcp-infra.md
+      - how-to/gcp/configure-image-registry.md
       - how-to/gcp/e2e-gke-ci-job.md
       - how-to/gcp/setup-management-cluster.md
     - 'Kubevirt':
