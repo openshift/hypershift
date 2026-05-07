@@ -110,6 +110,15 @@ func TestPreparePayloadScript(t *testing.T) {
 				g.Expect(script).To(ContainSubstring("0000_01_cleanup.yaml"))
 			},
 		},
+		{
+			name:         "When called, it should omit the packageserver PDB manifest from the payload",
+			platformType: hyperv1.AWSPlatform,
+			oauthEnabled: true,
+			featureSet:   configv1.Default,
+			assertions: func(g Gomega, script string) {
+				g.Expect(script).To(ContainSubstring("rm -f /var/payload/release-manifests/0000_50_olm_00-packageserver.pdb.yaml"))
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -135,6 +144,7 @@ func TestResourcesToRemove(t *testing.T) {
 			name:         "When platform is IBMCloud, it should return IBM-specific resources without CRDs",
 			platformType: hyperv1.IBMCloudPlatform,
 			assertions: func(g Gomega, resources []string) {
+				g.Expect(resources).To(ContainElement("packageserver-pdb"))
 				g.Expect(resources).To(ContainElement("network-operator"))
 				g.Expect(resources).To(ContainElement("default-account-cluster-network-operator"))
 				g.Expect(resources).To(ContainElement("cluster-node-tuning-operator"))
@@ -158,6 +168,7 @@ func TestResourcesToRemove(t *testing.T) {
 			name:         "When platform is AWS (default), it should return the full list including CRDs and storage operators",
 			platformType: hyperv1.AWSPlatform,
 			assertions: func(g Gomega, resources []string) {
+				g.Expect(resources).To(ContainElement("packageserver-pdb"))
 				g.Expect(resources).To(ContainElement("machineconfigs.machineconfiguration.openshift.io"))
 				g.Expect(resources).To(ContainElement("machineconfigpools.machineconfiguration.openshift.io"))
 				g.Expect(resources).To(ContainElement("network-operator"))
