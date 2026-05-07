@@ -1,6 +1,7 @@
 package install
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"io/fs"
@@ -486,6 +487,64 @@ func TestSetupCRDs(t *testing.T) {
 			}
 
 			g.Expect(nodePoolCRDS[0].GetAnnotations()["release.openshift.io/feature-set"]).To(Equal("Default"))
+		})
+	}
+}
+
+func TestRenderHyperShiftOperator_RenderSensitive(t *testing.T) {
+	tests := []struct {
+		name            string
+		renderSensitive bool
+		expectSecrets   bool
+	}{
+		{
+			name:            "When render-sensitive is false it should exclude secrets from output",
+			renderSensitive: false,
+			expectSecrets:   false,
+		},
+		{
+			name:            "When render-sensitive is true it should include secrets in output",
+			renderSensitive: true,
+			expectSecrets:   true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			var buf bytes.Buffer
+			opts := &Options{
+				PrivatePlatform:         string(hyperv1.NonePlatform),
+				EnableDefaultingWebhook: true,
+				EnableValidatingWebhook: true,
+				EnableConversionWebhook: true,
+				RenderSensitive:         tc.renderSensitive,
+				Format:                  RenderFormatYaml,
+				OutputTypes:             string(OutputAll),
+			}
+			err := RenderHyperShiftOperator(t.Context(), &buf, opts)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			var secretNames []string
+			decodedCount := 0
+			for doc := range strings.SplitSeq(buf.String(), "\n---\n") {
+				if strings.TrimSpace(doc) == "" {
+					continue
+				}
+				obj, _, err := hyperapi.YamlSerializer.Decode([]byte(doc), nil, nil)
+				g.Expect(err).ToNot(HaveOccurred(), "failed to decode rendered manifest")
+				decodedCount++
+				if secret, ok := obj.(*corev1.Secret); ok {
+					secretNames = append(secretNames, secret.Name)
+				}
+			}
+			g.Expect(decodedCount).To(BeNumerically(">", 0), "expected rendered manifests to be decodable")
+			if tc.expectSecrets {
+				g.Expect(secretNames).ToNot(BeEmpty(), "expected secrets in rendered output")
+			} else {
+				g.Expect(secretNames).To(BeEmpty(), "expected no secrets in rendered output")
+			}
 		})
 	}
 }
