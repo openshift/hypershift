@@ -212,7 +212,7 @@ func TestSetScaleFromZeroAnnotationsOnObject(t *testing.T) {
 			},
 		},
 		{
-			name:            "When Azure template with valid VMSize and no GPU it should set basic annotations",
+			name: "When Azure template with valid VMSize and no GPU it should set basic annotations",
 			provider: &mockProvider{info: &instancetype.InstanceTypeInfo{
 				VCPU: 4, MemoryMb: 16384, GPU: 0, CPUArchitecture: "amd64",
 			}},

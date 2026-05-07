@@ -61,8 +61,8 @@ func TestTransformSKU_WhenValidInput_ItShouldTransformCorrectly(t *testing.T) {
 		{
 			name: "When Standard_D4s_v3 with x64 arch it should transform correctly",
 			input: makeSKU("Standard_D4s_v3", "virtualMachines", map[string]string{
-				"vCPUs":              "4",
-				"MemoryGB":           "16",
+				"vCPUs":               "4",
+				"MemoryGB":            "16",
 				"CpuArchitectureType": "x64",
 			}),
 			expected: &instancetype.InstanceTypeInfo{
@@ -76,9 +76,9 @@ func TestTransformSKU_WhenValidInput_ItShouldTransformCorrectly(t *testing.T) {
 		{
 			name: "When GPU VM it should set GPU count",
 			input: makeSKU("Standard_NC16as_T4_v3", "virtualMachines", map[string]string{
-				"vCPUs":              "16",
-				"MemoryGB":           "110",
-				"GPUs":               "1",
+				"vCPUs":               "16",
+				"MemoryGB":            "110",
+				"GPUs":                "1",
 				"CpuArchitectureType": "x64",
 			}),
 			expected: &instancetype.InstanceTypeInfo{
@@ -92,8 +92,8 @@ func TestTransformSKU_WhenValidInput_ItShouldTransformCorrectly(t *testing.T) {
 		{
 			name: "When Arm64 VM it should set correct architecture",
 			input: makeSKU("Standard_D4ps_v5", "virtualMachines", map[string]string{
-				"vCPUs":              "4",
-				"MemoryGB":           "16",
+				"vCPUs":               "4",
+				"MemoryGB":            "16",
 				"CpuArchitectureType": "Arm64",
 			}),
 			expected: &instancetype.InstanceTypeInfo{
@@ -107,8 +107,8 @@ func TestTransformSKU_WhenValidInput_ItShouldTransformCorrectly(t *testing.T) {
 		{
 			name: "When GPUs capability is absent it should default to 0",
 			input: makeSKU("Standard_B2s", "virtualMachines", map[string]string{
-				"vCPUs":              "2",
-				"MemoryGB":           "4",
+				"vCPUs":               "2",
+				"MemoryGB":            "4",
 				"CpuArchitectureType": "x64",
 			}),
 			expected: &instancetype.InstanceTypeInfo{
@@ -122,8 +122,8 @@ func TestTransformSKU_WhenValidInput_ItShouldTransformCorrectly(t *testing.T) {
 		{
 			name: "When MemoryGB is fractional it should convert correctly",
 			input: makeSKU("Standard_B1ls", "virtualMachines", map[string]string{
-				"vCPUs":              "1",
-				"MemoryGB":           "0.5",
+				"vCPUs":               "1",
+				"MemoryGB":            "0.5",
 				"CpuArchitectureType": "x64",
 			}),
 			expected: &instancetype.InstanceTypeInfo{
@@ -137,8 +137,8 @@ func TestTransformSKU_WhenValidInput_ItShouldTransformCorrectly(t *testing.T) {
 		{
 			name: "When MemoryGB is large it should convert correctly",
 			input: makeSKU("Standard_M416ms_v2", "virtualMachines", map[string]string{
-				"vCPUs":              "416",
-				"MemoryGB":           "11400",
+				"vCPUs":               "416",
+				"MemoryGB":            "11400",
 				"CpuArchitectureType": "x64",
 			}),
 			expected: &instancetype.InstanceTypeInfo{
@@ -181,7 +181,7 @@ func TestTransformSKU_WhenMissingRequiredFields_ItShouldReturnError(t *testing.T
 		{
 			name: "When vCPUs capability is missing it should return error",
 			input: makeSKU("Standard_D4s_v3", "virtualMachines", map[string]string{
-				"MemoryGB":           "16",
+				"MemoryGB":            "16",
 				"CpuArchitectureType": "x64",
 			}),
 			expectedError: "missing vCPUs capability",
@@ -189,7 +189,7 @@ func TestTransformSKU_WhenMissingRequiredFields_ItShouldReturnError(t *testing.T
 		{
 			name: "When MemoryGB capability is missing it should return error",
 			input: makeSKU("Standard_D4s_v3", "virtualMachines", map[string]string{
-				"vCPUs":              "4",
+				"vCPUs":               "4",
 				"CpuArchitectureType": "x64",
 			}),
 			expectedError: "missing MemoryGB capability",
@@ -205,8 +205,8 @@ func TestTransformSKU_WhenMissingRequiredFields_ItShouldReturnError(t *testing.T
 		{
 			name: "When vCPUs value is not a valid integer it should return error",
 			input: makeSKU("Standard_D4s_v3", "virtualMachines", map[string]string{
-				"vCPUs":              "abc",
-				"MemoryGB":           "16",
+				"vCPUs":               "abc",
+				"MemoryGB":            "16",
 				"CpuArchitectureType": "x64",
 			}),
 			expectedError: "invalid vCPUs value",
@@ -214,8 +214,8 @@ func TestTransformSKU_WhenMissingRequiredFields_ItShouldReturnError(t *testing.T
 		{
 			name: "When MemoryGB value is not a valid float it should return error",
 			input: makeSKU("Standard_D4s_v3", "virtualMachines", map[string]string{
-				"vCPUs":              "4",
-				"MemoryGB":           "xyz",
+				"vCPUs":               "4",
+				"MemoryGB":            "xyz",
 				"CpuArchitectureType": "x64",
 			}),
 			expectedError: "invalid MemoryGB value",
@@ -223,8 +223,8 @@ func TestTransformSKU_WhenMissingRequiredFields_ItShouldReturnError(t *testing.T
 		{
 			name: "When vCPUs value is zero it should return error",
 			input: makeSKU("Standard_D4s_v3", "virtualMachines", map[string]string{
-				"vCPUs":              "0",
-				"MemoryGB":           "16",
+				"vCPUs":               "0",
+				"MemoryGB":            "16",
 				"CpuArchitectureType": "x64",
 			}),
 			expectedError: "invalid vCPUs count",
@@ -232,8 +232,8 @@ func TestTransformSKU_WhenMissingRequiredFields_ItShouldReturnError(t *testing.T
 		{
 			name: "When MemoryGB value is zero it should return error",
 			input: makeSKU("Standard_D4s_v3", "virtualMachines", map[string]string{
-				"vCPUs":              "4",
-				"MemoryGB":           "0",
+				"vCPUs":               "4",
+				"MemoryGB":            "0",
 				"CpuArchitectureType": "x64",
 			}),
 			expectedError: "invalid MemoryGB value",
@@ -241,8 +241,8 @@ func TestTransformSKU_WhenMissingRequiredFields_ItShouldReturnError(t *testing.T
 		{
 			name: "When CpuArchitectureType is unsupported it should return error",
 			input: makeSKU("Standard_D4s_v3", "virtualMachines", map[string]string{
-				"vCPUs":              "4",
-				"MemoryGB":           "16",
+				"vCPUs":               "4",
+				"MemoryGB":            "16",
 				"CpuArchitectureType": "i386",
 			}),
 			expectedError: "unsupported CPU architecture",

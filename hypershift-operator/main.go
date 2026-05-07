@@ -17,8 +17,8 @@ package main
 import (
 	"context"
 	"crypto/tls"
-	"fmt"
 	"encoding/json"
+	"fmt"
 	"net"
 	"os"
 	"strings"
@@ -660,7 +660,7 @@ func setupNodePoolController(ctx context.Context, mgr ctrl.Manager, opts *StartO
 				missing = append(missing, "location")
 			}
 			if len(missing) > 0 {
-				return fmt.Errorf("Azure scale-from-zero credentials missing required fields: %s", strings.Join(missing, ", "))
+				return fmt.Errorf("azure scale-from-zero credentials missing required fields: %s", strings.Join(missing, ", "))
 			}
 			cred, err := azidentity.NewClientSecretCredential(azureCreds.TenantID, azureCreds.ClientID, azureCreds.ClientSecret, nil)
 			if err != nil {
