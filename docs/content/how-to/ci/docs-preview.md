@@ -1,13 +1,13 @@
 # Documentation Preview
 
-When a pull request modifies files under `docs/`, a GitHub Actions workflow automatically builds the documentation and deploys a preview to Cloudflare Pages.
+When a pull request modifies files under `docs/`, GitHub Actions workflows automatically build the documentation and deploy a preview to Cloudflare Pages.
 
 ## How It Works
 
-The workflow uses `pull_request_target` with two jobs to securely handle fork PRs:
+The preview system uses two separate workflows for security, following the reusable workflow pattern described in [GitHub Actions Workflows](github-actions.md):
 
-1. **Build** — checks out the PR code and builds the docs with MkDocs in strict mode. This job has no access to secrets.
-2. **Deploy** — downloads the built artifact and deploys it to Cloudflare Pages. This job has access to the `docs-preview` environment secrets but never executes PR code.
+1. **Docs Build** (`.github/workflows/docs-build.yaml`) — triggers on `pull_request` for changes under `docs/`. The caller delegates to `docs-build-reusable.yaml@main`, which checks out the PR code, builds with MkDocs in strict mode, and uploads the built site as an artifact. This workflow has no access to secrets.
+2. **Docs Deploy** (`.github/workflows/docs-deploy.yaml`) — triggers via `workflow_run` when the Docs Build workflow completes successfully. It downloads the built artifact and deploys to Cloudflare Pages. This workflow has access to the `docs-preview` environment secrets but never executes PR code.
 
 GitHub shows a **View deployment** link in the PR timeline via the `docs-preview` environment.
 
@@ -15,9 +15,9 @@ The preview is available at `https://pr-<number>.hypershift.pages.dev`.
 
 ## Configuration
 
-The workflow is defined in `.github/workflows/docs-preview.yaml` and runs on self-hosted ARC runners.
+The workflows run on self-hosted ARC runners.
 
-It requires two secrets configured on the `docs-preview` GitHub Environment:
+The deploy workflow requires two secrets configured on the `docs-preview` GitHub Environment:
 
 | Secret | Description |
 |--------|-------------|
