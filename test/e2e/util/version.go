@@ -114,3 +114,15 @@ func IsLessThan(version semver.Version) bool {
 func IsGreaterThanOrEqualTo(version semver.Version) bool {
 	return releaseVersion.GE(version)
 }
+
+// ShouldRunKarpenterTests skips the test unless the Karpenter v1 API is available.
+// The v1 API exists on 4.23+, but when the operator is built from main and
+// tested against a 4.22 hosted cluster, set RUN_KARPENTER_TESTS=true to
+// lower the gate to 4.22.
+func ShouldRunKarpenterTests(t *testing.T) {
+	if os.Getenv("RUN_KARPENTER_TESTS") == "true" {
+		AtLeast(t, Version422)
+	} else {
+		AtLeast(t, Version423)
+	}
+}
