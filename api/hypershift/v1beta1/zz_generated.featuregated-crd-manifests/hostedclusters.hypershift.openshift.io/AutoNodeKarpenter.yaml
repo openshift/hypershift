@@ -2946,6 +2946,65 @@ spec:
                                   rule: self.matches('^[0-9]{1,3}\\..*') && int(self.split('/')[0].split('.')[0])
                                     > 0
                             type: object
+                          ipv6:
+                            description: |-
+                              ipv6 allows users to configure IP settings for IPv6 connections. When omitted,
+                              this means no opinions and the default configuration is used. Check individual
+                              fields within ipv6 for details of default values.
+                              For KubeVirt hosted clusters using dual-stack networking, it is recommended to
+                              set ipv6.internalJoinSubnet to a value different from the management cluster's
+                              join subnet (default fd98::/64) to avoid IPv6 routing conflicts.
+                            minProperties: 1
+                            properties:
+                              internalJoinSubnet:
+                                description: |-
+                                  internalJoinSubnet is a v6 subnet used internally by ovn-kubernetes in case the
+                                  default one is being already used by something else. It must not overlap with
+                                  any other subnet being used by OpenShift or by the node network. The size of the
+                                  subnet must be larger than the number of nodes.
+                                  The current default value is fd98::/64.
+                                  For KubeVirt hosted clusters, if this field is not set, HyperShift will
+                                  automatically use fd99::/64 to avoid collisions with the management cluster's
+                                  default join subnet (fd98::/64).
+                                  The subnet must be large enough to accommodate one IP per node in your cluster.
+                                  The value must be in proper IPv6 CIDR format.
+                                  Note that IPv6 dual addresses are not permitted.
+                                maxLength: 48
+                                minLength: 3
+                                type: string
+                                x-kubernetes-validations:
+                                - message: Subnet must be in valid IPv6 CIDR format
+                                    (e.g., fd98::/64)
+                                  rule: self.matches('^\\s*((([0-9A-Fa-f]{1,4}:){7}([0-9A-Fa-f]{1,4}|:))|(([0-9A-Fa-f]{1,4}:){6}(:[0-9A-Fa-f]{1,4}|:))|(([0-9A-Fa-f]{1,4}:){5}((:[0-9A-Fa-f]{1,4}){1,2}|:))|(([0-9A-Fa-f]{1,4}:){4}((:[0-9A-Fa-f]{1,4}){1,3}|:))|(([0-9A-Fa-f]{1,4}:){3}((:[0-9A-Fa-f]{1,4}){1,4}|:))|(([0-9A-Fa-f]{1,4}:){2}((:[0-9A-Fa-f]{1,4}){1,5}|:))|(([0-9A-Fa-f]{1,4}:){1}((:[0-9A-Fa-f]{1,4}){1,6}|:))|(::((:[0-9A-Fa-f]{1,4}){1,7}|:)))\\s*/([0-9]|[1-9][0-9]|1[0-1][0-9]|12[0-8])$')
+                                - message: subnet must be in the range /0 to /125
+                                    inclusive
+                                  rule: self.matches('^.*/[0-9]+$') && int(self.split('/')[1])
+                                    <= 125
+                              internalTransitSwitchSubnet:
+                                description: |-
+                                  internalTransitSwitchSubnet is a v6 subnet in IPv6 CIDR format used internally
+                                  by OVN-Kubernetes for the distributed transit switch in the OVN Interconnect
+                                  architecture that connects the cluster routers on each node together to enable
+                                  east west traffic. The subnet chosen should not overlap with other networks
+                                  specified for OVN-Kubernetes as well as other networks used on the host.
+                                  When omitted, this means no opinion and the platform is left to choose a reasonable
+                                  default which is subject to change over time.
+                                  The current default subnet is fd97::/64.
+                                  The subnet must be large enough to accommodate one IP per node in your cluster.
+                                  The value must be in proper IPv6 CIDR format.
+                                  Note that IPv6 dual addresses are not permitted.
+                                maxLength: 48
+                                minLength: 3
+                                type: string
+                                x-kubernetes-validations:
+                                - message: Subnet must be in valid IPv6 CIDR format
+                                    (e.g., fd97::/64)
+                                  rule: self.matches('^\\s*((([0-9A-Fa-f]{1,4}:){7}([0-9A-Fa-f]{1,4}|:))|(([0-9A-Fa-f]{1,4}:){6}(:[0-9A-Fa-f]{1,4}|:))|(([0-9A-Fa-f]{1,4}:){5}((:[0-9A-Fa-f]{1,4}){1,2}|:))|(([0-9A-Fa-f]{1,4}:){4}((:[0-9A-Fa-f]{1,4}){1,3}|:))|(([0-9A-Fa-f]{1,4}:){3}((:[0-9A-Fa-f]{1,4}){1,4}|:))|(([0-9A-Fa-f]{1,4}:){2}((:[0-9A-Fa-f]{1,4}){1,5}|:))|(([0-9A-Fa-f]{1,4}:){1}((:[0-9A-Fa-f]{1,4}){1,6}|:))|(::((:[0-9A-Fa-f]{1,4}){1,7}|:)))\\s*/([0-9]|[1-9][0-9]|1[0-1][0-9]|12[0-8])$')
+                                - message: subnet must be in the range /0 to /125
+                                    inclusive
+                                  rule: self.matches('^.*/[0-9]+$') && int(self.split('/')[1])
+                                    <= 125
+                            type: object
                         type: object
                         x-kubernetes-validations:
                         - message: internalJoinSubnet and internalTransitSwitchSubnet
@@ -2953,6 +3012,11 @@ spec:
                           rule: '!has(self.ipv4) || !has(self.ipv4.internalJoinSubnet)
                             || !has(self.ipv4.internalTransitSwitchSubnet) || self.ipv4.internalJoinSubnet
                             != self.ipv4.internalTransitSwitchSubnet'
+                        - message: IPv6 internalJoinSubnet and internalTransitSwitchSubnet
+                            must not be the same
+                          rule: '!has(self.ipv6) || !has(self.ipv6.internalJoinSubnet)
+                            || !has(self.ipv6.internalTransitSwitchSubnet) || self.ipv6.internalJoinSubnet
+                            != self.ipv6.internalTransitSwitchSubnet'
                     type: object
                   ingressOperator:
                     description: |-

@@ -4155,6 +4155,34 @@ func validateSliceNetworkCIDRs(hc *hyperv1.HostedCluster) field.ErrorList {
 			}
 		}
 	}
+
+	if hc.Spec.Networking.NetworkType == hyperv1.OVNKubernetes {
+		var ipv6JoinSubnet, ipv6TransitSubnet string
+		if hc.Spec.OperatorConfiguration != nil && hc.Spec.OperatorConfiguration.ClusterNetworkOperator != nil &&
+			hc.Spec.OperatorConfiguration.ClusterNetworkOperator.OVNKubernetesConfig != nil {
+			ipv6JoinSubnet = hc.Spec.OperatorConfiguration.ClusterNetworkOperator.OVNKubernetesConfig.IPv6.InternalJoinSubnet
+			ipv6TransitSubnet = hc.Spec.OperatorConfiguration.ClusterNetworkOperator.OVNKubernetesConfig.IPv6.InternalTransitSwitchSubnet
+		}
+		// The reconciler defaults KubeVirt IPv6 join subnet to fd99::/64;
+		// include the effective value so overlaps are caught at admission time.
+		if ipv6JoinSubnet == "" && hc.Spec.Platform.Type == hyperv1.KubevirtPlatform {
+			ipv6JoinSubnet = "fd99::/64"
+		}
+		if ipv6JoinSubnet != "" {
+			_, cidr, err := net.ParseCIDR(ipv6JoinSubnet)
+			if err == nil {
+				ce := cidrEntry{*cidr, *field.NewPath("spec", "operatorConfiguration", "clusterNetworkOperator", "ovnKubernetesConfig", "ipv6", "internalJoinSubnet")}
+				cidrEntries = append(cidrEntries, ce)
+			}
+		}
+		if ipv6TransitSubnet != "" {
+			_, cidr, err := net.ParseCIDR(ipv6TransitSubnet)
+			if err == nil {
+				ce := cidrEntry{*cidr, *field.NewPath("spec", "operatorConfiguration", "clusterNetworkOperator", "ovnKubernetesConfig", "ipv6", "internalTransitSwitchSubnet")}
+				cidrEntries = append(cidrEntries, ce)
+			}
+		}
+	}
 	return compareCIDREntries(cidrEntries)
 }
 

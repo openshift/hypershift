@@ -36,6 +36,12 @@ const kubevirtDefaultGenevePort = uint32(9880)
 // is 100.65.0.0/16. We need to avoid that for kubernetes which runs nested.
 const kubevirtDefaultV4InternalSubnet = "100.66.0.0/16"
 
+// The default OVN IPv6 join subnet is fd98::/64. We need to avoid that for
+// KubeVirt hosted clusters which run nested, because both the management and
+// guest clusters would use the same join subnet, causing IPv6 routing conflicts
+// when external traffic is SNAT'd to a join switch IP.
+const kubevirtDefaultV6InternalJoinSubnet = "fd99::/64"
+
 func ReconcileNetworkOperator(network *operatorv1.Network, networkType hyperv1.NetworkType, platformType hyperv1.PlatformType, disableMultiNetwork bool, ovnConfig *hyperv1.OVNKubernetesConfig) {
 	switch platformType {
 	case hyperv1.KubevirtPlatform:
@@ -59,6 +65,12 @@ func ReconcileNetworkOperator(network *operatorv1.Network, networkType hyperv1.N
 			}
 			if network.Spec.DefaultNetwork.OVNKubernetesConfig.GenevePort == nil {
 				network.Spec.DefaultNetwork.OVNKubernetesConfig.GenevePort = &port
+			}
+			if network.Spec.DefaultNetwork.OVNKubernetesConfig.IPv6 == nil {
+				network.Spec.DefaultNetwork.OVNKubernetesConfig.IPv6 = &operatorv1.IPv6OVNKubernetesConfig{}
+			}
+			if network.Spec.DefaultNetwork.OVNKubernetesConfig.IPv6.InternalJoinSubnet == "" {
+				network.Spec.DefaultNetwork.OVNKubernetesConfig.IPv6.InternalJoinSubnet = kubevirtDefaultV6InternalJoinSubnet
 			}
 		}
 	case hyperv1.PowerVSPlatform:
@@ -93,6 +105,19 @@ func ReconcileNetworkOperator(network *operatorv1.Network, networkType hyperv1.N
 			if ovnConfig.IPv4.InternalTransitSwitchSubnet != "" {
 				ovnCfg.IPv4.InternalTransitSwitchSubnet = ovnConfig.IPv4.InternalTransitSwitchSubnet
 			}
+		}
+		// Apply IPv6 configuration
+		if ovnConfig.IPv6.InternalJoinSubnet != "" {
+			if ovnCfg.IPv6 == nil {
+				ovnCfg.IPv6 = &operatorv1.IPv6OVNKubernetesConfig{}
+			}
+			ovnCfg.IPv6.InternalJoinSubnet = ovnConfig.IPv6.InternalJoinSubnet
+		}
+		if ovnConfig.IPv6.InternalTransitSwitchSubnet != "" {
+			if ovnCfg.IPv6 == nil {
+				ovnCfg.IPv6 = &operatorv1.IPv6OVNKubernetesConfig{}
+			}
+			ovnCfg.IPv6.InternalTransitSwitchSubnet = ovnConfig.IPv6.InternalTransitSwitchSubnet
 		}
 	}
 
