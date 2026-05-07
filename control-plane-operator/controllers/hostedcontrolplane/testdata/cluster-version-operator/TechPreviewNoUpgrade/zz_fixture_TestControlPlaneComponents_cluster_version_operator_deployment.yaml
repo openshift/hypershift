@@ -152,6 +152,7 @@ spec:
           rm -f /var/payload/release-manifests/0000_50_olm_06-psm-operator.deployment.ibm-cloud-managed.yaml
           rm -f /var/payload/release-manifests/0000_50_olm_06-psm-operator.service.yaml
           rm -f /var/payload/release-manifests/0000_50_olm_06-psm-operator.servicemonitor.yaml
+          rm -f /var/payload/release-manifests/0000_50_olm_00-packageserver.pdb.yaml
           rm -f /var/payload/release-manifests/0000_50_olm_07-olm-operator.deployment.ibm-cloud-managed.yaml
           rm -f /var/payload/release-manifests/0000_50_olm_07-olm-operator.deployment.yaml
           rm -f /var/payload/release-manifests/0000_50_olm_07-collect-profiles.cronjob.yaml
