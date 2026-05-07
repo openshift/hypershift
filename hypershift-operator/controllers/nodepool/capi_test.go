@@ -24,7 +24,10 @@ import (
 	"k8s.io/utils/ptr"
 
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
+	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
+	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -1517,6 +1520,391 @@ func TestCAPIReconcile(t *testing.T) {
 					g.Expect(tt.nodePool.Status.Version).To(BeEmpty())
 				}
 			}
+		})
+	}
+}
+
+func TestGlobalPSManagedLabelOnMachines(t *testing.T) {
+	maxUnavailable := intstr.FromInt(0)
+	maxSurge := intstr.FromInt(1)
+	awsMachineTemplateName := "test-nodepool-29e4de4b"
+	capiClusterName := "infra-id"
+	controlPlaneNamespace := "test-namespace-test-cluster"
+
+	tests := []struct {
+		name          string
+		nodePool      *hyperv1.NodePool
+		hostedCluster *hyperv1.HostedCluster
+		objects       []client.Object
+		reconcile     func(t *testing.T, capi *CAPI) error
+		expectLabel   bool
+	}{
+		{
+			name: "When using Replace upgrade strategy on AWS, it should apply globalPS managed label to Machines",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-nodepool",
+					Namespace: "test-namespace",
+				},
+				Spec: hyperv1.NodePoolSpec{
+					ClusterName: "test-cluster",
+					Management: hyperv1.NodePoolManagement{
+						UpgradeType: hyperv1.UpgradeTypeReplace,
+						Replace: &hyperv1.ReplaceUpgrade{
+							Strategy: hyperv1.UpgradeStrategyRollingUpdate,
+							RollingUpdate: &hyperv1.RollingUpdate{
+								MaxUnavailable: &maxUnavailable,
+								MaxSurge:       &maxSurge,
+							},
+						},
+					},
+					Replicas: ptr.To[int32](3),
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AWSPlatform,
+						AWS: &hyperv1.AWSNodePoolPlatform{
+							AMI: "an-ami",
+						},
+					},
+				},
+			},
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "test-namespace"},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+						AWS: &hyperv1.AWSPlatformSpec{
+							Region:                      "",
+							CloudProviderConfig:         &hyperv1.AWSCloudProviderConfig{},
+							ServiceEndpoints:            []hyperv1.AWSServiceEndpoint{},
+							RolesRef:                    hyperv1.AWSRolesRef{},
+							ResourceTags:                []hyperv1.AWSResourceTag{},
+							EndpointAccess:              "",
+							AdditionalAllowedPrincipals: []string{},
+							MultiArch:                   false,
+						},
+					},
+				},
+			},
+			objects: []client.Object{
+				&capiv1.MachineSet{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-machineset",
+						Namespace: controlPlaneNamespace,
+						Annotations: map[string]string{
+							nodePoolAnnotation: "test-namespace/test-nodepool",
+						},
+					},
+					Spec: capiv1.MachineSetSpec{
+						Template: capiv1.MachineTemplateSpec{
+							Spec: capiv1.MachineSpec{
+								InfrastructureRef: corev1.ObjectReference{
+									Kind:       "AWSMachineTemplate",
+									APIVersion: "infrastructure.cluster.x-k8s.io/v1beta2",
+									Namespace:  controlPlaneNamespace,
+									Name:       awsMachineTemplateName,
+								},
+							},
+						},
+					},
+				},
+				&capiv1.Machine{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-machine-1",
+						Namespace: controlPlaneNamespace,
+						Annotations: map[string]string{
+							nodePoolAnnotation: "test-namespace/test-nodepool",
+						},
+					},
+				},
+				&capiaws.AWSMachineTemplate{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      awsMachineTemplateName,
+						Namespace: controlPlaneNamespace,
+						Annotations: map[string]string{
+							nodePoolAnnotation: "test-namespace/test-nodepool",
+						},
+					},
+				},
+			},
+			expectLabel: true,
+		},
+		{
+			name: "When using Replace upgrade strategy on Azure, it should apply globalPS managed label to Machines",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-nodepool",
+					Namespace: "test-namespace",
+				},
+				Spec: hyperv1.NodePoolSpec{
+					ClusterName: "test-cluster",
+					Management: hyperv1.NodePoolManagement{
+						UpgradeType: hyperv1.UpgradeTypeReplace,
+						Replace: &hyperv1.ReplaceUpgrade{
+							Strategy: hyperv1.UpgradeStrategyRollingUpdate,
+							RollingUpdate: &hyperv1.RollingUpdate{
+								MaxUnavailable: &maxUnavailable,
+								MaxSurge:       &maxSurge,
+							},
+						},
+					},
+					Replicas: ptr.To[int32](3),
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AzurePlatform,
+					},
+				},
+			},
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "test-namespace"},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+					},
+				},
+			},
+			objects: []client.Object{
+				&capiv1.Machine{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-machine-1",
+						Namespace: controlPlaneNamespace,
+						Annotations: map[string]string{
+							nodePoolAnnotation: "test-namespace/test-nodepool",
+						},
+					},
+				},
+				&capiv1.MachineDeployment{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-nodepool",
+						Namespace: controlPlaneNamespace,
+					},
+				},
+			},
+			reconcile: func(t *testing.T, capi *CAPI) error {
+				md := &capiv1.MachineDeployment{}
+				if err := capi.Client.Get(t.Context(), client.ObjectKey{Namespace: controlPlaneNamespace, Name: "test-nodepool"}, md); err != nil {
+					return err
+				}
+				template := &capiazure.AzureMachineTemplate{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-azure-template",
+						Namespace: controlPlaneNamespace,
+					},
+				}
+				log := ctrl.LoggerFrom(t.Context())
+				return capi.reconcileMachineDeployment(t.Context(), log, md, template)
+			},
+			expectLabel: true,
+		},
+		{
+			name: "When using InPlace upgrade strategy on AWS, it should not apply globalPS managed label to Machines",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-nodepool",
+					Namespace: "test-namespace",
+				},
+				Spec: hyperv1.NodePoolSpec{
+					ClusterName: "test-cluster",
+					Management: hyperv1.NodePoolManagement{
+						UpgradeType: hyperv1.UpgradeTypeInPlace,
+					},
+					Replicas: ptr.To[int32](3),
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AWSPlatform,
+						AWS: &hyperv1.AWSNodePoolPlatform{
+							AMI: "an-ami",
+						},
+					},
+				},
+			},
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "test-namespace"},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+						AWS: &hyperv1.AWSPlatformSpec{
+							Region:                      "",
+							CloudProviderConfig:         &hyperv1.AWSCloudProviderConfig{},
+							ServiceEndpoints:            []hyperv1.AWSServiceEndpoint{},
+							RolesRef:                    hyperv1.AWSRolesRef{},
+							ResourceTags:                []hyperv1.AWSResourceTag{},
+							EndpointAccess:              "",
+							AdditionalAllowedPrincipals: []string{},
+							MultiArch:                   false,
+						},
+					},
+				},
+			},
+			objects: []client.Object{
+				&capiv1.MachineSet{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-machineset",
+						Namespace: controlPlaneNamespace,
+						Annotations: map[string]string{
+							nodePoolAnnotation: "test-namespace/test-nodepool",
+						},
+					},
+					Spec: capiv1.MachineSetSpec{
+						Template: capiv1.MachineTemplateSpec{
+							Spec: capiv1.MachineSpec{
+								InfrastructureRef: corev1.ObjectReference{
+									Kind:       "AWSMachineTemplate",
+									APIVersion: "infrastructure.cluster.x-k8s.io/v1beta2",
+									Namespace:  controlPlaneNamespace,
+									Name:       awsMachineTemplateName,
+								},
+							},
+						},
+					},
+				},
+				&capiv1.Machine{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-machine-1",
+						Namespace: controlPlaneNamespace,
+						Annotations: map[string]string{
+							nodePoolAnnotation: "test-namespace/test-nodepool",
+						},
+					},
+				},
+				&capiaws.AWSMachineTemplate{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      awsMachineTemplateName,
+						Namespace: controlPlaneNamespace,
+						Annotations: map[string]string{
+							nodePoolAnnotation: "test-namespace/test-nodepool",
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "When using Replace upgrade strategy on KubeVirt, it should not apply globalPS managed label to Machines",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-nodepool",
+					Namespace: "test-namespace",
+				},
+				Spec: hyperv1.NodePoolSpec{
+					ClusterName: "test-cluster",
+					Management: hyperv1.NodePoolManagement{
+						UpgradeType: hyperv1.UpgradeTypeReplace,
+						Replace: &hyperv1.ReplaceUpgrade{
+							Strategy: hyperv1.UpgradeStrategyRollingUpdate,
+							RollingUpdate: &hyperv1.RollingUpdate{
+								MaxUnavailable: &maxUnavailable,
+								MaxSurge:       &maxSurge,
+							},
+						},
+					},
+					Replicas: ptr.To[int32](3),
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.KubevirtPlatform,
+					},
+				},
+			},
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "test-namespace"},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.KubevirtPlatform,
+					},
+				},
+			},
+			objects: []client.Object{
+				&capiv1.Machine{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-machine-1",
+						Namespace: controlPlaneNamespace,
+						Annotations: map[string]string{
+							nodePoolAnnotation: "test-namespace/test-nodepool",
+						},
+					},
+				},
+				&capiv1.MachineDeployment{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-nodepool",
+						Namespace: controlPlaneNamespace,
+					},
+				},
+			},
+			// Call reconcileMachineDeployment directly to test the label logic
+			// without requiring full KubeVirt machine template setup.
+			reconcile: func(t *testing.T, capi *CAPI) error {
+				md := &capiv1.MachineDeployment{}
+				if err := capi.Client.Get(t.Context(), client.ObjectKey{Namespace: controlPlaneNamespace, Name: "test-nodepool"}, md); err != nil {
+					return err
+				}
+				kvTemplate := &capikubevirt.KubevirtMachineTemplate{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-kv-template",
+						Namespace: controlPlaneNamespace,
+					},
+				}
+				log := ctrl.LoggerFrom(t.Context())
+				return capi.reconcileMachineDeployment(t.Context(), log, md, kvTemplate)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			objects := append([]client.Object{tt.nodePool}, tt.objects...)
+			c := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				WithObjects(objects...).
+				Build()
+
+			capi := &CAPI{
+				Token: &Token{
+					ConfigGenerator: &ConfigGenerator{
+						Client:                c,
+						hostedCluster:         tt.hostedCluster,
+						nodePool:              tt.nodePool,
+						controlplaneNamespace: controlPlaneNamespace,
+						rolloutConfig: &rolloutConfig{
+							releaseImage: &releaseinfo.ReleaseImage{
+								ImageStream: &imageapi.ImageStream{
+									ObjectMeta: metav1.ObjectMeta{
+										Name: "target-version",
+									},
+								},
+							},
+						},
+					},
+					cpoCapabilities:        &CPOCapabilities{},
+					CreateOrUpdateProvider: upsert.New(false),
+				},
+				capiClusterName: capiClusterName,
+				ApplyProvider:   upsert.NewApplyProvider(false),
+			}
+
+			reconcile := tt.reconcile
+			if reconcile == nil {
+				reconcile = func(t *testing.T, capi *CAPI) error {
+					return capi.Reconcile(t.Context())
+				}
+			}
+			err := reconcile(t, capi)
+			g.Expect(err).NotTo(HaveOccurred())
+
+			globalPSManagedLabelKey := fmt.Sprintf("%s.%s", labelManagedPrefix, globalPSNodeLabel)
+			machineList := &capiv1.MachineList{}
+			err = capi.Client.List(t.Context(), machineList, client.InNamespace(controlPlaneNamespace))
+			g.Expect(err).NotTo(HaveOccurred())
+			foundOwnedMachine := false
+			for _, m := range machineList.Items {
+				if m.Annotations[nodePoolAnnotation] == client.ObjectKeyFromObject(tt.nodePool).String() {
+					foundOwnedMachine = true
+					if tt.expectLabel {
+						g.Expect(m.Labels).To(HaveKeyWithValue(globalPSManagedLabelKey, "true"),
+							"Machine %s should have the globalPS managed label", m.Name)
+					} else {
+						g.Expect(m.Labels).ToNot(HaveKey(globalPSManagedLabelKey),
+							"Machine %s should NOT have the globalPS managed label", m.Name)
+					}
+				}
+			}
+			g.Expect(foundOwnedMachine).To(BeTrue(), "expected at least one Machine owned by NodePool %s", client.ObjectKeyFromObject(tt.nodePool).String())
 		})
 	}
 }

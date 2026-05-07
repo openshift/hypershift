@@ -1776,7 +1776,29 @@ func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclie
 	g.Expect(err).NotTo(HaveOccurred(), "failed to count available nodes")
 
 	t.Logf("NodePool replicas: %d, Available nodes: %d", *np.Spec.Replicas, nodeCount)
-
+	// Verify that nodes from Replace NodePools have the globalPS label applied via CAPI propagation.
+	// This label is set on the MachineDeployment template so it flows to Nodes at creation time.
+	t.Run("Check Replace nodes have globalPS label from CAPI propagation", func(t *testing.T) {
+		globalPSLabelKey := "hypershift.openshift.io/nodepool-globalps-enabled"
+		g.Eventually(func() error {
+			nodeList := &corev1.NodeList{}
+			if err := guestClient.List(ctx, nodeList, crclient.MatchingLabels{
+				hyperv1.NodePoolLabel: np.Name,
+			}); err != nil {
+				return fmt.Errorf("failed to list nodes: %w", err)
+			}
+			if len(nodeList.Items) != int(nodeCount) {
+				return fmt.Errorf("expected %d nodes for NodePool %s, got %d", nodeCount, np.Name, len(nodeList.Items))
+			}
+			for _, node := range nodeList.Items {
+				if node.Labels[globalPSLabelKey] != "true" {
+					return fmt.Errorf("node %s does not have the globalPS label", node.Name)
+				}
+			}
+			t.Logf("All %d nodes have the globalPS label", len(nodeList.Items))
+			return nil
+		}, 30*time.Second, 5*time.Second).Should(Succeed())
+	})
 	// Create the additional-pull-secret secret in the DataPlane using the dummy pull secret.
 	// The dummy pull secret is not authorized to pull restricted images.
 	err = createAdditionalPullSecret(ctx, guestClient, additionalPullSecretDummyData, additionalPullSecretName, additionalPullSecretNamespace)
