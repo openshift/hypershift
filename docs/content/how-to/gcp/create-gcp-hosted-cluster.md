@@ -113,6 +113,45 @@ KUBECONFIG=hosted-kubeconfig oc get nodes
 KUBECONFIG=hosted-kubeconfig oc get clusterversion
 ```
 
+## Image Registry
+
+GCP hosted clusters automatically configure the OpenShift image registry using Workload Identity Federation (WIF). The `--image-registry-service-account` flag passed at cluster creation supplies the GCP service account (GSA) that the registry operator uses to access GCS.
+
+The flow is:
+
+1. The HyperShift control plane generates a WIF credential for the `image-registry` GSA and writes it to the `installer-cloud-credentials` secret in the `openshift-image-registry` namespace.
+2. The cluster image registry operator reads the credential and creates a GCS bucket in the hosted cluster project.
+3. The registry becomes available at `image-registry.openshift-image-registry.svc:5000`.
+
+### Verify Registry Status
+
+```bash
+KUBECONFIG=hosted-kubeconfig oc get clusteroperator image-registry
+```
+
+The `AVAILABLE` column should be `True` within a few minutes of nodes joining.
+
+Inspect the GCS bucket chosen by the registry operator:
+
+```bash
+KUBECONFIG=hosted-kubeconfig oc get configs.imageregistry.operator.openshift.io cluster \
+  -o jsonpath='{.spec.storage}'
+```
+
+### Disable the Image Registry
+
+Add `--capabilities-disabled=ImageRegistry` to the `hypershift create cluster gcp` command to skip deploying the registry operator and suppress GCS bucket creation.
+
+To disable the registry on a running cluster, patch the `HostedCluster` resource:
+
+```bash
+oc patch hostedcluster <cluster-name> -n <namespace> \
+  --type=merge \
+  --patch='{"spec":{"capabilities":{"disabled":["ImageRegistry"]}}}'
+```
+
+For advanced scenarios (custom bucket, pre-existing bucket, troubleshooting WIF auth), see [Configure Image Registry on GCP](configure-image-registry.md).
+
 ## Destroy Hosted Cluster
 
 ```bash
@@ -159,3 +198,5 @@ oc get nodepool -n <namespace> -o yaml
 - **WIF validation fails** — Ensure all service account emails match the output from `create iam gcp`
 - **PSC endpoint not available** — Verify the operator has WIF credentials and the PSC subnet exists
 - **Nodes not joining** — Check that the boot image is available and the hosted cluster project has compute API enabled
+- **Image registry operator not available** — Confirm the `installer-cloud-credentials` secret exists in `openshift-image-registry` and the WIF credential references the correct pool/provider; see [Configure Image Registry on GCP](configure-image-registry.md) for details
+- **GCS bucket creation fails (403)** — The `image-registry` GSA is missing `roles/storage.admin`; grant it with `gcloud projects add-iam-policy-binding` or re-run `hypershift create iam gcp`
