@@ -73,6 +73,8 @@ nav:
     - how-to/ci/ci-infrastructure.md
     - how-to/ci/checking-ci.md
     - 'Documentation Preview': how-to/ci/docs-preview.md
+    - 'GitHub Actions Workflows': how-to/ci/github-actions.md
+    - 'Sync Community Fork': how-to/ci/sync-community-fork.md
   - 'Common':
     - how-to/common/exposing-services-from-hcp.md
     - 'Global Pull Secret': how-to/common/global-pull-secret.md
