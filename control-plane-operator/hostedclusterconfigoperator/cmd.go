@@ -33,12 +33,14 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/spotremediation"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/operator"
 	hyperapi "github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/labelenforcingclient"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/supportedversion"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
 
+	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/rest"
 
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -222,6 +224,19 @@ func (o *HostedClusterConfigOperator) Run(ctx context.Context) error {
 	}
 	cfg := operator.CfgFromFile(o.TargetKubeconfig)
 	cpConfig := ctrl.GetConfigOrDie()
+
+	// Detect the management cluster capabilities once at startup so controllers can
+	// gate optional behavior (e.g. watching route.openshift.io Routes) without each
+	// having to build its own discovery client.
+	cpDiscoveryClient, err := discovery.NewDiscoveryClientForConfig(cpConfig)
+	if err != nil {
+		return fmt.Errorf("failed to create management cluster discovery client: %w", err)
+	}
+	mgmtClusterCaps, err := capabilities.DetectManagementClusterCapabilities(cpDiscoveryClient)
+	if err != nil {
+		return fmt.Errorf("failed to detect management cluster capabilities: %w", err)
+	}
+
 	mgr := operator.Mgr(ctx, cfg, cpConfig, o.Namespace, o.HostedControlPlaneName)
 	mgr.GetLogger().Info("Starting hosted-cluster-config-operator", "version", supportedversion.String())
 	cpCluster, err := cluster.New(cpConfig, func(opt *cluster.Options) {
@@ -302,27 +317,28 @@ func (o *HostedClusterConfigOperator) Run(ctx context.Context) error {
 			APIClient: apiReadingClient,
 		},
 
-		Config:                cpConfig,
-		TargetConfig:          cfg,
-		KubevirtInfraConfig:   kubevirtInfraConfig,
-		Manager:               mgr,
-		Namespace:             o.Namespace,
-		HCPName:               o.HostedControlPlaneName,
-		InitialCA:             string(o.initialCA),
-		ClusterSignerCA:       string(o.clusterSignerCA),
-		ControllerFuncs:       controllersToRun,
-		Versions:              versions,
-		PlatformType:          hyperv1.PlatformType(o.platformType),
-		CPCluster:             cpCluster,
-		Logger:                ctrl.Log.WithName("hypershift-operator"),
-		ReleaseProvider:       releaseProvider,
-		KonnectivityAddress:   o.KonnectivityAddress,
-		KonnectivityPort:      o.KonnectivityPort,
-		OAuthAddress:          o.OAuthAddress,
-		OAuthPort:             o.OAuthPort,
-		OperateOnReleaseImage: os.Getenv("OPERATE_ON_RELEASE_IMAGE"),
-		EnableCIDebugOutput:   o.enableCIDebugOutput,
-		ImageMetaDataProvider: imageMetaDataProvider,
+		Config:                        cpConfig,
+		TargetConfig:                  cfg,
+		KubevirtInfraConfig:           kubevirtInfraConfig,
+		Manager:                       mgr,
+		Namespace:                     o.Namespace,
+		HCPName:                       o.HostedControlPlaneName,
+		InitialCA:                     string(o.initialCA),
+		ClusterSignerCA:               string(o.clusterSignerCA),
+		ControllerFuncs:               controllersToRun,
+		Versions:                      versions,
+		PlatformType:                  hyperv1.PlatformType(o.platformType),
+		CPCluster:                     cpCluster,
+		Logger:                        ctrl.Log.WithName("hypershift-operator"),
+		ReleaseProvider:               releaseProvider,
+		KonnectivityAddress:           o.KonnectivityAddress,
+		KonnectivityPort:              o.KonnectivityPort,
+		OAuthAddress:                  o.OAuthAddress,
+		OAuthPort:                     o.OAuthPort,
+		OperateOnReleaseImage:         os.Getenv("OPERATE_ON_RELEASE_IMAGE"),
+		EnableCIDebugOutput:           o.enableCIDebugOutput,
+		ImageMetaDataProvider:         imageMetaDataProvider,
+		ManagementClusterCapabilities: mgmtClusterCaps,
 	}
 	configmetrics.Register(mgr.GetCache())
 	return operatorConfig.Start(ctx)
