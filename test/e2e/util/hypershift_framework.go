@@ -556,6 +556,13 @@ func teardownHostedCluster(t *testing.T, ctx context.Context, hc *hyperv1.Hosted
 	// Save off any error so that we can continue with the teardown
 	dumpErr := dumpCluster(ctx, t, true)
 
+	// Stream karpenter pod logs in the background so we capture the teardown
+	// window. Point-in-time dumps miss this because the pods are killed during
+	// HC deletion, before the retry dump runs.
+	cpNamespace := manifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name)
+	stopStreaming := streamHCPPodLogs(ctx, t, cpNamespace, artifactDir)
+	defer stopStreaming()
+
 	// Try repeatedly to destroy the cluster gracefully. For each failure, dump
 	// the current cluster to help debug teardown lifecycle issues.
 	destroyAttempt := 1
