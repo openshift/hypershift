@@ -3602,17 +3602,23 @@ func ValidateKubeAPIServerAllowedCIDRs(t testing.TB, ctx context.Context, mgmtCl
 			}
 		})
 		g.Expect(err).NotTo(HaveOccurred(), "failed to restore HostedCluster API server CIDRs")
+
+		// Verify KAS is reachable on the original transport before returning. The
+		// AllowedCIDRs test uses cfg.Dial to create isolated transports, but subsequent
+		// tests share the original guestConfig's transport. Without this wait, the next
+		// test may start before Azure LB propagation completes the CIDR restoration.
+		g.Eventually(func(g Gomega) {
+			client, err := kubeclient.NewForConfig(guestConfig)
+			g.Expect(err).ToNot(HaveOccurred(), "failed to create kubeclient for transport recovery")
+			_, err = client.ServerVersion()
+			g.Expect(err).ToNot(HaveOccurred(), "KAS should be reachable on original transport after CIDR cleanup")
+		}).WithContext(ctx).WithTimeout(5 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
 	}()
 
-	kubeClient, err := kubeclient.NewForConfig(guestConfig)
-	g.Expect(err).NotTo(HaveOccurred())
-
 	// ensure that kube-apiserver is not reachable from anywhere
-	ensureAPIServerAllowedCIDRs(ctx, t, g, mgmtClient, kubeClient, hc, []string{"0.0.0.0/32"}, false)
+	ensureAPIServerAllowedCIDRs(ctx, t, g, mgmtClient, guestConfig, hc, []string{"0.0.0.0/32"}, false)
 	// ensure kube-apiserver is reachable when allowed CIDRs allow access from everywhere
-	// This is useful for testing purposes, as it allows us to access the kube-apiserver from any IP
-	// In a production environment, this should be restricted to specific CIDRs
-	ensureAPIServerAllowedCIDRs(ctx, t, g, mgmtClient, kubeClient, hc, append([]string{"0.0.0.0/0"}, generateTestCIDRs250()...), true)
+	ensureAPIServerAllowedCIDRs(ctx, t, g, mgmtClient, guestConfig, hc, append([]string{"0.0.0.0/0"}, generateTestCIDRs250()...), true)
 }
 
 func EnsureKubeAPIServerAllowedCIDRs(t *testing.T, ctx context.Context, mgmtClient crclient.Client, guestConfig *rest.Config, hc *hyperv1.HostedCluster) {
@@ -3621,7 +3627,7 @@ func EnsureKubeAPIServerAllowedCIDRs(t *testing.T, ctx context.Context, mgmtClie
 	})
 }
 
-func ensureAPIServerAllowedCIDRs(ctx context.Context, t testing.TB, g Gomega, mgmtClient crclient.Client, guestClient *kubeclient.Clientset, hc *hyperv1.HostedCluster, allowedCIDRs []string, shouldBeReachable bool) {
+func ensureAPIServerAllowedCIDRs(ctx context.Context, t testing.TB, g Gomega, mgmtClient crclient.Client, guestConfig *rest.Config, hc *hyperv1.HostedCluster, allowedCIDRs []string, shouldBeReachable bool) {
 	expectedCIDRs := make([]hyperv1.CIDRBlock, len(allowedCIDRs))
 	for i, cidr := range allowedCIDRs {
 		expectedCIDRs[i] = hyperv1.CIDRBlock(cidr)
@@ -3660,14 +3666,75 @@ func ensureAPIServerAllowedCIDRs(ctx context.Context, t testing.TB, g Gomega, mg
 			"HCP AllowedCIDRBlocks should match the HostedCluster spec")
 	}).WithContext(ctx).WithTimeout(time.Minute * 3).WithPolling(time.Second * 5).Should(Succeed())
 
+	// Wait for the CPO to reconcile the downstream service with the expected LoadBalancerSourceRanges.
+	// The target service depends on the APIServer publishing strategy:
+	// - Route: the "router" LB service carries the CIDRs
+	// - LoadBalancer: the KAS LB service itself carries the CIDRs
+	targetSvc := allowedCIDRsTargetService(hc, hcpNamespace)
+	if targetSvc != nil {
+		expectedSourceRanges := slices.Clone(allowedCIDRs)
+		slices.Sort(expectedSourceRanges)
+		t.Logf("Waiting for service %s/%s LoadBalancerSourceRanges to match %d CIDRs", targetSvc.Namespace, targetSvc.Name, len(expectedSourceRanges))
+		g.Eventually(func(g Gomega) {
+			svc := &corev1.Service{}
+			err := mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(targetSvc), svc)
+			g.Expect(err).ToNot(HaveOccurred(), "failed to get service %s/%s", targetSvc.Namespace, targetSvc.Name)
+			actualSourceRanges := slices.Clone(svc.Spec.LoadBalancerSourceRanges)
+			slices.Sort(actualSourceRanges)
+			g.Expect(actualSourceRanges).To(Equal(expectedSourceRanges),
+				"service %s/%s LoadBalancerSourceRanges should match expected CIDRs", targetSvc.Namespace, targetSvc.Name)
+		}).WithContext(ctx).WithTimeout(time.Minute * 3).WithPolling(time.Second * 5).Should(Succeed())
+	} else {
+		t.Log("No downstream LB service identified for this cluster configuration; skipping LoadBalancerSourceRanges wait")
+	}
+
+	// A fresh kubeclient is created on every poll iteration because Go's HTTP/2 transport
+	// keeps a single TCP connection open and multiplexes all requests over it. If a poll
+	// succeeds before the LB source-range block takes effect, every later poll reuses that
+	// same connection and never sees the block. Setting cfg.Dial to a new net.Dialer gives
+	// each config a unique pointer in client-go's TLS transport cache, which forces a brand
+	// new TCP connection per iteration so each poll independently tests reachability.
 	g.Eventually(func(g Gomega) {
-		_, err = guestClient.ServerVersion()
+		cfg := rest.CopyConfig(guestConfig)
+		cfg.Dial = (&net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}).DialContext
+		freshClient, err := kubeclient.NewForConfig(cfg)
+		g.Expect(err).ToNot(HaveOccurred(), "failed to create kubeclient")
+		_, err = freshClient.ServerVersion()
 		if shouldBeReachable {
 			g.Expect(err).ToNot(HaveOccurred(), "kube-apiserver should be reachable")
 		} else {
 			g.Expect(err).To(HaveOccurred(), "kube-apiserver should not be reachable")
 		}
 	}).WithContext(ctx).WithTimeout(time.Minute * 3).WithPolling(time.Second * 5).Should(Succeed())
+}
+
+// allowedCIDRsTargetService returns the LoadBalancer service that enforces AllowedCIDRBlocks
+// based on the HostedCluster's APIServer publishing strategy. Returns nil when no LB service
+// carries source ranges (private clusters, NodePort, ARO HCP).
+// Mirrors CPO's API server and router service reconciliation logic.
+func allowedCIDRsTargetService(hc *hyperv1.HostedCluster, hcpNamespace string) *corev1.Service {
+	if !netutil.IsPublicHC(hc) {
+		return nil
+	}
+	strategy := netutil.ServicePublishingStrategyByTypeByHC(hc, hyperv1.APIServer)
+	if strategy == nil {
+		return nil
+	}
+	switch strategy.Type {
+	case hyperv1.Route:
+		if azureutil.IsAroHCP() {
+			return nil
+		}
+		return cpomanifests.RouterPublicService(hcpNamespace)
+	case hyperv1.LoadBalancer:
+		if hc.Spec.Platform.Type == hyperv1.AzurePlatform ||
+			(hc.Annotations != nil && hc.Annotations[hyperv1.ManagementPlatformAnnotation] == string(hyperv1.AzurePlatform)) {
+			return cpomanifests.KubeAPIServerServiceAzureLB(hcpNamespace)
+		}
+		return cpomanifests.KubeAPIServerService(hcpNamespace)
+	default:
+		return nil
+	}
 }
 
 // generateTestCIDRs250 is a helper to generate 250 /32 CIDRs starting at 250.250.250.1
