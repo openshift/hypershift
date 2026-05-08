@@ -247,6 +247,26 @@ func TestTransformSKU_WhenMissingRequiredFields_ItShouldReturnError(t *testing.T
 			}),
 			expectedError: "unsupported CPU architecture",
 		},
+		{
+			name: "When GPUs value is not a valid integer it should return error",
+			input: makeSKU("Standard_NC6", "virtualMachines", map[string]string{
+				"vCPUs":               "6",
+				"MemoryGB":            "56",
+				"GPUs":                "abc",
+				"CpuArchitectureType": "x64",
+			}),
+			expectedError: "invalid GPUs value",
+		},
+		{
+			name: "When GPUs value is negative it should return error",
+			input: makeSKU("Standard_NC6", "virtualMachines", map[string]string{
+				"vCPUs":               "6",
+				"MemoryGB":            "56",
+				"GPUs":                "-1",
+				"CpuArchitectureType": "x64",
+			}),
+			expectedError: "negative GPUs count",
+		},
 	}
 
 	for _, tt := range tests {

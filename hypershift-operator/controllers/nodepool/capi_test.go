@@ -42,6 +42,7 @@ func TestSetMachineSetReplicas(t *testing.T) {
 		name                        string
 		nodePool                    *hyperv1.NodePool
 		machineSet                  *capiv1.MachineSet
+		scaleFromZeroPlatform       hyperv1.PlatformType
 		expectReplicas              int32
 		expectAutoscalerAnnotations map[string]string
 	}{
@@ -199,7 +200,8 @@ func TestSetMachineSetReplicas(t *testing.T) {
 					Replicas: nil,
 				},
 			},
-			expectReplicas: 0,
+			scaleFromZeroPlatform: hyperv1.AzurePlatform,
+			expectReplicas:        0,
 			expectAutoscalerAnnotations: map[string]string{
 				autoscalerMinAnnotation: "0",
 				autoscalerMaxAnnotation: "5",
@@ -266,7 +268,7 @@ func TestSetMachineSetReplicas(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
-			setMachineSetReplicas(tc.nodePool, tc.machineSet)
+			setMachineSetReplicas(tc.nodePool, tc.machineSet, tc.scaleFromZeroPlatform)
 			g.Expect(*tc.machineSet.Spec.Replicas).To(Equal(tc.expectReplicas))
 			g.Expect(tc.machineSet.Annotations).To(Equal(tc.expectAutoscalerAnnotations))
 		})
@@ -279,6 +281,7 @@ func TestSetMachineDeploymentReplicas(t *testing.T) {
 		name                        string
 		nodePool                    *hyperv1.NodePool
 		machineDeployment           *capiv1.MachineDeployment
+		scaleFromZeroPlatform       hyperv1.PlatformType
 		expectReplicas              int32
 		expectAutoscalerAnnotations map[string]string
 	}{
@@ -525,7 +528,8 @@ func TestSetMachineDeploymentReplicas(t *testing.T) {
 					Replicas: nil,
 				},
 			},
-			expectReplicas: 0,
+			scaleFromZeroPlatform: hyperv1.AzurePlatform,
+			expectReplicas:        0,
 			expectAutoscalerAnnotations: map[string]string{
 				autoscalerMinAnnotation: "0",
 				autoscalerMaxAnnotation: "5",
@@ -592,7 +596,7 @@ func TestSetMachineDeploymentReplicas(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
-			setMachineDeploymentReplicas(tc.nodePool, tc.machineDeployment)
+			setMachineDeploymentReplicas(tc.nodePool, tc.machineDeployment, tc.scaleFromZeroPlatform)
 			g.Expect(*tc.machineDeployment.Spec.Replicas).To(Equal(tc.expectReplicas))
 			g.Expect(tc.machineDeployment.Annotations).To(Equal(tc.expectAutoscalerAnnotations))
 		})

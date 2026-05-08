@@ -662,11 +662,23 @@ func setupNodePoolController(ctx context.Context, mgr ctrl.Manager, opts *StartO
 			if len(missing) > 0 {
 				return fmt.Errorf("azure scale-from-zero credentials missing required fields: %s", strings.Join(missing, ", "))
 			}
-			cred, err := azidentity.NewClientSecretCredential(azureCreds.TenantID, azureCreds.ClientID, azureCreds.ClientSecret, nil)
+			azureCloudName := os.Getenv("AZURE_CLOUD_NAME")
+			if azureCloudName == "" {
+				azureCloudName = config.DefaultAzureCloud
+			}
+			cloudConfig, err := azureutil.GetAzureCloudConfiguration(azureCloudName)
+			if err != nil {
+				return fmt.Errorf("failed to get Azure cloud configuration for scale-from-zero: %w", err)
+			}
+			cred, err := azidentity.NewClientSecretCredential(azureCreds.TenantID, azureCreds.ClientID, azureCreds.ClientSecret,
+				&azidentity.ClientSecretCredentialOptions{
+					ClientOptions: azcore.ClientOptions{Cloud: cloudConfig},
+				},
+			)
 			if err != nil {
 				return fmt.Errorf("failed to create Azure credentials for scale-from-zero: %w", err)
 			}
-			skuClient, err := armcompute.NewResourceSKUsClient(azureCreds.SubscriptionID, cred, nil)
+			skuClient, err := armcompute.NewResourceSKUsClient(azureCreds.SubscriptionID, cred, azureutil.NewARMClientOptions(cloudConfig))
 			if err != nil {
 				return fmt.Errorf("failed to create Azure ResourceSKUs client: %w", err)
 			}

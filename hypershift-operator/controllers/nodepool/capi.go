@@ -51,7 +51,8 @@ const (
 // and let nodepool, hostedcluster, and client be fields of CAPI / interface methods.
 type CAPI struct {
 	*Token
-	capiClusterName string
+	capiClusterName       string
+	scaleFromZeroPlatform hyperv1.PlatformType
 	upsert.ApplyProvider
 }
 
@@ -472,7 +473,7 @@ func (c *CAPI) reconcileMachineDeployment(ctx context.Context, log logr.Logger,
 		}
 	}
 
-	setMachineDeploymentReplicas(nodePool, machineDeployment)
+	setMachineDeploymentReplicas(nodePool, machineDeployment, c.scaleFromZeroPlatform)
 
 	if updated := c.propagateVersionAndTemplate(log, machineDeployment, machineTemplateCR); updated {
 		return nil
@@ -756,7 +757,7 @@ func (c *CAPI) reconcileMachineHealthCheck(ctx context.Context,
 
 // setMachineDeploymentReplicas sets wanted replicas:
 // If autoscaling is enabled we reconcile min/max annotations and leave replicas untouched.
-func setMachineDeploymentReplicas(nodePool *hyperv1.NodePool, machineDeployment *capiv1.MachineDeployment) {
+func setMachineDeploymentReplicas(nodePool *hyperv1.NodePool, machineDeployment *capiv1.MachineDeployment, scaleFromZeroPlatform hyperv1.PlatformType) {
 	if machineDeployment.Annotations == nil {
 		machineDeployment.Annotations = make(map[string]string)
 	}
@@ -773,7 +774,7 @@ func setMachineDeploymentReplicas(nodePool *hyperv1.NodePool, machineDeployment 
 		// NodePools from being permanently stuck at 0 replicas on platforms that don't support
 		// scale-from-zero metadata.
 		effectiveMin := ptr.Deref(nodePool.Spec.AutoScaling.Min, 0)
-		if effectiveMin == 0 && nodePool.Spec.Platform.Type != hyperv1.AWSPlatform && nodePool.Spec.Platform.Type != hyperv1.AzurePlatform {
+		if effectiveMin == 0 && nodePool.Spec.Platform.Type != hyperv1.AWSPlatform && nodePool.Spec.Platform.Type != scaleFromZeroPlatform {
 			effectiveMin = 1
 		}
 
@@ -957,7 +958,7 @@ func (c *CAPI) reconcileMachineSet(ctx context.Context,
 	}
 	machineSet.Spec.Template.Annotations[nodePoolAnnotationTaints] = taintsInJSON
 
-	setMachineSetReplicas(nodePool, machineSet)
+	setMachineSetReplicas(nodePool, machineSet, c.scaleFromZeroPlatform)
 
 	isUpdating := false
 	// Propagate version and userData Secret to the MachineSet.
@@ -1064,7 +1065,7 @@ func machineSetInPlaceRolloutIsComplete(machineSet *capiv1.MachineSet) bool {
 
 // setMachineSetReplicas sets wanted replicas:
 // If autoscaling is enabled we reconcile min/max annotations and leave replicas untouched.
-func setMachineSetReplicas(nodePool *hyperv1.NodePool, machineSet *capiv1.MachineSet) {
+func setMachineSetReplicas(nodePool *hyperv1.NodePool, machineSet *capiv1.MachineSet, scaleFromZeroPlatform hyperv1.PlatformType) {
 	if machineSet.Annotations == nil {
 		machineSet.Annotations = make(map[string]string)
 	}
@@ -1081,7 +1082,7 @@ func setMachineSetReplicas(nodePool *hyperv1.NodePool, machineSet *capiv1.Machin
 		// NodePools from being permanently stuck at 0 replicas on platforms that don't support
 		// scale-from-zero metadata.
 		effectiveMin := ptr.Deref(nodePool.Spec.AutoScaling.Min, 0)
-		if effectiveMin == 0 && nodePool.Spec.Platform.Type != hyperv1.AWSPlatform && nodePool.Spec.Platform.Type != hyperv1.AzurePlatform {
+		if effectiveMin == 0 && nodePool.Spec.Platform.Type != hyperv1.AWSPlatform && nodePool.Spec.Platform.Type != scaleFromZeroPlatform {
 			effectiveMin = 1
 		}
 

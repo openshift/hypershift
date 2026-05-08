@@ -130,9 +130,13 @@ func transformSKU(sku *armcompute.ResourceSKU) (*instancetype.InstanceTypeInfo, 
 	gpuStr, ok := getCapabilityValue(sku.Capabilities, "GPUs")
 	if ok {
 		gpu, err := strconv.ParseInt(gpuStr, 10, 32)
-		if err == nil {
-			info.GPU = int32(gpu)
+		if err != nil {
+			return nil, fmt.Errorf("invalid GPUs value %q for VM size %q: %w", gpuStr, name, err)
 		}
+		if gpu < 0 {
+			return nil, fmt.Errorf("negative GPUs count %d for VM size %q", gpu, name)
+		}
+		info.GPU = int32(gpu)
 	}
 
 	archStr, ok := getCapabilityValue(sku.Capabilities, "CpuArchitectureType")
