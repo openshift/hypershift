@@ -60,6 +60,7 @@ import (
 	oauthapiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oauth_apiserver"
 	ocmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/ocm"
 	olmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/olm"
+	olmv1 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/olmv1"
 	pkioperatorv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/pkioperator"
 	registryoperatorv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/registryoperator"
 	routecmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/routecm"
@@ -278,7 +279,13 @@ func (r *HostedControlPlaneReconciler) registerComponents(hcp *hyperv1.HostedCon
 		metricsproxyv2.NewComponent(r.DefaultIngressDomain),
 	)
 	r.components = append(r.components,
+	    // through an unfortunate bit of naming, the 'v2' in 'olmv2' refers to the path, not the component version
+		// therefore 'olmv2' is actually OLMv0, in the v2 path
 		olmv2.NewComponents(r.ManagementClusterCapabilities.Has(capabilities.CapabilityImageStream))...,
+	)
+	r.components = append(r.components,
+	    // OLMv1 components
+		olmv1.NewComponents(r.ManagementClusterCapabilities.Has(capabilities.CapabilityImageStream))...,
 	)
 }
 
