@@ -141,4 +141,4 @@ To add a completely different marketplace:
 
 - [Claude Code Plugin Marketplace Documentation](https://docs.claude.com/en/docs/claude-code/plugin-marketplaces)
 - [openshift-eng/ai-helpers Repository](https://github.com/openshift-eng/ai-helpers)
-- Project Documentation: [CLAUDE.md](../../CLAUDE.md)
+- Project Documentation: [AGENTS.md](../../AGENTS.md)
