@@ -3,12 +3,14 @@ package nodeclass
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1"
 
 	awskarpenterv1 "github.com/aws/karpenter-provider-aws/pkg/apis/v1"
 
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 )
 
@@ -157,9 +159,50 @@ func volumeTypeToKarpenter(vt hyperkarpenterv1.VolumeType) *string {
 	return &v
 }
 
+func karpenterKubeletConfigurationFromNodeClassSpec(spec hyperkarpenterv1.OpenshiftEC2NodeClassSpec) *awskarpenterv1.KubeletConfiguration {
+	if !spec.Kubelet.HasTypedFields() {
+		return nil
+	}
+	return &awskarpenterv1.KubeletConfiguration{
+		ImageGCHighThresholdPercent: spec.Kubelet.ImageGCHighThresholdPercent,
+		ImageGCLowThresholdPercent:  spec.Kubelet.ImageGCLowThresholdPercent,
+		MaxPods:                     ptrIfNonZero(spec.Kubelet.MaxPods),
+		CPUCFSQuota:                 spec.Kubelet.CPUCFSQuota,
+		EvictionHard:                spec.Kubelet.EvictionHard,
+		EvictionSoft:                spec.Kubelet.EvictionSoft,
+		EvictionSoftGracePeriod:     evictionSoftGracePeriodToDuration(spec.Kubelet.EvictionSoftGracePeriod),
+		EvictionMaxPodGracePeriod:   spec.Kubelet.EvictionMaxPodGracePeriod,
+		PodsPerCore:                 ptrIfNonZero(spec.Kubelet.PodsPerCore),
+		SystemReserved:              spec.Kubelet.SystemReserved,
+		KubeReserved:                spec.Kubelet.KubeReserved,
+	}
+}
+
+func evictionSoftGracePeriodToDuration(m map[string]string) map[string]metav1.Duration {
+	if m == nil {
+		return nil
+	}
+	result := make(map[string]metav1.Duration, len(m))
+	for k, v := range m {
+		d, err := time.ParseDuration(v)
+		if err != nil {
+			continue
+		}
+		result[k] = metav1.Duration{Duration: d}
+	}
+	return result
+}
+
 func ptrIfNonEmpty(s string) *string {
 	if s == "" {
 		return nil
 	}
 	return &s
+}
+
+func ptrIfNonZero(v int32) *int32 {
+	if v == 0 {
+		return nil
+	}
+	return ptr.To(v)
 }

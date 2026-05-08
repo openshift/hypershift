@@ -293,6 +293,13 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		}
 	}
 
+	// Moved here from hypershift operator. Consumed by our ignition controller to taint our nodes
+	// on firstboot so our nodes don't get workloads on them until karpenter okays it. Centralized here
+	// so each nodeclass doesn't need its own separate taint configmap.
+	if err := r.reconcileTaintConfigMap(ctx, hcp); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to reconcile taint configmap: %w", err)
+	}
+
 	// Reconcile AutoNode status before the release image lookup so node/nodeclaim counts
 	// are always updated even if the release image lookup fails during/after a control plane upgrade.
 	if err := r.reconcileAutoNodeStatus(ctx, hcp); err != nil {
@@ -412,6 +419,25 @@ func sumNodeClaimVCPUs(nodeClaims []karpenterv1.NodeClaim, liveNodes map[string]
 		}
 	}
 	return int32(total)
+}
+
+// reconcileTaintConfigMap ensures the set-karpenter-taint ConfigMap exists in the HCP namespace.
+func (r *Reconciler) reconcileTaintConfigMap(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	cm := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      karpenterutil.KarpenterTaintConfigMapName,
+			Namespace: hcp.Namespace,
+		},
+	}
+	_, err := r.CreateOrUpdate(ctx, r.ManagementClient, cm, func() error {
+		manifest, err := karpenterutil.KarpenterTaintConfigManifest()
+		if err != nil {
+			return fmt.Errorf("failed to generate taint config manifest: %w", err)
+		}
+		cm.Data = map[string]string{"config": manifest}
+		return nil
+	})
+	return err
 }
 
 // reconcileCRDs reconcile the Karpenter CRDs, if onlyCreate is true it uses an only write non cached client.
