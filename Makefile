@@ -200,6 +200,7 @@ karpenter-api: $(CONTROLLER_GEN) $(YQ)
 	karpenter-operator/hack/adjust-cel.sh
 	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./api/karpenter/..." output:crd:artifacts:config=karpenter-operator/controllers/karpenter/assets
 	cp karpenter-operator/controllers/karpenter/assets/karpenter.hypershift.openshift.io_openshiftec2nodeclasses.yaml karpenter-operator/controllers/karpenter/assets/zz_generated.crd-manifests/openshiftec2nodeclasses.crd.yaml
+	$(GO) run ./hack/kubelet-ratcheting-gen/main.go
 
 .PHONY: control-plane-operator
 control-plane-operator:
