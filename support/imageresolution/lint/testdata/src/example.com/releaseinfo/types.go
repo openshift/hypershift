@@ -1,0 +1,7 @@
+package releaseinfo
+
+type ProviderWithRegistryOverrides interface{}
+type ProviderWithOpenShiftImageRegistryOverrides interface{}
+type RegistryMirrorProviderDecorator struct{}
+type ProviderWithOpenShiftImageRegistryOverridesDecorator struct{}
+type CommonRegistryProvider struct{}
