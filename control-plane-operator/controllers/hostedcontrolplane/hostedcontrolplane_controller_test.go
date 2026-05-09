@@ -31,11 +31,10 @@ import (
 	fakecapabilities "github.com/openshift/hypershift/support/capabilities/fake"
 	"github.com/openshift/hypershift/support/certs"
 	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/imageresolution"
 	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/netutil"
-	"github.com/openshift/hypershift/support/releaseinfo"
 	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
-	"github.com/openshift/hypershift/support/releaseinfo/testutils"
 	"github.com/openshift/hypershift/support/testutil"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
 	"github.com/openshift/hypershift/support/upsert"
@@ -159,15 +158,15 @@ func TestReconcileKubeadminPassword(t *testing.T) {
 }
 
 func TestReconcileIgnitionServer(t *testing.T) {
-	mockCtrl := gomock.NewController(t)
-	mockedProviderWithOpenshiftImageRegistryOverrides := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(mockCtrl)
-	mockedProviderWithOpenshiftImageRegistryOverrides.EXPECT().
-		Lookup(gomock.Any(), gomock.Any(), gomock.Any()).Return(testutils.InitReleaseImageOrDie("4.20.0"), nil).AnyTimes()
-	mockedProviderWithOpenshiftImageRegistryOverrides.EXPECT().
-		GetRegistryOverrides().Return(map[string]string{"registry": "override"}).AnyTimes()
-	mockedProviderWithOpenshiftImageRegistryOverrides.EXPECT().
-		GetOpenShiftImageRegistryOverrides().Return(map[string][]string{"registry": {"override"}}).AnyTimes()
-	mockedProviderWithOpenshiftImageRegistryOverrides.EXPECT().GetMirroredReleaseImage().Return("").AnyTimes()
+	fakeProvider := &fakereleaseprovider.FakeReleaseProvider{Version: "4.20.0"}
+	providerSet, err := imageresolution.NewProviderSet().
+		WithRegistryOverrides(map[string]string{"registry": "override"}).
+		WithImageRegistryMirrors(map[string][]string{"registry": {"override"}}).
+		WithReleaseProvider(fakeProvider).
+		Build()
+	if err != nil {
+		t.Fatalf("failed to build provider set: %v", err)
+	}
 
 	hcp := &hyperv1.HostedControlPlane{
 		ObjectMeta: metav1.ObjectMeta{
@@ -279,7 +278,7 @@ func TestReconcileIgnitionServer(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			hcp.ObjectMeta.Annotations = tt.annotations
 
-			ignitionComponent := ignitionserverv2.NewComponent(mockedProviderWithOpenshiftImageRegistryOverrides, "")
+			ignitionComponent := ignitionserverv2.NewComponent(providerSet, "")
 			fakeObjects, err := componentsFakeObjects(hcp.Namespace, configv1.Default)
 			if err != nil {
 				t.Fatalf("failed to generate fake objects: %v", err)
@@ -713,18 +712,20 @@ func TestEventHandling(t *testing.T) {
 	if !readyInfraStatus.IsReady() {
 		t.Fatal("readyInfraStatus fixture is not actually ready")
 	}
+	eventProviderSet, err := imageresolution.NewProviderSet().
+		WithReleaseProvider(&fakereleaseprovider.FakeReleaseProvider{Version: "4.15.0"}).
+		Build()
+	if err != nil {
+		t.Fatalf("failed to build provider set: %v", err)
+	}
 	mockCtrl := gomock.NewController(t)
-	mockedProviderWithOpenshiftImageRegistryOverrides := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(mockCtrl)
-	mockedProviderWithOpenshiftImageRegistryOverrides.EXPECT().
-		Lookup(gomock.Any(), gomock.Any(), gomock.Any()).
-		Return(testutils.InitReleaseImageOrDie("4.15.0"), nil).AnyTimes()
 	mockEC2 := awsapi.NewMockEC2API(mockCtrl)
 	mockEC2.EXPECT().DescribeVpcEndpoints(gomock.Any(), gomock.Any()).Return(&ec2.DescribeVpcEndpointsOutput{}, fmt.Errorf("not ready")).AnyTimes()
 
 	r := &HostedControlPlaneReconciler{
 		Client:                        c,
 		ManagementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
-		ReleaseProvider:               mockedProviderWithOpenshiftImageRegistryOverrides,
+		ReleaseProvider:               eventProviderSet,
 		UserReleaseProvider:           &fakereleaseprovider.FakeReleaseProvider{},
 		ImageMetadataProvider:         &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProviderHCCO{},
 		reconcileInfrastructureStatus: func(context.Context, *hyperv1.HostedControlPlane) (infra.InfrastructureStatus, error) {
@@ -796,11 +797,13 @@ func (c *createTrackingWorkqueue) Add(item reconcile.Request) {
 
 func TestNonReadyInfraTriggersRequeueAfter(t *testing.T) {
 	t.Parallel()
+	infraProviderSet, err := imageresolution.NewProviderSet().
+		WithReleaseProvider(&fakereleaseprovider.FakeReleaseProvider{Version: "4.15.0"}).
+		Build()
+	if err != nil {
+		t.Fatalf("failed to build provider set: %v", err)
+	}
 	mockCtrl := gomock.NewController(t)
-	mockedProviderWithOpenshiftImageRegistryOverrides := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(mockCtrl)
-	mockedProviderWithOpenshiftImageRegistryOverrides.EXPECT().
-		Lookup(gomock.Any(), gomock.Any(), gomock.Any()).
-		Return(testutils.InitReleaseImageOrDie("4.15.0"), nil).AnyTimes()
 	mockEC2 := awsapi.NewMockEC2API(mockCtrl)
 	mockEC2.EXPECT().DescribeVpcEndpoints(gomock.Any(), gomock.Any()).Return(&ec2.DescribeVpcEndpointsOutput{}, fmt.Errorf("not ready")).AnyTimes()
 	hcp := sampleHCP(t)
@@ -809,7 +812,7 @@ func TestNonReadyInfraTriggersRequeueAfter(t *testing.T) {
 	r := &HostedControlPlaneReconciler{
 		Client:                        c,
 		ManagementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
-		ReleaseProvider:               mockedProviderWithOpenshiftImageRegistryOverrides,
+		ReleaseProvider:               infraProviderSet,
 		UserReleaseProvider:           &fakereleaseprovider.FakeReleaseProvider{},
 		ImageMetadataProvider:         &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProviderHCCO{},
 		reconcileInfrastructureStatus: func(context.Context, *hyperv1.HostedControlPlane) (infra.InfrastructureStatus, error) {
@@ -1019,15 +1022,14 @@ func TestIncludeServingCertificates(t *testing.T) {
 // TestControlPlaneComponents is a generic test which generates a fixture for each registered component's deployment/statefulset.
 // This is helpful to allow to inspect the final manifest yaml result after all the pre/post-processing is applied.
 func TestControlPlaneComponents(t *testing.T) {
-	mockCtrl := gomock.NewController(t)
-	mockedProviderWithOpenshiftImageRegistryOverrides := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(mockCtrl)
-	mockedProviderWithOpenshiftImageRegistryOverrides.EXPECT().
-		Lookup(gomock.Any(), gomock.Any(), gomock.Any()).Return(testutils.InitReleaseImageOrDie("4.15.0"), nil).AnyTimes()
-	mockedProviderWithOpenshiftImageRegistryOverrides.EXPECT().
-		GetRegistryOverrides().Return(map[string]string{"registry": "override"}).AnyTimes()
-	mockedProviderWithOpenshiftImageRegistryOverrides.EXPECT().
-		GetOpenShiftImageRegistryOverrides().Return(map[string][]string{"registry": {"override"}}).AnyTimes()
-	mockedProviderWithOpenshiftImageRegistryOverrides.EXPECT().GetMirroredReleaseImage().Return("").AnyTimes()
+	componentsProviderSet, err := imageresolution.NewProviderSet().
+		WithRegistryOverrides(map[string]string{"registry": "override"}).
+		WithImageRegistryMirrors(map[string][]string{"registry": {"override"}}).
+		WithReleaseProvider(&fakereleaseprovider.FakeReleaseProvider{Version: "4.15.0"}).
+		Build()
+	if err != nil {
+		t.Fatalf("failed to build provider set: %v", err)
+	}
 
 	tests := []struct {
 		name           string
@@ -1115,7 +1117,7 @@ func TestControlPlaneComponents(t *testing.T) {
 
 	for _, tt := range tests {
 		reconciler := &HostedControlPlaneReconciler{
-			ReleaseProvider:               mockedProviderWithOpenshiftImageRegistryOverrides,
+			ReleaseProvider:               componentsProviderSet,
 			ManagementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
 		}
 		hcp := &hyperv1.HostedControlPlane{

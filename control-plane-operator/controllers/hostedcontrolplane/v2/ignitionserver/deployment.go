@@ -10,7 +10,6 @@ import (
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/proxy"
-	"github.com/openshift/hypershift/support/util"
 
 	configv1 "github.com/openshift/api/config/v1"
 
@@ -50,13 +49,13 @@ func (ign *ignitionServer) adaptDeployment(cpContext component.WorkloadContext, 
 
 	podspec.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
 		c.Args = append(c.Args,
-			"--registry-overrides", util.ConvertRegistryOverridesToCommandLineFlag(ign.releaseProvider.GetRegistryOverrides()),
+			"--registry-overrides", ign.releaseProvider.Config().RegistryOverridesFlag(),
 			"--platform", string(hcp.Spec.Platform.Type),
 		)
 
 		podspec.UpsertEnvVar(c, corev1.EnvVar{
 			Name:  "OPENSHIFT_IMG_OVERRIDES",
-			Value: util.ConvertOpenShiftImageRegistryOverridesToCommandLineFlag(ign.releaseProvider.GetOpenShiftImageRegistryOverrides()),
+			Value: ign.releaseProvider.Config().ImageRegistryMirrorsEnvVar(),
 		})
 
 		proxy.SetEnvVars(&c.Env)

@@ -37,14 +37,13 @@ import (
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/events"
+	"github.com/openshift/hypershift/support/imageresolution"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/podspec"
-	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/supportedversion"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/reference"
 	"github.com/openshift/hypershift/support/upsert"
-	"github.com/openshift/hypershift/support/util"
 	syncfgconfigmap "github.com/openshift/hypershift/sync-fg-configmap"
 	syncglobalpullsecret "github.com/openshift/hypershift/sync-global-pullsecret"
 	tokenminter "github.com/openshift/hypershift/token-minter"
@@ -440,53 +439,41 @@ func NewStartCommand() *cobra.Command {
 			componentImages[kv[0]] = kv[1]
 		}
 
-		var imageRegistryOverrides map[string][]string
-
-		openShiftImgOverrides, ok := os.LookupEnv("OPENSHIFT_IMG_OVERRIDES")
-		if ok {
-			imageRegistryOverrides = util.ConvertImageRegistryOverrideStringToMap(openShiftImgOverrides)
+		imageRegistryOverrides, err := imageresolution.ParseImageRegistryMirrorsEnvVar(os.Getenv("OPENSHIFT_IMG_OVERRIDES"))
+		if err != nil {
+			setupLog.Error(err, "failed to parse OPENSHIFT_IMG_OVERRIDES")
+			os.Exit(1)
+		}
+		if imageRegistryOverrides == nil {
+			imageRegistryOverrides = map[string][]string{}
+		}
+		for registry, override := range registryOverrides {
+			imageRegistryOverrides[registry] = append(imageRegistryOverrides[registry], override)
 		}
 
-		if len(registryOverrides) > 0 {
-			if imageRegistryOverrides == nil {
-				imageRegistryOverrides = map[string][]string{}
-			}
-			for registry, override := range registryOverrides {
-				if _, exists := imageRegistryOverrides[registry]; !exists {
-					imageRegistryOverrides[registry] = []string{}
-				}
-				imageRegistryOverrides[registry] = append(imageRegistryOverrides[registry], override)
-			}
+		// Control plane ProviderSet: has registry overrides, image registry mirrors,
+		// and component image overrides for the CP release image.
+		cpProviderSet, err := imageresolution.NewProviderSet().
+			WithRegistryOverrides(registryOverrides).
+			WithImageRegistryMirrors(imageRegistryOverrides).
+			WithImageOverrides(componentImages).
+			Build()
+		if err != nil {
+			setupLog.Error(err, "failed to build control plane image resolution provider set")
+			os.Exit(1)
 		}
 
-		coreReleaseProvider := &releaseinfo.StaticProviderDecorator{
-			Delegate: &releaseinfo.CachedProvider{
-				Inner: &releaseinfo.RegistryClientProvider{},
-				Cache: map[string]*releaseinfo.ReleaseImage{},
-			},
-			ComponentImages: componentImages,
-		}
-
-		// It should be used to lookup spec.releaseImage.
-		userReleaseProvider := &releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator{
-			Delegate: &releaseinfo.RegistryMirrorProviderDecorator{
-				Delegate:          coreReleaseProvider,
-				RegistryOverrides: nil, // UserReleaseProvider shouldn't include registry overrides as they should not get propagated to the data plane.
-			},
-			OpenShiftImageRegistryOverrides: imageRegistryOverrides,
-		}
-
-		// It should be used to lookup spec.controlPlaneReleaseImage.
-		cpReleaseProvider := &releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator{
-			Delegate: &releaseinfo.RegistryMirrorProviderDecorator{
-				Delegate:          coreReleaseProvider,
-				RegistryOverrides: registryOverrides,
-			},
-			OpenShiftImageRegistryOverrides: imageRegistryOverrides,
-		}
-
-		imageMetaDataProvider := &util.RegistryClientImageMetadataProvider{
-			OpenShiftImageRegistryOverrides: imageRegistryOverrides,
+		// Data plane ProviderSet: ForDataPlane() enforces no CLI overrides or image overrides.
+		// ICSP/IDMS mirrors are included so the CPO can fetch the release image in disconnected
+		// environments. Component images in pod specs are resolved via resolveForPodSpec which
+		// does NOT apply mirrors, so data-plane pods see original pullspecs.
+		dpProviderSet, err := imageresolution.NewProviderSet().
+			ForDataPlane().
+			WithImageRegistryMirrors(imageRegistryOverrides).
+			Build()
+		if err != nil {
+			setupLog.Error(err, "failed to build data plane image resolution provider set")
+			os.Exit(1)
 		}
 
 		defaultIngressDomain := os.Getenv(config.DefaultIngressDomainEnvVar)
@@ -504,15 +491,15 @@ func NewStartCommand() *cobra.Command {
 			Client:                                  mgr.GetClient(),
 			GVKAccessChecker:                        component.NewGVKAccessCache(mgr.GetAPIReader()),
 			ManagementClusterCapabilities:           mgmtClusterCaps,
-			ReleaseProvider:                         cpReleaseProvider,
-			UserReleaseProvider:                     userReleaseProvider,
+			ReleaseProvider:                         cpProviderSet,
+			UserReleaseProvider:                     dpProviderSet,
 			EnableCIDebugOutput:                     enableCIDebugOutput,
 			OperateOnReleaseImage:                   os.Getenv("OPERATE_ON_RELEASE_IMAGE"),
 			DefaultIngressDomain:                    defaultIngressDomain,
 			MetricsSet:                              metricsSet,
 			CertRotationScale:                       certRotationScale,
 			EnableCVOManagementClusterMetricsAccess: enableCVOManagementClusterMetricsAccess,
-			ImageMetadataProvider:                   imageMetaDataProvider,
+			ImageMetadataProvider:                   cpProviderSet.ImageMetadataProvider(),
 		}).SetupWithManager(mgr, upsert.New(enableCIDebugOutput).CreateOrUpdate, hcp); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "hosted-control-plane")
 			os.Exit(1)

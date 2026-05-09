@@ -4,6 +4,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/capabilities"
 	component "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/imageresolution"
 	"github.com/openshift/hypershift/support/podspec"
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -16,8 +17,7 @@ const (
 var _ component.ComponentOptions = &hcco{}
 
 type hcco struct {
-	registryOverrides               map[string]string
-	openShiftImageRegistryOverrides map[string][]string
+	resolverConfig imageresolution.ResolverConfig
 }
 
 // IsRequestServing implements controlplanecomponent.ComponentOptions.
@@ -35,10 +35,9 @@ func (h *hcco) NeedsManagementKASAccess() bool {
 	return true
 }
 
-func NewComponent(registryOverrides map[string]string, openShiftImageRegistryOverrides map[string][]string, caps *hyperv1.Capabilities) component.ControlPlaneComponent {
+func NewComponent(resolverConfig imageresolution.ResolverConfig, caps *hyperv1.Capabilities) component.ControlPlaneComponent {
 	hcco := &hcco{
-		registryOverrides:               registryOverrides,
-		openShiftImageRegistryOverrides: openShiftImageRegistryOverrides,
+		resolverConfig: resolverConfig,
 	}
 
 	availabilityProberOpts := hccpAvailabilityProberOpts(caps)

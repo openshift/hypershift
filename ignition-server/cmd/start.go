@@ -17,7 +17,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
 	"github.com/openshift/hypershift/ignition-server/controllers"
 	hyperapi "github.com/openshift/hypershift/support/api"
-	"github.com/openshift/hypershift/support/releaseinfo"
+	"github.com/openshift/hypershift/support/imageresolution"
 	"github.com/openshift/hypershift/support/supportedversion"
 	"github.com/openshift/hypershift/support/util"
 
@@ -152,31 +152,30 @@ func setUpPayloadStoreReconciler(ctx context.Context, registryOverrides map[stri
 		return nil, fmt.Errorf("unable to create image file cache: %w", err)
 	}
 
-	imageMetaDataProvider := &util.RegistryClientImageMetadataProvider{
-		OpenShiftImageRegistryOverrides: util.ConvertImageRegistryOverrideStringToMap(os.Getenv("OPENSHIFT_IMG_OVERRIDES")),
+	imageRegistryMirrors, err := imageresolution.ParseImageRegistryMirrorsEnvVar(os.Getenv("OPENSHIFT_IMG_OVERRIDES"))
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse OPENSHIFT_IMG_OVERRIDES: %w", err)
+	}
+	igProviderSet, err := imageresolution.NewProviderSet().
+		WithRegistryOverrides(registryOverrides).
+		WithImageRegistryMirrors(imageRegistryMirrors).
+		Build()
+	if err != nil {
+		return nil, fmt.Errorf("failed to build image resolution provider set: %w", err)
 	}
 
 	if err = (&controllers.TokenSecretReconciler{
 		Client:       mgr.GetClient(),
 		PayloadStore: payloadStore,
 		IgnitionProvider: &controllers.LocalIgnitionProvider{
-			ReleaseProvider: &releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator{
-				Delegate: &releaseinfo.RegistryMirrorProviderDecorator{
-					Delegate: &releaseinfo.CachedProvider{
-						Inner: &releaseinfo.RegistryClientProvider{},
-						Cache: map[string]*releaseinfo.ReleaseImage{},
-					},
-					RegistryOverrides: registryOverrides,
-				},
-				OpenShiftImageRegistryOverrides: util.ConvertImageRegistryOverrideStringToMap(os.Getenv("OPENSHIFT_IMG_OVERRIDES")),
-			},
+			ReleaseProvider:       igProviderSet,
 			Client:                mgr.GetClient(),
 			Namespace:             os.Getenv(namespaceEnvVariableName),
 			CloudProvider:         cloudProvider,
 			WorkDir:               cacheDir,
 			ImageFileCache:        imageFileCache,
 			FeatureGateManifest:   featureGateManifest,
-			ImageMetadataProvider: imageMetaDataProvider,
+			ImageMetadataProvider: igProviderSet.ImageMetadataProvider(),
 		},
 	}).SetupWithManager(ctx, mgr); err != nil {
 		return nil, fmt.Errorf("unable to create controller: %w", err)

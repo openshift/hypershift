@@ -9,9 +9,9 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/support/catalogs"
 	component "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/imageresolution"
 	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/reference"
-	"github.com/openshift/hypershift/support/util"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -107,8 +107,11 @@ func getCatalogImagesOverrides(cpContext component.WorkloadContext, capabilityIm
 }
 
 func getCatalogImages(cpContext component.WorkloadContext, pullSecret []byte) (map[string]string, error) {
-	registryOverrides := util.ConvertImageRegistryOverrideStringToMap(cpContext.HCP.Annotations[hyperv1.OLMCatalogsISRegistryOverridesAnnotation])
-	return catalogs.GetCatalogImages(cpContext, *cpContext.HCP, pullSecret, cpContext.ImageMetadataProvider, registryOverrides)
+	mirrors, err := imageresolution.ParseImageRegistryMirrorsEnvVar(cpContext.HCP.Annotations[hyperv1.OLMCatalogsISRegistryOverridesAnnotation])
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse OLM catalog registry overrides annotation: %w", err)
+	}
+	return catalogs.GetCatalogImages(cpContext, *cpContext.HCP, pullSecret, cpContext.ImageMetadataProvider, imageresolution.ResolverConfig{ImageRegistryMirrors: mirrors})
 }
 
 func checkCatalogImageOverides(images map[string]string) (bool, error) {
