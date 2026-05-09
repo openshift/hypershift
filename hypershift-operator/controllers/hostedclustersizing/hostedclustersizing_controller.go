@@ -36,8 +36,8 @@ func newReconciler(
 	lister client.Client,
 	now func() time.Time,
 	hypershiftOperatorImage string,
-	releaseProvider *releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator,
-	imageMetadataProvider *hyperutil.RegistryClientImageMetadataProvider,
+	releaseProvider releaseinfo.Provider,
+	imageMetadataProvider hyperutil.ImageMetadataProvider,
 ) *reconciler {
 	return &reconciler{
 		client: hypershiftClient,

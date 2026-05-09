@@ -8,6 +8,7 @@ import (
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/imageresolution"
 	"github.com/openshift/hypershift/support/util"
 
 	"github.com/blang/semver"
@@ -53,20 +54,20 @@ func (c *imagesCache) setImages(images map[string]string, inputsHash string) {
 var catalogImagesCache = &imagesCache{}
 
 // GetCatalogImages uses a simple cache to prevent frequent registry lookups for catalog images
-func GetCatalogImages(ctx context.Context, hcp hyperv1.HostedControlPlane, pullSecret []byte, imageMetadataProvider util.ImageMetadataProvider, registryOverrides map[string][]string) (map[string]string, error) {
+func GetCatalogImages(ctx context.Context, hcp hyperv1.HostedControlPlane, pullSecret []byte, imageMetadataProvider util.ImageMetadataProvider, overrides imageresolution.ResolverConfig) (map[string]string, error) {
 	return getCatalogImagesWithCache(
-		imageLookupCacheKeyFn(&hcp, pullSecret, registryOverrides),
+		imageLookupCacheKeyFn(&hcp, pullSecret, overrides),
 		releaseVersionFn(ctx, &hcp, pullSecret, imageMetadataProvider),
 		imageExistsFn(ctx, &hcp, pullSecret, imageMetadataProvider),
-		registryOverrides)
+		overrides)
 }
 
-func getCatalogImagesWithCache(cacheKey func() any, releaseVersion func() (*semver.Version, error), imageExists func(string) (bool, error), registryOverrides map[string][]string) (map[string]string, error) {
+func getCatalogImagesWithCache(cacheKey func() any, releaseVersion func() (*semver.Version, error), imageExists func(string) (bool, error), overrides imageresolution.ResolverConfig) (map[string]string, error) {
 	hash := util.HashSimple(cacheKey())
 	if images := catalogImagesCache.getImages(hash); images != nil {
 		return images, nil
 	}
-	images, err := computeCatalogImages(releaseVersion, imageExists, registryOverrides)
+	images, err := computeCatalogImages(releaseVersion, imageExists, overrides)
 	if err != nil {
 		return nil, err
 	}
@@ -74,15 +75,15 @@ func getCatalogImagesWithCache(cacheKey func() any, releaseVersion func() (*semv
 	return images, nil
 }
 
-func imageLookupCacheKeyFn(hcp *hyperv1.HostedControlPlane, pullSecret []byte, registryOverrides map[string][]string) func() any {
+func imageLookupCacheKeyFn(hcp *hyperv1.HostedControlPlane, pullSecret []byte, overrides imageresolution.ResolverConfig) func() any {
 	return func() any {
 		cacheKey := struct {
 			releaseImage string
-			overrides    map[string][]string
+			overrides    imageresolution.ResolverConfig
 			pullSecret   []byte
 		}{
 			releaseImage: hcp.Spec.ReleaseImage,
-			overrides:    registryOverrides,
+			overrides:    overrides,
 			pullSecret:   pullSecret,
 		}
 		return cacheKey
@@ -121,7 +122,7 @@ func imageExistsFn(ctx context.Context, hcp *hyperv1.HostedControlPlane, pullSec
 	}
 }
 
-func computeCatalogImages(releaseVersion func() (*semver.Version, error), imageExists func(string) (bool, error), registryOverrides map[string][]string) (map[string]string, error) {
+func computeCatalogImages(releaseVersion func() (*semver.Version, error), imageExists func(string) (bool, error), overrides imageresolution.ResolverConfig) (map[string]string, error) {
 	var registries []string
 	version, err := releaseVersion()
 	if err != nil {
@@ -130,8 +131,8 @@ func computeCatalogImages(releaseVersion func() (*semver.Version, error), imageE
 
 	defaultRegistry := fmt.Sprintf("%s/%s", defaultRegistryURL, defaultRegistryNamespace)
 
-	if len(registryOverrides) > 0 {
-		for registrySource, registryDest := range registryOverrides {
+	if len(overrides.ImageRegistryMirrors) > 0 {
+		for registrySource, registryDest := range overrides.ImageRegistryMirrors {
 			switch registrySource {
 			case defaultRegistry:
 				registries = registryDest

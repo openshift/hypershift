@@ -2,14 +2,10 @@ package globalconfig
 
 import (
 	"context"
-	"fmt"
 	"sort"
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/support/capabilities"
-	"github.com/openshift/hypershift/support/releaseinfo"
-	hyperutil "github.com/openshift/hypershift/support/util"
 
 	configv1 "github.com/openshift/api/config/v1"
 	operatorv1alpha1 "github.com/openshift/api/operator/v1alpha1"
@@ -205,89 +201,4 @@ func getImageContentSourcePolicies(ctx context.Context, client crclient.Client) 
 	}
 
 	return icspRegistryOverrides, nil
-}
-
-// RegistryProvider is an interface for release and metadata providers to enable the reconcilliation
-// of those providers
-type RegistryProvider interface {
-	GetMetadataProvider() hyperutil.ImageMetadataProvider
-	GetReleaseProvider() releaseinfo.ProviderWithOpenShiftImageRegistryOverrides
-	Reconcile(context.Context, crclient.Client) error
-}
-
-// CommonRegistryProvider is the default RegistyProvider implementation
-type CommonRegistryProvider struct {
-	capChecker       capabilities.CapabiltyChecker
-	MetadataProvider *hyperutil.RegistryClientImageMetadataProvider
-	ReleaseProvider  *releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator
-}
-
-// NewCommonRegistryProvider creates a CommonRegistryProvider
-func NewCommonRegistryProvider(ctx context.Context, capChecker capabilities.CapabiltyChecker, client crclient.Client, registryOverrides map[string]string) (CommonRegistryProvider, error) {
-
-	var (
-		imageRegistryMirrors map[string][]string
-		err                  error
-	)
-
-	if capChecker.Has(capabilities.CapabilityICSP) || capChecker.Has(capabilities.CapabilityIDMS) {
-		imageRegistryMirrors, err = GetAllImageRegistryMirrors(ctx, client, capChecker.Has(capabilities.CapabilityIDMS), capChecker.Has(capabilities.CapabilityICSP))
-		if err != nil {
-			return CommonRegistryProvider{}, fmt.Errorf("failed to reconcile over image registry mirrors: %w", err)
-		}
-	}
-
-	releaseProvider := &releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator{
-		Delegate: &releaseinfo.RegistryMirrorProviderDecorator{
-			Delegate: &releaseinfo.CachedProvider{
-				Inner: &releaseinfo.RegistryClientProvider{},
-				Cache: map[string]*releaseinfo.ReleaseImage{},
-			},
-			RegistryOverrides: registryOverrides,
-		},
-		OpenShiftImageRegistryOverrides: imageRegistryMirrors,
-	}
-
-	metadataProvider := &hyperutil.RegistryClientImageMetadataProvider{
-		OpenShiftImageRegistryOverrides: imageRegistryMirrors,
-	}
-
-	provider := CommonRegistryProvider{
-		capChecker:       capChecker,
-		MetadataProvider: metadataProvider,
-		ReleaseProvider:  releaseProvider,
-	}
-
-	return provider, nil
-}
-
-// GetMetadataProvider returns the image metadata provider for the registry provider
-func (rp CommonRegistryProvider) GetMetadataProvider() hyperutil.ImageMetadataProvider {
-	return rp.MetadataProvider
-}
-
-// GetReleaseProvider returns the release provider for the registry provider
-func (rp CommonRegistryProvider) GetReleaseProvider() releaseinfo.ProviderWithOpenShiftImageRegistryOverrides {
-	return rp.ReleaseProvider
-}
-
-// Reconcile updates the image registry mirrors for the providers according to the capabilities of the cluster
-func (rp CommonRegistryProvider) Reconcile(ctx context.Context, client crclient.Client) error {
-
-	var (
-		imageRegistryMirrors map[string][]string
-		err                  error
-	)
-
-	if rp.capChecker.Has(capabilities.CapabilityICSP) || rp.capChecker.Has(capabilities.CapabilityIDMS) {
-		imageRegistryMirrors, err = GetAllImageRegistryMirrors(ctx, client, rp.capChecker.Has(capabilities.CapabilityIDMS), rp.capChecker.Has(capabilities.CapabilityICSP))
-		if err != nil {
-			return fmt.Errorf("failed to reconcile over image registry mirrors: %w", err)
-		}
-	}
-
-	rp.ReleaseProvider.OpenShiftImageRegistryOverrides = imageRegistryMirrors
-	rp.MetadataProvider.OpenShiftImageRegistryOverrides = imageRegistryMirrors
-
-	return nil
 }

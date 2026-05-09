@@ -79,7 +79,7 @@ const (
 type HCPEtcdBackupReconciler struct {
 	client.Client
 	OperatorNamespace       string
-	ReleaseProvider         releaseinfo.ProviderWithOpenShiftImageRegistryOverrides
+	ReleaseProvider         releaseinfo.Provider
 	HypershiftOperatorImage string
 	MaxBackupCount          int
 }

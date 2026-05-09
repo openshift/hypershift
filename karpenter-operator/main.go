@@ -10,8 +10,8 @@ import (
 	"github.com/openshift/hypershift/karpenter-operator/controllers/karpenterignition"
 	"github.com/openshift/hypershift/karpenter-operator/controllers/nodeclass"
 	hyperapi "github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/imageresolution"
 	"github.com/openshift/hypershift/support/releaseinfo"
-	"github.com/openshift/hypershift/support/util"
 
 	awskarpenterapis "github.com/aws/karpenter-provider-aws/pkg/apis"
 	awskarpenterv1 "github.com/aws/karpenter-provider-aws/pkg/apis/v1"
@@ -146,39 +146,28 @@ func run(ctx context.Context) error {
 		return fmt.Errorf("failed to setup controller with manager: %w", err)
 	}
 
-	imageRegistryOverrides := map[string][]string{}
-	openShiftImgOverrides, ok := os.LookupEnv("OPENSHIFT_IMG_OVERRIDES")
-	if ok {
-		imageRegistryOverrides = util.ConvertImageRegistryOverrideStringToMap(openShiftImgOverrides)
+	imageRegistryOverrides, err := imageresolution.ParseImageRegistryMirrorsEnvVar(os.Getenv("OPENSHIFT_IMG_OVERRIDES"))
+	if err != nil {
+		return fmt.Errorf("failed to parse OPENSHIFT_IMG_OVERRIDES: %w", err)
+	}
+	if imageRegistryOverrides == nil {
+		imageRegistryOverrides = map[string][]string{}
 	}
 	for registry, override := range registryOverrides {
-		if _, exists := imageRegistryOverrides[registry]; !exists {
-			imageRegistryOverrides[registry] = []string{}
-		}
 		imageRegistryOverrides[registry] = append(imageRegistryOverrides[registry], override)
 	}
 
-	releaseProvider := &releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator{
-		Delegate: &releaseinfo.RegistryMirrorProviderDecorator{
-			Delegate: &releaseinfo.StaticProviderDecorator{
-				Delegate: &releaseinfo.CachedProvider{
-					Inner: &releaseinfo.RegistryClientProvider{},
-					Cache: map[string]*releaseinfo.ReleaseImage{},
-				},
-			},
-			RegistryOverrides: nil,
-		},
-		OpenShiftImageRegistryOverrides: imageRegistryOverrides,
-	}
-
-	imageMetaDataProvider := &util.RegistryClientImageMetadataProvider{
-		OpenShiftImageRegistryOverrides: imageRegistryOverrides,
+	karpenterProviderSet, err := imageresolution.NewProviderSet().
+		WithImageRegistryMirrors(imageRegistryOverrides).
+		Build()
+	if err != nil {
+		return fmt.Errorf("failed to build image resolution provider set: %w", err)
 	}
 
 	kir := karpenterignition.KarpenterIgnitionReconciler{
-		ReleaseProvider:         releaseProvider,
+		ReleaseProvider:         karpenterProviderSet,
 		VersionResolver:         releaseinfo.NewCincinnatiVersionResolver(),
-		ImageMetadataProvider:   imageMetaDataProvider,
+		ImageMetadataProvider:   karpenterProviderSet.ImageMetadataProvider(),
 		HypershiftOperatorImage: hypershiftOperatorImage,
 		IgnitionEndpoint:        ignitionEndpoint,
 		Namespace:               namespace,

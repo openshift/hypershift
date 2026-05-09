@@ -157,7 +157,7 @@ spec:
 		ignitionConfig3,
 		ignitionServerCACert,
 	).Build()
-	mockedReleaseProvider := releaseinfo.NewMockProviderWithRegistryOverrides(mockCtrl)
+	mockedReleaseProvider := releaseinfo.NewMockProvider(mockCtrl)
 	//We need the ReleaseProvider to stay at 4.18 so that the token doesn't get updated when bumping releases,
 	// this protects us from possibly hiding other factors that might be causing the token to be updated
 	mockedReleaseProvider.EXPECT().Lookup(gomock.Any(), gomock.Any(), gomock.Any()).
@@ -479,7 +479,7 @@ func TestShouldKeepOldUserData(t *testing.T) {
 	testCases := []struct {
 		name                 string
 		hc                   *hyperv1.HostedCluster
-		releaseProvider      *releaseinfo.MockProviderWithRegistryOverrides
+		releaseProvider      *releaseinfo.MockProvider
 		releaseMockedVersion string
 		expected             bool
 	}{
@@ -503,7 +503,7 @@ func TestShouldKeepOldUserData(t *testing.T) {
 				},
 				Status: hyperv1.HostedClusterStatus{},
 			},
-			releaseProvider: releaseinfo.NewMockProviderWithRegistryOverrides(mockCtrl),
+			releaseProvider: releaseinfo.NewMockProvider(mockCtrl),
 			expected:        false,
 		},
 		{
@@ -526,7 +526,7 @@ func TestShouldKeepOldUserData(t *testing.T) {
 				},
 				Status: hyperv1.HostedClusterStatus{},
 			},
-			releaseProvider:      releaseinfo.NewMockProviderWithRegistryOverrides(mockCtrl),
+			releaseProvider:      releaseinfo.NewMockProvider(mockCtrl),
 			releaseMockedVersion: "4.15.0",
 			expected:             true,
 		},
@@ -549,7 +549,7 @@ func TestShouldKeepOldUserData(t *testing.T) {
 					},
 				},
 			},
-			releaseProvider:      releaseinfo.NewMockProviderWithRegistryOverrides(mockCtrl),
+			releaseProvider:      releaseinfo.NewMockProvider(mockCtrl),
 			releaseMockedVersion: "4.16.0",
 			expected:             false,
 		},

@@ -38,7 +38,7 @@ const (
 	hostedClusterForNodePoolIndex = ".spec.clusterName"
 )
 
-func SetupWithManager(ctx context.Context, mgr ctrl.Manager, hypershiftOperatorImage string, releaseProvider *releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator, imageMetadataProvider *hyperutil.RegistryClientImageMetadataProvider) error {
+func SetupWithManager(ctx context.Context, mgr ctrl.Manager, hypershiftOperatorImage string, releaseProvider releaseinfo.Provider, imageMetadataProvider hyperutil.ImageMetadataProvider) error {
 	hypershiftClient, err := hypershiftclient.NewForConfig(mgr.GetConfig())
 	if err != nil {
 		return err

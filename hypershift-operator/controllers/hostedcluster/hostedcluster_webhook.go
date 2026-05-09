@@ -127,7 +127,7 @@ func (defaulter *nodePoolDefaulter) Default(ctx context.Context, obj runtime.Obj
 }
 
 // SetupWebhookWithManager sets up HostedCluster webhooks.
-func SetupWebhookWithManager(mgr ctrl.Manager, imageMetaDataProvider *hyperutil.RegistryClientImageMetadataProvider, logger logr.Logger) error {
+func SetupWebhookWithManager(mgr ctrl.Manager, imageMetaDataProvider hyperutil.ImageMetadataProvider, logger logr.Logger) error {
 	err := ctrl.NewWebhookManagedBy(mgr).
 		For(&hyperv1.HostedCluster{}).
 		WithDefaulter(&hostedClusterDefaulter{}).

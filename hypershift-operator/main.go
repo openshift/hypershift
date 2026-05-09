@@ -55,6 +55,7 @@ import (
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/globalconfig"
+	"github.com/openshift/hypershift/support/imageresolution"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/supportedversion"
@@ -389,8 +390,34 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		return fmt.Errorf("failed to reconcile deprecation ValidatingAdmissionPolicy: %w", err)
 	}
 
-	// Create the registry provider for the release and image metadata providers
-	registryProvider, err := globalconfig.NewCommonRegistryProvider(ctx, mgmtClusterCaps, apiReadingClient, opts.RegistryOverrides)
+	// Build initial image registry mirrors from ICSP/IDMS if supported
+	var imageRegistryMirrors map[string][]string
+	if mgmtClusterCaps.Has(capabilities.CapabilityICSP) || mgmtClusterCaps.Has(capabilities.CapabilityIDMS) {
+		imageRegistryMirrors, err = globalconfig.GetAllImageRegistryMirrors(ctx, apiReadingClient, mgmtClusterCaps.Has(capabilities.CapabilityIDMS), mgmtClusterCaps.Has(capabilities.CapabilityICSP))
+		if err != nil {
+			return fmt.Errorf("failed to get image registry mirrors: %w", err)
+		}
+	}
+
+	// Build the mirror refresh function for dynamic reconciliation
+	var mirrorRefresh imageresolution.MirrorRefreshFunc
+	if mgmtClusterCaps.Has(capabilities.CapabilityICSP) || mgmtClusterCaps.Has(capabilities.CapabilityIDMS) {
+		hasIDMS := mgmtClusterCaps.Has(capabilities.CapabilityIDMS)
+		hasICSP := mgmtClusterCaps.Has(capabilities.CapabilityICSP)
+		mirrorRefresh = func(ctx context.Context, client crclient.Client) (map[string][]string, error) {
+			return globalconfig.GetAllImageRegistryMirrors(ctx, client, hasIDMS, hasICSP)
+		}
+	}
+
+	// Create the unified image resolution provider set
+	registryProvider, err := imageresolution.NewProviderSet().
+		WithRegistryOverrides(opts.RegistryOverrides).
+		WithImageRegistryMirrors(imageRegistryMirrors).
+		WithMirrorRefresh(mirrorRefresh).
+		Build()
+	if err != nil {
+		return fmt.Errorf("failed to build image resolution provider set: %w", err)
+	}
 
 	monitoringDashboards := (os.Getenv("MONITORING_DASHBOARDS") == "1")
 	enableCVOManagementClusterMetricsAccess := (os.Getenv(config.EnableCVOManagementClusterMetricsAccessEnvVar) == "1")
@@ -406,7 +433,6 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		Client:                                  mgr.GetClient(),
 		ManagementClusterCapabilities:           mgmtClusterCaps,
 		HypershiftOperatorImage:                 operatorImage,
-		RegistryOverrides:                       opts.RegistryOverrides,
 		RegistryProvider:                        registryProvider,
 		EnableOCPClusterMonitoring:              opts.EnableOCPClusterMonitoring,
 		EnableCIDebugOutput:                     opts.EnableCIDebugOutput,
@@ -434,7 +460,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		return fmt.Errorf("unable to create controller: %w", err)
 	}
 	if opts.CertDir != "" {
-		if err := hostedcluster.SetupWebhookWithManager(mgr, registryProvider.MetadataProvider, log); err != nil {
+		if err := hostedcluster.SetupWebhookWithManager(mgr, registryProvider.ImageMetadataProvider(), log); err != nil {
 			return fmt.Errorf("unable to create webhook: %w", err)
 		}
 	}
@@ -493,10 +519,10 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 
 	if err := (&nodepool.NodePoolReconciler{
 		Client:                  mgr.GetClient(),
-		ReleaseProvider:         registryProvider.ReleaseProvider,
+		ReleaseProvider:         registryProvider,
 		CreateOrUpdateProvider:  createOrUpdate,
 		HypershiftOperatorImage: operatorImage,
-		ImageMetadataProvider:   registryProvider.MetadataProvider,
+		ImageMetadataProvider:   registryProvider.ImageMetadataProvider(),
 		KubevirtInfraClients:    kvinfra.NewKubevirtInfraClientMap(),
 		EC2Client:               ec2Client,
 		InstanceTypeProvider:    instanceTypeProvider,
@@ -512,7 +538,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 
 	enableSizeTagging := os.Getenv("ENABLE_SIZE_TAGGING") == "1"
 	if enableSizeTagging {
-		if err := hostedclustersizing.SetupWithManager(ctx, mgr, operatorImage, registryProvider.ReleaseProvider, registryProvider.MetadataProvider); err != nil {
+		if err := hostedclustersizing.SetupWithManager(ctx, mgr, operatorImage, registryProvider, registryProvider.ImageMetadataProvider()); err != nil {
 			return fmt.Errorf("failed to set up hosted cluster sizing operator: %w", err)
 		}
 	}
@@ -654,7 +680,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		etcdBackupReconciler := &etcdbackup.HCPEtcdBackupReconciler{
 			Client:                  mgr.GetClient(),
 			OperatorNamespace:       opts.Namespace,
-			ReleaseProvider:         registryProvider.ReleaseProvider,
+			ReleaseProvider:         registryProvider,
 			HypershiftOperatorImage: operatorImage,
 			MaxBackupCount:          opts.EtcdBackupMaxCount,
 		}
