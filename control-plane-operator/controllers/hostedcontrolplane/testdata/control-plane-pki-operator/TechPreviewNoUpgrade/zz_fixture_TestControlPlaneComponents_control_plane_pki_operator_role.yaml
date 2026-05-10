@@ -45,9 +45,12 @@ rules:
   - pods
   verbs:
   - get
+  - list
+  - watch
 - apiGroups:
   - apps
   resources:
+  - deployments
   - replicasets
   verbs:
   - get
