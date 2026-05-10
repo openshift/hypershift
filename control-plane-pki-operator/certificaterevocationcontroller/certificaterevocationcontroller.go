@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"net"
 	"sort"
 	"strconv"
 	"strings"
@@ -20,6 +21,8 @@ import (
 	hcpmanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-pki-operator/certificates"
 	"github.com/openshift/hypershift/control-plane-pki-operator/manifests"
+	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/podspec"
 
 	"github.com/openshift/library-go/pkg/certs/cert-inspection/certgraphanalysis"
 	"github.com/openshift/library-go/pkg/certs/cert-inspection/certgraphapi"
@@ -54,9 +57,14 @@ type CertificateRevocationController struct {
 	getSecret    func(namespace, name string) (*corev1.Secret, error)
 	listSecrets  func(namespace string) ([]*corev1.Secret, error)
 	getConfigMap func(namespace, name string) (*corev1.ConfigMap, error)
+	listPods     func(namespace string, selector labels.Selector) ([]*corev1.Pod, error)
 
 	// for unit testing only
 	skipKASConnections bool
+	// overrideVerifyCertAgainstKASPods, when non-nil, replaces verifyCertificateAgainstAllKASPods
+	// for unit testing. This allows tests to control per-pod verification behavior without
+	// requiring real KAS pod connections.
+	overrideVerifyCertAgainstKASPods func(ctx context.Context, namespace string, adminCfg *rest.Config, certPEM, keyPEM []byte, verifyFunc func(ctx context.Context, client kubernetes.Interface) (bool, error)) (bool, error)
 }
 
 // TODO: we need some sort of time-based GC for completed CRRs
@@ -85,11 +93,15 @@ func NewCertificateRevocationController(
 		getConfigMap: func(namespace, name string) (*corev1.ConfigMap, error) {
 			return kubeInformersForNamespaces.InformersFor(namespace).Core().V1().ConfigMaps().Lister().ConfigMaps(namespace).Get(name)
 		},
+		listPods: func(namespace string, selector labels.Selector) ([]*corev1.Pod, error) {
+			return kubeInformersForNamespaces.InformersFor(namespace).Core().V1().Pods().Lister().Pods(namespace).List(selector)
+		},
 	}
 
 	crrInformer := hypershiftInformers.Certificates().V1alpha1().CertificateRevocationRequests().Informer()
 	secretInformer := kubeInformersForNamespaces.InformersFor(hostedControlPlane.Namespace).Core().V1().Secrets().Informer()
 	configMapInformer := kubeInformersForNamespaces.InformersFor(hostedControlPlane.Namespace).Core().V1().ConfigMaps().Informer()
+	podInformer := kubeInformersForNamespaces.InformersFor(hostedControlPlane.Namespace).Core().V1().Pods().Informer()
 	listCRRs := func(namespace string) ([]*certificatesv1alpha1.CertificateRevocationRequest, error) {
 		return hypershiftInformers.Certificates().V1alpha1().CertificateRevocationRequests().Lister().CertificateRevocationRequests(hostedControlPlane.Namespace).List(labels.Everything())
 	}
@@ -98,6 +110,10 @@ func NewCertificateRevocationController(
 		WithInformersQueueKeysFunc(enqueueCertificateRevocationRequest, crrInformer).
 		WithInformersQueueKeysFunc(enqueueSecret(listCRRs), secretInformer).
 		WithInformersQueueKeysFunc(enqueueConfigMap(listCRRs), configMapInformer).
+		// KAS pod readiness and PodIP gate certificate verification progress; wiring
+		// the pod informer ensures that pod transitions trigger immediate reconciliation
+		// instead of waiting for the next ResyncEvery or SyntheticRequeueError cycle.
+		WithInformersQueueKeysFunc(enqueueKASPod(listCRRs, hostedControlPlane.Namespace), podInformer).
 		WithSync(c.syncCertificateRevocationRequest).
 		ResyncEvery(time.Minute).
 		ToController("CertificateRevocationController", eventRecorder.WithComponentSuffix(c.fieldManager))
@@ -244,6 +260,20 @@ func enqueueConfigMap(listCRRs func(namespace string) ([]*certificatesv1alpha1.C
 			return nil
 		}
 		return enqueueForSigner(configMap.Namespace, signer, listCRRs)
+	}
+}
+
+func enqueueKASPod(listCRRs func(namespace string) ([]*certificatesv1alpha1.CertificateRevocationRequest, error), namespace string) func(obj runtime.Object) []string {
+	return func(obj runtime.Object) []string {
+		pod, ok := obj.(*corev1.Pod)
+		if !ok {
+			klog.ErrorS(fmt.Errorf("unexpected object of type %T, wanted %T", obj, &corev1.Pod{}), "could not determine queue key")
+			return nil
+		}
+		if !kasAppLabelSelector.Matches(labels.Set(pod.Labels)) {
+			return nil
+		}
+		return enqueueAll(namespace, listCRRs)
 	}
 }
 
@@ -535,6 +565,124 @@ func (c *CertificateRevocationController) generateNewSignerCertificate(ctx conte
 	return false, nil, false, nil
 }
 
+const perPodVerifyTimeout = 10 * time.Second
+
+// kasAppLabelSelector is the label selector used to find KAS pods in the hosted control plane namespace.
+var kasAppLabelSelector = labels.SelectorFromSet(labels.Set{"app": hcpmanifests.KubeAPIServerServiceName})
+
+// verifyCertificateAgainstAllKASPods connects to each KAS pod individually to run verifyFunc,
+// ensuring that all pods (not just one behind a service load balancer) pass the verification.
+// It returns true when all non-terminating ready pods pass.
+func (c *CertificateRevocationController) verifyCertificateAgainstAllKASPods(
+	ctx context.Context,
+	namespace string,
+	adminCfg *rest.Config,
+	certPEM, keyPEM []byte,
+	verifyFunc func(ctx context.Context, client kubernetes.Interface) (bool, error),
+) (bool, error) {
+	if c.overrideVerifyCertAgainstKASPods != nil {
+		return c.overrideVerifyCertAgainstKASPods(ctx, namespace, adminCfg, certPEM, keyPEM, verifyFunc)
+	}
+
+	pods, err := c.listPods(namespace, kasAppLabelSelector)
+	if err != nil {
+		return false, fmt.Errorf("couldn't list KAS pods: %w", err)
+	}
+
+	var readyPods []*corev1.Pod
+	for _, pod := range pods {
+		if pod.DeletionTimestamp != nil {
+			continue
+		}
+		if !podspec.IsPodReady(pod) || pod.Status.PodIP == "" {
+			// a non-terminating pod that's not ready: we can't check it yet, requeue
+			klog.V(4).Infof("KAS pod %s/%s not ready for verification (ready=%v, podIP=%q), requeueing", pod.Namespace, pod.Name, podspec.IsPodReady(pod), pod.Status.PodIP)
+			return false, nil
+		}
+		readyPods = append(readyPods, pod)
+	}
+
+	if len(readyPods) == 0 {
+		// no pods to check yet, requeue
+		klog.V(4).Infof("No ready KAS pods found in namespace %s, requeueing", namespace)
+		return false, nil
+	}
+
+	// Cross-check against the KAS Deployment's expected replica count.
+	// Without this, if some pods aren't visible (e.g. informer cache lag or
+	// a pod restarting between list and verification), we could verify only a
+	// subset and miss pods still serving with old trust bundles.
+	kasDeployment, err := c.kubeClient.AppsV1().Deployments(namespace).Get(ctx, hcpmanifests.KubeAPIServerServiceName, metav1.GetOptions{})
+	if err != nil {
+		return false, fmt.Errorf("couldn't get KAS deployment to verify replica count: %w", err)
+	}
+	expectedReplicas := int32(1)
+	if kasDeployment.Spec.Replicas != nil {
+		expectedReplicas = *kasDeployment.Spec.Replicas
+	}
+	if int32(len(readyPods)) != expectedReplicas {
+		klog.V(4).Infof("KAS pod count mismatch in namespace %s: found %d ready pods, expected %d replicas, requeueing", namespace, len(readyPods), expectedReplicas)
+		return false, nil
+	}
+
+	for _, pod := range readyPods {
+		port := podspec.ContainerPort(pod, "client", config.KASPodDefaultPort)
+		podCfg := rest.AnonymousClientConfig(adminCfg)
+		podCfg.Timeout = perPodVerifyTimeout
+		podCfg.TLSClientConfig.CertData = certPEM
+		podCfg.TLSClientConfig.KeyData = keyPEM
+		podCfg.Host = fmt.Sprintf("https://%s", net.JoinHostPort(pod.Status.PodIP, strconv.Itoa(int(port))))
+		// We're connecting to the PodIP, but the serving cert is still issued for the KAS service
+		// name. Keep CA verification enabled and override ServerName for SNI + hostname validation.
+		podCfg.TLSClientConfig.ServerName = hcpmanifests.KubeAPIServerServiceName
+
+		podClient, err := kubernetes.NewForConfig(podCfg)
+		if err != nil {
+			return false, fmt.Errorf("couldn't create client for KAS pod %s/%s: %w", pod.Namespace, pod.Name, err)
+		}
+
+		podCtx, cancel := context.WithTimeout(ctx, perPodVerifyTimeout)
+		passed, err := verifyFunc(podCtx, podClient)
+		cancel()
+		if err != nil {
+			return false, fmt.Errorf("verification failed against KAS pod %s/%s: %w", pod.Namespace, pod.Name, err)
+		}
+		if !passed {
+			return false, nil
+		}
+	}
+
+	return true, nil
+}
+
+// verifyCertificateTrusted checks if a KAS pod trusts the given certificate by performing a SelfSubjectReview.
+// Returns true if the pod accepts the certificate, false if unauthorized, error otherwise.
+func verifyCertificateTrusted(ctx context.Context, client kubernetes.Interface) (bool, error) {
+	_, err := client.AuthenticationV1().SelfSubjectReviews().Create(ctx, &authenticationv1.SelfSubjectReview{}, metav1.CreateOptions{})
+	if apierrors.IsUnauthorized(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("couldn't send SSR to guest cluster: %w", err)
+	}
+	return true, nil
+}
+
+// verifyCertificateRevoked checks if a KAS pod has revoked the given certificate by performing a SelfSubjectReview.
+// Returns true if the pod rejects the certificate (Unauthorized), false if still trusted, error otherwise.
+func verifyCertificateRevoked(ctx context.Context, client kubernetes.Interface) (bool, error) {
+	_, err := client.AuthenticationV1().SelfSubjectReviews().Create(ctx, &authenticationv1.SelfSubjectReview{}, metav1.CreateOptions{})
+	if err == nil {
+		// pod still trusts the old cert
+		return false, nil
+	}
+	if !apierrors.IsUnauthorized(err) {
+		return false, fmt.Errorf("couldn't send SSR to guest cluster: %w", err)
+	}
+	// unauthorized means the cert is properly revoked on this pod
+	return true, nil
+}
+
 func (c *CertificateRevocationController) ensureNewSignerCertificatePropagated(ctx context.Context, namespace string, name string, now func() time.Time, crr *certificatesv1alpha1.CertificateRevocationRequest) (bool, *actions, bool, error) {
 	signer, ok := secretForSignerClass(namespace, certificates.SignerClass(crr.Spec.SignerClass))
 	if !ok {
@@ -569,6 +717,17 @@ func (c *CertificateRevocationController) ensureNewSignerCertificatePropagated(c
 		return true, nil, false, nil
 	}
 
+	var recorded bool
+	for _, condition := range crr.Status.Conditions {
+		if condition.Type == certificatesv1alpha1.NewCertificatesTrustedType && condition.Status == metav1.ConditionTrue {
+			recorded = true
+			break
+		}
+	}
+	if recorded {
+		return false, nil, false, nil
+	}
+
 	// the real gate for this phase is that KAS has loaded the updated trust bundle and now
 	// authorizes clients using certificates signed by the new signer - it is difficult to unit-test
 	// that, though, and it's always valid to first check that our certificates have propagated as far
@@ -578,7 +737,7 @@ func (c *CertificateRevocationController) ensureNewSignerCertificatePropagated(c
 	}
 
 	// if the updated trust bundle has propagated as far as we can tell, let's go ahead and ask
-	// KAS to detect when it trusts the new signer
+	// each KAS pod individually to detect when it trusts the new signer
 	if !c.skipKASConnections {
 		kubeconfig := hcpmanifests.KASServiceKubeconfigSecret(namespace)
 		kubeconfigSecret, err := c.getSecret(kubeconfig.Namespace, kubeconfig.Name)
@@ -593,49 +752,51 @@ func (c *CertificateRevocationController) ensureNewSignerCertificatePropagated(c
 		if err != nil {
 			return true, nil, false, fmt.Errorf("couldn't load guest cluster service network kubeconfig: %w", err)
 		}
-		certCfg := rest.AnonymousClientConfig(adminCfg)
-		certCfg.TLSClientConfig.CertData = currentCertPEM
-		certCfg.TLSClientConfig.KeyData = currentKeyPEM
 
-		testClient, err := kubernetes.NewForConfig(certCfg)
+		allTrusted, err := c.verifyCertificateAgainstAllKASPods(ctx, namespace, adminCfg, currentCertPEM, currentKeyPEM, verifyCertificateTrusted)
 		if err != nil {
-			return true, nil, false, fmt.Errorf("couldn't create guest cluster client using old certificate: %w", err)
+			return true, nil, false, err
+		}
+		if !allTrusted {
+			return true, nil, true, nil // pod transitions trigger reconciliation, but synthetic re-queue is still needed for KAS trust bundle reloads
 		}
 
-		_, err = testClient.AuthenticationV1().SelfSubjectReviews().Create(ctx, &authenticationv1.SelfSubjectReview{}, metav1.CreateOptions{})
-		if apierrors.IsUnauthorized(err) {
-			// this is OK, things are just propagating still
-			return true, nil, true, nil // we need to synthetically re-queue since nothing about KAS loading will trigger us
-		}
-		if err != nil {
-			return true, nil, false, fmt.Errorf("couldn't send SSR to guest cluster: %w", err)
+		// Cross-check: verify the previous signer is also still trusted.
+		// At this stage the old signer hasn't been pruned yet, so both old and new
+		// should be trusted. If the old is rejected, the pod is mid-reload.
+		if crr.Status.PreviousSigner != nil {
+			oldSecret, err := c.getSecret(namespace, crr.Status.PreviousSigner.Name)
+			if err != nil {
+				return true, nil, false, err
+			}
+			oldCertPEM := oldSecret.Data[corev1.TLSCertKey]
+			oldKeyPEM := oldSecret.Data[corev1.TLSPrivateKeyKey]
+			if len(oldCertPEM) > 0 && len(oldKeyPEM) > 0 {
+				oldTrusted, err := c.verifyCertificateAgainstAllKASPods(ctx, namespace, adminCfg, oldCertPEM, oldKeyPEM, verifyCertificateTrusted)
+				if err != nil {
+					return true, nil, false, err
+				}
+				if !oldTrusted {
+					klog.V(4).Infof("KAS pods accepted new cert but rejected old signer cert for %s/%s; likely mid-reload, requeueing", namespace, name)
+					return true, nil, true, nil
+				}
+			}
 		}
 	}
 
-	var recorded bool
-	for _, condition := range crr.Status.Conditions {
-		if condition.Type == certificatesv1alpha1.NewCertificatesTrustedType && condition.Status == metav1.ConditionTrue {
-			recorded = true
-			break
-		}
-	}
-	if !recorded {
-		cfg := certificatesv1alpha1applyconfigurations.CertificateRevocationRequest(name, namespace)
-		cfg.Status = certificatesv1alpha1applyconfigurations.CertificateRevocationRequestStatus().
-			WithRevocationTimestamp(*crr.Status.RevocationTimestamp).
-			WithPreviousSigner(*crr.Status.PreviousSigner).
-			WithConditions(conditions(crr.Status.Conditions, metav1applyconfigurations.Condition().
-				WithType(certificatesv1alpha1.NewCertificatesTrustedType).
-				WithStatus(metav1.ConditionTrue).
-				WithLastTransitionTime(metav1.NewTime(now())).
-				WithReason(hypershiftv1beta1.AsExpectedReason).
-				WithMessage(fmt.Sprintf("New signer certificate %s/%s trusted.", signer.Namespace, signer.Name)),
-			)...)
-		e := event("CertificateRevocationProgressing", "New %q signer certificates valid.", crr.Spec.SignerClass)
-		return true, &actions{event: e, crr: cfg}, false, nil
-	}
-
-	return false, nil, false, nil
+	cfg := certificatesv1alpha1applyconfigurations.CertificateRevocationRequest(name, namespace)
+	cfg.Status = certificatesv1alpha1applyconfigurations.CertificateRevocationRequestStatus().
+		WithRevocationTimestamp(*crr.Status.RevocationTimestamp).
+		WithPreviousSigner(*crr.Status.PreviousSigner).
+		WithConditions(conditions(crr.Status.Conditions, metav1applyconfigurations.Condition().
+			WithType(certificatesv1alpha1.NewCertificatesTrustedType).
+			WithStatus(metav1.ConditionTrue).
+			WithLastTransitionTime(metav1.NewTime(now())).
+			WithReason(hypershiftv1beta1.AsExpectedReason).
+			WithMessage(fmt.Sprintf("New signer certificate %s/%s trusted.", signer.Namespace, signer.Name)),
+		)...)
+	e := event("CertificateRevocationProgressing", "New %q signer certificates valid.", crr.Spec.SignerClass)
+	return true, &actions{event: e, crr: cfg}, false, nil
 }
 
 func (c *CertificateRevocationController) generateNewLeafCertificates(ctx context.Context, namespace string, name string, now func() time.Time, crr *certificatesv1alpha1.CertificateRevocationRequest) (bool, *actions, bool, error) {
@@ -813,6 +974,17 @@ func (c *CertificateRevocationController) prunePreviousSignerCertificates(ctx co
 }
 
 func (c *CertificateRevocationController) ensureOldSignerCertificateRevoked(ctx context.Context, namespace string, name string, now func() time.Time, crr *certificatesv1alpha1.CertificateRevocationRequest) (bool, *actions, bool, error) {
+	var recorded bool
+	for _, condition := range crr.Status.Conditions {
+		if condition.Type == certificatesv1alpha1.PreviousCertificatesRevokedType && condition.Status == metav1.ConditionTrue {
+			recorded = true
+			break
+		}
+	}
+	if recorded {
+		return false, nil, false, nil
+	}
+
 	oldCertSecret, err := c.getSecret(namespace, crr.Status.PreviousSigner.Name)
 	if err != nil {
 		return true, nil, false, err
@@ -833,6 +1005,21 @@ func (c *CertificateRevocationController) ensureOldSignerCertificateRevoked(ctx 
 		return true, nil, false, fmt.Errorf("signer certificate %s/%s had no data for %s", oldCertSecret.Namespace, oldCertSecret.Name, corev1.TLSPrivateKeyKey)
 	}
 
+	// Load the current (new) signer cert/key for cross-checking during per-pod verification.
+	signer, ok := secretForSignerClass(namespace, certificates.SignerClass(crr.Spec.SignerClass))
+	if !ok {
+		return true, nil, false, nil
+	}
+	signerSecret, _, err := c.loadCertificateSecret(signer.Namespace, signer.Name)
+	if err != nil {
+		return true, nil, false, err
+	}
+	if signerSecret == nil {
+		return true, nil, false, nil
+	}
+	currentCertPEM := signerSecret.Data[corev1.TLSCertKey]
+	currentKeyPEM := signerSecret.Data[corev1.TLSPrivateKeyKey]
+
 	totalClientCA := manifests.TotalKASClientCABundle(namespace)
 	totalClientTrustBundle, err := c.loadTrustBundleConfigMap(totalClientCA.Namespace, totalClientCA.Name)
 	if err != nil {
@@ -850,7 +1037,7 @@ func (c *CertificateRevocationController) ensureOldSignerCertificateRevoked(ctx 
 	}
 
 	// if the updated trust bundle has propagated as far as we can tell, let's go ahead and ask
-	// KAS to ensure it no longer trusts the old signer
+	// each KAS pod individually to ensure it no longer trusts the old signer
 	if !c.skipKASConnections {
 		kubeconfig := hcpmanifests.KASServiceKubeconfigSecret(namespace)
 		kubeconfigSecret, err := c.getSecret(kubeconfig.Namespace, kubeconfig.Name)
@@ -865,49 +1052,43 @@ func (c *CertificateRevocationController) ensureOldSignerCertificateRevoked(ctx 
 		if err != nil {
 			return true, nil, false, fmt.Errorf("couldn't load guest cluster service network kubeconfig: %w", err)
 		}
-		certCfg := rest.AnonymousClientConfig(adminCfg)
-		certCfg.TLSClientConfig.CertData = oldCertPEM
-		certCfg.TLSClientConfig.KeyData = oldKeyPEM
 
-		testClient, err := kubernetes.NewForConfig(certCfg)
+		allRevoked, err := c.verifyCertificateAgainstAllKASPods(ctx, namespace, adminCfg, oldCertPEM, oldKeyPEM, verifyCertificateRevoked)
 		if err != nil {
-			return true, nil, false, fmt.Errorf("couldn't create guest cluster client using old certificate: %w", err)
+			return true, nil, false, err
+		}
+		if !allRevoked {
+			return true, nil, true, nil // pod transitions trigger reconciliation, but synthetic re-queue is still needed for KAS trust bundle reloads
 		}
 
-		_, err = testClient.AuthenticationV1().SelfSubjectReviews().Create(ctx, &authenticationv1.SelfSubjectReview{}, metav1.CreateOptions{})
-		if err == nil {
-			// this is OK, things are just propagating still
-			return true, nil, true, nil // we need to synthetically re-queue since nothing about KAS loading will trigger us
+		// Cross-check: verify the current signer is still trusted by all pods.
+		// This guards against transient states where kube-apiserver rejects ALL
+		// certificates during a trust bundle reload, which could produce a false
+		// positive on the revocation check above.
+		allTrusted, err := c.verifyCertificateAgainstAllKASPods(ctx, namespace, adminCfg, currentCertPEM, currentKeyPEM, verifyCertificateTrusted)
+		if err != nil {
+			return true, nil, false, err
 		}
-		if !apierrors.IsUnauthorized(err) {
-			return true, nil, false, fmt.Errorf("couldn't send SSR to guest cluster: %w", err)
+		if !allTrusted {
+			klog.V(4).Infof("KAS pods rejected old cert but also rejected current signer cert for %s/%s; likely mid-reload, requeueing", namespace, name)
+			return true, nil, true, nil
 		}
 	}
 
-	var recorded bool
-	for _, condition := range crr.Status.Conditions {
-		if condition.Type == certificatesv1alpha1.PreviousCertificatesRevokedType && condition.Status == metav1.ConditionTrue {
-			recorded = true
-			break
-		}
-	}
-	if !recorded {
-		cfg := certificatesv1alpha1applyconfigurations.CertificateRevocationRequest(name, namespace)
-		cfg.Status = certificatesv1alpha1applyconfigurations.CertificateRevocationRequestStatus().
-			WithRevocationTimestamp(*crr.Status.RevocationTimestamp).
-			WithPreviousSigner(*crr.Status.PreviousSigner).
-			WithConditions(conditions(crr.Status.Conditions,
-				metav1applyconfigurations.Condition().
-					WithType(certificatesv1alpha1.PreviousCertificatesRevokedType).
-					WithStatus(metav1.ConditionTrue).
-					WithLastTransitionTime(metav1.NewTime(now())).
-					WithReason(hypershiftv1beta1.AsExpectedReason).
-					WithMessage("Previous signer certificate revoked."),
-			)...)
-		e := event("CertificateRevocationComplete", "%q signer certificates revoked.", crr.Spec.SignerClass)
-		return true, &actions{event: e, crr: cfg}, false, nil
-	}
-	return false, nil, false, nil
+	cfg := certificatesv1alpha1applyconfigurations.CertificateRevocationRequest(name, namespace)
+	cfg.Status = certificatesv1alpha1applyconfigurations.CertificateRevocationRequestStatus().
+		WithRevocationTimestamp(*crr.Status.RevocationTimestamp).
+		WithPreviousSigner(*crr.Status.PreviousSigner).
+		WithConditions(conditions(crr.Status.Conditions,
+			metav1applyconfigurations.Condition().
+				WithType(certificatesv1alpha1.PreviousCertificatesRevokedType).
+				WithStatus(metav1.ConditionTrue).
+				WithLastTransitionTime(metav1.NewTime(now())).
+				WithReason(hypershiftv1beta1.AsExpectedReason).
+				WithMessage("Previous signer certificate revoked."),
+		)...)
+	e := event("CertificateRevocationComplete", "%q signer certificates revoked.", crr.Spec.SignerClass)
+	return true, &actions{event: e, crr: cfg}, false, nil
 }
 
 func (c *CertificateRevocationController) loadCertificateSecret(namespace, name string) (*corev1.Secret, []*x509.Certificate, error) {
