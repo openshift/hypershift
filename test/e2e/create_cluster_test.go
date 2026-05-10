@@ -21,7 +21,9 @@ import (
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/integration"
 	integrationframework "github.com/openshift/hypershift/test/integration/framework"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/tools/clientcmd"
@@ -1880,6 +1882,66 @@ func TestCreateCluster(t *testing.T) {
 		}
 	}).
 		Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "create-cluster", globalOpts.ServiceAccountSigningKey)
+}
+
+// TestCreateClusterHABreakGlassCredentials exercises the break-glass credential flow
+// on a HighlyAvailable control plane (3 KAS replicas). This validates that the
+// CertificateRevocationController correctly verifies certificate revocation against
+// each individual KAS pod rather than through the service load balancer.
+func TestCreateClusterHABreakGlassCredentials(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(testContext)
+	defer cancel()
+
+	clusterOpts := globalOpts.DefaultClusterOptions(t)
+	clusterOpts.ControlPlaneAvailabilityPolicy = string(hyperv1.HighlyAvailable)
+	clusterOpts.NodePoolReplicas = 0
+
+	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+		// Wait for guest API to be reachable (SelfSubjectReview only, no nodes needed)
+		_ = e2eutil.WaitForGuestClient(t, ctx, mgtClient, hostedCluster)
+
+		// Assert that KAS deployment has 3 ready replicas to guard against false-positive passes
+		controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+		e2eutil.EventuallyObject(t, ctx, "KAS deployment to have 3 ready replicas",
+			func(ctx context.Context) (*appsv1.Deployment, error) {
+				deployment := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{
+					Namespace: controlPlaneNamespace,
+					Name:      "kube-apiserver",
+				}}
+				err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(deployment), deployment)
+				return deployment, err
+			},
+			[]e2eutil.Predicate[*appsv1.Deployment]{
+				func(deployment *appsv1.Deployment) (done bool, reasons string, err error) {
+					ready := deployment.Status.ReadyReplicas
+					return ready == 3, fmt.Sprintf("expected 3 ready replicas, got %d", ready), nil
+				},
+			},
+		)
+
+		t.Logf("fetching mgmt kubeconfig")
+		mgmtCfg, err := e2eutil.GetConfig()
+		g.Expect(err).NotTo(HaveOccurred(), "couldn't get mgmt kubeconfig")
+		mgmtCfg.QPS = -1
+		mgmtCfg.Burst = -1
+
+		mgmtClients, err := integrationframework.NewClients(mgmtCfg)
+		g.Expect(err).NotTo(HaveOccurred(), "couldn't create mgmt clients")
+
+		guestKubeConfigSecretData := e2eutil.WaitForGuestKubeConfig(t, ctx, mgtClient, hostedCluster)
+
+		guestConfig, err := clientcmd.RESTConfigFromKubeConfig(guestKubeConfigSecretData)
+		g.Expect(err).NotTo(HaveOccurred(), "couldn't load guest kubeconfig")
+		guestConfig.QPS = -1
+		guestConfig.Burst = -1
+
+		guestClients, err := integrationframework.NewClients(guestConfig)
+		g.Expect(err).NotTo(HaveOccurred(), "couldn't create guest clients")
+
+		integration.RunTestControlPlanePKIOperatorBreakGlassCredentials(t, testContext, hostedCluster, mgmtClients, guestClients)
+	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "ha-break-glass-creds", globalOpts.ServiceAccountSigningKey)
 }
 
 // TODO(alberto): rename this e2e to drop TestCreateCluster prefix after merging https://github.com/openshift/release/pull/66655
