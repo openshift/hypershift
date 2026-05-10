@@ -124,6 +124,159 @@ func TestFindVolumeMount(t *testing.T) {
 	})
 }
 
+func TestIsPodReady(t *testing.T) {
+	t.Parallel()
+	for _, testCase := range []struct {
+		name     string
+		pod      *corev1.Pod
+		expected bool
+	}{
+		{
+			name:     "When pod is nil it should return false",
+			pod:      nil,
+			expected: false,
+		},
+		{
+			name: "When pod has Ready=True it should return true",
+			pod: &corev1.Pod{
+				Status: corev1.PodStatus{
+					Conditions: []corev1.PodCondition{{
+						Type:   corev1.PodReady,
+						Status: corev1.ConditionTrue,
+					}},
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "When pod has Ready=False it should return false",
+			pod: &corev1.Pod{
+				Status: corev1.PodStatus{
+					Conditions: []corev1.PodCondition{{
+						Type:   corev1.PodReady,
+						Status: corev1.ConditionFalse,
+					}},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "When pod has no Ready condition it should return false",
+			pod: &corev1.Pod{
+				Status: corev1.PodStatus{
+					Conditions: []corev1.PodCondition{{
+						Type:   corev1.PodInitialized,
+						Status: corev1.ConditionTrue,
+					}},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "When pod has no conditions it should return false",
+			pod: &corev1.Pod{
+				Status: corev1.PodStatus{},
+			},
+			expected: false,
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+			g.Expect(IsPodReady(testCase.pod)).To(Equal(testCase.expected))
+		})
+	}
+}
+
+func TestContainerPort(t *testing.T) {
+	t.Parallel()
+	for _, testCase := range []struct {
+		name         string
+		pod          *corev1.Pod
+		portName     string
+		defaultPort  int32
+		expectedPort int32
+	}{
+		{
+			name: "When named port is found it should return the container port",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{{
+						Ports: []corev1.ContainerPort{{
+							Name:          "client",
+							ContainerPort: 6443,
+						}},
+					}},
+				},
+			},
+			portName:     "client",
+			defaultPort:  8443,
+			expectedPort: 6443,
+		},
+		{
+			name: "When named port is missing it should return the default port",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{{
+						Ports: []corev1.ContainerPort{{
+							Name:          "metrics",
+							ContainerPort: 9090,
+						}},
+					}},
+				},
+			},
+			portName:     "client",
+			defaultPort:  6443,
+			expectedPort: 6443,
+		},
+		{
+			name: "When container has no ports it should return the default port",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{{
+						Name: "kube-apiserver",
+					}},
+				},
+			},
+			portName:     "client",
+			defaultPort:  6443,
+			expectedPort: 6443,
+		},
+		{
+			name: "When port is in a non-first container it should return the container port",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "sidecar",
+							Ports: []corev1.ContainerPort{{
+								Name:          "metrics",
+								ContainerPort: 9090,
+							}},
+						},
+						{
+							Name: "kube-apiserver",
+							Ports: []corev1.ContainerPort{{
+								Name:          "client",
+								ContainerPort: 7443,
+							}},
+						},
+					},
+				},
+			},
+			portName:     "client",
+			defaultPort:  6443,
+			expectedPort: 7443,
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+			g.Expect(ContainerPort(testCase.pod, testCase.portName, testCase.defaultPort)).To(Equal(testCase.expectedPort))
+		})
+	}
+}
+
 func TestEnforceRestrictedSecurityContextToContainers(t *testing.T) {
 	tests := []struct {
 		name     string
