@@ -603,154 +603,9 @@ func (r *AWSEndpointServiceReconciler) reconcileAWSEndpointService(ctx context.C
 		return err
 	}
 
-	endpointID := awsEndpointService.Status.EndpointID
-	var endpointDNSEntries []ec2types.DnsEntry
-	if endpointID != "" {
-		// check if Endpoint exists in AWS
-		output, err := ec2Client.DescribeVpcEndpoints(ctx, &ec2.DescribeVpcEndpointsInput{
-			VpcEndpointIds: []string{endpointID},
-		})
-		if err != nil {
-			log.Error(err, "failed to describe vpc endpoint", "endpointID", endpointID)
-			var apiErr smithy.APIError
-			if errors.As(err, &apiErr) {
-				if apiErr.ErrorCode() == "InvalidVpcEndpointId.NotFound" {
-					// clear the EndpointID so a new Endpoint is created on the requeue
-					awsEndpointService.Status.EndpointID = ""
-					return fmt.Errorf("endpoint with id %s not found, resetting status", endpointID)
-				} else {
-					return errors.New(apiErr.ErrorCode())
-				}
-			}
-			return err
-		}
-
-		if aws.ToString(output.VpcEndpoints[0].ServiceName) != awsEndpointService.Status.EndpointServiceName {
-			log.Info("endpoint links to wrong endpointservice, deleting...", "LinkedVPCEndpointServiceName", aws.ToString(output.VpcEndpoints[0].ServiceName), "WantedVPCEndpointService", awsEndpointService.Status.EndpointServiceName)
-			if _, err := ec2Client.DeleteVpcEndpoints(ctx, &ec2.DeleteVpcEndpointsInput{
-				VpcEndpointIds: []string{aws.ToString(output.VpcEndpoints[0].VpcEndpointId)},
-			}); err != nil {
-				log.Error(err, "failed to delete vpc endpoint", "id", aws.ToString(output.VpcEndpoints[0].VpcEndpointId))
-				return fmt.Errorf("error deleting AWSEndpoint: %w", err)
-			}
-
-			// Once the VPC Endpoint is deleted, we need to send an error in order to reexecute the reconcilliation
-			return fmt.Errorf("current endpoint %s is not pointing to the existing .Status.EndpointServiceName, reconciling by deleting endpoint", aws.ToString(output.VpcEndpoints[0].ServiceName))
-		}
-
-		if len(output.VpcEndpoints) == 0 {
-			// This should not happen but just in case
-			// clear the EndpointID so a new Endpoint is created on the requeue
-			awsEndpointService.Status.EndpointID = ""
-			return fmt.Errorf("endpoint with id %s not found, resetting status", endpointID)
-		}
-		log.Info("endpoint exists", "endpointID", endpointID)
-		endpointDNSEntries = output.VpcEndpoints[0].DnsEntries
-
-		// Ensure endpoint has the right subnets.
-		addedSubnet, removedSubnet := diffIDs(awsEndpointService.Spec.SubnetIDs, output.VpcEndpoints[0].SubnetIds)
-
-		// Ensure endpoint has the right SG.
-		existingSG := make([]string, 0)
-		for _, group := range output.VpcEndpoints[0].Groups {
-			existingSG = append(existingSG, aws.ToString(group.GroupId))
-		}
-		addedSG, _ := diffIDs([]string{awsEndpointService.Status.SecurityGroupID}, existingSG)
-
-		if addedSubnet != nil || removedSubnet != nil || addedSG != nil {
-			log.Info("endpoint subnets or security groups have changed")
-			_, err := ec2Client.ModifyVpcEndpoint(ctx, &ec2.ModifyVpcEndpointInput{
-				VpcEndpointId:       aws.String(endpointID),
-				AddSubnetIds:        addedSubnet,
-				RemoveSubnetIds:     removedSubnet,
-				AddSecurityGroupIds: addedSG,
-			})
-			if err != nil {
-				log.Error(err, "failed to modify vpc endpoint", "id", endpointID, "addSubnets", addedSubnet, "removeSubnets", removedSubnet, "addSG", addedSG)
-				msg := err.Error()
-				var apiErr smithy.APIError
-				if errors.As(err, &apiErr) {
-					msg = apiErr.ErrorCode()
-				}
-				log.Error(err, "failed to modify vpc endpoint")
-				return fmt.Errorf("failed to modify vpc endpoint: %s", msg)
-			}
-			log.Info("endpoint subnets updated")
-		} else {
-			log.Info("endpoint subnets are unchanged")
-		}
-	} else {
-		if !hasAWSConfig(&hcp.Spec.Platform) {
-			return fmt.Errorf("AWS platform information not provided in HostedControlPlane")
-		}
-
-		// Verify there is not already an Endpoint that we can adopt
-		// This can happen if we have a stale status on AWSEndpointService or encountered
-		// an error updating the AWSEndpointService on the previous reconcile
-		output, err := ec2Client.DescribeVpcEndpoints(ctx, &ec2.DescribeVpcEndpointsInput{
-			Filters: apiTagToEC2Filter(awsEndpointService.Name, hcp.Spec.Platform.AWS.ResourceTags),
-		})
-		if err != nil {
-			msg := err.Error()
-			var apiErr smithy.APIError
-			if errors.As(err, &apiErr) {
-				msg = apiErr.ErrorCode()
-			}
-			log.Error(err, "failed to describe vpc endpoints")
-			return fmt.Errorf("failed to describe vpc endpoints: %s", msg)
-		}
-		if len(output.VpcEndpoints) != 0 {
-			if aws.ToString(output.VpcEndpoints[0].ServiceName) != awsEndpointService.Status.EndpointServiceName {
-				log.Info("endpoint links to wrong endpointservice, deleting...", "LinkedVPCEndpointServiceName", aws.ToString(output.VpcEndpoints[0].ServiceName), "WantedVPCEndpointService", awsEndpointService.Status.EndpointServiceName)
-				if _, err := ec2Client.DeleteVpcEndpoints(ctx, &ec2.DeleteVpcEndpointsInput{
-					VpcEndpointIds: []string{aws.ToString(output.VpcEndpoints[0].VpcEndpointId)},
-				}); err != nil {
-					log.Error(err, "failed to delete vpc endpoint", "id", aws.ToString(output.VpcEndpoints[0].VpcEndpointId))
-					return fmt.Errorf("error deleting AWSEndpoint: %w", err)
-				}
-
-				// Once the VPC Endpoint is deleted, we need to send an error in order to reexecute the reconcilliation
-				return fmt.Errorf("current endpoint %s is not pointing to the existing .Status.EndpointServiceName, reconciling by deleting endpoint", aws.ToString(output.VpcEndpoints[0].ServiceName))
-			}
-			endpointID = aws.ToString(output.VpcEndpoints[0].VpcEndpointId)
-			log.Info("endpoint already exists, adopting", "endpointID", endpointID)
-			awsEndpointService.Status.EndpointID = endpointID
-			endpointDNSEntries = output.VpcEndpoints[0].DnsEntries
-		} else {
-			log.Info("endpoint does not already exist")
-
-			if awsEndpointService.Status.SecurityGroupID == "" {
-				return fmt.Errorf("security group ID doesn't exist yet for the endpoint to use")
-			}
-			output, err := ec2Client.CreateVpcEndpoint(ctx, &ec2.CreateVpcEndpointInput{
-				SecurityGroupIds: []string{awsEndpointService.Status.SecurityGroupID},
-				ServiceName:      aws.String(awsEndpointService.Status.EndpointServiceName),
-				VpcId:            aws.String(hcp.Spec.Platform.AWS.CloudProviderConfig.VPC),
-				VpcEndpointType:  ec2types.VpcEndpointTypeInterface,
-				SubnetIds:        awsEndpointService.Spec.SubnetIDs,
-				TagSpecifications: []ec2types.TagSpecification{{
-					ResourceType: ec2types.ResourceTypeVpcEndpoint,
-					Tags:         apiTagToEC2Tag(awsEndpointService.Name, hcp.Spec.Platform.AWS.ResourceTags),
-				}},
-			})
-			if err != nil {
-				msg := err.Error()
-				var apiErr smithy.APIError
-				if errors.As(err, &apiErr) {
-					msg = apiErr.ErrorCode()
-				}
-				log.Error(err, "failed to create vpc endpoint")
-				return fmt.Errorf("failed to create vpc endpoint: %s", msg)
-			}
-			if output == nil || output.VpcEndpoint == nil {
-				return fmt.Errorf("CreateVpcEndpoint output is nil")
-			}
-
-			endpointID = aws.ToString(output.VpcEndpoint.VpcEndpointId)
-			log.Info("endpoint created", "endpointID", endpointID)
-			awsEndpointService.Status.EndpointID = endpointID
-			endpointDNSEntries = output.VpcEndpoint.DnsEntries
-		}
+	endpointID, endpointDNSEntries, err := r.ensureVPCEndpoint(ctx, ec2Client, awsEndpointService, hcp, log)
+	if err != nil {
+		return err
 	}
 
 	if len(endpointDNSEntries) == 0 {
@@ -758,18 +613,191 @@ func (r *AWSEndpointServiceReconciler) reconcileAWSEndpointService(ctx context.C
 		return nil
 	}
 
-	recordNames := recordsForService(awsEndpointService, hcp)
-	if len(recordNames) == 0 {
-		log.Info("WARNING: no mapping from AWSEndpointService to DNS")
+	fqdns, zoneID, err := r.reconcileEndpointDNSRecords(ctx, route53Client, awsEndpointService, hcp, endpointDNSEntries, log)
+	if err != nil {
+		return err
+	}
+
+	awsEndpointService.Status.DNSNames = fqdns
+	awsEndpointService.Status.DNSZoneID = zoneID
+
+	return r.reconcileExternalNameServices(ctx, hcp, endpointDNSEntries, log)
+}
+
+func (r *AWSEndpointServiceReconciler) ensureVPCEndpoint(ctx context.Context, ec2Client awsapi.EC2API, awsEndpointService *hyperv1.AWSEndpointService, hcp *hyperv1.HostedControlPlane, log logr.Logger) (string, []ec2types.DnsEntry, error) {
+	endpointID := awsEndpointService.Status.EndpointID
+	if endpointID != "" {
+		return r.reconcileExistingEndpoint(ctx, ec2Client, awsEndpointService, endpointID, log)
+	}
+	return r.reconcileNewEndpoint(ctx, ec2Client, awsEndpointService, hcp, log)
+}
+
+func (r *AWSEndpointServiceReconciler) reconcileExistingEndpoint(ctx context.Context, ec2Client awsapi.EC2API, awsEndpointService *hyperv1.AWSEndpointService, endpointID string, log logr.Logger) (string, []ec2types.DnsEntry, error) {
+	output, err := ec2Client.DescribeVpcEndpoints(ctx, &ec2.DescribeVpcEndpointsInput{
+		VpcEndpointIds: []string{endpointID},
+	})
+	if err != nil {
+		log.Error(err, "failed to describe vpc endpoint", "endpointID", endpointID)
+		var apiErr smithy.APIError
+		if errors.As(err, &apiErr) {
+			if apiErr.ErrorCode() == "InvalidVpcEndpointId.NotFound" {
+				awsEndpointService.Status.EndpointID = ""
+				return "", nil, fmt.Errorf("endpoint with id %s not found, resetting status", endpointID)
+			} else {
+				return "", nil, errors.New(apiErr.ErrorCode())
+			}
+		}
+		return "", nil, err
+	}
+
+	if len(output.VpcEndpoints) == 0 {
+		awsEndpointService.Status.EndpointID = ""
+		return "", nil, fmt.Errorf("endpoint with id %s not found, resetting status", endpointID)
+	}
+
+	if err := deleteEndpointIfWrongService(ctx, ec2Client, output.VpcEndpoints[0], awsEndpointService.Status.EndpointServiceName, log); err != nil {
+		return "", nil, err
+	}
+
+	log.Info("endpoint exists", "endpointID", endpointID)
+
+	if err := modifyEndpointIfNeeded(ctx, ec2Client, awsEndpointService, output.VpcEndpoints[0], endpointID, log); err != nil {
+		return "", nil, err
+	}
+
+	return endpointID, output.VpcEndpoints[0].DnsEntries, nil
+}
+
+func deleteEndpointIfWrongService(ctx context.Context, ec2Client awsapi.EC2API, endpoint ec2types.VpcEndpoint, expectedServiceName string, log logr.Logger) error {
+	if aws.ToString(endpoint.ServiceName) == expectedServiceName {
+		return nil
+	}
+	log.Info("endpoint links to wrong endpointservice, deleting...", "LinkedVPCEndpointServiceName", aws.ToString(endpoint.ServiceName), "WantedVPCEndpointService", expectedServiceName)
+	if _, err := ec2Client.DeleteVpcEndpoints(ctx, &ec2.DeleteVpcEndpointsInput{
+		VpcEndpointIds: []string{aws.ToString(endpoint.VpcEndpointId)},
+	}); err != nil {
+		log.Error(err, "failed to delete vpc endpoint", "id", aws.ToString(endpoint.VpcEndpointId))
+		return fmt.Errorf("error deleting AWSEndpoint: %w", err)
+	}
+	return fmt.Errorf("current endpoint %s is not pointing to the existing .Status.EndpointServiceName, reconciling by deleting endpoint", aws.ToString(endpoint.ServiceName))
+}
+
+func modifyEndpointIfNeeded(ctx context.Context, ec2Client awsapi.EC2API, awsEndpointService *hyperv1.AWSEndpointService, endpoint ec2types.VpcEndpoint, endpointID string, log logr.Logger) error {
+	addedSubnet, removedSubnet := diffIDs(awsEndpointService.Spec.SubnetIDs, endpoint.SubnetIds)
+
+	existingSG := make([]string, 0)
+	for _, group := range endpoint.Groups {
+		existingSG = append(existingSG, aws.ToString(group.GroupId))
+	}
+	addedSG, _ := diffIDs([]string{awsEndpointService.Status.SecurityGroupID}, existingSG)
+
+	if addedSubnet == nil && removedSubnet == nil && addedSG == nil {
+		log.Info("endpoint subnets are unchanged")
 		return nil
 	}
 
-	zoneName := zoneName(hcp.Name)
+	log.Info("endpoint subnets or security groups have changed")
+	_, err := ec2Client.ModifyVpcEndpoint(ctx, &ec2.ModifyVpcEndpointInput{
+		VpcEndpointId:       aws.String(endpointID),
+		AddSubnetIds:        addedSubnet,
+		RemoveSubnetIds:     removedSubnet,
+		AddSecurityGroupIds: addedSG,
+	})
+	if err != nil {
+		log.Error(err, "failed to modify vpc endpoint", "id", endpointID, "addSubnets", addedSubnet, "removeSubnets", removedSubnet, "addSG", addedSG)
+		msg := err.Error()
+		var apiErr smithy.APIError
+		if errors.As(err, &apiErr) {
+			msg = apiErr.ErrorCode()
+		}
+		log.Error(err, "failed to modify vpc endpoint")
+		return fmt.Errorf("failed to modify vpc endpoint: %s", msg)
+	}
+	log.Info("endpoint subnets updated")
+	return nil
+}
+
+func (r *AWSEndpointServiceReconciler) reconcileNewEndpoint(ctx context.Context, ec2Client awsapi.EC2API, awsEndpointService *hyperv1.AWSEndpointService, hcp *hyperv1.HostedControlPlane, log logr.Logger) (string, []ec2types.DnsEntry, error) {
+	if !hasAWSConfig(&hcp.Spec.Platform) {
+		return "", nil, fmt.Errorf("AWS platform information not provided in HostedControlPlane")
+	}
+
+	output, err := ec2Client.DescribeVpcEndpoints(ctx, &ec2.DescribeVpcEndpointsInput{
+		Filters: apiTagToEC2Filter(awsEndpointService.Name, hcp.Spec.Platform.AWS.ResourceTags),
+	})
+	if err != nil {
+		msg := err.Error()
+		var apiErr smithy.APIError
+		if errors.As(err, &apiErr) {
+			msg = apiErr.ErrorCode()
+		}
+		log.Error(err, "failed to describe vpc endpoints")
+		return "", nil, fmt.Errorf("failed to describe vpc endpoints: %s", msg)
+	}
+
+	if len(output.VpcEndpoints) != 0 {
+		if err := deleteEndpointIfWrongService(ctx, ec2Client, output.VpcEndpoints[0], awsEndpointService.Status.EndpointServiceName, log); err != nil {
+			return "", nil, err
+		}
+		endpointID := aws.ToString(output.VpcEndpoints[0].VpcEndpointId)
+		log.Info("endpoint already exists, adopting", "endpointID", endpointID)
+		awsEndpointService.Status.EndpointID = endpointID
+		return endpointID, output.VpcEndpoints[0].DnsEntries, nil
+	}
+
+	return r.createVPCEndpoint(ctx, ec2Client, awsEndpointService, hcp, log)
+}
+
+func (r *AWSEndpointServiceReconciler) createVPCEndpoint(ctx context.Context, ec2Client awsapi.EC2API, awsEndpointService *hyperv1.AWSEndpointService, hcp *hyperv1.HostedControlPlane, log logr.Logger) (string, []ec2types.DnsEntry, error) {
+	log.Info("endpoint does not already exist")
+
+	if awsEndpointService.Status.SecurityGroupID == "" {
+		return "", nil, fmt.Errorf("security group ID doesn't exist yet for the endpoint to use")
+	}
+	output, err := ec2Client.CreateVpcEndpoint(ctx, &ec2.CreateVpcEndpointInput{
+		SecurityGroupIds: []string{awsEndpointService.Status.SecurityGroupID},
+		ServiceName:      aws.String(awsEndpointService.Status.EndpointServiceName),
+		VpcId:            aws.String(hcp.Spec.Platform.AWS.CloudProviderConfig.VPC),
+		VpcEndpointType:  ec2types.VpcEndpointTypeInterface,
+		SubnetIds:        awsEndpointService.Spec.SubnetIDs,
+		TagSpecifications: []ec2types.TagSpecification{{
+			ResourceType: ec2types.ResourceTypeVpcEndpoint,
+			Tags:         apiTagToEC2Tag(awsEndpointService.Name, hcp.Spec.Platform.AWS.ResourceTags),
+		}},
+	})
+	if err != nil {
+		msg := err.Error()
+		var apiErr smithy.APIError
+		if errors.As(err, &apiErr) {
+			msg = apiErr.ErrorCode()
+		}
+		log.Error(err, "failed to create vpc endpoint")
+		return "", nil, fmt.Errorf("failed to create vpc endpoint: %s", msg)
+	}
+	if output == nil || output.VpcEndpoint == nil {
+		return "", nil, fmt.Errorf("CreateVpcEndpoint output is nil")
+	}
+
+	endpointID := aws.ToString(output.VpcEndpoint.VpcEndpointId)
+	log.Info("endpoint created", "endpointID", endpointID)
+	awsEndpointService.Status.EndpointID = endpointID
+	return endpointID, output.VpcEndpoint.DnsEntries, nil
+}
+
+func (r *AWSEndpointServiceReconciler) reconcileEndpointDNSRecords(ctx context.Context, route53Client awsapi.ROUTE53API, awsEndpointService *hyperv1.AWSEndpointService, hcp *hyperv1.HostedControlPlane, endpointDNSEntries []ec2types.DnsEntry, log logr.Logger) ([]string, string, error) {
+	recordNames := recordsForService(awsEndpointService, hcp)
+	if len(recordNames) == 0 {
+		log.Info("WARNING: no mapping from AWSEndpointService to DNS")
+		return nil, "", nil
+	}
+
+	zn := zoneName(hcp.Name)
 	var zoneID string
 	if r.awsClientBuilder.getLocalHostedZoneID() == "" {
-		zoneID, err = lookupZoneID(ctx, route53Client, zoneName)
+		var err error
+		zoneID, err = lookupZoneID(ctx, route53Client, zn)
 		if err != nil {
-			return err
+			return nil, "", err
 		}
 		r.awsClientBuilder.setLocalHostedZoneID(zoneID)
 	} else {
@@ -778,21 +806,23 @@ func (r *AWSEndpointServiceReconciler) reconcileAWSEndpointService(ctx context.C
 
 	var fqdns []string
 	for _, recordName := range recordNames {
-		fqdn := fmt.Sprintf("%s.%s", recordName, zoneName)
+		fqdn := fmt.Sprintf("%s.%s", recordName, zn)
 		fqdns = append(fqdns, fqdn)
-		err = CreateRecord(ctx, route53Client, zoneID, fqdn, aws.ToString(endpointDNSEntries[0].DnsName), route53types.RRTypeCname)
+		err := CreateRecord(ctx, route53Client, zoneID, fqdn, aws.ToString(endpointDNSEntries[0].DnsName), route53types.RRTypeCname)
 		if err != nil {
-			return err
+			return nil, "", err
 		}
 		log.Info("DNS record created", "fqdn", fqdn)
 	}
 
-	awsEndpointService.Status.DNSNames = fqdns
-	awsEndpointService.Status.DNSZoneID = zoneID
+	return fqdns, zoneID, nil
+}
 
-	if isPublic, externalNames := netutil.IsPublicHCP(hcp), hcpExternalNames(hcp); !isPublic && len(externalNames) > 0 {
-		// only if not public and external names are configured, create services of type ExternalName so external-dns
-		// can create records for them
+func (r *AWSEndpointServiceReconciler) reconcileExternalNameServices(ctx context.Context, hcp *hyperv1.HostedControlPlane, endpointDNSEntries []ec2types.DnsEntry, log logr.Logger) error {
+	isPublic := netutil.IsPublicHCP(hcp)
+	externalNames := hcpExternalNames(hcp)
+
+	if !isPublic && len(externalNames) > 0 {
 		var errs []error
 		for svcType, externalName := range externalNames {
 			var svc *corev1.Service
@@ -812,27 +842,26 @@ func (r *AWSEndpointServiceReconciler) reconcileAWSEndpointService(ctx context.C
 		if len(errs) > 0 {
 			return fmt.Errorf("failed to create external services for private endpoints: %w", utilerrors.NewAggregate(errs))
 		}
-	} else {
-		// if the cluster is public, ensure that any ExternalName services are removed
-		privateExternalServices := &corev1.ServiceList{}
-		if err := r.List(ctx, privateExternalServices, client.HasLabels{externalPrivateServiceLabel}); err != nil {
-			return fmt.Errorf("cannot list private external services: %w", err)
-		}
-		if len(privateExternalServices.Items) > 0 {
-			log.Info("Removing private external services", "count", len(privateExternalServices.Items))
-			var errs []error
-			for i := range privateExternalServices.Items {
-				svc := &privateExternalServices.Items[i]
-				if err := r.Delete(ctx, svc); err != nil {
-					errs = append(errs, fmt.Errorf("failed to delete private external service %s: %w", svc.Name, err))
-				}
-			}
-			if len(errs) > 0 {
-				return utilerrors.NewAggregate(errs)
-			}
-		}
+		return nil
 	}
 
+	privateExternalServices := &corev1.ServiceList{}
+	if err := r.List(ctx, privateExternalServices, client.InNamespace(hcp.Namespace), client.HasLabels{externalPrivateServiceLabel}); err != nil {
+		return fmt.Errorf("cannot list private external services: %w", err)
+	}
+	if len(privateExternalServices.Items) > 0 {
+		log.Info("Removing private external services", "count", len(privateExternalServices.Items))
+		var errs []error
+		for i := range privateExternalServices.Items {
+			svc := &privateExternalServices.Items[i]
+			if err := r.Delete(ctx, svc); err != nil {
+				errs = append(errs, fmt.Errorf("failed to delete private external service %s: %w", svc.Name, err))
+			}
+		}
+		if len(errs) > 0 {
+			return utilerrors.NewAggregate(errs)
+		}
+	}
 	return nil
 }
 

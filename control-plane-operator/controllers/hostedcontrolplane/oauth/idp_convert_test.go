@@ -210,6 +210,721 @@ func TestOpenIDProviderConversion(t *testing.T) {
 	}
 }
 
+func TestDefaultIDPMappingMethods(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		input    []configv1.IdentityProvider
+		expected []configv1.MappingMethodType
+	}{
+		{
+			name:     "When no identity providers are given, it should return an empty slice",
+			input:    []configv1.IdentityProvider{},
+			expected: []configv1.MappingMethodType{},
+		},
+		{
+			name: "When mapping method is empty, it should default to claim",
+			input: []configv1.IdentityProvider{
+				{Name: "test", MappingMethod: ""},
+			},
+			expected: []configv1.MappingMethodType{configv1.MappingMethodClaim},
+		},
+		{
+			name: "When mapping method is already set, it should preserve it",
+			input: []configv1.IdentityProvider{
+				{Name: "test", MappingMethod: configv1.MappingMethodAdd},
+			},
+			expected: []configv1.MappingMethodType{configv1.MappingMethodAdd},
+		},
+		{
+			name: "When multiple providers have mixed mapping methods, it should default only empty ones",
+			input: []configv1.IdentityProvider{
+				{Name: "a", MappingMethod: ""},
+				{Name: "b", MappingMethod: configv1.MappingMethodLookup},
+				{Name: "c", MappingMethod: ""},
+			},
+			expected: []configv1.MappingMethodType{
+				configv1.MappingMethodClaim,
+				configv1.MappingMethodLookup,
+				configv1.MappingMethodClaim,
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			result := defaultIDPMappingMethods(tc.input)
+			g.Expect(result).To(HaveLen(len(tc.expected)))
+			for i, idp := range result {
+				g.Expect(idp.MappingMethod).To(Equal(tc.expected[i]))
+			}
+		})
+	}
+}
+
+func newTestVolumeMountInfo() *IDPVolumeMountInfo {
+	return &IDPVolumeMountInfo{
+		Container: oauthContainerMain().Name,
+		VolumeMounts: podspec.VolumeMounts{
+			oauthContainerMain().Name: podspec.ContainerMounts{},
+		},
+	}
+}
+
+func TestConvertBasicAuthIDP(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name        string
+		config      *configv1.IdentityProviderConfig
+		expectErr   bool
+		expectLogin bool
+		expectChall bool
+	}{
+		{
+			name: "When BasicAuth config is nil, it should return an error",
+			config: &configv1.IdentityProviderConfig{
+				Type: configv1.IdentityProviderTypeBasicAuth,
+			},
+			expectErr: true,
+		},
+		{
+			name: "When BasicAuth config has only URL, it should produce a valid provider",
+			config: &configv1.IdentityProviderConfig{
+				Type: configv1.IdentityProviderTypeBasicAuth,
+				BasicAuth: &configv1.BasicAuthIdentityProvider{
+					OAuthRemoteConnectionInfo: configv1.OAuthRemoteConnectionInfo{
+						URL: "https://auth.example.com",
+					},
+				},
+			},
+			expectErr:   false,
+			expectLogin: true,
+			expectChall: true,
+		},
+		{
+			name: "When BasicAuth config has CA and TLS certs, it should set volume mount paths",
+			config: &configv1.IdentityProviderConfig{
+				Type: configv1.IdentityProviderTypeBasicAuth,
+				BasicAuth: &configv1.BasicAuthIdentityProvider{
+					OAuthRemoteConnectionInfo: configv1.OAuthRemoteConnectionInfo{
+						URL:           "https://auth.example.com",
+						CA:            configv1.ConfigMapNameReference{Name: "my-ca"},
+						TLSClientCert: configv1.SecretNameReference{Name: "my-cert"},
+						TLSClientKey:  configv1.SecretNameReference{Name: "my-key"},
+					},
+				},
+			},
+			expectErr:   false,
+			expectLogin: true,
+			expectChall: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			vmi := newTestVolumeMountInfo()
+			data, err := convertBasicAuthIDP(tc.config, 0, vmi)
+			if tc.expectErr {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring("configuration is missing"))
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(data.login).To(Equal(tc.expectLogin))
+				g.Expect(data.challenge).To(Equal(tc.expectChall))
+				provider := data.provider.(*osinv1.BasicAuthPasswordIdentityProvider)
+				g.Expect(provider.RemoteConnectionInfo.URL).To(Equal("https://auth.example.com"))
+				if tc.config.BasicAuth.CA.Name != "" {
+					g.Expect(provider.RemoteConnectionInfo.CA).To(ContainSubstring("idp_cm_0_ca"))
+				}
+				if tc.config.BasicAuth.TLSClientCert.Name != "" {
+					g.Expect(provider.RemoteConnectionInfo.CertFile).To(ContainSubstring("idp_secret_0_tls-client-cert"))
+				}
+				if tc.config.BasicAuth.TLSClientKey.Name != "" {
+					g.Expect(provider.RemoteConnectionInfo.KeyFile).To(ContainSubstring("idp_secret_0_tls-client-key"))
+				}
+			}
+		})
+	}
+}
+
+func TestConvertGitHubIDP(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name        string
+		config      *configv1.IdentityProviderConfig
+		expectErr   bool
+		expectLogin bool
+		expectChall bool
+	}{
+		{
+			name: "When GitHub config is nil, it should return an error",
+			config: &configv1.IdentityProviderConfig{
+				Type: configv1.IdentityProviderTypeGitHub,
+			},
+			expectErr: true,
+		},
+		{
+			name: "When GitHub config is provided with organizations, it should produce a valid provider",
+			config: &configv1.IdentityProviderConfig{
+				Type: configv1.IdentityProviderTypeGitHub,
+				GitHub: &configv1.GitHubIdentityProvider{
+					ClientID:      "my-client-id",
+					ClientSecret:  configv1.SecretNameReference{Name: "gh-secret"},
+					Organizations: []string{"org1", "org2"},
+					Teams:         []string{"org1/team1"},
+					Hostname:      "github.example.com",
+				},
+			},
+			expectErr:   false,
+			expectLogin: true,
+			expectChall: false,
+		},
+		{
+			name: "When GitHub config has a CA, it should set the CA path",
+			config: &configv1.IdentityProviderConfig{
+				Type: configv1.IdentityProviderTypeGitHub,
+				GitHub: &configv1.GitHubIdentityProvider{
+					ClientID:     "my-client-id",
+					ClientSecret: configv1.SecretNameReference{Name: "gh-secret"},
+					CA:           configv1.ConfigMapNameReference{Name: "gh-ca"},
+				},
+			},
+			expectErr:   false,
+			expectLogin: true,
+			expectChall: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			vmi := newTestVolumeMountInfo()
+			data, err := convertGitHubIDP(tc.config, 0, vmi)
+			if tc.expectErr {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(data.login).To(Equal(tc.expectLogin))
+				g.Expect(data.challenge).To(Equal(tc.expectChall))
+				provider := data.provider.(*osinv1.GitHubIdentityProvider)
+				g.Expect(provider.ClientID).To(Equal(tc.config.GitHub.ClientID))
+				g.Expect(provider.Organizations).To(Equal(tc.config.GitHub.Organizations))
+				if tc.config.GitHub.CA.Name != "" {
+					g.Expect(provider.CA).To(ContainSubstring("idp_cm_0_ca"))
+				}
+			}
+		})
+	}
+}
+
+func TestConvertGitLabIDP(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name        string
+		config      *configv1.IdentityProviderConfig
+		expectErr   bool
+		expectLogin bool
+		expectChall bool
+	}{
+		{
+			name: "When GitLab config is nil, it should return an error",
+			config: &configv1.IdentityProviderConfig{
+				Type: configv1.IdentityProviderTypeGitLab,
+			},
+			expectErr: true,
+		},
+		{
+			name: "When GitLab config is provided, it should produce a valid provider with legacy set",
+			config: &configv1.IdentityProviderConfig{
+				Type: configv1.IdentityProviderTypeGitLab,
+				GitLab: &configv1.GitLabIdentityProvider{
+					URL:          "https://gitlab.example.com",
+					ClientID:     "gl-client",
+					ClientSecret: configv1.SecretNameReference{Name: "gl-secret"},
+				},
+			},
+			expectErr:   false,
+			expectLogin: true,
+			expectChall: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			vmi := newTestVolumeMountInfo()
+			data, err := convertGitLabIDP(tc.config, 0, vmi)
+			if tc.expectErr {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(data.login).To(Equal(tc.expectLogin))
+				g.Expect(data.challenge).To(Equal(tc.expectChall))
+				provider := data.provider.(*osinv1.GitLabIdentityProvider)
+				g.Expect(provider.URL).To(Equal("https://gitlab.example.com"))
+				g.Expect(provider.Legacy).ToNot(BeNil())
+				g.Expect(*provider.Legacy).To(BeFalse())
+			}
+		})
+	}
+}
+
+func TestConvertGoogleIDP(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name        string
+		config      *configv1.IdentityProviderConfig
+		expectErr   bool
+		expectLogin bool
+		expectChall bool
+	}{
+		{
+			name: "When Google config is nil, it should return an error",
+			config: &configv1.IdentityProviderConfig{
+				Type: configv1.IdentityProviderTypeGoogle,
+			},
+			expectErr: true,
+		},
+		{
+			name: "When Google config is provided with hosted domain, it should produce a valid provider",
+			config: &configv1.IdentityProviderConfig{
+				Type: configv1.IdentityProviderTypeGoogle,
+				Google: &configv1.GoogleIdentityProvider{
+					ClientID:     "google-client",
+					ClientSecret: configv1.SecretNameReference{Name: "google-secret"},
+					HostedDomain: "example.com",
+				},
+			},
+			expectErr:   false,
+			expectLogin: true,
+			expectChall: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			vmi := newTestVolumeMountInfo()
+			data, err := convertGoogleIDP(tc.config, 0, vmi)
+			if tc.expectErr {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(data.login).To(Equal(tc.expectLogin))
+				g.Expect(data.challenge).To(Equal(tc.expectChall))
+				provider := data.provider.(*osinv1.GoogleIdentityProvider)
+				g.Expect(provider.ClientID).To(Equal("google-client"))
+				g.Expect(provider.HostedDomain).To(Equal("example.com"))
+			}
+		})
+	}
+}
+
+func TestConvertHTPasswdIDP(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name        string
+		config      *configv1.IdentityProviderConfig
+		expectErr   bool
+		expectLogin bool
+		expectChall bool
+	}{
+		{
+			name: "When HTPasswd config is nil, it should return an error",
+			config: &configv1.IdentityProviderConfig{
+				Type: configv1.IdentityProviderTypeHTPasswd,
+			},
+			expectErr: true,
+		},
+		{
+			name: "When HTPasswd config is provided, it should produce a valid provider",
+			config: &configv1.IdentityProviderConfig{
+				Type: configv1.IdentityProviderTypeHTPasswd,
+				HTPasswd: &configv1.HTPasswdIdentityProvider{
+					FileData: configv1.SecretNameReference{Name: "htpasswd-secret"},
+				},
+			},
+			expectErr:   false,
+			expectLogin: true,
+			expectChall: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			vmi := newTestVolumeMountInfo()
+			data, err := convertHTPasswdIDP(tc.config, 0, vmi)
+			if tc.expectErr {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(data.login).To(Equal(tc.expectLogin))
+				g.Expect(data.challenge).To(Equal(tc.expectChall))
+				provider := data.provider.(*osinv1.HTPasswdPasswordIdentityProvider)
+				g.Expect(provider.File).To(ContainSubstring("idp_secret_0_file-data"))
+			}
+		})
+	}
+}
+
+func TestConvertKeystoneIDP(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name        string
+		config      *configv1.IdentityProviderConfig
+		expectErr   bool
+		expectLogin bool
+		expectChall bool
+	}{
+		{
+			name: "When Keystone config is nil, it should return an error",
+			config: &configv1.IdentityProviderConfig{
+				Type: configv1.IdentityProviderTypeKeystone,
+			},
+			expectErr: true,
+		},
+		{
+			name: "When Keystone config is provided with TLS certs, it should produce a valid provider",
+			config: &configv1.IdentityProviderConfig{
+				Type: configv1.IdentityProviderTypeKeystone,
+				Keystone: &configv1.KeystoneIdentityProvider{
+					OAuthRemoteConnectionInfo: configv1.OAuthRemoteConnectionInfo{
+						URL:           "https://keystone.example.com",
+						CA:            configv1.ConfigMapNameReference{Name: "ks-ca"},
+						TLSClientCert: configv1.SecretNameReference{Name: "ks-cert"},
+						TLSClientKey:  configv1.SecretNameReference{Name: "ks-key"},
+					},
+					DomainName: "my-domain",
+				},
+			},
+			expectErr:   false,
+			expectLogin: true,
+			expectChall: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			vmi := newTestVolumeMountInfo()
+			data, err := convertKeystoneIDP(tc.config, 0, vmi)
+			if tc.expectErr {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(data.login).To(Equal(tc.expectLogin))
+				g.Expect(data.challenge).To(Equal(tc.expectChall))
+				provider := data.provider.(*osinv1.KeystonePasswordIdentityProvider)
+				g.Expect(provider.RemoteConnectionInfo.URL).To(Equal("https://keystone.example.com"))
+				g.Expect(provider.DomainName).To(Equal("my-domain"))
+				g.Expect(provider.UseKeystoneIdentity).To(BeTrue())
+				g.Expect(provider.RemoteConnectionInfo.CA).To(ContainSubstring("idp_cm_0_ca"))
+				g.Expect(provider.RemoteConnectionInfo.CertInfo.CertFile).To(ContainSubstring("idp_secret_0_tls-client-cert"))
+				g.Expect(provider.RemoteConnectionInfo.CertInfo.KeyFile).To(ContainSubstring("idp_secret_0_tls-client-key"))
+			}
+		})
+	}
+}
+
+func TestConvertLDAPIDP(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name        string
+		config      *configv1.IdentityProviderConfig
+		expectErr   bool
+		expectLogin bool
+		expectChall bool
+	}{
+		{
+			name: "When LDAP config is nil, it should return an error",
+			config: &configv1.IdentityProviderConfig{
+				Type: configv1.IdentityProviderTypeLDAP,
+			},
+			expectErr: true,
+		},
+		{
+			name: "When LDAP config is provided with bind password, it should produce a valid provider",
+			config: &configv1.IdentityProviderConfig{
+				Type: configv1.IdentityProviderTypeLDAP,
+				LDAP: &configv1.LDAPIdentityProvider{
+					URL:          "ldap://ldap.example.com",
+					BindDN:       "cn=admin,dc=example,dc=com",
+					BindPassword: configv1.SecretNameReference{Name: "ldap-bind-pw"},
+					Insecure:     true,
+					Attributes: configv1.LDAPAttributeMapping{
+						ID:                []string{"dn"},
+						PreferredUsername: []string{"uid"},
+						Name:              []string{"cn"},
+						Email:             []string{"mail"},
+					},
+					CA: configv1.ConfigMapNameReference{Name: "ldap-ca"},
+				},
+			},
+			expectErr:   false,
+			expectLogin: true,
+			expectChall: true,
+		},
+		{
+			name: "When LDAP config has no bind password, it should not set the bind password field",
+			config: &configv1.IdentityProviderConfig{
+				Type: configv1.IdentityProviderTypeLDAP,
+				LDAP: &configv1.LDAPIdentityProvider{
+					URL:      "ldap://ldap.example.com",
+					Insecure: false,
+					Attributes: configv1.LDAPAttributeMapping{
+						ID: []string{"dn"},
+					},
+				},
+			},
+			expectErr:   false,
+			expectLogin: true,
+			expectChall: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			vmi := newTestVolumeMountInfo()
+			data, err := convertLDAPIDP(tc.config, 0, vmi)
+			if tc.expectErr {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(data.login).To(Equal(tc.expectLogin))
+				g.Expect(data.challenge).To(Equal(tc.expectChall))
+				provider := data.provider.(*osinv1.LDAPPasswordIdentityProvider)
+				g.Expect(provider.URL).To(Equal(tc.config.LDAP.URL))
+				g.Expect(provider.BindDN).To(Equal(tc.config.LDAP.BindDN))
+				g.Expect(provider.Insecure).To(Equal(tc.config.LDAP.Insecure))
+				g.Expect(provider.Attributes.ID).To(Equal(tc.config.LDAP.Attributes.ID))
+				if tc.config.LDAP.BindPassword.Name != "" {
+					g.Expect(provider.BindPassword.StringSourceSpec.File).To(ContainSubstring("idp_secret_0_bind-password"))
+				} else {
+					g.Expect(provider.BindPassword.StringSourceSpec.File).To(BeEmpty())
+				}
+				if tc.config.LDAP.CA.Name != "" {
+					g.Expect(provider.CA).To(ContainSubstring("idp_cm_0_ca"))
+				}
+			}
+		})
+	}
+}
+
+func TestConvertRequestHeaderIDP(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name        string
+		config      *configv1.IdentityProviderConfig
+		expectErr   bool
+		expectLogin bool
+		expectChall bool
+	}{
+		{
+			name: "When RequestHeader config is nil, it should return an error",
+			config: &configv1.IdentityProviderConfig{
+				Type: configv1.IdentityProviderTypeRequestHeader,
+			},
+			expectErr: true,
+		},
+		{
+			name: "When RequestHeader has login and challenge URLs, it should set login and challenge to true",
+			config: &configv1.IdentityProviderConfig{
+				Type: configv1.IdentityProviderTypeRequestHeader,
+				RequestHeader: &configv1.RequestHeaderIdentityProvider{
+					LoginURL:          "https://login.example.com",
+					ChallengeURL:      "https://challenge.example.com",
+					ClientCA:          configv1.ConfigMapNameReference{Name: "rh-ca"},
+					ClientCommonNames: []string{"client1"},
+					Headers:           []string{"X-Remote-User"},
+				},
+			},
+			expectErr:   false,
+			expectLogin: true,
+			expectChall: true,
+		},
+		{
+			name: "When RequestHeader has empty login and challenge URLs, it should set login and challenge to false",
+			config: &configv1.IdentityProviderConfig{
+				Type: configv1.IdentityProviderTypeRequestHeader,
+				RequestHeader: &configv1.RequestHeaderIdentityProvider{
+					ClientCA: configv1.ConfigMapNameReference{Name: "rh-ca"},
+					Headers:  []string{"X-Remote-User"},
+				},
+			},
+			expectErr:   false,
+			expectLogin: false,
+			expectChall: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			vmi := newTestVolumeMountInfo()
+			data, err := convertRequestHeaderIDP(tc.config, 0, vmi)
+			if tc.expectErr {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(data.login).To(Equal(tc.expectLogin))
+				g.Expect(data.challenge).To(Equal(tc.expectChall))
+				provider := data.provider.(*osinv1.RequestHeaderIdentityProvider)
+				g.Expect(provider.Headers).To(Equal(tc.config.RequestHeader.Headers))
+				g.Expect(provider.ClientCA).To(ContainSubstring("idp_cm_0_ca"))
+			}
+		})
+	}
+}
+
+func TestConvertProviderConfigToIDPData_UnsupportedType(t *testing.T) {
+	t.Parallel()
+	g := NewWithT(t)
+	vmi := newTestVolumeMountInfo()
+	config := &configv1.IdentityProviderConfig{
+		Type: "UnsupportedType",
+	}
+	_, err := convertProviderConfigToIDPData(t.Context(), config, nil, 0, vmi, nil, "test", true)
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(err.Error()).To(ContainSubstring("is not supported"))
+}
+
+func TestConvertProviderConfigToIDPData_Routing(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name         string
+		providerType configv1.IdentityProviderType
+		config       *configv1.IdentityProviderConfig
+		expectedKind string
+	}{
+		{
+			name:         "When type is BasicAuth, it should route to BasicAuth converter",
+			providerType: configv1.IdentityProviderTypeBasicAuth,
+			config: &configv1.IdentityProviderConfig{
+				Type: configv1.IdentityProviderTypeBasicAuth,
+				BasicAuth: &configv1.BasicAuthIdentityProvider{
+					OAuthRemoteConnectionInfo: configv1.OAuthRemoteConnectionInfo{URL: "https://example.com"},
+				},
+			},
+			expectedKind: "BasicAuthPasswordIdentityProvider",
+		},
+		{
+			name:         "When type is GitHub, it should route to GitHub converter",
+			providerType: configv1.IdentityProviderTypeGitHub,
+			config: &configv1.IdentityProviderConfig{
+				Type: configv1.IdentityProviderTypeGitHub,
+				GitHub: &configv1.GitHubIdentityProvider{
+					ClientID:     "id",
+					ClientSecret: configv1.SecretNameReference{Name: "s"},
+				},
+			},
+			expectedKind: "GitHubIdentityProvider",
+		},
+		{
+			name:         "When type is HTPasswd, it should route to HTPasswd converter",
+			providerType: configv1.IdentityProviderTypeHTPasswd,
+			config: &configv1.IdentityProviderConfig{
+				Type: configv1.IdentityProviderTypeHTPasswd,
+				HTPasswd: &configv1.HTPasswdIdentityProvider{
+					FileData: configv1.SecretNameReference{Name: "htpasswd"},
+				},
+			},
+			expectedKind: "HTPasswdPasswordIdentityProvider",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			vmi := newTestVolumeMountInfo()
+			data, err := convertProviderConfigToIDPData(t.Context(), tc.config, nil, 0, vmi, nil, "test", true)
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(data.provider.GetObjectKind().GroupVersionKind().Kind).To(Equal(tc.expectedKind))
+		})
+	}
+}
+
+func TestIDPVolumeMountInfo_ConfigMapPath(t *testing.T) {
+	t.Parallel()
+	g := NewWithT(t)
+	vmi := newTestVolumeMountInfo()
+	result := vmi.ConfigMapPath(2, "my-configmap", "ca", "ca.crt")
+	g.Expect(result).To(Equal("/etc/oauth/idp/idp_cm_2_ca/ca.crt"))
+	g.Expect(vmi.Volumes).To(HaveLen(1))
+	g.Expect(vmi.Volumes[0].Name).To(Equal("idp-cm-2-ca"))
+	g.Expect(vmi.Volumes[0].ConfigMap.Name).To(Equal("my-configmap"))
+}
+
+func TestIDPVolumeMountInfo_SecretPath(t *testing.T) {
+	t.Parallel()
+	g := NewWithT(t)
+	vmi := newTestVolumeMountInfo()
+	result := vmi.SecretPath(3, "my-secret", "client-secret", "clientSecret")
+	g.Expect(result).To(Equal("/etc/oauth/idp/idp_secret_3_client-secret/clientSecret"))
+	g.Expect(vmi.Volumes).To(HaveLen(1))
+	g.Expect(vmi.Volumes[0].Name).To(Equal("idp-secret-3-client-secret"))
+	g.Expect(vmi.Volumes[0].Secret.SecretName).To(Equal("my-secret"))
+	g.Expect(vmi.Volumes[0].Secret.DefaultMode).ToNot(BeNil())
+	g.Expect(*vmi.Volumes[0].Secret.DefaultMode).To(Equal(int32(0640)))
+}
+
+func TestIsValidURL(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		rawurl   string
+		optional bool
+		expected bool
+	}{
+		{
+			name:     "When URL is empty and optional, it should return true",
+			rawurl:   "",
+			optional: true,
+			expected: true,
+		},
+		{
+			name:     "When URL is empty and required, it should return false",
+			rawurl:   "",
+			optional: false,
+			expected: false,
+		},
+		{
+			name:     "When URL is a valid https URL, it should return true",
+			rawurl:   "https://example.com/auth",
+			optional: false,
+			expected: true,
+		},
+		{
+			name:     "When URL uses http scheme, it should return false",
+			rawurl:   "http://example.com/auth",
+			optional: false,
+			expected: false,
+		},
+		{
+			name:     "When URL has a fragment, it should return false",
+			rawurl:   "https://example.com/auth#fragment",
+			optional: false,
+			expected: false,
+		},
+		{
+			name:     "When URL has no host, it should return false",
+			rawurl:   "https://",
+			optional: false,
+			expected: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			g.Expect(isValidURL(tc.rawurl, tc.optional)).To(Equal(tc.expected))
+		})
+	}
+}
+
 func TestTransportForCARef(t *testing.T) {
 	namespace := "test"
 

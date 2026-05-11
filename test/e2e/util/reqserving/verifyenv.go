@@ -33,6 +33,8 @@ import (
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/go-logr/logr"
 )
 
 func VerifyRequestServingEnvironment(ctx context.Context) error {
@@ -47,12 +49,26 @@ func VerifyRequestServingEnvironment(ctx context.Context) error {
 		return fmt.Errorf("failed to get ClusterSizingConfiguration: %w", err)
 	}
 
-	// Verify ClusterSizingConfiguration is valid
 	if condition := meta.FindStatusCondition(csc.Status.Conditions, schedulingv1alpha1.ClusterSizingConfigurationValidType); condition == nil || condition.Status != metav1.ConditionTrue {
 		return fmt.Errorf("ClusterSizingConfiguration is not valid: %v", condition)
 	}
 
-	// Verify request serving nodes have proper taints
+	if err := verifyRequestServingNodeTaints(ctx, client); err != nil {
+		return err
+	}
+
+	if err := verifyNonRequestServingNodes(ctx, log, client, csc); err != nil {
+		return err
+	}
+
+	if err := verifyPlaceholderNodes(ctx, log, client, csc); err != nil {
+		return err
+	}
+
+	return verifyPlaceholderNamespace(ctx, client, csc)
+}
+
+func verifyRequestServingNodeTaints(ctx context.Context, client crclient.Client) error {
 	requestServingNodes := &corev1.NodeList{}
 	if err := client.List(ctx, requestServingNodes, crclient.MatchingLabels{hyperv1.RequestServingComponentLabel: "true"}); err != nil {
 		return fmt.Errorf("failed to list request serving nodes: %w", err)
@@ -60,98 +76,109 @@ func VerifyRequestServingEnvironment(ctx context.Context) error {
 
 	for _, node := range requestServingNodes.Items {
 		hasRequestServingTaint := false
-
 		for _, taint := range node.Spec.Taints {
 			if taint.Key == scheduleraws.ControlPlaneServingComponentTaint && taint.Value == "true" && taint.Effect == corev1.TaintEffectNoSchedule {
 				hasRequestServingTaint = true
 			}
 		}
-
 		if !hasRequestServingTaint {
 			return fmt.Errorf("request serving node %s missing request-serving-component taint", node.Name)
 		}
 	}
+	return nil
+}
 
-	// Verify that the non-request serving nodes are created in all zones
-	if csc.Spec.NonRequestServingNodesBufferPerZone != nil {
-		// Determine how many non-request serving nodes should be present
-		expectedCountPerZone := int(math.Ceil(csc.Spec.NonRequestServingNodesBufferPerZone.AsApproximateFloat64()))
-		pollCtx, cancel := context.WithTimeout(ctx, ComplexVerificationTimeout)
-		defer cancel()
-		err := wait.PollUntilContextCancel(pollCtx, DefaultPollingInterval, true, func(ctx context.Context) (bool, error) {
-			actualCount := map[string]int{}
-			nodes := &corev1.NodeList{}
-			if err := client.List(ctx, nodes, crclient.HasLabels{ControlPlaneNodeLabel}); err != nil {
-				log.Error(err, "failed to list nodes")
-				return false, nil
-			}
-			for _, node := range nodes.Items {
-				if _, reqServing := node.Labels[hyperv1.RequestServingComponentLabel]; reqServing {
-					continue
-				}
-				// Skip nodes that don't have a zone label
-				if zone, exists := node.Labels[corev1.LabelTopologyZone]; !exists || zone == "" {
-					continue
-				}
-				actualCount[node.Labels[corev1.LabelTopologyZone]] = actualCount[node.Labels[corev1.LabelTopologyZone]] + 1
-			}
-			if len(actualCount) < 3 {
-				log.Info("waiting for non-request serving nodes to be created in all zones", "zone count", len(actualCount))
-				return false, nil
-			}
-			for zone, count := range actualCount {
-				if count < expectedCountPerZone {
-					log.Info("waiting for non-request serving nodes to be created in all zones", "zone", zone, "count", count, "expected", expectedCountPerZone)
-					return false, nil
-				}
-			}
-			return true, nil
-		})
-		if err != nil {
-			return fmt.Errorf("failed to verify non-request serving nodes: %w", err)
-		}
+func verifyNonRequestServingNodes(ctx context.Context, log logr.Logger, client crclient.Client, csc *schedulingv1alpha1.ClusterSizingConfiguration) error {
+	if csc.Spec.NonRequestServingNodesBufferPerZone == nil {
+		return nil
 	}
+	expectedCountPerZone := int(math.Ceil(csc.Spec.NonRequestServingNodesBufferPerZone.AsApproximateFloat64()))
+	pollCtx, cancel := context.WithTimeout(ctx, ComplexVerificationTimeout)
+	defer cancel()
+	err := wait.PollUntilContextCancel(pollCtx, DefaultPollingInterval, true, func(ctx context.Context) (bool, error) {
+		actualCount := map[string]int{}
+		nodes := &corev1.NodeList{}
+		if err := client.List(ctx, nodes, crclient.HasLabels{ControlPlaneNodeLabel}); err != nil {
+			log.Error(err, "failed to list nodes")
+			return false, nil
+		}
+		for _, node := range nodes.Items {
+			if _, reqServing := node.Labels[hyperv1.RequestServingComponentLabel]; reqServing {
+				continue
+			}
+			if zone, exists := node.Labels[corev1.LabelTopologyZone]; !exists || zone == "" {
+				continue
+			}
+			actualCount[node.Labels[corev1.LabelTopologyZone]] = actualCount[node.Labels[corev1.LabelTopologyZone]] + 1
+		}
+		if len(actualCount) < 3 {
+			log.Info("waiting for non-request serving nodes to be created in all zones", "zone count", len(actualCount))
+			return false, nil
+		}
+		for zone, count := range actualCount {
+			if count < expectedCountPerZone {
+				log.Info("waiting for non-request serving nodes to be created in all zones", "zone", zone, "count", count, "expected", expectedCountPerZone)
+				return false, nil
+			}
+		}
+		return true, nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to verify non-request serving nodes: %w", err)
+	}
+	return nil
+}
 
-	// Verify that placeholder nodes exist if configured
+func verifyPlaceholderNodes(ctx context.Context, log logr.Logger, client crclient.Client, csc *schedulingv1alpha1.ClusterSizingConfiguration) error {
 	for _, size := range csc.Spec.Sizes {
-		if size.Management != nil && size.Management.Placeholders > 0 {
-			pollCtx, cancel := context.WithTimeout(ctx, ComplexVerificationTimeout)
-			defer cancel()
-			err := wait.PollUntilContextCancel(pollCtx, DefaultPollingInterval, true, func(ctx context.Context) (bool, error) {
-				nodes := &corev1.NodeList{}
-				if err := client.List(ctx, nodes, crclient.HasLabels{ControlPlaneNodeLabel, hyperv1.RequestServingComponentLabel}); err != nil {
-					log.Error(err, "failed to list nodes")
-					return false, nil
-				}
-				nodePairs := map[string]int{}
-				for _, node := range nodes.Items {
-					if _, hasHC := node.Labels[hyperv1.HostedClusterLabel]; hasHC {
-						continue
-					}
-					if nodeSize := node.Labels[hyperv1.NodeSizeLabel]; nodeSize != size.Name {
-						continue
-					}
-					nodePairs[node.Labels[scheduleraws.OSDFleetManagerPairedNodesLabel]] = nodePairs[node.Labels[scheduleraws.OSDFleetManagerPairedNodesLabel]] + 1
-				}
-				for pair, count := range nodePairs {
-					if count != 2 {
-						log.Info("waiting for placeholder node pair", "pair", pair, "count", count)
-						return false, nil
-					}
-				}
-				if len(nodePairs) < size.Management.Placeholders {
-					log.Info("waiting for count of placeholder pairs to be available", "pair count", len(nodePairs), "expected", size.Management.Placeholders)
-					return false, nil
-				}
-				return true, nil
-			})
-			if err != nil {
-				return fmt.Errorf("failed to verify placeholder nodes for size %s: %w", size.Name, err)
-			}
+		if size.Management == nil || size.Management.Placeholders <= 0 {
+			continue
+		}
+		if err := verifyPlaceholderNodesForSize(ctx, log, client, size); err != nil {
+			return err
 		}
 	}
+	return nil
+}
 
-	// Check if any size configuration has placeholders configured
+func verifyPlaceholderNodesForSize(ctx context.Context, log logr.Logger, client crclient.Client, size schedulingv1alpha1.SizeConfiguration) error {
+	pollCtx, cancel := context.WithTimeout(ctx, ComplexVerificationTimeout)
+	defer cancel()
+	err := wait.PollUntilContextCancel(pollCtx, DefaultPollingInterval, true, func(ctx context.Context) (bool, error) {
+		nodes := &corev1.NodeList{}
+		if err := client.List(ctx, nodes, crclient.HasLabels{ControlPlaneNodeLabel, hyperv1.RequestServingComponentLabel}); err != nil {
+			log.Error(err, "failed to list nodes")
+			return false, nil
+		}
+		nodePairs := map[string]int{}
+		for _, node := range nodes.Items {
+			if _, hasHC := node.Labels[hyperv1.HostedClusterLabel]; hasHC {
+				continue
+			}
+			if nodeSize := node.Labels[hyperv1.NodeSizeLabel]; nodeSize != size.Name {
+				continue
+			}
+			nodePairs[node.Labels[scheduleraws.OSDFleetManagerPairedNodesLabel]] = nodePairs[node.Labels[scheduleraws.OSDFleetManagerPairedNodesLabel]] + 1
+		}
+		for pair, count := range nodePairs {
+			if count != 2 {
+				log.Info("waiting for placeholder node pair", "pair", pair, "count", count)
+				return false, nil
+			}
+		}
+		if len(nodePairs) < size.Management.Placeholders {
+			log.Info("waiting for count of placeholder pairs to be available", "pair count", len(nodePairs), "expected", size.Management.Placeholders)
+			return false, nil
+		}
+		return true, nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to verify placeholder nodes for size %s: %w", size.Name, err)
+	}
+	return nil
+}
+
+func verifyPlaceholderNamespace(ctx context.Context, client crclient.Client, csc *schedulingv1alpha1.ClusterSizingConfiguration) error {
 	hasPlaceholders := false
 	for _, size := range csc.Spec.Sizes {
 		if size.Management != nil && size.Management.Placeholders > 0 {
@@ -159,14 +186,12 @@ func VerifyRequestServingEnvironment(ctx context.Context) error {
 			break
 		}
 	}
-
-	// If placeholders are configured, verify the namespace exists
-	if hasPlaceholders {
-		placeholderNS := &corev1.Namespace{}
-		if err := client.Get(ctx, types.NamespacedName{Name: PlaceholderNamespace}, placeholderNS); err != nil {
-			return fmt.Errorf("placeholders configured in ClusterSizingConfiguration but %s namespace not found: %w", PlaceholderNamespace, err)
-		}
+	if !hasPlaceholders {
+		return nil
 	}
-
+	placeholderNS := &corev1.Namespace{}
+	if err := client.Get(ctx, types.NamespacedName{Name: PlaceholderNamespace}, placeholderNS); err != nil {
+		return fmt.Errorf("placeholders configured in ClusterSizingConfiguration but %s namespace not found: %w", PlaceholderNamespace, err)
+	}
 	return nil
 }

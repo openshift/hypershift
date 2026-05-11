@@ -199,41 +199,12 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context, l logr.Logger) (*C
 		return nil, err
 	}
 
-	awsSession, err := o.AWSCredentialsOpts.GetSession(ctx, "cli-create-infra", o.CredentialsSecretData, o.Region)
+	awsSession, vpcOwnerSession, err := o.initAWSSessions(ctx)
 	if err != nil {
 		return nil, err
 	}
-	var vpcOwnerSession *aws.Config
-	if o.VPCOwnerCredentialOpts.AWSCredentialsFile != "" {
-		vpcOwnerSession, err = o.VPCOwnerCredentialOpts.GetSession(ctx, "cli-create-infra", nil, o.Region)
-		if err != nil {
-			return nil, err
-		}
-	}
 
-	var clusterCreatorEC2Client, ec2Client awsapi.EC2API
-	var vpcOwnerRoute53Client, route53Client awsapi.ROUTE53API
-	awsConfig := awsutil.NewConfig()
-	clusterCreatorEC2Client = ec2.NewFromConfig(*awsSession, func(o *ec2.Options) {
-		o.Retryer = awsConfig()
-	})
-	if vpcOwnerSession != nil {
-		ec2Client = ec2.NewFromConfig(*vpcOwnerSession, func(o *ec2.Options) {
-			o.Retryer = awsConfig()
-		})
-	} else {
-		ec2Client = clusterCreatorEC2Client
-	}
-	route53Client = route53.NewFromConfig(*awsSession, func(o *route53.Options) {
-		o.Retryer = awsutil.NewRoute53Config()()
-	})
-	if vpcOwnerSession != nil {
-		vpcOwnerRoute53Client = route53.NewFromConfig(*vpcOwnerSession, func(o *route53.Options) {
-			o.Retryer = awsutil.NewRoute53Config()()
-		})
-	} else {
-		vpcOwnerRoute53Client = route53Client
-	}
+	clusterCreatorEC2Client, ec2Client, route53Client, vpcOwnerRoute53Client := o.initAWSClients(awsSession, vpcOwnerSession)
 
 	if err := o.parseAdditionalTags(); err != nil {
 		return nil, err
@@ -256,20 +227,97 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context, l logr.Logger) (*C
 		o.Zones = append(o.Zones, zone)
 	}
 
-	// VPC resources
-	result.VPCID, err = o.createVPC(ctx, l, ec2Client)
-	if err != nil {
-		return nil, err
-	}
-	if err = o.CreateDHCPOptions(ctx, l, ec2Client, result.VPCID); err != nil {
-		return nil, err
-	}
-	igwID, err := o.CreateInternetGateway(ctx, l, ec2Client, result.VPCID)
+	igwID, err := o.createVPCResources(ctx, l, ec2Client, result)
 	if err != nil {
 		return nil, err
 	}
 
-	// Per zone resources
+	publicSubnetIDs, err := o.createPerZoneResources(ctx, l, ec2Client, result, igwID)
+	if err != nil {
+		return nil, err
+	}
+
+	result.PublicZoneID, err = o.LookupPublicZone(ctx, l, route53Client)
+	if err != nil {
+		return nil, err
+	}
+
+	if vpcOwnerSession != nil {
+		if err := o.shareSubnets(ctx, l, vpcOwnerSession, awsSession, publicSubnetIDs, result); err != nil {
+			return nil, err
+		}
+	}
+
+	if err := o.createDNSZones(ctx, l, clusterCreatorEC2Client, route53Client, vpcOwnerRoute53Client, result); err != nil {
+		return nil, err
+	}
+
+	if err := o.createProxyResources(ctx, l, ec2Client, result, publicSubnetIDs); err != nil {
+		return nil, err
+	}
+
+	return result, nil
+}
+
+func (o *CreateInfraOptions) initAWSSessions(ctx context.Context) (*aws.Config, *aws.Config, error) {
+	awsSession, err := o.AWSCredentialsOpts.GetSession(ctx, "cli-create-infra", o.CredentialsSecretData, o.Region)
+	if err != nil {
+		return nil, nil, err
+	}
+	var vpcOwnerSession *aws.Config
+	if o.VPCOwnerCredentialOpts.AWSCredentialsFile != "" {
+		vpcOwnerSession, err = o.VPCOwnerCredentialOpts.GetSession(ctx, "cli-create-infra", nil, o.Region)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+	return awsSession, vpcOwnerSession, nil
+}
+
+func (o *CreateInfraOptions) initAWSClients(awsSession, vpcOwnerSession *aws.Config) (awsapi.EC2API, awsapi.EC2API, awsapi.ROUTE53API, awsapi.ROUTE53API) {
+	awsConfig := awsutil.NewConfig()
+	clusterCreatorEC2Client := ec2.NewFromConfig(*awsSession, func(o *ec2.Options) {
+		o.Retryer = awsConfig()
+	})
+	var ec2Client awsapi.EC2API
+	if vpcOwnerSession != nil {
+		ec2Client = ec2.NewFromConfig(*vpcOwnerSession, func(o *ec2.Options) {
+			o.Retryer = awsConfig()
+		})
+	} else {
+		ec2Client = clusterCreatorEC2Client
+	}
+	route53Client := route53.NewFromConfig(*awsSession, func(o *route53.Options) {
+		o.Retryer = awsutil.NewRoute53Config()()
+	})
+	var vpcOwnerRoute53Client awsapi.ROUTE53API
+	if vpcOwnerSession != nil {
+		vpcOwnerRoute53Client = route53.NewFromConfig(*vpcOwnerSession, func(o *route53.Options) {
+			o.Retryer = awsutil.NewRoute53Config()()
+		})
+	} else {
+		vpcOwnerRoute53Client = route53Client
+	}
+	return clusterCreatorEC2Client, ec2Client, route53Client, vpcOwnerRoute53Client
+}
+
+func (o *CreateInfraOptions) createVPCResources(ctx context.Context, l logr.Logger, ec2Client awsapi.EC2API, result *CreateInfraOutput) (string, error) {
+	var err error
+	result.VPCID, err = o.createVPC(ctx, l, ec2Client)
+	if err != nil {
+		return "", err
+	}
+	if err = o.CreateDHCPOptions(ctx, l, ec2Client, result.VPCID); err != nil {
+		return "", err
+	}
+	igwID, err := o.CreateInternetGateway(ctx, l, ec2Client, result.VPCID)
+	if err != nil {
+		return "", err
+	}
+	return igwID, nil
+}
+
+func (o *CreateInfraOptions) createPerZoneResources(ctx context.Context, l logr.Logger, ec2Client awsapi.EC2API, result *CreateInfraOutput, igwID string) ([]string, error) {
 	_, cidrNetwork, err := net.ParseCIDR(o.VPCCIDR)
 	if err != nil {
 		return nil, err
@@ -285,10 +333,7 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context, l logr.Logger) (*C
 	var publicSubnetIDs []string
 	var natGatewayID string
 	for _, zone := range o.Zones {
-		var (
-			privateSubnetID string
-			err             error
-		)
+		var privateSubnetID string
 		if !o.PublicOnly {
 			privateSubnetID, err = o.CreatePrivateSubnet(ctx, l, ec2Client, result.VPCID, zone, privateNetwork.String())
 			if err != nil {
@@ -321,7 +366,6 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context, l logr.Logger) (*C
 			Name:     zone,
 			SubnetID: zoneSubnetID,
 		})
-		// increment each subnet by /20
 		privateNetwork.IP[2] = privateNetwork.IP[2] + 16
 		publicNetwork.IP[2] = publicNetwork.IP[2] + 16
 	}
@@ -334,66 +378,64 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context, l logr.Logger) (*C
 	if err != nil {
 		return nil, err
 	}
-	result.PublicZoneID, err = o.LookupPublicZone(ctx, l, route53Client)
-	if err != nil {
-		return nil, err
-	}
+	return publicSubnetIDs, nil
+}
 
-	if vpcOwnerSession != nil {
-		if err := o.shareSubnets(ctx, l, vpcOwnerSession, awsSession, publicSubnetIDs, result); err != nil {
-			return nil, err
-		}
-	}
-
+func (o *CreateInfraOptions) createDNSZones(ctx context.Context, l logr.Logger, clusterCreatorEC2Client awsapi.EC2API, route53Client, vpcOwnerRoute53Client awsapi.ROUTE53API, result *CreateInfraOutput) error {
 	privateZoneClient := vpcOwnerRoute53Client
 	var initialVPC string
+	var err error
 	if o.PrivateZonesInClusterAccount {
 		privateZoneClient = route53Client
-
-		// Create a dummy vpc that we can use to create the private hosted zones
 		if initialVPC, err = o.createVPC(ctx, l, clusterCreatorEC2Client); err != nil {
-			return nil, err
+			return err
 		}
+		defer func() {
+			if initialVPC != "" {
+				if cleanupErr := o.deleteVPC(ctx, l, clusterCreatorEC2Client, initialVPC); cleanupErr != nil {
+					l.Error(cleanupErr, "Failed to clean up temporary VPC", "id", initialVPC)
+				}
+			}
+		}()
 	}
 
 	result.PrivateZoneID, err = o.CreatePrivateZone(ctx, l, privateZoneClient, ZoneName(o.Name, o.BaseDomainPrefix, o.BaseDomain), result.VPCID, o.PrivateZonesInClusterAccount, vpcOwnerRoute53Client, initialVPC)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	result.LocalZoneID, err = o.CreatePrivateZone(ctx, l, privateZoneClient, fmt.Sprintf("%s.%s", o.Name, hypershiftLocalZoneName), result.VPCID, o.PrivateZonesInClusterAccount, vpcOwnerRoute53Client, initialVPC)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	if initialVPC != "" {
-		if err := o.deleteVPC(ctx, l, clusterCreatorEC2Client, initialVPC); err != nil {
-			return nil, err
-		}
+	return nil
+}
+
+func (o *CreateInfraOptions) createProxyResources(ctx context.Context, l logr.Logger, ec2Client awsapi.EC2API, result *CreateInfraOutput, publicSubnetIDs []string) error {
+	if !o.EnableProxy && !o.EnableSecureProxy {
+		return nil
+	}
+	sgGroupID, err := o.createProxySecurityGroup(ctx, l, ec2Client, result.VPCID)
+	if err != nil {
+		return fmt.Errorf("failed to create security group for proxy: %w", err)
 	}
 
-	if o.EnableProxy || o.EnableSecureProxy {
-		sgGroupID, err := o.createProxySecurityGroup(ctx, l, ec2Client, result.VPCID)
+	if o.ProxyVPCEndpointServiceName != "" {
+		result.ProxyAddr, err = o.createProxyVPCEndpoint(ctx, l, ec2Client, result.VPCID, result.Zones[0].SubnetID, sgGroupID)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create security group for proxy: %w", err)
+			return err
 		}
-
-		if o.ProxyVPCEndpointServiceName != "" {
-			result.ProxyAddr, err = o.createProxyVPCEndpoint(ctx, l, ec2Client, result.VPCID, result.Zones[0].SubnetID, sgGroupID)
-			if err != nil {
-				return nil, err
-			}
-		} else {
-			proxyResult, err := o.createProxyHost(ctx, l, ec2Client, result.Zones[0].SubnetID, sgGroupID, o.EnableSecureProxy)
-			if err != nil {
-				return nil, fmt.Errorf("failed to create proxy host: %w", err)
-			}
-			result.ProxyAddr = proxyResult.HTTPProxyURL
-			result.SecureProxyAddr = proxyResult.HTTPSProxyURL
-			result.ProxyCA = proxyResult.CA
-			result.ProxyPrivateSSHKey = proxyResult.PrivateKey
+	} else {
+		proxyResult, err := o.createProxyHost(ctx, l, ec2Client, publicSubnetIDs[0], sgGroupID, o.EnableSecureProxy)
+		if err != nil {
+			return fmt.Errorf("failed to create proxy host: %w", err)
 		}
+		result.ProxyAddr = proxyResult.HTTPProxyURL
+		result.SecureProxyAddr = proxyResult.HTTPSProxyURL
+		result.ProxyCA = proxyResult.CA
+		result.ProxyPrivateSSHKey = proxyResult.PrivateKey
 	}
-	return result, nil
+	return nil
 }
 
 func (o *CreateInfraOptions) createProxySecurityGroup(ctx context.Context, l logr.Logger, client awsapi.EC2API, vpcID string) (string, error) {

@@ -254,6 +254,7 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	return result, nil
 }
 
+//nolint:gocyclo
 func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool) (ctrl.Result, error) {
 	log := ctrl.LoggerFrom(ctx)
 

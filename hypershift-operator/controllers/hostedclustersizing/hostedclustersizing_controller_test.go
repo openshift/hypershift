@@ -2,8 +2,11 @@ package hostedclustersizing
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
+
+	. "github.com/onsi/gomega"
 
 	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	schedulingv1alpha1 "github.com/openshift/hypershift/api/scheduling/v1alpha1"
@@ -951,7 +954,7 @@ func TestSizingController_Reconcile(t *testing.T) {
 			}},
 		},
 		{
-			name:   "no-op, delay already exposed in status",
+			name:   "no-op, delay already exposed in status, preserves requeue",
 			config: validCommonConfig,
 			hostedCluster: &hypershiftv1beta1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
@@ -992,6 +995,7 @@ func TestSizingController_Reconcile(t *testing.T) {
 					Status: hypershiftv1beta1.HostedControlPlaneStatus{NodeCount: ptr.To(3)},
 				}, nil
 			},
+			expected: &action{requeueAfter: 8 * time.Minute},
 		},
 		{
 			name:   "delay for concurrency",
@@ -1114,7 +1118,7 @@ func TestSizingController_Reconcile(t *testing.T) {
 			}, requeueAfter: 5 * time.Minute},
 		},
 		{
-			name:   "delay for concurrency, no-op since condition already present",
+			name:   "delay for concurrency, no-op since condition already present, preserves requeue",
 			config: validCommonConfig,
 			hostedCluster: &hypershiftv1beta1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
@@ -1162,6 +1166,7 @@ func TestSizingController_Reconcile(t *testing.T) {
 					Status: hypershiftv1beta1.HostedControlPlaneStatus{NodeCount: ptr.To(3)},
 				}, nil
 			},
+			expected: &action{requeueAfter: 5 * time.Minute},
 		},
 		{
 			name:   "delay for concurrency, undo conditions since cluster returned to original size during delay",
@@ -1604,6 +1609,610 @@ func TestSizingController_Reconcile(t *testing.T) {
 			}
 			if diff := cmp.Diff(action, testCase.expected, compareActions()...); diff != "" {
 				t.Fatalf("got incorrect action: %v", diff)
+			}
+		})
+	}
+}
+
+func TestIsConfigValid(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		config   *schedulingv1alpha1.ClusterSizingConfiguration
+		expected bool
+	}{
+		{
+			name: "When the Valid condition is True, it should return true",
+			config: &schedulingv1alpha1.ClusterSizingConfiguration{
+				Status: schedulingv1alpha1.ClusterSizingConfigurationStatus{
+					Conditions: []metav1.Condition{
+						{Type: schedulingv1alpha1.ClusterSizingConfigurationValidType, Status: metav1.ConditionTrue},
+					},
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "When the Valid condition is False, it should return false",
+			config: &schedulingv1alpha1.ClusterSizingConfiguration{
+				Status: schedulingv1alpha1.ClusterSizingConfigurationStatus{
+					Conditions: []metav1.Condition{
+						{Type: schedulingv1alpha1.ClusterSizingConfigurationValidType, Status: metav1.ConditionFalse},
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "When no conditions exist, it should return false",
+			config: &schedulingv1alpha1.ClusterSizingConfiguration{
+				Status: schedulingv1alpha1.ClusterSizingConfigurationStatus{},
+			},
+			expected: false,
+		},
+		{
+			name: "When the Valid condition is Unknown, it should return false",
+			config: &schedulingv1alpha1.ClusterSizingConfiguration{
+				Status: schedulingv1alpha1.ClusterSizingConfigurationStatus{
+					Conditions: []metav1.Condition{
+						{Type: schedulingv1alpha1.ClusterSizingConfigurationValidType, Status: metav1.ConditionUnknown},
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "When only unrelated conditions exist, it should return false",
+			config: &schedulingv1alpha1.ClusterSizingConfiguration{
+				Status: schedulingv1alpha1.ClusterSizingConfigurationStatus{
+					Conditions: []metav1.Condition{
+						{Type: "SomeOtherType", Status: metav1.ConditionTrue},
+					},
+				},
+			},
+			expected: false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			g.Expect(isConfigValid(tc.config)).To(Equal(tc.expected))
+		})
+	}
+}
+
+func TestDetermineSizeClass(t *testing.T) {
+	ctrl.SetLogger(zap.New(zap.UseDevMode(true), zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
+		o.EncodeTime = zapcore.RFC3339TimeEncoder
+	})))
+	logger := ctrl.Log
+
+	configWithSizes := &schedulingv1alpha1.ClusterSizingConfiguration{
+		Spec: schedulingv1alpha1.ClusterSizingConfigurationSpec{
+			Sizes: []schedulingv1alpha1.SizeConfiguration{
+				{Name: "small", Criteria: schedulingv1alpha1.NodeCountCriteria{From: 0, To: ptr.To(uint32(10))}},
+				{Name: "medium", Criteria: schedulingv1alpha1.NodeCountCriteria{From: 11, To: ptr.To(uint32(100))}},
+				{Name: "large", Criteria: schedulingv1alpha1.NodeCountCriteria{From: 101}},
+			},
+		},
+	}
+
+	for _, tc := range []struct {
+		name                  string
+		config                *schedulingv1alpha1.ClusterSizingConfiguration
+		hostedCluster         *hypershiftv1beta1.HostedCluster
+		sizeClassLabelPresent bool
+		expectedName          string
+		expectNil             bool
+	}{
+		{
+			name:   "When override annotation references a valid size, it should return that size",
+			config: configWithSizes,
+			hostedCluster: &hypershiftv1beta1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{hypershiftv1beta1.ClusterSizeOverrideAnnotation: "medium"},
+				},
+			},
+			expectedName: "medium",
+		},
+		{
+			name:   "When override annotation references an invalid size, it should return nil",
+			config: configWithSizes,
+			hostedCluster: &hypershiftv1beta1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{hypershiftv1beta1.ClusterSizeOverrideAnnotation: "nonexistent"},
+				},
+			},
+			expectNil: true,
+		},
+		{
+			name:   "When autoscaling annotation is true with valid recommended size, it should return that size",
+			config: configWithSizes,
+			hostedCluster: &hypershiftv1beta1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						hypershiftv1beta1.ResourceBasedControlPlaneAutoscalingAnnotation: "true",
+						hypershiftv1beta1.RecommendedClusterSizeAnnotation:               "large",
+					},
+				},
+			},
+			expectedName: "large",
+		},
+		{
+			name:   "When autoscaling annotation is not 'true', it should fall through to node count path",
+			config: configWithSizes,
+			hostedCluster: &hypershiftv1beta1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						hypershiftv1beta1.ResourceBasedControlPlaneAutoscalingAnnotation: "false",
+						hypershiftv1beta1.RecommendedClusterSizeAnnotation:               "large",
+					},
+				},
+			},
+			// Falls through to determineSizeClassFromNodeCount; with nodeCount=0 -> "small"
+			expectedName: "small",
+		},
+		{
+			name:   "When override takes priority over autoscaling, it should use the override",
+			config: configWithSizes,
+			hostedCluster: &hypershiftv1beta1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						hypershiftv1beta1.ClusterSizeOverrideAnnotation:                  "large",
+						hypershiftv1beta1.ResourceBasedControlPlaneAutoscalingAnnotation: "true",
+						hypershiftv1beta1.RecommendedClusterSizeAnnotation:               "small",
+					},
+				},
+			},
+			expectedName: "large",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			r := &reconciler{
+				now: time.Now,
+				hccoReportsNodeCount: func(_ context.Context, _ *hypershiftv1beta1.HostedCluster) (bool, error) {
+					return false, nil
+				},
+				nodePoolsForHostedCluster: func(_ context.Context, _ *hypershiftv1beta1.HostedCluster) (*hypershiftv1beta1.NodePoolList, error) {
+					return &hypershiftv1beta1.NodePoolList{}, nil
+				},
+			}
+
+			result, err := r.determineSizeClass(t.Context(), logger, tc.config, tc.hostedCluster, tc.sizeClassLabelPresent)
+			g.Expect(err).ToNot(HaveOccurred())
+			if tc.expectNil {
+				g.Expect(result).To(BeNil())
+			} else {
+				g.Expect(result).ToNot(BeNil())
+				g.Expect(result.Name).To(Equal(tc.expectedName))
+			}
+		})
+	}
+}
+
+func TestDetermineSizeClassFromAutoscaling(t *testing.T) {
+	ctrl.SetLogger(zap.New(zap.UseDevMode(true), zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
+		o.EncodeTime = zapcore.RFC3339TimeEncoder
+	})))
+	logger := ctrl.Log
+
+	for _, tc := range []struct {
+		name         string
+		config       *schedulingv1alpha1.ClusterSizingConfiguration
+		hc           *hypershiftv1beta1.HostedCluster
+		expectedName string
+		expectNil    bool
+	}{
+		{
+			name: "When sizes list is empty, it should return nil",
+			config: &schedulingv1alpha1.ClusterSizingConfiguration{
+				Spec: schedulingv1alpha1.ClusterSizingConfigurationSpec{
+					Sizes: []schedulingv1alpha1.SizeConfiguration{},
+				},
+			},
+			hc:        &hypershiftv1beta1.HostedCluster{},
+			expectNil: true,
+		},
+		{
+			name: "When recommended size annotation matches a configured size, it should return that size",
+			config: &schedulingv1alpha1.ClusterSizingConfiguration{
+				Spec: schedulingv1alpha1.ClusterSizingConfigurationSpec{
+					Sizes: []schedulingv1alpha1.SizeConfiguration{
+						{Name: "small"},
+						{Name: "medium"},
+						{Name: "large"},
+					},
+				},
+			},
+			hc: &hypershiftv1beta1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						hypershiftv1beta1.RecommendedClusterSizeAnnotation: "medium",
+					},
+				},
+			},
+			expectedName: "medium",
+		},
+		{
+			name: "When recommended size annotation does not match any configured size, it should fall back to first size",
+			config: &schedulingv1alpha1.ClusterSizingConfiguration{
+				Spec: schedulingv1alpha1.ClusterSizingConfigurationSpec{
+					Sizes: []schedulingv1alpha1.SizeConfiguration{
+						{Name: "small"},
+						{Name: "large"},
+					},
+				},
+			},
+			hc: &hypershiftv1beta1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						hypershiftv1beta1.RecommendedClusterSizeAnnotation: "nonexistent",
+					},
+				},
+			},
+			expectedName: "small",
+		},
+		{
+			name: "When no recommended size annotation is set, it should fall back to first size",
+			config: &schedulingv1alpha1.ClusterSizingConfiguration{
+				Spec: schedulingv1alpha1.ClusterSizingConfigurationSpec{
+					Sizes: []schedulingv1alpha1.SizeConfiguration{
+						{Name: "tiny"},
+						{Name: "huge"},
+					},
+				},
+			},
+			hc:           &hypershiftv1beta1.HostedCluster{},
+			expectedName: "tiny",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			r := &reconciler{}
+
+			result, err := r.determineSizeClassFromAutoscaling(logger, tc.config, tc.hc)
+			g.Expect(err).ToNot(HaveOccurred())
+			if tc.expectNil {
+				g.Expect(result).To(BeNil())
+			} else {
+				g.Expect(result).ToNot(BeNil())
+				g.Expect(result.Name).To(Equal(tc.expectedName))
+			}
+		})
+	}
+}
+
+func TestCheckTransitionDelay(t *testing.T) {
+	theTime, err := time.Parse(time.RFC3339Nano, "2006-01-02T15:04:05.000000000Z")
+	if err != nil {
+		t.Fatalf("could not parse time: %v", err)
+	}
+	fakeClock := testingclock.NewFakeClock(theTime)
+
+	config := &schedulingv1alpha1.ClusterSizingConfiguration{
+		Spec: schedulingv1alpha1.ClusterSizingConfigurationSpec{
+			TransitionDelay: schedulingv1alpha1.TransitionDelayConfiguration{
+				Increase: metav1.Duration{Duration: 30 * time.Second},
+				Decrease: metav1.Duration{Duration: 10 * time.Minute},
+			},
+		},
+	}
+
+	for _, tc := range []struct {
+		name               string
+		hostedCluster      *hypershiftv1beta1.HostedCluster
+		sizeClass          *schedulingv1alpha1.SizeConfiguration
+		increasingSize     bool
+		lastTransitionTime *time.Time
+		expectNil          bool
+		expectNoOp         bool
+		expectRequeue      time.Duration
+	}{
+		{
+			name: "When increase delay has elapsed since last transition, it should return nil to allow transition",
+			hostedCluster: &hypershiftv1beta1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "hc"},
+			},
+			sizeClass:          &schedulingv1alpha1.SizeConfiguration{Name: "large"},
+			increasingSize:     true,
+			lastTransitionTime: ptr.To(fakeClock.Now().Add(-1 * time.Minute)),
+			expectNil:          true,
+		},
+		{
+			name: "When decrease delay has not elapsed since last transition, it should return action with requeue",
+			hostedCluster: &hypershiftv1beta1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "hc"},
+			},
+			sizeClass:          &schedulingv1alpha1.SizeConfiguration{Name: "small"},
+			increasingSize:     false,
+			lastTransitionTime: ptr.To(fakeClock.Now().Add(-1 * time.Minute)),
+			expectRequeue:      9 * time.Minute,
+		},
+		{
+			name: "When no previous transition exists and increase delay has not elapsed from zero time, it should return nil",
+			hostedCluster: &hypershiftv1beta1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "hc"},
+			},
+			sizeClass:      &schedulingv1alpha1.SizeConfiguration{Name: "large"},
+			increasingSize: true,
+			expectNil:      true,
+		},
+		{
+			name: "When delay has not elapsed and conditions already match status, it should return action with requeue but no applyCfg",
+			hostedCluster: &hypershiftv1beta1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "hc"},
+				Status: hypershiftv1beta1.HostedClusterStatus{Conditions: []metav1.Condition{
+					{
+						Type:               hypershiftv1beta1.ClusterSizeTransitionPending,
+						Status:             metav1.ConditionTrue,
+						Reason:             "TransitionDelayNotElapsed",
+						Message:            "HostedClusters must wait at least 10m0s to decrease in size after the cluster size changes.",
+						LastTransitionTime: metav1.NewTime(fakeClock.Now().Add(-30 * time.Second)),
+					},
+					{
+						Type:               hypershiftv1beta1.ClusterSizeTransitionRequired,
+						Status:             metav1.ConditionTrue,
+						Reason:             "small",
+						Message:            "The HostedCluster will transition to a new t-shirt size.",
+						LastTransitionTime: metav1.NewTime(fakeClock.Now().Add(-1 * time.Minute)),
+					},
+				}},
+			},
+			sizeClass:          &schedulingv1alpha1.SizeConfiguration{Name: "small"},
+			increasingSize:     false,
+			lastTransitionTime: ptr.To(fakeClock.Now().Add(-5 * time.Minute)),
+			expectNoOp:         true,
+			expectRequeue:      9 * time.Minute,
+		},
+		{
+			name: "When computed size matches the target and delay start is from computed time, it should use computed time as delay start",
+			hostedCluster: &hypershiftv1beta1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "hc"},
+				Status: hypershiftv1beta1.HostedClusterStatus{Conditions: []metav1.Condition{
+					{
+						Type:               hypershiftv1beta1.ClusterSizeTransitionRequired,
+						Status:             metav1.ConditionTrue,
+						Reason:             "large",
+						Message:            "The HostedCluster will transition to a new t-shirt size.",
+						LastTransitionTime: metav1.NewTime(fakeClock.Now().Add(-20 * time.Second)),
+					},
+				}},
+			},
+			sizeClass:          &schedulingv1alpha1.SizeConfiguration{Name: "large"},
+			increasingSize:     true,
+			lastTransitionTime: ptr.To(fakeClock.Now().Add(-5 * time.Minute)),
+			expectRequeue:      10 * time.Second,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			r := &reconciler{now: fakeClock.Now}
+
+			result := r.checkTransitionDelay(config, tc.hostedCluster, tc.sizeClass, tc.increasingSize, tc.lastTransitionTime)
+			if tc.expectNil {
+				g.Expect(result).To(BeNil())
+			} else if tc.expectNoOp {
+				g.Expect(result).ToNot(BeNil())
+				g.Expect(result.applyCfg).To(BeNil(), "no-op action should have nil applyCfg")
+				g.Expect(result.requeueAfter).To(Equal(tc.expectRequeue), "no-op action should preserve requeueAfter")
+			} else {
+				g.Expect(result).ToNot(BeNil())
+				g.Expect(result.applyCfg).ToNot(BeNil())
+				g.Expect(result.requeueAfter).To(Equal(tc.expectRequeue))
+			}
+		})
+	}
+}
+
+func TestCheckConcurrencyLimit(t *testing.T) {
+	theTime, err := time.Parse(time.RFC3339Nano, "2006-01-02T15:04:05.000000000Z")
+	if err != nil {
+		t.Fatalf("could not parse time: %v", err)
+	}
+	fakeClock := testingclock.NewFakeClock(theTime)
+
+	config := &schedulingv1alpha1.ClusterSizingConfiguration{
+		Spec: schedulingv1alpha1.ClusterSizingConfigurationSpec{
+			Concurrency: schedulingv1alpha1.ConcurrencyConfiguration{
+				SlidingWindow: metav1.Duration{Duration: 10 * time.Minute},
+				Limit:         3,
+			},
+		},
+	}
+
+	sizeClass := &schedulingv1alpha1.SizeConfiguration{Name: "large"}
+
+	for _, tc := range []struct {
+		name               string
+		hostedCluster      *hypershiftv1beta1.HostedCluster
+		listHostedClusters func(context.Context) (*hypershiftv1beta1.HostedClusterList, error)
+		expectNil          bool
+		expectNoOp         bool
+		expectRequeue      bool
+		expectErr          bool
+	}{
+		{
+			name: "When cluster is not scheduled, it should return nil to skip concurrency check",
+			hostedCluster: &hypershiftv1beta1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "hc"},
+			},
+			expectNil: true,
+		},
+		{
+			name: "When cluster is scheduled but transitions are under the limit, it should return nil to allow transition",
+			hostedCluster: &hypershiftv1beta1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace:   "ns",
+					Name:        "hc",
+					Annotations: map[string]string{hypershiftv1beta1.HostedClusterScheduledAnnotation: "true"},
+				},
+			},
+			listHostedClusters: func(_ context.Context) (*hypershiftv1beta1.HostedClusterList, error) {
+				return &hypershiftv1beta1.HostedClusterList{Items: []hypershiftv1beta1.HostedCluster{
+					hostedClusterWithTransition("first", fakeClock.Now().Add(-1*time.Minute)),
+					hostedClusterWithTransition("second", fakeClock.Now().Add(-2*time.Minute)),
+				}}, nil
+			},
+			expectNil: true,
+		},
+		{
+			name: "When cluster is scheduled and transitions are at the limit, it should return action with requeue",
+			hostedCluster: &hypershiftv1beta1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace:   "ns",
+					Name:        "hc",
+					Annotations: map[string]string{hypershiftv1beta1.HostedClusterScheduledAnnotation: "true"},
+				},
+			},
+			listHostedClusters: func(_ context.Context) (*hypershiftv1beta1.HostedClusterList, error) {
+				return &hypershiftv1beta1.HostedClusterList{Items: []hypershiftv1beta1.HostedCluster{
+					hostedClusterWithTransition("first", fakeClock.Now().Add(-1*time.Minute)),
+					hostedClusterWithTransition("second", fakeClock.Now().Add(-2*time.Minute)),
+					hostedClusterWithTransition("third", fakeClock.Now().Add(-3*time.Minute)),
+				}}, nil
+			},
+			expectRequeue: true,
+		},
+		{
+			name: "When cluster is scheduled and conditions already match, it should return action with requeue but no applyCfg",
+			hostedCluster: &hypershiftv1beta1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace:   "ns",
+					Name:        "hc",
+					Annotations: map[string]string{hypershiftv1beta1.HostedClusterScheduledAnnotation: "true"},
+				},
+				Status: hypershiftv1beta1.HostedClusterStatus{Conditions: []metav1.Condition{
+					{
+						Type:    hypershiftv1beta1.ClusterSizeTransitionPending,
+						Status:  metav1.ConditionTrue,
+						Reason:  "ConcurrencyLimitReached",
+						Message: "3 HostedClusters have already transitioned sizes in the last 10m0s, more time must elapse before the next transition.",
+					},
+					{
+						Type:    hypershiftv1beta1.ClusterSizeTransitionRequired,
+						Status:  metav1.ConditionTrue,
+						Reason:  "large",
+						Message: "The HostedCluster will transition to a new t-shirt size.",
+					},
+				}},
+			},
+			listHostedClusters: func(_ context.Context) (*hypershiftv1beta1.HostedClusterList, error) {
+				return &hypershiftv1beta1.HostedClusterList{Items: []hypershiftv1beta1.HostedCluster{
+					hostedClusterWithTransition("first", fakeClock.Now().Add(-1*time.Minute)),
+					hostedClusterWithTransition("second", fakeClock.Now().Add(-2*time.Minute)),
+					hostedClusterWithTransition("third", fakeClock.Now().Add(-3*time.Minute)),
+				}}, nil
+			},
+			expectNoOp: true,
+		},
+		{
+			name: "When listing hosted clusters fails, it should return an error",
+			hostedCluster: &hypershiftv1beta1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace:   "ns",
+					Name:        "hc",
+					Annotations: map[string]string{hypershiftv1beta1.HostedClusterScheduledAnnotation: "true"},
+				},
+			},
+			listHostedClusters: func(_ context.Context) (*hypershiftv1beta1.HostedClusterList, error) {
+				return nil, fmt.Errorf("list error")
+			},
+			expectErr: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			r := &reconciler{
+				now:                fakeClock.Now,
+				listHostedClusters: tc.listHostedClusters,
+			}
+
+			result, err := r.checkConcurrencyLimit(t.Context(), config, tc.hostedCluster, sizeClass)
+			if tc.expectErr {
+				g.Expect(err).To(HaveOccurred())
+				return
+			}
+			g.Expect(err).ToNot(HaveOccurred())
+
+			if tc.expectNil {
+				g.Expect(result).To(BeNil())
+			} else if tc.expectNoOp {
+				g.Expect(result).ToNot(BeNil())
+				g.Expect(result.applyCfg).To(BeNil(), "no-op action should have nil applyCfg")
+				g.Expect(result.requeueAfter).To(BeNumerically(">", 0), "no-op action should preserve requeueAfter")
+			} else if tc.expectRequeue {
+				g.Expect(result).ToNot(BeNil())
+				g.Expect(result.applyCfg).ToNot(BeNil())
+				g.Expect(result.requeueAfter).To(BeNumerically(">", 0))
+			}
+		})
+	}
+}
+
+func TestClearTransientConditions(t *testing.T) {
+	theTime, err := time.Parse(time.RFC3339Nano, "2006-01-02T15:04:05.000000000Z")
+	if err != nil {
+		t.Fatalf("could not parse time: %v", err)
+	}
+	fakeClock := testingclock.NewFakeClock(theTime)
+	transitionTime := fakeClock.Now().Add(-5 * time.Minute)
+
+	for _, tc := range []struct {
+		name      string
+		hc        *hypershiftv1beta1.HostedCluster
+		expectNil bool
+	}{
+		{
+			name: "When transient conditions need clearing, it should return an action with updated conditions",
+			hc: &hypershiftv1beta1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "hc"},
+				Status: hypershiftv1beta1.HostedClusterStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:    hypershiftv1beta1.ClusterSizeTransitionPending,
+							Status:  metav1.ConditionTrue,
+							Reason:  "TransitionDelayNotElapsed",
+							Message: "some message",
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "When transient conditions already match desired state, it should return nil",
+			hc: &hypershiftv1beta1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "hc"},
+				Status: hypershiftv1beta1.HostedClusterStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:    hypershiftv1beta1.ClusterSizeTransitionPending,
+							Status:  metav1.ConditionFalse,
+							Reason:  "ClusterSizeTransitioned",
+							Message: "The HostedCluster has transitioned to a new t-shirt size.",
+						},
+						{
+							Type:    hypershiftv1beta1.ClusterSizeTransitionRequired,
+							Status:  metav1.ConditionFalse,
+							Reason:  hypershiftv1beta1.AsExpectedReason,
+							Message: "The HostedCluster has transitioned to a new t-shirt size.",
+						},
+					},
+				},
+			},
+			expectNil: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			r := &reconciler{now: fakeClock.Now}
+
+			result, err := r.clearTransientConditions(tc.hc, &transitionTime)
+			g.Expect(err).ToNot(HaveOccurred())
+			if tc.expectNil {
+				g.Expect(result).To(BeNil())
+			} else {
+				g.Expect(result).ToNot(BeNil())
+				g.Expect(result.applyCfg).ToNot(BeNil())
+				g.Expect(result.applyCfg.Status).ToNot(BeNil())
 			}
 		})
 	}

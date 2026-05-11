@@ -67,10 +67,77 @@ func SetupSnapshotController(mgr ctrl.Manager) error {
 	return nil
 }
 
+func (r *SnapshotReconciler) getSnapshotConfig(ctx context.Context) (*auditlogpersistencev1alpha1.AuditLogPersistenceConfigSpec, error) {
+	config := &auditlogpersistencev1alpha1.AuditLogPersistenceConfig{}
+	if err := r.client.Get(ctx, types.NamespacedName{Name: "cluster"}, config); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to get AuditLogPersistenceConfig: %w", err)
+	}
+
+	spec := config.Spec.DeepCopy()
+	ApplyDefaults(spec)
+
+	if !IsEnabled(spec) || !IsSnapshotsEnabled(spec) {
+		return nil, nil
+	}
+	return spec, nil
+}
+
+func (r *SnapshotReconciler) getLastObservedRestartCount(ctx context.Context, pod *corev1.Pod, log logr.Logger) int32 {
+	val, ok := pod.Annotations[lastObservedRestartCountAnnotation]
+	if !ok {
+		return 0
+	}
+	count, err := parseInt32(val)
+	if err != nil {
+		log.V(1).Info("Failed to parse last observed restart count annotation, resetting to 0", "annotationValue", val, "error", err)
+		podCopy := pod.DeepCopy()
+		if podCopy.Annotations == nil {
+			podCopy.Annotations = make(map[string]string)
+		}
+		podCopy.Annotations[lastObservedRestartCountAnnotation] = "0"
+		if patchErr := r.client.Patch(ctx, podCopy, client.MergeFrom(pod)); patchErr != nil {
+			log.Error(patchErr, "Failed to reset corrupted annotation")
+		}
+		return 0
+	}
+	return count
+}
+
+func (r *SnapshotReconciler) checkSnapshotInterval(ctx context.Context, pod *corev1.Pod, spec *auditlogpersistencev1alpha1.AuditLogPersistenceConfigSpec, log logr.Logger) (shouldSnapshot bool, skipReconcile bool) {
+	lastSnapshotTimeStr, ok := pod.Annotations[lastSnapshotTimeAnnotation]
+	if !ok {
+		return true, false
+	}
+	lastSnapshotTime, err := time.Parse(time.RFC3339, lastSnapshotTimeStr)
+	if err != nil {
+		log.V(1).Info("Failed to parse last snapshot time annotation, will create snapshot", "annotationValue", lastSnapshotTimeStr, "error", err)
+		podCopy := pod.DeepCopy()
+		if podCopy.Annotations == nil {
+			podCopy.Annotations = make(map[string]string)
+		}
+		delete(podCopy.Annotations, lastSnapshotTimeAnnotation)
+		if patchErr := r.client.Patch(ctx, podCopy, client.MergeFrom(pod)); patchErr != nil {
+			log.Error(patchErr, "Failed to remove corrupted last snapshot time annotation")
+		}
+		return true, false
+	}
+	minInterval, err := time.ParseDuration(spec.Snapshots.MinInterval)
+	if err != nil {
+		log.Error(err, "Failed to parse minimum interval from config, will create snapshot", "minInterval", spec.Snapshots.MinInterval)
+		return true, false
+	}
+	if time.Since(lastSnapshotTime) >= minInterval {
+		return true, false
+	}
+	return false, true
+}
+
 func (r *SnapshotReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := r.log.WithValues("pod", req.NamespacedName)
 
-	// Get the pod
 	pod := &corev1.Pod{}
 	if err := r.client.Get(ctx, req.NamespacedName, pod); err != nil {
 		if apierrors.IsNotFound(err) {
@@ -79,12 +146,10 @@ func (r *SnapshotReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, fmt.Errorf("failed to get pod: %w", err)
 	}
 
-	// Check if this is a kube-apiserver pod
 	if !isKubeAPIServerPod(pod) {
 		return ctrl.Result{}, nil
 	}
 
-	// Check if namespace is a control plane namespace
 	ns := &corev1.Namespace{}
 	if err := r.client.Get(ctx, types.NamespacedName{Name: pod.Namespace}, ns); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to get namespace: %w", err)
@@ -94,30 +159,14 @@ func (r *SnapshotReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, nil
 	}
 
-	// Get the AuditLogPersistenceConfig
-	config := &auditlogpersistencev1alpha1.AuditLogPersistenceConfig{}
-	if err := r.client.Get(ctx, types.NamespacedName{Name: "cluster"}, config); err != nil {
-		if apierrors.IsNotFound(err) {
-			return ctrl.Result{}, nil
-		}
-		return ctrl.Result{}, fmt.Errorf("failed to get AuditLogPersistenceConfig: %w", err)
+	spec, err := r.getSnapshotConfig(ctx)
+	if err != nil {
+		return ctrl.Result{}, err
 	}
-
-	// Apply defaults to a copy of the spec to avoid modifying the original
-	spec := config.Spec.DeepCopy()
-	ApplyDefaults(spec)
-
-	// Check if feature is enabled
-	if !IsEnabled(spec) {
+	if spec == nil {
 		return ctrl.Result{}, nil
 	}
 
-	// Check if snapshots are enabled
-	if !IsSnapshotsEnabled(spec) {
-		return ctrl.Result{}, nil
-	}
-
-	// Get the kube-apiserver container restart count
 	var restartCount int32
 	for _, containerStatus := range pod.Status.ContainerStatuses {
 		if containerStatus.Name == "kube-apiserver" {
@@ -126,33 +175,12 @@ func (r *SnapshotReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		}
 	}
 
-	// Get the last observed restart count from annotation
-	lastObservedRestartCount := int32(0)
-	if val, ok := pod.Annotations[lastObservedRestartCountAnnotation]; ok {
-		var err error
-		lastObservedRestartCount, err = parseInt32(val)
-		if err != nil {
-			log.V(1).Info("Failed to parse last observed restart count annotation, resetting to 0", "annotationValue", val, "error", err)
-			// Reset corrupted annotation to 0
-			podCopy := pod.DeepCopy()
-			if podCopy.Annotations == nil {
-				podCopy.Annotations = make(map[string]string)
-			}
-			podCopy.Annotations[lastObservedRestartCountAnnotation] = "0"
-			if patchErr := r.client.Patch(ctx, podCopy, client.MergeFrom(pod)); patchErr != nil {
-				log.Error(patchErr, "Failed to reset corrupted annotation")
-				// Continue anyway - the annotation will be fixed on next reconciliation
-			}
-			lastObservedRestartCount = 0
-		}
-	}
+	lastObservedRestartCount := r.getLastObservedRestartCount(ctx, pod, log)
 
-	// Check if restart count increased (indicating a crash)
 	if restartCount <= lastObservedRestartCount {
 		return ctrl.Result{}, nil
 	}
 
-	// Always update the last observed restart count when we see a new restart
 	podCopy := pod.DeepCopy()
 	if podCopy.Annotations == nil {
 		podCopy.Annotations = make(map[string]string)
@@ -160,51 +188,17 @@ func (r *SnapshotReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	podCopy.Annotations[lastObservedRestartCountAnnotation] = fmt.Sprintf("%d", restartCount)
 	if patchErr := r.client.Patch(ctx, podCopy, client.MergeFrom(pod)); patchErr != nil {
 		log.Error(patchErr, "Failed to update last observed restart count annotation")
-		// Continue anyway - we'll try again on next reconciliation
 	}
 
-	// Check if we should create a snapshot based on minimum interval
-	shouldSnapshot := false
-	if lastSnapshotTimeStr, ok := pod.Annotations[lastSnapshotTimeAnnotation]; ok {
-		lastSnapshotTime, err := time.Parse(time.RFC3339, lastSnapshotTimeStr)
-		if err != nil {
-			log.V(1).Info("Failed to parse last snapshot time annotation, will create snapshot", "annotationValue", lastSnapshotTimeStr, "error", err)
-			// Remove corrupted annotation - it will be set correctly after snapshot creation
-			podCopy := pod.DeepCopy()
-			if podCopy.Annotations == nil {
-				podCopy.Annotations = make(map[string]string)
-			}
-			delete(podCopy.Annotations, lastSnapshotTimeAnnotation)
-			if patchErr := r.client.Patch(ctx, podCopy, client.MergeFrom(pod)); patchErr != nil {
-				log.Error(patchErr, "Failed to remove corrupted last snapshot time annotation")
-				// Continue anyway - the annotation will be fixed on next reconciliation
-			}
-			shouldSnapshot = true
-		} else {
-			minInterval, err := time.ParseDuration(spec.Snapshots.MinInterval)
-			if err != nil {
-				log.Error(err, "Failed to parse minimum interval from config, will create snapshot", "minInterval", spec.Snapshots.MinInterval)
-				shouldSnapshot = true
-			} else {
-				if time.Since(lastSnapshotTime) >= minInterval {
-					shouldSnapshot = true
-				} else {
-					log.V(1).Info("Skipping snapshot due to minimum interval", "timeSinceLastSnapshot", time.Since(lastSnapshotTime), "minInterval", minInterval, "restartCount", restartCount)
-					return ctrl.Result{}, nil
-				}
-			}
-		}
-	} else {
-		// No previous snapshot, create one
-		shouldSnapshot = true
+	shouldSnapshot, skipReconcile := r.checkSnapshotInterval(ctx, pod, spec, log)
+	if skipReconcile {
+		log.V(1).Info("Skipping snapshot due to minimum interval", "restartCount", restartCount)
+		return ctrl.Result{}, nil
 	}
-
-	// If we shouldn't snapshot, return early (we've already updated lastObservedRestartCount)
 	if !shouldSnapshot {
 		return ctrl.Result{}, nil
 	}
 
-	// Find the PVC for this pod
 	pvcName := pvcNamePrefix + pod.Name
 	pvc := &corev1.PersistentVolumeClaim{}
 	if err := r.client.Get(ctx, types.NamespacedName{Name: pvcName, Namespace: pod.Namespace}, pvc); err != nil {
@@ -215,12 +209,10 @@ func (r *SnapshotReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, fmt.Errorf("failed to get PVC: %w", err)
 	}
 
-	// Create snapshot
 	if err := r.createSnapshot(ctx, pod, pvc, spec); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to create snapshot: %w", err)
 	}
 
-	// Update pod annotation with snapshot time (lastObservedRestartCount was already updated above)
 	podCopy = pod.DeepCopy()
 	if podCopy.Annotations == nil {
 		podCopy.Annotations = make(map[string]string)
@@ -230,10 +222,8 @@ func (r *SnapshotReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, fmt.Errorf("failed to update pod annotation: %w", err)
 	}
 
-	// Manage retention
 	if err := r.manageRetention(ctx, pod, pvc, spec); err != nil {
 		log.Error(err, "Failed to manage snapshot retention")
-		// Don't fail reconciliation on retention errors
 	}
 
 	log.Info("Successfully created snapshot for pod crash", "restartCount", restartCount, "previousObservedRestartCount", lastObservedRestartCount)

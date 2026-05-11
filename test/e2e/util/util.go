@@ -1911,37 +1911,42 @@ func EnsureGuestWebhooksValidated(t *testing.T, ctx context.Context, guestClient
 	})
 }
 
+func skipGlobalPullSecretPreconditions(t *testing.T, entryHostedCluster *hyperv1.HostedCluster, additionalPullSecretFile string) {
+	t.Helper()
+	AtLeast(t, Version419)
+	// TODO (jparrill): Change check of release version `releaseVersion.GT(Version420)` to `releaseVersion.GE(Version420)`
+	// during the backport to 4.20 of this PR https://github.com/openshift/hypershift/pull/6736
+	if entryHostedCluster.Spec.Platform.Type != hyperv1.AzurePlatform && entryHostedCluster.Spec.Platform.Type != hyperv1.AWSPlatform {
+		t.Skip("test only supported on platform ARO or AWS")
+	}
+
+	if entryHostedCluster.Spec.Platform.Type == hyperv1.AWSPlatform && releaseVersion.LE(Version420) {
+		t.Skip("AWS platform not supported on version 4.20 or less")
+	}
+
+	if strings.Contains(t.Name(), "TestAutoscaling") || strings.Contains(t.Name(), "TestAutoscalingBalancing") || strings.Contains(t.Name(), "TestNodePool") {
+		t.Skip("Skip GlobalPullSecret test for NodePool and Autoscaling tests to avoid issues with the daemon set")
+	}
+
+	// due to this bug: https://issues.redhat.com/browse/OCPBUGS-63743 we should skip the TestCreateClusterCustomConfig
+	// This tests adds a custom network configuration to operatorConfiguration that causes the ovnkube-node and multus DS to crashLoop
+	// after the triggers the kubelet restart
+	if strings.Contains(t.Name(), "TestCreateClusterCustomConfig") {
+		t.Skip("Skip GlobalPullSecret test for TestCreateClusterCustomConfig to avoid issues with OVN")
+	}
+
+	if !netutil.IsPublicHC(entryHostedCluster) {
+		t.Skip("test only supported on public clusters")
+	}
+
+	if additionalPullSecretFile == "" {
+		t.Skip("additional pull secret file not provided via --e2e.additional-pull-secret-file")
+	}
+}
+
 func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclient.Client, entryHostedCluster *hyperv1.HostedCluster, additionalPullSecretFile string) {
 	t.Run("EnsureGlobalPullSecret", func(t *testing.T) {
-		AtLeast(t, Version419)
-		// TODO (jparrill): Change check of release version `releaseVersion.GT(Version420)` to `releaseVersion.GE(Version420)`
-		// during the backport to 4.20 of this PR https://github.com/openshift/hypershift/pull/6736
-		if entryHostedCluster.Spec.Platform.Type != hyperv1.AzurePlatform && entryHostedCluster.Spec.Platform.Type != hyperv1.AWSPlatform {
-			t.Skip("test only supported on platform ARO or AWS")
-		}
-
-		if entryHostedCluster.Spec.Platform.Type == hyperv1.AWSPlatform && releaseVersion.LE(Version420) {
-			t.Skip("AWS platform not supported on version 4.20 or less")
-		}
-
-		if strings.Contains(t.Name(), "TestAutoscaling") || strings.Contains(t.Name(), "TestAutoscalingBalancing") || strings.Contains(t.Name(), "TestNodePool") {
-			t.Skip("Skip GlobalPullSecret test for NodePool and Autoscaling tests to avoid issues with the daemon set")
-		}
-
-		// due to this bug: https://issues.redhat.com/browse/OCPBUGS-63743 we should skip the TestCreateClusterCustomConfig
-		// This tests adds a custom network configuration to operatorConfiguration that causes the ovnkube-node and multus DS to crashLoop
-		// after the triggers the kubelet restart
-		if strings.Contains(t.Name(), "TestCreateClusterCustomConfig") {
-			t.Skip("Skip GlobalPullSecret test for TestCreateClusterCustomConfig to avoid issues with OVN")
-		}
-
-		if !netutil.IsPublicHC(entryHostedCluster) {
-			t.Skip("test only supported on public clusters")
-		}
-
-		if additionalPullSecretFile == "" {
-			t.Skip("additional pull secret file not provided via --e2e.additional-pull-secret-file")
-		}
+		skipGlobalPullSecretPreconditions(t, entryHostedCluster, additionalPullSecretFile)
 
 		additionalPullSecretReadOnlyE2EData, err := os.ReadFile(additionalPullSecretFile)
 		if err != nil {
@@ -2291,40 +2296,22 @@ func EnsureKubeAPIDNSNameCustomCert(t *testing.T, ctx context.Context, mgmtClien
 	t.Run("EnsureKubeAPIDNSNameCustomCert", func(t *testing.T) {
 		AtLeast(t, Version419)
 
-		// Skip for kubevirt HostedClusters
 		if entryHostedCluster.Spec.Platform.Type == hyperv1.KubevirtPlatform {
 			t.Skip("Skipping EnsureKubeAPIDNSNameCustomCert test for kubevirt")
 		}
 
+		serviceDomain, retryTimeout := customCertDNSConfig(t, entryHostedCluster, clusterOpts)
+
 		var (
 			hcKASCustomKubeconfigSecretName string
 
-			serviceDomain        = "service.ci.hypershift.devcluster.openshift.com"
-			isAzure              = entryHostedCluster.Spec.Platform.Type == hyperv1.AzurePlatform
-			retryTimeout         = 5 * time.Minute
 			dnsResolutionTimeout = 30 * time.Minute
 			kasDeploymentTimeout = 30 * time.Minute
 
-			// Using domain name filtered by the external-dns deployment in CI
 			customApiServerHost     = fmt.Sprintf("api-custom-cert-%s.%s", entryHostedCluster.Spec.InfraID, serviceDomain)
 			hcpNamespace            = manifests.HostedControlPlaneNamespace(entryHostedCluster.Namespace, entryHostedCluster.Name)
 			kasCustomCertSecretName = fmt.Sprintf("%s-kas-custom-cert", entryHostedCluster.Name)
 		)
-
-		if isAzure {
-			serviceDomain = "aks-e2e.hypershift.azure.devcluster.openshift.com"
-			customApiServerHost = fmt.Sprintf("api-custom-cert-%s.%s", entryHostedCluster.Spec.InfraID, serviceDomain)
-
-			// Based on sample test evidence: ~40% failure rate due to internal DNS lag after external resolution
-			// Use retries instead of proactive waiting for better efficiency
-			retryTimeout = 10 * time.Minute // Extended retry for the kubeconfig test
-			t.Log("Using Azure-specific retry strategy for DNS propagation race condition")
-		}
-
-		if entryHostedCluster.Spec.Platform.Type == hyperv1.GCPPlatform && clusterOpts.ExternalDNSDomain != "" {
-			serviceDomain = clusterOpts.ExternalDNSDomain
-			customApiServerHost = fmt.Sprintf("api-custom-cert-%s.%s", entryHostedCluster.Spec.InfraID, serviceDomain)
-		}
 
 		g := NewWithT(t)
 		if !netutil.IsPublicHC(entryHostedCluster) {
@@ -2351,42 +2338,9 @@ func EnsureKubeAPIDNSNameCustomCert(t *testing.T, ctx context.Context, mgmtClien
 		err = mgmtClient.Create(ctx, customCertSecret)
 		g.Expect(err).NotTo(HaveOccurred(), "failed to create custom certificate secret")
 
-		// update HC with a KubeAPIDNSName and KAS custom serving cert
 		hc := entryHostedCluster.DeepCopy()
 		t.Log("Updating hosted cluster with KubeAPIDNSName and KAS custom serving cert")
-		err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
-			// Get the latest version of the object
-			latestHC := &hyperv1.HostedCluster{}
-			if err := mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(hc), latestHC); err != nil {
-				return err
-			}
-
-			// update the KubeAPIDNSName
-			latestHC.Spec.KubeAPIServerDNSName = customApiServerHost
-
-			// update the KAS custom serving cert
-			if latestHC.Spec.Configuration == nil {
-				latestHC.Spec.Configuration = &hyperv1.ClusterConfiguration{}
-			}
-			if latestHC.Spec.Configuration.APIServer == nil {
-				latestHC.Spec.Configuration.APIServer = &configv1.APIServerSpec{}
-			}
-
-			namedCertificate := configv1.APIServerNamedServingCert{
-				Names: []string{customApiServerHost},
-				ServingCertificate: configv1.SecretNameReference{
-					Name: kasCustomCertSecretName,
-				},
-			}
-
-			if len(latestHC.Spec.Configuration.APIServer.ServingCerts.NamedCertificates) == 0 {
-				latestHC.Spec.Configuration.APIServer.ServingCerts.NamedCertificates = []configv1.APIServerNamedServingCert{namedCertificate}
-			} else {
-				latestHC.Spec.Configuration.APIServer.ServingCerts.NamedCertificates = append(latestHC.Spec.Configuration.APIServer.ServingCerts.NamedCertificates, namedCertificate)
-			}
-
-			return mgmtClient.Update(ctx, latestHC)
-		})
+		err = setKubeAPIDNSNameAndCert(ctx, mgmtClient, hc, customApiServerHost, kasCustomCertSecretName)
 		g.Expect(err).NotTo(HaveOccurred(), "failed to update hosted cluster")
 
 		t.Log("Getting custom kubeconfig client")
@@ -2405,42 +2359,8 @@ func EnsureKubeAPIDNSNameCustomCert(t *testing.T, ctx context.Context, mgmtClien
 		err = mgmtClient.Get(ctx, types.NamespacedName{Namespace: hcpNamespace, Name: entryHostedCluster.Name}, hcp)
 		g.Expect(err).NotTo(HaveOccurred(), "failed to get updated HostedControlPlane")
 
-		// Find the external name destination for the KAS Service
 		t.Log("Finding the external name destination for the KAS Service")
-		var externalNameDestination string
-		if entryHostedCluster.Spec.Services != nil {
-			for _, service := range entryHostedCluster.Spec.Services {
-				fmt.Printf("service: %+v\n", service)
-				switch service.Service {
-				case hyperv1.APIServer:
-					switch service.Type {
-					case hyperv1.Route:
-						if service.Route != nil && len(service.Route.Hostname) > 0 {
-							externalNameDestination = service.Route.Hostname
-							break
-						}
-					case hyperv1.LoadBalancer:
-						if service.LoadBalancer != nil && len(service.LoadBalancer.Hostname) > 0 {
-							externalNameDestination = service.LoadBalancer.Hostname
-							break
-						}
-					case hyperv1.NodePort:
-						if service.NodePort != nil && len(service.NodePort.Address) > 0 && service.NodePort.Port != 0 {
-							externalNameDestination = fmt.Sprintf("%s:%d", service.NodePort.Address, service.NodePort.Port)
-							break
-						}
-					}
-				default:
-					t.Log("service custom DNS name not found, using the control plane endpoint")
-					hcp := &hyperv1.HostedControlPlane{}
-					err = mgmtClient.Get(ctx, types.NamespacedName{Namespace: hcpNamespace, Name: entryHostedCluster.Name}, hcp)
-					g.Expect(err).NotTo(HaveOccurred(), "failed to get updated HostedControlPlane")
-					g.Expect(hcp.Status.ControlPlaneEndpoint.Host).NotTo(BeEmpty(), "failed to get the control plane endpoint")
-					externalNameDestination = hcp.Status.ControlPlaneEndpoint.Host
-				}
-			}
-		}
-		g.Expect(externalNameDestination).NotTo(BeEmpty(), "failed to get the external name destination")
+		externalNameDestination := findExternalNameDestination(t, ctx, g, mgmtClient, entryHostedCluster, hcpNamespace)
 
 		// Create a new KAS Service to be used by the external-dns deployment in CI
 		t.Logf("Creating a new KAS Service to be used by the external-dns deployment in CI with the custom DNS name %s", customApiServerHost)
@@ -2512,7 +2432,7 @@ func EnsureKubeAPIDNSNameCustomCert(t *testing.T, ctx context.Context, mgmtClien
 		t.Run("EnsureCustomAdminKubeconfigReachesTheKAS", func(t *testing.T) {
 			g := NewWithT(t)
 			t.Log("Checking CustomAdminKubeconfig reaches the KAS")
-			if isAzure {
+			if entryHostedCluster.Spec.Platform.Type == hyperv1.AzurePlatform {
 				t.Log("Using extended retry timeout for Azure DNS propagation")
 			}
 			// Add retry logic for DNS-related failures with platform-specific timeout
@@ -2655,6 +2575,91 @@ func EnsureKubeAPIDNSNameCustomCert(t *testing.T, ctx context.Context, mgmtClien
 		g.Expect(err).NotTo(HaveOccurred(), "failed to get custom certificate secret")
 		err = mgmtClient.Delete(ctx, latestCustomCertSecret)
 		g.Expect(err).NotTo(HaveOccurred(), "failed to delete custom certificate secret")
+	})
+}
+
+func customCertDNSConfig(t *testing.T, hc *hyperv1.HostedCluster, clusterOpts PlatformAgnosticOptions) (string, time.Duration) {
+	serviceDomain := "service.ci.hypershift.devcluster.openshift.com"
+	retryTimeout := 5 * time.Minute
+
+	if hc.Spec.Platform.Type == hyperv1.AzurePlatform {
+		serviceDomain = "aks-e2e.hypershift.azure.devcluster.openshift.com"
+		retryTimeout = 10 * time.Minute
+		t.Log("Using Azure-specific retry strategy for DNS propagation race condition")
+	}
+
+	if hc.Spec.Platform.Type == hyperv1.GCPPlatform && clusterOpts.ExternalDNSDomain != "" {
+		serviceDomain = clusterOpts.ExternalDNSDomain
+	}
+
+	return serviceDomain, retryTimeout
+}
+
+func findExternalNameDestination(t *testing.T, ctx context.Context, g Gomega, mgmtClient crclient.Client, hc *hyperv1.HostedCluster, hcpNamespace string) string {
+	var dest string
+	for _, service := range hc.Spec.Services {
+		fmt.Printf("service: %+v\n", service)
+		switch service.Service {
+		case hyperv1.APIServer:
+			dest = apiServerExternalName(service)
+		default:
+			t.Log("service custom DNS name not found, using the control plane endpoint")
+			hcp := &hyperv1.HostedControlPlane{}
+			err := mgmtClient.Get(ctx, types.NamespacedName{Namespace: hcpNamespace, Name: hc.Name}, hcp)
+			g.Expect(err).NotTo(HaveOccurred(), "failed to get updated HostedControlPlane")
+			g.Expect(hcp.Status.ControlPlaneEndpoint.Host).NotTo(BeEmpty(), "failed to get the control plane endpoint")
+			dest = hcp.Status.ControlPlaneEndpoint.Host
+		}
+	}
+	g.Expect(dest).NotTo(BeEmpty(), "failed to get the external name destination")
+	return dest
+}
+
+func apiServerExternalName(service hyperv1.ServicePublishingStrategyMapping) string {
+	switch service.Type {
+	case hyperv1.Route:
+		if service.Route != nil && len(service.Route.Hostname) > 0 {
+			return service.Route.Hostname
+		}
+	case hyperv1.LoadBalancer:
+		if service.LoadBalancer != nil && len(service.LoadBalancer.Hostname) > 0 {
+			return service.LoadBalancer.Hostname
+		}
+	case hyperv1.NodePort:
+		if service.NodePort != nil && len(service.NodePort.Address) > 0 && service.NodePort.Port != 0 {
+			return fmt.Sprintf("%s:%d", service.NodePort.Address, service.NodePort.Port)
+		}
+	}
+	return ""
+}
+
+func setKubeAPIDNSNameAndCert(ctx context.Context, mgmtClient crclient.Client, hc *hyperv1.HostedCluster, customApiServerHost, kasCustomCertSecretName string) error {
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		latestHC := &hyperv1.HostedCluster{}
+		if err := mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(hc), latestHC); err != nil {
+			return err
+		}
+
+		latestHC.Spec.KubeAPIServerDNSName = customApiServerHost
+
+		if latestHC.Spec.Configuration == nil {
+			latestHC.Spec.Configuration = &hyperv1.ClusterConfiguration{}
+		}
+		if latestHC.Spec.Configuration.APIServer == nil {
+			latestHC.Spec.Configuration.APIServer = &configv1.APIServerSpec{}
+		}
+
+		namedCertificate := configv1.APIServerNamedServingCert{
+			Names: []string{customApiServerHost},
+			ServingCertificate: configv1.SecretNameReference{
+				Name: kasCustomCertSecretName,
+			},
+		}
+
+		latestHC.Spec.Configuration.APIServer.ServingCerts.NamedCertificates = append(
+			latestHC.Spec.Configuration.APIServer.ServingCerts.NamedCertificates, namedCertificate)
+
+		return mgmtClient.Update(ctx, latestHC)
 	})
 }
 
@@ -3084,16 +3089,13 @@ func ValidateHostedClusterConditions(t *testing.T, ctx context.Context, client c
 		// ValidKubeVirtInfraNetworkMTU condition is not present in versions < 4.15
 		delete(expectedConditions, hyperv1.ValidKubeVirtInfraNetworkMTU)
 	}
-	if IsLessThan(Version422) {
-		delete(expectedConditions, hyperv1.ValidKubeVirtInfraNetworkPolicyRBAC)
-	}
-
 	if IsLessThan(Version421) {
 		delete(expectedConditions, hyperv1.DataPlaneConnectionAvailable)
 	}
 
 	if IsLessThan(Version422) {
 		delete(expectedConditions, hyperv1.ControlPlaneConnectionAvailable)
+		delete(expectedConditions, hyperv1.ValidKubeVirtInfraNetworkPolicyRBAC)
 	}
 
 	// TODO: TEMPORARY - Remove this once ControlPlaneConnectionAvailable condition is merged and stable.

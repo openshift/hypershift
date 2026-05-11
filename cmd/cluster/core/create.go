@@ -236,51 +236,25 @@ func (r *resources) asObjects() []crclient.Object {
 
 func prototypeResources(ctx context.Context, opts *CreateOptions) (*resources, error) {
 	prototype := &resources{}
-	// allow client side defaulting when release image is empty but release stream is set.
-	if len(opts.ReleaseImage) == 0 && len(opts.ReleaseStream) != 0 {
-		client, err := util.GetClient()
-		if err != nil {
-			return nil, fmt.Errorf("failed to get client: %w", err)
-		}
-		defaultVersion, err := supportedversion.LookupDefaultOCPVersion(ctx, opts.ReleaseStream, client)
-		if err != nil {
-			return nil, fmt.Errorf("release image is required when unable to lookup default OCP version: %w", err)
-		}
-		opts.ReleaseImage = defaultVersion.PullSpec
+	if err := resolveReleaseImage(ctx, opts); err != nil {
+		return nil, err
 	}
 
-	annotations := map[string]string{}
-	for _, s := range opts.Annotations {
-		pair := strings.SplitN(s, "=", 2)
-		if len(pair) != 2 {
-			return nil, fmt.Errorf("invalid annotation: %s", s)
-		}
-		k, v := pair[0], pair[1]
-		annotations[k] = v
+	annotations, err := parseKeyValuePairs(opts.Annotations, "annotation")
+	if err != nil {
+		return nil, err
 	}
-
-	labels := map[string]string{}
-	for _, s := range opts.Labels {
-		pair := strings.SplitN(s, "=", 2)
-		if len(pair) != 2 {
-			return nil, fmt.Errorf("invalid label: %s", s)
-		}
-		k, v := pair[0], pair[1]
-		labels[k] = v
+	labels, err := parseKeyValuePairs(opts.Labels, "label")
+	if err != nil {
+		return nil, err
 	}
-
 	if len(opts.ControlPlaneOperatorImage) > 0 {
 		annotations[hyperv1.ControlPlaneOperatorImageAnnotation] = opts.ControlPlaneOperatorImage
 	}
 
-	pullSecret := opts.PullSecret
-	var err error
-	// overrides if pullSecretFile is set
-	if len(opts.PullSecretFile) > 0 {
-		pullSecret, err = os.ReadFile(opts.PullSecretFile)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read pull secret file: %w", err)
-		}
+	pullSecret, err := resolvePullSecret(opts)
+	if err != nil {
+		return nil, err
 	}
 
 	prototype.Namespace = &corev1.Namespace{
@@ -350,49 +324,124 @@ func prototypeResources(ctx context.Context, opts *CreateOptions) (*resources, e
 		},
 	}
 
+	applyClusterCapabilities(prototype.Cluster, opts)
+	if err := applyEtcdConfig(prototype.Cluster, opts); err != nil {
+		return nil, err
+	}
+	if err := applySSHKey(prototype, opts); err != nil {
+		return nil, err
+	}
+	if err := applyPausedUntil(prototype.Cluster, opts); err != nil {
+		return nil, err
+	}
+	applyOLMConfig(prototype.Cluster, opts)
+	if err := applyNetworkConfig(prototype.Cluster, opts); err != nil {
+		return nil, err
+	}
+	applySchedulingConfig(prototype.Cluster, opts)
+	if err := applyTrustBundleAndImageSources(prototype, opts); err != nil {
+		return nil, err
+	}
+	applyFeatureSet(prototype.Cluster, opts)
+
+	if len(opts.KubeAPIServerDNSName) > 0 {
+		if err := validation.IsDNS1123Subdomain(opts.KubeAPIServerDNSName); len(err) > 0 {
+			return nil, fmt.Errorf("KubeAPIServerDNSName failed DNS validation: %s", strings.Join(err[:], " "))
+		}
+		prototype.Cluster.Spec.KubeAPIServerDNSName = opts.KubeAPIServerDNSName
+	}
+
+	return prototype, nil
+}
+
+func resolveReleaseImage(ctx context.Context, opts *CreateOptions) error {
+	if len(opts.ReleaseImage) != 0 || len(opts.ReleaseStream) == 0 {
+		return nil
+	}
+	client, err := util.GetClient()
+	if err != nil {
+		return fmt.Errorf("failed to get client: %w", err)
+	}
+	defaultVersion, err := supportedversion.LookupDefaultOCPVersion(ctx, opts.ReleaseStream, client)
+	if err != nil {
+		return fmt.Errorf("release image is required when unable to lookup default OCP version: %w", err)
+	}
+	opts.ReleaseImage = defaultVersion.PullSpec
+	return nil
+}
+
+func parseKeyValuePairs(items []string, kind string) (map[string]string, error) {
+	result := map[string]string{}
+	for _, s := range items {
+		pair := strings.SplitN(s, "=", 2)
+		if len(pair) != 2 {
+			return nil, fmt.Errorf("invalid %s: %s", kind, s)
+		}
+		if pair[0] == "" {
+			return nil, fmt.Errorf("invalid %s: key must not be empty in %q", kind, s)
+		}
+		result[pair[0]] = pair[1]
+	}
+	return result, nil
+}
+
+func resolvePullSecret(opts *CreateOptions) ([]byte, error) {
+	if len(opts.PullSecretFile) > 0 {
+		data, err := os.ReadFile(opts.PullSecretFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read pull secret file: %w", err)
+		}
+		return data, nil
+	}
+	return opts.PullSecret, nil
+}
+
+func applyClusterCapabilities(cluster *hyperv1.HostedCluster, opts *CreateOptions) {
 	if len(opts.EnableClusterCapabilities) > 0 {
 		caps := make([]hyperv1.OptionalCapability, len(opts.EnableClusterCapabilities))
 		for i, c := range opts.EnableClusterCapabilities {
 			caps[i] = hyperv1.OptionalCapability(c)
 		}
-		prototype.Cluster.Spec.Capabilities.Enabled = caps
+		cluster.Spec.Capabilities.Enabled = caps
 	}
-
 	if len(opts.DisableClusterCapabilities) > 0 {
 		caps := make([]hyperv1.OptionalCapability, len(opts.DisableClusterCapabilities))
 		for i, c := range opts.DisableClusterCapabilities {
 			caps[i] = hyperv1.OptionalCapability(c)
 		}
-		prototype.Cluster.Spec.Capabilities.Disabled = caps
+		cluster.Spec.Capabilities.Disabled = caps
 	}
+}
 
+func applyEtcdConfig(cluster *hyperv1.HostedCluster, opts *CreateOptions) error {
 	if opts.EtcdStorageClass != "" {
-		prototype.Cluster.Spec.Etcd.Managed.Storage.PersistentVolume.StorageClassName = ptr.To(opts.EtcdStorageClass)
+		cluster.Spec.Etcd.Managed.Storage.PersistentVolume.StorageClassName = ptr.To(opts.EtcdStorageClass)
 	}
-
 	if opts.EtcdStorageSize != "" {
 		etcdStorageSize, err := resource.ParseQuantity(opts.EtcdStorageSize)
 		if err != nil {
-			return nil, fmt.Errorf("failed parse ectd storage size: %w", err)
+			return fmt.Errorf("failed parse ectd storage size: %w", err)
 		}
-		prototype.Cluster.Spec.Etcd.Managed.Storage.PersistentVolume.Size = &etcdStorageSize
+		cluster.Spec.Etcd.Managed.Storage.PersistentVolume.Size = &etcdStorageSize
 	}
+	return nil
+}
 
+func applySSHKey(prototype *resources, opts *CreateOptions) error {
 	sshKey, sshPrivateKey := opts.PublicKey, opts.PrivateKey
-	// overrides secret if SSHKeyFile is set
+	var err error
 	if len(opts.SSHKeyFile) > 0 {
 		if opts.GenerateSSH {
-			return nil, fmt.Errorf("--generate-ssh and --ssh-key cannot be specified together")
+			return fmt.Errorf("--generate-ssh and --ssh-key cannot be specified together")
 		}
-		key, err := os.ReadFile(opts.SSHKeyFile)
+		sshKey, err = os.ReadFile(opts.SSHKeyFile)
 		if err != nil {
-			return nil, fmt.Errorf("failed to read ssh key file: %w", err)
+			return fmt.Errorf("failed to read ssh key file: %w", err)
 		}
-		sshKey = key
 	} else if opts.GenerateSSH {
 		sshKey, sshPrivateKey, err = util.GenerateSSHKeys()
 		if err != nil {
-			return nil, fmt.Errorf("failed to generate ssh keys: %w", err)
+			return fmt.Errorf("failed to generate ssh keys: %w", err)
 		}
 	}
 	if len(sshKey) > 0 {
@@ -415,105 +464,96 @@ func prototypeResources(ctx context.Context, opts *CreateOptions) (*resources, e
 		}
 		prototype.Cluster.Spec.SSHKey = corev1.LocalObjectReference{Name: prototype.SSHKey.Name}
 	}
+	return nil
+}
 
-	// validate pausedUntil value
-	// valid values are either "true" or RFC3339 format date
-	if len(opts.PausedUntil) > 0 && opts.PausedUntil != "true" {
-		_, err := time.Parse(time.RFC3339, opts.PausedUntil)
-		if err != nil {
-			return nil, fmt.Errorf("invalid pausedUntil value, should be \"true\" or a valid RFC3339 date format: %w", err)
-		}
-		prototype.Cluster.Spec.PausedUntil = &opts.PausedUntil
+func applyPausedUntil(cluster *hyperv1.HostedCluster, opts *CreateOptions) error {
+	if len(opts.PausedUntil) == 0 || opts.PausedUntil == "true" {
+		return nil
 	}
+	_, err := time.Parse(time.RFC3339, opts.PausedUntil)
+	if err != nil {
+		return fmt.Errorf("invalid pausedUntil value, should be \"true\" or a valid RFC3339 date format: %w", err)
+	}
+	cluster.Spec.PausedUntil = &opts.PausedUntil
+	return nil
+}
 
+func applyOLMConfig(cluster *hyperv1.HostedCluster, opts *CreateOptions) {
 	if opts.OLMDisableDefaultSources {
-		prototype.Cluster.Spec.Configuration.OperatorHub = &configv1.OperatorHubSpec{
+		cluster.Spec.Configuration.OperatorHub = &configv1.OperatorHubSpec{
 			DisableAllDefaultSources: true,
 		}
 	}
-
 	if len(opts.OLMCatalogPlacement) > 0 {
-		prototype.Cluster.Spec.OLMCatalogPlacement = opts.OLMCatalogPlacement
+		cluster.Spec.OLMCatalogPlacement = opts.OLMCatalogPlacement
 	}
+}
 
-	var clusterNetworkEntries []hyperv1.ClusterNetworkEntry
+func applyNetworkConfig(cluster *hyperv1.HostedCluster, opts *CreateOptions) error {
 	for _, cidr := range opts.ClusterCIDR {
 		parsedCIDR, err := ipnet.ParseCIDR(cidr)
 		if err != nil {
-			return nil, fmt.Errorf("parsing ClusterCIDR (%s): %w", cidr, err)
+			return fmt.Errorf("parsing ClusterCIDR (%s): %w", cidr, err)
 		}
-		clusterNetworkEntries = append(clusterNetworkEntries, hyperv1.ClusterNetworkEntry{CIDR: *parsedCIDR})
+		cluster.Spec.Networking.ClusterNetwork = append(cluster.Spec.Networking.ClusterNetwork, hyperv1.ClusterNetworkEntry{CIDR: *parsedCIDR})
 	}
-	prototype.Cluster.Spec.Networking.ClusterNetwork = clusterNetworkEntries
-
-	var serviceNetworkEntries []hyperv1.ServiceNetworkEntry
 	for _, cidr := range opts.ServiceCIDR {
 		parsedCIDR, err := ipnet.ParseCIDR(cidr)
 		if err != nil {
-			return nil, fmt.Errorf("parsing ServiceCIDR (%s): %w", cidr, err)
+			return fmt.Errorf("parsing ServiceCIDR (%s): %w", cidr, err)
 		}
-		serviceNetworkEntries = append(serviceNetworkEntries, hyperv1.ServiceNetworkEntry{CIDR: *parsedCIDR})
+		cluster.Spec.Networking.ServiceNetwork = append(cluster.Spec.Networking.ServiceNetwork, hyperv1.ServiceNetworkEntry{CIDR: *parsedCIDR})
 	}
-	prototype.Cluster.Spec.Networking.ServiceNetwork = serviceNetworkEntries
-
-	var machineNetworkEntries []hyperv1.MachineNetworkEntry
 	for _, cidr := range opts.MachineCIDR {
 		parsedCIDR, err := ipnet.ParseCIDR(cidr)
 		if err != nil {
-			return nil, fmt.Errorf("parsing MachineCIDR (%s): %w", cidr, err)
+			return fmt.Errorf("parsing MachineCIDR (%s): %w", cidr, err)
 		}
-		machineNetworkEntries = append(machineNetworkEntries, hyperv1.MachineNetworkEntry{CIDR: *parsedCIDR})
+		cluster.Spec.Networking.MachineNetwork = append(cluster.Spec.Networking.MachineNetwork, hyperv1.MachineNetworkEntry{CIDR: *parsedCIDR})
 	}
-	prototype.Cluster.Spec.Networking.MachineNetwork = machineNetworkEntries
 
 	if opts.DisableMultiNetwork {
-		if prototype.Cluster.Spec.OperatorConfiguration == nil {
-			prototype.Cluster.Spec.OperatorConfiguration = &hyperv1.OperatorConfiguration{}
-		}
-		if prototype.Cluster.Spec.OperatorConfiguration.ClusterNetworkOperator == nil {
-			prototype.Cluster.Spec.OperatorConfiguration.ClusterNetworkOperator = &hyperv1.ClusterNetworkOperatorSpec{}
-		}
-		prototype.Cluster.Spec.OperatorConfiguration.ClusterNetworkOperator.DisableMultiNetwork = &opts.DisableMultiNetwork
+		ensureClusterNetworkOperatorSpec(cluster)
+		cluster.Spec.OperatorConfiguration.ClusterNetworkOperator.DisableMultiNetwork = &opts.DisableMultiNetwork
 	}
-
 	if opts.OVNKubernetesMTU > 0 {
-		if prototype.Cluster.Spec.OperatorConfiguration == nil {
-			prototype.Cluster.Spec.OperatorConfiguration = &hyperv1.OperatorConfiguration{}
+		ensureClusterNetworkOperatorSpec(cluster)
+		if cluster.Spec.OperatorConfiguration.ClusterNetworkOperator.OVNKubernetesConfig == nil {
+			cluster.Spec.OperatorConfiguration.ClusterNetworkOperator.OVNKubernetesConfig = &hyperv1.OVNKubernetesConfig{}
 		}
-		if prototype.Cluster.Spec.OperatorConfiguration.ClusterNetworkOperator == nil {
-			prototype.Cluster.Spec.OperatorConfiguration.ClusterNetworkOperator = &hyperv1.ClusterNetworkOperatorSpec{}
-		}
-		if prototype.Cluster.Spec.OperatorConfiguration.ClusterNetworkOperator.OVNKubernetesConfig == nil {
-			prototype.Cluster.Spec.OperatorConfiguration.ClusterNetworkOperator.OVNKubernetesConfig = &hyperv1.OVNKubernetesConfig{}
-		}
-		prototype.Cluster.Spec.OperatorConfiguration.ClusterNetworkOperator.OVNKubernetesConfig.MTU = opts.OVNKubernetesMTU
+		cluster.Spec.OperatorConfiguration.ClusterNetworkOperator.OVNKubernetesConfig.MTU = opts.OVNKubernetesMTU
 	}
-
 	if opts.AllocateNodeCIDRs {
 		enabled := hyperv1.AllocateNodeCIDRsEnabled
-		prototype.Cluster.Spec.Networking.AllocateNodeCIDRs = &enabled
+		cluster.Spec.Networking.AllocateNodeCIDRs = &enabled
 	}
+	return nil
+}
 
+func ensureClusterNetworkOperatorSpec(cluster *hyperv1.HostedCluster) {
+	if cluster.Spec.OperatorConfiguration == nil {
+		cluster.Spec.OperatorConfiguration = &hyperv1.OperatorConfiguration{}
+	}
+	if cluster.Spec.OperatorConfiguration.ClusterNetworkOperator == nil {
+		cluster.Spec.OperatorConfiguration.ClusterNetworkOperator = &hyperv1.ClusterNetworkOperatorSpec{}
+	}
+}
+
+func applySchedulingConfig(cluster *hyperv1.HostedCluster, opts *CreateOptions) {
 	if opts.NodeSelector != nil {
-		prototype.Cluster.Spec.NodeSelector = opts.NodeSelector
+		cluster.Spec.NodeSelector = opts.NodeSelector
 	}
-
 	if opts.PodsLabels != nil {
-		prototype.Cluster.Spec.Labels = opts.PodsLabels
+		cluster.Spec.Labels = opts.PodsLabels
 	}
+}
 
-	for _, tStr := range opts.Tolerations {
-		toleration, err := parseTolerationString(tStr)
-		if err != nil {
-			return nil, err
-		}
-		prototype.Cluster.Spec.Tolerations = append(prototype.Cluster.Spec.Tolerations, *toleration)
-	}
-
+func applyTrustBundleAndImageSources(prototype *resources, opts *CreateOptions) error {
 	if len(opts.AdditionalTrustBundle) > 0 {
 		userCABundle, err := os.ReadFile(opts.AdditionalTrustBundle)
 		if err != nil {
-			return nil, fmt.Errorf("failed to read additional trust bundle file: %w", err)
+			return fmt.Errorf("failed to read additional trust bundle file: %w", err)
 		}
 		prototype.AdditionalTrustBundle = &corev1.ConfigMap{
 			TypeMeta: metav1.TypeMeta{
@@ -534,44 +574,42 @@ func prototypeResources(ctx context.Context, opts *CreateOptions) (*resources, e
 	if len(opts.ImageContentSources) > 0 {
 		icspFileBytes, err := os.ReadFile(opts.ImageContentSources)
 		if err != nil {
-			return nil, fmt.Errorf("failed to read image content sources file: %w", err)
+			return fmt.Errorf("failed to read image content sources file: %w", err)
 		}
-
 		var imageContentSources []hyperv1.ImageContentSource
 		err = yaml.Unmarshal(icspFileBytes, &imageContentSources)
 		if err != nil {
-			return nil, fmt.Errorf("unable to deserialize image content sources file: %w", err)
+			return fmt.Errorf("unable to deserialize image content sources file: %w", err)
 		}
 		prototype.Cluster.Spec.ImageContentSources = imageContentSources
 	}
 
-	if opts.FeatureSet != string(configv1.Default) {
-		switch opts.FeatureSet {
-		case string(configv1.TechPreviewNoUpgrade):
-			prototype.Cluster.Spec.Configuration.FeatureGate = &configv1.FeatureGateSpec{
-				FeatureGateSelection: configv1.FeatureGateSelection{
-					FeatureSet: configv1.TechPreviewNoUpgrade,
-				},
-			}
-		case string(configv1.DevPreviewNoUpgrade):
-			prototype.Cluster.Spec.Configuration.FeatureGate = &configv1.FeatureGateSpec{
-				FeatureGateSelection: configv1.FeatureGateSelection{
-					FeatureSet: configv1.DevPreviewNoUpgrade,
-				},
-			}
-		default:
-			return nil, fmt.Errorf("invalid feature set: %s", opts.FeatureSet)
+	for _, tStr := range opts.Tolerations {
+		toleration, err := parseTolerationString(tStr)
+		if err != nil {
+			return err
 		}
+		prototype.Cluster.Spec.Tolerations = append(prototype.Cluster.Spec.Tolerations, *toleration)
 	}
 
-	if len(opts.KubeAPIServerDNSName) > 0 {
-		if err := validation.IsDNS1123Subdomain(opts.KubeAPIServerDNSName); len(err) > 0 {
-			return nil, fmt.Errorf("KubeAPIServerDNSName failed DNS validation: %s", strings.Join(err[:], " "))
-		}
-		prototype.Cluster.Spec.KubeAPIServerDNSName = opts.KubeAPIServerDNSName
-	}
+	return nil
+}
 
-	return prototype, nil
+func applyFeatureSet(cluster *hyperv1.HostedCluster, opts *CreateOptions) {
+	switch opts.FeatureSet {
+	case string(configv1.TechPreviewNoUpgrade):
+		cluster.Spec.Configuration.FeatureGate = &configv1.FeatureGateSpec{
+			FeatureGateSelection: configv1.FeatureGateSelection{
+				FeatureSet: configv1.TechPreviewNoUpgrade,
+			},
+		}
+	case string(configv1.DevPreviewNoUpgrade):
+		cluster.Spec.Configuration.FeatureGate = &configv1.FeatureGateSpec{
+			FeatureGateSelection: configv1.FeatureGateSelection{
+				FeatureSet: configv1.DevPreviewNoUpgrade,
+			},
+		}
+	}
 }
 
 func apply(ctx context.Context, l logr.Logger, infraID string, objects []crclient.Object, waitForRollout bool, mutate func(crclient.Object)) error {
@@ -680,81 +718,103 @@ func (opts *RawCreateOptions) Validate(ctx context.Context) (*ValidatedCreateOpt
 	if opts.Name == "" {
 		return nil, errors.New("--name is required")
 	}
-
 	if opts.PullSecretFile == "" {
 		return nil, errors.New("--pull-secret is required")
 	}
-
-	if opts.VersionCheck {
-		versionCLI := supportedversion.GetRevision()
-		client, err := util.GetClient()
-		if err != nil {
-			return nil, fmt.Errorf("failed to get client: %w", err)
-		}
-		if err := validateVersion(ctx, versionCLI, client); err != nil {
-			return nil, fmt.Errorf("version validation failed: %w", err)
-		}
+	if err := opts.validateVersionAndWait(ctx); err != nil {
+		return nil, err
 	}
 
-	if opts.Wait && opts.NodePoolReplicas < 1 {
-		return nil, errors.New("--wait requires --node-pool-replicas > 0")
-	}
-
-	// Validate HostedCluster name follows RFC1123 standard
-	// https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#dns-label-names
 	errs := validation.IsDNS1123Label(opts.Name)
 	if len(errs) > 0 {
 		return nil, fmt.Errorf("HostedCluster name failed RFC1123 validation: %s", strings.Join(errs[:], " "))
 	}
 
-	if !opts.Render {
+	if err := opts.validateClusterExistence(ctx); err != nil {
+		return nil, err
+	}
+	if err := opts.validateArchAndFeatureSet(); err != nil {
+		return nil, err
+	}
+	if err := opts.validateCapabilities(); err != nil {
+		return nil, err
+	}
+	if err := opts.validateNetworkOptions(); err != nil {
+		return nil, err
+	}
+
+	return &ValidatedCreateOptions{
+		validatedCreateOptions: &validatedCreateOptions{
+			RawCreateOptions: opts,
+		},
+	}, nil
+}
+
+func (opts *RawCreateOptions) validateVersionAndWait(ctx context.Context) error {
+	if opts.VersionCheck {
+		versionCLI := supportedversion.GetRevision()
 		client, err := util.GetClient()
 		if err != nil {
-			return nil, err
+			return fmt.Errorf("failed to get client: %w", err)
 		}
-		// Validate HostedCluster with this name doesn't exist in the namespace
-		cluster := &hyperv1.HostedCluster{ObjectMeta: metav1.ObjectMeta{Namespace: opts.Namespace, Name: opts.Name}}
-		if err := client.Get(ctx, crclient.ObjectKeyFromObject(cluster), cluster); err == nil {
-			return nil, fmt.Errorf("hostedcluster %s already exists", crclient.ObjectKeyFromObject(cluster))
-		} else if !apierrors.IsNotFound(err) {
-			return nil, fmt.Errorf("hostedcluster doesn't exist validation failed with error: %w", err)
-		}
-
-		// Validate multi-arch aspects
-		kc, err := hyperutil.GetKubeClientSet()
-		if err != nil {
-			return nil, fmt.Errorf("could not retrieve kube clientset: %w", err)
-		}
-		if err := validateMgmtClusterAndNodePoolCPUArchitectures(ctx, opts, kc, &hyperutil.RegistryClientImageMetadataProvider{}); err != nil {
-			if strings.Contains(err.Error(), "failed to retrieve manifest") {
-				opts.Log.Info("WARNING: Unable to access the payload, skipping the Architectures check.", "error", err.Error())
-			} else {
-				return nil, err
-			}
+		if err := validateVersion(ctx, versionCLI, client); err != nil {
+			return fmt.Errorf("version validation failed: %w", err)
 		}
 	}
+	if opts.Wait && opts.NodePoolReplicas < 1 {
+		return errors.New("--wait requires --node-pool-replicas > 0")
+	}
+	return nil
+}
 
+func (opts *RawCreateOptions) validateClusterExistence(ctx context.Context) error {
+	if opts.Render {
+		return nil
+	}
+	client, err := util.GetClient()
+	if err != nil {
+		return err
+	}
+	cluster := &hyperv1.HostedCluster{ObjectMeta: metav1.ObjectMeta{Namespace: opts.Namespace, Name: opts.Name}}
+	if err := client.Get(ctx, crclient.ObjectKeyFromObject(cluster), cluster); err == nil {
+		return fmt.Errorf("hostedcluster %s already exists", crclient.ObjectKeyFromObject(cluster))
+	} else if !apierrors.IsNotFound(err) {
+		return fmt.Errorf("hostedcluster doesn't exist validation failed with error: %w", err)
+	}
+
+	kc, err := hyperutil.GetKubeClientSet()
+	if err != nil {
+		return fmt.Errorf("could not retrieve kube clientset: %w", err)
+	}
+	if err := validateMgmtClusterAndNodePoolCPUArchitectures(ctx, opts, kc, &hyperutil.RegistryClientImageMetadataProvider{}); err != nil {
+		if strings.Contains(err.Error(), "failed to retrieve manifest") {
+			opts.Log.Info("WARNING: Unable to access the payload, skipping the Architectures check.", "error", err.Error())
+		} else {
+			return err
+		}
+	}
+	return nil
+}
+
+func (opts *RawCreateOptions) validateArchAndFeatureSet() error {
 	arch := strings.ToLower(opts.Arch)
 	switch arch {
-	case hyperv1.ArchitectureAMD64:
-	case hyperv1.ArchitectureARM64:
-	case hyperv1.ArchitecturePPC64LE:
-	case hyperv1.ArchitectureS390X:
+	case hyperv1.ArchitectureAMD64, hyperv1.ArchitectureARM64, hyperv1.ArchitecturePPC64LE, hyperv1.ArchitectureS390X:
 	default:
-		return nil, fmt.Errorf("specified arch %q is not supported", opts.Arch)
+		return fmt.Errorf("specified arch %q is not supported", opts.Arch)
 	}
 
-	// Validate feature set is "", TechPreviewNoUpgrade, or DevPreviewNoUpgrade
 	switch opts.FeatureSet {
-	case string(configv1.Default):
-	case string(configv1.TechPreviewNoUpgrade):
-	case string(configv1.DevPreviewNoUpgrade):
+	case string(configv1.Default), string(configv1.TechPreviewNoUpgrade), string(configv1.DevPreviewNoUpgrade):
 	case string(configv1.CustomNoUpgrade):
-		return nil, fmt.Errorf("only a predefined feature set is supported by the feature-set flag")
+		return fmt.Errorf("only a predefined feature set is supported by the feature-set flag")
 	default:
-		return nil, fmt.Errorf("specified feature set %q is not supported", opts.FeatureSet)
+		return fmt.Errorf("specified feature set %q is not supported", opts.FeatureSet)
 	}
+	return nil
+}
 
+func (opts *RawCreateOptions) validateCapabilities() error {
 	acceptedValues := sets.NewString(
 		string(hyperv1.ImageRegistryCapability),
 		string(hyperv1.OpenShiftSamplesCapability),
@@ -764,54 +824,44 @@ func (opts *RawCreateOptions) Validate(ctx context.Context) (*ValidatedCreateOpt
 		string(hyperv1.NodeTuningCapability),
 		string(hyperv1.IngressCapability),
 	)
-	if len(opts.DisableClusterCapabilities) > 0 {
-		for _, capability := range opts.DisableClusterCapabilities {
-			if !acceptedValues.Has(capability) {
-				return nil, fmt.Errorf("unknown disabled capability: %s, accepted values are: %v", capability, acceptedValues.List())
-			}
+	for _, capability := range opts.DisableClusterCapabilities {
+		if !acceptedValues.Has(capability) {
+			return fmt.Errorf("unknown disabled capability: %s, accepted values are: %v", capability, acceptedValues.List())
 		}
 	}
-	if len(opts.EnableClusterCapabilities) > 0 {
-		for _, capability := range opts.EnableClusterCapabilities {
-			if !acceptedValues.Has(capability) {
-				return nil, fmt.Errorf("unknown enabled capability: %s, accepted values are: %v", capability, acceptedValues.List())
-			}
+	for _, capability := range opts.EnableClusterCapabilities {
+		if !acceptedValues.Has(capability) {
+			return fmt.Errorf("unknown enabled capability: %s, accepted values are: %v", capability, acceptedValues.List())
 		}
 	}
-
 	disabledCaps := sets.NewString(opts.DisableClusterCapabilities...)
 	if disabledCaps.Has(string(hyperv1.IngressCapability)) && !disabledCaps.Has(string(hyperv1.ConsoleCapability)) {
-		return nil, fmt.Errorf("ingress capability can only be disabled if Console capability is also disabled")
+		return fmt.Errorf("ingress capability can only be disabled if Console capability is also disabled")
 	}
-
 	if len(opts.KubeAPIServerDNSName) > 0 {
 		if err := validation.IsDNS1123Subdomain(opts.KubeAPIServerDNSName); len(err) > 0 {
-			return nil, fmt.Errorf("KubeAPIServerDNSName failed DNS validation: %s", strings.Join(err[:], " "))
+			return fmt.Errorf("KubeAPIServerDNSName failed DNS validation: %s", strings.Join(err[:], " "))
 		}
 	}
+	return nil
+}
 
+func (opts *RawCreateOptions) validateNetworkOptions() error {
 	if opts.DisableMultiNetwork && opts.NetworkType != "Other" {
-		return nil, fmt.Errorf("disableMultiNetwork is only allowed when networkType is 'Other' (got '%s')", opts.NetworkType)
+		return fmt.Errorf("disableMultiNetwork is only allowed when networkType is 'Other' (got '%s')", opts.NetworkType)
 	}
-
 	if opts.OVNKubernetesMTU != 0 {
 		if opts.NetworkType != string(hyperv1.OVNKubernetes) {
-			return nil, fmt.Errorf("--ovn-kubernetes-mtu is only valid when --network-type is OVNKubernetes (got '%s')", opts.NetworkType)
+			return fmt.Errorf("--ovn-kubernetes-mtu is only valid when --network-type is OVNKubernetes (got '%s')", opts.NetworkType)
 		}
 		if opts.OVNKubernetesMTU < 576 || opts.OVNKubernetesMTU > 9216 {
-			return nil, fmt.Errorf("--ovn-kubernetes-mtu must be between 576 and 9216 (got %d)", opts.OVNKubernetesMTU)
+			return fmt.Errorf("--ovn-kubernetes-mtu must be between 576 and 9216 (got %d)", opts.OVNKubernetesMTU)
 		}
 	}
-
 	if opts.AllocateNodeCIDRs && opts.NetworkType != "Other" {
-		return nil, fmt.Errorf("allocateNodeCIDRs is only allowed when networkType is 'Other' (got '%s')", opts.NetworkType)
+		return fmt.Errorf("allocateNodeCIDRs is only allowed when networkType is 'Other' (got '%s')", opts.NetworkType)
 	}
-
-	return &ValidatedCreateOptions{
-		validatedCreateOptions: &validatedCreateOptions{
-			RawCreateOptions: opts,
-		},
-	}, nil
+	return nil
 }
 
 // completedCreateOptions is a private wrapper that enforces a call of Complete() before CreateCluster() can be invoked.

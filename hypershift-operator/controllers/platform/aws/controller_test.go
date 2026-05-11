@@ -1000,6 +1000,257 @@ func TestEnqueueOnKarpenterConfigMapChange(t *testing.T) {
 	}
 }
 
+func TestListNodePools(t *testing.T) {
+	testCases := []struct {
+		name          string
+		clusterName   string
+		namespace     string
+		objects       []client.Object
+		expectedNames []string
+		expectError   bool
+	}{
+		{
+			name:        "When NodePools exist for the given cluster, it should return only those matching the cluster name",
+			clusterName: "my-cluster",
+			namespace:   "clusters",
+			objects: []client.Object{
+				&hyperv1.NodePool{
+					ObjectMeta: metav1.ObjectMeta{Name: "np-1", Namespace: "clusters"},
+					Spec:       hyperv1.NodePoolSpec{ClusterName: "my-cluster"},
+				},
+				&hyperv1.NodePool{
+					ObjectMeta: metav1.ObjectMeta{Name: "np-2", Namespace: "clusters"},
+					Spec:       hyperv1.NodePoolSpec{ClusterName: "other-cluster"},
+				},
+				&hyperv1.NodePool{
+					ObjectMeta: metav1.ObjectMeta{Name: "np-3", Namespace: "clusters"},
+					Spec:       hyperv1.NodePoolSpec{ClusterName: "my-cluster"},
+				},
+			},
+			expectedNames: []string{"np-1", "np-3"},
+		},
+		{
+			name:        "When no NodePools match the cluster name, it should return an empty list",
+			clusterName: "my-cluster",
+			namespace:   "clusters",
+			objects: []client.Object{
+				&hyperv1.NodePool{
+					ObjectMeta: metav1.ObjectMeta{Name: "np-1", Namespace: "clusters"},
+					Spec:       hyperv1.NodePoolSpec{ClusterName: "other-cluster"},
+				},
+			},
+			expectedNames: []string{},
+		},
+		{
+			name:          "When no NodePools exist in the namespace, it should return an empty list",
+			clusterName:   "my-cluster",
+			namespace:     "clusters",
+			objects:       []client.Object{},
+			expectedNames: []string{},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(hyperapi.Scheme).
+				WithObjects(tc.objects...).
+				Build()
+
+			result, err := listNodePools(t.Context(), fakeClient, tc.namespace, tc.clusterName)
+
+			if tc.expectError {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).NotTo(HaveOccurred())
+				names := make([]string, len(result))
+				for i, np := range result {
+					names[i] = np.Name
+				}
+				g.Expect(names).To(ConsistOf(tc.expectedNames))
+			}
+		})
+	}
+}
+
+func TestApiTagToEC2Tag(t *testing.T) {
+	testCases := []struct {
+		name     string
+		input    []hyperv1.AWSResourceTag
+		expected []ec2types.Tag
+	}{
+		{
+			name:     "When input is empty, it should return an empty slice",
+			input:    []hyperv1.AWSResourceTag{},
+			expected: []ec2types.Tag{},
+		},
+		{
+			name: "When input has multiple tags, it should convert all of them",
+			input: []hyperv1.AWSResourceTag{
+				{Key: "env", Value: "prod"},
+				{Key: "team", Value: "platform"},
+			},
+			expected: []ec2types.Tag{
+				{Key: aws.String("env"), Value: aws.String("prod")},
+				{Key: aws.String("team"), Value: aws.String("platform")},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			result := apiTagToEC2Tag(tc.input)
+			g.Expect(result).To(HaveLen(len(tc.expected)))
+			for i := range result {
+				g.Expect(aws.ToString(result[i].Key)).To(Equal(aws.ToString(tc.expected[i].Key)))
+				g.Expect(aws.ToString(result[i].Value)).To(Equal(aws.ToString(tc.expected[i].Value)))
+			}
+		})
+	}
+}
+
+func TestHostedClusterNamespaceAndName(t *testing.T) {
+	testCases := []struct {
+		name              string
+		hcp               *hyperv1.HostedControlPlane
+		expectedNamespace string
+		expectedName      string
+	}{
+		{
+			name: "When annotation exists with namespace/name, it should return both parts",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						"hypershift.openshift.io/cluster": "my-ns/my-cluster",
+					},
+				},
+			},
+			expectedNamespace: "my-ns",
+			expectedName:      "my-cluster",
+		},
+		{
+			name: "When annotation is missing, it should return empty strings",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{},
+				},
+			},
+			expectedNamespace: "",
+			expectedName:      "",
+		},
+		{
+			name: "When annotations map is nil, it should return empty strings",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{},
+			},
+			expectedNamespace: "",
+			expectedName:      "",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			ns, name := hostedClusterNamespaceAndName(tc.hcp)
+			g.Expect(ns).To(Equal(tc.expectedNamespace))
+			g.Expect(name).To(Equal(tc.expectedName))
+		})
+	}
+}
+
+func TestToLowerState(t *testing.T) {
+	testCases := []struct {
+		name     string
+		input    ec2types.State
+		expected ec2types.State
+	}{
+		{
+			name:     "When input is PascalCase, it should return lowercase",
+			input:    ec2types.StateAvailable,
+			expected: "available",
+		},
+		{
+			name:     "When input is already lowercase, it should return unchanged",
+			input:    "pending",
+			expected: "pending",
+		},
+		{
+			name:     "When input is PendingAcceptance, it should return lowercase",
+			input:    ec2types.StatePendingAcceptance,
+			expected: "pendingacceptance",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			result := toLowerState(tc.input)
+			g.Expect(result).To(Equal(tc.expected))
+		})
+	}
+}
+
+func TestEnqueueOnKarpenterConfigMapCreate(t *testing.T) {
+	testCases := []struct {
+		name           string
+		cm             *corev1.ConfigMap
+		expectedQueued int
+	}{
+		{
+			name: "When a karpenter-managed ConfigMap is created, it should enqueue AWSEndpointServices",
+			cm: &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      karpenterutil.KarpenterSubnetsConfigMapName,
+					Namespace: "clusters-my-cluster",
+					Labels: map[string]string{
+						"hypershift.openshift.io/managed-by": "karpenter",
+					},
+				},
+			},
+			// awsEndpointServicesByName returns 3 entries
+			expectedQueued: 3,
+		},
+		{
+			name: "When a non-karpenter ConfigMap is created, it should not enqueue",
+			cm: &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "some-other-configmap",
+					Namespace: "clusters-my-cluster",
+				},
+			},
+			expectedQueued: 0,
+		},
+		{
+			name: "When ConfigMap has karpenter name but lacks managed-by label, it should not enqueue",
+			cm: &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      karpenterutil.KarpenterSubnetsConfigMapName,
+					Namespace: "clusters-my-cluster",
+				},
+			},
+			expectedQueued: 0,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			mgr := &fakeManager{}
+			r := &AWSEndpointServiceReconciler{}
+			handler := r.enqueueOnKarpenterConfigMapCreate(mgr)
+
+			q := &captureQueue{}
+			handler(t.Context(), event.CreateEvent{Object: tc.cm}, q)
+
+			g.Expect(q.added).To(HaveLen(tc.expectedQueued))
+		})
+	}
+}
+
 // fakeManager implements just enough of ctrl.Manager for tests that need mgr.GetLogger().
 // All unimplemented methods are delegated to the embedded nil Manager, which will
 // panic if called — intentionally, as tests should never trigger those paths.

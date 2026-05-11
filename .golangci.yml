@@ -3,9 +3,12 @@ run:
   allow-parallel-runners: true
 linters:
   enable:
+    - gocyclo
     - misspell
     - unparam
   settings:
+    gocyclo:
+      min-complexity: 30
     govet:
       enable:
         - nilness

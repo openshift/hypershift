@@ -367,11 +367,210 @@ func (r *HostedControlPlaneReconciler) eventHandlers(scheme *runtime.Scheme, res
 	return handlers
 }
 
+func (r *HostedControlPlaneReconciler) reconcileDeletion(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane, originalHostedControlPlane *hyperv1.HostedControlPlane) (ctrl.Result, error) {
+	condition := &metav1.Condition{
+		Type: string(hyperv1.AWSDefaultSecurityGroupDeleted),
+	}
+	if shouldCleanupCloudResources(r.Log, hostedControlPlane) {
+		if code, destroyErr := r.destroyAWSDefaultSecurityGroup(ctx, hostedControlPlane); destroyErr != nil {
+			condition.Message = "failed to delete AWS default security group"
+			if code == "DependencyViolation" {
+				condition.Message = destroyErr.Error()
+			}
+			condition.Reason = hyperv1.AWSErrorReason
+			condition.Status = metav1.ConditionFalse
+			meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, *condition)
+
+			if err := r.Client.Status().Patch(ctx, hostedControlPlane, client.MergeFromWithOptions(originalHostedControlPlane, client.MergeFromWithOptimisticLock{})); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to update status on hcp for security group deletion: %w. Condition error message: %v", err, condition.Message)
+			}
+
+			switch code {
+			case "UnauthorizedOperation":
+				r.Log.Error(destroyErr, "Skipping AWS default security group deletion because of unauthorized operation.")
+			case "DependencyViolation":
+				r.Log.Error(destroyErr, "Skipping AWS default security group deletion because of dependency violation.")
+			default:
+				return ctrl.Result{}, fmt.Errorf("failed to delete AWS default security group: %w", destroyErr)
+			}
+		} else {
+			condition.Message = hyperv1.AllIsWellMessage
+			condition.Reason = hyperv1.AsExpectedReason
+			condition.Status = metav1.ConditionTrue
+			meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, *condition)
+
+			if err := r.Client.Status().Patch(ctx, hostedControlPlane, client.MergeFromWithOptions(originalHostedControlPlane, client.MergeFromWithOptimisticLock{})); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to update status on hcp for security group deletion: %w. Condition message: %v", err, condition.Message)
+			}
+		}
+
+		done, err := r.removeCloudResources(ctx, hostedControlPlane)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to ensure cloud resources are removed: %w", err)
+		}
+		if !done {
+			return ctrl.Result{RequeueAfter: time.Minute}, nil
+		}
+	}
+
+	if controllerutil.ContainsFinalizer(hostedControlPlane, finalizer) {
+		originalHCP := hostedControlPlane.DeepCopy()
+		controllerutil.RemoveFinalizer(hostedControlPlane, finalizer)
+		if err := r.Patch(ctx, hostedControlPlane, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{})); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to remove finalizer from cluster: %w", err)
+		}
+	}
+	return ctrl.Result{}, nil
+}
+
+func (r *HostedControlPlaneReconciler) reconcileEtcdStatus(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane) error {
+	newCondition := metav1.Condition{
+		Type:   string(hyperv1.EtcdAvailable),
+		Status: metav1.ConditionUnknown,
+		Reason: hyperv1.StatusUnknownReason,
+	}
+	switch hostedControlPlane.Spec.Etcd.ManagementType {
+	case hyperv1.Managed:
+		r.Log.Info("Reconciling etcd cluster status for managed strategy")
+		sts := manifests.EtcdStatefulSet(hostedControlPlane.Namespace)
+		if err := r.Get(ctx, client.ObjectKeyFromObject(sts), sts); err != nil {
+			if apierrors.IsNotFound(err) {
+				newCondition = metav1.Condition{
+					Type:   string(hyperv1.EtcdAvailable),
+					Status: metav1.ConditionFalse,
+					Reason: hyperv1.EtcdStatefulSetNotFoundReason,
+				}
+			} else {
+				return fmt.Errorf("failed to fetch etcd statefulset %s/%s: %w", sts.Namespace, sts.Name, err)
+			}
+		} else {
+			conditionPtr, err := r.etcdStatefulSetCondition(ctx, sts)
+			if err != nil {
+				return fmt.Errorf("failed to get etcd statefulset status: %w", err)
+			}
+			newCondition = *conditionPtr
+		}
+	case hyperv1.Unmanaged:
+		r.Log.Info("Assuming Etcd cluster is running in unmanaged etcd strategy")
+		newCondition = metav1.Condition{
+			Type:    string(hyperv1.EtcdAvailable),
+			Status:  metav1.ConditionTrue,
+			Reason:  "EtcdRunning",
+			Message: "Etcd cluster is assumed to be running in unmanaged state",
+		}
+	}
+	newCondition.ObservedGeneration = hostedControlPlane.Generation
+	meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, newCondition)
+
+	if hostedControlPlane.Spec.Etcd.ManagementType == hyperv1.Managed &&
+		hostedControlPlane.Spec.Etcd.Managed != nil && len(hostedControlPlane.Spec.Etcd.Managed.Storage.RestoreSnapshotURL) > 0 {
+		restoreCondition := meta.FindStatusCondition(hostedControlPlane.Status.Conditions, string(hyperv1.EtcdSnapshotRestored))
+		if restoreCondition == nil {
+			r.Log.Info("Reconciling etcd cluster restore status")
+			sts := manifests.EtcdStatefulSet(hostedControlPlane.Namespace)
+			if err := r.Get(ctx, client.ObjectKeyFromObject(sts), sts); err == nil {
+				rc := metav1.Condition{}
+				conditionPtr := r.etcdRestoredCondition(ctx, sts)
+				if conditionPtr != nil {
+					rc = *conditionPtr
+					rc.ObservedGeneration = hostedControlPlane.Generation
+					meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, rc)
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+func (r *HostedControlPlaneReconciler) reconcileKASStatus(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane) error {
+	newCondition := metav1.Condition{
+		Type:   string(hyperv1.KubeAPIServerAvailable),
+		Status: metav1.ConditionUnknown,
+		Reason: hyperv1.StatusUnknownReason,
+	}
+	deployment := manifests.KASDeployment(hostedControlPlane.Namespace)
+	if err := r.Get(ctx, client.ObjectKeyFromObject(deployment), deployment); err != nil {
+		if apierrors.IsNotFound(err) {
+			newCondition = metav1.Condition{
+				Type:    string(hyperv1.KubeAPIServerAvailable),
+				Status:  metav1.ConditionFalse,
+				Reason:  hyperv1.NotFoundReason,
+				Message: "Kube APIServer deployment not found",
+			}
+		} else {
+			return fmt.Errorf("failed to fetch Kube APIServer deployment %s/%s: %w", deployment.Namespace, deployment.Name, err)
+		}
+	} else {
+		newCondition = metav1.Condition{
+			Type:   string(hyperv1.KubeAPIServerAvailable),
+			Status: metav1.ConditionFalse,
+			Reason: hyperv1.StatusUnknownReason,
+		}
+		for _, cond := range deployment.Status.Conditions {
+			if cond.Type == appsv1.DeploymentAvailable {
+				if cond.Status == corev1.ConditionTrue {
+					newCondition = metav1.Condition{
+						Type:    string(hyperv1.KubeAPIServerAvailable),
+						Status:  metav1.ConditionTrue,
+						Reason:  hyperv1.AsExpectedReason,
+						Message: "Kube APIServer deployment is available",
+					}
+				} else {
+					newCondition = metav1.Condition{
+						Type:    string(hyperv1.KubeAPIServerAvailable),
+						Status:  metav1.ConditionFalse,
+						Reason:  hyperv1.WaitingForAvailableReason,
+						Message: "Waiting for Kube APIServer deployment to become available",
+					}
+				}
+				break
+			}
+		}
+	}
+	newCondition.ObservedGeneration = hostedControlPlane.Generation
+	meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, newCondition)
+	return nil
+}
+
+func (r *HostedControlPlaneReconciler) reconcileDegradedStatus(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane) error {
+	condition := metav1.Condition{
+		Type:               string(hyperv1.HostedControlPlaneDegraded),
+		Status:             metav1.ConditionFalse,
+		Reason:             hyperv1.AsExpectedReason,
+		ObservedGeneration: hostedControlPlane.Generation,
+	}
+	cpoManagedDeploymentList := &appsv1.DeploymentList{}
+	if err := r.List(ctx, cpoManagedDeploymentList, client.MatchingLabels{
+		component.ManagedByLabel: "control-plane-operator",
+	}, client.InNamespace(hostedControlPlane.Namespace)); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to list managed deployments in namespace %s: %w", hostedControlPlane.Namespace, err)
+		}
+	}
+	var errs []error
+	sort.SliceStable(cpoManagedDeploymentList.Items, func(i, j int) bool {
+		return cpoManagedDeploymentList.Items[i].Name < cpoManagedDeploymentList.Items[j].Name
+	})
+	for _, deployment := range cpoManagedDeploymentList.Items {
+		if deployment.Status.UnavailableReplicas > 0 {
+			errs = append(errs, fmt.Errorf("%s deployment has %d unavailable replicas", deployment.Name, deployment.Status.UnavailableReplicas))
+		}
+	}
+	err := utilerrors.NewAggregate(errs)
+	if err != nil {
+		condition.Status = metav1.ConditionTrue
+		condition.Reason = "UnavailableReplicas"
+		condition.Message = err.Error()
+	}
+	meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, condition)
+	return nil
+}
+
 func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	r.Log = ctrl.LoggerFrom(ctx)
 	r.Log.Info("Reconciling")
 
-	// Fetch the hostedControlPlane instance
 	hostedControlPlane := &hyperv1.HostedControlPlane{}
 	err := r.Client.Get(ctx, req.NamespacedName, hostedControlPlane)
 	if err != nil {
@@ -383,64 +582,10 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	originalHostedControlPlane := hostedControlPlane.DeepCopy()
 
-	// Return early if deleted
 	if !hostedControlPlane.DeletionTimestamp.IsZero() {
-		condition := &metav1.Condition{
-			Type: string(hyperv1.AWSDefaultSecurityGroupDeleted),
-		}
-		if shouldCleanupCloudResources(r.Log, hostedControlPlane) {
-			if code, destroyErr := r.destroyAWSDefaultSecurityGroup(ctx, hostedControlPlane); destroyErr != nil {
-				condition.Message = "failed to delete AWS default security group"
-				if code == "DependencyViolation" {
-					condition.Message = destroyErr.Error()
-				}
-				condition.Reason = hyperv1.AWSErrorReason
-				condition.Status = metav1.ConditionFalse
-				meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, *condition)
-
-				if err := r.Client.Status().Patch(ctx, hostedControlPlane, client.MergeFromWithOptions(originalHostedControlPlane, client.MergeFromWithOptimisticLock{})); err != nil {
-					return ctrl.Result{}, fmt.Errorf("failed to update status on hcp for security group deletion: %w. Condition error message: %v", err, condition.Message)
-				}
-
-				if code == "UnauthorizedOperation" {
-					r.Log.Error(destroyErr, "Skipping AWS default security group deletion because of unauthorized operation.")
-				}
-				if code == "DependencyViolation" {
-					r.Log.Error(destroyErr, "Skipping AWS default security group deletion because of dependency violation.")
-				} else {
-					return ctrl.Result{}, fmt.Errorf("failed to delete AWS default security group: %w", destroyErr)
-				}
-			} else {
-				condition.Message = hyperv1.AllIsWellMessage
-				condition.Reason = hyperv1.AsExpectedReason
-				condition.Status = metav1.ConditionTrue
-				meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, *condition)
-
-				if err := r.Client.Status().Patch(ctx, hostedControlPlane, client.MergeFromWithOptions(originalHostedControlPlane, client.MergeFromWithOptimisticLock{})); err != nil {
-					return ctrl.Result{}, fmt.Errorf("failed to update status on hcp for security group deletion: %w. Condition message: %v", err, condition.Message)
-				}
-			}
-
-			done, err := r.removeCloudResources(ctx, hostedControlPlane)
-			if err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to ensure cloud resources are removed: %w", err)
-			}
-			if !done {
-				return ctrl.Result{RequeueAfter: time.Minute}, nil
-			}
-		}
-
-		if controllerutil.ContainsFinalizer(hostedControlPlane, finalizer) {
-			originalHCP := hostedControlPlane.DeepCopy()
-			controllerutil.RemoveFinalizer(hostedControlPlane, finalizer)
-			if err := r.Patch(ctx, hostedControlPlane, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{})); err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to remove finalizer from cluster: %w", err)
-			}
-		}
-		return ctrl.Result{}, nil
+		return r.reconcileDeletion(ctx, hostedControlPlane, originalHostedControlPlane)
 	}
 
-	// Ensure the hostedControlPlane has a finalizer for cleanup
 	if !controllerutil.ContainsFinalizer(hostedControlPlane, finalizer) {
 		originalHCP := hostedControlPlane.DeepCopy()
 		controllerutil.AddFinalizer(hostedControlPlane, finalizer)
@@ -454,7 +599,6 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, nil
 	}
 
-	// Reconcile global configuration validation status
 	{
 		condition := metav1.Condition{
 			Type:               string(hyperv1.ValidHostedControlPlaneConfiguration),
@@ -472,67 +616,10 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, condition)
 	}
 
-	// Reconcile etcd cluster status
-	{
-		newCondition := metav1.Condition{
-			Type:   string(hyperv1.EtcdAvailable),
-			Status: metav1.ConditionUnknown,
-			Reason: hyperv1.StatusUnknownReason,
-		}
-		switch hostedControlPlane.Spec.Etcd.ManagementType {
-		case hyperv1.Managed:
-			r.Log.Info("Reconciling etcd cluster status for managed strategy")
-			sts := manifests.EtcdStatefulSet(hostedControlPlane.Namespace)
-			if err := r.Get(ctx, client.ObjectKeyFromObject(sts), sts); err != nil {
-				if apierrors.IsNotFound(err) {
-					newCondition = metav1.Condition{
-						Type:   string(hyperv1.EtcdAvailable),
-						Status: metav1.ConditionFalse,
-						Reason: hyperv1.EtcdStatefulSetNotFoundReason,
-					}
-				} else {
-					return ctrl.Result{}, fmt.Errorf("failed to fetch etcd statefulset %s/%s: %w", sts.Namespace, sts.Name, err)
-				}
-			} else {
-				conditionPtr, err := r.etcdStatefulSetCondition(ctx, sts)
-				if err != nil {
-					return ctrl.Result{}, fmt.Errorf("failed to get etcd statefulset status: %w", err)
-				}
-				newCondition = *conditionPtr
-			}
-		case hyperv1.Unmanaged:
-			r.Log.Info("Assuming Etcd cluster is running in unmanaged etcd strategy")
-			newCondition = metav1.Condition{
-				Type:    string(hyperv1.EtcdAvailable),
-				Status:  metav1.ConditionTrue,
-				Reason:  "EtcdRunning",
-				Message: "Etcd cluster is assumed to be running in unmanaged state",
-			}
-		}
-		newCondition.ObservedGeneration = hostedControlPlane.Generation
-		meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, newCondition)
+	if err := r.reconcileEtcdStatus(ctx, hostedControlPlane); err != nil {
+		return ctrl.Result{}, err
 	}
 
-	// Reconcile etcd restore status
-	if hostedControlPlane.Spec.Etcd.ManagementType == hyperv1.Managed &&
-		hostedControlPlane.Spec.Etcd.Managed != nil && len(hostedControlPlane.Spec.Etcd.Managed.Storage.RestoreSnapshotURL) > 0 {
-		restoreCondition := meta.FindStatusCondition(hostedControlPlane.Status.Conditions, string(hyperv1.EtcdSnapshotRestored))
-		if restoreCondition == nil {
-			r.Log.Info("Reconciling etcd cluster restore status")
-			sts := manifests.EtcdStatefulSet(hostedControlPlane.Namespace)
-			if err := r.Get(ctx, client.ObjectKeyFromObject(sts), sts); err == nil {
-				newCondition := metav1.Condition{}
-				conditionPtr := r.etcdRestoredCondition(ctx, sts)
-				if conditionPtr != nil {
-					newCondition = *conditionPtr
-					newCondition.ObservedGeneration = hostedControlPlane.Generation
-					meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, newCondition)
-				}
-			}
-		}
-	}
-
-	// Validate KMS config
 	switch hostedControlPlane.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
 		r.validateAWSKMSConfig(ctx, hostedControlPlane)
@@ -540,198 +627,17 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		r.validateAzureKMSConfig(ctx, hostedControlPlane)
 	}
 
-	// Reconcile Kube APIServer status
-	{
-		newCondition := metav1.Condition{
-			Type:   string(hyperv1.KubeAPIServerAvailable),
-			Status: metav1.ConditionUnknown,
-			Reason: hyperv1.StatusUnknownReason,
-		}
-		deployment := manifests.KASDeployment(hostedControlPlane.Namespace)
-		if err := r.Get(ctx, client.ObjectKeyFromObject(deployment), deployment); err != nil {
-			if apierrors.IsNotFound(err) {
-				newCondition = metav1.Condition{
-					Type:    string(hyperv1.KubeAPIServerAvailable),
-					Status:  metav1.ConditionFalse,
-					Reason:  hyperv1.NotFoundReason,
-					Message: "Kube APIServer deployment not found",
-				}
-			} else {
-				return ctrl.Result{}, fmt.Errorf("failed to fetch Kube APIServer deployment %s/%s: %w", deployment.Namespace, deployment.Name, err)
-			}
-		} else {
-			// Assume the deployment is unavailable until proven otherwise.
-			newCondition = metav1.Condition{
-				Type:   string(hyperv1.KubeAPIServerAvailable),
-				Status: metav1.ConditionFalse,
-				Reason: hyperv1.StatusUnknownReason,
-			}
-			for _, cond := range deployment.Status.Conditions {
-				if cond.Type == appsv1.DeploymentAvailable {
-					if cond.Status == corev1.ConditionTrue {
-						newCondition = metav1.Condition{
-							Type:    string(hyperv1.KubeAPIServerAvailable),
-							Status:  metav1.ConditionTrue,
-							Reason:  hyperv1.AsExpectedReason,
-							Message: "Kube APIServer deployment is available",
-						}
-					} else {
-						newCondition = metav1.Condition{
-							Type:    string(hyperv1.KubeAPIServerAvailable),
-							Status:  metav1.ConditionFalse,
-							Reason:  hyperv1.WaitingForAvailableReason,
-							Message: "Waiting for Kube APIServer deployment to become available",
-						}
-					}
-					break
-				}
-			}
-		}
-		newCondition.ObservedGeneration = hostedControlPlane.Generation
-		meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, newCondition)
+	if err := r.reconcileKASStatus(ctx, hostedControlPlane); err != nil {
+		return ctrl.Result{}, err
 	}
 
-	// Reconcile Degraded status
-	{
-		condition := metav1.Condition{
-			Type:               string(hyperv1.HostedControlPlaneDegraded),
-			Status:             metav1.ConditionFalse,
-			Reason:             hyperv1.AsExpectedReason,
-			ObservedGeneration: hostedControlPlane.Generation,
-		}
-		cpoManagedDeploymentList := &appsv1.DeploymentList{}
-		if err := r.List(ctx, cpoManagedDeploymentList, client.MatchingLabels{
-			component.ManagedByLabel: "control-plane-operator",
-		}, client.InNamespace(hostedControlPlane.Namespace)); err != nil {
-			if !apierrors.IsNotFound(err) {
-				return ctrl.Result{}, fmt.Errorf("failed to list managed deployments in namespace %s: %w", hostedControlPlane.Namespace, err)
-			}
-		}
-		var errs []error
-		sort.SliceStable(cpoManagedDeploymentList.Items, func(i, j int) bool {
-			return cpoManagedDeploymentList.Items[i].Name < cpoManagedDeploymentList.Items[j].Name
-		})
-		for _, deployment := range cpoManagedDeploymentList.Items {
-			if deployment.Status.UnavailableReplicas > 0 {
-				errs = append(errs, fmt.Errorf("%s deployment has %d unavailable replicas", deployment.Name, deployment.Status.UnavailableReplicas))
-			}
-		}
-		err := utilerrors.NewAggregate(errs)
-		if err != nil {
-			condition.Status = metav1.ConditionTrue
-			condition.Reason = "UnavailableReplicas"
-			condition.Message = err.Error()
-		}
-		meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, condition)
+	if err := r.reconcileDegradedStatus(ctx, hostedControlPlane); err != nil {
+		return ctrl.Result{}, err
 	}
 
-	// Reconcile infrastructure status
-	{
-		r.Log.Info("Reconciling infrastructure status")
-		newCondition := metav1.Condition{
-			Type:   string(hyperv1.InfrastructureReady),
-			Status: metav1.ConditionUnknown,
-			Reason: hyperv1.StatusUnknownReason,
-		}
-		infraStatus, err := r.reconcileInfrastructureStatus(ctx, hostedControlPlane)
-		if err != nil {
-			newCondition = metav1.Condition{
-				Type:    string(hyperv1.InfrastructureReady),
-				Status:  metav1.ConditionUnknown,
-				Reason:  hyperv1.InfraStatusFailureReason,
-				Message: err.Error(),
-			}
-			r.Log.Error(err, "failed to determine infrastructure status")
-		} else {
-			if infraStatus.IsReady() {
-				hostedControlPlane.Status.ControlPlaneEndpoint = hyperv1.APIEndpoint{
-					Host: infraStatus.APIHost,
-					Port: infraStatus.APIPort,
-				}
-				newCondition = metav1.Condition{
-					Type:    string(hyperv1.InfrastructureReady),
-					Status:  metav1.ConditionTrue,
-					Message: hyperv1.AllIsWellMessage,
-					Reason:  hyperv1.AsExpectedReason,
-				}
-				if util.HCPOAuthEnabled(hostedControlPlane) {
-					hostedControlPlane.Status.OAuthCallbackURLTemplate = fmt.Sprintf("https://%s:%d/oauth2callback/[identity-provider-name]", infraStatus.OAuthHost, infraStatus.OAuthPort)
-				}
-			} else {
-				message := "Cluster infrastructure is still provisioning"
-				if len(infraStatus.Message) > 0 {
-					message = infraStatus.Message
-				}
-				newCondition = metav1.Condition{
-					Type:    string(hyperv1.InfrastructureReady),
-					Status:  metav1.ConditionFalse,
-					Reason:  hyperv1.WaitingOnInfrastructureReadyReason,
-					Message: message,
-				}
-				r.Log.Info("Infrastructure is not yet ready")
-			}
-		}
-		newCondition.ObservedGeneration = hostedControlPlane.Generation
-		meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, newCondition)
-	}
-
-	// Reconcile external DNS status
-	{
-		newCondition := metav1.Condition{
-			Type:   string(hyperv1.ExternalDNSReachable),
-			Status: metav1.ConditionUnknown,
-			Reason: hyperv1.StatusUnknownReason,
-		}
-
-		kasExternalHostname := netutil.ServiceExternalDNSHostname(hostedControlPlane, hyperv1.APIServer)
-		if kasExternalHostname != "" {
-			if err := netutil.ResolveDNSHostname(ctx, kasExternalHostname); err != nil {
-				newCondition = metav1.Condition{
-					Type:    string(hyperv1.ExternalDNSReachable),
-					Status:  metav1.ConditionFalse,
-					Reason:  hyperv1.ExternalDNSHostNotReachableReason,
-					Message: err.Error(),
-				}
-			} else {
-				newCondition = metav1.Condition{
-					Type:    string(hyperv1.ExternalDNSReachable),
-					Status:  metav1.ConditionTrue,
-					Message: hyperv1.AllIsWellMessage,
-					Reason:  hyperv1.AsExpectedReason,
-				}
-			}
-		} else {
-			newCondition.Message = "External DNS is not configured"
-		}
-
-		newCondition.ObservedGeneration = hostedControlPlane.Generation
-		meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, newCondition)
-	}
-
-	// Reconcile hostedcontrolplane availability and Ready flag
-	{
-		healthCheckErr := r.healthCheckKASLoadBalancers(ctx, hostedControlPlane)
-
-		// Check control plane components availability only if the HCP is not already marked as available
-		var componentsNotAvailableMsg string
-		var componentsErr error
-		availableCondition := meta.FindStatusCondition(hostedControlPlane.Status.Conditions, string(hyperv1.HostedControlPlaneAvailable))
-		alreadyAvailable := availableCondition != nil && availableCondition.Status == metav1.ConditionTrue
-		if !alreadyAvailable {
-			componentsNotAvailableMsg, componentsErr = r.controlPlaneComponentsAvailable(ctx, hostedControlPlane)
-		}
-
-		ready, condition := reconcileAvailabilityStatus(
-			hostedControlPlane.Status.Conditions,
-			hostedControlPlane.Status.KubeConfig != nil,
-			healthCheckErr,
-			componentsNotAvailableMsg,
-			componentsErr,
-			hostedControlPlane.Generation,
-		)
-		hostedControlPlane.Status.Ready = ready
-		meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, condition)
-	}
+	r.reconcileInfrastructureStatusCondition(ctx, hostedControlPlane)
+	r.reconcileExternalDNSStatusCondition(ctx, hostedControlPlane)
+	r.reconcileAvailabilityAndReadyStatus(ctx, hostedControlPlane)
 
 	// Admin Kubeconfig
 	kubeconfig := manifests.KASAdminKubeconfigSecret(hostedControlPlane.Namespace, hostedControlPlane.Spec.KubeConfig)
@@ -754,20 +660,8 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return reconcile.Result{}, err
 	}
 
-	explicitOauthConfig := hostedControlPlane.Spec.Configuration != nil && hostedControlPlane.Spec.Configuration.OAuth != nil
-	if explicitOauthConfig {
-		hostedControlPlane.Status.KubeadminPassword = nil
-	} else {
-		kubeadminPassword := common.KubeadminPasswordSecret(hostedControlPlane.Namespace)
-		if err := r.Get(ctx, client.ObjectKeyFromObject(kubeadminPassword), kubeadminPassword); err != nil {
-			if !apierrors.IsNotFound(err) {
-				return reconcile.Result{}, fmt.Errorf("failed to get kubeadmin password: %w", err)
-			}
-		} else {
-			hostedControlPlane.Status.KubeadminPassword = &corev1.LocalObjectReference{
-				Name: kubeadminPassword.Name,
-			}
-		}
+	if err := r.reconcileKubeadminPasswordStatus(ctx, hostedControlPlane); err != nil {
+		return reconcile.Result{}, err
 	}
 
 	// Reconcile valid release info status
@@ -776,38 +670,8 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return reconcile.Result{}, fmt.Errorf("failed to look up release image metadata: %w", err)
 	}
 
-	// Reconcile controlPlaneVersion status.
-	// This runs after LookupReleaseImage so we can use the version and resolved
-	// digest from the release image metadata.
-	{
-		clk := r.clock
-		if clk == nil {
-			clk = clock.RealClock{}
-		}
-		// Resolve the release image to its digest so controlPlaneVersion records
-		// the immutable image reference, consistent with how CVO records images.
-		pullSecret := common.PullSecret(hostedControlPlane.Namespace)
-		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
-			return reconcile.Result{}, fmt.Errorf("failed to get pull secret for version reconciliation: %w", err)
-		}
-		_, resolvedRef, err := r.ImageMetadataProvider.GetDigest(ctx, util.HCPControlPlaneReleaseImage(hostedControlPlane), pullSecret.Data[corev1.DockerConfigJsonKey])
-		if err != nil {
-			return reconcile.Result{}, fmt.Errorf("failed to resolve control plane release image digest: %w", err)
-		}
-		resolvedImage := resolvedRef.String()
-
-		componentsList := &hyperv1.ControlPlaneComponentList{}
-		if listErr := r.Client.List(ctx, componentsList, client.InNamespace(hostedControlPlane.Namespace)); listErr != nil {
-			// On list failure, ensure a Partial entry exists so consumers
-			// know an upgrade was attempted. Preserve observedGeneration.
-			hostedControlPlane.Status.ControlPlaneVersion = ensureControlPlaneVersionPartial(hostedControlPlane, clk, releaseImage.Version(), resolvedImage)
-			// Persist the Partial entry before returning the error.
-			if patchErr := r.Client.Status().Patch(ctx, hostedControlPlane, client.MergeFromWithOptions(originalHostedControlPlane, client.MergeFromWithOptimisticLock{})); patchErr != nil {
-				return reconcile.Result{}, fmt.Errorf("failed to patch status after component list failure: %w (list error: %v)", patchErr, listErr)
-			}
-			return reconcile.Result{}, fmt.Errorf("failed to list control plane components for version reconciliation: %w", listErr)
-		}
-		hostedControlPlane.Status.ControlPlaneVersion = reconcileControlPlaneVersion(hostedControlPlane, componentsList.Items, clk, releaseImage.Version(), resolvedImage)
+	if err := r.reconcileControlPlaneVersionStatus(ctx, hostedControlPlane, originalHostedControlPlane, releaseImage); err != nil {
+		return reconcile.Result{}, err
 	}
 
 	hostedControlPlane.Status.Initialized = true
@@ -850,6 +714,155 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	return ctrl.Result{RequeueAfter: hcpReadyRequeueInterval}, nil
+}
+
+func (r *HostedControlPlaneReconciler) reconcileInfrastructureStatusCondition(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane) {
+	r.Log.Info("Reconciling infrastructure status")
+	newCondition := metav1.Condition{
+		Type:   string(hyperv1.InfrastructureReady),
+		Status: metav1.ConditionUnknown,
+		Reason: hyperv1.StatusUnknownReason,
+	}
+	infraStatus, err := r.reconcileInfrastructureStatus(ctx, hostedControlPlane)
+	if err != nil {
+		newCondition = metav1.Condition{
+			Type:    string(hyperv1.InfrastructureReady),
+			Status:  metav1.ConditionUnknown,
+			Reason:  hyperv1.InfraStatusFailureReason,
+			Message: err.Error(),
+		}
+		r.Log.Error(err, "failed to determine infrastructure status")
+	} else if infraStatus.IsReady() {
+		hostedControlPlane.Status.ControlPlaneEndpoint = hyperv1.APIEndpoint{
+			Host: infraStatus.APIHost,
+			Port: infraStatus.APIPort,
+		}
+		newCondition = metav1.Condition{
+			Type:    string(hyperv1.InfrastructureReady),
+			Status:  metav1.ConditionTrue,
+			Message: hyperv1.AllIsWellMessage,
+			Reason:  hyperv1.AsExpectedReason,
+		}
+		if util.HCPOAuthEnabled(hostedControlPlane) {
+			hostedControlPlane.Status.OAuthCallbackURLTemplate = fmt.Sprintf("https://%s:%d/oauth2callback/[identity-provider-name]", infraStatus.OAuthHost, infraStatus.OAuthPort)
+		}
+	} else {
+		message := "Cluster infrastructure is still provisioning"
+		if len(infraStatus.Message) > 0 {
+			message = infraStatus.Message
+		}
+		newCondition = metav1.Condition{
+			Type:    string(hyperv1.InfrastructureReady),
+			Status:  metav1.ConditionFalse,
+			Reason:  hyperv1.WaitingOnInfrastructureReadyReason,
+			Message: message,
+		}
+		r.Log.Info("Infrastructure is not yet ready")
+	}
+	newCondition.ObservedGeneration = hostedControlPlane.Generation
+	meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, newCondition)
+}
+
+func (r *HostedControlPlaneReconciler) reconcileExternalDNSStatusCondition(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane) {
+	newCondition := metav1.Condition{
+		Type:   string(hyperv1.ExternalDNSReachable),
+		Status: metav1.ConditionUnknown,
+		Reason: hyperv1.StatusUnknownReason,
+	}
+
+	kasExternalHostname := netutil.ServiceExternalDNSHostname(hostedControlPlane, hyperv1.APIServer)
+	if kasExternalHostname != "" {
+		if err := netutil.ResolveDNSHostname(ctx, kasExternalHostname); err != nil {
+			newCondition = metav1.Condition{
+				Type:    string(hyperv1.ExternalDNSReachable),
+				Status:  metav1.ConditionFalse,
+				Reason:  hyperv1.ExternalDNSHostNotReachableReason,
+				Message: err.Error(),
+			}
+		} else {
+			newCondition = metav1.Condition{
+				Type:    string(hyperv1.ExternalDNSReachable),
+				Status:  metav1.ConditionTrue,
+				Message: hyperv1.AllIsWellMessage,
+				Reason:  hyperv1.AsExpectedReason,
+			}
+		}
+	} else {
+		newCondition.Message = "External DNS is not configured"
+	}
+
+	newCondition.ObservedGeneration = hostedControlPlane.Generation
+	meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, newCondition)
+}
+
+func (r *HostedControlPlaneReconciler) reconcileAvailabilityAndReadyStatus(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane) {
+	healthCheckErr := r.healthCheckKASLoadBalancers(ctx, hostedControlPlane)
+
+	var componentsNotAvailableMsg string
+	var componentsErr error
+	availableCondition := meta.FindStatusCondition(hostedControlPlane.Status.Conditions, string(hyperv1.HostedControlPlaneAvailable))
+	alreadyAvailable := availableCondition != nil && availableCondition.Status == metav1.ConditionTrue
+	if !alreadyAvailable {
+		componentsNotAvailableMsg, componentsErr = r.controlPlaneComponentsAvailable(ctx, hostedControlPlane)
+	}
+
+	ready, condition := reconcileAvailabilityStatus(
+		hostedControlPlane.Status.Conditions,
+		hostedControlPlane.Status.KubeConfig != nil,
+		healthCheckErr,
+		componentsNotAvailableMsg,
+		componentsErr,
+		hostedControlPlane.Generation,
+	)
+	hostedControlPlane.Status.Ready = ready
+	meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, condition)
+}
+
+func (r *HostedControlPlaneReconciler) reconcileKubeadminPasswordStatus(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane) error {
+	explicitOauthConfig := hostedControlPlane.Spec.Configuration != nil && hostedControlPlane.Spec.Configuration.OAuth != nil
+	if explicitOauthConfig {
+		hostedControlPlane.Status.KubeadminPassword = nil
+		return nil
+	}
+	kubeadminPassword := common.KubeadminPasswordSecret(hostedControlPlane.Namespace)
+	if err := r.Get(ctx, client.ObjectKeyFromObject(kubeadminPassword), kubeadminPassword); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to get kubeadmin password: %w", err)
+		}
+		hostedControlPlane.Status.KubeadminPassword = nil
+	} else {
+		hostedControlPlane.Status.KubeadminPassword = &corev1.LocalObjectReference{
+			Name: kubeadminPassword.Name,
+		}
+	}
+	return nil
+}
+
+func (r *HostedControlPlaneReconciler) reconcileControlPlaneVersionStatus(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane, originalHostedControlPlane *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) error {
+	clk := r.clock
+	if clk == nil {
+		clk = clock.RealClock{}
+	}
+	pullSecret := common.PullSecret(hostedControlPlane.Namespace)
+	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
+		return fmt.Errorf("failed to get pull secret for version reconciliation: %w", err)
+	}
+	_, resolvedRef, err := r.ImageMetadataProvider.GetDigest(ctx, util.HCPControlPlaneReleaseImage(hostedControlPlane), pullSecret.Data[corev1.DockerConfigJsonKey])
+	if err != nil {
+		return fmt.Errorf("failed to resolve control plane release image digest: %w", err)
+	}
+	resolvedImage := resolvedRef.String()
+
+	componentsList := &hyperv1.ControlPlaneComponentList{}
+	if listErr := r.Client.List(ctx, componentsList, client.InNamespace(hostedControlPlane.Namespace)); listErr != nil {
+		hostedControlPlane.Status.ControlPlaneVersion = ensureControlPlaneVersionPartial(hostedControlPlane, clk, releaseImage.Version(), resolvedImage)
+		if patchErr := r.Client.Status().Patch(ctx, hostedControlPlane, client.MergeFromWithOptions(originalHostedControlPlane, client.MergeFromWithOptimisticLock{})); patchErr != nil {
+			return fmt.Errorf("failed to patch status after component list failure: %w (list error: %v)", patchErr, listErr)
+		}
+		return fmt.Errorf("failed to list control plane components for version reconciliation: %w", listErr)
+	}
+	hostedControlPlane.Status.ControlPlaneVersion = reconcileControlPlaneVersion(hostedControlPlane, componentsList.Items, clk, releaseImage.Version(), resolvedImage)
+	return nil
 }
 
 // reconcileAvailabilityStatus determines the HostedControlPlane availability condition
@@ -1293,10 +1306,470 @@ func (r *HostedControlPlaneReconciler) reconcileKubeadminPassword(ctx context.Co
 	return nil
 }
 
+func (r *HostedControlPlaneReconciler) reconcileEtcdCerts(ctx context.Context, hcp *hyperv1.HostedControlPlane, p *pki.PKIParams, createOrUpdate upsert.CreateOrUpdateFN) error {
+	etcdSignerSecret := manifests.EtcdSignerSecret(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, etcdSignerSecret, func() error {
+		return pki.ReconcileEtcdSignerSecret(etcdSignerSecret, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile etcd signer CA secret: %w", err)
+	}
+
+	etcdSignerCM := manifests.EtcdSignerCAConfigMap(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, etcdSignerCM, func() error {
+		return pki.ReconcileEtcdSignerConfigMap(etcdSignerCM, p.OwnerRef, etcdSignerSecret)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile etcd signer CA configmap: %w", err)
+	}
+
+	etcdClientSecret := manifests.EtcdClientSecret(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, etcdClientSecret, func() error {
+		return pki.ReconcileEtcdClientSecret(etcdClientSecret, etcdSignerSecret, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile etcd client secret: %w", err)
+	}
+
+	etcdServerSecret := manifests.EtcdServerSecret(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, etcdServerSecret, func() error {
+		return pki.ReconcileEtcdServerSecret(etcdServerSecret, etcdSignerSecret, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile etcd server secret: %w", err)
+	}
+
+	etcdPeerSecret := manifests.EtcdPeerSecret(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, etcdPeerSecret, func() error {
+		return pki.ReconcileEtcdPeerSecret(etcdPeerSecret, etcdSignerSecret, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile etcd peer secret: %w", err)
+	}
+
+	etcdMetricsSignerSecret := manifests.EtcdMetricsSignerSecret(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, etcdMetricsSignerSecret, func() error {
+		return pki.ReconcileEtcdMetricsSignerSecret(etcdMetricsSignerSecret, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile etcd signer CA secret: %w", err)
+	}
+
+	etcdMetricsSignerCM := manifests.EtcdMetricsSignerCAConfigMap(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, etcdMetricsSignerCM, func() error {
+		return pki.ReconcileEtcdMetricsSignerConfigMap(etcdMetricsSignerCM, p.OwnerRef, etcdMetricsSignerSecret)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile etcd signer CA configmap: %w", err)
+	}
+
+	etcdMetricsClientSecret := manifests.EtcdMetricsClientSecret(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, etcdMetricsClientSecret, func() error {
+		return pki.ReconcileEtcdMetricsClientSecret(etcdMetricsClientSecret, etcdMetricsSignerSecret, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile etcd client secret: %w", err)
+	}
+
+	return nil
+}
+
+func (r *HostedControlPlaneReconciler) reconcileKASCerts(ctx context.Context, hcp *hyperv1.HostedControlPlane, p *pki.PKIParams, createOrUpdate upsert.CreateOrUpdateFN, rootCASecret *corev1.Secret) error {
+	kasServerSecret := manifests.KASServerCertSecret(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, kasServerSecret, func() error {
+		return pki.ReconcileKASServerCertSecret(kasServerSecret, rootCASecret, p.OwnerRef, p.ExternalAPIAddress, p.InternalAPIAddress, p.ServiceCIDR, p.NodeInternalAPIServerIP)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile kas server secret: %w", err)
+	}
+
+	kasServerPrivateSecret := manifests.KASServerPrivateCertSecret(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, kasServerPrivateSecret, func() error {
+		return pki.ReconcileKASServerPrivateCertSecret(kasServerPrivateSecret, rootCASecret, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile kas server private secret: %w", err)
+	}
+
+	totalKASClientCABundle := pkimanifests.TotalKASClientCABundle(hcp.Namespace)
+	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(totalKASClientCABundle), totalKASClientCABundle); err != nil && !apierrors.IsNotFound(err) {
+		return fmt.Errorf("failed to fetch KAS total client CA bundle: %w", err)
+	}
+
+	if err := r.setupKASClientSigners(ctx, hcp, p, createOrUpdate, rootCASecret, totalKASClientCABundle); err != nil {
+		return err
+	}
+
+	serviceAccountSigningKeySecret := manifests.ServiceAccountSigningKeySecret(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, serviceAccountSigningKeySecret, func() error {
+		return pki.ReconcileServiceAccountSigningKeySecret(serviceAccountSigningKeySecret, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile api server service account key secret: %w", err)
+	}
+
+	return nil
+}
+
+func (r *HostedControlPlaneReconciler) reconcileOpenshiftCerts(ctx context.Context, hcp *hyperv1.HostedControlPlane, p *pki.PKIParams, createOrUpdate upsert.CreateOrUpdateFN, rootCASecret *corev1.Secret) error {
+	openshiftAPIServerCertSecret := manifests.OpenShiftAPIServerCertSecret(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, openshiftAPIServerCertSecret, func() error {
+		return pki.ReconcileOpenShiftAPIServerCertSecret(openshiftAPIServerCertSecret, rootCASecret, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile kas admin client secret: %w", err)
+	}
+
+	if util.HCPOAuthEnabled(hcp) {
+		openshiftOAuthAPIServerCertSecret := manifests.OpenShiftOAuthAPIServerCertSecret(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, openshiftOAuthAPIServerCertSecret, func() error {
+			return pki.ReconcileOpenShiftOAuthAPIServerCertSecret(openshiftOAuthAPIServerCertSecret, rootCASecret, p.OwnerRef)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile openshift oauth apiserver cert: %w", err)
+		}
+	}
+
+	openshiftControllerManagerCertSecret := manifests.OpenShiftControllerManagerCertSecret(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, openshiftControllerManagerCertSecret, func() error {
+		return pki.ReconcileOpenShiftControllerManagerCertSecret(openshiftControllerManagerCertSecret, rootCASecret, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile openshift controller manager cert: %w", err)
+	}
+
+	openshiftRouteControllerManagerCertSecret := manifests.OpenShiftRouteControllerManagerCertSecret(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, openshiftRouteControllerManagerCertSecret, func() error {
+		return pki.ReconcileOpenShiftControllerManagerCertSecret(openshiftRouteControllerManagerCertSecret, rootCASecret, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile openshift route controller manager cert: %w", err)
+	}
+
+	clusterPolicyControllerCertSecret := manifests.ClusterPolicyControllerCertSecret(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, clusterPolicyControllerCertSecret, func() error {
+		return pki.ReconcileOpenShiftControllerManagerCertSecret(clusterPolicyControllerCertSecret, rootCASecret, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile cluster policy controller cert: %w", err)
+	}
+
+	return nil
+}
+
+func (r *HostedControlPlaneReconciler) reconcileKonnectivityCerts(ctx context.Context, hcp *hyperv1.HostedControlPlane, p *pki.PKIParams, createOrUpdate upsert.CreateOrUpdateFN) error {
+	konnectivitySigner := manifests.KonnectivitySignerSecret(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, konnectivitySigner, func() error {
+		return pki.ReconcileKonnectivitySignerSecret(konnectivitySigner, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile konnectivity signer secret: %v", err)
+	}
+
+	konnectivityCACM := manifests.KonnectivityCAConfigMap(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, konnectivityCACM, func() error {
+		return pki.ReconcileKonnectivityConfigMap(konnectivityCACM, p.OwnerRef, konnectivitySigner)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile konnectivity CA config map: %v", err)
+	}
+
+	konnectivityServerSecret := manifests.KonnectivityServerSecret(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, konnectivityServerSecret, func() error {
+		return pki.ReconcileKonnectivityServerSecret(konnectivityServerSecret, konnectivitySigner, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile konnectivity server cert: %w", err)
+	}
+
+	konnectivityClusterSecret := manifests.KonnectivityClusterSecret(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, konnectivityClusterSecret, func() error {
+		return pki.ReconcileKonnectivityClusterSecret(konnectivityClusterSecret, konnectivitySigner, p.OwnerRef, p.ExternalKconnectivityAddress)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile konnectivity cluster cert: %w", err)
+	}
+
+	konnectivityClientSecret := manifests.KonnectivityClientSecret(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, konnectivityClientSecret, func() error {
+		return pki.ReconcileKonnectivityClientSecret(konnectivityClientSecret, konnectivitySigner, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile konnectivity client cert: %w", err)
+	}
+
+	konnectivityAgentSecret := manifests.KonnectivityAgentSecret(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, konnectivityAgentSecret, func() error {
+		return pki.ReconcileKonnectivityAgentSecret(konnectivityAgentSecret, konnectivitySigner, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile konnectivity agent cert: %w", err)
+	}
+
+	return nil
+}
+
+func (r *HostedControlPlaneReconciler) reconcileOAuthCerts(ctx context.Context, hcp *hyperv1.HostedControlPlane, p *pki.PKIParams, createOrUpdate upsert.CreateOrUpdateFN, rootCASecret *corev1.Secret, trustedCABundle *corev1.ConfigMap) error {
+	oauthServerCert := manifests.OpenShiftOAuthServerCert(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, oauthServerCert, func() error {
+		return pki.ReconcileOAuthServerCert(oauthServerCert, rootCASecret, p.OwnerRef, p.ExternalOauthAddress)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile oauth cert secret: %w", err)
+	}
+
+	bundleSources := []*corev1.Secret{oauthServerCert}
+	if hcp.Spec.Configuration != nil && hcp.Spec.Configuration.APIServer != nil {
+		for _, namedCert := range hcp.Spec.Configuration.APIServer.ServingCerts.NamedCertificates {
+			if namedCert.ServingCertificate.Name == "" {
+				continue
+			}
+			certSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: namedCert.ServingCertificate.Name, Namespace: hcp.Namespace}}
+			if err := r.Get(ctx, client.ObjectKeyFromObject(certSecret), certSecret); err != nil {
+				return fmt.Errorf("failed to get named certificate %s: %w", certSecret.Name, err)
+			}
+			bundleSources = append(bundleSources, certSecret)
+		}
+	}
+
+	if trustedCABundle.Data[certs.UserCABundleMapKey] != "" {
+		bundleSources = append(bundleSources, &corev1.Secret{
+			Data: map[string][]byte{
+				certs.CASignerCertMapKey: []byte(trustedCABundle.Data[certs.UserCABundleMapKey]),
+			},
+		})
+	}
+
+	oauthMasterCABundle := manifests.OpenShiftOAuthMasterCABundle(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, oauthMasterCABundle, func() error {
+		return pki.ReconcileOAuthMasterCABundle(oauthMasterCABundle, p.OwnerRef, bundleSources)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile oauth cert secret: %w", err)
+	}
+
+	return nil
+}
+
+func (r *HostedControlPlaneReconciler) reconcileOLMAndMiscCerts(ctx context.Context, hcp *hyperv1.HostedControlPlane, p *pki.PKIParams, createOrUpdate upsert.CreateOrUpdateFN, rootCASecret *corev1.Secret) error {
+	if capabilities.IsNodeTuningCapabilityEnabled(hcp.Spec.Capabilities) {
+		NodeTuningOperatorServingCert := manifests.ClusterNodeTuningOperatorServingCertSecret(hcp.Namespace)
+		NodeTuningOperatorService := manifests.ClusterNodeTuningOperatorMetricsService(hcp.Namespace)
+		err := removeServiceCAAnnotationAndSecret(ctx, r.Client, NodeTuningOperatorService, NodeTuningOperatorServingCert)
+		if err != nil {
+			r.Log.Error(err, "failed to remove service ca annotation and secret: %w")
+		}
+		if _, err = createOrUpdate(ctx, r, NodeTuningOperatorServingCert, func() error {
+			return pki.ReconcileNodeTuningOperatorServingCertSecret(NodeTuningOperatorServingCert, rootCASecret, p.OwnerRef)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile node tuning operator serving cert: %w", err)
+		}
+	}
+
+	packageServerCertSecret := manifests.OLMPackageServerCertSecret(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, packageServerCertSecret, func() error {
+		return pki.ReconcileOLMPackageServerCertSecret(packageServerCertSecret, rootCASecret, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile packageserver cert: %w", err)
+	}
+
+	catalogOperatorServingCert := manifests.OLMCatalogOperatorServingCertSecret(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, catalogOperatorServingCert, func() error {
+		return pki.ReconcileOLMCatalogOperatorServingCertSecret(catalogOperatorServingCert, rootCASecret, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile olm catalog operator serving cert: %w", err)
+	}
+
+	olmOperatorServingCert := manifests.OLMOperatorServingCertSecret(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, olmOperatorServingCert, func() error {
+		return pki.ReconcileOLMOperatorServingCertSecret(olmOperatorServingCert, rootCASecret, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile olm operator serving cert: %w", err)
+	}
+
+	if capabilities.IsImageRegistryCapabilityEnabled(hcp.Spec.Capabilities) {
+		imageRegistryOperatorServingCert := manifests.ImageRegistryOperatorServingCert(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, imageRegistryOperatorServingCert, func() error {
+			return pki.ReconcileRegistryOperatorServingCert(imageRegistryOperatorServingCert, rootCASecret, p.OwnerRef)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile image registry operator serving cert: %w", err)
+		}
+	}
+
+	kcmServerSecret := manifests.KCMServerCertSecret(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, kcmServerSecret, func() error {
+		return pki.ReconcileKCMServerSecret(kcmServerSecret, rootCASecret, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile olm operator serving cert: %w", err)
+	}
+
+	cvoServerCert := manifests.ClusterVersionOperatorServerCertSecret(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, cvoServerCert, func() error {
+		return pki.ReconcileCVOServerSecret(cvoServerCert, rootCASecret, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile cvo serving cert: %w", err)
+	}
+
+	return nil
+}
+
+func (r *HostedControlPlaneReconciler) reconcileNetworkServingCerts(ctx context.Context, hcp *hyperv1.HostedControlPlane, p *pki.PKIParams, createOrUpdate upsert.CreateOrUpdateFN, rootCASecret *corev1.Secret) error {
+	if !netutil.IsDisableMultiNetwork(hcp) {
+		multusAdmissionControllerService := manifests.MultusAdmissionControllerService(hcp.Namespace)
+		if err := r.Get(ctx, client.ObjectKeyFromObject(multusAdmissionControllerService), multusAdmissionControllerService); err != nil {
+			if !apierrors.IsNotFound(err) {
+				return fmt.Errorf("failed to retrieve multus-admission-controller service: %w", err)
+			}
+		}
+
+		if hasServiceCAAnnotation := doesServiceHaveServiceCAAnnotation(multusAdmissionControllerService); !hasServiceCAAnnotation {
+			multusAdmissionControllerServingCertSecret := manifests.MultusAdmissionControllerServingCert(hcp.Namespace)
+
+			if err := removeServiceCASecret(ctx, r.Client, multusAdmissionControllerServingCertSecret); err != nil {
+				return err
+			}
+
+			if _, err := createOrUpdate(ctx, r, multusAdmissionControllerServingCertSecret, func() error {
+				return pki.ReconcileMultusAdmissionControllerServingCertSecret(multusAdmissionControllerServingCertSecret, rootCASecret, p.OwnerRef)
+			}); err != nil {
+				return fmt.Errorf("failed to reconcile multus admission controller serving cert: %w", err)
+			}
+		}
+	}
+
+	networkNodeIdentityService := manifests.NetworkNodeIdentityService(hcp.Namespace)
+	if err := r.Get(ctx, client.ObjectKeyFromObject(networkNodeIdentityService), networkNodeIdentityService); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to retrieve network-node-identity service: %w", err)
+		}
+	}
+
+	if hasServiceCAAnnotation := doesServiceHaveServiceCAAnnotation(networkNodeIdentityService); !hasServiceCAAnnotation {
+		networkNodeIdentityServingCertSecret := manifests.NetworkNodeIdentityControllerServingCert(hcp.Namespace)
+
+		if err := removeServiceCASecret(ctx, r.Client, networkNodeIdentityServingCertSecret); err != nil {
+			return err
+		}
+
+		if _, err := createOrUpdate(ctx, r, networkNodeIdentityServingCertSecret, func() error {
+			return pki.ReconcileNetworkNodeIdentityServingCertSecret(networkNodeIdentityServingCertSecret, rootCASecret, p.OwnerRef)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile network node identity serving cert: %w", err)
+		}
+	}
+
+	ovnControlPlaneService := manifests.OVNKubernetesControlPlaneService(hcp.Namespace)
+	if err := r.Get(ctx, client.ObjectKeyFromObject(ovnControlPlaneService), ovnControlPlaneService); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to retrieve ovn-kubernetes-control-plane service: %w", err)
+		}
+	}
+
+	if hasServiceCAAnnotation := doesServiceHaveServiceCAAnnotation(ovnControlPlaneService); !hasServiceCAAnnotation {
+		ovnControlPlaneMetricsServingCertSecret := manifests.OVNControlPlaneMetricsServingCert(hcp.Namespace)
+
+		if err := removeServiceCASecret(ctx, r.Client, ovnControlPlaneMetricsServingCertSecret); err != nil {
+			return err
+		}
+
+		if _, err := createOrUpdate(ctx, r, ovnControlPlaneMetricsServingCertSecret, func() error {
+			return pki.ReconcileOVNControlPlaneMetricsServingCertSecret(ovnControlPlaneMetricsServingCertSecret, rootCASecret, p.OwnerRef)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile OVN control plane serving cert: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func (r *HostedControlPlaneReconciler) reconcileAWSPlatformCerts(ctx context.Context, hcp *hyperv1.HostedControlPlane, p *pki.PKIParams, createOrUpdate upsert.CreateOrUpdateFN, rootCASecret *corev1.Secret) error {
+	awsPodIdentityWebhookServingCert := manifests.AWSPodIdentityWebhookServingCert(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, awsPodIdentityWebhookServingCert, func() error {
+		return pki.ReconcileAWSPodIdentityWebhookServingCert(awsPodIdentityWebhookServingCert, rootCASecret, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile %s secret: %w", awsPodIdentityWebhookServingCert.Name, err)
+	}
+
+	awsEBSCsiDriverControllerMetricsService := manifests.AWSEBSCsiDriverControllerMetricsService(hcp.Namespace)
+	if err := r.Get(ctx, client.ObjectKeyFromObject(awsEBSCsiDriverControllerMetricsService), awsEBSCsiDriverControllerMetricsService); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to retrieve aws-ebs-csi-driver-controller-metrics service: %w", err)
+		}
+	}
+
+	if hasServiceCAAnnotation := doesServiceHaveServiceCAAnnotation(awsEBSCsiDriverControllerMetricsService); !hasServiceCAAnnotation {
+		awsEBSCsiDriverControllerMetricsServingCert := manifests.AWSEBSCsiDriverControllerMetricsServingCert(hcp.Namespace)
+
+		if err := removeServiceCASecret(ctx, r.Client, awsEBSCsiDriverControllerMetricsServingCert); err != nil {
+			return err
+		}
+
+		if _, err := createOrUpdate(ctx, r, awsEBSCsiDriverControllerMetricsServingCert, func() error {
+			return pki.ReconcileAWSEBSCsiDriverControllerMetricsServingCertSecret(awsEBSCsiDriverControllerMetricsServingCert, rootCASecret, p.OwnerRef)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile aws ebs csi driver controller metrics serving cert: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func (r *HostedControlPlaneReconciler) reconcileAzurePlatformCerts(ctx context.Context, hcp *hyperv1.HostedControlPlane, p *pki.PKIParams, createOrUpdate upsert.CreateOrUpdateFN, rootCASecret *corev1.Secret) error {
+	azureWorkloadIdentityWebhookServingCert := manifests.AzureWorkloadIdentityWebhookServingCert(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, azureWorkloadIdentityWebhookServingCert, func() error {
+		return pki.ReconcileAzureWorkloadIdentityWebhookServingCert(azureWorkloadIdentityWebhookServingCert, rootCASecret, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile %s secret: %w", azureWorkloadIdentityWebhookServingCert.Name, err)
+	}
+
+	AzureDiskCsiDriverOperatorServingCert := manifests.AzureDiskCSIDriverOperatorServingCertSecret(hcp.Namespace)
+	AzureDiskCsiDriverOperatorService := manifests.AzureDiskCSIDriverOperatorMetricsService(hcp.Namespace)
+	if err := removeServiceCAAnnotationAndSecret(ctx, r.Client, AzureDiskCsiDriverOperatorService, AzureDiskCsiDriverOperatorServingCert); err != nil {
+		r.Log.Error(err, "failed to remove service ca annotation and secret: %w")
+	}
+	if _, err := createOrUpdate(ctx, r, AzureDiskCsiDriverOperatorServingCert, func() error {
+		z := pki.ReconcileAzureDiskCsiDriverOperatorMetricsServingCertSecret(AzureDiskCsiDriverOperatorServingCert, rootCASecret, p.OwnerRef)
+		return z
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile azure-disk csi driver operator serving cert: %w", err)
+	}
+
+	azureDiskCsiDriverControllerMetricsService := manifests.AzureDiskCsiDriverControllerMetricsService(hcp.Namespace)
+	if err := r.Get(ctx, client.ObjectKeyFromObject(azureDiskCsiDriverControllerMetricsService), azureDiskCsiDriverControllerMetricsService); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to retrieve azure-disk-csi-driver-controller-metrics service: %w", err)
+		}
+	}
+
+	if hasServiceCAAnnotation := doesServiceHaveServiceCAAnnotation(azureDiskCsiDriverControllerMetricsService); !hasServiceCAAnnotation {
+		azureDiskCsiDriverControllerMetricsServingCert := manifests.AzureDiskCsiDriverControllerMetricsServingCert(hcp.Namespace)
+
+		if err := removeServiceCASecret(ctx, r.Client, azureDiskCsiDriverControllerMetricsServingCert); err != nil {
+			return err
+		}
+
+		if _, err := createOrUpdate(ctx, r, azureDiskCsiDriverControllerMetricsServingCert, func() error {
+			return pki.ReconcileAzureDiskCsiDriverControllerMetricsServingCertSecret(azureDiskCsiDriverControllerMetricsServingCert, rootCASecret, p.OwnerRef)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile azure disk csi driver controller metrics serving cert: %w", err)
+		}
+	}
+
+	AzureFileCsiDriverOperatorServingCert := manifests.AzureFileCSIDriverOperatorServingCertSecret(hcp.Namespace)
+	AzureFileCsiDriverOperatorService := manifests.AzureFileCSIDriverOperatorMetricsService(hcp.Namespace)
+	if err := removeServiceCAAnnotationAndSecret(ctx, r.Client, AzureFileCsiDriverOperatorService, AzureFileCsiDriverOperatorServingCert); err != nil {
+		r.Log.Error(err, "failed to remove service ca annotation and secret: %w")
+	}
+	if _, err := createOrUpdate(ctx, r, AzureFileCsiDriverOperatorServingCert, func() error {
+		z := pki.ReconcileAzureFileCsiDriverOperatorMetricsServingCertSecret(AzureFileCsiDriverOperatorServingCert, rootCASecret, p.OwnerRef)
+		return z
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile azure-file csi driver operator serving cert: %w", err)
+	}
+
+	azureFileCsiDriverControllerMetricsService := manifests.AzureFileCsiDriverControllerMetricsService(hcp.Namespace)
+	if err := r.Get(ctx, client.ObjectKeyFromObject(azureFileCsiDriverControllerMetricsService), azureFileCsiDriverControllerMetricsService); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to retrieve azure-file-csi-driver-controller-metrics service: %w", err)
+		}
+	}
+
+	if hasServiceCAAnnotation := doesServiceHaveServiceCAAnnotation(azureFileCsiDriverControllerMetricsService); !hasServiceCAAnnotation {
+		azureFileCsiDriverControllerMetricsServingCert := manifests.AzureFileCsiDriverControllerMetricsServingCert(hcp.Namespace)
+
+		if err := removeServiceCASecret(ctx, r.Client, azureFileCsiDriverControllerMetricsServingCert); err != nil {
+			return err
+		}
+
+		if _, err := createOrUpdate(ctx, r, azureFileCsiDriverControllerMetricsServingCert, func() error {
+			return pki.ReconcileAzureFileCsiDriverControllerMetricsServingCertSecret(azureFileCsiDriverControllerMetricsServingCert, rootCASecret, p.OwnerRef)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile azure file csi driver controller metrics serving cert: %w", err)
+		}
+	}
+
+	return nil
+}
+
 func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hyperv1.HostedControlPlane, infraStatus infra.InfrastructureStatus, createOrUpdate upsert.CreateOrUpdateFN) error {
 	p := pki.NewPKIParams(hcp, infraStatus.APIHost, infraStatus.OAuthHost, infraStatus.KonnectivityHost)
 
-	// Root CA
 	rootCASecret := manifests.RootCASecret(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, rootCASecret, func() error {
 		return pki.ReconcileRootCA(rootCASecret, p.OwnerRef)
@@ -1321,193 +1794,23 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return fmt.Errorf("failed to reconcile root CA configmap: %w", err)
 	}
 
-	// Etcd signer for all the etcd-related certs
-	etcdSignerSecret := manifests.EtcdSignerSecret(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, etcdSignerSecret, func() error {
-		return pki.ReconcileEtcdSignerSecret(etcdSignerSecret, p.OwnerRef)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile etcd signer CA secret: %w", err)
-	}
-
-	etcdSignerCM := manifests.EtcdSignerCAConfigMap(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, etcdSignerCM, func() error {
-		return pki.ReconcileEtcdSignerConfigMap(etcdSignerCM, p.OwnerRef, etcdSignerSecret)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile etcd signer CA configmap: %w", err)
-	}
-
-	// Etcd client secret
-	etcdClientSecret := manifests.EtcdClientSecret(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, etcdClientSecret, func() error {
-		return pki.ReconcileEtcdClientSecret(etcdClientSecret, etcdSignerSecret, p.OwnerRef)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile etcd client secret: %w", err)
-	}
-
-	// Etcd server secret
-	etcdServerSecret := manifests.EtcdServerSecret(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, etcdServerSecret, func() error {
-		return pki.ReconcileEtcdServerSecret(etcdServerSecret, etcdSignerSecret, p.OwnerRef)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile etcd server secret: %w", err)
-	}
-
-	// Etcd peer secret
-	etcdPeerSecret := manifests.EtcdPeerSecret(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, etcdPeerSecret, func() error {
-		return pki.ReconcileEtcdPeerSecret(etcdPeerSecret, etcdSignerSecret, p.OwnerRef)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile etcd peer secret: %w", err)
-	}
-
-	// Etcd metrics signer
-	// Etcd signer for all the etcd-related certs
-	etcdMetricsSignerSecret := manifests.EtcdMetricsSignerSecret(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, etcdMetricsSignerSecret, func() error {
-		return pki.ReconcileEtcdMetricsSignerSecret(etcdMetricsSignerSecret, p.OwnerRef)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile etcd signer CA secret: %w", err)
-	}
-
-	etcdMetricsSignerCM := manifests.EtcdMetricsSignerCAConfigMap(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, etcdMetricsSignerCM, func() error {
-		return pki.ReconcileEtcdMetricsSignerConfigMap(etcdMetricsSignerCM, p.OwnerRef, etcdMetricsSignerSecret)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile etcd signer CA configmap: %w", err)
-	}
-
-	// Etcd client secret
-	etcdMetricsClientSecret := manifests.EtcdMetricsClientSecret(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, etcdMetricsClientSecret, func() error {
-		return pki.ReconcileEtcdMetricsClientSecret(etcdMetricsClientSecret, etcdMetricsSignerSecret, p.OwnerRef)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile etcd client secret: %w", err)
-	}
-
-	// KAS server secret
-	kasServerSecret := manifests.KASServerCertSecret(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, kasServerSecret, func() error {
-		return pki.ReconcileKASServerCertSecret(kasServerSecret, rootCASecret, p.OwnerRef, p.ExternalAPIAddress, p.InternalAPIAddress, p.ServiceCIDR, p.NodeInternalAPIServerIP)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile kas server secret: %w", err)
-	}
-
-	// KAS server private secret
-	kasServerPrivateSecret := manifests.KASServerPrivateCertSecret(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, kasServerPrivateSecret, func() error {
-		return pki.ReconcileKASServerPrivateCertSecret(kasServerPrivateSecret, rootCASecret, p.OwnerRef)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile kas server private secret: %w", err)
-	}
-
-	totalKASClientCABundle := pkimanifests.TotalKASClientCABundle(hcp.Namespace)
-	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(totalKASClientCABundle), totalKASClientCABundle); err != nil && !apierrors.IsNotFound(err) {
-		return fmt.Errorf("failed to fetch KAS total client CA bundle: %w", err)
-	}
-
-	if err := r.setupKASClientSigners(ctx, hcp, p, createOrUpdate, rootCASecret, totalKASClientCABundle); err != nil {
+	if err := r.reconcileEtcdCerts(ctx, hcp, p, createOrUpdate); err != nil {
 		return err
 	}
 
-	// Service account signing key secret
-	serviceAccountSigningKeySecret := manifests.ServiceAccountSigningKeySecret(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, serviceAccountSigningKeySecret, func() error {
-		return pki.ReconcileServiceAccountSigningKeySecret(serviceAccountSigningKeySecret, p.OwnerRef)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile api server service account key secret: %w", err)
+	if err := r.reconcileKASCerts(ctx, hcp, p, createOrUpdate, rootCASecret); err != nil {
+		return err
 	}
 
-	// OpenShift APIServer
-	openshiftAPIServerCertSecret := manifests.OpenShiftAPIServerCertSecret(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, openshiftAPIServerCertSecret, func() error {
-		return pki.ReconcileOpenShiftAPIServerCertSecret(openshiftAPIServerCertSecret, rootCASecret, p.OwnerRef)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile kas admin client secret: %w", err)
+	if err := r.reconcileOpenshiftCerts(ctx, hcp, p, createOrUpdate, rootCASecret); err != nil {
+		return err
 	}
 
-	if util.HCPOAuthEnabled(hcp) {
-		// OpenShift OAuth APIServer
-		openshiftOAuthAPIServerCertSecret := manifests.OpenShiftOAuthAPIServerCertSecret(hcp.Namespace)
-		if _, err := createOrUpdate(ctx, r, openshiftOAuthAPIServerCertSecret, func() error {
-			return pki.ReconcileOpenShiftOAuthAPIServerCertSecret(openshiftOAuthAPIServerCertSecret, rootCASecret, p.OwnerRef)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile openshift oauth apiserver cert: %w", err)
-		}
+	if err := r.reconcileKonnectivityCerts(ctx, hcp, p, createOrUpdate); err != nil {
+		return err
 	}
 
-	// OpenShift ControllerManager Cert
-	openshiftControllerManagerCertSecret := manifests.OpenShiftControllerManagerCertSecret(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, openshiftControllerManagerCertSecret, func() error {
-		return pki.ReconcileOpenShiftControllerManagerCertSecret(openshiftControllerManagerCertSecret, rootCASecret, p.OwnerRef)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile openshift controller manager cert: %w", err)
-	}
-
-	// OpenShift Route ControllerManager Cert
-	openshiftRouteControllerManagerCertSecret := manifests.OpenShiftRouteControllerManagerCertSecret(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, openshiftRouteControllerManagerCertSecret, func() error {
-		return pki.ReconcileOpenShiftControllerManagerCertSecret(openshiftRouteControllerManagerCertSecret, rootCASecret, p.OwnerRef)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile openshift route controller manager cert: %w", err)
-	}
-
-	// Cluster Policy Controller Cert
-	clusterPolicyControllerCertSecret := manifests.ClusterPolicyControllerCertSecret(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, clusterPolicyControllerCertSecret, func() error {
-		return pki.ReconcileOpenShiftControllerManagerCertSecret(clusterPolicyControllerCertSecret, rootCASecret, p.OwnerRef)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile cluster policy controller cert: %w", err)
-	}
-
-	konnectivitySigner := manifests.KonnectivitySignerSecret(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, konnectivitySigner, func() error {
-		return pki.ReconcileKonnectivitySignerSecret(konnectivitySigner, p.OwnerRef)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile konnectivity signer secret: %v", err)
-	}
-
-	konnectivityCACM := manifests.KonnectivityCAConfigMap(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, konnectivityCACM, func() error {
-		return pki.ReconcileKonnectivityConfigMap(konnectivityCACM, p.OwnerRef, konnectivitySigner)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile konnectivity CA config map: %v", err)
-	}
-
-	// Konnectivity Server Cert
-	konnectivityServerSecret := manifests.KonnectivityServerSecret(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, konnectivityServerSecret, func() error {
-		return pki.ReconcileKonnectivityServerSecret(konnectivityServerSecret, konnectivitySigner, p.OwnerRef)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile konnectivity server cert: %w", err)
-	}
-
-	// Konnectivity Cluster Cert
-	konnectivityClusterSecret := manifests.KonnectivityClusterSecret(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, konnectivityClusterSecret, func() error {
-		return pki.ReconcileKonnectivityClusterSecret(konnectivityClusterSecret, konnectivitySigner, p.OwnerRef, p.ExternalKconnectivityAddress)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile konnectivity cluster cert: %w", err)
-	}
-
-	// Konnectivity Client Cert
-	konnectivityClientSecret := manifests.KonnectivityClientSecret(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, konnectivityClientSecret, func() error {
-		return pki.ReconcileKonnectivityClientSecret(konnectivityClientSecret, konnectivitySigner, p.OwnerRef)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile konnectivity client cert: %w", err)
-	}
-
-	// Konnectivity Agent Cert
-	konnectivityAgentSecret := manifests.KonnectivityAgentSecret(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, konnectivityAgentSecret, func() error {
-		return pki.ReconcileKonnectivityAgentSecret(konnectivityAgentSecret, konnectivitySigner, p.OwnerRef)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile konnectivity agent cert: %w", err)
-	}
-
-	// Reconcile ingress serving certificate only if Ingress capability is enabled.
 	if capabilities.IsIngressCapabilityEnabled(hcp.Spec.Capabilities) {
-		// Ingress Cert
 		ingressCert := manifests.IngressCert(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r, ingressCert, func() error {
 			return pki.ReconcileIngressCert(ingressCert, rootCASecret, p.OwnerRef, p.IngressSubdomain)
@@ -1532,46 +1835,11 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 	}
 
 	if util.HCPOAuthEnabled(hcp) {
-		// OAuth server Cert
-		oauthServerCert := manifests.OpenShiftOAuthServerCert(hcp.Namespace)
-		if _, err := createOrUpdate(ctx, r, oauthServerCert, func() error {
-			return pki.ReconcileOAuthServerCert(oauthServerCert, rootCASecret, p.OwnerRef, p.ExternalOauthAddress)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile oauth cert secret: %w", err)
-		}
-
-		// OAuth master CA Bundle
-		bundleSources := []*corev1.Secret{oauthServerCert}
-		if hcp.Spec.Configuration != nil && hcp.Spec.Configuration.APIServer != nil {
-			for _, namedCert := range hcp.Spec.Configuration.APIServer.ServingCerts.NamedCertificates {
-				if namedCert.ServingCertificate.Name == "" {
-					continue
-				}
-				certSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: namedCert.ServingCertificate.Name, Namespace: hcp.Namespace}}
-				if err := r.Get(ctx, client.ObjectKeyFromObject(certSecret), certSecret); err != nil {
-					return fmt.Errorf("failed to get named certificate %s: %w", certSecret.Name, err)
-				}
-				bundleSources = append(bundleSources, certSecret)
-			}
-		}
-
-		if trustedCABundle.Data[certs.UserCABundleMapKey] != "" {
-			bundleSources = append(bundleSources, &corev1.Secret{
-				Data: map[string][]byte{
-					certs.CASignerCertMapKey: []byte(trustedCABundle.Data[certs.UserCABundleMapKey]),
-				},
-			})
-		}
-
-		oauthMasterCABundle := manifests.OpenShiftOAuthMasterCABundle(hcp.Namespace)
-		if _, err := createOrUpdate(ctx, r, oauthMasterCABundle, func() error {
-			return pki.ReconcileOAuthMasterCABundle(oauthMasterCABundle, p.OwnerRef, bundleSources)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile oauth cert secret: %w", err)
+		if err := r.reconcileOAuthCerts(ctx, hcp, p, createOrUpdate, rootCASecret, trustedCABundle); err != nil {
+			return err
 		}
 	}
 
-	// MCS Cert
 	if _, exists := hcp.Annotations[hyperv1.DisableIgnitionServerAnnotation]; !exists {
 		machineConfigServerCert := manifests.MachineConfigServerCert(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r, machineConfigServerCert, func() error {
@@ -1580,149 +1848,13 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 			return fmt.Errorf("failed to reconcile machine config server cert secret: %w", err)
 		}
 	}
-	var err error
-	if capabilities.IsNodeTuningCapabilityEnabled(hcp.Spec.Capabilities) {
-		// Cluster Node Tuning Operator metrics Serving Cert
-		NodeTuningOperatorServingCert := manifests.ClusterNodeTuningOperatorServingCertSecret(hcp.Namespace)
-		NodeTuningOperatorService := manifests.ClusterNodeTuningOperatorMetricsService(hcp.Namespace)
-		err := removeServiceCAAnnotationAndSecret(ctx, r.Client, NodeTuningOperatorService, NodeTuningOperatorServingCert)
-		if err != nil {
-			r.Log.Error(err, "failed to remove service ca annotation and secret: %w")
-		}
-		if _, err = createOrUpdate(ctx, r, NodeTuningOperatorServingCert, func() error {
-			return pki.ReconcileNodeTuningOperatorServingCertSecret(NodeTuningOperatorServingCert, rootCASecret, p.OwnerRef)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile node tuning operator serving cert: %w", err)
-		}
-	}
-	// OLM PackageServer Cert
-	packageServerCertSecret := manifests.OLMPackageServerCertSecret(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, packageServerCertSecret, func() error {
-		return pki.ReconcileOLMPackageServerCertSecret(packageServerCertSecret, rootCASecret, p.OwnerRef)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile packageserver cert: %w", err)
+
+	if err := r.reconcileOLMAndMiscCerts(ctx, hcp, p, createOrUpdate, rootCASecret); err != nil {
+		return err
 	}
 
-	// OLM Catalog Operator Serving Cert
-	catalogOperatorServingCert := manifests.OLMCatalogOperatorServingCertSecret(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, catalogOperatorServingCert, func() error {
-		return pki.ReconcileOLMCatalogOperatorServingCertSecret(catalogOperatorServingCert, rootCASecret, p.OwnerRef)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile olm catalog operator serving cert: %w", err)
-	}
-
-	// OLM Operator Serving Cert
-	olmOperatorServingCert := manifests.OLMOperatorServingCertSecret(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, olmOperatorServingCert, func() error {
-		return pki.ReconcileOLMOperatorServingCertSecret(olmOperatorServingCert, rootCASecret, p.OwnerRef)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile olm operator serving cert: %w", err)
-	}
-
-	if capabilities.IsImageRegistryCapabilityEnabled(hcp.Spec.Capabilities) {
-		// Image Registry Operator Serving Cert
-		imageRegistryOperatorServingCert := manifests.ImageRegistryOperatorServingCert(hcp.Namespace)
-		if _, err := createOrUpdate(ctx, r, imageRegistryOperatorServingCert, func() error {
-			return pki.ReconcileRegistryOperatorServingCert(imageRegistryOperatorServingCert, rootCASecret, p.OwnerRef)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile image registry operator serving cert: %w", err)
-		}
-	}
-
-	kcmServerSecret := manifests.KCMServerCertSecret(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, kcmServerSecret, func() error {
-		return pki.ReconcileKCMServerSecret(kcmServerSecret, rootCASecret, p.OwnerRef)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile olm operator serving cert: %w", err)
-	}
-
-	cvoServerCert := manifests.ClusterVersionOperatorServerCertSecret(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, cvoServerCert, func() error {
-		return pki.ReconcileCVOServerSecret(cvoServerCert, rootCASecret, p.OwnerRef)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile cvo serving cert: %w", err)
-	}
-
-	// For the Multus Admission Controller, Network Node Identity, and OVN Control Plane Metrics Serving Certs:
-	//   We want to remove the secret if there was an existing one created by service-ca; otherwise, it will cause
-	//   issues in cases where you are upgrading an older CPO prior to us adding the feature to reconcile the serving
-	//   cert secret ourselves.
-
-	// Multus Admission Controller Serving Cert - only if Multus is not disabled
-	if !netutil.IsDisableMultiNetwork(hcp) {
-		multusAdmissionControllerService := manifests.MultusAdmissionControllerService(hcp.Namespace)
-		if err = r.Get(ctx, client.ObjectKeyFromObject(multusAdmissionControllerService), multusAdmissionControllerService); err != nil {
-			if !apierrors.IsNotFound(err) {
-				return fmt.Errorf("failed to retrieve multus-admission-controller service: %w", err)
-			}
-		}
-
-		// If the service doesn't have the service ca annotation, delete any previous secret with the annotation and
-		// reconcile the secret with our own rootCA; otherwise, skip reconciling the secret with our own rootCA.
-		if hasServiceCAAnnotation := doesServiceHaveServiceCAAnnotation(multusAdmissionControllerService); !hasServiceCAAnnotation {
-			multusAdmissionControllerServingCertSecret := manifests.MultusAdmissionControllerServingCert(hcp.Namespace)
-
-			err = removeServiceCASecret(ctx, r.Client, multusAdmissionControllerServingCertSecret)
-			if err != nil {
-				return err
-			}
-
-			if _, err = createOrUpdate(ctx, r, multusAdmissionControllerServingCertSecret, func() error {
-				return pki.ReconcileMultusAdmissionControllerServingCertSecret(multusAdmissionControllerServingCertSecret, rootCASecret, p.OwnerRef)
-			}); err != nil {
-				return fmt.Errorf("failed to reconcile multus admission controller serving cert: %w", err)
-			}
-		}
-	}
-
-	// Network Node Identity Serving Cert
-	networkNodeIdentityService := manifests.NetworkNodeIdentityService(hcp.Namespace)
-	if err = r.Get(ctx, client.ObjectKeyFromObject(networkNodeIdentityService), networkNodeIdentityService); err != nil {
-		if !apierrors.IsNotFound(err) {
-			return fmt.Errorf("failed to retrieve network-node-identity service: %w", err)
-		}
-	}
-
-	// If the service doesn't have the service ca annotation, delete any previous secret with the annotation and
-	// reconcile the secret with our own rootCA; otherwise, skip reconciling the secret with our own rootCA.
-	if hasServiceCAAnnotation := doesServiceHaveServiceCAAnnotation(networkNodeIdentityService); !hasServiceCAAnnotation {
-		networkNodeIdentityServingCertSecret := manifests.NetworkNodeIdentityControllerServingCert(hcp.Namespace)
-
-		err = removeServiceCASecret(ctx, r.Client, networkNodeIdentityServingCertSecret)
-		if err != nil {
-			return err
-		}
-
-		if _, err = createOrUpdate(ctx, r, networkNodeIdentityServingCertSecret, func() error {
-			return pki.ReconcileNetworkNodeIdentityServingCertSecret(networkNodeIdentityServingCertSecret, rootCASecret, p.OwnerRef)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile network node identity serving cert: %w", err)
-		}
-	}
-
-	// OVN Control Plane Metrics Serving Cert
-	ovnControlPlaneService := manifests.OVNKubernetesControlPlaneService(hcp.Namespace)
-	if err = r.Get(ctx, client.ObjectKeyFromObject(ovnControlPlaneService), ovnControlPlaneService); err != nil {
-		if !apierrors.IsNotFound(err) {
-			return fmt.Errorf("failed to retrieve ovn-kubernetes-control-plane service: %w", err)
-		}
-	}
-
-	// If the service doesn't have the service ca annotation, delete any previous secret with the annotation and
-	// reconcile the secret with our own rootCA; otherwise, skip reconciling the secret with our own rootCA.
-	if hasServiceCAAnnotation := doesServiceHaveServiceCAAnnotation(ovnControlPlaneService); !hasServiceCAAnnotation {
-		ovnControlPlaneMetricsServingCertSecret := manifests.OVNControlPlaneMetricsServingCert(hcp.Namespace)
-
-		err = removeServiceCASecret(ctx, r.Client, ovnControlPlaneMetricsServingCertSecret)
-		if err != nil {
-			return err
-		}
-
-		if _, err = createOrUpdate(ctx, r, ovnControlPlaneMetricsServingCertSecret, func() error {
-			return pki.ReconcileOVNControlPlaneMetricsServingCertSecret(ovnControlPlaneMetricsServingCertSecret, rootCASecret, p.OwnerRef)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile OVN control plane serving cert: %w", err)
-		}
+	if err := r.reconcileNetworkServingCerts(ctx, hcp, p, createOrUpdate, rootCASecret); err != nil {
+		return err
 	}
 
 	if _, exists := hcp.Annotations[hyperv1.DisableIgnitionServerAnnotation]; !exists {
@@ -1736,115 +1868,14 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		}
 	}
 
-	// Platform specific certs
 	switch hcp.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
-		awsPodIdentityWebhookServingCert := manifests.AWSPodIdentityWebhookServingCert(hcp.Namespace)
-		if _, err := createOrUpdate(ctx, r, awsPodIdentityWebhookServingCert, func() error {
-			return pki.ReconcileAWSPodIdentityWebhookServingCert(awsPodIdentityWebhookServingCert, rootCASecret, p.OwnerRef)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile %s secret: %w", awsPodIdentityWebhookServingCert.Name, err)
-		}
-
-		awsEBSCsiDriverControllerMetricsService := manifests.AWSEBSCsiDriverControllerMetricsService(hcp.Namespace)
-		if err = r.Get(ctx, client.ObjectKeyFromObject(awsEBSCsiDriverControllerMetricsService), awsEBSCsiDriverControllerMetricsService); err != nil {
-			if !apierrors.IsNotFound(err) {
-				return fmt.Errorf("failed to retrieve aws-ebs-csi-driver-controller-metrics service: %w", err)
-			}
-		}
-
-		if hasServiceCAAnnotation := doesServiceHaveServiceCAAnnotation(awsEBSCsiDriverControllerMetricsService); !hasServiceCAAnnotation {
-			awsEBSCsiDriverControllerMetricsServingCert := manifests.AWSEBSCsiDriverControllerMetricsServingCert(hcp.Namespace)
-
-			err = removeServiceCASecret(ctx, r.Client, awsEBSCsiDriverControllerMetricsServingCert)
-			if err != nil {
-				return err
-			}
-
-			if _, err = createOrUpdate(ctx, r, awsEBSCsiDriverControllerMetricsServingCert, func() error {
-				return pki.ReconcileAWSEBSCsiDriverControllerMetricsServingCertSecret(awsEBSCsiDriverControllerMetricsServingCert, rootCASecret, p.OwnerRef)
-			}); err != nil {
-				return fmt.Errorf("failed to reconcile aws ebs csi driver controller metrics serving cert: %w", err)
-			}
+		if err := r.reconcileAWSPlatformCerts(ctx, hcp, p, createOrUpdate, rootCASecret); err != nil {
+			return err
 		}
 	case hyperv1.AzurePlatform:
-		azureWorkloadIdentityWebhookServingCert := manifests.AzureWorkloadIdentityWebhookServingCert(hcp.Namespace)
-		if _, err := createOrUpdate(ctx, r, azureWorkloadIdentityWebhookServingCert, func() error {
-			return pki.ReconcileAzureWorkloadIdentityWebhookServingCert(azureWorkloadIdentityWebhookServingCert, rootCASecret, p.OwnerRef)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile %s secret: %w", azureWorkloadIdentityWebhookServingCert.Name, err)
-		}
-
-		// Azure-disk CSI driver Operator metrics Serving Cert
-		AzureDiskCsiDriverOperatorServingCert := manifests.AzureDiskCSIDriverOperatorServingCertSecret(hcp.Namespace)
-		AzureDiskCsiDriverOperatorService := manifests.AzureDiskCSIDriverOperatorMetricsService(hcp.Namespace)
-		err := removeServiceCAAnnotationAndSecret(ctx, r.Client, AzureDiskCsiDriverOperatorService, AzureDiskCsiDriverOperatorServingCert)
-		if err != nil {
-			r.Log.Error(err, "failed to remove service ca annotation and secret: %w")
-		}
-		if _, err = createOrUpdate(ctx, r, AzureDiskCsiDriverOperatorServingCert, func() error {
-			z := pki.ReconcileAzureDiskCsiDriverOperatorMetricsServingCertSecret(AzureDiskCsiDriverOperatorServingCert, rootCASecret, p.OwnerRef)
-			return z
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile azure-disk csi driver operator serving cert: %w", err)
-		}
-
-		azureDiskCsiDriverControllerMetricsService := manifests.AzureDiskCsiDriverControllerMetricsService(hcp.Namespace)
-		if err = r.Get(ctx, client.ObjectKeyFromObject(azureDiskCsiDriverControllerMetricsService), azureDiskCsiDriverControllerMetricsService); err != nil {
-			if !apierrors.IsNotFound(err) {
-				return fmt.Errorf("failed to retrieve azure-disk-csi-driver-controller-metrics service: %w", err)
-			}
-		}
-
-		if hasServiceCAAnnotation := doesServiceHaveServiceCAAnnotation(azureDiskCsiDriverControllerMetricsService); !hasServiceCAAnnotation {
-			azureDiskCsiDriverControllerMetricsServingCert := manifests.AzureDiskCsiDriverControllerMetricsServingCert(hcp.Namespace)
-
-			err = removeServiceCASecret(ctx, r.Client, azureDiskCsiDriverControllerMetricsServingCert)
-			if err != nil {
-				return err
-			}
-
-			if _, err = createOrUpdate(ctx, r, azureDiskCsiDriverControllerMetricsServingCert, func() error {
-				return pki.ReconcileAzureDiskCsiDriverControllerMetricsServingCertSecret(azureDiskCsiDriverControllerMetricsServingCert, rootCASecret, p.OwnerRef)
-			}); err != nil {
-				return fmt.Errorf("failed to reconcile azure disk csi driver controller metrics serving cert: %w", err)
-			}
-		}
-
-		// Azure-file CSI driver Operator metrics Serving Cert
-		AzureFileCsiDriverOperatorServingCert := manifests.AzureFileCSIDriverOperatorServingCertSecret(hcp.Namespace)
-		AzureFileCsiDriverOperatorService := manifests.AzureFileCSIDriverOperatorMetricsService(hcp.Namespace)
-		err = removeServiceCAAnnotationAndSecret(ctx, r.Client, AzureFileCsiDriverOperatorService, AzureFileCsiDriverOperatorServingCert)
-		if err != nil {
-			r.Log.Error(err, "failed to remove service ca annotation and secret: %w")
-		}
-		if _, err = createOrUpdate(ctx, r, AzureFileCsiDriverOperatorServingCert, func() error {
-			z := pki.ReconcileAzureFileCsiDriverOperatorMetricsServingCertSecret(AzureFileCsiDriverOperatorServingCert, rootCASecret, p.OwnerRef)
-			return z
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile azure-file csi driver operator serving cert: %w", err)
-		}
-
-		azureFileCsiDriverControllerMetricsService := manifests.AzureFileCsiDriverControllerMetricsService(hcp.Namespace)
-		if err = r.Get(ctx, client.ObjectKeyFromObject(azureFileCsiDriverControllerMetricsService), azureFileCsiDriverControllerMetricsService); err != nil {
-			if !apierrors.IsNotFound(err) {
-				return fmt.Errorf("failed to retrieve azure-file-csi-driver-controller-metrics service: %w", err)
-			}
-		}
-
-		if hasServiceCAAnnotation := doesServiceHaveServiceCAAnnotation(azureFileCsiDriverControllerMetricsService); !hasServiceCAAnnotation {
-			azureFileCsiDriverControllerMetricsServingCert := manifests.AzureFileCsiDriverControllerMetricsServingCert(hcp.Namespace)
-
-			err = removeServiceCASecret(ctx, r.Client, azureFileCsiDriverControllerMetricsServingCert)
-			if err != nil {
-				return err
-			}
-
-			if _, err := createOrUpdate(ctx, r, azureFileCsiDriverControllerMetricsServingCert, func() error {
-				return pki.ReconcileAzureFileCsiDriverControllerMetricsServingCertSecret(azureFileCsiDriverControllerMetricsServingCert, rootCASecret, p.OwnerRef)
-			}); err != nil {
-				return fmt.Errorf("failed to reconcile azure file csi driver controller metrics serving cert: %w", err)
-			}
+		if err := r.reconcileAzurePlatformCerts(ctx, hcp, p, createOrUpdate, rootCASecret); err != nil {
+			return err
 		}
 	}
 

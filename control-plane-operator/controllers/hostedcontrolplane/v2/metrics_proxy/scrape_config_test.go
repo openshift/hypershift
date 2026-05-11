@@ -20,6 +20,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/yaml"
 
+	"github.com/go-logr/logr"
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 )
 
@@ -621,6 +622,557 @@ func TestAdaptScrapeConfigPodMonitorMissingPod(t *testing.T) {
 		var cfg metricsproxybin.FileConfig
 		g.Expect(yaml.Unmarshal([]byte(cm.Data["config.yaml"]), &cfg)).To(Succeed())
 		g.Expect(cfg.Components).To(BeEmpty())
+	})
+}
+
+func TestEndpointScheme(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		scheme   *prometheusoperatorv1.Scheme
+		expected string
+	}{
+		{
+			name:     "When scheme is nil, it should default to http",
+			scheme:   nil,
+			expected: "http",
+		},
+		{
+			name:     "When scheme is https, it should return https",
+			scheme:   (*prometheusoperatorv1.Scheme)(ptr.To("https")),
+			expected: "https",
+		},
+		{
+			name:     "When scheme is http, it should return http",
+			scheme:   (*prometheusoperatorv1.Scheme)(ptr.To("http")),
+			expected: "http",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			g.Expect(endpointScheme(tc.scheme)).To(Equal(tc.expected))
+		})
+	}
+}
+
+func TestEndpointMetricsPath(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		path     string
+		expected string
+	}{
+		{
+			name:     "When path is empty, it should default to /metrics",
+			path:     "",
+			expected: "/metrics",
+		},
+		{
+			name:     "When path is provided, it should return that path",
+			path:     "/custom/metrics",
+			expected: "/custom/metrics",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			g.Expect(endpointMetricsPath(tc.path)).To(Equal(tc.expected))
+		})
+	}
+}
+
+func TestSafeTLSServerName(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		tlsCfg   *prometheusoperatorv1.TLSConfig
+		expected string
+	}{
+		{
+			name:     "When TLS config is nil, it should return empty string",
+			tlsCfg:   nil,
+			expected: "",
+		},
+		{
+			name: "When ServerName is nil, it should return empty string",
+			tlsCfg: &prometheusoperatorv1.TLSConfig{
+				SafeTLSConfig: prometheusoperatorv1.SafeTLSConfig{
+					ServerName: nil,
+				},
+			},
+			expected: "",
+		},
+		{
+			name: "When ServerName is set, it should return the server name",
+			tlsCfg: &prometheusoperatorv1.TLSConfig{
+				SafeTLSConfig: prometheusoperatorv1.SafeTLSConfig{
+					ServerName: ptr.To("kube-apiserver"),
+				},
+			},
+			expected: "kube-apiserver",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			g.Expect(safeTLSServerName(tc.tlsCfg)).To(Equal(tc.expected))
+		})
+	}
+}
+
+func TestCertFilePathFromSecretOrConfigMap(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		ref      prometheusoperatorv1.SecretOrConfigMap
+		expected string
+	}{
+		{
+			name:     "When both Secret and ConfigMap are nil, it should return empty string",
+			ref:      prometheusoperatorv1.SecretOrConfigMap{},
+			expected: "",
+		},
+		{
+			name: "When ConfigMap is set, it should return configmap path",
+			ref: prometheusoperatorv1.SecretOrConfigMap{
+				ConfigMap: &corev1.ConfigMapKeySelector{
+					LocalObjectReference: corev1.LocalObjectReference{Name: "root-ca"},
+					Key:                  "ca.crt",
+				},
+			},
+			expected: certBasePath + "/root-ca/ca.crt",
+		},
+		{
+			name: "When Secret is set, it should return secret path",
+			ref: prometheusoperatorv1.SecretOrConfigMap{
+				Secret: &corev1.SecretKeySelector{
+					LocalObjectReference: corev1.LocalObjectReference{Name: "my-secret"},
+					Key:                  "tls.crt",
+				},
+			},
+			expected: certBasePath + "/my-secret/tls.crt",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			g.Expect(certFilePathFromSecretOrConfigMap(tc.ref)).To(Equal(tc.expected))
+		})
+	}
+}
+
+func TestPopulateTLSFilePaths(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name         string
+		ca           prometheusoperatorv1.SecretOrConfigMap
+		cert         prometheusoperatorv1.SecretOrConfigMap
+		keySecret    *corev1.SecretKeySelector
+		expectedCA   string
+		expectedCert string
+		expectedKey  string
+	}{
+		{
+			name:         "When all TLS refs are empty, it should set empty paths",
+			ca:           prometheusoperatorv1.SecretOrConfigMap{},
+			cert:         prometheusoperatorv1.SecretOrConfigMap{},
+			keySecret:    nil,
+			expectedCA:   "",
+			expectedCert: "",
+			expectedKey:  "",
+		},
+		{
+			name: "When CA, cert, and key are all provided, it should set all paths",
+			ca: prometheusoperatorv1.SecretOrConfigMap{
+				ConfigMap: &corev1.ConfigMapKeySelector{
+					LocalObjectReference: corev1.LocalObjectReference{Name: "root-ca"},
+					Key:                  "ca.crt",
+				},
+			},
+			cert: prometheusoperatorv1.SecretOrConfigMap{
+				Secret: &corev1.SecretKeySelector{
+					LocalObjectReference: corev1.LocalObjectReference{Name: "metrics-client"},
+					Key:                  "tls.crt",
+				},
+			},
+			keySecret: &corev1.SecretKeySelector{
+				LocalObjectReference: corev1.LocalObjectReference{Name: "metrics-client"},
+				Key:                  "tls.key",
+			},
+			expectedCA:   certBasePath + "/root-ca/ca.crt",
+			expectedCert: certBasePath + "/metrics-client/tls.crt",
+			expectedKey:  certBasePath + "/metrics-client/tls.key",
+		},
+		{
+			name: "When only CA is provided, it should set only CA path",
+			ca: prometheusoperatorv1.SecretOrConfigMap{
+				ConfigMap: &corev1.ConfigMapKeySelector{
+					LocalObjectReference: corev1.LocalObjectReference{Name: "root-ca"},
+					Key:                  "ca.crt",
+				},
+			},
+			cert:         prometheusoperatorv1.SecretOrConfigMap{},
+			keySecret:    nil,
+			expectedCA:   certBasePath + "/root-ca/ca.crt",
+			expectedCert: "",
+			expectedKey:  "",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			comp := &metricsproxybin.ComponentFileConfig{}
+			populateTLSFilePaths(comp, tc.ca, tc.cert, tc.keySecret)
+			g.Expect(comp.CAFile).To(Equal(tc.expectedCA))
+			g.Expect(comp.CertFile).To(Equal(tc.expectedCert))
+			g.Expect(comp.KeyFile).To(Equal(tc.expectedKey))
+		})
+	}
+}
+
+func TestPopulateMetricsLabelsFromAnnotations(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name              string
+		annotations       map[string]string
+		expectedJob       string
+		expectedNamespace string
+		expectedService   string
+		expectedEndpoint  string
+	}{
+		{
+			name:              "When no annotations are present, it should leave fields empty",
+			annotations:       map[string]string{},
+			expectedJob:       "",
+			expectedNamespace: "",
+			expectedService:   "",
+			expectedEndpoint:  "",
+		},
+		{
+			name:              "When annotations is nil, it should leave fields empty",
+			annotations:       nil,
+			expectedJob:       "",
+			expectedNamespace: "",
+			expectedService:   "",
+			expectedEndpoint:  "",
+		},
+		{
+			name: "When all metrics annotations are present, it should populate all fields",
+			annotations: map[string]string{
+				"hypershift.openshift.io/metrics-job":       "kube-apiserver",
+				"hypershift.openshift.io/metrics-namespace": "openshift-kube-apiserver",
+				"hypershift.openshift.io/metrics-service":   "kube-apiserver",
+				"hypershift.openshift.io/metrics-endpoint":  "https",
+			},
+			expectedJob:       "kube-apiserver",
+			expectedNamespace: "openshift-kube-apiserver",
+			expectedService:   "kube-apiserver",
+			expectedEndpoint:  "https",
+		},
+		{
+			name: "When only some annotations are present, it should populate only matching fields",
+			annotations: map[string]string{
+				"hypershift.openshift.io/metrics-job":       "etcd",
+				"hypershift.openshift.io/metrics-namespace": "openshift-etcd",
+			},
+			expectedJob:       "etcd",
+			expectedNamespace: "openshift-etcd",
+			expectedService:   "",
+			expectedEndpoint:  "",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			comp := &metricsproxybin.ComponentFileConfig{}
+			populateMetricsLabelsFromAnnotations(comp, tc.annotations)
+			g.Expect(comp.MetricsJob).To(Equal(tc.expectedJob))
+			g.Expect(comp.MetricsNamespace).To(Equal(tc.expectedNamespace))
+			g.Expect(comp.MetricsService).To(Equal(tc.expectedService))
+			g.Expect(comp.MetricsEndpoint).To(Equal(tc.expectedEndpoint))
+		})
+	}
+}
+
+func TestFindServiceForMonitor(t *testing.T) {
+	t.Parallel()
+
+	namespace := "test-ns"
+
+	tests := []struct {
+		name            string
+		objects         []runtime.Object
+		smName          string
+		selector        metav1.LabelSelector
+		expectedSvc     string
+		expectedErr     bool
+		expectedSelKeys []string
+	}{
+		{
+			name: "When service exists with same name as ServiceMonitor, it should find it by direct lookup",
+			objects: []runtime.Object{
+				newService("kube-apiserver", namespace, "kube-apiserver", "client", 6443),
+			},
+			smName:          "kube-apiserver",
+			selector:        metav1.LabelSelector{MatchLabels: map[string]string{"app": "kube-apiserver"}},
+			expectedSvc:     "kube-apiserver",
+			expectedErr:     false,
+			expectedSelKeys: []string{"app"},
+		},
+		{
+			name: "When no service matches name but label selector matches, it should fall back to label selector",
+			objects: []runtime.Object{
+				newService("etcd-client", namespace, "etcd", "metrics", 2381),
+			},
+			smName:          "etcd",
+			selector:        metav1.LabelSelector{MatchLabels: map[string]string{"app": "etcd"}},
+			expectedSvc:     "etcd-client",
+			expectedErr:     false,
+			expectedSelKeys: []string{"app"},
+		},
+		{
+			name:        "When no service exists at all, it should return an error",
+			objects:     []runtime.Object{},
+			smName:      "missing",
+			selector:    metav1.LabelSelector{MatchLabels: map[string]string{"app": "missing"}},
+			expectedErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			scheme := runtime.NewScheme()
+			_ = corev1.AddToScheme(scheme)
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(tc.objects...).Build()
+
+			cpContext := component.WorkloadContext{
+				Context: context.Background(),
+				Client:  fakeClient,
+			}
+
+			svcName, podSelector, err := findServiceForMonitor(cpContext, namespace, tc.smName, tc.selector)
+			if tc.expectedErr {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(svcName).To(Equal(tc.expectedSvc))
+				for _, key := range tc.expectedSelKeys {
+					g.Expect(podSelector).To(HaveKey(key))
+				}
+			}
+		})
+	}
+}
+
+func TestResolveServicePort(t *testing.T) {
+	t.Parallel()
+
+	namespace := "test-ns"
+
+	tests := []struct {
+		name         string
+		objects      []runtime.Object
+		serviceName  string
+		portName     string
+		podSelector  map[string]string
+		expectedPort int32
+		expectedErr  bool
+	}{
+		{
+			name: "When service has a numeric targetPort, it should resolve directly",
+			objects: []runtime.Object{
+				newService("my-svc", namespace, "app", "https", 6443),
+			},
+			serviceName:  "my-svc",
+			portName:     "https",
+			podSelector:  map[string]string{"app": "app"},
+			expectedPort: 6443,
+			expectedErr:  false,
+		},
+		{
+			name: "When service has a named targetPort, it should resolve from a pod",
+			objects: []runtime.Object{
+				newServiceWithTargetPort("my-svc", namespace, "app", "client", 443, intstr.FromString("https")),
+				newPodWithLabels("my-pod", namespace, "https", 6443, map[string]string{"app": "app"}),
+			},
+			serviceName:  "my-svc",
+			portName:     "client",
+			podSelector:  map[string]string{"app": "app"},
+			expectedPort: 6443,
+			expectedErr:  false,
+		},
+		{
+			name: "When service port name does not match, it should return an error",
+			objects: []runtime.Object{
+				newService("my-svc", namespace, "app", "metrics", 8080),
+			},
+			serviceName: "my-svc",
+			portName:    "nonexistent",
+			podSelector: map[string]string{"app": "app"},
+			expectedErr: true,
+		},
+		{
+			name:        "When service does not exist, it should return an error",
+			objects:     []runtime.Object{},
+			serviceName: "missing-svc",
+			portName:    "https",
+			podSelector: map[string]string{"app": "app"},
+			expectedErr: true,
+		},
+		{
+			name: "When service has no targetPort, it should default to the service port value",
+			objects: []runtime.Object{
+				&corev1.Service{
+					ObjectMeta: metav1.ObjectMeta{Name: "my-svc", Namespace: namespace},
+					Spec: corev1.ServiceSpec{
+						Selector: map[string]string{"app": "app"},
+						Ports:    []corev1.ServicePort{{Name: "web", Port: 8443}},
+					},
+				},
+			},
+			serviceName:  "my-svc",
+			portName:     "web",
+			podSelector:  map[string]string{"app": "app"},
+			expectedPort: 8443,
+			expectedErr:  false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			scheme := runtime.NewScheme()
+			_ = corev1.AddToScheme(scheme)
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(tc.objects...).Build()
+
+			cpContext := component.WorkloadContext{
+				Context: context.Background(),
+				Client:  fakeClient,
+			}
+
+			port, err := resolveServicePort(cpContext, namespace, tc.serviceName, tc.portName, tc.podSelector)
+			if tc.expectedErr {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(port).To(Equal(tc.expectedPort))
+			}
+		})
+	}
+}
+
+func TestComponentFromServiceMonitor_EdgeCases(t *testing.T) {
+	t.Parallel()
+
+	namespace := "test-ns"
+
+	t.Run("When ServiceMonitor has no endpoints, it should return false", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		sm := &prometheusoperatorv1.ServiceMonitor{
+			ObjectMeta: metav1.ObjectMeta{Name: "empty-sm", Namespace: namespace},
+			Spec:       prometheusoperatorv1.ServiceMonitorSpec{},
+		}
+
+		scheme := runtime.NewScheme()
+		_ = corev1.AddToScheme(scheme)
+		_ = prometheusoperatorv1.AddToScheme(scheme)
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+
+		cpContext := component.WorkloadContext{
+			Context: context.Background(),
+			Client:  fakeClient,
+		}
+
+		_, ok := componentFromServiceMonitor(cpContext, logr.Discard(), namespace, sm)
+		g.Expect(ok).To(BeFalse())
+	})
+
+	t.Run("When endpoint has no port reference, it should return false", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		sm := &prometheusoperatorv1.ServiceMonitor{
+			ObjectMeta: metav1.ObjectMeta{Name: "no-port-sm", Namespace: namespace},
+			Spec: prometheusoperatorv1.ServiceMonitorSpec{
+				Endpoints: []prometheusoperatorv1.Endpoint{{}},
+				Selector:  metav1.LabelSelector{MatchLabels: map[string]string{"app": "test"}},
+			},
+		}
+		svc := newService("no-port-sm", namespace, "test", "metrics", 8080)
+
+		scheme := runtime.NewScheme()
+		_ = corev1.AddToScheme(scheme)
+		_ = prometheusoperatorv1.AddToScheme(scheme)
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(svc).Build()
+
+		cpContext := component.WorkloadContext{
+			Context: context.Background(),
+			Client:  fakeClient,
+		}
+
+		_, ok := componentFromServiceMonitor(cpContext, logr.Discard(), namespace, sm)
+		g.Expect(ok).To(BeFalse())
+	})
+}
+
+func TestComponentFromPodMonitor_EdgeCases(t *testing.T) {
+	t.Parallel()
+
+	namespace := "test-ns"
+
+	t.Run("When PodMonitor has no endpoints, it should return false", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		pm := &prometheusoperatorv1.PodMonitor{
+			ObjectMeta: metav1.ObjectMeta{Name: "empty-pm", Namespace: namespace},
+			Spec:       prometheusoperatorv1.PodMonitorSpec{},
+		}
+
+		scheme := runtime.NewScheme()
+		_ = corev1.AddToScheme(scheme)
+		_ = prometheusoperatorv1.AddToScheme(scheme)
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+
+		cpContext := component.WorkloadContext{
+			Context: context.Background(),
+			Client:  fakeClient,
+		}
+
+		_, ok := componentFromPodMonitor(cpContext, logr.Discard(), namespace, pm)
+		g.Expect(ok).To(BeFalse())
+	})
+
+	t.Run("When PodMonitor endpoint has nil port, it should return false", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		pm := &prometheusoperatorv1.PodMonitor{
+			ObjectMeta: metav1.ObjectMeta{Name: "nil-port-pm", Namespace: namespace},
+			Spec: prometheusoperatorv1.PodMonitorSpec{
+				PodMetricsEndpoints: []prometheusoperatorv1.PodMetricsEndpoint{
+					{Port: nil},
+				},
+				Selector: metav1.LabelSelector{MatchLabels: map[string]string{"app": "test"}},
+			},
+		}
+
+		scheme := runtime.NewScheme()
+		_ = corev1.AddToScheme(scheme)
+		_ = prometheusoperatorv1.AddToScheme(scheme)
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+
+		cpContext := component.WorkloadContext{
+			Context: context.Background(),
+			Client:  fakeClient,
+		}
+
+		_, ok := componentFromPodMonitor(cpContext, logr.Discard(), namespace, pm)
+		g.Expect(ok).To(BeFalse())
 	})
 }
 

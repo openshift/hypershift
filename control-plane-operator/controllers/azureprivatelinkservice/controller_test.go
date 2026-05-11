@@ -1715,6 +1715,269 @@ func TestReconcileDelete_WhenNoSiblingCRs_ItShouldDeleteBaseDomainZone(t *testin
 		"should delete both VNet links when the last CR goes away")
 }
 
+func TestBaseDomainVNetLinkName(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		crName   string
+		expected string
+	}{
+		{
+			name:     "When CR name is private-router, it should append basedomain VNet link suffix",
+			crName:   "private-router",
+			expected: "private-router-basedomain-vnet-link",
+		},
+		{
+			name:     "When CR name is oauth-openshift, it should append basedomain VNet link suffix",
+			crName:   "oauth-openshift",
+			expected: "oauth-openshift-basedomain-vnet-link",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewGomegaWithT(t)
+			result := baseDomainVNetLinkName(tt.crName)
+			g.Expect(result).To(Equal(tt.expected))
+		})
+	}
+}
+
+func TestDNSZoneConfigErrMsgQualifier(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name      string
+		logPrefix string
+		expected  string
+	}{
+		{
+			name:      "When logPrefix is empty, it should return empty string",
+			logPrefix: "",
+			expected:  "",
+		},
+		{
+			name:      "When logPrefix is set, it should return prefix followed by a space",
+			logPrefix: "base domain",
+			expected:  "base domain ",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewGomegaWithT(t)
+			cfg := dnsZoneConfig{logPrefix: tt.logPrefix}
+			g.Expect(cfg.errMsgQualifier()).To(Equal(tt.expected))
+		})
+	}
+}
+
+func TestRecordNamesForCR(t *testing.T) {
+	tests := []struct {
+		name        string
+		crName      string
+		clusterName string
+		siblings    []client.Object
+		expected    []string
+	}{
+		{
+			name:        "When CR is not private-router, it should return only the oauth record",
+			crName:      "oauth-openshift",
+			clusterName: "my-cluster",
+			expected:    []string{"oauth-my-cluster"},
+		},
+		{
+			name:        "When CR is private-router with no sibling, it should return api and oauth records",
+			crName:      "private-router",
+			clusterName: "my-cluster",
+			expected:    []string{"api-my-cluster", "oauth-my-cluster"},
+		},
+		{
+			name:        "When CR is private-router with sibling OAuth CR, it should return only api record",
+			crName:      "private-router",
+			clusterName: "my-cluster",
+			siblings: []client.Object{
+				func() *hyperv1.AzurePrivateLinkService {
+					cr := newTestAzurePLS(t, "oauth-openshift", "test-ns")
+					cr.Spec.BaseDomain = "example.com"
+					return cr
+				}(),
+			},
+			expected: []string{"api-my-cluster"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			scheme := newTestScheme(t, g)
+
+			azPLS := newTestAzurePLS(t, tt.crName, "test-ns")
+			azPLS.Spec.BaseDomain = "example.com"
+
+			objs := append([]client.Object{azPLS}, tt.siblings...)
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(objs...).
+				Build()
+
+			r := &AzurePrivateLinkServiceReconciler{Client: fakeClient}
+			result, err := r.recordNamesForCR(t.Context(), azPLS, tt.clusterName, testr.New(t))
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(result).To(Equal(tt.expected))
+		})
+	}
+}
+
+func TestDeleteBaseDomainARecords(t *testing.T) {
+	tests := []struct {
+		name                   string
+		crName                 string
+		dnsZoneName            string
+		baseDomain             string
+		siblings               []client.Object
+		expectedDeletedRecords []string
+		expectDeleteCalled     bool
+	}{
+		{
+			name:               "When dnsZoneName is empty, it should skip deletion",
+			crName:             "private-router",
+			dnsZoneName:        "",
+			baseDomain:         "example.com",
+			expectDeleteCalled: false,
+		},
+		{
+			name:               "When dnsZoneName has wrong suffix, it should skip deletion",
+			crName:             "private-router",
+			dnsZoneName:        "cluster.wrong.suffix",
+			baseDomain:         "example.com",
+			expectDeleteCalled: false,
+		},
+		{
+			name:                   "When private-router with no siblings, it should delete api and oauth records",
+			crName:                 "private-router",
+			dnsZoneName:            "my-cluster.hypershift.local",
+			baseDomain:             "example.com",
+			expectedDeletedRecords: []string{"api-my-cluster", "oauth-my-cluster"},
+			expectDeleteCalled:     true,
+		},
+		{
+			name:        "When private-router with sibling OAuth CR, it should delete only api record",
+			crName:      "private-router",
+			dnsZoneName: "my-cluster.hypershift.local",
+			baseDomain:  "example.com",
+			siblings: []client.Object{
+				func() *hyperv1.AzurePrivateLinkService {
+					cr := newTestAzurePLS(t, "oauth-openshift", "test-ns")
+					cr.Spec.BaseDomain = "example.com"
+					return cr
+				}(),
+			},
+			expectedDeletedRecords: []string{"api-my-cluster"},
+			expectDeleteCalled:     true,
+		},
+		{
+			name:                   "When non-private-router CR, it should delete only oauth record",
+			crName:                 "oauth-openshift",
+			dnsZoneName:            "my-cluster.hypershift.local",
+			baseDomain:             "example.com",
+			expectedDeletedRecords: []string{"oauth-my-cluster"},
+			expectDeleteCalled:     true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			scheme := newTestScheme(t, g)
+
+			azPLS := newTestAzurePLS(t, tt.crName, "test-ns")
+			azPLS.Spec.BaseDomain = tt.baseDomain
+			azPLS.Status.DNSZoneName = tt.dnsZoneName
+
+			objs := append([]client.Object{azPLS}, tt.siblings...)
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(objs...).
+				Build()
+
+			mockRecords := &mockRecordSets{}
+			r := &AzurePrivateLinkServiceReconciler{
+				Client:     fakeClient,
+				RecordSets: mockRecords,
+			}
+
+			err := r.deleteBaseDomainARecords(t.Context(), azPLS, "test-rg", tt.baseDomain, tt.dnsZoneName, testr.New(t))
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(mockRecords.deleteCalled).To(Equal(tt.expectDeleteCalled))
+			if tt.expectDeleteCalled {
+				g.Expect(mockRecords.deletedRecordNames).To(Equal(tt.expectedDeletedRecords))
+			}
+		})
+	}
+}
+
+func TestMapHCPToAzurePLS(t *testing.T) {
+	tests := []struct {
+		name           string
+		hcp            *hyperv1.HostedControlPlane
+		plsCRs         []client.Object
+		expectRequests int
+	}{
+		{
+			name: "When HCP has the Azure PLS finalizer and PLS CRs exist, it should return requests for all PLS CRs",
+			hcp: func() *hyperv1.HostedControlPlane {
+				hcp := newTestHCP(t, "test-hcp", "test-ns", "api.test.example.com")
+				hcp.Finalizers = []string{hcpAzurePLSFinalizerName}
+				return hcp
+			}(),
+			plsCRs: []client.Object{
+				newTestAzurePLS(t, "private-router", "test-ns"),
+				newTestAzurePLS(t, "oauth-openshift", "test-ns"),
+			},
+			expectRequests: 2,
+		},
+		{
+			name: "When HCP does not have the Azure PLS finalizer, it should return no requests",
+			hcp:  newTestHCP(t, "test-hcp", "test-ns", "api.test.example.com"),
+			plsCRs: []client.Object{
+				newTestAzurePLS(t, "private-router", "test-ns"),
+			},
+			expectRequests: 0,
+		},
+		{
+			name: "When HCP has the finalizer but no PLS CRs exist, it should return no requests",
+			hcp: func() *hyperv1.HostedControlPlane {
+				hcp := newTestHCP(t, "test-hcp", "test-ns", "api.test.example.com")
+				hcp.Finalizers = []string{hcpAzurePLSFinalizerName}
+				return hcp
+			}(),
+			plsCRs:         []client.Object{},
+			expectRequests: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			scheme := newTestScheme(t, g)
+
+			objs := append([]client.Object{tt.hcp}, tt.plsCRs...)
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(objs...).
+				Build()
+
+			r := &AzurePrivateLinkServiceReconciler{Client: fakeClient}
+			mapFn := r.mapHCPToAzurePLS()
+			ctx := log.IntoContext(t.Context(), testr.New(t))
+			requests := mapFn(ctx, tt.hcp)
+			g.Expect(requests).To(HaveLen(tt.expectRequests))
+		})
+	}
+}
+
 func TestHasSiblingCR(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -1788,72 +2051,6 @@ func TestHasSiblingCR(t *testing.T) {
 			} else {
 				g.Expect(err).ToNot(HaveOccurred())
 				g.Expect(has).To(Equal(tt.expectHas))
-			}
-		})
-	}
-}
-
-func TestMapHCPToAzurePLS(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		name        string
-		hcp         *hyperv1.HostedControlPlane
-		existingPLS []client.Object
-		expectedLen int
-	}{
-		{
-			name: "When HCP has PLS finalizer and AzurePLS CRs exist it should return reconcile requests",
-			hcp: func() *hyperv1.HostedControlPlane {
-				hcp := newTestHCP(t, "test-hcp", "test-ns", "api.test.example.com")
-				hcp.Finalizers = []string{hcpAzurePLSFinalizerName}
-				return hcp
-			}(),
-			existingPLS: []client.Object{
-				newTestAzurePLS(t, "pls-1", "test-ns"),
-				newTestAzurePLS(t, "pls-2", "test-ns"),
-			},
-			expectedLen: 2,
-		},
-		{
-			name:        "When HCP does not have PLS finalizer it should return nil",
-			hcp:         newTestHCP(t, "test-hcp", "test-ns", "api.test.example.com"),
-			expectedLen: 0,
-		},
-		{
-			name: "When HCP has PLS finalizer but no AzurePLS CRs exist it should return empty list",
-			hcp: func() *hyperv1.HostedControlPlane {
-				hcp := newTestHCP(t, "test-hcp", "test-ns", "api.test.example.com")
-				hcp.Finalizers = []string{hcpAzurePLSFinalizerName}
-				return hcp
-			}(),
-			expectedLen: 0,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			g := NewGomegaWithT(t)
-			scheme := newTestScheme(t, g)
-
-			objs := []client.Object{tt.hcp}
-			objs = append(objs, tt.existingPLS...)
-
-			fakeClient := fake.NewClientBuilder().
-				WithScheme(scheme).
-				WithObjects(objs...).
-				Build()
-
-			r := &AzurePrivateLinkServiceReconciler{Client: fakeClient}
-			mapFunc := r.mapHCPToAzurePLS()
-
-			ctx := log.IntoContext(t.Context(), testr.New(t))
-			requests := mapFunc(ctx, tt.hcp)
-
-			if tt.expectedLen == 0 {
-				g.Expect(requests).To(BeEmpty())
-			} else {
-				g.Expect(requests).To(HaveLen(tt.expectedLen))
 			}
 		})
 	}
@@ -2331,7 +2528,7 @@ func TestReconcileDelete_WhenBaseDomainVNetLinkDeleteFails_ItShouldReturnError(t
 
 	err := r.reconcileDelete(t.Context(), azPLS, testr.New(t))
 	g.Expect(err).To(HaveOccurred())
-	g.Expect(err).To(MatchError(ContainSubstring("failed to begin deleting base domain VNet Link")))
+	g.Expect(err).To(MatchError(ContainSubstring("failed to begin deleting VNet Link")))
 }
 
 func TestReconcileDelete_WhenBaseDomainZoneDeleteFails_ItShouldReturnError(t *testing.T) {
@@ -2358,7 +2555,7 @@ func TestReconcileDelete_WhenBaseDomainZoneDeleteFails_ItShouldReturnError(t *te
 
 	err := r.reconcileDelete(t.Context(), azPLS, testr.New(t))
 	g.Expect(err).To(HaveOccurred())
-	g.Expect(err).To(MatchError(ContainSubstring("failed to begin deleting base domain Private DNS Zone")))
+	g.Expect(err).To(MatchError(ContainSubstring("failed to begin deleting Private DNS Zone")))
 }
 
 // Tests CR deletion with DNSZoneName set in status, which causes reconcileDelete
@@ -2921,7 +3118,7 @@ func TestReconcileDelete_WhenBaseDomainVNetLinkPollerFails_ItShouldReturnError(t
 
 	err := r.reconcileDelete(t.Context(), azPLS, testr.New(t))
 	g.Expect(err).To(HaveOccurred())
-	g.Expect(err).To(MatchError(ContainSubstring("failed to delete base domain VNet Link")))
+	g.Expect(err).To(MatchError(ContainSubstring("failed to delete VNet Link")))
 }
 
 func TestReconcileDelete_WhenBaseDomainZonePollerFails_ItShouldReturnError(t *testing.T) {
@@ -2948,7 +3145,7 @@ func TestReconcileDelete_WhenBaseDomainZonePollerFails_ItShouldReturnError(t *te
 
 	err := r.reconcileDelete(t.Context(), azPLS, testr.New(t))
 	g.Expect(err).To(HaveOccurred())
-	g.Expect(err).To(MatchError(ContainSubstring("failed to delete base domain Private DNS Zone")))
+	g.Expect(err).To(MatchError(ContainSubstring("failed to delete Private DNS Zone")))
 }
 
 // Tests CR deletion without DNSZoneName, which skips DNS cleanup and only verifies

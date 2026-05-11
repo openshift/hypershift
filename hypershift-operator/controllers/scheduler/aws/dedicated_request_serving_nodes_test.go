@@ -9,6 +9,8 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	schedulingv1alpha1 "github.com/openshift/hypershift/api/scheduling/v1alpha1"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
+	schedulerutil "github.com/openshift/hypershift/hypershift-operator/controllers/scheduler/util"
 	hyperapi "github.com/openshift/hypershift/support/api"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -864,6 +866,991 @@ func TestFilterNodeEvents(t *testing.T) {
 			}
 			actual := r.filterNodeEvents(t.Context(), test.incomingNode)
 			g.Expect(actual).To(Equal(test.expected))
+		})
+	}
+}
+
+func TestIsNodePairedWith(t *testing.T) {
+	tests := []struct {
+		name      string
+		candidate *corev1.Node
+		existing  map[string]*corev1.Node
+		expected  bool
+	}{
+		{
+			name: "When there are no existing nodes, it should return true",
+			candidate: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						OSDFleetManagerPairedNodesLabel: "pair-a",
+					},
+				},
+			},
+			existing: map[string]*corev1.Node{},
+			expected: true,
+		},
+		{
+			name: "When the candidate has the same pair label as an existing node, it should return true",
+			candidate: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						OSDFleetManagerPairedNodesLabel: "pair-a",
+					},
+				},
+			},
+			existing: map[string]*corev1.Node{
+				"zone-x": {
+					ObjectMeta: metav1.ObjectMeta{
+						Labels: map[string]string{
+							OSDFleetManagerPairedNodesLabel: "pair-a",
+						},
+					},
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "When the candidate has a different pair label from all existing nodes, it should return false",
+			candidate: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						OSDFleetManagerPairedNodesLabel: "pair-b",
+					},
+				},
+			},
+			existing: map[string]*corev1.Node{
+				"zone-x": {
+					ObjectMeta: metav1.ObjectMeta{
+						Labels: map[string]string{
+							OSDFleetManagerPairedNodesLabel: "pair-a",
+						},
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "When multiple existing nodes have mixed pair labels, it should return true if any matches",
+			candidate: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						OSDFleetManagerPairedNodesLabel: "pair-b",
+					},
+				},
+			},
+			existing: map[string]*corev1.Node{
+				"zone-x": {
+					ObjectMeta: metav1.ObjectMeta{
+						Labels: map[string]string{
+							OSDFleetManagerPairedNodesLabel: "pair-a",
+						},
+					},
+				},
+				"zone-y": {
+					ObjectMeta: metav1.ObjectMeta{
+						Labels: map[string]string{
+							OSDFleetManagerPairedNodesLabel: "pair-b",
+						},
+					},
+				},
+			},
+			expected: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewWithT(t)
+			actual := isNodePairedWith(test.candidate, test.existing)
+			g.Expect(actual).To(Equal(test.expected))
+		})
+	}
+}
+
+func TestGoalNodesByZone(t *testing.T) {
+	tests := []struct {
+		name         string
+		goalNodes    []corev1.Node
+		expectedKeys []string
+	}{
+		{
+			name:         "When there are no goal nodes, it should return empty map",
+			goalNodes:    nil,
+			expectedKeys: nil,
+		},
+		{
+			name: "When nodes are in different zones, it should return one node per zone",
+			goalNodes: []corev1.Node{
+				{ObjectMeta: metav1.ObjectMeta{Name: "n1", Labels: map[string]string{corev1.LabelTopologyZone: "us-east-1a"}}},
+				{ObjectMeta: metav1.ObjectMeta{Name: "n2", Labels: map[string]string{corev1.LabelTopologyZone: "us-east-1b"}}},
+			},
+			expectedKeys: []string{"us-east-1a", "us-east-1b"},
+		},
+		{
+			name: "When multiple nodes are in the same zone, it should keep only the first",
+			goalNodes: []corev1.Node{
+				{ObjectMeta: metav1.ObjectMeta{Name: "n1", Labels: map[string]string{corev1.LabelTopologyZone: "us-east-1a"}}},
+				{ObjectMeta: metav1.ObjectMeta{Name: "n2", Labels: map[string]string{corev1.LabelTopologyZone: "us-east-1a"}}},
+				{ObjectMeta: metav1.ObjectMeta{Name: "n3", Labels: map[string]string{corev1.LabelTopologyZone: "us-east-1b"}}},
+			},
+			expectedKeys: []string{"us-east-1a", "us-east-1b"},
+		},
+		{
+			name: "When a node has no zone label, it should be skipped",
+			goalNodes: []corev1.Node{
+				{ObjectMeta: metav1.ObjectMeta{Name: "n1", Labels: map[string]string{}}},
+				{ObjectMeta: metav1.ObjectMeta{Name: "n2", Labels: map[string]string{corev1.LabelTopologyZone: "us-east-1b"}}},
+			},
+			expectedKeys: []string{"us-east-1b"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewWithT(t)
+			r := &DedicatedServingComponentSchedulerAndSizer{}
+			result := r.goalNodesByZone(test.goalNodes)
+			g.Expect(result).To(HaveLen(len(test.expectedKeys)))
+			for _, key := range test.expectedKeys {
+				g.Expect(result).To(HaveKey(key))
+			}
+		})
+	}
+}
+
+func TestNodeNamesByZoneMap(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    map[string]corev1.Node
+		expected map[string]string
+	}{
+		{
+			name:     "When there are no nodes, it should return empty map",
+			input:    map[string]corev1.Node{},
+			expected: map[string]string{},
+		},
+		{
+			name: "When there are nodes, it should map zone to node name",
+			input: map[string]corev1.Node{
+				"zone-a": {ObjectMeta: metav1.ObjectMeta{Name: "node-1"}},
+				"zone-b": {ObjectMeta: metav1.ObjectMeta{Name: "node-2"}},
+			},
+			expected: map[string]string{
+				"zone-a": "node-1",
+				"zone-b": "node-2",
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewWithT(t)
+			result := nodeNamesByZoneMap(test.input)
+			g.Expect(result).To(Equal(test.expected))
+		})
+	}
+}
+
+func TestResolvePairLabelFromNodes(t *testing.T) {
+	tests := []struct {
+		name        string
+		nodes       []corev1.Node
+		expected    string
+		expectError bool
+	}{
+		{
+			name:        "When there are no nodes, it should return an error",
+			nodes:       nil,
+			expectError: true,
+		},
+		{
+			name: "When the first node has a pair label, it should return that label",
+			nodes: []corev1.Node{
+				{ObjectMeta: metav1.ObjectMeta{Name: "n1", Labels: map[string]string{OSDFleetManagerPairedNodesLabel: "pair-x"}}},
+				{ObjectMeta: metav1.ObjectMeta{Name: "n2", Labels: map[string]string{OSDFleetManagerPairedNodesLabel: "pair-x"}}},
+			},
+			expected: "pair-x",
+		},
+		{
+			name: "When the first node has no pair label, it should return an error",
+			nodes: []corev1.Node{
+				{ObjectMeta: metav1.ObjectMeta{Name: "n1", Labels: map[string]string{}}},
+			},
+			expectError: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewWithT(t)
+			r := &DedicatedServingComponentSchedulerAndSizer{}
+			result, err := r.resolvePairLabelFromNodes(test.nodes)
+			if test.expectError {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(result).To(Equal(test.expected))
+			}
+		})
+	}
+}
+
+func TestFindExistingNodesForCluster(t *testing.T) {
+	hc := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "ns",
+			Name:      "hc1",
+		},
+	}
+	hcValue := "ns-hc1"
+
+	tests := []struct {
+		name          string
+		nodeList      *corev1.NodeList
+		expectedNames []string
+	}{
+		{
+			name:          "When there are no nodes, it should return empty map",
+			nodeList:      &corev1.NodeList{},
+			expectedNames: nil,
+		},
+		{
+			name: "When a node matches the cluster, it should be included",
+			nodeList: &corev1.NodeList{
+				Items: []corev1.Node{
+					{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "n1",
+							Labels: map[string]string{
+								"topology.kubernetes.io/zone": "zone-a",
+								hyperv1.HostedClusterLabel:    hcValue,
+							},
+						},
+					},
+				},
+			},
+			expectedNames: []string{"n1"},
+		},
+		{
+			name: "When a node is being deleted, it should be skipped",
+			nodeList: &corev1.NodeList{
+				Items: []corev1.Node{
+					{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:              "n1",
+							DeletionTimestamp: &metav1.Time{Time: metav1.Now().Time},
+							Finalizers:        []string{"test"},
+							Labels: map[string]string{
+								"topology.kubernetes.io/zone": "zone-a",
+								hyperv1.HostedClusterLabel:    hcValue,
+							},
+						},
+					},
+				},
+			},
+			expectedNames: nil,
+		},
+		{
+			name: "When a node has no zone label, it should be skipped",
+			nodeList: &corev1.NodeList{
+				Items: []corev1.Node{
+					{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "n1",
+							Labels: map[string]string{
+								hyperv1.HostedClusterLabel: hcValue,
+							},
+						},
+					},
+				},
+			},
+			expectedNames: nil,
+		},
+		{
+			name: "When a node belongs to a different cluster, it should be skipped",
+			nodeList: &corev1.NodeList{
+				Items: []corev1.Node{
+					{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "n1",
+							Labels: map[string]string{
+								"topology.kubernetes.io/zone": "zone-a",
+								hyperv1.HostedClusterLabel:    "other-ns-other-hc",
+							},
+						},
+					},
+				},
+			},
+			expectedNames: nil,
+		},
+		{
+			name: "When nodes are in different zones for the same cluster, it should return both",
+			nodeList: &corev1.NodeList{
+				Items: []corev1.Node{
+					{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "n1",
+							Labels: map[string]string{
+								"topology.kubernetes.io/zone": "zone-a",
+								hyperv1.HostedClusterLabel:    hcValue,
+							},
+						},
+					},
+					{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "n2",
+							Labels: map[string]string{
+								"topology.kubernetes.io/zone": "zone-b",
+								hyperv1.HostedClusterLabel:    hcValue,
+							},
+						},
+					},
+				},
+			},
+			expectedNames: []string{"n1", "n2"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewWithT(t)
+			r := &DedicatedServingComponentScheduler{}
+			result := r.findExistingNodesForCluster(t.Context(), test.nodeList, hc)
+			g.Expect(result).To(HaveLen(len(test.expectedNames)))
+			for _, name := range test.expectedNames {
+				found := false
+				for _, node := range result {
+					if node.Name == name {
+						found = true
+						break
+					}
+				}
+				g.Expect(found).To(BeTrue(), "expected node %s not found in result", name)
+			}
+		})
+	}
+}
+
+func TestFindAvailableNodes(t *testing.T) {
+	tests := []struct {
+		name          string
+		nodeList      *corev1.NodeList
+		existing      map[string]*corev1.Node
+		expectedLen   int
+		expectedNames []string
+	}{
+		{
+			name: "When an unassigned node is in a new zone with matching pair label, it should be selected",
+			nodeList: &corev1.NodeList{
+				Items: []corev1.Node{
+					{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "n2",
+							Labels: map[string]string{
+								"topology.kubernetes.io/zone":   "zone-b",
+								OSDFleetManagerPairedNodesLabel: "pair-1",
+							},
+						},
+					},
+				},
+			},
+			existing: map[string]*corev1.Node{
+				"zone-a": {
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "n1",
+						Labels: map[string]string{
+							OSDFleetManagerPairedNodesLabel: "pair-1",
+						},
+					},
+				},
+			},
+			expectedLen:   2,
+			expectedNames: []string{"n2"},
+		},
+		{
+			name: "When a node has no zone label, it should be skipped",
+			nodeList: &corev1.NodeList{
+				Items: []corev1.Node{
+					{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:   "n2",
+							Labels: map[string]string{},
+						},
+					},
+				},
+			},
+			existing:    map[string]*corev1.Node{},
+			expectedLen: 0,
+		},
+		{
+			name: "When a node is already assigned to a cluster, it should be skipped",
+			nodeList: &corev1.NodeList{
+				Items: []corev1.Node{
+					{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "n2",
+							Labels: map[string]string{
+								"topology.kubernetes.io/zone":   "zone-b",
+								hyperv1.HostedClusterLabel:      "other-cluster",
+								OSDFleetManagerPairedNodesLabel: "pair-1",
+							},
+						},
+					},
+				},
+			},
+			existing:    map[string]*corev1.Node{},
+			expectedLen: 0,
+		},
+		{
+			name: "When a node has a non-matching pair label, it should be skipped",
+			nodeList: &corev1.NodeList{
+				Items: []corev1.Node{
+					{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "n2",
+							Labels: map[string]string{
+								"topology.kubernetes.io/zone":   "zone-b",
+								OSDFleetManagerPairedNodesLabel: "pair-2",
+							},
+						},
+					},
+				},
+			},
+			existing: map[string]*corev1.Node{
+				"zone-a": {
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "n1",
+						Labels: map[string]string{
+							OSDFleetManagerPairedNodesLabel: "pair-1",
+						},
+					},
+				},
+			},
+			expectedLen: 1,
+		},
+		{
+			name: "When a zone already has a node in use, it should be skipped",
+			nodeList: &corev1.NodeList{
+				Items: []corev1.Node{
+					{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "n2",
+							Labels: map[string]string{
+								"topology.kubernetes.io/zone":   "zone-a",
+								OSDFleetManagerPairedNodesLabel: "pair-1",
+							},
+						},
+					},
+				},
+			},
+			existing: map[string]*corev1.Node{
+				"zone-a": {
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "n1",
+						Labels: map[string]string{
+							OSDFleetManagerPairedNodesLabel: "pair-1",
+						},
+					},
+				},
+			},
+			expectedLen: 1,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewWithT(t)
+			r := &DedicatedServingComponentScheduler{}
+			r.findAvailableNodes(t.Context(), test.nodeList, test.existing)
+			g.Expect(test.existing).To(HaveLen(test.expectedLen))
+			for _, name := range test.expectedNames {
+				found := false
+				for _, node := range test.existing {
+					if node.Name == name {
+						found = true
+						break
+					}
+				}
+				g.Expect(found).To(BeTrue(), "expected node %s not found in result", name)
+			}
+		})
+	}
+}
+
+func TestUpdateHostedClusterAnnotations(t *testing.T) {
+	tests := []struct {
+		name                string
+		nodesToUse          map[string]*corev1.Node
+		expectedAnnotations map[string]string
+	}{
+		{
+			name: "When nodes have GoMemLimit, LBSubnets, and pair label, it should set all annotations",
+			nodesToUse: map[string]*corev1.Node{
+				"zone-a": {
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "n1",
+						Labels: map[string]string{
+							schedulerutil.GoMemLimitLabel:   "4096",
+							schedulerutil.LBSubnetsLabel:    "subnet-1.subnet-2",
+							OSDFleetManagerPairedNodesLabel: "pair-1",
+						},
+					},
+				},
+			},
+			expectedAnnotations: map[string]string{
+				hyperv1.HostedClusterScheduledAnnotation:     "true",
+				hyperv1.KubeAPIServerGOMemoryLimitAnnotation: "4096",
+				hyperv1.AWSLoadBalancerSubnetsAnnotation:     "subnet-1,subnet-2",
+				hyperv1.AWSLoadBalancerTargetNodesAnnotation: OSDFleetManagerPairedNodesLabel + "=pair-1",
+			},
+		},
+		{
+			name: "When nodes have no optional labels, it should only set the scheduled annotation",
+			nodesToUse: map[string]*corev1.Node{
+				"zone-a": {
+					ObjectMeta: metav1.ObjectMeta{
+						Name:   "n1",
+						Labels: map[string]string{},
+					},
+				},
+			},
+			expectedAnnotations: map[string]string{
+				hyperv1.HostedClusterScheduledAnnotation: "true",
+			},
+		},
+		{
+			name: "When LBSubnets use periods as separators, it should replace with commas",
+			nodesToUse: map[string]*corev1.Node{
+				"zone-a": {
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "n1",
+						Labels: map[string]string{
+							schedulerutil.LBSubnetsLabel: "subnet-a.subnet-b.subnet-c",
+						},
+					},
+				},
+			},
+			expectedAnnotations: map[string]string{
+				hyperv1.HostedClusterScheduledAnnotation: "true",
+				hyperv1.AWSLoadBalancerSubnetsAnnotation: "subnet-a,subnet-b,subnet-c",
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewWithT(t)
+			hc := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace:   "test-ns",
+					Name:        "test-hc",
+					Annotations: map[string]string{},
+				},
+			}
+			c := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithObjects(hc).Build()
+			r := &DedicatedServingComponentScheduler{Client: c}
+			err := r.updateHostedClusterAnnotations(t.Context(), hc, test.nodesToUse)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			updated := &hyperv1.HostedCluster{}
+			err = c.Get(t.Context(), client.ObjectKeyFromObject(hc), updated)
+			g.Expect(err).ToNot(HaveOccurred())
+			for key, value := range test.expectedAnnotations {
+				g.Expect(updated.Annotations).To(HaveKeyWithValue(key, value))
+			}
+		})
+	}
+}
+
+func TestHandleDeletion(t *testing.T) {
+	now := metav1.Now()
+
+	tests := []struct {
+		name              string
+		hc                *hyperv1.HostedCluster
+		additionalObjects []client.Object
+		expectFinalizer   bool
+	}{
+		{
+			name: "When HC has no scheduler finalizer, it should return without changes",
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace:         "test-ns",
+					Name:              "test-hc",
+					DeletionTimestamp: &now,
+					Finalizers:        []string{"other-finalizer"},
+					Annotations:       map[string]string{},
+				},
+			},
+			expectFinalizer: false,
+		},
+		{
+			name: "When HC still has the hostedcluster finalizer, it should wait and keep the scheduler finalizer",
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace:         "test-ns",
+					Name:              "test-hc",
+					DeletionTimestamp: &now,
+					Finalizers:        []string{schedulerFinalizer, hostedcluster.HostedClusterFinalizer},
+					Annotations:       map[string]string{},
+				},
+			},
+			expectFinalizer: true,
+		},
+		{
+			name: "When HC has scheduler finalizer and no hostedcluster finalizer, it should remove the finalizer",
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace:         "test-ns",
+					Name:              "test-hc",
+					DeletionTimestamp: &now,
+					Finalizers:        []string{schedulerFinalizer},
+					Annotations:       map[string]string{},
+				},
+			},
+			expectFinalizer: false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewWithT(t)
+			objs := []client.Object{test.hc}
+			objs = append(objs, test.additionalObjects...)
+			c := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithObjects(objs...).Build()
+			r := &DedicatedServingComponentSchedulerAndSizer{
+				Client:         c,
+				createOrUpdate: controllerutil.CreateOrUpdate,
+			}
+			_, err := r.handleDeletion(t.Context(), test.hc)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			updated := &hyperv1.HostedCluster{}
+			err = c.Get(t.Context(), client.ObjectKeyFromObject(test.hc), updated)
+			if test.expectFinalizer {
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(controllerutil.ContainsFinalizer(updated, schedulerFinalizer)).To(BeTrue())
+			} else {
+				if err == nil {
+					g.Expect(controllerutil.ContainsFinalizer(updated, schedulerFinalizer)).To(BeFalse())
+				}
+			}
+		})
+	}
+}
+
+func TestClassifyDedicatedNodes(t *testing.T) {
+	hc := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "ns",
+			Name:      "hc1",
+		},
+	}
+	hcKey := "ns-hc1"
+
+	mkNode := func(name, hcLabel, pairLabel, sizeLabel string, deleting bool) corev1.Node {
+		n := corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: name,
+				Labels: map[string]string{
+					hyperv1.RequestServingComponentLabel: "true",
+					hyperv1.NodeSizeLabel:                sizeLabel,
+					OSDFleetManagerPairedNodesLabel:      pairLabel,
+				},
+			},
+		}
+		if hcLabel != "" {
+			n.Labels[hyperv1.HostedClusterLabel] = hcLabel
+		}
+		if deleting {
+			now := metav1.Now()
+			n.DeletionTimestamp = &now
+			n.Finalizers = []string{"test"}
+		}
+		return n
+	}
+
+	tests := []struct {
+		name              string
+		nodes             []client.Object
+		desiredSize       string
+		expectedGoalLen   int
+		expectedAvailLen  int
+		expectedPairLabel string
+	}{
+		{
+			name:             "When there are no nodes, it should return empty slices",
+			nodes:            nil,
+			desiredSize:      "small",
+			expectedGoalLen:  0,
+			expectedAvailLen: 0,
+		},
+		{
+			name: "When nodes are labeled for the cluster with matching size and pair, they should be goal nodes",
+			nodes: []client.Object{
+				func() client.Object { n := mkNode("n1", hcKey, "pair-1", "small", false); return &n }(),
+				func() client.Object { n := mkNode("n2", hcKey, "pair-1", "small", false); return &n }(),
+			},
+			desiredSize:       "small",
+			expectedGoalLen:   2,
+			expectedAvailLen:  0,
+			expectedPairLabel: "pair-1",
+		},
+		{
+			name: "When nodes have no cluster label, they should be available nodes",
+			nodes: []client.Object{
+				func() client.Object { n := mkNode("n1", "", "pair-1", "small", false); return &n }(),
+			},
+			desiredSize:      "small",
+			expectedGoalLen:  0,
+			expectedAvailLen: 1,
+		},
+		{
+			name: "When a node is being deleted, it should be skipped entirely",
+			nodes: []client.Object{
+				func() client.Object { n := mkNode("n1", hcKey, "pair-1", "small", true); return &n }(),
+			},
+			desiredSize:      "small",
+			expectedGoalLen:  0,
+			expectedAvailLen: 0,
+		},
+		{
+			name: "When a cluster node has wrong size, it should not be a goal node",
+			nodes: []client.Object{
+				func() client.Object { n := mkNode("n1", hcKey, "pair-1", "medium", false); return &n }(),
+			},
+			desiredSize:       "small",
+			expectedGoalLen:   0,
+			expectedAvailLen:  0,
+			expectedPairLabel: "pair-1",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewWithT(t)
+			c := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithObjects(test.nodes...).Build()
+			r := &DedicatedServingComponentSchedulerAndSizer{Client: c}
+			goalNodes, availableNodes, pairLabel, err := r.classifyDedicatedNodes(t.Context(), hc, test.desiredSize)
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(goalNodes).To(HaveLen(test.expectedGoalLen))
+			g.Expect(availableNodes).To(HaveLen(test.expectedAvailLen))
+			g.Expect(pairLabel).To(Equal(test.expectedPairLabel))
+		})
+	}
+}
+
+func TestEnsurePairConfigMap(t *testing.T) {
+	tests := []struct {
+		name        string
+		existing    []client.Object
+		pairLabel   string
+		hcNamespace string
+		hcName      string
+		expectError bool
+	}{
+		{
+			name:        "When no configmap exists, it should create one",
+			existing:    nil,
+			pairLabel:   "pair-1",
+			hcNamespace: "ns",
+			hcName:      "hc1",
+		},
+		{
+			name: "When configmap exists for the same cluster, it should succeed",
+			existing: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: placeholderNamespace,
+						Name:      "pair-1",
+						Labels:    map[string]string{pairLabelKey: "pair-1"},
+					},
+					Data: map[string]string{
+						clusterNamespaceKey: "ns",
+						clusterNameKey:      "hc1",
+					},
+				},
+			},
+			pairLabel:   "pair-1",
+			hcNamespace: "ns",
+			hcName:      "hc1",
+		},
+		{
+			name: "When configmap exists for a different cluster, it should return conflict error",
+			existing: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: placeholderNamespace,
+						Name:      "pair-1",
+						Labels:    map[string]string{pairLabelKey: "pair-1"},
+					},
+					Data: map[string]string{
+						clusterNamespaceKey: "other-ns",
+						clusterNameKey:      "other-hc",
+					},
+				},
+			},
+			pairLabel:   "pair-1",
+			hcNamespace: "ns",
+			hcName:      "hc1",
+			expectError: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewWithT(t)
+			c := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithObjects(test.existing...).Build()
+			r := &DedicatedServingComponentSchedulerAndSizer{Client: c}
+			err := r.ensurePairConfigMap(t.Context(), test.pairLabel, test.hcNamespace, test.hcName)
+			if test.expectError {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring("conflict"))
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+				cm := &corev1.ConfigMap{}
+				err = c.Get(t.Context(), types.NamespacedName{Namespace: placeholderNamespace, Name: test.pairLabel}, cm)
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(cm.Data[clusterNamespaceKey]).To(Equal(test.hcNamespace))
+				g.Expect(cm.Data[clusterNameKey]).To(Equal(test.hcName))
+			}
+		})
+	}
+}
+
+func TestPairLabelFromConfigMaps(t *testing.T) {
+	tests := []struct {
+		name      string
+		existing  []client.Object
+		namespace string
+		hcName    string
+		expected  string
+	}{
+		{
+			name:      "When no configmaps exist, it should return empty string",
+			existing:  nil,
+			namespace: "ns",
+			hcName:    "hc1",
+			expected:  "",
+		},
+		{
+			name: "When a matching configmap exists, it should return the pair label",
+			existing: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: placeholderNamespace,
+						Name:      "pair-1",
+						Labels:    map[string]string{pairLabelKey: "pair-1"},
+					},
+					Data: map[string]string{
+						clusterNamespaceKey: "ns",
+						clusterNameKey:      "hc1",
+					},
+				},
+			},
+			namespace: "ns",
+			hcName:    "hc1",
+			expected:  "pair-1",
+		},
+		{
+			name: "When configmaps exist for other clusters only, it should return empty string",
+			existing: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: placeholderNamespace,
+						Name:      "pair-1",
+						Labels:    map[string]string{pairLabelKey: "pair-1"},
+					},
+					Data: map[string]string{
+						clusterNamespaceKey: "other-ns",
+						clusterNameKey:      "other-hc",
+					},
+				},
+			},
+			namespace: "ns",
+			hcName:    "hc1",
+			expected:  "",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewWithT(t)
+			c := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithObjects(test.existing...).Build()
+			r := &DedicatedServingComponentSchedulerAndSizer{Client: c}
+			result, err := r.pairLabelFromConfigMaps(t.Context(), test.namespace, test.hcName)
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(result).To(Equal(test.expected))
+		})
+	}
+}
+
+func TestDeletePairConfigMaps(t *testing.T) {
+	hc := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "ns",
+			Name:      "hc1",
+		},
+	}
+
+	tests := []struct {
+		name              string
+		existing          []client.Object
+		expectedRemaining int
+	}{
+		{
+			name:              "When there are no configmaps, it should succeed",
+			existing:          nil,
+			expectedRemaining: 0,
+		},
+		{
+			name: "When configmaps match the cluster, they should be deleted",
+			existing: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: placeholderNamespace,
+						Name:      "pair-1",
+						Labels:    map[string]string{pairLabelKey: "pair-1"},
+					},
+					Data: map[string]string{
+						clusterNamespaceKey: "ns",
+						clusterNameKey:      "hc1",
+					},
+				},
+			},
+			expectedRemaining: 0,
+		},
+		{
+			name: "When configmaps belong to a different cluster, they should not be deleted",
+			existing: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: placeholderNamespace,
+						Name:      "pair-1",
+						Labels:    map[string]string{pairLabelKey: "pair-1"},
+					},
+					Data: map[string]string{
+						clusterNamespaceKey: "other-ns",
+						clusterNameKey:      "other-hc",
+					},
+				},
+			},
+			expectedRemaining: 1,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewWithT(t)
+			c := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithObjects(test.existing...).Build()
+			r := &DedicatedServingComponentSchedulerAndSizer{Client: c}
+			err := r.deletePairConfigMaps(t.Context(), hc)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			cmList := &corev1.ConfigMapList{}
+			err = c.List(t.Context(), cmList, client.InNamespace(placeholderNamespace))
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(cmList.Items).To(HaveLen(test.expectedRemaining))
 		})
 	}
 }

@@ -3,10 +3,16 @@ package assets
 import (
 	"fmt"
 	"testing"
+	"time"
 
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	controlplaneoperatoroverrides "github.com/openshift/hypershift/hypershift-operator/controlplaneoperator-overrides"
+	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/rhobsmonitoring"
+
+	configv1 "github.com/openshift/api/config/v1"
 
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -798,4 +804,541 @@ func TestHyperShiftOperatorClusterRole_WebhookRBAC(t *testing.T) {
 			ResourceNames: []string{hyperv1.GroupVersion.Group},
 		})))
 	})
+}
+
+func TestBuildArgs(t *testing.T) {
+	tests := []struct {
+		name              string
+		deployment        HyperShiftOperatorDeployment
+		expectContains    []string
+		expectNotContains []string
+	}{
+		{
+			name: "When registry overrides is set, it should include the flag in args",
+			deployment: HyperShiftOperatorDeployment{
+				PrivatePlatform:   string(hyperv1.NonePlatform),
+				RegistryOverrides: "quay.io=mirror.example.com",
+			},
+			expectContains: []string{"--registry-overrides=quay.io=mirror.example.com"},
+		},
+		{
+			name: "When registry overrides is empty, it should not include the flag",
+			deployment: HyperShiftOperatorDeployment{
+				PrivatePlatform: string(hyperv1.NonePlatform),
+			},
+			expectNotContains: []string{"--registry-overrides"},
+		},
+		{
+			name: "When all standard options are set, it should include them in args",
+			deployment: HyperShiftOperatorDeployment{
+				PrivatePlatform:                        string(hyperv1.AWSPlatform),
+				EnableOCPClusterMonitoring:             true,
+				EnableCIDebugOutput:                    true,
+				EnableDedicatedRequestServingIsolation: true,
+			},
+			expectContains: []string{
+				"run",
+				"--namespace=$(MY_NAMESPACE)",
+				"--pod-name=$(MY_NAME)",
+				"--metrics-addr=:9000",
+				"--enable-dedicated-request-serving-isolation=true",
+				"--enable-ocp-cluster-monitoring=true",
+				"--enable-ci-debug-output=true",
+				fmt.Sprintf("--private-platform=%s", hyperv1.AWSPlatform),
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			args := tc.deployment.buildArgs()
+			for _, expected := range tc.expectContains {
+				g.Expect(args).To(ContainElement(expected))
+			}
+			for _, notExpected := range tc.expectNotContains {
+				for _, arg := range args {
+					g.Expect(arg).NotTo(HavePrefix(notExpected))
+				}
+			}
+		})
+	}
+}
+
+func TestBuildEnvVars(t *testing.T) {
+	tests := []struct {
+		name           string
+		deployment     HyperShiftOperatorDeployment
+		expectContains []corev1.EnvVar
+		expectAbsent   []string
+	}{
+		{
+			name: "When TechPreviewNoUpgrade is enabled, it should include HYPERSHIFT_FEATURESET env var",
+			deployment: HyperShiftOperatorDeployment{
+				TechPreviewNoUpgrade: true,
+			},
+			expectContains: []corev1.EnvVar{
+				{Name: "HYPERSHIFT_FEATURESET", Value: string(configv1.TechPreviewNoUpgrade)},
+			},
+		},
+		{
+			name: "When EnableAuditLogPersistence is enabled, it should include ENABLE_AUDIT_LOG_PERSISTENCE env var",
+			deployment: HyperShiftOperatorDeployment{
+				EnableAuditLogPersistence: true,
+			},
+			expectContains: []corev1.EnvVar{
+				{Name: "ENABLE_AUDIT_LOG_PERSISTENCE", Value: "true"},
+			},
+		},
+		{
+			name: "When EnableCVOManagementClusterMetricsAccess is enabled, it should include the env var",
+			deployment: HyperShiftOperatorDeployment{
+				EnableCVOManagementClusterMetricsAccess: true,
+			},
+			expectContains: []corev1.EnvVar{
+				{Name: config.EnableCVOManagementClusterMetricsAccessEnvVar, Value: "1"},
+			},
+		},
+		{
+			name: "When ManagedService is set, it should include MANAGED_SERVICE env var",
+			deployment: HyperShiftOperatorDeployment{
+				ManagedService: hyperv1.AroHCP,
+			},
+			expectContains: []corev1.EnvVar{
+				{Name: "MANAGED_SERVICE", Value: hyperv1.AroHCP},
+			},
+		},
+		{
+			name: "When EnableSizeTagging is enabled, it should include ENABLE_SIZE_TAGGING env var",
+			deployment: HyperShiftOperatorDeployment{
+				EnableSizeTagging: true,
+			},
+			expectContains: []corev1.EnvVar{
+				{Name: "ENABLE_SIZE_TAGGING", Value: "1"},
+			},
+		},
+		{
+			name: "When EnableEtcdRecovery is enabled, it should include the env var",
+			deployment: HyperShiftOperatorDeployment{
+				EnableEtcdRecovery: true,
+			},
+			expectContains: []corev1.EnvVar{
+				{Name: config.EnableEtcdRecoveryEnvVar, Value: "1"},
+			},
+		},
+		{
+			name: "When EnableCPOOverrides is enabled, it should include the env var",
+			deployment: HyperShiftOperatorDeployment{
+				EnableCPOOverrides: true,
+			},
+			expectContains: []corev1.EnvVar{
+				{Name: controlplaneoperatoroverrides.CPOOverridesEnvVar, Value: "1"},
+			},
+		},
+		{
+			name: "When PlatformsInstalled is set, it should include PLATFORMS_INSTALLED env var",
+			deployment: HyperShiftOperatorDeployment{
+				PlatformsInstalled: "aws,azure",
+			},
+			expectContains: []corev1.EnvVar{
+				{Name: "PLATFORMS_INSTALLED", Value: "aws,azure"},
+			},
+		},
+		{
+			name: "When RHOBSMonitoring is enabled, it should include the env var",
+			deployment: HyperShiftOperatorDeployment{
+				RHOBSMonitoring: true,
+			},
+			expectContains: []corev1.EnvVar{
+				{Name: rhobsmonitoring.EnvironmentVariable, Value: "1"},
+			},
+		},
+		{
+			name: "When CVOPrometheusURL is set, it should include the env var",
+			deployment: HyperShiftOperatorDeployment{
+				CVOPrometheusURL: "https://prometheus.example.com",
+			},
+			expectContains: []corev1.EnvVar{
+				{Name: config.CVOPrometheusURLEnvVar, Value: "https://prometheus.example.com"},
+			},
+		},
+		{
+			name: "When MonitoringDashboards is enabled, it should include MONITORING_DASHBOARDS env var",
+			deployment: HyperShiftOperatorDeployment{
+				MonitoringDashboards: true,
+			},
+			expectContains: []corev1.EnvVar{
+				{Name: "MONITORING_DASHBOARDS", Value: "1"},
+			},
+		},
+		{
+			name: "When no optional features are enabled, it should not include optional env vars",
+			deployment: HyperShiftOperatorDeployment{
+				CertRotationScale: 24 * time.Hour,
+			},
+			expectAbsent: []string{
+				"HYPERSHIFT_FEATURESET",
+				"ENABLE_AUDIT_LOG_PERSISTENCE",
+				"MANAGED_SERVICE",
+				"ENABLE_SIZE_TAGGING",
+				"MONITORING_DASHBOARDS",
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			envVars := tc.deployment.buildEnvVars()
+			for _, expected := range tc.expectContains {
+				g.Expect(envVars).To(ContainElement(expected))
+			}
+			for _, absent := range tc.expectAbsent {
+				for _, env := range envVars {
+					g.Expect(env.Name).NotTo(Equal(absent))
+				}
+			}
+		})
+	}
+}
+
+func TestAddWebhookResources(t *testing.T) {
+	tests := []struct {
+		name                    string
+		enableWebhook           bool
+		enableValidatingWebhook bool
+		expectArgs              []string
+		expectVolumeMountCount  int
+		expectVolumeCount       int
+	}{
+		{
+			name:                   "When webhook is disabled, it should not add any resources",
+			enableWebhook:          false,
+			expectVolumeMountCount: 0,
+			expectVolumeCount:      0,
+		},
+		{
+			name:                   "When webhook is enabled without validating webhook, it should add serving-cert resources and cert-dir arg",
+			enableWebhook:          true,
+			expectArgs:             []string{"--cert-dir=/var/run/secrets/serving-cert"},
+			expectVolumeMountCount: 1,
+			expectVolumeCount:      1,
+		},
+		{
+			name:                    "When webhook and validating webhook are both enabled, it should add cert-dir and enable-validating-webhook args",
+			enableWebhook:           true,
+			enableValidatingWebhook: true,
+			expectArgs:              []string{"--cert-dir=/var/run/secrets/serving-cert", "--enable-validating-webhook=true"},
+			expectVolumeMountCount:  1,
+			expectVolumeCount:       1,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			d := HyperShiftOperatorDeployment{
+				EnableWebhook:           tc.enableWebhook,
+				EnableValidatingWebhook: tc.enableValidatingWebhook,
+			}
+			var args []string
+			var volumeMounts []corev1.VolumeMount
+			var volumes []corev1.Volume
+
+			d.addWebhookResources(&args, &volumeMounts, &volumes)
+
+			g.Expect(volumeMounts).To(HaveLen(tc.expectVolumeMountCount))
+			g.Expect(volumes).To(HaveLen(tc.expectVolumeCount))
+			for _, expected := range tc.expectArgs {
+				g.Expect(args).To(ContainElement(expected))
+			}
+		})
+	}
+}
+
+func TestAddOIDCResources(t *testing.T) {
+	tests := []struct {
+		name                   string
+		deployment             HyperShiftOperatorDeployment
+		expectVolumeMountCount int
+		expectVolumeCount      int
+		expectArgCount         int
+	}{
+		{
+			name: "When all OIDC parameters are set, it should add OIDC resources",
+			deployment: HyperShiftOperatorDeployment{
+				OIDCBucketName:                 "my-bucket",
+				OIDCBucketRegion:               "us-east-1",
+				OIDCStorageProviderS3SecretKey: "mykey",
+				OIDCStorageProviderS3Secret: &corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "oidc-secret"},
+				},
+			},
+			expectVolumeMountCount: 1,
+			expectVolumeCount:      1,
+			expectArgCount:         3,
+		},
+		{
+			name: "When OIDC bucket name is empty, it should not add any resources",
+			deployment: HyperShiftOperatorDeployment{
+				OIDCBucketRegion:               "us-east-1",
+				OIDCStorageProviderS3SecretKey: "mykey",
+				OIDCStorageProviderS3Secret: &corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "oidc-secret"},
+				},
+			},
+			expectVolumeMountCount: 0,
+			expectVolumeCount:      0,
+			expectArgCount:         0,
+		},
+		{
+			name: "When OIDC secret is nil, it should not add any resources",
+			deployment: HyperShiftOperatorDeployment{
+				OIDCBucketName:                 "my-bucket",
+				OIDCBucketRegion:               "us-east-1",
+				OIDCStorageProviderS3SecretKey: "mykey",
+			},
+			expectVolumeMountCount: 0,
+			expectVolumeCount:      0,
+			expectArgCount:         0,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			var args []string
+			var volumeMounts []corev1.VolumeMount
+			var volumes []corev1.Volume
+
+			tc.deployment.addOIDCResources(&args, &volumeMounts, &volumes)
+
+			g.Expect(volumeMounts).To(HaveLen(tc.expectVolumeMountCount))
+			g.Expect(volumes).To(HaveLen(tc.expectVolumeCount))
+			g.Expect(args).To(HaveLen(tc.expectArgCount))
+		})
+	}
+}
+
+func TestAddScaleFromZeroResources(t *testing.T) {
+	tests := []struct {
+		name                   string
+		deployment             HyperShiftOperatorDeployment
+		expectVolumeMountCount int
+		expectArgCount         int
+	}{
+		{
+			name: "When all scale-from-zero parameters are set, it should add resources",
+			deployment: HyperShiftOperatorDeployment{
+				ScaleFromZeroSecret: &corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "sfz-secret"},
+				},
+				ScaleFromZeroSecretKey: "credentials",
+				ScaleFromZeroProvider:  "aws",
+			},
+			expectVolumeMountCount: 1,
+			expectArgCount:         2,
+		},
+		{
+			name: "When scale-from-zero secret is nil, it should not add any resources",
+			deployment: HyperShiftOperatorDeployment{
+				ScaleFromZeroSecretKey: "credentials",
+				ScaleFromZeroProvider:  "aws",
+			},
+			expectVolumeMountCount: 0,
+			expectArgCount:         0,
+		},
+		{
+			name: "When scale-from-zero provider is empty, it should not add any resources",
+			deployment: HyperShiftOperatorDeployment{
+				ScaleFromZeroSecret: &corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "sfz-secret"},
+				},
+				ScaleFromZeroSecretKey: "credentials",
+			},
+			expectVolumeMountCount: 0,
+			expectArgCount:         0,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			var args []string
+			var volumeMounts []corev1.VolumeMount
+			var volumes []corev1.Volume
+
+			tc.deployment.addScaleFromZeroResources(&args, &volumeMounts, &volumes)
+
+			g.Expect(volumeMounts).To(HaveLen(tc.expectVolumeMountCount))
+			g.Expect(args).To(HaveLen(tc.expectArgCount))
+		})
+	}
+}
+
+func TestResolveImage(t *testing.T) {
+	tests := []struct {
+		name          string
+		operatorImage string
+		images        map[string]string
+		expected      string
+	}{
+		{
+			name:          "When no image override in map, it should use OperatorImage",
+			operatorImage: "default-image:latest",
+			images:        map[string]string{},
+			expected:      "default-image:latest",
+		},
+		{
+			name:          "When image override exists in map, it should use the override",
+			operatorImage: "default-image:latest",
+			images:        map[string]string{"hypershift-operator": "override-image:v1"},
+			expected:      "override-image:v1",
+		},
+		{
+			name:          "When images map is nil, it should use OperatorImage",
+			operatorImage: "default-image:latest",
+			images:        nil,
+			expected:      "default-image:latest",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			d := HyperShiftOperatorDeployment{
+				OperatorImage: tc.operatorImage,
+				Images:        tc.images,
+			}
+			result := d.resolveImage()
+			g.Expect(result).To(Equal(tc.expected))
+		})
+	}
+}
+
+func TestAddPrivatePlatformResources(t *testing.T) {
+	tests := []struct {
+		name             string
+		deployment       HyperShiftOperatorDeployment
+		expectEnvNames   []string
+		expectAbsentEnvs []string
+	}{
+		{
+			name: "When private platform is None, it should not add any platform resources",
+			deployment: HyperShiftOperatorDeployment{
+				PrivatePlatform: string(hyperv1.NonePlatform),
+			},
+			expectAbsentEnvs: []string{"AWS_SHARED_CREDENTIALS_FILE", "AZURE_CREDENTIALS_FILE", "GCP_PROJECT"},
+		},
+		{
+			name: "When private platform is AWS, it should add AWS env vars and volumes",
+			deployment: HyperShiftOperatorDeployment{
+				PrivatePlatform:  string(hyperv1.AWSPlatform),
+				AWSPrivateRegion: "us-east-1",
+				AWSPrivateSecret: &corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "aws-creds"},
+				},
+				AWSPrivateSecretKey: "credentials",
+			},
+			expectEnvNames: []string{"AWS_SHARED_CREDENTIALS_FILE", "AWS_REGION", "AWS_SDK_LOAD_CONFIG"},
+		},
+		{
+			name: "When private platform is GCP with project and region, it should add GCP env vars",
+			deployment: HyperShiftOperatorDeployment{
+				PrivatePlatform: string(hyperv1.GCPPlatform),
+				GCPProject:      "my-project",
+				GCPRegion:       "us-central1",
+			},
+			expectEnvNames: []string{"GCP_PROJECT", "GCP_REGION"},
+		},
+		{
+			name: "When private platform is GCP without project, it should not add GCP_PROJECT env var",
+			deployment: HyperShiftOperatorDeployment{
+				PrivatePlatform: string(hyperv1.GCPPlatform),
+			},
+			expectAbsentEnvs: []string{"GCP_PROJECT", "GCP_REGION"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			var envVars []corev1.EnvVar
+			var volumeMounts []corev1.VolumeMount
+			var volumes []corev1.Volume
+
+			tc.deployment.addPrivatePlatformResources(&envVars, &volumeMounts, &volumes)
+
+			envNames := make([]string, 0, len(envVars))
+			for _, e := range envVars {
+				envNames = append(envNames, e.Name)
+			}
+			for _, expected := range tc.expectEnvNames {
+				g.Expect(envNames).To(ContainElement(expected))
+			}
+			for _, absent := range tc.expectAbsentEnvs {
+				g.Expect(envNames).NotTo(ContainElement(absent))
+			}
+		})
+	}
+}
+
+func TestAddAzurePlatformResources(t *testing.T) {
+	tests := []struct {
+		name           string
+		deployment     HyperShiftOperatorDeployment
+		expectEnvNames []string
+		expectVolCount int
+	}{
+		{
+			name: "When Azure managed identity is provided, it should set PLS client ID and subscription ID env vars",
+			deployment: HyperShiftOperatorDeployment{
+				AzurePLSManagedIdentityClientID: "client-id",
+				AzurePLSSubscriptionID:          "sub-id",
+				AzurePLSResourceGroup:           "rg-mgmt",
+			},
+			expectEnvNames: []string{"AZURE_RESOURCE_GROUP", "AZURE_PLS_CLIENT_ID", "AZURE_SUBSCRIPTION_ID"},
+			expectVolCount: 0,
+		},
+		{
+			name: "When Azure credentials file is provided, it should mount the credentials volume",
+			deployment: HyperShiftOperatorDeployment{
+				AzurePLSResourceGroup: "rg-mgmt",
+				AzurePrivateSecret: &corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "azure-creds"},
+				},
+				AzurePrivateSecretKey: "credentials",
+			},
+			expectEnvNames: []string{"AZURE_RESOURCE_GROUP", "AZURE_CREDENTIALS_FILE"},
+			expectVolCount: 1,
+		},
+		{
+			name: "When neither managed identity nor credentials file is provided, it should not add env vars or volumes",
+			deployment: HyperShiftOperatorDeployment{
+				AzurePLSResourceGroup: "rg-mgmt",
+			},
+			expectEnvNames: []string{"AZURE_RESOURCE_GROUP"},
+			expectVolCount: 0,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			var envVars []corev1.EnvVar
+			var volumeMounts []corev1.VolumeMount
+			var volumes []corev1.Volume
+
+			tc.deployment.addAzurePlatformResources(&envVars, &volumeMounts, &volumes)
+
+			envNames := make([]string, 0, len(envVars))
+			for _, e := range envVars {
+				envNames = append(envNames, e.Name)
+			}
+			for _, expected := range tc.expectEnvNames {
+				g.Expect(envNames).To(ContainElement(expected))
+			}
+			g.Expect(volumes).To(HaveLen(tc.expectVolCount))
+		})
+	}
 }
