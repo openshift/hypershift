@@ -34,6 +34,19 @@ type CreateNodePoolOptions struct {
 	NodeUpgradeType hyperv1.UpgradeType
 	Arch            string
 	AutoRepair      bool
+
+	// ClientFn returns a Kubernetes client. When nil, util.GetClient is used.
+	// This enables dependency injection for testing without requiring a live cluster.
+	ClientFn func() (crclient.Client, error)
+}
+
+// GetClient returns a Kubernetes client using the configured ClientFn,
+// falling back to util.GetClient when ClientFn is nil.
+func (o *CreateNodePoolOptions) GetClient() (crclient.Client, error) {
+	if o.ClientFn != nil {
+		return o.ClientFn()
+	}
+	return util.GetClient()
 }
 
 type PlatformOptions interface {
@@ -87,7 +100,7 @@ func (o *CreateNodePoolOptions) Validate(ctx context.Context, c crclient.Client)
 }
 
 func (o *CreateNodePoolOptions) CreateNodePool(ctx context.Context, platformOpts PlatformOptions) error {
-	client, err := util.GetClient()
+	client, err := o.GetClient()
 	if err != nil {
 		return err
 	}

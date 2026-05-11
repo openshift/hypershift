@@ -44,6 +44,19 @@ type DestroyOptions struct {
 	Log                   logr.Logger
 	CredentialSecretName  string
 	RedactBaseDomain      bool
+
+	// ClientFn returns a Kubernetes client. When nil, util.GetClient is used.
+	// This enables dependency injection for testing without requiring a live cluster.
+	ClientFn func() (client.Client, error)
+}
+
+// GetClient returns a Kubernetes client using the configured ClientFn,
+// falling back to util.GetClient when ClientFn is nil.
+func (o *DestroyOptions) GetClient() (client.Client, error) {
+	if o.ClientFn != nil {
+		return o.ClientFn()
+	}
+	return util.GetClient()
 }
 
 type AWSPlatformDestroyOptions struct {
@@ -85,7 +98,7 @@ type PowerVSPlatformDestroyOptions struct {
 }
 
 func GetCluster(ctx context.Context, o *DestroyOptions) (*hyperv1.HostedCluster, error) {
-	c, err := util.GetClient()
+	c, err := o.GetClient()
 	if err != nil {
 		return nil, err
 	}
@@ -106,7 +119,7 @@ func GetCluster(ctx context.Context, o *DestroyOptions) (*hyperv1.HostedCluster,
 func DestroyCluster(ctx context.Context, hostedCluster *hyperv1.HostedCluster, o *DestroyOptions, destroyPlatformSpecifics DestroyPlatformSpecifics) error {
 	hostedClusterExists := hostedCluster != nil
 	shouldDestroyPlatformSpecifics := destroyPlatformSpecifics != nil
-	c, err := util.GetClient()
+	c, err := o.GetClient()
 	if err != nil {
 		return err
 	}

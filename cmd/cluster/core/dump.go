@@ -135,6 +135,19 @@ type DumpOptions struct {
 	ImpersonateAs string
 
 	Log logr.Logger
+
+	// ClientFn returns a Kubernetes client. When nil, util.GetClient is used.
+	// This enables dependency injection for testing without requiring a live cluster.
+	ClientFn func() (client.Client, error)
+}
+
+// GetClient returns a Kubernetes client using the configured ClientFn,
+// falling back to util.GetClient when ClientFn is nil.
+func (o *DumpOptions) GetClient() (client.Client, error) {
+	if o.ClientFn != nil {
+		return o.ClientFn()
+	}
+	return util.GetClient()
 }
 
 func NewDumpCommand() *cobra.Command {
@@ -184,7 +197,7 @@ func dumpGuestCluster(ctx context.Context, opts *DumpOptions) error {
 	if len(opts.ImpersonateAs) > 0 {
 		c, err = util.GetImpersonatedClient(opts.ImpersonateAs)
 	} else {
-		c, err = util.GetClient()
+		c, err = opts.GetClient()
 	}
 
 	if err != nil {
@@ -342,7 +355,7 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 			return err
 		}
 	} else {
-		c, err = util.GetClient()
+		c, err = opts.GetClient()
 		if err != nil {
 			return err
 		}
