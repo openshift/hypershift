@@ -84,7 +84,10 @@ var backupRestorePlatforms = map[hyperv1.PlatformType]backupRestorePlatformConfi
 	},
 	hyperv1.AgentPlatform: {
 		excludeWorkloads: []string{"router", "karpenter", "karpenter-operator", "cloud-network-config-controller"},
-		postRestoreHook:  nil,
+		postRestoreHook: func(testCtx *internal.TestContext) error {
+			// Restore brings back paused CAPI resources; unpause them so reconciliation resumes.
+			return backuprestore.UnpauseAgentCAPIResources(testCtx, GinkgoLogr.WithName("backup-restore"))
+		},
 	},
 	hyperv1.KubevirtPlatform: {
 		excludeWorkloads: []string{"router", "karpenter", "karpenter-operator", "cloud-network-config-controller"},
@@ -174,6 +177,17 @@ var _ = Describe("BackupRestore", Label("backup-restore"), Ordered, Serial, func
 
 	Context(ContextBackup, func() {
 		It("should create backup and schedule successfully", func() {
+			if testCtx.GetHostedCluster().Spec.Platform.Type == hyperv1.AgentPlatform {
+				By("Pausing AgentMachine and AgentCluster CRs")
+				err := backuprestore.PauseAgentCAPIResources(testCtx, GinkgoLogr.WithName("backup-restore"))
+				Expect(err).NotTo(HaveOccurred())
+				DeferCleanup(func() {
+					if err := backuprestore.UnpauseAgentCAPIResources(testCtx, GinkgoLogr.WithName("backup-restore")); err != nil {
+						GinkgoWriter.Printf("Failed to unpause Agent CAPI resources during cleanup: %v\n", err)
+					}
+				})
+			}
+
 			// Create schedule first to test parallel execution of backup and schedule and
 			// to speed up the test execution.
 			By("Creating schedule")
@@ -219,6 +233,7 @@ var _ = Describe("BackupRestore", Label("backup-restore"), Ordered, Serial, func
 			By("Waiting for schedule to have one backup completed")
 			err = backuprestore.WaitForScheduleCompletion(testCtx, scheduleName)
 			Expect(err).NotTo(HaveOccurred())
+
 		})
 	})
 
