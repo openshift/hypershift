@@ -10,6 +10,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
 	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
@@ -706,6 +707,111 @@ func TestAllocateNodeCIDRsFlag(t *testing.T) {
 
 		})
 	}
+}
+
+func TestCreateOptionsGetClient(t *testing.T) {
+	t.Run("When ClientFn is set it should use the provided function", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		expectedClient := fake.NewClientBuilder().Build()
+		opts := &RawCreateOptions{
+			ClientFn: func() (crclient.Client, error) {
+				return expectedClient, nil
+			},
+		}
+		c, err := opts.GetClient()
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(c).To(Equal(expectedClient))
+	})
+
+	t.Run("When ClientFn is set it should be accessible via completed options", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		expectedClient := fake.NewClientBuilder().Build()
+		opts := &CreateOptions{
+			completedCreateOptions: &completedCreateOptions{
+				ValidatedCreateOptions: &ValidatedCreateOptions{
+					validatedCreateOptions: &validatedCreateOptions{
+						RawCreateOptions: &RawCreateOptions{
+							ClientFn: func() (crclient.Client, error) {
+								return expectedClient, nil
+							},
+						},
+					},
+				},
+			},
+		}
+		c, err := opts.GetClient()
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(c).To(Equal(expectedClient))
+	})
+}
+
+func TestValidateWithInjectedClient(t *testing.T) {
+	t.Run("When a HostedCluster already exists it should return an error", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		ctx := t.Context()
+		tempDir := t.TempDir()
+
+		pullSecretFile := filepath.Join(tempDir, "pull-secret.json")
+		if err := os.WriteFile(pullSecretFile, []byte(`fake`), 0600); err != nil {
+			t.Fatalf("failed to write pullSecret: %v", err)
+		}
+
+		existingCluster := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "existing-cluster",
+				Namespace: "clusters",
+			},
+		}
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(hyperapi.Scheme).
+			WithObjects(existingCluster).
+			Build()
+
+		rawOpts := &RawCreateOptions{
+			Name:           "existing-cluster",
+			Namespace:      "clusters",
+			PullSecretFile: pullSecretFile,
+			Arch:           "amd64",
+			Render:         false,
+			ClientFn: func() (crclient.Client, error) {
+				return fakeClient, nil
+			},
+		}
+
+		_, err := rawOpts.Validate(ctx)
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("already exists"))
+	})
+
+	t.Run("When no HostedCluster exists and render is true it should pass validation", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		ctx := t.Context()
+		tempDir := t.TempDir()
+
+		pullSecretFile := filepath.Join(tempDir, "pull-secret.json")
+		if err := os.WriteFile(pullSecretFile, []byte(`fake`), 0600); err != nil {
+			t.Fatalf("failed to write pullSecret: %v", err)
+		}
+
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(hyperapi.Scheme).
+			Build()
+
+		rawOpts := &RawCreateOptions{
+			Name:           "new-cluster",
+			Namespace:      "clusters",
+			PullSecretFile: pullSecretFile,
+			Arch:           "amd64",
+			Render:         true,
+			ClientFn: func() (crclient.Client, error) {
+				return fakeClient, nil
+			},
+		}
+
+		validated, err := rawOpts.Validate(ctx)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(validated).ToNot(BeNil())
+	})
 }
 
 func TestValidateVersion(t *testing.T) {

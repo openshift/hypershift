@@ -14,6 +14,9 @@ import (
 
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
 	"github.com/google/go-cmp/cmp"
 	"github.com/spf13/pflag"
 )
@@ -121,8 +124,6 @@ func TestCreateCluster(t *testing.T) {
 	certs.UnsafeSeed(1234567890)
 	ctx := framework.InterruptableContext(t.Context())
 	tempDir := t.TempDir()
-	t.Setenv("FAKE_CLIENT", "true")
-
 	pullSecretFile := filepath.Join(tempDir, "pull-secret.json")
 
 	if err := os.WriteFile(pullSecretFile, []byte(`fake`), 0600); err != nil {
@@ -171,6 +172,9 @@ func TestCreateCluster(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			flags := pflag.NewFlagSet(testCase.name, pflag.ContinueOnError)
 			coreOpts := core.DefaultOptions()
+			coreOpts.ClientFn = func() (crclient.Client, error) {
+				return fake.NewClientBuilder().Build(), nil
+			}
 			core.BindDeveloperOptions(coreOpts, flags)
 			kubevirtOpts := DefaultOptions()
 			BindDeveloperOptions(kubevirtOpts, flags)
