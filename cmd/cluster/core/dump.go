@@ -138,7 +138,7 @@ type DumpOptions struct {
 
 	// ClientFn returns a Kubernetes client. When nil, util.GetClient is used.
 	// This enables dependency injection for testing without requiring a live cluster.
-	ClientFn func() (client.Client, error)
+	ClientFn func() (client.Client, error) `json:"-"`
 }
 
 // GetClient returns a Kubernetes client using the configured ClientFn,

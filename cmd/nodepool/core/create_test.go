@@ -262,3 +262,18 @@ func TestValidMinorVersionCompatibility(t *testing.T) {
 		g.Expect(err.Error()).To(Equal("NodePool minor version 4.14 is less than 4.15, which is the minimum NodePool version compatible with the 4.18 HostedCluster"))
 	})
 }
+
+func TestCreateNodePoolOptionsGetClient(t *testing.T) {
+	t.Run("When ClientFn is set it should use the provided function", func(t *testing.T) {
+		g := NewWithT(t)
+		expectedClient := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
+		opts := &CreateNodePoolOptions{
+			ClientFn: func() (client.Client, error) {
+				return expectedClient, nil
+			},
+		}
+		c, err := opts.GetClient()
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(c).To(Equal(expectedClient))
+	})
+}

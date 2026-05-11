@@ -20,7 +20,7 @@ import (
 
 func TestDestroyCluster(t *testing.T) {
 	t.Run("When HostedCluster is nil and platform specifics provided it should call destroyPlatformSpecifics", func(t *testing.T) {
-		g := NewGomegaWithT(t)
+		g := NewWithT(t)
 
 		platformSpecificsCalled := false
 		var receivedOpts *DestroyOptions
@@ -41,7 +41,7 @@ func TestDestroyCluster(t *testing.T) {
 				Location: "eastus",
 			},
 			ClientFn: func() (client.Client, error) {
-				return fake.NewClientBuilder().Build(), nil
+				return fake.NewClientBuilder().WithScheme(hyperapi.Scheme).Build(), nil
 			},
 		}
 
@@ -56,7 +56,7 @@ func TestDestroyCluster(t *testing.T) {
 
 func TestGetCluster(t *testing.T) {
 	t.Run("When the HostedCluster exists it should return it", func(t *testing.T) {
-		g := NewGomegaWithT(t)
+		g := NewWithT(t)
 		hc := &hyperv1.HostedCluster{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "my-cluster",
@@ -84,7 +84,7 @@ func TestGetCluster(t *testing.T) {
 	})
 
 	t.Run("When the HostedCluster does not exist it should return nil", func(t *testing.T) {
-		g := NewGomegaWithT(t)
+		g := NewWithT(t)
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(hyperapi.Scheme).
 			Build()
@@ -105,7 +105,7 @@ func TestGetCluster(t *testing.T) {
 	})
 
 	t.Run("When the client factory returns an error it should propagate", func(t *testing.T) {
-		g := NewGomegaWithT(t)
+		g := NewWithT(t)
 		opts := &DestroyOptions{
 			Name:      "test",
 			Namespace: "clusters",
@@ -124,8 +124,8 @@ func TestGetCluster(t *testing.T) {
 
 func TestDestroyOptionsGetClient(t *testing.T) {
 	t.Run("When ClientFn is set it should use the provided function", func(t *testing.T) {
-		g := NewGomegaWithT(t)
-		expectedClient := fake.NewClientBuilder().Build()
+		g := NewWithT(t)
+		expectedClient := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).Build()
 		opts := &DestroyOptions{
 			ClientFn: func() (client.Client, error) {
 				return expectedClient, nil

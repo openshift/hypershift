@@ -13,6 +13,7 @@ import (
 	awsinfra "github.com/openshift/hypershift/cmd/infra/aws"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/cmd/util"
+	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/testutil"
 	"github.com/openshift/hypershift/test/integration/framework"
@@ -238,7 +239,7 @@ func TestCreateCluster(t *testing.T) {
 			coreOpts := core.DefaultOptions()
 			core.BindDeveloperOptions(coreOpts, flags)
 			coreOpts.ClientFn = func() (crclient.Client, error) {
-				return fake.NewClientBuilder().Build(), nil
+				return fake.NewClientBuilder().WithScheme(hyperapi.Scheme).Build(), nil
 			}
 			awsOpts := DefaultOptions()
 			BindDeveloperOptions(awsOpts, flags)

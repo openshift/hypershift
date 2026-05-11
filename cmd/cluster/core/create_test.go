@@ -711,8 +711,8 @@ func TestAllocateNodeCIDRsFlag(t *testing.T) {
 
 func TestCreateOptionsGetClient(t *testing.T) {
 	t.Run("When ClientFn is set it should use the provided function", func(t *testing.T) {
-		g := NewGomegaWithT(t)
-		expectedClient := fake.NewClientBuilder().Build()
+		g := NewWithT(t)
+		expectedClient := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).Build()
 		opts := &RawCreateOptions{
 			ClientFn: func() (crclient.Client, error) {
 				return expectedClient, nil
@@ -724,8 +724,8 @@ func TestCreateOptionsGetClient(t *testing.T) {
 	})
 
 	t.Run("When ClientFn is set it should be accessible via completed options", func(t *testing.T) {
-		g := NewGomegaWithT(t)
-		expectedClient := fake.NewClientBuilder().Build()
+		g := NewWithT(t)
+		expectedClient := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).Build()
 		opts := &CreateOptions{
 			completedCreateOptions: &completedCreateOptions{
 				ValidatedCreateOptions: &ValidatedCreateOptions{
@@ -747,7 +747,7 @@ func TestCreateOptionsGetClient(t *testing.T) {
 
 func TestValidateWithInjectedClient(t *testing.T) {
 	t.Run("When a HostedCluster already exists it should return an error", func(t *testing.T) {
-		g := NewGomegaWithT(t)
+		g := NewWithT(t)
 		ctx := t.Context()
 		tempDir := t.TempDir()
 
@@ -784,7 +784,7 @@ func TestValidateWithInjectedClient(t *testing.T) {
 	})
 
 	t.Run("When no HostedCluster exists and render is true it should pass validation", func(t *testing.T) {
-		g := NewGomegaWithT(t)
+		g := NewWithT(t)
 		ctx := t.Context()
 		tempDir := t.TempDir()
 

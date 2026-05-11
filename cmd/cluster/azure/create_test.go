@@ -14,6 +14,7 @@ import (
 	azureinfra "github.com/openshift/hypershift/cmd/infra/azure"
 	azurenodepool "github.com/openshift/hypershift/cmd/nodepool/azure"
 	"github.com/openshift/hypershift/cmd/util"
+	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/testutil"
 	"github.com/openshift/hypershift/test/integration/framework"
@@ -310,7 +311,7 @@ func TestCreateCluster(t *testing.T) {
 			flags := pflag.NewFlagSet(testCase.name, pflag.ContinueOnError)
 			coreOpts := core.DefaultOptions()
 			coreOpts.ClientFn = func() (crclient.Client, error) {
-				return fake.NewClientBuilder().Build(), nil
+				return fake.NewClientBuilder().WithScheme(hyperapi.Scheme).Build(), nil
 			}
 			core.BindDeveloperOptions(coreOpts, flags)
 			azureOpts := DefaultOptions()
