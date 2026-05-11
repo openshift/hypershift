@@ -22,8 +22,8 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/certs"
+	"github.com/openshift/hypershift/support/imageresolution"
 	"github.com/openshift/hypershift/support/k8sutil"
-	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
 	"github.com/openshift/hypershift/support/util"
 
@@ -57,7 +57,7 @@ import (
 // measurements.
 type LocalIgnitionProvider struct {
 	Client          client.Client
-	ReleaseProvider releaseinfo.ProviderWithOpenShiftImageRegistryOverrides
+	ReleaseProvider *imageresolution.ProviderSet
 	CloudProvider   hyperv1.PlatformType
 	Namespace       string
 
@@ -77,7 +77,7 @@ type LocalIgnitionProvider struct {
 
 	// ImageMetaDataProvider is used to get the image metadata for the images
 	// used in the ignition payload.
-	ImageMetadataProvider *util.RegistryClientImageMetadataProvider
+	ImageMetadataProvider util.ImageMetadataProvider
 
 	ImageFileCache *imageFileCache
 
@@ -320,7 +320,6 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage, cu
 		start := time.Now()
 
 		// Replace the release image with the mirrored release image in disconnected environment cases.
-		// ProviderWithOpenShiftImageRegistryOverrides Lookup will store the mirrored release image if it exists.
 		_, err := p.ReleaseProvider.Lookup(ctx, releaseImage, pullSecret)
 		if err != nil {
 			return fmt.Errorf("failed to look up release image metadata: %w", err)

@@ -59,7 +59,7 @@ import (
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
 	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
-	"github.com/openshift/hypershift/support/globalconfig"
+	"github.com/openshift/hypershift/support/imageresolution"
 	"github.com/openshift/hypershift/support/infraid"
 	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/metrics"
@@ -167,8 +167,6 @@ type HostedClusterReconciler struct {
 	// 2) The OCP version being deployed is the latest version supported by Hypershift
 	HypershiftOperatorImage string
 
-	RegistryOverrides map[string]string
-
 	// SetDefaultSecurityContext is used to configure Security Context for containers
 	SetDefaultSecurityContext bool
 
@@ -191,7 +189,7 @@ type HostedClusterReconciler struct {
 
 	OperatorNamespace string
 
-	RegistryProvider globalconfig.RegistryProvider
+	RegistryProvider *imageresolution.ProviderSet
 
 	overwriteReconcile   func(ctx context.Context, req ctrl.Request, log logr.Logger, hcluster *hyperv1.HostedCluster) (ctrl.Result, error)
 	now                  func() metav1.Time
@@ -664,8 +662,8 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	releaseProvider := r.RegistryProvider.GetReleaseProvider()
-	registryClientImageMetadataProvider := r.RegistryProvider.GetMetadataProvider()
+	releaseProvider := r.RegistryProvider
+	registryClientImageMetadataProvider := r.RegistryProvider.ImageMetadataProvider()
 
 	pullSecretBytes, err := hyperutil.GetPullSecretBytes(ctx, r.Client, hcluster)
 	if err != nil {
@@ -2570,7 +2568,7 @@ func (r *HostedClusterReconciler) reconcileCAPIManager(cpContext controlplanecom
 			return err
 		}
 
-		imageOverride, err = backwardcompat.GetBackwardCompatibleCAPIImage(cpContext, pullSecret, r.RegistryProvider.GetReleaseProvider(), releaseVersion, ImageStreamCAPI)
+		imageOverride, err = backwardcompat.GetBackwardCompatibleCAPIImage(cpContext, pullSecret, r.RegistryProvider, releaseVersion, ImageStreamCAPI)
 		if err != nil {
 			return err
 		}
@@ -2630,7 +2628,7 @@ func (r *HostedClusterReconciler) reconcileCAPIProvider(cpContext controlplaneco
 
 // reconcileControlPlaneOperator orchestrates reconciliation of the control plane
 // operator components.
-func (r *HostedClusterReconciler) reconcileControlPlaneOperator(cpContext controlplanecomponent.ControlPlaneContext, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, controlPlaneOperatorImage, utilitiesImage, defaultIngressDomain string, cpoHasUtilities bool, certRotationScale time.Duration, releaseVersion semver.Version, releaseProvider releaseinfo.ProviderWithOpenShiftImageRegistryOverrides) error {
+func (r *HostedClusterReconciler) reconcileControlPlaneOperator(cpContext controlplanecomponent.ControlPlaneContext, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, controlPlaneOperatorImage, utilitiesImage, defaultIngressDomain string, cpoHasUtilities bool, certRotationScale time.Duration, releaseVersion semver.Version, releaseProvider *imageresolution.ProviderSet) error {
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespaceObject(hcluster.Namespace, hcluster.Name)
 	err := r.Client.Get(cpContext, client.ObjectKeyFromObject(controlPlaneNamespace), controlPlaneNamespace)
 	if err != nil {
@@ -2685,8 +2683,8 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(cpContext contro
 		UtilitiesImage:              utilitiesImage,
 		HasUtilities:                cpoHasUtilities,
 		CertRotationScale:           certRotationScale,
-		RegistryOverrideCommandLine: hyperutil.ConvertRegistryOverridesToCommandLineFlag(releaseProvider.GetRegistryOverrides()),
-		OpenShiftRegistryOverrides:  hyperutil.ConvertOpenShiftImageRegistryOverridesToCommandLineFlag(releaseProvider.GetOpenShiftImageRegistryOverrides()),
+		RegistryOverrideCommandLine: releaseProvider.Config().RegistryOverridesFlag(),
+		OpenShiftRegistryOverrides:  releaseProvider.Config().ImageRegistryMirrorsEnvVar(),
 		DefaultIngressDomain:        defaultIngressDomain,
 		FeatureSet:                  r.FeatureSet,
 	})
@@ -3742,7 +3740,7 @@ func (r *HostedClusterReconciler) validateUserCAConfigMaps(ctx context.Context, 
 	return errs
 }
 
-func (r *HostedClusterReconciler) validateReleaseImage(ctx context.Context, hc *hyperv1.HostedCluster, releaseProvider releaseinfo.ProviderWithOpenShiftImageRegistryOverrides) error {
+func (r *HostedClusterReconciler) validateReleaseImage(ctx context.Context, hc *hyperv1.HostedCluster, releaseProvider releaseinfo.Provider) error {
 	if _, exists := hc.Annotations[hyperv1.SkipReleaseImageValidation]; exists {
 		return nil
 	}
@@ -4543,7 +4541,7 @@ func (r *HostedClusterReconciler) reconcileAWSSubnets(ctx context.Context, _ ups
 	return nil
 }
 
-func (r *HostedClusterReconciler) lookupReleaseImage(ctx context.Context, hcluster *hyperv1.HostedCluster, releaseProvider releaseinfo.ProviderWithOpenShiftImageRegistryOverrides) (*releaseinfo.ReleaseImage, error) {
+func (r *HostedClusterReconciler) lookupReleaseImage(ctx context.Context, hcluster *hyperv1.HostedCluster, releaseProvider releaseinfo.Provider) (*releaseinfo.ReleaseImage, error) {
 	pullSecretBytes, err := hyperutil.GetPullSecretBytes(ctx, r.Client, hcluster)
 	if err != nil {
 		return nil, err

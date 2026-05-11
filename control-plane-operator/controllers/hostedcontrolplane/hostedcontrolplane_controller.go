@@ -79,6 +79,7 @@ import (
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/events"
 	"github.com/openshift/hypershift/support/globalconfig"
+	"github.com/openshift/hypershift/support/imageresolution"
 	"github.com/openshift/hypershift/support/k8sutil"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	"github.com/openshift/hypershift/support/metrics"
@@ -173,7 +174,7 @@ type HostedControlPlaneReconciler struct {
 	CertRotationScale time.Duration
 
 	Log                                     logr.Logger
-	ReleaseProvider                         releaseinfo.ProviderWithOpenShiftImageRegistryOverrides
+	ReleaseProvider                         *imageresolution.ProviderSet
 	UserReleaseProvider                     releaseinfo.Provider
 	createOrUpdate                          func(hcp *hyperv1.HostedControlPlane) upsert.CreateOrUpdateFN
 	EnableCIDebugOutput                     bool
@@ -253,7 +254,7 @@ func (r *HostedControlPlaneReconciler) registerComponents(hcp *hyperv1.HostedCon
 		oauthv2.NewComponent(),
 		routecmv2.NewComponent(),
 		clusterpolicyv2.NewComponent(),
-		configoperatorv2.NewComponent(r.ReleaseProvider.GetRegistryOverrides(), r.ReleaseProvider.GetOpenShiftImageRegistryOverrides(), hcp.Spec.Capabilities),
+		configoperatorv2.NewComponent(r.ReleaseProvider.Config(), hcp.Spec.Capabilities),
 		awsccmv2.NewComponent(),
 		azureccmv2.NewComponent(),
 		kubevirtccmv2.NewComponent(),

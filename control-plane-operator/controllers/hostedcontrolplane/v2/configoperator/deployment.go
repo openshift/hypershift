@@ -9,7 +9,6 @@ import (
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/proxy"
-	"github.com/openshift/hypershift/support/util"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -44,7 +43,7 @@ func (h *hcco) adaptDeployment(cpContext component.WorkloadContext, deployment *
 			fmt.Sprintf("--konnectivity-port=%d", cpContext.InfraStatus.KonnectivityPort),
 			fmt.Sprintf("--oauth-address=%s", cpContext.InfraStatus.OAuthHost),
 			fmt.Sprintf("--oauth-port=%d", cpContext.InfraStatus.OAuthPort),
-			"--registry-overrides", util.ConvertRegistryOverridesToCommandLineFlag(h.registryOverrides),
+			"--registry-overrides", h.resolverConfig.RegistryOverridesFlag(),
 		)
 
 		if hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
@@ -66,7 +65,7 @@ func (h *hcco) adaptDeployment(cpContext component.WorkloadContext, deployment *
 			},
 			{
 				Name:  "OPENSHIFT_IMG_OVERRIDES",
-				Value: util.ConvertOpenShiftImageRegistryOverridesToCommandLineFlag(h.openShiftImageRegistryOverrides),
+				Value: h.resolverConfig.ImageRegistryMirrorsEnvVar(),
 			},
 			{
 				Name:  "HOSTED_CLUSTER_CONFIG_OPERATOR_IMAGE",

@@ -161,7 +161,6 @@ const (
 	testEtcdImage = "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:etcd-fake"
 )
 
-// fakeReleaseProvider implements releaseinfo.ProviderWithOpenShiftImageRegistryOverrides.
 type fakeReleaseProvider struct{}
 
 func (f *fakeReleaseProvider) Lookup(ctx context.Context, image string, pullSecret []byte) (*releaseinfo.ReleaseImage, error) {
@@ -175,18 +174,6 @@ func (f *fakeReleaseProvider) Lookup(ctx context.Context, image string, pullSecr
 			},
 		},
 	}, nil
-}
-
-func (f *fakeReleaseProvider) GetRegistryOverrides() map[string]string {
-	return nil
-}
-
-func (f *fakeReleaseProvider) GetOpenShiftImageRegistryOverrides() map[string][]string {
-	return nil
-}
-
-func (f *fakeReleaseProvider) GetMirroredReleaseImage() string {
-	return ""
 }
 
 func TestReconcile(t *testing.T) {

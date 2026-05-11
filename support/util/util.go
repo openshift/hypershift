@@ -13,7 +13,6 @@ import (
 	"net/http"
 	"os"
 	"regexp"
-	"sort"
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -223,73 +222,6 @@ func RemoveEmptyJSONField(stringData string, field string) string {
 	stringData = regexp.MustCompile(`\s*,\s*}`).ReplaceAllString(stringData, "}")
 	stringData = regexp.MustCompile(`{\s*,\s*`).ReplaceAllString(stringData, "{")
 	return stringData
-}
-
-// ConvertRegistryOverridesToCommandLineFlag converts a map of registry sources and their mirrors into a string
-func ConvertRegistryOverridesToCommandLineFlag(registryOverrides map[string]string) string {
-	var commandLineFlagArray []string
-	for registrySource, registryReplacement := range registryOverrides {
-		commandLineFlagArray = append(commandLineFlagArray, fmt.Sprintf("%s=%s", registrySource, registryReplacement))
-	}
-	if len(commandLineFlagArray) > 0 {
-		sort.Strings(commandLineFlagArray)
-		return strings.Join(commandLineFlagArray, ",")
-	}
-	// this is the equivalent of null on a StringToString command line variable.
-	return "="
-}
-
-// ConvertOpenShiftImageRegistryOverridesToCommandLineFlag converts a map of image registry sources and their mirrors into a string
-func ConvertOpenShiftImageRegistryOverridesToCommandLineFlag(registryOverrides map[string][]string) string {
-	var commandLineFlagArray []string
-	var sortedRegistrySources []string
-
-	for k := range registryOverrides {
-		sortedRegistrySources = append(sortedRegistrySources, k)
-	}
-	sort.Strings(sortedRegistrySources)
-
-	for _, registrySource := range sortedRegistrySources {
-		registryReplacements := registryOverrides[registrySource]
-		for _, registryReplacement := range registryReplacements {
-			commandLineFlagArray = append(commandLineFlagArray, fmt.Sprintf("%s=%s", registrySource, registryReplacement))
-		}
-	}
-	if len(commandLineFlagArray) > 0 {
-		return strings.Join(commandLineFlagArray, ",")
-	}
-	// this is the equivalent of null on a StringToString command line variable.
-	return "="
-}
-
-// ConvertImageRegistryOverrideStringToMap translates the environment variable containing registry source to mirror
-// mappings back to a map[string]string structure that can be ingested by the registry image content policies release provider
-func ConvertImageRegistryOverrideStringToMap(envVar string) map[string][]string {
-	registryMirrorPair := strings.Split(envVar, ",")
-
-	if (len(registryMirrorPair) == 1 && registryMirrorPair[0] == "") || envVar == "=" {
-		return nil
-	}
-
-	imageRegistryOverrides := make(map[string][]string)
-
-	for _, pair := range registryMirrorPair {
-		registryMirror := strings.SplitN(pair, "=", 2)
-		if len(registryMirror) != 2 {
-			continue
-		}
-		registry := registryMirror[0]
-		mirror := registryMirror[1]
-
-		// Skip empty registry or mirror entries
-		if registry == "" || mirror == "" {
-			continue
-		}
-
-		imageRegistryOverrides[registry] = append(imageRegistryOverrides[registry], mirror)
-	}
-
-	return imageRegistryOverrides
 }
 
 func GetKubeClientSet() (kubeclient.Interface, error) {

@@ -10,6 +10,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/imageresolution"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
 	imgref "github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/reference"
 	"github.com/openshift/hypershift/support/util"
@@ -33,11 +34,11 @@ func (p *testImageMetadataProvider) GetDigest(ctx context.Context, imageRef stri
 
 func TestComputeCatalogImages(t *testing.T) {
 	tests := []struct {
-		name              string
-		releaseVersion    semver.Version
-		existingImages    []string
-		registryOverrides map[string][]string
-		expected          map[string]string
+		name           string
+		releaseVersion semver.Version
+		existingImages []string
+		overrides      imageresolution.ResolverConfig
+		expected       map[string]string
 	}{
 		{
 			name:           "All current release images are available",
@@ -81,12 +82,12 @@ func TestComputeCatalogImages(t *testing.T) {
 				"another.example.org/redhat/redhat-marketplace-index:v4.19",
 				"another.example.org/redhat/redhat-operator-index:v4.19",
 			},
-			registryOverrides: map[string][]string{
+			overrides: imageresolution.ResolverConfig{ImageRegistryMirrors: map[string][]string{
 				"registry.redhat.io/redhat": {
 					"example.org/test",
 					"another.example.org/redhat",
 				},
-			},
+			}},
 			expected: map[string]string{
 				"certified-operators": "example.org/test/certified-operator-index:v4.19",
 				"community-operators": "example.org/test/community-operator-index:v4.19",
@@ -103,12 +104,12 @@ func TestComputeCatalogImages(t *testing.T) {
 				"another.example.org/redhat/redhat-marketplace-index:v4.19",
 				"another.example.org/redhat/redhat-operator-index:v4.17",
 			},
-			registryOverrides: map[string][]string{
+			overrides: imageresolution.ResolverConfig{ImageRegistryMirrors: map[string][]string{
 				"registry.redhat.io/redhat": {
 					"example.org/test",
 					"another.example.org/redhat",
 				},
-			},
+			}},
 			expected: map[string]string{
 				"certified-operators": "example.org/test/certified-operator-index:v4.19",
 				"community-operators": "example.org/test/community-operator-index:v4.18",
@@ -126,12 +127,12 @@ func TestComputeCatalogImages(t *testing.T) {
 				"another.example.org/redhat/redhat-marketplace-index:v4.19",
 				"another.example.org/redhat/redhat-operator-index:v4.19",
 			},
-			registryOverrides: map[string][]string{
+			overrides: imageresolution.ResolverConfig{ImageRegistryMirrors: map[string][]string{
 				"registry.redhat.io": {
 					"example.org/test",
 					"another.example.org",
 				},
-			},
+			}},
 			expected: map[string]string{
 				"certified-operators": "example.org/test/certified-operator-index:v4.19",
 				"community-operators": "example.org/test/community-operator-index:v4.19",
@@ -215,12 +216,12 @@ func TestComputeCatalogImages(t *testing.T) {
 				"another.example.org/redhat/redhat-marketplace-index:v4.19",
 				"another.example.org/redhat/redhat-operator-index:v4.19",
 			},
-			registryOverrides: map[string][]string{
+			overrides: imageresolution.ResolverConfig{ImageRegistryMirrors: map[string][]string{
 				"registry.redhat.io": {
 					"example.org",
 					"another.example.org",
 				},
-			},
+			}},
 			expected: map[string]string{
 				"certified-operators": "example.org/redhat/certified-operator-index:v4.19",
 				"community-operators": "example.org/redhat/community-operator-index:v4.19",
@@ -236,7 +237,7 @@ func TestComputeCatalogImages(t *testing.T) {
 				return &tc.releaseVersion, nil
 			}, func(image string) (bool, error) {
 				return slices.Contains(tc.existingImages, image), nil
-			}, tc.registryOverrides)
+			}, tc.overrides)
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(result).To(Equal(tc.expected))
 		})
@@ -346,7 +347,7 @@ func TestGetCatalogImagesWithCache(t *testing.T) {
 	g := NewGomegaWithT(t)
 
 	// First call should not use the cache
-	result, err := getCatalogImagesWithCache(cacheKeyFn, releaseVersioFn, imageExistsFn, nil)
+	result, err := getCatalogImagesWithCache(cacheKeyFn, releaseVersioFn, imageExistsFn, imageresolution.ResolverConfig{})
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(result).To(Equal(
 		map[string]string{
@@ -358,7 +359,7 @@ func TestGetCatalogImagesWithCache(t *testing.T) {
 	))
 
 	// Next call should use the cache, even if we pass an alternate imageExistsFn
-	result, err = getCatalogImagesWithCache(cacheKeyFn, releaseVersioFn, only417ImgsExist, nil)
+	result, err = getCatalogImagesWithCache(cacheKeyFn, releaseVersioFn, only417ImgsExist, imageresolution.ResolverConfig{})
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(result).To(Equal(
 		map[string]string{
@@ -371,7 +372,7 @@ func TestGetCatalogImagesWithCache(t *testing.T) {
 
 	// If we change the cache key (such as different release), then the image lookup function should
 	// be called again
-	result, err = getCatalogImagesWithCache(alternateCacheKeyFn, releaseVersioFn, only417ImgsExist, nil)
+	result, err = getCatalogImagesWithCache(alternateCacheKeyFn, releaseVersioFn, only417ImgsExist, imageresolution.ResolverConfig{})
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(result).To(Equal(
 		map[string]string{
@@ -389,27 +390,27 @@ func TestImageLookupCacheKeyFn(t *testing.T) {
 	hc := &hyperv1.HostedControlPlane{}
 	hc.Spec.ReleaseImage = "registry.redhat.io/release:example"
 	pullSecret := []byte("12345")
-	registryOverrides := map[string][]string{
+	overrides := imageresolution.ResolverConfig{ImageRegistryMirrors: map[string][]string{
 		"test": {"one", "two"},
-	}
+	}}
 
 	// Test that hashes for the same input are the same
-	fn1 := imageLookupCacheKeyFn(hc, pullSecret, registryOverrides)
-	fn2 := imageLookupCacheKeyFn(hc, pullSecret, registryOverrides)
+	fn1 := imageLookupCacheKeyFn(hc, pullSecret, overrides)
+	fn2 := imageLookupCacheKeyFn(hc, pullSecret, overrides)
 	hash1 := util.HashSimple(fn1())
 	hash2 := util.HashSimple(fn2())
 	g.Expect(hash1).To(Equal(hash2))
 
 	// Test that if we change part of the key, the hashes will defer
 	hc.Spec.ReleaseImage = hc.Spec.ReleaseImage + "v2"
-	fn3 := imageLookupCacheKeyFn(hc, pullSecret, registryOverrides)
+	fn3 := imageLookupCacheKeyFn(hc, pullSecret, overrides)
 	hash3 := util.HashSimple(fn3())
 	g.Expect(hash3).ToNot(Equal(hash1))
 
-	registryOverrides = map[string][]string{
+	overrides = imageresolution.ResolverConfig{ImageRegistryMirrors: map[string][]string{
 		"test": {"one", "two", "three"},
-	}
-	fn4 := imageLookupCacheKeyFn(hc, pullSecret, registryOverrides)
+	}}
+	fn4 := imageLookupCacheKeyFn(hc, pullSecret, overrides)
 	hash4 := util.HashSimple(fn4())
 	g.Expect(hash4).ToNot(Equal(hash3))
 }

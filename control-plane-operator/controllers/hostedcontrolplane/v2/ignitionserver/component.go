@@ -3,7 +3,7 @@ package ignitionserver
 import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	component "github.com/openshift/hypershift/support/controlplane-component"
-	"github.com/openshift/hypershift/support/releaseinfo"
+	"github.com/openshift/hypershift/support/imageresolution"
 )
 
 const (
@@ -13,7 +13,7 @@ const (
 var _ component.ComponentOptions = &ignitionServer{}
 
 type ignitionServer struct {
-	releaseProvider      releaseinfo.ProviderWithOpenShiftImageRegistryOverrides
+	releaseProvider      *imageresolution.ProviderSet
 	defaultIngressDomain string
 }
 
@@ -32,7 +32,7 @@ func (r *ignitionServer) NeedsManagementKASAccess() bool {
 	return true
 }
 
-func NewComponent(releaseProvider releaseinfo.ProviderWithOpenShiftImageRegistryOverrides, defaultIngressDomain string) component.ControlPlaneComponent {
+func NewComponent(releaseProvider *imageresolution.ProviderSet, defaultIngressDomain string) component.ControlPlaneComponent {
 	ignition := &ignitionServer{
 		releaseProvider:      releaseProvider,
 		defaultIngressDomain: defaultIngressDomain,

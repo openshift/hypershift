@@ -8,15 +8,14 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
 	component "github.com/openshift/hypershift/support/controlplane-component"
-	"github.com/openshift/hypershift/support/releaseinfo"
+	"github.com/openshift/hypershift/support/imageresolution"
+	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	crfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
-
-	"go.uber.org/mock/gomock"
 )
 
 // TestAdaptDeployment verifies that adaptDeployment produces a deterministic deployment
@@ -63,11 +62,11 @@ func TestAdaptDeployment(t *testing.T) {
 				overrides = map[string][]string{}
 			}
 
-			ctrl := gomock.NewController(t)
-
-			mockRelease := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(ctrl)
-			mockRelease.EXPECT().GetOpenShiftImageRegistryOverrides().Return(overrides).AnyTimes()
-			mockRelease.EXPECT().GetRegistryOverrides().Return(map[string]string{}).AnyTimes()
+			providerSet, err := imageresolution.NewProviderSet().
+				WithImageRegistryMirrors(overrides).
+				WithReleaseProvider(&fakereleaseprovider.FakeReleaseProvider{}).
+				Build()
+			g.Expect(err).ToNot(HaveOccurred())
 
 			client := crfake.NewClientBuilder().WithScheme(api.Scheme).Build()
 
@@ -87,7 +86,7 @@ func TestAdaptDeployment(t *testing.T) {
 				HCP:     hcp,
 			}
 
-			ign := &ignitionServer{releaseProvider: mockRelease}
+			ign := &ignitionServer{releaseProvider: providerSet}
 
 			deployment := &appsv1.Deployment{
 				ObjectMeta: metav1.ObjectMeta{
@@ -105,7 +104,7 @@ func TestAdaptDeployment(t *testing.T) {
 				},
 			}
 
-			err := ign.adaptDeployment(cpContext, deployment)
+			err = ign.adaptDeployment(cpContext, deployment)
 			g.Expect(err).ToNot(HaveOccurred())
 
 			for _, container := range deployment.Spec.Template.Spec.Containers {

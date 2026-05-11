@@ -10,7 +10,7 @@ import (
 
 	"github.com/openshift/hypershift/ignition-server/controllers"
 	hyperapi "github.com/openshift/hypershift/support/api"
-	"github.com/openshift/hypershift/support/releaseinfo"
+	"github.com/openshift/hypershift/support/imageresolution"
 	"github.com/openshift/hypershift/support/util"
 
 	corev1 "k8s.io/api/core/v1"
@@ -99,9 +99,14 @@ func (o *RunLocalIgnitionProviderOptions) Run(ctx context.Context) error {
 		OpenShiftImageRegistryOverrides: map[string][]string{},
 	}
 
+	localProviderSet, err := imageresolution.NewProviderSet().Build()
+	if err != nil {
+		return fmt.Errorf("unable to create provider set: %w", err)
+	}
+
 	p := &controllers.LocalIgnitionProvider{
 		Client:                cl,
-		ReleaseProvider:       &releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator{},
+		ReleaseProvider:       localProviderSet,
 		ImageMetadataProvider: imageMetaDataProvider,
 		CloudProvider:         "",
 		Namespace:             o.Namespace,

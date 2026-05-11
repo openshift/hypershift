@@ -16,22 +16,12 @@ import (
 	"github.com/blang/semver"
 )
 
+//go:generate ../../hack/tools/bin/mockgen -source=releaseinfo.go -package=releaseinfo -destination=provider_mock.go
+
 // Provider knows how to find the release image metadata for an image referred
 // to by its pullspec.
 type Provider interface {
 	Lookup(ctx context.Context, image string, pullSecret []byte) (*ReleaseImage, error)
-}
-
-//go:generate ../../hack/tools/bin/mockgen -source=releaseinfo.go -package=releaseinfo -destination=providerwithregistryoverrides_mock.go
-type ProviderWithRegistryOverrides interface {
-	Provider
-	GetRegistryOverrides() map[string]string
-}
-
-type ProviderWithOpenShiftImageRegistryOverrides interface {
-	ProviderWithRegistryOverrides
-	GetOpenShiftImageRegistryOverrides() map[string][]string
-	GetMirroredReleaseImage() string
 }
 
 // ReleaseImage wraps an ImageStream with some utilities that help the user

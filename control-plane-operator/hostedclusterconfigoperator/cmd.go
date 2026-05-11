@@ -33,11 +33,10 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/spotremediation"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/operator"
 	hyperapi "github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/imageresolution"
 	"github.com/openshift/hypershift/support/labelenforcingclient"
-	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/supportedversion"
 	"github.com/openshift/hypershift/support/upsert"
-	"github.com/openshift/hypershift/support/util"
 
 	"k8s.io/client-go/rest"
 
@@ -244,39 +243,25 @@ func (o *HostedClusterConfigOperator) Run(ctx context.Context) error {
 		kubevirtInfraConfig = cpConfig
 	}
 
-	imageRegistryOverrides := map[string][]string{}
-	openShiftImgOverrides, ok := os.LookupEnv("OPENSHIFT_IMG_OVERRIDES")
-	if ok {
-		imageRegistryOverrides = util.ConvertImageRegistryOverrideStringToMap(openShiftImgOverrides)
+	imageRegistryMirrors, err := imageresolution.ParseImageRegistryMirrorsEnvVar(os.Getenv("OPENSHIFT_IMG_OVERRIDES"))
+	if err != nil {
+		return fmt.Errorf("failed to parse OPENSHIFT_IMG_OVERRIDES: %w", err)
 	}
-	if len(o.registryOverrides) > 0 {
-		if imageRegistryOverrides == nil {
-			imageRegistryOverrides = map[string][]string{}
-		}
-		for registry, override := range o.registryOverrides {
-			if _, exists := imageRegistryOverrides[registry]; !exists {
-				imageRegistryOverrides[registry] = []string{}
-			}
-			imageRegistryOverrides[registry] = append(imageRegistryOverrides[registry], override)
-		}
+	if imageRegistryMirrors == nil {
+		imageRegistryMirrors = map[string][]string{}
+	}
+	for registry, override := range o.registryOverrides {
+		imageRegistryMirrors[registry] = append(imageRegistryMirrors[registry], override)
 	}
 
-	releaseProvider := &releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator{
-		Delegate: &releaseinfo.RegistryMirrorProviderDecorator{
-			Delegate: &releaseinfo.StaticProviderDecorator{
-				Delegate: &releaseinfo.CachedProvider{
-					Inner: &releaseinfo.RegistryClientProvider{},
-					Cache: map[string]*releaseinfo.ReleaseImage{},
-				},
-			},
-			RegistryOverrides: nil,
-		},
-		OpenShiftImageRegistryOverrides: imageRegistryOverrides,
+	providerSet, err := imageresolution.NewProviderSet().
+		WithImageRegistryMirrors(imageRegistryMirrors).
+		Build()
+	if err != nil {
+		return fmt.Errorf("failed to build image resolution provider set: %w", err)
 	}
-
-	imageMetaDataProvider := &util.RegistryClientImageMetadataProvider{
-		OpenShiftImageRegistryOverrides: imageRegistryOverrides,
-	}
+	releaseProvider := providerSet
+	imageMetaDataProvider := providerSet.ImageMetadataProvider()
 
 	apiReadingClient, err := client.New(mgr.GetConfig(), client.Options{Scheme: hyperapi.Scheme})
 	if err != nil {

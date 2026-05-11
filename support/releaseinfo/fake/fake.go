@@ -18,7 +18,7 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-var _ releaseinfo.ProviderWithRegistryOverrides = &FakeReleaseProvider{}
+var _ releaseinfo.Provider = &FakeReleaseProvider{}
 
 type FakeReleaseProvider struct {
 	// Version of the returned release image. Defaults to 4.14.0 if unset.
@@ -130,18 +130,6 @@ func (f *FakeReleaseProvider) Lookup(_ context.Context, image string, _ []byte) 
 	}
 	releaseImage.ImageStream.Name = version
 	return releaseImage, nil
-}
-
-func (*FakeReleaseProvider) GetRegistryOverrides() map[string]string {
-	return nil
-}
-
-func (*FakeReleaseProvider) GetOpenShiftImageRegistryOverrides() map[string][]string {
-	return nil
-}
-
-func (*FakeReleaseProvider) GetMirroredReleaseImage() string {
-	return ""
 }
 
 func GetReleaseImage(ctx context.Context, hc *hyperv1.HostedCluster, client crclient.WithWatch, releaseProvider *FakeReleaseProvider) *releaseinfo.ReleaseImage {

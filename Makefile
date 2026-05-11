@@ -115,8 +115,16 @@ api-lint: $(GOLANGCI_LINT) $(KUBEAPILINTER_PLUGIN)
 api-lint-fix: $(GOLANGCI_LINT) $(KUBEAPILINTER_PLUGIN)
 	cd api && $(GOLANGCI_LINT) run --config ./.golangci.yml --fix -v --new-from-rev=${PULL_BASE_SHA}
 
+IMAGERESOLUTION_LINT := $(abspath bin/imageresolution-lint)
+$(IMAGERESOLUTION_LINT): support/imageresolution/lint/analyzer.go support/imageresolution/lint/cmd/main.go
+	$(GO) build -o $(IMAGERESOLUTION_LINT) ./support/imageresolution/lint/cmd/
+
+.PHONY: lint-imageresolution
+lint-imageresolution: $(IMAGERESOLUTION_LINT) generate
+	$(GO) vet -vettool=$(IMAGERESOLUTION_LINT) $$($(GO) list ./... | grep -v /vendor/ | grep -v /imageresolution)
+
 .PHONY: lint
-lint: generate
+lint: generate lint-imageresolution
 	$(MAKE) api-lint; api_rc=$$?; \
 	$(GOLANGCI_LINT) run --config ./.golangci.yml --modules-download-mode=readonly -v; main_rc=$$?; \
 	exit $$(( api_rc > main_rc ? api_rc : main_rc ))

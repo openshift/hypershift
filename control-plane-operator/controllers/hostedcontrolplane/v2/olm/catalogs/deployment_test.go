@@ -84,6 +84,47 @@ func TestCheckCatalogImageOverrides(t *testing.T) {
 	}
 }
 
+func TestGetCatalogImages(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name       string
+		annotation string
+		expectErr  string
+	}{
+		{
+			name:       "When OLMCatalogsISRegistryOverridesAnnotation contains malformed data, it should return a parse error",
+			annotation: "invalid_no_equals",
+			expectErr:  "failed to parse OLM catalog registry overrides annotation",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-hcp",
+					Namespace: "test-namespace",
+					Annotations: map[string]string{
+						hyperv1.OLMCatalogsISRegistryOverridesAnnotation: tc.annotation,
+					},
+				},
+			}
+
+			cpContext := component.WorkloadContext{
+				HCP: hcp,
+			}
+
+			_, err := getCatalogImages(cpContext, []byte{})
+			g.Expect(err).To(HaveOccurred())
+			g.Expect(err.Error()).To(ContainSubstring(tc.expectErr))
+		})
+	}
+}
+
 func TestGetCatalogImagesOverrides(t *testing.T) {
 	t.Parallel()
 
