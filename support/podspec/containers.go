@@ -243,3 +243,29 @@ func EnforceRestrictedSecurityContextToContainers(podSpec *corev1.PodSpec) error
 	}
 	return nil
 }
+
+// IsPodReady returns true if the pod has a Ready condition with status True.
+func IsPodReady(pod *corev1.Pod) bool {
+	if pod == nil {
+		return false
+	}
+	for _, condition := range pod.Status.Conditions {
+		if condition.Type == corev1.PodReady {
+			return condition.Status == corev1.ConditionTrue
+		}
+	}
+	return false
+}
+
+// ContainerPort returns the container port matching the given name, or the default
+// port if no matching named port is found.
+func ContainerPort(pod *corev1.Pod, portName string, defaultPort int32) int32 {
+	for i := range pod.Spec.Containers {
+		for j := range pod.Spec.Containers[i].Ports {
+			if pod.Spec.Containers[i].Ports[j].Name == portName {
+				return pod.Spec.Containers[i].Ports[j].ContainerPort
+			}
+		}
+	}
+	return defaultPort
+}
