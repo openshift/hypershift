@@ -220,7 +220,7 @@ func (r *Reconciler) reconcileInPlaceUpgrade(ctx context.Context, nodePoolUpgrad
 				log.Info("Reconciled MachineSet", "result", result)
 			}
 
-			return fmt.Errorf("degraded node found, cannot progress in-place upgrade. Degraded reason: %v", node.Annotations[MachineConfigDaemonMessageAnnotationKey])
+			return fmt.Errorf("degraded node %s found, cannot progress in-place upgrade. Degraded reason: %s", node.Name, node.Annotations[MachineConfigDaemonMessageAnnotationKey])
 		}
 
 		if nodeNeedsUpgrade(node, currentConfigVersionHash, targetConfigVersionHash) {
