@@ -427,31 +427,11 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
-	// Bubble up AWSDefaultSecurityGroupDeleted condition from the hostedControlPlane.
-	// We set this condition even if the HC is being deleted, so we can report blocking objects on deletion.
-	{
-		if hcp != nil && !hcp.DeletionTimestamp.IsZero() {
-			freshCondition := &metav1.Condition{
-				Type:               string(hyperv1.AWSDefaultSecurityGroupDeleted),
-				Status:             metav1.ConditionUnknown,
-				Reason:             hyperv1.StatusUnknownReason,
-				ObservedGeneration: hcluster.Generation,
-			}
-
-			securityGroupDeletionCondition := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.AWSDefaultSecurityGroupDeleted))
-			if securityGroupDeletionCondition != nil {
-				freshCondition = securityGroupDeletionCondition
-			}
-
-			oldCondition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.AWSDefaultSecurityGroupDeleted))
-			if oldCondition == nil || oldCondition.Message != freshCondition.Message {
-				freshCondition.ObservedGeneration = hcluster.Generation
-				meta.SetStatusCondition(&hcluster.Status.Conditions, *freshCondition)
-				// Persist status updates
-				if err := r.Client.Status().Update(ctx, hcluster); err != nil {
-					return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
-				}
-			}
+	// Bubble up AWSDefaultSecurityGroupDeleted condition from the hostedControlPlane to report blocking objects on deletion.
+	if condition, changed := computeAWSDefaultSGDeletedCondition(hcluster, hcp); changed {
+		meta.SetStatusCondition(&hcluster.Status.Conditions, *condition)
+		if err := r.Client.Status().Update(ctx, hcluster); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
 		}
 	}
 
@@ -3183,6 +3163,31 @@ func computeUnmanagedEtcdAvailability(hcluster *hyperv1.HostedCluster, unmanaged
 		Status: metav1.ConditionTrue,
 		Reason: hyperv1.UnmanagedEtcdAsExpected,
 	}
+}
+
+func computeAWSDefaultSGDeletedCondition(hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) (*metav1.Condition, bool) {
+	if hcluster.Spec.Platform.Type != hyperv1.AWSPlatform || hcp == nil || hcp.DeletionTimestamp.IsZero() {
+		return nil, false
+	}
+
+	freshCondition := &metav1.Condition{
+		Type:               string(hyperv1.AWSDefaultSecurityGroupDeleted),
+		Status:             metav1.ConditionUnknown,
+		Reason:             hyperv1.StatusUnknownReason,
+		ObservedGeneration: hcluster.Generation,
+	}
+
+	if sgCondition := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.AWSDefaultSecurityGroupDeleted)); sgCondition != nil {
+		freshCondition = sgCondition
+	}
+
+	oldCondition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.AWSDefaultSecurityGroupDeleted))
+	if oldCondition != nil && oldCondition.Message == freshCondition.Message {
+		return nil, false
+	}
+
+	freshCondition.ObservedGeneration = hcluster.Generation
+	return freshCondition, true
 }
 
 func computeAWSEndpointServiceCondition(awsEndpointServiceList hyperv1.AWSEndpointServiceList, conditionType hyperv1.ConditionType) metav1.Condition {
