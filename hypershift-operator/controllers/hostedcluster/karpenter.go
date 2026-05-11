@@ -118,18 +118,16 @@ spec:
 }
 
 // resolveKarpenterFinalizer removes the karpenter finalizer from the HCP
-// when the karpenter-operator cannot do so itself because the guest KAS is down.
+// when the karpenter-operator cannot do so itself. This covers two scenarios:
 //
-// This breaks the deadlock where:
-//  1. The HostedCluster deletion waits for the HCP to be removed
-//  2. The HCP can't be removed because it has the karpenter finalizer
-//  3. The karpenter-operator can't remove the finalizer because the guest KAS is down
-//     and it depends on guest-side watches to function
+//  1. The guest KAS is down during HostedCluster deletion, so the karpenter-operator
+//     cannot reach its guest-side watches to process the finalizer.
+//  2. AutoNode was disabled before the HostedCluster was deleted, so the karpenter-operator
+//     deployment was removed and cannot process the finalizer at all.
+//
+// Without this fallback the HCP would be stuck in terminating with the karpenter finalizer
+// blocking deletion indefinitely.
 func (r *HostedClusterReconciler) resolveKarpenterFinalizer(ctx context.Context, hc *hyperv1.HostedCluster) error {
-	if !karpenterutil.IsKarpenterEnabled(hc.Spec.AutoNode) {
-		return nil
-	}
-
 	log := ctrl.LoggerFrom(ctx)
 	cpNamespace := manifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name)
 
@@ -142,12 +140,19 @@ func (r *HostedClusterReconciler) resolveKarpenterFinalizer(ctx context.Context,
 		return nil
 	}
 
-	kasAvailable, err := isKASAvailable(ctx, hcp.Namespace, r.Client)
-	if err != nil {
-		return fmt.Errorf("failed to check KAS availability: %w", err)
-	}
-	if kasAvailable {
-		return nil
+	// When AutoNode is still enabled, defer to the karpenter-operator for graceful
+	// cleanup — only force-remove the finalizer once the guest KAS is down and the
+	// operator can no longer reach its watches.
+	// When AutoNode is disabled, the karpenter-operator deployment is already gone,
+	// so there is no controller to process the finalizer and we must remove it immediately.
+	if karpenterutil.IsKarpenterEnabled(hc.Spec.AutoNode) {
+		kasAvailable, err := isKASAvailable(ctx, hcp.Namespace, r.Client)
+		if err != nil {
+			return fmt.Errorf("failed to check KAS availability: %w", err)
+		}
+		if kasAvailable {
+			return nil
+		}
 	}
 
 	original := hcp.DeepCopy()
