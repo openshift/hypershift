@@ -957,9 +957,18 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 				Message: fmt.Sprintf("error listing awsendpointservices in namespace %s: %v", hcpNamespace, err),
 			}
 			meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
+			if hcluster.Spec.Platform.AWS != nil &&
+				hcluster.Spec.Platform.AWS.IngressDNSManagement == hyperv1.AWSIngressDNSManaged {
+				condition.Type = string(hyperv1.AWSIngressDNSAvailable)
+				meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
+			}
 		} else {
 			meta.SetStatusCondition(&hcluster.Status.Conditions, computeAWSEndpointServiceCondition(awsEndpointServiceList, hyperv1.AWSEndpointAvailable))
 			meta.SetStatusCondition(&hcluster.Status.Conditions, computeAWSEndpointServiceCondition(awsEndpointServiceList, hyperv1.AWSEndpointServiceAvailable))
+			if hcluster.Spec.Platform.AWS != nil &&
+				hcluster.Spec.Platform.AWS.IngressDNSManagement == hyperv1.AWSIngressDNSManaged {
+				meta.SetStatusCondition(&hcluster.Status.Conditions, computeAWSEndpointServiceCondition(awsEndpointServiceList, hyperv1.AWSIngressDNSAvailable))
+			}
 		}
 	}
 

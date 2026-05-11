@@ -25,6 +25,10 @@ const (
 	// created in the guest VPC
 	AWSEndpointAvailable ConditionType = "AWSEndpointAvailable"
 
+	// AWSIngressDNSAvailable indicates whether the Route53 ingress DNS zones
+	// and records have been successfully created in the customer's AWS account.
+	AWSIngressDNSAvailable ConditionType = "AWSIngressDNSAvailable"
+
 	AWSSuccessReason string = "AWSSuccess"
 	AWSErrorReason   string = "AWSError"
 )
@@ -56,7 +60,7 @@ type AWSEndpointServiceStatus struct {
 	// exist, then the Available condition will be false, reason AWSErrorReason,
 	// and the error reported in the message.
 	//
-	// Current condition types are: "Available"
+	// Current condition types are: "AWSEndpointServiceAvailable", "AWSEndpointAvailable", "AWSIngressDNSAvailable"
 	// +optional
 	// +listType=map
 	// +listMapKey=type
@@ -92,6 +96,18 @@ type AWSEndpointServiceStatus struct {
 	// SecurityGroupID is the ID of the security group.
 	// +optional
 	SecurityGroupID string `json:"securityGroupID,omitempty"`
+
+	// ingressPublicZoneID is the Route53 hosted zone ID for the public ingress zone
+	// created when IngressDNSManagement is Managed.
+	// +optional
+	// +kubebuilder:validation:MaxLength=32
+	IngressPublicZoneID string `json:"ingressPublicZoneID,omitempty"`
+
+	// ingressPrivateZoneID is the Route53 hosted zone ID for the private ingress zone
+	// created when IngressDNSManagement is Managed.
+	// +optional
+	// +kubebuilder:validation:MaxLength=32
+	IngressPrivateZoneID string `json:"ingressPrivateZoneID,omitempty"`
 }
 
 // +kubebuilder:object:root=true

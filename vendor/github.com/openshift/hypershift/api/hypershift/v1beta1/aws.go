@@ -309,6 +309,21 @@ type AWSCloudProviderConfig struct {
 	VPC string `json:"vpc"`
 }
 
+// AWSIngressDNSManagement specifies whether the control plane operator manages
+// Route53 hosted zones for ingress DNS in the customer's AWS account.
+type AWSIngressDNSManagement string
+
+const (
+	// AWSIngressDNSUnmanaged means the control plane operator does not create
+	// public/private ingress hosted zones. Only the .hypershift.local zone is managed.
+	AWSIngressDNSUnmanaged AWSIngressDNSManagement = "Unmanaged"
+
+	// AWSIngressDNSManaged means the control plane operator creates public and private
+	// Route53 hosted zones for ingress, creates a DNSEndpoint CR for NS delegation,
+	// and creates an _acme-challenge CNAME for cert-manager DNS01 CNAME-follow.
+	AWSIngressDNSManaged AWSIngressDNSManagement = "Managed"
+)
+
 // AWSEndpointAccessType specifies the publishing scope of cluster endpoints.
 type AWSEndpointAccessType string
 
@@ -414,6 +429,20 @@ type AWSPlatformSpec struct {
 	//
 	// +optional
 	SharedVPC *AWSSharedVPC `json:"sharedVPC,omitempty"`
+
+	// ingressDNSManagement specifies whether the control plane operator manages
+	// Route53 hosted zones for ingress DNS in the customer's AWS account.
+	// When set to "Managed", the CPO creates public and private ingress zones,
+	// a DNSEndpoint CR for NS delegation, and an _acme-challenge CNAME for
+	// cert-manager DNS01 CNAME-follow.
+	// When set to "Unmanaged" (the default), only the .hypershift.local zone is managed.
+	//
+	// +kubebuilder:validation:Enum=Unmanaged;Managed
+	// +kubebuilder:default=Unmanaged
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="ingressDNSManagement is immutable"
+	// +immutable
+	// +optional
+	IngressDNSManagement AWSIngressDNSManagement `json:"ingressDNSManagement,omitempty"`
 
 	// terminationHandlerQueueURL specifies the SQS queue URL for EC2 spot interruption events.
 	// This is required when using spot instances (marketType: Spot) in NodePools to enable

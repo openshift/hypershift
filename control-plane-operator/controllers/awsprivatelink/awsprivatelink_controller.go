@@ -34,6 +34,8 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -58,6 +60,12 @@ const (
 	defaultResync               = 10 * time.Hour
 	externalPrivateServiceLabel = "hypershift.openshift.io/external-private-service"
 )
+
+var dnsEndpointGVK = schema.GroupVersionKind{
+	Group:   "externaldns.k8s.io",
+	Version: "v1alpha1",
+	Kind:    "DNSEndpoint",
+}
 
 // PrivateServiceObserver watches a given Service type LB and reconciles
 // an awsEndpointService CR representation for it.
@@ -790,6 +798,32 @@ func (r *AWSEndpointServiceReconciler) reconcileAWSEndpointService(ctx context.C
 	awsEndpointService.Status.DNSNames = fqdns
 	awsEndpointService.Status.DNSZoneID = zoneID
 
+	if awsEndpointService.Name == manifests.PrivateRouterService("").Name &&
+		hcp.Spec.Platform.AWS != nil &&
+		hcp.Spec.Platform.AWS.IngressDNSManagement == hyperv1.AWSIngressDNSManaged {
+		dnsResult, err := reconcileIngressDNS(ctx, route53Client, hcp,
+			awsEndpointService.Status.IngressPublicZoneID,
+			awsEndpointService.Status.IngressPrivateZoneID)
+		if err != nil {
+			log.Error(err, "failed to reconcile ingress DNS")
+			setIngressDNSCondition(&awsEndpointService.Status.Conditions, metav1.ConditionFalse, hyperv1.AWSErrorReason, err.Error())
+			return err
+		}
+
+		awsEndpointService.Status.IngressPublicZoneID = dnsResult.PublicZoneID
+		awsEndpointService.Status.IngressPrivateZoneID = dnsResult.PrivateZoneID
+
+		if len(dnsResult.NSRecords) > 0 {
+			if err := r.reconcileDNSEndpoint(ctx, hcp, dnsResult.IngressDNS, dnsResult.NSRecords); err != nil {
+				log.Error(err, "failed to reconcile DNSEndpoint for ingress DNS")
+				setIngressDNSCondition(&awsEndpointService.Status.Conditions, metav1.ConditionFalse, hyperv1.AWSErrorReason, err.Error())
+				return err
+			}
+		}
+
+		setIngressDNSCondition(&awsEndpointService.Status.Conditions, metav1.ConditionTrue, hyperv1.AWSSuccessReason, "")
+	}
+
 	if isPublic, externalNames := netutil.IsPublicHCP(hcp), hcpExternalNames(hcp); !isPublic && len(externalNames) > 0 {
 		// only if not public and external names are configured, create services of type ExternalName so external-dns
 		// can create records for them
@@ -1100,6 +1134,40 @@ func (r *AWSEndpointServiceReconciler) delete(ctx context.Context, awsEndpointSe
 		log.Info("security group deleted", "id", awsEndpointService.Status.SecurityGroupID)
 	}
 
+	if awsEndpointService.Status.IngressPublicZoneID != "" || awsEndpointService.Status.IngressPrivateZoneID != "" {
+		if err := cleanupIngressDNS(ctx, route53Client,
+			awsEndpointService.Status.IngressPublicZoneID,
+			awsEndpointService.Status.IngressPrivateZoneID); err != nil {
+			return false, fmt.Errorf("failed to clean up ingress DNS zones: %w", err)
+		}
+		log.Info("ingress DNS zones cleaned up")
+
+		var hcpName string
+		hcpList := &hyperv1.HostedControlPlaneList{}
+		if err := r.List(ctx, hcpList, &client.ListOptions{Namespace: awsEndpointService.Namespace}); err == nil && len(hcpList.Items) == 1 {
+			hcpName = hcpList.Items[0].Name
+		}
+		if hcpName == "" {
+			for _, ref := range awsEndpointService.OwnerReferences {
+				if ref.Kind == "HostedControlPlane" {
+					hcpName = ref.Name
+					break
+				}
+			}
+		}
+		if hcpName != "" {
+			ep := &unstructured.Unstructured{}
+			ep.SetGroupVersionKind(dnsEndpointGVK)
+			ep.SetName(dnsEndpointName(hcpName))
+			ep.SetNamespace(awsEndpointService.Namespace)
+			if err := r.Delete(ctx, ep); err != nil && !apierrors.IsNotFound(err) {
+				log.Info("Failed to delete DNSEndpoint during cleanup", "name", ep.GetName(), "error", err.Error())
+			}
+		} else {
+			log.Info("Could not determine HCP name for DNSEndpoint cleanup, skipping")
+		}
+	}
+
 	zoneID := awsEndpointService.Status.DNSZoneID
 
 	for _, fqdn := range awsEndpointService.Status.DNSNames {
@@ -1211,4 +1279,81 @@ func equalIPRanges(a, b []ec2types.IpRange) bool {
 		}
 	}
 	return true
+}
+
+func setIngressDNSCondition(conditions *[]metav1.Condition, status metav1.ConditionStatus, reason, message string) {
+	meta.SetStatusCondition(conditions, metav1.Condition{
+		Type:    string(hyperv1.AWSIngressDNSAvailable),
+		Status:  status,
+		Reason:  reason,
+		Message: message,
+	})
+}
+
+func dnsEndpointName(hcpName string) string {
+	return hcpName + "-ingress-delegation"
+}
+
+func trimDNSName(dnsName string) string {
+	return strings.TrimSuffix(dnsName, ".")
+}
+
+func trimNameservers(nameservers []string) []string {
+	result := make([]string, len(nameservers))
+	for i, ns := range nameservers {
+		result[i] = strings.TrimSuffix(ns, ".")
+	}
+	return result
+}
+
+func (r *AWSEndpointServiceReconciler) reconcileDNSEndpoint(
+	ctx context.Context,
+	hcp *hyperv1.HostedControlPlane,
+	ingressDNSName string,
+	nameservers []string,
+) error {
+	log := ctrl.LoggerFrom(ctx)
+
+	dnsName := trimDNSName(ingressDNSName)
+	trimmed := trimNameservers(nameservers)
+	nsTargets := make([]interface{}, len(trimmed))
+	for i, ns := range trimmed {
+		nsTargets[i] = ns
+	}
+
+	dnsEndpoint := &unstructured.Unstructured{}
+	dnsEndpoint.SetGroupVersionKind(dnsEndpointGVK)
+	dnsEndpoint.SetName(dnsEndpointName(hcp.Name))
+	dnsEndpoint.SetNamespace(hcp.Namespace)
+
+	result, err := r.CreateOrUpdate(ctx, r, dnsEndpoint, func() error {
+		if err := controllerutil.SetControllerReference(hcp, dnsEndpoint, r.Scheme()); err != nil {
+			return fmt.Errorf("failed to set controller reference on DNSEndpoint: %w", err)
+		}
+		dnsEndpoint.Object["spec"] = map[string]interface{}{
+			"endpoints": []interface{}{
+				map[string]interface{}{
+					"dnsName":    dnsName,
+					"recordType": "NS",
+					"targets":    nsTargets,
+					"recordTTL":  float64(300),
+				},
+			},
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to reconcile DNSEndpoint: %w", err)
+	}
+
+	if result != controllerutil.OperationResultNone {
+		log.Info("Reconciled DNSEndpoint",
+			"result", result,
+			"name", dnsEndpoint.GetName(),
+			"namespace", dnsEndpoint.GetNamespace(),
+			"dnsName", dnsName,
+			"nameservers", nameservers)
+	}
+
+	return nil
 }

@@ -24,16 +24,17 @@ import (
 // AWSPlatformSpecApplyConfiguration represents a declarative configuration of the AWSPlatformSpec type for use
 // with apply.
 type AWSPlatformSpecApplyConfiguration struct {
-	Region                      *string                                   `json:"region,omitempty"`
-	CloudProviderConfig         *AWSCloudProviderConfigApplyConfiguration `json:"cloudProviderConfig,omitempty"`
-	ServiceEndpoints            []AWSServiceEndpointApplyConfiguration    `json:"serviceEndpoints,omitempty"`
-	RolesRef                    *AWSRolesRefApplyConfiguration            `json:"rolesRef,omitempty"`
-	ResourceTags                []AWSResourceTagApplyConfiguration        `json:"resourceTags,omitempty"`
-	EndpointAccess              *hypershiftv1beta1.AWSEndpointAccessType  `json:"endpointAccess,omitempty"`
-	AdditionalAllowedPrincipals []string                                  `json:"additionalAllowedPrincipals,omitempty"`
-	MultiArch                   *bool                                     `json:"multiArch,omitempty"`
-	SharedVPC                   *AWSSharedVPCApplyConfiguration           `json:"sharedVPC,omitempty"`
-	TerminationHandlerQueueURL  *string                                   `json:"terminationHandlerQueueURL,omitempty"`
+	Region                      *string                                    `json:"region,omitempty"`
+	CloudProviderConfig         *AWSCloudProviderConfigApplyConfiguration  `json:"cloudProviderConfig,omitempty"`
+	ServiceEndpoints            []AWSServiceEndpointApplyConfiguration     `json:"serviceEndpoints,omitempty"`
+	RolesRef                    *AWSRolesRefApplyConfiguration             `json:"rolesRef,omitempty"`
+	ResourceTags                []AWSResourceTagApplyConfiguration         `json:"resourceTags,omitempty"`
+	EndpointAccess              *hypershiftv1beta1.AWSEndpointAccessType   `json:"endpointAccess,omitempty"`
+	AdditionalAllowedPrincipals []string                                   `json:"additionalAllowedPrincipals,omitempty"`
+	MultiArch                   *bool                                      `json:"multiArch,omitempty"`
+	SharedVPC                   *AWSSharedVPCApplyConfiguration            `json:"sharedVPC,omitempty"`
+	IngressDNSManagement        *hypershiftv1beta1.AWSIngressDNSManagement `json:"ingressDNSManagement,omitempty"`
+	TerminationHandlerQueueURL  *string                                    `json:"terminationHandlerQueueURL,omitempty"`
 }
 
 // AWSPlatformSpecApplyConfiguration constructs a declarative configuration of the AWSPlatformSpec type for use with
@@ -123,6 +124,14 @@ func (b *AWSPlatformSpecApplyConfiguration) WithMultiArch(value bool) *AWSPlatfo
 // If called multiple times, the SharedVPC field is set to the value of the last call.
 func (b *AWSPlatformSpecApplyConfiguration) WithSharedVPC(value *AWSSharedVPCApplyConfiguration) *AWSPlatformSpecApplyConfiguration {
 	b.SharedVPC = value
+	return b
+}
+
+// WithIngressDNSManagement sets the IngressDNSManagement field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the IngressDNSManagement field is set to the value of the last call.
+func (b *AWSPlatformSpecApplyConfiguration) WithIngressDNSManagement(value hypershiftv1beta1.AWSIngressDNSManagement) *AWSPlatformSpecApplyConfiguration {
+	b.IngressDNSManagement = &value
 	return b
 }
 
