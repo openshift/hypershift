@@ -139,6 +139,12 @@ var (
 		// Allow 1 restart for token-minter sidecar race condition: https://issues.redhat.com/browse/GCP-441
 		// TODO(GCP-447): Remove this toleration once token-minter is injected as a native sidecar init container.
 		"gcp-cloud-controller-manager": 1,
+		// During minor version upgrades the controlplane-manager rolls out the new dns-operator
+		// before CVO applies the updated ClusterRole on the hosted cluster. The 4.22 dns-operator
+		// requires NetworkPolicy and APIServer RBAC that doesn't exist in 4.21, so it crash-loops
+		// until CVO catches up. This is a deterministic ordering issue, not a race.
+		// See https://issues.redhat.com/browse/OCPBUGS-78539
+		"dns-operator": 5,
 	}
 )
 
