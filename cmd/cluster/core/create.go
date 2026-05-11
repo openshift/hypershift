@@ -188,22 +188,11 @@ type RawCreateOptions struct {
 	// This is intended primarily for e2e testing and should be used with care.
 	BeforeApply func(crclient.Object) `json:"-"`
 
-	// Client is the Kubernetes client used for API operations during cluster creation.
-	// If nil, a client is created from the current kubeconfig via util.GetClient().
-	// This field enables dependency injection for unit testing without a live cluster.
-	Client crclient.Client `json:"-"`
+	util.ClientHolder
 
 	// These fields are reverse-completed by the aws CLI since we support a flag that projects
 	// them back up here
 	PublicKey, PrivateKey, PullSecret []byte
-}
-
-// GetClient returns the injected client if set, otherwise creates one from the current kubeconfig.
-func (opts *RawCreateOptions) GetClient() (crclient.Client, error) {
-	if opts.Client != nil {
-		return opts.Client, nil
-	}
-	return util.GetClient()
 }
 
 type resources struct {
@@ -964,7 +953,7 @@ func CreateCluster(ctx context.Context, rawOpts *RawCreateOptions, rawPlatform P
 	}
 
 	// Otherwise, apply the objects
-	client, err := rawOpts.GetClient()
+	client, err := opts.GetClient()
 	if err != nil {
 		return err
 	}

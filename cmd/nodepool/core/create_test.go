@@ -1,11 +1,13 @@
 package core
 
 import (
+	"context"
 	"testing"
 
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/support/api"
 	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
 
@@ -14,7 +16,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"sigs.k8s.io/controller-runtime/pkg/client"
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
@@ -88,7 +90,7 @@ func TestValidateHostedClusterPayloadSupportsNodePoolCPUArch(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			g := NewWithT(t)
 
-			var objs []client.Object
+			var objs []crclient.Object
 
 			if testCase.buildHostedClusterObject {
 				objs = append(objs, testCase.hc)
@@ -208,7 +210,7 @@ func TestValidMinorVersionCompatibility(t *testing.T) {
 			}
 
 			// Create the resources in the fake client
-			objs := []client.Object{hc, basePullSecret}
+			objs := []crclient.Object{hc, basePullSecret}
 			c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objs...).Build()
 
 			releaseProvider := &fakereleaseprovider.FakeReleaseProvider{
@@ -249,7 +251,7 @@ func TestValidMinorVersionCompatibility(t *testing.T) {
 			},
 		}
 
-		objs := []client.Object{hc, basePullSecret}
+		objs := []crclient.Object{hc, basePullSecret}
 		c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objs...).Build()
 
 		releaseProvider := &fakereleaseprovider.FakeReleaseProvider{
@@ -261,4 +263,114 @@ func TestValidMinorVersionCompatibility(t *testing.T) {
 		g.Expect(err).To(HaveOccurred())
 		g.Expect(err.Error()).To(Equal("NodePool minor version 4.14 is less than 4.15, which is the minimum NodePool version compatible with the 4.18 HostedCluster"))
 	})
+}
+
+func TestCreateNodePoolGetClient(t *testing.T) {
+	t.Run("When Client is injected it should return the injected client", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+		fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
+		opts := &CreateNodePoolOptions{
+			ClientHolder: util.ClientHolder{Client: fakeClient},
+		}
+		c, err := opts.GetClient()
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(c).To(Equal(fakeClient))
+	})
+
+	t.Run("When Client is nil it should fall back to util.GetClient", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+		opts := &CreateNodePoolOptions{}
+		c, err := opts.GetClient()
+		if err != nil {
+			g.Expect(c).To(BeNil())
+		} else {
+			g.Expect(c).NotTo(BeNil())
+		}
+	})
+}
+
+func TestCreateNodePoolWithInjectedClient(t *testing.T) {
+	t.Run("When Client is injected and NodePool already exists it should detect the duplicate", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		existingHC := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-cluster",
+				Namespace: "clusters",
+			},
+			Spec: hyperv1.HostedClusterSpec{
+				Platform: hyperv1.PlatformSpec{
+					Type: hyperv1.AWSPlatform,
+				},
+				Release: hyperv1.Release{
+					Image: "quay.io/openshift-release-dev/ocp-release:4.18.0-x86_64",
+				},
+				PullSecret: corev1.LocalObjectReference{
+					Name: "pull-secret",
+				},
+			},
+			Status: hyperv1.HostedClusterStatus{
+				PayloadArch: hyperv1.AMD64,
+				Version: &hyperv1.ClusterVersionStatus{
+					History: []configv1.UpdateHistory{
+						{
+							State:   configv1.CompletedUpdate,
+							Version: "4.18.0",
+						},
+					},
+				},
+			},
+		}
+
+		existingNP := &hyperv1.NodePool{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-np",
+				Namespace: "clusters",
+			},
+		}
+
+		pullSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "pull-secret",
+				Namespace: "clusters",
+			},
+			Data: map[string][]byte{
+				corev1.DockerConfigJsonKey: []byte(`{"auths":{"quay.io":{"auth":"","email":""}}}`),
+			},
+		}
+
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(api.Scheme).
+			WithObjects(existingHC, existingNP, pullSecret).
+			Build()
+
+		opts := &CreateNodePoolOptions{
+			Name:         "test-np",
+			Namespace:    "clusters",
+			ClusterName:  "test-cluster",
+			Arch:         "amd64",
+			ReleaseImage: "quay.io/openshift-release-dev/ocp-release:4.18.0-x86_64",
+			ClientHolder: util.ClientHolder{Client: fakeClient},
+		}
+
+		mockPlatform := &mockPlatformOptions{platformType: hyperv1.AWSPlatform}
+		err := opts.CreateNodePool(context.Background(), mockPlatform)
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("already exists"))
+	})
+}
+
+type mockPlatformOptions struct {
+	platformType hyperv1.PlatformType
+}
+
+func (m *mockPlatformOptions) UpdateNodePool(_ context.Context, _ *hyperv1.NodePool, _ *hyperv1.HostedCluster, _ crclient.Client) error {
+	return nil
+}
+
+func (m *mockPlatformOptions) Type() hyperv1.PlatformType {
+	return m.platformType
 }

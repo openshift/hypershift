@@ -19,7 +19,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/util/retry"
 
-	"sigs.k8s.io/controller-runtime/pkg/client"
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	"github.com/go-logr/logr"
@@ -45,18 +45,7 @@ type DestroyOptions struct {
 	CredentialSecretName  string
 	RedactBaseDomain      bool
 
-	// Client is the Kubernetes client used for API operations during cluster destruction.
-	// If nil, a client is created from the current kubeconfig via util.GetClient().
-	// This field enables dependency injection for unit testing without a live cluster.
-	Client client.Client
-}
-
-// GetClient returns the injected client if set, otherwise creates one from the current kubeconfig.
-func (o *DestroyOptions) GetClient() (client.Client, error) {
-	if o.Client != nil {
-		return o.Client, nil
-	}
-	return util.GetClient()
+	util.ClientHolder
 }
 
 type AWSPlatformDestroyOptions struct {
@@ -139,7 +128,7 @@ func DestroyCluster(ctx context.Context, hostedCluster *hyperv1.HostedCluster, o
 		// if the hostedcluster is needs to be modified during deletion, patch the
 		// hosted cluster before deleting it.
 		if !equality.Semantic.DeepEqual(&hostedCluster, original) {
-			if err := c.Patch(ctx, hostedCluster, client.MergeFrom(original)); err != nil {
+			if err := c.Patch(ctx, hostedCluster, crclient.MergeFrom(original)); err != nil {
 				if apierrors.IsNotFound(err) {
 					o.Log.Info("Hosted cluster not found, skipping client updates", "namespace", o.Namespace, "name", o.Name)
 				} else if !strings.Contains(err.Error(), "no new finalizers can be added if the object is being deleted") {
@@ -190,9 +179,9 @@ func DestroyCluster(ctx context.Context, hostedCluster *hyperv1.HostedCluster, o
 	return nil
 }
 
-func deleteCLISecrets(ctx context.Context, o *DestroyOptions, c client.Client) error {
+func deleteCLISecrets(ctx context.Context, o *DestroyOptions, c crclient.Client) error {
 	o.Log.Info("Deleting Secrets", "namespace", o.Namespace)
-	if err := c.DeleteAllOf(ctx, &v1.Secret{}, client.InNamespace(o.Namespace), client.MatchingLabels{util.AutoInfraLabelName: o.InfraID}); err != nil {
+	if err := c.DeleteAllOf(ctx, &v1.Secret{}, crclient.InNamespace(o.Namespace), crclient.MatchingLabels{util.AutoInfraLabelName: o.InfraID}); err != nil {
 		if apierrors.IsNotFound(err) {
 			o.Log.Info("Secrets not found based on labels, skipping delete", "namespace", o.Namespace, "labels", util.AutoInfraLabelName+":"+o.InfraID)
 		} else {
@@ -204,14 +193,14 @@ func deleteCLISecrets(ctx context.Context, o *DestroyOptions, c client.Client) e
 	return nil
 }
 
-func removeFinalizer(ctx context.Context, hostedCluster *hyperv1.HostedCluster, o *DestroyOptions, c client.Client) error {
+func removeFinalizer(ctx context.Context, hostedCluster *hyperv1.HostedCluster, o *DestroyOptions, c crclient.Client) error {
 	if !sets.New[string](hostedCluster.Finalizers...).Has(destroyFinalizer) {
 		return nil
 	}
 
 	if err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		// Ensure that we have the latest hostedCluster resource
-		if err := c.Get(ctx, client.ObjectKeyFromObject(hostedCluster), hostedCluster); err != nil {
+		if err := c.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster); err != nil {
 			if !apierrors.IsNotFound(err) {
 				return fmt.Errorf("failed to fetch latest HostedCluster: %w", err)
 			}
@@ -219,7 +208,7 @@ func removeFinalizer(ctx context.Context, hostedCluster *hyperv1.HostedCluster, 
 		}
 		original := hostedCluster.DeepCopy()
 		controllerutil.RemoveFinalizer(hostedCluster, destroyFinalizer)
-		if err := c.Patch(ctx, hostedCluster, client.MergeFromWithOptions(original, client.MergeFromWithOptimisticLock{})); err != nil {
+		if err := c.Patch(ctx, hostedCluster, crclient.MergeFromWithOptions(original, crclient.MergeFromWithOptimisticLock{})); err != nil {
 			if !apierrors.IsNotFound(err) {
 				return err
 			}
@@ -235,7 +224,7 @@ func removeFinalizer(ctx context.Context, hostedCluster *hyperv1.HostedCluster, 
 
 // waitForRestOfFinalizers waits for the hosted cluster to have only the CLI's finalizer remaining,
 // which should indicate the cluster was successfully torn down.
-func waitForRestOfFinalizers(ctx context.Context, hostedCluster *hyperv1.HostedCluster, o *DestroyOptions, c client.Client) error {
+func waitForRestOfFinalizers(ctx context.Context, hostedCluster *hyperv1.HostedCluster, o *DestroyOptions, c crclient.Client) error {
 	clusterDeleteCtx, clusterDeleteCtxCancel := context.WithTimeout(ctx, o.ClusterGracePeriod)
 	defer clusterDeleteCtxCancel()
 
@@ -274,7 +263,7 @@ func setFinalizer(hostedCluster *hyperv1.HostedCluster, o *DestroyOptions) {
 	o.Log.Info("Setting client finalizer for hosted cluster", "namespace", hostedCluster.Namespace, "name", hostedCluster.Name)
 }
 
-func waitForClusterDeletion(ctx context.Context, hostedCluster *hyperv1.HostedCluster, o *DestroyOptions, c client.Client) error {
+func waitForClusterDeletion(ctx context.Context, hostedCluster *hyperv1.HostedCluster, o *DestroyOptions, c crclient.Client) error {
 	clusterDeleteCtx, clusterDeleteCtxCancel := context.WithTimeout(ctx, o.ClusterGracePeriod)
 	defer clusterDeleteCtxCancel()
 

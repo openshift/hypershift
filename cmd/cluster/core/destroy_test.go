@@ -9,6 +9,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/log"
+	"github.com/openshift/hypershift/cmd/util"
 	hyperapi "github.com/openshift/hypershift/support/api"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -18,6 +19,7 @@ import (
 
 func TestDestroyCluster(t *testing.T) {
 	t.Run("When HostedCluster is nil and platform specifics provided it should call destroyPlatformSpecifics", func(t *testing.T) {
+		t.Parallel()
 		g := NewGomegaWithT(t)
 
 		platformSpecificsCalled := false
@@ -34,7 +36,7 @@ func TestDestroyCluster(t *testing.T) {
 			Namespace:          "clusters",
 			InfraID:            "test-infra",
 			Log:                log.Log,
-			Client:             fake.NewClientBuilder().WithScheme(hyperapi.Scheme).Build(),
+			ClientHolder:       util.ClientHolder{Client: fake.NewClientBuilder().WithScheme(hyperapi.Scheme).Build()},
 			AzurePlatform: AzurePlatformDestroyOptions{
 				Cloud:    "AzurePublicCloud",
 				Location: "eastus",
@@ -50,6 +52,7 @@ func TestDestroyCluster(t *testing.T) {
 	})
 
 	t.Run("When HostedCluster exists it should delete it using injected client", func(t *testing.T) {
+		t.Parallel()
 		g := NewGomegaWithT(t)
 
 		existingCluster := &hyperv1.HostedCluster{
@@ -76,7 +79,7 @@ func TestDestroyCluster(t *testing.T) {
 			Namespace:          "clusters",
 			InfraID:            "test-infra",
 			Log:                log.Log,
-			Client:             fakeClient,
+			ClientHolder:       util.ClientHolder{Client: fakeClient},
 		}
 
 		err := DestroyCluster(context.Background(), existingCluster, opts, mockPlatformSpecifics)
@@ -87,6 +90,7 @@ func TestDestroyCluster(t *testing.T) {
 
 func TestGetCluster(t *testing.T) {
 	t.Run("When HostedCluster exists it should return it using the injected client", func(t *testing.T) {
+		t.Parallel()
 		g := NewGomegaWithT(t)
 
 		existingCluster := &hyperv1.HostedCluster{
@@ -102,10 +106,10 @@ func TestGetCluster(t *testing.T) {
 			Build()
 
 		opts := &DestroyOptions{
-			Name:      "test-cluster",
-			Namespace: "clusters",
-			Log:       log.Log,
-			Client:    fakeClient,
+			Name:         "test-cluster",
+			Namespace:    "clusters",
+			Log:          log.Log,
+			ClientHolder: util.ClientHolder{Client: fakeClient},
 		}
 
 		cluster, err := GetCluster(context.Background(), opts)
@@ -116,6 +120,7 @@ func TestGetCluster(t *testing.T) {
 	})
 
 	t.Run("When HostedCluster does not exist it should return nil", func(t *testing.T) {
+		t.Parallel()
 		g := NewGomegaWithT(t)
 
 		fakeClient := fake.NewClientBuilder().
@@ -123,11 +128,11 @@ func TestGetCluster(t *testing.T) {
 			Build()
 
 		opts := &DestroyOptions{
-			Name:      "nonexistent-cluster",
-			Namespace: "clusters",
-			InfraID:   "test-infra",
-			Log:       log.Log,
-			Client:    fakeClient,
+			Name:         "nonexistent-cluster",
+			Namespace:    "clusters",
+			InfraID:      "test-infra",
+			Log:          log.Log,
+			ClientHolder: util.ClientHolder{Client: fakeClient},
 		}
 
 		cluster, err := GetCluster(context.Background(), opts)

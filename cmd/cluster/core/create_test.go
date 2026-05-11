@@ -9,6 +9,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/cmd/util"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
@@ -891,10 +892,11 @@ func TestGetServicePublishingStrategyMapping(t *testing.T) {
 
 func TestGetClient(t *testing.T) {
 	t.Run("When Client is injected it should return the injected client", func(t *testing.T) {
+		t.Parallel()
 		g := NewWithT(t)
 		fakeClient := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).Build()
 		opts := &RawCreateOptions{
-			Client: fakeClient,
+			ClientHolder: util.ClientHolder{Client: fakeClient},
 		}
 		client, err := opts.GetClient()
 		g.Expect(err).NotTo(HaveOccurred())
@@ -902,18 +904,21 @@ func TestGetClient(t *testing.T) {
 	})
 
 	t.Run("When Client is nil it should fall back to util.GetClient", func(t *testing.T) {
-		// This test verifies that when no client is injected, GetClient
-		// delegates to util.GetClient(). We don't assert success or failure
-		// because the result depends on whether a kubeconfig is available
-		// in the environment. The key behavior is that the injected client
-		// (if set) takes precedence over the fallback.
+		t.Parallel()
+		g := NewWithT(t)
 		opts := &RawCreateOptions{}
-		_, _ = opts.GetClient()
+		c, err := opts.GetClient()
+		if err != nil {
+			g.Expect(c).To(BeNil())
+		} else {
+			g.Expect(c).NotTo(BeNil())
+		}
 	})
 }
 
 func TestValidateWithInjectedClient(t *testing.T) {
 	t.Run("When Client is injected and VersionCheck is enabled it should use injected client for version validation", func(t *testing.T) {
+		t.Parallel()
 		g := NewWithT(t)
 		ctx := t.Context()
 		tempDir := t.TempDir()
@@ -945,7 +950,7 @@ func TestValidateWithInjectedClient(t *testing.T) {
 			PullSecretFile: pullSecretFile,
 			Arch:           "amd64",
 			VersionCheck:   true,
-			Client:         fakeClient,
+			ClientHolder:   util.ClientHolder{Client: fakeClient},
 			Render:         true,
 		}
 
@@ -958,6 +963,7 @@ func TestValidateWithInjectedClient(t *testing.T) {
 	})
 
 	t.Run("When Client is injected and cluster already exists it should detect the duplicate", func(t *testing.T) {
+		t.Parallel()
 		g := NewWithT(t)
 		ctx := t.Context()
 		tempDir := t.TempDir()
@@ -984,7 +990,7 @@ func TestValidateWithInjectedClient(t *testing.T) {
 			Namespace:      "clusters",
 			PullSecretFile: pullSecretFile,
 			Arch:           "amd64",
-			Client:         fakeClient,
+			ClientHolder:   util.ClientHolder{Client: fakeClient},
 		}
 
 		// Validate should detect the existing cluster and return an error,

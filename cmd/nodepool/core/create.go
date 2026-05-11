@@ -35,18 +35,7 @@ type CreateNodePoolOptions struct {
 	Arch            string
 	AutoRepair      bool
 
-	// Client is the Kubernetes client used for API operations during nodepool creation.
-	// If nil, a client is created from the current kubeconfig via util.GetClient().
-	// This field enables dependency injection for unit testing without a live cluster.
-	Client crclient.Client
-}
-
-// GetClient returns the injected client if set, otherwise creates one from the current kubeconfig.
-func (o *CreateNodePoolOptions) GetClient() (crclient.Client, error) {
-	if o.Client != nil {
-		return o.Client, nil
-	}
-	return util.GetClient()
+	util.ClientHolder
 }
 
 type PlatformOptions interface {

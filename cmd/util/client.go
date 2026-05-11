@@ -29,6 +29,22 @@ func GetConfig() (*rest.Config, error) {
 	return cfg, nil
 }
 
+// ClientHolder provides dependency injection for Kubernetes clients.
+// Embed it in option structs to get a Client field and GetClient() method.
+type ClientHolder struct {
+	// Client is the Kubernetes client used for API operations.
+	// If nil, a client is created from the current kubeconfig via GetClient().
+	Client crclient.Client `json:"-"`
+}
+
+// GetClient returns the injected client if set, otherwise creates one from the current kubeconfig.
+func (h *ClientHolder) GetClient() (crclient.Client, error) {
+	if h.Client != nil {
+		return h.Client, nil
+	}
+	return GetClient()
+}
+
 // GetClient creates a controller-runtime client for Kubernetes from the current kubeconfig.
 func GetClient() (crclient.Client, error) {
 	config, err := GetConfig()
