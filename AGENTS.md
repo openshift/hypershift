@@ -139,6 +139,10 @@ Please see /hypershift/.cursor/rules/code-formatting.mdc
 ### CRD API Machinery Fundamentals
 See api/AGENTS.md
 
+### Validation: CEL Over Webhooks
+
+Do not add new validation logic to the admission webhook. Use CEL validation rules instead. See .claude/rules/webhook-validation.md for rationale and guidance.
+
 ### Design Invariants
 
 See [docs/content/reference/goals-and-design-invariants.md](docs/content/reference/goals-and-design-invariants.md) for security and architectural invariants that all code changes must respect.

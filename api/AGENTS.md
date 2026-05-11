@@ -45,6 +45,7 @@ To avoid introducing new dependencies, do not add utils or methods to the API ty
 - **OpenAPI schema validation only runs when a key is present in the serialized object.** if a field is omitted, the validation never executes. This is why `MinLength=1` on an optional field is safe: the constraint only fires when the user actually provides a value.
 - **Optionality and min constraints are independent concerns.** An optional field with `MinLength=1` means "you don't have to set this, but if you do, it can't be empty." These do not conflict.
 - **Admission-time validation rejects the write immediately.** Controller-time validation accepts the write, the user assumes success, and discovers the problem later via conditions or logs. Always prefer admission-time via CEL over controller-time validation.
+- **Use CEL rules, not webhooks, for new validation.** HyperShift deliberately avoids admission webhooks because they add latency (especially in hosted-on-hosted topologies like IBM Cloud where requests traverse konnectivity), require TLS cert management, and couple resource availability to a running webhook service. The existing webhook is scoped to KubeVirt platform defaults and is not a general extension point. Add new validation as CEL markers on the API types in this module.
 
 ### Immutability
 
