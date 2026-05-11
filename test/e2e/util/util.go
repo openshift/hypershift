@@ -2326,6 +2326,19 @@ func EnsureKubeAPIDNSNameCustomCert(t *testing.T, ctx context.Context, mgmtClien
 			customApiServerHost = fmt.Sprintf("api-custom-cert-%s.%s", entryHostedCluster.Spec.InfraID, serviceDomain)
 		}
 
+		// For AWS, use ExternalDNSDomain if set, otherwise fall back to BaseDomain for local development
+		if entryHostedCluster.Spec.Platform.Type == hyperv1.AWSPlatform {
+			if clusterOpts.ExternalDNSDomain != "" {
+				serviceDomain = clusterOpts.ExternalDNSDomain
+				customApiServerHost = fmt.Sprintf("api-custom-cert-%s.%s", entryHostedCluster.Spec.InfraID, serviceDomain)
+			} else if clusterOpts.BaseDomain != "" {
+				// Use base domain for local development environments where external-dns is not available
+				serviceDomain = clusterOpts.BaseDomain
+				customApiServerHost = fmt.Sprintf("api-custom-cert-%s.%s", entryHostedCluster.Spec.InfraID, serviceDomain)
+				t.Logf("Using base domain for custom cert DNS: %s", serviceDomain)
+			}
+		}
+
 		g := NewWithT(t)
 		if !netutil.IsPublicHC(entryHostedCluster) {
 			return

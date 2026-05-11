@@ -79,6 +79,27 @@ make update                   # Full update (api-deps, workspace-sync, deps, api
 
 See .claude/skills/dev
 
+## Local Development Environment
+
+For detailed instructions on local development workflows including:
+- Building custom operator images
+- Installing HyperShift with custom images
+- Creating and managing hosted clusters
+- Running E2E tests
+- Iteration workflows
+
+See the comprehensive guides in:
+- **[HACKING.md](./HACKING.md)** - General development how-to guides
+- **[.claude/skills/dev/](./.claude/skills/dev/)** - Step-by-step development skills for specific tasks:
+  - `build-ho-image` - Building HyperShift operator images
+  - `build-cpo-image` - Building control plane operator images
+  - `install-ho-aws` - Installing HyperShift on AWS
+  - `create-hc-aws` - Creating hosted clusters
+  - `e2e-run-aws` - Running and iterating on E2E tests
+  - `destroy-hc-aws` - Cleaning up hosted clusters
+
+These skills include environment setup, prerequisites, troubleshooting, and iteration workflows.
+
 ## Testing Strategy
 
 ### Unit Tests
