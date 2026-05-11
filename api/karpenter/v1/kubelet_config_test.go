@@ -26,10 +26,10 @@ func TestKubeletConfigurationMarshalRoundTrip(t *testing.T) {
 					"cpu":    "200m",
 					"memory": "512Mi",
 				},
-				EvictionHard: map[string]string{
+				EvictionHard: map[string]EvictionThreshold{
 					"memory.available": "100Mi",
 				},
-				EvictionSoft: map[string]string{
+				EvictionSoft: map[string]EvictionThreshold{
 					"memory.available": "200Mi",
 				},
 				EvictionSoftGracePeriod: map[string]string{

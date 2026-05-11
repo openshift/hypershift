@@ -123,14 +123,14 @@ func (in *KubeletConfiguration) DeepCopyInto(out *KubeletConfiguration) {
 	}
 	if in.EvictionHard != nil {
 		in, out := &in.EvictionHard, &out.EvictionHard
-		*out = make(map[string]string, len(*in))
+		*out = make(map[string]EvictionThreshold, len(*in))
 		for key, val := range *in {
 			(*out)[key] = val
 		}
 	}
 	if in.EvictionSoft != nil {
 		in, out := &in.EvictionSoft, &out.EvictionSoft
-		*out = make(map[string]string, len(*in))
+		*out = make(map[string]EvictionThreshold, len(*in))
 		for key, val := range *in {
 			(*out)[key] = val
 		}

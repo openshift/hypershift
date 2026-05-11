@@ -269,6 +269,10 @@ spec:
                     type: boolean
                   evictionHard:
                     additionalProperties:
+                      description: |-
+                        EvictionThreshold is a threshold value for a kubelet eviction signal.
+                        Values are either a percentage (e.g. "10%") or a Kubernetes quantity (e.g. "100Mi").
+                      maxLength: 64
                       type: string
                     description: evictionHard is a map of signal names to quantities
                       that defines hard eviction thresholds.
@@ -288,6 +292,10 @@ spec:
                     type: integer
                   evictionSoft:
                     additionalProperties:
+                      description: |-
+                        EvictionThreshold is a threshold value for a kubelet eviction signal.
+                        Values are either a percentage (e.g. "10%") or a Kubernetes quantity (e.g. "100Mi").
+                      maxLength: 64
                       type: string
                     description: evictionSoft is a map of signal names to quantities
                       that defines soft eviction thresholds.
@@ -396,6 +404,17 @@ spec:
                     evictionSoft
                   rule: '!has(self.evictionSoftGracePeriod) || (has(self.evictionSoft)
                     && self.evictionSoftGracePeriod.all(e, e in self.evictionSoft))'
+                - message: evictionSoft threshold must be greater than or equal to
+                    evictionHard threshold for the same signal (soft eviction should
+                    fire before hard)
+                  rule: '!has(self.evictionHard) || !has(self.evictionSoft) || self.evictionHard.all(key,
+                    !(key in self.evictionSoft) || ((self.evictionSoft[key].endsWith(''%'')
+                    && self.evictionHard[key].endsWith(''%'')) ? (self.evictionSoft[key].size()
+                    <= 1 || self.evictionHard[key].size() <= 1 || double(self.evictionSoft[key].substring(0,
+                    self.evictionSoft[key].size() - 1)) >= double(self.evictionHard[key].substring(0,
+                    self.evictionHard[key].size() - 1))) : (!(isQuantity(self.evictionSoft[key])
+                    && isQuantity(self.evictionHard[key])) || quantity(self.evictionSoft[key]).compareTo(quantity(self.evictionHard[key]))
+                    >= 0)))'
               metadataOptions:
                 description: |-
                   metadataOptions contains parameters for specifying the exposure of the

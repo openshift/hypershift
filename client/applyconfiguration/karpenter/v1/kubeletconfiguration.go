@@ -17,20 +17,24 @@ limitations under the License.
 
 package v1
 
+import (
+	karpenterv1 "github.com/openshift/hypershift/api/karpenter/v1"
+)
+
 // KubeletConfigurationApplyConfiguration represents a declarative configuration of the KubeletConfiguration type for use
 // with apply.
 type KubeletConfigurationApplyConfiguration struct {
-	MaxPods                     *int32            `json:"maxPods,omitempty"`
-	PodsPerCore                 *int32            `json:"podsPerCore,omitempty"`
-	SystemReserved              map[string]string `json:"systemReserved,omitempty"`
-	KubeReserved                map[string]string `json:"kubeReserved,omitempty"`
-	EvictionHard                map[string]string `json:"evictionHard,omitempty"`
-	EvictionSoft                map[string]string `json:"evictionSoft,omitempty"`
-	EvictionSoftGracePeriod     map[string]string `json:"evictionSoftGracePeriod,omitempty"`
-	EvictionMaxPodGracePeriod   *int32            `json:"evictionMaxPodGracePeriod,omitempty"`
-	ImageGCHighThresholdPercent *int32            `json:"imageGCHighThresholdPercent,omitempty"`
-	ImageGCLowThresholdPercent  *int32            `json:"imageGCLowThresholdPercent,omitempty"`
-	CPUCFSQuota                 *bool             `json:"cpuCFSQuota,omitempty"`
+	MaxPods                     *int32                                   `json:"maxPods,omitempty"`
+	PodsPerCore                 *int32                                   `json:"podsPerCore,omitempty"`
+	SystemReserved              map[string]string                        `json:"systemReserved,omitempty"`
+	KubeReserved                map[string]string                        `json:"kubeReserved,omitempty"`
+	EvictionHard                map[string]karpenterv1.EvictionThreshold `json:"evictionHard,omitempty"`
+	EvictionSoft                map[string]karpenterv1.EvictionThreshold `json:"evictionSoft,omitempty"`
+	EvictionSoftGracePeriod     map[string]string                        `json:"evictionSoftGracePeriod,omitempty"`
+	EvictionMaxPodGracePeriod   *int32                                   `json:"evictionMaxPodGracePeriod,omitempty"`
+	ImageGCHighThresholdPercent *int32                                   `json:"imageGCHighThresholdPercent,omitempty"`
+	ImageGCLowThresholdPercent  *int32                                   `json:"imageGCLowThresholdPercent,omitempty"`
+	CPUCFSQuota                 *bool                                    `json:"cpuCFSQuota,omitempty"`
 }
 
 // KubeletConfigurationApplyConfiguration constructs a declarative configuration of the KubeletConfiguration type for use with
@@ -87,9 +91,9 @@ func (b *KubeletConfigurationApplyConfiguration) WithKubeReserved(entries map[st
 // and returns the receiver, so that objects can be build by chaining "With" function invocations.
 // If called multiple times, the entries provided by each call will be put on the EvictionHard field,
 // overwriting an existing map entries in EvictionHard field with the same key.
-func (b *KubeletConfigurationApplyConfiguration) WithEvictionHard(entries map[string]string) *KubeletConfigurationApplyConfiguration {
+func (b *KubeletConfigurationApplyConfiguration) WithEvictionHard(entries map[string]karpenterv1.EvictionThreshold) *KubeletConfigurationApplyConfiguration {
 	if b.EvictionHard == nil && len(entries) > 0 {
-		b.EvictionHard = make(map[string]string, len(entries))
+		b.EvictionHard = make(map[string]karpenterv1.EvictionThreshold, len(entries))
 	}
 	for k, v := range entries {
 		b.EvictionHard[k] = v
@@ -101,9 +105,9 @@ func (b *KubeletConfigurationApplyConfiguration) WithEvictionHard(entries map[st
 // and returns the receiver, so that objects can be build by chaining "With" function invocations.
 // If called multiple times, the entries provided by each call will be put on the EvictionSoft field,
 // overwriting an existing map entries in EvictionSoft field with the same key.
-func (b *KubeletConfigurationApplyConfiguration) WithEvictionSoft(entries map[string]string) *KubeletConfigurationApplyConfiguration {
+func (b *KubeletConfigurationApplyConfiguration) WithEvictionSoft(entries map[string]karpenterv1.EvictionThreshold) *KubeletConfigurationApplyConfiguration {
 	if b.EvictionSoft == nil && len(entries) > 0 {
-		b.EvictionSoft = make(map[string]string, len(entries))
+		b.EvictionSoft = make(map[string]karpenterv1.EvictionThreshold, len(entries))
 	}
 	for k, v := range entries {
 		b.EvictionSoft[k] = v

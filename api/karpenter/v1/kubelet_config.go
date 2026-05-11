@@ -27,6 +27,11 @@ func init() {
 	}
 }
 
+// EvictionThreshold is a threshold value for a kubelet eviction signal.
+// Values are either a percentage (e.g. "10%") or a Kubernetes quantity (e.g. "100Mi").
+// +kubebuilder:validation:MaxLength=64
+type EvictionThreshold string
+
 // KubeletConfiguration configures kubelet settings for nodes provisioned by this NodeClass.
 // These settings are injected into the node's ignition configuration via MachineConfig.
 // The fields listed below are validated at admission time. Additional kubelet configuration
@@ -42,6 +47,7 @@ func init() {
 // +kubebuilder:validation:XValidation:rule="!has(self.podsPerCore) || !has(self.maxPods) || self.podsPerCore <= self.maxPods",message="podsPerCore must not exceed maxPods"
 // +kubebuilder:validation:XValidation:rule="!has(self.evictionSoft) || (has(self.evictionSoftGracePeriod) && self.evictionSoft.all(e, e in self.evictionSoftGracePeriod))",message="evictionSoft entry does not have a matching evictionSoftGracePeriod"
 // +kubebuilder:validation:XValidation:rule="!has(self.evictionSoftGracePeriod) || (has(self.evictionSoft) && self.evictionSoftGracePeriod.all(e, e in self.evictionSoft))",message="evictionSoftGracePeriod entry does not have a matching evictionSoft"
+// +kubebuilder:validation:XValidation:rule="!has(self.evictionHard) || !has(self.evictionSoft) || self.evictionHard.all(key, !(key in self.evictionSoft) || ((self.evictionSoft[key].endsWith('%') && self.evictionHard[key].endsWith('%')) ? (self.evictionSoft[key].size() <= 1 || self.evictionHard[key].size() <= 1 || double(self.evictionSoft[key].substring(0, self.evictionSoft[key].size() - 1)) >= double(self.evictionHard[key].substring(0, self.evictionHard[key].size() - 1))) : (!(isQuantity(self.evictionSoft[key]) && isQuantity(self.evictionHard[key])) || quantity(self.evictionSoft[key]).compareTo(quantity(self.evictionHard[key])) >= 0)))",message="evictionSoft threshold must be greater than or equal to evictionHard threshold for the same signal (soft eviction should fire before hard)"
 type KubeletConfiguration struct {
 	// maxPods is the maximum number of pods that can run on a node.
 	// The value must be between 1 and 2500, inclusive.
@@ -81,14 +87,14 @@ type KubeletConfiguration struct {
 	// +kubebuilder:validation:MinProperties=1
 	// +kubebuilder:validation:MaxProperties=20
 	// +optional
-	EvictionHard map[string]string `json:"evictionHard,omitempty"`
+	EvictionHard map[string]EvictionThreshold `json:"evictionHard,omitempty"`
 	// evictionSoft is a map of signal names to quantities that defines soft eviction thresholds.
 	// +kubebuilder:validation:XValidation:message="valid keys for evictionSoft are ['memory.available','nodefs.available','nodefs.inodesFree','imagefs.available','imagefs.inodesFree','pid.available']",rule="self.all(x, x in ['memory.available','nodefs.available','nodefs.inodesFree','imagefs.available','imagefs.inodesFree','pid.available'])"
 	// +kubebuilder:validation:XValidation:message="evictionSoft values must not be empty",rule="self.all(x, self[x].size() > 0)"
 	// +kubebuilder:validation:MinProperties=1
 	// +kubebuilder:validation:MaxProperties=20
 	// +optional
-	EvictionSoft map[string]string `json:"evictionSoft,omitempty"`
+	EvictionSoft map[string]EvictionThreshold `json:"evictionSoft,omitempty"`
 	// evictionSoftGracePeriod is a map of signal names to quantities that defines grace periods
 	// for each soft eviction signal.
 	// +kubebuilder:validation:XValidation:message="valid keys for evictionSoftGracePeriod are ['memory.available','nodefs.available','nodefs.inodesFree','imagefs.available','imagefs.inodesFree','pid.available']",rule="self.all(x, x in ['memory.available','nodefs.available','nodefs.inodesFree','imagefs.available','imagefs.inodesFree','pid.available'])"

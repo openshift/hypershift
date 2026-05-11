@@ -571,6 +571,172 @@ tests:
           evictionSoftGracePeriod:
             memory.available: "30s"
 
+  # --- evictionSoft >= evictionHard threshold ordering validation ---
+  - name: When kubelet evictionSoft quantity threshold is less than evictionHard it should fail
+    initial: |
+      apiVersion: karpenter.hypershift.openshift.io/v1
+      kind: OpenshiftEC2NodeClass
+      spec:
+        subnetSelectorTerms:
+        - tags:
+            env: test
+        securityGroupSelectorTerms:
+        - id: sg-0123456789abcdef0
+        kubelet:
+          evictionHard:
+            memory.available: "200Mi"
+          evictionSoft:
+            memory.available: "100Mi"
+          evictionSoftGracePeriod:
+            memory.available: "30s"
+    expectedError: "evictionSoft threshold must be greater than or equal to evictionHard threshold for the same signal (soft eviction should fire before hard)"
+
+  - name: When kubelet evictionSoft percentage threshold is less than evictionHard it should fail
+    initial: |
+      apiVersion: karpenter.hypershift.openshift.io/v1
+      kind: OpenshiftEC2NodeClass
+      spec:
+        subnetSelectorTerms:
+        - tags:
+            env: test
+        securityGroupSelectorTerms:
+        - id: sg-0123456789abcdef0
+        kubelet:
+          evictionHard:
+            nodefs.available: "15%"
+          evictionSoft:
+            nodefs.available: "10%"
+          evictionSoftGracePeriod:
+            nodefs.available: "1m0s"
+    expectedError: "evictionSoft threshold must be greater than or equal to evictionHard threshold for the same signal (soft eviction should fire before hard)"
+
+  - name: When kubelet evictionSoft quantity threshold equals evictionHard it should pass
+    initial: |
+      apiVersion: karpenter.hypershift.openshift.io/v1
+      kind: OpenshiftEC2NodeClass
+      spec:
+        subnetSelectorTerms:
+        - tags:
+            env: test
+        securityGroupSelectorTerms:
+        - id: sg-0123456789abcdef0
+        kubelet:
+          evictionHard:
+            memory.available: "100Mi"
+          evictionSoft:
+            memory.available: "100Mi"
+          evictionSoftGracePeriod:
+            memory.available: "30s"
+
+  - name: When kubelet evictionSoft quantity threshold is greater than evictionHard it should pass
+    initial: |
+      apiVersion: karpenter.hypershift.openshift.io/v1
+      kind: OpenshiftEC2NodeClass
+      spec:
+        subnetSelectorTerms:
+        - tags:
+            env: test
+        securityGroupSelectorTerms:
+        - id: sg-0123456789abcdef0
+        kubelet:
+          evictionHard:
+            memory.available: "100Mi"
+          evictionSoft:
+            memory.available: "200Mi"
+          evictionSoftGracePeriod:
+            memory.available: "30s"
+
+  - name: When kubelet evictionSoft percentage threshold equals evictionHard it should pass
+    initial: |
+      apiVersion: karpenter.hypershift.openshift.io/v1
+      kind: OpenshiftEC2NodeClass
+      spec:
+        subnetSelectorTerms:
+        - tags:
+            env: test
+        securityGroupSelectorTerms:
+        - id: sg-0123456789abcdef0
+        kubelet:
+          evictionHard:
+            nodefs.available: "10%"
+          evictionSoft:
+            nodefs.available: "10%"
+          evictionSoftGracePeriod:
+            nodefs.available: "1m0s"
+
+  - name: When kubelet evictionSoft percentage threshold is greater than evictionHard it should pass
+    initial: |
+      apiVersion: karpenter.hypershift.openshift.io/v1
+      kind: OpenshiftEC2NodeClass
+      spec:
+        subnetSelectorTerms:
+        - tags:
+            env: test
+        securityGroupSelectorTerms:
+        - id: sg-0123456789abcdef0
+        kubelet:
+          evictionHard:
+            nodefs.available: "10%"
+          evictionSoft:
+            nodefs.available: "15%"
+          evictionSoftGracePeriod:
+            nodefs.available: "1m0s"
+
+  - name: When kubelet evictionSoft and evictionHard have multiple signals with one soft less than hard it should fail
+    initial: |
+      apiVersion: karpenter.hypershift.openshift.io/v1
+      kind: OpenshiftEC2NodeClass
+      spec:
+        subnetSelectorTerms:
+        - tags:
+            env: test
+        securityGroupSelectorTerms:
+        - id: sg-0123456789abcdef0
+        kubelet:
+          evictionHard:
+            memory.available: "100Mi"
+            nodefs.available: "15%"
+          evictionSoft:
+            memory.available: "200Mi"
+            nodefs.available: "10%"
+          evictionSoftGracePeriod:
+            memory.available: "30s"
+            nodefs.available: "1m0s"
+    expectedError: "evictionSoft threshold must be greater than or equal to evictionHard threshold for the same signal (soft eviction should fire before hard)"
+
+  - name: When kubelet evictionHard has signals not in evictionSoft it should pass
+    initial: |
+      apiVersion: karpenter.hypershift.openshift.io/v1
+      kind: OpenshiftEC2NodeClass
+      spec:
+        subnetSelectorTerms:
+        - tags:
+            env: test
+        securityGroupSelectorTerms:
+        - id: sg-0123456789abcdef0
+        kubelet:
+          evictionHard:
+            memory.available: "100Mi"
+            nodefs.available: "10%"
+          evictionSoft:
+            memory.available: "200Mi"
+          evictionSoftGracePeriod:
+            memory.available: "30s"
+
+  - name: When only evictionHard is set without evictionSoft it should pass
+    initial: |
+      apiVersion: karpenter.hypershift.openshift.io/v1
+      kind: OpenshiftEC2NodeClass
+      spec:
+        subnetSelectorTerms:
+        - tags:
+            env: test
+        securityGroupSelectorTerms:
+        - id: sg-0123456789abcdef0
+        kubelet:
+          evictionHard:
+            memory.available: "100Mi"
+
   # --- imageGC threshold validation ---
   - name: When kubelet imageGCHighThresholdPercent exceeds 100 it should fail
     initial: |

@@ -168,14 +168,29 @@ func karpenterKubeletConfigurationFromNodeClassSpec(spec hyperkarpenterv1.Opensh
 		ImageGCLowThresholdPercent:  spec.Kubelet.ImageGCLowThresholdPercent,
 		MaxPods:                     ptrIfNonZero(spec.Kubelet.MaxPods),
 		CPUCFSQuota:                 spec.Kubelet.CPUCFSQuota,
-		EvictionHard:                spec.Kubelet.EvictionHard,
-		EvictionSoft:                spec.Kubelet.EvictionSoft,
+		EvictionHard:                evictionThresholdMapToStringMap(spec.Kubelet.EvictionHard),
+		EvictionSoft:                evictionThresholdMapToStringMap(spec.Kubelet.EvictionSoft),
 		EvictionSoftGracePeriod:     evictionSoftGracePeriodToDuration(spec.Kubelet.EvictionSoftGracePeriod),
 		EvictionMaxPodGracePeriod:   spec.Kubelet.EvictionMaxPodGracePeriod,
 		PodsPerCore:                 ptrIfNonZero(spec.Kubelet.PodsPerCore),
 		SystemReserved:              spec.Kubelet.SystemReserved,
 		KubeReserved:                spec.Kubelet.KubeReserved,
 	}
+}
+
+// evictionThresholdMapToStringMap converts our EvictionThreshold map to a plain string map.
+// EvictionThreshold is a type definition (not a type alias) because controller-gen's deepcopy
+// generator doesn't handle *types.Alias (https://github.com/kubernetes-sigs/controller-tools/issues/988),
+// so we can't use `type EvictionThreshold = string` which would make this copy unnecessary.
+func evictionThresholdMapToStringMap(m map[string]hyperkarpenterv1.EvictionThreshold) map[string]string {
+	if m == nil {
+		return nil
+	}
+	result := make(map[string]string, len(m))
+	for k, v := range m {
+		result[k] = string(v)
+	}
+	return result
 }
 
 func evictionSoftGracePeriodToDuration(m map[string]string) map[string]metav1.Duration {
