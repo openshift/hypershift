@@ -19,4 +19,4 @@ requests==2.33.0
 requests-oauthlib==2.0.0
 rsa==4.9
 uritemplate==4.1.1
-urllib3==2.6.3
+urllib3==2.7.0
