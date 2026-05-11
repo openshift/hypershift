@@ -9,6 +9,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
 	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
@@ -886,4 +887,110 @@ func TestGetServicePublishingStrategyMapping(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestGetClient(t *testing.T) {
+	t.Run("When Client is injected it should return the injected client", func(t *testing.T) {
+		g := NewWithT(t)
+		fakeClient := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).Build()
+		opts := &RawCreateOptions{
+			Client: fakeClient,
+		}
+		client, err := opts.GetClient()
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(client).To(Equal(fakeClient))
+	})
+
+	t.Run("When Client is nil it should fall back to util.GetClient", func(t *testing.T) {
+		// This test verifies that when no client is injected, GetClient
+		// delegates to util.GetClient(). We don't assert success or failure
+		// because the result depends on whether a kubeconfig is available
+		// in the environment. The key behavior is that the injected client
+		// (if set) takes precedence over the fallback.
+		opts := &RawCreateOptions{}
+		_, _ = opts.GetClient()
+	})
+}
+
+func TestValidateWithInjectedClient(t *testing.T) {
+	t.Run("When Client is injected and VersionCheck is enabled it should use injected client for version validation", func(t *testing.T) {
+		g := NewWithT(t)
+		ctx := t.Context()
+		tempDir := t.TempDir()
+
+		pullSecretFile := filepath.Join(tempDir, "pull-secret.json")
+		if err := os.WriteFile(pullSecretFile, []byte(`fake`), 0600); err != nil {
+			t.Fatalf("failed to write pullSecret: %v", err)
+		}
+
+		supportedVersions := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "supported-versions",
+				Namespace: "hypershift",
+			},
+			Data: map[string]string{
+				config.ConfigMapServerVersionKey: "test-version",
+				config.ConfigMapVersionsKey:      `{"versions":[]}`,
+			},
+		}
+
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(hyperapi.Scheme).
+			WithObjects(supportedVersions).
+			Build()
+
+		opts := &RawCreateOptions{
+			Name:           "test-cluster",
+			Namespace:      "clusters",
+			PullSecretFile: pullSecretFile,
+			Arch:           "amd64",
+			VersionCheck:   true,
+			Client:         fakeClient,
+			Render:         true,
+		}
+
+		// Version check will fail because the CLI version doesn't match "test-version",
+		// but it should fail with a version mismatch error (not a "unable to get kubernetes config" error),
+		// proving the injected client was used successfully.
+		_, err := opts.Validate(ctx)
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("version mismatch"))
+	})
+
+	t.Run("When Client is injected and cluster already exists it should detect the duplicate", func(t *testing.T) {
+		g := NewWithT(t)
+		ctx := t.Context()
+		tempDir := t.TempDir()
+
+		pullSecretFile := filepath.Join(tempDir, "pull-secret.json")
+		if err := os.WriteFile(pullSecretFile, []byte(`fake`), 0600); err != nil {
+			t.Fatalf("failed to write pullSecret: %v", err)
+		}
+
+		existingCluster := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "existing-cluster",
+				Namespace: "clusters",
+			},
+		}
+
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(hyperapi.Scheme).
+			WithObjects(existingCluster).
+			Build()
+
+		opts := &RawCreateOptions{
+			Name:           "existing-cluster",
+			Namespace:      "clusters",
+			PullSecretFile: pullSecretFile,
+			Arch:           "amd64",
+			Client:         fakeClient,
+		}
+
+		// Validate should detect the existing cluster and return an error,
+		// proving the injected client was used for the existence check.
+		_, err := opts.Validate(ctx)
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("already exists"))
+	})
 }

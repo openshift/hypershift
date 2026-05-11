@@ -8,11 +8,14 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/openshift/hypershift/cmd/cluster/core"
+	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/testutil"
 	"github.com/openshift/hypershift/test/integration/framework"
 
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
+
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/spf13/pflag"
@@ -121,7 +124,6 @@ func TestCreateCluster(t *testing.T) {
 	certs.UnsafeSeed(1234567890)
 	ctx := framework.InterruptableContext(t.Context())
 	tempDir := t.TempDir()
-	t.Setenv("FAKE_CLIENT", "true")
 
 	pullSecretFile := filepath.Join(tempDir, "pull-secret.json")
 
@@ -171,6 +173,7 @@ func TestCreateCluster(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			flags := pflag.NewFlagSet(testCase.name, pflag.ContinueOnError)
 			coreOpts := core.DefaultOptions()
+			coreOpts.Client = fake.NewClientBuilder().WithScheme(hyperapi.Scheme).Build()
 			core.BindDeveloperOptions(coreOpts, flags)
 			kubevirtOpts := DefaultOptions()
 			BindDeveloperOptions(kubevirtOpts, flags)
