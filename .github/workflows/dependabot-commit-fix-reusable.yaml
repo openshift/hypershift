@@ -31,6 +31,7 @@ jobs:
       - name: Rewrite commit body
         env:
           HEAD_BRANCH: ${{ inputs.head_branch }}
+          HEAD_SHA: ${{ inputs.head_sha }}
         run: |
           SUBJECT=$(git log -1 --format='%s')
           BODY=$(git log -1 --format='%b')
@@ -70,4 +71,4 @@ jobs:
           git config user.name "dependabot[bot]"
           git config user.email "49699333+dependabot[bot]@users.noreply.github.com"
           git commit --amend -F /tmp/commit-msg.txt
-          git push --force-with-lease origin HEAD:"${HEAD_BRANCH}"
+          git push "--force-with-lease=${HEAD_BRANCH}:${HEAD_SHA}" origin HEAD:"${HEAD_BRANCH}"
