@@ -21,4 +21,4 @@ Webhooks add latency and operational complexity that CEL avoids:
 
 Add new validation as CEL markers on the API types in `api/hypershift/v1beta1/` and cover them with envtests. See `api/AGENTS.md` and `test/envtest/README.md`.
 
-The exception is CAPI resources, where webhooks are used unconditionally during the v1beta2 migration period.
+The exception is CAPI resources, where a conversion webhook is required during the v1beta2 migration period.
