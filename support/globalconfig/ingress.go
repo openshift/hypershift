@@ -19,12 +19,22 @@ func IngressConfig() *configv1.Ingress {
 }
 
 func ReconcileIngressConfig(cfg *configv1.Ingress, hcp *hyperv1.HostedControlPlane) {
+	// Preserve guest cluster's componentRoutes and appsDomain so they are not
+	// reconciled over. This allows customers to configure custom routes
+	// (e.g. Console, Downloads) and an alternative apps domain directly on
+	// the guest cluster's Ingress config. See OCPSTRAT-2884.
+	existingComponentRoutes := cfg.Spec.ComponentRoutes
+	existingAppsDomain := cfg.Spec.AppsDomain
+
 	if hcp.Spec.Configuration != nil && hcp.Spec.Configuration.Ingress != nil {
 		cfg.Spec = *hcp.Spec.Configuration.Ingress
 	}
 	if cfg.Spec.Domain == "" {
 		cfg.Spec.Domain = IngressDomain(hcp)
 	}
+
+	cfg.Spec.ComponentRoutes = existingComponentRoutes
+	cfg.Spec.AppsDomain = existingAppsDomain
 }
 
 func IngressDomain(hcp *hyperv1.HostedControlPlane) string {

@@ -31,6 +31,7 @@ type AdmissionPolicy struct {
 
 const (
 	AdmissionPolicyNameConfig             = "config"
+	AdmissionPolicyNameIngress            = "ingress"
 	AdmissionPolicyNameMirror             = "mirror"
 	AdmissionPolicyNameICSP               = "icsp"
 	AdmissionPolicyNameInfra              = "infra"
@@ -38,6 +39,19 @@ const (
 	cnoSAUser                             = "system:serviceaccount:openshift-network-operator:cluster-network-operator"
 
 	BaseCelExpression = "has(object.spec) && has(oldObject.spec) && object.spec == oldObject.spec"
+
+	// IngressCelExpression compares all Ingress spec fields individually except componentRoutes
+	// and appsDomain, allowing guest cluster users to modify those two fields freely.
+	// The OAuth componentRoute is still protected since it is managed by the control plane.
+	// Optional fields use has() guards to handle the case where the field is not present.
+	IngressCelExpression = "has(object.spec) && has(oldObject.spec)" +
+		" && object.spec.domain == oldObject.spec.domain" +
+		" && ((!has(object.spec.requiredHSTSPolicies) && !has(oldObject.spec.requiredHSTSPolicies)) || (has(object.spec.requiredHSTSPolicies) && has(oldObject.spec.requiredHSTSPolicies) && object.spec.requiredHSTSPolicies == oldObject.spec.requiredHSTSPolicies))" +
+		" && ((!has(object.spec.loadBalancer) && !has(oldObject.spec.loadBalancer)) || (has(object.spec.loadBalancer) && has(oldObject.spec.loadBalancer) && object.spec.loadBalancer == oldObject.spec.loadBalancer))" +
+		" && ((!has(object.spec.type) && !has(oldObject.spec.type)) || (has(object.spec.type) && has(oldObject.spec.type) && object.spec.type == oldObject.spec.type))" +
+		" && ((!has(object.spec.aws) && !has(oldObject.spec.aws)) || (has(object.spec.aws) && has(oldObject.spec.aws) && object.spec.aws == oldObject.spec.aws))" +
+		" && ((!has(object.spec.platform) && !has(oldObject.spec.platform)) || (has(object.spec.platform) && has(oldObject.spec.platform) && object.spec.platform == oldObject.spec.platform))" +
+		" && ((!has(object.spec.componentRoutes) && !has(oldObject.spec.componentRoutes)) || (has(object.spec.componentRoutes) && has(oldObject.spec.componentRoutes) && object.spec.componentRoutes.filter(r, r.namespace == 'openshift-authentication' && r.name == 'oauth-openshift') == oldObject.spec.componentRoutes.filter(r, r.namespace == 'openshift-authentication' && r.name == 'oauth-openshift')))"
 )
 
 var (
@@ -62,6 +76,10 @@ var (
 func ReconcileKASValidatingAdmissionPolicies(ctx context.Context, hcp *hyperv1.HostedControlPlane, client client.Client, createOrUpdate upsert.CreateOrUpdateFN) error {
 	if err := reconcileConfigValidatingAdmissionPolicy(ctx, hcp, client, createOrUpdate); err != nil {
 		return fmt.Errorf("failed to reconcile Config Validating Admission Policy: %v", err)
+	}
+
+	if err := reconcileIngressValidatingAdmissionPolicy(ctx, hcp, client, createOrUpdate); err != nil {
+		return fmt.Errorf("failed to reconcile Ingress Validating Admission Policy: %v", err)
 	}
 
 	if err := reconcileMirrorValidatingAdmissionPolicy(ctx, hcp, client, createOrUpdate); err != nil {
@@ -96,11 +114,6 @@ func reconcileConfigValidatingAdmissionPolicy(ctx context.Context, hcp *hyperv1.
 		"oauths",
 	}
 
-	//Only include "ingresses" in the policy if the ingress capability is enabled.
-	if capabilities.IsIngressCapabilityEnabled(hcp.Spec.Capabilities) {
-		configResources = append(configResources, "ingresses")
-	}
-
 	if hcp.Spec.OLMCatalogPlacement == hyperv1.ManagementOLMCatalogPlacement {
 		configResources = append(configResources, "operatorhubs")
 	}
@@ -110,6 +123,26 @@ func reconcileConfigValidatingAdmissionPolicy(ctx context.Context, hcp *hyperv1.
 	configAdmissionPolicy.MatchConstraints = constructPolicyMatchConstraints(configResources, configAPIVersion, configAPIGroup, []k8sadmissionv1.OperationType{"UPDATE", "DELETE"})
 	if err := configAdmissionPolicy.reconcileAdmissionPolicy(ctx, client, createOrUpdate); err != nil {
 		return fmt.Errorf("error reconciling Config Validating Admission Policy: %v", err)
+	}
+
+	return nil
+}
+
+func reconcileIngressValidatingAdmissionPolicy(ctx context.Context, hcp *hyperv1.HostedControlPlane, client client.Client, createOrUpdate upsert.CreateOrUpdateFN) error {
+	if !capabilities.IsIngressCapabilityEnabled(hcp.Spec.Capabilities) {
+		return nil
+	}
+
+	ingressAdmissionPolicy := AdmissionPolicy{Name: AdmissionPolicyNameIngress}
+	ingressAPIVersion := []string{configv1.GroupVersion.Version}
+	ingressAPIGroup := []string{configv1.GroupVersion.Group}
+	ingressResources := []string{"ingresses"}
+
+	HCCOUserValidation.Expression = generateIngressCelExpression(userWhiteList)
+	ingressAdmissionPolicy.Validations = []k8sadmissionv1.Validation{HCCOUserValidation}
+	ingressAdmissionPolicy.MatchConstraints = constructPolicyMatchConstraints(ingressResources, ingressAPIVersion, ingressAPIGroup, []k8sadmissionv1.OperationType{"UPDATE", "DELETE"})
+	if err := ingressAdmissionPolicy.reconcileAdmissionPolicy(ctx, client, createOrUpdate); err != nil {
+		return fmt.Errorf("error reconciling Ingress Validating Admission Policy: %v", err)
 	}
 
 	return nil
@@ -253,4 +286,23 @@ func generateCelExpression(usernames []string) string {
 	finalExpression := fmt.Sprintf("%s || (%s)", userWhiteListExpression, BaseCelExpression)
 
 	return finalExpression
+}
+
+func generateIngressCelExpression(usernames []string) string {
+	var userWhiteListExpression string
+
+	if len(usernames) != 0 {
+		quotedUsernames := make([]string, len(usernames))
+		for i, username := range usernames {
+			quotedUsernames[i] = fmt.Sprintf("'%s'", username)
+		}
+
+		userWhiteListExpression = fmt.Sprintf("request.userInfo.username in [%s]", strings.Join(quotedUsernames, ", "))
+	}
+
+	if len(userWhiteListExpression) == 0 {
+		return IngressCelExpression
+	}
+
+	return fmt.Sprintf("%s || (%s)", userWhiteListExpression, IngressCelExpression)
 }
