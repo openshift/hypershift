@@ -71,7 +71,6 @@ type Reconciler struct {
 
 func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
 	log := ctrl.LoggerFrom(ctx)
-	log.Info("Reconciling")
 
 	// Fetch the MachineSet.
 	machineSet := &capiv1.MachineSet{}

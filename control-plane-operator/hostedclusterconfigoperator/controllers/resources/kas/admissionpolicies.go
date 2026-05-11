@@ -20,7 +20,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
-	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -61,9 +60,6 @@ var (
 // ReconcileKASValidatingAdmissionPolicies will create ValidatingAdmissionPolicies which block certain resources
 // from being updated/deleted from the DataPlane side.
 func ReconcileKASValidatingAdmissionPolicies(ctx context.Context, hcp *hyperv1.HostedControlPlane, client client.Client, createOrUpdate upsert.CreateOrUpdateFN) error {
-	log := ctrl.LoggerFrom(ctx)
-	log.Info("reconciling validating admission policies")
-
 	if err := reconcileConfigValidatingAdmissionPolicy(ctx, hcp, client, createOrUpdate); err != nil {
 		return fmt.Errorf("failed to reconcile Config Validating Admission Policy: %v", err)
 	}

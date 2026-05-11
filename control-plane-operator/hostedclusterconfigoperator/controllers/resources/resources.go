@@ -335,7 +335,6 @@ func namespacedNamePredicateFunc(namespace, name string) func(client.Object) boo
 
 func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result, error) {
 	log := ctrl.LoggerFrom(ctx)
-	log.Info("Reconciling")
 
 	hcp := manifests.HostedControlPlane(r.hcpNamespace, r.hcpName)
 	if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(hcp), hcp); err != nil {

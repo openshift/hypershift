@@ -129,8 +129,6 @@ func (r *PrivateServiceObserver) SetupWithManager(ctx context.Context, mgr ctrl.
 }
 
 func (r *PrivateServiceObserver) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	r.log.Info("reconciling")
-
 	// Fetch the Service
 	svc, err := r.clientset.CoreV1().Services(req.Namespace).Get(ctx, req.Name, metav1.GetOptions{})
 	if err != nil {
@@ -181,7 +179,6 @@ func (r *PrivateServiceObserver) Reconcile(ctx context.Context, req ctrl.Request
 	}); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile AWSEndpointService: %w", err)
 	}
-	r.log.Info("reconcile complete", "request", req)
 	return ctrl.Result{}, nil
 }
 
@@ -412,8 +409,6 @@ func (r *AWSEndpointServiceReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, fmt.Errorf("logger not found: %w", err)
 	}
 
-	log.Info("reconciling")
-
 	// Fetch the AWSEndpointService
 	obj := &hyperv1.AWSEndpointService{
 		ObjectMeta: metav1.ObjectMeta{
@@ -548,7 +543,6 @@ func (r *AWSEndpointServiceReconciler) Reconcile(ctx context.Context, req ctrl.R
 		}
 	}
 
-	log.Info("reconciliation complete")
 	// always requeue to catch and report out of band changes in AWS
 	// NOTICE: if the RequeueAfter interval is short enough, it could result in hitting some AWS request limits.
 	return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil

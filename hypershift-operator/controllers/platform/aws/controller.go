@@ -265,8 +265,6 @@ func (r *AWSEndpointServiceReconciler) Reconcile(ctx context.Context, req ctrl.R
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("no logger found: %w", err)
 	}
-	log.Info("reconciling")
-
 	// Fetch the AWSEndpointService
 	obj := &hyperv1.AWSEndpointService{
 		ObjectMeta: metav1.ObjectMeta{
@@ -373,7 +371,6 @@ func (r *AWSEndpointServiceReconciler) Reconcile(ctx context.Context, req ctrl.R
 		}
 	}
 
-	log.Info("reconciliation complete")
 	// always requeue to catch and report out of band changes in AWS
 	// NOTICE: if the RequeueAfter interval is short enough, it could result in hitting some AWS request limits.
 	return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
