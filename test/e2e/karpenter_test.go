@@ -270,14 +270,16 @@ func testARM64Provisioning(ctx context.Context, guestClient crclient.Client, hos
 			t.Skip("test only supported on multi-arch clusters")
 		}
 
+		hc := hostedCluster.DeepCopy()
+
 		armNodeClass := &hyperkarpenterv1.OpenshiftEC2NodeClass{
 			ObjectMeta: metav1.ObjectMeta{Name: "arm-nodeclass"},
 			Spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{
 				SubnetSelectorTerms: []hyperkarpenterv1.SubnetSelectorTerm{
-					{Tags: map[string]string{"karpenter.sh/discovery": hostedCluster.Spec.InfraID}},
+					{Tags: map[string]string{"karpenter.sh/discovery": hc.Spec.InfraID}},
 				},
 				SecurityGroupSelectorTerms: []hyperkarpenterv1.SecurityGroupSelectorTerm{
-					{Tags: map[string]string{"karpenter.sh/discovery": hostedCluster.Spec.InfraID}},
+					{Tags: map[string]string{"karpenter.sh/discovery": hc.Spec.InfraID}},
 				},
 			},
 		}
@@ -309,7 +311,7 @@ func testARM64Provisioning(ctx context.Context, guestClient crclient.Client, hos
 			"kubernetes.io/arch":         "arm64",
 		}
 
-		nodes := e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, 1, armNodeLabels)
+		nodes := e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hc.Spec.Platform.Type, 1, armNodeLabels)
 		waitForReadyKarpenterPods(t, ctx, guestClient, nodes, 1, map[string]string{"app": "arm-app"})
 
 		g.Expect(guestClient.Delete(ctx, armNodePool)).To(Succeed())
@@ -318,7 +320,7 @@ func testARM64Provisioning(ctx context.Context, guestClient crclient.Client, hos
 		t.Logf("Deleted ARM64 workloads")
 
 		t.Logf("Waiting for Karpenter ARM64 Nodes to disappear")
-		_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, 0, armNodeLabels)
+		_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hc.Spec.Platform.Type, 0, armNodeLabels)
 	}
 }
 
@@ -327,15 +329,15 @@ func testInstanceProfileAnnotation(ctx context.Context, mgtClient, guestClient c
 		t.Parallel()
 		g := NewWithT(t)
 
-		// Get the current HostedCluster
-		err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
+		hc := hostedCluster.DeepCopy()
+		err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(hc), hc)
 		g.Expect(err).NotTo(HaveOccurred())
 
 		// Use the default worker instance profile (typically {infraID}-worker)
-		workerInstanceProfile := hostedCluster.Spec.InfraID + "-worker"
+		workerInstanceProfile := hc.Spec.InfraID + "-worker"
 
 		// Apply the annotation to the HostedCluster
-		err = e2eutil.UpdateObject(t, ctx, mgtClient, hostedCluster, func(obj *hyperv1.HostedCluster) {
+		err = e2eutil.UpdateObject(t, ctx, mgtClient, hc, func(obj *hyperv1.HostedCluster) {
 			if obj.Annotations == nil {
 				obj.Annotations = make(map[string]string)
 			}
@@ -377,7 +379,7 @@ func testInstanceProfileAnnotation(ctx context.Context, mgtClient, guestClient c
 			karpenterv1.NodePoolLabelKey: testNodePool.Name,
 		}
 
-		nodes := e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, 1, testNodeLabels)
+		nodes := e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hc.Spec.Platform.Type, 1, testNodeLabels)
 		t.Logf("Karpenter nodes are ready")
 
 		// Verify EC2 instances have the correct instance profile
@@ -403,13 +405,13 @@ func testInstanceProfileAnnotation(ctx context.Context, mgtClient, guestClient c
 		t.Logf("Waiting for Karpenter nodes to be deleted")
 		g.Expect(guestClient.Delete(ctx, testWorkLoads)).To(Succeed())
 		g.Expect(guestClient.Delete(ctx, testNodePool)).To(Succeed())
-		_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, 0, testNodeLabels)
+		_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hc.Spec.Platform.Type, 0, testNodeLabels)
 
 		// Remove the annotation and verify it gets cleared from EC2NodeClass
-		err = mgtClient.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
+		err = mgtClient.Get(ctx, crclient.ObjectKeyFromObject(hc), hc)
 		g.Expect(err).NotTo(HaveOccurred())
 
-		err = e2eutil.UpdateObject(t, ctx, mgtClient, hostedCluster, func(obj *hyperv1.HostedCluster) {
+		err = e2eutil.UpdateObject(t, ctx, mgtClient, hc, func(obj *hyperv1.HostedCluster) {
 			delete(obj.Annotations, hyperv1.AWSKarpenterDefaultInstanceProfile)
 		})
 		g.Expect(err).NotTo(HaveOccurred())
@@ -432,13 +434,13 @@ func testNodeClassVersionField(ctx context.Context, mgtClient, guestClient crcli
 		t.Parallel()
 		g := NewWithT(t)
 
-		// Re-fetch the hosted cluster to get the latest version status
-		err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
+		hc := hostedCluster.DeepCopy()
+		err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(hc), hc)
 		g.Expect(err).NotTo(HaveOccurred())
-		g.Expect(hostedCluster.Status.Version).NotTo(BeNil(), "hostedCluster.Status.Version should not be nil")
-		g.Expect(hostedCluster.Status.Version.Desired.Version).NotTo(BeEmpty(), "hostedCluster.Status.Version.Desired.Version should not be empty")
+		g.Expect(hc.Status.Version).NotTo(BeNil(), "hostedCluster.Status.Version should not be nil")
+		g.Expect(hc.Status.Version.Desired.Version).NotTo(BeEmpty(), "hostedCluster.Status.Version.Desired.Version should not be empty")
 
-		cpVersion, err := semver.Parse(hostedCluster.Status.Version.Desired.Version)
+		cpVersion, err := semver.Parse(hc.Status.Version.Desired.Version)
 		g.Expect(err).NotTo(HaveOccurred(), "failed to parse control plane version")
 		t.Logf("Control plane version: %s", cpVersion.String())
 
@@ -465,8 +467,8 @@ func testNodeClassVersionField(ctx context.Context, mgtClient, guestClient crcli
 					if nc.Status.ReleaseImage == "" {
 						return false, "status.releaseImage is empty", nil
 					}
-					if nc.Status.ReleaseImage != hostedCluster.Spec.Release.Image {
-						return false, fmt.Sprintf("expected status.releaseImage %q to match hostedCluster.Spec.Release.Image %q", nc.Status.ReleaseImage, hostedCluster.Spec.Release.Image), nil
+					if nc.Status.ReleaseImage != hc.Spec.Release.Image {
+						return false, fmt.Sprintf("expected status.releaseImage %q to match hostedCluster.Spec.Release.Image %q", nc.Status.ReleaseImage, hc.Spec.Release.Image), nil
 					}
 					return true, fmt.Sprintf("status.releaseImage matches control plane: %s", nc.Status.ReleaseImage), nil
 				}),
@@ -488,10 +490,10 @@ func testNodeClassVersionField(ctx context.Context, mgtClient, guestClient crcli
 			Spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{
 				Version: nodeClassVersion,
 				SubnetSelectorTerms: []hyperkarpenterv1.SubnetSelectorTerm{
-					{Tags: map[string]string{"karpenter.sh/discovery": hostedCluster.Spec.InfraID}},
+					{Tags: map[string]string{"karpenter.sh/discovery": hc.Spec.InfraID}},
 				},
 				SecurityGroupSelectorTerms: []hyperkarpenterv1.SecurityGroupSelectorTerm{
-					{Tags: map[string]string{"karpenter.sh/discovery": hostedCluster.Spec.InfraID}},
+					{Tags: map[string]string{"karpenter.sh/discovery": hc.Spec.InfraID}},
 				},
 				MetadataOptions: hyperkarpenterv1.MetadataOptions{
 					Access:                  hyperkarpenterv1.MetadataAccessHTTPEndpoint,
@@ -605,7 +607,7 @@ func testNodeClassVersionField(ctx context.Context, mgtClient, guestClient crcli
 		}
 
 		// Log diagnostic info about the version-test NodeClass infrastructure.
-		hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+		hcpNamespace := manifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name)
 		secretList := &corev1.SecretList{}
 		if err := mgtClient.List(ctx, secretList,
 			crclient.InNamespace(hcpNamespace),
@@ -666,7 +668,7 @@ func testNodeClassVersionField(ctx context.Context, mgtClient, guestClient crcli
 		// NodeClaims don't leak vCPUs into subsequent sequential tests.
 		g.Expect(guestClient.Delete(ctx, testWorkLoads)).To(Succeed())
 		g.Expect(guestClient.Delete(ctx, testNodePool)).To(Succeed())
-		_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, 0, testNodeLabels)
+		_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hc.Spec.Platform.Type, 0, testNodeLabels)
 
 		// Verify that a version exceeding the allowed n-3 skew sets SupportedVersionSkew=False.
 		skewMajor, skewMinor, err := supportedversion.PreviousMinorVersion(cpVersion, 4)
@@ -741,9 +743,11 @@ func testCapacityReservation(ctx context.Context, mgtClient, guestClient crclien
 		t.Parallel()
 		g := NewWithT(t)
 
+		hc := hostedCluster.DeepCopy()
+
 		// AutoNode.Provisioner.Karpenter.AWS is required at the API level when karpenter
 		// is configured, so this should never happen/never be nil for a valid karpenter cluster.
-		if hostedCluster.Spec.AutoNode.Provisioner.Karpenter.Platform != hyperv1.AWSPlatform {
+		if hc.Spec.AutoNode.Provisioner.Karpenter.Platform != hyperv1.AWSPlatform {
 			t.Skip("HostedCluster does not have a Karpenter AWS platform configured, skipping capacity reservation test")
 		}
 
@@ -866,7 +870,7 @@ func testCapacityReservation(ctx context.Context, mgtClient, guestClient crclien
 		t.Logf("Created workload capacity-reservation-web-app to trigger node provisioning")
 
 		// Wait for the node to be ready.
-		nodes := e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, 1, crNodeLabels)
+		nodes := e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hc.Spec.Platform.Type, 1, crNodeLabels)
 		g.Expect(nodes).To(HaveLen(1))
 		t.Logf("Node provisioned by capacity-reservation-test NodePool is ready")
 
@@ -884,7 +888,7 @@ func testCapacityReservation(ctx context.Context, mgtClient, guestClient crclien
 		// so stale NodeClaims don't leak vCPUs into subsequent sequential tests.
 		g.Expect(guestClient.Delete(ctx, crWorkload)).To(Succeed())
 		g.Expect(guestClient.Delete(ctx, crNodePool)).To(Succeed())
-		_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, 0, crNodeLabels)
+		_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hc.Spec.Platform.Type, 0, crNodeLabels)
 	}
 }
 
@@ -893,13 +897,15 @@ func testArbitrarySubnet(ctx context.Context, mgtClient, guestClient crclient.Cl
 		t.Parallel()
 		g := NewWithT(t)
 
+		hc := hostedCluster.DeepCopy()
+
 		// Get VPC ID and find an AZ that is:
 		// (a) supported by the VPC endpoint service (to avoid InvalidParameter), and
 		// (b) not already occupied by a VPC subnet (to avoid DuplicateSubnetsInSameZone).
 		// This exercises the real scenario: a customer brings a subnet in a new AZ,
 		// it propagates to the VPC endpoint, and nodes in that AZ can reach the cluster.
 		ec2client := ec2Client(awsCredsFile, awsRegion)
-		vpcID := hostedCluster.Spec.Platform.AWS.CloudProviderConfig.VPC
+		vpcID := hc.Spec.Platform.AWS.CloudProviderConfig.VPC
 		subnetsOut, err := ec2client.DescribeSubnets(ctx, &ec2.DescribeSubnetsInput{
 			Filters: []ec2types.Filter{{Name: aws.String("vpc-id"), Values: []string{vpcID}}},
 		})
@@ -913,7 +919,7 @@ func testArbitrarySubnet(ctx context.Context, mgtClient, guestClient crclient.Cl
 		}
 
 		// Get the AZs supported by the VPC endpoint service.
-		hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+		hcpNamespace := manifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name)
 		esList := &hyperv1.AWSEndpointServiceList{}
 		g.Expect(mgtClient.List(ctx, esList, crclient.InNamespace(hcpNamespace))).To(Succeed())
 		g.Expect(esList.Items).NotTo(BeEmpty(), "expected at least one AWSEndpointService")
@@ -949,7 +955,7 @@ func testArbitrarySubnet(ctx context.Context, mgtClient, guestClient crclient.Cl
 		t.Logf("Selected AZ %s for test subnet (supported by endpoint service, not in VPC)", az)
 
 		// Create a small test subnet in the VPC.
-		subnetID, cleanupSubnet := e2eutil.CreateTestSubnet(ctx, t, ec2client, vpcID, az, hostedCluster.Spec.InfraID)
+		subnetID, cleanupSubnet := e2eutil.CreateTestSubnet(ctx, t, ec2client, vpcID, az, hc.Spec.InfraID)
 		t.Logf("Created test subnet %s in AZ %s", subnetID, az)
 
 		// Create an OpenshiftEC2NodeClass that selects the subnet by ID.
@@ -958,7 +964,7 @@ func testArbitrarySubnet(ctx context.Context, mgtClient, guestClient crclient.Cl
 			Spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{
 				SubnetSelectorTerms: []hyperkarpenterv1.SubnetSelectorTerm{{ID: subnetID}},
 				SecurityGroupSelectorTerms: []hyperkarpenterv1.SecurityGroupSelectorTerm{
-					{Tags: map[string]string{"karpenter.sh/discovery": hostedCluster.Spec.InfraID}},
+					{Tags: map[string]string{"karpenter.sh/discovery": hc.Spec.InfraID}},
 				},
 			},
 		}
@@ -970,7 +976,7 @@ func testArbitrarySubnet(ctx context.Context, mgtClient, guestClient crclient.Cl
 			}
 			// Wait for the subnet to be removed from the karpenter-subnets ConfigMap.
 			// The karpenter-operator removes it during NodeClass deletion reconciliation.
-			hcpNS := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+			hcpNS := manifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name)
 			if err := wait.PollUntilContextTimeout(ctx, 5*time.Second, 2*time.Minute, true, func(ctx context.Context) (bool, error) {
 				cm := &corev1.ConfigMap{}
 				if err := mgtClient.Get(ctx, crclient.ObjectKey{
@@ -1134,7 +1140,7 @@ func testArbitrarySubnet(ctx context.Context, mgtClient, guestClient crclient.Cl
 		testNodeLabels := map[string]string{
 			karpenterv1.NodePoolLabelKey: testNodePool.Name,
 		}
-		nodes := e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, 1, testNodeLabels)
+		nodes := e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hc.Spec.Platform.Type, 1, testNodeLabels)
 		t.Logf("Node launched in arbitrary subnet, verifying it used subnet %s", subnetID)
 
 		// Verify the launched node's EC2 instance is in the expected subnet.
@@ -1157,7 +1163,9 @@ func testKubeletPropagation(ctx context.Context, mgtClient, guestClient crclient
 		t.Parallel()
 		g := NewWithT(t)
 
-		hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+		hc := hostedCluster.DeepCopy()
+
+		hcpNamespace := manifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name)
 
 		// Create a custom OpenshiftEC2NodeClass that the controller does not manage, so that
 		// reconcileOpenshiftEC2NodeClassDefault cannot overwrite spec.kubelet on every reconcile.
@@ -1292,11 +1300,11 @@ func testKubeletPropagation(ctx context.Context, mgtClient, guestClient crclient
 		}
 
 		// Wait for nodes to be provisioned
-		e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, 1, testNodeLabels)
+		e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hc.Spec.Platform.Type, 1, testNodeLabels)
 		t.Logf("Karpenter nodes are ready")
 
 		// Build a clientset for the guest cluster (needed for pod log fetching)
-		guestConfig := e2eutil.WaitForGuestRestConfig(t, ctx, mgtClient, hostedCluster)
+		guestConfig := e2eutil.WaitForGuestRestConfig(t, ctx, mgtClient, hc)
 		guestClientset, err := kubeclient.NewForConfig(guestConfig)
 		g.Expect(err).NotTo(HaveOccurred())
 
@@ -1335,7 +1343,7 @@ func testKubeletPropagation(ctx context.Context, mgtClient, guestClient crclient
 		// Cleanup workloads and NodePool
 		g.Expect(guestClient.Delete(ctx, testWorkLoads)).To(Succeed())
 		g.Expect(guestClient.Delete(ctx, testNodePool)).To(Succeed())
-		_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, 0, testNodeLabels)
+		_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hc.Spec.Platform.Type, 0, testNodeLabels)
 	}
 }
 
