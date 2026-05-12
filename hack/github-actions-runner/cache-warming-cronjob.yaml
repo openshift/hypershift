@@ -1,0 +1,66 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: go-cache-warmer
+  namespace: arc-runners
+  labels:
+    app.kubernetes.io/component: cache-warmer
+    app.kubernetes.io/part-of: arc-runner-set
+spec:
+  schedule: "0 2 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 3600
+      backoffLimit: 1
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: cache-warmer
+              image: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/hypershift-gh-actions-runner:latest
+              command:
+                - /bin/bash
+                - -c
+                - |
+                  set -euo pipefail
+
+                  echo "=== Cloning openshift/hypershift main branch ==="
+                  git clone --depth 1 --branch main https://github.com/openshift/hypershift.git /tmp/hypershift
+                  cd /tmp/hypershift
+
+                  echo "=== Compiling all packages ==="
+                  go build ./...
+
+                  echo "=== Compiling all test binaries ==="
+                  go test -c -o /dev/null ./... 2>/dev/null || true
+
+                  echo "=== Syncing build cache to PV ==="
+                  rm -rf /cache/go-build/*
+                  cp -a "${GOCACHE}"/* /cache/go-build/
+
+                  echo "=== Cache warming complete ==="
+                  du -sh /cache/go-build/
+              env:
+                - name: GOCACHE
+                  value: /tmp/go-build-cache
+                - name: GOMODCACHE
+                  value: /tmp/go-mod-cache
+                - name: HOME
+                  value: /tmp
+              resources:
+                requests:
+                  cpu: "4"
+                  memory: "16Gi"
+                limits:
+                  cpu: "4"
+                  memory: "16Gi"
+              volumeMounts:
+                - name: go-cache
+                  mountPath: /cache/go-build
+          volumes:
+            - name: go-cache
+              persistentVolumeClaim:
+                claimName: go-cache-pvc
