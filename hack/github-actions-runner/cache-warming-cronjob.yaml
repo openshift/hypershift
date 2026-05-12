@@ -37,8 +37,11 @@ spec:
                   echo "=== Compiling all test binaries ==="
                   go test -c -o /dev/null ./... 2>/dev/null || true
 
+                  echo "=== Cleaning stale cache entries (older than 7 days) ==="
+                  find /cache/go-build -type f -mtime +7 -delete
+                  find /cache/go-build -type d -empty -delete
+
                   echo "=== Syncing build cache to PV ==="
-                  rm -rf /cache/go-build/*
                   cp -a "${GOCACHE}"/* /cache/go-build/
 
                   echo "=== Cache warming complete ==="
