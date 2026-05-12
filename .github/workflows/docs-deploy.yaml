@@ -44,9 +44,10 @@ jobs:
           command: pages deploy site --project-name=hypershift --branch=pr-${{ steps.pr.outputs.number }} --commit-dirty=true
       - name: Create PR deployment status
         env:
-          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ steps.pr.outputs.number }}
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          REPO: ${{ github.repository }}
         run: |
           if ! [[ "${PR_NUMBER}" =~ ^[0-9]+$ ]]; then
             echo "Invalid PR number: '${PR_NUMBER}'"
@@ -55,14 +56,21 @@ jobs:
           DEPLOY_ENV="docs-preview/pr-${PR_NUMBER}"
           ENV_URL="https://pr-${PR_NUMBER}.hypershift.pages.dev"
 
-          DEPLOY_ID=$(echo '{"ref":"'"${HEAD_SHA}"'","environment":"'"${DEPLOY_ENV}"'","auto_merge":false,"required_contexts":[]}' \
-            | gh api "repos/${{ github.repository }}/deployments" --input - --jq '.id')
+          DEPLOY_ID=$(curl -fsSL \
+            -X POST \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${REPO}/deployments" \
+            -d '{"ref":"'"${HEAD_SHA}"'","environment":"'"${DEPLOY_ENV}"'","auto_merge":false,"required_contexts":[]}' \
+            | jq -r '.id')
           if ! [[ "${DEPLOY_ID}" =~ ^[0-9]+$ ]]; then
             echo "Failed to create deployment. DEPLOY_ID='${DEPLOY_ID}'"
             exit 1
           fi
 
-          gh api "repos/${{ github.repository }}/deployments/${DEPLOY_ID}/statuses" \
-            -f state="success" \
-            -f environment_url="${ENV_URL}" \
-            -f description="Docs preview for PR #${PR_NUMBER}"
+          curl -fsSL \
+            -X POST \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${REPO}/deployments/${DEPLOY_ID}/statuses" \
+            -d '{"state":"success","environment_url":"'"${ENV_URL}"'","description":"Docs preview for PR #'"${PR_NUMBER}"'"}'
