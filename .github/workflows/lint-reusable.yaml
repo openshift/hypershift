@@ -25,7 +25,8 @@ jobs:
       - name: Warm Go build cache from EFS
         run: |
           if [ -d /cache/go-build ]; then
-            cp -a /cache/go-build /tmp/go-build-cache
+            mkdir -p /tmp/go-build-cache
+            cp -a /cache/go-build/. /tmp/go-build-cache/
           fi
       - name: Use pre-built lint tools
         run: |
