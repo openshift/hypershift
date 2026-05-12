@@ -24,6 +24,10 @@ The deploy workflow requires two secrets configured on the `docs-preview` GitHub
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account ID |
 | `CLOUDFLARE_API_TOKEN` | API token with Cloudflare Pages edit permissions |
 
+## Troubleshooting
+
+If the preview link doesn't appear on your PR, check that the Docs Build workflow completed successfully. The Docs Deploy workflow triggers automatically after a successful build.
+
 ## Local Preview
 
 To preview documentation locally:
