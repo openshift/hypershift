@@ -18,9 +18,18 @@ spec:
       template:
         spec:
           restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault
           containers:
             - name: cache-warmer
               image: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/hypershift-gh-actions-runner:latest
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
               command:
                 - /bin/bash
                 - -c
