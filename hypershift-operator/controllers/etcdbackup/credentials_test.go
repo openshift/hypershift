@@ -148,59 +148,155 @@ func TestResolveAzureCredentials(t *testing.T) {
 		result := resolveAzureCredentials(secret)
 		g.Expect(result.Mode).To(Equal(credentialModeAzureManagedIdentity))
 	})
-}
 
-func TestResolveCredentials(t *testing.T) {
-	t.Run("When storage type is S3 it should delegate to AWS resolution", func(t *testing.T) {
-		g := NewGomegaWithT(t)
-		secret := &corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{Name: "aws-creds"},
-			Data: map[string][]byte{
-				"credentials": []byte("arn:aws:iam::123456789012:role/test"),
-			},
-		}
-
-		result := resolveCredentials(hyperv1.S3BackupStorage, secret)
-		g.Expect(result.Mode).To(Equal(credentialModeAWSSTS))
-	})
-
-	t.Run("When storage type is AzureBlob it should delegate to Azure resolution", func(t *testing.T) {
+	t.Run("When Secret has cloud key with AZURE_CLIENT_ID= and whitespace value it should fall back to managed-identity mode", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 		secret := &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{Name: "azure-creds"},
 			Data: map[string][]byte{
-				"cloud": []byte("AZURE_CLIENT_ID=client-123\n"),
+				"cloud": []byte("AZURE_SUBSCRIPTION_ID=sub-123\nAZURE_CLIENT_ID=   \nAZURE_TENANT_ID=tenant-456\n"),
 			},
 		}
 
-		result := resolveCredentials(hyperv1.AzureBlobBackupStorage, secret)
+		result := resolveAzureCredentials(secret)
+		g.Expect(result.Mode).To(Equal(credentialModeAzureManagedIdentity))
+		g.Expect(result.ClientID).To(BeEmpty())
+	})
+
+	t.Run("When Secret has cloud key with Windows-style CRLF line endings it should trim and detect workload-identity mode", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		secret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: "azure-creds"},
+			Data: map[string][]byte{
+				"cloud": []byte("AZURE_SUBSCRIPTION_ID=sub-123\r\nAZURE_CLIENT_ID=client-789\r\nAZURE_TENANT_ID=tenant-456\r\n"),
+			},
+		}
+
+		result := resolveAzureCredentials(secret)
 		g.Expect(result.Mode).To(Equal(credentialModeAzureWorkloadIdentity))
+		g.Expect(result.ClientID).To(Equal("client-789"))
+	})
+
+	t.Run("When Secret has both cloud and credentials keys it should prioritize cloud key", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		secret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: "azure-creds"},
+			Data: map[string][]byte{
+				"cloud":       []byte("AZURE_CLIENT_ID=wi-client\n"),
+				"credentials": []byte(`{"clientSecret":"should-be-ignored"}`),
+			},
+		}
+
+		result := resolveAzureCredentials(secret)
+		g.Expect(result.Mode).To(Equal(credentialModeAzureWorkloadIdentity))
+		g.Expect(result.ClientID).To(Equal("wi-client"))
 	})
 }
 
-func TestNeedsCredentialsFile(t *testing.T) {
-	t.Run("When mode is AWS static it should need credentials file", func(t *testing.T) {
-		g := NewGomegaWithT(t)
-		g.Expect(resolvedCredentials{Mode: credentialModeAWSStatic}.needsCredentialsFile()).To(BeTrue())
-	})
+func TestResolveCredentials(t *testing.T) {
+	tests := []struct {
+		name        string
+		storageType hyperv1.HCPEtcdBackupStorageType
+		secretName  string
+		secretData  map[string][]byte
+		wantMode    credentialMode
+	}{
+		{
+			name:        "When storage type is S3 it should delegate to AWS resolution",
+			storageType: hyperv1.S3BackupStorage,
+			secretName:  "aws-creds",
+			secretData:  map[string][]byte{"credentials": []byte("arn:aws:iam::123456789012:role/test")},
+			wantMode:    credentialModeAWSSTS,
+		},
+		{
+			name:        "When storage type is AzureBlob it should delegate to Azure resolution",
+			storageType: hyperv1.AzureBlobBackupStorage,
+			secretName:  "azure-creds",
+			secretData:  map[string][]byte{"cloud": []byte("AZURE_CLIENT_ID=client-123\n")},
+			wantMode:    credentialModeAzureWorkloadIdentity,
+		},
+		{
+			name:        "When storage type is unknown it should default to AWS static mode",
+			storageType: "UnknownStorage",
+			secretName:  "some-creds",
+			secretData:  map[string][]byte{},
+			wantMode:    credentialModeAWSStatic,
+		},
+	}
 
-	t.Run("When mode is AWS STS it should not need credentials file", func(t *testing.T) {
-		g := NewGomegaWithT(t)
-		g.Expect(resolvedCredentials{Mode: credentialModeAWSSTS}.needsCredentialsFile()).To(BeFalse())
-	})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: tt.secretName},
+				Data:       tt.secretData,
+			}
+			result := resolveCredentials(tt.storageType, secret)
+			g.Expect(result.Mode).To(Equal(tt.wantMode))
+			g.Expect(result.SecretName).To(Equal(tt.secretName))
+		})
+	}
+}
 
-	t.Run("When mode is Azure client-secret it should need credentials file", func(t *testing.T) {
-		g := NewGomegaWithT(t)
-		g.Expect(resolvedCredentials{Mode: credentialModeAzureClientSecret}.needsCredentialsFile()).To(BeTrue())
-	})
+func TestCredentialBehavioralMethods(t *testing.T) {
+	tests := []struct {
+		name                      string
+		mode                      credentialMode
+		wantNeedsCredentialsFile  bool
+		wantNeedsProjectedToken   bool
+		wantNeedsWorkloadIdentity bool
+		wantAzureAuthType         string
+	}{
+		{
+			name:                      "When mode is AWS static it should need credentials file only",
+			mode:                      credentialModeAWSStatic,
+			wantNeedsCredentialsFile:  true,
+			wantNeedsProjectedToken:   false,
+			wantNeedsWorkloadIdentity: false,
+			wantAzureAuthType:         "",
+		},
+		{
+			name:                      "When mode is AWS STS it should need projected token only",
+			mode:                      credentialModeAWSSTS,
+			wantNeedsCredentialsFile:  false,
+			wantNeedsProjectedToken:   true,
+			wantNeedsWorkloadIdentity: false,
+			wantAzureAuthType:         "",
+		},
+		{
+			name:                      "When mode is Azure client-secret it should need credentials file and report auth type",
+			mode:                      credentialModeAzureClientSecret,
+			wantNeedsCredentialsFile:  true,
+			wantNeedsProjectedToken:   false,
+			wantNeedsWorkloadIdentity: false,
+			wantAzureAuthType:         "client-secret",
+		},
+		{
+			name:                      "When mode is Azure workload-identity it should need workload identity label only",
+			mode:                      credentialModeAzureWorkloadIdentity,
+			wantNeedsCredentialsFile:  false,
+			wantNeedsProjectedToken:   false,
+			wantNeedsWorkloadIdentity: true,
+			wantAzureAuthType:         "",
+		},
+		{
+			name:                      "When mode is Azure managed-identity it should need credentials file and report auth type",
+			mode:                      credentialModeAzureManagedIdentity,
+			wantNeedsCredentialsFile:  true,
+			wantNeedsProjectedToken:   false,
+			wantNeedsWorkloadIdentity: false,
+			wantAzureAuthType:         "managed-identity",
+		},
+	}
 
-	t.Run("When mode is Azure workload-identity it should not need credentials file", func(t *testing.T) {
-		g := NewGomegaWithT(t)
-		g.Expect(resolvedCredentials{Mode: credentialModeAzureWorkloadIdentity}.needsCredentialsFile()).To(BeFalse())
-	})
-
-	t.Run("When mode is Azure managed-identity it should need credentials file", func(t *testing.T) {
-		g := NewGomegaWithT(t)
-		g.Expect(resolvedCredentials{Mode: credentialModeAzureManagedIdentity}.needsCredentialsFile()).To(BeTrue())
-	})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			creds := resolvedCredentials{Mode: tt.mode}
+			g.Expect(creds.needsCredentialsFile()).To(Equal(tt.wantNeedsCredentialsFile))
+			g.Expect(creds.needsProjectedToken()).To(Equal(tt.wantNeedsProjectedToken))
+			g.Expect(creds.needsWorkloadIdentityLabel()).To(Equal(tt.wantNeedsWorkloadIdentity))
+			g.Expect(creds.azureAuthType()).To(Equal(tt.wantAzureAuthType))
+		})
+	}
 }

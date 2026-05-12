@@ -393,6 +393,28 @@ func (r *HCPEtcdBackupReconciler) findActiveJob(ctx context.Context, hcpNamespac
 	return nil, nil
 }
 
+// hasNonTerminalBackup checks if any other HCPEtcdBackup in the same namespace
+// is not yet in a terminal state (pending or in-progress). This guards against
+// deleting shared RBAC/NetworkPolicy resources while another backup still needs them,
+// covering the race window between HCPEtcdBackup creation and Job creation.
+func (r *HCPEtcdBackupReconciler) hasNonTerminalBackup(ctx context.Context, current *hyperv1.HCPEtcdBackup) (bool, string, error) {
+	backupList := &hyperv1.HCPEtcdBackupList{}
+	if err := r.List(ctx, backupList, client.InNamespace(current.Namespace)); err != nil {
+		return false, "", err
+	}
+
+	for i := range backupList.Items {
+		other := &backupList.Items[i]
+		if other.Name == current.Name {
+			continue
+		}
+		if !isTerminal(other) {
+			return true, other.Name, nil
+		}
+	}
+	return false, "", nil
+}
+
 // findJobForBackup finds the Job created for this specific backup.
 func (r *HCPEtcdBackupReconciler) findJobForBackup(ctx context.Context, backup *hyperv1.HCPEtcdBackup) (*batchv1.Job, error) {
 	jobList := &batchv1.JobList{}
@@ -566,7 +588,7 @@ func (r *HCPEtcdBackupReconciler) ensureServiceAccount(ctx context.Context, cred
 		},
 	}
 	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, sa, func() error {
-		if creds.Mode == credentialModeAzureWorkloadIdentity {
+		if creds.needsWorkloadIdentityLabel() {
 			if sa.Annotations == nil {
 				sa.Annotations = map[string]string{}
 			}
@@ -687,18 +709,20 @@ func (r *HCPEtcdBackupReconciler) ensureNetworkPolicy(ctx context.Context, backu
 }
 
 // cleanupResources removes temporary NetworkPolicy and RBAC from the HCP namespace.
-// It skips deletion if another backup Job is still active in the same HCP namespace,
-// because the shared resources (NetworkPolicy, RBAC) are needed by that Job.
+// It skips deletion if another backup is pending or in-progress in the same namespace,
+// because the shared resources (NetworkPolicy, RBAC) may be needed by that backup.
 func (r *HCPEtcdBackupReconciler) cleanupResources(ctx context.Context, backup *hyperv1.HCPEtcdBackup) error {
 	logger := log.FromContext(ctx)
 
-	// Guard: don't delete shared resources while another backup Job is active.
-	activeJob, err := r.findActiveJob(ctx, backup.Namespace)
+	// Guard: don't delete shared resources while another non-terminal backup exists.
+	// This covers both the case where a Job is active AND the race window where a
+	// new HCPEtcdBackup has been created but its Job hasn't been spawned yet.
+	hasOther, otherName, err := r.hasNonTerminalBackup(ctx, backup)
 	if err != nil {
-		return fmt.Errorf("failed to check for active jobs before cleanup: %w", err)
+		return fmt.Errorf("failed to check for non-terminal backups before cleanup: %w", err)
 	}
-	if activeJob != nil {
-		logger.Info("skipping cleanup: another backup Job is still active", "activeJob", activeJob.Name)
+	if hasOther {
+		logger.Info("skipping cleanup: another backup is still pending or in-progress", "otherBackup", otherName)
 		return nil
 	}
 
@@ -787,7 +811,7 @@ func (r *HCPEtcdBackupReconciler) createBackupJob(ctx context.Context, backup *h
 	for k, v := range jobLabels {
 		podLabels[k] = v
 	}
-	if creds.Mode == credentialModeAzureWorkloadIdentity {
+	if creds.needsWorkloadIdentityLabel() {
 		podLabels["azure.workload.identity/use"] = "true"
 	}
 
@@ -926,7 +950,7 @@ func (r *HCPEtcdBackupReconciler) buildJobVolumes(creds resolvedCredentials) []c
 		})
 	}
 
-	if creds.Mode == credentialModeAWSSTS {
+	if creds.needsProjectedToken() {
 		volumes = append(volumes, corev1.Volume{
 			Name: volumeAWSIAMToken,
 			VolumeSource: corev1.VolumeSource{
@@ -970,7 +994,7 @@ func (r *HCPEtcdBackupReconciler) buildUploadContainer(image string, args []stri
 		})
 	}
 
-	if creds.Mode == credentialModeAWSSTS {
+	if creds.needsProjectedToken() {
 		container.Env = []corev1.EnvVar{
 			{Name: "AWS_ROLE_ARN", Value: creds.RoleARN},
 			{Name: "AWS_WEB_IDENTITY_TOKEN_FILE", Value: mountPathAWSIAMToken + "/token"},
@@ -1020,11 +1044,8 @@ func (r *HCPEtcdBackupReconciler) buildUploadArgs(backup *hyperv1.HCPEtcdBackup,
 		if creds.needsCredentialsFile() {
 			args = append(args, "--credentials-file", mountPathCredentials+"/credentials")
 		}
-		switch creds.Mode {
-		case credentialModeAzureClientSecret:
-			args = append(args, "--azure-auth-type", "client-secret")
-		case credentialModeAzureManagedIdentity:
-			args = append(args, "--azure-auth-type", "managed-identity")
+		if authType := creds.azureAuthType(); authType != "" {
+			args = append(args, "--azure-auth-type", authType)
 		}
 		if azure.EncryptionKeyURL != "" {
 			args = append(args, "--azure-encryption-scope", azure.EncryptionKeyURL)

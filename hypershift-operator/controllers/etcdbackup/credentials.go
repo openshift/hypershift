@@ -36,6 +36,25 @@ func (c resolvedCredentials) needsCredentialsFile() bool {
 	}
 }
 
+func (c resolvedCredentials) needsProjectedToken() bool {
+	return c.Mode == credentialModeAWSSTS
+}
+
+func (c resolvedCredentials) needsWorkloadIdentityLabel() bool {
+	return c.Mode == credentialModeAzureWorkloadIdentity
+}
+
+func (c resolvedCredentials) azureAuthType() string {
+	switch c.Mode {
+	case credentialModeAzureClientSecret:
+		return "client-secret"
+	case credentialModeAzureManagedIdentity:
+		return "managed-identity"
+	default:
+		return ""
+	}
+}
+
 func resolveCredentials(storageType hyperv1.HCPEtcdBackupStorageType, secret *corev1.Secret) resolvedCredentials {
 	switch storageType {
 	case hyperv1.S3BackupStorage:
