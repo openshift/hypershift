@@ -180,6 +180,8 @@ func (r *reconciler) reconcile(
 	config *schedulingv1alpha1.ClusterSizingConfiguration, hostedCluster *hypershiftv1beta1.HostedCluster,
 ) (*action, error) {
 	if !isConfigValid(config) {
+		// we can't put clusters into t-shirt sizes unless we have a valid configuration;
+		// we'll re-trigger when the configuration object changes and can process clusters then
 		return nil, nil
 	}
 
@@ -200,6 +202,8 @@ func (r *reconciler) reconcile(
 
 	lastTransitionTime, lastSizeClass := previousTransitionFor(hostedCluster)
 	currentSizeClass, sizeClassLabelPresent := hostedCluster.ObjectMeta.Labels[hypershiftv1beta1.HostedClusterSizeLabel]
+	// we can't update both the status and the labels in one call, so when we have
+	// updated status but have not yet updated the labels, we just need to do that first
 	if lastTransitionTime != nil && !sizeClassLabelPresent || currentSizeClass != lastSizeClass {
 		return &action{
 			applyCfg: hypershiftv1beta1applyconfigurations.HostedCluster(hostedCluster.Name, hostedCluster.Namespace).
@@ -243,7 +247,7 @@ func (r *reconciler) determineSizeClass(
 			}
 		}
 		logger.Error(fmt.Errorf("could not find a size class for hosted cluster"), "no size can be set on hosted cluster")
-		return nil, nil
+		return nil, nil // user needs to reformat the field, returning error is useless
 	}
 
 	if autoScaling := hostedCluster.Annotations[hypershiftv1beta1.ResourceBasedControlPlaneAutoscalingAnnotation]; autoScaling == "true" {
@@ -272,6 +276,7 @@ func (r *reconciler) determineSizeClassFromAutoscaling(
 		}
 	}
 
+	// If no recommended size is set, or the recommended size wasn't found, use the first size class as fallback
 	sizeClass := &config.Spec.Sizes[0]
 	if recommendedSize == "" {
 		logger.Info("Resource-based autoscaling enabled but no recommended size set, using first size class", "defaultSize", sizeClass.Name)
@@ -349,6 +354,12 @@ func (r *reconciler) transitionSizeClass(
 	}
 	increasingSize := previousMinimumSize < sizeClass.Criteria.From
 
+	// For new clusters being added to the fleet, we have an SLA on creation time and can't
+	// afford to delay the first transition, as it is required for the control plane to schedule.
+	// For other clusters, we want to limit the amount of churn to promote management plane stability.
+	// third, we need to know if we're ready to transition the cluster:
+	// - the hosted cluster has limits to how quickly it can transition up and down, and
+	// - the management plane has limits to how many clusters can be transitioning at any time
 	if result := r.checkTransitionDelay(config, hostedCluster, sizeClass, increasingSize, lastTransitionTime); result != nil {
 		if result.applyCfg == nil {
 			return &action{requeueAfter: result.requeueAfter}, nil
@@ -394,6 +405,7 @@ func (r *reconciler) checkTransitionDelay(
 	sizeClass *schedulingv1alpha1.SizeConfiguration, increasingSize bool,
 	lastTransitionTime *time.Time,
 ) *action {
+	// if we transitioned in the past, we need to enforce the delay from there
 	delayStart := time.Time{}
 	if lastTransitionTime != nil {
 		delayStart = *lastTransitionTime

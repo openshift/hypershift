@@ -187,6 +187,10 @@ func defaultCommand() *cobra.Command {
 	return cmd
 }
 
+// For now, since the hosted cluster config operator is treated like any other
+// release payload component but isn't actually part of a release payload,
+// enable the user to specify an image directly as a flag, and otherwise
+// try and detect the control plane operator's image to use instead.
 func newOperatorImageLookup(mgr ctrl.Manager, namespace, deploymentName string) func(string) (string, error) {
 	return func(userSpecifiedImage string) (string, error) {
 		if len(userSpecifiedImage) > 0 {
@@ -201,6 +205,7 @@ func newOperatorImageLookup(mgr ctrl.Manager, namespace, deploymentName string) 
 			}
 
 			for _, container := range me.Spec.Containers {
+				// If CPO container image is a sha256 reference, use it
 				if container.Name == "control-plane-operator" {
 					if strings.Contains(container.Image, "@sha256:") {
 						return container.Image, nil
@@ -208,6 +213,7 @@ func newOperatorImageLookup(mgr ctrl.Manager, namespace, deploymentName string) 
 				}
 			}
 
+			// Use the container status to make sure we get the sha256 reference
 			for _, container := range me.Status.ContainerStatuses {
 				if container.Name == "control-plane-operator" {
 					image := strings.TrimPrefix(container.ImageID, "docker-pullable://")
@@ -289,14 +295,16 @@ func buildReleaseProviders(componentImages map[string]string, registryOverrides 
 		ComponentImages: componentImages,
 	}
 
+	// It should be used to lookup spec.releaseImage.
 	userReleaseProvider := &releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator{
 		Delegate: &releaseinfo.RegistryMirrorProviderDecorator{
 			Delegate:          coreReleaseProvider,
-			RegistryOverrides: nil,
+			RegistryOverrides: nil, // UserReleaseProvider shouldn't include registry overrides as they should not get propagated to the data plane.
 		},
 		OpenShiftImageRegistryOverrides: imageRegistryOverrides,
 	}
 
+	// It should be used to lookup spec.controlPlaneReleaseImage.
 	cpReleaseProvider := &releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator{
 		Delegate: &releaseinfo.RegistryMirrorProviderDecorator{
 			Delegate:          coreReleaseProvider,
@@ -445,6 +453,7 @@ func NewStartCommand() *cobra.Command {
 			if err != nil {
 				return false, err
 			}
+			// Apparently this is occasionally set to an empty string
 			if hostedClusterConfigOperatorImage == "" {
 				setupLog.Info("hosted cluster config operator image is empty, retrying")
 				return false, nil

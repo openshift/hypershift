@@ -91,7 +91,8 @@ const (
 
 	HostedClusterManagedAzureInfoMetricName = "hosted_cluster_managed_azure_info"
 	HostedClusterManagedAzureInfoMetricHelp = "Reports Azure managed (ARO) specific information about the given HostedCluster"
-	HostedClusterManagedAzureResourceType   = "hcpOpenShiftClusters"
+	// see https://github.com/Azure/ARO-HCP/blob/4134b5bb53782858047a0493f31b250c811eb84c/api/redhatopenshift/resource-manager/Microsoft.RedHatOpenShift/hcpclusters/preview/2024-06-10-preview/openapi.json#L131
+	HostedClusterManagedAzureResourceType = "hcpOpenShiftClusters"
 
 	HostedClusterAzureInfoMetricName = "hosted_cluster_azure_info"
 	HostedClusterAzureInfoMetricHelp = "Reports Azure information about the given HostedCluster"
@@ -395,6 +396,7 @@ func collectInitialRollingOutMetric(ch chan<- prometheus.Metric, clk clock.Clock
 }
 
 func collectUpgradingDurationMetric(ch chan<- prometheus.Metric, clk clock.Clock, hcluster *hyperv1.HostedCluster, hclusterLabelValues []string) {
+	// The upgrade is adding a new entry in the history on top of the initial rollout.
 	if hcluster.Status.Version == nil || len(hcluster.Status.Version.History) <= 1 {
 		return
 	}
@@ -463,6 +465,7 @@ func (c *hostedClustersMetricsCollector) collectProxyMetrics(ch chan<- prometheu
 }
 
 func (c *hostedClustersMetricsCollector) collectProxyCAMetrics(ch chan<- prometheus.Metric, hcluster *hyperv1.HostedCluster, hclusterLabelValues []string) {
+	// Only report CA validity if a CA is actually configured
 	proxyCAValid := 0.0
 	validProxyCondition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.ValidProxyConfiguration))
 	if validProxyCondition != nil && validProxyCondition.Status == metav1.ConditionTrue {
@@ -475,6 +478,7 @@ func (c *hostedClustersMetricsCollector) collectProxyCAMetrics(ch chan<- prometh
 		hclusterLabelValues...,
 	)
 
+	// Silently skip expiry time if we can't fetch it
 	proxyExpiryTime := 0.0
 	expiryTime, err := c.expiryTimeProxyCA(hcluster)
 	if err == nil {
@@ -559,6 +563,7 @@ func collectAzureInfoMetrics(ch chan<- prometheus.Metric, hcluster *hyperv1.Host
 	}
 }
 
+// Use detailed credential status: 0=valid, 1=invalid, 2=unknown
 func collectAwsCredsMetric(ch chan<- prometheus.Metric, hcluster *hyperv1.HostedCluster, hclusterLabelValues []string) {
 	credStatus := platformaws.GetCredentialStatus(hcluster)
 	ch <- prometheus.MustNewConstMetric(

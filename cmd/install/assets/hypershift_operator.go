@@ -993,6 +993,9 @@ func (o HyperShiftOperatorDeployment) addAzurePlatformResources(envVars *[]corev
 	if o.AzurePLSResourceGroup != "" {
 		*envVars = append(*envVars, corev1.EnvVar{Name: "AZURE_RESOURCE_GROUP", Value: o.AzurePLSResourceGroup})
 	}
+	// Workload identity mode: the SA annotation triggers Azure AD Workload Identity
+	// webhook to inject federated tokens. Set the client ID as an env var so the
+	// HO platform controller can construct credentials.
 	if o.AzurePLSManagedIdentityClientID != "" {
 		*envVars = append(*envVars, corev1.EnvVar{Name: "AZURE_PLS_CLIENT_ID", Value: o.AzurePLSManagedIdentityClientID})
 		if o.AzurePLSSubscriptionID != "" {

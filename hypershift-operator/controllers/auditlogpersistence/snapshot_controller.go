@@ -76,6 +76,7 @@ func (r *SnapshotReconciler) getSnapshotConfig(ctx context.Context) (*auditlogpe
 		return nil, fmt.Errorf("failed to get AuditLogPersistenceConfig: %w", err)
 	}
 
+	// Apply defaults to a copy of the spec to avoid modifying the original
 	spec := config.Spec.DeepCopy()
 	ApplyDefaults(spec)
 
@@ -97,6 +98,7 @@ func (r *SnapshotReconciler) getLastObservedRestartCount(ctx context.Context, po
 		if podCopy.Annotations == nil {
 			podCopy.Annotations = make(map[string]string)
 		}
+		// Reset corrupted annotation to 0
 		podCopy.Annotations[lastObservedRestartCountAnnotation] = "0"
 		if patchErr := r.client.Patch(ctx, podCopy, client.MergeFrom(pod)); patchErr != nil {
 			log.Error(patchErr, "Failed to reset corrupted annotation")
@@ -118,6 +120,7 @@ func (r *SnapshotReconciler) checkSnapshotInterval(ctx context.Context, pod *cor
 		if podCopy.Annotations == nil {
 			podCopy.Annotations = make(map[string]string)
 		}
+		// Remove corrupted annotation - it will be set correctly after snapshot creation
 		delete(podCopy.Annotations, lastSnapshotTimeAnnotation)
 		if patchErr := r.client.Patch(ctx, podCopy, client.MergeFrom(pod)); patchErr != nil {
 			log.Error(patchErr, "Failed to remove corrupted last snapshot time annotation")

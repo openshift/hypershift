@@ -355,6 +355,7 @@ func prototypeResources(ctx context.Context, opts *CreateOptions) (*resources, e
 }
 
 func resolveReleaseImage(ctx context.Context, opts *CreateOptions) error {
+	// allow client side defaulting when release image is empty but release stream is set.
 	if len(opts.ReleaseImage) != 0 || len(opts.ReleaseStream) == 0 {
 		return nil
 	}
@@ -386,6 +387,7 @@ func parseKeyValuePairs(items []string, kind string) (map[string]string, error) 
 }
 
 func resolvePullSecret(opts *CreateOptions) ([]byte, error) {
+	// overrides if pullSecretFile is set
 	if len(opts.PullSecretFile) > 0 {
 		data, err := os.ReadFile(opts.PullSecretFile)
 		if err != nil {
@@ -430,6 +432,7 @@ func applyEtcdConfig(cluster *hyperv1.HostedCluster, opts *CreateOptions) error 
 func applySSHKey(prototype *resources, opts *CreateOptions) error {
 	sshKey, sshPrivateKey := opts.PublicKey, opts.PrivateKey
 	var err error
+	// overrides secret if SSHKeyFile is set
 	if len(opts.SSHKeyFile) > 0 {
 		if opts.GenerateSSH {
 			return fmt.Errorf("--generate-ssh and --ssh-key cannot be specified together")
@@ -468,6 +471,8 @@ func applySSHKey(prototype *resources, opts *CreateOptions) error {
 }
 
 func applyPausedUntil(cluster *hyperv1.HostedCluster, opts *CreateOptions) error {
+	// validate pausedUntil value
+	// valid values are either "true" or RFC3339 format date
 	if len(opts.PausedUntil) == 0 || opts.PausedUntil == "true" {
 		return nil
 	}
@@ -725,14 +730,18 @@ func (opts *RawCreateOptions) Validate(ctx context.Context) (*ValidatedCreateOpt
 		return nil, err
 	}
 
+	// Validate HostedCluster name follows RFC1123 standard
+	// https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#dns-label-names
 	errs := validation.IsDNS1123Label(opts.Name)
 	if len(errs) > 0 {
 		return nil, fmt.Errorf("HostedCluster name failed RFC1123 validation: %s", strings.Join(errs[:], " "))
 	}
 
+	// Validate HostedCluster with this name doesn't exist in the namespace
 	if err := opts.validateClusterExistence(ctx); err != nil {
 		return nil, err
 	}
+	// Validate multi-arch aspects
 	if err := opts.validateArchAndFeatureSet(); err != nil {
 		return nil, err
 	}
@@ -804,6 +813,7 @@ func (opts *RawCreateOptions) validateArchAndFeatureSet() error {
 		return fmt.Errorf("specified arch %q is not supported", opts.Arch)
 	}
 
+	// Validate feature set is "", TechPreviewNoUpgrade, or DevPreviewNoUpgrade
 	switch opts.FeatureSet {
 	case string(configv1.Default), string(configv1.TechPreviewNoUpgrade), string(configv1.DevPreviewNoUpgrade):
 	case string(configv1.CustomNoUpgrade):

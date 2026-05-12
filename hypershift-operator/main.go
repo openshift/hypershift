@@ -432,6 +432,8 @@ func resolveOperatorImage(ctx context.Context, mgr ctrl.Manager, opts *StartOpti
 		if err := mgr.GetAPIReader().Get(ctx, crclient.ObjectKeyFromObject(me), me); err != nil {
 			return "", fmt.Errorf("failed to get operator pod %s: %w", crclient.ObjectKeyFromObject(me), err)
 		}
+		// Use the container status to make sure we get the sha256 reference rather than a potentially
+		// floating tag.
 		for _, container := range me.Status.ContainerStatuses {
 			if container.Name == "operator" {
 				return strings.TrimPrefix(container.ImageID, "docker-pullable://"), nil
@@ -446,6 +448,7 @@ func resolveOperatorImage(ctx context.Context, mgr ctrl.Manager, opts *StartOpti
 		if err != nil {
 			return false, err
 		}
+		// Apparently this is occasionally set to an empty string
 		if operatorImage == "" {
 			log.Info("operator image is empty, retrying")
 			return false, nil
@@ -538,6 +541,9 @@ func setupHostedClusterController(ctx context.Context, mgr ctrl.Manager, opts *S
 }
 
 func cleanupLegacyWebhook(ctx context.Context, mgr ctrl.Manager, opts *StartOptions) error {
+	// Since we dropped the validation webhook server we need to ensure this resource doesn't exist
+	// otherwise it will intercept kas requests and fail.
+	// TODO (alberto): dropped in 4.14.
 	if opts.EnableValidatingWebhook {
 		return nil
 	}
@@ -629,6 +635,7 @@ func setupPlatformControllers(mgr ctrl.Manager, opts *StartOptions, mgmtClusterC
 }
 
 func setupAzurePlatformController(mgr ctrl.Manager, log logr.Logger) error {
+	// ARO HCP uses Swift networking, not Private Link Services
 	if azureutil.IsAroHCP() {
 		return nil
 	}
@@ -732,6 +739,8 @@ func setupSupportControllers(mgr ctrl.Manager, opts *StartOptions, mgmtClusterCa
 		return fmt.Errorf("unable to create supported version controller: %w", err)
 	}
 
+	// If enabled, start controller to ensure UWM stack is enabled and configured
+	// to remotely write telemetry metrics.
 	if opts.EnableUWMTelemetryRemoteWrite {
 		if err := (&uwmtelemetry.Reconciler{
 			Namespace:              opts.Namespace,

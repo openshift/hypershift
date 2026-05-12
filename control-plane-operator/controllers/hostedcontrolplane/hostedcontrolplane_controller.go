@@ -502,6 +502,7 @@ func (r *HostedControlPlaneReconciler) reconcileKASStatus(ctx context.Context, h
 			return fmt.Errorf("failed to fetch Kube APIServer deployment %s/%s: %w", deployment.Namespace, deployment.Name, err)
 		}
 	} else {
+		// Assume the deployment is unavailable until proven otherwise.
 		newCondition = metav1.Condition{
 			Type:   string(hyperv1.KubeAPIServerAvailable),
 			Status: metav1.ConditionFalse,
@@ -670,6 +671,8 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return reconcile.Result{}, fmt.Errorf("failed to look up release image metadata: %w", err)
 	}
 
+	// This runs after LookupReleaseImage so we can use the version and resolved
+	// digest from the release image metadata.
 	if err := r.reconcileControlPlaneVersionStatus(ctx, hostedControlPlane, originalHostedControlPlane, releaseImage); err != nil {
 		return reconcile.Result{}, err
 	}
@@ -847,6 +850,8 @@ func (r *HostedControlPlaneReconciler) reconcileControlPlaneVersionStatus(ctx co
 	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
 		return fmt.Errorf("failed to get pull secret for version reconciliation: %w", err)
 	}
+	// Resolve the release image to its digest so controlPlaneVersion records
+	// the immutable image reference, consistent with how CVO records images.
 	_, resolvedRef, err := r.ImageMetadataProvider.GetDigest(ctx, util.HCPControlPlaneReleaseImage(hostedControlPlane), pullSecret.Data[corev1.DockerConfigJsonKey])
 	if err != nil {
 		return fmt.Errorf("failed to resolve control plane release image digest: %w", err)
@@ -855,6 +860,9 @@ func (r *HostedControlPlaneReconciler) reconcileControlPlaneVersionStatus(ctx co
 
 	componentsList := &hyperv1.ControlPlaneComponentList{}
 	if listErr := r.Client.List(ctx, componentsList, client.InNamespace(hostedControlPlane.Namespace)); listErr != nil {
+		// On list failure, ensure a Partial entry exists so consumers
+		// know an upgrade was attempted. Preserve observedGeneration.
+		// Persist the Partial entry before returning the error.
 		hostedControlPlane.Status.ControlPlaneVersion = ensureControlPlaneVersionPartial(hostedControlPlane, clk, releaseImage.Version(), resolvedImage)
 		if patchErr := r.Client.Status().Patch(ctx, hostedControlPlane, client.MergeFromWithOptions(originalHostedControlPlane, client.MergeFromWithOptimisticLock{})); patchErr != nil {
 			return fmt.Errorf("failed to patch status after component list failure: %w (list error: %v)", patchErr, listErr)
@@ -1590,6 +1598,10 @@ func (r *HostedControlPlaneReconciler) reconcileOLMAndMiscCerts(ctx context.Cont
 }
 
 func (r *HostedControlPlaneReconciler) reconcileNetworkServingCerts(ctx context.Context, hcp *hyperv1.HostedControlPlane, p *pki.PKIParams, createOrUpdate upsert.CreateOrUpdateFN, rootCASecret *corev1.Secret) error {
+	// For the Multus Admission Controller, Network Node Identity, and OVN Control Plane Metrics Serving Certs:
+	//   We want to remove the secret if there was an existing one created by service-ca; otherwise, it will cause
+	//   issues in cases where you are upgrading an older CPO prior to us adding the feature to reconcile the serving
+	//   cert secret ourselves.
 	if !netutil.IsDisableMultiNetwork(hcp) {
 		multusAdmissionControllerService := manifests.MultusAdmissionControllerService(hcp.Namespace)
 		if err := r.Get(ctx, client.ObjectKeyFromObject(multusAdmissionControllerService), multusAdmissionControllerService); err != nil {
@@ -1598,6 +1610,8 @@ func (r *HostedControlPlaneReconciler) reconcileNetworkServingCerts(ctx context.
 			}
 		}
 
+		// If the service doesn't have the service ca annotation, delete any previous secret with the annotation and
+		// reconcile the secret with our own rootCA; otherwise, skip reconciling the secret with our own rootCA.
 		if hasServiceCAAnnotation := doesServiceHaveServiceCAAnnotation(multusAdmissionControllerService); !hasServiceCAAnnotation {
 			multusAdmissionControllerServingCertSecret := manifests.MultusAdmissionControllerServingCert(hcp.Namespace)
 
@@ -1620,6 +1634,8 @@ func (r *HostedControlPlaneReconciler) reconcileNetworkServingCerts(ctx context.
 		}
 	}
 
+	// If the service doesn't have the service ca annotation, delete any previous secret with the annotation and
+	// reconcile the secret with our own rootCA; otherwise, skip reconciling the secret with our own rootCA.
 	if hasServiceCAAnnotation := doesServiceHaveServiceCAAnnotation(networkNodeIdentityService); !hasServiceCAAnnotation {
 		networkNodeIdentityServingCertSecret := manifests.NetworkNodeIdentityControllerServingCert(hcp.Namespace)
 
@@ -1641,6 +1657,8 @@ func (r *HostedControlPlaneReconciler) reconcileNetworkServingCerts(ctx context.
 		}
 	}
 
+	// If the service doesn't have the service ca annotation, delete any previous secret with the annotation and
+	// reconcile the secret with our own rootCA; otherwise, skip reconciling the secret with our own rootCA.
 	if hasServiceCAAnnotation := doesServiceHaveServiceCAAnnotation(ovnControlPlaneService); !hasServiceCAAnnotation {
 		ovnControlPlaneMetricsServingCertSecret := manifests.OVNControlPlaneMetricsServingCert(hcp.Namespace)
 

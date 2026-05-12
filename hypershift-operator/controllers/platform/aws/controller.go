@@ -460,6 +460,7 @@ func listKarpenterSubnetIDs(ctx context.Context, c client.Client, namespace stri
 	return subnetIDs, nil
 }
 
+// If a previous awsendpointservice that points to an ingress controller exists, remove it
 func (r *AWSEndpointServiceReconciler) deleteObsoleteEndpointService(ctx context.Context, awsEndpointService *hyperv1.AWSEndpointService) (done bool, err error) {
 	endpointServices := &hyperv1.AWSEndpointServiceList{}
 	if err := r.List(ctx, endpointServices, client.InNamespace(awsEndpointService.Namespace)); err != nil {
@@ -476,6 +477,7 @@ func (r *AWSEndpointServiceReconciler) deleteObsoleteEndpointService(ctx context
 			hasPrivateIngressControllerEPService = true
 		}
 	}
+	// Only if both router and private ingress controller AWSEndpointServices exist, delete the obsolete one
 	if !hasPrivateRouterEPService || !hasPrivateIngressControllerEPService {
 		return false, nil
 	}
@@ -515,6 +517,7 @@ func (r *AWSEndpointServiceReconciler) ensureVpcEndpointService(ctx context.Cont
 			return "", "", err
 		}
 		if len(output.ServiceConfigurations) == 0 {
+			// clear the EndpointServiceName so a new Endpoint Service is created on the requeue
 			awsEndpointService.Status.EndpointServiceName = ""
 			return "", "", fmt.Errorf("endpoint service %s not found, resetting status", serviceName)
 		}

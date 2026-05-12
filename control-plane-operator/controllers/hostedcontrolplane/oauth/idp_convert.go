@@ -191,7 +191,7 @@ func convertGitLabIDP(providerConfig *configv1.IdentityProviderConfig, i int, id
 		ClientSecret: configv1.StringSource{StringSourceSpec: configv1.StringSourceSpec{
 			File: idpVolumeMounts.SecretPath(i, gitlabConfig.ClientSecret.Name, "client-secret", configv1.ClientSecretKey),
 		}},
-		Legacy: new(bool),
+		Legacy: new(bool), // we require OIDC for GitLab now
 	}
 	if gitlabConfig.CA.Name != "" {
 		provider.CA = idpVolumeMounts.ConfigMapPath(i, gitlabConfig.CA.Name, "ca", corev1.ServiceAccountRootCAKey)
@@ -235,7 +235,7 @@ func convertKeystoneIDP(providerConfig *configv1.IdentityProviderConfig, i int, 
 		TypeMeta:             metav1.TypeMeta{Kind: "KeystonePasswordIdentityProvider", APIVersion: osinv1.GroupVersion.String()},
 		RemoteConnectionInfo: configv1.RemoteConnectionInfo{URL: keystoneConfig.URL},
 		DomainName:           keystoneConfig.DomainName,
-		UseKeystoneIdentity:  true,
+		UseKeystoneIdentity:  true, // force use of keystone ID
 	}
 	if keystoneConfig.CA.Name != "" {
 		provider.RemoteConnectionInfo.CA = idpVolumeMounts.ConfigMapPath(i, keystoneConfig.CA.Name, "ca", corev1.ServiceAccountRootCAKey)
@@ -291,6 +291,7 @@ func convertOpenIDIDP(ctx context.Context, providerConfig *configv1.IdentityProv
 		ExtraScopes:              openIDConfig.ExtraScopes,
 		ExtraAuthorizeParameters: openIDConfig.ExtraAuthorizeParameters,
 	}
+	// Handle special case for IBM Cloud's OIDC provider (need to override some fields not available in public api)
 	if configOverride != nil {
 		openIDProvider.URLs = configOverride.URLs
 		openIDProvider.Claims = configOverride.Claims
@@ -308,6 +309,7 @@ func convertOpenIDIDP(ctx context.Context, providerConfig *configv1.IdentityProv
 			}
 		}
 		openIDProvider.Claims = osinv1.OpenIDClaims{
+			// There is no longer a user-facing setting for ID as it is considered unsafe
 			ID:                []string{configv1.UserIDClaim},
 			PreferredUsername: openIDConfig.Claims.PreferredUsername,
 			Name:              openIDConfig.Claims.Name,
@@ -322,6 +324,9 @@ func convertOpenIDIDP(ctx context.Context, providerConfig *configv1.IdentityProv
 	if configOverride != nil && configOverride.Challenge != nil {
 		data.challenge = *configOverride.Challenge
 	} else {
+		// openshift CR validating in kube-apiserver does not allow
+		// challenge-redirecting IdPs to be configured with OIDC so it is safe
+		// to allow challenge-issuing flow if it's available on the OIDC side
 		challengeFlowsAllowed, err := checkOIDCPasswordGrantFlow(ctx, kclient, openIDProvider.URLs.Token, openIDConfig.ClientID, namespace, openIDConfig.CA, openIDConfig.ClientSecret, skipKonnectivityDialer)
 		if err != nil {
 			return nil, fmt.Errorf("error attempting password grant flow: %v", err)

@@ -410,6 +410,9 @@ func (c *CAPI) reconcileMachineDeployment(ctx context.Context, log logr.Logger,
 
 	c.setMachineDeploymentMetadata(machineDeployment, capiClusterName)
 
+	// Set defaults. These are normally set by the CAPI machinedeployment webhook.
+	// However, since we don't run the webhook, CAPI updates the machinedeployment
+	// after it has been created with defaults.
 	machineDeployment.Spec.MinReadySeconds = ptr.To[int32](0)
 	machineDeployment.Spec.ClusterName = capiClusterName
 	if machineDeployment.Spec.Selector.MatchLabels == nil {
@@ -429,6 +432,8 @@ func (c *CAPI) reconcileMachineDeployment(ctx context.Context, log logr.Logger,
 				resourcesName:           resourcesName,
 				capiv1.ClusterNameLabel: capiClusterName,
 			},
+			// Annotations here propagate down to Machines
+			// https://cluster-api.sigs.k8s.io/developer/architecture/controllers/metadata-propagation.html#machinedeployment.
 			Annotations: map[string]string{
 				nodePoolAnnotation:                       client.ObjectKeyFromObject(nodePool).String(),
 				hyperv1.NodePoolReleaseVersionAnnotation: c.Version(),
@@ -451,6 +456,7 @@ func (c *CAPI) reconcileMachineDeployment(ctx context.Context, log logr.Logger,
 		},
 	}
 
+	// This label must be on the MachineDeployment template so the spot MHC can select machines
 	if isSpotEnabled(nodePool) {
 		machineDeployment.Spec.Template.Labels[interruptibleInstanceLabel] = ""
 	}
@@ -494,11 +500,13 @@ func (c *CAPI) setMachineDeploymentMetadata(machineDeployment *capiv1.MachineDep
 }
 
 func setMachineDeploymentFailureDomain(nodePool *hyperv1.NodePool, machineDeployment *capiv1.MachineDeployment) {
+	// The CAPI provider for OpenStack uses the FailureDomain field to set the availability zone.
 	if nodePool.Spec.Platform.Type == hyperv1.OpenStackPlatform && nodePool.Spec.Platform.OpenStack != nil {
 		if nodePool.Spec.Platform.OpenStack.AvailabilityZone != "" {
 			machineDeployment.Spec.Template.Spec.FailureDomain = ptr.To(nodePool.Spec.Platform.OpenStack.AvailabilityZone)
 		}
 	}
+	// The CAPI provider for GCP uses the FailureDomain field to set the zone.
 	if nodePool.Spec.Platform.Type == hyperv1.GCPPlatform && nodePool.Spec.Platform.GCP != nil {
 		if nodePool.Spec.Platform.GCP.Zone != "" {
 			machineDeployment.Spec.Template.Spec.FailureDomain = ptr.To(nodePool.Spec.Platform.GCP.Zone)
@@ -506,6 +514,11 @@ func setMachineDeploymentFailureDomain(nodePool *hyperv1.NodePool, machineDeploy
 	}
 }
 
+// propagateLabelsAndTaintsToMachines propagates label/taints directly into Machines
+// to avoid a NodePool label/taints change triggering a rolling upgrade.
+// TODO(Alberto): drop this and rely on core in-place propagation once CAPI 1.4.0
+// https://github.com/kubernetes-sigs/cluster-api/releases comes through the payload.
+// https://issues.redhat.com/browse/HOSTEDCP-971
 func (c *CAPI) propagateLabelsAndTaintsToMachines(ctx context.Context, log logr.Logger, machineDeployment *capiv1.MachineDeployment) error {
 	nodePool := c.nodePool
 	machineList := &capiv1.MachineList{}
@@ -530,6 +543,9 @@ func (c *CAPI) propagateLabelsAndTaintsToMachines(ctx context.Context, log logr.
 				machine.Labels[labelKey] = v
 			}
 
+			// Propagate globalPS managed label to Machines so the HCCO Node controller
+			// applies it to Nodes. This enables the GlobalPullSecret DaemonSet to
+			// schedule on Replace nodes. Only AWS and Azure platforms support this.
 			if nodePool.Spec.Platform.Type == hyperv1.AWSPlatform || nodePool.Spec.Platform.Type == hyperv1.AzurePlatform {
 				globalPSLabelKey := fmt.Sprintf("%s.%s", labelManagedPrefix, globalPSNodeLabel)
 				machine.Labels[globalPSLabelKey] = "true"
@@ -594,6 +610,8 @@ func (c *CAPI) reconcileMachineDeploymentStatus(log logr.Logger, machineDeployme
 	targetConfigHash := c.HashWithoutVersion()
 	targetConfigVersionHash := c.Hash()
 
+	// If the MachineDeployment is now processing we know
+	// is at the expected version (spec.version) and config (userData Secret) so we reconcile status and annotation.
 	if MachineDeploymentComplete(machineDeployment) {
 		if nodePool.Status.Version != targetVersion {
 			log.Info("Version update complete",

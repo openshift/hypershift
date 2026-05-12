@@ -88,6 +88,8 @@ func (r *HostedClusterReconciler) handleExistingEtcdRecoveryJob(ctx context.Cont
 	return false, nil
 }
 
+// Creating the condition for the first time or in the case of the ETCD fails intermittently.
+// If the ETCD keeps failing and recovering, we can see the hcluster.Generation increasing indefinitely.
 func (r *HostedClusterReconciler) setEtcdRecoveryCondition(ctx context.Context, hcluster *hyperv1.HostedCluster, status metav1.ConditionStatus, reason, message string) error {
 	condition := metav1.Condition{
 		Type:               string(hyperv1.EtcdRecoveryActive),
@@ -128,6 +130,7 @@ func (r *HostedClusterReconciler) detectAndTriggerEtcdRecovery(ctx context.Conte
 	}
 
 	if failingEtcdPod == nil {
+		// However, if the statefulset is not reporting fully available, check later
 		if !fullyAvailable {
 			return &requeueAfter, nil
 		}
