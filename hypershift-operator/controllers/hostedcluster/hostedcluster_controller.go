@@ -633,6 +633,11 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 
 	createOrUpdate := r.createOrUpdate(req)
 
+	// Reconcile apiServer encryption configuration
+	if err := r.reconcileAPIServerEncryptionConfig(ctx, hcluster, createOrUpdate, log); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	// Reconcile platform defaults
 	if err := r.reconcilePlatformDefaultSettings(ctx, hcluster, createOrUpdate, log); err != nil {
 		return ctrl.Result{}, err
@@ -4057,6 +4062,25 @@ func (r *HostedClusterReconciler) validateOCPConfigurations(ctx context.Context,
 		}
 	}
 
+	if hc.Spec.Configuration != nil && hc.Spec.Configuration.APIServer != nil {
+		encType := hc.Spec.Configuration.APIServer.Encryption.Type
+		encPath := field.NewPath("spec", "configuration", "apiServer", "encryption", "type")
+		switch encType {
+		case configv1.EncryptionTypeAESGCM:
+			errs = append(errs, field.Invalid(encPath, encType, "aesgcm encryption is not supported; use spec.configuration.apiServer.encryption.type aescbc or configure spec.secretEncryption with type aescbc or kms"))
+		case configv1.EncryptionTypeKMS:
+			if hc.Spec.SecretEncryption == nil ||
+				hc.Spec.SecretEncryption.Type != hyperv1.KMS ||
+				hc.Spec.SecretEncryption.KMS == nil {
+				errs = append(errs, field.Invalid(encPath, encType, "KMS encryption requires configuring spec.secretEncryption with platform-specific KMS settings"))
+			} else if hc.Spec.SecretEncryption.KMS.AWS == nil &&
+				hc.Spec.SecretEncryption.KMS.IBMCloud == nil &&
+				hc.Spec.SecretEncryption.KMS.Azure == nil {
+				errs = append(errs, field.Invalid(encPath, encType, "KMS encryption requires at least one platform-specific provider (aws, azure, or ibmcloud) in spec.secretEncryption.kms"))
+			}
+		}
+	}
+
 	return errs.ToAggregate()
 }
 
@@ -4927,6 +4951,62 @@ func (r *HostedClusterReconciler) reconcileKubevirtPlatformDefaultSettings(ctx c
 				return fmt.Errorf("failed to update hostedcluster %s annotation: %w", hc.Name, err)
 			}
 		}
+	}
+
+	return nil
+}
+
+// reconcileAPIServerEncryptionConfig honors spec.configuration.apiServer.encryption
+// by auto-generating an AESCBC key and populating spec.secretEncryption when the user
+// sets encryption.type to aescbc without configuring secretEncryption directly.
+// If secretEncryption is already set, it takes precedence (override power).
+func (r *HostedClusterReconciler) reconcileAPIServerEncryptionConfig(ctx context.Context, hc *hyperv1.HostedCluster, createOrUpdate upsert.CreateOrUpdateFN, logger logr.Logger) error {
+	if hc.Spec.Configuration == nil || hc.Spec.Configuration.APIServer == nil {
+		return nil
+	}
+	if hc.Spec.Configuration.APIServer.Encryption.Type != configv1.EncryptionTypeAESCBC {
+		return nil
+	}
+	if hc.Spec.SecretEncryption != nil && len(hc.Spec.SecretEncryption.Type) > 0 {
+		return nil
+	}
+
+	logger.Info("configuration.apiServer.encryption.type is aescbc but secretEncryption is not set; auto-generating key", "hostedCluster", client.ObjectKeyFromObject(hc))
+	etcdEncSec := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: hc.Namespace,
+			Name:      hc.Name + etcdEncKeyPostfix,
+		},
+	}
+
+	_, err := createOrUpdate(ctx, r.Client, etcdEncSec, func() error {
+		if etcdEncSec.Data == nil {
+			etcdEncSec.Data = map[string][]byte{}
+		}
+		if _, exists := etcdEncSec.Data[hyperv1.AESCBCKeySecretKey]; !exists {
+			generatedKey := make([]byte, 32)
+			if _, err := rand.Read(generatedKey); err != nil {
+				return fmt.Errorf("failed to generate the etcd encryption key: %w", err)
+			}
+			etcdEncSec.Data[hyperv1.AESCBCKeySecretKey] = generatedKey
+		}
+		etcdEncSec.Type = corev1.SecretTypeOpaque
+
+		ownerRef := config.OwnerRefFrom(hc)
+		ownerRef.ApplyTo(etcdEncSec)
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create ETCD SecretEncryption key from apiServer encryption config: %w", err)
+	}
+
+	hc.Spec.SecretEncryption = &hyperv1.SecretEncryptionSpec{
+		Type: hyperv1.AESCBC,
+		AESCBC: &hyperv1.AESCBCSpec{
+			ActiveKey: corev1.LocalObjectReference{
+				Name: etcdEncSec.Name,
+			},
+		},
 	}
 
 	return nil
