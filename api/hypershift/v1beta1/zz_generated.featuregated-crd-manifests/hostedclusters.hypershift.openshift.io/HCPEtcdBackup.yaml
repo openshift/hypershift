@@ -5350,6 +5350,8 @@ spec:
                         - message: privateLink is forbidden when type is not PrivateLink
                           rule: 'self.type != ''PrivateLink'' ? !has(self.privateLink)
                             : true'
+                        - message: privateLink is required when type is PrivateLink
+                          rule: self.type != 'PrivateLink' || has(self.privateLink)
                       resourceGroup:
                         default: default
                         description: |-
@@ -5484,9 +5486,9 @@ spec:
                         == ''Public'') == (oldSelf.topology == ''Public'')'
                     - message: private is required when topology is Private or PublicAndPrivate,
                         and forbidden otherwise
-                      rule: '!has(self.topology) || ((self.topology == ''Private''
-                        || self.topology == ''PublicAndPrivate'') ? has(self.private)
-                        : !has(self.private))'
+                      rule: 'has(self.topology) && (self.topology == ''Private'' ||
+                        self.topology == ''PublicAndPrivate'') ? has(self.private)
+                        : !has(self.private)'
                     - message: workloadIdentities.controlPlaneOperator is required
                         when Private Link is configured with WorkloadIdentities authentication
                       rule: '!has(self.private) || self.private.type != ''PrivateLink''
