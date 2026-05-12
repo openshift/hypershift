@@ -164,7 +164,13 @@ func isKASAvailable(ctx context.Context, cpNamespace string, c client.Client) (b
 //   - True  / AsExpected          — Karpenter enabled in spec AND both components fully rolled out.
 //   - False / AutoNodeProgressing — Enable or disable operation is in progress.
 //   - False / AutoNodeNotConfigured — Karpenter not in spec AND no components present.
-func (r *HostedClusterReconciler) reconcileAutoNodeEnabledCondition(ctx context.Context, hcluster *hyperv1.HostedCluster, hcpNamespace string) metav1.Condition {
+//
+// reconcileAutoNodeEnabledCondition returns the AutoNodeEnabled condition and whether
+// the caller should requeue to poll for progress. The second return value is true when
+// an enable or disable operation is still in flight; the HC reconciler does not watch
+// ControlPlaneComponent resources, so a periodic requeue is needed to pick up status
+// changes from the karpenter-operator's CPC updates.
+func (r *HostedClusterReconciler) reconcileAutoNodeEnabledCondition(ctx context.Context, hcluster *hyperv1.HostedCluster, hcpNamespace string) (metav1.Condition, bool) {
 	condition := metav1.Condition{
 		Type:               string(hyperv1.AutoNodeEnabled),
 		ObservedGeneration: hcluster.Generation,
@@ -178,7 +184,7 @@ func (r *HostedClusterReconciler) reconcileAutoNodeEnabledCondition(ctx context.
 		condition.Status = metav1.ConditionUnknown
 		condition.Reason = hyperv1.AutoNodeEvaluationFailedReason
 		condition.Message = fmt.Sprintf("failed to list ControlPlaneComponents: %v", err)
-		return condition
+		return condition, false
 	}
 
 	// Grab all of our karpenter components
@@ -195,7 +201,7 @@ func (r *HostedClusterReconciler) reconcileAutoNodeEnabledCondition(ctx context.
 			condition.Status = metav1.ConditionFalse
 			condition.Reason = hyperv1.AutoNodeProgressingReason
 			condition.Message = "AutoNode is being enabled: waiting for components to be created"
-			return condition
+			return condition, true
 		}
 		// Check if they're ready
 		var notReady []string
@@ -214,13 +220,13 @@ func (r *HostedClusterReconciler) reconcileAutoNodeEnabledCondition(ctx context.
 			condition.Status = metav1.ConditionFalse
 			condition.Reason = hyperv1.AutoNodeProgressingReason
 			condition.Message = fmt.Sprintf("AutoNode is being enabled: %s", strings.Join(notReady, "; "))
-			return condition
+			return condition, true
 		}
 		// Otherwise report ready
 		condition.Status = metav1.ConditionTrue
 		condition.Reason = hyperv1.AsExpectedReason
 		condition.Message = "AutoNode is ready"
-		return condition
+		return condition, false
 	}
 
 	// Karpenter not enabled — check if Deployments are still terminating.
@@ -236,7 +242,7 @@ func (r *HostedClusterReconciler) reconcileAutoNodeEnabledCondition(ctx context.
 			condition.Status = metav1.ConditionUnknown
 			condition.Reason = hyperv1.AutoNodeEvaluationFailedReason
 			condition.Message = fmt.Sprintf("failed to check karpenter deployments: %v", err)
-			return condition
+			return condition, false
 		}
 	}
 
@@ -244,11 +250,11 @@ func (r *HostedClusterReconciler) reconcileAutoNodeEnabledCondition(ctx context.
 		condition.Status = metav1.ConditionFalse
 		condition.Reason = hyperv1.AutoNodeProgressingReason
 		condition.Message = fmt.Sprintf("AutoNode is being disabled: waiting for deployments to be removed: %s", strings.Join(runningDeployments, ", "))
-		return condition
+		return condition, true
 	}
 
 	condition.Status = metav1.ConditionFalse
 	condition.Reason = hyperv1.AutoNodeNotConfiguredReason
 	condition.Message = "AutoNode provisioner is not configured"
-	return condition
+	return condition, false
 }

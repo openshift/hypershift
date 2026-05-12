@@ -297,14 +297,16 @@ func TestReconcileAutoNodeEnabledCondition(t *testing.T) {
 	}
 
 	tests := map[string]struct {
-		autoNode    hyperv1.AutoNode
-		components  []hyperv1.ControlPlaneComponent
-		deployments []appsv1.Deployment
-		want        metav1.Condition
+		autoNode       hyperv1.AutoNode
+		components     []hyperv1.ControlPlaneComponent
+		deployments    []appsv1.Deployment
+		want           metav1.Condition
+		wantProgessing bool
 	}{
 		"When karpenter is enabled and components not yet created it should report progressing": {
-			autoNode:   karpenterEnabledAutoNode,
-			components: nil,
+			autoNode:       karpenterEnabledAutoNode,
+			components:     nil,
+			wantProgessing: true,
 			want: metav1.Condition{
 				Type:   string(hyperv1.AutoNodeEnabled),
 				Status: metav1.ConditionFalse,
@@ -319,6 +321,7 @@ func TestReconcileAutoNodeEnabledCondition(t *testing.T) {
 					Status:     hyperv1.ControlPlaneComponentStatus{Conditions: []metav1.Condition{rolloutCompleteTrue}},
 				},
 			},
+			wantProgessing: true,
 			want: metav1.Condition{
 				Type:   string(hyperv1.AutoNodeEnabled),
 				Status: metav1.ConditionFalse,
@@ -337,6 +340,7 @@ func TestReconcileAutoNodeEnabledCondition(t *testing.T) {
 					Status:     hyperv1.ControlPlaneComponentStatus{Conditions: []metav1.Condition{rolloutCompleteFalse}},
 				},
 			},
+			wantProgessing: true,
 			want: metav1.Condition{
 				Type:   string(hyperv1.AutoNodeEnabled),
 				Status: metav1.ConditionFalse,
@@ -367,6 +371,7 @@ func TestReconcileAutoNodeEnabledCondition(t *testing.T) {
 				{ObjectMeta: metav1.ObjectMeta{Name: karpenterv2.ComponentName, Namespace: hcpNamespace}},
 				{ObjectMeta: metav1.ObjectMeta{Name: karpenteroperatorv2.ComponentName, Namespace: hcpNamespace}},
 			},
+			wantProgessing: true,
 			want: metav1.Condition{
 				Type:   string(hyperv1.AutoNodeEnabled),
 				Status: metav1.ConditionFalse,
@@ -378,6 +383,7 @@ func TestReconcileAutoNodeEnabledCondition(t *testing.T) {
 			deployments: []appsv1.Deployment{
 				{ObjectMeta: metav1.ObjectMeta{Name: karpenterv2.ComponentName, Namespace: hcpNamespace}},
 			},
+			wantProgessing: true,
 			want: metav1.Condition{
 				Type:   string(hyperv1.AutoNodeEnabled),
 				Status: metav1.ConditionFalse,
@@ -439,13 +445,16 @@ func TestReconcileAutoNodeEnabledCondition(t *testing.T) {
 				},
 			}
 
-			got := r.reconcileAutoNodeEnabledCondition(context.Background(), hcluster, hcpNamespace)
+			got, progressing := r.reconcileAutoNodeEnabledCondition(context.Background(), hcluster, hcpNamespace)
 			got.ObservedGeneration = 0
 			got.Message = ""
 			got.LastTransitionTime = metav1.Time{}
 
 			if !equality.Semantic.DeepEqual(tc.want, got) {
-				t.Errorf("expected %+v, got %+v", tc.want, got)
+				t.Errorf("condition: expected %+v, got %+v", tc.want, got)
+			}
+			if progressing != tc.wantProgessing {
+				t.Errorf("progressing: expected %v, got %v", tc.wantProgessing, progressing)
 			}
 		})
 	}
