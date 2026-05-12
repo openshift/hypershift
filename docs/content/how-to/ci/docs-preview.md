@@ -11,7 +11,7 @@ The preview system uses two separate workflows for security, following the reusa
 
 GitHub shows a **View deployment** link in the PR timeline via the `docs-preview` environment.
 
-The preview is available at `https://pr-<number>.hypershift.pages.dev`.
+The preview is available at `https://pr-<number>.hypershift.pages.dev`. Previews are automatically cleaned up by Cloudflare's branch retention policy.
 
 ## Configuration
 
