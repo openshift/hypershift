@@ -86,12 +86,11 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false
-      - name: Restore Go build cache
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
-        with:
-          path: /tmp/go-build-cache
-          key: go-build-${{ matrix.shard }}-${{ hashFiles('go.mod') }}-${{ github.sha }}
-          restore-keys: go-build-${{ matrix.shard }}-${{ hashFiles('go.mod') }}-
+      - name: Warm Go build cache from EFS
+        run: |
+          if [ -d /cache/go-build ]; then
+            cp -a /cache/go-build /tmp/go-build-cache
+          fi
       - name: Run tests
         run: make test-shard TEST_PACKAGES="${{ matrix.packages }}" COVER_PROFILE="cover-${{ matrix.shard }}.out"
       - name: Upload to Codecov
