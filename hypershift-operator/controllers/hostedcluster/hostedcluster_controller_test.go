@@ -6569,3 +6569,380 @@ func TestComputeEndpointServiceCondition(t *testing.T) {
 		})
 	}
 }
+
+func TestReconcileAPIServerEncryptionConfig(t *testing.T) {
+	t.Parallel()
+
+	for _, testCase := range []struct {
+		name                      string
+		hc                        *hyperv1.HostedCluster
+		expectSecretCreated       bool
+		expectSecretEncryptionSet bool
+		expectedActiveKeyName     string
+	}{
+		{
+			name: "When configuration.apiServer.encryption.type is aescbc and secretEncryption is nil, it should generate key and set secretEncryption",
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: "test",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						APIServer: &configv1.APIServerSpec{
+							Encryption: configv1.APIServerEncryption{
+								Type: configv1.EncryptionTypeAESCBC,
+							},
+						},
+					},
+				},
+			},
+			expectSecretCreated:       true,
+			expectSecretEncryptionSet: true,
+			expectedActiveKeyName:     "test-cluster" + etcdEncKeyPostfix,
+		},
+		{
+			name: "When configuration.apiServer.encryption.type is aescbc and secretEncryption is already set, it should not override",
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: "test",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						APIServer: &configv1.APIServerSpec{
+							Encryption: configv1.APIServerEncryption{
+								Type: configv1.EncryptionTypeAESCBC,
+							},
+						},
+					},
+					SecretEncryption: &hyperv1.SecretEncryptionSpec{
+						Type: hyperv1.AESCBC,
+						AESCBC: &hyperv1.AESCBCSpec{
+							ActiveKey: corev1.LocalObjectReference{
+								Name: "custom-key",
+							},
+						},
+					},
+				},
+			},
+			expectSecretCreated:       false,
+			expectSecretEncryptionSet: true,
+			expectedActiveKeyName:     "custom-key",
+		},
+		{
+			name: "When configuration.apiServer.encryption.type is aescbc and secretEncryption has empty type, it should generate key and set secretEncryption",
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: "test",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						APIServer: &configv1.APIServerSpec{
+							Encryption: configv1.APIServerEncryption{
+								Type: configv1.EncryptionTypeAESCBC,
+							},
+						},
+					},
+					SecretEncryption: &hyperv1.SecretEncryptionSpec{},
+				},
+			},
+			expectSecretCreated:       true,
+			expectSecretEncryptionSet: true,
+			expectedActiveKeyName:     "test-cluster" + etcdEncKeyPostfix,
+		},
+		{
+			name: "When configuration is nil, it should be a no-op",
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: "test",
+				},
+				Spec: hyperv1.HostedClusterSpec{},
+			},
+			expectSecretCreated:       false,
+			expectSecretEncryptionSet: false,
+		},
+		{
+			name: "When configuration.apiServer.encryption.type is identity, it should be a no-op",
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: "test",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						APIServer: &configv1.APIServerSpec{
+							Encryption: configv1.APIServerEncryption{
+								Type: configv1.EncryptionTypeIdentity,
+							},
+						},
+					},
+				},
+			},
+			expectSecretCreated:       false,
+			expectSecretEncryptionSet: false,
+		},
+		{
+			name: "When configuration.apiServer is nil, it should be a no-op",
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: "test",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Configuration: &hyperv1.ClusterConfiguration{},
+				},
+			},
+			expectSecretCreated:       false,
+			expectSecretEncryptionSet: false,
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				WithObjects(testCase.hc).
+				Build()
+
+			r := &HostedClusterReconciler{
+				Client: fakeClient,
+			}
+
+			logger := zap.New(zap.UseDevMode(true), zap.Level(zapcore.InfoLevel))
+			err := r.reconcileAPIServerEncryptionConfig(t.Context(), testCase.hc, ctrl.CreateOrUpdate, logger)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			if testCase.expectSecretCreated {
+				secret := &corev1.Secret{}
+				err := fakeClient.Get(t.Context(), crclient.ObjectKey{
+					Namespace: testCase.hc.Namespace,
+					Name:      testCase.hc.Name + etcdEncKeyPostfix,
+				}, secret)
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(secret.Data).To(HaveKey(hyperv1.AESCBCKeySecretKey))
+				g.Expect(secret.Data[hyperv1.AESCBCKeySecretKey]).To(HaveLen(32))
+			} else {
+				secret := &corev1.Secret{}
+				err := fakeClient.Get(t.Context(), crclient.ObjectKey{
+					Namespace: testCase.hc.Namespace,
+					Name:      testCase.hc.Name + etcdEncKeyPostfix,
+				}, secret)
+				g.Expect(errors2.IsNotFound(err)).To(BeTrue())
+				if testCase.expectedActiveKeyName != "" && testCase.expectedActiveKeyName != testCase.hc.Name+etcdEncKeyPostfix {
+					err = fakeClient.Get(t.Context(), crclient.ObjectKey{
+						Namespace: testCase.hc.Namespace,
+						Name:      testCase.expectedActiveKeyName,
+					}, secret)
+					g.Expect(errors2.IsNotFound(err)).To(BeTrue())
+				}
+			}
+
+			if testCase.expectSecretEncryptionSet {
+				g.Expect(testCase.hc.Spec.SecretEncryption).ToNot(BeNil())
+				g.Expect(testCase.hc.Spec.SecretEncryption.Type).To(Equal(hyperv1.AESCBC))
+				g.Expect(testCase.hc.Spec.SecretEncryption.AESCBC).ToNot(BeNil())
+				g.Expect(testCase.hc.Spec.SecretEncryption.AESCBC.ActiveKey.Name).To(Equal(testCase.expectedActiveKeyName))
+			} else {
+				g.Expect(testCase.hc.Spec.SecretEncryption).To(BeNil())
+			}
+		})
+	}
+}
+
+func TestValidateOCPConfigurationsEncryption(t *testing.T) {
+	t.Parallel()
+
+	for _, testCase := range []struct {
+		name      string
+		hc        *hyperv1.HostedCluster
+		expectErr bool
+		errSubstr string
+	}{
+		{
+			name: "When encryption type is aesgcm, it should return an error",
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: "test",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						APIServer: &configv1.APIServerSpec{
+							Encryption: configv1.APIServerEncryption{
+								Type: configv1.EncryptionTypeAESGCM,
+							},
+						},
+					},
+				},
+			},
+			expectErr: true,
+			errSubstr: "aesgcm encryption is not supported",
+		},
+		{
+			name: "When encryption type is KMS without secretEncryption, it should return an error",
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: "test",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						APIServer: &configv1.APIServerSpec{
+							Encryption: configv1.APIServerEncryption{
+								Type: configv1.EncryptionTypeKMS,
+							},
+						},
+					},
+				},
+			},
+			expectErr: true,
+			errSubstr: "KMS encryption requires configuring spec.secretEncryption",
+		},
+		{
+			name: "When encryption type is KMS with secretEncryption set, it should not return an error",
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: "test",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						APIServer: &configv1.APIServerSpec{
+							Encryption: configv1.APIServerEncryption{
+								Type: configv1.EncryptionTypeKMS,
+							},
+						},
+					},
+					SecretEncryption: &hyperv1.SecretEncryptionSpec{
+						Type: hyperv1.KMS,
+						KMS: &hyperv1.KMSSpec{
+							Provider: hyperv1.AWS,
+							AWS: &hyperv1.AWSKMSSpec{
+								Region: "us-east-1",
+								ActiveKey: hyperv1.AWSKMSKeyEntry{
+									ARN: "arn:aws:kms:us-east-1:000000000000:key/00000000-0000-0000-0000-000000000000",
+								},
+								Auth: hyperv1.AWSKMSAuthSpec{
+									AWSKMSRoleARN: "arn:aws:iam::000000000000:role/test-role",
+								},
+							},
+						},
+					},
+				},
+			},
+			expectErr: false,
+		},
+		{
+			name: "When encryption type is KMS with secretEncryption type mismatch, it should return an error",
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: "test",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						APIServer: &configv1.APIServerSpec{
+							Encryption: configv1.APIServerEncryption{
+								Type: configv1.EncryptionTypeKMS,
+							},
+						},
+					},
+					SecretEncryption: &hyperv1.SecretEncryptionSpec{
+						Type: hyperv1.AESCBC,
+					},
+				},
+			},
+			expectErr: true,
+			errSubstr: "KMS encryption requires configuring spec.secretEncryption",
+		},
+		{
+			name: "When encryption type is KMS with nil kms config, it should return an error",
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: "test",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						APIServer: &configv1.APIServerSpec{
+							Encryption: configv1.APIServerEncryption{
+								Type: configv1.EncryptionTypeKMS,
+							},
+						},
+					},
+					SecretEncryption: &hyperv1.SecretEncryptionSpec{
+						Type: hyperv1.KMS,
+					},
+				},
+			},
+			expectErr: true,
+			errSubstr: "KMS encryption requires configuring spec.secretEncryption",
+		},
+		{
+			name: "When encryption type is KMS with provider set but provider-specific config nil, it should return an error",
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: "test",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						APIServer: &configv1.APIServerSpec{
+							Encryption: configv1.APIServerEncryption{
+								Type: configv1.EncryptionTypeKMS,
+							},
+						},
+					},
+					SecretEncryption: &hyperv1.SecretEncryptionSpec{
+						Type: hyperv1.KMS,
+						KMS: &hyperv1.KMSSpec{
+							Provider: hyperv1.AWS,
+						},
+					},
+				},
+			},
+			expectErr: true,
+			errSubstr: "KMS encryption requires at least one platform-specific provider",
+		},
+		{
+			name: "When encryption type is aescbc, it should not return an error",
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: "test",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						APIServer: &configv1.APIServerSpec{
+							Encryption: configv1.APIServerEncryption{
+								Type: configv1.EncryptionTypeAESCBC,
+							},
+						},
+					},
+				},
+			},
+			expectErr: false,
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				Build()
+
+			r := &HostedClusterReconciler{
+				Client: fakeClient,
+			}
+
+			err := r.validateOCPConfigurations(t.Context(), testCase.hc, fakeClient)
+			if testCase.expectErr {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring(testCase.errSubstr))
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+			}
+		})
+	}
+}
