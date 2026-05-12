@@ -860,6 +860,9 @@ func (r *AzurePrivateLinkServiceReconciler) handleAzureError(ctx context.Context
 // CPO finalizer has completed PE cleanup and removed its finalizer from the CR.
 func (r *AzurePrivateLinkServiceReconciler) reconcileDelete(ctx context.Context, azPLS *hyperv1.AzurePrivateLinkService, log logr.Logger) error {
 	resourceGroup := azPLS.Spec.ResourceGroupName
+	// Delete DNS resources using the zone name persisted in status.
+	// This avoids a dependency on the HostedControlPlane during deletion, which may
+	// already be torn down or unavailable when the finalizer runs.
 	dnsZoneName := azPLS.Status.DNSZoneName
 
 	if dnsZoneName != "" {
@@ -961,6 +964,9 @@ func (r *AzurePrivateLinkServiceReconciler) deleteBaseDomainResources(ctx contex
 		return err
 	}
 
+	// Only delete the base domain DNS zone if no other CRs share it.
+	// When multiple CRs (e.g., private-router and oauth-openshift) use the same
+	// base domain zone, the zone must not be deleted until the last CR is removed.
 	hasSiblings, err := r.hasSiblingCR(ctx, azPLS)
 	if err != nil {
 		return fmt.Errorf("failed to check for sibling CRs during base domain zone cleanup: %w", err)
@@ -988,6 +994,9 @@ func (r *AzurePrivateLinkServiceReconciler) deleteBaseDomainARecords(ctx context
 	var baseDomainRecords []string
 	if azPLS.Name == privateRouterCRName {
 		baseDomainRecords = append(baseDomainRecords, kasBaseDomainRecordPrefix+clusterName)
+		// Only delete the oauth record if there is no sibling OAuth CR that
+		// owns it. This prevents the private-router deletion from removing
+		// an oauth record that now belongs to the dedicated OAuth CR.
 		hasSiblings, err := r.hasSiblingCR(ctx, azPLS)
 		if err != nil {
 			return fmt.Errorf("failed to check for sibling CRs during base domain cleanup: %w", err)
@@ -1013,6 +1022,10 @@ func (r *AzurePrivateLinkServiceReconciler) deleteBaseDomainARecords(ctx context
 	return nil
 }
 
+// deletePrivateEndpoint always attempts deletion by deterministic name, even
+// when PrivateEndpointID is empty. If the status was never populated (e.g.,
+// status update failed after PE creation), relying solely on PrivateEndpointID
+// would orphan the PE in the customer's subscription.
 func (r *AzurePrivateLinkServiceReconciler) deletePrivateEndpoint(ctx context.Context, resourceGroup, crName, statusPEID string, log logr.Logger) error {
 	peName := privateEndpointName(crName)
 	log.Info("Deleting Private Endpoint", "name", peName, "hasStatusID", statusPEID != "")

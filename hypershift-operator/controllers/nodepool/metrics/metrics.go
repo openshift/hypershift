@@ -390,6 +390,7 @@ func (c *nodePoolsMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 	c.lastCollectTime = currentCollectTime
 }
 
+// Hosted clusters loop
 func (c *nodePoolsMetricsCollector) collectHostedClusterData(ctx context.Context) map[string]*hclusterData {
 	hclusterPathToData := make(map[string]*hclusterData)
 	hclusters := &hyperv1.HostedClusterList{}
@@ -414,6 +415,7 @@ func (c *nodePoolsMetricsCollector) collectHostedClusterData(ctx context.Context
 	return hclusterPathToData
 }
 
+// Machine sets loop
 func (c *nodePoolsMetricsCollector) collectMachineSetReplicas(ctx context.Context) map[string]int32 {
 	result := make(map[string]int32)
 	machineSets := &capiv1.MachineSetList{}
@@ -422,11 +424,13 @@ func (c *nodePoolsMetricsCollector) collectMachineSetReplicas(ctx context.Contex
 	}
 	for k := range machineSets.Items {
 		machineSet := &machineSets.Items[k]
+		// we use machineSet.Spec.Replicas because nodePool.Spec.Replicas will not be set if autoscaling is enabled
 		result[machineSet.Namespace+"/"+machineSet.Name] = *machineSet.Spec.Replicas
 	}
 	return result
 }
 
+// Machine deployments loop
 func (c *nodePoolsMetricsCollector) collectMachineDeploymentReplicas(ctx context.Context) map[string]int32 {
 	result := make(map[string]int32)
 	machineDeployments := &capiv1.MachineDeploymentList{}
@@ -435,6 +439,7 @@ func (c *nodePoolsMetricsCollector) collectMachineDeploymentReplicas(ctx context
 	}
 	for k := range machineDeployments.Items {
 		md := &machineDeployments.Items[k]
+		// we use machineDeployment.Spec.Replicas because nodePool.Spec.Replicas will not be set if autoscaling is enabled
 		result[md.Namespace+"/"+md.Name] = *md.Spec.Replicas
 	}
 	return result

@@ -101,6 +101,8 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 }
 
 func (r *HostedClusterReconciler) reconcileIngressNetworkPolicy(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcp *hyperv1.HostedControlPlane, controlPlaneNamespaceName string) error {
+	// Only needed when routes are served by the management cluster's default ingress controller,
+	// i.e., when routes are NOT labeled for the HCP router.
 	policy := networkpolicy.OpenshiftIngressNetworkPolicy(controlPlaneNamespaceName)
 	if !netutil.LabelHCPRoutes(hcp) {
 		if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
@@ -328,6 +330,8 @@ func reconcilePrivateRouterNetworkPolicy(policy *networkingv1.NetworkPolicy, _ *
 			"app": "private-router",
 		},
 	}
+	// TODO: Network policy code should move to the control plane operator. For now,
+	// only setup ingress rules (and not egress rules) when version is < 4.14
 	if ingressOnly {
 		policy.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}
 		return nil
@@ -652,6 +656,15 @@ func reconcileVirtLauncherNetworkPolicy(log logr.Logger, policy *networkingv1.Ne
 	return buildVirtLauncherNetworkPolicyBase(log, policy, hcluster, blockedIPv4Networks, blockedIPv6Networks, controlPlanePeers)
 }
 
+// reconcileVirtLauncherNetworkPolicyExternalInfra builds the virt-launcher
+// NetworkPolicy for deployments where the KubeVirt VMs run on a separate
+// infrastructure cluster. Unlike the centralized variant, this omits egress
+// rules for control-plane pods (kube-apiserver, oauth, ignition-server-proxy)
+// because those pods reside on the management cluster and are reached via
+// external IPs already permitted by the broad 0.0.0.0/0 allow rule.
+// infraClusterNetwork may be nil when the infra kubeconfig lacks cluster-
+// scoped read access to networks.config.openshift.io. In that case the
+// policy is still created but without CIDR-based egress blocking.
 func reconcileVirtLauncherNetworkPolicyExternalInfra(log logr.Logger, policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster, infraClusterNetwork *configv1.Network) error {
 	blockedIPv4Networks := []string{}
 	blockedIPv6Networks := []string{}
@@ -667,8 +680,9 @@ func reconcileVirtLauncherNetworkPolicyExternalInfra(log logr.Logger, policy *ne
 	return buildVirtLauncherNetworkPolicyBase(log, policy, hcluster, blockedIPv4Networks, blockedIPv6Networks, nil)
 }
 
-// buildVirtLauncherNetworkPolicyBase constructs the virt-launcher
-// NetworkPolicy structure. extraEgressPeers are appended to the primary egress rule
+// buildVirtLauncherNetworkPolicyBase constructs the common virt-launcher
+// NetworkPolicy structure shared by both centralized and external infra
+// deployments. extraEgressPeers are appended to the primary egress rule
 // (e.g. control-plane pod selectors for centralized infra).
 func buildVirtLauncherNetworkPolicyBase(log logr.Logger, policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster, blockedIPv4Networks, blockedIPv6Networks []string, extraEgressPeers []networkingv1.NetworkPolicyPeer) error {
 	protocolTCP := corev1.ProtocolTCP
@@ -1039,6 +1053,11 @@ func (r *HostedClusterReconciler) reconcileExternalInfraVirtLauncherPolicy(ctx c
 	infraClient := kvInfraClient.GetInfraClient()
 	infraNamespace := kvInfraClient.GetInfraNamespace()
 
+	// networks.config.openshift.io is cluster-scoped, so the infra
+	// kubeconfig needs a ClusterRole with get permission on that
+	// resource. When the permission is missing we still create the
+	// NetworkPolicy but without CIDR-based egress blocking, and
+	// surface the RBAC gap as a condition on the HostedCluster.
 	infraClusterNetwork, err := fetchInfraClusterNetwork(ctx, infraClient, infraNamespace, hcluster, log)
 	if err != nil {
 		return err

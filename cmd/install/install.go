@@ -185,6 +185,8 @@ func (o *Options) validatePlatformConfig() []error {
 			errs = append(errs, fmt.Errorf("--aws-private-region and --aws-private-creds or --aws-private-secret are required with --private-platform=%s", hyperv1.AWSPlatform))
 		}
 	case hyperv1.GCPPlatform:
+		// GCP uses Workload Identity Federation, no credentials required.
+		// However, --gcp-project and --gcp-region must be set together.
 		if (o.GCPProject == "") != (o.GCPRegion == "") {
 			errs = append(errs, fmt.Errorf("--gcp-project and --gcp-region must be set together when --private-platform=%s", hyperv1.GCPPlatform))
 		}
@@ -242,6 +244,7 @@ func (o *Options) validateExternalDNSConfig() []error {
 		return nil
 	}
 	var errs []error
+	// Credentials are optional for GCP when using Workload Identity
 	credentialsRequired := o.ExternalDNSProvider != "google"
 	if credentialsRequired && len(o.ExternalDNSCredentials) == 0 && len(o.ExternalDNSCredentialsSecret) == 0 {
 		errs = append(errs, fmt.Errorf("--external-dns-credentials or --external-dns-credentials-secret are required with --external-dns-provider"))
@@ -282,20 +285,24 @@ func (o *Options) validateImageConfig() []error {
 	return errs
 }
 
+// Validate scale-from-zero credentials
 func (o *Options) validateScaleFromZeroConfig() []error {
 	if len(o.ScaleFromZeroCreds) == 0 && len(o.ScaleFromZeroCredentialsSecret) == 0 {
 		return nil
 	}
 	var errs []error
 	supportedProviders := set.New("aws")
+	// Check mutual exclusivity - only one of file or secret should be provided
 	if len(o.ScaleFromZeroCreds) != 0 && len(o.ScaleFromZeroCredentialsSecret) != 0 {
 		errs = append(errs, fmt.Errorf("only one of --scale-from-zero-creds or --scale-from-zero-secret is supported"))
 	}
+	// Provider is required when using scale-from-zero credentials
 	if len(o.ScaleFromZeroProvider) == 0 {
 		errs = append(errs, fmt.Errorf("--scale-from-zero-provider is required when using scale-from-zero credentials"))
 	} else if !supportedProviders.Has(o.ScaleFromZeroProvider) {
 		errs = append(errs, fmt.Errorf("invalid --scale-from-zero-provider: %s (must be one of: %v)", o.ScaleFromZeroProvider, supportedProviders.UnsortedList()))
 	}
+	// Validate credentials file exists and is accessible if provided
 	if len(o.ScaleFromZeroCreds) > 0 {
 		if _, err := os.Stat(o.ScaleFromZeroCreds); err != nil {
 			if os.IsNotExist(err) {
@@ -324,6 +331,7 @@ func (o *Options) validateMiscConfig() []error {
 	if len(o.ManagedService) > 0 && o.ManagedService != hyperv1.AroHCP {
 		errs = append(errs, fmt.Errorf("not a valid managed service type: %s", o.ManagedService))
 	}
+	// Validate all the platforms in the list are valid
 	for _, platform := range o.PlatformsToInstall {
 		platformToCheck := strings.ToLower(platform)
 		if !ValidPlatforms.Has(platformToCheck) {

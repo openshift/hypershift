@@ -174,6 +174,7 @@ func (r *DedicatedServingComponentScheduler) Reconcile(ctx context.Context, req 
 		return ctrl.Result{}, fmt.Errorf("found too many dedicated nodes for HC: %v", len(dedicatedNodesForHC.Items))
 	}
 
+	// We check existing dedicated Nodes are 2. If not e.g. some was deleted, continue.
 	if scheduled := hcluster.Annotations[hyperv1.HostedClusterScheduledAnnotation]; scheduled == "true" && len(dedicatedNodesForHC.Items) == 2 {
 		log.Info("hosted cluster is already scheduled, nothing to do")
 		return ctrl.Result{}, nil
@@ -307,6 +308,7 @@ func (r *DedicatedServingComponentScheduler) updateHostedClusterAnnotations(ctx 
 		}
 		if node.Labels[schedulerutil.LBSubnetsLabel] != "" && lbSubnets == "" {
 			lbSubnets = node.Labels[schedulerutil.LBSubnetsLabel]
+			// If subnets are separated by periods, replace them with commas
 			lbSubnets = strings.ReplaceAll(lbSubnets, ".", ",")
 		}
 		if node.Labels[OSDFleetManagerPairedNodesLabel] != "" && pairLabel == "" {
@@ -509,9 +511,11 @@ func (r *DedicatedServingComponentSchedulerAndSizer) Reconcile(ctx context.Conte
 
 	if len(nodesByZone) > 1 {
 		log.Info("sufficient nodes exist for placement")
+		// If we have enough nodes, update the hosted cluster.
 		if err := schedulerutil.UpdateHostedCluster(ctx, r.Client, hc, desiredSize, &config, goalNodes); err != nil {
 			return ctrl.Result{}, err
 		}
+		// Ensure we don't have a placeholder deployment, since we have nodes
 		log.Info("removing placeholder")
 		if err := r.deletePlaceholderDeployment(ctx, hc); err != nil {
 			return ctrl.Result{}, err
@@ -578,6 +582,10 @@ func (r *DedicatedServingComponentSchedulerAndSizer) backfillOrClaimNodes(ctx co
 				needClusterLabel = append(needClusterLabel, node)
 			}
 		}
+		// Find any nodes that are in the same fleet manager group and have the right size
+		// but are not labeled with the hosted cluster label. Ensure that these nodes are labeled
+		// and tainted with the hosted cluster label. This can happen if not all nodes were labeled/tainted
+		// when they were initially selected.
 		if len(needClusterLabel) > 0 {
 			log.Info("backfilling node labels")
 			for _, node := range needClusterLabel {
@@ -680,6 +688,7 @@ func (r *DedicatedServingComponentSchedulerAndSizer) deployAndLabelPlaceholderNo
 			return ctrl.Result{}, err
 		}
 	}
+	// Ensure that any placeholder deployment is deleted
 	log.Info("removing placeholder")
 	if err := r.deletePlaceholderDeployment(ctx, hc); err != nil {
 		return ctrl.Result{}, err

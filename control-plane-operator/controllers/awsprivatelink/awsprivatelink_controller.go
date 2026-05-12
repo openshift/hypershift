@@ -677,8 +677,10 @@ func deleteEndpointIfWrongService(ctx context.Context, ec2Client awsapi.EC2API, 
 }
 
 func modifyEndpointIfNeeded(ctx context.Context, ec2Client awsapi.EC2API, awsEndpointService *hyperv1.AWSEndpointService, endpoint ec2types.VpcEndpoint, endpointID string, log logr.Logger) error {
+	// Ensure endpoint has the right subnets.
 	addedSubnet, removedSubnet := diffIDs(awsEndpointService.Spec.SubnetIDs, endpoint.SubnetIds)
 
+	// Ensure endpoint has the right SG.
 	existingSG := make([]string, 0)
 	for _, group := range endpoint.Groups {
 		existingSG = append(existingSG, aws.ToString(group.GroupId))
@@ -816,6 +818,8 @@ func (r *AWSEndpointServiceReconciler) reconcileExternalNameServices(ctx context
 	isPublic := netutil.IsPublicHCP(hcp)
 	externalNames := hcpExternalNames(hcp)
 
+	// only if not public and external names are configured, create services of type ExternalName so external-dns
+	// can create records for them
 	if !isPublic && len(externalNames) > 0 {
 		var errs []error
 		for svcType, externalName := range externalNames {
@@ -839,6 +843,7 @@ func (r *AWSEndpointServiceReconciler) reconcileExternalNameServices(ctx context
 		return nil
 	}
 
+	// if the cluster is public, ensure that any ExternalName services are removed
 	privateExternalServices := &corev1.ServiceList{}
 	if err := r.List(ctx, privateExternalServices, client.InNamespace(hcp.Namespace), client.HasLabels{externalPrivateServiceLabel}); err != nil {
 		return fmt.Errorf("cannot list private external services: %w", err)
@@ -1106,6 +1111,7 @@ func (r *AWSEndpointServiceReconciler) delete(ctx context.Context, awsEndpointSe
 		}
 
 		if output != nil && len(output.VpcEndpoints) != 0 {
+			// Once the VPC Endpoint is deleted, we need to return an error to reexecute the reconciliation
 			return false, fmt.Errorf("resource requested for deletion but still present")
 		}
 

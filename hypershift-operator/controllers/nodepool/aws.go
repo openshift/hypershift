@@ -81,7 +81,7 @@ func awsMachineTemplateSpec(infraName string, hostedCluster *hyperv1.HostedClust
 
 	instanceMetadataOptions := &capiaws.InstanceMetadataOptions{
 		HTTPTokens:              capiaws.HTTPTokensStateOptional,
-		HTTPPutResponseHopLimit: 2,
+		HTTPPutResponseHopLimit: 2, // set to 2 as per AWS recommendation for container envs https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instancedata-data-retrieval.html#imds-considerations
 		HTTPEndpoint:            capiaws.InstanceMetadataEndpointStateEnabled,
 		InstanceMetadataTags:    capiaws.InstanceMetadataEndpointStateDisabled,
 	}
@@ -119,11 +119,13 @@ func awsMachineTemplateSpec(infraName string, hostedCluster *hyperv1.HostedClust
 }
 
 func resolveAWSAMI(hostedCluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool, releaseImage *releaseinfo.ReleaseImage) (string, error) {
+	// TODO: Should the region be included in the NodePool platform information?
 	region := hostedCluster.Spec.Platform.AWS.Region
 	arch := nodePool.Spec.Arch
 	if nodePool.Spec.Platform.AWS.AMI != "" {
 		return nodePool.Spec.Platform.AWS.AMI, nil
 	}
+	// Use Windows AMI mapping when ImageType is set to Windows
 	if nodePool.Spec.Platform.AWS.ImageType == hyperv1.ImageTypeWindows {
 		ami, err := getWindowsAMI(region, arch, releaseImage)
 		if err != nil {
@@ -131,6 +133,7 @@ func resolveAWSAMI(hostedCluster *hyperv1.HostedCluster, nodePool *hyperv1.NodeP
 		}
 		return ami, nil
 	}
+	// Default behavior for Linux/RHCOS AMIs
 	ami, err := defaultNodePoolAMI(region, arch, releaseImage)
 	if err != nil {
 		return "", fmt.Errorf("couldn't discover an AMI for release image: %w", err)
@@ -208,8 +211,10 @@ func applyAWSPlacementOptions(nodePool *hyperv1.NodePool, spec *capiaws.AWSMachi
 	}
 	spec.Template.Spec.Tenancy = placement.Tenancy
 
+	// Handle market type - placement.MarketType takes precedence over capacityReservation.MarketType (deprecated)
 	switch placement.MarketType {
 	case hyperv1.MarketTypeSpot:
+		// Spot instances
 		spec.Template.Spec.SpotMarketOptions = &capiaws.SpotMarketOptions{}
 		if placement.Spot.MaxPrice != "" {
 			spec.Template.Spec.SpotMarketOptions.MaxPrice = ptr.To(placement.Spot.MaxPrice)
@@ -219,6 +224,7 @@ func applyAWSPlacementOptions(nodePool *hyperv1.NodePool, spec *capiaws.AWSMachi
 	case hyperv1.MarketTypeOnDemand:
 		spec.Template.Spec.MarketType = capiaws.MarketTypeOnDemand
 	default:
+		// If placement.MarketType is not set, fall back to capacityReservation.MarketType (deprecated)
 		if capacityReservation := placement.CapacityReservation; capacityReservation != nil {
 			//nolint:staticcheck // SA1019: capacityReservation.MarketType is deprecated but supported for backward compatibility
 			switch capacityReservation.MarketType {
@@ -227,6 +233,7 @@ func applyAWSPlacementOptions(nodePool *hyperv1.NodePool, spec *capiaws.AWSMachi
 			case hyperv1.MarketTypeOnDemand:
 				spec.Template.Spec.MarketType = capiaws.MarketTypeOnDemand
 			default:
+				// if the tenancy is not host and the ID is set, default the market type to CapacityBlock
 				if placement.Tenancy != "host" && capacityReservation.ID != nil {
 					spec.Template.Spec.MarketType = capiaws.MarketTypeCapacityBlock
 				}
@@ -234,6 +241,7 @@ func applyAWSPlacementOptions(nodePool *hyperv1.NodePool, spec *capiaws.AWSMachi
 		}
 	}
 
+	// Handle capacity reservation options
 	if capacityReservation := placement.CapacityReservation; capacityReservation != nil {
 		spec.Template.Spec.CapacityReservationID = capacityReservation.ID
 		spec.Template.Spec.CapacityReservationPreference = capiaws.CapacityReservationPreference(capacityReservation.Preference)

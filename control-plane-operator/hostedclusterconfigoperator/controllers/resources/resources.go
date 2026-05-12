@@ -504,6 +504,7 @@ func (r *reconciler) cleanupLegacyResources(ctx context.Context, log logr.Logger
 }
 
 func (r *reconciler) reconcileDeletion(ctx context.Context, log logr.Logger, hcp *hyperv1.HostedControlPlane) (ctrl.Result, error) {
+	// Delete admission policies during cluster deletion to allow HCCO cleanup operations for ARO HCP
 	if hcp.Spec.Platform.Type == hyperv1.AzurePlatform {
 		registryConfigManagementStateAdmissionPolicy := registry.AdmissionPolicy{Name: registry.AdmissionPolicyNameManagementState}
 		log.Info("Cluster is being deleted, deleting registry management state admission policy and binding to allow cleanup")
@@ -607,6 +608,10 @@ func (r *reconciler) reconcileRegistryAndIngress(ctx context.Context, hcp *hyper
 	}
 
 	if capabilities.IsImageRegistryCapabilityEnabled(hcp.Spec.Capabilities) {
+		// For platforms where cluster-image-registry-operator (CIRO) needs a PVC to be created, bootstrap needs to happen
+		// in CIRO before the registry config is created. For now, this is the case for the OpenStack platform.
+		// If the object exist, we reconcile the registry config for other fields as it should be fine since the PVC would
+		// exist at this point.
 		if imageRegistryPlatformWithPVC(hcp.Spec.Platform.Type) && (!registryConfigExists || registryConfig == nil) {
 			log.Info("skipping registry config to let CIRO bootstrap")
 		} else {
@@ -623,6 +628,7 @@ func (r *reconciler) reconcileRegistryAndIngress(ctx context.Context, hcp *hyper
 				errs = append(errs, fmt.Errorf("failed to reconcile imageregistry config: %w", err))
 			}
 
+			// TODO: remove this when ROSA HCP stops setting the managementState to Removed to disable the Image Registry
 			if registryConfig.Spec.ManagementState == operatorv1.Removed && r.platformType != hyperv1.IBMCloudPlatform && r.platformType != hyperv1.AzurePlatform {
 				log.Info("imageregistry operator managementstate is removed, disabling openshift-controller-manager controllers and cleaning up resources")
 				ocmConfigMap := cpomanifests.OpenShiftControllerManagerConfig(r.hcpNamespace)
@@ -829,10 +835,13 @@ func (r *reconciler) reconcileNetworkingAndSecrets(ctx context.Context, hcp *hyp
 	}); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile network operator: %w", err))
 	}
+	// Detect suboptimal MTU size on kubevirt hosted cluster with ovn-k and raise a condition in such a case
 	if err := networkoperator.DetectSuboptimalMTU(ctx, r.cpClient, networkOperator, hcp); err != nil {
 		errs = append(errs, err)
 	}
 
+	// this allows users to disable data collection in sensitive environments
+	// solves https://issues.redhat.com/browse/OCPBUGS-12208
 	ensureExistsReconciliationStrategy := false
 	if _, exists := hcp.Annotations[hyperv1.EnsureExistsPullSecretReconciliation]; exists {
 		ensureExistsReconciliationStrategy = true
@@ -1819,11 +1828,13 @@ func (r *reconciler) reconcileControlPlaneConnectionAvailable(ctx context.Contex
 	cm := manifests.KASConnectionCheckerConfigMap()
 	if err := r.client.Get(ctx, client.ObjectKeyFromObject(cm), cm); err != nil {
 		if apierrors.IsNotFound(err) {
+			// CPO has not created the configmap yet, wait for create
 			condition.Reason = hyperv1.ControlPlaneConnectionConfigMapNotFoundReason
 			condition.Message = fmt.Sprintf("Connectivity check ConfigMap %s/%s not found; the hosted cluster config operator may not have reconciled it yet",
 				manifests.KASConnectionCheckerNamespace, manifests.KASConnectionCheckerConfigMapName)
 			return r.patchHCPStatusCondition(ctx, hcp, condition)
 		}
+		// This should not happen as we are started by the CPO after the configmap should be created
 		condition.Reason = hyperv1.ReconcileErrorReason
 		condition.Message = fmt.Sprintf("Failed to get connectivity check ConfigMap %s/%s: %v",
 			manifests.KASConnectionCheckerNamespace, manifests.KASConnectionCheckerConfigMapName, err)
