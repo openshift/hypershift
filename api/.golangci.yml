@@ -319,6 +319,27 @@ linters:
           - kubeapilinter
         path: hypershift/v1beta1/openstack.go
         text: 'nobools: field OpenStackPlatformSpec.DisableExternalNetwork pointer should not use a bool. Use a string type with meaningful constant values as an enum.'
+      - linters:
+          - kubeapilinter
+        path: karpenter/v1/kubelet_config.go
+        text: 'nobools: field KubeletConfiguration.CPUCFSQuota pointer should not use a bool. Use a string type with meaningful constant values as an enum.'
+
+      - linters:
+          - kubeapilinter
+        path: karpenter/v1/karpenter_types.go
+        text: 'minlength: field OpenshiftEC2NodeClassSpec.Kubelet type KubeletConfiguration must have a minimum properties, add kubebuilder:validation:MinProperties marker'
+      - linters:
+          - kubeapilinter
+        path: karpenter/v1/karpenter_types.go
+        text: 'optionalfields: field OpenshiftEC2NodeClassSpec.Kubelet has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: karpenter/v1/kubelet_config.go
+        text: 'nodurations: field KubeletConfiguration.EvictionSoftGracePeriod map value should not use a Duration. Use an integer type with units in the name to avoid the need for clients to implement Go style duration parsing.'
+      - linters:
+          - kubeapilinter
+        path: karpenter/v1/kubelet_config.go
+        text: 'nomaps: field KubeletConfiguration\.(SystemReserved|KubeReserved|EvictionHard|EvictionSoft|EvictionSoftGracePeriod)'
 
       # statussubresource (1 issue)
       - linters:

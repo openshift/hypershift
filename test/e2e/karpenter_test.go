@@ -5,6 +5,7 @@ package e2e
 import (
 	"bufio"
 	"context"
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -46,7 +47,19 @@ import (
 	"k8s.io/utils/ptr"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
+	"sigs.k8s.io/yaml"
 )
+
+//go:embed karpenter_kubelet_checker_pod.yaml
+var kubeletCheckerPodRaw []byte
+
+var kubeletCheckerPodTemplate = func() *corev1.Pod {
+	pod := &corev1.Pod{}
+	if err := yaml.Unmarshal(kubeletCheckerPodRaw, pod); err != nil {
+		panic(err)
+	}
+	return pod
+}()
 
 func TestKarpenter(t *testing.T) {
 	e2eutil.AtLeast(t, e2eutil.Version422)
@@ -80,6 +93,7 @@ func TestKarpenter(t *testing.T) {
 			t.Run("OpenshiftEC2NodeClass version field and MetadataOptions", testNodeClassVersionField(ctx, mgtClient, guestClient, hostedCluster, awsCredsFile, awsRegion, pullSecretFile))
 			t.Run("Capacity reservation selector propagation", testCapacityReservation(ctx, mgtClient, guestClient, hostedCluster, awsCredsFile, awsRegion))
 			t.Run("Arbitrary subnet propagation", testArbitrarySubnet(ctx, mgtClient, guestClient, hostedCluster, awsCredsFile, awsRegion))
+			t.Run("OpenshiftEC2NodeClass Kubelet propagation", testKubeletPropagation(ctx, mgtClient, guestClient, hostedCluster))
 		})
 
 		t.Run("AutoNode enable/disable lifecycle", testAutoNodeLifecycle(ctx, mgtClient, hostedCluster))
@@ -1159,6 +1173,193 @@ func testArbitrarySubnet(ctx context.Context, mgtClient, guestClient crclient.Cl
 		// No need to wait for node deprovisioning — subsequent tests use isolated NodePools.
 		g.Expect(guestClient.Delete(ctx, testWorkLoads)).To(Succeed())
 		g.Expect(guestClient.Delete(ctx, testNodePool)).To(Succeed())
+	}
+}
+
+func testKubeletPropagation(ctx context.Context, mgtClient, guestClient crclient.Client, hostedCluster *hyperv1.HostedCluster) func(t *testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+
+		// Create a custom OpenshiftEC2NodeClass that the controller does not manage, so that
+		// reconcileOpenshiftEC2NodeClassDefault cannot overwrite spec.kubelet on every reconcile.
+		// We picked weird non-round numbers specifically so we know it wasn't getting defaulted.
+		//
+		// Build KubeletConfiguration via JSON unmarshal so that overflow (non-typed) fields
+		// like podPidsLimit and containerLogMaxSize are captured. The overflow mechanism
+		// requires JSON deserialization because the overflow map is unexported.
+		kubeletJSON := `{
+			"maxPods": 203,
+			"podsPerCore": 11,
+			"systemReserved": {"cpu": "510m", "memory": "521Mi"},
+			"kubeReserved": {"cpu": "520m", "memory": "531Mi"},
+			"evictionHard": {"memory.available": "201Mi", "nodefs.available": "11%"},
+			"evictionSoft": {"memory.available": "401Mi", "nodefs.available": "16%"},
+			"evictionSoftGracePeriod": {"memory.available": "1m31s", "nodefs.available": "2m5s"},
+			"evictionMaxPodGracePeriod": 31,
+			"imageGCHighThresholdPercent": 81,
+			"imageGCLowThresholdPercent": 71,
+			"cpuCFSQuota": false,
+			"podPidsLimit": 4096,
+			"containerLogMaxSize": "50Mi"
+		}`
+		var kubeletConfig hyperkarpenterv1.KubeletConfiguration
+		g.Expect(json.Unmarshal([]byte(kubeletJSON), &kubeletConfig)).To(Succeed())
+
+		nc := &hyperkarpenterv1.OpenshiftEC2NodeClass{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "kubelet-config-test",
+			},
+			Spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{
+				Kubelet: kubeletConfig,
+			},
+		}
+		g.Expect(guestClient.Create(ctx, nc)).To(Succeed())
+		t.Logf("Created OpenshiftEC2NodeClass %q with kubelet config", nc.Name)
+		t.Cleanup(func() {
+			_ = guestClient.Delete(ctx, nc)
+		})
+
+		// Wait for the per-nodeclass KubeletConfig ConfigMap to appear in the HCP namespace.
+		kubeletCMName := karpenterutil.KarpenterNodeClassKubeletConfigName(nc.Name)
+		e2eutil.EventuallyObject(t, ctx, fmt.Sprintf("KubeletConfig ConfigMap %s/%s to appear with correct content", hcpNamespace, kubeletCMName),
+			func(ctx context.Context) (*corev1.ConfigMap, error) {
+				cm := &corev1.ConfigMap{}
+				err := mgtClient.Get(ctx, crclient.ObjectKey{Name: kubeletCMName, Namespace: hcpNamespace}, cm)
+				return cm, err
+			},
+			[]e2eutil.Predicate[*corev1.ConfigMap]{
+				func(cm *corev1.ConfigMap) (done bool, reasons string, err error) {
+					if cm.Labels[karpenterutil.KarpenterNodeClassKubeletConfigLabel] != "true" {
+						return false, fmt.Sprintf("missing label %s=true", karpenterutil.KarpenterNodeClassKubeletConfigLabel), nil
+					}
+					return true, "label present", nil
+				},
+				func(cm *corev1.ConfigMap) (done bool, reasons string, err error) {
+					config := cm.Data["config"]
+					for _, field := range []string{"maxPods", "podsPerCore", "cpuCFSQuota", "podPidsLimit", "containerLogMaxSize"} {
+						if !strings.Contains(config, field) {
+							return false, fmt.Sprintf("config missing field %q", field), nil
+						}
+					}
+					return true, "all required fields present in config", nil
+				},
+			},
+			e2eutil.WithTimeout(2*time.Minute),
+			e2eutil.WithInterval(5*time.Second),
+		)
+		t.Logf("KubeletConfig ConfigMap %s is present and correct", kubeletCMName)
+
+		// Wait for the karpenterignition controller to issue the ignition token with kubelet config.
+		// The annotation is set after token.Reconcile() succeeds, guaranteeing Karpenter will use
+		// the token (with kubelet config) when provisioning new nodes.
+		e2eutil.EventuallyObject(t, ctx, fmt.Sprintf("OpenshiftEC2NodeClass %q to have ignition token annotation", nc.Name),
+			func(ctx context.Context) (*hyperkarpenterv1.OpenshiftEC2NodeClass, error) {
+				updated := &hyperkarpenterv1.OpenshiftEC2NodeClass{}
+				err := guestClient.Get(ctx, crclient.ObjectKey{Name: nc.Name}, updated)
+				return updated, err
+			},
+			[]e2eutil.Predicate[*hyperkarpenterv1.OpenshiftEC2NodeClass]{
+				func(nc *hyperkarpenterv1.OpenshiftEC2NodeClass) (done bool, reasons string, err error) {
+					v := nc.GetAnnotations()["hypershift.openshift.io/nodeClassCurrentConfigVersion"]
+					if v == "" {
+						return false, "annotation hypershift.openshift.io/nodeClassCurrentConfigVersion not yet set", nil
+					}
+					return true, fmt.Sprintf("annotation set to %q", v), nil
+				},
+			},
+			e2eutil.WithTimeout(2*time.Minute),
+			e2eutil.WithInterval(5*time.Second),
+		)
+		t.Logf("Ignition token annotation set on %q", nc.Name)
+
+		// Wait for the OpenshiftEC2NodeClass to be fully Ready before creating the NodePool.
+		// Karpenter ignores NodePools whose referenced EC2NodeClass is not Ready — the ignition
+		// annotation above is set before AWS resource discovery (SecurityGroups, Subnets) completes,
+		// so we must wait for the Ready condition explicitly to avoid provisioning delays.
+		t.Logf("Make sure OpenshiftEC2NodeClass %q is Ready before nodepool creation", nc.Name)
+		e2eutil.EventuallyObject(t, ctx, fmt.Sprintf("OpenshiftEC2NodeClass %q to be Ready", nc.Name),
+			func(ctx context.Context) (*hyperkarpenterv1.OpenshiftEC2NodeClass, error) {
+				updated := &hyperkarpenterv1.OpenshiftEC2NodeClass{}
+				err := guestClient.Get(ctx, crclient.ObjectKey{Name: nc.Name}, updated)
+				return updated, err
+			},
+			[]e2eutil.Predicate[*hyperkarpenterv1.OpenshiftEC2NodeClass]{
+				e2eutil.ConditionPredicate[*hyperkarpenterv1.OpenshiftEC2NodeClass](e2eutil.Condition{
+					Type:   "Ready",
+					Status: metav1.ConditionTrue,
+				}),
+			},
+			e2eutil.WithTimeout(5*time.Minute),
+		)
+		t.Logf("OpenshiftEC2NodeClass %q is Ready", nc.Name)
+
+		// Create Karpenter NodePool pointing at the custom nodeclass and workloads to provision nodes.
+		testNodePool := baseNodePool("kubelet-config-test", nc.Name)
+		testWorkLoads := testWorkload("kubelet-config-web-app", 1, map[string]string{
+			karpenterv1.NodePoolLabelKey: testNodePool.Name,
+		})
+
+		g.Expect(guestClient.Create(ctx, testNodePool)).To(Succeed())
+		t.Logf("Created Karpenter NodePool %s", testNodePool.Name)
+		g.Expect(guestClient.Create(ctx, testWorkLoads)).To(Succeed())
+		t.Logf("Created workloads %s", testWorkLoads.Name)
+		t.Cleanup(func() {
+			_ = guestClient.Delete(ctx, testWorkLoads)
+			_ = guestClient.Delete(ctx, testNodePool)
+		})
+
+		testNodeLabels := map[string]string{
+			karpenterv1.NodePoolLabelKey: testNodePool.Name,
+		}
+
+		// Wait for nodes to be provisioned
+		e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, 1, testNodeLabels)
+		t.Logf("Karpenter nodes are ready")
+
+		// Build a clientset for the guest cluster (needed for pod log fetching)
+		guestConfig := e2eutil.WaitForGuestRestConfig(t, ctx, mgtClient, hostedCluster)
+		guestClientset, err := kubeclient.NewForConfig(guestConfig)
+		g.Expect(err).NotTo(HaveOccurred())
+
+		// Run a privileged pod on the karpenter node that prints kubelet.conf then
+		// greps each expected field, exiting non-zero if any is missing.
+		checkerPod := kubeletCheckerPodTemplate.DeepCopy()
+		checkerPod.Spec.NodeSelector = testNodeLabels
+		checkerPod.Spec.Tolerations = []corev1.Toleration{{Operator: corev1.TolerationOpExists}}
+		g.Expect(guestClient.Create(ctx, checkerPod)).To(Succeed())
+		t.Cleanup(func() { _ = guestClient.Delete(ctx, checkerPod) })
+		t.Logf("Created kubelet-config-checker pod on nodepool %s", testNodePool.Name)
+
+		// Wait for the pod to complete (Succeeded or Failed)
+		// This is intentionally not an EventuallyObject because we need to do something on either state
+		g.Eventually(func(g Gomega) {
+			p := &corev1.Pod{}
+			g.Expect(guestClient.Get(ctx, crclient.ObjectKeyFromObject(checkerPod), p)).To(Succeed())
+			g.Expect(p.Status.Phase).To(BeElementOf(corev1.PodSucceeded, corev1.PodFailed))
+		}).WithTimeout(5 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
+
+		// Always fetch and log the pod output so it's visible in the test run
+		logReq := guestClientset.CoreV1().Pods(checkerPod.Namespace).GetLogs(checkerPod.Name, &corev1.PodLogOptions{Container: "checker"})
+		logStream, err := logReq.Stream(ctx)
+		g.Expect(err).NotTo(HaveOccurred())
+		defer logStream.Close()
+		logBytes, err := io.ReadAll(logStream)
+		g.Expect(err).NotTo(HaveOccurred())
+		t.Logf("kubelet-config-checker output:\n%s", string(logBytes))
+
+		// Assert the pod succeeded (grep chain exited 0 = all fields found)
+		p := &corev1.Pod{}
+		g.Expect(guestClient.Get(ctx, crclient.ObjectKeyFromObject(checkerPod), p)).To(Succeed())
+		g.Expect(p.Status.Phase).To(Equal(corev1.PodSucceeded), "kubelet config fields not all found — see pod output above")
+		t.Logf("kubelet config fields confirmed on node")
+
+		// Cleanup workloads and NodePool
+		g.Expect(guestClient.Delete(ctx, testWorkLoads)).To(Succeed())
+		g.Expect(guestClient.Delete(ctx, testNodePool)).To(Succeed())
+		_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, 0, testNodeLabels)
 	}
 }
 

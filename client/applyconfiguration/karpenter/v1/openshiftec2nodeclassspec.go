@@ -34,6 +34,7 @@ type OpenshiftEC2NodeClassSpecApplyConfiguration struct {
 	Monitoring                       *karpenterv1.MonitoringState                        `json:"monitoring,omitempty"`
 	MetadataOptions                  *MetadataOptionsApplyConfiguration                  `json:"metadataOptions,omitempty"`
 	Version                          *string                                             `json:"version,omitempty"`
+	Kubelet                          *KubeletConfigurationApplyConfiguration             `json:"kubelet,omitempty"`
 }
 
 // OpenshiftEC2NodeClassSpecApplyConfiguration constructs a declarative configuration of the OpenshiftEC2NodeClassSpec type for use with
@@ -145,5 +146,13 @@ func (b *OpenshiftEC2NodeClassSpecApplyConfiguration) WithMetadataOptions(value 
 // If called multiple times, the Version field is set to the value of the last call.
 func (b *OpenshiftEC2NodeClassSpecApplyConfiguration) WithVersion(value string) *OpenshiftEC2NodeClassSpecApplyConfiguration {
 	b.Version = &value
+	return b
+}
+
+// WithKubelet sets the Kubelet field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the Kubelet field is set to the value of the last call.
+func (b *OpenshiftEC2NodeClassSpecApplyConfiguration) WithKubelet(value *KubeletConfigurationApplyConfiguration) *OpenshiftEC2NodeClassSpecApplyConfiguration {
+	b.Kubelet = value
 	return b
 }
