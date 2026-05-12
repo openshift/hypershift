@@ -1686,6 +1686,13 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return fmt.Errorf("failed to reconcile olm operator serving cert: %w", err)
 	}
 
+	schedulerServerSecret := manifests.SchedulerServerCertSecret(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, schedulerServerSecret, func() error {
+		return pki.ReconcileSchedulerServerSecret(schedulerServerSecret, rootCASecret, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile scheduler serving cert: %w", err)
+	}
+
 	cvoServerCert := manifests.ClusterVersionOperatorServerCertSecret(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, cvoServerCert, func() error {
 		return pki.ReconcileCVOServerSecret(cvoServerCert, rootCASecret, p.OwnerRef)
