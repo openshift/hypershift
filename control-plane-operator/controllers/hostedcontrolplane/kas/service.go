@@ -21,6 +21,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
+const AWSNLBAnnotation = "service.beta.kubernetes.io/aws-load-balancer-type"
+
 func kasLabels() map[string]string {
 	return map[string]string{
 		"app":                              "kube-apiserver",
@@ -62,13 +64,18 @@ func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingSt
 	if svc.Annotations == nil {
 		svc.Annotations = map[string]string{}
 	}
-	if hcp.Spec.Platform.Type == hyperv1.AWSPlatform {
-		svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-type"] = "nlb"
-	}
+
+	// Remove stale AWS NLB annotation before reconciling.
+	// It will be re-added only when the service is actually a LoadBalancer.
+	delete(svc.Annotations, AWSNLBAnnotation)
+
 	switch strategy.Type {
 	case hyperv1.LoadBalancer:
 		if isPublic {
 			svc.Spec.Type = corev1.ServiceTypeLoadBalancer
+			if hcp.Spec.Platform.Type == hyperv1.AWSPlatform {
+				svc.Annotations[AWSNLBAnnotation] = "nlb"
+			}
 			if strategy.LoadBalancer != nil && strategy.LoadBalancer.Hostname != "" {
 				svc.Annotations[hyperv1.ExternalDNSHostnameAnnotation] = strategy.LoadBalancer.Hostname
 			}
@@ -217,7 +224,7 @@ func ReconcilePrivateService(svc *corev1.Service, hcp *hyperv1.HostedControlPlan
 		// AWS Load Balancer Controller annotation for cross-zone load balancing (EKS Auto Mode).
 		svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-attributes"] = "load_balancing.cross_zone.enabled=true"
 		svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-internal"] = "true"
-		svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-type"] = "nlb"
+		svc.Annotations[AWSNLBAnnotation] = "nlb"
 	}
 	svc.Spec.Ports[0] = portSpec
 	return nil
