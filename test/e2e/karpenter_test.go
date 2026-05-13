@@ -315,7 +315,8 @@ func testARM64Provisioning(ctx context.Context, guestClient crclient.Client, hos
 			{Key: "kubernetes.io/arch", Operator: corev1.NodeSelectorOpIn, Values: []string{"arm64"}},
 			{Key: karpenterv1.CapacityTypeLabelKey, Operator: corev1.NodeSelectorOpIn, Values: []string{karpenterv1.CapacityTypeOnDemand}},
 		}
-		armWorkLoads := testWorkload("arm-app", 1, map[string]string{karpenterv1.NodePoolLabelKey: armNodePool.Name})
+		// quay.io/openshift/origin-pod does not support arm64
+		armWorkLoads := testWorkloadWithImage("arm-app", 1, map[string]string{karpenterv1.NodePoolLabelKey: armNodePool.Name}, "quay.io/hypershift/sleep:multiarch")
 
 		t.Cleanup(func() {
 			_ = guestClient.Delete(ctx, armWorkLoads)
@@ -1760,6 +1761,10 @@ func baseNodePool(name, nodeClassName string) *karpenterv1.NodePool {
 }
 
 func testWorkload(name string, replicas int32, nodeSelector map[string]string) *appsv1.Deployment {
+	return testWorkloadWithImage(name, replicas, nodeSelector, "quay.io/openshift/origin-pod:4.22.0")
+}
+
+func testWorkloadWithImage(name string, replicas int32, nodeSelector map[string]string, image string) *appsv1.Deployment {
 	appLabel := map[string]string{"app": name}
 	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
@@ -1787,7 +1792,7 @@ func testWorkload(name string, replicas int32, nodeSelector map[string]string) *
 					},
 					Containers: []corev1.Container{{
 						Name:  name,
-						Image: "quay.io/openshift/origin-pod:4.22.0",
+						Image: image,
 						Resources: corev1.ResourceRequirements{
 							Requests: corev1.ResourceList{
 								corev1.ResourceCPU:    resource.MustParse("250m"),
