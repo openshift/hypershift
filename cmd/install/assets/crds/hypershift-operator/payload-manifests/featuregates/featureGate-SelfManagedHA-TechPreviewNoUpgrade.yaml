@@ -41,6 +41,9 @@
                         "name": "ExternalOIDCWithUpstreamParity"
                     },
                     {
+                        "name": "ExternalOIDCExternalClaimsSourcing"
+                    },
+                    {
                         "name": "GCPPlatform"
                     },
                     {
