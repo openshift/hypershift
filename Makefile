@@ -35,6 +35,25 @@ PYYAML_VER := 6.0.3
 PYYAML_DIST_DIR := pyyaml_dist
 PYYAML_STAMP := $(TOOLS_BIN_DIR)/$(PYYAML_DIST_DIR)/.installed
 
+# Python tool runner: prefer uv when available, fall back to pip
+UV ?= $(shell command -v uv 2>/dev/null)
+
+ifneq ($(UV),)
+CODESPELL_CMD  = $(UV) run --with codespell==$(CODESPELL_VER) codespell
+GITLINT_CMD    = $(UV) run --with gitlint-core==$(GITLINT_VER) gitlint
+DOCS_NAV_CMD   = $(UV) run --with pyyaml==$(PYYAML_VER) python3
+CODESPELL_DEPS =
+GITLINT_DEPS   =
+DOCS_NAV_DEPS  =
+else
+CODESPELL_CMD  = $(CODESPELL)
+GITLINT_CMD    = $(GITLINT)
+DOCS_NAV_CMD   = PYTHONPATH=$(TOOLS_BIN_DIR)/$(PYYAML_DIST_DIR) python3
+CODESPELL_DEPS = codespell
+GITLINT_DEPS   = $(GITLINT)
+DOCS_NAV_DEPS  = $(PYYAML_STAMP)
+endif
+
 PROMTOOL=$(abspath $(TOOLS_BIN_DIR)/promtool)
 
 # Setup envtest for running tests that require a Kubernetes API server
@@ -581,22 +600,22 @@ run-operator-locally-aws-dev:
 	@$(RUN_OPERATOR_LOCALLY_AWS)
 
 .PHONY: verify-docs-nav
-verify-docs-nav: $(PYYAML_STAMP) ## Verify docs nav entries are sorted alphabetically.
-	PYTHONPATH=$(TOOLS_BIN_DIR)/$(PYYAML_DIST_DIR) python3 hack/verify-docs-nav-order.py
+verify-docs-nav: $(DOCS_NAV_DEPS) ## Verify docs nav entries are sorted alphabetically.
+	$(DOCS_NAV_CMD) hack/verify-docs-nav-order.py
 
 .PHONY: verify-codespell
-verify-codespell: codespell ## Verify codespell.
-	@$(CODESPELL) --count --ignore-words=./.codespellignore --skip="./hack/tools/bin/codespell_dist,./docs/site/*,./vendor/*,./api/vendor/*,./hack/tools/vendor/*,./api/hypershift/v1alpha1/*,./support/thirdparty/*,./docs/content/reference/*,./hack/tools/bin/*,./cmd/install/assets/*,./go.sum,./api/go.sum,./hack/workspace/go.work.sum,./api/hypershift/v1beta1/zz_generated.featuregated-crd-manifests,./hack/tools/go.mod,./hack/tools/go.sum,./karpenter-operator/controllers/karpenter/assets/*.yaml,./dev/*"
+verify-codespell: $(CODESPELL_DEPS) ## Verify codespell.
+	@$(CODESPELL_CMD) --count --ignore-words=./.codespellignore --skip="./hack/tools/bin/codespell_dist,./docs/site/*,./vendor/*,./api/vendor/*,./hack/tools/vendor/*,./api/hypershift/v1alpha1/*,./support/thirdparty/*,./docs/content/reference/*,./hack/tools/bin/*,./cmd/install/assets/*,./go.sum,./api/go.sum,./hack/workspace/go.work.sum,./api/hypershift/v1beta1/zz_generated.featuregated-crd-manifests,./hack/tools/go.mod,./hack/tools/go.sum,./karpenter-operator/controllers/karpenter/assets/*.yaml,./dev/*"
 
 .PHONY: verify-api-deps
 verify-api-deps: $(VERIFY_API_DEPS) ## Verify API dependencies against allowlist.
 	@$(VERIFY_API_DEPS)
 
 .PHONY: run-gitlint
-run-gitlint: $(GITLINT)
+run-gitlint: $(GITLINT_DEPS)
 ifdef PULL_BASE_SHA
 	@echo "Linting commits from $(PULL_BASE_SHA) to $(PULL_PULL_SHA) (CI: PR targeting $(PULL_BASE_SHA))"
-	@$(GITLINT) --commits $(PULL_BASE_SHA)..$(PULL_PULL_SHA)
+	@$(GITLINT_CMD) --commits $(PULL_BASE_SHA)..$(PULL_PULL_SHA)
 else
 	$(eval MERGE_BASE := $(shell \
 		git merge-base HEAD origin/HEAD 2>/dev/null || \
@@ -605,7 +624,7 @@ else
 		echo "HEAD~1" \
 	))
 	@echo "Linting commits from $(MERGE_BASE) to HEAD (local development)"
-	@$(GITLINT) --commits $(MERGE_BASE)..HEAD
+	@$(GITLINT_CMD) --commits $(MERGE_BASE)..HEAD
 endif
 
 .PHONY: cpo-container-sync
