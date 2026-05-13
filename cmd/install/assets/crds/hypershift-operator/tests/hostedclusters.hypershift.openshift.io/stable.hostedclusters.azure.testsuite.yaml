@@ -613,7 +613,7 @@ tests:
           servicePublishingStrategy:
             type: Route
             route: {}
-    expectedError: "privateLink is required when type is PrivateLink"
+    expectedError: "privateLink is required when type is PrivateLink, and forbidden otherwise"
 
   - name: When Azure PrivateLink type is set with privateLink config it should pass
     initial: |
