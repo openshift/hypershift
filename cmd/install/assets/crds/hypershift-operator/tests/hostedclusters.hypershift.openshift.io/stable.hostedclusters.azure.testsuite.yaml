@@ -813,3 +813,271 @@ tests:
             type: Route
             route: {}
     expectedError: "workloadIdentities.controlPlaneOperator is required when Private Link is configured with WorkloadIdentities authentication"
+
+  # --- Azure DNS shadowing validation ---
+  - name: When Azure route hostname domain overlaps with baseDomain it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: Azure
+          azure:
+            location: eastus
+            resourceGroupName: test-rg
+            vnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet"
+            subnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+            subscriptionID: "12345678-1234-5678-9012-123456789012"
+            securityGroupID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg"
+            tenantID: "87654321-4321-8765-2109-876543210987"
+            azureAuthenticationConfig:
+              azureAuthenticationConfigType: ManagedIdentities
+              managedIdentities:
+                controlPlane:
+                  managedIdentitiesKeyVault:
+                    name: test-kv
+                    tenantID: "87654321-4321-8765-2109-876543210987"
+                  cloudProvider:
+                    clientID: "12345678-1234-5678-9012-123456789012"
+                    objectEncoding: utf-8
+                    credentialsSecretName: cp-secret
+                  nodePoolManagement:
+                    clientID: "12345678-1234-5678-9012-123456789012"
+                    objectEncoding: utf-8
+                    credentialsSecretName: npm-secret
+                  controlPlaneOperator:
+                    clientID: "12345678-1234-5678-9012-123456789012"
+                    objectEncoding: utf-8
+                    credentialsSecretName: cpo-secret
+                  imageRegistry:
+                    clientID: "12345678-1234-5678-9012-123456789012"
+                    objectEncoding: utf-8
+                    credentialsSecretName: ir-secret
+                  ingress:
+                    clientID: "12345678-1234-5678-9012-123456789012"
+                    objectEncoding: utf-8
+                    credentialsSecretName: ingress-secret
+                  network:
+                    clientID: "12345678-1234-5678-9012-123456789012"
+                    objectEncoding: utf-8
+                    credentialsSecretName: network-secret
+                  disk:
+                    clientID: "12345678-1234-5678-9012-123456789012"
+                    objectEncoding: utf-8
+                    credentialsSecretName: disk-secret
+                  file:
+                    clientID: "12345678-1234-5678-9012-123456789012"
+                    objectEncoding: utf-8
+                    credentialsSecretName: file-secret
+                dataPlane:
+                  imageRegistryMSIClientID: "12345678-1234-5678-9012-123456789012"
+                  diskMSIClientID: "12345678-1234-5678-9012-123456789012"
+                  fileMSIClientID: "12345678-1234-5678-9012-123456789012"
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route:
+              hostname: api-mycluster.example.com
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "Azure service hostname domain must not overlap with the cluster base domain"
+
+  - name: When Azure loadBalancer hostname domain overlaps with baseDomain it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: Azure
+          azure:
+            location: eastus
+            resourceGroupName: test-rg
+            vnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet"
+            subnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+            subscriptionID: "12345678-1234-5678-9012-123456789012"
+            securityGroupID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg"
+            tenantID: "87654321-4321-8765-2109-876543210987"
+            azureAuthenticationConfig:
+              azureAuthenticationConfigType: ManagedIdentities
+              managedIdentities:
+                controlPlane:
+                  managedIdentitiesKeyVault:
+                    name: test-kv
+                    tenantID: "87654321-4321-8765-2109-876543210987"
+                  cloudProvider:
+                    clientID: "12345678-1234-5678-9012-123456789012"
+                    objectEncoding: utf-8
+                    credentialsSecretName: cp-secret
+                  nodePoolManagement:
+                    clientID: "12345678-1234-5678-9012-123456789012"
+                    objectEncoding: utf-8
+                    credentialsSecretName: npm-secret
+                  controlPlaneOperator:
+                    clientID: "12345678-1234-5678-9012-123456789012"
+                    objectEncoding: utf-8
+                    credentialsSecretName: cpo-secret
+                  imageRegistry:
+                    clientID: "12345678-1234-5678-9012-123456789012"
+                    objectEncoding: utf-8
+                    credentialsSecretName: ir-secret
+                  ingress:
+                    clientID: "12345678-1234-5678-9012-123456789012"
+                    objectEncoding: utf-8
+                    credentialsSecretName: ingress-secret
+                  network:
+                    clientID: "12345678-1234-5678-9012-123456789012"
+                    objectEncoding: utf-8
+                    credentialsSecretName: network-secret
+                  disk:
+                    clientID: "12345678-1234-5678-9012-123456789012"
+                    objectEncoding: utf-8
+                    credentialsSecretName: disk-secret
+                  file:
+                    clientID: "12345678-1234-5678-9012-123456789012"
+                    objectEncoding: utf-8
+                    credentialsSecretName: file-secret
+                dataPlane:
+                  imageRegistryMSIClientID: "12345678-1234-5678-9012-123456789012"
+                  diskMSIClientID: "12345678-1234-5678-9012-123456789012"
+                  fileMSIClientID: "12345678-1234-5678-9012-123456789012"
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: LoadBalancer
+            loadBalancer:
+              hostname: api-mycluster.example.com
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "Azure service hostname domain must not overlap with the cluster base domain"
+
+  - name: When Azure route hostname domain differs from baseDomain it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: Azure
+          azure:
+            location: eastus
+            resourceGroupName: test-rg
+            vnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet"
+            subnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+            subscriptionID: "12345678-1234-5678-9012-123456789012"
+            securityGroupID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg"
+            tenantID: "87654321-4321-8765-2109-876543210987"
+            azureAuthenticationConfig:
+              azureAuthenticationConfigType: ManagedIdentities
+              managedIdentities:
+                controlPlane:
+                  managedIdentitiesKeyVault:
+                    name: test-kv
+                    tenantID: "87654321-4321-8765-2109-876543210987"
+                  cloudProvider:
+                    clientID: "12345678-1234-5678-9012-123456789012"
+                    objectEncoding: utf-8
+                    credentialsSecretName: cp-secret
+                  nodePoolManagement:
+                    clientID: "12345678-1234-5678-9012-123456789012"
+                    objectEncoding: utf-8
+                    credentialsSecretName: npm-secret
+                  controlPlaneOperator:
+                    clientID: "12345678-1234-5678-9012-123456789012"
+                    objectEncoding: utf-8
+                    credentialsSecretName: cpo-secret
+                  imageRegistry:
+                    clientID: "12345678-1234-5678-9012-123456789012"
+                    objectEncoding: utf-8
+                    credentialsSecretName: ir-secret
+                  ingress:
+                    clientID: "12345678-1234-5678-9012-123456789012"
+                    objectEncoding: utf-8
+                    credentialsSecretName: ingress-secret
+                  network:
+                    clientID: "12345678-1234-5678-9012-123456789012"
+                    objectEncoding: utf-8
+                    credentialsSecretName: network-secret
+                  disk:
+                    clientID: "12345678-1234-5678-9012-123456789012"
+                    objectEncoding: utf-8
+                    credentialsSecretName: disk-secret
+                  file:
+                    clientID: "12345678-1234-5678-9012-123456789012"
+                    objectEncoding: utf-8
+                    credentialsSecretName: file-secret
+                dataPlane:
+                  imageRegistryMSIClientID: "12345678-1234-5678-9012-123456789012"
+                  diskMSIClientID: "12345678-1234-5678-9012-123456789012"
+                  fileMSIClientID: "12345678-1234-5678-9012-123456789012"
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route:
+              hostname: api-mycluster.external.different.com
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+
