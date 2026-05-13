@@ -3502,13 +3502,14 @@ func TestComputeAWSEndpointServiceCondition(t *testing.T) {
 
 func TestValidateSliceNetworkCIDRs(t *testing.T) {
 	tests := []struct {
-		name        string
-		mn          []hyperv1.MachineNetworkEntry
-		cn          []hyperv1.ClusterNetworkEntry
-		sn          []hyperv1.ServiceNetworkEntry
-		networkType hyperv1.NetworkType
-		ovnConfig   *hyperv1.OVNKubernetesConfig
-		wantErr     bool
+		name         string
+		mn           []hyperv1.MachineNetworkEntry
+		cn           []hyperv1.ClusterNetworkEntry
+		sn           []hyperv1.ServiceNetworkEntry
+		networkType  hyperv1.NetworkType
+		platformType hyperv1.PlatformType
+		ovnConfig    *hyperv1.OVNKubernetesConfig
+		wantErr      bool
 	}{
 		{
 			name:        "given a conflicting IPv6 clusterNetwork overlapped with machineNetwork, it should fail",
@@ -3653,6 +3654,80 @@ func TestValidateSliceNetworkCIDRs(t *testing.T) {
 			},
 			wantErr: false,
 		},
+		{
+			name:        "When OVN-Kubernetes with valid IPv6 InternalJoinSubnet it should succeed",
+			mn:          []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd02::/48")}},
+			cn:          []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd01::/64")}},
+			sn:          []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd03::/112")}},
+			networkType: hyperv1.OVNKubernetes,
+			ovnConfig: &hyperv1.OVNKubernetesConfig{
+				IPv6: hyperv1.OVNIPv6Config{
+					InternalJoinSubnet: "fd99::/64",
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name:        "When OVN-Kubernetes IPv6 InternalJoinSubnet overlaps with MachineNetwork it should fail",
+			mn:          []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd99::/48")}},
+			cn:          []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd01::/64")}},
+			sn:          []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd03::/112")}},
+			networkType: hyperv1.OVNKubernetes,
+			ovnConfig: &hyperv1.OVNKubernetesConfig{
+				IPv6: hyperv1.OVNIPv6Config{
+					InternalJoinSubnet: "fd99::/64",
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name:        "When OVN-Kubernetes IPv6 subnets overlap with each other it should fail",
+			mn:          []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd02::/48")}},
+			cn:          []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd01::/64")}},
+			sn:          []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd03::/112")}},
+			networkType: hyperv1.OVNKubernetes,
+			ovnConfig: &hyperv1.OVNKubernetesConfig{
+				IPv6: hyperv1.OVNIPv6Config{
+					InternalJoinSubnet:          "fd99::/64",
+					InternalTransitSwitchSubnet: "fd99::/48",
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name:         "When KubeVirt OVN-Kubernetes with no IPv6 config and MachineNetwork overlaps default fd99::/64 it should fail",
+			mn:           []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd99::/48")}},
+			cn:           []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd01::/64")}},
+			sn:           []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd02::/112")}},
+			networkType:  hyperv1.OVNKubernetes,
+			platformType: hyperv1.KubevirtPlatform,
+			ovnConfig:    nil,
+			wantErr:      true,
+		},
+		{
+			name:         "When KubeVirt OVN-Kubernetes with no IPv4 config and MachineNetwork overlaps default 100.66.0.0/16 it should fail",
+			mn:           []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("100.66.0.0/24")}},
+			cn:           []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("10.128.0.0/14")}},
+			sn:           []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.30.0.0/16")}},
+			networkType:  hyperv1.OVNKubernetes,
+			platformType: hyperv1.KubevirtPlatform,
+			ovnConfig:    nil,
+			wantErr:      true,
+		},
+		{
+			name:         "When KubeVirt OVN-Kubernetes with explicit IPv6 join subnet it should use explicit value not default",
+			mn:           []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd99::/48")}},
+			cn:           []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd01::/64")}},
+			sn:           []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd02::/112")}},
+			networkType:  hyperv1.OVNKubernetes,
+			platformType: hyperv1.KubevirtPlatform,
+			ovnConfig: &hyperv1.OVNKubernetesConfig{
+				IPv6: hyperv1.OVNIPv6Config{
+					InternalJoinSubnet: "fdaa::/64",
+				},
+			},
+			wantErr: false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -3663,6 +3738,9 @@ func TestValidateSliceNetworkCIDRs(t *testing.T) {
 					Namespace: "any",
 				},
 				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: tt.platformType,
+					},
 					Networking: hyperv1.ClusterNetworking{
 						NetworkType:    tt.networkType,
 						MachineNetwork: tt.mn,
@@ -3672,9 +3750,7 @@ func TestValidateSliceNetworkCIDRs(t *testing.T) {
 				},
 			}
 
-			// Set OVN configuration if provided
 			if tt.ovnConfig != nil {
-				//OperatorConfiguration
 				hc.Spec.OperatorConfiguration = &hyperv1.OperatorConfiguration{
 					ClusterNetworkOperator: &hyperv1.ClusterNetworkOperatorSpec{
 						OVNKubernetesConfig: tt.ovnConfig,
