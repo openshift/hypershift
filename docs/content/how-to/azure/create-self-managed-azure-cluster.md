@@ -168,6 +168,15 @@ ${HYPERSHIFT_BINARY_PATH}/hypershift create cluster azure \
     cluster's VNet, `--endpoint-access Private` flag, and HyperShift operator
     installation with `--private-platform Azure`.
 
+!!! warning "Private Clusters: Avoid DNS Zone Shadowing"
+
+    If creating a **private** Azure HostedCluster, ensure `--external-dns-domain` does
+    not match `{clusterName}.{baseDomain}` or its parent domain. A matching value
+    causes an Azure Private DNS zone to shadow `*.apps` resolution, breaking console
+    and all ingress. This cannot be fixed after creation. See
+    [External DNS Domain Must Not Match Cluster Domain](deploy-azure-private-clusters.md#external-dns-domain-must-not-match-cluster-domain)
+    for details.
+
 ### Configuring Azure Marketplace Images
 
 HyperShift supports multiple approaches for configuring Azure Marketplace images for your cluster nodes. The recommended approach varies based on your OpenShift version and requirements.
