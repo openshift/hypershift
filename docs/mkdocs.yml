@@ -367,6 +367,7 @@ nav:
   - reference/service-publishing-strategies.md
 - 'Contribute':
   - contribute/index.md
+  - 'Repositories': contribute/repositories.md
   - 'HO/CPO Release Process': contribute/release-process.md
   - 'OCP Branching Tasks': contribute/branch-process.md
   - 'Custom Images': contribute/custom-images.md
