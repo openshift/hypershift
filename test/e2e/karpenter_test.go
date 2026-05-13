@@ -62,7 +62,7 @@ var kubeletCheckerPodTemplate = func() *corev1.Pod {
 }()
 
 func TestKarpenter(t *testing.T) {
-	e2eutil.AtLeast(t, e2eutil.Version422)
+	e2eutil.ShouldRunKarpenterTests(t)
 	if globalOpts.Platform != hyperv1.AWSPlatform {
 		t.Skip("test only supported on platform AWS")
 	}

@@ -363,7 +363,9 @@ func executeNodePoolTest(t *testing.T, ctx context.Context, mgmtClient crclient.
 	// Validate that CAPI v1 condition messages are bubbled up during machine provisioning.
 	// This checks that the AllMachinesReady condition is populated with CAPI-derived
 	// machine-level details before machines are fully ready.
-	if nodePool.Spec.Replicas != nil && *nodePool.Spec.Replicas > 0 {
+	// The CAPI condition aggregation logic was introduced in 4.23; older operators don't produce
+	// the expected "machines are not healthy" message format during provisioning.
+	if e2eutil.IsGreaterThanOrEqualTo(e2eutil.Version423) && nodePool.Spec.Replicas != nil && *nodePool.Spec.Replicas > 0 {
 		validateCAPIConditionBubblingDuringProvisioning(t, ctx, mgmtClient, nodePool)
 	}
 
@@ -412,7 +414,8 @@ func validateNodePoolConditions(t *testing.T, ctx context.Context, client crclie
 		// to ensure CAPI v1 condition messages are properly aggregated and bubbled up.
 		// When all machines are ready and healthy, the aggregation pipeline should produce
 		// Reason=AsExpected and Message="All is well".
-		if expectedSupportedVersionSkew {
+		// The CAPI condition aggregation logic was introduced in 4.23.
+		if expectedSupportedVersionSkew && e2eutil.IsGreaterThanOrEqualTo(e2eutil.Version423) {
 			switch conditionType {
 			case hyperv1.NodePoolAllMachinesReadyConditionType, hyperv1.NodePoolAllNodesHealthyConditionType:
 				condition.Reason = hyperv1.AsExpectedReason
