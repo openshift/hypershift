@@ -135,6 +135,8 @@ const (
 	useRestrictedPodSecurityLabel                              = "io.openshift.hypershift.restricted-psa"
 	defaultToControlPlaneV2Label                               = "io.openshift.hypershift.control-plane-operator.v2-isdefault"
 
+	apiOpenShiftComLabelPrefix = "api.openshift.com/"
+
 	etcdEncKeyPostfix = "-etcd-encryption-key"
 
 	jobHostedClusterNameLabel      = "hypershift.openshift.io/cluster-name"
@@ -2423,10 +2425,17 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 	if hcp.Labels == nil {
 		hcp.Labels = make(map[string]string)
 	}
-	// All labels on the HostedCluster with this special prefix are copied
-	// Those are labels set by OCM
+	// These labels are managed by OCM. Delete-then-copy ensures removals
+	// on the HostedCluster (e.g., clearing limited-support) propagate to the HCP.
+	for key := range hcp.Labels {
+		if strings.HasPrefix(key, apiOpenShiftComLabelPrefix) {
+			if _, exists := hcluster.Labels[key]; !exists {
+				delete(hcp.Labels, key)
+			}
+		}
+	}
 	for key, val := range hcluster.Labels {
-		if strings.HasPrefix(key, "api.openshift.com") {
+		if strings.HasPrefix(key, apiOpenShiftComLabelPrefix) {
 			hcp.Labels[key] = val
 		}
 	}

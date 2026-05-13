@@ -310,6 +310,64 @@ func TestReconcileHostedControlPlaneAdditionalTrustBundle(t *testing.T) {
 	}
 }
 
+func TestReconcileHostedControlPlaneLabelSync(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name           string
+		hcLabels       map[string]string
+		hcpLabels      map[string]string
+		expectedLabels map[string]string
+	}{
+		{
+			name:           "When HC has api.openshift.com labels, it should copy them to HCP",
+			hcLabels:       map[string]string{"api.openshift.com/limited-support": "true", "api.openshift.com/name": "test"},
+			hcpLabels:      map[string]string{},
+			expectedLabels: map[string]string{"api.openshift.com/limited-support": "true", "api.openshift.com/name": "test"},
+		},
+		{
+			name:           "When HC removes an api.openshift.com label, it should remove the stale label from HCP",
+			hcLabels:       map[string]string{"api.openshift.com/name": "test"},
+			hcpLabels:      map[string]string{"api.openshift.com/limited-support": "true", "api.openshift.com/name": "old"},
+			expectedLabels: map[string]string{"api.openshift.com/name": "test"},
+		},
+		{
+			name:           "When HC has no api.openshift.com labels, it should preserve non-api.openshift.com labels on HCP",
+			hcLabels:       map[string]string{},
+			hcpLabels:      map[string]string{"api.openshift.com/limited-support": "true", "cluster.x-k8s.io/cluster-name": "keep-me"},
+			expectedLabels: map[string]string{"cluster.x-k8s.io/cluster-name": "keep-me"},
+		},
+		{
+			name:           "When HC labels are nil, it should remove all api.openshift.com labels from HCP",
+			hcLabels:       nil,
+			hcpLabels:      map[string]string{"api.openshift.com/limited-support": "true"},
+			expectedLabels: map[string]string{},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			hc := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Labels: test.hcLabels},
+			}
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Labels: test.hcpLabels},
+			}
+			err := reconcileHostedControlPlane(hcp, hc, false, false, func() (map[string]string, error) { return nil, nil })
+			g.Expect(err).ToNot(HaveOccurred())
+
+			for key, val := range test.expectedLabels {
+				g.Expect(hcp.Labels).To(HaveKeyWithValue(key, val))
+			}
+			for key := range hcp.Labels {
+				if strings.HasPrefix(key, apiOpenShiftComLabelPrefix) {
+					g.Expect(test.expectedLabels).To(HaveKey(key), "unexpected label %s=%s still on HCP", key, hcp.Labels[key])
+				}
+			}
+		})
+	}
+}
+
 func TestReconcileHostedControlPlaneUpgrades(t *testing.T) {
 	t.Parallel()
 	// TODO: the spec/status comparison of control plane is a weak check; the
