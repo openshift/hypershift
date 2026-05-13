@@ -5302,11 +5302,10 @@ spec:
                         - type
                         type: object
                         x-kubernetes-validations:
-                        - message: privateLink is forbidden when type is not PrivateLink
-                          rule: 'self.type != ''PrivateLink'' ? !has(self.privateLink)
-                            : true'
-                        - message: privateLink is required when type is PrivateLink
-                          rule: self.type != 'PrivateLink' || has(self.privateLink)
+                        - message: privateLink is required when type is PrivateLink,
+                            and forbidden otherwise
+                          rule: 'self.type == ''PrivateLink'' ? has(self.privateLink)
+                            : !has(self.privateLink)'
                       resourceGroup:
                         default: default
                         description: |-

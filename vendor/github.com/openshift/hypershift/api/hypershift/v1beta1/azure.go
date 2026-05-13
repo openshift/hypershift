@@ -668,8 +668,7 @@ const (
 // mechanism. Currently only PrivateLink is supported; additional mechanisms (e.g., Swift) may
 // be added in the future.
 //
-// +kubebuilder:validation:XValidation:rule="self.type != 'PrivateLink' ? !has(self.privateLink) : true",message="privateLink is forbidden when type is not PrivateLink"
-// +kubebuilder:validation:XValidation:rule="self.type != 'PrivateLink' || has(self.privateLink)",message="privateLink is required when type is PrivateLink"
+// +kubebuilder:validation:XValidation:rule="self.type == 'PrivateLink' ? has(self.privateLink) : !has(self.privateLink)",message="privateLink is required when type is PrivateLink, and forbidden otherwise"
 // +union
 type AzurePrivateSpec struct {
 	// type specifies the private connectivity mechanism used for the hosted cluster's API server.
