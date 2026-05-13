@@ -6,6 +6,7 @@ title: Contribute
 
 Use these resources to contribute to HyperShift.
 
+- [Repositories](repositories.md)
 - [Contributing guidelines (GitHub)](https://github.com/openshift/hypershift/blob/main/.github/CONTRIBUTING.md)
 - [Release Process](release-process.md)
 - [Custom Images](custom-images.md)

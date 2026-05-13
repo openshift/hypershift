@@ -826,6 +826,7 @@ title: Contribute
 
 Use these resources to contribute to HyperShift.
 
+- Repositories
 - Contributing guidelines (GitHub)
 - Release Process
 - Custom Images
@@ -969,6 +970,28 @@ This is a sample of how the release notes looks like added to the PR:
   - fix(hypershift): reduce CAPI rbac access
   - Validate Network Input for HostedCluster
   ```
+
+
+---
+
+## Source: docs/content/contribute/repositories.md
+
+---
+title: Repositories
+---
+
+# Repositories
+
+The HyperShift team owns and maintains the following repositories.
+
+| Repository | Description | Upstream |
+|---|---|---|
+| openshift/hypershift | Main repository containing the HyperShift Operator, Control Plane Operator, CLI, API definitions, and tests. | |
+| hypershift-community/hypershift | Community fork synced from openshift/hypershift. | |
+| openshift/hypershift-oadp-plugin | OADP (OpenShift API for Data Protection) plugin for HostedControlPlane backup and restore. | |
+| openshift/aws-encryption-provider | API server encryption provider backed by AWS KMS. | kubernetes-sigs/aws-encryption-provider |
+| openshift/azure-kubernetes-kms | Azure Key Vault KMS plugin for the Kubernetes API server. | Azure/kubernetes-kms |
+| openshift/apiserver-network-proxy | Konnectivity proxy enabling secure communication between the API server and cluster nodes. | kubernetes-sigs/apiserver-network-proxy |
 
 
 ---
