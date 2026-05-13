@@ -10,6 +10,10 @@ template:
       - name: runner
         image: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/hypershift-gh-actions-runner:latest
         command: ["/home/runner/run.sh"]
+        volumeMounts:
+          - name: go-cache
+            mountPath: /cache/go-build
+            readOnly: true
         resources:
           requests:
             cpu: "4"
@@ -17,6 +21,11 @@ template:
           limits:
             cpu: "4"
             memory: "16Gi"
+    volumes:
+      - name: go-cache
+        persistentVolumeClaim:
+          claimName: go-cache-pvc
+          readOnly: true
     topologySpreadConstraints:
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname
