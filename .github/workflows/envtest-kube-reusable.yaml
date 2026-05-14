@@ -49,8 +49,6 @@ jobs:
     if: needs.changes.outputs.should_run == 'true'
     runs-on: arc-runner-set
     timeout-minutes: 15
-    env:
-      GOCACHE: /tmp/go-build-cache
     strategy:
       fail-fast: false
       matrix:
@@ -59,12 +57,7 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
-      - name: Warm Go build cache from EFS
-        run: |
-          if [ -d /cache/go-build ]; then
-            mkdir -p /tmp/go-build-cache
-            cp -a /cache/go-build/. /tmp/go-build-cache/
-          fi
+      - uses: ./.github/actions/warm-go-cache
       - run: make test-envtest-kube ENVTEST_KUBE_VERSIONS="${{ matrix.version }}"
 
   conclusion:
