@@ -92,7 +92,7 @@ func TestReconcile(t *testing.T) {
 		crd := &apiextensionsv1.CustomResourceDefinition{
 			ObjectMeta: metav1.ObjectMeta{Name: "hostedclusters.hypershift.openshift.io"},
 			Spec: apiextensionsv1.CustomResourceDefinitionSpec{
-				Group: "hypershift.openshift.io",
+				Group: webhookConfigName,
 				Names: apiextensionsv1.CustomResourceDefinitionNames{
 					Plural:   "hostedclusters",
 					Singular: "hostedcluster",
@@ -181,7 +181,7 @@ func TestReconcile(t *testing.T) {
 		g := NewWithT(t)
 
 		mwc := &admissionregistrationv1.MutatingWebhookConfiguration{
-			ObjectMeta: metav1.ObjectMeta{Name: "hypershift.openshift.io"},
+			ObjectMeta: metav1.ObjectMeta{Name: webhookConfigName},
 			Webhooks: []admissionregistrationv1.MutatingWebhook{
 				{
 					Name:                    "defaulting.hypershift.openshift.io",
@@ -192,7 +192,7 @@ func TestReconcile(t *testing.T) {
 			},
 		}
 		vwc := &admissionregistrationv1.ValidatingWebhookConfiguration{
-			ObjectMeta: metav1.ObjectMeta{Name: "hypershift.openshift.io"},
+			ObjectMeta: metav1.ObjectMeta{Name: webhookConfigName},
 			Webhooks: []admissionregistrationv1.ValidatingWebhook{
 				{
 					Name:                    "validating.hypershift.openshift.io",
@@ -210,12 +210,12 @@ func TestReconcile(t *testing.T) {
 		g.Expect(err).ToNot(HaveOccurred())
 
 		updatedMWC := &admissionregistrationv1.MutatingWebhookConfiguration{}
-		g.Expect(cl.Get(t.Context(), client.ObjectKey{Name: "hypershift.openshift.io"}, updatedMWC)).To(Succeed())
+		g.Expect(cl.Get(t.Context(), client.ObjectKey{Name: webhookConfigName}, updatedMWC)).To(Succeed())
 		g.Expect(updatedMWC.Webhooks[0].ClientConfig.CABundle).ToNot(Equal([]byte("old")))
 		g.Expect(updatedMWC.Webhooks[0].ClientConfig.CABundle).ToNot(BeEmpty())
 
 		updatedVWC := &admissionregistrationv1.ValidatingWebhookConfiguration{}
-		g.Expect(cl.Get(t.Context(), client.ObjectKey{Name: "hypershift.openshift.io"}, updatedVWC)).To(Succeed())
+		g.Expect(cl.Get(t.Context(), client.ObjectKey{Name: webhookConfigName}, updatedVWC)).To(Succeed())
 		g.Expect(updatedVWC.Webhooks[0].ClientConfig.CABundle).ToNot(Equal([]byte("old")))
 		g.Expect(updatedVWC.Webhooks[0].ClientConfig.CABundle).ToNot(BeEmpty())
 	})
@@ -312,6 +312,57 @@ func TestReconcile(t *testing.T) {
 		caSecret := &corev1.Secret{}
 		g.Expect(cl.Get(t.Context(), client.ObjectKey{Name: CASecretName, Namespace: "hypershift"}, caSecret)).To(Succeed())
 		g.Expect(caSecret.Data).To(HaveKey(certs.CASignerCertMapKey))
+	})
+
+	t.Run("When upgrading from service-ca it should remove inject-cabundle annotation from webhook configurations", func(t *testing.T) {
+		g := NewWithT(t)
+
+		mwc := &admissionregistrationv1.MutatingWebhookConfiguration{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: webhookConfigName,
+				Annotations: map[string]string{
+					injectCABundleAnnotation: "true",
+				},
+			},
+			Webhooks: []admissionregistrationv1.MutatingWebhook{
+				{
+					Name:                    "defaulting.hypershift.openshift.io",
+					ClientConfig:            admissionregistrationv1.WebhookClientConfig{CABundle: []byte("old")},
+					SideEffects:             sideEffectNone(),
+					AdmissionReviewVersions: []string{"v1"},
+				},
+			},
+		}
+		vwc := &admissionregistrationv1.ValidatingWebhookConfiguration{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: webhookConfigName,
+				Annotations: map[string]string{
+					injectCABundleAnnotation: "true",
+				},
+			},
+			Webhooks: []admissionregistrationv1.ValidatingWebhook{
+				{
+					Name:                    "validating.hypershift.openshift.io",
+					ClientConfig:            admissionregistrationv1.WebhookClientConfig{CABundle: []byte("old")},
+					SideEffects:             sideEffectNone(),
+					AdmissionReviewVersions: []string{"v1"},
+				},
+			},
+		}
+
+		cl := fake.NewClientBuilder().WithScheme(newScheme(t)).WithObjects(mwc, vwc).Build()
+		r := newReconciler(cl)
+
+		_, err := r.Reconcile(t.Context(), caRequest())
+		g.Expect(err).ToNot(HaveOccurred())
+
+		updatedMWC := &admissionregistrationv1.MutatingWebhookConfiguration{}
+		g.Expect(cl.Get(t.Context(), client.ObjectKey{Name: webhookConfigName}, updatedMWC)).To(Succeed())
+		g.Expect(updatedMWC.Annotations).ToNot(HaveKey(injectCABundleAnnotation))
+
+		updatedVWC := &admissionregistrationv1.ValidatingWebhookConfiguration{}
+		g.Expect(cl.Get(t.Context(), client.ObjectKey{Name: webhookConfigName}, updatedVWC)).To(Succeed())
+		g.Expect(updatedVWC.Annotations).ToNot(HaveKey(injectCABundleAnnotation))
 	})
 
 	t.Run("When the serving cert was not created by service-ca it should not delete it", func(t *testing.T) {
