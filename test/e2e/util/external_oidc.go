@@ -27,6 +27,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	configv1typedclient "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1"
 
+	appsv1 "k8s.io/api/apps/v1"
 	kauthnv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -54,8 +55,9 @@ const (
 	ClaimValidationExprEmailExists   = "has(claims.email) && claims.email != ''"
 	ClaimValidationExprEmailVerified = "claims.email_verified == true"
 
-	// CEL expression for user validation rule
-	UserValidationExprNoSystemPrefix = "!user.username.startsWith('system:')"
+	// CEL expressions for user validation rules
+	UserValidationExprNoSystemPrefix  = "!user.username.startsWith('system:')"
+	UserValidationExprNoForbiddenWord = "!user.username.contains('forbidden')"
 )
 
 type ExtOIDCConfig struct {
@@ -210,6 +212,10 @@ func (config *ExtOIDCConfig) GetAuthenticationConfig() *configv1.AuthenticationS
 			{
 				Expression: UserValidationExprNoSystemPrefix,
 				Message:    "username cannot use reserved system: prefix",
+			},
+			{
+				Expression: UserValidationExprNoForbiddenWord,
+				Message:    "username cannot contain the word 'forbidden'",
 			},
 		}
 	}
@@ -397,7 +403,7 @@ func GetClientConfigForKeycloakOIDCUser(clientCfg *rest.Config, authConfig *ExtO
 		"--issuer-url=" + authConfig.IssuerURL,
 		"--client-id=" + authConfig.CliClientID,
 		"--extra-scopes=email,profile",
-		"--callback-address=127.0.0.1:8080",
+		"--callback-address=127.0.0.1:0",
 		"--certificate-authority=" + authConfig.IssuerCABundleFile,
 	}
 
@@ -963,6 +969,87 @@ func GenerateRandomPassword(length int) string {
 	return string(b)
 }
 
+// SetupKeycloakAdminClientFromCluster retrieves Keycloak admin credentials from the cluster and creates an admin client
+func SetupKeycloakAdminClientFromCluster(ctx context.Context, t *testing.T, mgtClient crclient.Client, config *ExtOIDCConfig) (*KeycloakAdminClient, error) {
+	g := NewWithT(t)
+
+	// Tests are ran on both AWS and Azure AKS clusters respectively.
+	// However, Keycloak credentials are stored differently on both.
+
+	// On AWS, both admin username and password credentials are stored
+	// via a StatefulSet called 'keycloak' in the 'keycloak' namespace.
+
+	// On AKS, the admin username is stored in a config map called
+	// 'keycloak-env-vars' in 'keycloak' namespace via data.KC_BOOTSTAP_ADMIN_USERNAME,
+	// and the admin password is stored in a secret called 'keycloak'
+	// in the 'keycloak' namespace via data.admin-password .
+	// https://github.com/bitnami/charts/tree/main/bitnami/keycloak/templates
+
+	adminUser, adminPass := "", ""
+
+	// Try AWS approach first: read from StatefulSet environment variables
+	t.Logf("Retrieving Keycloak admin credentials from StatefulSet (AWS approach)")
+	sts := &appsv1.StatefulSet{}
+	err := mgtClient.Get(ctx, crclient.ObjectKey{
+		Namespace: "keycloak",
+		Name:      "keycloak",
+	}, sts)
+	if err == nil {
+		// StatefulSet exists, try to read credentials from environment variables
+		for _, env := range sts.Spec.Template.Spec.Containers[0].Env {
+			if env.Name == "KC_BOOTSTRAP_ADMIN_USERNAME" {
+				adminUser = env.Value
+			}
+			if env.Name == "KC_BOOTSTRAP_ADMIN_PASSWORD" {
+				adminPass = env.Value
+			}
+		}
+	}
+
+	// If credentials not found in StatefulSet, try AKS approach: ConfigMap + Secret
+	if adminUser == "" || adminPass == "" {
+		t.Logf("Credentials not found in StatefulSet, trying AKS approach (ConfigMap + Secret)")
+
+		// Get admin username from ConfigMap
+		cm := &corev1.ConfigMap{}
+		err = mgtClient.Get(ctx, crclient.ObjectKey{
+			Namespace: "keycloak",
+			Name:      "keycloak-env-vars",
+		}, cm)
+		if err == nil && cm.Data != nil {
+			adminUser = cm.Data["KC_BOOTSTRAP_ADMIN_USERNAME"]
+		}
+
+		// Get admin password from Secret
+		secret := &corev1.Secret{}
+		err = mgtClient.Get(ctx, crclient.ObjectKey{
+			Namespace: "keycloak",
+			Name:      "keycloak",
+		}, secret)
+		if err == nil && secret.Data != nil {
+			adminPass = string(secret.Data["admin-password"])
+		}
+	}
+
+	// Verify we found both credentials
+	if adminUser == "" || adminPass == "" {
+		return nil, fmt.Errorf("could not find Keycloak admin credentials in StatefulSet (AWS) or ConfigMap+Secret (AKS)")
+	}
+
+	t.Logf("Successfully retrieved Keycloak admin credentials (username: %s)", adminUser)
+
+	// Trim /realms/master from issuerURL
+	baseURL := strings.TrimSuffix(config.IssuerURL, "/realms/master")
+	kc := NewKeycloakAdminClient(baseURL, adminUser, adminPass, config.IssuerCABundleFile)
+
+	// Verify access by getting admin token
+	err = kc.GetAdminToken(ctx)
+	g.Expect(err).NotTo(HaveOccurred(), "failed to get admin token")
+
+	t.Logf("Successfully created Keycloak admin client")
+	return kc, nil
+}
+
 // TestResources tracks resources created during a test for cleanup
 type TestResources struct {
 	AdminClient *KeycloakAdminClient
@@ -983,13 +1070,18 @@ func NewTestResources(adminClient *KeycloakAdminClient) *TestResources {
 
 // CreateTestUser creates a user and tracks it for cleanup
 func (tr *TestResources) CreateTestUser(ctx context.Context, t *testing.T, username, email, password string) (string, error) {
+	return tr.CreateTestUserWithEmailVerification(ctx, t, username, email, password, true)
+}
+
+// CreateTestUserWithEmailVerification creates a user with specific email verification status and tracks it for cleanup
+func (tr *TestResources) CreateTestUserWithEmailVerification(ctx context.Context, t *testing.T, username, email, password string, emailVerified bool) (string, error) {
 	user := KeycloakUser{
 		Username:      username,
 		Enabled:       true,
 		FirstName:     username,
 		LastName:      "Test",
 		Email:         email,
-		EmailVerified: true,
+		EmailVerified: emailVerified,
 	}
 
 	userID, err := tr.AdminClient.CreateUser(ctx, user)
@@ -1007,7 +1099,7 @@ func (tr *TestResources) CreateTestUser(ctx context.Context, t *testing.T, usern
 	tr.UserIDs = append(tr.UserIDs, userID)
 	tr.UserCreds[username] = password
 
-	t.Logf("Created test user: %s (ID: %s)", username, userID)
+	t.Logf("Created test user: %s (ID: %s, email_verified: %v)", username, userID, emailVerified)
 	return userID, nil
 }
 
@@ -1025,6 +1117,16 @@ func (tr *TestResources) CreateTestGroup(ctx context.Context, t *testing.T, grou
 	return groupID, nil
 }
 
+// CreateTestUserWithRandomCredentials creates a user with generated credentials and tracks it for cleanup
+func (tr *TestResources) CreateTestUserWithRandomCredentials(ctx context.Context, t *testing.T, usernamePrefix string) (userID, username, email, password string, err error) {
+	username = usernamePrefix + "-" + GenerateRandomPassword(8)
+	email = username + "@test.example.com"
+	password = GenerateRandomPassword(16)
+
+	userID, err = tr.CreateTestUser(ctx, t, username, email, password)
+	return userID, username, email, password, err
+}
+
 // GetTestUsersString returns users in format "user1:pass1,user2:pass2,..."
 func (tr *TestResources) GetTestUsersString() string {
 	var users []string
@@ -1037,6 +1139,10 @@ func (tr *TestResources) GetTestUsersString() string {
 // Cleanup deletes all tracked resources
 func (tr *TestResources) Cleanup(ctx context.Context, t *testing.T) {
 	t.Logf("Cleaning up test resources: %d users, %d groups", len(tr.UserIDs), len(tr.GroupIDs))
+
+	if err := tr.AdminClient.GetAdminToken(ctx); err != nil {
+		t.Logf("Warning: failed to refresh admin token: %v", err)
+	}
 
 	// Delete users
 	for _, userID := range tr.UserIDs {
@@ -1060,4 +1166,175 @@ func (tr *TestResources) Cleanup(ctx context.Context, t *testing.T) {
 	tr.UserIDs = []string{}
 	tr.GroupIDs = []string{}
 	tr.UserCreds = make(map[string]string)
+}
+
+// AuthenticatedTestUser contains the results of setting up an authenticated test user
+type AuthenticatedTestUser struct {
+	Username          string
+	Email             string
+	Password          string
+	UserID            string
+	GroupID           string
+	GroupName         string
+	KubeConfig        *rest.Config
+	AuthClient        kauthnv1typedclient.AuthenticationV1Interface
+	SelfSubjectReview *kauthnv1.SelfSubjectReview
+}
+
+// TryAuthenticateUser attempts to authenticate a user and returns error if authentication fails
+// This is useful for negative testing where you expect authentication to fail
+func (tr *TestResources) TryAuthenticateUser(
+	ctx context.Context,
+	t *testing.T,
+	username string,
+	password string,
+	clientCfg *rest.Config,
+	extOIDCConfig *ExtOIDCConfig,
+) error {
+	// This function replicates ChangeUserForKeycloakExtOIDC but returns errors
+	// instead of using gomega assertions, allowing negative testing scenarios
+
+	if extOIDCConfig == nil {
+		return fmt.Errorf("extOIDCConfig is nil")
+	}
+	if extOIDCConfig.ExternalOIDCProvider != ProviderKeycloak {
+		return fmt.Errorf("expected Keycloak provider, got %s", extOIDCConfig.ExternalOIDCProvider)
+	}
+
+	// Step 1: Get OIDC token from Keycloak
+	httpClient := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true,
+			},
+		},
+	}
+
+	requestURL := extOIDCConfig.IssuerURL + "/protocol/openid-connect/token"
+	oidcClientID := extOIDCConfig.CliClientID
+	if oidcClientID == "" {
+		return fmt.Errorf("oidcClientID is empty")
+	}
+
+	formData := url.Values{
+		"client_id":  []string{oidcClientID},
+		"grant_type": []string{"password"},
+		"password":   []string{password},
+		"scope":      []string{"openid email profile"},
+		"username":   []string{username},
+	}
+
+	response, err := httpClient.PostForm(requestURL, formData)
+	if err != nil {
+		return fmt.Errorf("failed to POST to token endpoint: %w", err)
+	}
+	defer response.Body.Close()
+
+	// Authentication can fail at Keycloak level (e.g., email_verified=false)
+	if response.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(response.Body)
+		return fmt.Errorf("keycloak authentication failed with status %d: %s", response.StatusCode, string(body))
+	}
+
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	var respMap map[string]any
+	err = json.Unmarshal(body, &respMap)
+	if err != nil {
+		return fmt.Errorf("failed to unmarshal token response: %w", err)
+	}
+
+	idToken, ok := respMap["id_token"].(string)
+	if !ok {
+		return fmt.Errorf("id_token not found or not a string in response")
+	}
+
+	// Step 2: Try to authenticate with K8s using the ID token directly
+	// We use the token as a bearer token instead of going through the exec plugin,
+	// which would attempt an authorization code flow (browser-based) that requires
+	// user interaction. Using the token directly allows us to capture validation
+	// errors from the Kubernetes API server.
+	// Use AnonymousClientConfig to clear all auth credentials (certs, tokens) from the admin config
+	clientConfigForExtOIDCUser := rest.AnonymousClientConfig(rest.CopyConfig(clientCfg))
+	clientConfigForExtOIDCUser.BearerToken = idToken
+
+	authClient, err := kauthnv1typedclient.NewForConfig(clientConfigForExtOIDCUser)
+	if err != nil {
+		return fmt.Errorf("failed to create auth client: %w", err)
+	}
+
+	// Authentication can fail at K8s level due to claim validation rules or user validation rules
+	_, err = authClient.SelfSubjectReviews().Create(ctx, &kauthnv1.SelfSubjectReview{}, metav1.CreateOptions{})
+	if err != nil {
+		return fmt.Errorf("kubernetes authentication failed: %w", err)
+	}
+
+	return nil
+}
+
+// SetupAuthenticatedUserWithGroup creates a test user, group, adds user to group, authenticates, and gets self subject review
+// This is a complete setup for testing authentication and authorization scenarios
+func (tr *TestResources) SetupAuthenticatedUserWithGroup(
+	ctx context.Context,
+	t *testing.T,
+	usernamePrefix string,
+	groupNamePrefix string,
+	clientCfg *rest.Config,
+	extOIDCConfig *ExtOIDCConfig,
+) (*AuthenticatedTestUser, error) {
+	g := NewWithT(t)
+
+	// Create test group
+	groupName := groupNamePrefix + "-" + GenerateRandomPassword(8)
+	groupID, err := tr.CreateTestGroup(ctx, t, groupName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create test group: %w", err)
+	}
+	t.Logf("Created test group: %s (ID: %s)", groupName, groupID)
+
+	// Create test user with specific email
+	username := usernamePrefix + "-" + GenerateRandomPassword(8)
+	email := username + "@test.example.com"
+	password := GenerateRandomPassword(16)
+	userID, err := tr.CreateTestUser(ctx, t, username, email, password)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create test user: %w", err)
+	}
+	t.Logf("Created test user: %s (email: %s, ID: %s)", username, email, userID)
+
+	// Add user to group
+	err = tr.AdminClient.AddUserToGroup(ctx, userID, groupID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to add user to group: %w", err)
+	}
+	t.Logf("Added user %s to group %s", username, groupName)
+
+	// Authenticate as test user
+	testAuthConfig := *extOIDCConfig
+	testAuthConfig.TestUsers = username + ":" + password
+	testUserKubeConfig := ChangeUserForKeycloakExtOIDC(t, ctx, clientCfg, &testAuthConfig)
+	testAuthClient, err := kauthnv1typedclient.NewForConfig(testUserKubeConfig)
+	g.Expect(err).NotTo(HaveOccurred())
+
+	// Get self subject review
+	selfSubjectReview, err := testAuthClient.SelfSubjectReviews().Create(ctx, &kauthnv1.SelfSubjectReview{}, metav1.CreateOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get self subject review: %w", err)
+	}
+	t.Logf("Test user self subject review: %+v", selfSubjectReview.Status.UserInfo)
+
+	return &AuthenticatedTestUser{
+		Username:          username,
+		Email:             email,
+		Password:          password,
+		UserID:            userID,
+		GroupID:           groupID,
+		GroupName:         groupName,
+		KubeConfig:        testUserKubeConfig,
+		AuthClient:        testAuthClient,
+		SelfSubjectReview: selfSubjectReview,
+	}, nil
 }
