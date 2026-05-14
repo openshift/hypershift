@@ -9,5 +9,5 @@ runs:
         if [ -d /cache/go-build ]; then
           mkdir -p /tmp/go-build-cache && \
           timeout 120 cp -a /cache/go-build/. /tmp/go-build-cache/ || \
-          echo "Warning: failed to copy EFS cache, proceeding without cache"
+          echo "::warning::Failed to copy EFS cache, proceeding without cache"
         fi
