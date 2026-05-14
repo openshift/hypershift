@@ -36,7 +36,7 @@ var Analyzer = &analysis.Analyzer{
 	Run:              run,
 }
 
-func run(pass *analysis.Pass) (interface{}, error) {
+func run(pass *analysis.Pass) (any, error) {
 	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 
 	var goversion string // effective file version ("" => unknown)
@@ -355,7 +355,7 @@ func lockPath(tpkg *types.Package, typ types.Type, seen map[types.Type]bool) typ
 	}
 
 	nfields := styp.NumFields()
-	for i := 0; i < nfields; i++ {
+	for i := range nfields {
 		ftyp := styp.Field(i).Type()
 		subpath := lockPath(tpkg, ftyp, seen)
 		if subpath != nil {
@@ -378,7 +378,7 @@ var lockerType *types.Interface
 
 // Construct a sync.Locker interface type.
 func init() {
-	nullary := types.NewSignature(nil, nil, nil, false) // func()
+	nullary := types.NewSignatureType(nil, nil, nil, nil, nil, false) // func()
 	methods := []*types.Func{
 		types.NewFunc(token.NoPos, nil, "Lock", nullary),
 		types.NewFunc(token.NoPos, nil, "Unlock", nullary),
