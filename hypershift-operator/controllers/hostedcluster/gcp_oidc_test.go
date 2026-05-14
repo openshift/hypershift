@@ -137,7 +137,44 @@ func TestReconcileGCPOIDCDocuments(t *testing.T) {
 			expectFinalizer: true,
 		},
 		{
-			name: "When GCS client is nil it should return an error",
+			name: "When finalizer already exists and no bucket is configured it should skip without error",
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "test",
+					Namespace:  "clusters",
+					Finalizers: []string{gcpOIDCDocumentsFinalizer},
+				},
+				Spec: hyperv1.HostedClusterSpec{InfraID: "test-infra"},
+			},
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "clusters-test"},
+				Spec:       hyperv1.HostedControlPlaneSpec{IssuerURL: "https://example.com"},
+			},
+			gcsClient:       nil,
+			bucketName:      "",
+			expectUploads:   0,
+			expectFinalizer: true,
+		},
+		{
+			name: "When ServiceAccountSigningKey is set and no bucket is configured it should skip without error",
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "clusters"},
+				Spec: hyperv1.HostedClusterSpec{
+					InfraID:                  "test-infra",
+					ServiceAccountSigningKey: &corev1.LocalObjectReference{Name: "custom-key"},
+				},
+			},
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "clusters-test"},
+				Spec:       hyperv1.HostedControlPlaneSpec{IssuerURL: "https://example.com"},
+			},
+			gcsClient:       nil,
+			bucketName:      "",
+			expectUploads:   0,
+			expectFinalizer: false,
+		},
+		{
+			name: "When GCS client is nil and no signing key it should return an error",
 			hcluster: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "clusters"},
 				Spec:       hyperv1.HostedClusterSpec{InfraID: "test-infra"},
@@ -149,10 +186,10 @@ func TestReconcileGCPOIDCDocuments(t *testing.T) {
 			gcsClient:    nil,
 			bucketName:   "",
 			expectErr:    true,
-			expectErrMsg: "not configured with a GCS bucket or credentials",
+			expectErrMsg: "GCP OIDC document management requires either a ServiceAccountSigningKey",
 		},
 		{
-			name: "When bucket name is empty it should return an error",
+			name: "When bucket name is empty and no signing key it should return an error",
 			hcluster: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "clusters"},
 				Spec:       hyperv1.HostedClusterSpec{InfraID: "test-infra"},
@@ -164,7 +201,7 @@ func TestReconcileGCPOIDCDocuments(t *testing.T) {
 			gcsClient:    newFakeGCSClient(),
 			bucketName:   "",
 			expectErr:    true,
-			expectErrMsg: "not configured with a GCS bucket or credentials",
+			expectErrMsg: "GCP OIDC document management requires either a ServiceAccountSigningKey",
 		},
 		{
 			name: "When sa-signing-key secret is not found it should return nil and retry later",

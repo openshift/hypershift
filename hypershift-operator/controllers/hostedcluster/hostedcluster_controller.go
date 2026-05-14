@@ -2039,29 +2039,10 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile kubevirt CSI cluster wide RBAC: %w", err)
 		}
 	case hyperv1.AWSPlatform:
-		// Reconcile the AWS OIDC discovery
-		if err := r.reconcileAWSOIDCDocuments(ctx, log, hcluster, hcp); err != nil {
-			meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
-				Type:               string(hyperv1.ValidOIDCConfiguration),
-				Status:             metav1.ConditionFalse,
-				Reason:             hyperv1.OIDCConfigurationInvalidReason,
-				ObservedGeneration: hcluster.Generation,
-				Message:            err.Error(),
-			})
-			if statusErr := r.Client.Status().Update(ctx, hcluster); statusErr != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to reconcile AWS OIDC documents: %s, failed to update status: %w", err, statusErr)
-			}
-			return ctrl.Result{}, fmt.Errorf("failed to reconcile the AWS OIDC documents: %w", err)
-		}
-		meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
-			Type:               string(hyperv1.ValidOIDCConfiguration),
-			Status:             metav1.ConditionTrue,
-			Reason:             hyperv1.AsExpectedReason,
-			ObservedGeneration: hcluster.Generation,
-			Message:            "OIDC configuration is valid",
-		})
-		if err := r.Client.Status().Update(ctx, hcluster); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
+		if err := r.reconcileOIDCDocumentsWithStatus(ctx, hcluster, func() error {
+			return r.reconcileAWSOIDCDocuments(ctx, log, hcluster, hcp)
+		}); err != nil {
+			return ctrl.Result{}, err
 		}
 	case hyperv1.AzurePlatform:
 		if azureutil.IsAroHCP() {
@@ -2097,30 +2078,10 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			}
 		}
 	case hyperv1.GCPPlatform:
-		if r.GCPOIDCStorageBucketName != "" && r.GCSClient != nil {
-			if err := r.reconcileGCPOIDCDocuments(ctx, log, hcluster, hcp); err != nil {
-				meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
-					Type:               string(hyperv1.ValidOIDCConfiguration),
-					Status:             metav1.ConditionFalse,
-					Reason:             hyperv1.OIDCConfigurationInvalidReason,
-					ObservedGeneration: hcluster.Generation,
-					Message:            err.Error(),
-				})
-				if statusErr := r.Client.Status().Update(ctx, hcluster); statusErr != nil {
-					return ctrl.Result{}, fmt.Errorf("failed to reconcile GCP OIDC documents: %s, failed to update status: %w", err, statusErr)
-				}
-				return ctrl.Result{}, fmt.Errorf("failed to reconcile the GCP OIDC documents: %w", err)
-			}
-			meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
-				Type:               string(hyperv1.ValidOIDCConfiguration),
-				Status:             metav1.ConditionTrue,
-				Reason:             hyperv1.AsExpectedReason,
-				ObservedGeneration: hcluster.Generation,
-				Message:            "OIDC configuration is valid",
-			})
-			if err := r.Client.Status().Update(ctx, hcluster); err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
-			}
+		if err := r.reconcileOIDCDocumentsWithStatus(ctx, hcluster, func() error {
+			return r.reconcileGCPOIDCDocuments(ctx, log, hcluster, hcp)
+		}); err != nil {
+			return ctrl.Result{}, err
 		}
 	}
 
@@ -4408,6 +4369,33 @@ const (
 	serviceAccountSigningKeySecret = "sa-signing-key"
 	serviceSignerPublicKey         = "service-account.pub"
 )
+
+func (r *HostedClusterReconciler) reconcileOIDCDocumentsWithStatus(ctx context.Context, hcluster *hyperv1.HostedCluster, reconcileFunc func() error) error {
+	if err := reconcileFunc(); err != nil {
+		meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
+			Type:               string(hyperv1.ValidOIDCConfiguration),
+			Status:             metav1.ConditionFalse,
+			Reason:             hyperv1.OIDCConfigurationInvalidReason,
+			ObservedGeneration: hcluster.Generation,
+			Message:            err.Error(),
+		})
+		if statusErr := r.Client.Status().Update(ctx, hcluster); statusErr != nil {
+			return fmt.Errorf("failed to reconcile OIDC documents: %s, failed to update status: %w", err, statusErr)
+		}
+		return fmt.Errorf("failed to reconcile OIDC documents: %w", err)
+	}
+	meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
+		Type:               string(hyperv1.ValidOIDCConfiguration),
+		Status:             metav1.ConditionTrue,
+		Reason:             hyperv1.AsExpectedReason,
+		ObservedGeneration: hcluster.Generation,
+		Message:            "OIDC configuration is valid",
+	})
+	if err := r.Client.Status().Update(ctx, hcluster); err != nil {
+		return fmt.Errorf("failed to update OIDC status: %w", err)
+	}
+	return nil
+}
 
 func oidcDocumentGenerators() map[string]oidc.OIDCDocumentGeneratorFunc {
 	return map[string]oidc.OIDCDocumentGeneratorFunc{
