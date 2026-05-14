@@ -182,11 +182,11 @@ func IsValidReleaseVersion(version, currentVersion, maxSupportedVersion, minSupp
 	}
 
 	if normalizedVersion.Minor > normalizedMax.Minor {
-		return fmt.Errorf("the latest version supported is: %q. Attempting to use: %q", displayMax, version)
+		return fmt.Errorf("the latest version supported is: %q. Attempting to use: %q", trimVersion(displayMax.String()), version)
 	}
 
 	if normalizedVersion.Minor < normalizedMin.Minor {
-		return fmt.Errorf("the minimum version supported for platform %s is: %q. Attempting to use: %q", string(platformType), minSupportedVersion, version)
+		return fmt.Errorf("the minimum version supported for platform %s is: %q. Attempting to use: %q", string(platformType), trimVersion(minSupportedVersion.String()), version)
 	}
 
 	return nil
