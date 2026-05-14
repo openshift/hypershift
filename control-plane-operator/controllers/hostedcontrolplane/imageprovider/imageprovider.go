@@ -1,6 +1,10 @@
 package imageprovider
 
-import "github.com/openshift/hypershift/support/releaseinfo"
+import (
+	"strings"
+
+	"github.com/openshift/hypershift/support/releaseinfo"
+)
 
 //go:generate ../../../../hack/tools/bin/mockgen -source=imageprovider.go -package=imageprovider -destination=imageprovider_mock.go
 
@@ -57,4 +61,30 @@ func (p *SimpleReleaseImageProvider) ImageExist(key string) (string, bool) {
 
 func (p *SimpleReleaseImageProvider) ComponentImages() map[string]string {
 	return p.componentsImages
+}
+
+// NewWithRegistryOverrides creates a SimpleReleaseImageProvider that applies
+// registry overrides to all component images. This ensures init containers
+// and other sub-resources created by CPO use the overridden image references.
+func NewWithRegistryOverrides(releaseImage *releaseinfo.ReleaseImage, registryOverrides map[string]string) *SimpleReleaseImageProvider {
+	originalImages := releaseImage.ComponentImages()
+	images := make(map[string]string, len(originalImages))
+	for k, v := range originalImages {
+		images[k] = v
+	}
+	if len(registryOverrides) > 0 {
+		for key, image := range images {
+			for source, target := range registryOverrides {
+				if image == source || strings.HasPrefix(image, source+"/") {
+					images[key] = strings.Replace(image, source, target, 1)
+					break
+				}
+			}
+		}
+	}
+	return &SimpleReleaseImageProvider{
+		componentsImages: images,
+		missingImages:    make([]string, 0),
+		ReleaseImage:     releaseImage,
+	}
 }

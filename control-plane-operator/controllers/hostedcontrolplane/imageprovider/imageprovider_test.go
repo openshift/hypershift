@@ -4,6 +4,13 @@ import (
 	"testing"
 
 	. "github.com/onsi/gomega"
+
+	"github.com/openshift/hypershift/support/releaseinfo"
+
+	imageapi "github.com/openshift/api/image/v1"
+
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func TestNewFromImages(t *testing.T) {
@@ -172,5 +179,117 @@ func TestComponentImages(t *testing.T) {
 		result := provider.ComponentImages()
 
 		g.Expect(result).To(Equal(images))
+	})
+}
+
+func newTestReleaseImage(images map[string]string) *releaseinfo.ReleaseImage {
+	tags := make([]imageapi.TagReference, 0, len(images))
+	for name, image := range images {
+		tags = append(tags, imageapi.TagReference{
+			Name: name,
+			From: &corev1.ObjectReference{Name: image},
+		})
+	}
+	return &releaseinfo.ReleaseImage{
+		ImageStream: &imageapi.ImageStream{
+			ObjectMeta: metav1.ObjectMeta{Name: "4.20.0"},
+			Spec:       imageapi.ImageStreamSpec{Tags: tags},
+		},
+	}
+}
+
+func TestNewWithRegistryOverrides(t *testing.T) {
+	t.Parallel()
+
+	t.Run("When overrides match, component images should be remapped", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		releaseImage := newTestReleaseImage(map[string]string{
+			"availability-prober": "quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-20:latest",
+			"kube-apiserver":      "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:abc123",
+			"etcd":                "registry.access.redhat.com/rhel8/etcd:latest",
+		})
+		overrides := map[string]string{
+			"quay.io": "mirror.example.com/quay-cache",
+		}
+
+		provider := NewWithRegistryOverrides(releaseImage, overrides)
+
+		g.Expect(provider.GetImage("availability-prober")).To(Equal(
+			"mirror.example.com/quay-cache/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-20:latest"))
+		g.Expect(provider.GetImage("kube-apiserver")).To(Equal(
+			"mirror.example.com/quay-cache/openshift-release-dev/ocp-v4.0-art-dev@sha256:abc123"))
+		g.Expect(provider.GetImage("etcd")).To(Equal(
+			"registry.access.redhat.com/rhel8/etcd:latest"))
+	})
+
+	t.Run("When no overrides provided, images should be unchanged", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		releaseImage := newTestReleaseImage(map[string]string{
+			"availability-prober": "quay.io/redhat-user-workloads/crt-redhat-acm-tenant/cpo:latest",
+		})
+
+		provider := NewWithRegistryOverrides(releaseImage, nil)
+
+		g.Expect(provider.GetImage("availability-prober")).To(Equal(
+			"quay.io/redhat-user-workloads/crt-redhat-acm-tenant/cpo:latest"))
+	})
+
+	t.Run("When overrides don't match any image, images should be unchanged", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		releaseImage := newTestReleaseImage(map[string]string{
+			"etcd": "registry.access.redhat.com/rhel8/etcd:latest",
+		})
+		overrides := map[string]string{
+			"quay.io": "mirror.example.com",
+		}
+
+		provider := NewWithRegistryOverrides(releaseImage, overrides)
+
+		g.Expect(provider.GetImage("etcd")).To(Equal(
+			"registry.access.redhat.com/rhel8/etcd:latest"))
+	})
+
+	t.Run("When override prefix matches subdomain, it should not apply", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		releaseImage := newTestReleaseImage(map[string]string{
+			"component": "quay.io.example.com/namespace/image:tag",
+		})
+		overrides := map[string]string{
+			"quay.io": "mirror.example.com",
+		}
+
+		provider := NewWithRegistryOverrides(releaseImage, overrides)
+
+		g.Expect(provider.GetImage("component")).To(Equal(
+			"quay.io.example.com/namespace/image:tag"))
+	})
+
+	t.Run("When multiple overrides exist, only the matching one should apply", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		releaseImage := newTestReleaseImage(map[string]string{
+			"availability-prober": "quay.io/redhat-user-workloads/crt-redhat-acm-tenant/cpo:latest",
+			"etcd":                "gcr.io/etcd-development/etcd:v3.5",
+		})
+		overrides := map[string]string{
+			"quay.io": "acr.example.com/quay-cache",
+			"gcr.io":  "acr.example.com/gcr-cache",
+		}
+
+		provider := NewWithRegistryOverrides(releaseImage, overrides)
+
+		g.Expect(provider.GetImage("availability-prober")).To(Equal(
+			"acr.example.com/quay-cache/redhat-user-workloads/crt-redhat-acm-tenant/cpo:latest"))
+		g.Expect(provider.GetImage("etcd")).To(Equal(
+			"acr.example.com/gcr-cache/etcd-development/etcd:v3.5"))
 	})
 }
