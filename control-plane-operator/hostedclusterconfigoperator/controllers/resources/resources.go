@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -131,6 +132,8 @@ exec /bin/azure-cloud-node-manager \
   --enable-deprecated-beta-topology-labels \
   --wait-routes=false
 `
+
+var disabledServiceAccountPullSecretsController = fmt.Sprintf("-%s", openshiftcpv1.OpenShiftServiceAccountPullSecretsController)
 
 type reconciler struct {
 	client         client.Client
@@ -629,8 +632,7 @@ func (r *reconciler) reconcileRegistryAndIngress(ctx context.Context, hcp *hyper
 			}
 
 			// TODO: remove this when ROSA HCP stops setting the managementState to Removed to disable the Image Registry
-			if registryConfig.Spec.ManagementState == operatorv1.Removed && r.platformType != hyperv1.IBMCloudPlatform && r.platformType != hyperv1.AzurePlatform {
-				log.Info("imageregistry operator managementstate is removed, disabling openshift-controller-manager controllers and cleaning up resources")
+			if r.platformType != hyperv1.IBMCloudPlatform && r.platformType != hyperv1.AzurePlatform {
 				ocmConfigMap := cpomanifests.OpenShiftControllerManagerConfig(r.hcpNamespace)
 				if _, err := r.CreateOrUpdate(ctx, r.cpClient, ocmConfigMap, func() error {
 					if ocmConfigMap.Data == nil {
@@ -638,12 +640,28 @@ func (r *reconciler) reconcileRegistryAndIngress(ctx context.Context, hcp *hyper
 					}
 					config := &openshiftcpv1.OpenShiftControllerManagerConfig{}
 					if configStr, exists := ocmConfigMap.Data[ocm.ConfigKey]; exists && len(configStr) > 0 {
-						err := k8sutil.DeserializeResource(configStr, config, api.Scheme)
-						if err != nil {
+						if err := k8sutil.DeserializeResource(configStr, config, api.Scheme); err != nil {
 							return fmt.Errorf("unable to decode existing openshift controller manager configuration: %w", err)
 						}
 					}
-					config.Controllers = []string{"*", fmt.Sprintf("-%s", openshiftcpv1.OpenShiftServiceAccountPullSecretsController)}
+					if registryConfig.Spec.ManagementState == operatorv1.Removed {
+						if isServiceAccountPullSecretsControllerDisabled(config.Controllers) {
+							// Already disabled; returning nil without mutation causes CreateOrUpdate to skip the update.
+							return nil
+						}
+						log.Info("imageregistry operator managementstate is removed, disabling serviceaccount-pull-secrets controller")
+						if len(config.Controllers) == 0 {
+							config.Controllers = []string{"*", disabledServiceAccountPullSecretsController}
+						} else {
+							config.Controllers = append(config.Controllers, disabledServiceAccountPullSecretsController)
+						}
+					} else if isServiceAccountPullSecretsControllerDisabled(config.Controllers) {
+						log.Info("imageregistry operator managementstate is no longer removed, re-enabling serviceaccount-pull-secrets controller")
+						config.Controllers = removeDisabledServiceAccountPullSecretsController(config.Controllers)
+					} else {
+						// No change needed; returning nil without mutation causes CreateOrUpdate to skip the update.
+						return nil
+					}
 					configStr, err := k8sutil.SerializeResource(config, api.Scheme)
 					if err != nil {
 						return fmt.Errorf("failed to serialize openshift controller manager configuration: %w", err)
@@ -3650,4 +3668,21 @@ func imageRegistryPlatformWithPVC(platform hyperv1.PlatformType) bool {
 	default:
 		return false
 	}
+}
+
+func isServiceAccountPullSecretsControllerDisabled(controllers []string) bool {
+	return slices.Contains(controllers, disabledServiceAccountPullSecretsController)
+}
+
+func removeDisabledServiceAccountPullSecretsController(controllers []string) []string {
+	filtered := make([]string, 0, len(controllers))
+	for _, c := range controllers {
+		if c != disabledServiceAccountPullSecretsController {
+			filtered = append(filtered, c)
+		}
+	}
+	if len(filtered) == 0 {
+		return []string{"*"}
+	}
+	return filtered
 }

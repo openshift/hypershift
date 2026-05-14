@@ -14,6 +14,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ocm"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/kas"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
@@ -21,6 +22,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/globalconfig"
+	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
@@ -29,6 +31,7 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	imageapi "github.com/openshift/api/image/v1"
+	openshiftcpv1 "github.com/openshift/api/openshiftcontrolplane/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
 
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
@@ -3907,6 +3910,185 @@ func TestEnsureGuestAdmissionWebhooksAreValid(t *testing.T) {
 						t.Fatalf("unexpected object type %T in guestObjects for expectWebhookAlive check", obj)
 					}
 				}
+			}
+		})
+	}
+}
+
+func TestIsServiceAccountPullSecretsControllerDisabled(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name        string
+		controllers []string
+		expected    bool
+	}{
+		{
+			name:        "When controllers is nil, it should return false",
+			controllers: nil,
+			expected:    false,
+		},
+		{
+			name:        "When controllers is empty, it should return false",
+			controllers: []string{},
+			expected:    false,
+		},
+		{
+			name:        "When controller is disabled, it should return true",
+			controllers: []string{"*", "-openshift.io/serviceaccount-pull-secrets"},
+			expected:    true,
+		},
+		{
+			name:        "When controllers has other entries but not the disabled one, it should return false",
+			controllers: []string{"*", "-some-other-controller"},
+			expected:    false,
+		},
+		{
+			name:        "When only the wildcard is present, it should return false",
+			controllers: []string{"*"},
+			expected:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+			g.Expect(isServiceAccountPullSecretsControllerDisabled(tt.controllers)).To(Equal(tt.expected))
+		})
+	}
+}
+
+func TestReconcileRegistryAndIngress_ServiceAccountPullSecretsController(t *testing.T) {
+	t.Parallel()
+
+	hcpNamespace := "test-hcp-ns"
+
+	serializeOCMConfig := func(t *testing.T, controllers []string) string {
+		t.Helper()
+		config := &openshiftcpv1.OpenShiftControllerManagerConfig{
+			Controllers: controllers,
+		}
+		data, err := k8sutil.SerializeResource(config, api.Scheme)
+		if err != nil {
+			t.Fatalf("failed to serialize OCM config: %v", err)
+		}
+		return data
+	}
+
+	tests := []struct {
+		name                   string
+		platformType           hyperv1.PlatformType
+		managementState        operatorv1.ManagementState
+		existingOCMControllers []string
+		hasExistingOCMConfig   bool
+		expectedControllers    []string
+	}{
+		{
+			name:                   "When managementState is Removed, it should disable serviceaccount-pull-secrets controller",
+			platformType:           hyperv1.AWSPlatform,
+			managementState:        operatorv1.Removed,
+			existingOCMControllers: nil,
+			hasExistingOCMConfig:   true,
+			expectedControllers:    []string{"*", disabledServiceAccountPullSecretsController},
+		},
+		{
+			name:                   "When managementState changes from Removed to Managed, it should re-enable serviceaccount-pull-secrets controller",
+			platformType:           hyperv1.AWSPlatform,
+			managementState:        operatorv1.Managed,
+			existingOCMControllers: []string{"*", disabledServiceAccountPullSecretsController},
+			hasExistingOCMConfig:   true,
+			expectedControllers:    []string{"*"},
+		},
+		{
+			name:                   "When managementState is Managed and controller is already enabled, it should not change controllers",
+			platformType:           hyperv1.AWSPlatform,
+			managementState:        operatorv1.Managed,
+			existingOCMControllers: []string{"*"},
+			hasExistingOCMConfig:   true,
+			expectedControllers:    []string{"*"},
+		},
+		{
+			name:                   "When platform is IBMCloud, it should not modify OCM config regardless of managementState",
+			platformType:           hyperv1.IBMCloudPlatform,
+			managementState:        operatorv1.Removed,
+			existingOCMControllers: nil,
+			hasExistingOCMConfig:   true,
+			expectedControllers:    nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			registryConfig := manifests.Registry()
+			registryConfig.Spec.ManagementState = tt.managementState
+
+			guestClient := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				WithObjects(registryConfig).
+				Build()
+
+			ocmConfigMap := cpomanifests.OpenShiftControllerManagerConfig(hcpNamespace)
+			if tt.hasExistingOCMConfig {
+				ocmConfigMap.Data = map[string]string{}
+				if tt.existingOCMControllers != nil {
+					ocmConfigMap.Data[ocm.ConfigKey] = serializeOCMConfig(t, tt.existingOCMControllers)
+				} else {
+					ocmConfigMap.Data[ocm.ConfigKey] = serializeOCMConfig(t, nil)
+				}
+			}
+
+			cpClient := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				WithObjects(ocmConfigMap).
+				Build()
+
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-hcp",
+					Namespace: hcpNamespace,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: tt.platformType,
+					},
+				},
+			}
+
+			r := &reconciler{
+				client:                 guestClient,
+				cpClient:               cpClient,
+				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
+				platformType:           tt.platformType,
+				hcpNamespace:           hcpNamespace,
+			}
+
+			log := zapr.NewLogger(zaptest.NewLogger(t))
+			errs := r.reconcileRegistryAndIngress(t.Context(), hcp, log)
+			for _, e := range errs {
+				g.Expect(e.Error()).ToNot(ContainSubstring("openshift-controller-manager config"), "unexpected OCM config error: %v", e)
+			}
+
+			resultConfigMap := cpomanifests.OpenShiftControllerManagerConfig(hcpNamespace)
+			err := cpClient.Get(t.Context(), client.ObjectKeyFromObject(resultConfigMap), resultConfigMap)
+			g.Expect(err).ToNot(HaveOccurred(), "failed to get OCM ConfigMap")
+
+			if tt.expectedControllers == nil {
+				config := &openshiftcpv1.OpenShiftControllerManagerConfig{}
+				if configStr, exists := resultConfigMap.Data[ocm.ConfigKey]; exists && len(configStr) > 0 {
+					err := k8sutil.DeserializeResource(configStr, config, api.Scheme)
+					g.Expect(err).ToNot(HaveOccurred(), "failed to deserialize OCM config")
+				}
+				g.Expect(config.Controllers).To(BeNil(), "controllers should remain nil for excluded platform")
+			} else {
+				config := &openshiftcpv1.OpenShiftControllerManagerConfig{}
+				configStr, exists := resultConfigMap.Data[ocm.ConfigKey]
+				g.Expect(exists).To(BeTrue(), "OCM config should exist")
+				err := k8sutil.DeserializeResource(configStr, config, api.Scheme)
+				g.Expect(err).ToNot(HaveOccurred(), "failed to deserialize OCM config")
+				g.Expect(config.Controllers).To(Equal(tt.expectedControllers))
 			}
 		})
 	}
