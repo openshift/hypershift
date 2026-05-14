@@ -992,6 +992,7 @@ The HyperShift team owns and maintains the following repositories.
 | openshift/aws-encryption-provider | API server encryption provider backed by AWS KMS. | kubernetes-sigs/aws-encryption-provider |
 | openshift/azure-kubernetes-kms | Azure Key Vault KMS plugin for the Kubernetes API server. | Azure/kubernetes-kms |
 | openshift/apiserver-network-proxy | Konnectivity proxy enabling secure communication between the API server and cluster nodes. | kubernetes-sigs/apiserver-network-proxy |
+| openshift/aws-node-termination-handler | Gracefully handles EC2 instance shutdown within Kubernetes. | aws/aws-node-termination-handler |
 
 
 ---
