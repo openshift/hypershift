@@ -1,0 +1,13 @@
+name: 'Warm Go build cache'
+description: 'Set GOCACHE and optionally warm from EFS-backed PV'
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        echo "GOCACHE=/tmp/go-build-cache" >> "$GITHUB_ENV"
+        if [ -d /cache/go-build ]; then
+          mkdir -p /tmp/go-build-cache && \
+          cp -a /cache/go-build/. /tmp/go-build-cache/ || \
+          echo "Warning: failed to copy EFS cache, proceeding without cache"
+        fi
