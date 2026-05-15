@@ -174,6 +174,51 @@ func EtcdBackupJobRoleBinding(hcpNamespace string) *rbacv1.RoleBinding {
 	}
 }
 
+func EtcdRestoreJob(ns string) *batchv1.Job {
+	return &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "etcd-restore",
+			Namespace: ns,
+		},
+	}
+}
+
+func EtcdRestorePVC(ns string) *corev1.PersistentVolumeClaim {
+	return &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "etcd-restore-snapshot",
+			Namespace: ns,
+		},
+	}
+}
+
+func EtcdRestoreServiceAccount(ns string) *corev1.ServiceAccount {
+	return &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "etcd-restore",
+			Namespace: ns,
+		},
+	}
+}
+
+func EtcdRestoreRole(ns string) *rbacv1.Role {
+	return &rbacv1.Role{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "etcd-restore",
+			Namespace: ns,
+		},
+	}
+}
+
+func EtcdRestoreRoleBinding(ns string) *rbacv1.RoleBinding {
+	return &rbacv1.RoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "etcd-restore",
+			Namespace: ns,
+		},
+	}
+}
+
 // EtcdBackupNetworkPolicy returns a NetworkPolicy in the HCP namespace that
 // allows ingress from etcd backup Job pods (in the HO namespace) to etcd on
 // port 2379. This policy is created before the Job and cleaned up after it

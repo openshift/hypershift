@@ -44,6 +44,7 @@ import (
 	dnsoperatorv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/dnsoperator"
 	endpointresolverv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/endpoint_resolver"
 	etcdv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/etcd"
+	etcdbackupgcsv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/etcd_backup_gcs"
 	fgv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/fg"
 	ignitionserverv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/ignitionserver"
 	ignitionproxyv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/ignitionserver_proxy"
@@ -109,6 +110,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -279,6 +281,9 @@ func (r *HostedControlPlaneReconciler) registerComponents(hcp *hyperv1.HostedCon
 	)
 	r.components = append(r.components,
 		olmv2.NewComponents(r.ManagementClusterCapabilities.Has(capabilities.CapabilityImageStream))...,
+	)
+	r.components = append(r.components,
+		etcdbackupgcsv2.NewComponent(),
 	)
 }
 
@@ -620,6 +625,102 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, err
 	}
 
+	// Reconcile etcd restore status
+	shouldMonitorRestore := false
+	if hostedControlPlane.Spec.Etcd.ManagementType == hyperv1.Managed &&
+		hostedControlPlane.Spec.Etcd.Managed != nil && len(hostedControlPlane.Spec.Etcd.Managed.Storage.RestoreSnapshotURL) > 0 {
+		shouldMonitorRestore = true
+	}
+	if hostedControlPlane.Spec.Etcd.Managed != nil &&
+		hostedControlPlane.Spec.Etcd.Managed.AutomatedBackup != nil {
+		shouldMonitorRestore = true
+	}
+	if shouldMonitorRestore {
+		restoreCondition := meta.FindStatusCondition(hostedControlPlane.Status.Conditions, string(hyperv1.EtcdSnapshotRestored))
+		if restoreCondition == nil || restoreCondition.Status == metav1.ConditionFalse {
+			r.Log.Info("Reconciling etcd cluster restore status")
+			conditionSet := false
+
+			// Check if restore Job completed with no-snapshot (nothing to restore)
+			if hostedControlPlane.Spec.Etcd.Managed != nil &&
+				hostedControlPlane.Spec.Etcd.Managed.AutomatedBackup != nil {
+				job := manifests.EtcdRestoreJob(hostedControlPlane.Namespace)
+				if err := r.Get(ctx, client.ObjectKeyFromObject(job), job); err == nil {
+					for _, cond := range job.Status.Conditions {
+						if cond.Type == batchv1.JobComplete && cond.Status == corev1.ConditionTrue {
+							msg := r.getRestoreJobTerminationMessage(ctx, job)
+							if strings.HasPrefix(msg, "no-snapshot") || strings.HasPrefix(msg, "no-secrets") {
+								meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, metav1.Condition{
+									Type:               string(hyperv1.EtcdSnapshotRestored),
+									Status:             metav1.ConditionTrue,
+									Reason:             "NoSnapshotFound",
+									Message:            "Restore job completed: no snapshot to restore",
+									ObservedGeneration: hostedControlPlane.Generation,
+								})
+								conditionSet = true
+							}
+						}
+						if cond.Type == batchv1.JobFailed && cond.Status == corev1.ConditionTrue {
+							meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, metav1.Condition{
+								Type:               string(hyperv1.EtcdSnapshotRestored),
+								Status:             metav1.ConditionFalse,
+								Reason:             "RestoreJobFailed",
+								Message:            fmt.Sprintf("Restore job failed: %s", cond.Message),
+								ObservedGeneration: hostedControlPlane.Generation,
+							})
+							conditionSet = true
+						}
+					}
+				}
+			}
+
+			// Once any etcd pod has restored the snapshot, set the condition.
+			// Only one member needs the snapshot; the others join via Raft replication.
+			// This avoids a deadlock where the restore PVC pins all pods to a single zone.
+			if !conditionSet &&
+				hostedControlPlane.Spec.Etcd.Managed != nil &&
+				hostedControlPlane.Spec.Etcd.Managed.AutomatedBackup != nil {
+				if r.isSnapshotRestoredOnAnyPod(ctx, hostedControlPlane) {
+					meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, metav1.Condition{
+						Type:               string(hyperv1.EtcdSnapshotRestored),
+						Status:             metav1.ConditionTrue,
+						Reason:             hyperv1.AsExpectedReason,
+						Message:            "Snapshot restored on at least one etcd member",
+						ObservedGeneration: hostedControlPlane.Generation,
+					})
+					conditionSet = true
+				}
+			}
+
+			if !conditionSet {
+				sts := manifests.EtcdStatefulSet(hostedControlPlane.Namespace)
+				if err := r.Get(ctx, client.ObjectKeyFromObject(sts), sts); err == nil {
+					conditionPtr := r.etcdRestoredCondition(ctx, sts)
+					if conditionPtr != nil {
+						conditionPtr.ObservedGeneration = hostedControlPlane.Generation
+						meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, *conditionPtr)
+					}
+				}
+			}
+		}
+		if restoreCondition != nil && restoreCondition.Status == metav1.ConditionTrue {
+			r.Delete(ctx, manifests.EtcdRestoreJob(hostedControlPlane.Namespace),
+				client.PropagationPolicy(metav1.DeletePropagationBackground))
+			r.Delete(ctx, manifests.EtcdRestorePVC(hostedControlPlane.Namespace))
+			r.Delete(ctx, manifests.EtcdRestoreRole(hostedControlPlane.Namespace))
+			r.Delete(ctx, manifests.EtcdRestoreRoleBinding(hostedControlPlane.Namespace))
+		}
+	}
+
+	// Reconcile etcd backup status
+	r.reconcileEtcdBackupCondition(ctx, hostedControlPlane)
+
+	// Reconcile etcd restore resources
+	if err := r.reconcileEtcdRestore(ctx, hostedControlPlane); err != nil {
+		r.Log.Error(err, "Failed to reconcile etcd restore")
+	}
+
+	// Validate KMS config
 	switch hostedControlPlane.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
 		r.validateAWSKMSConfig(ctx, hostedControlPlane)
@@ -2358,7 +2459,7 @@ func (r *HostedControlPlaneReconciler) etcdRestoredCondition(ctx context.Context
 		}); err == nil {
 			for _, pod := range podList.Items {
 				for _, status := range pod.Status.InitContainerStatuses {
-					if status.Name == "etcd-init" {
+					if status.Name == "etcd-init" || status.Name == "etcd-restore" {
 						if status.Ready {
 							initContainerCount += 1
 						} else if status.LastTerminationState.Terminated != nil {
@@ -2384,6 +2485,44 @@ func (r *HostedControlPlaneReconciler) etcdRestoredCondition(ctx context.Context
 		}
 	}
 	return nil
+}
+
+func (r *HostedControlPlaneReconciler) getRestoreJobTerminationMessage(ctx context.Context, job *batchv1.Job) string {
+	podList := &corev1.PodList{}
+	if err := r.List(ctx, podList, &client.ListOptions{
+		Namespace: job.Namespace,
+		LabelSelector: labels.SelectorFromValidatedSet(labels.Set{
+			"job-name": job.Name,
+		}),
+	}); err != nil {
+		return ""
+	}
+	for _, pod := range podList.Items {
+		for _, cs := range pod.Status.ContainerStatuses {
+			if cs.State.Terminated != nil && cs.State.Terminated.Message != "" {
+				return cs.State.Terminated.Message
+			}
+		}
+	}
+	return ""
+}
+
+func (r *HostedControlPlaneReconciler) isSnapshotRestoredOnAnyPod(ctx context.Context, hcp *hyperv1.HostedControlPlane) bool {
+	podList := &corev1.PodList{}
+	if err := r.List(ctx, podList, &client.ListOptions{
+		Namespace:     hcp.Namespace,
+		LabelSelector: labels.SelectorFromValidatedSet(labels.Set{"app": "etcd"}),
+	}); err != nil {
+		return false
+	}
+	for _, pod := range podList.Items {
+		for _, status := range pod.Status.InitContainerStatuses {
+			if status.Name == "etcd-restore" && status.Ready {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (r *HostedControlPlaneReconciler) etcdStatefulSetCondition(ctx context.Context, sts *appsv1.StatefulSet) (*metav1.Condition, error) {
@@ -3219,4 +3358,254 @@ func includeServingCertificates(ctx context.Context, c client.Client, hcp *hyper
 	}
 
 	return newRootCA, nil
+}
+
+func (r *HostedControlPlaneReconciler) reconcileEtcdBackupCondition(ctx context.Context, hcp *hyperv1.HostedControlPlane) {
+	if hcp.Spec.Etcd.Managed == nil ||
+		hcp.Spec.Etcd.Managed.AutomatedBackup == nil {
+		return
+	}
+
+	cronJob := &batchv1.CronJob{}
+	switch hcp.Spec.Etcd.Managed.AutomatedBackup.Storage.Type {
+	case hyperv1.AutomatedEtcdBackupStorageTypeGCS:
+		cronJob.Name = etcdbackupgcsv2.ComponentName
+	}
+	cronJob.Namespace = hcp.Namespace
+
+	condition := metav1.Condition{
+		Type:               string(hyperv1.EtcdBackupSucceeded),
+		ObservedGeneration: hcp.Generation,
+	}
+
+	if err := r.Get(ctx, client.ObjectKeyFromObject(cronJob), cronJob); err != nil {
+		condition.Status = metav1.ConditionFalse
+		condition.Reason = "WaitingForEtcd"
+		condition.Message = "Waiting for etcd to become available before scheduling backups"
+		meta.SetStatusCondition(&hcp.Status.Conditions, condition)
+		return
+	}
+
+	if cronJob.Spec.Suspend != nil && *cronJob.Spec.Suspend {
+		condition.Status = metav1.ConditionFalse
+		condition.Reason = "CronJobSuspended"
+		condition.Message = "Etcd backup CronJob is suspended"
+	} else if cronJob.Status.LastSuccessfulTime != nil {
+		condition.Status = metav1.ConditionTrue
+		condition.Reason = hyperv1.BackupSucceededReason
+		condition.Message = fmt.Sprintf("Last successful backup at %s", cronJob.Status.LastSuccessfulTime.UTC().Format(time.RFC3339))
+	} else if cronJob.Status.LastScheduleTime != nil {
+		condition.Status = metav1.ConditionFalse
+		condition.Reason = hyperv1.BackupInProgressReason
+		condition.Message = "CronJob has been scheduled but no successful completion yet"
+	} else {
+		condition.Status = metav1.ConditionFalse
+		condition.Reason = "WaitingForFirstSchedule"
+		condition.Message = "CronJob has not been scheduled yet"
+	}
+
+	meta.SetStatusCondition(&hcp.Status.Conditions, condition)
+}
+
+func buildSnapshotFetchContainer(backupConfig *hyperv1.AutomatedEtcdBackupConfig, infraID string) corev1.Container {
+	c := corev1.Container{
+		Image:           os.Getenv("CONTROL_PLANE_OPERATOR_IMAGE"),
+		ImagePullPolicy: corev1.PullIfNotPresent,
+		Command:         []string{"control-plane-operator"},
+		VolumeMounts: []corev1.VolumeMount{
+			{Name: "snapshot", MountPath: "/snapshot"},
+		},
+		Resources: corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("10m"),
+				corev1.ResourceMemory: resource.MustParse("80Mi"),
+			},
+		},
+	}
+
+	switch backupConfig.Storage.Type {
+	case hyperv1.AutomatedEtcdBackupStorageTypeGCS:
+		c.Name = "gcs-snapshot-fetch"
+		c.Args = []string{
+			"gcs-snapshot-fetch",
+			"--gcs-bucket", backupConfig.Storage.GCS.Bucket,
+			"--infra-id", infraID,
+			"--output-dir", "/snapshot",
+		}
+	}
+
+	return c
+}
+
+func (r *HostedControlPlaneReconciler) reconcileEtcdRestore(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	if hcp.Spec.Etcd.Managed == nil ||
+		hcp.Spec.Etcd.Managed.AutomatedBackup == nil {
+		return nil
+	}
+
+	if meta.IsStatusConditionTrue(hcp.Status.Conditions, string(hyperv1.EtcdSnapshotRestored)) {
+		return nil
+	}
+
+	// If the restore Job has failed (backoff limit reached), delete it so a fresh
+	// Job is created below. This handles transient failures such as the identity
+	// service account not being ready at cluster creation time.
+	existingJob := manifests.EtcdRestoreJob(hcp.Namespace)
+	if err := r.Get(ctx, client.ObjectKeyFromObject(existingJob), existingJob); err == nil {
+		for _, cond := range existingJob.Status.Conditions {
+			if cond.Type == batchv1.JobFailed && cond.Status == corev1.ConditionTrue {
+				r.Log.Info("Deleting failed restore job for retry", "message", cond.Message)
+				if err := r.Delete(ctx, existingJob, client.PropagationPolicy(metav1.DeletePropagationBackground)); err != nil && !apierrors.IsNotFound(err) {
+					return fmt.Errorf("failed to delete failed restore job: %w", err)
+				}
+				meta.RemoveStatusCondition(&hcp.Status.Conditions, string(hyperv1.EtcdSnapshotRestored))
+				// Return early so the old Job is fully garbage-collected before the
+				// next reconcile creates a fresh one. CreateOrUpdate below would
+				// otherwise find the terminating Job and silently no-op.
+				return nil
+			}
+		}
+	}
+
+	backupConfig := hcp.Spec.Etcd.Managed.AutomatedBackup
+	ns := hcp.Namespace
+
+	// Ensure ServiceAccount with identity annotation
+	sa := manifests.EtcdRestoreServiceAccount(ns)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, sa, func() error {
+		if sa.Annotations == nil {
+			sa.Annotations = make(map[string]string)
+		}
+		switch backupConfig.Storage.Type {
+		case hyperv1.AutomatedEtcdBackupStorageTypeGCS:
+			sa.Annotations["iam.gke.io/gcp-service-account"] = backupConfig.Storage.GCS.GCPServiceAccount
+		}
+		return controllerutil.SetControllerReference(hcp, sa, r.Scheme())
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile restore service account: %w", err)
+	}
+
+	// Ensure Role for secret restoration
+	role := manifests.EtcdRestoreRole(ns)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, role, func() error {
+		role.Rules = []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{""},
+				Resources: []string{"secrets"},
+				Verbs:     []string{"get", "create", "update"},
+			},
+		}
+		return controllerutil.SetControllerReference(hcp, role, r.Scheme())
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile restore role: %w", err)
+	}
+
+	// Ensure RoleBinding
+	rb := manifests.EtcdRestoreRoleBinding(ns)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, rb, func() error {
+		rb.RoleRef = rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "Role",
+			Name:     role.Name,
+		}
+		rb.Subjects = []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      sa.Name,
+				Namespace: ns,
+			},
+		}
+		return controllerutil.SetControllerReference(hcp, rb, r.Scheme())
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile restore role binding: %w", err)
+	}
+
+	// Ensure PVC for snapshot storage
+	pvc := manifests.EtcdRestorePVC(ns)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, pvc, func() error {
+		if pvc.CreationTimestamp.IsZero() {
+			pvc.Spec = corev1.PersistentVolumeClaimSpec{
+				AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+				Resources: corev1.VolumeResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceStorage: resource.MustParse("10Gi"),
+					},
+				},
+			}
+		}
+		return controllerutil.SetControllerReference(hcp, pvc, r.Scheme())
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile restore PVC: %w", err)
+	}
+
+	if err := r.Get(ctx, client.ObjectKeyFromObject(pvc), pvc); err != nil {
+		return fmt.Errorf("failed to get restore PVC status: %w", err)
+	}
+	if pvc.Status.Phase != corev1.ClaimBound && !pvc.CreationTimestamp.IsZero() &&
+		time.Since(pvc.CreationTimestamp.Time) > resourceDeletionTimeout {
+		log := ctrl.LoggerFrom(ctx)
+		log.Info("Restore PVC stuck in Pending, deleting to retry", "pvc", pvc.Name,
+			"age", time.Since(pvc.CreationTimestamp.Time).Round(time.Second))
+		if err := r.Delete(ctx, pvc); err != nil {
+			return fmt.Errorf("failed to delete stuck restore PVC: %w", err)
+		}
+		return nil
+	}
+
+	// Ensure restore Job
+	job := manifests.EtcdRestoreJob(ns)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, job, func() error {
+		if !job.CreationTimestamp.IsZero() {
+			return nil
+		}
+		job.Spec = batchv1.JobSpec{
+			BackoffLimit: ptr.To(int32(3)),
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					ServiceAccountName: sa.Name,
+					RestartPolicy:      corev1.RestartPolicyNever,
+					InitContainers: []corev1.Container{
+						buildSnapshotFetchContainer(backupConfig, hcp.Spec.InfraID),
+					},
+					Containers: []corev1.Container{
+						{
+							Name:            "restore-secrets",
+							Image:           os.Getenv("CONTROL_PLANE_OPERATOR_IMAGE"),
+							ImagePullPolicy: corev1.PullIfNotPresent,
+							Command:         []string{"control-plane-operator"},
+							Args: []string{
+								"restore-secrets",
+								"--secrets-dir", "/snapshot/secrets",
+								"--namespace", ns,
+							},
+							VolumeMounts: []corev1.VolumeMount{
+								{Name: "snapshot", MountPath: "/snapshot"},
+							},
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("10m"),
+									corev1.ResourceMemory: resource.MustParse("80Mi"),
+								},
+							},
+						},
+					},
+					Volumes: []corev1.Volume{
+						{
+							Name: "snapshot",
+							VolumeSource: corev1.VolumeSource{
+								PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: pvc.Name,
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+		return controllerutil.SetControllerReference(hcp, job, r.Scheme())
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile restore job: %w", err)
+	}
+
+	return nil
 }

@@ -1,0 +1,25 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: etcd-backup-gcs
+  namespace: HCP_NAMESPACE
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - get
+  resourceNames:
+  - root-ca
+  - etcd-signer
+  - sa-signing-key
+  - etcd-client-tls
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  verbs:
+  - get
+  resourceNames:
+  - etcd-ca
