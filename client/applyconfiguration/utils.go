@@ -77,6 +77,12 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.APIEndpointApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("APIServerNetworking"):
 		return &hypershiftv1beta1.APIServerNetworkingApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("AutomatedEtcdBackupConfig"):
+		return &hypershiftv1beta1.AutomatedEtcdBackupConfigApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("AutomatedEtcdBackupGCS"):
+		return &hypershiftv1beta1.AutomatedEtcdBackupGCSApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("AutomatedEtcdBackupStorage"):
+		return &hypershiftv1beta1.AutomatedEtcdBackupStorageApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AutoNode"):
 		return &hypershiftv1beta1.AutoNodeApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AutoNodeStatus"):

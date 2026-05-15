@@ -3110,6 +3110,164 @@ Used by the metrics collector for billing aggregation.</p>
 </tr>
 </tbody>
 </table>
+###AutomatedEtcdBackupConfig { #hypershift.openshift.io/v1beta1.AutomatedEtcdBackupConfig }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.ManagedEtcdSpec">ManagedEtcdSpec</a>)
+</p>
+<p>
+<p>AutomatedEtcdBackupConfig configures scheduled etcd backups to cloud storage.
+When set, a CronJob snapshots etcd on schedule and uploads to the configured
+storage backend. On cluster creation, if an existing backup is found for the
+cluster&rsquo;s infraID, it is automatically restored.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>schedule</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>schedule is a cron expression for backup frequency.
+Defaults to hourly (&ldquo;0 * * * *&rdquo;) if not specified.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>storage</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AutomatedEtcdBackupStorage">
+AutomatedEtcdBackupStorage
+</a>
+</em>
+</td>
+<td>
+<p>storage configures the cloud storage backend for backup archives.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###AutomatedEtcdBackupGCS { #hypershift.openshift.io/v1beta1.AutomatedEtcdBackupGCS }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AutomatedEtcdBackupStorage">AutomatedEtcdBackupStorage</a>)
+</p>
+<p>
+<p>AutomatedEtcdBackupGCS configures Google Cloud Storage as the backup
+destination.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>bucket</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>bucket is the name of the GCS bucket for storing etcd snapshots.
+The bucket must already exist and the gcpServiceAccount must have
+roles/storage.objectAdmin on it.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>gcpServiceAccount</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>gcpServiceAccount is the email of a GCP service account in the
+management cluster&rsquo;s GCP project. The Kubernetes ServiceAccount used
+by the backup/restore pods will be annotated with this email for
+GKE Workload Identity access to the GCS bucket.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###AutomatedEtcdBackupStorage { #hypershift.openshift.io/v1beta1.AutomatedEtcdBackupStorage }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AutomatedEtcdBackupConfig">AutomatedEtcdBackupConfig</a>)
+</p>
+<p>
+<p>AutomatedEtcdBackupStorage configures the storage backend for automated etcd
+backups. Exactly one storage type must be specified.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>type</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AutomatedEtcdBackupStorageType">
+AutomatedEtcdBackupStorageType
+</a>
+</em>
+</td>
+<td>
+<p>type is the storage backend type.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>gcs</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AutomatedEtcdBackupGCS">
+AutomatedEtcdBackupGCS
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>gcs configures Google Cloud Storage as the backup destination.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###AutomatedEtcdBackupStorageType { #hypershift.openshift.io/v1beta1.AutomatedEtcdBackupStorageType }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AutomatedEtcdBackupStorage">AutomatedEtcdBackupStorage</a>)
+</p>
+<p>
+<p>AutomatedEtcdBackupStorageType is a string identifying a storage backend.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;GCS&#34;</p></td>
+<td></td>
+</tr></tbody>
+</table>
 ###AvailabilityPolicy { #hypershift.openshift.io/v1beta1.AvailabilityPolicy }
 <p>
 (<em>Appears on:</em>
@@ -12274,6 +12432,20 @@ HCPEtcdBackupConfig
 <p>backup defines the backup configuration for managed etcd, including
 optional KMS key settings for artifact encryption in cloud storage.
 This configuration is only used when an HCPEtcdBackup CR exists.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>automatedBackup</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AutomatedEtcdBackupConfig">
+AutomatedEtcdBackupConfig
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>automatedBackup configures scheduled etcd backups to cloud storage.</p>
 </td>
 </tr>
 </tbody>
