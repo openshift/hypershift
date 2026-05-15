@@ -67,7 +67,7 @@ func BindOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.Namespace, "namespace", opts.Namespace, "A namespace to contain the generated resources")
 	flags.StringVar(&opts.Name, "name", opts.Name, "A name for the cluster")
-	flags.StringVar(&opts.BaseDomain, "base-domain", opts.BaseDomain, "The ingress base domain for the cluster")
+	flags.StringVar(&opts.BaseDomain, "base-domain", opts.BaseDomain, "The ingress base domain for the cluster. If omitted for an HCP KubeVirt cluster, this defaults to the management cluster's apps domain.")
 	flags.StringVar(&opts.BaseDomainPrefix, "base-domain-prefix", opts.BaseDomainPrefix, "The ingress base domain prefix for the cluster, defaults to cluster name. Use 'none' for an empty prefix")
 	flags.StringVar(&opts.ExternalDNSDomain, "external-dns-domain", opts.ExternalDNSDomain, "Sets hostname to opinionated values in the specified domain for services with publishing type LoadBalancer or Route.")
 	flags.StringVar(&opts.NetworkType, "network-type", opts.NetworkType, "Enum specifying the cluster SDN provider. Supports either Calico, OVNKubernetes, OpenShiftSDN or Other.")
