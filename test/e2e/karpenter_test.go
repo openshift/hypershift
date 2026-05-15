@@ -316,7 +316,7 @@ func testARM64Provisioning(ctx context.Context, guestClient crclient.Client, hos
 			{Key: karpenterv1.CapacityTypeLabelKey, Operator: corev1.NodeSelectorOpIn, Values: []string{karpenterv1.CapacityTypeOnDemand}},
 		}
 		// quay.io/openshift/origin-pod does not support arm64
-		armWorkLoads := testWorkloadWithImage("arm-app", 1, map[string]string{karpenterv1.NodePoolLabelKey: armNodePool.Name}, "quay.io/hypershift/sleep:multiarch")
+		armWorkLoads := testWorkloadWithImage("arm-app", 1, map[string]string{karpenterv1.NodePoolLabelKey: armNodePool.Name}, "registry.access.redhat.com/ubi10/ubi-minimal:10.1")
 
 		t.Cleanup(func() {
 			_ = guestClient.Delete(ctx, armWorkLoads)
@@ -1802,6 +1802,7 @@ func testWorkloadWithImage(name string, replicas int32, nodeSelector map[string]
 						SecurityContext: &corev1.SecurityContext{
 							AllowPrivilegeEscalation: ptr.To(false),
 						},
+						Command: []string{"/bin/sh", "-c", "sleep infinity"},
 					}},
 					NodeSelector: nodeSelector,
 				},
