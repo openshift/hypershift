@@ -171,4 +171,17 @@ func init() {
 		"Comma-separated list of Azure subscription IDs permitted to create Private Endpoints.",
 		false,
 	)
+	// GCP automated etcd backup test environment variables
+	RegisterEnvVar(
+		"E2E_GCS_BACKUP_BUCKET",
+		"GCS bucket name used for automated etcd backup e2e tests. "+
+			"If not set, derived from HostedCluster spec.etcd.managed.automatedBackup.storage.gcs.bucket.",
+		false,
+	)
+	RegisterEnvVar(
+		"E2E_GCP_BACKUP_SERVICE_ACCOUNT",
+		"Email of the GCP service account used for etcd backup/restore "+
+			"Workload Identity binding. If not set, derived from HostedCluster spec.",
+		false,
+	)
 }
