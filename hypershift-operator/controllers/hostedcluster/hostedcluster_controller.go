@@ -814,6 +814,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			hyperv1.DataPlaneConnectionAvailable,
 			hyperv1.ControlPlaneConnectionAvailable,
 			hyperv1.EtcdBackupSucceeded,
+			hyperv1.EtcdSnapshotRestored,
 		}
 
 		for _, conditionType := range hcpConditions {
