@@ -309,6 +309,38 @@ func TestCertVolumesFromMonitors(t *testing.T) {
 		}
 	})
 
+	t.Run("When resource names contain dots, it should sanitize volume names but preserve mount paths", func(t *testing.T) {
+		t.Parallel()
+
+		sm := newServiceMonitorWithTLS("cno", namespace, &prometheusoperatorv1.TLSConfig{
+			SafeTLSConfig: prometheusoperatorv1.SafeTLSConfig{
+				CA: prometheusoperatorv1.SecretOrConfigMap{
+					ConfigMap: &corev1.ConfigMapKeySelector{
+						LocalObjectReference: corev1.LocalObjectReference{Name: "openshift-service-ca.crt"},
+						Key:                  "service-ca.crt",
+					},
+				},
+			},
+		})
+
+		cpContext := newCertVolumeTestContext(namespace, scheme, sm)
+		volumes, mounts := assertCertVolumeCount(t, cpContext, namespace, 1, 1)
+
+		if volumes[0].Name != "openshift-service-ca-crt" {
+			t.Errorf("expected sanitized volume name openshift-service-ca-crt, got %s", volumes[0].Name)
+		}
+		if mounts[0].Name != "openshift-service-ca-crt" {
+			t.Errorf("expected sanitized mount name openshift-service-ca-crt, got %s", mounts[0].Name)
+		}
+		expectedPath := certBasePath + "/openshift-service-ca.crt"
+		if mounts[0].MountPath != expectedPath {
+			t.Errorf("expected mount path to preserve dots %q, got %q", expectedPath, mounts[0].MountPath)
+		}
+		if volumes[0].VolumeSource.ConfigMap.Name != "openshift-service-ca.crt" {
+			t.Errorf("expected ConfigMap source name to preserve original name, got %s", volumes[0].VolumeSource.ConfigMap.Name)
+		}
+	})
+
 	t.Run("When PodMonitor has no TLS config, it should be skipped", func(t *testing.T) {
 		t.Parallel()
 
