@@ -22,7 +22,7 @@ import (
 )
 
 func TestKarpenterUpgradeControlPlane(t *testing.T) {
-	e2eutil.AtLeast(t, e2eutil.Version422)
+	e2eutil.ShouldRunKarpenterTests(t)
 	if globalOpts.Platform != hyperv1.AWSPlatform {
 		t.Skip("test only supported on platform AWS")
 	}
@@ -70,7 +70,7 @@ func TestKarpenterUpgradeControlPlane(t *testing.T) {
 
 		nodes := e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, int32(replicas), nodeLabels)
 		nodeClaims := waitForReadyNodeClaims(t, ctx, guestClient, len(nodes))
-		waitForReadyKarpenterPods(t, ctx, guestClient, nodes, replicas)
+		waitForReadyKarpenterPods(t, ctx, guestClient, nodes, replicas, map[string]string{"app": "web-app"})
 
 		preUpgradeOSImage := nodes[0].Status.NodeInfo.OSImage
 		t.Logf("Pre-upgrade node: %s, OS image: %s", nodes[0].Name, preUpgradeOSImage)
@@ -127,7 +127,7 @@ func TestKarpenterUpgradeControlPlane(t *testing.T) {
 		)
 
 		t.Logf("Waiting for Karpenter pods to schedule on the new node")
-		waitForReadyKarpenterPods(t, ctx, guestClient, nodes, replicas)
+		waitForReadyKarpenterPods(t, ctx, guestClient, nodes, replicas, map[string]string{"app": "web-app"})
 
 		nodeClaims = waitForReadyNodeClaims(t, ctx, guestClient, len(nodes))
 

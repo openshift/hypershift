@@ -315,7 +315,8 @@ func testARM64Provisioning(ctx context.Context, guestClient crclient.Client, hos
 			{Key: "kubernetes.io/arch", Operator: corev1.NodeSelectorOpIn, Values: []string{"arm64"}},
 			{Key: karpenterv1.CapacityTypeLabelKey, Operator: corev1.NodeSelectorOpIn, Values: []string{karpenterv1.CapacityTypeOnDemand}},
 		}
-		armWorkLoads := testWorkload("arm-app", 1, map[string]string{karpenterv1.NodePoolLabelKey: armNodePool.Name})
+		// quay.io/openshift/origin-pod does not support arm64
+		armWorkLoads := testWorkloadWithImage("arm-app", 1, map[string]string{karpenterv1.NodePoolLabelKey: armNodePool.Name}, "quay.io/hypershift/sleep:multiarch")
 
 		t.Cleanup(func() {
 			_ = guestClient.Delete(ctx, armWorkLoads)
@@ -334,7 +335,7 @@ func testARM64Provisioning(ctx context.Context, guestClient crclient.Client, hos
 		}
 
 		nodes := e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, 1, armNodeLabels)
-		waitForReadyKarpenterPods(t, ctx, guestClient, nodes, 1)
+		waitForReadyKarpenterPods(t, ctx, guestClient, nodes, 1, map[string]string{"app": "arm-app"})
 
 		g.Expect(guestClient.Delete(ctx, armNodePool)).To(Succeed())
 		t.Logf("Deleted ARM64 NodePool")
@@ -1514,12 +1515,12 @@ func testBillingConsolidationAndPDB(ctx context.Context, mgtClient, guestClient 
 	}
 }
 
-func waitForReadyKarpenterPods(t *testing.T, ctx context.Context, client crclient.Client, nodes []corev1.Node, n int) []corev1.Pod {
+func waitForReadyKarpenterPods(t *testing.T, ctx context.Context, client crclient.Client, nodes []corev1.Node, n int, podLabels map[string]string) []corev1.Pod {
 	pods := &corev1.PodList{}
 	waitTimeout := 20 * time.Minute
 	e2eutil.EventuallyObjects(t, ctx, "Pods to be scheduled on provisioned Karpenter nodes",
 		func(ctx context.Context) ([]*corev1.Pod, error) {
-			err := client.List(ctx, pods, crclient.InNamespace("default"))
+			err := client.List(ctx, pods, crclient.InNamespace("default"), crclient.MatchingLabels(podLabels))
 			items := make([]*corev1.Pod, len(pods.Items))
 			for i := range pods.Items {
 				items[i] = &pods.Items[i]
@@ -1760,6 +1761,10 @@ func baseNodePool(name, nodeClassName string) *karpenterv1.NodePool {
 }
 
 func testWorkload(name string, replicas int32, nodeSelector map[string]string) *appsv1.Deployment {
+	return testWorkloadWithImage(name, replicas, nodeSelector, "quay.io/openshift/origin-pod:4.22.0")
+}
+
+func testWorkloadWithImage(name string, replicas int32, nodeSelector map[string]string, image string) *appsv1.Deployment {
 	appLabel := map[string]string{"app": name}
 	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
@@ -1787,7 +1792,7 @@ func testWorkload(name string, replicas int32, nodeSelector map[string]string) *
 					},
 					Containers: []corev1.Container{{
 						Name:  name,
-						Image: "quay.io/openshift/origin-pod:4.22.0",
+						Image: image,
 						Resources: corev1.ResourceRequirements{
 							Requests: corev1.ResourceList{
 								corev1.ResourceCPU:    resource.MustParse("250m"),
