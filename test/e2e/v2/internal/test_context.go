@@ -108,6 +108,8 @@ func (tc *TestContext) GetHostedClusterClient() crclient.Client {
 		if err != nil {
 			panic(fmt.Sprintf("failed to create REST config from kubeconfig: %v", err))
 		}
+		restConfig.QPS = 200
+		restConfig.Burst = 300
 
 		client, err := crclient.New(restConfig, crclient.Options{Scheme: hyperapi.Scheme})
 		if err != nil {

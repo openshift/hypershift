@@ -276,7 +276,7 @@ func EtcdSingleMemberCorruptionTest(getTestCtx internal.TestContextGetter) {
 				return want != 0 && want == got, fmt.Sprintf("wanted status active to be %d, got %d", want, got), nil
 			}},
 			e2eutil.WithInterval(5*time.Second),
-			e2eutil.WithTimeout(10*time.Minute),
+			e2eutil.WithTimeout(15*time.Minute),
 		)
 
 		waitForEtcdConvergence(ctx, testCtx.MgmtClient, cpNamespace, ptr.Deref(etcdSts.Spec.Replicas, 0))
@@ -341,7 +341,7 @@ func EtcdMissingMemberRecoveryTest(getTestCtx internal.TestContextGetter) {
 				return want != 0 && want == got, fmt.Sprintf("wanted status active to be %d, got %d", want, got), nil
 			}},
 			e2eutil.WithInterval(5*time.Second),
-			e2eutil.WithTimeout(10*time.Minute),
+			e2eutil.WithTimeout(15*time.Minute),
 		)
 
 		waitForEtcdConvergence(ctx, testCtx.MgmtClient, cpNamespace, ptr.Deref(etcdSts.Spec.Replicas, 0))

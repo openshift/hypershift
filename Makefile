@@ -486,6 +486,18 @@ e2ev2:
 e2ev2-create-guests:
 	$(GO_BUILD_RECIPE) -tags e2ev2 -o bin/create-guests ./test/e2e/v2/cmd/create-guests
 
+.PHONY: e2ev2-run-tests
+e2ev2-run-tests:
+	$(GO_BUILD_RECIPE) -tags e2ev2 -o bin/run-tests ./test/e2e/v2/cmd/run-tests
+
+.PHONY: e2ev2-destroy-guests
+e2ev2-destroy-guests:
+	$(GO_BUILD_RECIPE) -tags e2ev2 -o bin/destroy-guests ./test/e2e/v2/cmd/destroy-guests
+
+.PHONY: e2ev2-dump-guests
+e2ev2-dump-guests:
+	$(GO_BUILD_RECIPE) -tags e2ev2 -o bin/dump-guests ./test/e2e/v2/cmd/dump-guests
+
 .PHONY: backuprestore-e2e
 backuprestore-e2e:
 	$(GO_BACKUPRESTORE_E2E_RECIPE) -o bin/test-backuprestore ./test/e2e/v2/tests
