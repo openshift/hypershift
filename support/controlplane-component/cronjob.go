@@ -39,16 +39,22 @@ func (c *cronJobProvider) Replicas(object *batchv1.CronJob) *int32 {
 
 // IsAvailable implements WorkloadProvider.
 func (c *cronJobProvider) IsAvailable(object *batchv1.CronJob) (status metav1.ConditionStatus, reason string, message string) {
-	// TODO
-	status = metav1.ConditionTrue
-	reason = hyperv1.AsExpectedReason
-	return
+	if object.Spec.Suspend != nil && *object.Spec.Suspend {
+		return metav1.ConditionFalse, "CronJobSuspended", "CronJob is suspended"
+	}
+	return metav1.ConditionTrue, hyperv1.AsExpectedReason, ""
 }
 
 // IsReady implements WorkloadProvider.
 func (c *cronJobProvider) IsReady(object *batchv1.CronJob) (status metav1.ConditionStatus, reason string, message string) {
-	// TODO
-	status = metav1.ConditionTrue
-	reason = hyperv1.AsExpectedReason
-	return
+	if object.Spec.Suspend != nil && *object.Spec.Suspend {
+		return metav1.ConditionFalse, "CronJobSuspended", "CronJob is suspended"
+	}
+	if object.Status.LastSuccessfulTime != nil {
+		return metav1.ConditionTrue, hyperv1.AsExpectedReason, ""
+	}
+	if object.Status.LastScheduleTime != nil {
+		return metav1.ConditionFalse, "WaitingForSuccess", "CronJob has been scheduled but no successful completion yet"
+	}
+	return metav1.ConditionFalse, "WaitingForFirstSchedule", "CronJob has not been scheduled yet"
 }
