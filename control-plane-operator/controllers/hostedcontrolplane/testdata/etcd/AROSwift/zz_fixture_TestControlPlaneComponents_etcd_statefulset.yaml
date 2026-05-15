@@ -82,7 +82,11 @@ spec:
       - command:
         - /bin/sh
         - -c
-        - ETCD_INITIAL_CLUSTER_STATE=$(cat /etc/etcd/clusterstate/state) /usr/bin/etcd
+        - |
+          if [ -f /etc/etcd/clusterstate/initial_cluster ]; then
+            export ETCD_INITIAL_CLUSTER=$(cat /etc/etcd/clusterstate/initial_cluster)
+          fi
+          ETCD_INITIAL_CLUSTER_STATE=$(cat /etc/etcd/clusterstate/state) /usr/bin/etcd
         env:
         - name: POD_IP
           valueFrom:
@@ -305,23 +309,41 @@ spec:
 
           echo "new" > /etc/etcd/clusterstate/state
 
+          if [[ "${SNAPSHOT_RESTORE:-}" == "true" ]]; then
+            echo "Snapshot restore pending, skipping cluster membership check"
+            exit 0
+          fi
+
           if [[ ! -f /var/lib/data/member/snap/db ]]; then
             echo "No existing etcd data found"
             echo "Checking if cluster is functional"
-            if etcdctl member list; then
+            CLUSTER_UP=false
+            for attempt in $(seq 1 12); do
+              if etcdctl member list; then
+                CLUSTER_UP=true
+                break
+              fi
+              echo "Attempt ${attempt}/12: cluster not reachable, retrying in 5s..."
+              sleep 5
+            done
+            if [[ "${CLUSTER_UP}" == "true" ]]; then
               echo "Cluster is functional"
               MEMBER_ID=$(etcdctl member list -w simple | grep "${HOSTNAME}" | awk -F, '{ print $1 }')
               if [[ -n "${MEMBER_ID}" ]]; then
                 echo "A member with this name (${HOSTNAME}) already exists, removing"
                 etcdctl member remove "${MEMBER_ID}"
-                echo "Adding new member"
-                etcdctl member add ${HOSTNAME} --peer-urls https://${HOSTNAME}.etcd-discovery.${NAMESPACE}.svc:2380
-                echo "existing" > /etc/etcd/clusterstate/state
-              else
-                echo "A member does not exist with name (${HOSTNAME}), nothing to do"
               fi
+              echo "Adding ${HOSTNAME} to existing cluster"
+              ADD_OUTPUT=$(etcdctl member add ${HOSTNAME} --peer-urls https://${HOSTNAME}.etcd-discovery.${NAMESPACE}.svc:2380)
+              echo "${ADD_OUTPUT}"
+              INITIAL_CLUSTER=$(echo "${ADD_OUTPUT}" | grep "^ETCD_INITIAL_CLUSTER=" | cut -d'"' -f2)
+              if [[ -n "${INITIAL_CLUSTER}" ]]; then
+                echo "${INITIAL_CLUSTER}" > /etc/etcd/clusterstate/initial_cluster
+                echo "Wrote initial_cluster: ${INITIAL_CLUSTER}"
+              fi
+              echo "existing" > /etc/etcd/clusterstate/state
             else
-              echo "Cannot list members in cluster, so likely not up yet"
+              echo "Cannot list members in cluster after 12 attempts, so likely not up yet"
             fi
           else
             echo "Snapshot db exists, member has data"

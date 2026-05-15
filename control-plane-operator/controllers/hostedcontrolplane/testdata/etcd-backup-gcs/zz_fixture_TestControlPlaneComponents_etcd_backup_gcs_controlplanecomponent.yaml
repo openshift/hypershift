@@ -1,7 +1,7 @@
 apiVersion: hypershift.openshift.io/v1beta1
 kind: ControlPlaneComponent
 metadata:
-  name: olm-collect-profiles
+  name: etcd-backup-gcs
   namespace: hcp-namespace
   resourceVersion: "1"
 spec: {}
@@ -18,18 +18,15 @@ status:
     status: "False"
     type: RolloutComplete
   resources:
-  - group: ""
-    kind: ConfigMap
-    name: olm-collect-profiles
+  - group: monitoring.coreos.com
+    kind: PrometheusRule
+    name: etcd-backup-alerting-rules
   - group: rbac.authorization.k8s.io
     kind: Role
-    name: olm-collect-profiles
+    name: etcd-backup-gcs
   - group: rbac.authorization.k8s.io
     kind: RoleBinding
-    name: olm-collect-profiles
-  - group: ""
-    kind: Secret
-    name: pprof-cert
+    name: etcd-backup-gcs
   - group: ""
     kind: ServiceAccount
-    name: olm-collect-profiles
+    name: etcd-backup-gcs

@@ -53,9 +53,11 @@ import (
 	"github.com/aws/smithy-go"
 
 	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/util/workqueue"
@@ -4428,3 +4430,228 @@ var _ util.ImageMetadataProvider = &fakeVersionImageMetadataProvider{}
 
 // Compile-time assertion for clock interface used by tests.
 var _ clock.Clock = &testingclock.FakeClock{}
+
+func TestReconcileEtcdRestore(t *testing.T) {
+	t.Parallel()
+
+	const ns = "test-ns"
+
+	gcpHCP := func(conditions ...metav1.Condition) *hyperv1.HostedControlPlane {
+		hcp := &hyperv1.HostedControlPlane{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test",
+				Namespace: ns,
+			},
+			Spec: hyperv1.HostedControlPlaneSpec{
+				Etcd: hyperv1.EtcdSpec{
+					ManagementType: hyperv1.Managed,
+					Managed: &hyperv1.ManagedEtcdSpec{
+						AutomatedBackup: &hyperv1.AutomatedEtcdBackupConfig{
+							Storage: hyperv1.AutomatedEtcdBackupStorage{
+								Type: hyperv1.AutomatedEtcdBackupStorageTypeGCS,
+								GCS: &hyperv1.AutomatedEtcdBackupGCS{
+									Bucket:            "my-bucket",
+									GCPServiceAccount: "sa@proj.iam.gserviceaccount.com",
+								},
+							},
+						},
+					},
+				},
+				InfraID: "test-infra",
+			},
+		}
+		hcp.Status.Conditions = conditions
+		return hcp
+	}
+
+	failedJob := func() *batchv1.Job {
+		job := manifests.EtcdRestoreJob(ns)
+		job.CreationTimestamp = metav1.Now()
+		job.Status.Conditions = []batchv1.JobCondition{
+			{
+				Type:    batchv1.JobFailed,
+				Status:  corev1.ConditionTrue,
+				Message: "Job has reached the specified backoff limit",
+			},
+		}
+		return job
+	}
+
+	testCases := []struct {
+		name             string
+		hcp              *hyperv1.HostedControlPlane
+		existingJob      *batchv1.Job
+		existingPVC      *corev1.PersistentVolumeClaim
+		expectJobDeleted bool
+		expectPVCDeleted bool
+		expectCondNil    bool
+		expectError      bool
+	}{
+		{
+			name: "When restore job has failed it should delete the job and clear the condition",
+			hcp: gcpHCP(metav1.Condition{
+				Type:   string(hyperv1.EtcdSnapshotRestored),
+				Status: metav1.ConditionFalse,
+				Reason: "RestoreJobFailed",
+			}),
+			existingJob:      failedJob(),
+			expectJobDeleted: true,
+			expectCondNil:    true,
+		},
+		{
+			name: "When restore condition is true it should skip reconciliation",
+			hcp: gcpHCP(metav1.Condition{
+				Type:   string(hyperv1.EtcdSnapshotRestored),
+				Status: metav1.ConditionTrue,
+				Reason: hyperv1.AsExpectedReason,
+			}),
+			expectJobDeleted: false,
+			expectCondNil:    false,
+		},
+		{
+			name: "When platform is not GCP it should return nil",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test",
+					Namespace: ns,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
+				},
+			},
+			expectJobDeleted: false,
+			expectCondNil:    true,
+		},
+		{
+			name: "When restore PVC is stuck in Pending for more than 10 minutes it should delete PVC",
+			hcp:  gcpHCP(),
+			existingPVC: &corev1.PersistentVolumeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              manifests.EtcdRestorePVC(ns).Name,
+					Namespace:         ns,
+					UID:               "test-uid",
+					CreationTimestamp: metav1.NewTime(time.Now().Add(-11 * time.Minute)),
+					ResourceVersion:   "1",
+				},
+				Spec: corev1.PersistentVolumeClaimSpec{
+					AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+					Resources: corev1.VolumeResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceStorage: resource.MustParse("10Gi"),
+						},
+					},
+				},
+				Status: corev1.PersistentVolumeClaimStatus{
+					Phase: corev1.ClaimPending,
+				},
+			},
+			expectPVCDeleted: true,
+			expectCondNil:    true,
+		},
+		{
+			name: "When restore PVC is Pending for less than 10 minutes it should not delete PVC",
+			hcp:  gcpHCP(),
+			existingPVC: &corev1.PersistentVolumeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              manifests.EtcdRestorePVC(ns).Name,
+					Namespace:         ns,
+					UID:               "test-uid",
+					CreationTimestamp: metav1.NewTime(time.Now().Add(-5 * time.Minute)),
+					ResourceVersion:   "1",
+				},
+				Spec: corev1.PersistentVolumeClaimSpec{
+					AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+					Resources: corev1.VolumeResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceStorage: resource.MustParse("10Gi"),
+						},
+					},
+				},
+				Status: corev1.PersistentVolumeClaimStatus{
+					Phase: corev1.ClaimPending,
+				},
+			},
+			expectPVCDeleted: false,
+			expectCondNil:    true,
+		},
+		{
+			name: "When restore PVC is Bound it should not delete PVC regardless of age",
+			hcp:  gcpHCP(),
+			existingPVC: &corev1.PersistentVolumeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              manifests.EtcdRestorePVC(ns).Name,
+					Namespace:         ns,
+					UID:               "test-uid",
+					CreationTimestamp: metav1.NewTime(time.Now().Add(-30 * time.Minute)),
+					ResourceVersion:   "1",
+				},
+				Spec: corev1.PersistentVolumeClaimSpec{
+					AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+					Resources: corev1.VolumeResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceStorage: resource.MustParse("10Gi"),
+						},
+					},
+				},
+				Status: corev1.PersistentVolumeClaimStatus{
+					Phase: corev1.ClaimBound,
+				},
+			},
+			expectPVCDeleted: false,
+			expectCondNil:    true,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			builder := fake.NewClientBuilder().WithScheme(api.Scheme).
+				WithObjects(tc.hcp).
+				WithStatusSubresource(&hyperv1.HostedControlPlane{})
+			if tc.existingJob != nil {
+				builder = builder.WithObjects(tc.existingJob)
+			}
+			if tc.existingPVC != nil {
+				builder = builder.WithObjects(tc.existingPVC)
+			}
+			fakeClient := builder.Build()
+
+			r := &HostedControlPlaneReconciler{
+				Client: fakeClient,
+				Log:    ctrl.LoggerFrom(t.Context()),
+			}
+
+			err := r.reconcileEtcdRestore(t.Context(), tc.hcp)
+			if tc.expectError {
+				g.Expect(err).To(HaveOccurred())
+				return
+			}
+			g.Expect(err).ToNot(HaveOccurred())
+
+			if tc.expectJobDeleted {
+				job := manifests.EtcdRestoreJob(ns)
+				err := fakeClient.Get(t.Context(), client.ObjectKeyFromObject(job), job)
+				g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "expected failed job to be deleted")
+			}
+
+			if tc.existingPVC != nil {
+				pvc := manifests.EtcdRestorePVC(ns)
+				err := fakeClient.Get(t.Context(), client.ObjectKeyFromObject(pvc), pvc)
+				if tc.expectPVCDeleted {
+					g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "expected stuck PVC to be deleted")
+				} else {
+					g.Expect(err).ToNot(HaveOccurred(), "expected PVC to still exist")
+				}
+			}
+
+			cond := meta.FindStatusCondition(tc.hcp.Status.Conditions, string(hyperv1.EtcdSnapshotRestored))
+			if tc.expectCondNil {
+				g.Expect(cond).To(BeNil(), "expected EtcdSnapshotRestored condition to be removed")
+			} else {
+				g.Expect(cond).ToNot(BeNil())
+			}
+		})
+	}
+}
