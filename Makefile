@@ -559,7 +559,7 @@ staticcheck: $(STATICCHECK)
 # Build the docker image with official golang image
 .PHONY: docker-build
 docker-build:
-	${RUNTIME} build --build-arg COMMIT_HASH=$(COMMIT_HASH) . -t ${IMG}
+	${RUNTIME} build --platform linux/amd64 --build-arg COMMIT_HASH=$(COMMIT_HASH) . -t ${IMG}
 
 # Push the docker image
 .PHONY: docker-push
