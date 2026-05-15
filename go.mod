@@ -94,9 +94,9 @@ require (
 	golang.org/x/oauth2 v0.36.0
 	golang.org/x/sync v0.20.0
 	golang.org/x/time v0.15.0
-	google.golang.org/api v0.277.0
-	google.golang.org/grpc v1.80.0
-	gopkg.in/ini.v1 v1.67.1
+	google.golang.org/api v0.279.0
+	google.golang.org/grpc v1.81.1
+	gopkg.in/ini.v1 v1.67.2
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.1
 	k8s.io/api v0.35.1
