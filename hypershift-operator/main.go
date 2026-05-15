@@ -54,6 +54,7 @@ import (
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/gcpapi"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/netutil"
@@ -147,6 +148,7 @@ type StartOptions struct {
 	OIDCStorageProviderS3BucketName        string
 	OIDCStorageProviderS3Region            string
 	OIDCStorageProviderS3Credentials       string
+	GCPOIDCStorageBucketName               string
 	EnableUWMTelemetryRemoteWrite          bool
 	EnableValidatingWebhook                bool
 	EnableDedicatedRequestServingIsolation bool
@@ -184,6 +186,7 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().StringToStringVar(&opts.RegistryOverrides, "registry-overrides", map[string]string{}, "registry-overrides contains the source registry string as a key and the destination registry string as value. Images before being applied are scanned for the source registry string and if found the string is replaced with the destination registry string. Format is: sr1=dr1,sr2=dr2")
 	cmd.Flags().StringVar(&opts.PrivatePlatform, "private-platform", opts.PrivatePlatform, "Platform on which private clusters are supported by this operator (supports \"AWS\", \"Azure\", \"GCP\", or \"None\")")
 	cmd.Flags().StringVar(&opts.OIDCStorageProviderS3BucketName, "oidc-storage-provider-s3-bucket-name", "", "Name of the bucket in which to store the clusters OIDC discovery information. Required for AWS guest clusters")
+	cmd.Flags().StringVar(&opts.GCPOIDCStorageBucketName, "gcp-oidc-storage-bucket-name", "", "Name of the GCS bucket in which to store the clusters OIDC discovery information. Required for GCP guest clusters using issuer URL discovery")
 	cmd.Flags().StringVar(&opts.OIDCStorageProviderS3Region, "oidc-storage-provider-s3-region", opts.OIDCStorageProviderS3Region, "Region in which the OIDC bucket is located. Required for AWS guest clusters")
 	cmd.Flags().StringVar(&opts.OIDCStorageProviderS3Credentials, "oidc-storage-provider-s3-credentials", opts.OIDCStorageProviderS3Credentials, "Location of the credentials file for the OIDC bucket. Required for AWS guest clusters.")
 	cmd.Flags().BoolVar(&opts.EnableUWMTelemetryRemoteWrite, "enable-uwm-telemetry-remote-write", opts.EnableUWMTelemetryRemoteWrite, "If true, enables a controller that ensures user workload monitoring is enabled and that it is configured to remote write telemetry metrics from control planes")
@@ -527,6 +530,14 @@ func setupHostedClusterController(ctx context.Context, mgr ctrl.Manager, opts *S
 		})
 		hostedClusterReconciler.S3Client = s3Client
 		hostedClusterReconciler.OIDCStorageProviderS3BucketName = opts.OIDCStorageProviderS3BucketName
+	}
+	if opts.GCPOIDCStorageBucketName != "" {
+		gcsClient, err := gcpapi.NewGCSClient(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to create GCS storage client: %w", err)
+		}
+		hostedClusterReconciler.GCSClient = gcsClient
+		hostedClusterReconciler.GCPOIDCStorageBucketName = opts.GCPOIDCStorageBucketName
 	}
 	if err := hostedClusterReconciler.SetupWithManager(mgr, createOrUpdate, metricsSet, opts.Namespace); err != nil {
 		return fmt.Errorf("unable to create controller: %w", err)
