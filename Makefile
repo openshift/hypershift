@@ -482,6 +482,10 @@ reqserving-e2e:
 e2ev2:
 	$(GO_E2EV2_RECIPE) -o bin/test-e2e-v2 ./test/e2e/v2/tests
 
+.PHONY: e2ev2-create-guests
+e2ev2-create-guests:
+	$(GO_BUILD_RECIPE) -tags e2ev2 -o bin/create-guests ./test/e2e/v2/cmd/create-guests
+
 .PHONY: backuprestore-e2e
 backuprestore-e2e:
 	$(GO_BACKUPRESTORE_E2E_RECIPE) -o bin/test-backuprestore ./test/e2e/v2/tests
