@@ -418,8 +418,23 @@ func TestCertVolumesFromMonitors(t *testing.T) {
 			},
 		})
 
-		cpContext := newCertVolumeTestContext(namespace, scheme, sm)
-		volumes, mounts := assertCertVolumeCount(t, cpContext, namespace, 1, 1)
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(sm).Build()
+		cpContext := component.WorkloadContext{
+			Context: context.Background(),
+			Client:  fakeClient,
+			HCP:     &hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{Namespace: namespace}},
+		}
+
+		volumes, mounts, err := certVolumesFromMonitors(cpContext, namespace)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(volumes) != 1 {
+			t.Fatalf("expected 1 volume, got %d", len(volumes))
+		}
+		if len(mounts) != 1 {
+			t.Fatalf("expected 1 mount, got %d", len(mounts))
+		}
 
 		if volumes[0].Name != "openshift-service-ca-crt" {
 			t.Errorf("expected sanitized volume name openshift-service-ca-crt, got %s", volumes[0].Name)
