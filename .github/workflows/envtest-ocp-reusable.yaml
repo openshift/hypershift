@@ -49,8 +49,6 @@ jobs:
     if: needs.changes.outputs.should_run == 'true'
     runs-on: arc-runner-set
     timeout-minutes: 15
-    env:
-      GOCACHE: /tmp/go-build-cache
     strategy:
       fail-fast: false
       matrix:
