@@ -80,9 +80,6 @@ type PlatformConfig interface {
 	// "hypershift destroy cluster <platform>".
 	DestroyArgs() []string
 
-	// Suffixes returns the hash suffixes for cluster name derivation,
-	// matching the order of ClusterSpecs.
-	Suffixes() []string
 }
 
 // NewPlatformConfig creates a PlatformConfig for the given platform
@@ -104,11 +101,3 @@ func DeriveClusterName(prowJobID, suffix string) string {
 	return fmt.Sprintf("%x", hash)[:20]
 }
 
-// DeriveClusterNames returns cluster names for the given suffixes.
-func DeriveClusterNames(prowJobID string, suffixes []string) []string {
-	names := make([]string, 0, len(suffixes))
-	for _, suffix := range suffixes {
-		names = append(names, DeriveClusterName(prowJobID, suffix))
-	}
-	return names
-}

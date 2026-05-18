@@ -52,15 +52,16 @@ func main() {
 		log.Fatalf("Failed to initialize platform config: %v", err)
 	}
 
-	clusterNames := lifecycle.DeriveClusterNames(prowJobID, platform.Suffixes())
-	log.Printf("Dumping %d clusters derived from PROW_JOB_ID=%s", len(clusterNames), prowJobID)
+	specs := platform.ClusterSpecs("", "")
+	log.Printf("Dumping %d clusters derived from PROW_JOB_ID=%s", len(specs), prowJobID)
 
 	var wg sync.WaitGroup
-	for _, name := range clusterNames {
+	for _, spec := range specs {
+		clusterName := lifecycle.DeriveClusterName(prowJobID, spec.Suffix)
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			dumpCluster(*hypershiftBinary, artifactDir, name)
+			dumpCluster(*hypershiftBinary, artifactDir, clusterName, spec.Variant)
 		}()
 	}
 	wg.Wait()
@@ -68,8 +69,8 @@ func main() {
 	log.Println("All cluster dumps complete")
 }
 
-func dumpCluster(hypershiftBinary, artifactDir, clusterName string) {
-	dumpDir := filepath.Join(artifactDir, clusterName)
+func dumpCluster(hypershiftBinary, artifactDir, clusterName, variant string) {
+	dumpDir := filepath.Join(artifactDir, variant)
 	if err := os.MkdirAll(dumpDir, 0755); err != nil {
 		log.Printf("WARNING: Failed to create artifact directory %s: %v", dumpDir, err)
 		return

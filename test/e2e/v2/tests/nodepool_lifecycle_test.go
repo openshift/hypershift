@@ -808,6 +808,19 @@ func NodePoolTrustBundleTest(getTestCtx internal.TestContextGetter) {
 
 		ctx := testCtx.Context
 
+		defaultNP := getDefaultNodePool(ctx, testCtx.MgmtClient, hc)
+		Expect(defaultNP).NotTo(BeNil(), "default NodePool should exist")
+
+		var oneReplica int32 = 1
+		np := buildTestNodePool(defaultNP, "trust-bundle", func(pool *hyperv1.NodePool) {
+			pool.Spec.Replicas = &oneReplica
+		})
+		Expect(testCtx.MgmtClient.Create(ctx, np)).To(Succeed(), "failed to create NodePool %s", np.Name)
+		GinkgoWriter.Printf("Created NodePool %s for trust bundle test\n", np.Name)
+		defer cleanupNodePool(ctx, testCtx.MgmtClient, np)
+
+		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, guestClient, np, hc.Spec.Platform.Type)
+
 		// Create additional trust bundle ConfigMap
 		trustBundle := &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
@@ -826,19 +839,18 @@ func NodePoolTrustBundleTest(getTestCtx internal.TestContextGetter) {
 
 		// Defer cleanup: remove trust bundle reference from HostedCluster
 		defer func() {
-			_ = e2eutil.UpdateObject(GinkgoTB(), ctx, testCtx.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
+			err := e2eutil.UpdateObject(GinkgoTB(), ctx, testCtx.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
 				obj.Spec.AdditionalTrustBundle = nil
 			})
+			if err != nil {
+				GinkgoWriter.Printf("WARNING: failed to clean up trust bundle reference: %v\n", err)
+			}
 		}()
 
-		// Wait for NodePool to begin updating
-		defaultNP := getDefaultNodePool(ctx, testCtx.MgmtClient, hc)
-		Expect(defaultNP).NotTo(BeNil(), "default NodePool should exist")
-
-		e2eutil.EventuallyObject(GinkgoTB(), ctx, fmt.Sprintf("NodePool %s/%s to begin updating", defaultNP.Namespace, defaultNP.Name),
+		e2eutil.EventuallyObject(GinkgoTB(), ctx, fmt.Sprintf("NodePool %s/%s to begin updating", np.Namespace, np.Name),
 			func(ctx context.Context) (*hyperv1.NodePool, error) {
 				pool := &hyperv1.NodePool{}
-				err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(defaultNP), pool)
+				err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(np), pool)
 				return pool, err
 			},
 			[]e2eutil.Predicate[*hyperv1.NodePool]{
@@ -850,11 +862,10 @@ func NodePoolTrustBundleTest(getTestCtx internal.TestContextGetter) {
 			e2eutil.WithInterval(10*time.Second), e2eutil.WithTimeout(5*time.Minute),
 		)
 
-		// Wait for NodePool to stop updating
-		e2eutil.EventuallyObject(GinkgoTB(), ctx, fmt.Sprintf("NodePool %s/%s to stop updating", defaultNP.Namespace, defaultNP.Name),
+		e2eutil.EventuallyObject(GinkgoTB(), ctx, fmt.Sprintf("NodePool %s/%s to stop updating", np.Namespace, np.Name),
 			func(ctx context.Context) (*hyperv1.NodePool, error) {
 				pool := &hyperv1.NodePool{}
-				err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(defaultNP), pool)
+				err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(np), pool)
 				return pool, err
 			},
 			[]e2eutil.Predicate[*hyperv1.NodePool]{
@@ -925,10 +936,10 @@ func NodePoolTrustBundleTest(getTestCtx internal.TestContextGetter) {
 		)
 
 		// Wait for NodePool to cycle again
-		e2eutil.EventuallyObject(GinkgoTB(), ctx, fmt.Sprintf("NodePool %s/%s to begin updating after trust bundle removal", defaultNP.Namespace, defaultNP.Name),
+		e2eutil.EventuallyObject(GinkgoTB(), ctx, fmt.Sprintf("NodePool %s/%s to begin updating after trust bundle removal", np.Namespace, np.Name),
 			func(ctx context.Context) (*hyperv1.NodePool, error) {
 				pool := &hyperv1.NodePool{}
-				err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(defaultNP), pool)
+				err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(np), pool)
 				return pool, err
 			},
 			[]e2eutil.Predicate[*hyperv1.NodePool]{
@@ -940,10 +951,10 @@ func NodePoolTrustBundleTest(getTestCtx internal.TestContextGetter) {
 			e2eutil.WithInterval(10*time.Second), e2eutil.WithTimeout(5*time.Minute),
 		)
 
-		e2eutil.EventuallyObject(GinkgoTB(), ctx, fmt.Sprintf("NodePool %s/%s to stop updating after trust bundle removal", defaultNP.Namespace, defaultNP.Name),
+		e2eutil.EventuallyObject(GinkgoTB(), ctx, fmt.Sprintf("NodePool %s/%s to stop updating after trust bundle removal", np.Namespace, np.Name),
 			func(ctx context.Context) (*hyperv1.NodePool, error) {
 				pool := &hyperv1.NodePool{}
-				err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(defaultNP), pool)
+				err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(np), pool)
 				return pool, err
 			},
 			[]e2eutil.Predicate[*hyperv1.NodePool]{

@@ -91,10 +91,6 @@ func (a *AzurePlatformConfig) DefaultBaseDomain() string {
 	return "hcp-sm-azure.azure.devcluster.openshift.com"
 }
 
-func (a *AzurePlatformConfig) Suffixes() []string {
-	return []string{"-pub", "-prv", "-oau", "-upg"}
-}
-
 func (a *AzurePlatformConfig) ClusterSpecs(releaseImage, n1Image string) []ClusterSpec {
 	return []ClusterSpec{
 		{
@@ -123,6 +119,11 @@ func (a *AzurePlatformConfig) ClusterSpecs(releaseImage, n1Image string) []Clust
 			OutputFile:   "cluster-name-upgrade",
 			ReleaseImage: n1Image,
 			ExtraArgs:    []string{"--control-plane-availability-policy=HighlyAvailable"},
+		},
+		{
+			Variant:    "autoscaling",
+			Suffix:     "-asc",
+			OutputFile: "cluster-name-autoscaling",
 		},
 	}
 }
@@ -191,7 +192,7 @@ func (a *AzurePlatformConfig) TestMatrix(releaseImage string) TestMatrix {
 			{
 				Name:        "public",
 				ClusterFile: "cluster-name-public",
-				LabelFilter: "self-managed-azure-public || nodepool-autoscaling || nodepool-lifecycle",
+				LabelFilter: "self-managed-azure-public || nodepool-lifecycle",
 				Skip:        "KAS allowed CIDRs",
 				JUnitFile:   "junit_self_managed_azure_public.xml",
 			},
@@ -206,6 +207,12 @@ func (a *AzurePlatformConfig) TestMatrix(releaseImage string) TestMatrix {
 				ClusterFile: "cluster-name-oauth-lb",
 				LabelFilter: "self-managed-azure-oauth-lb",
 				JUnitFile:   "junit_self_managed_azure_oauth_lb.xml",
+			},
+			{
+				Name:        "autoscaling",
+				ClusterFile: "cluster-name-autoscaling",
+				LabelFilter: "nodepool-autoscaling",
+				JUnitFile:   "junit_nodepool_autoscaling.xml",
 			},
 		},
 		Sequential: []SequentialGroup{

@@ -19,6 +19,7 @@ package tests
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -28,6 +29,7 @@ import (
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
 
+	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -56,8 +58,10 @@ func AutoscalingScaleUpDownTest(getTestCtx internal.TestContextGetter) {
 		defaultNP := getDefaultNodePool(ctx, testCtx.MgmtClient, hc)
 		Expect(defaultNP).NotTo(BeNil(), "default NodePool should exist")
 
-		// Create autoscaling NodePool with min=1, max=3
-		autoscalingNP := buildAutoscalingNodePool(defaultNP, 1, 3)
+		// Create autoscaling NodePool with min=1, max=3 and a unique node label
+		// so the workload targets only this NodePool's nodes.
+		autoscalingLabel := map[string]string{"e2e-autoscaling-test": "scale-up-down"}
+		autoscalingNP := buildAutoscalingNodePool(defaultNP, 1, 3, autoscalingLabel)
 		err := testCtx.MgmtClient.Create(ctx, autoscalingNP)
 		Expect(err).NotTo(HaveOccurred(), "failed to create autoscaling NodePool")
 		GinkgoWriter.Printf("Created autoscaling NodePool %s with min=1, max=3\n", autoscalingNP.Name)
@@ -78,9 +82,11 @@ func AutoscalingScaleUpDownTest(getTestCtx internal.TestContextGetter) {
 		bytes, ok := memCapacity.AsInt64()
 		Expect(ok).To(BeTrue(), "memory capacity should be convertible to int64")
 
-		// Create workload that requires 3 nodes (50% memory per pod, 3 pods)
+		// Create workload that requires 3 nodes (50% memory per pod, 3 pods).
+		// nodeSelector forces pods onto the autoscaling NodePool so the
+		// cluster autoscaler must scale it up.
 		workloadMemRequest := *resource.NewQuantity(bytes/2, resource.BinarySI)
-		workload := newAutoscalingWorkload(3, workloadMemRequest)
+		workload := newAutoscalingWorkload(3, workloadMemRequest, autoscalingLabel)
 		err = guestClient.Create(ctx, workload)
 		Expect(err).NotTo(HaveOccurred(), "failed to create workload")
 
@@ -97,7 +103,9 @@ func AutoscalingScaleUpDownTest(getTestCtx internal.TestContextGetter) {
 	})
 }
 
-// AutoscalingBalancingTest tests that autoscaling balances workload across multiple NodePools
+// AutoscalingBalancingTest tests that autoscaling balances workload across multiple NodePools.
+// It configures the HostedCluster with the Random expander so the cluster autoscaler
+// distributes scale-up events across NodePools instead of favoring one.
 func AutoscalingBalancingTest(getTestCtx internal.TestContextGetter) {
 	It("should balance pods across multiple autoscaling NodePools", func() {
 		testCtx := getTestCtx()
@@ -112,18 +120,81 @@ func AutoscalingBalancingTest(getTestCtx internal.TestContextGetter) {
 		Expect(guestClient).NotTo(BeNil(), "hosted cluster client should be available")
 
 		ctx := testCtx.Context
+		cpNamespace := testCtx.ControlPlaneNamespace
+
+		// Configure autoscaler with Random expander for balanced distribution.
+		// The default least-waste expander favors a single NodePool.
+		balancingLabel := "e2e-balance-ignore"
+		originalHC := hc.DeepCopy()
+		hc.Spec.Autoscaling = hyperv1.ClusterAutoscaling{
+			Expanders: []hyperv1.ExpanderString{
+				hyperv1.RandomExpander,
+			},
+			BalancingIgnoredLabels: []string{
+				balancingLabel,
+			},
+			MaxFreeDifferenceRatioPercent: ptr.To[int32](70),
+		}
+		err := testCtx.MgmtClient.Patch(ctx, hc, crclient.MergeFrom(originalHC))
+		Expect(err).NotTo(HaveOccurred(), "failed to configure autoscaler on HostedCluster")
+		GinkgoWriter.Println("Configured HostedCluster autoscaling with Random expander")
+
+		DeferCleanup(func() {
+			latest := &hyperv1.HostedCluster{}
+			if err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(hc), latest); err != nil {
+				GinkgoWriter.Printf("Warning: failed to get HostedCluster for cleanup: %v\n", err)
+				return
+			}
+			patch := crclient.MergeFrom(latest.DeepCopy())
+			latest.Spec.Autoscaling = hyperv1.ClusterAutoscaling{}
+			if err := testCtx.MgmtClient.Patch(ctx, latest, patch); err != nil {
+				GinkgoWriter.Printf("Warning: failed to reset autoscaler config: %v\n", err)
+			}
+		})
+
+		// Wait for autoscaler deployment to pick up the new config
+		e2eutil.EventuallyObject(GinkgoTB(), ctx, "autoscaler deployment to have balancing config",
+			func(ctx context.Context) (*appsv1.Deployment, error) {
+				dep := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{
+					Namespace: cpNamespace, Name: "cluster-autoscaler",
+				}}
+				err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(dep), dep)
+				return dep, err
+			},
+			[]e2eutil.Predicate[*appsv1.Deployment]{func(dep *appsv1.Deployment) (bool, string, error) {
+				for _, arg := range dep.Spec.Template.Spec.Containers[0].Args {
+					if strings.Contains(arg, balancingLabel) {
+						return dep.Status.ReadyReplicas > 0, fmt.Sprintf("ready replicas: %d", dep.Status.ReadyReplicas), nil
+					}
+				}
+				return false, "balancing-ignore-label not found in autoscaler args", nil
+			}},
+			e2eutil.WithInterval(10*time.Second),
+			e2eutil.WithTimeout(5*time.Minute),
+		)
 
 		// Find the default NodePool to copy platform config
 		defaultNP := getDefaultNodePool(ctx, testCtx.MgmtClient, hc)
 		Expect(defaultNP).NotTo(BeNil(), "default NodePool should exist")
 
-		// Create two autoscaling NodePools
-		autoscalingNP1 := buildAutoscalingNodePool(defaultNP, 1, 3)
-		err := testCtx.MgmtClient.Create(ctx, autoscalingNP1)
+		// Create two autoscaling NodePools with distinct labels for the
+		// balancing-ignored-labels config and a shared label for the workload nodeSelector.
+		sharedLabel := map[string]string{"e2e-autoscaling-test": "balance"}
+		np1Labels := map[string]string{
+			"e2e-autoscaling-test": "balance",
+			balancingLabel:         "np1",
+		}
+		np2Labels := map[string]string{
+			"e2e-autoscaling-test": "balance",
+			balancingLabel:         "np2",
+		}
+
+		autoscalingNP1 := buildAutoscalingNodePool(defaultNP, 1, 3, np1Labels)
+		err = testCtx.MgmtClient.Create(ctx, autoscalingNP1)
 		Expect(err).NotTo(HaveOccurred(), "failed to create first autoscaling NodePool")
 		defer cleanupNodePool(ctx, testCtx.MgmtClient, autoscalingNP1)
 
-		autoscalingNP2 := buildAutoscalingNodePool(defaultNP, 1, 3)
+		autoscalingNP2 := buildAutoscalingNodePool(defaultNP, 1, 3, np2Labels)
 		err = testCtx.MgmtClient.Create(ctx, autoscalingNP2)
 		Expect(err).NotTo(HaveOccurred(), "failed to create second autoscaling NodePool")
 		defer cleanupNodePool(ctx, testCtx.MgmtClient, autoscalingNP2)
@@ -144,9 +215,9 @@ func AutoscalingBalancingTest(getTestCtx internal.TestContextGetter) {
 		bytes, ok := memCapacity.AsInt64()
 		Expect(ok).To(BeTrue(), "memory capacity should be convertible to int64")
 
-		// Create workload that requires 4 nodes (50% memory per pod, 4 pods)
+		// Create workload targeting the autoscaling NodePools via the shared label.
 		workloadMemRequest := *resource.NewQuantity(bytes/2, resource.BinarySI)
-		workload := newAutoscalingWorkload(4, workloadMemRequest)
+		workload := newAutoscalingWorkload(4, workloadMemRequest, sharedLabel)
 		err = guestClient.Create(ctx, workload)
 		Expect(err).NotTo(HaveOccurred(), "failed to create workload")
 		defer cleanupWorkload(ctx, guestClient, workload)
@@ -192,8 +263,9 @@ func getDefaultNodePool(ctx context.Context, client crclient.Client, hc *hyperv1
 	return nil
 }
 
-// buildAutoscalingNodePool creates a new NodePool with autoscaling enabled based on a template
-func buildAutoscalingNodePool(template *hyperv1.NodePool, min, max int32) *hyperv1.NodePool {
+// buildAutoscalingNodePool creates a new NodePool with autoscaling enabled based on a template.
+// nodeLabels are applied to the NodePool's nodes so workloads can target them with a nodeSelector.
+func buildAutoscalingNodePool(template *hyperv1.NodePool, min, max int32, nodeLabels map[string]string) *hyperv1.NodePool {
 	GinkgoHelper()
 
 	name := e2eutil.SimpleNameGenerator.GenerateName(template.Spec.ClusterName + "-auto-")
@@ -214,11 +286,22 @@ func buildAutoscalingNodePool(template *hyperv1.NodePool, min, max int32) *hyper
 		Max: max,
 	}
 
+	if len(nodeLabels) > 0 {
+		if np.Spec.NodeLabels == nil {
+			np.Spec.NodeLabels = make(map[string]string)
+		}
+		for k, v := range nodeLabels {
+			np.Spec.NodeLabels[k] = v
+		}
+	}
+
 	return np
 }
 
-// newAutoscalingWorkload creates a Job that spawns multiple pods for autoscaling tests
-func newAutoscalingWorkload(njobs int32, memoryRequest resource.Quantity) *batchv1.Job {
+// newAutoscalingWorkload creates a Job that spawns multiple pods for autoscaling tests.
+// nodeSelector constrains pods to land on specific NodePool nodes so the
+// cluster autoscaler is forced to scale the targeted NodePool.
+func newAutoscalingWorkload(njobs int32, memoryRequest resource.Quantity, nodeSelector map[string]string) *batchv1.Job {
 	GinkgoHelper()
 
 	name := e2eutil.SimpleNameGenerator.GenerateName("autoscaling-workload-")
@@ -257,6 +340,7 @@ func newAutoscalingWorkload(njobs int32, memoryRequest resource.Quantity) *batch
 							},
 						},
 					},
+					NodeSelector:  nodeSelector,
 					RestartPolicy: corev1.RestartPolicyNever,
 				},
 			},

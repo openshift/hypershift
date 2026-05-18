@@ -240,11 +240,11 @@ func EtcdKillAllMembersTest(getTestCtx internal.TestContextGetter) {
 	})
 }
 
-// EtcdSingleMemberCorruptionTest corrupts a random member's WAL file using
-// RunCommandInPod, deletes the pod, verifies the etcd recovery job becomes active,
-// and waits for StatefulSet convergence.
+// EtcdSingleMemberCorruptionTest destroys a random member's data directory using
+// RunCommandInPod, then waits for etcd to crash in-place so the recovery
+// controller detects the failing member and creates a recovery job.
 func EtcdSingleMemberCorruptionTest(getTestCtx internal.TestContextGetter) {
-	It("should recover after a single member's WAL is corrupted", func() {
+	It("should recover after a single member's data is corrupted", func() {
 		testCtx := getTestCtx()
 		ctx := testCtx.Context
 		cpNamespace := testCtx.ControlPlaneNamespace
@@ -252,15 +252,18 @@ func EtcdSingleMemberCorruptionTest(getTestCtx internal.TestContextGetter) {
 		etcdSts, etcdPods := getEtcdStsAndPods(ctx, testCtx.MgmtClient, cpNamespace)
 
 		pod := randomEtcdPods(etcdPods.Items, 1)[0]
-		command := `find /var/lib/data/member/wal -type f -name "*.wal" -print0 | shuf -z -n1 | xargs -0 rm`
+		// Remove the entire member directory so etcd cannot start.
+		// Deleting only a single WAL file is insufficient because etcd
+		// can recover from partial WAL loss using its snapshot database.
+		// Do NOT delete the pod afterward — let etcd crash and restart
+		// in-place so RestartCount increments on the same pod. The
+		// recovery controller requires RestartCount > 0 to detect a
+		// failing member; deleting the pod resets RestartCount to 0.
+		command := `rm -rf /var/lib/data/member`
 
-		GinkgoWriter.Printf("Deleting WAL file from etcd pod: %s\n", pod.Name)
-		cmdStdout, err := e2eutil.RunCommandInPod(ctx, testCtx.MgmtClient, "etcd", pod.Namespace, []string{"/bin/sh", "-c", command}, "etcd", 5*time.Minute)
-		Expect(err).NotTo(HaveOccurred(), "failed to delete WAL file from etcd pod %s", pod.Name)
-		Expect(cmdStdout).NotTo(ContainSubstring("No such file or directory"), "failed to delete WAL file from etcd pod %s", pod.Name)
-
-		GinkgoWriter.Printf("Deleting pod: %s\n", pod.Name)
-		Expect(testCtx.MgmtClient.Delete(ctx, &pod)).To(Succeed(), "failed to delete pod %s", pod.Name)
+		GinkgoWriter.Printf("Destroying data directory on etcd pod: %s\n", pod.Name)
+		_, err := e2eutil.RunCommandInPod(ctx, testCtx.MgmtClient, "etcd", pod.Namespace, []string{"/bin/sh", "-c", command}, "etcd", 5*time.Minute)
+		Expect(err).NotTo(HaveOccurred(), "failed to destroy data directory on etcd pod %s", pod.Name)
 
 		// Etcd recovery job should be created.
 		// We don't check if the job completed because it will be deleted after completion.
@@ -271,9 +274,8 @@ func EtcdSingleMemberCorruptionTest(getTestCtx internal.TestContextGetter) {
 				return recoveryJob, err
 			},
 			[]e2eutil.Predicate[*batchv1.Job]{func(job *batchv1.Job) (bool, string, error) {
-				want := int32(1)
 				got := job.Status.Active
-				return want != 0 && want == got, fmt.Sprintf("wanted status active to be %d, got %d", want, got), nil
+				return got == 1, fmt.Sprintf("wanted status active to be 1, got %d", got), nil
 			}},
 			e2eutil.WithInterval(5*time.Second),
 			e2eutil.WithTimeout(15*time.Minute),
@@ -336,9 +338,8 @@ func EtcdMissingMemberRecoveryTest(getTestCtx internal.TestContextGetter) {
 				return recoveryJob, err
 			},
 			[]e2eutil.Predicate[*batchv1.Job]{func(job *batchv1.Job) (bool, string, error) {
-				want := int32(1)
 				got := job.Status.Active
-				return want != 0 && want == got, fmt.Sprintf("wanted status active to be %d, got %d", want, got), nil
+				return got == 1, fmt.Sprintf("wanted status active to be 1, got %d", got), nil
 			}},
 			e2eutil.WithInterval(5*time.Second),
 			e2eutil.WithTimeout(15*time.Minute),

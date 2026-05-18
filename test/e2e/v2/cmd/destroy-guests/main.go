@@ -52,12 +52,9 @@ func main() {
 		hypershiftBin = "hypershift"
 	}
 
-	clusterNames := lifecycle.DeriveClusterNames(prowJobID, platform.Suffixes())
+	specs := platform.ClusterSpecs("", "")
 
-	log.Printf("Destroying %d clusters derived from PROW_JOB_ID=%s", len(clusterNames), prowJobID)
-	for _, name := range clusterNames {
-		log.Printf("  cluster: %s", name)
-	}
+	log.Printf("Destroying %d clusters derived from PROW_JOB_ID=%s", len(specs), prowJobID)
 
 	var (
 		mu     sync.Mutex
@@ -65,17 +62,18 @@ func main() {
 		wg     sync.WaitGroup
 	)
 
-	for _, name := range clusterNames {
+	for _, spec := range specs {
+		clusterName := lifecycle.DeriveClusterName(prowJobID, spec.Suffix)
 		wg.Add(1)
-		go func(clusterName string) {
+		go func() {
 			defer wg.Done()
-			if err := destroyCluster(hypershiftBin, clusterName, platform); err != nil {
-				log.Printf("WARNING: Failed to destroy cluster %s: %v", clusterName, err)
+			if err := destroyCluster(hypershiftBin, clusterName, spec.Variant, platform); err != nil {
+				log.Printf("WARNING: Failed to destroy cluster %s (%s): %v", clusterName, spec.Variant, err)
 				mu.Lock()
 				failed = true
 				mu.Unlock()
 			}
-		}(name)
+		}()
 	}
 
 	wg.Wait()
@@ -86,8 +84,8 @@ func main() {
 	log.Printf("All clusters destroyed successfully")
 }
 
-func destroyCluster(hypershiftBin, name string, platform lifecycle.PlatformConfig) error {
-	log.Printf("Destroying cluster: %s", name)
+func destroyCluster(hypershiftBin, name, variant string, platform lifecycle.PlatformConfig) error {
+	log.Printf("Destroying cluster %s (%s)", name, variant)
 
 	args := []string{
 		"destroy", "cluster", platform.Name(),
