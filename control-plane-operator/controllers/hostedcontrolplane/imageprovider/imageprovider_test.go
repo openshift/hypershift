@@ -1,6 +1,7 @@
 package imageprovider
 
 import (
+	"maps"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -291,5 +292,68 @@ func TestNewWithRegistryOverrides(t *testing.T) {
 			"acr.example.com/quay-cache/redhat-user-workloads/crt-redhat-acm-tenant/cpo:latest"))
 		g.Expect(provider.GetImage("etcd")).To(Equal(
 			"acr.example.com/gcr-cache/etcd-development/etcd:v3.5"))
+	})
+	t.Run("When applied, longest-prefix override wins over a broader one", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		releaseImage := newTestReleaseImage(map[string]string{
+			"kube-apiserver": "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:abc123",
+		})
+		overrides := map[string]string{
+			"quay.io":                       "broad.example.com",
+			"quay.io/openshift-release-dev": "narrow.example.com/mirror",
+		}
+
+		provider := NewWithRegistryOverrides(releaseImage, overrides)
+
+		g.Expect(provider.GetImage("kube-apiserver")).To(Equal(
+			"narrow.example.com/mirror/ocp-v4.0-art-dev@sha256:abc123"))
+	})
+
+	t.Run("When applied, overrides and release-image maps are not mutated", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		sourceImages := map[string]string{
+			"availability-prober": "quay.io/redhat-user-workloads/crt-redhat-acm-tenant/cpo:latest",
+			"kube-apiserver":      "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:abc123",
+		}
+		sourceImagesSnapshot := maps.Clone(sourceImages)
+		releaseImage := newTestReleaseImage(sourceImages)
+
+		overrides := map[string]string{
+			"quay.io": "mirror.example.com/quay-cache",
+		}
+		overridesSnapshot := maps.Clone(overrides)
+
+		_ = NewWithRegistryOverrides(releaseImage, overrides)
+
+		g.Expect(overrides).To(Equal(overridesSnapshot),
+			"NewWithRegistryOverrides must not mutate its overrides argument")
+		g.Expect(releaseImage.ComponentImages()).To(Equal(sourceImagesSnapshot),
+			"NewWithRegistryOverrides must not mutate the source release image's ComponentImages map")
+	})
+
+	t.Run("When applied twice, the second application is a no-op (idempotent)", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		overrides := map[string]string{
+			"quay.io": "mirror.example.com/quay-cache",
+		}
+		firstReleaseImage := newTestReleaseImage(map[string]string{
+			"availability-prober": "quay.io/redhat-user-workloads/crt-redhat-acm-tenant/cpo:latest",
+			"etcd":                "registry.access.redhat.com/rhel8/etcd:latest",
+		})
+
+		firstProvider := NewWithRegistryOverrides(firstReleaseImage, overrides)
+		firstImages := maps.Clone(firstProvider.ComponentImages())
+
+		secondReleaseImage := newTestReleaseImage(firstImages)
+		secondProvider := NewWithRegistryOverrides(secondReleaseImage, overrides)
+
+		g.Expect(secondProvider.ComponentImages()).To(Equal(firstImages),
+			"applying the same overrides a second time must not change images already rewritten")
 	})
 }
