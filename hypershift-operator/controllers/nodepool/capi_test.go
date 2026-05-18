@@ -27,6 +27,7 @@ import (
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
 	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	"sigs.k8s.io/cluster-api/util/conversion"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
@@ -3025,7 +3026,7 @@ func TestMachineDeploymentComplete(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Generation: 2,
 					Annotations: map[string]string{
-						"cluster.x-k8s.io/conversion-data": conversionData(2, 2, 2, 2),
+						conversion.DataAnnotation: conversionData(2, 2, 2, 2),
 					},
 				},
 				Spec:   capiv1.MachineDeploymentSpec{Replicas: &two},
@@ -3039,7 +3040,7 @@ func TestMachineDeploymentComplete(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Generation: 2,
 					Annotations: map[string]string{
-						"cluster.x-k8s.io/conversion-data": conversionData(2, 0, 2, 2),
+						conversion.DataAnnotation: conversionData(2, 0, 2, 2),
 					},
 				},
 				Spec:   capiv1.MachineDeploymentSpec{Replicas: &two},
@@ -3053,7 +3054,7 @@ func TestMachineDeploymentComplete(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Generation: 2,
 					Annotations: map[string]string{
-						"cluster.x-k8s.io/conversion-data": conversionData(3, 2, 2, 2),
+						conversion.DataAnnotation: conversionData(3, 2, 2, 2),
 					},
 				},
 				Spec:   capiv1.MachineDeploymentSpec{Replicas: &two},
@@ -3067,7 +3068,7 @@ func TestMachineDeploymentComplete(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Generation: 2,
 					Annotations: map[string]string{
-						"cluster.x-k8s.io/conversion-data": conversionData(2, 2, 2, 1),
+						conversion.DataAnnotation: conversionData(2, 2, 2, 1),
 					},
 				},
 				Spec:   capiv1.MachineDeploymentSpec{Replicas: &two},
@@ -3098,12 +3099,26 @@ func TestMachineDeploymentComplete(t *testing.T) {
 			expected: true,
 		},
 		{
+			name: "When conversion-data annotation is malformed it should fall back to v1beta1 result",
+			md: &capiv1.MachineDeployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Generation: 1,
+					Annotations: map[string]string{
+						conversion.DataAnnotation: "not-valid-json",
+					},
+				},
+				Spec:   capiv1.MachineDeploymentSpec{Replicas: &two},
+				Status: capiv1.MachineDeploymentStatus{Replicas: 2, UpdatedReplicas: 2, AvailableReplicas: 2, ObservedGeneration: 1},
+			},
+			expected: true,
+		},
+		{
 			name: "When v1beta1 replicas does not match spec it should return false",
 			md: &capiv1.MachineDeployment{
 				ObjectMeta: metav1.ObjectMeta{
 					Generation: 2,
 					Annotations: map[string]string{
-						"cluster.x-k8s.io/conversion-data": conversionData(3, 2, 2, 2),
+						conversion.DataAnnotation: conversionData(3, 2, 2, 2),
 					},
 				},
 				Spec:   capiv1.MachineDeploymentSpec{Replicas: &three},

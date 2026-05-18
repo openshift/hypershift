@@ -154,23 +154,15 @@ func SetupWebhookWithManager(mgr ctrl.Manager, imageMetaDataProvider *hyperutil.
 		return fmt.Errorf("unable to register hostedcontrolplane webhook: %w", err)
 	}
 
-	// Initialize CAPI v1beta1 conversion support.
-	// CAPI v1beta1 types need an apiVersionGetter to convert object references
-	// from v1beta2 (Hub) ContractVersionedObjectReference back to v1beta1 corev1.ObjectReference.
-	// The getter resolves GroupKind to the preferred API version string using the scheme.
-	// Since we use v1beta1 as the storage version for CAPI CRDs, we prefer v1beta1 when available.
+	// CAPI conversion between API versions requires resolving GroupKind to an API version string
+	// to convert between corev1.ObjectReference and ContractVersionedObjectReference.
+	// Without this, Cluster spec/status conversion fails and MachineDeployment controller
+	// sees an empty Cluster status, never creates MachineSets or Machines.
 	capiv1beta1.SetAPIVersionGetter(func(gk schema.GroupKind) (string, error) {
 		versions := mgr.GetScheme().VersionsForGroupKind(gk)
 		if len(versions) == 0 {
 			return "", fmt.Errorf("no versions registered for GroupKind %s", gk)
 		}
-		// Prefer v1beta1 if available since we use it as storage version for CAPI CRDs
-		for _, v := range versions {
-			if v.Version == "v1beta1" {
-				return gk.WithVersion(v.Version).GroupVersion().String(), nil
-			}
-		}
-		// Fall back to the first registered version
 		return gk.WithVersion(versions[0].Version).GroupVersion().String(), nil
 	})
 

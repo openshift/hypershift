@@ -43,6 +43,7 @@ import (
 	capiopenstackv1beta1 "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
 	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
 	"sigs.k8s.io/cluster-api/util"
+	"sigs.k8s.io/cluster-api/util/conversion"
 	"sigs.k8s.io/cluster-api/util/patch"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -113,12 +114,10 @@ type CPOCapabilities struct {
 	CreateDefaultAWSSecurityGroup bool
 }
 
-var (
-	// when using the conditions.SetSummary, with the WithStepCounter or WithStepCounterIf(true) options,
-	// the result Ready condition message is something like "1 of 2 completed". If we want to use this kind
-	// of messages for our own condition message, this is not useful. This regexp finds these condition messages
-	isSetupCounterCondMessage = regexp.MustCompile(`\d+ of \d+ completed`)
-)
+// when using the conditions.SetSummary, with the WithStepCounter or WithStepCounterIf(true) options,
+// the result Ready condition message is something like "1 of 2 completed". If we want to use this kind
+// of messages for our own condition message, this is not useful. This regexp finds these condition messages
+var isSetupCounterCondMessage = regexp.MustCompile(`\d+ of \d+ completed`)
 
 var capiRelatedNodePoolManagedResourcesToWatch = []client.Object{
 	&capiaws.AWSMachineTemplate{},
@@ -799,7 +798,7 @@ func MachineDeploymentComplete(deployment *capiv1.MachineDeployment) bool {
 // and verifies that the native v1beta2 status also indicates completion. If the annotation
 // is absent (e.g. CAPI < v1.11), returns true to preserve backwards compatibility.
 func machineDeploymentCompleteFromConversionData(deployment *capiv1.MachineDeployment) bool {
-	raw, ok := deployment.Annotations["cluster.x-k8s.io/conversion-data"]
+	raw, ok := deployment.Annotations[conversion.DataAnnotation]
 	if !ok {
 		return true
 	}
@@ -816,6 +815,7 @@ func machineDeploymentCompleteFromConversionData(deployment *capiv1.MachineDeplo
 		} `json:"status"`
 	}
 	if err := json.Unmarshal([]byte(raw), &v1beta2MD); err != nil {
+		ctrl.Log.WithName("nodepool").Error(err, "Failed to unmarshal conversion-data annotation, falling back to v1beta1 status")
 		return true
 	}
 
@@ -998,6 +998,7 @@ func (r *NodePoolReconciler) listSecrets(ctx context.Context, nodePool *hyperv1.
 	}
 	return filtered, nil
 }
+
 func isAutomatedMachineManagement(nodePool *hyperv1.NodePool) bool {
 	return !(isIBMUPI(nodePool) || isPlatformNone(nodePool))
 }
