@@ -1,9 +1,10 @@
 package imageprovider
 
 import (
-	"strings"
+	"maps"
 
 	"github.com/openshift/hypershift/support/releaseinfo"
+	"github.com/openshift/hypershift/support/util/registryoverride"
 )
 
 //go:generate ../../../../hack/tools/bin/mockgen -source=imageprovider.go -package=imageprovider -destination=imageprovider_mock.go
@@ -27,11 +28,7 @@ type SimpleReleaseImageProvider struct {
 }
 
 func New(releaseImage *releaseinfo.ReleaseImage) *SimpleReleaseImageProvider {
-	return &SimpleReleaseImageProvider{
-		componentsImages: releaseImage.ComponentImages(),
-		missingImages:    make([]string, 0),
-		ReleaseImage:     releaseImage,
-	}
+	return NewWithRegistryOverrides(releaseImage, nil)
 }
 
 func NewFromImages(componentsImages map[string]string) *SimpleReleaseImageProvider {
@@ -66,21 +63,13 @@ func (p *SimpleReleaseImageProvider) ComponentImages() map[string]string {
 // NewWithRegistryOverrides creates a SimpleReleaseImageProvider that applies
 // registry overrides to all component images. This ensures init containers
 // and other sub-resources created by CPO use the overridden image references.
+//
+// The returned provider owns a private copy of releaseImage.ComponentImages()
+// so callers can safely mutate it.
 func NewWithRegistryOverrides(releaseImage *releaseinfo.ReleaseImage, registryOverrides map[string]string) *SimpleReleaseImageProvider {
-	originalImages := releaseImage.ComponentImages()
-	images := make(map[string]string, len(originalImages))
-	for k, v := range originalImages {
-		images[k] = v
-	}
-	if len(registryOverrides) > 0 {
-		for key, image := range images {
-			for source, target := range registryOverrides {
-				if image == source || strings.HasPrefix(image, source+"/") {
-					images[key] = strings.Replace(image, source, target, 1)
-					break
-				}
-			}
-		}
+	images := maps.Clone(releaseImage.ComponentImages())
+	for key, image := range images {
+		images[key] = registryoverride.Replace(image, registryOverrides)
 	}
 	return &SimpleReleaseImageProvider{
 		componentsImages: images,
