@@ -73,7 +73,6 @@ jobs:
           - shard: other
             packages: ./karpenter-operator/... ./control-plane-pki-operator/... ./contrib/... ./ignition-server/... ./pkg/... ./dnsresolver/... ./product-cli/... ./client/... ./test/integration/... ./test/e2e/util/... ./test/util/... ./availability-prober/... ./konnectivity-socks5-proxy/... ./konnectivity-https-proxy/... ./kubernetes-default-proxy/... ./kubevirtexternalinfra/... ./etcd-defrag/... ./etcd-backup/... ./etcd-recovery/... ./etcd-upload/... ./kas-bootstrap/... ./sharedingress-config-generator/... ./sync-fg-configmap/... ./sync-global-pullsecret/... ./token-minter/...
     env:
-      GOCACHE: /tmp/go-build-cache
       GOMODCACHE: /tmp/go-mod-cache
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
