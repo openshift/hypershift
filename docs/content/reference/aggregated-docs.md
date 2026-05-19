@@ -9665,6 +9665,24 @@ This creates 7 managed identities with federated credentials for:
 - NodePool Management
 - Network Operator
 
+To also create a KMS identity for Azure Key Vault etcd encryption at rest, add the `--enable-kms` flag:
+
+```bash
+hypershift create iam azure \
+    --name $CLUSTER_NAME \
+    --infra-id $INFRA_ID \
+    --azure-creds $AZURE_CREDS \
+    --location $LOCATION \
+    --resource-group-name $PERSISTENT_RG_NAME \
+    --oidc-issuer-url $OIDC_ISSUER_URL \
+    --output-file workload-identities.json \
+    --enable-kms
+```
+
+!!! warning "KMS Key Vault Role Assignment"
+
+    If you use `--enable-kms`, you must **manually** assign the `Key Vault Crypto User` role to the KMS identity on your Key Vault. The `--auto-assign-roles` flag does not cover this because the Key Vault scope is user-provided. See Enabling KMS Encryption for the role assignment commands.
+
 For complete documentation on the IAM commands, see Create Azure IAM Resources Separately.
 
 ## Configure OIDC Issuer
@@ -11082,6 +11100,134 @@ ${HYPERSHIFT_BINARY_PATH}/hypershift create nodepool azure \
     - `--dns-zone-rg-name`: Resource group containing the DNS zone (os4-common)
     - `--diagnostics-storage-account-type Managed`: Use Azure managed storage for diagnostics
     - `--control-plane-operator-image`: Custom HyperShift operator image (optional)
+
+## Enabling KMS Encryption (etcd Encryption at Rest)
+
+Self-managed Azure HostedClusters support encrypting etcd data at rest using Azure Key Vault with the KMSv2 protocol. This requires:
+
+1. An Azure Key Vault with a cryptographic key
+2. A workload identity with `Key Vault Crypto User` role on the Key Vault
+
+### Prerequisites
+
+Ensure the `kms` workload identity is included in your `workload-identities.json` file. When using `hypershift create iam azure`, pass the `--enable-kms` flag to create the KMS identity (using the `INFRA_ID` set during Azure Workload Identity Setup):
+
+```bash
+hypershift create iam azure \
+    --name "$CLUSTER_NAME" \
+    --infra-id "$INFRA_ID" \
+    --azure-creds "$AZURE_CREDS" \
+    --location "$LOCATION" \
+    --resource-group-name "$PERSISTENT_RG_NAME" \
+    --oidc-issuer-url "$OIDC_ISSUER_URL" \
+    --output-file ./workload-identities.json \
+    --enable-kms
+```
+
+### Create a Key Vault and Key
+
+!!! note "RBAC Key Vault Permissions"
+
+    The Key Vault is created with `--enable-rbac-authorization`, which means the creator does **not** automatically get data plane access. You must have the `Key Vault Crypto Officer` role (or equivalent) on the Key Vault to create and manage keys. If the key creation step fails with a `Forbidden` error, assign yourself the role:
+
+    ```bash
+    MY_OBJECT_ID=$(az ad signed-in-user show --query id -o tsv)
+    KV_ID=$(az keyvault show --name "${KV_NAME}" --query id -o tsv)
+    az role assignment create \
+        --assignee-object-id "${MY_OBJECT_ID}" \
+        --assignee-principal-type User \
+        --role "Key Vault Crypto Officer" \
+        --scope "${KV_ID}"
+    ```
+
+```bash
+# Create Key Vault
+KV_NAME="${PREFIX}-kv"
+az keyvault create \
+    --name "${KV_NAME}" \
+    --resource-group "${MANAGED_RG_NAME}" \
+    --location "${LOCATION}" \
+    --enable-rbac-authorization
+
+# Create encryption key
+KEY_NAME="${PREFIX}-etcd-key"
+az keyvault key create \
+    --vault-name "${KV_NAME}" \
+    --name "${KEY_NAME}" \
+    --kty RSA \
+    --size 2048
+
+# Get the key ID (used as --encryption-key-id)
+ENCRYPTION_KEY_ID=$(az keyvault key show \
+    --vault-name "${KV_NAME}" \
+    --name "${KEY_NAME}" \
+    --query key.kid -o tsv)
+```
+
+### Assign Key Vault Crypto User Role to the KMS Identity
+
+!!! warning "Manual Step Required"
+
+    The `--auto-assign-roles` / `--assign-service-principal-roles` flag does **not** assign the Key Vault role because the Key Vault scope is user-provided and not known to the CLI at role-assignment time. You must perform this role assignment manually.
+
+Grant the KMS workload identity the `Key Vault Crypto User` role on your Key Vault so it can encrypt and decrypt etcd data:
+
+```bash
+# Get the principal ID of the KMS managed identity
+# The identity name follows the pattern: {clusterName}-kms-{infraID}
+# List identities in the resource group to find the exact name:
+#   az identity list --resource-group "${PERSISTENT_RG_NAME}" --query "[?contains(name, 'kms')]" -o table
+KMS_MI_NAME=$(az identity list \
+    --resource-group "${PERSISTENT_RG_NAME}" \
+    --query "[?contains(name, '${CLUSTER_NAME}-kms')].name" -o tsv)
+KMS_PRINCIPAL_ID=$(az identity show \
+    --name "${KMS_MI_NAME}" \
+    --resource-group "${PERSISTENT_RG_NAME}" \
+    --query principalId -o tsv)
+
+# Get the Key Vault resource ID
+KV_ID=$(az keyvault show --name "${KV_NAME}" --query id -o tsv)
+
+# Assign Key Vault Crypto User role to the KMS identity
+az role assignment create \
+    --assignee-object-id "${KMS_PRINCIPAL_ID}" \
+    --assignee-principal-type ServicePrincipal \
+    --role "Key Vault Crypto User" \
+    --scope "${KV_ID}"
+```
+
+### Create the Cluster with KMS
+
+Add the `--encryption-key-id` flag to your cluster creation command:
+
+```bash
+${HYPERSHIFT_BINARY_PATH}/hypershift create cluster azure \
+    --name "$CLUSTER_NAME" \
+    --namespace "$CLUSTER_NAMESPACE" \
+    --azure-creds $AZURE_CREDS \
+    --location ${LOCATION} \
+    --node-pool-replicas 2 \
+    --base-domain $PARENT_DNS_ZONE \
+    --pull-secret $PULL_SECRET \
+    --generate-ssh \
+    --release-image ${RELEASE_IMAGE} \
+    --external-dns-domain ${DNS_ZONE_NAME} \
+    --resource-group-name "${MANAGED_RG_NAME}" \
+    --vnet-id "${GetVnetID}" \
+    --subnet-id "${GetSubnetID}" \
+    --network-security-group-id "${GetNsgID}" \
+    --sa-token-issuer-private-key-path "${SA_TOKEN_ISSUER_PRIVATE_KEY_PATH}" \
+    --oidc-issuer-url "${OIDC_ISSUER_URL}" \
+    --dns-zone-rg-name ${PERSISTENT_RG_NAME} \
+    --assign-service-principal-roles \
+    --workload-identities-file ./workload-identities.json \
+    --encryption-key-id "${ENCRYPTION_KEY_ID}" \
+    --diagnostics-storage-account-type Managed
+```
+
+!!! note "KMS Authentication"
+
+    For self-managed Azure, the KMS provider authenticates using the `kms` workload identity specified in your `workload-identities.json`. This is different from managed Azure (ARO HCP), which uses managed identities with CSI secret store volumes. The `--kms-credentials-secret-name` flag is not needed for self-managed clusters.
 
 ## Verification
 
@@ -37388,7 +37534,7 @@ secrets can continue to be decrypted until they are all re-encrypted with the ac
 </tr>
 <tr>
 <td>
-<code>kms</code></br>
+<code>kms,omitzero</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.ManagedIdentity">
 ManagedIdentity
@@ -37396,7 +37542,27 @@ ManagedIdentity
 </em>
 </td>
 <td>
-<p>kms is a pre-existing managed identity used to authenticate with Azure KMS.</p>
+<em>(Optional)</em>
+<p>kms is a pre-existing managed identity used to authenticate with Azure KMS.
+This is used for managed Azure (ARO HCP) clusters.
+kms and workloadIdentity are mutually exclusive.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>workloadIdentity,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.WorkloadIdentity">
+WorkloadIdentity
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>workloadIdentity contains the workload identity used to authenticate
+with Azure Key Vault for KMS encryption via a token-minter sidecar.
+This identity must have &ldquo;Key Vault Crypto User&rdquo; role on the Key Vault.
+kms and workloadIdentity are mutually exclusive.</p>
 </td>
 </tr>
 <tr>
@@ -50488,6 +50654,7 @@ string
 ###WorkloadIdentity { #hypershift.openshift.io/v1beta1.WorkloadIdentity }
 <p>
 (<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzureKMSSpec">AzureKMSSpec</a>, 
 <a href="#hypershift.openshift.io/v1beta1.AzureWorkloadIdentities">AzureWorkloadIdentities</a>)
 </p>
 <p>

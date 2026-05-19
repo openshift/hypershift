@@ -66,6 +66,10 @@ const (
 	HypershiftImageTag  = "latest"
 )
 
+// CloudTokenMountPath is the mount path for federated workload identity tokens
+// used by cloud provider components in self-managed Azure clusters.
+const CloudTokenMountPath = "/var/run/secrets/openshift/serviceaccount"
+
 // Azure Default Values
 const (
 	// DefaultAzureLocation is the default Azure region for resource creation

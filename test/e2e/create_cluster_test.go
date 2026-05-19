@@ -377,14 +377,15 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 		if globalOpts.ConfigurableClusterOptions.AzureEncryptionKeyID == "" {
 			t.Fatal("azure encryption key id is required")
 		}
-		if globalOpts.ConfigurableClusterOptions.AzureKMSUserAssignedCredsSecretName == "" {
-			t.Fatal("azure kms user assigned creds secret name is required")
+		// KMS user assigned creds secret name is only required for managed Azure (ARO HCP)
+		if azureutil.IsAroHCP() && globalOpts.ConfigurableClusterOptions.AzureKMSUserAssignedCredsSecretName == "" {
+			t.Fatal("azure kms user assigned creds secret name is required for managed Azure")
 		}
 
 		kmsUserAssignedCredsSecretName = globalOpts.ConfigurableClusterOptions.AzureKMSUserAssignedCredsSecretName
 		kmsKeyInfo, err = azureutil.GetAzureEncryptionKeyInfo(globalOpts.ConfigurableClusterOptions.AzureEncryptionKeyID)
 		if err != nil {
-			t.Fatal("failed to get azure encryption key info: %w", err)
+			t.Fatalf("failed to get azure encryption key info: %v", err)
 		}
 	}
 
@@ -404,8 +405,10 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 			g.Expect(hostedCluster.Spec.SecretEncryption.KMS.Azure.ActiveKey.KeyVaultName).To(Equal(kmsKeyInfo.KeyVaultName))
 			g.Expect(hostedCluster.Spec.SecretEncryption.KMS.Azure.ActiveKey.KeyName).To(Equal(kmsKeyInfo.KeyName))
 			g.Expect(hostedCluster.Spec.SecretEncryption.KMS.Azure.ActiveKey.KeyVersion).To(Equal(kmsKeyInfo.KeyVersion))
-			g.Expect(hostedCluster.Spec.SecretEncryption.KMS.Azure.KMS.CredentialsSecretName).To(Equal(kmsUserAssignedCredsSecretName))
-			g.Expect(hostedCluster.Spec.SecretEncryption.KMS.Azure.KMS.ObjectEncoding).To(Equal(hyperv1.ObjectEncodingFormat("utf-8")))
+			if azureutil.IsAroHCP() {
+				g.Expect(hostedCluster.Spec.SecretEncryption.KMS.Azure.KMS.CredentialsSecretName).To(Equal(kmsUserAssignedCredsSecretName))
+				g.Expect(hostedCluster.Spec.SecretEncryption.KMS.Azure.KMS.ObjectEncoding).To(Equal(hyperv1.ObjectEncodingFormat("utf-8")))
+			}
 		}
 
 		guestClient := e2eutil.WaitForGuestClient(t, testContext, mgtClient, hostedCluster)

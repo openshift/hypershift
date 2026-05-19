@@ -6501,8 +6501,10 @@ spec:
                             - ""
                             type: string
                           kms:
-                            description: kms is a pre-existing managed identity used
-                              to authenticate with Azure KMS.
+                            description: |-
+                              kms is a pre-existing managed identity used to authenticate with Azure KMS.
+                              This is used for managed Azure (ARO HCP) clusters.
+                              kms and workloadIdentity are mutually exclusive.
                             properties:
                               clientID:
                                 description: |-
@@ -6551,15 +6553,42 @@ spec:
                             - credentialsSecretName
                             - objectEncoding
                             type: object
+                          workloadIdentity:
+                            description: |-
+                              workloadIdentity contains the workload identity used to authenticate
+                              with Azure Key Vault for KMS encryption via a token-minter sidecar.
+                              This identity must have "Key Vault Crypto User" role on the Key Vault.
+                              kms and workloadIdentity are mutually exclusive.
+                            properties:
+                              clientID:
+                                description: clientID is client ID of a federated
+                                  managed identity used in workload identity authentication
+                                maxLength: 36
+                                minLength: 36
+                                pattern: ^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
+                                type: string
+                                x-kubernetes-validations:
+                                - message: the client ID of a managed identity must
+                                    be a valid UUID. It should be 5 groups of hyphen
+                                    separated hexadecimal characters in the form 8-4-4-4-12.
+                                  rule: self.matches('^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$')
+                            required:
+                            - clientID
+                            type: object
                         required:
                         - activeKey
-                        - kms
                         type: object
                         x-kubernetes-validations:
                         - message: backupKey.keyVaultName must match activeKey.keyVaultName;
                             both keys must reside in the same Key Vault
                           rule: '!has(self.backupKey) || self.backupKey.keyVaultName
                             == self.activeKey.keyVaultName'
+                        - message: kms and workloadIdentity are mutually exclusive
+                          rule: '!(has(self.kms) && has(self.workloadIdentity))'
+                        - message: one of kms or workloadIdentity must be set
+                          rule: has(self.kms) || has(self.workloadIdentity)
+                        - message: the KMS authentication mode is immutable once set
+                          rule: has(self.kms) == has(oldSelf.kms)
                       ibmcloud:
                         description: ibmcloud defines metadata for the IBM Cloud KMS
                           encryption strategy
