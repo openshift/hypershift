@@ -2934,7 +2934,7 @@ func (r *HostedControlPlaneReconciler) validateAWSKMSConfig(ctx context.Context,
 		return
 	}
 
-	sa := manifests.KASContainerAWSKMSProviderServiceAccount()
+	sa := manifests.KASContainerKMSProviderServiceAccount()
 	token, err := k8sutil.CreateTokenForServiceAccount(ctx, sa, k8sutil.ServiceAccountClient(guestClient, sa.Namespace))
 	if err != nil {
 		// service account might not be created in the guest cluster or KAS is not operational.
@@ -3052,6 +3052,20 @@ func (r *HostedControlPlaneReconciler) validateAzureKMSConfig(ctx context.Contex
 			}
 			log.Info("Reusing existing UserAssignedManagedIdentity credentials for KMS to authenticate to Azure")
 		}
+	} else if hyperazureutil.IsSelfManagedAzure(hcp.Spec.Platform.Type) {
+		// For self-managed Azure, the KMS provider uses workload identity with a federated token
+		// minted inside the KAS pod. The CPO cannot validate Key Vault access directly because
+		// it does not have the KMS workload identity credentials. Key Vault access is validated
+		// at runtime by the azure-kms-provider container.
+		condition := metav1.Condition{
+			Type:               string(hyperv1.ValidAzureKMSConfig),
+			ObservedGeneration: hcp.Generation,
+			Status:             metav1.ConditionTrue,
+			Message:            "KMS configuration accepted; Key Vault access is validated at runtime by the KMS provider",
+			Reason:             hyperv1.AsExpectedReason,
+		}
+		meta.SetStatusCondition(&hcp.Status.Conditions, condition)
+		return
 	}
 
 	azureKeyVaultDNSSuffix, err := hyperazureutil.GetKeyVaultDNSSuffixFromCloudType(hcp.Spec.Platform.Azure.Cloud)

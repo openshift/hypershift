@@ -810,6 +810,9 @@ const (
 // AzureKMSSpec defines metadata about the configuration of the Azure KMS Secret Encryption provider using Azure key vault
 //
 // +kubebuilder:validation:XValidation:rule="!has(self.backupKey) || self.backupKey.keyVaultName == self.activeKey.keyVaultName",message="backupKey.keyVaultName must match activeKey.keyVaultName; both keys must reside in the same Key Vault"
+// +kubebuilder:validation:XValidation:rule="!(has(self.kms) && has(self.workloadIdentity))",message="kms and workloadIdentity are mutually exclusive"
+// +kubebuilder:validation:XValidation:rule="has(self.kms) || has(self.workloadIdentity)",message="one of kms or workloadIdentity must be set"
+// +kubebuilder:validation:XValidation:rule="has(self.kms) == has(oldSelf.kms)",message="the KMS authentication mode is immutable once set"
 type AzureKMSSpec struct {
 	// activeKey defines the active key used to encrypt new secrets
 	//
@@ -821,9 +824,19 @@ type AzureKMSSpec struct {
 	BackupKey *AzureKMSKey `json:"backupKey,omitempty"`
 
 	// kms is a pre-existing managed identity used to authenticate with Azure KMS.
+	// This is used for managed Azure (ARO HCP) clusters.
+	// kms and workloadIdentity are mutually exclusive.
 	//
-	// +required
-	KMS ManagedIdentity `json:"kms"`
+	// +optional
+	KMS ManagedIdentity `json:"kms,omitzero"`
+
+	// workloadIdentity contains the workload identity used to authenticate
+	// with Azure Key Vault for KMS encryption via a token-minter sidecar.
+	// This identity must have "Key Vault Crypto User" role on the Key Vault.
+	// kms and workloadIdentity are mutually exclusive.
+	//
+	// +optional
+	WorkloadIdentity WorkloadIdentity `json:"workloadIdentity,omitzero"`
 
 	// keyVaultAccess specifies how the Key Vault should be accessed.
 	// When set to "Private", the control plane routes Key Vault traffic through

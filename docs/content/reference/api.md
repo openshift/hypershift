@@ -3419,7 +3419,7 @@ secrets can continue to be decrypted until they are all re-encrypted with the ac
 </tr>
 <tr>
 <td>
-<code>kms</code></br>
+<code>kms,omitzero</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.ManagedIdentity">
 ManagedIdentity
@@ -3427,7 +3427,27 @@ ManagedIdentity
 </em>
 </td>
 <td>
-<p>kms is a pre-existing managed identity used to authenticate with Azure KMS.</p>
+<em>(Optional)</em>
+<p>kms is a pre-existing managed identity used to authenticate with Azure KMS.
+This is used for managed Azure (ARO HCP) clusters.
+kms and workloadIdentity are mutually exclusive.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>workloadIdentity,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.WorkloadIdentity">
+WorkloadIdentity
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>workloadIdentity contains the workload identity used to authenticate
+with Azure Key Vault for KMS encryption via a token-minter sidecar.
+This identity must have &ldquo;Key Vault Crypto User&rdquo; role on the Key Vault.
+kms and workloadIdentity are mutually exclusive.</p>
 </td>
 </tr>
 <tr>
@@ -16519,6 +16539,7 @@ string
 ###WorkloadIdentity { #hypershift.openshift.io/v1beta1.WorkloadIdentity }
 <p>
 (<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzureKMSSpec">AzureKMSSpec</a>, 
 <a href="#hypershift.openshift.io/v1beta1.AzureWorkloadIdentities">AzureWorkloadIdentities</a>)
 </p>
 <p>

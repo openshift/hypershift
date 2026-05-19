@@ -383,21 +383,34 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 	}
 
 	if o.encryptionKey != nil {
+		azureKMSSpec := &hyperv1.AzureKMSSpec{
+			ActiveKey: hyperv1.AzureKMSKey{
+				KeyVaultName: o.encryptionKey.KeyVaultName,
+				KeyName:      o.encryptionKey.KeyName,
+				KeyVersion:   o.encryptionKey.KeyVersion,
+			},
+		}
+
+		if o.infra.WorkloadIdentities != nil {
+			if o.infra.KMSClientID == "" {
+				return fmt.Errorf("self-managed Azure KMS requires a KMS workload identity; re-run 'hypershift create iam azure' with --enable-kms")
+			}
+			azureKMSSpec.WorkloadIdentity = hyperv1.WorkloadIdentity{
+				ClientID: hyperv1.AzureClientID(o.infra.KMSClientID),
+			}
+		} else {
+			// Managed Azure (ARO HCP) with managed identities
+			azureKMSSpec.KMS = hyperv1.ManagedIdentity{
+				CredentialsSecretName: o.KMSUserAssignedCredsSecretName,
+				ObjectEncoding:        ObjectEncoding,
+			}
+		}
+
 		cluster.Spec.SecretEncryption = &hyperv1.SecretEncryptionSpec{
 			Type: hyperv1.KMS,
 			KMS: &hyperv1.KMSSpec{
 				Provider: hyperv1.AZURE,
-				Azure: &hyperv1.AzureKMSSpec{
-					ActiveKey: hyperv1.AzureKMSKey{
-						KeyVaultName: o.encryptionKey.KeyVaultName,
-						KeyName:      o.encryptionKey.KeyName,
-						KeyVersion:   o.encryptionKey.KeyVersion,
-					},
-					KMS: hyperv1.ManagedIdentity{
-						CredentialsSecretName: o.KMSUserAssignedCredsSecretName,
-						ObjectEncoding:        ObjectEncoding,
-					},
-				},
+				Azure:    azureKMSSpec,
 			},
 		}
 	}

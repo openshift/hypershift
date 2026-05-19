@@ -41,6 +41,7 @@ const (
 	EndpointAccessPrivateAdditionalAllowedSubscriptionsDescription = "Additional Azure subscription IDs permitted to create Private Endpoints (the guest cluster's own subscription is always automatically allowed)."
 
 	// Encryption
+	EnableKMSDescription           = "Create a KMS workload identity for Azure Key Vault KMS encryption. Use this when the cluster will be configured with --encryption-key-id."
 	EncryptionKeyIDDescription     = "Azure Key Vault key identifier used to encrypt etcd data via KMSv2 (format: https://<vault>.vault.azure.net/keys/<key>/<version>)."
 	EncryptionAtHostDescription    = "Enable host-based encryption for VM disks and temp disks. Valid values: Enabled, Disabled."
 	DiskEncryptionSetIDDescription = "Full resource ID of an Azure Disk Encryption Set used to encrypt NodePool OS disks with customer-managed keys."

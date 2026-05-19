@@ -104,6 +104,7 @@ func TestIsValidReleaseVersion(t *testing.T) {
 		minVersionSupported    *semver.Version
 		networkType            hyperv1.NetworkType
 		expectError            bool
+		expectedMessage        string
 		platform               hyperv1.PlatformType
 	}{
 		{
@@ -125,6 +126,7 @@ func TestIsValidReleaseVersion(t *testing.T) {
 			latestVersionSupported: v("4.22.0"),
 			minVersionSupported:    v("4.14.0"),
 			expectError:            true,
+			expectedMessage:        "\"4.22\"",
 			platform:               hyperv1.NonePlatform,
 		},
 		{
@@ -162,6 +164,7 @@ func TestIsValidReleaseVersion(t *testing.T) {
 			latestVersionSupported: v("4.12.0"),
 			minVersionSupported:    v("4.10.0"),
 			expectError:            true,
+			expectedMessage:        "\"4.10\"",
 			platform:               hyperv1.NonePlatform,
 		},
 		{
@@ -294,6 +297,9 @@ func TestIsValidReleaseVersion(t *testing.T) {
 			err := IsValidReleaseVersion(test.nextVersion, test.currentVersion, test.latestVersionSupported, test.minVersionSupported, test.networkType, test.platform)
 			if test.expectError {
 				g.Expect(err).To(HaveOccurred())
+				if test.expectedMessage != "" {
+					g.Expect(err.Error()).To(ContainSubstring(test.expectedMessage))
+				}
 				return
 			}
 			g.Expect(err).ToNot(HaveOccurred())

@@ -274,6 +274,13 @@ func (o *CreateInfraOptions) handleIdentitiesAndRBAC(ctx context.Context, rbacMg
 		if err := json.Unmarshal(workloadIdentitiesRaw, &result.WorkloadIdentities); err != nil {
 			return fmt.Errorf("failed to unmarshal --workload-identities-file: %w", err)
 		}
+		var iamExtra struct {
+			KMSClientID string `json:"kmsClientID,omitempty"`
+		}
+		if err := json.Unmarshal(workloadIdentitiesRaw, &iamExtra); err == nil {
+			result.KMSClientID = iamExtra.KMSClientID
+		}
+
 		if o.AssignServicePrincipalRoles {
 			if err := rbacMgr.AssignWorkloadIdentities(ctx, o, result.WorkloadIdentities, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName); err != nil {
 				return err

@@ -1087,6 +1087,9 @@ func TestControlPlaneComponents(t *testing.T) {
 								KeyName:      "test-key",
 								KeyVersion:   "1",
 							},
+							KMS: hyperv1.ManagedIdentity{
+								CredentialsSecretName: "test-kms-creds",
+							},
 							KeyVaultAccess: hyperv1.AzureKeyVaultPrivate,
 						},
 					},
