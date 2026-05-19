@@ -489,6 +489,7 @@ type HyperShiftOperatorDeployment struct {
 	EnableCIDebugOutput                     bool
 	EnableWebhook                           bool
 	EnableValidatingWebhook                 bool
+	EnableWebhookCertReconciler             bool
 	PrivatePlatform                         string
 	AWSPrivateSecret                        *corev1.Secret
 	AWSPrivateSecretKey                     string
@@ -864,6 +865,9 @@ func (o HyperShiftOperatorDeployment) addWebhookResources(args *[]string, volume
 	*args = append(*args, "--cert-dir=/var/run/secrets/serving-cert")
 	if o.EnableValidatingWebhook {
 		*args = append(*args, "--enable-validating-webhook=true")
+	}
+	if !o.EnableWebhookCertReconciler {
+		*args = append(*args, "--enable-webhook-cert-reconciler=false")
 	}
 }
 

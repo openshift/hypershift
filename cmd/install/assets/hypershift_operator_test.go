@@ -1004,12 +1004,14 @@ func TestBuildEnvVars(t *testing.T) {
 
 func TestAddWebhookResources(t *testing.T) {
 	tests := []struct {
-		name                    string
-		enableWebhook           bool
-		enableValidatingWebhook bool
-		expectArgs              []string
-		expectVolumeMountCount  int
-		expectVolumeCount       int
+		name                        string
+		enableWebhook               bool
+		enableValidatingWebhook     bool
+		enableWebhookCertReconciler bool
+		expectArgs                  []string
+		notExpectArgs               []string
+		expectVolumeMountCount      int
+		expectVolumeCount           int
 	}{
 		{
 			name:                   "When webhook is disabled, it should not add any resources",
@@ -1018,19 +1020,31 @@ func TestAddWebhookResources(t *testing.T) {
 			expectVolumeCount:      0,
 		},
 		{
-			name:                   "When webhook is enabled without validating webhook, it should add serving-cert resources and cert-dir arg",
-			enableWebhook:          true,
-			expectArgs:             []string{"--cert-dir=/var/run/secrets/serving-cert"},
-			expectVolumeMountCount: 1,
-			expectVolumeCount:      1,
+			name:                        "When webhook is enabled without validating webhook, it should add serving-cert resources and cert-dir arg",
+			enableWebhook:               true,
+			enableWebhookCertReconciler: true,
+			expectArgs:                  []string{"--cert-dir=/var/run/secrets/serving-cert"},
+			notExpectArgs:               []string{"--enable-webhook-cert-reconciler=false"},
+			expectVolumeMountCount:      1,
+			expectVolumeCount:           1,
 		},
 		{
-			name:                    "When webhook and validating webhook are both enabled, it should add cert-dir and enable-validating-webhook args",
-			enableWebhook:           true,
-			enableValidatingWebhook: true,
-			expectArgs:              []string{"--cert-dir=/var/run/secrets/serving-cert", "--enable-validating-webhook=true"},
-			expectVolumeMountCount:  1,
-			expectVolumeCount:       1,
+			name:                        "When webhook and validating webhook are both enabled, it should add cert-dir and enable-validating-webhook args",
+			enableWebhook:               true,
+			enableValidatingWebhook:     true,
+			enableWebhookCertReconciler: true,
+			expectArgs:                  []string{"--cert-dir=/var/run/secrets/serving-cert", "--enable-validating-webhook=true"},
+			notExpectArgs:               []string{"--enable-webhook-cert-reconciler=false"},
+			expectVolumeMountCount:      1,
+			expectVolumeCount:           1,
+		},
+		{
+			name:                        "When webhook cert reconciler is disabled, it should add the flag to args",
+			enableWebhook:               true,
+			enableWebhookCertReconciler: false,
+			expectArgs:                  []string{"--cert-dir=/var/run/secrets/serving-cert", "--enable-webhook-cert-reconciler=false"},
+			expectVolumeMountCount:      1,
+			expectVolumeCount:           1,
 		},
 	}
 
@@ -1038,8 +1052,9 @@ func TestAddWebhookResources(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
 			d := HyperShiftOperatorDeployment{
-				EnableWebhook:           tc.enableWebhook,
-				EnableValidatingWebhook: tc.enableValidatingWebhook,
+				EnableWebhook:               tc.enableWebhook,
+				EnableValidatingWebhook:     tc.enableValidatingWebhook,
+				EnableWebhookCertReconciler: tc.enableWebhookCertReconciler,
 			}
 			var args []string
 			var volumeMounts []corev1.VolumeMount
@@ -1051,6 +1066,9 @@ func TestAddWebhookResources(t *testing.T) {
 			g.Expect(volumes).To(HaveLen(tc.expectVolumeCount))
 			for _, expected := range tc.expectArgs {
 				g.Expect(args).To(ContainElement(expected))
+			}
+			for _, notExpected := range tc.notExpectArgs {
+				g.Expect(args).NotTo(ContainElement(notExpected))
 			}
 		})
 	}

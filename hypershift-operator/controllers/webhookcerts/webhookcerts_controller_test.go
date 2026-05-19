@@ -36,9 +36,19 @@ func newReconciler(cl client.Client) *WebhookCertReconciler {
 		Client:      cl,
 		Namespace:   "hypershift",
 		ServiceName: "operator",
+		ManageCerts: true,
 		createOrUpdate: func(ctx context.Context, c client.Client, obj client.Object, f controllerutil.MutateFn) (controllerutil.OperationResult, error) {
 			return controllerutil.CreateOrUpdate(ctx, c, obj, f)
 		},
+	}
+}
+
+func newCABundleOnlyReconciler(cl client.Client) *WebhookCertReconciler {
+	return &WebhookCertReconciler{
+		Client:      cl,
+		Namespace:   "hypershift",
+		ServiceName: "operator",
+		ManageCerts: false,
 	}
 }
 
@@ -419,6 +429,108 @@ func TestWebhookDNSNames(t *testing.T) {
 			"operator.hypershift.svc",
 			"operator.hypershift.svc.cluster.local",
 		))
+	})
+}
+
+func TestReconcileCABundleOnly(t *testing.T) {
+	t.Run("When serving cert has ca.crt it should patch webhook configurations", func(t *testing.T) {
+		g := NewWithT(t)
+
+		servingSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      ServingCertSecretName,
+				Namespace: "hypershift",
+			},
+			Type: corev1.SecretTypeTLS,
+			Data: map[string][]byte{
+				corev1.TLSCertKey:       []byte("cert-data"),
+				corev1.TLSPrivateKeyKey: []byte("key-data"),
+				certs.CASignerCertMapKey: []byte("external-ca-bundle"),
+			},
+		}
+		mwc := &admissionregistrationv1.MutatingWebhookConfiguration{
+			ObjectMeta: metav1.ObjectMeta{Name: webhookConfigName},
+			Webhooks: []admissionregistrationv1.MutatingWebhook{
+				{
+					Name:                    "defaulting.hypershift.openshift.io",
+					ClientConfig:            admissionregistrationv1.WebhookClientConfig{CABundle: []byte("old")},
+					SideEffects:             sideEffectNone(),
+					AdmissionReviewVersions: []string{"v1"},
+				},
+			},
+		}
+
+		cl := fake.NewClientBuilder().WithScheme(newScheme(t)).WithObjects(servingSecret, mwc).Build()
+		r := newCABundleOnlyReconciler(cl)
+
+		result, err := r.Reconcile(t.Context(), ctrl.Request{NamespacedName: client.ObjectKey{Name: ServingCertSecretName, Namespace: "hypershift"}})
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(result.RequeueAfter).To(Equal(12 * time.Hour))
+
+		updatedMWC := &admissionregistrationv1.MutatingWebhookConfiguration{}
+		g.Expect(cl.Get(t.Context(), client.ObjectKey{Name: webhookConfigName}, updatedMWC)).To(Succeed())
+		g.Expect(updatedMWC.Webhooks[0].ClientConfig.CABundle).To(Equal([]byte("external-ca-bundle")))
+	})
+
+	t.Run("When serving cert is missing it should return an error", func(t *testing.T) {
+		g := NewWithT(t)
+
+		cl := fake.NewClientBuilder().WithScheme(newScheme(t)).Build()
+		r := newCABundleOnlyReconciler(cl)
+
+		_, err := r.Reconcile(t.Context(), ctrl.Request{NamespacedName: client.ObjectKey{Name: ServingCertSecretName, Namespace: "hypershift"}})
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("failed to get serving cert secret"))
+	})
+
+	t.Run("When serving cert has no ca.crt key it should return an error", func(t *testing.T) {
+		g := NewWithT(t)
+
+		servingSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      ServingCertSecretName,
+				Namespace: "hypershift",
+			},
+			Type: corev1.SecretTypeTLS,
+			Data: map[string][]byte{
+				corev1.TLSCertKey:       []byte("cert-data"),
+				corev1.TLSPrivateKeyKey: []byte("key-data"),
+			},
+		}
+
+		cl := fake.NewClientBuilder().WithScheme(newScheme(t)).WithObjects(servingSecret).Build()
+		r := newCABundleOnlyReconciler(cl)
+
+		_, err := r.Reconcile(t.Context(), ctrl.Request{NamespacedName: client.ObjectKey{Name: ServingCertSecretName, Namespace: "hypershift"}})
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("does not contain a ca.crt key"))
+	})
+
+	t.Run("When serving cert has ca.crt it should not create a CA secret", func(t *testing.T) {
+		g := NewWithT(t)
+
+		servingSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      ServingCertSecretName,
+				Namespace: "hypershift",
+			},
+			Type: corev1.SecretTypeTLS,
+			Data: map[string][]byte{
+				corev1.TLSCertKey:        []byte("cert-data"),
+				corev1.TLSPrivateKeyKey:  []byte("key-data"),
+				certs.CASignerCertMapKey: []byte("external-ca-bundle"),
+			},
+		}
+
+		cl := fake.NewClientBuilder().WithScheme(newScheme(t)).WithObjects(servingSecret).Build()
+		r := newCABundleOnlyReconciler(cl)
+
+		_, err := r.Reconcile(t.Context(), ctrl.Request{NamespacedName: client.ObjectKey{Name: ServingCertSecretName, Namespace: "hypershift"}})
+		g.Expect(err).ToNot(HaveOccurred())
+
+		caSecret := &corev1.Secret{}
+		err = cl.Get(t.Context(), client.ObjectKey{Name: CASecretName, Namespace: "hypershift"}, caSecret)
+		g.Expect(err).To(HaveOccurred())
 	})
 }
 

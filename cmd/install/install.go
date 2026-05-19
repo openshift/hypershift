@@ -155,6 +155,7 @@ type Options struct {
 	ScaleFromZeroCreds                        string
 	ScaleFromZeroCredentialsSecret            string
 	ScaleFromZeroCredentialsSecretKey         string
+	EnableWebhookCertReconciler               bool
 	RenderSensitive                           bool
 }
 
@@ -377,6 +378,7 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().BoolVar(&opts.EnableDefaultingWebhook, "enable-defaulting-webhook", opts.EnableDefaultingWebhook, "Enable webhook for defaulting hypershift API types")
 	cmd.PersistentFlags().BoolVar(&opts.EnableValidatingWebhook, "enable-validating-webhook", opts.EnableValidatingWebhook, "Enable webhook for validating hypershift API types")
 	cmd.PersistentFlags().BoolVar(&opts.EnableConversionWebhook, "enable-conversion-webhook", opts.EnableConversionWebhook, "Enable webhook for converting hypershift API types")
+	cmd.PersistentFlags().BoolVar(&opts.EnableWebhookCertReconciler, "enable-webhook-cert-reconciler", opts.EnableWebhookCertReconciler, "If true, the operator manages webhook TLS certificates. Set to false when an external certificate manager (e.g. cert-manager) manages the serving cert")
 	cmd.PersistentFlags().BoolVar(&opts.ExcludeEtcdManifests, "exclude-etcd", opts.ExcludeEtcdManifests, "Leave out etcd manifests")
 	cmd.PersistentFlags().Var(&opts.PlatformMonitoring, "platform-monitoring", "Select an option for enabling platform cluster monitoring. Valid values are: None, OperatorOnly, All")
 	cmd.PersistentFlags().BoolVar(&opts.EnableCIDebugOutput, "enable-ci-debug-output", opts.EnableCIDebugOutput, "If extra CI debug output should be enabled")
@@ -536,6 +538,7 @@ func NewInstallOptionsWithDefaults() Options {
 	opts.EnableConversionWebhook = true
 	opts.EnableDedicatedRequestServingIsolation = true
 	opts.EnableDefaultingWebhook = false
+	opts.EnableWebhookCertReconciler = true
 	opts.EnableEtcdRecovery = true
 	opts.EnableSizeTagging = false
 	opts.EnableValidatingWebhook = false
@@ -1259,6 +1262,7 @@ func setupOperatorResources(opts Options, userCABundleCM *corev1.ConfigMap, trus
 		EnableCIDebugOutput:                     opts.EnableCIDebugOutput,
 		EnableWebhook:                           opts.EnableDefaultingWebhook || opts.EnableConversionWebhook || opts.EnableValidatingWebhook || opts.EnableAuditLogPersistence,
 		EnableValidatingWebhook:                 opts.EnableValidatingWebhook,
+		EnableWebhookCertReconciler:             opts.EnableWebhookCertReconciler,
 		PrivatePlatform:                         opts.PrivatePlatform,
 		AWSPrivateRegion:                        opts.AWSPrivateRegion,
 		GCPProject:                              opts.GCPProject,

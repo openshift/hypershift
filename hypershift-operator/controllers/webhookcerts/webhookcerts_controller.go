@@ -62,10 +62,15 @@ const (
 
 // WebhookCertReconciler reconciles the self-managed webhook CA and serving cert.
 // It is used on non-OpenShift clusters where the service-ca operator is not available.
+//
+// When ManageCerts is false, the reconciler runs in caBundle-only mode: it reads the
+// CA from the serving cert secret's ca.crt key and patches CRDs and webhook configurations,
+// but does not create or manage the CA or serving cert secrets.
 type WebhookCertReconciler struct {
 	Client         client.Client
 	Namespace      string
 	ServiceName    string
+	ManageCerts    bool
 	createOrUpdate upsert.CreateOrUpdateFN
 }
 
@@ -73,28 +78,57 @@ func (r *WebhookCertReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpdat
 	r.Client = mgr.GetClient()
 	r.createOrUpdate = createOrUpdate.CreateOrUpdate
 
+	secretFilter := func(o client.Object) bool {
+		if o.GetNamespace() != r.Namespace {
+			return false
+		}
+		if r.ManageCerts {
+			return o.GetName() == CASecretName || o.GetName() == ServingCertSecretName
+		}
+		return o.GetName() == ServingCertSecretName
+	}
+
 	return ctrl.NewControllerManagedBy(mgr).
 		Named("webhookcerts").
-		For(&corev1.Secret{}, builder.WithPredicates(predicate.NewPredicateFuncs(func(o client.Object) bool {
-			return o.GetNamespace() == r.Namespace &&
-				(o.GetName() == CASecretName || o.GetName() == ServingCertSecretName)
-		}))).
+		For(&corev1.Secret{}, builder.WithPredicates(predicate.NewPredicateFuncs(secretFilter))).
 		Complete(r)
 }
 
 func (r *WebhookCertReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := ctrl.LoggerFrom(ctx)
 
-	// 0. Handle upgrade from service-ca managed certs.
-	// On existing OpenShift clusters, the service-ca operator may have created the
-	// serving cert secret and annotated the Service. We must remove these before
-	// reconciling our own certs, otherwise service-ca will keep overwriting the secret
-	// with a cert signed by a different CA than the one we inject into webhook configs.
-	if err := r.removeServiceCAResources(ctx, log); err != nil {
+	var (
+		caBundle []byte
+		err      error
+	)
+	if r.ManageCerts {
+		caBundle, err = r.reconcileCerts(ctx, log)
+	} else {
+		caBundle, err = r.readCABundleFromServingCert(ctx)
+	}
+	if err != nil {
 		return ctrl.Result{}, err
 	}
 
-	// 1. Reconcile the self-signed CA.
+	if err := r.patchCRDsCABundle(ctx, caBundle); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to patch CRD caBundle: %w", err)
+	}
+
+	if err := r.patchWebhookConfigsCABundle(ctx, caBundle); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to patch webhook config caBundle: %w", err)
+	}
+
+	log.Info("Webhook certs reconciled", "manageCerts", r.ManageCerts, "requeueAfter", requeueInterval)
+	return ctrl.Result{RequeueAfter: requeueInterval}, nil
+}
+
+func (r *WebhookCertReconciler) reconcileCerts(ctx context.Context, log logr.Logger) ([]byte, error) {
+	// Handle upgrade from service-ca managed certs.
+	if err := r.removeServiceCAResources(ctx, log); err != nil {
+		return nil, err
+	}
+
+	// Reconcile the self-signed CA.
 	caSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      CASecretName,
@@ -105,10 +139,10 @@ func (r *WebhookCertReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		caSecret.Type = corev1.SecretTypeOpaque
 		return certs.ReconcileSelfSignedCA(caSecret, "hypershift-webhook-ca", "openshift")
 	}); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to reconcile webhook CA secret: %w", err)
+		return nil, fmt.Errorf("failed to reconcile webhook CA secret: %w", err)
 	}
 
-	// 2. Reconcile the serving cert signed by the CA.
+	// Reconcile the serving cert signed by the CA.
 	dnsNames := webhookDNSNames(r.ServiceName, r.Namespace)
 	servingSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
@@ -131,22 +165,24 @@ func (r *WebhookCertReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			nil,
 		)
 	}); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to reconcile webhook serving cert: %w", err)
+		return nil, fmt.Errorf("failed to reconcile webhook serving cert: %w", err)
 	}
 
-	// 3. Patch caBundle on CRDs with conversion webhooks.
-	caBundle := caSecret.Data[certs.CASignerCertMapKey]
-	if err := r.patchCRDsCABundle(ctx, caBundle); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to patch CRD caBundle: %w", err)
-	}
+	return caSecret.Data[certs.CASignerCertMapKey], nil
+}
 
-	// 4. Patch caBundle on webhook configurations.
-	if err := r.patchWebhookConfigsCABundle(ctx, caBundle); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to patch webhook config caBundle: %w", err)
+// readCABundleFromServingCert reads the CA bundle from the serving cert secret's ca.crt key,
+// as populated by an external certificate manager (e.g. cert-manager).
+func (r *WebhookCertReconciler) readCABundleFromServingCert(ctx context.Context) ([]byte, error) {
+	servingSecret := &corev1.Secret{}
+	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: r.Namespace, Name: ServingCertSecretName}, servingSecret); err != nil {
+		return nil, fmt.Errorf("failed to get serving cert secret: %w", err)
 	}
-
-	log.Info("Webhook certs reconciled", "requeueAfter", requeueInterval)
-	return ctrl.Result{RequeueAfter: requeueInterval}, nil
+	caBundle, ok := servingSecret.Data[certs.CASignerCertMapKey]
+	if !ok || len(caBundle) == 0 {
+		return nil, fmt.Errorf("serving cert secret %s/%s does not contain a %s key", r.Namespace, ServingCertSecretName, certs.CASignerCertMapKey)
+	}
+	return caBundle, nil
 }
 
 // patchCRDsCABundle patches the caBundle on all CRDs whose conversion webhook points to our service.

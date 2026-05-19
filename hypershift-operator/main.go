@@ -152,6 +152,7 @@ type StartOptions struct {
 	EnableUWMTelemetryRemoteWrite          bool
 	EnableValidatingWebhook                bool
 	EnableDedicatedRequestServingIsolation bool
+	EnableWebhookCertReconciler           bool
 	ScaleFromZeroProvider                  string
 	ScaleFromZeroCreds                     string
 	EtcdBackupMaxCount                     int
@@ -192,6 +193,7 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&opts.EnableUWMTelemetryRemoteWrite, "enable-uwm-telemetry-remote-write", opts.EnableUWMTelemetryRemoteWrite, "If true, enables a controller that ensures user workload monitoring is enabled and that it is configured to remote write telemetry metrics from control planes")
 	cmd.Flags().BoolVar(&opts.EnableValidatingWebhook, "enable-validating-webhook", false, "Enable webhook for validating hypershift API types")
 	cmd.Flags().BoolVar(&opts.EnableDedicatedRequestServingIsolation, "enable-dedicated-request-serving-isolation", true, "If true, enables scheduling of request serving components to dedicated nodes")
+	cmd.Flags().BoolVar(&opts.EnableWebhookCertReconciler, "enable-webhook-cert-reconciler", true, "If true, the operator manages webhook TLS certificates. Set to false when an external certificate manager (e.g. cert-manager) manages the serving cert")
 	cmd.Flags().StringVar(&opts.ScaleFromZeroProvider, "scale-from-zero-provider", opts.ScaleFromZeroProvider, "Platform type for scale-from-zero autoscaling (aws)")
 	cmd.Flags().StringVar(&opts.ScaleFromZeroCreds, "scale-from-zero-creds", opts.ScaleFromZeroCreds, "Path to credentials file for scale-from-zero instance type queries")
 	cmd.Flags().IntVar(&opts.EtcdBackupMaxCount, "etcd-backup-max-count", 5, "Maximum number of completed HCPEtcdBackup CRs to retain per HostedControlPlane")
@@ -793,6 +795,7 @@ func setupSupportControllers(mgr ctrl.Manager, opts *StartOptions, mgmtClusterCa
 		webhookCertReconciler := &webhookcerts.WebhookCertReconciler{
 			Namespace:   opts.Namespace,
 			ServiceName: "operator",
+			ManageCerts: opts.EnableWebhookCertReconciler,
 		}
 		if err := webhookCertReconciler.SetupWithManager(mgr, createOrUpdate); err != nil {
 			return fmt.Errorf("unable to create webhook cert controller: %w", err)
