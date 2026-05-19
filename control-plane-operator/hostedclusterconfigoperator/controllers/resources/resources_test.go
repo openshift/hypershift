@@ -3042,3 +3042,42 @@ func TestReconcileMetricsForwarder(t *testing.T) {
 		})
 	}
 }
+
+func Test_namespacedNamePredicateFunc(t *testing.T) {
+	predicate := namespacedNamePredicateFunc("my-hcp-namespace", "pull-secret")
+
+	tests := []struct {
+		name   string
+		object client.Object
+		want   bool
+	}{
+		{
+			name: "When namespace and name match it should return true",
+			object: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Namespace: "my-hcp-namespace", Name: "pull-secret"},
+			},
+			want: true,
+		},
+		{
+			name: "When namespace differs it should return false",
+			object: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Namespace: "other-namespace", Name: "pull-secret"},
+			},
+			want: false,
+		},
+		{
+			name: "When name differs it should return false",
+			object: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Namespace: "my-hcp-namespace", Name: "other-secret"},
+			},
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			g.Expect(predicate(tt.object)).To(Equal(tt.want))
+		})
+	}
+}
