@@ -12,6 +12,8 @@ import (
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hypershiftv1beta1applyconfigurations "github.com/openshift/hypershift/client/applyconfiguration/hypershift/v1beta1"
+	hypershiftclient "github.com/openshift/hypershift/client/clientset/clientset"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/azure"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/openstack"
@@ -48,6 +50,7 @@ import (
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/capabilities"
+	"github.com/openshift/hypershift/support/conditions"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/k8sutil"
@@ -77,6 +80,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
+	metav1applyconfigurations "k8s.io/client-go/applyconfigurations/meta/v1"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
@@ -133,9 +137,10 @@ exec /bin/azure-cloud-node-manager \
 `
 
 type reconciler struct {
-	client         client.Client
-	uncachedClient client.Client
-	clientSet      *clientset.Clientset
+	client           client.Client
+	uncachedClient   client.Client
+	clientSet        *clientset.Clientset
+	hypershiftClient hypershiftclient.Interface
 	upsert.CreateOrUpdateProvider
 	platformType              hyperv1.PlatformType
 	rootCA                    string
@@ -207,10 +212,16 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 		return fmt.Errorf("failed to initialize kubeClient from config: %w", err)
 	}
 
+	hypershiftClient, err := hypershiftclient.NewForConfig(opts.CPCluster.GetConfig())
+	if err != nil {
+		return fmt.Errorf("failed to create hypershift client: %w", err)
+	}
+
 	c, err := controller.New(ControllerName, opts.Manager, controller.Options{Reconciler: &reconciler{
 		client:                    opts.Manager.GetClient(),
 		uncachedClient:            uncachedClient,
 		clientSet:                 clientset,
+		hypershiftClient:          hypershiftClient,
 		CreateOrUpdateProvider:    opts.TargetCreateOrUpdateProvider,
 		platformType:              opts.PlatformType,
 		rootCA:                    opts.InitialCA,
@@ -567,12 +578,22 @@ func (r *reconciler) reconcileClusterRecovery(ctx context.Context, log logr.Logg
 		condition.Message = "Hosted cluster recovery finished"
 	}
 
-	meta.SetStatusCondition(&hcp.Status.Conditions, *condition)
 	log.Info("setting condition", "type", condition.Type, "status", condition.Status, "message", condition.Message)
-	if err := r.cpClient.Status().Update(ctx, hcp); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to update status on hcp for hosted cluster recovery: %w. Condition error message: %v", err, condition.Message)
+	managed := sets.New[string](string(hyperv1.HostedClusterRestoredFromBackup))
+	applyCond := metav1applyconfigurations.Condition().
+		WithType(condition.Type).
+		WithStatus(condition.Status).
+		WithReason(condition.Reason).
+		WithMessage(condition.Message)
+	cfg := hypershiftv1beta1applyconfigurations.HostedControlPlane(hcp.Name, hcp.Namespace).
+		WithStatus(hypershiftv1beta1applyconfigurations.HostedControlPlaneStatus().
+			WithConditions(conditions.SSAConditions(hcp.Status.Conditions, managed, applyCond)...))
+	if _, err := r.hypershiftClient.HypershiftV1beta1().HostedControlPlanes(hcp.Namespace).ApplyStatus(
+		ctx, cfg, metav1.ApplyOptions{FieldManager: "hcco-resources-recovery", Force: true},
+	); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to apply status on hcp for hosted cluster recovery: %w. Condition error message: %v", err, condition.Message)
 	}
-	log.Info("successfully updated hcp status with recovery condition")
+	log.Info("successfully applied hcp status with recovery condition")
 
 	if !finished {
 		return ctrl.Result{RequeueAfter: 120 * time.Second}, nil
@@ -1619,20 +1640,20 @@ func (r *reconciler) reconcileDataPlaneConnectionAvailable(ctx context.Context, 
 		condition.Status = metav1.ConditionUnknown
 		condition.Reason = hyperv1.ReconcileErrorReason
 		condition.Message = "Unable to count worker nodes: " + err.Error()
-		return r.patchHCPStatusCondition(ctx, hcp, condition)
+		return r.applyHCPStatusCondition(ctx, hcp, condition)
 	}
 	if totalNodes == 0 {
 		condition.Status = metav1.ConditionUnknown
 		condition.Reason = hyperv1.DataPlaneConnectionNoWorkerNodesAvailableReason
 		condition.Message = "No worker nodes available"
-		return r.patchHCPStatusCondition(ctx, hcp, condition)
+		return r.applyHCPStatusCondition(ctx, hcp, condition)
 	}
 	var podList corev1.PodList
 	if err := r.uncachedClient.List(ctx, &podList,
 		client.MatchingLabels{"app": "konnectivity-agent"}, client.InNamespace("kube-system")); err != nil {
 		condition.Reason = hyperv1.ReconciliationErrorReason
 		condition.Message = "Couldn't list konnectivity-agent PODs in kube-system namespace: " + err.Error()
-		return r.patchHCPStatusCondition(ctx, hcp, condition)
+		return r.applyHCPStatusCondition(ctx, hcp, condition)
 	}
 
 	logsFound := false
@@ -1667,7 +1688,7 @@ func (r *reconciler) reconcileDataPlaneConnectionAvailable(ctx context.Context, 
 		}
 	}
 
-	return r.patchHCPStatusCondition(ctx, hcp, condition)
+	return r.applyHCPStatusCondition(ctx, hcp, condition)
 }
 
 // getKASHealthCheckEndpoint returns the appropriate KAS health check endpoint based on the platform type.
@@ -1679,18 +1700,30 @@ func getKASHealthCheckEndpoint(platformType hyperv1.PlatformType) string {
 	return "/version"
 }
 
-// patchHCPStatusCondition patches the HostedControlPlane status with the provided condition.
-// It only performs the API call if the condition actually changed.
-func (r *reconciler) patchHCPStatusCondition(ctx context.Context, hcp *hyperv1.HostedControlPlane, condition *metav1.Condition) error {
+var connectionConditions = sets.New[string](
+	string(hyperv1.DataPlaneConnectionAvailable),
+	string(hyperv1.ControlPlaneConnectionAvailable),
+)
+
+func (r *reconciler) applyHCPStatusCondition(ctx context.Context, hcp *hyperv1.HostedControlPlane, condition *metav1.Condition) error {
 	log := ctrl.LoggerFrom(ctx)
-	originalHCP := hcp.DeepCopy()
-	if !meta.SetStatusCondition(&hcp.Status.Conditions, *condition) {
-		return nil // No status change; avoid unnecessary API call.
+	applyCond := metav1applyconfigurations.Condition().
+		WithType(condition.Type).
+		WithStatus(condition.Status).
+		WithReason(condition.Reason).
+		WithMessage(condition.Message)
+	if !conditions.ConditionChanged(hcp.Status.Conditions, applyCond) {
+		return nil
 	}
-	if err := r.cpClient.Status().Patch(ctx, hcp, client.MergeFrom(originalHCP)); err != nil {
-		return fmt.Errorf("failed to update HostedControlPlane status with %s condition: %w", condition.Type, err)
+	cfg := hypershiftv1beta1applyconfigurations.HostedControlPlane(hcp.Name, hcp.Namespace).
+		WithStatus(hypershiftv1beta1applyconfigurations.HostedControlPlaneStatus().
+			WithConditions(conditions.SSAConditions(hcp.Status.Conditions, connectionConditions, applyCond)...))
+	if _, err := r.hypershiftClient.HypershiftV1beta1().HostedControlPlanes(hcp.Namespace).ApplyStatus(
+		ctx, cfg, metav1.ApplyOptions{FieldManager: "hcco-resources-connection", Force: true},
+	); err != nil {
+		return fmt.Errorf("failed to apply HostedControlPlane status with %s condition: %w", condition.Type, err)
 	}
-	log.Info(string(condition.Type) + " condition updated")
+	log.Info(condition.Type + " condition updated")
 	return nil
 }
 
@@ -1816,12 +1849,12 @@ func (r *reconciler) reconcileControlPlaneConnectionAvailable(ctx context.Contex
 	if err != nil {
 		condition.Reason = hyperv1.ReconcileErrorReason
 		condition.Message = "Unable to count worker nodes: " + err.Error()
-		return r.patchHCPStatusCondition(ctx, hcp, condition)
+		return r.applyHCPStatusCondition(ctx, hcp, condition)
 	}
 	if totalNodes == 0 {
 		condition.Reason = hyperv1.ControlPlaneConnectionNoWorkerNodesAvailableReason
 		condition.Message = "No worker nodes available to verify control plane connectivity"
-		return r.patchHCPStatusCondition(ctx, hcp, condition)
+		return r.applyHCPStatusCondition(ctx, hcp, condition)
 	}
 
 	// Get the connectivity check ConfigMap
@@ -1832,13 +1865,13 @@ func (r *reconciler) reconcileControlPlaneConnectionAvailable(ctx context.Contex
 			condition.Reason = hyperv1.ControlPlaneConnectionConfigMapNotFoundReason
 			condition.Message = fmt.Sprintf("Connectivity check ConfigMap %s/%s not found; the hosted cluster config operator may not have reconciled it yet",
 				manifests.KASConnectionCheckerNamespace, manifests.KASConnectionCheckerConfigMapName)
-			return r.patchHCPStatusCondition(ctx, hcp, condition)
+			return r.applyHCPStatusCondition(ctx, hcp, condition)
 		}
 		// This should not happen as we are started by the CPO after the configmap should be created
 		condition.Reason = hyperv1.ReconcileErrorReason
 		condition.Message = fmt.Sprintf("Failed to get connectivity check ConfigMap %s/%s: %v",
 			manifests.KASConnectionCheckerNamespace, manifests.KASConnectionCheckerConfigMapName, err)
-		return r.patchHCPStatusCondition(ctx, hcp, condition)
+		return r.applyHCPStatusCondition(ctx, hcp, condition)
 	}
 
 	// Check the lastSucceeded timestamp
@@ -1847,7 +1880,7 @@ func (r *reconciler) reconcileControlPlaneConnectionAvailable(ctx context.Contex
 		condition.Status = metav1.ConditionFalse
 		condition.Reason = hyperv1.ControlPlaneConnectionKASAccessFailedReason
 		condition.Message = "Data plane to control plane connection is not available: no successful connectivity check recorded"
-		return r.patchHCPStatusCondition(ctx, hcp, condition)
+		return r.applyHCPStatusCondition(ctx, hcp, condition)
 	}
 
 	lastSucceeded, err := time.Parse(time.RFC3339, lastSucceededStr)
@@ -1855,20 +1888,20 @@ func (r *reconciler) reconcileControlPlaneConnectionAvailable(ctx context.Contex
 		condition.Status = metav1.ConditionFalse
 		condition.Reason = hyperv1.ControlPlaneConnectionKASAccessFailedReason
 		condition.Message = fmt.Sprintf("Data plane to control plane connection is not available: failed to parse lastSucceeded timestamp: %v", err)
-		return r.patchHCPStatusCondition(ctx, hcp, condition)
+		return r.applyHCPStatusCondition(ctx, hcp, condition)
 	}
 
 	if time.Since(lastSucceeded) > 5*time.Minute {
 		condition.Status = metav1.ConditionFalse
 		condition.Reason = hyperv1.ControlPlaneConnectionCheckStaleReason
 		condition.Message = fmt.Sprintf("Data plane to control plane connection is not available: last successful check was at %s, which is older than 5 minutes", lastSucceededStr)
-		return r.patchHCPStatusCondition(ctx, hcp, condition)
+		return r.applyHCPStatusCondition(ctx, hcp, condition)
 	}
 
 	condition.Status = metav1.ConditionTrue
 	condition.Reason = hyperv1.AsExpectedReason
 	condition.Message = hyperv1.AllIsWellMessage
-	return r.patchHCPStatusCondition(ctx, hcp, condition)
+	return r.applyHCPStatusCondition(ctx, hcp, condition)
 }
 
 func (r *reconciler) reconcileOpenshiftAPIServerAPIServices(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
@@ -2724,12 +2757,20 @@ func (r *reconciler) destroyCloudResources(ctx context.Context, hcp *hyperv1.Hos
 		Message: message,
 	}
 
-	originalHCP := hcp.DeepCopy()
-	meta.SetStatusCondition(&hcp.Status.Conditions, *resourcesDestroyedCond)
-
-	if !equality.Semantic.DeepEqual(hcp, originalHCP) {
-		if err := r.cpClient.Status().Update(ctx, hcp); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to set resources destroyed condition: %w", err)
+	applyCond := metav1applyconfigurations.Condition().
+		WithType(resourcesDestroyedCond.Type).
+		WithStatus(resourcesDestroyedCond.Status).
+		WithReason(resourcesDestroyedCond.Reason).
+		WithMessage(resourcesDestroyedCond.Message)
+	if conditions.ConditionChanged(hcp.Status.Conditions, applyCond) {
+		managed := sets.New[string](string(hyperv1.CloudResourcesDestroyed))
+		cfg := hypershiftv1beta1applyconfigurations.HostedControlPlane(hcp.Name, hcp.Namespace).
+			WithStatus(hypershiftv1beta1applyconfigurations.HostedControlPlaneStatus().
+				WithConditions(conditions.SSAConditions(hcp.Status.Conditions, managed, applyCond)...))
+		if _, err := r.hypershiftClient.HypershiftV1beta1().HostedControlPlanes(hcp.Namespace).ApplyStatus(
+			ctx, cfg, metav1.ApplyOptions{FieldManager: "hcco-resources-cloud-destroy", Force: true},
+		); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to apply resources destroyed condition: %w", err)
 		}
 	}
 

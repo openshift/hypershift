@@ -14,6 +14,7 @@ import (
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hypershiftclient "github.com/openshift/hypershift/client/clientset/clientset"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
 	"github.com/openshift/hypershift/ignition-server/controllers"
 	hyperapi "github.com/openshift/hypershift/support/api"
@@ -156,10 +157,16 @@ func setUpPayloadStoreReconciler(ctx context.Context, registryOverrides map[stri
 		OpenShiftImageRegistryOverrides: util.ConvertImageRegistryOverrideStringToMap(os.Getenv("OPENSHIFT_IMG_OVERRIDES")),
 	}
 
+	hcpClient, err := hypershiftclient.NewForConfig(restConfig)
+	if err != nil {
+		return nil, fmt.Errorf("unable to create hypershift client: %w", err)
+	}
+
 	if err = (&controllers.TokenSecretReconciler{
 		Client:       mgr.GetClient(),
 		PayloadStore: payloadStore,
 		IgnitionProvider: &controllers.LocalIgnitionProvider{
+			HypershiftClient: hcpClient,
 			ReleaseProvider: &releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator{
 				Delegate: &releaseinfo.RegistryMirrorProviderDecorator{
 					Delegate: &releaseinfo.CachedProvider{

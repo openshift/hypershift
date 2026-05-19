@@ -522,6 +522,7 @@ func NewStartCommand() *cobra.Command {
 
 		if err := (&hostedcontrolplane.HostedControlPlaneReconciler{
 			Client:                                  mgr.GetClient(),
+			HypershiftClient:                        hcpClient,
 			GVKAccessChecker:                        component.NewGVKAccessCache(mgr.GetAPIReader()),
 			ManagementClusterCapabilities:           mgmtClusterCaps,
 			ReleaseProvider:                         cpReleaseProvider,

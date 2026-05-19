@@ -8,7 +8,10 @@ import (
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hypershiftv1beta1applyconfigurations "github.com/openshift/hypershift/client/applyconfiguration/hypershift/v1beta1"
+	hypershiftclient "github.com/openshift/hypershift/client/clientset/clientset"
 	"github.com/openshift/hypershift/hypershift-operator/featuregate"
+	"github.com/openshift/hypershift/support/conditions"
 	supportconfig "github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/releaseinfo"
@@ -24,6 +27,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/apimachinery/pkg/util/sets"
+	metav1applyconfigurations "k8s.io/client-go/applyconfigurations/meta/v1"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/utils/ptr"
@@ -78,6 +83,7 @@ const (
 // etcd snapshot and upload Jobs in the HyperShift Operator namespace.
 type HCPEtcdBackupReconciler struct {
 	client.Client
+	HypershiftClient        hypershiftclient.Interface
 	OperatorNamespace       string
 	ReleaseProvider         releaseinfo.ProviderWithOpenShiftImageRegistryOverrides
 	HypershiftOperatorImage string
@@ -299,9 +305,19 @@ func (r *HCPEtcdBackupReconciler) setCondition(backup *hyperv1.HCPEtcdBackup, co
 // updateHCPBackupCondition sets a condition on the HostedControlPlane to bubble
 // up the etcd backup status. The HC controller propagates this to the HostedCluster.
 func (r *HCPEtcdBackupReconciler) updateHCPBackupCondition(ctx context.Context, hcp *hyperv1.HostedControlPlane, condition metav1.Condition) error {
-	condition.ObservedGeneration = hcp.Generation
-	meta.SetStatusCondition(&hcp.Status.Conditions, condition)
-	return r.Status().Update(ctx, hcp)
+	managed := sets.New[string](condition.Type)
+	applyCond := metav1applyconfigurations.Condition().
+		WithType(condition.Type).
+		WithStatus(condition.Status).
+		WithObservedGeneration(hcp.Generation).
+		WithReason(condition.Reason).
+		WithMessage(condition.Message)
+	cfg := hypershiftv1beta1applyconfigurations.HostedControlPlane(hcp.Name, hcp.Namespace).
+		WithStatus(hypershiftv1beta1applyconfigurations.HostedControlPlaneStatus().
+			WithConditions(conditions.SSAConditions(hcp.Status.Conditions, managed, applyCond)...))
+	_, err := r.HypershiftClient.HypershiftV1beta1().HostedControlPlanes(hcp.Namespace).ApplyStatus(
+		ctx, cfg, metav1.ApplyOptions{FieldManager: "etcd-backup", Force: true})
+	return err
 }
 
 // updateHostedClusterBackupURL persists the snapshot URL in the HostedCluster

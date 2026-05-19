@@ -15,6 +15,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hypershiftfake "github.com/openshift/hypershift/client/clientset/clientset/fake"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 
 	corev1 "k8s.io/api/core/v1"
@@ -1237,9 +1238,17 @@ func TestReconcileValidReleaseInfoCondition(t *testing.T) {
 			g := NewWithT(t)
 
 			fakeClient := newFakeClientWithScheme(tt.objects...)
+
+			var runtimeObjects []runtime.Object
+			for _, obj := range tt.objects {
+				runtimeObjects = append(runtimeObjects, obj.DeepCopyObject())
+			}
+			fakeHypershiftClient := hypershiftfake.NewSimpleClientset(runtimeObjects...)
+
 			provider := &LocalIgnitionProvider{
-				Client:    fakeClient,
-				Namespace: tt.namespace,
+				Client:           fakeClient,
+				HypershiftClient: fakeHypershiftClient,
+				Namespace:        tt.namespace,
 			}
 
 			// Build a SimpleReleaseImageProvider with controlled missing images.
@@ -1258,9 +1267,9 @@ func TestReconcileValidReleaseInfoCondition(t *testing.T) {
 			}
 			g.Expect(err).NotTo(HaveOccurred())
 
-			// Verify the condition was set on the HostedControlPlane.
-			hcpList := &hyperv1.HostedControlPlaneList{}
-			g.Expect(fakeClient.List(t.Context(), hcpList, client.InNamespace(tt.namespace))).To(Succeed())
+			// Verify the condition was set on the HostedControlPlane via the typed client.
+			hcpList, listErr := fakeHypershiftClient.HypershiftV1beta1().HostedControlPlanes(tt.namespace).List(t.Context(), metav1.ListOptions{})
+			g.Expect(listErr).NotTo(HaveOccurred())
 			g.Expect(hcpList.Items).To(HaveLen(1))
 
 			cond := meta.FindStatusCondition(hcpList.Items[0].Status.Conditions, string(hyperv1.IgnitionServerValidReleaseInfo))

@@ -17,11 +17,14 @@ import (
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hypershiftv1beta1applyconfigurations "github.com/openshift/hypershift/client/applyconfiguration/hypershift/v1beta1"
+	hypershiftclient "github.com/openshift/hypershift/client/clientset/clientset"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/certs"
+	"github.com/openshift/hypershift/support/conditions"
 	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
@@ -29,9 +32,10 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
+	metav1applyconfigurations "k8s.io/client-go/applyconfigurations/meta/v1"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -56,10 +60,11 @@ import (
 // non-conflicting ports. This effort is not yet justified by any performance
 // measurements.
 type LocalIgnitionProvider struct {
-	Client          client.Client
-	ReleaseProvider releaseinfo.ProviderWithOpenShiftImageRegistryOverrides
-	CloudProvider   hyperv1.PlatformType
-	Namespace       string
+	Client           client.Client
+	HypershiftClient hypershiftclient.Interface
+	ReleaseProvider  releaseinfo.ProviderWithOpenShiftImageRegistryOverrides
+	CloudProvider    hyperv1.PlatformType
+	Namespace        string
 
 	// WorkDir is the base working directory for contents extracted from a
 	// release payload. Usually this would map to a volume mount.
@@ -766,25 +771,33 @@ func (r *LocalIgnitionProvider) reconcileValidReleaseInfoCondition(ctx context.C
 
 	hostedControlPlane := hcpList.Items[0]
 
+	managedTypes := sets.New[string](string(hyperv1.IgnitionServerValidReleaseInfo))
+
+	var condition *metav1applyconfigurations.ConditionApplyConfiguration
 	if len(releaseImageProvider.GetMissingImages()) == 0 {
-		meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, metav1.Condition{
-			Type:               string(hyperv1.IgnitionServerValidReleaseInfo),
-			Status:             metav1.ConditionTrue,
-			Reason:             hyperv1.AsExpectedReason,
-			Message:            hyperv1.AllIsWellMessage,
-			ObservedGeneration: hostedControlPlane.Generation,
-		})
+		condition = metav1applyconfigurations.Condition().
+			WithType(string(hyperv1.IgnitionServerValidReleaseInfo)).
+			WithStatus(metav1.ConditionTrue).
+			WithReason(hyperv1.AsExpectedReason).
+			WithMessage(hyperv1.AllIsWellMessage).
+			WithObservedGeneration(hostedControlPlane.Generation).
+			WithLastTransitionTime(metav1.Now())
 	} else {
-		meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, metav1.Condition{
-			Type:               string(hyperv1.IgnitionServerValidReleaseInfo),
-			Status:             metav1.ConditionFalse,
-			Reason:             hyperv1.MissingReleaseImagesReason,
-			Message:            strings.Join(releaseImageProvider.GetMissingImages(), ", "),
-			ObservedGeneration: hostedControlPlane.Generation,
-		})
+		condition = metav1applyconfigurations.Condition().
+			WithType(string(hyperv1.IgnitionServerValidReleaseInfo)).
+			WithStatus(metav1.ConditionFalse).
+			WithReason(hyperv1.MissingReleaseImagesReason).
+			WithMessage(strings.Join(releaseImageProvider.GetMissingImages(), ", ")).
+			WithObservedGeneration(hostedControlPlane.Generation).
+			WithLastTransitionTime(metav1.Now())
 	}
 
-	return r.Client.Status().Update(ctx, &hostedControlPlane)
+	cfg := hypershiftv1beta1applyconfigurations.HostedControlPlane(hostedControlPlane.Name, hostedControlPlane.Namespace).
+		WithStatus(hypershiftv1beta1applyconfigurations.HostedControlPlaneStatus().
+			WithConditions(conditions.SSAConditions(hostedControlPlane.Status.Conditions, managedTypes, condition)...))
+	_, err := r.HypershiftClient.HypershiftV1beta1().HostedControlPlanes(hostedControlPlane.Namespace).ApplyStatus(
+		ctx, cfg, metav1.ApplyOptions{FieldManager: "ignition-server", Force: true})
+	return err
 }
 
 // copyFile copies a file named src to dst, preserving attributes.

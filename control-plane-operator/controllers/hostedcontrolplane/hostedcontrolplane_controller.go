@@ -16,6 +16,8 @@ import (
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hypershiftv1beta1applyconfigurations "github.com/openshift/hypershift/client/applyconfiguration/hypershift/v1beta1"
+	hypershiftclient "github.com/openshift/hypershift/client/clientset/clientset"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ignition"
@@ -116,6 +118,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/duration"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
+	metav1applyconfigurations "k8s.io/client-go/applyconfigurations/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/workqueue"
@@ -156,6 +159,7 @@ const (
 
 type HostedControlPlaneReconciler struct {
 	client.Client
+	HypershiftClient hypershiftclient.Interface
 
 	GVKAccessChecker component.GVKAccessChecker
 
@@ -1957,31 +1961,38 @@ func (r *HostedControlPlaneReconciler) cleanupOldPKIOperatorDeployment(ctx conte
 	return nil
 }
 
+func (r *HostedControlPlaneReconciler) applyHCPStatusCondition(ctx context.Context, hcp *hyperv1.HostedControlPlane, fieldManager string, managedTypes sets.Set[string], updated ...*metav1applyconfigurations.ConditionApplyConfiguration) error {
+	cfg := hypershiftv1beta1applyconfigurations.HostedControlPlane(hcp.Name, hcp.Namespace).
+		WithStatus(hypershiftv1beta1applyconfigurations.HostedControlPlaneStatus().
+			WithConditions(conditions.SSAConditions(hcp.Status.Conditions, managedTypes, updated...)...))
+	_, err := r.HypershiftClient.HypershiftV1beta1().HostedControlPlanes(hcp.Namespace).ApplyStatus(
+		ctx, cfg, metav1.ApplyOptions{FieldManager: fieldManager, Force: true})
+	return err
+}
+
 func (r *HostedControlPlaneReconciler) reconcileValidIDPConfigurationCondition(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, oauthHost string, oauthPort int32) error {
 	p := oauth.NewOAuthServerParams(hcp, releaseImageProvider, oauthHost, oauthPort, r.SetDefaultSecurityContext)
 
-	// Report any IDP configuration errors as a condition on the HCP
-	new := metav1.Condition{
-		Type:    string(hyperv1.ValidIDPConfiguration),
-		Status:  metav1.ConditionTrue,
-		Reason:  "IDPConfigurationValid",
-		Message: "Identity provider configuration is valid",
-	}
+	cond := metav1applyconfigurations.Condition().
+		WithType(string(hyperv1.ValidIDPConfiguration)).
+		WithStatus(metav1.ConditionTrue).
+		WithReason("IDPConfigurationValid").
+		WithMessage("Identity provider configuration is valid")
+
 	if _, _, err := oauth.ConvertIdentityProviders(ctx, p.IdentityProviders(), p.OauthConfigOverrides, r, hcp.Namespace); err != nil {
-		// Report the error in a condition on the HCP
 		r.Log.Error(err, "failed to initialize identity providers")
-		new = metav1.Condition{
-			Type:    string(hyperv1.ValidIDPConfiguration),
-			Status:  metav1.ConditionFalse,
-			Reason:  "IDPConfigurationError",
-			Message: fmt.Sprintf("failed to initialize identity providers: %v", err),
-		}
+		cond.
+			WithStatus(metav1.ConditionFalse).
+			WithReason("IDPConfigurationError").
+			WithMessage(fmt.Sprintf("failed to initialize identity providers: %v", err))
 	}
-	// Update the condition on the HCP if it has changed
-	if meta.SetStatusCondition(&hcp.Status.Conditions, new) {
-		if err := r.Status().Update(ctx, hcp); err != nil {
-			return fmt.Errorf("failed to update valid IDP configuration condition: %w", err)
-		}
+
+	if !conditions.ConditionChanged(hcp.Status.Conditions, cond) {
+		return nil
+	}
+	managed := sets.New[string](string(hyperv1.ValidIDPConfiguration))
+	if err := r.applyHCPStatusCondition(ctx, hcp, "hostedcontrolplane-idp", managed, cond); err != nil {
+		return fmt.Errorf("failed to apply valid IDP configuration condition: %w", err)
 	}
 	return nil
 }
@@ -2497,14 +2508,14 @@ func (r *HostedControlPlaneReconciler) removeCloudResources(ctx context.Context,
 			if resourcesDestroyedCond != nil && resourcesDestroyedCond.Message != "" {
 				message = fmt.Sprintf("%s (last status: %s)", message, resourcesDestroyedCond.Message)
 			}
-			meta.SetStatusCondition(&hcp.Status.Conditions, metav1.Condition{
-				Type:    string(hyperv1.CloudResourcesDestroyed),
-				Status:  metav1.ConditionFalse,
-				Reason:  string(hyperv1.CloudResourcesDeletionTimedOutReason),
-				Message: message,
-			})
-			if err := r.Status().Update(ctx, hcp); err != nil {
-				return false, fmt.Errorf("failed to update cloud resources destroyed condition: %w", err)
+			managed := sets.New[string](string(hyperv1.CloudResourcesDestroyed))
+			cond := metav1applyconfigurations.Condition().
+				WithType(string(hyperv1.CloudResourcesDestroyed)).
+				WithStatus(metav1.ConditionFalse).
+				WithReason(string(hyperv1.CloudResourcesDeletionTimedOutReason)).
+				WithMessage(message)
+			if err := r.applyHCPStatusCondition(ctx, hcp, "hostedcontrolplane-cloud-resources", managed, cond); err != nil {
+				return false, fmt.Errorf("failed to apply cloud resources destroyed condition: %w", err)
 			}
 			return true, nil
 		}
@@ -2529,15 +2540,14 @@ func (r *HostedControlPlaneReconciler) removeCloudResources(ctx context.Context,
 		return false, nil
 	}
 	if cvoScaledDownCond == nil || cvoScaledDownCond.Status != metav1.ConditionTrue {
-		cvoScaledDownCond = &metav1.Condition{
-			Type:               string(hyperv1.CVOScaledDown),
-			Status:             metav1.ConditionTrue,
-			Reason:             "CVOScaledDown",
-			LastTransitionTime: metav1.Now(),
-		}
-		meta.SetStatusCondition(&hcp.Status.Conditions, *cvoScaledDownCond)
-		if err := r.Status().Update(ctx, hcp); err != nil {
-			return false, fmt.Errorf("failed to set CVO scaled down condition: %w", err)
+		managed := sets.New[string](string(hyperv1.CVOScaledDown))
+		cond := metav1applyconfigurations.Condition().
+			WithType(string(hyperv1.CVOScaledDown)).
+			WithStatus(metav1.ConditionTrue).
+			WithReason("CVOScaledDown").
+			WithLastTransitionTime(metav1.Now())
+		if err := r.applyHCPStatusCondition(ctx, hcp, "hostedcontrolplane-cvo-scaledown", managed, cond); err != nil {
+			return false, fmt.Errorf("failed to apply CVO scaled down condition: %w", err)
 		}
 	}
 	return false, nil

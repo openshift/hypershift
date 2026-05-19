@@ -23,6 +23,7 @@ import (
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hypershiftclient "github.com/openshift/hypershift/client/clientset/clientset"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	pkiconfig "github.com/openshift/hypershift/control-plane-pki-operator/config"
 	etcdrecovery "github.com/openshift/hypershift/etcd-recovery"
@@ -766,8 +767,13 @@ func setupSupportControllers(mgr ctrl.Manager, opts *StartOptions, mgmtClusterCa
 	}
 
 	if featuregate.Gate().Enabled(featuregate.HCPEtcdBackup) {
+		hclient, err := hypershiftclient.NewForConfig(mgr.GetConfig())
+		if err != nil {
+			return fmt.Errorf("unable to create hypershift client for etcd backup controller: %w", err)
+		}
 		etcdBackupReconciler := &etcdbackup.HCPEtcdBackupReconciler{
 			Client:                  mgr.GetClient(),
+			HypershiftClient:        hclient,
 			OperatorNamespace:       opts.Namespace,
 			ReleaseProvider:         registryProvider.ReleaseProvider,
 			HypershiftOperatorImage: operatorImage,

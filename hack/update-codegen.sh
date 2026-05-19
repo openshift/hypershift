@@ -20,3 +20,10 @@ kube::codegen::gen_client \
     --versioned-name clientset \
     --boilerplate "../${SCRIPT_ROOT}/boilerplate.go.txt" \
     .
+
+# applyconfiguration-gen puts omitempty on all fields, but AvailableUpdates is
+# +required in the CRD schema. omitempty omits empty slices from JSON, causing
+# the API server to reject SSA applies with "Required value". omitzero (Go 1.24+)
+# omits only nil — an empty slice serializes as [].
+sed -i 's/"availableUpdates,omitempty"/"availableUpdates,omitzero"/' \
+    ../client/applyconfiguration/hypershift/v1beta1/clusterversionstatus.go

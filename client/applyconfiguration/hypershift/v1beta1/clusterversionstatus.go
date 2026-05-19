@@ -27,7 +27,7 @@ type ClusterVersionStatusApplyConfiguration struct {
 	Desired            *v1.Release            `json:"desired,omitempty"`
 	History            []v1.UpdateHistory     `json:"history,omitempty"`
 	ObservedGeneration *int64                 `json:"observedGeneration,omitempty"`
-	AvailableUpdates   []v1.Release           `json:"availableUpdates,omitempty"`
+	AvailableUpdates   []v1.Release           `json:"availableUpdates,omitzero"`
 	ConditionalUpdates []v1.ConditionalUpdate `json:"conditionalUpdates,omitempty"`
 }
 

@@ -13,6 +13,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/api/util/ipnet"
+	hypershiftfake "github.com/openshift/hypershift/client/clientset/clientset/fake"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/infra"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
@@ -732,6 +733,7 @@ func TestEventHandling(t *testing.T) {
 
 	r := &HostedControlPlaneReconciler{
 		Client:                        c,
+		HypershiftClient:              hypershiftfake.NewSimpleClientset(hcp.DeepCopy()),
 		ManagementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
 		ReleaseProvider:               mockedProviderWithOpenshiftImageRegistryOverrides,
 		UserReleaseProvider:           &fakereleaseprovider.FakeReleaseProvider{},
@@ -2836,8 +2838,11 @@ func TestRemoveCloudResources(t *testing.T) {
 				WithStatusSubresource(&hyperv1.HostedControlPlane{}).
 				Build()
 
+			fakeHypershiftClient := hypershiftfake.NewSimpleClientset(tc.hcp.DeepCopy())
+
 			r := &HostedControlPlaneReconciler{
-				Client: c,
+				Client:           c,
+				HypershiftClient: fakeHypershiftClient,
 			}
 
 			var originalCloudResourcesCond *metav1.Condition
@@ -2857,8 +2862,8 @@ func TestRemoveCloudResources(t *testing.T) {
 			g.Expect(done).To(Equal(tc.expectedDone))
 
 			if tc.expectedCondition != nil {
-				updatedHCP := &hyperv1.HostedControlPlane{}
-				g.Expect(c.Get(ctx, client.ObjectKeyFromObject(tc.hcp), updatedHCP)).To(Succeed())
+				updatedHCP, getErr := fakeHypershiftClient.HypershiftV1beta1().HostedControlPlanes(tc.hcp.Namespace).Get(ctx, tc.hcp.Name, metav1.GetOptions{})
+				g.Expect(getErr).ToNot(HaveOccurred())
 				condition := meta.FindStatusCondition(updatedHCP.Status.Conditions, tc.expectedCondition.Type)
 				g.Expect(condition).ToNot(BeNil())
 				g.Expect(condition.Status).To(Equal(tc.expectedCondition.Status))

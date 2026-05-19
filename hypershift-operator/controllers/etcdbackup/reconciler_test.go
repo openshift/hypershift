@@ -10,6 +10,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hypershiftfake "github.com/openshift/hypershift/client/clientset/clientset/fake"
 	"github.com/openshift/hypershift/hypershift-operator/featuregate"
 	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/releaseinfo"
@@ -72,8 +73,17 @@ func newReconciler(objs ...client.Object) *HCPEtcdBackupReconciler {
 		WithStatusSubresource(&hyperv1.HCPEtcdBackup{}, &hyperv1.HostedControlPlane{}, &hyperv1.HostedCluster{}).
 		Build()
 
+	var hypershiftObjs []runtime.Object
+	for _, obj := range objs {
+		switch obj.(type) {
+		case *hyperv1.HostedControlPlane, *hyperv1.HostedCluster, *hyperv1.HCPEtcdBackup:
+			hypershiftObjs = append(hypershiftObjs, obj.DeepCopyObject())
+		}
+	}
+
 	return &HCPEtcdBackupReconciler{
 		Client:                  fakeClient,
+		HypershiftClient:        hypershiftfake.NewSimpleClientset(hypershiftObjs...),
 		OperatorNamespace:       testHONamespace,
 		ReleaseProvider:         &fakeReleaseProvider{},
 		HypershiftOperatorImage: "quay.io/hypershift/hypershift:latest",
@@ -817,9 +827,9 @@ func TestHandleJobStatus(t *testing.T) {
 		g.Expect(updated.Status.Conditions[0].Reason).To(Equal(hyperv1.BackupSucceededReason))
 		g.Expect(updated.Status.SnapshotURL).To(Equal("s3://my-bucket/backups/test/snapshot.db"))
 
-		// Verify HCP condition was set
-		updatedHCP := &hyperv1.HostedControlPlane{}
-		g.Expect(r.Get(context.Background(), types.NamespacedName{Name: testHCPName, Namespace: testHCPNamespace}, updatedHCP)).To(Succeed())
+		// Verify HCP condition was set (read from typed client since SSA writes go there)
+		updatedHCP, getErr := r.HypershiftClient.HypershiftV1beta1().HostedControlPlanes(testHCPNamespace).Get(context.Background(), testHCPName, metav1.GetOptions{})
+		g.Expect(getErr).ToNot(HaveOccurred())
 		hcpCond := meta.FindStatusCondition(updatedHCP.Status.Conditions, string(hyperv1.EtcdBackupSucceeded))
 		g.Expect(hcpCond).ToNot(BeNil())
 		g.Expect(hcpCond.Status).To(Equal(metav1.ConditionTrue))
@@ -1411,9 +1421,9 @@ func TestReconcileHappyPath(t *testing.T) {
 		g.Expect(updated.Status.Conditions[0].Reason).To(Equal(hyperv1.BackupInProgressReason))
 		g.Expect(updated.Status.Conditions[0].Status).To(Equal(metav1.ConditionFalse))
 
-		// Verify HCP condition was set
-		updatedHCP := &hyperv1.HostedControlPlane{}
-		g.Expect(r.Get(ctx, types.NamespacedName{Name: testHCPName, Namespace: testHCPNamespace}, updatedHCP)).To(Succeed())
+		// Verify HCP condition was set (read from typed client since SSA writes go there)
+		updatedHCP, getErr := r.HypershiftClient.HypershiftV1beta1().HostedControlPlanes(testHCPNamespace).Get(ctx, testHCPName, metav1.GetOptions{})
+		g.Expect(getErr).ToNot(HaveOccurred())
 		hcpCond := meta.FindStatusCondition(updatedHCP.Status.Conditions, string(hyperv1.EtcdBackupSucceeded))
 		g.Expect(hcpCond).ToNot(BeNil())
 		g.Expect(hcpCond.Status).To(Equal(metav1.ConditionFalse))

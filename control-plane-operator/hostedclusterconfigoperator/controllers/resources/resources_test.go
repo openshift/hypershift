@@ -13,6 +13,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hypershiftfake "github.com/openshift/hypershift/client/clientset/clientset/fake"
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/kas"
@@ -176,6 +177,7 @@ func TestReconcileErrorHandling(t *testing.T) {
 			platformType:           hyperv1.NonePlatform,
 			clusterSignerCA:        "foobar",
 			cpClient:               fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(cpObjects...).WithStatusSubresource(&hyperv1.HostedControlPlane{}).Build(),
+			hypershiftClient:       hypershiftfake.NewSimpleClientset(fakeHCP()),
 			hcpName:                "foo",
 			hcpNamespace:           "bar",
 			releaseProvider: &fakereleaseprovider.FakeReleaseProvider{
@@ -210,6 +212,7 @@ func TestReconcileErrorHandling(t *testing.T) {
 			platformType:           hyperv1.NonePlatform,
 			clusterSignerCA:        "foobar",
 			cpClient:               fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(cpObjects...).Build(),
+			hypershiftClient:       hypershiftfake.NewSimpleClientset(fakeHCP()),
 			hcpName:                "foo",
 			hcpNamespace:           "bar",
 			releaseProvider: &fakereleaseprovider.FakeReleaseProvider{
@@ -817,21 +820,23 @@ func TestDestroyCloudResources(t *testing.T) {
 		g.Expect(len(pods.Items)).To(Equal(0))
 	}
 
-	verifyDoneCond := func(g *WithT, c client.Client) {
+	verifyDoneCond := func(g *WithT, hcpClient *hypershiftfake.Clientset) {
 		hcp := fakeHostedControlPlane()
-		err := c.Get(t.Context(), client.ObjectKeyFromObject(hcp), hcp)
+		updated, err := hcpClient.HypershiftV1beta1().HostedControlPlanes(hcp.Namespace).Get(t.Context(), hcp.Name, metav1.GetOptions{})
 		g.Expect(err).ToNot(HaveOccurred())
-		cond := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.CloudResourcesDestroyed))
+		cond := meta.FindStatusCondition(updated.Status.Conditions, string(hyperv1.CloudResourcesDestroyed))
 		g.Expect(cond).ToNot(BeNil())
+		g.Expect(cond.Status).To(Equal(metav1.ConditionTrue))
 	}
 
-	verifyNotDoneCond := func(g *WithT, c client.Client) {
+	verifyNotDoneCond := func(g *WithT, hcpClient *hypershiftfake.Clientset) {
 		hcp := fakeHostedControlPlane()
-		err := c.Get(t.Context(), client.ObjectKeyFromObject(hcp), hcp)
+		updated, err := hcpClient.HypershiftV1beta1().HostedControlPlanes(hcp.Namespace).Get(t.Context(), hcp.Name, metav1.GetOptions{})
 		g.Expect(err).ToNot(HaveOccurred())
-		cond := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.CloudResourcesDestroyed))
+		cond := meta.FindStatusCondition(updated.Status.Conditions, string(hyperv1.CloudResourcesDestroyed))
 		g.Expect(cond).ToNot(BeNil())
 		g.Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+		g.Expect(cond.Reason).ToNot(Equal("NotDone"), "condition should have been updated from its seeded value")
 	}
 
 	tests := []struct {
@@ -937,10 +942,12 @@ func TestDestroyCloudResources(t *testing.T) {
 				},
 			}
 			cpClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(fakeHCP, kasDeployment).WithStatusSubresource(&hyperv1.HostedControlPlane{}).Build()
+			fakeHypershiftClient := hypershiftfake.NewSimpleClientset(fakeHCP.DeepCopy())
 			r := &reconciler{
 				client:                 guestClient,
 				uncachedClient:         uncachedClient,
 				cpClient:               cpClient,
+				hypershiftClient:       fakeHypershiftClient,
 				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
 				cleanupTracker:         supportutil.NewCleanupTracker(),
 			}
@@ -951,9 +958,9 @@ func TestDestroyCloudResources(t *testing.T) {
 				test.verify(g, guestClient, uncachedClient)
 			}
 			if test.verifyDoneCond {
-				verifyDoneCond(g, cpClient)
+				verifyDoneCond(g, fakeHypershiftClient)
 			} else {
-				verifyNotDoneCond(g, cpClient)
+				verifyNotDoneCond(g, fakeHypershiftClient)
 			}
 		})
 	}
@@ -2505,9 +2512,11 @@ func Test_reconciler_reconcileDataPlaneConnectionAvailable(t *testing.T) {
 			podList := &corev1.PodList{
 				Items: tt.pods,
 			}
+			fakeHypershiftClient := hypershiftfake.NewSimpleClientset(tt.hcp.DeepCopy())
 			r.client = fake.NewClientBuilder().WithLists(nodeList).Build()
 			r.uncachedClient = fake.NewClientBuilder().WithLists(podList).Build()
 			r.cpClient = fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tt.hcp).WithStatusSubresource(&hyperv1.HostedControlPlane{}).Build()
+			r.hypershiftClient = fakeHypershiftClient
 			r.GetPodLogs = tt.mockedGetPodLogs
 
 			gotErr := r.reconcileDataPlaneConnectionAvailable(ctx, tt.hcp, log)
@@ -2521,8 +2530,12 @@ func Test_reconciler_reconcileDataPlaneConnectionAvailable(t *testing.T) {
 				t.Fatal("reconcileDataPlaneConnectionAvailable() succeeded unexpectedly")
 			}
 			if tt.expectedCondition != nil {
+				updated, err := fakeHypershiftClient.HypershiftV1beta1().HostedControlPlanes(tt.hcp.Namespace).Get(ctx, tt.hcp.Name, metav1.GetOptions{})
+				if err != nil {
+					t.Fatalf("failed to get HCP: %v", err)
+				}
 				found := false
-				for _, c := range tt.hcp.Status.Conditions {
+				for _, c := range updated.Status.Conditions {
 					if tt.expectedCondition.Type == c.Type &&
 						tt.expectedCondition.Message == c.Message &&
 						tt.expectedCondition.Status == c.Status &&
@@ -2531,7 +2544,7 @@ func Test_reconciler_reconcileDataPlaneConnectionAvailable(t *testing.T) {
 					}
 				}
 				if !found {
-					t.Fatal("couldn't find expected condition")
+					t.Fatalf("couldn't find expected condition. Expected: %+v, Got: %+v", tt.expectedCondition, updated.Status.Conditions)
 				}
 			}
 		})
@@ -2673,8 +2686,10 @@ func Test_reconciler_reconcileControlPlaneConnectionAvailable(t *testing.T) {
 			}
 			nodeList := &corev1.NodeList{Items: tt.nodes}
 
+			fakeHypershiftClient := hypershiftfake.NewSimpleClientset(tt.hcp.DeepCopy())
 			r.client = fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).WithLists(nodeList).Build()
 			r.cpClient = fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tt.hcp).WithStatusSubresource(&hyperv1.HostedControlPlane{}).Build()
+			r.hypershiftClient = fakeHypershiftClient
 
 			gotErr := r.reconcileControlPlaneConnectionAvailable(ctx, tt.hcp)
 			if gotErr != nil {
@@ -2687,8 +2702,12 @@ func Test_reconciler_reconcileControlPlaneConnectionAvailable(t *testing.T) {
 				t.Fatal("reconcileControlPlaneConnectionAvailable() succeeded unexpectedly")
 			}
 			if tt.expectedCondition != nil {
+				updated, err := fakeHypershiftClient.HypershiftV1beta1().HostedControlPlanes(tt.hcp.Namespace).Get(ctx, tt.hcp.Name, metav1.GetOptions{})
+				if err != nil {
+					t.Fatalf("failed to get HCP: %v", err)
+				}
 				found := false
-				for _, c := range tt.hcp.Status.Conditions {
+				for _, c := range updated.Status.Conditions {
 					if tt.expectedCondition.Type == c.Type &&
 						tt.expectedCondition.Message == c.Message &&
 						tt.expectedCondition.Status == c.Status &&
@@ -2697,7 +2716,7 @@ func Test_reconciler_reconcileControlPlaneConnectionAvailable(t *testing.T) {
 					}
 				}
 				if !found {
-					t.Fatalf("couldn't find expected condition. Expected: %+v, Got: %+v", tt.expectedCondition, tt.hcp.Status.Conditions)
+					t.Fatalf("couldn't find expected condition. Expected: %+v, Got: %+v", tt.expectedCondition, updated.Status.Conditions)
 				}
 			}
 		})
@@ -3244,11 +3263,13 @@ func TestReconcileDeletion(t *testing.T) {
 
 			guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tt.existingObjects...).Build()
 			cpClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tt.hcp).WithStatusSubresource(&hyperv1.HostedControlPlane{}).Build()
+			fakeHypershiftClient := hypershiftfake.NewSimpleClientset(tt.hcp.DeepCopy())
 
 			r := &reconciler{
 				client:                 guestClient,
 				uncachedClient:         fake.NewClientBuilder().WithScheme(api.Scheme).Build(),
 				cpClient:               cpClient,
+				hypershiftClient:       fakeHypershiftClient,
 				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
 				cleanupTracker:         supportutil.NewCleanupTracker(),
 			}
@@ -3298,8 +3319,10 @@ func TestReconcileDeletion(t *testing.T) {
 
 			if tt.expectCloudCleanup {
 				// When cloud cleanup is triggered, verify it ran by checking the CloudResourcesDestroyed condition was set
-				// The condition is set by destroyCloudResources regardless of whether resources remain
-				condition := meta.FindStatusCondition(tt.hcp.Status.Conditions, string(hyperv1.CloudResourcesDestroyed))
+				// The condition is set by destroyCloudResources regardless of whether resources remain (read from typed client since SSA writes go there)
+				updatedHCP, getErr := fakeHypershiftClient.HypershiftV1beta1().HostedControlPlanes(tt.hcp.Namespace).Get(t.Context(), tt.hcp.Name, metav1.GetOptions{})
+				g.Expect(getErr).ToNot(HaveOccurred())
+				condition := meta.FindStatusCondition(updatedHCP.Status.Conditions, string(hyperv1.CloudResourcesDestroyed))
 				g.Expect(condition).ToNot(BeNil(), "CloudResourcesDestroyed condition should be set when cleanup is triggered")
 				g.Expect(condition.Status).To(Equal(metav1.ConditionTrue), "CloudResourcesDestroyed should be true when all resources are cleaned up")
 				g.Expect(condition.Reason).ToNot(BeEmpty(), "CloudResourcesDestroyed condition should have a reason")
@@ -3503,11 +3526,13 @@ func TestReconcileClusterRecovery(t *testing.T) {
 
 			cpClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tt.hcp).WithStatusSubresource(&hyperv1.HostedControlPlane{}).Build()
 			uncachedClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tt.uncachedObjects...).Build()
+			fakeHypershiftClient := hypershiftfake.NewSimpleClientset(tt.hcp.DeepCopy())
 
 			r := &reconciler{
 				client:                 fake.NewClientBuilder().WithScheme(api.Scheme).Build(),
 				uncachedClient:         uncachedClient,
 				cpClient:               cpClient,
+				hypershiftClient:       fakeHypershiftClient,
 				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
 			}
 
@@ -3526,8 +3551,8 @@ func TestReconcileClusterRecovery(t *testing.T) {
 			}
 
 			if tt.expectCondition {
-				updatedHCP := &hyperv1.HostedControlPlane{}
-				g.Expect(cpClient.Get(t.Context(), client.ObjectKeyFromObject(tt.hcp), updatedHCP)).To(Succeed())
+				updatedHCP, getErr := fakeHypershiftClient.HypershiftV1beta1().HostedControlPlanes(tt.hcp.Namespace).Get(t.Context(), tt.hcp.Name, metav1.GetOptions{})
+				g.Expect(getErr).ToNot(HaveOccurred())
 
 				cond := meta.FindStatusCondition(updatedHCP.Status.Conditions, string(hyperv1.HostedClusterRestoredFromBackup))
 				g.Expect(cond).ToNot(BeNil(), "recovery condition should be set")
