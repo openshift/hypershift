@@ -364,3 +364,73 @@ func GenerateInitialWebhookCerts(namespace, serviceName string) (*corev1.Secret,
 	caBundle := caSecret.Data[certs.CASignerCertMapKey]
 	return caSecret, servingSecret, caBundle, nil
 }
+
+// EnsureWebhookCerts ensures that webhook cert secrets exist so the webhook
+// server can start. If the serving cert secret already exists with valid data,
+// this is a no-op (the volume mount handles file delivery). If the secret is
+// missing or has empty data, new certs are generated and persisted as secrets.
+func EnsureWebhookCerts(ctx context.Context, c client.Client, namespace, serviceName string) error {
+	log := ctrl.LoggerFrom(ctx).WithName("webhook-cert-bootstrap")
+
+	existingSecret := &corev1.Secret{}
+	err := c.Get(ctx, client.ObjectKey{Namespace: namespace, Name: ServingCertSecretName}, existingSecret)
+	if err != nil && !apierrors.IsNotFound(err) {
+		return fmt.Errorf("failed to check for existing serving cert secret: %w", err)
+	}
+
+	// if secret exists check it is not empty
+	if err == nil {
+		if len(existingSecret.Data[corev1.TLSCertKey]) > 0 && len(existingSecret.Data[corev1.TLSPrivateKeyKey]) > 0 {
+			log.Info("Serving cert secret already exists, volume mount will provide certs")
+			return nil
+		}
+		log.Info("Serving cert secret exists but has empty data, regenerating")
+	}
+
+	log.Info("Generating webhook certificates")
+	caSecret, servingSecret, _, err := GenerateInitialWebhookCerts(namespace, serviceName)
+	if err != nil {
+		return fmt.Errorf("failed to generate webhook certs: %w", err)
+	}
+
+	if createErr := c.Create(ctx, caSecret); createErr != nil {
+		if !apierrors.IsAlreadyExists(createErr) {
+			return fmt.Errorf("failed to create CA secret: %w", createErr)
+		}
+		// CA already exists — fetch it and regenerate the serving cert so it
+		// is signed by the persisted CA, not the transient one we just created.
+		persistedCA := &corev1.Secret{}
+		if err := c.Get(ctx, client.ObjectKey{Namespace: namespace, Name: CASecretName}, persistedCA); err != nil {
+			return fmt.Errorf("failed to get existing CA secret: %w", err)
+		}
+		servingSecret.Data = map[string][]byte{}
+		dnsNames := webhookDNSNames(serviceName, namespace)
+		if err := certs.ReconcileSignedCert(
+			servingSecret,
+			persistedCA,
+			"hypershift-operator",
+			[]string{"openshift"},
+			[]x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+			corev1.TLSCertKey,
+			corev1.TLSPrivateKeyKey,
+			"",
+			dnsNames,
+			nil,
+		); err != nil {
+			return fmt.Errorf("failed to regenerate serving cert from persisted CA: %w", err)
+		}
+	}
+
+	if createErr := c.Create(ctx, servingSecret); createErr != nil {
+		if !apierrors.IsAlreadyExists(createErr) {
+			return fmt.Errorf("failed to create serving cert secret: %w", createErr)
+		}
+		existingSecret.Data = servingSecret.Data
+		if err := c.Update(ctx, existingSecret); err != nil {
+			return fmt.Errorf("failed to update serving cert secret: %w", err)
+		}
+	}
+
+	log.Info("Webhook certificates bootstrapped")
+	return nil
+}
