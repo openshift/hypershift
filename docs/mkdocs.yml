@@ -9,6 +9,7 @@ plugins:
 - search
 - mermaid2:
     version: 11.2.0
+    javascript: https://unpkg.com/mermaid@11.2.0/dist/mermaid.min.js
 - glightbox:
     touchNavigation: true
     loop: false
@@ -25,12 +26,14 @@ docs_dir: content
 repo_url: https://github.com/openshift/hypershift
 edit_uri: edit/main/docs/content
 repo_name: openshift/hypershift
-extra_javascript:
-  - https://unpkg.com/mermaid@11.2.0/dist/mermaid.min.js
 markdown_extensions:
 - toc:
     toc_depth: "2-3"
 - attr_list:
+- md_in_html:
+- pymdownx.emoji:
+    emoji_index: !!python/name:material.extensions.emoji.twemoji
+    emoji_generator: !!python/name:material.extensions.emoji.to_svg
 - pymdownx.highlight
 - pymdownx.inlinehilite
 - pymdownx.superfences:
@@ -55,7 +58,19 @@ extra_css:
   - custom.css
 nav:
 - Home: index.md
-- 'Getting started': getting-started.md
+- 'Getting Started':
+  - getting-started/index.md
+  - 'Quick Setup (AWS)': getting-started/quick-setup.md
+  - 'Onboarding Guide':
+    - getting-started/onboarding/index.md
+    - 'What is HyperShift?': getting-started/onboarding/what-is-hypershift.md
+    - 'Key Concepts': getting-started/onboarding/key-concepts.md
+    - 'Architecture': getting-started/onboarding/architecture.md
+    - 'Cluster Lifecycle': getting-started/onboarding/lifecycle.md
+    - 'Data Plane': getting-started/onboarding/data-plane.md
+    - 'Cloud Platforms': getting-started/onboarding/platforms.md
+    - 'Development': getting-started/onboarding/development.md
+    - 'Reference': getting-started/onboarding/reference.md
 - 'How-to guides':
   - how-to/index.md
   - 'Agentic SDLC': how-to/agentic-sdlc.md
