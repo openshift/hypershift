@@ -13,7 +13,6 @@ import (
 // ClusterSpec describes a single cluster to create for lifecycle tests.
 type ClusterSpec struct {
 	Variant      string
-	Suffix       string // hash suffix for name derivation
 	OutputFile   string // filename under SHARED_DIR
 	ExtraArgs    []string
 	ReleaseImage string // override (empty = use default)
@@ -94,10 +93,13 @@ func NewPlatformConfig(platform, sharedDir string) (PlatformConfig, error) {
 	}
 }
 
-// DeriveClusterName hashes prowJobID+suffix with SHA-256 and returns
-// the first 20 hex characters.
-func DeriveClusterName(prowJobID, suffix string) string {
-	hash := sha256.Sum256([]byte(prowJobID + suffix))
-	return fmt.Sprintf("%x", hash)[:20]
+// DeriveClusterName builds a human-readable, deterministic cluster name
+// from the prow job ID and cluster variant. The format is
+// "{variant}-{hash10}" where hash10 is the first 10 hex characters of
+// SHA-256(prowJobID), giving uniqueness per CI run while keeping the
+// variant visible in artifacts and namespaces.
+func DeriveClusterName(prowJobID, variant string) string {
+	hash := sha256.Sum256([]byte(prowJobID))
+	return variant + "-" + fmt.Sprintf("%x", hash)[:10]
 }
 

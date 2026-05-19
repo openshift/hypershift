@@ -129,7 +129,7 @@ func run(ctx context.Context, cfg envConfig) error {
 	named := make([]namedSpec, len(specs))
 	clusterNames := make(map[string]string) // outputFile -> name
 	for i, spec := range specs {
-		name := lifecycle.DeriveClusterName(cfg.prowJobID, spec.Suffix)
+		name := lifecycle.DeriveClusterName(cfg.prowJobID, spec.Variant)
 		named[i] = namedSpec{ClusterSpec: spec, name: name}
 		clusterNames[spec.OutputFile] = name
 	}

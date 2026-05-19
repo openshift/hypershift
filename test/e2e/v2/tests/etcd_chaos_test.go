@@ -250,6 +250,9 @@ func EtcdSingleMemberCorruptionTest(getTestCtx internal.TestContextGetter) {
 		cpNamespace := testCtx.ControlPlaneNamespace
 
 		etcdSts, etcdPods := getEtcdStsAndPods(ctx, testCtx.MgmtClient, cpNamespace)
+		if ptr.Deref(etcdSts.Spec.Replicas, 0) < 3 {
+			Skip("etcd corruption recovery requires HighlyAvailable etcd (>= 3 replicas)")
+		}
 
 		pod := randomEtcdPods(etcdPods.Items, 1)[0]
 		// Remove the entire member directory so etcd cannot start.
@@ -295,6 +298,9 @@ func EtcdMissingMemberRecoveryTest(getTestCtx internal.TestContextGetter) {
 		cpNamespace := testCtx.ControlPlaneNamespace
 
 		etcdSts, etcdPods := getEtcdStsAndPods(ctx, testCtx.MgmtClient, cpNamespace)
+		if ptr.Deref(etcdSts.Spec.Replicas, 0) < 3 {
+			Skip("etcd missing member recovery requires HighlyAvailable etcd (>= 3 replicas)")
+		}
 
 		pod := randomEtcdPods(etcdPods.Items, 1)[0]
 		ep := fmt.Sprintf("https://etcd-client.%s.svc:2379", cpNamespace)

@@ -63,12 +63,13 @@ func main() {
 	)
 
 	for _, spec := range specs {
-		clusterName := lifecycle.DeriveClusterName(prowJobID, spec.Suffix)
+		clusterName := lifecycle.DeriveClusterName(prowJobID, spec.Variant)
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			if err := destroyCluster(hypershiftBin, clusterName, spec.Variant, platform); err != nil {
 				log.Printf("WARNING: Failed to destroy cluster %s (%s): %v", clusterName, spec.Variant, err)
+				log.Printf("ACTION REQUIRED: cloud resources for cluster %s may be orphaned and need manual cleanup (resource group, DNS records, etc.)", clusterName)
 				mu.Lock()
 				failed = true
 				mu.Unlock()

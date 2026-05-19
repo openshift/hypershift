@@ -57,11 +57,11 @@ func main() {
 
 	var wg sync.WaitGroup
 	for _, spec := range specs {
-		clusterName := lifecycle.DeriveClusterName(prowJobID, spec.Suffix)
+		clusterName := lifecycle.DeriveClusterName(prowJobID, spec.Variant)
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			dumpCluster(*hypershiftBinary, artifactDir, clusterName, spec.Variant)
+			dumpCluster(*hypershiftBinary, artifactDir, clusterName)
 		}()
 	}
 	wg.Wait()
@@ -69,8 +69,8 @@ func main() {
 	log.Println("All cluster dumps complete")
 }
 
-func dumpCluster(hypershiftBinary, artifactDir, clusterName, variant string) {
-	dumpDir := filepath.Join(artifactDir, variant)
+func dumpCluster(hypershiftBinary, artifactDir, clusterName string) {
+	dumpDir := filepath.Join(artifactDir, clusterName)
 	if err := os.MkdirAll(dumpDir, 0755); err != nil {
 		log.Printf("WARNING: Failed to create artifact directory %s: %v", dumpDir, err)
 		return

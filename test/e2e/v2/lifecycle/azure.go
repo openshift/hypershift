@@ -95,12 +95,10 @@ func (a *AzurePlatformConfig) ClusterSpecs(releaseImage, n1Image string) []Clust
 	return []ClusterSpec{
 		{
 			Variant:    "public",
-			Suffix:     "-pub",
 			OutputFile: "cluster-name-public",
 		},
 		{
 			Variant:    "private",
-			Suffix:     "-prv",
 			OutputFile: "cluster-name-private",
 			ExtraArgs: []string{
 				"--endpoint-access=Private",
@@ -109,20 +107,17 @@ func (a *AzurePlatformConfig) ClusterSpecs(releaseImage, n1Image string) []Clust
 		},
 		{
 			Variant:    "oauth-lb",
-			Suffix:     "-oau",
 			OutputFile: "cluster-name-oauth-lb",
 			ExtraArgs:  []string{"--oauth-publishing-strategy=LoadBalancer"},
 		},
 		{
 			Variant:      "upgrade",
-			Suffix:       "-upg",
 			OutputFile:   "cluster-name-upgrade",
 			ReleaseImage: n1Image,
 			ExtraArgs:    []string{"--control-plane-availability-policy=HighlyAvailable"},
 		},
 		{
 			Variant:    "autoscaling",
-			Suffix:     "-asc",
 			OutputFile: "cluster-name-autoscaling",
 		},
 	}
