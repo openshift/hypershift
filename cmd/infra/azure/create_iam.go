@@ -42,6 +42,7 @@ func NewCreateIAMCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.OIDCIssuerURL, "oidc-issuer-url", opts.OIDCIssuerURL, util.OIDCIssuerURLDescription)
 	cmd.Flags().StringVar(&opts.OutputFile, "output-file", opts.OutputFile, util.WorkloadIdentitiesOutputFileDescription)
 	cmd.Flags().StringVar(&opts.Cloud, "cloud", opts.Cloud, util.CloudDescription)
+	cmd.Flags().BoolVar(&opts.EnableKMS, "enable-kms", opts.EnableKMS, util.EnableKMSDescription)
 
 	_ = cmd.MarkFlagRequired("name")
 	_ = cmd.MarkFlagRequired("infra-id")
@@ -84,6 +85,7 @@ func BindCreateIAMProductFlags(opts *CreateIAMOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.OIDCIssuerURL, "oidc-issuer-url", opts.OIDCIssuerURL, util.OIDCIssuerURLDescription)
 	flags.StringVar(&opts.OutputFile, "output-file", opts.OutputFile, util.WorkloadIdentitiesOutputFileDescription)
 	flags.StringVar(&opts.Cloud, "cloud", opts.Cloud, util.CloudDescription)
+	flags.BoolVar(&opts.EnableKMS, "enable-kms", opts.EnableKMS, util.EnableKMSDescription)
 }
 
 // Validate validates the CreateIAMOptions
@@ -132,14 +134,14 @@ func (o *CreateIAMOptions) Run(ctx context.Context, l logr.Logger) error {
 	identityManager := NewIdentityManager(subscriptionID, azureCreds, o.Cloud)
 
 	// Create workload identities and federated credentials
-	workloadIdentities, err := identityManager.CreateWorkloadIdentitiesFromIAMOptions(ctx, l, o, o.ResourceGroupName)
+	iamOutput, err := identityManager.CreateWorkloadIdentitiesFromIAMOptions(ctx, l, o, o.ResourceGroupName)
 	if err != nil {
 		return fmt.Errorf("failed to create workload identities: %w", err)
 	}
 
-	// Write output to file (directly as AzureWorkloadIdentities for compatibility
-	// with --workload-identities-file flag in create cluster/infra commands)
-	if err := o.writeOutput(workloadIdentities); err != nil {
+	// Write output to file. The format embeds AzureWorkloadIdentities fields at the top level
+	// for compatibility with --workload-identities-file, plus kmsClientID if KMS is enabled.
+	if err := o.writeOutput(iamOutput); err != nil {
 		return err
 	}
 

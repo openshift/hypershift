@@ -39,13 +39,13 @@ func TestNewIdentityManager(t *testing.T) {
 func TestGetWorkloadIdentityDefinitions(t *testing.T) {
 	tests := map[string]struct {
 		clusterName       string
-		topology          string
+		opts              WorkloadIdentityOptions
 		expectedCount     int
 		expectedComponent []string
 	}{
-		"When public topology it should return 7 identity definitions without controlPlaneOperator": {
+		"When public topology without KMS it should return 7 identity definitions": {
 			clusterName:   "test-cluster",
-			topology:      "Public",
+			opts:          WorkloadIdentityOptions{Topology: "Public"},
 			expectedCount: 7,
 			expectedComponent: []string{
 				"disk",
@@ -57,9 +57,9 @@ func TestGetWorkloadIdentityDefinitions(t *testing.T) {
 				"network",
 			},
 		},
-		"When private topology it should return 8 identity definitions with controlPlaneOperator": {
+		"When private topology without KMS it should return 8 identity definitions with controlPlaneOperator": {
 			clusterName:   "test-cluster",
-			topology:      "Private",
+			opts:          WorkloadIdentityOptions{Topology: "Private"},
 			expectedCount: 8,
 			expectedComponent: []string{
 				"disk",
@@ -72,9 +72,9 @@ func TestGetWorkloadIdentityDefinitions(t *testing.T) {
 				"controlPlaneOperator",
 			},
 		},
-		"When empty topology it should return 8 identity definitions for cleanup": {
+		"When public topology with KMS it should return 8 identity definitions including kms": {
 			clusterName:   "test-cluster",
-			topology:      "",
+			opts:          WorkloadIdentityOptions{Topology: "Public", IncludeKMS: true},
 			expectedCount: 8,
 			expectedComponent: []string{
 				"disk",
@@ -84,7 +84,39 @@ func TestGetWorkloadIdentityDefinitions(t *testing.T) {
 				"cloudProvider",
 				"nodePoolManagement",
 				"network",
+				"kms",
+			},
+		},
+		"When private topology with KMS it should return 9 identity definitions": {
+			clusterName:   "test-cluster",
+			opts:          WorkloadIdentityOptions{Topology: "Private", IncludeKMS: true},
+			expectedCount: 9,
+			expectedComponent: []string{
+				"disk",
+				"file",
+				"imageRegistry",
+				"ingress",
+				"cloudProvider",
+				"nodePoolManagement",
+				"network",
 				"controlPlaneOperator",
+				"kms",
+			},
+		},
+		"When empty topology with KMS it should return 9 identity definitions for cleanup": {
+			clusterName:   "test-cluster",
+			opts:          WorkloadIdentityOptions{IncludeKMS: true},
+			expectedCount: 9,
+			expectedComponent: []string{
+				"disk",
+				"file",
+				"imageRegistry",
+				"ingress",
+				"cloudProvider",
+				"nodePoolManagement",
+				"network",
+				"controlPlaneOperator",
+				"kms",
 			},
 		},
 	}
@@ -93,7 +125,7 @@ func TestGetWorkloadIdentityDefinitions(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
 
-			definitions := GetWorkloadIdentityDefinitions(test.clusterName, test.topology)
+			definitions := GetWorkloadIdentityDefinitions(test.clusterName, test.opts)
 
 			// Verify count
 			g.Expect(definitions).To(HaveLen(test.expectedCount))
