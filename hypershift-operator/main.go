@@ -24,6 +24,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
+	"github.com/openshift/hypershift/cmd/install/assets"
 	pkiconfig "github.com/openshift/hypershift/control-plane-pki-operator/config"
 	etcdrecovery "github.com/openshift/hypershift/etcd-recovery"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/auditlogpersistence"
@@ -272,6 +273,12 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	apiReadingClient, err := crclient.New(mgr.GetConfig(), crclient.Options{Scheme: hyperapi.Scheme})
 	if err != nil {
 		return fmt.Errorf("failed to construct api reading client: %w", err)
+	}
+
+	if opts.CertDir != "" {
+		if err := webhookcerts.EnsureWebhookCerts(ctx, apiReadingClient, opts.Namespace, assets.HypershiftOperatorName); err != nil {
+			return fmt.Errorf("failed to bootstrap webhook certs: %w", err)
+		}
 	}
 
 	if err := reconcileDeprecationValidatingAdmissionPolicy(ctx, apiReadingClient, mgmtClusterCaps, log); err != nil {

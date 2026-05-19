@@ -858,6 +858,7 @@ func (o HyperShiftOperatorDeployment) addWebhookResources(args *[]string, volume
 		VolumeSource: corev1.VolumeSource{
 			Secret: &corev1.SecretVolumeSource{
 				SecretName: "manager-serving-cert",
+				Optional:   ptr.To(true),
 			},
 		},
 	})
@@ -1163,10 +1164,11 @@ func (o ExternalDNSPodMonitor) Build() *prometheusoperatorv1.PodMonitor {
 					"name": ExternalDNSDeploymentName,
 				},
 			},
-			PodMetricsEndpoints: []prometheusoperatorv1.PodMetricsEndpoint{{
-				Port:     ptr.To("metrics"),
-				Interval: "30s",
-			},
+			PodMetricsEndpoints: []prometheusoperatorv1.PodMetricsEndpoint{
+				{
+					Port:     ptr.To("metrics"),
+					Interval: "30s",
+				},
 			},
 		},
 	}
