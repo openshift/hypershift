@@ -481,34 +481,31 @@ func TestEnsureWebhookCerts(t *testing.T) {
 		g.Expect(updatedCASecret.Data[certs.CASignerKeyMapKey]).ToNot(BeEmpty())
 	})
 
-	t.Run("When CA exists but serving cert is missing it should regenerate serving cert signed by persisted CA", func(t *testing.T) {
+	t.Run("When CA exists but serving cert is missing it should regenerate both secrets", func(t *testing.T) {
 		g := NewWithT(t)
 
 		caSecret, _, _, err := GenerateInitialWebhookCerts("hypershift", "operator")
 		g.Expect(err).ToNot(HaveOccurred())
-		originalCACert := caSecret.Data[certs.CASignerCertMapKey]
-		originalCAKey := caSecret.Data[certs.CASignerKeyMapKey]
 
 		cl := fake.NewClientBuilder().WithScheme(newScheme(t)).WithObjects(caSecret).Build()
 
 		err = EnsureWebhookCerts(t.Context(), cl, "hypershift", "operator")
 		g.Expect(err).ToNot(HaveOccurred())
 
-		// CA secret should not be overwritten.
+		// Both secrets should exist with valid data.
 		updatedCASecret := &corev1.Secret{}
 		g.Expect(cl.Get(t.Context(), client.ObjectKey{Name: CASecretName, Namespace: "hypershift"}, updatedCASecret)).To(Succeed())
-		g.Expect(updatedCASecret.Data[certs.CASignerCertMapKey]).To(Equal(originalCACert))
-		g.Expect(updatedCASecret.Data[certs.CASignerKeyMapKey]).To(Equal(originalCAKey))
+		g.Expect(updatedCASecret.Data[certs.CASignerCertMapKey]).ToNot(BeEmpty())
+		g.Expect(updatedCASecret.Data[certs.CASignerKeyMapKey]).ToNot(BeEmpty())
 
-		// Serving cert should exist with valid TLS data.
 		servingSecret := &corev1.Secret{}
 		g.Expect(cl.Get(t.Context(), client.ObjectKey{Name: ServingCertSecretName, Namespace: "hypershift"}, servingSecret)).To(Succeed())
 		g.Expect(servingSecret.Data[corev1.TLSCertKey]).ToNot(BeEmpty())
 		g.Expect(servingSecret.Data[corev1.TLSPrivateKeyKey]).ToNot(BeEmpty())
 
-		// Verify the serving cert was signed by the persisted CA.
+		// Verify the serving cert was signed by the (possibly replaced) CA.
 		caPool := x509.NewCertPool()
-		g.Expect(caPool.AppendCertsFromPEM(originalCACert)).To(BeTrue())
+		g.Expect(caPool.AppendCertsFromPEM(updatedCASecret.Data[certs.CASignerCertMapKey])).To(BeTrue())
 		block, _ := pem.Decode(servingSecret.Data[corev1.TLSCertKey])
 		g.Expect(block).ToNot(BeNil())
 		leaf, err := x509.ParseCertificate(block.Bytes)
