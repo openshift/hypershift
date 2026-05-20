@@ -124,7 +124,8 @@ func TestExternalOIDC(t *testing.T) {
 				t.Logf("begin to test CEL username expression mapping")
 
 				// Setup: Create test resources with automatic cleanup
-				testResources := e2eutil.NewTestResources(kc)
+				testResources, err := e2eutil.NewTestResources(ctx, kc, clusterOpts.ExtOIDCConfig)
+				g.Expect(err).NotTo(HaveOccurred())
 				defer testResources.Cleanup(ctx, t)
 
 				// Setup: Create authenticated test user with group
@@ -191,7 +192,8 @@ func TestExternalOIDC(t *testing.T) {
 				t.Logf("begin to test CEL groups expression mapping")
 
 				// Setup: Create test resources with automatic cleanup
-				testResources := e2eutil.NewTestResources(kc)
+				testResources, err := e2eutil.NewTestResources(ctx, kc, clusterOpts.ExtOIDCConfig)
+				g.Expect(err).NotTo(HaveOccurred())
 				defer testResources.Cleanup(ctx, t)
 
 				// Verify: Groups expression is configured
@@ -242,12 +244,9 @@ func TestExternalOIDC(t *testing.T) {
 				g := NewWithT(t)
 				t.Logf("begin to test claim validation rules")
 
-				// Refresh admin token before creating test resources
-				err := kc.GetAdminToken(ctx)
-				g.Expect(err).NotTo(HaveOccurred(), "failed to refresh Keycloak admin token")
-
 				// Setup: Create test resources with automatic cleanup
-				testResources := e2eutil.NewTestResources(kc)
+				testResources, err := e2eutil.NewTestResources(ctx, kc, clusterOpts.ExtOIDCConfig)
+				g.Expect(err).NotTo(HaveOccurred())
 				defer testResources.Cleanup(ctx, t)
 
 				// Verify: Claim validation rules are configured
@@ -285,10 +284,6 @@ func TestExternalOIDC(t *testing.T) {
 				g.Expect(err).To(HaveOccurred(), "authentication must fail when email_verified=false")
 				t.Logf("✓ User with email_verified=false correctly rejected: %v", err)
 
-				// refresh token here so we don't get a 401
-				err = kc.GetAdminToken(ctx)
-				g.Expect(err).NotTo(HaveOccurred(), "failed to refresh Keycloak admin token")
-
 				// Test 3: Invalid - empty email (violates rule 1)
 				// Demonstrates rule 1 requirement: has(claims.email) && claims.email != ''
 				t.Logf("Test 3: Creating user with empty email (violates rule 1)")
@@ -312,12 +307,9 @@ func TestExternalOIDC(t *testing.T) {
 				g := NewWithT(t)
 				t.Logf("begin to test user validation rules")
 
-				// Refresh admin token before creating test resources
-				err := kc.GetAdminToken(ctx)
-				g.Expect(err).NotTo(HaveOccurred(), "failed to refresh Keycloak admin token")
-
 				// Setup: Create test resources with automatic cleanup
-				testResources := e2eutil.NewTestResources(kc)
+				testResources, err := e2eutil.NewTestResources(ctx, kc, clusterOpts.ExtOIDCConfig)
+				g.Expect(err).NotTo(HaveOccurred())
 				defer testResources.Cleanup(ctx, t)
 
 				// Verify: User validation rules are configured
