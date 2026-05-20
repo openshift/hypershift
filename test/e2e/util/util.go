@@ -2011,7 +2011,7 @@ func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclie
 		// Verify that in-place management-cluster pull secret updates propagate to the guest cluster
 		// without triggering a NodePool rollout.
 		t.Run("When management-cluster hostedCluster.Spec.PullSecret is updated in-place it should propagate to guest without rollout", func(t *testing.T) {
-			CPOAtLeast(t, Version423, entryHostedCluster)
+			CPOAtLeast(t, Version422, entryHostedCluster)
 			g := NewWithT(t)
 			t.Logf("Reading management-cluster pull secret %s/%s", entryHostedCluster.Namespace, entryHostedCluster.Spec.PullSecret.Name)
 			mgmtSecret := &corev1.Secret{}
