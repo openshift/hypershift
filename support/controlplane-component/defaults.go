@@ -427,12 +427,29 @@ func (c *controlPlaneWorkload[T]) applyRequestsOverrides(podTemplate *corev1.Pod
 	for i, c := range podTemplate.Spec.InitContainers {
 		if res, ok := requestsOverrides[c.Name]; ok {
 			maps.Copy(podTemplate.Spec.InitContainers[i].Resources.Requests, res)
+			applyNonOvercommitableResourceLimits(&podTemplate.Spec.InitContainers[i], res)
 		}
 	}
 	for i, c := range podTemplate.Spec.Containers {
 		if res, ok := requestsOverrides[c.Name]; ok {
 			maps.Copy(podTemplate.Spec.Containers[i].Resources.Requests, res)
+			applyNonOvercommitableResourceLimits(&podTemplate.Spec.Containers[i], res)
 		}
+	}
+}
+
+const aroSwiftNICResource corev1.ResourceName = "aro.openshift.io/swift-nic"
+
+// applyNonOvercommitableResourceLimits sets limits equal to requests for extended
+// resources that cannot be overcommitted, specifically "aro.openshift.io/swift-nic".
+// The API server requires limits == requests for these resources.
+// https://github.com/kubernetes/kubernetes/blob/621e250502ddeeab8274836e88b506c0c4f57232/pkg/apis/core/validation/validation.go#L7975-L7976
+func applyNonOvercommitableResourceLimits(container *corev1.Container, overrides corev1.ResourceList) {
+	if quantity, ok := overrides[aroSwiftNICResource]; ok {
+		if container.Resources.Limits == nil {
+			container.Resources.Limits = corev1.ResourceList{}
+		}
+		container.Resources.Limits[aroSwiftNICResource] = quantity
 	}
 }
 
