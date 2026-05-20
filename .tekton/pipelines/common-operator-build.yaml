@@ -134,6 +134,8 @@ spec:
       value: $(params.image-expires-after)
     - name: dev-package-managers
       value: $(params.dev-package-managers)
+    - name: enable-package-registry-proxy
+      value: "true"
     runAfter:
     - clone-repository
     taskRef:
