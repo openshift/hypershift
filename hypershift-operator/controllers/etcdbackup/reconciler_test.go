@@ -1786,3 +1786,78 @@ func TestGetSnapshotURLFromPod(t *testing.T) {
 		})
 	}
 }
+
+func TestUpdateHCPBackupCondition(t *testing.T) {
+	t.Parallel()
+
+	t.Run("When patching a backup condition, it should not stomp unrelated status fields", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		hcp := newHostedControlPlane()
+		hcp.Generation = 3
+		hcp.Status.AutoNode = hyperv1.AutoNodeStatus{
+			VCPUs: ptr.To[int32](8),
+		}
+
+		r := newReconciler(hcp)
+
+		err := r.updateHCPBackupCondition(t.Context(), hcp, metav1.Condition{
+			Type:    string(hyperv1.EtcdBackupSucceeded),
+			Status:  metav1.ConditionTrue,
+			Reason:  "BackupComplete",
+			Message: "backup finished",
+		})
+		g.Expect(err).ToNot(HaveOccurred())
+
+		var updated hyperv1.HostedControlPlane
+		g.Expect(r.Get(t.Context(), types.NamespacedName{
+			Name:      testHCPName,
+			Namespace: testHCPNamespace,
+		}, &updated)).To(Succeed())
+
+		cond := meta.FindStatusCondition(updated.Status.Conditions, string(hyperv1.EtcdBackupSucceeded))
+		g.Expect(cond).ToNot(BeNil())
+		g.Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+		g.Expect(cond.Reason).To(Equal("BackupComplete"))
+		g.Expect(cond.ObservedGeneration).To(Equal(int64(3)))
+
+		g.Expect(updated.Status.AutoNode.VCPUs).To(Equal(ptr.To[int32](8)),
+			"autoNode should be preserved — patch must not stomp unrelated fields")
+	})
+
+	t.Run("When patching a backup condition onto an HCP with existing conditions, it should preserve them", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		hcp := newHostedControlPlane()
+		hcp.Status.Conditions = []metav1.Condition{
+			{
+				Type:   string(hyperv1.ClusterVersionAvailable),
+				Status: metav1.ConditionTrue,
+				Reason: "OK",
+			},
+		}
+
+		r := newReconciler(hcp)
+
+		err := r.updateHCPBackupCondition(t.Context(), hcp, metav1.Condition{
+			Type:    string(hyperv1.EtcdBackupSucceeded),
+			Status:  metav1.ConditionTrue,
+			Reason:  "BackupComplete",
+			Message: "backup finished",
+		})
+		g.Expect(err).ToNot(HaveOccurred())
+
+		var updated hyperv1.HostedControlPlane
+		g.Expect(r.Get(t.Context(), types.NamespacedName{
+			Name:      testHCPName,
+			Namespace: testHCPNamespace,
+		}, &updated)).To(Succeed())
+
+		g.Expect(updated.Status.Conditions).To(HaveLen(2),
+			"both the existing condition and the new backup condition should be present")
+		g.Expect(meta.FindStatusCondition(updated.Status.Conditions, string(hyperv1.ClusterVersionAvailable))).ToNot(BeNil())
+		g.Expect(meta.FindStatusCondition(updated.Status.Conditions, string(hyperv1.EtcdBackupSucceeded))).ToNot(BeNil())
+	})
+}
