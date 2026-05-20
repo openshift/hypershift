@@ -9,6 +9,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -771,4 +772,30 @@ func TestHyperShiftOperatorDeployment_Build_WorkloadIdentityLabel(t *testing.T) 
 			}
 		})
 	}
+}
+
+func TestHyperShiftOperatorClusterRole_WebhookRBAC(t *testing.T) {
+	t.Parallel()
+	clusterRole := HyperShiftOperatorClusterRole{}.Build()
+
+	t.Run("When building the ClusterRole it should include cluster-scoped RBAC for webhook configurations", func(t *testing.T) {
+		t.Parallel()
+		g := NewGomegaWithT(t)
+		g.Expect(clusterRole.Rules).To(ContainElement(Equal(rbacv1.PolicyRule{
+			APIGroups: []string{"admissionregistration.k8s.io"},
+			Resources: []string{"mutatingwebhookconfigurations", "validatingwebhookconfigurations"},
+			Verbs:     []string{"get", "list", "watch", "update"},
+		})))
+	})
+
+	t.Run("When building the ClusterRole it should include scoped delete for validatingwebhookconfigurations", func(t *testing.T) {
+		t.Parallel()
+		g := NewGomegaWithT(t)
+		g.Expect(clusterRole.Rules).To(ContainElement(Equal(rbacv1.PolicyRule{
+			APIGroups:     []string{"admissionregistration.k8s.io"},
+			Resources:     []string{"validatingwebhookconfigurations"},
+			Verbs:         []string{"delete"},
+			ResourceNames: []string{hyperv1.GroupVersion.Group},
+		})))
+	})
 }
