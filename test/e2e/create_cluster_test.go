@@ -116,8 +116,11 @@ func TestCreateCluster(t *testing.T) {
 		e2eutil.EnsureDefaultSecurityGroupTags(t, ctx, mgtClient, hostedCluster, clusterOpts)
 
 		if globalOpts.Platform == hyperv1.AzurePlatform {
-			e2eutil.EnsureKubeAPIServerAllowedCIDRs(t, ctx, mgtClient, guestConfig, hostedCluster)
+			// WI webhook must run before AllowedCIDRs. AllowedCIDRs blocks and restores
+			// all KAS traffic; the webhook sidecar (FailurePolicy: Ignore) may not be
+			// ready during recovery, silently skipping mutation on pods created in that window.
 			e2eutil.EnsureAzureWorkloadIdentityWebhookMutation(t, ctx, guestClient)
+			e2eutil.EnsureKubeAPIServerAllowedCIDRs(t, ctx, mgtClient, guestConfig, hostedCluster)
 		}
 
 		e2eutil.EnsureGlobalPullSecret(t, ctx, mgtClient, hostedCluster, globalOpts.AdditionalPullSecretFile)
