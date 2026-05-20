@@ -328,6 +328,7 @@ func (p *konnectivityProxy) DialContext(ctx context.Context, network string, req
 	}
 	if res.StatusCode != http.StatusOK {
 		log.Info("Status code was not 200", "statusCode", res.StatusCode)
+		res.Body.Close()
 		_ = konnectivityConnection.Close()
 		return nil, fmt.Errorf("proxy error from %s while dialing %s: %v", konnectivityServerAddress, requestAddress, res.Status)
 	}
@@ -335,6 +336,7 @@ func (p *konnectivityProxy) DialContext(ctx context.Context, network string, req
 	// for TLS. In TLS, the client speaks first, so we know there's no unbuffered data, but we can double-check.
 	if br.Buffered() > 0 {
 		log.Info("The response contained buffered data, none expected")
+		res.Body.Close()
 		_ = konnectivityConnection.Close()
 		return nil, fmt.Errorf("unexpected %d bytes of buffered data from CONNECT proxy %q",
 			br.Buffered(), konnectivityServerAddress)
