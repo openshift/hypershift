@@ -137,7 +137,7 @@ spec:
         image: etcd
         imagePullPolicy: IfNotPresent
         livenessProbe:
-          failureThreshold: 5
+          failureThreshold: 12
           httpGet:
             path: healthz
             port: 9980
