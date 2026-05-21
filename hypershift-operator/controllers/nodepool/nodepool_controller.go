@@ -2,6 +2,7 @@ package nodepool
 
 import (
 	"context"
+	coreerrors "errors"
 	"fmt"
 	"os"
 	"regexp"
@@ -414,7 +415,8 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	}
 
 	if err := capi.Reconcile(ctx); err != nil {
-		if _, isNotReady := err.(*NotReadyError); isNotReady {
+		var notReadyErr *NotReadyError
+		if coreerrors.As(err, &notReadyErr) {
 			log.Info("Waiting to create machine template", "message", err.Error())
 			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 		}

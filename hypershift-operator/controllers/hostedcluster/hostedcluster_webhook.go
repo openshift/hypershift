@@ -104,7 +104,7 @@ func (defaulter *nodePoolDefaulter) Default(ctx context.Context, obj runtime.Obj
 
 		err := defaulter.client.Get(ctx, client.ObjectKeyFromObject(hc), hc)
 		if err != nil {
-			return fmt.Errorf("error retrieving HostedCluster named [%s], %v", np.Spec.ClusterName, err)
+			return fmt.Errorf("error retrieving HostedCluster named [%s], %w", np.Spec.ClusterName, err)
 		}
 		np.Spec.Release.Image = hc.Spec.Release.Image
 	}

@@ -963,7 +963,7 @@ func (infra *Infra) createVpc(ctx context.Context, logger logr.Logger, options *
 		})
 
 		if err != nil {
-			return nil, fmt.Errorf("error attaching inbound security group rule to allow %d to vpc %v", port, err)
+			return nil, fmt.Errorf("error attaching inbound security group rule to allow %d to vpc %w", port, err)
 		}
 	}
 

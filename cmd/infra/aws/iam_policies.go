@@ -36,7 +36,7 @@ func APIsByDelegatedServices() (ServicesByDelegate, error) {
 	for _, binding := range bindings {
 		p := policy{}
 		if err := json.Unmarshal([]byte(binding.policy), &p); err != nil {
-			return nil, fmt.Errorf("error unmarshalling delegate policy for %q: %v", binding.name, err)
+			return nil, fmt.Errorf("error unmarshalling delegate policy for %q: %w", binding.name, err)
 		}
 		delegate := EndpointsByService{}
 		for i, statement := range p.Statement {

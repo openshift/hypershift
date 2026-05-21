@@ -206,7 +206,7 @@ func readComponentVersions(is *imageapi.ImageStream) (ComponentVersions, []error
 		}
 		all, err := parseComponentVersionsLabel(versions, tag.Annotations[annotationBuildVersionsDisplayNames])
 		if err != nil {
-			errs = append(errs, fmt.Errorf("the referenced image %s had an invalid version annotation: %v", tag.Name, err))
+			errs = append(errs, fmt.Errorf("the referenced image %s had an invalid version annotation: %w", tag.Name, err))
 		}
 		for k, v := range all {
 			if k == "kubectl" {
@@ -326,7 +326,7 @@ func parseComponentVersionsLabel(label, displayNames string) (ComponentVersions,
 		}
 		v, err := semver.Parse(parts[1])
 		if err != nil {
-			return nil, fmt.Errorf("the version pair %q must have a valid semantic version: %v", pair, err)
+			return nil, fmt.Errorf("the version pair %q must have a valid semantic version: %w", pair, err)
 		}
 		v.Build = nil
 		labels[parts[0]] = ComponentVersion{

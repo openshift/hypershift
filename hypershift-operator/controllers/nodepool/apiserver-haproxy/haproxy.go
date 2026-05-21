@@ -139,7 +139,7 @@ func (r *HAProxy) reconcileHAProxyIgnitionConfig(ctx context.Context, hcluster *
 	if hcluster.Spec.Configuration != nil && hcluster.Spec.Configuration.Proxy != nil && hcluster.Spec.Configuration.Proxy.HTTPSProxy != "" && netutil.ConnectsThroughInternetToControlplane(hcluster.Spec.Platform) {
 		apiserverProxy, err = joinDefaultPortIfMissing(hcluster.Spec.Configuration.Proxy.HTTPSProxy)
 		if err != nil {
-			return "", fmt.Errorf("failed to parse .Spec.Configuration.Proxy.HTTPSProxy: %v", err)
+			return "", fmt.Errorf("failed to parse .Spec.Configuration.Proxy.HTTPSProxy: %w", err)
 		}
 		noProxy = hcluster.Spec.Configuration.Proxy.NoProxy
 	}

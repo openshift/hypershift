@@ -2,6 +2,7 @@ package registryclient
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"hash"
 	"io"
@@ -377,20 +378,24 @@ func isTemporaryHTTPError(err error) (time.Duration, bool) {
 	if err == nil {
 		return 0, false
 	}
-	switch t := err.(type) {
-	case net.Error:
-		return time.Second, t.Timeout()
-	case errcode.ErrorCoder:
+	var netErr net.Error
+	if errors.As(err, &netErr) {
+		return time.Second, netErr.Timeout()
+	}
+	var errorCoder errcode.ErrorCoder
+	if errors.As(err, &errorCoder) {
 		// note: we explicitly do not check errcode.ErrorCodeUnknown because that is used in
 		// a wide range of scenarios to convey "generic error", not "retryable error"
-		switch t.ErrorCode() {
+		switch errorCoder.ErrorCode() {
 		case errcode.ErrorCodeUnavailable:
 			return 5 * time.Second, true
 		case errcode.ErrorCodeTooManyRequests:
 			return 2 * time.Second, true
 		}
-	case *registryclient.UnexpectedHTTPResponseError:
-		switch t.StatusCode {
+	}
+	var unexpectedErr *registryclient.UnexpectedHTTPResponseError
+	if errors.As(err, &unexpectedErr) {
+		switch unexpectedErr.StatusCode {
 		case http.StatusInternalServerError, http.StatusGatewayTimeout, http.StatusServiceUnavailable, http.StatusBadGateway:
 			return 5 * time.Second, true
 		case http.StatusTooManyRequests:
@@ -692,7 +697,7 @@ func (r *readSeekCloserVerifier) Read(p []byte) (n int, err error) {
 		if n > 0 {
 			r.hash.Write(p[:n])
 		}
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			actual := digest.NewDigest(r.expect.Algorithm(), r.hash)
 			if actual != r.expect {
 				return n, fmt.Errorf("content integrity error: the blob streamed from digest %s does not match the digest calculated from the content %s", r.expect, actual)

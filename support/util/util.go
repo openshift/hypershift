@@ -440,7 +440,7 @@ func SanitizeIgnitionPayload(payload []byte) error {
 	var jsonPayload ignitionapi.Config
 
 	if err := json.Unmarshal(payload, &jsonPayload); err != nil {
-		return fmt.Errorf("error unmarshalling Ignition payload: %v", err)
+		return fmt.Errorf("error unmarshalling Ignition payload: %w", err)
 	}
 
 	return nil

@@ -231,10 +231,10 @@ func (o *HostedClusterConfigOperator) Run(ctx context.Context) error {
 		opt.Scheme = api.Scheme
 	})
 	if err != nil {
-		return fmt.Errorf("cannot create control plane cluster: %v", err)
+		return fmt.Errorf("cannot create control plane cluster: %w", err)
 	}
 	if err := mgr.Add(cpCluster); err != nil {
-		return fmt.Errorf("cannot add CPCluster to manager: %v", err)
+		return fmt.Errorf("cannot add CPCluster to manager: %w", err)
 	}
 	var kubevirtInfraConfig *rest.Config
 	if o.KubevirtInfraKubeconfig != "" {

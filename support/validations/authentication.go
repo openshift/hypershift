@@ -68,7 +68,7 @@ func ValidateAuthenticationSpecForTypeOIDC(ctx context.Context, client crclient.
 
 	apiServerAuthConfig, err := kas.HCPAuthConfigToAPIServerAuthConfig(authConfig)
 	if err != nil {
-		return fmt.Errorf("converting from HCP auth config type to apiserver auth config type: %v", err)
+		return fmt.Errorf("converting from HCP auth config type to apiserver auth config type: %w", err)
 	}
 
 	fieldErrors := validation.ValidateAuthenticationConfiguration(celCompiler, apiServerAuthConfig, disallowIssuers)

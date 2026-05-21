@@ -114,7 +114,7 @@ func Render(ctx context.Context, namespace string, name string, portForward bool
 			},
 		}
 		if err := c.Get(ctx, client.ObjectKeyFromObject(&kubeConfigSecret), &kubeConfigSecret); err != nil {
-			return fmt.Errorf("failed to get kubeconfig secret %s: %s", client.ObjectKeyFromObject(&kubeConfigSecret), err)
+			return fmt.Errorf("failed to get kubeconfig secret %s: %w", client.ObjectKeyFromObject(&kubeConfigSecret), err)
 		}
 		data, hasData := kubeConfigSecret.Data["kubeconfig"]
 		if !hasData || len(data) == 0 {

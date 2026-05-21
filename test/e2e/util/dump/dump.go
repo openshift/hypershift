@@ -68,7 +68,7 @@ func DumpMachineConsoleLogs(ctx context.Context, hc *hyperv1.HostedCluster, awsC
 	}
 	err := consoleLogs.Run(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get machine console logs: %v", err)
+		return fmt.Errorf("failed to get machine console logs: %w", err)
 	}
 	return nil
 }

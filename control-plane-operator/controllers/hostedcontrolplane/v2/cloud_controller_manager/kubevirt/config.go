@@ -54,7 +54,7 @@ func adaptConfig(cpContext component.WorkloadContext, cm *corev1.ConfigMap) erro
 	data := []byte(cm.Data[CloudConfigKey])
 	cloudConfig := &CloudConfig{}
 	if err := yaml.Unmarshal(data, cloudConfig); err != nil {
-		return fmt.Errorf("failed to unmarshal CloudConfig: %v", err)
+		return fmt.Errorf("failed to unmarshal CloudConfig: %w", err)
 	}
 
 	if kubevirt := cpContext.HCP.Spec.Platform.Kubevirt; kubevirt != nil && kubevirt.Credentials != nil {

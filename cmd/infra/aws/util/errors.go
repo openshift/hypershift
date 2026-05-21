@@ -9,7 +9,8 @@ import (
 )
 
 func IsErrorRetryable(err error) bool {
-	if aggregate, isAggregate := err.(utilerrors.Aggregate); isAggregate {
+	var aggregate utilerrors.Aggregate
+	if errors.As(err, &aggregate) {
 		if len(aggregate.Errors()) == 1 {
 			err = aggregate.Errors()[0]
 		} else {

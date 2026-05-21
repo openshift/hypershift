@@ -21,7 +21,7 @@ const (
 func (c *controlPlaneWorkload[T]) adaptServiceAccountKubeconfigSecret(cpContext WorkloadContext, secret *corev1.Secret) error {
 	csrSigner := manifests.CSRSignerCASecret(cpContext.HCP.Namespace)
 	if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(csrSigner), csrSigner); err != nil {
-		return fmt.Errorf("failed to get cluster-signer-ca secret: %v", err)
+		return fmt.Errorf("failed to get cluster-signer-ca secret: %w", err)
 	}
 	rootCA := manifests.RootCASecret(cpContext.HCP.Namespace)
 	if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(rootCA), rootCA); err != nil {

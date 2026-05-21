@@ -81,11 +81,11 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 	bootstrapUpdateErrors := []error{}
 	for _, bootstrapContainer := range bootstrapContainers {
 		if err := updateBootstrapInitContainer(deployment, hcp, payloadVersion, bootstrapContainer); err != nil {
-			bootstrapUpdateErrors = append(bootstrapUpdateErrors, fmt.Errorf("updating bootstrap container %q: %v", bootstrapContainer, err))
+			bootstrapUpdateErrors = append(bootstrapUpdateErrors, fmt.Errorf("updating bootstrap container %q: %w", bootstrapContainer, err))
 		}
 	}
 	if err := errors.Join(bootstrapUpdateErrors...); err != nil {
-		return fmt.Errorf("updating bootstrap containers: %v", err)
+		return fmt.Errorf("updating bootstrap containers: %w", err)
 	}
 
 	if hcp.Spec.Configuration.GetAuditPolicyConfig().Profile == configv1.NoneAuditProfileType {

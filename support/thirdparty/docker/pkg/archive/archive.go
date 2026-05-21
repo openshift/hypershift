@@ -140,7 +140,7 @@ func cmdStream(cmd *exec.Cmd, input io.Reader) (io.ReadCloser, error) {
 	// Copy stdout to the returned pipe
 	go func() {
 		if err := cmd.Wait(); err != nil {
-			pipeW.CloseWithError(fmt.Errorf("%s: %s", err, errBuf.String()))
+			pipeW.CloseWithError(fmt.Errorf("%w: %s", err, errBuf.String()))
 		} else {
 			pipeW.Close()
 		}
