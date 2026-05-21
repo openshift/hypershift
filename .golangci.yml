@@ -3,9 +3,16 @@ run:
   allow-parallel-runners: true
 linters:
   enable:
+    - dupword
+    - durationcheck
+    - errorlint
+    - fatcontext
     - gocyclo
     - misspell
+    - nilerr
+    - noctx
     - unparam
+    - usestdlibvars
   settings:
     gocyclo:
       min-complexity: 30
