@@ -284,7 +284,7 @@ func TestKonnectivityHealthEndRetryPreventsStubbornFlag(t *testing.T) {
 // All accepted connections inherit a deadline so io.Copy never blocks indefinitely.
 func startTCPEchoServer(t *testing.T) net.Listener {
 	t.Helper()
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	ln, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("failed to start echo server: %v", err)
 	}
@@ -315,7 +315,7 @@ func startTCPEchoServer(t *testing.T) net.Listener {
 // deadlines so they cannot outlive the test.
 func startConnectProxy(t *testing.T, connectCount *atomic.Int32) net.Listener {
 	t.Helper()
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	ln, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("failed to start proxy server: %v", err)
 	}
@@ -329,7 +329,7 @@ func startConnectProxy(t *testing.T, connectCount *atomic.Int32) net.Listener {
 			}
 			connectCount.Add(1)
 
-			target, err := net.DialTimeout("tcp", r.Host, 5*time.Second)
+			target, err := (&net.Dialer{Timeout: 5 * time.Second}).DialContext(r.Context(), "tcp", r.Host)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusBadGateway)
 				return

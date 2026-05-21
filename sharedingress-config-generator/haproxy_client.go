@@ -1,6 +1,7 @@
 package sharedingressconfiggenerator
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net"
@@ -11,14 +12,14 @@ import (
 type haProxyClient interface {
 	// sendHAProxyCommand connects to the specified Unix socket, sends a command,
 	// and returns the response from HAProxy.
-	sendCommand(socketPath, command string) (string, error)
+	sendCommand(ctx context.Context, socketPath, command string) (string, error)
 }
 
 type defaultHAproxyClient struct {
 }
 
-func (c *defaultHAproxyClient) sendCommand(socketPath, command string) (string, error) {
-	conn, err := net.Dial("unix", socketPath)
+func (c *defaultHAproxyClient) sendCommand(ctx context.Context, socketPath, command string) (string, error) {
+	conn, err := (&net.Dialer{}).DialContext(ctx, "unix", socketPath)
 	if err != nil {
 		return "", fmt.Errorf("failed to connect to socket %s: %w", socketPath, err)
 	}

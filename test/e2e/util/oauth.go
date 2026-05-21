@@ -116,7 +116,7 @@ func WaitForOAuthTokenByHost(t testing.TB, ctx context.Context, oauthHost string
 
 	oauthClient := configmanifests.OAuthServerChallengingClient().Name
 	tokenReqUrl := fmt.Sprintf("https://%s/oauth/authorize?response_type=token&client_id=%s", oauthHost, oauthClient)
-	request, err := http.NewRequest(http.MethodGet, tokenReqUrl, nil)
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, tokenReqUrl, nil)
 	g.Expect(err).ToNot(HaveOccurred())
 
 	request.Header.Set("Authorization", getBasicHeader(username, password))
@@ -180,7 +180,7 @@ func WaitForOAuthRouteReady(t *testing.T, ctx context.Context, client crclient.C
 	g.Expect(err).ToNot(HaveOccurred(), "failed retrieving oauth route")
 	t.Logf("Found OAuth route %s", route.Spec.Host)
 
-	request, err := http.NewRequest(http.MethodHead, fmt.Sprintf("https://%s/healthz", route.Spec.Host), nil)
+	request, err := http.NewRequestWithContext(ctx, http.MethodHead, fmt.Sprintf("https://%s/healthz", route.Spec.Host), nil)
 	g.Expect(err).ToNot(HaveOccurred())
 
 	transport, err := restclient.TransportFor(restclient.AnonymousClientConfig(restConfig))
@@ -349,7 +349,7 @@ func WaitForOAuthLoadBalancerReady(t testing.TB, ctx context.Context, client crc
 
 	// Wait for the OAuth hostname to be resolvable via DNS (ExternalDNS creates the record)
 	// and for the /healthz endpoint to return HTTP 200
-	request, err := http.NewRequest(http.MethodHead, fmt.Sprintf("https://%s/healthz", oauthHost), nil)
+	request, err := http.NewRequestWithContext(ctx, http.MethodHead, fmt.Sprintf("https://%s/healthz", oauthHost), nil)
 	g.Expect(err).ToNot(HaveOccurred())
 
 	transport, err := restclient.TransportFor(restclient.AnonymousClientConfig(restConfig))

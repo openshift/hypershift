@@ -944,9 +944,9 @@ func (r *HostedControlPlaneReconciler) healthCheckKASLoadBalancers(ctx context.C
 		// When the cluster is private, checking the load balancers will depend on whether the load balancer is
 		// using the right subnets. To avoid uncertainty, we'll limit the check to the service endpoint.
 		if hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
-			return healthCheckKASEndpoint(manifests.KubeAPIServerService("").Name, config.KASSVCIBMCloudPort)
+			return healthCheckKASEndpoint(ctx, manifests.KubeAPIServerService("").Name, config.KASSVCIBMCloudPort)
 		}
-		return healthCheckKASEndpoint(manifests.KubeAPIServerService("").Name, config.KASSVCPort)
+		return healthCheckKASEndpoint(ctx, manifests.KubeAPIServerService("").Name, config.KASSVCPort)
 	case serviceStrategy.Type == hyperv1.Route:
 		if hcp.Spec.Platform.Type != hyperv1.IBMCloudPlatform {
 			externalRoute := manifests.KubeAPIServerExternalPublicRoute(hcp.Namespace)
@@ -958,7 +958,7 @@ func (r *HostedControlPlaneReconciler) healthCheckKASLoadBalancers(ctx context.C
 			if err != nil {
 				return err
 			}
-			return healthCheckKASEndpoint(endpoint, port)
+			return healthCheckKASEndpoint(ctx, endpoint, port)
 		}
 	case serviceStrategy.Type == hyperv1.LoadBalancer:
 		svc := manifests.KubeAPIServerService(hcp.Namespace)
@@ -987,20 +987,25 @@ func (r *HostedControlPlaneReconciler) healthCheckKASLoadBalancers(ctx context.C
 		} else if LBIngress.IP != "" {
 			ingressPoint = LBIngress.IP
 		}
-		return healthCheckKASEndpoint(ingressPoint, port)
+		return healthCheckKASEndpoint(ctx, ingressPoint, port)
 	}
 	return nil
 }
 
-func healthCheckKASEndpoint(ingressPoint string, port int) error {
+func healthCheckKASEndpoint(ctx context.Context, ingressPoint string, port int) error {
 	healthEndpoint := fmt.Sprintf("https://%s:%d/healthz", ingressPoint, port)
 
 	httpClient := util.InsecureHTTPClient()
 	httpClient.Timeout = 10 * time.Second
-	resp, err := httpClient.Get(healthEndpoint)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, healthEndpoint, nil)
 	if err != nil {
 		return err
 	}
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("APIServer endpoint %s is not healthy", ingressPoint)

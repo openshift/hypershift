@@ -67,7 +67,7 @@ func (s *server) validate() error {
 }
 
 func (s *server) run(ctx context.Context) error {
-	listener, err := net.Listen("tcp", s.listenAddr)
+	listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", s.listenAddr)
 	if err != nil {
 		return fmt.Errorf("failed to listen on tcp:%s: %w", s.listenAddr, err)
 	}
@@ -87,7 +87,7 @@ func (s *server) run(ctx context.Context) error {
 		go func() {
 			defer conn.Close()
 
-			backendConn, err := net.Dial("tcp", s.proxyAddr)
+			backendConn, err := (&net.Dialer{}).DialContext(ctx, "tcp", s.proxyAddr)
 			if err != nil {
 				s.log.Error(err, "failed diaing backend", "proxyAddr", s.proxyAddr)
 				return
