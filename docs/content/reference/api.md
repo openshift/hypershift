@@ -6207,6 +6207,12 @@ When this is false for too long and there&rsquo;s no clear indication in the &ld
 <td><p>HostedClusterDegraded indicates whether the HostedCluster is encountering
 an error that may require user intervention to resolve.</p>
 </td>
+</tr><tr><td><p>&#34;HostedClusterDeleting&#34;</p></td>
+<td><p>HostedClusterDeleting indicates whether the HostedCluster is being deleted and
+provides first-class visibility into which phase of deletion the cluster is in.
+<strong>False / AsExpected</strong> means the cluster is not being deleted.
+<strong>True</strong> means deletion is in progress; the Reason and Message indicate the current phase.</p>
+</td>
 </tr><tr><td><p>&#34;HostedClusterDestroyed&#34;</p></td>
 <td><p>HostedClusterDestroyed indicates that a hosted has finished destroying and that it is waiting for a destroy grace period to go away.
 The grace period is determined by the hypershift.openshift.io/destroy-grace-period annotation in the HostedCluster if present.</p>

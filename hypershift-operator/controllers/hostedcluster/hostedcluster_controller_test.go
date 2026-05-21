@@ -8832,3 +8832,498 @@ func TestReconcileSREMetricsConfig_EffectiveMetricsSet(t *testing.T) {
 		})
 	}
 }
+
+func TestDeleteSetDeletionProgressIdempotency(t *testing.T) {
+	g := NewGomegaWithT(t)
+
+	now := metav1.Now()
+
+	hc := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "test-cluster",
+			Namespace:         "clusters",
+			DeletionTimestamp: &now,
+			Finalizers:        []string{"hypershift.openshift.io/finalizer"},
+			Generation:        1,
+		},
+		Spec: hyperv1.HostedClusterSpec{
+			Platform: hyperv1.PlatformSpec{Type: hyperv1.NonePlatform},
+			InfraID:  "test-infra-id",
+			Release:  hyperv1.Release{Image: "quay.io/test/release:latest"},
+			Networking: hyperv1.ClusterNetworking{
+				ServiceNetwork: []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.31.0.0/16")}},
+				ClusterNetwork: []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("10.132.0.0/14")}},
+			},
+			Services:   []hyperv1.ServicePublishingStrategyMapping{},
+			PullSecret: corev1.LocalObjectReference{Name: "pull-secret"},
+		},
+		Status: hyperv1.HostedClusterStatus{
+			Conditions: []metav1.Condition{
+				{
+					Type:               string(hyperv1.HostedClusterDeleting),
+					Status:             metav1.ConditionTrue,
+					Reason:             hyperv1.DeletionWaitingForNodePoolDeletionReason,
+					Message:            "Waiting for 1 NodePool(s) to be deleted: np-1",
+					ObservedGeneration: 1,
+				},
+			},
+		},
+	}
+
+	np := &hyperv1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:       "np-1",
+			Namespace:  "clusters",
+			Finalizers: []string{"hypershift.openshift.io/test-finalizer"},
+		},
+		Spec: hyperv1.NodePoolSpec{
+			ClusterName: "test-cluster",
+			Platform:    hyperv1.NodePoolPlatform{Type: hyperv1.NonePlatform},
+			Release:     hyperv1.Release{Image: "quay.io/test/release:latest"},
+			Management:  hyperv1.NodePoolManagement{UpgradeType: hyperv1.UpgradeTypeReplace},
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(api.Scheme).
+		WithObjects(hc, np).
+		WithStatusSubresource(hc).
+		Build()
+
+	r := &HostedClusterReconciler{
+		Client:                        fakeClient,
+		KubevirtInfraClients:          kvinfra.NewKubevirtInfraClientMap(),
+		ManagementClusterCapabilities: &fakecapabilities.FakeSupportNoCapabilities{},
+	}
+
+	ctx := ctrl.LoggerInto(t.Context(), zap.New(zap.UseDevMode(true), zap.WriteTo(os.Stdout)))
+
+	// First call sets the condition.
+	completed, err := r.delete(ctx, hc)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(completed).To(BeFalse())
+
+	// Fetch the resource version after first call.
+	updatedHC := &hyperv1.HostedCluster{}
+	g.Expect(fakeClient.Get(ctx, types.NamespacedName{Namespace: "clusters", Name: "test-cluster"}, updatedHC)).To(Succeed())
+	rvAfterFirst := updatedHC.ResourceVersion
+
+	// Second call with same state should be idempotent (no status update).
+	hc.ResourceVersion = updatedHC.ResourceVersion
+	hc.Status = updatedHC.Status
+	completed, err = r.delete(ctx, hc)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(completed).To(BeFalse())
+
+	g.Expect(fakeClient.Get(ctx, types.NamespacedName{Namespace: "clusters", Name: "test-cluster"}, updatedHC)).To(Succeed())
+	g.Expect(updatedHC.ResourceVersion).To(Equal(rvAfterFirst))
+}
+
+func TestDeleteNodePoolTeardownPhase(t *testing.T) {
+	g := NewGomegaWithT(t)
+
+	now := metav1.Now()
+
+	tests := []struct {
+		name                    string
+		existingNodePools       []hyperv1.NodePool
+		expectedConditionReason string
+		expectedMessage         string
+	}{
+		{
+			name: "When NodePools remain after deletion it should set WaitingForNodePoolDeletion and return incomplete",
+			existingNodePools: []hyperv1.NodePool{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:       "np-1",
+						Namespace:  "clusters",
+						Finalizers: []string{"hypershift.openshift.io/test-finalizer"},
+					},
+					Spec: hyperv1.NodePoolSpec{
+						ClusterName: "test-cluster",
+						Platform:    hyperv1.NodePoolPlatform{Type: hyperv1.NonePlatform},
+						Release:     hyperv1.Release{Image: "quay.io/test/release:latest"},
+						Management:  hyperv1.NodePoolManagement{UpgradeType: hyperv1.UpgradeTypeReplace},
+					},
+				},
+			},
+			expectedConditionReason: hyperv1.DeletionWaitingForNodePoolDeletionReason,
+			expectedMessage:         "Waiting for 1 NodePool(s) to be deleted: np-1",
+		},
+		{
+			name: "When multiple NodePools remain it should report the count in the message",
+			existingNodePools: []hyperv1.NodePool{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:       "np-1",
+						Namespace:  "clusters",
+						Finalizers: []string{"hypershift.openshift.io/test-finalizer"},
+					},
+					Spec: hyperv1.NodePoolSpec{
+						ClusterName: "test-cluster",
+						Platform:    hyperv1.NodePoolPlatform{Type: hyperv1.NonePlatform},
+						Release:     hyperv1.Release{Image: "quay.io/test/release:latest"},
+						Management:  hyperv1.NodePoolManagement{UpgradeType: hyperv1.UpgradeTypeReplace},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:       "np-2",
+						Namespace:  "clusters",
+						Finalizers: []string{"hypershift.openshift.io/test-finalizer"},
+					},
+					Spec: hyperv1.NodePoolSpec{
+						ClusterName: "test-cluster",
+						Platform:    hyperv1.NodePoolPlatform{Type: hyperv1.NonePlatform},
+						Release:     hyperv1.Release{Image: "quay.io/test/release:latest"},
+						Management:  hyperv1.NodePoolManagement{UpgradeType: hyperv1.UpgradeTypeReplace},
+					},
+				},
+			},
+			expectedConditionReason: hyperv1.DeletionWaitingForNodePoolDeletionReason,
+			expectedMessage:         "Waiting for 2 NodePool(s) to be deleted: np-1, np-2",
+		},
+		{
+			name:                    "When no NodePools exist it should proceed past the NodePool phase",
+			existingNodePools:       nil,
+			expectedConditionReason: "",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			hc := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "test-cluster",
+					Namespace:         "clusters",
+					DeletionTimestamp: &now,
+					Finalizers:        []string{"hypershift.openshift.io/finalizer"},
+					Generation:        1,
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.NonePlatform},
+					InfraID:  "test-infra-id",
+					Release:  hyperv1.Release{Image: "quay.io/test/release:latest"},
+					Networking: hyperv1.ClusterNetworking{
+						ServiceNetwork: []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.31.0.0/16")}},
+						ClusterNetwork: []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("10.132.0.0/14")}},
+					},
+					Services:   []hyperv1.ServicePublishingStrategyMapping{},
+					PullSecret: corev1.LocalObjectReference{Name: "pull-secret"},
+				},
+				Status: hyperv1.HostedClusterStatus{},
+			}
+
+			objs := []crclient.Object{hc}
+			for i := range tc.existingNodePools {
+				objs = append(objs, &tc.existingNodePools[i])
+			}
+
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				WithObjects(objs...).
+				WithStatusSubresource(&hyperv1.HostedCluster{}).
+				Build()
+
+			r := &HostedClusterReconciler{
+				Client:                        fakeClient,
+				KubevirtInfraClients:          kvinfra.NewKubevirtInfraClientMap(),
+				ManagementClusterCapabilities: &fakecapabilities.FakeSupportNoCapabilities{},
+			}
+
+			ctx := ctrl.LoggerInto(t.Context(), zap.New(zap.UseDevMode(true), zap.WriteTo(os.Stdout)))
+			completed, err := r.delete(ctx, hc)
+
+			if tc.expectedConditionReason != "" {
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(completed).To(BeFalse())
+
+				updatedHC := &hyperv1.HostedCluster{}
+				g.Expect(fakeClient.Get(ctx, types.NamespacedName{Namespace: "clusters", Name: "test-cluster"}, updatedHC)).To(Succeed())
+
+				cond := meta.FindStatusCondition(updatedHC.Status.Conditions, string(hyperv1.HostedClusterDeleting))
+				g.Expect(cond).ToNot(BeNil())
+				g.Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+				g.Expect(cond.Reason).To(Equal(tc.expectedConditionReason))
+				g.Expect(cond.Message).To(Equal(tc.expectedMessage))
+				g.Expect(cond.ObservedGeneration).To(Equal(int64(1)))
+			} else {
+				// No NodePools case: it proceeds past the NodePool phase into later
+				// deletion stages. We verify it did not set WaitingForNodePoolDeletion.
+				g.Expect(err).ToNot(HaveOccurred())
+
+				updatedHC := &hyperv1.HostedCluster{}
+				g.Expect(fakeClient.Get(ctx, types.NamespacedName{Namespace: "clusters", Name: "test-cluster"}, updatedHC)).To(Succeed())
+				cond := meta.FindStatusCondition(updatedHC.Status.Conditions, string(hyperv1.HostedClusterDeleting))
+				if cond != nil {
+					g.Expect(cond.Reason).ToNot(Equal(hyperv1.DeletionWaitingForNodePoolDeletionReason))
+				}
+			}
+		})
+	}
+}
+
+func TestDeleteCAPIClusterTeardownPhase(t *testing.T) {
+	g := NewGomegaWithT(t)
+
+	now := metav1.Now()
+	controlPlaneNamespace := "clusters-test-cluster"
+
+	hc := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "test-cluster",
+			Namespace:         "clusters",
+			DeletionTimestamp: &now,
+			Finalizers:        []string{"hypershift.openshift.io/finalizer"},
+			Generation:        1,
+		},
+		Spec: hyperv1.HostedClusterSpec{
+			Platform: hyperv1.PlatformSpec{Type: hyperv1.NonePlatform},
+			InfraID:  "test-infra-id",
+			Release:  hyperv1.Release{Image: "quay.io/test/release:latest"},
+			Networking: hyperv1.ClusterNetworking{
+				ServiceNetwork: []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.31.0.0/16")}},
+				ClusterNetwork: []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("10.132.0.0/14")}},
+			},
+			Services:   []hyperv1.ServicePublishingStrategyMapping{},
+			PullSecret: corev1.LocalObjectReference{Name: "pull-secret"},
+		},
+		Status: hyperv1.HostedClusterStatus{},
+	}
+
+	capiCluster := &v1beta1.Cluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "test-infra-id",
+			Namespace:         controlPlaneNamespace,
+			DeletionTimestamp: &now,
+			Finalizers:        []string{"capi.cluster.x-k8s.io/test-finalizer"},
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(api.Scheme).
+		WithObjects(hc, capiCluster).
+		WithStatusSubresource(&hyperv1.HostedCluster{}).
+		Build()
+
+	r := &HostedClusterReconciler{
+		Client:                        fakeClient,
+		KubevirtInfraClients:          kvinfra.NewKubevirtInfraClientMap(),
+		ManagementClusterCapabilities: &fakecapabilities.FakeSupportNoCapabilities{},
+	}
+
+	ctx := ctrl.LoggerInto(t.Context(), zap.New(zap.UseDevMode(true), zap.WriteTo(os.Stdout)))
+	completed, err := r.delete(ctx, hc)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(completed).To(BeFalse())
+
+	updatedHC := &hyperv1.HostedCluster{}
+	g.Expect(fakeClient.Get(ctx, types.NamespacedName{Namespace: "clusters", Name: "test-cluster"}, updatedHC)).To(Succeed())
+
+	cond := meta.FindStatusCondition(updatedHC.Status.Conditions, string(hyperv1.HostedClusterDeleting))
+	g.Expect(cond).ToNot(BeNil())
+	g.Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+	g.Expect(cond.Reason).To(Equal(hyperv1.DeletionWaitingForCAPIClusterDeletionReason))
+	g.Expect(cond.Message).To(ContainSubstring("Waiting for CAPI cluster"))
+}
+
+func TestDeleteNamespaceTeardownPhase(t *testing.T) {
+	g := NewGomegaWithT(t)
+
+	now := metav1.Now()
+	controlPlaneNamespace := "clusters-test-cluster"
+
+	t.Run("When namespace has blocking conditions it should include them in the message", func(t *testing.T) {
+		hc := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:              "test-cluster",
+				Namespace:         "clusters",
+				DeletionTimestamp: &now,
+				Finalizers:        []string{"hypershift.openshift.io/finalizer"},
+				Generation:        1,
+			},
+			Spec: hyperv1.HostedClusterSpec{
+				Platform: hyperv1.PlatformSpec{Type: hyperv1.NonePlatform},
+				InfraID:  "",
+				Release:  hyperv1.Release{Image: "quay.io/test/release:latest"},
+				Networking: hyperv1.ClusterNetworking{
+					ServiceNetwork: []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.31.0.0/16")}},
+					ClusterNetwork: []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("10.132.0.0/14")}},
+				},
+				Services:   []hyperv1.ServicePublishingStrategyMapping{},
+				PullSecret: corev1.LocalObjectReference{Name: "pull-secret"},
+			},
+			Status: hyperv1.HostedClusterStatus{},
+		}
+
+		ns := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:              controlPlaneNamespace,
+				DeletionTimestamp: &now,
+				Finalizers:        []string{"kubernetes"},
+			},
+			Status: corev1.NamespaceStatus{
+				Phase: corev1.NamespaceTerminating,
+				Conditions: []corev1.NamespaceCondition{
+					{
+						Type:    corev1.NamespaceContentRemaining,
+						Status:  corev1.ConditionTrue,
+						Message: "Some resources still exist in the namespace",
+					},
+					{
+						Type:    corev1.NamespaceFinalizersRemaining,
+						Status:  corev1.ConditionTrue,
+						Message: "Some content in the namespace has finalizers",
+					},
+				},
+			},
+		}
+
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(api.Scheme).
+			WithObjects(hc, ns).
+			WithStatusSubresource(&hyperv1.HostedCluster{}, &corev1.Namespace{}).
+			Build()
+
+		r := &HostedClusterReconciler{
+			Client:                        fakeClient,
+			KubevirtInfraClients:          kvinfra.NewKubevirtInfraClientMap(),
+			ManagementClusterCapabilities: &fakecapabilities.FakeSupportNoCapabilities{},
+		}
+
+		ctx := ctrl.LoggerInto(t.Context(), zap.New(zap.UseDevMode(true), zap.WriteTo(os.Stdout)))
+		completed, err := r.delete(ctx, hc)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(completed).To(BeFalse())
+
+		updatedHC := &hyperv1.HostedCluster{}
+		g.Expect(fakeClient.Get(ctx, types.NamespacedName{Namespace: "clusters", Name: "test-cluster"}, updatedHC)).To(Succeed())
+
+		cond := meta.FindStatusCondition(updatedHC.Status.Conditions, string(hyperv1.HostedClusterDeleting))
+		g.Expect(cond).ToNot(BeNil())
+		g.Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+		g.Expect(cond.Reason).To(Equal(hyperv1.DeletionWaitingForNamespaceDeletionReason))
+		g.Expect(cond.Message).To(ContainSubstring("NamespaceContentRemaining"))
+		g.Expect(cond.Message).To(ContainSubstring("NamespaceFinalizersRemaining"))
+		g.Expect(cond.Message).To(ContainSubstring("Terminating"))
+	})
+
+	t.Run("When namespace has no blocking conditions it should report waiting with phase only", func(t *testing.T) {
+		hc := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:              "test-cluster",
+				Namespace:         "clusters",
+				DeletionTimestamp: &now,
+				Finalizers:        []string{"hypershift.openshift.io/finalizer"},
+				Generation:        1,
+			},
+			Spec: hyperv1.HostedClusterSpec{
+				Platform: hyperv1.PlatformSpec{Type: hyperv1.NonePlatform},
+				InfraID:  "",
+				Release:  hyperv1.Release{Image: "quay.io/test/release:latest"},
+				Networking: hyperv1.ClusterNetworking{
+					ServiceNetwork: []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.31.0.0/16")}},
+					ClusterNetwork: []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("10.132.0.0/14")}},
+				},
+				Services:   []hyperv1.ServicePublishingStrategyMapping{},
+				PullSecret: corev1.LocalObjectReference{Name: "pull-secret"},
+			},
+			Status: hyperv1.HostedClusterStatus{},
+		}
+
+		ns := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:              controlPlaneNamespace,
+				DeletionTimestamp: &now,
+				Finalizers:        []string{"kubernetes"},
+			},
+			Status: corev1.NamespaceStatus{
+				Phase: corev1.NamespaceTerminating,
+			},
+		}
+
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(api.Scheme).
+			WithObjects(hc, ns).
+			WithStatusSubresource(&hyperv1.HostedCluster{}, &corev1.Namespace{}).
+			Build()
+
+		r := &HostedClusterReconciler{
+			Client:                        fakeClient,
+			KubevirtInfraClients:          kvinfra.NewKubevirtInfraClientMap(),
+			ManagementClusterCapabilities: &fakecapabilities.FakeSupportNoCapabilities{},
+		}
+
+		ctx := ctrl.LoggerInto(t.Context(), zap.New(zap.UseDevMode(true), zap.WriteTo(os.Stdout)))
+		completed, err := r.delete(ctx, hc)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(completed).To(BeFalse())
+
+		updatedHC := &hyperv1.HostedCluster{}
+		g.Expect(fakeClient.Get(ctx, types.NamespacedName{Namespace: "clusters", Name: "test-cluster"}, updatedHC)).To(Succeed())
+
+		cond := meta.FindStatusCondition(updatedHC.Status.Conditions, string(hyperv1.HostedClusterDeleting))
+		g.Expect(cond).ToNot(BeNil())
+		g.Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+		g.Expect(cond.Reason).To(Equal(hyperv1.DeletionWaitingForNamespaceDeletionReason))
+		g.Expect(cond.Message).To(ContainSubstring("Terminating"))
+		g.Expect(cond.Message).ToNot(ContainSubstring("NamespaceContentRemaining"))
+	})
+}
+
+func TestDeleteCompleted(t *testing.T) {
+	g := NewGomegaWithT(t)
+
+	now := metav1.Now()
+
+	hc := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "test-cluster",
+			Namespace:         "clusters",
+			DeletionTimestamp: &now,
+			Finalizers:        []string{"hypershift.openshift.io/finalizer"},
+			Generation:        1,
+			Annotations: map[string]string{
+				hyperv1.SkipControlPlaneNamespaceDeletionAnnotation: "true",
+			},
+		},
+		Spec: hyperv1.HostedClusterSpec{
+			Platform: hyperv1.PlatformSpec{Type: hyperv1.NonePlatform},
+			InfraID:  "",
+			Release:  hyperv1.Release{Image: "quay.io/test/release:latest"},
+			Networking: hyperv1.ClusterNetworking{
+				ServiceNetwork: []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.31.0.0/16")}},
+				ClusterNetwork: []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("10.132.0.0/14")}},
+			},
+			Services:   []hyperv1.ServicePublishingStrategyMapping{},
+			PullSecret: corev1.LocalObjectReference{Name: "pull-secret"},
+		},
+		Status: hyperv1.HostedClusterStatus{},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(api.Scheme).
+		WithObjects(hc).
+		WithStatusSubresource(&hyperv1.HostedCluster{}).
+		Build()
+
+	r := &HostedClusterReconciler{
+		Client:                        fakeClient,
+		KubevirtInfraClients:          kvinfra.NewKubevirtInfraClientMap(),
+		ManagementClusterCapabilities: &fakecapabilities.FakeSupportNoCapabilities{},
+	}
+
+	ctx := ctrl.LoggerInto(t.Context(), zap.New(zap.UseDevMode(true), zap.WriteTo(os.Stdout)))
+	completed, err := r.delete(ctx, hc)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(completed).To(BeTrue())
+
+	updatedHC := &hyperv1.HostedCluster{}
+	g.Expect(fakeClient.Get(ctx, types.NamespacedName{Namespace: "clusters", Name: "test-cluster"}, updatedHC)).To(Succeed())
+
+	cond := meta.FindStatusCondition(updatedHC.Status.Conditions, string(hyperv1.HostedClusterDeleting))
+	g.Expect(cond).ToNot(BeNil())
+	g.Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+	g.Expect(cond.Reason).To(Equal(hyperv1.DeletionCompletedReason))
+	g.Expect(cond.Message).To(ContainSubstring("namespace deletion skipped"))
+}
