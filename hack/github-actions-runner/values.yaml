@@ -5,11 +5,21 @@ minRunners: 1
 maxRunners: 70
 
 template:
+  metadata:
+    annotations:
+      io.kubernetes.cri-o.Devices: "/dev/fuse"
   spec:
+    hostUsers: false
+    securityContext:
+      runAsUser: 0
     containers:
       - name: runner
         image: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/hypershift-gh-actions-runner:latest
         command: ["/home/runner/run.sh"]
+        securityContext:
+          capabilities:
+            drop: ["ALL"]
+            add: ["SYS_ADMIN"]
         volumeMounts:
           - name: go-cache
             mountPath: /cache/go-build

@@ -1,0 +1,59 @@
+apiVersion: security.openshift.io/v1
+kind: SecurityContextConstraints
+metadata:
+  name: restricted-v3-fuse
+  annotations:
+    kubernetes.io/description: >-
+      Based on restricted-v3 with minimal changes to enable unprivileged
+      FUSE mounts: allows uid 0 and CAP_SYS_ADMIN inside user
+      namespaces. userNamespaceLevel: RequirePodLevel ensures these
+      privileges only exist inside the user namespace and map to
+      unprivileged host identities.
+# Identical to restricted-v3
+allowHostDirVolumePlugin: false
+allowHostIPC: false
+allowHostNetwork: false
+allowHostPID: false
+allowHostPorts: false
+allowPrivilegeEscalation: false
+allowPrivilegedContainer: false
+readOnlyRootFilesystem: false
+priority: null
+seLinuxContext:
+  type: MustRunAs
+seccompProfiles:
+- runtime/default
+userNamespaceLevel: RequirePodLevel
+volumes:
+- configMap
+- csi
+- downwardAPI
+- emptyDir
+- ephemeral
+- image
+- persistentVolumeClaim
+- projected
+- secret
+users: []
+groups: []
+# Changed from restricted-v3: allow SYS_ADMIN for FUSE mounts
+allowedCapabilities:
+- NET_BIND_SERVICE
+- SYS_ADMIN
+requiredDropCapabilities:
+- ALL
+# Changed from restricted-v3: allow uid 0 inside user namespace
+runAsUser:
+  type: MustRunAsRange
+  uidRangeMin: 0
+  uidRangeMax: 65534
+fsGroup:
+  type: MustRunAs
+  ranges:
+  - min: 0
+    max: 65534
+supplementalGroups:
+  type: MustRunAs
+  ranges:
+  - min: 0
+    max: 65534
