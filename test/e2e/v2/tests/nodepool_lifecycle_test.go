@@ -66,7 +66,7 @@ func RegisterNodePoolLifecycleTests(getTestCtx internal.TestContextGetter) {
 	NodePoolDiskEncryptionTest(getTestCtx)
 }
 
-var _ = Describe("NodePool Lifecycle", Label("nodepool-lifecycle"), func() {
+var _ = Describe("NodePool Lifecycle", Label("lifecycle", "nodepool-lifecycle"), func() {
 	var testCtx *internal.TestContext
 
 	BeforeEach(func() {

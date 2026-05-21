@@ -81,7 +81,7 @@ func RegisterControlPlaneUpgradeTests(getTestCtx internal.TestContextGetter) {
 	ControlPlaneUpgradeTest(getTestCtx)
 }
 
-var _ = Describe("Control Plane Upgrade", Label("control-plane-upgrade"), func() {
+var _ = Describe("Control Plane Upgrade", Label("lifecycle", "control-plane-upgrade"), func() {
 	var testCtx *internal.TestContext
 
 	BeforeEach(func() {
