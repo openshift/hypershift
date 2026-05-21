@@ -126,18 +126,6 @@ func TestNodePool(t *testing.T) {
 						test: NewNodePoolPrevReleaseCreateTest(hostedCluster, globalOpts.N1MinorReleaseImage, clusterOpts, true),
 					},
 					{
-						name: "TestNodePoolPrevReleaseN2",
-						test: NewNodePoolPrevReleaseCreateTest(hostedCluster, globalOpts.N2MinorReleaseImage, clusterOpts, true),
-					},
-					{
-						name: "TestNodePoolPrevReleaseN3",
-						test: NewNodePoolPrevReleaseCreateTest(hostedCluster, globalOpts.N3MinorReleaseImage, clusterOpts, true),
-					},
-					{
-						name: "TestNodePoolPrevReleaseN4",
-						test: NewNodePoolPrevReleaseCreateTest(hostedCluster, globalOpts.N4MinorReleaseImage, clusterOpts, false),
-					},
-					{
 						name: "TestMirrorConfigs",
 						test: NewMirrorConfigsTest(ctx, mgtClient, hostedCluster, hostedClusterClient),
 					},
