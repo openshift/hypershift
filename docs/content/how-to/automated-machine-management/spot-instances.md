@@ -12,7 +12,7 @@ AWS Spot instances use spare EC2 capacity at significantly reduced prices compar
 
 ## Prerequisites
 
-Before creating a Spot instance NodePool, you must set up an SQS queue and EventBridge rules to receive EC2 interruption events. The AWS Node Termination Handler deployed by HyperShift polls this queue and cordons/drains nodes before they are terminated, providing best-effort graceful shutdown.
+Before creating a Spot instance NodePool, you must set up an SQS queue and EventBridge rules to receive EC2 interruption events. The AWS Node Termination Handler (NTH) deployed by HyperShift polls this queue and cordons/drains nodes before they are terminated, providing best-effort graceful shutdown.
 
 ### 1. Create the SQS queue
 
@@ -163,7 +163,7 @@ When a NodePool is created with `marketType: Spot`, HyperShift labels all Machin
 
 ### Graceful termination with SQS (recommended)
 
-When `terminationHandlerQueueURL` is set on the HostedCluster and at least one NodePool has `marketType: Spot`, HyperShift automatically deploys the Termination Handler as a control plane component. The termination flow is:
+When `terminationHandlerQueueURL` is set on the HostedCluster and at least one NodePool has `marketType: Spot`, HyperShift automatically deploys the Node Termination Handler (NTH) as a control plane component. The termination flow is:
 
 1. AWS sends a Spot interruption warning (2-minute notice) or rebalance recommendation to the SQS queue via EventBridge
 2. NTH polls the queue and identifies the affected node
