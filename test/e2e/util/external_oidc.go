@@ -75,6 +75,9 @@ type ExtOIDCConfig struct {
 	// for oidcProviders.issuer.issuerCertificateAuthority
 	IssuerCAConfigmapName string
 	IssuerCABundleFile    string
+
+	// custom field for adding custom auth configuration
+	CustomAuthSpec *configv1.AuthenticationSpec
 }
 
 func GetExtOIDCConfig(provider, cliClientID, consoleClientID, issuerURL, consoleSecret, issuerCABundleFile, testUsers string) *ExtOIDCConfig {
