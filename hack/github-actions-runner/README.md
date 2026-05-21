@@ -3,6 +3,7 @@
 This directory contains the configuration for self-hosted GitHub Actions runners
 deployed on a HyperShift hosted cluster, targeting the `openshift/hypershift` repository.
 
+
 Related Jira: [CNTRLPLANE-2986](https://redhat.atlassian.net/browse/CNTRLPLANE-2986)
 
 ## Architecture Overview
