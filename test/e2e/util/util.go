@@ -420,7 +420,7 @@ func WaitForGuestKubeconfigHostUpdate(t *testing.T, ctx context.Context, client 
 		newHost, getHostError = GetGuestKubeconfigHost(t, ctx, client, hostedCluster)
 		if getHostError != nil {
 			t.Logf("failed to get guest kubeconfig host: %v", getHostError)
-			return false, nil
+			return false, nil //nolint:nilerr // retry until kubeconfig host is available
 		}
 		if newHost == oldHost {
 			t.Logf("guest kubeconfig host is not yet updated, keep polling")
