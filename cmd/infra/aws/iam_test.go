@@ -577,6 +577,32 @@ func TestCreateWorkerInstanceProfile(t *testing.T) {
 	}
 }
 
+func TestControlPlaneOperatorPolicy(t *testing.T) {
+	tests := []struct {
+		name      string
+		sharedVPC bool
+	}{
+		{
+			name:      "non-shared VPC policy should include ec2:DeleteTags",
+			sharedVPC: false,
+		},
+		{
+			name:      "shared VPC policy should include ec2:DeleteTags",
+			sharedVPC: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			pb := controlPlaneOperatorPolicy("Z1234567890ABC", tt.sharedVPC)
+			g.Expect(pb.name).To(Equal("control-plane-operator"))
+			g.Expect(pb.policy).To(ContainSubstring("ec2:DeleteTags"))
+			g.Expect(pb.policy).To(ContainSubstring("ec2:CreateTags"))
+		})
+	}
+}
+
 func TestEnsureHostedZonePrefix(t *testing.T) {
 	tests := []struct {
 		name      string
