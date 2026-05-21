@@ -36,7 +36,6 @@ type reconciler struct {
 
 func (r *reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
 	log := ctrl.LoggerFrom(ctx)
-	log.Info("Reconciling")
 
 	node := &corev1.Node{}
 	if err := r.guestClusterClient.Get(ctx, req.NamespacedName, node); err != nil {

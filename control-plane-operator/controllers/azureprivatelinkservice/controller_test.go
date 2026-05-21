@@ -3,6 +3,7 @@ package azureprivatelinkservice
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -15,7 +16,9 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v5"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/privatedns/armprivatedns"
 
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -24,10 +27,54 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/go-logr/logr/testr"
 )
+
+// --- Poller helpers ---
+
+// donePollingHandler is a PollingHandler that is immediately done and returns
+// either a result or an error via Result().
+type donePollingHandler[T any] struct {
+	result T
+	err    error
+}
+
+func (h *donePollingHandler[T]) Done() bool                                   { return true }
+func (h *donePollingHandler[T]) Poll(context.Context) (*http.Response, error) { return nil, nil }
+func (h *donePollingHandler[T]) Result(_ context.Context, out *T) error {
+	if h.err != nil {
+		return h.err
+	}
+	*out = h.result
+	return nil
+}
+
+// newDonePoller creates a Poller that is already done and returns the given result.
+func newDonePoller[T any](t *testing.T, result T) *azruntime.Poller[T] {
+	t.Helper()
+	p, err := azruntime.NewPoller[T](nil, azruntime.Pipeline{}, &azruntime.NewPollerOptions[T]{
+		Handler: &donePollingHandler[T]{result: result},
+	})
+	if err != nil {
+		t.Fatalf("newDonePoller: unexpected error creating poller: %v", err)
+	}
+	return p
+}
+
+// newErrorPoller creates a Poller that is already done but returns an error from Result.
+func newErrorPoller[T any](t *testing.T, err error) *azruntime.Poller[T] {
+	t.Helper()
+	p, pollerErr := azruntime.NewPoller[T](nil, azruntime.Pipeline{}, &azruntime.NewPollerOptions[T]{
+		Handler: &donePollingHandler[T]{err: err},
+	})
+	if pollerErr != nil {
+		t.Fatalf("newErrorPoller: unexpected error creating poller: %v", pollerErr)
+	}
+	return p
+}
 
 // --- Mock implementations ---
 
@@ -43,6 +90,10 @@ type mockPrivateEndpoints struct {
 	lastCreateName   string
 	lastCreateRG     string
 	lastDeleteName   string
+	// createPoller, if set, is returned from BeginCreateOrUpdate instead of nil.
+	createPoller *azruntime.Poller[armnetwork.PrivateEndpointsClientCreateOrUpdateResponse]
+	// deletePoller, if set, is returned from BeginDelete instead of nil.
+	deletePoller *azruntime.Poller[armnetwork.PrivateEndpointsClientDeleteResponse]
 }
 
 func (m *mockPrivateEndpoints) BeginCreateOrUpdate(_ context.Context, resourceGroupName string, privateEndpointName string, parameters armnetwork.PrivateEndpoint, _ *armnetwork.PrivateEndpointsClientBeginCreateOrUpdateOptions) (*azruntime.Poller[armnetwork.PrivateEndpointsClientCreateOrUpdateResponse], error) {
@@ -53,8 +104,7 @@ func (m *mockPrivateEndpoints) BeginCreateOrUpdate(_ context.Context, resourceGr
 	if m.createErr != nil {
 		return nil, m.createErr
 	}
-	// Return a nil poller; tests use PollResult to complete
-	return nil, nil
+	return m.createPoller, nil
 }
 
 func (m *mockPrivateEndpoints) BeginDelete(_ context.Context, resourceGroupName string, privateEndpointName string, _ *armnetwork.PrivateEndpointsClientBeginDeleteOptions) (*azruntime.Poller[armnetwork.PrivateEndpointsClientDeleteResponse], error) {
@@ -63,7 +113,7 @@ func (m *mockPrivateEndpoints) BeginDelete(_ context.Context, resourceGroupName 
 	if m.deleteErr != nil {
 		return nil, m.deleteErr
 	}
-	return nil, nil
+	return m.deletePoller, nil
 }
 
 func (m *mockPrivateEndpoints) Get(_ context.Context, resourceGroupName string, privateEndpointName string, _ *armnetwork.PrivateEndpointsClientGetOptions) (armnetwork.PrivateEndpointsClientGetResponse, error) {
@@ -78,6 +128,8 @@ type mockPrivateDNSZones struct {
 	deleteCalled     bool
 	lastZoneName     string
 	deletedZoneNames []string
+	createPoller     *azruntime.Poller[armprivatedns.PrivateZonesClientCreateOrUpdateResponse]
+	deletePoller     *azruntime.Poller[armprivatedns.PrivateZonesClientDeleteResponse]
 }
 
 func (m *mockPrivateDNSZones) BeginCreateOrUpdate(_ context.Context, _ string, privateZoneName string, _ armprivatedns.PrivateZone, _ *armprivatedns.PrivateZonesClientBeginCreateOrUpdateOptions) (*azruntime.Poller[armprivatedns.PrivateZonesClientCreateOrUpdateResponse], error) {
@@ -86,7 +138,7 @@ func (m *mockPrivateDNSZones) BeginCreateOrUpdate(_ context.Context, _ string, p
 	if m.createErr != nil {
 		return nil, m.createErr
 	}
-	return nil, nil
+	return m.createPoller, nil
 }
 
 func (m *mockPrivateDNSZones) BeginDelete(_ context.Context, _ string, privateZoneName string, _ *armprivatedns.PrivateZonesClientBeginDeleteOptions) (*azruntime.Poller[armprivatedns.PrivateZonesClientDeleteResponse], error) {
@@ -96,7 +148,7 @@ func (m *mockPrivateDNSZones) BeginDelete(_ context.Context, _ string, privateZo
 	if m.deleteErr != nil {
 		return nil, m.deleteErr
 	}
-	return nil, nil
+	return m.deletePoller, nil
 }
 
 type mockVirtualNetworkLinks struct {
@@ -106,6 +158,8 @@ type mockVirtualNetworkLinks struct {
 	deleteCalled     bool
 	lastLinkName     string
 	deletedLinkNames []string
+	createPoller     *azruntime.Poller[armprivatedns.VirtualNetworkLinksClientCreateOrUpdateResponse]
+	deletePoller     *azruntime.Poller[armprivatedns.VirtualNetworkLinksClientDeleteResponse]
 }
 
 func (m *mockVirtualNetworkLinks) BeginCreateOrUpdate(_ context.Context, _ string, _ string, virtualNetworkLinkName string, _ armprivatedns.VirtualNetworkLink, _ *armprivatedns.VirtualNetworkLinksClientBeginCreateOrUpdateOptions) (*azruntime.Poller[armprivatedns.VirtualNetworkLinksClientCreateOrUpdateResponse], error) {
@@ -114,7 +168,7 @@ func (m *mockVirtualNetworkLinks) BeginCreateOrUpdate(_ context.Context, _ strin
 	if m.createErr != nil {
 		return nil, m.createErr
 	}
-	return nil, nil
+	return m.createPoller, nil
 }
 
 func (m *mockVirtualNetworkLinks) BeginDelete(_ context.Context, _ string, _ string, virtualNetworkLinkName string, _ *armprivatedns.VirtualNetworkLinksClientBeginDeleteOptions) (*azruntime.Poller[armprivatedns.VirtualNetworkLinksClientDeleteResponse], error) {
@@ -124,40 +178,49 @@ func (m *mockVirtualNetworkLinks) BeginDelete(_ context.Context, _ string, _ str
 	if m.deleteErr != nil {
 		return nil, m.deleteErr
 	}
-	return nil, nil
+	return m.deletePoller, nil
 }
 
 type mockRecordSets struct {
-	createErr          error
-	deleteErr          error
-	createCalled       bool
-	deleteCalled       bool
-	createCallCount    int
-	deleteCallCount    int
-	createdRecordNames []string
-	deletedRecordNames []string
-	lastRecordSetName  string
-	lastRecordType     armprivatedns.RecordType
-	lastRecordParams   armprivatedns.RecordSet
+	createErr            error
+	deleteErr            error
+	deleteErrZone        string // if set, deleteErr only applies to this zone
+	createCalled         bool
+	deleteCalled         bool
+	createCallCount      int
+	deleteCallCount      int
+	createdRecordNames   []string
+	createdRecordsByZone map[string][]string
+	deletedRecordNames   []string
+	lastRecordSetName    string
+	lastRecordType       armprivatedns.RecordType
+	lastRecordParams     armprivatedns.RecordSet
 }
 
-func (m *mockRecordSets) CreateOrUpdate(_ context.Context, _ string, _ string, recordType armprivatedns.RecordType, relativeRecordSetName string, parameters armprivatedns.RecordSet, _ *armprivatedns.RecordSetsClientCreateOrUpdateOptions) (armprivatedns.RecordSetsClientCreateOrUpdateResponse, error) {
+func (m *mockRecordSets) CreateOrUpdate(_ context.Context, _ string, privateDnsZoneName string, recordType armprivatedns.RecordType, relativeRecordSetName string, parameters armprivatedns.RecordSet, _ *armprivatedns.RecordSetsClientCreateOrUpdateOptions) (armprivatedns.RecordSetsClientCreateOrUpdateResponse, error) {
 	m.createCalled = true
 	m.createCallCount++
 	m.createdRecordNames = append(m.createdRecordNames, relativeRecordSetName)
+	if m.createdRecordsByZone == nil {
+		m.createdRecordsByZone = make(map[string][]string)
+	}
+	m.createdRecordsByZone[privateDnsZoneName] = append(m.createdRecordsByZone[privateDnsZoneName], relativeRecordSetName)
 	m.lastRecordSetName = relativeRecordSetName
 	m.lastRecordType = recordType
 	m.lastRecordParams = parameters
 	return armprivatedns.RecordSetsClientCreateOrUpdateResponse{}, m.createErr
 }
 
-func (m *mockRecordSets) Delete(_ context.Context, _ string, _ string, recordType armprivatedns.RecordType, relativeRecordSetName string, _ *armprivatedns.RecordSetsClientDeleteOptions) (armprivatedns.RecordSetsClientDeleteResponse, error) {
+func (m *mockRecordSets) Delete(_ context.Context, _ string, privateDnsZoneName string, recordType armprivatedns.RecordType, relativeRecordSetName string, _ *armprivatedns.RecordSetsClientDeleteOptions) (armprivatedns.RecordSetsClientDeleteResponse, error) {
 	m.deleteCalled = true
 	m.deleteCallCount++
 	m.deletedRecordNames = append(m.deletedRecordNames, relativeRecordSetName)
 	m.lastRecordSetName = relativeRecordSetName
 	m.lastRecordType = recordType
-	return armprivatedns.RecordSetsClientDeleteResponse{}, m.deleteErr
+	if m.deleteErr != nil && (m.deleteErrZone == "" || m.deleteErrZone == privateDnsZoneName) {
+		return armprivatedns.RecordSetsClientDeleteResponse{}, m.deleteErr
+	}
+	return armprivatedns.RecordSetsClientDeleteResponse{}, nil
 }
 
 // --- Helper functions ---
@@ -336,6 +399,7 @@ func TestExtractPrivateEndpointIP(t *testing.T) {
 }
 
 func TestReconcile_WhenPLSAliasIsNotYetAvailable_ItShouldRequeue(t *testing.T) {
+	t.Parallel()
 	g := NewGomegaWithT(t)
 	scheme := newTestScheme(t, g)
 
@@ -360,7 +424,7 @@ func TestReconcile_WhenPLSAliasIsNotYetAvailable_ItShouldRequeue(t *testing.T) {
 		RecordSets:          &mockRecordSets{},
 	}
 
-	result, err := r.Reconcile(log.IntoContext(context.Background(), testr.New(t)), ctrl.Request{
+	result, err := r.Reconcile(log.IntoContext(t.Context(), testr.New(t)), ctrl.Request{
 		NamespacedName: types.NamespacedName{Name: "test-pls", Namespace: "test-ns"},
 	})
 
@@ -369,6 +433,7 @@ func TestReconcile_WhenPLSAliasIsNotYetAvailable_ItShouldRequeue(t *testing.T) {
 }
 
 func TestReconcile_WhenPLSAliasIsAvailable_ItShouldCreatePrivateEndpoint(t *testing.T) {
+	t.Parallel()
 	g := NewGomegaWithT(t)
 	scheme := newTestScheme(t, g)
 
@@ -397,7 +462,7 @@ func TestReconcile_WhenPLSAliasIsAvailable_ItShouldCreatePrivateEndpoint(t *test
 		RecordSets:          &mockRecordSets{},
 	}
 
-	_, err := r.Reconcile(log.IntoContext(context.Background(), testr.New(t)), ctrl.Request{
+	_, err := r.Reconcile(log.IntoContext(t.Context(), testr.New(t)), ctrl.Request{
 		NamespacedName: types.NamespacedName{Name: "test-pls", Namespace: "test-ns"},
 	})
 
@@ -415,6 +480,7 @@ func TestReconcile_WhenPLSAliasIsAvailable_ItShouldCreatePrivateEndpoint(t *test
 }
 
 func TestReconcile_WhenPEIsCreated_ItShouldCreateDNSZoneAndARecord(t *testing.T) {
+	t.Parallel()
 	g := NewGomegaWithT(t)
 	scheme := newTestScheme(t, g)
 
@@ -468,7 +534,7 @@ func TestReconcile_WhenPEIsCreated_ItShouldCreateDNSZoneAndARecord(t *testing.T)
 		RecordSets:          mockRecords,
 	}
 
-	result, err := r.Reconcile(log.IntoContext(context.Background(), testr.New(t)), ctrl.Request{
+	result, err := r.Reconcile(log.IntoContext(t.Context(), testr.New(t)), ctrl.Request{
 		NamespacedName: types.NamespacedName{Name: "private-router", Namespace: "test-ns"},
 	})
 
@@ -491,6 +557,7 @@ func TestReconcile_WhenPEIsCreated_ItShouldCreateDNSZoneAndARecord(t *testing.T)
 }
 
 func TestReconcile_WhenCRIsDeleted_ItShouldCleanUpPEAndDNS(t *testing.T) {
+	t.Parallel()
 	g := NewGomegaWithT(t)
 	scheme := newTestScheme(t, g)
 
@@ -526,8 +593,8 @@ func TestReconcile_WhenCRIsDeleted_ItShouldCleanUpPEAndDNS(t *testing.T) {
 	}
 
 	// Call reconcileDelete directly to avoid the fake client DeletionTimestamp limitation
-	err := r.reconcileDelete(context.Background(), azPLS, testr.New(t))
-	g.Expect(err).ToNot(HaveOccurred()) // reconcileDelete is best-effort, always returns nil
+	err := r.reconcileDelete(t.Context(), azPLS, testr.New(t))
+	g.Expect(err).ToNot(HaveOccurred())
 
 	// Verify cleanup was attempted for all resource types
 	g.Expect(mockRecords.deleteCalled).To(BeTrue(), "should attempt to delete A records")
@@ -540,6 +607,7 @@ func TestReconcile_WhenCRIsDeleted_ItShouldCleanUpPEAndDNS(t *testing.T) {
 }
 
 func TestReconcile_WhenAllResourcesAreCreated_ItShouldSetAvailableCondition(t *testing.T) {
+	t.Parallel()
 	g := NewGomegaWithT(t)
 	scheme := newTestScheme(t, g)
 
@@ -585,29 +653,24 @@ func TestReconcile_WhenAllResourcesAreCreated_ItShouldSetAvailableCondition(t *t
 	}
 
 	// Test the PE reconciliation directly (DNS is tested separately)
-	result, err := r.reconcilePrivateEndpoint(context.Background(), azPLS, testr.New(t))
+	result, err := r.reconcilePrivateEndpoint(t.Context(), azPLS, testr.New(t))
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(result.IsZero()).To(BeTrue(), "should not requeue after successful PE reconciliation")
 
 	// Verify status was updated
 	updated := &hyperv1.AzurePrivateLinkService{}
-	err = fakeClient.Get(context.Background(), types.NamespacedName{Name: "test-pls", Namespace: "test-ns"}, updated)
+	err = fakeClient.Get(t.Context(), types.NamespacedName{Name: "test-pls", Namespace: "test-ns"}, updated)
 	g.Expect(err).ToNot(HaveOccurred())
 
 	// Check PE Available condition
-	var peCondition *metav1.Condition
-	for i := range updated.Status.Conditions {
-		if updated.Status.Conditions[i].Type == string(hyperv1.AzurePrivateEndpointAvailable) {
-			peCondition = &updated.Status.Conditions[i]
-			break
-		}
-	}
+	peCondition := meta.FindStatusCondition(updated.Status.Conditions, string(hyperv1.AzurePrivateEndpointAvailable))
 	g.Expect(peCondition).ToNot(BeNil(), "PE Available condition should be set")
 	g.Expect(peCondition.Status).To(Equal(metav1.ConditionTrue))
 	g.Expect(peCondition.Reason).To(Equal(hyperv1.AzurePLSSuccessReason))
 }
 
 func TestReconcile_WhenFinalizerNotPresent_ItShouldAddFinalizer(t *testing.T) {
+	t.Parallel()
 	g := NewGomegaWithT(t)
 	scheme := newTestScheme(t, g)
 
@@ -628,7 +691,7 @@ func TestReconcile_WhenFinalizerNotPresent_ItShouldAddFinalizer(t *testing.T) {
 		RecordSets:          &mockRecordSets{},
 	}
 
-	result, err := r.Reconcile(log.IntoContext(context.Background(), testr.New(t)), ctrl.Request{
+	result, err := r.Reconcile(log.IntoContext(t.Context(), testr.New(t)), ctrl.Request{
 		NamespacedName: types.NamespacedName{Name: "test-pls", Namespace: "test-ns"},
 	})
 
@@ -637,12 +700,13 @@ func TestReconcile_WhenFinalizerNotPresent_ItShouldAddFinalizer(t *testing.T) {
 
 	// Verify finalizer was added
 	updated := &hyperv1.AzurePrivateLinkService{}
-	err = fakeClient.Get(context.Background(), types.NamespacedName{Name: "test-pls", Namespace: "test-ns"}, updated)
+	err = fakeClient.Get(t.Context(), types.NamespacedName{Name: "test-pls", Namespace: "test-ns"}, updated)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(updated.Finalizers).To(ContainElement(azurePrivateLinkServiceFinalizer), "finalizer should be added")
 }
 
 func TestReconcileDNS_WhenPEIPNotAvailable_ItShouldRequeue(t *testing.T) {
+	t.Parallel()
 	g := NewGomegaWithT(t)
 	scheme := newTestScheme(t, g)
 
@@ -663,12 +727,13 @@ func TestReconcileDNS_WhenPEIPNotAvailable_ItShouldRequeue(t *testing.T) {
 		RecordSets:          &mockRecordSets{},
 	}
 
-	result, err := r.reconcileDNS(context.Background(), azPLS, "test-hcp", testr.New(t))
+	result, err := r.reconcileDNS(t.Context(), azPLS, "test-hcp", testr.New(t))
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(result.RequeueAfter).ToNot(BeZero(), "should requeue when PE IP is not available")
 }
 
 func TestReconcileDelete_WhenDNSZoneNameNotSet_ItShouldSkipDNSCleanup(t *testing.T) {
+	t.Parallel()
 	g := NewGomegaWithT(t)
 	scheme := newTestScheme(t, g)
 
@@ -696,7 +761,7 @@ func TestReconcileDelete_WhenDNSZoneNameNotSet_ItShouldSkipDNSCleanup(t *testing
 		RecordSets:          mockRecords,
 	}
 
-	err := r.reconcileDelete(context.Background(), azPLS, testr.New(t))
+	err := r.reconcileDelete(t.Context(), azPLS, testr.New(t))
 	g.Expect(err).ToNot(HaveOccurred())
 
 	// DNS cleanup should be skipped since DNSZoneName is not set in status
@@ -709,6 +774,7 @@ func TestReconcileDelete_WhenDNSZoneNameNotSet_ItShouldSkipDNSCleanup(t *testing
 }
 
 func TestGetHostedControlPlane(t *testing.T) {
+	t.Parallel()
 	g := NewGomegaWithT(t)
 	scheme := newTestScheme(t, g)
 
@@ -780,7 +846,7 @@ func TestGetHostedControlPlane(t *testing.T) {
 				Build()
 
 			r := &AzurePrivateLinkServiceReconciler{Client: fakeClient}
-			hcp, err := r.getHostedControlPlane(context.Background(), tt.azPLS)
+			hcp, err := r.getHostedControlPlane(t.Context(), tt.azPLS)
 
 			if tt.expectErr {
 				g.Expect(err).To(HaveOccurred())
@@ -793,6 +859,7 @@ func TestGetHostedControlPlane(t *testing.T) {
 }
 
 func TestReconcilePrivateEndpoint_WhenPEAlreadyExists_ItShouldUpdateStatus(t *testing.T) {
+	t.Parallel()
 	g := NewGomegaWithT(t)
 	scheme := newTestScheme(t, g)
 
@@ -826,7 +893,7 @@ func TestReconcilePrivateEndpoint_WhenPEAlreadyExists_ItShouldUpdateStatus(t *te
 		PrivateEndpoints: mockPE,
 	}
 
-	result, err := r.reconcilePrivateEndpoint(context.Background(), azPLS, testr.New(t))
+	result, err := r.reconcilePrivateEndpoint(t.Context(), azPLS, testr.New(t))
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(result.IsZero()).To(BeTrue())
 
@@ -836,13 +903,14 @@ func TestReconcilePrivateEndpoint_WhenPEAlreadyExists_ItShouldUpdateStatus(t *te
 
 	// Verify status was updated with existing PE info
 	updated := &hyperv1.AzurePrivateLinkService{}
-	err = fakeClient.Get(context.Background(), types.NamespacedName{Name: "test-pls", Namespace: "test-ns"}, updated)
+	err = fakeClient.Get(t.Context(), types.NamespacedName{Name: "test-pls", Namespace: "test-ns"}, updated)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(updated.Status.PrivateEndpointID).To(Equal("/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/privateEndpoints/existing-pe"))
 	g.Expect(updated.Status.PrivateEndpointIP).To(Equal("10.0.2.10"))
 }
 
 func TestReconcile_WhenCRNotFound_ItShouldReturnNoError(t *testing.T) {
+	t.Parallel()
 	g := NewGomegaWithT(t)
 	scheme := newTestScheme(t, g)
 
@@ -858,7 +926,7 @@ func TestReconcile_WhenCRNotFound_ItShouldReturnNoError(t *testing.T) {
 		RecordSets:          &mockRecordSets{},
 	}
 
-	result, err := r.Reconcile(log.IntoContext(context.Background(), testr.New(t)), ctrl.Request{
+	result, err := r.Reconcile(log.IntoContext(t.Context(), testr.New(t)), ctrl.Request{
 		NamespacedName: types.NamespacedName{Name: "nonexistent", Namespace: "test-ns"},
 	})
 
@@ -867,6 +935,7 @@ func TestReconcile_WhenCRNotFound_ItShouldReturnNoError(t *testing.T) {
 }
 
 func TestReconcile_WhenCRAlreadyDeleted_ItShouldReturnNoError(t *testing.T) {
+	t.Parallel()
 	g := NewGomegaWithT(t)
 	scheme := newTestScheme(t, g)
 
@@ -890,7 +959,7 @@ func TestReconcile_WhenCRAlreadyDeleted_ItShouldReturnNoError(t *testing.T) {
 		RecordSets:          &mockRecordSets{},
 	}
 
-	result, err := r.Reconcile(log.IntoContext(context.Background(), testr.New(t)), ctrl.Request{
+	result, err := r.Reconcile(log.IntoContext(t.Context(), testr.New(t)), ctrl.Request{
 		NamespacedName: types.NamespacedName{Name: "test-pls", Namespace: "test-ns"},
 	})
 
@@ -997,6 +1066,7 @@ func TestExtractPrivateEndpointConnectionState(t *testing.T) {
 }
 
 func TestEnsureHCPFinalizer_WhenNotPresent_ItShouldAddFinalizer(t *testing.T) {
+	t.Parallel()
 	g := NewGomegaWithT(t)
 	scheme := newTestScheme(t, g)
 
@@ -1012,18 +1082,19 @@ func TestEnsureHCPFinalizer_WhenNotPresent_ItShouldAddFinalizer(t *testing.T) {
 		Client: fakeClient,
 	}
 
-	result, err := r.ensureHCPFinalizer(context.Background(), hcp, testr.New(t))
+	result, err := r.ensureHCPFinalizer(t.Context(), hcp, testr.New(t))
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(result.IsZero()).To(BeTrue(), "should return zero result after adding HCP finalizer")
 
 	// Verify finalizer was added to HCP
 	updatedHCP := &hyperv1.HostedControlPlane{}
-	err = fakeClient.Get(context.Background(), types.NamespacedName{Name: "test-hcp", Namespace: "test-ns"}, updatedHCP)
+	err = fakeClient.Get(t.Context(), types.NamespacedName{Name: "test-hcp", Namespace: "test-ns"}, updatedHCP)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(updatedHCP.Finalizers).To(ContainElement(hcpAzurePLSFinalizerName), "HCP should have the Azure PLS finalizer")
 }
 
 func TestEnsureHCPFinalizer_WhenAlreadyPresent_ItShouldNotModify(t *testing.T) {
+	t.Parallel()
 	g := NewGomegaWithT(t)
 	scheme := newTestScheme(t, g)
 
@@ -1039,18 +1110,19 @@ func TestEnsureHCPFinalizer_WhenAlreadyPresent_ItShouldNotModify(t *testing.T) {
 		Client: fakeClient,
 	}
 
-	result, err := r.ensureHCPFinalizer(context.Background(), hcp, testr.New(t))
+	result, err := r.ensureHCPFinalizer(t.Context(), hcp, testr.New(t))
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(result.IsZero()).To(BeTrue())
 
 	// Verify finalizer is still present and only once
 	updatedHCP := &hyperv1.HostedControlPlane{}
-	err = fakeClient.Get(context.Background(), types.NamespacedName{Name: "test-hcp", Namespace: "test-ns"}, updatedHCP)
+	err = fakeClient.Get(t.Context(), types.NamespacedName{Name: "test-hcp", Namespace: "test-ns"}, updatedHCP)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(updatedHCP.Finalizers).To(Equal([]string{hcpAzurePLSFinalizerName}))
 }
 
 func TestReconcile_WhenPLSAliasIsAvailable_ItShouldAddHCPFinalizer(t *testing.T) {
+	t.Parallel()
 	g := NewGomegaWithT(t)
 	scheme := newTestScheme(t, g)
 
@@ -1079,19 +1151,20 @@ func TestReconcile_WhenPLSAliasIsAvailable_ItShouldAddHCPFinalizer(t *testing.T)
 		RecordSets:          &mockRecordSets{},
 	}
 
-	_, err := r.Reconcile(log.IntoContext(context.Background(), testr.New(t)), ctrl.Request{
+	_, err := r.Reconcile(log.IntoContext(t.Context(), testr.New(t)), ctrl.Request{
 		NamespacedName: types.NamespacedName{Name: "test-pls", Namespace: "test-ns"},
 	})
 	g.Expect(err).ToNot(HaveOccurred())
 
 	// Verify HCP finalizer was added
 	updatedHCP := &hyperv1.HostedControlPlane{}
-	err = fakeClient.Get(context.Background(), types.NamespacedName{Name: "test-hcp", Namespace: "test-ns"}, updatedHCP)
+	err = fakeClient.Get(t.Context(), types.NamespacedName{Name: "test-hcp", Namespace: "test-ns"}, updatedHCP)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(updatedHCP.Finalizers).To(ContainElement(hcpAzurePLSFinalizerName), "HCP should have the Azure PLS finalizer after reconciliation with PLS alias available")
 }
 
 func TestReconcileHCPDeletion_WhenHCPIsBeingDeleted_ItShouldCleanUpAndRemoveFinalizer(t *testing.T) {
+	t.Parallel()
 	g := NewGomegaWithT(t)
 	scheme := newTestScheme(t, g)
 
@@ -1128,7 +1201,7 @@ func TestReconcileHCPDeletion_WhenHCPIsBeingDeleted_ItShouldCleanUpAndRemoveFina
 	}
 
 	// Call reconcileHCPDeletion directly
-	result, err := r.reconcileHCPDeletion(context.Background(), azPLS, hcp, testr.New(t))
+	result, err := r.reconcileHCPDeletion(t.Context(), azPLS, hcp, testr.New(t))
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(result.IsZero()).To(BeTrue())
 
@@ -1144,7 +1217,7 @@ func TestReconcileHCPDeletion_WhenHCPIsBeingDeleted_ItShouldCleanUpAndRemoveFina
 	// objects whose DeletionTimestamp is set and all finalizers are removed,
 	// so a NotFound error confirms the finalizer was successfully removed.
 	updatedHCP := &hyperv1.HostedControlPlane{}
-	err = fakeClient.Get(context.Background(), types.NamespacedName{Name: "test-hcp", Namespace: "test-ns"}, updatedHCP)
+	err = fakeClient.Get(t.Context(), types.NamespacedName{Name: "test-hcp", Namespace: "test-ns"}, updatedHCP)
 	if apierrors.IsNotFound(err) {
 		// Expected: fake client deleted the HCP because all finalizers were removed
 		return
@@ -1154,6 +1227,7 @@ func TestReconcileHCPDeletion_WhenHCPIsBeingDeleted_ItShouldCleanUpAndRemoveFina
 }
 
 func TestReconcileHCPDeletion_WhenHCPDoesNotHaveFinalizer_ItShouldBeNoOp(t *testing.T) {
+	t.Parallel()
 	g := NewGomegaWithT(t)
 	scheme := newTestScheme(t, g)
 
@@ -1182,7 +1256,7 @@ func TestReconcileHCPDeletion_WhenHCPDoesNotHaveFinalizer_ItShouldBeNoOp(t *test
 		RecordSets:          &mockRecordSets{},
 	}
 
-	result, err := r.reconcileHCPDeletion(context.Background(), azPLS, hcp, testr.New(t))
+	result, err := r.reconcileHCPDeletion(t.Context(), azPLS, hcp, testr.New(t))
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(result.IsZero()).To(BeTrue())
 
@@ -1192,6 +1266,7 @@ func TestReconcileHCPDeletion_WhenHCPDoesNotHaveFinalizer_ItShouldBeNoOp(t *test
 }
 
 func TestReconcileHCPDeletion_WhenAzureCleanupFails_ItShouldReturnErrorAndPreserveFinalizer(t *testing.T) {
+	t.Parallel()
 	g := NewGomegaWithT(t)
 	scheme := newTestScheme(t, g)
 
@@ -1226,18 +1301,19 @@ func TestReconcileHCPDeletion_WhenAzureCleanupFails_ItShouldReturnErrorAndPreser
 		RecordSets:          mockRecords,
 	}
 
-	_, err := r.reconcileHCPDeletion(context.Background(), azPLS, hcp, testr.New(t))
+	_, err := r.reconcileHCPDeletion(t.Context(), azPLS, hcp, testr.New(t))
 	g.Expect(err).To(HaveOccurred(), "should return error when Azure cleanup fails")
-	g.Expect(err.Error()).To(ContainSubstring("failed to clean up Azure resources during HCP deletion"))
+	g.Expect(err).To(MatchError(ContainSubstring("failed to clean up Azure resources during HCP deletion")))
 
 	// Verify the HCP finalizer was NOT removed
 	updatedHCP := &hyperv1.HostedControlPlane{}
-	err = fakeClient.Get(context.Background(), types.NamespacedName{Name: "test-hcp", Namespace: "test-ns"}, updatedHCP)
+	err = fakeClient.Get(t.Context(), types.NamespacedName{Name: "test-hcp", Namespace: "test-ns"}, updatedHCP)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(updatedHCP.Finalizers).To(ContainElement(hcpAzurePLSFinalizerName), "HCP finalizer should be preserved when cleanup fails")
 }
 
 func TestReconcile_WhenHCPIsBeingDeleted_ItShouldTriggerCleanupInsteadOfCreation(t *testing.T) {
+	t.Parallel()
 	g := NewGomegaWithT(t)
 	scheme := newTestScheme(t, g)
 
@@ -1274,7 +1350,7 @@ func TestReconcile_WhenHCPIsBeingDeleted_ItShouldTriggerCleanupInsteadOfCreation
 		RecordSets:          mockRecords,
 	}
 
-	result, err := r.Reconcile(log.IntoContext(context.Background(), testr.New(t)), ctrl.Request{
+	result, err := r.Reconcile(log.IntoContext(t.Context(), testr.New(t)), ctrl.Request{
 		NamespacedName: types.NamespacedName{Name: "test-pls", Namespace: "test-ns"},
 	})
 	g.Expect(err).ToNot(HaveOccurred())
@@ -1294,7 +1370,7 @@ func TestReconcile_WhenHCPIsBeingDeleted_ItShouldTriggerCleanupInsteadOfCreation
 	// objects whose DeletionTimestamp is set and all finalizers are removed,
 	// so a NotFound error confirms the finalizer was successfully removed.
 	updatedHCP := &hyperv1.HostedControlPlane{}
-	err = fakeClient.Get(context.Background(), types.NamespacedName{Name: "test-hcp", Namespace: "test-ns"}, updatedHCP)
+	err = fakeClient.Get(t.Context(), types.NamespacedName{Name: "test-hcp", Namespace: "test-ns"}, updatedHCP)
 	if apierrors.IsNotFound(err) {
 		// Expected: fake client deleted the HCP because all finalizers were removed
 		return
@@ -1304,6 +1380,7 @@ func TestReconcile_WhenHCPIsBeingDeleted_ItShouldTriggerCleanupInsteadOfCreation
 }
 
 func TestReconcile_WhenPEConnectionNotApproved_ItShouldRequeueWithWarning(t *testing.T) {
+	t.Parallel()
 	g := NewGomegaWithT(t)
 	scheme := newTestScheme(t, g)
 
@@ -1344,28 +1421,23 @@ func TestReconcile_WhenPEConnectionNotApproved_ItShouldRequeueWithWarning(t *tes
 		PrivateEndpoints: mockPE,
 	}
 
-	result, err := r.reconcilePrivateEndpoint(context.Background(), azPLS, testr.New(t))
+	result, err := r.reconcilePrivateEndpoint(t.Context(), azPLS, testr.New(t))
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(result.RequeueAfter).ToNot(BeZero(), "should requeue when connection not approved")
 
 	// Check condition was set to False with appropriate reason
 	updated := &hyperv1.AzurePrivateLinkService{}
-	err = fakeClient.Get(context.Background(), types.NamespacedName{Name: "test-pls", Namespace: "test-ns"}, updated)
+	err = fakeClient.Get(t.Context(), types.NamespacedName{Name: "test-pls", Namespace: "test-ns"}, updated)
 	g.Expect(err).ToNot(HaveOccurred())
 
-	var peCondition *metav1.Condition
-	for i := range updated.Status.Conditions {
-		if updated.Status.Conditions[i].Type == string(hyperv1.AzurePrivateEndpointAvailable) {
-			peCondition = &updated.Status.Conditions[i]
-			break
-		}
-	}
+	peCondition := meta.FindStatusCondition(updated.Status.Conditions, string(hyperv1.AzurePrivateEndpointAvailable))
 	g.Expect(peCondition).ToNot(BeNil())
 	g.Expect(peCondition.Status).To(Equal(metav1.ConditionFalse))
 	g.Expect(peCondition.Reason).To(Equal("PrivateEndpointConnectionNotApproved"))
 }
 
 func TestReconcile_WhenNonPrivateRouterCR_ItShouldSkipHypershiftLocalDNS(t *testing.T) {
+	t.Parallel()
 	g := NewGomegaWithT(t)
 	scheme := newTestScheme(t, g)
 
@@ -1414,7 +1486,7 @@ func TestReconcile_WhenNonPrivateRouterCR_ItShouldSkipHypershiftLocalDNS(t *test
 		RecordSets:          mockRecords,
 	}
 
-	result, err := r.Reconcile(log.IntoContext(context.Background(), testr.New(t)), ctrl.Request{
+	result, err := r.Reconcile(log.IntoContext(t.Context(), testr.New(t)), ctrl.Request{
 		NamespacedName: types.NamespacedName{Name: "oauth-openshift", Namespace: "test-ns"},
 	})
 
@@ -1428,12 +1500,13 @@ func TestReconcile_WhenNonPrivateRouterCR_ItShouldSkipHypershiftLocalDNS(t *test
 
 	// DNSZoneName should be persisted in status for delete-path cleanup
 	updated := &hyperv1.AzurePrivateLinkService{}
-	err = fakeClient.Get(context.Background(), types.NamespacedName{Name: "oauth-openshift", Namespace: "test-ns"}, updated)
+	err = fakeClient.Get(t.Context(), types.NamespacedName{Name: "oauth-openshift", Namespace: "test-ns"}, updated)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(updated.Status.DNSZoneName).To(Equal("test-hcp.hypershift.local"), "non-private-router CRs should persist DNSZoneName for delete-path cleanup")
 }
 
 func TestReconcileBaseDomainDNS_WhenPrivateRouterWithNoSibling_ItShouldCreateBothRecords(t *testing.T) {
+	t.Parallel()
 	g := NewGomegaWithT(t)
 	scheme := newTestScheme(t, g)
 
@@ -1458,7 +1531,7 @@ func TestReconcileBaseDomainDNS_WhenPrivateRouterWithNoSibling_ItShouldCreateBot
 		RecordSets:          mockRecords,
 	}
 
-	result, err := r.reconcileBaseDomainDNS(context.Background(), azPLS, "test-hcp", testr.New(t))
+	result, err := r.reconcileBaseDomainDNS(t.Context(), azPLS, "test-hcp", "", testr.New(t))
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(result.IsZero()).To(BeTrue())
 
@@ -1468,6 +1541,7 @@ func TestReconcileBaseDomainDNS_WhenPrivateRouterWithNoSibling_ItShouldCreateBot
 }
 
 func TestReconcileBaseDomainDNS_WhenPrivateRouterWithSiblingOAuth_ItShouldOnlyCreateAPIRecord(t *testing.T) {
+	t.Parallel()
 	g := NewGomegaWithT(t)
 	scheme := newTestScheme(t, g)
 
@@ -1496,7 +1570,7 @@ func TestReconcileBaseDomainDNS_WhenPrivateRouterWithSiblingOAuth_ItShouldOnlyCr
 		RecordSets:          mockRecords,
 	}
 
-	result, err := r.reconcileBaseDomainDNS(context.Background(), azPLS, "test-hcp", testr.New(t))
+	result, err := r.reconcileBaseDomainDNS(t.Context(), azPLS, "test-hcp", "", testr.New(t))
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(result.IsZero()).To(BeTrue())
 
@@ -1506,6 +1580,7 @@ func TestReconcileBaseDomainDNS_WhenPrivateRouterWithSiblingOAuth_ItShouldOnlyCr
 }
 
 func TestReconcileBaseDomainDNS_WhenOAuthCR_ItShouldOnlyCreateOAuthRecord(t *testing.T) {
+	t.Parallel()
 	g := NewGomegaWithT(t)
 	scheme := newTestScheme(t, g)
 
@@ -1530,7 +1605,7 @@ func TestReconcileBaseDomainDNS_WhenOAuthCR_ItShouldOnlyCreateOAuthRecord(t *tes
 		RecordSets:          mockRecords,
 	}
 
-	result, err := r.reconcileBaseDomainDNS(context.Background(), azPLS, "test-hcp", testr.New(t))
+	result, err := r.reconcileBaseDomainDNS(t.Context(), azPLS, "test-hcp", "", testr.New(t))
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(result.IsZero()).To(BeTrue())
 
@@ -1540,6 +1615,7 @@ func TestReconcileBaseDomainDNS_WhenOAuthCR_ItShouldOnlyCreateOAuthRecord(t *tes
 }
 
 func TestReconcileDelete_WhenSiblingCRsExist_ItShouldNotDeleteBaseDomainZone(t *testing.T) {
+	t.Parallel()
 	g := NewGomegaWithT(t)
 	scheme := newTestScheme(t, g)
 
@@ -1573,12 +1649,12 @@ func TestReconcileDelete_WhenSiblingCRsExist_ItShouldNotDeleteBaseDomainZone(t *
 		RecordSets:          mockRecords,
 	}
 
-	err := r.reconcileDelete(context.Background(), azPLS, testr.New(t))
+	err := r.reconcileDelete(t.Context(), azPLS, testr.New(t))
 	g.Expect(err).ToNot(HaveOccurred())
 
 	// A records should only include the api record (sibling OAuth owns the oauth record)
 	g.Expect(mockRecords.deleteCalled).To(BeTrue(), "should delete A records")
-	// The hypershift.local records (api, *.apps) + only api-test-hcp from base domain = 3
+	// The hypershift.local records (api, *.apps) + api-test-hcp from base domain = 3
 	g.Expect(mockRecords.deletedRecordNames).To(ConsistOf("api", "*.apps", "api-test-hcp"),
 		"should delete hypershift.local records and only api base domain record (sibling owns oauth)")
 
@@ -1595,6 +1671,7 @@ func TestReconcileDelete_WhenSiblingCRsExist_ItShouldNotDeleteBaseDomainZone(t *
 }
 
 func TestReconcileDelete_WhenNoSiblingCRs_ItShouldDeleteBaseDomainZone(t *testing.T) {
+	t.Parallel()
 	g := NewGomegaWithT(t)
 	scheme := newTestScheme(t, g)
 
@@ -1626,7 +1703,7 @@ func TestReconcileDelete_WhenNoSiblingCRs_ItShouldDeleteBaseDomainZone(t *testin
 		RecordSets:          mockRecords,
 	}
 
-	err := r.reconcileDelete(context.Background(), azPLS, testr.New(t))
+	err := r.reconcileDelete(t.Context(), azPLS, testr.New(t))
 	g.Expect(err).ToNot(HaveOccurred())
 
 	// With no siblings, private-router should delete both api and oauth base domain records
@@ -1641,6 +1718,269 @@ func TestReconcileDelete_WhenNoSiblingCRs_ItShouldDeleteBaseDomainZone(t *testin
 	// Both VNet links should be deleted
 	g.Expect(mockLinks.deletedLinkNames).To(ConsistOf("private-router-vnet-link", "private-router-basedomain-vnet-link"),
 		"should delete both VNet links when the last CR goes away")
+}
+
+func TestBaseDomainVNetLinkName(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		crName   string
+		expected string
+	}{
+		{
+			name:     "When CR name is private-router, it should append basedomain VNet link suffix",
+			crName:   "private-router",
+			expected: "private-router-basedomain-vnet-link",
+		},
+		{
+			name:     "When CR name is oauth-openshift, it should append basedomain VNet link suffix",
+			crName:   "oauth-openshift",
+			expected: "oauth-openshift-basedomain-vnet-link",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewGomegaWithT(t)
+			result := baseDomainVNetLinkName(tt.crName)
+			g.Expect(result).To(Equal(tt.expected))
+		})
+	}
+}
+
+func TestDNSZoneConfigErrMsgQualifier(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name      string
+		logPrefix string
+		expected  string
+	}{
+		{
+			name:      "When logPrefix is empty, it should return empty string",
+			logPrefix: "",
+			expected:  "",
+		},
+		{
+			name:      "When logPrefix is set, it should return prefix followed by a space",
+			logPrefix: "base domain",
+			expected:  "base domain ",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewGomegaWithT(t)
+			cfg := dnsZoneConfig{logPrefix: tt.logPrefix}
+			g.Expect(cfg.errMsgQualifier()).To(Equal(tt.expected))
+		})
+	}
+}
+
+func TestRecordNamesForCR(t *testing.T) {
+	tests := []struct {
+		name        string
+		crName      string
+		clusterName string
+		siblings    []client.Object
+		expected    []string
+	}{
+		{
+			name:        "When CR is not private-router, it should return only the oauth record",
+			crName:      "oauth-openshift",
+			clusterName: "my-cluster",
+			expected:    []string{"oauth-my-cluster"},
+		},
+		{
+			name:        "When CR is private-router with no sibling, it should return api and oauth records",
+			crName:      "private-router",
+			clusterName: "my-cluster",
+			expected:    []string{"api-my-cluster", "oauth-my-cluster"},
+		},
+		{
+			name:        "When CR is private-router with sibling OAuth CR, it should return only api record",
+			crName:      "private-router",
+			clusterName: "my-cluster",
+			siblings: []client.Object{
+				func() *hyperv1.AzurePrivateLinkService {
+					cr := newTestAzurePLS(t, "oauth-openshift", "test-ns")
+					cr.Spec.BaseDomain = "example.com"
+					return cr
+				}(),
+			},
+			expected: []string{"api-my-cluster"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			scheme := newTestScheme(t, g)
+
+			azPLS := newTestAzurePLS(t, tt.crName, "test-ns")
+			azPLS.Spec.BaseDomain = "example.com"
+
+			objs := append([]client.Object{azPLS}, tt.siblings...)
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(objs...).
+				Build()
+
+			r := &AzurePrivateLinkServiceReconciler{Client: fakeClient}
+			result, err := r.recordNamesForCR(t.Context(), azPLS, tt.clusterName, testr.New(t))
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(result).To(Equal(tt.expected))
+		})
+	}
+}
+
+func TestDeleteBaseDomainARecords(t *testing.T) {
+	tests := []struct {
+		name                   string
+		crName                 string
+		dnsZoneName            string
+		baseDomain             string
+		siblings               []client.Object
+		expectedDeletedRecords []string
+		expectDeleteCalled     bool
+	}{
+		{
+			name:               "When dnsZoneName is empty, it should skip deletion",
+			crName:             "private-router",
+			dnsZoneName:        "",
+			baseDomain:         "example.com",
+			expectDeleteCalled: false,
+		},
+		{
+			name:               "When dnsZoneName has wrong suffix, it should skip deletion",
+			crName:             "private-router",
+			dnsZoneName:        "cluster.wrong.suffix",
+			baseDomain:         "example.com",
+			expectDeleteCalled: false,
+		},
+		{
+			name:                   "When private-router with no siblings, it should delete api and oauth records",
+			crName:                 "private-router",
+			dnsZoneName:            "my-cluster.hypershift.local",
+			baseDomain:             "example.com",
+			expectedDeletedRecords: []string{"api-my-cluster", "oauth-my-cluster"},
+			expectDeleteCalled:     true,
+		},
+		{
+			name:        "When private-router with sibling OAuth CR, it should delete only api record",
+			crName:      "private-router",
+			dnsZoneName: "my-cluster.hypershift.local",
+			baseDomain:  "example.com",
+			siblings: []client.Object{
+				func() *hyperv1.AzurePrivateLinkService {
+					cr := newTestAzurePLS(t, "oauth-openshift", "test-ns")
+					cr.Spec.BaseDomain = "example.com"
+					return cr
+				}(),
+			},
+			expectedDeletedRecords: []string{"api-my-cluster"},
+			expectDeleteCalled:     true,
+		},
+		{
+			name:                   "When non-private-router CR, it should delete only oauth record",
+			crName:                 "oauth-openshift",
+			dnsZoneName:            "my-cluster.hypershift.local",
+			baseDomain:             "example.com",
+			expectedDeletedRecords: []string{"oauth-my-cluster"},
+			expectDeleteCalled:     true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			scheme := newTestScheme(t, g)
+
+			azPLS := newTestAzurePLS(t, tt.crName, "test-ns")
+			azPLS.Spec.BaseDomain = tt.baseDomain
+			azPLS.Status.DNSZoneName = tt.dnsZoneName
+
+			objs := append([]client.Object{azPLS}, tt.siblings...)
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(objs...).
+				Build()
+
+			mockRecords := &mockRecordSets{}
+			r := &AzurePrivateLinkServiceReconciler{
+				Client:     fakeClient,
+				RecordSets: mockRecords,
+			}
+
+			err := r.deleteBaseDomainARecords(t.Context(), azPLS, "test-rg", tt.baseDomain, tt.dnsZoneName, testr.New(t))
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(mockRecords.deleteCalled).To(Equal(tt.expectDeleteCalled))
+			if tt.expectDeleteCalled {
+				g.Expect(mockRecords.deletedRecordNames).To(Equal(tt.expectedDeletedRecords))
+			}
+		})
+	}
+}
+
+func TestMapHCPToAzurePLS(t *testing.T) {
+	tests := []struct {
+		name           string
+		hcp            *hyperv1.HostedControlPlane
+		plsCRs         []client.Object
+		expectRequests int
+	}{
+		{
+			name: "When HCP has the Azure PLS finalizer and PLS CRs exist, it should return requests for all PLS CRs",
+			hcp: func() *hyperv1.HostedControlPlane {
+				hcp := newTestHCP(t, "test-hcp", "test-ns", "api.test.example.com")
+				hcp.Finalizers = []string{hcpAzurePLSFinalizerName}
+				return hcp
+			}(),
+			plsCRs: []client.Object{
+				newTestAzurePLS(t, "private-router", "test-ns"),
+				newTestAzurePLS(t, "oauth-openshift", "test-ns"),
+			},
+			expectRequests: 2,
+		},
+		{
+			name: "When HCP does not have the Azure PLS finalizer, it should return no requests",
+			hcp:  newTestHCP(t, "test-hcp", "test-ns", "api.test.example.com"),
+			plsCRs: []client.Object{
+				newTestAzurePLS(t, "private-router", "test-ns"),
+			},
+			expectRequests: 0,
+		},
+		{
+			name: "When HCP has the finalizer but no PLS CRs exist, it should return no requests",
+			hcp: func() *hyperv1.HostedControlPlane {
+				hcp := newTestHCP(t, "test-hcp", "test-ns", "api.test.example.com")
+				hcp.Finalizers = []string{hcpAzurePLSFinalizerName}
+				return hcp
+			}(),
+			plsCRs:         []client.Object{},
+			expectRequests: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			scheme := newTestScheme(t, g)
+
+			objs := append([]client.Object{tt.hcp}, tt.plsCRs...)
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(objs...).
+				Build()
+
+			r := &AzurePrivateLinkServiceReconciler{Client: fakeClient}
+			mapFn := r.mapHCPToAzurePLS()
+			ctx := log.IntoContext(t.Context(), testr.New(t))
+			requests := mapFn(ctx, tt.hcp)
+			g.Expect(requests).To(HaveLen(tt.expectRequests))
+		})
+	}
 }
 
 func TestHasSiblingCR(t *testing.T) {
@@ -1709,7 +2049,7 @@ func TestHasSiblingCR(t *testing.T) {
 				Build()
 
 			r := &AzurePrivateLinkServiceReconciler{Client: fakeClient}
-			has, err := r.hasSiblingCR(context.Background(), tt.azPLS)
+			has, err := r.hasSiblingCR(t.Context(), tt.azPLS)
 
 			if tt.expectErr {
 				g.Expect(err).To(HaveOccurred())
@@ -1719,4 +2059,1982 @@ func TestHasSiblingCR(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestMapHCPToAzurePLS_WhenObjectIsNotHCP_ItShouldReturnNil(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+	scheme := newTestScheme(t, g)
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		Build()
+
+	r := &AzurePrivateLinkServiceReconciler{Client: fakeClient}
+	mapFunc := r.mapHCPToAzurePLS()
+
+	ctx := log.IntoContext(t.Context(), testr.New(t))
+	requests := mapFunc(ctx, &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{Name: "not-an-hcp", Namespace: "test-ns"},
+	})
+	g.Expect(requests).To(BeNil())
+}
+
+func TestErrMsgQualifier(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name      string
+		logPrefix string
+		expected  string
+	}{
+		{
+			name:      "When logPrefix is empty it should return empty string",
+			logPrefix: "",
+			expected:  "",
+		},
+		{
+			name:      "When logPrefix is set it should return prefix with trailing space",
+			logPrefix: "base domain",
+			expected:  "base domain ",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewGomegaWithT(t)
+			cfg := dnsZoneConfig{logPrefix: tt.logPrefix}
+			g.Expect(cfg.errMsgQualifier()).To(Equal(tt.expected))
+		})
+	}
+}
+
+func TestReconcilePrivateEndpoint_WhenGetReturnsNon404Error_ItShouldSetErrorCondition(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+	scheme := newTestScheme(t, g)
+
+	azPLS := newTestAzurePLS(t, "test-pls", "test-ns")
+	azPLS.Status.PrivateLinkServiceAlias = "test-alias"
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(azPLS).
+		WithStatusSubresource(azPLS).
+		Build()
+
+	mockPE := &mockPrivateEndpoints{
+		getErr: &azcore.ResponseError{StatusCode: 500},
+	}
+
+	r := &AzurePrivateLinkServiceReconciler{
+		Client:           fakeClient,
+		PrivateEndpoints: mockPE,
+	}
+
+	result, err := r.reconcilePrivateEndpoint(t.Context(), azPLS, testr.New(t))
+	g.Expect(err).ToNot(HaveOccurred(), "handleAzureError returns nil error with RequeueAfter")
+	g.Expect(result.RequeueAfter).ToNot(BeZero(), "should requeue after Azure error")
+
+	updated := &hyperv1.AzurePrivateLinkService{}
+	g.Expect(fakeClient.Get(t.Context(), types.NamespacedName{Name: "test-pls", Namespace: "test-ns"}, updated)).To(Succeed())
+
+	peCondition := meta.FindStatusCondition(updated.Status.Conditions, string(hyperv1.AzurePrivateEndpointAvailable))
+	g.Expect(peCondition).ToNot(BeNil())
+	g.Expect(peCondition.Status).To(Equal(metav1.ConditionFalse))
+	g.Expect(peCondition.Reason).To(Equal("PrivateEndpointGetFailed"))
+}
+
+func TestReconcilePrivateEndpoint_WhenCreateFails_ItShouldSetErrorCondition(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+	scheme := newTestScheme(t, g)
+
+	azPLS := newTestAzurePLS(t, "test-pls", "test-ns")
+	azPLS.Status.PrivateLinkServiceAlias = "test-alias"
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(azPLS).
+		WithStatusSubresource(azPLS).
+		Build()
+
+	mockPE := &mockPrivateEndpoints{
+		getErr:    &azcore.ResponseError{StatusCode: 404},
+		createErr: fmt.Errorf("mock creation failure"),
+	}
+
+	r := &AzurePrivateLinkServiceReconciler{
+		Client:           fakeClient,
+		PrivateEndpoints: mockPE,
+	}
+
+	result, err := r.reconcilePrivateEndpoint(t.Context(), azPLS, testr.New(t))
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(result.RequeueAfter).ToNot(BeZero())
+	g.Expect(mockPE.createCalled).To(BeTrue())
+}
+
+func TestReconcileDNS_WhenDNSZoneCreateFails_ItShouldRequeueAfterError(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+	scheme := newTestScheme(t, g)
+
+	azPLS := newTestAzurePLS(t, "test-pls", "test-ns")
+	azPLS.Status.PrivateEndpointIP = "10.0.1.5"
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(azPLS).
+		WithStatusSubresource(azPLS).
+		Build()
+
+	r := &AzurePrivateLinkServiceReconciler{
+		Client:              fakeClient,
+		PrivateDNSZones:     &mockPrivateDNSZones{createErr: fmt.Errorf("mock DNS zone creation failure")},
+		VirtualNetworkLinks: &mockVirtualNetworkLinks{},
+		RecordSets:          &mockRecordSets{},
+	}
+
+	result, err := r.reconcileDNS(t.Context(), azPLS, "test-hcp", testr.New(t))
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(result.RequeueAfter).ToNot(BeZero())
+}
+
+func TestReconcileDNS_WhenVNetLinkCreateFails_ItShouldRequeueAfterError(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+	scheme := newTestScheme(t, g)
+
+	azPLS := newTestAzurePLS(t, "test-pls", "test-ns")
+	azPLS.Status.PrivateEndpointIP = "10.0.1.5"
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(azPLS).
+		WithStatusSubresource(azPLS).
+		Build()
+
+	r := &AzurePrivateLinkServiceReconciler{
+		Client:              fakeClient,
+		PrivateDNSZones:     &mockPrivateDNSZones{},
+		VirtualNetworkLinks: &mockVirtualNetworkLinks{createErr: fmt.Errorf("mock VNet link creation failure")},
+		RecordSets:          &mockRecordSets{},
+	}
+
+	result, err := r.reconcileDNS(t.Context(), azPLS, "test-hcp", testr.New(t))
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(result.RequeueAfter).ToNot(BeZero())
+}
+
+func TestReconcileDNS_WhenARecordCreateFails_ItShouldRequeueAfterError(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+	scheme := newTestScheme(t, g)
+
+	azPLS := newTestAzurePLS(t, "test-pls", "test-ns")
+	azPLS.Status.PrivateEndpointIP = "10.0.1.5"
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(azPLS).
+		WithStatusSubresource(azPLS).
+		Build()
+
+	r := &AzurePrivateLinkServiceReconciler{
+		Client:              fakeClient,
+		PrivateDNSZones:     &mockPrivateDNSZones{},
+		VirtualNetworkLinks: &mockVirtualNetworkLinks{},
+		RecordSets:          &mockRecordSets{createErr: fmt.Errorf("mock A record creation failure")},
+	}
+
+	result, err := r.reconcileDNS(t.Context(), azPLS, "test-hcp", testr.New(t))
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(result.RequeueAfter).ToNot(BeZero())
+}
+
+func TestReconcileBaseDomainDNS_WhenDNSZoneCreateFails_ItShouldRequeueAfterError(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+	scheme := newTestScheme(t, g)
+
+	azPLS := newTestAzurePLS(t, "oauth-openshift", "test-ns")
+	azPLS.Spec.BaseDomain = "example.com"
+	azPLS.Status.PrivateEndpointIP = "10.0.1.6"
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(azPLS).
+		WithStatusSubresource(azPLS).
+		Build()
+
+	r := &AzurePrivateLinkServiceReconciler{
+		Client:              fakeClient,
+		PrivateDNSZones:     &mockPrivateDNSZones{createErr: fmt.Errorf("mock DNS zone creation failure")},
+		VirtualNetworkLinks: &mockVirtualNetworkLinks{},
+		RecordSets:          &mockRecordSets{},
+	}
+
+	result, err := r.reconcileBaseDomainDNS(t.Context(), azPLS, "test-hcp", "", testr.New(t))
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(result.RequeueAfter).ToNot(BeZero())
+}
+
+func TestReconcileDelete_WhenARecordDeleteReturnsNon404Error_ItShouldReturnError(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+	scheme := newTestScheme(t, g)
+
+	azPLS := newTestAzurePLS(t, "test-pls", "test-ns")
+	azPLS.Status.DNSZoneName = "test-hcp.hypershift.local"
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(azPLS).
+		Build()
+
+	r := &AzurePrivateLinkServiceReconciler{
+		Client:              fakeClient,
+		PrivateEndpoints:    &mockPrivateEndpoints{},
+		PrivateDNSZones:     &mockPrivateDNSZones{},
+		VirtualNetworkLinks: &mockVirtualNetworkLinks{},
+		RecordSets:          &mockRecordSets{deleteErr: fmt.Errorf("mock delete error")},
+	}
+
+	err := r.reconcileDelete(t.Context(), azPLS, testr.New(t))
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(err).To(MatchError(ContainSubstring("failed to delete A record")))
+}
+
+func TestReconcileDelete_WhenVNetLinkDeleteReturnsNon404Error_ItShouldReturnError(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+	scheme := newTestScheme(t, g)
+
+	azPLS := newTestAzurePLS(t, "test-pls", "test-ns")
+	azPLS.Status.DNSZoneName = "test-hcp.hypershift.local"
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(azPLS).
+		Build()
+
+	r := &AzurePrivateLinkServiceReconciler{
+		Client:              fakeClient,
+		PrivateEndpoints:    &mockPrivateEndpoints{},
+		PrivateDNSZones:     &mockPrivateDNSZones{},
+		VirtualNetworkLinks: &mockVirtualNetworkLinks{deleteErr: fmt.Errorf("mock delete error")},
+		RecordSets:          &mockRecordSets{},
+	}
+
+	err := r.reconcileDelete(t.Context(), azPLS, testr.New(t))
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(err).To(MatchError(ContainSubstring("failed to begin deleting VNet Link")))
+}
+
+func TestReconcileDelete_WhenDNSZoneDeleteReturnsNon404Error_ItShouldReturnError(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+	scheme := newTestScheme(t, g)
+
+	azPLS := newTestAzurePLS(t, "test-pls", "test-ns")
+	azPLS.Status.DNSZoneName = "test-hcp.hypershift.local"
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(azPLS).
+		Build()
+
+	r := &AzurePrivateLinkServiceReconciler{
+		Client:              fakeClient,
+		PrivateEndpoints:    &mockPrivateEndpoints{},
+		PrivateDNSZones:     &mockPrivateDNSZones{deleteErr: fmt.Errorf("mock delete error")},
+		VirtualNetworkLinks: &mockVirtualNetworkLinks{},
+		RecordSets:          &mockRecordSets{},
+	}
+
+	err := r.reconcileDelete(t.Context(), azPLS, testr.New(t))
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(err).To(MatchError(ContainSubstring("failed to begin deleting Private DNS Zone")))
+}
+
+func TestReconcileDelete_WhenPEDeleteReturnsNon404Error_ItShouldReturnError(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+	scheme := newTestScheme(t, g)
+
+	azPLS := newTestAzurePLS(t, "test-pls", "test-ns")
+	// No DNS zone → skips DNS cleanup, goes straight to PE
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(azPLS).
+		Build()
+
+	r := &AzurePrivateLinkServiceReconciler{
+		Client:              fakeClient,
+		PrivateEndpoints:    &mockPrivateEndpoints{deleteErr: fmt.Errorf("mock delete error")},
+		PrivateDNSZones:     &mockPrivateDNSZones{},
+		VirtualNetworkLinks: &mockVirtualNetworkLinks{},
+		RecordSets:          &mockRecordSets{},
+	}
+
+	err := r.reconcileDelete(t.Context(), azPLS, testr.New(t))
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(err).To(MatchError(ContainSubstring("failed to begin deleting Private Endpoint")))
+}
+
+func TestReconcileDelete_WhenAllDeletesReturn404_ItShouldCompleteSuccessfully(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+	scheme := newTestScheme(t, g)
+
+	azPLS := newTestAzurePLS(t, "test-pls", "test-ns")
+	azPLS.Status.DNSZoneName = "test-hcp.hypershift.local"
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(azPLS).
+		Build()
+
+	notFoundErr := &azcore.ResponseError{StatusCode: 404}
+	r := &AzurePrivateLinkServiceReconciler{
+		Client:              fakeClient,
+		PrivateEndpoints:    &mockPrivateEndpoints{deleteErr: notFoundErr},
+		PrivateDNSZones:     &mockPrivateDNSZones{deleteErr: notFoundErr},
+		VirtualNetworkLinks: &mockVirtualNetworkLinks{deleteErr: notFoundErr},
+		RecordSets:          &mockRecordSets{deleteErr: notFoundErr},
+	}
+
+	err := r.reconcileDelete(t.Context(), azPLS, testr.New(t))
+	g.Expect(err).ToNot(HaveOccurred(), "404 errors should be treated as already deleted")
+}
+
+func TestReconcileDelete_WhenNonPrivateRouterWithBaseDomain_ItShouldDeleteOAuthRecordOnly(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+	scheme := newTestScheme(t, g)
+
+	azPLS := newTestAzurePLS(t, "oauth-openshift", "test-ns")
+	azPLS.Status.DNSZoneName = "test-hcp.hypershift.local"
+	azPLS.Spec.BaseDomain = "example.com"
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(azPLS).
+		Build()
+
+	mockRecords := &mockRecordSets{}
+
+	r := &AzurePrivateLinkServiceReconciler{
+		Client:              fakeClient,
+		PrivateEndpoints:    &mockPrivateEndpoints{},
+		PrivateDNSZones:     &mockPrivateDNSZones{},
+		VirtualNetworkLinks: &mockVirtualNetworkLinks{},
+		RecordSets:          mockRecords,
+	}
+
+	err := r.reconcileDelete(t.Context(), azPLS, testr.New(t))
+	g.Expect(err).ToNot(HaveOccurred())
+
+	// Should delete hypershift.local records (api, *.apps) + only oauth base domain record
+	g.Expect(mockRecords.deletedRecordNames).To(ContainElement("oauth-test-hcp"))
+	g.Expect(mockRecords.deletedRecordNames).ToNot(ContainElement("api-test-hcp"),
+		"non-private-router CR should not delete the api base domain record")
+}
+
+func TestReconcileDelete_WhenBaseDomainButClusterNameCannotBeDerived_ItShouldSkipRecordDeletion(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+	scheme := newTestScheme(t, g)
+
+	azPLS := newTestAzurePLS(t, "test-pls", "test-ns")
+	azPLS.Spec.BaseDomain = "example.com"
+	// No DNSZoneName → can't derive cluster name → skip record deletion
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(azPLS).
+		Build()
+
+	mockRecords := &mockRecordSets{}
+	mockLinks := &mockVirtualNetworkLinks{}
+	mockDNS := &mockPrivateDNSZones{}
+
+	r := &AzurePrivateLinkServiceReconciler{
+		Client:              fakeClient,
+		PrivateEndpoints:    &mockPrivateEndpoints{},
+		PrivateDNSZones:     mockDNS,
+		VirtualNetworkLinks: mockLinks,
+		RecordSets:          mockRecords,
+	}
+
+	err := r.reconcileDelete(t.Context(), azPLS, testr.New(t))
+	g.Expect(err).ToNot(HaveOccurred())
+
+	// No base domain A records should be deleted since cluster name couldn't be derived
+	g.Expect(mockRecords.deletedRecordNames).To(BeEmpty(),
+		"should not delete any A records when cluster name cannot be derived")
+	// Zone and VNet link deletion still proceed because they only require the baseDomain
+	// from the spec (not the cluster name). Only A record names depend on the cluster name.
+	g.Expect(mockLinks.deleteCalled).To(BeTrue(), "should still attempt base domain VNet link deletion")
+	g.Expect(mockDNS.deleteCalled).To(BeTrue(), "should still attempt base domain zone deletion")
+}
+
+func TestReconcileDelete_WhenBaseDomainRecordDeleteFails_ItShouldReturnError(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+	scheme := newTestScheme(t, g)
+
+	azPLS := newTestAzurePLS(t, "oauth-openshift", "test-ns")
+	azPLS.Status.DNSZoneName = "test-hcp.hypershift.local"
+	azPLS.Spec.BaseDomain = "example.com"
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(azPLS).
+		Build()
+
+	// Only error on base domain zone deletes; hypershift.local record deletes should succeed.
+	r := &AzurePrivateLinkServiceReconciler{
+		Client:              fakeClient,
+		PrivateEndpoints:    &mockPrivateEndpoints{},
+		PrivateDNSZones:     &mockPrivateDNSZones{},
+		VirtualNetworkLinks: &mockVirtualNetworkLinks{},
+		RecordSets:          &mockRecordSets{deleteErr: fmt.Errorf("mock delete error"), deleteErrZone: "example.com"},
+	}
+
+	err := r.reconcileDelete(t.Context(), azPLS, testr.New(t))
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(err).To(MatchError(ContainSubstring("failed to delete base domain A record")))
+}
+
+func TestReconcileDelete_WhenBaseDomainVNetLinkDeleteFails_ItShouldReturnError(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+	scheme := newTestScheme(t, g)
+
+	azPLS := newTestAzurePLS(t, "test-pls", "test-ns")
+	azPLS.Spec.BaseDomain = "example.com"
+	// No DNSZoneName → skips hypershift.local section and base domain records
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(azPLS).
+		Build()
+
+	r := &AzurePrivateLinkServiceReconciler{
+		Client:              fakeClient,
+		PrivateEndpoints:    &mockPrivateEndpoints{},
+		PrivateDNSZones:     &mockPrivateDNSZones{},
+		VirtualNetworkLinks: &mockVirtualNetworkLinks{deleteErr: fmt.Errorf("mock delete error")},
+		RecordSets:          &mockRecordSets{},
+	}
+
+	err := r.reconcileDelete(t.Context(), azPLS, testr.New(t))
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(err).To(MatchError(ContainSubstring("failed to begin deleting VNet Link")))
+}
+
+func TestReconcileDelete_WhenBaseDomainZoneDeleteFails_ItShouldReturnError(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+	scheme := newTestScheme(t, g)
+
+	azPLS := newTestAzurePLS(t, "test-pls", "test-ns")
+	azPLS.Spec.BaseDomain = "example.com"
+	// No DNSZoneName → skips hypershift.local section and base domain records
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(azPLS).
+		Build()
+
+	r := &AzurePrivateLinkServiceReconciler{
+		Client:              fakeClient,
+		PrivateEndpoints:    &mockPrivateEndpoints{},
+		PrivateDNSZones:     &mockPrivateDNSZones{deleteErr: fmt.Errorf("mock delete error")},
+		VirtualNetworkLinks: &mockVirtualNetworkLinks{},
+		RecordSets:          &mockRecordSets{},
+	}
+
+	err := r.reconcileDelete(t.Context(), azPLS, testr.New(t))
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(err).To(MatchError(ContainSubstring("failed to begin deleting Private DNS Zone")))
+}
+
+// Tests CR deletion with DNSZoneName set in status, which causes reconcileDelete
+// to attempt DNS record, VNet link, and zone cleanup in addition to PE deletion.
+// Compare with TestReconcile_WhenCRDeletionSucceeds which has no DNSZoneName and
+// only verifies PE deletion proceeds.
+func TestReconcile_WhenCRDeletionWithFinalizer_ItShouldCleanUpAndRemoveFinalizer(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+	scheme := newTestScheme(t, g)
+
+	now := metav1.Now()
+	azPLS := newTestAzurePLS(t, "test-pls", "test-ns")
+	azPLS.DeletionTimestamp = &now
+	azPLS.Finalizers = []string{azurePrivateLinkServiceFinalizer}
+	azPLS.Status.DNSZoneName = "test-hcp.hypershift.local"
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(azPLS).
+		WithStatusSubresource(azPLS).
+		Build()
+
+	r := &AzurePrivateLinkServiceReconciler{
+		Client:              fakeClient,
+		PrivateEndpoints:    &mockPrivateEndpoints{},
+		PrivateDNSZones:     &mockPrivateDNSZones{},
+		VirtualNetworkLinks: &mockVirtualNetworkLinks{},
+		RecordSets:          &mockRecordSets{},
+	}
+
+	result, err := r.Reconcile(log.IntoContext(t.Context(), testr.New(t)), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "test-pls", Namespace: "test-ns"},
+	})
+
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(result.IsZero()).To(BeTrue())
+
+	// Verify finalizer was removed (object may be garbage collected by fake client)
+	updated := &hyperv1.AzurePrivateLinkService{}
+	err = fakeClient.Get(t.Context(), types.NamespacedName{Name: "test-pls", Namespace: "test-ns"}, updated)
+	if apierrors.IsNotFound(err) {
+		return // Object was garbage collected after all finalizers removed
+	}
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(updated.Finalizers).ToNot(ContainElement(azurePrivateLinkServiceFinalizer))
+}
+
+func TestReconcile_WhenNonPrivateRouterWithDNSZoneNameAlreadySet_ItShouldPreserveExistingDNSZoneName(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+	scheme := newTestScheme(t, g)
+
+	azPLS := newTestAzurePLS(t, "oauth-openshift", "test-ns")
+	azPLS.Finalizers = []string{azurePrivateLinkServiceFinalizer}
+	azPLS.Status.PrivateLinkServiceAlias = "test-alias"
+	azPLS.Status.PrivateEndpointIP = "10.0.1.6"
+	azPLS.Status.PrivateEndpointID = "/pe/id"
+	azPLS.Status.DNSZoneName = "test-hcp.hypershift.local" // Already set
+
+	hcp := newTestHCP(t, "test-hcp", "test-ns", "api.test.example.com")
+	hcp.Finalizers = []string{hcpAzurePLSFinalizerName}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(azPLS, hcp).
+		WithStatusSubresource(azPLS).
+		Build()
+
+	mockPE := &mockPrivateEndpoints{
+		getResponse: armnetwork.PrivateEndpointsClientGetResponse{
+			PrivateEndpoint: armnetwork.PrivateEndpoint{
+				ID: ptr.To("/pe/id"),
+				Properties: &armnetwork.PrivateEndpointProperties{
+					CustomDNSConfigs: []*armnetwork.CustomDNSConfigPropertiesFormat{
+						{IPAddresses: []*string{ptr.To("10.0.1.6")}},
+					},
+				},
+			},
+		},
+	}
+
+	r := &AzurePrivateLinkServiceReconciler{
+		Client:              fakeClient,
+		PrivateEndpoints:    mockPE,
+		PrivateDNSZones:     &mockPrivateDNSZones{},
+		VirtualNetworkLinks: &mockVirtualNetworkLinks{},
+		RecordSets:          &mockRecordSets{},
+	}
+
+	result, err := r.Reconcile(log.IntoContext(t.Context(), testr.New(t)), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "oauth-openshift", Namespace: "test-ns"},
+	})
+
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(result.RequeueAfter).To(Equal(azureutil.DriftDetectionRequeueInterval))
+
+	updated := &hyperv1.AzurePrivateLinkService{}
+	g.Expect(fakeClient.Get(t.Context(), types.NamespacedName{Name: "oauth-openshift", Namespace: "test-ns"}, updated)).To(Succeed())
+	g.Expect(updated.Status.DNSZoneName).To(Equal("test-hcp.hypershift.local"))
+}
+
+func TestReconcile_WhenPrivateRouterWithBaseDomain_ItShouldReconcileBaseDomainDNS(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+	scheme := newTestScheme(t, g)
+
+	azPLS := newTestAzurePLS(t, "private-router", "test-ns")
+	azPLS.Finalizers = []string{azurePrivateLinkServiceFinalizer}
+	azPLS.Status.PrivateLinkServiceAlias = "test-alias"
+	azPLS.Status.PrivateEndpointIP = "10.0.1.5"
+	azPLS.Status.PrivateEndpointID = "/pe/id"
+	azPLS.Spec.BaseDomain = "example.com"
+
+	hcp := newTestHCP(t, "test-hcp", "test-ns", "api.test.example.com")
+	hcp.Finalizers = []string{hcpAzurePLSFinalizerName}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(azPLS, hcp).
+		WithStatusSubresource(azPLS).
+		Build()
+
+	mockPE := &mockPrivateEndpoints{
+		getResponse: armnetwork.PrivateEndpointsClientGetResponse{
+			PrivateEndpoint: armnetwork.PrivateEndpoint{
+				ID: ptr.To("/pe/id"),
+				Properties: &armnetwork.PrivateEndpointProperties{
+					CustomDNSConfigs: []*armnetwork.CustomDNSConfigPropertiesFormat{
+						{IPAddresses: []*string{ptr.To("10.0.1.5")}},
+					},
+				},
+			},
+		},
+	}
+	mockRecords := &mockRecordSets{}
+
+	r := &AzurePrivateLinkServiceReconciler{
+		Client:              fakeClient,
+		PrivateEndpoints:    mockPE,
+		PrivateDNSZones:     &mockPrivateDNSZones{},
+		VirtualNetworkLinks: &mockVirtualNetworkLinks{},
+		RecordSets:          mockRecords,
+	}
+
+	result, err := r.Reconcile(log.IntoContext(t.Context(), testr.New(t)), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "private-router", Namespace: "test-ns"},
+	})
+
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(result.RequeueAfter).To(Equal(azureutil.DriftDetectionRequeueInterval))
+
+	// Should have created both hypershift.local records (api, *.apps) and
+	// base domain records (api-test-hcp, oauth-test-hcp since no sibling)
+	g.Expect(mockRecords.createdRecordNames).To(ConsistOf("api", "*.apps", "api-test-hcp", "oauth-test-hcp"))
+}
+
+func TestReconcilePrivateEndpoint_WhenPollerSucceeds_ItShouldUpdateStatusWithPEInfo(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+	scheme := newTestScheme(t, g)
+
+	azPLS := newTestAzurePLS(t, "test-pls", "test-ns")
+	azPLS.Status.PrivateLinkServiceAlias = "test-alias"
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(azPLS).
+		WithStatusSubresource(azPLS).
+		Build()
+
+	peResp := armnetwork.PrivateEndpointsClientCreateOrUpdateResponse{
+		PrivateEndpoint: armnetwork.PrivateEndpoint{
+			ID: ptr.To("/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/privateEndpoints/test-pls-pe"),
+			Properties: &armnetwork.PrivateEndpointProperties{
+				CustomDNSConfigs: []*armnetwork.CustomDNSConfigPropertiesFormat{
+					{IPAddresses: []*string{ptr.To("10.0.1.5")}},
+				},
+			},
+		},
+	}
+
+	mockPE := &mockPrivateEndpoints{
+		getErr:       &azcore.ResponseError{StatusCode: 404},
+		createPoller: newDonePoller(t, peResp),
+	}
+
+	r := &AzurePrivateLinkServiceReconciler{
+		Client:           fakeClient,
+		PrivateEndpoints: mockPE,
+	}
+
+	result, err := r.reconcilePrivateEndpoint(t.Context(), azPLS, testr.New(t))
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(result.IsZero()).To(BeTrue())
+
+	updated := &hyperv1.AzurePrivateLinkService{}
+	g.Expect(fakeClient.Get(t.Context(), types.NamespacedName{Name: "test-pls", Namespace: "test-ns"}, updated)).To(Succeed())
+	g.Expect(updated.Status.PrivateEndpointIP).To(Equal("10.0.1.5"))
+	g.Expect(updated.Status.PrivateEndpointID).To(ContainSubstring("test-pls-pe"))
+}
+
+func TestReconcilePrivateEndpoint_WhenPollerFails_ItShouldSetErrorCondition(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+	scheme := newTestScheme(t, g)
+
+	azPLS := newTestAzurePLS(t, "test-pls", "test-ns")
+	azPLS.Status.PrivateLinkServiceAlias = "test-alias"
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(azPLS).
+		WithStatusSubresource(azPLS).
+		Build()
+
+	mockPE := &mockPrivateEndpoints{
+		getErr:       &azcore.ResponseError{StatusCode: 404},
+		createPoller: newErrorPoller[armnetwork.PrivateEndpointsClientCreateOrUpdateResponse](t, fmt.Errorf("poller failed")),
+	}
+
+	r := &AzurePrivateLinkServiceReconciler{
+		Client:           fakeClient,
+		PrivateEndpoints: mockPE,
+	}
+
+	result, err := r.reconcilePrivateEndpoint(t.Context(), azPLS, testr.New(t))
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(result.RequeueAfter).ToNot(BeZero())
+}
+
+func TestReconcileDNS_WhenDNSZonePollerSucceeds_ItShouldCreateLinkAndRecords(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+	scheme := newTestScheme(t, g)
+
+	azPLS := newTestAzurePLS(t, "private-router", "test-ns")
+	azPLS.Status.PrivateEndpointIP = "10.0.1.5"
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(azPLS).
+		WithStatusSubresource(azPLS).
+		Build()
+
+	zoneResp := armprivatedns.PrivateZonesClientCreateOrUpdateResponse{
+		PrivateZone: armprivatedns.PrivateZone{
+			ID: ptr.To("/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/privateDnsZones/test.hypershift.local"),
+		},
+	}
+	linkResp := armprivatedns.VirtualNetworkLinksClientCreateOrUpdateResponse{}
+	mockRecords := &mockRecordSets{}
+
+	r := &AzurePrivateLinkServiceReconciler{
+		Client:              fakeClient,
+		PrivateDNSZones:     &mockPrivateDNSZones{createPoller: newDonePoller(t, zoneResp)},
+		VirtualNetworkLinks: &mockVirtualNetworkLinks{createPoller: newDonePoller(t, linkResp)},
+		RecordSets:          mockRecords,
+	}
+
+	result, err := r.reconcileDNS(t.Context(), azPLS, "test-hcp", testr.New(t))
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(result.IsZero()).To(BeTrue())
+	g.Expect(mockRecords.createdRecordNames).To(ConsistOf("api", "*.apps"))
+}
+
+func TestReconcileDNS_WhenDNSZonePollerFails_ItShouldRequeueAfterError(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+	scheme := newTestScheme(t, g)
+
+	azPLS := newTestAzurePLS(t, "test-pls", "test-ns")
+	azPLS.Status.PrivateEndpointIP = "10.0.1.5"
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(azPLS).
+		WithStatusSubresource(azPLS).
+		Build()
+
+	r := &AzurePrivateLinkServiceReconciler{
+		Client: fakeClient,
+		PrivateDNSZones: &mockPrivateDNSZones{
+			createPoller: newErrorPoller[armprivatedns.PrivateZonesClientCreateOrUpdateResponse](t, fmt.Errorf("zone poller failed")),
+		},
+		VirtualNetworkLinks: &mockVirtualNetworkLinks{},
+		RecordSets:          &mockRecordSets{},
+	}
+
+	result, err := r.reconcileDNS(t.Context(), azPLS, "test-hcp", testr.New(t))
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(result.RequeueAfter).ToNot(BeZero())
+}
+
+func TestReconcileDNS_WhenVNetLinkPollerFails_ItShouldRequeueAfterError(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+	scheme := newTestScheme(t, g)
+
+	azPLS := newTestAzurePLS(t, "test-pls", "test-ns")
+	azPLS.Status.PrivateEndpointIP = "10.0.1.5"
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(azPLS).
+		WithStatusSubresource(azPLS).
+		Build()
+
+	r := &AzurePrivateLinkServiceReconciler{
+		Client:          fakeClient,
+		PrivateDNSZones: &mockPrivateDNSZones{},
+		VirtualNetworkLinks: &mockVirtualNetworkLinks{
+			createPoller: newErrorPoller[armprivatedns.VirtualNetworkLinksClientCreateOrUpdateResponse](t, fmt.Errorf("link poller failed")),
+		},
+		RecordSets: &mockRecordSets{},
+	}
+
+	result, err := r.reconcileDNS(t.Context(), azPLS, "test-hcp", testr.New(t))
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(result.RequeueAfter).ToNot(BeZero())
+}
+
+func TestReconcileDNS_WhenVNetAlreadyLinked_ItShouldContinue(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+	scheme := newTestScheme(t, g)
+
+	azPLS := newTestAzurePLS(t, "test-pls", "test-ns")
+	azPLS.Status.PrivateEndpointIP = "10.0.1.5"
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(azPLS).
+		WithStatusSubresource(azPLS).
+		Build()
+
+	mockRecords := &mockRecordSets{}
+	r := &AzurePrivateLinkServiceReconciler{
+		Client:          fakeClient,
+		PrivateDNSZones: &mockPrivateDNSZones{},
+		VirtualNetworkLinks: &mockVirtualNetworkLinks{
+			createPoller: newErrorPoller[armprivatedns.VirtualNetworkLinksClientCreateOrUpdateResponse](t,
+				fmt.Errorf("already linked to the virtual network")),
+		},
+		RecordSets: mockRecords,
+	}
+
+	result, err := r.reconcileDNS(t.Context(), azPLS, "test-hcp", testr.New(t))
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(result.IsZero()).To(BeTrue(), "should continue past VNet already linked")
+	g.Expect(mockRecords.createCalled).To(BeTrue(), "should still create A records")
+}
+
+func TestReconcileDelete_WhenPollersSucceed_ItShouldDeleteAllResources(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+	scheme := newTestScheme(t, g)
+
+	azPLS := newTestAzurePLS(t, "test-pls", "test-ns")
+	azPLS.Status.DNSZoneName = "test-hcp.hypershift.local"
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(azPLS).
+		Build()
+
+	mockPE := &mockPrivateEndpoints{
+		deletePoller: newDonePoller(t, armnetwork.PrivateEndpointsClientDeleteResponse{}),
+	}
+	mockDNS := &mockPrivateDNSZones{
+		deletePoller: newDonePoller(t, armprivatedns.PrivateZonesClientDeleteResponse{}),
+	}
+	mockLinks := &mockVirtualNetworkLinks{
+		deletePoller: newDonePoller(t, armprivatedns.VirtualNetworkLinksClientDeleteResponse{}),
+	}
+
+	r := &AzurePrivateLinkServiceReconciler{
+		Client:              fakeClient,
+		PrivateEndpoints:    mockPE,
+		PrivateDNSZones:     mockDNS,
+		VirtualNetworkLinks: mockLinks,
+		RecordSets:          &mockRecordSets{},
+	}
+
+	err := r.reconcileDelete(t.Context(), azPLS, testr.New(t))
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(mockPE.deleteCalled).To(BeTrue())
+	g.Expect(mockDNS.deleteCalled).To(BeTrue())
+	g.Expect(mockLinks.deleteCalled).To(BeTrue())
+}
+
+func TestReconcileDelete_WhenVNetLinkPollerFails_ItShouldReturnError(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+	scheme := newTestScheme(t, g)
+
+	azPLS := newTestAzurePLS(t, "test-pls", "test-ns")
+	azPLS.Status.DNSZoneName = "test-hcp.hypershift.local"
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(azPLS).
+		Build()
+
+	r := &AzurePrivateLinkServiceReconciler{
+		Client:           fakeClient,
+		PrivateEndpoints: &mockPrivateEndpoints{},
+		PrivateDNSZones:  &mockPrivateDNSZones{},
+		VirtualNetworkLinks: &mockVirtualNetworkLinks{
+			deletePoller: newErrorPoller[armprivatedns.VirtualNetworkLinksClientDeleteResponse](t, fmt.Errorf("poller failed")),
+		},
+		RecordSets: &mockRecordSets{},
+	}
+
+	err := r.reconcileDelete(t.Context(), azPLS, testr.New(t))
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(err).To(MatchError(ContainSubstring("failed to delete VNet Link")))
+}
+
+func TestReconcileDelete_WhenDNSZonePollerFails_ItShouldReturnError(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+	scheme := newTestScheme(t, g)
+
+	azPLS := newTestAzurePLS(t, "test-pls", "test-ns")
+	azPLS.Status.DNSZoneName = "test-hcp.hypershift.local"
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(azPLS).
+		Build()
+
+	r := &AzurePrivateLinkServiceReconciler{
+		Client:              fakeClient,
+		PrivateEndpoints:    &mockPrivateEndpoints{},
+		PrivateDNSZones:     &mockPrivateDNSZones{deletePoller: newErrorPoller[armprivatedns.PrivateZonesClientDeleteResponse](t, fmt.Errorf("poller failed"))},
+		VirtualNetworkLinks: &mockVirtualNetworkLinks{},
+		RecordSets:          &mockRecordSets{},
+	}
+
+	err := r.reconcileDelete(t.Context(), azPLS, testr.New(t))
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(err).To(MatchError(ContainSubstring("failed to delete Private DNS Zone")))
+}
+
+func TestReconcileDelete_WhenPEPollerFails_ItShouldReturnError(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+	scheme := newTestScheme(t, g)
+
+	azPLS := newTestAzurePLS(t, "test-pls", "test-ns")
+	// No DNS zone → skip DNS cleanup
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(azPLS).
+		Build()
+
+	r := &AzurePrivateLinkServiceReconciler{
+		Client:              fakeClient,
+		PrivateEndpoints:    &mockPrivateEndpoints{deletePoller: newErrorPoller[armnetwork.PrivateEndpointsClientDeleteResponse](t, fmt.Errorf("poller failed"))},
+		PrivateDNSZones:     &mockPrivateDNSZones{},
+		VirtualNetworkLinks: &mockVirtualNetworkLinks{},
+		RecordSets:          &mockRecordSets{},
+	}
+
+	err := r.reconcileDelete(t.Context(), azPLS, testr.New(t))
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(err).To(MatchError(ContainSubstring("failed to delete Private Endpoint")))
+}
+
+func TestReconcileDelete_WhenDeletePollersReturn404_ItShouldSucceed(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+	scheme := newTestScheme(t, g)
+
+	azPLS := newTestAzurePLS(t, "test-pls", "test-ns")
+	azPLS.Status.DNSZoneName = "test-hcp.hypershift.local"
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(azPLS).
+		Build()
+
+	notFoundErr := &azcore.ResponseError{StatusCode: 404}
+	r := &AzurePrivateLinkServiceReconciler{
+		Client:              fakeClient,
+		PrivateEndpoints:    &mockPrivateEndpoints{deletePoller: newErrorPoller[armnetwork.PrivateEndpointsClientDeleteResponse](t, notFoundErr)},
+		PrivateDNSZones:     &mockPrivateDNSZones{deletePoller: newErrorPoller[armprivatedns.PrivateZonesClientDeleteResponse](t, notFoundErr)},
+		VirtualNetworkLinks: &mockVirtualNetworkLinks{deletePoller: newErrorPoller[armprivatedns.VirtualNetworkLinksClientDeleteResponse](t, notFoundErr)},
+		RecordSets:          &mockRecordSets{deleteErr: notFoundErr},
+	}
+
+	err := r.reconcileDelete(t.Context(), azPLS, testr.New(t))
+	g.Expect(err).ToNot(HaveOccurred(), "404 from pollers should be treated as already deleted")
+}
+
+func TestReconcileDelete_WhenBaseDomainPollersSucceed_ItShouldDeleteAllBaseDomainResources(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+	scheme := newTestScheme(t, g)
+
+	azPLS := newTestAzurePLS(t, "private-router", "test-ns")
+	azPLS.Status.DNSZoneName = "test-hcp.hypershift.local"
+	azPLS.Spec.BaseDomain = "example.com"
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(azPLS).
+		Build()
+
+	mockLinks := &mockVirtualNetworkLinks{
+		deletePoller: newDonePoller(t, armprivatedns.VirtualNetworkLinksClientDeleteResponse{}),
+	}
+	mockDNS := &mockPrivateDNSZones{
+		deletePoller: newDonePoller(t, armprivatedns.PrivateZonesClientDeleteResponse{}),
+	}
+	mockRecords := &mockRecordSets{}
+
+	r := &AzurePrivateLinkServiceReconciler{
+		Client:              fakeClient,
+		PrivateEndpoints:    &mockPrivateEndpoints{deletePoller: newDonePoller(t, armnetwork.PrivateEndpointsClientDeleteResponse{})},
+		PrivateDNSZones:     mockDNS,
+		VirtualNetworkLinks: mockLinks,
+		RecordSets:          mockRecords,
+	}
+
+	err := r.reconcileDelete(t.Context(), azPLS, testr.New(t))
+	g.Expect(err).ToNot(HaveOccurred())
+
+	// Both hypershift.local zone and base domain zone should be deleted
+	g.Expect(mockDNS.deletedZoneNames).To(ConsistOf("test-hcp.hypershift.local", "example.com"))
+	// Both VNet links should be deleted
+	g.Expect(mockLinks.deletedLinkNames).To(ConsistOf("private-router-vnet-link", "private-router-basedomain-vnet-link"))
+}
+
+func TestReconcileDelete_WhenBaseDomainVNetLinkPollerFails_ItShouldReturnError(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+	scheme := newTestScheme(t, g)
+
+	azPLS := newTestAzurePLS(t, "test-pls", "test-ns")
+	azPLS.Spec.BaseDomain = "example.com"
+	// No DNSZoneName → skips hypershift.local section, goes to base domain
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(azPLS).
+		Build()
+
+	r := &AzurePrivateLinkServiceReconciler{
+		Client:           fakeClient,
+		PrivateEndpoints: &mockPrivateEndpoints{},
+		PrivateDNSZones:  &mockPrivateDNSZones{},
+		VirtualNetworkLinks: &mockVirtualNetworkLinks{
+			deletePoller: newErrorPoller[armprivatedns.VirtualNetworkLinksClientDeleteResponse](t, fmt.Errorf("poller failed")),
+		},
+		RecordSets: &mockRecordSets{},
+	}
+
+	err := r.reconcileDelete(t.Context(), azPLS, testr.New(t))
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(err).To(MatchError(ContainSubstring("failed to delete VNet Link")))
+}
+
+func TestReconcileDelete_WhenBaseDomainZonePollerFails_ItShouldReturnError(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+	scheme := newTestScheme(t, g)
+
+	azPLS := newTestAzurePLS(t, "test-pls", "test-ns")
+	azPLS.Spec.BaseDomain = "example.com"
+	// No DNSZoneName → skips hypershift.local section
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(azPLS).
+		Build()
+
+	r := &AzurePrivateLinkServiceReconciler{
+		Client:              fakeClient,
+		PrivateEndpoints:    &mockPrivateEndpoints{},
+		PrivateDNSZones:     &mockPrivateDNSZones{deletePoller: newErrorPoller[armprivatedns.PrivateZonesClientDeleteResponse](t, fmt.Errorf("poller failed"))},
+		VirtualNetworkLinks: &mockVirtualNetworkLinks{},
+		RecordSets:          &mockRecordSets{},
+	}
+
+	err := r.reconcileDelete(t.Context(), azPLS, testr.New(t))
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(err).To(MatchError(ContainSubstring("failed to delete Private DNS Zone")))
+}
+
+// Tests CR deletion without DNSZoneName, which skips DNS cleanup and only verifies
+// PE deletion. Compare with TestReconcile_WhenCRDeletionWithFinalizer which has
+// DNSZoneName set and exercises the full DNS cleanup path.
+func TestReconcile_WhenCRDeletionSucceeds_ItShouldRemoveFinalizerAndCleanUp(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+	scheme := newTestScheme(t, g)
+
+	now := metav1.Now()
+	azPLS := newTestAzurePLS(t, "test-pls", "test-ns")
+	azPLS.DeletionTimestamp = &now
+	azPLS.Finalizers = []string{azurePrivateLinkServiceFinalizer}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(azPLS).
+		WithStatusSubresource(azPLS).
+		Build()
+
+	mockPE := &mockPrivateEndpoints{}
+	r := &AzurePrivateLinkServiceReconciler{
+		Client:              fakeClient,
+		PrivateEndpoints:    mockPE,
+		PrivateDNSZones:     &mockPrivateDNSZones{},
+		VirtualNetworkLinks: &mockVirtualNetworkLinks{},
+		RecordSets:          &mockRecordSets{},
+	}
+
+	result, err := r.Reconcile(log.IntoContext(t.Context(), testr.New(t)), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "test-pls", Namespace: "test-ns"},
+	})
+
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(result.IsZero()).To(BeTrue())
+	g.Expect(mockPE.deleteCalled).To(BeTrue(), "should clean up PE during CR deletion")
+}
+
+func TestReconcile_WhenCRDeletionFails_ItShouldReturnError(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+	scheme := newTestScheme(t, g)
+
+	now := metav1.Now()
+	azPLS := newTestAzurePLS(t, "test-pls", "test-ns")
+	azPLS.DeletionTimestamp = &now
+	azPLS.Finalizers = []string{azurePrivateLinkServiceFinalizer}
+	azPLS.Status.DNSZoneName = "test-hcp.hypershift.local"
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(azPLS).
+		WithStatusSubresource(azPLS).
+		Build()
+
+	r := &AzurePrivateLinkServiceReconciler{
+		Client:              fakeClient,
+		PrivateEndpoints:    &mockPrivateEndpoints{deleteErr: fmt.Errorf("PE delete failed")},
+		PrivateDNSZones:     &mockPrivateDNSZones{},
+		VirtualNetworkLinks: &mockVirtualNetworkLinks{},
+		RecordSets:          &mockRecordSets{deleteErr: fmt.Errorf("record delete failed")},
+	}
+
+	_, err := r.Reconcile(log.IntoContext(t.Context(), testr.New(t)), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "test-pls", Namespace: "test-ns"},
+	})
+
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(err).To(MatchError(ContainSubstring("failed to delete resources")))
+}
+
+func TestReconcile_WhenGetHCPFails_ItShouldReturnError(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+	scheme := newTestScheme(t, g)
+
+	// CR has PLS alias but no HCP owner reference → getHostedControlPlane fails
+	azPLS := newTestAzurePLS(t, "test-pls", "test-ns")
+	azPLS.Finalizers = []string{azurePrivateLinkServiceFinalizer}
+	azPLS.Status.PrivateLinkServiceAlias = "test-alias"
+	azPLS.OwnerReferences = nil // Remove owner reference
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(azPLS).
+		WithStatusSubresource(azPLS).
+		Build()
+
+	r := &AzurePrivateLinkServiceReconciler{
+		Client:              fakeClient,
+		PrivateEndpoints:    &mockPrivateEndpoints{},
+		PrivateDNSZones:     &mockPrivateDNSZones{},
+		VirtualNetworkLinks: &mockVirtualNetworkLinks{},
+		RecordSets:          &mockRecordSets{},
+	}
+
+	_, err := r.Reconcile(log.IntoContext(t.Context(), testr.New(t)), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "test-pls", Namespace: "test-ns"},
+	})
+
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(err).To(MatchError(ContainSubstring("failed to get HostedControlPlane")))
+}
+
+func TestReconcile_WhenPEReconcileFails_ItShouldReturnRequeueResult(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+	scheme := newTestScheme(t, g)
+
+	azPLS := newTestAzurePLS(t, "test-pls", "test-ns")
+	azPLS.Finalizers = []string{azurePrivateLinkServiceFinalizer}
+	azPLS.Status.PrivateLinkServiceAlias = "test-alias"
+
+	hcp := newTestHCP(t, "test-hcp", "test-ns", "api.test.example.com")
+	hcp.Finalizers = []string{hcpAzurePLSFinalizerName}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(azPLS, hcp).
+		WithStatusSubresource(azPLS).
+		Build()
+
+	r := &AzurePrivateLinkServiceReconciler{
+		Client:              fakeClient,
+		PrivateEndpoints:    &mockPrivateEndpoints{getErr: &azcore.ResponseError{StatusCode: 500}},
+		PrivateDNSZones:     &mockPrivateDNSZones{},
+		VirtualNetworkLinks: &mockVirtualNetworkLinks{},
+		RecordSets:          &mockRecordSets{},
+	}
+
+	result, err := r.Reconcile(log.IntoContext(t.Context(), testr.New(t)), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "test-pls", Namespace: "test-ns"},
+	})
+
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(result.RequeueAfter).ToNot(BeZero(), "should requeue after PE error")
+}
+
+func TestReconcile_WhenDNSReconcileFails_ItShouldReturnRequeueResult(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+	scheme := newTestScheme(t, g)
+
+	azPLS := newTestAzurePLS(t, "private-router", "test-ns")
+	azPLS.Finalizers = []string{azurePrivateLinkServiceFinalizer}
+	azPLS.Status.PrivateLinkServiceAlias = "test-alias"
+	azPLS.Status.PrivateEndpointIP = "10.0.1.5"
+	azPLS.Status.PrivateEndpointID = "/pe/id"
+
+	hcp := newTestHCP(t, "test-hcp", "test-ns", "api.test.example.com")
+	hcp.Finalizers = []string{hcpAzurePLSFinalizerName}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(azPLS, hcp).
+		WithStatusSubresource(azPLS).
+		Build()
+
+	mockPE := &mockPrivateEndpoints{
+		getResponse: armnetwork.PrivateEndpointsClientGetResponse{
+			PrivateEndpoint: armnetwork.PrivateEndpoint{
+				ID: ptr.To("/pe/id"),
+				Properties: &armnetwork.PrivateEndpointProperties{
+					CustomDNSConfigs: []*armnetwork.CustomDNSConfigPropertiesFormat{
+						{IPAddresses: []*string{ptr.To("10.0.1.5")}},
+					},
+				},
+			},
+		},
+	}
+
+	r := &AzurePrivateLinkServiceReconciler{
+		Client:              fakeClient,
+		PrivateEndpoints:    mockPE,
+		PrivateDNSZones:     &mockPrivateDNSZones{createErr: fmt.Errorf("DNS zone creation failed")},
+		VirtualNetworkLinks: &mockVirtualNetworkLinks{},
+		RecordSets:          &mockRecordSets{},
+	}
+
+	result, err := r.Reconcile(log.IntoContext(t.Context(), testr.New(t)), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "private-router", Namespace: "test-ns"},
+	})
+
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(result.RequeueAfter).ToNot(BeZero(), "should requeue after DNS error")
+}
+
+func TestReconcile_WhenBaseDomainDNSFails_ItShouldReturnRequeueResult(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+	scheme := newTestScheme(t, g)
+
+	azPLS := newTestAzurePLS(t, "private-router", "test-ns")
+	azPLS.Finalizers = []string{azurePrivateLinkServiceFinalizer}
+	azPLS.Status.PrivateLinkServiceAlias = "test-alias"
+	azPLS.Status.PrivateEndpointIP = "10.0.1.5"
+	azPLS.Status.PrivateEndpointID = "/pe/id"
+	azPLS.Spec.BaseDomain = "example.com"
+
+	hcp := newTestHCP(t, "test-hcp", "test-ns", "api.test.example.com")
+	hcp.Finalizers = []string{hcpAzurePLSFinalizerName}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(azPLS, hcp).
+		WithStatusSubresource(azPLS).
+		Build()
+
+	mockPE := &mockPrivateEndpoints{
+		getResponse: armnetwork.PrivateEndpointsClientGetResponse{
+			PrivateEndpoint: armnetwork.PrivateEndpoint{
+				ID: ptr.To("/pe/id"),
+				Properties: &armnetwork.PrivateEndpointProperties{
+					CustomDNSConfigs: []*armnetwork.CustomDNSConfigPropertiesFormat{
+						{IPAddresses: []*string{ptr.To("10.0.1.5")}},
+					},
+				},
+			},
+		},
+	}
+
+	mockRecords := &mockRecordSets{
+		createErr: fmt.Errorf("A record creation failed"),
+	}
+	r := &AzurePrivateLinkServiceReconciler{
+		Client:              fakeClient,
+		PrivateEndpoints:    mockPE,
+		PrivateDNSZones:     &mockPrivateDNSZones{},
+		VirtualNetworkLinks: &mockVirtualNetworkLinks{},
+		RecordSets:          mockRecords,
+	}
+
+	result, err := r.Reconcile(log.IntoContext(t.Context(), testr.New(t)), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "private-router", Namespace: "test-ns"},
+	})
+
+	// The first DNS zone (hypershift.local) A record creation will fail
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(result.RequeueAfter).ToNot(BeZero())
+}
+
+func TestReconcile_WhenFinalizerAddConflicts_ItShouldRequeue(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+	scheme := newTestScheme(t, g)
+
+	azPLS := newTestAzurePLS(t, "test-pls", "test-ns")
+	// No finalizer → Reconcile will try to add one
+
+	conflictErr := apierrors.NewConflict(
+		hyperv1.Resource("azureprivatelinkservices"), "test-pls", fmt.Errorf("conflict"))
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(azPLS).
+		WithStatusSubresource(azPLS).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Update: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.UpdateOption) error {
+				if _, ok := obj.(*hyperv1.AzurePrivateLinkService); ok {
+					return conflictErr
+				}
+				return c.Update(ctx, obj, opts...)
+			},
+		}).
+		Build()
+
+	r := &AzurePrivateLinkServiceReconciler{
+		Client:              fakeClient,
+		PrivateEndpoints:    &mockPrivateEndpoints{},
+		PrivateDNSZones:     &mockPrivateDNSZones{},
+		VirtualNetworkLinks: &mockVirtualNetworkLinks{},
+		RecordSets:          &mockRecordSets{},
+	}
+
+	result, err := r.Reconcile(log.IntoContext(t.Context(), testr.New(t)), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "test-pls", Namespace: "test-ns"},
+	})
+
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(result.Requeue).To(BeTrue(), "should requeue on conflict")
+}
+
+func TestEnsureHCPFinalizer_WhenPatchConflicts_ItShouldRequeue(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+	scheme := newTestScheme(t, g)
+
+	hcp := newTestHCP(t, "test-hcp", "test-ns", "api.test.example.com")
+	// No finalizer → will try to add one
+
+	conflictErr := apierrors.NewConflict(
+		hyperv1.Resource("hostedcontrolplanes"), "test-hcp", fmt.Errorf("conflict"))
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(hcp).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Patch: func(ctx context.Context, c client.WithWatch, obj client.Object, patch client.Patch, opts ...client.PatchOption) error {
+				if _, ok := obj.(*hyperv1.HostedControlPlane); ok {
+					return conflictErr
+				}
+				return c.Patch(ctx, obj, patch, opts...)
+			},
+		}).
+		Build()
+
+	r := &AzurePrivateLinkServiceReconciler{Client: fakeClient}
+
+	result, err := r.ensureHCPFinalizer(t.Context(), hcp, testr.New(t))
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(result.Requeue).To(BeTrue(), "should requeue on conflict")
+}
+
+func TestReconcileHCPDeletion_WhenPatchConflicts_ItShouldRequeue(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+	scheme := newTestScheme(t, g)
+
+	azPLS := newTestAzurePLS(t, "test-pls", "test-ns")
+
+	now := metav1.Now()
+	hcp := newTestHCP(t, "test-hcp", "test-ns", "api.test.example.com")
+	hcp.DeletionTimestamp = &now
+	hcp.Finalizers = []string{hcpAzurePLSFinalizerName}
+
+	conflictErr := apierrors.NewConflict(
+		hyperv1.Resource("hostedcontrolplanes"), "test-hcp", fmt.Errorf("conflict"))
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(azPLS, hcp).
+		WithStatusSubresource(azPLS).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Patch: func(ctx context.Context, c client.WithWatch, obj client.Object, patch client.Patch, opts ...client.PatchOption) error {
+				if _, ok := obj.(*hyperv1.HostedControlPlane); ok {
+					return conflictErr
+				}
+				return c.Patch(ctx, obj, patch, opts...)
+			},
+		}).
+		Build()
+
+	r := &AzurePrivateLinkServiceReconciler{
+		Client:              fakeClient,
+		PrivateEndpoints:    &mockPrivateEndpoints{},
+		PrivateDNSZones:     &mockPrivateDNSZones{},
+		VirtualNetworkLinks: &mockVirtualNetworkLinks{},
+		RecordSets:          &mockRecordSets{},
+	}
+
+	result, err := r.reconcileHCPDeletion(t.Context(), azPLS, hcp, testr.New(t))
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(result.Requeue).To(BeTrue(), "should requeue on conflict")
+}
+
+func TestUpdatePrivateEndpointStatus_WhenStatusPatchFails_ItShouldReturnError(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+	scheme := newTestScheme(t, g)
+
+	azPLS := newTestAzurePLS(t, "test-pls", "test-ns")
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(azPLS).
+		WithStatusSubresource(azPLS).
+		WithInterceptorFuncs(interceptor.Funcs{
+			SubResourcePatch: func(ctx context.Context, c client.Client, subResourceName string, obj client.Object, patch client.Patch, opts ...client.SubResourcePatchOption) error {
+				return fmt.Errorf("status patch failed")
+			},
+		}).
+		Build()
+
+	r := &AzurePrivateLinkServiceReconciler{Client: fakeClient}
+
+	pe := armnetwork.PrivateEndpoint{
+		ID:         ptr.To("/pe/id"),
+		Properties: &armnetwork.PrivateEndpointProperties{},
+	}
+
+	_, err := r.updatePrivateEndpointStatus(t.Context(), azPLS, pe, "10.0.1.5", testr.New(t))
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(err).To(MatchError(ContainSubstring("status patch failed")))
+}
+
+func TestUpdatePrivateEndpointStatus_WhenConnectionPendingAndPatchFails_ItShouldReturnError(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+	scheme := newTestScheme(t, g)
+
+	azPLS := newTestAzurePLS(t, "test-pls", "test-ns")
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(azPLS).
+		WithStatusSubresource(azPLS).
+		WithInterceptorFuncs(interceptor.Funcs{
+			SubResourcePatch: func(ctx context.Context, c client.Client, subResourceName string, obj client.Object, patch client.Patch, opts ...client.SubResourcePatchOption) error {
+				return fmt.Errorf("status patch failed")
+			},
+		}).
+		Build()
+
+	r := &AzurePrivateLinkServiceReconciler{Client: fakeClient}
+
+	pe := armnetwork.PrivateEndpoint{
+		ID: ptr.To("/pe/id"),
+		Properties: &armnetwork.PrivateEndpointProperties{
+			ManualPrivateLinkServiceConnections: []*armnetwork.PrivateLinkServiceConnection{
+				{
+					Properties: &armnetwork.PrivateLinkServiceConnectionProperties{
+						PrivateLinkServiceConnectionState: &armnetwork.PrivateLinkServiceConnectionState{
+							Status: ptr.To("Pending"),
+						},
+					},
+				},
+			},
+		},
+	}
+
+	_, err := r.updatePrivateEndpointStatus(t.Context(), azPLS, pe, "10.0.1.5", testr.New(t))
+	g.Expect(err).To(HaveOccurred())
+}
+
+func TestHandleAzureError_WhenStatusPatchFails_ItShouldReturnPatchError(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+	scheme := newTestScheme(t, g)
+
+	azPLS := newTestAzurePLS(t, "test-pls", "test-ns")
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(azPLS).
+		WithStatusSubresource(azPLS).
+		WithInterceptorFuncs(interceptor.Funcs{
+			SubResourcePatch: func(ctx context.Context, c client.Client, subResourceName string, obj client.Object, patch client.Patch, opts ...client.SubResourcePatchOption) error {
+				return fmt.Errorf("status patch failed")
+			},
+		}).
+		Build()
+
+	r := &AzurePrivateLinkServiceReconciler{Client: fakeClient}
+
+	_, err := r.handleAzureError(t.Context(), azPLS, "TestCondition", "TestReason", fmt.Errorf("test error"), testr.New(t))
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(err).To(MatchError(ContainSubstring("status patch failed")))
+}
+
+func TestReconcileDNSZone_WhenStatusPatchFails_ItShouldReturnError(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+	scheme := newTestScheme(t, g)
+
+	azPLS := newTestAzurePLS(t, "test-pls", "test-ns")
+	azPLS.Status.PrivateEndpointIP = "10.0.1.5"
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(azPLS).
+		WithStatusSubresource(azPLS).
+		WithInterceptorFuncs(interceptor.Funcs{
+			SubResourcePatch: func(ctx context.Context, c client.Client, subResourceName string, obj client.Object, patch client.Patch, opts ...client.SubResourcePatchOption) error {
+				return fmt.Errorf("status patch failed")
+			},
+		}).
+		Build()
+
+	r := &AzurePrivateLinkServiceReconciler{
+		Client:              fakeClient,
+		PrivateDNSZones:     &mockPrivateDNSZones{},
+		VirtualNetworkLinks: &mockVirtualNetworkLinks{},
+		RecordSets:          &mockRecordSets{},
+	}
+
+	_, err := r.reconcileDNS(t.Context(), azPLS, "test-hcp", testr.New(t))
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(err).To(MatchError(ContainSubstring("status patch failed")))
+}
+
+func TestExtractPrivateEndpointIP_WhenNICHasNilElements_ItShouldSkipThem(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+
+	pe := armnetwork.PrivateEndpoint{
+		Properties: &armnetwork.PrivateEndpointProperties{
+			NetworkInterfaces: []*armnetwork.Interface{
+				nil, // nil NIC entry
+				{
+					Properties: &armnetwork.InterfacePropertiesFormat{
+						IPConfigurations: []*armnetwork.InterfaceIPConfiguration{
+							nil, // nil IP config entry
+							{
+								Properties: &armnetwork.InterfaceIPConfigurationPropertiesFormat{
+									PrivateIPAddress: ptr.To("10.0.1.7"),
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	result := extractPrivateEndpointIP(pe)
+	g.Expect(result).To(Equal("10.0.1.7"))
+}
+
+func TestReconcile_WhenNonPrivateRouterDNSZoneNamePatchFails_ItShouldReturnError(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+	scheme := newTestScheme(t, g)
+
+	// Non-private-router CR with empty DNSZoneName triggers the status patch at Reconcile step 9
+	azPLS := newTestAzurePLS(t, "oauth-openshift", "test-ns")
+	azPLS.Finalizers = []string{azurePrivateLinkServiceFinalizer}
+	azPLS.Status.PrivateLinkServiceAlias = "test-alias"
+	azPLS.Status.PrivateEndpointIP = "10.0.1.6"
+	azPLS.Status.PrivateEndpointID = "/pe/id"
+	// DNSZoneName intentionally left empty to trigger the persist path
+
+	hcp := newTestHCP(t, "test-hcp", "test-ns", "api.test.example.com")
+	hcp.Finalizers = []string{hcpAzurePLSFinalizerName}
+
+	// Allow the first status patch (PE status update) but fail on the second (DNS zone name persist)
+	patchCount := 0
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(azPLS, hcp).
+		WithStatusSubresource(azPLS).
+		WithInterceptorFuncs(interceptor.Funcs{
+			SubResourcePatch: func(ctx context.Context, c client.Client, subResourceName string, obj client.Object, patch client.Patch, opts ...client.SubResourcePatchOption) error {
+				if _, ok := obj.(*hyperv1.AzurePrivateLinkService); ok {
+					patchCount++
+					if patchCount > 1 {
+						return fmt.Errorf("simulated status patch failure")
+					}
+				}
+				return c.SubResource(subResourceName).Patch(ctx, obj, patch, opts...)
+			},
+		}).
+		Build()
+
+	// PE get returns existing PE so reconcilePrivateEndpoint just updates status
+	r := &AzurePrivateLinkServiceReconciler{
+		Client: fakeClient,
+		PrivateEndpoints: &mockPrivateEndpoints{
+			getResponse: armnetwork.PrivateEndpointsClientGetResponse{
+				PrivateEndpoint: armnetwork.PrivateEndpoint{
+					ID:   ptr.To("/pe/id"),
+					Name: ptr.To("oauth-openshift-pe"),
+					Properties: &armnetwork.PrivateEndpointProperties{
+						ManualPrivateLinkServiceConnections: []*armnetwork.PrivateLinkServiceConnection{{
+							Properties: &armnetwork.PrivateLinkServiceConnectionProperties{
+								PrivateLinkServiceConnectionState: &armnetwork.PrivateLinkServiceConnectionState{
+									Status: ptr.To("Approved"),
+								},
+							},
+						}},
+						NetworkInterfaces: []*armnetwork.Interface{{
+							Properties: &armnetwork.InterfacePropertiesFormat{
+								IPConfigurations: []*armnetwork.InterfaceIPConfiguration{{
+									Properties: &armnetwork.InterfaceIPConfigurationPropertiesFormat{
+										PrivateIPAddress: ptr.To("10.0.1.6"),
+									},
+								}},
+							},
+						}},
+					},
+				},
+			},
+		},
+		PrivateDNSZones:     &mockPrivateDNSZones{},
+		VirtualNetworkLinks: &mockVirtualNetworkLinks{},
+		RecordSets:          &mockRecordSets{},
+	}
+
+	_, err := r.Reconcile(log.IntoContext(t.Context(), testr.New(t)), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "oauth-openshift", Namespace: "test-ns"},
+	})
+
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(err).To(MatchError(ContainSubstring("failed to persist DNS zone name in status")))
+}
+
+func TestReconcile_WhenBaseDomainShadowsClusterDomain_ItShouldSetDegradedConditionAndSkipZoneCreation(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+	scheme := newTestScheme(t, g)
+
+	azPLS := newTestAzurePLS(t, "private-router", "test-ns")
+	azPLS.Finalizers = []string{azurePrivateLinkServiceFinalizer}
+	azPLS.Status.PrivateLinkServiceAlias = "test-alias"
+	azPLS.Status.PrivateEndpointIP = "10.0.1.5"
+	azPLS.Status.PrivateEndpointID = "/pe/id"
+	// This is the shadowing condition: baseDomain == hcpName.hcpDNSBaseDomain
+	azPLS.Spec.BaseDomain = "test-hcp.example.com"
+
+	hcp := newTestHCP(t, "test-hcp", "test-ns", "api.test.example.com")
+	hcp.Spec.DNS.BaseDomain = "example.com"
+	hcp.Finalizers = []string{hcpAzurePLSFinalizerName}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(azPLS, hcp).
+		WithStatusSubresource(azPLS).
+		Build()
+
+	mockPE := &mockPrivateEndpoints{
+		getResponse: armnetwork.PrivateEndpointsClientGetResponse{
+			PrivateEndpoint: armnetwork.PrivateEndpoint{
+				ID: ptr.To("/pe/id"),
+				Properties: &armnetwork.PrivateEndpointProperties{
+					CustomDNSConfigs: []*armnetwork.CustomDNSConfigPropertiesFormat{
+						{IPAddresses: []*string{ptr.To("10.0.1.5")}},
+					},
+				},
+			},
+		},
+	}
+	mockDNS := &mockPrivateDNSZones{}
+	mockRecords := &mockRecordSets{}
+
+	r := &AzurePrivateLinkServiceReconciler{
+		Client:              fakeClient,
+		PrivateEndpoints:    mockPE,
+		PrivateDNSZones:     mockDNS,
+		VirtualNetworkLinks: &mockVirtualNetworkLinks{},
+		RecordSets:          mockRecords,
+	}
+
+	result, err := r.Reconcile(log.IntoContext(t.Context(), testr.New(t)), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "private-router", Namespace: "test-ns"},
+	})
+
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(result.RequeueAfter).ToNot(BeZero(), "should requeue for drift detection")
+
+	// No base domain zone should be created when shadowing is detected.
+	// The last zone created should be the hypershift.local zone, not the base domain zone.
+	g.Expect(mockDNS.lastZoneName).To(Equal("test-hcp.hypershift.local"),
+		"only the hypershift.local zone should be created, not the base domain zone")
+
+	// Verify no records were created for the base domain zone
+	baseDomainRecords := mockRecords.createdRecordsByZone["test-hcp.example.com"]
+	g.Expect(baseDomainRecords).To(BeEmpty(),
+		"no records should be created in the base domain zone when shadowing is detected")
+
+	// Verify the DNS condition is set to False with the degraded reason
+	updated := &hyperv1.AzurePrivateLinkService{}
+	err = fakeClient.Get(t.Context(), types.NamespacedName{Name: "private-router", Namespace: "test-ns"}, updated)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	dnsCondition := meta.FindStatusCondition(updated.Status.Conditions, string(hyperv1.AzurePrivateDNSAvailable))
+	g.Expect(dnsCondition).ToNot(BeNil(), "DNS condition should be set")
+	g.Expect(dnsCondition.Status).To(Equal(metav1.ConditionFalse),
+		"DNS condition should be False when shadowing is detected")
+	g.Expect(dnsCondition.Reason).To(Equal("BaseDomainShadowsClusterDomain"),
+		"DNS condition reason should indicate base domain shadowing")
+	g.Expect(dnsCondition.Message).To(ContainSubstring("shadows the cluster domain"),
+		"DNS condition message should explain the shadowing issue")
+	g.Expect(dnsCondition.Message).To(ContainSubstring("--external-dns-domain"),
+		"DNS condition message should suggest recreating with a different external-dns-domain")
+}
+
+func TestBaseDomainShadowsClusterDomain(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		baseDomain    string
+		clusterName   string
+		hcpBaseDomain string
+		expected      bool
+	}{
+		"When baseDomain equals clusterName.hcpBaseDomain, it should detect shadowing": {
+			baseDomain:    "my-cluster.example.com",
+			clusterName:   "my-cluster",
+			hcpBaseDomain: "example.com",
+			expected:      true,
+		},
+		"When baseDomain matches with different casing, it should detect shadowing": {
+			baseDomain:    "My-Cluster.Example.COM",
+			clusterName:   "my-cluster",
+			hcpBaseDomain: "example.com",
+			expected:      true,
+		},
+		"When baseDomain differs from clusterName.hcpBaseDomain, it should not detect shadowing": {
+			baseDomain:    "other-prefix.example.com",
+			clusterName:   "my-cluster",
+			hcpBaseDomain: "example.com",
+			expected:      false,
+		},
+		"When baseDomain is empty, it should not detect shadowing": {
+			baseDomain:    "",
+			clusterName:   "my-cluster",
+			hcpBaseDomain: "example.com",
+			expected:      false,
+		},
+		"When hcpBaseDomain is empty, it should not detect shadowing": {
+			baseDomain:    "my-cluster.example.com",
+			clusterName:   "my-cluster",
+			hcpBaseDomain: "",
+			expected:      false,
+		},
+		"When clusterName is empty, it should return false": {
+			baseDomain:    "my-cluster.example.com",
+			clusterName:   "",
+			hcpBaseDomain: "example.com",
+			expected:      false,
+		},
+		"When baseDomain equals hcpBaseDomain, it should detect shadowing": {
+			baseDomain:    "example.com",
+			clusterName:   "my-cluster",
+			hcpBaseDomain: "example.com",
+			expected:      true,
+		},
+		"When baseDomain is a non-domain-boundary suffix, it should not detect shadowing": {
+			baseDomain:    "ample.com",
+			clusterName:   "my-cluster",
+			hcpBaseDomain: "example.com",
+			expected:      false,
+		},
+		"When baseDomain is a multi-level parent domain, it should detect shadowing": {
+			baseDomain:    "devcluster.openshift.com",
+			clusterName:   "hcp-two",
+			hcpBaseDomain: "acm-dev04.devcluster.openshift.com",
+			expected:      true,
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			g.Expect(baseDomainShadowsClusterDomain(tt.baseDomain, tt.clusterName, tt.hcpBaseDomain)).To(Equal(tt.expected))
+		})
+	}
+}
+
+func TestReconcile_WhenBaseDomainDiffersFromClusterDomain_ItShouldCreateZoneNormally(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+	scheme := newTestScheme(t, g)
+
+	azPLS := newTestAzurePLS(t, "private-router", "test-ns")
+	azPLS.Finalizers = []string{azurePrivateLinkServiceFinalizer}
+	azPLS.Status.PrivateLinkServiceAlias = "test-alias"
+	azPLS.Status.PrivateEndpointIP = "10.0.1.5"
+	azPLS.Status.PrivateEndpointID = "/pe/id"
+	// No shadowing: base domain is unrelated to hcpName.hcpDNSBaseDomain
+	azPLS.Spec.BaseDomain = "custom-dns.example.com"
+
+	hcp := newTestHCP(t, "test-hcp", "test-ns", "api.test.example.com")
+	hcp.Spec.DNS.BaseDomain = "example.com"
+	hcp.Finalizers = []string{hcpAzurePLSFinalizerName}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(azPLS, hcp).
+		WithStatusSubresource(azPLS).
+		Build()
+
+	mockPE := &mockPrivateEndpoints{
+		getResponse: armnetwork.PrivateEndpointsClientGetResponse{
+			PrivateEndpoint: armnetwork.PrivateEndpoint{
+				ID: ptr.To("/pe/id"),
+				Properties: &armnetwork.PrivateEndpointProperties{
+					CustomDNSConfigs: []*armnetwork.CustomDNSConfigPropertiesFormat{
+						{IPAddresses: []*string{ptr.To("10.0.1.5")}},
+					},
+				},
+			},
+		},
+	}
+	mockDNS := &mockPrivateDNSZones{}
+	mockRecords := &mockRecordSets{}
+
+	r := &AzurePrivateLinkServiceReconciler{
+		Client:              fakeClient,
+		PrivateEndpoints:    mockPE,
+		PrivateDNSZones:     mockDNS,
+		VirtualNetworkLinks: &mockVirtualNetworkLinks{},
+		RecordSets:          mockRecords,
+	}
+
+	result, err := r.Reconcile(log.IntoContext(t.Context(), testr.New(t)), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "private-router", Namespace: "test-ns"},
+	})
+
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(result.RequeueAfter).ToNot(BeZero(), "should requeue for drift detection")
+
+	// The base domain zone should be created since there's no shadowing
+	g.Expect(mockDNS.lastZoneName).To(Equal("custom-dns.example.com"),
+		"last zone should be the base domain zone")
+
+	// *.apps should only appear in the hypershift.local zone, NOT the base domain zone
+	baseDomainRecords := mockRecords.createdRecordsByZone["custom-dns.example.com"]
+	g.Expect(baseDomainRecords).ToNot(ContainElement("*.apps"),
+		"*.apps wildcard should NOT be added to the base domain zone when there is no shadowing")
+
+	// Verify the DNS condition is set to True (success)
+	updated := &hyperv1.AzurePrivateLinkService{}
+	err = fakeClient.Get(t.Context(), types.NamespacedName{Name: "private-router", Namespace: "test-ns"}, updated)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	dnsCondition := meta.FindStatusCondition(updated.Status.Conditions, string(hyperv1.AzurePrivateDNSAvailable))
+	g.Expect(dnsCondition).ToNot(BeNil(), "DNS condition should be set")
+	g.Expect(dnsCondition.Status).To(Equal(metav1.ConditionTrue))
+}
+
+func TestReconcile_WhenAvailableConditionPatchFails_ItShouldReturnError(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+	scheme := newTestScheme(t, g)
+
+	azPLS := newTestAzurePLS(t, "oauth-openshift", "test-ns")
+	azPLS.Finalizers = []string{azurePrivateLinkServiceFinalizer}
+	azPLS.Status.PrivateLinkServiceAlias = "test-alias"
+	azPLS.Status.PrivateEndpointIP = "10.0.1.6"
+	azPLS.Status.PrivateEndpointID = "/pe/id"
+	azPLS.Status.DNSZoneName = "test-hcp.hypershift.local" // Already set, skips persist path
+
+	hcp := newTestHCP(t, "test-hcp", "test-ns", "api.test.example.com")
+	hcp.Finalizers = []string{hcpAzurePLSFinalizerName}
+
+	// Allow the first status patch (PE status update) but fail on the Available condition patch
+	patchCount := 0
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(azPLS, hcp).
+		WithStatusSubresource(azPLS).
+		WithInterceptorFuncs(interceptor.Funcs{
+			SubResourcePatch: func(ctx context.Context, c client.Client, subResourceName string, obj client.Object, patch client.Patch, opts ...client.SubResourcePatchOption) error {
+				if _, ok := obj.(*hyperv1.AzurePrivateLinkService); ok {
+					patchCount++
+					if patchCount > 1 {
+						return fmt.Errorf("simulated Available condition patch failure")
+					}
+				}
+				return c.SubResource(subResourceName).Patch(ctx, obj, patch, opts...)
+			},
+		}).
+		Build()
+
+	r := &AzurePrivateLinkServiceReconciler{
+		Client: fakeClient,
+		PrivateEndpoints: &mockPrivateEndpoints{
+			getResponse: armnetwork.PrivateEndpointsClientGetResponse{
+				PrivateEndpoint: armnetwork.PrivateEndpoint{
+					ID:   ptr.To("/pe/id"),
+					Name: ptr.To("oauth-openshift-pe"),
+					Properties: &armnetwork.PrivateEndpointProperties{
+						ManualPrivateLinkServiceConnections: []*armnetwork.PrivateLinkServiceConnection{{
+							Properties: &armnetwork.PrivateLinkServiceConnectionProperties{
+								PrivateLinkServiceConnectionState: &armnetwork.PrivateLinkServiceConnectionState{
+									Status: ptr.To("Approved"),
+								},
+							},
+						}},
+						NetworkInterfaces: []*armnetwork.Interface{{
+							Properties: &armnetwork.InterfacePropertiesFormat{
+								IPConfigurations: []*armnetwork.InterfaceIPConfiguration{{
+									Properties: &armnetwork.InterfaceIPConfigurationPropertiesFormat{
+										PrivateIPAddress: ptr.To("10.0.1.6"),
+									},
+								}},
+							},
+						}},
+					},
+				},
+			},
+		},
+		PrivateDNSZones:     &mockPrivateDNSZones{},
+		VirtualNetworkLinks: &mockVirtualNetworkLinks{},
+		RecordSets:          &mockRecordSets{},
+	}
+
+	_, err := r.Reconcile(log.IntoContext(t.Context(), testr.New(t)), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "oauth-openshift", Namespace: "test-ns"},
+	})
+
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(err).To(MatchError(ContainSubstring("failed to update Available condition")))
 }

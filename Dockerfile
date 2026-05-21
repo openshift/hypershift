@@ -1,4 +1,5 @@
-FROM registry.ci.openshift.org/openshift/release:rhel-9-release-golang-1.25-openshift-4.22 AS builder
+FROM registry.ci.openshift.org/openshift/release:rhel-9-release-golang-1.25-openshift-4.23 AS builder
+ARG COMMIT_HASH
 
 WORKDIR /hypershift
 

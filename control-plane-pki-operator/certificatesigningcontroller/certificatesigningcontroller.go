@@ -107,7 +107,7 @@ func (c *CertificateSigningController) syncCertificateSigningRequest(ctx context
 
 const backdate = 5 * time.Minute
 
-func (c *CertificateSigningController) processCertificateSigningRequest(ctx context.Context, name string, now func() time.Time) (*certificatesv1applyconfigurations.CertificateSigningRequestApplyConfiguration, bool, error, error) {
+func (c *CertificateSigningController) processCertificateSigningRequest(ctx context.Context, name string, now func() time.Time) (*certificatesv1applyconfigurations.CertificateSigningRequestApplyConfiguration, bool, error, error) { //nolint:unparam // result kept for API consistency
 	csr, err := c.getCSR(name)
 	if apierrors.IsNotFound(err) {
 		return nil, false, nil, nil // nothing to be done, CSR is gone
@@ -225,7 +225,7 @@ func duration(certTTL time.Duration, expirationSeconds *int32) time.Duration {
 //	Long-lived certificates set NotAfter = Now() + TTL - Backdate.
 //	Short-lived certificates set NotAfter = Now() + TTL.
 //	All certificates truncate NotAfter to the expiration date of the signer.
-func boundaries(now func() time.Time, ttl, backdate, horizon time.Duration, signerNotAfter time.Time) (time.Time, time.Time, error) {
+func boundaries(now func() time.Time, ttl, backdate, horizon time.Duration, signerNotAfter time.Time) (time.Time, time.Time, error) { //nolint:unparam // result kept for API consistency
 	if now == nil {
 		now = time.Now
 	}

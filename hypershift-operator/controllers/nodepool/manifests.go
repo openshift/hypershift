@@ -3,7 +3,7 @@ package nodepool
 import (
 	"fmt"
 
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/netutil"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -31,7 +31,7 @@ func PerformanceProfileConfigMap(namespace, name, nodePoolName string) *corev1.C
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace,
-			Name:      util.ShortenName(name, nodePoolName, QualifiedNameMaxLength),
+			Name:      netutil.ShortenName(name, nodePoolName, QualifiedNameMaxLength),
 		},
 	}
 }

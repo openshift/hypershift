@@ -19,6 +19,7 @@ STATICCHECK := $(abspath $(TOOLS_BIN_DIR)/staticcheck)
 GENAPIDOCS := $(abspath $(TOOLS_BIN_DIR)/gen-crd-api-reference-docs)
 MOCKGEN := $(abspath $(TOOLS_BIN_DIR)/mockgen)
 YQ := $(abspath $(TOOLS_BIN_DIR)/yq)
+VERIFY_API_DEPS := $(abspath $(TOOLS_BIN_DIR)/verify-api-deps)
 
 CODESPELL_VER := 2.4.1
 CODESPELL_BIN := codespell
@@ -29,6 +30,10 @@ GITLINT_VER := 0.19.1
 GITLINT_DIST_DIR := gitlint_dist
 GITLINT_BIN := gitlint
 GITLINT := $(TOOLS_BIN_DIR)/$(GITLINT_DIST_DIR)/$(GITLINT_BIN)-bin
+
+PYYAML_VER := 6.0.3
+PYYAML_DIST_DIR := pyyaml_dist
+PYYAML_STAMP := $(TOOLS_BIN_DIR)/$(PYYAML_DIST_DIR)/.installed
 
 PROMTOOL=$(abspath $(TOOLS_BIN_DIR)/promtool)
 
@@ -130,8 +135,16 @@ verify-git-clean:
 	$(eval STATUS = $(shell git status -s))
 	$(if $(strip $(STATUS)),$(error untracked files detected: ${STATUS}))
 
+.PHONY: verify-codecov
+verify-codecov: ## Validate codecov.yml against Codecov's API.
+	@curl --silent --show-error \
+		--connect-timeout 5 --max-time 30 \
+		--retry 3 --retry-all-errors --retry-delay 1 \
+		--data-binary @codecov.yml https://codecov.io/validate \
+		| tee /dev/stderr | grep -q "^Valid!"
+
 .PHONY: verify-parallel
-verify-parallel: verify-codespell lint cpo-container-sync run-gitlint
+verify-parallel: verify-codespell verify-codecov verify-api-deps lint cpo-container-sync run-gitlint verify-docs-nav
 
 .PHONY: verify
 verify: generate update staticcheck fmt vet
@@ -156,9 +169,14 @@ $(GENAPIDOCS): $(TOOLS_DIR)/go.mod
 $(MOCKGEN): ${TOOLS_DIR}/go.mod
 	cd $(TOOLS_DIR); $(GO) build -tags=tools -o $(BIN_DIR)/mockgen go.uber.org/mock/mockgen
 
+$(VERIFY_API_DEPS): $(TOOLS_DIR)/go.mod # Build verify-api-deps tool
+	cd $(TOOLS_DIR); $(GO) build -o $(BIN_DIR)/verify-api-deps ./verify-api-deps
 
-#.PHONY: generate
+
+.PHONY: generate
 generate: $(MOCKGEN)
+	@echo "Cleaning stale mock files..."
+	git clean -fx -- '*_mock.go'
 	$(GO) generate ./...
 
 # Compile all tests
@@ -181,6 +199,8 @@ karpenter-api: $(CONTROLLER_GEN) $(YQ)
 	karpenter-operator/hack/crds-sync.sh
 	karpenter-operator/hack/adjust-cel.sh
 	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./api/karpenter/..." output:crd:artifacts:config=karpenter-operator/controllers/karpenter/assets
+	cp karpenter-operator/controllers/karpenter/assets/karpenter.hypershift.openshift.io_openshiftec2nodeclasses.yaml karpenter-operator/controllers/karpenter/assets/zz_generated.crd-manifests/openshiftec2nodeclasses.crd.yaml
+	$(GO) run ./hack/kubelet-ratcheting-gen/main.go
 
 .PHONY: control-plane-operator
 control-plane-operator:
@@ -348,6 +368,15 @@ test: generate
 	@echo "Running tests with $(NUM_CORES) parallel jobs..."
 	$(GO) test -race -parallel=$(NUM_CORES) -count=1 -timeout=30m ./... -coverprofile cover.out
 
+# Run a subset of unit tests (used by CI sharding).
+# Usage: make test-shard TEST_PACKAGES="./cmd/... ./support/..." COVER_PROFILE="cover-shard.out"
+TEST_PACKAGES ?= ./...
+COVER_PROFILE ?= cover.out
+.PHONY: test-shard
+test-shard: generate
+	@echo "Running shard tests for packages: $(TEST_PACKAGES)"
+	$(GO) test -race -parallel=$(NUM_CORES) -count=1 -timeout=30m $(TEST_PACKAGES) -coverprofile $(COVER_PROFILE)
+
 # OCP envtest index for downstream kubebuilder assets
 ENVTEST_OCP_INDEX := https://raw.githubusercontent.com/openshift/api/master/envtest-releases.yaml
 # OCP version to Kubernetes version mapping (OCP 4.x -> K8s 1.(x+13))
@@ -357,26 +386,85 @@ ENVTEST_OCP_K8S_VERSIONS ?= 1.30.3 1.31.2 1.32.1 1.33.2 1.34.1 1.35.1
 # Vanilla Kubernetes versions for envtest (upstream kubebuilder assets)
 ENVTEST_KUBE_VERSIONS ?= 1.31.0 1.32.0 1.33.0 1.34.0 1.35.0
 
+# Parallel envtest execution: 0 = sequential (default), N = N parallel jobs, MAX = all versions in parallel.
+ENVTEST_JOBS ?= 0
+
+# Internal pattern target for parallel sub-make. Do not call directly.
+# Expects ENVTEST_BIN_DIR and optionally ENVTEST_INDEX_FLAG via sub-make variables.
+_run-single-envtest-%:
+	@log=$$(mktemp); \
+	echo "=== Running envtest for K8s $* ===" > "$$log"; \
+	KUBEBUILDER_ASSETS="$$($(SETUP_ENVTEST) use --use-env --bin-dir $(ENVTEST_BIN_DIR) -p path $(ENVTEST_INDEX_FLAG) $*)" \
+	$(GO) test -tags envtest -race -count=1 -timeout=30m ./test/envtest/... >> "$$log" 2>&1; \
+	rc=$$?; \
+	cat "$$log"; \
+	rm -f "$$log"; \
+	exit $$rc
+
 .PHONY: test-envtest-ocp
-test-envtest-ocp: generate $(SETUP_ENVTEST) ## Run envtest tests for all supported OCP versions (4.17-4.22)
+test-envtest-ocp: generate $(SETUP_ENVTEST) ## Run envtest tests for all supported OCP versions (ENVTEST_JOBS=0|N|MAX)
+ifeq ($(ENVTEST_JOBS),0)
 	@for k8s_ver in $(ENVTEST_OCP_K8S_VERSIONS); do \
 		echo "=== Running envtest for OCP (K8s $$k8s_ver) ==="; \
 		KUBEBUILDER_ASSETS="$$($(SETUP_ENVTEST) use --use-env --bin-dir $(ENVTEST_OCP_ASSETS_DIR) -p path --index $(ENVTEST_OCP_INDEX) $$k8s_ver)" \
 		$(GO) test -tags envtest -race -count=1 -timeout=30m ./test/envtest/... || exit 1; \
 	done
 	@echo "=== All OCP envtest versions passed ==="
+else
+	@echo "=== Pre-fetching OCP envtest assets ==="
+	@for k8s_ver in $(ENVTEST_OCP_K8S_VERSIONS); do \
+		echo "  Fetching K8s $$k8s_ver..."; \
+		$(SETUP_ENVTEST) use --use-env --bin-dir $(ENVTEST_OCP_ASSETS_DIR) -p path --index $(ENVTEST_OCP_INDEX) $$k8s_ver > /dev/null || { echo "Failed to fetch envtest assets for $$k8s_ver"; exit 1; }; \
+	done
+  ifeq ($(ENVTEST_JOBS),MAX)
+	@echo "=== Running OCP envtest in parallel (jobs=$(words $(ENVTEST_OCP_K8S_VERSIONS))) ==="
+	@$(MAKE) -j$(words $(ENVTEST_OCP_K8S_VERSIONS)) --no-print-directory \
+		ENVTEST_BIN_DIR="$(ENVTEST_OCP_ASSETS_DIR)" \
+		ENVTEST_INDEX_FLAG="--index $(ENVTEST_OCP_INDEX)" \
+		$(addprefix _run-single-envtest-,$(ENVTEST_OCP_K8S_VERSIONS))
+  else
+	@echo "=== Running OCP envtest in parallel (jobs=$(ENVTEST_JOBS)) ==="
+	@$(MAKE) -j$(ENVTEST_JOBS) --no-print-directory \
+		ENVTEST_BIN_DIR="$(ENVTEST_OCP_ASSETS_DIR)" \
+		ENVTEST_INDEX_FLAG="--index $(ENVTEST_OCP_INDEX)" \
+		$(addprefix _run-single-envtest-,$(ENVTEST_OCP_K8S_VERSIONS))
+  endif
+	@echo "=== All OCP envtest versions passed ==="
+endif
 
 .PHONY: test-envtest-kube
-test-envtest-kube: generate $(SETUP_ENVTEST) ## Run envtest tests for all supported vanilla Kubernetes versions (1.31-1.35)
+test-envtest-kube: generate $(SETUP_ENVTEST) ## Run envtest tests for all supported Kubernetes versions (ENVTEST_JOBS=0|N|MAX)
+ifeq ($(ENVTEST_JOBS),0)
 	@for k8s_ver in $(ENVTEST_KUBE_VERSIONS); do \
 		echo "=== Running envtest for Kubernetes $$k8s_ver ==="; \
 		KUBEBUILDER_ASSETS="$$($(SETUP_ENVTEST) use --use-env --bin-dir $(ENVTEST_KUBE_ASSETS_DIR) -p path $$k8s_ver)" \
 		$(GO) test -tags envtest -race -count=1 -timeout=30m ./test/envtest/... || exit 1; \
 	done
 	@echo "=== All Kubernetes envtest versions passed ==="
+else
+	@echo "=== Pre-fetching Kubernetes envtest assets ==="
+	@for k8s_ver in $(ENVTEST_KUBE_VERSIONS); do \
+		echo "  Fetching K8s $$k8s_ver..."; \
+		$(SETUP_ENVTEST) use --use-env --bin-dir $(ENVTEST_KUBE_ASSETS_DIR) -p path $$k8s_ver > /dev/null || { echo "Failed to fetch envtest assets for $$k8s_ver"; exit 1; }; \
+	done
+  ifeq ($(ENVTEST_JOBS),MAX)
+	@echo "=== Running Kubernetes envtest in parallel (jobs=$(words $(ENVTEST_KUBE_VERSIONS))) ==="
+	@$(MAKE) -j$(words $(ENVTEST_KUBE_VERSIONS)) --no-print-directory \
+		ENVTEST_BIN_DIR="$(ENVTEST_KUBE_ASSETS_DIR)" \
+		ENVTEST_INDEX_FLAG="" \
+		$(addprefix _run-single-envtest-,$(ENVTEST_KUBE_VERSIONS))
+  else
+	@echo "=== Running Kubernetes envtest in parallel (jobs=$(ENVTEST_JOBS)) ==="
+	@$(MAKE) -j$(ENVTEST_JOBS) --no-print-directory \
+		ENVTEST_BIN_DIR="$(ENVTEST_KUBE_ASSETS_DIR)" \
+		ENVTEST_INDEX_FLAG="" \
+		$(addprefix _run-single-envtest-,$(ENVTEST_KUBE_VERSIONS))
+  endif
+	@echo "=== All Kubernetes envtest versions passed ==="
+endif
 
 .PHONY: test-envtest-api-all
-test-envtest-api-all: test-envtest-ocp test-envtest-kube ## Run envtest API tests for all supported OCP and Kubernetes versions
+test-envtest-api-all: test-envtest-ocp test-envtest-kube ## Run all envtest API tests (ENVTEST_JOBS=0|N|MAX)
 
 .PHONY: e2e
 e2e: reqserving-e2e e2ev2 backuprestore-e2e
@@ -472,7 +560,7 @@ staticcheck: $(STATICCHECK)
 # Build the docker image with official golang image
 .PHONY: docker-build
 docker-build:
-	${RUNTIME} build . -t ${IMG}
+	${RUNTIME} build --build-arg COMMIT_HASH=$(COMMIT_HASH) . -t ${IMG}
 
 # Push the docker image
 .PHONY: docker-push
@@ -492,9 +580,17 @@ hypershift-install-aws-dev:
 run-operator-locally-aws-dev:
 	@$(RUN_OPERATOR_LOCALLY_AWS)
 
+.PHONY: verify-docs-nav
+verify-docs-nav: $(PYYAML_STAMP) ## Verify docs nav entries are sorted alphabetically.
+	PYTHONPATH=$(TOOLS_BIN_DIR)/$(PYYAML_DIST_DIR) python3 hack/verify-docs-nav-order.py
+
 .PHONY: verify-codespell
 verify-codespell: codespell ## Verify codespell.
-	@$(CODESPELL) --count --ignore-words=./.codespellignore --skip="./hack/tools/bin/codespell_dist,./docs/site/*,./vendor/*,./api/vendor/*,./hack/tools/vendor/*,./api/hypershift/v1alpha1/*,./support/thirdparty/*,./docs/content/reference/*,./hack/tools/bin/*,./cmd/install/assets/*,./go.sum,./hack/workspace/go.work.sum,./api/hypershift/v1beta1/zz_generated.featuregated-crd-manifests,./hack/tools/go.mod,./hack/tools/go.sum,./karpenter-operator/controllers/karpenter/assets/*.yaml,./dev/*"
+	@$(CODESPELL) --count --ignore-words=./.codespellignore --skip="./hack/tools/bin/codespell_dist,./docs/site/*,./vendor/*,./api/vendor/*,./hack/tools/vendor/*,./api/hypershift/v1alpha1/*,./support/thirdparty/*,./docs/content/reference/*,./hack/tools/bin/*,./cmd/install/assets/*,./go.sum,./api/go.sum,./hack/workspace/go.work.sum,./api/hypershift/v1beta1/zz_generated.featuregated-crd-manifests,./hack/tools/go.mod,./hack/tools/go.sum,./karpenter-operator/controllers/karpenter/assets/*.yaml,./dev/*"
+
+.PHONY: verify-api-deps
+verify-api-deps: $(VERIFY_API_DEPS) ## Verify API dependencies against allowlist.
+	@$(VERIFY_API_DEPS)
 
 .PHONY: run-gitlint
 run-gitlint: $(GITLINT)
@@ -529,6 +625,13 @@ karpenter-upstream-e2e:
 ## Tooling Binaries
 ## --------------------------------------
 
+##@ pyyaml
+$(PYYAML_STAMP): ## Install pyyaml for verify-docs-nav.
+	rm -rf $(TOOLS_BIN_DIR)/$(PYYAML_DIST_DIR) && \
+	mkdir -p $(TOOLS_BIN_DIR)/$(PYYAML_DIST_DIR) && \
+	python3 -m pip install --target=$(TOOLS_BIN_DIR)/$(PYYAML_DIST_DIR) pyyaml==$(PYYAML_VER) --upgrade && \
+	touch $@
+
 ##@ codespell
 codespell : $(CODESPELL) ## Build a local copy of codespell.
 $(CODESPELL): ## Build codespell from tools folder.
@@ -536,7 +639,7 @@ $(CODESPELL): ## Build codespell from tools folder.
 		mkdir -p $(TOOLS_BIN_DIR)/$(CODESPELL_DIST_DIR); \
 		mkdir -p $(TOOLS_BIN_DIR)/$(CODESPELL_DIST_DIR)/bin; \
 		mkdir -p $(TOOLS_BIN_DIR)/$(CODESPELL_DIST_DIR); \
-	 	pip install --target=$(TOOLS_BIN_DIR)/$(CODESPELL_DIST_DIR) $(CODESPELL_BIN)==$(CODESPELL_VER) --upgrade; \
+	 	python3 -m pip install --target=$(TOOLS_BIN_DIR)/$(CODESPELL_DIST_DIR) $(CODESPELL_BIN)==$(CODESPELL_VER) --upgrade; \
 		mv $(TOOLS_BIN_DIR)/$(CODESPELL_DIST_DIR)/bin/$(CODESPELL_BIN) $(TOOLS_BIN_DIR)/$(CODESPELL_DIST_DIR); \
 		rm -r $(TOOLS_BIN_DIR)/$(CODESPELL_DIST_DIR)/bin;
 
@@ -545,6 +648,6 @@ gitlint : $(GITLINT) ## Install local copy of gitlint
 $(GITLINT): $(TOOLS_DIR)/go.mod
 	mkdir -p $(TOOLS_BIN_DIR); \
 	mkdir -p $(TOOLS_BIN_DIR)/$(GITLINT_DIST_DIR); \
-	pip install --target=$(TOOLS_BIN_DIR)/$(GITLINT_DIST_DIR) gitlint==$(GITLINT_VER) --upgrade; \
+	python3 -m pip install --target=$(TOOLS_BIN_DIR)/$(GITLINT_DIST_DIR) gitlint==$(GITLINT_VER) --upgrade; \
 	cp $(TOOLS_BIN_DIR)/$(GITLINT_DIST_DIR)/bin/$(GITLINT_BIN) $(TOOLS_BIN_DIR)/$(GITLINT_DIST_DIR)/$(GITLINT_BIN)-bin; \
 	chmod +x $(TOOLS_BIN_DIR)/$(GITLINT_DIST_DIR)/$(GITLINT_BIN)-bin;

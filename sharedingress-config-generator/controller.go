@@ -12,7 +12,7 @@ import (
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/netutil"
 
 	routev1 "github.com/openshift/api/route/v1"
 
@@ -69,7 +69,7 @@ func (r *SharedIngressConfigReconciler) SetupWithManager(mgr ctrl.Manager) error
 		Watches(
 			&routev1.Route{},
 			handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []ctrl.Request {
-				if _, hasHCPLabel := obj.GetLabels()[util.HCPRouteLabel]; !hasHCPLabel {
+				if _, hasHCPLabel := obj.GetLabels()[netutil.HCPRouteLabel]; !hasHCPLabel {
 					return nil
 				}
 				return []ctrl.Request{{NamespacedName: client.ObjectKey{

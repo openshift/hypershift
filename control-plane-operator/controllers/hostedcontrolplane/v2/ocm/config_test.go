@@ -7,8 +7,8 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	controlplanecomponent "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
 	"github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/testutil"
-	"github.com/openshift/hypershift/support/util"
 
 	v1 "github.com/openshift/api/config/v1"
 	openshiftcpv1 "github.com/openshift/api/openshiftcontrolplane/v1"
@@ -69,19 +69,19 @@ func TestReconcileOpenShiftControllerManagerConfig(t *testing.T) {
 			}
 
 			config := &openshiftcpv1.OpenShiftControllerManagerConfig{}
-			err = util.DeserializeResource(configMap.Data[configKey], config, api.Scheme)
+			err = k8sutil.DeserializeResource(configMap.Data[configKey], config, api.Scheme)
 			if err != nil {
 				t.Fatalf("unable to decode existing openshift controller manager configuration: %v", err)
 			}
 
 			adaptConfig(config, hcp.Spec.Configuration, imageProvider, buildConfig, hcp.Spec.Capabilities, []string{"foo=true", "bar=false"}, nil)
-			configStr, err := util.SerializeResource(config, api.Scheme)
+			configStr, err := k8sutil.SerializeResource(config, api.Scheme)
 			if err != nil {
 				t.Fatalf("failed to serialize openshift controller manager configuration: %v", err)
 			}
 			configMap.Data[configKey] = configStr
 
-			configMapYaml, err := util.SerializeResource(configMap, api.Scheme)
+			configMapYaml, err := k8sutil.SerializeResource(configMap, api.Scheme)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}

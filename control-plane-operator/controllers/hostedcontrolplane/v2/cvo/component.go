@@ -7,8 +7,8 @@ import (
 	oapiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oapi"
 	"github.com/openshift/hypershift/support/awsutil"
 	component "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/rhobsmonitoring"
-	"github.com/openshift/hypershift/support/util"
 )
 
 const (
@@ -65,7 +65,7 @@ func NewComponent(enableCVOManagementClusterMetricsAccess bool) component.Contro
 			component.WithPredicate(cvo.isManagementClusterMetricsAccessEnabled),
 		).
 		WithDependencies(oapiv2.ComponentName).
-		InjectAvailabilityProberContainer(util.AvailabilityProberOpts{
+		InjectAvailabilityProberContainer(podspec.AvailabilityProberOpts{
 			KubeconfigVolumeName: "kubeconfig",
 		}).
 		Build()

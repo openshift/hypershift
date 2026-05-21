@@ -20,6 +20,7 @@ import (
 	route53types "github.com/aws/aws-sdk-go-v2/service/route53/types"
 	"github.com/aws/smithy-go"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -769,6 +770,716 @@ func TestDeleteSecurityGroup(t *testing.T) {
 //
 // A proper fix requires persisting the SharedVPC role ARNs in the AWSEndpointService
 // status so the deletion path can authenticate independently of the HCP.
+func TestHasAWSConfig(t *testing.T) {
+	tests := []struct {
+		name     string
+		platform hyperv1.PlatformSpec
+		expected bool
+	}{
+		{
+			name: "When all AWS config fields are present, it should return true",
+			platform: hyperv1.PlatformSpec{
+				Type: hyperv1.AWSPlatform,
+				AWS: &hyperv1.AWSPlatformSpec{
+					CloudProviderConfig: &hyperv1.AWSCloudProviderConfig{
+						Subnet: &hyperv1.AWSResourceReference{
+							ID: aws.String("subnet-123"),
+						},
+					},
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "When platform type is not AWS, it should return false",
+			platform: hyperv1.PlatformSpec{
+				Type: hyperv1.AzurePlatform,
+			},
+			expected: false,
+		},
+		{
+			name: "When AWS spec is nil, it should return false",
+			platform: hyperv1.PlatformSpec{
+				Type: hyperv1.AWSPlatform,
+				AWS:  nil,
+			},
+			expected: false,
+		},
+		{
+			name: "When CloudProviderConfig is nil, it should return false",
+			platform: hyperv1.PlatformSpec{
+				Type: hyperv1.AWSPlatform,
+				AWS: &hyperv1.AWSPlatformSpec{
+					CloudProviderConfig: nil,
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "When Subnet is nil, it should return false",
+			platform: hyperv1.PlatformSpec{
+				Type: hyperv1.AWSPlatform,
+				AWS: &hyperv1.AWSPlatformSpec{
+					CloudProviderConfig: &hyperv1.AWSCloudProviderConfig{
+						Subnet: nil,
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "When Subnet.ID is nil, it should return false",
+			platform: hyperv1.PlatformSpec{
+				Type: hyperv1.AWSPlatform,
+				AWS: &hyperv1.AWSPlatformSpec{
+					CloudProviderConfig: &hyperv1.AWSCloudProviderConfig{
+						Subnet: &hyperv1.AWSResourceReference{
+							ID: nil,
+						},
+					},
+				},
+			},
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			g.Expect(hasAWSConfig(&tt.platform)).To(Equal(tt.expected))
+		})
+	}
+}
+
+func TestVPCEndpointPort(t *testing.T) {
+	tests := []struct {
+		name     string
+		svcName  string
+		expected int32
+	}{
+		{
+			name:     "When service is kube-apiserver-private, it should return 6443",
+			svcName:  "kube-apiserver-private",
+			expected: 6443,
+		},
+		{
+			name:     "When service is private-router, it should return 443",
+			svcName:  "private-router",
+			expected: 443,
+		},
+		{
+			name:     "When service is an unknown name, it should return 443",
+			svcName:  "some-other-service",
+			expected: 443,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			aes := &hyperv1.AWSEndpointService{
+				ObjectMeta: metav1.ObjectMeta{Name: tt.svcName},
+			}
+			g.Expect(vpcEndpointPort(aes)).To(Equal(tt.expected))
+		})
+	}
+}
+
+func TestVPCEndpointSecurityGroupName(t *testing.T) {
+	tests := []struct {
+		name         string
+		infraID      string
+		endpointName string
+		expected     string
+	}{
+		{
+			name:         "When given infraID and endpoint name, it should format correctly",
+			infraID:      "my-infra",
+			endpointName: "kube-apiserver-private",
+			expected:     "my-infra-vpce-kube-apiserver-private",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			g.Expect(vpcEndpointSecurityGroupName(tt.infraID, tt.endpointName)).To(Equal(tt.expected))
+		})
+	}
+}
+
+func TestVPCEndpointSecurityGroupFilter(t *testing.T) {
+	tests := []struct {
+		name         string
+		infraID      string
+		endpointName string
+	}{
+		{
+			name:         "When given infraID and endpoint name, it should return cluster tag and name tag filters",
+			infraID:      "test-infra",
+			endpointName: "kube-apiserver-private",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			filters := vpcEndpointSecurityGroupFilter(tt.infraID, tt.endpointName)
+			g.Expect(filters).To(HaveLen(2))
+			g.Expect(aws.ToString(filters[0].Name)).To(Equal("tag:kubernetes.io/cluster/test-infra"))
+			g.Expect(filters[0].Values).To(Equal([]string{"owned"}))
+			g.Expect(aws.ToString(filters[1].Name)).To(Equal("tag:Name"))
+			g.Expect(filters[1].Values).To(Equal([]string{"test-infra-vpce-kube-apiserver-private"}))
+		})
+	}
+}
+
+func TestApiTagToEC2Tag(t *testing.T) {
+	tests := []struct {
+		name     string
+		svcName  string
+		tags     []hyperv1.AWSResourceTag
+		expected []ec2types.Tag
+	}{
+		{
+			name:    "When no resource tags are provided, it should return only the AWSEndpointService tag",
+			svcName: "my-svc",
+			tags:    nil,
+			expected: []ec2types.Tag{
+				{Key: aws.String("AWSEndpointService"), Value: aws.String("my-svc")},
+			},
+		},
+		{
+			name:    "When resource tags are provided, it should include them plus the AWSEndpointService tag",
+			svcName: "my-svc",
+			tags: []hyperv1.AWSResourceTag{
+				{Key: "env", Value: "prod"},
+				{Key: "team", Value: "platform"},
+			},
+			expected: []ec2types.Tag{
+				{Key: aws.String("env"), Value: aws.String("prod")},
+				{Key: aws.String("team"), Value: aws.String("platform")},
+				{Key: aws.String("AWSEndpointService"), Value: aws.String("my-svc")},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			result := apiTagToEC2Tag(tt.svcName, tt.tags)
+			g.Expect(result).To(Equal(tt.expected))
+		})
+	}
+}
+
+func TestApiTagToEC2Filter(t *testing.T) {
+	tests := []struct {
+		name     string
+		svcName  string
+		tags     []hyperv1.AWSResourceTag
+		expected []ec2types.Filter
+	}{
+		{
+			name:    "When no resource tags are provided, it should return only the AWSEndpointService filter",
+			svcName: "my-svc",
+			tags:    nil,
+			expected: []ec2types.Filter{
+				{Name: aws.String("tag:AWSEndpointService"), Values: []string{"my-svc"}},
+			},
+		},
+		{
+			name:    "When resource tags are provided, it should include them as tag filters plus the AWSEndpointService filter",
+			svcName: "my-svc",
+			tags: []hyperv1.AWSResourceTag{
+				{Key: "env", Value: "prod"},
+			},
+			expected: []ec2types.Filter{
+				{Name: aws.String("tag:env"), Values: []string{"prod"}},
+				{Name: aws.String("tag:AWSEndpointService"), Values: []string{"my-svc"}},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			result := apiTagToEC2Filter(tt.svcName, tt.tags)
+			g.Expect(result).To(Equal(tt.expected))
+		})
+	}
+}
+
+func TestZoneName(t *testing.T) {
+	tests := []struct {
+		name     string
+		hcpName  string
+		expected string
+	}{
+		{
+			name:     "When given an HCP name, it should append the hypershift.local suffix",
+			hcpName:  "my-cluster",
+			expected: "my-cluster.hypershift.local",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			g.Expect(zoneName(tt.hcpName)).To(Equal(tt.expected))
+		})
+	}
+}
+
+func TestRouterZoneName(t *testing.T) {
+	tests := []struct {
+		name     string
+		hcpName  string
+		expected string
+	}{
+		{
+			name:     "When given an HCP name, it should prepend apps and append the hypershift.local suffix",
+			hcpName:  "my-cluster",
+			expected: "apps.my-cluster.hypershift.local",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			g.Expect(RouterZoneName(tt.hcpName)).To(Equal(tt.expected))
+		})
+	}
+}
+
+func TestControllerName(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "When given a name, it should append the observer suffix",
+			input:    "kube-apiserver",
+			expected: "kube-apiserver-observer",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			g.Expect(ControllerName(tt.input)).To(Equal(tt.expected))
+		})
+	}
+}
+
+func TestNameMapper(t *testing.T) {
+	tests := []struct {
+		name           string
+		watchedNames   []string
+		incomingName   string
+		incomingNS     string
+		expectRequests int
+	}{
+		{
+			name:           "When incoming object name matches a watched name, it should return a reconcile request",
+			watchedNames:   []string{"kube-apiserver-private", "private-router"},
+			incomingName:   "kube-apiserver-private",
+			incomingNS:     "test-ns",
+			expectRequests: 1,
+		},
+		{
+			name:           "When incoming object name does not match any watched name, it should return nil",
+			watchedNames:   []string{"kube-apiserver-private"},
+			incomingName:   "other-service",
+			incomingNS:     "test-ns",
+			expectRequests: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			mapFn := nameMapper(tt.watchedNames)
+			svc := &corev1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      tt.incomingName,
+					Namespace: tt.incomingNS,
+				},
+			}
+			requests := mapFn(t.Context(), svc)
+			g.Expect(requests).To(HaveLen(tt.expectRequests))
+			if tt.expectRequests > 0 {
+				g.Expect(requests[0].Name).To(Equal(tt.incomingName))
+				g.Expect(requests[0].Namespace).To(Equal(tt.incomingNS))
+			}
+		})
+	}
+}
+
+func TestHCPExternalNames(t *testing.T) {
+	tests := []struct {
+		name     string
+		hcp      *hyperv1.HostedControlPlane
+		expected map[string]string
+	}{
+		{
+			name: "When API and OAuth both have Route strategies with hostnames, it should return both",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.APIServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type:  hyperv1.Route,
+								Route: &hyperv1.RoutePublishingStrategy{Hostname: "api.example.com"},
+							},
+						},
+						{
+							Service: hyperv1.OAuthServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type:  hyperv1.Route,
+								Route: &hyperv1.RoutePublishingStrategy{Hostname: "oauth.example.com"},
+							},
+						},
+					},
+				},
+			},
+			expected: map[string]string{
+				"api":   "api.example.com",
+				"oauth": "oauth.example.com",
+			},
+		},
+		{
+			name: "When no Route strategies are configured, it should return empty map",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.APIServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.LoadBalancer,
+							},
+						},
+					},
+				},
+			},
+			expected: map[string]string{},
+		},
+		{
+			name: "When Route strategy has no hostname, it should not include that entry",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.APIServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type:  hyperv1.Route,
+								Route: &hyperv1.RoutePublishingStrategy{Hostname: ""},
+							},
+						},
+					},
+				},
+			},
+			expected: map[string]string{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			result := hcpExternalNames(tt.hcp)
+			g.Expect(result).To(Equal(tt.expected))
+		})
+	}
+}
+
+func TestReconcileExternalService(t *testing.T) {
+	tests := []struct {
+		name           string
+		hostName       string
+		targetCName    string
+		expectedLabels map[string]string
+	}{
+		{
+			name:        "When reconciling an external service, it should set type, labels, annotations, and external name",
+			hostName:    "api.example.com",
+			targetCName: "vpce-abc.vpce-svc.us-east-1.vpce.amazonaws.com",
+			expectedLabels: map[string]string{
+				externalPrivateServiceLabel: "true",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-hcp",
+					Namespace: "test-ns",
+					UID:       "test-uid",
+				},
+			}
+			svc := &corev1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "kube-apiserver-private-external",
+					Namespace: "test-ns",
+				},
+			}
+
+			err := reconcileExternalService(svc, hcp, tt.hostName, tt.targetCName)
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(svc.Spec.Type).To(Equal(corev1.ServiceTypeExternalName))
+			g.Expect(svc.Spec.ExternalName).To(Equal(tt.targetCName))
+			g.Expect(svc.Labels[externalPrivateServiceLabel]).To(Equal("true"))
+			g.Expect(svc.Annotations[hyperv1.ExternalDNSHostnameAnnotation]).To(Equal(tt.hostName))
+			g.Expect(svc.OwnerReferences).To(HaveLen(1))
+			g.Expect(svc.OwnerReferences[0].Name).To(Equal("test-hcp"))
+		})
+	}
+}
+
+func TestDeleteEndpointIfWrongService(t *testing.T) {
+	tests := []struct {
+		name                string
+		endpointServiceName string
+		expectedServiceName string
+		setupEC2Mock        func(*gomock.Controller) *awsapi.MockEC2API
+		expectError         bool
+	}{
+		{
+			name:                "When endpoint points to the correct service, it should return nil",
+			endpointServiceName: "com.amazonaws.vpce-svc-abc",
+			expectedServiceName: "com.amazonaws.vpce-svc-abc",
+			setupEC2Mock: func(mockCtrl *gomock.Controller) *awsapi.MockEC2API {
+				return awsapi.NewMockEC2API(mockCtrl)
+			},
+			expectError: false,
+		},
+		{
+			name:                "When endpoint points to wrong service, it should delete and return error",
+			endpointServiceName: "com.amazonaws.vpce-svc-wrong",
+			expectedServiceName: "com.amazonaws.vpce-svc-correct",
+			setupEC2Mock: func(mockCtrl *gomock.Controller) *awsapi.MockEC2API {
+				m := awsapi.NewMockEC2API(mockCtrl)
+				m.EXPECT().DeleteVpcEndpoints(gomock.Any(), gomock.Any()).Return(&ec2v2.DeleteVpcEndpointsOutput{}, nil)
+				return m
+			},
+			expectError: true,
+		},
+		{
+			name:                "When endpoint points to wrong service and delete fails, it should return the delete error",
+			endpointServiceName: "com.amazonaws.vpce-svc-wrong",
+			expectedServiceName: "com.amazonaws.vpce-svc-correct",
+			setupEC2Mock: func(mockCtrl *gomock.Controller) *awsapi.MockEC2API {
+				m := awsapi.NewMockEC2API(mockCtrl)
+				m.EXPECT().DeleteVpcEndpoints(gomock.Any(), gomock.Any()).Return(nil, fmt.Errorf("access denied"))
+				return m
+			},
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			mockCtrl := gomock.NewController(t)
+			mockEC2 := tt.setupEC2Mock(mockCtrl)
+
+			endpoint := ec2types.VpcEndpoint{
+				VpcEndpointId: aws.String("vpce-123"),
+				ServiceName:   aws.String(tt.endpointServiceName),
+			}
+			ctx := ctrl.LoggerInto(t.Context(), ctrl.Log.WithName("test"))
+			err := deleteEndpointIfWrongService(ctx, mockEC2, endpoint, tt.expectedServiceName, ctrl.Log.WithName("test"))
+			if tt.expectError {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+			}
+		})
+	}
+}
+
+func TestModifyEndpointIfNeeded(t *testing.T) {
+	tests := []struct {
+		name                string
+		specSubnetIDs       []string
+		endpointSubnetIDs   []string
+		specSecurityGroupID string
+		endpointGroups      []ec2types.SecurityGroupIdentifier
+		setupEC2Mock        func(*gomock.Controller) *awsapi.MockEC2API
+		expectError         bool
+	}{
+		{
+			name:                "When subnets and security groups are unchanged, it should not modify",
+			specSubnetIDs:       []string{"subnet-1", "subnet-2"},
+			endpointSubnetIDs:   []string{"subnet-1", "subnet-2"},
+			specSecurityGroupID: "sg-123",
+			endpointGroups:      []ec2types.SecurityGroupIdentifier{{GroupId: aws.String("sg-123")}},
+			setupEC2Mock: func(mockCtrl *gomock.Controller) *awsapi.MockEC2API {
+				return awsapi.NewMockEC2API(mockCtrl)
+			},
+			expectError: false,
+		},
+		{
+			name:                "When subnets have changed, it should call ModifyVpcEndpoint",
+			specSubnetIDs:       []string{"subnet-1", "subnet-3"},
+			endpointSubnetIDs:   []string{"subnet-1", "subnet-2"},
+			specSecurityGroupID: "sg-123",
+			endpointGroups:      []ec2types.SecurityGroupIdentifier{{GroupId: aws.String("sg-123")}},
+			setupEC2Mock: func(mockCtrl *gomock.Controller) *awsapi.MockEC2API {
+				m := awsapi.NewMockEC2API(mockCtrl)
+				m.EXPECT().ModifyVpcEndpoint(gomock.Any(), gomock.Any()).Return(&ec2v2.ModifyVpcEndpointOutput{}, nil)
+				return m
+			},
+			expectError: false,
+		},
+		{
+			name:                "When security group needs adding, it should call ModifyVpcEndpoint",
+			specSubnetIDs:       []string{"subnet-1"},
+			endpointSubnetIDs:   []string{"subnet-1"},
+			specSecurityGroupID: "sg-new",
+			endpointGroups:      []ec2types.SecurityGroupIdentifier{{GroupId: aws.String("sg-old")}},
+			setupEC2Mock: func(mockCtrl *gomock.Controller) *awsapi.MockEC2API {
+				m := awsapi.NewMockEC2API(mockCtrl)
+				m.EXPECT().ModifyVpcEndpoint(gomock.Any(), gomock.Any()).Return(&ec2v2.ModifyVpcEndpointOutput{}, nil)
+				return m
+			},
+			expectError: false,
+		},
+		{
+			name:                "When ModifyVpcEndpoint fails, it should return error",
+			specSubnetIDs:       []string{"subnet-1", "subnet-3"},
+			endpointSubnetIDs:   []string{"subnet-1", "subnet-2"},
+			specSecurityGroupID: "sg-123",
+			endpointGroups:      []ec2types.SecurityGroupIdentifier{{GroupId: aws.String("sg-123")}},
+			setupEC2Mock: func(mockCtrl *gomock.Controller) *awsapi.MockEC2API {
+				m := awsapi.NewMockEC2API(mockCtrl)
+				m.EXPECT().ModifyVpcEndpoint(gomock.Any(), gomock.Any()).Return(nil, fmt.Errorf("throttling"))
+				return m
+			},
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			mockCtrl := gomock.NewController(t)
+			mockEC2 := tt.setupEC2Mock(mockCtrl)
+
+			aes := &hyperv1.AWSEndpointService{
+				Spec: hyperv1.AWSEndpointServiceSpec{
+					SubnetIDs: tt.specSubnetIDs,
+				},
+				Status: hyperv1.AWSEndpointServiceStatus{
+					SecurityGroupID: tt.specSecurityGroupID,
+				},
+			}
+
+			endpoint := ec2types.VpcEndpoint{
+				SubnetIds: tt.endpointSubnetIDs,
+				Groups:    tt.endpointGroups,
+			}
+
+			ctx := ctrl.LoggerInto(t.Context(), ctrl.Log.WithName("test"))
+			err := modifyEndpointIfNeeded(ctx, mockEC2, aes, endpoint, "vpce-123", ctrl.Log.WithName("test"))
+			if tt.expectError {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+			}
+		})
+	}
+}
+
+func TestReconcileExistingEndpoint(t *testing.T) {
+	tests := []struct {
+		name             string
+		endpointID       string
+		setupEC2Mock     func(*gomock.Controller) *awsapi.MockEC2API
+		expectError      bool
+		expectEndpointID string
+	}{
+		{
+			name:       "When DescribeVpcEndpoints returns empty results, it should reset EndpointID and return error",
+			endpointID: "vpce-123",
+			setupEC2Mock: func(mockCtrl *gomock.Controller) *awsapi.MockEC2API {
+				m := awsapi.NewMockEC2API(mockCtrl)
+				m.EXPECT().DescribeVpcEndpoints(gomock.Any(), gomock.Any()).Return(&ec2v2.DescribeVpcEndpointsOutput{
+					VpcEndpoints: []ec2types.VpcEndpoint{},
+				}, nil)
+				return m
+			},
+			expectError:      true,
+			expectEndpointID: "",
+		},
+		{
+			name:       "When DescribeVpcEndpoints returns NotFound API error, it should reset EndpointID and return error",
+			endpointID: "vpce-gone",
+			setupEC2Mock: func(mockCtrl *gomock.Controller) *awsapi.MockEC2API {
+				m := awsapi.NewMockEC2API(mockCtrl)
+				m.EXPECT().DescribeVpcEndpoints(gomock.Any(), gomock.Any()).Return(nil, &smithy.GenericAPIError{Code: "InvalidVpcEndpointId.NotFound", Message: "not found"})
+				return m
+			},
+			expectError:      true,
+			expectEndpointID: "",
+		},
+		{
+			name:       "When endpoint exists and matches service, it should return the endpoint ID",
+			endpointID: "vpce-active",
+			setupEC2Mock: func(mockCtrl *gomock.Controller) *awsapi.MockEC2API {
+				m := awsapi.NewMockEC2API(mockCtrl)
+				m.EXPECT().DescribeVpcEndpoints(gomock.Any(), gomock.Any()).Return(&ec2v2.DescribeVpcEndpointsOutput{
+					VpcEndpoints: []ec2types.VpcEndpoint{
+						{
+							VpcEndpointId: aws.String("vpce-active"),
+							ServiceName:   aws.String("com.amazonaws.vpce-svc-test"),
+							SubnetIds:     []string{"subnet-1"},
+							Groups:        []ec2types.SecurityGroupIdentifier{{GroupId: aws.String("sg-test")}},
+						},
+					},
+				}, nil)
+				return m
+			},
+			expectError:      false,
+			expectEndpointID: "vpce-active",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			mockCtrl := gomock.NewController(t)
+			mockEC2 := tt.setupEC2Mock(mockCtrl)
+
+			awsEndpointService := &hyperv1.AWSEndpointService{
+				Status: hyperv1.AWSEndpointServiceStatus{
+					EndpointID:          tt.endpointID,
+					EndpointServiceName: "com.amazonaws.vpce-svc-test",
+					SecurityGroupID:     "sg-test",
+				},
+				Spec: hyperv1.AWSEndpointServiceSpec{
+					SubnetIDs: []string{"subnet-1"},
+				},
+			}
+
+			r := &AWSEndpointServiceReconciler{}
+			ctx := ctrl.LoggerInto(t.Context(), ctrl.Log.WithName("test"))
+			resultID, _, err := r.reconcileExistingEndpoint(ctx, mockEC2, awsEndpointService, tt.endpointID, ctrl.Log.WithName("test"))
+			if tt.expectError {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+			}
+			g.Expect(resultID).To(Equal(tt.expectEndpointID))
+			g.Expect(awsEndpointService.Status.EndpointID).To(Equal(tt.expectEndpointID))
+		})
+	}
+}
+
 func TestReconcileDeletionSharedVPC(t *testing.T) {
 	now := metav1.NewTime(time.Now())
 
@@ -907,6 +1618,36 @@ func TestReconcileDeletionSharedVPC(t *testing.T) {
 			}, updatedService)
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(controllerutil.ContainsFinalizer(updatedService, finalizer)).To(Equal(tc.expectFinalizer))
+		})
+	}
+}
+
+func TestExtractNLBName(t *testing.T) {
+	testCases := []struct {
+		name     string
+		hostname string
+		expected string
+	}{
+		{
+			name:     "When standard NLB hostname it should extract name without hyphens",
+			hostname: "a1b2c3d4e5f6g7-1234567890abcdef.elb.us-east-1.amazonaws.com",
+			expected: "a1b2c3d4e5f6g7",
+		},
+		{
+			name:     "When EKS Auto Mode NLB hostname it should extract full name with hyphens",
+			hostname: "k8s-clusters-kubeapis-db6fee3a62-8008741421d14306.elb.us-east-1.amazonaws.com",
+			expected: "k8s-clusters-kubeapis-db6fee3a62",
+		},
+		{
+			name:     "When hostname has no hyphens it should return the first label as-is",
+			hostname: "somename.elb.us-east-1.amazonaws.com",
+			expected: "somename",
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			g.Expect(extractNLBName(tc.hostname)).To(Equal(tc.expected))
 		})
 	}
 }

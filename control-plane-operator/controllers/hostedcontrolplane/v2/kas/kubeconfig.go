@@ -11,7 +11,8 @@ import (
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/netutil"
+	"github.com/openshift/hypershift/support/podspec"
 
 	corev1 "k8s.io/api/core/v1"
 	clientcmd "k8s.io/client-go/tools/clientcmd"
@@ -22,7 +23,7 @@ import (
 )
 
 const (
-	KubeconfigKey = util.KubeconfigKey
+	KubeconfigKey = podspec.KubeconfigKey
 )
 
 func adaptServiceKubeconfigSecret(cpContext component.WorkloadContext, secret *corev1.Secret) error {
@@ -82,7 +83,7 @@ func adaptHCCOKubeconfigSecret(cpContext component.WorkloadContext, secret *core
 }
 
 func adaptLocalhostKubeconfigSecret(cpContext component.WorkloadContext, secret *corev1.Secret) error {
-	apiServerPort := util.KASPodPort(cpContext.HCP)
+	apiServerPort := netutil.KASPodPort(cpContext.HCP)
 	localhostURL := fmt.Sprintf("https://localhost:%d", apiServerPort)
 	kubeconfig, err := GenerateKubeConfig(cpContext, manifests.SystemAdminClientCertSecret(cpContext.HCP.Namespace), localhostURL)
 	if err != nil {
@@ -97,7 +98,7 @@ func adaptLocalhostKubeconfigSecret(cpContext component.WorkloadContext, secret 
 }
 
 func adaptKASBootstrapContainerKubeconfigSecret(cpContext component.WorkloadContext, secret *corev1.Secret) error {
-	apiServerPort := util.KASPodPort(cpContext.HCP)
+	apiServerPort := netutil.KASPodPort(cpContext.HCP)
 	localhostURL := fmt.Sprintf("https://localhost:%d", apiServerPort)
 	kubeconfig, err := GenerateKubeConfig(cpContext, manifests.KASBootstrapContainerClientCertSecret(cpContext.HCP.Namespace), localhostURL)
 	if err != nil {
@@ -118,7 +119,7 @@ func adapExternalAdminKubeconfigSecret(cpContext component.WorkloadContext, secr
 
 	url := externalURL(cpContext.InfraStatus)
 
-	if !util.IsPublicHCP(cpContext.HCP) && !util.IsRouteKAS(cpContext.HCP) {
+	if !netutil.IsPublicHCP(cpContext.HCP) && !netutil.IsRouteKAS(cpContext.HCP) {
 		url = internalURL(cpContext.InfraStatus, cpContext.HCP.Name)
 	}
 	kubeconfig, err := GenerateKubeConfig(cpContext, manifests.SystemAdminClientCertSecret(cpContext.HCP.Namespace), url)
@@ -162,7 +163,7 @@ func adaptCustomAdminKubeconfigSecret(cpContext component.WorkloadContext, secre
 
 func adaptBootstrapKubeconfigSecret(cpContext component.WorkloadContext, secret *corev1.Secret) error {
 	url := externalURL(cpContext.InfraStatus)
-	if util.IsPrivateHCP(cpContext.HCP) {
+	if netutil.IsPrivateHCP(cpContext.HCP) {
 		url = internalURL(cpContext.InfraStatus, cpContext.HCP.Name)
 	}
 	kubeconfig, err := GenerateKubeConfig(cpContext, manifests.KASMachineBootstrapClientCertSecret(cpContext.HCP.Namespace), url)
@@ -214,7 +215,7 @@ func adaptAzureWorkloadIdentityWebhookKubeconfigSecret(cpContext component.Workl
 	}
 
 	if !cpContext.SkipCertificateSigning {
-		apiServerPort := util.KASPodPort(cpContext.HCP)
+		apiServerPort := netutil.KASPodPort(cpContext.HCP)
 		localhostURL := fmt.Sprintf("https://localhost:%d", apiServerPort)
 		return pki.ReconcileServiceAccountKubeconfigWithURL(secret, csrSigner, rootCACM, "openshift-authentication", "azure-workload-identity-webhook", localhostURL)
 	}

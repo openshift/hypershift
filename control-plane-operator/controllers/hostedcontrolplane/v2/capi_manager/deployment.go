@@ -5,7 +5,8 @@ import (
 
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/k8sutil"
+	"github.com/openshift/hypershift/support/podspec"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -20,7 +21,7 @@ func (capi *CAPIManagerOptions) adaptDeployment(cpContext component.WorkloadCont
 		return fmt.Errorf("failed to parse version (%s): %w", versionStr, err)
 	}
 
-	util.UpdateContainer("manager", deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
+	podspec.UpdateContainer("manager", deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
 		if version.GE(config.Version419) {
 			c.Args = append(c.Args, "--feature-gates=MachineSetPreflightChecks=false")
 		}
@@ -33,7 +34,7 @@ func (capi *CAPIManagerOptions) adaptDeployment(cpContext component.WorkloadCont
 	if deployment.Annotations == nil {
 		deployment.Annotations = make(map[string]string)
 	}
-	deployment.Annotations[util.HostedClusterAnnotation] = cpContext.HCP.Annotations[util.HostedClusterAnnotation]
+	deployment.Annotations[k8sutil.HostedClusterAnnotation] = cpContext.HCP.Annotations[k8sutil.HostedClusterAnnotation]
 
 	return nil
 }

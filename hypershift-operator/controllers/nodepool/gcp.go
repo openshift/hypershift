@@ -5,8 +5,8 @@ import (
 	"fmt"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/releaseinfo"
-	supportutil "github.com/openshift/hypershift/support/util"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
@@ -18,7 +18,7 @@ import (
 
 // gcpMachineTemplate creates a GCPMachineTemplate for the given NodePool.
 // This follows the AWS and Azure patterns for CAPI machine template generation.
-func (c *CAPI) gcpMachineTemplate(ctx context.Context, templateNameGenerator func(spec any) (string, error)) (client.Object, error) {
+func (c *CAPI) gcpMachineTemplate(_ context.Context, templateNameGenerator func(spec any) (string, error)) (client.Object, error) {
 	nodePool := c.nodePool
 	hc := c.hostedCluster
 
@@ -60,7 +60,7 @@ func (c *CAPI) gcpMachineTemplate(ctx context.Context, templateNameGenerator fun
 			Labels: map[string]string{
 				capiv1.ClusterNameLabel:                 c.capiClusterName,
 				hyperv1.NodePoolLabel:                   c.nodePool.Name,
-				supportutil.HostedClusterAnnotation:     hc.Name,
+				k8sutil.HostedClusterAnnotation:         hc.Name,
 				capiv1.TemplateClonedFromNameAnnotation: templateName,
 			},
 		},
@@ -178,7 +178,7 @@ func resolveGCPImage(nodePool *hyperv1.NodePool, releaseImage *releaseinfo.Relea
 
 // resolveGCPSubnet configures the subnet for node placement.
 // Priority: NodePool subnet > HostedCluster PSC subnet > "default"
-func resolveGCPSubnet(gcpPlatform *hyperv1.GCPNodePoolPlatform, hcGCPPlatform *hyperv1.GCPPlatformSpec) (string, error) {
+func resolveGCPSubnet(gcpPlatform *hyperv1.GCPNodePoolPlatform, hcGCPPlatform *hyperv1.GCPPlatformSpec) (string, error) { //nolint:unparam // error return kept for API consistency
 	// NodePool-specified subnet takes precedence
 	if gcpPlatform != nil && gcpPlatform.Subnet != "" {
 		// CAPG will automatically prepend "projects/{project}/regions/{region}/subnetworks/"
@@ -282,9 +282,9 @@ func configureGCPLabels(hcGCPPlatform *hyperv1.GCPPlatformSpec, gcpPlatform *hyp
 	}
 
 	// Add HyperShift-specific labels for resource identification
-	labels[supportutil.GCPLabelCluster] = clusterName
+	labels[k8sutil.GCPLabelCluster] = clusterName
 	if infraID != "" {
-		labels[supportutil.GCPLabelInfraID] = infraID
+		labels[k8sutil.GCPLabelInfraID] = infraID
 	}
 
 	return labels

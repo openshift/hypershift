@@ -28,7 +28,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	hyperutil "github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/podspec"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
 
@@ -306,7 +306,7 @@ func ReadOnlyRootFilesystemTmpDirMountTest(getTestCtx internal.TestContextGetter
 					for _, container := range pod.Spec.Containers {
 						hasTmpMount := false
 						for _, mount := range container.VolumeMounts {
-							if mount.MountPath == hyperutil.PodTmpDirMountPath {
+							if mount.MountPath == podspec.PodTmpDirMountPath {
 								hasTmpMount = true
 								break
 							}

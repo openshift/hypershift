@@ -35,6 +35,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/azureutil"
+	"github.com/openshift/hypershift/support/k8sutil"
 	supportutil "github.com/openshift/hypershift/support/util"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -185,7 +186,7 @@ func (r *AzurePrivateLinkServiceController) Reconcile(ctx context.Context, req c
 	}
 
 	// 4. Find the hosted cluster using annotation (set by CPO-side observer)
-	hc, err := supportutil.HostedClusterFromAnnotation(ctx, r.Client, azPLS)
+	hc, err := k8sutil.HostedClusterFromAnnotation(ctx, r.Client, azPLS)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to get hosted cluster: %w", err)
 	}

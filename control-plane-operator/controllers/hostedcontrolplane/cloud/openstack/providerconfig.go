@@ -2,7 +2,7 @@ package openstack
 
 import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/netutil"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/utils/ptr"
@@ -67,7 +67,7 @@ func getCloudConfig(platformSpec *hyperv1.OpenStackPlatformSpec, credentialsSecr
 		}
 	}
 	config += "\n[Networking]\n"
-	config += "address-sort-order = " + util.MachineNetworksToList(machineNetwork) + "\n"
+	config += "address-sort-order = " + netutil.MachineNetworksToList(machineNetwork) + "\n"
 
 	return config
 }

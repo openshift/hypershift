@@ -15,7 +15,6 @@ import (
 	"github.com/openshift/hypershift/support/config"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/utils/ptr"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -53,10 +52,16 @@ var ocpVersionToKubeVersion = map[string]semver.Version{
 	"4.20.0": semver.MustParse("1.33.0"),
 	"4.21.0": semver.MustParse("1.34.0"),
 	"4.22.0": semver.MustParse("1.35.0"),
+	"4.23.0": semver.MustParse("1.36.0"),
 }
 
 func GetKubeVersionForSupportedVersion(supportedVersion semver.Version) (*semver.Version, error) {
-	kubeVersion, ok := ocpVersionToKubeVersion[supportedVersion.String()]
+	normalized, err := normalizeToV4(supportedVersion)
+	if err != nil {
+		return nil, err
+	}
+	lookupKey := semver.Version{Major: normalized.Major, Minor: normalized.Minor}
+	kubeVersion, ok := ocpVersionToKubeVersion[lookupKey.String()]
 	if !ok {
 		return nil, fmt.Errorf("unknown supported version %q", supportedVersion.String())
 	}
@@ -110,49 +115,78 @@ func trimVersion(version string) string {
 
 func subtractMinor(version *semver.Version, count uint64) *semver.Version {
 	result := *version
-	result.Minor = maxInt64(0, result.Minor-count)
+	if result.Minor >= count {
+		result.Minor -= count
+	} else {
+		result.Minor = 0
+	}
 	return &result
 }
 
-func maxInt64(a, b uint64) uint64 {
-	if a > b {
-		return a
-	}
-	return b
-}
+// Version thresholds used by IsValidReleaseVersion, parsed once at package init.
+var (
+	minReleaseVersion = semver.MustParse("4.8.0")
+	sdnMaxVersion     = semver.MustParse("4.10.0")
+)
 
 func IsValidReleaseVersion(version, currentVersion, maxSupportedVersion, minSupportedVersion *semver.Version, networkType hyperv1.NetworkType, platformType hyperv1.PlatformType) error {
-	if maxSupportedVersion.GT(LatestSupportedVersion) {
-		maxSupportedVersion = ptr.To(LatestSupportedVersion)
+	// Normalize all versions to 4.x for consistent comparison across the 4.x/5.x boundary.
+	normalizedVersion, err := normalizeToV4(*version)
+	if err != nil {
+		return err
+	}
+	normalizedMax, err := normalizeToV4(*maxSupportedVersion)
+	if err != nil {
+		return err
+	}
+	normalizedMin, err := normalizeToV4(*minSupportedVersion)
+	if err != nil {
+		return err
+	}
+	normalizedLatest, err := normalizeToV4(LatestSupportedVersion)
+	if err != nil {
+		return err
 	}
 
-	if version.LT(semver.MustParse("4.8.0")) {
+	displayMax := maxSupportedVersion
+	if normalizedMax.GT(normalizedLatest) {
+		normalizedMax = normalizedLatest
+		displayMax = &LatestSupportedVersion
+	}
+
+	if normalizedVersion.LT(minReleaseVersion) {
 		return fmt.Errorf("releases before 4.8 are not supported. Attempting to use: %q", version)
 	}
 
-	if currentVersion != nil && currentVersion.Minor > version.Minor {
-		return fmt.Errorf("y-stream downgrade from %q to %q is not supported", currentVersion, version)
+	if currentVersion != nil {
+		normalizedCurrent, err := normalizeToV4(*currentVersion)
+		if err != nil {
+			return err
+		}
+		if normalizedCurrent.Minor > normalizedVersion.Minor {
+			return fmt.Errorf("y-stream downgrade from %q to %q is not supported", currentVersion, version)
+		}
+
+		if networkType == hyperv1.OpenShiftSDN && normalizedCurrent.Minor < normalizedVersion.Minor {
+			return fmt.Errorf("y-stream upgrade from %q to %q is not for OpenShiftSDN", currentVersion, version)
+		}
 	}
 
-	if networkType == hyperv1.OpenShiftSDN && currentVersion != nil && currentVersion.Minor < version.Minor {
-		return fmt.Errorf("y-stream upgrade from %q to %q is not for OpenShiftSDN", currentVersion, version)
-	}
-
-	versionMinorOnly := &semver.Version{Major: version.Major, Minor: version.Minor}
-	if networkType == hyperv1.OpenShiftSDN && currentVersion == nil && versionMinorOnly.GT(semver.MustParse("4.10.0")) && platformType != hyperv1.PowerVSPlatform {
+	normalizedVersionMinorOnly := semver.Version{Major: 4, Minor: normalizedVersion.Minor}
+	if networkType == hyperv1.OpenShiftSDN && currentVersion == nil && normalizedVersionMinorOnly.GT(sdnMaxVersion) && platformType != hyperv1.PowerVSPlatform {
 		return fmt.Errorf("cannot use OpenShiftSDN with OCP version %q > 4.10", version)
 	}
 
-	if networkType == hyperv1.OVNKubernetes && currentVersion == nil && versionMinorOnly.LTE(semver.MustParse("4.10.0")) {
+	if networkType == hyperv1.OVNKubernetes && currentVersion == nil && normalizedVersionMinorOnly.LTE(sdnMaxVersion) {
 		return fmt.Errorf("cannot use OVNKubernetes with OCP version %q < 4.11", version)
 	}
 
-	if (version.Major == maxSupportedVersion.Major && version.Minor > maxSupportedVersion.Minor) || version.Major > maxSupportedVersion.Major {
-		return fmt.Errorf("the latest version supported is: %q. Attempting to use: %q", maxSupportedVersion, version)
+	if normalizedVersion.Minor > normalizedMax.Minor {
+		return fmt.Errorf("the latest version supported is: %q. Attempting to use: %q", trimVersion(displayMax.String()), version)
 	}
 
-	if (version.Major == minSupportedVersion.Major && version.Minor < minSupportedVersion.Minor) || version.Major < minSupportedVersion.Major {
-		return fmt.Errorf("the minimum version supported for platform %s is: %q. Attempting to use: %q", string(platformType), minSupportedVersion, version)
+	if normalizedVersion.Minor < normalizedMin.Minor {
+		return fmt.Errorf("the minimum version supported for platform %s is: %q. Attempting to use: %q", string(platformType), trimVersion(minSupportedVersion.String()), version)
 	}
 
 	return nil
@@ -218,9 +252,16 @@ func getArchFromStream(releaseStream string) string {
 func LookupLatestSupportedRelease(ctx context.Context, hc *hyperv1.HostedCluster) (string, error) {
 	minSupportedVersion := GetMinSupportedVersion(hc)
 
+	// Normalize LatestSupportedVersion to 4.x so the filter range is correct
+	// even when LatestSupportedVersion is 5.x (e.g. 5.0 -> 4.23).
+	normalizedLatest, err := normalizeToV4(LatestSupportedVersion)
+	if err != nil {
+		return "", fmt.Errorf("failed to normalize latest supported version: %w", err)
+	}
+
 	prefix := "https://multi.ocp.releases.ci.openshift.org/api/v1/releasestream/4-stable-multi/latest"
 	filter := fmt.Sprintf("in=>4.%d.%d+<+4.%d.0-a",
-		minSupportedVersion.Minor, minSupportedVersion.Patch, LatestSupportedVersion.Minor+1)
+		minSupportedVersion.Minor, minSupportedVersion.Patch, normalizedLatest.Minor+1)
 
 	releaseURL := fmt.Sprintf("%s?%s", prefix, filter)
 
@@ -340,35 +381,87 @@ type ocpTags struct {
 	Tags []ocpVersion `json:"tags"`
 }
 
+// v5MinorOffset is the 4.x minor version that corresponds to 5.0.
+// OCP 5.0 is equivalent to OCP 4.23 (dual versioning), so 5.x maps to 4.(v5MinorOffset+x).
+const v5MinorOffset uint64 = 23
+
+// normalizeToV4 converts a version to the 4.x numbering scheme for comparison.
+// OCP 5.0 is equivalent to OCP 4.23, so 5.x maps to 4.(23+x).
+// Versions already in the 4.x series are returned unchanged.
+// NOTE: Only handles Major 4 and 5. If a future major version (e.g., 6.x) is
+// introduced, this function must be updated to include the new mapping.
+func normalizeToV4(v semver.Version) (semver.Version, error) {
+	switch v.Major {
+	case 4:
+		return v, nil
+	case 5:
+		return semver.Version{
+			Major: 4,
+			Minor: v.Minor + v5MinorOffset,
+			Patch: v.Patch,
+			Pre:   v.Pre,
+			Build: v.Build,
+		}, nil
+	default:
+		return semver.Version{}, fmt.Errorf("unsupported major version %d; only 4.x and 5.x are supported", v.Major)
+	}
+}
+
+// denormalizeFromV4 converts a normalized 4.x minor version back to the display version.
+// Minor versions >= v5MinorOffset are mapped to 5.x; lower values remain 4.x.
+func denormalizeFromV4(minor uint64) (major, displayMinor uint64) {
+	if minor >= v5MinorOffset {
+		return 5, minor - v5MinorOffset
+	}
+	return 4, minor
+}
+
+// PreviousMinorVersion returns the OpenShift version that is n minor releases
+// before v, correctly handling the 5.0 == 4.23 version bridge.
+// For example, PreviousMinorVersion(5.0.0, 2) returns (4, 21).
+func PreviousMinorVersion(v semver.Version, n uint64) (major, minor uint64, err error) {
+	normalized, err := normalizeToV4(v)
+	if err != nil {
+		return 0, 0, err
+	}
+	if normalized.Minor < n {
+		return 0, 0, fmt.Errorf("cannot go back %d minor versions from %s (normalized minor %d)", n, v, normalized.Minor)
+	}
+	major, minor = denormalizeFromV4(normalized.Minor - n)
+	return major, minor, nil
+}
+
 // ValidateVersionSkew validates the version skew between HostedCluster and NodePool versions.
 // Returns nil if the version skew is supported, otherwise returns a descriptive error.
 // All 4.y versions support n-3 version skew (e.g., 4.18 HostedCluster supports NodePools running 4.17, 4.16, and 4.15).
+// OCP 5.0 is equivalent to 4.23, so cross-major-version skew is handled via normalization.
 func ValidateVersionSkew(hostedClusterVersion, nodePoolVersion *semver.Version) error {
-	// Reject mismatched major versions
-	if nodePoolVersion.Major != hostedClusterVersion.Major {
-		return fmt.Errorf("NodePool major version %d must match HostedCluster major version %d",
-			nodePoolVersion.Major, hostedClusterVersion.Major)
+	// Normalize versions to 4.x equivalents for comparison.
+	// OCP 5.0 == 4.23 (dual versioning), so cross-major-version skew
+	// (e.g., HC=5.0, NP=4.22) is valid within the n-3 skew policy.
+	normalizedHC, err := normalizeToV4(*hostedClusterVersion)
+	if err != nil {
+		return err
+	}
+	normalizedNP, err := normalizeToV4(*nodePoolVersion)
+	if err != nil {
+		return err
 	}
 
-	if nodePoolVersion.GT(*hostedClusterVersion) {
+	if normalizedNP.GT(normalizedHC) {
 		return fmt.Errorf("NodePool version %s cannot be higher than the HostedCluster version %s",
 			nodePoolVersion, hostedClusterVersion)
 	}
 
-	versionDiff := int(hostedClusterVersion.Minor) - int(nodePoolVersion.Minor)
+	versionDiff := int(normalizedHC.Minor) - int(normalizedNP.Minor)
 	maxAllowedDiff := 3
 
 	if versionDiff > maxAllowedDiff {
-		// Compute minSupportedMinor with explicit conditional
-		var minSupportedMinor int
-		if int(hostedClusterVersion.Minor)-maxAllowedDiff < 0 {
-			minSupportedMinor = 0
-		} else {
-			minSupportedMinor = int(hostedClusterVersion.Minor) - maxAllowedDiff
-		}
+		minSupportedMinor := max(int(normalizedHC.Minor)-maxAllowedDiff, 0)
+		minMajor, minMinor := denormalizeFromV4(uint64(minSupportedMinor))
 		return fmt.Errorf("NodePool minor version %d.%d is less than %d.%d, which is the minimum NodePool version compatible with the %d.%d HostedCluster",
 			nodePoolVersion.Major, nodePoolVersion.Minor,
-			hostedClusterVersion.Major, minSupportedMinor,
+			minMajor, minMinor,
 			hostedClusterVersion.Major, hostedClusterVersion.Minor)
 	}
 

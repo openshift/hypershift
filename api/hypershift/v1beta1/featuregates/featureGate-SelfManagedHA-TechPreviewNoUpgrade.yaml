@@ -17,9 +17,6 @@
                 "disabled": [],
                 "enabled": [
                     {
-                        "name": "AutoNodeKarpenter",
-                    },
-                    {
                         "name": "ExternalOIDC"
                     },
                     {

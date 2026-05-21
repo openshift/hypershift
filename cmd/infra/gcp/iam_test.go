@@ -1,10 +1,16 @@
 package gcp
 
 import (
+	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
+
+	. "github.com/onsi/gomega"
 
 	"github.com/go-logr/logr"
 	"google.golang.org/api/cloudresourcemanager/v1"
+	"google.golang.org/api/googleapi"
 	"google.golang.org/api/iam/v1"
 )
 
@@ -49,10 +55,8 @@ func TestIAMManagerFormatServiceAccountMethods(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := tt.method(tt.arg)
-			if got != tt.expected {
-				t.Errorf("got %q, want %q", got, tt.expected)
-			}
+			g := NewWithT(t)
+			g.Expect(tt.method(tt.arg)).To(Equal(tt.expected))
 		})
 	}
 }
@@ -86,10 +90,8 @@ func TestIAMManagerFormatWIFPrincipal(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := manager.formatWIFPrincipal(tt.namespace, tt.saName)
-			if got != tt.expected {
-				t.Errorf("got %q, want %q", got, tt.expected)
-			}
+			g := NewWithT(t)
+			g.Expect(manager.formatWIFPrincipal(tt.namespace, tt.saName)).To(Equal(tt.expected))
 		})
 	}
 }
@@ -117,16 +119,13 @@ func TestIAMManagerFormatIssuerUri(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
 			manager := &IAMManager{
 				oidcIssuerURL: tt.oidcIssuerURL,
 				infraID:       tt.infraID,
 				logger:        logr.Discard(),
 			}
-
-			got := manager.formatIssuerUri()
-			if got != tt.expected {
-				t.Errorf("got %q, want %q", got, tt.expected)
-			}
+			g.Expect(manager.formatIssuerUri()).To(Equal(tt.expected))
 		})
 	}
 }
@@ -188,17 +187,11 @@ func TestAddMemberToRoleBinding(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := manager.addMemberToRoleBinding(tt.policy, tt.role, tt.member)
-			if got != tt.expectedResult {
-				t.Errorf("expected result %v, got %v", tt.expectedResult, got)
-			}
-
-			// Verify member count in the role binding
+			g := NewWithT(t)
+			g.Expect(manager.addMemberToRoleBinding(tt.policy, tt.role, tt.member)).To(Equal(tt.expectedResult))
 			for _, binding := range tt.policy.Bindings {
 				if binding.Role == tt.role {
-					if len(binding.Members) != tt.expectedCount {
-						t.Errorf("expected %d members, got %d", tt.expectedCount, len(binding.Members))
-					}
+					g.Expect(binding.Members).To(HaveLen(tt.expectedCount))
 					break
 				}
 			}
@@ -266,17 +259,11 @@ func TestRemoveMemberFromRoleBinding(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := manager.removeMemberFromRoleBinding(tt.policy, tt.role, tt.member)
-			if got != tt.expectedResult {
-				t.Errorf("expected result %v, got %v", tt.expectedResult, got)
-			}
-
-			// Verify member count in the role binding
+			g := NewWithT(t)
+			g.Expect(manager.removeMemberFromRoleBinding(tt.policy, tt.role, tt.member)).To(Equal(tt.expectedResult))
 			for _, binding := range tt.policy.Bindings {
 				if binding.Role == tt.role {
-					if len(binding.Members) != tt.expectedCount {
-						t.Errorf("expected %d members, got %d", tt.expectedCount, len(binding.Members))
-					}
+					g.Expect(binding.Members).To(HaveLen(tt.expectedCount))
 					break
 				}
 			}
@@ -341,17 +328,11 @@ func TestAddMemberToServiceAccountRoleBinding(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := manager.addMemberToServiceAccountRoleBinding(tt.policy, tt.role, tt.member)
-			if got != tt.expectedResult {
-				t.Errorf("expected result %v, got %v", tt.expectedResult, got)
-			}
-
-			// Verify member count in the role binding
+			g := NewWithT(t)
+			g.Expect(manager.addMemberToServiceAccountRoleBinding(tt.policy, tt.role, tt.member)).To(Equal(tt.expectedResult))
 			for _, binding := range tt.policy.Bindings {
 				if binding.Role == tt.role {
-					if len(binding.Members) != tt.expectedCount {
-						t.Errorf("expected %d members, got %d", tt.expectedCount, len(binding.Members))
-					}
+					g.Expect(binding.Members).To(HaveLen(tt.expectedCount))
 					break
 				}
 			}
@@ -360,27 +341,104 @@ func TestAddMemberToServiceAccountRoleBinding(t *testing.T) {
 }
 
 func TestLoadServiceAccountDefinitions(t *testing.T) {
-	// Test loading the embedded default configuration
 	t.Run("When loading embedded default configuration it should return valid definitions", func(t *testing.T) {
-		definitions, err := loadServiceAccountDefinitions("")
-		if err != nil {
-			t.Fatalf("expected no error, got %v", err)
-		}
+		g := NewWithT(t)
+		definitions, err := loadServiceAccountDefinitions()
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(definitions).NotTo(BeEmpty())
 
-		if len(definitions) == 0 {
-			t.Error("expected at least one service account definition")
-		}
-
-		// Verify each definition has required fields
 		for _, def := range definitions {
-			if def.Name == "" {
-				t.Error("expected Name to be non-empty")
-			}
-			if def.DisplayName == "" {
-				t.Errorf("expected DisplayName to be non-empty for %s", def.Name)
-			}
+			g.Expect(def.Name).NotTo(BeEmpty())
+			g.Expect(def.DisplayName).NotTo(BeEmpty(), "DisplayName should be non-empty for %s", def.Name)
 		}
 	})
+
+	t.Run("When loading cloud-network definition it should have roles populated", func(t *testing.T) {
+		g := NewWithT(t)
+		definitions, err := loadServiceAccountDefinitions()
+		g.Expect(err).NotTo(HaveOccurred())
+
+		var cloudNetworkDef *ServiceAccountDefinition
+		for i := range definitions {
+			if definitions[i].Name == "cloud-network" {
+				cloudNetworkDef = &definitions[i]
+				break
+			}
+		}
+		g.Expect(cloudNetworkDef).NotTo(BeNil(), "expected to find cloud-network service account definition")
+		g.Expect(cloudNetworkDef.Roles).NotTo(BeEmpty())
+	})
+
+	t.Run("When loading image-registry definition it should have both operator and server K8s SAs", func(t *testing.T) {
+		g := NewWithT(t)
+		definitions, err := loadServiceAccountDefinitions()
+		g.Expect(err).NotTo(HaveOccurred())
+
+		var imageRegistryDef *ServiceAccountDefinition
+		for i := range definitions {
+			if definitions[i].Name == "image-registry" {
+				imageRegistryDef = &definitions[i]
+				break
+			}
+		}
+		g.Expect(imageRegistryDef).NotTo(BeNil(), "expected to find image-registry service account definition")
+		g.Expect(imageRegistryDef.K8sServiceAccounts).To(HaveLen(2), "image-registry should have 2 K8s SA bindings")
+		g.Expect(imageRegistryDef.K8sServiceAccounts).To(ContainElements(
+			K8sServiceAccountRef{Namespace: "openshift-image-registry", Name: "cluster-image-registry-operator"},
+			K8sServiceAccountRef{Namespace: "openshift-image-registry", Name: "registry"},
+		))
+	})
+}
+
+func TestIsTransientIAMError(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		expected bool
+	}{
+		{
+			name:     "When error is nil it should return false",
+			err:      nil,
+			expected: false,
+		},
+		{
+			name:     "When error is a 429 rate limit error it should return true",
+			err:      &googleapi.Error{Code: 429, Message: "A quota has been reached"},
+			expected: true,
+		},
+		{
+			name:     "When error is a 404 not found error it should return true",
+			err:      &googleapi.Error{Code: 404, Message: "Not found"},
+			expected: true,
+		},
+		{
+			name:     "When error is a 403 permission error it should return true",
+			err:      &googleapi.Error{Code: 403, Message: "Permission denied"},
+			expected: true,
+		},
+		{
+			name:     "When error is a 403 non-permission error it should return false",
+			err:      &googleapi.Error{Code: 403, Message: "Forbidden"},
+			expected: false,
+		},
+		{
+			name:     "When error is a 500 server error it should return false",
+			err:      &googleapi.Error{Code: 500, Message: "Internal server error"},
+			expected: false,
+		},
+		{
+			name:     "When error is a non-googleapi error it should return false",
+			err:      fmt.Errorf("some other error"),
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			g.Expect(isTransientIAMError(tt.err)).To(Equal(tt.expected))
+		})
+	}
 }
 
 func TestIsAlreadyExistsError(t *testing.T) {
@@ -398,10 +456,146 @@ func TestIsAlreadyExistsError(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := isAlreadyExistsError(tt.err)
-			if got != tt.expected {
-				t.Errorf("expected %v, got %v", tt.expected, got)
+			g := NewWithT(t)
+			g.Expect(isAlreadyExistsError(tt.err)).To(Equal(tt.expected))
+		})
+	}
+}
+
+func TestLoadAndValidateJWKS(t *testing.T) {
+	tests := []struct {
+		name          string
+		fileContent   string
+		setupFile     bool
+		expectedError string
+		expectedJSON  bool
+	}{
+		{
+			name:         "When valid JWKS file is provided it should return the content",
+			fileContent:  `{"keys": [{"kty": "RSA", "use": "sig", "kid": "test-key"}]}`,
+			setupFile:    true,
+			expectedJSON: true,
+		},
+		{
+			name:          "When file does not exist it should return error",
+			setupFile:     false,
+			expectedError: "failed to read JWKS file",
+		},
+		{
+			name:          "When file contains invalid JSON it should return error",
+			fileContent:   `{not valid json}`,
+			setupFile:     true,
+			expectedError: "JWKS file contains invalid JSON",
+		},
+		{
+			name:         "When file contains empty JSON object it should return it",
+			fileContent:  `{}`,
+			setupFile:    true,
+			expectedJSON: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			var filePath string
+			if tt.setupFile {
+				tmpDir := t.TempDir()
+				filePath = filepath.Join(tmpDir, "jwks.json")
+				err := os.WriteFile(filePath, []byte(tt.fileContent), 0644)
+				g.Expect(err).NotTo(HaveOccurred())
+			} else {
+				filePath = filepath.Join(t.TempDir(), "non-existent.json")
 			}
+
+			result, err := loadAndValidateJWKS(filePath)
+
+			if tt.expectedError != "" {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring(tt.expectedError))
+			} else {
+				g.Expect(err).NotTo(HaveOccurred())
+				if tt.expectedJSON {
+					g.Expect(result).To(Equal(tt.fileContent))
+				}
+			}
+		})
+	}
+}
+
+func TestCompareJWKS(t *testing.T) {
+	manager := &IAMManager{
+		logger: logr.Discard(),
+	}
+
+	tests := []struct {
+		name     string
+		jwks1    string
+		jwks2    string
+		expected bool
+	}{
+		{
+			name:     "When both are empty it should return true",
+			jwks1:    "",
+			jwks2:    "",
+			expected: true,
+		},
+		{
+			name:     "When both are whitespace-only it should return true",
+			jwks1:    "  ",
+			jwks2:    "  \t ",
+			expected: true,
+		},
+		{
+			name:     "When first is empty and second is not it should return false",
+			jwks1:    "",
+			jwks2:    `{"keys": []}`,
+			expected: false,
+		},
+		{
+			name:     "When first is non-empty and second is empty it should return false",
+			jwks1:    `{"keys": []}`,
+			jwks2:    "",
+			expected: false,
+		},
+		{
+			name:     "When both contain identical JSON it should return true",
+			jwks1:    `{"keys": [{"kty": "RSA"}]}`,
+			jwks2:    `{"keys": [{"kty": "RSA"}]}`,
+			expected: true,
+		},
+		{
+			name:     "When both contain semantically equal JSON with different formatting it should return true",
+			jwks1:    `{"keys":[{"kty":"RSA"}]}`,
+			jwks2:    `{ "keys" : [ { "kty" : "RSA" } ] }`,
+			expected: true,
+		},
+		{
+			name:     "When JSON content differs it should return false",
+			jwks1:    `{"keys": [{"kty": "RSA"}]}`,
+			jwks2:    `{"keys": [{"kty": "EC"}]}`,
+			expected: false,
+		},
+		{
+			name:     "When first contains invalid JSON it should return false",
+			jwks1:    `{not json}`,
+			jwks2:    `{"keys": []}`,
+			expected: false,
+		},
+		{
+			name:     "When second contains invalid JSON it should return false",
+			jwks1:    `{"keys": []}`,
+			jwks2:    `{not json}`,
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			got := manager.compareJWKS(tt.jwks1, tt.jwks2)
+			g.Expect(got).To(Equal(tt.expected))
 		})
 	}
 }

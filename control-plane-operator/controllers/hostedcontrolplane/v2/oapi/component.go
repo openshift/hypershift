@@ -3,7 +3,7 @@ package oapi
 import (
 	kasv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kas"
 	component "github.com/openshift/hypershift/support/controlplane-component"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/podspec"
 )
 
 const (
@@ -52,6 +52,6 @@ func NewComponent() component.ControlPlaneComponent {
 		InjectKonnectivityContainer(component.KonnectivityContainerOptions{
 			Mode: component.HTTPS,
 		}).
-		InjectAvailabilityProberContainer(util.AvailabilityProberOpts{}).
+		InjectAvailabilityProberContainer(podspec.AvailabilityProberOpts{}).
 		Build()
 }

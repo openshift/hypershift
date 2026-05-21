@@ -2,7 +2,7 @@ package capiprovider
 
 import (
 	component "github.com/openshift/hypershift/support/controlplane-component"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/k8sutil"
 
 	rbacv1 "k8s.io/api/rbac/v1"
 )
@@ -15,6 +15,6 @@ func (capi *CAPIProviderOptions) adaptRole(cpContext component.WorkloadContext, 
 	if role.Annotations == nil {
 		role.Annotations = make(map[string]string)
 	}
-	role.Annotations[util.HostedClusterAnnotation] = cpContext.HCP.Annotations[util.HostedClusterAnnotation]
+	role.Annotations[k8sutil.HostedClusterAnnotation] = cpContext.HCP.Annotations[k8sutil.HostedClusterAnnotation]
 	return nil
 }

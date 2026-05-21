@@ -6,8 +6,8 @@ import (
 
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
+	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/testutil"
-	"github.com/openshift/hypershift/support/util"
 
 	routev1 "github.com/openshift/api/route/v1"
 
@@ -19,7 +19,7 @@ func TestGenerateRouterConfig(t *testing.T) {
 
 	namedRoute := func(r *routev1.Route, mods ...func(*routev1.Route)) *routev1.Route {
 		r.Labels = map[string]string{
-			util.HCPRouteLabel: "test-ns-clustername",
+			netutil.HCPRouteLabel: "test-ns-clustername",
 		}
 		for _, m := range mods {
 			m(r)

@@ -94,6 +94,7 @@ func TestMain(m *testing.M) {
 	flag.StringVar(&globalOpts.HOInstallationOptions.PlatformMonitoring, "e2e.platform-monitoring", "All", "The option for enabling platform cluster monitoring when installing the HyperShift Operator. Valid values are: None, OperatorOnly, All. This is a HyperShift Operator installation option")
 	flag.BoolVar(&globalOpts.RunUpgradeTest, "upgrade.run-tests", false, "Run HyperShift Operator upgrade test")
 	flag.StringVar(&globalOpts.ExternalCNIProvider, "e2e.external-cni-provider", "", fmt.Sprintf("The option supports the following CNI providers: %s", e2eutil.CiliumCNIProvider))
+	flag.StringVar(&globalOpts.AdditionalPullSecretFile, "e2e.additional-pull-secret-file", "", "path to a pull secret file for the EnsureGlobalPullSecret test")
 
 	// external OIDC configuration
 	flag.StringVar(&globalOpts.ExternalOIDCProvider, "e2e.external-oidc-provider", "", "if not null, enable external OIDC config with provider. supported value: keycloak, azure")
@@ -177,6 +178,7 @@ func TestMain(m *testing.M) {
 	flag.StringVar(&globalOpts.ConfigurableClusterOptions.GCPCloudControllerServiceAccount, "e2e.gcp-cloudcontroller-sa", "", "Service Account for Cloud Controller Manager")
 	flag.StringVar(&globalOpts.ConfigurableClusterOptions.GCPStorageServiceAccount, "e2e.gcp-storage-sa", "", "Service Account for GCP PD CSI Driver")
 	flag.StringVar(&globalOpts.ConfigurableClusterOptions.GCPImageRegistryServiceAccount, "e2e.gcp-imageregistry-sa", "", "Service Account for Image Registry Operator")
+	flag.StringVar(&globalOpts.ConfigurableClusterOptions.GCPNetworkServiceAccount, "e2e.gcp-network-sa", "", "Service Account for Cloud Network Config Controller")
 	flag.StringVar(&globalOpts.ConfigurableClusterOptions.GCPServiceAccountSigningKeyPath, "e2e.gcp-sa-signing-key-path", "", "Path to the private key file for the GCP service account token issuer")
 	flag.StringVar(&globalOpts.ConfigurableClusterOptions.GCPEndpointAccess, "e2e.gcp-endpoint-access", string(hyperv1.GCPEndpointAccessPrivate), "GCP endpoint access type: Private or PublicAndPrivate")
 	flag.StringVar(&globalOpts.ConfigurableClusterOptions.GCPIssuerURL, "e2e.gcp-oidc-issuer-url", "", "The OIDC provider issuer URL for GCP")

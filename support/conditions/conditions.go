@@ -2,7 +2,7 @@ package conditions
 
 import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	support "github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/netutil"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -88,13 +88,16 @@ func ExpectedHCConditions(hostedCluster *hyperv1.HostedCluster) map[hyperv1.Cond
 			// thus the PVC is RWO and VMs are expected to be non-live-migratable
 			conditions[hyperv1.KubeVirtNodesLiveMigratable] = metav1.ConditionFalse
 		}
+		if hostedCluster.Spec.Platform.Kubevirt != nil && hostedCluster.Spec.Platform.Kubevirt.Credentials != nil {
+			conditions[hyperv1.ValidKubeVirtInfraNetworkPolicyRBAC] = metav1.ConditionTrue
+		}
 	}
 
 	if hostedCluster.Spec.Etcd.ManagementType == hyperv1.Unmanaged {
 		conditions[hyperv1.UnmanagedEtcdAvailable] = metav1.ConditionTrue
 	}
 
-	kasExternalHostname := support.ServiceExternalDNSHostnameByHC(hostedCluster, hyperv1.APIServer)
+	kasExternalHostname := netutil.ServiceExternalDNSHostnameByHC(hostedCluster, hyperv1.APIServer)
 	if kasExternalHostname == "" {
 		// ExternalDNS is not configured
 		conditions[hyperv1.ExternalDNSReachable] = metav1.ConditionUnknown

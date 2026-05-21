@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/openshift/hypershift/support/api"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/netutil"
 
 	routev1 "github.com/openshift/api/route/v1"
 
@@ -106,8 +106,8 @@ func TestApplyManifestLabelRemoval(t *testing.T) {
 			Name:      routeName,
 			Namespace: namespace,
 			Labels: map[string]string{
-				util.HCPRouteLabel: namespace,
-				"other-label":      "keep-me",
+				netutil.HCPRouteLabel: namespace,
+				"other-label":         "keep-me",
 			},
 		},
 		Spec: routev1.RouteSpec{
@@ -126,8 +126,8 @@ func TestApplyManifestLabelRemoval(t *testing.T) {
 			Name:      routeName,
 			Namespace: namespace,
 			Labels: map[string]string{
-				util.HCPRouteLabel: util.RemoveLabelMarker, // Mark for removal
-				"other-label":      "keep-me",              // Keep this label
+				netutil.HCPRouteLabel: netutil.RemoveLabelMarker, // Mark for removal
+				"other-label":         "keep-me",                 // Keep this label
 			},
 		},
 		Spec: routev1.RouteSpec{
@@ -162,7 +162,7 @@ func TestApplyManifestLabelRemoval(t *testing.T) {
 	}
 
 	// HCPRouteLabel should be removed
-	if _, exists := updatedRoute.Labels[util.HCPRouteLabel]; exists {
+	if _, exists := updatedRoute.Labels[netutil.HCPRouteLabel]; exists {
 		t.Errorf("expected HCPRouteLabel to be removed, but it still exists")
 	}
 
@@ -191,7 +191,7 @@ func TestApplyManifestLabelRemovalWithEmptyLabels(t *testing.T) {
 			Name:      routeName,
 			Namespace: namespace,
 			Labels: map[string]string{
-				util.HCPRouteLabel: namespace,
+				netutil.HCPRouteLabel: namespace,
 			},
 		},
 		Spec: routev1.RouteSpec{
@@ -208,7 +208,7 @@ func TestApplyManifestLabelRemovalWithEmptyLabels(t *testing.T) {
 			Name:      routeName,
 			Namespace: namespace,
 			Labels: map[string]string{
-				util.HCPRouteLabel: util.RemoveLabelMarker,
+				netutil.HCPRouteLabel: netutil.RemoveLabelMarker,
 			},
 		},
 		Spec: routev1.RouteSpec{
@@ -244,7 +244,7 @@ func TestApplyManifestLabelRemovalWithEmptyLabels(t *testing.T) {
 	}
 
 	// HCPRouteLabel should be removed
-	if _, exists := updatedRoute.Labels[util.HCPRouteLabel]; exists {
+	if _, exists := updatedRoute.Labels[netutil.HCPRouteLabel]; exists {
 		t.Errorf("expected HCPRouteLabel to be removed, but it still exists")
 	}
 
@@ -270,8 +270,8 @@ func TestApplyManifestLabelRemovalOnCreate(t *testing.T) {
 			Name:      routeName,
 			Namespace: namespace,
 			Labels: map[string]string{
-				util.HCPRouteLabel: util.RemoveLabelMarker, // Mark for removal
-				"other-label":      "keep-me",              // Keep this label
+				netutil.HCPRouteLabel: netutil.RemoveLabelMarker, // Mark for removal
+				"other-label":         "keep-me",                 // Keep this label
 			},
 		},
 		Spec: routev1.RouteSpec{
@@ -306,7 +306,7 @@ func TestApplyManifestLabelRemovalOnCreate(t *testing.T) {
 	}
 
 	// HCPRouteLabel should not exist (removal marker was cleaned up before creation)
-	if _, exists := createdRoute.Labels[util.HCPRouteLabel]; exists {
+	if _, exists := createdRoute.Labels[netutil.HCPRouteLabel]; exists {
 		t.Errorf("expected HCPRouteLabel to be removed before creation, but it still exists")
 	}
 

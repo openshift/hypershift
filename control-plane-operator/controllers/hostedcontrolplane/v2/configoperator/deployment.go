@@ -7,6 +7,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	component "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/util"
 
@@ -34,7 +35,7 @@ func (h *hcco) adaptDeployment(cpContext component.WorkloadContext, deployment *
 	hcp := cpContext.HCP
 	openShiftVersion := cpContext.ReleaseImageProvider.Version()
 
-	util.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
+	podspec.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
 		c.Command = append(c.Command,
 			"--platform-type", string(hcp.Spec.Platform.Type),
 			fmt.Sprintf("--enable-ci-debug-output=%t", cpContext.EnableCIDebugOutput),
@@ -91,19 +92,19 @@ func (h *hcco) adaptDeployment(cpContext component.WorkloadContext, deployment *
 		}
 	})
 
-	util.UpdateVolume(kubeconfigVolumeName, deployment.Spec.Template.Spec.Volumes, func(v *corev1.Volume) {
+	podspec.UpdateVolume(kubeconfigVolumeName, deployment.Spec.Template.Spec.Volumes, func(v *corev1.Volume) {
 		v.VolumeSource.Secret.SecretName = manifests.HCCOKubeconfigSecret("").Name
 	})
-	util.UpdateVolume(rootCAVolumeName, deployment.Spec.Template.Spec.Volumes, func(v *corev1.Volume) {
+	podspec.UpdateVolume(rootCAVolumeName, deployment.Spec.Template.Spec.Volumes, func(v *corev1.Volume) {
 		v.VolumeSource.ConfigMap.Name = manifests.RootCAConfigMap("").Name
 	})
-	util.UpdateVolume(clusterSignerCAVolumeName, deployment.Spec.Template.Spec.Volumes, func(v *corev1.Volume) {
+	podspec.UpdateVolume(clusterSignerCAVolumeName, deployment.Spec.Template.Spec.Volumes, func(v *corev1.Volume) {
 		v.VolumeSource.ConfigMap.Name = manifests.KubeletClientCABundle("").Name
 	})
 
 	if isExternalInfraKubevirt(hcp) {
 		// injects the kubevirt credentials secret volume, volume mount path, and appends cli arg.
-		util.DeploymentAddKubevirtInfraCredentials(deployment)
+		podspec.DeploymentAddKubevirtInfraCredentials(deployment)
 	}
 
 	return nil

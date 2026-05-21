@@ -58,6 +58,7 @@ The `hypershift create iam gcp` command creates WIF resources in the hosted clus
   - `cloud-controller` — Cloud Controller Manager (load balancer admin, security admin, compute viewer)
   - `storage` — GCP PD CSI Driver (storage admin, instance admin)
   - `image-registry` — Image Registry Operator (storage admin)
+  - `cloud-network` — Cloud Network Config Controller (instance admin, network user)
 
 ```bash
 hypershift create iam gcp \
@@ -108,7 +109,8 @@ The command outputs JSON with the WIF configuration:
     "nodepool-mgmt": "my-cluster-nodepool-mgmt@my-hc-project.iam.gserviceaccount.com",
     "cloud-controller": "my-cluster-cloud-controller@my-hc-project.iam.gserviceaccount.com",
     "gcp-pd-csi": "my-cluster-gcp-pd-csi@my-hc-project.iam.gserviceaccount.com",
-    "image-registry": "my-cluster-image-registry@my-hc-project.iam.gserviceaccount.com"
+    "image-registry": "my-cluster-image-registry@my-hc-project.iam.gserviceaccount.com",
+    "cloud-network": "my-cluster-cloud-network@my-hc-project.iam.gserviceaccount.com"
   }
 }
 ```

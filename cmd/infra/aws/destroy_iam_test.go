@@ -393,10 +393,11 @@ func TestDestroyOIDCResources(t *testing.T) {
 	const totalRoleChecks = 10
 
 	tests := []struct {
-		name          string
-		setupMock     func(*awsapi.MockIAMAPI)
-		expectError   bool
-		errorContains string
+		name             string
+		setupMock        func(*awsapi.MockIAMAPI)
+		expectError      bool
+		errorContains    string
+		errorContainsAll []string
 	}{
 		{
 			name: "When OIDC provider matches infraID and shared role exists it should delete the provider and return early",
@@ -466,7 +467,7 @@ func TestDestroyOIDCResources(t *testing.T) {
 			errorContains: "api error",
 		},
 		{
-			name: "When DeleteOpenIDConnectProvider fails with a non-NSE error it should return the error",
+			name: "When DeleteOpenIDConnectProvider fails with a non-NSE error it should still attempt role cleanup and return the error",
 			setupMock: func(m *awsapi.MockIAMAPI) {
 				gomock.InOrder(
 					m.EXPECT().ListOpenIDConnectProviders(gomock.Any(), gomock.Any(), gomock.Any()).
@@ -477,10 +478,61 @@ func TestDestroyOIDCResources(t *testing.T) {
 						}, nil),
 					m.EXPECT().DeleteOpenIDConnectProvider(gomock.Any(), gomock.Any(), gomock.Any()).
 						Return(nil, errors.New("permission denied")),
+					// continues to role cleanup; shared-role + 9 component roles all not found
+					m.EXPECT().GetRole(gomock.Any(), gomock.Any(), gomock.Any()).
+						Return(nil, noSuchEntity()).Times(totalRoleChecks),
 				)
 			},
 			expectError:   true,
 			errorContains: "permission denied",
+		},
+		{
+			name: "When shared-role fails it should still attempt all component role deletions and aggregate errors",
+			setupMock: func(m *awsapi.MockIAMAPI) {
+				sharedRoleName := testInfraID + "-shared-role"
+				ingressRoleName := testInfraID + "-openshift-ingress"
+				gomock.InOrder(
+					m.EXPECT().ListOpenIDConnectProviders(gomock.Any(), gomock.Any(), gomock.Any()).
+						Return(&iam.ListOpenIDConnectProvidersOutput{}, nil),
+					// shared-role GetRole fails
+					m.EXPECT().GetRole(gomock.Any(), &iam.GetRoleInput{RoleName: aws.String(sharedRoleName)}, gomock.Any()).
+						Return(nil, errors.New("shared-role api error")),
+					// continues to component roles; openshift-ingress also fails
+					m.EXPECT().GetRole(gomock.Any(), &iam.GetRoleInput{RoleName: aws.String(ingressRoleName)}, gomock.Any()).
+						Return(nil, errors.New("ingress api error")),
+					// remaining 8 component roles not found
+					m.EXPECT().GetRole(gomock.Any(), gomock.Any(), gomock.Any()).
+						Return(nil, noSuchEntity()).Times(8),
+				)
+			},
+			expectError:      true,
+			errorContainsAll: []string{"shared-role api error", "ingress api error"},
+		},
+		{
+			name: "When multiple component role deletions fail it should aggregate all errors",
+			setupMock: func(m *awsapi.MockIAMAPI) {
+				sharedRoleName := testInfraID + "-shared-role"
+				ingressRoleName := testInfraID + "-openshift-ingress"
+				registryRoleName := testInfraID + "-openshift-image-registry"
+				gomock.InOrder(
+					m.EXPECT().ListOpenIDConnectProviders(gomock.Any(), gomock.Any(), gomock.Any()).
+						Return(&iam.ListOpenIDConnectProvidersOutput{}, nil),
+					// shared-role not found
+					m.EXPECT().GetRole(gomock.Any(), &iam.GetRoleInput{RoleName: aws.String(sharedRoleName)}, gomock.Any()).
+						Return(nil, noSuchEntity()),
+					// openshift-ingress fails
+					m.EXPECT().GetRole(gomock.Any(), &iam.GetRoleInput{RoleName: aws.String(ingressRoleName)}, gomock.Any()).
+						Return(nil, errors.New("ingress api error")),
+					// openshift-image-registry fails
+					m.EXPECT().GetRole(gomock.Any(), &iam.GetRoleInput{RoleName: aws.String(registryRoleName)}, gomock.Any()).
+						Return(nil, errors.New("registry api error")),
+					// remaining 7 component roles not found
+					m.EXPECT().GetRole(gomock.Any(), gomock.Any(), gomock.Any()).
+						Return(nil, noSuchEntity()).Times(7),
+				)
+			},
+			expectError:      true,
+			errorContainsAll: []string{"ingress api error", "registry api error"},
 		},
 	}
 
@@ -498,6 +550,9 @@ func TestDestroyOIDCResources(t *testing.T) {
 				g.Expect(err).To(HaveOccurred())
 				if tt.errorContains != "" {
 					g.Expect(err.Error()).To(ContainSubstring(tt.errorContains))
+				}
+				for _, substr := range tt.errorContainsAll {
+					g.Expect(err.Error()).To(ContainSubstring(substr))
 				}
 			} else {
 				g.Expect(err).NotTo(HaveOccurred())
@@ -519,6 +574,7 @@ func TestDestroySharedVPCRoles(t *testing.T) {
 		setupVPCOwnerMock     func(*awsapi.MockIAMAPI)
 		expectError           bool
 		errorContains         string
+		errorContainsAll      []string
 	}{
 		{
 			name:                  "When PrivateZonesInClusterAccount is false ingress role should use vpcOwnerClient",
@@ -546,12 +602,14 @@ func TestDestroySharedVPCRoles(t *testing.T) {
 			},
 		},
 		{
-			name:                  "When destroying the ingress role fails it should return the error",
+			name:                  "When destroying the ingress role fails it should still attempt control-plane role and return the error",
 			privateZonesInCluster: false,
 			setupIAMMock:          func(_ *awsapi.MockIAMAPI) {},
 			setupVPCOwnerMock: func(m *awsapi.MockIAMAPI) {
 				m.EXPECT().GetRole(gomock.Any(), &iam.GetRoleInput{RoleName: aws.String(ingressRoleName)}, gomock.Any()).
 					Return(nil, errors.New("api error"))
+				m.EXPECT().GetRole(gomock.Any(), &iam.GetRoleInput{RoleName: aws.String(cpRoleName)}, gomock.Any()).
+					Return(nil, noSuchEntity())
 			},
 			expectError:   true,
 			errorContains: "cannot check for existing role",
@@ -570,6 +628,19 @@ func TestDestroySharedVPCRoles(t *testing.T) {
 			},
 			expectError:   true,
 			errorContains: "cannot check for existing role",
+		},
+		{
+			name:                  "When both ingress and control-plane role deletions fail it should aggregate all errors",
+			privateZonesInCluster: false,
+			setupIAMMock:          func(_ *awsapi.MockIAMAPI) {},
+			setupVPCOwnerMock: func(m *awsapi.MockIAMAPI) {
+				m.EXPECT().GetRole(gomock.Any(), &iam.GetRoleInput{RoleName: aws.String(ingressRoleName)}, gomock.Any()).
+					Return(nil, errors.New("ingress api error"))
+				m.EXPECT().GetRole(gomock.Any(), &iam.GetRoleInput{RoleName: aws.String(cpRoleName)}, gomock.Any()).
+					Return(nil, errors.New("cp api error"))
+			},
+			expectError:      true,
+			errorContainsAll: []string{"ingress api error", "cp api error"},
 		},
 	}
 
@@ -593,6 +664,9 @@ func TestDestroySharedVPCRoles(t *testing.T) {
 				g.Expect(err).To(HaveOccurred())
 				if tt.errorContains != "" {
 					g.Expect(err.Error()).To(ContainSubstring(tt.errorContains))
+				}
+				for _, substr := range tt.errorContainsAll {
+					g.Expect(err.Error()).To(ContainSubstring(substr))
 				}
 			} else {
 				g.Expect(err).NotTo(HaveOccurred())

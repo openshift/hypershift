@@ -8,7 +8,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	supportutil "github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/k8sutil"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -56,6 +56,7 @@ func TestControllerName(t *testing.T) {
 }
 
 func TestReconcile(t *testing.T) {
+	t.Parallel()
 	const (
 		testNamespace     = "clusters-test-hcp"
 		testServiceName   = "private-router"
@@ -78,7 +79,7 @@ func TestReconcile(t *testing.T) {
 				Namespace: testNamespace,
 				UID:       testHCPUID,
 				Annotations: map[string]string{
-					supportutil.HostedClusterAnnotation: "clusters/test-cluster",
+					k8sutil.HostedClusterAnnotation: "clusters/test-cluster",
 				},
 			},
 			Spec: hyperv1.HostedControlPlaneSpec{
@@ -205,6 +206,32 @@ func TestReconcile(t *testing.T) {
 			expectPLSCreated: false,
 		},
 		{
+			name:        "When HCP has nil Azure platform it should return an error",
+			serviceName: testServiceName,
+			requestName: testServiceName,
+			service:     defaultService(),
+			hcp: func() *hyperv1.HostedControlPlane {
+				hcp := defaultHCP()
+				hcp.Spec.Platform.Azure = nil
+				return hcp
+			}(),
+			expectError:      true,
+			expectPLSCreated: false,
+		},
+		{
+			name:        "When HCP has empty private connectivity type it should return an error",
+			serviceName: testServiceName,
+			requestName: testServiceName,
+			service:     defaultService(),
+			hcp: func() *hyperv1.HostedControlPlane {
+				hcp := defaultHCP()
+				hcp.Spec.Platform.Azure.Private.Type = ""
+				return hcp
+			}(),
+			expectError:      true,
+			expectPLSCreated: false,
+		},
+		{
 			name:        "When CR already exists, it should update loadBalancerIP",
 			serviceName: testServiceName,
 			requestName: testServiceName,
@@ -240,8 +267,9 @@ func TestReconcile(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			g := NewGomegaWithT(t)
-			ctx := context.Background()
+			ctx := t.Context()
 
 			// Create fake client with initial objects
 			scheme := runtime.NewScheme()
@@ -315,7 +343,7 @@ func TestReconcile(t *testing.T) {
 				g.Expect(azurePLS.OwnerReferences[0].Name).To(Equal(testHCPName))
 
 				// Verify HostedCluster annotation is copied
-				g.Expect(azurePLS.Annotations).To(HaveKeyWithValue(supportutil.HostedClusterAnnotation, "clusters/test-cluster"))
+				g.Expect(azurePLS.Annotations).To(HaveKeyWithValue(k8sutil.HostedClusterAnnotation, "clusters/test-cluster"))
 			} else {
 				// Verify no AzurePrivateLinkService was created
 				azurePLSList := &hyperv1.AzurePrivateLinkServiceList{}
@@ -404,6 +432,34 @@ func TestBaseDomainFromServices(t *testing.T) {
 			g.Expect(result).To(Equal(tt.expected))
 		})
 	}
+}
+
+func TestReconcile_WhenServiceNotFound_ItShouldReturnNoError(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+	_ = hyperv1.AddToScheme(scheme)
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		Build()
+
+	observer := &AzurePrivateLinkServiceObserver{
+		Client:           fakeClient,
+		ControllerName:   "test-observer",
+		ServiceName:      "private-router",
+		ServiceNamespace: "test-ns",
+		HCPNamespace:     "test-ns",
+	}
+
+	result, err := observer.Reconcile(t.Context(), reconcile.Request{
+		NamespacedName: types.NamespacedName{Name: "private-router", Namespace: "test-ns"},
+	})
+
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(result.IsZero()).To(BeTrue())
 }
 
 // mockCreateOrUpdateProvider implements CreateOrUpdateProvider for testing

@@ -87,3 +87,16 @@ updates:
       misc-dependencies:
         patterns:
           - "*"
+  # GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "friday"
+      time: "01:00"
+      timezone: "Etc/UTC"
+    commit-message:
+      prefix: "ci(deps)"
+    labels:
+      - "area/ci-tooling"
+      - "ok-to-test"

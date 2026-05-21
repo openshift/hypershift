@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/openshift/hypershift/api/hypershift/v1beta1"
-	utilroute "github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/netutil"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -79,12 +79,99 @@ func getDefaultResourcesForPlatform(platform string) []string {
 	return result
 }
 
+// getDefaultResourcesForPlatformEtcdSnapshot returns the resource list for etcd snapshot mode.
+// It reuses the same platform-specific resources as the default mode, but the base resources
+// exclude PV-related and workload controller resources since etcd is backed up via CRD
+// snapshots, and adds namespaces.
+func getDefaultResourcesForPlatformEtcdSnapshot(platform string) []string {
+	platformResources, exists := platformResourceMap[strings.ToUpper(platform)]
+	if !exists {
+		platformResources = awsResources
+	}
+
+	result := make([]string, len(baseResourcesEtcdSnapshot)+len(platformResources))
+	copy(result, baseResourcesEtcdSnapshot)
+	copy(result[len(baseResourcesEtcdSnapshot):], platformResources)
+
+	return result
+}
+
+// validateEtcdSnapshotFlags checks that volume-related flags are not explicitly passed alongside
+// --use-etcd-snapshot. The changedFlags set contains flag names that were explicitly set by the
+// user (via cmd.Flags().Visit in cobra), so default values do not trigger errors.
+func (o *CreateOptions) validateEtcdSnapshotFlags(changedFlags map[string]bool) error {
+	if !o.UseEtcdSnapshot {
+		return nil
+	}
+	if changedFlags["snapshot-move-data"] {
+		return fmt.Errorf("--snapshot-move-data cannot be used with --use-etcd-snapshot (etcd snapshot mode disables volume snapshots)")
+	}
+	if changedFlags["default-volumes-to-fs-backup"] {
+		return fmt.Errorf("--default-volumes-to-fs-backup cannot be used with --use-etcd-snapshot (etcd snapshot mode disables volume snapshots)")
+	}
+	if changedFlags["restore-pvs"] {
+		return fmt.Errorf("--restore-pvs cannot be used with --use-etcd-snapshot (etcd snapshot mode disables volume snapshots)")
+	}
+	return nil
+}
+
+// resolveIncludedResources returns the resource list based on user override, etcd snapshot mode, or platform defaults.
+func (o *CreateOptions) resolveIncludedResources(platform string) []string {
+	if o.IncludedResources != nil {
+		return o.IncludedResources
+	}
+	if o.UseEtcdSnapshot {
+		return getDefaultResourcesForPlatformEtcdSnapshot(platform)
+	}
+	return getDefaultResourcesForPlatform(platform)
+}
+
+// toInterfaceSlice converts a []string to []interface{} for use in unstructured objects.
+func toInterfaceSlice(s []string) []interface{} {
+	result := make([]interface{}, len(s))
+	for i, v := range s {
+		result[i] = v
+	}
+	return result
+}
+
+// buildBackupSpec constructs the backup spec map used by both Backup and Schedule objects.
+func (o *CreateOptions) buildBackupSpec(includedNamespaces, includedResources []string) map[string]interface{} {
+	nsSlice := toInterfaceSlice(includedNamespaces)
+	resSlice := toInterfaceSlice(includedResources)
+
+	if o.UseEtcdSnapshot {
+		return map[string]interface{}{
+			"includedNamespaces":       nsSlice,
+			"includedResources":        resSlice,
+			"excludedResources":        []interface{}{},
+			"storageLocation":          o.StorageLocation,
+			"ttl":                      o.TTL.String(),
+			"itemOperationTimeout":     "4h0m0s",
+			"snapshotMoveData":         false,
+			"defaultVolumesToFsBackup": false,
+			"snapshotVolumes":          false,
+		}
+	}
+	return map[string]interface{}{
+		"includedNamespaces":       nsSlice,
+		"includedResources":        resSlice,
+		"storageLocation":          o.StorageLocation,
+		"ttl":                      o.TTL.String(),
+		"csiSnapshotTimeout":       "10m0s",
+		"snapshotMoveData":         o.SnapshotMoveData,
+		"defaultVolumesToFsBackup": o.DefaultVolumesToFsBackup,
+		"dataMover":                "velero",
+		"snapshotVolumes":          true,
+	}
+}
+
 // generateName creates a name using the format: {hcName}-{hcNamespace}-{randomSuffix}.
 // If the name is too long, it uses utils.ShortenName to ensure it doesn't exceed 63 characters.
 func generateName(hcName, hcNamespace string) string {
 	randomSuffix := utilrand.String(6)
 	baseName := fmt.Sprintf("%s-%s", hcName, hcNamespace)
-	return utilroute.ShortenName(baseName, randomSuffix, validation.DNS1123LabelMaxLength)
+	return netutil.ShortenName(baseName, randomSuffix, validation.DNS1123LabelMaxLength)
 }
 
 // GenerateResourcePolicyName creates a deterministic resource policy ConfigMap name
@@ -95,7 +182,7 @@ func GenerateResourcePolicyName(hcName, hcNamespace string) string {
 	baseName := fmt.Sprintf("%s-%s", hcName, hcNamespace)
 	hash := sha256.Sum256([]byte(baseName))
 	hashSuffix := hex.EncodeToString(hash[:])[:6]
-	return utilroute.ShortenName(baseName, hashSuffix, validation.DNS1123LabelMaxLength)
+	return netutil.ShortenName(baseName, hashSuffix, validation.DNS1123LabelMaxLength)
 }
 
 // GenerateResourcePolicyConfigMap creates a ConfigMap with a Velero volume policy that skips

@@ -52,7 +52,7 @@ func (r *NodePoolReconciler) nodeVersionsFromMachines(_ context.Context, machine
 		}
 
 		// Determine node health from CAPI NodeHealthy condition.
-		condition := findCAPIStatusCondition(machine.Status.Conditions, capiv1.MachineNodeHealthyCondition)
+		condition := findMachineStatusCondition(machine, string(capiv1.MachineNodeHealthyCondition))
 		if condition != nil && condition.Status == corev1.ConditionTrue {
 			versionCounts[key].ready++
 		} else {

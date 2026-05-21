@@ -11,8 +11,8 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/featuregate"
+	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/releaseinfo"
-	hyperutil "github.com/openshift/hypershift/support/util"
 
 	configv1 "github.com/openshift/api/config/v1"
 	imageapi "github.com/openshift/api/image/v1"
@@ -118,7 +118,7 @@ func newHostedControlPlane() *hyperv1.HostedControlPlane {
 			Name:      testHCPName,
 			Namespace: testHCPNamespace,
 			Annotations: map[string]string{
-				hyperutil.HostedClusterAnnotation: testHCNamespace + "/" + testHCName,
+				k8sutil.HostedClusterAnnotation: testHCNamespace + "/" + testHCName,
 			},
 		},
 		Spec: hyperv1.HostedControlPlaneSpec{
@@ -1497,4 +1497,292 @@ func TestUpdateHostedClusterBackupURL(t *testing.T) {
 		g.Expect(r.Get(context.Background(), types.NamespacedName{Name: testHCName, Namespace: testHCNamespace}, updatedHC)).To(Succeed())
 		g.Expect(updatedHC.Status.LastSuccessfulEtcdBackupURL).To(Equal("s3://bucket/snapshot.db"))
 	})
+}
+
+func TestGetCredentialSecretName(t *testing.T) {
+	tests := []struct {
+		name        string
+		backup      *hyperv1.HCPEtcdBackup
+		expected    string
+		expectError bool
+	}{
+		{
+			name: "When storage type is S3, it should return S3 credential secret name",
+			backup: &hyperv1.HCPEtcdBackup{
+				Spec: hyperv1.HCPEtcdBackupSpec{
+					Storage: hyperv1.HCPEtcdBackupStorage{
+						StorageType: hyperv1.S3BackupStorage,
+						S3: hyperv1.HCPEtcdBackupS3{
+							Credentials: hyperv1.SecretReference{Name: "s3-creds"},
+						},
+					},
+				},
+			},
+			expected: "s3-creds",
+		},
+		{
+			name: "When storage type is AzureBlob, it should return Azure credential secret name",
+			backup: &hyperv1.HCPEtcdBackup{
+				Spec: hyperv1.HCPEtcdBackupSpec{
+					Storage: hyperv1.HCPEtcdBackupStorage{
+						StorageType: hyperv1.AzureBlobBackupStorage,
+						AzureBlob: hyperv1.HCPEtcdBackupAzureBlob{
+							Credentials: hyperv1.SecretReference{Name: "azure-creds"},
+						},
+					},
+				},
+			},
+			expected: "azure-creds",
+		},
+		{
+			name: "When storage type is unsupported, it should return an error",
+			backup: &hyperv1.HCPEtcdBackup{
+				Spec: hyperv1.HCPEtcdBackupSpec{
+					Storage: hyperv1.HCPEtcdBackupStorage{
+						StorageType: "UnsupportedType",
+					},
+				},
+			},
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			r := newReconciler()
+
+			name, err := r.getCredentialSecretName(tt.backup)
+
+			if tt.expectError {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring("unsupported"))
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(name).To(Equal(tt.expected))
+			}
+		})
+	}
+}
+
+func TestGetHostedControlPlane(t *testing.T) {
+	tests := []struct {
+		name      string
+		objects   []client.Object
+		namespace string
+		expectNil bool
+		expectErr bool
+	}{
+		{
+			name:      "When no HCPs exist in the namespace, it should return nil",
+			objects:   []client.Object{},
+			namespace: testHCPNamespace,
+			expectNil: true,
+		},
+		{
+			name: "When one HCP exists in the namespace, it should return it",
+			objects: []client.Object{
+				newHostedControlPlane(),
+			},
+			namespace: testHCPNamespace,
+			expectNil: false,
+		},
+		{
+			name: "When HCP exists in a different namespace, it should return nil",
+			objects: []client.Object{
+				newHostedControlPlane(),
+			},
+			namespace: "other-namespace",
+			expectNil: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			r := newReconciler(tt.objects...)
+
+			result, err := r.getHostedControlPlane(t.Context(), tt.namespace)
+
+			if tt.expectErr {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+				if tt.expectNil {
+					g.Expect(result).To(BeNil())
+				} else {
+					g.Expect(result).ToNot(BeNil())
+				}
+			}
+		})
+	}
+}
+
+func TestValidatePrerequisites(t *testing.T) {
+	tests := []struct {
+		name        string
+		backup      *hyperv1.HCPEtcdBackup
+		objects     []client.Object
+		expectDone  bool
+		expectError bool
+		expectFail  bool
+	}{
+		{
+			name:   "When credential secret exists, it should return done=false (proceed)",
+			backup: newHCPEtcdBackup(),
+			objects: []client.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "aws-creds",
+						Namespace: testHONamespace,
+					},
+				},
+			},
+			expectDone: false,
+		},
+		{
+			name:       "When credential secret is missing, it should set BackupFailed and return done=true",
+			backup:     newHCPEtcdBackup(),
+			objects:    []client.Object{},
+			expectDone: true,
+			expectFail: true,
+		},
+		{
+			name: "When storage type is unsupported, it should set BackupFailed and return done=true",
+			backup: &hyperv1.HCPEtcdBackup{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testBackupName,
+					Namespace: testHCPNamespace,
+				},
+				Spec: hyperv1.HCPEtcdBackupSpec{
+					Storage: hyperv1.HCPEtcdBackupStorage{
+						StorageType: "UnsupportedType",
+					},
+				},
+			},
+			objects:    []client.Object{},
+			expectDone: true,
+			expectFail: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			allObjects := append([]client.Object{tt.backup}, tt.objects...)
+			r := newReconciler(allObjects...)
+
+			_, done, err := r.validatePrerequisites(t.Context(), tt.backup)
+
+			if tt.expectError {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+			}
+			g.Expect(done).To(Equal(tt.expectDone))
+
+			if tt.expectFail {
+				updated := &hyperv1.HCPEtcdBackup{}
+				g.Expect(r.Get(t.Context(), types.NamespacedName{Name: tt.backup.Name, Namespace: tt.backup.Namespace}, updated)).To(Succeed())
+				cond := meta.FindStatusCondition(updated.Status.Conditions, string(hyperv1.BackupCompleted))
+				g.Expect(cond).ToNot(BeNil())
+				g.Expect(cond.Reason).To(Equal(hyperv1.BackupFailedReason))
+			}
+		})
+	}
+}
+
+func TestGetSnapshotURLFromPod(t *testing.T) {
+	tests := []struct {
+		name     string
+		pods     []client.Object
+		jobName  string
+		expected string
+	}{
+		{
+			name: "When upload container has termination message, it should return the URL",
+			pods: []client.Object{
+				&corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "backup-pod",
+						Namespace: testHONamespace,
+						Labels:    map[string]string{"batch.kubernetes.io/job-name": "my-job"},
+					},
+					Spec: corev1.PodSpec{
+						Containers:    []corev1.Container{{Name: "upload", Image: "test:latest"}},
+						RestartPolicy: corev1.RestartPolicyNever,
+					},
+					Status: corev1.PodStatus{
+						ContainerStatuses: []corev1.ContainerStatus{
+							{
+								Name: "upload",
+								State: corev1.ContainerState{
+									Terminated: &corev1.ContainerStateTerminated{
+										Message: "  s3://bucket/path/snapshot.db  ",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			jobName:  "my-job",
+			expected: "s3://bucket/path/snapshot.db",
+		},
+		{
+			name:     "When no pods exist for the job, it should return empty string",
+			pods:     []client.Object{},
+			jobName:  "my-job",
+			expected: "",
+		},
+		{
+			name: "When upload container has no termination message, it should return empty string",
+			pods: []client.Object{
+				&corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "backup-pod",
+						Namespace: testHONamespace,
+						Labels:    map[string]string{"batch.kubernetes.io/job-name": "my-job"},
+					},
+					Spec: corev1.PodSpec{
+						Containers:    []corev1.Container{{Name: "upload", Image: "test:latest"}},
+						RestartPolicy: corev1.RestartPolicyNever,
+					},
+					Status: corev1.PodStatus{
+						ContainerStatuses: []corev1.ContainerStatus{
+							{
+								Name: "upload",
+								State: corev1.ContainerState{
+									Terminated: &corev1.ContainerStateTerminated{
+										ExitCode: 0,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			jobName:  "my-job",
+			expected: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			r := newReconciler(tt.pods...)
+
+			job := &batchv1.Job{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      tt.jobName,
+					Namespace: testHONamespace,
+				},
+			}
+
+			url, err := r.getSnapshotURLFromPod(t.Context(), job)
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(url).To(Equal(tt.expected))
+		})
+	}
 }

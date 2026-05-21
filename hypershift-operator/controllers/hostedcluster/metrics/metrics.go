@@ -91,7 +91,8 @@ const (
 
 	HostedClusterManagedAzureInfoMetricName = "hosted_cluster_managed_azure_info"
 	HostedClusterManagedAzureInfoMetricHelp = "Reports Azure managed (ARO) specific information about the given HostedCluster"
-	HostedClusterManagedAzureResourceType   = "hcpOpenShiftClusters"
+	// see https://github.com/Azure/ARO-HCP/blob/4134b5bb53782858047a0493f31b250c811eb84c/api/redhatopenshift/resource-manager/Microsoft.RedHatOpenShift/hcpclusters/preview/2024-06-10-preview/openapi.json#L131
+	HostedClusterManagedAzureResourceType = "hcpOpenShiftClusters"
 
 	HostedClusterAzureInfoMetricName = "hosted_cluster_azure_info"
 	HostedClusterAzureInfoMetricHelp = "Reports Azure information about the given HostedCluster"
@@ -260,25 +261,54 @@ func (c *hostedClustersMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 	currentCollectTime := c.clock.Now()
 	log := ctrllog.Log
 
-	// countByIdentityProviderMetric - init
-	identityProviderToHClustersCount := make(map[configv1.IdentityProviderType]int)
+	identityProviderToHClustersCount := initIdentityProviderCounts()
+	platformToHClustersCount := initPlatformCounts()
+	platformToFailureConditionToHClustersCount := initPlatformFailureConditionCounts()
 
+	hclusters := &hyperv1.HostedClusterList{}
+	if err := c.List(context.Background(), hclusters); err != nil {
+		log.Error(err, "failed to list hosted clusters while collecting metrics")
+		return
+	}
+
+	for k := range hclusters.Items {
+		hcluster := &hclusters.Items[k]
+
+		collectIdentityProviderCounts(hcluster, identityProviderToHClustersCount)
+		platform := hcluster.Spec.Platform.Type
+		platformToHClustersCount[platform] = platformToHClustersCount[platform] + 1
+		collectFailureConditionCounts(hcluster, platform, platformToFailureConditionToHClustersCount)
+		c.collectTransitionDurationMetrics(hcluster, currentCollectTime)
+
+		hclusterLabelValues := []string{hcluster.Namespace, hcluster.Name, hcluster.Spec.ClusterID}
+		c.collectPerClusterMetrics(ch, hcluster, hclusterLabelValues)
+	}
+
+	emitAggregatedMetrics(ch, identityProviderToHClustersCount, platformToHClustersCount, platformToFailureConditionToHClustersCount)
+	c.transitionDurationMetric.Collect(ch)
+	c.lastCollectTime = currentCollectTime
+}
+
+func initIdentityProviderCounts() map[configv1.IdentityProviderType]int {
+	counts := make(map[configv1.IdentityProviderType]int)
 	for k := range knownIdentityProviders {
-		identityProviderToHClustersCount[knownIdentityProviders[k]] = 0
+		counts[knownIdentityProviders[k]] = 0
 	}
+	return counts
+}
 
-	// countByPlatformMetric - init
-	platformToHClustersCount := make(map[hyperv1.PlatformType]int)
-
+func initPlatformCounts() map[hyperv1.PlatformType]int {
+	counts := make(map[hyperv1.PlatformType]int)
 	for k := range knownPlatforms {
-		platformToHClustersCount[knownPlatforms[k]] = 0
+		counts[knownPlatforms[k]] = 0
 	}
+	return counts
+}
 
-	// countByPlatformAndFailureConditionMetric - init
-	platformToFailureConditionToHClustersCount := make(map[hyperv1.PlatformType]*map[string]int)
-
+func initPlatformFailureConditionCounts() map[hyperv1.PlatformType]*map[string]int {
+	counts := make(map[hyperv1.PlatformType]*map[string]int)
 	for k := range knownPlatforms {
-		platformToFailureConditionToHClustersCount[knownPlatforms[k]] = createFailureConditionToHClustersCountMap(conditions.ExpectedHCConditions(&hyperv1.HostedCluster{
+		counts[knownPlatforms[k]] = createFailureConditionToHClustersCountMap(conditions.ExpectedHCConditions(&hyperv1.HostedCluster{
 			Spec: hyperv1.HostedClusterSpec{
 				Platform: hyperv1.PlatformSpec{
 					Type: knownPlatforms[k],
@@ -286,319 +316,288 @@ func (c *hostedClustersMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 			},
 		}))
 	}
+	return counts
+}
 
-	// MAIN LOOP - Hosted clusters loop
-	{
-		hclusters := &hyperv1.HostedClusterList{}
-
-		if err := c.List(context.Background(), hclusters); err != nil {
-			log.Error(err, "failed to list hosted clusters while collecting metrics")
+func collectIdentityProviderCounts(hcluster *hyperv1.HostedCluster, counts map[configv1.IdentityProviderType]int) {
+	if hcluster.Spec.Configuration != nil && hcluster.Spec.Configuration.OAuth != nil {
+		for _, identityProvider := range hcluster.Spec.Configuration.OAuth.IdentityProviders {
+			counts[identityProvider.Type] = counts[identityProvider.Type] + 1
 		}
+	}
+}
 
-		for k := range hclusters.Items {
-			hcluster := &hclusters.Items[k]
+func collectFailureConditionCounts(hcluster *hyperv1.HostedCluster, platform hyperv1.PlatformType, platformToFailureConditionToHClustersCount map[hyperv1.PlatformType]*map[string]int) {
+	expectedConditions := conditions.ExpectedHCConditions(hcluster)
+	_, isKnownPlatform := platformToFailureConditionToHClustersCount[platform]
+	if !isKnownPlatform {
+		platformToFailureConditionToHClustersCount[platform] = createFailureConditionToHClustersCountMap(expectedConditions)
+	}
 
-			// countByIdentityProviderMetric - aggregation
-			if hcluster.Spec.Configuration != nil && hcluster.Spec.Configuration.OAuth != nil {
-				for _, identityProvider := range hcluster.Spec.Configuration.OAuth.IdentityProviders {
-					identityProviderToHClustersCount[identityProvider.Type] = identityProviderToHClustersCount[identityProvider.Type] + 1
-				}
+	failureConditionToHClustersCount := platformToFailureConditionToHClustersCount[platform]
+	for _, condition := range hcluster.Status.Conditions {
+		expectedStatus, isKnownCondition := expectedConditions[hyperv1.ConditionType(condition.Type)]
+		if isKnownCondition && condition.Status != expectedStatus {
+			failureCondPrefix := ""
+			if expectedStatus == metav1.ConditionTrue {
+				failureCondPrefix = "not_"
 			}
+			failureCondition := failureCondPrefix + condition.Type
+			(*failureConditionToHClustersCount)[failureCondition] = (*failureConditionToHClustersCount)[failureCondition] + 1
+		}
+	}
+}
 
-			// countByPlatformMetric - aggregation
-			platform := hcluster.Spec.Platform.Type
-			platformToHClustersCount[platform] = platformToHClustersCount[platform] + 1
-
-			// countByPlatformAndFailureConditionMetric - aggregation
-			{
-				expectedConditions := conditions.ExpectedHCConditions(hcluster)
-				_, isKnownPlatform := platformToFailureConditionToHClustersCount[platform]
-
-				if !isKnownPlatform {
-					platformToFailureConditionToHClustersCount[platform] = createFailureConditionToHClustersCountMap(expectedConditions)
-				}
-
-				failureConditionToHClustersCount := platformToFailureConditionToHClustersCount[platform]
-
-				for _, condition := range hcluster.Status.Conditions {
-					expectedStatus, isKnownCondition := expectedConditions[hyperv1.ConditionType(condition.Type)]
-
-					if isKnownCondition && condition.Status != expectedStatus {
-						failureCondPrefix := ""
-
-						if expectedStatus == metav1.ConditionTrue {
-							failureCondPrefix = "not_"
-						}
-
-						failureCondition := failureCondPrefix + condition.Type
-
-						(*failureConditionToHClustersCount)[failureCondition] = (*failureConditionToHClustersCount)[failureCondition] + 1
-					}
-				}
+func (c *hostedClustersMetricsCollector) collectTransitionDurationMetrics(hcluster *hyperv1.HostedCluster, currentCollectTime time.Time) {
+	for _, conditionType := range []hyperv1.ConditionType{hyperv1.EtcdAvailable, hyperv1.InfrastructureReady, hyperv1.ExternalDNSReachable, hyperv1.AWSEndpointServiceAvailable, hyperv1.AWSEndpointAvailable} {
+		condition := meta.FindStatusCondition(hcluster.Status.Conditions, string(conditionType))
+		if condition != nil && condition.Status == metav1.ConditionTrue {
+			t := condition.LastTransitionTime.Time
+			if c.lastCollectTime.Before(t) && (t.Before(currentCollectTime) || t.Equal(currentCollectTime)) {
+				c.transitionDurationMetric.With(map[string]string{"condition": string(conditionType)}).Observe(t.Sub(hcluster.CreationTimestamp.Time).Seconds())
 			}
+		}
+	}
+}
 
-			// transitionDurationMetric - aggregation
-			for _, conditionType := range []hyperv1.ConditionType{hyperv1.EtcdAvailable, hyperv1.InfrastructureReady, hyperv1.ExternalDNSReachable, hyperv1.AWSEndpointServiceAvailable, hyperv1.AWSEndpointAvailable} {
-				condition := meta.FindStatusCondition(hcluster.Status.Conditions, string(conditionType))
+func (c *hostedClustersMetricsCollector) collectPerClusterMetrics(ch chan<- prometheus.Metric, hcluster *hyperv1.HostedCluster, hclusterLabelValues []string) {
+	collectInitialAvailabilityMetric(ch, c.clock, hcluster, hclusterLabelValues)
+	collectInitialRollingOutMetric(ch, c.clock, hcluster, hclusterLabelValues)
+	collectUpgradingDurationMetric(ch, c.clock, hcluster, hclusterLabelValues)
+	collectLimitedSupportMetric(ch, hcluster, hclusterLabelValues)
+	collectSilenceAlertsMetric(ch, hcluster, hclusterLabelValues)
+	c.collectProxyMetrics(ch, hcluster, hclusterLabelValues)
+	collectRosaMetrics(ch, hcluster, hclusterLabelValues)
+	collectAzureInfoMetrics(ch, hcluster, hclusterLabelValues)
+	collectAwsCredsMetric(ch, hcluster, hclusterLabelValues)
+	collectDeletingMetrics(ch, c.clock, hcluster, hclusterLabelValues)
+}
 
-				if condition != nil && condition.Status == metav1.ConditionTrue {
-					t := condition.LastTransitionTime.Time
+func collectInitialAvailabilityMetric(ch chan<- prometheus.Metric, clk clock.Clock, hcluster *hyperv1.HostedCluster, hclusterLabelValues []string) {
+	if _, hasBeenAvailable := hcluster.Annotations[HasBeenAvailableAnnotation]; !hasBeenAvailable {
+		ch <- prometheus.MustNewConstMetric(
+			waitingInitialAvailabilityDurationMetricDesc,
+			prometheus.GaugeValue,
+			clk.Since(hcluster.CreationTimestamp.Time).Seconds(),
+			hclusterLabelValues...,
+		)
+	}
+}
 
-					if c.lastCollectTime.Before(t) && (t.Before(currentCollectTime) || t.Equal(currentCollectTime)) {
-						c.transitionDurationMetric.With(map[string]string{"condition": string(conditionType)}).Observe(t.Sub(hcluster.CreationTimestamp.Time).Seconds())
-					}
-				}
-			}
+func collectInitialRollingOutMetric(ch chan<- prometheus.Metric, clk clock.Clock, hcluster *hyperv1.HostedCluster, hclusterLabelValues []string) {
+	if hcluster.Status.Version == nil || len(hcluster.Status.Version.History) == 0 || hcluster.Status.Version.History[0].CompletionTime == nil {
+		ch <- prometheus.MustNewConstMetric(
+			initialRollingOutDurationMetricDesc,
+			prometheus.GaugeValue,
+			clk.Since(hcluster.CreationTimestamp.Time).Seconds(),
+			hclusterLabelValues...,
+		)
+	}
+}
 
-			hclusterLabelValues := []string{hcluster.Namespace, hcluster.Name, hcluster.Spec.ClusterID}
+func collectUpgradingDurationMetric(ch chan<- prometheus.Metric, clk clock.Clock, hcluster *hyperv1.HostedCluster, hclusterLabelValues []string) {
+	// The upgrade is adding a new entry in the history on top of the initial rollout.
+	if hcluster.Status.Version == nil || len(hcluster.Status.Version.History) <= 1 {
+		return
+	}
+	newVersionEntry := hcluster.Status.Version.History[len(hcluster.Status.Version.History)-1]
+	if newVersionEntry.CompletionTime != nil {
+		return
+	}
+	previousVersionEntry := hcluster.Status.Version.History[len(hcluster.Status.Version.History)-2]
+	ch <- prometheus.MustNewConstMetric(
+		upgradingDurationMetricDesc,
+		prometheus.GaugeValue,
+		clk.Since(newVersionEntry.StartedTime.Time).Seconds(),
+		append(hclusterLabelValues, previousVersionEntry.Version, newVersionEntry.Version)...,
+	)
+}
 
-			// waitingInitialAvailabilityDurationMetric
-			{
-				_, hasBeenAvailable := hcluster.Annotations[HasBeenAvailableAnnotation]
+func collectLimitedSupportMetric(ch chan<- prometheus.Metric, hcluster *hyperv1.HostedCluster, hclusterLabelValues []string) {
+	limitedSupportValue := 0.0
+	if _, ok := hcluster.Labels[hyperv1.LimitedSupportLabel]; ok {
+		limitedSupportValue = 1.0
+	}
+	ch <- prometheus.MustNewConstMetric(
+		limitedSupportEnabledMetricDesc,
+		prometheus.GaugeValue,
+		limitedSupportValue,
+		hclusterLabelValues...,
+	)
+}
 
-				if !hasBeenAvailable {
-					initializingDuration := c.clock.Since(hcluster.CreationTimestamp.Time).Seconds()
+func collectSilenceAlertsMetric(ch chan<- prometheus.Metric, hcluster *hyperv1.HostedCluster, hclusterLabelValues []string) {
+	silenceAlertsValue := 0.0
+	if _, ok := hcluster.Labels[hyperv1.SilenceClusterAlertsLabel]; ok {
+		silenceAlertsValue = 1.0
+	}
+	ch <- prometheus.MustNewConstMetric(
+		silenceAlertsMetricDesc,
+		prometheus.GaugeValue,
+		silenceAlertsValue,
+		hclusterLabelValues...,
+	)
+}
 
-					ch <- prometheus.MustNewConstMetric(
-						waitingInitialAvailabilityDurationMetricDesc,
-						prometheus.GaugeValue,
-						initializingDuration,
-						hclusterLabelValues...,
-					)
-				}
-			}
+func (c *hostedClustersMetricsCollector) collectProxyMetrics(ch chan<- prometheus.Metric, hcluster *hyperv1.HostedCluster, hclusterLabelValues []string) {
+	var proxyHTTP, proxyHTTPS, proxyTrustedCA string
+	proxyValue := 0.0
+	if hcluster.Spec.Configuration != nil && hcluster.Spec.Configuration.Proxy != nil {
+		if hcluster.Spec.Configuration.Proxy.HTTPProxy != "" {
+			proxyHTTP = "1"
+		}
+		if hcluster.Spec.Configuration.Proxy.HTTPSProxy != "" {
+			proxyHTTPS = "1"
+		}
+		if hcluster.Spec.Configuration.Proxy.TrustedCA.Name != "" {
+			proxyTrustedCA = "1"
+			c.collectProxyCAMetrics(ch, hcluster, hclusterLabelValues)
+		}
+		proxyValue = 1.0
+	}
 
-			// initialRollingOutDurationMetric
-			if hcluster.Status.Version == nil || len(hcluster.Status.Version.History) == 0 || hcluster.Status.Version.History[0].CompletionTime == nil {
-				initializingDuration := c.clock.Since(hcluster.CreationTimestamp.Time).Seconds()
+	ch <- prometheus.MustNewConstMetric(
+		proxyMetricDesc,
+		prometheus.GaugeValue,
+		proxyValue,
+		append(hclusterLabelValues, proxyHTTP, proxyHTTPS, proxyTrustedCA)...,
+	)
+}
 
-				ch <- prometheus.MustNewConstMetric(
-					initialRollingOutDurationMetricDesc,
-					prometheus.GaugeValue,
-					initializingDuration,
-					hclusterLabelValues...,
-				)
-			}
+func (c *hostedClustersMetricsCollector) collectProxyCAMetrics(ch chan<- prometheus.Metric, hcluster *hyperv1.HostedCluster, hclusterLabelValues []string) {
+	// Only report CA validity if a CA is actually configured
+	proxyCAValid := 0.0
+	validProxyCondition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.ValidProxyConfiguration))
+	if validProxyCondition != nil && validProxyCondition.Status == metav1.ConditionTrue {
+		proxyCAValid = 1.0
+	}
+	ch <- prometheus.MustNewConstMetric(
+		proxyCAMetricDesc,
+		prometheus.GaugeValue,
+		proxyCAValid,
+		hclusterLabelValues...,
+	)
 
-			// upgradingDurationMetric
-			// The upgrade is adding a new entry in the history on top of the initial rollout.
-			if hcluster.Status.Version != nil && len(hcluster.Status.Version.History) > 1 {
-				newVersionEntry := hcluster.Status.Version.History[len(hcluster.Status.Version.History)-1]
+	// Silently skip expiry time if we can't fetch it
+	proxyExpiryTime := 0.0
+	expiryTime, err := c.expiryTimeProxyCA(hcluster)
+	if err == nil {
+		proxyExpiryTime = float64(expiryTime.Unix())
+	}
+	ch <- prometheus.MustNewConstMetric(
+		proxyCAExpiryMetricDesc,
+		prometheus.GaugeValue,
+		proxyExpiryTime,
+		hclusterLabelValues...,
+	)
+}
 
-				if newVersionEntry.CompletionTime == nil {
-					previousVersionEntry := hcluster.Status.Version.History[len(hcluster.Status.Version.History)-2]
-					upgradingDuration := c.clock.Since(newVersionEntry.StartedTime.Time).Seconds()
-
-					ch <- prometheus.MustNewConstMetric(
-						upgradingDurationMetricDesc,
-						prometheus.GaugeValue,
-						upgradingDuration,
-						append(hclusterLabelValues, previousVersionEntry.Version, newVersionEntry.Version)...,
-					)
-				}
-			}
-
-			// limitedSupportEnabledMetric
-			{
-				limitedSupportValue := 0.0
-				if _, ok := hcluster.Labels[hyperv1.LimitedSupportLabel]; ok {
-					limitedSupportValue = 1.0
-				}
-
-				ch <- prometheus.MustNewConstMetric(
-					limitedSupportEnabledMetricDesc,
-					prometheus.GaugeValue,
-					limitedSupportValue,
-					hclusterLabelValues...,
-				)
-			}
-
-			// silenceAlertsMetric
-			{
-				silenceAlertsValue := 0.0
-				if _, ok := hcluster.Labels[hyperv1.SilenceClusterAlertsLabel]; ok {
-					silenceAlertsValue = 1.0
-				}
-
-				ch <- prometheus.MustNewConstMetric(
-					silenceAlertsMetricDesc,
-					prometheus.GaugeValue,
-					silenceAlertsValue,
-					hclusterLabelValues...,
-				)
-			}
-
-			// proxyMetric
-			{
-				var proxyHTTP, proxyHTTPS, proxyTrustedCA string
-				proxyValue := 0.0
-				proxyCAValid := 0.0
-				proxyExpiryTime := 0.0
-				if hcluster.Spec.Configuration != nil && hcluster.Spec.Configuration.Proxy != nil {
-					if hcluster.Spec.Configuration.Proxy.HTTPProxy != "" {
-						proxyHTTP = "1"
-					}
-					if hcluster.Spec.Configuration.Proxy.HTTPSProxy != "" {
-						proxyHTTPS = "1"
-					}
-					if hcluster.Spec.Configuration.Proxy.TrustedCA.Name != "" {
-						proxyTrustedCA = "1"
-
-						// Read validation result from the ValidProxyConfiguration condition
-						validProxyCondition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.ValidProxyConfiguration))
-						if validProxyCondition != nil && validProxyCondition.Status == metav1.ConditionTrue {
-							proxyCAValid = 1.0
-						} else {
-							proxyCAValid = 0.0
-						}
-
-						// Only report CA validity if a CA is actually configured
-						ch <- prometheus.MustNewConstMetric(
-							proxyCAMetricDesc,
-							prometheus.GaugeValue,
-							proxyCAValid,
-							hclusterLabelValues...,
-						)
-
-						expiryTime, err := c.expiryTimeProxyCA(hcluster)
-						if err != nil {
-							// Silently skip expiry time if we can't fetch it
-							proxyExpiryTime = 0.0
-						} else {
-							proxyExpiryTime = float64(expiryTime.Unix())
-						}
-						ch <- prometheus.MustNewConstMetric(
-							proxyCAExpiryMetricDesc,
-							prometheus.GaugeValue,
-							proxyExpiryTime,
-							hclusterLabelValues...,
-						)
-					}
-					proxyValue = 1.0
-				}
-
-				ch <- prometheus.MustNewConstMetric(
-					proxyMetricDesc,
-					prometheus.GaugeValue,
-					proxyValue,
-					append(hclusterLabelValues, proxyHTTP, proxyHTTPS, proxyTrustedCA)...,
-				)
-			}
-
-			// etcdManualInterventionRequiredMetric
-			// clusterSizeOverrideMetric
-			{
-				metricLabels := make(map[string]string, 0)
-				if hcluster.Spec.Platform.Type == hyperv1.AWSPlatform && hcluster.Spec.Platform.AWS != nil && hcluster.Spec.Platform.AWS.ResourceTags != nil {
-					for _, resourceTag := range hcluster.Spec.Platform.AWS.ResourceTags {
-						switch resourceTag.Key {
-						case "api.openshift.com/environment":
-							metricLabels["environment"] = resourceTag.Value
-						case "api.openshift.com/id":
-							metricLabels["internal_id"] = resourceTag.Value
-						case "red-hat-clustertype":
-							metricLabels["cluster_type"] = resourceTag.Value
-						}
-					}
-				}
-
-				if metricLabels["cluster_type"] == "rosa" {
-					etcdRecoveryActiveCondition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.EtcdRecoveryActive))
-					if etcdRecoveryActiveCondition != nil && etcdRecoveryActiveCondition.Status == metav1.ConditionFalse && etcdRecoveryActiveCondition.Reason == hyperv1.EtcdRecoveryJobFailedReason {
-						etcdManualInterventionRequiredValue := 1.0
-						ch <- prometheus.MustNewConstMetric(
-							etcdManualInterventionRequiredMetricDesc,
-							prometheus.GaugeValue,
-							etcdManualInterventionRequiredValue,
-							append(hclusterLabelValues, metricLabels["environment"], metricLabels["internal_id"])...,
-						)
-
-					}
-
-					if sizeOverride := hcluster.Annotations[hyperv1.ClusterSizeOverrideAnnotation]; sizeOverride != "" {
-						ch <- prometheus.MustNewConstMetric(
-							clusterSizeOverrideMetricDesc,
-							prometheus.GaugeValue,
-							1.0,
-							append(hclusterLabelValues, metricLabels["environment"], metricLabels["internal_id"], sizeOverride)...,
-						)
-					}
-				}
-			}
-
-			if hcluster.Spec.Platform.Azure != nil {
-				azInfo := hcluster.Spec.Platform.Azure
-				subID := azInfo.SubscriptionID
-				resGroup := azInfo.ResourceGroupName
-				if azureutil.IsAroHCP() {
-					// see https://github.com/Azure/ARO-HCP/blob/4134b5bb53782858047a0493f31b250c811eb84c/api/redhatopenshift/resource-manager/Microsoft.RedHatOpenShift/hcpclusters/preview/2024-06-10-preview/openapi.json#L131
-					resourceID := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.RedHatOpenshift/hcpOpenShiftClusters/%s",
-						subID, resGroup, hcluster.Name)
-					ch <- prometheus.MustNewConstMetric(
-						managedAzureHostedClusterInfoDesc,
-						prometheus.GaugeValue,
-						1.0,
-						append(hclusterLabelValues,
-							azInfo.Location,
-							subID,
-							resGroup,
-							HostedClusterManagedAzureResourceType,
-							resourceID)...)
-				} else {
-					ch <- prometheus.MustNewConstMetric(
-						azureHostedClusterInfoDesc,
-						prometheus.GaugeValue,
-						1.0,
-						append(hclusterLabelValues,
-							azInfo.Location,
-							subID,
-							resGroup)...)
-				}
-			}
-
-			// invalidAwsCredsMetric
-			{
-				// Use detailed credential status: 0=valid, 1=invalid, 2=unknown
-				credStatus := platformaws.GetCredentialStatus(hcluster)
-				invalidAwsCredsValue := float64(credStatus)
-
-				ch <- prometheus.MustNewConstMetric(
-					invalidAwsCredsMetricDesc,
-					prometheus.GaugeValue,
-					invalidAwsCredsValue,
-					hclusterLabelValues...,
-				)
-			}
-
-			if !hcluster.DeletionTimestamp.IsZero() {
-				// deletingDurationMetric
-				deletingDuration := c.clock.Since(hcluster.DeletionTimestamp.Time).Seconds()
-
-				ch <- prometheus.MustNewConstMetric(
-					deletingDurationMetricDesc,
-					prometheus.GaugeValue,
-					deletingDuration,
-					hclusterLabelValues...,
-				)
-
-				// guestCloudResourcesDeletingDurationMetric
-				condition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.CloudResourcesDestroyed))
-
-				if condition == nil || condition.Status != metav1.ConditionTrue {
-					ch <- prometheus.MustNewConstMetric(
-						guestCloudResourcesDeletingDurationMetricDesc,
-						prometheus.GaugeValue,
-						deletingDuration,
-						hclusterLabelValues...,
-					)
-				}
+func collectRosaMetrics(ch chan<- prometheus.Metric, hcluster *hyperv1.HostedCluster, hclusterLabelValues []string) {
+	metricLabels := make(map[string]string, 0)
+	if hcluster.Spec.Platform.Type == hyperv1.AWSPlatform && hcluster.Spec.Platform.AWS != nil && hcluster.Spec.Platform.AWS.ResourceTags != nil {
+		for _, resourceTag := range hcluster.Spec.Platform.AWS.ResourceTags {
+			switch resourceTag.Key {
+			case "api.openshift.com/environment":
+				metricLabels["environment"] = resourceTag.Value
+			case "api.openshift.com/id":
+				metricLabels["internal_id"] = resourceTag.Value
+			case "red-hat-clustertype":
+				metricLabels["cluster_type"] = resourceTag.Value
 			}
 		}
 	}
 
-	// AGGREGATED METRICS
+	if metricLabels["cluster_type"] != "rosa" {
+		return
+	}
 
-	// countByIdentityProviderMetric
+	etcdRecoveryActiveCondition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.EtcdRecoveryActive))
+	if etcdRecoveryActiveCondition != nil && etcdRecoveryActiveCondition.Status == metav1.ConditionFalse && etcdRecoveryActiveCondition.Reason == hyperv1.EtcdRecoveryJobFailedReason {
+		ch <- prometheus.MustNewConstMetric(
+			etcdManualInterventionRequiredMetricDesc,
+			prometheus.GaugeValue,
+			1.0,
+			append(hclusterLabelValues, metricLabels["environment"], metricLabels["internal_id"])...,
+		)
+	}
+
+	if sizeOverride := hcluster.Annotations[hyperv1.ClusterSizeOverrideAnnotation]; sizeOverride != "" {
+		ch <- prometheus.MustNewConstMetric(
+			clusterSizeOverrideMetricDesc,
+			prometheus.GaugeValue,
+			1.0,
+			append(hclusterLabelValues, metricLabels["environment"], metricLabels["internal_id"], sizeOverride)...,
+		)
+	}
+}
+
+func collectAzureInfoMetrics(ch chan<- prometheus.Metric, hcluster *hyperv1.HostedCluster, hclusterLabelValues []string) {
+	if hcluster.Spec.Platform.Azure == nil {
+		return
+	}
+	azInfo := hcluster.Spec.Platform.Azure
+	subID := azInfo.SubscriptionID
+	resGroup := azInfo.ResourceGroupName
+	if azureutil.IsAroHCP() {
+		resourceID := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.RedHatOpenshift/hcpOpenShiftClusters/%s",
+			subID, resGroup, hcluster.Name)
+		ch <- prometheus.MustNewConstMetric(
+			managedAzureHostedClusterInfoDesc,
+			prometheus.GaugeValue,
+			1.0,
+			append(hclusterLabelValues,
+				azInfo.Location,
+				subID,
+				resGroup,
+				HostedClusterManagedAzureResourceType,
+				resourceID)...)
+	} else {
+		ch <- prometheus.MustNewConstMetric(
+			azureHostedClusterInfoDesc,
+			prometheus.GaugeValue,
+			1.0,
+			append(hclusterLabelValues,
+				azInfo.Location,
+				subID,
+				resGroup)...)
+	}
+}
+
+// Use detailed credential status: 0=valid, 1=invalid, 2=unknown
+func collectAwsCredsMetric(ch chan<- prometheus.Metric, hcluster *hyperv1.HostedCluster, hclusterLabelValues []string) {
+	credStatus := platformaws.GetCredentialStatus(hcluster)
+	ch <- prometheus.MustNewConstMetric(
+		invalidAwsCredsMetricDesc,
+		prometheus.GaugeValue,
+		float64(credStatus),
+		hclusterLabelValues...,
+	)
+}
+
+func collectDeletingMetrics(ch chan<- prometheus.Metric, clk clock.Clock, hcluster *hyperv1.HostedCluster, hclusterLabelValues []string) {
+	if hcluster.DeletionTimestamp.IsZero() {
+		return
+	}
+	deletingDuration := clk.Since(hcluster.DeletionTimestamp.Time).Seconds()
+	ch <- prometheus.MustNewConstMetric(
+		deletingDurationMetricDesc,
+		prometheus.GaugeValue,
+		deletingDuration,
+		hclusterLabelValues...,
+	)
+
+	condition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.CloudResourcesDestroyed))
+	if condition == nil || condition.Status != metav1.ConditionTrue {
+		ch <- prometheus.MustNewConstMetric(
+			guestCloudResourcesDeletingDurationMetricDesc,
+			prometheus.GaugeValue,
+			deletingDuration,
+			hclusterLabelValues...,
+		)
+	}
+}
+
+func emitAggregatedMetrics(ch chan<- prometheus.Metric, identityProviderToHClustersCount map[configv1.IdentityProviderType]int, platformToHClustersCount map[hyperv1.PlatformType]int, platformToFailureConditionToHClustersCount map[hyperv1.PlatformType]*map[string]int) {
 	for identityProvider, hclustersCount := range identityProviderToHClustersCount {
 		ch <- prometheus.MustNewConstMetric(
 			countByIdentityProviderMetricDesc,
@@ -608,7 +607,6 @@ func (c *hostedClustersMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 		)
 	}
 
-	// countByPlatformMetric
 	for platform, hclustersCount := range platformToHClustersCount {
 		ch <- prometheus.MustNewConstMetric(
 			countByPlatformMetricDesc,
@@ -618,7 +616,6 @@ func (c *hostedClustersMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 		)
 	}
 
-	// countByPlatformAndFailureConditionMetric
 	for platform, failureConditionToHClustersCount := range platformToFailureConditionToHClustersCount {
 		for failureCondition, hclustersCount := range *failureConditionToHClustersCount {
 			ch <- prometheus.MustNewConstMetric(
@@ -630,11 +627,6 @@ func (c *hostedClustersMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 			)
 		}
 	}
-
-	// transitionDurationMetric
-	c.transitionDurationMetric.Collect(ch)
-
-	c.lastCollectTime = currentCollectTime
 }
 
 // Load the CA bundle for the hosted cluster and find the earliest expiring certificate time.

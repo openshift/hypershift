@@ -6,7 +6,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	component "github.com/openshift/hypershift/support/controlplane-component"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/netutil"
 
 	routev1 "github.com/openshift/api/route/v1"
 )
@@ -15,8 +15,8 @@ func (mp *metricsProxy) adaptRoute(cpContext component.WorkloadContext, route *r
 	hcp := cpContext.HCP
 	serviceName := ComponentName
 
-	if util.IsPrivateHCP(hcp) {
-		return util.ReconcileInternalRoute(route, hcp.Name, serviceName)
+	if netutil.IsPrivateHCP(hcp) {
+		return netutil.ReconcileInternalRoute(route, hcp.Name, serviceName)
 	}
 
 	// Derive hostname from the Ignition route's domain when an explicit hostname
@@ -24,7 +24,7 @@ func (mp *metricsProxy) adaptRoute(cpContext component.WorkloadContext, route *r
 	// explicit hostnames on service publishing strategies. Since metrics-proxy has
 	// no strategy entry, derive from the Ignition strategy's domain.
 	hostname := ""
-	ignitionStrategy := util.ServicePublishingStrategyByTypeForHCP(hcp, hyperv1.Ignition)
+	ignitionStrategy := netutil.ServicePublishingStrategyByTypeForHCP(hcp, hyperv1.Ignition)
 	if ignitionStrategy != nil && ignitionStrategy.Route != nil && ignitionStrategy.Route.Hostname != "" {
 		parts := strings.SplitN(ignitionStrategy.Route.Hostname, ".", 2)
 		if len(parts) == 2 {
@@ -32,8 +32,8 @@ func (mp *metricsProxy) adaptRoute(cpContext component.WorkloadContext, route *r
 		}
 	}
 
-	labelHCPRoutes := util.LabelHCPRoutes(hcp)
-	if err := util.ReconcileExternalRoute(route, hostname, mp.defaultIngressDomain, serviceName, labelHCPRoutes); err != nil {
+	labelHCPRoutes := netutil.LabelHCPRoutes(hcp)
+	if err := netutil.ReconcileExternalRoute(route, hostname, mp.defaultIngressDomain, serviceName, labelHCPRoutes); err != nil {
 		return err
 	}
 
@@ -42,7 +42,7 @@ func (mp *metricsProxy) adaptRoute(cpContext component.WorkloadContext, route *r
 	// ReconcileExternalRoute works on the manifest object (no existing label), so we mark
 	// it for removal here to ensure preserveOriginalMetadata deletes it from the cluster object.
 	if !labelHCPRoutes {
-		util.MarkHCPRouteLabelForRemoval(route)
+		netutil.MarkHCPRouteLabelForRemoval(route)
 	}
 
 	return nil

@@ -22,6 +22,7 @@ package v1beta1
 type AutoNodeStatusApplyConfiguration struct {
 	NodeCount      *int32 `json:"nodeCount,omitempty"`
 	NodeClaimCount *int32 `json:"nodeClaimCount,omitempty"`
+	VCPUs          *int32 `json:"vcpus,omitempty"`
 }
 
 // AutoNodeStatusApplyConfiguration constructs a declarative configuration of the AutoNodeStatus type for use with
@@ -43,5 +44,13 @@ func (b *AutoNodeStatusApplyConfiguration) WithNodeCount(value int32) *AutoNodeS
 // If called multiple times, the NodeClaimCount field is set to the value of the last call.
 func (b *AutoNodeStatusApplyConfiguration) WithNodeClaimCount(value int32) *AutoNodeStatusApplyConfiguration {
 	b.NodeClaimCount = &value
+	return b
+}
+
+// WithVCPUs sets the VCPUs field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the VCPUs field is set to the value of the last call.
+func (b *AutoNodeStatusApplyConfiguration) WithVCPUs(value int32) *AutoNodeStatusApplyConfiguration {
+	b.VCPUs = &value
 	return b
 }

@@ -53,6 +53,11 @@ const (
 	// service-ca annotations placed on secrets it creates.
 	originatingServiceBetaAnnotation  = "service.beta.openshift.io/originating-service-name"
 	originatingServiceAlphaAnnotation = "service.alpha.openshift.io/originating-service-name"
+
+	// service-ca annotation on webhook configs that triggers CA bundle injection.
+	injectCABundleAnnotation = "service.beta.openshift.io/inject-cabundle"
+
+	webhookConfigName = "hypershift.openshift.io"
 )
 
 // WebhookCertReconciler reconciles the self-managed webhook CA and serving cert.
@@ -172,14 +177,44 @@ func (r *WebhookCertReconciler) patchCRDsCABundle(ctx context.Context, caBundle 
 	return nil
 }
 
+// removeInjectCABundleAnnotation removes the service-ca inject-cabundle annotation from
+// webhook configurations so the service-ca operator stops overwriting our self-managed caBundle.
+func (r *WebhookCertReconciler) removeInjectCABundleAnnotation(ctx context.Context, log logr.Logger) error {
+	mwc := &admissionregistrationv1.MutatingWebhookConfiguration{}
+	if err := r.Client.Get(ctx, client.ObjectKey{Name: webhookConfigName}, mwc); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to get MutatingWebhookConfiguration: %w", err)
+		}
+	} else if _, ok := mwc.Annotations[injectCABundleAnnotation]; ok {
+		delete(mwc.Annotations, injectCABundleAnnotation)
+		if err := r.Client.Update(ctx, mwc); err != nil {
+			return fmt.Errorf("failed to remove %s annotation from MutatingWebhookConfiguration: %w", injectCABundleAnnotation, err)
+		}
+		log.Info("Removed inject-cabundle annotation from MutatingWebhookConfiguration")
+	}
+
+	vwc := &admissionregistrationv1.ValidatingWebhookConfiguration{}
+	if err := r.Client.Get(ctx, client.ObjectKey{Name: webhookConfigName}, vwc); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to get ValidatingWebhookConfiguration: %w", err)
+		}
+	} else if _, ok := vwc.Annotations[injectCABundleAnnotation]; ok {
+		delete(vwc.Annotations, injectCABundleAnnotation)
+		if err := r.Client.Update(ctx, vwc); err != nil {
+			return fmt.Errorf("failed to remove %s annotation from ValidatingWebhookConfiguration: %w", injectCABundleAnnotation, err)
+		}
+		log.Info("Removed inject-cabundle annotation from ValidatingWebhookConfiguration")
+	}
+
+	return nil
+}
+
 // patchWebhookConfigsCABundle patches the caBundle on MutatingWebhookConfiguration and ValidatingWebhookConfiguration
 // resources named hypershift.openshift.io.
 func (r *WebhookCertReconciler) patchWebhookConfigsCABundle(ctx context.Context, caBundle []byte) error {
-	webhookName := "hypershift.openshift.io"
-
 	// Patch MutatingWebhookConfiguration
 	mwc := &admissionregistrationv1.MutatingWebhookConfiguration{}
-	if err := r.Client.Get(ctx, client.ObjectKey{Name: webhookName}, mwc); err != nil {
+	if err := r.Client.Get(ctx, client.ObjectKey{Name: webhookConfigName}, mwc); err != nil {
 		if !apierrors.IsNotFound(err) {
 			return fmt.Errorf("failed to get MutatingWebhookConfiguration: %w", err)
 		}
@@ -200,7 +235,7 @@ func (r *WebhookCertReconciler) patchWebhookConfigsCABundle(ctx context.Context,
 
 	// Patch ValidatingWebhookConfiguration
 	vwc := &admissionregistrationv1.ValidatingWebhookConfiguration{}
-	if err := r.Client.Get(ctx, client.ObjectKey{Name: webhookName}, vwc); err != nil {
+	if err := r.Client.Get(ctx, client.ObjectKey{Name: webhookConfigName}, vwc); err != nil {
 		if !apierrors.IsNotFound(err) {
 			return fmt.Errorf("failed to get ValidatingWebhookConfiguration: %w", err)
 		}
@@ -245,6 +280,12 @@ func (r *WebhookCertReconciler) removeServiceCAResources(ctx context.Context, lo
 			}
 			log.Info("Removed service-ca annotations from operator service")
 		}
+	}
+
+	// Remove the inject-cabundle annotation from webhook configurations so the
+	// service-ca operator stops overwriting the caBundle we manage ourselves.
+	if err := r.removeInjectCABundleAnnotation(ctx, log); err != nil {
+		return err
 	}
 
 	// If the existing serving cert secret was created by service-ca, delete it

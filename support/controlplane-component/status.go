@@ -7,7 +7,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	assets "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/podspec"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -237,7 +237,7 @@ func (c *controlPlaneWorkload[T]) checkOperandsRolloutStatus(cpContext WorkloadC
 			errs = append(errs, fmt.Errorf("deployment %s/%s has version %s, expected %s", deployment.Namespace, deployment.Name, releaseVersion, expectedVersion))
 			continue
 		}
-		if !util.IsDeploymentReady(cpContext, &deployment) {
+		if !podspec.IsDeploymentReady(cpContext, &deployment) {
 			errs = append(errs, fmt.Errorf("deployment %s/%s is not ready", deployment.Namespace, deployment.Name))
 		}
 	}

@@ -20,7 +20,7 @@ import (
 	"fmt"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	supportutil "github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/podspec"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -109,7 +109,7 @@ func VerifyRequestServingPodDistribution(ctx context.Context, hc *hyperv1.Hosted
 			if dep.Spec.Replicas == nil || *dep.Spec.Replicas != int32(expectedReplicas) {
 				errs = append(errs, fmt.Errorf("deployment %s has replicas %v, expected %d", depName, valueOrZero(dep.Spec.Replicas), expectedReplicas))
 			}
-			if !supportutil.IsDeploymentReady(pctx, dep) {
+			if !podspec.IsDeploymentReady(pctx, dep) {
 				errs = append(errs, fmt.Errorf("deployment %s not yet ready", depName))
 			}
 		}

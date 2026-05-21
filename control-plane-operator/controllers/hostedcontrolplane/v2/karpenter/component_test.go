@@ -6,7 +6,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1beta1"
+	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	assets "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
@@ -27,10 +27,10 @@ func TestPredicate(t *testing.T) {
 		},
 		Spec: hyperv1.HostedControlPlaneSpec{
 			InfraID: "test-infra-id",
-			AutoNode: &hyperv1.AutoNode{
+			AutoNode: hyperv1.AutoNode{
 				Provisioner: hyperv1.ProvisionerConfig{
 					Name: hyperv1.ProvisionerKarpenter,
-					Karpenter: &hyperv1.KarpenterConfig{
+					Karpenter: hyperv1.KarpenterConfig{
 						Platform: hyperv1.AWSPlatform,
 					},
 				},

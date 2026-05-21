@@ -23,8 +23,11 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	hyperapi "github.com/openshift/hypershift/support/api"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/client-go/tools/clientcmd"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -35,13 +38,15 @@ type TestContextGetter func() *TestContext
 // TestContext holds the test context including clients and hosted cluster reference
 type TestContext struct {
 	context.Context
-	MgmtClient            crclient.Client
-	ClusterName           string
-	ClusterNamespace      string
-	ControlPlaneNamespace string
-	ArtifactDir           string
-	hostedCluster         *hyperv1.HostedCluster
-	hostedClusterOnce     sync.Once
+	MgmtClient              crclient.Client
+	ClusterName             string
+	ClusterNamespace        string
+	ControlPlaneNamespace   string
+	ArtifactDir             string
+	hostedCluster           *hyperv1.HostedCluster
+	hostedClusterOnce       sync.Once
+	hostedClusterClient     crclient.Client
+	hostedClusterClientOnce sync.Once
 }
 
 // GetHostedCluster returns the HostedCluster associated with this test context.
@@ -71,6 +76,46 @@ func (tc *TestContext) GetHostedCluster() *hyperv1.HostedCluster {
 		tc.hostedCluster = hostedCluster
 	})
 	return tc.hostedCluster
+}
+
+// GetHostedClusterClient returns a controller-runtime client for the hosted cluster.
+// It reads the kubeconfig from the secret referenced by the HostedCluster status.
+// The client is lazily initialized and cached.
+// Returns nil if the HostedCluster is not available or its KubeConfig status is not set.
+// Panics on any other initialization failure (e.g., kubeconfig secret not found, invalid kubeconfig data).
+func (tc *TestContext) GetHostedClusterClient() crclient.Client {
+	tc.hostedClusterClientOnce.Do(func() {
+		hc := tc.GetHostedCluster()
+		if hc == nil || hc.Status.KubeConfig == nil {
+			return
+		}
+
+		var kubeconfigSecret corev1.Secret
+		err := tc.MgmtClient.Get(tc.Context, crclient.ObjectKey{
+			Namespace: hc.Namespace,
+			Name:      hc.Status.KubeConfig.Name,
+		}, &kubeconfigSecret)
+		if err != nil {
+			panic(fmt.Sprintf("failed to get kubeconfig secret %s/%s: %v", hc.Namespace, hc.Status.KubeConfig.Name, err))
+		}
+
+		kubeconfigData, ok := kubeconfigSecret.Data["kubeconfig"]
+		if !ok || len(kubeconfigData) == 0 {
+			panic(fmt.Sprintf("kubeconfig key not found or empty in secret %s/%s", hc.Namespace, hc.Status.KubeConfig.Name))
+		}
+
+		restConfig, err := clientcmd.RESTConfigFromKubeConfig(kubeconfigData)
+		if err != nil {
+			panic(fmt.Sprintf("failed to create REST config from kubeconfig: %v", err))
+		}
+
+		client, err := crclient.New(restConfig, crclient.Options{Scheme: hyperapi.Scheme})
+		if err != nil {
+			panic(fmt.Sprintf("failed to create hosted cluster client: %v", err))
+		}
+		tc.hostedClusterClient = client
+	})
+	return tc.hostedClusterClient
 }
 
 var (

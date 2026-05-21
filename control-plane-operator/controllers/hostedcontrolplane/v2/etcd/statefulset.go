@@ -8,7 +8,8 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	component "github.com/openshift/hypershift/support/controlplane-component"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/netutil"
+	"github.com/openshift/hypershift/support/podspec"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -20,12 +21,12 @@ func adaptStatefulSet(cpContext component.WorkloadContext, sts *appsv1.StatefulS
 	hcp := cpContext.HCP
 	managedEtcdSpec := hcp.Spec.Etcd.Managed
 
-	ipv4, err := util.IsIPv4CIDR(hcp.Spec.Networking.ClusterNetwork[0].CIDR.String())
+	ipv4, err := netutil.IsIPv4CIDR(hcp.Spec.Networking.ClusterNetwork[0].CIDR.String())
 	if err != nil {
 		return fmt.Errorf("error checking the ClusterNetworkCIDR: %v", err)
 	}
 
-	util.UpdateContainer(ComponentName, sts.Spec.Template.Spec.Containers, func(c *corev1.Container) {
+	podspec.UpdateContainer(ComponentName, sts.Spec.Template.Spec.Containers, func(c *corev1.Container) {
 		replicas := component.DefaultReplicas(hcp, &etcd{}, ComponentName)
 		var members []string
 		for i := range replicas {
@@ -40,22 +41,22 @@ func adaptStatefulSet(cpContext component.WorkloadContext, sts *appsv1.StatefulS
 		)
 
 		if !ipv4 {
-			util.UpsertEnvVar(c, corev1.EnvVar{
+			podspec.UpsertEnvVar(c, corev1.EnvVar{
 				Name:  "ETCD_LISTEN_PEER_URLS",
 				Value: "https://[$(POD_IP)]:2380",
 			})
-			util.UpsertEnvVar(c, corev1.EnvVar{
+			podspec.UpsertEnvVar(c, corev1.EnvVar{
 				Name:  "ETCD_LISTEN_CLIENT_URLS",
 				Value: "https://[$(POD_IP)]:2379,https://localhost:2379",
 			})
-			util.UpsertEnvVar(c, corev1.EnvVar{
+			podspec.UpsertEnvVar(c, corev1.EnvVar{
 				Name:  "ETCD_LISTEN_METRICS_URLS",
 				Value: "https://[::]:2382",
 			})
 		}
 	})
 
-	util.UpdateContainer("etcd-metrics", sts.Spec.Template.Spec.Containers, func(c *corev1.Container) {
+	podspec.UpdateContainer("etcd-metrics", sts.Spec.Template.Spec.Containers, func(c *corev1.Container) {
 		var loInterface, allInterfaces string
 		if ipv4 {
 			loInterface = "127.0.0.1"
@@ -67,6 +68,7 @@ func adaptStatefulSet(cpContext component.WorkloadContext, sts *appsv1.StatefulS
 		c.Args = append(c.Args,
 			fmt.Sprintf("--listen-addr=%s:2383", loInterface),
 			fmt.Sprintf("--metrics-addr=https://%s:2381", allInterfaces),
+			"--advertise-client-url=",
 		)
 	})
 

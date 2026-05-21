@@ -214,11 +214,11 @@ func testKillAllMembers(parentCtx context.Context, client crclient.Client, clust
 		// Ensure that all etcd pods are replaced
 		e2eutil.EventuallyObjects(t, ctx, "etcd Pods to be replaced", func(ctx context.Context) ([]*corev1.Pod, error) {
 			pods := &corev1.PodList{}
-			err := client.List(ctx, etcdPods, &crclient.ListOptions{
+			err := client.List(ctx, pods, &crclient.ListOptions{
 				Namespace:     guestNamespace,
 				LabelSelector: labels.Set(etcdSts.Spec.Selector.MatchLabels).AsSelector(),
 			})
-			var items []*corev1.Pod
+			items := make([]*corev1.Pod, len(pods.Items))
 			for i := range pods.Items {
 				items[i] = &pods.Items[i]
 			}
@@ -307,9 +307,9 @@ func testEtcdMemberCorruption(parentCtx context.Context, client crclient.Client,
 			err := client.Get(ctx, crclient.ObjectKeyFromObject(sts), sts)
 			return sts, err
 		}, []e2eutil.Predicate[*appsv1.StatefulSet]{func(sts *appsv1.StatefulSet) (done bool, reasons string, err error) {
-			want := ptr.Deref(etcdSts.Spec.Replicas, 3)
+			want := ptr.Deref(etcdSts.Spec.Replicas, 0)
 			got := sts.Status.ReadyReplicas
-			return want != 3 && want == got, fmt.Sprintf("wanted %d replicas in spec, got %d in status", want, got), nil
+			return want != 0 && want == got, fmt.Sprintf("wanted %d replicas in spec, got %d in status", want, got), nil
 		}}, e2eutil.WithInterval(5*time.Second), e2eutil.WithTimeout(30*time.Minute))
 	}
 }
@@ -380,9 +380,9 @@ func testEtcdMemberMissing(parentCtx context.Context, client crclient.Client, cl
 			err := client.Get(ctx, crclient.ObjectKeyFromObject(sts), sts)
 			return sts, err
 		}, []e2eutil.Predicate[*appsv1.StatefulSet]{func(sts *appsv1.StatefulSet) (done bool, reasons string, err error) {
-			want := ptr.Deref(etcdSts.Spec.Replicas, 3)
+			want := ptr.Deref(etcdSts.Spec.Replicas, 0)
 			got := sts.Status.ReadyReplicas
-			return want != 3 && want == got, fmt.Sprintf("wanted %d replicas in spec, got %d in status", want, got), nil
+			return want != 0 && want == got, fmt.Sprintf("wanted %d replicas in spec, got %d in status", want, got), nil
 		}}, e2eutil.WithInterval(5*time.Second), e2eutil.WithTimeout(30*time.Minute))
 	}
 }

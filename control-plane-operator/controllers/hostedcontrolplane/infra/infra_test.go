@@ -11,9 +11,9 @@ import (
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/events"
+	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/testutil"
 	"github.com/openshift/hypershift/support/upsert"
-	"github.com/openshift/hypershift/support/util"
 
 	routev1 "github.com/openshift/api/route/v1"
 
@@ -715,6 +715,7 @@ func simulateInfraProvisioning(ctx context.Context, c client.Client, hcp *hyperv
 }
 
 func TestReconcileInfrastructure_ErrorCases(t *testing.T) {
+	t.Parallel()
 	testCases := []struct {
 		name string
 		hcp  *hyperv1.HostedControlPlane
@@ -811,6 +812,7 @@ func TestReconcileInfrastructure_ErrorCases(t *testing.T) {
 }
 
 func TestReconcileInfrastructure_WhenTransitioningFromPublicToPrivate_ItShouldCleanUpPublicResources(t *testing.T) {
+	t.Parallel()
 	g := NewGomegaWithT(t)
 
 	// Start with Public configuration
@@ -865,6 +867,7 @@ func TestReconcileInfrastructure_WhenTransitioningFromPublicToPrivate_ItShouldCl
 }
 
 func TestReconcileInfrastructure_WhenTransitioningFromPrivateToPublic_ItShouldCleanUpPrivateResources(t *testing.T) {
+	t.Parallel()
 	g := NewGomegaWithT(t)
 
 	// Start with Private configuration
@@ -921,6 +924,7 @@ func TestReconcileInfrastructure_WhenTransitioningFromPrivateToPublic_ItShouldCl
 // Tests moved from hostedcontrolplane_controller_test.go
 
 func TestReconcileOAuthService(t *testing.T) {
+	t.Parallel()
 	targetNamespace := "test"
 	apiPort := int32(config.KASSVCPort)
 	hostname := "test.example.com"
@@ -1149,6 +1153,7 @@ func TestReconcileOAuthService(t *testing.T) {
 }
 
 func TestReconcileAPIServerService(t *testing.T) {
+	t.Parallel()
 	targetNamespace := "test"
 	apiPort := int32(config.KASSVCPort)
 	kasPort := "client"
@@ -1212,6 +1217,7 @@ func TestReconcileAPIServerService(t *testing.T) {
 	}
 	withCrossZoneAnnotation := func(svc *corev1.Service) {
 		svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled"] = "true"
+		svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-attributes"] = "load_balancing.cross_zone.enabled=true"
 	}
 	withLoadBalancerSourceRanges := func(svc *corev1.Service) {
 		svc.Spec.LoadBalancerSourceRanges = allowCIDRString
@@ -1244,7 +1250,7 @@ func TestReconcileAPIServerService(t *testing.T) {
 			Labels: map[string]string{
 				"hypershift.openshift.io/hosted-control-plane": targetNamespace,
 				hyperv1.RouteVisibilityLabel:                   string(hyperv1.RouteVisibilityPrivate),
-				util.InternalRouteLabel:                        "true",
+				netutil.InternalRouteLabel:                     "true",
 			},
 			OwnerReferences: []metav1.OwnerReference{ownerRef},
 		},
@@ -1333,6 +1339,7 @@ func TestReconcileAPIServerService(t *testing.T) {
 				kasPublicService(func(s *corev1.Service) {
 					s.Spec.Type = corev1.ServiceTypeClusterIP
 					delete(s.Annotations, "external-dns.alpha.kubernetes.io/hostname")
+					delete(s.Annotations, "service.beta.kubernetes.io/aws-load-balancer-type")
 				}),
 				kasPrivateService(withCrossZoneAnnotation),
 			},
@@ -1351,6 +1358,7 @@ func TestReconcileAPIServerService(t *testing.T) {
 				kasPublicService(func(s *corev1.Service) {
 					s.Spec.Type = corev1.ServiceTypeClusterIP
 					delete(s.Annotations, "external-dns.alpha.kubernetes.io/hostname")
+					delete(s.Annotations, "service.beta.kubernetes.io/aws-load-balancer-type")
 				}),
 			},
 			expectedRoutes: []routev1.Route{
@@ -1372,6 +1380,7 @@ func TestReconcileAPIServerService(t *testing.T) {
 				kasPublicService(func(s *corev1.Service) {
 					s.Spec.Type = corev1.ServiceTypeClusterIP
 					delete(s.Annotations, "external-dns.alpha.kubernetes.io/hostname")
+					delete(s.Annotations, "service.beta.kubernetes.io/aws-load-balancer-type")
 				}),
 			},
 			expectedRoutes: []routev1.Route{
@@ -1393,6 +1402,7 @@ func TestReconcileAPIServerService(t *testing.T) {
 				kasPublicService(func(s *corev1.Service) {
 					s.Spec.Type = corev1.ServiceTypeClusterIP
 					delete(s.Annotations, "external-dns.alpha.kubernetes.io/hostname")
+					delete(s.Annotations, "service.beta.kubernetes.io/aws-load-balancer-type")
 				}),
 			},
 			expectedRoutes: []routev1.Route{
@@ -1491,6 +1501,7 @@ func TestReconcileHCPRouterServices(t *testing.T) {
 	}
 	withCrossZoneAnnotation := func(svc *corev1.Service) {
 		svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled"] = "true"
+		svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-attributes"] = "load_balancing.cross_zone.enabled=true"
 	}
 	tests := []struct {
 		name                         string
@@ -1676,6 +1687,7 @@ func (c *fakeMessageCollector) ErrorMessages(resource client.Object) ([]string, 
 var _ events.MessageCollector = &fakeMessageCollector{}
 
 func TestReconcileRouterServiceStatus(t *testing.T) {
+	t.Parallel()
 	const namespace = "test-ns"
 	const svcName = "test"
 	tests := []struct {
@@ -1826,6 +1838,7 @@ func TestReconcileInternalRouterServiceStatus(t *testing.T) {
 }
 
 func TestReconcileOAuthService_AzureLoadBalancer(t *testing.T) {
+	t.Parallel()
 	targetNamespace := "test"
 	apiPort := int32(config.KASSVCPort)
 	ipFamilyPolicy := corev1.IPFamilyPolicyPreferDualStack

@@ -4,23 +4,29 @@ import (
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/podspec"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 )
 
 func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
-	util.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
-		util.UpsertEnvVar(c, corev1.EnvVar{
+	podspec.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
+		podspec.UpsertEnvVar(c, corev1.EnvVar{
 			Name: "RELEASE_VERSION", Value: cpContext.UserReleaseImageProvider.Version(),
 		})
-		util.UpsertEnvVar(c, corev1.EnvVar{
+		podspec.UpsertEnvVar(c, corev1.EnvVar{
 			Name: "IMAGE", Value: cpContext.UserReleaseImageProvider.GetImage("haproxy-router"),
 		})
-		util.UpsertEnvVar(c, corev1.EnvVar{
+		podspec.UpsertEnvVar(c, corev1.EnvVar{
 			Name: "CANARY_IMAGE", Value: cpContext.UserReleaseImageProvider.GetImage("cluster-ingress-operator"),
 		})
+
+		if cpContext.HCP.Spec.FIPS {
+			podspec.UpsertEnvVar(c, corev1.EnvVar{
+				Name: "FIPS_ENABLED", Value: "true",
+			})
+		}
 
 		// For managed Azure deployments, we pass an environment variable, MANAGED_AZURE_HCP_CREDENTIALS_FILE_PATH, so
 		// we authenticate with Azure API through UserAssignedCredential authentication. We also mount the

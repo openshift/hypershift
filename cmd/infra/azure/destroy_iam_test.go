@@ -22,6 +22,7 @@ func TestDestroyIAMOptionsValidate(t *testing.T) {
 				WorkloadIdentitiesFile: "/path/to/identities.json",
 				CredentialsFile:        "/path/to/creds.json",
 				ResourceGroupName:      "test-rg",
+				DNSZoneRG:              "dns-zone-rg",
 			},
 			expectedError: false,
 			description:   "Should pass when all required fields are provided",
@@ -80,6 +81,18 @@ func TestDestroyIAMOptionsValidate(t *testing.T) {
 			expectedError: true,
 			errorContains: "infra-id is required",
 			description:   "Should require infra-id",
+		},
+		"When dns-zone-rg-name is empty it should return an error": {
+			opts: DestroyIAMOptions{
+				Name:                   "test-cluster",
+				InfraID:                "test-infra-id",
+				WorkloadIdentitiesFile: "/path/to/identities.json",
+				CredentialsFile:        "/path/to/creds.json",
+				ResourceGroupName:      "test-rg",
+			},
+			expectedError: true,
+			errorContains: "dns-zone-rg-name is required",
+			description:   "Should require dns-zone-rg-name",
 		},
 	}
 

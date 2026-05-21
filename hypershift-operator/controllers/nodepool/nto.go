@@ -12,7 +12,9 @@ import (
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	supportutil "github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/backwardcompat"
+	"github.com/openshift/hypershift/support/k8sutil"
+	"github.com/openshift/hypershift/support/netutil"
 
 	configv1 "github.com/openshift/api/config/v1"
 	configv1alpha1 "github.com/openshift/api/config/v1alpha1"
@@ -61,7 +63,7 @@ func (r *NodePoolReconciler) reconcileMirroredConfigs(ctx context.Context, logr 
 
 	want := set.Set[string]{}
 	for _, mirroredConfig := range mirroredConfigs {
-		want.Insert(supportutil.ShortenName(mirroredConfig.Name, nodePool.Name, validation.LabelValueMaxLength))
+		want.Insert(netutil.ShortenName(mirroredConfig.Name, nodePool.Name, validation.LabelValueMaxLength))
 	}
 	have := set.Set[string]{}
 	for _, configMap := range existingConfigsList.Items {
@@ -83,7 +85,7 @@ func (r *NodePoolReconciler) reconcileMirroredConfigs(ctx context.Context, logr 
 		if !toDelete.Has(existingConfig.Name) {
 			continue
 		}
-		_, err := supportutil.DeleteIfNeeded(ctx, r.Client, existingConfig)
+		_, err := k8sutil.DeleteIfNeeded(ctx, r.Client, existingConfig)
 		if err != nil {
 			return fmt.Errorf("failed to delete ConfigMap %s: %w", client.ObjectKeyFromObject(existingConfig).String(), err)
 		}
@@ -111,7 +113,7 @@ func (r *NodePoolReconciler) reconcileMirroredConfigs(ctx context.Context, logr 
 	for _, mirroredConfig := range mirroredConfigs {
 		cm := &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      supportutil.ShortenName(mirroredConfig.Name, nodePool.Name, validation.LabelValueMaxLength),
+				Name:      netutil.ShortenName(mirroredConfig.Name, nodePool.Name, validation.LabelValueMaxLength),
 				Namespace: controlPlaneNamespace},
 		}
 		if result, err := r.CreateOrUpdate(ctx, r.Client, cm, func() error {
@@ -442,6 +444,8 @@ func getMirrorConfigForManifest(manifest []byte) (*MirrorConfig, error) {
 	_ = configv1.Install(scheme)
 	_ = configv1alpha1.Install(scheme)
 
+	manifest = backwardcompat.NormalizeV1Alpha1ClusterImagePolicy(manifest)
+
 	yamlSerializer := serializer.NewSerializerWithOptions(
 		serializer.DefaultMetaFactory, scheme, scheme,
 		serializer.SerializerOptions{Yaml: true, Pretty: true, Strict: false},
@@ -514,7 +518,7 @@ func (r *NodePoolReconciler) ntoReconcile(ctx context.Context, nodePool *hyperv1
 
 	tunedConfigMap := TunedConfigMap(controlPlaneNamespace, nodePool.Name)
 	if tunedConfig == "" {
-		if _, err := supportutil.DeleteIfNeeded(ctx, r.Client, tunedConfigMap); err != nil {
+		if _, err := k8sutil.DeleteIfNeeded(ctx, r.Client, tunedConfigMap); err != nil {
 			return fmt.Errorf("failed to delete tunedConfig ConfigMap: %w", err)
 		}
 	} else {
@@ -553,7 +557,7 @@ func (r *NodePoolReconciler) ntoReconcile(ctx context.Context, nodePool *hyperv1
 		for i := range existingPerformanceProfileConfigMapList.Items {
 			ppConfigMap := &existingPerformanceProfileConfigMapList.Items[i]
 			if ppConfigMap.Name != performanceProfileConfigMap.Name {
-				if _, err := supportutil.DeleteIfNeeded(ctx, r.Client, ppConfigMap); err != nil {
+				if _, err := k8sutil.DeleteIfNeeded(ctx, r.Client, ppConfigMap); err != nil {
 					return fmt.Errorf("failed to delete performanceProfile ConfigMap: %w", err)
 				}
 			}

@@ -4,7 +4,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	oapiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oapi"
 	component "github.com/openshift/hypershift/support/controlplane-component"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/podspec"
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
@@ -43,7 +43,7 @@ func NewComponent() component.ControlPlaneComponent {
 			Namespace: "openshift-cloud-credential-operator",
 			MountPath: "/etc/kubernetes",
 		}).
-		InjectAvailabilityProberContainer(util.AvailabilityProberOpts{
+		InjectAvailabilityProberContainer(podspec.AvailabilityProberOpts{
 			KubeconfigVolumeName:          component.ServiceAccountKubeconfigVolumeName,
 			WaitForInfrastructureResource: true,
 			RequiredAPIs: []schema.GroupVersionKind{

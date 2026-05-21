@@ -103,7 +103,7 @@ func (c *CertificateSigningRequestApprovalController) syncCertificateSigningRequ
 	return nil
 }
 
-func (c *CertificateSigningRequestApprovalController) processCertificateSigningRequest(name string) (*certificatesv1.CertificateSigningRequest, bool, error) {
+func (c *CertificateSigningRequestApprovalController) processCertificateSigningRequest(name string) (*certificatesv1.CertificateSigningRequest, bool, error) { //nolint:unparam // result kept for API consistency
 	csr, err := c.getCSR(name)
 	if apierrors.IsNotFound(err) {
 		return nil, false, nil // nothing to do

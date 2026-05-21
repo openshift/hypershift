@@ -32,7 +32,6 @@ const (
 
 func (r *reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
 	log := ctrl.LoggerFrom(ctx)
-	log.Info("Reconciling")
 
 	hcp := &hyperv1.HostedControlPlane{}
 	if err := r.client.Get(ctx, r.hcpKey, hcp); err != nil {
@@ -95,7 +94,7 @@ func (r *reconciler) findKubevirtPassthroughServices(ctx context.Context, hcp *h
 	return kubevirtPassthroughServices, nil
 }
 
-func (r *reconciler) reconcileKubevirtPassthroughService(ctx context.Context, hcp *hyperv1.HostedControlPlane, machineKey types.NamespacedName, cpService *corev1.Service) error {
+func (r *reconciler) reconcileKubevirtPassthroughService(ctx context.Context, _ *hyperv1.HostedControlPlane, machineKey types.NamespacedName, cpService *corev1.Service) error {
 	log := ctrl.LoggerFrom(ctx)
 
 	// If there is a selector endpoints should not be generated
@@ -125,6 +124,10 @@ func (r *reconciler) reconcileKubevirtPassthroughService(ctx context.Context, hc
 			parsedAddr, err := netip.ParseAddr(machineAddress.Address)
 			if err != nil {
 				return fmt.Errorf("parsing machine address (%s) in machine %s: %w", machineAddress.Address, machine.Name, err)
+			}
+			if parsedAddr.IsLinkLocalUnicast() {
+				log.Info("Skipping link-local address for EndpointSlice", "address", machineAddress.Address, "machine", machine.Name)
+				continue
 			}
 			if parsedAddr.Is4() {
 				ipv4MachineAddresses = append(ipv4MachineAddresses, machineAddress.Address)

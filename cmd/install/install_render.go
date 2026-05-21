@@ -9,6 +9,7 @@ import (
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/config"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -69,6 +70,7 @@ func NewRenderCommand(opts *Options) *cobra.Command {
 	cmd.Flags().StringVar(&opts.Format, "format", RenderFormatYaml, fmt.Sprintf("Output format for the manifests, supports %s and %s", RenderFormatYaml, RenderFormatJson))
 	cmd.Flags().StringVar(&opts.OutputTypes, "outputs", string(OutputAll), fmt.Sprintf("Which manifests to output, one of %s, %s, or %s. Output CRDs separately to allow applying them first and waiting for them to be established.", OutputAll, OutputCRDs, OutputResources))
 	cmd.Flags().StringVar(&opts.OutputFile, "output-file", "", "File to write the rendered manifests to. Writes to STDOUT if not specified.")
+	cmd.Flags().BoolVar(&opts.RenderSensitive, "render-sensitive", false, "Render secrets in the output. By default secrets are excluded to avoid leaking private key material into GitOps repositories")
 	cmd.MarkFlagsMutuallyExclusive("template", "outputs")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
@@ -103,6 +105,10 @@ func RenderHyperShiftOperator(ctx context.Context, cmdOut io.Writer, opts *Optio
 		return err
 	}
 
+	if opts.Template && !opts.RenderSensitive {
+		return fmt.Errorf("--template requires --render-sensitive=true because Template output can embed Secret objects")
+	}
+
 	var crds []crclient.Object
 	var objects []crclient.Object
 
@@ -129,6 +135,18 @@ func RenderHyperShiftOperator(ctx context.Context, cmdOut io.Writer, opts *Optio
 	case OutputResources:
 		objectsToRender = objects
 	}
+
+	if !opts.RenderSensitive {
+		filtered := make([]crclient.Object, 0, len(objectsToRender))
+		for _, obj := range objectsToRender {
+			if _, isSecret := obj.(*corev1.Secret); isSecret {
+				continue
+			}
+			filtered = append(filtered, obj)
+		}
+		objectsToRender = filtered
+	}
+
 	var out io.Writer
 	if opts.OutputFile != "" {
 		file, err := os.Create(opts.OutputFile)

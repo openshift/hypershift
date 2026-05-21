@@ -42,8 +42,10 @@ func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 	cmd.Flags().StringVar(&opts.AzurePlatform.Location, "location", opts.AzurePlatform.Location, "Location for the cluster")
 	cmd.Flags().StringVar(&opts.AzurePlatform.ResourceGroupName, "resource-group-name", opts.AzurePlatform.ResourceGroupName, "The name of the resource group containing the HostedCluster infrastructure resources that need to be destroyed.")
 	cmd.Flags().BoolVar(&opts.AzurePlatform.PreserveResourceGroup, "preserve-resource-group", opts.AzurePlatform.PreserveResourceGroup, "When true, the managed/main resource group will not be deleted during cluster destroy. Only cluster-specific resources within the resource group will be cleaned up.")
+	cmd.Flags().StringVar(&opts.AzurePlatform.DNSZoneRGName, "dns-zone-rg-name", opts.AzurePlatform.DNSZoneRGName, util.DNSZoneRGNameDestroyDescription)
 
 	_ = cmd.MarkFlagRequired("azure-creds")
+	_ = cmd.MarkFlagRequired("dns-zone-rg-name")
 
 	logger := log.Log
 	cmd.Run = func(cmd *cobra.Command, args []string) {
@@ -148,6 +150,24 @@ func DestroyCluster(ctx context.Context, o *core.DestroyOptions) error {
 }
 
 func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error {
+	// Clean up role assignments before destroying infrastructure to avoid orphans.
+	// Match the create path resource-group names: {name}-nsg and {name}-vnet.
+	subscriptionID, azureCreds, err := util.SetupAzureCredentials(o.Log, nil, o.AzurePlatform.CredentialsFile)
+	if err != nil {
+		return fmt.Errorf("failed to setup Azure credentials: %w", err)
+	}
+
+	nsgRG := o.Name + "-nsg"
+	vnetRG := o.Name + "-vnet"
+
+	rbacManager := azureinfra.NewRBACManager(subscriptionID, azureCreds)
+	// assignCustomHCPRoles=false is safe: GetServicePrincipalScopes only uses the flag to select
+	// the role definition ID, not to modify the scopes list. Cleanup derives role assignment names
+	// from infraID + component + scope, so the role ID is irrelevant.
+	if err := rbacManager.CleanupRoleAssignments(ctx, o.Log, o.InfraID, o.AzurePlatform.ResourceGroupName, nsgRG, vnetRG, o.AzurePlatform.DNSZoneRGName, false); err != nil {
+		o.Log.Error(err, "Failed to clean up some role assignments, continuing with infrastructure deletion")
+	}
+
 	destroyInfraOptions := &azureinfra.DestroyInfraOptions{
 		Name:                  o.Name,
 		Location:              o.AzurePlatform.Location,

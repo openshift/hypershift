@@ -7,8 +7,8 @@ import (
 
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
+	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/oadp"
-	utilroute "github.com/openshift/hypershift/support/util"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
@@ -17,6 +17,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 func NewCreateRestoreCommand() *cobra.Command {
@@ -62,6 +63,11 @@ https://hypershift.pages.dev/how-to/disaster-recovery/dr-cli/`,
 			// Set pointer values from CLI flags
 			opts.RestorePVs = &restorePVs
 			opts.PreserveNodePorts = &preserveNodePorts
+			changedFlags := make(map[string]bool)
+			cmd.Flags().Visit(func(f *pflag.Flag) { changedFlags[f.Name] = true })
+			if err := opts.validateEtcdSnapshotFlags(changedFlags); err != nil {
+				return err
+			}
 			return opts.RunRestore(cmd.Context())
 		},
 	}
@@ -80,6 +86,7 @@ https://hypershift.pages.dev/how-to/disaster-recovery/dr-cli/`,
 	cmd.Flags().BoolVar(&opts.Render, "render", false, "Render the restore object to STDOUT instead of creating it")
 	cmd.Flags().BoolVar(&restorePVs, "restore-pvs", true, "Restore persistent volumes")
 	cmd.Flags().BoolVar(&preserveNodePorts, "preserve-node-ports", true, "Preserve NodePort assignments during restore")
+	cmd.Flags().BoolVar(&opts.UseEtcdSnapshot, "use-etcd-snapshot", false, "Use etcd snapshot mode: etcd is backed up via HCPEtcdBackup CRD snapshots instead of PV volume snapshots")
 
 	// Mark required flags - note that we'll validate backup OR schedule in Run()
 	_ = cmd.MarkFlagRequired("hc-name")
@@ -94,7 +101,7 @@ func GenerateRestoreName(hcName, hcNamespace string) string {
 	randomSuffix := utilrand.String(6)
 	baseName := fmt.Sprintf("%s-%s", hcName, hcNamespace)
 	// Use ShortenName to ensure it doesn't exceed DNS1123 subdomain max length (63 chars)
-	return utilroute.ShortenName(baseName, randomSuffix, validation.DNS1123LabelMaxLength)
+	return netutil.ShortenName(baseName, randomSuffix, validation.DNS1123LabelMaxLength)
 }
 
 func (o *CreateOptions) RunRestore(ctx context.Context) error {
@@ -344,8 +351,16 @@ func (o *CreateOptions) GenerateRestoreObject() (*unstructured.Unstructured, str
 		includedNamespacesInterface[i] = ns
 	}
 
-	excludedResourcesInterface := make([]interface{}, len(defaultExcludedResources))
-	for i, res := range defaultExcludedResources {
+	// Select excluded resources based on mode
+	var excludedResources []string
+	if o.UseEtcdSnapshot {
+		excludedResources = excludedResourcesEtcdSnapshot
+	} else {
+		excludedResources = defaultExcludedResources
+	}
+
+	excludedResourcesInterface := make([]interface{}, len(excludedResources))
+	for i, res := range excludedResources {
 		excludedResourcesInterface[i] = res
 	}
 
@@ -354,13 +369,24 @@ func (o *CreateOptions) GenerateRestoreObject() (*unstructured.Unstructured, str
 		"includedNamespaces":     includedNamespacesInterface,
 		"excludedResources":      excludedResourcesInterface,
 		"existingResourcePolicy": o.ExistingResourcePolicy,
-		"restorePVs":             *o.RestorePVs,
 		"preserveNodePorts":      *o.PreserveNodePorts,
+	}
+
+	if o.UseEtcdSnapshot {
+		spec["restorePVs"] = false
+		spec["cleanupBeforeRestore"] = "CleanupRestored"
+	} else {
+		spec["restorePVs"] = *o.RestorePVs
 	}
 
 	// Set either BackupName or ScheduleName, but not both
 	if o.BackupName != "" {
 		spec["backupName"] = o.BackupName
+		if o.UseEtcdSnapshot {
+			spec["veleroManagedClustersBackupName"] = o.BackupName
+			spec["veleroCredentialsBackupName"] = o.BackupName
+			spec["veleroResourcesBackupName"] = o.BackupName
+		}
 	} else if o.ScheduleName != "" {
 		spec["scheduleName"] = o.ScheduleName
 	}

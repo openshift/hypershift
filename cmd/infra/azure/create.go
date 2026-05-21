@@ -125,7 +125,6 @@ func BindProductFlags(opts *CreateInfraOptions, flags *pflag.FlagSet) {
 
 // Run is the main function responsible for creating the Azure infrastructure resources for a HostedCluster.
 func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInfraOutput, error) {
-	// Validate deployment model flags to prevent conflicts between ARO HCP and self-managed Azure
 	if err := o.validateDeploymentModelFlags(); err != nil {
 		return nil, err
 	}
@@ -136,180 +135,203 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 		BaseDomain: o.BaseDomain,
 	}
 
-	// Setup subscription ID and Azure credential information
 	subscriptionID, azureCreds, err := util.SetupAzureCredentials(l, o.Credentials, o.CredentialsFile)
 	if err != nil {
 		return nil, fmt.Errorf("failed to setup Azure credentials: %w", err)
 	}
 
-	// Initialize managers
 	rgMgr := NewResourceGroupManager(subscriptionID, azureCreds, o.Cloud)
 	netMgr := NewNetworkManager(subscriptionID, azureCreds, o.Cloud)
 	rbacMgr := NewRBACManager(subscriptionID, azureCreds)
 
-	// Create main resource group
-	resourceGroupName, msg, err := rgMgr.CreateOrGetResourceGroup(ctx, o, "")
-	if err != nil {
-		return nil, fmt.Errorf("failed to create a resource group: %w", err)
-	}
-	result.ResourceGroupName = resourceGroupName
-	l.Info(msg, "name", resourceGroupName)
-
-	// Get base DNS zone ID
-	result.PublicZoneID, err = netMgr.GetBaseDomainID(ctx, o.BaseDomain)
+	resourceGroupName, nsgResourceGroupName, vnetResourceGroupName, err := o.createNetworkResources(ctx, l, rgMgr, netMgr, &result)
 	if err != nil {
 		return nil, err
 	}
 
-	// Handle network security group
+	if err := o.handleIdentitiesAndRBAC(ctx, rbacMgr, &result, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName); err != nil {
+		return nil, err
+	}
+
+	if err := o.createDNSAndLBResources(ctx, l, netMgr, &result, resourceGroupName); err != nil {
+		return nil, err
+	}
+
+	if err := o.writeOutputFile(l, result); err != nil {
+		return nil, err
+	}
+
+	return &result, nil
+}
+
+func (o *CreateInfraOptions) createNetworkResources(ctx context.Context, l logr.Logger, rgMgr *ResourceGroupManager, netMgr *NetworkManager, result *CreateInfraOutput) (string, string, string, error) {
+	resourceGroupName, msg, err := rgMgr.CreateOrGetResourceGroup(ctx, o, "")
+	if err != nil {
+		return "", "", "", fmt.Errorf("failed to create a resource group: %w", err)
+	}
+	result.ResourceGroupName = resourceGroupName
+	l.Info(msg, "name", resourceGroupName)
+
+	result.PublicZoneID, err = netMgr.GetBaseDomainID(ctx, o.BaseDomain)
+	if err != nil {
+		return "", "", "", err
+	}
+
 	nsgResourceGroupName := ""
 	if len(o.NetworkSecurityGroupID) > 0 {
 		result.SecurityGroupID = o.NetworkSecurityGroupID
 		_, nsgResourceGroupName, err = azureutil.GetNameAndResourceGroupFromNetworkSecurityGroupID(o.NetworkSecurityGroupID)
 		if err != nil {
-			return nil, err
+			return "", "", "", err
 		}
 		l.Info("Using existing network security group", "ID", result.SecurityGroupID)
 	} else {
 		nsgResourceGroupName = o.Name + "-nsg"
 		nsgResourceGroupName, msg, err = rgMgr.CreateOrGetResourceGroup(ctx, o, nsgResourceGroupName)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create resource group for network security group: %w", err)
+			return "", "", "", fmt.Errorf("failed to create resource group for network security group: %w", err)
 		}
 		l.Info(msg, "name", nsgResourceGroupName)
 
 		nsgID, err := netMgr.CreateSecurityGroup(ctx, nsgResourceGroupName, o.Name, o.InfraID, o.Location)
 		if err != nil {
-			return nil, err
+			return "", "", "", err
 		}
 		result.SecurityGroupID = nsgID
 		l.Info("Successfully created network security group", "ID", result.SecurityGroupID)
 	}
 
-	// Handle subnet
 	if len(o.SubnetID) > 0 {
 		result.SubnetID = o.SubnetID
 		l.Info("Using existing subnet", "ID", result.SubnetID)
 	}
 
-	// Handle virtual network
 	vnetResourceGroupName := ""
 	if len(o.VnetID) > 0 {
 		result.VNetID = o.VnetID
 		_, vnetResourceGroupName, err = azureutil.GetVnetNameAndResourceGroupFromVnetID(o.VnetID)
 		if err != nil {
-			return nil, err
+			return "", "", "", err
 		}
 		l.Info("Using existing vnet", "ID", result.VNetID)
 	} else {
 		vnetResourceGroupName = o.Name + "-vnet"
 		vnetResourceGroupName, msg, err = rgMgr.CreateOrGetResourceGroup(ctx, o, vnetResourceGroupName)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create resource group for virtual network: %w", err)
+			return "", "", "", fmt.Errorf("failed to create resource group for virtual network: %w", err)
 		}
 		l.Info(msg, "name", vnetResourceGroupName)
 
 		vnet, err := netMgr.CreateVirtualNetwork(ctx, vnetResourceGroupName, o.Name, o.InfraID, o.Location, o.SubnetID, result.SecurityGroupID)
 		if err != nil {
-			return nil, err
+			return "", "", "", err
 		}
 		result.SubnetID = *vnet.Properties.Subnets[0].ID
 		result.VNetID = *vnet.ID
 		l.Info("Successfully created vnet", "ID", result.VNetID)
 	}
 
-	// Handle managed identities and RBAC
+	return resourceGroupName, nsgResourceGroupName, vnetResourceGroupName, nil
+}
+
+func (o *CreateInfraOptions) handleIdentitiesAndRBAC(ctx context.Context, rbacMgr *RBACManager, result *CreateInfraOutput, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName string) error {
 	if o.ManagedIdentitiesFile != "" {
 		result.ControlPlaneMIs = &hyperv1.AzureResourceManagedIdentities{}
 		managedIdentitiesRaw, err := os.ReadFile(o.ManagedIdentitiesFile)
 		if err != nil {
-			return nil, fmt.Errorf("failed to read --managed-identities-file %s: %w", o.ManagedIdentitiesFile, err)
+			return fmt.Errorf("failed to read --managed-identities-file %s: %w", o.ManagedIdentitiesFile, err)
 		}
 		if err := yaml.Unmarshal(managedIdentitiesRaw, &result.ControlPlaneMIs.ControlPlane); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal --managed-identities-file: %w", err)
+			return fmt.Errorf("failed to unmarshal --managed-identities-file: %w", err)
 		}
-
 		if o.AssignServicePrincipalRoles {
 			if err := rbacMgr.AssignControlPlaneRoles(ctx, o, result.ControlPlaneMIs, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName); err != nil {
-				return nil, err
+				return err
 			}
 		}
 	}
 
-	// Handle data plane identities
 	if o.DataPlaneIdentitiesFile != "" {
 		dataPlaneIdentitiesRaw, err := os.ReadFile(o.DataPlaneIdentitiesFile)
 		if err != nil {
-			return nil, fmt.Errorf("failed to read --data-plane-identities-file %s: %w", o.DataPlaneIdentitiesFile, err)
+			return fmt.Errorf("failed to read --data-plane-identities-file %s: %w", o.DataPlaneIdentitiesFile, err)
 		}
 		if err := yaml.Unmarshal(dataPlaneIdentitiesRaw, &result.DataPlaneIdentities); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal --data-plane-identities-file: %w", err)
+			return fmt.Errorf("failed to unmarshal --data-plane-identities-file: %w", err)
 		}
-
 		if o.AssignServicePrincipalRoles {
 			if err := rbacMgr.AssignDataPlaneRoles(ctx, o, result.DataPlaneIdentities, resourceGroupName); err != nil {
-				return nil, err
+				return err
 			}
 		}
 	}
 
-	// Handle workload identities
 	if o.WorkloadIdentitiesFile != "" {
 		workloadIdentitiesRaw, err := os.ReadFile(o.WorkloadIdentitiesFile)
 		if err != nil {
-			return nil, fmt.Errorf("failed to read --workload-identities-file %s: %w", o.WorkloadIdentitiesFile, err)
+			return fmt.Errorf("failed to read --workload-identities-file %s: %w", o.WorkloadIdentitiesFile, err)
 		}
 		if err := json.Unmarshal(workloadIdentitiesRaw, &result.WorkloadIdentities); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal --workload-identities-file: %w", err)
+			return fmt.Errorf("failed to unmarshal --workload-identities-file: %w", err)
+		}
+		var iamExtra struct {
+			KMSClientID string `json:"kmsClientID,omitempty"`
+		}
+		if err := json.Unmarshal(workloadIdentitiesRaw, &iamExtra); err == nil {
+			result.KMSClientID = iamExtra.KMSClientID
 		}
 
 		if o.AssignServicePrincipalRoles {
 			if err := rbacMgr.AssignWorkloadIdentities(ctx, o, result.WorkloadIdentities, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName); err != nil {
-				return nil, err
+				return err
 			}
 		}
 	}
 
-	// Create DNS infrastructure
+	return nil
+}
+
+func (o *CreateInfraOptions) createDNSAndLBResources(ctx context.Context, l logr.Logger, netMgr *NetworkManager, result *CreateInfraOutput, resourceGroupName string) error {
 	privateDNSZoneID, privateDNSZoneName, err := netMgr.CreatePrivateDNSZone(ctx, resourceGroupName, o.Name, o.BaseDomain)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	result.PrivateZoneID = privateDNSZoneID
 	l.Info("Successfully created private DNS zone", "name", privateDNSZoneName)
 
 	err = netMgr.CreatePrivateDNSZoneLink(ctx, resourceGroupName, o.Name, o.InfraID, result.VNetID, privateDNSZoneName)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	l.Info("Successfully created private DNS zone link")
 
-	// Create load balancer infrastructure
 	publicIPAddress, err := netMgr.CreatePublicIPAddressForLB(ctx, resourceGroupName, o.InfraID, o.Location)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	l.Info("Successfully created public IP address for guest cluster egress load balancer")
 
 	err = netMgr.CreateLoadBalancer(ctx, resourceGroupName, o.InfraID, o.Location, publicIPAddress)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	l.Info("Successfully created guest cluster egress load balancer")
+	return nil
+}
 
-	// Serialize the result to the output file if it was provided
-	if o.OutputFile != "" {
-		resultSerialized, err := yaml.Marshal(result)
-		if err != nil {
-			return nil, fmt.Errorf("failed to serialize result: %w", err)
-		}
-		if err := os.WriteFile(o.OutputFile, resultSerialized, 0644); err != nil {
-			l.Error(err, "Writing output file failed", "Output File", o.OutputFile, "data", string(resultSerialized))
-			return nil, fmt.Errorf("failed to write result to --output-file: %w", err)
-		}
+func (o *CreateInfraOptions) writeOutputFile(l logr.Logger, result CreateInfraOutput) error {
+	if o.OutputFile == "" {
+		return nil
 	}
-
-	return &result, nil
+	resultSerialized, err := yaml.Marshal(result)
+	if err != nil {
+		return fmt.Errorf("failed to serialize result: %w", err)
+	}
+	if err := os.WriteFile(o.OutputFile, resultSerialized, 0600); err != nil {
+		l.Error(err, "Writing output file failed", "Output File", o.OutputFile)
+		return fmt.Errorf("failed to write result to --output-file: %w", err)
+	}
+	return nil
 }
 
 // Validate validates the CreateInfraOptions before running the command

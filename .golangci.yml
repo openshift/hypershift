@@ -3,8 +3,15 @@ run:
   allow-parallel-runners: true
 linters:
   enable:
+    - gocyclo
     - misspell
+    - unparam
   settings:
+    gocyclo:
+      min-complexity: 30
+    govet:
+      enable:
+        - nilness
     misspell:
       # The use of US spelling over other English spellings, like UK, is inline with the OpenShift conventions:
       # https://github.com/openshift/enhancements/blob/master/CONVENTIONS.md#terminology-grammar-and-spelling
@@ -22,6 +29,12 @@ linters:
       - legacy
       - std-error-handling
     rules:
+      - linters:
+          - unparam
+        path: '_test\.go$'
+      - linters:
+          - unparam
+        path: 'support/thirdparty/'
       - linters:
           - staticcheck
         text: 'SA1019: hcp.Status.Version is deprecated: Use versionStatus.desired.version instead.'

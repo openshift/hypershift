@@ -87,9 +87,15 @@ So, we need to check over the Step registry config and make sure that the hypers
 
 Example Release Repo PR
 
-We should also ensure that the latest release branch is using the Hypershift Operator and e2e from main.
+We should also ensure that the latest release branch is using the Hypershift Operator and e2e from main. Specifically, the release branch CI config should import `hypershift-tests` as a pre-built base image from the `hypershift` namespace rather than building it from `Dockerfile.e2e` in the release branch source. This ensures the e2e binary comes from main and keeps release branch configs consistent. The changes needed are:
 
-Example Release Branch PR
+1. Add `hypershift-tests` to the `base_images` section (namespace: `hypershift`, tag: `latest`)
+2. Remove the `Dockerfile.e2e` entry from the `images` section
+3. Remove `hypershift-tests` from the promotion exclusion list (since it is no longer built)
+
+Example Release Branch PR (4.21)
+
+Example Release Branch PR (4.22)
 
 ---
 
@@ -140,6 +146,17 @@ to preview the site equivalent to the published site.
     The API reference is generated automatically. Do not
     edit it manually. See the API generation section
     section for details.
+
+## Adding how-to guides
+
+When adding a new how-to guide, you must insert the entry in **alphabetical order**
+by display title within the appropriate section of the `nav:` in
+`docs/mkdocs.yml`.
+Platform-specific guides belong under the `Platform` section.
+
+The `make verify` target includes a `verify-docs-nav` check that validates
+alphabetical ordering. If your entry is out of order, the check will fail and
+show the expected order.
 
 ## Preview the site locally
 
@@ -809,6 +826,7 @@ title: Contribute
 
 Use these resources to contribute to HyperShift.
 
+- Repositories
 - Contributing guidelines (GitHub)
 - Release Process
 - Custom Images
@@ -956,6 +974,29 @@ This is a sample of how the release notes looks like added to the PR:
 
 ---
 
+## Source: docs/content/contribute/repositories.md
+
+---
+title: Repositories
+---
+
+# Repositories
+
+The HyperShift team owns and maintains the following repositories.
+
+| Repository | Description | Upstream |
+|---|---|---|
+| openshift/hypershift | Main repository containing the HyperShift Operator, Control Plane Operator, CLI, API definitions, and tests. | |
+| hypershift-community/hypershift | Community fork synced from openshift/hypershift. | |
+| openshift/hypershift-oadp-plugin | OADP (OpenShift API for Data Protection) plugin for HostedControlPlane backup and restore. | |
+| openshift/aws-encryption-provider | API server encryption provider backed by AWS KMS. | kubernetes-sigs/aws-encryption-provider |
+| openshift/azure-kubernetes-kms | Azure Key Vault KMS plugin for the Kubernetes API server. | Azure/kubernetes-kms |
+| openshift/apiserver-network-proxy | Konnectivity proxy enabling secure communication between the API server and cluster nodes. | kubernetes-sigs/apiserver-network-proxy |
+| openshift/aws-node-termination-handler | Gracefully handles EC2 instance shutdown within Kubernetes. | aws/aws-node-termination-handler |
+
+
+---
+
 ## Source: docs/content/contribute/run-hypershift-operator-locally.md
 
 ---
@@ -1043,7 +1084,1538 @@ title: Run tests
 
 ---
 
-## Source: docs/content/getting-started.md
+## Source: docs/content/getting-started/index.md
+
+# Getting Started
+
+Welcome to HyperShift! Choose your path based on where you are:
+
+<div class="grid cards" markdown>
+
+-   :material-school:{ .lg .middle } **Onboarding Guide**
+
+    ---
+
+    New to the team? Start here for a structured learning path through HyperShift concepts, architecture, and codebase.
+
+    :octicons-arrow-right-24: Start onboarding
+
+-   :material-rocket-launch:{ .lg .middle } **Quick Setup (AWS)**
+
+    ---
+
+    Ready to create your first hosted cluster? Follow the step-by-step setup guide for a self-managed AWS cluster.
+
+    :octicons-arrow-right-24: Quick setup
+
+</div>
+
+
+---
+
+## Source: docs/content/getting-started/onboarding/architecture.md
+
+# Architecture and Main Components
+
+## Overall Architecture
+
+> **See also**: Controller Architecture for detailed controller diagrams and resource dependency graphs.
+
+```mermaid
+graph TB
+    subgraph "Management Cluster"
+        subgraph "hypershift namespace"
+            HO_DEPLOY[HyperShift Operator]
+        end
+
+        subgraph "clusters namespace"
+            HC1[HostedCluster]
+            NP1[NodePool]
+        end
+
+        subgraph "clusters-my-cluster namespace"
+            HCP1[HostedControlPlane]
+            CPO1[control-plane-operator]
+            PKI1[PKI operator]
+            ETCD1[etcd]
+            KAS1[kube-apiserver]
+            KONN[konnectivity]
+            MORE1["KCM, scheduler, CVO,<br/>CCM, ignition, +30 more"]
+            CAPI_PROV[CAPI Provider]
+        end
+    end
+
+    subgraph "Guest Cluster"
+        KUBELET1[kubelet]
+        KONN_AGENT[konnectivity-agent]
+        WORKLOADS[User Workloads]
+    end
+
+    HO_DEPLOY -->|manages| HC1
+    HO_DEPLOY -->|manages| NP1
+    HO_DEPLOY -->|creates| HCP1
+    HO_DEPLOY -->|deploys| CPO1
+
+    CPO1 -->|reconciles| ETCD1
+    CPO1 -->|reconciles| KAS1
+    CPO1 -->|reconciles| MORE1
+
+    KONN -->|tunnel| KONN_AGENT
+    KAS1 -.->|API calls via tunnel| KUBELET1
+```
+
+> For the full detailed architecture diagram with all components, see Controller Architecture.
+
+### Namespace Layout
+
+```mermaid
+graph LR
+    subgraph "Management Cluster Namespaces"
+        NS1["<b>hypershift</b><br/>HyperShift Operator"]
+        NS2["<b>clusters</b><br/>HostedCluster + NodePool CRs<br/>(user namespace)"]
+        NS3["<b>clusters-my-cluster</b><br/>Control Plane namespace"]
+        NS4["<b>clusters-another-cluster</b><br/>Another Control Plane"]
+    end
+
+    NS2 -->|HC controller creates| NS3
+    NS2 -->|HC controller creates| NS4
+```
+
+The namespace naming convention is implemented in `hypershift-operator/controllers/manifests/manifests.go`:
+```go
+func HostedControlPlaneNamespace(hostedClusterNamespace, hostedClusterName string) string {
+    return fmt.Sprintf("%s-%s", hostedClusterNamespace, strings.ReplaceAll(hostedClusterName, ".", "-"))
+}
+```
+
+!!! tip "Explore yourself"
+    Read `hypershift-operator/controllers/manifests/manifests.go` to see all the naming helpers used across the codebase.
+
+---
+
+## Main Components
+
+> **See also**: Controller Architecture for detailed controller diagrams, resource dependency graphs, and the Hosted Cluster Config Operator.
+
+### HyperShift Operator (HO)
+
+- **Entry point**: `hypershift-operator/main.go`
+- **Deployed in**: `hypershift` namespace as a Deployment
+
+Contains the main controllers:
+
+| Controller | Directory | Function | Read This First |
+|------------|-----------|----------|-----------------|
+| **HostedCluster** | `hypershift-operator/controllers/hostedcluster/` | Manages full HC lifecycle, creates CP namespace, deploys CPO | `hostedcluster_controller.go` (start at `Reconcile` method, ~line 337) |
+| **NodePool** | `hypershift-operator/controllers/nodepool/` | Manages CAPI Machines, ignition tokens, rolling upgrades | `nodepool_controller.go` (start at `Reconcile` method) |
+| **HostedClusterSizing** | `hypershift-operator/controllers/hostedclustersizing/` | Resource-based sizing decisions | `hostedclustersizing_controller.go` |
+| **Scheduler** | `hypershift-operator/controllers/scheduler/` | Schedules HCs on management cluster nodes | `scheduler.go` |
+| **SharedIngress** | `hypershift-operator/controllers/sharedingress/` | Shared ingress across multiple HCs | `sharedingress_controller.go` |
+
+!!! tip "Explore yourself"
+    The HostedCluster controller (`hostedcluster_controller.go`) is ~5200 lines. Don't try to read it all at once. Start with the `Reconcile` method and follow the function calls. Key sub-functions to look at:
+
+    - `reconcileHostedControlPlane()` (~line 2404) - how HC spec is translated to HCP
+    - `reconcileControlPlaneOperator()` - how the CPO deployment is created
+    - `reconcileCAPICluster()` (~line 2901) - how the CAPI Cluster CR is created
+    - `r.delete()` (~line 501) - the deletion flow
+
+### Control Plane Operator (CPO)
+
+- **Source**: `control-plane-operator/`
+- **Main controller**: `control-plane-operator/controllers/hostedcontrolplane/hostedcontrolplane_controller.go` (~3200 lines)
+- **Deployed in**: each CP namespace (one CPO instance per hosted cluster)
+
+The CPO reads the `HostedControlPlane` resource and reconciles ~40 control plane components:
+
+```mermaid
+graph TD
+    HCP[HostedControlPlane CR] --> CPO[Control Plane Operator]
+
+    CPO --> PKI[PKI Operator]
+    CPO --> ETCD[etcd]
+    CPO --> FG[FeatureGate Generator]
+    CPO --> ROUTER[Router]
+
+    ETCD --> KAS[kube-apiserver]
+    FG --> KAS
+
+    KAS --> KCM[kube-controller-manager]
+    KAS --> SCHED[kube-scheduler]
+    KAS --> OAPI[openshift-apiserver]
+    KAS --> CVO[cluster-version-operator]
+    KAS --> CNO[cluster-network-operator]
+    KAS --> CCM[cloud-controller-manager]
+    KAS --> KONN[konnectivity]
+    KAS --> MORE["... +25 more components"]
+
+    style PKI fill:#e1f5fe
+    style ETCD fill:#e1f5fe
+    style FG fill:#e1f5fe
+    style ROUTER fill:#e1f5fe
+    style KAS fill:#fff3e0
+```
+
+> Light blue components have no KAS dependency. KAS (orange) is an implicit dependency for everything else. The full list includes oauth-server, oauth-apiserver, openshift-controller-manager, ingress-operator, dns-operator, machine-approver, config-operator, storage-operator, node-tuning-operator, and more.
+
+!!! tip "Explore yourself"
+    Look at the `registerComponents()` function (~line 236 in `hostedcontrolplane_controller.go`) to see the full list of registered components.
+
+    Then pick one simple component like `kube-scheduler` at `control-plane-operator/controllers/hostedcontrolplane/v2/kube_scheduler/` to understand the pattern.
+
+### CPOv2 Framework
+
+The declarative framework for defining control plane components. Each component uses a builder pattern:
+
+```go
+component.NewDeploymentComponent(name, opts).
+    WithAdaptFunction(adaptDeployment).           // Dynamic deployment mutations
+    WithPredicate(predicate).                      // Enable/disable the component
+    WithDependencies("etcd", "featuregate-generator"). // Block until deps are ready
+    WithManifestAdapter("config.yaml", ...).       // Adapt supporting manifests
+    InjectTokenMinterContainer(tokenOpts).         // Auto-inject token minter sidecar
+    InjectKonnectivityContainer(konnOpts).         // Auto-inject konnectivity proxy
+    RolloutOnConfigMapChange("my-config").          // Auto-rollout on config change
+    Build()
+```
+
+| File | What it does | Why you should read it |
+|------|-------------|----------------------|
+| `support/controlplane-component/controlplane-component.go` | Core reconcile logic, `ControlPlaneComponent` interface | Understand how components are reconciled (line 163, `Reconcile` method) |
+| `support/controlplane-component/builder.go` | Builder pattern for constructing components | Learn how to create a new component |
+| `support/controlplane-component/status.go` | Dependency checking, status conditions | Understand `checkDependencies` (line 50) and how `Available`/`RolloutComplete` conditions work |
+| `support/controlplane-component/workload.go` | Workload (Deployment/StatefulSet) reconciliation | See how deployments are created from asset manifests |
+
+Each component generates a `ControlPlaneComponent` CR with conditions:
+
+- `ControlPlaneComponentAvailable` - at least one pod is ready
+- `ControlPlaneComponentRolloutComplete` - all pods at the desired version
+
+!!! tip "Explore yourself"
+    Compare a simple component (`v2/kube_scheduler/`) with a complex one (`v2/kas/`) to see how the framework scales. Assets (YAML manifests) live in `v2/assets/<component>/`.
+
+### PKI Operator
+
+**Directory**: `control-plane-pki-operator/`
+
+Manages all PKI (certificates) for the hosted cluster:
+
+| Controller | Directory | Function |
+|------------|-----------|----------|
+| CertRotation | `certrotationcontroller/` | Rotates CAs and leaf certs using library-go |
+| CertificateSigning | `certificatesigningcontroller/` | Signs CSRs for break-glass access |
+| CSR Approval | `certificatesigningrequestapprovalcontroller/` | Auto-approves CSRs matching known signers |
+| CertRevocation | `certificaterevocationcontroller/` | Handles certificate revocation |
+| TargetConfig | `targetconfigcontroller/` | PKI target configuration |
+
+Supports two break-glass signers: **Customer** and **SRE**.
+
+!!! tip "Explore yourself"
+    Start with `control-plane-pki-operator/operator.go` to see how all sub-controllers are wired together. Then look at `certificates/` for signer definitions.
+
+### Ignition Server
+
+**Directory**: `ignition-server/`
+
+HTTPS server serving ignition configs to worker nodes during bootstrap:
+
+```mermaid
+sequenceDiagram
+    participant NPC as NodePool Controller
+    participant IS as Ignition Server
+    participant PS as PayloadStore
+    participant Node as Worker Node
+
+    NPC->>IS: Creates Token Secret<br/>(release, config, token UUID)
+    IS->>IS: TokenSecretReconciler<br/>detects new Secret
+    IS->>IS: LocalIgnitionProvider<br/>generates payload with MCO
+    IS->>PS: Stores payload<br/>keyed by token UUID
+
+    Note over Node: Cloud instance boots
+    Node->>IS: GET /ignition<br/>Header: token UUID
+    IS->>PS: Looks up payload by token
+    PS->>IS: Ignition JSON
+    IS->>Node: Responds with ignition config
+    Node->>Node: Applies ignition,<br/>starts kubelet,<br/>joins guest cluster
+```
+
+| File | What it does |
+|------|-------------|
+| `ignition-server/cmd/start.go` | HTTPS server setup, `/ignition` request handler |
+| `ignition-server/controllers/tokensecret_controller.go` | `TokenSecretReconciler`: watches token Secrets, generates payloads, rotates tokens |
+| `ignition-server/controllers/local_ignitionprovider.go` | `LocalIgnitionProvider`: extracts MCO binaries from release image, runs them to produce ignition JSON |
+| `ignition-server/controllers/cache.go` | `ExpiringCache`: in-memory TTL cache for payloads |
+
+!!! tip "Explore yourself"
+    Start with `ignition-server/cmd/start.go` to understand the HTTP handler, then follow the flow into `tokensecret_controller.go`.
+
+
+---
+
+## Source: docs/content/getting-started/onboarding/data-plane.md
+
+# Data Plane and Node Management
+
+> **See also**: NodePool Rollouts for in-depth rollout mechanics and update strategies.
+
+## NodePool - Key Fields
+
+| Field | Purpose | Look at |
+|-------|---------|---------|
+| `spec.clusterName` | Immutable reference to the HostedCluster | `api/hypershift/v1beta1/nodepool_types.go` |
+| `spec.release` | Release image (change triggers rollout, tagged `+rollout`) | Same file |
+| `spec.platform` | Platform-specific machine config (AMI, instance type, etc.) | `aws.go`, `azure.go`, `kubevirt.go` in the api dir |
+| `spec.replicas` / `spec.autoScaling` | Node count control | Same file |
+| `spec.management.upgradeType` | `Replace` (default) or `InPlace` | Same file |
+| `spec.management.autoRepair` | Enables MachineHealthCheck | Same file |
+| `spec.config` | ConfigMap refs with MachineConfig (change triggers rollout) | Same file |
+
+## Node Lifecycle
+
+```mermaid
+sequenceDiagram
+    participant NPC as NodePool Controller
+    participant CFG as ConfigGenerator
+    participant TOK as Token Manager
+    participant CAPI as ClusterAPI
+    participant Cloud as Cloud Provider
+    participant IGN as Ignition Server
+    participant Node as Worker Node
+    participant GC as Guest Cluster
+
+    NPC->>CFG: Compute config hash
+    CFG-->>NPC: hash = hashSimple(mcoConfig + version + ...)
+
+    NPC->>TOK: reconcileTokenSecret(hash)
+    TOK->>TOK: Creates token Secret in HCP ns<br/>(token UUID, release, config)
+    TOK->>TOK: Creates userdata Secret<br/>(ignition stub with URL + token)
+
+    NPC->>CAPI: Creates/updates MachineDeployment
+    Note over CAPI: Spec.Template.Bootstrap.DataSecretName<br/>= userdata secret name
+
+    CAPI->>CAPI: Creates MachineSet
+    CAPI->>CAPI: Creates Machine(s)
+    CAPI->>Cloud: Provisions instance<br/>(EC2, Azure VM, KubeVirt VM)
+
+    Cloud->>Node: Instance boots with userdata
+    Node->>IGN: GET /ignition<br/>Authorization: token UUID
+    IGN->>IGN: Looks up payload in cache
+    IGN-->>Node: Full ignition JSON
+
+    Node->>Node: Applies ignition config
+    Node->>Node: Starts kubelet
+    Node->>GC: Joins the guest cluster
+
+    Note over NPC: machine-approver approves node CSR
+```
+
+!!! tip "Explore yourself"
+    The NodePool controller is split across several files. Read them in this order:
+
+    1. `hypershift-operator/controllers/nodepool/nodepool_controller.go` - Main reconciler entry point, condition checks
+    2. `hypershift-operator/controllers/nodepool/config.go` - `ConfigGenerator`: how config hash is computed for rollout detection
+    3. `hypershift-operator/controllers/nodepool/token.go` - `Token`: token Secret and userdata Secret lifecycle
+    4. `hypershift-operator/controllers/nodepool/capi.go` - `CAPI`: MachineDeployment, MachineSet, MachineHealthCheck, MachineTemplate creation
+
+## ClusterAPI Integration
+
+```mermaid
+graph TD
+    NP[NodePool] -->|creates| MD[MachineDeployment]
+    NP -->|creates| MT[PlatformMachineTemplate<br/><i>e.g., AWSMachineTemplate</i>]
+    NP -->|creates| MHC[MachineHealthCheck]
+
+    MD -->|CAPI creates| MS[MachineSet]
+    MS -->|CAPI creates| M1[Machine 1]
+    MS -->|CAPI creates| M2[Machine 2]
+    MS -->|CAPI creates| MN[Machine N]
+
+    M1 -->|infra provider creates| I1[EC2 Instance / Azure VM / KubeVirt VM]
+
+    MT -.->|referenced by| MD
+    MHC -.->|monitors| M1
+    MHC -.->|monitors| M2
+
+    subgraph "CP Namespace (clusters-my-cluster)"
+        MD
+        MS
+        M1
+        M2
+        MN
+        MT
+        MHC
+    end
+```
+
+**Rollout detection**: `ConfigGenerator.Hash()` produces a new hash when config or version changes. New hash = new Secrets = new `DataSecretName` on MachineDeployment = CAPI rolling update.
+
+!!! tip "Explore yourself"
+    Platform-specific machine template builders:
+
+    - `hypershift-operator/controllers/nodepool/aws.go` - `awsMachineTemplateSpec()`: AMI resolution, instance type, root volume, security groups
+    - `hypershift-operator/controllers/nodepool/azure.go` - Azure VM config
+    - `hypershift-operator/controllers/nodepool/kubevirt/kubevirt.go` - KubeVirt VM config
+    - `hypershift-operator/controllers/nodepool/agent.go` - Agent/bare-metal label selectors
+    - `hypershift-operator/controllers/nodepool/gcp.go` - GCP machine config
+    - `hypershift-operator/controllers/nodepool/openstack.go` - OpenStack config
+
+## Auto-scaling
+
+> **See also**: Resource-Based Control Plane Autoscaling for detailed autoscaling configuration.
+
+- **Manual**: `nodePool.spec.replicas` propagates to `MachineDeployment.Spec.Replicas`
+- **Cluster Autoscaler**: `nodePool.spec.autoScaling.min/max` becomes CAPI annotations on MachineDeployment
+- **Scale-from-zero** (AWS only): capacity annotations (`vCPU`, `memoryMb`, `GPU`) in `hypershift-operator/controllers/nodepool/scale_from_zero.go`
+- **Karpenter** (alternative): provisions nodes directly based on pending pods, bypassing MachineDeployments. See `karpenter-operator/controllers/`
+
+!!! tip "Explore yourself"
+    Karpenter integration files:
+
+    - `karpenter-operator/controllers/karpenter/karpenter_controller.go` - Main reconciler
+    - `karpenter-operator/controllers/karpenterignition/karpenterignition_controller.go` - Ignition for Karpenter nodes
+    - `api/karpenter/v1beta1/` - HyperShift Karpenter API types
+
+## Auto-repair
+
+```mermaid
+flowchart LR
+    MHC[MachineHealthCheck] -->|detects NodeReady=False<br/>for 8-16 min| UNHEALTHY[Machine marked<br/>unhealthy]
+    UNHEALTHY -->|MaxUnhealthy=2<br/>prevents cascade| DELETE[Deletes Machine]
+    DELETE -->|CAPI| NEW[Creates replacement<br/>Machine]
+```
+
+!!! tip "Explore yourself"
+    MHC creation is in `hypershift-operator/controllers/nodepool/capi.go`, function `reconcileMachineHealthCheck()` (~line 649). Note the different timeouts for cloud (8 min) vs Agent/None (16 min) platforms.
+
+---
+
+
+---
+
+## Source: docs/content/getting-started/onboarding/development.md
+
+# APIs, Code Structure, and Development
+
+## Multi-Module Structure
+
+```mermaid
+graph TD
+    subgraph "Root Module: github.com/openshift/hypershift"
+        ROOT_MOD[go.mod]
+        OPERATORS[hypershift-operator/<br/>control-plane-operator/<br/>karpenter-operator/]
+        SUPPORT[support/]
+        CMD[cmd/]
+        VENDOR[vendor/<br/><i>DO NOT modify directly</i>]
+    end
+
+    subgraph "API Module: github.com/openshift/hypershift/api"
+        API_MOD[api/go.mod]
+        API_TYPES[api/hypershift/v1beta1/<br/>api/scheduling/v1alpha1/<br/>api/certificates/v1alpha1/<br/>api/karpenter/v1beta1/]
+        API_VENDOR[api/vendor/]
+    end
+
+    OPERATORS -->|consumes via vendor| API_TYPES
+
+    style VENDOR fill:#ffcdd2
+    style API_VENDOR fill:#ffcdd2
+```
+
+> **GOLDEN RULE**: After any change in `api/`, run `make update`. This runs: `api-deps` -> `workspace-sync` -> `deps` -> `api` -> `api-docs` -> `clients` -> `docs-aggregate`.
+
+!!! tip "Explore yourself"
+    - `api/go.mod` - the separate module definition
+    - `api/CLAUDE.md` - API backward compatibility rules (critical reading!)
+    - `hack/workspace/go.work` - Go workspace for local development across both modules
+
+## Main API Types
+
+```mermaid
+classDiagram
+    class HostedCluster {
+        +HostedClusterSpec spec
+        +HostedClusterStatus status
+        namespace: user namespace
+        scope: user-facing
+    }
+
+    class HostedControlPlane {
+        +HostedControlPlaneSpec spec
+        +HostedControlPlaneStatus status
+        namespace: CP namespace
+        scope: internal
+    }
+
+    class NodePool {
+        +NodePoolSpec spec
+        +NodePoolStatus status
+        namespace: user namespace
+        scope: user-facing
+    }
+
+    class ControlPlaneComponent {
+        +conditions: Available, RolloutComplete
+        namespace: CP namespace
+        scope: internal
+    }
+
+    HostedCluster "1" --> "1" HostedControlPlane : HC controller creates
+    HostedCluster "1" --> "*" NodePool : clusterName reference
+    HostedControlPlane "1" --> "*" ControlPlaneComponent : CPO creates
+
+    NodePool --> MachineDeployment : CAPI
+    MachineDeployment --> MachineSet : CAPI
+    MachineSet --> Machine : CAPI
+```
+
+!!! tip "Explore yourself"
+    Key API files to read:
+
+    - `api/hypershift/v1beta1/hostedcluster_types.go` - Start here. HostedClusterSpec (~line 529), HostedClusterStatus (~line 2105)
+    - `api/hypershift/v1beta1/hosted_controlplane.go` - HCP spec (~line 44) mirrors HC spec
+    - `api/hypershift/v1beta1/nodepool_types.go` - NodePoolSpec, note the `+rollout` tags
+    - `api/hypershift/v1beta1/controlplanecomponent_types.go` - CPOv2 status tracking
+    - `api/hypershift/v1beta1/etcdbackup_types.go` - Example of a feature-gated type
+    - `api/hypershift/v1beta1/groupversion_info.go` - API group registration
+
+## Feature Gates
+
+Feature gates control which API fields and CRD types are available:
+
+```go
+// Example: gated field
+// +openshift:enable:FeatureGate=AutoNodeKarpenter
+AutoNode *AutoNode `json:"autoNode,omitempty"`
+```
+
+!!! tip "Explore yourself"
+    Feature gate definitions are in `api/hypershift/v1beta1/featuregates/`:
+
+    - `featureGate-Hypershift-Default.yaml` - Default feature set
+    - `featureGate-Hypershift-TechPreviewNoUpgrade.yaml` - TechPreview set
+    - Per-gate CRD fragments are generated in `api/hypershift/v1beta1/zz_generated.featuregated-crd-manifests/`
+
+## Key Annotations
+
+Some important annotations you'll encounter (defined in `api/hypershift/v1beta1/hostedcluster_types.go`, lines 29-449):
+
+| Annotation | Purpose |
+|-----------|---------|
+| `hypershift.openshift.io/control-plane-operator-image` | Override CPO image (dev/e2e) |
+| `hypershift.openshift.io/restart-date` | Triggers rolling restart of all components |
+| `hypershift.openshift.io/force-upgrade-to` | Force upgrade even if CVO says not upgradeable |
+| `hypershift.openshift.io/disable-pki-reconciliation` | Stops PKI cert regeneration |
+| `resource-request-override.hypershift.openshift.io/<deploy>.<container>` | Override resource requests per container |
+| `hypershift.openshift.io/topology` | `dedicated-request-serving-components` for dedicated nodes |
+| `hypershift.openshift.io/cleanup-cloud-resources` | Controls cloud resource cleanup on deletion |
+
+!!! tip "Explore yourself"
+    Read the annotation constants block at the top of `hostedcluster_types.go` (lines 29-449). Each has a comment explaining its purpose.
+
+---
+
+## Development Workflow
+
+> **See also**: Run Tests, Run HyperShift Operator Locally, and Develop In-Cluster for detailed development setup guides.
+
+### Essential Commands
+
+```bash
+# Build
+make build                    # All binaries
+make hypershift               # CLI only
+make hypershift-operator      # HO only
+make control-plane-operator   # CPO only
+
+# Test
+make test                     # Unit tests with race detection
+make e2e                      # Build E2E test binaries
+
+# Code quality
+make verify                   # Full verification (BEFORE PR) - includes generate, fmt, vet, lint, codespell, gitlint
+make lint                     # golangci-lint
+make lint-fix                 # Auto-fix linting
+make fmt                      # Format
+make vet                      # go vet
+
+# API and generation
+make update                   # Full update after api/ changes
+make api                      # Only regenerate CRDs
+make generate                 # go generate
+make clients                  # Update generated clients
+```
+
+### Workflow for API Changes
+
+```mermaid
+flowchart TD
+    A[Edit types in api/hypershift/v1beta1/] --> B[make update]
+    B --> C[make verify]
+    C --> D{Changed a field type?}
+    D -->|Yes| E[Add serialization compatibility test<br/>in *_types_test.go]
+    D -->|No| F[make test]
+    E --> F
+    F --> G[Create PR]
+```
+
+!!! tip "Explore yourself"
+    Look at `api/hypershift/v1beta1/nodepool_types_test.go` for the serialization compatibility test pattern. It defines an N-1 struct and verifies JSON round-trip compatibility.
+
+### Running Locally
+
+```bash
+# Install HyperShift in development mode
+make hypershift-install-aws-dev
+
+# Run operator locally
+make run-operator-locally-aws-dev
+
+# Or manually
+bin/hypershift install --development
+bin/hypershift-operator run
+```
+
+!!! tip "Explore yourself"
+    The CLI is built from `main.go` at the repo root. Subcommands are in `cmd/`:
+
+    - `cmd/cluster/` - `create cluster` and `destroy cluster` commands
+    - `cmd/nodepool/` - `create nodepool` and `destroy nodepool`
+    - `cmd/install/` - `install` command and CRD assets
+    - `cmd/infra/` - `create infra` commands per platform
+    - `cmd/install/assets/hypershift-operator/` - Final CRD YAML files
+
+---
+
+## Common Development Patterns
+
+### Upsert Pattern
+
+`support/upsert/upsert.go` wraps `controllerutil.CreateOrUpdate` to prevent reconciliation loops by copying server-defaulted fields.
+
+```go
+// Typical usage in a reconciler
+result, err := r.createOrUpdate(ctx, r.client, deployment, func() error {
+    // mutate deployment here
+    return nil
+})
+```
+
+!!! tip "Explore yourself"
+    Read `support/upsert/upsert.go` to understand the loop detection mechanism. The `CreateOrUpdateProvider` interface is injected into controllers via `SetupWithManager`.
+
+### Controller Structure
+
+```go
+type MyReconciler struct {
+    client         crclient.Client
+    createOrUpdate upsert.CreateOrUpdateFN
+}
+
+func (r *MyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+    // 1. Fetch resource
+    // 2. Handle deletion
+    // 3. Add finalizer
+    // 4. Reconcile sub-resources
+    // 5. Update status
+}
+```
+
+!!! tip "Explore yourself"
+    Compare how different controllers are set up:
+
+    - `hypershift-operator/controllers/hostedcluster/hostedcluster_controller.go` - Large, complex controller
+    - `hypershift-operator/controllers/hostedclustersizing/hostedclustersizing_controller.go` - Simpler controller
+    - `control-plane-operator/controllers/hostedcontrolplane/hostedcontrolplane_controller.go` - CPO main controller
+
+### Test Conventions
+
+- Use **Gherkin syntax** for test names: `"When ... it should ..."`
+- Use **gomega** for assertions
+- Unit tests live alongside source files
+- E2E tests in `test/e2e/`
+- Integration tests in `test/integration/`
+
+!!! tip "Explore yourself"
+    - `test/e2e/` - E2E tests covering cluster lifecycle, nodepool operations, upgrades
+    - `test/integration/` - Integration tests for controller behavior
+    - Any `*_test.go` file alongside the source for unit test examples
+
+### API Backward Compatibility
+
+Rules from `api/CLAUDE.md`:
+
+- Every API type change must be safe for **N+1 (forward)** and **N-1 (rollback)** compatibility
+- Changing a value type to a pointer (e.g., `int32` to `*int32`) requires `omitempty`
+- Never remove or rename fields
+- Always add serialization compatibility tests when modifying field types
+
+
+---
+
+## Source: docs/content/getting-started/onboarding/index.md
+
+# HyperShift / Hosted Control Planes (HCP) - Onboarding Guide
+
+!!! note "How this guide relates to other docs"
+    This is a **curated learning path** — it provides a structured narrative to help newcomers build a mental model of HyperShift step by step. It intentionally summarizes topics that are covered in more detail in dedicated reference pages. Where applicable, "See also" links point you to the authoritative source for deeper reading. This guide is not a replacement for those docs.
+
+---
+
+## Tips for New Team Members
+
+1. **Start with the CRDs**: Understanding `HostedCluster`, `HostedControlPlane`, and `NodePool` is 80% of the work
+2. **Follow the data flow**: HC -> HCP -> Components. NP -> CAPI -> Cloud -> Node
+3. **Conditions are your friend**: Always check `.status.conditions` to understand what's happening
+4. **`make verify` before pushing**: Always
+5. **The CP namespace is where the magic happens**: `kubectl get pods -n clusters-<name>` shows you everything
+6. **Read the tests**: Unit tests and E2E tests are the best living documentation
+7. **Use `hypershift dump`**: The diagnostic tool at `cmd/dump/` captures full cluster state for debugging
+8. **Don't read 5000-line files end-to-end**: Follow function calls from the `Reconcile` entry point
+9. **The API module is separate**: Remember to run `make update` after any change in `api/`
+10. **Ask about invariants**: When in doubt about a design decision, check if it violates any of the architectural invariants
+
+---
+
+## Recommended Learning Path
+
+```mermaid
+graph TD
+    subgraph "Week 1-2: Foundations"
+        S1A[Read this guide end-to-end]
+        S1B[Install HyperShift locally<br/><code>make hypershift-install-aws-dev</code>]
+        S1C[Create a test HostedCluster<br/><code>bin/hypershift create cluster</code>]
+        S1D[Explore the CRDs:<br/>HostedCluster, HCP, NodePool<br/><i>Read the API type files</i>]
+        S1E[Observe pods in the<br/>CP namespace with kubectl]
+    end
+
+    subgraph "Week 3-4: Architecture"
+        S2A[Read hostedcluster_controller.go<br/>Understand the reconcile loop]
+        S2B[Read hostedcontrolplane_controller.go<br/>Understand how the CPO<br/>deploys components]
+        S2C[Read nodepool_controller.go<br/>Understand the node flow]
+        S2D[Study the CPOv2 framework<br/>support/controlplane-component/]
+        S2E[Read a simple v2 component<br/>e.g., kube-scheduler]
+    end
+
+    subgraph "Week 5-6: Deep Dive"
+        S3A[Study the Platform interface<br/>and one implementation<br/>e.g., AWS or KubeVirt]
+        S3B[Understand the ignition flow<br/>Token -> Ignition Server -> Node]
+        S3C[Study PKI and certificates]
+        S3D[Make a real change:<br/>bug fix or small feature]
+        S3E[Run make verify<br/>and create your first PR]
+    end
+
+    subgraph "Week 7+: Specialization"
+        S4A[Choose area of focus:<br/>- Control Plane<br/>- Data Plane / NodePool<br/>- Platform specific<br/>- API Design]
+        S4B[Read E2E tests<br/>test/e2e/]
+        S4C[Contribute features<br/>and PR reviews]
+    end
+
+    S1A --> S1B --> S1C --> S1D --> S1E
+    S1E --> S2A
+    S2A --> S2B --> S2C --> S2D --> S2E
+    S2E --> S3A
+    S3A --> S3B --> S3C --> S3D --> S3E
+    S3E --> S4A --> S4B --> S4C
+```
+
+### Suggested Reading Order for Code
+
+For each area, follow this order to build understanding incrementally:
+
+**Control Plane path:**
+
+1. `api/hypershift/v1beta1/hostedcluster_types.go` (skim the Spec, focus on key fields)
+2. `api/hypershift/v1beta1/hosted_controlplane.go` (note the similarity to HC)
+3. `hypershift-operator/controllers/hostedcluster/hostedcluster_controller.go` (`Reconcile` method only)
+4. `control-plane-operator/controllers/hostedcontrolplane/hostedcontrolplane_controller.go` (`Reconcile` and `registerComponents`)
+5. `support/controlplane-component/controlplane-component.go` (core framework)
+6. `control-plane-operator/controllers/hostedcontrolplane/v2/kube_scheduler/` (simple component)
+
+**Data Plane path:**
+
+1. `api/hypershift/v1beta1/nodepool_types.go`
+2. `hypershift-operator/controllers/nodepool/nodepool_controller.go` (`Reconcile` entry point)
+3. `hypershift-operator/controllers/nodepool/config.go` (hash-based rollout)
+4. `hypershift-operator/controllers/nodepool/token.go` (ignition tokens)
+5. `hypershift-operator/controllers/nodepool/capi.go` (CAPI resource creation)
+6. `ignition-server/cmd/start.go` (how nodes fetch their config)
+
+**Platform path (pick one):**
+
+1. `hypershift-operator/controllers/hostedcluster/internal/platform/platform.go` (interface)
+2. `hypershift-operator/controllers/hostedcluster/internal/platform/<your-platform>/` (implementation)
+3. `hypershift-operator/controllers/nodepool/<your-platform>.go` (machine template)
+4. `control-plane-operator/controllers/hostedcontrolplane/v2/cloud_controller_manager/<your-platform>/` (CCM)
+5. `api/hypershift/v1beta1/<your-platform>.go` (API types)
+
+---
+
+## Guide Contents
+
+| Section | What you'll learn |
+|---------|------------------|
+| What is HyperShift? | The problem HyperShift solves and how it works |
+| Key Concepts | Core resources, glossary, and terminology |
+| Architecture | Overall architecture, namespace layout, and main components |
+| Cluster Lifecycle | Creation, upgrades, deletion, and the CPO reconciliation flow |
+| Data Plane | NodePool management, node lifecycle, ClusterAPI, auto-scaling |
+| Cloud Platforms | Supported platforms, comparison, and infrastructure details |
+| Development | APIs, code structure, development workflow, and patterns |
+| Reference | Architectural invariants and key file reference |
+
+
+---
+
+## Source: docs/content/getting-started/onboarding/key-concepts.md
+
+# Key Concepts
+
+> **See also**: Concepts and Personas for detailed persona definitions (Service Provider, Consumer, Instance Admin) and Controller Architecture for detailed controller diagrams and resource dependency graphs.
+
+```mermaid
+graph TD
+    subgraph "Management Cluster"
+        HC[HostedCluster<br/><i>namespace: clusters</i>]
+        NP[NodePool<br/><i>namespace: clusters</i>]
+
+        subgraph "CP Namespace: clusters-my-cluster"
+            HCP[HostedControlPlane]
+            CPO[Control Plane Operator]
+            ETCD[etcd]
+            KAS[kube-apiserver]
+            KCM[kube-controller-manager]
+            SCHED[kube-scheduler]
+            OAPI[openshift-apiserver]
+            PKI[PKI Operator]
+            IGN[Ignition Server]
+        end
+
+        HO[HyperShift Operator<br/><i>namespace: hypershift</i>]
+    end
+
+    subgraph "Guest Cluster - Data Plane"
+        W1[Worker Node 1]
+        W2[Worker Node 2]
+        W3[Worker Node N]
+    end
+
+    HO -->|manages| HC
+    HO -->|manages| NP
+    HO -->|creates| HCP
+    HO -->|deploys| CPO
+    CPO -->|manages| ETCD
+    CPO -->|manages| KAS
+    CPO -->|manages| KCM
+    CPO -->|manages| SCHED
+    CPO -->|manages| OAPI
+    CPO -->|manages| PKI
+    CPO -->|manages| IGN
+
+    KAS -.->|konnectivity tunnel| W1
+    KAS -.->|konnectivity tunnel| W2
+    KAS -.->|konnectivity tunnel| W3
+    IGN -.->|ignition configs| W1
+    IGN -.->|ignition configs| W2
+    IGN -.->|ignition configs| W3
+```
+
+## Glossary
+
+> For full persona and concept definitions, see Concepts and Personas.
+
+| Term | Description | Start Reading Here |
+|------|-------------|-------------------|
+| **Management Cluster** | The OpenShift/K8s cluster where HyperShift operators run and where control plane pods live | `hypershift-operator/main.go` |
+| **Guest Cluster** (Hosted Cluster) | The cluster end users consume. Only has worker nodes | - |
+| **HostedCluster (HC)** | User-facing CRD declaring the intent to create a cluster. Lives in the user's namespace | `api/hypershift/v1beta1/hostedcluster_types.go` |
+| **HostedControlPlane (HCP)** | Internal CRD created by the HC controller. Lives in the control plane namespace. The CPO reads it to know what to deploy | `api/hypershift/v1beta1/hosted_controlplane.go` |
+| **NodePool (NP)** | User-facing CRD defining a scalable set of worker nodes. References a HostedCluster | `api/hypershift/v1beta1/nodepool_types.go` |
+| **Control Plane Namespace** | Namespace (`{hc-ns}-{hc-name}`) where all control plane components live | `hypershift-operator/controllers/manifests/manifests.go` |
+| **HyperShift Operator (HO)** | Main operator managing HostedClusters and NodePools | `hypershift-operator/controllers/hostedcluster/hostedcluster_controller.go` |
+| **Control Plane Operator (CPO)** | Runs inside each CP namespace and manages all control plane components | `control-plane-operator/controllers/hostedcontrolplane/hostedcontrolplane_controller.go` |
+| **PKI Operator** | Certificate operator handling rotation and signing | `control-plane-pki-operator/operator.go` |
+| **Ignition Server** | HTTPS server that serves ignition configs to worker nodes during bootstrap | `ignition-server/cmd/start.go` |
+
+
+---
+
+## Source: docs/content/getting-started/onboarding/lifecycle.md
+
+# Cluster Lifecycle and Control Plane
+
+---
+
+## HostedCluster Lifecycle
+
+### Creation
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant HC as HostedCluster
+    participant HO as HyperShift Operator
+    participant CPNS as CP Namespace
+    participant CPO as Control Plane Operator
+    participant CAPI as ClusterAPI
+    participant NP as NodePool
+    participant Cloud as Cloud Provider
+
+    User->>HC: Creates HostedCluster CR
+    HO->>HC: Watch & Reconcile
+    HO->>HO: Validates release image, config
+    HO->>CPNS: Creates namespace<br/>{hc-ns}-{hc-name}
+    HO->>CPNS: Copies secrets<br/>(pull-secret, SSH, encryption)
+    HO->>CPNS: Creates HostedControlPlane CR
+    HO->>CPNS: Deploys CPO Deployment
+    HO->>CPNS: Deploys CAPI Manager + Provider
+    HO->>CPNS: Configures NetworkPolicies
+
+    CPO->>CPO: Reads HCP, resolves release image
+    CPO->>CPNS: Deploys etcd StatefulSet
+    CPO->>CPNS: Deploys kube-apiserver
+    CPO->>CPNS: Deploys +30 components
+    CPO->>HC: Reports status via HCP
+
+    HO->>HC: Copies kubeconfig to user namespace
+
+    User->>NP: Creates NodePool CR
+    HO->>NP: Watch & Reconcile
+    HO->>CPNS: Creates Token + UserData Secrets
+    HO->>CAPI: Creates MachineDeployment + MachineTemplate
+    CAPI->>Cloud: Provisions instances
+    Cloud-->>CPNS: Nodes boot, fetch ignition
+    Cloud-->>HC: Nodes join the guest cluster
+```
+
+!!! tip "Explore yourself"
+    Follow the creation flow step by step in `hostedcluster_controller.go`:
+
+    1. `Reconcile()` (~line 337) - entry point
+    2. `reconcileHostedControlPlane()` (~line 2404) - HCP creation
+    3. `reconcileControlPlaneOperator()` - CPO deployment
+    4. `reconcileCAPIManager()` - CAPI deployment
+    5. Network policies: `hypershift-operator/controllers/hostedcluster/network_policies.go`
+
+### Steady State
+
+- The CPO continuously reconciles all components against the HCP spec
+- The PKI operator rotates certificates automatically
+- The NodePool controller manages auto-repair and scaling
+- Status flow: `CPO -> HCP status -> HO -> HC status`
+
+### Upgrade
+
+> **See also**: Upgrades for detailed upgrade procedures and version skew policies.
+
+Control plane and data plane upgrades are **decoupled**:
+
+```mermaid
+graph LR
+    subgraph "Control Plane Upgrade"
+        A[Change HC.spec.release] --> B[HO updates HCP]
+        B --> C[CPO deploys new versions<br/>of components]
+    end
+
+    subgraph "Data Plane Upgrade"
+        D[Change NP.spec.release] --> E[New config hash]
+        E --> F[New token/userdata Secrets]
+        F --> G[CAPI rolling update<br/>of MachineDeployment]
+    end
+
+    A -.->|independent| D
+```
+
+- `controlPlaneRelease`: allows patching management-side components without touching the data plane
+- NodePool releases can be updated independently (within N-2 y-stream skew)
+
+### Deletion
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant HO as HyperShift Operator
+    participant CAPI as ClusterAPI
+    participant Cloud as Cloud Provider
+
+    User->>HO: Delete HostedCluster
+    HO->>CAPI: Deletes Machines, MachineDeployments
+    CAPI->>Cloud: Terminates instances
+    HO->>HO: Deletes HCP, waits for CPO cleanup
+    HO->>Cloud: Cleans up cloud resources<br/>(LBs, DNS, SGs, endpoints)
+    HO->>HO: Cleans up cluster-wide RBAC
+    HO->>HO: Removes finalizer
+    Note over HO: Supports grace period via<br/>hypershift.openshift.io/destroy-grace-period
+```
+
+!!! tip "Explore yourself"
+    The deletion flow starts at `r.delete()` (~line 501 in `hostedcluster_controller.go`). Notice the `CloudResourcesDestroyed` and `HostedClusterDestroyed` conditions.
+
+---
+
+## Control Plane in Detail
+
+### CPO Reconciliation Flow
+
+> **See also**: Controller Architecture for the full controller dependency graph and reconciliation details.
+
+```mermaid
+flowchart TD
+    START[Reconcile HCP] --> FETCH[Fetch HostedControlPlane]
+    FETCH --> DEL{Deletion?}
+    DEL -->|Yes| CLEANUP[Cleanup cloud resources<br/>Remove finalizer]
+    DEL -->|No| FIN[Add finalizer]
+    FIN --> VALIDATE[Validate configuration]
+    VALIDATE --> ETCD_STATUS[Check etcd status]
+    ETCD_STATUS --> KMS[Validate KMS config]
+    KMS --> KAS_STATUS[Check KAS availability]
+    KAS_STATUS --> INFRA[Setup infrastructure status<br/>endpoints, DNS, routes]
+    INFRA --> IGNITION_CFG[Reconcile ignition configs]
+    IGNITION_CFG --> OAUTH_PWD[Reconcile kubeadmin password]
+    OAUTH_PWD --> CONTEXT[Build ControlPlaneContext]
+    CONTEXT --> COMPONENTS[Iterate registered components]
+
+    subgraph "Component Loop"
+        COMPONENTS --> C1[Component.Reconcile]
+        C1 --> PRED{Predicate<br/>passes?}
+        PRED -->|No| DELETE_RES[Delete component resources]
+        PRED -->|Yes| DEPS{Dependencies<br/>ready?}
+        DEPS -->|No| WAIT[Skip, requeue]
+        DEPS -->|Yes| RECONCILE[Reconcile manifests<br/>+ workload]
+        RECONCILE --> STATUS_CR[Update ControlPlaneComponent CR]
+    end
+```
+
+!!! tip "Explore yourself"
+    In `hostedcontrolplane_controller.go`, the component iteration loop is at ~line 1232:
+
+    ```go
+    for _, c := range r.components {
+        r.Log.Info("Reconciling component", "component_name", c.Name())
+        if err := c.Reconcile(cpContext); err != nil {
+            errs = append(errs, err)
+        }
+    }
+    ```
+
+### Component Dependencies
+
+```mermaid
+graph TD
+    PKI[PKI Operator] --> |no deps| READY1((Ready))
+    ETCD[etcd] --> |no deps| READY2((Ready))
+    FG[FeatureGate Generator] --> |no deps| READY3((Ready))
+    ROUTER[Router] --> |no deps| READY4((Ready))
+
+    READY2 --> KAS[kube-apiserver]
+    READY3 --> KAS
+
+    KAS --> |implicit dependency| KCM[kube-controller-manager]
+    KAS --> |implicit dependency| SCHED[kube-scheduler]
+    KAS --> |implicit dependency| OAPI[openshift-apiserver]
+    KAS --> |implicit dependency| CVO[CVO]
+    KAS --> |implicit dependency| ALL["All other<br/>components (~30)"]
+
+    style PKI fill:#c8e6c9
+    style ETCD fill:#c8e6c9
+    style FG fill:#c8e6c9
+    style ROUTER fill:#c8e6c9
+    style KAS fill:#ffcc80
+```
+
+KAS is an implicit dependency for all components **except**: etcd, featuregate-generator, control-plane-operator, cluster-api, capi-provider, karpenter, and router.
+
+### Status Propagation
+
+```mermaid
+graph LR
+    CPC[ControlPlaneComponent CRs<br/><i>per-component</i><br/>Available / RolloutComplete] --> HCP_STATUS[HCP Status<br/>Conditions:<br/>EtcdAvailable<br/>KubeAPIServerAvailable<br/>ValidConfiguration]
+    HCP_STATUS --> HC_STATUS[HC Status<br/>Conditions:<br/>Available<br/>Progressing<br/>Degraded]
+
+    HC_STATUS --> USER[Visible to the user]
+```
+
+!!! tip "Explore yourself"
+    - HC conditions are defined in `api/hypershift/v1beta1/hostedcluster_conditions.go`
+    - NP conditions are in `api/hypershift/v1beta1/nodepool_conditions.go`
+    - The CPOv2 status logic is in `support/controlplane-component/status.go`
+
+
+---
+
+## Source: docs/content/getting-started/onboarding/platforms.md
+
+# Supported Cloud Platforms
+
+> **See also**: Multi-Platform Support for the full support matrix across HostedCluster, NodePool, and management cluster platform combinations.
+
+HyperShift supports multiple infrastructure platforms. Each platform implements the same `Platform` interface but brings its own CAPI provider, credential model, and networking primitives. Some platforms are generally available while others are behind feature gates.
+
+```mermaid
+graph TD
+    subgraph "Cloud Providers"
+        subgraph "AWS"
+            AWS_SM["AWS Self-Managed"]
+            AWS_M["AWS Managed<br/><i>ROSA HCP</i>"]
+        end
+
+        subgraph "Azure"
+            AZ_SM["Azure Self-Managed"]
+            AZ_M["Azure Managed<br/><i>ARO HCP</i>"]
+        end
+
+        subgraph "GCP"
+            GCP_SM["GCP Self-Managed<br/><i>Feature-gated</i>"]
+            GCP_M["GCP Managed<br/><i>GCP HCP</i>"]
+        end
+    end
+
+    subgraph "Virtualization"
+        KV["KubeVirt<br/><i>VMs on K8s</i>"]
+    end
+
+    subgraph "Bare Metal"
+        AG["Agent<br/><i>Bare-metal</i>"]
+    end
+
+    subgraph "Other"
+        OS["OpenStack<br/><i>Feature-gated</i>"]
+        IBM["IBM Cloud<br/><i>PowerVS</i>"]
+    end
+
+    style AWS_SM fill:#f96,stroke:#333
+    style AWS_M fill:#f96,stroke:#333
+    style AZ_SM fill:#69f,stroke:#333
+    style AZ_M fill:#69f,stroke:#333
+    style GCP_SM fill:#6c6,stroke:#333
+    style GCP_M fill:#6c6,stroke:#333
+    style KV fill:#c6f,stroke:#333
+    style AG fill:#a65,stroke:#333
+    style OS fill:#f66,stroke:#333
+    style IBM fill:#999,stroke:#333
+```
+
+---
+
+## Platform Interface
+
+Every platform must implement the `Platform` interface defined in `hypershift-operator/controllers/hostedcluster/internal/platform/platform.go`. The HyperShift Operator uses this interface to abstract away cloud-specific details during HostedCluster reconciliation.
+
+```go
+type Platform interface {
+    // ReconcileCAPIInfraCR creates/updates the platform-specific CAPI infrastructure CR
+    // that will be referenced by the CAPI Cluster CR.
+    ReconcileCAPIInfraCR(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
+        hcluster *hyperv1.HostedCluster, controlPlaneNamespace string,
+        apiEndpoint hyperv1.APIEndpoint) (client.Object, error)
+
+    // CAPIProviderDeploymentSpec returns the DeploymentSpec for the CAPI provider
+    // with platform-specific volumes, secrets, and containers.
+    CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster,
+        hcp *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error)
+
+    // ReconcileCredentials copies cloud credentials from the HostedCluster namespace
+    // into the control plane namespace for the CPO to consume.
+    ReconcileCredentials(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
+        hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error
+
+    // ReconcileSecretEncryption copies KMS-related resources into the control plane
+    // namespace (if the platform supports KMS).
+    ReconcileSecretEncryption(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
+        hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error
+
+    // CAPIProviderPolicyRules returns additional RBAC PolicyRules required by the
+    // CAPI provider to manage platform resources. Return nil if none are needed.
+    CAPIProviderPolicyRules() []rbacv1.PolicyRule
+
+    // DeleteCredentials cleans up platform credential resources so they don't leak
+    // when a HostedCluster is deleted.
+    DeleteCredentials(ctx context.Context, c client.Client,
+        hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error
+}
+```
+
+The `GetPlatform()` function in the same file uses a `switch` on `hcluster.Spec.Platform.Type` to instantiate the correct implementation (AWS, Azure, GCP, KubeVirt, Agent, etc.).
+
+---
+
+## Platform Comparison
+
+| Aspect | AWS (Self-Managed) | AWS (ROSA HCP) | Azure (Self-Managed) | Azure (ARO HCP) | GCP (GCP HCP) | KubeVirt | Agent |
+|--------|-------------------|----------------|---------------------|-----------------|---------------|----------|-------|
+| **Managed service** | No | Yes | No | Yes | Yes | No | No |
+| **CAPI Provider** | CAPA | CAPA | CAPZ | CAPZ | CAPG | - | - |
+| **Identity** | STS / IRSA | STS / IRSA | Workload Identity | Workload Identity | Workload Identity | N/A | N/A |
+| **KMS** | AWS KMS | AWS KMS | Azure Key Vault | Azure Key Vault | GCP KMS | N/A | N/A |
+| **Private connectivity** | AWS PrivateLink | AWS PrivateLink | Azure Private Link Service | Azure Private Link Service | Private Service Connect | N/A | N/A |
+| **Infra provisioning** | EC2/VPC | EC2/VPC | VMs/VNet | VMs/VNet | GCE/VPC | KubeVirt VMs | BareMetalHost |
+| **Cloud Controller Manager** | aws-ccm | aws-ccm | azure-ccm | azure-ccm | gcp-ccm | kubevirt-ccm | N/A |
+
+!!! tip "Explore yourself"
+    Browse the platform implementation directories to see how each platform implements the interface:
+
+    - `hypershift-operator/controllers/hostedcluster/internal/platform/aws/`
+    - `hypershift-operator/controllers/hostedcluster/internal/platform/azure/`
+    - `hypershift-operator/controllers/hostedcluster/internal/platform/gcp/`
+    - `hypershift-operator/controllers/hostedcluster/internal/platform/kubevirt/`
+    - `hypershift-operator/controllers/hostedcluster/internal/platform/agent/`
+    - `hypershift-operator/controllers/hostedcluster/internal/platform/openstack/`
+    - `hypershift-operator/controllers/hostedcluster/internal/platform/powervs/`
+
+---
+
+## AWS Infrastructure
+
+AWS is the most mature platform. Both self-managed and managed (ROSA HCP) deployments use the same underlying infrastructure primitives.
+
+```mermaid
+graph TD
+    subgraph "Management Cluster VPC"
+        HO[HyperShift Operator]
+
+        subgraph "CP Namespace"
+            KAS[kube-apiserver]
+            NLB[Network Load Balancer<br/><i>API endpoint</i>]
+            CAPA[CAPA Controller]
+        end
+    end
+
+    subgraph "Guest Cluster VPC"
+        subgraph "Public Subnets"
+            IGW[Internet Gateway]
+            NATGW[NAT Gateway]
+        end
+        subgraph "Private Subnets"
+            W1[Worker EC2<br/>Subnet AZ-a]
+            W2[Worker EC2<br/>Subnet AZ-b]
+            W3[Worker EC2<br/>Subnet AZ-c]
+        end
+    end
+
+    HO -->|creates| NLB
+    NLB --> KAS
+    CAPA -->|provisions| W1
+    CAPA -->|provisions| W2
+    CAPA -->|provisions| W3
+    W1 & W2 & W3 -->|egress via| NATGW
+    NATGW --> IGW
+
+    style NLB fill:#f96,stroke:#333
+    style KAS fill:#69f,stroke:#333
+```
+
+The guest cluster VPC contains public subnets (with an Internet Gateway and NAT Gateway for outbound traffic) and private subnets where worker EC2 instances run. The CAPI AWS provider (CAPA) manages the machine lifecycle. The kube-apiserver is fronted by a Network Load Balancer for external access.
+
+---
+
+## AWS PrivateLink
+
+For private clusters on AWS, HyperShift uses AWS PrivateLink to expose the kube-apiserver without traversing the public internet. The CPO runs a dedicated controller that manages the PrivateLink endpoint service and VPC endpoint:
+
+- **Source**: `control-plane-operator/controllers/awsprivatelink/`
+- The management cluster creates a VPC Endpoint Service backed by the kube-apiserver NLB
+- Consumers create a VPC Endpoint in their VPC that connects through PrivateLink
+- DNS is configured so the API server hostname resolves to the private endpoint
+
+This model is critical for ROSA HCP where the control plane runs in a service account VPC that the customer never sees directly.
+
+---
+
+## KubeVirt Nested Virtualization
+
+KubeVirt is unique because it runs guest cluster worker nodes as virtual machines on an existing Kubernetes cluster, creating a nested architecture:
+
+```mermaid
+graph TD
+    subgraph "Infrastructure Cluster (OCP with KubeVirt)"
+        KV_OP[KubeVirt Operator]
+        subgraph "Management Cluster Layer"
+            HO[HyperShift Operator]
+            subgraph "CP Namespace"
+                CPO_KV[CPO]
+                KAS_KV[kube-apiserver]
+            end
+        end
+
+        subgraph "KubeVirt VMs"
+            VM1[VM: Worker 1<br/><i>runs as a Pod</i>]
+            VM2[VM: Worker 2<br/><i>runs as a Pod</i>]
+            VM3[VM: Worker N<br/><i>runs as a Pod</i>]
+        end
+    end
+
+    KV_OP -->|manages VMs| VM1 & VM2 & VM3
+    HO -->|creates HC| CPO_KV
+    CPO_KV -->|manages| KAS_KV
+    KAS_KV -.->|konnectivity| VM1 & VM2 & VM3
+
+    style VM1 fill:#c6f,stroke:#333
+    style VM2 fill:#c6f,stroke:#333
+    style VM3 fill:#c6f,stroke:#333
+```
+
+Key differences from cloud platforms:
+
+- **No CAPI provider**: KubeVirt manages VMs directly through the KubeVirt API
+- **No cloud credentials**: The infrastructure cluster already has everything needed
+- **Nested networking**: Guest cluster pods run inside VMs that run inside pods on the infra cluster
+- **Shared infrastructure**: The management cluster, control plane, and worker VMs all share the same underlying cluster
+
+---
+
+## Cloud Controller Managers
+
+Each cloud platform has a Cloud Controller Manager (CCM) that runs in the control plane namespace. The CCM is responsible for:
+
+- Initializing nodes with cloud-specific metadata (zone, instance type, addresses)
+- Managing cloud load balancers for Services of type `LoadBalancer`
+- Handling node lifecycle (detecting when cloud instances are terminated)
+
+Platform-specific CCM implementations are registered as CPO v2 components:
+
+- `control-plane-operator/controllers/hostedcontrolplane/v2/cloud_controller_manager/aws/`
+- `control-plane-operator/controllers/hostedcontrolplane/v2/cloud_controller_manager/azure/`
+- `control-plane-operator/controllers/hostedcontrolplane/v2/cloud_controller_manager/gcp/`
+- `control-plane-operator/controllers/hostedcontrolplane/v2/cloud_controller_manager/kubevirt/`
+- `control-plane-operator/controllers/hostedcontrolplane/v2/cloud_controller_manager/openstack/`
+- `control-plane-operator/controllers/hostedcontrolplane/v2/cloud_controller_manager/powervs/`
+
+Each CCM component adapts a `cloud-provider-<platform>` binary with the appropriate cloud configuration file, credentials, and feature gates for the hosted cluster.
+
+---
+
+## Credential Management Pattern
+
+Cloud credentials flow from the user-facing HostedCluster resource into the control plane namespace where they are consumed by the CAPI provider, CCM, and other platform-aware components:
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant HC as HostedCluster
+    participant HO as HyperShift Operator
+    participant CPN as CP Namespace
+    participant CAPI as CAPI Provider
+    participant CCM as Cloud Controller Manager
+
+    User->>HC: Creates HC with cloud credentials<br/>(Secret references in spec.platform)
+    HO->>HO: platform.ReconcileCredentials()
+    HO->>CPN: Copies credential Secrets<br/>into control plane namespace
+    HO->>HO: platform.ReconcileSecretEncryption()
+    HO->>CPN: Copies KMS Secrets<br/>(if platform supports KMS)
+    CPN->>CAPI: Mounts credentials as volumes
+    CPN->>CCM: Mounts cloud config + credentials
+```
+
+The cloud configuration file that the CCM and other components consume is generated per-platform:
+
+- **AWS**: `control-plane-operator/controllers/hostedcontrolplane/cloud/aws/providerconfig.go`
+- **Azure**: `control-plane-operator/controllers/hostedcontrolplane/cloud/azure/providerconfig.go`
+- **OpenStack**: `control-plane-operator/controllers/hostedcontrolplane/cloud/openstack/providerconfig.go`
+
+These files build the `cloud.conf` (or equivalent) that gets mounted into the CCM, KCM, and other components that need to interact with the cloud API.
+
+
+---
+
+## Source: docs/content/getting-started/onboarding/reference.md
+
+# Architectural Invariants and Key File Reference
+
+## Architectural Invariants
+
+> **See also**: Goals and Design Invariants for the authoritative list of project goals and invariants.
+
+These are the design rules that should inform **every decision**:
+
+1. **Unidirectional communication**: Management cluster -> hosted cluster, never the reverse. All communication originates from within the CP namespace.
+
+2. **Pristine workers**: Compute nodes run only user workloads + minimal agents (kubelet, konnectivity-agent, CNI). No control plane logic.
+
+3. **No mutable CRDs/CRs exposed**: The hosted cluster should not expose mutable resources that could interfere with HyperShift-managed features.
+
+4. **Data plane changes do not trigger management-side lifecycle actions**: Prevents cascading failures.
+
+5. **No user credential management**: HyperShift components do not own credentials; they copy and use them, but ownership remains with the user.
+
+6. **Namespace isolation**: Each CP namespace is isolated via NetworkPolicies and Linux container primitives. See `hypershift-operator/controllers/hostedcluster/network_policies.go`.
+
+7. **Decoupled upgrade signals**: Management-side and data-plane components upgrade independently via `controlPlaneRelease`.
+
+8. **CPO backward compatibility**: The HO may deploy older CPO versions. Changes to the HO must consider impact on older CPOs. The HO checks CPO image labels before enabling features (e.g., `controlPlanePKIOperatorSignsCSRs`, `useRestrictedPSA`, `defaultToControlPlaneV2`).
+
+---
+
+## Key File Reference
+
+### APIs
+
+| File | Contents | Priority |
+|------|----------|----------|
+| `api/hypershift/v1beta1/hostedcluster_types.go` | HostedCluster spec/status, platform configs, constants, annotations | Must read |
+| `api/hypershift/v1beta1/hostedcluster_conditions.go` | HC condition type constants | Must read |
+| `api/hypershift/v1beta1/hosted_controlplane.go` | HostedControlPlane spec/status | Must read |
+| `api/hypershift/v1beta1/nodepool_types.go` | NodePool spec/status | Must read |
+| `api/hypershift/v1beta1/nodepool_conditions.go` | NP condition type constants | Must read |
+| `api/hypershift/v1beta1/aws.go` | AWS types (`AWSPlatformSpec`, `AWSRolesRef`) | Read for AWS work |
+| `api/hypershift/v1beta1/azure.go` | Azure types | Read for Azure work |
+| `api/hypershift/v1beta1/kubevirt.go` | KubeVirt types | Read for KubeVirt work |
+| `api/hypershift/v1beta1/controlplanecomponent_types.go` | CPOv2 ControlPlaneComponent CR | Good to know |
+| `api/hypershift/v1beta1/etcdbackup_types.go` | Feature-gated type example | Good to know |
+| `api/hypershift/v1beta1/groupversion_info.go` | API group registration | Reference |
+| `api/CLAUDE.md` | API compatibility rules | Must read |
+
+### HO Controllers
+
+| File | Contents | Priority |
+|------|----------|----------|
+| `hypershift-operator/controllers/hostedcluster/hostedcluster_controller.go` | HC Reconciler (~5200 lines) | Must read (selectively) |
+| `hypershift-operator/controllers/hostedcluster/network_policies.go` | Namespace isolation NetworkPolicies | Good to know |
+| `hypershift-operator/controllers/nodepool/nodepool_controller.go` | NP Reconciler main entry | Must read |
+| `hypershift-operator/controllers/nodepool/config.go` | ConfigGenerator, rollout hash | Must read |
+| `hypershift-operator/controllers/nodepool/token.go` | Token and UserData Secrets | Must read |
+| `hypershift-operator/controllers/nodepool/capi.go` | MachineDeployment, MHC, templates | Must read |
+| `hypershift-operator/controllers/nodepool/aws.go` | AWS MachineTemplate builder | Read for AWS work |
+| `hypershift-operator/controllers/nodepool/azure.go` | Azure MachineTemplate builder | Read for Azure work |
+| `hypershift-operator/controllers/nodepool/kubevirt/kubevirt.go` | KubeVirt MachineTemplate builder | Read for KubeVirt work |
+| `hypershift-operator/controllers/nodepool/conditions.go` | SetStatusCondition helpers | Reference |
+| `hypershift-operator/controllers/nodepool/version.go` | NodesInfo aggregation from CAPI Machines | Reference |
+| `hypershift-operator/controllers/nodepool/scale_from_zero.go` | Scale-from-zero annotation management | Reference |
+| `hypershift-operator/controllers/manifests/manifests.go` | Namespace naming, resource naming helpers | Reference |
+
+### CPO Controllers
+
+| File | Contents | Priority |
+|------|----------|----------|
+| `control-plane-operator/controllers/hostedcontrolplane/hostedcontrolplane_controller.go` | HCP Reconciler (~3200 lines) | Must read (selectively) |
+| `control-plane-operator/controllers/hostedcontrolplane/v2/kas/` | kube-apiserver component (complex example) | Good to know |
+| `control-plane-operator/controllers/hostedcontrolplane/v2/kube_scheduler/` | kube-scheduler component (simple example) | Must read |
+| `control-plane-operator/controllers/hostedcontrolplane/v2/etcd/` | etcd component | Good to know |
+| `control-plane-operator/controllers/hostedcontrolplane/v2/capi_manager/` | CAPI manager component | Reference |
+| `control-plane-operator/controllers/hostedcontrolplane/v2/capi_provider/` | CAPI provider component | Reference |
+| `control-plane-operator/controllers/hostedcontrolplane/v2/cloud_controller_manager/` | Per-platform CCMs | Read per platform |
+| `control-plane-operator/controllers/hostedcontrolplane/v2/assets/` | YAML manifests for all components | Reference |
+
+### Framework and Support
+
+| File | Contents | Priority |
+|------|----------|----------|
+| `support/controlplane-component/controlplane-component.go` | CPOv2 framework core | Must read |
+| `support/controlplane-component/builder.go` | Builder pattern for components | Must read |
+| `support/controlplane-component/status.go` | Status logic, dependency checking | Must read |
+| `support/controlplane-component/workload.go` | Workload reconciliation | Good to know |
+| `support/upsert/upsert.go` | CreateOrUpdate wrapper | Must read |
+
+### Platform Implementations
+
+| File | Contents | Priority |
+|------|----------|----------|
+| `hypershift-operator/controllers/hostedcluster/internal/platform/platform.go` | Platform interface definition | Must read |
+| `hypershift-operator/controllers/hostedcluster/internal/platform/aws/aws.go` | AWS platform impl | Read for AWS |
+| `hypershift-operator/controllers/hostedcluster/internal/platform/azure/azure.go` | Azure platform impl | Read for Azure |
+| `hypershift-operator/controllers/hostedcluster/internal/platform/kubevirt/kubevirt.go` | KubeVirt platform impl | Read for KubeVirt |
+| `hypershift-operator/controllers/hostedcluster/internal/platform/agent/agent.go` | Agent platform impl | Read for Agent |
+
+### PKI and Ignition
+
+| File | Contents | Priority |
+|------|----------|----------|
+| `control-plane-pki-operator/operator.go` | PKI operator wiring | Good to know |
+| `control-plane-pki-operator/certrotationcontroller/` | Certificate rotation | Reference |
+| `control-plane-pki-operator/certificatesigningcontroller/` | CSR signing | Reference |
+| `ignition-server/cmd/start.go` | Ignition HTTPS server | Good to know |
+| `ignition-server/controllers/tokensecret_controller.go` | Token reconciler | Good to know |
+| `ignition-server/controllers/local_ignitionprovider.go` | MCO binary execution | Reference |
+
+### CLI and Infrastructure
+
+| File | Contents | Priority |
+|------|----------|----------|
+| `main.go` | CLI entry point | Reference |
+| `cmd/cluster/` | create/destroy cluster commands | Reference |
+| `cmd/nodepool/` | create/destroy nodepool commands | Reference |
+| `cmd/install/` | install command, CRD assets | Reference |
+| `cmd/infra/aws/create.go` | AWS infra CLI (`CreateInfra()`) | Read for AWS |
+| `cmd/infra/aws/iam.go` | AWS IAM roles and OIDC | Read for AWS |
+| `cmd/infra/azure/` | Azure infra CLI | Read for Azure |
+
+### Tests
+
+| File | Contents | Priority |
+|------|----------|----------|
+| `test/e2e/` | E2E tests (cluster lifecycle, nodepool, upgrades) | Browse for context |
+| `test/integration/` | Integration tests (controller behavior) | Browse for context |
+| `api/hypershift/v1beta1/nodepool_types_test.go` | Serialization compatibility test example | Must read for API changes |
+
+
+---
+
+## Source: docs/content/getting-started/onboarding/what-is-hypershift.md
+
+# What is HyperShift?
+
+HyperShift is an OpenShift middleware that **decouples the control plane from the data plane** (worker nodes), allowing control planes to run as workloads on a central **management cluster**.
+
+## The Problem it Solves
+
+In standalone OpenShift, every cluster runs its own control plane (etcd, kube-apiserver, controllers) on dedicated master nodes. This creates:
+
+- **Resource overhead**: 3+ master nodes per cluster just for the control plane
+- **Provisioning time**: 30-45 minutes including bootstrap
+- **Distributed operations**: each control plane is independently operated
+
+## How HyperShift Solves It
+
+**Standalone OpenShift** — each cluster embeds its own control plane on dedicated master nodes:
+
+```mermaid
+graph LR
+    subgraph "Standalone Cluster 1"
+        M1[Control Plane<br/>Masters x3]
+        W1[Workers 1..N]
+        M1 --> W1
+    end
+
+    subgraph "Standalone Cluster 2"
+        M2[Control Plane<br/>Masters x3]
+        W2[Workers 1..N]
+        M2 --> W2
+    end
+
+    subgraph "Standalone Cluster 3"
+        M3[Control Plane<br/>Masters x3]
+        W3[Workers 1..N]
+        M3 --> W3
+    end
+```
+
+Each standalone cluster is **self-contained** — it embeds its own control plane on dedicated master nodes. There is no shared management layer; every cluster independently operates its own etcd, API server, and controllers.
+
+**HyperShift Model** — a single management cluster hosts all control planes as pods:
+
+```mermaid
+graph LR
+    subgraph "Management Cluster"
+        D[Management Cluster]
+        D --> E[HCP 1 - Pods]
+        D --> F[HCP 2 - Pods]
+        D --> G[HCP 3 - Pods]
+    end
+
+    E -.-> H[Workers 1..N]
+    F -.-> I[Workers 1..N]
+    G -.-> J[Workers 1..N]
+```
+
+| Aspect | Standalone OpenShift | HyperShift (HCP) |
+|--------|---------------------|-------------------|
+| Control plane location | Dedicated master nodes inside the cluster | Pods on a management cluster |
+| Master nodes | 3+ required | Zero; only worker nodes in the guest cluster |
+| Provisioning time | 30-45 minutes | ~10-15 minutes |
+| Control plane isolation | Physical/VM | Namespace + NetworkPolicies |
+| Upgrade model | Single upgrade for CP + workers | Independent upgrades for CP vs data plane |
+
+
+---
+
+## Source: docs/content/getting-started/quick-setup.md
 
 ---
 title: Getting started
@@ -2371,13 +3943,28 @@ If you wanna know more about how to expose the ingress service in the Data Plane
 
 ## Overview
 
-The Global Pull Secret functionality enables Hosted Cluster administrators to include additional pull secrets for accessing container images from private registries without requiring assistance from the Management Cluster administrator. This feature allows you to merge your custom pull secret with the original HostedCluster pull secret, making it available to all nodes in the cluster.
+The Global Pull Secret functionality enables Hosted Cluster administrators to include additional pull secrets for accessing container images from private registries without requiring assistance from the Management Cluster administrator. This feature allows you to merge your custom pull secret with the original HostedCluster pull secret, making it available to nodes that run the sync DaemonSet.
 
-The implementation uses a DaemonSet approach that automatically detects when you create an `additional-pull-secret` in the `kube-system` namespace of your DataPlane (Hosted Cluster). The system then merges this secret with the original pull secret and deploys the merged result to all nodes via a DaemonSet that updates the kubelet configuration.
+The implementation uses a DaemonSet that updates kubelet pull credentials on the node. The pull secret referenced by **`HostedCluster.spec.pullSecret`** is always copied from the HostedControlPlane into the guest cluster as the `original-pull-secret` Secret in `kube-system`. The `sync-global-pullsecret` process writes that content to `/var/lib/kubelet/config.json` on **eligible** worker nodes (see Platform and NodePool eligibility), even if you **never** create `additional-pull-secret`. In that baseline case there is no merge step: the kubelet file is kept aligned with the HostedCluster pull secret that HCCO reconciles into the data plane.
+
+When you **do** create an `additional-pull-secret` in the `kube-system` namespace of your DataPlane (Hosted Cluster), the system merges it with the original HostedCluster pull secret and deploys the merged result via the same DaemonSet path (still preferring the original secret where registry entries conflict).
 
 !!! note
 
-    This feature is designed to work autonomously - once you create the additional pull secret, the system automatically handles the rest without requiring Management Cluster administrator intervention.
+    This feature is designed to work autonomously. With only `HostedCluster.spec.pullSecret`, the Hosted Cluster Config Operator (HCCO) still reconciles `original-pull-secret` and the DaemonSet object in the guest; sync pods run only on eligible nodes. Creating `additional-pull-secret` is optional and only needed to add or layer registry credentials beyond the HostedCluster pull secret.
+
+## Platform and NodePool eligibility
+
+HCCO reconciles Global Pull Secret resources for **every** hosted cluster platform: it always maintains `kube-system/original-pull-secret` (and optional `global-pull-secret`), RBAC, and the `global-pull-secret-syncer` DaemonSet **object** in the data plane.
+
+The DaemonSet pod template requires nodes to have the label **`hypershift.openshift.io/nodepool-globalps-enabled=true`**. Today the HyperShift operator sets that label on **Machines** (and HCCO propagates it to **Nodes**) only for:
+
+- **AWS** and **Azure** NodePools, and  
+- the **Replace** upgrade strategy (`MachineDeployment` path).
+
+It does **not** set the label for **InPlace** NodePools (to avoid conflicting with Machine Config Daemon on kubelet config), or for **Replace** on other platforms such as **KubeVirt** (and other providers) in the current implementation—those workers therefore typically have **no** Global Pull Secret sync pods unless something else applies the label.
+
+For platforms without sync pods, pull credentials still come from **ignition/bootstrap** and from in-cluster Secrets (for example `openshift-config/pull-secret`); kubelet on-disk config is not updated by this DaemonSet on those nodes.
 
 ## Adding your Pull Secret
 
@@ -2435,8 +4022,8 @@ After creating the secret, the system will automatically:
 
 1. Validate the secret format
 2. Merge it with the original pull secret
-3. Deploy a DaemonSet to all nodes
-4. Update the kubelet configuration on each node
+3. Ensure the DaemonSet is present in the guest cluster
+4. Update kubelet configuration on **eligible** worker nodes (see Platform and NodePool eligibility)
 
 You can verify the deployment by checking:
 
@@ -2455,42 +4042,45 @@ kubectl get pods -n kube-system -l name=global-pull-secret-syncer
 
 The Global Pull Secret functionality operates through a multi-component system:
 
-### Automatic Detection
-- The Hosted Cluster Config Operator (HCCO) continuously monitors the `kube-system` namespace
-- When it detects the creation of `additional-pull-secret`, it triggers the reconciliation process
+### Automatic detection and baseline sync
+- The Hosted Cluster Config Operator (HCCO) continuously reconciles Global Pull Secret resources and watches Secrets in the `kube-system` namespace of the data plane.
+- On every reconcile, HCCO copies the HostedControlPlane pull secret (sourced from **`HostedCluster.spec.pullSecret`**) into `kube-system/original-pull-secret` so the DaemonSet can mount it on the node.
+- If `additional-pull-secret` is **not** present, HCCO removes the `global-pull-secret` Secret (if it existed) and the DaemonSet syncs **only** the HostedCluster pull secret copy into `/var/lib/kubelet/config.json` on eligible nodes.
+- When `additional-pull-secret` **is** present, reconciliation additionally validates and merges it with the HostedCluster pull secret.
 
-### Validation and Merging
-- The system validates that your secret contains a proper DockerConfigJSON format
-- It retrieves the original pull secret from the HostedControlPlane
-- Your additional pull secret is merged with the original one
-- **If there are conflicting registry entries, the original pull secret takes precedence** (the additional pull secret entry is ignored for conflicting registries)
-- The system supports namespace-specific registry entries (e.g., `quay.io/namespace`) for better credential specificity
+### Validation and merging (optional additional secret)
+- When `additional-pull-secret` exists, the system validates that it contains a proper DockerConfigJSON format.
+- It retrieves the original pull secret from the HostedControlPlane (same content as `HostedCluster.spec.pullSecret`).
+- Your additional pull secret is merged with the original one.
+- **If there are conflicting registry entries, the original pull secret takes precedence** (the additional pull secret entry is ignored for conflicting registries).
+- The system supports namespace-specific registry entries (e.g., `quay.io/namespace`) for better credential specificity.
 
-### Deployment Process
-- A `global-pull-secret` is created in the `kube-system` namespace containing the merged result
+### Deployment process
+- When merging is active, a `global-pull-secret` is created in the `kube-system` namespace containing the merged result. If there is no additional secret, this Secret is absent and the syncer uses `original-pull-secret` only.
 - RBAC resources (ServiceAccount, Role, RoleBinding) are created for the DaemonSet in both `kube-system` and `openshift-config` namespaces
 - We use Role and RoleBinding in both namespaces to access secrets in `kube-system` and `openshift-config` namespaces
 - A DaemonSet named `global-pull-secret-syncer` is deployed to eligible nodes
 
-!!! warning "NodePool InPlace Strategy Restriction"
+!!! warning "InPlace and unsupported platforms"
 
-    The Global Pull Secret DaemonSet is **not deployed** to nodes that belong to NodePools using the **InPlace upgrade strategy**. This restriction prevents conflicts between the DaemonSet's modifications to `/var/lib/kubelet/config.json` and the Machine Config Daemon (MCD) during InPlace upgrades.
+    **InPlace NodePools:** workers are intentionally **not** labeled `hypershift.openshift.io/nodepool-globalps-enabled`, so the Global Pull Secret sync **pods do not schedule** there. That avoids conflicts between edits to `/var/lib/kubelet/config.json` and the Machine Config Daemon (MCD).
 
-    - **Nodes with Replace strategy**: ✅ Receive Global Pull Secret DaemonSet
-    - **Nodes with InPlace strategy**: ❌ Do not receive Global Pull Secret DaemonSet
+    **AWS and Azure, Replace:** workers **are** labeled (via Machine → Node propagation), so sync pods **can** run and reconcile kubelet pull configuration from `original-pull-secret` / `global-pull-secret`.
 
-    This ensures that MCD operations during InPlace upgrades do not fail due to unexpected changes in kubelet configuration files.
+    **Other platforms (for example KubeVirt, GCP, Agent, …):** the DaemonSet object still exists in `kube-system`, but nodes usually **lack** the selector label, so you will typically see **no** (or very few) sync pods unless you set that label yourself.
 
-### Node-Level Synchronization
-- Each DaemonSet pod runs a controller that watches the secrets under kube-system namespace
-- When changes are detected, it updates `/var/lib/kubelet/config.json` on the node
+    See Platform and NodePool eligibility for the full picture.
+
+### Node-level synchronization
+- Each DaemonSet pod runs `sync-global-pullsecret`, which periodically reads the mounted pull secret files (`global-pull-secret` when present, otherwise `original-pull-secret`, which holds the **`HostedCluster.spec.pullSecret`** payload reconciled by HCCO).
+- When the desired content differs from `/var/lib/kubelet/config.json`, it updates the file on the node
 - The kubelet service is restarted via DBus to apply the new configuration
 - If the restart fails after 3 attempts, the system rolls back the file changes
 
-### Automatic Cleanup
-- If you delete the `additional-pull-secret`, the HCCO automatically removes the `global-pull-secret` secret
-- The system reverts to using only the original pull secret from the HostedControlPlane
-- The DaemonSet continues running but now syncs only the original pull secret to nodes
+### Automatic cleanup
+- If you delete the `additional-pull-secret`, the HCCO automatically removes the `global-pull-secret` secret.
+- The system reverts to syncing **only** the HostedCluster pull secret (via `original-pull-secret`, still sourced from the HostedControlPlane).
+- The DaemonSet continues to run on eligible nodes and keeps `/var/lib/kubelet/config.json` aligned with that HostedCluster pull secret.
 
 ## Registry Precedence and Conflict Resolution
 
@@ -2562,20 +4152,18 @@ The implementation consists of several key components working together:
    - Handles validation of user-provided pull secrets
    - Manages the merging logic between original and additional pull secrets
    - Creates and manages RBAC resources
-   - Deploys and manages the DaemonSet
-   - **Node eligibility assessment**: Labels nodes from InPlace NodePools and configures DaemonSet scheduling restrictions
+   - Deploys and manages the DaemonSet in Nodes labeled with `hypershift.openshift.io/nodepool-globalps-enabled=true`
 
 2. **Sync Global Pull Secret Command** (`sync-global-pullsecret` package)
-   - Runs as a DaemonSet on each node
-   - Watches for changes to the `global-pull-secret` in `kube-system` namespace
-   - Accesses the original `pull-secret` in `openshift-config` namespace
-   - Updates the kubelet configuration file
+   - Runs in the DaemonSet pod on eligible nodes
+   - Reads mounted Docker config JSON from `global-pull-secret` when that volume exists; otherwise uses `original-pull-secret` (the copy of **`HostedCluster.spec.pullSecret`** reconciled into `kube-system`)
+   - Updates `/var/lib/kubelet/config.json` on the host
    - Manages kubelet service restarts via DBus
 
-3. **Hosted Cluster Config Operator Integration**
-   - Monitors for the presence of `additional-pull-secret`
-   - Orchestrates the entire process
-   - Handles cleanup when the secret is removed
+3. **Hosted Cluster Config Operator integration**
+   - Reconciles `original-pull-secret` on every pass from the HostedControlPlane pull secret (`HostedCluster.spec.pullSecret`)
+   - When `additional-pull-secret` exists, validates, merges, and reconciles `global-pull-secret`; when it does not, removes `global-pull-secret` and relies on `original-pull-secret` only for kubelet sync
+   - Orchestrates RBAC and the DaemonSet for both paths
 
 ### Architecture Diagram
 
@@ -2624,9 +4212,9 @@ graph TB
     Container --> |Executes| SyncCommand[sync-global-pullsecret command]
 
     %% Sync Process
-    SyncCommand --> |Watches global-pull-secret| SyncController[Global Pull Secret Reconciler]
-    SyncController --> |Reads secret| ReadGlobalPS[Read global-pull-secret]
-    SyncController --> |Reads original| ReadOriginalPS[Read original pull-secret]
+    SyncCommand --> |Reads mounted files| SyncController[sync-global-pullsecret loop]
+    SyncController --> |Reads if present| ReadGlobalPS[Read global-pull-secret mount]
+    SyncController --> |Reads HostedCluster PS copy| ReadOriginalPS[Read original-pull-secret mount]
 
     %% File Update Process
     ReadGlobalPS --> |Gets data| GlobalPSBytes[Global Pull Secret Bytes]
@@ -2680,42 +4268,11 @@ graph TB
   - Write to `/var/lib/kubelet/config.json` (kubelet configuration file)
   - Connect to systemd via DBus for service management
   - Restart kubelet.service, which requires root privileges
-- **Smart node targeting**: Automatically excludes nodes from InPlace NodePools to prevent MCD conflicts
+- **Smart node targeting**: The DaemonSet uses a `nodeSelector` for `hypershift.openshift.io/nodepool-globalps-enabled=true`; the HyperShift operator only applies that label on **AWS** and **Azure** **Replace** NodePools, so InPlace and other platforms do not get sync pods by default (see Platform and NodePool eligibility)
 
-### InPlace NodePool Handling
+### How scheduling avoids InPlace conflicts
 
-To prevent conflicts with Machine Config Daemon operations, the implementation includes intelligent node targeting:
-
-#### Node Labeling Process
-1. **MachineSets Discovery**: The controller queries the management cluster for MachineSets with InPlace-specific annotations (`hypershift.openshift.io/nodePoolTargetConfigVersion`)
-2. **Machine Enumeration**: For each InPlace MachineSets, it lists all associated Machines
-3. **Node Identification**: Maps Machine objects to their corresponding nodes via `machine.Status.NodeRef.Name`
-4. **Labeling**: Applies `hypershift.openshift.io/nodepool-inplace-strategy=true` label to identified nodes
-
-#### DaemonSet Scheduling Configuration
-The DaemonSet uses NodeAffinity to exclude InPlace nodes:
-
-```yaml
-spec:
-  template:
-    spec:
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-            - matchExpressions:
-              - key: hypershift.openshift.io/nodepool-inplace-strategy
-                operator: DoesNotExist
-```
-
-This ensures that:
-- **Nodes without the label**: ✅ Are eligible for DaemonSet scheduling
-- **Nodes with the label** (any value): ❌ Are excluded from DaemonSet scheduling
-
-#### Conflict Prevention Benefits
-- **Prevents MCD failures**: Avoids conflicts when MCD expects specific kubelet configuration during InPlace upgrades
-- **Maintains upgrade reliability**: InPlace upgrade processes are not interrupted by Global Pull Secret modifications
-- **Automatic detection**: No manual intervention required - the system automatically identifies and handles InPlace nodes
+Eligibility is **positive selection**, not NodeAffinity on an InPlace label: InPlace workers simply **never** receive `hypershift.openshift.io/nodepool-globalps-enabled=true`, so the sync DaemonSet does not place pods on them. Replace workers on AWS/Azure **do** receive the label so the DaemonSet can run there without colliding with MCD on InPlace upgrade paths.
 
 ### Error Handling
 
@@ -3177,6 +4734,288 @@ In order for Cilium connectivity test pods to run on OpenShift, a simple custom 
   pod-to-external-1111-5c4cfd9497-6slss                    1/1     Running   0          23h
   pod-to-external-fqdn-allow-google-cnp-7d65d9b747-w4cx5   1/1     Running   0          23h
   ~~~
+
+
+---
+
+## Source: docs/content/how-to/agentic-sdlc.md
+
+---
+title: Agentic Software Development Life Cycle
+---
+
+# Agentic Software Development Life Cycle
+
+The HyperShift team operates an **Agentic Software Development Life Cycle (ASDLC)**. A framework that decouples distributed consumption of reusable agentic building blocks (skills, slash commands, sub-agents, knowledge bases) from the systems that orchestrate agent execution and LLM inference at scale.
+
+This separation enables flexible implementation choices: the same building blocks power local Claude Code (or other agents) sessions that can run on a developer's laptop, centralized Prow CI jobs, ambient agents, long-running cluster workloads, etc.
+
+```mermaid
+graph TB
+    subgraph "Building Blocks Layer"
+        direction LR
+        SK["Skills & Slash Commands — /jira:solve, /code-review:pr, ..."]
+        AG["Sub-agents — HCP SMEs, Explore, Plan"]
+        KB["Knowledge Bases — CLAUDE.md, AGENTS.md, Rules"]
+        HK["Hooks & Plugins — Pre-commit, CI integration"]
+    end
+
+    subgraph "Orchestration / Execution Layer"
+        subgraph Local["Local (Dev Laptop)"]
+            direction LR
+            L_CC["Claude Code CLI"]
+            L_BM["Bot Minter"]
+        end
+        subgraph Centralized["Centralized (Shared Infra)"]
+            direction LR
+            C_PJ["Prow Jobs"]
+            C_AM["Ambient"]
+        end
+    end
+
+    SK --> Local
+    AG --> Local
+    KB --> Local
+    HK --> Local
+    SK --> Centralized
+    AG --> Centralized
+    KB --> Centralized
+    HK --> Centralized
+
+    style SK fill:#e8f4fd,stroke:#1a73e8
+    style AG fill:#e8f4fd,stroke:#1a73e8
+    style KB fill:#e8f4fd,stroke:#1a73e8
+    style HK fill:#e8f4fd,stroke:#1a73e8
+    style L_CC fill:#fce8e6,stroke:#d93025
+    style L_BM fill:#fce8e6,stroke:#d93025
+    style C_PJ fill:#fce8e6,stroke:#d93025
+    style C_AM fill:#fce8e6,stroke:#d93025
+```
+
+
+
+---
+
+## Phases of ASDLC
+
+### Phase 1 — Discovery
+
+The discovery phase focuses on understanding the problem space, designing the solution, and refining scope into actionable work items.
+
+```mermaid
+flowchart LR
+    subgraph "Architecture Design"
+        A1["Interactive Claude session: discuss design and implementation"] --> A2["HCP SME sub-agents: cloud-provider, control-plane, data-plane, api, architect"]
+        A2 --> A3["Create RFC or enhancement proposal"]
+    end
+
+    subgraph "Scope Refinement"
+        B1["/jira:create — Create Jira issues"] --> B5["/jira:ready-to-solve — Validate readiness for agent"]
+        B1 --> B2["/jira:generate-test-plan — Generate test plan from Jira"]
+        B1 --> B3["/utils:generate-test-plan — Generate test plan from PRs"]
+        B1 --> B4["Obra superpowers"]
+    end
+
+    A3 --> B1
+```
+
+
+
+#### Architecture Design
+
+
+| Activity          | Building Block                                 | Description                                                                                                              |
+| ----------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Design discussion | Claude Code / Other Agents interactive session | Discuss design and implementation plans with Agents in a conversational session                                          |
+| Domain expertise  | HCP SME sub-agents                             | Leverage specialized agents: `cloud-provider-sme`, `control-plane-sme`, `data-plane-sme`, `api-sme`, `hcp-architect-sme` |
+| Proposal creation | RFC / Enhancement                              | Create a formal enhancement or RFC document capturing the agreed design                                                  |
+
+
+#### Scope Refinement
+
+
+| Activity             | Building Block              | Description                                                      |
+| -------------------- | --------------------------- | ---------------------------------------------------------------- |
+| Issue creation       | `/jira:create`              | Create well-structured Jira issues (stories, bugs, tasks, epics) |
+| Readiness validation | `/jira:ready-to-solve`      | Validate a Jira issue is well-groomed and ready for `/jira:solve` |
+| Test planning (Jira) | `/jira:generate-test-plan`  | Generate test steps from a Jira issue                            |
+| Test planning (PRs)  | `/utils:generate-test-plan` | Generate test steps for one or more related PRs                  |
+
+
+---
+
+### Phase 2 — Delivery
+
+The delivery phase covers implementation, review, and quality assurance — each supported by agentic workflows.
+
+```mermaid
+flowchart LR
+    subgraph "Implementation"
+        C1["/jira:solve"]
+        C2["Bot minter"]
+    end
+
+    subgraph "Code Review"
+        D1["CodeRabbit — automated review"] --> D3["Address feedback"]
+        D2["/code-review:pr — /code-review:pre-commit-review"] --> D3
+        D3 --> D4["/utils:address-reviews"]
+    end
+
+    subgraph "QE & Testing"
+        E2["/ci:analyze-prow-job-test-failure"]
+        E3["/agentic-qe test-plan"]
+    end
+
+    C1 --> D1
+    C2 --> D1
+    D4 --> E2
+```
+
+
+
+#### Implementation
+
+
+| Activity        | Building Block | Description                                                         |
+| --------------- | -------------- | ------------------------------------------------------------------- |
+| Code generation | `/jira:solve`  | Analyze a Jira issue and create a pull request with a proposed fix  |
+| Code generation | Bot minter     | GitHub App-based agents that create and manage PRs programmatically |
+
+
+#### Code Review
+
+
+| Activity          | Building Block                      | Description                                           |
+| ----------------- | ----------------------------------- | ----------------------------------------------------- |
+| Automated review  | CodeRabbit | AI-powered code review bot running on every PR        |
+| On-demand review  | `/code-review:pr`                   | Trigger a full PR review with language-aware analysis |
+| Pre-commit review | `/code-review:pre-commit-review`    | Review staged changes before committing               |
+| Address feedback  | `/utils:address-reviews`            | Automatically address PR review comments              |
+
+
+#### QE & Testing
+
+
+| Activity                | Building Block                      | Description                                                     |
+| ----------------------- | ----------------------------------- | --------------------------------------------------------------- |
+| CI failure analysis     | `/ci:analyze-prow-job-test-failure` | Analyze test failures from Prow CI job artifacts                |
+| Agentic QE              | `/agentic-qe test-plan`             | Execute test plans with agentic workflows                       |
+| Presubmit auto-analysis | Prow presubmits                     | CI jobs automatically trigger failure analysis on test failures |
+
+
+---
+
+## Modes of Agentic Workflows
+
+A mode describes where/how execution happens. Building blocks can be executed in different modes depending on the use case:
+
+```mermaid
+graph LR
+    subgraph "Local"
+        L1["Developer laptop — Claude Code CLI"]
+    end
+
+    subgraph "Centralized"
+        P1["Prow periodic jobs"]
+        P2["Prow presubmit jobs"]
+        AM1["Ambient agents"]
+        LR1["Long-running agents — prebuilt binaries as cluster workloads"]
+    end
+
+    L1 -.- BB["Shared — Building Blocks"]
+    P1 -.- BB
+    P2 -.- BB
+    AM1 -.- BB
+    LR1 -.- BB
+
+    style BB fill:#e8f5e9,stroke:#34a853
+```
+
+
+
+### Local
+
+Building blocks executed by developers on their laptops using Claude Code CLI, Bot-Minter, others... This is the most interactive mode where removing ambiguity might need several iterations. Ideal for design discussions, exploratory work, and ad-hoc tasks.
+
+Before publishing a code artifact for human review, developers are expected to levereage building blocks for local code review and agentic qe
+
+### Centralized
+
+Building blocks run and driven by central infrastructure tools. These run on schedule, in response to events, or continuously as cluster workloads: Prow Jobs, Ambient, Cluster workloads... Ideal for repetitive tasks or concise work items.
+
+#### Hands-off Delivery
+
+```mermaid
+flowchart TD
+    A["Jira item labeled with issue-for-agent"] --> A2["/jira:ready-to-solve validates readiness"]
+    A2 --> B["Periodic Job picks from backlog"]
+    B --> C["Agent generates code, reviews, addresses and creates PR"]
+    C --> D["Agent review on published PR"]
+    D --> E["Human review"]
+    E --> F["/address-pr-review"]
+    F --> E
+    E --> G["Human lgtm"]
+    G --> H["/agentic-qe"]
+    H --> I["Presubmit e2e runs"]
+    I --> J["Auto-analysis on failures"]
+    J -->|"Failures found"| F
+    I -->|"Pass"| K["Merge"]
+```
+
+
+
+For details on the current centralized jobs, see AI-Assisted CI Jobs.
+
+---
+
+## Monitoring
+
+### Dashboards
+
+Agent execution metrics, token usage, and cost tracking
+
+### Slack Integration
+
+
+| Channel               | Purpose                                         |
+| --------------------- | ----------------------------------------------- |
+| `@ship-help`          | AI-assisted triage and routing of help requests |
+| `#project-hypershift` | General team channel                            |
+
+
+Building blocks integrate with Slack for notifications, status updates, and interactive assistance.
+
+---
+
+## Principles
+
+- **Reuse drives self-improvement** — Every execution of a building block generates signal (successes, failures, review feedback) that feeds back into refining the building blocks themselves.
+- **Raise the quality floor** — Agentic workflows must enforce consistent code patterns, code review, test generation, and CI analysis on every change, raising the baseline quality across all contributions.
+- **Compounding returns** — Better building block specifications produce better output, which produces better input data for the next iteration. The system improves itself over time.
+
+---
+
+## Getting Started
+
+=== "For developers"
+
+    1. Install Claude Code CLI
+    2. Clone the HyperShift repository
+    3. Install plugins:
+
+    ```bash
+    /plugin marketplace add openshift-eng/ai-helpers
+    /plugin install jira@ai-helpers
+    /plugin install utils@ai-helpers
+    /plugin install ci@ai-helpers
+    /plugin install code-review@ai-helpers
+    ```
+
+=== "For CI integration"
+
+    1. See AI-Assisted CI Jobs for existing Prow job setup
+    2. Label Jira issues with `issue-for-agent` to submit them for processing
+
 
 
 ---
@@ -4269,6 +6108,165 @@ scale_down_nodepool
 </details>
 
 After these steps, you will see how the (in the AWS case) instances will be terminated instantly, but Openshift will take some time until the nodes get deleted because of the default timeouts set on the platforms.
+
+
+---
+
+## Source: docs/content/how-to/autoscaling.md
+
+# Autoscaling
+
+This guide covers configuring node pool and cluster autoscaling for HostedClusters. Autoscaling automatically adjusts the number of worker nodes based on workload demands.
+
+## Node Pool Autoscaling
+
+Node pool autoscaling enables individual NodePools to automatically scale between a minimum and maximum number of nodes based on pending pod resource requests.
+
+### Enable Autoscaling on a NodePool
+
+To enable autoscaling, set `spec.autoScaling` and remove `spec.replicas`:
+
+```bash
+oc patch nodepool -n <HOSTED_CLUSTER_NAMESPACE> <NODEPOOL_NAME> --type merge -p '{
+  "spec": {
+    "replicas": null,
+    "autoScaling": {
+      "min": 1,
+      "max": 5
+    }
+  }
+}'
+```
+
+| Field | Description |
+|-------|-------------|
+| `min` | Minimum number of nodes to maintain. Must be >= 0 and <= `max`. See note below about platform restrictions. |
+| `max` | Maximum number of nodes the autoscaler can scale to. Must be >= 1 and >= `min`. |
+
+!!! note
+    `autoScaling` and `replicas` are mutually exclusive. When enabling autoscaling, `replicas` must be set to `null`.
+
+!!! note
+    Scale-from-zero (`min: 0`) is only supported on the AWS platform. All other platforms require `min` >= 1.
+
+### Verify Autoscaling is Enabled
+
+Check the `AutoscalingEnabled` condition on the NodePool:
+
+```bash
+oc get nodepool -n <HOSTED_CLUSTER_NAMESPACE> <NODEPOOL_NAME> -o jsonpath='{.status.conditions[?(@.type=="AutoscalingEnabled")].status}'
+```
+
+The output should be `True`.
+
+### Disable Autoscaling
+
+To disable autoscaling and return to a fixed replica count:
+
+```bash
+oc patch nodepool -n <HOSTED_CLUSTER_NAMESPACE> <NODEPOOL_NAME> --type merge -p '{
+  "spec": {
+    "autoScaling": null,
+    "replicas": 2
+  }
+}'
+```
+
+## Cluster Autoscaling
+
+Cluster autoscaling configures global autoscaling behavior that applies to all NodePools in a HostedCluster. This includes scale-down policies, node group balancing, and expander strategies.
+
+### Configure Cluster Autoscaling
+
+Set `spec.autoscaling` on the HostedCluster:
+
+```bash
+oc patch hostedcluster -n <HOSTED_CLUSTER_NAMESPACE> <HOSTED_CLUSTER_NAME> --type merge -p '{
+  "spec": {
+    "autoscaling": {
+      "scaling": "ScaleUpAndScaleDown",
+      "maxNodesTotal": 10,
+      "expanders": ["LeastWaste"],
+      "scaleDown": {
+        "delayAfterAddSeconds": 300,
+        "unneededDurationSeconds": 600,
+        "utilizationThresholdPercent": 50
+      }
+    }
+  }
+}'
+```
+
+### Configuration Reference
+
+#### Scaling Behavior
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `scaling` | string | `ScaleUpAndScaleDown` | `ScaleUpOnly` or `ScaleUpAndScaleDown`. Controls whether the autoscaler can scale down nodes. |
+| `maxNodesTotal` | int | unlimited | Maximum total nodes across all NodePools. The autoscaler will not scale beyond this limit. |
+| `maxPodGracePeriod` | int | 600 | Maximum seconds to wait for graceful pod termination before scaling down. |
+| `maxNodeProvisionTime` | string | 15m | Maximum time to wait for a node to provision, in Go duration format (e.g., `15m`, `20m`). |
+| `podPriorityThreshold` | int | -10 | Pods with priority below this threshold won't trigger scale-up. |
+
+!!! note
+    Defaults listed in the configuration reference tables represent the cluster autoscaler's effective behavior when the field is omitted. The only API-enforced default is `scaling`, which defaults to `ScaleUpAndScaleDown`.
+
+#### Expanders
+
+Expanders control how the autoscaler selects which NodePool to scale when multiple NodePools can satisfy pending pods. Set via `spec.autoscaling.expanders`:
+
+| Expander | Description |
+|----------|-------------|
+| `LeastWaste` | Selects the NodePool with the least idle CPU and memory after scaling. |
+| `Priority` | Selects the NodePool with the highest user-defined priority. |
+| `Random` | Selects a NodePool randomly. |
+
+Default: `[Priority, LeastWaste]`. Up to 3 expanders can be specified in priority order.
+
+!!! note
+    The `Priority` expander uses a ConfigMap named `cluster-autoscaler-priority-expander` in the `kube-system` namespace of the guest cluster to determine NodePool priorities. The ConfigMap maps integer priorities to node group name patterns (regex). Higher values mean higher priority. See the upstream documentation for details on the ConfigMap format.
+
+#### Scale Down Configuration
+
+The `scaleDown` field is only valid when `scaling` is set to `ScaleUpAndScaleDown`:
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `delayAfterAddSeconds` | int | 600 | Seconds to wait after scale-up before evaluating scale-down. |
+| `delayAfterDeleteSeconds` | int | 0 | Seconds to wait after node deletion before evaluating scale-down. |
+| `delayAfterFailureSeconds` | int | 180 | Seconds to wait after a failed scale-down before retrying. |
+| `unneededDurationSeconds` | int | 600 | How long a node must be unneeded before it is eligible for removal. |
+| `utilizationThresholdPercent` | int | 50 | Nodes with utilization below this percentage are candidates for removal. 0 means only completely idle nodes; 100 means any node can be removed. |
+
+#### Node Group Balancing
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `balancingIgnoredLabels` | []string | [] | Labels the autoscaler should ignore when comparing node groups for balancing. Platform-specific labels are added automatically. |
+| `maxFreeDifferenceRatioPercent` | int | 10 | Maximum allowed difference in free resources between node groups to be considered similar for balancing. 0 = exact match required; 100 = any difference allowed. |
+
+## How It Works
+
+1. When a pod cannot be scheduled due to insufficient resources, the cluster autoscaler identifies NodePools with autoscaling enabled that can satisfy the pod's requirements.
+2. The autoscaler selects a NodePool based on the configured expander strategy and triggers a scale-up by increasing the NodePool's replica count.
+3. HyperShift provisions new platform-specific machine instances for the NodePool and the new nodes join the guest cluster.
+4. When `scaling` is set to `ScaleUpAndScaleDown`, the autoscaler monitors node utilization. Nodes that remain underutilized (below `utilizationThresholdPercent`) for longer than `unneededDurationSeconds` are removed.
+
+## Monitoring
+
+Check the current state of autoscaling:
+
+```bash
+# View NodePool autoscaling status
+oc get nodepools -n <HOSTED_CLUSTER_NAMESPACE> -o wide
+
+# Check autoscaler deployment in the control plane namespace
+oc get deployment cluster-autoscaler -n <HOSTED_CLUSTER_NAMESPACE>-<HOSTED_CLUSTER_NAME>
+
+# View autoscaler logs
+oc logs deployment/cluster-autoscaler -n <HOSTED_CLUSTER_NAMESPACE>-<HOSTED_CLUSTER_NAME>
+```
 
 
 ---
@@ -6356,13 +8354,28 @@ Let's remark some things from this command:<br>
 
 ## Overview
 
-The Global Pull Secret functionality enables Hosted Cluster administrators to include additional pull secrets for accessing container images from private registries without requiring assistance from the Management Cluster administrator. This feature allows you to merge your custom pull secret with the original HostedCluster pull secret, making it available to all nodes in the cluster.
+The Global Pull Secret functionality enables Hosted Cluster administrators to include additional pull secrets for accessing container images from private registries without requiring assistance from the Management Cluster administrator. This feature allows you to merge your custom pull secret with the original HostedCluster pull secret, making it available to nodes that run the sync DaemonSet.
 
-The implementation uses a DaemonSet approach that automatically detects when you create an `additional-pull-secret` in the `kube-system` namespace of your DataPlane (Hosted Cluster). The system then merges this secret with the original pull secret and deploys the merged result to all nodes via a DaemonSet that updates the kubelet configuration.
+The implementation uses a DaemonSet that updates kubelet pull credentials on the node. The pull secret referenced by **`HostedCluster.spec.pullSecret`** is always copied from the HostedControlPlane into the guest cluster as the `original-pull-secret` Secret in `kube-system`. The `sync-global-pullsecret` process writes that content to `/var/lib/kubelet/config.json` on **eligible** worker nodes (see Platform and NodePool eligibility), even if you **never** create `additional-pull-secret`. In that baseline case there is no merge step: the kubelet file is kept aligned with the HostedCluster pull secret that HCCO reconciles into the data plane.
+
+When you **do** create an `additional-pull-secret` in the `kube-system` namespace of your DataPlane (Hosted Cluster), the system merges it with the original HostedCluster pull secret and deploys the merged result via the same DaemonSet path (still preferring the original secret where registry entries conflict).
 
 !!! note
 
-    This feature is designed to work autonomously - once you create the additional pull secret, the system automatically handles the rest without requiring Management Cluster administrator intervention.
+    This feature is designed to work autonomously. With only `HostedCluster.spec.pullSecret`, the Hosted Cluster Config Operator (HCCO) still reconciles `original-pull-secret` and the DaemonSet object in the guest; sync pods run only on eligible nodes. Creating `additional-pull-secret` is optional and only needed to add or layer registry credentials beyond the HostedCluster pull secret.
+
+## Platform and NodePool eligibility
+
+HCCO reconciles Global Pull Secret resources for **every** hosted cluster platform: it always maintains `kube-system/original-pull-secret` (and optional `global-pull-secret`), RBAC, and the `global-pull-secret-syncer` DaemonSet **object** in the data plane.
+
+The DaemonSet pod template requires nodes to have the label **`hypershift.openshift.io/nodepool-globalps-enabled=true`**. Today the HyperShift operator sets that label on **Machines** (and HCCO propagates it to **Nodes**) only for:
+
+- **AWS** and **Azure** NodePools, and  
+- the **Replace** upgrade strategy (`MachineDeployment` path).
+
+It does **not** set the label for **InPlace** NodePools (to avoid conflicting with Machine Config Daemon on kubelet config), or for **Replace** on other platforms such as **KubeVirt** (and other providers) in the current implementation—those workers therefore typically have **no** Global Pull Secret sync pods unless something else applies the label.
+
+For platforms without sync pods, pull credentials still come from **ignition/bootstrap** and from in-cluster Secrets (for example `openshift-config/pull-secret`); kubelet on-disk config is not updated by this DaemonSet on those nodes.
 
 ## Adding your Pull Secret
 
@@ -6420,8 +8433,8 @@ After creating the secret, the system will automatically:
 
 1. Validate the secret format
 2. Merge it with the original pull secret
-3. Deploy a DaemonSet to all nodes
-4. Update the kubelet configuration on each node
+3. Ensure the DaemonSet is present in the guest cluster
+4. Update kubelet configuration on **eligible** worker nodes (see Platform and NodePool eligibility)
 
 You can verify the deployment by checking:
 
@@ -6440,42 +8453,45 @@ kubectl get pods -n kube-system -l name=global-pull-secret-syncer
 
 The Global Pull Secret functionality operates through a multi-component system:
 
-### Automatic Detection
-- The Hosted Cluster Config Operator (HCCO) continuously monitors the `kube-system` namespace
-- When it detects the creation of `additional-pull-secret`, it triggers the reconciliation process
+### Automatic detection and baseline sync
+- The Hosted Cluster Config Operator (HCCO) continuously reconciles Global Pull Secret resources and watches Secrets in the `kube-system` namespace of the data plane.
+- On every reconcile, HCCO copies the HostedControlPlane pull secret (sourced from **`HostedCluster.spec.pullSecret`**) into `kube-system/original-pull-secret` so the DaemonSet can mount it on the node.
+- If `additional-pull-secret` is **not** present, HCCO removes the `global-pull-secret` Secret (if it existed) and the DaemonSet syncs **only** the HostedCluster pull secret copy into `/var/lib/kubelet/config.json` on eligible nodes.
+- When `additional-pull-secret` **is** present, reconciliation additionally validates and merges it with the HostedCluster pull secret.
 
-### Validation and Merging
-- The system validates that your secret contains a proper DockerConfigJSON format
-- It retrieves the original pull secret from the HostedControlPlane
-- Your additional pull secret is merged with the original one
-- **If there are conflicting registry entries, the original pull secret takes precedence** (the additional pull secret entry is ignored for conflicting registries)
-- The system supports namespace-specific registry entries (e.g., `quay.io/namespace`) for better credential specificity
+### Validation and merging (optional additional secret)
+- When `additional-pull-secret` exists, the system validates that it contains a proper DockerConfigJSON format.
+- It retrieves the original pull secret from the HostedControlPlane (same content as `HostedCluster.spec.pullSecret`).
+- Your additional pull secret is merged with the original one.
+- **If there are conflicting registry entries, the original pull secret takes precedence** (the additional pull secret entry is ignored for conflicting registries).
+- The system supports namespace-specific registry entries (e.g., `quay.io/namespace`) for better credential specificity.
 
-### Deployment Process
-- A `global-pull-secret` is created in the `kube-system` namespace containing the merged result
+### Deployment process
+- When merging is active, a `global-pull-secret` is created in the `kube-system` namespace containing the merged result. If there is no additional secret, this Secret is absent and the syncer uses `original-pull-secret` only.
 - RBAC resources (ServiceAccount, Role, RoleBinding) are created for the DaemonSet in both `kube-system` and `openshift-config` namespaces
 - We use Role and RoleBinding in both namespaces to access secrets in `kube-system` and `openshift-config` namespaces
 - A DaemonSet named `global-pull-secret-syncer` is deployed to eligible nodes
 
-!!! warning "NodePool InPlace Strategy Restriction"
+!!! warning "InPlace and unsupported platforms"
 
-    The Global Pull Secret DaemonSet is **not deployed** to nodes that belong to NodePools using the **InPlace upgrade strategy**. This restriction prevents conflicts between the DaemonSet's modifications to `/var/lib/kubelet/config.json` and the Machine Config Daemon (MCD) during InPlace upgrades.
+    **InPlace NodePools:** workers are intentionally **not** labeled `hypershift.openshift.io/nodepool-globalps-enabled`, so the Global Pull Secret sync **pods do not schedule** there. That avoids conflicts between edits to `/var/lib/kubelet/config.json` and the Machine Config Daemon (MCD).
 
-    - **Nodes with Replace strategy**: ✅ Receive Global Pull Secret DaemonSet
-    - **Nodes with InPlace strategy**: ❌ Do not receive Global Pull Secret DaemonSet
+    **AWS and Azure, Replace:** workers **are** labeled (via Machine → Node propagation), so sync pods **can** run and reconcile kubelet pull configuration from `original-pull-secret` / `global-pull-secret`.
 
-    This ensures that MCD operations during InPlace upgrades do not fail due to unexpected changes in kubelet configuration files.
+    **Other platforms (for example KubeVirt, GCP, Agent, …):** the DaemonSet object still exists in `kube-system`, but nodes usually **lack** the selector label, so you will typically see **no** (or very few) sync pods unless you set that label yourself.
 
-### Node-Level Synchronization
-- Each DaemonSet pod runs a controller that watches the secrets under kube-system namespace
-- When changes are detected, it updates `/var/lib/kubelet/config.json` on the node
+    See Platform and NodePool eligibility for the full picture.
+
+### Node-level synchronization
+- Each DaemonSet pod runs `sync-global-pullsecret`, which periodically reads the mounted pull secret files (`global-pull-secret` when present, otherwise `original-pull-secret`, which holds the **`HostedCluster.spec.pullSecret`** payload reconciled by HCCO).
+- When the desired content differs from `/var/lib/kubelet/config.json`, it updates the file on the node
 - The kubelet service is restarted via DBus to apply the new configuration
 - If the restart fails after 3 attempts, the system rolls back the file changes
 
-### Automatic Cleanup
-- If you delete the `additional-pull-secret`, the HCCO automatically removes the `global-pull-secret` secret
-- The system reverts to using only the original pull secret from the HostedControlPlane
-- The DaemonSet continues running but now syncs only the original pull secret to nodes
+### Automatic cleanup
+- If you delete the `additional-pull-secret`, the HCCO automatically removes the `global-pull-secret` secret.
+- The system reverts to syncing **only** the HostedCluster pull secret (via `original-pull-secret`, still sourced from the HostedControlPlane).
+- The DaemonSet continues to run on eligible nodes and keeps `/var/lib/kubelet/config.json` aligned with that HostedCluster pull secret.
 
 ## Registry Precedence and Conflict Resolution
 
@@ -6547,20 +8563,18 @@ The implementation consists of several key components working together:
    - Handles validation of user-provided pull secrets
    - Manages the merging logic between original and additional pull secrets
    - Creates and manages RBAC resources
-   - Deploys and manages the DaemonSet
-   - **Node eligibility assessment**: Labels nodes from InPlace NodePools and configures DaemonSet scheduling restrictions
+   - Deploys and manages the DaemonSet in Nodes labeled with `hypershift.openshift.io/nodepool-globalps-enabled=true`
 
 2. **Sync Global Pull Secret Command** (`sync-global-pullsecret` package)
-   - Runs as a DaemonSet on each node
-   - Watches for changes to the `global-pull-secret` in `kube-system` namespace
-   - Accesses the original `pull-secret` in `openshift-config` namespace
-   - Updates the kubelet configuration file
+   - Runs in the DaemonSet pod on eligible nodes
+   - Reads mounted Docker config JSON from `global-pull-secret` when that volume exists; otherwise uses `original-pull-secret` (the copy of **`HostedCluster.spec.pullSecret`** reconciled into `kube-system`)
+   - Updates `/var/lib/kubelet/config.json` on the host
    - Manages kubelet service restarts via DBus
 
-3. **Hosted Cluster Config Operator Integration**
-   - Monitors for the presence of `additional-pull-secret`
-   - Orchestrates the entire process
-   - Handles cleanup when the secret is removed
+3. **Hosted Cluster Config Operator integration**
+   - Reconciles `original-pull-secret` on every pass from the HostedControlPlane pull secret (`HostedCluster.spec.pullSecret`)
+   - When `additional-pull-secret` exists, validates, merges, and reconciles `global-pull-secret`; when it does not, removes `global-pull-secret` and relies on `original-pull-secret` only for kubelet sync
+   - Orchestrates RBAC and the DaemonSet for both paths
 
 ### Architecture Diagram
 
@@ -6609,9 +8623,9 @@ graph TB
     Container --> |Executes| SyncCommand[sync-global-pullsecret command]
 
     %% Sync Process
-    SyncCommand --> |Watches global-pull-secret| SyncController[Global Pull Secret Reconciler]
-    SyncController --> |Reads secret| ReadGlobalPS[Read global-pull-secret]
-    SyncController --> |Reads original| ReadOriginalPS[Read original pull-secret]
+    SyncCommand --> |Reads mounted files| SyncController[sync-global-pullsecret loop]
+    SyncController --> |Reads if present| ReadGlobalPS[Read global-pull-secret mount]
+    SyncController --> |Reads HostedCluster PS copy| ReadOriginalPS[Read original-pull-secret mount]
 
     %% File Update Process
     ReadGlobalPS --> |Gets data| GlobalPSBytes[Global Pull Secret Bytes]
@@ -6665,42 +8679,11 @@ graph TB
   - Write to `/var/lib/kubelet/config.json` (kubelet configuration file)
   - Connect to systemd via DBus for service management
   - Restart kubelet.service, which requires root privileges
-- **Smart node targeting**: Automatically excludes nodes from InPlace NodePools to prevent MCD conflicts
+- **Smart node targeting**: The DaemonSet uses a `nodeSelector` for `hypershift.openshift.io/nodepool-globalps-enabled=true`; the HyperShift operator only applies that label on **AWS** and **Azure** **Replace** NodePools, so InPlace and other platforms do not get sync pods by default (see Platform and NodePool eligibility)
 
-### InPlace NodePool Handling
+### How scheduling avoids InPlace conflicts
 
-To prevent conflicts with Machine Config Daemon operations, the implementation includes intelligent node targeting:
-
-#### Node Labeling Process
-1. **MachineSets Discovery**: The controller queries the management cluster for MachineSets with InPlace-specific annotations (`hypershift.openshift.io/nodePoolTargetConfigVersion`)
-2. **Machine Enumeration**: For each InPlace MachineSets, it lists all associated Machines
-3. **Node Identification**: Maps Machine objects to their corresponding nodes via `machine.Status.NodeRef.Name`
-4. **Labeling**: Applies `hypershift.openshift.io/nodepool-inplace-strategy=true` label to identified nodes
-
-#### DaemonSet Scheduling Configuration
-The DaemonSet uses NodeAffinity to exclude InPlace nodes:
-
-```yaml
-spec:
-  template:
-    spec:
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-            - matchExpressions:
-              - key: hypershift.openshift.io/nodepool-inplace-strategy
-                operator: DoesNotExist
-```
-
-This ensures that:
-- **Nodes without the label**: ✅ Are eligible for DaemonSet scheduling
-- **Nodes with the label** (any value): ❌ Are excluded from DaemonSet scheduling
-
-#### Conflict Prevention Benefits
-- **Prevents MCD failures**: Avoids conflicts when MCD expects specific kubelet configuration during InPlace upgrades
-- **Maintains upgrade reliability**: InPlace upgrade processes are not interrupted by Global Pull Secret modifications
-- **Automatic detection**: No manual intervention required - the system automatically identifies and handles InPlace nodes
+Eligibility is **positive selection**, not NodeAffinity on an InPlace label: InPlace workers simply **never** receive `hypershift.openshift.io/nodepool-globalps-enabled=true`, so the sync DaemonSet does not place pods on them. Replace workers on AWS/Azure **do** receive the label so the DaemonSet can run there without colliding with MCD on InPlace upgrade paths.
 
 ### Error Handling
 
@@ -7542,6 +9525,80 @@ This command creates a new job in that namespace and eventually will report the 
 
 ---
 
+## Source: docs/content/how-to/azure/autoscaling-self-managed.md
+
+# Autoscaling for Self-Managed Azure HostedClusters
+
+This guide covers configuring autoscaling for self-managed Azure HostedClusters. For the full autoscaling configuration reference, see the Autoscaling guide.
+
+## Prerequisites
+
+- A self-managed Azure HostedCluster created following the Create a Self-Managed Azure HostedCluster guide
+- `oc` or `kubectl` CLI with access to the management cluster
+
+## Example: Full Autoscaling Configuration
+
+This example configures a HostedCluster with two Azure NodePools balanced by the autoscaler:
+
+```yaml
+apiVersion: hypershift.openshift.io/v1beta1
+kind: HostedCluster
+metadata:
+  name: my-cluster
+  namespace: clusters
+spec:
+  autoscaling:
+    scaling: ScaleUpAndScaleDown
+    maxNodesTotal: 12
+    expanders:
+      - Random
+    scaleDown:
+      delayAfterAddSeconds: 300
+      unneededDurationSeconds: 600
+      utilizationThresholdPercent: 50
+    balancingIgnoredLabels:
+      - "custom.label/environment"
+    maxFreeDifferenceRatioPercent: 70
+---
+apiVersion: hypershift.openshift.io/v1beta1
+kind: NodePool
+metadata:
+  name: my-cluster-nodepool-1
+  namespace: clusters
+spec:
+  clusterName: my-cluster
+  autoScaling:
+    min: 1
+    max: 6
+  platform:
+    azure:
+      vmSize: Standard_D4s_v3
+      # ... other required fields (image, osDisk) omitted for brevity
+---
+apiVersion: hypershift.openshift.io/v1beta1
+kind: NodePool
+metadata:
+  name: my-cluster-nodepool-2
+  namespace: clusters
+spec:
+  clusterName: my-cluster
+  autoScaling:
+    min: 1
+    max: 6
+  platform:
+    azure:
+      vmSize: Standard_D4s_v3
+      # ... other required fields (image, osDisk) omitted for brevity
+```
+
+## Azure-Specific Details
+
+- HyperShift provisions individual Azure Virtual Machines via CAPZ when scaling up NodePools.
+- Scale-from-zero (`autoScaling.min: 0`) is not supported on Azure. The minimum must be >= 1.
+
+
+---
+
 ## Source: docs/content/how-to/azure/azure-workload-identity-setup.md
 
 # Azure Workload Identity Setup for Self-Managed Clusters
@@ -7607,6 +9664,24 @@ This creates 7 managed identities with federated credentials for:
 - Cloud Provider
 - NodePool Management
 - Network Operator
+
+To also create a KMS identity for Azure Key Vault etcd encryption at rest, add the `--enable-kms` flag:
+
+```bash
+hypershift create iam azure \
+    --name $CLUSTER_NAME \
+    --infra-id $INFRA_ID \
+    --azure-creds $AZURE_CREDS \
+    --location $LOCATION \
+    --resource-group-name $PERSISTENT_RG_NAME \
+    --oidc-issuer-url $OIDC_ISSUER_URL \
+    --output-file workload-identities.json \
+    --enable-kms
+```
+
+!!! warning "KMS Key Vault Role Assignment"
+
+    If you use `--enable-kms`, you must **manually** assign the `Key Vault Crypto User` role to the KMS identity on your Key Vault. The `--auto-assign-roles` flag does not cover this because the Key Vault scope is user-provided. See Enabling KMS Encryption for the role assignment commands.
 
 For complete documentation on the IAM commands, see Create Azure IAM Resources Separately.
 
@@ -8386,7 +10461,11 @@ To destroy the workload identities that were created:
 ```bash
 hypershift destroy iam azure \
     --azure-creds AZURE_CREDENTIALS_FILE \
-    --workload-identities-file workload-identities.json
+    --workload-identities-file workload-identities.json \
+    --resource-group-name RESOURCE_GROUP \
+    --name CLUSTER_NAME \
+    --infra-id INFRA_ID \
+    --dns-zone-rg-name DNS_ZONE_RG
 ```
 
 The destroy command reads the output file from create to identify which identities to delete.
@@ -8423,6 +10502,10 @@ Both the managed identities and their federated credentials are removed.
 |------|-------------|
 | `--azure-creds` | Path to Azure credentials JSON file |
 | `--workload-identities-file` | Path to workload identities JSON file |
+| `--resource-group-name` | Resource group containing the identities |
+| `--name` | Name of the HostedCluster |
+| `--infra-id` | Unique infrastructure identifier |
+| `--dns-zone-rg-name` | Resource group containing the Azure DNS zone |
 
 ### Optional Flags for `destroy iam azure`
 
@@ -8479,7 +10562,10 @@ hypershift create cluster azure \
 # --- Cleanup ---
 
 # 6. Destroy the cluster
-hypershift destroy cluster azure --name ${NAME}
+hypershift destroy cluster azure \
+    --name ${NAME} \
+    --azure-creds ${AZURE_CREDS} \
+    --dns-zone-rg-name ${DNS_ZONE_RG}
 
 # 7. Destroy infrastructure
 hypershift destroy infra azure \
@@ -8490,7 +10576,11 @@ hypershift destroy infra azure \
 # 8. Destroy IAM resources
 hypershift destroy iam azure \
     --azure-creds ${AZURE_CREDS} \
-    --workload-identities-file workload-identities.json
+    --workload-identities-file workload-identities.json \
+    --resource-group-name ${RESOURCE_GROUP} \
+    --name ${NAME} \
+    --infra-id ${INFRA_ID} \
+    --dns-zone-rg-name ${DNS_ZONE_RG}
 ```
 
 ## See Also
@@ -8912,6 +11002,15 @@ ${HYPERSHIFT_BINARY_PATH}/hypershift create cluster azure \
     cluster's VNet, `--endpoint-access Private` flag, and HyperShift operator
     installation with `--private-platform Azure`.
 
+!!! warning "Private Clusters: Avoid DNS Zone Shadowing"
+
+    If creating a **private** Azure HostedCluster, ensure `--external-dns-domain` does
+    not match `{clusterName}.{baseDomain}` or its parent domain. A matching value
+    causes an Azure Private DNS zone to shadow `*.apps` resolution, breaking console
+    and all ingress. This cannot be fixed after creation. See
+    External DNS Domain Must Not Match Cluster Domain
+    for details.
+
 ### Configuring Azure Marketplace Images
 
 HyperShift supports multiple approaches for configuring Azure Marketplace images for your cluster nodes. The recommended approach varies based on your OpenShift version and requirements.
@@ -9011,6 +11110,134 @@ ${HYPERSHIFT_BINARY_PATH}/hypershift create nodepool azure \
     - `--diagnostics-storage-account-type Managed`: Use Azure managed storage for diagnostics
     - `--control-plane-operator-image`: Custom HyperShift operator image (optional)
 
+## Enabling KMS Encryption (etcd Encryption at Rest)
+
+Self-managed Azure HostedClusters support encrypting etcd data at rest using Azure Key Vault with the KMSv2 protocol. This requires:
+
+1. An Azure Key Vault with a cryptographic key
+2. A workload identity with `Key Vault Crypto User` role on the Key Vault
+
+### Prerequisites
+
+Ensure the `kms` workload identity is included in your `workload-identities.json` file. When using `hypershift create iam azure`, pass the `--enable-kms` flag to create the KMS identity (using the `INFRA_ID` set during Azure Workload Identity Setup):
+
+```bash
+hypershift create iam azure \
+    --name "$CLUSTER_NAME" \
+    --infra-id "$INFRA_ID" \
+    --azure-creds "$AZURE_CREDS" \
+    --location "$LOCATION" \
+    --resource-group-name "$PERSISTENT_RG_NAME" \
+    --oidc-issuer-url "$OIDC_ISSUER_URL" \
+    --output-file ./workload-identities.json \
+    --enable-kms
+```
+
+### Create a Key Vault and Key
+
+!!! note "RBAC Key Vault Permissions"
+
+    The Key Vault is created with `--enable-rbac-authorization`, which means the creator does **not** automatically get data plane access. You must have the `Key Vault Crypto Officer` role (or equivalent) on the Key Vault to create and manage keys. If the key creation step fails with a `Forbidden` error, assign yourself the role:
+
+    ```bash
+    MY_OBJECT_ID=$(az ad signed-in-user show --query id -o tsv)
+    KV_ID=$(az keyvault show --name "${KV_NAME}" --query id -o tsv)
+    az role assignment create \
+        --assignee-object-id "${MY_OBJECT_ID}" \
+        --assignee-principal-type User \
+        --role "Key Vault Crypto Officer" \
+        --scope "${KV_ID}"
+    ```
+
+```bash
+# Create Key Vault
+KV_NAME="${PREFIX}-kv"
+az keyvault create \
+    --name "${KV_NAME}" \
+    --resource-group "${MANAGED_RG_NAME}" \
+    --location "${LOCATION}" \
+    --enable-rbac-authorization
+
+# Create encryption key
+KEY_NAME="${PREFIX}-etcd-key"
+az keyvault key create \
+    --vault-name "${KV_NAME}" \
+    --name "${KEY_NAME}" \
+    --kty RSA \
+    --size 2048
+
+# Get the key ID (used as --encryption-key-id)
+ENCRYPTION_KEY_ID=$(az keyvault key show \
+    --vault-name "${KV_NAME}" \
+    --name "${KEY_NAME}" \
+    --query key.kid -o tsv)
+```
+
+### Assign Key Vault Crypto User Role to the KMS Identity
+
+!!! warning "Manual Step Required"
+
+    The `--auto-assign-roles` / `--assign-service-principal-roles` flag does **not** assign the Key Vault role because the Key Vault scope is user-provided and not known to the CLI at role-assignment time. You must perform this role assignment manually.
+
+Grant the KMS workload identity the `Key Vault Crypto User` role on your Key Vault so it can encrypt and decrypt etcd data:
+
+```bash
+# Get the principal ID of the KMS managed identity
+# The identity name follows the pattern: {clusterName}-kms-{infraID}
+# List identities in the resource group to find the exact name:
+#   az identity list --resource-group "${PERSISTENT_RG_NAME}" --query "[?contains(name, 'kms')]" -o table
+KMS_MI_NAME=$(az identity list \
+    --resource-group "${PERSISTENT_RG_NAME}" \
+    --query "[?contains(name, '${CLUSTER_NAME}-kms')].name" -o tsv)
+KMS_PRINCIPAL_ID=$(az identity show \
+    --name "${KMS_MI_NAME}" \
+    --resource-group "${PERSISTENT_RG_NAME}" \
+    --query principalId -o tsv)
+
+# Get the Key Vault resource ID
+KV_ID=$(az keyvault show --name "${KV_NAME}" --query id -o tsv)
+
+# Assign Key Vault Crypto User role to the KMS identity
+az role assignment create \
+    --assignee-object-id "${KMS_PRINCIPAL_ID}" \
+    --assignee-principal-type ServicePrincipal \
+    --role "Key Vault Crypto User" \
+    --scope "${KV_ID}"
+```
+
+### Create the Cluster with KMS
+
+Add the `--encryption-key-id` flag to your cluster creation command:
+
+```bash
+${HYPERSHIFT_BINARY_PATH}/hypershift create cluster azure \
+    --name "$CLUSTER_NAME" \
+    --namespace "$CLUSTER_NAMESPACE" \
+    --azure-creds $AZURE_CREDS \
+    --location ${LOCATION} \
+    --node-pool-replicas 2 \
+    --base-domain $PARENT_DNS_ZONE \
+    --pull-secret $PULL_SECRET \
+    --generate-ssh \
+    --release-image ${RELEASE_IMAGE} \
+    --external-dns-domain ${DNS_ZONE_NAME} \
+    --resource-group-name "${MANAGED_RG_NAME}" \
+    --vnet-id "${GetVnetID}" \
+    --subnet-id "${GetSubnetID}" \
+    --network-security-group-id "${GetNsgID}" \
+    --sa-token-issuer-private-key-path "${SA_TOKEN_ISSUER_PRIVATE_KEY_PATH}" \
+    --oidc-issuer-url "${OIDC_ISSUER_URL}" \
+    --dns-zone-rg-name ${PERSISTENT_RG_NAME} \
+    --assign-service-principal-roles \
+    --workload-identities-file ./workload-identities.json \
+    --encryption-key-id "${ENCRYPTION_KEY_ID}" \
+    --diagnostics-storage-account-type Managed
+```
+
+!!! note "KMS Authentication"
+
+    For self-managed Azure, the KMS provider authenticates using the `kms` workload identity specified in your `workload-identities.json`. This is different from managed Azure (ARO HCP), which uses managed identities with CSI secret store volumes. The `--kms-credentials-secret-name` flag is not needed for self-managed clusters.
+
 ## Verification
 
 Check the cluster status and access:
@@ -9038,7 +11265,8 @@ To delete the HostedCluster:
 hypershift destroy cluster azure \
     --name $CLUSTER_NAME \
     --azure-creds $AZURE_CREDS \
-    --resource-group-name $MANAGED_RG_NAME
+    --resource-group-name $MANAGED_RG_NAME \
+    --dns-zone-rg-name $PERSISTENT_RG_NAME
 ```
 
 !!! note "Resource Cleanup"
@@ -9445,7 +11673,8 @@ To delete a private HostedCluster:
 hypershift destroy cluster azure \
     --name ${CLUSTER_NAME} \
     --azure-creds ${AZURE_CREDS} \
-    --resource-group-name ${MANAGED_RG_NAME}
+    --resource-group-name ${MANAGED_RG_NAME} \
+    --dns-zone-rg-name ${DNS_ZONE_RG_NAME}
 ```
 
 The deletion process automatically cleans up Private Link resources in the correct order:
@@ -9523,6 +11752,74 @@ The deletion process automatically cleans up Private Link resources in the corre
     1. `<clusterName>.hypershift.local` — synthetic internal zone with `api` and `*.apps` records
     2. `<baseDomain>` — base domain zone with `api-<clusterName>` and `oauth-<clusterName>` records
 
+### External DNS Domain Must Not Match Cluster Domain
+
+!!! warning "Azure Private DNS Zone Shadowing"
+
+    On private Azure HostedClusters, do **not** set `--external-dns-domain` to a value
+    that matches or is a parent domain of `{clusterName}.{baseDomain}`. For example,
+    if your cluster is named `my-cluster` with base domain `example.com`, do not use
+    `--external-dns-domain my-cluster.example.com` or `--external-dns-domain example.com`.
+
+    This misconfiguration **cannot be corrected after cluster creation** because the
+    relevant fields (`spec.services`, `spec.dns.baseDomain`, and `metadata.name`) are
+    all immutable. The cluster must be destroyed and recreated with a different
+    `--external-dns-domain` value.
+
+    **Safe example**: If your cluster is `my-cluster` with base domain `example.com`,
+    use a separate subdomain such as `--external-dns-domain custom-dns.example.com`
+    that does not overlap with `my-cluster.example.com`.
+
+#### What Goes Wrong
+
+Private Azure clusters use two separate routing paths:
+
+1. **Management-plane router** (`private-router`): An HAProxy pod in the hosted
+   control plane namespace, fronted by an internal load balancer and exposed to the
+   guest VNet through Azure Private Link. Worker nodes reach this router via the
+   Private Endpoint IP. HAProxy uses SNI-based routing and only has ACLs for
+   `.hypershift.local` hostnames (KAS, ignition, konnectivity, OAuth). Any hostname
+   that does not match an ACL falls through to the `default_backend kube_api`, which
+   returns KAS certificates.
+
+2. **Data-plane router** (`router-default`): The OpenShift ingress controller running
+   on worker nodes, serving `*.apps.{clusterName}.{baseDomain}` hostnames with the
+   correct wildcard ingress certificate.
+
+When `--external-dns-domain` matches the cluster domain, the PLS controller creates a
+Private DNS zone named `{clusterName}.{baseDomain}`. This zone becomes authoritative
+for **all** queries under that name within the guest VNet, including
+`*.apps.{clusterName}.{baseDomain}`. Since the zone only has `api` and `oauth` A
+records pointing to the Private Endpoint IP, apps queries either:
+
+- Return **NXDOMAIN** (if no `*.apps` record exists in the zone), or
+- Resolve to the **Private Endpoint IP**, which routes to `private-router` (HAProxy).
+  Because `*.apps` hostnames do not match any HAProxy SNI ACL, traffic falls through
+  to `kube_api` and the client receives a **TLS certificate mismatch** (KAS cert
+  instead of the ingress wildcard cert).
+
+Neither outcome is usable. The console, OAuth login, and all application routes are
+unreachable.
+
+#### Why the Controller Cannot Self-Heal
+
+The controller cannot fix this by adding a `*.apps` wildcard record to the shadowing
+zone because:
+
+- The Private Endpoint IP routes to the management-plane `private-router`, not the
+  data-plane `router-default`. Adding `*.apps → PE IP` would route apps traffic to
+  HAProxy, which does not serve those hostnames.
+- The correct target (the data-plane ingress IP on worker nodes) is not available to
+  the PLS controller. The controller runs in the control plane and has no client to
+  the guest cluster. There is no HCP status field that reports the guest ingress IP,
+  and the HostedCluster Controller Operator (HCCO) does not propagate it back.
+
+When the controller detects shadowing, it sets `AzurePrivateDNSAvailable=False` with
+reason `BaseDomainShadowsClusterDomain` and skips zone creation entirely. This
+prevents the shadowing zone from being created, but the `api` and `oauth` hostnames
+from `--external-dns-domain` will not resolve via Private DNS. The cluster must be
+recreated with a non-overlapping domain.
+
 ### Condition Debugging
 
 If the cluster gets stuck, check the `AzurePrivateLinkService` CR conditions:
@@ -9536,7 +11833,7 @@ oc get azureprivatelinkservices -n clusters-${CLUSTER_NAME} -o jsonpath='{.items
 | `AzureInternalLoadBalancerAvailable` = False | The `private-router` Service hasn't received an ILB IP yet. Check the Service status and Azure networking. |
 | `AzurePLSCreated` = False | PLS creation failed. Check NAT subnet policies, credentials, and the HO operator logs. |
 | `AzurePrivateEndpointAvailable` = False | PE creation failed or connection not approved. Check the PLS auto-approval list and CPO logs. |
-| `AzurePrivateDNSAvailable` = False | DNS zone or record creation failed. Check CPO identity permissions in the guest subscription. |
+| `AzurePrivateDNSAvailable` = False | DNS zone or record creation failed. If the reason is `BaseDomainShadowsClusterDomain`, the `--external-dns-domain` value overlaps with the cluster domain — the cluster must be recreated with a different value. See External DNS Domain Must Not Match Cluster Domain. |
 
 ## Related Documentation
 
@@ -9554,13 +11851,28 @@ oc get azureprivatelinkservices -n clusters-${CLUSTER_NAME} -o jsonpath='{.items
 
 ## Overview
 
-The Global Pull Secret functionality enables Hosted Cluster administrators to include additional pull secrets for accessing container images from private registries without requiring assistance from the Management Cluster administrator. This feature allows you to merge your custom pull secret with the original HostedCluster pull secret, making it available to all nodes in the cluster.
+The Global Pull Secret functionality enables Hosted Cluster administrators to include additional pull secrets for accessing container images from private registries without requiring assistance from the Management Cluster administrator. This feature allows you to merge your custom pull secret with the original HostedCluster pull secret, making it available to nodes that run the sync DaemonSet.
 
-The implementation uses a DaemonSet approach that automatically detects when you create an `additional-pull-secret` in the `kube-system` namespace of your DataPlane (Hosted Cluster). The system then merges this secret with the original pull secret and deploys the merged result to all nodes via a DaemonSet that updates the kubelet configuration.
+The implementation uses a DaemonSet that updates kubelet pull credentials on the node. The pull secret referenced by **`HostedCluster.spec.pullSecret`** is always copied from the HostedControlPlane into the guest cluster as the `original-pull-secret` Secret in `kube-system`. The `sync-global-pullsecret` process writes that content to `/var/lib/kubelet/config.json` on **eligible** worker nodes (see Platform and NodePool eligibility), even if you **never** create `additional-pull-secret`. In that baseline case there is no merge step: the kubelet file is kept aligned with the HostedCluster pull secret that HCCO reconciles into the data plane.
+
+When you **do** create an `additional-pull-secret` in the `kube-system` namespace of your DataPlane (Hosted Cluster), the system merges it with the original HostedCluster pull secret and deploys the merged result via the same DaemonSet path (still preferring the original secret where registry entries conflict).
 
 !!! note
 
-    This feature is designed to work autonomously - once you create the additional pull secret, the system automatically handles the rest without requiring Management Cluster administrator intervention.
+    This feature is designed to work autonomously. With only `HostedCluster.spec.pullSecret`, the Hosted Cluster Config Operator (HCCO) still reconciles `original-pull-secret` and the DaemonSet object in the guest; sync pods run only on eligible nodes. Creating `additional-pull-secret` is optional and only needed to add or layer registry credentials beyond the HostedCluster pull secret.
+
+## Platform and NodePool eligibility
+
+HCCO reconciles Global Pull Secret resources for **every** hosted cluster platform: it always maintains `kube-system/original-pull-secret` (and optional `global-pull-secret`), RBAC, and the `global-pull-secret-syncer` DaemonSet **object** in the data plane.
+
+The DaemonSet pod template requires nodes to have the label **`hypershift.openshift.io/nodepool-globalps-enabled=true`**. Today the HyperShift operator sets that label on **Machines** (and HCCO propagates it to **Nodes**) only for:
+
+- **AWS** and **Azure** NodePools, and  
+- the **Replace** upgrade strategy (`MachineDeployment` path).
+
+It does **not** set the label for **InPlace** NodePools (to avoid conflicting with Machine Config Daemon on kubelet config), or for **Replace** on other platforms such as **KubeVirt** (and other providers) in the current implementation—those workers therefore typically have **no** Global Pull Secret sync pods unless something else applies the label.
+
+For platforms without sync pods, pull credentials still come from **ignition/bootstrap** and from in-cluster Secrets (for example `openshift-config/pull-secret`); kubelet on-disk config is not updated by this DaemonSet on those nodes.
 
 ## Adding your Pull Secret
 
@@ -9618,8 +11930,8 @@ After creating the secret, the system will automatically:
 
 1. Validate the secret format
 2. Merge it with the original pull secret
-3. Deploy a DaemonSet to all nodes
-4. Update the kubelet configuration on each node
+3. Ensure the DaemonSet is present in the guest cluster
+4. Update kubelet configuration on **eligible** worker nodes (see Platform and NodePool eligibility)
 
 You can verify the deployment by checking:
 
@@ -9638,42 +11950,45 @@ kubectl get pods -n kube-system -l name=global-pull-secret-syncer
 
 The Global Pull Secret functionality operates through a multi-component system:
 
-### Automatic Detection
-- The Hosted Cluster Config Operator (HCCO) continuously monitors the `kube-system` namespace
-- When it detects the creation of `additional-pull-secret`, it triggers the reconciliation process
+### Automatic detection and baseline sync
+- The Hosted Cluster Config Operator (HCCO) continuously reconciles Global Pull Secret resources and watches Secrets in the `kube-system` namespace of the data plane.
+- On every reconcile, HCCO copies the HostedControlPlane pull secret (sourced from **`HostedCluster.spec.pullSecret`**) into `kube-system/original-pull-secret` so the DaemonSet can mount it on the node.
+- If `additional-pull-secret` is **not** present, HCCO removes the `global-pull-secret` Secret (if it existed) and the DaemonSet syncs **only** the HostedCluster pull secret copy into `/var/lib/kubelet/config.json` on eligible nodes.
+- When `additional-pull-secret` **is** present, reconciliation additionally validates and merges it with the HostedCluster pull secret.
 
-### Validation and Merging
-- The system validates that your secret contains a proper DockerConfigJSON format
-- It retrieves the original pull secret from the HostedControlPlane
-- Your additional pull secret is merged with the original one
-- **If there are conflicting registry entries, the original pull secret takes precedence** (the additional pull secret entry is ignored for conflicting registries)
-- The system supports namespace-specific registry entries (e.g., `quay.io/namespace`) for better credential specificity
+### Validation and merging (optional additional secret)
+- When `additional-pull-secret` exists, the system validates that it contains a proper DockerConfigJSON format.
+- It retrieves the original pull secret from the HostedControlPlane (same content as `HostedCluster.spec.pullSecret`).
+- Your additional pull secret is merged with the original one.
+- **If there are conflicting registry entries, the original pull secret takes precedence** (the additional pull secret entry is ignored for conflicting registries).
+- The system supports namespace-specific registry entries (e.g., `quay.io/namespace`) for better credential specificity.
 
-### Deployment Process
-- A `global-pull-secret` is created in the `kube-system` namespace containing the merged result
+### Deployment process
+- When merging is active, a `global-pull-secret` is created in the `kube-system` namespace containing the merged result. If there is no additional secret, this Secret is absent and the syncer uses `original-pull-secret` only.
 - RBAC resources (ServiceAccount, Role, RoleBinding) are created for the DaemonSet in both `kube-system` and `openshift-config` namespaces
 - We use Role and RoleBinding in both namespaces to access secrets in `kube-system` and `openshift-config` namespaces
 - A DaemonSet named `global-pull-secret-syncer` is deployed to eligible nodes
 
-!!! warning "NodePool InPlace Strategy Restriction"
+!!! warning "InPlace and unsupported platforms"
 
-    The Global Pull Secret DaemonSet is **not deployed** to nodes that belong to NodePools using the **InPlace upgrade strategy**. This restriction prevents conflicts between the DaemonSet's modifications to `/var/lib/kubelet/config.json` and the Machine Config Daemon (MCD) during InPlace upgrades.
+    **InPlace NodePools:** workers are intentionally **not** labeled `hypershift.openshift.io/nodepool-globalps-enabled`, so the Global Pull Secret sync **pods do not schedule** there. That avoids conflicts between edits to `/var/lib/kubelet/config.json` and the Machine Config Daemon (MCD).
 
-    - **Nodes with Replace strategy**: ✅ Receive Global Pull Secret DaemonSet
-    - **Nodes with InPlace strategy**: ❌ Do not receive Global Pull Secret DaemonSet
+    **AWS and Azure, Replace:** workers **are** labeled (via Machine → Node propagation), so sync pods **can** run and reconcile kubelet pull configuration from `original-pull-secret` / `global-pull-secret`.
 
-    This ensures that MCD operations during InPlace upgrades do not fail due to unexpected changes in kubelet configuration files.
+    **Other platforms (for example KubeVirt, GCP, Agent, …):** the DaemonSet object still exists in `kube-system`, but nodes usually **lack** the selector label, so you will typically see **no** (or very few) sync pods unless you set that label yourself.
 
-### Node-Level Synchronization
-- Each DaemonSet pod runs a controller that watches the secrets under kube-system namespace
-- When changes are detected, it updates `/var/lib/kubelet/config.json` on the node
+    See Platform and NodePool eligibility for the full picture.
+
+### Node-level synchronization
+- Each DaemonSet pod runs `sync-global-pullsecret`, which periodically reads the mounted pull secret files (`global-pull-secret` when present, otherwise `original-pull-secret`, which holds the **`HostedCluster.spec.pullSecret`** payload reconciled by HCCO).
+- When the desired content differs from `/var/lib/kubelet/config.json`, it updates the file on the node
 - The kubelet service is restarted via DBus to apply the new configuration
 - If the restart fails after 3 attempts, the system rolls back the file changes
 
-### Automatic Cleanup
-- If you delete the `additional-pull-secret`, the HCCO automatically removes the `global-pull-secret` secret
-- The system reverts to using only the original pull secret from the HostedControlPlane
-- The DaemonSet continues running but now syncs only the original pull secret to nodes
+### Automatic cleanup
+- If you delete the `additional-pull-secret`, the HCCO automatically removes the `global-pull-secret` secret.
+- The system reverts to syncing **only** the HostedCluster pull secret (via `original-pull-secret`, still sourced from the HostedControlPlane).
+- The DaemonSet continues to run on eligible nodes and keeps `/var/lib/kubelet/config.json` aligned with that HostedCluster pull secret.
 
 ## Registry Precedence and Conflict Resolution
 
@@ -9745,20 +12060,18 @@ The implementation consists of several key components working together:
    - Handles validation of user-provided pull secrets
    - Manages the merging logic between original and additional pull secrets
    - Creates and manages RBAC resources
-   - Deploys and manages the DaemonSet
-   - **Node eligibility assessment**: Labels nodes from InPlace NodePools and configures DaemonSet scheduling restrictions
+   - Deploys and manages the DaemonSet in Nodes labeled with `hypershift.openshift.io/nodepool-globalps-enabled=true`
 
 2. **Sync Global Pull Secret Command** (`sync-global-pullsecret` package)
-   - Runs as a DaemonSet on each node
-   - Watches for changes to the `global-pull-secret` in `kube-system` namespace
-   - Accesses the original `pull-secret` in `openshift-config` namespace
-   - Updates the kubelet configuration file
+   - Runs in the DaemonSet pod on eligible nodes
+   - Reads mounted Docker config JSON from `global-pull-secret` when that volume exists; otherwise uses `original-pull-secret` (the copy of **`HostedCluster.spec.pullSecret`** reconciled into `kube-system`)
+   - Updates `/var/lib/kubelet/config.json` on the host
    - Manages kubelet service restarts via DBus
 
-3. **Hosted Cluster Config Operator Integration**
-   - Monitors for the presence of `additional-pull-secret`
-   - Orchestrates the entire process
-   - Handles cleanup when the secret is removed
+3. **Hosted Cluster Config Operator integration**
+   - Reconciles `original-pull-secret` on every pass from the HostedControlPlane pull secret (`HostedCluster.spec.pullSecret`)
+   - When `additional-pull-secret` exists, validates, merges, and reconciles `global-pull-secret`; when it does not, removes `global-pull-secret` and relies on `original-pull-secret` only for kubelet sync
+   - Orchestrates RBAC and the DaemonSet for both paths
 
 ### Architecture Diagram
 
@@ -9807,9 +12120,9 @@ graph TB
     Container --> |Executes| SyncCommand[sync-global-pullsecret command]
 
     %% Sync Process
-    SyncCommand --> |Watches global-pull-secret| SyncController[Global Pull Secret Reconciler]
-    SyncController --> |Reads secret| ReadGlobalPS[Read global-pull-secret]
-    SyncController --> |Reads original| ReadOriginalPS[Read original pull-secret]
+    SyncCommand --> |Reads mounted files| SyncController[sync-global-pullsecret loop]
+    SyncController --> |Reads if present| ReadGlobalPS[Read global-pull-secret mount]
+    SyncController --> |Reads HostedCluster PS copy| ReadOriginalPS[Read original-pull-secret mount]
 
     %% File Update Process
     ReadGlobalPS --> |Gets data| GlobalPSBytes[Global Pull Secret Bytes]
@@ -9863,42 +12176,11 @@ graph TB
   - Write to `/var/lib/kubelet/config.json` (kubelet configuration file)
   - Connect to systemd via DBus for service management
   - Restart kubelet.service, which requires root privileges
-- **Smart node targeting**: Automatically excludes nodes from InPlace NodePools to prevent MCD conflicts
+- **Smart node targeting**: The DaemonSet uses a `nodeSelector` for `hypershift.openshift.io/nodepool-globalps-enabled=true`; the HyperShift operator only applies that label on **AWS** and **Azure** **Replace** NodePools, so InPlace and other platforms do not get sync pods by default (see Platform and NodePool eligibility)
 
-### InPlace NodePool Handling
+### How scheduling avoids InPlace conflicts
 
-To prevent conflicts with Machine Config Daemon operations, the implementation includes intelligent node targeting:
-
-#### Node Labeling Process
-1. **MachineSets Discovery**: The controller queries the management cluster for MachineSets with InPlace-specific annotations (`hypershift.openshift.io/nodePoolTargetConfigVersion`)
-2. **Machine Enumeration**: For each InPlace MachineSets, it lists all associated Machines
-3. **Node Identification**: Maps Machine objects to their corresponding nodes via `machine.Status.NodeRef.Name`
-4. **Labeling**: Applies `hypershift.openshift.io/nodepool-inplace-strategy=true` label to identified nodes
-
-#### DaemonSet Scheduling Configuration
-The DaemonSet uses NodeAffinity to exclude InPlace nodes:
-
-```yaml
-spec:
-  template:
-    spec:
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-            - matchExpressions:
-              - key: hypershift.openshift.io/nodepool-inplace-strategy
-                operator: DoesNotExist
-```
-
-This ensures that:
-- **Nodes without the label**: ✅ Are eligible for DaemonSet scheduling
-- **Nodes with the label** (any value): ❌ Are excluded from DaemonSet scheduling
-
-#### Conflict Prevention Benefits
-- **Prevents MCD failures**: Avoids conflicts when MCD expects specific kubelet configuration during InPlace upgrades
-- **Maintains upgrade reliability**: InPlace upgrade processes are not interrupted by Global Pull Secret modifications
-- **Automatic detection**: No manual intervention required - the system automatically identifies and handles InPlace nodes
+Eligibility is **positive selection**, not NodeAffinity on an InPlace label: InPlace workers simply **never** receive `hypershift.openshift.io/nodepool-globalps-enabled=true`, so the sync DaemonSet does not place pods on them. Replace workers on AWS/Azure **do** receive the label so the DaemonSet can run there without colliding with MCD on InPlace upgrade paths.
 
 ### Error Handling
 
@@ -10330,6 +12612,7 @@ Begin your self-managed Azure HyperShift deployment by following the guides in o
 2. **Setup Azure Management Cluster for HyperShift** - Install HyperShift operator (with or without External DNS)
 3. **Create a Self-Managed Azure HostedCluster** - Deploy your first hosted cluster
 4. **Deploy Azure Private Clusters** (Optional) - Configure private endpoint access with Azure Private Link
+5. **Autoscaling** - Configure node pool and cluster autoscaling
 
 Each guide includes sections for both DNS approaches - simply follow the sections that match your choice.
 
@@ -11312,14 +13595,14 @@ Understanding the CI infrastructure helps when:
 
 # Documentation Preview
 
-When a pull request modifies files under `docs/`, a GitHub Actions workflow automatically builds the documentation and deploys a preview to Cloudflare Pages.
+When a pull request modifies files under `docs/`, GitHub Actions workflows automatically build the documentation and deploy a preview to Cloudflare Pages.
 
 ## How It Works
 
-The workflow uses `pull_request_target` with two jobs to securely handle fork PRs:
+The preview system uses two separate workflows for security, following the reusable workflow pattern described in GitHub Actions Workflows:
 
-1. **Build** — checks out the PR code and builds the docs with MkDocs in strict mode. This job has no access to secrets.
-2. **Deploy** — downloads the built artifact and deploys it to Cloudflare Pages. This job has access to the `docs-preview` environment secrets but never executes PR code.
+1. **Docs Build** (`.github/workflows/docs-build.yaml`) — triggers on `pull_request` for changes under `docs/`. The caller delegates to `docs-build-reusable.yaml@main`, which checks out the PR code, builds with MkDocs in strict mode, and uploads the built site as an artifact. This workflow has no access to secrets.
+2. **Docs Deploy** (`.github/workflows/docs-deploy.yaml`) — triggers via `workflow_run` when the Docs Build workflow completes successfully. It downloads the built artifact and deploys to Cloudflare Pages. This workflow has access to the `docs-preview` environment secrets but never executes PR code.
 
 GitHub shows a **View deployment** link in the PR timeline via the `docs-preview` environment.
 
@@ -11327,9 +13610,9 @@ The preview is available at `https://pr-<number>.hypershift.pages.dev`.
 
 ## Configuration
 
-The workflow is defined in `.github/workflows/docs-preview.yaml` and runs on self-hosted ARC runners.
+The workflows run on self-hosted ARC runners.
 
-It requires two secrets configured on the `docs-preview` GitHub Environment:
+The deploy workflow requires two secrets configured on the `docs-preview` GitHub Environment:
 
 | Secret | Description |
 |--------|-------------|
@@ -11347,6 +13630,105 @@ mkdocs serve
 ```
 
 Then open http://127.0.0.1:8000.
+
+
+---
+
+## Source: docs/content/how-to/ci/github-actions.md
+
+# GitHub Actions Workflows
+
+HyperShift uses GitHub Actions for lightweight CI checks that run on every pull request. These workflows complement the heavier Prow-based e2e tests by providing fast feedback on code quality, formatting, and documentation.
+
+## Reusable Workflow Architecture
+
+All GHA workflows follow a **caller + reusable** pattern:
+
+- **Caller workflow** (e.g., `lint.yaml`) — defines triggers (`pull_request`, branch filters) and delegates to a reusable workflow pinned at `@main`.
+- **Reusable workflow** (e.g., `lint-reusable.yaml`) — contains the actual job steps. Triggered via `workflow_call` and optionally on `push` to `main` for post-merge runs.
+
+```mermaid
+flowchart LR
+    subgraph "Caller (lint.yaml)"
+        A["on: pull_request"] --> B["uses: ...lint-reusable.yaml@main"]
+    end
+
+    subgraph "Reusable (lint-reusable.yaml)"
+        B --> C["on: workflow_call"]
+        C --> D["Checkout + Run lint"]
+    end
+```
+
+This pattern provides:
+
+- **Consistency** — all PR and push workflows share the same job definitions.
+- **Maintainability** — job logic is defined once in the reusable workflow and updated in a single place.
+- **Security** — callers pin reusable workflows to `@main`, reducing the risk of PRs altering reusable job logic. Caller workflows are protected by branch protection rules and CODEOWNERS.
+
+## Workflows
+
+All workflows run on self-hosted ARC runners and target the `main` and `release-4.22` branches.
+
+### Code Quality
+
+| Caller | Reusable | Purpose |
+|--------|----------|---------|
+| `codespell.yaml` | `codespell-reusable.yaml` | Spell checking across the codebase |
+| `gitlint.yaml` | `gitlint-reusable.yaml` | Commit message format validation |
+| `lint.yaml` | `lint-reusable.yaml` | Go linting via `golangci-lint` |
+| `verify.yaml` | `verify-reusable.yaml` | Full verification (`make verify`) |
+
+### Testing
+
+| Caller | Reusable | Purpose |
+|--------|----------|---------|
+| `test.yaml` | `test-reusable.yaml` | Unit tests with race detection and Codecov upload |
+| `envtest-ocp.yaml` | `envtest-ocp-reusable.yaml` | CRD validation tests against OpenShift k8s versions |
+| `envtest-kube.yaml` | `envtest-kube-reusable.yaml` | CRD validation tests against vanilla k8s versions |
+
+### Documentation
+
+| Caller | Reusable | Purpose |
+|--------|----------|---------|
+| `docs-build.yaml` | `docs-build-reusable.yaml` | Build MkDocs site in strict mode |
+
+The `docs-deploy.yaml` workflow is not a reusable workflow pair — it triggers via `workflow_run` after the Docs Build completes to deploy the preview. See Documentation Preview for details.
+
+### Other
+
+| Caller | Reusable | Purpose |
+|--------|----------|---------|
+| `cpo-container-sync.yaml` | `cpo-container-sync-reusable.yaml` | Validate CPO container image references are in sync |
+| `dependabot-commit-fix.yaml` | `dependabot-commit-fix-reusable.yaml` | Rewrite dependabot commit messages to pass gitlint |
+
+The `sync-community-fork.yaml` workflow runs on push to `main` only (not on PRs) and does not use the reusable pattern. See Sync Community Fork for details.
+
+## Adding a New Workflow
+
+To add a new GHA workflow:
+
+1. Create the reusable workflow (e.g., `my-check-reusable.yaml`) with `on: workflow_call`.
+2. Create the caller workflow (e.g., `my-check.yaml`) that uses the reusable workflow pinned at `@main`.
+3. Add branch filters for `main` and any active release branches.
+4. Use `arc-runner-set` as the runner.
+
+Example caller:
+
+```yaml
+name: My Check
+
+on:
+  pull_request:
+    branches:
+      - main
+      - release-4.22
+
+jobs:
+  my-check:
+    uses: openshift/hypershift/.github/workflows/my-check-reusable.yaml@main
+    permissions:
+      contents: read
+```
 
 
 ---
@@ -11515,13 +13897,28 @@ If you wanna know more about how to expose the ingress service in the Data Plane
 
 ## Overview
 
-The Global Pull Secret functionality enables Hosted Cluster administrators to include additional pull secrets for accessing container images from private registries without requiring assistance from the Management Cluster administrator. This feature allows you to merge your custom pull secret with the original HostedCluster pull secret, making it available to all nodes in the cluster.
+The Global Pull Secret functionality enables Hosted Cluster administrators to include additional pull secrets for accessing container images from private registries without requiring assistance from the Management Cluster administrator. This feature allows you to merge your custom pull secret with the original HostedCluster pull secret, making it available to nodes that run the sync DaemonSet.
 
-The implementation uses a DaemonSet approach that automatically detects when you create an `additional-pull-secret` in the `kube-system` namespace of your DataPlane (Hosted Cluster). The system then merges this secret with the original pull secret and deploys the merged result to all nodes via a DaemonSet that updates the kubelet configuration.
+The implementation uses a DaemonSet that updates kubelet pull credentials on the node. The pull secret referenced by **`HostedCluster.spec.pullSecret`** is always copied from the HostedControlPlane into the guest cluster as the `original-pull-secret` Secret in `kube-system`. The `sync-global-pullsecret` process writes that content to `/var/lib/kubelet/config.json` on **eligible** worker nodes (see Platform and NodePool eligibility), even if you **never** create `additional-pull-secret`. In that baseline case there is no merge step: the kubelet file is kept aligned with the HostedCluster pull secret that HCCO reconciles into the data plane.
+
+When you **do** create an `additional-pull-secret` in the `kube-system` namespace of your DataPlane (Hosted Cluster), the system merges it with the original HostedCluster pull secret and deploys the merged result via the same DaemonSet path (still preferring the original secret where registry entries conflict).
 
 !!! note
 
-    This feature is designed to work autonomously - once you create the additional pull secret, the system automatically handles the rest without requiring Management Cluster administrator intervention.
+    This feature is designed to work autonomously. With only `HostedCluster.spec.pullSecret`, the Hosted Cluster Config Operator (HCCO) still reconciles `original-pull-secret` and the DaemonSet object in the guest; sync pods run only on eligible nodes. Creating `additional-pull-secret` is optional and only needed to add or layer registry credentials beyond the HostedCluster pull secret.
+
+## Platform and NodePool eligibility
+
+HCCO reconciles Global Pull Secret resources for **every** hosted cluster platform: it always maintains `kube-system/original-pull-secret` (and optional `global-pull-secret`), RBAC, and the `global-pull-secret-syncer` DaemonSet **object** in the data plane.
+
+The DaemonSet pod template requires nodes to have the label **`hypershift.openshift.io/nodepool-globalps-enabled=true`**. Today the HyperShift operator sets that label on **Machines** (and HCCO propagates it to **Nodes**) only for:
+
+- **AWS** and **Azure** NodePools, and  
+- the **Replace** upgrade strategy (`MachineDeployment` path).
+
+It does **not** set the label for **InPlace** NodePools (to avoid conflicting with Machine Config Daemon on kubelet config), or for **Replace** on other platforms such as **KubeVirt** (and other providers) in the current implementation—those workers therefore typically have **no** Global Pull Secret sync pods unless something else applies the label.
+
+For platforms without sync pods, pull credentials still come from **ignition/bootstrap** and from in-cluster Secrets (for example `openshift-config/pull-secret`); kubelet on-disk config is not updated by this DaemonSet on those nodes.
 
 ## Adding your Pull Secret
 
@@ -11579,8 +13976,8 @@ After creating the secret, the system will automatically:
 
 1. Validate the secret format
 2. Merge it with the original pull secret
-3. Deploy a DaemonSet to all nodes
-4. Update the kubelet configuration on each node
+3. Ensure the DaemonSet is present in the guest cluster
+4. Update kubelet configuration on **eligible** worker nodes (see Platform and NodePool eligibility)
 
 You can verify the deployment by checking:
 
@@ -11599,42 +13996,45 @@ kubectl get pods -n kube-system -l name=global-pull-secret-syncer
 
 The Global Pull Secret functionality operates through a multi-component system:
 
-### Automatic Detection
-- The Hosted Cluster Config Operator (HCCO) continuously monitors the `kube-system` namespace
-- When it detects the creation of `additional-pull-secret`, it triggers the reconciliation process
+### Automatic detection and baseline sync
+- The Hosted Cluster Config Operator (HCCO) continuously reconciles Global Pull Secret resources and watches Secrets in the `kube-system` namespace of the data plane.
+- On every reconcile, HCCO copies the HostedControlPlane pull secret (sourced from **`HostedCluster.spec.pullSecret`**) into `kube-system/original-pull-secret` so the DaemonSet can mount it on the node.
+- If `additional-pull-secret` is **not** present, HCCO removes the `global-pull-secret` Secret (if it existed) and the DaemonSet syncs **only** the HostedCluster pull secret copy into `/var/lib/kubelet/config.json` on eligible nodes.
+- When `additional-pull-secret` **is** present, reconciliation additionally validates and merges it with the HostedCluster pull secret.
 
-### Validation and Merging
-- The system validates that your secret contains a proper DockerConfigJSON format
-- It retrieves the original pull secret from the HostedControlPlane
-- Your additional pull secret is merged with the original one
-- **If there are conflicting registry entries, the original pull secret takes precedence** (the additional pull secret entry is ignored for conflicting registries)
-- The system supports namespace-specific registry entries (e.g., `quay.io/namespace`) for better credential specificity
+### Validation and merging (optional additional secret)
+- When `additional-pull-secret` exists, the system validates that it contains a proper DockerConfigJSON format.
+- It retrieves the original pull secret from the HostedControlPlane (same content as `HostedCluster.spec.pullSecret`).
+- Your additional pull secret is merged with the original one.
+- **If there are conflicting registry entries, the original pull secret takes precedence** (the additional pull secret entry is ignored for conflicting registries).
+- The system supports namespace-specific registry entries (e.g., `quay.io/namespace`) for better credential specificity.
 
-### Deployment Process
-- A `global-pull-secret` is created in the `kube-system` namespace containing the merged result
+### Deployment process
+- When merging is active, a `global-pull-secret` is created in the `kube-system` namespace containing the merged result. If there is no additional secret, this Secret is absent and the syncer uses `original-pull-secret` only.
 - RBAC resources (ServiceAccount, Role, RoleBinding) are created for the DaemonSet in both `kube-system` and `openshift-config` namespaces
 - We use Role and RoleBinding in both namespaces to access secrets in `kube-system` and `openshift-config` namespaces
 - A DaemonSet named `global-pull-secret-syncer` is deployed to eligible nodes
 
-!!! warning "NodePool InPlace Strategy Restriction"
+!!! warning "InPlace and unsupported platforms"
 
-    The Global Pull Secret DaemonSet is **not deployed** to nodes that belong to NodePools using the **InPlace upgrade strategy**. This restriction prevents conflicts between the DaemonSet's modifications to `/var/lib/kubelet/config.json` and the Machine Config Daemon (MCD) during InPlace upgrades.
+    **InPlace NodePools:** workers are intentionally **not** labeled `hypershift.openshift.io/nodepool-globalps-enabled`, so the Global Pull Secret sync **pods do not schedule** there. That avoids conflicts between edits to `/var/lib/kubelet/config.json` and the Machine Config Daemon (MCD).
 
-    - **Nodes with Replace strategy**: ✅ Receive Global Pull Secret DaemonSet
-    - **Nodes with InPlace strategy**: ❌ Do not receive Global Pull Secret DaemonSet
+    **AWS and Azure, Replace:** workers **are** labeled (via Machine → Node propagation), so sync pods **can** run and reconcile kubelet pull configuration from `original-pull-secret` / `global-pull-secret`.
 
-    This ensures that MCD operations during InPlace upgrades do not fail due to unexpected changes in kubelet configuration files.
+    **Other platforms (for example KubeVirt, GCP, Agent, …):** the DaemonSet object still exists in `kube-system`, but nodes usually **lack** the selector label, so you will typically see **no** (or very few) sync pods unless you set that label yourself.
 
-### Node-Level Synchronization
-- Each DaemonSet pod runs a controller that watches the secrets under kube-system namespace
-- When changes are detected, it updates `/var/lib/kubelet/config.json` on the node
+    See Platform and NodePool eligibility for the full picture.
+
+### Node-level synchronization
+- Each DaemonSet pod runs `sync-global-pullsecret`, which periodically reads the mounted pull secret files (`global-pull-secret` when present, otherwise `original-pull-secret`, which holds the **`HostedCluster.spec.pullSecret`** payload reconciled by HCCO).
+- When the desired content differs from `/var/lib/kubelet/config.json`, it updates the file on the node
 - The kubelet service is restarted via DBus to apply the new configuration
 - If the restart fails after 3 attempts, the system rolls back the file changes
 
-### Automatic Cleanup
-- If you delete the `additional-pull-secret`, the HCCO automatically removes the `global-pull-secret` secret
-- The system reverts to using only the original pull secret from the HostedControlPlane
-- The DaemonSet continues running but now syncs only the original pull secret to nodes
+### Automatic cleanup
+- If you delete the `additional-pull-secret`, the HCCO automatically removes the `global-pull-secret` secret.
+- The system reverts to syncing **only** the HostedCluster pull secret (via `original-pull-secret`, still sourced from the HostedControlPlane).
+- The DaemonSet continues to run on eligible nodes and keeps `/var/lib/kubelet/config.json` aligned with that HostedCluster pull secret.
 
 ## Registry Precedence and Conflict Resolution
 
@@ -11706,20 +14106,18 @@ The implementation consists of several key components working together:
    - Handles validation of user-provided pull secrets
    - Manages the merging logic between original and additional pull secrets
    - Creates and manages RBAC resources
-   - Deploys and manages the DaemonSet
-   - **Node eligibility assessment**: Labels nodes from InPlace NodePools and configures DaemonSet scheduling restrictions
+   - Deploys and manages the DaemonSet in Nodes labeled with `hypershift.openshift.io/nodepool-globalps-enabled=true`
 
 2. **Sync Global Pull Secret Command** (`sync-global-pullsecret` package)
-   - Runs as a DaemonSet on each node
-   - Watches for changes to the `global-pull-secret` in `kube-system` namespace
-   - Accesses the original `pull-secret` in `openshift-config` namespace
-   - Updates the kubelet configuration file
+   - Runs in the DaemonSet pod on eligible nodes
+   - Reads mounted Docker config JSON from `global-pull-secret` when that volume exists; otherwise uses `original-pull-secret` (the copy of **`HostedCluster.spec.pullSecret`** reconciled into `kube-system`)
+   - Updates `/var/lib/kubelet/config.json` on the host
    - Manages kubelet service restarts via DBus
 
-3. **Hosted Cluster Config Operator Integration**
-   - Monitors for the presence of `additional-pull-secret`
-   - Orchestrates the entire process
-   - Handles cleanup when the secret is removed
+3. **Hosted Cluster Config Operator integration**
+   - Reconciles `original-pull-secret` on every pass from the HostedControlPlane pull secret (`HostedCluster.spec.pullSecret`)
+   - When `additional-pull-secret` exists, validates, merges, and reconciles `global-pull-secret`; when it does not, removes `global-pull-secret` and relies on `original-pull-secret` only for kubelet sync
+   - Orchestrates RBAC and the DaemonSet for both paths
 
 ### Architecture Diagram
 
@@ -11768,9 +14166,9 @@ graph TB
     Container --> |Executes| SyncCommand[sync-global-pullsecret command]
 
     %% Sync Process
-    SyncCommand --> |Watches global-pull-secret| SyncController[Global Pull Secret Reconciler]
-    SyncController --> |Reads secret| ReadGlobalPS[Read global-pull-secret]
-    SyncController --> |Reads original| ReadOriginalPS[Read original pull-secret]
+    SyncCommand --> |Reads mounted files| SyncController[sync-global-pullsecret loop]
+    SyncController --> |Reads if present| ReadGlobalPS[Read global-pull-secret mount]
+    SyncController --> |Reads HostedCluster PS copy| ReadOriginalPS[Read original-pull-secret mount]
 
     %% File Update Process
     ReadGlobalPS --> |Gets data| GlobalPSBytes[Global Pull Secret Bytes]
@@ -11824,42 +14222,11 @@ graph TB
   - Write to `/var/lib/kubelet/config.json` (kubelet configuration file)
   - Connect to systemd via DBus for service management
   - Restart kubelet.service, which requires root privileges
-- **Smart node targeting**: Automatically excludes nodes from InPlace NodePools to prevent MCD conflicts
+- **Smart node targeting**: The DaemonSet uses a `nodeSelector` for `hypershift.openshift.io/nodepool-globalps-enabled=true`; the HyperShift operator only applies that label on **AWS** and **Azure** **Replace** NodePools, so InPlace and other platforms do not get sync pods by default (see Platform and NodePool eligibility)
 
-### InPlace NodePool Handling
+### How scheduling avoids InPlace conflicts
 
-To prevent conflicts with Machine Config Daemon operations, the implementation includes intelligent node targeting:
-
-#### Node Labeling Process
-1. **MachineSets Discovery**: The controller queries the management cluster for MachineSets with InPlace-specific annotations (`hypershift.openshift.io/nodePoolTargetConfigVersion`)
-2. **Machine Enumeration**: For each InPlace MachineSets, it lists all associated Machines
-3. **Node Identification**: Maps Machine objects to their corresponding nodes via `machine.Status.NodeRef.Name`
-4. **Labeling**: Applies `hypershift.openshift.io/nodepool-inplace-strategy=true` label to identified nodes
-
-#### DaemonSet Scheduling Configuration
-The DaemonSet uses NodeAffinity to exclude InPlace nodes:
-
-```yaml
-spec:
-  template:
-    spec:
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-            - matchExpressions:
-              - key: hypershift.openshift.io/nodepool-inplace-strategy
-                operator: DoesNotExist
-```
-
-This ensures that:
-- **Nodes without the label**: ✅ Are eligible for DaemonSet scheduling
-- **Nodes with the label** (any value): ❌ Are excluded from DaemonSet scheduling
-
-#### Conflict Prevention Benefits
-- **Prevents MCD failures**: Avoids conflicts when MCD expects specific kubelet configuration during InPlace upgrades
-- **Maintains upgrade reliability**: InPlace upgrade processes are not interrupted by Global Pull Secret modifications
-- **Automatic detection**: No manual intervention required - the system automatically identifies and handles InPlace nodes
+Eligibility is **positive selection**, not NodeAffinity on an InPlace label: InPlace workers simply **never** receive `hypershift.openshift.io/nodepool-globalps-enabled=true`, so the sync DaemonSet does not place pods on them. Replace workers on AWS/Azure **do** receive the label so the DaemonSet can run there without colliding with MCD on InPlace upgrade paths.
 
 ### Error Handling
 
@@ -14437,6 +16804,7 @@ hypershift create oadp-backup \
 | `--default-volumes-to-fs-backup` | bool | `false` | ❌ | Use filesystem backup for volumes by default instead of snapshots |
 | `--render` | bool | `false` | ❌ | Render the backup object to STDOUT instead of creating it |
 | `--included-resources` | []string | (see below) | ❌ | Comma-separated list of resources to include (overrides defaults) |
+| `--use-etcd-snapshot` | bool | `false` | ❌ | **[Tech Preview]** Use etcd snapshot mode: etcd is backed up via HCPEtcdBackup CRD snapshots instead of PV volume snapshots. Incompatible with `--snapshot-move-data` and `--default-volumes-to-fs-backup` |
 
 #### Flag Details
 
@@ -14459,6 +16827,22 @@ Supports Kubernetes duration format:
 
 **`--snapshot-move-data`**
 When enabled, moves snapshot data to object storage for long-term retention. Useful for cross-region/cross-cloud disaster recovery.
+
+**`--use-etcd-snapshot`** **[Tech Preview]**
+Enables etcd snapshot mode where etcd data is backed up via HCPEtcdBackup CRD snapshots instead of PV volume snapshots. This flag cannot be combined with `--snapshot-move-data` or `--default-volumes-to-fs-backup`.
+
+Differences compared to the default backup mode:
+
+| Setting | Default mode | Etcd snapshot mode |
+|---------|-------------|-------------------|
+| `snapshotVolumes` | `true` | `false` |
+| `snapshotMoveData` | user-configurable | `false` (forced) |
+| `defaultVolumesToFsBackup` | user-configurable | `false` (forced) |
+| `dataMover` | `velero` | not set |
+| `csiSnapshotTimeout` | `10m0s` | not set by CLI (Velero may add a default) |
+| `itemOperationTimeout` | not set | `4h0m0s` |
+| `excludedResources` | not set | `[]` (empty) |
+| Included resources | Base + platform resources (with PVs, deployments, statefulsets) | Base + platform resources (without PVs, deployments, statefulsets; adds namespaces) |
 
 **`--included-resources`**
 Accepts comma-separated resource types. See Resource Types section for complete list.
@@ -14684,7 +17068,17 @@ hypershift create oadp-backup \
   --ttl 24h  # 1 day retention
 ```
 
-#### Scenario 6: Platform-Specific Backups
+#### Scenario 6: Etcd Snapshot Mode (Tech Preview)
+Back up using etcd snapshots instead of PV volume snapshots:
+```bash
+hypershift create oadp-backup \
+  --hc-name prod01 \
+  --hc-namespace hcp01 \
+  --use-etcd-snapshot \
+  --ttl 168h  # 7 days retention
+```
+
+#### Scenario 7: Platform-Specific Backups
 The backup command automatically detects your platform and includes appropriate resources. Here are examples for different platforms:
 
 **AWS HostedCluster:**
@@ -15084,6 +17478,7 @@ hypershift create oadp-restore \
 | `--render` | bool | `false` | ❌ | Render the restore object to STDOUT instead of creating it |
 | `--restore-pvs` | bool | `true` | ❌ | Restore persistent volumes |
 | `--preserve-node-ports` | bool | `true` | ❌ | Preserve NodePort assignments during restore |
+| `--use-etcd-snapshot` | bool | `false` | ❌ | **[Tech Preview]** Use etcd snapshot restore mode: disables PV restore, enables cleanup before restore, and adjusts excluded resources for etcd snapshot workflows |
 
 > **Note**: Either `--from-backup` OR `--from-schedule` must be specified, but not both.
 
@@ -15113,6 +17508,22 @@ Specifies a custom name for the restore resource. If not provided, a name is aut
 
 **`--render`**
 Outputs the restore YAML to STDOUT instead of creating the resource. Useful for inspection or GitOps workflows.
+
+**`--use-etcd-snapshot`** **[Tech Preview]**
+Enables etcd snapshot restore mode, designed for restoring backups created with `--use-etcd-snapshot`.
+
+Differences compared to the default restore mode (as generated by the CLI; Velero may add additional fields at runtime):
+
+| Setting | Default mode | Etcd snapshot mode |
+|---------|-------------|-------------------|
+| `restorePVs` | `true` (user-configurable) | `false` (forced) |
+| `cleanupBeforeRestore` | not set | `CleanupRestored` |
+| `veleroManagedClustersBackupName` | not set | set to backup name (when `--from-backup` is used) |
+| `veleroCredentialsBackupName` | not set | set to backup name (when `--from-backup` is used) |
+| `veleroResourcesBackupName` | not set | set to backup name (when `--from-backup` is used) |
+| Excluded `csinodes.storage.k8s.io` | yes | no |
+| Excluded `volumeattachments.storage.k8s.io` | yes | no |
+| Excluded `backuprepositories.velero.io` | yes | no |
 
 ### Example Commands
 
@@ -15290,6 +17701,16 @@ hypershift create oadp-restore \
   --hc-namespace hcp01 \
   --from-backup production-backup-abc123 \
   --existing-resource-policy none
+```
+
+#### Scenario 6: Etcd Snapshot Restore (Tech Preview)
+Restore from a backup created with etcd snapshot mode:
+```bash
+hypershift create oadp-restore \
+  --hc-name production \
+  --hc-namespace hcp01 \
+  --from-backup production-etcd-snapshot-abc123 \
+  --use-etcd-snapshot
 ```
 
 ### Best Practices
@@ -15887,6 +18308,744 @@ oc patch -n ${CLUSTER_NAMESPACE} hostedclusters/${CLUSTER_NAME} -p '{"spec":{"pa
 
 ---
 
+## Source: docs/content/how-to/disaster-recovery/etcd-snapshot-backup/backup-flow.md
+
+---
+title: Backup Flow
+---
+
+# Etcd Snapshot Backup Flow
+
+!!! warning "Tech Preview"
+
+    This feature requires the `HCPEtcdBackup` feature gate enabled in the HyperShift Operator.
+
+This page describes the end-to-end backup process when using the Etcd Snapshot method. The flow involves three actors: the OADP HyperShift plugin (orchestration), the HyperShift Operator's etcd backup controller (execution), and the backup Job (snapshot + upload).
+
+## End-to-End Sequence
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant CLI as HyperShift CLI
+    participant Velero
+    participant Plugin as OADP Plugin
+    participant Orch as Etcd Backup Orchestrator
+    participant HO as HCPEtcdBackup Controller
+    participant Job as Backup Job
+    participant etcd as etcd Pods
+    participant S3 as Object Storage
+
+    User->>CLI: hypershift create oadp-backup --use-etcd-snapshot
+    CLI->>CLI: Validate HostedCluster, OADP, DPA
+    CLI->>Velero: Create Backup CR
+
+    Note over Velero,Plugin: Velero iterates included resources
+
+    Velero->>Plugin: Execute(HostedControlPlane)
+    Plugin->>Plugin: Validate platform config
+    Plugin->>Orch: CreateEtcdBackup()
+    Orch->>Orch: Fetch BSL, map storage config
+    Orch->>Orch: Copy BSL credentials to HO namespace
+    Orch->>HO: Create HCPEtcdBackup CR
+    Orch->>HO: VerifyInProgress (30s timeout)
+
+    HO->>HO: Check etcd health
+    HO->>HO: Ensure no other backup running
+    HO->>HO: Create RBAC + NetworkPolicy in HCP ns
+    HO->>Job: Create backup Job in HO namespace
+
+    Job->>etcd: fetch-certs: copy TLS from HCP ns
+    Job->>etcd: snapshot: etcdctl snapshot save
+    Job->>S3: upload: push snapshot.db
+
+    HO->>HO: Extract URL from pod termination message
+    HO->>HO: Persist URL to HostedCluster status
+    HO->>HO: Cleanup RBAC + NetworkPolicy
+
+    Orch->>HO: WaitForCompletion (10min timeout)
+    HO-->>Orch: BackupCompleted = Succeeded
+    Orch-->>Plugin: Return snapshot URL
+
+    Plugin->>Plugin: Cache snapshot URL
+    Plugin->>Plugin: Inject URL annotation on HCP
+
+    Velero->>Plugin: Execute(HostedCluster)
+    Plugin->>Plugin: Add restored-from-backup annotation
+    Plugin->>Plugin: Inject cached snapshot URL annotation
+
+    Velero->>Plugin: Execute(etcd Pod)
+    Plugin-->>Velero: Skip (etcd snapshot mode)
+
+    Velero->>Plugin: Execute(etcd PVC)
+    Plugin-->>Velero: Skip (etcd snapshot mode)
+
+    Velero->>Velero: Backup complete
+```
+
+## Step 1: CLI Validation and Backup Creation
+
+The backup starts when the user runs the CLI command or creates a Velero `Backup` CR manually.
+
+**Using the CLI:**
+
+```bash
+hypershift create oadp-backup \
+  --hc-name my-hosted-cluster \
+  --hc-namespace clusters \
+  --name my-backup \
+  --storage-location default \
+  --use-etcd-snapshot
+```
+
+The CLI performs the following validations before creating the Backup CR:
+
+1. Backup name is valid (DNS-1123 subdomain, max 63 characters).
+2. HostedCluster exists and its platform is detected (AWS, Azure, Agent, KubeVirt, OpenStack).
+3. OADP components are ready: `openshift-adp-controller-manager` and `velero` deployments exist with available replicas.
+4. A `DataProtectionApplication` CR exists with status `Reconciled`.
+5. The HyperShift plugin is configured in the DPA (warning if missing).
+
+The generated Backup CR includes:
+
+- **Included namespaces**: The HostedCluster namespace (e.g. `clusters`) and the HostedControlPlane namespace (e.g. `clusters-my-hosted-cluster`).
+- **Included resources**: Platform-aware resource list excluding etcd-related resources (PVCs, PVs, Deployments, StatefulSets).
+- **Snapshot settings**: `snapshotVolumes: false`, no volume snapshot data mover.
+
+## Step 2: OADP Plugin Processes Resources
+
+Velero iterates over all included resources and invokes the plugin's `BackupItemAction.Execute()` for each item. The plugin behavior depends on the resource kind:
+
+### HostedControlPlane
+
+1. **Platform validation**: The plugin calls `ValidatePlatformConfig()` to check platform-specific constraints.
+2. **Etcd backup creation**: The plugin's Etcd Backup Orchestrator creates the `HCPEtcdBackup` CR:
+    - Fetches the Velero `BackupStorageLocation` (BSL) from the `openshift-adp` namespace.
+    - Maps BSL configuration to `HCPEtcdBackup` storage config (bucket, region, key prefix for S3; container, storage account for Azure).
+    - Copies the BSL credential Secret to the HyperShift Operator namespace, remapping the data key from `cloud` to `credentials`.
+    - If encryption is configured in `HostedCluster.Spec.Etcd.Managed.Backup`, sets the KMS key ARN (AWS) or Key Vault URL (Azure) on the storage config.
+    - Creates the `HCPEtcdBackup` CR in the HCP namespace.
+3. **Verification**: The orchestrator polls the `BackupCompleted` condition for up to 30 seconds, waiting for the controller to acknowledge the backup (status changes to `BackupInProgress` or `BackupSucceeded`).
+4. **Completion wait**: The orchestrator polls for up to 10 minutes (every 5 seconds) until the backup reaches a terminal state.
+5. **URL caching**: On success, the snapshot URL is cached on the plugin instance for use by subsequent items.
+6. **Annotation injection**: The plugin adds `hypershift.openshift.io/etcd-snapshot-url` annotation with the snapshot URL.
+7. **Credential cleanup**: The temporary credential Secret in the HO namespace is deleted.
+
+### HostedCluster
+
+1. Adds `hypershift.openshift.io/restored-from-backup` annotation (used during restore to signal the cluster was restored).
+2. If the etcd backup was not yet created (HostedCluster may be processed before HostedControlPlane), triggers the same backup creation flow.
+3. Injects the cached snapshot URL as annotation and into the status field `lastSuccessfulEtcdBackupURL`.
+
+!!! note
+
+    The URL is injected into both an annotation and the status because Velero strips status fields during backup. The annotation survives and is read during restore.
+
+### etcd Pods
+
+Skipped entirely. In etcd snapshot mode, etcd data is captured via the snapshot, not from the pod's filesystem.
+
+### etcd PVCs
+
+Skipped entirely. PVCs matching the pattern `data-etcd-*` are excluded.
+
+### Other Resources
+
+All other resources (Secrets, ConfigMaps, Services, etc.) are processed normally by Velero without plugin modification.
+
+## Step 3: HCPEtcdBackup Controller Reconciliation
+
+When the OADP plugin creates the `HCPEtcdBackup` CR, the HyperShift Operator's etcd backup controller reconciles it through the following stages:
+
+### 3.1 Pre-flight Checks
+
+1. **Feature gate**: Verifies `HCPEtcdBackup` feature gate is enabled. Returns immediately if disabled.
+2. **Terminal state**: If the backup already succeeded, failed, or was rejected, the controller runs cleanup and retention enforcement, then stops.
+3. **Etcd health**: Fetches the etcd `StatefulSet` in the HCP namespace and verifies all replicas are ready. If unhealthy, the backup is rejected with reason `EtcdUnhealthy`.
+4. **Serial execution**: Scans for active backup Jobs targeting the same HCP namespace. If another backup is running, the new one is rejected with reason `BackupRejected`. This check is idempotent: it runs after checking for the current backup's own Job.
+5. **Credentials**: Verifies the credential Secret referenced in the backup spec exists in the HO namespace.
+
+### 3.2 Resource Creation
+
+The controller creates temporary resources required for the backup Job to access etcd across namespaces:
+
+| Resource | Namespace | Purpose |
+|----------|-----------|---------|
+| `ServiceAccount` | HO namespace | Identity for the backup Job pods |
+| `Role` | HCP namespace | Grants read access to `etcd-client-tls` Secret and `etcd-ca` ConfigMap |
+| `RoleBinding` | HCP namespace | Binds the HO ServiceAccount to the HCP Role |
+| `NetworkPolicy` | HCP namespace | Allows ingress on port 2379 from the HO namespace to etcd pods |
+
+### 3.3 Backup Job
+
+The controller creates a Kubernetes `Job` in the HO namespace with three containers:
+
+| Container | Type | Image | Purpose |
+|-----------|------|-------|---------|
+| `fetch-certs` | Init container | control-plane-operator | Runs `fetch-etcd-certs`: copies etcd TLS certificates from the HCP namespace using the cross-namespace RBAC |
+| `snapshot` | Init container | etcd | Runs `etcdctl snapshot save`: connects to etcd on port 2379 using the fetched TLS certificates and creates a local snapshot file |
+| `upload` | Main container | control-plane-operator | Runs `etcd-upload`: uploads the snapshot file to S3 or Azure Blob using the mounted credentials. Writes the final snapshot URL to the container's termination message |
+
+**Job configuration:**
+
+| Setting | Value | Reason |
+|---------|-------|--------|
+| `backoffLimit` | 0 | No retries on failure |
+| `activeDeadlineSeconds` | 900 (15 min) | Prevents indefinitely running Jobs |
+| `ttlSecondsAfterFinished` | 600 (10 min) | Automatic Job cleanup |
+
+**Shared volumes:**
+
+- `etcd-certs`: EmptyDir shared between `fetch-certs` and `snapshot` containers for TLS certificates.
+- `etcd-backup`: EmptyDir shared between `snapshot` and `upload` containers for the snapshot file.
+- `backup-credentials`: Secret mount (read-only) with cloud provider credentials for the upload container.
+
+### 3.4 Job Monitoring
+
+On subsequent reconcile loops, the controller checks the Job status:
+
+- **Succeeded**: Extracts the snapshot URL from the `upload` container's termination message. Persists it to `HostedCluster.Status.LastSuccessfulEtcdBackupURL` using a retry-on-conflict pattern. Marks the `HCPEtcdBackup` as `BackupSucceeded`.
+- **Failed**: Marks the `HCPEtcdBackup` as `BackupFailed`.
+- **Running**: Requeues reconciliation after 10 seconds.
+
+### 3.5 Cleanup
+
+When the backup reaches a terminal state:
+
+1. Removes the `Role`, `RoleBinding`, and `NetworkPolicy` from the HCP namespace.
+2. Skips cleanup if another active backup Job exists for the same HCP (resources are shared).
+3. The Job itself is cleaned up automatically by the `ttlSecondsAfterFinished` setting.
+
+### 3.6 Retention Enforcement
+
+After cleanup, the controller enforces the retention policy:
+
+1. Lists all `HCPEtcdBackup` CRs for the same HCP namespace, sorted by creation time.
+2. If the count exceeds `MaxBackupCount`, deletes the oldest backups.
+3. The snapshot URL survives CR deletion because it was previously persisted to `HostedCluster.Status.LastSuccessfulEtcdBackupURL`.
+
+## Snapshot URL Persistence
+
+The snapshot URL is persisted through two independent paths to ensure availability during restore:
+
+```mermaid
+graph LR
+    JOB[Backup Job<br/>termination message] -->|extracted by controller| HC_STATUS[HostedCluster.Status<br/>LastSuccessfulEtcdBackupURL]
+    JOB -->|extracted by controller| BACKUP_STATUS[HCPEtcdBackup.Status<br/>SnapshotURL]
+    BACKUP_STATUS -->|read by plugin| ANNOTATION[Annotation on HC/HCP<br/>in Velero backup archive]
+
+    HC_STATUS -.->|survives CR deletion| HC_STATUS
+    ANNOTATION -.->|read during restore| RESTORE[Restore plugin]
+```
+
+- **HostedCluster status**: Persists across `HCPEtcdBackup` CR deletions (retention). Available for operational reference.
+- **Backup annotation**: Stored inside the Velero backup archive. This is the path used during restore, since Velero strips status fields.
+
+## Error Scenarios
+
+| Scenario | Result | Recovery |
+|----------|--------|----------|
+| etcd StatefulSet not fully ready | `BackupCompleted` = `EtcdUnhealthy` | Wait for etcd to recover, create a new backup |
+| Another backup already running for this HCP | `BackupCompleted` = `BackupRejected` | Wait for the active backup to complete |
+| Credential Secret not found in HO namespace | Backup fails immediately | Verify the OADP plugin correctly copied the BSL credentials |
+| Backup Job fails (etcdctl error, upload error) | `BackupCompleted` = `BackupFailed` | Check Job pod logs, verify etcd connectivity and storage permissions |
+| Backup Job exceeds 15 min deadline | Job killed, `BackupCompleted` = `BackupFailed` | Investigate network or storage latency |
+| Plugin verification timeout (30s) | Plugin returns error, Velero marks backup failed | Check HyperShift Operator logs for controller issues |
+| Plugin completion timeout (10 min) | Plugin returns error, Velero marks backup failed | Check backup Job status and pod logs |
+| `HCPEtcdBackup` CRD not installed | Plugin fails with explicit error | Enable the `HCPEtcdBackup` feature gate and ensure CRDs are deployed |
+
+## Platform-specific Notes
+
+### AWS
+
+- Storage uses S3 with the bucket and region from the Velero BSL config.
+- Key prefix: `{bsl-prefix}/backups/{backup-name}/etcd-backup`.
+- Optional KMS encryption via `HostedCluster.Spec.Etcd.Managed.Backup.AWS.KMSKeyARN`.
+
+### Azure
+
+- Storage uses Azure Blob with container and storage account from the BSL config.
+- Key prefix: `{bsl-prefix}/backups/{backup-name}/etcd-backup`.
+- Optional Key Vault encryption via `HostedCluster.Spec.Etcd.Managed.Backup.Azure.EncryptionKeyURL`.
+
+### KubeVirt
+
+- RHCOS boot image PVCs (labeled `hypershift.openshift.io/is-kubevirt-rhcos`) are excluded regardless of backup method.
+- DataVolumes with the same label are also excluded.
+
+### Agent (Bare Metal)
+
+- `ClusterDeployment.Spec.PreserveOnDelete` is set to `false` during backup.
+- `InfraEnv` objects must not be deleted when restoring on the same management cluster.
+
+
+---
+
+## Source: docs/content/how-to/disaster-recovery/etcd-snapshot-backup/index.md
+
+---
+title: Etcd Snapshot Backup (Tech Preview)
+---
+
+!!! warning "Tech Preview"
+
+    The Etcd Snapshot Backup method is a Tech Preview feature. It requires the `HCPEtcdBackup` feature gate to be enabled in the HyperShift Operator. Tech Preview features are not supported in production environments.
+
+## Overview
+
+The Etcd Snapshot Backup method provides an alternative to the default volume snapshot approach for backing up Hosted Control Plane etcd data. Instead of capturing raw PVC content via CSI volume snapshots or filesystem backup, this method uses `etcdutl snapshot save` to create a consistent snapshot of the etcd database and uploads it to object storage (S3 or Azure Blob).
+
+With the volume snapshot method, Velero captures each etcd PVC individually (typically 3 PVCs for a HighlyAvailable control plane). The etcd snapshot method produces a single snapshot file of the logical database, resulting in significantly smaller backup artifacts.
+
+This approach is driven by the `HCPEtcdBackup` Custom Resource and orchestrated through the OADP HyperShift plugin during Velero backup operations.
+
+## Comparison with Volume Snapshot Method
+
+| Aspect | Volume Snapshot (Default) | Etcd Snapshot (Tech Preview) |
+|--------|--------------------------|------------------------------|
+| **Backup mechanism** | CSI volume snapshots or Kopia filesystem backup of etcd PVCs (one per replica, typically 3) | `etcdutl snapshot save` producing a single snapshot file, uploaded to object storage |
+| **Portability** | Tied to the storage provider and CSI driver | Snapshot is storage-agnostic. Cross-cluster restore supported for AWS, Azure, Agent. Not yet validated for KubeVirt |
+| **Backup size** | Full PVC content (3 PVCs for HighlyAvailable) | Single etcd database snapshot (significantly smaller) |
+| **Restore mechanism** | PVC restore from snapshot | `etcdctl snapshot restore` via init container |
+| **Requirements** | CSI driver with snapshot support or Kopia node agent | `HCPEtcdBackup` feature gate enabled |
+| **Encryption** | Depends on storage provider | Optional KMS (AWS) or Key Vault (Azure) encryption |
+
+## Prerequisites
+
+Before using the Etcd Snapshot Backup method, ensure the following:
+
+1. **Feature gate enabled**: The `HCPEtcdBackup` feature gate must be enabled in the HyperShift Operator.
+2. **OADP 1.6+ installed**: The OADP operator (version 1.6 or later) with the HyperShift plugin must be deployed. See Backup and Restore with OADP 1.5 for DPA configuration reference.
+3. **Object storage configured**: A Velero `BackupStorageLocation` pointing to S3 or Azure Blob must be configured.
+4. **Plugin ConfigMap**: The OADP HyperShift plugin must be configured to use the etcd snapshot method via a ConfigMap in the OADP namespace (see Plugin Configuration below).
+5. **General DR prerequisites**: Review the Disaster Recovery Prerequisites page for service publishing strategy requirements and platform-specific considerations.
+
+## Plugin Configuration
+
+The OADP HyperShift plugin reads its configuration from a ConfigMap named `hypershift-oadp-plugin-config` in the OADP namespace (typically `openshift-adp`). To use the etcd snapshot method, the `etcdBackupMethod` key must be set to `etcdSnapshot`:
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hypershift-oadp-plugin-config
+  namespace: openshift-adp
+data:
+  etcdBackupMethod: "etcdSnapshot" # "volumeSnapshot" (default) or "etcdSnapshot"
+```
+
+| Key | Values | Description |
+|-----|--------|-------------|
+| `hoNamespace` | namespace name | Namespace where the HyperShift Operator is installed. Defaults to `hypershift`. |
+| `etcdBackupMethod` | `volumeSnapshot` (default), `etcdSnapshot` | Selects the etcd backup method. `etcdSnapshot` enables the Tech Preview flow described in this section. |
+| `migration` | `true`, `false` | Set to `true` when the backup is intended for migration to a different management cluster. |
+
+!!! important
+
+    If the `etcdBackupMethod` is set to `etcdSnapshot` but the `HCPEtcdBackup` CRD is not installed (feature gate not enabled), the plugin will fail with an explicit error.
+
+## Architecture
+
+The Etcd Snapshot Backup system is composed of two layers:
+
+- **Orchestration layer**: The OADP HyperShift plugin (running inside Velero) drives the backup/restore lifecycle. During backup, it creates the `HCPEtcdBackup` CR in the HCP namespace, waits for completion, and injects the snapshot URL into the backed-up resources. During restore, it reads the snapshot URL from the `HostedCluster.Status.LastSuccessfulEtcdBackupURL` field (persisted as an annotation during backup) and injects it into the `RestoreSnapshotURL` spec field.
+- **Execution layer**: HyperShift controllers perform the actual work. The HyperShift Operator's etcd backup controller (running in the HO namespace) watches `HCPEtcdBackup` CRs across all namespaces and creates the backup Job in the HO namespace. The Control Plane Operator's etcd controller handles snapshot restoration via an init container.
+
+### Backup Flow
+
+```mermaid
+graph LR
+    subgraph OADP["openshift-adp"]
+        PLUGIN[OADP Plugin]
+    end
+
+    subgraph HO["hypershift namespace"]
+        CTRL[HCPEtcdBackup Controller]
+        JOB[Backup Job]
+    end
+
+    subgraph HCP["clusters-NAME namespace"]
+        CR[HCPEtcdBackup CR]
+        ETCD[etcd Pods]
+    end
+
+    HC[HostedCluster]
+    S3[(Object Storage)]
+
+    PLUGIN -- "1 create CR" --> CR
+    CTRL -- "2 watch CR" --> CR
+    CTRL -- "3 create Job" --> JOB
+    JOB -- "4 snapshot" --> ETCD
+    JOB -- "5 upload" --> S3
+    CTRL -- "6 persist URL" --> HC
+    PLUGIN -- "7 read URL and inject annotation" --> HC
+```
+
+### Restore Flow
+
+```mermaid
+graph LR
+    subgraph OADP["openshift-adp"]
+        PLUGIN[OADP Plugin]
+    end
+
+    HC[HostedCluster]
+    HCP[HostedControlPlane]
+
+    subgraph CPO["Control Plane Operator"]
+        ETCD_CTRL[etcd controller]
+    end
+
+    ETCD[etcd Pod + init container]
+    S3[(Object Storage)]
+
+    PLUGIN -- "1 read annotation" --> HC
+    PLUGIN -- "2 presign URL" --> PLUGIN
+    PLUGIN -- "3 inject RestoreSnapshotURL" --> HC
+    PLUGIN -- "3 inject RestoreSnapshotURL" --> HCP
+    ETCD_CTRL -- "4 add init container" --> ETCD
+    ETCD -- "5 download snapshot" --> S3
+    ETCD -- "6 etcdctl restore" --> ETCD
+```
+
+### HCPEtcdBackup Custom Resource
+
+The `HCPEtcdBackup` CR represents a one-shot backup request for etcd. Key characteristics:
+
+- **Immutable spec**: Once created, the spec cannot be modified.
+- **Storage backends**: S3 (AWS) or Azure Blob, configured as a discriminated union.
+- **Encryption**: Optional KMS key ARN (AWS) or Key Vault URL (Azure). Immutable once set.
+- **Status**: Tracks completion via `BackupCompleted` condition with reasons: `BackupInProgress`, `BackupSucceeded`, `BackupFailed`, `BackupRejected`, `EtcdUnhealthy`.
+- **Snapshot URL**: On success, `Status.SnapshotURL` contains the URL where the snapshot was uploaded.
+
+### Credential Handling
+
+During **backup**, the OADP plugin copies the Velero `BackupStorageLocation` credentials from the `openshift-adp` namespace to the HyperShift Operator namespace. The backup Job mounts this temporary Secret to authenticate against object storage. The Secret is cleaned up after the backup completes. Once the backup Job succeeds, the HyperShift Operator persists the snapshot URL to `HostedCluster.Status.LastSuccessfulEtcdBackupURL`. The OADP plugin then reads this status field and injects it as an annotation (`hypershift.openshift.io/etcd-snapshot-url`) on the HostedCluster and HostedControlPlane items in the Velero backup archive. This annotation is the mechanism that carries the snapshot URL through to the restore phase, since Velero strips status fields.
+
+During **restore**, no credential copying is needed. The plugin reads the `etcd-snapshot-url` annotation from the backed-up resources. For S3 URLs, the plugin generates a presigned HTTPS URL (1-hour expiry) using the BSL credentials. The presigned URL embeds temporary authentication, allowing the etcd init container to download the snapshot without direct access to credentials.
+
+### Conditions and Status
+
+| Resource | Condition / Field | Meaning |
+|----------|-------------------|---------|
+| `HCPEtcdBackup` | `BackupCompleted` | Tracks backup lifecycle (InProgress, Succeeded, Failed, Rejected, EtcdUnhealthy) |
+| `HostedControlPlane` | `EtcdSnapshotRestored` | Set to True after etcd is restored from snapshot |
+| `HostedControlPlane` | `EtcdBackupSucceeded` | Bubbled from HCPEtcdBackup, indicates most recent backup result |
+| `HostedCluster` | `Status.LastSuccessfulEtcdBackupURL` | Persists the last snapshot URL. Set by the HO controller after successful backup. Read by the OADP plugin to inject as annotation during backup. Survives HCPEtcdBackup CR deletion via retention |
+| `HostedCluster` | Annotation `etcd-snapshot-url` | Injected by OADP plugin during backup (from Status field). Read by OADP plugin during restore to set RestoreSnapshotURL |
+| `HostedCluster` | Annotation `restored-from-backup` | Set during restore, removed once `HostedClusterRestoredFromBackup` condition becomes True |
+
+## Guides
+
+### Backup Flow
+
+Step-by-step description of the backup process: how the OADP plugin triggers the etcd snapshot, how the HyperShift Operator executes it, and how the snapshot URL is persisted.
+
+### Restore Flow
+
+Step-by-step description of the restore process: how the OADP plugin injects the snapshot URL, how the Control Plane Operator restores etcd, and how the cluster recovers.
+
+
+---
+
+## Source: docs/content/how-to/disaster-recovery/etcd-snapshot-backup/restore-flow.md
+
+---
+title: Restore Flow
+---
+
+# Etcd Snapshot Restore Flow
+
+!!! warning "Tech Preview"
+
+    This feature requires the `HCPEtcdBackup` feature gate enabled in the HyperShift Operator.
+
+This page describes the end-to-end restore process when recovering a Hosted Control Plane from an etcd snapshot backup. The flow involves the OADP HyperShift plugin (URL injection), the Control Plane Operator (etcd restore), and the etcd init container (snapshot download and apply).
+
+## End-to-End Sequence
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Velero
+    participant Plugin as OADP Plugin
+    participant BSL as BackupStorageLocation
+    participant HC as HostedCluster
+    participant HCP as HostedControlPlane
+    participant CPO as Control Plane Operator
+    participant etcd as etcd StatefulSet
+    participant S3 as Object Storage
+
+    User->>Velero: Create Restore CR (from backup)
+
+    Velero->>Plugin: Execute(HostedCluster)
+    Plugin->>Plugin: Read etcd-snapshot-url annotation
+    Plugin->>BSL: Fetch credentials
+    Plugin->>Plugin: presignS3URL() - convert s3:// to HTTPS
+    Plugin->>HC: Inject RestoreSnapshotURL into Spec
+    Plugin->>HC: Add restored-from-backup annotation
+
+    Velero->>Plugin: Execute(HostedControlPlane)
+    Plugin->>Plugin: Read etcd-snapshot-url annotation
+    Plugin->>Plugin: presignS3URL()
+    Plugin->>HCP: Inject RestoreSnapshotURL into Spec
+
+    Velero->>Plugin: Execute(Pods)
+    Plugin-->>Velero: Skip all pods
+
+    Note over Velero: Restore completes
+
+    CPO->>CPO: Detect RestoreSnapshotURL set
+    CPO->>etcd: Inject etcd-init container
+
+    Note over etcd: etcd Pod starts with init container
+
+    etcd->>S3: Download snapshot from presigned URL
+    etcd->>etcd: Validate (check for XML error response)
+    etcd->>etcd: etcdutl/etcdctl snapshot restore
+    etcd->>etcd: Move restored data to /var/lib/data
+
+    Note over etcd: etcd starts with restored data
+
+    CPO->>CPO: Set EtcdSnapshotRestored = True
+    CPO->>etcd: Remove etcd-init container
+```
+
+## Step 1: Restore CR Creation
+
+The restore starts when the user runs the CLI command or creates a Velero `Restore` CR manually.
+
+**Using the CLI:**
+
+```bash
+hypershift create oadp-restore \
+  --hc-name my-hosted-cluster \
+  --hc-namespace clusters \
+  --name my-restore \
+  --from-backup my-backup
+```
+
+Or from a schedule (uses the latest successful backup):
+
+```bash
+hypershift create oadp-restore \
+  --hc-name my-hosted-cluster \
+  --hc-namespace clusters \
+  --name my-restore \
+  --from-schedule my-schedule
+```
+
+The CLI validates:
+
+1. Either `--from-backup` or `--from-schedule` is specified (mutually exclusive).
+2. The backup or schedule exists and has completed successfully.
+3. OADP components are ready.
+4. A `DataProtectionApplication` CR exists with status `Reconciled`.
+
+The generated Restore CR includes:
+
+- **Included namespaces**: HostedCluster and HostedControlPlane namespaces.
+- **Excluded resources**: Nodes, events, Velero CRs, CSI nodes, VolumeAttachments.
+- **Restore PVs**: `false` (etcd data comes from snapshot, not volume restore).
+- **Existing resource policy**: Configurable (`none` to skip existing, `update` to overwrite).
+- **Preserve node ports**: `true`.
+
+## Step 2: OADP Plugin Processes Restored Resources
+
+Velero reads the backed-up resources from the archive and invokes the plugin's `RestoreItemAction.Execute()` for each item.
+
+### HostedCluster
+
+1. **Backup lookup**: The plugin retrieves the associated Velero `Backup` object and validates that `IncludedNamespaces` is set.
+2. **Annotation reading**: Reads `hypershift.openshift.io/etcd-snapshot-url` annotation from the backed-up HostedCluster.
+3. **URL conversion**: If the URL uses the `s3://` scheme, converts it to a presigned HTTPS URL (see URL Presigning below).
+4. **Spec injection**: Sets `Spec.Etcd.Managed.Storage.RestoreSnapshotURL` to a single-element array containing the presigned URL.
+5. **Restore annotation**: Adds `hypershift.openshift.io/restored-from-backup` annotation.
+
+### HostedControlPlane
+
+Same flow as HostedCluster:
+
+1. Reads `hypershift.openshift.io/etcd-snapshot-url` annotation.
+2. Converts S3 URL to presigned HTTPS if needed.
+3. Injects into `Spec.Etcd.Managed.Storage.RestoreSnapshotURL`.
+
+### Pods
+
+All pods are skipped during restore (returned with `WithoutRestore()` flag). Pods are recreated by their parent workloads (Deployments, StatefulSets) after those are restored.
+
+### ClusterDeployment (Agent Platform)
+
+For the Agent platform, the plugin sets `Spec.PreserveOnDelete = true` to prevent unintended cluster cleanup during subsequent deletes.
+
+## Step 3: S3 URL Presigning
+
+When the snapshot URL uses the `s3://bucket/key` format, the OADP plugin converts it to a presigned HTTPS URL. This allows the etcd init container to download the snapshot without needing direct access to cloud credentials.
+
+**Presigning process:**
+
+```mermaid
+graph LR
+    A[s3://bucket/key] --> B{Parse URL}
+    B --> C[Fetch BSL from OADP namespace]
+    C --> D[Read BSL credential Secret]
+    D --> E[Parse AWS credentials<br/>AccessKeyID + SecretAccessKey]
+    E --> F[Generate SigV4 presigned URL<br/>1-hour expiry]
+    F --> G[https://bucket.s3.region.amazonaws.com/key?X-Amz-...]
+```
+
+**Required credentials in the BSL Secret:**
+
+```ini
+[default]
+aws_access_key_id = AKIA...
+aws_secret_access_key = ...
+aws_session_token = ...  # optional
+```
+
+The presigned URL has a **1-hour expiry**. The etcd init container must download the snapshot within this window. If the URL expires, the init container detects the error (S3 returns an XML error response) and exits with a clear error message.
+
+!!! note
+
+    Azure Blob URLs are already HTTPS and do not require presigning. The plugin passes them through unchanged.
+
+## Step 4: Etcd Snapshot Restore
+
+Once the `HostedControlPlane` is created with `RestoreSnapshotURL` set, the Control Plane Operator detects it and modifies the etcd `StatefulSet`.
+
+### 4.1 Init Container Injection
+
+The CPO checks two conditions:
+
+1. `RestoreSnapshotURL` is non-empty.
+2. `EtcdSnapshotRestored` condition is not yet `True`.
+
+If both are met, an `etcd-init` init container is injected into the etcd StatefulSet spec. The container receives the snapshot URL via environment variable `RESTORE_URL_ETCD`.
+
+### 4.2 Snapshot Download and Restore
+
+The `etcd-init` container runs the `etcd-init.sh` script, which executes the following steps:
+
+```
+1. Check if /var/lib/data is already populated
+   └─ If yes: skip (idempotent, data already restored)
+   └─ If no: proceed with restore
+
+2. Download snapshot from RESTORE_URL_ETCD via curl
+
+3. Validate the downloaded file
+   └─ Check first 5 bytes for "<?xml" prefix
+   └─ If XML detected: log error and exit 1
+      (indicates S3 error: object not found, URL expired, etc.)
+
+4. Detect etcd version and restore
+   ├─ etcd 3.6+ (OCP 4.21+): etcdutl snapshot restore
+   └─ etcd 3.5.x: etcdctl snapshot restore (ETCDCTL_API=3)
+
+5. Restore to staging directory
+   └─ Target: /var/lib/restore (not directly to /var/lib/data)
+
+6. Atomic swap
+   └─ rm -rf /var/lib/data
+   └─ mv /var/lib/restore /var/lib/data
+
+7. etcd starts normally with restored data
+```
+
+**Key safety mechanisms:**
+
+- **Idempotency**: If `/var/lib/data` is already populated (e.g. pod restarted after successful restore), the script skips the restore entirely.
+- **Staging directory**: Restoring to `/var/lib/restore` first and then moving prevents data corruption if the restore fails mid-write.
+- **XML error detection**: S3 returns XML error responses for missing objects, expired presigned URLs, or access denied. The script detects these and fails with a clear error instead of corrupting etcd with XML data.
+- **Version detection**: Automatically selects `etcdutl` (etcd 3.6+) or `etcdctl` (etcd 3.5.x) based on the available binaries.
+
+### 4.3 Post-Restore Reconciliation
+
+After the etcd pod starts successfully with restored data:
+
+1. The CPO sets the `EtcdSnapshotRestored` condition to `True` on the `HostedControlPlane`.
+2. On the next reconciliation loop, the CPO detects `EtcdSnapshotRestored = True` and removes the `etcd-init` container from the StatefulSet. This prevents the init container from running on subsequent pod restarts.
+3. The `HostedCluster` controller detects the `restored-from-backup` annotation and monitors the restore completion. Once the `HostedClusterRestoredFromBackup` condition becomes `True`, the annotation is removed.
+
+## Pre-Restore Checklist
+
+Before performing a restore, ensure:
+
+- [ ] No running pods or PVCs exist in the HostedControlPlane namespace (delete the HostedCluster and NodePools first if restoring on the same management cluster).
+- [ ] The Velero backup has `status.phase: Completed`.
+- [ ] OADP components are running and the DPA is reconciled.
+- [ ] For AWS: BSL credentials are valid and have permission to read the snapshot from S3.
+- [ ] For Agent platform: `InfraEnv` objects are preserved (do not delete them).
+- [ ] Review Disaster Recovery Prerequisites for service publishing strategy requirements.
+
+## Post-Restore Steps
+
+After the restore completes:
+
+1. **Verify etcd health**: Check that the etcd pods are running and the cluster is healthy.
+
+    ```bash
+    oc get pods -n clusters-<hc-name> -l app=etcd
+    ```
+
+2. **Check restore conditions**:
+
+    ```bash
+    oc get hostedcluster <hc-name> -n clusters -o jsonpath='{.status.conditions}' | jq '.[] | select(.type | test("Restore|Etcd"))'
+    ```
+
+3. **AWS OIDC fixup** (if applicable): After restoring to a different management cluster, the OIDC provider may need to be updated.
+
+    ```bash
+    hypershift fix dr-oidc-iam --hc-name <hc-name> --hc-namespace clusters
+    ```
+
+4. **Verify workloads**: Confirm that the hosted cluster's API server is accessible and workloads are running.
+
+    ```bash
+    oc --kubeconfig <hosted-cluster-kubeconfig> get nodes
+    oc --kubeconfig <hosted-cluster-kubeconfig> get clusteroperators
+    ```
+
+## Error Scenarios
+
+| Scenario | Symptom | Recovery |
+|----------|---------|----------|
+| Presigned URL expired (>1h) | etcd-init exits with error, logs show XML error response | Create a new restore from the same backup (generates fresh presigned URL) |
+| Snapshot file corrupted | etcdctl snapshot restore fails | The upload uses S3 CRC32 integrity checks at transport level. If corruption still occurs, restore from a different backup |
+| S3 bucket not accessible | curl download fails | Verify BSL credentials and network connectivity |
+| Existing data in etcd PVC | etcd-init skips restore | Delete the PVC to force a fresh restore, or verify the existing data is correct |
+| HostedCluster already exists with etcd data | etcd-init detects `/var/lib/data` is populated and skips restore | Delete the HostedCluster, NodePools, and etcd PVCs before restoring so the init container can write fresh data |
+| Missing `etcd-snapshot-url` annotation | RestoreSnapshotURL not injected, etcd starts empty | Verify the backup was created with `--use-etcd-snapshot` and completed successfully |
+
+## Platform-specific Considerations
+
+### AWS
+
+- Presigned URLs are generated using SigV4 with the BSL credentials.
+- Post-restore OIDC fixup may be required when restoring to a different management cluster.
+- Worker nodes will be reprovisioned (node readoption is not supported).
+
+### Azure
+
+- Snapshot URLs are already HTTPS (no presigning needed).
+- Worker nodes will be reprovisioned.
+
+### Agent (Bare Metal)
+
+- `ClusterDeployment.Spec.PreserveOnDelete` is set to `true` during restore.
+- `InfraEnv` objects and the Assisted Installer database must be preserved.
+- Node readoption is supported for OCP 4.19+ with MCE 2.9+ / ACM 2.14+.
+
+### KubeVirt
+
+- Restore is only supported on the same management cluster where the backup was created.
+- VMs are recreated after restore (not preserved from backup).
+- Worker nodes will be reprovisioned.
+
+
+---
+
 ## Source: docs/content/how-to/disaster-recovery/index.md
 
 ---
@@ -15911,6 +19070,9 @@ Updated procedures and enhanced features for OADP version 1.5.
 
 ### ETCD Recovery
 ETCD disaster recovery procedures for control plane data backup and restoration.
+
+### Etcd Snapshot Backup (Tech Preview)
+Alternative backup method using native etcd snapshots instead of volume snapshots. Requires the `HCPEtcdBackup` feature gate. Includes detailed backup and restore flow documentation.
 
 
 ---
@@ -17108,6 +20270,247 @@ go test ./test/integration/gcp_test.go -v
 
 ---
 
+## Source: docs/content/how-to/gcp/configure-image-registry.md
+
+# Configure Image Registry on GCP
+
+This guide explains how the OpenShift image registry works on GCP hosted clusters, how to verify it is functioning, and how to configure or disable it.
+
+## Overview
+
+GCP hosted clusters use Workload Identity Federation (WIF) to grant the image registry operator access to a Google Cloud Storage (GCS) bucket for storing container images. No long-lived credentials are stored — the operator uses short-lived tokens issued by the hosted cluster's OIDC provider.
+
+| Component | Name / Location | Purpose |
+|-----------|-----------------|---------|
+| GCP Service Account | `<infra-id>-image-registry@<project-id>.iam.gserviceaccount.com` | Identity that GCS bucket operations run as |
+| WIF credential secret | `installer-cloud-credentials` in `openshift-image-registry` | Federated credential JSON consumed by the registry operator |
+| Kubernetes service account | `cluster-image-registry-operator` in `openshift-image-registry` | Issues OIDC tokens exchanged for GCP access tokens |
+| GCS bucket | Auto-created by the registry operator | Stores container image layers and manifests |
+
+## Prerequisites
+
+- A running GCP hosted cluster with `oc` access to the guest cluster
+- The `image-registry` GCP service account created during IAM setup (see Create GCP IAM Resources)
+- The `--image-registry-service-account` flag provided when the cluster was created (see Create a GCP Hosted Cluster)
+
+## Default Behavior
+
+When a GCP hosted cluster starts up, the image registry is enabled automatically through a three-step flow:
+
+1. **Credential propagation** — The HyperShift control plane reads the `image-registry` GSA email from the `HostedControlPlane` spec and generates a WIF credential JSON. This credential is written to the `installer-cloud-credentials` secret in the `openshift-image-registry` namespace on the guest cluster.
+
+2. **Bucket creation** — The cluster image registry operator reads the WIF credentials and creates a GCS bucket. The bucket name is chosen automatically based on the cluster's infrastructure ID and region.
+
+3. **Registry available** — Once the bucket exists and the credentials are valid, the registry operator reports `Available=True` and the internal registry endpoint becomes active at `image-registry.openshift-image-registry.svc:5000`.
+
+No manual configuration is required when the cluster is created with the `--image-registry-service-account` flag.
+
+## Verification
+
+### Check ClusterOperator Status
+
+Verify the image registry operator is available:
+
+```bash
+KUBECONFIG=hosted-kubeconfig oc get clusteroperator image-registry
+```
+
+Expected output:
+
+```text
+NAME             VERSION   AVAILABLE   PROGRESSING   DEGRADED   SINCE   MESSAGE
+image-registry   4.18.0    True        False         False      5m
+```
+
+### Check Registry Configuration
+
+Inspect the registry operator configuration to see the GCS bucket that was created:
+
+```bash
+KUBECONFIG=hosted-kubeconfig oc get configs.imageregistry.operator.openshift.io cluster -o jsonpath='{.spec.storage}'
+```
+
+Expected output shows the GCS bucket:
+
+```json
+{"gcs":{"bucket":"<auto-generated-bucket-name>","region":"<region>"}}
+```
+
+### Check WIF Credentials
+
+Verify the WIF credential secret was propagated to the guest cluster:
+
+```bash
+KUBECONFIG=hosted-kubeconfig oc get secret installer-cloud-credentials \
+  -n openshift-image-registry -o jsonpath='{.data.service_account\.json}' | base64 -d | python3 -m json.tool
+```
+
+The decoded JSON should contain `"type": "external_account"` and reference your WIF pool and provider IDs, confirming that short-lived federated tokens are used rather than a service account key.
+
+## Advanced Configuration
+
+### Custom Bucket Name
+
+To use a specific GCS bucket name instead of the auto-generated one, patch the registry operator configuration after cluster creation:
+
+```bash
+KUBECONFIG=hosted-kubeconfig oc patch configs.imageregistry.operator.openshift.io cluster \
+  --type=merge \
+  --patch='{"spec":{"storage":{"gcs":{"bucket":"<your-bucket-name>","region":"<region>"}}}}'
+```
+
+!!! note "Bucket must exist"
+
+    The bucket must already exist and the `image-registry` GSA must have `Storage Admin` permissions on it. The registry operator will not create a bucket when one is explicitly specified.
+
+### Using a Pre-Existing Bucket
+
+If your organization requires using a pre-existing GCS bucket (for example, to apply custom lifecycle policies or retention rules):
+
+1. Create the bucket in the hosted cluster GCP project:
+
+    ```bash
+    gsutil mb -p <project-id> -l <region> gs://<your-bucket-name>
+    ```
+
+2. Grant the `image-registry` GSA `Storage Admin` access:
+
+    ```bash
+    gsutil iam ch \
+      serviceAccount:<infra-id>-image-registry@<project-id>.iam.gserviceaccount.com:roles/storage.admin \
+      gs://<your-bucket-name>
+    ```
+
+3. Configure the registry operator to use the bucket:
+
+    ```bash
+    KUBECONFIG=hosted-kubeconfig oc patch configs.imageregistry.operator.openshift.io cluster \
+      --type=merge \
+      --patch='{"spec":{"storage":{"gcs":{"bucket":"<your-bucket-name>","region":"<region>"}}}}'
+    ```
+
+### Disabling the Image Registry
+
+The image registry can be disabled via the `ImageRegistry` capability on the `HostedCluster`. When disabled, the registry operator is not deployed and no GCS bucket is created.
+
+To disable the image registry at cluster creation time, add `--capabilities-disabled=ImageRegistry` to the `hypershift create cluster gcp` command (refer to Create a GCP Hosted Cluster for the full command).
+
+To disable the registry on a running cluster, patch the `HostedCluster` resource on the management cluster:
+
+```bash
+oc patch hostedcluster <cluster-name> -n <namespace> \
+  --type=merge \
+  --patch='{"spec":{"capabilities":{"disabled":["ImageRegistry"]}}}'
+```
+
+!!! note
+
+    This merge patch replaces the entire `spec.capabilities.disabled` list. If your cluster already has other capabilities disabled, include them in the patch to avoid re-enabling them.
+
+!!! warning "Data loss"
+
+    Disabling the image registry does not delete the GCS bucket or its contents. However, any images stored in the registry will become inaccessible to the cluster while the registry is disabled.
+
+## Troubleshooting
+
+### Registry Operator Not Available
+
+If `oc get clusteroperator image-registry` shows `Available=False`:
+
+1. Check the registry operator logs:
+
+    ```bash
+    KUBECONFIG=hosted-kubeconfig oc logs -n openshift-image-registry \
+      deployment/cluster-image-registry-operator
+    ```
+
+2. Check the `installer-cloud-credentials` secret exists:
+
+    ```bash
+    KUBECONFIG=hosted-kubeconfig oc get secret installer-cloud-credentials \
+      -n openshift-image-registry
+    ```
+
+    If the secret is missing, check the control plane namespace on the management cluster:
+
+    ```bash
+    oc get events -n <namespace>-<cluster-name> | grep image-registry
+    ```
+
+### GCS Bucket Creation Fails (403 Forbidden)
+
+A 403 error on bucket creation means the `image-registry` GSA does not have sufficient permissions.
+
+**Check that the GSA has the `Storage Admin` role:**
+
+```bash
+gcloud projects get-iam-policy <project-id> \
+  --flatten="bindings[].members" \
+  --filter="bindings.members:<infra-id>-image-registry@<project-id>.iam.gserviceaccount.com" \
+  --format="table(bindings.role)"
+```
+
+The output should include `roles/storage.admin`. If it does not, recreate the IAM resources using `hypershift create iam gcp` or grant the role manually:
+
+```bash
+gcloud projects add-iam-policy-binding <project-id> \
+  --member="serviceAccount:<infra-id>-image-registry@<project-id>.iam.gserviceaccount.com" \
+  --role="roles/storage.admin"
+```
+
+### WIF Authentication Errors
+
+If the registry operator logs show token exchange errors (e.g., `invalid_grant` or `audience mismatch`):
+
+1. Verify the WIF credential references the correct pool and provider:
+
+    ```bash
+    KUBECONFIG=hosted-kubeconfig oc get secret installer-cloud-credentials \
+      -n openshift-image-registry -o jsonpath='{.data.service_account\.json}' | base64 -d
+    ```
+
+    Confirm the `audience` field matches the WIF provider URL:
+    `//iam.googleapis.com/projects/<project-number>/locations/global/workloadIdentityPools/<pool-id>/providers/<provider-id>`
+
+2. Verify the WIF provider trust configuration allows the Kubernetes service account:
+
+    ```bash
+    gcloud iam workload-identity-pools providers describe <provider-id> \
+      --workload-identity-pool=<pool-id> \
+      --project=<project-id> \
+      --location=global
+    ```
+
+### Bucket Already Exists (409 Conflict)
+
+GCS bucket names are globally unique. If the auto-generated name conflicts with an existing bucket, the registry operator will log a 409 error.
+
+Configure the registry to use a different bucket name:
+
+```bash
+KUBECONFIG=hosted-kubeconfig oc patch configs.imageregistry.operator.openshift.io cluster \
+  --type=merge \
+  --patch='{"spec":{"storage":{"gcs":{"bucket":"<unique-bucket-name>","region":"<region>"}}}}'
+```
+
+Then create the bucket and grant permissions as described in Using a Pre-Existing Bucket.
+
+### Storage Quota Exceeded
+
+If the GCP project has a storage quota that limits GCS bucket creation or capacity, check current quota
+usage in the GCP Console Cloud Storage quotas page
+and request an increase if needed, or contact your GCP administrator.
+
+## Related Documentation
+
+- Create GCP IAM Resources — Create the `image-registry` GSA and WIF bindings
+- Create a GCP Hosted Cluster — Full cluster creation with the `--image-registry-service-account` flag
+- GCP Workload Identity Federation — Upstream GCP WIF documentation
+- OpenShift Image Registry Operator — Upstream registry operator documentation
+
+
+---
+
 ## Source: docs/content/how-to/gcp/create-gcp-hosted-cluster.md
 
 # Create a GCP Hosted Cluster
@@ -17145,6 +20548,7 @@ hypershift create cluster gcp \
   --cloud-controller-service-account=<cloud-controller-sa-email> \
   --storage-service-account=<storage-sa-email> \
   --image-registry-service-account=<image-registry-sa-email> \
+  --network-service-account=<network-sa-email> \
   --service-account-signing-key-path=<path-to-sa-signer.key> \
   --oidc-issuer-url=<oidc-issuer-url> \
   --base-domain=<your-dns-domain> \
@@ -17184,6 +20588,7 @@ hypershift create cluster gcp \
 | `--cloud-controller-service-account` | Yes | Cloud Controller Manager SA email |
 | `--storage-service-account` | Yes | GCP PD CSI Driver SA email |
 | `--image-registry-service-account` | Yes | Image Registry Operator SA email |
+| `--network-service-account` | Yes | Cloud Network Config Controller SA email |
 | `--service-account-signing-key-path` | Yes | Path to RSA private key for OIDC token signing |
 | `--oidc-issuer-url` | Yes | OIDC issuer URL |
 | `--node-pool-replicas` | Yes | Number of worker nodes (default: 0) |
@@ -17222,6 +20627,45 @@ Verify access:
 KUBECONFIG=hosted-kubeconfig oc get nodes
 KUBECONFIG=hosted-kubeconfig oc get clusterversion
 ```
+
+## Image Registry
+
+GCP hosted clusters automatically configure the OpenShift image registry using Workload Identity Federation (WIF). The `--image-registry-service-account` flag passed at cluster creation supplies the GCP service account (GSA) that the registry operator uses to access GCS.
+
+The flow is:
+
+1. The HyperShift control plane generates a WIF credential for the `image-registry` GSA and writes it to the `installer-cloud-credentials` secret in the `openshift-image-registry` namespace.
+2. The cluster image registry operator reads the credential and creates a GCS bucket in the hosted cluster project.
+3. The registry becomes available at `image-registry.openshift-image-registry.svc:5000`.
+
+### Verify Registry Status
+
+```bash
+KUBECONFIG=hosted-kubeconfig oc get clusteroperator image-registry
+```
+
+The `AVAILABLE` column should be `True` within a few minutes of nodes joining.
+
+Inspect the GCS bucket chosen by the registry operator:
+
+```bash
+KUBECONFIG=hosted-kubeconfig oc get configs.imageregistry.operator.openshift.io cluster \
+  -o jsonpath='{.spec.storage}'
+```
+
+### Disable the Image Registry
+
+Add `--capabilities-disabled=ImageRegistry` to the `hypershift create cluster gcp` command to skip deploying the registry operator and suppress GCS bucket creation.
+
+To disable the registry on a running cluster, patch the `HostedCluster` resource:
+
+```bash
+oc patch hostedcluster <cluster-name> -n <namespace> \
+  --type=merge \
+  --patch='{"spec":{"capabilities":{"disabled":["ImageRegistry"]}}}'
+```
+
+For advanced scenarios (custom bucket, pre-existing bucket, troubleshooting WIF auth), see Configure Image Registry on GCP.
 
 ## Destroy Hosted Cluster
 
@@ -17269,6 +20713,8 @@ oc get nodepool -n <namespace> -o yaml
 - **WIF validation fails** — Ensure all service account emails match the output from `create iam gcp`
 - **PSC endpoint not available** — Verify the operator has WIF credentials and the PSC subnet exists
 - **Nodes not joining** — Check that the boot image is available and the hosted cluster project has compute API enabled
+- **Image registry operator not available** — Confirm the `installer-cloud-credentials` secret exists in `openshift-image-registry` and the WIF credential references the correct pool/provider; see Configure Image Registry on GCP for details
+- **GCS bucket creation fails (403)** — The `image-registry` GSA is missing `roles/storage.admin`; grant it with `gcloud projects add-iam-policy-binding` or re-run `hypershift create iam gcp`
 
 
 ---
@@ -17335,6 +20781,7 @@ The `hypershift create iam gcp` command creates WIF resources in the hosted clus
   - `cloud-controller` — Cloud Controller Manager (load balancer admin, security admin, compute viewer)
   - `storage` — GCP PD CSI Driver (storage admin, instance admin)
   - `image-registry` — Image Registry Operator (storage admin)
+  - `cloud-network` — Cloud Network Config Controller (instance admin, network user)
 
 ```bash
 hypershift create iam gcp \
@@ -17385,7 +20832,8 @@ The command outputs JSON with the WIF configuration:
     "nodepool-mgmt": "my-cluster-nodepool-mgmt@my-hc-project.iam.gserviceaccount.com",
     "cloud-controller": "my-cluster-cloud-controller@my-hc-project.iam.gserviceaccount.com",
     "gcp-pd-csi": "my-cluster-gcp-pd-csi@my-hc-project.iam.gserviceaccount.com",
-    "image-registry": "my-cluster-image-registry@my-hc-project.iam.gserviceaccount.com"
+    "image-registry": "my-cluster-image-registry@my-hc-project.iam.gserviceaccount.com",
+    "cloud-network": "my-cluster-cloud-network@my-hc-project.iam.gserviceaccount.com"
   }
 }
 ```
@@ -17597,6 +21045,7 @@ GCP hosted clusters use a **two-project model** that mirrors the production arch
 - Create GCP Infrastructure — Create network infrastructure (VPC, subnet)
 - Create GCP IAM Resources — Create WIF pool, OIDC provider, and service accounts
 - Create a GCP Hosted Cluster — Deploy your first hosted cluster
+- Configure Image Registry — Verify, configure, or troubleshoot the GCS-backed image registry
 - E2E GKE CI Job — CI job for validating GCP platform changes
 
 ## Prerequisites
@@ -18397,6 +21846,324 @@ hcp create cluster kubevirt \
 
 ---
 
+## Source: docs/content/how-to/kubevirt/configuring-vm-with-jsonpatch.md
+
+# Configuring KubeVirt VMs with JSON Patches
+
+HyperShift provides a JSON patch mechanism that allows advanced customization of
+the KubeVirt VirtualMachine template. This is useful when you need to configure VM
+properties that are not directly exposed through the NodePool API, such as node
+affinity, tolerations, or additional network interfaces.
+
+## Overview
+
+The `hypershift.openshift.io/kubevirt-vm-jsonpatch` annotation accepts a JSON
+array of RFC 6902 JSON Patch
+operations. The annotation can be set on either the `HostedCluster` or the
+`NodePool` resource (or both). When set on both, the `HostedCluster` patches are
+applied first and the `NodePool` patches are applied second, meaning NodePool
+patches take precedence for the same path.
+
+Each patch operation is an object with the following fields:
+
+| Field   | Description                                                         | Required                       |
+|---------|---------------------------------------------------------------------|--------------------------------|
+| `op`    | The operation to perform: `add`, `replace`, `remove`, `move`, `copy`, `test` | Yes                            |
+| `path`  | A JSON Pointer path into the `VirtualMachineTemplateSpec`           | Yes                            |
+| `from`  | Source JSON Pointer path (used by `move` and `copy`)                | Yes (`move`, `copy`)           |
+| `value` | The value to use for the operation                                  | Yes (`add`, `replace`, `test`) |
+
+The `path` field targets the
+VirtualMachineTemplateSpec structure. For
+example, the path `/spec/template/spec/affinity` refers to the VM instance's
+affinity configuration.
+
+!!! note
+
+    HyperShift's `add` operation automatically creates intermediate path elements
+    if they do not exist. This behavior differs from RFC 6902, which requires
+    parent paths to exist. You can add deeply nested fields without ensuring
+    parent objects are present; this convenience is specific to HyperShift's
+    implementation (`EnsurePathExistsOnAdd` is enabled in the underlying
+    `evanphx/json-patch` library) and may not be portable to other JSON Patch
+    tools.
+
+## Configuring Node Affinity
+
+By default, HyperShift configures either `PodAntiAffinity` or
+`TopologySpreadConstraints` on KubeVirt VMs to spread them across nodes. However,
+the NodePool API does not expose a `NodeAffinity` field. To schedule VMs on
+specific nodes based on labels, you can use the JSON patch annotation to add node
+affinity rules.
+
+!!! note
+
+    When adding node affinity, use the `add` operation on the
+    `/spec/template/spec/affinity/nodeAffinity` sub-path rather than replacing
+    the entire `/spec/template/spec/affinity` object. Replacing the full affinity
+    object would remove the default pod anti-affinity or topology spread
+    constraints that HyperShift sets to distribute VMs across nodes.
+
+### Required Node Affinity
+
+The following example schedules VMs only on infrastructure nodes labeled with
+`node-type=kubevirt-worker`. This uses `requiredDuringSchedulingIgnoredDuringExecution`
+to enforce strict placement.
+
+```yaml linenums="1"
+apiVersion: hypershift.openshift.io/v1beta1
+kind: NodePool
+metadata:
+  name: example
+  namespace: clusters
+  annotations:
+    hypershift.openshift.io/kubevirt-vm-jsonpatch: |
+      [
+        {
+          "op": "add",
+          "path": "/spec/template/spec/affinity/nodeAffinity/requiredDuringSchedulingIgnoredDuringExecution",
+          "value": {
+            "nodeSelectorTerms": [
+              {
+                "matchExpressions": [
+                  {
+                    "key": "node-type",
+                    "operator": "In",
+                    "values": ["kubevirt-worker"]
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+spec:
+  clusterName: example
+  replicas: 2
+  platform:
+    kubevirt:
+      compute:
+        cores: 4
+        memory: 8Gi
+      rootVolume:
+        persistent:
+          size: 32Gi
+        type: Persistent
+    type: KubeVirt
+```
+
+You can also apply the annotation to an existing NodePool using `oc annotate`:
+
+```shell linenums="1"
+oc annotate nodepool -n clusters example \
+  hypershift.openshift.io/kubevirt-vm-jsonpatch='[{"op":"add","path":"/spec/template/spec/affinity/nodeAffinity/requiredDuringSchedulingIgnoredDuringExecution","value":{"nodeSelectorTerms":[{"matchExpressions":[{"key":"node-type","operator":"In","values":["kubevirt-worker"]}]}]}}]'
+```
+
+### Preferred Node Affinity
+
+The following example uses `preferredDuringSchedulingIgnoredDuringExecution` to
+express a preference for nodes with the label `gpu=true`, without strictly
+requiring it. The `weight` field (1-100) determines the priority of this
+preference relative to other scheduling constraints.
+
+```yaml linenums="1"
+apiVersion: hypershift.openshift.io/v1beta1
+kind: NodePool
+metadata:
+  name: example
+  namespace: clusters
+  annotations:
+    hypershift.openshift.io/kubevirt-vm-jsonpatch: |
+      [
+        {
+          "op": "add",
+          "path": "/spec/template/spec/affinity/nodeAffinity/preferredDuringSchedulingIgnoredDuringExecution",
+          "value": [
+            {
+              "weight": 100,
+              "preference": {
+                "matchExpressions": [
+                  {
+                    "key": "gpu",
+                    "operator": "In",
+                    "values": ["true"]
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+spec:
+  clusterName: example
+  replicas: 2
+  platform:
+    kubevirt:
+      compute:
+        cores: 4
+        memory: 8Gi
+      rootVolume:
+        persistent:
+          size: 32Gi
+        type: Persistent
+    type: KubeVirt
+```
+
+### Combining Required and Preferred Affinity
+
+You can combine both required and preferred node affinity rules in a single
+annotation by including multiple patch operations:
+
+```yaml linenums="1"
+metadata:
+  annotations:
+    hypershift.openshift.io/kubevirt-vm-jsonpatch: |
+      [
+        {
+          "op": "add",
+          "path": "/spec/template/spec/affinity/nodeAffinity/requiredDuringSchedulingIgnoredDuringExecution",
+          "value": {
+            "nodeSelectorTerms": [
+              {
+                "matchExpressions": [
+                  {
+                    "key": "node-role",
+                    "operator": "In",
+                    "values": ["compute"]
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "op": "add",
+          "path": "/spec/template/spec/affinity/nodeAffinity/preferredDuringSchedulingIgnoredDuringExecution",
+          "value": [
+            {
+              "weight": 50,
+              "preference": {
+                "matchExpressions": [
+                  {
+                    "key": "zone",
+                    "operator": "In",
+                    "values": ["us-east-1a"]
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+```
+
+## Applying Patches at the HostedCluster Level
+
+When the same node affinity rule should apply to all NodePools, you can set the
+annotation on the `HostedCluster` resource instead of each individual NodePool:
+
+```yaml linenums="1"
+apiVersion: hypershift.openshift.io/v1beta1
+kind: HostedCluster
+metadata:
+  name: example
+  namespace: clusters
+  annotations:
+    hypershift.openshift.io/kubevirt-vm-jsonpatch: |
+      [
+        {
+          "op": "add",
+          "path": "/spec/template/spec/affinity/nodeAffinity/requiredDuringSchedulingIgnoredDuringExecution",
+          "value": {
+            "nodeSelectorTerms": [
+              {
+                "matchExpressions": [
+                  {
+                    "key": "node-type",
+                    "operator": "In",
+                    "values": ["kubevirt-worker"]
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+spec:
+  # ... HostedCluster spec
+```
+
+## Additional JSON Patch Examples
+
+The JSON patch annotation is not limited to node affinity. Below are additional
+examples showing other use cases.
+
+### Replacing CPU Cores
+
+```yaml linenums="1"
+metadata:
+  annotations:
+    hypershift.openshift.io/kubevirt-vm-jsonpatch: |
+      [
+        {
+          "op": "replace",
+          "path": "/spec/template/spec/domain/cpu/cores",
+          "value": 8
+        }
+      ]
+```
+
+### Adding a Secondary Multus Network
+
+```yaml linenums="1"
+metadata:
+  annotations:
+    hypershift.openshift.io/kubevirt-vm-jsonpatch: |
+      [
+        {
+          "op": "add",
+          "path": "/spec/template/spec/networks/-",
+          "value": {
+            "name": "secondary-net",
+            "multus": {
+              "networkName": "my-namespace/my-nad"
+            }
+          }
+        },
+        {
+          "op": "add",
+          "path": "/spec/template/spec/domain/devices/interfaces/-",
+          "value": {
+            "name": "secondary-net",
+            "bridge": {}
+          }
+        }
+      ]
+```
+
+## Important Considerations
+
+- **Validation**: The annotation value is validated by admission webhooks during
+  create and update operations. Invalid JSON, missing required fields, or
+  unsupported operations will be rejected.
+
+- **Preserve default affinity**: HyperShift sets `PodAntiAffinity` or
+  `TopologySpreadConstraints` by default to distribute VMs across nodes. Always
+  add node affinity at the `/spec/template/spec/affinity/nodeAffinity` sub-path
+  rather than replacing the entire affinity object, to avoid removing these
+  defaults.
+
+- **Precedence**: When the annotation is set on both a `HostedCluster` and a
+  `NodePool`, the `HostedCluster` patches are applied first. NodePool patches
+  can override values previously set by HostedCluster patches.
+
+- **Path syntax**: Paths follow the JSON Pointer (RFC 6901)
+  specification. Special characters in keys must be escaped: `~0` for `~` and
+  `~1` for `/`.
+
+
+---
+
 ## Source: docs/content/how-to/kubevirt/create-kubevirt-cluster.md
 
 # Create a Kubevirt cluster
@@ -18779,13 +22546,19 @@ The user or service account used in the provided kubeconfig should have full per
 * `endpointslices`
 * `endpointslices/restricted`
 * `routes`
+* `networkpolicies`
 The user or service account used in the provided kubeconfig should also have get/create/delete permissions over the following resources:
 * `volumesnapshots`
-As well as get permission for:
+As well as get/create/update permission for:
+* `events`
+And get permission for:
 * `persistentvolumeclaims`
 
 All of these permissions are needed only on the target namespace on the infra cluster (passed through the `--infra-namespace` command-line argument).
-This can be achieved by binding the following Role to the user used in the external infra kubeconfig:
+
+In addition, the HyperShift operator reads the infrastructure cluster's network configuration (`networks.config.openshift.io`) to build a virt-launcher NetworkPolicy that blocks egress to the infra cluster's internal pod/service networks. This resource is **cluster-scoped**, so it requires a separate ClusterRole and ClusterRoleBinding (see below). If this permission is not granted, the NetworkPolicy is still created but without CIDR-based egress blocking, and a `ValidKubeVirtInfraNetworkPolicyRBAC=False` condition is set on the HostedCluster along with a warning event in the infrastructure cluster namespace.
+
+This can be achieved by binding the following Role **and** ClusterRole to the user used in the external infra kubeconfig:
 ```yaml
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
@@ -18834,6 +22607,20 @@ rules:
     verbs:
       - '*'
   - apiGroups:
+      - networking.k8s.io
+    resources:
+      - networkpolicies
+    verbs:
+      - '*'
+  - apiGroups:
+      - ''
+    resources:
+      - events
+    verbs:
+      - get
+      - create
+      - update
+  - apiGroups:
     - snapshot.storage.k8s.io
     resources:
     - volumesnapshots
@@ -18849,6 +22636,35 @@ rules:
     - get
 ```
 
+For full virt-launcher network isolation, also create a ClusterRole and ClusterRoleBinding
+to allow reading the infrastructure cluster's network configuration:
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kv-external-infra-network-reader
+rules:
+  - apiGroups:
+      - config.openshift.io
+    resources:
+      - networks
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kv-external-infra-network-reader-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kv-external-infra-network-reader
+subjects:
+  - kind: ServiceAccount
+    name: hcp-infra-sa
+    namespace: clusters-example
+```
+
 
 ---
 
@@ -18858,13 +22674,28 @@ rules:
 
 ## Overview
 
-The Global Pull Secret functionality enables Hosted Cluster administrators to include additional pull secrets for accessing container images from private registries without requiring assistance from the Management Cluster administrator. This feature allows you to merge your custom pull secret with the original HostedCluster pull secret, making it available to all nodes in the cluster.
+The Global Pull Secret functionality enables Hosted Cluster administrators to include additional pull secrets for accessing container images from private registries without requiring assistance from the Management Cluster administrator. This feature allows you to merge your custom pull secret with the original HostedCluster pull secret, making it available to nodes that run the sync DaemonSet.
 
-The implementation uses a DaemonSet approach that automatically detects when you create an `additional-pull-secret` in the `kube-system` namespace of your DataPlane (Hosted Cluster). The system then merges this secret with the original pull secret and deploys the merged result to all nodes via a DaemonSet that updates the kubelet configuration.
+The implementation uses a DaemonSet that updates kubelet pull credentials on the node. The pull secret referenced by **`HostedCluster.spec.pullSecret`** is always copied from the HostedControlPlane into the guest cluster as the `original-pull-secret` Secret in `kube-system`. The `sync-global-pullsecret` process writes that content to `/var/lib/kubelet/config.json` on **eligible** worker nodes (see Platform and NodePool eligibility), even if you **never** create `additional-pull-secret`. In that baseline case there is no merge step: the kubelet file is kept aligned with the HostedCluster pull secret that HCCO reconciles into the data plane.
+
+When you **do** create an `additional-pull-secret` in the `kube-system` namespace of your DataPlane (Hosted Cluster), the system merges it with the original HostedCluster pull secret and deploys the merged result via the same DaemonSet path (still preferring the original secret where registry entries conflict).
 
 !!! note
 
-    This feature is designed to work autonomously - once you create the additional pull secret, the system automatically handles the rest without requiring Management Cluster administrator intervention.
+    This feature is designed to work autonomously. With only `HostedCluster.spec.pullSecret`, the Hosted Cluster Config Operator (HCCO) still reconciles `original-pull-secret` and the DaemonSet object in the guest; sync pods run only on eligible nodes. Creating `additional-pull-secret` is optional and only needed to add or layer registry credentials beyond the HostedCluster pull secret.
+
+## Platform and NodePool eligibility
+
+HCCO reconciles Global Pull Secret resources for **every** hosted cluster platform: it always maintains `kube-system/original-pull-secret` (and optional `global-pull-secret`), RBAC, and the `global-pull-secret-syncer` DaemonSet **object** in the data plane.
+
+The DaemonSet pod template requires nodes to have the label **`hypershift.openshift.io/nodepool-globalps-enabled=true`**. Today the HyperShift operator sets that label on **Machines** (and HCCO propagates it to **Nodes**) only for:
+
+- **AWS** and **Azure** NodePools, and  
+- the **Replace** upgrade strategy (`MachineDeployment` path).
+
+It does **not** set the label for **InPlace** NodePools (to avoid conflicting with Machine Config Daemon on kubelet config), or for **Replace** on other platforms such as **KubeVirt** (and other providers) in the current implementation—those workers therefore typically have **no** Global Pull Secret sync pods unless something else applies the label.
+
+For platforms without sync pods, pull credentials still come from **ignition/bootstrap** and from in-cluster Secrets (for example `openshift-config/pull-secret`); kubelet on-disk config is not updated by this DaemonSet on those nodes.
 
 ## Adding your Pull Secret
 
@@ -18922,8 +22753,8 @@ After creating the secret, the system will automatically:
 
 1. Validate the secret format
 2. Merge it with the original pull secret
-3. Deploy a DaemonSet to all nodes
-4. Update the kubelet configuration on each node
+3. Ensure the DaemonSet is present in the guest cluster
+4. Update kubelet configuration on **eligible** worker nodes (see Platform and NodePool eligibility)
 
 You can verify the deployment by checking:
 
@@ -18942,42 +22773,45 @@ kubectl get pods -n kube-system -l name=global-pull-secret-syncer
 
 The Global Pull Secret functionality operates through a multi-component system:
 
-### Automatic Detection
-- The Hosted Cluster Config Operator (HCCO) continuously monitors the `kube-system` namespace
-- When it detects the creation of `additional-pull-secret`, it triggers the reconciliation process
+### Automatic detection and baseline sync
+- The Hosted Cluster Config Operator (HCCO) continuously reconciles Global Pull Secret resources and watches Secrets in the `kube-system` namespace of the data plane.
+- On every reconcile, HCCO copies the HostedControlPlane pull secret (sourced from **`HostedCluster.spec.pullSecret`**) into `kube-system/original-pull-secret` so the DaemonSet can mount it on the node.
+- If `additional-pull-secret` is **not** present, HCCO removes the `global-pull-secret` Secret (if it existed) and the DaemonSet syncs **only** the HostedCluster pull secret copy into `/var/lib/kubelet/config.json` on eligible nodes.
+- When `additional-pull-secret` **is** present, reconciliation additionally validates and merges it with the HostedCluster pull secret.
 
-### Validation and Merging
-- The system validates that your secret contains a proper DockerConfigJSON format
-- It retrieves the original pull secret from the HostedControlPlane
-- Your additional pull secret is merged with the original one
-- **If there are conflicting registry entries, the original pull secret takes precedence** (the additional pull secret entry is ignored for conflicting registries)
-- The system supports namespace-specific registry entries (e.g., `quay.io/namespace`) for better credential specificity
+### Validation and merging (optional additional secret)
+- When `additional-pull-secret` exists, the system validates that it contains a proper DockerConfigJSON format.
+- It retrieves the original pull secret from the HostedControlPlane (same content as `HostedCluster.spec.pullSecret`).
+- Your additional pull secret is merged with the original one.
+- **If there are conflicting registry entries, the original pull secret takes precedence** (the additional pull secret entry is ignored for conflicting registries).
+- The system supports namespace-specific registry entries (e.g., `quay.io/namespace`) for better credential specificity.
 
-### Deployment Process
-- A `global-pull-secret` is created in the `kube-system` namespace containing the merged result
+### Deployment process
+- When merging is active, a `global-pull-secret` is created in the `kube-system` namespace containing the merged result. If there is no additional secret, this Secret is absent and the syncer uses `original-pull-secret` only.
 - RBAC resources (ServiceAccount, Role, RoleBinding) are created for the DaemonSet in both `kube-system` and `openshift-config` namespaces
 - We use Role and RoleBinding in both namespaces to access secrets in `kube-system` and `openshift-config` namespaces
 - A DaemonSet named `global-pull-secret-syncer` is deployed to eligible nodes
 
-!!! warning "NodePool InPlace Strategy Restriction"
+!!! warning "InPlace and unsupported platforms"
 
-    The Global Pull Secret DaemonSet is **not deployed** to nodes that belong to NodePools using the **InPlace upgrade strategy**. This restriction prevents conflicts between the DaemonSet's modifications to `/var/lib/kubelet/config.json` and the Machine Config Daemon (MCD) during InPlace upgrades.
+    **InPlace NodePools:** workers are intentionally **not** labeled `hypershift.openshift.io/nodepool-globalps-enabled`, so the Global Pull Secret sync **pods do not schedule** there. That avoids conflicts between edits to `/var/lib/kubelet/config.json` and the Machine Config Daemon (MCD).
 
-    - **Nodes with Replace strategy**: ✅ Receive Global Pull Secret DaemonSet
-    - **Nodes with InPlace strategy**: ❌ Do not receive Global Pull Secret DaemonSet
+    **AWS and Azure, Replace:** workers **are** labeled (via Machine → Node propagation), so sync pods **can** run and reconcile kubelet pull configuration from `original-pull-secret` / `global-pull-secret`.
 
-    This ensures that MCD operations during InPlace upgrades do not fail due to unexpected changes in kubelet configuration files.
+    **Other platforms (for example KubeVirt, GCP, Agent, …):** the DaemonSet object still exists in `kube-system`, but nodes usually **lack** the selector label, so you will typically see **no** (or very few) sync pods unless you set that label yourself.
 
-### Node-Level Synchronization
-- Each DaemonSet pod runs a controller that watches the secrets under kube-system namespace
-- When changes are detected, it updates `/var/lib/kubelet/config.json` on the node
+    See Platform and NodePool eligibility for the full picture.
+
+### Node-level synchronization
+- Each DaemonSet pod runs `sync-global-pullsecret`, which periodically reads the mounted pull secret files (`global-pull-secret` when present, otherwise `original-pull-secret`, which holds the **`HostedCluster.spec.pullSecret`** payload reconciled by HCCO).
+- When the desired content differs from `/var/lib/kubelet/config.json`, it updates the file on the node
 - The kubelet service is restarted via DBus to apply the new configuration
 - If the restart fails after 3 attempts, the system rolls back the file changes
 
-### Automatic Cleanup
-- If you delete the `additional-pull-secret`, the HCCO automatically removes the `global-pull-secret` secret
-- The system reverts to using only the original pull secret from the HostedControlPlane
-- The DaemonSet continues running but now syncs only the original pull secret to nodes
+### Automatic cleanup
+- If you delete the `additional-pull-secret`, the HCCO automatically removes the `global-pull-secret` secret.
+- The system reverts to syncing **only** the HostedCluster pull secret (via `original-pull-secret`, still sourced from the HostedControlPlane).
+- The DaemonSet continues to run on eligible nodes and keeps `/var/lib/kubelet/config.json` aligned with that HostedCluster pull secret.
 
 ## Registry Precedence and Conflict Resolution
 
@@ -19049,20 +22883,18 @@ The implementation consists of several key components working together:
    - Handles validation of user-provided pull secrets
    - Manages the merging logic between original and additional pull secrets
    - Creates and manages RBAC resources
-   - Deploys and manages the DaemonSet
-   - **Node eligibility assessment**: Labels nodes from InPlace NodePools and configures DaemonSet scheduling restrictions
+   - Deploys and manages the DaemonSet in Nodes labeled with `hypershift.openshift.io/nodepool-globalps-enabled=true`
 
 2. **Sync Global Pull Secret Command** (`sync-global-pullsecret` package)
-   - Runs as a DaemonSet on each node
-   - Watches for changes to the `global-pull-secret` in `kube-system` namespace
-   - Accesses the original `pull-secret` in `openshift-config` namespace
-   - Updates the kubelet configuration file
+   - Runs in the DaemonSet pod on eligible nodes
+   - Reads mounted Docker config JSON from `global-pull-secret` when that volume exists; otherwise uses `original-pull-secret` (the copy of **`HostedCluster.spec.pullSecret`** reconciled into `kube-system`)
+   - Updates `/var/lib/kubelet/config.json` on the host
    - Manages kubelet service restarts via DBus
 
-3. **Hosted Cluster Config Operator Integration**
-   - Monitors for the presence of `additional-pull-secret`
-   - Orchestrates the entire process
-   - Handles cleanup when the secret is removed
+3. **Hosted Cluster Config Operator integration**
+   - Reconciles `original-pull-secret` on every pass from the HostedControlPlane pull secret (`HostedCluster.spec.pullSecret`)
+   - When `additional-pull-secret` exists, validates, merges, and reconciles `global-pull-secret`; when it does not, removes `global-pull-secret` and relies on `original-pull-secret` only for kubelet sync
+   - Orchestrates RBAC and the DaemonSet for both paths
 
 ### Architecture Diagram
 
@@ -19111,9 +22943,9 @@ graph TB
     Container --> |Executes| SyncCommand[sync-global-pullsecret command]
 
     %% Sync Process
-    SyncCommand --> |Watches global-pull-secret| SyncController[Global Pull Secret Reconciler]
-    SyncController --> |Reads secret| ReadGlobalPS[Read global-pull-secret]
-    SyncController --> |Reads original| ReadOriginalPS[Read original pull-secret]
+    SyncCommand --> |Reads mounted files| SyncController[sync-global-pullsecret loop]
+    SyncController --> |Reads if present| ReadGlobalPS[Read global-pull-secret mount]
+    SyncController --> |Reads HostedCluster PS copy| ReadOriginalPS[Read original-pull-secret mount]
 
     %% File Update Process
     ReadGlobalPS --> |Gets data| GlobalPSBytes[Global Pull Secret Bytes]
@@ -19167,42 +22999,11 @@ graph TB
   - Write to `/var/lib/kubelet/config.json` (kubelet configuration file)
   - Connect to systemd via DBus for service management
   - Restart kubelet.service, which requires root privileges
-- **Smart node targeting**: Automatically excludes nodes from InPlace NodePools to prevent MCD conflicts
+- **Smart node targeting**: The DaemonSet uses a `nodeSelector` for `hypershift.openshift.io/nodepool-globalps-enabled=true`; the HyperShift operator only applies that label on **AWS** and **Azure** **Replace** NodePools, so InPlace and other platforms do not get sync pods by default (see Platform and NodePool eligibility)
 
-### InPlace NodePool Handling
+### How scheduling avoids InPlace conflicts
 
-To prevent conflicts with Machine Config Daemon operations, the implementation includes intelligent node targeting:
-
-#### Node Labeling Process
-1. **MachineSets Discovery**: The controller queries the management cluster for MachineSets with InPlace-specific annotations (`hypershift.openshift.io/nodePoolTargetConfigVersion`)
-2. **Machine Enumeration**: For each InPlace MachineSets, it lists all associated Machines
-3. **Node Identification**: Maps Machine objects to their corresponding nodes via `machine.Status.NodeRef.Name`
-4. **Labeling**: Applies `hypershift.openshift.io/nodepool-inplace-strategy=true` label to identified nodes
-
-#### DaemonSet Scheduling Configuration
-The DaemonSet uses NodeAffinity to exclude InPlace nodes:
-
-```yaml
-spec:
-  template:
-    spec:
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-            - matchExpressions:
-              - key: hypershift.openshift.io/nodepool-inplace-strategy
-                operator: DoesNotExist
-```
-
-This ensures that:
-- **Nodes without the label**: ✅ Are eligible for DaemonSet scheduling
-- **Nodes with the label** (any value): ❌ Are excluded from DaemonSet scheduling
-
-#### Conflict Prevention Benefits
-- **Prevents MCD failures**: Avoids conflicts when MCD expects specific kubelet configuration during InPlace upgrades
-- **Maintains upgrade reliability**: InPlace upgrade processes are not interrupted by Global Pull Secret modifications
-- **Automatic detection**: No manual intervention required - the system automatically identifies and handles InPlace nodes
+Eligibility is **positive selection**, not NodeAffinity on an InPlace label: InPlace workers simply **never** receive `hypershift.openshift.io/nodepool-globalps-enabled=true`, so the sync DaemonSet does not place pods on them. Replace workers on AWS/Azure **do** receive the label so the DaemonSet can run there without colliding with MCD on InPlace upgrade paths.
 
 ### Error Handling
 
@@ -20290,13 +24091,28 @@ If you wanna know more about how to expose the ingress service in the Data Plane
 
 ## Overview
 
-The Global Pull Secret functionality enables Hosted Cluster administrators to include additional pull secrets for accessing container images from private registries without requiring assistance from the Management Cluster administrator. This feature allows you to merge your custom pull secret with the original HostedCluster pull secret, making it available to all nodes in the cluster.
+The Global Pull Secret functionality enables Hosted Cluster administrators to include additional pull secrets for accessing container images from private registries without requiring assistance from the Management Cluster administrator. This feature allows you to merge your custom pull secret with the original HostedCluster pull secret, making it available to nodes that run the sync DaemonSet.
 
-The implementation uses a DaemonSet approach that automatically detects when you create an `additional-pull-secret` in the `kube-system` namespace of your DataPlane (Hosted Cluster). The system then merges this secret with the original pull secret and deploys the merged result to all nodes via a DaemonSet that updates the kubelet configuration.
+The implementation uses a DaemonSet that updates kubelet pull credentials on the node. The pull secret referenced by **`HostedCluster.spec.pullSecret`** is always copied from the HostedControlPlane into the guest cluster as the `original-pull-secret` Secret in `kube-system`. The `sync-global-pullsecret` process writes that content to `/var/lib/kubelet/config.json` on **eligible** worker nodes (see Platform and NodePool eligibility), even if you **never** create `additional-pull-secret`. In that baseline case there is no merge step: the kubelet file is kept aligned with the HostedCluster pull secret that HCCO reconciles into the data plane.
+
+When you **do** create an `additional-pull-secret` in the `kube-system` namespace of your DataPlane (Hosted Cluster), the system merges it with the original HostedCluster pull secret and deploys the merged result via the same DaemonSet path (still preferring the original secret where registry entries conflict).
 
 !!! note
 
-    This feature is designed to work autonomously - once you create the additional pull secret, the system automatically handles the rest without requiring Management Cluster administrator intervention.
+    This feature is designed to work autonomously. With only `HostedCluster.spec.pullSecret`, the Hosted Cluster Config Operator (HCCO) still reconciles `original-pull-secret` and the DaemonSet object in the guest; sync pods run only on eligible nodes. Creating `additional-pull-secret` is optional and only needed to add or layer registry credentials beyond the HostedCluster pull secret.
+
+## Platform and NodePool eligibility
+
+HCCO reconciles Global Pull Secret resources for **every** hosted cluster platform: it always maintains `kube-system/original-pull-secret` (and optional `global-pull-secret`), RBAC, and the `global-pull-secret-syncer` DaemonSet **object** in the data plane.
+
+The DaemonSet pod template requires nodes to have the label **`hypershift.openshift.io/nodepool-globalps-enabled=true`**. Today the HyperShift operator sets that label on **Machines** (and HCCO propagates it to **Nodes**) only for:
+
+- **AWS** and **Azure** NodePools, and  
+- the **Replace** upgrade strategy (`MachineDeployment` path).
+
+It does **not** set the label for **InPlace** NodePools (to avoid conflicting with Machine Config Daemon on kubelet config), or for **Replace** on other platforms such as **KubeVirt** (and other providers) in the current implementation—those workers therefore typically have **no** Global Pull Secret sync pods unless something else applies the label.
+
+For platforms without sync pods, pull credentials still come from **ignition/bootstrap** and from in-cluster Secrets (for example `openshift-config/pull-secret`); kubelet on-disk config is not updated by this DaemonSet on those nodes.
 
 ## Adding your Pull Secret
 
@@ -20354,8 +24170,8 @@ After creating the secret, the system will automatically:
 
 1. Validate the secret format
 2. Merge it with the original pull secret
-3. Deploy a DaemonSet to all nodes
-4. Update the kubelet configuration on each node
+3. Ensure the DaemonSet is present in the guest cluster
+4. Update kubelet configuration on **eligible** worker nodes (see Platform and NodePool eligibility)
 
 You can verify the deployment by checking:
 
@@ -20374,42 +24190,45 @@ kubectl get pods -n kube-system -l name=global-pull-secret-syncer
 
 The Global Pull Secret functionality operates through a multi-component system:
 
-### Automatic Detection
-- The Hosted Cluster Config Operator (HCCO) continuously monitors the `kube-system` namespace
-- When it detects the creation of `additional-pull-secret`, it triggers the reconciliation process
+### Automatic detection and baseline sync
+- The Hosted Cluster Config Operator (HCCO) continuously reconciles Global Pull Secret resources and watches Secrets in the `kube-system` namespace of the data plane.
+- On every reconcile, HCCO copies the HostedControlPlane pull secret (sourced from **`HostedCluster.spec.pullSecret`**) into `kube-system/original-pull-secret` so the DaemonSet can mount it on the node.
+- If `additional-pull-secret` is **not** present, HCCO removes the `global-pull-secret` Secret (if it existed) and the DaemonSet syncs **only** the HostedCluster pull secret copy into `/var/lib/kubelet/config.json` on eligible nodes.
+- When `additional-pull-secret` **is** present, reconciliation additionally validates and merges it with the HostedCluster pull secret.
 
-### Validation and Merging
-- The system validates that your secret contains a proper DockerConfigJSON format
-- It retrieves the original pull secret from the HostedControlPlane
-- Your additional pull secret is merged with the original one
-- **If there are conflicting registry entries, the original pull secret takes precedence** (the additional pull secret entry is ignored for conflicting registries)
-- The system supports namespace-specific registry entries (e.g., `quay.io/namespace`) for better credential specificity
+### Validation and merging (optional additional secret)
+- When `additional-pull-secret` exists, the system validates that it contains a proper DockerConfigJSON format.
+- It retrieves the original pull secret from the HostedControlPlane (same content as `HostedCluster.spec.pullSecret`).
+- Your additional pull secret is merged with the original one.
+- **If there are conflicting registry entries, the original pull secret takes precedence** (the additional pull secret entry is ignored for conflicting registries).
+- The system supports namespace-specific registry entries (e.g., `quay.io/namespace`) for better credential specificity.
 
-### Deployment Process
-- A `global-pull-secret` is created in the `kube-system` namespace containing the merged result
+### Deployment process
+- When merging is active, a `global-pull-secret` is created in the `kube-system` namespace containing the merged result. If there is no additional secret, this Secret is absent and the syncer uses `original-pull-secret` only.
 - RBAC resources (ServiceAccount, Role, RoleBinding) are created for the DaemonSet in both `kube-system` and `openshift-config` namespaces
 - We use Role and RoleBinding in both namespaces to access secrets in `kube-system` and `openshift-config` namespaces
 - A DaemonSet named `global-pull-secret-syncer` is deployed to eligible nodes
 
-!!! warning "NodePool InPlace Strategy Restriction"
+!!! warning "InPlace and unsupported platforms"
 
-    The Global Pull Secret DaemonSet is **not deployed** to nodes that belong to NodePools using the **InPlace upgrade strategy**. This restriction prevents conflicts between the DaemonSet's modifications to `/var/lib/kubelet/config.json` and the Machine Config Daemon (MCD) during InPlace upgrades.
+    **InPlace NodePools:** workers are intentionally **not** labeled `hypershift.openshift.io/nodepool-globalps-enabled`, so the Global Pull Secret sync **pods do not schedule** there. That avoids conflicts between edits to `/var/lib/kubelet/config.json` and the Machine Config Daemon (MCD).
 
-    - **Nodes with Replace strategy**: ✅ Receive Global Pull Secret DaemonSet
-    - **Nodes with InPlace strategy**: ❌ Do not receive Global Pull Secret DaemonSet
+    **AWS and Azure, Replace:** workers **are** labeled (via Machine → Node propagation), so sync pods **can** run and reconcile kubelet pull configuration from `original-pull-secret` / `global-pull-secret`.
 
-    This ensures that MCD operations during InPlace upgrades do not fail due to unexpected changes in kubelet configuration files.
+    **Other platforms (for example KubeVirt, GCP, Agent, …):** the DaemonSet object still exists in `kube-system`, but nodes usually **lack** the selector label, so you will typically see **no** (or very few) sync pods unless you set that label yourself.
 
-### Node-Level Synchronization
-- Each DaemonSet pod runs a controller that watches the secrets under kube-system namespace
-- When changes are detected, it updates `/var/lib/kubelet/config.json` on the node
+    See Platform and NodePool eligibility for the full picture.
+
+### Node-level synchronization
+- Each DaemonSet pod runs `sync-global-pullsecret`, which periodically reads the mounted pull secret files (`global-pull-secret` when present, otherwise `original-pull-secret`, which holds the **`HostedCluster.spec.pullSecret`** payload reconciled by HCCO).
+- When the desired content differs from `/var/lib/kubelet/config.json`, it updates the file on the node
 - The kubelet service is restarted via DBus to apply the new configuration
 - If the restart fails after 3 attempts, the system rolls back the file changes
 
-### Automatic Cleanup
-- If you delete the `additional-pull-secret`, the HCCO automatically removes the `global-pull-secret` secret
-- The system reverts to using only the original pull secret from the HostedControlPlane
-- The DaemonSet continues running but now syncs only the original pull secret to nodes
+### Automatic cleanup
+- If you delete the `additional-pull-secret`, the HCCO automatically removes the `global-pull-secret` secret.
+- The system reverts to syncing **only** the HostedCluster pull secret (via `original-pull-secret`, still sourced from the HostedControlPlane).
+- The DaemonSet continues to run on eligible nodes and keeps `/var/lib/kubelet/config.json` aligned with that HostedCluster pull secret.
 
 ## Registry Precedence and Conflict Resolution
 
@@ -20481,20 +24300,18 @@ The implementation consists of several key components working together:
    - Handles validation of user-provided pull secrets
    - Manages the merging logic between original and additional pull secrets
    - Creates and manages RBAC resources
-   - Deploys and manages the DaemonSet
-   - **Node eligibility assessment**: Labels nodes from InPlace NodePools and configures DaemonSet scheduling restrictions
+   - Deploys and manages the DaemonSet in Nodes labeled with `hypershift.openshift.io/nodepool-globalps-enabled=true`
 
 2. **Sync Global Pull Secret Command** (`sync-global-pullsecret` package)
-   - Runs as a DaemonSet on each node
-   - Watches for changes to the `global-pull-secret` in `kube-system` namespace
-   - Accesses the original `pull-secret` in `openshift-config` namespace
-   - Updates the kubelet configuration file
+   - Runs in the DaemonSet pod on eligible nodes
+   - Reads mounted Docker config JSON from `global-pull-secret` when that volume exists; otherwise uses `original-pull-secret` (the copy of **`HostedCluster.spec.pullSecret`** reconciled into `kube-system`)
+   - Updates `/var/lib/kubelet/config.json` on the host
    - Manages kubelet service restarts via DBus
 
-3. **Hosted Cluster Config Operator Integration**
-   - Monitors for the presence of `additional-pull-secret`
-   - Orchestrates the entire process
-   - Handles cleanup when the secret is removed
+3. **Hosted Cluster Config Operator integration**
+   - Reconciles `original-pull-secret` on every pass from the HostedControlPlane pull secret (`HostedCluster.spec.pullSecret`)
+   - When `additional-pull-secret` exists, validates, merges, and reconciles `global-pull-secret`; when it does not, removes `global-pull-secret` and relies on `original-pull-secret` only for kubelet sync
+   - Orchestrates RBAC and the DaemonSet for both paths
 
 ### Architecture Diagram
 
@@ -20543,9 +24360,9 @@ graph TB
     Container --> |Executes| SyncCommand[sync-global-pullsecret command]
 
     %% Sync Process
-    SyncCommand --> |Watches global-pull-secret| SyncController[Global Pull Secret Reconciler]
-    SyncController --> |Reads secret| ReadGlobalPS[Read global-pull-secret]
-    SyncController --> |Reads original| ReadOriginalPS[Read original pull-secret]
+    SyncCommand --> |Reads mounted files| SyncController[sync-global-pullsecret loop]
+    SyncController --> |Reads if present| ReadGlobalPS[Read global-pull-secret mount]
+    SyncController --> |Reads HostedCluster PS copy| ReadOriginalPS[Read original-pull-secret mount]
 
     %% File Update Process
     ReadGlobalPS --> |Gets data| GlobalPSBytes[Global Pull Secret Bytes]
@@ -20599,42 +24416,11 @@ graph TB
   - Write to `/var/lib/kubelet/config.json` (kubelet configuration file)
   - Connect to systemd via DBus for service management
   - Restart kubelet.service, which requires root privileges
-- **Smart node targeting**: Automatically excludes nodes from InPlace NodePools to prevent MCD conflicts
+- **Smart node targeting**: The DaemonSet uses a `nodeSelector` for `hypershift.openshift.io/nodepool-globalps-enabled=true`; the HyperShift operator only applies that label on **AWS** and **Azure** **Replace** NodePools, so InPlace and other platforms do not get sync pods by default (see Platform and NodePool eligibility)
 
-### InPlace NodePool Handling
+### How scheduling avoids InPlace conflicts
 
-To prevent conflicts with Machine Config Daemon operations, the implementation includes intelligent node targeting:
-
-#### Node Labeling Process
-1. **MachineSets Discovery**: The controller queries the management cluster for MachineSets with InPlace-specific annotations (`hypershift.openshift.io/nodePoolTargetConfigVersion`)
-2. **Machine Enumeration**: For each InPlace MachineSets, it lists all associated Machines
-3. **Node Identification**: Maps Machine objects to their corresponding nodes via `machine.Status.NodeRef.Name`
-4. **Labeling**: Applies `hypershift.openshift.io/nodepool-inplace-strategy=true` label to identified nodes
-
-#### DaemonSet Scheduling Configuration
-The DaemonSet uses NodeAffinity to exclude InPlace nodes:
-
-```yaml
-spec:
-  template:
-    spec:
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-            - matchExpressions:
-              - key: hypershift.openshift.io/nodepool-inplace-strategy
-                operator: DoesNotExist
-```
-
-This ensures that:
-- **Nodes without the label**: ✅ Are eligible for DaemonSet scheduling
-- **Nodes with the label** (any value): ❌ Are excluded from DaemonSet scheduling
-
-#### Conflict Prevention Benefits
-- **Prevents MCD failures**: Avoids conflicts when MCD expects specific kubelet configuration during InPlace upgrades
-- **Maintains upgrade reliability**: InPlace upgrade processes are not interrupted by Global Pull Secret modifications
-- **Automatic detection**: No manual intervention required - the system automatically identifies and handles InPlace nodes
+Eligibility is **positive selection**, not NodeAffinity on an InPlace label: InPlace workers simply **never** receive `hypershift.openshift.io/nodepool-globalps-enabled=true`, so the sync DaemonSet does not place pods on them. Replace workers on AWS/Azure **do** receive the label so the DaemonSet can run there without colliding with MCD on InPlace upgrade paths.
 
 ### Error Handling
 
@@ -20912,13 +24698,28 @@ We can see the 8GB device for etcd.
 
 ## Overview
 
-The Global Pull Secret functionality enables Hosted Cluster administrators to include additional pull secrets for accessing container images from private registries without requiring assistance from the Management Cluster administrator. This feature allows you to merge your custom pull secret with the original HostedCluster pull secret, making it available to all nodes in the cluster.
+The Global Pull Secret functionality enables Hosted Cluster administrators to include additional pull secrets for accessing container images from private registries without requiring assistance from the Management Cluster administrator. This feature allows you to merge your custom pull secret with the original HostedCluster pull secret, making it available to nodes that run the sync DaemonSet.
 
-The implementation uses a DaemonSet approach that automatically detects when you create an `additional-pull-secret` in the `kube-system` namespace of your DataPlane (Hosted Cluster). The system then merges this secret with the original pull secret and deploys the merged result to all nodes via a DaemonSet that updates the kubelet configuration.
+The implementation uses a DaemonSet that updates kubelet pull credentials on the node. The pull secret referenced by **`HostedCluster.spec.pullSecret`** is always copied from the HostedControlPlane into the guest cluster as the `original-pull-secret` Secret in `kube-system`. The `sync-global-pullsecret` process writes that content to `/var/lib/kubelet/config.json` on **eligible** worker nodes (see Platform and NodePool eligibility), even if you **never** create `additional-pull-secret`. In that baseline case there is no merge step: the kubelet file is kept aligned with the HostedCluster pull secret that HCCO reconciles into the data plane.
+
+When you **do** create an `additional-pull-secret` in the `kube-system` namespace of your DataPlane (Hosted Cluster), the system merges it with the original HostedCluster pull secret and deploys the merged result via the same DaemonSet path (still preferring the original secret where registry entries conflict).
 
 !!! note
 
-    This feature is designed to work autonomously - once you create the additional pull secret, the system automatically handles the rest without requiring Management Cluster administrator intervention.
+    This feature is designed to work autonomously. With only `HostedCluster.spec.pullSecret`, the Hosted Cluster Config Operator (HCCO) still reconciles `original-pull-secret` and the DaemonSet object in the guest; sync pods run only on eligible nodes. Creating `additional-pull-secret` is optional and only needed to add or layer registry credentials beyond the HostedCluster pull secret.
+
+## Platform and NodePool eligibility
+
+HCCO reconciles Global Pull Secret resources for **every** hosted cluster platform: it always maintains `kube-system/original-pull-secret` (and optional `global-pull-secret`), RBAC, and the `global-pull-secret-syncer` DaemonSet **object** in the data plane.
+
+The DaemonSet pod template requires nodes to have the label **`hypershift.openshift.io/nodepool-globalps-enabled=true`**. Today the HyperShift operator sets that label on **Machines** (and HCCO propagates it to **Nodes**) only for:
+
+- **AWS** and **Azure** NodePools, and  
+- the **Replace** upgrade strategy (`MachineDeployment` path).
+
+It does **not** set the label for **InPlace** NodePools (to avoid conflicting with Machine Config Daemon on kubelet config), or for **Replace** on other platforms such as **KubeVirt** (and other providers) in the current implementation—those workers therefore typically have **no** Global Pull Secret sync pods unless something else applies the label.
+
+For platforms without sync pods, pull credentials still come from **ignition/bootstrap** and from in-cluster Secrets (for example `openshift-config/pull-secret`); kubelet on-disk config is not updated by this DaemonSet on those nodes.
 
 ## Adding your Pull Secret
 
@@ -20976,8 +24777,8 @@ After creating the secret, the system will automatically:
 
 1. Validate the secret format
 2. Merge it with the original pull secret
-3. Deploy a DaemonSet to all nodes
-4. Update the kubelet configuration on each node
+3. Ensure the DaemonSet is present in the guest cluster
+4. Update kubelet configuration on **eligible** worker nodes (see Platform and NodePool eligibility)
 
 You can verify the deployment by checking:
 
@@ -20996,42 +24797,45 @@ kubectl get pods -n kube-system -l name=global-pull-secret-syncer
 
 The Global Pull Secret functionality operates through a multi-component system:
 
-### Automatic Detection
-- The Hosted Cluster Config Operator (HCCO) continuously monitors the `kube-system` namespace
-- When it detects the creation of `additional-pull-secret`, it triggers the reconciliation process
+### Automatic detection and baseline sync
+- The Hosted Cluster Config Operator (HCCO) continuously reconciles Global Pull Secret resources and watches Secrets in the `kube-system` namespace of the data plane.
+- On every reconcile, HCCO copies the HostedControlPlane pull secret (sourced from **`HostedCluster.spec.pullSecret`**) into `kube-system/original-pull-secret` so the DaemonSet can mount it on the node.
+- If `additional-pull-secret` is **not** present, HCCO removes the `global-pull-secret` Secret (if it existed) and the DaemonSet syncs **only** the HostedCluster pull secret copy into `/var/lib/kubelet/config.json` on eligible nodes.
+- When `additional-pull-secret` **is** present, reconciliation additionally validates and merges it with the HostedCluster pull secret.
 
-### Validation and Merging
-- The system validates that your secret contains a proper DockerConfigJSON format
-- It retrieves the original pull secret from the HostedControlPlane
-- Your additional pull secret is merged with the original one
-- **If there are conflicting registry entries, the original pull secret takes precedence** (the additional pull secret entry is ignored for conflicting registries)
-- The system supports namespace-specific registry entries (e.g., `quay.io/namespace`) for better credential specificity
+### Validation and merging (optional additional secret)
+- When `additional-pull-secret` exists, the system validates that it contains a proper DockerConfigJSON format.
+- It retrieves the original pull secret from the HostedControlPlane (same content as `HostedCluster.spec.pullSecret`).
+- Your additional pull secret is merged with the original one.
+- **If there are conflicting registry entries, the original pull secret takes precedence** (the additional pull secret entry is ignored for conflicting registries).
+- The system supports namespace-specific registry entries (e.g., `quay.io/namespace`) for better credential specificity.
 
-### Deployment Process
-- A `global-pull-secret` is created in the `kube-system` namespace containing the merged result
+### Deployment process
+- When merging is active, a `global-pull-secret` is created in the `kube-system` namespace containing the merged result. If there is no additional secret, this Secret is absent and the syncer uses `original-pull-secret` only.
 - RBAC resources (ServiceAccount, Role, RoleBinding) are created for the DaemonSet in both `kube-system` and `openshift-config` namespaces
 - We use Role and RoleBinding in both namespaces to access secrets in `kube-system` and `openshift-config` namespaces
 - A DaemonSet named `global-pull-secret-syncer` is deployed to eligible nodes
 
-!!! warning "NodePool InPlace Strategy Restriction"
+!!! warning "InPlace and unsupported platforms"
 
-    The Global Pull Secret DaemonSet is **not deployed** to nodes that belong to NodePools using the **InPlace upgrade strategy**. This restriction prevents conflicts between the DaemonSet's modifications to `/var/lib/kubelet/config.json` and the Machine Config Daemon (MCD) during InPlace upgrades.
+    **InPlace NodePools:** workers are intentionally **not** labeled `hypershift.openshift.io/nodepool-globalps-enabled`, so the Global Pull Secret sync **pods do not schedule** there. That avoids conflicts between edits to `/var/lib/kubelet/config.json` and the Machine Config Daemon (MCD).
 
-    - **Nodes with Replace strategy**: ✅ Receive Global Pull Secret DaemonSet
-    - **Nodes with InPlace strategy**: ❌ Do not receive Global Pull Secret DaemonSet
+    **AWS and Azure, Replace:** workers **are** labeled (via Machine → Node propagation), so sync pods **can** run and reconcile kubelet pull configuration from `original-pull-secret` / `global-pull-secret`.
 
-    This ensures that MCD operations during InPlace upgrades do not fail due to unexpected changes in kubelet configuration files.
+    **Other platforms (for example KubeVirt, GCP, Agent, …):** the DaemonSet object still exists in `kube-system`, but nodes usually **lack** the selector label, so you will typically see **no** (or very few) sync pods unless you set that label yourself.
 
-### Node-Level Synchronization
-- Each DaemonSet pod runs a controller that watches the secrets under kube-system namespace
-- When changes are detected, it updates `/var/lib/kubelet/config.json` on the node
+    See Platform and NodePool eligibility for the full picture.
+
+### Node-level synchronization
+- Each DaemonSet pod runs `sync-global-pullsecret`, which periodically reads the mounted pull secret files (`global-pull-secret` when present, otherwise `original-pull-secret`, which holds the **`HostedCluster.spec.pullSecret`** payload reconciled by HCCO).
+- When the desired content differs from `/var/lib/kubelet/config.json`, it updates the file on the node
 - The kubelet service is restarted via DBus to apply the new configuration
 - If the restart fails after 3 attempts, the system rolls back the file changes
 
-### Automatic Cleanup
-- If you delete the `additional-pull-secret`, the HCCO automatically removes the `global-pull-secret` secret
-- The system reverts to using only the original pull secret from the HostedControlPlane
-- The DaemonSet continues running but now syncs only the original pull secret to nodes
+### Automatic cleanup
+- If you delete the `additional-pull-secret`, the HCCO automatically removes the `global-pull-secret` secret.
+- The system reverts to syncing **only** the HostedCluster pull secret (via `original-pull-secret`, still sourced from the HostedControlPlane).
+- The DaemonSet continues to run on eligible nodes and keeps `/var/lib/kubelet/config.json` aligned with that HostedCluster pull secret.
 
 ## Registry Precedence and Conflict Resolution
 
@@ -21103,20 +24907,18 @@ The implementation consists of several key components working together:
    - Handles validation of user-provided pull secrets
    - Manages the merging logic between original and additional pull secrets
    - Creates and manages RBAC resources
-   - Deploys and manages the DaemonSet
-   - **Node eligibility assessment**: Labels nodes from InPlace NodePools and configures DaemonSet scheduling restrictions
+   - Deploys and manages the DaemonSet in Nodes labeled with `hypershift.openshift.io/nodepool-globalps-enabled=true`
 
 2. **Sync Global Pull Secret Command** (`sync-global-pullsecret` package)
-   - Runs as a DaemonSet on each node
-   - Watches for changes to the `global-pull-secret` in `kube-system` namespace
-   - Accesses the original `pull-secret` in `openshift-config` namespace
-   - Updates the kubelet configuration file
+   - Runs in the DaemonSet pod on eligible nodes
+   - Reads mounted Docker config JSON from `global-pull-secret` when that volume exists; otherwise uses `original-pull-secret` (the copy of **`HostedCluster.spec.pullSecret`** reconciled into `kube-system`)
+   - Updates `/var/lib/kubelet/config.json` on the host
    - Manages kubelet service restarts via DBus
 
-3. **Hosted Cluster Config Operator Integration**
-   - Monitors for the presence of `additional-pull-secret`
-   - Orchestrates the entire process
-   - Handles cleanup when the secret is removed
+3. **Hosted Cluster Config Operator integration**
+   - Reconciles `original-pull-secret` on every pass from the HostedControlPlane pull secret (`HostedCluster.spec.pullSecret`)
+   - When `additional-pull-secret` exists, validates, merges, and reconciles `global-pull-secret`; when it does not, removes `global-pull-secret` and relies on `original-pull-secret` only for kubelet sync
+   - Orchestrates RBAC and the DaemonSet for both paths
 
 ### Architecture Diagram
 
@@ -21165,9 +24967,9 @@ graph TB
     Container --> |Executes| SyncCommand[sync-global-pullsecret command]
 
     %% Sync Process
-    SyncCommand --> |Watches global-pull-secret| SyncController[Global Pull Secret Reconciler]
-    SyncController --> |Reads secret| ReadGlobalPS[Read global-pull-secret]
-    SyncController --> |Reads original| ReadOriginalPS[Read original pull-secret]
+    SyncCommand --> |Reads mounted files| SyncController[sync-global-pullsecret loop]
+    SyncController --> |Reads if present| ReadGlobalPS[Read global-pull-secret mount]
+    SyncController --> |Reads HostedCluster PS copy| ReadOriginalPS[Read original-pull-secret mount]
 
     %% File Update Process
     ReadGlobalPS --> |Gets data| GlobalPSBytes[Global Pull Secret Bytes]
@@ -21221,42 +25023,11 @@ graph TB
   - Write to `/var/lib/kubelet/config.json` (kubelet configuration file)
   - Connect to systemd via DBus for service management
   - Restart kubelet.service, which requires root privileges
-- **Smart node targeting**: Automatically excludes nodes from InPlace NodePools to prevent MCD conflicts
+- **Smart node targeting**: The DaemonSet uses a `nodeSelector` for `hypershift.openshift.io/nodepool-globalps-enabled=true`; the HyperShift operator only applies that label on **AWS** and **Azure** **Replace** NodePools, so InPlace and other platforms do not get sync pods by default (see Platform and NodePool eligibility)
 
-### InPlace NodePool Handling
+### How scheduling avoids InPlace conflicts
 
-To prevent conflicts with Machine Config Daemon operations, the implementation includes intelligent node targeting:
-
-#### Node Labeling Process
-1. **MachineSets Discovery**: The controller queries the management cluster for MachineSets with InPlace-specific annotations (`hypershift.openshift.io/nodePoolTargetConfigVersion`)
-2. **Machine Enumeration**: For each InPlace MachineSets, it lists all associated Machines
-3. **Node Identification**: Maps Machine objects to their corresponding nodes via `machine.Status.NodeRef.Name`
-4. **Labeling**: Applies `hypershift.openshift.io/nodepool-inplace-strategy=true` label to identified nodes
-
-#### DaemonSet Scheduling Configuration
-The DaemonSet uses NodeAffinity to exclude InPlace nodes:
-
-```yaml
-spec:
-  template:
-    spec:
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-            - matchExpressions:
-              - key: hypershift.openshift.io/nodepool-inplace-strategy
-                operator: DoesNotExist
-```
-
-This ensures that:
-- **Nodes without the label**: ✅ Are eligible for DaemonSet scheduling
-- **Nodes with the label** (any value): ❌ Are excluded from DaemonSet scheduling
-
-#### Conflict Prevention Benefits
-- **Prevents MCD failures**: Avoids conflicts when MCD expects specific kubelet configuration during InPlace upgrades
-- **Maintains upgrade reliability**: InPlace upgrade processes are not interrupted by Global Pull Secret modifications
-- **Automatic detection**: No manual intervention required - the system automatically identifies and handles InPlace nodes
+Eligibility is **positive selection**, not NodeAffinity on an InPlace label: InPlace workers simply **never** receive `hypershift.openshift.io/nodepool-globalps-enabled=true`, so the sync DaemonSet does not place pods on them. Replace workers on AWS/Azure **do** receive the label so the DaemonSet can run there without colliding with MCD on InPlace upgrade paths.
 
 ### Error Handling
 
@@ -22504,13 +26275,28 @@ E.g.:
 
 ## Overview
 
-The Global Pull Secret functionality enables Hosted Cluster administrators to include additional pull secrets for accessing container images from private registries without requiring assistance from the Management Cluster administrator. This feature allows you to merge your custom pull secret with the original HostedCluster pull secret, making it available to all nodes in the cluster.
+The Global Pull Secret functionality enables Hosted Cluster administrators to include additional pull secrets for accessing container images from private registries without requiring assistance from the Management Cluster administrator. This feature allows you to merge your custom pull secret with the original HostedCluster pull secret, making it available to nodes that run the sync DaemonSet.
 
-The implementation uses a DaemonSet approach that automatically detects when you create an `additional-pull-secret` in the `kube-system` namespace of your DataPlane (Hosted Cluster). The system then merges this secret with the original pull secret and deploys the merged result to all nodes via a DaemonSet that updates the kubelet configuration.
+The implementation uses a DaemonSet that updates kubelet pull credentials on the node. The pull secret referenced by **`HostedCluster.spec.pullSecret`** is always copied from the HostedControlPlane into the guest cluster as the `original-pull-secret` Secret in `kube-system`. The `sync-global-pullsecret` process writes that content to `/var/lib/kubelet/config.json` on **eligible** worker nodes (see Platform and NodePool eligibility), even if you **never** create `additional-pull-secret`. In that baseline case there is no merge step: the kubelet file is kept aligned with the HostedCluster pull secret that HCCO reconciles into the data plane.
+
+When you **do** create an `additional-pull-secret` in the `kube-system` namespace of your DataPlane (Hosted Cluster), the system merges it with the original HostedCluster pull secret and deploys the merged result via the same DaemonSet path (still preferring the original secret where registry entries conflict).
 
 !!! note
 
-    This feature is designed to work autonomously - once you create the additional pull secret, the system automatically handles the rest without requiring Management Cluster administrator intervention.
+    This feature is designed to work autonomously. With only `HostedCluster.spec.pullSecret`, the Hosted Cluster Config Operator (HCCO) still reconciles `original-pull-secret` and the DaemonSet object in the guest; sync pods run only on eligible nodes. Creating `additional-pull-secret` is optional and only needed to add or layer registry credentials beyond the HostedCluster pull secret.
+
+## Platform and NodePool eligibility
+
+HCCO reconciles Global Pull Secret resources for **every** hosted cluster platform: it always maintains `kube-system/original-pull-secret` (and optional `global-pull-secret`), RBAC, and the `global-pull-secret-syncer` DaemonSet **object** in the data plane.
+
+The DaemonSet pod template requires nodes to have the label **`hypershift.openshift.io/nodepool-globalps-enabled=true`**. Today the HyperShift operator sets that label on **Machines** (and HCCO propagates it to **Nodes**) only for:
+
+- **AWS** and **Azure** NodePools, and  
+- the **Replace** upgrade strategy (`MachineDeployment` path).
+
+It does **not** set the label for **InPlace** NodePools (to avoid conflicting with Machine Config Daemon on kubelet config), or for **Replace** on other platforms such as **KubeVirt** (and other providers) in the current implementation—those workers therefore typically have **no** Global Pull Secret sync pods unless something else applies the label.
+
+For platforms without sync pods, pull credentials still come from **ignition/bootstrap** and from in-cluster Secrets (for example `openshift-config/pull-secret`); kubelet on-disk config is not updated by this DaemonSet on those nodes.
 
 ## Adding your Pull Secret
 
@@ -22568,8 +26354,8 @@ After creating the secret, the system will automatically:
 
 1. Validate the secret format
 2. Merge it with the original pull secret
-3. Deploy a DaemonSet to all nodes
-4. Update the kubelet configuration on each node
+3. Ensure the DaemonSet is present in the guest cluster
+4. Update kubelet configuration on **eligible** worker nodes (see Platform and NodePool eligibility)
 
 You can verify the deployment by checking:
 
@@ -22588,42 +26374,45 @@ kubectl get pods -n kube-system -l name=global-pull-secret-syncer
 
 The Global Pull Secret functionality operates through a multi-component system:
 
-### Automatic Detection
-- The Hosted Cluster Config Operator (HCCO) continuously monitors the `kube-system` namespace
-- When it detects the creation of `additional-pull-secret`, it triggers the reconciliation process
+### Automatic detection and baseline sync
+- The Hosted Cluster Config Operator (HCCO) continuously reconciles Global Pull Secret resources and watches Secrets in the `kube-system` namespace of the data plane.
+- On every reconcile, HCCO copies the HostedControlPlane pull secret (sourced from **`HostedCluster.spec.pullSecret`**) into `kube-system/original-pull-secret` so the DaemonSet can mount it on the node.
+- If `additional-pull-secret` is **not** present, HCCO removes the `global-pull-secret` Secret (if it existed) and the DaemonSet syncs **only** the HostedCluster pull secret copy into `/var/lib/kubelet/config.json` on eligible nodes.
+- When `additional-pull-secret` **is** present, reconciliation additionally validates and merges it with the HostedCluster pull secret.
 
-### Validation and Merging
-- The system validates that your secret contains a proper DockerConfigJSON format
-- It retrieves the original pull secret from the HostedControlPlane
-- Your additional pull secret is merged with the original one
-- **If there are conflicting registry entries, the original pull secret takes precedence** (the additional pull secret entry is ignored for conflicting registries)
-- The system supports namespace-specific registry entries (e.g., `quay.io/namespace`) for better credential specificity
+### Validation and merging (optional additional secret)
+- When `additional-pull-secret` exists, the system validates that it contains a proper DockerConfigJSON format.
+- It retrieves the original pull secret from the HostedControlPlane (same content as `HostedCluster.spec.pullSecret`).
+- Your additional pull secret is merged with the original one.
+- **If there are conflicting registry entries, the original pull secret takes precedence** (the additional pull secret entry is ignored for conflicting registries).
+- The system supports namespace-specific registry entries (e.g., `quay.io/namespace`) for better credential specificity.
 
-### Deployment Process
-- A `global-pull-secret` is created in the `kube-system` namespace containing the merged result
+### Deployment process
+- When merging is active, a `global-pull-secret` is created in the `kube-system` namespace containing the merged result. If there is no additional secret, this Secret is absent and the syncer uses `original-pull-secret` only.
 - RBAC resources (ServiceAccount, Role, RoleBinding) are created for the DaemonSet in both `kube-system` and `openshift-config` namespaces
 - We use Role and RoleBinding in both namespaces to access secrets in `kube-system` and `openshift-config` namespaces
 - A DaemonSet named `global-pull-secret-syncer` is deployed to eligible nodes
 
-!!! warning "NodePool InPlace Strategy Restriction"
+!!! warning "InPlace and unsupported platforms"
 
-    The Global Pull Secret DaemonSet is **not deployed** to nodes that belong to NodePools using the **InPlace upgrade strategy**. This restriction prevents conflicts between the DaemonSet's modifications to `/var/lib/kubelet/config.json` and the Machine Config Daemon (MCD) during InPlace upgrades.
+    **InPlace NodePools:** workers are intentionally **not** labeled `hypershift.openshift.io/nodepool-globalps-enabled`, so the Global Pull Secret sync **pods do not schedule** there. That avoids conflicts between edits to `/var/lib/kubelet/config.json` and the Machine Config Daemon (MCD).
 
-    - **Nodes with Replace strategy**: ✅ Receive Global Pull Secret DaemonSet
-    - **Nodes with InPlace strategy**: ❌ Do not receive Global Pull Secret DaemonSet
+    **AWS and Azure, Replace:** workers **are** labeled (via Machine → Node propagation), so sync pods **can** run and reconcile kubelet pull configuration from `original-pull-secret` / `global-pull-secret`.
 
-    This ensures that MCD operations during InPlace upgrades do not fail due to unexpected changes in kubelet configuration files.
+    **Other platforms (for example KubeVirt, GCP, Agent, …):** the DaemonSet object still exists in `kube-system`, but nodes usually **lack** the selector label, so you will typically see **no** (or very few) sync pods unless you set that label yourself.
 
-### Node-Level Synchronization
-- Each DaemonSet pod runs a controller that watches the secrets under kube-system namespace
-- When changes are detected, it updates `/var/lib/kubelet/config.json` on the node
+    See Platform and NodePool eligibility for the full picture.
+
+### Node-level synchronization
+- Each DaemonSet pod runs `sync-global-pullsecret`, which periodically reads the mounted pull secret files (`global-pull-secret` when present, otherwise `original-pull-secret`, which holds the **`HostedCluster.spec.pullSecret`** payload reconciled by HCCO).
+- When the desired content differs from `/var/lib/kubelet/config.json`, it updates the file on the node
 - The kubelet service is restarted via DBus to apply the new configuration
 - If the restart fails after 3 attempts, the system rolls back the file changes
 
-### Automatic Cleanup
-- If you delete the `additional-pull-secret`, the HCCO automatically removes the `global-pull-secret` secret
-- The system reverts to using only the original pull secret from the HostedControlPlane
-- The DaemonSet continues running but now syncs only the original pull secret to nodes
+### Automatic cleanup
+- If you delete the `additional-pull-secret`, the HCCO automatically removes the `global-pull-secret` secret.
+- The system reverts to syncing **only** the HostedCluster pull secret (via `original-pull-secret`, still sourced from the HostedControlPlane).
+- The DaemonSet continues to run on eligible nodes and keeps `/var/lib/kubelet/config.json` aligned with that HostedCluster pull secret.
 
 ## Registry Precedence and Conflict Resolution
 
@@ -22695,20 +26484,18 @@ The implementation consists of several key components working together:
    - Handles validation of user-provided pull secrets
    - Manages the merging logic between original and additional pull secrets
    - Creates and manages RBAC resources
-   - Deploys and manages the DaemonSet
-   - **Node eligibility assessment**: Labels nodes from InPlace NodePools and configures DaemonSet scheduling restrictions
+   - Deploys and manages the DaemonSet in Nodes labeled with `hypershift.openshift.io/nodepool-globalps-enabled=true`
 
 2. **Sync Global Pull Secret Command** (`sync-global-pullsecret` package)
-   - Runs as a DaemonSet on each node
-   - Watches for changes to the `global-pull-secret` in `kube-system` namespace
-   - Accesses the original `pull-secret` in `openshift-config` namespace
-   - Updates the kubelet configuration file
+   - Runs in the DaemonSet pod on eligible nodes
+   - Reads mounted Docker config JSON from `global-pull-secret` when that volume exists; otherwise uses `original-pull-secret` (the copy of **`HostedCluster.spec.pullSecret`** reconciled into `kube-system`)
+   - Updates `/var/lib/kubelet/config.json` on the host
    - Manages kubelet service restarts via DBus
 
-3. **Hosted Cluster Config Operator Integration**
-   - Monitors for the presence of `additional-pull-secret`
-   - Orchestrates the entire process
-   - Handles cleanup when the secret is removed
+3. **Hosted Cluster Config Operator integration**
+   - Reconciles `original-pull-secret` on every pass from the HostedControlPlane pull secret (`HostedCluster.spec.pullSecret`)
+   - When `additional-pull-secret` exists, validates, merges, and reconciles `global-pull-secret`; when it does not, removes `global-pull-secret` and relies on `original-pull-secret` only for kubelet sync
+   - Orchestrates RBAC and the DaemonSet for both paths
 
 ### Architecture Diagram
 
@@ -22757,9 +26544,9 @@ graph TB
     Container --> |Executes| SyncCommand[sync-global-pullsecret command]
 
     %% Sync Process
-    SyncCommand --> |Watches global-pull-secret| SyncController[Global Pull Secret Reconciler]
-    SyncController --> |Reads secret| ReadGlobalPS[Read global-pull-secret]
-    SyncController --> |Reads original| ReadOriginalPS[Read original pull-secret]
+    SyncCommand --> |Reads mounted files| SyncController[sync-global-pullsecret loop]
+    SyncController --> |Reads if present| ReadGlobalPS[Read global-pull-secret mount]
+    SyncController --> |Reads HostedCluster PS copy| ReadOriginalPS[Read original-pull-secret mount]
 
     %% File Update Process
     ReadGlobalPS --> |Gets data| GlobalPSBytes[Global Pull Secret Bytes]
@@ -22813,42 +26600,11 @@ graph TB
   - Write to `/var/lib/kubelet/config.json` (kubelet configuration file)
   - Connect to systemd via DBus for service management
   - Restart kubelet.service, which requires root privileges
-- **Smart node targeting**: Automatically excludes nodes from InPlace NodePools to prevent MCD conflicts
+- **Smart node targeting**: The DaemonSet uses a `nodeSelector` for `hypershift.openshift.io/nodepool-globalps-enabled=true`; the HyperShift operator only applies that label on **AWS** and **Azure** **Replace** NodePools, so InPlace and other platforms do not get sync pods by default (see Platform and NodePool eligibility)
 
-### InPlace NodePool Handling
+### How scheduling avoids InPlace conflicts
 
-To prevent conflicts with Machine Config Daemon operations, the implementation includes intelligent node targeting:
-
-#### Node Labeling Process
-1. **MachineSets Discovery**: The controller queries the management cluster for MachineSets with InPlace-specific annotations (`hypershift.openshift.io/nodePoolTargetConfigVersion`)
-2. **Machine Enumeration**: For each InPlace MachineSets, it lists all associated Machines
-3. **Node Identification**: Maps Machine objects to their corresponding nodes via `machine.Status.NodeRef.Name`
-4. **Labeling**: Applies `hypershift.openshift.io/nodepool-inplace-strategy=true` label to identified nodes
-
-#### DaemonSet Scheduling Configuration
-The DaemonSet uses NodeAffinity to exclude InPlace nodes:
-
-```yaml
-spec:
-  template:
-    spec:
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-            - matchExpressions:
-              - key: hypershift.openshift.io/nodepool-inplace-strategy
-                operator: DoesNotExist
-```
-
-This ensures that:
-- **Nodes without the label**: ✅ Are eligible for DaemonSet scheduling
-- **Nodes with the label** (any value): ❌ Are excluded from DaemonSet scheduling
-
-#### Conflict Prevention Benefits
-- **Prevents MCD failures**: Avoids conflicts when MCD expects specific kubelet configuration during InPlace upgrades
-- **Maintains upgrade reliability**: InPlace upgrade processes are not interrupted by Global Pull Secret modifications
-- **Automatic detection**: No manual intervention required - the system automatically identifies and handles InPlace nodes
+Eligibility is **positive selection**, not NodeAffinity on an InPlace label: InPlace workers simply **never** receive `hypershift.openshift.io/nodepool-globalps-enabled=true`, so the sync DaemonSet does not place pods on them. Replace workers on AWS/Azure **do** receive the label so the DaemonSet can run there without colliding with MCD on InPlace upgrade paths.
 
 ### Error Handling
 
@@ -23844,6 +27600,8 @@ This allows there to be two separate procedures a Cluster Service Provider can t
 Control Plane upgrades are driven by the HostedCluster, while Node upgrades are driven by its respective NodePool. Both the HostedCluster and NodePool expose a `.release` field where the OCP release image can be specified.
 
 For a cluster to keep fully operational during an upgrade process, Control Plane and Nodes upgrades need to be orchestrated while satisfying Kubernetes version skew policy at any time. The supported OCP versions are dictated by the running HyperShift Operator see here for more details on versioning.
+
+Control Plane downgrades (moving `.spec.release` to an earlier version) are not supported. Once a HostedCluster has been upgraded, the change cannot be reversed.
 
 ## HostedCluster
 `.spec.release` dictates the version of the Control Plane.
@@ -31098,7 +34856,7 @@ associated with this HostedCluster.</p>
 </tr>
 <tr>
 <td>
-<code>autoNode</code></br>
+<code>autoNode,omitzero</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.AutoNode">
 AutoNode
@@ -31160,10 +34918,11 @@ Kubernetes core/v1.LocalObjectReference
 <p>pullSecret is a local reference to a Secret that must have a &ldquo;.dockerconfigjson&rdquo; key whose content must be a valid Openshift pull secret JSON.
 If the reference is set but none of the above requirements are met, the HostedCluster will enter a degraded state.
 TODO(alberto): Signal this in a condition.
-This pull secret will be part of every payload generated by the controllers for any NodePool of the HostedCluster
-and it will be injected into the container runtime of all NodePools.
-Changing this value will trigger a rollout for all existing NodePools in the cluster.
-Changing the content of the secret inplace will not trigger a rollout and might result in unpredictable behaviour.
+This pull secret is included in NodePool ignition/bootstrap payloads and applied to the container runtime when nodes provision.
+Changing this value will trigger a rollout for all existing NodePools in the cluster (for both replace and inplace upgrade types).
+Updating the referenced Secret&rsquo;s data in place (without changing this reference) does not trigger that rollout.
+In AWS and Azure NodePools using the Replace upgrade strategy, the Secret&rsquo;s data in place changes
+will still propagate the updated credentials down to the guest cluster and kubelet config.
 TODO(alberto): have our own local reference type to include our opinions and avoid transparent changes.</p>
 </td>
 </tr>
@@ -33525,6 +37284,22 @@ int32
 This represents what Karpenter intends to provision, whether or not the node object exists yet.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>vcpus</code></br>
+<em>
+int32
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>vcpus is the total number of virtual CPUs across all Karpenter-managed nodes
+that have registered and reported capacity. This is the sum of CPU capacity
+from each NodeClaim whose corresponding node exists (status.nodeName is set).
+This value is 0 when no Karpenter nodes are provisioned.
+Used by the metrics collector for billing aggregation.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###AvailabilityPolicy { #hypershift.openshift.io/v1beta1.AvailabilityPolicy }
@@ -33836,7 +37611,7 @@ secrets can continue to be decrypted until they are all re-encrypted with the ac
 </tr>
 <tr>
 <td>
-<code>kms</code></br>
+<code>kms,omitzero</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.ManagedIdentity">
 ManagedIdentity
@@ -33844,7 +37619,27 @@ ManagedIdentity
 </em>
 </td>
 <td>
-<p>kms is a pre-existing managed identity used to authenticate with Azure KMS.</p>
+<em>(Optional)</em>
+<p>kms is a pre-existing managed identity used to authenticate with Azure KMS.
+This is used for managed Azure (ARO HCP) clusters.
+kms and workloadIdentity are mutually exclusive.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>workloadIdentity,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.WorkloadIdentity">
+WorkloadIdentity
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>workloadIdentity contains the workload identity used to authenticate
+with Azure Key Vault for KMS encryption via a token-minter sidecar.
+This identity must have &ldquo;Key Vault Crypto User&rdquo; role on the Key Vault.
+kms and workloadIdentity are mutually exclusive.</p>
 </td>
 </tr>
 <tr>
@@ -36432,6 +40227,15 @@ e.g. the user-provided IDP configuration provided is invalid or the IDP is not r
 hosting a guest cluster utilizing kubevirt platform is a sufficient value that will avoid
 performance degradation due to fragmentation of the double encapsulation in ovn-kubernetes</p>
 </td>
+</tr><tr><td><p>&#34;ValidKubeVirtInfraNetworkPolicyRBAC&#34;</p></td>
+<td><p>ValidKubeVirtInfraNetworkPolicyRBAC indicates whether the external infra
+kubeconfig has sufficient permissions to create/update the virt-launcher network policy
+on the infrastructure cluster. This covers both reading the
+cluster network configuration (networks.config.openshift.io) for CIDR-
+based egress blocking and creating/updating NetworkPolicy resources in
+the infra namespace. When false, tenant isolation may be weaker: the
+NetworkPolicy may be missing or lack CIDR-based egress restrictions.</p>
+</td>
 </tr><tr><td><p>&#34;ValidOIDCConfiguration&#34;</p></td>
 <td><p>ValidOIDCConfiguration indicates if an AWS cluster&rsquo;s OIDC condition is
 detected as invalid.
@@ -38397,6 +42201,28 @@ Typically obtained from the output of <code>hypershift infra create gcp</code> w
 the required service accounts with appropriate IAM roles and WIF bindings.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>network</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.GCPServiceAccountEmail">
+GCPServiceAccountEmail
+</a>
+</em>
+</td>
+<td>
+<p>network is the Google Service Account email for the Cloud Network Config Controller
+that manages cloud-level network configurations (egress IPs, subnets).
+This GSA requires the following IAM roles:
+- roles/compute.instanceAdmin.v1 (Compute Instance Admin - for managing network interfaces)
+- roles/compute.networkUser (Compute Network User - for using subnets)
+See cmd/infra/gcp/iam-bindings.json for the authoritative role definitions.
+Format: service-account-name@project-id.iam.gserviceaccount.com</p>
+<p>This is a user-provided value referencing a pre-created Google Service Account.
+Typically obtained from the output of <code>hypershift infra create gcp</code> which creates
+the required service accounts with appropriate IAM roles and WIF bindings.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###GCPWorkloadIdentityConfig { #hypershift.openshift.io/v1beta1.GCPWorkloadIdentityConfig }
@@ -39339,7 +43165,7 @@ associated with this HostedCluster.</p>
 </tr>
 <tr>
 <td>
-<code>autoNode</code></br>
+<code>autoNode,omitzero</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.AutoNode">
 AutoNode
@@ -39401,10 +43227,11 @@ Kubernetes core/v1.LocalObjectReference
 <p>pullSecret is a local reference to a Secret that must have a &ldquo;.dockerconfigjson&rdquo; key whose content must be a valid Openshift pull secret JSON.
 If the reference is set but none of the above requirements are met, the HostedCluster will enter a degraded state.
 TODO(alberto): Signal this in a condition.
-This pull secret will be part of every payload generated by the controllers for any NodePool of the HostedCluster
-and it will be injected into the container runtime of all NodePools.
-Changing this value will trigger a rollout for all existing NodePools in the cluster.
-Changing the content of the secret inplace will not trigger a rollout and might result in unpredictable behaviour.
+This pull secret is included in NodePool ignition/bootstrap payloads and applied to the container runtime when nodes provision.
+Changing this value will trigger a rollout for all existing NodePools in the cluster (for both replace and inplace upgrade types).
+Updating the referenced Secret&rsquo;s data in place (without changing this reference) does not trigger that rollout.
+In AWS and Azure NodePools using the Replace upgrade strategy, the Secret&rsquo;s data in place changes
+will still propagate the updated credentials down to the guest cluster and kubelet config.
 TODO(alberto): have our own local reference type to include our opinions and avoid transparent changes.</p>
 </td>
 </tr>
@@ -40337,7 +44164,7 @@ associated with the control plane.</p>
 </tr>
 <tr>
 <td>
-<code>autoNode</code></br>
+<code>autoNode,omitzero</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.AutoNode">
 AutoNode
@@ -41534,7 +45361,7 @@ PlatformType
 </tr>
 <tr>
 <td>
-<code>aws</code></br>
+<code>aws,omitzero</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.KarpenterAWSConfig">
 KarpenterAWSConfig
@@ -45619,7 +49446,7 @@ Provisioner
 </tr>
 <tr>
 <td>
-<code>karpenter</code></br>
+<code>karpenter,omitzero</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.KarpenterConfig">
 KarpenterConfig
@@ -46904,6 +50731,7 @@ string
 ###WorkloadIdentity { #hypershift.openshift.io/v1beta1.WorkloadIdentity }
 <p>
 (<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzureKMSSpec">AzureKMSSpec</a>, 
 <a href="#hypershift.openshift.io/v1beta1.AzureWorkloadIdentities">AzureWorkloadIdentities</a>)
 </p>
 <p>
@@ -48797,6 +52625,28 @@ These are desired project goals which drive the design invariants stated below. 
 - Compute worker Nodes should not run anything beyond user workloads.
   - A hosted cluster should not expose CRDs, CRs or Pods that enable users to manipulate HyperShift owned features.
 - HyperShift components should not own or manage user infrastructure platform credentials.
+
+### CP and Data Plane Ingress
+
+- Control plane (CP) ingress and guest cluster (data plane) ingress are orthogonal. They are handled by separate components, have separate implementations, and should not be conflated.
+
+- CP ingress is handled by HyperShift. A dedicated (or shared) router (HAProxy pod) is deployed in the management cluster. It is exposed to the guest cluster's private network via a cloud-specific Private Link (AWS PrivateLink, Azure Private Link Service, Swift...). The private-router uses SNI-based routing to forward traffic to the appropriate CP service (KAS, OAuth, Konnectivity, Ignition).
+
+- Data plane (guest cluster) ingress — i.e. application traffic under `*.apps` — is handled by the ingress operator running inside the guest cluster. This is standard OpenShift ingress, not something HyperShift's CP infrastructure manages. The CP private-router lives on the management side and does not know how to resolve guest cluster workloads.
+
+- A private topology dictates how CP ingress endpoints are exposed (e.g. only via Private Link, not public LB). It may also influence the desired visibility of guest cluster ingress, but the two are not inherently linked.
+
+- DNS for private clusters uses a synthetic `<cluster-name>.hypershift.local` zone. This is an internal, non-configurable domain automatically managed by HyperShift. Records in this zone include:
+  - `api.<cluster-name>.hypershift.local` → private endpoint IP
+  - `*.apps.<cluster-name>.hypershift.local` → private endpoint IP
+
+  These `*.apps` records in the `.hypershift.local` zone exist for CP-resident services that are exposed as routes (OAuth, Ignition, Konnectivity), not for guest cluster application traffic.
+
+- The `.hypershift.local` `*.apps` wildcard is distinct from `*.apps.<cluster>.<basedomain>`. The former resolves CP service routes via the private endpoint. The latter is the guest cluster's application ingress domain, managed by the ingress operator on the data plane — not by HyperShift's CP Private Link infrastructure.
+
+- On AWS, the reason both `api` and `*.apps` records exist in the `.hypershift.local` zone is historical: originally there was support for KAS having its own LB, which would have required two separate private endpoints and therefore two distinct domain resolutions. A similar pattern may be needed in the future for Azure if OAuth gets its own LB, but that is a separate concern from guest cluster traffic routing.
+
+- PRs modifying private DNS should validate traffic flow, not just DNS records. E2e tests should demonstrate that a traffic journey previously blocked is now enabled by the change, rather than simply asserting that DNS records exist in infrastructure.
 
 ---
 

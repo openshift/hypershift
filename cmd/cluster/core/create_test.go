@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	. "github.com/onsi/gomega"
 
@@ -12,6 +13,8 @@ import (
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
 	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
+
+	configv1 "github.com/openshift/api/config/v1"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -23,12 +26,46 @@ import (
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	"github.com/spf13/pflag"
 )
+
+func TestBindOptions(t *testing.T) {
+	t.Run("When flags are parsed it should populate the options struct", func(t *testing.T) {
+		g := NewWithT(t)
+		opts := DefaultOptions()
+		flags := pflag.NewFlagSet("test", pflag.ContinueOnError)
+		BindOptions(opts, flags)
+
+		err := flags.Parse([]string{
+			"--base-domain=example.com",
+			"--name=my-cluster",
+			"--namespace=my-ns",
+		})
+
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(opts.BaseDomain).To(Equal("example.com"))
+		g.Expect(opts.Name).To(Equal("my-cluster"))
+		g.Expect(opts.Namespace).To(Equal("my-ns"))
+	})
+
+	t.Run("When base-domain flag is omitted the pflag default should be empty", func(t *testing.T) {
+		g := NewWithT(t)
+		opts := DefaultOptions()
+		flags := pflag.NewFlagSet("test", pflag.ContinueOnError)
+		BindOptions(opts, flags)
+
+		err := flags.Parse([]string{})
+
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(opts.BaseDomain).To(BeEmpty())
+	})
+}
 
 func TestValidateMgmtClusterAndNodePoolCPUArchitectures(t *testing.T) {
 	ctx := t.Context()
 
-	fakeKubeClient := fakekubeclient.NewSimpleClientset()
+	fakeKubeClient := fakekubeclient.NewClientset()
 	fakeDiscovery, ok := fakeKubeClient.Discovery().(*fakediscovery.FakeDiscovery)
 	if !ok {
 		t.Fatalf("failed to convert FakeDiscovery")
@@ -886,4 +923,841 @@ func TestGetServicePublishingStrategyMapping(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestParseKeyValuePairs(t *testing.T) {
+	tests := []struct {
+		name        string
+		items       []string
+		kind        string
+		expected    map[string]string
+		expectError string
+	}{
+		{
+			name:     "When valid key=value pairs are provided, it should return a map",
+			items:    []string{"key1=value1", "key2=value2"},
+			kind:     "annotation",
+			expected: map[string]string{"key1": "value1", "key2": "value2"},
+		},
+		{
+			name:     "When an empty list is provided, it should return an empty map",
+			items:    []string{},
+			kind:     "label",
+			expected: map[string]string{},
+		},
+		{
+			name:        "When a malformed pair without equals sign is provided, it should return an error",
+			items:       []string{"badentry"},
+			kind:        "annotation",
+			expectError: "invalid annotation: badentry",
+		},
+		{
+			name:     "When a value contains an equals sign, it should split only on the first equals",
+			items:    []string{"key=val=extra"},
+			kind:     "label",
+			expected: map[string]string{"key": "val=extra"},
+		},
+		{
+			name:     "When a value is empty after equals sign, it should accept it",
+			items:    []string{"key="},
+			kind:     "annotation",
+			expected: map[string]string{"key": ""},
+		},
+		{
+			name:        "When the key is empty, it should return an error",
+			items:       []string{"=value"},
+			kind:        "label",
+			expectError: "key must not be empty",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			result, err := parseKeyValuePairs(tc.items, tc.kind)
+			if tc.expectError != "" {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring(tc.expectError))
+			} else {
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(result).To(Equal(tc.expected))
+			}
+		})
+	}
+}
+
+func TestApplyEtcdConfig(t *testing.T) {
+	tests := []struct {
+		name               string
+		etcdStorageClass   string
+		etcdStorageSize    string
+		expectError        string
+		expectStorageClass *string
+		expectSizeString   string
+	}{
+		{
+			name:             "When no etcd storage options are provided, it should leave defaults unchanged",
+			etcdStorageClass: "",
+			etcdStorageSize:  "",
+		},
+		{
+			name:               "When etcd storage class is provided, it should set the storage class",
+			etcdStorageClass:   "gp3-csi",
+			expectStorageClass: ptr.To("gp3-csi"),
+		},
+		{
+			name:             "When a valid etcd storage size is provided, it should set the storage size",
+			etcdStorageSize:  "8Gi",
+			expectSizeString: "8Gi",
+		},
+		{
+			name:            "When an invalid etcd storage size is provided, it should return an error",
+			etcdStorageSize: "notasize",
+			expectError:     "failed parse ectd storage size",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			cluster := &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Etcd: hyperv1.EtcdSpec{
+						Managed: &hyperv1.ManagedEtcdSpec{
+							Storage: hyperv1.ManagedEtcdStorageSpec{
+								PersistentVolume: &hyperv1.PersistentVolumeEtcdStorageSpec{
+									Size: &hyperv1.DefaultPersistentVolumeEtcdStorageSize,
+								},
+							},
+						},
+					},
+				},
+			}
+			opts := &CreateOptions{
+				completedCreateOptions: &completedCreateOptions{
+					ValidatedCreateOptions: &ValidatedCreateOptions{
+						validatedCreateOptions: &validatedCreateOptions{
+							RawCreateOptions: &RawCreateOptions{
+								EtcdStorageClass: tc.etcdStorageClass,
+								EtcdStorageSize:  tc.etcdStorageSize,
+							},
+						},
+					},
+				},
+			}
+
+			err := applyEtcdConfig(cluster, opts)
+			if tc.expectError != "" {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring(tc.expectError))
+			} else {
+				g.Expect(err).NotTo(HaveOccurred())
+				if tc.expectStorageClass != nil {
+					g.Expect(cluster.Spec.Etcd.Managed.Storage.PersistentVolume.StorageClassName).To(Equal(tc.expectStorageClass))
+				}
+				if tc.expectSizeString != "" {
+					g.Expect(cluster.Spec.Etcd.Managed.Storage.PersistentVolume.Size.String()).To(Equal(tc.expectSizeString))
+				}
+				// When no storage options are provided, verify defaults remain unchanged
+				if tc.etcdStorageClass == "" && tc.etcdStorageSize == "" {
+					// StorageClassName should remain nil (default)
+					g.Expect(cluster.Spec.Etcd.Managed.Storage.PersistentVolume.StorageClassName).To(BeNil(), "StorageClassName should remain nil when not specified")
+					// Size should remain at the default value
+					g.Expect(cluster.Spec.Etcd.Managed.Storage.PersistentVolume.Size).To(Equal(&hyperv1.DefaultPersistentVolumeEtcdStorageSize), "Size should remain at default when not specified")
+				}
+			}
+		})
+	}
+}
+
+func TestApplyPausedUntil(t *testing.T) {
+	tests := []struct {
+		name        string
+		pausedUntil string
+		expectError string
+		expectSet   bool
+	}{
+		{
+			name:        "When pausedUntil is empty, it should not set PausedUntil on the cluster",
+			pausedUntil: "",
+			expectSet:   false,
+		},
+		{
+			name:        "When pausedUntil is 'true', it should not set PausedUntil on the cluster",
+			pausedUntil: "true",
+			expectSet:   false,
+		},
+		{
+			name:        "When pausedUntil is a valid RFC3339 date, it should set PausedUntil on the cluster",
+			pausedUntil: "2026-12-31T23:59:59Z",
+			expectSet:   true,
+		},
+		{
+			name:        "When pausedUntil is an invalid date format, it should return an error",
+			pausedUntil: "not-a-date",
+			expectError: "invalid pausedUntil value",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			cluster := &hyperv1.HostedCluster{}
+			opts := &CreateOptions{
+				completedCreateOptions: &completedCreateOptions{
+					ValidatedCreateOptions: &ValidatedCreateOptions{
+						validatedCreateOptions: &validatedCreateOptions{
+							RawCreateOptions: &RawCreateOptions{
+								PausedUntil: tc.pausedUntil,
+							},
+						},
+					},
+				},
+			}
+
+			err := applyPausedUntil(cluster, opts)
+			if tc.expectError != "" {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring(tc.expectError))
+			} else {
+				g.Expect(err).NotTo(HaveOccurred())
+				if tc.expectSet {
+					g.Expect(cluster.Spec.PausedUntil).NotTo(BeNil())
+					g.Expect(*cluster.Spec.PausedUntil).To(Equal(tc.pausedUntil))
+				} else {
+					g.Expect(cluster.Spec.PausedUntil).To(BeNil())
+				}
+			}
+		})
+	}
+}
+
+func TestApplyOLMConfig(t *testing.T) {
+	tests := []struct {
+		name                     string
+		olmDisableDefaultSources bool
+		olmCatalogPlacement      hyperv1.OLMCatalogPlacement
+		expectOperatorHub        bool
+		expectCatalogPlacement   hyperv1.OLMCatalogPlacement
+	}{
+		{
+			name:                     "When OLM default sources are disabled, it should set DisableAllDefaultSources",
+			olmDisableDefaultSources: true,
+			olmCatalogPlacement:      "",
+			expectOperatorHub:        true,
+		},
+		{
+			name:                   "When OLM catalog placement is set to Guest, it should set OLMCatalogPlacement",
+			olmCatalogPlacement:    hyperv1.GuestOLMCatalogPlacement,
+			expectCatalogPlacement: hyperv1.GuestOLMCatalogPlacement,
+		},
+		{
+			name:              "When no OLM options are set, it should not modify the cluster",
+			expectOperatorHub: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			cluster := &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Configuration: &hyperv1.ClusterConfiguration{},
+				},
+			}
+			opts := &CreateOptions{
+				completedCreateOptions: &completedCreateOptions{
+					ValidatedCreateOptions: &ValidatedCreateOptions{
+						validatedCreateOptions: &validatedCreateOptions{
+							RawCreateOptions: &RawCreateOptions{
+								OLMDisableDefaultSources: tc.olmDisableDefaultSources,
+								OLMCatalogPlacement:      tc.olmCatalogPlacement,
+							},
+						},
+					},
+				},
+			}
+
+			applyOLMConfig(cluster, opts)
+			if tc.expectOperatorHub {
+				g.Expect(cluster.Spec.Configuration.OperatorHub).NotTo(BeNil())
+				g.Expect(cluster.Spec.Configuration.OperatorHub.DisableAllDefaultSources).To(BeTrue())
+			}
+			if tc.expectCatalogPlacement != "" {
+				g.Expect(cluster.Spec.OLMCatalogPlacement).To(Equal(tc.expectCatalogPlacement))
+			}
+			// When no OLM options are set, verify cluster remains unmodified
+			if !tc.olmDisableDefaultSources && tc.olmCatalogPlacement == "" {
+				g.Expect(cluster.Spec.Configuration.OperatorHub).To(BeNil(), "OperatorHub should remain nil when OLM options are not set")
+				g.Expect(cluster.Spec.OLMCatalogPlacement).To(BeEmpty(), "OLMCatalogPlacement should remain empty when not specified")
+			}
+		})
+	}
+}
+
+func TestApplyFeatureSet(t *testing.T) {
+	tests := []struct {
+		name               string
+		featureSet         string
+		expectFeatureGate  bool
+		expectedFeatureSet configv1.FeatureSet
+	}{
+		{
+			name:              "When feature set is Default, it should not set FeatureGate",
+			featureSet:        string(configv1.Default),
+			expectFeatureGate: false,
+		},
+		{
+			name:               "When feature set is TechPreviewNoUpgrade, it should set the TechPreviewNoUpgrade feature gate",
+			featureSet:         string(configv1.TechPreviewNoUpgrade),
+			expectFeatureGate:  true,
+			expectedFeatureSet: configv1.TechPreviewNoUpgrade,
+		},
+		{
+			name:               "When feature set is DevPreviewNoUpgrade, it should set the DevPreviewNoUpgrade feature gate",
+			featureSet:         string(configv1.DevPreviewNoUpgrade),
+			expectFeatureGate:  true,
+			expectedFeatureSet: configv1.DevPreviewNoUpgrade,
+		},
+		{
+			name:              "When feature set is an unrecognized value, it should not set FeatureGate",
+			featureSet:        "SomethingElse",
+			expectFeatureGate: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			cluster := &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Configuration: &hyperv1.ClusterConfiguration{},
+				},
+			}
+			opts := &CreateOptions{
+				completedCreateOptions: &completedCreateOptions{
+					ValidatedCreateOptions: &ValidatedCreateOptions{
+						validatedCreateOptions: &validatedCreateOptions{
+							RawCreateOptions: &RawCreateOptions{
+								FeatureSet: tc.featureSet,
+							},
+						},
+					},
+				},
+			}
+
+			applyFeatureSet(cluster, opts)
+			if tc.expectFeatureGate {
+				g.Expect(cluster.Spec.Configuration.FeatureGate).NotTo(BeNil())
+				g.Expect(cluster.Spec.Configuration.FeatureGate.FeatureSet).To(Equal(tc.expectedFeatureSet))
+			} else {
+				g.Expect(cluster.Spec.Configuration.FeatureGate).To(BeNil())
+			}
+		})
+	}
+}
+
+func TestApplyNetworkConfig(t *testing.T) {
+	tests := []struct {
+		name           string
+		clusterCIDR    []string
+		serviceCIDR    []string
+		machineCIDR    []string
+		expectError    string
+		expectClusters int
+		expectServices int
+		expectMachines int
+	}{
+		{
+			name:           "When valid CIDRs are provided, it should parse and append them",
+			clusterCIDR:    []string{"10.128.0.0/14"},
+			serviceCIDR:    []string{"172.30.0.0/16"},
+			machineCIDR:    []string{"10.0.0.0/16"},
+			expectClusters: 1,
+			expectServices: 1,
+			expectMachines: 1,
+		},
+		{
+			name:           "When dual-stack CIDRs are provided, it should parse both",
+			clusterCIDR:    []string{"10.128.0.0/14", "fd01::/48"},
+			serviceCIDR:    []string{"172.30.0.0/16", "fd02::/112"},
+			expectClusters: 2,
+			expectServices: 2,
+			expectMachines: 0,
+		},
+		{
+			name:        "When an invalid cluster CIDR is provided, it should return an error",
+			clusterCIDR: []string{"not-a-cidr"},
+			expectError: "parsing ClusterCIDR",
+		},
+		{
+			name:        "When an invalid service CIDR is provided, it should return an error",
+			serviceCIDR: []string{"not-a-cidr"},
+			expectError: "parsing ServiceCIDR",
+		},
+		{
+			name:        "When an invalid machine CIDR is provided, it should return an error",
+			machineCIDR: []string{"not-a-cidr"},
+			expectError: "parsing MachineCIDR",
+		},
+		{
+			name:           "When no CIDRs are provided, it should produce empty network lists",
+			expectClusters: 0,
+			expectServices: 0,
+			expectMachines: 0,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			cluster := &hyperv1.HostedCluster{}
+			opts := &CreateOptions{
+				completedCreateOptions: &completedCreateOptions{
+					ValidatedCreateOptions: &ValidatedCreateOptions{
+						validatedCreateOptions: &validatedCreateOptions{
+							RawCreateOptions: &RawCreateOptions{
+								ClusterCIDR: tc.clusterCIDR,
+								ServiceCIDR: tc.serviceCIDR,
+								MachineCIDR: tc.machineCIDR,
+							},
+						},
+					},
+				},
+			}
+
+			err := applyNetworkConfig(cluster, opts)
+			if tc.expectError != "" {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring(tc.expectError))
+			} else {
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(cluster.Spec.Networking.ClusterNetwork).To(HaveLen(tc.expectClusters))
+				g.Expect(cluster.Spec.Networking.ServiceNetwork).To(HaveLen(tc.expectServices))
+				g.Expect(cluster.Spec.Networking.MachineNetwork).To(HaveLen(tc.expectMachines))
+			}
+		})
+	}
+}
+
+func TestApplySchedulingConfig(t *testing.T) {
+	tests := []struct {
+		name               string
+		nodeSelector       map[string]string
+		podsLabels         map[string]string
+		expectNodeSelector map[string]string
+		expectLabels       map[string]string
+	}{
+		{
+			name:               "When node selector is provided, it should set NodeSelector on the cluster",
+			nodeSelector:       map[string]string{"role": "cp", "disk": "fast"},
+			expectNodeSelector: map[string]string{"role": "cp", "disk": "fast"},
+		},
+		{
+			name:         "When pods labels are provided, it should set Labels on the cluster",
+			podsLabels:   map[string]string{"team": "hypershift"},
+			expectLabels: map[string]string{"team": "hypershift"},
+		},
+		{
+			name: "When neither is provided, it should not modify the cluster",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			cluster := &hyperv1.HostedCluster{}
+			opts := &CreateOptions{
+				completedCreateOptions: &completedCreateOptions{
+					ValidatedCreateOptions: &ValidatedCreateOptions{
+						validatedCreateOptions: &validatedCreateOptions{
+							RawCreateOptions: &RawCreateOptions{
+								NodeSelector: tc.nodeSelector,
+								PodsLabels:   tc.podsLabels,
+							},
+						},
+					},
+				},
+			}
+
+			applySchedulingConfig(cluster, opts)
+			if tc.expectNodeSelector != nil {
+				g.Expect(cluster.Spec.NodeSelector).To(Equal(tc.expectNodeSelector))
+			}
+			if tc.expectLabels != nil {
+				g.Expect(cluster.Spec.Labels).To(Equal(tc.expectLabels))
+			}
+			// When neither node selector nor labels are provided, verify cluster remains unmodified
+			if tc.nodeSelector == nil && tc.podsLabels == nil {
+				g.Expect(cluster.Spec.NodeSelector).To(BeNil(), "NodeSelector should remain nil when not specified")
+				g.Expect(cluster.Spec.Labels).To(BeNil(), "Labels should remain nil when not specified")
+			}
+		})
+	}
+}
+
+func TestParseTolerationString(t *testing.T) {
+	tests := []struct {
+		name        string
+		input       string
+		expectError string
+		expected    *corev1.Toleration
+	}{
+		{
+			name:  "When a full toleration is specified, it should parse all fields",
+			input: "key=node-role.kubernetes.io/master,operator=Exists,effect=NoSchedule",
+			expected: &corev1.Toleration{
+				Key:      "node-role.kubernetes.io/master",
+				Operator: corev1.TolerationOpExists,
+				Effect:   corev1.TaintEffectNoSchedule,
+			},
+		},
+		{
+			name:  "When operator is Equal and a value is specified, it should parse correctly",
+			input: "key=mykey,value=myvalue,operator=Equal,effect=NoExecute",
+			expected: &corev1.Toleration{
+				Key:      "mykey",
+				Value:    "myvalue",
+				Operator: corev1.TolerationOpEqual,
+				Effect:   corev1.TaintEffectNoExecute,
+			},
+		},
+		{
+			name:  "When tolerationSeconds is specified, it should parse the integer value",
+			input: "key=mykey,operator=Exists,effect=NoExecute,tolerationSeconds=300",
+			expected: &corev1.Toleration{
+				Key:               "mykey",
+				Operator:          corev1.TolerationOpExists,
+				Effect:            corev1.TaintEffectNoExecute,
+				TolerationSeconds: ptr.To(int64(300)),
+			},
+		},
+		{
+			name:  "When effect is PreferNoSchedule, it should normalize the case",
+			input: "key=mykey,effect=preferNoSchedule",
+			expected: &corev1.Toleration{
+				Key:    "mykey",
+				Effect: corev1.TaintEffectPreferNoSchedule,
+			},
+		},
+		{
+			name:        "When an unknown operator type is provided, it should return an error",
+			input:       "key=mykey,operator=Unknown",
+			expectError: "unknown operator type",
+		},
+		{
+			name:        "When an unknown effect type is provided, it should return an error",
+			input:       "key=mykey,effect=Unknown",
+			expectError: "unknown effect type",
+		},
+		{
+			name:        "When a malformed key-value is provided, it should return an error",
+			input:       "badformat",
+			expectError: "invalid toleration cli argument",
+		},
+		{
+			name:        "When an unknown field is provided, it should return an error",
+			input:       "unknownfield=value",
+			expectError: "unknown field",
+		},
+		{
+			name:        "When tolerationSeconds is not an integer, it should return an error",
+			input:       "key=mykey,tolerationSeconds=abc",
+			expectError: "failed to parse tolerationSeconds",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			result, err := parseTolerationString(tc.input)
+			if tc.expectError != "" {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring(tc.expectError))
+			} else {
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(result).To(Equal(tc.expected))
+			}
+		})
+	}
+}
+
+func TestPostProcess(t *testing.T) {
+	t.Run("When secret encryption is nil, it should default to AESCBC", func(t *testing.T) {
+		g := NewWithT(t)
+		r := &resources{
+			Cluster: &hyperv1.HostedCluster{},
+		}
+		opts := &CreateOptions{
+			completedCreateOptions: &completedCreateOptions{
+				ValidatedCreateOptions: &ValidatedCreateOptions{
+					validatedCreateOptions: &validatedCreateOptions{
+						RawCreateOptions: &RawCreateOptions{
+							Name:      "test-cluster",
+							Namespace: "clusters",
+						},
+					},
+				},
+			},
+		}
+
+		postProcess(r, opts)
+
+		g.Expect(r.Cluster.Spec.SecretEncryption).NotTo(BeNil())
+		g.Expect(r.Cluster.Spec.SecretEncryption.Type).To(Equal(hyperv1.AESCBC))
+		g.Expect(r.Cluster.Spec.SecretEncryption.AESCBC).NotTo(BeNil())
+		g.Expect(r.Cluster.Spec.SecretEncryption.AESCBC.ActiveKey.Name).To(Equal("test-cluster-etcd-encryption-key"))
+		g.Expect(r.Resources).To(HaveLen(1))
+	})
+
+	t.Run("When secret encryption is already set, it should not override it", func(t *testing.T) {
+		g := NewWithT(t)
+		r := &resources{
+			Cluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					SecretEncryption: &hyperv1.SecretEncryptionSpec{
+						Type: hyperv1.KMS,
+					},
+				},
+			},
+		}
+		opts := &CreateOptions{
+			completedCreateOptions: &completedCreateOptions{
+				ValidatedCreateOptions: &ValidatedCreateOptions{
+					validatedCreateOptions: &validatedCreateOptions{
+						RawCreateOptions: &RawCreateOptions{
+							Name:      "test-cluster",
+							Namespace: "clusters",
+						},
+					},
+				},
+			},
+		}
+
+		postProcess(r, opts)
+
+		g.Expect(r.Cluster.Spec.SecretEncryption.Type).To(Equal(hyperv1.KMS))
+		g.Expect(r.Resources).To(BeEmpty())
+	})
+}
+
+func TestDefaultNodePool(t *testing.T) {
+	tests := []struct {
+		name         string
+		clusterName  string
+		suffix       string
+		expectedName string
+	}{
+		{
+			name:         "When no suffix is provided, it should use the cluster name",
+			clusterName:  "my-cluster",
+			suffix:       "",
+			expectedName: "my-cluster",
+		},
+		{
+			name:         "When a suffix is provided, it should append it to the cluster name",
+			clusterName:  "my-cluster",
+			suffix:       "us-east-1a",
+			expectedName: "my-cluster-us-east-1a",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			replicas := int32(3)
+			opts := &CreateOptions{
+				completedCreateOptions: &completedCreateOptions{
+					ValidatedCreateOptions: &ValidatedCreateOptions{
+						validatedCreateOptions: &validatedCreateOptions{
+							RawCreateOptions: &RawCreateOptions{
+								Name:             tc.clusterName,
+								Namespace:        "clusters",
+								NodePoolReplicas: replicas,
+								ReleaseImage:     "quay.io/openshift/ocp:4.16",
+								AutoRepair:       true,
+								Arch:             "amd64",
+								NodeDrainTimeout: 5 * time.Minute,
+							},
+						},
+					},
+				},
+			}
+
+			constructor := defaultNodePool(opts)
+			np := constructor(hyperv1.AWSPlatform, tc.suffix)
+
+			g.Expect(np.Name).To(Equal(tc.expectedName))
+			g.Expect(np.Namespace).To(Equal("clusters"))
+			g.Expect(np.Spec.ClusterName).To(Equal(tc.clusterName))
+			g.Expect(np.Spec.Platform.Type).To(Equal(hyperv1.AWSPlatform))
+			g.Expect(*np.Spec.Replicas).To(Equal(replicas))
+			g.Expect(np.Spec.Management.AutoRepair).To(BeTrue())
+			g.Expect(np.Spec.Arch).To(Equal("amd64"))
+			g.Expect(np.Spec.Release.Image).To(Equal("quay.io/openshift/ocp:4.16"))
+		})
+	}
+}
+
+func TestValidateArchAndFeatureSet(t *testing.T) {
+	tests := []struct {
+		name        string
+		arch        string
+		featureSet  string
+		expectError string
+	}{
+		{
+			name:       "When amd64 arch and Default feature set are provided, it should pass",
+			arch:       "amd64",
+			featureSet: string(configv1.Default),
+		},
+		{
+			name:       "When arm64 arch is provided, it should pass",
+			arch:       "arm64",
+			featureSet: string(configv1.Default),
+		},
+		{
+			name:       "When ppc64le arch is provided, it should pass",
+			arch:       "ppc64le",
+			featureSet: string(configv1.Default),
+		},
+		{
+			name:       "When s390x arch is provided, it should pass",
+			arch:       "s390x",
+			featureSet: string(configv1.Default),
+		},
+		{
+			name:        "When an unsupported arch is provided, it should return an error",
+			arch:        "mips",
+			featureSet:  string(configv1.Default),
+			expectError: "specified arch",
+		},
+		{
+			name:       "When TechPreviewNoUpgrade feature set is provided, it should pass",
+			arch:       "amd64",
+			featureSet: string(configv1.TechPreviewNoUpgrade),
+		},
+		{
+			name:       "When DevPreviewNoUpgrade feature set is provided, it should pass",
+			arch:       "amd64",
+			featureSet: string(configv1.DevPreviewNoUpgrade),
+		},
+		{
+			name:        "When CustomNoUpgrade feature set is provided, it should return an error",
+			arch:        "amd64",
+			featureSet:  string(configv1.CustomNoUpgrade),
+			expectError: "only a predefined feature set is supported",
+		},
+		{
+			name:        "When an unknown feature set is provided, it should return an error",
+			arch:        "amd64",
+			featureSet:  "SomethingRandom",
+			expectError: "specified feature set",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			opts := &RawCreateOptions{
+				Arch:       tc.arch,
+				FeatureSet: tc.featureSet,
+			}
+
+			err := opts.validateArchAndFeatureSet()
+			if tc.expectError != "" {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring(tc.expectError))
+			} else {
+				g.Expect(err).NotTo(HaveOccurred())
+			}
+		})
+	}
+}
+
+func TestApplyClusterCapabilities(t *testing.T) {
+	tests := []struct {
+		name           string
+		enableCaps     []string
+		disableCaps    []string
+		expectEnabled  []hyperv1.OptionalCapability
+		expectDisabled []hyperv1.OptionalCapability
+	}{
+		{
+			name:           "When both enable and disable capabilities are provided, it should set both",
+			enableCaps:     []string{"baremetal", "Console"},
+			disableCaps:    []string{"ImageRegistry"},
+			expectEnabled:  []hyperv1.OptionalCapability{"baremetal", "Console"},
+			expectDisabled: []hyperv1.OptionalCapability{"ImageRegistry"},
+		},
+		{
+			name:           "When only disable capabilities are provided, it should set disabled only",
+			disableCaps:    []string{"Insights", "NodeTuning"},
+			expectDisabled: []hyperv1.OptionalCapability{"Insights", "NodeTuning"},
+		},
+		{
+			name: "When neither enable nor disable are provided, it should not set capabilities",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			cluster := &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Capabilities: &hyperv1.Capabilities{},
+				},
+			}
+			opts := &CreateOptions{
+				completedCreateOptions: &completedCreateOptions{
+					ValidatedCreateOptions: &ValidatedCreateOptions{
+						validatedCreateOptions: &validatedCreateOptions{
+							RawCreateOptions: &RawCreateOptions{
+								EnableClusterCapabilities:  tc.enableCaps,
+								DisableClusterCapabilities: tc.disableCaps,
+							},
+						},
+					},
+				},
+			}
+
+			applyClusterCapabilities(cluster, opts)
+
+			if tc.expectEnabled != nil {
+				g.Expect(cluster.Spec.Capabilities.Enabled).To(Equal(tc.expectEnabled))
+			} else {
+				g.Expect(cluster.Spec.Capabilities.Enabled).To(BeNil())
+			}
+			if tc.expectDisabled != nil {
+				g.Expect(cluster.Spec.Capabilities.Disabled).To(Equal(tc.expectDisabled))
+			} else {
+				g.Expect(cluster.Spec.Capabilities.Disabled).To(BeNil())
+			}
+		})
+	}
+}
+
+func TestEnsureClusterNetworkOperatorSpec(t *testing.T) {
+	t.Run("When OperatorConfiguration is nil, it should initialize both OperatorConfiguration and ClusterNetworkOperator", func(t *testing.T) {
+		g := NewWithT(t)
+		cluster := &hyperv1.HostedCluster{}
+
+		ensureClusterNetworkOperatorSpec(cluster)
+
+		g.Expect(cluster.Spec.OperatorConfiguration).NotTo(BeNil())
+		g.Expect(cluster.Spec.OperatorConfiguration.ClusterNetworkOperator).NotTo(BeNil())
+	})
+
+	t.Run("When OperatorConfiguration exists but ClusterNetworkOperator is nil, it should initialize ClusterNetworkOperator", func(t *testing.T) {
+		g := NewWithT(t)
+		cluster := &hyperv1.HostedCluster{
+			Spec: hyperv1.HostedClusterSpec{
+				OperatorConfiguration: &hyperv1.OperatorConfiguration{},
+			},
+		}
+
+		ensureClusterNetworkOperatorSpec(cluster)
+
+		g.Expect(cluster.Spec.OperatorConfiguration.ClusterNetworkOperator).NotTo(BeNil())
+	})
 }

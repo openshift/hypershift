@@ -96,6 +96,7 @@ func (c *Ec2ClientMock) DescribeInstanceTypes(ctx context.Context, input *ec2v2.
 func TestReportVCpusCountByHCluster(t *testing.T) {
 	testCases := []struct {
 		name      string
+		platform  hyperv1.PlatformType
 		npsParams []nodePoolParams
 		configMap *corev1.ConfigMap
 
@@ -229,10 +230,26 @@ func TestReportVCpusCountByHCluster(t *testing.T) {
 			expectedVCpusCount:            16,
 			expectedVCpusCountErrorReason: "",
 		},
+		{
+			name:     "When nodePool platform is KubeVirt, it should return -1 with unsupported platform error",
+			platform: hyperv1.KubevirtPlatform,
+			npsParams: []nodePoolParams{
+				{availableNodesCount: 2},
+			},
+			expectedVCpusCount:            -1,
+			expectedVCpusCountErrorReason: "unsupported platform",
+		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			platform := tc.platform
+			if platform == "" {
+				platform = hyperv1.AWSPlatform
+			}
+
 			hcluster := &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "hc",
@@ -241,7 +258,7 @@ func TestReportVCpusCountByHCluster(t *testing.T) {
 				Spec: hyperv1.HostedClusterSpec{
 					ClusterID: "id",
 					Platform: hyperv1.PlatformSpec{
-						Type: hyperv1.AWSPlatform,
+						Type: platform,
 					},
 				},
 			}
@@ -263,15 +280,18 @@ func TestReportVCpusCountByHCluster(t *testing.T) {
 					Spec: hyperv1.NodePoolSpec{
 						ClusterName: "hc",
 						Platform: hyperv1.NodePoolPlatform{
-							Type: hyperv1.AWSPlatform,
-							AWS: &hyperv1.AWSNodePoolPlatform{
-								InstanceType: npParam.ec2InstanceType,
-							},
+							Type: platform,
 						},
 					},
 					Status: hyperv1.NodePoolStatus{
 						Replicas: npParam.availableNodesCount,
 					},
+				}
+
+				if platform == hyperv1.AWSPlatform {
+					nodePool.Spec.Platform.AWS = &hyperv1.AWSNodePoolPlatform{
+						InstanceType: npParam.ec2InstanceType,
+					}
 				}
 
 				clientBuilder = clientBuilder.WithObjects(nodePool)
@@ -281,9 +301,7 @@ func TestReportVCpusCountByHCluster(t *testing.T) {
 			reg.MustRegister(createNodePoolsMetricsCollector(clientBuilder.Build(), ec2MockedClient, clock.RealClock{}))
 
 			allMetricsValues, err := reg.Gather()
-			if err != nil {
-				t.Fatalf("gathering metrics failed: %v", err)
-			}
+			g.Expect(err).ToNot(HaveOccurred())
 
 			var vCpusCountMetricValue *dto.MetricFamily
 			var vCpusComputationErrorMetricValue *dto.MetricFamily
@@ -311,7 +329,7 @@ func TestReportVCpusCountByHCluster(t *testing.T) {
 					Name: ptr.To("namespace"), Value: ptr.To("any"),
 				},
 				{
-					Name: ptr.To("platform"), Value: ptr.To(string(hyperv1.AWSPlatform)),
+					Name: ptr.To("platform"), Value: ptr.To(string(platform)),
 				},
 			}
 
@@ -339,15 +357,8 @@ func TestReportVCpusCountByHCluster(t *testing.T) {
 				}
 			}
 
-			if diff := cmp.Diff(vCpusCountMetricValue, expectedVCpusCountMetricValue, ignoreUnexportedDto); diff != "" {
-				t.Errorf("result differs from actual: %s", diff)
-			}
-
-			if diff := cmp.Diff(vCpusComputationErrorMetricValue, expectedVCpusComputationErrorMetricValue, ignoreUnexportedDto); diff != "" {
-				t.Errorf("result differs from actual: %s, expected %+v, got %+v", diff,
-					expectedVCpusComputationErrorMetricValue,
-					vCpusComputationErrorMetricValue)
-			}
+			g.Expect(cmp.Diff(vCpusCountMetricValue, expectedVCpusCountMetricValue, ignoreUnexportedDto)).To(BeEmpty())
+			g.Expect(cmp.Diff(vCpusComputationErrorMetricValue, expectedVCpusComputationErrorMetricValue, ignoreUnexportedDto)).To(BeEmpty())
 		})
 	}
 }
@@ -549,4 +560,173 @@ func TestErrorCache(t *testing.T) {
 		close(ch)
 		g.Expect(ec2CallCount).To(Equal(2), "EC2 API should be retried when its error was transient")
 	})
+}
+
+func TestReportVCpusWithKarpenterAutoNode(t *testing.T) {
+	testCases := []struct {
+		name      string
+		autoVCPUs *int32
+		npsParams []nodePoolParams
+
+		MockedEC2DescribeInstanceTypesFunc func(ctx context.Context, input *ec2v2.DescribeInstanceTypesInput, optFns ...func(*ec2v2.Options)) (*ec2v2.DescribeInstanceTypesOutput, error)
+
+		expectedVCpusCount            float64
+		expectedVCpusCountErrorReason string
+	}{
+		{
+			name:               "When cluster has only Karpenter nodes, it should report AutoNode vCPUs",
+			autoVCPUs:          ptr.To[int32](12),
+			npsParams:          []nodePoolParams{},
+			expectedVCpusCount: 12,
+		},
+		{
+			name:      "When cluster has both Karpenter and native nodes, it should sum both",
+			autoVCPUs: ptr.To[int32](20),
+			npsParams: []nodePoolParams{
+				{availableNodesCount: 2, ec2InstanceType: "m5.xlarge"},
+			},
+			MockedEC2DescribeInstanceTypesFunc: func(ctx context.Context, input *ec2v2.DescribeInstanceTypesInput, optFns ...func(*ec2v2.Options)) (*ec2v2.DescribeInstanceTypesOutput, error) {
+				return initDescribeInstanceTypesOutput([]ec2typesv2.InstanceTypeInfo{
+					initInstanceTypeInfo("m5.xlarge", 4)}), nil
+			},
+			expectedVCpusCount: 28, // 20 Karpenter + 2*4 native
+		},
+		{
+			name:      "When AutoNode.VCPUs is nil, it should report only native vCPUs",
+			autoVCPUs: nil,
+			npsParams: []nodePoolParams{
+				{availableNodesCount: 2, ec2InstanceType: "m5.xlarge"},
+			},
+			MockedEC2DescribeInstanceTypesFunc: func(ctx context.Context, input *ec2v2.DescribeInstanceTypesInput, optFns ...func(*ec2v2.Options)) (*ec2v2.DescribeInstanceTypesOutput, error) {
+				return initDescribeInstanceTypesOutput([]ec2typesv2.InstanceTypeInfo{
+					initInstanceTypeInfo("m5.xlarge", 4)}), nil
+			},
+			expectedVCpusCount: 8,
+		},
+		{
+			name:      "When native lookup fails with Karpenter vCPUs, it should report -1",
+			autoVCPUs: ptr.To[int32](20),
+			npsParams: []nodePoolParams{
+				{availableNodesCount: 2, ec2InstanceType: "unknown-type"},
+			},
+			MockedEC2DescribeInstanceTypesFunc: func(ctx context.Context, input *ec2v2.DescribeInstanceTypesInput, optFns ...func(*ec2v2.Options)) (*ec2v2.DescribeInstanceTypesOutput, error) {
+				return &ec2v2.DescribeInstanceTypesOutput{}, nil
+			},
+			expectedVCpusCount:            -1,
+			expectedVCpusCountErrorReason: errRosaCPUsInstanceTypesConfigNotFound.Error(),
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			hcluster := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "hc",
+					Namespace: "any",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					ClusterID: "id",
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					AutoNode: hyperv1.AutoNodeStatus{
+						VCPUs: tc.autoVCPUs,
+					},
+				},
+			}
+
+			clientBuilder := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hcluster)
+
+			ec2MockedClient := &Ec2ClientMock{}
+			if tc.MockedEC2DescribeInstanceTypesFunc != nil {
+				ec2MockedClient.MockedDescribeInstanceTypesFunc = tc.MockedEC2DescribeInstanceTypesFunc
+			}
+
+			for k, npParam := range tc.npsParams {
+				nodePool := &hyperv1.NodePool{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      strconv.Itoa(k),
+						Namespace: "any",
+					},
+					Spec: hyperv1.NodePoolSpec{
+						ClusterName: "hc",
+						Platform: hyperv1.NodePoolPlatform{
+							Type: hyperv1.AWSPlatform,
+							AWS: &hyperv1.AWSNodePoolPlatform{
+								InstanceType: npParam.ec2InstanceType,
+							},
+						},
+					},
+					Status: hyperv1.NodePoolStatus{
+						Replicas: npParam.availableNodesCount,
+					},
+				}
+				clientBuilder = clientBuilder.WithObjects(nodePool)
+			}
+
+			reg := prometheus.NewPedanticRegistry()
+			reg.MustRegister(createNodePoolsMetricsCollector(clientBuilder.Build(), ec2MockedClient, clock.RealClock{}))
+
+			allMetricsValues, err := reg.Gather()
+			if err != nil {
+				t.Fatalf("gathering metrics failed: %v", err)
+			}
+
+			var vCpusCountMetricValue *dto.MetricFamily
+			var vCpusComputationErrorMetricValue *dto.MetricFamily
+			var expectedVCpusComputationErrorMetricValue *dto.MetricFamily
+
+			for _, metricValue := range allMetricsValues {
+				if metricValue != nil && metricValue.Name != nil {
+					switch *metricValue.Name {
+					case VCpusCountByHClusterMetricName:
+						vCpusCountMetricValue = metricValue
+					case VCpusComputationErrorByHClusterMetricName:
+						vCpusComputationErrorMetricValue = metricValue
+					}
+				}
+			}
+
+			expectedBaseLabels := []*dto.LabelPair{
+				{Name: ptr.To("_id"), Value: ptr.To("id")},
+				{Name: ptr.To("name"), Value: ptr.To("hc")},
+				{Name: ptr.To("namespace"), Value: ptr.To("any")},
+				{Name: ptr.To("platform"), Value: ptr.To(string(hyperv1.AWSPlatform))},
+			}
+
+			expectedVCpusCountMetricValue := &dto.MetricFamily{
+				Name: ptr.To(VCpusCountByHClusterMetricName),
+				Help: ptr.To(VCpusCountByHClusterMetricHelp),
+				Type: func() *dto.MetricType { v := dto.MetricType(1); return &v }(),
+				Metric: []*dto.Metric{{
+					Label: expectedBaseLabels,
+					Gauge: &dto.Gauge{Value: ptr.To(tc.expectedVCpusCount)},
+				}},
+			}
+
+			if tc.expectedVCpusCountErrorReason != "" {
+				expectedVCpusComputationErrorMetricValue = &dto.MetricFamily{
+					Name: ptr.To(VCpusComputationErrorByHClusterMetricName),
+					Help: ptr.To(VCpusComputationErrorByHClusterMetricHelp),
+					Type: func() *dto.MetricType { v := dto.MetricType(1); return &v }(),
+					Metric: []*dto.Metric{{
+						Label: append(expectedBaseLabels, &dto.LabelPair{
+							Name: ptr.To("reason"), Value: ptr.To(tc.expectedVCpusCountErrorReason),
+						}),
+						Gauge: &dto.Gauge{Value: ptr.To[float64](1.0)},
+					}},
+				}
+			}
+
+			if diff := cmp.Diff(vCpusCountMetricValue, expectedVCpusCountMetricValue, ignoreUnexportedDto); diff != "" {
+				t.Errorf("vCpus count differs from expected: %s", diff)
+			}
+
+			if diff := cmp.Diff(vCpusComputationErrorMetricValue, expectedVCpusComputationErrorMetricValue, ignoreUnexportedDto); diff != "" {
+				t.Errorf("vCpus error metric differs from expected: %s", diff)
+			}
+		})
+	}
 }

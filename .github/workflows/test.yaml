@@ -1,41 +1,15 @@
 name: Unit Tests
 
 on:
-  push:
-    branches: [main]
   pull_request:
-    branches: [main]
+    branches:
+      - main
+      - release-4.22
   workflow_dispatch: {}
 
 jobs:
   test:
-    name: Unit Tests
-    runs-on: arc-runner-set
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-      - name: Check for non-contrib changes
-        id: changes
-        run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
-          else
-            FILES=$(git diff --name-only HEAD~1)
-          fi
-          if echo "$FILES" | grep -qvE '^(contrib|\.github)/'; then
-            echo "run_tests=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "run_tests=false" >> "$GITHUB_OUTPUT"
-          fi
-      - if: steps.changes.outputs.run_tests == 'true'
-        run: make test
-      - if: steps.changes.outputs.run_tests == 'true'
-        name: Upload to Codecov
-        uses: codecov/codecov-action@v5
-        env:
-          HOME: /tmp
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
-        with:
-          files: cover.out
+    uses: openshift/hypershift/.github/workflows/test-reusable.yaml@main
+    permissions:
+      contents: read
+    secrets: inherit

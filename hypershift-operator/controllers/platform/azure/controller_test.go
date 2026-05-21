@@ -14,7 +14,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/azureutil"
-	supportutil "github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/k8sutil"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	azruntime "github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
@@ -160,7 +160,7 @@ func TestReconcile_WhenHostedClusterIsPaused_ItShouldRequeueAfterPauseExpiry(t *
 			Namespace:  "test-ns",
 			Finalizers: []string{azurePLSFinalizer},
 			Annotations: map[string]string{
-				supportutil.HostedClusterAnnotation: "test-ns/test-cluster",
+				k8sutil.HostedClusterAnnotation: "test-ns/test-cluster",
 			},
 		},
 		Spec: hyperv1.AzurePrivateLinkServiceSpec{
@@ -219,7 +219,7 @@ func TestReconcile_WhenLoadBalancerIPIsSet_ItShouldCreateAPLS(t *testing.T) {
 			Namespace:  "test-ns",
 			Finalizers: []string{azurePLSFinalizer},
 			Annotations: map[string]string{
-				supportutil.HostedClusterAnnotation: "test-ns/test-cluster",
+				k8sutil.HostedClusterAnnotation: "test-ns/test-cluster",
 			},
 		},
 		Spec: hyperv1.AzurePrivateLinkServiceSpec{
@@ -315,7 +315,7 @@ func TestReconcile_WhenPLSAlreadyExists_ItShouldUpdateStatus(t *testing.T) {
 			Namespace:  "test-ns",
 			Finalizers: []string{azurePLSFinalizer},
 			Annotations: map[string]string{
-				supportutil.HostedClusterAnnotation: "test-ns/test-cluster",
+				k8sutil.HostedClusterAnnotation: "test-ns/test-cluster",
 			},
 		},
 		Spec: hyperv1.AzurePrivateLinkServiceSpec{
@@ -592,7 +592,7 @@ func TestReconcile_WhenLoadBalancerIPNotSet_ItShouldRequeue(t *testing.T) {
 			Namespace:  "test-ns",
 			Finalizers: []string{azurePLSFinalizer},
 			Annotations: map[string]string{
-				supportutil.HostedClusterAnnotation: "test-ns/test-cluster",
+				k8sutil.HostedClusterAnnotation: "test-ns/test-cluster",
 			},
 		},
 		Spec: hyperv1.AzurePrivateLinkServiceSpec{
@@ -911,7 +911,7 @@ func TestReconcile_WhenAdditionalAllowedSubscriptionsChange_ItShouldUpdatePLS(t 
 			Namespace:  "test-ns",
 			Finalizers: []string{azurePLSFinalizer},
 			Annotations: map[string]string{
-				supportutil.HostedClusterAnnotation: "test-ns/test-cluster",
+				k8sutil.HostedClusterAnnotation: "test-ns/test-cluster",
 			},
 		},
 		Spec: hyperv1.AzurePrivateLinkServiceSpec{
@@ -1031,7 +1031,7 @@ func TestReconcile_WhenAdditionalAllowedSubscriptionsMatch_ItShouldNotUpdatePLS(
 			Namespace:  "test-ns",
 			Finalizers: []string{azurePLSFinalizer},
 			Annotations: map[string]string{
-				supportutil.HostedClusterAnnotation: "test-ns/test-cluster",
+				k8sutil.HostedClusterAnnotation: "test-ns/test-cluster",
 			},
 		},
 		Spec: hyperv1.AzurePrivateLinkServiceSpec{

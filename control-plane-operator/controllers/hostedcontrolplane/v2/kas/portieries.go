@@ -1,7 +1,7 @@
 package kas
 
 import (
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/podspec"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -19,7 +19,7 @@ const (
 )
 
 var (
-	portieriesVolumeMounts = util.PodVolumeMounts{
+	portieriesVolumeMounts = podspec.VolumeMounts{
 		portierisContainerName: {
 			localhostKubeconfigVolumeName: "/etc/openshift/kubeconfig",
 			portierisCertsVolumeName:      "/etc/certs",

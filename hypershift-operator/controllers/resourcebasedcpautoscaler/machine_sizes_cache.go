@@ -103,7 +103,7 @@ func sizeMemoryCapacityAvailable(csc *schedulingv1alpha1.ClusterSizingConfigurat
 
 // updateSizesFromConfig populates the cache using capacity information directly
 // from the ClusterSizingConfiguration.
-func (s *machineSizesCache) updateSizesFromConfig(csc *schedulingv1alpha1.ClusterSizingConfiguration) error {
+func (s *machineSizesCache) updateSizesFromConfig(csc *schedulingv1alpha1.ClusterSizingConfiguration) error { //nolint:unparam // result kept for API consistency
 	sizes := map[string]machineResources{}
 	for _, sizeConfig := range csc.Spec.Sizes {
 		resources := machineResources{

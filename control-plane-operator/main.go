@@ -38,6 +38,8 @@ import (
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/events"
 	"github.com/openshift/hypershift/support/metrics"
+	"github.com/openshift/hypershift/support/netutil"
+	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/supportedversion"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/reference"
@@ -75,6 +77,13 @@ import (
 var setupLog = ctrl.Log.WithName("setup")
 
 func main() {
+	// Ensure compatibility with Kubernetes API servers that do not fully support the
+	// 'sendInitialEvents' watch parameter by disabling the WatchListClient feature by default.
+	// This covers all subcommands (ignition-server, etcd-defrag, etc.) dispatched from this binary.
+	if _, ok := os.LookupEnv("KUBE_FEATURE_WatchListClient"); !ok {
+		os.Setenv("KUBE_FEATURE_WatchListClient", "false")
+	}
+
 	ctrl.SetLogger(zap.New(zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
 		o.EncodeTime = zapcore.RFC3339TimeEncoder
 	})))
@@ -176,6 +185,135 @@ func defaultCommand() *cobra.Command {
 	cmd.AddCommand(endpointresolver.NewStartCommand())
 	cmd.AddCommand(metricsproxy.NewStartCommand())
 	return cmd
+}
+
+// For now, since the hosted cluster config operator is treated like any other
+// release payload component but isn't actually part of a release payload,
+// enable the user to specify an image directly as a flag, and otherwise
+// try and detect the control plane operator's image to use instead.
+func newOperatorImageLookup(mgr ctrl.Manager, namespace, deploymentName string) func(string) (string, error) {
+	return func(userSpecifiedImage string) (string, error) {
+		if len(userSpecifiedImage) > 0 {
+			setupLog.Info("using image from arguments", "image", userSpecifiedImage)
+			return userSpecifiedImage, nil
+		}
+		ctx := context.Background()
+		if podName := os.Getenv("POD_NAME"); podName != "" {
+			me := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: podName}}
+			if err := mgr.GetAPIReader().Get(ctx, crclient.ObjectKeyFromObject(me), me); err != nil {
+				return "", fmt.Errorf("failed to get operator pod %s: %w", crclient.ObjectKeyFromObject(me), err)
+			}
+
+			for _, container := range me.Spec.Containers {
+				// If CPO container image is a sha256 reference, use it
+				if container.Name == "control-plane-operator" {
+					if strings.Contains(container.Image, "@sha256:") {
+						return container.Image, nil
+					}
+				}
+			}
+
+			// Use the container status to make sure we get the sha256 reference
+			for _, container := range me.Status.ContainerStatuses {
+				if container.Name == "control-plane-operator" {
+					image := strings.TrimPrefix(container.ImageID, "docker-pullable://")
+					if ref, err := reference.Parse(image); err == nil && ref.Registry != "" {
+						return image, nil
+					}
+				}
+			}
+		}
+		deployment := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: deploymentName}}
+		if err := mgr.GetAPIReader().Get(ctx, crclient.ObjectKeyFromObject(deployment), deployment); err != nil {
+			return "", fmt.Errorf("failed to get operator deployment: %w", err)
+		}
+		for _, container := range deployment.Spec.Template.Spec.Containers {
+			if container.Name == "control-plane-operator" {
+				setupLog.Info("using operator image from deployment")
+				return container.Image, nil
+			}
+		}
+		return "", fmt.Errorf("couldn't locate operator container on deployment")
+	}
+}
+
+func buildComponentImages(hccoImage, socks5ProxyImage, availabilityProberImage, tokenMinterImage, cpoImage, imageOverridesStr string) map[string]string {
+	componentImages := map[string]string{
+		podspec.AvailabilityProberImageName: availabilityProberImage,
+		"hosted-cluster-config-operator":    hccoImage,
+		"socks5-proxy":                      socks5ProxyImage,
+		"token-minter":                      tokenMinterImage,
+		podspec.CPOImageName:                cpoImage,
+		podspec.CPPKIOImageName:             cpoImage,
+	}
+	for _, pair := range strings.Split(imageOverridesStr, ",") {
+		if pair == "" {
+			continue
+		}
+		kv := strings.SplitN(pair, "=", 2)
+		if len(kv) != 2 {
+			setupLog.Info("WARNING: skipping malformed image override entry", "entry", pair)
+			continue
+		}
+		componentImages[kv[0]] = kv[1]
+	}
+	return componentImages
+}
+
+func buildImageRegistryOverrides(registryOverrides map[string]string) map[string][]string {
+	var imageRegistryOverrides map[string][]string
+
+	openShiftImgOverrides, ok := os.LookupEnv("OPENSHIFT_IMG_OVERRIDES")
+	if ok {
+		imageRegistryOverrides = util.ConvertImageRegistryOverrideStringToMap(openShiftImgOverrides)
+	}
+
+	if len(registryOverrides) > 0 {
+		if imageRegistryOverrides == nil {
+			imageRegistryOverrides = map[string][]string{}
+		}
+		for registry, override := range registryOverrides {
+			if _, exists := imageRegistryOverrides[registry]; !exists {
+				imageRegistryOverrides[registry] = []string{}
+			}
+			imageRegistryOverrides[registry] = append(imageRegistryOverrides[registry], override)
+		}
+	}
+
+	return imageRegistryOverrides
+}
+
+func buildReleaseProviders(componentImages map[string]string, registryOverrides map[string]string, imageRegistryOverrides map[string][]string) (
+	*releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator,
+	*releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator,
+) {
+	coreReleaseProvider := &releaseinfo.StaticProviderDecorator{
+		Delegate: &releaseinfo.CachedProvider{
+			Inner: &releaseinfo.RegistryClientProvider{},
+			Cache: map[string]*releaseinfo.ReleaseImage{},
+		},
+		ComponentImages: componentImages,
+	}
+
+	// It should be used to lookup spec.releaseImage.
+	userReleaseProvider := &releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator{
+		Delegate: &releaseinfo.RegistryMirrorProviderDecorator{
+			Delegate:          coreReleaseProvider,
+			RegistryOverrides: nil, // UserReleaseProvider shouldn't include registry overrides as they should not get propagated to the data plane.
+		},
+		OpenShiftImageRegistryOverrides: imageRegistryOverrides,
+	}
+
+	// It should be used to lookup spec.controlPlaneReleaseImage.
+	cpReleaseProvider := &releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator{
+		Delegate: &releaseinfo.RegistryMirrorProviderDecorator{
+			Delegate:          coreReleaseProvider,
+			RegistryOverrides: registryOverrides,
+		},
+		OpenShiftImageRegistryOverrides: imageRegistryOverrides,
+	}
+
+	return cpReleaseProvider, userReleaseProvider
 }
 
 func NewStartCommand() *cobra.Command {
@@ -308,56 +446,7 @@ func NewStartCommand() *cobra.Command {
 		// configure the featuregates based on featureset
 		featuregates.ConfigureFeatureSet(featureSet)
 
-		// For now, since the hosted cluster config operator is treated like any other
-		// release payload component but isn't actually part of a release payload,
-		// enable the user to specify an image directly as a flag, and otherwise
-		// try and detect the control plane operator's image to use instead.
-		lookupOperatorImage := func(userSpecifiedImage string) (string, error) {
-			if len(userSpecifiedImage) > 0 {
-				setupLog.Info("using image from arguments", "image", userSpecifiedImage)
-				return userSpecifiedImage, nil
-			}
-			if podName := os.Getenv("POD_NAME"); podName != "" {
-				me := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: podName}}
-				if err := mgr.GetAPIReader().Get(ctx, crclient.ObjectKeyFromObject(me), me); err != nil {
-					return "", fmt.Errorf("failed to get operator pod %s: %w", crclient.ObjectKeyFromObject(me), err)
-				}
-
-				// If CPO container image is a sha256 reference, use it
-				for _, container := range me.Spec.Containers {
-					if container.Name == "control-plane-operator" {
-						if strings.Contains(container.Image, "@sha256:") {
-							return container.Image, nil
-						}
-					}
-				}
-
-				// CPO container image is not a sha256 reference
-				// Use the container status to make sure we get the sha256 reference
-				for _, container := range me.Status.ContainerStatuses {
-					// TODO: could use downward API for this too, overkill?
-					if container.Name == "control-plane-operator" {
-						image := strings.TrimPrefix(container.ImageID, "docker-pullable://")
-						// Only return image if it is a valid reference
-						if ref, err := reference.Parse(image); err == nil && ref.Registry != "" {
-							return image, nil
-						}
-					}
-				}
-			}
-			deployment := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: deploymentName}}
-			if err := mgr.GetAPIReader().Get(ctx, crclient.ObjectKeyFromObject(deployment), deployment); err != nil {
-				return "", fmt.Errorf("failed to get operator deployment: %w", err)
-			}
-			for _, container := range deployment.Spec.Template.Spec.Containers {
-				// TODO: could use downward API for this too, overkill?
-				if container.Name == "control-plane-operator" {
-					setupLog.Info("using operator image from deployment")
-					return container.Image, nil
-				}
-			}
-			return "", fmt.Errorf("couldn't locate operator container on deployment")
-		}
+		lookupOperatorImage := newOperatorImageLookup(mgr, namespace, deploymentName)
 
 		if err := wait.PollUntilContextTimeout(ctx, 5*time.Second, 30*time.Second, true, func(ctx context.Context) (bool, error) {
 			hostedClusterConfigOperatorImage, err = lookupOperatorImage(hostedClusterConfigOperatorImage)
@@ -411,70 +500,10 @@ func NewStartCommand() *cobra.Command {
 			os.Exit(1)
 		}
 
-		componentImages := map[string]string{
-			util.AvailabilityProberImageName: availabilityProberImage,
-			"hosted-cluster-config-operator": hostedClusterConfigOperatorImage,
-			"socks5-proxy":                   socks5ProxyImage,
-			"token-minter":                   tokenMinterImage,
-			util.CPOImageName:                cpoImage,
-			util.CPPKIOImageName:             cpoImage,
-		}
-		for _, pair := range strings.Split(imageOverridesStr, ",") {
-			if pair == "" {
-				continue
-			}
-			kv := strings.SplitN(pair, "=", 2)
-			if len(kv) != 2 {
-				setupLog.Info("WARNING: skipping malformed image override entry", "entry", pair)
-				continue
-			}
-			componentImages[kv[0]] = kv[1]
-		}
+		componentImages := buildComponentImages(hostedClusterConfigOperatorImage, socks5ProxyImage, availabilityProberImage, tokenMinterImage, cpoImage, imageOverridesStr)
+		imageRegistryOverrides := buildImageRegistryOverrides(registryOverrides)
 
-		var imageRegistryOverrides map[string][]string
-
-		openShiftImgOverrides, ok := os.LookupEnv("OPENSHIFT_IMG_OVERRIDES")
-		if ok {
-			imageRegistryOverrides = util.ConvertImageRegistryOverrideStringToMap(openShiftImgOverrides)
-		}
-
-		if len(registryOverrides) > 0 {
-			if imageRegistryOverrides == nil {
-				imageRegistryOverrides = map[string][]string{}
-			}
-			for registry, override := range registryOverrides {
-				if _, exists := imageRegistryOverrides[registry]; !exists {
-					imageRegistryOverrides[registry] = []string{}
-				}
-				imageRegistryOverrides[registry] = append(imageRegistryOverrides[registry], override)
-			}
-		}
-
-		coreReleaseProvider := &releaseinfo.StaticProviderDecorator{
-			Delegate: &releaseinfo.CachedProvider{
-				Inner: &releaseinfo.RegistryClientProvider{},
-				Cache: map[string]*releaseinfo.ReleaseImage{},
-			},
-			ComponentImages: componentImages,
-		}
-
-		// It should be used to lookup spec.releaseImage.
-		userReleaseProvider := &releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator{
-			Delegate: &releaseinfo.RegistryMirrorProviderDecorator{
-				Delegate:          coreReleaseProvider,
-				RegistryOverrides: nil, // UserReleaseProvider shouldn't include registry overrides as they should not get propagated to the data plane.
-			},
-			OpenShiftImageRegistryOverrides: imageRegistryOverrides,
-		}
-
-		// It should be used to lookup spec.controlPlaneReleaseImage.
-		cpReleaseProvider := &releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator{
-			Delegate: &releaseinfo.RegistryMirrorProviderDecorator{
-				Delegate:          coreReleaseProvider,
-				RegistryOverrides: registryOverrides,
-			},
-			OpenShiftImageRegistryOverrides: imageRegistryOverrides,
-		}
+		cpReleaseProvider, userReleaseProvider := buildReleaseProviders(componentImages, registryOverrides, imageRegistryOverrides)
 
 		imageMetaDataProvider := &util.RegistryClientImageMetadataProvider{
 			OpenShiftImageRegistryOverrides: imageRegistryOverrides,
@@ -517,156 +546,7 @@ func NewStartCommand() *cobra.Command {
 			os.Exit(1)
 		}
 
-		if hcp.Spec.Platform.Type == hyperv1.AWSPlatform && util.IsPrivateHCP(hcp) && mgmtClusterCaps.Has(capabilities.CapabilityRoute) {
-			controllerName := "PrivateKubeAPIServerServiceObserver"
-			if err := (&awsprivatelink.PrivateServiceObserver{
-				Client:                 mgr.GetClient(),
-				ControllerName:         controllerName,
-				ServiceNamespace:       namespace,
-				ServiceName:            manifests.KubeAPIServerPrivateServiceName,
-				HCPNamespace:           namespace,
-				CreateOrUpdateProvider: upsert.New(enableCIDebugOutput),
-			}).SetupWithManager(ctx, mgr); err != nil {
-				controllerName := awsprivatelink.ControllerName(manifests.KubeAPIServerPrivateServiceName)
-				setupLog.Error(err, "unable to create controller", "controller", controllerName)
-				os.Exit(1)
-			}
-
-			controllerName = "PrivateIngressServiceObserver"
-			if err := (&awsprivatelink.PrivateServiceObserver{
-				Client:                 mgr.GetClient(),
-				ControllerName:         controllerName,
-				ServiceNamespace:       namespace,
-				ServiceName:            manifests.PrivateRouterService("").Name,
-				HCPNamespace:           namespace,
-				CreateOrUpdateProvider: upsert.New(enableCIDebugOutput),
-			}).SetupWithManager(ctx, mgr); err != nil {
-				controllerName := awsprivatelink.ControllerName(manifests.PrivateRouterService("").Name)
-				setupLog.Error(err, "unable to create controller", "controller", controllerName)
-				os.Exit(1)
-			}
-
-			if err := (&awsprivatelink.AWSEndpointServiceReconciler{
-				CreateOrUpdateProvider: upsert.New(enableCIDebugOutput),
-			}).SetupWithManager(mgr); err != nil {
-				setupLog.Error(err, "unable to create controller", "controller", "aws-endpoint-service")
-				os.Exit(1)
-			}
-		}
-
-		if hcp.Spec.Platform.Type == hyperv1.GCPPlatform && util.IsPrivateHCP(hcp) && mgmtClusterCaps.Has(capabilities.CapabilityRoute) {
-			observerControllerName := "GCPPrivateServiceObserver"
-
-			if err = (&gcpprivateserviceconnect.GCPPrivateServiceObserver{
-				Client:                 mgr.GetClient(),
-				ControllerName:         observerControllerName,
-				ServiceNamespace:       namespace,
-				ServiceName:            manifests.PrivateRouterService("").Name,
-				HCPNamespace:           namespace,
-				CreateOrUpdateProvider: upsert.New(enableCIDebugOutput),
-			}).SetupWithManager(ctx, mgr); err != nil {
-				observerControllerName = gcpprivateserviceconnect.ControllerName(manifests.PrivateRouterService("").Name)
-				setupLog.Error(err, "unable to create controller", "controller", observerControllerName)
-				os.Exit(1)
-			}
-
-			// Add customer-side PSC endpoint controller
-			endpointControllerName := "GCPPrivateServiceConnectEndpoint"
-
-			if err = (&gcpprivateserviceconnect.GCPPrivateServiceConnectReconciler{
-				Client:                 mgr.GetClient(),
-				CreateOrUpdateProvider: upsert.New(enableCIDebugOutput),
-			}).SetupWithManager(mgr); err != nil {
-				setupLog.Error(err, "unable to create controller", "controller", endpointControllerName)
-				os.Exit(1)
-			}
-		}
-
-		if hcp.Spec.Platform.Type == hyperv1.AzurePlatform && util.IsPrivateHCP(hcp) && mgmtClusterCaps.Has(capabilities.CapabilityRoute) && !azureutil.IsAroHCP() {
-			if hcp.Spec.Platform.Azure == nil || hcp.Spec.Platform.Azure.Private.Type == "" {
-				setupLog.Error(fmt.Errorf("azure platform or private connectivity is not configured"), "skipping Azure Private Link observer setup")
-			} else {
-				azureObserverName := "AzurePrivateLinkServiceObserver"
-
-				if err = (&azureprivatelinkservice.AzurePrivateLinkServiceObserver{
-					Client:                 mgr.GetClient(),
-					ControllerName:         azureObserverName,
-					ServiceNamespace:       namespace,
-					ServiceName:            manifests.PrivateRouterService("").Name,
-					HCPNamespace:           namespace,
-					CreateOrUpdateProvider: upsert.New(enableCIDebugOutput),
-				}).SetupWithManager(ctx, mgr); err != nil {
-					setupLog.Error(err, "unable to create controller", "controller", azureObserverName)
-					os.Exit(1)
-				}
-
-				if oauthStrategy := util.ServicePublishingStrategyByTypeForHCP(hcp, hyperv1.OAuthServer); oauthStrategy != nil && oauthStrategy.Type == hyperv1.LoadBalancer {
-					azureOAuthObserverName := "AzurePrivateLinkServiceOAuthObserver"
-
-					if err = (&azureprivatelinkservice.AzurePrivateLinkServiceObserver{
-						Client:                 mgr.GetClient(),
-						ControllerName:         azureOAuthObserverName,
-						ServiceNamespace:       namespace,
-						ServiceName:            manifests.OauthServerService("").Name,
-						HCPNamespace:           namespace,
-						CreateOrUpdateProvider: upsert.New(enableCIDebugOutput),
-					}).SetupWithManager(ctx, mgr); err != nil {
-						setupLog.Error(err, "unable to create controller", "controller", azureOAuthObserverName)
-						os.Exit(1)
-					}
-				}
-
-				azureReconcilerName := "AzurePrivateLinkServiceReconciler"
-
-				cloudConfig, err := azureutil.GetAzureCloudConfiguration(hcp.Spec.Platform.Azure.Cloud)
-				if err != nil {
-					setupLog.Error(err, "failed to get Azure cloud configuration")
-					os.Exit(1)
-				}
-				azureCreds, err := azidentity.NewDefaultAzureCredential(
-					&azidentity.DefaultAzureCredentialOptions{
-						ClientOptions: azcore.ClientOptions{Cloud: cloudConfig},
-					},
-				)
-				if err != nil {
-					setupLog.Error(err, "failed to create Azure credentials")
-					os.Exit(1)
-				}
-				azureSubscriptionID := hcp.Spec.Platform.Azure.SubscriptionID
-				armClientOpts := azureutil.NewARMClientOptions(cloudConfig)
-				peClient, err := armnetwork.NewPrivateEndpointsClient(azureSubscriptionID, azureCreds, armClientOpts)
-				if err != nil {
-					setupLog.Error(err, "failed to create Azure Private Endpoints client")
-					os.Exit(1)
-				}
-				dnsZonesClient, err := armprivatedns.NewPrivateZonesClient(azureSubscriptionID, azureCreds, armClientOpts)
-				if err != nil {
-					setupLog.Error(err, "failed to create Azure Private DNS Zones client")
-					os.Exit(1)
-				}
-				vnetLinksClient, err := armprivatedns.NewVirtualNetworkLinksClient(azureSubscriptionID, azureCreds, armClientOpts)
-				if err != nil {
-					setupLog.Error(err, "failed to create Azure Virtual Network Links client")
-					os.Exit(1)
-				}
-				recordSetsClient, err := armprivatedns.NewRecordSetsClient(azureSubscriptionID, azureCreds, armClientOpts)
-				if err != nil {
-					setupLog.Error(err, "failed to create Azure Record Sets client")
-					os.Exit(1)
-				}
-
-				if err = (&azureprivatelinkservice.AzurePrivateLinkServiceReconciler{
-					Client:              mgr.GetClient(),
-					PrivateEndpoints:    peClient,
-					PrivateDNSZones:     dnsZonesClient,
-					VirtualNetworkLinks: vnetLinksClient,
-					RecordSets:          recordSetsClient,
-				}).SetupWithManager(mgr); err != nil {
-					setupLog.Error(err, "unable to create controller", "controller", azureReconcilerName)
-					os.Exit(1)
-				}
-			}
-		}
+		setupPrivatePlatformControllers(ctx, mgr, hcp, namespace, enableCIDebugOutput, mgmtClusterCaps)
 
 		if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 			setupLog.Error(err, "unable to set up health check")
@@ -684,4 +564,168 @@ func NewStartCommand() *cobra.Command {
 	}
 
 	return cmd
+}
+
+func setupPrivatePlatformControllers(ctx context.Context, mgr ctrl.Manager, hcp *hyperv1.HostedControlPlane, namespace string, enableCIDebugOutput bool, mgmtClusterCaps *capabilities.ManagementClusterCapabilities) {
+	if !netutil.IsPrivateHCP(hcp) || !mgmtClusterCaps.Has(capabilities.CapabilityRoute) {
+		return
+	}
+
+	switch hcp.Spec.Platform.Type {
+	case hyperv1.AWSPlatform:
+		setupAWSPrivateControllers(ctx, mgr, namespace, enableCIDebugOutput)
+	case hyperv1.GCPPlatform:
+		setupGCPPrivateControllers(ctx, mgr, namespace, enableCIDebugOutput)
+	case hyperv1.AzurePlatform:
+		setupAzurePrivateControllers(ctx, mgr, hcp, namespace, enableCIDebugOutput)
+	}
+}
+
+func setupAWSPrivateControllers(ctx context.Context, mgr ctrl.Manager, namespace string, enableCIDebugOutput bool) {
+	controllerName := "PrivateKubeAPIServerServiceObserver"
+	if err := (&awsprivatelink.PrivateServiceObserver{
+		Client:                 mgr.GetClient(),
+		ControllerName:         controllerName,
+		ServiceNamespace:       namespace,
+		ServiceName:            manifests.KubeAPIServerPrivateServiceName,
+		HCPNamespace:           namespace,
+		CreateOrUpdateProvider: upsert.New(enableCIDebugOutput),
+	}).SetupWithManager(ctx, mgr); err != nil {
+		controllerName = awsprivatelink.ControllerName(manifests.KubeAPIServerPrivateServiceName)
+		setupLog.Error(err, "unable to create controller", "controller", controllerName)
+		os.Exit(1)
+	}
+
+	controllerName = "PrivateIngressServiceObserver"
+	if err := (&awsprivatelink.PrivateServiceObserver{
+		Client:                 mgr.GetClient(),
+		ControllerName:         controllerName,
+		ServiceNamespace:       namespace,
+		ServiceName:            manifests.PrivateRouterService("").Name,
+		HCPNamespace:           namespace,
+		CreateOrUpdateProvider: upsert.New(enableCIDebugOutput),
+	}).SetupWithManager(ctx, mgr); err != nil {
+		controllerName = awsprivatelink.ControllerName(manifests.PrivateRouterService("").Name)
+		setupLog.Error(err, "unable to create controller", "controller", controllerName)
+		os.Exit(1)
+	}
+
+	if err := (&awsprivatelink.AWSEndpointServiceReconciler{
+		CreateOrUpdateProvider: upsert.New(enableCIDebugOutput),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "aws-endpoint-service")
+		os.Exit(1)
+	}
+}
+
+func setupGCPPrivateControllers(ctx context.Context, mgr ctrl.Manager, namespace string, enableCIDebugOutput bool) {
+	observerControllerName := "GCPPrivateServiceObserver"
+	if err := (&gcpprivateserviceconnect.GCPPrivateServiceObserver{
+		Client:                 mgr.GetClient(),
+		ControllerName:         observerControllerName,
+		ServiceNamespace:       namespace,
+		ServiceName:            manifests.PrivateRouterService("").Name,
+		HCPNamespace:           namespace,
+		CreateOrUpdateProvider: upsert.New(enableCIDebugOutput),
+	}).SetupWithManager(ctx, mgr); err != nil {
+		observerControllerName = gcpprivateserviceconnect.ControllerName(manifests.PrivateRouterService("").Name)
+		setupLog.Error(err, "unable to create controller", "controller", observerControllerName)
+		os.Exit(1)
+	}
+
+	endpointControllerName := "GCPPrivateServiceConnectEndpoint"
+	if err := (&gcpprivateserviceconnect.GCPPrivateServiceConnectReconciler{
+		Client:                 mgr.GetClient(),
+		CreateOrUpdateProvider: upsert.New(enableCIDebugOutput),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", endpointControllerName)
+		os.Exit(1)
+	}
+}
+
+func setupAzurePrivateControllers(ctx context.Context, mgr ctrl.Manager, hcp *hyperv1.HostedControlPlane, namespace string, enableCIDebugOutput bool) {
+	if azureutil.IsAroHCP() {
+		return
+	}
+	if hcp.Spec.Platform.Azure == nil || hcp.Spec.Platform.Azure.Private.Type == "" {
+		setupLog.Error(fmt.Errorf("azure platform or private connectivity is not configured"), "skipping Azure Private Link observer setup")
+		return
+	}
+
+	azureObserverName := "AzurePrivateLinkServiceObserver"
+	if err := (&azureprivatelinkservice.AzurePrivateLinkServiceObserver{
+		Client:                 mgr.GetClient(),
+		ControllerName:         azureObserverName,
+		ServiceNamespace:       namespace,
+		ServiceName:            manifests.PrivateRouterService("").Name,
+		HCPNamespace:           namespace,
+		CreateOrUpdateProvider: upsert.New(enableCIDebugOutput),
+	}).SetupWithManager(ctx, mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", azureObserverName)
+		os.Exit(1)
+	}
+
+	if oauthStrategy := netutil.ServicePublishingStrategyByTypeForHCP(hcp, hyperv1.OAuthServer); oauthStrategy != nil && oauthStrategy.Type == hyperv1.LoadBalancer {
+		azureOAuthObserverName := "AzurePrivateLinkServiceOAuthObserver"
+		if err := (&azureprivatelinkservice.AzurePrivateLinkServiceObserver{
+			Client:                 mgr.GetClient(),
+			ControllerName:         azureOAuthObserverName,
+			ServiceNamespace:       namespace,
+			ServiceName:            manifests.OauthServerService("").Name,
+			HCPNamespace:           namespace,
+			CreateOrUpdateProvider: upsert.New(enableCIDebugOutput),
+		}).SetupWithManager(ctx, mgr); err != nil {
+			setupLog.Error(err, "unable to create controller", "controller", azureOAuthObserverName)
+			os.Exit(1)
+		}
+	}
+
+	cloudConfig, err := azureutil.GetAzureCloudConfiguration(hcp.Spec.Platform.Azure.Cloud)
+	if err != nil {
+		setupLog.Error(err, "failed to get Azure cloud configuration")
+		os.Exit(1)
+	}
+	azureCreds, err := azidentity.NewDefaultAzureCredential(
+		&azidentity.DefaultAzureCredentialOptions{
+			ClientOptions: azcore.ClientOptions{Cloud: cloudConfig},
+		},
+	)
+	if err != nil {
+		setupLog.Error(err, "failed to create Azure credentials")
+		os.Exit(1)
+	}
+	azureSubscriptionID := hcp.Spec.Platform.Azure.SubscriptionID
+	armClientOpts := azureutil.NewARMClientOptions(cloudConfig)
+	peClient, err := armnetwork.NewPrivateEndpointsClient(azureSubscriptionID, azureCreds, armClientOpts)
+	if err != nil {
+		setupLog.Error(err, "failed to create Azure Private Endpoints client")
+		os.Exit(1)
+	}
+	dnsZonesClient, err := armprivatedns.NewPrivateZonesClient(azureSubscriptionID, azureCreds, armClientOpts)
+	if err != nil {
+		setupLog.Error(err, "failed to create Azure Private DNS Zones client")
+		os.Exit(1)
+	}
+	vnetLinksClient, err := armprivatedns.NewVirtualNetworkLinksClient(azureSubscriptionID, azureCreds, armClientOpts)
+	if err != nil {
+		setupLog.Error(err, "failed to create Azure Virtual Network Links client")
+		os.Exit(1)
+	}
+	recordSetsClient, err := armprivatedns.NewRecordSetsClient(azureSubscriptionID, azureCreds, armClientOpts)
+	if err != nil {
+		setupLog.Error(err, "failed to create Azure Record Sets client")
+		os.Exit(1)
+	}
+
+	azureReconcilerName := "AzurePrivateLinkServiceReconciler"
+	if err = (&azureprivatelinkservice.AzurePrivateLinkServiceReconciler{
+		Client:              mgr.GetClient(),
+		PrivateEndpoints:    peClient,
+		PrivateDNSZones:     dnsZonesClient,
+		VirtualNetworkLinks: vnetLinksClient,
+		RecordSets:          recordSetsClient,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", azureReconcilerName)
+		os.Exit(1)
+	}
 }

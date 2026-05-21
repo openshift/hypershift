@@ -5,7 +5,7 @@ import (
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/capabilities"
 	component "github.com/openshift/hypershift/support/controlplane-component"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/podspec"
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/utils/ptr"
@@ -59,7 +59,7 @@ func NewComponent() component.ControlPlaneComponent {
 			},
 			KubeconfingVolumeName: "admin-kubeconfig",
 		}).
-		InjectAvailabilityProberContainer(util.AvailabilityProberOpts{
+		InjectAvailabilityProberContainer(podspec.AvailabilityProberOpts{
 			KubeconfigVolumeName: component.ServiceAccountKubeconfigVolumeName,
 			RequiredAPIs: []schema.GroupVersionKind{
 				{Group: "route.openshift.io", Version: "v1", Kind: "Route"},

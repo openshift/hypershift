@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
+	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/thirdparty/kubernetes/pkg/credentialprovider"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
@@ -46,9 +47,6 @@ type Reconciler struct {
 }
 
 func (r *Reconciler) Reconcile(ctx context.Context, req crreconcile.Request) (crreconcile.Result, error) {
-	log := ctrl.LoggerFrom(ctx)
-	log.Info("reconciling global pull secret")
-
 	// Reconcile GlobalPullSecret
 	if err := r.reconcileGlobalPullSecret(ctx); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile global pull secret: %w", err)
@@ -76,7 +74,6 @@ func (r *Reconciler) reconcileGlobalPullSecret(ctx context.Context) error {
 		ok                          bool
 	)
 	log := ctrl.LoggerFrom(ctx)
-	log.Info("reconciling global pull secret")
 
 	// Create ServiceAccount for global-pull-secret-syncer
 	serviceAccount := manifests.GlobalPullSecretServiceAccount()
@@ -179,9 +176,6 @@ func (r *Reconciler) reconcileGlobalPullSecret(ctx context.Context) error {
 }
 
 func reconcileDaemonSet(ctx context.Context, daemonSet *appsv1.DaemonSet, globalPullSecretName string, originalPullSecretName string, configSeed string, c crclient.Client, createOrUpdate upsert.CreateOrUpdateFN, hccoImage string) error {
-	log := ctrl.LoggerFrom(ctx)
-	log.Info("Reconciling global pull secret daemon set")
-
 	if _, err := createOrUpdate(ctx, c, daemonSet, func() error {
 		daemonSet.Spec = appsv1.DaemonSetSpec{
 			Selector: &metav1.LabelSelector{
@@ -351,16 +345,16 @@ func buildGlobalPSVolumeMounts(globalPullSecretName string) []corev1.VolumeMount
 	return volumeMounts
 }
 
-// buildGlobalPSVolumes creates volumes for the GlobalPullSecret DaemonSet using util.BuildVolume pattern
+// buildGlobalPSVolumes creates volumes for the GlobalPullSecret DaemonSet using podspec.BuildVolume pattern
 func buildGlobalPSVolumes(globalPullSecretName string, originalPullSecretName string) []corev1.Volume {
 	var volumes []corev1.Volume
 
-	volumes = append(volumes, util.BuildVolume(globalPSVolumeKubeletConfig(), buildGlobalPSVolumeKubeletConfig))
-	volumes = append(volumes, util.BuildVolume(globalPSVolumeDbus(), buildGlobalPSVolumeDbus))
-	volumes = append(volumes, util.BuildVolume(globalPSVolumeOriginalPullSecret(), buildGlobalPSVolumeOriginalPullSecret(originalPullSecretName)))
+	volumes = append(volumes, podspec.BuildVolume(globalPSVolumeKubeletConfig(), buildGlobalPSVolumeKubeletConfig))
+	volumes = append(volumes, podspec.BuildVolume(globalPSVolumeDbus(), buildGlobalPSVolumeDbus))
+	volumes = append(volumes, podspec.BuildVolume(globalPSVolumeOriginalPullSecret(), buildGlobalPSVolumeOriginalPullSecret(originalPullSecretName)))
 
 	if globalPullSecretName != "" {
-		volumes = append(volumes, util.BuildVolume(globalPSVolumeGlobalPullSecret(), buildGlobalPSVolumeGlobalPullSecret(globalPullSecretName)))
+		volumes = append(volumes, podspec.BuildVolume(globalPSVolumeGlobalPullSecret(), buildGlobalPSVolumeGlobalPullSecret(globalPullSecretName)))
 	}
 
 	return volumes

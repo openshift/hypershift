@@ -180,8 +180,9 @@ func TestReconcileServiceAzureInternalLB(t *testing.T) {
 func TestReconcilePrivateService(t *testing.T) {
 	azureILBAnnotation := azureutil.InternalLoadBalancerAnnotation
 	awsCrossZoneAnnotation := "service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled"
+	awsLBAttributesAnnotation := "service.beta.kubernetes.io/aws-load-balancer-attributes"
 	awsInternalAnnotation := "service.beta.kubernetes.io/aws-load-balancer-internal"
-	awsNLBAnnotation := "service.beta.kubernetes.io/aws-load-balancer-type"
+	awsNLBAnnotation := AWSNLBAnnotation
 
 	testCases := []struct {
 		name                    string
@@ -318,6 +319,7 @@ func TestReconcilePrivateService(t *testing.T) {
 				g.Expect(svc.Annotations).To(HaveKeyWithValue(azureILBAnnotation, "true"))
 				// Azure should NOT have AWS annotations
 				g.Expect(svc.Annotations).ToNot(HaveKey(awsCrossZoneAnnotation))
+				g.Expect(svc.Annotations).ToNot(HaveKey(awsLBAttributesAnnotation))
 				g.Expect(svc.Annotations).ToNot(HaveKey(awsInternalAnnotation))
 				g.Expect(svc.Annotations).ToNot(HaveKey(awsNLBAnnotation))
 			}
@@ -325,6 +327,7 @@ func TestReconcilePrivateService(t *testing.T) {
 			// Verify AWS annotations
 			if tc.expectAWSAnnotations {
 				g.Expect(svc.Annotations).To(HaveKeyWithValue(awsCrossZoneAnnotation, "true"))
+				g.Expect(svc.Annotations).To(HaveKeyWithValue(awsLBAttributesAnnotation, "load_balancing.cross_zone.enabled=true"))
 				g.Expect(svc.Annotations).To(HaveKeyWithValue(awsInternalAnnotation, "true"))
 				g.Expect(svc.Annotations).To(HaveKeyWithValue(awsNLBAnnotation, "nlb"))
 				// Non-Azure should NOT have Azure ILB annotation

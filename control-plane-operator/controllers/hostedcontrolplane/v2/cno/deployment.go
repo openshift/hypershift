@@ -9,6 +9,8 @@ import (
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/netutil"
+	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/rhobsmonitoring"
 	"github.com/openshift/hypershift/support/util"
@@ -21,19 +23,16 @@ import (
 )
 
 func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
-	cnoEnvVars, err := buildCNOEnvVars(cpContext)
-	if err != nil {
-		return err
-	}
-	util.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
+	cnoEnvVars := buildCNOEnvVars(cpContext)
+	podspec.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
 		c.Env = append(c.Env, cnoEnvVars...)
 	})
 
-	util.UpdateContainer("client-token-minter", deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
+	podspec.UpdateContainer("client-token-minter", deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
 		c.Args = append(c.Args, "--token-audience", cpContext.HCP.Spec.IssuerURL)
 	})
 
-	util.UpdateContainer("init-client-token-minter", deployment.Spec.Template.Spec.InitContainers, func(c *corev1.Container) {
+	podspec.UpdateContainer("init-client-token-minter", deployment.Spec.Template.Spec.InitContainers, func(c *corev1.Container) {
 		c.Args = append(c.Args, "--token-audience", cpContext.HCP.Spec.IssuerURL)
 	})
 
@@ -69,16 +68,16 @@ if [[ -n $sc ]]; then kubectl --kubeconfig $kc delete --ignore-not-found validat
 	return nil
 }
 
-func buildCNOEnvVars(cpContext component.WorkloadContext) ([]corev1.EnvVar, error) {
+func buildCNOEnvVars(cpContext component.WorkloadContext) []corev1.EnvVar {
 	hcp := cpContext.HCP
 	releaseImageProvider := cpContext.ReleaseImageProvider
 	userReleaseImageProvider := cpContext.UserReleaseImageProvider
 
 	apiServerAddress := hcp.Status.ControlPlaneEndpoint.Host
 	apiServerPort := hcp.Status.ControlPlaneEndpoint.Port
-	if util.IsPrivateHCP(hcp) {
+	if netutil.IsPrivateHCP(hcp) {
 		apiServerAddress = fmt.Sprintf("api.%s.hypershift.local", hcp.Name)
-		apiServerPort = util.APIPortForLocalZone(util.IsLBKAS(hcp))
+		apiServerPort = netutil.APIPortForLocalZone(netutil.IsLBKAS(hcp))
 	} else if hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
 		apiServerAddress = *hcp.Spec.Networking.APIServer.AdvertiseAddress
 		apiServerPort = *hcp.Spec.Networking.APIServer.Port
@@ -118,7 +117,7 @@ func buildCNOEnvVars(cpContext component.WorkloadContext) ([]corev1.EnvVar, erro
 		{Name: "FRR_K8S_IMAGE", Value: userReleaseImageProvider.GetImage("metallb-frr")},
 	}
 
-	if !util.IsPrivateHCP(hcp) {
+	if !netutil.IsPrivateHCP(hcp) {
 		cnoEnv = append(cnoEnv, corev1.EnvVar{
 			Name: "PROXY_INTERNAL_APISERVER_ADDRESS", Value: "true",
 		})
@@ -162,5 +161,14 @@ func buildCNOEnvVars(cpContext component.WorkloadContext) ([]corev1.EnvVar, erro
 		)
 	}
 
-	return cnoEnv, nil
+	// For GCP deployments, we pass the credentials filename for the Cloud Network Config Controller.
+	// The CNO uses this to configure the CNCC deployment it manages in the management cluster.
+	if hcp.Spec.Platform.Type == hyperv1.GCPPlatform {
+		cnoEnv = append(cnoEnv, corev1.EnvVar{
+			Name:  "GCP_CNCC_CREDENTIALS_FILE",
+			Value: "application_default_credentials.json",
+		})
+	}
+
+	return cnoEnv
 }

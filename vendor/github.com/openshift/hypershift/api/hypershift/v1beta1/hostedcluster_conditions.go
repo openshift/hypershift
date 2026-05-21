@@ -122,6 +122,15 @@ const (
 	// performance degradation due to fragmentation of the double encapsulation in ovn-kubernetes
 	ValidKubeVirtInfraNetworkMTU ConditionType = "ValidKubeVirtInfraNetworkMTU"
 
+	// ValidKubeVirtInfraNetworkPolicyRBAC indicates whether the external infra
+	// kubeconfig has sufficient permissions to create/update the virt-launcher network policy
+	// on the infrastructure cluster. This covers both reading the
+	// cluster network configuration (networks.config.openshift.io) for CIDR-
+	// based egress blocking and creating/updating NetworkPolicy resources in
+	// the infra namespace. When false, tenant isolation may be weaker: the
+	// NetworkPolicy may be missing or lack CIDR-based egress restrictions.
+	ValidKubeVirtInfraNetworkPolicyRBAC ConditionType = "ValidKubeVirtInfraNetworkPolicyRBAC"
+
 	// KubeVirtNodesLiveMigratable indicates if all nodes (VirtualMachines) of the kubevirt
 	// hosted cluster can be live migrated without experiencing a node restart
 	KubeVirtNodesLiveMigratable ConditionType = "KubeVirtNodesLiveMigratable"
@@ -279,6 +288,9 @@ const (
 	InvalidIdentityProvider               = "InvalidIdentityProvider"
 	PayloadArchNotFoundReason             = "PayloadArchNotFound"
 
+	InfraClusterNetworkReadFailedReason         = "InfraClusterNetworkReadFailed"
+	InfraClusterNetworkPolicyCreateFailedReason = "InfraClusterNetworkPolicyCreateFailed"
+
 	InvalidIAMRoleReason = "InvalidIAMRole"
 
 	InvalidAzureCredentialsReason = "InvalidAzureCredentials"
@@ -302,6 +314,8 @@ const (
 	ReconcileErrorReason = "ReconcileError"
 
 	CloudResourcesCleanupSkippedReason = "CloudResourcesCleanupSkipped"
+
+	CloudResourcesDeletionTimedOutReason = "CloudResourcesDeletionTimedOut"
 
 	DataPlaneConnectionNoKonnectivityAgentPodsNotFoundReason = "KonnectivityAgentPodsNotFound"
 

@@ -59,6 +59,7 @@ type OADPBackupOptions struct {
 	Render                   bool     // Render the backup object to STDOUT instead of creating it
 	IncludedResources        []string // Comma-separated list of resources to include
 	IncludeNamespaces        []string // Additional namespaces to include
+	UseEtcdSnapshot          bool     // Use etcd snapshot mode (--use-etcd-snapshot)
 }
 
 // OADPRestoreOptions contains options for creating an OADP restore
@@ -79,6 +80,7 @@ type OADPRestoreOptions struct {
 	Render                 bool     // Render the restore object to STDOUT instead of creating it
 	RestorePVs             *bool    // Restore persistent volumes (default: true)
 	PreserveNodePorts      *bool    // Preserve NodePort assignments during restore (default: true)
+	UseEtcdSnapshot        bool     // Use etcd snapshot mode (--use-etcd-snapshot)
 }
 
 // OADPScheduleOptions contains options for creating an OADP backup schedule
@@ -101,6 +103,7 @@ type OADPScheduleOptions struct {
 	Paused                   bool     // Create schedule in paused state
 	UseOwnerReferences       bool     // Use owner references in backup objects
 	SkipImmediately          bool     // Skip immediate backup after schedule creation
+	UseEtcdSnapshot          bool     // Use etcd snapshot mode (--use-etcd-snapshot)
 }
 
 // FixDrOidcIamOptions contains options for fixing OIDC identity provider during disaster recovery
@@ -271,6 +274,9 @@ func buildBackupArgs(opts *OADPBackupOptions) []string {
 	if opts.Render {
 		args = append(args, "--render")
 	}
+	if opts.UseEtcdSnapshot {
+		args = append(args, "--use-etcd-snapshot")
+	}
 
 	// Slice flags
 	if len(opts.IncludedResources) > 0 {
@@ -328,6 +334,9 @@ func buildRestoreArgs(opts *OADPRestoreOptions) []string {
 	if opts.Render {
 		args = append(args, "--render")
 	}
+	if opts.UseEtcdSnapshot {
+		args = append(args, "--use-etcd-snapshot")
+	}
 
 	// Slice flags
 	if len(opts.IncludeNamespaces) > 0 {
@@ -382,6 +391,9 @@ func buildScheduleArgs(opts *OADPScheduleOptions) []string {
 	}
 	if opts.SkipImmediately {
 		args = append(args, "--skip-immediately")
+	}
+	if opts.UseEtcdSnapshot {
+		args = append(args, "--use-etcd-snapshot")
 	}
 
 	// Slice flags

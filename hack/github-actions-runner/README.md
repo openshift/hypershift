@@ -14,9 +14,11 @@ runner pods that pick up GitHub Actions jobs and terminate after completion.
 ### How It Works
 
 When a PR is opened against `openshift/hypershift`, GitHub triggers the workflow
-files defined in `.github/workflows/`. Each workflow file (e.g., `lint.yaml`,
-`codespell.yaml`) specifies `runs-on: arc-runner-set`, which tells GitHub to
-route the job to our self-hosted runners instead of GitHub-hosted runners.
+files defined in `.github/workflows/`. All workflows follow a **caller + reusable**
+pattern: each caller workflow (e.g., `lint.yaml`) delegates to a reusable workflow
+(e.g., `lint-reusable.yaml`) pinned at `@main` via `uses:`. The reusable workflow
+contains the actual job steps and specifies `runs-on: arc-runner-set`, which tells
+GitHub to route the job to our self-hosted runners instead of GitHub-hosted runners.
 
 **Note:** These runners are scoped to the `openshift/hypershift` repository
 only (via `githubConfigUrl` in the Helm values). PRs in other OpenShift repos
@@ -42,7 +44,8 @@ connection to GitHub's Actions service — essentially saying "I'm here, send me
 jobs."
 
 **Phase 2 — Job matching (on every PR):**
-When a PR triggers a workflow, GitHub reads the workflow YAML and sees
+When a PR triggers a workflow, the caller workflow delegates to the reusable
+workflow pinned at `@main`. GitHub reads the reusable workflow YAML and sees
 `runs-on: arc-runner-set`. It checks its registry of runners and finds one
 registered under that label for `openshift/hypershift`. It queues the job for
 that runner set. The Listener — already connected — receives the job
@@ -61,7 +64,7 @@ arrow — everything flows outbound from the cluster to GitHub:
 sequenceDiagram
     participant Dev as Developer
     participant GH as GitHub API<br/>(api.github.com)
-    participant WF as Workflow YAML<br/>(.github/workflows/*.yaml)
+    participant WF as Workflow YAML<br/>(.github/workflows/*-reusable.yaml)
     participant Listener as ARC Listener<br/>(arc-systems namespace)
     participant Controller as ARC Controller<br/>(arc-systems namespace)
     participant Runner as Runner Pod<br/>(arc-runners namespace)
@@ -77,7 +80,7 @@ sequenceDiagram
     rect rgb(255, 248, 240)
         Note over Dev,GH: Phase 2: Job Matching (on PR)
         Dev->>GH: Opens / updates PR
-        GH->>WF: Evaluates workflow triggers<br/>(on: pull_request)
+        GH->>WF: Evaluates caller triggers<br/>(on: pull_request)<br/>Caller delegates to reusable@main
         WF->>GH: Creates jobs with<br/>runs-on: arc-runner-set
         GH->>GH: Matches label to registered<br/>runner scale set
         GH-->>Listener: Job notification delivered<br/>over existing long-poll<br/>(no inbound connection needed)
@@ -406,18 +409,49 @@ spec:
 
 ## Using the Runners in Workflows
 
-Reference the runner label `arc-runner-set` in your GitHub Actions workflow:
+All HyperShift workflows use a caller + reusable pattern. The caller defines
+triggers and delegates to a reusable workflow pinned at `@main`. The reusable
+workflow contains the job steps and `runs-on: arc-runner-set`.
+
+**Caller workflow** (e.g., `my-check.yaml`):
 
 ```yaml
+name: My Check
+
+on:
+  pull_request:
+    branches:
+      - main
+      - release-4.22
+
 jobs:
-  build:
+  my-check:
+    uses: openshift/hypershift/.github/workflows/my-check-reusable.yaml@main
+    permissions:
+      contents: read
+```
+
+**Reusable workflow** (e.g., `my-check-reusable.yaml`):
+
+```yaml
+name: My Check (Reusable)
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  my-check:
     runs-on: arc-runner-set
     steps:
       - uses: actions/checkout@v4
-      - run: go version
-      - run: oc version --client
-      - run: make build
+      - run: make my-check
 ```
+
+This pattern ensures PRs cannot modify the workflow code they execute under
+(the reusable workflow is resolved from `@main`, not from the PR branch).
 
 ## Verification
 

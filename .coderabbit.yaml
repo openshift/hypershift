@@ -1,6 +1,8 @@
 inheritance: true
 language: en-US
 reviews:
+  auto_review:
+    drafts: true
   profile: chill
   high_level_summary: true
   collapse_walkthrough: true

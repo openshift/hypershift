@@ -62,6 +62,24 @@ This creates 7 managed identities with federated credentials for:
 - NodePool Management
 - Network Operator
 
+To also create a KMS identity for Azure Key Vault etcd encryption at rest, add the `--enable-kms` flag:
+
+```bash
+hypershift create iam azure \
+    --name $CLUSTER_NAME \
+    --infra-id $INFRA_ID \
+    --azure-creds $AZURE_CREDS \
+    --location $LOCATION \
+    --resource-group-name $PERSISTENT_RG_NAME \
+    --oidc-issuer-url $OIDC_ISSUER_URL \
+    --output-file workload-identities.json \
+    --enable-kms
+```
+
+!!! warning "KMS Key Vault Role Assignment"
+
+    If you use `--enable-kms`, you must **manually** assign the `Key Vault Crypto User` role to the KMS identity on your Key Vault. The `--auto-assign-roles` flag does not cover this because the Key Vault scope is user-provided. See [Enabling KMS Encryption](create-self-managed-azure-cluster.md#enabling-kms-encryption-etcd-encryption-at-rest) for the role assignment commands.
+
 For complete documentation on the IAM commands, see [Create Azure IAM Resources Separately](create-iam-separately.md).
 
 ## Configure OIDC Issuer

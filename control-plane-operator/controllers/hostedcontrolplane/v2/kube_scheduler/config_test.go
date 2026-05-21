@@ -13,8 +13,8 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/testutil"
-	"github.com/openshift/hypershift/support/util"
 
 	configv1 "github.com/openshift/api/config/v1"
 
@@ -98,7 +98,7 @@ func TestGenerateConfig(t *testing.T) {
 			}
 			g.Expect(data.Profiles).To(HaveLen(len(tc.expectedProfiles)))
 
-			configMapYaml, err := util.SerializeResource(cm, api.Scheme)
+			configMapYaml, err := k8sutil.SerializeResource(cm, api.Scheme)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}

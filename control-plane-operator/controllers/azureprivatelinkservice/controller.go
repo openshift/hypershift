@@ -334,7 +334,7 @@ func (r *AzurePrivateLinkServiceReconciler) Reconcile(ctx context.Context, req c
 	// Workers need to resolve api-<name>.<basedomain> and oauth-<name>.<basedomain>
 	// to the PE IP so that the console, OAuth, and other services work on private clusters.
 	if azPLS.Spec.BaseDomain != "" {
-		if result, err := r.reconcileBaseDomainDNS(ctx, azPLS, hcp.Name, log); err != nil || !result.IsZero() {
+		if result, err := r.reconcileBaseDomainDNS(ctx, azPLS, hcp.Name, hcp.Spec.DNS.BaseDomain, log); err != nil || !result.IsZero() {
 			return result, err
 		}
 	}
@@ -744,6 +744,19 @@ func (r *AzurePrivateLinkServiceReconciler) reconcileDNS(ctx context.Context, az
 	}, log)
 }
 
+func baseDomainShadowsClusterDomain(baseDomain, clusterName, hcpBaseDomain string) bool {
+	if baseDomain == "" || clusterName == "" || hcpBaseDomain == "" {
+		return false
+	}
+	clusterDomain := strings.ToLower(clusterName + "." + hcpBaseDomain)
+	// A Private DNS zone named baseDomain is authoritative for all queries
+	// under *.baseDomain. Prepending a dot to both sides ensures we match at
+	// domain label boundaries only (e.g. "ample.com" does NOT match
+	// "example.com") while also catching baseDomain == hcpBaseDomain
+	// (e.g. baseDomain "example.com" shadows "my-cluster.example.com").
+	return strings.HasSuffix("."+clusterDomain, "."+strings.ToLower(baseDomain))
+}
+
 // reconcileBaseDomainDNS creates a Private DNS Zone for the cluster's base domain,
 // links it to the guest VNet, and creates A records for the API and/or OAuth hostnames.
 // This enables worker VMs to resolve api-<name>.<basedomain> and oauth-<name>.<basedomain>
@@ -756,7 +769,44 @@ func (r *AzurePrivateLinkServiceReconciler) reconcileDNS(ctx context.Context, az
 //     (backward compatibility for clusters without a separate OAuth PLS).
 //   - Any other CR (e.g., oauth-openshift): Creates only oauth-<name> record, pointing
 //     to this CR's own PE IP.
-func (r *AzurePrivateLinkServiceReconciler) reconcileBaseDomainDNS(ctx context.Context, azPLS *hyperv1.AzurePrivateLinkService, clusterName string, log logr.Logger) (ctrl.Result, error) {
+//
+// When the base domain would shadow the cluster's apps domain (baseDomain ==
+// clusterName.hcpBaseDomain or is a parent domain of it), a degraded condition
+// is set on the CR and zone creation is skipped entirely. Creating a Private DNS
+// zone for the base domain in this case would make it authoritative for *.apps
+// queries, but the Private Endpoint routes to the management-plane private-router
+// (HAProxy) whose SNI ACLs only match *.hypershift.local hostnames. Base domain
+// *.apps hostnames would fall through to KAS, which presents a TLS cert that does
+// not cover them, breaking ingress. The correct fix is to recreate the cluster
+// with a different --external-dns-domain value.
+func (r *AzurePrivateLinkServiceReconciler) reconcileBaseDomainDNS(ctx context.Context, azPLS *hyperv1.AzurePrivateLinkService, clusterName, hcpBaseDomain string, log logr.Logger) (ctrl.Result, error) {
+	// Skip zone creation when shadowing is detected. We cannot add *.apps → PE IP
+	// because the PE routes to private-router (HAProxy) which only serves
+	// .hypershift.local hostnames — apps traffic gets KAS certs. The data-plane
+	// router-default IP is not discoverable from this controller.
+	if baseDomainShadowsClusterDomain(azPLS.Spec.BaseDomain, clusterName, hcpBaseDomain) {
+		log.Info("Base domain zone shadows cluster apps domain, DNS resolution for *.apps will be affected",
+			"baseDomain", azPLS.Spec.BaseDomain,
+			"clusterDomain", clusterName+"."+hcpBaseDomain)
+
+		patch := client.MergeFrom(azPLS.DeepCopy())
+		meta.SetStatusCondition(&azPLS.Status.Conditions, metav1.Condition{
+			Type:   string(hyperv1.AzurePrivateDNSAvailable),
+			Status: metav1.ConditionFalse,
+			Reason: "BaseDomainShadowsClusterDomain",
+			Message: fmt.Sprintf("Base domain %q shadows the cluster domain %q. "+
+				"The Private DNS zone will intercept *.apps queries, breaking ingress. "+
+				"Recreate the cluster with a different --external-dns-domain value.",
+				azPLS.Spec.BaseDomain, clusterName+"."+hcpBaseDomain),
+			ObservedGeneration: azPLS.Generation,
+		})
+		if err := r.Status().Patch(ctx, azPLS, patch); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to update degraded condition for base domain shadowing: %w", err)
+		}
+
+		return ctrl.Result{RequeueAfter: azureutil.DriftDetectionRequeueInterval}, nil
+	}
+
 	recordNames, err := r.recordNamesForCR(ctx, azPLS, clusterName, log)
 	if err != nil {
 		return ctrl.Result{}, err
@@ -860,191 +910,195 @@ func (r *AzurePrivateLinkServiceReconciler) handleAzureError(ctx context.Context
 // CPO finalizer has completed PE cleanup and removed its finalizer from the CR.
 func (r *AzurePrivateLinkServiceReconciler) reconcileDelete(ctx context.Context, azPLS *hyperv1.AzurePrivateLinkService, log logr.Logger) error {
 	resourceGroup := azPLS.Spec.ResourceGroupName
-
-	// 1. Delete DNS resources using the zone name persisted in status.
+	// Delete DNS resources using the zone name persisted in status.
 	// This avoids a dependency on the HostedControlPlane during deletion, which may
 	// already be torn down or unavailable when the finalizer runs.
 	dnsZoneName := azPLS.Status.DNSZoneName
+
 	if dnsZoneName != "" {
-		// Delete both A records (KAS apex and wildcard apps)
-		for _, recordName := range []string{kasARecordName, appsARecordName} {
-			log.Info("Deleting A record", "record", recordName, "zone", dnsZoneName)
-			deleteCtx, cancel := context.WithTimeout(ctx, azureAPITimeout)
-			if _, err := r.RecordSets.Delete(deleteCtx, resourceGroup, dnsZoneName, armprivatedns.RecordTypeA, recordName, nil); err != nil {
-				cancel()
-				if !azureutil.IsAzureNotFoundError(err) {
-					return fmt.Errorf("failed to delete A record %q: %w", recordName, err)
-				}
-			}
-			cancel()
-		}
-
-		// 2. Delete VNet link (must be deleted before zone)
-		linkName := vnetLinkName(azPLS.Name)
-		log.Info("Deleting VNet Link", "name", linkName)
-		deleteCtx2, cancel2 := context.WithTimeout(ctx, azureAPITimeout)
-		defer cancel2()
-		linkPoller, err := r.VirtualNetworkLinks.BeginDelete(deleteCtx2, resourceGroup, dnsZoneName, linkName, nil)
-		if err != nil {
-			if !azureutil.IsAzureNotFoundError(err) {
-				return fmt.Errorf("failed to begin deleting VNet Link: %w", err)
-			}
-		} else if linkPoller != nil {
-			linkPollCtx, linkPollCancel := context.WithTimeout(ctx, azureutil.PollTimeout)
-			defer linkPollCancel()
-
-			if _, err := linkPoller.PollUntilDone(linkPollCtx, nil); err != nil {
-				if !azureutil.IsAzureNotFoundError(err) {
-					return fmt.Errorf("failed to delete VNet Link: %w", err)
-				}
-			}
-		}
-
-		// 3. Delete Private DNS Zone
-		log.Info("Deleting Private DNS Zone", "zone", dnsZoneName)
-		deleteCtx3, cancel3 := context.WithTimeout(ctx, azureAPITimeout)
-		defer cancel3()
-		zonePoller, err := r.PrivateDNSZones.BeginDelete(deleteCtx3, resourceGroup, dnsZoneName, nil)
-		if err != nil {
-			if !azureutil.IsAzureNotFoundError(err) {
-				return fmt.Errorf("failed to begin deleting Private DNS Zone: %w", err)
-			}
-		} else if zonePoller != nil {
-			zonePollCtx, zonePollCancel := context.WithTimeout(ctx, azureutil.PollTimeout)
-			defer zonePollCancel()
-
-			if _, err := zonePoller.PollUntilDone(zonePollCtx, nil); err != nil {
-				if !azureutil.IsAzureNotFoundError(err) {
-					return fmt.Errorf("failed to delete Private DNS Zone: %w", err)
-				}
-			}
+		if err := r.deleteDNSResources(ctx, resourceGroup, dnsZoneName, azPLS.Name, log); err != nil {
+			return err
 		}
 	} else {
 		log.V(1).Info("DNSZoneName not set in status, skipping DNS cleanup")
 	}
 
-	// 4. Delete base domain DNS resources (A records, VNet link, zone)
-	baseDomain := azPLS.Spec.BaseDomain
-	if baseDomain != "" {
-		// Extract cluster name from the hypershift.local zone name (format: "<cluster-name>.hypershift.local")
-		clusterName := ""
-		if dnsZoneName != "" {
-			// Strip the ".hypershift.local" suffix to get the cluster name
-			if name, ok := strings.CutSuffix(dnsZoneName, "."+privateDNSZoneSuffix); ok {
-				clusterName = name
-			}
-		}
-
-		if clusterName != "" {
-			// Determine which base domain A records this CR owns based on its name.
-			// This mirrors the creation logic in reconcileBaseDomainDNS.
-			var baseDomainRecords []string
-			if azPLS.Name == privateRouterCRName {
-				baseDomainRecords = append(baseDomainRecords, kasBaseDomainRecordPrefix+clusterName)
-				// Only delete the oauth record if there is no sibling OAuth CR that
-				// owns it. This prevents the private-router deletion from removing
-				// an oauth record that now belongs to the dedicated OAuth CR.
-				hasSiblings, err := r.hasSiblingCR(ctx, azPLS)
-				if err != nil {
-					return fmt.Errorf("failed to check for sibling CRs during base domain cleanup: %w", err)
-				}
-				if !hasSiblings {
-					baseDomainRecords = append(baseDomainRecords, oauthBaseDomainRecordPrefix+clusterName)
-				}
-			} else {
-				baseDomainRecords = append(baseDomainRecords, oauthBaseDomainRecordPrefix+clusterName)
-			}
-
-			for _, recordName := range baseDomainRecords {
-				log.Info("Deleting base domain A record", "record", recordName, "zone", baseDomain)
-				deleteCtx, cancel := context.WithTimeout(ctx, azureAPITimeout)
-				if _, err := r.RecordSets.Delete(deleteCtx, resourceGroup, baseDomain, armprivatedns.RecordTypeA, recordName, nil); err != nil {
-					cancel()
-					if !azureutil.IsAzureNotFoundError(err) {
-						return fmt.Errorf("failed to delete base domain A record %q: %w", recordName, err)
-					}
-				}
-				cancel()
-			}
-		}
-
-		// Delete base domain VNet link
-		bdLinkName := baseDomainVNetLinkName(azPLS.Name)
-		log.Info("Deleting base domain VNet Link", "name", bdLinkName)
-		bdLinkCtx, bdLinkCancel := context.WithTimeout(ctx, azureAPITimeout)
-		defer bdLinkCancel()
-		bdLinkPoller, err := r.VirtualNetworkLinks.BeginDelete(bdLinkCtx, resourceGroup, baseDomain, bdLinkName, nil)
-		if err != nil {
-			if !azureutil.IsAzureNotFoundError(err) {
-				return fmt.Errorf("failed to begin deleting base domain VNet Link: %w", err)
-			}
-		} else if bdLinkPoller != nil {
-			bdLinkPollCtx, bdLinkPollCancel := context.WithTimeout(ctx, azureutil.PollTimeout)
-			defer bdLinkPollCancel()
-
-			if _, err := bdLinkPoller.PollUntilDone(bdLinkPollCtx, nil); err != nil {
-				if !azureutil.IsAzureNotFoundError(err) {
-					return fmt.Errorf("failed to delete base domain VNet Link: %w", err)
-				}
-			}
-		}
-
-		// Only delete the base domain DNS zone if no other CRs share it.
-		// When multiple CRs (e.g., private-router and oauth-openshift) use the same
-		// base domain zone, the zone must not be deleted until the last CR is removed.
-		hasSiblings, err := r.hasSiblingCR(ctx, azPLS)
-		if err != nil {
-			return fmt.Errorf("failed to check for sibling CRs during base domain zone cleanup: %w", err)
-		}
-
-		if !hasSiblings {
-			log.Info("Deleting base domain Private DNS Zone (last CR using this zone)", "zone", baseDomain)
-			bdZoneCtx, bdZoneCancel := context.WithTimeout(ctx, azureAPITimeout)
-			defer bdZoneCancel()
-			bdZonePoller, err := r.PrivateDNSZones.BeginDelete(bdZoneCtx, resourceGroup, baseDomain, nil)
-			if err != nil {
-				if !azureutil.IsAzureNotFoundError(err) {
-					return fmt.Errorf("failed to begin deleting base domain Private DNS Zone: %w", err)
-				}
-			} else if bdZonePoller != nil {
-				bdZonePollCtx, bdZonePollCancel := context.WithTimeout(ctx, azureutil.PollTimeout)
-				defer bdZonePollCancel()
-
-				if _, err := bdZonePoller.PollUntilDone(bdZonePollCtx, nil); err != nil {
-					if !azureutil.IsAzureNotFoundError(err) {
-						return fmt.Errorf("failed to delete base domain Private DNS Zone: %w", err)
-					}
-				}
-			}
-		} else {
-			log.Info("Skipping base domain zone deletion, other CRs still use it", "zone", baseDomain)
-		}
+	if err := r.deleteBaseDomainResources(ctx, azPLS, resourceGroup, dnsZoneName, log); err != nil {
+		return err
 	}
 
-	// 5. Delete Private Endpoint
-	// Always attempt deletion by deterministic name, even when PrivateEndpointID is empty.
-	// If the status was never populated (e.g., status update failed after PE creation),
-	// relying solely on PrivateEndpointID would orphan the PE in the customer's subscription.
-	peName := privateEndpointName(azPLS.Name)
-	log.Info("Deleting Private Endpoint", "name", peName, "hasStatusID", azPLS.Status.PrivateEndpointID != "")
-	deleteCtx4, cancel4 := context.WithTimeout(ctx, azureAPITimeout)
-	defer cancel4()
-	pePoller, err := r.PrivateEndpoints.BeginDelete(deleteCtx4, resourceGroup, peName, nil)
+	return r.deletePrivateEndpoint(ctx, resourceGroup, azPLS.Name, azPLS.Status.PrivateEndpointID, log)
+}
+
+func (r *AzurePrivateLinkServiceReconciler) deleteDNSResources(ctx context.Context, resourceGroup, dnsZoneName, crName string, log logr.Logger) error {
+	for _, recordName := range []string{kasARecordName, appsARecordName} {
+		log.Info("Deleting A record", "record", recordName, "zone", dnsZoneName)
+		deleteCtx, cancel := context.WithTimeout(ctx, azureAPITimeout)
+		if _, err := r.RecordSets.Delete(deleteCtx, resourceGroup, dnsZoneName, armprivatedns.RecordTypeA, recordName, nil); err != nil {
+			cancel()
+			if !azureutil.IsAzureNotFoundError(err) {
+				return fmt.Errorf("failed to delete A record %q: %w", recordName, err)
+			}
+		}
+		cancel()
+	}
+
+	if err := r.deleteVNetLink(ctx, resourceGroup, dnsZoneName, vnetLinkName(crName), log); err != nil {
+		return err
+	}
+
+	return r.deleteDNSZone(ctx, resourceGroup, dnsZoneName, log)
+}
+
+func (r *AzurePrivateLinkServiceReconciler) deleteVNetLink(ctx context.Context, resourceGroup, zoneName, linkName string, log logr.Logger) error {
+	log.Info("Deleting VNet Link", "name", linkName)
+	deleteCtx, cancel := context.WithTimeout(ctx, azureAPITimeout)
+	defer cancel()
+	linkPoller, err := r.VirtualNetworkLinks.BeginDelete(deleteCtx, resourceGroup, zoneName, linkName, nil)
+	if err != nil {
+		if !azureutil.IsAzureNotFoundError(err) {
+			return fmt.Errorf("failed to begin deleting VNet Link: %w", err)
+		}
+		return nil
+	}
+	if linkPoller == nil {
+		return nil
+	}
+	linkPollCtx, linkPollCancel := context.WithTimeout(ctx, azureutil.PollTimeout)
+	defer linkPollCancel()
+
+	if _, err := linkPoller.PollUntilDone(linkPollCtx, nil); err != nil {
+		if !azureutil.IsAzureNotFoundError(err) {
+			return fmt.Errorf("failed to delete VNet Link: %w", err)
+		}
+	}
+	return nil
+}
+
+func (r *AzurePrivateLinkServiceReconciler) deleteDNSZone(ctx context.Context, resourceGroup, zoneName string, log logr.Logger) error {
+	log.Info("Deleting Private DNS Zone", "zone", zoneName)
+	deleteCtx, cancel := context.WithTimeout(ctx, azureAPITimeout)
+	defer cancel()
+	zonePoller, err := r.PrivateDNSZones.BeginDelete(deleteCtx, resourceGroup, zoneName, nil)
+	if err != nil {
+		if !azureutil.IsAzureNotFoundError(err) {
+			return fmt.Errorf("failed to begin deleting Private DNS Zone: %w", err)
+		}
+		return nil
+	}
+	if zonePoller == nil {
+		return nil
+	}
+	zonePollCtx, zonePollCancel := context.WithTimeout(ctx, azureutil.PollTimeout)
+	defer zonePollCancel()
+
+	if _, err := zonePoller.PollUntilDone(zonePollCtx, nil); err != nil {
+		if !azureutil.IsAzureNotFoundError(err) {
+			return fmt.Errorf("failed to delete Private DNS Zone: %w", err)
+		}
+	}
+	return nil
+}
+
+func (r *AzurePrivateLinkServiceReconciler) deleteBaseDomainResources(ctx context.Context, azPLS *hyperv1.AzurePrivateLinkService, resourceGroup, dnsZoneName string, log logr.Logger) error {
+	baseDomain := azPLS.Spec.BaseDomain
+	if baseDomain == "" {
+		return nil
+	}
+
+	if err := r.deleteBaseDomainARecords(ctx, azPLS, resourceGroup, baseDomain, dnsZoneName, log); err != nil {
+		return err
+	}
+
+	if err := r.deleteVNetLink(ctx, resourceGroup, baseDomain, baseDomainVNetLinkName(azPLS.Name), log); err != nil {
+		return err
+	}
+
+	// Only delete the base domain DNS zone if no other CRs share it.
+	// When multiple CRs (e.g., private-router and oauth-openshift) use the same
+	// base domain zone, the zone must not be deleted until the last CR is removed.
+	hasSiblings, err := r.hasSiblingCR(ctx, azPLS)
+	if err != nil {
+		return fmt.Errorf("failed to check for sibling CRs during base domain zone cleanup: %w", err)
+	}
+
+	if !hasSiblings {
+		log.Info("Deleting base domain Private DNS Zone (last CR using this zone)", "zone", baseDomain)
+		return r.deleteDNSZone(ctx, resourceGroup, baseDomain, log)
+	}
+	log.Info("Skipping base domain zone deletion, other CRs still use it", "zone", baseDomain)
+	return nil
+}
+
+func (r *AzurePrivateLinkServiceReconciler) deleteBaseDomainARecords(ctx context.Context, azPLS *hyperv1.AzurePrivateLinkService, resourceGroup, baseDomain, dnsZoneName string, log logr.Logger) error {
+	clusterName := ""
+	if dnsZoneName != "" {
+		if name, ok := strings.CutSuffix(dnsZoneName, "."+privateDNSZoneSuffix); ok {
+			clusterName = name
+		}
+	}
+	if clusterName == "" {
+		return nil
+	}
+
+	var baseDomainRecords []string
+	if azPLS.Name == privateRouterCRName {
+		baseDomainRecords = append(baseDomainRecords, kasBaseDomainRecordPrefix+clusterName)
+		// Only delete the oauth record if there is no sibling OAuth CR that
+		// owns it. This prevents the private-router deletion from removing
+		// an oauth record that now belongs to the dedicated OAuth CR.
+		hasSiblings, err := r.hasSiblingCR(ctx, azPLS)
+		if err != nil {
+			return fmt.Errorf("failed to check for sibling CRs during base domain cleanup: %w", err)
+		}
+		if !hasSiblings {
+			baseDomainRecords = append(baseDomainRecords, oauthBaseDomainRecordPrefix+clusterName)
+		}
+	} else {
+		baseDomainRecords = append(baseDomainRecords, oauthBaseDomainRecordPrefix+clusterName)
+	}
+
+	for _, recordName := range baseDomainRecords {
+		log.Info("Deleting base domain A record", "record", recordName, "zone", baseDomain)
+		deleteCtx, cancel := context.WithTimeout(ctx, azureAPITimeout)
+		if _, err := r.RecordSets.Delete(deleteCtx, resourceGroup, baseDomain, armprivatedns.RecordTypeA, recordName, nil); err != nil {
+			cancel()
+			if !azureutil.IsAzureNotFoundError(err) {
+				return fmt.Errorf("failed to delete base domain A record %q: %w", recordName, err)
+			}
+		}
+		cancel()
+	}
+	return nil
+}
+
+// deletePrivateEndpoint always attempts deletion by deterministic name, even
+// when PrivateEndpointID is empty. If the status was never populated (e.g.,
+// status update failed after PE creation), relying solely on PrivateEndpointID
+// would orphan the PE in the customer's subscription.
+func (r *AzurePrivateLinkServiceReconciler) deletePrivateEndpoint(ctx context.Context, resourceGroup, crName, statusPEID string, log logr.Logger) error {
+	peName := privateEndpointName(crName)
+	log.Info("Deleting Private Endpoint", "name", peName, "hasStatusID", statusPEID != "")
+	deleteCtx, cancel := context.WithTimeout(ctx, azureAPITimeout)
+	defer cancel()
+	pePoller, err := r.PrivateEndpoints.BeginDelete(deleteCtx, resourceGroup, peName, nil)
 	if err != nil {
 		if !azureutil.IsAzureNotFoundError(err) {
 			return fmt.Errorf("failed to begin deleting Private Endpoint: %w", err)
 		}
-	} else if pePoller != nil {
-		pePollCtx, pePollCancel := context.WithTimeout(ctx, azureutil.PollTimeout)
-		defer pePollCancel()
+		return nil
+	}
+	if pePoller == nil {
+		return nil
+	}
+	pePollCtx, pePollCancel := context.WithTimeout(ctx, azureutil.PollTimeout)
+	defer pePollCancel()
 
-		if _, err := pePoller.PollUntilDone(pePollCtx, nil); err != nil {
-			if !azureutil.IsAzureNotFoundError(err) {
-				return fmt.Errorf("failed to delete Private Endpoint: %w", err)
-			}
+	if _, err := pePoller.PollUntilDone(pePollCtx, nil); err != nil {
+		if !azureutil.IsAzureNotFoundError(err) {
+			return fmt.Errorf("failed to delete Private Endpoint: %w", err)
 		}
 	}
-
 	return nil
 }
 

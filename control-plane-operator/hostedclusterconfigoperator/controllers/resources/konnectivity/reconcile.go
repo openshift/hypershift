@@ -6,7 +6,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/podspec"
 
 	configv1 "github.com/openshift/api/config/v1"
 
@@ -23,8 +23,8 @@ const (
 )
 
 var (
-	volumeMounts = util.PodVolumeMounts{
-		konnectivityAgentContainer().Name: util.ContainerVolumeMounts{
+	volumeMounts = podspec.VolumeMounts{
+		konnectivityAgentContainer().Name: podspec.ContainerMounts{
 			konnectivityVolumeAgentCerts().Name: "/etc/konnectivity/agent",
 			konnectivityVolumeCACert().Name:     "/etc/konnectivity/ca",
 		},
@@ -69,11 +69,11 @@ func ReconcileAgentDaemonSet(daemonset *appsv1.DaemonSet, params *KonnectivityPa
 					RunAsUser: ptr.To[int64](1000),
 				},
 				Containers: []corev1.Container{
-					util.BuildContainer(konnectivityAgentContainer(), buildKonnectivityWorkerAgentContainer(params.Image, params.ExternalAddress, params.ExternalPort, proxy, useHostNetwork)),
+					podspec.BuildContainer(konnectivityAgentContainer(), buildKonnectivityWorkerAgentContainer(params.Image, params.ExternalAddress, params.ExternalPort, proxy, useHostNetwork)),
 				},
 				Volumes: []corev1.Volume{
-					util.BuildVolume(konnectivityVolumeAgentCerts(), buildKonnectivityVolumeWorkerAgentCerts),
-					util.BuildVolume(konnectivityVolumeCACert(), buildKonnectivityVolumeCACert),
+					podspec.BuildVolume(konnectivityVolumeAgentCerts(), buildKonnectivityVolumeWorkerAgentCerts),
+					podspec.BuildVolume(konnectivityVolumeCACert(), buildKonnectivityVolumeCACert),
 				},
 				PriorityClassName: systemNodeCriticalPriorityClass,
 				// Always run, even if nodes are not ready e.G. because there are networking issues as this helps a lot in debugging

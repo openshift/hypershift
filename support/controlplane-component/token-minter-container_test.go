@@ -7,6 +7,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/config"
 
 	corev1 "k8s.io/api/core/v1"
 )
@@ -35,7 +36,7 @@ func TestInjectContainer(t *testing.T) {
 		g := NewGomegaWithT(t)
 
 		podSpec := basePodSpec()
-		baseOpts.injectContainer(true, podSpec, baseContainer, cloudTokenFileMountPath, "cloud-token")
+		baseOpts.injectContainer(true, podSpec, baseContainer, config.CloudTokenMountPath, "cloud-token")
 
 		g.Expect(podSpec.InitContainers).To(HaveLen(1))
 		g.Expect(podSpec.Containers).To(HaveLen(1), "should not add to regular containers")
@@ -50,19 +51,19 @@ func TestInjectContainer(t *testing.T) {
 		g := NewGomegaWithT(t)
 
 		podSpec := basePodSpec()
-		baseOpts.injectContainer(true, podSpec, baseContainer, cloudTokenFileMountPath, "cloud-token")
+		baseOpts.injectContainer(true, podSpec, baseContainer, config.CloudTokenMountPath, "cloud-token")
 
 		initContainer := podSpec.InitContainers[0]
 		g.Expect(initContainer.StartupProbe).ToNot(BeNil())
 		g.Expect(initContainer.StartupProbe.Exec).ToNot(BeNil())
 		g.Expect(initContainer.StartupProbe.Exec.Command).To(Equal(
-			[]string{"test", "-f", path.Join(cloudTokenFileMountPath, "token")},
+			[]string{"test", "-f", path.Join(config.CloudTokenMountPath, "token")},
 		))
 		g.Expect(initContainer.StartupProbe.PeriodSeconds).To(Equal(int32(1)))
 		g.Expect(initContainer.StartupProbe.FailureThreshold).To(Equal(int32(30)))
 	})
 
-	t.Run("When native sidecars are enabled with KubeAPIServerToken it should use cloudTokenFileMountPath for the startup probe", func(t *testing.T) {
+	t.Run("When native sidecars are enabled with KubeAPIServerToken it should use config.CloudTokenMountPath for the startup probe", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 
 		podSpec := basePodSpec()
@@ -70,7 +71,7 @@ func TestInjectContainer(t *testing.T) {
 
 		initContainer := podSpec.InitContainers[0]
 		g.Expect(initContainer.StartupProbe.Exec.Command).To(Equal(
-			[]string{"test", "-f", path.Join(cloudTokenFileMountPath, "token")},
+			[]string{"test", "-f", path.Join(config.CloudTokenMountPath, "token")},
 		), "probe must check the token-minter's own mount path, not the main container's")
 	})
 
@@ -78,7 +79,7 @@ func TestInjectContainer(t *testing.T) {
 		g := NewGomegaWithT(t)
 
 		podSpec := basePodSpec()
-		baseOpts.injectContainer(false, podSpec, baseContainer, cloudTokenFileMountPath, "cloud-token")
+		baseOpts.injectContainer(false, podSpec, baseContainer, config.CloudTokenMountPath, "cloud-token")
 
 		g.Expect(podSpec.InitContainers).To(BeEmpty())
 		g.Expect(podSpec.Containers).To(HaveLen(2))
@@ -101,7 +102,7 @@ func TestInjectContainer(t *testing.T) {
 
 		for _, nativeSidecars := range []bool{true, false} {
 			podSpec := basePodSpec()
-			oneShotOpts.injectContainer(nativeSidecars, podSpec, baseContainer, cloudTokenFileMountPath, "cloud-token")
+			oneShotOpts.injectContainer(nativeSidecars, podSpec, baseContainer, config.CloudTokenMountPath, "cloud-token")
 
 			g.Expect(podSpec.InitContainers).To(HaveLen(1), "oneshot minters should be injected as init containers")
 			g.Expect(podSpec.Containers).To(HaveLen(1), "oneshot minters should not be added to regular containers")
@@ -115,12 +116,12 @@ func TestInjectContainer(t *testing.T) {
 
 		for _, nativeSidecars := range []bool{true, false} {
 			podSpec := basePodSpec()
-			baseOpts.injectContainer(nativeSidecars, podSpec, baseContainer, cloudTokenFileMountPath, "cloud-token")
+			baseOpts.injectContainer(nativeSidecars, podSpec, baseContainer, config.CloudTokenMountPath, "cloud-token")
 
 			mainContainer := podSpec.Containers[0]
 			g.Expect(mainContainer.VolumeMounts).To(ContainElement(corev1.VolumeMount{
 				Name:      "cloud-token",
-				MountPath: cloudTokenFileMountPath,
+				MountPath: config.CloudTokenMountPath,
 			}))
 		}
 	})

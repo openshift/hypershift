@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/netutil"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -48,6 +48,9 @@ func TestReconcileRouterServiceAnnotations(t *testing.T) {
 	if got := svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled"]; got != "true" {
 		t.Fatalf("expected cross-zone load balancing annotation to be 'true', got %q", got)
 	}
+	if got := svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-attributes"]; got != "load_balancing.cross_zone.enabled=true" {
+		t.Fatalf("expected load balancer attributes annotation, got %q", got)
+	}
 	if got := svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-target-node-labels"]; got != targetNodesLabel {
 		t.Fatalf("expected target node labels annotation to be '%s', got %q", targetNodesLabel, got)
 	}
@@ -72,7 +75,7 @@ func TestReconcileRouterService_AppliesLoadBalancerSourceRanges(t *testing.T) {
 		}
 
 		// Then LoadBalancerSourceRanges should be set to match AllowedCIDRBlocks
-		expectedCIDRs := sets.New(util.AllowedCIDRBlocks(hcp)...)
+		expectedCIDRs := sets.New(netutil.AllowedCIDRBlocks(hcp)...)
 		actualCIDRs := sets.New(svc.Spec.LoadBalancerSourceRanges...)
 
 		if !expectedCIDRs.Equal(actualCIDRs) {

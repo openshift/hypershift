@@ -85,6 +85,8 @@ spec:
             fieldRef:
               apiVersion: v1
               fieldPath: metadata.namespace
+        - name: KUBE_FEATURE_WatchListClient
+          value: "false"
         - name: OPENSHIFT_RELEASE_VERSION
           value: 4.18.0
         - name: KUBERNETES_VERSION

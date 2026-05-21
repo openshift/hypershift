@@ -93,7 +93,7 @@ func (r *DefragController) SetupWithManager(ctx context.Context, mgr ctrl.Manage
 	return nil
 }
 
-func (r *DefragController) etcdEndpoints(ctx context.Context) ([]string, error) {
+func (r *DefragController) etcdEndpoints(_ context.Context) ([]string, error) {
 	var eplist []string
 
 	// Because we are part of the etcd pod, we can just use localhost.

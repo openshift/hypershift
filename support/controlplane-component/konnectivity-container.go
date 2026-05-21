@@ -6,8 +6,8 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/proxy"
-	"github.com/openshift/hypershift/support/util"
 
 	configv1 "github.com/openshift/api/config/v1"
 
@@ -104,7 +104,7 @@ func (opts KonnectivityContainerOptions) injectKonnectivityContainer(cpContext C
 		})
 	}
 
-	image := cpContext.ReleaseImageProvider.GetImage(util.CPOImageName)
+	image := cpContext.ReleaseImageProvider.GetImage(podspec.CPOImageName)
 
 	if opts.Mode == Dual {
 		opts.Mode = HTTPS

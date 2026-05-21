@@ -16,6 +16,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	iamtypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
 
+	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	"github.com/go-logr/logr"
@@ -95,29 +96,31 @@ func (o *DestroyIAMOptions) DestroyIAM(ctx context.Context) error {
 		o.Retryer = awsConfig()
 	})
 
-	err = o.DestroyOIDCResources(ctx, iamClient)
-	if err != nil {
-		return err
+	// Attempt all IAM cleanup steps even if some fail, to avoid leaking
+	// IAM resources when one step encounters an error.
+	var errs []error
+
+	if err = o.DestroyOIDCResources(ctx, iamClient); err != nil {
+		errs = append(errs, err)
 	}
-	err = o.DestroyWorkerInstanceProfile(ctx, iamClient)
-	if err != nil {
-		return err
+	if err = o.DestroyWorkerInstanceProfile(ctx, iamClient); err != nil {
+		errs = append(errs, err)
 	}
 
 	if o.VPCOwnerCredentialsOpts.AWSCredentialsFile != "" {
 		vpcOwnerAWSSession, err := o.VPCOwnerCredentialsOpts.GetSession(ctx, "cli-destroy-iam", nil, o.Region)
 		if err != nil {
-			return err
+			return utilerrors.NewAggregate(append(errs, err))
 		}
 		vpcOwnerIAMClient := iam.NewFromConfig(*vpcOwnerAWSSession, func(o *iam.Options) {
 			o.Retryer = awsConfig()
 		})
 		if err = o.DestroySharedVPCRoles(ctx, iamClient, vpcOwnerIAMClient); err != nil {
-			return err
+			errs = append(errs, err)
 		}
 	}
 
-	return nil
+	return utilerrors.NewAggregate(errs)
 }
 
 func (o *DestroyIAMOptions) DestroyOIDCResources(ctx context.Context, iamClient awsapi.IAMAPI) error {
@@ -125,6 +128,8 @@ func (o *DestroyIAMOptions) DestroyOIDCResources(ctx context.Context, iamClient 
 	if err != nil {
 		return err
 	}
+
+	var errs []error
 
 	for _, provider := range oidcProviderList.OpenIDConnectProviderList {
 		// OIDC Provider ARN is of the form arn:aws:iam::<account-id>:oidc-provider/hypershift-ci-2-oidc.s3.us-east-1.amazonaws.com/<infra-id>
@@ -138,7 +143,7 @@ func (o *DestroyIAMOptions) DestroyOIDCResources(ctx context.Context, iamClient 
 				var nse *iamtypes.NoSuchEntityException
 				if !errors.As(err, &nse) {
 					o.Log.Error(err, "Error deleting OIDC provider", "providerARN", provider.Arn)
-					return err
+					errs = append(errs, fmt.Errorf("failed to delete OIDC provider %s: %w", *provider.Arn, err))
 				}
 			} else {
 				o.Log.Info("Deleted OIDC provider", "providerARN", provider.Arn)
@@ -150,43 +155,44 @@ func (o *DestroyIAMOptions) DestroyOIDCResources(ctx context.Context, iamClient 
 	// Delete the shared role
 	removed := false
 	if removed, err = o.DestroyOIDCRole(ctx, iamClient, "shared-role"); err != nil {
-		return err
+		errs = append(errs, err)
 	}
 	if removed {
 		// The cluster was created with a single shared role, so we are done.
 		// Save on additional API calls and just return here.
-		return nil
+		return utilerrors.NewAggregate(errs)
 	}
-	// Delete individual component roles
-	if err = o.DestroyOIDCRoleWithRetry(ctx, iamClient, "openshift-ingress"); err != nil {
-		return err
+	// Delete individual component roles. Attempt all deletions even if some
+	// fail, to avoid leaking IAM roles.
+	//
+	// Roles that require retry (e.g. due to eventually-consistent policy
+	// detachment) are handled first via DestroyOIDCRoleWithRetry.
+	roleNamesWithRetry := []string{
+		"openshift-ingress",
 	}
-	if _, err = o.DestroyOIDCRole(ctx, iamClient, "openshift-image-registry"); err != nil {
-		return err
-	}
-	if _, err = o.DestroyOIDCRole(ctx, iamClient, "aws-ebs-csi-driver-controller"); err != nil {
-		return err
-	}
-	if _, err = o.DestroyOIDCRole(ctx, iamClient, "cloud-controller"); err != nil {
-		return err
-	}
-	if _, err = o.DestroyOIDCRole(ctx, iamClient, "node-pool"); err != nil {
-		return err
-	}
-	if _, err = o.DestroyOIDCRole(ctx, iamClient, "control-plane-operator"); err != nil {
-		return err
-	}
-	if _, err = o.DestroyOIDCRole(ctx, iamClient, "cloud-network-config-controller"); err != nil {
-		return err
-	}
-	if _, err = o.DestroyOIDCRole(ctx, iamClient, "kms-provider"); err != nil {
-		return err
-	}
-	if _, err = o.DestroyOIDCRole(ctx, iamClient, "karpenter"); err != nil {
-		return err
+	for _, name := range roleNamesWithRetry {
+		if err := o.DestroyOIDCRoleWithRetry(ctx, iamClient, name); err != nil {
+			errs = append(errs, err)
+		}
 	}
 
-	return nil
+	roleNames := []string{
+		"openshift-image-registry",
+		"aws-ebs-csi-driver-controller",
+		"cloud-controller",
+		"node-pool",
+		"control-plane-operator",
+		"cloud-network-config-controller",
+		"kms-provider",
+		"karpenter",
+	}
+	for _, name := range roleNames {
+		if _, err := o.DestroyOIDCRole(ctx, iamClient, name); err != nil {
+			errs = append(errs, err)
+		}
+	}
+
+	return utilerrors.NewAggregate(errs)
 }
 
 // DestroyOIDCRoleWithRetry retries the entire DestroyOIDCRole operation if it fails due to attached policies
@@ -368,16 +374,16 @@ func (o *DestroyIAMOptions) DestroyWorkerInstanceProfile(ctx context.Context, cl
 }
 
 func (o *DestroyIAMOptions) DestroySharedVPCRoles(ctx context.Context, iamClient, vpcOwnerIAMClient awsapi.IAMAPI) error {
-	var err error
 	ingressRoleClient := vpcOwnerIAMClient
 	if o.PrivateZonesInClusterAccount {
 		ingressRoleClient = iamClient
 	}
-	if _, err = o.DestroyOIDCRole(ctx, ingressRoleClient, "shared-vpc-ingress"); err != nil {
-		return err
+	var errs []error
+	if _, err := o.DestroyOIDCRole(ctx, ingressRoleClient, "shared-vpc-ingress"); err != nil {
+		errs = append(errs, err)
 	}
-	if _, err = o.DestroyOIDCRole(ctx, vpcOwnerIAMClient, "shared-vpc-control-plane"); err != nil {
-		return err
+	if _, err := o.DestroyOIDCRole(ctx, vpcOwnerIAMClient, "shared-vpc-control-plane"); err != nil {
+		errs = append(errs, err)
 	}
-	return nil
+	return utilerrors.NewAggregate(errs)
 }

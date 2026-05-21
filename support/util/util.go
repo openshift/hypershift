@@ -7,52 +7,31 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"hash/fnv"
 	"io"
-	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"regexp"
 	"sort"
 	"strings"
-	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	cmdutil "github.com/openshift/hypershift/cmd/util"
 	controlplaneoperatoroverrides "github.com/openshift/hypershift/hypershift-operator/controlplaneoperator-overrides"
+	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
 
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/types"
 	kubeclient "k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/util/retry"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	"github.com/blang/semver"
 	ignitionapi "github.com/coreos/ignition/v2/config/v3_2/types"
-)
-
-const (
-	// DebugDeploymentsAnnotation contains a comma separated list of deployment names which should always be scaled to 0
-	// for development.
-	DebugDeploymentsAnnotation               = "hypershift.openshift.io/debug-deployments"
-	EnableHostedClustersAnnotationScopingEnv = "ENABLE_HOSTEDCLUSTERS_ANNOTATION_SCOPING"
-	HostedClustersScopeAnnotationEnv         = "HOSTEDCLUSTERS_SCOPE_ANNOTATION"
-	HostedClustersScopeAnnotation            = "hypershift.openshift.io/scope"
-	HostedClusterAnnotation                  = "hypershift.openshift.io/cluster"
-
-	// GCPLabelCluster is the GCP resource label key used to identify the HostedCluster name.
-	GCPLabelCluster = "hypershift-openshift-io-cluster"
-	// GCPLabelInfraID is the GCP resource label key used to identify the infrastructure ID.
-	GCPLabelInfraID = "hypershift-openshift-io-infra-id"
 )
 
 type JSONMapper func(jsonData []byte) []byte
@@ -77,90 +56,6 @@ func ParseNamespacedName(name string) types.NamespacedName {
 		return types.NamespacedName{Namespace: parts[0], Name: parts[1]}
 	}
 	return types.NamespacedName{Name: parts[0]}
-}
-
-// CopyConfigMap copies the .Data field of configMap `source` into configmap `cm`
-func CopyConfigMap(cm, source *corev1.ConfigMap) {
-	cm.Data = map[string]string{}
-	for k, v := range source.Data {
-		cm.Data[k] = v
-	}
-}
-
-func UpdateObject[T client.Object](ctx context.Context, c client.Client, obj T, mutate func() error) error {
-	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		if err := c.Get(ctx, client.ObjectKeyFromObject(obj), obj); err != nil {
-			return err
-		}
-
-		original := obj.DeepCopyObject().(T)
-		if err := mutate(); err != nil {
-			return err
-		}
-
-		return c.Patch(ctx, obj, client.MergeFrom(original))
-	})
-}
-
-func DeleteIfNeededWithOptions(ctx context.Context, c client.Client, o client.Object, opts ...client.DeleteOption) (exists bool, err error) {
-	if err := c.Get(ctx, client.ObjectKeyFromObject(o), o); err != nil {
-		if apierrors.IsNotFound(err) || meta.IsNoMatchError(err) {
-			return false, nil
-		}
-		return false, fmt.Errorf("error getting %T: %w", o, err)
-	}
-	if o.GetDeletionTimestamp() != nil {
-		return true, nil
-	}
-	if err := c.Delete(ctx, o, opts...); err != nil {
-		if apierrors.IsNotFound(err) {
-			return false, nil
-		}
-		return false, fmt.Errorf("error deleting %T: %w", o, err)
-	}
-
-	return true, nil
-}
-
-func DeleteIfNeededWithPredicate[T client.Object](ctx context.Context, c client.Client, o T, predicate func(T) bool) (exists bool, err error) {
-	if err := c.Get(ctx, client.ObjectKeyFromObject(o), o); err != nil {
-		if apierrors.IsNotFound(err) || meta.IsNoMatchError(err) {
-			return false, nil
-		}
-		return false, fmt.Errorf("error getting %T: %w", o, err)
-	}
-	if o.GetDeletionTimestamp() != nil {
-		return true, nil
-	}
-	if !predicate(o) {
-		return true, nil
-	}
-	if err := c.Delete(ctx, o); err != nil {
-		if apierrors.IsNotFound(err) {
-			return false, nil
-		}
-		return false, fmt.Errorf("error deleting %T: %w", o, err)
-	}
-
-	return true, nil
-}
-
-func DeleteAllIfNeeded(ctx context.Context, c client.Client, o ...client.Object) error {
-	errs := []error{}
-	for _, obj := range o {
-		_, err := DeleteIfNeededWithOptions(ctx, c, obj)
-		if err != nil {
-			errs = append(errs, err)
-		}
-	}
-	if len(errs) > 0 {
-		return errors.Join(errs...)
-	}
-	return nil
-}
-
-func DeleteIfNeeded(ctx context.Context, c client.Client, o client.Object) (exists bool, err error) {
-	return DeleteIfNeededWithOptions(ctx, c, o)
 }
 
 func HCControlPlaneReleaseImage(hcluster *hyperv1.HostedCluster) string {
@@ -265,20 +160,6 @@ func decompress(r io.Reader) (*bytes.Buffer, error) {
 	}
 
 	return bytes.NewBuffer(data), nil
-}
-
-// ResolveDNSHostname receives a hostname string and tries to resolve it.
-// Returns error if the host can't be resolved.
-func ResolveDNSHostname(ctx context.Context, hostName string) error {
-	timeoutCtx, cancel := context.WithTimeout(ctx, time.Second)
-	defer cancel()
-
-	ips, err := net.DefaultResolver.LookupIPAddr(timeoutCtx, hostName)
-	if err == nil && len(ips) == 0 {
-		err = fmt.Errorf("couldn't resolve %s", hostName)
-	}
-
-	return err
 }
 
 // InsecureHTTPClient return a http.Client which skips server certificate verification
@@ -411,74 +292,6 @@ func ConvertImageRegistryOverrideStringToMap(envVar string) map[string][]string 
 	return imageRegistryOverrides
 }
 
-// IsIPv4CIDR checks if the input string is an IPv4 CIDR.
-func IsIPv4CIDR(input string) (bool, error) {
-	_, ipnet, err := net.ParseCIDR(input)
-	if err != nil {
-		return false, fmt.Errorf("error parsing input '%s': not a valid CIDR", input)
-	}
-	if ipnet.IP.To4() != nil {
-		return true, nil
-	}
-	return false, nil
-}
-
-// IsIPv4Address checks if the input string is an IPv4 address.
-func IsIPv4Address(input string) (bool, error) {
-	ip := net.ParseIP(input)
-	if ip == nil {
-		return false, fmt.Errorf("error parsing input '%s': not a valid IP address", input)
-	}
-	if ip.To4() != nil {
-		return true, nil
-	}
-	return false, nil
-}
-
-// FirstUsableIP returns the first usable IP in both, IPv4 and IPv6 stacks.
-func FirstUsableIP(cidr string) (string, error) {
-	_, ipNet, err := net.ParseCIDR(cidr)
-	if err != nil {
-		return "", fmt.Errorf("error validating the incoming CIDR %s: %w", cidr, err)
-	}
-	ip := ipNet.IP
-	ip[len(ipNet.IP)-1]++
-	return ip.String(), nil
-}
-
-// ParseNodeSelector parses a comma separated string of key=value pairs into a map
-func ParseNodeSelector(str string) map[string]string {
-	if len(str) == 0 {
-		return nil
-	}
-	parts := strings.Split(str, ",")
-	result := make(map[string]string)
-	for _, part := range parts {
-		kv := strings.SplitN(part, "=", 2)
-		if len(kv) != 2 {
-			continue
-		}
-		if len(kv[0]) == 0 || len(kv[1]) == 0 {
-			continue
-		}
-		result[kv[0]] = kv[1]
-	}
-	return result
-}
-
-func ApplyAWSLoadBalancerTargetNodesAnnotation(svc *corev1.Service, hcp *hyperv1.HostedControlPlane) {
-	if hcp.Spec.Platform.Type != hyperv1.AWSPlatform {
-		return
-	}
-	if svc.Annotations == nil {
-		svc.Annotations = make(map[string]string)
-	}
-	selectors, ok := hcp.Annotations[hyperv1.AWSLoadBalancerTargetNodesAnnotation]
-	if ok {
-		svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-target-node-labels"] = selectors
-	}
-}
-
 func GetKubeClientSet() (kubeclient.Interface, error) {
 	cfg, err := cmdutil.GetConfig()
 	if err != nil {
@@ -560,8 +373,8 @@ func getImageArchitecture(ctx context.Context, image string, pullSecretBytes []b
 // default behavior is to accept all events for hostedclusters that do not have the annotation.
 // The ENABLE_HOSTEDCLUSTERS_ANNOTATION_SCOPING env var must also be set to "true" to enable the scoping feature.
 func PredicatesForHostedClusterAnnotationScoping(r client.Reader) predicate.Predicate {
-	hcAnnotationScopingEnabledEnvVal := os.Getenv(EnableHostedClustersAnnotationScopingEnv)
-	hcScopeAnnotationEnvVal := os.Getenv(HostedClustersScopeAnnotationEnv)
+	hcAnnotationScopingEnabledEnvVal := os.Getenv(k8sutil.EnableHostedClustersAnnotationScopingEnv)
+	hcScopeAnnotationEnvVal := os.Getenv(k8sutil.HostedClustersScopeAnnotationEnv)
 	filter := func(obj client.Object) bool {
 		if hcAnnotationScopingEnabledEnvVal != "true" {
 			return true // process event; the scoping feature has not been enabled via the ENABLE_HOSTEDCLUSTERS_ANNOTATION_SCOPING env var
@@ -587,14 +400,14 @@ func getHostedClusterScopeAnnotation(obj client.Object, r client.Reader) string 
 	switch obj := obj.(type) {
 	case *hyperv1.HostedCluster:
 		if obj.GetAnnotations() != nil {
-			return obj.GetAnnotations()[HostedClustersScopeAnnotation]
+			return obj.GetAnnotations()[k8sutil.HostedClustersScopeAnnotation]
 		}
 	case *hyperv1.NodePool:
 		hostedClusterName = fmt.Sprintf("%s/%s", obj.Namespace, obj.Spec.ClusterName)
 	default:
 		if obj.GetAnnotations() != nil {
 			nodePoolName = obj.GetAnnotations()["hypershift.openshift.io/nodePool"]
-			hostedClusterName = obj.GetAnnotations()[HostedClusterAnnotation]
+			hostedClusterName = obj.GetAnnotations()[k8sutil.HostedClusterAnnotation]
 		}
 		if nodePoolName != "" {
 			namespacedName := ParseNamespacedName(nodePoolName)
@@ -616,7 +429,7 @@ func getHostedClusterScopeAnnotation(obj client.Object, r client.Reader) string 
 		return ""
 	}
 	if hcluster.GetAnnotations() != nil {
-		return hcluster.GetAnnotations()[HostedClustersScopeAnnotation]
+		return hcluster.GetAnnotations()[k8sutil.HostedClustersScopeAnnotation]
 	}
 	return ""
 }
@@ -716,33 +529,6 @@ func GetControlPlaneOperatorImageLabels(ctx context.Context, hc *hyperv1.HostedC
 	}
 
 	return ImageLabels(controlPlaneOperatorImageMetadata), nil
-}
-
-var (
-	hasPortRegex = regexp.MustCompile(`:\d{1,5}$`)
-)
-
-func HostFromURL(addr string) (string, error) {
-	parsedURL, err := url.Parse(addr)
-	if err != nil {
-		return "", fmt.Errorf("failed to parse URL(%s): %w", addr, err)
-	}
-	hostPort := parsedURL.Host
-	if hostPort == "" {
-		return "", fmt.Errorf("missing host/port name in URL(%s)", addr)
-	}
-	if !hasPortRegex.MatchString(hostPort) {
-		return hostPort, nil
-	}
-	hostName, _, err := net.SplitHostPort(hostPort)
-	if err != nil {
-		return "", fmt.Errorf("failed to split host/port from (%s): %w", hostPort, err)
-	}
-	if hostName == "" {
-		return "", fmt.Errorf("missing host name in URL(%s)", addr)
-	}
-	return hostName, nil
-
 }
 
 // EnableIfCustomKubeconfig returns true if the hosted control plane has a custom kubeconfig defined

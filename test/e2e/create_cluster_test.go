@@ -13,15 +13,20 @@ import (
 	"time"
 
 	. "github.com/onsi/gomega"
-	configv1 "github.com/openshift/api/config/v1"
-	operatorv1 "github.com/openshift/api/operator/v1"
+
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/support/azureutil"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/integration"
 	integrationframework "github.com/openshift/hypershift/test/integration/framework"
+
+	configv1 "github.com/openshift/api/config/v1"
+	operatorv1 "github.com/openshift/api/operator/v1"
+
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/tools/clientcmd"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -111,11 +116,14 @@ func TestCreateCluster(t *testing.T) {
 		e2eutil.EnsureDefaultSecurityGroupTags(t, ctx, mgtClient, hostedCluster, clusterOpts)
 
 		if globalOpts.Platform == hyperv1.AzurePlatform {
-			e2eutil.EnsureKubeAPIServerAllowedCIDRs(t, ctx, mgtClient, guestConfig, hostedCluster)
+			// WI webhook must run before AllowedCIDRs. AllowedCIDRs blocks and restores
+			// all KAS traffic; the webhook sidecar (FailurePolicy: Ignore) may not be
+			// ready during recovery, silently skipping mutation on pods created in that window.
 			e2eutil.EnsureAzureWorkloadIdentityWebhookMutation(t, ctx, guestClient)
+			e2eutil.EnsureKubeAPIServerAllowedCIDRs(t, ctx, mgtClient, guestConfig, hostedCluster)
 		}
 
-		e2eutil.EnsureGlobalPullSecret(t, ctx, mgtClient, hostedCluster)
+		e2eutil.EnsureGlobalPullSecret(t, ctx, mgtClient, hostedCluster, globalOpts.AdditionalPullSecretFile)
 		e2eutil.EnsureMetricsForwarderWorking(t, ctx, mgtClient, hostedCluster)
 
 		// Verify CPO override image if TEST_CPO_OVERRIDE=1 is set
@@ -126,10 +134,78 @@ func TestCreateCluster(t *testing.T) {
 
 		if globalOpts.Platform == hyperv1.AzurePlatform || globalOpts.Platform == hyperv1.AWSPlatform {
 			// ensure Ingress Operator configuration is properly applied
-			e2eutil.EnsureIngressOperatorConfiguration(t, ctx, mgtClient, guestClient, hostedCluster)
+			e2eutil.EnsureIngressOperatorConfiguration(t, ctx, guestClient, hostedCluster)
 		}
+
+		e2eutil.EnsureAWSCCMWithCustomizations(t, ctx, &e2eutil.AWSCCMTestConfig{
+			MgtClient:     mgtClient,
+			GuestClient:   guestClient,
+			HostedCluster: hostedCluster,
+			AWSCredsFile:  clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile,
+			Platform:      globalOpts.Platform,
+		})
 	}).WithAssetReader(content.ReadFile).
 		Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "create-cluster", globalOpts.ServiceAccountSigningKey)
+}
+
+// TestCreateClusterHABreakGlassCredentials exercises the break-glass credential flow
+// on a HighlyAvailable control plane (3 KAS replicas). This validates that the
+// CertificateRevocationController correctly verifies certificate revocation against
+// each individual KAS pod rather than through the service load balancer.
+func TestCreateClusterHABreakGlassCredentials(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(testContext)
+	defer cancel()
+
+	clusterOpts := globalOpts.DefaultClusterOptions(t)
+	clusterOpts.ControlPlaneAvailabilityPolicy = string(hyperv1.HighlyAvailable)
+	clusterOpts.NodePoolReplicas = 0
+
+	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+		// Wait for guest API to be reachable (SelfSubjectReview only, no nodes needed)
+		_ = e2eutil.WaitForGuestClient(t, ctx, mgtClient, hostedCluster)
+
+		// Assert that KAS deployment has 3 ready replicas to guard against false-positive passes
+		controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+		e2eutil.EventuallyObject(t, ctx, "KAS deployment to have 3 ready replicas",
+			func(ctx context.Context) (*appsv1.Deployment, error) {
+				deployment := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{
+					Namespace: controlPlaneNamespace,
+					Name:      "kube-apiserver",
+				}}
+				err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(deployment), deployment)
+				return deployment, err
+			},
+			[]e2eutil.Predicate[*appsv1.Deployment]{
+				func(deployment *appsv1.Deployment) (done bool, reasons string, err error) {
+					ready := deployment.Status.ReadyReplicas
+					return ready == 3, fmt.Sprintf("expected 3 ready replicas, got %d", ready), nil
+				},
+			},
+		)
+
+		t.Logf("fetching mgmt kubeconfig")
+		mgmtCfg, err := e2eutil.GetConfig()
+		g.Expect(err).NotTo(HaveOccurred(), "couldn't get mgmt kubeconfig")
+		mgmtCfg.QPS = -1
+		mgmtCfg.Burst = -1
+
+		mgmtClients, err := integrationframework.NewClients(mgmtCfg)
+		g.Expect(err).NotTo(HaveOccurred(), "couldn't create mgmt clients")
+
+		guestKubeConfigSecretData := e2eutil.WaitForGuestKubeConfig(t, ctx, mgtClient, hostedCluster)
+
+		guestConfig, err := clientcmd.RESTConfigFromKubeConfig(guestKubeConfigSecretData)
+		g.Expect(err).NotTo(HaveOccurred(), "couldn't load guest kubeconfig")
+		guestConfig.QPS = -1
+		guestConfig.Burst = -1
+
+		guestClients, err := integrationframework.NewClients(guestConfig)
+		g.Expect(err).NotTo(HaveOccurred(), "couldn't create guest clients")
+
+		integration.RunTestControlPlanePKIOperatorBreakGlassCredentials(t, testContext, hostedCluster, mgmtClients, guestClients)
+	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "ha-break-glass-creds", globalOpts.ServiceAccountSigningKey)
 }
 
 // TODO(alberto): rename this e2e to drop TestCreateCluster prefix after merging https://github.com/openshift/release/pull/66655
@@ -304,21 +380,26 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 		if globalOpts.ConfigurableClusterOptions.AzureEncryptionKeyID == "" {
 			t.Fatal("azure encryption key id is required")
 		}
-		if globalOpts.ConfigurableClusterOptions.AzureKMSUserAssignedCredsSecretName == "" {
-			t.Fatal("azure kms user assigned creds secret name is required")
+		// KMS user assigned creds secret name is only required for managed Azure (ARO HCP)
+		if azureutil.IsAroHCP() && globalOpts.ConfigurableClusterOptions.AzureKMSUserAssignedCredsSecretName == "" {
+			t.Fatal("azure kms user assigned creds secret name is required for managed Azure")
 		}
 
 		kmsUserAssignedCredsSecretName = globalOpts.ConfigurableClusterOptions.AzureKMSUserAssignedCredsSecretName
 		kmsKeyInfo, err = azureutil.GetAzureEncryptionKeyInfo(globalOpts.ConfigurableClusterOptions.AzureEncryptionKeyID)
 		if err != nil {
-			t.Fatal("failed to get azure encryption key info: %w", err)
+			t.Fatalf("failed to get azure encryption key info: %v", err)
 		}
 	}
 
 	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 		switch globalOpts.Platform {
 		case hyperv1.AWSPlatform:
+			g.Expect(hostedCluster.Spec.SecretEncryption).ToNot(BeNil(), "SecretEncryption must be set")
+			g.Expect(hostedCluster.Spec.SecretEncryption.KMS).ToNot(BeNil(), "SecretEncryption.KMS must be set")
+			g.Expect(hostedCluster.Spec.SecretEncryption.KMS.AWS).ToNot(BeNil(), "KMS.AWS must be set")
 			g.Expect(hostedCluster.Spec.SecretEncryption.KMS.AWS.ActiveKey.ARN).To(Equal(*kmsKeyArn))
+			g.Expect(hostedCluster.Spec.SecretEncryption.KMS.AWS.Auth).ToNot(BeNil(), "KMS.AWS.Auth must be set")
 			g.Expect(hostedCluster.Spec.SecretEncryption.KMS.AWS.Auth.AWSKMSRoleARN).ToNot(BeEmpty())
 		case hyperv1.AzurePlatform:
 			g.Expect(hostedCluster.Spec.SecretEncryption).ToNot(BeNil(), "SecretEncryption must be set")
@@ -327,8 +408,10 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 			g.Expect(hostedCluster.Spec.SecretEncryption.KMS.Azure.ActiveKey.KeyVaultName).To(Equal(kmsKeyInfo.KeyVaultName))
 			g.Expect(hostedCluster.Spec.SecretEncryption.KMS.Azure.ActiveKey.KeyName).To(Equal(kmsKeyInfo.KeyName))
 			g.Expect(hostedCluster.Spec.SecretEncryption.KMS.Azure.ActiveKey.KeyVersion).To(Equal(kmsKeyInfo.KeyVersion))
-			g.Expect(hostedCluster.Spec.SecretEncryption.KMS.Azure.KMS.CredentialsSecretName).To(Equal(kmsUserAssignedCredsSecretName))
-			g.Expect(hostedCluster.Spec.SecretEncryption.KMS.Azure.KMS.ObjectEncoding).To(Equal(hyperv1.ObjectEncodingFormat("utf-8")))
+			if azureutil.IsAroHCP() {
+				g.Expect(hostedCluster.Spec.SecretEncryption.KMS.Azure.KMS.CredentialsSecretName).To(Equal(kmsUserAssignedCredsSecretName))
+				g.Expect(hostedCluster.Spec.SecretEncryption.KMS.Azure.KMS.ObjectEncoding).To(Equal(hyperv1.ObjectEncodingFormat("utf-8")))
+			}
 		}
 
 		guestClient := e2eutil.WaitForGuestClient(t, testContext, mgtClient, hostedCluster)

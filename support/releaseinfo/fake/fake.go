@@ -6,8 +6,8 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	haproxy "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/apiserver-haproxy"
+	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/releaseinfo"
-	"github.com/openshift/hypershift/support/util"
 
 	imagev1 "github.com/openshift/api/image/v1"
 
@@ -59,7 +59,7 @@ func (f *FakeReleaseProvider) Lookup(_ context.Context, image string, _ []byte) 
 						From: &corev1.ObjectReference{Name: ""},
 					},
 					{
-						Name: util.AvailabilityProberImageName,
+						Name: podspec.AvailabilityProberImageName,
 						From: &corev1.ObjectReference{Name: ""},
 					},
 					{

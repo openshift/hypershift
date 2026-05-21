@@ -5,6 +5,7 @@ package e2e
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -359,6 +360,15 @@ func executeNodePoolTest(t *testing.T, ctx context.Context, mgmtClient crclient.
 		return
 	}
 
+	// Validate that CAPI v1 condition messages are bubbled up during machine provisioning.
+	// This checks that the AllMachinesReady condition is populated with CAPI-derived
+	// machine-level details before machines are fully ready.
+	// The CAPI condition aggregation logic was introduced in 4.23; older operators don't produce
+	// the expected "machines are not healthy" message format during provisioning.
+	if e2eutil.IsGreaterThanOrEqualTo(e2eutil.Version423) && nodePool.Spec.Replicas != nil && *nodePool.Spec.Replicas > 0 {
+		validateCAPIConditionBubblingDuringProvisioning(t, ctx, mgmtClient, nodePool)
+	}
+
 	// For supported versions, run full validation including node readiness
 	nodes := e2eutil.WaitForReadyNodesByNodePool(t, ctx, hcClient, nodePool, hostedCluster.Spec.Platform.Type)
 	// We want to make sure all conditions are met and in a deterministic known state before running the tests to avoid false positives.
@@ -395,10 +405,25 @@ func validateNodePoolConditions(t *testing.T, ctx context.Context, client crclie
 
 	var predicates []e2eutil.Predicate[*hyperv1.NodePool]
 	for conditionType, conditionStatus := range expectedConditions {
-		predicates = append(predicates, e2eutil.ConditionPredicate[*hyperv1.NodePool](e2eutil.Condition{
+		condition := e2eutil.Condition{
 			Type:   conditionType,
 			Status: metav1.ConditionStatus(conditionStatus),
-		}))
+		}
+
+		// For CAPI-derived conditions in steady state, also validate Reason and Message
+		// to ensure CAPI v1 condition messages are properly aggregated and bubbled up.
+		// When all machines are ready and healthy, the aggregation pipeline should produce
+		// Reason=AsExpected and Message="All is well".
+		// The CAPI condition aggregation logic was introduced in 4.23.
+		if expectedSupportedVersionSkew && e2eutil.IsGreaterThanOrEqualTo(e2eutil.Version423) {
+			switch conditionType {
+			case hyperv1.NodePoolAllMachinesReadyConditionType, hyperv1.NodePoolAllNodesHealthyConditionType:
+				condition.Reason = hyperv1.AsExpectedReason
+				condition.Message = hyperv1.AllIsWellMessage
+			}
+		}
+
+		predicates = append(predicates, e2eutil.ConditionPredicate[*hyperv1.NodePool](condition))
 	}
 
 	e2eutil.EventuallyObject(t, ctx, fmt.Sprintf("NodePool %s/%s to have correct status", nodePool.Namespace, nodePool.Name),
@@ -407,5 +432,94 @@ func validateNodePoolConditions(t *testing.T, ctx context.Context, client crclie
 			return nodePool, err
 		},
 		predicates, e2eutil.WithoutConditionDump(), e2eutil.WithTimeout(20*time.Minute),
+		e2eutil.WithInterval(15*time.Second), // Reduce polling frequency from 3s default to prevent client rate limiting
 	)
+}
+
+// validateCAPIConditionBubblingDuringProvisioning validates that during machine provisioning,
+// CAPI v1 Machine conditions are properly bubbled up to the NodePool.
+//
+// This specifically tests the nil-condition handling: when CAPI Machines exist but have not
+// yet reported their Ready or NodeHealthy conditions (nil), the NodePool conditions must
+// show False with machine-level details — not incorrectly True.
+//
+// AllNodesHealthy is the primary signal because the CAPI NodeHealthy condition stays nil
+// until the node actually joins the cluster and kubelet reports health. This takes minutes
+// on any cloud platform, creating a large reliable window where:
+//   - Correct code: AllNodesHealthy=False with "machines are not healthy"
+//   - Broken code:  AllNodesHealthy=True (nil conditions silently ignored)
+//
+// AllMachinesReady is checked as well but the nil window is shorter (CAPI provider sets
+// Ready=False quickly after instance launch), so it uses a softer assertion.
+func validateCAPIConditionBubblingDuringProvisioning(t *testing.T, ctx context.Context, client crclient.Client, nodePool *hyperv1.NodePool) {
+	t.Helper()
+	t.Log("Validating CAPI v1 condition message bubbling during machine provisioning")
+
+	// AllNodesHealthy: hard assertion.
+	// NodeHealthy stays nil until the node joins the cluster (minutes). During this entire
+	// window, AllNodesHealthy MUST be False with the aggregated message format.
+	// If it shows True, nil conditions are being silently ignored.
+	nodesUnhealthyObserved := pollForConditionFalseWithAggregatedMessage(t, ctx, client, nodePool,
+		hyperv1.NodePoolAllNodesHealthyConditionType, "healthy")
+	if !nodesUnhealthyObserved {
+		t.Errorf("AllNodesHealthy was never observed as False with aggregated 'machines are not healthy' message "+
+			"during provisioning. This indicates CAPI Machine nil NodeHealthy conditions are being silently "+
+			"ignored instead of treated as unhealthy. NodePool: %s/%s", nodePool.Namespace, nodePool.Name)
+	}
+
+	// AllMachinesReady: soft assertion (log-only).
+	// The nil window for Ready condition is brief because the CAPI provider sets Ready=False
+	// quickly after instance launch. We may miss it.
+	machinesUnreadyObserved := pollForConditionFalseWithAggregatedMessage(t, ctx, client, nodePool,
+		hyperv1.NodePoolAllMachinesReadyConditionType, "ready")
+	if !machinesUnreadyObserved {
+		t.Logf("AllMachinesReady was not observed as False with aggregated message during provisioning " +
+			"(CAPI provider may have set Ready condition before we could observe nil state)")
+	}
+}
+
+// pollForConditionFalseWithAggregatedMessage polls the NodePool until it observes the given
+// condition as False with a message containing "machines are not <state>" (the format produced
+// by aggregateMachineReasonsAndMessages). Polling stops when either:
+//   - The condition is False with the expected message format → returns true
+//   - The condition transitions to True (machines became ready) → returns false
+//   - The timeout (5 min) is reached → returns false
+func pollForConditionFalseWithAggregatedMessage(t *testing.T, ctx context.Context, client crclient.Client, nodePool *hyperv1.NodePool, conditionType, state string) bool {
+	t.Helper()
+
+	observed := false
+	expectedSubstring := "machines are not " + state
+
+	_ = wait.PollUntilContextTimeout(ctx, 3*time.Second, 5*time.Minute, true, func(ctx context.Context) (bool, error) {
+		np := &hyperv1.NodePool{}
+		if err := client.Get(ctx, crclient.ObjectKeyFromObject(nodePool), np); err != nil {
+			return false, nil
+		}
+
+		for _, cond := range np.Status.Conditions {
+			if cond.Type != conditionType {
+				continue
+			}
+
+			if cond.Status == corev1.ConditionFalse && strings.Contains(cond.Message, expectedSubstring) {
+				t.Logf("CAPI bubbling confirmed for %s: Status=False, Reason=%s", conditionType, cond.Reason)
+				observed = true
+				return true, nil // success — stop polling
+			}
+
+			if cond.Status == corev1.ConditionTrue {
+				// Condition is True — machines became ready before we saw the aggregated False state
+				return true, nil // stop polling
+			}
+
+			// False but without the expected message (e.g. "No Machines are created" before
+			// CAPI machines exist) — keep polling until machines are created
+			return false, nil
+		}
+
+		// Condition not yet set on NodePool — keep polling
+		return false, nil
+	})
+
+	return observed
 }

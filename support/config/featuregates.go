@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/openshift/hypershift/support/api"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/k8sutil"
 
 	configv1 "github.com/openshift/api/config/v1"
 
@@ -35,7 +35,7 @@ func ParseFeatureGates(cm *corev1.ConfigMap) (*configv1.FeatureGate, error) {
 	if len(manifest) == 0 {
 		return nil, fmt.Errorf("empty featuregate manifest")
 	}
-	if err := util.DeserializeResource(manifest, fg, api.Scheme); err != nil {
+	if err := k8sutil.DeserializeResource(manifest, fg, api.Scheme); err != nil {
 		return nil, fmt.Errorf("failed to deserialize feature gate resource: %w", err)
 	}
 	return fg, nil

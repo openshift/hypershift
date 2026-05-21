@@ -105,6 +105,7 @@ type GCPNetworkConfig struct {
 // +kubebuilder:validation:XValidation:rule="self.workloadIdentity.serviceAccountsEmails.cloudController.contains('@') && self.workloadIdentity.serviceAccountsEmails.cloudController.endsWith('@' + self.project + '.iam.gserviceaccount.com')",message="cloudController service account must belong to the same project"
 // +kubebuilder:validation:XValidation:rule="self.workloadIdentity.serviceAccountsEmails.storage.contains('@') && self.workloadIdentity.serviceAccountsEmails.storage.endsWith('@' + self.project + '.iam.gserviceaccount.com')",message="storage service account must belong to the same project"
 // +kubebuilder:validation:XValidation:rule="self.workloadIdentity.serviceAccountsEmails.imageRegistry.contains('@') && self.workloadIdentity.serviceAccountsEmails.imageRegistry.endsWith('@' + self.project + '.iam.gserviceaccount.com')",message="imageRegistry service account must belong to the same project"
+// +kubebuilder:validation:XValidation:rule="self.workloadIdentity.serviceAccountsEmails.network.endsWith('@' + self.project + '.iam.gserviceaccount.com')",message="network service account must belong to the same project"
 type GCPPlatformSpec struct {
 	// project is the GCP project ID.
 	// A valid project ID must satisfy the following rules:
@@ -357,6 +358,22 @@ type GCPServiceAccountsEmails struct {
 	// +immutable
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="ImageRegistry is immutable"
 	ImageRegistry GCPServiceAccountEmail `json:"imageRegistry,omitempty"`
+
+	// network is the Google Service Account email for the Cloud Network Config Controller
+	// that manages cloud-level network configurations (egress IPs, subnets).
+	// This GSA requires the following IAM roles:
+	// - roles/compute.instanceAdmin.v1 (Compute Instance Admin - for managing network interfaces)
+	// - roles/compute.networkUser (Compute Network User - for using subnets)
+	// See cmd/infra/gcp/iam-bindings.json for the authoritative role definitions.
+	// Format: service-account-name@project-id.iam.gserviceaccount.com
+	//
+	// This is a user-provided value referencing a pre-created Google Service Account.
+	// Typically obtained from the output of `hypershift infra create gcp` which creates
+	// the required service accounts with appropriate IAM roles and WIF bindings.
+	//
+	// +required
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="Network is immutable"
+	Network GCPServiceAccountEmail `json:"network,omitempty"`
 }
 
 // GCPOnHostMaintenance defines the behavior when a host maintenance event occurs.

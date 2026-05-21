@@ -34,6 +34,7 @@ tests:
                 cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
                 storage: storage@my-project-123.iam.gserviceaccount.com
                 imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                network: cnccsa@my-project-123.iam.gserviceaccount.com
         pullSecret:
           name: secret
         release:
@@ -89,6 +90,7 @@ tests:
                 cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
                 storage: storage@my-project-123.iam.gserviceaccount.com
                 imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                network: cnccsa@my-project-123.iam.gserviceaccount.com
         pullSecret:
           name: secret
         release:
@@ -144,6 +146,7 @@ tests:
                 cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
                 storage: storage@my-project-123.iam.gserviceaccount.com
                 imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                network: cnccsa@my-project-123.iam.gserviceaccount.com
         pullSecret:
           name: secret
         release:
@@ -199,6 +202,7 @@ tests:
                 cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
                 storage: storage@my-project-123.iam.gserviceaccount.com
                 imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                network: cnccsa@my-project-123.iam.gserviceaccount.com
         pullSecret:
           name: secret
         release:
@@ -254,6 +258,7 @@ tests:
                 cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
                 storage: storage@my-project-123.iam.gserviceaccount.com
                 imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                network: cnccsa@my-project-123.iam.gserviceaccount.com
         pullSecret:
           name: secret
         release:
@@ -309,6 +314,7 @@ tests:
                 cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
                 storage: storage@my-project-123.iam.gserviceaccount.com
                 imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                network: cnccsa@my-project-123.iam.gserviceaccount.com
         pullSecret:
           name: secret
         release:
@@ -364,6 +370,7 @@ tests:
                 cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
                 storage: storage@my-project-123.iam.gserviceaccount.com
                 imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                network: cnccsa@my-project-123.iam.gserviceaccount.com
         pullSecret:
           name: secret
         release:
@@ -420,6 +427,7 @@ tests:
                 cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
                 storage: storage@my-project-123.iam.gserviceaccount.com
                 imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                network: cnccsa@my-project-123.iam.gserviceaccount.com
         pullSecret:
           name: secret
         release:
@@ -476,6 +484,7 @@ tests:
                 cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
                 storage: storage@my-project-123.iam.gserviceaccount.com
                 imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                network: cnccsa@my-project-123.iam.gserviceaccount.com
         pullSecret:
           name: secret
         release:
@@ -531,6 +540,7 @@ tests:
                 cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
                 storage: storage@my-project-123.iam.gserviceaccount.com
                 imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                network: cnccsa@my-project-123.iam.gserviceaccount.com
         pullSecret:
           name: secret
         release:
@@ -586,6 +596,7 @@ tests:
                 cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
                 storage: storage@my-project-123.iam.gserviceaccount.com
                 imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                network: cnccsa@my-project-123.iam.gserviceaccount.com
         pullSecret:
           name: secret
         release:
@@ -641,10 +652,1076 @@ tests:
                 cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
                 storage: storage@my-project-123.iam.gserviceaccount.com
                 imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                network: cnccsa@my-project-123.iam.gserviceaccount.com
         pullSecret:
           name: secret
         release:
           image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+
+  # --- GCP network service account (CNCC) validation ---
+  - name: When GCP network service account has invalid email format it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: GCP
+          gcp:
+            project: my-project-123
+            region: us-central1
+            networkConfig:
+              network:
+                name: my-network
+              privateServiceConnectSubnet:
+                name: my-psc-subnet
+            workloadIdentity:
+              projectNumber: "123456789012"
+              poolID: my-wif-pool
+              providerID: my-wif-provider
+              serviceAccountsEmails:
+                nodePool: nodepool@my-project-123.iam.gserviceaccount.com
+                controlPlane: controlplane@my-project-123.iam.gserviceaccount.com
+                cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
+                storage: storage@my-project-123.iam.gserviceaccount.com
+                imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                network: INVALID-EMAIL
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "network"
+
+  - name: When GCP network service account belongs to different project it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: GCP
+          gcp:
+            project: my-project-123
+            region: us-central1
+            networkConfig:
+              network:
+                name: my-network
+              privateServiceConnectSubnet:
+                name: my-psc-subnet
+            workloadIdentity:
+              projectNumber: "123456789012"
+              poolID: my-wif-pool
+              providerID: my-wif-provider
+              serviceAccountsEmails:
+                nodePool: nodepool@my-project-123.iam.gserviceaccount.com
+                controlPlane: controlplane@my-project-123.iam.gserviceaccount.com
+                cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
+                storage: storage@my-project-123.iam.gserviceaccount.com
+                imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                network: cnccsa@wrong-project.iam.gserviceaccount.com
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "network service account must belong to the same project"
+
+  - name: When GCP network service account is provided and valid it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: GCP
+          gcp:
+            project: my-project-123
+            region: us-central1
+            networkConfig:
+              network:
+                name: my-network
+              privateServiceConnectSubnet:
+                name: my-psc-subnet
+            workloadIdentity:
+              projectNumber: "123456789012"
+              poolID: my-wif-pool
+              providerID: my-wif-provider
+              serviceAccountsEmails:
+                nodePool: nodepool@my-project-123.iam.gserviceaccount.com
+                controlPlane: controlplane@my-project-123.iam.gserviceaccount.com
+                cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
+                storage: storage@my-project-123.iam.gserviceaccount.com
+                imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                network: cnccsa@my-project-123.iam.gserviceaccount.com
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+
+  - name: When GCP network service account is omitted it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: GCP
+          gcp:
+            project: my-project-123
+            region: us-central1
+            networkConfig:
+              network:
+                name: my-network
+              privateServiceConnectSubnet:
+                name: my-psc-subnet
+            workloadIdentity:
+              projectNumber: "123456789012"
+              poolID: my-wif-pool
+              providerID: my-wif-provider
+              serviceAccountsEmails:
+                nodePool: nodepool@my-project-123.iam.gserviceaccount.com
+                controlPlane: controlplane@my-project-123.iam.gserviceaccount.com
+                cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
+                storage: storage@my-project-123.iam.gserviceaccount.com
+                imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "network: Required value"
+
+  # --- GCP imageRegistry service account validation ---
+  - name: When GCP imageRegistry service account belongs to different project it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: GCP
+          gcp:
+            project: my-project-123
+            region: us-central1
+            networkConfig:
+              network:
+                name: my-network
+              privateServiceConnectSubnet:
+                name: my-psc-subnet
+            workloadIdentity:
+              projectNumber: "123456789012"
+              poolID: my-wif-pool
+              providerID: my-wif-provider
+              serviceAccountsEmails:
+                nodePool: nodepool@my-project-123.iam.gserviceaccount.com
+                controlPlane: controlplane@my-project-123.iam.gserviceaccount.com
+                cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
+                storage: storage@my-project-123.iam.gserviceaccount.com
+                imageRegistry: imageregistry@wrong-project.iam.gserviceaccount.com
+                network: cnccsa@my-project-123.iam.gserviceaccount.com
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "imageRegistry service account must belong to the same project"
+
+  onUpdate:
+  # --- GCP network service account immutability ---
+  - name: When GCP network service account is changed it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: GCP
+          gcp:
+            project: my-project-123
+            region: us-central1
+            networkConfig:
+              network:
+                name: my-network
+              privateServiceConnectSubnet:
+                name: my-psc-subnet
+            workloadIdentity:
+              projectNumber: "123456789012"
+              poolID: my-wif-pool
+              providerID: my-wif-provider
+              serviceAccountsEmails:
+                nodePool: nodepool@my-project-123.iam.gserviceaccount.com
+                controlPlane: controlplane@my-project-123.iam.gserviceaccount.com
+                cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
+                storage: storage@my-project-123.iam.gserviceaccount.com
+                imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                network: cnccsa@my-project-123.iam.gserviceaccount.com
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: GCP
+          gcp:
+            project: my-project-123
+            region: us-central1
+            networkConfig:
+              network:
+                name: my-network
+              privateServiceConnectSubnet:
+                name: my-psc-subnet
+            workloadIdentity:
+              projectNumber: "123456789012"
+              poolID: my-wif-pool
+              providerID: my-wif-provider
+              serviceAccountsEmails:
+                nodePool: nodepool@my-project-123.iam.gserviceaccount.com
+                controlPlane: controlplane@my-project-123.iam.gserviceaccount.com
+                cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
+                storage: storage@my-project-123.iam.gserviceaccount.com
+                imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                network: different@my-project-123.iam.gserviceaccount.com
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "Network is immutable"
+
+  - name: When updating release image while GCP network service account is unchanged it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: GCP
+          gcp:
+            project: my-project-123
+            region: us-central1
+            networkConfig:
+              network:
+                name: my-network
+              privateServiceConnectSubnet:
+                name: my-psc-subnet
+            workloadIdentity:
+              projectNumber: "123456789012"
+              poolID: my-wif-pool
+              providerID: my-wif-provider
+              serviceAccountsEmails:
+                nodePool: nodepool@my-project-123.iam.gserviceaccount.com
+                controlPlane: controlplane@my-project-123.iam.gserviceaccount.com
+                cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
+                storage: storage@my-project-123.iam.gserviceaccount.com
+                imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                network: cnccsa@my-project-123.iam.gserviceaccount.com
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: GCP
+          gcp:
+            project: my-project-123
+            region: us-central1
+            networkConfig:
+              network:
+                name: my-network
+              privateServiceConnectSubnet:
+                name: my-psc-subnet
+            workloadIdentity:
+              projectNumber: "123456789012"
+              poolID: my-wif-pool
+              providerID: my-wif-provider
+              serviceAccountsEmails:
+                nodePool: nodepool@my-project-123.iam.gserviceaccount.com
+                controlPlane: controlplane@my-project-123.iam.gserviceaccount.com
+                cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
+                storage: storage@my-project-123.iam.gserviceaccount.com
+                imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                network: cnccsa@my-project-123.iam.gserviceaccount.com
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.16.0-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+
+  # --- GCP network service account ratcheting ---
+  - name: When updating a previously invalid network SA to a new invalid value it should fail
+    initialCRDPatches:
+      # Remove the network SA project membership validation so the initial object can be
+      # created with a cross-project network service account that would normally be rejected.
+      - op: remove
+        path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/properties/platform/properties/gcp/x-kubernetes-validations/5
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: GCP
+          gcp:
+            project: my-project-123
+            region: us-central1
+            networkConfig:
+              network:
+                name: my-network
+              privateServiceConnectSubnet:
+                name: my-psc-subnet
+            workloadIdentity:
+              projectNumber: "123456789012"
+              poolID: my-wif-pool
+              providerID: my-wif-provider
+              serviceAccountsEmails:
+                nodePool: nodepool@my-project-123.iam.gserviceaccount.com
+                controlPlane: controlplane@my-project-123.iam.gserviceaccount.com
+                cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
+                storage: storage@my-project-123.iam.gserviceaccount.com
+                imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                network: cnccsa@wrong-project.iam.gserviceaccount.com
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: GCP
+          gcp:
+            project: my-project-123
+            region: us-central1
+            networkConfig:
+              network:
+                name: my-network
+              privateServiceConnectSubnet:
+                name: my-psc-subnet
+            workloadIdentity:
+              projectNumber: "123456789012"
+              poolID: my-wif-pool
+              providerID: my-wif-provider
+              serviceAccountsEmails:
+                nodePool: nodepool@my-project-123.iam.gserviceaccount.com
+                controlPlane: controlplane@my-project-123.iam.gserviceaccount.com
+                cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
+                storage: storage@my-project-123.iam.gserviceaccount.com
+                imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                network: cnccsa@other-wrong-project.iam.gserviceaccount.com
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "network service account must belong to the same project"
+
+  - name: When updating a legit field while a previously invalid network SA is unchanged it should pass
+    initialCRDPatches:
+      # Remove the network SA project membership validation so the initial object can be
+      # created with a cross-project network service account that would normally be rejected.
+      - op: remove
+        path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/properties/platform/properties/gcp/x-kubernetes-validations/5
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: GCP
+          gcp:
+            project: my-project-123
+            region: us-central1
+            networkConfig:
+              network:
+                name: my-network
+              privateServiceConnectSubnet:
+                name: my-psc-subnet
+            workloadIdentity:
+              projectNumber: "123456789012"
+              poolID: my-wif-pool
+              providerID: my-wif-provider
+              serviceAccountsEmails:
+                nodePool: nodepool@my-project-123.iam.gserviceaccount.com
+                controlPlane: controlplane@my-project-123.iam.gserviceaccount.com
+                cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
+                storage: storage@my-project-123.iam.gserviceaccount.com
+                imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                network: cnccsa@wrong-project.iam.gserviceaccount.com
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: GCP
+          gcp:
+            project: my-project-123
+            region: us-central1
+            networkConfig:
+              network:
+                name: my-network
+              privateServiceConnectSubnet:
+                name: my-psc-subnet
+            workloadIdentity:
+              projectNumber: "123456789012"
+              poolID: my-wif-pool
+              providerID: my-wif-provider
+              serviceAccountsEmails:
+                nodePool: nodepool@my-project-123.iam.gserviceaccount.com
+                controlPlane: controlplane@my-project-123.iam.gserviceaccount.com
+                cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
+                storage: storage@my-project-123.iam.gserviceaccount.com
+                imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                network: cnccsa@wrong-project.iam.gserviceaccount.com
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.16.0-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+
+  # --- GCP imageRegistry service account immutability ---
+  - name: When GCP imageRegistry service account is changed it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: GCP
+          gcp:
+            project: my-project-123
+            region: us-central1
+            networkConfig:
+              network:
+                name: my-network
+              privateServiceConnectSubnet:
+                name: my-psc-subnet
+            workloadIdentity:
+              projectNumber: "123456789012"
+              poolID: my-wif-pool
+              providerID: my-wif-provider
+              serviceAccountsEmails:
+                nodePool: nodepool@my-project-123.iam.gserviceaccount.com
+                controlPlane: controlplane@my-project-123.iam.gserviceaccount.com
+                cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
+                storage: storage@my-project-123.iam.gserviceaccount.com
+                imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                network: cnccsa@my-project-123.iam.gserviceaccount.com
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: GCP
+          gcp:
+            project: my-project-123
+            region: us-central1
+            networkConfig:
+              network:
+                name: my-network
+              privateServiceConnectSubnet:
+                name: my-psc-subnet
+            workloadIdentity:
+              projectNumber: "123456789012"
+              poolID: my-wif-pool
+              providerID: my-wif-provider
+              serviceAccountsEmails:
+                nodePool: nodepool@my-project-123.iam.gserviceaccount.com
+                controlPlane: controlplane@my-project-123.iam.gserviceaccount.com
+                cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
+                storage: storage@my-project-123.iam.gserviceaccount.com
+                imageRegistry: different@my-project-123.iam.gserviceaccount.com
+                network: cnccsa@my-project-123.iam.gserviceaccount.com
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "ImageRegistry is immutable"
+
+  # --- GCP imageRegistry service account ratcheting ---
+  - name: When updating a previously invalid imageRegistry SA to a new invalid value it should fail
+    initialCRDPatches:
+      # Remove the imageRegistry SA project membership validation so the initial object can be
+      # created with a cross-project imageRegistry service account that would normally be rejected.
+      - op: remove
+        path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/properties/platform/properties/gcp/x-kubernetes-validations/4
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: GCP
+          gcp:
+            project: my-project-123
+            region: us-central1
+            networkConfig:
+              network:
+                name: my-network
+              privateServiceConnectSubnet:
+                name: my-psc-subnet
+            workloadIdentity:
+              projectNumber: "123456789012"
+              poolID: my-wif-pool
+              providerID: my-wif-provider
+              serviceAccountsEmails:
+                nodePool: nodepool@my-project-123.iam.gserviceaccount.com
+                controlPlane: controlplane@my-project-123.iam.gserviceaccount.com
+                cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
+                storage: storage@my-project-123.iam.gserviceaccount.com
+                imageRegistry: imageregistry@wrong-project.iam.gserviceaccount.com
+                network: cnccsa@my-project-123.iam.gserviceaccount.com
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: GCP
+          gcp:
+            project: my-project-123
+            region: us-central1
+            networkConfig:
+              network:
+                name: my-network
+              privateServiceConnectSubnet:
+                name: my-psc-subnet
+            workloadIdentity:
+              projectNumber: "123456789012"
+              poolID: my-wif-pool
+              providerID: my-wif-provider
+              serviceAccountsEmails:
+                nodePool: nodepool@my-project-123.iam.gserviceaccount.com
+                controlPlane: controlplane@my-project-123.iam.gserviceaccount.com
+                cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
+                storage: storage@my-project-123.iam.gserviceaccount.com
+                imageRegistry: imageregistry@other-wrong-project.iam.gserviceaccount.com
+                network: cnccsa@my-project-123.iam.gserviceaccount.com
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "imageRegistry service account must belong to the same project"
+
+  - name: When updating a legit field while a previously invalid imageRegistry SA is unchanged it should pass
+    initialCRDPatches:
+      # Remove the imageRegistry SA project membership validation so the initial object can be
+      # created with a cross-project imageRegistry service account that would normally be rejected.
+      - op: remove
+        path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/properties/platform/properties/gcp/x-kubernetes-validations/4
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: GCP
+          gcp:
+            project: my-project-123
+            region: us-central1
+            networkConfig:
+              network:
+                name: my-network
+              privateServiceConnectSubnet:
+                name: my-psc-subnet
+            workloadIdentity:
+              projectNumber: "123456789012"
+              poolID: my-wif-pool
+              providerID: my-wif-provider
+              serviceAccountsEmails:
+                nodePool: nodepool@my-project-123.iam.gserviceaccount.com
+                controlPlane: controlplane@my-project-123.iam.gserviceaccount.com
+                cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
+                storage: storage@my-project-123.iam.gserviceaccount.com
+                imageRegistry: imageregistry@wrong-project.iam.gserviceaccount.com
+                network: cnccsa@my-project-123.iam.gserviceaccount.com
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: GCP
+          gcp:
+            project: my-project-123
+            region: us-central1
+            networkConfig:
+              network:
+                name: my-network
+              privateServiceConnectSubnet:
+                name: my-psc-subnet
+            workloadIdentity:
+              projectNumber: "123456789012"
+              poolID: my-wif-pool
+              providerID: my-wif-provider
+              serviceAccountsEmails:
+                nodePool: nodepool@my-project-123.iam.gserviceaccount.com
+                controlPlane: controlplane@my-project-123.iam.gserviceaccount.com
+                cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
+                storage: storage@my-project-123.iam.gserviceaccount.com
+                imageRegistry: imageregistry@wrong-project.iam.gserviceaccount.com
+                network: cnccsa@my-project-123.iam.gserviceaccount.com
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.16.0-x86_64
         secretEncryption:
           aescbc:
             activeKey:

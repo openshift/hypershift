@@ -9,8 +9,8 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hyperapi "github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/upsert"
-	supportutil "github.com/openshift/hypershift/support/util"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -164,7 +164,7 @@ func TestReconcile_PausedUntil(t *testing.T) {
 			Name:      "test-cluster",
 			Namespace: "test-namespace",
 			Annotations: map[string]string{
-				supportutil.HostedClusterAnnotation: "test-namespace/test-cluster",
+				k8sutil.HostedClusterAnnotation: "test-namespace/test-cluster",
 			},
 		},
 		Spec: hyperv1.HostedControlPlaneSpec{
@@ -178,7 +178,7 @@ func TestReconcile_PausedUntil(t *testing.T) {
 			Namespace:  "test-namespace",
 			Finalizers: []string{"hypershift.openshift.io/gcp-private-service-connect"}, // Add finalizer so it gets past initial checks
 			Annotations: map[string]string{
-				supportutil.HostedClusterAnnotation: "test-namespace/test-cluster",
+				k8sutil.HostedClusterAnnotation: "test-namespace/test-cluster",
 			},
 		},
 		Spec: hyperv1.GCPPrivateServiceConnectSpec{

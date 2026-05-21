@@ -6,7 +6,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	assets "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/podspec"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -60,7 +60,7 @@ func (s *statefulSetProvider) IsAvailable(object *appsv1.StatefulSet) (status me
 
 // IsReady implements WorkloadProvider.
 func (s *statefulSetProvider) IsReady(sts *appsv1.StatefulSet) (status metav1.ConditionStatus, reason string, message string) {
-	if util.IsStatefulSetReady(context.TODO(), sts) {
+	if podspec.IsStatefulSetReady(context.TODO(), sts) {
 		status = metav1.ConditionTrue
 		reason = hyperv1.AsExpectedReason
 		message = fmt.Sprintf("Statefulset %s successfully rolled out", sts.Name)

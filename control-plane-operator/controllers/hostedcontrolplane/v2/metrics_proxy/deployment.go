@@ -3,10 +3,11 @@ package metricsproxy
 import (
 	"fmt"
 	"sort"
+	"strings"
 
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/metrics"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/podspec"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -31,7 +32,7 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 		return fmt.Errorf("failed to build cert volumes: %w", err)
 	}
 
-	util.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
+	podspec.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
 		c.Args = append(c.Args,
 			"--metrics-set", string(metricsSet),
 		)
@@ -121,8 +122,9 @@ func certVolumesFromMonitors(cpContext component.WorkloadContext, namespace stri
 
 	for _, name := range names {
 		ref := refs[name]
+		volName := sanitizeVolumeName(name)
 		vol := corev1.Volume{
-			Name: name,
+			Name: volName,
 		}
 
 		if ref.isSecret {
@@ -144,12 +146,19 @@ func certVolumesFromMonitors(cpContext component.WorkloadContext, namespace stri
 
 		volumes = append(volumes, vol)
 		mounts = append(mounts, corev1.VolumeMount{
-			Name:      name,
+			Name:      volName,
 			MountPath: certBasePath + "/" + name,
 		})
 	}
 
 	return volumes, mounts, nil
+}
+
+// sanitizeVolumeName converts a resource name into a valid Kubernetes volume
+// name by replacing dots with dashes. Kubernetes volume names must conform to
+// DNS label rules which do not allow dots.
+func sanitizeVolumeName(name string) string {
+	return strings.ReplaceAll(name, ".", "-")
 }
 
 // collectSecretOrConfigMapRef adds a SecretOrConfigMap reference to the refs map.

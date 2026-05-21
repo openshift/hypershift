@@ -1,22 +1,40 @@
 package install
 
 import (
+	"bytes"
+	"context"
+	"io"
 	"io/fs"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/cmd/install/assets"
 	crdassets "github.com/openshift/hypershift/cmd/install/assets/crds"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
+	hyperapi "github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/metrics"
 
+	operatorv1alpha1 "github.com/openshift/api/operator/v1alpha1"
+
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/set"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
+
+	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 )
 
 func TestOptions_Validate(t *testing.T) {
@@ -478,6 +496,64 @@ func TestSetupCRDs(t *testing.T) {
 	}
 }
 
+func TestRenderHyperShiftOperator_RenderSensitive(t *testing.T) {
+	tests := []struct {
+		name            string
+		renderSensitive bool
+		expectSecrets   bool
+	}{
+		{
+			name:            "When render-sensitive is false it should exclude secrets from output",
+			renderSensitive: false,
+			expectSecrets:   false,
+		},
+		{
+			name:            "When render-sensitive is true it should include secrets in output",
+			renderSensitive: true,
+			expectSecrets:   true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			var buf bytes.Buffer
+			opts := &Options{
+				PrivatePlatform:         string(hyperv1.NonePlatform),
+				EnableDefaultingWebhook: true,
+				EnableValidatingWebhook: true,
+				EnableConversionWebhook: true,
+				RenderSensitive:         tc.renderSensitive,
+				Format:                  RenderFormatYaml,
+				OutputTypes:             string(OutputAll),
+			}
+			err := RenderHyperShiftOperator(t.Context(), &buf, opts)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			var secretNames []string
+			decodedCount := 0
+			for doc := range strings.SplitSeq(buf.String(), "\n---\n") {
+				if strings.TrimSpace(doc) == "" {
+					continue
+				}
+				obj, _, err := hyperapi.YamlSerializer.Decode([]byte(doc), nil, nil)
+				g.Expect(err).ToNot(HaveOccurred(), "failed to decode rendered manifest")
+				decodedCount++
+				if secret, ok := obj.(*corev1.Secret); ok {
+					secretNames = append(secretNames, secret.Name)
+				}
+			}
+			g.Expect(decodedCount).To(BeNumerically(">", 0), "expected rendered manifests to be decodable")
+			if tc.expectSecrets {
+				g.Expect(secretNames).ToNot(BeEmpty(), "expected secrets in rendered output")
+			} else {
+				g.Expect(secretNames).To(BeEmpty(), "expected no secrets in rendered output")
+			}
+		})
+	}
+}
+
 func TestHyperShiftOperatorManifests_SharedIngress(t *testing.T) {
 	tests := []struct {
 		name                       string
@@ -547,6 +623,1134 @@ func TestHyperShiftOperatorManifests_SharedIngress(t *testing.T) {
 				g.Expect(hasSharedIngressNamespace).To(BeFalse(), "expected shared ingress namespace to not be present")
 				g.Expect(hasSharedIngressClusterRole).To(BeFalse(), "expected shared ingress ClusterRole to not be present")
 				g.Expect(hasSharedIngressClusterRoleBinding).To(BeFalse(), "expected shared ingress ClusterRoleBinding to not be present")
+			}
+		})
+	}
+}
+
+// fakeDiscovery implements discovery.ServerResourcesInterface for testing.
+type fakeDiscovery struct {
+	resources []*metav1.APIResourceList
+}
+
+func (f *fakeDiscovery) ServerResourcesForGroupVersion(groupVersion string) (*metav1.APIResourceList, error) {
+	for _, rl := range f.resources {
+		if rl.GroupVersion == groupVersion {
+			return rl, nil
+		}
+	}
+	return nil, &apierrors.StatusError{
+		ErrStatus: metav1.Status{
+			Status: metav1.StatusFailure,
+			Reason: metav1.StatusReasonNotFound,
+		},
+	}
+}
+
+func TestIsClusterAPIRegistered(t *testing.T) {
+	tests := []struct {
+		name           string
+		resources      []*metav1.APIResourceList
+		expectedResult bool
+	}{
+		{
+			name: "When ClusterAPI API is registered it should detect CCAPIO presence",
+			resources: []*metav1.APIResourceList{
+				{
+					GroupVersion: "operator.openshift.io/v1alpha1",
+					APIResources: []metav1.APIResource{
+						{Name: "imagecontentsourcepolicies", Kind: "ImageContentSourcePolicy"},
+						{Name: "clusterapis", Kind: "ClusterAPI"},
+					},
+				},
+			},
+			expectedResult: true,
+		},
+		{
+			name:           "When ClusterAPI API is not registered it should skip CCAPIO coordination",
+			resources:      nil,
+			expectedResult: false,
+		},
+		{
+			name: "When operator.openshift.io/v1alpha1 exists but ClusterAPI kind is not present it should return false",
+			resources: []*metav1.APIResourceList{
+				{
+					GroupVersion: "operator.openshift.io/v1alpha1",
+					APIResources: []metav1.APIResource{
+						{Name: "imagecontentsourcepolicies", Kind: "ImageContentSourcePolicy"},
+					},
+				},
+			},
+			expectedResult: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			disco := &fakeDiscovery{resources: tc.resources}
+
+			registered, err := isClusterAPIRegistered(disco)
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(registered).To(Equal(tc.expectedResult))
+		})
+	}
+}
+
+func TestEnsureUnmanagedCRDs(t *testing.T) {
+	capiCRDs := []crclient.Object{
+		&apiextensionsv1.CustomResourceDefinition{ObjectMeta: metav1.ObjectMeta{Name: "clusters.cluster.x-k8s.io"}},
+		&apiextensionsv1.CustomResourceDefinition{ObjectMeta: metav1.ObjectMeta{Name: "machines.cluster.x-k8s.io"}},
+		&apiextensionsv1.CustomResourceDefinition{ObjectMeta: metav1.ObjectMeta{Name: "nodepools.hypershift.openshift.io"}},
+	}
+
+	// ssaInterceptor converts SSA Patch calls into Create/Update for the fake client,
+	// which does not support ApplyPatchType natively.
+	ssaInterceptor := interceptor.Funcs{
+		Patch: func(ctx context.Context, c crclient.WithWatch, obj crclient.Object, patch crclient.Patch, opts ...crclient.PatchOption) error {
+			if patch.Type() != types.ApplyPatchType {
+				return c.Patch(ctx, obj, patch, opts...)
+			}
+			existing := obj.DeepCopyObject().(crclient.Object)
+			err := c.Get(ctx, crclient.ObjectKeyFromObject(obj), existing)
+			if apierrors.IsNotFound(err) {
+				return c.Create(ctx, obj)
+			}
+			if err != nil {
+				return err
+			}
+			obj.SetResourceVersion(existing.GetResourceVersion())
+			return c.Update(ctx, obj)
+		},
+	}
+
+	tests := []struct {
+		name             string
+		existingConfig   *operatorv1alpha1.ClusterAPI
+		crds             []crclient.Object
+		expectedCRDNames []string
+		expectNoChange   bool
+	}{
+		{
+			name:           "When ClusterAPI config does not exist it should create it with unmanaged CRDs",
+			existingConfig: nil,
+			crds:           capiCRDs,
+			expectedCRDNames: []string{
+				"clusters.cluster.x-k8s.io",
+				"machines.cluster.x-k8s.io",
+			},
+		},
+		{
+			name: "When ClusterAPI config exists it should apply unmanaged CRDs",
+			existingConfig: &operatorv1alpha1.ClusterAPI{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "cluster",
+				},
+				Spec: &operatorv1alpha1.ClusterAPISpec{
+					UnmanagedCustomResourceDefinitions: []string{
+						"clusters.cluster.x-k8s.io",
+						"machinesets.cluster.x-k8s.io",
+					},
+				},
+			},
+			crds: capiCRDs,
+			// SSA with listType=set would merge entries from different field owners on a real
+			// API server. Since the fake client cannot simulate set-based merge semantics,
+			// this test verifies that HyperShift's apply succeeds and contains its own entries.
+			expectedCRDNames: []string{
+				"clusters.cluster.x-k8s.io",
+				"machines.cluster.x-k8s.io",
+			},
+		},
+		{
+			name: "When all CRDs already listed it should apply idempotently",
+			existingConfig: &operatorv1alpha1.ClusterAPI{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "cluster",
+				},
+				Spec: &operatorv1alpha1.ClusterAPISpec{
+					UnmanagedCustomResourceDefinitions: []string{
+						"clusters.cluster.x-k8s.io",
+						"machines.cluster.x-k8s.io",
+					},
+				},
+			},
+			crds: capiCRDs,
+			expectedCRDNames: []string{
+				"clusters.cluster.x-k8s.io",
+				"machines.cluster.x-k8s.io",
+			},
+		},
+		{
+			name:           "When populating unmanaged CRDs it should only include CAPI CRDs",
+			existingConfig: nil,
+			crds: []crclient.Object{
+				&apiextensionsv1.CustomResourceDefinition{ObjectMeta: metav1.ObjectMeta{Name: "nodepools.hypershift.openshift.io"}},
+				&apiextensionsv1.CustomResourceDefinition{ObjectMeta: metav1.ObjectMeta{Name: "hostedclusters.hypershift.openshift.io"}},
+			},
+			expectNoChange: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			builder := fake.NewClientBuilder().
+				WithScheme(hyperapi.Scheme).
+				WithInterceptorFuncs(ssaInterceptor)
+			if tc.existingConfig != nil {
+				builder = builder.WithObjects(tc.existingConfig)
+			}
+			client := builder.Build()
+
+			_, err := ensureUnmanagedCRDs(t.Context(), io.Discard, client, tc.crds)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			if tc.expectNoChange {
+				config := &operatorv1alpha1.ClusterAPI{}
+				err := client.Get(t.Context(), crclient.ObjectKey{Name: "cluster"}, config)
+				if tc.existingConfig == nil {
+					g.Expect(err).To(HaveOccurred(), "expected no ClusterAPI config to be created")
+					return
+				}
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(config.Spec).ToNot(BeNil())
+				g.Expect(config.Spec.UnmanagedCustomResourceDefinitions).
+					To(ConsistOf(tc.existingConfig.Spec.UnmanagedCustomResourceDefinitions))
+				return
+			}
+
+			config := &operatorv1alpha1.ClusterAPI{}
+			err = client.Get(t.Context(), crclient.ObjectKey{Name: "cluster"}, config)
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(config.Spec).ToNot(BeNil())
+			g.Expect(config.Spec.UnmanagedCustomResourceDefinitions).To(ConsistOf(tc.expectedCRDNames))
+		})
+	}
+}
+
+func TestWaitForCAPIOperatorSync(t *testing.T) {
+	tests := []struct {
+		name            string
+		config          *operatorv1alpha1.ClusterAPI
+		patchGeneration int64
+		expectSuccess   bool
+	}{
+		{
+			name: "When revision controller has observed the patch generation and installer has applied it should succeed",
+			config: &operatorv1alpha1.ClusterAPI{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "cluster",
+					Generation: 2,
+				},
+				Status: operatorv1alpha1.ClusterAPIStatus{
+					ObservedRevisionGeneration: 2,
+					DesiredRevision:            "rev-2",
+					CurrentRevision:            "rev-2",
+					Revisions: []operatorv1alpha1.ClusterAPIInstallerRevision{
+						{Name: "rev-2", Revision: 2, ContentID: "content-2"},
+					},
+				},
+			},
+			patchGeneration: 2,
+			expectSuccess:   true,
+		},
+		{
+			name: "When observedRevisionGeneration is ahead of patch generation it should succeed",
+			config: &operatorv1alpha1.ClusterAPI{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "cluster",
+					Generation: 3,
+				},
+				Status: operatorv1alpha1.ClusterAPIStatus{
+					ObservedRevisionGeneration: 3,
+					DesiredRevision:            "rev-3",
+					CurrentRevision:            "rev-3",
+					Revisions: []operatorv1alpha1.ClusterAPIInstallerRevision{
+						{Name: "rev-3", Revision: 3, ContentID: "content-3"},
+					},
+				},
+			},
+			patchGeneration: 2,
+			expectSuccess:   true,
+		},
+		{
+			name: "When revision controller has not observed the patch generation it should time out",
+			config: &operatorv1alpha1.ClusterAPI{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "cluster",
+					Generation: 3,
+				},
+				Status: operatorv1alpha1.ClusterAPIStatus{
+					ObservedRevisionGeneration: 2,
+					DesiredRevision:            "rev-2",
+					CurrentRevision:            "rev-2",
+					Revisions: []operatorv1alpha1.ClusterAPIInstallerRevision{
+						{Name: "rev-2", Revision: 2, ContentID: "content-2"},
+					},
+				},
+			},
+			patchGeneration: 3,
+			expectSuccess:   false,
+		},
+		{
+			name: "When reading a stale object from before the patch it should time out",
+			config: &operatorv1alpha1.ClusterAPI{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "cluster",
+					Generation: 1,
+				},
+				Status: operatorv1alpha1.ClusterAPIStatus{
+					ObservedRevisionGeneration: 1,
+					DesiredRevision:            "rev-1",
+					CurrentRevision:            "rev-1",
+					Revisions: []operatorv1alpha1.ClusterAPIInstallerRevision{
+						{Name: "rev-1", Revision: 1, ContentID: "content-1"},
+					},
+				},
+			},
+			patchGeneration: 2,
+			expectSuccess:   false,
+		},
+		{
+			name: "When currentRevision does not match desiredRevision it should time out",
+			config: &operatorv1alpha1.ClusterAPI{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "cluster",
+					Generation: 2,
+				},
+				Status: operatorv1alpha1.ClusterAPIStatus{
+					ObservedRevisionGeneration: 2,
+					DesiredRevision:            "rev-2",
+					CurrentRevision:            "rev-1",
+					Revisions: []operatorv1alpha1.ClusterAPIInstallerRevision{
+						{Name: "rev-1", Revision: 1, ContentID: "content-1"},
+						{Name: "rev-2", Revision: 2, ContentID: "content-2"},
+					},
+				},
+			},
+			patchGeneration: 2,
+			expectSuccess:   false,
+		},
+		{
+			name: "When currentRevision is empty it should time out",
+			config: &operatorv1alpha1.ClusterAPI{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "cluster",
+					Generation: 1,
+				},
+				Status: operatorv1alpha1.ClusterAPIStatus{
+					ObservedRevisionGeneration: 1,
+					DesiredRevision:            "rev-1",
+					Revisions: []operatorv1alpha1.ClusterAPIInstallerRevision{
+						{Name: "rev-1", Revision: 1, ContentID: "content-1"},
+					},
+				},
+			},
+			patchGeneration: 1,
+			expectSuccess:   false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			client := fake.NewClientBuilder().
+				WithScheme(hyperapi.Scheme).
+				WithObjects(tc.config).
+				WithStatusSubresource(&operatorv1alpha1.ClusterAPI{}).
+				Build()
+
+			ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+			defer cancel()
+
+			err := waitForCAPIOperatorSync(ctx, io.Discard, client, tc.patchGeneration)
+			if tc.expectSuccess {
+				g.Expect(err).ToNot(HaveOccurred())
+			} else {
+				g.Expect(err).To(HaveOccurred())
+			}
+		})
+	}
+}
+func TestApplyDefaults(t *testing.T) {
+	tests := []struct {
+		name             string
+		opts             Options
+		expectedReplicas int32
+	}{
+		{
+			name:             "When Development mode is enabled, it should set replicas to 0",
+			opts:             Options{Development: true},
+			expectedReplicas: 0,
+		},
+		{
+			name:             "When defaulting webhook is enabled, it should set replicas to 2",
+			opts:             Options{EnableDefaultingWebhook: true},
+			expectedReplicas: 2,
+		},
+		{
+			name:             "When conversion webhook is enabled, it should set replicas to 2",
+			opts:             Options{EnableConversionWebhook: true},
+			expectedReplicas: 2,
+		},
+		{
+			name:             "When validating webhook is enabled, it should set replicas to 2",
+			opts:             Options{EnableValidatingWebhook: true},
+			expectedReplicas: 2,
+		},
+		{
+			name:             "When no special options are set, it should default replicas to 1",
+			opts:             Options{},
+			expectedReplicas: 1,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			tc.opts.ApplyDefaults()
+			g.Expect(tc.opts.HyperShiftOperatorReplicas).To(Equal(tc.expectedReplicas))
+			g.Expect(tc.opts.RenderNamespace).To(BeTrue())
+		})
+	}
+}
+
+func TestIsAWSPlatformEnabled(t *testing.T) {
+	tests := []struct {
+		name               string
+		platformsToInstall []string
+		expected           bool
+	}{
+		{
+			name:               "When no platforms are specified, it should return true (all platforms enabled)",
+			platformsToInstall: nil,
+			expected:           true,
+		},
+		{
+			name:               "When empty platforms list is specified, it should return true",
+			platformsToInstall: []string{},
+			expected:           true,
+		},
+		{
+			name:               "When AWS is in the list, it should return true",
+			platformsToInstall: []string{"AWS", "Azure"},
+			expected:           true,
+		},
+		{
+			name:               "When aws (lowercase) is in the list, it should return true",
+			platformsToInstall: []string{"aws"},
+			expected:           true,
+		},
+		{
+			name:               "When AWS is not in the list, it should return false",
+			platformsToInstall: []string{"Azure", "GCP"},
+			expected:           false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			result := isAWSPlatformEnabled(tc.platformsToInstall)
+			g.Expect(result).To(Equal(tc.expected))
+		})
+	}
+}
+
+func TestIsAzurePlatformEnabled(t *testing.T) {
+	tests := []struct {
+		name               string
+		platformsToInstall []string
+		expected           bool
+	}{
+		{
+			name:               "When no platforms are specified, it should return true (all platforms enabled)",
+			platformsToInstall: nil,
+			expected:           true,
+		},
+		{
+			name:               "When Azure is in the list, it should return true",
+			platformsToInstall: []string{"Azure", "AWS"},
+			expected:           true,
+		},
+		{
+			name:               "When azure (lowercase) is in the list, it should return true",
+			platformsToInstall: []string{"azure"},
+			expected:           true,
+		},
+		{
+			name:               "When Azure is not in the list, it should return false",
+			platformsToInstall: []string{"AWS", "GCP"},
+			expected:           false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			result := isAzurePlatformEnabled(tc.platformsToInstall)
+			g.Expect(result).To(Equal(tc.expected))
+		})
+	}
+}
+
+func TestValidatePlatformConfig(t *testing.T) {
+	tests := []struct {
+		name        string
+		opts        Options
+		expectError bool
+	}{
+		{
+			name:        "When private platform is None, it should pass",
+			opts:        Options{PrivatePlatform: string(hyperv1.NonePlatform)},
+			expectError: false,
+		},
+		{
+			name:        "When private platform is an unsupported value, it should fail",
+			opts:        Options{PrivatePlatform: "Unsupported"},
+			expectError: true,
+		},
+		{
+			name: "When private platform is AWS with creds and region, it should pass",
+			opts: Options{
+				PrivatePlatform:  string(hyperv1.AWSPlatform),
+				AWSPrivateCreds:  "/path/to/creds",
+				AWSPrivateRegion: "us-east-1",
+			},
+			expectError: false,
+		},
+		{
+			name: "When private platform is AWS without creds or region, it should fail",
+			opts: Options{
+				PrivatePlatform: string(hyperv1.AWSPlatform),
+			},
+			expectError: true,
+		},
+		{
+			name: "When private platform is GCP with only project set, it should fail",
+			opts: Options{
+				PrivatePlatform: string(hyperv1.GCPPlatform),
+				GCPProject:      "my-project",
+			},
+			expectError: true,
+		},
+		{
+			name: "When private platform is GCP with both project and region, it should pass",
+			opts: Options{
+				PrivatePlatform: string(hyperv1.GCPPlatform),
+				GCPProject:      "my-project",
+				GCPRegion:       "us-central1",
+			},
+			expectError: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			errs := tc.opts.validatePlatformConfig()
+			if tc.expectError {
+				g.Expect(errs).NotTo(BeEmpty())
+			} else {
+				g.Expect(errs).To(BeEmpty())
+			}
+		})
+	}
+}
+
+func TestValidateOIDCConfig(t *testing.T) {
+	tests := []struct {
+		name        string
+		opts        Options
+		expectError bool
+	}{
+		{
+			name:        "When no OIDC options are set, it should pass",
+			opts:        Options{},
+			expectError: false,
+		},
+		{
+			name: "When both OIDC secret and credentials are set, it should fail",
+			opts: Options{
+				OIDCStorageProviderS3CredentialsSecret: "my-secret",
+				OIDCStorageProviderS3Credentials:       "my-creds",
+			},
+			expectError: true,
+		},
+		{
+			name: "When OIDC credentials are set without bucket name, it should fail",
+			opts: Options{
+				OIDCStorageProviderS3Credentials: "my-creds",
+			},
+			expectError: true,
+		},
+		{
+			name: "When OIDC bucket name contains dots, it should fail",
+			opts: Options{
+				OIDCStorageProviderS3BucketName: "my.bucket.name",
+			},
+			expectError: true,
+		},
+		{
+			name: "When all OIDC parameters are provided correctly, it should pass",
+			opts: Options{
+				OIDCStorageProviderS3Credentials:          "my-creds",
+				OIDCStorageProviderS3BucketName:           "mybucket",
+				OIDCStorageProviderS3Region:               "us-east-1",
+				OIDCStorageProviderS3CredentialsSecretKey: "mykey",
+			},
+			expectError: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			errs := tc.opts.validateOIDCConfig()
+			if tc.expectError {
+				g.Expect(errs).NotTo(BeEmpty())
+			} else {
+				g.Expect(errs).To(BeEmpty())
+			}
+		})
+	}
+}
+
+func TestValidateExternalDNSConfig(t *testing.T) {
+	tests := []struct {
+		name        string
+		opts        Options
+		expectError bool
+	}{
+		{
+			name:        "When no external DNS provider is set, it should pass",
+			opts:        Options{},
+			expectError: false,
+		},
+		{
+			name: "When external DNS provider is set without credentials or domain filter, it should fail",
+			opts: Options{
+				ExternalDNSProvider: "aws",
+			},
+			expectError: true,
+		},
+		{
+			name: "When external DNS provider is set with credentials and domain filter, it should pass",
+			opts: Options{
+				ExternalDNSProvider:     "aws",
+				ExternalDNSCredentials:  "/path/to/creds",
+				ExternalDNSDomainFilter: "example.com",
+			},
+			expectError: false,
+		},
+		{
+			name: "When external DNS interval is an invalid duration, it should fail",
+			opts: Options{
+				ExternalDNSProvider:     "aws",
+				ExternalDNSCredentials:  "/path/to/creds",
+				ExternalDNSDomainFilter: "example.com",
+				ExternalDNSInterval:     "not-a-duration",
+			},
+			expectError: true,
+		},
+		{
+			name: "When AWS zones cache duration is set with non-AWS provider, it should fail",
+			opts: Options{
+				ExternalDNSProvider:              "azure",
+				ExternalDNSCredentials:           "/path/to/creds",
+				ExternalDNSDomainFilter:          "example.com",
+				ExternalDNSAWSZonesCacheDuration: "1h",
+			},
+			expectError: true,
+		},
+		{
+			name: "When google provider is set without credentials, it should pass (Workload Identity)",
+			opts: Options{
+				ExternalDNSProvider:     "google",
+				ExternalDNSDomainFilter: "example.com",
+			},
+			expectError: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			errs := tc.opts.validateExternalDNSConfig()
+			if tc.expectError {
+				g.Expect(errs).NotTo(BeEmpty())
+			} else {
+				g.Expect(errs).To(BeEmpty())
+			}
+		})
+	}
+}
+
+func TestValidateMonitoringConfig(t *testing.T) {
+	tests := []struct {
+		name        string
+		opts        Options
+		expectError bool
+	}{
+		{
+			name:        "When no monitoring options are set, it should pass",
+			opts:        Options{},
+			expectError: false,
+		},
+		{
+			name: "When both RHOBS monitoring and CVO management cluster metrics access are set, it should fail",
+			opts: Options{
+				RHOBSMonitoring:                         true,
+				EnableCVOManagementClusterMetricsAccess: true,
+			},
+			expectError: true,
+		},
+		{
+			name: "When CVO prometheus URL is set without RHOBS or CVO metrics, it should fail",
+			opts: Options{
+				CVOPrometheusURL: "https://prometheus.example.com",
+			},
+			expectError: true,
+		},
+		{
+			name: "When CVO prometheus URL is set with RHOBS monitoring, it should pass",
+			opts: Options{
+				CVOPrometheusURL: "https://prometheus.example.com",
+				RHOBSMonitoring:  true,
+			},
+			expectError: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			errs := tc.opts.validateMonitoringConfig()
+			if tc.expectError {
+				g.Expect(errs).NotTo(BeEmpty())
+			} else {
+				g.Expect(errs).To(BeEmpty())
+			}
+		})
+	}
+}
+
+func TestValidateMiscConfig(t *testing.T) {
+	tests := []struct {
+		name        string
+		opts        Options
+		expectError bool
+	}{
+		{
+			name:        "When no misc options are set, it should pass",
+			opts:        Options{},
+			expectError: false,
+		},
+		{
+			name: "When managed service is an invalid value, it should fail",
+			opts: Options{
+				ManagedService: "INVALID",
+			},
+			expectError: true,
+		},
+		{
+			name: "When managed service is ARO-HCP, it should pass",
+			opts: Options{
+				ManagedService: hyperv1.AroHCP,
+			},
+			expectError: false,
+		},
+		{
+			name: "When an invalid platform is specified, it should fail",
+			opts: Options{
+				PlatformsToInstall: []string{"invalid-platform"},
+			},
+			expectError: true,
+		},
+		{
+			name: "When valid platforms are specified, it should pass",
+			opts: Options{
+				PlatformsToInstall: []string{"aws", "Azure"},
+			},
+			expectError: false,
+		},
+		{
+			name: "When invalid image pull policy is specified, it should fail",
+			opts: Options{
+				ImagePullPolicy: "WheneverYouFeel",
+			},
+			expectError: true,
+		},
+		{
+			name: "When Always image pull policy is specified, it should pass",
+			opts: Options{
+				ImagePullPolicy: "Always",
+			},
+			expectError: false,
+		},
+		{
+			name: "When Never image pull policy is specified, it should pass",
+			opts: Options{
+				ImagePullPolicy: "Never",
+			},
+			expectError: false,
+		},
+		{
+			name: "When IfNotPresent image pull policy is specified, it should pass",
+			opts: Options{
+				ImagePullPolicy: "IfNotPresent",
+			},
+			expectError: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			errs := tc.opts.validateMiscConfig()
+			if tc.expectError {
+				g.Expect(errs).NotTo(BeEmpty())
+			} else {
+				g.Expect(errs).To(BeEmpty())
+			}
+		})
+	}
+}
+
+func TestSetupMonitoring(t *testing.T) {
+	tests := []struct {
+		name             string
+		opts             Options
+		expectSLOAlerts  bool
+		expectDashboards bool
+		minResourceCount int
+	}{
+		{
+			name: "When SLOs alerts and monitoring dashboards are disabled, it should return base monitoring resources",
+			opts: Options{
+				PlatformMonitoring: metrics.PlatformMonitoringAll,
+			},
+			expectSLOAlerts:  false,
+			expectDashboards: false,
+			minResourceCount: 4,
+		},
+		{
+			name: "When SLOs alerts are enabled, it should include alerting rule",
+			opts: Options{
+				SLOsAlerts: true,
+			},
+			expectSLOAlerts:  true,
+			minResourceCount: 5,
+		},
+		{
+			name: "When monitoring dashboards are enabled, it should include dashboard template",
+			opts: Options{
+				Namespace:            "hypershift",
+				MonitoringDashboards: true,
+			},
+			expectDashboards: true,
+			minResourceCount: 5,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "hypershift"}}
+			objects := setupMonitoring(tc.opts, ns)
+
+			g.Expect(len(objects)).To(BeNumerically(">=", tc.minResourceCount))
+
+			// Check SLO alerts
+			foundAlertingRule := false
+			for _, obj := range objects {
+				if rule, ok := obj.(*prometheusoperatorv1.PrometheusRule); ok && rule.Namespace == "openshift-monitoring" {
+					foundAlertingRule = true
+					break
+				}
+			}
+			if tc.expectSLOAlerts {
+				g.Expect(foundAlertingRule).To(BeTrue(), "expected SLO alerting rule to be present when SLOsAlerts is enabled")
+			} else {
+				g.Expect(foundAlertingRule).To(BeFalse(), "expected no SLO alerting rule when SLOsAlerts is disabled")
+			}
+
+			// Check dashboards
+			foundDashboard := false
+			for _, obj := range objects {
+				if cm, ok := obj.(*corev1.ConfigMap); ok && cm.Name == "monitoring-dashboard-template" {
+					foundDashboard = true
+					break
+				}
+			}
+			if tc.expectDashboards {
+				g.Expect(foundDashboard).To(BeTrue(), "expected monitoring dashboard to be present when MonitoringDashboards is enabled")
+			} else {
+				g.Expect(foundDashboard).To(BeFalse(), "expected no monitoring dashboard when MonitoringDashboards is disabled")
+			}
+		})
+	}
+}
+
+func TestSetupRBAC(t *testing.T) {
+	tests := []struct {
+		name                         string
+		enableAdminRBAC              bool
+		azureManagedIdentityClientID string
+		expectSAAnnotation           bool
+		minObjectCount               int
+	}{
+		{
+			name:           "When admin RBAC is disabled, it should return base RBAC resources",
+			minObjectCount: 6,
+		},
+		{
+			name:            "When admin RBAC is enabled, it should include client and reader RBAC resources",
+			enableAdminRBAC: true,
+			minObjectCount:  11,
+		},
+		{
+			name:                         "When Azure managed identity is set, it should annotate the service account",
+			azureManagedIdentityClientID: "test-client-id",
+			expectSAAnnotation:           true,
+			minObjectCount:               6,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "hypershift"}}
+			opts := Options{
+				EnableAdminRBACGeneration:       tc.enableAdminRBAC,
+				AzurePLSManagedIdentityClientID: tc.azureManagedIdentityClientID,
+			}
+
+			sa, objects := setupRBAC(opts, ns)
+			g.Expect(len(objects)).To(BeNumerically(">=", tc.minObjectCount))
+			g.Expect(sa).NotTo(BeNil())
+			if tc.expectSAAnnotation {
+				g.Expect(sa.Annotations).To(HaveKeyWithValue("azure.workload.identity/client-id", tc.azureManagedIdentityClientID))
+			}
+
+			// When admin RBAC is enabled, verify specific admin RBAC objects exist
+			if tc.enableAdminRBAC {
+				foundClientClusterRole := false
+				foundReaderClusterRole := false
+				for _, obj := range objects {
+					if obj.GetObjectKind().GroupVersionKind().Kind == "ClusterRole" {
+						if obj.GetName() == "hypershift-client" {
+							foundClientClusterRole = true
+						}
+						if obj.GetName() == "hypershift-readers" {
+							foundReaderClusterRole = true
+						}
+					}
+				}
+				g.Expect(foundClientClusterRole).To(BeTrue(), "expected hypershift-client ClusterRole to be present when admin RBAC is enabled")
+				g.Expect(foundReaderClusterRole).To(BeTrue(), "expected hypershift-readers ClusterRole to be present when admin RBAC is enabled")
+			}
+		})
+	}
+}
+
+func TestSetupCA(t *testing.T) {
+	t.Run("When no additional trust bundle is provided, it should return only the managed trust bundle", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "hypershift"}}
+		userCA, trustedCA, objects, err := setupCA(Options{}, ns)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(userCA).To(BeNil())
+		g.Expect(trustedCA).NotTo(BeNil())
+		g.Expect(trustedCA.Name).To(Equal("openshift-config-managed-trusted-ca-bundle"))
+		g.Expect(objects).To(HaveLen(1))
+	})
+}
+
+func TestValidateImageConfig(t *testing.T) {
+	tests := []struct {
+		name        string
+		opts        Options
+		expectError bool
+	}{
+		{
+			name:        "When default image and no refs file are set, it should pass",
+			opts:        Options{HyperShiftImage: HyperShiftImage},
+			expectError: false,
+		},
+		{
+			name: "When both custom image and refs file are set, it should fail",
+			opts: Options{
+				HyperShiftImage: "custom-image:latest",
+				ImageRefsFile:   "/path/to/refs",
+			},
+			expectError: true,
+		},
+		{
+			name: "When cert rotation scale is longer than 24h, it should fail",
+			opts: Options{
+				HyperShiftImage:   HyperShiftImage,
+				CertRotationScale: 48 * time.Hour,
+			},
+			expectError: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			errs := tc.opts.validateImageConfig()
+			if tc.expectError {
+				g.Expect(errs).NotTo(BeEmpty())
+			} else {
+				g.Expect(errs).To(BeEmpty())
+			}
+		})
+	}
+}
+
+func TestSetupSharedIngress(t *testing.T) {
+	t.Run("When setupSharedIngress is called, it should return namespace, ClusterRole, and ClusterRoleBinding", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		objects := setupSharedIngress()
+		g.Expect(objects).To(HaveLen(3))
+
+		g.Expect(objects[0].GetName()).To(Equal(sharedingress.RouterNamespace))
+		g.Expect(objects[0].GetLabels()).To(HaveKeyWithValue("hypershift.openshift.io/component", "shared-ingress"))
+
+		g.Expect(objects[1].GetName()).To(Equal(sharedingress.ConfigGeneratorName))
+		g.Expect(objects[2].GetName()).To(Equal(sharedingress.ConfigGeneratorName))
+
+		crb := objects[2].(*rbacv1.ClusterRoleBinding)
+		g.Expect(crb.RoleRef.Name).To(Equal(sharedingress.ConfigGeneratorName))
+		g.Expect(crb.Subjects).To(HaveLen(1))
+		g.Expect(crb.Subjects[0].Name).To(Equal("router"))
+		g.Expect(crb.Subjects[0].Namespace).To(Equal(sharedingress.RouterNamespace))
+	})
+}
+
+func TestSetupAdminRBAC(t *testing.T) {
+	t.Run("When setupAdminRBAC is called, it should return client and reader RBAC resources", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "hypershift"}}
+		objects := setupAdminRBAC(ns)
+
+		g.Expect(objects).To(HaveLen(5))
+
+		objectNames := make([]string, len(objects))
+		for i, obj := range objects {
+			objectNames[i] = obj.GetName()
+		}
+		g.Expect(objectNames).To(ContainElement("hypershift-client"))
+		g.Expect(objectNames).To(ContainElement("hypershift-readers"))
+	})
+}
+
+func TestGetDeploymentCondition(t *testing.T) {
+	tests := []struct {
+		name             string
+		deployConditions []appsv1.DeploymentCondition
+		condType         string
+		expectFound      bool
+	}{
+		{
+			name: "When the condition exists, it should return it",
+			deployConditions: []appsv1.DeploymentCondition{
+				{Type: "Progressing", Reason: "NewReplicaSetAvailable"},
+				{Type: "Available", Reason: "MinimumReplicasAvailable"},
+			},
+			condType:    "Available",
+			expectFound: true,
+		},
+		{
+			name: "When the condition does not exist, it should return nil",
+			deployConditions: []appsv1.DeploymentCondition{
+				{Type: "Progressing", Reason: "NewReplicaSetAvailable"},
+			},
+			condType:    "Available",
+			expectFound: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			status := appsv1.DeploymentStatus{}
+			for _, c := range tc.deployConditions {
+				status.Conditions = append(status.Conditions, appsv1.DeploymentCondition{
+					Type:   appsv1.DeploymentConditionType(c.Type),
+					Reason: c.Reason,
+				})
+			}
+			cond := GetDeploymentCondition(status, appsv1.DeploymentConditionType(tc.condType))
+			if tc.expectFound {
+				g.Expect(cond).NotTo(BeNil())
+			} else {
+				g.Expect(cond).To(BeNil())
+			}
+		})
+	}
+}
+
+func TestNewInstallOptionsWithDefaults(t *testing.T) {
+	t.Run("When NewInstallOptionsWithDefaults is called, it should set all expected defaults", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		opts := NewInstallOptionsWithDefaults()
+
+		g.Expect(opts.Namespace).To(Equal("hypershift"))
+		g.Expect(opts.PrivatePlatform).To(Equal(string(hyperv1.NonePlatform)))
+		g.Expect(opts.HyperShiftImage).To(Equal(HyperShiftImage))
+		g.Expect(opts.ExternalDNSImage).To(Equal(ExternalDNSImage))
+		g.Expect(opts.CertRotationScale).To(Equal(24 * time.Hour))
+		g.Expect(opts.ImagePullPolicy).To(Equal("IfNotPresent"))
+		g.Expect(opts.EnableConversionWebhook).To(BeTrue())
+		g.Expect(opts.EnableDedicatedRequestServingIsolation).To(BeTrue())
+		g.Expect(opts.EnableEtcdRecovery).To(BeTrue())
+		g.Expect(opts.MetricsSet).To(Equal(metrics.DefaultMetricsSet))
+		g.Expect(opts.AWSPrivateCredentialsSecretKey).To(Equal("credentials"))
+		g.Expect(opts.ScaleFromZeroCredentialsSecretKey).To(Equal("credentials"))
+		g.Expect(opts.OIDCStorageProviderS3CredentialsSecretKey).To(Equal("credentials"))
+		g.Expect(opts.Development).To(BeFalse())
+		g.Expect(opts.EnableAdminRBACGeneration).To(BeFalse())
+		g.Expect(opts.AdditionalOperatorEnvVars).NotTo(BeNil())
+	})
+}
+
+func TestHyperShiftNamespaceBuild(t *testing.T) {
+	tests := []struct {
+		name                         string
+		nsConfig                     assets.HyperShiftNamespace
+		expectClusterMonitoringLabel bool
+	}{
+		{
+			name: "When OCP cluster monitoring is enabled, it should include the monitoring label",
+			nsConfig: assets.HyperShiftNamespace{
+				Name:                       "hypershift",
+				EnableOCPClusterMonitoring: true,
+			},
+			expectClusterMonitoringLabel: true,
+		},
+		{
+			name: "When OCP cluster monitoring is disabled, it should not include the monitoring label",
+			nsConfig: assets.HyperShiftNamespace{
+				Name:                       "hypershift",
+				EnableOCPClusterMonitoring: false,
+			},
+			expectClusterMonitoringLabel: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			ns := tc.nsConfig.Build()
+			g.Expect(ns.Name).To(Equal(tc.nsConfig.Name))
+			g.Expect(ns.Labels).To(HaveKeyWithValue("hypershift.openshift.io/component", "operator"))
+			if tc.expectClusterMonitoringLabel {
+				g.Expect(ns.Labels).To(HaveKeyWithValue("openshift.io/cluster-monitoring", "true"))
+			} else {
+				g.Expect(ns.Labels).NotTo(HaveKey("openshift.io/cluster-monitoring"))
 			}
 		})
 	}

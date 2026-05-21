@@ -10,6 +10,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/featuregate"
 	supportconfig "github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	hyperutil "github.com/openshift/hypershift/support/util"
 
@@ -108,15 +109,100 @@ func (r *HCPEtcdBackupReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
+func (r *HCPEtcdBackupReconciler) setFailedConditionAndUpdate(ctx context.Context, backup *hyperv1.HCPEtcdBackup, reason, message string) (ctrl.Result, error) {
+	r.setCondition(backup, metav1.Condition{
+		Type:    string(hyperv1.BackupCompleted),
+		Status:  metav1.ConditionFalse,
+		Reason:  reason,
+		Message: message,
+	})
+	if err := r.Status().Update(ctx, backup); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
+	}
+	return ctrl.Result{}, nil
+}
+
+func (r *HCPEtcdBackupReconciler) validatePrerequisites(ctx context.Context, backup *hyperv1.HCPEtcdBackup) (ctrl.Result, bool, error) {
+	credentialSecretName, err := r.getCredentialSecretName(backup)
+	if err != nil {
+		result, updateErr := r.setFailedConditionAndUpdate(ctx, backup, hyperv1.BackupFailedReason, err.Error())
+		if updateErr != nil {
+			return result, true, updateErr
+		}
+		return result, true, nil
+	}
+
+	credSecret := &corev1.Secret{}
+	if err := r.Get(ctx, types.NamespacedName{Name: credentialSecretName, Namespace: r.OperatorNamespace}, credSecret); err != nil {
+		if apierrors.IsNotFound(err) {
+			result, updateErr := r.setFailedConditionAndUpdate(ctx, backup, hyperv1.BackupFailedReason,
+				fmt.Sprintf("credential Secret %q not found in namespace %q", credentialSecretName, r.OperatorNamespace))
+			if updateErr != nil {
+				return result, true, updateErr
+			}
+			return result, true, nil
+		}
+		return ctrl.Result{}, true, fmt.Errorf("failed to get credential Secret: %w", err)
+	}
+	return ctrl.Result{}, false, nil
+}
+
+func (r *HCPEtcdBackupReconciler) createResourcesAndJob(ctx context.Context, backup *hyperv1.HCPEtcdBackup, hcp *hyperv1.HostedControlPlane) (ctrl.Result, error) {
+	logger := log.FromContext(ctx)
+	logger.Info("creating backup resources", "backup", backup.Name, "namespace", backup.Namespace)
+
+	if err := r.ensureServiceAccount(ctx); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to ensure ServiceAccount: %w", err)
+	}
+
+	if err := r.ensureRBAC(ctx, backup); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to ensure RBAC: %w", err)
+	}
+
+	if err := r.ensureNetworkPolicy(ctx, backup); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to ensure NetworkPolicy: %w", err)
+	}
+
+	if err := r.createBackupJob(ctx, backup, hcp); err != nil {
+		if apierrors.IsNotFound(err) {
+			// Clean up RBAC and NetworkPolicy created above before marking terminal.
+			if cleanupErr := r.cleanupResources(ctx, backup); cleanupErr != nil {
+				logger.Error(cleanupErr, "failed to cleanup resources after terminal backup failure")
+			}
+			return r.setFailedConditionAndUpdate(ctx, backup, hyperv1.BackupFailedReason, err.Error())
+		}
+		return ctrl.Result{}, fmt.Errorf("failed to create backup Job: %w", err)
+	}
+
+	r.setCondition(backup, metav1.Condition{
+		Type:    string(hyperv1.BackupCompleted),
+		Status:  metav1.ConditionFalse,
+		Reason:  hyperv1.BackupInProgressReason,
+		Message: "Backup Job created, waiting for completion",
+	})
+	if err := r.Status().Update(ctx, backup); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
+	}
+
+	if err := r.updateHCPBackupCondition(ctx, hcp, metav1.Condition{
+		Type:    string(hyperv1.EtcdBackupSucceeded),
+		Status:  metav1.ConditionFalse,
+		Reason:  hyperv1.BackupInProgressReason,
+		Message: fmt.Sprintf("Backup %q is in progress", backup.Name),
+	}); err != nil {
+		logger.Error(err, "failed to update HCP backup condition")
+	}
+
+	return ctrl.Result{RequeueAfter: requeueInterval}, nil
+}
+
 func (r *HCPEtcdBackupReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
-	// Feature gate check
 	if !featuregate.Gate().Enabled(featuregate.HCPEtcdBackup) {
 		return ctrl.Result{}, nil
 	}
 
-	// Fetch the HCPEtcdBackup CR
 	backup := &hyperv1.HCPEtcdBackup{}
 	if err := r.Get(ctx, req.NamespacedName, backup); err != nil {
 		if apierrors.IsNotFound(err) {
@@ -138,25 +224,15 @@ func (r *HCPEtcdBackupReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, nil
 	}
 
-	// Look up the HostedControlPlane in the same namespace
 	hcp, err := r.getHostedControlPlane(ctx, backup.Namespace)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to look up HostedControlPlane: %w", err)
 	}
 	if hcp == nil {
-		r.setCondition(backup, metav1.Condition{
-			Type:    string(hyperv1.BackupCompleted),
-			Status:  metav1.ConditionFalse,
-			Reason:  hyperv1.BackupFailedReason,
-			Message: "HostedControlPlane not found in namespace " + backup.Namespace,
-		})
-		if err := r.Status().Update(ctx, backup); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
-		}
-		return ctrl.Result{}, nil
+		return r.setFailedConditionAndUpdate(ctx, backup, hyperv1.BackupFailedReason,
+			"HostedControlPlane not found in namespace "+backup.Namespace)
 	}
 
-	// Phase 1 health check: etcd StatefulSet readiness
 	healthy, msg, err := r.checkEtcdHealth(ctx, backup.Namespace)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to check etcd health: %w", err)
@@ -174,14 +250,11 @@ func (r *HCPEtcdBackupReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{RequeueAfter: requeueInterval}, nil
 	}
 
-	// Check if we already created a Job for this backup
 	existingJob, err := r.findJobForBackup(ctx, backup)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to find job for backup: %w", err)
 	}
-
 	if existingJob != nil {
-		// Monitor existing Job status
 		return r.handleJobStatus(ctx, backup, existingJob, hcp)
 	}
 
@@ -193,104 +266,17 @@ func (r *HCPEtcdBackupReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 	if activeJob != nil {
 		logger.Info("rejecting backup: another backup Job is already active", "activeJob", activeJob.Name)
-		r.setCondition(backup, metav1.Condition{
-			Type:    string(hyperv1.BackupCompleted),
-			Status:  metav1.ConditionFalse,
-			Reason:  hyperv1.BackupRejectedReason,
-			Message: fmt.Sprintf("rejected: backup Job %q is already running for this HCP; delete this CR and retry after the active backup completes", activeJob.Name),
-		})
-		if err := r.Status().Update(ctx, backup); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
-		}
-		return ctrl.Result{}, nil
+		return r.setFailedConditionAndUpdate(ctx, backup, hyperv1.BackupRejectedReason,
+			fmt.Sprintf("rejected: backup Job %q is already running for this HCP; delete this CR and retry after the active backup completes", activeJob.Name))
 	}
 
 	// Validate prerequisites before creating any resources.
 	// Check credential Secret early so we don't create RBAC/NetworkPolicy unnecessarily.
-	credentialSecretName, err := r.getCredentialSecretName(backup)
-	if err != nil {
-		r.setCondition(backup, metav1.Condition{
-			Type:    string(hyperv1.BackupCompleted),
-			Status:  metav1.ConditionFalse,
-			Reason:  hyperv1.BackupFailedReason,
-			Message: err.Error(),
-		})
-		if statusErr := r.Status().Update(ctx, backup); statusErr != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to update status: %w", statusErr)
-		}
-		return ctrl.Result{}, nil
+	if result, done, err := r.validatePrerequisites(ctx, backup); done || err != nil {
+		return result, err
 	}
 
-	credSecret := &corev1.Secret{}
-	if err := r.Get(ctx, types.NamespacedName{Name: credentialSecretName, Namespace: r.OperatorNamespace}, credSecret); err != nil {
-		if apierrors.IsNotFound(err) {
-			r.setCondition(backup, metav1.Condition{
-				Type:    string(hyperv1.BackupCompleted),
-				Status:  metav1.ConditionFalse,
-				Reason:  hyperv1.BackupFailedReason,
-				Message: fmt.Sprintf("credential Secret %q not found in namespace %q", credentialSecretName, r.OperatorNamespace),
-			})
-			if statusErr := r.Status().Update(ctx, backup); statusErr != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to update status: %w", statusErr)
-			}
-			return ctrl.Result{}, nil
-		}
-		return ctrl.Result{}, fmt.Errorf("failed to get credential Secret: %w", err)
-	}
-
-	// Create resources and Job
-	logger.Info("creating backup resources", "backup", backup.Name, "namespace", backup.Namespace)
-
-	if err := r.ensureServiceAccount(ctx); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to ensure ServiceAccount: %w", err)
-	}
-
-	if err := r.ensureRBAC(ctx, backup); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to ensure RBAC: %w", err)
-	}
-
-	if err := r.ensureNetworkPolicy(ctx, backup); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to ensure NetworkPolicy: %w", err)
-	}
-
-	if err := r.createBackupJob(ctx, backup, hcp); err != nil {
-		if apierrors.IsNotFound(err) {
-			r.setCondition(backup, metav1.Condition{
-				Type:    string(hyperv1.BackupCompleted),
-				Status:  metav1.ConditionFalse,
-				Reason:  hyperv1.BackupFailedReason,
-				Message: err.Error(),
-			})
-			if statusErr := r.Status().Update(ctx, backup); statusErr != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to update status: %w", statusErr)
-			}
-			return ctrl.Result{}, nil
-		}
-		return ctrl.Result{}, fmt.Errorf("failed to create backup Job: %w", err)
-	}
-
-	// Set status to indicate backup is in progress
-	r.setCondition(backup, metav1.Condition{
-		Type:    string(hyperv1.BackupCompleted),
-		Status:  metav1.ConditionFalse,
-		Reason:  hyperv1.BackupInProgressReason,
-		Message: "Backup Job created, waiting for completion",
-	})
-	if err := r.Status().Update(ctx, backup); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
-	}
-
-	// Bubble up to HCP
-	if err := r.updateHCPBackupCondition(ctx, hcp, metav1.Condition{
-		Type:    string(hyperv1.EtcdBackupSucceeded),
-		Status:  metav1.ConditionFalse,
-		Reason:  hyperv1.BackupInProgressReason,
-		Message: fmt.Sprintf("Backup %q is in progress", backup.Name),
-	}); err != nil {
-		logger.Error(err, "failed to update HCP backup condition")
-	}
-
-	return ctrl.Result{RequeueAfter: requeueInterval}, nil
+	return r.createResourcesAndJob(ctx, backup, hcp)
 }
 
 // isTerminal returns true if the backup is in a terminal state.
@@ -325,7 +311,7 @@ func (r *HCPEtcdBackupReconciler) updateHCPBackupCondition(ctx context.Context, 
 // (TTLSecondsAfterFinished) before the next reconcile extracts it.
 func (r *HCPEtcdBackupReconciler) updateHostedClusterBackupURL(ctx context.Context, hcp *hyperv1.HostedControlPlane, snapshotURL string) error {
 	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		hc, err := hyperutil.HostedClusterFromAnnotation(ctx, r.Client, hcp)
+		hc, err := k8sutil.HostedClusterFromAnnotation(ctx, r.Client, hcp)
 		if err != nil {
 			return err
 		}

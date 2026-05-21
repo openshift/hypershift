@@ -726,6 +726,42 @@ spec:
                             type: array
                             x-kubernetes-list-type: atomic
                         type: object
+                      tlsAdherence:
+                        description: |-
+                          tlsAdherence controls if components in the cluster adhere to the TLS security profile
+                          configured on this APIServer resource.
+
+                          Valid values are "LegacyAdheringComponentsOnly" and "StrictAllComponents".
+
+                          When set to "LegacyAdheringComponentsOnly", components that already honor the
+                          cluster-wide TLS profile continue to do so. Components that do not already honor
+                          it continue to use their individual TLS configurations.
+
+                          When set to "StrictAllComponents", all components must honor the configured TLS
+                          profile unless they have a component-specific TLS configuration that overrides
+                          it. This mode is recommended for security-conscious deployments and is required
+                          for certain compliance frameworks.
+
+                          Note: Some components such as Kubelet and IngressController have their own
+                          dedicated TLS configuration mechanisms via KubeletConfig and IngressController
+                          CRs respectively. When these component-specific TLS configurations are set,
+                          they take precedence over the cluster-wide tlsSecurityProfile. When not set,
+                          these components fall back to the cluster-wide default.
+
+                          Components that encounter an unknown value for tlsAdherence should treat it
+                          as "StrictAllComponents" and log a warning to ensure forward compatibility
+                          while defaulting to the more secure behavior.
+
+                          This field is optional.
+                          When omitted, this means the user has no opinion and the platform is left
+                          to choose reasonable defaults. These defaults are subject to change over time.
+                          The current default is LegacyAdheringComponentsOnly.
+
+                          Once set, this field may be changed to a different value, but may not be removed.
+                        enum:
+                        - LegacyAdheringComponentsOnly
+                        - StrictAllComponents
+                        type: string
                       tlsSecurityProfile:
                         description: |-
                           tlsSecurityProfile specifies settings for TLS connections for externally exposed servers.
@@ -861,6 +897,10 @@ spec:
                             type: string
                         type: object
                     type: object
+                    x-kubernetes-validations:
+                    - message: tlsAdherence may not be removed once set
+                      rule: 'has(oldSelf.tlsAdherence) ? has(self.tlsAdherence) :
+                        true'
                   authentication:
                     description: |-
                       authentication specifies cluster-wide settings for authentication (like OAuth and
@@ -1033,12 +1073,18 @@ spec:
                                       description: |-
                                         prefix is an optional field that configures the prefix that will be applied to the cluster identity attribute during the process of mapping JWT claims to cluster identity attributes.
 
-                                        When omitted (""), no prefix is applied to the cluster identity attribute.
+                                        When omitted or set to an empty string (""), no prefix is applied to the cluster identity attribute.
+                                        Must not be set to a non-empty value when expression is set.
 
                                         Example: if `prefix` is set to "myoidc:" and the `claim` in JWT contains an array of strings "a", "b" and "c", the mapping will result in an array of string "myoidc:a", "myoidc:b" and "myoidc:c".
                                       type: string
                                   type: object
                                   x-kubernetes-validations:
+                                  - message: prefix must not be set to a non-empty
+                                      value when expression is set
+                                    rule: 'has(self.expression) && size(self.expression)
+                                      > 0 ? (!has(self.prefix) || size(self.prefix)
+                                      == 0) : true'
                                   - message: expression must not be set if claim is
                                       specified and is not an empty string
                                     rule: '(size(self.?claim.orValue("")) > 0) ? !has(self.expression)
@@ -1138,11 +1184,9 @@ spec:
                                         Allowed values are 'Prefix', 'NoPrefix', and omitted (not provided or an empty string).
 
                                         When set to 'Prefix', the value specified in the prefix field will be prepended to the value of the JWT claim.
-
                                         The prefix field must be set when prefixPolicy is 'Prefix'.
-
+                                        Must not be set to 'Prefix' when expression is set.
                                         When set to 'NoPrefix', no prefix will be prepended to the value of the JWT claim.
-
                                         When omitted, this means no opinion and the platform is left to choose any prefixes that are applied which is subject to change over time.
                                         Currently, the platform prepends `{issuerURL}#` to the value of the JWT claim when the claim is not 'email'.
 
@@ -1164,6 +1208,11 @@ spec:
                                       must be set
                                     rule: 'has(self.claim) ? !has(self.expression)
                                       : has(self.expression)'
+                                  - message: prefixPolicy must not be set to 'Prefix'
+                                      when expression is set
+                                    rule: 'has(self.expression) && size(self.expression)
+                                      > 0 ? !has(self.prefixPolicy) || self.prefixPolicy
+                                      != ''Prefix'' : true'
                                   - message: prefix must be set if prefixPolicy is
                                       'Prefix', but must remain unset otherwise
                                     rule: 'has(self.prefixPolicy) && self.prefixPolicy
@@ -1839,6 +1888,9 @@ spec:
 
                           Once set, changing domain is not currently supported.
                         type: string
+                        x-kubernetes-validations:
+                        - message: domain is immutable once set
+                          rule: self == oldSelf
                       loadBalancer:
                         description: |-
                           loadBalancer contains the load balancer details in general which are not only specific to the underlying infrastructure
@@ -2178,9 +2230,10 @@ spec:
                                     operator:
                                       description: |-
                                         Operator represents a key's relationship to the value.
-                                        Valid operators are Exists and Equal. Defaults to Equal.
+                                        Valid operators are Exists, Equal, Lt, and Gt. Defaults to Equal.
                                         Exists is equivalent to wildcard for value, so that a pod can
                                         tolerate all taints of a particular category.
+                                        Lt and Gt perform numeric comparisons (requires feature gate TaintTolerationComparisonOperators).
                                       type: string
                                     tolerationSeconds:
                                       description: |-
@@ -2240,9 +2293,10 @@ spec:
                                     operator:
                                       description: |-
                                         Operator represents a key's relationship to the value.
-                                        Valid operators are Exists and Equal. Defaults to Equal.
+                                        Valid operators are Exists, Equal, Lt, and Gt. Defaults to Equal.
                                         Exists is equivalent to wildcard for value, so that a pod can
                                         tolerate all taints of a particular category.
+                                        Lt and Gt perform numeric comparisons (requires feature gate TaintTolerationComparisonOperators).
                                       type: string
                                     tolerationSeconds:
                                       description: |-
@@ -6333,6 +6387,28 @@ spec:
                                 - message: 'email must be a valid GCP service account
                                     email (format: name@project.iam.gserviceaccount.com)'
                                   rule: self.matches('^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\\.iam\\.gserviceaccount\\.com$')
+                              network:
+                                description: |-
+                                  network is the Google Service Account email for the Cloud Network Config Controller
+                                  that manages cloud-level network configurations (egress IPs, subnets).
+                                  This GSA requires the following IAM roles:
+                                  - roles/compute.instanceAdmin.v1 (Compute Instance Admin - for managing network interfaces)
+                                  - roles/compute.networkUser (Compute Network User - for using subnets)
+                                  See cmd/infra/gcp/iam-bindings.json for the authoritative role definitions.
+                                  Format: service-account-name@project-id.iam.gserviceaccount.com
+
+                                  This is a user-provided value referencing a pre-created Google Service Account.
+                                  Typically obtained from the output of `hypershift infra create gcp` which creates
+                                  the required service accounts with appropriate IAM roles and WIF bindings.
+                                maxLength: 85
+                                minLength: 37
+                                type: string
+                                x-kubernetes-validations:
+                                - message: Network is immutable
+                                  rule: self == oldSelf
+                                - message: 'email must be a valid GCP service account
+                                    email (format: name@project.iam.gserviceaccount.com)'
+                                  rule: self.matches('^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\\.iam\\.gserviceaccount\\.com$')
                               nodePool:
                                 description: |-
                                   nodePool is the Google Service Account email for CAPG controllers
@@ -6384,6 +6460,7 @@ spec:
                             - cloudController
                             - controlPlane
                             - imageRegistry
+                            - network
                             - nodePool
                             - storage
                             type: object
@@ -6425,6 +6502,9 @@ spec:
                         project
                       rule: self.workloadIdentity.serviceAccountsEmails.imageRegistry.contains('@')
                         && self.workloadIdentity.serviceAccountsEmails.imageRegistry.endsWith('@'
+                        + self.project + '.iam.gserviceaccount.com')
+                    - message: network service account must belong to the same project
+                      rule: self.workloadIdentity.serviceAccountsEmails.network.endsWith('@'
                         + self.project + '.iam.gserviceaccount.com')
                   ibmcloud:
                     description: ibmcloud defines IBMCloud specific settings for components
@@ -7642,8 +7722,10 @@ spec:
                             - ""
                             type: string
                           kms:
-                            description: kms is a pre-existing managed identity used
-                              to authenticate with Azure KMS.
+                            description: |-
+                              kms is a pre-existing managed identity used to authenticate with Azure KMS.
+                              This is used for managed Azure (ARO HCP) clusters.
+                              kms and workloadIdentity are mutually exclusive.
                             properties:
                               clientID:
                                 description: |-
@@ -7692,15 +7774,42 @@ spec:
                             - credentialsSecretName
                             - objectEncoding
                             type: object
+                          workloadIdentity:
+                            description: |-
+                              workloadIdentity contains the workload identity used to authenticate
+                              with Azure Key Vault for KMS encryption via a token-minter sidecar.
+                              This identity must have "Key Vault Crypto User" role on the Key Vault.
+                              kms and workloadIdentity are mutually exclusive.
+                            properties:
+                              clientID:
+                                description: clientID is client ID of a federated
+                                  managed identity used in workload identity authentication
+                                maxLength: 36
+                                minLength: 36
+                                pattern: ^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
+                                type: string
+                                x-kubernetes-validations:
+                                - message: the client ID of a managed identity must
+                                    be a valid UUID. It should be 5 groups of hyphen
+                                    separated hexadecimal characters in the form 8-4-4-4-12.
+                                  rule: self.matches('^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$')
+                            required:
+                            - clientID
+                            type: object
                         required:
                         - activeKey
-                        - kms
                         type: object
                         x-kubernetes-validations:
                         - message: backupKey.keyVaultName must match activeKey.keyVaultName;
                             both keys must reside in the same Key Vault
                           rule: '!has(self.backupKey) || self.backupKey.keyVaultName
                             == self.activeKey.keyVaultName'
+                        - message: kms and workloadIdentity are mutually exclusive
+                          rule: '!(has(self.kms) && has(self.workloadIdentity))'
+                        - message: one of kms or workloadIdentity must be set
+                          rule: has(self.kms) || has(self.workloadIdentity)
+                        - message: the KMS authentication mode is immutable once set
+                          rule: has(self.kms) == has(oldSelf.kms)
                       ibmcloud:
                         description: ibmcloud defines metadata for the IBM Cloud KMS
                           encryption strategy
@@ -7999,9 +8108,10 @@ spec:
                     operator:
                       description: |-
                         Operator represents a key's relationship to the value.
-                        Valid operators are Exists and Equal. Defaults to Equal.
+                        Valid operators are Exists, Equal, Lt, and Gt. Defaults to Equal.
                         Exists is equivalent to wildcard for value, so that a pod can
                         tolerate all taints of a particular category.
+                        Lt and Gt perform numeric comparisons (requires feature gate TaintTolerationComparisonOperators).
                       type: string
                     tolerationSeconds:
                       description: |-
@@ -8066,6 +8176,17 @@ spec:
                       nodeCount is the number of nodes fully provisioned by Karpenter.
                       These are node objects that exist in the cluster and carry the karpenter.sh/nodepool label.
                     format: int32
+                    minimum: 0
+                    type: integer
+                  vcpus:
+                    description: |-
+                      vcpus is the total number of virtual CPUs across all Karpenter-managed nodes
+                      that have registered and reported capacity. This is the sum of CPU capacity
+                      from each NodeClaim whose corresponding node exists (status.nodeName is set).
+                      This value is 0 when no Karpenter nodes are provisioned.
+                      Used by the metrics collector for billing aggregation.
+                    format: int32
+                    maximum: 1000000
                     minimum: 0
                     type: integer
                 type: object

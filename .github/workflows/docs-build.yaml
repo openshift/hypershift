@@ -1,0 +1,16 @@
+name: Docs Build
+
+on:
+  pull_request:
+    branches:
+      - main
+      - release-4.22
+    paths:
+      - 'docs/**'
+      - '.github/workflows/docs-build.yaml'
+
+jobs:
+  build:
+    uses: openshift/hypershift/.github/workflows/docs-build-reusable.yaml@main
+    permissions:
+      contents: read

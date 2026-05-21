@@ -10,7 +10,7 @@ import (
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/globalconfig"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/k8sutil"
 
 	buildv1 "github.com/openshift/api/build/v1"
 	configv1 "github.com/openshift/api/config/v1"
@@ -31,7 +31,7 @@ func adaptConfigMap(cpContext component.WorkloadContext, cm *corev1.ConfigMap) e
 	}
 
 	ocmConfig := &openshiftcpv1.OpenShiftControllerManagerConfig{}
-	err := util.DeserializeResource(cm.Data[configKey], ocmConfig, api.Scheme)
+	err := k8sutil.DeserializeResource(cm.Data[configKey], ocmConfig, api.Scheme)
 	if err != nil {
 		return fmt.Errorf("unable to decode existing openshift controller manager configuration: %w", err)
 	}
@@ -44,7 +44,7 @@ func adaptConfigMap(cpContext component.WorkloadContext, cm *corev1.ConfigMap) e
 	if err == nil && existingCM.Data != nil {
 		if existingConfigStr, exists := existingCM.Data[configKey]; exists && len(existingConfigStr) > 0 {
 			existingConfig := &openshiftcpv1.OpenShiftControllerManagerConfig{}
-			if err := util.DeserializeResource(existingConfigStr, existingConfig, api.Scheme); err == nil {
+			if err := k8sutil.DeserializeResource(existingConfigStr, existingConfig, api.Scheme); err == nil {
 				existingControllers = existingConfig.Controllers
 			}
 		}
@@ -60,7 +60,7 @@ func adaptConfigMap(cpContext component.WorkloadContext, cm *corev1.ConfigMap) e
 		return err
 	}
 	adaptConfig(ocmConfig, cpContext.HCP.Spec.Configuration, cpContext.ReleaseImageProvider, observedConfig.Build, cpContext.HCP.Spec.Capabilities, featureGates, existingControllers)
-	configStr, err := util.SerializeResource(ocmConfig, api.Scheme)
+	configStr, err := k8sutil.SerializeResource(ocmConfig, api.Scheme)
 	if err != nil {
 		return fmt.Errorf("failed to serialize openshift controller manager configuration: %w", err)
 	}

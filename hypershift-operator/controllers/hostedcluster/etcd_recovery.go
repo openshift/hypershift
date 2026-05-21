@@ -11,8 +11,8 @@ import (
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	etcdrecoverymanifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests/etcdrecovery"
+	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/upsert"
-	hyperutil "github.com/openshift/hypershift/support/util"
 
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
@@ -25,6 +25,8 @@ import (
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/go-logr/logr"
 )
 
 type etcdJobStatus struct {
@@ -37,64 +39,78 @@ func (r *HostedClusterReconciler) reconcileETCDMemberRecovery(ctx context.Contex
 	log := ctrl.LoggerFrom(ctx)
 	hcpNS := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 
-	// Check the recovery job
 	recoveryJob := etcdrecoverymanifests.EtcdRecoveryJob(hcpNS)
 	jobStatus, err := r.etcdRecoveryJobStatus(ctx, recoveryJob)
 	if err != nil {
 		return nil, err
 	}
 
-	etcdRecoveryActiveCondition := metav1.Condition{
+	if jobStatus.exists {
+		done, err := r.handleExistingEtcdRecoveryJob(ctx, log, hcluster, recoveryJob, jobStatus)
+		if err != nil {
+			return nil, err
+		}
+		if done {
+			return nil, nil
+		}
+	}
+
+	return r.detectAndTriggerEtcdRecovery(ctx, log, hcluster, hcpNS, recoveryJob, createOrUpdate)
+}
+
+// handleExistingEtcdRecoveryJob processes an existing recovery job.
+// It returns (done, err) where done=true means the caller should return immediately
+// without falling through to detectAndTriggerEtcdRecovery.
+func (r *HostedClusterReconciler) handleExistingEtcdRecoveryJob(ctx context.Context, log logr.Logger, hcluster *hyperv1.HostedCluster, recoveryJob *batchv1.Job, jobStatus *etcdJobStatus) (bool, error) {
+	if !jobStatus.finished {
+		log.Info("waiting for etcd recovery job to complete")
+		return true, nil
+	}
+
+	if !jobStatus.successful {
+		if err := r.setEtcdRecoveryCondition(ctx, hcluster, metav1.ConditionFalse, hyperv1.EtcdRecoveryJobFailedReason, "Error in Etcd Recovery job: the Etcd cluster requires manual intervention."); err != nil {
+			return false, err
+		}
+		// There is no benefit in requeuing, since the cluster needs manual intervention
+		log.Error(errors.New("etcd recovery failed"), "failed recovery job exists", "job", crclient.ObjectKeyFromObject(recoveryJob).String())
+		return true, nil
+	}
+
+	if err := r.cleanupEtcdRecoveryObjects(ctx, hcluster); err != nil {
+		return false, fmt.Errorf("failed to cleanup etcd recovery job: %w", err)
+	}
+
+	if err := r.setEtcdRecoveryCondition(ctx, hcluster, metav1.ConditionFalse, hyperv1.AsExpectedReason, "ETCD Recovery job succeeded."); err != nil {
+		return false, err
+	}
+
+	// After successful cleanup, fall through to detectAndTriggerEtcdRecovery
+	return false, nil
+}
+
+// Creating the condition for the first time or in the case of the ETCD fails intermittently.
+// If the ETCD keeps failing and recovering, we can see the hcluster.Generation increasing indefinitely.
+func (r *HostedClusterReconciler) setEtcdRecoveryCondition(ctx context.Context, hcluster *hyperv1.HostedCluster, status metav1.ConditionStatus, reason, message string) error {
+	condition := metav1.Condition{
 		Type:               string(hyperv1.EtcdRecoveryActive),
 		ObservedGeneration: hcluster.Generation,
+		Status:             status,
+		Reason:             reason,
+		Message:            message,
+		LastTransitionTime: r.now(),
 	}
 
-	if jobStatus.exists {
-		if !jobStatus.finished {
-			log.Info("waiting for etcd recovery job to complete")
-			return nil, nil
-		}
-
-		if !jobStatus.successful {
-			etcdRecoveryActiveCondition.Status = metav1.ConditionFalse
-			etcdRecoveryActiveCondition.Reason = hyperv1.EtcdRecoveryJobFailedReason
-			etcdRecoveryActiveCondition.Message = "Error in Etcd Recovery job: the Etcd cluster requires manual intervention."
-			etcdRecoveryActiveCondition.LastTransitionTime = r.now()
-
-			oldCondition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.EtcdRecoveryActive))
-
-			if oldCondition == nil || oldCondition.Status != etcdRecoveryActiveCondition.Status {
-				meta.SetStatusCondition(&hcluster.Status.Conditions, etcdRecoveryActiveCondition)
-				if err := r.Client.Status().Update(ctx, hcluster); err != nil {
-					return nil, fmt.Errorf("failed to update etcd recovery job condition: %w", err)
-				}
-			}
-
-			// There is no benefit in requeuing, since the cluster needs manual intervention
-			log.Error(errors.New("etcd recovery failed"), "failed recovery job exists", "job", crclient.ObjectKeyFromObject(recoveryJob).String())
-			return nil, nil
-		}
-
-		// Cleanup ETCD Recovery objects
-		if err := r.cleanupEtcdRecoveryObjects(ctx, hcluster); err != nil {
-			return nil, fmt.Errorf("failed to cleanup etcd recovery job: %w", err)
-		}
-
-		etcdRecoveryActiveCondition.Status = metav1.ConditionFalse
-		etcdRecoveryActiveCondition.Reason = hyperv1.AsExpectedReason
-		etcdRecoveryActiveCondition.Message = "ETCD Recovery job succeeded."
-		etcdRecoveryActiveCondition.LastTransitionTime = r.now()
-
-		oldCondition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.EtcdRecoveryActive))
-
-		if oldCondition == nil || oldCondition.Status != etcdRecoveryActiveCondition.Status {
-			meta.SetStatusCondition(&hcluster.Status.Conditions, etcdRecoveryActiveCondition)
-			if err := r.Client.Status().Update(ctx, hcluster); err != nil {
-				return nil, fmt.Errorf("failed to update etcd recovery job condition: %w", err)
-			}
+	oldCondition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.EtcdRecoveryActive))
+	if oldCondition == nil || oldCondition.Status != condition.Status {
+		meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
+		if err := r.Client.Status().Update(ctx, hcluster); err != nil {
+			return fmt.Errorf("failed to update etcd recovery job condition: %w", err)
 		}
 	}
+	return nil
+}
 
+func (r *HostedClusterReconciler) detectAndTriggerEtcdRecovery(ctx context.Context, log logr.Logger, hcluster *hyperv1.HostedCluster, hcpNS string, recoveryJob *batchv1.Job, createOrUpdate upsert.CreateOrUpdateFN) (*time.Duration, error) {
 	etcdStatefulSet := etcdrecoverymanifests.EtcdStatefulSet(hcpNS)
 	if err := r.Get(ctx, crclient.ObjectKeyFromObject(etcdStatefulSet), etcdStatefulSet); err != nil {
 		if apierrors.IsNotFound(err) {
@@ -108,31 +124,12 @@ func (r *HostedClusterReconciler) reconcileETCDMemberRecovery(ctx context.Contex
 	}
 	requeueAfter := etcdCheckRequeueInterval
 
-	etcdPodList := &corev1.PodList{}
-	if err := r.List(ctx, etcdPodList, crclient.InNamespace(hcpNS), crclient.MatchingLabels{
-		"app": "etcd",
-	}); err != nil {
-		return nil, fmt.Errorf("failed to list etcd pods: %w", err)
-	}
-
-	if len(etcdPodList.Items) < 3 {
-		// Cannot initiate recovery without all etcd pods, let's requeue
-		return &requeueAfter, nil
-	}
-
-	var failingEtcdPod *corev1.Pod
-	for _, pod := range etcdPodList.Items {
-		for _, containerStatus := range pod.Status.ContainerStatuses {
-			if containerStatus.State.Waiting != nil && containerStatus.RestartCount > 0 && containerStatus.Name == "etcd" {
-				failingEtcdPod = &pod
-				log.Info("detected etcd failing pod", "name", pod.Name, "namespace", pod.Namespace)
-				break
-			}
-		}
+	failingEtcdPod, err := r.findFailingEtcdPod(ctx, log, hcpNS)
+	if err != nil {
+		return nil, err
 	}
 
 	if failingEtcdPod == nil {
-		// No failing etcd pods detected
 		// However, if the statefulset is not reporting fully available, check later
 		if !fullyAvailable {
 			return &requeueAfter, nil
@@ -142,20 +139,55 @@ func (r *HostedClusterReconciler) reconcileETCDMemberRecovery(ctx context.Contex
 
 	log.Info("there are symptoms of etcd cluster degradation, triggering recovery job")
 
+	if err := r.createEtcdRecoveryResources(ctx, hcluster, hcpNS, recoveryJob, createOrUpdate); err != nil {
+		return nil, err
+	}
+
+	if err := r.setEtcdRecoveryCondition(ctx, hcluster, metav1.ConditionTrue, hyperv1.AsExpectedReason, "ETCD Recovery job in progress."); err != nil {
+		return nil, err
+	}
+
+	return nil, nil
+}
+
+func (r *HostedClusterReconciler) findFailingEtcdPod(ctx context.Context, log logr.Logger, hcpNS string) (*corev1.Pod, error) {
+	etcdPodList := &corev1.PodList{}
+	if err := r.List(ctx, etcdPodList, crclient.InNamespace(hcpNS), crclient.MatchingLabels{
+		"app": "etcd",
+	}); err != nil {
+		return nil, fmt.Errorf("failed to list etcd pods: %w", err)
+	}
+
+	if len(etcdPodList.Items) < 3 {
+		return nil, nil
+	}
+
+	for _, pod := range etcdPodList.Items {
+		for _, containerStatus := range pod.Status.ContainerStatuses {
+			if containerStatus.State.Waiting != nil && containerStatus.RestartCount > 0 && containerStatus.Name == "etcd" {
+				log.Info("detected etcd failing pod", "name", pod.Name, "namespace", pod.Namespace)
+				return &pod, nil
+			}
+		}
+	}
+	return nil, nil
+}
+
+func (r *HostedClusterReconciler) createEtcdRecoveryResources(ctx context.Context, hcluster *hyperv1.HostedCluster, hcpNS string, recoveryJob *batchv1.Job, createOrUpdate upsert.CreateOrUpdateFN) error {
 	recoveryRole := etcdrecoverymanifests.EtcdRecoveryRole(hcpNS)
 	if _, err := createOrUpdate(ctx, r.Client, recoveryRole, func() error {
 		r.reconcileEtcdRecoveryRole(recoveryRole)
 		return nil
 	}); err != nil {
-		return nil, fmt.Errorf("failed to reconcile etcd recovery role: %w", err)
+		return fmt.Errorf("failed to reconcile etcd recovery role: %w", err)
 	}
 
 	recoverySA := etcdrecoverymanifests.EtcdRecoveryServiceAccount(hcpNS)
 	if _, err := createOrUpdate(ctx, r.Client, recoverySA, func() error {
-		hyperutil.EnsurePullSecret(recoverySA, common.PullSecret("").Name)
+		k8sutil.EnsurePullSecret(recoverySA, common.PullSecret("").Name)
 		return nil
 	}); err != nil {
-		return nil, fmt.Errorf("failed to reconcile etcd-recovery job service account: %w", err)
+		return fmt.Errorf("failed to reconcile etcd-recovery job service account: %w", err)
 	}
 
 	recoveryRoleBinding := etcdrecoverymanifests.EtcdRecoveryRoleBinding(hcpNS)
@@ -163,32 +195,16 @@ func (r *HostedClusterReconciler) reconcileETCDMemberRecovery(ctx context.Contex
 		r.reconcileEtcdRecoveryRoleBinding(recoveryRoleBinding, recoveryRole, recoverySA)
 		return nil
 	}); err != nil {
-		return nil, fmt.Errorf("failed to reconcile etcd recovery role binding: %w", err)
+		return fmt.Errorf("failed to reconcile etcd recovery role binding: %w", err)
 	}
 
 	if _, err := createOrUpdate(ctx, r.Client, recoveryJob, func() error {
 		return r.reconcileEtcdRecoveryJob(recoveryJob, hcluster)
 	}); err != nil {
-		return nil, fmt.Errorf("failed to reconcile etcd recovery job: %w", err)
+		return fmt.Errorf("failed to reconcile etcd recovery job: %w", err)
 	}
 
-	// Creating the condition for the first time or in the case of the ETCD fails intermitently
-	etcdRecoveryActiveCondition.Status = metav1.ConditionTrue
-	etcdRecoveryActiveCondition.Reason = hyperv1.AsExpectedReason
-	etcdRecoveryActiveCondition.Message = "ETCD Recovery job in progress."
-	etcdRecoveryActiveCondition.LastTransitionTime = r.now()
-
-	// If the ETCD keeps failing and recovering, we can see the hcluster.Generation increasing indefinitely.
-	oldCondition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.EtcdRecoveryActive))
-
-	if oldCondition == nil || oldCondition.Status != etcdRecoveryActiveCondition.Status {
-		meta.SetStatusCondition(&hcluster.Status.Conditions, etcdRecoveryActiveCondition)
-		if err := r.Client.Status().Update(ctx, hcluster); err != nil {
-			return nil, fmt.Errorf("failed to update etcd recovery job condition: %w", err)
-		}
-	}
-
-	return nil, nil
+	return nil
 }
 
 // etcdRecoveryJobStatus checks the status of the ETCD recovery job and returns a status
@@ -233,22 +249,22 @@ func (r *HostedClusterReconciler) cleanupEtcdRecoveryObjects(ctx context.Context
 	hcpNS := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 
 	recoveryJob := etcdrecoverymanifests.EtcdRecoveryJob(hcpNS)
-	if _, err := hyperutil.DeleteIfNeededWithOptions(ctx, r.Client, recoveryJob, crclient.PropagationPolicy(metav1.DeletePropagationBackground)); err != nil {
+	if _, err := k8sutil.DeleteIfNeededWithOptions(ctx, r.Client, recoveryJob, crclient.PropagationPolicy(metav1.DeletePropagationBackground)); err != nil {
 		return fmt.Errorf("failed to cleanup etcd recovery job: %w", err)
 	}
 
 	recoverySA := etcdrecoverymanifests.EtcdRecoveryServiceAccount(hcpNS)
-	if _, err := hyperutil.DeleteIfNeeded(ctx, r.Client, recoverySA); err != nil {
+	if _, err := k8sutil.DeleteIfNeeded(ctx, r.Client, recoverySA); err != nil {
 		return fmt.Errorf("failed to cleanup etcd-recovery job service account: %w", err)
 	}
 
 	recoveryRoleBinding := etcdrecoverymanifests.EtcdRecoveryRoleBinding(hcpNS)
-	if _, err := hyperutil.DeleteIfNeeded(ctx, r.Client, recoveryRoleBinding); err != nil {
+	if _, err := k8sutil.DeleteIfNeeded(ctx, r.Client, recoveryRoleBinding); err != nil {
 		return fmt.Errorf("failed to cleanup etcd-recovery role binding: %w", err)
 	}
 
 	recoveryRole := etcdrecoverymanifests.EtcdRecoveryRole(hcpNS)
-	if _, err := hyperutil.DeleteIfNeeded(ctx, r.Client, recoveryRole); err != nil {
+	if _, err := k8sutil.DeleteIfNeeded(ctx, r.Client, recoveryRole); err != nil {
 		return fmt.Errorf("failed to cleanup etcd-recovery role: %w", err)
 	}
 

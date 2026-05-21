@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/openshift/hypershift/support/certs"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/podspec"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/clientcmd"
@@ -103,9 +103,9 @@ func TestReconcileServiceAccountKubeconfigWithURL(t *testing.T) {
 				t.Fatalf("failed to reconcile kubeconfig: %v", err)
 			}
 
-			kubeconfigData, hasKubeconfig := secret.Data[util.KubeconfigKey]
+			kubeconfigData, hasKubeconfig := secret.Data[podspec.KubeconfigKey]
 			if !hasKubeconfig {
-				t.Fatalf("expected %q key to be present in secret data", util.KubeconfigKey)
+				t.Fatalf("expected %q key to be present in secret data", podspec.KubeconfigKey)
 			}
 
 			kubeconfig, err := clientcmd.Load(kubeconfigData)

@@ -2,6 +2,7 @@ package hostedclustersizing
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"time"
@@ -15,7 +16,7 @@ import (
 	hyperutil "github.com/openshift/hypershift/support/util"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -25,6 +26,8 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+
+	"github.com/go-logr/logr"
 )
 
 const (
@@ -129,7 +132,7 @@ func (r *reconciler) Reconcile(ctx context.Context, request reconcile.Request) (
 
 	hostedCluster, err := r.getHostedCluster(ctx, request.NamespacedName)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if apierrors.IsNotFound(err) {
 			return reconcile.Result{}, nil
 		}
 		return reconcile.Result{}, err
@@ -157,7 +160,15 @@ func (r *reconciler) Reconcile(ctx context.Context, request reconcile.Request) (
 	return reconcile.Result{}, nil
 }
 
-type ignoreError error
+// ignoreError is a concrete error type used to signal that the error should
+// be logged but not propagated. Using a named struct (rather than a type alias
+// of error) ensures that errors.As only matches intentionally wrapped errors.
+type ignoreError struct {
+	err error
+}
+
+func (e ignoreError) Error() string { return e.err.Error() }
+func (e ignoreError) Unwrap() error { return e.err }
 
 type action struct {
 	requeueAfter time.Duration
@@ -165,19 +176,12 @@ type action struct {
 }
 
 func (r *reconciler) reconcile(
-	ctx context.Context, request reconcile.Request,
+	ctx context.Context, _ reconcile.Request,
 	config *schedulingv1alpha1.ClusterSizingConfiguration, hostedCluster *hypershiftv1beta1.HostedCluster,
 ) (*action, error) {
-	var configValid bool
-	for _, condition := range config.Status.Conditions {
-		if condition.Type == schedulingv1alpha1.ClusterSizingConfigurationValidType && condition.Status == metav1.ConditionTrue {
-			configValid = true
-			break
-		}
-	}
-	if !configValid {
-		// we can't put clusters into t-shirt sizes unless we have a valid configuration; we'll re-trigger when
-		// the configuration object changes and can process clusters then
+	if !isConfigValid(config) {
+		// we can't put clusters into t-shirt sizes unless we have a valid configuration;
+		// we'll re-trigger when the configuration object changes and can process clusters then
 		return nil, nil
 	}
 
@@ -189,7 +193,7 @@ func (r *reconciler) reconcile(
 	isPaused, duration, err := hyperutil.ProcessPausedUntilField(hostedCluster.Spec.PausedUntil, r.now())
 	if err != nil {
 		logger.Error(err, "error processing hosted cluster paused field")
-		return nil, nil // user needs to reformat the field, returning error is useless
+		return nil, nil
 	}
 	if isPaused {
 		logger.Info("Reconciliation paused", "pausedUntil", *hostedCluster.Spec.PausedUntil)
@@ -198,94 +202,148 @@ func (r *reconciler) reconcile(
 
 	lastTransitionTime, lastSizeClass := previousTransitionFor(hostedCluster)
 	currentSizeClass, sizeClassLabelPresent := hostedCluster.ObjectMeta.Labels[hypershiftv1beta1.HostedClusterSizeLabel]
+	// we can't update both the status and the labels in one call, so when we have
+	// updated status but have not yet updated the labels, we just need to do that first
 	if lastTransitionTime != nil && !sizeClassLabelPresent || currentSizeClass != lastSizeClass {
-		// we can't update both the status and the labels in one call, so when we have updated status but
-		// have not yet updated the labels, we just need to do that first
 		return &action{
 			applyCfg: hypershiftv1beta1applyconfigurations.HostedCluster(hostedCluster.Name, hostedCluster.Namespace).
 				WithLabels(map[string]string{hypershiftv1beta1.HostedClusterSizeLabel: lastSizeClass}),
 		}, nil
 	}
 
-	var sizeClass *schedulingv1alpha1.SizeConfiguration
-	if overrideSize := hostedCluster.Annotations[hypershiftv1beta1.ClusterSizeOverrideAnnotation]; overrideSize != "" {
-		// given the override size, get the size configuration
-		for i, class := range config.Spec.Sizes {
-			if class.Name == overrideSize {
-				sizeClass = &config.Spec.Sizes[i]
-			}
-		}
-	} else if autoScaling := hostedCluster.Annotations[hypershiftv1beta1.ResourceBasedControlPlaneAutoscalingAnnotation]; autoScaling == "true" {
-		if len(config.Spec.Sizes) == 0 {
-			logger.Error(fmt.Errorf("could not find a size class for hosted cluster"), "no size can be set on hosted cluster")
-			return nil, nil
-		}
-		recommendedSize := hostedCluster.Annotations[hypershiftv1beta1.RecommendedClusterSizeAnnotation]
-
-		// First, try to find the recommended size in the configuration
-		if recommendedSize != "" {
-			for i, class := range config.Spec.Sizes {
-				if class.Name == recommendedSize {
-					sizeClass = &config.Spec.Sizes[i]
-					logger.V(1).Info("Using recommended cluster size", "size", recommendedSize)
-					break
-				}
-			}
-		}
-
-		// If no recommended size is set, or the recommended size wasn't found, use the first size class as fallback
-		if sizeClass == nil {
-			sizeClass = &config.Spec.Sizes[0]
-			if recommendedSize == "" {
-				logger.Info("Resource-based autoscaling enabled but no recommended size set, using first size class", "defaultSize", sizeClass.Name)
-			} else {
-				logger.Info("Recommended size not found in configuration, falling back to first size class", "requestedSize", recommendedSize, "fallbackSize", sizeClass.Name)
-			}
-		}
-	} else {
-		nodeCount, err := r.determineNodeCount(ctx, hostedCluster, sizeClassLabelPresent)
-		if err != nil {
-			if _, ignore := err.(ignoreError); ignore {
-				logger.Info("Ignoring error", "error", err.Error())
-				return nil, nil
-			}
-			return nil, err
-		}
-
-		// given the node count we need to figure out if we need to transition to another t-shirt size
-		for i, class := range config.Spec.Sizes {
-			if class.Criteria.From <= nodeCount && (class.Criteria.To == nil || *class.Criteria.To >= nodeCount) {
-				sizeClass = &config.Spec.Sizes[i]
-			}
-		}
+	sizeClass, err := r.determineSizeClass(ctx, logger, config, hostedCluster, sizeClassLabelPresent)
+	if err != nil {
+		return nil, err
+	}
+	if sizeClass == nil {
+		return nil, nil
 	}
 
-	if sizeClass == nil {
+	if sizeClassLabelPresent && sizeClass.Name == currentSizeClass {
+		return r.clearTransientConditions(hostedCluster, lastTransitionTime)
+	}
+
+	return r.transitionSizeClass(ctx, config, hostedCluster, sizeClass, currentSizeClass, sizeClassLabelPresent, lastTransitionTime)
+}
+
+func isConfigValid(config *schedulingv1alpha1.ClusterSizingConfiguration) bool {
+	for _, condition := range config.Status.Conditions {
+		if condition.Type == schedulingv1alpha1.ClusterSizingConfigurationValidType && condition.Status == metav1.ConditionTrue {
+			return true
+		}
+	}
+	return false
+}
+
+func (r *reconciler) determineSizeClass(
+	ctx context.Context, logger logr.Logger,
+	config *schedulingv1alpha1.ClusterSizingConfiguration, hostedCluster *hypershiftv1beta1.HostedCluster,
+	sizeClassLabelPresent bool,
+) (*schedulingv1alpha1.SizeConfiguration, error) {
+	if overrideSize := hostedCluster.Annotations[hypershiftv1beta1.ClusterSizeOverrideAnnotation]; overrideSize != "" {
+		for i, class := range config.Spec.Sizes {
+			if class.Name == overrideSize {
+				return &config.Spec.Sizes[i], nil
+			}
+		}
+		logger.Error(fmt.Errorf("could not find a size class for hosted cluster"), "no size can be set on hosted cluster")
+		return nil, nil // user needs to reformat the field, returning error is useless
+	}
+
+	if autoScaling := hostedCluster.Annotations[hypershiftv1beta1.ResourceBasedControlPlaneAutoscalingAnnotation]; autoScaling == "true" {
+		return r.determineSizeClassFromAutoscaling(logger, config, hostedCluster)
+	}
+
+	return r.determineSizeClassFromNodeCount(ctx, logger, config, hostedCluster, sizeClassLabelPresent)
+}
+
+func (r *reconciler) determineSizeClassFromAutoscaling(
+	logger logr.Logger,
+	config *schedulingv1alpha1.ClusterSizingConfiguration, hostedCluster *hypershiftv1beta1.HostedCluster,
+) (*schedulingv1alpha1.SizeConfiguration, error) {
+	if len(config.Spec.Sizes) == 0 {
 		logger.Error(fmt.Errorf("could not find a size class for hosted cluster"), "no size can be set on hosted cluster")
 		return nil, nil
 	}
-	if sizeClassLabelPresent && sizeClass.Name == currentSizeClass {
-		// no transition necessary, clear transient conditions
-		cfg := applyCfgFor(hostedCluster,
-			metav1applyconfigurations.Condition().
-				WithType(hypershiftv1beta1.ClusterSizeTransitionPending).
-				WithStatus(metav1.ConditionFalse).
-				WithReason("ClusterSizeTransitioned").
-				WithMessage("The HostedCluster has transitioned to a new t-shirt size.").
-				WithLastTransitionTime(metav1.NewTime(*lastTransitionTime)),
-			metav1applyconfigurations.Condition().
-				WithType(hypershiftv1beta1.ClusterSizeTransitionRequired).
-				WithStatus(metav1.ConditionFalse).
-				WithReason(hypershiftv1beta1.AsExpectedReason).
-				WithMessage("The HostedCluster has transitioned to a new t-shirt size.").
-				WithLastTransitionTime(metav1.NewTime(*lastTransitionTime)),
-		)
-		if cfg != nil {
-			return &action{applyCfg: cfg}, nil
+	recommendedSize := hostedCluster.Annotations[hypershiftv1beta1.RecommendedClusterSizeAnnotation]
+
+	if recommendedSize != "" {
+		for i, class := range config.Spec.Sizes {
+			if class.Name == recommendedSize {
+				logger.V(1).Info("Using recommended cluster size", "size", recommendedSize)
+				return &config.Spec.Sizes[i], nil
+			}
 		}
-		return nil, nil
 	}
 
+	// If no recommended size is set, or the recommended size wasn't found, use the first size class as fallback
+	sizeClass := &config.Spec.Sizes[0]
+	if recommendedSize == "" {
+		logger.Info("Resource-based autoscaling enabled but no recommended size set, using first size class", "defaultSize", sizeClass.Name)
+	} else {
+		logger.Info("Recommended size not found in configuration, falling back to first size class", "requestedSize", recommendedSize, "fallbackSize", sizeClass.Name)
+	}
+	return sizeClass, nil
+}
+
+func (r *reconciler) determineSizeClassFromNodeCount(
+	ctx context.Context, logger logr.Logger,
+	config *schedulingv1alpha1.ClusterSizingConfiguration, hostedCluster *hypershiftv1beta1.HostedCluster,
+	sizeClassLabelPresent bool,
+) (*schedulingv1alpha1.SizeConfiguration, error) {
+	nodeCount, err := r.determineNodeCount(ctx, hostedCluster, sizeClassLabelPresent)
+	if err != nil {
+		var ignore ignoreError
+		if errors.As(err, &ignore) {
+			logger.Info("Ignoring error", "error", err.Error())
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	var sizeClass *schedulingv1alpha1.SizeConfiguration
+	for i, class := range config.Spec.Sizes {
+		if class.Criteria.From <= nodeCount && (class.Criteria.To == nil || *class.Criteria.To >= nodeCount) {
+			sizeClass = &config.Spec.Sizes[i]
+		}
+	}
+	if sizeClass == nil {
+		logger.Error(fmt.Errorf("could not find a size class for hosted cluster"), "no size can be set on hosted cluster")
+	}
+	return sizeClass, nil
+}
+
+func (r *reconciler) clearTransientConditions(hostedCluster *hypershiftv1beta1.HostedCluster, lastTransitionTime *time.Time) (*action, error) {
+	transitionTime := r.now()
+	if lastTransitionTime != nil {
+		transitionTime = *lastTransitionTime
+	}
+	cfg := applyCfgFor(hostedCluster,
+		metav1applyconfigurations.Condition().
+			WithType(hypershiftv1beta1.ClusterSizeTransitionPending).
+			WithStatus(metav1.ConditionFalse).
+			WithReason("ClusterSizeTransitioned").
+			WithMessage("The HostedCluster has transitioned to a new t-shirt size.").
+			WithLastTransitionTime(metav1.NewTime(transitionTime)),
+		metav1applyconfigurations.Condition().
+			WithType(hypershiftv1beta1.ClusterSizeTransitionRequired).
+			WithStatus(metav1.ConditionFalse).
+			WithReason(hypershiftv1beta1.AsExpectedReason).
+			WithMessage("The HostedCluster has transitioned to a new t-shirt size.").
+			WithLastTransitionTime(metav1.NewTime(transitionTime)),
+	)
+	if cfg != nil {
+		return &action{applyCfg: cfg}, nil
+	}
+	return nil, nil
+}
+
+func (r *reconciler) transitionSizeClass(
+	ctx context.Context,
+	config *schedulingv1alpha1.ClusterSizingConfiguration, hostedCluster *hypershiftv1beta1.HostedCluster,
+	sizeClass *schedulingv1alpha1.SizeConfiguration, currentSizeClass string, sizeClassLabelPresent bool,
+	lastTransitionTime *time.Time,
+) (*action, error) {
 	previousMinimumSize := uint32(0)
 	if sizeClassLabelPresent {
 		for _, class := range config.Spec.Sizes {
@@ -296,80 +354,24 @@ func (r *reconciler) reconcile(
 	}
 	increasingSize := previousMinimumSize < sizeClass.Criteria.From
 
+	// For new clusters being added to the fleet, we have an SLA on creation time and can't
+	// afford to delay the first transition, as it is required for the control plane to schedule.
+	// For other clusters, we want to limit the amount of churn to promote management plane stability.
 	// third, we need to know if we're ready to transition the cluster:
 	// - the hosted cluster has limits to how quickly it can transition up and down, and
 	// - the management plane has limits to how many clusters can be transitioning at any time
-	delayStart := time.Time{}
-	if lastTransitionTime != nil {
-		// if we transitioned in the past, we need to enforce the delay from there
-		delayStart = *lastTransitionTime
-	}
-	lastComputedTime, lastComputedSizeClass := previousComputedSizeFor(hostedCluster)
-	if lastComputedTime != nil && lastComputedSizeClass == sizeClass.Name {
-		// we computed that the cluster should transition already; enforce the delay from that point
-		delayStart = *lastComputedTime
-	}
-	var delay time.Duration
-	var transition string
-	if increasingSize {
-		transition = "increase"
-		delay = config.Spec.TransitionDelay.Increase.Duration
-	} else {
-		transition = "decrease"
-		delay = config.Spec.TransitionDelay.Decrease.Duration
-	}
-	if r.now().Sub(delayStart) < delay {
-		cfg := applyCfgFor(hostedCluster,
-			metav1applyconfigurations.Condition().
-				WithType(hypershiftv1beta1.ClusterSizeTransitionPending).
-				WithStatus(metav1.ConditionTrue).
-				WithReason("TransitionDelayNotElapsed").
-				WithMessage(fmt.Sprintf("HostedClusters must wait at least %s to %s in size after the cluster size changes.", delay.String(), transition)).
-				WithLastTransitionTime(metav1.NewTime(r.now())),
-			metav1applyconfigurations.Condition().
-				WithType(hypershiftv1beta1.ClusterSizeTransitionRequired).
-				WithStatus(metav1.ConditionTrue).
-				WithReason(sizeClass.Name).
-				WithMessage("The HostedCluster will transition to a new t-shirt size.").
-				WithLastTransitionTime(metav1.NewTime(r.now())),
-		)
-		if cfg != nil {
-			return &action{applyCfg: cfg, requeueAfter: delayStart.Add(delay).Sub(r.now())}, nil
-		} else {
-			return nil, nil
+	if result := r.checkTransitionDelay(config, hostedCluster, sizeClass, increasingSize, lastTransitionTime); result != nil {
+		if result.applyCfg == nil {
+			return &action{requeueAfter: result.requeueAfter}, nil
 		}
+		return result, nil
 	}
 
-	// For new clusters being added to the fleet, we have an SLA on creation time and can't afford to delay
-	// the first transition, as it is required for the control plane to schedule. For other clusters, though,
-	// we want to limit the amount of churn happening in order to promote the stability of the management plane.
-	if scheduled := hostedCluster.Annotations[hypershiftv1beta1.HostedClusterScheduledAnnotation]; scheduled == "true" {
-		hostedClusters, err := r.listHostedClusters(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to list hosted clusters when calculating concurrency: %w", err)
+	if result, err := r.checkConcurrencyLimit(ctx, config, hostedCluster, sizeClass); err != nil || result != nil {
+		if result != nil && result.applyCfg == nil {
+			return &action{requeueAfter: result.requeueAfter}, nil
 		}
-
-		if changes, durationUntilChanges := transitionsWithinSlidingWindow(hostedClusters, config.Spec.Concurrency.SlidingWindow.Duration, r.now()); int32(changes) >= config.Spec.Concurrency.Limit {
-			cfg := applyCfgFor(hostedCluster,
-				metav1applyconfigurations.Condition().
-					WithType(hypershiftv1beta1.ClusterSizeTransitionPending).
-					WithStatus(metav1.ConditionTrue).
-					WithReason("ConcurrencyLimitReached").
-					WithMessage(fmt.Sprintf("%d HostedClusters have already transitioned sizes in the last %s, more time must elapse before the next transition.", changes, config.Spec.Concurrency.SlidingWindow.Duration.String())).
-					WithLastTransitionTime(metav1.NewTime(r.now())),
-				metav1applyconfigurations.Condition().
-					WithType(hypershiftv1beta1.ClusterSizeTransitionRequired).
-					WithStatus(metav1.ConditionTrue).
-					WithReason(sizeClass.Name).
-					WithMessage("The HostedCluster will transition to a new t-shirt size.").
-					WithLastTransitionTime(metav1.NewTime(r.now())),
-			)
-			if cfg != nil {
-				return &action{applyCfg: cfg, requeueAfter: durationUntilChanges}, nil
-			} else {
-				return nil, nil
-			}
-		}
+		return result, err
 	}
 
 	cfg := applyCfgFor(hostedCluster,
@@ -398,6 +400,94 @@ func (r *reconciler) reconcile(
 	return nil, nil
 }
 
+func (r *reconciler) checkTransitionDelay(
+	config *schedulingv1alpha1.ClusterSizingConfiguration, hostedCluster *hypershiftv1beta1.HostedCluster,
+	sizeClass *schedulingv1alpha1.SizeConfiguration, increasingSize bool,
+	lastTransitionTime *time.Time,
+) *action {
+	// if we transitioned in the past, we need to enforce the delay from there
+	delayStart := time.Time{}
+	if lastTransitionTime != nil {
+		delayStart = *lastTransitionTime
+	}
+	lastComputedTime, lastComputedSizeClass := previousComputedSizeFor(hostedCluster)
+	if lastComputedTime != nil && lastComputedSizeClass == sizeClass.Name {
+		delayStart = *lastComputedTime
+	}
+	var delay time.Duration
+	var transition string
+	if increasingSize {
+		transition = "increase"
+		delay = config.Spec.TransitionDelay.Increase.Duration
+	} else {
+		transition = "decrease"
+		delay = config.Spec.TransitionDelay.Decrease.Duration
+	}
+	if r.now().Sub(delayStart) >= delay {
+		return nil
+	}
+
+	cfg := applyCfgFor(hostedCluster,
+		metav1applyconfigurations.Condition().
+			WithType(hypershiftv1beta1.ClusterSizeTransitionPending).
+			WithStatus(metav1.ConditionTrue).
+			WithReason("TransitionDelayNotElapsed").
+			WithMessage(fmt.Sprintf("HostedClusters must wait at least %s to %s in size after the cluster size changes.", delay.String(), transition)).
+			WithLastTransitionTime(metav1.NewTime(r.now())),
+		metav1applyconfigurations.Condition().
+			WithType(hypershiftv1beta1.ClusterSizeTransitionRequired).
+			WithStatus(metav1.ConditionTrue).
+			WithReason(sizeClass.Name).
+			WithMessage("The HostedCluster will transition to a new t-shirt size.").
+			WithLastTransitionTime(metav1.NewTime(r.now())),
+	)
+	if cfg != nil {
+		return &action{applyCfg: cfg, requeueAfter: delayStart.Add(delay).Sub(r.now())}
+	}
+	// Conditions already match status; no update needed but delay has not elapsed, so requeue and stop processing.
+	return &action{requeueAfter: delayStart.Add(delay).Sub(r.now())}
+}
+
+func (r *reconciler) checkConcurrencyLimit(
+	ctx context.Context,
+	config *schedulingv1alpha1.ClusterSizingConfiguration, hostedCluster *hypershiftv1beta1.HostedCluster,
+	sizeClass *schedulingv1alpha1.SizeConfiguration,
+) (*action, error) {
+	if scheduled := hostedCluster.Annotations[hypershiftv1beta1.HostedClusterScheduledAnnotation]; scheduled != "true" {
+		return nil, nil
+	}
+
+	hostedClusters, err := r.listHostedClusters(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list hosted clusters when calculating concurrency: %w", err)
+	}
+
+	changes, durationUntilChanges := transitionsWithinSlidingWindow(hostedClusters, config.Spec.Concurrency.SlidingWindow.Duration, r.now())
+	if int32(changes) < config.Spec.Concurrency.Limit {
+		return nil, nil
+	}
+
+	cfg := applyCfgFor(hostedCluster,
+		metav1applyconfigurations.Condition().
+			WithType(hypershiftv1beta1.ClusterSizeTransitionPending).
+			WithStatus(metav1.ConditionTrue).
+			WithReason("ConcurrencyLimitReached").
+			WithMessage(fmt.Sprintf("%d HostedClusters have already transitioned sizes in the last %s, more time must elapse before the next transition.", changes, config.Spec.Concurrency.SlidingWindow.Duration.String())).
+			WithLastTransitionTime(metav1.NewTime(r.now())),
+		metav1applyconfigurations.Condition().
+			WithType(hypershiftv1beta1.ClusterSizeTransitionRequired).
+			WithStatus(metav1.ConditionTrue).
+			WithReason(sizeClass.Name).
+			WithMessage("The HostedCluster will transition to a new t-shirt size.").
+			WithLastTransitionTime(metav1.NewTime(r.now())),
+	)
+	if cfg != nil {
+		return &action{applyCfg: cfg, requeueAfter: durationUntilChanges}, nil
+	}
+	// Conditions already match status; no update needed but concurrency limit reached, so requeue and stop processing.
+	return &action{requeueAfter: durationUntilChanges}, nil
+}
+
 func (r *reconciler) determineNodeCount(ctx context.Context, hostedCluster *hypershiftv1beta1.HostedCluster, sizeClassLabelPresent bool) (uint32, error) {
 	// Note: for every HostedCluster, we *either* expect to see the HCCO report the number of nodes into the
 	// HostedControlPlane status, *or* we must walk NodePools and count up their replicas here. We need to
@@ -424,7 +514,7 @@ func (r *reconciler) determineNodeCount(ctx context.Context, hostedCluster *hype
 	if hccoReportsNodeCount {
 		hostedControlPlane, err := r.hostedControlPlaneForHostedCluster(ctx, hostedCluster)
 		if err != nil {
-			return 0, ignoreError(fmt.Errorf("failed to get hosted control plane: %w", err))
+			return 0, ignoreError{err: fmt.Errorf("failed to get hosted control plane: %w", err)}
 		}
 
 		if hostedControlPlane.Status.NodeCount != nil && *hostedControlPlane.Status.NodeCount > 0 {
@@ -442,7 +532,7 @@ func (r *reconciler) determineNodeCount(ctx context.Context, hostedCluster *hype
 			if nodePool.Spec.AutoScaling != nil {
 				// If the Kube API Server is not available, and we already have a size label, skip processing
 				if !kasAvailable && sizeClassLabelPresent {
-					return 0, ignoreError(fmt.Errorf("KAS is not available, and no size class label is set yet"))
+					return 0, ignoreError{err: fmt.Errorf("KAS is not available, and no size class label is set yet")}
 				}
 				replicas = uint32(nodePool.Status.Replicas)
 			} else if nodePool.Spec.Replicas != nil {

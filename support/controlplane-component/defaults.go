@@ -12,6 +12,8 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	karpenterassets "github.com/openshift/hypershift/karpenter-operator/controllers/karpenter/assets"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/k8sutil"
+	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/util"
 
 	corev1 "k8s.io/api/core/v1"
@@ -112,11 +114,11 @@ func (c *controlPlaneWorkload[T]) setDefaultOptions(cpContext ControlPlaneContex
 	}
 
 	if c.availabilityProberOpts != nil {
-		availabilityProberImage := cpContext.ReleaseImageProvider.GetImage(util.AvailabilityProberImageName)
-		util.AvailabilityProber(
+		availabilityProberImage := cpContext.ReleaseImageProvider.GetImage(podspec.AvailabilityProberImageName)
+		podspec.AvailabilityProber(
 			kas.InClusterKASReadyURL(hcp.Spec.Platform.Type), availabilityProberImage,
 			&podTemplateSpec.Spec,
-			util.WithOptions(c.availabilityProberOpts))
+			podspec.WithOptions(c.availabilityProberOpts))
 	}
 
 	enforceTerminationMessagePolicy(podTemplateSpec.Spec.InitContainers)
@@ -149,7 +151,7 @@ func (c *controlPlaneWorkload[T]) setDefaultOptions(cpContext ControlPlaneContex
 	// Containers that need specific capabilities (e.g., NET_BIND_SERVICE for haproxy)
 	// should declare them in their deployment templates, and they will be preserved.
 	if hcp.Spec.Platform.Type == hyperv1.GCPPlatform {
-		if err := util.EnforceRestrictedSecurityContextToContainers(&podTemplateSpec.Spec); err != nil {
+		if err := podspec.EnforceRestrictedSecurityContextToContainers(&podTemplateSpec.Spec); err != nil {
 			return fmt.Errorf("failed to enforce restricted security context: %w", err)
 		}
 	}
@@ -305,7 +307,7 @@ func (c *controlPlaneWorkload[T]) setControlPlaneIsolation(podTemplate *corev1.P
 
 		var additionalRequestServingNodeSelector map[string]string
 		if hcp.Annotations[hyperv1.RequestServingNodeAdditionalSelectorAnnotation] != "" {
-			additionalRequestServingNodeSelector = util.ParseNodeSelector(hcp.Annotations[hyperv1.RequestServingNodeAdditionalSelectorAnnotation])
+			additionalRequestServingNodeSelector = k8sutil.ParseNodeSelector(hcp.Annotations[hyperv1.RequestServingNodeAdditionalSelectorAnnotation])
 		}
 		for key, value := range additionalRequestServingNodeSelector {
 			nodeSelectorRequirements = append(nodeSelectorRequirements, corev1.NodeSelectorRequirement{
@@ -577,7 +579,7 @@ func enforceImagePullPolicy(containers []corev1.Container) error {
 
 func enforceReadOnlyRootFilesystem(podSpec *corev1.PodSpec) {
 	podSpec.Volumes = append(podSpec.Volumes, corev1.Volume{
-		Name: util.PodTmpDirMountName,
+		Name: podspec.PodTmpDirMountName,
 		VolumeSource: corev1.VolumeSource{
 			EmptyDir: &corev1.EmptyDirVolumeSource{},
 		},
@@ -591,11 +593,11 @@ func enforceReadOnlyRootFilesystemContainers(containers []corev1.Container) {
 			containers[i].SecurityContext = &corev1.SecurityContext{}
 		}
 		if !slices.ContainsFunc(containers[i].VolumeMounts, func(vm corev1.VolumeMount) bool {
-			return vm.MountPath == util.PodTmpDirMountPath
+			return vm.MountPath == podspec.PodTmpDirMountPath
 		}) {
 			containers[i].VolumeMounts = append(containers[i].VolumeMounts, corev1.VolumeMount{
-				Name:      util.PodTmpDirMountName,
-				MountPath: util.PodTmpDirMountPath,
+				Name:      podspec.PodTmpDirMountName,
+				MountPath: podspec.PodTmpDirMountPath,
 			})
 		}
 		containers[i].SecurityContext.ReadOnlyRootFilesystem = ptr.To(true)
@@ -667,7 +669,7 @@ func DefaultReplicas(hcp *hyperv1.HostedControlPlane, options ComponentOptions, 
 // debugDeploymentsAnnotation value, indicating the Component should be considered to
 // be in development mode.
 func debugComponentsSet(hcp *hyperv1.HostedControlPlane) sets.Set[string] {
-	val, exists := hcp.Annotations[util.DebugDeploymentsAnnotation]
+	val, exists := hcp.Annotations[k8sutil.DebugDeploymentsAnnotation]
 	if !exists {
 		return nil
 	}

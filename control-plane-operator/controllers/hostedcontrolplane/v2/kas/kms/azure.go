@@ -2,6 +2,7 @@ package kms
 
 import (
 	"fmt"
+	"path"
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -9,6 +10,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/secretproviderclass"
 	"github.com/openshift/hypershift/support/util"
 
@@ -36,7 +38,7 @@ const (
 )
 
 var (
-	azureKMSVolumeMounts = util.PodVolumeMounts{
+	azureKMSVolumeMounts = podspec.VolumeMounts{
 		KasMainContainerName: {
 			kasVolumeKMSSocket().Name: "/opt",
 		},
@@ -57,17 +59,41 @@ var (
 var _ KMSProvider = &azureKMSProvider{}
 
 type azureKMSProvider struct {
-	kmsSpec  *hyperv1.AzureKMSSpec
-	kmsImage string
+	kmsSpec          *hyperv1.AzureKMSSpec
+	kmsImage         string
+	isSelfManaged    bool
+	kmsClientID      string
+	tenantID         string
+	tokenMinterImage string
 }
 
-func NewAzureKMSProvider(kmsSpec *hyperv1.AzureKMSSpec, image string) (*azureKMSProvider, error) {
+// AzureKMSProviderOptions contains optional configuration for Azure KMS providers.
+type AzureKMSProviderOptions struct {
+	IsSelfManaged    bool
+	KMSClientID      string
+	TenantID         string
+	TokenMinterImage string
+}
+
+func NewAzureKMSProvider(kmsSpec *hyperv1.AzureKMSSpec, image string, opts AzureKMSProviderOptions) (*azureKMSProvider, error) {
 	if kmsSpec == nil {
 		return nil, fmt.Errorf("azure kms metadata not specified")
 	}
+	if opts.IsSelfManaged {
+		if opts.KMSClientID == "" || opts.TenantID == "" {
+			return nil, fmt.Errorf("kmsClientID and tenantID are required for self-managed Azure KMS")
+		}
+		if opts.TokenMinterImage == "" {
+			return nil, fmt.Errorf("tokenMinterImage is required for self-managed Azure KMS")
+		}
+	}
 	return &azureKMSProvider{
-		kmsSpec:  kmsSpec,
-		kmsImage: image,
+		kmsSpec:          kmsSpec,
+		kmsImage:         image,
+		isSelfManaged:    opts.IsSelfManaged,
+		kmsClientID:      opts.KMSClientID,
+		tenantID:         opts.TenantID,
+		tokenMinterImage: opts.TokenMinterImage,
 	}, nil
 }
 
@@ -123,21 +149,36 @@ func (p *azureKMSProvider) GenerateKMSPodConfig() (*KMSPodConfig, error) {
 	podConfig := &KMSPodConfig{}
 
 	podConfig.Volumes = append(podConfig.Volumes,
-		util.BuildVolume(kasVolumeAzureKMSCredentials(), buildVolumeAzureKMSCredentials),
-		util.BuildVolume(kasVolumeKMSSocket(), buildVolumeKMSSocket),
-		util.BuildVolume(kasVolumeKMSSecretStore(), buildVolumeKMSSecretStore),
+		podspec.BuildVolume(kasVolumeAzureKMSCredentials(), buildVolumeAzureKMSCredentials),
+		podspec.BuildVolume(kasVolumeKMSSocket(), buildVolumeKMSSocket),
 	)
 
+	if p.isSelfManaged {
+		podConfig.Volumes = append(podConfig.Volumes,
+			podspec.BuildVolume(kasVolumeAzureKMSCloudToken(), buildVolumeAzureKMSCloudToken),
+		)
+	} else {
+		podConfig.Volumes = append(podConfig.Volumes,
+			podspec.BuildVolume(kasVolumeKMSSecretStore(), buildVolumeKMSSecretStore),
+		)
+	}
+
 	podConfig.Containers = append(podConfig.Containers,
-		util.BuildContainer(
+		podspec.BuildContainer(
 			kasContainerAzureKMSActive(),
 			p.buildKASContainerAzureKMS(p.kmsSpec.ActiveKey, azureActiveKMSUnixSocket, azureActiveKMSHealthPort, azureActiveKMSMetricsAddr)),
 	)
 	if p.kmsSpec.BackupKey != nil {
 		podConfig.Containers = append(podConfig.Containers,
-			util.BuildContainer(
+			podspec.BuildContainer(
 				kasContainerAzureKMSBackup(),
 				p.buildKASContainerAzureKMS(*p.kmsSpec.BackupKey, azureBackupKMSUnixSocket, azureBackupKMSHealthPort, azureBackupKMSMetricsAddr)),
+		)
+	}
+
+	if p.isSelfManaged {
+		podConfig.Containers = append(podConfig.Containers,
+			podspec.BuildContainer(kasContainerAzureKMSTokenMinter(), p.buildKASContainerAzureKMSTokenMinter()),
 		)
 	}
 
@@ -171,11 +212,26 @@ func (p *azureKMSProvider) buildKASContainerAzureKMS(kmsKey hyperv1.AzureKMSKey,
 			"-v=1",
 		}
 		c.VolumeMounts = azureKMSVolumeMounts.ContainerMounts(c.Name)
-		c.VolumeMounts = append(c.VolumeMounts, corev1.VolumeMount{
-			Name:      config.ManagedAzureKMSSecretStoreVolumeName,
-			MountPath: config.ManagedAzureCertificateMountPath,
-			ReadOnly:  true,
-		})
+
+		if p.isSelfManaged {
+			c.VolumeMounts = append(c.VolumeMounts, corev1.VolumeMount{
+				Name:      kasVolumeAzureKMSCloudToken().Name,
+				MountPath: config.CloudTokenMountPath,
+				ReadOnly:  true,
+			})
+			c.Env = append(c.Env,
+				corev1.EnvVar{Name: "AZURE_CLIENT_ID", Value: p.kmsClientID},
+				corev1.EnvVar{Name: "AZURE_TENANT_ID", Value: p.tenantID},
+				corev1.EnvVar{Name: "AZURE_FEDERATED_TOKEN_FILE", Value: path.Join(config.CloudTokenMountPath, "token")},
+			)
+		} else {
+			c.VolumeMounts = append(c.VolumeMounts, corev1.VolumeMount{
+				Name:      config.ManagedAzureKMSSecretStoreVolumeName,
+				MountPath: config.ManagedAzureCertificateMountPath,
+				ReadOnly:  true,
+			})
+		}
+
 		c.LivenessProbe = &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
@@ -199,6 +255,37 @@ func (p *azureKMSProvider) buildKASContainerAzureKMS(kmsKey hyperv1.AzureKMSKey,
 	}
 }
 
+func (p *azureKMSProvider) buildKASContainerAzureKMSTokenMinter() func(*corev1.Container) {
+	return func(c *corev1.Container) {
+		c.Image = p.tokenMinterImage
+		c.ImagePullPolicy = corev1.PullIfNotPresent
+		c.Command = []string{"/usr/bin/control-plane-operator", "token-minter"}
+		c.Args = []string{
+			"--token-audience=openshift",
+			fmt.Sprintf("--service-account-namespace=%s", manifests.KASContainerKMSProviderServiceAccount().Namespace),
+			fmt.Sprintf("--service-account-name=%s", manifests.KASContainerKMSProviderServiceAccount().Name),
+			fmt.Sprintf("--token-file=%s", path.Join(config.CloudTokenMountPath, "token")),
+			fmt.Sprintf("--kubeconfig=%s", path.Join("/etc/kubernetes", podspec.KubeconfigKey)),
+		}
+		c.Resources = corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("10m"),
+				corev1.ResourceMemory: resource.MustParse("30Mi"),
+			},
+		}
+		c.VolumeMounts = []corev1.VolumeMount{
+			{
+				Name:      kasVolumeAzureKMSCloudToken().Name,
+				MountPath: config.CloudTokenMountPath,
+			},
+			{
+				Name:      kasVolumeLocalhostKubeconfig,
+				MountPath: "/etc/kubernetes",
+			},
+		}
+	}
+}
+
 func kasContainerAzureKMSActive() *corev1.Container {
 	return &corev1.Container{
 		Name: "azure-kms-provider-active",
@@ -208,6 +295,12 @@ func kasContainerAzureKMSActive() *corev1.Container {
 func kasContainerAzureKMSBackup() *corev1.Container {
 	return &corev1.Container{
 		Name: "azure-kms-provider-backup",
+	}
+}
+
+func kasContainerAzureKMSTokenMinter() *corev1.Container {
+	return &corev1.Container{
+		Name: "azure-kms-token-minter",
 	}
 }
 
@@ -247,8 +340,21 @@ func buildVolumeKMSSecretStore(v *corev1.Volume) {
 	}
 }
 
+func kasVolumeAzureKMSCloudToken() *corev1.Volume {
+	return &corev1.Volume{
+		Name: "azure-kms-cloud-token",
+	}
+}
+
+func buildVolumeAzureKMSCloudToken(v *corev1.Volume) {
+	v.EmptyDir = &corev1.EmptyDirVolumeSource{Medium: corev1.StorageMediumMemory}
+}
+
 func AdaptAzureSecretProvider(cpContext component.WorkloadContext, secretProvider *secretsstorev1.SecretProviderClass) error {
 	managedIdentity := cpContext.HCP.Spec.SecretEncryption.KMS.Azure.KMS
+	if managedIdentity.CredentialsSecretName == "" {
+		return fmt.Errorf("managed identity credentials secret name is required for Azure KMS secret provider")
+	}
 	secretproviderclass.ReconcileManagedAzureSecretProviderClass(secretProvider, cpContext.HCP, managedIdentity)
 	return nil
 }

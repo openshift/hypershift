@@ -6,7 +6,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	kasv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kas"
 	component "github.com/openshift/hypershift/support/controlplane-component"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/podspec"
 
 	corev1 "k8s.io/api/core/v1"
 )
@@ -20,6 +20,6 @@ func adaptKubeconfig(cpContext component.WorkloadContext, secret *corev1.Secret)
 	if secret.Data == nil {
 		secret.Data = map[string][]byte{}
 	}
-	secret.Data[util.KubeconfigKey] = kubeconfig
+	secret.Data[podspec.KubeconfigKey] = kubeconfig
 	return nil
 }

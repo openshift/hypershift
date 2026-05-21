@@ -13,7 +13,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/assets"
 	"github.com/openshift/hypershift/support/azureutil"
-	hyperutil "github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/k8sutil"
 
 	configv1 "github.com/openshift/api/config/v1"
 	securityv1 "github.com/openshift/api/security/v1"
@@ -530,7 +530,7 @@ func CleanupCiliumConnectivityTestResources(ctx context.Context, t *testing.T, g
 			Name: "cilium-test",
 		},
 	}
-	if _, err := hyperutil.DeleteIfNeeded(ctx, guestClient, scc); err != nil {
+	if _, err := k8sutil.DeleteIfNeeded(ctx, guestClient, scc); err != nil {
 		t.Logf("Warning: failed to delete SCC: %v", err)
 	}
 
@@ -540,7 +540,7 @@ func CleanupCiliumConnectivityTestResources(ctx context.Context, t *testing.T, g
 			Name: ciliumTestNamespace,
 		},
 	}
-	if _, err := hyperutil.DeleteIfNeeded(ctx, guestClient, ns); err != nil {
+	if _, err := k8sutil.DeleteIfNeeded(ctx, guestClient, ns); err != nil {
 		t.Logf("Warning: failed to delete namespace: %v", err)
 	}
 

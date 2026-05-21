@@ -6,7 +6,7 @@ import (
 
 	"github.com/openshift/hypershift/support/api"
 	component "github.com/openshift/hypershift/support/controlplane-component"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/podspec"
 
 	configv1 "github.com/openshift/api/config/v1"
 
@@ -36,7 +36,7 @@ func adaptJob(cpContext component.WorkloadContext, job *batchv1.Job) error {
 	}
 	featureGateYaml := featureGateBuffer.String()
 
-	util.UpdateContainer("render-feature-gates", job.Spec.Template.Spec.InitContainers, func(c *corev1.Container) {
+	podspec.UpdateContainer("render-feature-gates", job.Spec.Template.Spec.InitContainers, func(c *corev1.Container) {
 		c.Env = append(c.Env,
 			corev1.EnvVar{
 				Name:  "PAYLOAD_VERSION",
@@ -48,7 +48,7 @@ func adaptJob(cpContext component.WorkloadContext, job *batchv1.Job) error {
 			},
 		)
 	})
-	util.UpdateContainer("apply", job.Spec.Template.Spec.Containers, func(c *corev1.Container) {
+	podspec.UpdateContainer("apply", job.Spec.Template.Spec.Containers, func(c *corev1.Container) {
 		c.Env = append(c.Env,
 			corev1.EnvVar{
 				Name:  "PAYLOAD_VERSION",

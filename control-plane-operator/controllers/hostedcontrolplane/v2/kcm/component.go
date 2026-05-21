@@ -2,7 +2,7 @@ package kcm
 
 import (
 	component "github.com/openshift/hypershift/support/controlplane-component"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/podspec"
 )
 
 const (
@@ -33,7 +33,7 @@ func NewComponent() component.ControlPlaneComponent {
 			"servicemonitor.yaml",
 			component.WithAdaptFunction(adaptServiceMonitor),
 		).
-		InjectAvailabilityProberContainer(util.AvailabilityProberOpts{}).
+		InjectAvailabilityProberContainer(podspec.AvailabilityProberOpts{}).
 		Build()
 }
 

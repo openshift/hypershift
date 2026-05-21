@@ -48,6 +48,11 @@ type CreateOptions struct {
 	UseOwnerReferences bool
 	SkipImmediately    bool
 
+	// Etcd snapshot mode flag (common to backup, restore, schedule).
+	// When true, etcd is backed up via HCPEtcdBackup CRD snapshots
+	// instead of PV volume snapshots, producing lighter manifests.
+	UseEtcdSnapshot bool
+
 	// Client context (common)
 	Log    logr.Logger
 	Client client.Client
@@ -103,5 +108,29 @@ var (
 		"csinodes.storage.k8s.io",
 		"volumeattachments.storage.k8s.io",
 		"backuprepositories.velero.io",
+	}
+
+	// Base resources for etcd snapshot mode: same as baseResources but without PV-related
+	// resources (persistentvolumeclaims, persistentvolumes) and workload controllers
+	// (deployments, statefulsets) since etcd is backed up via CRD snapshots. Adds namespaces.
+	baseResourcesEtcdSnapshot = []string{
+		"serviceaccounts", "roles", "rolebindings", "pods", "configmaps",
+		"priorityclasses", "poddisruptionbudgets",
+		"hostedclusters.hypershift.openshift.io", "nodepools.hypershift.openshift.io",
+		"secrets", "services",
+		"hostedcontrolplanes.hypershift.openshift.io", "clusters.cluster.x-k8s.io",
+		"machinedeployments.cluster.x-k8s.io", "machinesets.cluster.x-k8s.io", "machines.cluster.x-k8s.io",
+		"routes.route.openshift.io", "clusterdeployments.hive.openshift.io",
+		"namespaces",
+	}
+
+	// Excluded resources for restore in etcd snapshot mode
+	excludedResourcesEtcdSnapshot = []string{
+		"nodes",
+		"events",
+		"events.events.k8s.io",
+		"backups.velero.io",
+		"restores.velero.io",
+		"resticrepositories.velero.io",
 	}
 )

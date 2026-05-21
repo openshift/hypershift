@@ -65,6 +65,11 @@ func TestGetKubeVersionForSupportedVersion(t *testing.T) {
 			expectedKubeVer: "1.34.0",
 		},
 		{
+			name:            "When OCP 5.0 is provided, it should normalize to 4.23 and return Kubernetes 1.36",
+			ocpVersion:      "5.0.0",
+			expectedKubeVer: "1.36.0",
+		},
+		{
 			name:       "When an unmapped OCP version is provided it should return an error",
 			ocpVersion: "4.99.0",
 			expectErr:  true,
@@ -99,6 +104,7 @@ func TestIsValidReleaseVersion(t *testing.T) {
 		minVersionSupported    *semver.Version
 		networkType            hyperv1.NetworkType
 		expectError            bool
+		expectedMessage        string
 		platform               hyperv1.PlatformType
 	}{
 		{
@@ -120,6 +126,7 @@ func TestIsValidReleaseVersion(t *testing.T) {
 			latestVersionSupported: v("4.22.0"),
 			minVersionSupported:    v("4.14.0"),
 			expectError:            true,
+			expectedMessage:        "\"4.22\"",
 			platform:               hyperv1.NonePlatform,
 		},
 		{
@@ -157,6 +164,7 @@ func TestIsValidReleaseVersion(t *testing.T) {
 			latestVersionSupported: v("4.12.0"),
 			minVersionSupported:    v("4.10.0"),
 			expectError:            true,
+			expectedMessage:        "\"4.10\"",
 			platform:               hyperv1.NonePlatform,
 		},
 		{
@@ -236,6 +244,51 @@ func TestIsValidReleaseVersion(t *testing.T) {
 			expectError:            false,
 			platform:               hyperv1.PowerVSPlatform,
 		},
+		{
+			name:                   "When version is 5.0 (equivalent to 4.23), it should be valid",
+			currentVersion:         v("4.22.0"),
+			nextVersion:            v("5.0.0"),
+			latestVersionSupported: v("5.0.0"),
+			minVersionSupported:    v("4.14.0"),
+			expectError:            false,
+			platform:               hyperv1.AWSPlatform,
+		},
+		{
+			name:                   "When version is 4.23 (equivalent to 5.0), it should be valid",
+			currentVersion:         v("4.22.0"),
+			nextVersion:            v("4.23.0"),
+			latestVersionSupported: v("5.0.0"),
+			minVersionSupported:    v("4.14.0"),
+			expectError:            false,
+			platform:               hyperv1.AWSPlatform,
+		},
+		{
+			name:                   "When version is 5.0 with pre-release tag, it should be valid",
+			currentVersion:         v("4.22.0"),
+			nextVersion:            v("5.0.0-nightly-something"),
+			latestVersionSupported: v("5.0.0"),
+			minVersionSupported:    v("4.14.0"),
+			expectError:            false,
+			platform:               hyperv1.AWSPlatform,
+		},
+		{
+			name:                   "When maxSupportedVersion is clamped below LatestSupportedVersion, it should reject higher versions",
+			currentVersion:         v("4.18.0"),
+			nextVersion:            v("4.20.0"),
+			latestVersionSupported: v("4.19.0"),
+			minVersionSupported:    v("4.14.0"),
+			expectError:            true,
+			platform:               hyperv1.AWSPlatform,
+		},
+		{
+			name:                   "When version has unsupported major 6, it should return error",
+			currentVersion:         nil,
+			nextVersion:            v("6.0.0"),
+			latestVersionSupported: v("5.0.0"),
+			minVersionSupported:    v("4.14.0"),
+			expectError:            true,
+			platform:               hyperv1.AWSPlatform,
+		},
 	}
 
 	for _, test := range testCases {
@@ -244,6 +297,9 @@ func TestIsValidReleaseVersion(t *testing.T) {
 			err := IsValidReleaseVersion(test.nextVersion, test.currentVersion, test.latestVersionSupported, test.minVersionSupported, test.networkType, test.platform)
 			if test.expectError {
 				g.Expect(err).To(HaveOccurred())
+				if test.expectedMessage != "" {
+					g.Expect(err.Error()).To(ContainSubstring(test.expectedMessage))
+				}
 				return
 			}
 			g.Expect(err).ToNot(HaveOccurred())
@@ -421,7 +477,191 @@ func TestGetSupportedOCPVersions(t *testing.T) {
 	}
 }
 
+func TestNormalizeToV4(t *testing.T) {
+	t.Parallel()
+	testCases := []struct {
+		name      string
+		input     string
+		expected  string
+		expectErr bool
+	}{
+		{
+			name:     "When version is 4.x, it should be returned unchanged",
+			input:    "4.22.0",
+			expected: "4.22.0",
+		},
+		{
+			name:     "When version is 5.0, it should normalize to 4.23",
+			input:    "5.0.0",
+			expected: "4.23.0",
+		},
+		{
+			name:     "When version is 5.1, it should normalize to 4.24",
+			input:    "5.1.0",
+			expected: "4.24.0",
+		},
+		{
+			name:     "When version has patch level, it should be preserved",
+			input:    "5.0.7",
+			expected: "4.23.7",
+		},
+		{
+			name:     "When version has pre-release metadata, it should be preserved",
+			input:    "5.0.0-nightly",
+			expected: "4.23.0-nightly",
+		},
+		{
+			name:     "When version is 4.14, it should be returned unchanged",
+			input:    "4.14.0",
+			expected: "4.14.0",
+		},
+		{
+			name:      "When version has unsupported major 6, it should return error",
+			input:     "6.0.0",
+			expectErr: true,
+		},
+		{
+			name:      "When version has unsupported major 3, it should return error",
+			input:     "3.11.0",
+			expectErr: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+			input := semver.MustParse(tc.input)
+			result, err := normalizeToV4(input)
+			if tc.expectErr {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(result.String()).To(Equal(tc.expected))
+			}
+		})
+	}
+}
+
+func TestDenormalizeFromV4(t *testing.T) {
+	t.Parallel()
+	testCases := []struct {
+		name          string
+		minor         uint64
+		expectedMajor uint64
+		expectedMinor uint64
+	}{
+		{
+			name:          "When minor is 0, it should return 4.0",
+			minor:         0,
+			expectedMajor: 4,
+			expectedMinor: 0,
+		},
+		{
+			name:          "When minor is 22, it should return 4.22",
+			minor:         22,
+			expectedMajor: 4,
+			expectedMinor: 22,
+		},
+		{
+			name:          "When minor is 23, it should return 5.0",
+			minor:         23,
+			expectedMajor: 5,
+			expectedMinor: 0,
+		},
+		{
+			name:          "When minor is 24, it should return 5.1",
+			minor:         24,
+			expectedMajor: 5,
+			expectedMinor: 1,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+			major, minor := denormalizeFromV4(tc.minor)
+			g.Expect(major).To(Equal(tc.expectedMajor))
+			g.Expect(minor).To(Equal(tc.expectedMinor))
+		})
+	}
+}
+
+func TestPreviousMinorVersion(t *testing.T) {
+	t.Parallel()
+	testCases := []struct {
+		name          string
+		version       semver.Version
+		n             uint64
+		expectedMajor uint64
+		expectedMinor uint64
+		expectError   bool
+		errSubstr     string
+	}{
+		{
+			name:          "When subtracting within 4.x, it should return the correct 4.x version",
+			version:       semver.MustParse("4.20.0"),
+			n:             2,
+			expectedMajor: 4,
+			expectedMinor: 18,
+		},
+		{
+			name:          "When crossing the 5.x to 4.x bridge, it should denormalize correctly",
+			version:       semver.MustParse("5.0.0"),
+			n:             2,
+			expectedMajor: 4,
+			expectedMinor: 21,
+		},
+		{
+			name:          "When staying within 5.x, it should return the correct 5.x version",
+			version:       semver.MustParse("5.2.0"),
+			n:             1,
+			expectedMajor: 5,
+			expectedMinor: 1,
+		},
+		{
+			name:          "When n is 0, it should return the same version",
+			version:       semver.MustParse("4.18.0"),
+			n:             0,
+			expectedMajor: 4,
+			expectedMinor: 18,
+		},
+		{
+			name:        "When n exceeds the normalized minor, it should return an underflow error",
+			version:     semver.MustParse("4.1.0"),
+			n:           5,
+			expectError: true,
+			errSubstr:   "cannot go back",
+		},
+		{
+			name:        "When major version is unsupported, it should return a normalization error",
+			version:     semver.MustParse("6.0.0"),
+			n:           1,
+			expectError: true,
+			errSubstr:   "unsupported major version",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+			major, minor, err := PreviousMinorVersion(tc.version, tc.n)
+			if tc.expectError {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring(tc.errSubstr))
+			} else {
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(major).To(Equal(tc.expectedMajor))
+				g.Expect(minor).To(Equal(tc.expectedMinor))
+			}
+		})
+	}
+}
+
 func TestValidateVersionSkew(t *testing.T) {
+	t.Parallel()
 	v := func(str string) *semver.Version {
 		result := semver.MustParse(str)
 		return &result
@@ -491,17 +731,93 @@ func TestValidateVersionSkew(t *testing.T) {
 			nodePoolVersion:      v("4.18.0"),
 			expectError:          false,
 		},
+		// Cross-major-version tests (5.0 == 4.23 dual versioning)
+		{
+			name:                 "When HC is 5.0 and NP is 4.22 (n-1 across major boundary), it should pass validation",
+			hostedClusterVersion: v("5.0.0"),
+			nodePoolVersion:      v("4.22.0"),
+			expectError:          false,
+		},
+		{
+			name:                 "When HC is 5.0 and NP is 4.21 (n-2 across major boundary), it should pass validation",
+			hostedClusterVersion: v("5.0.0"),
+			nodePoolVersion:      v("4.21.0"),
+			expectError:          false,
+		},
+		{
+			name:                 "When HC is 5.0 and NP is 4.20 (n-3 across major boundary), it should pass validation",
+			hostedClusterVersion: v("5.0.0"),
+			nodePoolVersion:      v("4.20.0"),
+			expectError:          false,
+		},
+		{
+			name:                 "When HC is 5.0 and NP is 4.19 (exceeds n-3 across major boundary), it should return error",
+			hostedClusterVersion: v("5.0.0"),
+			nodePoolVersion:      v("4.19.0"),
+			expectError:          true,
+			expectedErrSubstr:    "is less than 4.20, which is the minimum NodePool version compatible with the 5.0 HostedCluster",
+		},
+		{
+			name:                 "When HC is 5.0 and NP is 5.0 (same version), it should pass validation",
+			hostedClusterVersion: v("5.0.0"),
+			nodePoolVersion:      v("5.0.0"),
+			expectError:          false,
+		},
+		{
+			name:                 "When HC is 5.0 and NP is 4.23 (equivalent versions), it should pass validation",
+			hostedClusterVersion: v("5.0.0"),
+			nodePoolVersion:      v("4.23.0"),
+			expectError:          false,
+		},
+		{
+			name:                 "When HC is 4.23 and NP is 5.0 (equivalent versions), it should pass validation",
+			hostedClusterVersion: v("4.23.0"),
+			nodePoolVersion:      v("5.0.0"),
+			expectError:          false,
+		},
+		{
+			name:                 "When HC is 4.23 and NP is 4.22 (n-1 with 4.23), it should pass validation",
+			hostedClusterVersion: v("4.23.0"),
+			nodePoolVersion:      v("4.22.0"),
+			expectError:          false,
+		},
+		{
+			name:                 "When HC is 5.0 and NP is 5.1 (NP higher than HC), it should return error",
+			hostedClusterVersion: v("5.0.0"),
+			nodePoolVersion:      v("5.1.0"),
+			expectError:          true,
+			expectedErrSubstr:    "cannot be higher than the HostedCluster version",
+		},
+		{
+			name:                 "When HC is 5.1 and NP is 4.21 (n-3 boundary with 5.1), it should pass validation",
+			hostedClusterVersion: v("5.1.0"),
+			nodePoolVersion:      v("4.21.0"),
+			expectError:          false,
+		},
+		{
+			name:                 "When HC is 5.1 and NP is 4.20 (exceeds n-3 with 5.1), it should return error",
+			hostedClusterVersion: v("5.1.0"),
+			nodePoolVersion:      v("4.20.0"),
+			expectError:          true,
+			expectedErrSubstr:    "is less than 4.21, which is the minimum NodePool version compatible with the 5.1 HostedCluster",
+		},
+		{
+			name:                 "When HC is 5.0.3 and NP is 4.22.7 (patch-level across major boundary), it should pass validation",
+			hostedClusterVersion: v("5.0.3"),
+			nodePoolVersion:      v("4.22.7"),
+			expectError:          false,
+		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			g := NewGomegaWithT(t)
+			t.Parallel()
+			g := NewWithT(t)
 
 			err := ValidateVersionSkew(tc.hostedClusterVersion, tc.nodePoolVersion)
 
 			if tc.expectError {
-				g.Expect(err).To(HaveOccurred())
-				g.Expect(err.Error()).To(ContainSubstring(tc.expectedErrSubstr))
+				g.Expect(err).To(MatchError(ContainSubstring(tc.expectedErrSubstr)))
 			} else {
 				g.Expect(err).ToNot(HaveOccurred())
 			}

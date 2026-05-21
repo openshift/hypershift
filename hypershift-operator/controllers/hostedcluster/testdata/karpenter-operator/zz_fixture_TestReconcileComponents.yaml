@@ -70,6 +70,8 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: metadata.name
+        - name: KUBE_FEATURE_WatchListClient
+          value: "false"
         - name: AWS_SHARED_CREDENTIALS_FILE
           value: /etc/provider/credentials
         - name: AWS_REGION

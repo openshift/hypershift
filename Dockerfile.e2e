@@ -1,4 +1,5 @@
-FROM registry.ci.openshift.org/openshift/release:rhel-9-release-golang-1.25-openshift-4.22 AS builder
+FROM registry.ci.openshift.org/openshift/release:rhel-9-release-golang-1.25-openshift-4.23 AS builder
+ARG COMMIT_HASH
 
 WORKDIR /hypershift
 
@@ -8,7 +9,7 @@ RUN make e2e hypershift
 
 # Reuse the same image as builder because we need go command in ci-test-e2e.sh
 # Multi-stage build lets us drop the source code and build cache from the final image
-FROM registry.ci.openshift.org/openshift/release:rhel-9-release-golang-1.25-openshift-4.22
+FROM registry.ci.openshift.org/openshift/release:rhel-9-release-golang-1.25-openshift-4.23
 
 WORKDIR /hypershift
 

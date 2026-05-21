@@ -8,6 +8,7 @@ ignore:
   - "hack/**"
   - "client/**"
   - "vendor/**"
+  - "support/thirdparty/**"
   - "docs/**"
   - "Makefile"
   - ".*/**"
@@ -19,6 +20,8 @@ ignore:
   # Generated mock files
   - "**/*_mock.go"
   - "**/*mock*.go"
+  # Test fakes and helpers
+  - "**/fake*/*.go"
   # Files containing only types, structs, or constants (no executable code)
   - "control-plane-operator/controllers/hostedcontrolplane/cloud/azure/providerconfig.go"
   - "control-plane-operator/controllers/hostedcontrolplane/ocm/config.go"
@@ -27,7 +30,6 @@ ignore:
   - "control-plane-operator/metrics-proxy/types.go"
   - "support/config/constants.go"
   - "support/config/types.go"
-  - "support/thirdparty/library-go/pkg/image/dockerv1client/types.go"
   - "support/awsapi/*.go"
   - "support/azureutil/constants.go"
   - "support/api/capi_types.go"

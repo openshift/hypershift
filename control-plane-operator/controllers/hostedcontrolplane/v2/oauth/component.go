@@ -3,6 +3,7 @@ package oauth
 import (
 	oapiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oapi"
 	component "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/util"
 
 	"k8s.io/utils/ptr"
@@ -78,7 +79,7 @@ func NewComponent() component.ControlPlaneComponent {
 				ConnectDirectlyToCloudAPIs: ptr.To(true),
 			},
 		}).
-		InjectAvailabilityProberContainer(util.AvailabilityProberOpts{}).
+		InjectAvailabilityProberContainer(podspec.AvailabilityProberOpts{}).
 		Build()
 }
 

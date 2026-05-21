@@ -10,7 +10,8 @@ import (
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/events"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/k8sutil"
+	"github.com/openshift/hypershift/support/netutil"
 
 	routev1 "github.com/openshift/api/route/v1"
 
@@ -20,6 +21,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
+const AWSNLBAnnotation = "service.beta.kubernetes.io/aws-load-balancer-type"
+
 func kasLabels() map[string]string {
 	return map[string]string{
 		"app":                              "kube-apiserver",
@@ -28,9 +31,9 @@ func kasLabels() map[string]string {
 }
 
 func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingStrategy, owner *metav1.OwnerReference, apiServerServicePort int, apiAllowedCIDRBlocks []string, hcp *hyperv1.HostedControlPlane) error {
-	isPublic := util.IsPublicHCP(hcp)
-	isPrivate := util.IsPrivateHCP(hcp)
-	util.EnsureOwnerRef(svc, owner)
+	isPublic := netutil.IsPublicHCP(hcp)
+	isPrivate := netutil.IsPrivateHCP(hcp)
+	k8sutil.EnsureOwnerRef(svc, owner)
 	if svc.Spec.Selector == nil {
 		svc.Spec.Selector = kasLabels()
 	}
@@ -61,13 +64,18 @@ func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingSt
 	if svc.Annotations == nil {
 		svc.Annotations = map[string]string{}
 	}
-	if hcp.Spec.Platform.Type == hyperv1.AWSPlatform {
-		svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-type"] = "nlb"
-	}
+
+	// Remove stale AWS NLB annotation before reconciling.
+	// It will be re-added only when the service is actually a LoadBalancer.
+	delete(svc.Annotations, AWSNLBAnnotation)
+
 	switch strategy.Type {
 	case hyperv1.LoadBalancer:
 		if isPublic {
 			svc.Spec.Type = corev1.ServiceTypeLoadBalancer
+			if hcp.Spec.Platform.Type == hyperv1.AWSPlatform {
+				svc.Annotations[AWSNLBAnnotation] = "nlb"
+			}
 			if strategy.LoadBalancer != nil && strategy.LoadBalancer.Hostname != "" {
 				svc.Annotations[hyperv1.ExternalDNSHostnameAnnotation] = strategy.LoadBalancer.Hostname
 			}
@@ -80,7 +88,10 @@ func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingSt
 				// To ensure that requirement is satisfied in Regions with more than 3 zones, managed services create subnets in all of them.
 				// That and having this enabled in the load balancers would make the private link communication to always succeed.
 				// Without this the connection might go to a subnet without Node and so it would be rejected.
+				// In-tree AWS cloud provider annotation for cross-zone load balancing (OpenShift management clusters).
 				svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled"] = "true"
+				// AWS Load Balancer Controller annotation for cross-zone load balancing (EKS Auto Mode).
+				svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-attributes"] = "load_balancing.cross_zone.enabled=true"
 			}
 		} else {
 			svc.Spec.Type = corev1.ServiceTypeClusterIP
@@ -103,7 +114,7 @@ func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingSt
 }
 
 func ReconcileServiceClusterIP(svc *corev1.Service, owner *metav1.OwnerReference) error {
-	util.EnsureOwnerRef(svc, owner)
+	k8sutil.EnsureOwnerRef(svc, owner)
 	if svc.Spec.Selector == nil {
 		svc.Spec.Selector = kasLabels()
 	}
@@ -137,7 +148,7 @@ func ReconcileServiceClusterIP(svc *corev1.Service, owner *metav1.OwnerReference
 func ReconcileServiceStatus(svc *corev1.Service, strategy *hyperv1.ServicePublishingStrategy, apiServerPort int, messageCollector events.MessageCollector) (host string, port int32, message string, err error) {
 	switch strategy.Type {
 	case hyperv1.LoadBalancer:
-		if message, err := util.CollectLBMessageIfNotProvisioned(svc, messageCollector); err != nil || message != "" {
+		if message, err := k8sutil.CollectLBMessageIfNotProvisioned(svc, messageCollector); err != nil || message != "" {
 			return host, port, message, err
 		}
 		port = int32(apiServerPort)
@@ -163,7 +174,7 @@ func ReconcileServiceStatus(svc *corev1.Service, strategy *hyperv1.ServicePublis
 		port = svc.Spec.Ports[0].NodePort
 		host = strategy.NodePort.Address
 	case hyperv1.Route:
-		if message, err := util.CollectLBMessageIfNotProvisioned(svc, messageCollector); err != nil || message != "" {
+		if message, err := k8sutil.CollectLBMessageIfNotProvisioned(svc, messageCollector); err != nil || message != "" {
 			return host, port, message, err
 		}
 		host = strategy.Route.Hostname
@@ -173,7 +184,7 @@ func ReconcileServiceStatus(svc *corev1.Service, strategy *hyperv1.ServicePublis
 }
 
 func ReconcilePrivateService(svc *corev1.Service, hcp *hyperv1.HostedControlPlane, owner *metav1.OwnerReference) error {
-	util.EnsureOwnerRef(svc, owner)
+	k8sutil.EnsureOwnerRef(svc, owner)
 	svc.Spec.Selector = kasLabels()
 
 	// Setting this to PreferDualStack will make the service to be created with IPv4 and IPv6 addresses if the management cluster is dual stack.
@@ -208,9 +219,12 @@ func ReconcilePrivateService(svc *corev1.Service, hcp *hyperv1.HostedControlPlan
 	case hyperv1.AzurePlatform:
 		svc.Annotations[azureutil.InternalLoadBalancerAnnotation] = azureutil.InternalLoadBalancerValue
 	default:
+		// In-tree AWS cloud provider annotation for cross-zone load balancing (OpenShift management clusters).
 		svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled"] = "true"
+		// AWS Load Balancer Controller annotation for cross-zone load balancing (EKS Auto Mode).
+		svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-attributes"] = "load_balancing.cross_zone.enabled=true"
 		svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-internal"] = "true"
-		svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-type"] = "nlb"
+		svc.Annotations[AWSNLBAnnotation] = "nlb"
 	}
 	svc.Spec.Ports[0] = portSpec
 	return nil
@@ -228,7 +242,7 @@ func ReconcileExternalPrivateRoute(route *routev1.Route, owner *metav1.OwnerRefe
 		route.Labels = map[string]string{}
 	}
 	route.Labels[hyperv1.RouteVisibilityLabel] = hyperv1.RouteVisibilityPrivate
-	util.AddInternalRouteLabel(route)
+	netutil.AddInternalRouteLabel(route)
 	return nil
 }
 
@@ -236,8 +250,8 @@ func reconcileExternalRoute(route *routev1.Route, owner *metav1.OwnerReference, 
 	if hostname == "" {
 		return fmt.Errorf("route hostname is required for service APIServer")
 	}
-	util.EnsureOwnerRef(route, owner)
-	util.AddHCPRouteLabel(route)
+	k8sutil.EnsureOwnerRef(route, owner)
+	netutil.AddHCPRouteLabel(route)
 	route.Spec.Host = hostname
 	route.Spec.To = routev1.RouteTargetReference{
 		Kind: "Service",
@@ -253,10 +267,10 @@ func reconcileExternalRoute(route *routev1.Route, owner *metav1.OwnerReference, 
 }
 
 func ReconcileInternalRoute(route *routev1.Route, owner *metav1.OwnerReference) error {
-	util.EnsureOwnerRef(route, owner)
+	k8sutil.EnsureOwnerRef(route, owner)
 	route.Spec.Host = fmt.Sprintf("api.%s.hypershift.local", owner.Name)
 	// Assumes owner is the HCP
-	return util.ReconcileInternalRoute(route, "", manifests.KubeAPIServerService("").Name)
+	return netutil.ReconcileInternalRoute(route, "", manifests.KubeAPIServerService("").Name)
 }
 
 func ReconcileKonnectivityServerLocalService(svc *corev1.Service, ownerRef config.OwnerRef) error {
@@ -315,7 +329,7 @@ func ReconcileKonnectivityServerService(svc *corev1.Service, ownerRef config.Own
 
 func ReconcileKonnectivityExternalRoute(route *routev1.Route, ownerRef config.OwnerRef, hostname string, defaultIngressDomain string, labelHCPRoutes bool) error {
 	ownerRef.ApplyTo(route)
-	if err := util.ReconcileExternalRoute(route, hostname, defaultIngressDomain, manifests.KonnectivityServerService(route.Namespace).Name, labelHCPRoutes); err != nil {
+	if err := netutil.ReconcileExternalRoute(route, hostname, defaultIngressDomain, manifests.KonnectivityServerService(route.Namespace).Name, labelHCPRoutes); err != nil {
 		return err
 	}
 	if route.Annotations == nil {
@@ -328,7 +342,7 @@ func ReconcileKonnectivityExternalRoute(route *routev1.Route, ownerRef config.Ow
 func ReconcileKonnectivityInternalRoute(route *routev1.Route, ownerRef config.OwnerRef) error {
 	ownerRef.ApplyTo(route)
 	// Assumes ownerRef is the HCP
-	if err := util.ReconcileInternalRoute(route, ownerRef.Reference.Name, manifests.KonnectivityServerService(route.Namespace).Name); err != nil {
+	if err := netutil.ReconcileInternalRoute(route, ownerRef.Reference.Name, manifests.KonnectivityServerService(route.Namespace).Name); err != nil {
 		return err
 	}
 	if route.Annotations == nil {
