@@ -123,7 +123,7 @@ func TestReconcile(t *testing.T) {
 		}
 
 		// Make the temporary directory read-only to simulate a permissions error
-		g.Expect(os.Chmod(tempDir, 0555)).To(Succeed()) // r-x r-x r-x
+		g.Expect(os.Chmod(tempDir, 0555)).To(Succeed()) //nolint:dupword // r-x r-x r-x describes permission bits
 		// Ensure we restore permissions so the deferred os.RemoveAll can work
 		defer func() {
 			g.Expect(os.Chmod(tempDir, 0755)).To(Succeed())
