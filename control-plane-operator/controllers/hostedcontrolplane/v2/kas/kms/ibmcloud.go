@@ -42,6 +42,13 @@ const (
 	ibmCloudKMSHealthPort         = 8081
 )
 
+// IBMCloudKMSProviderName returns the fixed EncryptionConfiguration KMS provider
+// name used for IBM Cloud. Unlike AWS/Azure, IBM Cloud always uses a single
+// provider with all key versions bundled into the sidecar.
+func IBMCloudKMSProviderName() string {
+	return fmt.Sprintf("%s%s", ibmKeyNamePrefix, "v2")
+}
+
 var _ KMSProvider = &ibmCloudKMSProvider{}
 
 type ibmCloudKMSProvider struct {
@@ -65,7 +72,7 @@ func (p *ibmCloudKMSProvider) GenerateKMSEncryptionConfig(_ string) (*v1.Encrypt
 		{
 			KMS: &v1.KMSConfiguration{
 				APIVersion: "v2",
-				Name:       fmt.Sprintf("%s%s", ibmKeyNamePrefix, "v2"),
+				Name:       IBMCloudKMSProviderName(),
 				Endpoint:   ibmCloudKMSUnixSocket,
 				Timeout:    &metav1.Duration{Duration: 35 * time.Second},
 			},
@@ -299,7 +306,6 @@ func (p *ibmCloudKMSProvider) GenerateKMSPodConfig() (*KMSPodConfig, error) {
 
 	podConfig.KASContainerMutate = func(c *corev1.Container) {
 		c.VolumeMounts = append(c.VolumeMounts, ibmCloudKMSVolumeMounts.ContainerMounts(KasMainContainerName)...)
-		c.Args = append(c.Args, "--encryption-provider-config-automatic-reload=false")
 	}
 
 	return podConfig, nil
