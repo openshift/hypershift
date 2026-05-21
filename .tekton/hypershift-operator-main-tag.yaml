@@ -185,6 +185,8 @@ spec:
         value: $(params.output-image).prefetch
       - name: ociArtifactExpiresAfter
         value: $(params.image-expires-after)
+      - name: enable-package-registry-proxy
+        value: "true"
       runAfter:
       - clone-repository
       taskRef:
