@@ -363,4 +363,170 @@ func TestExternalOIDC(t *testing.T) {
 			})
 		}
 	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "external-oidc", globalOpts.ServiceAccountSigningKey)
+
+	// experiment: see if we can pass custom auth config to test here
+	customClusterOpts := clusterOpts
+	config := customClusterOpts.ExtOIDCConfig
+	customClusterOpts.ExtOIDCConfig.CustomAuthSpec = &configv1.AuthenticationSpec{
+		Type: configv1.AuthenticationTypeOIDC,
+		OIDCProviders: []configv1.OIDCProvider{
+			{
+				Name: config.OIDCProviderName,
+				Issuer: configv1.TokenIssuer{
+					Audiences: []configv1.TokenAudience{
+						configv1.TokenAudience(config.CliClientID),
+						configv1.TokenAudience(config.ConsoleClientID),
+					},
+					URL: config.IssuerURL,
+					CertificateAuthority: configv1.ConfigMapNameReference{
+						Name: config.IssuerCAConfigmapName,
+					},
+				},
+				OIDCClients: []configv1.OIDCClientConfig{
+					{
+						ClientID:           config.CliClientID,
+						ComponentName:      "cli",
+						ComponentNamespace: "openshift-console",
+						ExtraScopes:        []string{"email"},
+					},
+					{
+						ClientID: config.ConsoleClientID,
+						ClientSecret: configv1.SecretNameReference{
+							Name: config.ConsoleClientSecretName,
+						},
+						ComponentName:      "console",
+						ComponentNamespace: "openshift-console",
+						ExtraScopes:        []string{"email"},
+					},
+				},
+				ClaimMappings: configv1.TokenClaimMappings{
+					UID: &configv1.TokenClaimOrExpressionMapping{
+						Claim: "sub",
+					},
+					Username: configv1.UsernameClaimMapping{
+						Expression: "claims.email.split('@')[0]",
+					},
+					Groups: configv1.PrefixedClaimMapping{
+						TokenClaimMapping: configv1.TokenClaimMapping{
+							Expression: "claims.?groups.orValue([])",
+						},
+					},
+					Extra: []configv1.ExtraMapping{
+						{
+							Key:             "extratest.openshift.com/foo",
+							ValueExpression: "claims.email",
+						},
+					},
+				},
+				ClaimValidationRules: []configv1.TokenClaimValidationRule{
+					{
+						Type: configv1.TokenValidationRuleTypeCEL,
+						CEL: configv1.TokenClaimValidationCELRule{
+							Expression: "has(claims.email) && claims.email != ''",
+							Message:    "email claim must be present and non-empty",
+						},
+					},
+					{
+						Type: configv1.TokenValidationRuleTypeCEL,
+						CEL: configv1.TokenClaimValidationCELRule{
+							Expression: "claims.email_verified == true",
+							Message:    "email_verified claim must be true",
+						},
+					},
+				},
+				UserValidationRules: []configv1.TokenUserValidationRule{
+					{
+						Expression: "!user.username.startsWith('system:')",
+						Message:    "username cannot use reserved system: prefix",
+					},
+					{
+						Expression: "!user.username.contains('forbidden')",
+						Message:    "username cannot contain the word 'forbidden'",
+					},
+				},
+			},
+		},
+	}
+	// currently is still under feature gate - having the tests
+	// run like this mean easy removal of feature gate check
+	// when they graduate to default feature set.
+	if featuregates.Gate().Enabled(featuregates.ExternalOIDCWithUpstreamParity) {
+		e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+			g.Expect(hostedCluster.Spec.Configuration).NotTo(BeNil())
+			g.Expect(hostedCluster.Spec.Configuration.Authentication).NotTo(BeNil())
+			g.Expect(hostedCluster.Spec.Configuration.Authentication.OIDCProviders).NotTo(BeEmpty())
+			clientCfg := e2eutil.WaitForGuestRestConfig(t, ctx, mgtClient, hostedCluster)
+			authKubeConfig := e2eutil.ChangeUserForKeycloakExtOIDC(t, ctx, clientCfg, clusterOpts.ExtOIDCConfig)
+			authClient, err := kauthnv1typedclient.NewForConfig(authKubeConfig)
+			g.Expect(err).NotTo(HaveOccurred())
+			selfSubjectReview, err := authClient.SelfSubjectReviews().Create(ctx, &kauthnv1.SelfSubjectReview{}, metav1.CreateOptions{})
+			g.Expect(err).NotTo(HaveOccurred())
+			t.Logf("selfSubjectReview %+v", selfSubjectReview)
+
+			// Setup Keycloak admin client
+			kc, err := e2eutil.SetupKeycloakAdminClientFromCluster(ctx, t, mgtClient, clusterOpts.ExtOIDCConfig)
+			if err != nil {
+				t.Skipf("Could not setup Keycloak admin client: %v", err)
+			}
+			t.Run("[OCPFeatureGate:ExternalOIDCWithUpstreamParity] Test user validation rules 1", func(t *testing.T) {
+				g := NewWithT(t)
+				t.Logf("begin to test user validation rules")
+
+				// Setup: Create test resources with automatic cleanup
+				testResources, err := e2eutil.NewTestResources(ctx, kc, clusterOpts.ExtOIDCConfig)
+				g.Expect(err).NotTo(HaveOccurred())
+				defer testResources.Cleanup(ctx, t)
+
+				// Verify: User validation rules are configured
+				g.Expect(hostedCluster.Spec.Configuration.Authentication.OIDCProviders[0].UserValidationRules).NotTo(BeEmpty())
+				userRules := hostedCluster.Spec.Configuration.Authentication.OIDCProviders[0].UserValidationRules
+				g.Expect(userRules).Should(HaveLen(2), "should have two user validation rules")
+
+				// Verify: Rules use expected CEL expressions
+				expressions := []string{userRules[0].Expression, userRules[1].Expression}
+				g.Expect(expressions).Should(ContainElement(e2eutil.UserValidationExprNoSystemPrefix))
+				g.Expect(expressions).Should(ContainElement(e2eutil.UserValidationExprNoForbiddenWord))
+				t.Logf("User validation rules configured: %v", expressions)
+
+				// Test 1: Valid user - passes all validation rules
+				// Should PASS validation and authenticate successfully
+				t.Logf("Test 1: Creating user with valid username (no system: prefix, no 'forbidden' word)")
+				validUser, err := testResources.SetupAuthenticatedUserWithGroup(ctx, t, "user-valid", "user-valid-group", clientCfg, clusterOpts.ExtOIDCConfig)
+				g.Expect(err).NotTo(HaveOccurred(), "authentication must succeed when all validation rules pass")
+
+				// Username is derived from email via CEL: claims.email.split('@')[0]
+				expectedUsername := strings.Split(validUser.Email, "@")[0]
+				g.Expect(validUser.SelfSubjectReview.Status.UserInfo.Username).Should(Equal(expectedUsername))
+				g.Expect(validUser.SelfSubjectReview.Status.UserInfo.Username).NotTo(HavePrefix("system:"))
+				g.Expect(validUser.SelfSubjectReview.Status.UserInfo.Username).NotTo(ContainSubstring("forbidden"))
+				t.Logf("✓ User with username='%s' authenticated successfully", validUser.SelfSubjectReview.Status.UserInfo.Username)
+
+				// Test 2: Invalid user - username contains "forbidden"
+				// Demonstrates the testable user validation rule: !user.username.contains('forbidden')
+				t.Logf("Test 2: Creating user with 'forbidden' in username (violates user validation rule)")
+				forbiddenUsername := "user-forbidden-" + e2eutil.GenerateRandomPassword(8)
+				forbiddenEmail := forbiddenUsername + "@test.example.com"
+				forbiddenPassword := e2eutil.GenerateRandomPassword(16)
+				forbiddenUserID, err := testResources.CreateTestUser(ctx, t, forbiddenUsername, forbiddenEmail, forbiddenPassword)
+				g.Expect(err).NotTo(HaveOccurred(), "creating user in Keycloak should succeed")
+				t.Logf("Created user with email='%s', mapped username will be '%s' (ID: %s)", forbiddenEmail, forbiddenUsername, forbiddenUserID)
+
+				// Try to authenticate - should FAIL due to user validation rule
+				err = testResources.TryAuthenticateUser(ctx, t, forbiddenUsername, forbiddenPassword, clientCfg, clusterOpts.ExtOIDCConfig)
+				g.Expect(err).To(HaveOccurred(), "authentication must fail when username contains 'forbidden'")
+				g.Expect(err.Error()).Should(ContainSubstring("Unauthorized"),
+					"forbidden user cannot authenticate as it violates user validation rule")
+				t.Logf("✓ User with 'forbidden' in username correctly rejected with error: %v", err)
+
+				// NOTE: We cannot test the negative case for the system: prefix rule via Keycloak
+				// because RFC 5322 email addresses do not allow colons in the local part.
+				// Since username = claims.email.split('@')[0], we would need an email like
+				// "system:admin@test.example.com", which is invalid per email standards.
+				// The system: prefix rule should be tested via unit tests or envtest where claims can be mocked.
+
+				t.Logf("User validation rules successfully validated: users with 'forbidden' in username are rejected")
+			})
+		}).Execute(&customClusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "ext-oidc-usr-rules", globalOpts.ServiceAccountSigningKey)
+	}
+
 }
