@@ -463,10 +463,11 @@ func TestCertificateRevocationController_processCertificateRevocationRequest(t *
 			},
 		},
 		{
-			name:         "not yet propagated, nothing to do",
-			now:          postRevocationClock.Now,
-			crrNamespace: "crr-ns",
-			crrName:      "crr-name",
+			name:            "not yet propagated, nothing to do",
+			now:             postRevocationClock.Now,
+			crrNamespace:    "crr-ns",
+			crrName:         "crr-name",
+			expectedRequeue: true, // New cert not yet in total bundle, requeue to wait for TargetConfigController
 			crr: &certificatesv1alpha1.CertificateRevocationRequest{
 				ObjectMeta: metav1.ObjectMeta{Namespace: "crr-ns", Name: "crr-name"},
 				Spec:       certificatesv1alpha1.CertificateRevocationRequestSpec{SignerClass: string(certificates.CustomerBreakGlassSigner)},
@@ -847,10 +848,11 @@ func TestCertificateRevocationController_processCertificateRevocationRequest(t *
 			},
 		},
 		{
-			name:         "validating, previous still valid",
-			now:          postRevocationClock.Now,
-			crrNamespace: "crr-ns",
-			crrName:      "crr-name",
+			name:            "validating, previous still valid",
+			now:             postRevocationClock.Now,
+			crrNamespace:    "crr-ns",
+			crrName:         "crr-name",
+			expectedRequeue: true, // Old cert still in total bundle, requeue to wait for TargetConfigController
 			crr: &certificatesv1alpha1.CertificateRevocationRequest{
 				ObjectMeta: metav1.ObjectMeta{Namespace: "crr-ns", Name: "crr-name"},
 				Spec:       certificatesv1alpha1.CertificateRevocationRequestSpec{SignerClass: string(certificates.CustomerBreakGlassSigner)},
@@ -1032,6 +1034,81 @@ func TestCertificateRevocationController_processCertificateRevocationRequest(t *
 					},
 				},
 			},
+		},
+		{
+			name:            "SRE signer: validating, previous still valid (requeue path)",
+			now:             postRevocationClock.Now,
+			crrNamespace:    "crr-ns",
+			crrName:         "crr-name-sre",
+			expectedRequeue: true, // Old cert still in total bundle for SRE signer, must requeue
+			crr: &certificatesv1alpha1.CertificateRevocationRequest{
+				ObjectMeta: metav1.ObjectMeta{Namespace: "crr-ns", Name: "crr-name-sre"},
+				Spec:       certificatesv1alpha1.CertificateRevocationRequestSpec{SignerClass: string(certificates.SREBreakGlassSigner)},
+				Status: certificatesv1alpha1.CertificateRevocationRequestStatus{
+					RevocationTimestamp: ptr.To(metav1.NewTime(revocationClock.Now())),
+					PreviousSigner:      &corev1.LocalObjectReference{Name: "1pfcydcz358pa1glirkmc72sdkf5zw21uam4jbnj03pw"},
+					Conditions: []metav1.Condition{{
+						Type:               certificatesv1alpha1.LeafCertificatesRegeneratedType,
+						Status:             metav1.ConditionTrue,
+						LastTransitionTime: metav1.NewTime(postRevocationClock.Now()),
+						Reason:             hypershiftv1beta1.AsExpectedReason,
+						Message:            `All leaf certificates are re-generated.`,
+					}, {
+						Type:               certificatesv1alpha1.RootCertificatesRegeneratedType,
+						Status:             metav1.ConditionTrue,
+						LastTransitionTime: metav1.NewTime(postRevocationClock.Now()),
+						Reason:             hypershiftv1beta1.AsExpectedReason,
+						Message:            `Signer certificate crr-ns/sre-system-admin-signer regenerated.`,
+					}, {
+						Type:               certificatesv1alpha1.NewCertificatesTrustedType,
+						Status:             metav1.ConditionTrue,
+						LastTransitionTime: metav1.NewTime(postRevocationClock.Now()),
+						Reason:             hypershiftv1beta1.AsExpectedReason,
+						Message:            `New signer certificate crr-ns/sre-system-admin-signer trusted.`,
+					}},
+				},
+			},
+			secrets: []*corev1.Secret{{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace:   "crr-ns",
+					Name:        manifests.SRESystemAdminSigner("").Name,
+					Annotations: map[string]string{certrotation.CertificateIssuer: "crr-ns_sre-break-glass-signer@1234"},
+				},
+				Data: map[string][]byte{
+					corev1.TLSCertKey:       data.future.raw.signerCert,
+					corev1.TLSPrivateKeyKey: data.future.raw.signerKey,
+				},
+			}, {
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "crr-ns",
+					Name:      "1pfcydcz358pa1glirkmc72sdkf5zw21uam4jbnj03pw",
+				},
+				Data: map[string][]byte{
+					corev1.TLSCertKey:       data.original.raw.signerCert,
+					corev1.TLSPrivateKeyKey: data.original.raw.signerKey,
+				},
+			}, {
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace:   "crr-ns",
+					Name:        manifests.SRESystemAdminClientCertSecret("").Name,
+					Annotations: map[string]string{certrotation.CertificateIssuer: "crr-ns_sre-break-glass-signer@1234"},
+				},
+				Data: map[string][]byte{
+					corev1.TLSCertKey:       data.future.raw.signedCert,
+					corev1.TLSPrivateKeyKey: data.future.raw.clientKey,
+				},
+			}},
+			cms: []*corev1.ConfigMap{{
+				ObjectMeta: metav1.ObjectMeta{Namespace: "crr-ns", Name: manifests.SRESystemAdminSignerCA("").Name},
+				Data: map[string]string{
+					"ca-bundle.crt": string(data.future.raw.signerCert),
+				},
+			}, {
+				ObjectMeta: metav1.ObjectMeta{Namespace: "crr-ns", Name: manifests.TotalKASClientCABundle("").Name},
+				Data: map[string]string{
+					"ca-bundle.crt": string(data.original.raw.signerCert) + string(data.future.raw.signerCert),
+				},
+			}},
 		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {

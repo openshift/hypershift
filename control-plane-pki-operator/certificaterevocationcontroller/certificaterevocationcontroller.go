@@ -733,7 +733,7 @@ func (c *CertificateRevocationController) ensureNewSignerCertificatePropagated(c
 	// that, though, and it's always valid to first check that our certificates have propagated as far
 	// as we can tell in the system before asking the KAS, since that's expensive
 	if len(trustedCertificates(totalClientTrustBundle, []*certificateSecret{{cert: signers[0]}}, now)) == 0 {
-		return true, nil, false, nil
+		return true, nil, true, nil
 	}
 
 	// if the updated trust bundle has propagated as far as we can tell, let's go ahead and ask
@@ -1033,7 +1033,7 @@ func (c *CertificateRevocationController) ensureOldSignerCertificateRevoked(ctx 
 	// that, though, and it's always valid to first check that our certificates have propagated as far
 	// as we can tell in the system before asking the KAS, since that's expensive
 	if len(trustedCertificates(totalClientTrustBundle, []*certificateSecret{{cert: oldCerts[0]}}, now)) != 0 {
-		return true, nil, false, nil
+		return true, nil, true, nil
 	}
 
 	// if the updated trust bundle has propagated as far as we can tell, let's go ahead and ask
