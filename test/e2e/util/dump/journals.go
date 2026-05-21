@@ -133,7 +133,7 @@ func setupBastionLoggers(artifactDir string) (*zap.Logger, *zap.Logger, error) {
 	createLogFile := filepath.Join(artifactDir, "create-bastion.log")
 	createLog, err := os.Create(createLogFile)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create create log: %w", err)
+		return nil, nil, fmt.Errorf("failed to create log: %w", err)
 	}
 	createLogger := zap.New(zapcore.NewCore(zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig()), zapcore.Lock(createLog), zap.DebugLevel))
 

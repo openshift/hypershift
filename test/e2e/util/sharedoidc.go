@@ -106,7 +106,7 @@ func SetupSharedOIDCProvider(opts *Options, artifactDir string) error {
 	createLogFile := filepath.Join(artifactDir, "create-oidc-provider.log")
 	createLog, err := os.Create(createLogFile)
 	if err != nil {
-		return fmt.Errorf("failed to create create log: %w", err)
+		return fmt.Errorf("failed to create log: %w", err)
 	}
 	createLogger := zap.New(zapcore.NewCore(zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig()), zapcore.Lock(createLog), zap.DebugLevel))
 	defer func() {

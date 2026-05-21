@@ -180,7 +180,7 @@ func InstallHostedCluster(ctx context.Context, logger logr.Logger, opts *Options
 		if SkippedCleanupSteps().HasAny("all", "hosted-clusters") {
 			return nil
 		}
-		logger.Info("dumping hosted hosted cluster assets")
+		logger.Info("dumping hosted cluster assets")
 		dumpLogPath := filepath.Join("install", "assets.dump.yaml")
 		dumpCmd := exec.CommandContext(ctx, opts.OCPath,
 			"get", "--ignore-not-found", "--show-managed-fields", "-f", filepath.Join(opts.ArtifactDir, yamlPath), "--kubeconfig", opts.Kubeconfig,

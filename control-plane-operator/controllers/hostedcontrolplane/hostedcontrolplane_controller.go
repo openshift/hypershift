@@ -2139,7 +2139,7 @@ func (r *HostedControlPlaneReconciler) reconcileCoreIgnitionConfig(ctx context.C
 		}
 		data, hasSSHKeyData := sshKeySecret.Data["id_rsa.pub"]
 		if !hasSSHKeyData {
-			return fmt.Errorf("SSH key secret secret %s is missing the id_rsa.pub key", hcp.Spec.SSHKey.Name)
+			return fmt.Errorf("SSH key secret %s is missing the id_rsa.pub key", hcp.Spec.SSHKey.Name)
 		}
 		sshKey = string(data)
 	}

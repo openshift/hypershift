@@ -20,7 +20,7 @@ func ProxyConfig() *configv1.Proxy {
 	}
 }
 
-// TODO (relyt0925): this is is utilized by the machine config server and feeds into the user data setup to download
+// TODO (relyt0925): this is utilized by the machine config server and feeds into the user data setup to download
 // ignition configuration. It also factors into the machine config served to the machine. These usages need to be
 // further examined before it directly takes what the user configures for the cluster-wide proxy at the SDN level.
 // In current state of the world: the in cluster proxy configuration set by the user is never picked up (only the one

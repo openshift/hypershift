@@ -128,7 +128,7 @@ func ReconcileDefaultIngressControllerCertSecret(certSecret *corev1.Secret, sour
 		return fmt.Errorf("source secret %s/%s does not have a cert key", sourceSecret.Namespace, sourceSecret.Name)
 	}
 	if _, hasKeyKey := sourceSecret.Data[corev1.TLSPrivateKeyKey]; !hasKeyKey {
-		return fmt.Errorf("source secret %s/%s does not have a key key", sourceSecret.Namespace, sourceSecret.Name)
+		return fmt.Errorf("source secret %s/%s does not have the expected key", sourceSecret.Namespace, sourceSecret.Name)
 	}
 
 	certSecret.Data = map[string][]byte{}

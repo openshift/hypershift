@@ -2346,7 +2346,7 @@ func reconcileHostedControlPlaneAnnotations(hcp *hyperv1.HostedControlPlane, hcl
 		hyperv1.KubeAPIServerGoAwayChance,
 		hyperv1.KubeAPIServerServiceAccountTokenMaxExpiration,
 		hyperv1.HostedClusterRestoredFromBackupAnnotation,
-		// TODO: Remove this once the the input is in the HostedCluster AWS API.
+		// TODO: Remove this once the input is in the HostedCluster AWS API.
 		"hypershift.openshift.io/aws-termination-handler-queue-url",
 		hyperv1.SwiftPodNetworkInstanceAnnotation,
 		hyperv1.EnableMetricsForwarding,
@@ -2524,7 +2524,7 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 	return nil
 }
 
-// reconcileCAPIManager orchestrates orchestrates of  all CAPI manager components.
+// reconcileCAPIManager orchestrates all CAPI manager components.
 func (r *HostedClusterReconciler) reconcileCAPIManager(cpContext controlplanecomponent.ControlPlaneContext, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, releaseVersion semver.Version) error {
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespaceObject(hcluster.Namespace, hcluster.Name)
 	err := r.Client.Get(cpContext, client.ObjectKeyFromObject(controlPlaneNamespace), controlPlaneNamespace)
