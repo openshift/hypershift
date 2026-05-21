@@ -143,7 +143,7 @@ spec:
 
 ### Setting a maximum price (optional)
 
-You can optionally set a maximum hourly price for Spot instances. When omitted, you pay the current Spot price (capped at the on-demand price). AWS recommends **not** setting a maximum price to reduce interruption frequency:
+You can request Spot Instances at the Spot price, capped at the On-Demand price, or you can specify the maximum amount you're willing to pay:
 
 ```yaml
 spec:
