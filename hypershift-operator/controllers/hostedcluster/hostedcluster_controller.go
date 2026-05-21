@@ -876,6 +876,11 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		hcluster.Status.AutoNode = hcp.Status.AutoNode
 	}
 
+	// Copy the secret encryption status from the hostedcontrolplane
+	if hcp != nil {
+		hcp.Status.SecretEncryption.DeepCopyInto(&hcluster.Status.SecretEncryption)
+	}
+
 	// Copy the control plane version status from the hostedcontrolplane
 	propagateControlPlaneVersion(hcluster, hcp)
 
@@ -907,6 +912,15 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 				validKMSConfig.ObservedGeneration = hcluster.Generation
 				meta.SetStatusCondition(&hcluster.Status.Conditions, *validKMSConfig)
 			}
+		}
+	}
+
+	// Copy the EtcdDataEncryptionUpToDate condition from the HostedControlPlane
+	if hcp != nil {
+		encryptionCond := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.EtcdDataEncryptionUpToDate))
+		if encryptionCond != nil {
+			encryptionCond.ObservedGeneration = hcluster.Generation
+			meta.SetStatusCondition(&hcluster.Status.Conditions, *encryptionCond)
 		}
 	}
 
@@ -1580,10 +1594,10 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			if err != nil {
 				return ctrl.Result{}, fmt.Errorf("failed reconciling aescbc active key: %w", err)
 			}
-			if hcluster.Spec.SecretEncryption.AESCBC.BackupKey != nil && len(hcluster.Spec.SecretEncryption.AESCBC.BackupKey.Name) > 0 {
+			if hcluster.Spec.SecretEncryption.AESCBC.BackupKey != nil && len(hcluster.Spec.SecretEncryption.AESCBC.BackupKey.Name) > 0 { //nolint:staticcheck
 				var src corev1.Secret
-				if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.SecretEncryption.AESCBC.BackupKey.Name}, &src); err != nil {
-					return ctrl.Result{}, fmt.Errorf("failed to get backup aescbc secret %s: %w", hcluster.Spec.SecretEncryption.AESCBC.BackupKey.Name, err)
+				if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.SecretEncryption.AESCBC.BackupKey.Name}, &src); err != nil { //nolint:staticcheck
+					return ctrl.Result{}, fmt.Errorf("failed to get backup aescbc secret %s: %w", hcluster.Spec.SecretEncryption.AESCBC.BackupKey.Name, err) //nolint:staticcheck
 				}
 				if err := ensureReferencedResourceAnnotation(ctx, r.Client, hcluster.Name, &src); err != nil {
 					return ctrl.Result{}, fmt.Errorf("failed to set referenced resource annotation: %w", err)
