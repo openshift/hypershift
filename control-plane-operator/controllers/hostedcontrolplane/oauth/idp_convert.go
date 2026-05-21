@@ -478,11 +478,10 @@ func discoverOpenIDURLs(ctx context.Context, kclient crclient.Client, issuer, ke
 	reqCtx, cancel := context.WithTimeout(ctx, externalHTTPRequestTimeout)
 	defer cancel()
 
-	req, err := http.NewRequest(http.MethodGet, wellKnown, nil)
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, wellKnown, nil)
 	if err != nil {
 		return nil, err
 	}
-	req = req.WithContext(reqCtx)
 
 	rt, err := transportForCARef(ctx, kclient, namespace, ca.Name, key, skipKonnectivityDialer)
 	if err != nil {
@@ -585,11 +584,10 @@ func checkOIDCPasswordGrantFlow(ctx context.Context,
 	reqCtx, cancel := context.WithTimeout(ctx, externalHTTPRequestTimeout)
 	defer cancel()
 
-	req, err := http.NewRequest("POST", tokenURL, body)
+	req, err := http.NewRequestWithContext(reqCtx, "POST", tokenURL, body)
 	if err != nil {
 		return false, err
 	}
-	req = req.WithContext(reqCtx)
 	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
 	// explicitly set Accept to 'application/json' as that's the expected deserializable output
 	req.Header.Set("Accept", "application/json")

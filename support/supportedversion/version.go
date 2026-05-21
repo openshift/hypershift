@@ -507,7 +507,11 @@ func retrieveSupportedOCPVersion(ctx context.Context, releaseURL string, client 
 	}
 
 	// Fetch the release information from the URL
-	resp, err := http.Get(releaseURL)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, releaseURL, nil)
+	if err != nil {
+		return ocpVersion{}, err
+	}
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return ocpVersion{}, err
 	}

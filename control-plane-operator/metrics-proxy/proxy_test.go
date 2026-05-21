@@ -140,7 +140,8 @@ func TestProxyHandler_ServeHTTP(t *testing.T) {
 
 			handler := newTestHandler(tt.components, tt.discoverer)
 
-			req := httptest.NewRequest(http.MethodGet, tt.path, nil)
+			req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, tt.path, nil)
+			g.Expect(err).NotTo(HaveOccurred())
 			rec := httptest.NewRecorder()
 
 			handler.ServeHTTP(rec, req)
@@ -183,7 +184,8 @@ func TestProxyHandler_ServeHTTP(t *testing.T) {
 			},
 		)
 
-		req := httptest.NewRequest(http.MethodGet, "/metrics/etcd", nil)
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "/metrics/etcd", nil)
+		g.Expect(err).NotTo(HaveOccurred())
 		rec := httptest.NewRecorder()
 
 		handler.ServeHTTP(rec, req)
@@ -217,7 +219,8 @@ func TestProxyHandler_ServeHTTP(t *testing.T) {
 			},
 		)
 
-		req := httptest.NewRequest(http.MethodGet, "/metrics/etcd", nil)
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "/metrics/etcd", nil)
+		g.Expect(err).NotTo(HaveOccurred())
 		rec := httptest.NewRecorder()
 
 		handler.ServeHTTP(rec, req)
@@ -258,7 +261,8 @@ func TestProxyHandler_ServeHTTP(t *testing.T) {
 			},
 		)
 
-		req := httptest.NewRequest(http.MethodGet, "/metrics/etcd", nil)
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "/metrics/etcd", nil)
+		g.Expect(err).NotTo(HaveOccurred())
 		rec := httptest.NewRecorder()
 
 		handler.ServeHTTP(rec, req)
@@ -282,7 +286,8 @@ func TestProxyHandler_ServeHTTP(t *testing.T) {
 			&fakeTargetDiscoverer{targets: []ScrapeTarget{}},
 		)
 
-		req := httptest.NewRequest(http.MethodGet, "/metrics/etcd/", nil)
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "/metrics/etcd/", nil)
+		g.Expect(err).NotTo(HaveOccurred())
 		rec := httptest.NewRecorder()
 
 		handler.ServeHTTP(rec, req)
@@ -338,7 +343,8 @@ func TestRequireClientCert(t *testing.T) {
 		t.Parallel()
 		g := NewWithT(t)
 
-		req := httptest.NewRequest(http.MethodGet, "/metrics/etcd", nil)
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "/metrics/etcd", nil)
+		g.Expect(err).NotTo(HaveOccurred())
 		req.TLS = nil
 		rec := httptest.NewRecorder()
 
@@ -352,7 +358,8 @@ func TestRequireClientCert(t *testing.T) {
 		t.Parallel()
 		g := NewWithT(t)
 
-		req := httptest.NewRequest(http.MethodGet, "/metrics/etcd", nil)
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "/metrics/etcd", nil)
+		g.Expect(err).NotTo(HaveOccurred())
 		req.TLS = &tls.ConnectionState{VerifiedChains: nil}
 		rec := httptest.NewRecorder()
 
@@ -366,7 +373,8 @@ func TestRequireClientCert(t *testing.T) {
 		t.Parallel()
 		g := NewWithT(t)
 
-		req := httptest.NewRequest(http.MethodGet, "/metrics/etcd", nil)
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "/metrics/etcd", nil)
+		g.Expect(err).NotTo(HaveOccurred())
 		req.TLS = &tls.ConnectionState{
 			VerifiedChains: [][]*x509.Certificate{{}},
 		}

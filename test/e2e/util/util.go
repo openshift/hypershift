@@ -442,12 +442,16 @@ func WaitForGuestKubeconfigHostResolutionUpdate(t *testing.T, ctx context.Contex
 	err := wait.PollUntilContextTimeout(ctx, 15*time.Second, 30*time.Minute, true, func(ctx context.Context) (done bool, err error) {
 		host := strings.TrimPrefix(uri, "https://")
 		host = strings.Split(host, ":")[0]
-		ips, err := net.LookupIP(host)
+		ipAddrs, err := (&net.Resolver{}).LookupIPAddr(ctx, host)
 		if err != nil {
 			t.Logf("failed to resolve guest kubeconfig host: %v", err)
 			return false, nil
 		}
-		ip := ips[0].String()
+		if len(ipAddrs) == 0 {
+			t.Logf("guest kubeconfig host resolved with no IPs yet")
+			return false, nil
+		}
+		ip := ipAddrs[0].IP.String()
 		if endpointAccess == hyperv1.Private {
 			if strings.HasPrefix(ip, "10.") {
 				t.Logf("kubeconfig host now resolves to private address")
@@ -2393,7 +2397,7 @@ func EnsureKubeAPIDNSNameCustomCert(t *testing.T, ctx context.Context, mgmtClien
 		start := time.Now()
 		g.Eventually(func() error {
 			t.Logf("[%s] Waiting until the URL is resolvable: %s", time.Now().Format(time.RFC3339), customApiServerHost)
-			_, err := net.LookupIP(customApiServerHost)
+			_, err := (&net.Resolver{}).LookupIPAddr(ctx, customApiServerHost)
 			if err != nil {
 				return fmt.Errorf("failed to resolve the custom DNS name: %w", err)
 			}

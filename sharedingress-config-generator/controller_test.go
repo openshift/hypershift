@@ -2,6 +2,7 @@ package sharedingressconfiggenerator
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -29,7 +30,7 @@ type mockHAProxyClient struct {
 	lastCommand       string
 }
 
-func (m *mockHAProxyClient) sendCommand(socketPath, command string) (string, error) {
+func (m *mockHAProxyClient) sendCommand(_ context.Context, socketPath, command string) (string, error) {
 	m.sendCommandCalled = true
 	m.sendCommandCount++
 	m.lastCommand = command

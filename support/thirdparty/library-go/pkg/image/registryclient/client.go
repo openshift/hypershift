@@ -182,7 +182,7 @@ func (c *Context) Ping(ctx context.Context, registry *url.URL, insecure bool) (h
 	}
 
 	// follow redirects
-	redirect, err := c.ping(src, insecure, t)
+	redirect, err := c.ping(ctx, src, insecure, t)
 
 	c.lock.Lock()
 	defer c.lock.Unlock()
@@ -224,14 +224,14 @@ func (c *Context) Repository(ctx context.Context, registry *url.URL, repoName st
 	return NewLimitedRetryRepository(repo, c.Retries, limiter), nil
 }
 
-func (c *Context) ping(registry url.URL, insecure bool, transport http.RoundTripper) (*url.URL, error) {
+func (c *Context) ping(ctx context.Context, registry url.URL, insecure bool, transport http.RoundTripper) (*url.URL, error) {
 	pingClient := &http.Client{
 		Transport: transport,
 		Timeout:   15 * time.Second,
 	}
 	target := registry
 	target.Path = path.Join(target.Path, "v2") + "/"
-	req, err := http.NewRequest("GET", target.String(), nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", target.String(), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -239,7 +239,7 @@ func (c *Context) ping(registry url.URL, insecure bool, transport http.RoundTrip
 	if err != nil {
 		if insecure && registry.Scheme == "https" {
 			registry.Scheme = "http"
-			_, nErr := c.ping(registry, true, transport)
+			_, nErr := c.ping(ctx, registry, true, transport)
 			if nErr != nil {
 				return nil, nErr
 			}

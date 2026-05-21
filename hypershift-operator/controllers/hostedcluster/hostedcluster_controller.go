@@ -1801,7 +1801,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 				hcp,
 				shouldCheckForStaleCerts(hcluster, defaultToControlPlaneV2),
 				r.kasServingCertHashFromSecret(ctx, hcp),
-				r.kasServingCertHashFromEndpoint(kasHostAndPortFromHCP(hcp))))
+				r.kasServingCertHashFromEndpoint(ctx, kasHostAndPortFromHCP(hcp))))
 	})
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile hostedcontrolplane: %w", err)
@@ -2242,16 +2242,20 @@ func (r *HostedClusterReconciler) kasServingCertHashFromSecret(ctx context.Conte
 	}
 }
 
-func (r *HostedClusterReconciler) kasServingCertHashFromEndpoint(kasHostAndPort string) func() (string, error) {
+func (r *HostedClusterReconciler) kasServingCertHashFromEndpoint(ctx context.Context, kasHostAndPort string) func() (string, error) {
 	return func() (string, error) {
-		conn, err := tls.Dial("tcp", kasHostAndPort, &tls.Config{
+		netConn, err := (&tls.Dialer{Config: &tls.Config{
 			InsecureSkipVerify: true,
 			ServerName:         "kubernetes",
-		})
+		}}).DialContext(ctx, "tcp", kasHostAndPort)
 		if err != nil {
 			return "", fmt.Errorf("failed to dial %s: %w", kasHostAndPort, err)
 		}
-		defer conn.Close()
+		defer netConn.Close()
+		conn, ok := netConn.(*tls.Conn)
+		if !ok {
+			return "", fmt.Errorf("connection to %s is not a TLS connection", kasHostAndPort)
+		}
 		kasCerts := conn.ConnectionState().PeerCertificates
 		if len(kasCerts) == 0 {
 			return "", fmt.Errorf("no certificate found on KAS endpoint %s", kasHostAndPort)

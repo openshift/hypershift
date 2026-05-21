@@ -47,7 +47,10 @@ func newResolveRequest(t *testing.T, selector map[string]string) *http.Request {
 	if err != nil {
 		t.Fatalf("failed to marshal request: %v", err)
 	}
-	req := httptest.NewRequest(http.MethodPost, resolvePath, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, resolvePath, bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
 	req.Header.Set("Content-Type", "application/json")
 	return req
 }
@@ -167,7 +170,10 @@ func TestResolverHandlerMethodNotAllowed(t *testing.T) {
 	t.Run("When sending GET request it should return 405", func(t *testing.T) {
 		lister := newFakePodLister("test-namespace", nil)
 		handler := newResolverHandler(lister)
-		req := httptest.NewRequest(http.MethodGet, resolvePath, nil)
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, resolvePath, nil)
+		if err != nil {
+			t.Fatalf("failed to create request: %v", err)
+		}
 		rec := httptest.NewRecorder()
 
 		handler.ServeHTTP(rec, req)
@@ -197,7 +203,10 @@ func TestResolverHandlerInvalidBody(t *testing.T) {
 	t.Run("When request body is invalid JSON it should return 400", func(t *testing.T) {
 		lister := newFakePodLister("test-namespace", nil)
 		handler := newResolverHandler(lister)
-		req := httptest.NewRequest(http.MethodPost, resolvePath, bytes.NewReader([]byte("not json")))
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, resolvePath, bytes.NewReader([]byte("not json")))
+		if err != nil {
+			t.Fatalf("failed to create request: %v", err)
+		}
 		rec := httptest.NewRecorder()
 
 		handler.ServeHTTP(rec, req)
