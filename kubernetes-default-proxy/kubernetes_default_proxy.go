@@ -95,7 +95,7 @@ func (s *server) run(ctx context.Context) error {
 			defer backendConn.Close()
 
 			req := &http.Request{
-				Method:     "CONNECT",
+				Method:     http.MethodConnect,
 				URL:        &url.URL{Host: s.apiServerAddr},
 				Proto:      "HTTP/1.1",
 				ProtoMajor: 1,
@@ -111,7 +111,7 @@ func (s *server) run(ctx context.Context) error {
 				s.log.Error(err, "failed to read response to connect request")
 				return
 			}
-			if response.StatusCode != 200 {
+			if response.StatusCode != http.StatusOK {
 				s.log.Error(fmt.Errorf("got unexpected statuscode %d to CONNECT request", response.StatusCode), "failed to establish a connection through http connect")
 				return
 			}

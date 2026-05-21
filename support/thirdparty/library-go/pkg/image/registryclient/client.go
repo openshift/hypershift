@@ -231,7 +231,7 @@ func (c *Context) ping(ctx context.Context, registry url.URL, insecure bool, tra
 	}
 	target := registry
 	target.Path = path.Join(target.Path, "v2") + "/"
-	req, err := http.NewRequestWithContext(ctx, "GET", target.String(), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target.String(), nil)
 	if err != nil {
 		return nil, err
 	}

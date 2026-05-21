@@ -267,7 +267,7 @@ func LookupLatestSupportedRelease(ctx context.Context, hc *hyperv1.HostedCluster
 
 	var version ocpVersion
 
-	req, err := http.NewRequestWithContext(ctx, "GET", releaseURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, releaseURL, nil)
 	if err != nil {
 		return "", err
 	}

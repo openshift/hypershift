@@ -571,7 +571,7 @@ func (p *LocalIgnitionProvider) runMCSAndFetchPayload(ctx context.Context, dirs 
 	var payload []byte
 	// Try connecting to the server until we get a response or the context is closed
 	err = wait.PollUntilContextCancel(ctx, 1*time.Second, true, func(ctx context.Context) (bool, error) {
-		req, err := http.NewRequestWithContext(ctx, "GET", "http://localhost:22626/config/master", nil)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://localhost:22626/config/master", nil)
 		if err != nil {
 			return false, fmt.Errorf("error building http request: %w", err)
 		}
