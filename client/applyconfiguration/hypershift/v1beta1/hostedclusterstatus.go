@@ -40,6 +40,7 @@ type HostedClusterStatusApplyConfiguration struct {
 	AutoNode                    *AutoNodeStatusApplyConfiguration            `json:"autoNode,omitempty"`
 	Configuration               *ConfigurationStatusApplyConfiguration       `json:"configuration,omitempty"`
 	LastSuccessfulEtcdBackupURL *string                                      `json:"lastSuccessfulEtcdBackupURL,omitempty"`
+	SecretEncryption            *SecretEncryptionStatusApplyConfiguration    `json:"secretEncryption,omitempty"`
 }
 
 // HostedClusterStatusApplyConfiguration constructs a declarative configuration of the HostedClusterStatus type for use with
@@ -162,5 +163,13 @@ func (b *HostedClusterStatusApplyConfiguration) WithConfiguration(value *Configu
 // If called multiple times, the LastSuccessfulEtcdBackupURL field is set to the value of the last call.
 func (b *HostedClusterStatusApplyConfiguration) WithLastSuccessfulEtcdBackupURL(value string) *HostedClusterStatusApplyConfiguration {
 	b.LastSuccessfulEtcdBackupURL = &value
+	return b
+}
+
+// WithSecretEncryption sets the SecretEncryption field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the SecretEncryption field is set to the value of the last call.
+func (b *HostedClusterStatusApplyConfiguration) WithSecretEncryption(value *SecretEncryptionStatusApplyConfiguration) *HostedClusterStatusApplyConfiguration {
+	b.SecretEncryption = value
 	return b
 }

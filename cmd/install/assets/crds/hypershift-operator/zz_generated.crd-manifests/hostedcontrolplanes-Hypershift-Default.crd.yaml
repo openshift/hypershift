@@ -6369,6 +6369,9 @@ spec:
                         description: |-
                           backupKey defines the old key during the rotation process so previously created
                           secrets can continue to be decrypted until they are all re-encrypted with the active key.
+
+                          Deprecated: This field will be ignored when status.secretEncryption.activeKey is set.
+                          The system automatically manages the previous key via the status field.
                         properties:
                           name:
                             default: ""
@@ -6426,6 +6429,9 @@ spec:
                             description: |-
                               backupKey defines the old key during the rotation process so previously created
                               secrets can continue to be decrypted until they are all re-encrypted with the active key.
+
+                              Deprecated: This field will be ignored when status.secretEncryption.activeKey is set.
+                              The system automatically manages the previous key via the status field.
                             properties:
                               arn:
                                 description: arn is the Amazon Resource Name for the
@@ -6480,6 +6486,9 @@ spec:
                             description: |-
                               backupKey defines the old key during the rotation process so previously created
                               secrets can continue to be decrypted until they are all re-encrypted with the active key.
+
+                              Deprecated: This field will be ignored when status.secretEncryption.activeKey is set.
+                              The system automatically manages the previous key via the status field.
                             properties:
                               keyName:
                                 description: keyName is the name of the keyvault key
@@ -7493,6 +7502,384 @@ spec:
                   Deprecated: Use versionStatus.desired.image instead.
                 maxLength: 255
                 type: string
+              secretEncryption:
+                description: secretEncryption tracks the state of secret encryption
+                  key rotation and re-encryption.
+                minProperties: 1
+                properties:
+                  activeKey:
+                    description: |-
+                      activeKey is the encryption key specification that all etcd data is confirmed encrypted with.
+                      Updated after successful re-encryption.
+                    properties:
+                      aescbc:
+                        description: aescbc holds a reference to the AESCBC key secret.
+                        properties:
+                          dataHash:
+                            description: |-
+                              dataHash is the hex-encoded SHA-256 hash of the secret's "key" data field
+                              at the time re-encryption completed.
+                            maxLength: 64
+                            minLength: 1
+                            type: string
+                          secret:
+                            description: secret is a reference to the secret containing
+                              the AESCBC key.
+                            properties:
+                              name:
+                                default: ""
+                                description: |-
+                                  Name of the referent.
+                                  This field is effectively required, but due to backwards compatibility is
+                                  allowed to be empty. Instances of this type with an empty value here are
+                                  almost certainly wrong.
+                                  More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                type: string
+                            type: object
+                            x-kubernetes-map-type: atomic
+                        required:
+                        - dataHash
+                        - secret
+                        type: object
+                      aws:
+                        description: aws holds the AWS KMS key identity fields.
+                        properties:
+                          arn:
+                            description: arn is the Amazon Resource Name of the KMS
+                              key.
+                            maxLength: 2048
+                            minLength: 1
+                            type: string
+                          region:
+                            description: region is the AWS region of the KMS key.
+                            maxLength: 255
+                            minLength: 1
+                            type: string
+                        required:
+                        - arn
+                        - region
+                        type: object
+                      azure:
+                        description: azure holds the Azure KMS key identity fields.
+                        properties:
+                          keyName:
+                            description: keyName is the name of the key in the vault.
+                            maxLength: 255
+                            minLength: 1
+                            type: string
+                          keyVaultName:
+                            description: keyVaultName is the name of the Azure Key
+                              Vault.
+                            maxLength: 255
+                            minLength: 1
+                            type: string
+                          keyVersion:
+                            description: keyVersion is the version of the key.
+                            maxLength: 255
+                            minLength: 1
+                            type: string
+                        required:
+                        - keyName
+                        - keyVaultName
+                        - keyVersion
+                        type: object
+                      ibmCloud:
+                        description: ibmCloud holds the IBM Cloud KMS key identity
+                          fields.
+                        properties:
+                          correlationID:
+                            description: correlationID is the correlation ID for the
+                              key.
+                            maxLength: 255
+                            minLength: 1
+                            type: string
+                          crkID:
+                            description: crkID is the Customer Root Key ID.
+                            maxLength: 255
+                            minLength: 1
+                            type: string
+                          instanceID:
+                            description: instanceID is the KMS instance ID.
+                            maxLength: 255
+                            minLength: 1
+                            type: string
+                          keyVersion:
+                            description: keyVersion is the key version number.
+                            format: int32
+                            minimum: 0
+                            type: integer
+                          region:
+                            description: region is the IBM Cloud region.
+                            maxLength: 255
+                            minLength: 1
+                            type: string
+                          url:
+                            description: url is the KMS endpoint URL.
+                            maxLength: 2048
+                            minLength: 1
+                            type: string
+                        required:
+                        - correlationID
+                        - crkID
+                        - instanceID
+                        - keyVersion
+                        - region
+                        - url
+                        type: object
+                      provider:
+                        description: provider identifies the encryption provider.
+                        enum:
+                        - Azure
+                        - AWS
+                        - IBMCloud
+                        - AESCBC
+                        type: string
+                    required:
+                    - provider
+                    type: object
+                    x-kubernetes-validations:
+                    - message: azure is required when provider is Azure, and forbidden
+                        otherwise
+                      rule: 'self.provider == ''Azure'' ? has(self.azure) : !has(self.azure)'
+                    - message: aws is required when provider is AWS, and forbidden
+                        otherwise
+                      rule: 'self.provider == ''AWS'' ? has(self.aws) : !has(self.aws)'
+                    - message: ibmCloud is required when provider is IBMCloud, and
+                        forbidden otherwise
+                      rule: 'self.provider == ''IBMCloud'' ? has(self.ibmCloud) :
+                        !has(self.ibmCloud)'
+                    - message: aescbc is required when provider is AESCBC, and forbidden
+                        otherwise
+                      rule: 'self.provider == ''AESCBC'' ? has(self.aescbc) : !has(self.aescbc)'
+                  history:
+                    description: |-
+                      history contains a list of key rotations applied to this cluster. The newest
+                      entry is first in the list. Entries have state Completed when re-encryption
+                      has finished. The current rotation phase is always history[0].state when
+                      history[0] is not Completed or Interrupted.
+                    items:
+                      description: EncryptionMigrationHistory records a key rotation,
+                        including in-progress rotations.
+                      properties:
+                        completionTime:
+                          description: completionTime is when the rotation finished.
+                            Not set while the rotation is in progress.
+                          format: date-time
+                          type: string
+                        from:
+                          description: from is the key that data was migrated from
+                            (the previous active key).
+                          properties:
+                            fingerprint:
+                              description: fingerprint is the hex-encoded SHA-256
+                                hash of the key's identity fields.
+                              maxLength: 64
+                              minLength: 1
+                              type: string
+                            provider:
+                              description: provider identifies the encryption provider.
+                              enum:
+                              - Azure
+                              - AWS
+                              - IBMCloud
+                              - AESCBC
+                              type: string
+                          required:
+                          - fingerprint
+                          - provider
+                          type: object
+                        startedTime:
+                          description: startedTime is when the rotation was initiated.
+                          format: date-time
+                          type: string
+                        state:
+                          description: state tracks the current phase of this rotation.
+                          enum:
+                          - ReadOnlyDeploy
+                          - WritePromote
+                          - Migrating
+                          - Completed
+                          - Interrupted
+                          type: string
+                        to:
+                          description: to is the key that data was migrated to (the
+                            target key).
+                          properties:
+                            fingerprint:
+                              description: fingerprint is the hex-encoded SHA-256
+                                hash of the key's identity fields.
+                              maxLength: 64
+                              minLength: 1
+                              type: string
+                            provider:
+                              description: provider identifies the encryption provider.
+                              enum:
+                              - Azure
+                              - AWS
+                              - IBMCloud
+                              - AESCBC
+                              type: string
+                          required:
+                          - fingerprint
+                          - provider
+                          type: object
+                      required:
+                      - from
+                      - startedTime
+                      - state
+                      - to
+                      type: object
+                    maxItems: 5
+                    minItems: 1
+                    type: array
+                    x-kubernetes-list-type: atomic
+                  targetKey:
+                    description: |-
+                      targetKey is the key being rolled out during an active rotation. Snapshot from
+                      spec.secretEncryption's active key when the rotation starts. The CPO uses this
+                      (not the current spec) during the rotation, so mid-rotation spec changes are
+                      safely queued until the current rotation completes. Cleared when rotation completes.
+                    properties:
+                      aescbc:
+                        description: aescbc holds a reference to the AESCBC key secret.
+                        properties:
+                          dataHash:
+                            description: |-
+                              dataHash is the hex-encoded SHA-256 hash of the secret's "key" data field
+                              at the time re-encryption completed.
+                            maxLength: 64
+                            minLength: 1
+                            type: string
+                          secret:
+                            description: secret is a reference to the secret containing
+                              the AESCBC key.
+                            properties:
+                              name:
+                                default: ""
+                                description: |-
+                                  Name of the referent.
+                                  This field is effectively required, but due to backwards compatibility is
+                                  allowed to be empty. Instances of this type with an empty value here are
+                                  almost certainly wrong.
+                                  More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                type: string
+                            type: object
+                            x-kubernetes-map-type: atomic
+                        required:
+                        - dataHash
+                        - secret
+                        type: object
+                      aws:
+                        description: aws holds the AWS KMS key identity fields.
+                        properties:
+                          arn:
+                            description: arn is the Amazon Resource Name of the KMS
+                              key.
+                            maxLength: 2048
+                            minLength: 1
+                            type: string
+                          region:
+                            description: region is the AWS region of the KMS key.
+                            maxLength: 255
+                            minLength: 1
+                            type: string
+                        required:
+                        - arn
+                        - region
+                        type: object
+                      azure:
+                        description: azure holds the Azure KMS key identity fields.
+                        properties:
+                          keyName:
+                            description: keyName is the name of the key in the vault.
+                            maxLength: 255
+                            minLength: 1
+                            type: string
+                          keyVaultName:
+                            description: keyVaultName is the name of the Azure Key
+                              Vault.
+                            maxLength: 255
+                            minLength: 1
+                            type: string
+                          keyVersion:
+                            description: keyVersion is the version of the key.
+                            maxLength: 255
+                            minLength: 1
+                            type: string
+                        required:
+                        - keyName
+                        - keyVaultName
+                        - keyVersion
+                        type: object
+                      ibmCloud:
+                        description: ibmCloud holds the IBM Cloud KMS key identity
+                          fields.
+                        properties:
+                          correlationID:
+                            description: correlationID is the correlation ID for the
+                              key.
+                            maxLength: 255
+                            minLength: 1
+                            type: string
+                          crkID:
+                            description: crkID is the Customer Root Key ID.
+                            maxLength: 255
+                            minLength: 1
+                            type: string
+                          instanceID:
+                            description: instanceID is the KMS instance ID.
+                            maxLength: 255
+                            minLength: 1
+                            type: string
+                          keyVersion:
+                            description: keyVersion is the key version number.
+                            format: int32
+                            minimum: 0
+                            type: integer
+                          region:
+                            description: region is the IBM Cloud region.
+                            maxLength: 255
+                            minLength: 1
+                            type: string
+                          url:
+                            description: url is the KMS endpoint URL.
+                            maxLength: 2048
+                            minLength: 1
+                            type: string
+                        required:
+                        - correlationID
+                        - crkID
+                        - instanceID
+                        - keyVersion
+                        - region
+                        - url
+                        type: object
+                      provider:
+                        description: provider identifies the encryption provider.
+                        enum:
+                        - Azure
+                        - AWS
+                        - IBMCloud
+                        - AESCBC
+                        type: string
+                    required:
+                    - provider
+                    type: object
+                    x-kubernetes-validations:
+                    - message: azure is required when provider is Azure, and forbidden
+                        otherwise
+                      rule: 'self.provider == ''Azure'' ? has(self.azure) : !has(self.azure)'
+                    - message: aws is required when provider is AWS, and forbidden
+                        otherwise
+                      rule: 'self.provider == ''AWS'' ? has(self.aws) : !has(self.aws)'
+                    - message: ibmCloud is required when provider is IBMCloud, and
+                        forbidden otherwise
+                      rule: 'self.provider == ''IBMCloud'' ? has(self.ibmCloud) :
+                        !has(self.ibmCloud)'
+                    - message: aescbc is required when provider is AESCBC, and forbidden
+                        otherwise
+                      rule: 'self.provider == ''AESCBC'' ? has(self.aescbc) : !has(self.aescbc)'
+                type: object
               version:
                 description: |-
                   version is the semantic version of the release applied by

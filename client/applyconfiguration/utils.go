@@ -65,6 +65,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		// Group=hypershift.openshift.io, Version=v1beta1
 	case v1beta1.SchemeGroupVersion.WithKind("AddressPair"):
 		return &hypershiftv1beta1.AddressPairApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("AESCBCKeyStatus"):
+		return &hypershiftv1beta1.AESCBCKeyStatusApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AESCBCSpec"):
 		return &hypershiftv1beta1.AESCBCSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AgentNodePoolPlatform"):
@@ -87,6 +89,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.AWSKMSAuthSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AWSKMSKeyEntry"):
 		return &hypershiftv1beta1.AWSKMSKeyEntryApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("AWSKMSKeyStatus"):
+		return &hypershiftv1beta1.AWSKMSKeyStatusApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AWSKMSSpec"):
 		return &hypershiftv1beta1.AWSKMSSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AWSNodePoolPlatform"):
@@ -111,6 +115,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.AzureAuthenticationConfigurationApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AzureKMSKey"):
 		return &hypershiftv1beta1.AzureKMSKeyApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("AzureKMSKeyStatus"):
+		return &hypershiftv1beta1.AzureKMSKeyStatusApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AzureKMSSpec"):
 		return &hypershiftv1beta1.AzureKMSSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AzureMarketplaceImage"):
@@ -175,6 +181,10 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.DNSSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("DNSZoneStatus"):
 		return &hypershiftv1beta1.DNSZoneStatusApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("EncryptionKeyReference"):
+		return &hypershiftv1beta1.EncryptionKeyReferenceApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("EncryptionMigrationHistory"):
+		return &hypershiftv1beta1.EncryptionMigrationHistoryApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("EtcdSpec"):
 		return &hypershiftv1beta1.EtcdSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("EtcdTLSConfig"):
@@ -249,6 +259,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.IBMCloudKMSAuthSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("IBMCloudKMSKeyEntry"):
 		return &hypershiftv1beta1.IBMCloudKMSKeyEntryApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("IBMCloudKMSKeyStatus"):
+		return &hypershiftv1beta1.IBMCloudKMSKeyStatusApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("IBMCloudKMSSpec"):
 		return &hypershiftv1beta1.IBMCloudKMSSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("IBMCloudKMSUnmanagedAuthSpec"):
@@ -389,8 +401,12 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.RouterParamApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ScaleDownConfig"):
 		return &hypershiftv1beta1.ScaleDownConfigApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("SecretEncryptionKeyStatus"):
+		return &hypershiftv1beta1.SecretEncryptionKeyStatusApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("SecretEncryptionSpec"):
 		return &hypershiftv1beta1.SecretEncryptionSpecApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("SecretEncryptionStatus"):
+		return &hypershiftv1beta1.SecretEncryptionStatusApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("SecretReference"):
 		return &hypershiftv1beta1.SecretReferenceApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ServiceNetworkEntry"):
