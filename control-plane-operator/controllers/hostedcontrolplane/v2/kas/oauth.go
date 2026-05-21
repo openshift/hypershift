@@ -36,7 +36,7 @@ func adaptOauthMetadata(cpContext component.WorkloadContext, cfg *corev1.ConfigM
 
 	var oauthMetadata map[string]interface{}
 	if err := json.Unmarshal([]byte(cfg.Data[OauthMetadataConfigKey]), &oauthMetadata); err != nil {
-		return fmt.Errorf("failed to unmarshal oauth metadata: %v", err)
+		return fmt.Errorf("failed to unmarshal oauth metadata: %w", err)
 	}
 
 	oauthURL := fmt.Sprintf("https://%s:%d", cpContext.InfraStatus.OAuthHost, cpContext.InfraStatus.OAuthPort)
@@ -46,7 +46,7 @@ func adaptOauthMetadata(cpContext component.WorkloadContext, cfg *corev1.ConfigM
 
 	data, err := json.Marshal(oauthMetadata)
 	if err != nil {
-		return fmt.Errorf("failed to marshal oauth metadata: %v", err)
+		return fmt.Errorf("failed to marshal oauth metadata: %w", err)
 	}
 	cfg.Data[OauthMetadataConfigKey] = string(data)
 	return nil

@@ -892,7 +892,7 @@ func (r *AWSEndpointServiceReconciler) controlPlaneOperatorRoleARNWithoutPath(hc
 	}
 	arn, err := arn.Parse(hc.Spec.Platform.AWS.RolesRef.ControlPlaneOperatorARN)
 	if err != nil {
-		return "", fmt.Errorf("failed to parse %s into an ARN: %v", hc.Spec.Platform.AWS.RolesRef.ControlPlaneOperatorARN, err)
+		return "", fmt.Errorf("failed to parse %s into an ARN: %w", hc.Spec.Platform.AWS.RolesRef.ControlPlaneOperatorARN, err)
 	}
 
 	// IAM names cannot have a "/" while path names are the only way to get "/" into the name

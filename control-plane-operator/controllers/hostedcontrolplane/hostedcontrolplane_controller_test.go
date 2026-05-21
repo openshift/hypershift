@@ -891,7 +891,7 @@ func TestSetKASCustomKubeconfigStatus(t *testing.T) {
 			c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objs...).WithStatusSubresource(&hyperv1.HostedControlPlane{}).Build()
 
 			err := setKASCustomKubeconfigStatus(ctx, hcp, c)
-			g.Expect(err).To(BeNil(), fmt.Errorf("error setting custom kubeconfig status failed: %v", err))
+			g.Expect(err).To(BeNil(), fmt.Errorf("error setting custom kubeconfig status failed: %w", err))
 			g.Expect(hcp.Status.CustomKubeconfig).To(Equal(tc.expectedStatus))
 		})
 	}

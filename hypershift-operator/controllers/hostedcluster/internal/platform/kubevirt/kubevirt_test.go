@@ -79,7 +79,7 @@ func TestReconcileCAPIInfraCR(t *testing.T) {
 				t.Fatalf("Expected the provided function to be called once")
 			}
 			if tc.expectedErr != nil {
-				if err != tc.expectedErr {
+				if !errors.Is(err, tc.expectedErr) {
 					t.Fatalf("ReconcileCAPIInfraCR: Expected to fail. gotErr: %v, expectedErr: %v", err, tc.expectedErr)
 				}
 			} else if err != nil {

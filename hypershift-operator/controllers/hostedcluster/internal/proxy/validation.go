@@ -31,7 +31,7 @@ func LoadCABundle(configMap corev1.ConfigMap) ([]*x509.Certificate, error) {
 	}
 	certBundle, err := crypto.CertsFromPEM(trustBundleData)
 	if err != nil {
-		return nil, fmt.Errorf("failed parsing certificate data from ConfigMap %q: %v", configMap.Name, err)
+		return nil, fmt.Errorf("failed parsing certificate data from ConfigMap %q: %w", configMap.Name, err)
 	}
 	return certBundle, nil
 }

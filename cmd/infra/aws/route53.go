@@ -239,12 +239,12 @@ func setSOAMinimum(ctx context.Context, client awsapi.ROUTE53API, id, name strin
 func deleteZone(ctx context.Context, id string, client awsapi.ROUTE53API, logger logr.Logger) error {
 	err := deleteRecords(ctx, client, id, logger)
 	if err != nil {
-		return fmt.Errorf("failed to delete hosted zone records: %v", err)
+		return fmt.Errorf("failed to delete hosted zone records: %w", err)
 	}
 	if _, err = client.DeleteHostedZone(ctx, &route53.DeleteHostedZoneInput{
 		Id: aws.String(id),
 	}); err != nil {
-		return fmt.Errorf("failed to delete hosted zone: %v", err)
+		return fmt.Errorf("failed to delete hosted zone: %w", err)
 	}
 	return nil
 }

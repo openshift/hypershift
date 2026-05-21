@@ -104,7 +104,7 @@ func ConvertIdentityProviders(ctx context.Context, identityProviders []configv1.
 		}
 		data, err := convertProviderConfigToIDPData(ctx, &idp.IdentityProviderConfig, providerConfigOverride, i, volumeMountInfo, kclient, namespace, false)
 		if err != nil {
-			errs = append(errs, fmt.Errorf("failed to apply IDP %s config: %v", idp.Name, err))
+			errs = append(errs, fmt.Errorf("failed to apply IDP %s config: %w", idp.Name, err))
 			continue
 		}
 		converted = append(converted,
@@ -329,7 +329,7 @@ func convertOpenIDIDP(ctx context.Context, providerConfig *configv1.IdentityProv
 		// to allow challenge-issuing flow if it's available on the OIDC side
 		challengeFlowsAllowed, err := checkOIDCPasswordGrantFlow(ctx, kclient, openIDProvider.URLs.Token, openIDConfig.ClientID, namespace, openIDConfig.CA, openIDConfig.ClientSecret, skipKonnectivityDialer)
 		if err != nil {
-			return nil, fmt.Errorf("error attempting password grant flow: %v", err)
+			return nil, fmt.Errorf("error attempting password grant flow: %w", err)
 		}
 		data.challenge = challengeFlowsAllowed
 	}
@@ -501,7 +501,7 @@ func discoverOpenIDURLs(ctx context.Context, kclient crclient.Client, issuer, ke
 
 	metadata := &openIDProviderJSON{}
 	if err := json.NewDecoder(resp.Body).Decode(metadata); err != nil {
-		return nil, fmt.Errorf("failed to decode metadata: %v", err)
+		return nil, fmt.Errorf("failed to decode metadata: %w", err)
 	}
 
 	for _, arg := range []struct {
@@ -552,7 +552,7 @@ func checkOIDCPasswordGrantFlow(ctx context.Context,
 	}
 	err := kclient.Get(ctx, crclient.ObjectKeyFromObject(secret), secret)
 	if err != nil {
-		return false, fmt.Errorf("couldn't get the referenced secret: %v", err)
+		return false, fmt.Errorf("couldn't get the referenced secret: %w", err)
 	}
 
 	// check whether we already attempted this not to send unnecessary login
@@ -569,7 +569,7 @@ func checkOIDCPasswordGrantFlow(ctx context.Context,
 
 	transport, err := transportForCARef(ctx, kclient, namespace, caRererence.Name, corev1.ServiceAccountRootCAKey, skipKonnectivityDialer)
 	if err != nil {
-		return false, fmt.Errorf("couldn't get a transport for the referenced CA: %v", err)
+		return false, fmt.Errorf("couldn't get a transport for the referenced CA: %w", err)
 	}
 
 	// prepare the grant-checking query

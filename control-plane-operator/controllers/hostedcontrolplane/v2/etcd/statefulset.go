@@ -23,7 +23,7 @@ func adaptStatefulSet(cpContext component.WorkloadContext, sts *appsv1.StatefulS
 
 	ipv4, err := netutil.IsIPv4CIDR(hcp.Spec.Networking.ClusterNetwork[0].CIDR.String())
 	if err != nil {
-		return fmt.Errorf("error checking the ClusterNetworkCIDR: %v", err)
+		return fmt.Errorf("error checking the ClusterNetworkCIDR: %w", err)
 	}
 
 	podspec.UpdateContainer(ComponentName, sts.Spec.Template.Spec.Containers, func(c *corev1.Container) {

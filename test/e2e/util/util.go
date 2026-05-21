@@ -7,6 +7,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -233,7 +234,7 @@ func DeleteNamespace(t *testing.T, ctx context.Context, client crclient.Client, 
 		return false, nil
 	})
 	if err != nil {
-		return fmt.Errorf("namespace still exists after deletion timeout: %v", err)
+		return fmt.Errorf("namespace still exists after deletion timeout: %w", err)
 	}
 	if os.Getenv("EVENTUALLY_VERBOSE") != "false" {
 		t.Logf("Deleted namespace %s", namespace)
@@ -397,7 +398,7 @@ func GetGuestKubeconfigHost(t *testing.T, ctx context.Context, client crclient.C
 	guestKubeConfigSecretData := WaitForGuestKubeConfig(t, ctx, client, hostedCluster)
 	guestConfig, err := clientcmd.RESTConfigFromKubeConfig(guestKubeConfigSecretData)
 	if err != nil {
-		return "", fmt.Errorf("couldn't load guest kubeconfig: %v", err)
+		return "", fmt.Errorf("couldn't load guest kubeconfig: %w", err)
 	}
 
 	host := guestConfig.Host
@@ -1608,7 +1609,7 @@ func GetMetricsFromPod(ctx context.Context, c crclient.Client, componentName, co
 	command := []string{"curl", "-s", fmt.Sprintf("http://127.0.0.1:%s/metrics", port)}
 	cmdOutput, err := RunCommandInPod(ctx, c, componentName, namespaceName, command, containerName, 5*time.Minute)
 	if err != nil {
-		return nil, fmt.Errorf("couldn't obtain any metrics: %v", err)
+		return nil, fmt.Errorf("couldn't obtain any metrics: %w", err)
 	}
 	if len(cmdOutput) == 0 {
 		return nil, fmt.Errorf("no metrics found")
@@ -2247,7 +2248,7 @@ func createAdditionalPullSecret(ctx context.Context, guestClient crclient.Client
 	}
 
 	if err := guestClient.Create(ctx, secret); err != nil && !apierrors.IsAlreadyExists(err) {
-		return fmt.Errorf("failed to create secret: %v", err)
+		return fmt.Errorf("failed to create secret: %w", err)
 	}
 
 	return nil
@@ -2394,7 +2395,7 @@ func EnsureKubeAPIDNSNameCustomCert(t *testing.T, ctx context.Context, mgmtClien
 			t.Logf("[%s] Waiting until the URL is resolvable: %s", time.Now().Format(time.RFC3339), customApiServerHost)
 			_, err := net.LookupIP(customApiServerHost)
 			if err != nil {
-				return fmt.Errorf("failed to resolve the custom DNS name: %v", err)
+				return fmt.Errorf("failed to resolve the custom DNS name: %w", err)
 			}
 			t.Logf("resolved the custom DNS name after %s\n", time.Since(start))
 			return nil
@@ -2567,7 +2568,7 @@ func EnsureKubeAPIDNSNameCustomCert(t *testing.T, ctx context.Context, mgmtClien
 		err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
 			latestHC := &hyperv1.HostedCluster{}
 			if err := mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(hc), latestHC); err != nil {
-				return fmt.Errorf("failed to get latest HostedCluster: %v", err)
+				return fmt.Errorf("failed to get latest HostedCluster: %w", err)
 			}
 			latestHC.Spec.Configuration.APIServer.ServingCerts.NamedCertificates = []configv1.APIServerNamedServingCert{}
 			return mgmtClient.Update(ctx, latestHC)
@@ -2874,7 +2875,7 @@ func getIngressRouterDefaultIP(t *testing.T, ctx context.Context, client crclien
 		}
 		return getErr == nil, err
 	}); err != nil {
-		return "", fmt.Errorf("router-default service did't become available: %v", err)
+		return "", fmt.Errorf("router-default service did't become available: %w", err)
 	}
 
 	routerDefaultIP := defaultIngressRouterService.Status.LoadBalancer.Ingress[0].IP
@@ -4514,7 +4515,7 @@ func ApplyYAMLBytes(ctx context.Context, c crclient.Client, yamlContent []byte, 
 	for {
 		obj := &unstructured.Unstructured{}
 		if err := decoder.Decode(obj); err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				return nil
 			}
 			return fmt.Errorf("failed to decode YAML: %w", err)
@@ -4638,7 +4639,7 @@ func EnsureNodeTuningOperatorMetricsEndpoint(t *testing.T, ctx context.Context, 
 			}
 			cmdOutput, err := RunCommandInPod(ctx, mgmtClient, "cluster-node-tuning-operator", hcpNamespace, httpsCommand, "cluster-node-tuning-operator", 30*time.Second)
 			if err != nil {
-				return fmt.Errorf("failed to get metrics via ServiceMonitor HTTPS at %s: %v", httpsServiceURL, err)
+				return fmt.Errorf("failed to get metrics via ServiceMonitor HTTPS at %s: %w", httpsServiceURL, err)
 			}
 			if len(cmdOutput) == 0 {
 				return fmt.Errorf("no metrics returned via ServiceMonitor HTTPS at %s", httpsServiceURL)

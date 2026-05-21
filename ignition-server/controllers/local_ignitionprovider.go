@@ -652,7 +652,7 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage, cu
 		return imageprovider.New(img), nil
 	}()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get component images: %v", err)
+		return nil, fmt.Errorf("failed to get component images: %w", err)
 	}
 
 	mcoImage, err := p.resolveMCOImage(ctx, imageProvider, pullSecret)

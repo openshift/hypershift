@@ -514,12 +514,12 @@ func (r *reconciler) reconcileDeletion(ctx context.Context, log logr.Logger, hcp
 
 		binding := manifests.ValidatingAdmissionPolicyBinding(fmt.Sprintf("%s-binding", registryConfigManagementStateAdmissionPolicy.Name))
 		if _, err := k8sutil.DeleteIfNeeded(ctx, r.client, binding); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to delete ValidatingAdmissionPolicyBinding %s: %v", binding.Name, err)
+			return ctrl.Result{}, fmt.Errorf("failed to delete ValidatingAdmissionPolicyBinding %s: %w", binding.Name, err)
 		}
 
 		vap := manifests.ValidatingAdmissionPolicy(registryConfigManagementStateAdmissionPolicy.Name)
 		if _, err := k8sutil.DeleteIfNeeded(ctx, r.client, vap); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to delete ValidatingAdmissionPolicy %s: %v", vap.Name, err)
+			return ctrl.Result{}, fmt.Errorf("failed to delete ValidatingAdmissionPolicy %s: %w", vap.Name, err)
 		}
 	}
 
@@ -2015,7 +2015,7 @@ func (r *reconciler) reconcileKubeadminPasswordHashSecret(ctx context.Context, h
 		kubeadminPasswordSecret.Annotations[cpoauth.KubeadminSecretHashAnnotation] = string(kubeadminPasswordHashSecret.Data["kubeadmin"])
 		return nil
 	}); err != nil {
-		return fmt.Errorf("failed to annotate kubeadmin-password secret in hcp namespace: %v", err)
+		return fmt.Errorf("failed to annotate kubeadmin-password secret in hcp namespace: %w", err)
 	}
 
 	return nil

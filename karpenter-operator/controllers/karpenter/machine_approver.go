@@ -85,7 +85,7 @@ func (r *MachineApproverController) SetupWithManager(mgr ctrl.Manager) error {
 		&handler.TypedEnqueueRequestForObject[*certificatesv1.CertificateSigningRequest]{},
 		predicate.NewTypedPredicateFuncs(csrFilterFn),
 	)); err != nil {
-		return fmt.Errorf("failed to watch CertificateSigningRequest: %v", err)
+		return fmt.Errorf("failed to watch CertificateSigningRequest: %w", err)
 	}
 
 	return nil
@@ -100,7 +100,7 @@ func (r *MachineApproverController) Reconcile(ctx context.Context, req ctrl.Requ
 		if apierrors.IsNotFound(err) {
 			return ctrl.Result{}, nil
 		}
-		return ctrl.Result{}, fmt.Errorf("failed to get csr %s: %v", req.NamespacedName, err)
+		return ctrl.Result{}, fmt.Errorf("failed to get csr %s: %w", req.NamespacedName, err)
 	}
 
 	// Return early if deleted
@@ -129,7 +129,7 @@ func (r *MachineApproverController) Reconcile(ctx context.Context, req ctrl.Requ
 	if authorized {
 		log.Info("Attempting to approve CSR", "csr", csr.Name)
 		if err := r.approve(ctx, csr); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to approve csr %s: %v", csr.Name, err)
+			return ctrl.Result{}, fmt.Errorf("failed to approve csr %s: %w", csr.Name, err)
 		}
 	}
 
@@ -243,7 +243,7 @@ func (r *MachineApproverController) approve(ctx context.Context, csr *certificat
 
 	_, err := r.certClient.CertificateSigningRequests().UpdateApproval(ctx, csr.Name, csr, metav1.UpdateOptions{})
 	if err != nil {
-		return fmt.Errorf("error updating approval for csr: %v", err)
+		return fmt.Errorf("error updating approval for csr: %w", err)
 	}
 
 	return nil

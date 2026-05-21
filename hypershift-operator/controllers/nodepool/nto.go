@@ -412,7 +412,7 @@ func BuildMirrorConfigs(ctx context.Context, cg *ConfigGenerator) ([]*MirrorConf
 		yamlReader := yaml.NewYAMLReader(bufio.NewReader(strings.NewReader(cmPayload)))
 		for {
 			manifestRaw, err := yamlReader.Read()
-			if err != nil && err != io.EOF {
+			if err != nil && !coreerrors.Is(err, io.EOF) {
 				errors = append(errors, fmt.Errorf("configmap %q contains invalid yaml: %w", config.Name, err))
 				continue
 			}
@@ -427,7 +427,7 @@ func BuildMirrorConfigs(ctx context.Context, cg *ConfigGenerator) ([]*MirrorConf
 					mirrorConfigs = append(mirrorConfigs, mirrorConfig)
 				}
 			}
-			if err == io.EOF {
+			if coreerrors.Is(err, io.EOF) {
 				break
 			}
 		}

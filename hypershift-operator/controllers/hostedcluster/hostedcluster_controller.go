@@ -1421,7 +1421,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 				Message:            err.Error(),
 			})
 			if statusErr := r.Client.Status().Update(ctx, hcluster); statusErr != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to reconcile platform credentials: %s, failed to update status: %w", err, statusErr)
+				return ctrl.Result{}, fmt.Errorf("failed to reconcile platform credentials: %w, failed to update status: %w", err, statusErr)
 			}
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile platform credentials: %w", err)
 		}
@@ -1434,7 +1434,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 				Message:            "Required platform credentials are found",
 			})
 			if statusErr := r.Client.Status().Update(ctx, hcluster); statusErr != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to reconcile platform credentials: %s, failed to update status: %w", err, statusErr)
+				return ctrl.Result{}, fmt.Errorf("failed to reconcile platform credentials: %w, failed to update status: %w", err, statusErr)
 			}
 		}
 	}
@@ -2840,7 +2840,7 @@ func (r *HostedClusterReconciler) reconcileCLISecrets(ctx context.Context, creat
 		util.AutoInfraLabelName:         hcluster.Spec.InfraID,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to retrieve cli created secrets: %v", err)
+		return fmt.Errorf("failed to retrieve cli created secrets: %w", err)
 	}
 
 	ownerRef := config.OwnerRefFrom(hcluster)
@@ -2850,7 +2850,7 @@ func (r *HostedClusterReconciler) reconcileCLISecrets(ctx context.Context, creat
 			return nil
 		})
 		if err != nil {
-			return fmt.Errorf("failed to set '%s' secret's owner reference: %v", secret.Name, err)
+			return fmt.Errorf("failed to set '%s' secret's owner reference: %w", secret.Name, err)
 		}
 		if res == controllerutil.OperationResultUpdated {
 			log.Info("added owner reference of the Hosted cluster, to the secret", "secret", secret.Name)
@@ -3239,7 +3239,7 @@ func computeAWSEndpointServiceCondition(awsEndpointServiceList hyperv1.AWSEndpoi
 func listNodePools(ctx context.Context, c client.Client, clusterNamespace, clusterName string) ([]hyperv1.NodePool, error) {
 	nodePoolList := &hyperv1.NodePoolList{}
 	if err := c.List(ctx, nodePoolList); err != nil {
-		return nil, fmt.Errorf("failed getting nodePool list: %v", err)
+		return nil, fmt.Errorf("failed getting nodePool list: %w", err)
 	}
 	// TODO: do a label association or something
 	filtered := []hyperv1.NodePool{}
@@ -4439,7 +4439,7 @@ func (r *HostedClusterReconciler) reconcileOIDCDocumentsWithStatus(ctx context.C
 			Message:            err.Error(),
 		})
 		if statusErr := r.Client.Status().Update(ctx, hcluster); statusErr != nil {
-			return fmt.Errorf("failed to reconcile OIDC documents: %s, failed to update status: %w", err, statusErr)
+			return fmt.Errorf("failed to reconcile OIDC documents: %w, failed to update status: %w", err, statusErr)
 		}
 		return fmt.Errorf("failed to reconcile OIDC documents: %w", err)
 	}
@@ -4525,7 +4525,8 @@ func (r *HostedClusterReconciler) reconcileAWSOIDCDocuments(ctx context.Context,
 				// return the code. If other specific error types can be handled, add
 				// new switch cases and try to provide more actionable info to the
 				// user.
-				wrapped = fmt.Errorf("%w: aws returned an error: %v", wrapped, err)
+				log.Error(err, "failed to upload OIDC document to S3", "path", path, "bucket", r.OIDCStorageProviderS3BucketName)
+				wrapped = fmt.Errorf("%w: aws returned an error", wrapped)
 			}
 			return wrapped
 		}

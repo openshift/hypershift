@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -316,7 +317,7 @@ func run(ctx context.Context, opts Options) error {
 	}()
 
 	log.Printf("Listening on %s", opts.Addr)
-	if err := server.ListenAndServeTLS("", ""); err != nil && err != http.ErrServerClosed {
+	if err := server.ListenAndServeTLS("", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
 	return nil

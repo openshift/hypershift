@@ -116,7 +116,7 @@ func run(ctx context.Context) error {
 	}
 
 	if err := mgr.Add(managementCluster); err != nil {
-		return fmt.Errorf("failed to add managementCluster to controller runtime manager: %v", err)
+		return fmt.Errorf("failed to add managementCluster to controller runtime manager: %w", err)
 	}
 
 	hypershiftClient, err := hypershiftclient.NewForConfig(managementKubeconfig)

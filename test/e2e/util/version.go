@@ -50,16 +50,16 @@ func init() {
 func SetReleaseImageVersion(ctx context.Context, latestReleaseImage string, pullSecretFile string) error {
 	data, err := os.ReadFile(pullSecretFile)
 	if err != nil {
-		return fmt.Errorf("error reading file: %v", err)
+		return fmt.Errorf("error reading file: %w", err)
 	}
 	releaseInfoProvider := releaseinfo.RegistryClientProvider{}
 	releaseImage, err := releaseInfoProvider.Lookup(ctx, latestReleaseImage, data)
 	if err != nil {
-		return fmt.Errorf("error looking up latest release image: %v", err)
+		return fmt.Errorf("error looking up latest release image: %w", err)
 	}
 	releaseVersion, err = semver.Parse(releaseImage.Version())
 	if err != nil {
-		return fmt.Errorf("error parsing version: %v", err)
+		return fmt.Errorf("error parsing version: %w", err)
 	}
 	releaseVersion.Patch = 0
 	releaseVersion.Pre = nil
@@ -76,7 +76,7 @@ func SetReleaseVersionFromHostedCluster(ctx context.Context, hostedCluster *hype
 	var err error
 	releaseVersion, err = semver.Parse(hcVersion)
 	if err != nil {
-		return fmt.Errorf("error parsing version: %v", err)
+		return fmt.Errorf("error parsing version: %w", err)
 	}
 	releaseVersion.Patch = 0
 	releaseVersion.Pre = nil
