@@ -37047,6 +37047,50 @@ NodePoolStatus
 </tr>
 </tbody>
 </table>
+###AESCBCKeyStatus { #hypershift.openshift.io/v1beta1.AESCBCKeyStatus }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.SecretEncryptionKeyStatus">SecretEncryptionKeyStatus</a>)
+</p>
+<p>
+<p>AESCBCKeyStatus contains a reference to the AESCBC key secret and a SHA-256 hash
+of its contents for fingerprinting.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>secret</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#localobjectreference-v1-core">
+Kubernetes core/v1.LocalObjectReference
+</a>
+</em>
+</td>
+<td>
+<p>secret is a reference to the secret containing the AESCBC key.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>dataHash</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>dataHash is the hex-encoded SHA-256 hash of the secret&rsquo;s &ldquo;key&rdquo; data field
+at the time re-encryption completed.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###AESCBCSpec { #hypershift.openshift.io/v1beta1.AESCBCSpec }
 <p>
 (<em>Appears on:</em>
@@ -37089,6 +37133,8 @@ Kubernetes core/v1.LocalObjectReference
 <em>(Optional)</em>
 <p>backupKey defines the old key during the rotation process so previously created
 secrets can continue to be decrypted until they are all re-encrypted with the active key.</p>
+<p>Deprecated: This field will be ignored when status.secretEncryption.activeKey is set.
+The system automatically manages the previous key via the status field.</p>
 </td>
 </tr>
 </tbody>
@@ -37345,6 +37391,47 @@ string
 </tr>
 </tbody>
 </table>
+###AWSKMSKeyStatus { #hypershift.openshift.io/v1beta1.AWSKMSKeyStatus }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.SecretEncryptionKeyStatus">SecretEncryptionKeyStatus</a>)
+</p>
+<p>
+<p>AWSKMSKeyStatus contains identity fields for an AWS KMS key, sufficient to
+reconstruct the backup sidecar container arguments.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>arn</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>arn is the Amazon Resource Name of the KMS key.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>region</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>region is the AWS region of the KMS key.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###AWSKMSSpec { #hypershift.openshift.io/v1beta1.AWSKMSSpec }
 <p>
 (<em>Appears on:</em>
@@ -37398,6 +37485,8 @@ AWSKMSKeyEntry
 <em>(Optional)</em>
 <p>backupKey defines the old key during the rotation process so previously created
 secrets can continue to be decrypted until they are all re-encrypted with the active key.</p>
+<p>Deprecated: This field will be ignored when status.secretEncryption.activeKey is set.
+The system automatically manages the previous key via the status field.</p>
 </td>
 </tr>
 <tr>
@@ -39084,6 +39173,58 @@ string
 </tr>
 </tbody>
 </table>
+###AzureKMSKeyStatus { #hypershift.openshift.io/v1beta1.AzureKMSKeyStatus }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.SecretEncryptionKeyStatus">SecretEncryptionKeyStatus</a>)
+</p>
+<p>
+<p>AzureKMSKeyStatus contains identity fields for an Azure KMS key, sufficient to
+reconstruct the EncryptionConfiguration read provider.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>keyVaultName</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>keyVaultName is the name of the Azure Key Vault.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>keyName</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>keyName is the name of the key in the vault.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>keyVersion</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>keyVersion is the version of the key.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###AzureKMSSpec { #hypershift.openshift.io/v1beta1.AzureKMSSpec }
 <p>
 (<em>Appears on:</em>
@@ -39126,6 +39267,8 @@ AzureKMSKey
 <em>(Optional)</em>
 <p>backupKey defines the old key during the rotation process so previously created
 secrets can continue to be decrypted until they are all re-encrypted with the active key.</p>
+<p>Deprecated: This field will be ignored when status.secretEncryption.activeKey is set.
+The system automatically manages the previous key via the status field.</p>
 </td>
 </tr>
 <tr>
@@ -41644,6 +41787,13 @@ A failure here often means a software bug or a non-stable cluster.</p>
 most recent etcd backup. True means the last backup completed successfully;
 False means a backup is in progress or the last backup failed.</p>
 </td>
+</tr><tr><td><p>&#34;EtcdDataEncryptionUpToDate&#34;</p></td>
+<td><p>EtcdDataEncryptionUpToDate indicates whether all etcd data is encrypted with the
+currently active encryption key.
+True: all data confirmed encrypted with the active key.
+False: re-encryption is in progress or has failed.
+Absent: encryption is not configured.</p>
+</td>
 </tr><tr><td><p>&#34;EtcdRecoveryActive&#34;</p></td>
 <td><p>EtcdRecoveryActive indicates that the Etcd cluster is failing and the
 recovery job was triggered.</p>
@@ -42528,6 +42678,168 @@ UserManagedDiagnostics
 </td>
 </tr>
 </tbody>
+</table>
+###EncryptionKeyReference { #hypershift.openshift.io/v1beta1.EncryptionKeyReference }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.EncryptionMigrationHistory">EncryptionMigrationHistory</a>)
+</p>
+<p>
+<p>EncryptionKeyReference identifies an encryption key by its provider and fingerprint.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>provider</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.SecretEncryptionProvider">
+SecretEncryptionProvider
+</a>
+</em>
+</td>
+<td>
+<p>provider identifies the encryption provider.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>fingerprint</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>fingerprint is the hex-encoded SHA-256 hash of the key&rsquo;s identity fields.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###EncryptionMigrationHistory { #hypershift.openshift.io/v1beta1.EncryptionMigrationHistory }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.SecretEncryptionStatus">SecretEncryptionStatus</a>)
+</p>
+<p>
+<p>EncryptionMigrationHistory records a key rotation, including in-progress rotations.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>from,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.EncryptionKeyReference">
+EncryptionKeyReference
+</a>
+</em>
+</td>
+<td>
+<p>from is the key that data was migrated from (the previous active key).</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>to,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.EncryptionKeyReference">
+EncryptionKeyReference
+</a>
+</em>
+</td>
+<td>
+<p>to is the key that data was migrated to (the target key).</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>state</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.EncryptionMigrationState">
+EncryptionMigrationState
+</a>
+</em>
+</td>
+<td>
+<p>state tracks the current phase of this rotation.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>startedTime</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#time-v1-meta">
+Kubernetes meta/v1.Time
+</a>
+</em>
+</td>
+<td>
+<p>startedTime is when the rotation was initiated.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>completionTime</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#time-v1-meta">
+Kubernetes meta/v1.Time
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>completionTime is when the rotation finished. Not set while the rotation is in progress.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###EncryptionMigrationState { #hypershift.openshift.io/v1beta1.EncryptionMigrationState }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.EncryptionMigrationHistory">EncryptionMigrationHistory</a>)
+</p>
+<p>
+<p>EncryptionMigrationState tracks the lifecycle of a key rotation.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;Completed&#34;</p></td>
+<td><p>EncryptionMigrationStateCompleted means all data was successfully re-encrypted with the target key.</p>
+</td>
+</tr><tr><td><p>&#34;Interrupted&#34;</p></td>
+<td><p>EncryptionMigrationStateInterrupted means the rotation was abandoned before data was encrypted
+with the target key (e.g., targetKey replaced during ReadOnlyDeploy).</p>
+</td>
+</tr><tr><td><p>&#34;Migrating&#34;</p></td>
+<td><p>EncryptionMigrationStateMigrating means all KAS replicas have converged on the new write
+provider and re-encryption (StorageVersionMigration) is in progress.</p>
+</td>
+</tr><tr><td><p>&#34;ReadOnlyDeploy&#34;</p></td>
+<td><p>EncryptionMigrationStateReadOnlyDeploy means the new key is being deployed as a read-only
+provider. The old key remains the write provider.</p>
+</td>
+</tr><tr><td><p>&#34;WritePromote&#34;</p></td>
+<td><p>EncryptionMigrationStateWritePromote means the new key is being promoted to write provider.
+The old key becomes read-only.</p>
+</td>
+</tr></tbody>
 </table>
 ###EtcdManagementType { #hypershift.openshift.io/v1beta1.EtcdManagementType }
 <p>
@@ -45313,6 +45625,20 @@ successful etcd backup snapshot. Persisted here because HCPEtcdBackup CRs
 are ephemeral and may be deleted by retention policies.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>secretEncryption,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.SecretEncryptionStatus">
+SecretEncryptionStatus
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>secretEncryption tracks the state of secret encryption key rotation and re-encryption.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###HostedControlPlaneSpec { #hypershift.openshift.io/v1beta1.HostedControlPlaneSpec }
@@ -46101,6 +46427,20 @@ ConfigurationStatus
 <p>configuration contains the cluster configuration status of the HostedCluster</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>secretEncryption,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.SecretEncryptionStatus">
+SecretEncryptionStatus
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>secretEncryption tracks the state of secret encryption key rotation and re-encryption.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###IBMCloudKMSAuthSpec { #hypershift.openshift.io/v1beta1.IBMCloudKMSAuthSpec }
@@ -46258,6 +46598,91 @@ int
 <td>
 <p>keyVersion is a unique number associated with the key. The number increments whenever a new
 key is enabled for data encryption.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###IBMCloudKMSKeyStatus { #hypershift.openshift.io/v1beta1.IBMCloudKMSKeyStatus }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.SecretEncryptionKeyStatus">SecretEncryptionKeyStatus</a>)
+</p>
+<p>
+<p>IBMCloudKMSKeyStatus contains identity fields for an IBM Cloud KMS key list entry,
+sufficient to reconstruct the KP_DATA_JSON entry for the backup key.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>crkID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>crkID is the Customer Root Key ID.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>instanceID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>instanceID is the KMS instance ID.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>keyVersion</code></br>
+<em>
+int32
+</em>
+</td>
+<td>
+<p>keyVersion is the key version number.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>region</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>region is the IBM Cloud region.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>correlationID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>correlationID is the correlation ID for the key.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>url</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>url is the KMS endpoint URL.</p>
 </td>
 </tr>
 </tbody>
@@ -51663,6 +52088,121 @@ When omitted, the autoscaler defaults to 50%.</p>
 </td>
 </tr></tbody>
 </table>
+###SecretEncryptionKeyStatus { #hypershift.openshift.io/v1beta1.SecretEncryptionKeyStatus }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.SecretEncryptionStatus">SecretEncryptionStatus</a>)
+</p>
+<p>
+<p>SecretEncryptionKeyStatus records the active key identity. Status-specific types are used
+instead of reusing the spec types directly, to decouple status serialization from spec type evolution.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>provider</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.SecretEncryptionProvider">
+SecretEncryptionProvider
+</a>
+</em>
+</td>
+<td>
+<p>provider identifies the encryption provider.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>azure,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureKMSKeyStatus">
+AzureKMSKeyStatus
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>azure holds the Azure KMS key identity fields.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>aws,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AWSKMSKeyStatus">
+AWSKMSKeyStatus
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>aws holds the AWS KMS key identity fields.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>ibmCloud,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.IBMCloudKMSKeyStatus">
+IBMCloudKMSKeyStatus
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>ibmCloud holds the IBM Cloud KMS key identity fields.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>aescbc,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AESCBCKeyStatus">
+AESCBCKeyStatus
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>aescbc holds a reference to the AESCBC key secret.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###SecretEncryptionProvider { #hypershift.openshift.io/v1beta1.SecretEncryptionProvider }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.EncryptionKeyReference">EncryptionKeyReference</a>, 
+<a href="#hypershift.openshift.io/v1beta1.SecretEncryptionKeyStatus">SecretEncryptionKeyStatus</a>)
+</p>
+<p>
+<p>SecretEncryptionProvider identifies the encryption provider recorded in status.
+This is a separate type from KMSProvider because the KMSProvider enum does not include AESCBC.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;AESCBC&#34;</p></td>
+<td></td>
+</tr><tr><td><p>&#34;AWS&#34;</p></td>
+<td></td>
+</tr><tr><td><p>&#34;Azure&#34;</p></td>
+<td></td>
+</tr><tr><td><p>&#34;IBMCloud&#34;</p></td>
+<td></td>
+</tr></tbody>
+</table>
 ###SecretEncryptionSpec { #hypershift.openshift.io/v1beta1.SecretEncryptionSpec }
 <p>
 (<em>Appears on:</em>
@@ -51720,6 +52260,74 @@ AESCBCSpec
 <td>
 <em>(Optional)</em>
 <p>aescbc defines metadata about the AESCBC secret encryption strategy</p>
+</td>
+</tr>
+</tbody>
+</table>
+###SecretEncryptionStatus { #hypershift.openshift.io/v1beta1.SecretEncryptionStatus }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.HostedClusterStatus">HostedClusterStatus</a>, 
+<a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneStatus">HostedControlPlaneStatus</a>)
+</p>
+<p>
+<p>SecretEncryptionStatus tracks the state of secret encryption key rotation and re-encryption.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>activeKey,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.SecretEncryptionKeyStatus">
+SecretEncryptionKeyStatus
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>activeKey is the encryption key specification that all etcd data is confirmed encrypted with.
+Updated after successful re-encryption.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>targetKey,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.SecretEncryptionKeyStatus">
+SecretEncryptionKeyStatus
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>targetKey is the key being rolled out during an active rotation. Snapshot from
+spec.secretEncryption&rsquo;s active key when the rotation starts. The CPO uses this
+(not the current spec) during the rotation, so mid-rotation spec changes are
+safely queued until the current rotation completes. Cleared when rotation completes.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>history</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.EncryptionMigrationHistory">
+[]EncryptionMigrationHistory
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>history contains a list of key rotations applied to this cluster. The newest
+entry is first in the list. Entries have state Completed when re-encryption
+has finished. The current rotation phase is always history[0].state when
+history[0] is not Completed or Interrupted.</p>
 </td>
 </tr>
 </tbody>
