@@ -66,10 +66,7 @@ You can create workload identities using either:
 
 **When to Complete**: This is a one-time setup that can be reused across multiple hosted clusters. Complete this before proceeding to Phase 2.
 
-👉 **Guides**:
-
-- [Azure Workload Identity Setup](azure-workload-identity-setup.md) - Overview with CLI and OIDC configuration
-- [Create Azure IAM Resources Separately](create-iam-separately.md) - Detailed IAM command reference
+👉 **Guide**: [Create Azure IAM Resources](create-iam-separately.md) - OIDC issuer configuration and workload identity creation
 
 ### Phase 2: Management Cluster Setup
 
@@ -168,7 +165,7 @@ Self-managed Azure HyperShift implements several security best practices:
 
 Begin your self-managed Azure HyperShift deployment by following the guides in order:
 
-1. **[Azure Workload Identity Setup](azure-workload-identity-setup.md)** - Set up managed identities and OIDC federation (or use [Create Azure IAM Resources Separately](create-iam-separately.md) for CLI-based setup)
+1. **[Create Azure IAM Resources](create-iam-separately.md)** - Set up OIDC issuer, managed identities, and workload identity federation
 2. **[Setup Azure Management Cluster for HyperShift](setup-management-cluster.md)** - Install HyperShift operator (with or without External DNS)
 3. **[Create a Self-Managed Azure HostedCluster](create-self-managed-azure-cluster.md)** - Deploy your first hosted cluster
 4. **[Deploy Azure Private Clusters](deploy-azure-private-clusters.md)** (Optional) - Configure private endpoint access with Azure Private Link
