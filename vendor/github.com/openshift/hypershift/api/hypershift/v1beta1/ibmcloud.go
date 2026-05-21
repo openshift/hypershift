@@ -44,6 +44,41 @@ type IBMCloudKMSKeyEntry struct {
 	KeyVersion int `json:"keyVersion"`
 }
 
+// IBMCloudKMSKeyStatus contains identity fields for an IBM Cloud KMS key list entry,
+// sufficient to reconstruct the KP_DATA_JSON entry for the backup key.
+// +k8s:deepcopy-gen=true
+type IBMCloudKMSKeyStatus struct {
+	// crkID is the Customer Root Key ID.
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=255
+	CRKID string `json:"crkID,omitempty"`
+	// instanceID is the KMS instance ID.
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=255
+	InstanceID string `json:"instanceID,omitempty"`
+	// keyVersion is the key version number.
+	// +required
+	// +kubebuilder:validation:Minimum=0
+	KeyVersion int32 `json:"keyVersion,omitempty"`
+	// region is the IBM Cloud region.
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=255
+	Region string `json:"region,omitempty"`
+	// correlationID is the correlation ID for the key.
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=255
+	CorrelationID string `json:"correlationID,omitempty"`
+	// url is the KMS endpoint URL.
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=2048
+	URL string `json:"url,omitempty"`
+}
+
 // IBMCloudKMSAuthSpec defines metadata for how authentication is done with IBM Cloud KMS
 type IBMCloudKMSAuthSpec struct {
 	// type defines the IBM Cloud KMS authentication strategy

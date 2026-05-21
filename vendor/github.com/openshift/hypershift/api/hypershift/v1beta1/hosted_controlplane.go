@@ -419,6 +419,10 @@ type HostedControlPlaneStatus struct {
 	// configuration contains the cluster configuration status of the HostedCluster
 	// +optional
 	Configuration *ConfigurationStatus `json:"configuration,omitempty"`
+
+	// secretEncryption tracks the state of secret encryption key rotation and re-encryption.
+	// +optional
+	SecretEncryption SecretEncryptionStatus `json:"secretEncryption,omitzero"`
 }
 
 // APIEndpoint represents a reachable Kubernetes API endpoint.
