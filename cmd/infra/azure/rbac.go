@@ -377,7 +377,7 @@ func (r *RBACManager) getObjectIDFromClientID(ctx context.Context, clientID stri
 	url := graphAPIEndpoint + "?" + strings.ReplaceAll(filterQuery, " ", "%20")
 
 	// Make the API request
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to create request: %w", err)
 	}

@@ -654,7 +654,7 @@ func checkOIDCPasswordGrantFlow(ctx context.Context,
 	reqCtx, cancel := context.WithTimeout(ctx, externalHTTPRequestTimeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(reqCtx, "POST", tokenURL, body)
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, tokenURL, body)
 	if err != nil {
 		return false, err
 	}

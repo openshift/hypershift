@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 
 	"github.com/openshift/hypershift/cmd/log"
@@ -198,7 +199,7 @@ func (o *CreateIAMOptions) ensureResourceGroup(ctx context.Context, l logr.Logge
 	}
 
 	var respErr *azcore.ResponseError
-	if !errors.As(err, &respErr) || respErr.StatusCode != 404 {
+	if !errors.As(err, &respErr) || respErr.StatusCode != http.StatusNotFound {
 		return fmt.Errorf("failed to check resource group %q: %w", o.ResourceGroupName, err)
 	}
 
