@@ -65,7 +65,7 @@ func TestValidateEndpointAccess(t *testing.T) {
 			opts.EndpointAccessPrivateNATSubnetID = test.endpointAccessPrivateNATSubnetID
 			opts.EndpointAccessPrivateAdditionalAllowedSubscriptions = test.endpointAccessPrivateAdditionalAllowedSubscriptions
 
-			_, err := opts.Validate(context.Background(), &core.CreateOptions{})
+			_, err := opts.Validate(context.Background(), nil)
 			if test.expectError {
 				if err == nil {
 					t.Fatalf("expected error but got nil")
@@ -335,6 +335,87 @@ func TestCreateCluster(t *testing.T) {
 	}
 }
 
+func TestValidateExternalDNSDomain(t *testing.T) {
+	t.Parallel()
+	tests := map[string]struct {
+		externalDNSDomain string
+		name              string
+		baseDomain        string
+		expectError       bool
+	}{
+		"When externalDNSDomain matches cluster domain, it should return an error": {
+			externalDNSDomain: "test-cluster.example.com",
+			name:              "test-cluster",
+			baseDomain:        "example.com",
+			expectError:       true,
+		},
+		"When externalDNSDomain is parent of cluster domain, it should return an error": {
+			externalDNSDomain: "example.com",
+			name:              "test-cluster",
+			baseDomain:        "example.com",
+			expectError:       true,
+		},
+		"When externalDNSDomain differs from cluster domain, it should return nil": {
+			externalDNSDomain: "external.different.com",
+			name:              "test-cluster",
+			baseDomain:        "example.com",
+			expectError:       false,
+		},
+		"When externalDNSDomain is empty, it should return nil": {
+			externalDNSDomain: "",
+			name:              "test-cluster",
+			baseDomain:        "example.com",
+			expectError:       false,
+		},
+		"When externalDNSDomain matches cluster domain case-insensitively, it should return an error": {
+			externalDNSDomain: "Test-Cluster.Example.COM",
+			name:              "test-cluster",
+			baseDomain:        "example.com",
+			expectError:       true,
+		},
+		"When cluster name is empty, it should return nil": {
+			externalDNSDomain: "test-cluster.example.com",
+			name:              "",
+			baseDomain:        "example.com",
+			expectError:       false,
+		},
+		"When base domain is empty, it should return nil": {
+			externalDNSDomain: "test-cluster.example.com",
+			name:              "test-cluster",
+			baseDomain:        "",
+			expectError:       false,
+		},
+		"When externalDNSDomain shares a suffix but not on dot boundary, it should return nil": {
+			externalDNSDomain: "ample.com",
+			name:              "test-cluster",
+			baseDomain:        "example.com",
+			expectError:       false,
+		},
+		"When externalDNSDomain has trailing dot, it should still detect shadowing": {
+			externalDNSDomain: "test-cluster.example.com.",
+			name:              "test-cluster",
+			baseDomain:        "example.com",
+			expectError:       true,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			g := NewGomegaWithT(t)
+
+			err := validateExternalDNSDomain(test.externalDNSDomain, test.name, test.baseDomain)
+			if test.expectError {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring("conflicts with cluster domain"))
+				g.Expect(err.Error()).To(ContainSubstring("shadows *.apps DNS resolution"))
+			} else {
+				g.Expect(err).NotTo(HaveOccurred())
+			}
+		})
+	}
+}
+
 func TestValidateOAuthPublishingStrategy(t *testing.T) {
 	tests := map[string]struct {
 		oauthPublishingStrategy string
@@ -375,7 +456,7 @@ func TestValidateOAuthPublishingStrategy(t *testing.T) {
 			opts.ManagedIdentitiesFile = test.managedIdentitiesFile
 			opts.DataPlaneIdentitiesFile = test.dataPlaneIdentitiesFile
 
-			_, err := opts.Validate(context.Background(), &core.CreateOptions{})
+			_, err := opts.Validate(context.Background(), nil)
 			if test.expectError {
 				g.Expect(err).To(HaveOccurred())
 				g.Expect(err).To(MatchError(test.expectedErrorMsg))

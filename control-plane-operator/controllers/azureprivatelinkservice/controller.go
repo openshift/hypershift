@@ -334,7 +334,7 @@ func (r *AzurePrivateLinkServiceReconciler) Reconcile(ctx context.Context, req c
 	// Workers need to resolve api-<name>.<basedomain> and oauth-<name>.<basedomain>
 	// to the PE IP so that the console, OAuth, and other services work on private clusters.
 	if azPLS.Spec.BaseDomain != "" {
-		if result, err := r.reconcileBaseDomainDNS(ctx, azPLS, hcp.Name, log); err != nil || !result.IsZero() {
+		if result, err := r.reconcileBaseDomainDNS(ctx, azPLS, hcp.Name, hcp.Spec.DNS.BaseDomain, log); err != nil || !result.IsZero() {
 			return result, err
 		}
 	}
@@ -744,6 +744,19 @@ func (r *AzurePrivateLinkServiceReconciler) reconcileDNS(ctx context.Context, az
 	}, log)
 }
 
+func baseDomainShadowsClusterDomain(baseDomain, clusterName, hcpBaseDomain string) bool {
+	if baseDomain == "" || clusterName == "" || hcpBaseDomain == "" {
+		return false
+	}
+	clusterDomain := strings.ToLower(clusterName + "." + hcpBaseDomain)
+	// A Private DNS zone named baseDomain is authoritative for all queries
+	// under *.baseDomain. Prepending a dot to both sides ensures we match at
+	// domain label boundaries only (e.g. "ample.com" does NOT match
+	// "example.com") while also catching baseDomain == hcpBaseDomain
+	// (e.g. baseDomain "example.com" shadows "my-cluster.example.com").
+	return strings.HasSuffix("."+clusterDomain, "."+strings.ToLower(baseDomain))
+}
+
 // reconcileBaseDomainDNS creates a Private DNS Zone for the cluster's base domain,
 // links it to the guest VNet, and creates A records for the API and/or OAuth hostnames.
 // This enables worker VMs to resolve api-<name>.<basedomain> and oauth-<name>.<basedomain>
@@ -756,7 +769,44 @@ func (r *AzurePrivateLinkServiceReconciler) reconcileDNS(ctx context.Context, az
 //     (backward compatibility for clusters without a separate OAuth PLS).
 //   - Any other CR (e.g., oauth-openshift): Creates only oauth-<name> record, pointing
 //     to this CR's own PE IP.
-func (r *AzurePrivateLinkServiceReconciler) reconcileBaseDomainDNS(ctx context.Context, azPLS *hyperv1.AzurePrivateLinkService, clusterName string, log logr.Logger) (ctrl.Result, error) {
+//
+// When the base domain would shadow the cluster's apps domain (baseDomain ==
+// clusterName.hcpBaseDomain or is a parent domain of it), a degraded condition
+// is set on the CR and zone creation is skipped entirely. Creating a Private DNS
+// zone for the base domain in this case would make it authoritative for *.apps
+// queries, but the Private Endpoint routes to the management-plane private-router
+// (HAProxy) whose SNI ACLs only match *.hypershift.local hostnames. Base domain
+// *.apps hostnames would fall through to KAS, which presents a TLS cert that does
+// not cover them, breaking ingress. The correct fix is to recreate the cluster
+// with a different --external-dns-domain value.
+func (r *AzurePrivateLinkServiceReconciler) reconcileBaseDomainDNS(ctx context.Context, azPLS *hyperv1.AzurePrivateLinkService, clusterName, hcpBaseDomain string, log logr.Logger) (ctrl.Result, error) {
+	// Skip zone creation when shadowing is detected. We cannot add *.apps → PE IP
+	// because the PE routes to private-router (HAProxy) which only serves
+	// .hypershift.local hostnames — apps traffic gets KAS certs. The data-plane
+	// router-default IP is not discoverable from this controller.
+	if baseDomainShadowsClusterDomain(azPLS.Spec.BaseDomain, clusterName, hcpBaseDomain) {
+		log.Info("Base domain zone shadows cluster apps domain, DNS resolution for *.apps will be affected",
+			"baseDomain", azPLS.Spec.BaseDomain,
+			"clusterDomain", clusterName+"."+hcpBaseDomain)
+
+		patch := client.MergeFrom(azPLS.DeepCopy())
+		meta.SetStatusCondition(&azPLS.Status.Conditions, metav1.Condition{
+			Type:   string(hyperv1.AzurePrivateDNSAvailable),
+			Status: metav1.ConditionFalse,
+			Reason: "BaseDomainShadowsClusterDomain",
+			Message: fmt.Sprintf("Base domain %q shadows the cluster domain %q. "+
+				"The Private DNS zone will intercept *.apps queries, breaking ingress. "+
+				"Recreate the cluster with a different --external-dns-domain value.",
+				azPLS.Spec.BaseDomain, clusterName+"."+hcpBaseDomain),
+			ObservedGeneration: azPLS.Generation,
+		})
+		if err := r.Status().Patch(ctx, azPLS, patch); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to update degraded condition for base domain shadowing: %w", err)
+		}
+
+		return ctrl.Result{RequeueAfter: azureutil.DriftDetectionRequeueInterval}, nil
+	}
+
 	recordNames, err := r.recordNamesForCR(ctx, azPLS, clusterName, log)
 	if err != nil {
 		return ctrl.Result{}, err

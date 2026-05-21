@@ -6988,6 +6988,17 @@ spec:
             - message: ovnKubernetesConfig is forbidden when networkType is not OVNKubernetes
               rule: self.networking.networkType == 'OVNKubernetes' || !has(self.operatorConfiguration)
                 || !has(self.operatorConfiguration.clusterNetworkOperator) || !has(self.operatorConfiguration.clusterNetworkOperator.ovnKubernetesConfig)
+            - message: Azure service hostname domain must not overlap with the cluster
+                base domain. An Azure Private DNS zone matching or containing the
+                base domain would shadow *.apps DNS resolution.
+              rule: self.platform.type != "Azure" || self.dns.baseDomain == "" ||
+                !self.services.exists(s, (has(s.servicePublishingStrategy.route) &&
+                has(s.servicePublishingStrategy.route.hostname) && s.servicePublishingStrategy.route.hostname.contains('.')
+                && ('.' + self.dns.baseDomain).endsWith('.' + s.servicePublishingStrategy.route.hostname.substring(s.servicePublishingStrategy.route.hostname.indexOf('.')
+                + 1))) || (has(s.servicePublishingStrategy.loadBalancer) && has(s.servicePublishingStrategy.loadBalancer.hostname)
+                && s.servicePublishingStrategy.loadBalancer.hostname.contains('.')
+                && ('.' + self.dns.baseDomain).endsWith('.' + s.servicePublishingStrategy.loadBalancer.hostname.substring(s.servicePublishingStrategy.loadBalancer.hostname.indexOf('.')
+                + 1))))
           status:
             description: status is the latest observed status of the HostedCluster.
             properties:
