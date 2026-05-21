@@ -265,6 +265,12 @@ const (
 	PublicEndpointSharedIngressConfiguredReason = "SharedIngressConfigured"
 	PublicEndpointTopologyPrivateReason         = "TopologyPrivate"
 	PublicEndpointConvergenceInProgressReason   = "ConvergenceInProgress"
+	// EtcdDataEncryptionUpToDate indicates whether all etcd data is encrypted with the
+	// currently active encryption key.
+	// True: all data confirmed encrypted with the active key.
+	// False: re-encryption is in progress or has failed.
+	// Absent: encryption is not configured.
+	EtcdDataEncryptionUpToDate ConditionType = "EtcdDataEncryptionUpToDate"
 )
 
 // Reasons.
@@ -349,6 +355,14 @@ const (
 	AutoNodeNotConfiguredReason    = "AutoNodeNotConfigured"
 	AutoNodeProgressingReason      = "AutoNodeProgressing"
 	AutoNodeEvaluationFailedReason = "AutoNodeEvaluationFailed"
+
+	ReadOnlyRolloutInProgressReason     = "ReadOnlyRolloutInProgress"
+	WritePromotionInProgressReason      = "WritePromotionInProgress"
+	ReEncryptionInProgressReason        = "ReEncryptionInProgress"
+	ReEncryptionCompletedReason         = "ReEncryptionCompleted"
+	ReEncryptionFailedReason            = "ReEncryptionFailed"
+	ReEncryptionWaitingForKASReason     = "ReEncryptionWaitingForKASConvergence"
+	ReEncryptionPersistentFailureReason = "ReEncryptionPersistentFailure"
 )
 
 // Messages.

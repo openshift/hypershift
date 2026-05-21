@@ -856,6 +856,9 @@ type AzureKMSSpec struct {
 	ActiveKey AzureKMSKey `json:"activeKey"`
 	// backupKey defines the old key during the rotation process so previously created
 	// secrets can continue to be decrypted until they are all re-encrypted with the active key.
+	//
+	// Deprecated: This field will be ignored when status.secretEncryption.activeKey is set.
+	// The system automatically manages the previous key via the status field.
 	// +optional
 	BackupKey *AzureKMSKey `json:"backupKey,omitempty"`
 
@@ -900,6 +903,27 @@ type AzureKMSKey struct {
 	// +kubebuilder:validation:MaxLength=255
 	// +required
 	KeyVersion string `json:"keyVersion"`
+}
+
+// AzureKMSKeyStatus contains identity fields for an Azure KMS key, sufficient to
+// reconstruct the EncryptionConfiguration read provider.
+// +k8s:deepcopy-gen=true
+type AzureKMSKeyStatus struct {
+	// keyVaultName is the name of the Azure Key Vault.
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=255
+	KeyVaultName string `json:"keyVaultName,omitempty"`
+	// keyName is the name of the key in the vault.
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=255
+	KeyName string `json:"keyName,omitempty"`
+	// keyVersion is the version of the key.
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=255
+	KeyVersion string `json:"keyVersion,omitempty"`
 }
 
 // AzureAuthenticationType is a discriminated union type that contains the Azure authentication configuration for an

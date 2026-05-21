@@ -2073,8 +2073,149 @@ type AESCBCSpec struct {
 	ActiveKey corev1.LocalObjectReference `json:"activeKey"`
 	// backupKey defines the old key during the rotation process so previously created
 	// secrets can continue to be decrypted until they are all re-encrypted with the active key.
+	//
+	// Deprecated: This field will be ignored when status.secretEncryption.activeKey is set.
+	// The system automatically manages the previous key via the status field.
 	// +optional
 	BackupKey *corev1.LocalObjectReference `json:"backupKey,omitempty"`
+}
+
+// SecretEncryptionProvider identifies the encryption provider recorded in status.
+// This is a separate type from KMSProvider because the KMSProvider enum does not include AESCBC.
+type SecretEncryptionProvider string
+
+const (
+	SecretEncryptionProviderAzure    SecretEncryptionProvider = "Azure"
+	SecretEncryptionProviderAWS      SecretEncryptionProvider = "AWS"
+	SecretEncryptionProviderIBMCloud SecretEncryptionProvider = "IBMCloud"
+	SecretEncryptionProviderAESCBC   SecretEncryptionProvider = "AESCBC"
+)
+
+// SecretEncryptionStatus tracks the state of secret encryption key rotation and re-encryption.
+// +k8s:deepcopy-gen=true
+// +kubebuilder:validation:MinProperties=1
+type SecretEncryptionStatus struct {
+	// activeKey is the encryption key specification that all etcd data is confirmed encrypted with.
+	// Updated after successful re-encryption.
+	// +optional
+	ActiveKey SecretEncryptionKeyStatus `json:"activeKey,omitzero"`
+	// targetKey is the key being rolled out during an active rotation. Snapshot from
+	// spec.secretEncryption's active key when the rotation starts. The CPO uses this
+	// (not the current spec) during the rotation, so mid-rotation spec changes are
+	// safely queued until the current rotation completes. Cleared when rotation completes.
+	// +optional
+	TargetKey SecretEncryptionKeyStatus `json:"targetKey,omitzero"`
+	// history contains a list of key rotations applied to this cluster. The newest
+	// entry is first in the list. Entries have state Completed when re-encryption
+	// has finished. The current rotation phase is always history[0].state when
+	// history[0] is not Completed or Interrupted.
+	// +optional
+	// +listType=atomic
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=5
+	History []EncryptionMigrationHistory `json:"history,omitempty"`
+}
+
+// SecretEncryptionKeyStatus records the active key identity. Status-specific types are used
+// instead of reusing the spec types directly, to decouple status serialization from spec type evolution.
+// +k8s:deepcopy-gen=true
+// +kubebuilder:validation:XValidation:rule="self.provider == 'Azure' ? has(self.azure) : !has(self.azure)",message="azure is required when provider is Azure, and forbidden otherwise"
+// +kubebuilder:validation:XValidation:rule="self.provider == 'AWS' ? has(self.aws) : !has(self.aws)",message="aws is required when provider is AWS, and forbidden otherwise"
+// +kubebuilder:validation:XValidation:rule="self.provider == 'IBMCloud' ? has(self.ibmCloud) : !has(self.ibmCloud)",message="ibmCloud is required when provider is IBMCloud, and forbidden otherwise"
+// +kubebuilder:validation:XValidation:rule="self.provider == 'AESCBC' ? has(self.aescbc) : !has(self.aescbc)",message="aescbc is required when provider is AESCBC, and forbidden otherwise"
+// +union
+type SecretEncryptionKeyStatus struct {
+	// provider identifies the encryption provider.
+	// +required
+	// +unionDiscriminator
+	// +kubebuilder:validation:Enum=Azure;AWS;IBMCloud;AESCBC
+	Provider SecretEncryptionProvider `json:"provider,omitempty"`
+	// azure holds the Azure KMS key identity fields.
+	// +optional
+	// +unionMember
+	Azure AzureKMSKeyStatus `json:"azure,omitzero"`
+	// aws holds the AWS KMS key identity fields.
+	// +optional
+	// +unionMember
+	AWS AWSKMSKeyStatus `json:"aws,omitzero"`
+	// ibmCloud holds the IBM Cloud KMS key identity fields.
+	// +optional
+	// +unionMember
+	IBMCloud IBMCloudKMSKeyStatus `json:"ibmCloud,omitzero"`
+	// aescbc holds a reference to the AESCBC key secret.
+	// +optional
+	// +unionMember
+	AESCBC AESCBCKeyStatus `json:"aescbc,omitzero"`
+}
+
+// AESCBCKeyStatus contains a reference to the AESCBC key secret and a SHA-256 hash
+// of its contents for fingerprinting.
+// +k8s:deepcopy-gen=true
+type AESCBCKeyStatus struct {
+	// secret is a reference to the secret containing the AESCBC key.
+	// +required
+	Secret corev1.LocalObjectReference `json:"secret,omitempty"`
+	// dataHash is the hex-encoded SHA-256 hash of the secret's "key" data field
+	// at the time re-encryption completed.
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=64
+	DataHash string `json:"dataHash,omitempty"`
+}
+
+// EncryptionKeyReference identifies an encryption key by its provider and fingerprint.
+// +k8s:deepcopy-gen=true
+type EncryptionKeyReference struct {
+	// provider identifies the encryption provider.
+	// +required
+	// +kubebuilder:validation:Enum=Azure;AWS;IBMCloud;AESCBC
+	Provider SecretEncryptionProvider `json:"provider,omitempty"`
+	// fingerprint is the hex-encoded SHA-256 hash of the key's identity fields.
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=64
+	Fingerprint string `json:"fingerprint,omitempty"`
+}
+
+// EncryptionMigrationState tracks the lifecycle of a key rotation.
+// +kubebuilder:validation:Enum=ReadOnlyDeploy;WritePromote;Migrating;Completed;Interrupted
+type EncryptionMigrationState string
+
+const (
+	// EncryptionMigrationStateReadOnlyDeploy means the new key is being deployed as a read-only
+	// provider. The old key remains the write provider.
+	EncryptionMigrationStateReadOnlyDeploy EncryptionMigrationState = "ReadOnlyDeploy"
+	// EncryptionMigrationStateWritePromote means the new key is being promoted to write provider.
+	// The old key becomes read-only.
+	EncryptionMigrationStateWritePromote EncryptionMigrationState = "WritePromote"
+	// EncryptionMigrationStateMigrating means all KAS replicas have converged on the new write
+	// provider and re-encryption (StorageVersionMigration) is in progress.
+	EncryptionMigrationStateMigrating EncryptionMigrationState = "Migrating"
+	// EncryptionMigrationStateCompleted means all data was successfully re-encrypted with the target key.
+	EncryptionMigrationStateCompleted EncryptionMigrationState = "Completed"
+	// EncryptionMigrationStateInterrupted means the rotation was abandoned before data was encrypted
+	// with the target key (e.g., targetKey replaced during ReadOnlyDeploy).
+	EncryptionMigrationStateInterrupted EncryptionMigrationState = "Interrupted"
+)
+
+// EncryptionMigrationHistory records a key rotation, including in-progress rotations.
+// +k8s:deepcopy-gen=true
+type EncryptionMigrationHistory struct {
+	// from is the key that data was migrated from (the previous active key).
+	// +required
+	From EncryptionKeyReference `json:"from,omitzero"`
+	// to is the key that data was migrated to (the target key).
+	// +required
+	To EncryptionKeyReference `json:"to,omitzero"`
+	// state tracks the current phase of this rotation.
+	// +required
+	State EncryptionMigrationState `json:"state,omitempty"`
+	// startedTime is when the rotation was initiated.
+	// +required
+	StartedTime metav1.Time `json:"startedTime,omitempty"`
+	// completionTime is when the rotation finished. Not set while the rotation is in progress.
+	// +optional
+	CompletionTime *metav1.Time `json:"completionTime,omitempty"`
 }
 
 type PayloadArchType string
@@ -2190,6 +2331,10 @@ type HostedClusterStatus struct {
 	// +kubebuilder:validation:MaxLength=2048
 	// +kubebuilder:validation:XValidation:rule="self.matches('^(https|s3)://.*')",message="lastSuccessfulEtcdBackupURL must be a valid URL with scheme https or s3"
 	LastSuccessfulEtcdBackupURL string `json:"lastSuccessfulEtcdBackupURL,omitempty"`
+
+	// secretEncryption tracks the state of secret encryption key rotation and re-encryption.
+	// +optional
+	SecretEncryption SecretEncryptionStatus `json:"secretEncryption,omitzero"`
 }
 
 // AutoNodeStatus contains the observed state of the AutoNode provisioner.
