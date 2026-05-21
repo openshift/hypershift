@@ -173,7 +173,7 @@ func WaitForOAuthRouteReady(t *testing.T, ctx context.Context, client crclient.C
 	err := wait.PollUntilContextTimeout(ctx, time.Second, time.Minute, true, func(ctx context.Context) (done bool, err error) {
 		err = client.Get(context.Background(), crclient.ObjectKeyFromObject(route), route)
 		if err != nil {
-			return false, nil
+			return false, nil //nolint:nilerr // retry until route exists
 		}
 		return true, nil
 	})
@@ -253,7 +253,7 @@ func WaitForOauthConfig(t testing.TB, ctx context.Context, client crclient.Clien
 	err := wait.PollUntilContextTimeout(ctx, time.Second, 10*time.Minute, true, func(ctx context.Context) (done bool, err error) {
 		err = client.Get(context.Background(), crclient.ObjectKeyFromObject(oauthConfigCM), oauthConfigCM)
 		if err != nil {
-			return false, nil
+			return false, nil //nolint:nilerr // retry until configmap exists
 		}
 		data, ok := oauthConfigCM.Data[OAuthServerConfigKey]
 		if !ok || data == "" {
@@ -262,7 +262,7 @@ func WaitForOauthConfig(t testing.TB, ctx context.Context, client crclient.Clien
 
 		ouathConfig := &osinv1.OsinServerConfig{}
 		if _, _, err := api.YamlSerializer.Decode([]byte(data), nil, ouathConfig); err != nil {
-			return false, nil
+			return false, nil //nolint:nilerr // retry until config is parseable
 		}
 		if len(ouathConfig.OAuthConfig.IdentityProviders) == 0 {
 			return false, nil
@@ -328,7 +328,7 @@ func WaitForOAuthLoadBalancerReady(t testing.TB, ctx context.Context, client crc
 	svc := hcpmanifests.OauthServerService(hcpNamespace)
 	err := wait.PollUntilContextTimeout(ctx, 5*time.Second, 10*time.Minute, true, func(ctx context.Context) (done bool, err error) {
 		if err := client.Get(ctx, crclient.ObjectKeyFromObject(svc), svc); err != nil {
-			return false, nil
+			return false, nil //nolint:nilerr // retry until service exists
 		}
 		if svc.Spec.Type != corev1.ServiceTypeLoadBalancer {
 			t.Logf("Waiting for oauth-openshift Service type to be LoadBalancer, got %s", svc.Spec.Type)

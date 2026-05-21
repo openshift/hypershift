@@ -1002,7 +1002,7 @@ func (r *NodePoolReconciler) supportedVersionSkewCondition(ctx context.Context, 
 			Message:            err.Error(),
 			ObservedGeneration: nodePool.Generation,
 		})
-		return nil, nil
+		return nil, nil //nolint:nilerr // validation error is surfaced via status condition, not returned
 	}
 	SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 		Type:               hyperv1.NodePoolSupportedVersionSkewConditionType,

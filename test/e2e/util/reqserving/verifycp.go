@@ -93,7 +93,7 @@ func verifyKASGoMemLimit(ctx context.Context, client crclient.Client, cpNamespac
 	err := wait.PollUntilContextCancel(pollCtx, DefaultPollingInterval, true, func(pctx context.Context) (bool, error) {
 		kasPods := &corev1.PodList{}
 		if err := client.List(pctx, kasPods, crclient.MatchingLabels{"app": "kube-apiserver"}, crclient.InNamespace(cpNamespace)); err != nil {
-			return false, nil
+			return false, nil //nolint:nilerr // retry until pods are listable
 		}
 		if len(kasPods.Items) == 0 {
 			return false, nil
@@ -132,7 +132,7 @@ func verifyInflightConfig(ctx context.Context, client crclient.Client, cpNamespa
 	err := wait.PollUntilContextCancel(pollCtx, DefaultPollingInterval, true, func(pctx context.Context) (bool, error) {
 		kasConfigMap := &corev1.ConfigMap{}
 		if err := client.Get(pctx, types.NamespacedName{Name: "kas-config", Namespace: cpNamespace}, kasConfigMap); err != nil {
-			return false, nil
+			return false, nil //nolint:nilerr // retry until configmap exists
 		}
 		data, ok := kasConfigMap.Data["config.json"]
 		if !ok || data == "" {
@@ -140,7 +140,7 @@ func verifyInflightConfig(ctx context.Context, client crclient.Client, cpNamespa
 		}
 		kasConfig := &kcpv1.KubeAPIServerConfig{}
 		if err := json.Unmarshal([]byte(data), &kasConfig); err != nil {
-			return false, nil
+			return false, nil //nolint:nilerr // retry until config is parseable
 		}
 		if !inflightArgMatches(kasConfig, "max-requests-inflight", effects.MaximumRequestsInflight) {
 			return false, nil
@@ -185,7 +185,7 @@ func verifyResourceRequests(ctx context.Context, client crclient.Client, cpNames
 		for _, effect := range effects.ResourceRequests {
 			containers, err := getContainersForEffect(pctx, client, cpNamespace, effect)
 			if err != nil {
-				return false, nil
+				return false, nil //nolint:nilerr // retry until containers are available
 			}
 			if !containerResourcesMatch(containers, effect) {
 				return false, nil

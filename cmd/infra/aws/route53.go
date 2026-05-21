@@ -188,7 +188,10 @@ func (o *DestroyInfraOptions) CleanupPublicZone(ctx context.Context, client awsa
 	name := o.BaseDomain
 	id, err := LookupZone(ctx, client, name, false)
 	if err != nil {
-		return nil
+		if strings.Contains(err.Error(), "not found") {
+			return nil
+		}
+		return fmt.Errorf("failed to lookup public hosted zone %s: %w", name, err)
 	}
 	recordName := fmt.Sprintf("*.apps.%s.%s", o.Name, o.BaseDomain)
 	err = deleteRecord(ctx, client, id, recordName)

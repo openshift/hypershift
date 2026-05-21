@@ -103,8 +103,11 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 
 	telemeterClientSecret := monitoring.TelemeterClientSecret()
 	if err := r.Get(ctx, client.ObjectKeyFromObject(telemeterClientSecret), telemeterClientSecret); err != nil {
-		log.Info("user-workload-monitoring (UWM) telemetry remote writer is disabled because the 'telemeter-client' secret does not exist.")
-		return ctrl.Result{}, nil
+		if apierrors.IsNotFound(err) {
+			log.Info("user-workload-monitoring (UWM) telemetry remote writer is disabled because the 'telemeter-client' secret does not exist.")
+			return ctrl.Result{}, nil //nolint:nilerr // missing secret means UWM telemetry is disabled
+		}
+		return ctrl.Result{}, r.errorHandler(operatorDeployment, fmt.Errorf("failed to get telemeter-client secret: %w", err))
 	}
 
 	if err := r.reconcileTelemetryRemoteWrite(ctx, string(clusterVersion.Spec.ClusterID)); err != nil {
