@@ -20,6 +20,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kauthnv1typedclient "k8s.io/client-go/kubernetes/typed/authentication/v1"
 	"k8s.io/client-go/rest"
+
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -96,7 +97,7 @@ func (kc *KeycloakAdminClient) GetAdminToken(ctx context.Context) error {
 		"password":   []string{kc.AdminPass},
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", tokenURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, tokenURL, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create token request: %w", err)
 	}
@@ -138,7 +139,7 @@ func (kc *KeycloakAdminClient) CreateGroup(ctx context.Context, groupName string
 		return "", fmt.Errorf("failed to marshal group: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", groupURL, strings.NewReader(string(groupJSON)))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, groupURL, strings.NewReader(string(groupJSON)))
 	if err != nil {
 		return "", fmt.Errorf("failed to create group request: %w", err)
 	}
@@ -181,7 +182,7 @@ func (kc *KeycloakAdminClient) CreateUser(ctx context.Context, user KeycloakUser
 		return "", fmt.Errorf("failed to marshal user: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", userURL, strings.NewReader(string(userJSON)))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, userURL, strings.NewReader(string(userJSON)))
 	if err != nil {
 		return "", fmt.Errorf("failed to create user request: %w", err)
 	}
@@ -230,7 +231,7 @@ func (kc *KeycloakAdminClient) SetUserPassword(ctx context.Context, userID, pass
 		return fmt.Errorf("failed to marshal credential: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "PUT", passwordURL, strings.NewReader(string(credJSON)))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, passwordURL, strings.NewReader(string(credJSON)))
 	if err != nil {
 		return fmt.Errorf("failed to create password request: %w", err)
 	}
@@ -255,7 +256,7 @@ func (kc *KeycloakAdminClient) SetUserPassword(ctx context.Context, userID, pass
 func (kc *KeycloakAdminClient) AddUserToGroup(ctx context.Context, userID, groupID string) error {
 	groupURL := fmt.Sprintf("%s/admin/realms/master/users/%s/groups/%s", kc.BaseURL, userID, groupID)
 
-	req, err := http.NewRequestWithContext(ctx, "PUT", groupURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, groupURL, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create add-to-group request: %w", err)
 	}
@@ -280,7 +281,7 @@ func (kc *KeycloakAdminClient) AddUserToGroup(ctx context.Context, userID, group
 func (kc *KeycloakAdminClient) GetClientByClientID(ctx context.Context, clientID string) (string, error) {
 	clientsURL := fmt.Sprintf("%s/admin/realms/master/clients?clientId=%s", kc.BaseURL, url.QueryEscape(clientID))
 
-	req, err := http.NewRequestWithContext(ctx, "GET", clientsURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, clientsURL, nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to create get-client request: %w", err)
 	}
@@ -313,7 +314,7 @@ func (kc *KeycloakAdminClient) GetClientByClientID(ctx context.Context, clientID
 func (kc *KeycloakAdminClient) DeleteUser(ctx context.Context, userID string) error {
 	userURL := fmt.Sprintf("%s/admin/realms/master/users/%s", kc.BaseURL, userID)
 
-	req, err := http.NewRequestWithContext(ctx, "DELETE", userURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, userURL, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create delete-user request: %w", err)
 	}
@@ -337,7 +338,7 @@ func (kc *KeycloakAdminClient) DeleteUser(ctx context.Context, userID string) er
 func (kc *KeycloakAdminClient) DeleteGroup(ctx context.Context, groupID string) error {
 	groupURL := fmt.Sprintf("%s/admin/realms/master/groups/%s", kc.BaseURL, groupID)
 
-	req, err := http.NewRequestWithContext(ctx, "DELETE", groupURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, groupURL, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create delete-group request: %w", err)
 	}
@@ -361,7 +362,7 @@ func (kc *KeycloakAdminClient) DeleteGroup(ctx context.Context, groupID string) 
 func (kc *KeycloakAdminClient) GetUserByUsername(ctx context.Context, username string) (string, error) {
 	usersURL := fmt.Sprintf("%s/admin/realms/master/users?username=%s&exact=true", kc.BaseURL, url.QueryEscape(username))
 
-	req, err := http.NewRequestWithContext(ctx, "GET", usersURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, usersURL, nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to create get-user request: %w", err)
 	}
@@ -397,7 +398,7 @@ func (kc *KeycloakAdminClient) GetUserByUsername(ctx context.Context, username s
 func (kc *KeycloakAdminClient) GetGroupByName(ctx context.Context, groupName string) (string, error) {
 	groupsURL := fmt.Sprintf("%s/admin/realms/master/groups", kc.BaseURL)
 
-	req, err := http.NewRequestWithContext(ctx, "GET", groupsURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, groupsURL, nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to create get-groups request: %w", err)
 	}
@@ -440,7 +441,7 @@ func (kc *KeycloakAdminClient) CreateProtocolMapper(ctx context.Context, clientI
 		return fmt.Errorf("failed to marshal mapper: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", mapperURL, strings.NewReader(string(mapperJSON)))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, mapperURL, strings.NewReader(string(mapperJSON)))
 	if err != nil {
 		return fmt.Errorf("failed to create mapper request: %w", err)
 	}
@@ -675,11 +676,13 @@ func renewAdminTokenIfExpired(ctx context.Context, adminClient *KeycloakAdminCli
 		},
 	}
 
-	response, err := httpClient.PostForm(
-		requestURL,
-		formData,
-	)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, requestURL, strings.NewReader(formData.Encode()))
+	if err != nil {
+		return fmt.Errorf("failed to create token introspect request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
+	response, err := httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to POST to token introspect endpoint: %w", err)
 	}
@@ -705,7 +708,9 @@ func renewAdminTokenIfExpired(ctx context.Context, adminClient *KeycloakAdminCli
 
 	if !active {
 		// refresh admin token as it has expired
-		adminClient.GetAdminToken(ctx)
+		if err := adminClient.GetAdminToken(ctx); err != nil {
+			return fmt.Errorf("failed to refresh admin token: %w", err)
+		}
 	}
 
 	return nil
@@ -884,7 +889,13 @@ func (tr *TestResources) TryAuthenticateUser(
 		"username":   []string{username},
 	}
 
-	response, err := httpClient.PostForm(requestURL, formData)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, requestURL, strings.NewReader(formData.Encode()))
+	if err != nil {
+		return fmt.Errorf("failed to create token request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	response, err := httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to POST to token endpoint: %w", err)
 	}
