@@ -42,7 +42,7 @@ func GCPCloudControllerManagerTest(getTestCtx internal.TestContextGetter) {
 			}
 		})
 
-		Context("When nodes are initialized by the CCM", func() {
+		When("nodes are initialized by the CCM", func() {
 			var nodes *corev1.NodeList
 
 			BeforeEach(func() {

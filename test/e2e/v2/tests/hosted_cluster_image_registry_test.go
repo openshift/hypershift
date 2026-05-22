@@ -48,8 +48,8 @@ func RegisterHostedClusterImageRegistryTests(getTestCtx internal.TestContextGett
 // automatically skipped.
 func ImageRegistryCapabilityEnabledTest(getTestCtx internal.TestContextGetter) {
 	var (
-		tc                 *internal.TestContext
-		hc                 *hyperv1.HostedCluster
+		tc                  *internal.TestContext
+		hc                  *hyperv1.HostedCluster
 		hostedClusterClient crclient.Client
 	)
 
@@ -245,7 +245,10 @@ func ImageRegistryCapabilityDisabledTest(getTestCtx internal.TestContextGetter) 
 			ns.Name = "image-registry-test-namespace"
 			Expect(hostedClusterClient.Create(tc.Context, ns)).To(Succeed())
 			DeferCleanup(func() {
-				_ = hostedClusterClient.Delete(tc.Context, ns)
+				err := hostedClusterClient.Delete(tc.Context, ns)
+				if err != nil && !apierrors.IsNotFound(err) {
+					Expect(err).NotTo(HaveOccurred(), "cleanup: failed to delete test namespace %s", ns.Name)
+				}
 			})
 
 			Eventually(func(g Gomega) {
@@ -281,9 +284,7 @@ var _ = Describe("Hosted Cluster Image Registry", Label("hosted-cluster-image-re
 		testCtx = internal.GetTestContext()
 		Expect(testCtx).NotTo(BeNil(), "test context should be set up in BeforeSuite")
 
-		if err := testCtx.ValidateControlPlaneNamespace(); err != nil {
-			AbortSuite(err.Error())
-		}
+		testCtx.ValidateHostedCluster()
 	})
 
 	RegisterHostedClusterImageRegistryTests(func() *internal.TestContext { return testCtx })
