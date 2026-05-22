@@ -692,29 +692,22 @@ func PodAffinitiesAndTolerationsTest(getTestCtx internal.TestContextGetter) {
 // WorkloadRegistryValidationTest registers tests for workload registry validation
 func WorkloadRegistryValidationTest(getTestCtx internal.TestContextGetter) {
 	Context("Workload registry validation", func() {
-		// Label("Informing"): failures skip (non-blocking) until registry is complete
-		It("all pods should belong to predefined workloads", Label("Informing"), func() {
+		It("should not contain any unrecognized pods", func() {
 			testCtx := getTestCtx()
-			_ = testCtx.GetHostedCluster() // unused but kept for consistency
-			// List all pods in control plane namespace
 			podList := &corev1.PodList{}
-			err := testCtx.MgmtClient.List(context.Background(), podList, &crclient.ListOptions{
+			err := testCtx.MgmtClient.List(testCtx.Context, podList, &crclient.ListOptions{
 				Namespace: testCtx.ControlPlaneNamespace,
 			})
 			Expect(err).NotTo(HaveOccurred(), "failed to list pods in control plane namespace")
 
-			// Build a map of workload selectors for quick lookup
 			workloadSelectors := make(map[string]labels.Selector)
 			for _, workload := range workloads {
 				selector := labels.SelectorFromSet(workload.PodSelector)
 				workloadSelectors[workload.Name] = selector
 			}
 
-			// Check each pod
 			var podsNotBelongingToWorkloads []string
 			for _, pod := range podList.Items {
-				// Skip system pods (if any)
-				// Check if pod belongs to any workload
 				belongsToWorkload := false
 				for _, selector := range workloadSelectors {
 					if selector.Matches(labels.Set(pod.Labels)) {
@@ -841,9 +834,7 @@ var _ = Describe("Control Plane Workloads", Label("control-plane-workloads"), fu
 		testCtx = internal.GetTestContext()
 		Expect(testCtx).NotTo(BeNil(), "test context should be set up in BeforeSuite")
 
-		if err := testCtx.ValidateControlPlaneNamespace(); err != nil {
-			AbortSuite(err.Error())
-		}
+		testCtx.ValidateHostedCluster()
 	})
 
 	RegisterControlPlaneWorkloadsTests(func() *internal.TestContext { return testCtx })
