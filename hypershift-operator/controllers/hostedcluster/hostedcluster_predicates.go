@@ -94,7 +94,7 @@ var hostedClusterAdditionalActionableAnnotations = []string{
 }
 
 var hostedClusterActionableLabelPrefixes = []string{
-	"api.openshift.com",
+	hyperv1.OCMLabelPrefix,
 }
 
 func hostedClusterPrimaryPredicate(r client.Reader) predicate.Predicate {
