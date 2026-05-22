@@ -306,12 +306,8 @@ func getNodePool(testCtx *internal.TestContext) (*hyperv1.NodePool, error) {
 	return nil, fmt.Errorf("no NodePool found for cluster %s", testCtx.ClusterName)
 }
 
-// validateBeforeEach validates the control plane namespace and ensures Velero is running.
-// It is called from BeforeEach in both BackupRestore and BackupRestoreEtcdSnapshot suites.
 func validateBeforeEach(testCtx *internal.TestContext) {
-	if err := testCtx.ValidateControlPlaneNamespace(); err != nil {
-		AbortSuite(err.Error())
-	}
+	testCtx.ValidateHostedCluster()
 
 	err := backuprestore.EnsureVeleroPodRunning(testCtx)
 	if err != nil {

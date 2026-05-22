@@ -160,6 +160,12 @@ func init() {
 		false,
 		filepath.Join(os.Getenv("HOME"), ".aws", "credentials"),
 	)
+	RegisterEnvVarWithDefault(
+		"E2E_SERVICE_DOMAIN",
+		"Service domain used for custom DNS endpoint testing. Optional; leave empty to use the default cluster domain.",
+		false,
+		"",
+	)
 	// Azure self-managed test environment variables
 	RegisterEnvVar(
 		"AZURE_PRIVATE_NAT_SUBNET_ID",
