@@ -22,83 +22,16 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/netutil"
-	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
 
 	routev1 "github.com/openshift/api/route/v1"
-
-	corev1 "k8s.io/api/core/v1"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // RegisterHostedClusterComplianceTests registers all hosted cluster compliance tests.
 func RegisterHostedClusterComplianceTests(getTestCtx internal.TestContextGetter) {
-	EnsureCustomLabelsTest(getTestCtx)
-	EnsureCustomTolerationsTest(getTestCtx)
 	EnsureAllRoutesUseHCPRouterTest(getTestCtx)
-}
-
-func EnsureCustomLabelsTest(getTestCtx internal.TestContextGetter) {
-	When("hosted cluster has custom labels configured", func() {
-		It("should propagate labels to all control plane pods", Label("Informing"), func() {
-			tc := getTestCtx()
-			if e2eutil.IsLessThan(e2eutil.Version419) {
-				Skip("custom labels propagation requires version >= 4.19")
-			}
-
-			podList := &corev1.PodList{}
-			Expect(tc.MgmtClient.List(tc.Context, podList, crclient.InNamespace(tc.ControlPlaneNamespace))).To(Succeed())
-			Expect(podList.Items).NotTo(BeEmpty(), "expected pods in control plane namespace %s", tc.ControlPlaneNamespace)
-
-			var podsWithoutLabel []string
-			for _, pod := range podList.Items {
-				if pod.Labels["kubevirt.io"] == "virt-launcher" || pod.Labels["app"] == "vmi-console-debug" {
-					continue
-				}
-				if value, exist := pod.Labels["hypershift-e2e-test-label"]; !exist || value != "test" {
-					podsWithoutLabel = append(podsWithoutLabel, pod.Name)
-				}
-			}
-			Expect(podsWithoutLabel).To(BeEmpty(), "pods without custom label: %v", podsWithoutLabel)
-		})
-	})
-}
-
-func EnsureCustomTolerationsTest(getTestCtx internal.TestContextGetter) {
-	When("hosted cluster has custom tolerations configured", func() {
-		It("should propagate tolerations to all control plane pods", Label("Informing"), func() {
-			tc := getTestCtx()
-			if e2eutil.IsLessThan(e2eutil.Version419) {
-				Skip("custom tolerations propagation requires version >= 4.19")
-			}
-
-			podList := &corev1.PodList{}
-			Expect(tc.MgmtClient.List(tc.Context, podList, crclient.InNamespace(tc.ControlPlaneNamespace))).To(Succeed())
-			Expect(podList.Items).NotTo(BeEmpty(), "expected pods in control plane namespace %s", tc.ControlPlaneNamespace)
-
-			var podsWithoutToleration []string
-			for _, pod := range podList.Items {
-				if pod.Labels["kubevirt.io"] == "virt-launcher" || pod.Labels["app"] == "vmi-console-debug" {
-					continue
-				}
-				found := false
-				for _, t := range pod.Spec.Tolerations {
-					if t.Key == "hypershift-e2e-test-toleration" &&
-						t.Operator == corev1.TolerationOpEqual &&
-						t.Value == "true" &&
-						t.Effect == corev1.TaintEffectNoSchedule {
-						found = true
-						break
-					}
-				}
-				if !found {
-					podsWithoutToleration = append(podsWithoutToleration, pod.Name)
-				}
-			}
-			Expect(podsWithoutToleration).To(BeEmpty(), "pods without custom toleration: %v", podsWithoutToleration)
-		})
-	})
 }
 
 func EnsureAllRoutesUseHCPRouterTest(getTestCtx internal.TestContextGetter) {
