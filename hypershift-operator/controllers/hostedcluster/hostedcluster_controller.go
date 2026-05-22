@@ -1213,7 +1213,10 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 				ObservedGeneration: hcluster.Generation,
 			}
 			skipReleaseImageValidation := hasSkipReleaseImageValidationAnnotation(hcluster)
-			err := r.validateReleaseImage(ctx, hcluster, releaseProvider)
+			var err error
+			if !skipReleaseImageValidation {
+				err = r.validateReleaseImage(ctx, hcluster, releaseProvider)
+			}
 			switch {
 			case skipReleaseImageValidation:
 				condition.Status = metav1.ConditionTrue
