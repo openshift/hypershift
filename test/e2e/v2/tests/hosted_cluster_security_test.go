@@ -143,7 +143,11 @@ func EnsureAdmissionPoliciesTest(getTestCtx internal.TestContextGetter) {
 				apiServer := &configv1.APIServer{}
 				g.Expect(hcClient.Get(tc.Context, crclient.ObjectKey{Name: "cluster"}, apiServer)).To(Succeed())
 				apiServerCopy := apiServer.DeepCopy()
-				apiServerCopy.Spec.Audit.Profile = configv1.AllRequestBodiesAuditProfileType
+				if apiServerCopy.Spec.Audit.Profile == configv1.AllRequestBodiesAuditProfileType {
+					apiServerCopy.Spec.Audit.Profile = configv1.DefaultAuditProfileType
+				} else {
+					apiServerCopy.Spec.Audit.Profile = configv1.AllRequestBodiesAuditProfileType
+				}
 				err := hcClient.Update(tc.Context, apiServerCopy)
 				g.Expect(err).To(HaveOccurred(), "VAP should block audit profile modification")
 				g.Expect(err.Error()).To(ContainSubstring("ValidatingAdmissionPolicy"),
@@ -187,10 +191,13 @@ func EnsureAdmissionPoliciesTest(getTestCtx internal.TestContextGetter) {
 							"cleanup: failed to restore OperatorHub configuration")
 					}, time.Minute, 5*time.Second).Should(Succeed())
 				})
-				operatorHubCopy := operatorHub.DeepCopy()
-				operatorHubCopy.Spec.DisableAllDefaultSources = true
-				Expect(hcClient.Update(tc.Context, operatorHubCopy)).To(Succeed(),
-					"VAP should allow OperatorHub configuration changes when OLM uses guest placement")
+				Eventually(func(g Gomega) {
+					oh := &configv1.OperatorHub{}
+					g.Expect(hcClient.Get(tc.Context, crclient.ObjectKey{Name: "cluster"}, oh)).To(Succeed())
+					oh.Spec.DisableAllDefaultSources = !originalDisableAll
+					g.Expect(hcClient.Update(tc.Context, oh)).To(Succeed(),
+						"VAP should allow OperatorHub configuration changes when OLM uses guest placement")
+				}, time.Minute, 5*time.Second).Should(Succeed())
 			}
 		})
 	})
@@ -198,12 +205,16 @@ func EnsureAdmissionPoliciesTest(getTestCtx internal.TestContextGetter) {
 
 func EnsureNetworkPoliciesTest(getTestCtx internal.TestContextGetter) {
 	When("checking network policies on an AWS hosted cluster", func() {
-		It("should find management KAS access labels on expected components", func() {
+		BeforeEach(func() {
 			tc := getTestCtx()
 			hostedCluster := tc.GetHostedCluster()
 			if hostedCluster.Spec.Platform.Type != hyperv1.AWSPlatform {
 				Skip("network policies test is only for AWS platform")
 			}
+		})
+
+		It("should find management KAS access labels on expected components", func() {
+			tc := getTestCtx()
 
 			podList := &corev1.PodList{}
 			Expect(tc.MgmtClient.List(tc.Context, podList,
@@ -217,10 +228,6 @@ func EnsureNetworkPoliciesTest(getTestCtx internal.TestContextGetter) {
 
 		It("should block egress traffic from non-privileged pods to the management KAS", func() {
 			tc := getTestCtx()
-			hostedCluster := tc.GetHostedCluster()
-			if hostedCluster.Spec.Platform.Type != hyperv1.AWSPlatform {
-				Skip("network policies test is only for AWS platform")
-			}
 
 			mgmtRestConfig, err := e2eutil.GetConfig()
 			Expect(err).NotTo(HaveOccurred(), "should be able to load management cluster REST config")
@@ -238,18 +245,76 @@ func EnsureNetworkPoliciesTest(getTestCtx internal.TestContextGetter) {
 			}
 			Expect(kasAddress).NotTo(BeEmpty(), "should resolve management KAS endpoint address")
 
-			cvoPods := &corev1.PodList{}
-			Expect(tc.MgmtClient.List(tc.Context, cvoPods,
-				crclient.InNamespace(tc.ControlPlaneNamespace),
-				crclient.MatchingLabels{"app": "cluster-version-operator"},
-			)).To(Succeed())
-			Expect(cvoPods.Items).NotTo(BeEmpty(), "cluster-version-operator pod should exist")
+			Eventually(func(g Gomega) {
+				cvoPods := &corev1.PodList{}
+				g.Expect(tc.MgmtClient.List(tc.Context, cvoPods,
+					crclient.InNamespace(tc.ControlPlaneNamespace),
+					crclient.MatchingLabels{"app": "cluster-version-operator"},
+				)).To(Succeed())
+				g.Expect(cvoPods.Items).NotTo(BeEmpty(), "cluster-version-operator pod should exist")
 
-			_, err = v2util.RunCommandInPod(tc.Context, clientset, mgmtRestConfig,
-				tc.ControlPlaneNamespace, cvoPods.Items[0].Name, "cluster-version-operator",
-				"curl", "--connect-timeout", "2", "-Iks", kasAddress)
-			Expect(err).To(HaveOccurred(),
-				"cluster-version-operator should not be able to reach the management KAS at %s", kasAddress)
+				var runningPodName string
+				for _, p := range cvoPods.Items {
+					if p.Status.Phase == corev1.PodRunning {
+						runningPodName = p.Name
+						break
+					}
+				}
+				g.Expect(runningPodName).NotTo(BeEmpty(), "a running cluster-version-operator pod should exist")
+
+				_, err := v2util.RunCommandInPod(tc.Context, clientset, mgmtRestConfig,
+					tc.ControlPlaneNamespace, runningPodName, "cluster-version-operator",
+					"curl", "--connect-timeout", "2", "-Iks", kasAddress)
+				g.Expect(err).To(HaveOccurred(),
+					"cluster-version-operator should not be able to reach the management KAS at %s", kasAddress)
+				g.Expect(err.Error()).To(SatisfyAny(
+					ContainSubstring("exit code"),
+					ContainSubstring("Connection timed out"),
+					ContainSubstring("Connection refused"),
+				), "failure should be a curl connection error, not an exec/setup error; got: %v", err)
+			}, 1*time.Minute, 10*time.Second).Should(Succeed())
+
+			hostedCluster := tc.GetHostedCluster()
+			if hostedCluster.Spec.Platform.Type == hyperv1.AWSPlatform &&
+				hostedCluster.Spec.Platform.AWS != nil &&
+				hostedCluster.Spec.Platform.AWS.EndpointAccess != hyperv1.Private {
+				By("Verifying private-router cannot reach management KAS")
+				routerPods := &corev1.PodList{}
+				Expect(tc.MgmtClient.List(tc.Context, routerPods,
+					crclient.InNamespace(tc.ControlPlaneNamespace),
+					crclient.MatchingLabels{"app": "private-router"},
+				)).To(Succeed())
+				if len(routerPods.Items) > 0 {
+					Eventually(func(g Gomega) {
+						currentRouterPods := &corev1.PodList{}
+						g.Expect(tc.MgmtClient.List(tc.Context, currentRouterPods,
+							crclient.InNamespace(tc.ControlPlaneNamespace),
+							crclient.MatchingLabels{"app": "private-router"},
+						)).To(Succeed())
+						g.Expect(currentRouterPods.Items).NotTo(BeEmpty(), "private-router pod should exist")
+
+						var runningPodName string
+						for _, p := range currentRouterPods.Items {
+							if p.Status.Phase == corev1.PodRunning {
+								runningPodName = p.Name
+								break
+							}
+						}
+						g.Expect(runningPodName).NotTo(BeEmpty(), "a running private-router pod should exist")
+
+						_, err := v2util.RunCommandInPod(tc.Context, clientset, mgmtRestConfig,
+							tc.ControlPlaneNamespace, runningPodName, "private-router",
+							"curl", "--connect-timeout", "2", "-Iks", kasAddress)
+						g.Expect(err).To(HaveOccurred(),
+							"private-router should not be able to reach the management KAS at %s", kasAddress)
+						g.Expect(err.Error()).To(SatisfyAny(
+							ContainSubstring("exit code"),
+							ContainSubstring("Connection timed out"),
+							ContainSubstring("Connection refused"),
+						), "failure should be a curl connection error, not an exec/setup error; got: %v", err)
+					}, 1*time.Minute, 10*time.Second).Should(Succeed())
+				}
+			}
 		})
 	})
 }

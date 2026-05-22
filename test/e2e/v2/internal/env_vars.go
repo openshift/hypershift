@@ -162,7 +162,7 @@ func init() {
 	)
 	RegisterEnvVarWithDefault(
 		"E2E_SERVICE_DOMAIN",
-		"Service domain used for custom DNS endpoint testing. Optional; leave empty to use the default cluster domain.",
+		"Service domain used for custom DNS endpoint testing. Optional; test is skipped when empty.",
 		false,
 		"",
 	)
