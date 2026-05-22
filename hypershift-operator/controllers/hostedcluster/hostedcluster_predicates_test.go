@@ -378,4 +378,3 @@ func newHostedClusterForPredicateTests(generation int64, annotations map[string]
 		},
 	}
 }
-
