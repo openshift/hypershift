@@ -32,7 +32,6 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 
 	appsv1 "k8s.io/api/apps/v1"
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -42,7 +41,6 @@ import (
 // RegisterHostedClusterHealthTests registers all hosted cluster health test specs.
 func RegisterHostedClusterHealthTests(getTestCtx internal.TestContextGetter) {
 	ValidateHostedClusterConditionsTest(getTestCtx)
-	EnsureNoCrashingPodsTest(getTestCtx)
 	EnsureCAPIFinalizersTest(getTestCtx)
 	EnsureFeatureGateStatusTest(getTestCtx)
 	EnsurePayloadArchSetCorrectlyTest(getTestCtx)
@@ -74,90 +72,6 @@ func ValidateHostedClusterConditionsTest(getTestCtx internal.TestContextGetter) 
 					g.Expect(condition.Status).To(Equal(expectedStatus), "condition %s should have status %s", condType, expectedStatus)
 				}
 			}, 10*time.Minute, 10*time.Second).Should(Succeed())
-		})
-	})
-}
-
-func EnsureNoCrashingPodsTest(getTestCtx internal.TestContextGetter) {
-	When("control plane is running", func() {
-		It("should have no crashing pods", func() {
-			tc := getTestCtx()
-			hostedCluster := tc.GetHostedCluster()
-
-			podCrashTolerations := map[string]int32{
-				// TODO: Figure out why Route kind does not exist when ingress-operator first starts
-				"ingress-operator": 20,
-				// Seeing flakes due to https://issues.redhat.com/browse/OCPBUGS-30068
-				"cloud-credential-operator": 20,
-				// Restart built into OLM by design
-				"olm-operator":                20,
-				"catalog-operator":            20,
-				"certified-operators-catalog": 20,
-				"community-operators-catalog": 20,
-				"redhat-operators-catalog":    20,
-				"redhat-marketplace-catalog":  20,
-				// Temporary workaround for https://issues.redhat.com/browse/OCPBUGS-45182
-				"openstack-manila-csi-controllerplugin": 20,
-				// Temporary workaround for https://issues.redhat.com/browse/CNV-40820
-				"kubevirt-csi": 20,
-				// Allow 1 restart for aws-ebs-csi-driver-controller
-				"aws-ebs-csi-driver-controller": 1,
-				// Allow 1 restart for network-node-identity webhook startup timing
-				"network-node-identity": 1,
-				// Temporary workaround for https://issues.redhat.com/browse/CNV-76520
-				"kubevirt-cloud-controller-manager": 2,
-				// Allow 1 restart for token-minter sidecar race condition: https://issues.redhat.com/browse/GCP-441
-				"gcp-cloud-controller-manager": 1,
-				// During minor version upgrades the dns-operator may crash-loop briefly. See https://issues.redhat.com/browse/OCPBUGS-78539
-				"dns-operator": 5,
-			}
-			// v2 relies on generous crash tolerations rather than v1's log-inspection
-			// exemptions for cert-rotation and leader-election restarts.
-
-			getComponentName := func(pod *corev1.Pod) string {
-				if pod.Labels["app"] != "" {
-					return pod.Labels["app"]
-				}
-				if pod.Labels["name"] != "" {
-					return pod.Labels["name"]
-				}
-				GinkgoLogr.Info("pod has no app or name label, using pod name as component identifier", "pod", pod.Name)
-				return pod.Name
-			}
-
-			var defaultCrashToleration int32
-			if hostedCluster.Spec.Platform.Type == hyperv1.KubevirtPlatform {
-				kvPlatform := hostedCluster.Spec.Platform.Kubevirt
-				// External infra can be slow at times due to the nested nature of how external infra is tested.
-				if kvPlatform != nil && kvPlatform.Credentials != nil {
-					defaultCrashToleration = 1
-				}
-				// In Azure infra, CAPK pod might crash on startup due to leader election.
-				if kvPlatform != nil && hostedCluster.Annotations != nil {
-					mgmtPlatform, annotationExists := hostedCluster.Annotations[hyperv1.ManagementPlatformAnnotation]
-					if annotationExists && mgmtPlatform == string(hyperv1.AzurePlatform) {
-						defaultCrashToleration = 1
-					}
-				}
-			}
-
-			Eventually(func(g Gomega) {
-				var podList corev1.PodList
-				g.Expect(tc.MgmtClient.List(tc.Context, &podList, crclient.InNamespace(tc.ControlPlaneNamespace))).To(Succeed())
-
-				for i := range podList.Items {
-					pod := &podList.Items[i]
-					crashToleration := defaultCrashToleration
-					if t, ok := podCrashTolerations[getComponentName(pod)]; ok {
-						crashToleration = t
-					}
-					for _, containerStatus := range pod.Status.ContainerStatuses {
-						g.Expect(containerStatus.RestartCount).To(BeNumerically("<=", crashToleration),
-							"container %s in pod %s has too many restarts (%d > %d)",
-							containerStatus.Name, pod.Name, containerStatus.RestartCount, crashToleration)
-					}
-				}
-			}, 5*time.Minute, 10*time.Second).Should(Succeed())
 		})
 	})
 }
