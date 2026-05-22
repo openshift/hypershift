@@ -35,4 +35,7 @@ RUN cd /tmp/tools && \
         -o /opt/lint-tools/kube-api-linter.so sigs.k8s.io/kube-api-linter/pkg/plugin && \
     rm -rf /tmp/tools
 
+COPY contrib/ci/gocacheprog/ /tmp/gocacheprog/
+RUN cd /tmp/gocacheprog && go build -o /usr/local/bin/gocacheprog . && rm -rf /tmp/gocacheprog
+
 USER runner
