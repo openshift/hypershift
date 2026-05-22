@@ -184,6 +184,10 @@ generate: $(MOCKGEN)
 tests: generate
 	$(GO) test -o /dev/null -c ./...
 
+.PHONY: test-shared-ingress-smoke
+test-shared-ingress-smoke:
+	./test/integration/shared-ingress/smoke-test.sh
+
 # Build hypershift-operator binary
 .PHONY: hypershift-operator
 hypershift-operator:
