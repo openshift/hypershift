@@ -8,6 +8,7 @@ import (
 	"github.com/openshift/hypershift/support/k8sutil"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/event"
@@ -196,7 +197,7 @@ func TestHostedClusterPrimaryPredicate_WhenHostedClusterUpdatesItShouldFilterMea
 	t.Setenv(k8sutil.EnableHostedClustersAnnotationScopingEnv, "")
 	t.Setenv(k8sutil.HostedClustersScopeAnnotationEnv, "")
 
-	predicate := hostedClusterPrimaryPredicate(fake.NewClientBuilder().WithScheme(api.Scheme).Build())
+	pred := hostedClusterPrimaryPredicate(fake.NewClientBuilder().WithScheme(api.Scheme).Build())
 
 	testCases := []struct {
 		name     string
@@ -286,7 +287,7 @@ func TestHostedClusterPrimaryPredicate_WhenHostedClusterUpdatesItShouldFilterMea
 			oldHC: newHostedClusterForPredicateTests(1, nil),
 			newHC: func() *hyperv1.HostedCluster {
 				hc := newHostedClusterForPredicateTests(1, nil)
-				hc.DeletionTimestamp = ptrToTime(metav1.Now())
+				hc.DeletionTimestamp = ptr.To(metav1.Now())
 				return hc
 			}(),
 			expected: true,
@@ -335,7 +336,7 @@ func TestHostedClusterPrimaryPredicate_WhenHostedClusterUpdatesItShouldFilterMea
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			actual := predicate.Update(event.UpdateEvent{
+			actual := pred.Update(event.UpdateEvent{
 				ObjectOld: tc.oldHC,
 				ObjectNew: tc.newHC,
 			})
@@ -350,7 +351,7 @@ func TestHostedClusterPrimaryPredicate_WhenAHostedClusterBecomesInScopeItShouldA
 	t.Setenv(k8sutil.EnableHostedClustersAnnotationScopingEnv, "true")
 	t.Setenv(k8sutil.HostedClustersScopeAnnotationEnv, "team-a")
 
-	predicate := hostedClusterPrimaryPredicate(fake.NewClientBuilder().WithScheme(api.Scheme).Build())
+	pred := hostedClusterPrimaryPredicate(fake.NewClientBuilder().WithScheme(api.Scheme).Build())
 
 	oldHC := newHostedClusterForPredicateTests(1, map[string]string{
 		k8sutil.HostedClustersScopeAnnotation: "team-b",
@@ -359,7 +360,7 @@ func TestHostedClusterPrimaryPredicate_WhenAHostedClusterBecomesInScopeItShouldA
 		k8sutil.HostedClustersScopeAnnotation: "team-a",
 	})
 
-	if !predicate.Update(event.UpdateEvent{
+	if !pred.Update(event.UpdateEvent{
 		ObjectOld: oldHC,
 		ObjectNew: newHC,
 	}) {
@@ -378,6 +379,3 @@ func newHostedClusterForPredicateTests(generation int64, annotations map[string]
 	}
 }
 
-func ptrToTime(value metav1.Time) *metav1.Time {
-	return &value
-}
