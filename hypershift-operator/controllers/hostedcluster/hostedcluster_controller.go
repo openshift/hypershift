@@ -146,7 +146,6 @@ const (
 	previouslySyncedRestartDateAnnotation = "hypershift.openshift.io/previous-restart-date"
 	kasServingCertHashAnnotation          = "hypershift.openshift.io/kas-serving-cert-hash"
 	referencedResourceAnnotationPrefix    = "referenced-resource.hypershift.openshift.io/"
-	releaseImageValidationSkippedReason   = "ReleaseImageValidationSkipped"
 )
 
 var (
@@ -1202,7 +1201,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			case skipReleaseImageValidation:
 				condition.Status = metav1.ConditionTrue
 				condition.Message = "Release image validation is skipped by annotation"
-				condition.Reason = releaseImageValidationSkippedReason
+				condition.Reason = hyperv1.ReleaseImageValidationSkippedReason
 			case err != nil:
 				condition.Status = metav1.ConditionFalse
 				condition.Message = err.Error()
@@ -3750,10 +3749,10 @@ func shouldValidateReleaseImage(hcluster *hyperv1.HostedCluster, condition *meta
 
 	skipReleaseImageValidation := hasSkipReleaseImageValidationAnnotation(hcluster)
 	if skipReleaseImageValidation {
-		return condition.Reason != releaseImageValidationSkippedReason
+		return condition.Reason != hyperv1.ReleaseImageValidationSkippedReason
 	}
 
-	return condition.Reason == releaseImageValidationSkippedReason
+	return condition.Reason == hyperv1.ReleaseImageValidationSkippedReason
 }
 
 func hasSkipReleaseImageValidationAnnotation(hcluster *hyperv1.HostedCluster) bool {
