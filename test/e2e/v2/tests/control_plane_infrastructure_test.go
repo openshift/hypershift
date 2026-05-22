@@ -89,8 +89,7 @@ func validateContainerResourceRequests(podNamespace, podName string, containers 
 // InfrastructureRegistryValidationTest registers tests for infrastructure workload registry validation
 func InfrastructureRegistryValidationTest(getTestCtx internal.TestContextGetter) {
 	Context("Infrastructure registry validation", func() {
-		// Label("Informing"): failures skip (non-blocking) until registry is complete
-		It("should not contain any unrecognized pods", Label("Informing"), func() {
+		It("should not contain any unrecognized pods", func() {
 			testCtx := getTestCtx()
 
 			// Track unmatched pods across all infrastructure namespaces
