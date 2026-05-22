@@ -20,8 +20,6 @@ spec:
       containers:
         - name: karpenter
           image: aws-karpenter-provider-aws # replaced by payload
-          args:
-            - "--log-level=debug"
           env:
             - name: KUBECONFIG
               value: "/mnt/kubeconfig/target-kubeconfig"

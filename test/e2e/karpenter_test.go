@@ -3,7 +3,6 @@
 package e2e
 
 import (
-	"bufio"
 	"context"
 	_ "embed"
 	"encoding/json"
@@ -11,7 +10,6 @@ import (
 	"io"
 	"maps"
 	"os"
-	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -148,29 +146,6 @@ func testKarpenterPlumbing(ctx context.Context, mgtClient, guestClient crclient.
 
 		t.Log("Checking AutoNode vCPUs status (no Karpenter nodes provisioned)")
 		waitForAutoNodeStatusVCPUs(t, ctx, mgtClient, hostedCluster, 0)
-
-		t.Log("Checking Karpenter version is logged")
-		cfg, err := e2eutil.GetConfig()
-		g.Expect(err).NotTo(HaveOccurred(), "failed to get client config")
-		k8sClient := kubeclient.NewForConfigOrDie(cfg)
-
-		karpenterPodList := &corev1.PodList{}
-		g.Expect(mgtClient.List(ctx, karpenterPodList,
-			crclient.InNamespace(karpenterNamespace),
-			crclient.MatchingLabels{"app": karpenterComponentName})).To(Succeed())
-		g.Expect(karpenterPodList.Items).NotTo(BeEmpty(), "karpenter pods should exist")
-
-		versionFound := false
-		var foundVersion string
-		for _, pod := range karpenterPodList.Items {
-			if found, version := checkKarpenterVersionInLogs(ctx, k8sClient, &pod, karpenterComponentName, t); found {
-				versionFound = true
-				foundVersion = version
-				break
-			}
-		}
-		g.Expect(versionFound).To(BeTrue(), "karpenter version should be present in logs")
-		t.Logf("Karpenter version found in logs: %s", foundVersion)
 
 		t.Log("Validating Karpenter CRDs are installed")
 		expectedCRDs := []string{
@@ -1857,46 +1832,4 @@ func machineOSVersions(releaseImage *releaseinfo.ReleaseImage) []string {
 		}
 	}
 	return versions
-}
-
-func checkKarpenterVersionInLogs(ctx context.Context, client *kubeclient.Clientset, pod *corev1.Pod, containerName string, t *testing.T) (bool, string) {
-	podLogOpts := corev1.PodLogOptions{
-		Container: containerName,
-	}
-	req := client.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &podLogOpts)
-	podLogs, err := req.Stream(ctx)
-	if err != nil {
-		t.Logf("couldn't stream pod log; pod namespace: %s, pod name: %s, error: %v", pod.Namespace, pod.Name, err)
-		return false, ""
-	}
-	defer podLogs.Close()
-
-	logBytes, err := io.ReadAll(podLogs)
-	if err != nil {
-		t.Logf("failed to read pod log; pod namespace: %s, pod name: %s, error: %v", pod.Namespace, pod.Name, err)
-		return false, ""
-	}
-
-	scanner := bufio.NewScanner(strings.NewReader(string(logBytes)))
-	const (
-		bufSize          = 256 * 1024
-		maxScanTokenSize = 512 * 1024
-	)
-	buf := make([]byte, bufSize)
-	scanner.Buffer(buf, maxScanTokenSize)
-
-	versionRegex := regexp.MustCompile(`"version"\s*:\s*"([^"]+)"`)
-
-	for scanner.Scan() {
-		line := scanner.Text()
-		if matches := versionRegex.FindStringSubmatch(line); len(matches) > 1 {
-			return true, matches[1]
-		}
-	}
-
-	if err = scanner.Err(); err != nil {
-		t.Logf("failed to scan pod log; pod namespace: %s, pod name: %s, error: %v", pod.Namespace, pod.Name, err)
-	}
-
-	return false, ""
 }
