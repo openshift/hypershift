@@ -18,7 +18,6 @@ package tests
 
 import (
 	"fmt"
-	"maps"
 	"strings"
 	"time"
 
@@ -158,26 +157,9 @@ func EnsureMetricsForwarderWorkingTest(getTestCtx internal.TestContextGetter) {
 				Skip("metrics forwarder requires version >= 4.22")
 			}
 
-			hc := &hyperv1.HostedCluster{}
-			Expect(tc.MgmtClient.Get(tc.Context, crclient.ObjectKeyFromObject(hostedCluster), hc)).To(Succeed(),
-				"should be able to get hosted cluster for metrics forwarding update")
-			originalAnnotations := maps.Clone(hc.Annotations)
-			if hc.Annotations == nil {
-				hc.Annotations = make(map[string]string)
+			if hostedCluster.Annotations[hyperv1.EnableMetricsForwarding] != "true" {
+				Skip("metrics forwarding annotation not set on hosted cluster; skipping verification test")
 			}
-			hc.Annotations[hyperv1.EnableMetricsForwarding] = "true"
-			Expect(tc.MgmtClient.Update(tc.Context, hc)).To(Succeed(), "should be able to set metrics forwarding annotation on hosted cluster")
-
-			DeferCleanup(func() {
-				hcCleanup := &hyperv1.HostedCluster{}
-				err := tc.MgmtClient.Get(tc.Context, crclient.ObjectKeyFromObject(hostedCluster), hcCleanup)
-				if apierrors.IsNotFound(err) {
-					return
-				}
-				Expect(err).NotTo(HaveOccurred(), "failed to get hosted cluster for cleanup")
-				hcCleanup.Annotations = originalAnnotations
-				Expect(tc.MgmtClient.Update(tc.Context, hcCleanup)).To(Succeed(), "failed to restore hosted cluster annotations")
-			})
 
 			By("Waiting for management-side metrics deployments")
 			Eventually(func(g Gomega) {

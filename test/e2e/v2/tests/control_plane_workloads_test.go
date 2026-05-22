@@ -809,10 +809,76 @@ func SecurityContextUIDTest(getTestCtx internal.TestContextGetter) {
 	})
 }
 
+// NoCrashingPodsTest registers per-workload tests for container restart counts
+func NoCrashingPodsTest(getTestCtx internal.TestContextGetter) {
+	Context("No crashing pods", func() {
+		crashTolerations := map[string]int32{
+			"ingress-operator":                      20,
+			"cloud-credential-operator":             20,
+			"olm-operator":                          20,
+			"catalog-operator":                      20,
+			"certified-operators-catalog":           20,
+			"community-operators-catalog":           20,
+			"redhat-operators-catalog":              20,
+			"redhat-marketplace-catalog":            20,
+			"openstack-manila-csi-controllerplugin": 20,
+			"kubevirt-csi":                          20,
+			"aws-ebs-csi-driver-controller":         1,
+			"network-node-identity":                 1,
+			"kubevirt-cloud-controller-manager":     2,
+			"gcp-cloud-controller-manager":          1,
+			"dns-operator":                          5,
+		}
+
+		for _, workload := range workloads {
+			It(fmt.Sprintf("should have no crashing pods for %s", workload.Name), func() {
+				testCtx := getTestCtx()
+				hostedCluster := testCtx.GetHostedCluster()
+				if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
+					Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
+				}
+
+				pods := getWorkloadPods(testCtx, workload)
+				if len(pods) == 0 {
+					Skip(fmt.Sprintf("no pods found for workload %s", workload.Name))
+				}
+
+				var defaultCrashToleration int32
+				if hostedCluster.Spec.Platform.Type == hyperv1.KubevirtPlatform {
+					kvPlatform := hostedCluster.Spec.Platform.Kubevirt
+					if kvPlatform != nil && kvPlatform.Credentials != nil {
+						defaultCrashToleration = 1
+					}
+					if kvPlatform != nil && hostedCluster.Annotations != nil {
+						mgmtPlatform, annotationExists := hostedCluster.Annotations[hyperv1.ManagementPlatformAnnotation]
+						if annotationExists && mgmtPlatform == string(hyperv1.AzurePlatform) {
+							defaultCrashToleration = 1
+						}
+					}
+				}
+
+				toleration := defaultCrashToleration
+				if t, ok := crashTolerations[workload.Name]; ok {
+					toleration = t
+				}
+
+				for _, pod := range pods {
+					for _, containerStatus := range pod.Status.ContainerStatuses {
+						Expect(containerStatus.RestartCount).To(BeNumerically("<=", toleration),
+							"container %s in pod %s has too many restarts (%d > %d)",
+							containerStatus.Name, pod.Name, containerStatus.RestartCount, toleration)
+					}
+				}
+			})
+		}
+	})
+}
+
 // RegisterControlPlaneWorkloadsTests registers all control plane workloads tests
 func RegisterControlPlaneWorkloadsTests(getTestCtx internal.TestContextGetter) {
 	WorkloadRegistryValidationTest(getTestCtx)
 	DeploymentGenerationTest(getTestCtx)
+	NoCrashingPodsTest(getTestCtx)
 	SafeToEvictAnnotationsTest(getTestCtx)
 	ReadOnlyRootFilesystemTest(getTestCtx)
 	ReadOnlyRootFilesystemTmpDirMountTest(getTestCtx)
