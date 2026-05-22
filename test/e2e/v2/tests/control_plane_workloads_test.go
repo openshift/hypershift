@@ -874,6 +874,90 @@ func NoCrashingPodsTest(getTestCtx internal.TestContextGetter) {
 	})
 }
 
+// CustomLabelsTest registers per-workload tests for custom label propagation
+func CustomLabelsTest(getTestCtx internal.TestContextGetter) {
+	Context("Custom labels", Label("Informing"), func() {
+		BeforeEach(func() {
+			e2eutil.GinkgoAtLeast(e2eutil.Version419)
+		})
+
+		exemptions := []string{
+			"virt-launcher",
+			"vmi-console-debug",
+		}
+
+		for _, workload := range workloads {
+			It(fmt.Sprintf("should propagate custom labels to %s pods", workload.Name), func() {
+				testCtx := getTestCtx()
+				hostedCluster := testCtx.GetHostedCluster()
+				if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
+					Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
+				}
+				if slices.Contains(exemptions, workload.Name) {
+					Skip(fmt.Sprintf("workload %s is exempt from custom labels check", workload.Name))
+				}
+
+				pods := getWorkloadPods(testCtx, workload)
+				if len(pods) == 0 {
+					Skip(fmt.Sprintf("no pods found for workload %s", workload.Name))
+				}
+
+				for _, pod := range pods {
+					Expect(pod.Labels).To(HaveKeyWithValue("hypershift-e2e-test-label", "test"),
+						"pod %s should have custom label hypershift-e2e-test-label=test", pod.Name)
+				}
+			})
+		}
+	})
+}
+
+// CustomTolerationsTest registers per-workload tests for custom toleration propagation
+func CustomTolerationsTest(getTestCtx internal.TestContextGetter) {
+	Context("Custom tolerations", Label("Informing"), func() {
+		BeforeEach(func() {
+			e2eutil.GinkgoAtLeast(e2eutil.Version419)
+		})
+
+		exemptions := []string{
+			"virt-launcher",
+			"vmi-console-debug",
+		}
+
+		for _, workload := range workloads {
+			It(fmt.Sprintf("should propagate custom tolerations to %s pods", workload.Name), func() {
+				testCtx := getTestCtx()
+				hostedCluster := testCtx.GetHostedCluster()
+				if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
+					Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
+				}
+				if slices.Contains(exemptions, workload.Name) {
+					Skip(fmt.Sprintf("workload %s is exempt from custom tolerations check", workload.Name))
+				}
+
+				pods := getWorkloadPods(testCtx, workload)
+				if len(pods) == 0 {
+					Skip(fmt.Sprintf("no pods found for workload %s", workload.Name))
+				}
+
+				for _, pod := range pods {
+					found := false
+					for _, t := range pod.Spec.Tolerations {
+						if t.Key == "hypershift-e2e-test-toleration" &&
+							t.Operator == corev1.TolerationOpEqual &&
+							t.Value == "true" &&
+							t.Effect == corev1.TaintEffectNoSchedule {
+							found = true
+							break
+						}
+					}
+					Expect(found).To(BeTrue(),
+						"pod %s should have custom toleration hypershift-e2e-test-toleration", pod.Name)
+				}
+			})
+		}
+	})
+}
+
 // RegisterControlPlaneWorkloadsTests registers all control plane workloads tests
 func RegisterControlPlaneWorkloadsTests(getTestCtx internal.TestContextGetter) {
 	WorkloadRegistryValidationTest(getTestCtx)
@@ -888,6 +972,8 @@ func RegisterControlPlaneWorkloadsTests(getTestCtx internal.TestContextGetter) {
 	PodPriorityTest(getTestCtx)
 	ServiceAccountTokenMountingTest(getTestCtx)
 	PodAffinitiesAndTolerationsTest(getTestCtx)
+	CustomLabelsTest(getTestCtx)
+	CustomTolerationsTest(getTestCtx)
 	SecurityContextUIDTest(getTestCtx)
 }
 
