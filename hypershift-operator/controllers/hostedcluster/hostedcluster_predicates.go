@@ -131,7 +131,7 @@ func hostedClusterActionableAnnotationChanged(oldAnnotations, newAnnotations map
 	}
 
 	for _, prefix := range hostedClusterActionableAnnotationPrefixes {
-		if annotationPrefixChanged(oldAnnotations, newAnnotations, prefix) {
+		if prefixedKeyChanged(oldAnnotations, newAnnotations, prefix) {
 			return true
 		}
 	}
@@ -152,16 +152,16 @@ func annotationValueChanged(oldAnnotations, newAnnotations map[string]string, ke
 	return oldHasValue != newHasValue || oldValue != newValue
 }
 
-func annotationPrefixChanged(oldAnnotations, newAnnotations map[string]string, prefix string) bool {
-	oldPrefixedAnnotations := prefixedAnnotations(oldAnnotations, prefix)
-	newPrefixedAnnotations := prefixedAnnotations(newAnnotations, prefix)
+func prefixedKeyChanged(old, new map[string]string, prefix string) bool {
+	oldEntries := prefixedEntries(old, prefix)
+	newEntries := prefixedEntries(new, prefix)
 
-	if len(oldPrefixedAnnotations) != len(newPrefixedAnnotations) {
+	if len(oldEntries) != len(newEntries) {
 		return true
 	}
 
-	for key, oldValue := range oldPrefixedAnnotations {
-		if newValue, ok := newPrefixedAnnotations[key]; !ok || newValue != oldValue {
+	for key, oldValue := range oldEntries {
+		if newValue, ok := newEntries[key]; !ok || newValue != oldValue {
 			return true
 		}
 	}
@@ -169,19 +169,19 @@ func annotationPrefixChanged(oldAnnotations, newAnnotations map[string]string, p
 	return false
 }
 
-func prefixedAnnotations(annotations map[string]string, prefix string) map[string]string {
-	prefixed := map[string]string{}
-	for key, value := range annotations {
+func prefixedEntries(m map[string]string, prefix string) map[string]string {
+	result := map[string]string{}
+	for key, value := range m {
 		if strings.HasPrefix(key, prefix) {
-			prefixed[key] = value
+			result[key] = value
 		}
 	}
-	return prefixed
+	return result
 }
 
 func hostedClusterActionableLabelChanged(oldLabels, newLabels map[string]string) bool {
 	for _, prefix := range hostedClusterActionableLabelPrefixes {
-		if annotationPrefixChanged(oldLabels, newLabels, prefix) {
+		if prefixedKeyChanged(oldLabels, newLabels, prefix) {
 			return true
 		}
 	}
