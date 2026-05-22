@@ -1,0 +1,656 @@
+apiVersion: apiextensions.k8s.io/v1
+name: "HostedCluster automated etcd backup validation"
+crdName: hostedclusters.hypershift.openshift.io
+featureGates:
+  - HCPAutomatedEtcdBackup
+version: v1beta1
+tests:
+  onCreate:
+  - name: When automatedBackup has valid GCS config it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+            automatedBackup:
+              schedule: "0 * * * *"
+              storage:
+                type: GCS
+                gcs:
+                  bucket: my-backup-bucket
+                  gcpServiceAccount: mysa12@my-project.iam.gserviceaccount.com
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+
+  - name: When schedule is not a 5-field cron expression it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+            automatedBackup:
+              schedule: "every hour"
+              storage:
+                type: GCS
+                gcs:
+                  bucket: my-backup-bucket
+                  gcpServiceAccount: mysa12@my-project.iam.gserviceaccount.com
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "schedule must be a 5-field cron expression"
+
+  - name: When schedule has fewer than 5 fields it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+            automatedBackup:
+              schedule: "0 * * *"
+              storage:
+                type: GCS
+                gcs:
+                  bucket: my-backup-bucket
+                  gcpServiceAccount: mysa12@my-project.iam.gserviceaccount.com
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "schedule must be a 5-field cron expression"
+
+  - name: When schedule has more than 5 fields it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+            automatedBackup:
+              schedule: "0 * * * * *"
+              storage:
+                type: GCS
+                gcs:
+                  bucket: my-backup-bucket
+                  gcpServiceAccount: mysa12@my-project.iam.gserviceaccount.com
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "schedule must be a 5-field cron expression"
+
+  - name: When storage type is GCS but gcs config is missing it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+            automatedBackup:
+              schedule: "0 * * * *"
+              storage:
+                type: GCS
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "gcs configuration is required when type is GCS, and forbidden otherwise"
+
+  - name: When gcpServiceAccount has invalid format it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+            automatedBackup:
+              schedule: "0 * * * *"
+              storage:
+                type: GCS
+                gcs:
+                  bucket: my-backup-bucket
+                  gcpServiceAccount: InvalidUpperCase@my-project.iam.gserviceaccount.com
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "gcpServiceAccount"
+
+  - name: When bucket name is too short it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+            automatedBackup:
+              schedule: "0 * * * *"
+              storage:
+                type: GCS
+                gcs:
+                  bucket: ab
+                  gcpServiceAccount: mysa12@my-project.iam.gserviceaccount.com
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "spec.etcd.managed.automatedBackup.storage.gcs.bucket"
+
+  onUpdate:
+  - name: When schedule is updated to a valid cron expression it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+            automatedBackup:
+              schedule: "0 * * * *"
+              storage:
+                type: GCS
+                gcs:
+                  bucket: my-backup-bucket
+                  gcpServiceAccount: mysa12@my-project.iam.gserviceaccount.com
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+            automatedBackup:
+              schedule: "*/15 * * * *"
+              storage:
+                type: GCS
+                gcs:
+                  bucket: my-backup-bucket
+                  gcpServiceAccount: mysa12@my-project.iam.gserviceaccount.com
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+
+  - name: When schedule is updated to an invalid expression it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+            automatedBackup:
+              schedule: "0 * * * *"
+              storage:
+                type: GCS
+                gcs:
+                  bucket: my-backup-bucket
+                  gcpServiceAccount: mysa12@my-project.iam.gserviceaccount.com
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+            automatedBackup:
+              schedule: "invalid"
+              storage:
+                type: GCS
+                gcs:
+                  bucket: my-backup-bucket
+                  gcpServiceAccount: mysa12@my-project.iam.gserviceaccount.com
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "schedule must be a 5-field cron expression"
+
+  - name: When GCS bucket is changed while storage type stays the same it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+            automatedBackup:
+              schedule: "0 * * * *"
+              storage:
+                type: GCS
+                gcs:
+                  bucket: my-backup-bucket
+                  gcpServiceAccount: mysa12@my-project.iam.gserviceaccount.com
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+            automatedBackup:
+              schedule: "0 * * * *"
+              storage:
+                type: GCS
+                gcs:
+                  bucket: new-backup-bucket
+                  gcpServiceAccount: mysa12@my-project.iam.gserviceaccount.com
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}

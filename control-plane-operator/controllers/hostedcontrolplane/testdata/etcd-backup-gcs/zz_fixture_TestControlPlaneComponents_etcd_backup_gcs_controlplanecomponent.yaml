@@ -1,0 +1,32 @@
+apiVersion: hypershift.openshift.io/v1beta1
+kind: ControlPlaneComponent
+metadata:
+  name: etcd-backup-gcs
+  namespace: hcp-namespace
+  resourceVersion: "1"
+spec: {}
+status:
+  conditions:
+  - lastTransitionTime: null
+    message: ""
+    reason: AsExpected
+    status: "True"
+    type: Available
+  - lastTransitionTime: null
+    message: CronJob has not been scheduled yet
+    reason: WaitingForFirstSchedule
+    status: "False"
+    type: RolloutComplete
+  resources:
+  - group: monitoring.coreos.com
+    kind: PrometheusRule
+    name: etcd-backup-alerting-rules
+  - group: rbac.authorization.k8s.io
+    kind: Role
+    name: etcd-backup-gcs
+  - group: rbac.authorization.k8s.io
+    kind: RoleBinding
+    name: etcd-backup-gcs
+  - group: ""
+    kind: ServiceAccount
+    name: etcd-backup-gcs

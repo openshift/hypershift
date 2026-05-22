@@ -27,6 +27,10 @@ type options struct {
 	storageAccount  string
 	encryptionScope string
 	authType        string
+
+	// GCS-specific
+	gcsBucket  string
+	secretsDir string
 }
 
 func NewStartCommand() *cobra.Command {
@@ -46,7 +50,7 @@ func NewStartCommand() *cobra.Command {
 
 	// Common flags
 	cmd.Flags().StringVar(&opts.snapshotPath, "snapshot-path", "", "path to the etcd snapshot file to upload")
-	cmd.Flags().StringVar(&opts.storageType, "storage-type", "", "cloud storage backend type (S3 or AzureBlob)")
+	cmd.Flags().StringVar(&opts.storageType, "storage-type", "", "cloud storage backend type (S3, AzureBlob, or GCS)")
 	cmd.Flags().StringVar(&opts.keyPrefix, "key-prefix", "", "key prefix for the backup file in cloud storage")
 	cmd.Flags().StringVar(&opts.credentialsFile, "credentials-file", "", "path to cloud credentials file")
 
@@ -61,6 +65,10 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.encryptionScope, "azure-encryption-scope", "", "[Azure] encryption scope for server-side encryption (optional)")
 	cmd.Flags().StringVar(&opts.authType, "azure-auth-type", "client-secret", "[Azure] authentication type: client-secret (default) or managed-identity (ARO HCP)")
 
+	// GCS-specific flags
+	cmd.Flags().StringVar(&opts.gcsBucket, "gcs-bucket", "", "[GCS] GCS bucket name")
+	cmd.Flags().StringVar(&opts.secretsDir, "secrets-dir", "", "path to directory containing secrets to bundle into the backup archive")
+
 	_ = cmd.MarkFlagRequired("snapshot-path")
 	_ = cmd.MarkFlagRequired("storage-type")
 	_ = cmd.MarkFlagRequired("key-prefix")
@@ -73,15 +81,29 @@ func run(ctx context.Context, opts options) error {
 		return fmt.Errorf("snapshot file not accessible: %w", err)
 	}
 
+	uploadPath := opts.snapshotPath
+	if opts.secretsDir != "" {
+		archivePath, err := bundleArchive(opts.snapshotPath, opts.secretsDir)
+		if err != nil {
+			return fmt.Errorf("failed to create backup archive: %w", err)
+		}
+		defer os.Remove(archivePath)
+		uploadPath = archivePath
+	}
+
 	opts.keyPrefix = strings.TrimSuffix(opts.keyPrefix, "/")
-	key := fmt.Sprintf("%s/%d%s", opts.keyPrefix, time.Now().Unix(), filepath.Ext(opts.snapshotPath))
+	ext := filepath.Ext(uploadPath)
+	if strings.HasSuffix(uploadPath, ".tar.gz") {
+		ext = ".tar.gz"
+	}
+	key := fmt.Sprintf("%s/%d%s", opts.keyPrefix, time.Now().Unix(), ext)
 
 	uploader, err := newUploader(ctx, opts)
 	if err != nil {
 		return err
 	}
 
-	result, err := uploader.Upload(ctx, opts.snapshotPath, key)
+	result, err := uploader.Upload(ctx, uploadPath, key)
 	if err != nil {
 		return fmt.Errorf("failed to upload snapshot: %w", err)
 	}
@@ -104,7 +126,9 @@ func newUploader(ctx context.Context, opts options) (Uploader, error) {
 		return NewS3Uploader(ctx, opts.bucket, opts.region, opts.credentialsFile, opts.kmsKeyARN)
 	case "AzureBlob":
 		return NewAzureBlobUploader(ctx, opts.container, opts.storageAccount, opts.credentialsFile, opts.encryptionScope, opts.authType)
+	case "GCS":
+		return NewGCSUploader(ctx, opts.gcsBucket)
 	default:
-		return nil, fmt.Errorf("unsupported storage type: %q (must be S3 or AzureBlob)", opts.storageType)
+		return nil, fmt.Errorf("unsupported storage type: %q (must be S3, AzureBlob, or GCS)", opts.storageType)
 	}
 }

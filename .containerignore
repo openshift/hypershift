@@ -1,0 +1,5 @@
+.git/
+hack/tools/bin/
+contrib/
+.github/
+.tekton/

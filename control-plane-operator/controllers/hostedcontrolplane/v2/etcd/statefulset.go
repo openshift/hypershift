@@ -12,9 +12,13 @@ import (
 	"github.com/openshift/hypershift/support/podspec"
 
 	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/utils/ptr"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 func adaptStatefulSet(cpContext component.WorkloadContext, sts *appsv1.StatefulSet) error {
@@ -82,6 +86,38 @@ func adaptStatefulSet(cpContext component.WorkloadContext, sts *appsv1.StatefulS
 		sts.Spec.Template.Spec.InitContainers = append(sts.Spec.Template.Spec.InitContainers,
 			buildEtcdInitContainer(managedEtcdSpec.Storage.RestoreSnapshotURL[0]), // RestoreSnapshotURL can only have 1 entry
 		)
+	}
+
+	// Automated restore: inject init container if restore Job completed with a snapshot
+	if hcp.Spec.Etcd.Managed != nil &&
+		hcp.Spec.Etcd.Managed.AutomatedBackup != nil &&
+		!snapshotRestored {
+		shouldRestore, err := shouldInjectRestore(cpContext)
+		if err != nil {
+			return err
+		}
+		if shouldRestore {
+			sts.Spec.Template.Spec.InitContainers = append(sts.Spec.Template.Spec.InitContainers,
+				buildRestoreInitContainer(),
+			)
+			sts.Spec.Template.Spec.Volumes = append(sts.Spec.Template.Spec.Volumes,
+				corev1.Volume{
+					Name: "restore-snapshot",
+					VolumeSource: corev1.VolumeSource{
+						PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+							ClaimName: "etcd-restore-snapshot",
+						},
+					},
+				},
+			)
+			podspec.UpdateContainer("reset-member", sts.Spec.Template.Spec.InitContainers, func(c *corev1.Container) {
+				podspec.UpsertEnvVar(c, corev1.EnvVar{
+					Name:  "SNAPSHOT_RESTORE",
+					Value: "true",
+				})
+			})
+			sts.Spec.Replicas = ptr.To(int32(1))
+		}
 	}
 
 	// adapt PersistentVolume
@@ -155,4 +191,82 @@ func buildEtcdDefragControllerContainer(namespace string) corev1.Container {
 		},
 	}
 	return c
+}
+
+//go:embed etcd-restore.sh
+var etcdRestoreScript string
+
+func shouldInjectRestore(cpContext component.WorkloadContext) (bool, error) {
+	job := &batchv1.Job{}
+	jobKey := client.ObjectKey{
+		Namespace: cpContext.HCP.Namespace,
+		Name:      manifests.EtcdRestoreJob("").Name,
+	}
+	if err := cpContext.Client.Get(cpContext, jobKey, job); err != nil {
+		return false, fmt.Errorf("waiting for GCS restore job: %w", err)
+	}
+
+	for _, cond := range job.Status.Conditions {
+		if cond.Type == batchv1.JobComplete && cond.Status == corev1.ConditionTrue {
+			msg := getJobTerminationMessage(cpContext, job)
+			if strings.HasPrefix(msg, "no-snapshot") || strings.HasPrefix(msg, "no-secrets") {
+				return false, nil
+			}
+			return true, nil
+		}
+		if cond.Type == batchv1.JobFailed && cond.Status == corev1.ConditionTrue {
+			return false, fmt.Errorf("GCS restore job failed: %s", cond.Message)
+		}
+	}
+
+	return false, fmt.Errorf("GCS restore job not yet complete")
+}
+
+func getJobTerminationMessage(cpContext component.WorkloadContext, job *batchv1.Job) string {
+	podList := &corev1.PodList{}
+	if err := cpContext.Client.List(cpContext, podList, &client.ListOptions{
+		Namespace: job.Namespace,
+		LabelSelector: labels.SelectorFromValidatedSet(labels.Set{
+			"job-name": job.Name,
+		}),
+	}); err != nil {
+		return ""
+	}
+	for _, pod := range podList.Items {
+		for _, cs := range pod.Status.ContainerStatuses {
+			if cs.State.Terminated != nil && cs.State.Terminated.Message != "" {
+				return cs.State.Terminated.Message
+			}
+		}
+	}
+	return ""
+}
+
+func buildRestoreInitContainer() corev1.Container {
+	return corev1.Container{
+		Name:            "etcd-restore",
+		Image:           "etcd",
+		ImagePullPolicy: corev1.PullIfNotPresent,
+		Command:         []string{"/bin/sh", "-ce", etcdRestoreScript},
+		Env: []corev1.EnvVar{
+			{
+				Name: "NAMESPACE",
+				ValueFrom: &corev1.EnvVarSource{
+					FieldRef: &corev1.ObjectFieldSelector{
+						FieldPath: "metadata.namespace",
+					},
+				},
+			},
+		},
+		VolumeMounts: []corev1.VolumeMount{
+			{
+				Name:      "data",
+				MountPath: "/var/lib",
+			},
+			{
+				Name:      "restore-snapshot",
+				MountPath: "/snapshot",
+			},
+		},
+	}
 }

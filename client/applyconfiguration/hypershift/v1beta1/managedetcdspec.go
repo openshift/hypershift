@@ -20,8 +20,9 @@ package v1beta1
 // ManagedEtcdSpecApplyConfiguration represents a declarative configuration of the ManagedEtcdSpec type for use
 // with apply.
 type ManagedEtcdSpecApplyConfiguration struct {
-	Storage *ManagedEtcdStorageSpecApplyConfiguration `json:"storage,omitempty"`
-	Backup  *HCPEtcdBackupConfigApplyConfiguration    `json:"backup,omitempty"`
+	Storage         *ManagedEtcdStorageSpecApplyConfiguration    `json:"storage,omitempty"`
+	Backup          *HCPEtcdBackupConfigApplyConfiguration       `json:"backup,omitempty"`
+	AutomatedBackup *AutomatedEtcdBackupConfigApplyConfiguration `json:"automatedBackup,omitempty"`
 }
 
 // ManagedEtcdSpecApplyConfiguration constructs a declarative configuration of the ManagedEtcdSpec type for use with
@@ -43,5 +44,13 @@ func (b *ManagedEtcdSpecApplyConfiguration) WithStorage(value *ManagedEtcdStorag
 // If called multiple times, the Backup field is set to the value of the last call.
 func (b *ManagedEtcdSpecApplyConfiguration) WithBackup(value *HCPEtcdBackupConfigApplyConfiguration) *ManagedEtcdSpecApplyConfiguration {
 	b.Backup = value
+	return b
+}
+
+// WithAutomatedBackup sets the AutomatedBackup field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the AutomatedBackup field is set to the value of the last call.
+func (b *ManagedEtcdSpecApplyConfiguration) WithAutomatedBackup(value *AutomatedEtcdBackupConfigApplyConfiguration) *ManagedEtcdSpecApplyConfiguration {
+	b.AutomatedBackup = value
 	return b
 }

@@ -1911,6 +1911,11 @@ type ManagedEtcdSpec struct {
 	// +optional
 	// +openshift:enable:FeatureGate=HCPEtcdBackup
 	Backup HCPEtcdBackupConfig `json:"backup,omitzero"`
+
+	// automatedBackup configures scheduled etcd backups to cloud storage.
+	// +optional
+	// +openshift:enable:FeatureGate=HCPAutomatedEtcdBackup
+	AutomatedBackup *AutomatedEtcdBackupConfig `json:"automatedBackup,omitempty"`
 }
 
 // ManagedEtcdStorageType is a storage type for an etcd cluster.

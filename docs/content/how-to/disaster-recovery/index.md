@@ -23,3 +23,7 @@ ETCD disaster recovery procedures for control plane data backup and restoration.
 
 ### [Etcd Snapshot Backup (Tech Preview)](etcd-snapshot-backup/index.md)
 Alternative backup method using native etcd snapshots instead of volume snapshots. Requires the `HCPEtcdBackup` feature gate. Includes detailed backup and restore flow documentation.
+
+### Related
+
+- [Automated Etcd Backup and Restore](automated-etcd-backup.md) — Scheduled backup to cloud storage with automatic restore on cluster creation (currently supports GCS).

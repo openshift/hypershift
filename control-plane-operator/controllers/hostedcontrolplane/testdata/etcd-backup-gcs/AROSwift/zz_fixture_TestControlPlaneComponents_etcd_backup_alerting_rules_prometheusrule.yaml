@@ -1,0 +1,43 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: etcd-backup-alerting-rules
+  namespace: hcp-namespace
+  ownerReferences:
+  - apiVersion: hypershift.openshift.io/v1beta1
+    blockOwnerDeletion: true
+    controller: true
+    kind: HostedControlPlane
+    name: hcp
+    uid: ""
+  resourceVersion: "1"
+spec:
+  groups:
+  - name: etcd-backup.rules
+    rules:
+    - alert: EtcdBackupStale
+      annotations:
+        description: No successful etcd backup has been recorded for CronJob {{ $labels.cronjob
+          }} in namespace {{ $labels.namespace }} for more than 2 hours. The last
+          successful backup was {{ $value | humanizeDuration }} ago.
+        summary: Etcd backup is stale
+      expr: |
+        (time() - kube_cronjob_status_last_successful_time{cronjob="etcd-backup-gcs"}) > 7200
+        and kube_cronjob_status_last_successful_time{cronjob="etcd-backup-gcs"} > 0
+      for: 10m
+      labels:
+        _id: ""
+        severity: warning
+    - alert: EtcdRestoreFailed
+      annotations:
+        description: The etcd restore job {{ $labels.job_name }} in namespace {{ $labels.namespace
+          }} has failed. This may prevent the hosted cluster from recovering from
+          backup. Investigate the job logs and HostedControlPlane EtcdSnapshotRestored
+          condition for details.
+        summary: Etcd restore job failed
+      expr: |
+        kube_job_status_failed{job_name=~"etcd-restore.*"} > 0
+      for: 10m
+      labels:
+        _id: ""
+        severity: critical

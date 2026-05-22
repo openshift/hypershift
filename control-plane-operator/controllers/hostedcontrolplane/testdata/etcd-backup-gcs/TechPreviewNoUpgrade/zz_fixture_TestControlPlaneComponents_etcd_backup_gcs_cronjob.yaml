@@ -1,0 +1,91 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  labels:
+    hypershift.openshift.io/managed-by: control-plane-operator
+  name: etcd-backup-gcs
+  namespace: hcp-namespace
+  ownerReferences:
+  - apiVersion: hypershift.openshift.io/v1beta1
+    blockOwnerDeletion: true
+    controller: true
+    kind: HostedControlPlane
+    name: hcp
+    uid: ""
+  resourceVersion: "1"
+spec:
+  jobTemplate:
+    metadata: {}
+    spec:
+      template:
+        metadata:
+          annotations:
+            cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: tmp-dir
+            component.hypershift.openshift.io/config-hash: ""
+            hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
+          labels:
+            app: etcd-backup-gcs
+            hypershift.openshift.io/control-plane-component: etcd-backup-gcs
+            hypershift.openshift.io/hosted-control-plane: hcp-namespace
+        spec:
+          affinity:
+            nodeAffinity:
+              preferredDuringSchedulingIgnoredDuringExecution:
+              - preference:
+                  matchExpressions:
+                  - key: hypershift.openshift.io/control-plane
+                    operator: In
+                    values:
+                    - "true"
+                weight: 50
+              - preference:
+                  matchExpressions:
+                  - key: hypershift.openshift.io/cluster
+                    operator: In
+                    values:
+                    - hcp-namespace
+                weight: 100
+            podAffinity:
+              preferredDuringSchedulingIgnoredDuringExecution:
+              - podAffinityTerm:
+                  labelSelector:
+                    matchLabels:
+                      hypershift.openshift.io/hosted-control-plane: hcp-namespace
+                  topologyKey: kubernetes.io/hostname
+                weight: 100
+          automountServiceAccountToken: false
+          containers:
+          - args:
+            - etcd-upload
+            command:
+            - control-plane-operator
+            image: controlplane-operator
+            imagePullPolicy: IfNotPresent
+            name: upload
+            resources:
+              requests:
+                cpu: 10m
+                memory: 80Mi
+            securityContext:
+              readOnlyRootFilesystem: true
+            terminationMessagePolicy: FallbackToLogsOnError
+            volumeMounts:
+            - mountPath: /tmp
+              name: tmp-dir
+          priorityClassName: hypershift-control-plane
+          restartPolicy: Never
+          serviceAccountName: etcd-backup-gcs
+          tolerations:
+          - effect: NoSchedule
+            key: hypershift.openshift.io/control-plane
+            operator: Equal
+            value: "true"
+          - effect: NoSchedule
+            key: hypershift.openshift.io/cluster
+            operator: Equal
+            value: hcp-namespace
+          volumes:
+          - emptyDir: {}
+            name: tmp-dir
+  schedule: 0 */4 * * *
+status: {}

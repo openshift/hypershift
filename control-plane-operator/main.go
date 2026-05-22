@@ -26,6 +26,8 @@ import (
 	etcdbackup "github.com/openshift/hypershift/etcd-backup"
 	etcddefrag "github.com/openshift/hypershift/etcd-defrag"
 	etcdupload "github.com/openshift/hypershift/etcd-upload"
+	gcsrestoresecrets "github.com/openshift/hypershift/gcs-restore-secrets"
+	gcsfetch "github.com/openshift/hypershift/gcs-snapshot-fetch"
 	ignitionserver "github.com/openshift/hypershift/ignition-server/cmd"
 	kasbootstrap "github.com/openshift/hypershift/kas-bootstrap"
 	konnectivityhttpsproxy "github.com/openshift/hypershift/konnectivity-https-proxy"
@@ -123,6 +125,10 @@ func commandFor(name string) *cobra.Command {
 		cmd = syncglobalpullsecret.NewRunCommand()
 	case "fetch-etcd-certs":
 		cmd = etcdbackup.NewFetchCertsCommand()
+	case "restore-secrets", "gcs-restore-secrets":
+		cmd = gcsrestoresecrets.NewStartCommand()
+	case "gcs-snapshot-fetch":
+		cmd = gcsfetch.NewStartCommand()
 	case "endpoint-resolver":
 		cmd = endpointresolver.NewStartCommand()
 	case "metrics-proxy":
@@ -182,6 +188,8 @@ func defaultCommand() *cobra.Command {
 	cmd.AddCommand(kasbootstrap.NewRunCommand())
 	cmd.AddCommand(syncfgconfigmap.NewRunCommand())
 	cmd.AddCommand(syncglobalpullsecret.NewRunCommand())
+	cmd.AddCommand(gcsfetch.NewStartCommand())
+	cmd.AddCommand(gcsrestoresecrets.NewStartCommand())
 	cmd.AddCommand(endpointresolver.NewStartCommand())
 	cmd.AddCommand(metricsproxy.NewStartCommand())
 	return cmd

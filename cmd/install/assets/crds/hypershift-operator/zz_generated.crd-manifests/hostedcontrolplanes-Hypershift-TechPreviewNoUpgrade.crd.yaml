@@ -3164,6 +3164,70 @@ spec:
                     description: managed specifies the behavior of an etcd cluster
                       managed by HyperShift.
                     properties:
+                      automatedBackup:
+                        description: automatedBackup configures scheduled etcd backups
+                          to cloud storage.
+                        properties:
+                          schedule:
+                            description: |-
+                              schedule is a cron expression for backup frequency.
+                              Defaults to hourly ("0 * * * *") if not specified.
+                            maxLength: 64
+                            minLength: 1
+                            type: string
+                            x-kubernetes-validations:
+                            - message: schedule must be a 5-field cron expression
+                              rule: self.matches('^(\\S+\\s+){4}\\S+$')
+                          storage:
+                            description: storage configures the cloud storage backend
+                              for backup archives.
+                            properties:
+                              gcs:
+                                description: gcs configures Google Cloud Storage as
+                                  the backup destination.
+                                properties:
+                                  bucket:
+                                    description: |-
+                                      bucket is the name of the GCS bucket for storing etcd snapshots.
+                                      The bucket must already exist and the gcpServiceAccount must have
+                                      roles/storage.objectAdmin on it.
+                                    maxLength: 63
+                                    minLength: 3
+                                    type: string
+                                  gcpServiceAccount:
+                                    description: |-
+                                      gcpServiceAccount is the email of a GCP service account in the
+                                      management cluster's GCP project. The Kubernetes ServiceAccount used
+                                      by the backup/restore pods will be annotated with this email for
+                                      GKE Workload Identity access to the GCS bucket.
+                                    maxLength: 320
+                                    minLength: 1
+                                    type: string
+                                    x-kubernetes-validations:
+                                    - message: gcpServiceAccount must be a valid GCP
+                                        service account email
+                                      rule: self.matches('^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9.-]+\\.iam\\.gserviceaccount\\.com$')
+                                required:
+                                - bucket
+                                - gcpServiceAccount
+                                type: object
+                              type:
+                                description: type is the storage backend type.
+                                enum:
+                                - GCS
+                                type: string
+                            required:
+                            - type
+                            type: object
+                            x-kubernetes-validations:
+                            - message: gcs configuration is required when type is
+                                GCS, and forbidden otherwise
+                              rule: 'self.type == ''GCS'' ? has(self.gcs) : !has(self.gcs)'
+                            - message: storage type is immutable once set
+                              rule: self.type == oldSelf.type
+                        required:
+                        - storage
+                        type: object
                       backup:
                         description: |-
                           backup defines the backup configuration for managed etcd, including

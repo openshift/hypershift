@@ -176,6 +176,7 @@ type GCPPlatformSpec struct {
 	// +immutable
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="WorkloadIdentity is immutable"
 	WorkloadIdentity GCPWorkloadIdentityConfig `json:"workloadIdentity,omitzero"`
+
 }
 
 // GCPWorkloadIdentityConfig configures Workload Identity Federation for GCP clusters.
@@ -569,3 +570,4 @@ type GCPNodeServiceAccount struct {
 	// +kubebuilder:validation:items:MaxLength=512
 	Scopes []string `json:"scopes,omitempty"`
 }
+

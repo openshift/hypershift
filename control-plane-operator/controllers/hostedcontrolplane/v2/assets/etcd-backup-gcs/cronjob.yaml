@@ -1,0 +1,27 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: etcd-backup-gcs
+spec:
+  schedule: "0 */4 * * *"
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: etcd-backup-gcs
+        spec:
+          serviceAccountName: etcd-backup-gcs
+          containers:
+            - name: upload
+              image: controlplane-operator
+              imagePullPolicy: IfNotPresent
+              command:
+                - control-plane-operator
+              args:
+                - etcd-upload
+              resources:
+                requests:
+                  cpu: 10m
+                  memory: 80Mi
+          restartPolicy: Never

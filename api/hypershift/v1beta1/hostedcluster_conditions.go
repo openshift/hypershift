@@ -209,6 +209,12 @@ const (
 	// False means a backup is in progress or the last backup failed.
 	EtcdBackupSucceeded ConditionType = "EtcdBackupSucceeded"
 
+	// EtcdSnapshotRestored bubbles up from HCP. It indicates whether an etcd
+	// snapshot restore has completed. True means restore finished (or no snapshot
+	// existed to restore). Only relevant for clusters with etcd backup configured.
+	// The constant is also defined in hosted_controlplane.go for HCP-level use.
+	// EtcdSnapshotRestored ConditionType = "EtcdSnapshotRestored" — reuses the HCP constant.
+
 	// ClusterSizeComputed indicates that a t-shirt size was computed for this HostedCluster.
 	// The last transition time for this condition is used to manage how quickly transitions occur.
 	ClusterSizeComputed = "ClusterSizeComputed"
@@ -271,6 +277,7 @@ const (
 	EtcdWaitingForQuorumReason    = "EtcdWaitingForQuorum"
 	EtcdStatefulSetNotFoundReason = "StatefulSetNotFound"
 	EtcdRecoveryJobFailedReason   = "EtcdRecoveryJobFailed"
+	RestorePVCPendingReason       = "RestorePVCPending"
 
 	UnmanagedEtcdMisconfiguredReason = "UnmanagedEtcdMisconfigured"
 	UnmanagedEtcdAsExpected          = "UnmanagedEtcdAsExpected"
