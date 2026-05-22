@@ -44805,6 +44805,19 @@ github.com/openshift/api/config/v1.IBMCloudProviderType
 <p>providerType is a specific supported infrastructure provider within IBM Cloud.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>oauthNoProxyEndpoints</code></br>
+<em>
+[]string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>oauthNoProxyEndpoints is a list of endpoints that should be added to the OAuth
+no_proxy configuration.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###ImageContentSource { #hypershift.openshift.io/v1beta1.ImageContentSource }

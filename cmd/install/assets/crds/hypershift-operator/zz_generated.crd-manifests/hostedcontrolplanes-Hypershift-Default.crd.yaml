@@ -5723,6 +5723,18 @@ spec:
                   ibmcloud:
                     description: ibmcloud defines IBMCloud specific settings for components
                     properties:
+                      oauthNoProxyEndpoints:
+                        description: |-
+                          oauthNoProxyEndpoints is a list of endpoints that should be added to the OAuth
+                          no_proxy configuration.
+                        items:
+                          maxLength: 253
+                          minLength: 1
+                          type: string
+                        maxItems: 50
+                        minItems: 1
+                        type: array
+                        x-kubernetes-list-type: set
                       providerType:
                         description: providerType is a specific supported infrastructure
                           provider within IBM Cloud.

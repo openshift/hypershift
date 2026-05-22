@@ -95,10 +95,38 @@ func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider 
 	}
 
 	if hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
+		// Add default IBM Cloud endpoints for backward compatibility
 		p.OAuthNoProxy = append(p.OAuthNoProxy, "iam.cloud.ibm.com", "iam.test.cloud.ibm.com")
+		// Add any additional endpoints specified in the platform spec, avoiding duplicates
+		if hcp.Spec.Platform.IBMCloud != nil && len(hcp.Spec.Platform.IBMCloud.OAuthNoProxyEndpoints) > 0 {
+			p.OAuthNoProxy = appendUnique(p.OAuthNoProxy, hcp.Spec.Platform.IBMCloud.OAuthNoProxyEndpoints)
+		}
 	}
 
 	return p
+}
+
+// appendUnique appends items from 'toAdd' to 'existing' only if they don't already exist in 'existing'.
+// Empty strings are filtered out. This prevents duplicate entries and invalid empty values in the slice.
+func appendUnique(existing []string, toAdd []string) []string {
+	// Create a set of existing items for O(1) lookup
+	existingSet := make(map[string]struct{}, len(existing))
+	for _, item := range existing {
+		existingSet[item] = struct{}{}
+	}
+
+	// Append only unique, non-empty items
+	for _, item := range toAdd {
+		if item == "" {
+			continue // Skip empty strings
+		}
+		if _, exists := existingSet[item]; !exists {
+			existing = append(existing, item)
+			existingSet[item] = struct{}{}
+		}
+	}
+
+	return existing
 }
 
 func (p *OAuthServerParams) IdentityProviders() []configv1.IdentityProvider {

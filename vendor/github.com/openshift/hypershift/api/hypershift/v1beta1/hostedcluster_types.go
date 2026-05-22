@@ -1362,6 +1362,16 @@ type IBMCloudPlatformSpec struct {
 	// providerType is a specific supported infrastructure provider within IBM Cloud.
 	// +optional
 	ProviderType configv1.IBMCloudProviderType `json:"providerType,omitempty"`
+
+	// oauthNoProxyEndpoints is a list of endpoints that should be added to the OAuth
+	// no_proxy configuration.
+	// +optional
+	// +listType=set
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=50
+	// +kubebuilder:validation:items:MinLength=1
+	// +kubebuilder:validation:items:MaxLength=253
+	OAuthNoProxyEndpoints []string `json:"oauthNoProxyEndpoints,omitempty"`
 }
 
 // Release represents the metadata for an OCP release payload image.

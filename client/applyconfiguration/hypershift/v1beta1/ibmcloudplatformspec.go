@@ -24,7 +24,8 @@ import (
 // IBMCloudPlatformSpecApplyConfiguration represents a declarative configuration of the IBMCloudPlatformSpec type for use
 // with apply.
 type IBMCloudPlatformSpecApplyConfiguration struct {
-	ProviderType *v1.IBMCloudProviderType `json:"providerType,omitempty"`
+	ProviderType          *v1.IBMCloudProviderType `json:"providerType,omitempty"`
+	OAuthNoProxyEndpoints []string                 `json:"oauthNoProxyEndpoints,omitempty"`
 }
 
 // IBMCloudPlatformSpecApplyConfiguration constructs a declarative configuration of the IBMCloudPlatformSpec type for use with
@@ -38,5 +39,15 @@ func IBMCloudPlatformSpec() *IBMCloudPlatformSpecApplyConfiguration {
 // If called multiple times, the ProviderType field is set to the value of the last call.
 func (b *IBMCloudPlatformSpecApplyConfiguration) WithProviderType(value v1.IBMCloudProviderType) *IBMCloudPlatformSpecApplyConfiguration {
 	b.ProviderType = &value
+	return b
+}
+
+// WithOAuthNoProxyEndpoints adds the given value to the OAuthNoProxyEndpoints field in the declarative configuration
+// and returns the receiver, so that objects can be build by chaining "With" function invocations.
+// If called multiple times, values provided by each call will be appended to the OAuthNoProxyEndpoints field.
+func (b *IBMCloudPlatformSpecApplyConfiguration) WithOAuthNoProxyEndpoints(values ...string) *IBMCloudPlatformSpecApplyConfiguration {
+	for i := range values {
+		b.OAuthNoProxyEndpoints = append(b.OAuthNoProxyEndpoints, values[i])
+	}
 	return b
 }
