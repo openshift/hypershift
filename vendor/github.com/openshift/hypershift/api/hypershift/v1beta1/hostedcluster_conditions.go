@@ -298,6 +298,7 @@ const (
 	ProxyCABundleInvalidReason            = "ProxyCABundleInvalid"
 	PlatformCredentialsNotFoundReason     = "PlatformCredentialsNotFound"
 	InvalidImageReason                    = "InvalidImage"
+	ReleaseImageValidationSkippedReason   = "ReleaseImageValidationSkipped"
 	InvalidIdentityProvider               = "InvalidIdentityProvider"
 	PayloadArchNotFoundReason             = "PayloadArchNotFound"
 
