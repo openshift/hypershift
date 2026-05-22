@@ -18,7 +18,6 @@ package tests
 
 import (
 	"fmt"
-	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -33,6 +32,7 @@ import (
 	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
 
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+	dto "github.com/prometheus/client_model/go"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -40,6 +40,20 @@ import (
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+func expectMetricHasLabel(g Gomega, families map[string]*dto.MetricFamily, metricName, labelName, labelValue string) {
+	family, ok := families[metricName]
+	g.Expect(ok).To(BeTrue(), "metric %s should exist", metricName)
+	hasMatch := false
+	for _, m := range family.Metric {
+		for _, l := range m.GetLabel() {
+			if l.GetName() == labelName && l.GetValue() == labelValue {
+				hasMatch = true
+			}
+		}
+	}
+	g.Expect(hasMatch).To(BeTrue(), "metric %s should have label %s=%s", metricName, labelName, labelValue)
+}
 
 func RegisterHostedClusterMetricsTests(getTestCtx internal.TestContextGetter) {
 	ValidateMetricsTest(getTestCtx)
@@ -63,21 +77,26 @@ func ValidateMetricsTest(getTestCtx internal.TestContextGetter) {
 			Expect(err).NotTo(HaveOccurred(), "should be able to create kubernetes clientset")
 
 			hoNamespace := "hypershift"
-			podList := &corev1.PodList{}
-			Expect(tc.MgmtClient.List(tc.Context, podList,
-				crclient.InNamespace(hoNamespace),
-				crclient.MatchingLabels{"app": "operator"},
-			)).To(Succeed(), "should be able to list pods in the hypershift namespace")
-
-			if len(podList.Items) == 0 {
-				Skip("hypershift-operator pod not found in the hypershift namespace")
-			}
-
-			hoPodName := podList.Items[0].Name
 			hcName := hostedCluster.Name
 
 			Eventually(func(g Gomega) {
-				metrics, err := v2util.GetMetricsFromPod(tc.Context, clientset, mgmtRestConfig, hoNamespace, hoPodName, "operator", 9000)
+				currentPods := &corev1.PodList{}
+				g.Expect(tc.MgmtClient.List(tc.Context, currentPods,
+					crclient.InNamespace(hoNamespace),
+					crclient.MatchingLabels{"app": "operator"},
+				)).To(Succeed(), "should be able to list pods in the hypershift namespace")
+				g.Expect(currentPods.Items).NotTo(BeEmpty(), "hypershift-operator pod should exist")
+
+				var runningPodName string
+				for _, p := range currentPods.Items {
+					if p.Status.Phase == corev1.PodRunning {
+						runningPodName = p.Name
+						break
+					}
+				}
+				g.Expect(runningPodName).NotTo(BeEmpty(), "a running hypershift-operator pod should exist")
+
+				metrics, err := v2util.GetMetricsFromPod(tc.Context, clientset, mgmtRestConfig, hoNamespace, runningPodName, "operator", 9000)
 				g.Expect(err).NotTo(HaveOccurred(), "should be able to fetch metrics from hypershift-operator pod")
 
 				g.Expect(metrics).To(HaveKey("hypershift_operator_info"),
@@ -88,51 +107,18 @@ func ValidateMetricsTest(getTestCtx internal.TestContextGetter) {
 					hcmetrics.LimitedSupportEnabledMetricName,
 					hcmetrics.ProxyMetricName,
 				} {
-					family, ok := metrics[metricName]
-					g.Expect(ok).To(BeTrue(), "metric %s should exist", metricName)
-					hasMatch := false
-					for _, m := range family.Metric {
-						for _, l := range m.GetLabel() {
-							if l.GetName() == "name" && l.GetValue() == hcName {
-								hasMatch = true
-							}
-						}
-					}
-					g.Expect(hasMatch).To(BeTrue(),
-						"metric %s should have label name=%s", metricName, hcName)
+					expectMetricHasLabel(g, metrics, metricName, "name", hcName)
 				}
 
 				for _, metricName := range []string{
 					npmetrics.SizeMetricName,
 					npmetrics.AvailableReplicasMetricName,
 				} {
-					family, ok := metrics[metricName]
-					g.Expect(ok).To(BeTrue(), "metric %s should exist", metricName)
-					hasMatch := false
-					for _, m := range family.Metric {
-						for _, l := range m.GetLabel() {
-							if l.GetName() == "cluster_name" && l.GetValue() == hcName {
-								hasMatch = true
-							}
-						}
-					}
-					g.Expect(hasMatch).To(BeTrue(),
-						"metric %s should have label cluster_name=%s", metricName, hcName)
+					expectMetricHasLabel(g, metrics, metricName, "cluster_name", hcName)
 				}
 
 				if hostedCluster.Spec.Platform.Type == hyperv1.AWSPlatform {
-					family, ok := metrics[hcmetrics.InvalidAwsCredsMetricName]
-					g.Expect(ok).To(BeTrue(), "metric %s should exist on AWS", hcmetrics.InvalidAwsCredsMetricName)
-					hasMatch := false
-					for _, m := range family.Metric {
-						for _, l := range m.GetLabel() {
-							if l.GetName() == "name" && l.GetValue() == hcName {
-								hasMatch = true
-							}
-						}
-					}
-					g.Expect(hasMatch).To(BeTrue(),
-						"metric %s should have label name=%s", hcmetrics.InvalidAwsCredsMetricName, hcName)
+					expectMetricHasLabel(g, metrics, hcmetrics.InvalidAwsCredsMetricName, "name", hcName)
 				}
 
 				if hostedCluster.Spec.Platform.Type == hyperv1.AzurePlatform && azureutil.IsAroHCP() {
@@ -173,7 +159,7 @@ func EnsureMetricsForwarderWorkingTest(getTestCtx internal.TestContextGetter) {
 				}
 			}, 5*time.Minute, 10*time.Second).Should(Succeed())
 
-			By("Waiting for guest-side metrics-forwarder deployment")
+			By("Waiting for hosted cluster metrics-forwarder deployment")
 			tc.ValidateHostedClusterClient()
 			hcClient := tc.GetHostedClusterClient()
 			hcRestConfig := tc.GetHostedClusterRESTConfig()
@@ -189,10 +175,10 @@ func EnsureMetricsForwarderWorkingTest(getTestCtx internal.TestContextGetter) {
 					crclient.InNamespace(monitoringNamespace),
 					crclient.MatchingLabels{"app": "control-plane-metrics-forwarder"},
 				)).To(Succeed())
-				g.Expect(podList.Items).NotTo(BeEmpty(), "control-plane-metrics-forwarder pod should exist in guest cluster")
+				g.Expect(podList.Items).NotTo(BeEmpty(), "control-plane-metrics-forwarder pod should exist in hosted cluster")
 			}, 5*time.Minute, 10*time.Second).Should(Succeed())
 
-			By("Waiting for Prometheus pod in guest cluster")
+			By("Waiting for Prometheus pod in hosted cluster")
 			const promPodName = "prometheus-k8s-0"
 			Eventually(func(g Gomega) {
 				pod := &corev1.Pod{}
@@ -216,14 +202,16 @@ func EnsureMetricsForwarderWorkingTest(getTestCtx internal.TestContextGetter) {
 			}, 10*time.Minute, 15*time.Second).Should(Succeed())
 
 			By("Querying for actual kube-apiserver metrics scraped via the forwarder")
-			output, err := v2util.RunCommandInPod(tc.Context, hcClientset, hcRestConfig,
-				monitoringNamespace, promPodName, "prometheus",
-				"curl", "-gs", `http://localhost:9090/api/v1/query?query=apiserver_request_total{job="apiserver"}`)
-			Expect(err).NotTo(HaveOccurred(), "should be able to query Prometheus for apiserver_request_total")
-			Expect(output).To(ContainSubstring(`"resultType":"vector"`),
-				"Prometheus query should return vector results")
-			Expect(output).NotTo(ContainSubstring(`"result":[]`),
-				"should have apiserver_request_total metrics from kube-apiserver")
+			Eventually(func(g Gomega) {
+				output, err := v2util.RunCommandInPod(tc.Context, hcClientset, hcRestConfig,
+					monitoringNamespace, promPodName, "prometheus",
+					"curl", "-gs", `http://localhost:9090/api/v1/query?query=apiserver_request_total{job="apiserver"}`)
+				g.Expect(err).NotTo(HaveOccurred(), "should be able to query Prometheus for apiserver_request_total")
+				g.Expect(output).To(ContainSubstring(`"resultType":"vector"`),
+					"Prometheus query should return vector results")
+				g.Expect(output).NotTo(ContainSubstring(`"result":[]`),
+					"should have apiserver_request_total metrics from kube-apiserver")
+			}, 5*time.Minute, 15*time.Second).Should(Succeed())
 		})
 	})
 }
@@ -268,7 +256,10 @@ func EnsureNodeTuningOperatorMetricsEndpointTest(getTestCtx internal.TestContext
 			scheme := "https"
 			for _, endpoint := range serviceMonitor.Spec.Endpoints {
 				if endpoint.Path == "/metrics" {
-					targetPort = endpoint.TargetPort.String()
+					targetPort = endpoint.Port
+					if targetPort == "" && endpoint.TargetPort != nil {
+						targetPort = endpoint.TargetPort.String()
+					}
 					if endpoint.Scheme != nil {
 						scheme = string(*endpoint.Scheme)
 					}
@@ -283,17 +274,26 @@ func EnsureNodeTuningOperatorMetricsEndpointTest(getTestCtx internal.TestContext
 			clientset, err := kubernetes.NewForConfig(mgmtRestConfig)
 			Expect(err).NotTo(HaveOccurred(), "should be able to create kubernetes clientset")
 
-			ntoPods := &corev1.PodList{}
-			Expect(tc.MgmtClient.List(tc.Context, ntoPods,
-				crclient.InNamespace(tc.ControlPlaneNamespace),
-				crclient.MatchingLabels{"app": "cluster-node-tuning-operator"},
-			)).To(Succeed())
-			Expect(ntoPods.Items).NotTo(BeEmpty(), "cluster-node-tuning-operator pod should exist")
-
 			httpsServiceURL := fmt.Sprintf("%s://node-tuning-operator.%s.svc.cluster.local:%s/metrics", scheme, tc.ControlPlaneNamespace, targetPort)
 			Eventually(func(g Gomega) {
+				ntoPods := &corev1.PodList{}
+				g.Expect(tc.MgmtClient.List(tc.Context, ntoPods,
+					crclient.InNamespace(tc.ControlPlaneNamespace),
+					crclient.MatchingLabels{"app": "cluster-node-tuning-operator"},
+				)).To(Succeed())
+				g.Expect(ntoPods.Items).NotTo(BeEmpty(), "cluster-node-tuning-operator pod should exist")
+
+				var runningPodName string
+				for _, p := range ntoPods.Items {
+					if p.Status.Phase == corev1.PodRunning {
+						runningPodName = p.Name
+						break
+					}
+				}
+				g.Expect(runningPodName).NotTo(BeEmpty(), "a running cluster-node-tuning-operator pod should exist")
+
 				output, err := v2util.RunCommandInPod(tc.Context, clientset, mgmtRestConfig,
-					tc.ControlPlaneNamespace, ntoPods.Items[0].Name, "cluster-node-tuning-operator",
+					tc.ControlPlaneNamespace, runningPodName, "cluster-node-tuning-operator",
 					"curl", "-s", "-f", "--max-time", "10",
 					"--cacert", "/etc/secrets/ca.crt",
 					"--cert", "/tmp/metrics-client-ca/tls.crt",
@@ -301,7 +301,7 @@ func EnsureNodeTuningOperatorMetricsEndpointTest(getTestCtx internal.TestContext
 					httpsServiceURL)
 				g.Expect(err).NotTo(HaveOccurred(), "should be able to curl NTO metrics endpoint at %s", httpsServiceURL)
 				g.Expect(output).NotTo(BeEmpty(), "metrics response should not be empty")
-				g.Expect(strings.Contains(output, "# HELP")).To(BeTrue(),
+				g.Expect(output).To(ContainSubstring("# HELP"),
 					"metrics response should contain Prometheus format data")
 			}, 3*time.Minute, 10*time.Second).Should(Succeed())
 		})

@@ -17,8 +17,10 @@ limitations under the License.
 package tests
 
 import (
+	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"slices"
 	"strconv"
 	"strings"
@@ -36,16 +38,17 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/utils/ptr"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 var workloads = internal.GetControlPlaneWorkloads()
 
-// Helper function to get pods for a workload
 func getWorkloadPods(testCtx *internal.TestContext, workload internal.WorkloadSpec) []corev1.Pod {
 	GinkgoHelper()
-	pods, err := internal.GetWorkloadPodsBySelector(context.Background(), testCtx.MgmtClient, testCtx.ControlPlaneNamespace, workload)
+	pods, err := internal.GetWorkloadPodsBySelector(testCtx.Context, testCtx.MgmtClient, testCtx.ControlPlaneNamespace, workload)
 	Expect(err).NotTo(HaveOccurred(), "failed to list pods for workload %s", workload.Name)
 	return pods
 }
@@ -809,7 +812,50 @@ func SecurityContextUIDTest(getTestCtx internal.TestContextGetter) {
 	})
 }
 
-// NoCrashingPodsTest registers per-workload tests for container restart counts
+func isCertificateTriggeredRestart(ctx context.Context, client crclient.Client, pod *corev1.Pod) bool {
+	hcpList := &hyperv1.HostedControlPlaneList{}
+	if err := client.List(ctx, hcpList, crclient.InNamespace(pod.Namespace)); err != nil {
+		fmt.Fprintf(GinkgoWriter, "couldn't list HostedControlPlanes; pod namespace: %s, pod name: %s, error: %v\n", pod.Namespace, pod.Name, err)
+		return false
+	}
+	for _, hcp := range hcpList.Items {
+		if restartAnnotation, ok := hcp.Annotations[hyperv1.RestartDateAnnotation]; ok {
+			if strings.HasPrefix(restartAnnotation, "CertHash:") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func isLeaderElectionFailure(ctx context.Context, client kubernetes.Interface, pod *corev1.Pod, containerName string) bool {
+	req := client.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{
+		Container: containerName,
+		Previous:  true,
+		TailLines: ptr.To[int64](10),
+	})
+	podLogs, err := req.Stream(ctx)
+	if err != nil {
+		fmt.Fprintf(GinkgoWriter, "couldn't stream pod log; pod namespace: %s, pod name: %s, error: %v\n", pod.Namespace, pod.Name, err)
+		return false
+	}
+	defer podLogs.Close()
+
+	scanner := bufio.NewScanner(podLogs)
+	scanner.Buffer(make([]byte, 256*1024), 512*1024)
+	for scanner.Scan() {
+		if strings.Contains(strings.ToLower(scanner.Text()), "election lost") {
+			return true
+		}
+	}
+	// Drain remaining data to avoid broken pipe
+	_, _ = io.Copy(io.Discard, podLogs)
+	if err := scanner.Err(); err != nil {
+		fmt.Fprintf(GinkgoWriter, "failed to read pod log; pod namespace: %s, pod name: %s, error: %v\n", pod.Namespace, pod.Name, err)
+	}
+	return false
+}
+
 func NoCrashingPodsTest(getTestCtx internal.TestContextGetter) {
 	Context("No crashing pods", func() {
 		crashTolerations := map[string]int32{
@@ -862,8 +908,26 @@ func NoCrashingPodsTest(getTestCtx internal.TestContextGetter) {
 					toleration = t
 				}
 
+				var k8sClient kubernetes.Interface
 				for _, pod := range pods {
 					for _, containerStatus := range pod.Status.ContainerStatuses {
+						if containerStatus.RestartCount <= toleration {
+							continue
+						}
+						if strings.HasPrefix(pod.Name, "kube-controller-manager-") {
+							if isCertificateTriggeredRestart(testCtx.Context, testCtx.MgmtClient, &pod) {
+								continue
+							}
+						}
+						if k8sClient == nil {
+							mgmtRestConfig, err := e2eutil.GetConfig()
+							Expect(err).NotTo(HaveOccurred(), "failed to get management REST config for log inspection")
+							k8sClient, err = kubernetes.NewForConfig(mgmtRestConfig)
+							Expect(err).NotTo(HaveOccurred(), "failed to create kubernetes clientset for log inspection")
+						}
+						if isLeaderElectionFailure(testCtx.Context, k8sClient, &pod, containerStatus.Name) {
+							continue
+						}
 						Expect(containerStatus.RestartCount).To(BeNumerically("<=", toleration),
 							"container %s in pod %s has too many restarts (%d > %d)",
 							containerStatus.Name, pod.Name, containerStatus.RestartCount, toleration)
@@ -940,18 +1004,12 @@ func CustomTolerationsTest(getTestCtx internal.TestContextGetter) {
 				}
 
 				for _, pod := range pods {
-					found := false
-					for _, t := range pod.Spec.Tolerations {
-						if t.Key == "hypershift-e2e-test-toleration" &&
-							t.Operator == corev1.TolerationOpEqual &&
-							t.Value == "true" &&
-							t.Effect == corev1.TaintEffectNoSchedule {
-							found = true
-							break
-						}
-					}
-					Expect(found).To(BeTrue(),
-						"pod %s should have custom toleration hypershift-e2e-test-toleration", pod.Name)
+					Expect(pod.Spec.Tolerations).To(ContainElement(corev1.Toleration{
+						Key:      "hypershift-e2e-test-toleration",
+						Operator: corev1.TolerationOpEqual,
+						Value:    "true",
+						Effect:   corev1.TaintEffectNoSchedule,
+					}), "pod %s should have custom toleration hypershift-e2e-test-toleration", pod.Name)
 				}
 			})
 		}

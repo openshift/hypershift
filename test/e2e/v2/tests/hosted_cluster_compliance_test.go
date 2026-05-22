@@ -36,9 +36,10 @@ func RegisterHostedClusterComplianceTests(getTestCtx internal.TestContextGetter)
 
 func EnsureAllRoutesUseHCPRouterTest(getTestCtx internal.TestContextGetter) {
 	When("routes are created in the control plane namespace", func() {
-		It("should label all routes for the per-HCP router", func() {
+		It("should label all routes for the per-HCP router", Label("routes"), func() {
 			tc := getTestCtx()
 			hostedCluster := tc.GetHostedCluster()
+			Expect(hostedCluster).NotTo(BeNil(), "hosted cluster must be configured")
 
 			isRoute := false
 			for _, svc := range hostedCluster.Spec.Services {

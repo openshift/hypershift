@@ -3888,7 +3888,7 @@ func TestEnsureGuestAdmissionWebhooksAreValid(t *testing.T) {
 						g.Expect(apierrors.IsNotFound(err)).To(BeTrue(),
 							"MutatingWebhookConfiguration %q should have been deleted", tt.expectWebhookGone)
 					default:
-						t.Errorf("unexpected object type %T in guestObjects for expectWebhookGone check", obj)
+						t.Fatalf("unexpected object type %T in guestObjects for expectWebhookGone check", obj)
 					}
 				}
 			}
@@ -3904,7 +3904,7 @@ func TestEnsureGuestAdmissionWebhooksAreValid(t *testing.T) {
 						g.Expect(guestClient.Get(ctx, key, &admissionregistrationv1.MutatingWebhookConfiguration{})).To(Succeed(),
 							"MutatingWebhookConfiguration %q should still exist", tt.expectWebhookAlive)
 					default:
-						t.Errorf("unexpected object type %T in guestObjects for expectWebhookAlive check", obj)
+						t.Fatalf("unexpected object type %T in guestObjects for expectWebhookAlive check", obj)
 					}
 				}
 			}
