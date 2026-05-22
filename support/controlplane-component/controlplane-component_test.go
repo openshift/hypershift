@@ -168,6 +168,12 @@ func TestReconcile(t *testing.T) {
 						Labels: map[string]string{
 							"test-label": "test",
 						},
+						Tolerations: []corev1.Toleration{{
+							Key:      "custom-key",
+							Operator: corev1.TolerationOpEqual,
+							Value:    "custom-value",
+							Effect:   corev1.TaintEffectNoSchedule,
+						}},
 					},
 				},
 				Client: fake.NewClientBuilder().WithScheme(scheme).
@@ -187,6 +193,13 @@ func TestReconcile(t *testing.T) {
 			// pod template labels
 			g.Expect(result.podTemplate.Labels).To(HaveKeyWithValue(hyperv1.ControlPlaneComponentLabel, testComponentName))
 			g.Expect(result.podTemplate.Labels).To(HaveKeyWithValue("test-label", "test"))
+
+			g.Expect(result.podTemplate.Spec.Tolerations).To(ContainElement(corev1.Toleration{
+				Key:      "custom-key",
+				Operator: corev1.TolerationOpEqual,
+				Value:    "custom-value",
+				Effect:   corev1.TaintEffectNoSchedule,
+			}))
 
 			// pod template annotations
 			g.Expect(result.podTemplate.Annotations).To(HaveKey(hyperv1.ReleaseImageAnnotation))
