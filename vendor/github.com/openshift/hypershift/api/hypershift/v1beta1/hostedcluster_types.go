@@ -188,6 +188,10 @@ const (
 	// resource-request-override.hypershift.openshift.io/kube-apiserver.kube-apiserver: memory=3Gi,cpu=2000m
 	ResourceRequestOverrideAnnotationPrefix = "resource-request-override.hypershift.openshift.io"
 
+	// OCMLabelPrefix is the label key prefix used by OCM to tag HostedCluster
+	// resources. Labels with this prefix are mirrored to the HostedControlPlane.
+	OCMLabelPrefix = "api.openshift.com/"
+
 	// LimitedSupportLabel is a label that can be used by consumers to indicate
 	// a cluster is somehow out of regular support policy.
 	// https://docs.openshift.com/rosa/rosa_architecture/rosa_policy_service_definition/rosa-service-definition.html#rosa-limited-support_rosa-service-definition.
