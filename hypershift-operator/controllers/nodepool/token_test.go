@@ -425,6 +425,58 @@ func TestTokenCleanupOutdated(t *testing.T) {
 			},
 			expectedError: "",
 		},
+		{
+			name: "When platform is KubeVirt, outdated userdata secret should be preserved and token secret should get an expiration timestamp",
+			token: &Token{
+				ConfigGenerator: &ConfigGenerator{
+					nodePool: &hyperv1.NodePool{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: nodePoolName,
+							Annotations: map[string]string{
+								nodePoolAnnotationCurrentConfigVersion: outdatedHash,
+							},
+						},
+						Spec: hyperv1.NodePoolSpec{
+							Platform: hyperv1.NodePoolPlatform{
+								Type: hyperv1.KubevirtPlatform,
+							},
+						},
+					},
+					controlplaneNamespace: controlplaneNamespace,
+				},
+			},
+			fakeObjects: []crclient.Object{
+				userdataSecret.DeepCopy(),
+				tokenSecret.DeepCopy(),
+			},
+			expectedError: "",
+		},
+		{
+			name: "When platform is AWS, outdated userdata secret should be preserved and token secret should get an expiration timestamp",
+			token: &Token{
+				ConfigGenerator: &ConfigGenerator{
+					nodePool: &hyperv1.NodePool{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: nodePoolName,
+							Annotations: map[string]string{
+								nodePoolAnnotationCurrentConfigVersion: outdatedHash,
+							},
+						},
+						Spec: hyperv1.NodePoolSpec{
+							Platform: hyperv1.NodePoolPlatform{
+								Type: hyperv1.AWSPlatform,
+							},
+						},
+					},
+					controlplaneNamespace: controlplaneNamespace,
+				},
+			},
+			fakeObjects: []crclient.Object{
+				userdataSecret.DeepCopy(),
+				tokenSecret.DeepCopy(),
+			},
+			expectedError: "",
+		},
 	}
 
 	for _, tc := range testCases {
@@ -442,12 +494,15 @@ func TestTokenCleanupOutdated(t *testing.T) {
 			}
 			g.Expect(err).NotTo(HaveOccurred())
 
-			// user data secret should be deleted.
 			got := &corev1.Secret{}
 			err = fakeClient.Get(t.Context(), crclient.ObjectKeyFromObject(userdataSecret), got)
-			g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+			platformType := tc.token.nodePool.Spec.Platform.Type
+			if platformType == hyperv1.AWSPlatform || platformType == hyperv1.KubevirtPlatform {
+				g.Expect(err).ToNot(HaveOccurred(), "userdata secret should be preserved for %s platform", platformType)
+			} else {
+				g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "userdata secret should be deleted for %s platform", platformType)
+			}
 
-			// token secret if exists it should be have an expiration time.
 			got = &corev1.Secret{}
 			err = fakeClient.Get(t.Context(), crclient.ObjectKeyFromObject(tokenSecret), got)
 			if err != nil {
