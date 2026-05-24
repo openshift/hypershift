@@ -169,10 +169,15 @@ func (r *secretJanitor) Reconcile(ctx context.Context, req reconcile.Request) (r
 }
 
 // shouldKeepOldUserData determines if the old user data should be kept.
+// For KubeVirt, we always keep the old userdata Secret: it is shared by all VMs in the
+// NodePool generation and must not be removed while any of them are still running.
 // For AWS < 4.16, we keep the old userdata Secret so old Machines during rolled out can be deleted.
 // Otherwise, deletion fails because of https://github.com/kubernetes-sigs/cluster-api-provider-aws/pull/3805.
 // TODO (alberto): Drop this check when support for old versions without the fix is not needed anymore.
 func (r *NodePoolReconciler) shouldKeepOldUserData(ctx context.Context, hc *hyperv1.HostedCluster) (bool, error) {
+	if hc.Spec.Platform.Type == hyperv1.KubevirtPlatform {
+		return true, nil
+	}
 	if hc.Spec.Platform.Type != hyperv1.AWSPlatform {
 		return false, nil
 	}

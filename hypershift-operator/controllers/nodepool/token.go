@@ -187,10 +187,12 @@ func (t *Token) cleanupOutdated(ctx context.Context) error {
 		}
 	}
 
-	// For AWS, we keep the old userdata Secret so old Machines during rolled out can be deleted.
-	// Otherwise, deletion fails because of https://github.com/kubernetes-sigs/cluster-api-provider-aws/pull/3805.
+	// For AWS and KubeVirt, we keep the old userdata Secret so old Machines during rollout can be deleted.
+	// AWS: deletion fails because of https://github.com/kubernetes-sigs/cluster-api-provider-aws/pull/3805.
+	// KubeVirt: the Secret is shared by all VMs in the NodePool generation and must survive until
+	// the rollout completes and all old VMs are gone.
 	// TODO (Alberto): enable back deletion when the PR above gets merged.
-	if t.nodePool.Spec.Platform.Type != hyperv1.AWSPlatform {
+	if t.nodePool.Spec.Platform.Type != hyperv1.AWSPlatform && t.nodePool.Spec.Platform.Type != hyperv1.KubevirtPlatform {
 		userDataSecret := t.outdatedUserDataSecret()
 		err = t.Get(ctx, client.ObjectKeyFromObject(userDataSecret), userDataSecret)
 		if err != nil && !apierrors.IsNotFound(err) {
