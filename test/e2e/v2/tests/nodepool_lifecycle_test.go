@@ -39,6 +39,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -84,17 +85,14 @@ var _ = Describe("NodePool Lifecycle", Label("lifecycle", "nodepool-lifecycle"),
 func NodePoolMachineconfigRolloutTest(getTestCtx internal.TestContextGetter) {
 	It("should roll out a MachineConfig change via Replace upgrade strategy", func() {
 		testCtx := getTestCtx()
-		Expect(testCtx).NotTo(BeNil(), "test context should be set up in BeforeSuite")
+		testCtx.ValidateHostedClusterClient()
 
 		hc := testCtx.GetHostedCluster()
-		Expect(hc).NotTo(BeNil(), "hosted cluster should be available")
-
 		if hc.Spec.Platform.Type == hyperv1.KubevirtPlatform {
 			Skip("test is skipped for KubeVirt platform until https://issues.redhat.com/browse/CNV-38196 is addressed")
 		}
 
 		guestClient := testCtx.GetHostedClusterClient()
-		Expect(guestClient).NotTo(BeNil(), "hosted cluster client should be available")
 
 		ctx := testCtx.Context
 
@@ -182,11 +180,9 @@ func NodePoolMachineconfigRolloutTest(getTestCtx internal.TestContextGetter) {
 func NodePoolNTORolloutTest(getTestCtx internal.TestContextGetter) {
 	It("should roll out an NTO Tuned config change via Replace upgrade strategy", func() {
 		testCtx := getTestCtx()
-		Expect(testCtx).NotTo(BeNil(), "test context should be set up in BeforeSuite")
+		testCtx.ValidateHostedClusterClient()
 
 		hc := testCtx.GetHostedCluster()
-		Expect(hc).NotTo(BeNil(), "hosted cluster should be available")
-
 		if hc.Spec.Platform.Type == hyperv1.KubevirtPlatform {
 			Skip("test is skipped for KubeVirt platform until https://issues.redhat.com/browse/CNV-38196 is addressed")
 		}
@@ -195,7 +191,6 @@ func NodePoolNTORolloutTest(getTestCtx internal.TestContextGetter) {
 		}
 
 		guestClient := testCtx.GetHostedClusterClient()
-		Expect(guestClient).NotTo(BeNil(), "hosted cluster client should be available")
 
 		ctx := testCtx.Context
 
@@ -252,11 +247,9 @@ func NodePoolNTORolloutTest(getTestCtx internal.TestContextGetter) {
 func NodePoolNTOInPlaceTest(getTestCtx internal.TestContextGetter) {
 	It("should roll out an NTO Tuned config change via InPlace upgrade strategy", func() {
 		testCtx := getTestCtx()
-		Expect(testCtx).NotTo(BeNil(), "test context should be set up in BeforeSuite")
+		testCtx.ValidateHostedClusterClient()
 
 		hc := testCtx.GetHostedCluster()
-		Expect(hc).NotTo(BeNil(), "hosted cluster should be available")
-
 		if hc.Spec.Platform.Type == hyperv1.KubevirtPlatform {
 			Skip("test is skipped for KubeVirt platform until https://issues.redhat.com/browse/CNV-38196 is addressed")
 		}
@@ -265,7 +258,6 @@ func NodePoolNTOInPlaceTest(getTestCtx internal.TestContextGetter) {
 		}
 
 		guestClient := testCtx.GetHostedClusterClient()
-		Expect(guestClient).NotTo(BeNil(), "hosted cluster client should be available")
 
 		ctx := testCtx.Context
 
@@ -317,13 +309,10 @@ func NodePoolNTOInPlaceTest(getTestCtx internal.TestContextGetter) {
 func NodePoolReplaceUpgradeTest(getTestCtx internal.TestContextGetter) {
 	It("should upgrade a NodePool from previous to latest release via Replace strategy", func() {
 		testCtx := getTestCtx()
-		Expect(testCtx).NotTo(BeNil(), "test context should be set up in BeforeSuite")
+		testCtx.ValidateHostedClusterClient()
 
 		hc := testCtx.GetHostedCluster()
-		Expect(hc).NotTo(BeNil(), "hosted cluster should be available")
-
 		guestClient := testCtx.GetHostedClusterClient()
-		Expect(guestClient).NotTo(BeNil(), "hosted cluster client should be available")
 
 		previousImage := internal.GetEnvVarValue("E2E_PREVIOUS_RELEASE_IMAGE")
 		latestImage := internal.GetEnvVarValue("E2E_LATEST_RELEASE_IMAGE")
@@ -405,13 +394,10 @@ func NodePoolReplaceUpgradeTest(getTestCtx internal.TestContextGetter) {
 func NodePoolInPlaceUpgradeTest(getTestCtx internal.TestContextGetter) {
 	It("should upgrade a NodePool from previous to latest release via InPlace strategy", func() {
 		testCtx := getTestCtx()
-		Expect(testCtx).NotTo(BeNil(), "test context should be set up in BeforeSuite")
+		testCtx.ValidateHostedClusterClient()
 
 		hc := testCtx.GetHostedCluster()
-		Expect(hc).NotTo(BeNil(), "hosted cluster should be available")
-
 		guestClient := testCtx.GetHostedClusterClient()
-		Expect(guestClient).NotTo(BeNil(), "hosted cluster client should be available")
 
 		previousImage := internal.GetEnvVarValue("E2E_PREVIOUS_RELEASE_IMAGE")
 		latestImage := internal.GetEnvVarValue("E2E_LATEST_RELEASE_IMAGE")
@@ -487,18 +473,15 @@ func NodePoolInPlaceUpgradeTest(getTestCtx internal.TestContextGetter) {
 func NodePoolRollingUpgradeTest(getTestCtx internal.TestContextGetter) {
 	It("should perform a rolling upgrade when instance type or VM size changes", func() {
 		testCtx := getTestCtx()
-		Expect(testCtx).NotTo(BeNil(), "test context should be set up in BeforeSuite")
+		testCtx.ValidateHostedClusterClient()
 
 		hc := testCtx.GetHostedCluster()
-		Expect(hc).NotTo(BeNil(), "hosted cluster should be available")
-
 		platform := hc.Spec.Platform.Type
 		if platform != hyperv1.AWSPlatform && platform != hyperv1.AzurePlatform {
 			Skip("rolling upgrade test only supported on AWS and Azure platforms")
 		}
 
 		guestClient := testCtx.GetHostedClusterClient()
-		Expect(guestClient).NotTo(BeNil(), "hosted cluster client should be available")
 
 		ctx := testCtx.Context
 
@@ -586,10 +569,9 @@ func NodePoolRollingUpgradeTest(getTestCtx internal.TestContextGetter) {
 func NodePoolPrevReleaseN1Test(getTestCtx internal.TestContextGetter) {
 	It("should create a NodePool at N-1 release and have ready nodes", func() {
 		testCtx := getTestCtx()
-		Expect(testCtx).NotTo(BeNil(), "test context should be set up in BeforeSuite")
+		testCtx.ValidateHostedClusterClient()
 
 		hc := testCtx.GetHostedCluster()
-		Expect(hc).NotTo(BeNil(), "hosted cluster should be available")
 
 		n1Image := internal.GetEnvVarValue("E2E_N1_RELEASE_IMAGE")
 		if n1Image == "" {
@@ -597,7 +579,6 @@ func NodePoolPrevReleaseN1Test(getTestCtx internal.TestContextGetter) {
 		}
 
 		guestClient := testCtx.GetHostedClusterClient()
-		Expect(guestClient).NotTo(BeNil(), "hosted cluster client should be available")
 
 		ctx := testCtx.Context
 
@@ -625,10 +606,9 @@ func NodePoolPrevReleaseN1Test(getTestCtx internal.TestContextGetter) {
 func NodePoolPrevReleaseN2Test(getTestCtx internal.TestContextGetter) {
 	It("should create a NodePool at N-2 release and have ready nodes", func() {
 		testCtx := getTestCtx()
-		Expect(testCtx).NotTo(BeNil(), "test context should be set up in BeforeSuite")
+		testCtx.ValidateHostedClusterClient()
 
 		hc := testCtx.GetHostedCluster()
-		Expect(hc).NotTo(BeNil(), "hosted cluster should be available")
 
 		n2Image := internal.GetEnvVarValue("E2E_N2_RELEASE_IMAGE")
 		if n2Image == "" {
@@ -636,7 +616,6 @@ func NodePoolPrevReleaseN2Test(getTestCtx internal.TestContextGetter) {
 		}
 
 		guestClient := testCtx.GetHostedClusterClient()
-		Expect(guestClient).NotTo(BeNil(), "hosted cluster client should be available")
 
 		ctx := testCtx.Context
 
@@ -666,17 +645,14 @@ func NodePoolPrevReleaseN2Test(getTestCtx internal.TestContextGetter) {
 func NodePoolMirrorConfigsTest(getTestCtx internal.TestContextGetter) {
 	It("should mirror KubeletConfig to the hosted cluster and clean up on removal", func() {
 		testCtx := getTestCtx()
-		Expect(testCtx).NotTo(BeNil(), "test context should be set up in BeforeSuite")
+		testCtx.ValidateHostedClusterClient()
 
 		hc := testCtx.GetHostedCluster()
-		Expect(hc).NotTo(BeNil(), "hosted cluster should be available")
-
 		if e2eutil.IsLessThan(e2eutil.Version418) {
 			Skip("mirror configs test only applicable for 4.18+")
 		}
 
 		guestClient := testCtx.GetHostedClusterClient()
-		Expect(guestClient).NotTo(BeNil(), "hosted cluster client should be available")
 
 		ctx := testCtx.Context
 
@@ -703,9 +679,11 @@ func NodePoolMirrorConfigsTest(getTestCtx internal.TestContextGetter) {
 			Data: map[string]string{configKey: kubeletConfig1YAML},
 		}
 		Expect(testCtx.MgmtClient.Create(ctx, kcConfigMap)).To(Succeed(), "failed to create KubeletConfig ConfigMap")
-		defer func() {
-			_ = testCtx.MgmtClient.Delete(ctx, kcConfigMap)
-		}()
+		DeferCleanup(func() {
+			if err := testCtx.MgmtClient.Delete(ctx, kcConfigMap); err != nil && !apierrors.IsNotFound(err) {
+				GinkgoWriter.Printf("Warning: failed to cleanup KubeletConfig ConfigMap %s: %v\n", kcConfigMap.Name, err)
+			}
+		})
 
 		original := np.DeepCopy()
 		np.Spec.Config = append(np.Spec.Config, corev1.LocalObjectReference{Name: kcConfigMap.Name})
@@ -796,15 +774,12 @@ func NodePoolMirrorConfigsTest(getTestCtx internal.TestContextGetter) {
 func NodePoolTrustBundleTest(getTestCtx internal.TestContextGetter) {
 	It("should propagate and remove additional trust bundle to/from the hosted cluster", func() {
 		testCtx := getTestCtx()
-		Expect(testCtx).NotTo(BeNil(), "test context should be set up in BeforeSuite")
+		testCtx.ValidateHostedClusterClient()
 
 		e2eutil.GinkgoAtLeast(e2eutil.Version418)
 
 		hc := testCtx.GetHostedCluster()
-		Expect(hc).NotTo(BeNil(), "hosted cluster should be available")
-
 		guestClient := testCtx.GetHostedClusterClient()
-		Expect(guestClient).NotTo(BeNil(), "hosted cluster client should be available")
 
 		ctx := testCtx.Context
 
@@ -985,17 +960,14 @@ func NodePoolTrustBundleTest(getTestCtx internal.TestContextGetter) {
 func NodePoolNTOPerformanceProfileTest(getTestCtx internal.TestContextGetter) {
 	It("should create and manage NTO PerformanceProfile via NodePool TuningConfig", func() {
 		testCtx := getTestCtx()
-		Expect(testCtx).NotTo(BeNil(), "test context should be set up in BeforeSuite")
+		testCtx.ValidateHostedClusterClient()
 
 		hc := testCtx.GetHostedCluster()
-		Expect(hc).NotTo(BeNil(), "hosted cluster should be available")
-
 		if hc.Spec.Platform.Type == hyperv1.OpenStackPlatform {
 			Skip("test is skipped for OpenStack platform until https://issues.redhat.com/browse/OSASINFRA-3566 is addressed")
 		}
 
 		guestClient := testCtx.GetHostedClusterClient()
-		Expect(guestClient).NotTo(BeNil(), "hosted cluster client should be available")
 
 		ctx := testCtx.Context
 
@@ -1022,9 +994,11 @@ func NodePoolNTOPerformanceProfileTest(getTestCtx internal.TestContextGetter) {
 			Data: map[string]string{tuningConfigKey: performanceProfileYAML},
 		}
 		Expect(testCtx.MgmtClient.Create(ctx, ppConfigMap)).To(Succeed(), "failed to create PerformanceProfile ConfigMap")
-		defer func() {
-			_ = testCtx.MgmtClient.Delete(ctx, ppConfigMap)
-		}()
+		DeferCleanup(func() {
+			if err := testCtx.MgmtClient.Delete(ctx, ppConfigMap); err != nil && !apierrors.IsNotFound(err) {
+				GinkgoWriter.Printf("Warning: failed to cleanup PerformanceProfile ConfigMap %s: %v\n", ppConfigMap.Name, err)
+			}
+		})
 
 		original := np.DeepCopy()
 		np.Spec.TuningConfig = append(np.Spec.TuningConfig, corev1.LocalObjectReference{Name: ppConfigMap.Name})
@@ -1146,18 +1120,15 @@ func NodePoolAutoRepairTest(getTestCtx internal.TestContextGetter) {
 		Skip("auto-repair instance termination not yet implemented for v2 framework")
 
 		testCtx := getTestCtx()
-		Expect(testCtx).NotTo(BeNil(), "test context should be set up in BeforeSuite")
+		testCtx.ValidateHostedClusterClient()
 
 		hc := testCtx.GetHostedCluster()
-		Expect(hc).NotTo(BeNil(), "hosted cluster should be available")
-
 		platform := hc.Spec.Platform.Type
 		if platform != hyperv1.AWSPlatform && platform != hyperv1.AzurePlatform {
 			Skip("auto-repair test only supported on AWS and Azure platforms")
 		}
 
 		guestClient := testCtx.GetHostedClusterClient()
-		Expect(guestClient).NotTo(BeNil(), "hosted cluster client should be available")
 
 		ctx := testCtx.Context
 
@@ -1190,11 +1161,9 @@ func NodePoolAutoRepairTest(getTestCtx internal.TestContextGetter) {
 func NodePoolDiskEncryptionTest(getTestCtx internal.TestContextGetter) {
 	It("should create a NodePool with Azure DiskEncryptionSet and verify it is applied", func() {
 		testCtx := getTestCtx()
-		Expect(testCtx).NotTo(BeNil(), "test context should be set up in BeforeSuite")
+		testCtx.ValidateHostedClusterClient()
 
 		hc := testCtx.GetHostedCluster()
-		Expect(hc).NotTo(BeNil(), "hosted cluster should be available")
-
 		if hc.Spec.Platform.Type != hyperv1.AzurePlatform {
 			Skip("disk encryption test only supported on Azure platform")
 		}
@@ -1205,7 +1174,6 @@ func NodePoolDiskEncryptionTest(getTestCtx internal.TestContextGetter) {
 		}
 
 		guestClient := testCtx.GetHostedClusterClient()
-		Expect(guestClient).NotTo(BeNil(), "hosted cluster client should be available")
 
 		ctx := testCtx.Context
 
