@@ -171,4 +171,35 @@ func init() {
 		"Comma-separated list of Azure subscription IDs permitted to create Private Endpoints.",
 		false,
 	)
+	// Release image env vars for lifecycle tests
+	RegisterEnvVar(
+		"E2E_LATEST_RELEASE_IMAGE",
+		"Latest OCP release image for control plane upgrade tests.",
+		false,
+	)
+	RegisterEnvVar(
+		"E2E_PREVIOUS_RELEASE_IMAGE",
+		"N-1 OCP release image (previous minor) for control plane upgrade tests.",
+		false,
+	)
+	RegisterEnvVar(
+		"E2E_N1_RELEASE_IMAGE",
+		"N-1 minor release image for NodePool previous-release tests.",
+		false,
+	)
+	RegisterEnvVar(
+		"E2E_N2_RELEASE_IMAGE",
+		"N-2 minor release image for NodePool previous-release tests.",
+		false,
+	)
+	RegisterEnvVar(
+		"E2E_AZURE_CREDENTIALS_FILE",
+		"Path to Azure service principal credentials JSON file for platform-specific tests (auto-repair, disk encryption).",
+		false,
+	)
+	RegisterEnvVar(
+		"E2E_AZURE_DISK_ENCRYPTION_SET_ID",
+		"Azure DiskEncryptionSet resource ID for disk encryption NodePool tests.",
+		false,
+	)
 }
