@@ -34,8 +34,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/apimachinery/pkg/labels"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/utils/ptr"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -44,14 +44,10 @@ import (
 func AutoscalingScaleUpDownTest(getTestCtx internal.TestContextGetter) {
 	It("should scale up when workload increases and scale down when workload decreases", func() {
 		testCtx := getTestCtx()
-		Expect(testCtx).NotTo(BeNil(), "test context should be set up in BeforeSuite")
+		testCtx.ValidateHostedClusterClient()
 
 		hc := testCtx.GetHostedCluster()
-		Expect(hc).NotTo(BeNil(), "hosted cluster should be available")
-
 		guestClient := testCtx.GetHostedClusterClient()
-		Expect(guestClient).NotTo(BeNil(), "hosted cluster client should be available")
-
 		ctx := testCtx.Context
 
 		// Find the default NodePool to copy platform config
@@ -109,16 +105,12 @@ func AutoscalingScaleUpDownTest(getTestCtx internal.TestContextGetter) {
 func AutoscalingBalancingTest(getTestCtx internal.TestContextGetter) {
 	It("should balance pods across multiple autoscaling NodePools", func() {
 		testCtx := getTestCtx()
-		Expect(testCtx).NotTo(BeNil(), "test context should be set up in BeforeSuite")
+		testCtx.ValidateHostedClusterClient()
 
 		e2eutil.GinkgoAtLeast(e2eutil.Version420)
 
 		hc := testCtx.GetHostedCluster()
-		Expect(hc).NotTo(BeNil(), "hosted cluster should be available")
-
 		guestClient := testCtx.GetHostedClusterClient()
-		Expect(guestClient).NotTo(BeNil(), "hosted cluster client should be available")
-
 		ctx := testCtx.Context
 		cpNamespace := testCtx.ControlPlaneNamespace
 
@@ -236,8 +228,8 @@ func AutoscalingBalancingTest(getTestCtx internal.TestContextGetter) {
 				return false, nil
 			}
 			return autoscalingNP1.Status.Replicas >= 1 && autoscalingNP2.Status.Replicas >= 1, nil
-		}).WithTimeout(30 * time.Minute).
-			WithPolling(30 * time.Second).
+		}).WithTimeout(30*time.Minute).
+			WithPolling(30*time.Second).
 			Should(BeTrue(), "NodePools should have balanced distribution")
 	})
 }
