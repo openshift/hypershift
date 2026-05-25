@@ -229,9 +229,10 @@ type NodePoolSpec struct {
 	// +kubebuilder:validation:MaxItems=10
 	TuningConfig []corev1.LocalObjectReference `json:"tuningConfig,omitempty"`
 
-	// arch is the preferred processor architecture for the NodePool. Different platforms might have different supported architectures.
 	// TODO: This is set as optional to prevent validation from failing due to a limitation on client side validation with open API machinery:
 	//	https://github.com/kubernetes/kubernetes/issues/108768#issuecomment-1253912215
+
+	// arch is the preferred processor architecture for the NodePool. Different platforms might have different supported architectures.
 	//
 	// +kubebuilder:default:=amd64
 	// +kubebuilder:validation:Enum=arm64;amd64;ppc64le;s390x
