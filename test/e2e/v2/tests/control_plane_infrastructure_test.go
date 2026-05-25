@@ -134,38 +134,40 @@ func InfrastructureResourceRequestsTest(getTestCtx internal.TestContextGetter) {
 		for _, workload := range infraWorkloads {
 			workload := workload // capture range variable
 
-			It(fmt.Sprintf("should have resource requests for %s containers", workload.Name), func() {
-				testCtx := getTestCtx()
+			Context(workload.Name, func() {
+				It("should have resource requests for containers", func() {
+					testCtx := getTestCtx()
 
-				ns := &corev1.Namespace{}
-				err := testCtx.MgmtClient.Get(testCtx.Context, crclient.ObjectKey{Name: workload.Namespace}, ns)
-				if apierrors.IsNotFound(err) {
-					Skip(fmt.Sprintf("namespace %s not found", workload.Namespace))
-				}
-				Expect(err).NotTo(HaveOccurred(), "failed to get namespace %s", workload.Namespace)
-
-				podList := &corev1.PodList{}
-				err = testCtx.MgmtClient.List(testCtx.Context, podList, &crclient.ListOptions{
-					Namespace: workload.Namespace,
-				})
-				Expect(err).NotTo(HaveOccurred(), "failed to list pods in namespace %s", workload.Namespace)
-
-				var matchingPods []corev1.Pod
-				for _, pod := range podList.Items {
-					if workload.MatchesPod(pod) {
-						matchingPods = append(matchingPods, pod)
+					ns := &corev1.Namespace{}
+					err := testCtx.MgmtClient.Get(testCtx.Context, crclient.ObjectKey{Name: workload.Namespace}, ns)
+					if apierrors.IsNotFound(err) {
+						Skip(fmt.Sprintf("namespace %s not found", workload.Namespace))
 					}
-				}
+					Expect(err).NotTo(HaveOccurred(), "failed to get namespace %s", workload.Namespace)
 
-				var failures []string
-				for _, pod := range matchingPods {
-					failures = append(failures, validateContainerResourceRequests(pod.Namespace, pod.Name, pod.Spec.Containers)...)
-					failures = append(failures, validateContainerResourceRequests(pod.Namespace, pod.Name, pod.Spec.InitContainers)...)
-				}
+					podList := &corev1.PodList{}
+					err = testCtx.MgmtClient.List(testCtx.Context, podList, &crclient.ListOptions{
+						Namespace: workload.Namespace,
+					})
+					Expect(err).NotTo(HaveOccurred(), "failed to list pods in namespace %s", workload.Namespace)
 
-				if len(failures) > 0 {
-					Fail(strings.Join(failures, "\n"))
-				}
+					var matchingPods []corev1.Pod
+					for _, pod := range podList.Items {
+						if workload.MatchesPod(pod) {
+							matchingPods = append(matchingPods, pod)
+						}
+					}
+
+					var failures []string
+					for _, pod := range matchingPods {
+						failures = append(failures, validateContainerResourceRequests(pod.Namespace, pod.Name, pod.Spec.Containers)...)
+						failures = append(failures, validateContainerResourceRequests(pod.Namespace, pod.Name, pod.Spec.InitContainers)...)
+					}
+
+					if len(failures) > 0 {
+						Fail(strings.Join(failures, "\n"))
+					}
+				})
 			})
 		}
 	})
