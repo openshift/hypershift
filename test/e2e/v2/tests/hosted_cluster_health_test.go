@@ -140,7 +140,7 @@ func EnsurePayloadArchSetCorrectlyTest(getTestCtx internal.TestContextGetter) {
 				g.Expect(tc.MgmtClient.Get(tc.Context, crclient.ObjectKeyFromObject(hostedCluster), hc)).To(Succeed())
 				g.Expect(hc.Status.PayloadArch).NotTo(BeEmpty(), "PayloadArch should be set")
 				payloadArch, err := hyperutil.DetermineHostedClusterPayloadArch(tc.Context, tc.MgmtClient, hc, imageMetadataProvider)
-				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(err).NotTo(HaveOccurred(), "failed to determine payload arch")
 				g.Expect(payloadArch).To(Equal(hc.Status.PayloadArch))
 			}, 30*time.Minute, time.Minute).Should(Succeed())
 		})

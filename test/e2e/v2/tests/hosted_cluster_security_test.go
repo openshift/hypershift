@@ -101,21 +101,25 @@ func EnsureGuestWebhooksValidatedTest(getTestCtx internal.TestContextGetter) {
 }
 
 func EnsureAdmissionPoliciesTest(getTestCtx internal.TestContextGetter) {
-	When("checking admission policies on a public hosted cluster", func() {
-		It("should find all required ValidatingAdmissionPolicies", func() {
-			tc := getTestCtx()
+	When("checking admission policies on a public hosted cluster", Ordered, func() {
+		var tc *internal.TestContext
+		var hcClient crclient.Client
+		var hostedCluster *hyperv1.HostedCluster
+
+		BeforeAll(func() {
+			tc = getTestCtx()
 			if e2eutil.IsLessThan(e2eutil.Version418) {
 				Skip("Admission policies require version >= 4.18")
 			}
-			hostedCluster := tc.GetHostedCluster()
-
+			hostedCluster = tc.GetHostedCluster()
 			if !netutil.IsPublicHC(hostedCluster) {
 				Skip("admission policies test requires a public hosted cluster")
 			}
-
 			tc.ValidateHostedClusterClient()
-			hcClient := tc.GetHostedClusterClient()
+			hcClient = tc.GetHostedClusterClient()
+		})
 
+		It("should find all required ValidatingAdmissionPolicies", func() {
 			Eventually(func(g Gomega) {
 				vapList := &admissionregistrationv1.ValidatingAdmissionPolicyList{}
 				g.Expect(hcClient.List(tc.Context, vapList)).To(Succeed())
@@ -137,8 +141,9 @@ func EnsureAdmissionPoliciesTest(getTestCtx internal.TestContextGetter) {
 						"required ValidatingAdmissionPolicy %s not found", required)
 				}
 			}, 5*time.Minute, 10*time.Second).Should(Succeed())
+		})
 
-			By("Verifying VAPs deny unauthorized config changes")
+		It("should deny unauthorized config changes via VAPs", func() {
 			Eventually(func(g Gomega) {
 				apiServer := &configv1.APIServer{}
 				g.Expect(hcClient.Get(tc.Context, crclient.ObjectKey{Name: "cluster"}, apiServer)).To(Succeed())
@@ -153,8 +158,9 @@ func EnsureAdmissionPoliciesTest(getTestCtx internal.TestContextGetter) {
 				g.Expect(err.Error()).To(ContainSubstring("ValidatingAdmissionPolicy"),
 					"rejection should be from a ValidatingAdmissionPolicy, got: %v", err)
 			}, time.Minute, 5*time.Second).Should(Succeed())
+		})
 
-			By("Verifying VAPs allow status modifications")
+		It("should allow status modifications via VAPs", func() {
 			network := &configv1.Network{}
 			Expect(hcClient.Get(tc.Context, crclient.ObjectKey{Name: "cluster"}, network)).To(Succeed())
 			originalMTU := network.Status.ClusterNetworkMTU
@@ -175,30 +181,32 @@ func EnsureAdmissionPoliciesTest(getTestCtx internal.TestContextGetter) {
 				g.Expect(hcClient.Update(tc.Context, networkCopy)).To(Succeed(),
 					"VAP should allow status modifications")
 			}, time.Minute, 5*time.Second).Should(Succeed())
+		})
 
-			if hostedCluster.Spec.OLMCatalogPlacement == hyperv1.GuestOLMCatalogPlacement {
-				By("Verifying VAPs allow OperatorHub configuration changes")
-				operatorHub := &configv1.OperatorHub{}
-				Expect(hcClient.Get(tc.Context, crclient.ObjectKey{Name: "cluster"}, operatorHub)).To(Succeed())
-				originalDisableAll := operatorHub.Spec.DisableAllDefaultSources
-				DeferCleanup(func() {
-					Eventually(func(g Gomega) {
-						oh := &configv1.OperatorHub{}
-						g.Expect(hcClient.Get(tc.Context, crclient.ObjectKey{Name: "cluster"}, oh)).To(Succeed(),
-							"cleanup: failed to get OperatorHub resource")
-						oh.Spec.DisableAllDefaultSources = originalDisableAll
-						g.Expect(hcClient.Update(tc.Context, oh)).To(Succeed(),
-							"cleanup: failed to restore OperatorHub configuration")
-					}, time.Minute, 5*time.Second).Should(Succeed())
-				})
+		It("should allow OperatorHub config changes with guest OLM placement", func() {
+			if hostedCluster.Spec.OLMCatalogPlacement != hyperv1.GuestOLMCatalogPlacement {
+				Skip("OperatorHub test requires guest OLM catalog placement")
+			}
+			operatorHub := &configv1.OperatorHub{}
+			Expect(hcClient.Get(tc.Context, crclient.ObjectKey{Name: "cluster"}, operatorHub)).To(Succeed())
+			originalDisableAll := operatorHub.Spec.DisableAllDefaultSources
+			DeferCleanup(func() {
 				Eventually(func(g Gomega) {
 					oh := &configv1.OperatorHub{}
-					g.Expect(hcClient.Get(tc.Context, crclient.ObjectKey{Name: "cluster"}, oh)).To(Succeed())
-					oh.Spec.DisableAllDefaultSources = !originalDisableAll
+					g.Expect(hcClient.Get(tc.Context, crclient.ObjectKey{Name: "cluster"}, oh)).To(Succeed(),
+						"cleanup: failed to get OperatorHub resource")
+					oh.Spec.DisableAllDefaultSources = originalDisableAll
 					g.Expect(hcClient.Update(tc.Context, oh)).To(Succeed(),
-						"VAP should allow OperatorHub configuration changes when OLM uses guest placement")
+						"cleanup: failed to restore OperatorHub configuration")
 				}, time.Minute, 5*time.Second).Should(Succeed())
-			}
+			})
+			Eventually(func(g Gomega) {
+				oh := &configv1.OperatorHub{}
+				g.Expect(hcClient.Get(tc.Context, crclient.ObjectKey{Name: "cluster"}, oh)).To(Succeed())
+				oh.Spec.DisableAllDefaultSources = !originalDisableAll
+				g.Expect(hcClient.Update(tc.Context, oh)).To(Succeed(),
+					"VAP should allow OperatorHub configuration changes when OLM uses guest placement")
+			}, time.Minute, 5*time.Second).Should(Succeed())
 		})
 	})
 }

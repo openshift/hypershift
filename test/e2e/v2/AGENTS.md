@@ -116,8 +116,10 @@ Tests that iterate over control plane workloads (e.g., checking restart counts, 
 ```go
 for _, w := range workloads {
     workload := w
-    It(fmt.Sprintf("When workload %s is running, it should have custom labels", workload.Name), func() {
-        // assert per-workload
+    Context(workload.Name, func() {
+        It("should have custom labels", func() {
+            // assert per-workload
+        })
     })
 }
 ```

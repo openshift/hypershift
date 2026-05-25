@@ -73,26 +73,28 @@ func DeploymentGenerationTest(getTestCtx internal.TestContextGetter) {
 				continue
 			}
 
-			It(fmt.Sprintf("should not indicate rapid rollouts for %s", workload.Name), func() {
-				testCtx := getTestCtx()
-				hostedCluster := testCtx.GetHostedCluster()
-				if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
-					Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
-				}
+			Context(workload.Name, func() {
+				It("should not indicate rapid rollouts", func() {
+					testCtx := getTestCtx()
+					hostedCluster := testCtx.GetHostedCluster()
+					if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
+						Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
+					}
 
-				deployment := &appsv1.Deployment{}
-				err := testCtx.MgmtClient.Get(context.Background(), crclient.ObjectKey{
-					Namespace: testCtx.ControlPlaneNamespace,
-					Name:      workload.Name,
-				}, deployment)
-				if apierrors.IsNotFound(err) {
-					Skip(fmt.Sprintf("Deployment %s not found", workload.Name))
-				}
-				Expect(err).NotTo(HaveOccurred(), "failed to get Deployment %s", workload.Name)
+					deployment := &appsv1.Deployment{}
+					err := testCtx.MgmtClient.Get(context.Background(), crclient.ObjectKey{
+						Namespace: testCtx.ControlPlaneNamespace,
+						Name:      workload.Name,
+					}, deployment)
+					if apierrors.IsNotFound(err) {
+						Skip(fmt.Sprintf("Deployment %s not found", workload.Name))
+					}
+					Expect(err).NotTo(HaveOccurred(), "failed to get Deployment %s", workload.Name)
 
-				Expect(deployment.Generation).To(BeNumerically("<=", maxAllowedGeneration),
-					"Deployment %s has generation %d which exceeds max allowed %d",
-					workload.Name, deployment.Generation, maxAllowedGeneration)
+					Expect(deployment.Generation).To(BeNumerically("<=", maxAllowedGeneration),
+						"Deployment %s has generation %d which exceeds max allowed %d",
+						workload.Name, deployment.Generation, maxAllowedGeneration)
+				})
 			})
 		}
 	})
@@ -124,54 +126,56 @@ func SafeToEvictAnnotationsTest(getTestCtx internal.TestContextGetter) {
 			"ovnkube-control-plane",
 		}
 		for _, workload := range workloads {
-			It(fmt.Sprintf("should exist for pods with emptyDir or hostPath volumes belonging to %s", workload.Name), func() {
-				testCtx := getTestCtx()
-				hostedCluster := testCtx.GetHostedCluster()
-				if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
-					Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
-				}
-
-				// Skip if workload is in exemption list
-				if slices.Contains(exemptions, workload.Name) {
-					Skip(fmt.Sprintf("workload %s is exempt from safe-to-evict annotations check", workload.Name))
-				}
-
-				pods := getWorkloadPods(testCtx, workload)
-				if len(pods) == 0 {
-					Skip(fmt.Sprintf("no pods found for workload %s", workload.Name))
-				}
-
-				for _, pod := range pods {
-					// Check if pod has emptyDir or hostPath volumes
-					hasLocalVolumes := false
-					var localVolumeNames []string
-					for _, volume := range pod.Spec.Volumes {
-						if volume.EmptyDir != nil || volume.HostPath != nil {
-							hasLocalVolumes = true
-							localVolumeNames = append(localVolumeNames, volume.Name)
-						}
+			Context(workload.Name, func() {
+				It("should exist for pods with emptyDir or hostPath volumes", func() {
+					testCtx := getTestCtx()
+					hostedCluster := testCtx.GetHostedCluster()
+					if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
+						Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
 					}
 
-					if hasLocalVolumes {
-						annotationKey := "cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes"
-						annotationValue, exists := pod.Annotations[annotationKey]
-						Expect(exists).To(BeTrue(), "pod %s has local volumes but missing safe-to-evict annotation", pod.Name)
-						Expect(annotationValue).NotTo(BeEmpty(), "pod %s has empty safe-to-evict annotation", pod.Name)
+					// Skip if workload is in exemption list
+					if slices.Contains(exemptions, workload.Name) {
+						Skip(fmt.Sprintf("workload %s is exempt from safe-to-evict annotations check", workload.Name))
+					}
 
-						// Verify all local volumes are listed in annotation
-						annotatedVolumes := strings.Split(annotationValue, ",")
-						for _, volName := range localVolumeNames {
-							found := false
-							for _, annVol := range annotatedVolumes {
-								if strings.TrimSpace(annVol) == volName {
-									found = true
-									break
-								}
+					pods := getWorkloadPods(testCtx, workload)
+					if len(pods) == 0 {
+						Skip(fmt.Sprintf("no pods found for workload %s", workload.Name))
+					}
+
+					for _, pod := range pods {
+						// Check if pod has emptyDir or hostPath volumes
+						hasLocalVolumes := false
+						var localVolumeNames []string
+						for _, volume := range pod.Spec.Volumes {
+							if volume.EmptyDir != nil || volume.HostPath != nil {
+								hasLocalVolumes = true
+								localVolumeNames = append(localVolumeNames, volume.Name)
 							}
-							Expect(found).To(BeTrue(), "pod %s local volume %s not found in annotation", pod.Name, volName)
+						}
+
+						if hasLocalVolumes {
+							annotationKey := "cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes"
+							annotationValue, exists := pod.Annotations[annotationKey]
+							Expect(exists).To(BeTrue(), "pod %s has local volumes but missing safe-to-evict annotation", pod.Name)
+							Expect(annotationValue).NotTo(BeEmpty(), "pod %s has empty safe-to-evict annotation", pod.Name)
+
+							// Verify all local volumes are listed in annotation
+							annotatedVolumes := strings.Split(annotationValue, ",")
+							for _, volName := range localVolumeNames {
+								found := false
+								for _, annVol := range annotatedVolumes {
+									if strings.TrimSpace(annVol) == volName {
+										found = true
+										break
+									}
+								}
+								Expect(found).To(BeTrue(), "pod %s local volume %s not found in annotation", pod.Name, volName)
+							}
 						}
 					}
-				}
+				})
 			})
 		}
 	})
@@ -217,33 +221,35 @@ func ReadOnlyRootFilesystemTest(getTestCtx internal.TestContextGetter) {
 		}
 
 		for _, workload := range workloads {
-			It(fmt.Sprintf("should have read-only root filesystem for %s containers", workload.Name), func() {
-				testCtx := getTestCtx()
-				hostedCluster := testCtx.GetHostedCluster()
-				if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
-					Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
-				}
-
-				// Skip if workload is in exemption list
-				if slices.Contains(exemptions, workload.Name) {
-					Skip(fmt.Sprintf("workload %s is exempt from read-only root filesystem check", workload.Name))
-				}
-
-				pods := getWorkloadPods(testCtx, workload)
-				if len(pods) == 0 {
-					Skip(fmt.Sprintf("no pods found for workload %s", workload.Name))
-				}
-
-				for _, pod := range pods {
-					for _, container := range pod.Spec.Containers {
-						Expect(container.SecurityContext).NotTo(BeNil(),
-							"container %s in pod %s should have security context", container.Name, pod.Name)
-						Expect(container.SecurityContext.ReadOnlyRootFilesystem).NotTo(BeNil(),
-							"container %s in pod %s should have ReadOnlyRootFilesystem set", container.Name, pod.Name)
-						Expect(*container.SecurityContext.ReadOnlyRootFilesystem).To(BeTrue(),
-							"container %s in pod %s should have ReadOnlyRootFilesystem=true", container.Name, pod.Name)
+			Context(workload.Name, func() {
+				It("should have read-only root filesystem for containers", func() {
+					testCtx := getTestCtx()
+					hostedCluster := testCtx.GetHostedCluster()
+					if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
+						Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
 					}
-				}
+
+					// Skip if workload is in exemption list
+					if slices.Contains(exemptions, workload.Name) {
+						Skip(fmt.Sprintf("workload %s is exempt from read-only root filesystem check", workload.Name))
+					}
+
+					pods := getWorkloadPods(testCtx, workload)
+					if len(pods) == 0 {
+						Skip(fmt.Sprintf("no pods found for workload %s", workload.Name))
+					}
+
+					for _, pod := range pods {
+						for _, container := range pod.Spec.Containers {
+							Expect(container.SecurityContext).NotTo(BeNil(),
+								"container %s in pod %s should have security context", container.Name, pod.Name)
+							Expect(container.SecurityContext.ReadOnlyRootFilesystem).NotTo(BeNil(),
+								"container %s in pod %s should have ReadOnlyRootFilesystem set", container.Name, pod.Name)
+							Expect(*container.SecurityContext.ReadOnlyRootFilesystem).To(BeTrue(),
+								"container %s in pod %s should have ReadOnlyRootFilesystem=true", container.Name, pod.Name)
+						}
+					}
+				})
 			})
 		}
 	})
@@ -288,36 +294,38 @@ func ReadOnlyRootFilesystemTmpDirMountTest(getTestCtx internal.TestContextGetter
 		}
 
 		for _, workload := range workloads {
-			It(fmt.Sprintf("should have /tmp mounted for %s containers", workload.Name), func() {
-				testCtx := getTestCtx()
-				hostedCluster := testCtx.GetHostedCluster()
-				if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
-					Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
-				}
-
-				// Skip if workload is in exemption list
-				if slices.Contains(exemptions, workload.Name) {
-					Skip(fmt.Sprintf("workload %s is exempt from tmp dir mount check", workload.Name))
-				}
-
-				pods := getWorkloadPods(testCtx, workload)
-				if len(pods) == 0 {
-					Skip(fmt.Sprintf("no pods found for workload %s", workload.Name))
-				}
-
-				for _, pod := range pods {
-					for _, container := range pod.Spec.Containers {
-						hasTmpMount := false
-						for _, mount := range container.VolumeMounts {
-							if mount.MountPath == podspec.PodTmpDirMountPath {
-								hasTmpMount = true
-								break
-							}
-						}
-						Expect(hasTmpMount).To(BeTrue(),
-							"container %s in pod %s should have /tmp mounted", container.Name, pod.Name)
+			Context(workload.Name, func() {
+				It("should have /tmp mounted for containers", func() {
+					testCtx := getTestCtx()
+					hostedCluster := testCtx.GetHostedCluster()
+					if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
+						Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
 					}
-				}
+
+					// Skip if workload is in exemption list
+					if slices.Contains(exemptions, workload.Name) {
+						Skip(fmt.Sprintf("workload %s is exempt from tmp dir mount check", workload.Name))
+					}
+
+					pods := getWorkloadPods(testCtx, workload)
+					if len(pods) == 0 {
+						Skip(fmt.Sprintf("no pods found for workload %s", workload.Name))
+					}
+
+					for _, pod := range pods {
+						for _, container := range pod.Spec.Containers {
+							hasTmpMount := false
+							for _, mount := range container.VolumeMounts {
+								if mount.MountPath == podspec.PodTmpDirMountPath {
+									hasTmpMount = true
+									break
+								}
+							}
+							Expect(hasTmpMount).To(BeTrue(),
+								"container %s in pod %s should have /tmp mounted", container.Name, pod.Name)
+						}
+					}
+				})
 			})
 		}
 	})
@@ -328,28 +336,30 @@ func ContainerImagePullPolicyTest(getTestCtx internal.TestContextGetter) {
 	Context("Container image pull policy", func() {
 		// EnsureAllContainersHavePullPolicyIfNotPresent
 		for _, workload := range workloads {
-			It(fmt.Sprintf("should have IfNotPresent pull policy for %s containers", workload.Name), func() {
-				testCtx := getTestCtx()
-				hostedCluster := testCtx.GetHostedCluster()
-				if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
-					Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
-				}
-
-				pods := getWorkloadPods(testCtx, workload)
-				if len(pods) == 0 {
-					Skip(fmt.Sprintf("no pods found for workload %s", workload.Name))
-				}
-
-				for _, pod := range pods {
-					for _, container := range pod.Spec.Containers {
-						if container.ImagePullPolicy == "" {
-							Fail(fmt.Sprintf("container %s in pod %s has no ImagePullPolicy set", container.Name, pod.Name))
-						}
-						Expect(container.ImagePullPolicy).To(Equal(corev1.PullIfNotPresent),
-							"container %s in pod %s should have ImagePullPolicy=IfNotPresent, got %s",
-							container.Name, pod.Name, container.ImagePullPolicy)
+			Context(workload.Name, func() {
+				It("should have IfNotPresent pull policy for containers", func() {
+					testCtx := getTestCtx()
+					hostedCluster := testCtx.GetHostedCluster()
+					if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
+						Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
 					}
-				}
+
+					pods := getWorkloadPods(testCtx, workload)
+					if len(pods) == 0 {
+						Skip(fmt.Sprintf("no pods found for workload %s", workload.Name))
+					}
+
+					for _, pod := range pods {
+						for _, container := range pod.Spec.Containers {
+							if container.ImagePullPolicy == "" {
+								Fail(fmt.Sprintf("container %s in pod %s has no ImagePullPolicy set", container.Name, pod.Name))
+							}
+							Expect(container.ImagePullPolicy).To(Equal(corev1.PullIfNotPresent),
+								"container %s in pod %s should have ImagePullPolicy=IfNotPresent, got %s",
+								container.Name, pod.Name, container.ImagePullPolicy)
+						}
+					}
+				})
 			})
 		}
 	})
@@ -376,36 +386,38 @@ func ContainerTerminationMessagePolicyTest(getTestCtx internal.TestContextGetter
 		}
 
 		for _, workload := range workloads {
-			It(fmt.Sprintf("should have FallbackToLogsOnError termination message policy for %s containers", workload.Name), func() {
-				testCtx := getTestCtx()
-				hostedCluster := testCtx.GetHostedCluster()
-				if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
-					Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
-				}
-
-				// Skip if workload is in exemption list
-				if slices.Contains(exemptions, workload.Name) {
-					Skip(fmt.Sprintf("workload %s is exempt from termination message policy check", workload.Name))
-				}
-
-				// Skip KubeVirt related pods
-				pods := getWorkloadPods(testCtx, workload)
-				if len(pods) == 0 {
-					Skip(fmt.Sprintf("no pods found for workload %s", workload.Name))
-				}
-
-				for _, pod := range pods {
-					for _, initContainer := range pod.Spec.InitContainers {
-						Expect(initContainer.TerminationMessagePolicy).To(Equal(corev1.TerminationMessageFallbackToLogsOnError),
-							"initContainer %s in pod %s should have TerminationMessagePolicy=FallbackToLogsOnError",
-							initContainer.Name, pod.Name)
+			Context(workload.Name, func() {
+				It("should have FallbackToLogsOnError termination message policy for containers", func() {
+					testCtx := getTestCtx()
+					hostedCluster := testCtx.GetHostedCluster()
+					if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
+						Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
 					}
-					for _, container := range pod.Spec.Containers {
-						Expect(container.TerminationMessagePolicy).To(Equal(corev1.TerminationMessageFallbackToLogsOnError),
-							"container %s in pod %s should have TerminationMessagePolicy=FallbackToLogsOnError",
-							container.Name, pod.Name)
+
+					// Skip if workload is in exemption list
+					if slices.Contains(exemptions, workload.Name) {
+						Skip(fmt.Sprintf("workload %s is exempt from termination message policy check", workload.Name))
 					}
-				}
+
+					// Skip KubeVirt related pods
+					pods := getWorkloadPods(testCtx, workload)
+					if len(pods) == 0 {
+						Skip(fmt.Sprintf("no pods found for workload %s", workload.Name))
+					}
+
+					for _, pod := range pods {
+						for _, initContainer := range pod.Spec.InitContainers {
+							Expect(initContainer.TerminationMessagePolicy).To(Equal(corev1.TerminationMessageFallbackToLogsOnError),
+								"initContainer %s in pod %s should have TerminationMessagePolicy=FallbackToLogsOnError",
+								initContainer.Name, pod.Name)
+						}
+						for _, container := range pod.Spec.Containers {
+							Expect(container.TerminationMessagePolicy).To(Equal(corev1.TerminationMessageFallbackToLogsOnError),
+								"container %s in pod %s should have TerminationMessagePolicy=FallbackToLogsOnError",
+								container.Name, pod.Name)
+						}
+					}
+				})
 			})
 		}
 	})
@@ -416,30 +428,32 @@ func ContainerResourceRequestsTest(getTestCtx internal.TestContextGetter) {
 	Context("Container resource requests", func() {
 		// EnsureHCPContainersHaveResourceRequests
 		for _, workload := range workloads {
-			It(fmt.Sprintf("should have resource requests for %s containers", workload.Name), func() {
-				testCtx := getTestCtx()
-				hostedCluster := testCtx.GetHostedCluster()
-				if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
-					Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
-				}
-
-				pods := getWorkloadPods(testCtx, workload)
-				if len(pods) == 0 {
-					Skip(fmt.Sprintf("no pods found for workload %s", workload.Name))
-				}
-
-				for _, pod := range pods {
-					for _, container := range pod.Spec.Containers {
-						Expect(container.Resources.Requests).NotTo(BeNil(),
-							"container %s in pod %s should have resource requests", container.Name, pod.Name)
-						_, hasCPU := container.Resources.Requests[corev1.ResourceCPU]
-						Expect(hasCPU).To(BeTrue(),
-							"container %s in pod %s should have CPU resource request", container.Name, pod.Name)
-						_, hasMemory := container.Resources.Requests[corev1.ResourceMemory]
-						Expect(hasMemory).To(BeTrue(),
-							"container %s in pod %s should have memory resource request", container.Name, pod.Name)
+			Context(workload.Name, func() {
+				It("should have resource requests for containers", func() {
+					testCtx := getTestCtx()
+					hostedCluster := testCtx.GetHostedCluster()
+					if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
+						Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
 					}
-				}
+
+					pods := getWorkloadPods(testCtx, workload)
+					if len(pods) == 0 {
+						Skip(fmt.Sprintf("no pods found for workload %s", workload.Name))
+					}
+
+					for _, pod := range pods {
+						for _, container := range pod.Spec.Containers {
+							Expect(container.Resources.Requests).NotTo(BeNil(),
+								"container %s in pod %s should have resource requests", container.Name, pod.Name)
+							_, hasCPU := container.Resources.Requests[corev1.ResourceCPU]
+							Expect(hasCPU).To(BeTrue(),
+								"container %s in pod %s should have CPU resource request", container.Name, pod.Name)
+							_, hasMemory := container.Resources.Requests[corev1.ResourceMemory]
+							Expect(hasMemory).To(BeTrue(),
+								"container %s in pod %s should have memory resource request", container.Name, pod.Name)
+						}
+					}
+				})
 			})
 		}
 	})
@@ -451,23 +465,25 @@ func PodPriorityTest(getTestCtx internal.TestContextGetter) {
 		// EnsureNoPodsWithTooHighPriority
 		const maxAllowedPriority = 100002000
 		for _, workload := range workloads {
-			It(fmt.Sprintf("should not have too high priority for %s pods", workload.Name), func() {
-				testCtx := getTestCtx()
-				hostedCluster := testCtx.GetHostedCluster()
-				if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
-					Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
-				}
-
-				pods := getWorkloadPods(testCtx, workload)
-				if len(pods) == 0 {
-					Skip(fmt.Sprintf("no pods found for workload %s", workload.Name))
-				}
-
-				for _, pod := range pods {
-					if pod.Spec.Priority != nil && *pod.Spec.Priority > maxAllowedPriority {
-						Fail(fmt.Sprintf("pod %s has priority %d which exceeds maximum allowed %d", pod.Name, *pod.Spec.Priority, maxAllowedPriority))
+			Context(workload.Name, func() {
+				It("should not have too high priority for pods", func() {
+					testCtx := getTestCtx()
+					hostedCluster := testCtx.GetHostedCluster()
+					if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
+						Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
 					}
-				}
+
+					pods := getWorkloadPods(testCtx, workload)
+					if len(pods) == 0 {
+						Skip(fmt.Sprintf("no pods found for workload %s", workload.Name))
+					}
+
+					for _, pod := range pods {
+						if pod.Spec.Priority != nil && *pod.Spec.Priority > maxAllowedPriority {
+							Fail(fmt.Sprintf("pod %s has priority %d which exceeds maximum allowed %d", pod.Name, *pod.Spec.Priority, maxAllowedPriority))
+						}
+					}
+				})
 			})
 		}
 	})
@@ -534,29 +550,31 @@ func ServiceAccountTokenMountingTest(getTestCtx internal.TestContextGetter) {
 		}
 
 		for _, workload := range workloads {
-			It(fmt.Sprintf("should not mount service account token unless necessary for %s pods", workload.Name), func() {
-				testCtx := getTestCtx()
-				hostedCluster := testCtx.GetHostedCluster()
-				if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
-					Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
-				}
-
-				// Skip if workload is in exemption list
-				if slices.Contains(exemptions, workload.Name) {
-					Skip(fmt.Sprintf("workload %s is exempt from service account token mounting check", workload.Name))
-				}
-
-				pods := getWorkloadPods(testCtx, workload)
-				if len(pods) == 0 {
-					Skip(fmt.Sprintf("no pods found for workload %s", workload.Name))
-				}
-
-				for _, pod := range pods {
-					for _, volume := range pod.Spec.Volumes {
-						Expect(volume.Name).NotTo(HavePrefix("kube-api-access-"),
-							"pod %s should not have kube-api-access-* volume mounted", pod.Name)
+			Context(workload.Name, func() {
+				It("should not mount service account token unless necessary for pods", func() {
+					testCtx := getTestCtx()
+					hostedCluster := testCtx.GetHostedCluster()
+					if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
+						Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
 					}
-				}
+
+					// Skip if workload is in exemption list
+					if slices.Contains(exemptions, workload.Name) {
+						Skip(fmt.Sprintf("workload %s is exempt from service account token mounting check", workload.Name))
+					}
+
+					pods := getWorkloadPods(testCtx, workload)
+					if len(pods) == 0 {
+						Skip(fmt.Sprintf("no pods found for workload %s", workload.Name))
+					}
+
+					for _, pod := range pods {
+						for _, volume := range pod.Spec.Volumes {
+							Expect(volume.Name).NotTo(HavePrefix("kube-api-access-"),
+								"pod %s should not have kube-api-access-* volume mounted", pod.Name)
+						}
+					}
+				})
 			})
 		}
 	})
@@ -575,118 +593,120 @@ func PodAffinitiesAndTolerationsTest(getTestCtx internal.TestContextGetter) {
 		})
 
 		for _, workload := range workloads {
-			It(fmt.Sprintf("should have correct affinities and tolerations for %s pods", workload.Name), func() {
-				testCtx := getTestCtx()
-				hostedCluster := testCtx.GetHostedCluster()
-				if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
-					Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
-				}
-
-				// SRO is being removed in 4.18
-				if workload.Name == "shared-resource-csi-driver-operator" {
-					Skip("shared-resource-csi-driver-operator is exempt from affinities and tolerations check")
-				}
-
-				if workload.Name == "virt-launcher" || workload.Name == "vmi-console-debug" {
-					Skip("virt-launcher and vmi-console-debug are exempt from affinities and tolerations check")
-				}
-
-				pods := getWorkloadPods(testCtx, workload)
-				if len(pods) == 0 {
-					Skip(fmt.Sprintf("no pods found for workload %s", workload.Name))
-				}
-
-				controlPlaneLabelTolerationKey := "hypershift.openshift.io/control-plane"
-				clusterNodeSchedulingAffinityWeight := 100
-				controlPlaneNodeSchedulingAffinityWeight := clusterNodeSchedulingAffinityWeight / 2
-				colocationLabelKey := "hypershift.openshift.io/hosted-control-plane"
-
-				var expectedTolerations []corev1.Toleration
-				switch workload.Name {
-				case "aws-ebs-csi-driver-operator":
-					expectedTolerations = []corev1.Toleration{
-						{
-							Key:      controlPlaneLabelTolerationKey,
-							Operator: corev1.TolerationOpExists,
-						},
-						{
-							Key:      hyperv1.HostedClusterLabel,
-							Operator: corev1.TolerationOpEqual,
-							Value:    testCtx.ControlPlaneNamespace,
-						},
+			Context(workload.Name, func() {
+				It("should have correct affinities and tolerations for pods", func() {
+					testCtx := getTestCtx()
+					hostedCluster := testCtx.GetHostedCluster()
+					if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
+						Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
 					}
-				default:
-					expectedTolerations = []corev1.Toleration{
-						{
-							Key:      controlPlaneLabelTolerationKey,
-							Operator: corev1.TolerationOpEqual,
-							Value:    "true",
-							Effect:   corev1.TaintEffectNoSchedule,
-						},
-						{
-							Key:      hyperv1.HostedClusterLabel,
-							Operator: corev1.TolerationOpEqual,
-							Value:    testCtx.ControlPlaneNamespace,
-							Effect:   corev1.TaintEffectNoSchedule,
-						},
-					}
-				}
 
-				for _, pod := range pods {
-					for _, expectedTol := range expectedTolerations {
-						found := false
-						for _, tol := range pod.Spec.Tolerations {
-							if tol.Key == expectedTol.Key && tol.Operator == expectedTol.Operator && tol.Value == expectedTol.Value && tol.Effect == expectedTol.Effect {
-								found = true
-								break
-							}
+					// SRO is being removed in 4.18
+					if workload.Name == "shared-resource-csi-driver-operator" {
+						Skip("shared-resource-csi-driver-operator is exempt from affinities and tolerations check")
+					}
+
+					if workload.Name == "virt-launcher" || workload.Name == "vmi-console-debug" {
+						Skip("virt-launcher and vmi-console-debug are exempt from affinities and tolerations check")
+					}
+
+					pods := getWorkloadPods(testCtx, workload)
+					if len(pods) == 0 {
+						Skip(fmt.Sprintf("no pods found for workload %s", workload.Name))
+					}
+
+					controlPlaneLabelTolerationKey := "hypershift.openshift.io/control-plane"
+					clusterNodeSchedulingAffinityWeight := 100
+					controlPlaneNodeSchedulingAffinityWeight := clusterNodeSchedulingAffinityWeight / 2
+					colocationLabelKey := "hypershift.openshift.io/hosted-control-plane"
+
+					var expectedTolerations []corev1.Toleration
+					switch workload.Name {
+					case "aws-ebs-csi-driver-operator":
+						expectedTolerations = []corev1.Toleration{
+							{
+								Key:      controlPlaneLabelTolerationKey,
+								Operator: corev1.TolerationOpExists,
+							},
+							{
+								Key:      hyperv1.HostedClusterLabel,
+								Operator: corev1.TolerationOpEqual,
+								Value:    testCtx.ControlPlaneNamespace,
+							},
 						}
-						Expect(found).To(BeTrue(), "pod %s should have toleration %+v", pod.Name, expectedTol)
+					default:
+						expectedTolerations = []corev1.Toleration{
+							{
+								Key:      controlPlaneLabelTolerationKey,
+								Operator: corev1.TolerationOpEqual,
+								Value:    "true",
+								Effect:   corev1.TaintEffectNoSchedule,
+							},
+							{
+								Key:      hyperv1.HostedClusterLabel,
+								Operator: corev1.TolerationOpEqual,
+								Value:    testCtx.ControlPlaneNamespace,
+								Effect:   corev1.TaintEffectNoSchedule,
+							},
+						}
 					}
 
-					// Check affinities
-					Expect(pod.Spec.Affinity).NotTo(BeNil(), "pod %s should have affinity", pod.Name)
-					Expect(pod.Spec.Affinity.NodeAffinity).NotTo(BeNil(), "pod %s should have node affinity", pod.Name)
-					Expect(pod.Spec.Affinity.NodeAffinity.PreferredDuringSchedulingIgnoredDuringExecution).NotTo(BeEmpty(),
-						"pod %s should have preferred node affinity", pod.Name)
-
-					// Check for control plane node affinity
-					hasControlPlaneAffinity := false
-					for _, term := range pod.Spec.Affinity.NodeAffinity.PreferredDuringSchedulingIgnoredDuringExecution {
-						if term.Weight == int32(controlPlaneNodeSchedulingAffinityWeight) {
-							for _, req := range term.Preference.MatchExpressions {
-								if req.Key == controlPlaneLabelTolerationKey && req.Operator == corev1.NodeSelectorOpIn {
-									hasControlPlaneAffinity = true
+					for _, pod := range pods {
+						for _, expectedTol := range expectedTolerations {
+							found := false
+							for _, tol := range pod.Spec.Tolerations {
+								if tol.Key == expectedTol.Key && tol.Operator == expectedTol.Operator && tol.Value == expectedTol.Value && tol.Effect == expectedTol.Effect {
+									found = true
 									break
 								}
 							}
+							Expect(found).To(BeTrue(), "pod %s should have toleration %+v", pod.Name, expectedTol)
 						}
-					}
-					Expect(hasControlPlaneAffinity).To(BeTrue(), "pod %s should have control plane node affinity", pod.Name)
 
-					// Check for pod affinity
-					Expect(pod.Spec.Affinity.PodAffinity).NotTo(BeNil(), "pod %s should have pod affinity", pod.Name)
-					Expect(pod.Spec.Affinity.PodAffinity.PreferredDuringSchedulingIgnoredDuringExecution).NotTo(BeEmpty(),
-						"pod %s should have preferred pod affinity", pod.Name)
+						// Check affinities
+						Expect(pod.Spec.Affinity).NotTo(BeNil(), "pod %s should have affinity", pod.Name)
+						Expect(pod.Spec.Affinity.NodeAffinity).NotTo(BeNil(), "pod %s should have node affinity", pod.Name)
+						Expect(pod.Spec.Affinity.NodeAffinity.PreferredDuringSchedulingIgnoredDuringExecution).NotTo(BeEmpty(),
+							"pod %s should have preferred node affinity", pod.Name)
 
-					hasColocationAffinity := false
-					for _, term := range pod.Spec.Affinity.PodAffinity.PreferredDuringSchedulingIgnoredDuringExecution {
-						if term.Weight != 100 || term.PodAffinityTerm.LabelSelector == nil {
-							continue
+						// Check for control plane node affinity
+						hasControlPlaneAffinity := false
+						for _, term := range pod.Spec.Affinity.NodeAffinity.PreferredDuringSchedulingIgnoredDuringExecution {
+							if term.Weight == int32(controlPlaneNodeSchedulingAffinityWeight) {
+								for _, req := range term.Preference.MatchExpressions {
+									if req.Key == controlPlaneLabelTolerationKey && req.Operator == corev1.NodeSelectorOpIn {
+										hasControlPlaneAffinity = true
+										break
+									}
+								}
+							}
 						}
-						for _, value := range term.PodAffinityTerm.LabelSelector.MatchLabels {
-							if value == testCtx.ControlPlaneNamespace {
+						Expect(hasControlPlaneAffinity).To(BeTrue(), "pod %s should have control plane node affinity", pod.Name)
+
+						// Check for pod affinity
+						Expect(pod.Spec.Affinity.PodAffinity).NotTo(BeNil(), "pod %s should have pod affinity", pod.Name)
+						Expect(pod.Spec.Affinity.PodAffinity.PreferredDuringSchedulingIgnoredDuringExecution).NotTo(BeEmpty(),
+							"pod %s should have preferred pod affinity", pod.Name)
+
+						hasColocationAffinity := false
+						for _, term := range pod.Spec.Affinity.PodAffinity.PreferredDuringSchedulingIgnoredDuringExecution {
+							if term.Weight != 100 || term.PodAffinityTerm.LabelSelector == nil {
+								continue
+							}
+							for _, value := range term.PodAffinityTerm.LabelSelector.MatchLabels {
+								if value == testCtx.ControlPlaneNamespace {
+									hasColocationAffinity = true
+									break
+								}
+							}
+							if term.PodAffinityTerm.LabelSelector.MatchLabels[colocationLabelKey] == testCtx.ControlPlaneNamespace {
 								hasColocationAffinity = true
 								break
 							}
 						}
-						if term.PodAffinityTerm.LabelSelector.MatchLabels[colocationLabelKey] == testCtx.ControlPlaneNamespace {
-							hasColocationAffinity = true
-							break
-						}
+						Expect(hasColocationAffinity).To(BeTrue(), "pod %s should have colocation pod affinity", pod.Name)
 					}
-					Expect(hasColocationAffinity).To(BeTrue(), "pod %s should have colocation pod affinity", pod.Name)
-				}
+				})
 			})
 		}
 	})
@@ -774,39 +794,41 @@ func SecurityContextUIDTest(getTestCtx internal.TestContextGetter) {
 		}
 
 		for _, workload := range workloads {
-			It(fmt.Sprintf("should have expected RunAsUser UID for %s pods", workload.Name), func() {
-				testCtx := getTestCtx()
-				hostedCluster := testCtx.GetHostedCluster()
-				if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
-					Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
-				}
-
-				// Skip if workload is in exemption list
-				if slices.Contains(exemptions, workload.Name) {
-					Skip(fmt.Sprintf("workload %s is exempt from security context UID check", workload.Name))
-				}
-
-				pods := getWorkloadPods(testCtx, workload)
-				if len(pods) == 0 {
-					Skip(fmt.Sprintf("no pods found for workload %s", workload.Name))
-				}
-
-				for _, pod := range pods {
-					runAsUser := func() *int64 {
-						if pod.Spec.SecurityContext == nil || pod.Spec.SecurityContext.RunAsUser == nil {
-							return nil
-						}
-						return pod.Spec.SecurityContext.RunAsUser
-					}()
-
-					if runAsUser == nil {
-						Fail(fmt.Sprintf("pod %s/%s: RunAsUser is not set (expected UID %d)", pod.Namespace, pod.Name, expectedUID))
+			Context(workload.Name, func() {
+				It("should have expected RunAsUser UID for pods", func() {
+					testCtx := getTestCtx()
+					hostedCluster := testCtx.GetHostedCluster()
+					if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
+						Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
 					}
 
-					Expect(*runAsUser).To(Equal(expectedUID),
-						"pod %s/%s: RunAsUser %d does not match expected UID %d",
-						pod.Namespace, pod.Name, *runAsUser, expectedUID)
-				}
+					// Skip if workload is in exemption list
+					if slices.Contains(exemptions, workload.Name) {
+						Skip(fmt.Sprintf("workload %s is exempt from security context UID check", workload.Name))
+					}
+
+					pods := getWorkloadPods(testCtx, workload)
+					if len(pods) == 0 {
+						Skip(fmt.Sprintf("no pods found for workload %s", workload.Name))
+					}
+
+					for _, pod := range pods {
+						runAsUser := func() *int64 {
+							if pod.Spec.SecurityContext == nil || pod.Spec.SecurityContext.RunAsUser == nil {
+								return nil
+							}
+							return pod.Spec.SecurityContext.RunAsUser
+						}()
+
+						if runAsUser == nil {
+							Fail(fmt.Sprintf("pod %s/%s: RunAsUser is not set (expected UID %d)", pod.Namespace, pod.Name, expectedUID))
+						}
+
+						Expect(*runAsUser).To(Equal(expectedUID),
+							"pod %s/%s: RunAsUser %d does not match expected UID %d",
+							pod.Namespace, pod.Name, *runAsUser, expectedUID)
+					}
+				})
 			})
 		}
 	})
@@ -877,62 +899,64 @@ func NoCrashingPodsTest(getTestCtx internal.TestContextGetter) {
 		}
 
 		for _, workload := range workloads {
-			It(fmt.Sprintf("should have no crashing pods for %s", workload.Name), func() {
-				testCtx := getTestCtx()
-				hostedCluster := testCtx.GetHostedCluster()
-				if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
-					Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
-				}
-
-				pods := getWorkloadPods(testCtx, workload)
-				if len(pods) == 0 {
-					Skip(fmt.Sprintf("no pods found for workload %s", workload.Name))
-				}
-
-				var defaultCrashToleration int32
-				if hostedCluster.Spec.Platform.Type == hyperv1.KubevirtPlatform {
-					kvPlatform := hostedCluster.Spec.Platform.Kubevirt
-					if kvPlatform != nil && kvPlatform.Credentials != nil {
-						defaultCrashToleration = 1
+			Context(workload.Name, func() {
+				It("should have no crashing pods", func() {
+					testCtx := getTestCtx()
+					hostedCluster := testCtx.GetHostedCluster()
+					if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
+						Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
 					}
-					if kvPlatform != nil && hostedCluster.Annotations != nil {
-						mgmtPlatform, annotationExists := hostedCluster.Annotations[hyperv1.ManagementPlatformAnnotation]
-						if annotationExists && mgmtPlatform == string(hyperv1.AzurePlatform) {
+
+					pods := getWorkloadPods(testCtx, workload)
+					if len(pods) == 0 {
+						Skip(fmt.Sprintf("no pods found for workload %s", workload.Name))
+					}
+
+					var defaultCrashToleration int32
+					if hostedCluster.Spec.Platform.Type == hyperv1.KubevirtPlatform {
+						kvPlatform := hostedCluster.Spec.Platform.Kubevirt
+						if kvPlatform != nil && kvPlatform.Credentials != nil {
 							defaultCrashToleration = 1
 						}
-					}
-				}
-
-				toleration := defaultCrashToleration
-				if t, ok := crashTolerations[workload.Name]; ok {
-					toleration = t
-				}
-
-				var k8sClient kubernetes.Interface
-				for _, pod := range pods {
-					for _, containerStatus := range pod.Status.ContainerStatuses {
-						if containerStatus.RestartCount <= toleration {
-							continue
-						}
-						if strings.HasPrefix(pod.Name, "kube-controller-manager-") {
-							if isCertificateTriggeredRestart(testCtx.Context, testCtx.MgmtClient, &pod) {
-								continue
+						if kvPlatform != nil && hostedCluster.Annotations != nil {
+							mgmtPlatform, annotationExists := hostedCluster.Annotations[hyperv1.ManagementPlatformAnnotation]
+							if annotationExists && mgmtPlatform == string(hyperv1.AzurePlatform) {
+								defaultCrashToleration = 1
 							}
 						}
-						if k8sClient == nil {
-							mgmtRestConfig, err := e2eutil.GetConfig()
-							Expect(err).NotTo(HaveOccurred(), "failed to get management REST config for log inspection")
-							k8sClient, err = kubernetes.NewForConfig(mgmtRestConfig)
-							Expect(err).NotTo(HaveOccurred(), "failed to create kubernetes clientset for log inspection")
-						}
-						if isLeaderElectionFailure(testCtx.Context, k8sClient, &pod, containerStatus.Name) {
-							continue
-						}
-						Expect(containerStatus.RestartCount).To(BeNumerically("<=", toleration),
-							"container %s in pod %s has too many restarts (%d > %d)",
-							containerStatus.Name, pod.Name, containerStatus.RestartCount, toleration)
 					}
-				}
+
+					toleration := defaultCrashToleration
+					if t, ok := crashTolerations[workload.Name]; ok {
+						toleration = t
+					}
+
+					var k8sClient kubernetes.Interface
+					for _, pod := range pods {
+						for _, containerStatus := range pod.Status.ContainerStatuses {
+							if containerStatus.RestartCount <= toleration {
+								continue
+							}
+							if strings.HasPrefix(pod.Name, "kube-controller-manager-") {
+								if isCertificateTriggeredRestart(testCtx.Context, testCtx.MgmtClient, &pod) {
+									continue
+								}
+							}
+							if k8sClient == nil {
+								mgmtRestConfig, err := e2eutil.GetConfig()
+								Expect(err).NotTo(HaveOccurred(), "failed to get management REST config for log inspection")
+								k8sClient, err = kubernetes.NewForConfig(mgmtRestConfig)
+								Expect(err).NotTo(HaveOccurred(), "failed to create kubernetes clientset for log inspection")
+							}
+							if isLeaderElectionFailure(testCtx.Context, k8sClient, &pod, containerStatus.Name) {
+								continue
+							}
+							Expect(containerStatus.RestartCount).To(BeNumerically("<=", toleration),
+								"container %s in pod %s has too many restarts (%d > %d)",
+								containerStatus.Name, pod.Name, containerStatus.RestartCount, toleration)
+						}
+					}
+				})
 			})
 		}
 	})
@@ -951,25 +975,27 @@ func CustomLabelsTest(getTestCtx internal.TestContextGetter) {
 		}
 
 		for _, workload := range workloads {
-			It(fmt.Sprintf("should propagate custom labels to %s pods", workload.Name), func() {
-				testCtx := getTestCtx()
-				hostedCluster := testCtx.GetHostedCluster()
-				if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
-					Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
-				}
-				if slices.Contains(exemptions, workload.Name) {
-					Skip(fmt.Sprintf("workload %s is exempt from custom labels check", workload.Name))
-				}
+			Context(workload.Name, func() {
+				It("should propagate custom labels to pods", func() {
+					testCtx := getTestCtx()
+					hostedCluster := testCtx.GetHostedCluster()
+					if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
+						Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
+					}
+					if slices.Contains(exemptions, workload.Name) {
+						Skip(fmt.Sprintf("workload %s is exempt from custom labels check", workload.Name))
+					}
 
-				pods := getWorkloadPods(testCtx, workload)
-				if len(pods) == 0 {
-					Skip(fmt.Sprintf("no pods found for workload %s", workload.Name))
-				}
+					pods := getWorkloadPods(testCtx, workload)
+					if len(pods) == 0 {
+						Skip(fmt.Sprintf("no pods found for workload %s", workload.Name))
+					}
 
-				for _, pod := range pods {
-					Expect(pod.Labels).To(HaveKeyWithValue("hypershift-e2e-test-label", "test"),
-						"pod %s should have custom label hypershift-e2e-test-label=test", pod.Name)
-				}
+					for _, pod := range pods {
+						Expect(pod.Labels).To(HaveKeyWithValue("hypershift-e2e-test-label", "test"),
+							"pod %s should have custom label hypershift-e2e-test-label=test", pod.Name)
+					}
+				})
 			})
 		}
 	})
@@ -988,29 +1014,31 @@ func CustomTolerationsTest(getTestCtx internal.TestContextGetter) {
 		}
 
 		for _, workload := range workloads {
-			It(fmt.Sprintf("should propagate custom tolerations to %s pods", workload.Name), func() {
-				testCtx := getTestCtx()
-				hostedCluster := testCtx.GetHostedCluster()
-				if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
-					Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
-				}
-				if slices.Contains(exemptions, workload.Name) {
-					Skip(fmt.Sprintf("workload %s is exempt from custom tolerations check", workload.Name))
-				}
+			Context(workload.Name, func() {
+				It("should propagate custom tolerations to pods", func() {
+					testCtx := getTestCtx()
+					hostedCluster := testCtx.GetHostedCluster()
+					if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
+						Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
+					}
+					if slices.Contains(exemptions, workload.Name) {
+						Skip(fmt.Sprintf("workload %s is exempt from custom tolerations check", workload.Name))
+					}
 
-				pods := getWorkloadPods(testCtx, workload)
-				if len(pods) == 0 {
-					Skip(fmt.Sprintf("no pods found for workload %s", workload.Name))
-				}
+					pods := getWorkloadPods(testCtx, workload)
+					if len(pods) == 0 {
+						Skip(fmt.Sprintf("no pods found for workload %s", workload.Name))
+					}
 
-				for _, pod := range pods {
-					Expect(pod.Spec.Tolerations).To(ContainElement(corev1.Toleration{
-						Key:      "hypershift-e2e-test-toleration",
-						Operator: corev1.TolerationOpEqual,
-						Value:    "true",
-						Effect:   corev1.TaintEffectNoSchedule,
-					}), "pod %s should have custom toleration hypershift-e2e-test-toleration", pod.Name)
-				}
+					for _, pod := range pods {
+						Expect(pod.Spec.Tolerations).To(ContainElement(corev1.Toleration{
+							Key:      "hypershift-e2e-test-toleration",
+							Operator: corev1.TolerationOpEqual,
+							Value:    "true",
+							Effect:   corev1.TaintEffectNoSchedule,
+						}), "pod %s should have custom toleration hypershift-e2e-test-toleration", pod.Name)
+					}
+				})
 			})
 		}
 	})
