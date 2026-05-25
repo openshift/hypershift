@@ -705,12 +705,12 @@ func (c *CertificateRevocationController) ensureNewSignerCertificatePropagated(c
 
 	currentCertPEM, ok := signerSecert.Data[corev1.TLSCertKey]
 	if !ok || len(currentCertPEM) == 0 {
-		return true, nil, false, fmt.Errorf("signer certificate %s/%s had no data for %s", signerSecert.Namespace, signerSecert.Name, corev1.TLSCertKey)
+		return true, nil, false, fmt.Errorf("current signer certificate %s/%s had no data for %s", signerSecert.Namespace, signerSecert.Name, corev1.TLSCertKey)
 	}
 
 	currentKeyPEM, ok := signerSecert.Data[corev1.TLSPrivateKeyKey]
 	if !ok || len(currentKeyPEM) == 0 {
-		return true, nil, false, fmt.Errorf("signer certificate %s/%s had no data for %s", signerSecert.Namespace, signerSecert.Name, corev1.TLSPrivateKeyKey)
+		return true, nil, false, fmt.Errorf("current signer certificate %s/%s had no data for %s", signerSecert.Namespace, signerSecert.Name, corev1.TLSPrivateKeyKey)
 	}
 
 	totalClientCA := manifests.TotalKASClientCABundle(namespace)
@@ -997,7 +997,7 @@ func (c *CertificateRevocationController) ensureOldSignerCertificateRevoked(ctx 
 
 	oldCertPEM, ok := oldCertSecret.Data[corev1.TLSCertKey]
 	if !ok || len(oldCertPEM) == 0 {
-		return true, nil, false, fmt.Errorf("signer certificate %s/%s had no data for %s", oldCertSecret.Namespace, oldCertSecret.Name, corev1.TLSCertKey)
+		return true, nil, false, fmt.Errorf("previous signer certificate %s/%s had no data for %s", oldCertSecret.Namespace, oldCertSecret.Name, corev1.TLSCertKey)
 	}
 
 	oldCerts, err := certutil.ParseCertsPEM(oldCertPEM)
@@ -1007,7 +1007,7 @@ func (c *CertificateRevocationController) ensureOldSignerCertificateRevoked(ctx 
 
 	oldKeyPEM, ok := oldCertSecret.Data[corev1.TLSPrivateKeyKey]
 	if !ok || len(oldKeyPEM) == 0 {
-		return true, nil, false, fmt.Errorf("signer certificate %s/%s had no data for %s", oldCertSecret.Namespace, oldCertSecret.Name, corev1.TLSPrivateKeyKey)
+		return true, nil, false, fmt.Errorf("previous signer certificate %s/%s had no data for %s", oldCertSecret.Namespace, oldCertSecret.Name, corev1.TLSPrivateKeyKey)
 	}
 
 	// Load the current (new) signer cert/key for cross-checking during per-pod verification.
@@ -1025,12 +1025,12 @@ func (c *CertificateRevocationController) ensureOldSignerCertificateRevoked(ctx 
 
 	currentCertPEM, ok := signerSecret.Data[corev1.TLSCertKey]
 	if !ok || len(currentCertPEM) == 0 {
-		return true, nil, false, fmt.Errorf("signer certificate %s/%s had no data for %s", signerSecret.Namespace, signerSecret.Name, corev1.TLSCertKey)
+		return true, nil, false, fmt.Errorf("current signer certificate %s/%s had no data for %s", signerSecret.Namespace, signerSecret.Name, corev1.TLSCertKey)
 	}
 
 	currentKeyPEM, ok := signerSecret.Data[corev1.TLSPrivateKeyKey]
 	if !ok || len(currentKeyPEM) == 0 {
-		return true, nil, false, fmt.Errorf("signer certificate %s/%s had no data for %s", signerSecret.Namespace, signerSecret.Name, corev1.TLSPrivateKeyKey)
+		return true, nil, false, fmt.Errorf("current signer certificate %s/%s had no data for %s", signerSecret.Namespace, signerSecret.Name, corev1.TLSPrivateKeyKey)
 	}
 
 	totalClientCA := manifests.TotalKASClientCABundle(namespace)

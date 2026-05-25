@@ -1183,6 +1183,51 @@ func kasPodSpec() corev1.PodSpec {
 	}
 }
 
+func readyKASPod(name, ip string) *corev1.Pod {
+	return &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "test-ns"},
+		Spec:       kasPodSpec(),
+		Status: corev1.PodStatus{
+			PodIP: ip,
+			Conditions: []corev1.PodCondition{{
+				Type:   corev1.PodReady,
+				Status: corev1.ConditionTrue,
+			}},
+		},
+	}
+}
+
+func newTestController(crr *certificatesv1alpha1.CertificateRevocationRequest, secrets []*corev1.Secret, cms []*corev1.ConfigMap) *CertificateRevocationController {
+	return &CertificateRevocationController{
+		getCRR: func(namespace, name string) (*certificatesv1alpha1.CertificateRevocationRequest, error) {
+			return crr, nil
+		},
+		getSecret: func(namespace, name string) (*corev1.Secret, error) {
+			for _, s := range secrets {
+				if s.Namespace == namespace && s.Name == name {
+					return s, nil
+				}
+			}
+			return nil, apierrors.NewNotFound(corev1.SchemeGroupVersion.WithResource("secrets").GroupResource(), name)
+		},
+		listSecrets: func(namespace string) ([]*corev1.Secret, error) {
+			return secrets, nil
+		},
+		getConfigMap: func(namespace, name string) (*corev1.ConfigMap, error) {
+			for _, cm := range cms {
+				if cm.Namespace == namespace && cm.Name == name {
+					return cm, nil
+				}
+			}
+			return nil, apierrors.NewNotFound(corev1.SchemeGroupVersion.WithResource("configmaps").GroupResource(), name)
+		},
+		listPods: func(namespace string, selector labels.Selector) ([]*corev1.Pod, error) {
+			return nil, nil
+		},
+		skipKASConnections: false,
+	}
+}
+
 func fakeKubeClientWithKASDeployment(replicas int32) kubernetes.Interface {
 	return kubefake.NewClientset(&appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
@@ -1292,28 +1337,8 @@ func TestVerifyCertificateAgainstAllKASPods(t *testing.T) {
 		{
 			name: "When ready non-terminating pods exist it should call verifyFunc for each",
 			pods: []*corev1.Pod{
-				{
-					ObjectMeta: metav1.ObjectMeta{Name: "kas-1", Namespace: "test-ns"},
-					Spec:       kasPodSpec(),
-					Status: corev1.PodStatus{
-						PodIP: "10.0.0.1",
-						Conditions: []corev1.PodCondition{{
-							Type:   corev1.PodReady,
-							Status: corev1.ConditionTrue,
-						}},
-					},
-				},
-				{
-					ObjectMeta: metav1.ObjectMeta{Name: "kas-2", Namespace: "test-ns"},
-					Spec:       kasPodSpec(),
-					Status: corev1.PodStatus{
-						PodIP: "10.0.0.2",
-						Conditions: []corev1.PodCondition{{
-							Type:   corev1.PodReady,
-							Status: corev1.ConditionTrue,
-						}},
-					},
-				},
+				readyKASPod("kas-1", "10.0.0.1"),
+				readyKASPod("kas-2", "10.0.0.2"),
 			},
 			kasReplicas: 2,
 			verifyFunc: func(_ context.Context, _ kubernetes.Interface) (bool, error) {
@@ -1325,17 +1350,7 @@ func TestVerifyCertificateAgainstAllKASPods(t *testing.T) {
 		{
 			name: "When ready pod count does not match expected replicas it should requeue",
 			pods: []*corev1.Pod{
-				{
-					ObjectMeta: metav1.ObjectMeta{Name: "kas-1", Namespace: "test-ns"},
-					Spec:       kasPodSpec(),
-					Status: corev1.PodStatus{
-						PodIP: "10.0.0.1",
-						Conditions: []corev1.PodCondition{{
-							Type:   corev1.PodReady,
-							Status: corev1.ConditionTrue,
-						}},
-					},
-				},
+				readyKASPod("kas-1", "10.0.0.1"),
 			},
 			kasReplicas:    3,
 			expectedResult: false,
@@ -1343,17 +1358,7 @@ func TestVerifyCertificateAgainstAllKASPods(t *testing.T) {
 		{
 			name: "When one pod's verifyFunc returns false it should return false",
 			pods: []*corev1.Pod{
-				{
-					ObjectMeta: metav1.ObjectMeta{Name: "kas-1", Namespace: "test-ns"},
-					Spec:       kasPodSpec(),
-					Status: corev1.PodStatus{
-						PodIP: "10.0.0.1",
-						Conditions: []corev1.PodCondition{{
-							Type:   corev1.PodReady,
-							Status: corev1.ConditionTrue,
-						}},
-					},
-				},
+				readyKASPod("kas-1", "10.0.0.1"),
 			},
 			kasReplicas: 1,
 			verifyFunc: func(_ context.Context, _ kubernetes.Interface) (bool, error) {
@@ -1365,39 +1370,9 @@ func TestVerifyCertificateAgainstAllKASPods(t *testing.T) {
 		{
 			name: "When second of three pods fails it should return false and stop early",
 			pods: []*corev1.Pod{
-				{
-					ObjectMeta: metav1.ObjectMeta{Name: "kas-1", Namespace: "test-ns"},
-					Spec:       kasPodSpec(),
-					Status: corev1.PodStatus{
-						PodIP: "10.0.0.1",
-						Conditions: []corev1.PodCondition{{
-							Type:   corev1.PodReady,
-							Status: corev1.ConditionTrue,
-						}},
-					},
-				},
-				{
-					ObjectMeta: metav1.ObjectMeta{Name: "kas-2", Namespace: "test-ns"},
-					Spec:       kasPodSpec(),
-					Status: corev1.PodStatus{
-						PodIP: "10.0.0.2",
-						Conditions: []corev1.PodCondition{{
-							Type:   corev1.PodReady,
-							Status: corev1.ConditionTrue,
-						}},
-					},
-				},
-				{
-					ObjectMeta: metav1.ObjectMeta{Name: "kas-3", Namespace: "test-ns"},
-					Spec:       kasPodSpec(),
-					Status: corev1.PodStatus{
-						PodIP: "10.0.0.3",
-						Conditions: []corev1.PodCondition{{
-							Type:   corev1.PodReady,
-							Status: corev1.ConditionTrue,
-						}},
-					},
-				},
+				readyKASPod("kas-1", "10.0.0.1"),
+				readyKASPod("kas-2", "10.0.0.2"),
+				readyKASPod("kas-3", "10.0.0.3"),
 			},
 			kasReplicas: 3,
 			verifyFunc: func() func(context.Context, kubernetes.Interface) (bool, error) {
@@ -1421,17 +1396,9 @@ func TestVerifyCertificateAgainstAllKASPods(t *testing.T) {
 		},
 		{
 			name: "When verifyFunc returns an error it should return an error",
-			pods: []*corev1.Pod{{
-				ObjectMeta: metav1.ObjectMeta{Name: "kas-1", Namespace: "test-ns"},
-				Spec:       kasPodSpec(),
-				Status: corev1.PodStatus{
-					PodIP: "10.0.0.1",
-					Conditions: []corev1.PodCondition{{
-						Type:   corev1.PodReady,
-						Status: corev1.ConditionTrue,
-					}},
-				},
-			}},
+			pods: []*corev1.Pod{
+				readyKASPod("kas-1", "10.0.0.1"),
+			},
 			kasReplicas: 1,
 			verifyFunc: func(_ context.Context, _ kubernetes.Interface) (bool, error) {
 				return false, fmt.Errorf("SSR failed")
@@ -1756,34 +1723,7 @@ func TestEnsureNewSignerCertificatePropagated_KASVerification(t *testing.T) {
 	}
 
 	newPropagatedController := func(crr *certificatesv1alpha1.CertificateRevocationRequest, secrets []*corev1.Secret, cms []*corev1.ConfigMap) *CertificateRevocationController {
-		return &CertificateRevocationController{
-			getCRR: func(namespace, name string) (*certificatesv1alpha1.CertificateRevocationRequest, error) {
-				return crr, nil
-			},
-			getSecret: func(namespace, name string) (*corev1.Secret, error) {
-				for _, s := range secrets {
-					if s.Namespace == namespace && s.Name == name {
-						return s, nil
-					}
-				}
-				return nil, apierrors.NewNotFound(corev1.SchemeGroupVersion.WithResource("secrets").GroupResource(), name)
-			},
-			listSecrets: func(namespace string) ([]*corev1.Secret, error) {
-				return secrets, nil
-			},
-			getConfigMap: func(namespace, name string) (*corev1.ConfigMap, error) {
-				for _, cm := range cms {
-					if cm.Namespace == namespace && cm.Name == name {
-						return cm, nil
-					}
-				}
-				return nil, apierrors.NewNotFound(corev1.SchemeGroupVersion.WithResource("configmaps").GroupResource(), name)
-			},
-			listPods: func(namespace string, selector labels.Selector) ([]*corev1.Pod, error) {
-				return nil, nil
-			},
-			skipKASConnections: false,
-		}
+		return newTestController(crr, secrets, cms)
 	}
 
 	t.Run("When no KAS pods exist it should requeue", func(t *testing.T) {
@@ -1965,34 +1905,7 @@ func TestEnsureOldSignerCertificateRevoked_KASVerification(t *testing.T) {
 	}
 
 	newRevokedController := func(crr *certificatesv1alpha1.CertificateRevocationRequest, secrets []*corev1.Secret, cms []*corev1.ConfigMap) *CertificateRevocationController {
-		return &CertificateRevocationController{
-			getCRR: func(namespace, name string) (*certificatesv1alpha1.CertificateRevocationRequest, error) {
-				return crr, nil
-			},
-			getSecret: func(namespace, name string) (*corev1.Secret, error) {
-				for _, s := range secrets {
-					if s.Namespace == namespace && s.Name == name {
-						return s, nil
-					}
-				}
-				return nil, apierrors.NewNotFound(corev1.SchemeGroupVersion.WithResource("secrets").GroupResource(), name)
-			},
-			listSecrets: func(namespace string) ([]*corev1.Secret, error) {
-				return secrets, nil
-			},
-			getConfigMap: func(namespace, name string) (*corev1.ConfigMap, error) {
-				for _, cm := range cms {
-					if cm.Namespace == namespace && cm.Name == name {
-						return cm, nil
-					}
-				}
-				return nil, apierrors.NewNotFound(corev1.SchemeGroupVersion.WithResource("configmaps").GroupResource(), name)
-			},
-			listPods: func(namespace string, selector labels.Selector) ([]*corev1.Pod, error) {
-				return nil, nil
-			},
-			skipKASConnections: false,
-		}
+		return newTestController(crr, secrets, cms)
 	}
 
 	t.Run("When no KAS pods exist it should requeue", func(t *testing.T) {
@@ -2093,12 +2006,8 @@ func TestEnsureOldSignerCertificateRevoked_KASVerification(t *testing.T) {
 				// old cert: still accepted by at least one pod
 				return false, nil
 			}
-			// current cert: trusted (shouldn't be reached)
-			fakeClient := kubefake.NewClientset()
-			fakeClient.PrependReactor("create", "selfsubjectreviews", func(action k8stesting.Action) (bool, runtime.Object, error) {
-				return true, nil, nil
-			})
-			return verifyFunc(context.Background(), fakeClient)
+			t.Fatal("unexpected verification call for current cert — only old cert should be checked in this scenario")
+			return false, nil
 		}
 
 		_, requeue, err := c.processCertificateRevocationRequest(t.Context(), "crr-ns", "crr-name", postRevocationClock.Now)
@@ -2113,7 +2022,6 @@ func TestEnsureOldSignerCertificateRevoked_KASVerification(t *testing.T) {
 		kubeconfigData := makeKubeconfig(t)
 		crr := newRevokedCRR()
 		secrets := newRevokedSecrets(kubeconfigData)
-		// Remove the private key from the current signer secret
 		for _, s := range secrets {
 			if s.Name == manifests.CustomerSystemAdminSigner("").Name {
 				delete(s.Data, corev1.TLSPrivateKeyKey)
@@ -2124,6 +2032,27 @@ func TestEnsureOldSignerCertificateRevoked_KASVerification(t *testing.T) {
 
 		_, _, err := c.processCertificateRevocationRequest(t.Context(), "crr-ns", "crr-name", postRevocationClock.Now)
 		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("current signer certificate"))
 		g.Expect(err.Error()).To(ContainSubstring("had no data for"))
+	})
+
+	t.Run("When current signer cert is missing it should return an error", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		kubeconfigData := makeKubeconfig(t)
+		crr := newRevokedCRR()
+		secrets := newRevokedSecrets(kubeconfigData)
+		for _, s := range secrets {
+			if s.Name == manifests.CustomerSystemAdminSigner("").Name {
+				delete(s.Data, corev1.TLSCertKey)
+			}
+		}
+		cms := newRevokedCMs()
+		c := newRevokedController(crr, secrets, cms)
+
+		_, _, err := c.processCertificateRevocationRequest(t.Context(), "crr-ns", "crr-name", postRevocationClock.Now)
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("found no certificate in secret"))
 	})
 }
