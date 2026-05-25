@@ -1,8 +1,11 @@
 package konnectivityhttpsproxy
 
 import (
+	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -10,6 +13,7 @@ import (
 
 	. "github.com/onsi/gomega"
 
+	"github.com/elazarl/goproxy"
 	"golang.org/x/net/http/httpproxy"
 )
 
@@ -97,6 +101,116 @@ func TestShouldDialDirectFunc(t *testing.T) {
 			result, err := f(tc.requestURL)
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(result).To(Equal(tc.expectedDialDirectly))
+		})
+	}
+}
+
+func TestDialDirectFunc(t *testing.T) {
+	t.Run("When dialing with a valid listener it should connect successfully", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+
+		listener, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
+		g.Expect(err).NotTo(HaveOccurred())
+		defer listener.Close()
+
+		httpProxy := goproxy.NewProxyHttpServer()
+		httpProxy.Tr = &http.Transport{
+			DialContext: (&net.Dialer{}).DialContext,
+		}
+
+		dialFn := dialDirectFunc(httpProxy)
+		conn, err := dialFn(t.Context(), "tcp", listener.Addr().String())
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(conn).NotTo(BeNil())
+		conn.Close()
+	})
+
+	t.Run("When the transport DialContext fails it should return an error", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+
+		expectedErr := errors.New("dial failed")
+		httpProxy := goproxy.NewProxyHttpServer()
+		httpProxy.Tr = &http.Transport{
+			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				return nil, expectedErr
+			},
+		}
+
+		dialFn := dialDirectFunc(httpProxy)
+		conn, err := dialFn(t.Context(), "tcp", "127.0.0.1:1")
+		g.Expect(err).To(MatchError(expectedErr))
+		g.Expect(conn).To(BeNil())
+	})
+}
+
+func TestConnectDialFunc(t *testing.T) {
+	lookupErr := errors.New("lookup failed")
+
+	tests := []struct {
+		name               string
+		shouldDialDirect   bool
+		shouldDialDirectErr error
+		expectDialDirect   bool
+		expectDialProxy    bool
+		expectErr          error
+	}{
+		{
+			name:             "When shouldDialDirect returns true it should dial directly with request context",
+			shouldDialDirect: true,
+			expectDialDirect: true,
+		},
+		{
+			name:            "When shouldDialDirect returns false it should dial through proxy",
+			expectDialProxy: true,
+		},
+		{
+			name:                "When shouldDialDirect returns an error it should propagate the error",
+			shouldDialDirectErr: lookupErr,
+			expectErr:           lookupErr,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			type contextKey string
+			reqCtx := context.WithValue(t.Context(), contextKey("test"), "value")
+			req, err := http.NewRequestWithContext(reqCtx, "CONNECT", "https://example.com:443", nil)
+			g.Expect(err).NotTo(HaveOccurred())
+
+			directCalled := false
+			proxyCalled := false
+			var capturedCtx context.Context
+
+			dialDirectly := func(ctx context.Context, network, addr string) (net.Conn, error) {
+				directCalled = true
+				capturedCtx = ctx
+				return nil, nil
+			}
+			dialThroughProxy := func(network, addr string) (net.Conn, error) {
+				proxyCalled = true
+				return nil, nil
+			}
+			shouldDialDirect := func(u *url.URL) (bool, error) {
+				return tc.shouldDialDirect, tc.shouldDialDirectErr
+			}
+
+			f := connectDialFunc(shouldDialDirect, dialDirectly, dialThroughProxy)
+			conn, err := f(req, "tcp", "example.com:443")
+
+			if tc.expectErr != nil {
+				g.Expect(err).To(MatchError(tc.expectErr))
+				g.Expect(conn).To(BeNil())
+			} else {
+				g.Expect(err).NotTo(HaveOccurred())
+			}
+			g.Expect(directCalled).To(Equal(tc.expectDialDirect))
+			g.Expect(proxyCalled).To(Equal(tc.expectDialProxy))
+			if tc.expectDialDirect {
+				g.Expect(capturedCtx).To(Equal(reqCtx))
+				g.Expect(capturedCtx.Value(contextKey("test"))).To(Equal("value"))
+			}
 		})
 	}
 }
