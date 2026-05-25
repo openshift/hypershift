@@ -58,6 +58,11 @@ const (
 	TokenSecretPayloadKey        = "payload"
 	TokenSecretReleaseKey        = "release"
 	TokenSecretReleaseVersionKey = "release-version"
+
+	// upgradeRequeueInterval is how often the controller rechecks while an
+	// upgrade is in progress, closing the gap when a force-deleted pod's
+	// deletion event is missed.
+	upgradeRequeueInterval = 30 * time.Second
 )
 
 type Reconciler struct {
@@ -146,7 +151,14 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		return ctrl.Result{}, fmt.Errorf("token secret %s/%s is missing %q key", tokenSecret.Namespace, tokenSecret.Name, TokenSecretReleaseVersionKey)
 	}
 
-	return ctrl.Result{}, r.reconcileInPlaceUpgrade(ctx, nodePoolUpgradeAPI, tokenSecret, mcoImage, releaseVersion)
+	if err := r.reconcileInPlaceUpgrade(ctx, nodePoolUpgradeAPI, tokenSecret, mcoImage, releaseVersion); err != nil {
+		return ctrl.Result{}, err
+	}
+	// Requeue periodically while an upgrade is in progress. The controller only
+	// watches Nodes and MachineSets, so if an upgrade pod is force-deleted the
+	// deletion event is missed and the replacement pod is never created. A
+	// periodic recheck closes that gap.
+	return ctrl.Result{RequeueAfter: upgradeRequeueInterval}, nil
 }
 
 type nodePoolUpgradeAPI struct {
@@ -276,7 +288,7 @@ func (r *Reconciler) reconcileInPlaceUpgrade(ctx context.Context, nodePoolUpgrad
 
 	err = r.reconcileUpgradePods(ctx, r.guestClusterClient, nodes, nodePoolUpgradeAPI.spec.poolRef.GetName(), mcoImage, nodePoolUpgradeAPI.proxy)
 	if err != nil {
-		return fmt.Errorf("failed to delete idle upgrade pods: %w", err)
+		return fmt.Errorf("failed to reconcile upgrade pods: %w", err)
 	}
 	return nil
 }
@@ -311,22 +323,11 @@ func (r *Reconciler) reconcileUpgradePods(ctx context.Context, hostedClusterClie
 		pod := inPlaceUpgradePod(namespace.Name, node.Name)
 
 		if node.Annotations[CurrentMachineConfigAnnotationKey] == node.Annotations[DesiredMachineConfigAnnotationKey] &&
-			node.Annotations[DesiredDrainerAnnotationKey] == node.Annotations[LastAppliedDrainerAnnotationKey] {
+			node.Annotations[DesiredDrainerAnnotationKey] == node.Annotations[LastAppliedDrainerAnnotationKey] &&
+			node.Annotations[MachineConfigDaemonStateAnnotationKey] == MachineConfigDaemonStateDone {
 			// the node is updated and does not require a MCD running
-			if err := hostedClusterClient.Get(ctx, client.ObjectKeyFromObject(pod), pod); err != nil {
-				if apierrors.IsNotFound(err) {
-					continue
-				}
-				return fmt.Errorf("error getting upgrade MCD pod: %w", err)
-			}
-			if pod.DeletionTimestamp != nil {
-				continue
-			}
-			if err := hostedClusterClient.Delete(ctx, pod); err != nil {
-				if apierrors.IsNotFound(err) {
-					continue
-				}
-				return fmt.Errorf("error deleting upgrade MCD pod: %w", err)
+			if err := deleteUpgradePodIfExists(ctx, hostedClusterClient, pod); err != nil {
+				return err
 			}
 			log.Info("Deleted idle upgrade pod")
 		} else {
@@ -348,8 +349,37 @@ func (r *Reconciler) reconcileUpgradePods(ctx context.Context, hostedClusterClie
 				} else {
 					log.Info("create upgrade pod", "result", result)
 				}
+				// A pod with RestartPolicy=OnFailure only reaches a terminal phase after kubelet has exhausted its restart attempts (e.g. eviction or node loss), so deleting it here does not interrupt an active retry.
+			} else if pod.Status.Phase == corev1.PodSucceeded || pod.Status.Phase == corev1.PodFailed {
+				if pod.DeletionTimestamp != nil {
+					continue
+				}
+				log.Info("Detected terminated upgrade pod on node that still needs upgrade, deleting for retry",
+					"node", node.Name, "podPhase", pod.Status.Phase)
+				if err := hostedClusterClient.Delete(ctx, pod); err != nil {
+					if apierrors.IsNotFound(err) {
+						continue
+					}
+					return fmt.Errorf("error deleting terminated upgrade MCD pod for node %s: %w", node.Name, err)
+				}
 			}
 		}
+	}
+	return nil
+}
+
+func deleteUpgradePodIfExists(ctx context.Context, c client.Client, pod *corev1.Pod) error {
+	if err := c.Get(ctx, client.ObjectKeyFromObject(pod), pod); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("error getting upgrade MCD pod %s: %w", pod.Name, err)
+	}
+	if pod.DeletionTimestamp != nil {
+		return nil
+	}
+	if err := c.Delete(ctx, pod); err != nil && !apierrors.IsNotFound(err) {
+		return fmt.Errorf("error deleting upgrade MCD pod %s: %w", pod.Name, err)
 	}
 	return nil
 }
@@ -483,20 +513,8 @@ func deleteUpgradeManifests(ctx context.Context, hostedClusterClient client.Clie
 	namespace := inPlaceUpgradeNamespace(poolName)
 	for _, node := range nodes {
 		pod := inPlaceUpgradePod(namespace.Name, node.Name)
-		if err := hostedClusterClient.Get(ctx, client.ObjectKeyFromObject(pod), pod); err != nil {
-			if apierrors.IsNotFound(err) {
-				continue
-			}
-			return fmt.Errorf("error getting upgrade MCD pod: %w", err)
-		}
-		if pod.DeletionTimestamp != nil {
-			continue
-		}
-		if err := hostedClusterClient.Delete(ctx, pod); err != nil {
-			if apierrors.IsNotFound(err) {
-				continue
-			}
-			return fmt.Errorf("error deleting upgrade MCD pod: %w", err)
+		if err := deleteUpgradePodIfExists(ctx, hostedClusterClient, pod); err != nil {
+			return err
 		}
 	}
 	return nil
