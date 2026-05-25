@@ -625,7 +625,8 @@ func (c *CertificateRevocationController) verifyCertificateAgainstAllKASPods(
 		return false, nil
 	}
 
-	for _, pod := range readyPods {
+	klog.V(4).Infof("Starting per-pod certificate verification against %d ready KAS pods in namespace %s", len(readyPods), namespace)
+	for i, pod := range readyPods {
 		port := podspec.ContainerPort(pod, "client", config.KASPodDefaultPort)
 		podCfg := rest.AnonymousClientConfig(adminCfg)
 		podCfg.Timeout = perPodVerifyTimeout
@@ -641,6 +642,7 @@ func (c *CertificateRevocationController) verifyCertificateAgainstAllKASPods(
 			return false, fmt.Errorf("couldn't create client for KAS pod %s/%s: %w", pod.Namespace, pod.Name, err)
 		}
 
+		klog.V(4).Infof("Verifying certificate against KAS pod %s/%s (%d/%d) at %s:%d", pod.Namespace, pod.Name, i+1, len(readyPods), pod.Status.PodIP, port)
 		podCtx, cancel := context.WithTimeout(ctx, perPodVerifyTimeout)
 		passed, err := verifyFunc(podCtx, podClient)
 		cancel()
@@ -648,10 +650,13 @@ func (c *CertificateRevocationController) verifyCertificateAgainstAllKASPods(
 			return false, fmt.Errorf("verification failed against KAS pod %s/%s: %w", pod.Namespace, pod.Name, err)
 		}
 		if !passed {
+			klog.V(4).Infof("KAS pod %s/%s (%d/%d) did not pass certificate verification, requeueing", pod.Namespace, pod.Name, i+1, len(readyPods))
 			return false, nil
 		}
+		klog.V(4).Infof("KAS pod %s/%s (%d/%d) passed certificate verification", pod.Namespace, pod.Name, i+1, len(readyPods))
 	}
 
+	klog.V(2).Infof("All %d KAS pods in namespace %s passed certificate verification", len(readyPods), namespace)
 	return true, nil
 }
 
@@ -1017,8 +1022,16 @@ func (c *CertificateRevocationController) ensureOldSignerCertificateRevoked(ctx 
 	if signerSecret == nil {
 		return true, nil, false, nil
 	}
-	currentCertPEM := signerSecret.Data[corev1.TLSCertKey]
-	currentKeyPEM := signerSecret.Data[corev1.TLSPrivateKeyKey]
+
+	currentCertPEM, ok := signerSecret.Data[corev1.TLSCertKey]
+	if !ok || len(currentCertPEM) == 0 {
+		return true, nil, false, fmt.Errorf("signer certificate %s/%s had no data for %s", signerSecret.Namespace, signerSecret.Name, corev1.TLSCertKey)
+	}
+
+	currentKeyPEM, ok := signerSecret.Data[corev1.TLSPrivateKeyKey]
+	if !ok || len(currentKeyPEM) == 0 {
+		return true, nil, false, fmt.Errorf("signer certificate %s/%s had no data for %s", signerSecret.Namespace, signerSecret.Name, corev1.TLSPrivateKeyKey)
+	}
 
 	totalClientCA := manifests.TotalKASClientCABundle(namespace)
 	totalClientTrustBundle, err := c.loadTrustBundleConfigMap(totalClientCA.Namespace, totalClientCA.Name)
