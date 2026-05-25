@@ -127,6 +127,7 @@ func (a *AzurePlatformConfig) ClusterSpecs(releaseImage, n1Image string) []Clust
 			ExtraArgs: []string{
 				"--endpoint-access=Private",
 				"--endpoint-access-private-nat-subnet-id=" + a.privateNATSubnetID,
+				"--oauth-publishing-strategy=LoadBalancer",
 			},
 		},
 		{
@@ -340,7 +341,7 @@ func (a *AzurePlatformConfig) TestMatrix(releaseImage string) TestMatrix {
 			{
 				Name:        "private",
 				ClusterFile: "cluster-name-private",
-				LabelFilter: "self-managed-azure-private || hosted-cluster-compliance || nodepool-osimagestream",
+				LabelFilter: "self-managed-azure-private || self-managed-azure-oauth-lb-private || hosted-cluster-compliance || nodepool-osimagestream",
 				JUnitFile:   "junit_self_managed_azure_private.xml",
 			},
 			{
