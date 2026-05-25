@@ -1363,6 +1363,57 @@ func TestVerifyCertificateAgainstAllKASPods(t *testing.T) {
 			expectedCalls:  1,
 		},
 		{
+			name: "When second of three pods fails it should return false and stop early",
+			pods: []*corev1.Pod{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "kas-1", Namespace: "test-ns"},
+					Spec:       kasPodSpec(),
+					Status: corev1.PodStatus{
+						PodIP: "10.0.0.1",
+						Conditions: []corev1.PodCondition{{
+							Type:   corev1.PodReady,
+							Status: corev1.ConditionTrue,
+						}},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "kas-2", Namespace: "test-ns"},
+					Spec:       kasPodSpec(),
+					Status: corev1.PodStatus{
+						PodIP: "10.0.0.2",
+						Conditions: []corev1.PodCondition{{
+							Type:   corev1.PodReady,
+							Status: corev1.ConditionTrue,
+						}},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "kas-3", Namespace: "test-ns"},
+					Spec:       kasPodSpec(),
+					Status: corev1.PodStatus{
+						PodIP: "10.0.0.3",
+						Conditions: []corev1.PodCondition{{
+							Type:   corev1.PodReady,
+							Status: corev1.ConditionTrue,
+						}},
+					},
+				},
+			},
+			kasReplicas: 3,
+			verifyFunc: func() func(context.Context, kubernetes.Interface) (bool, error) {
+				call := 0
+				return func(_ context.Context, _ kubernetes.Interface) (bool, error) {
+					call++
+					if call == 2 {
+						return false, nil // second pod fails
+					}
+					return true, nil
+				}
+			}(),
+			expectedResult: false,
+			expectedCalls:  2, // should stop after second pod fails, never reaching third
+		},
+		{
 			name:           "When listing pods fails it should return an error",
 			listPodsErr:    fmt.Errorf("connection refused"),
 			expectedResult: false,
@@ -2024,5 +2075,55 @@ func TestEnsureOldSignerCertificateRevoked_KASVerification(t *testing.T) {
 			}
 		}
 		g.Expect(foundRevoked).To(BeTrue(), "should have set PreviousCertificatesRevokedType condition to True")
+	})
+
+	t.Run("When some KAS pods still accept old cert it should requeue", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		kubeconfigData := makeKubeconfig(t)
+		crr := newRevokedCRR()
+		secrets := newRevokedSecrets(kubeconfigData)
+		cms := newRevokedCMs()
+		c := newRevokedController(crr, secrets, cms)
+
+		// Override verification: old cert is still accepted (not yet revoked on all pods)
+		c.overrideVerifyCertAgainstKASPods = func(_ context.Context, _ string, _ *rest.Config, certPEM, _ []byte, verifyFunc func(context.Context, kubernetes.Interface) (bool, error)) (bool, error) {
+			if string(certPEM) == string(data.original.raw.signerCert) {
+				// old cert: still accepted by at least one pod
+				return false, nil
+			}
+			// current cert: trusted (shouldn't be reached)
+			fakeClient := kubefake.NewClientset()
+			fakeClient.PrependReactor("create", "selfsubjectreviews", func(action k8stesting.Action) (bool, runtime.Object, error) {
+				return true, nil, nil
+			})
+			return verifyFunc(context.Background(), fakeClient)
+		}
+
+		_, requeue, err := c.processCertificateRevocationRequest(t.Context(), "crr-ns", "crr-name", postRevocationClock.Now)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(requeue).To(BeTrue(), "should requeue when some KAS pods still accept old cert")
+	})
+
+	t.Run("When current signer key is missing it should return an error", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		kubeconfigData := makeKubeconfig(t)
+		crr := newRevokedCRR()
+		secrets := newRevokedSecrets(kubeconfigData)
+		// Remove the private key from the current signer secret
+		for _, s := range secrets {
+			if s.Name == manifests.CustomerSystemAdminSigner("").Name {
+				delete(s.Data, corev1.TLSPrivateKeyKey)
+			}
+		}
+		cms := newRevokedCMs()
+		c := newRevokedController(crr, secrets, cms)
+
+		_, _, err := c.processCertificateRevocationRequest(t.Context(), "crr-ns", "crr-name", postRevocationClock.Now)
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("had no data for"))
 	})
 }
