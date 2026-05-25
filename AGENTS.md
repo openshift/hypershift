@@ -102,7 +102,7 @@ See .claude/skills/dev
 - Test cases are YAML-driven following the openshift/api convention
 - Each YAML file defines `onCreate` and `onUpdate` test cases with expected errors
 - Run with `make test-envtest-ocp` (OpenShift k8s versions) or `make test-envtest-kube` (vanilla k8s versions), or `make test-envtest-api-all` for both
-- Tests run across multiple Kubernetes versions (1.31–1.35) to verify validation ratcheting and compatibility
+- Tests run across multiple Kubernetes versions (1.30–1.35) to verify validation ratcheting and compatibility
 - Feature gate filtering: test suites can target stable, tech-preview, or feature-gated CRD variants
 
 See test/envtest/README.md for details
