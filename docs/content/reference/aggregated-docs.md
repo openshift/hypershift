@@ -11021,15 +11021,6 @@ ${HYPERSHIFT_BINARY_PATH}/hypershift create cluster azure \
     cluster's VNet, `--endpoint-access Private` flag, and HyperShift operator
     installation with `--private-platform Azure`.
 
-!!! warning "Private Clusters: Avoid DNS Zone Shadowing"
-
-    If creating a **private** Azure HostedCluster, ensure `--external-dns-domain` does
-    not match `{clusterName}.{baseDomain}` or its parent domain. A matching value
-    causes an Azure Private DNS zone to shadow `*.apps` resolution, breaking console
-    and all ingress. This cannot be fixed after creation. See
-    External DNS Domain Must Not Match Cluster Domain
-    for details.
-
 ### Configuring Azure Marketplace Images
 
 HyperShift supports multiple approaches for configuring Azure Marketplace images for your cluster nodes. The recommended approach varies based on your OpenShift version and requirements.
@@ -11771,74 +11762,6 @@ The deletion process automatically cleans up Private Link resources in the corre
     1. `<clusterName>.hypershift.local` — synthetic internal zone with `api` and `*.apps` records
     2. `<baseDomain>` — base domain zone with `api-<clusterName>` and `oauth-<clusterName>` records
 
-### External DNS Domain Must Not Match Cluster Domain
-
-!!! warning "Azure Private DNS Zone Shadowing"
-
-    On private Azure HostedClusters, do **not** set `--external-dns-domain` to a value
-    that matches or is a parent domain of `{clusterName}.{baseDomain}`. For example,
-    if your cluster is named `my-cluster` with base domain `example.com`, do not use
-    `--external-dns-domain my-cluster.example.com` or `--external-dns-domain example.com`.
-
-    This misconfiguration **cannot be corrected after cluster creation** because the
-    relevant fields (`spec.services`, `spec.dns.baseDomain`, and `metadata.name`) are
-    all immutable. The cluster must be destroyed and recreated with a different
-    `--external-dns-domain` value.
-
-    **Safe example**: If your cluster is `my-cluster` with base domain `example.com`,
-    use a separate subdomain such as `--external-dns-domain custom-dns.example.com`
-    that does not overlap with `my-cluster.example.com`.
-
-#### What Goes Wrong
-
-Private Azure clusters use two separate routing paths:
-
-1. **Management-plane router** (`private-router`): An HAProxy pod in the hosted
-   control plane namespace, fronted by an internal load balancer and exposed to the
-   guest VNet through Azure Private Link. Worker nodes reach this router via the
-   Private Endpoint IP. HAProxy uses SNI-based routing and only has ACLs for
-   `.hypershift.local` hostnames (KAS, ignition, konnectivity, OAuth). Any hostname
-   that does not match an ACL falls through to the `default_backend kube_api`, which
-   returns KAS certificates.
-
-2. **Data-plane router** (`router-default`): The OpenShift ingress controller running
-   on worker nodes, serving `*.apps.{clusterName}.{baseDomain}` hostnames with the
-   correct wildcard ingress certificate.
-
-When `--external-dns-domain` matches the cluster domain, the PLS controller creates a
-Private DNS zone named `{clusterName}.{baseDomain}`. This zone becomes authoritative
-for **all** queries under that name within the guest VNet, including
-`*.apps.{clusterName}.{baseDomain}`. Since the zone only has `api` and `oauth` A
-records pointing to the Private Endpoint IP, apps queries either:
-
-- Return **NXDOMAIN** (if no `*.apps` record exists in the zone), or
-- Resolve to the **Private Endpoint IP**, which routes to `private-router` (HAProxy).
-  Because `*.apps` hostnames do not match any HAProxy SNI ACL, traffic falls through
-  to `kube_api` and the client receives a **TLS certificate mismatch** (KAS cert
-  instead of the ingress wildcard cert).
-
-Neither outcome is usable. The console, OAuth login, and all application routes are
-unreachable.
-
-#### Why the Controller Cannot Self-Heal
-
-The controller cannot fix this by adding a `*.apps` wildcard record to the shadowing
-zone because:
-
-- The Private Endpoint IP routes to the management-plane `private-router`, not the
-  data-plane `router-default`. Adding `*.apps → PE IP` would route apps traffic to
-  HAProxy, which does not serve those hostnames.
-- The correct target (the data-plane ingress IP on worker nodes) is not available to
-  the PLS controller. The controller runs in the control plane and has no client to
-  the guest cluster. There is no HCP status field that reports the guest ingress IP,
-  and the HostedCluster Controller Operator (HCCO) does not propagate it back.
-
-When the controller detects shadowing, it sets `AzurePrivateDNSAvailable=False` with
-reason `BaseDomainShadowsClusterDomain` and skips zone creation entirely. This
-prevents the shadowing zone from being created, but the `api` and `oauth` hostnames
-from `--external-dns-domain` will not resolve via Private DNS. The cluster must be
-recreated with a non-overlapping domain.
-
 ### Condition Debugging
 
 If the cluster gets stuck, check the `AzurePrivateLinkService` CR conditions:
@@ -11852,7 +11775,7 @@ oc get azureprivatelinkservices -n clusters-${CLUSTER_NAME} -o jsonpath='{.items
 | `AzureInternalLoadBalancerAvailable` = False | The `private-router` Service hasn't received an ILB IP yet. Check the Service status and Azure networking. |
 | `AzurePLSCreated` = False | PLS creation failed. Check NAT subnet policies, credentials, and the HO operator logs. |
 | `AzurePrivateEndpointAvailable` = False | PE creation failed or connection not approved. Check the PLS auto-approval list and CPO logs. |
-| `AzurePrivateDNSAvailable` = False | DNS zone or record creation failed. If the reason is `BaseDomainShadowsClusterDomain`, the `--external-dns-domain` value overlaps with the cluster domain — the cluster must be recreated with a different value. See External DNS Domain Must Not Match Cluster Domain. |
+| `AzurePrivateDNSAvailable` = False | DNS zone or record creation failed. Check CPO identity permissions in the guest subscription. |
 
 ## Related Documentation
 

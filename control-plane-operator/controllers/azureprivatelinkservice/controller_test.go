@@ -182,29 +182,24 @@ func (m *mockVirtualNetworkLinks) BeginDelete(_ context.Context, _ string, _ str
 }
 
 type mockRecordSets struct {
-	createErr            error
-	deleteErr            error
-	deleteErrZone        string // if set, deleteErr only applies to this zone
-	createCalled         bool
-	deleteCalled         bool
-	createCallCount      int
-	deleteCallCount      int
-	createdRecordNames   []string
-	createdRecordsByZone map[string][]string
-	deletedRecordNames   []string
-	lastRecordSetName    string
-	lastRecordType       armprivatedns.RecordType
-	lastRecordParams     armprivatedns.RecordSet
+	createErr          error
+	deleteErr          error
+	deleteErrZone      string // if set, deleteErr only applies to this zone
+	createCalled       bool
+	deleteCalled       bool
+	createCallCount    int
+	deleteCallCount    int
+	createdRecordNames []string
+	deletedRecordNames []string
+	lastRecordSetName  string
+	lastRecordType     armprivatedns.RecordType
+	lastRecordParams   armprivatedns.RecordSet
 }
 
-func (m *mockRecordSets) CreateOrUpdate(_ context.Context, _ string, privateDnsZoneName string, recordType armprivatedns.RecordType, relativeRecordSetName string, parameters armprivatedns.RecordSet, _ *armprivatedns.RecordSetsClientCreateOrUpdateOptions) (armprivatedns.RecordSetsClientCreateOrUpdateResponse, error) {
+func (m *mockRecordSets) CreateOrUpdate(_ context.Context, _ string, _ string, recordType armprivatedns.RecordType, relativeRecordSetName string, parameters armprivatedns.RecordSet, _ *armprivatedns.RecordSetsClientCreateOrUpdateOptions) (armprivatedns.RecordSetsClientCreateOrUpdateResponse, error) {
 	m.createCalled = true
 	m.createCallCount++
 	m.createdRecordNames = append(m.createdRecordNames, relativeRecordSetName)
-	if m.createdRecordsByZone == nil {
-		m.createdRecordsByZone = make(map[string][]string)
-	}
-	m.createdRecordsByZone[privateDnsZoneName] = append(m.createdRecordsByZone[privateDnsZoneName], relativeRecordSetName)
 	m.lastRecordSetName = relativeRecordSetName
 	m.lastRecordType = recordType
 	m.lastRecordParams = parameters
@@ -1531,7 +1526,7 @@ func TestReconcileBaseDomainDNS_WhenPrivateRouterWithNoSibling_ItShouldCreateBot
 		RecordSets:          mockRecords,
 	}
 
-	result, err := r.reconcileBaseDomainDNS(t.Context(), azPLS, "test-hcp", "", testr.New(t))
+	result, err := r.reconcileBaseDomainDNS(t.Context(), azPLS, "test-hcp", testr.New(t))
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(result.IsZero()).To(BeTrue())
 
@@ -1570,7 +1565,7 @@ func TestReconcileBaseDomainDNS_WhenPrivateRouterWithSiblingOAuth_ItShouldOnlyCr
 		RecordSets:          mockRecords,
 	}
 
-	result, err := r.reconcileBaseDomainDNS(t.Context(), azPLS, "test-hcp", "", testr.New(t))
+	result, err := r.reconcileBaseDomainDNS(t.Context(), azPLS, "test-hcp", testr.New(t))
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(result.IsZero()).To(BeTrue())
 
@@ -1605,7 +1600,7 @@ func TestReconcileBaseDomainDNS_WhenOAuthCR_ItShouldOnlyCreateOAuthRecord(t *tes
 		RecordSets:          mockRecords,
 	}
 
-	result, err := r.reconcileBaseDomainDNS(t.Context(), azPLS, "test-hcp", "", testr.New(t))
+	result, err := r.reconcileBaseDomainDNS(t.Context(), azPLS, "test-hcp", testr.New(t))
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(result.IsZero()).To(BeTrue())
 
@@ -1654,7 +1649,7 @@ func TestReconcileDelete_WhenSiblingCRsExist_ItShouldNotDeleteBaseDomainZone(t *
 
 	// A records should only include the api record (sibling OAuth owns the oauth record)
 	g.Expect(mockRecords.deleteCalled).To(BeTrue(), "should delete A records")
-	// The hypershift.local records (api, *.apps) + api-test-hcp from base domain = 3
+	// The hypershift.local records (api, *.apps) + only api-test-hcp from base domain = 3
 	g.Expect(mockRecords.deletedRecordNames).To(ConsistOf("api", "*.apps", "api-test-hcp"),
 		"should delete hypershift.local records and only api base domain record (sibling owns oauth)")
 
@@ -2275,7 +2270,7 @@ func TestReconcileBaseDomainDNS_WhenDNSZoneCreateFails_ItShouldRequeueAfterError
 		RecordSets:          &mockRecordSets{},
 	}
 
-	result, err := r.reconcileBaseDomainDNS(t.Context(), azPLS, "test-hcp", "", testr.New(t))
+	result, err := r.reconcileBaseDomainDNS(t.Context(), azPLS, "test-hcp", testr.New(t))
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(result.RequeueAfter).ToNot(BeZero())
 }
@@ -3735,233 +3730,6 @@ func TestReconcile_WhenNonPrivateRouterDNSZoneNamePatchFails_ItShouldReturnError
 
 	g.Expect(err).To(HaveOccurred())
 	g.Expect(err).To(MatchError(ContainSubstring("failed to persist DNS zone name in status")))
-}
-
-func TestReconcile_WhenBaseDomainShadowsClusterDomain_ItShouldSetDegradedConditionAndSkipZoneCreation(t *testing.T) {
-	t.Parallel()
-	g := NewGomegaWithT(t)
-	scheme := newTestScheme(t, g)
-
-	azPLS := newTestAzurePLS(t, "private-router", "test-ns")
-	azPLS.Finalizers = []string{azurePrivateLinkServiceFinalizer}
-	azPLS.Status.PrivateLinkServiceAlias = "test-alias"
-	azPLS.Status.PrivateEndpointIP = "10.0.1.5"
-	azPLS.Status.PrivateEndpointID = "/pe/id"
-	// This is the shadowing condition: baseDomain == hcpName.hcpDNSBaseDomain
-	azPLS.Spec.BaseDomain = "test-hcp.example.com"
-
-	hcp := newTestHCP(t, "test-hcp", "test-ns", "api.test.example.com")
-	hcp.Spec.DNS.BaseDomain = "example.com"
-	hcp.Finalizers = []string{hcpAzurePLSFinalizerName}
-
-	fakeClient := fake.NewClientBuilder().
-		WithScheme(scheme).
-		WithObjects(azPLS, hcp).
-		WithStatusSubresource(azPLS).
-		Build()
-
-	mockPE := &mockPrivateEndpoints{
-		getResponse: armnetwork.PrivateEndpointsClientGetResponse{
-			PrivateEndpoint: armnetwork.PrivateEndpoint{
-				ID: ptr.To("/pe/id"),
-				Properties: &armnetwork.PrivateEndpointProperties{
-					CustomDNSConfigs: []*armnetwork.CustomDNSConfigPropertiesFormat{
-						{IPAddresses: []*string{ptr.To("10.0.1.5")}},
-					},
-				},
-			},
-		},
-	}
-	mockDNS := &mockPrivateDNSZones{}
-	mockRecords := &mockRecordSets{}
-
-	r := &AzurePrivateLinkServiceReconciler{
-		Client:              fakeClient,
-		PrivateEndpoints:    mockPE,
-		PrivateDNSZones:     mockDNS,
-		VirtualNetworkLinks: &mockVirtualNetworkLinks{},
-		RecordSets:          mockRecords,
-	}
-
-	result, err := r.Reconcile(log.IntoContext(t.Context(), testr.New(t)), ctrl.Request{
-		NamespacedName: types.NamespacedName{Name: "private-router", Namespace: "test-ns"},
-	})
-
-	g.Expect(err).ToNot(HaveOccurred())
-	g.Expect(result.RequeueAfter).ToNot(BeZero(), "should requeue for drift detection")
-
-	// No base domain zone should be created when shadowing is detected.
-	// The last zone created should be the hypershift.local zone, not the base domain zone.
-	g.Expect(mockDNS.lastZoneName).To(Equal("test-hcp.hypershift.local"),
-		"only the hypershift.local zone should be created, not the base domain zone")
-
-	// Verify no records were created for the base domain zone
-	baseDomainRecords := mockRecords.createdRecordsByZone["test-hcp.example.com"]
-	g.Expect(baseDomainRecords).To(BeEmpty(),
-		"no records should be created in the base domain zone when shadowing is detected")
-
-	// Verify the DNS condition is set to False with the degraded reason
-	updated := &hyperv1.AzurePrivateLinkService{}
-	err = fakeClient.Get(t.Context(), types.NamespacedName{Name: "private-router", Namespace: "test-ns"}, updated)
-	g.Expect(err).ToNot(HaveOccurred())
-
-	dnsCondition := meta.FindStatusCondition(updated.Status.Conditions, string(hyperv1.AzurePrivateDNSAvailable))
-	g.Expect(dnsCondition).ToNot(BeNil(), "DNS condition should be set")
-	g.Expect(dnsCondition.Status).To(Equal(metav1.ConditionFalse),
-		"DNS condition should be False when shadowing is detected")
-	g.Expect(dnsCondition.Reason).To(Equal("BaseDomainShadowsClusterDomain"),
-		"DNS condition reason should indicate base domain shadowing")
-	g.Expect(dnsCondition.Message).To(ContainSubstring("shadows the cluster domain"),
-		"DNS condition message should explain the shadowing issue")
-	g.Expect(dnsCondition.Message).To(ContainSubstring("--external-dns-domain"),
-		"DNS condition message should suggest recreating with a different external-dns-domain")
-}
-
-func TestBaseDomainShadowsClusterDomain(t *testing.T) {
-	t.Parallel()
-
-	tests := map[string]struct {
-		baseDomain    string
-		clusterName   string
-		hcpBaseDomain string
-		expected      bool
-	}{
-		"When baseDomain equals clusterName.hcpBaseDomain, it should detect shadowing": {
-			baseDomain:    "my-cluster.example.com",
-			clusterName:   "my-cluster",
-			hcpBaseDomain: "example.com",
-			expected:      true,
-		},
-		"When baseDomain matches with different casing, it should detect shadowing": {
-			baseDomain:    "My-Cluster.Example.COM",
-			clusterName:   "my-cluster",
-			hcpBaseDomain: "example.com",
-			expected:      true,
-		},
-		"When baseDomain differs from clusterName.hcpBaseDomain, it should not detect shadowing": {
-			baseDomain:    "other-prefix.example.com",
-			clusterName:   "my-cluster",
-			hcpBaseDomain: "example.com",
-			expected:      false,
-		},
-		"When baseDomain is empty, it should not detect shadowing": {
-			baseDomain:    "",
-			clusterName:   "my-cluster",
-			hcpBaseDomain: "example.com",
-			expected:      false,
-		},
-		"When hcpBaseDomain is empty, it should not detect shadowing": {
-			baseDomain:    "my-cluster.example.com",
-			clusterName:   "my-cluster",
-			hcpBaseDomain: "",
-			expected:      false,
-		},
-		"When clusterName is empty, it should return false": {
-			baseDomain:    "my-cluster.example.com",
-			clusterName:   "",
-			hcpBaseDomain: "example.com",
-			expected:      false,
-		},
-		"When baseDomain equals hcpBaseDomain, it should detect shadowing": {
-			baseDomain:    "example.com",
-			clusterName:   "my-cluster",
-			hcpBaseDomain: "example.com",
-			expected:      true,
-		},
-		"When baseDomain is a non-domain-boundary suffix, it should not detect shadowing": {
-			baseDomain:    "ample.com",
-			clusterName:   "my-cluster",
-			hcpBaseDomain: "example.com",
-			expected:      false,
-		},
-		"When baseDomain is a multi-level parent domain, it should detect shadowing": {
-			baseDomain:    "devcluster.openshift.com",
-			clusterName:   "hcp-two",
-			hcpBaseDomain: "acm-dev04.devcluster.openshift.com",
-			expected:      true,
-		},
-	}
-
-	for name, tt := range tests {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-			g := NewWithT(t)
-
-			g.Expect(baseDomainShadowsClusterDomain(tt.baseDomain, tt.clusterName, tt.hcpBaseDomain)).To(Equal(tt.expected))
-		})
-	}
-}
-
-func TestReconcile_WhenBaseDomainDiffersFromClusterDomain_ItShouldCreateZoneNormally(t *testing.T) {
-	t.Parallel()
-	g := NewGomegaWithT(t)
-	scheme := newTestScheme(t, g)
-
-	azPLS := newTestAzurePLS(t, "private-router", "test-ns")
-	azPLS.Finalizers = []string{azurePrivateLinkServiceFinalizer}
-	azPLS.Status.PrivateLinkServiceAlias = "test-alias"
-	azPLS.Status.PrivateEndpointIP = "10.0.1.5"
-	azPLS.Status.PrivateEndpointID = "/pe/id"
-	// No shadowing: base domain is unrelated to hcpName.hcpDNSBaseDomain
-	azPLS.Spec.BaseDomain = "custom-dns.example.com"
-
-	hcp := newTestHCP(t, "test-hcp", "test-ns", "api.test.example.com")
-	hcp.Spec.DNS.BaseDomain = "example.com"
-	hcp.Finalizers = []string{hcpAzurePLSFinalizerName}
-
-	fakeClient := fake.NewClientBuilder().
-		WithScheme(scheme).
-		WithObjects(azPLS, hcp).
-		WithStatusSubresource(azPLS).
-		Build()
-
-	mockPE := &mockPrivateEndpoints{
-		getResponse: armnetwork.PrivateEndpointsClientGetResponse{
-			PrivateEndpoint: armnetwork.PrivateEndpoint{
-				ID: ptr.To("/pe/id"),
-				Properties: &armnetwork.PrivateEndpointProperties{
-					CustomDNSConfigs: []*armnetwork.CustomDNSConfigPropertiesFormat{
-						{IPAddresses: []*string{ptr.To("10.0.1.5")}},
-					},
-				},
-			},
-		},
-	}
-	mockDNS := &mockPrivateDNSZones{}
-	mockRecords := &mockRecordSets{}
-
-	r := &AzurePrivateLinkServiceReconciler{
-		Client:              fakeClient,
-		PrivateEndpoints:    mockPE,
-		PrivateDNSZones:     mockDNS,
-		VirtualNetworkLinks: &mockVirtualNetworkLinks{},
-		RecordSets:          mockRecords,
-	}
-
-	result, err := r.Reconcile(log.IntoContext(t.Context(), testr.New(t)), ctrl.Request{
-		NamespacedName: types.NamespacedName{Name: "private-router", Namespace: "test-ns"},
-	})
-
-	g.Expect(err).ToNot(HaveOccurred())
-	g.Expect(result.RequeueAfter).ToNot(BeZero(), "should requeue for drift detection")
-
-	// The base domain zone should be created since there's no shadowing
-	g.Expect(mockDNS.lastZoneName).To(Equal("custom-dns.example.com"),
-		"last zone should be the base domain zone")
-
-	// *.apps should only appear in the hypershift.local zone, NOT the base domain zone
-	baseDomainRecords := mockRecords.createdRecordsByZone["custom-dns.example.com"]
-	g.Expect(baseDomainRecords).ToNot(ContainElement("*.apps"),
-		"*.apps wildcard should NOT be added to the base domain zone when there is no shadowing")
-
-	// Verify the DNS condition is set to True (success)
-	updated := &hyperv1.AzurePrivateLinkService{}
-	err = fakeClient.Get(t.Context(), types.NamespacedName{Name: "private-router", Namespace: "test-ns"}, updated)
-	g.Expect(err).ToNot(HaveOccurred())
-
-	dnsCondition := meta.FindStatusCondition(updated.Status.Conditions, string(hyperv1.AzurePrivateDNSAvailable))
-	g.Expect(dnsCondition).ToNot(BeNil(), "DNS condition should be set")
-	g.Expect(dnsCondition.Status).To(Equal(metav1.ConditionTrue))
 }
 
 func TestReconcile_WhenAvailableConditionPatchFails_ItShouldReturnError(t *testing.T) {
