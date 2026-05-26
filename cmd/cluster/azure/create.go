@@ -161,7 +161,7 @@ func BindProductCoreFlags(opts *core.RawCreateOptions, flags *pflag.FlagSet) {
 }
 
 // Validate validates the Azure create cluster command options
-func (o *RawCreateOptions) Validate(ctx context.Context, opts *core.CreateOptions) (core.PlatformCompleter, error) {
+func (o *RawCreateOptions) Validate(ctx context.Context, _ *core.CreateOptions) (core.PlatformCompleter, error) {
 	var err error
 
 	// Check if the network security group is set and the resource group is not
@@ -222,12 +222,6 @@ func (o *RawCreateOptions) Validate(ctx context.Context, opts *core.CreateOption
 		}
 	}
 
-	if opts != nil {
-		if err := validateExternalDNSDomain(opts.ExternalDNSDomain, opts.Name, opts.BaseDomain); err != nil {
-			return nil, err
-		}
-	}
-
 	validOpts := &ValidatedCreateOptions{
 		validatedCreateOptions: &validatedCreateOptions{
 			RawCreateOptions: o,
@@ -256,36 +250,6 @@ func (o *RawCreateOptions) Validate(ctx context.Context, opts *core.CreateOption
 	}
 
 	return validOpts, nil
-}
-
-// validateExternalDNSDomain checks that the external DNS domain does not conflict with the cluster
-// domain. When a private Azure HostedCluster uses an externalDNSDomain that matches or is a parent
-// of the cluster domain (clusterName.baseDomain), the PLS controller creates an Azure Private DNS
-// zone that shadows *.apps DNS resolution.
-func validateExternalDNSDomain(externalDNSDomain, clusterName, baseDomain string) error {
-	if externalDNSDomain == "" {
-		return nil
-	}
-
-	if clusterName == "" || baseDomain == "" {
-		return nil
-	}
-
-	clusterDomain := clusterName + "." + baseDomain
-
-	extLower := strings.ToLower(strings.TrimSuffix(externalDNSDomain, "."))
-	clusterLower := strings.ToLower(strings.TrimSuffix(clusterDomain, "."))
-
-	// Check if the externalDNSDomain matches or is a parent of the cluster domain.
-	// An exact match means the Private DNS zone would directly shadow *.apps.
-	// A suffix match (with dot boundary) means the zone is a parent that would also shadow.
-	if extLower == clusterLower || strings.HasSuffix(clusterLower, "."+extLower) {
-		return fmt.Errorf("external DNS domain %q conflicts with cluster domain %q: "+
-			"this would create an Azure Private DNS zone that shadows *.apps DNS resolution. "+
-			"Use a different --external-dns-domain value", externalDNSDomain, clusterDomain)
-	}
-
-	return nil
 }
 
 // Complete completes the Azure create cluster command options
