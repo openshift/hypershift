@@ -33,6 +33,7 @@ import (
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -91,6 +92,8 @@ func EnsureDefaultSecurityGroupTagsTest(getTestCtx internal.TestContextGetter) {
 			day2TagKey := "test-day2-tag"
 			day2TagValue := "test-day2-value"
 
+			originalTags := append([]hyperv1.AWSResourceTag(nil), hc.Spec.Platform.AWS.ResourceTags...)
+
 			err = e2eutil.UpdateObject(GinkgoTB(), tc.Context, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
 				obj.Spec.Platform.AWS.ResourceTags = append(obj.Spec.Platform.AWS.ResourceTags, hyperv1.AWSResourceTag{
 					Key:   day2TagKey,
@@ -98,6 +101,14 @@ func EnsureDefaultSecurityGroupTagsTest(getTestCtx internal.TestContextGetter) {
 				})
 			})
 			Expect(err).NotTo(HaveOccurred(), "failed to update HostedCluster with day-2 tag")
+			DeferCleanup(func() {
+				err := e2eutil.UpdateObject(GinkgoTB(), tc.Context, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
+					obj.Spec.Platform.AWS.ResourceTags = append([]hyperv1.AWSResourceTag(nil), originalTags...)
+				})
+				if err != nil && !apierrors.IsNotFound(err) {
+					Expect(err).NotTo(HaveOccurred(), "cleanup: failed to restore HostedCluster AWS resource tags")
+				}
+			})
 
 			Eventually(func(g Gomega) {
 				sg, err := e2eutil.GetDefaultSecurityGroup(tc.Context, awsCredsFile, region, sgID)
@@ -159,9 +170,12 @@ func AWSCCMWithCustomizationsTest(getTestCtx internal.TestContextGetter) {
 					},
 				}
 				Expect(hcClient.Create(tc.Context, testNS)).To(Succeed(), "failed to create test namespace")
-				defer func() {
-					_ = hcClient.Delete(tc.Context, testNS)
-				}()
+				DeferCleanup(func() {
+					err := hcClient.Delete(tc.Context, testNS)
+					if err != nil && !apierrors.IsNotFound(err) {
+						Expect(err).NotTo(HaveOccurred(), "cleanup: failed to delete test namespace %s", testNS.Name)
+					}
+				})
 
 				testSvc := &corev1.Service{
 					ObjectMeta: metav1.ObjectMeta{

@@ -51,10 +51,17 @@ func EnsureNodeCommunicationTest(getTestCtx internal.TestContextGetter) {
 				g.Expect(err).NotTo(HaveOccurred(), "failed to list konnectivity-agent pods")
 				g.Expect(podList.Items).NotTo(BeEmpty(), "expected at least one konnectivity-agent pod in kube-system")
 
-				_, err = clientset.CoreV1().Pods("kube-system").GetLogs(podList.Items[0].Name, &corev1.PodLogOptions{
-					Container: "konnectivity-agent",
-				}).DoRaw(tc.Context)
-				g.Expect(err).NotTo(HaveOccurred(), "failed to retrieve logs from konnectivity-agent pod %s", podList.Items[0].Name)
+				retrieved := false
+				for _, pod := range podList.Items {
+					_, err = clientset.CoreV1().Pods("kube-system").GetLogs(pod.Name, &corev1.PodLogOptions{
+						Container: "konnectivity-agent",
+					}).DoRaw(tc.Context)
+					if err == nil {
+						retrieved = true
+						break
+					}
+				}
+				g.Expect(retrieved).To(BeTrue(), "failed to retrieve logs from any konnectivity-agent pod")
 			}, 5*time.Minute, 10*time.Second).Should(Succeed())
 		})
 	})

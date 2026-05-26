@@ -79,11 +79,19 @@ func EnsureGlobalPullSecretTest(getTestCtx internal.TestContextGetter) {
 				"failed to list NodePools")
 			Expect(npList.Items).NotTo(BeEmpty(), "expected at least one NodePool")
 
-			np := &npList.Items[0]
-			if np.Spec.Management.UpgradeType == hyperv1.UpgradeTypeInPlace {
-				Skip("InPlace upgrade type is not supported for global pull secret test")
+			var np *hyperv1.NodePool
+			for i := range npList.Items {
+				candidate := &npList.Items[i]
+				if candidate.Spec.Management.UpgradeType != hyperv1.UpgradeTypeInPlace &&
+					candidate.Spec.Replicas != nil &&
+					*candidate.Spec.Replicas > 0 {
+					np = candidate
+					break
+				}
 			}
-			Expect(np.Spec.Replicas).NotTo(BeNil(), "NodePool replicas should be set")
+			if np == nil {
+				Skip("no suitable NodePool found (need non-InPlace upgrade type with replicas > 0)")
+			}
 			nodeCount := *np.Spec.Replicas
 
 			var dummyPullSecretData = []byte(`{"auths": {"quay.io": {"auth": "YWRtaW46cGFzc3dvcmQ="}}}`)
@@ -98,6 +106,13 @@ func EnsureGlobalPullSecretTest(getTestCtx internal.TestContextGetter) {
 
 			By("creating additional-pull-secret with dummy data")
 			createAdditionalPullSecret(tc, hcClient, dummyPullSecretData)
+			DeferCleanup(func() {
+				additionalPS := hccomanifests.AdditionalPullSecret()
+				err := hcClient.Delete(tc.Context, additionalPS)
+				if err != nil && !apierrors.IsNotFound(err) {
+					Expect(err).NotTo(HaveOccurred(), "cleanup: failed to delete additional-pull-secret")
+				}
+			})
 
 			By("verifying GlobalPullSecret is created in the hosted cluster")
 			var oldGlobalPSData []byte
@@ -186,14 +201,21 @@ func verifyPullSecretPropagation(tc *internal.TestContext, hc *hyperv1.HostedClu
 
 	DeferCleanup(func() {
 		fresh := &corev1.Secret{}
-		if err := tc.MgmtClient.Get(tc.Context, crclient.ObjectKey{
+		err := tc.MgmtClient.Get(tc.Context, crclient.ObjectKey{
 			Namespace: hc.Namespace,
 			Name:      hc.Spec.PullSecret.Name,
-		}, fresh); err != nil {
+		}, fresh)
+		if apierrors.IsNotFound(err) {
 			return
 		}
+		Expect(err).NotTo(HaveOccurred(),
+			"cleanup: failed to get management-cluster pull secret %s/%s", hc.Namespace, hc.Spec.PullSecret.Name)
+		if fresh.Data == nil {
+			fresh.Data = map[string][]byte{}
+		}
 		fresh.Data[corev1.DockerConfigJsonKey] = originalData
-		_ = tc.MgmtClient.Update(tc.Context, fresh)
+		Expect(tc.MgmtClient.Update(tc.Context, fresh)).To(Succeed(),
+			"cleanup: failed to restore management-cluster pull secret %s/%s", hc.Namespace, hc.Spec.PullSecret.Name)
 	})
 
 	type dockerConfigJSON struct {
@@ -229,13 +251,17 @@ func verifyPullSecretPropagation(tc *internal.TestContext, hc *hyperv1.HostedClu
 
 	nodePool := &hyperv1.NodePool{}
 	Expect(tc.MgmtClient.Get(tc.Context, crclient.ObjectKeyFromObject(np), nodePool)).To(Succeed())
+	foundUpdatingConfig := false
 	for _, cond := range nodePool.Status.Conditions {
 		if cond.Type == hyperv1.NodePoolUpdatingConfigConditionType {
+			foundUpdatingConfig = true
 			Expect(string(cond.Status)).To(Equal(string(metav1.ConditionFalse)),
 				"UpdatingConfig should be False — in-place pull secret update must not trigger a rollout")
 			break
 		}
 	}
+	Expect(foundUpdatingConfig).To(BeTrue(),
+		"NodePool %s should have UpdatingConfig condition", nodePool.Name)
 
 	nodeList := &corev1.NodeList{}
 	Expect(hcClient.List(tc.Context, nodeList, crclient.MatchingLabels{
@@ -274,6 +300,13 @@ func createAdditionalPullSecret(tc *internal.TestContext, hcClient crclient.Clie
 	}
 	err := hcClient.Create(tc.Context, secret)
 	if apierrors.IsAlreadyExists(err) {
+		existing := &corev1.Secret{}
+		Expect(hcClient.Get(tc.Context, crclient.ObjectKeyFromObject(secret), existing)).To(Succeed(),
+			"failed to get existing additional-pull-secret for reconciliation")
+		existing.Data = secret.Data
+		existing.Type = secret.Type
+		Expect(hcClient.Update(tc.Context, existing)).To(Succeed(),
+			"failed to reconcile existing additional-pull-secret")
 		return
 	}
 	Expect(err).NotTo(HaveOccurred(), "failed to create additional-pull-secret")

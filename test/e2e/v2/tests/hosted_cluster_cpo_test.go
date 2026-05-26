@@ -45,9 +45,7 @@ func VerifyCPOOverrideImageTest(getTestCtx internal.TestContextGetter) {
 			Expect(releaseImage).NotTo(BeEmpty(), "HostedCluster release image should be set")
 
 			version := e2eutil.ExtractVersionFromReleaseImage(releaseImage)
-			if version == "" {
-				Skip(fmt.Sprintf("could not extract version from release image %s", releaseImage))
-			}
+			Expect(version).NotTo(BeEmpty(), "could not extract version from release image %s", releaseImage)
 
 			platform := string(hc.Spec.Platform.Type)
 			expectedImage := controlplaneoperatoroverrides.CPOImage(platform, version)
@@ -65,20 +63,29 @@ func VerifyCPOOverrideImageTest(getTestCtx internal.TestContextGetter) {
 				g.Expect(podList.Items).NotTo(BeEmpty(),
 					"expected at least one control-plane-operator pod in namespace %s", tc.ControlPlaneNamespace)
 
-				var runningPod *corev1.Pod
+				foundRunning := false
+				foundExpectedImage := false
 				for i := range podList.Items {
-					if podList.Items[i].Status.Phase == corev1.PodRunning {
-						runningPod = &podList.Items[i]
+					pod := &podList.Items[i]
+					if pod.Status.Phase != corev1.PodRunning {
+						continue
+					}
+					foundRunning = true
+					for _, c := range pod.Spec.Containers {
+						if c.Name == "control-plane-operator" && c.Image == expectedImage {
+							foundExpectedImage = true
+							break
+						}
+					}
+					if foundExpectedImage {
 						break
 					}
 				}
-				g.Expect(runningPod).NotTo(BeNil(),
+				g.Expect(foundRunning).To(BeTrue(),
 					"expected at least one running control-plane-operator pod in namespace %s", tc.ControlPlaneNamespace)
-				g.Expect(runningPod.Spec.Containers).NotTo(BeEmpty(),
-					"control-plane-operator pod %s should have at least one container", runningPod.Name)
-				g.Expect(runningPod.Spec.Containers[0].Image).To(Equal(expectedImage),
-					"control-plane-operator pod %s container image should match override (expected %s, got %s)",
-					runningPod.Name, expectedImage, runningPod.Spec.Containers[0].Image)
+				g.Expect(foundExpectedImage).To(BeTrue(),
+					"expected a running control-plane-operator container with image %s in namespace %s",
+					expectedImage, tc.ControlPlaneNamespace)
 			}, 5*time.Minute, 10*time.Second).Should(Succeed())
 		})
 	})

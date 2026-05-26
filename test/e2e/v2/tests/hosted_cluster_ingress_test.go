@@ -69,12 +69,14 @@ func ValidateIngressOperatorConfigurationTest(getTestCtx internal.TestContextGet
 
 				g.Expect(ic.Spec.EndpointPublishingStrategy).NotTo(BeNil(),
 					"IngressController EndpointPublishingStrategy should be set")
-				g.Expect(ic.Spec.EndpointPublishingStrategy.Type).To(Equal(operatorv1.LoadBalancerServiceStrategyType),
-					fmt.Sprintf("expected EndpointPublishingStrategy type LoadBalancerService, got %s", ic.Spec.EndpointPublishingStrategy.Type))
-				g.Expect(ic.Spec.EndpointPublishingStrategy.LoadBalancer).NotTo(BeNil(),
-					"IngressController LoadBalancer configuration should be set")
-				g.Expect(ic.Spec.EndpointPublishingStrategy.LoadBalancer.Scope).To(Equal(operatorv1.InternalLoadBalancer),
-					fmt.Sprintf("expected LoadBalancer scope Internal, got %s", ic.Spec.EndpointPublishingStrategy.LoadBalancer.Scope))
+				g.Expect(ic.Spec.EndpointPublishingStrategy.Type).To(Equal(expectedStrategy.Type),
+					fmt.Sprintf("expected EndpointPublishingStrategy type %s, got %s", expectedStrategy.Type, ic.Spec.EndpointPublishingStrategy.Type))
+				if expectedStrategy.LoadBalancer != nil {
+					g.Expect(ic.Spec.EndpointPublishingStrategy.LoadBalancer).NotTo(BeNil(),
+						"IngressController LoadBalancer configuration should be set")
+					g.Expect(ic.Spec.EndpointPublishingStrategy.LoadBalancer.Scope).To(Equal(expectedStrategy.LoadBalancer.Scope),
+						fmt.Sprintf("expected LoadBalancer scope %s, got %s", expectedStrategy.LoadBalancer.Scope, ic.Spec.EndpointPublishingStrategy.LoadBalancer.Scope))
+				}
 			}, 5*time.Minute, 10*time.Second).Should(Succeed())
 		})
 	})
