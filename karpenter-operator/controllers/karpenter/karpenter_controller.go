@@ -33,6 +33,7 @@ import (
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/utils/ptr"
 
+	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/cluster"
@@ -137,6 +138,21 @@ func (r *Reconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager, man
 		return fmt.Errorf("failed to watch HostedControlPlane: %w", err)
 	}
 
+	// Watch the CAPI Cluster management side. The CAPI Cluster is deleted earlier
+	// than the HCP in the HostedCluster deletion sequence, so reacting to it lets
+	// us start Karpenter node cleanup in parallel with regular CAPI node teardown
+	// rather than waiting for the HCP DeletionTimestamp (which is set much later).
+	if err := c.Watch(source.Kind[client.Object](managementCluster.GetCache(), &capiv1.Cluster{}, handler.EnqueueRequestsFromMapFunc(
+		func(ctx context.Context, o client.Object) []ctrl.Request {
+			if o.GetNamespace() != r.Namespace {
+				return nil
+			}
+			return []ctrl.Request{{NamespacedName: client.ObjectKey{Namespace: r.Namespace}}}
+		},
+	), namespacedPredicates)); err != nil {
+		return fmt.Errorf("failed to watch CAPI Cluster: %w", err)
+	}
+
 	// Only enqueue on Add/Delete — not status-only updates — since reconcileAutoNodeStatus cares only
 	// about count changes (nodes joining or leaving the cluster).
 	countChangePredicate := predicate.Funcs{
@@ -213,77 +229,12 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, err
 	}
 
-	if hcp.DeletionTimestamp != nil {
-		// TODO(maxcao13): if supporting disablement, we don't want to force delete immediately.
-		// When force=true, we skip the graceful timeout and immediately trigger forceful deletion.
-		// When force=false, we wait for NodeClaimDeletionTimeout before triggering forceful deletion.
-		force := true
-		if controllerutil.ContainsFinalizer(hcp, karpenterutil.KarpenterFinalizer) {
-			// The deletion flow is:
-			// 1. Delete all NodePools (NodeClaims will be marked for deletion from deleting the NodePools due to ownerReferences)
-			// 2. Make sure all NodeClaims are actually gone (gracefully first, unless force=true)
-			// 3. If graceful timeout or force=true, set the termination timestamp annotation to trigger Karpenter's forceful deletion
-			// 4. Remove the finalizer from the HostedControlPlane to allow the rest of the HCP deletion to complete
-
-			// Karpenter itself will make sure Nodes objects are deleted (and underlying instances are terminated) before finalizing the NodeClaims
-			nodePoolList := &karpenterv1.NodePoolList{}
-			if err := r.GuestClient.List(ctx, nodePoolList); err != nil {
-				return ctrl.Result{RequeueAfter: KarpenterDeletionRequeueInterval}, fmt.Errorf("failed to list NodePools: %w", err)
-			}
-
-			// Delete all NodePools first
-			if len(nodePoolList.Items) > 0 {
-				for _, nodePool := range nodePoolList.Items {
-					// If we still get the NodePool, but it's already marked as terminating, we don't need to call Delete again
-					if !nodePool.GetDeletionTimestamp().IsZero() {
-						continue
-					}
-					if err := r.GuestClient.Delete(ctx, &nodePool, &client.DeleteOptions{
-						GracePeriodSeconds: ptr.To(int64(0)),
-					}); err != nil {
-						return ctrl.Result{}, fmt.Errorf("failed to delete NodePool: %w", err)
-					}
-				}
-				return ctrl.Result{RequeueAfter: KarpenterDeletionRequeueInterval}, nil
-			}
-
-			// Make sure all NodeClaims are actually gone (gracefully first)
-			nodeClaimList := &karpenterv1.NodeClaimList{}
-			if err := r.GuestClient.List(ctx, nodeClaimList); err != nil {
-				return ctrl.Result{RequeueAfter: KarpenterDeletionRequeueInterval}, fmt.Errorf("failed to list NodeClaims: %w", err)
-			}
-			if len(nodeClaimList.Items) > 0 {
-				var elapsed time.Duration
-				for _, nodeClaim := range nodeClaimList.Items {
-					if nodeClaim.DeletionTimestamp == nil {
-						// This could happen if a NodeClaim has been orphaned without a NodePool owner ref
-						log.Info("NodeClaim has no deletion timestamp during deletion, deleting explicitly", "nodeClaim", nodeClaim.Name)
-						if err := r.GuestClient.Delete(ctx, &nodeClaim, &client.DeleteOptions{GracePeriodSeconds: ptr.To(int64(0))}); err != nil {
-							return ctrl.Result{RequeueAfter: KarpenterDeletionRequeueInterval}, fmt.Errorf("failed to delete NodeClaim: %w", err)
-						}
-						continue
-					}
-					elapsed = time.Since(nodeClaim.DeletionTimestamp.Time)
-					if !force && elapsed < NodeClaimDeletionTimeout {
-						continue
-					}
-
-					if err := r.handleForcefulNodeClaimDeletion(ctx, &nodeClaim); err != nil {
-						return ctrl.Result{RequeueAfter: KarpenterDeletionRequeueInterval}, fmt.Errorf("failed to handle forceful NodeClaim deletion: %w", err)
-					}
-				}
-				log.Info("Waiting for NodeClaims to be deleted, requeueing...", "nodeClaimCount", len(nodeClaimList.Items), "elapsed", elapsed)
-				return ctrl.Result{RequeueAfter: KarpenterDeletionRequeueInterval}, nil
-			}
-		}
-
-		originalHCP := hcp.DeepCopy()
-		controllerutil.RemoveFinalizer(hcp, karpenterutil.KarpenterFinalizer)
-		if err := r.ManagementClient.Patch(ctx, hcp, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{})); err != nil {
-			return ctrl.Result{RequeueAfter: KarpenterDeletionRequeueInterval}, fmt.Errorf("failed to remove finalizer from cluster: %w", err)
-		}
-		log.Info("Successfully removed all Karpenter NodePools and NodeClaims")
-		return ctrl.Result{}, nil
+	clusterDeleting, err := r.isClusterDeleting(ctx, hcp)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to check cluster deletion state: %w", err)
+	}
+	if clusterDeleting {
+		return r.reconcileDeletion(ctx, hcp)
 	}
 	if !controllerutil.ContainsFinalizer(hcp, karpenterutil.KarpenterFinalizer) {
 		originalHCP := hcp.DeepCopy()
@@ -511,6 +462,113 @@ func (r *Reconciler) reconcileOpenshiftEC2NodeClassDefault(ctx context.Context, 
 
 	log.Info("Reconciled default OpenshiftEC2NodeClass", "op", op)
 	return nil
+}
+
+func (r *Reconciler) reconcileDeletion(ctx context.Context, hcp *hyperv1.HostedControlPlane) (ctrl.Result, error) {
+	log := ctrl.LoggerFrom(ctx)
+
+	// TODO(maxcao13): if supporting disablement, we don't want to force delete immediately.
+	// When force=true, we skip the graceful timeout and immediately trigger forceful deletion.
+	// When force=false, we wait for NodeClaimDeletionTimeout before triggering forceful deletion.
+	force := true
+	if controllerutil.ContainsFinalizer(hcp, karpenterutil.KarpenterFinalizer) {
+		// The deletion flow is:
+		// 1. Delete all NodePools (NodeClaims will be marked for deletion from deleting the NodePools due to ownerReferences)
+		// 2. Make sure all NodeClaims are actually gone (gracefully first, unless force=true)
+		// 3. If graceful timeout or force=true, set the termination timestamp annotation to trigger Karpenter's forceful deletion
+		// 4. Remove the finalizer from the HostedControlPlane to allow the rest of the HCP deletion to complete
+
+		// Karpenter itself will make sure Nodes objects are deleted (and underlying instances are terminated) before finalizing the NodeClaims
+		nodePoolList := &karpenterv1.NodePoolList{}
+		if err := r.GuestClient.List(ctx, nodePoolList); err != nil {
+			return ctrl.Result{RequeueAfter: KarpenterDeletionRequeueInterval}, fmt.Errorf("failed to list NodePools: %w", err)
+		}
+
+		// Delete all NodePools first
+		if len(nodePoolList.Items) > 0 {
+			for _, nodePool := range nodePoolList.Items {
+				if !nodePool.GetDeletionTimestamp().IsZero() {
+					continue
+				}
+				if err := r.GuestClient.Delete(ctx, &nodePool, &client.DeleteOptions{
+					GracePeriodSeconds: ptr.To(int64(0)),
+				}); err != nil {
+					return ctrl.Result{}, fmt.Errorf("failed to delete NodePool: %w", err)
+				}
+			}
+			return ctrl.Result{RequeueAfter: KarpenterDeletionRequeueInterval}, nil
+		}
+
+		// Make sure all NodeClaims are actually gone (gracefully first)
+		nodeClaimList := &karpenterv1.NodeClaimList{}
+		if err := r.GuestClient.List(ctx, nodeClaimList); err != nil {
+			return ctrl.Result{RequeueAfter: KarpenterDeletionRequeueInterval}, fmt.Errorf("failed to list NodeClaims: %w", err)
+		}
+		if len(nodeClaimList.Items) > 0 {
+			var elapsed time.Duration
+			for _, nodeClaim := range nodeClaimList.Items {
+				if nodeClaim.DeletionTimestamp == nil {
+					log.Info("NodeClaim has no deletion timestamp during deletion, deleting explicitly", "nodeClaim", nodeClaim.Name)
+					if err := r.GuestClient.Delete(ctx, &nodeClaim, &client.DeleteOptions{GracePeriodSeconds: ptr.To(int64(0))}); err != nil {
+						return ctrl.Result{RequeueAfter: KarpenterDeletionRequeueInterval}, fmt.Errorf("failed to delete NodeClaim: %w", err)
+					}
+					continue
+				}
+				elapsed = time.Since(nodeClaim.DeletionTimestamp.Time)
+				if !force && elapsed < NodeClaimDeletionTimeout {
+					continue
+				}
+
+				if err := r.handleForcefulNodeClaimDeletion(ctx, &nodeClaim); err != nil {
+					return ctrl.Result{RequeueAfter: KarpenterDeletionRequeueInterval}, fmt.Errorf("failed to handle forceful NodeClaim deletion: %w", err)
+				}
+			}
+			log.Info("Waiting for NodeClaims to be deleted, requeueing...", "nodeClaimCount", len(nodeClaimList.Items), "elapsed", elapsed)
+			return ctrl.Result{RequeueAfter: KarpenterDeletionRequeueInterval}, nil
+		}
+	}
+
+	// Only remove the finalizer once the HCP itself is being deleted.
+	// When triggered by the CAPI Cluster deletion alone, we clean up nodes
+	// but leave the finalizer in place — it will be removed on a subsequent
+	// reconcile when the HCP gets its own DeletionTimestamp.
+	if hcp.DeletionTimestamp != nil {
+		originalHCP := hcp.DeepCopy()
+		controllerutil.RemoveFinalizer(hcp, karpenterutil.KarpenterFinalizer)
+		if err := r.ManagementClient.Patch(ctx, hcp, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{})); err != nil {
+			return ctrl.Result{RequeueAfter: KarpenterDeletionRequeueInterval}, fmt.Errorf("failed to remove finalizer from hostedControlPlane: %w", err)
+		}
+		log.Info("Successfully removed all Karpenter NodePools and NodeClaims")
+	}
+	return ctrl.Result{}, nil
+}
+
+// isClusterDeleting returns true when the cluster is being torn down.
+// It checks both the HCP DeletionTimestamp and the CAPI Cluster DeletionTimestamp.
+// The CAPI Cluster is deleted earlier in the HostedCluster deletion sequence than
+// the HCP, so checking it allows node cleanup to begin sooner — in parallel with
+// regular CAPI node teardown instead of after it completes.
+func (r *Reconciler) isClusterDeleting(ctx context.Context, hcp *hyperv1.HostedControlPlane) (bool, error) {
+	if hcp.DeletionTimestamp != nil {
+		return true, nil
+	}
+
+	if hcp.Spec.InfraID == "" {
+		return false, nil
+	}
+
+	capiCluster := &capiv1.Cluster{}
+	if err := r.ManagementClient.Get(ctx, client.ObjectKey{
+		Namespace: r.Namespace,
+		Name:      hcp.Spec.InfraID,
+	}, capiCluster); err != nil {
+		if apierrors.IsNotFound(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("failed to get CAPI Cluster: %w", err)
+	}
+
+	return !capiCluster.DeletionTimestamp.IsZero(), nil
 }
 
 // handleForcefulNodeClaimDeletion handles the timeout of a NodeClaim during cluster deletion.
