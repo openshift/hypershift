@@ -73,8 +73,12 @@ Node(s) can become stuck when removing all Nodes from a cluster (scaling NodePoo
 
 Several conditions can prevent Node(s) from being drained successfully:
 
-- The hosted cluster contains `PodDisruptionBudgets` that require at least 
-- The hosted cluster contains pods that use `PersistentVolumes``
+- The hosted cluster contains `PodDisruptionBudgets` that require at least one healthy pod, preventing eviction when there are no other nodes to reschedule onto.
+- The hosted cluster contains pods that use `PersistentVolumes` that cannot be detached from the node.
+
+!!! important
+
+    This is expected behavior. When all nodes are removed simultaneously, pods protected by PodDisruptionBudgets cannot be evicted because the PDB constraints cannot be satisfied with no remaining nodes. As a result, the drain operation blocks indefinitely. Configure `nodeDrainTimeout` to ensure nodes are eventually removed after a bounded period.
 
 #### Prevention
 
@@ -82,5 +86,20 @@ To prevent Nodes from becoming stuck when scaling down, set the `.spec.nodeDrain
 
 This forces Nodes to be removed once the timeout specified in the field has been reached, regardless of whether the node can be drained or the volumes can be detached successfully.
 
+```
+apiVersion: hypershift.openshift.io/v1beta1
+kind: NodePool
+metadata:
+  name: example
+  namespace: clusters
+spec:
+  nodeDrainTimeout: 30m
+  nodeVolumeDetachTimeout: 10m
+  # ...other fields...
+```
+
 !!! note
-    See the [Hypershift API reference page](../../reference/api.md) for more details.
+
+    See the [HyperShift API reference page](../../reference/api.md) for more details on these fields.
+
+    For an alternative approach that skips draining entirely via machine annotations, see [Scaling down data plane to Zero](scale-to-zero-dataplane.md).

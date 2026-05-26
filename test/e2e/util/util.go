@@ -343,7 +343,7 @@ func WaitForGuestRestConfig(t *testing.T, ctx context.Context, client crclient.C
 	return guestConfig
 }
 
-func WaitForGuestClient(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) crclient.Client {
+func WaitForGuestClient(t testing.TB, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) crclient.Client {
 	g := NewWithT(t)
 	guestKubeConfigSecretData := WaitForGuestKubeConfig(t, ctx, client, hostedCluster)
 
@@ -463,23 +463,23 @@ func WaitForGuestKubeconfigHostResolutionUpdate(t *testing.T, ctx context.Contex
 	g.Expect(err).NotTo(HaveOccurred(), "failed to wait for guest kubeconfig host resolution to update")
 }
 
-func WaitForNReadyNodes(t *testing.T, ctx context.Context, client crclient.Client, n int32, platform hyperv1.PlatformType) []corev1.Node {
+func WaitForNReadyNodes(t testing.TB, ctx context.Context, client crclient.Client, n int32, platform hyperv1.PlatformType) []corev1.Node {
 	return WaitForNReadyNodesWithOptions(t, ctx, client, n, platform, "")
 }
 
-func WaitForReadyNodesByNodePool(t *testing.T, ctx context.Context, client crclient.Client, np *hyperv1.NodePool, platform hyperv1.PlatformType, opts ...NodePoolPollOption) []corev1.Node {
+func WaitForReadyNodesByNodePool(t testing.TB, ctx context.Context, client crclient.Client, np *hyperv1.NodePool, platform hyperv1.PlatformType, opts ...NodePoolPollOption) []corev1.Node {
 	return WaitForNReadyNodesWithOptions(t, ctx, client, *np.Spec.Replicas, platform, fmt.Sprintf("for NodePool %s/%s", np.Namespace, np.Name), append(opts, WithClientOptions(crclient.MatchingLabelsSelector{Selector: labels.SelectorFromSet(labels.Set{hyperv1.NodePoolLabel: np.Name})}))...)
 }
 
-func WaitForReadyNodesByLabels(t *testing.T, ctx context.Context, client crclient.Client, platform hyperv1.PlatformType, replicas int32, nodeLabels map[string]string) []corev1.Node {
+func WaitForReadyNodesByLabels(t testing.TB, ctx context.Context, client crclient.Client, platform hyperv1.PlatformType, replicas int32, nodeLabels map[string]string) []corev1.Node {
 	return WaitForNReadyNodesWithOptions(t, ctx, client, replicas, platform, "", WithClientOptions(crclient.MatchingLabelsSelector{Selector: labels.SelectorFromSet(labels.Set(nodeLabels))}))
 }
 
-func WaitForNodePoolConfigUpdateComplete(t *testing.T, ctx context.Context, client crclient.Client, np *hyperv1.NodePool) {
+func WaitForNodePoolConfigUpdateComplete(t testing.TB, ctx context.Context, client crclient.Client, np *hyperv1.NodePool) {
 	WaitForNodePoolConfigUpdateCompleteWithPlatform(t, ctx, client, np, hyperv1.NonePlatform)
 }
 
-func WaitForNodePoolConfigUpdateCompleteWithPlatform(t *testing.T, ctx context.Context, client crclient.Client, np *hyperv1.NodePool, platform hyperv1.PlatformType) {
+func WaitForNodePoolConfigUpdateCompleteWithPlatform(t testing.TB, ctx context.Context, client crclient.Client, np *hyperv1.NodePool, platform hyperv1.PlatformType) {
 	// configUpdateTimeout for config updates to complete
 	configUpdateTimeout := 25 * time.Minute
 	switch platform {
@@ -557,7 +557,7 @@ func WithSuffix(suffix string) NodePoolPollOption {
 	}
 }
 
-func WaitForNReadyNodesWithOptions(t *testing.T, ctx context.Context, client crclient.Client, n int32, platform hyperv1.PlatformType, suffix string, opts ...NodePoolPollOption) []corev1.Node {
+func WaitForNReadyNodesWithOptions(t testing.TB, ctx context.Context, client crclient.Client, n int32, platform hyperv1.PlatformType, suffix string, opts ...NodePoolPollOption) []corev1.Node {
 	options := &NodePoolPollOptions{}
 	for _, opt := range opts {
 		opt(options)
@@ -606,7 +606,7 @@ func WaitForNReadyNodesWithOptions(t *testing.T, ctx context.Context, client crc
 // This was renamed from WaitForImageRollout to clarify that it checks HC.Status.Version
 // (data-plane CVO rollout), in contrast to WaitForControlPlaneRollout which checks
 // HC.Status.ControlPlaneVersion (management-side components).
-func WaitForDataPlaneRollout(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+func WaitForDataPlaneRollout(t testing.TB, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	var lastVersionCompletionTime *metav1.Time
 	if hostedCluster.Status.Version != nil &&
 		len(hostedCluster.Status.Version.History) > 0 {
@@ -651,14 +651,14 @@ func WaitForDataPlaneRollout(t *testing.T, ctx context.Context, client crclient.
 
 // WaitForImageRollout is a deprecated alias for WaitForDataPlaneRollout.
 // Deprecated: Use WaitForDataPlaneRollout instead.
-func WaitForImageRollout(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+func WaitForImageRollout(t testing.TB, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	WaitForDataPlaneRollout(t, ctx, client, hostedCluster)
 }
 
 // WaitForControlPlaneRollout waits for HC.Status.ControlPlaneVersion to reach Completed state
 // with the desired image. This checks management-side component rollout independently from CVO.
 // Must be gated with AtLeast(t, Version422) at call sites since older clusters lack this field.
-func WaitForControlPlaneRollout(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+func WaitForControlPlaneRollout(t testing.TB, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	EventuallyObject(t, ctx, fmt.Sprintf("HostedCluster %s/%s controlPlaneVersion to complete", hostedCluster.Namespace, hostedCluster.Name),
 		func(ctx context.Context) (*hyperv1.HostedCluster, error) {
 			hc := &hyperv1.HostedCluster{}
@@ -676,7 +676,7 @@ func WaitForControlPlaneRollout(t *testing.T, ctx context.Context, client crclie
 // WaitForControlPlaneComponentRollout waits for all ControlPlaneComponent resources to report
 // RolloutComplete=True and a version different from initialVersion. This provides a belt-and-suspenders
 // check alongside WaitForControlPlaneRollout by directly inspecting individual component status.
-func WaitForControlPlaneComponentRollout(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, initialVersion string) {
+func WaitForControlPlaneComponentRollout(t testing.TB, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, initialVersion string) {
 	controlPlaneComponents := &hyperv1.ControlPlaneComponentList{}
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
 	EventuallyObjects(t, ctx, "control plane components to complete rollout",
@@ -735,7 +735,7 @@ func WaitForConditionsOnHostedControlPlane(t *testing.T, ctx context.Context, cl
 	)
 }
 
-func WaitForNodePoolDesiredNodes(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+func WaitForNodePoolDesiredNodes(t testing.TB, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	EventuallyObjects(t, ctx, fmt.Sprintf("NodePools for HostedCluster %s/%s to have all of their desired nodes", hostedCluster.Namespace, hostedCluster.Name),
 		func(ctx context.Context) ([]*hyperv1.NodePool, error) {
 			list := &hyperv1.NodePoolList{}
@@ -2011,7 +2011,7 @@ func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclie
 		// Verify that in-place management-cluster pull secret updates propagate to the guest cluster
 		// without triggering a NodePool rollout.
 		t.Run("When management-cluster hostedCluster.Spec.PullSecret is updated in-place it should propagate to guest without rollout", func(t *testing.T) {
-			CPOAtLeast(t, Version423, entryHostedCluster)
+			CPOAtLeast(t, Version422, entryHostedCluster)
 			g := NewWithT(t)
 			t.Logf("Reading management-cluster pull secret %s/%s", entryHostedCluster.Namespace, entryHostedCluster.Spec.PullSecret.Name)
 			mgmtSecret := &corev1.Secret{}

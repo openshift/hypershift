@@ -11,6 +11,7 @@ RUN apt-get update && \
         curl \
         ca-certificates \
         python3-pip \
+        fuse-overlayfs \
     && rm -rf /var/lib/apt/lists/*
 
 ARG TARGETARCH
