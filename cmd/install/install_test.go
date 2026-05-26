@@ -5,6 +5,7 @@ import (
 	"context"
 	"io"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -412,7 +413,7 @@ func TestSetupCRDs(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
-			crds, err := setupCRDs(t.Context(), nil, tc.inputOptions, &corev1.Namespace{}, nil, nil)
+			crds, err := setupCRDs(t.Context(), nil, tc.inputOptions, &corev1.Namespace{}, nil)
 			g.Expect(err).ToNot(HaveOccurred())
 			nodePoolCRDS := make([]crclient.Object, 0)
 			var machineDeploymentCRD crclient.Object
@@ -497,6 +498,10 @@ func TestSetupCRDs(t *testing.T) {
 }
 
 func TestRenderHyperShiftOperator_RenderSensitive(t *testing.T) {
+	g := NewGomegaWithT(t)
+	pullSecretFile := filepath.Join(t.TempDir(), "pull-secret.json")
+	g.Expect(os.WriteFile(pullSecretFile, []byte(`{"auths":{}}`), 0o600)).To(Succeed())
+
 	tests := []struct {
 		name            string
 		renderSensitive bool
@@ -524,10 +529,12 @@ func TestRenderHyperShiftOperator_RenderSensitive(t *testing.T) {
 				EnableDefaultingWebhook: true,
 				EnableValidatingWebhook: true,
 				EnableConversionWebhook: true,
+				PullSecretFile:          pullSecretFile,
 				RenderSensitive:         tc.renderSensitive,
 				Format:                  RenderFormatYaml,
 				OutputTypes:             string(OutputAll),
 			}
+
 			err := RenderHyperShiftOperator(t.Context(), &buf, opts)
 			g.Expect(err).ToNot(HaveOccurred())
 
@@ -552,6 +559,39 @@ func TestRenderHyperShiftOperator_RenderSensitive(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("When webhooks are enabled it should not render webhook cert secrets", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+
+		var buf bytes.Buffer
+		opts := &Options{
+			PrivatePlatform:         string(hyperv1.NonePlatform),
+			PullSecretFile:          pullSecretFile,
+			EnableDefaultingWebhook: true,
+			EnableValidatingWebhook: true,
+			EnableConversionWebhook: true,
+			RenderSensitive:         true,
+			Format:                  RenderFormatYaml,
+			OutputTypes:             string(OutputAll),
+		}
+		err := RenderHyperShiftOperator(t.Context(), &buf, opts)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		var nonWebhookSecretCount int
+		for doc := range strings.SplitSeq(buf.String(), "\n---\n") {
+			if strings.TrimSpace(doc) == "" {
+				continue
+			}
+			obj, _, err := hyperapi.YamlSerializer.Decode([]byte(doc), nil, nil)
+			g.Expect(err).ToNot(HaveOccurred(), "failed to decode rendered manifest")
+			if secret, ok := obj.(*corev1.Secret); ok {
+				g.Expect(secret.Name).ToNot(Equal("webhook-serving-ca"), "webhook CA secret should not be rendered")
+				g.Expect(secret.Name).ToNot(Equal("manager-serving-cert"), "webhook serving cert should not be rendered")
+				nonWebhookSecretCount++
+			}
+		}
+		g.Expect(nonWebhookSecretCount).To(BeNumerically(">", 0), "expected at least one non-webhook secret to be rendered")
+	})
 }
 
 func TestHyperShiftOperatorManifests_SharedIngress(t *testing.T) {
@@ -973,6 +1013,7 @@ func TestWaitForCAPIOperatorSync(t *testing.T) {
 		})
 	}
 }
+
 func TestApplyDefaults(t *testing.T) {
 	tests := []struct {
 		name             string
