@@ -15,6 +15,9 @@ The framework is organized into three packages under `test/e2e/v2/`:
 
 - `internal/` — Framework internals (test context, workload registry, fail handler, env var management). Do not add tests here.
 - `tests/` — All standard v2 test files. Each file is feature-scoped with a top-level `Describe` and `Label`. The suite entry point is `suite_test.go`.
+- `util/` — Shared test utilities (pod exec helpers, metrics fetching) consumed by test files. Unlike `internal/`, these are importable by other packages.
+- `lifecycle/` — Platform-specific lifecycle helpers (e.g., Azure platform hooks).
+- `cmd/` — CLI tools for test orchestration: creating/destroying/dumping guest clusters and running test suites.
 - `backuprestore/` — Backup/restore helpers (CLI wrappers, prober, Velero).
 
 Additional packages may be introduced as the v2 framework expands; this structure is not yet finalized.
@@ -91,6 +94,60 @@ Expect(ptr).NotTo(BeNil(), "container %s in pod %s should have security context"
 
 Comments on exported functions must describe actual behavior including panic conditions, not just intended behavior. For example, `GetEnvVarValue` documents that it "panics if the environment variable is not registered."
 
+### 13. Non-Lifecycle Tests Must Not Mutate the Hosted Cluster
+
+Non-lifecycle tests (health, compliance, security, metrics) must only **verify** existing state — never mutate the hosted cluster to create preconditions. If a test requires a specific annotation, label, or configuration to be present, `Skip()` when it is absent rather than setting it. Only lifecycle tests (upgrade, backup-restore, nodepool scaling) may mutate cluster state.
+
+```go
+// WRONG — sets annotation to create precondition
+hc.Annotations["hypershift.openshift.io/metrics-forwarder"] = "true"
+Expect(mgmtClient.Update(ctx, hc)).To(Succeed())
+
+// RIGHT — skip if precondition is missing
+if _, ok := hc.Annotations["hypershift.openshift.io/metrics-forwarder"]; !ok {
+    Skip("metrics forwarder annotation not set on hosted cluster")
+}
+```
+
+### 14. Per-Workload Test Placement
+
+Tests that iterate over control plane workloads (e.g., checking restart counts, custom labels, custom tolerations) belong in `control_plane_workloads_test.go`, not in health or compliance test files. Follow the per-workload pattern: define a separate `It` block for each registered workload so failures identify the exact workload.
+
+```go
+for _, w := range workloads {
+    workload := w
+    Context(workload.Name, func() {
+        It("should have custom labels", func() {
+            // assert per-workload
+        })
+    })
+}
+```
+
+### 15. IPv6-Safe URL Construction
+
+When building URLs from endpoint IPs (e.g., Kubernetes service endpoints), always use `net.JoinHostPort` instead of `fmt.Sprintf`. Plain `%s:%d` formatting produces invalid URLs for IPv6 addresses.
+
+```go
+// WRONG — breaks with IPv6
+kasAddress = fmt.Sprintf("https://%s:%v", ip, port)
+
+// RIGHT — brackets IPv6 addresses automatically
+kasAddress = "https://" + net.JoinHostPort(ip, fmt.Sprintf("%d", port))
+```
+
+### 16. Vacuous Pass Prevention
+
+Before iterating a list and asserting on each item, assert the list is non-empty. An empty list trivially passes all per-item assertions, hiding regressions where resources were never created.
+
+```go
+Expect(routeList.Items).NotTo(BeEmpty(),
+    "expected at least one route in namespace %s", tc.ControlPlaneNamespace)
+for i := range routeList.Items {
+    // per-item assertions
+}
+```
+
 ## Expanding v2
 
 When adding new test areas:
@@ -105,3 +162,4 @@ When adding new test areas:
 - `backuprestore/` tests use `Ordered, Serial` Ginkgo decorators and require the combined `e2ev2,backuprestore` build tag. They produce a separate binary (`bin/test-backuprestore`).
 - `workload_registry.go` has a header comment saying "generated" but the file is manually maintained. Edit it directly.
 - Tests assume the hosted cluster is fully operational. There is no startup polling or readiness waiting in the suite setup.
+- MicroShift skip guards (`exutil.IsMicroShiftCluster()`, `[Skipped:MicroShift]` labels) do **not** apply to v2 e2e tests. Those guards are scoped to `openshift-tests-private`. The v2 framework runs exclusively against hosted clusters, which are never MicroShift.

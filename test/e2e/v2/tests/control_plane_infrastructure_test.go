@@ -17,7 +17,6 @@ limitations under the License.
 package tests
 
 import (
-	"context"
 	"fmt"
 	"strings"
 
@@ -86,35 +85,27 @@ func validateContainerResourceRequests(podNamespace, podName string, containers 
 	return failures
 }
 
-// InfrastructureRegistryValidationTest registers tests for infrastructure workload registry validation
 func InfrastructureRegistryValidationTest(getTestCtx internal.TestContextGetter) {
 	Context("Infrastructure registry validation", func() {
-		// Label("Informing"): failures skip (non-blocking) until registry is complete
-		It("all pods in infrastructure namespaces should belong to known workloads", Label("Informing"), func() {
+		It("should not contain any unrecognized pods", func() {
 			testCtx := getTestCtx()
 
-			// Track unmatched pods across all infrastructure namespaces
 			var podsNotBelongingToWorkloads []string
 
-			// Check each infrastructure namespace
 			for _, namespace := range internal.GetInfrastructureNamespaces() {
-				// Check if namespace exists
 				ns := &corev1.Namespace{}
-				err := testCtx.MgmtClient.Get(context.Background(), crclient.ObjectKey{Name: namespace}, ns)
+				err := testCtx.MgmtClient.Get(testCtx.Context, crclient.ObjectKey{Name: namespace}, ns)
 				if apierrors.IsNotFound(err) {
-					// Namespace doesn't exist, skip
 					continue
 				}
 				Expect(err).NotTo(HaveOccurred(), "failed to get namespace %s", namespace)
 
-				// List all pods in the namespace
 				podList := &corev1.PodList{}
-				err = testCtx.MgmtClient.List(context.Background(), podList, &crclient.ListOptions{
+				err = testCtx.MgmtClient.List(testCtx.Context, podList, &crclient.ListOptions{
 					Namespace: namespace,
 				})
 				Expect(err).NotTo(HaveOccurred(), "failed to list pods in namespace %s", namespace)
 
-				// Check each pod
 				for _, pod := range podList.Items {
 					belongsToWorkload := false
 					for _, workload := range infraWorkloads {
@@ -138,51 +129,45 @@ func InfrastructureRegistryValidationTest(getTestCtx internal.TestContextGetter)
 	})
 }
 
-// InfrastructureResourceRequestsTest registers tests for infrastructure workload resource requests
 func InfrastructureResourceRequestsTest(getTestCtx internal.TestContextGetter) {
 	Context("Container resource requests", func() {
 		for _, workload := range infraWorkloads {
 			workload := workload // capture range variable
 
-			It(fmt.Sprintf("should have resource requests for %s containers", workload.Name), func() {
-				testCtx := getTestCtx()
+			Context(workload.Name, func() {
+				It("should have resource requests for containers", func() {
+					testCtx := getTestCtx()
 
-				// Check if namespace exists
-				ns := &corev1.Namespace{}
-				err := testCtx.MgmtClient.Get(context.Background(), crclient.ObjectKey{Name: workload.Namespace}, ns)
-				if apierrors.IsNotFound(err) {
-					Skip(fmt.Sprintf("namespace %s not found", workload.Namespace))
-				}
-				Expect(err).NotTo(HaveOccurred(), "failed to get namespace %s", workload.Namespace)
-
-				// List pods matching the workload selector
-				podList := &corev1.PodList{}
-				err = testCtx.MgmtClient.List(context.Background(), podList, &crclient.ListOptions{
-					Namespace: workload.Namespace,
-				})
-				Expect(err).NotTo(HaveOccurred(), "failed to list pods in namespace %s", workload.Namespace)
-
-				// Filter pods that match this workload
-				var matchingPods []corev1.Pod
-				for _, pod := range podList.Items {
-					if workload.MatchesPod(pod) {
-						matchingPods = append(matchingPods, pod)
+					ns := &corev1.Namespace{}
+					err := testCtx.MgmtClient.Get(testCtx.Context, crclient.ObjectKey{Name: workload.Namespace}, ns)
+					if apierrors.IsNotFound(err) {
+						Skip(fmt.Sprintf("namespace %s not found", workload.Namespace))
 					}
-				}
+					Expect(err).NotTo(HaveOccurred(), "failed to get namespace %s", workload.Namespace)
 
-				// Track failures across all matching pods
-				var failures []string
-				for _, pod := range matchingPods {
-					// Validate regular containers
-					failures = append(failures, validateContainerResourceRequests(pod.Namespace, pod.Name, pod.Spec.Containers)...)
-					// Validate init containers
-					failures = append(failures, validateContainerResourceRequests(pod.Namespace, pod.Name, pod.Spec.InitContainers)...)
-				}
+					podList := &corev1.PodList{}
+					err = testCtx.MgmtClient.List(testCtx.Context, podList, &crclient.ListOptions{
+						Namespace: workload.Namespace,
+					})
+					Expect(err).NotTo(HaveOccurred(), "failed to list pods in namespace %s", workload.Namespace)
 
-				// Report all failures at once for better visibility
-				if len(failures) > 0 {
-					Fail(strings.Join(failures, "\n"))
-				}
+					var matchingPods []corev1.Pod
+					for _, pod := range podList.Items {
+						if workload.MatchesPod(pod) {
+							matchingPods = append(matchingPods, pod)
+						}
+					}
+
+					var failures []string
+					for _, pod := range matchingPods {
+						failures = append(failures, validateContainerResourceRequests(pod.Namespace, pod.Name, pod.Spec.Containers)...)
+						failures = append(failures, validateContainerResourceRequests(pod.Namespace, pod.Name, pod.Spec.InitContainers)...)
+					}
+
+					if len(failures) > 0 {
+						Fail(strings.Join(failures, "\n"))
+					}
+				})
 			})
 		}
 	})
