@@ -50,11 +50,7 @@ func FingerprintFromKeyStatus(status *hyperv1.SecretEncryptionKeyStatus) string 
 		if status.Azure.KeyVaultName == "" {
 			return ""
 		}
-		return FingerprintAzureKMSKey(hyperv1.AzureKMSKey{
-			KeyVaultName: status.Azure.KeyVaultName,
-			KeyName:      status.Azure.KeyName,
-			KeyVersion:   status.Azure.KeyVersion,
-		})
+		return FingerprintAzureKMSKey(status.Azure)
 	case hyperv1.SecretEncryptionProviderAWS:
 		if status.AWS.ARN == "" {
 			return ""
@@ -64,13 +60,7 @@ func FingerprintFromKeyStatus(status *hyperv1.SecretEncryptionKeyStatus) string 
 		if status.IBMCloud.CRKID == "" {
 			return ""
 		}
-		return FingerprintIBMCloudKMSKeyList([]hyperv1.IBMCloudKMSKeyEntry{
-			{
-				CRKID:      status.IBMCloud.CRKID,
-				InstanceID: status.IBMCloud.InstanceID,
-				KeyVersion: int(status.IBMCloud.KeyVersion),
-			},
-		})
+		return FingerprintIBMCloudKMSKeyList([]hyperv1.IBMCloudKMSKeyEntry{status.IBMCloud})
 	case hyperv1.SecretEncryptionProviderAESCBC:
 		if status.AESCBC.DataHash == "" {
 			return ""

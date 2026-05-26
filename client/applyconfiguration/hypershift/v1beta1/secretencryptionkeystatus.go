@@ -25,9 +25,9 @@ import (
 // with apply.
 type SecretEncryptionKeyStatusApplyConfiguration struct {
 	Provider *hypershiftv1beta1.SecretEncryptionProvider `json:"provider,omitempty"`
-	Azure    *AzureKMSKeyStatusApplyConfiguration        `json:"azure,omitempty"`
-	AWS      *AWSKMSKeyStatusApplyConfiguration          `json:"aws,omitempty"`
-	IBMCloud *IBMCloudKMSKeyStatusApplyConfiguration     `json:"ibmCloud,omitempty"`
+	Azure    *AzureKMSKeyApplyConfiguration              `json:"azure,omitempty"`
+	AWS      *AWSKMSKeyEntryApplyConfiguration           `json:"aws,omitempty"`
+	IBMCloud *IBMCloudKMSKeyEntryApplyConfiguration      `json:"ibmCloud,omitempty"`
 	AESCBC   *AESCBCKeyStatusApplyConfiguration          `json:"aescbc,omitempty"`
 }
 
@@ -48,7 +48,7 @@ func (b *SecretEncryptionKeyStatusApplyConfiguration) WithProvider(value hypersh
 // WithAzure sets the Azure field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the Azure field is set to the value of the last call.
-func (b *SecretEncryptionKeyStatusApplyConfiguration) WithAzure(value *AzureKMSKeyStatusApplyConfiguration) *SecretEncryptionKeyStatusApplyConfiguration {
+func (b *SecretEncryptionKeyStatusApplyConfiguration) WithAzure(value *AzureKMSKeyApplyConfiguration) *SecretEncryptionKeyStatusApplyConfiguration {
 	b.Azure = value
 	return b
 }
@@ -56,7 +56,7 @@ func (b *SecretEncryptionKeyStatusApplyConfiguration) WithAzure(value *AzureKMSK
 // WithAWS sets the AWS field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the AWS field is set to the value of the last call.
-func (b *SecretEncryptionKeyStatusApplyConfiguration) WithAWS(value *AWSKMSKeyStatusApplyConfiguration) *SecretEncryptionKeyStatusApplyConfiguration {
+func (b *SecretEncryptionKeyStatusApplyConfiguration) WithAWS(value *AWSKMSKeyEntryApplyConfiguration) *SecretEncryptionKeyStatusApplyConfiguration {
 	b.AWS = value
 	return b
 }
@@ -64,7 +64,7 @@ func (b *SecretEncryptionKeyStatusApplyConfiguration) WithAWS(value *AWSKMSKeySt
 // WithIBMCloud sets the IBMCloud field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the IBMCloud field is set to the value of the last call.
-func (b *SecretEncryptionKeyStatusApplyConfiguration) WithIBMCloud(value *IBMCloudKMSKeyStatusApplyConfiguration) *SecretEncryptionKeyStatusApplyConfiguration {
+func (b *SecretEncryptionKeyStatusApplyConfiguration) WithIBMCloud(value *IBMCloudKMSKeyEntryApplyConfiguration) *SecretEncryptionKeyStatusApplyConfiguration {
 	b.IBMCloud = value
 	return b
 }

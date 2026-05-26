@@ -114,7 +114,7 @@ func TestFingerprintFromKeyStatus(t *testing.T) {
 		key := hyperv1.AzureKMSKey{KeyVaultName: "vault", KeyName: "key", KeyVersion: "v1"}
 		status := &hyperv1.SecretEncryptionKeyStatus{
 			Provider: hyperv1.SecretEncryptionProviderAzure,
-			Azure:    hyperv1.AzureKMSKeyStatus{KeyVaultName: "vault", KeyName: "key", KeyVersion: "v1"},
+			Azure:    hyperv1.AzureKMSKey{KeyVaultName: "vault", KeyName: "key", KeyVersion: "v1"},
 		}
 		g.Expect(FingerprintFromKeyStatus(status)).To(Equal(FingerprintAzureKMSKey(key)))
 	})
@@ -124,7 +124,7 @@ func TestFingerprintFromKeyStatus(t *testing.T) {
 		arn := "arn:aws:kms:us-east-1:123:key/test"
 		status := &hyperv1.SecretEncryptionKeyStatus{
 			Provider: hyperv1.SecretEncryptionProviderAWS,
-			AWS:      hyperv1.AWSKMSKeyStatus{ARN: arn, Region: "us-east-1"},
+			AWS:      hyperv1.AWSKMSKeyEntry{ARN: arn},
 		}
 		g.Expect(FingerprintFromKeyStatus(status)).To(Equal(FingerprintAWSKMSKey(arn)))
 	})

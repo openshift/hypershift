@@ -10,38 +10,27 @@ import (
 func KeyStatusFromAzureSpec(key hyperv1.AzureKMSKey) *hyperv1.SecretEncryptionKeyStatus {
 	return &hyperv1.SecretEncryptionKeyStatus{
 		Provider: hyperv1.SecretEncryptionProviderAzure,
-		Azure:    hyperv1.AzureKMSKeyStatus(key),
+		Azure:    key,
 	}
 }
 
 // KeyStatusFromAWSSpec creates a SecretEncryptionKeyStatus from an AWS KMS key spec.
-func KeyStatusFromAWSSpec(key hyperv1.AWSKMSKeyEntry, region string) *hyperv1.SecretEncryptionKeyStatus {
+func KeyStatusFromAWSSpec(key hyperv1.AWSKMSKeyEntry) *hyperv1.SecretEncryptionKeyStatus {
 	return &hyperv1.SecretEncryptionKeyStatus{
 		Provider: hyperv1.SecretEncryptionProviderAWS,
-		AWS: hyperv1.AWSKMSKeyStatus{
-			ARN:    key.ARN,
-			Region: region,
-		},
+		AWS:      key,
 	}
 }
 
 // KeyStatusFromIBMCloudSpec creates a SecretEncryptionKeyStatus from IBM Cloud KMS key entries.
 // Uses the first entry in the key list as the representative key.
-func KeyStatusFromIBMCloudSpec(entries []hyperv1.IBMCloudKMSKeyEntry, region string) *hyperv1.SecretEncryptionKeyStatus {
+func KeyStatusFromIBMCloudSpec(entries []hyperv1.IBMCloudKMSKeyEntry) *hyperv1.SecretEncryptionKeyStatus {
 	if len(entries) == 0 {
 		return nil
 	}
-	e := entries[0]
 	return &hyperv1.SecretEncryptionKeyStatus{
 		Provider: hyperv1.SecretEncryptionProviderIBMCloud,
-		IBMCloud: hyperv1.IBMCloudKMSKeyStatus{
-			CRKID:         e.CRKID,
-			InstanceID:    e.InstanceID,
-			KeyVersion:    int32(e.KeyVersion),
-			Region:        region,
-			CorrelationID: e.CorrelationID,
-			URL:           e.URL,
-		},
+		IBMCloud: entries[0],
 	}
 }
 
@@ -77,12 +66,12 @@ func KeyStatusFromSpec(spec *hyperv1.SecretEncryptionSpec, aescbcDataHash string
 			if spec.KMS.AWS == nil {
 				return nil
 			}
-			return KeyStatusFromAWSSpec(spec.KMS.AWS.ActiveKey, spec.KMS.AWS.Region)
+			return KeyStatusFromAWSSpec(spec.KMS.AWS.ActiveKey)
 		case hyperv1.IBMCloud:
 			if spec.KMS.IBMCloud == nil {
 				return nil
 			}
-			return KeyStatusFromIBMCloudSpec(spec.KMS.IBMCloud.KeyList, spec.KMS.IBMCloud.Region)
+			return KeyStatusFromIBMCloudSpec(spec.KMS.IBMCloud.KeyList)
 		}
 	case hyperv1.AESCBC:
 		if spec.AESCBC == nil {

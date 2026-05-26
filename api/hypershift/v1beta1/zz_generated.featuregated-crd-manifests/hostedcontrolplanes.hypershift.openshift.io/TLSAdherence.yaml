@@ -6911,38 +6911,33 @@ spec:
                         description: aws holds the AWS KMS key identity fields.
                         properties:
                           arn:
-                            description: arn is the Amazon Resource Name of the KMS
-                              key.
+                            description: arn is the Amazon Resource Name for the encryption
+                              key
                             maxLength: 2048
-                            minLength: 1
-                            type: string
-                          region:
-                            description: region is the AWS region of the KMS key.
-                            maxLength: 255
-                            minLength: 1
+                            pattern: '^arn:'
                             type: string
                         required:
                         - arn
-                        - region
                         type: object
                       azure:
                         description: azure holds the Azure KMS key identity fields.
                         properties:
                           keyName:
-                            description: keyName is the name of the key in the vault.
+                            description: keyName is the name of the keyvault key used
+                              for encrypt/decrypt
                             maxLength: 255
-                            minLength: 1
                             type: string
                           keyVaultName:
-                            description: keyVaultName is the name of the Azure Key
-                              Vault.
+                            description: |-
+                              keyVaultName is the name of the keyvault. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
+                              Your Microsoft Entra application used to create the cluster must be authorized to access this keyvault, e.g using the AzureCLI:
+                              `az keyvault set-policy -n $KEYVAULT_NAME --key-permissions decrypt encrypt --spn <YOUR APPLICATION CLIENT ID>`
                             maxLength: 255
-                            minLength: 1
                             type: string
                           keyVersion:
-                            description: keyVersion is the version of the key.
+                            description: keyVersion contains the version of the key
+                              to use
                             maxLength: 255
-                            minLength: 1
                             type: string
                         required:
                         - keyName
@@ -6954,42 +6949,36 @@ spec:
                           fields.
                         properties:
                           correlationID:
-                            description: correlationID is the correlation ID for the
-                              key.
+                            description: correlationID is an identifier used to track
+                              all api call usage from hypershift
                             maxLength: 255
-                            minLength: 1
                             type: string
                           crkID:
-                            description: crkID is the Customer Root Key ID.
+                            description: crkID is the customer rook key id
                             maxLength: 255
-                            minLength: 1
                             type: string
                           instanceID:
-                            description: instanceID is the KMS instance ID.
+                            description: instanceID is the id for the key protect
+                              instance
                             maxLength: 255
-                            minLength: 1
                             type: string
                           keyVersion:
-                            description: keyVersion is the key version number.
-                            format: int32
+                            description: |-
+                              keyVersion is a unique number associated with the key. The number increments whenever a new
+                              key is enabled for data encryption.
+                            maximum: 2147483647
                             minimum: 0
                             type: integer
-                          region:
-                            description: region is the IBM Cloud region.
-                            maxLength: 255
-                            minLength: 1
-                            type: string
                           url:
-                            description: url is the KMS endpoint URL.
+                            description: url is the url to call key protect apis over
                             maxLength: 2048
-                            minLength: 1
+                            pattern: ^https://
                             type: string
                         required:
                         - correlationID
                         - crkID
                         - instanceID
                         - keyVersion
-                        - region
                         - url
                         type: object
                       provider:
@@ -7139,38 +7128,33 @@ spec:
                         description: aws holds the AWS KMS key identity fields.
                         properties:
                           arn:
-                            description: arn is the Amazon Resource Name of the KMS
-                              key.
+                            description: arn is the Amazon Resource Name for the encryption
+                              key
                             maxLength: 2048
-                            minLength: 1
-                            type: string
-                          region:
-                            description: region is the AWS region of the KMS key.
-                            maxLength: 255
-                            minLength: 1
+                            pattern: '^arn:'
                             type: string
                         required:
                         - arn
-                        - region
                         type: object
                       azure:
                         description: azure holds the Azure KMS key identity fields.
                         properties:
                           keyName:
-                            description: keyName is the name of the key in the vault.
+                            description: keyName is the name of the keyvault key used
+                              for encrypt/decrypt
                             maxLength: 255
-                            minLength: 1
                             type: string
                           keyVaultName:
-                            description: keyVaultName is the name of the Azure Key
-                              Vault.
+                            description: |-
+                              keyVaultName is the name of the keyvault. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
+                              Your Microsoft Entra application used to create the cluster must be authorized to access this keyvault, e.g using the AzureCLI:
+                              `az keyvault set-policy -n $KEYVAULT_NAME --key-permissions decrypt encrypt --spn <YOUR APPLICATION CLIENT ID>`
                             maxLength: 255
-                            minLength: 1
                             type: string
                           keyVersion:
-                            description: keyVersion is the version of the key.
+                            description: keyVersion contains the version of the key
+                              to use
                             maxLength: 255
-                            minLength: 1
                             type: string
                         required:
                         - keyName
@@ -7182,42 +7166,36 @@ spec:
                           fields.
                         properties:
                           correlationID:
-                            description: correlationID is the correlation ID for the
-                              key.
+                            description: correlationID is an identifier used to track
+                              all api call usage from hypershift
                             maxLength: 255
-                            minLength: 1
                             type: string
                           crkID:
-                            description: crkID is the Customer Root Key ID.
+                            description: crkID is the customer rook key id
                             maxLength: 255
-                            minLength: 1
                             type: string
                           instanceID:
-                            description: instanceID is the KMS instance ID.
+                            description: instanceID is the id for the key protect
+                              instance
                             maxLength: 255
-                            minLength: 1
                             type: string
                           keyVersion:
-                            description: keyVersion is the key version number.
-                            format: int32
+                            description: |-
+                              keyVersion is a unique number associated with the key. The number increments whenever a new
+                              key is enabled for data encryption.
+                            maximum: 2147483647
                             minimum: 0
                             type: integer
-                          region:
-                            description: region is the IBM Cloud region.
-                            maxLength: 255
-                            minLength: 1
-                            type: string
                           url:
-                            description: url is the KMS endpoint URL.
+                            description: url is the url to call key protect apis over
                             maxLength: 2048
-                            minLength: 1
+                            pattern: ^https://
                             type: string
                         required:
                         - correlationID
                         - crkID
                         - instanceID
                         - keyVersion
-                        - region
                         - url
                         type: object
                       provider:

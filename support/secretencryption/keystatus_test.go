@@ -76,7 +76,7 @@ func TestKeyReferenceFromStatus(t *testing.T) {
 		g := NewWithT(t)
 		status := &hyperv1.SecretEncryptionKeyStatus{
 			Provider: hyperv1.SecretEncryptionProviderAzure,
-			Azure:    hyperv1.AzureKMSKeyStatus{KeyVaultName: "v", KeyName: "k", KeyVersion: "1"},
+			Azure:    hyperv1.AzureKMSKey{KeyVaultName: "v", KeyName: "k", KeyVersion: "1"},
 		}
 		ref := KeyReferenceFromStatus(status)
 		g.Expect(ref.Provider).To(Equal(hyperv1.SecretEncryptionProviderAzure))

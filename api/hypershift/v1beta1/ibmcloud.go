@@ -22,61 +22,26 @@ type IBMCloudKMSKeyEntry struct {
 	// crkID is the customer rook key id
 	// +kubebuilder:validation:MaxLength=255
 	// +required
-	CRKID string `json:"crkID"`
+	CRKID string `json:"crkID,omitempty"`
 	// instanceID is the id for the key protect instance
 	// +kubebuilder:validation:MaxLength=255
 	// +required
-	InstanceID string `json:"instanceID"`
+	InstanceID string `json:"instanceID,omitempty"`
 	// correlationID is an identifier used to track all api call usage from hypershift
 	// +kubebuilder:validation:MaxLength=255
 	// +required
-	CorrelationID string `json:"correlationID"`
+	CorrelationID string `json:"correlationID,omitempty"`
 	// url is the url to call key protect apis over
 	// +kubebuilder:validation:Pattern=`^https://`
 	// +kubebuilder:validation:MaxLength=2048
 	// +required
-	URL string `json:"url"`
+	URL string `json:"url,omitempty"`
 	// keyVersion is a unique number associated with the key. The number increments whenever a new
 	// key is enabled for data encryption.
 	// +kubebuilder:validation:Minimum=0
 	// +kubebuilder:validation:Maximum=2147483647
 	// +required
-	KeyVersion int `json:"keyVersion"`
-}
-
-// IBMCloudKMSKeyStatus contains identity fields for an IBM Cloud KMS key list entry,
-// sufficient to reconstruct the KP_DATA_JSON entry for the backup key.
-// +k8s:deepcopy-gen=true
-type IBMCloudKMSKeyStatus struct {
-	// crkID is the Customer Root Key ID.
-	// +required
-	// +kubebuilder:validation:MinLength=1
-	// +kubebuilder:validation:MaxLength=255
-	CRKID string `json:"crkID,omitempty"`
-	// instanceID is the KMS instance ID.
-	// +required
-	// +kubebuilder:validation:MinLength=1
-	// +kubebuilder:validation:MaxLength=255
-	InstanceID string `json:"instanceID,omitempty"`
-	// keyVersion is the key version number.
-	// +required
-	// +kubebuilder:validation:Minimum=0
-	KeyVersion int32 `json:"keyVersion,omitempty"`
-	// region is the IBM Cloud region.
-	// +required
-	// +kubebuilder:validation:MinLength=1
-	// +kubebuilder:validation:MaxLength=255
-	Region string `json:"region,omitempty"`
-	// correlationID is the correlation ID for the key.
-	// +required
-	// +kubebuilder:validation:MinLength=1
-	// +kubebuilder:validation:MaxLength=255
-	CorrelationID string `json:"correlationID,omitempty"`
-	// url is the KMS endpoint URL.
-	// +required
-	// +kubebuilder:validation:MinLength=1
-	// +kubebuilder:validation:MaxLength=2048
-	URL string `json:"url,omitempty"`
+	KeyVersion int `json:"keyVersion,omitempty"`
 }
 
 // IBMCloudKMSAuthSpec defines metadata for how authentication is done with IBM Cloud KMS

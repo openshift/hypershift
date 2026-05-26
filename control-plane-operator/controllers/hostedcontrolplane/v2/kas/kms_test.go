@@ -52,7 +52,7 @@ func TestDeriveKMSKeys(t *testing.T) {
 			encStatus: &hyperv1.SecretEncryptionStatus{
 				ActiveKey: hyperv1.SecretEncryptionKeyStatus{
 					Provider: hyperv1.SecretEncryptionProviderAWS,
-					AWS:      hyperv1.AWSKMSKeyStatus{ARN: "arn:aws:kms:us-east-1:123456789:key/current-key", Region: "us-east-1"},
+					AWS:      hyperv1.AWSKMSKeyEntry{ARN: "arn:aws:kms:us-east-1:123456789:key/current-key"},
 				},
 			},
 			validate: func(g Gomega, keys kmsWriteReadKeys) {
@@ -73,11 +73,11 @@ func TestDeriveKMSKeys(t *testing.T) {
 			encStatus: &hyperv1.SecretEncryptionStatus{
 				ActiveKey: hyperv1.SecretEncryptionKeyStatus{
 					Provider: hyperv1.SecretEncryptionProviderAWS,
-					AWS:      hyperv1.AWSKMSKeyStatus{ARN: "arn:aws:kms:us-east-1:123456789:key/old-key", Region: "us-east-1"},
+					AWS:      hyperv1.AWSKMSKeyEntry{ARN: "arn:aws:kms:us-east-1:123456789:key/old-key"},
 				},
 				TargetKey: hyperv1.SecretEncryptionKeyStatus{
 					Provider: hyperv1.SecretEncryptionProviderAWS,
-					AWS:      hyperv1.AWSKMSKeyStatus{ARN: "arn:aws:kms:us-east-1:123456789:key/new-key", Region: "us-east-1"},
+					AWS:      hyperv1.AWSKMSKeyEntry{ARN: "arn:aws:kms:us-east-1:123456789:key/new-key"},
 				},
 			},
 			currentConfig: nil,
@@ -98,11 +98,11 @@ func TestDeriveKMSKeys(t *testing.T) {
 			encStatus: &hyperv1.SecretEncryptionStatus{
 				ActiveKey: hyperv1.SecretEncryptionKeyStatus{
 					Provider: hyperv1.SecretEncryptionProviderAWS,
-					AWS:      hyperv1.AWSKMSKeyStatus{ARN: "arn:aws:kms:us-east-1:123456789:key/old-key", Region: "us-east-1"},
+					AWS:      hyperv1.AWSKMSKeyEntry{ARN: "arn:aws:kms:us-east-1:123456789:key/old-key"},
 				},
 				TargetKey: hyperv1.SecretEncryptionKeyStatus{
 					Provider: hyperv1.SecretEncryptionProviderAWS,
-					AWS:      hyperv1.AWSKMSKeyStatus{ARN: "arn:aws:kms:us-east-1:123456789:key/new-key", Region: "us-east-1"},
+					AWS:      hyperv1.AWSKMSKeyEntry{ARN: "arn:aws:kms:us-east-1:123456789:key/new-key"},
 				},
 			},
 			currentConfig: kmsEncryptionConfig(
@@ -126,11 +126,11 @@ func TestDeriveKMSKeys(t *testing.T) {
 			encStatus: &hyperv1.SecretEncryptionStatus{
 				ActiveKey: hyperv1.SecretEncryptionKeyStatus{
 					Provider: hyperv1.SecretEncryptionProviderAzure,
-					Azure:    hyperv1.AzureKMSKeyStatus{KeyVaultName: "vault", KeyName: "key", KeyVersion: "v1"},
+					Azure:    hyperv1.AzureKMSKey{KeyVaultName: "vault", KeyName: "key", KeyVersion: "v1"},
 				},
 				TargetKey: hyperv1.SecretEncryptionKeyStatus{
 					Provider: hyperv1.SecretEncryptionProviderAzure,
-					Azure:    hyperv1.AzureKMSKeyStatus{KeyVaultName: "vault", KeyName: "key", KeyVersion: "v2"},
+					Azure:    hyperv1.AzureKMSKey{KeyVaultName: "vault", KeyName: "key", KeyVersion: "v2"},
 				},
 			},
 			currentConfig: nil,

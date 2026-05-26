@@ -89,8 +89,6 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.AWSKMSAuthSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AWSKMSKeyEntry"):
 		return &hypershiftv1beta1.AWSKMSKeyEntryApplyConfiguration{}
-	case v1beta1.SchemeGroupVersion.WithKind("AWSKMSKeyStatus"):
-		return &hypershiftv1beta1.AWSKMSKeyStatusApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AWSKMSSpec"):
 		return &hypershiftv1beta1.AWSKMSSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AWSNodePoolPlatform"):
@@ -115,8 +113,6 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.AzureAuthenticationConfigurationApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AzureKMSKey"):
 		return &hypershiftv1beta1.AzureKMSKeyApplyConfiguration{}
-	case v1beta1.SchemeGroupVersion.WithKind("AzureKMSKeyStatus"):
-		return &hypershiftv1beta1.AzureKMSKeyStatusApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AzureKMSSpec"):
 		return &hypershiftv1beta1.AzureKMSSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AzureMarketplaceImage"):
@@ -259,8 +255,6 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.IBMCloudKMSAuthSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("IBMCloudKMSKeyEntry"):
 		return &hypershiftv1beta1.IBMCloudKMSKeyEntryApplyConfiguration{}
-	case v1beta1.SchemeGroupVersion.WithKind("IBMCloudKMSKeyStatus"):
-		return &hypershiftv1beta1.IBMCloudKMSKeyStatusApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("IBMCloudKMSSpec"):
 		return &hypershiftv1beta1.IBMCloudKMSSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("IBMCloudKMSUnmanagedAuthSpec"):

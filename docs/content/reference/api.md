@@ -1680,7 +1680,8 @@ string
 ###AWSKMSKeyEntry { #hypershift.openshift.io/v1beta1.AWSKMSKeyEntry }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.AWSKMSSpec">AWSKMSSpec</a>)
+<a href="#hypershift.openshift.io/v1beta1.AWSKMSSpec">AWSKMSSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.SecretEncryptionKeyStatus">SecretEncryptionKeyStatus</a>)
 </p>
 <p>
 <p>AWSKMSKeyEntry defines metadata to locate the encryption key in AWS</p>
@@ -1702,47 +1703,6 @@ string
 </td>
 <td>
 <p>arn is the Amazon Resource Name for the encryption key</p>
-</td>
-</tr>
-</tbody>
-</table>
-###AWSKMSKeyStatus { #hypershift.openshift.io/v1beta1.AWSKMSKeyStatus }
-<p>
-(<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.SecretEncryptionKeyStatus">SecretEncryptionKeyStatus</a>)
-</p>
-<p>
-<p>AWSKMSKeyStatus contains identity fields for an AWS KMS key, sufficient to
-reconstruct the backup sidecar container arguments.</p>
-</p>
-<table>
-<thead>
-<tr>
-<th>Field</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>
-<code>arn</code></br>
-<em>
-string
-</em>
-</td>
-<td>
-<p>arn is the Amazon Resource Name of the KMS key.</p>
-</td>
-</tr>
-<tr>
-<td>
-<code>region</code></br>
-<em>
-string
-</em>
-</td>
-<td>
-<p>region is the AWS region of the KMS key.</p>
 </td>
 </tr>
 </tbody>
@@ -3439,7 +3399,8 @@ applications and dev/test.</p>
 ###AzureKMSKey { #hypershift.openshift.io/v1beta1.AzureKMSKey }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.AzureKMSSpec">AzureKMSSpec</a>)
+<a href="#hypershift.openshift.io/v1beta1.AzureKMSSpec">AzureKMSSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.SecretEncryptionKeyStatus">SecretEncryptionKeyStatus</a>)
 </p>
 <p>
 </p>
@@ -3484,58 +3445,6 @@ string
 </td>
 <td>
 <p>keyVersion contains the version of the key to use</p>
-</td>
-</tr>
-</tbody>
-</table>
-###AzureKMSKeyStatus { #hypershift.openshift.io/v1beta1.AzureKMSKeyStatus }
-<p>
-(<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.SecretEncryptionKeyStatus">SecretEncryptionKeyStatus</a>)
-</p>
-<p>
-<p>AzureKMSKeyStatus contains identity fields for an Azure KMS key, sufficient to
-reconstruct the EncryptionConfiguration read provider.</p>
-</p>
-<table>
-<thead>
-<tr>
-<th>Field</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>
-<code>keyVaultName</code></br>
-<em>
-string
-</em>
-</td>
-<td>
-<p>keyVaultName is the name of the Azure Key Vault.</p>
-</td>
-</tr>
-<tr>
-<td>
-<code>keyName</code></br>
-<em>
-string
-</em>
-</td>
-<td>
-<p>keyName is the name of the key in the vault.</p>
-</td>
-</tr>
-<tr>
-<td>
-<code>keyVersion</code></br>
-<em>
-string
-</em>
-</td>
-<td>
-<p>keyVersion is the version of the key.</p>
 </td>
 </tr>
 </tbody>
@@ -10846,7 +10755,8 @@ authentication to interact with IBM Cloud KMS APIs</p>
 ###IBMCloudKMSKeyEntry { #hypershift.openshift.io/v1beta1.IBMCloudKMSKeyEntry }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.IBMCloudKMSSpec">IBMCloudKMSSpec</a>)
+<a href="#hypershift.openshift.io/v1beta1.IBMCloudKMSSpec">IBMCloudKMSSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.SecretEncryptionKeyStatus">SecretEncryptionKeyStatus</a>)
 </p>
 <p>
 <p>IBMCloudKMSKeyEntry defines metadata for an IBM Cloud KMS encryption key</p>
@@ -10913,91 +10823,6 @@ int
 <td>
 <p>keyVersion is a unique number associated with the key. The number increments whenever a new
 key is enabled for data encryption.</p>
-</td>
-</tr>
-</tbody>
-</table>
-###IBMCloudKMSKeyStatus { #hypershift.openshift.io/v1beta1.IBMCloudKMSKeyStatus }
-<p>
-(<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.SecretEncryptionKeyStatus">SecretEncryptionKeyStatus</a>)
-</p>
-<p>
-<p>IBMCloudKMSKeyStatus contains identity fields for an IBM Cloud KMS key list entry,
-sufficient to reconstruct the KP_DATA_JSON entry for the backup key.</p>
-</p>
-<table>
-<thead>
-<tr>
-<th>Field</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>
-<code>crkID</code></br>
-<em>
-string
-</em>
-</td>
-<td>
-<p>crkID is the Customer Root Key ID.</p>
-</td>
-</tr>
-<tr>
-<td>
-<code>instanceID</code></br>
-<em>
-string
-</em>
-</td>
-<td>
-<p>instanceID is the KMS instance ID.</p>
-</td>
-</tr>
-<tr>
-<td>
-<code>keyVersion</code></br>
-<em>
-int32
-</em>
-</td>
-<td>
-<p>keyVersion is the key version number.</p>
-</td>
-</tr>
-<tr>
-<td>
-<code>region</code></br>
-<em>
-string
-</em>
-</td>
-<td>
-<p>region is the IBM Cloud region.</p>
-</td>
-</tr>
-<tr>
-<td>
-<code>correlationID</code></br>
-<em>
-string
-</em>
-</td>
-<td>
-<p>correlationID is the correlation ID for the key.</p>
-</td>
-</tr>
-<tr>
-<td>
-<code>url</code></br>
-<em>
-string
-</em>
-</td>
-<td>
-<p>url is the KMS endpoint URL.</p>
 </td>
 </tr>
 </tbody>
@@ -16409,8 +16234,7 @@ When omitted, the autoscaler defaults to 50%.</p>
 <a href="#hypershift.openshift.io/v1beta1.SecretEncryptionStatus">SecretEncryptionStatus</a>)
 </p>
 <p>
-<p>SecretEncryptionKeyStatus records the active key identity. Status-specific types are used
-instead of reusing the spec types directly, to decouple status serialization from spec type evolution.</p>
+<p>SecretEncryptionKeyStatus records the active key identity using the same types as the spec.</p>
 </p>
 <table>
 <thead>
@@ -16437,8 +16261,8 @@ SecretEncryptionProvider
 <td>
 <code>azure,omitzero</code></br>
 <em>
-<a href="#hypershift.openshift.io/v1beta1.AzureKMSKeyStatus">
-AzureKMSKeyStatus
+<a href="#hypershift.openshift.io/v1beta1.AzureKMSKey">
+AzureKMSKey
 </a>
 </em>
 </td>
@@ -16451,8 +16275,8 @@ AzureKMSKeyStatus
 <td>
 <code>aws,omitzero</code></br>
 <em>
-<a href="#hypershift.openshift.io/v1beta1.AWSKMSKeyStatus">
-AWSKMSKeyStatus
+<a href="#hypershift.openshift.io/v1beta1.AWSKMSKeyEntry">
+AWSKMSKeyEntry
 </a>
 </em>
 </td>
@@ -16465,8 +16289,8 @@ AWSKMSKeyStatus
 <td>
 <code>ibmCloud,omitzero</code></br>
 <em>
-<a href="#hypershift.openshift.io/v1beta1.IBMCloudKMSKeyStatus">
-IBMCloudKMSKeyStatus
+<a href="#hypershift.openshift.io/v1beta1.IBMCloudKMSKeyEntry">
+IBMCloudKMSKeyEntry
 </a>
 </em>
 </td>

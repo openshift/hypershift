@@ -892,37 +892,16 @@ type AzureKMSKey struct {
 	// `az keyvault set-policy -n $KEYVAULT_NAME --key-permissions decrypt encrypt --spn <YOUR APPLICATION CLIENT ID>`
 	// +kubebuilder:validation:MaxLength=255
 	// +required
-	KeyVaultName string `json:"keyVaultName"`
+	KeyVaultName string `json:"keyVaultName,omitempty"`
 
 	// keyName is the name of the keyvault key used for encrypt/decrypt
 	// +kubebuilder:validation:MaxLength=255
 	// +required
-	KeyName string `json:"keyName"`
+	KeyName string `json:"keyName,omitempty"`
 
 	// keyVersion contains the version of the key to use
 	// +kubebuilder:validation:MaxLength=255
 	// +required
-	KeyVersion string `json:"keyVersion"`
-}
-
-// AzureKMSKeyStatus contains identity fields for an Azure KMS key, sufficient to
-// reconstruct the EncryptionConfiguration read provider.
-// +k8s:deepcopy-gen=true
-type AzureKMSKeyStatus struct {
-	// keyVaultName is the name of the Azure Key Vault.
-	// +required
-	// +kubebuilder:validation:MinLength=1
-	// +kubebuilder:validation:MaxLength=255
-	KeyVaultName string `json:"keyVaultName,omitempty"`
-	// keyName is the name of the key in the vault.
-	// +required
-	// +kubebuilder:validation:MinLength=1
-	// +kubebuilder:validation:MaxLength=255
-	KeyName string `json:"keyName,omitempty"`
-	// keyVersion is the version of the key.
-	// +required
-	// +kubebuilder:validation:MinLength=1
-	// +kubebuilder:validation:MaxLength=255
 	KeyVersion string `json:"keyVersion,omitempty"`
 }
 

@@ -2116,8 +2116,7 @@ type SecretEncryptionStatus struct {
 	History []EncryptionMigrationHistory `json:"history,omitempty"`
 }
 
-// SecretEncryptionKeyStatus records the active key identity. Status-specific types are used
-// instead of reusing the spec types directly, to decouple status serialization from spec type evolution.
+// SecretEncryptionKeyStatus records the active key identity using the same types as the spec.
 // +k8s:deepcopy-gen=true
 // +kubebuilder:validation:XValidation:rule="self.provider == 'Azure' ? has(self.azure) : !has(self.azure)",message="azure is required when provider is Azure, and forbidden otherwise"
 // +kubebuilder:validation:XValidation:rule="self.provider == 'AWS' ? has(self.aws) : !has(self.aws)",message="aws is required when provider is AWS, and forbidden otherwise"
@@ -2133,15 +2132,15 @@ type SecretEncryptionKeyStatus struct {
 	// azure holds the Azure KMS key identity fields.
 	// +optional
 	// +unionMember
-	Azure AzureKMSKeyStatus `json:"azure,omitzero"`
+	Azure AzureKMSKey `json:"azure,omitzero"`
 	// aws holds the AWS KMS key identity fields.
 	// +optional
 	// +unionMember
-	AWS AWSKMSKeyStatus `json:"aws,omitzero"`
+	AWS AWSKMSKeyEntry `json:"aws,omitzero"`
 	// ibmCloud holds the IBM Cloud KMS key identity fields.
 	// +optional
 	// +unionMember
-	IBMCloud IBMCloudKMSKeyStatus `json:"ibmCloud,omitzero"`
+	IBMCloud IBMCloudKMSKeyEntry `json:"ibmCloud,omitzero"`
 	// aescbc holds a reference to the AESCBC key secret.
 	// +optional
 	// +unionMember

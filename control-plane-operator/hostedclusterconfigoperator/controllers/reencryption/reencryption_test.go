@@ -182,8 +182,8 @@ func aescbcKeyStatus(secretName, dataHash string) *hyperv1.SecretEncryptionKeySt
 	return secretencryption.KeyStatusFromAESCBCSpec(corev1.LocalObjectReference{Name: secretName}, dataHash)
 }
 
-func awsKeyStatus(arn, region string) *hyperv1.SecretEncryptionKeyStatus {
-	return secretencryption.KeyStatusFromAWSSpec(hyperv1.AWSKMSKeyEntry{ARN: arn}, region)
+func awsKeyStatus(arn string) *hyperv1.SecretEncryptionKeyStatus {
+	return secretencryption.KeyStatusFromAWSSpec(hyperv1.AWSKMSKeyEntry{ARN: arn})
 }
 
 func aescbcKeySecret(name, namespace, keyData string) *corev1.Secret {
@@ -699,7 +699,7 @@ func TestReconcile(t *testing.T) {
 		{
 			name: "When using AWS KMS and key ARN changes it should start rotation with 5 encrypted resources",
 			cpObjects: func() []client.Object {
-				oldKS := awsKeyStatus("arn:aws:kms:us-east-1:123456789012:key/old-key", "us-east-1")
+				oldKS := awsKeyStatus("arn:aws:kms:us-east-1:123456789012:key/old-key")
 				return []client.Object{
 					newHCP(
 						withKMSEncryption(),
@@ -722,8 +722,8 @@ func TestReconcile(t *testing.T) {
 		{
 			name: "When in Migrating phase with KMS and all 5 migrations complete it should complete rotation",
 			cpObjects: func() []client.Object {
-				oldKS := awsKeyStatus("arn:aws:kms:us-east-1:123456789012:key/old-key", "us-east-1")
-				newKS := awsKeyStatus("arn:aws:kms:us-east-1:123456789012:key/test-key-1", "us-east-1")
+				oldKS := awsKeyStatus("arn:aws:kms:us-east-1:123456789012:key/old-key")
+				newKS := awsKeyStatus("arn:aws:kms:us-east-1:123456789012:key/test-key-1")
 				return []client.Object{
 					newHCP(
 						withKMSEncryption(),

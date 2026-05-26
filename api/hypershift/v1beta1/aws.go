@@ -1082,23 +1082,7 @@ type AWSKMSKeyEntry struct {
 	// +required
 	// +kubebuilder:validation:Pattern=`^arn:`
 	// +kubebuilder:validation:MaxLength=2048
-	ARN string `json:"arn"`
-}
-
-// AWSKMSKeyStatus contains identity fields for an AWS KMS key, sufficient to
-// reconstruct the backup sidecar container arguments.
-// +k8s:deepcopy-gen=true
-type AWSKMSKeyStatus struct {
-	// arn is the Amazon Resource Name of the KMS key.
-	// +required
-	// +kubebuilder:validation:MinLength=1
-	// +kubebuilder:validation:MaxLength=2048
 	ARN string `json:"arn,omitempty"`
-	// region is the AWS region of the KMS key.
-	// +required
-	// +kubebuilder:validation:MinLength=1
-	// +kubebuilder:validation:MaxLength=255
-	Region string `json:"region,omitempty"`
 }
 
 // AWSPlatformStatus contains status specific to the AWS platform
