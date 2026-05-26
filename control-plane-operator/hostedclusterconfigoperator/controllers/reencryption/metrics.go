@@ -61,7 +61,7 @@ func recordMigrationDuration(namespace, name string, status hyperv1.SecretEncryp
 		return
 	}
 	h := status.History[0]
-	if h.State == hyperv1.EncryptionMigrationStateCompleted && h.CompletionTime != nil {
+	if h.State == hyperv1.EncryptionMigrationStateCompleted && !h.CompletionTime.IsZero() {
 		duration := h.CompletionTime.Sub(h.StartedTime.Time).Seconds()
 		migrationDurationHistogram.WithLabelValues(namespace, name).Observe(duration)
 	}

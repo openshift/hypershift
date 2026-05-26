@@ -2214,7 +2214,7 @@ type EncryptionMigrationHistory struct {
 	StartedTime metav1.Time `json:"startedTime,omitempty"`
 	// completionTime is when the rotation finished. Not set while the rotation is in progress.
 	// +optional
-	CompletionTime *metav1.Time `json:"completionTime,omitempty"`
+	CompletionTime metav1.Time `json:"completionTime,omitzero"`
 }
 
 type PayloadArchType string

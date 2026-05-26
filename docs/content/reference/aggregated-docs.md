@@ -42700,7 +42700,7 @@ Kubernetes meta/v1.Time
 </tr>
 <tr>
 <td>
-<code>completionTime</code></br>
+<code>completionTime,omitzero</code></br>
 <em>
 <a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#time-v1-meta">
 Kubernetes meta/v1.Time

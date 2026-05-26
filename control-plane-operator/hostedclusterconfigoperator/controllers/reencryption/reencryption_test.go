@@ -437,7 +437,7 @@ func TestReconcile(t *testing.T) {
 
 				g.Expect(hcp.Status.SecretEncryption.History).To(HaveLen(1))
 				g.Expect(hcp.Status.SecretEncryption.History[0].State).To(Equal(hyperv1.EncryptionMigrationStateReadOnlyDeploy))
-				g.Expect(hcp.Status.SecretEncryption.History[0].CompletionTime).To(BeNil())
+				g.Expect(hcp.Status.SecretEncryption.History[0].CompletionTime.IsZero()).To(BeTrue())
 
 				cond := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.EtcdDataEncryptionUpToDate))
 				g.Expect(cond).ToNot(BeNil())
@@ -642,7 +642,7 @@ func TestReconcile(t *testing.T) {
 				g.Expect(hcp.Status.SecretEncryption.ActiveKey.AESCBC.DataHash).To(Equal(newHash))
 
 				g.Expect(hcp.Status.SecretEncryption.History[0].State).To(Equal(hyperv1.EncryptionMigrationStateCompleted))
-				g.Expect(hcp.Status.SecretEncryption.History[0].CompletionTime).ToNot(BeNil())
+				g.Expect(hcp.Status.SecretEncryption.History[0].CompletionTime.IsZero()).To(BeFalse())
 
 				cond := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.EtcdDataEncryptionUpToDate))
 				g.Expect(cond).ToNot(BeNil())

@@ -416,8 +416,7 @@ func (r *Reconciler) handleMigratingPhase(_ context.Context, log logr.Logger, hc
 	log.Info("All StorageVersionMigrations completed successfully")
 	r.setHistoryState(hcp, hyperv1.EncryptionMigrationStateCompleted)
 	if len(hcp.Status.SecretEncryption.History) > 0 {
-		now := metav1.Time{Time: r.now()}
-		hcp.Status.SecretEncryption.History[0].CompletionTime = &now
+		hcp.Status.SecretEncryption.History[0].CompletionTime = metav1.Time{Time: r.now()}
 	}
 
 	return r.completeRotation(log, hcp)
