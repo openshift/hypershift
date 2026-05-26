@@ -92,6 +92,7 @@ func TestKarpenter(t *testing.T) {
 			t.Run("Capacity reservation selector propagation", testCapacityReservation(ctx, mgtClient, guestClient, hostedCluster, awsCredsFile, awsRegion))
 			t.Run("Arbitrary subnet propagation", testArbitrarySubnet(ctx, mgtClient, guestClient, hostedCluster, awsCredsFile, awsRegion))
 			t.Run("OpenshiftEC2NodeClass Kubelet propagation", testKubeletPropagation(ctx, mgtClient, guestClient, hostedCluster))
+			t.Run("Static capacity provisioning with replicas", testStaticCapacityProvisioning(ctx, guestClient, hostedCluster))
 		})
 
 		t.Run("AutoNode enable/disable lifecycle", testAutoNodeLifecycle(ctx, mgtClient, hostedCluster))
@@ -241,6 +242,35 @@ func testKarpenterPlumbing(ctx context.Context, mgtClient, guestClient crclient.
 		ec2NodeClassCopy := ec2NodeClass.DeepCopy()
 		ec2NodeClassCopy.Spec.AMISelectorTerms = []awskarpenterv1.AMISelectorTerm{{ID: "ami-fake123"}}
 		g.Expect(guestClient.Update(ctx, ec2NodeClassCopy)).To(MatchError(ContainSubstring("EC2NodeClass resource can't be created/updated/deleted directly, please use OpenshiftEC2NodeClass resource instead")))
+
+		t.Log("Validating Karpenter deployment has StaticCapacity feature gate enabled")
+		e2eutil.EventuallyObject(t, ctx, "karpenter deployment to have StaticCapacity=true in FEATURE_GATES",
+			func(ctx context.Context) (*appsv1.Deployment, error) {
+				dep := &appsv1.Deployment{}
+				err := mgtClient.Get(ctx, crclient.ObjectKey{Namespace: karpenterNamespace, Name: karpenterComponentName}, dep)
+				return dep, err
+			},
+			[]e2eutil.Predicate[*appsv1.Deployment]{
+				func(dep *appsv1.Deployment) (bool, string, error) {
+					for _, c := range dep.Spec.Template.Spec.Containers {
+						if c.Name != karpenterComponentName {
+							continue
+						}
+						for _, env := range c.Env {
+							if env.Name == "FEATURE_GATES" {
+								if strings.Contains(env.Value, "StaticCapacity=true") {
+									return true, fmt.Sprintf("FEATURE_GATES=%s", env.Value), nil
+								}
+								return false, fmt.Sprintf("FEATURE_GATES=%s does not contain StaticCapacity=true", env.Value), nil
+							}
+						}
+						return false, "FEATURE_GATES env var not found in karpenter container", nil
+					}
+					return false, fmt.Sprintf("container %s not found in deployment", karpenterComponentName), nil
+				},
+			},
+			e2eutil.WithTimeout(2*time.Minute),
+		)
 
 		t.Log("Validating AutoNodeEnabled condition is set on HostedCluster")
 		e2eutil.EventuallyObject(t, ctx, fmt.Sprintf("HostedCluster %s/%s to have AutoNodeEnabled condition", hostedCluster.Namespace, hostedCluster.Name),
@@ -1336,6 +1366,51 @@ func testKubeletPropagation(ctx context.Context, mgtClient, guestClient crclient
 		g.Expect(guestClient.Delete(ctx, testWorkLoads)).To(Succeed())
 		g.Expect(guestClient.Delete(ctx, testNodePool)).To(Succeed())
 		_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, 0, testNodeLabels)
+	}
+}
+
+func testStaticCapacityProvisioning(ctx context.Context, guestClient crclient.Client, hostedCluster *hyperv1.HostedCluster) func(t *testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		staticNodeClass := &hyperkarpenterv1.OpenshiftEC2NodeClass{
+			ObjectMeta: metav1.ObjectMeta{Name: "static-capacity-test"},
+			Spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{
+				SubnetSelectorTerms: []hyperkarpenterv1.SubnetSelectorTerm{
+					{Tags: map[string]string{"karpenter.sh/discovery": hostedCluster.Spec.InfraID}},
+				},
+				SecurityGroupSelectorTerms: []hyperkarpenterv1.SecurityGroupSelectorTerm{
+					{Tags: map[string]string{"karpenter.sh/discovery": hostedCluster.Spec.InfraID}},
+				},
+			},
+		}
+		g.Expect(guestClient.Create(ctx, staticNodeClass)).To(Succeed())
+		t.Logf("Created OpenshiftEC2NodeClass %q for static capacity test", staticNodeClass.Name)
+		t.Cleanup(func() {
+			_ = guestClient.Delete(ctx, staticNodeClass)
+		})
+
+		staticNodePool := baseNodePool("static-capacity-test", staticNodeClass.Name)
+		staticNodePool.Spec.Replicas = ptr.To[int64](2)
+		g.Expect(guestClient.Create(ctx, staticNodePool)).To(Succeed())
+		t.Logf("Created NodePool %q with spec.replicas=2", staticNodePool.Name)
+		t.Cleanup(func() {
+			_ = guestClient.Delete(ctx, staticNodePool)
+		})
+
+		testNodeLabels := map[string]string{
+			karpenterv1.NodePoolLabelKey: staticNodePool.Name,
+		}
+
+		t.Log("Waiting for static capacity nodes to become ready")
+		nodes := e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, 2, testNodeLabels)
+		t.Logf("Static capacity nodes ready: %v", getNodeNames(nodes))
+
+		g.Expect(guestClient.Delete(ctx, staticNodePool)).To(Succeed())
+		t.Log("Deleted static NodePool, waiting for nodes to be removed")
+		_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, 0, testNodeLabels)
+		t.Log("Static capacity nodes successfully deprovisioned")
 	}
 }
 

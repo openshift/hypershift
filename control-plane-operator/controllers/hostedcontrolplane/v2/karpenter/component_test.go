@@ -159,6 +159,13 @@ func TestAdaptDeployment(t *testing.T) {
 				},
 			))
 
+			g.Expect(deployment.Spec.Template.Spec.Containers[0].Env).To(ContainElement(
+				corev1.EnvVar{
+					Name:  "FEATURE_GATES",
+					Value: "StaticCapacity=true",
+				},
+			))
+
 			// expect correct image
 			g.Expect(deployment.Spec.Template.Spec.Containers[0].Image).To(Equal(tc.expectedImage))
 		})
