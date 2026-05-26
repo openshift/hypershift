@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/netutil"
 
 	"k8s.io/utils/ptr"
 
@@ -94,7 +94,7 @@ func TestDisableMultiNetworkDefaultBehavior(t *testing.T) {
 			}
 
 			// Test that the reconciler logic would make the correct decision
-			shouldProcessMultus := !util.IsDisableMultiNetwork(hcp)
+			shouldProcessMultus := !netutil.IsDisableMultiNetwork(hcp)
 
 			expectedDisableMultiNetwork := false
 			if test.expectedDisableMultiNetwork != nil {
@@ -149,7 +149,7 @@ func TestDisableMultiNetworkRestartLogic(t *testing.T) {
 			}
 
 			// Test the restart logic: restart when hasRestartAnnotation && !DisableMultiNetwork
-			shouldRestart := test.hasRestartAnnotation && !util.IsDisableMultiNetwork(hcp)
+			shouldRestart := test.hasRestartAnnotation && !netutil.IsDisableMultiNetwork(hcp)
 			assert.Equal(t, test.expectedRestart, shouldRestart, "Restart logic test failed")
 		})
 	}

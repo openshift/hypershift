@@ -2,7 +2,7 @@ package scheduler
 
 import (
 	component "github.com/openshift/hypershift/support/controlplane-component"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/podspec"
 )
 
 const (
@@ -40,6 +40,6 @@ func NewComponent() component.ControlPlaneComponent {
 			"kubeconfig.yaml",
 			component.WithAdaptFunction(adaptKubeconfig),
 		).
-		InjectAvailabilityProberContainer(util.AvailabilityProberOpts{}).
+		InjectAvailabilityProberContainer(podspec.AvailabilityProberOpts{}).
 		Build()
 }

@@ -1,8 +1,13 @@
 package assets
 
 import (
+	"bytes"
+	"embed"
 	_ "embed"
 	"fmt"
+	"io"
+	"io/fs"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -13,10 +18,10 @@ import (
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/metrics"
+	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/rhobsmonitoring"
 	"github.com/openshift/hypershift/support/supportedversion"
-	"github.com/openshift/hypershift/support/util"
 
 	configv1 "github.com/openshift/api/config/v1"
 
@@ -28,6 +33,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/utils/ptr"
 
 	"github.com/google/uuid"
@@ -107,6 +113,7 @@ func (o HyperShiftNamespace) Build() *corev1.Namespace {
 
 const (
 	awsCredsSecretName            = "hypershift-operator-aws-credentials"
+	azureCredsSecretName          = "hypershift-operator-azure-credentials"
 	oidcProviderS3CredsSecretName = "hypershift-operator-oidc-provider-s3-credentials"
 	scaleFromZeroCredsSecretName  = "hypershift-operator-scale-from-zero-credentials"
 	externaDNSCredsSecretName     = "external-dns-credentials"
@@ -130,6 +137,29 @@ func (o HyperShiftOperatorCredentialsSecret) Build() *corev1.Secret {
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      awsCredsSecretName,
+			Namespace: o.Namespace.Name,
+		},
+		Data: map[string][]byte{
+			o.CredsKey: o.CredsBytes,
+		},
+	}
+	return secret
+}
+
+type HyperShiftOperatorAzureCredentialsSecret struct {
+	Namespace  *corev1.Namespace
+	CredsBytes []byte
+	CredsKey   string
+}
+
+func (o HyperShiftOperatorAzureCredentialsSecret) Build() *corev1.Secret {
+	secret := &corev1.Secret{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Secret",
+			APIVersion: corev1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      azureCredsSecretName,
 			Namespace: o.Namespace.Name,
 		},
 		Data: map[string][]byte{
@@ -370,6 +400,14 @@ func (o ExternalDNSDeployment) Build() *appsv1.Deployment {
 			fmt.Sprintf("--aws-zones-cache-duration=%s", awsZonesCacheDuration),
 		)
 	case AzureExternalDNSProvider:
+		// Increase the Azure SDK retry count from the default of 3 to handle transient
+		// 429 (Too Many Requests) responses from the Azure DNS API with exponential backoff.
+		// See: https://github.com/kubernetes-sigs/external-dns/blob/master/docs/tutorials/azure.md#throttling
+		deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env,
+			corev1.EnvVar{
+				Name:  "AZURE_SDK_MAX_RETRIES",
+				Value: "5",
+			})
 		deployment.Spec.Template.Spec.Containers[0].Args = append(deployment.Spec.Template.Spec.Containers[0].Args,
 			"--azure-config-file=/etc/provider/credentials",
 		)
@@ -455,6 +493,11 @@ type HyperShiftOperatorDeployment struct {
 	AWSPrivateSecret                        *corev1.Secret
 	AWSPrivateSecretKey                     string
 	AWSPrivateRegion                        string
+	AzurePrivateSecret                      *corev1.Secret
+	AzurePrivateSecretKey                   string
+	AzurePLSManagedIdentityClientID         string
+	AzurePLSSubscriptionID                  string
+	AzurePLSResourceGroup                   string
 	GCPProject                              string
 	GCPRegion                               string
 	OIDCBucketName                          string
@@ -487,301 +530,23 @@ type HyperShiftOperatorDeployment struct {
 }
 
 func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
-	args := []string{
-		"run",
-		"--namespace=$(MY_NAMESPACE)",
-		"--pod-name=$(MY_NAME)",
-		"--metrics-addr=:9000",
-		fmt.Sprintf("--enable-dedicated-request-serving-isolation=%t", o.EnableDedicatedRequestServingIsolation),
-		fmt.Sprintf("--enable-ocp-cluster-monitoring=%t", o.EnableOCPClusterMonitoring),
-		fmt.Sprintf("--enable-ci-debug-output=%t", o.EnableCIDebugOutput),
-		fmt.Sprintf("--private-platform=%s", o.PrivatePlatform),
-	}
-	if o.RegistryOverrides != "" {
-		args = append(args, fmt.Sprintf("--registry-overrides=%s", o.RegistryOverrides))
-	}
-
+	args := o.buildArgs()
+	envVars := o.buildEnvVars()
 	var volumeMounts []corev1.VolumeMount
 	var initVolumeMounts []corev1.VolumeMount
 	var volumes []corev1.Volume
-	envVars := []corev1.EnvVar{
-		{
-			Name: "MY_NAMESPACE",
-			ValueFrom: &corev1.EnvVarSource{
-				FieldRef: &corev1.ObjectFieldSelector{
-					FieldPath: "metadata.namespace",
-				},
-			},
-		},
-		{
-			Name: "MY_NAME",
-			ValueFrom: &corev1.EnvVarSource{
-				FieldRef: &corev1.ObjectFieldSelector{
-					FieldPath: "metadata.name",
-				},
-			},
-		},
-		metrics.MetricsSetToEnv(o.MetricsSet),
-		{
-			Name:  "CERT_ROTATION_SCALE",
-			Value: o.CertRotationScale.String(),
-		},
-	}
 
-	// Add any additional environment variables specified if they don't already exist.
-	for key, value := range o.AdditionalOperatorEnvVars {
-		trimmedKey := strings.TrimSpace(key)
-		trimmedValue := strings.TrimSpace(value)
-
-		if trimmedKey != "" &&
-			trimmedValue != "" &&
-			!slices.ContainsFunc(envVars, func(e corev1.EnvVar) bool {
-				return e.Name == trimmedKey
-			}) {
-			envVars = append(envVars, corev1.EnvVar{
-				Name:  trimmedKey,
-				Value: trimmedValue,
-			})
-		}
-	}
-
-	// Add the new HYPERSHIFT_FEATURESET env var if TPNU is set.
-	if o.TechPreviewNoUpgrade {
-		envVars = append(envVars, corev1.EnvVar{
-			Name:  "HYPERSHIFT_FEATURESET",
-			Value: string(configv1.TechPreviewNoUpgrade),
-		})
-	}
-
-	// Add audit log persistence env var if enabled
-	if o.EnableAuditLogPersistence {
-		envVars = append(envVars, corev1.EnvVar{
-			Name:  "ENABLE_AUDIT_LOG_PERSISTENCE",
-			Value: "true",
-		})
-	}
-
-	if o.EnableWebhook {
-		volumeMounts = append(volumeMounts, corev1.VolumeMount{
-			Name:      "serving-cert",
-			MountPath: "/var/run/secrets/serving-cert",
-		})
-		volumes = append(volumes, corev1.Volume{
-			Name: "serving-cert",
-			VolumeSource: corev1.VolumeSource{
-				Secret: &corev1.SecretVolumeSource{
-					SecretName: "manager-serving-cert",
-				},
-			},
-		})
-		args = append(args,
-			"--cert-dir=/var/run/secrets/serving-cert",
-		)
-
-		if o.EnableValidatingWebhook {
-			args = append(args, "--enable-validating-webhook=true")
-		}
-	}
-
-	if len(o.OIDCBucketName) > 0 && len(o.OIDCBucketRegion) > 0 && len(o.OIDCStorageProviderS3SecretKey) > 0 &&
-		o.OIDCStorageProviderS3Secret != nil && len(o.OIDCStorageProviderS3Secret.Name) > 0 {
-		args = append(args,
-			"--oidc-storage-provider-s3-bucket-name="+o.OIDCBucketName,
-			"--oidc-storage-provider-s3-region="+o.OIDCBucketRegion,
-			"--oidc-storage-provider-s3-credentials=/etc/oidc-storage-provider-s3-creds/"+o.OIDCStorageProviderS3SecretKey,
-		)
-		volumeMounts = append(volumeMounts, corev1.VolumeMount{
-			Name:      "oidc-storage-provider-s3-creds",
-			MountPath: "/etc/oidc-storage-provider-s3-creds",
-		})
-		volumes = append(volumes, corev1.Volume{
-			Name: "oidc-storage-provider-s3-creds",
-			VolumeSource: corev1.VolumeSource{
-				Secret: &corev1.SecretVolumeSource{
-					SecretName: o.OIDCStorageProviderS3Secret.Name,
-				},
-			},
-		})
-	}
-
-	if o.ScaleFromZeroSecret != nil && len(o.ScaleFromZeroSecret.Name) > 0 && len(o.ScaleFromZeroSecretKey) > 0 && len(o.ScaleFromZeroProvider) > 0 {
-		args = append(args,
-			"--scale-from-zero-provider="+o.ScaleFromZeroProvider,
-			"--scale-from-zero-creds=/etc/scale-from-zero-creds/"+o.ScaleFromZeroSecretKey,
-		)
-		volumeMounts = append(volumeMounts, corev1.VolumeMount{
-			Name:      "scale-from-zero-creds",
-			MountPath: "/etc/scale-from-zero-creds",
-			ReadOnly:  true,
-		})
-		volumes = append(volumes, corev1.Volume{
-			Name: "scale-from-zero-creds",
-			VolumeSource: corev1.VolumeSource{
-				Secret: &corev1.SecretVolumeSource{
-					SecretName: o.ScaleFromZeroSecret.Name,
-				},
-			},
-		})
-	}
+	o.addWebhookResources(&args, &volumeMounts, &volumes)
+	o.addOIDCResources(&args, &volumeMounts, &volumes)
+	o.addScaleFromZeroResources(&args, &volumeMounts, &volumes)
 
 	if o.UWMTelemetry {
 		args = append(args, "--enable-uwm-telemetry-remote-write")
 	}
 
-	if o.EnableCVOManagementClusterMetricsAccess {
-		envVars = append(envVars, corev1.EnvVar{
-			Name:  config.EnableCVOManagementClusterMetricsAccessEnvVar,
-			Value: "1",
-		})
-	}
-
-	if len(o.ManagedService) > 0 {
-		envVars = append(envVars, corev1.EnvVar{
-			Name:  "MANAGED_SERVICE",
-			Value: o.ManagedService,
-		})
-	}
-
-	if len(o.AROHCPKeyVaultUsersClientID) > 0 {
-		envVars = append(envVars, corev1.EnvVar{
-			Name:  config.AROHCPKeyVaultManagedIdentityClientID,
-			Value: o.AROHCPKeyVaultUsersClientID,
-		})
-	}
-
-	if o.EnableSizeTagging {
-		envVars = append(envVars, corev1.EnvVar{
-			Name:  "ENABLE_SIZE_TAGGING",
-			Value: "1",
-		})
-	}
-
-	if o.EnableEtcdRecovery {
-		envVars = append(envVars, corev1.EnvVar{
-			Name:  config.EnableEtcdRecoveryEnvVar,
-			Value: "1",
-		})
-	}
-
-	if o.EnableCPOOverrides {
-		envVars = append(envVars, corev1.EnvVar{
-			Name:  controlplaneoperatoroverrides.CPOOverridesEnvVar,
-			Value: "1",
-		})
-	}
-
-	if len(o.PlatformsInstalled) > 0 {
-		envVars = append(envVars, corev1.EnvVar{
-			Name:  "PLATFORMS_INSTALLED",
-			Value: o.PlatformsInstalled,
-		})
-	}
-
-	image := o.OperatorImage
-
-	if mapImage, ok := o.Images["hypershift-operator"]; ok {
-		image = mapImage
-	}
-	tagMapping := images.TagMapping()
-	for tag, ref := range o.Images {
-		if envVar, exists := tagMapping[tag]; exists {
-			envVars = append(envVars, corev1.EnvVar{
-				Name:  envVar,
-				Value: ref,
-			})
-		}
-	}
-
-	privatePlatformType := hyperv1.PlatformType(o.PrivatePlatform)
-	if privatePlatformType != hyperv1.NonePlatform {
-		// Add platform specific settings
-		switch privatePlatformType {
-		case hyperv1.AWSPlatform:
-			// Add AWS credentials secret volume
-			volumes = append(volumes, corev1.Volume{
-				Name: "credentials",
-				VolumeSource: corev1.VolumeSource{
-					Secret: &corev1.SecretVolumeSource{
-						SecretName: o.AWSPrivateSecret.Name,
-					},
-				},
-			})
-			volumeMounts = append(volumeMounts, corev1.VolumeMount{
-				Name:      "credentials",
-				MountPath: "/etc/provider",
-			})
-			envVars = append(envVars,
-				corev1.EnvVar{
-					Name:  "AWS_SHARED_CREDENTIALS_FILE",
-					Value: "/etc/provider/" + o.AWSPrivateSecretKey,
-				},
-				corev1.EnvVar{
-					Name:  "AWS_REGION",
-					Value: o.AWSPrivateRegion,
-				},
-				corev1.EnvVar{
-					Name:  "AWS_SDK_LOAD_CONFIG",
-					Value: "1",
-				})
-		case hyperv1.GCPPlatform:
-			if o.GCPProject != "" {
-				envVars = append(envVars, corev1.EnvVar{
-					Name:  "GCP_PROJECT",
-					Value: o.GCPProject,
-				})
-			}
-			if o.GCPRegion != "" {
-				envVars = append(envVars, corev1.EnvVar{
-					Name:  "GCP_REGION",
-					Value: o.GCPRegion,
-				})
-			}
-		}
-
-		// Add AWS-specific volumes if AWS platform
-		if privatePlatformType == hyperv1.AWSPlatform {
-			volumeMounts = append(volumeMounts, corev1.VolumeMount{
-				Name:      "token",
-				MountPath: "/var/run/secrets/openshift/serviceaccount",
-			})
-			volumes = append(volumes, corev1.Volume{
-				Name: "token",
-				VolumeSource: corev1.VolumeSource{
-					Projected: &corev1.ProjectedVolumeSource{
-						Sources: []corev1.VolumeProjection{
-							{
-								ServiceAccountToken: &corev1.ServiceAccountTokenProjection{
-									Audience: "openshift",
-									Path:     "token",
-								},
-							},
-						},
-					},
-				},
-			})
-		}
-	}
-
-	if o.RHOBSMonitoring {
-		envVars = append(envVars, corev1.EnvVar{
-			Name:  rhobsmonitoring.EnvironmentVariable,
-			Value: "1",
-		})
-	}
-
-	if o.CVOPrometheusURL != "" {
-		envVars = append(envVars, corev1.EnvVar{
-			Name:  config.CVOPrometheusURLEnvVar,
-			Value: o.CVOPrometheusURL,
-		})
-	}
-
-	if o.MonitoringDashboards {
-		envVars = append(envVars, corev1.EnvVar{
-			Name:  "MONITORING_DASHBOARDS",
-			Value: "1",
-		})
-	}
+	image := o.resolveImage()
+	o.addImageTagEnvVars(&envVars)
+	o.addPrivatePlatformResources(&envVars, &volumeMounts, &volumes)
 
 	deployment := &appsv1.Deployment{
 		TypeMeta: metav1.TypeMeta{
@@ -926,6 +691,12 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 		},
 	}
 
+	// Azure Workload Identity requires this pod label for the webhook to inject
+	// federated tokens (AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_FEDERATED_TOKEN_FILE).
+	if o.AzurePLSManagedIdentityClientID != "" {
+		deployment.Spec.Template.Labels["azure.workload.identity/use"] = "true"
+	}
+
 	if o.IncludeVersion {
 		deployment.Annotations = map[string]string{
 			HyperShiftInstallCLIVersionAnnotation: supportedversion.String(),
@@ -934,7 +705,7 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 
 	if o.AdditionalTrustBundle != nil {
 		// Add trusted-ca mount with optional configmap
-		util.DeploymentAddTrustBundleVolume(&corev1.LocalObjectReference{Name: o.AdditionalTrustBundle.Name}, deployment)
+		podspec.DeploymentAddTrustBundleVolume(&corev1.LocalObjectReference{Name: o.AdditionalTrustBundle.Name}, deployment)
 	}
 
 	if o.OpenShiftTrustBundle != nil {
@@ -974,6 +745,283 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 	return deployment
 }
 
+func (o HyperShiftOperatorDeployment) buildArgs() []string {
+	args := []string{
+		"run",
+		"--namespace=$(MY_NAMESPACE)",
+		"--pod-name=$(MY_NAME)",
+		"--metrics-addr=:9000",
+		fmt.Sprintf("--enable-dedicated-request-serving-isolation=%t", o.EnableDedicatedRequestServingIsolation),
+		fmt.Sprintf("--enable-ocp-cluster-monitoring=%t", o.EnableOCPClusterMonitoring),
+		fmt.Sprintf("--enable-ci-debug-output=%t", o.EnableCIDebugOutput),
+		fmt.Sprintf("--private-platform=%s", o.PrivatePlatform),
+	}
+	if o.RegistryOverrides != "" {
+		args = append(args, fmt.Sprintf("--registry-overrides=%s", o.RegistryOverrides))
+	}
+	return args
+}
+
+func (o HyperShiftOperatorDeployment) buildEnvVars() []corev1.EnvVar {
+	envVars := []corev1.EnvVar{
+		{
+			Name: "MY_NAMESPACE",
+			ValueFrom: &corev1.EnvVarSource{
+				FieldRef: &corev1.ObjectFieldSelector{
+					FieldPath: "metadata.namespace",
+				},
+			},
+		},
+		{
+			Name: "MY_NAME",
+			ValueFrom: &corev1.EnvVarSource{
+				FieldRef: &corev1.ObjectFieldSelector{
+					FieldPath: "metadata.name",
+				},
+			},
+		},
+		metrics.MetricsSetToEnv(o.MetricsSet),
+		{
+			Name:  "CERT_ROTATION_SCALE",
+			Value: o.CertRotationScale.String(),
+		},
+		{
+			Name:  "KUBE_FEATURE_WatchListClient",
+			Value: "false",
+		},
+	}
+
+	for key, value := range o.AdditionalOperatorEnvVars {
+		trimmedKey := strings.TrimSpace(key)
+		trimmedValue := strings.TrimSpace(value)
+		if trimmedKey != "" &&
+			trimmedValue != "" &&
+			!slices.ContainsFunc(envVars, func(e corev1.EnvVar) bool {
+				return e.Name == trimmedKey
+			}) {
+			envVars = append(envVars, corev1.EnvVar{
+				Name:  trimmedKey,
+				Value: trimmedValue,
+			})
+		}
+	}
+
+	if o.TechPreviewNoUpgrade {
+		envVars = append(envVars, corev1.EnvVar{Name: "HYPERSHIFT_FEATURESET", Value: string(configv1.TechPreviewNoUpgrade)})
+	}
+	if o.EnableAuditLogPersistence {
+		envVars = append(envVars, corev1.EnvVar{Name: "ENABLE_AUDIT_LOG_PERSISTENCE", Value: "true"})
+	}
+	if o.EnableCVOManagementClusterMetricsAccess {
+		envVars = append(envVars, corev1.EnvVar{Name: config.EnableCVOManagementClusterMetricsAccessEnvVar, Value: "1"})
+	}
+	if len(o.ManagedService) > 0 {
+		envVars = append(envVars, corev1.EnvVar{Name: "MANAGED_SERVICE", Value: o.ManagedService})
+	}
+	if len(o.AROHCPKeyVaultUsersClientID) > 0 {
+		envVars = append(envVars, corev1.EnvVar{Name: config.AROHCPKeyVaultManagedIdentityClientID, Value: o.AROHCPKeyVaultUsersClientID})
+	}
+	if o.EnableSizeTagging {
+		envVars = append(envVars, corev1.EnvVar{Name: "ENABLE_SIZE_TAGGING", Value: "1"})
+	}
+	if o.EnableEtcdRecovery {
+		envVars = append(envVars, corev1.EnvVar{Name: config.EnableEtcdRecoveryEnvVar, Value: "1"})
+	}
+	if o.EnableCPOOverrides {
+		envVars = append(envVars, corev1.EnvVar{Name: controlplaneoperatoroverrides.CPOOverridesEnvVar, Value: "1"})
+	}
+	if len(o.PlatformsInstalled) > 0 {
+		envVars = append(envVars, corev1.EnvVar{Name: "PLATFORMS_INSTALLED", Value: o.PlatformsInstalled})
+	}
+	if o.RHOBSMonitoring {
+		envVars = append(envVars, corev1.EnvVar{Name: rhobsmonitoring.EnvironmentVariable, Value: "1"})
+	}
+	if o.CVOPrometheusURL != "" {
+		envVars = append(envVars, corev1.EnvVar{Name: config.CVOPrometheusURLEnvVar, Value: o.CVOPrometheusURL})
+	}
+	if o.MonitoringDashboards {
+		envVars = append(envVars, corev1.EnvVar{Name: "MONITORING_DASHBOARDS", Value: "1"})
+	}
+	return envVars
+}
+
+func (o HyperShiftOperatorDeployment) addWebhookResources(args *[]string, volumeMounts *[]corev1.VolumeMount, volumes *[]corev1.Volume) {
+	if !o.EnableWebhook {
+		return
+	}
+	*volumeMounts = append(*volumeMounts, corev1.VolumeMount{
+		Name:      "serving-cert",
+		MountPath: "/var/run/secrets/serving-cert",
+	})
+	*volumes = append(*volumes, corev1.Volume{
+		Name: "serving-cert",
+		VolumeSource: corev1.VolumeSource{
+			Secret: &corev1.SecretVolumeSource{
+				SecretName: "manager-serving-cert",
+			},
+		},
+	})
+	*args = append(*args, "--cert-dir=/var/run/secrets/serving-cert")
+	if o.EnableValidatingWebhook {
+		*args = append(*args, "--enable-validating-webhook=true")
+	}
+}
+
+func (o HyperShiftOperatorDeployment) addOIDCResources(args *[]string, volumeMounts *[]corev1.VolumeMount, volumes *[]corev1.Volume) {
+	if len(o.OIDCBucketName) == 0 || len(o.OIDCBucketRegion) == 0 || len(o.OIDCStorageProviderS3SecretKey) == 0 ||
+		o.OIDCStorageProviderS3Secret == nil || len(o.OIDCStorageProviderS3Secret.Name) == 0 {
+		return
+	}
+	*args = append(*args,
+		"--oidc-storage-provider-s3-bucket-name="+o.OIDCBucketName,
+		"--oidc-storage-provider-s3-region="+o.OIDCBucketRegion,
+		"--oidc-storage-provider-s3-credentials=/etc/oidc-storage-provider-s3-creds/"+o.OIDCStorageProviderS3SecretKey,
+	)
+	*volumeMounts = append(*volumeMounts, corev1.VolumeMount{
+		Name:      "oidc-storage-provider-s3-creds",
+		MountPath: "/etc/oidc-storage-provider-s3-creds",
+	})
+	*volumes = append(*volumes, corev1.Volume{
+		Name: "oidc-storage-provider-s3-creds",
+		VolumeSource: corev1.VolumeSource{
+			Secret: &corev1.SecretVolumeSource{
+				SecretName: o.OIDCStorageProviderS3Secret.Name,
+			},
+		},
+	})
+}
+
+func (o HyperShiftOperatorDeployment) addScaleFromZeroResources(args *[]string, volumeMounts *[]corev1.VolumeMount, volumes *[]corev1.Volume) {
+	if o.ScaleFromZeroSecret == nil || len(o.ScaleFromZeroSecret.Name) == 0 || len(o.ScaleFromZeroSecretKey) == 0 || len(o.ScaleFromZeroProvider) == 0 {
+		return
+	}
+	*args = append(*args,
+		"--scale-from-zero-provider="+o.ScaleFromZeroProvider,
+		"--scale-from-zero-creds=/etc/scale-from-zero-creds/"+o.ScaleFromZeroSecretKey,
+	)
+	*volumeMounts = append(*volumeMounts, corev1.VolumeMount{
+		Name:      "scale-from-zero-creds",
+		MountPath: "/etc/scale-from-zero-creds",
+		ReadOnly:  true,
+	})
+	*volumes = append(*volumes, corev1.Volume{
+		Name: "scale-from-zero-creds",
+		VolumeSource: corev1.VolumeSource{
+			Secret: &corev1.SecretVolumeSource{
+				SecretName: o.ScaleFromZeroSecret.Name,
+			},
+		},
+	})
+}
+
+func (o HyperShiftOperatorDeployment) resolveImage() string {
+	image := o.OperatorImage
+	if mapImage, ok := o.Images["hypershift-operator"]; ok {
+		image = mapImage
+	}
+	return image
+}
+
+func (o HyperShiftOperatorDeployment) addImageTagEnvVars(envVars *[]corev1.EnvVar) {
+	tagMapping := images.TagMapping()
+	for tag, ref := range o.Images {
+		if envVar, exists := tagMapping[tag]; exists {
+			*envVars = append(*envVars, corev1.EnvVar{
+				Name:  envVar,
+				Value: ref,
+			})
+		}
+	}
+}
+
+func (o HyperShiftOperatorDeployment) addPrivatePlatformResources(envVars *[]corev1.EnvVar, volumeMounts *[]corev1.VolumeMount, volumes *[]corev1.Volume) {
+	privatePlatformType := hyperv1.PlatformType(o.PrivatePlatform)
+	if privatePlatformType == hyperv1.NonePlatform {
+		return
+	}
+	switch privatePlatformType {
+	case hyperv1.AWSPlatform:
+		*volumes = append(*volumes, corev1.Volume{
+			Name: "credentials",
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: o.AWSPrivateSecret.Name,
+				},
+			},
+		})
+		*volumeMounts = append(*volumeMounts, corev1.VolumeMount{
+			Name:      "credentials",
+			MountPath: "/etc/provider",
+		})
+		*envVars = append(*envVars,
+			corev1.EnvVar{Name: "AWS_SHARED_CREDENTIALS_FILE", Value: "/etc/provider/" + o.AWSPrivateSecretKey},
+			corev1.EnvVar{Name: "AWS_REGION", Value: o.AWSPrivateRegion},
+			corev1.EnvVar{Name: "AWS_SDK_LOAD_CONFIG", Value: "1"},
+		)
+		*volumeMounts = append(*volumeMounts, corev1.VolumeMount{
+			Name:      "token",
+			MountPath: "/var/run/secrets/openshift/serviceaccount",
+		})
+		*volumes = append(*volumes, corev1.Volume{
+			Name: "token",
+			VolumeSource: corev1.VolumeSource{
+				Projected: &corev1.ProjectedVolumeSource{
+					Sources: []corev1.VolumeProjection{
+						{
+							ServiceAccountToken: &corev1.ServiceAccountTokenProjection{
+								Audience: "openshift",
+								Path:     "token",
+							},
+						},
+					},
+				},
+			},
+		})
+	case hyperv1.AzurePlatform:
+		o.addAzurePlatformResources(envVars, volumeMounts, volumes)
+	case hyperv1.GCPPlatform:
+		if o.GCPProject != "" {
+			*envVars = append(*envVars, corev1.EnvVar{Name: "GCP_PROJECT", Value: o.GCPProject})
+		}
+		if o.GCPRegion != "" {
+			*envVars = append(*envVars, corev1.EnvVar{Name: "GCP_REGION", Value: o.GCPRegion})
+		}
+	}
+}
+
+func (o HyperShiftOperatorDeployment) addAzurePlatformResources(envVars *[]corev1.EnvVar, volumeMounts *[]corev1.VolumeMount, volumes *[]corev1.Volume) {
+	if o.AzurePLSResourceGroup != "" {
+		*envVars = append(*envVars, corev1.EnvVar{Name: "AZURE_RESOURCE_GROUP", Value: o.AzurePLSResourceGroup})
+	}
+	// Workload identity mode: the SA annotation triggers Azure AD Workload Identity
+	// webhook to inject federated tokens. Set the client ID as an env var so the
+	// HO platform controller can construct credentials.
+	if o.AzurePLSManagedIdentityClientID != "" {
+		*envVars = append(*envVars, corev1.EnvVar{Name: "AZURE_PLS_CLIENT_ID", Value: o.AzurePLSManagedIdentityClientID})
+		if o.AzurePLSSubscriptionID != "" {
+			*envVars = append(*envVars, corev1.EnvVar{Name: "AZURE_SUBSCRIPTION_ID", Value: o.AzurePLSSubscriptionID})
+		}
+	} else if o.AzurePrivateSecret != nil && len(o.AzurePrivateSecret.Name) > 0 && len(o.AzurePrivateSecretKey) > 0 {
+		*volumes = append(*volumes, corev1.Volume{
+			Name: "azure-credentials",
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: o.AzurePrivateSecret.Name,
+				},
+			},
+		})
+		*volumeMounts = append(*volumeMounts, corev1.VolumeMount{
+			Name:      "azure-credentials",
+			MountPath: "/etc/azure-provider",
+			ReadOnly:  true,
+		})
+		*envVars = append(*envVars, corev1.EnvVar{
+			Name:  "AZURE_CREDENTIALS_FILE",
+			Value: "/etc/azure-provider/" + o.AzurePrivateSecretKey,
+		})
+	}
+}
+
 type HyperShiftOperatorService struct {
 	Namespace *corev1.Namespace
 }
@@ -989,9 +1037,6 @@ func (o HyperShiftOperatorService) Build() *corev1.Service {
 			Name:      HypershiftOperatorName,
 			Labels: map[string]string{
 				"name": HypershiftOperatorName,
-			},
-			Annotations: map[string]string{
-				"service.beta.openshift.io/serving-cert-secret-name": "manager-serving-cert",
 			},
 		},
 		Spec: corev1.ServiceSpec{
@@ -1395,6 +1440,11 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 				Resources:     []string{"validatingwebhookconfigurations"},
 				Verbs:         []string{"delete"},
 				ResourceNames: []string{hyperv1.GroupVersion.Group},
+			},
+			{
+				APIGroups: []string{"admissionregistration.k8s.io"},
+				Resources: []string{"mutatingwebhookconfigurations", "validatingwebhookconfigurations"},
+				Verbs:     []string{"get", "list", "watch", "update"},
 			},
 			{
 				APIGroups: []string{"certificates.k8s.io"},
@@ -2000,6 +2050,7 @@ func (o HyperShiftReaderClusterRoleBinding) Build() *rbacv1.ClusterRoleBinding {
 type HyperShiftMutatingWebhookConfiguration struct {
 	Namespace                 *corev1.Namespace
 	EnableAuditLogPersistence bool
+	CABundle                  []byte
 }
 
 const (
@@ -2020,9 +2071,6 @@ func (o HyperShiftMutatingWebhookConfiguration) Build() *admissionregistrationv1
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: o.Namespace.Name,
 			Name:      hyperv1.GroupVersion.Group,
-			Annotations: map[string]string{
-				"service.beta.openshift.io/inject-cabundle": "true",
-			},
 		},
 		Webhooks: []admissionregistrationv1.MutatingWebhook{
 			{
@@ -2041,6 +2089,7 @@ func (o HyperShiftMutatingWebhookConfiguration) Build() *admissionregistrationv1
 					},
 				},
 				ClientConfig: admissionregistrationv1.WebhookClientConfig{
+					CABundle: o.CABundle,
 					Service: &admissionregistrationv1.ServiceReference{
 						Namespace: "hypershift",
 						Name:      "operator",
@@ -2067,6 +2116,7 @@ func (o HyperShiftMutatingWebhookConfiguration) Build() *admissionregistrationv1
 					},
 				},
 				ClientConfig: admissionregistrationv1.WebhookClientConfig{
+					CABundle: o.CABundle,
 					Service: &admissionregistrationv1.ServiceReference{
 						Namespace: "hypershift",
 						Name:      "operator",
@@ -2107,6 +2157,7 @@ func (o HyperShiftMutatingWebhookConfiguration) Build() *admissionregistrationv1
 					},
 				},
 				ClientConfig: admissionregistrationv1.WebhookClientConfig{
+					CABundle: o.CABundle,
 					Service: &admissionregistrationv1.ServiceReference{
 						Namespace: "hypershift",
 						Name:      "operator",
@@ -2136,6 +2187,7 @@ func (o HyperShiftMutatingWebhookConfiguration) Build() *admissionregistrationv1
 					},
 				},
 				ClientConfig: admissionregistrationv1.WebhookClientConfig{
+					CABundle: o.CABundle,
 					Service: &admissionregistrationv1.ServiceReference{
 						Namespace: "hypershift",
 						Name:      "operator",
@@ -2156,6 +2208,7 @@ func (o HyperShiftMutatingWebhookConfiguration) Build() *admissionregistrationv1
 
 type HyperShiftValidatingWebhookConfiguration struct {
 	Namespace string
+	CABundle  []byte
 }
 
 func (o HyperShiftValidatingWebhookConfiguration) Build() *admissionregistrationv1.ValidatingWebhookConfiguration {
@@ -2173,9 +2226,6 @@ func (o HyperShiftValidatingWebhookConfiguration) Build() *admissionregistration
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: o.Namespace,
 			Name:      hyperv1.GroupVersion.Group,
-			Annotations: map[string]string{
-				"service.beta.openshift.io/inject-cabundle": "true",
-			},
 		},
 		Webhooks: []admissionregistrationv1.ValidatingWebhook{
 			{
@@ -2195,6 +2245,7 @@ func (o HyperShiftValidatingWebhookConfiguration) Build() *admissionregistration
 					},
 				},
 				ClientConfig: admissionregistrationv1.WebhookClientConfig{
+					CABundle: o.CABundle,
 					Service: &admissionregistrationv1.ServiceReference{
 						Namespace: "hypershift",
 						Name:      "operator",
@@ -2223,6 +2274,7 @@ func (o HyperShiftValidatingWebhookConfiguration) Build() *admissionregistration
 					},
 				},
 				ClientConfig: admissionregistrationv1.WebhookClientConfig{
+					CABundle: o.CABundle,
 					Service: &admissionregistrationv1.ServiceReference{
 						Namespace: "hypershift",
 						Name:      "operator",
@@ -2298,4 +2350,55 @@ func (o HyperShiftExtensionAPIServerAuthenticationReaderRoleBinding) Build() *rb
 			},
 		},
 	}
+}
+
+//go:embed recordingrules/*
+var recordingRules embed.FS
+
+// prometheusRuleSpec is meant to return all prometheus rule groups in a PrometheusRuleSpec.
+// At the moment we have only one.
+func prometheusRuleSpec() prometheusoperatorv1.PrometheusRuleSpec {
+	var spec prometheusoperatorv1.PrometheusRuleSpec
+	err := fs.WalkDir(recordingRules, ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			panic(err)
+		}
+		if filepath.Ext(path) != ".yaml" {
+			return nil
+		}
+		spec = getPrometheusRuleSpec(recordingRules, path)
+		return nil
+	})
+	if err != nil {
+		panic(err)
+	}
+
+	return spec
+}
+
+// getPrometheusRuleSpec unmarshals a prometheusoperatorv1.PrometheusRuleSpec from file.
+func getPrometheusRuleSpec(files embed.FS, file string) prometheusoperatorv1.PrometheusRuleSpec {
+	var prometheusRuleSpec prometheusoperatorv1.PrometheusRuleSpec
+	if err := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(getContents(files, file)), 100).Decode(&prometheusRuleSpec); err != nil {
+		panic(err)
+	}
+
+	return prometheusRuleSpec
+}
+
+func getContents(fs embed.FS, file string) []byte {
+	f, err := fs.Open(file)
+	if err != nil {
+		panic(err)
+	}
+	defer func() {
+		if err := f.Close(); err != nil {
+			panic(err)
+		}
+	}()
+	b, err := io.ReadAll(f)
+	if err != nil {
+		panic(err)
+	}
+	return b
 }

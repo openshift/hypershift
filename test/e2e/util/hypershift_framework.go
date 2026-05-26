@@ -30,7 +30,7 @@ import (
 	"github.com/openshift/hypershift/support/assets"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/capabilities"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/netutil"
 
 	configv1 "github.com/openshift/api/config/v1"
 
@@ -188,7 +188,7 @@ func (h *hypershiftTest) before(hostedCluster *hyperv1.HostedCluster, opts *Plat
 			// Use !IsPublicHC to detect strictly private clusters (no public API endpoint).
 			// IsPrivateHC includes PublicAndPrivate, which has a reachable API server
 			// and should use ValidatePublicCluster.
-			if !util.IsPublicHC(hostedCluster) {
+			if !netutil.IsPublicHC(hostedCluster) {
 				ValidatePrivateCluster(t, h.ctx, h.client, hostedCluster, opts, h.upgradeContext)
 			} else {
 				ValidatePublicCluster(t, h.ctx, h.client, hostedCluster, opts, h.upgradeContext)
@@ -205,7 +205,7 @@ func (h *hypershiftTest) before(hostedCluster *hyperv1.HostedCluster, opts *Plat
 			// The cilium-olm deployment requires worker nodes to schedule its pods.
 			// TestNodePool sets NodePoolReplicas=0 and creates NodePools later in individual tests,
 			// so we skip Cilium installation during the initial cluster validation phase.
-			if !util.IsPrivateHC(hostedCluster) {
+			if !netutil.IsPrivateHC(hostedCluster) {
 				if opts.NodePoolReplicas == 0 {
 					t.Fatal("NodePool replicas must be positive for Cilium to install.")
 				}
@@ -289,15 +289,32 @@ func (h *hypershiftTest) after(hostedCluster *hyperv1.HostedCluster, platform hy
 		// so skipping until we fix it.
 		// TODO(alberto): consider drop this gate when we fix OCPBUGS-61291.
 		if hostedCluster.Spec.Platform.Type != hyperv1.NonePlatform {
-			// Private clusters may won't be reachable from the test runner; assume workers exist.
-			hasWorkerNodes := true
-			if !util.IsPrivateHC(hostedCluster) {
+			hasWorkerNodes := false
+			if !netutil.IsPrivateHC(hostedCluster) {
 				guestClient := WaitForGuestClient(t, t.Context(), h.client, hostedCluster)
 				var nodeList corev1.NodeList
 				if err := guestClient.List(t.Context(), &nodeList); err != nil {
 					t.Errorf("failed to list nodes in guest cluster: %v", err)
 				}
 				hasWorkerNodes = len(nodeList.Items) > 0
+			} else {
+				// Private clusters are not reachable from the test runner;
+				// determine worker node expectation from NodePool replicas.
+				var nodePoolList hyperv1.NodePoolList
+				if err := h.client.List(t.Context(), &nodePoolList, crclient.InNamespace(hostedCluster.Namespace)); err != nil {
+					t.Errorf("failed to list NodePools: %v", err)
+				}
+				for i := range nodePoolList.Items {
+					np := &nodePoolList.Items[i]
+					if np.Spec.Replicas != nil && *np.Spec.Replicas > 0 {
+						hasWorkerNodes = true
+						break
+					}
+					if np.Spec.AutoScaling != nil && np.Spec.AutoScaling.Max > 0 {
+						hasWorkerNodes = true
+						break
+					}
+				}
 			}
 			ValidateHostedClusterConditions(t, t.Context(), h.client, hostedCluster, hasWorkerNodes, 10*time.Minute, h.upgradeContext)
 		}

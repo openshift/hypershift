@@ -6,7 +6,7 @@ import (
 	"text/template"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/netutil"
 )
 
 // Abbreviated version of the installer's InstallConfig type
@@ -20,7 +20,7 @@ type InstallConfig struct {
 
 func NewInstallConfig(hcp *hyperv1.HostedControlPlane) *InstallConfig {
 	cfg := &InstallConfig{
-		MachineCIDRs: util.MachineCIDRs(hcp.Spec.Networking.MachineNetwork),
+		MachineCIDRs: netutil.MachineCIDRs(hcp.Spec.Networking.MachineNetwork),
 		Platform:     string(hcp.Spec.Platform.Type),
 	}
 	switch hcp.Spec.Platform.Type {

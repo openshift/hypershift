@@ -99,7 +99,6 @@ func findClusterOperatorStatusCondition(conditions []configv1.ClusterOperatorSta
 
 func (h *hcpStatusReconciler) reconcile(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
 	log := ctrl.LoggerFrom(ctx)
-	log.Info("Reconciling hosted cluster version conditions")
 
 	var clusterVersion configv1.ClusterVersion
 	err := h.hostedClusterClient.Get(ctx, crclient.ObjectKey{Name: "version"}, &clusterVersion)

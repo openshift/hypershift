@@ -2,12 +2,14 @@ package azure
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"testing"
 
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	azurecloud "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/azure"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/config"
 
@@ -408,6 +410,120 @@ func TestReconcileCredentials(t *testing.T) {
 			if tt.validateSecrets != nil {
 				tt.validateSecrets(createdSecrets)
 			}
+		})
+	}
+}
+
+func TestReconcileKMSConfigSecret(t *testing.T) {
+	baseHC := func() *hyperv1.HostedCluster {
+		return &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-cluster"},
+			Spec: hyperv1.HostedClusterSpec{
+				InfraID: "test-infra",
+				Platform: hyperv1.PlatformSpec{
+					Type: hyperv1.AzurePlatform,
+					Azure: &hyperv1.AzurePlatformSpec{
+						Cloud:             "AzurePublicCloud",
+						TenantID:          "test-tenant-id",
+						SubscriptionID:    "test-sub-id",
+						ResourceGroupName: "test-rg",
+						Location:          "eastus",
+					},
+				},
+				SecretEncryption: &hyperv1.SecretEncryptionSpec{
+					Type: hyperv1.KMS,
+					KMS: &hyperv1.KMSSpec{
+						Provider: hyperv1.AZURE,
+						Azure: &hyperv1.AzureKMSSpec{
+							ActiveKey: hyperv1.AzureKMSKey{
+								KeyVaultName: "test-vault",
+								KeyName:      "test-key",
+								KeyVersion:   "v1",
+							},
+						},
+					},
+				},
+			},
+		}
+	}
+
+	testCases := []struct {
+		name           string
+		managedService string
+		hc             *hyperv1.HostedCluster
+		expectErr      bool
+		validate       func(g Gomega, cfg azurecloud.AzureConfig)
+	}{
+		{
+			name:           "When ARO HCP it should set AADMSIDataPlaneIdentityPath",
+			managedService: hyperv1.AroHCP,
+			hc: func() *hyperv1.HostedCluster {
+				hc := baseHC()
+				hc.Spec.SecretEncryption.KMS.Azure.KMS = hyperv1.ManagedIdentity{
+					CredentialsSecretName: "kms-creds",
+				}
+				return hc
+			}(),
+			validate: func(g Gomega, cfg azurecloud.AzureConfig) {
+				g.Expect(cfg.AADMSIDataPlaneIdentityPath).To(Equal(config.ManagedAzureCertificatePath + "kms-creds"))
+				g.Expect(cfg.UseWorkloadIdentityExtension).To(BeFalse())
+				g.Expect(cfg.AADClientID).To(BeEmpty())
+			},
+		},
+		{
+			name: "When self-managed Azure with workload identities it should set federated identity fields",
+			hc: func() *hyperv1.HostedCluster {
+				hc := baseHC()
+				hc.Spec.SecretEncryption.KMS.Azure.WorkloadIdentity = hyperv1.WorkloadIdentity{
+					ClientID: "kms-client-id",
+				}
+				return hc
+			}(),
+			validate: func(g Gomega, cfg azurecloud.AzureConfig) {
+				g.Expect(cfg.UseWorkloadIdentityExtension).To(BeTrue())
+				g.Expect(cfg.AADClientID).To(BeEmpty())
+				g.Expect(cfg.AADMSIDataPlaneIdentityPath).To(BeEmpty())
+			},
+		},
+		{
+			name:      "When Azure KMS without any credentials it should return an error",
+			hc:        baseHC(),
+			expectErr: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			if tc.managedService != "" {
+				t.Setenv("MANAGED_SERVICE", tc.managedService)
+			}
+
+			secret := &corev1.Secret{}
+			err := reconcileKMSConfigSecret(secret, tc.hc)
+			if tc.expectErr {
+				g.Expect(err).To(HaveOccurred())
+				return
+			}
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(secret.Data).To(HaveKey(azurecloud.CloudConfigKey))
+
+			var cfg azurecloud.AzureConfig
+			err = json.Unmarshal(secret.Data[azurecloud.CloudConfigKey], &cfg)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			// Verify common base fields
+			g.Expect(cfg.Cloud).To(Equal("AzurePublicCloud"))
+			g.Expect(cfg.TenantID).To(Equal("test-tenant-id"))
+			g.Expect(cfg.SubscriptionID).To(Equal("test-sub-id"))
+			g.Expect(cfg.ResourceGroup).To(Equal("test-rg"))
+			g.Expect(cfg.Location).To(Equal("eastus"))
+			g.Expect(cfg.LoadBalancerName).To(Equal("test-infra"))
+			g.Expect(cfg.CloudProviderBackoff).To(BeTrue())
+			g.Expect(cfg.LoadBalancerSku).To(Equal("standard"))
+
+			tc.validate(g, cfg)
 		})
 	}
 }

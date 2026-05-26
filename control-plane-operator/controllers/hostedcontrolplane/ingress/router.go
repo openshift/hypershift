@@ -5,7 +5,8 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/azureutil"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/k8sutil"
+	"github.com/openshift/hypershift/support/netutil"
 
 	routev1 "github.com/openshift/api/route/v1"
 
@@ -30,9 +31,12 @@ func ReconcileRouterService(svc *corev1.Service, internal, crossZoneLoadBalancin
 			svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-internal"] = "true"
 		}
 		if crossZoneLoadBalancingEnabled {
+			// In-tree AWS cloud provider annotation for cross-zone load balancing (OpenShift management clusters).
 			svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled"] = "true"
+			// AWS Load Balancer Controller annotation for cross-zone load balancing (EKS Auto Mode).
+			svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-attributes"] = "load_balancing.cross_zone.enabled=true"
 		}
-		util.ApplyAWSLoadBalancerTargetNodesAnnotation(svc, hcp)
+		k8sutil.ApplyAWSLoadBalancerTargetNodesAnnotation(svc, hcp)
 	}
 
 	if hcp.Spec.Platform.Type == hyperv1.GCPPlatform {
@@ -42,6 +46,15 @@ func ReconcileRouterService(svc *corev1.Service, internal, crossZoneLoadBalancin
 		if internal {
 			// Configure GCP Internal Load Balancer for PSC Service Attachment creation
 			svc.Annotations["networking.gke.io/load-balancer-type"] = "Internal"
+		}
+	}
+
+	if hcp.Spec.Platform.Type == hyperv1.AzurePlatform && !azureutil.IsAroHCP() {
+		if svc.Annotations == nil {
+			svc.Annotations = map[string]string{}
+		}
+		if internal {
+			svc.Annotations[azureutil.InternalLoadBalancerAnnotation] = azureutil.InternalLoadBalancerValue
 		}
 	}
 
@@ -75,7 +88,7 @@ func ReconcileRouterService(svc *corev1.Service, internal, crossZoneLoadBalancin
 
 	// Apply LoadBalancerSourceRanges for external router services to restrict CIDR access
 	// Only apply for external (non-internal) services and when not running on ARO HCP
-	allowedCIDRBlocks := util.AllowedCIDRBlocks(hcp)
+	allowedCIDRBlocks := netutil.AllowedCIDRBlocks(hcp)
 	if !internal && !azureutil.IsAroHCP() {
 		svc.Spec.LoadBalancerSourceRanges = allowedCIDRBlocks
 	}
@@ -85,7 +98,7 @@ func ReconcileRouterService(svc *corev1.Service, internal, crossZoneLoadBalancin
 
 func ReconcileRouteStatus(route *routev1.Route, externalHostname, internalHostname string) {
 	var canonicalHostName string
-	if _, isInternal := route.Labels[util.InternalRouteLabel]; isInternal {
+	if _, isInternal := route.Labels[netutil.InternalRouteLabel]; isInternal {
 		canonicalHostName = internalHostname
 	} else {
 		canonicalHostName = externalHostname

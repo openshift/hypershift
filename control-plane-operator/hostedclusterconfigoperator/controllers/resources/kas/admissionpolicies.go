@@ -20,7 +20,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
-	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -47,6 +46,7 @@ var (
 	// that needs to modify the Spec after/during the HostedCluster is created.
 	userWhiteList = []string{
 		fmt.Sprintf("system:%s", config.HCCOUser),
+		fmt.Sprintf("system:%s", config.KASBootstrapContainerUser),
 	}
 	allAdmissionPoliciesOperations = []k8sadmissionv1.OperationType{"*"}
 	defaultMatchResourcesScope     = k8sadmissionv1.ScopeType("*")
@@ -60,9 +60,6 @@ var (
 // ReconcileKASValidatingAdmissionPolicies will create ValidatingAdmissionPolicies which block certain resources
 // from being updated/deleted from the DataPlane side.
 func ReconcileKASValidatingAdmissionPolicies(ctx context.Context, hcp *hyperv1.HostedControlPlane, client client.Client, createOrUpdate upsert.CreateOrUpdateFN) error {
-	log := ctrl.LoggerFrom(ctx)
-	log.Info("reconciling validating admission policies")
-
 	if err := reconcileConfigValidatingAdmissionPolicy(ctx, hcp, client, createOrUpdate); err != nil {
 		return fmt.Errorf("failed to reconcile Config Validating Admission Policy: %v", err)
 	}
@@ -118,7 +115,7 @@ func reconcileConfigValidatingAdmissionPolicy(ctx context.Context, hcp *hyperv1.
 	return nil
 }
 
-func reconcileInfraValidatingAdmissionPolicy(ctx context.Context, hcp *hyperv1.HostedControlPlane, client client.Client, createOrUpdate upsert.CreateOrUpdateFN) error {
+func reconcileInfraValidatingAdmissionPolicy(ctx context.Context, _ *hyperv1.HostedControlPlane, client client.Client, createOrUpdate upsert.CreateOrUpdateFN) error {
 	// Infra AdmissionPolicy
 	// This VAP only reconciles the ValidationAdmissionPolicy for the Infrastructure resource
 	// in order to allow certain SAs to update the spec field of the resource.

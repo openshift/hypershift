@@ -13,7 +13,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	"github.com/openshift/hypershift/support/config"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/netutil"
 
 	routev1 "github.com/openshift/api/route/v1"
 
@@ -123,7 +123,7 @@ func getBackendsForHostedCluster(ctx context.Context, hc hyperv1.HostedCluster, 
 	}
 
 	// When is private (ARO with Swift), we don't need to create a backend for the dataplane-kas-svc frontend.
-	if !util.IsPrivateHC(&hc) {
+	if !netutil.IsPrivateHC(&hc) {
 		backends = append(backends, backendDesc{
 			Name:         kasService.Namespace + "-" + kasService.Name,
 			SVCIP:        kasService.Spec.ClusterIP,
@@ -135,7 +135,7 @@ func getBackendsForHostedCluster(ctx context.Context, hc hyperv1.HostedCluster, 
 
 	// This enables traffic from external DNS to exposed endpoints (KAS, oauth, ignition and konnectivity).
 	routeList := &routev1.RouteList{}
-	if err := client.List(ctx, routeList, crclient.InNamespace(hcpNamespace), crclient.HasLabels{util.HCPRouteLabel}); err != nil {
+	if err := client.List(ctx, routeList, crclient.InNamespace(hcpNamespace), crclient.HasLabels{netutil.HCPRouteLabel}); err != nil {
 		return nil, nil, fmt.Errorf("failed to list routes: %w", err)
 	}
 

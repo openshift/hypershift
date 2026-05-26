@@ -14,6 +14,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	"github.com/spf13/cobra"
@@ -72,6 +73,10 @@ func (o *syncFGConfigMapOptions) run(ctx context.Context) error {
 		return fmt.Errorf("failed to create client: %w", err)
 	}
 
+	return o.reconcile(ctx, c, content)
+}
+
+func (o *syncFGConfigMapOptions) reconcile(ctx context.Context, c crclient.Client, content []byte) error {
 	cm := &corev1.ConfigMap{}
 	cm.Name = o.Name
 	cm.Namespace = o.Namespace

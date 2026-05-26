@@ -71,7 +71,6 @@ type Reconciler struct {
 
 func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
 	log := ctrl.LoggerFrom(ctx)
-	log.Info("Reconciling")
 
 	// Fetch the MachineSet.
 	machineSet := &capiv1.MachineSet{}
@@ -220,7 +219,7 @@ func (r *Reconciler) reconcileInPlaceUpgrade(ctx context.Context, nodePoolUpgrad
 				log.Info("Reconciled MachineSet", "result", result)
 			}
 
-			return fmt.Errorf("degraded node found, cannot progress in-place upgrade. Degraded reason: %v", node.Annotations[MachineConfigDaemonMessageAnnotationKey])
+			return fmt.Errorf("degraded node %s found, cannot progress in-place upgrade. Degraded reason: %s", node.Name, node.Annotations[MachineConfigDaemonMessageAnnotationKey])
 		}
 
 		if nodeNeedsUpgrade(node, currentConfigVersionHash, targetConfigVersionHash) {
@@ -282,7 +281,7 @@ func (r *Reconciler) reconcileInPlaceUpgrade(ctx context.Context, nodePoolUpgrad
 	return nil
 }
 
-func (r *Reconciler) setNodesDesiredConfig(ctx context.Context, hostedClusterClient client.Client, poolName string, nodes []*corev1.Node, targetConfigVersionHash string) error {
+func (r *Reconciler) setNodesDesiredConfig(ctx context.Context, hostedClusterClient client.Client, _ string, nodes []*corev1.Node, targetConfigVersionHash string) error {
 	log := ctrl.LoggerFrom(ctx)
 
 	for _, node := range nodes {
@@ -514,7 +513,7 @@ func getNodesToUpgrade(nodes []*corev1.Node, targetConfig string, maxUnavailable
 	return append(availableCandidates, alreadyUnavailableNodes...)
 }
 
-func getCapacity(nodes []*corev1.Node, targetConfig string, maxUnavailable int) int {
+func getCapacity(nodes []*corev1.Node, _ string, maxUnavailable int) int {
 	// get how many machines we can update based on maxUnavailable
 	// In the MCO logic, unavailable is defined as any of:
 	// - config does not match

@@ -10,8 +10,9 @@ import (
 )
 
 type options struct {
-	namespace string
-	name      string
+	namespace   string
+	name        string
+	portForward bool
 }
 
 // NewCreateCommand returns a command which can render kubeconfigs for HostedCluster
@@ -30,9 +31,10 @@ func NewCreateCommand() *cobra.Command {
 
 	cmd.Flags().StringVar(&opts.namespace, "namespace", opts.namespace, "A HostedCluster namespace. Defaults to 'clusters'.")
 	cmd.Flags().StringVar(&opts.name, "name", opts.name, "A HostedCluster name.")
+	cmd.Flags().BoolVar(&opts.portForward, "port-forward", false, "For private clusters, rewrite the kubeconfig server URL for use with kubectl port-forward.")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		if err := hypershiftkubeconfig.Render(cmd.Context(), opts.namespace, opts.name); err != nil {
+		if err := hypershiftkubeconfig.Render(cmd.Context(), opts.namespace, opts.name, opts.portForward); err != nil {
 			_, _ = fmt.Fprintf(os.Stderr, "Error: %s\n", err)
 			return err
 		}

@@ -8,7 +8,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/podspec"
 
 	configv1 "github.com/openshift/api/config/v1"
 	osinv1 "github.com/openshift/api/osin/v1"
@@ -62,7 +62,7 @@ func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider 
 		ExternalHost:            host,
 		ExternalPort:            port,
 		OAuthServerImage:        releaseImageProvider.GetImage("oauth-server"),
-		AvailabilityProberImage: releaseImageProvider.GetImage(util.AvailabilityProberImageName),
+		AvailabilityProberImage: releaseImageProvider.GetImage(podspec.AvailabilityProberImageName),
 		Availability:            hcp.Spec.ControllerAvailabilityPolicy,
 		ProxyImage:              releaseImageProvider.GetImage("socks5-proxy"),
 		OAuthNoProxy:            []string{manifests.KubeAPIServerService("").Name, config.AuditWebhookService},

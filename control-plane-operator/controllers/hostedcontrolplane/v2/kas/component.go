@@ -55,6 +55,10 @@ func NewComponent() component.ControlPlaneComponent {
 			component.WithAdaptFunction(adaptLocalhostKubeconfigSecret),
 		).
 		WithManifestAdapter(
+			"kas-bootstrap-container-kubeconfig.yaml",
+			component.WithAdaptFunction(adaptKASBootstrapContainerKubeconfigSecret),
+		).
+		WithManifestAdapter(
 			"custom-admin-kubeconfig.yaml",
 			component.WithAdaptFunction(adaptCustomAdminKubeconfigSecret),
 			component.WithPredicate(enableIfCustomKubeconfig),

@@ -30,6 +30,8 @@ spec:
             fieldRef:
               apiVersion: v1
               fieldPath: metadata.namespace
+        - name: KUBE_FEATURE_WatchListClient
+          value: "false"
         image: hosted-cluster-config-operator
         imagePullPolicy: IfNotPresent
         livenessProbe:

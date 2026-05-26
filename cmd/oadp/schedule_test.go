@@ -1,12 +1,24 @@
 package oadp
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
 	"time"
 
+	. "github.com/onsi/gomega"
+
+	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/cmd/log"
+
+	appsv1 "k8s.io/api/apps/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 // TestCreateScheduleOptionsDefaults verifies that the default values for CreateOptions
@@ -199,6 +211,7 @@ func TestGenerateScheduleObjectComprehensive(t *testing.T) {
 		name                     string
 		platform                 string
 		includedResources        []string
+		useEtcdSnapshot          bool
 		paused                   bool
 		useOwnerReferences       bool
 		skipImmediately          bool
@@ -206,7 +219,8 @@ func TestGenerateScheduleObjectComprehensive(t *testing.T) {
 		expectedMinResources     int
 		expectedBaseResources    []string
 		expectedPlatformSpecific []string
-		customResourcesExact     bool // if true, expect exact match for includedResources
+		expectedAbsentResources  []string // resources that must NOT be in the list
+		customResourcesExact     bool     // if true, expect exact match for includedResources
 	}
 
 	// Use global platform resource mappings from types.go
@@ -224,7 +238,7 @@ func TestGenerateScheduleObjectComprehensive(t *testing.T) {
 	tests := []testCase{
 		// Test cases for custom resources and schedule options
 		{
-			name:                  "Custom resources with schedule options",
+			name:                  "When includedResources and schedule options are set it should use custom resources and respect options",
 			platform:              "AWS",
 			includedResources:     []string{"configmaps", "secrets", "pods"},
 			paused:                true,
@@ -236,7 +250,7 @@ func TestGenerateScheduleObjectComprehensive(t *testing.T) {
 			customResourcesExact:  true,
 		},
 		{
-			name:                  "Custom resources - daily backup",
+			name:                  "When includedResources is set for KubeVirt daily schedule it should use custom resources",
 			platform:              "KUBEVIRT",
 			includedResources:     []string{"hostedclusters.hypershift.openshift.io", "nodepools.hypershift.openshift.io", "secrets"},
 			paused:                false,
@@ -249,7 +263,7 @@ func TestGenerateScheduleObjectComprehensive(t *testing.T) {
 		},
 		// Test cases for default resources with different platforms and schedules
 		{
-			name:                     "Default resources - AWS platform with hourly backup",
+			name:                     "When using default mode for AWS with hourly schedule it should include base and platform resources",
 			platform:                 "AWS",
 			includedResources:        nil,
 			paused:                   false,
@@ -259,10 +273,11 @@ func TestGenerateScheduleObjectComprehensive(t *testing.T) {
 			expectedMinResources:     10,
 			expectedBaseResources:    expectedBaseResources,
 			expectedPlatformSpecific: testPlatformResources["AWS"],
+			expectedAbsentResources:  []string{"namespaces"},
 			customResourcesExact:     false,
 		},
 		{
-			name:                     "Default resources - Agent platform with weekly backup",
+			name:                     "When using default mode for Agent with weekly schedule it should include base and platform resources",
 			platform:                 "AGENT",
 			includedResources:        nil,
 			paused:                   true, // Start paused
@@ -272,10 +287,11 @@ func TestGenerateScheduleObjectComprehensive(t *testing.T) {
 			expectedMinResources:     10,
 			expectedBaseResources:    expectedBaseResources,
 			expectedPlatformSpecific: testPlatformResources["AGENT"],
+			expectedAbsentResources:  []string{"namespaces"},
 			customResourcesExact:     false,
 		},
 		{
-			name:                     "Default resources - Azure platform with monthly backup",
+			name:                     "When using default mode for Azure with monthly schedule it should include base and platform resources",
 			platform:                 "AZURE",
 			includedResources:        nil,
 			paused:                   false,
@@ -285,12 +301,40 @@ func TestGenerateScheduleObjectComprehensive(t *testing.T) {
 			expectedMinResources:     10,
 			expectedBaseResources:    expectedBaseResources,
 			expectedPlatformSpecific: testPlatformResources["AZURE"],
+			expectedAbsentResources:  []string{"namespaces"},
+			customResourcesExact:     false,
+		},
+		// Etcd snapshot mode test cases
+		{
+			name:                     "When UseEtcdSnapshot is true it should exclude PV resources and add namespaces for AWS schedule",
+			platform:                 "AWS",
+			useEtcdSnapshot:          true,
+			includedResources:        nil,
+			schedule:                 "0 2 * * *",
+			expectedMinResources:     10,
+			expectedBaseResources:    []string{"serviceaccounts", "hostedclusters.hypershift.openshift.io", "nodepools.hypershift.openshift.io", "namespaces", "secrets"},
+			expectedPlatformSpecific: testPlatformResources["AWS"],
+			expectedAbsentResources:  []string{"persistentvolumeclaims", "persistentvolumes", "deployments", "statefulsets"},
+			customResourcesExact:     false,
+		},
+		{
+			name:                     "When UseEtcdSnapshot is true it should exclude PV resources and add namespaces for Azure schedule",
+			platform:                 "AZURE",
+			useEtcdSnapshot:          true,
+			includedResources:        nil,
+			schedule:                 "0 3 * * 0",
+			expectedMinResources:     10,
+			expectedBaseResources:    []string{"serviceaccounts", "hostedclusters.hypershift.openshift.io", "nodepools.hypershift.openshift.io", "namespaces", "secrets"},
+			expectedPlatformSpecific: testPlatformResources["AZURE"],
+			expectedAbsentResources:  []string{"persistentvolumeclaims", "persistentvolumes", "deployments", "statefulsets"},
 			customResourcesExact:     false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
 			opts := &CreateOptions{
 				HCName:                   "test-cluster",
 				HCNamespace:              "test-cluster-ns",
@@ -300,6 +344,7 @@ func TestGenerateScheduleObjectComprehensive(t *testing.T) {
 				SnapshotMoveData:         false,
 				DefaultVolumesToFsBackup: false,
 				IncludedResources:        tt.includedResources,
+				UseEtcdSnapshot:          tt.useEtcdSnapshot,
 				Schedule:                 tt.schedule,
 				Paused:                   tt.paused,
 				UseOwnerReferences:       tt.useOwnerReferences,
@@ -307,61 +352,59 @@ func TestGenerateScheduleObjectComprehensive(t *testing.T) {
 			}
 
 			schedule, _, err := opts.GenerateScheduleObject(tt.platform)
-			if err != nil {
-				t.Errorf("GenerateScheduleObject() error = %v", err)
-				return
-			}
+			g.Expect(err).NotTo(HaveOccurred())
 
 			// Basic validation
-			if len(schedule.GetName()) == 0 {
-				t.Errorf("Expected schedule name to be generated, got empty string")
-			}
+			g.Expect(schedule.GetName()).NotTo(BeEmpty())
+			g.Expect(schedule.GetAPIVersion()).To(Equal("velero.io/v1"))
+			g.Expect(schedule.GetKind()).To(Equal("Schedule"))
 
-			if schedule.GetAPIVersion() != "velero.io/v1" {
-				t.Errorf("Expected API version 'velero.io/v1', got %s", schedule.GetAPIVersion())
-			}
+			// Schedule-specific fields
+			cronSchedule, found, _ := unstructured.NestedString(schedule.Object, "spec", "schedule")
+			g.Expect(found).To(BeTrue())
+			g.Expect(cronSchedule).To(Equal(tt.schedule))
 
-			if schedule.GetKind() != "Schedule" {
-				t.Errorf("Expected kind 'Schedule', got %s", schedule.GetKind())
-			}
+			paused, found, _ := unstructured.NestedBool(schedule.Object, "spec", "paused")
+			g.Expect(found).To(BeTrue())
+			g.Expect(paused).To(Equal(tt.paused))
 
-			// Check schedule-specific fields
-			cronSchedule, found, err := unstructured.NestedString(schedule.Object, "spec", "schedule")
-			if err != nil || !found {
-				t.Errorf("Expected to find spec.schedule field")
-			} else if cronSchedule != tt.schedule {
-				t.Errorf("Expected schedule to be '%s', got %s", tt.schedule, cronSchedule)
-			}
+			useOwnerReferences, found, _ := unstructured.NestedBool(schedule.Object, "spec", "useOwnerReferencesInBackup")
+			g.Expect(found).To(BeTrue())
+			g.Expect(useOwnerReferences).To(Equal(tt.useOwnerReferences))
 
-			paused, found, err := unstructured.NestedBool(schedule.Object, "spec", "paused")
-			if err != nil || !found {
-				t.Errorf("Expected to find spec.paused field")
-			} else if paused != tt.paused {
-				t.Errorf("Expected paused to be %v, got %v", tt.paused, paused)
-			}
+			skipImmediately, found, _ := unstructured.NestedBool(schedule.Object, "spec", "skipImmediately")
+			g.Expect(found).To(BeTrue())
+			g.Expect(skipImmediately).To(Equal(tt.skipImmediately))
 
-			useOwnerReferences, found, err := unstructured.NestedBool(schedule.Object, "spec", "useOwnerReferencesInBackup")
-			if err != nil || !found {
-				t.Errorf("Expected to find spec.useOwnerReferencesInBackup field")
-			} else if useOwnerReferences != tt.useOwnerReferences {
-				t.Errorf("Expected useOwnerReferencesInBackup to be %v, got %v", tt.useOwnerReferences, useOwnerReferences)
-			}
+			// Etcd snapshot mode template spec validations
+			if tt.useEtcdSnapshot {
+				_, dmFound, _ := unstructured.NestedString(schedule.Object, "spec", "template", "dataMover")
+				g.Expect(dmFound).To(BeFalse(), "dataMover should not be present in etcd snapshot mode")
 
-			skipImmediately, found, err := unstructured.NestedBool(schedule.Object, "spec", "skipImmediately")
-			if err != nil || !found {
-				t.Errorf("Expected to find spec.skipImmediately field")
-			} else if skipImmediately != tt.skipImmediately {
-				t.Errorf("Expected skipImmediately to be %v, got %v", tt.skipImmediately, skipImmediately)
+				sv, svFound, _ := unstructured.NestedBool(schedule.Object, "spec", "template", "snapshotVolumes")
+				g.Expect(svFound).To(BeTrue(), "snapshotVolumes should be present in etcd snapshot mode")
+				g.Expect(sv).To(BeFalse(), "snapshotVolumes should be false in etcd snapshot mode")
+
+				smd, smdFound, _ := unstructured.NestedBool(schedule.Object, "spec", "template", "snapshotMoveData")
+				g.Expect(smdFound).To(BeTrue(), "snapshotMoveData should be present in etcd snapshot mode")
+				g.Expect(smd).To(BeFalse(), "snapshotMoveData should be false in etcd snapshot mode")
+
+				iot, iotFound, _ := unstructured.NestedString(schedule.Object, "spec", "template", "itemOperationTimeout")
+				g.Expect(iotFound).To(BeTrue(), "itemOperationTimeout should be present")
+				g.Expect(iot).To(Equal("4h0m0s"))
+			} else if !tt.customResourcesExact {
+				dm, dmFound, _ := unstructured.NestedString(schedule.Object, "spec", "template", "dataMover")
+				g.Expect(dmFound).To(BeTrue(), "dataMover should be present in default mode")
+				g.Expect(dm).To(Equal("velero"))
+
+				sv, _, _ := unstructured.NestedBool(schedule.Object, "spec", "template", "snapshotVolumes")
+				g.Expect(sv).To(BeTrue(), "snapshotVolumes should be true in default mode")
 			}
 
 			// Get included resources from spec template
-			includedResourcesInterface, found, err := unstructured.NestedFieldNoCopy(schedule.Object, "spec", "template", "includedResources")
-			if err != nil || !found {
-				t.Errorf("Expected to find spec.template.includedResources field in schedule object")
-				return
-			}
+			includedResourcesInterface, found, _ := unstructured.NestedFieldNoCopy(schedule.Object, "spec", "template", "includedResources")
+			g.Expect(found).To(BeTrue(), "includedResources should be present")
 
-			// Convert to []string for comparison
 			var includedResources []string
 			if resourcesSlice, ok := includedResourcesInterface.([]string); ok {
 				includedResources = resourcesSlice
@@ -369,44 +412,32 @@ func TestGenerateScheduleObjectComprehensive(t *testing.T) {
 				for _, res := range resourcesInterfaceSlice {
 					includedResources = append(includedResources, res.(string))
 				}
-			} else {
-				t.Errorf("Expected includedResources to be []string or []interface{}, got %T", includedResourcesInterface)
-				return
 			}
 
-			// Check minimum number of resources
-			if len(includedResources) < tt.expectedMinResources {
-				t.Errorf("Expected at least %d resources, got %d", tt.expectedMinResources, len(includedResources))
-			}
+			g.Expect(len(includedResources)).To(BeNumerically(">=", tt.expectedMinResources))
 
 			// For custom resources, check exact match
 			if tt.customResourcesExact {
-				if len(includedResources) != len(tt.expectedBaseResources) {
-					t.Errorf("Expected exactly %d resources, got %d", len(tt.expectedBaseResources), len(includedResources))
-				}
+				g.Expect(includedResources).To(HaveLen(len(tt.expectedBaseResources)))
 				for i, expected := range tt.expectedBaseResources {
-					if i < len(includedResources) && includedResources[i] != expected {
-						t.Errorf("Expected resource[%d] to be '%s', got '%s'", i, expected, includedResources[i])
+					if i < len(includedResources) {
+						g.Expect(includedResources[i]).To(Equal(expected))
 					}
 				}
-				return // Skip platform-specific checks for custom resources
+				return
 			}
 
 			// For default resources, check contains
-			resourcesStr := fmt.Sprintf("%v", includedResources)
-
-			// Check base resources are included
 			for _, expected := range tt.expectedBaseResources {
-				if !strings.Contains(resourcesStr, expected) {
-					t.Errorf("Expected %s schedule to contain base resource '%s'", tt.platform, expected)
-				}
+				g.Expect(includedResources).To(ContainElement(expected), "should contain base resource '%s'", expected)
+			}
+			for _, expected := range tt.expectedPlatformSpecific {
+				g.Expect(includedResources).To(ContainElement(expected), "should contain platform resource '%s'", expected)
 			}
 
-			// Check platform-specific resources are included
-			for _, expected := range tt.expectedPlatformSpecific {
-				if !strings.Contains(resourcesStr, expected) {
-					t.Errorf("Expected %s schedule to contain platform-specific resource '%s'", tt.platform, expected)
-				}
+			// Verify resources that must NOT be present
+			for _, absent := range tt.expectedAbsentResources {
+				g.Expect(includedResources).NotTo(ContainElement(absent), "should NOT contain resource '%s'", absent)
 			}
 		})
 	}
@@ -902,6 +933,206 @@ func TestBuildIncludedNamespacesForSchedule(t *testing.T) {
 					t.Errorf("Expected namespace %d to be '%s', got '%s'", i, expected, result[i])
 				}
 			}
+		})
+	}
+}
+
+// TestRunSchedule verifies RunSchedule behavior across different client
+// availability and render/non-render scenarios.
+func TestRunSchedule(t *testing.T) {
+	tests := []struct {
+		name   string
+		setup  func(t *testing.T, opts *CreateOptions)
+		expect func(g Gomega, err error)
+	}{
+		{
+			name: "When client is unavailable in render mode it should fallback to AWS and render",
+			setup: func(t *testing.T, opts *CreateOptions) {
+				t.Setenv("KUBECONFIG", "/nonexistent/kubeconfig")
+				t.Setenv("KUBERNETES_SERVICE_HOST", "")
+				t.Setenv("KUBERNETES_SERVICE_PORT", "")
+				opts.Render = true
+			},
+			expect: func(g Gomega, err error) {
+				g.Expect(err).NotTo(HaveOccurred())
+			},
+		},
+		{
+			name: "When client is available in render mode it should render with validation warnings",
+			setup: func(t *testing.T, opts *CreateOptions) {
+				opts.Render = true
+				scheme := runtime.NewScheme()
+				opts.Client = fake.NewClientBuilder().WithScheme(scheme).Build()
+			},
+			expect: func(g Gomega, err error) {
+				g.Expect(err).NotTo(HaveOccurred())
+			},
+		},
+		{
+			name: "When client has valid resources in non-render mode it should create the schedule",
+			setup: func(t *testing.T, opts *CreateOptions) {
+				opts.Render = false
+
+				scheme := runtime.NewScheme()
+				_ = hypershiftv1beta1.AddToScheme(scheme)
+				_ = appsv1.AddToScheme(scheme)
+
+				hc := &hypershiftv1beta1.HostedCluster{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-cluster",
+						Namespace: "test-ns",
+					},
+					Spec: hypershiftv1beta1.HostedClusterSpec{
+						Platform: hypershiftv1beta1.PlatformSpec{
+							Type: hypershiftv1beta1.AWSPlatform,
+						},
+					},
+				}
+
+				oadpDeploy := &appsv1.Deployment{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "openshift-adp-controller-manager",
+						Namespace: "openshift-adp",
+					},
+					Status: appsv1.DeploymentStatus{ReadyReplicas: 1},
+				}
+
+				veleroDeploy := &appsv1.Deployment{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "velero",
+						Namespace: "openshift-adp",
+					},
+					Status: appsv1.DeploymentStatus{ReadyReplicas: 1},
+				}
+
+				dpa := &unstructured.Unstructured{
+					Object: map[string]interface{}{
+						"apiVersion": "oadp.openshift.io/v1alpha1",
+						"kind":       "DataProtectionApplication",
+						"metadata": map[string]interface{}{
+							"name":      "test-dpa",
+							"namespace": "openshift-adp",
+						},
+						"status": map[string]interface{}{
+							"conditions": []interface{}{
+								map[string]interface{}{
+									"type":   "Reconciled",
+									"status": "True",
+								},
+							},
+						},
+					},
+				}
+				dpa.SetGroupVersionKind(schema.GroupVersionKind{
+					Group:   "oadp.openshift.io",
+					Version: "v1alpha1",
+					Kind:    "DataProtectionApplication",
+				})
+
+				opts.Client = fake.NewClientBuilder().
+					WithScheme(scheme).
+					WithObjects(hc, oadpDeploy, veleroDeploy, dpa).
+					Build()
+			},
+			expect: func(g Gomega, err error) {
+				g.Expect(err).NotTo(HaveOccurred())
+			},
+		},
+		{
+			name: "When client is unavailable in non-render mode it should return an error",
+			setup: func(t *testing.T, opts *CreateOptions) {
+				t.Setenv("KUBECONFIG", "/nonexistent/kubeconfig")
+				t.Setenv("KUBERNETES_SERVICE_HOST", "")
+				t.Setenv("KUBERNETES_SERVICE_PORT", "")
+				opts.Render = false
+			},
+			expect: func(g Gomega, err error) {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring("failed to create kubernetes client"))
+			},
+		},
+		{
+			name: "When HostedCluster is not found in non-render mode it should return platform detection error",
+			setup: func(t *testing.T, opts *CreateOptions) {
+				opts.Render = false
+				scheme := runtime.NewScheme()
+				_ = hypershiftv1beta1.AddToScheme(scheme)
+				opts.Client = fake.NewClientBuilder().WithScheme(scheme).Build()
+			},
+			expect: func(g Gomega, err error) {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring("platform detection failed"))
+			},
+		},
+		{
+			name: "When OADP components are missing in non-render mode it should return OADP validation error",
+			setup: func(t *testing.T, opts *CreateOptions) {
+				opts.Render = false
+				scheme := runtime.NewScheme()
+				_ = hypershiftv1beta1.AddToScheme(scheme)
+				_ = appsv1.AddToScheme(scheme)
+
+				hc := &hypershiftv1beta1.HostedCluster{
+					ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "test-ns"},
+					Spec: hypershiftv1beta1.HostedClusterSpec{
+						Platform: hypershiftv1beta1.PlatformSpec{Type: hypershiftv1beta1.AWSPlatform},
+					},
+				}
+				opts.Client = fake.NewClientBuilder().WithScheme(scheme).WithObjects(hc).Build()
+			},
+			expect: func(g Gomega, err error) {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring("OADP validation failed"))
+			},
+		},
+		{
+			name: "When DPA is missing in non-render mode it should return DPA verification error",
+			setup: func(t *testing.T, opts *CreateOptions) {
+				opts.Render = false
+				scheme := runtime.NewScheme()
+				_ = hypershiftv1beta1.AddToScheme(scheme)
+				_ = appsv1.AddToScheme(scheme)
+
+				hc := &hypershiftv1beta1.HostedCluster{
+					ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "test-ns"},
+					Spec: hypershiftv1beta1.HostedClusterSpec{
+						Platform: hypershiftv1beta1.PlatformSpec{Type: hypershiftv1beta1.AWSPlatform},
+					},
+				}
+				oadpDeploy := &appsv1.Deployment{
+					ObjectMeta: metav1.ObjectMeta{Name: "openshift-adp-controller-manager", Namespace: "openshift-adp"},
+					Status:     appsv1.DeploymentStatus{ReadyReplicas: 1},
+				}
+				veleroDeploy := &appsv1.Deployment{
+					ObjectMeta: metav1.ObjectMeta{Name: "velero", Namespace: "openshift-adp"},
+					Status:     appsv1.DeploymentStatus{ReadyReplicas: 1},
+				}
+				opts.Client = fake.NewClientBuilder().WithScheme(scheme).WithObjects(hc, oadpDeploy, veleroDeploy).Build()
+			},
+			expect: func(g Gomega, err error) {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring("DPA verification failed"))
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			opts := &CreateOptions{
+				HCName:          "test-cluster",
+				HCNamespace:     "test-ns",
+				OADPNamespace:   "openshift-adp",
+				StorageLocation: "default",
+				TTL:             2 * time.Hour,
+				Schedule:        "0 2 * * *",
+				Log:             log.Log,
+			}
+
+			tt.setup(t, opts)
+			err := opts.RunSchedule(context.Background())
+			tt.expect(g, err)
 		})
 	}
 }

@@ -15,6 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 func NewCreateScheduleCommand() *cobra.Command {
@@ -64,6 +65,11 @@ For detailed documentation and examples, visit:
 https://hypershift.pages.dev/how-to/disaster-recovery/dr-cli/`,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			changedFlags := make(map[string]bool)
+			cmd.Flags().Visit(func(f *pflag.Flag) { changedFlags[f.Name] = true })
+			if err := opts.validateEtcdSnapshotFlags(changedFlags); err != nil {
+				return err
+			}
 			return opts.RunSchedule(cmd.Context())
 		},
 	}
@@ -86,6 +92,7 @@ https://hypershift.pages.dev/how-to/disaster-recovery/dr-cli/`,
 	cmd.Flags().BoolVar(&opts.Paused, "paused", false, "Create schedule in paused state")
 	cmd.Flags().BoolVar(&opts.UseOwnerReferences, "use-owner-references", false, "Use owner references in backup objects")
 	cmd.Flags().BoolVar(&opts.SkipImmediately, "skip-immediately", false, "Skip immediate backup after schedule creation")
+	cmd.Flags().BoolVar(&opts.UseEtcdSnapshot, "use-etcd-snapshot", false, "Use etcd snapshot mode: etcd is backed up via HCPEtcdBackup CRD snapshots instead of PV volume snapshots")
 
 	// Mark required flags
 	_ = cmd.MarkFlagRequired("hc-name")
@@ -117,6 +124,20 @@ func (o *CreateOptions) RunSchedule(ctx context.Context) error {
 		var err error
 		o.Client, err = util.GetClient()
 		if err != nil {
+			if o.Render {
+				// In render mode, if we can't connect to cluster, we'll still render but skip validations
+				o.Log.Info("Warning: Cannot connect to cluster for validation, skipping all checks")
+				schedule, resourcePolicyCM, err := o.GenerateScheduleObject("AWS")
+				if err != nil {
+					return fmt.Errorf("failed to generate schedule object: %w", err)
+				}
+				if resourcePolicyCM != nil {
+					if err := renderYAMLObject(resourcePolicyCM); err != nil {
+						return err
+					}
+				}
+				return renderYAMLObject(schedule)
+			}
 			return fmt.Errorf("failed to create kubernetes client for schedule validation: %w", err)
 		}
 	}
@@ -212,42 +233,11 @@ func (o *CreateOptions) GenerateScheduleObject(platform string) (*unstructured.U
 		scheduleName = GenerateScheduleName(o.HCName, o.HCNamespace)
 	}
 
-	// Determine which resources to include
-	var includedResources []string
-	if len(o.IncludedResources) > 0 {
-		// Use custom resources provided by user
-		includedResources = o.IncludedResources
-	} else {
-		// Use default resources based on platform
-		includedResources = getDefaultResourcesForPlatform(platform)
-	}
-
-	// Build included namespaces list
+	includedResources := o.resolveIncludedResources(platform)
 	includedNamespaces := buildIncludedNamespaces(o.HCNamespace, o.HCName, o.IncludeNamespaces)
 
-	// Convert string slices to interface slices for unstructured objects
-	includedNamespacesInterface := make([]interface{}, len(includedNamespaces))
-	for i, ns := range includedNamespaces {
-		includedNamespacesInterface[i] = ns
-	}
-
-	includedResourcesInterface := make([]interface{}, len(includedResources))
-	for i, res := range includedResources {
-		includedResourcesInterface[i] = res
-	}
-
 	// Create backup template spec that will be used for each scheduled backup
-	backupTemplate := map[string]interface{}{
-		"includedNamespaces":       includedNamespacesInterface,
-		"includedResources":        includedResourcesInterface,
-		"storageLocation":          o.StorageLocation,
-		"ttl":                      o.TTL.String(),
-		"snapshotMoveData":         o.SnapshotMoveData,
-		"defaultVolumesToFsBackup": o.DefaultVolumesToFsBackup,
-		"dataMover":                "velero",
-		"snapshotVolumes":          true,
-	}
-
+	backupTemplate := o.buildBackupSpec(includedNamespaces, includedResources)
 	applyPlatformBackupSpec(backupTemplate, platform)
 
 	// For KubeVirt, generate a resource policy ConfigMap to skip RHCOS boot image PVCs

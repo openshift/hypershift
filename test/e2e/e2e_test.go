@@ -80,7 +80,7 @@ func TestMain(m *testing.M) {
 	flag.Var(&globalOpts.ConfigurableClusterOptions.ServiceCIDR, "e2e.service-cidr", "The CIDR of the service network. Can be specified multiple times.")
 	flag.Var(&globalOpts.ConfigurableClusterOptions.Zone, "e2e.availability-zones", "Availability zones for clusters")
 	flag.StringVar(&globalOpts.HyperShiftOperatorLatestImage, "e2e.hypershift-operator-latest-image", "quay.io/hypershift/hypershift-operator:latest", "The latest HyperShift Operator image to deploy. If e2e.hypershift-operator-initial-image is set (e.g. to run an upgrade test), this image will be considered the latest HyperShift Operator image to upgrade to.")
-	flag.StringVar(&globalOpts.HOInstallationOptions.PrivatePlatform, "e2e.private-platform", "None", "Platform on which private clusters are supported by the HyperShift Operator (supports \"AWS\" or \"None\"). This is a HyperShift Operator installation option")
+	flag.StringVar(&globalOpts.HOInstallationOptions.PrivatePlatform, "e2e.private-platform", "None", "Platform on which private clusters are supported by the HyperShift Operator (supports \"AWS\", \"Azure\", or \"None\"). This is a HyperShift Operator installation option")
 	flag.StringVar(&globalOpts.HOInstallationOptions.AWSPrivateCredentialsFile, "e2e.aws-private-credentials-file", "/etc/hypershift-pool-aws-credentials/credentials", "path to AWS private credentials. This is a HyperShift Operator installation option")
 	flag.StringVar(&globalOpts.HOInstallationOptions.AWSPrivateRegion, "e2e.aws-private-region", "us-east-1", "AWS region where private clusters are supported by the HyperShift Operator. This is a HyperShift Operator installation option")
 	flag.StringVar(&globalOpts.HOInstallationOptions.AzurePrivateCredentialsFile, "e2e.azure-private-credentials-file", "", "Path to Azure credentials file for managing private cluster resources (Private Link Services, Private Endpoints). This is a HyperShift Operator installation option")
@@ -94,6 +94,7 @@ func TestMain(m *testing.M) {
 	flag.StringVar(&globalOpts.HOInstallationOptions.PlatformMonitoring, "e2e.platform-monitoring", "All", "The option for enabling platform cluster monitoring when installing the HyperShift Operator. Valid values are: None, OperatorOnly, All. This is a HyperShift Operator installation option")
 	flag.BoolVar(&globalOpts.RunUpgradeTest, "upgrade.run-tests", false, "Run HyperShift Operator upgrade test")
 	flag.StringVar(&globalOpts.ExternalCNIProvider, "e2e.external-cni-provider", "", fmt.Sprintf("The option supports the following CNI providers: %s", e2eutil.CiliumCNIProvider))
+	flag.StringVar(&globalOpts.AdditionalPullSecretFile, "e2e.additional-pull-secret-file", "", "path to a pull secret file for the EnsureGlobalPullSecret test")
 
 	// external OIDC configuration
 	flag.StringVar(&globalOpts.ExternalOIDCProvider, "e2e.external-oidc-provider", "", "if not null, enable external OIDC config with provider. supported value: keycloak, azure")
@@ -177,6 +178,7 @@ func TestMain(m *testing.M) {
 	flag.StringVar(&globalOpts.ConfigurableClusterOptions.GCPCloudControllerServiceAccount, "e2e.gcp-cloudcontroller-sa", "", "Service Account for Cloud Controller Manager")
 	flag.StringVar(&globalOpts.ConfigurableClusterOptions.GCPStorageServiceAccount, "e2e.gcp-storage-sa", "", "Service Account for GCP PD CSI Driver")
 	flag.StringVar(&globalOpts.ConfigurableClusterOptions.GCPImageRegistryServiceAccount, "e2e.gcp-imageregistry-sa", "", "Service Account for Image Registry Operator")
+	flag.StringVar(&globalOpts.ConfigurableClusterOptions.GCPNetworkServiceAccount, "e2e.gcp-network-sa", "", "Service Account for Cloud Network Config Controller")
 	flag.StringVar(&globalOpts.ConfigurableClusterOptions.GCPServiceAccountSigningKeyPath, "e2e.gcp-sa-signing-key-path", "", "Path to the private key file for the GCP service account token issuer")
 	flag.StringVar(&globalOpts.ConfigurableClusterOptions.GCPEndpointAccess, "e2e.gcp-endpoint-access", string(hyperv1.GCPEndpointAccessPrivate), "GCP endpoint access type: Private or PublicAndPrivate")
 	flag.StringVar(&globalOpts.ConfigurableClusterOptions.GCPIssuerURL, "e2e.gcp-oidc-issuer-url", "", "The OIDC provider issuer URL for GCP")

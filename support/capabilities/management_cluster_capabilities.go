@@ -80,6 +80,10 @@ const (
 	// CapabilityNativeSidecarContainers indicates if the management cluster supports native sidecar
 	// containers (K8s >= 1.29, where the SidecarContainers feature gate is beta and enabled by default).
 	CapabilityNativeSidecarContainers
+
+	// CapabilityAPIServer indicates if the cluster supports api server
+	// configuration by means of a custom resource.
+	CapabilityAPIServer
 )
 
 // ManagementClusterCapabilities holds all information about optional capabilities of
@@ -229,6 +233,15 @@ func DetectManagementClusterCapabilities(client ManagementClusterDiscoveryClient
 	}
 	if hasImageStreamCap {
 		discoveredCapabilities[CapabilityImageStream] = struct{}{}
+	}
+
+	// check for APIServer capability
+	hasAPIServerCap, err := isAPIResourceRegistered(client, configv1.GroupVersion, "apiserver")
+	if err != nil {
+		return nil, err
+	}
+	if hasAPIServerCap {
+		discoveredCapabilities[CapabilityAPIServer] = struct{}{}
 	}
 
 	// check for ValidatingAdmissionPolicy capability

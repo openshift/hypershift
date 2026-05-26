@@ -28,6 +28,7 @@ const (
 	testCloudControllerGSA hyperv1.GCPServiceAccountEmail = "test-cloud-controller@test-project.iam.gserviceaccount.com"
 	testStorageGSA         hyperv1.GCPServiceAccountEmail = "test-storage@test-project.iam.gserviceaccount.com"
 	testImageRegistryGSA   hyperv1.GCPServiceAccountEmail = "test-image-registry@test-project.iam.gserviceaccount.com"
+	testNetworkGSA         hyperv1.GCPServiceAccountEmail = "test-network-sa@test-project.iam.gserviceaccount.com"
 )
 
 // testCreateOrUpdate is a test helper that implements createOrUpdate functionality
@@ -93,6 +94,7 @@ func validHostedCluster() *hyperv1.HostedCluster {
 							CloudController: testCloudControllerGSA,
 							Storage:         testStorageGSA,
 							ImageRegistry:   testImageRegistryGSA,
+							Network:         testNetworkGSA,
 						},
 					},
 				},
@@ -293,103 +295,6 @@ func TestDeleteCredentials(t *testing.T) {
 	g.Expect(err).To(BeNil()) // Minimal implementation returns nil
 }
 
-func TestBuildGCPWorkloadIdentityCredentials(t *testing.T) {
-	g := NewWithT(t)
-
-	wif := hyperv1.GCPWorkloadIdentityConfig{
-		ProjectNumber: "123456789012",
-		PoolID:        "test-pool",
-		ProviderID:    "test-provider",
-		ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-			NodePool:        testNodePoolGSA,
-			ControlPlane:    testControlPlaneGSA,
-			CloudController: testCloudControllerGSA,
-			Storage:         testStorageGSA,
-			ImageRegistry:   testImageRegistryGSA,
-		},
-	}
-
-	// Using NodePool GSA as an example - the function is generic and works the same
-	// for any service account email (NodePool, ControlPlane, CloudController, etc.)
-	credentials, err := buildGCPWorkloadIdentityCredentials(wif, string(wif.ServiceAccountsEmails.NodePool))
-	g.Expect(err).To(BeNil())
-	g.Expect(credentials).To(ContainSubstring(`"type":"external_account"`))
-	g.Expect(credentials).To(ContainSubstring("123456789012"))
-	g.Expect(credentials).To(ContainSubstring("test-pool"))
-	g.Expect(credentials).To(ContainSubstring("test-provider"))
-	g.Expect(credentials).To(ContainSubstring("/var/run/secrets/openshift/serviceaccount/token"))
-}
-
-func TestBuildGCPWorkloadIdentityCredentialsValidation(t *testing.T) {
-	g := NewWithT(t)
-
-	// validWIF returns a baseline valid GCPWorkloadIdentityConfig.
-	// Callers mutate individual fields to test specific validation errors.
-	validWIF := func() hyperv1.GCPWorkloadIdentityConfig {
-		return hyperv1.GCPWorkloadIdentityConfig{
-			ProjectNumber: "123456789012",
-			PoolID:        "test-pool",
-			ProviderID:    "test-provider",
-			ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-				NodePool:        testNodePoolGSA,
-				ControlPlane:    testControlPlaneGSA,
-				CloudController: testCloudControllerGSA,
-				Storage:         testStorageGSA,
-				ImageRegistry:   testImageRegistryGSA,
-			},
-		}
-	}
-
-	tests := []struct {
-		name     string
-		mutate   func(*hyperv1.GCPWorkloadIdentityConfig)
-		errorMsg string
-	}{
-		{
-			name:   "valid configuration",
-			mutate: nil,
-		},
-		{
-			name:     "missing project number",
-			mutate:   func(wif *hyperv1.GCPWorkloadIdentityConfig) { wif.ProjectNumber = "" },
-			errorMsg: "project number cannot be empty",
-		},
-		{
-			name:     "missing pool ID",
-			mutate:   func(wif *hyperv1.GCPWorkloadIdentityConfig) { wif.PoolID = "" },
-			errorMsg: "pool ID cannot be empty",
-		},
-		{
-			name:     "missing provider ID",
-			mutate:   func(wif *hyperv1.GCPWorkloadIdentityConfig) { wif.ProviderID = "" },
-			errorMsg: "provider ID cannot be empty",
-		},
-		{
-			name:     "missing service account email",
-			mutate:   func(wif *hyperv1.GCPWorkloadIdentityConfig) { wif.ServiceAccountsEmails.NodePool = "" },
-			errorMsg: "service account email cannot be empty",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			wif := validWIF()
-			if tt.mutate != nil {
-				tt.mutate(&wif)
-			}
-			// Using NodePool GSA as the serviceAccountEmail parameter - the function
-			// is generic and works the same for any service account email
-			_, err := buildGCPWorkloadIdentityCredentials(wif, string(wif.ServiceAccountsEmails.NodePool))
-			if tt.errorMsg != "" {
-				g.Expect(err).ToNot(BeNil())
-				g.Expect(err.Error()).To(ContainSubstring(tt.errorMsg))
-			} else {
-				g.Expect(err).To(BeNil())
-			}
-		})
-	}
-}
-
 func TestValidateWorkloadIdentityConfiguration(t *testing.T) {
 	g := NewWithT(t)
 
@@ -438,6 +343,13 @@ func TestValidateWorkloadIdentityConfiguration(t *testing.T) {
 				hc.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.ImageRegistry = ""
 			},
 			errorMsg: "image registry service account email is required",
+		},
+		{
+			name: "missing network service account email",
+			mutate: func(hc *hyperv1.HostedCluster) {
+				hc.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.Network = ""
+			},
+			errorMsg: "network service account email is required",
 		},
 	}
 

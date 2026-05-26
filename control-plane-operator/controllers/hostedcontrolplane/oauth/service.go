@@ -5,6 +5,7 @@ import (
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	azureutil "github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
 
 	routev1 "github.com/openshift/api/route/v1"
@@ -26,7 +27,7 @@ var (
 	}
 )
 
-func ReconcileService(svc *corev1.Service, ownerRef config.OwnerRef, strategy *hyperv1.ServicePublishingStrategy, platformType hyperv1.PlatformType) error {
+func ReconcileService(svc *corev1.Service, ownerRef config.OwnerRef, strategy *hyperv1.ServicePublishingStrategy, platformType hyperv1.PlatformType, isPrivate bool) error {
 	ownerRef.ApplyTo(svc)
 	if svc.Spec.Selector == nil {
 		svc.Spec.Selector = oauthServerLabels
@@ -54,6 +55,26 @@ func ReconcileService(svc *corev1.Service, ownerRef config.OwnerRef, strategy *h
 	case hyperv1.Route:
 		if ((platformType == hyperv1.IBMCloudPlatform) && (svc.Spec.Type != corev1.ServiceTypeNodePort)) || (platformType != hyperv1.IBMCloudPlatform) {
 			svc.Spec.Type = corev1.ServiceTypeClusterIP
+		}
+	case hyperv1.LoadBalancer:
+		if platformType != hyperv1.AzurePlatform {
+			return fmt.Errorf("LoadBalancer publishing strategy for OAuth service is only supported on self-managed Azure, got platform: %s", platformType)
+		}
+		svc.Spec.Type = corev1.ServiceTypeLoadBalancer
+		// Azure uses port 443 for the OAuth LB service because port 6443 collides with
+		// the management cluster's KAS on the shared Azure internal load balancer.
+		// The target port remains 6443 as that is what the OAuth server pod listens on.
+		portSpec.Port = int32(RouteExternalPort)
+		if svc.Annotations == nil {
+			svc.Annotations = map[string]string{}
+		}
+		if strategy.LoadBalancer != nil && strategy.LoadBalancer.Hostname != "" {
+			svc.Annotations[hyperv1.ExternalDNSHostnameAnnotation] = strategy.LoadBalancer.Hostname
+		}
+		if isPrivate {
+			svc.Annotations[azureutil.InternalLoadBalancerAnnotation] = azureutil.InternalLoadBalancerValue
+		} else {
+			delete(svc.Annotations, azureutil.InternalLoadBalancerAnnotation)
 		}
 	default:
 		return fmt.Errorf("invalid publishing strategy for OAuth service: %s", strategy.Type)
@@ -89,6 +110,26 @@ func ReconcileServiceStatus(svc *corev1.Service, route *routev1.Route, strategy 
 		}
 		port = svc.Spec.Ports[0].NodePort
 		host = strategy.NodePort.Address
+	case hyperv1.LoadBalancer:
+		if strategy.LoadBalancer != nil && strategy.LoadBalancer.Hostname != "" {
+			host = strategy.LoadBalancer.Hostname
+			port = RouteExternalPort
+			return
+		}
+		if len(svc.Status.LoadBalancer.Ingress) == 0 {
+			message = fmt.Sprintf("OAuth LoadBalancer not yet provisioned; %v since creation", duration.ShortHumanDuration(time.Since(svc.ObjectMeta.CreationTimestamp.Time)))
+			return
+		}
+		ingress := svc.Status.LoadBalancer.Ingress[0]
+		if ingress.Hostname != "" {
+			host = ingress.Hostname
+		} else if ingress.IP != "" {
+			host = ingress.IP
+		} else {
+			message = fmt.Sprintf("OAuth LoadBalancer ingress has no hostname or IP; %v since creation", duration.ShortHumanDuration(time.Since(svc.ObjectMeta.CreationTimestamp.Time)))
+			return
+		}
+		port = RouteExternalPort
 	}
 	return
 }

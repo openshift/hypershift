@@ -15,6 +15,8 @@ import (
 
 var (
 	// y-stream versions supported by e2e in main
+	Version50  = semver.MustParse("5.0.0")
+	Version423 = semver.MustParse("4.23.0")
 	Version422 = semver.MustParse("4.22.0")
 	Version421 = semver.MustParse("4.21.0")
 	Version420 = semver.MustParse("4.20.0")
@@ -32,6 +34,8 @@ func init() {
 	// Ensure that the version constants are valid semver versions
 	// This is a compile-time check to ensure that the versions are valid
 	// semver versions.
+	_ = Version50
+	_ = Version423
 	_ = Version422
 	_ = Version421
 	_ = Version420
@@ -109,4 +113,16 @@ func IsLessThan(version semver.Version) bool {
 
 func IsGreaterThanOrEqualTo(version semver.Version) bool {
 	return releaseVersion.GE(version)
+}
+
+// ShouldRunKarpenterTests skips the test unless the Karpenter v1 API is available.
+// The v1 API exists on 4.23+, but when the operator is built from main and
+// tested against a 4.22 hosted cluster, set RUN_KARPENTER_TESTS=true to
+// lower the gate to 4.22.
+func ShouldRunKarpenterTests(t *testing.T) {
+	if os.Getenv("RUN_KARPENTER_TESTS") == "true" {
+		AtLeast(t, Version422)
+	} else {
+		AtLeast(t, Version423)
+	}
 }

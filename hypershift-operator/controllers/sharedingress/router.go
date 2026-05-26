@@ -6,7 +6,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/images"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/podspec"
 
 	configv1 "github.com/openshift/api/config/v1"
 
@@ -51,8 +51,8 @@ func ReconcileRouterDeployment(deployment *appsv1.Deployment, hypershiftOperator
 			},
 			Spec: corev1.PodSpec{
 				Containers: []corev1.Container{
-					util.BuildContainer(ConfigGeneratorContainer(), buildConfigGeneratorContainer(hypershiftOperatorImage)),
-					util.BuildContainer(hcpRouterContainerMain(), buildHCPRouterContainerMain()),
+					podspec.BuildContainer(ConfigGeneratorContainer(), buildConfigGeneratorContainer(hypershiftOperatorImage)),
+					podspec.BuildContainer(hcpRouterContainerMain(), buildHCPRouterContainerMain()),
 				},
 				Volumes: []corev1.Volume{
 					{

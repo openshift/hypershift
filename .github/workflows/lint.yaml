@@ -2,24 +2,12 @@ name: Lint
 
 on:
   pull_request:
-    branches: [main]
+    branches:
+      - main
+      - release-4.22
 
 jobs:
   lint:
-    name: Lint
-    runs-on: arc-runner-set
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-      - run: git fetch origin main:main
-      - name: Use pre-built lint tools
-        run: |
-          if [ -d /opt/lint-tools ]; then
-            mkdir -p hack/tools/bin
-            cp /opt/lint-tools/golangci-lint hack/tools/bin/
-            cp /opt/lint-tools/kube-api-linter.so hack/tools/bin/
-            touch hack/tools/bin/golangci-lint hack/tools/bin/kube-api-linter.so
-          fi
-      - run: make lint
+    uses: openshift/hypershift/.github/workflows/lint-reusable.yaml@main
+    permissions:
+      contents: read

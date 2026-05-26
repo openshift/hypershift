@@ -41,7 +41,7 @@ import (
 // know or care about in advance.
 //
 // TODO: Mutates the input, instead should use a copy of the input options
-func createClusterOpts(ctx context.Context, client crclient.Client, hc *hyperv1.HostedCluster, opts *PlatformAgnosticOptions) (*PlatformAgnosticOptions, error) {
+func createClusterOpts(_ context.Context, _ crclient.Client, hc *hyperv1.HostedCluster, opts *PlatformAgnosticOptions) (*PlatformAgnosticOptions, error) { //nolint:unparam // error return kept for API consistency
 	opts.Namespace = hc.Namespace
 	opts.Name = hc.Name
 
@@ -146,7 +146,7 @@ func createCluster(ctx context.Context, hc *hyperv1.HostedCluster, opts *Platfor
 		}
 		validOpts := completer.(*azure.ValidatedCreateOptions)
 
-		infraOpts, err := azure.CreateInfraOptions(ctx, validOpts, coreOpts)
+		infraOpts, err := azure.CreateInfraOptions(validOpts, coreOpts)
 		if err != nil {
 			return fmt.Errorf("failed to create infra options: %w", err)
 		}
@@ -300,7 +300,7 @@ func validateAWSGuestResourcesDeletedFunc(ctx context.Context, t *testing.T, inf
 		var lastOutput *resourcegroupstaggingapi.GetResourcesOutput
 
 		// Find load balancers, persistent volumes, or s3 buckets belonging to the guest cluster
-		err := wait.PollUntilContextTimeout(ctx, 20*time.Second, 25*time.Minute, false, func(ctx context.Context) (bool, error) {
+		err := wait.PollUntilContextTimeout(ctx, 20*time.Second, 15*time.Minute, false, func(ctx context.Context) (bool, error) {
 			// Filter get cluster resources.
 			output, err := taggingClient.GetResources(ctx, &resourcegroupstaggingapi.GetResourcesInput{
 				ResourceTypeFilters: []string{

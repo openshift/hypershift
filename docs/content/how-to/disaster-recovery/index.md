@@ -20,3 +20,6 @@ Updated procedures and enhanced features for OADP version 1.5.
 
 ### [ETCD Recovery](etcd-recovery.md)
 ETCD disaster recovery procedures for control plane data backup and restoration.
+
+### [Etcd Snapshot Backup (Tech Preview)](etcd-snapshot-backup/index.md)
+Alternative backup method using native etcd snapshots instead of volume snapshots. Requires the `HCPEtcdBackup` feature gate. Includes detailed backup and restore flow documentation.

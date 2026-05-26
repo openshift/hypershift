@@ -1,10 +1,13 @@
 package azure
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
+
+	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
@@ -21,6 +24,63 @@ import (
 
 	"github.com/spf13/pflag"
 )
+
+func TestValidateEndpointAccess(t *testing.T) {
+	tests := map[string]struct {
+		endpointAccess                                      string
+		endpointAccessPrivateNATSubnetID                    string
+		endpointAccessPrivateAdditionalAllowedSubscriptions []string
+		expectError                                         bool
+		expectedErrorMsg                                    string
+	}{
+		"When endpoint-access has an invalid value it should return an error": {
+			endpointAccess:   "InvalidValue",
+			expectError:      true,
+			expectedErrorMsg: "--endpoint-access must be one of: Public, PublicAndPrivate, Private",
+		},
+		"When endpoint-access is Private without nat-subnet-id it should succeed (controller auto-creates)": {
+			endpointAccess: "Private",
+			expectError:    false,
+		},
+		"When endpoint-access is PublicAndPrivate without nat-subnet-id it should succeed (controller auto-creates)": {
+			endpointAccess: "PublicAndPrivate",
+			expectError:    false,
+		},
+		"When endpoint-access is Private with nat-subnet-id it should succeed without additional subscriptions": {
+			endpointAccess:                   "Private",
+			endpointAccessPrivateNATSubnetID: "/subscriptions/sub-1/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/nat-subnet",
+			expectError:                      false,
+		},
+		"When endpoint-access is Public it should succeed without private connectivity fields": {
+			endpointAccess: "Public",
+			expectError:    false,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			opts := DefaultOptions()
+			opts.CredentialsFile = "fake"
+			opts.EndpointAccess = test.endpointAccess
+			opts.EndpointAccessPrivateNATSubnetID = test.endpointAccessPrivateNATSubnetID
+			opts.EndpointAccessPrivateAdditionalAllowedSubscriptions = test.endpointAccessPrivateAdditionalAllowedSubscriptions
+
+			_, err := opts.Validate(context.Background(), nil)
+			if test.expectError {
+				if err == nil {
+					t.Fatalf("expected error but got nil")
+				}
+				if err.Error() != test.expectedErrorMsg {
+					t.Fatalf("expected error %q but got %q", test.expectedErrorMsg, err.Error())
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("expected no error but got: %v", err)
+				}
+			}
+		})
+	}
+}
 
 func TestCreateCluster(t *testing.T) {
 	utilrand.Seed(1234567890)
@@ -219,6 +279,32 @@ func TestCreateCluster(t *testing.T) {
 				"--image-generation=Gen1",
 			},
 		},
+		{
+			name: "When endpoint-access is Private with endpoint-access-private flags it should render HostedCluster with Private endpoint access",
+			args: []string{
+				"--azure-creds=" + credentialsFile,
+				"--infra-json=" + infraFile,
+				"--render-sensitive",
+				"--name=example",
+				"--pull-secret=" + pullSecretFile,
+				"--managed-identities-file", filepath.Join(tempDir, "managedIdentities.json"),
+				"--data-plane-identities-file", filepath.Join(tempDir, "dataPlaneIdentities.json"),
+				"--endpoint-access=Private",
+				"--endpoint-access-private-nat-subnet-id=/subscriptions/sub-1/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/nat-subnet",
+				"--endpoint-access-private-additional-allowed-subscriptions=sub-1,sub-2",
+			},
+		},
+		{
+			name: "When oauth-publishing-strategy is LoadBalancer with workload identities it should render HostedCluster with OAuth LoadBalancer",
+			args: []string{
+				"--azure-creds=" + credentialsFile,
+				"--infra-json=" + infraFile,
+				"--render-sensitive",
+				"--name=example",
+				"--pull-secret=" + pullSecretFile,
+				"--oauth-publishing-strategy=LoadBalancer",
+			},
+		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			flags := pflag.NewFlagSet(testCase.name, pflag.ContinueOnError)
@@ -245,6 +331,138 @@ func TestCreateCluster(t *testing.T) {
 				t.Fatalf("failed to read manifests file: %v", err)
 			}
 			testutil.CompareWithFixture(t, manifests)
+		})
+	}
+}
+
+func TestValidateExternalDNSDomain(t *testing.T) {
+	t.Parallel()
+	tests := map[string]struct {
+		externalDNSDomain string
+		name              string
+		baseDomain        string
+		expectError       bool
+	}{
+		"When externalDNSDomain matches cluster domain, it should return an error": {
+			externalDNSDomain: "test-cluster.example.com",
+			name:              "test-cluster",
+			baseDomain:        "example.com",
+			expectError:       true,
+		},
+		"When externalDNSDomain is parent of cluster domain, it should return an error": {
+			externalDNSDomain: "example.com",
+			name:              "test-cluster",
+			baseDomain:        "example.com",
+			expectError:       true,
+		},
+		"When externalDNSDomain differs from cluster domain, it should return nil": {
+			externalDNSDomain: "external.different.com",
+			name:              "test-cluster",
+			baseDomain:        "example.com",
+			expectError:       false,
+		},
+		"When externalDNSDomain is empty, it should return nil": {
+			externalDNSDomain: "",
+			name:              "test-cluster",
+			baseDomain:        "example.com",
+			expectError:       false,
+		},
+		"When externalDNSDomain matches cluster domain case-insensitively, it should return an error": {
+			externalDNSDomain: "Test-Cluster.Example.COM",
+			name:              "test-cluster",
+			baseDomain:        "example.com",
+			expectError:       true,
+		},
+		"When cluster name is empty, it should return nil": {
+			externalDNSDomain: "test-cluster.example.com",
+			name:              "",
+			baseDomain:        "example.com",
+			expectError:       false,
+		},
+		"When base domain is empty, it should return nil": {
+			externalDNSDomain: "test-cluster.example.com",
+			name:              "test-cluster",
+			baseDomain:        "",
+			expectError:       false,
+		},
+		"When externalDNSDomain shares a suffix but not on dot boundary, it should return nil": {
+			externalDNSDomain: "ample.com",
+			name:              "test-cluster",
+			baseDomain:        "example.com",
+			expectError:       false,
+		},
+		"When externalDNSDomain has trailing dot, it should still detect shadowing": {
+			externalDNSDomain: "test-cluster.example.com.",
+			name:              "test-cluster",
+			baseDomain:        "example.com",
+			expectError:       true,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			g := NewGomegaWithT(t)
+
+			err := validateExternalDNSDomain(test.externalDNSDomain, test.name, test.baseDomain)
+			if test.expectError {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring("conflicts with cluster domain"))
+				g.Expect(err.Error()).To(ContainSubstring("shadows *.apps DNS resolution"))
+			} else {
+				g.Expect(err).NotTo(HaveOccurred())
+			}
+		})
+	}
+}
+
+func TestValidateOAuthPublishingStrategy(t *testing.T) {
+	tests := map[string]struct {
+		oauthPublishingStrategy string
+		managedIdentitiesFile   string
+		dataPlaneIdentitiesFile string
+		expectError             bool
+		expectedErrorMsg        string
+	}{
+		"When oauth-publishing-strategy is LoadBalancer with managed identities file, it should return an error": {
+			oauthPublishingStrategy: "LoadBalancer",
+			managedIdentitiesFile:   "fake-managed-identities.json",
+			dataPlaneIdentitiesFile: "fake-data-plane-identities.json",
+			expectError:             true,
+			expectedErrorMsg:        "--oauth-publishing-strategy LoadBalancer is not supported for ARO HCP (managed identities) clusters",
+		},
+		"When oauth-publishing-strategy is an invalid value, it should return an error": {
+			oauthPublishingStrategy: "InvalidValue",
+			expectError:             true,
+			expectedErrorMsg:        "--oauth-publishing-strategy must be either Route or LoadBalancer",
+		},
+		"When oauth-publishing-strategy is Route, it should pass validation": {
+			oauthPublishingStrategy: "Route",
+			expectError:             false,
+		},
+		"When oauth-publishing-strategy is LoadBalancer without managed identities, it should pass validation": {
+			oauthPublishingStrategy: "LoadBalancer",
+			expectError:             false,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			opts := DefaultOptions()
+			opts.CredentialsFile = "fake"
+			opts.OAuthPublishingStrategy = test.oauthPublishingStrategy
+			opts.ManagedIdentitiesFile = test.managedIdentitiesFile
+			opts.DataPlaneIdentitiesFile = test.dataPlaneIdentitiesFile
+
+			_, err := opts.Validate(context.Background(), nil)
+			if test.expectError {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err).To(MatchError(test.expectedErrorMsg))
+			} else {
+				g.Expect(err).NotTo(HaveOccurred())
+			}
 		})
 	}
 }

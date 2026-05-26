@@ -279,12 +279,32 @@ func validateRevocation(t *testing.T, ctx context.Context, hostedCluster *hypers
 		},
 	)
 
-	t.Logf("creating a client using the a certificate from the revoked signer")
-	previousCertClient := clientForCertKey(t, guest.Cfg, signedCrt, key)
-
-	t.Log("issuing SSR to confirm that we're not authorized to contact the server")
-	response, err := previousCertClient.AuthenticationV1().SelfSubjectReviews().Create(ctx, &authenticationv1.SelfSubjectReview{}, metav1.CreateOptions{})
-	if !apierrors.IsUnauthorized(err) {
-		t.Fatalf("expected an unauthorized error, got %v, response %#v", err, response)
+	// Poll the SSR through the service LB until we get Unauthorized.
+	// The controller already verified per-pod that all KAS instances rejected
+	// the old cert before setting PreviousCertificatesRevokedType=True, and the
+	// old signer CA has been pruned from the trust bundle ConfigMap. However, a
+	// KAS pod may restart between the controller's check and this test, causing
+	// the LB to transiently route to a pod that hasn't finished loading the
+	// trust bundle yet. Polling handles this without duplicating the controller's
+	// per-pod logic.
+	//
+	// We set a per-request timeout on the client because KAS may stall the TLS
+	// handshake (rather than cleanly rejecting) while reloading its trust bundle
+	// after revocation. Without a request timeout the HTTP call blocks
+	// indefinitely and the poll timeout cannot interrupt it.
+	t.Log("polling SSR to confirm that the revoked certificate is rejected")
+	cfgWithTimeout := rest.CopyConfig(guest.Cfg)
+	cfgWithTimeout.Timeout = 10 * time.Second
+	previousCertClient := clientForCertKey(t, cfgWithTimeout, signedCrt, key)
+	if err := wait.PollUntilContextTimeout(ctx, 1*time.Second, 3*time.Minute, true, func(ctx context.Context) (done bool, err error) {
+		t.Log("attempting SSR with revoked cert")
+		_, err = previousCertClient.AuthenticationV1().SelfSubjectReviews().Create(ctx, &authenticationv1.SelfSubjectReview{}, metav1.CreateOptions{})
+		if apierrors.IsUnauthorized(err) {
+			return true, nil
+		}
+		t.Logf("SSR not yet unauthorized (err=%v), retrying", err)
+		return false, nil
+	}); err != nil {
+		t.Fatalf("revoked certificate was not rejected within timeout: %v", err)
 	}
 }

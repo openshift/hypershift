@@ -1,14 +1,14 @@
 package aws
 
 import (
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/podspec"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 const (
-	Provider          = util.AWSCloudProviderName
+	Provider          = podspec.AWSCloudProviderName
 	ProviderConfigKey = "aws.conf"
 )
 

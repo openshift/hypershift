@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/netutil"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
@@ -129,7 +129,7 @@ func (mc *NTOPerformanceProfileTest) Run(t *testing.T, nodePool hyperv1.NodePool
 		},
 		[]e2eutil.Predicate[*corev1.ConfigMap]{
 			func(configMap *corev1.ConfigMap) (done bool, reasons string, err error) {
-				if want, got := util.ShortenName(performanceProfileConfigMap.Name, nodePool.Name, nodepool.QualifiedNameMaxLength), configMap.Name; want != got {
+				if want, got := netutil.ShortenName(performanceProfileConfigMap.Name, nodePool.Name, nodepool.QualifiedNameMaxLength), configMap.Name; want != got {
 					return false, fmt.Sprintf("expected performance profile ConfigMap name to be '%s', got '%s'", want, got), nil
 				}
 				return true, fmt.Sprintf("performance profile ConfigMap name is as expected"), nil
@@ -176,7 +176,7 @@ func (mc *NTOPerformanceProfileTest) Run(t *testing.T, nodePool hyperv1.NodePool
 		},
 		[]e2eutil.Predicate[*corev1.ConfigMap]{
 			func(configMap *corev1.ConfigMap) (done bool, reasons string, err error) {
-				if want, got := fmt.Sprintf("status-%s", util.ShortenName(performanceProfileConfigMap.Name, nodePool.Name, nodepool.QualifiedNameMaxLength)), configMap.Name; want != got {
+				if want, got := fmt.Sprintf("status-%s", netutil.ShortenName(performanceProfileConfigMap.Name, nodePool.Name, nodepool.QualifiedNameMaxLength)), configMap.Name; want != got {
 					return false, fmt.Sprintf("expected performance profile status ConfigMap name to be '%s', got '%s'", want, got), nil
 				}
 				return true, fmt.Sprintf("performance profile status ConfigMap name is as expected"), nil

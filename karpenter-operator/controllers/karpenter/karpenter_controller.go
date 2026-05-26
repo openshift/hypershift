@@ -8,7 +8,7 @@ import (
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1beta1"
+	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1"
 	hypershiftv1beta1applyconfigurations "github.com/openshift/hypershift/client/applyconfiguration/hypershift/v1beta1"
 	hypershiftclient "github.com/openshift/hypershift/client/clientset/clientset"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
@@ -18,6 +18,7 @@ import (
 	supportassets "github.com/openshift/hypershift/support/assets"
 	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
+	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
@@ -145,12 +146,34 @@ func (r *Reconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager, man
 		GenericFunc: func(e event.GenericEvent) bool { return false },
 	}
 
+	// NodeClaim predicate: fire on create/delete (count changes) and also when
+	// CPU capacity changes (for vCPU billing). Capacity is populated after the
+	// node registers, so we need updates for that transition.
+	nodeClaimPredicate := predicate.Funcs{
+		CreateFunc: func(e event.CreateEvent) bool { return true },
+		DeleteFunc: func(e event.DeleteEvent) bool { return true },
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			oldNC, ok1 := e.ObjectOld.(*karpenterv1.NodeClaim)
+			newNC, ok2 := e.ObjectNew.(*karpenterv1.NodeClaim)
+			if !ok1 || !ok2 {
+				return false
+			}
+			oldCPU := oldNC.Status.Capacity[corev1.ResourceCPU]
+			newCPU := newNC.Status.Capacity[corev1.ResourceCPU]
+			if !oldCPU.Equal(newCPU) {
+				return true
+			}
+			return oldNC.Status.NodeName != newNC.Status.NodeName
+		},
+		GenericFunc: func(e event.GenericEvent) bool { return false },
+	}
+
 	// Watch NodeClaims guest side to trigger reconcile when NodeClaims change.
 	if err := c.Watch(source.Kind[client.Object](mgr.GetCache(), &karpenterv1.NodeClaim{},
 		handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, _ client.Object) []ctrl.Request {
 			return []ctrl.Request{{NamespacedName: client.ObjectKey{Namespace: r.Namespace}}}
 		}),
-		countChangePredicate,
+		nodeClaimPredicate,
 	)); err != nil {
 		return fmt.Errorf("failed to watch NodeClaims: %w", err)
 	}
@@ -270,6 +293,13 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		}
 	}
 
+	// Moved here from hypershift operator. Consumed by our ignition controller to taint our nodes
+	// on firstboot so our nodes don't get workloads on them until karpenter okays it. Centralized here
+	// so each nodeclass doesn't need its own separate taint configmap.
+	if err := r.reconcileTaintConfigMap(ctx, hcp); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to reconcile taint configmap: %w", err)
+	}
+
 	// Reconcile AutoNode status before the release image lookup so node/nodeclaim counts
 	// are always updated even if the release image lookup fails during/after a control plane upgrade.
 	if err := r.reconcileAutoNodeStatus(ctx, hcp); err != nil {
@@ -288,7 +318,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	}
 	imageProvider := imageprovider.New(releaseImage)
 	imageProvider.ComponentImages()["token-minter"] = r.ControlPlaneOperatorImage
-	imageProvider.ComponentImages()[util.AvailabilityProberImageName] = r.ControlPlaneOperatorImage
+	imageProvider.ComponentImages()[podspec.AvailabilityProberImageName] = r.ControlPlaneOperatorImage
 
 	cpContext := controlplanecomponent.ControlPlaneContext{
 		Context:              ctx,
@@ -331,8 +361,10 @@ func (r *Reconciler) reconcileAutoNodeStatus(ctx context.Context, hcp *hyperv1.H
 		return fmt.Errorf("failed to list nodes: %w", err)
 	}
 
+	liveNodes := make(map[string]struct{}, len(nodes.Items))
 	var karpenterNodeCount int32
 	for i := range nodes.Items {
+		liveNodes[nodes.Items[i].Name] = struct{}{}
 		if _, hasLabel := nodes.Items[i].Labels[karpenterv1.NodePoolLabelKey]; hasLabel {
 			karpenterNodeCount++
 		}
@@ -345,11 +377,14 @@ func (r *Reconciler) reconcileAutoNodeStatus(ctx context.Context, hcp *hyperv1.H
 		return fmt.Errorf("failed to list NodeClaims: %w", err)
 	}
 
+	vcpus := sumNodeClaimVCPUs(nodeClaims.Items, liveNodes)
+
 	statusCfg := hypershiftv1beta1applyconfigurations.HostedControlPlaneStatus().
 		WithAutoNode(
 			hypershiftv1beta1applyconfigurations.AutoNodeStatus().
 				WithNodeCount(karpenterNodeCount).
-				WithNodeClaimCount(int32(len(nodeClaims.Items))),
+				WithNodeClaimCount(int32(len(nodeClaims.Items))).
+				WithVCPUs(vcpus),
 		)
 	cfg := hypershiftv1beta1applyconfigurations.HostedControlPlane(hcp.Name, hcp.Namespace)
 	cfg.Status = statusCfg
@@ -369,6 +404,42 @@ func (r *Reconciler) reconcileAutoNodeStatus(ctx context.Context, hcp *hyperv1.H
 	return nil
 }
 
+// sumNodeClaimVCPUs returns the total vCPU count across NodeClaims whose
+// backing Node still exists in the cluster and has reported CPU capacity.
+// The NodeClaim is the authoritative record of Karpenter ownership.
+func sumNodeClaimVCPUs(nodeClaims []karpenterv1.NodeClaim, liveNodes map[string]struct{}) int32 {
+	var total int64
+	for i := range nodeClaims {
+		nc := &nodeClaims[i]
+		if _, ok := liveNodes[nc.Status.NodeName]; !ok {
+			continue
+		}
+		if cpu, ok := nc.Status.Capacity[corev1.ResourceCPU]; ok {
+			total += cpu.Value()
+		}
+	}
+	return int32(total)
+}
+
+// reconcileTaintConfigMap ensures the set-karpenter-taint ConfigMap exists in the HCP namespace.
+func (r *Reconciler) reconcileTaintConfigMap(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	cm := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      karpenterutil.KarpenterTaintConfigMapName,
+			Namespace: hcp.Namespace,
+		},
+	}
+	_, err := r.CreateOrUpdate(ctx, r.ManagementClient, cm, func() error {
+		manifest, err := karpenterutil.KarpenterTaintConfigManifest()
+		if err != nil {
+			return fmt.Errorf("failed to generate taint config manifest: %w", err)
+		}
+		cm.Data = map[string]string{"config": manifest}
+		return nil
+	})
+	return err
+}
+
 // reconcileCRDs reconcile the Karpenter CRDs, if onlyCreate is true it uses an only write non cached client.
 func (r *Reconciler) reconcileCRDs(ctx context.Context, onlyCreate bool) error {
 	log := ctrl.LoggerFrom(ctx)
@@ -376,11 +447,12 @@ func (r *Reconciler) reconcileCRDs(ctx context.Context, onlyCreate bool) error {
 	errs := []error{}
 	var op controllerutil.OperationResult
 	var err error
-	for _, crd := range []*apiextensionsv1.CustomResourceDefinition{
+	for _, desired := range []*apiextensionsv1.CustomResourceDefinition{
 		crdEC2NodeClass,
 		crdNodePool,
 		crdNodeClaim,
 	} {
+		crd := desired.DeepCopy()
 		if onlyCreate {
 			if err := r.GuestClient.Create(ctx, crd); err != nil {
 				if !apierrors.IsAlreadyExists(err) {
@@ -389,6 +461,7 @@ func (r *Reconciler) reconcileCRDs(ctx context.Context, onlyCreate bool) error {
 			}
 		} else {
 			op, err = r.CreateOrUpdate(ctx, r.GuestClient, crd, func() error {
+				crd.Spec = desired.Spec
 				return nil
 			})
 			if err != nil {

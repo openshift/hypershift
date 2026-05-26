@@ -14,6 +14,7 @@ import (
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/rhobsmonitoring"
 	"github.com/openshift/hypershift/support/util"
 
@@ -63,7 +64,7 @@ func (cvo *clusterVersionOperator) adaptDeployment(cpContext component.WorkloadC
 		return fmt.Errorf("failed to discover CVO release images: %w", err)
 	}
 
-	util.UpdateContainer("prepare-payload", deployment.Spec.Template.Spec.InitContainers, func(c *corev1.Container) {
+	podspec.UpdateContainer("prepare-payload", deployment.Spec.Template.Spec.InitContainers, func(c *corev1.Container) {
 		c.Args = []string{
 			"-c",
 			preparePayloadScript(cpContext.HCP.Spec.Platform.Type, util.HCPOAuthEnabled(cpContext.HCP), featureSet),
@@ -94,15 +95,15 @@ func (cvo *clusterVersionOperator) adaptDeployment(cpContext component.WorkloadC
 	if err != nil {
 		return err
 	}
-	util.UpdateContainer("bootstrap", deployment.Spec.Template.Spec.InitContainers, func(c *corev1.Container) {
+	podspec.UpdateContainer("bootstrap", deployment.Spec.Template.Spec.InitContainers, func(c *corev1.Container) {
 		c.Env = append(c.Env, corev1.EnvVar{
 			Name:  "CLUSTER_VERSION_JSON",
 			Value: string(clusterVersionJSON),
 		})
 	})
 
-	util.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
-		util.UpsertEnvVar(c, corev1.EnvVar{
+	podspec.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
+		podspec.UpsertEnvVar(c, corev1.EnvVar{
 			Name:  "RELEASE_IMAGE",
 			Value: dataPlaneReleaseImage,
 		})

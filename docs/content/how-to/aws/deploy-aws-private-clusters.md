@@ -15,7 +15,7 @@ through the process of configuring HyperShift for private cluster support on AWS
 
 To enable private hosted clusters, HyperShift must be installed with private
 cluster support. This guide assumes you have performed all the
-[Getting started guide prerequisites](../../getting-started.md#prerequisites). The
+[Getting started guide prerequisites](../../getting-started/quick-setup.md#prerequisites). The
 following steps will reference elements of the steps you already performed.
 
 1. Create the private cluster IAM policy document.
@@ -128,7 +128,7 @@ following steps will reference elements of the steps you already performed.
 
     !!! note
 
-        Even if you already installed HyperShift using the [Getting started guide](../../getting-started.md), you
+        Even if you already installed HyperShift using the [Getting started guide](../../getting-started/quick-setup.md), you
         can safely run `hypershift install` again with private cluster support to update the existing installation.
 
     !!! important

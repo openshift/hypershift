@@ -166,7 +166,7 @@ type APIExcludedField struct {
 	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:MaxItems=32
 	// +listType=set
-	// +optional
+	// +required
 	Versions []APIVersionString `json:"versions,omitempty"`
 }
 
@@ -185,9 +185,11 @@ type CompatibilitySchema struct {
 	// excludedFields is a set of fields in the schema which will not be validated by
 	// crdSchemaValidation or objectSchemaValidation.
 	// The list may contain at most 64 fields.
+	// Each path in the list must be unique.
 	// When not specified, all fields in the schema will be validated.
 	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:MaxItems=64
+	// +kubebuilder:validation:XValidation:rule="self.all(x, self.exists_one(y, y.path == x.path))",message="each path in the list must be unique."
 	// +listType=atomic
 	// +optional
 	ExcludedFields []APIExcludedField `json:"excludedFields,omitempty"`
@@ -220,13 +222,13 @@ type ObjectSchemaValidation struct {
 	// filtered by namespace.
 	// +kubebuilder:validation:XValidation:rule="size(self.matchLabels) > 0 || size(self.matchExpressions) > 0",message="must have at least one of matchLabels or matchExpressions when specified"
 	// +optional
-	NamespaceSelector metav1.LabelSelector `json:"namespaceSelector,omitempty"`
+	NamespaceSelector metav1.LabelSelector `json:"namespaceSelector,omitempty,omitzero"`
 	// objectSelector defines a label selector for objects. If defined, only
 	// objects with matching labels will be subject to validation. When not
 	// specified, objects for validation will not be filtered by label.
 	// +kubebuilder:validation:XValidation:rule="size(self.matchLabels) > 0 || size(self.matchExpressions) > 0",message="must have at least one of matchLabels or matchExpressions when specified"
 	// +optional
-	ObjectSelector metav1.LabelSelector `json:"objectSelector,omitempty"`
+	ObjectSelector metav1.LabelSelector `json:"objectSelector,omitempty,omitzero"`
 
 	// matchConditions defines the matchConditions field of the resulting ValidatingWebhookConfiguration.
 	// When present, must contain between 1 and 64 match conditions.

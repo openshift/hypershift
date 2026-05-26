@@ -9,6 +9,7 @@ plugins:
 - search
 - mermaid2:
     version: 11.2.0
+    javascript: https://unpkg.com/mermaid@11.2.0/dist/mermaid.min.js
 - glightbox:
     touchNavigation: true
     loop: false
@@ -25,12 +26,14 @@ docs_dir: content
 repo_url: https://github.com/openshift/hypershift
 edit_uri: edit/main/docs/content
 repo_name: openshift/hypershift
-extra_javascript:
-  - https://unpkg.com/mermaid@11.2.0/dist/mermaid.min.js
 markdown_extensions:
 - toc:
     toc_depth: "2-3"
 - attr_list:
+- md_in_html:
+- pymdownx.emoji:
+    emoji_index: !!python/name:material.extensions.emoji.twemoji
+    emoji_generator: !!python/name:material.extensions.emoji.to_svg
 - pymdownx.highlight
 - pymdownx.inlinehilite
 - pymdownx.superfences:
@@ -55,40 +58,50 @@ extra_css:
   - custom.css
 nav:
 - Home: index.md
-- 'Getting started': getting-started.md
+- 'Getting Started':
+  - getting-started/index.md
+  - 'Quick Setup (AWS)': getting-started/quick-setup.md
+  - 'Onboarding Guide':
+    - getting-started/onboarding/index.md
+    - 'What is HyperShift?': getting-started/onboarding/what-is-hypershift.md
+    - 'Key Concepts': getting-started/onboarding/key-concepts.md
+    - 'Architecture': getting-started/onboarding/architecture.md
+    - 'Cluster Lifecycle': getting-started/onboarding/lifecycle.md
+    - 'Data Plane': getting-started/onboarding/data-plane.md
+    - 'Cloud Platforms': getting-started/onboarding/platforms.md
+    - 'Development': getting-started/onboarding/development.md
+    - 'Reference': getting-started/onboarding/reference.md
 - 'How-to guides':
   - how-to/index.md
-  - how-to/feature-gates.md
+  - 'Agentic SDLC': how-to/agentic-sdlc.md
   - how-to/audit-log-persistence.md
+  - 'Automated Machine Management':
+    - how-to/automated-machine-management/index.md
+    - how-to/automated-machine-management/configure-machines.md
+    - how-to/automated-machine-management/performance-profiling.md
+    - how-to/automated-machine-management/node-tuning.md
+    - how-to/automated-machine-management/nodepool-lifecycle.md
+    - how-to/automated-machine-management/scale-to-zero-dataplane.md
+  - how-to/autoscaling.md
+  - 'CI':
+    - 'AI-Assisted CI Jobs': how-to/ci/ai-assisted-ci-jobs.md
+    - how-to/ci/ci-infrastructure.md
+    - how-to/ci/checking-ci.md
+    - 'Documentation Preview': how-to/ci/docs-preview.md
+    - 'GitHub Actions Workflows': how-to/ci/github-actions.md
+    - 'Sync Community Fork': how-to/ci/sync-community-fork.md
+  - 'Common':
+    - how-to/common/exposing-services-from-hcp.md
+    - 'Global Pull Secret': how-to/common/global-pull-secret.md
+    - 'HCP Networking Requirements': how-to/common/hcp-networking-requirements.md
+    - how-to/common/multi-arch-on-hcp.md
+  - how-to/metrics-sets.md
   - 'Configure OCP components':
     - how-to/configure-ocp-components/index.md
     - how-to/configure-ocp-components/kubeapi-server.md
-    - how-to/configure-ocp-components/custom-kas-kubeconfig.md
     - how-to/configure-ocp-components/oauth-serving-certificates.md
-  - how-to/distribute-hosted-cluster-workloads.md
-  - how-to/upgrades.md
-  - how-to/restart-control-plane-components.md
-  - how-to/resource-based-control-plane-autoscaling.md
-  - how-to/pause-reconciliation.md
+    - how-to/configure-ocp-components/custom-kas-kubeconfig.md
   - how-to/per-hostedcluster-dashboard.md
-  - how-to/metrics-sets.md
-  - how-to/troubleshooting-general.md
-  - 'Common':
-    - 'HCP Networking Requirements': how-to/common/hcp-networking-requirements.md
-    - how-to/common/exposing-services-from-hcp.md
-    - how-to/common/multi-arch-on-hcp.md
-    - 'Global Pull Secret': how-to/common/global-pull-secret.md
-  - 'CI':
-    - how-to/ci/checking-ci.md
-    - how-to/ci/ci-infrastructure.md
-    - 'AI-Assisted CI Jobs': how-to/ci/ai-assisted-ci-jobs.md
-    - 'Documentation Preview': how-to/ci/docs-preview.md
-  - 'HyperShift Operator Install':
-    - how-to/install/index.md
-  - 'PKI and Certificates':
-    - how-to/pki/index.md
-    - how-to/pki/control-plane-certificates.md
-    - how-to/pki/break-glass-credentials.md
   - 'Disaster Recovery':
     - how-to/disaster-recovery/index.md
     - 'Prerequisites': how-to/disaster-recovery/prerequisites.md
@@ -96,88 +109,110 @@ nav:
     - how-to/disaster-recovery/backup-and-restore-oadp.md
     - how-to/disaster-recovery/backup-and-restore-oadp-1-5.md
     - how-to/disaster-recovery/etcd-recovery.md
-  - 'Automated Machine Management':
-    - how-to/automated-machine-management/index.md
-    - how-to/automated-machine-management/scale-to-zero-dataplane.md
-    - how-to/automated-machine-management/nodepool-lifecycle.md
-    - how-to/automated-machine-management/node-tuning.md
-    - how-to/automated-machine-management/configure-machines.md
-    - how-to/automated-machine-management/performance-profiling.md
-  - 'AWS':
-    - how-to/aws/create-aws-hosted-cluster-arm-workers.md
-    - how-to/aws/create-infra-iam-separately.md
-    - how-to/aws/create-aws-hosted-cluster-multiple-zones.md
-    - how-to/aws/create-aws-hosted-cluster-autonode.md
-    - how-to/aws/deploy-aws-private-clusters.md
-    - how-to/aws/external-dns.md
-    - how-to/aws/etc-backup-restore.md
-    - how-to/aws/disaster-recovery.md
-    - how-to/aws/shared-vpc.md
-    - how-to/aws/define-custom-kube-api-name.md
-    - 'Global Pull Secret': how-to/aws/global-pull-secret.md
-    - 'Other SDN providers': how-to/aws/other-sdn-providers.md
-    - 'Troubleshooting':
-        - how-to/aws/troubleshooting/index.md
-        - how-to/aws/troubleshooting/debug-nodes.md
-        - how-to/aws/troubleshooting/troubleshooting-disaster-recovery.md
-  - 'Azure':
-    - how-to/azure/index.md
-    - 'Managed Azure':
-      - how-to/azure/create-azure-cluster-on-aks.md
-      - how-to/azure/create-azure-cluster-with-options.md
-      - how-to/azure/scheduler.md
-    - 'Self-managed Azure':
-      - how-to/azure/self-managed-azure-index.md
-      - how-to/azure/azure-workload-identity-setup.md
-      - how-to/azure/setup-management-cluster.md
-      - how-to/azure/create-self-managed-azure-cluster.md
-      - how-to/azure/create-iam-separately.md
-      - how-to/azure/create-infra-separately.md
-    - 'Global Pull Secret': how-to/azure/global-pull-secret.md
-    - 'Troubleshooting':
-        - how-to/azure/troubleshooting/index.md
-        - how-to/azure/troubleshooting/debug-nodes.md
-  - 'Agent':
-    - how-to/agent/create-agent-cluster.md
-    - how-to/agent/create-heterogeneous-nodepools.md
-    - 'Other SDN providers': how-to/agent/other-sdn-providers.md
-    - 'Exposing HCP Services': how-to/agent/exposing-services-from-hcp.md
-    - 'Global Pull Secret': how-to/agent/global-pull-secret.md
+    - 'Etcd Snapshot Backup (Tech Preview)':
+      - how-to/disaster-recovery/etcd-snapshot-backup/index.md
+      - how-to/disaster-recovery/etcd-snapshot-backup/backup-flow.md
+      - how-to/disaster-recovery/etcd-snapshot-backup/restore-flow.md
   - 'Disconnected':
     - how-to/disconnected/index.md
-    - how-to/disconnected/tls-certificates.md
-    - 'IDMS/ICSP Config for Management Cluster': how-to/disconnected/idms-icsp-for-management-clusters.md
     - how-to/disconnected/image-content-sources.md
     - how-to/disconnected/disconnected-workarounds.md
+    - how-to/disconnected/tls-certificates.md
+    - 'IDMS/ICSP Config for Management Cluster': how-to/disconnected/idms-icsp-for-management-clusters.md
     - how-to/disconnected/known-issues.md
-  - 'Kubevirt':
-    - how-to/kubevirt/create-kubevirt-cluster.md
-    - how-to/kubevirt/ingress-and-dns.md
-    - how-to/kubevirt/configuring-storage.md
-    - how-to/kubevirt/configuring-network.md
-    - how-to/kubevirt/performance-tuning.md
-    - how-to/kubevirt/external-infrastructure.md
-    - how-to/kubevirt/gpu-devices.md
-    - how-to/kubevirt/troubleshooting-kubevirt-cluster.md
-    - 'Global Pull Secret': how-to/kubevirt/global-pull-secret.md
-  - 'OpenStack':
-    - how-to/openstack/index.md
-    - how-to/openstack/prerequisites.md
-    - how-to/openstack/hostedcluster.md
-    - how-to/openstack/az.md
-    - how-to/openstack/additional-ports.md
-    - how-to/openstack/performance-tuning.md
-    - how-to/openstack/destroy.md
-    - 'Global Pull Secret': how-to/openstack/global-pull-secret.md
-  - 'None':
-    - how-to/none/create-none-cluster.md
-    - 'Exposing HCP Services': how-to/agent/exposing-services-from-hcp.md
-    - 'Global Pull Secret': how-to/none/global-pull-secret.md
-  - 'PowerVS':
-    - how-to/powervs/create-cluster-powervs.md
-    - how-to/powervs/create-infra-separately.md
-    - how-to/powervs/prerequisites-and-env-guide.md
-    - 'Global Pull Secret': how-to/powervs/global-pull-secret.md
+  - how-to/distribute-hosted-cluster-workloads.md
+  - how-to/feature-gates.md
+  - 'HyperShift Operator Install':
+    - how-to/install/index.md
+  - how-to/pause-reconciliation.md
+  - 'PKI and Certificates':
+    - how-to/pki/index.md
+    - how-to/pki/break-glass-credentials.md
+    - how-to/pki/control-plane-certificates.md
+  - 'Platform':
+    - 'Agent':
+      - how-to/agent/create-agent-cluster.md
+      - how-to/agent/create-heterogeneous-nodepools.md
+      - 'Exposing HCP Services': how-to/agent/exposing-services-from-hcp.md
+      - 'Global Pull Secret': how-to/agent/global-pull-secret.md
+      - 'Other SDN providers': how-to/agent/other-sdn-providers.md
+    - 'AWS':
+      - how-to/aws/create-aws-hosted-cluster-arm-workers.md
+      - how-to/aws/create-aws-hosted-cluster-autonode.md
+      - how-to/aws/create-aws-hosted-cluster-multiple-zones.md
+      - how-to/aws/create-infra-iam-separately.md
+      - how-to/aws/define-custom-kube-api-name.md
+      - how-to/aws/deploy-aws-private-clusters.md
+      - how-to/aws/disaster-recovery.md
+      - how-to/aws/etc-backup-restore.md
+      - how-to/aws/external-dns.md
+      - 'Global Pull Secret': how-to/aws/global-pull-secret.md
+      - 'Other SDN providers': how-to/aws/other-sdn-providers.md
+      - how-to/aws/shared-vpc.md
+      - 'Troubleshooting':
+        - how-to/aws/troubleshooting/index.md
+        - how-to/aws/troubleshooting/troubleshooting-disaster-recovery.md
+        - how-to/aws/troubleshooting/debug-nodes.md
+    - 'Azure':
+      - how-to/azure/index.md
+      - 'Global Pull Secret': how-to/azure/global-pull-secret.md
+      - 'Managed Azure':
+        - how-to/azure/create-azure-cluster-with-options.md
+        - how-to/azure/create-azure-cluster-on-aks.md
+        - how-to/azure/scheduler.md
+      - 'Self-managed Azure':
+        - how-to/azure/self-managed-azure-index.md
+        - how-to/azure/autoscaling-self-managed.md
+        - how-to/azure/azure-workload-identity-setup.md
+        - how-to/azure/create-self-managed-azure-cluster.md
+        - how-to/azure/create-iam-separately.md
+        - how-to/azure/create-infra-separately.md
+        - how-to/azure/deploy-azure-private-clusters.md
+        - how-to/azure/setup-management-cluster.md
+      - 'Troubleshooting':
+        - how-to/azure/troubleshooting/index.md
+        - how-to/azure/troubleshooting/debug-nodes.md
+    - 'GCP':
+      - how-to/gcp/index.md
+      - how-to/gcp/create-gcp-hosted-cluster.md
+      - how-to/gcp/create-gcp-iam.md
+      - how-to/gcp/create-gcp-infra.md
+      - how-to/gcp/configure-image-registry.md
+      - how-to/gcp/e2e-gke-ci-job.md
+      - how-to/gcp/setup-management-cluster.md
+    - 'Kubevirt':
+      - how-to/kubevirt/configuring-network.md
+      - how-to/kubevirt/create-kubevirt-cluster.md
+      - how-to/kubevirt/external-infrastructure.md
+      - 'Global Pull Secret': how-to/kubevirt/global-pull-secret.md
+      - how-to/kubevirt/gpu-devices.md
+      - how-to/kubevirt/ingress-and-dns.md
+      - how-to/kubevirt/performance-tuning.md
+      - how-to/kubevirt/configuring-storage.md
+      - how-to/kubevirt/configuring-vm-with-jsonpatch.md
+      - how-to/kubevirt/troubleshooting-kubevirt-cluster.md
+    - 'None':
+      - how-to/none/create-none-cluster.md
+      - 'Exposing HCP Services': how-to/none/exposing-services-from-hcp.md
+      - 'Global Pull Secret': how-to/none/global-pull-secret.md
+    - 'OpenStack':
+      - how-to/openstack/index.md
+      - how-to/openstack/additional-ports.md
+      - how-to/openstack/az.md
+      - how-to/openstack/hostedcluster.md
+      - how-to/openstack/destroy.md
+      - 'Global Pull Secret': how-to/openstack/global-pull-secret.md
+      - how-to/openstack/performance-tuning.md
+      - how-to/openstack/prerequisites.md
+    - 'PowerVS':
+      - how-to/powervs/create-cluster-powervs.md
+      - how-to/powervs/create-infra-separately.md
+      - 'Global Pull Secret': how-to/powervs/global-pull-secret.md
+      - how-to/powervs/prerequisites-and-env-guide.md
+  - how-to/resource-based-control-plane-autoscaling.md
+  - how-to/restart-control-plane-components.md
+  - how-to/troubleshooting-general.md
+  - how-to/upgrades.md
 - 'Self-Managed Laboratories':
   - 'MultiCluster Engine and Agent provider':
     - labs/index.md
@@ -301,6 +336,8 @@ nav:
     - reference/architecture/index.md
     - 'AWS':
       - 'PrivateLink': reference/architecture/aws/privatelink.md
+    - 'Azure':
+      - 'PrivateLink': reference/architecture/azure/privatelink.md
     - 'Multicluster Engine and Agent': reference/architecture/mce-and-agent.md
     - 'Managed Azure':
         - reference/architecture/managed-azure/secrets-csi.md
@@ -342,8 +379,10 @@ nav:
       - reference/test-information-debugging/Azure/test-artifacts-directory-structure.md
   - reference/SLOs.md
   - reference/versioning-support.md
+  - reference/service-publishing-strategies.md
 - 'Contribute':
   - contribute/index.md
+  - 'Repositories': contribute/repositories.md
   - 'HO/CPO Release Process': contribute/release-process.md
   - 'OCP Branching Tasks': contribute/branch-process.md
   - 'Custom Images': contribute/custom-images.md

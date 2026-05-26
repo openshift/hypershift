@@ -119,6 +119,15 @@ where:
 * `--assign-identity-roles` enables automatic RBAC role assignment for workload identities
 * `DNS_ZONE_RG` is the name of the resource group containing your public DNS zone
 
+## Creating Infrastructure for Private Clusters
+
+The `create infra azure` command creates the same infrastructure resources regardless of
+endpoint access topology. The private endpoint access topology is configured during cluster
+creation using `--endpoint-access Private` on the `hypershift create cluster azure` command.
+
+See [Deploy Azure Private Clusters](deploy-azure-private-clusters.md) for the complete
+private cluster setup workflow.
+
 ## Create Workload Identities Separately
 
 If you want to create workload identities separately before creating infrastructure, use the

@@ -10,12 +10,13 @@ import (
 	auditlogpersistencev1alpha1 "github.com/openshift/hypershift/api/auditlogpersistence/v1alpha1"
 	certificatesv1alpha1 "github.com/openshift/hypershift/api/certificates/v1alpha1"
 	hyperv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1beta1"
+	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1"
 	schedulingv1alpha1 "github.com/openshift/hypershift/api/scheduling/v1alpha1"
 	"github.com/openshift/hypershift/support/rhobsmonitoring"
 
 	configv1 "github.com/openshift/api/config/v1"
 	imagev1 "github.com/openshift/api/image/v1"
+	imageregistryv1 "github.com/openshift/api/imageregistry/v1"
 	kcpv1 "github.com/openshift/api/kubecontrolplane/v1"
 	machinev1beta1 "github.com/openshift/api/machine/v1beta1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
@@ -118,6 +119,7 @@ func init() {
 		_ = configv1.AddToScheme(scheme)
 		_ = securityv1.AddToScheme(scheme)
 		_ = operatorv1.AddToScheme(scheme)
+		_ = imageregistryv1.AddToScheme(scheme)
 		_ = oauthv1.AddToScheme(scheme)
 		_ = osinv1.AddToScheme(scheme)
 		_ = routev1.AddToScheme(scheme)

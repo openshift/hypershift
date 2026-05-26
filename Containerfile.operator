@@ -1,4 +1,5 @@
-FROM registry.access.redhat.com/ubi9/go-toolset:1.25.7-1773318690 AS builder
+FROM registry.access.redhat.com/ubi9/go-toolset:1.25.9-1778054913 AS builder
+ARG COMMIT_HASH
 
 WORKDIR /hypershift
 
@@ -10,7 +11,7 @@ RUN make hypershift \
   && make product-cli \
   && make karpenter-operator
 
-FROM registry.access.redhat.com/ubi9/ubi-minimal:9.7-1773204619
+FROM registry.access.redhat.com/ubi9/ubi-minimal:9.7-1777857961
 COPY --from=builder /hypershift/bin/hypershift \
   /hypershift/bin/hypershift-no-cgo \
   /hypershift/bin/hcp \
@@ -21,11 +22,11 @@ COPY --from=builder /hypershift/bin/hypershift \
 ENTRYPOINT ["/usr/bin/hypershift"]
 
 LABEL name="multicluster-engine/hypershift-operator"
-LABEL cpe="cpe:/a:redhat:multicluster_engine:2.12::el9"
+LABEL cpe="cpe:/a:redhat:multicluster_engine:5.0::el9"
 LABEL description="HyperShift Operator is an operator to manage the lifecycle of Hosted Clusters"
 LABEL summary="HyperShift Operator"
 LABEL url="https://catalog.redhat.com/software/containers/multicluster-engine/hypershift-rhel9-operator/"
-LABEL version=4.22
+LABEL version=5.0
 LABEL com.redhat.component="multicluster-engine-hypershift-operator"
 LABEL io.k8s.description="HyperShift Operator"
 LABEL io.k8s.display-name="hypershift-operator"

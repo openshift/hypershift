@@ -2,6 +2,7 @@ package util
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"unicode/utf8"
 
@@ -9,6 +10,8 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
+	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -263,112 +266,6 @@ func testDecompressFuncErr(t *testing.T, payload []byte) {
 	g.Expect(out.String()).To(BeEmpty(), "should be an empty string")
 }
 
-func TestFirstUsableIP(t *testing.T) {
-	tests := []struct {
-		name    string
-		cidr    string
-		want    string
-		wantErr bool
-	}{
-		{
-			name:    "Given IPv4 CIDR, it should return the first ip of the network range",
-			cidr:    "192.168.1.0/24",
-			want:    "192.168.1.1",
-			wantErr: false,
-		},
-		{
-			name:    "Given IPv6 CIDR, it should return the first ip of the network range",
-			cidr:    "2000::/3",
-			want:    "2000::1",
-			wantErr: false,
-		},
-		{
-			name:    "Given a malformed IPv4 CIDR, it should return empty string and err",
-			cidr:    "192.168.1.35.53/24",
-			want:    "",
-			wantErr: true,
-		},
-		{
-			name:    "Given a malformed IPv6 CIDR, it should return empty string and err",
-			cidr:    "2001::44444444444444/17",
-			want:    "",
-			wantErr: true,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := FirstUsableIP(tt.cidr)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("FirstUsableIP() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if got != tt.want {
-				t.Errorf("FirstUsableIP() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestParseNodeSelector(t *testing.T) {
-	tests := []struct {
-		name string
-		str  string
-		want map[string]string
-	}{
-		{
-			name: "Given a valid node selector string, it should return a map of key value pairs",
-			str:  "key1=value1,key2=value2,key3=value3",
-			want: map[string]string{
-				"key1": "value1",
-				"key2": "value2",
-				"key3": "value3",
-			},
-		},
-		{
-			name: "Given a valid node selector string with empty values, it should return a map of key value pairs",
-			str:  "key1=,key2=value2,key3=",
-			want: map[string]string{
-				"key2": "value2",
-			},
-		},
-		{
-			name: "Given a valid node selector string with empty keys, it should return a map of key value pairs",
-			str:  "=value1,key2=value2,=value3",
-			want: map[string]string{
-				"key2": "value2",
-			},
-		},
-		{
-			name: "Given a valid node selector string with empty string, it should return an empty map",
-			str:  "",
-			want: nil,
-		},
-		{
-			name: "Given a valid node selector string with invalid key value pairs, it should return a map of key value pairs",
-			str:  "key1=value1,key2,key3=value3",
-			want: map[string]string{
-				"key1": "value1",
-				"key3": "value3",
-			},
-		},
-		{
-			name: "Given a valid node selector string with values that include =, it should return a map of key value pairs",
-			str:  "key1=value1=one,key2,key3=value3=three",
-			want: map[string]string{
-				"key1": "value1=one",
-				"key3": "value3=three",
-			},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			g := NewWithT(t)
-			got := ParseNodeSelector(tt.str)
-			g.Expect(got).To(Equal(tt.want))
-		})
-	}
-}
-
 func TestSanitizeIgnitionPayload(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -418,7 +315,7 @@ func TestSanitizeIgnitionPayload(t *testing.T) {
 }
 
 func TestGetMgmtClusterCPUArch(t *testing.T) {
-	fakeKubeClient := fakekubeclient.NewSimpleClientset()
+	fakeKubeClient := fakekubeclient.NewClientset()
 	fakeDiscovery, ok := fakeKubeClient.Discovery().(*fakediscovery.FakeDiscovery)
 
 	if !ok {
@@ -561,33 +458,39 @@ func TestGetImageArchitecture(t *testing.T) {
 		name                  string
 		image                 string
 		pullSecretBytes       []byte
-		imageMetadataProvider *RegistryClientImageMetadataProvider
+		imageMetadataProvider ImageMetadataProvider
 		expectedArch          hyperv1.PayloadArchType
 		expectErr             bool
 	}{
 		{
-			name:                  "Bad pull secret, cache empty; err",
-			image:                 "quay.io/openshift-release-dev/ocp-release:4.16.11-ppc64le",
-			pullSecretBytes:       []byte(""),
-			imageMetadataProvider: &RegistryClientImageMetadataProvider{},
-			expectedArch:          "",
-			expectErr:             true,
+			name:            "When providing an empty pull secret it should return an error",
+			image:           "quay.io/openshift-release-dev/ocp-release:4.16.11-ppc64le",
+			pullSecretBytes: []byte(""),
+			imageMetadataProvider: &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
+				Err: fmt.Errorf("empty pull secret"),
+			},
+			expectedArch: "",
+			expectErr:    true,
 		},
 		{
-			name:                  "Get amd64 from amd64 image; no err",
-			image:                 "quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64",
-			pullSecretBytes:       pullSecretBytes,
-			imageMetadataProvider: &RegistryClientImageMetadataProvider{},
-			expectedArch:          hyperv1.AMD64,
-			expectErr:             false,
+			name:            "When resolving an amd64 image it should return AMD64",
+			image:           "quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64",
+			pullSecretBytes: pullSecretBytes,
+			imageMetadataProvider: &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
+				Result: &dockerv1client.DockerImageConfig{Architecture: "amd64"},
+			},
+			expectedArch: hyperv1.AMD64,
+			expectErr:    false,
 		},
 		{
-			name:                  "Get ppc64le from ppc64le image; no err",
-			image:                 "quay.io/openshift-release-dev/ocp-release:4.16.11-ppc64le",
-			pullSecretBytes:       pullSecretBytes,
-			imageMetadataProvider: &RegistryClientImageMetadataProvider{},
-			expectedArch:          hyperv1.PPC64LE,
-			expectErr:             false,
+			name:            "When resolving a ppc64le image it should return PPC64LE",
+			image:           "quay.io/openshift-release-dev/ocp-release:4.16.11-ppc64le",
+			pullSecretBytes: pullSecretBytes,
+			imageMetadataProvider: &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
+				Result: &dockerv1client.DockerImageConfig{Architecture: "ppc64le"},
+			},
+			expectedArch: hyperv1.PPC64LE,
+			expectErr:    false,
 		},
 	}
 
@@ -612,12 +515,12 @@ func TestDetermineHostedClusterPayloadArch(t *testing.T) {
 		name                  string
 		hc                    *hyperv1.HostedCluster
 		secret                *corev1.Secret
-		imageMetadataProvider *RegistryClientImageMetadataProvider
+		imageMetadataProvider ImageMetadataProvider
 		expectedPayloadType   hyperv1.PayloadArchType
 		expectErr             bool
 	}{
 		{
-			name: "Get amd64 from amd64 image; no err",
+			name: "When resolving an amd64 image it should return AMD64",
 			hc: &hyperv1.HostedCluster{
 				TypeMeta: metav1.TypeMeta{},
 				ObjectMeta: metav1.ObjectMeta{
@@ -640,12 +543,15 @@ func TestDetermineHostedClusterPayloadArch(t *testing.T) {
 					corev1.DockerConfigJsonKey: pullSecretBytes,
 				},
 			},
-			imageMetadataProvider: &RegistryClientImageMetadataProvider{},
-			expectedPayloadType:   hyperv1.AMD64,
-			expectErr:             false,
+			imageMetadataProvider: &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
+				Result:    &dockerv1client.DockerImageConfig{Architecture: "amd64"},
+				MediaType: "application/vnd.docker.distribution.manifest.v2+json",
+			},
+			expectedPayloadType: hyperv1.AMD64,
+			expectErr:           false,
 		},
 		{
-			name: "Get multi payload from multi image; no err",
+			name: "When resolving a multi-arch image it should return Multi",
 			hc: &hyperv1.HostedCluster{
 				TypeMeta: metav1.TypeMeta{},
 				ObjectMeta: metav1.ObjectMeta{
@@ -668,9 +574,12 @@ func TestDetermineHostedClusterPayloadArch(t *testing.T) {
 					corev1.DockerConfigJsonKey: pullSecretBytes,
 				},
 			},
-			imageMetadataProvider: &RegistryClientImageMetadataProvider{},
-			expectedPayloadType:   hyperv1.Multi,
-			expectErr:             false,
+			imageMetadataProvider: &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
+				Result:    &dockerv1client.DockerImageConfig{Architecture: "multi"},
+				MediaType: "application/vnd.docker.distribution.manifest.list.v2+json",
+			},
+			expectedPayloadType: hyperv1.Multi,
+			expectErr:           false,
 		},
 	}
 
@@ -689,86 +598,6 @@ func TestDetermineHostedClusterPayloadArch(t *testing.T) {
 				g.Expect(err).To(BeNil())
 				g.Expect(payloadType).To(Equal(tc.expectedPayloadType))
 			}
-		})
-	}
-}
-
-func TestIsIPv4CIDR(t *testing.T) {
-	tests := []struct {
-		input       string
-		expected    bool
-		expectError bool
-	}{
-		// Valid IPv4 CIDRs
-		{"192.168.1.0/24", true, false},
-		{"10.0.0.0/8", true, false},
-
-		// Valid IPv6 CIDRs
-		{"2001:db8::/32", false, false},
-		{"fd00::/8", false, false},
-
-		// Invalid inputs
-		{"invalid", false, true},
-		{"192.168.1.1/33", false, true},  // Invalid CIDR prefix
-		{"", false, true},                // Empty input
-		{"1234::5678::/64", false, true}, // Malformed IP
-
-		// Edge cases
-		{"0.0.0.0/0", true, false},
-		{"255.255.255.255/32", true, false},
-	}
-
-	for _, test := range tests {
-		t.Run(test.input, func(t *testing.T) {
-			g := NewWithT(t)
-			result, err := IsIPv4CIDR(test.input)
-			if test.expectError {
-				g.Expect(err).To(HaveOccurred(), "Expected an error for input '%s'", test.input)
-			} else {
-				g.Expect(err).ToNot(HaveOccurred(), "Did not expect an error for input '%s'", test.input)
-			}
-
-			g.Expect(result).To(Equal(test.expected), "Unexpected result for input '%s'", test.input)
-		})
-	}
-}
-
-func TestIsIPv4Address(t *testing.T) {
-	tests := []struct {
-		input       string
-		expected    bool
-		expectError bool
-	}{
-		// Valid IPv4 addresses
-		{"192.168.1.1", true, false},
-		{"10.0.0.1", true, false},
-
-		// Valid IPv6 addresses
-		{"2001:db8::1", false, false},
-		{"fd00::1", false, false},
-
-		// Invalid inputs
-		{"invalid", false, true},
-		{"192.168.1.256", false, true}, // Invalid IPv4 address
-		{"", false, true},              // Empty input
-		{"1234::5678::1", false, true}, // Malformed IP
-
-		// Edge cases
-		{"0.0.0.0", true, false},
-		{"255.255.255.255", true, false},
-	}
-
-	for _, test := range tests {
-		t.Run(test.input, func(t *testing.T) {
-			g := NewWithT(t)
-			result, err := IsIPv4Address(test.input)
-			if test.expectError {
-				g.Expect(err).To(HaveOccurred(), "Expected an error for input '%s'", test.input)
-			} else {
-				g.Expect(err).ToNot(HaveOccurred(), "Did not expect an error for input '%s'", test.input)
-			}
-
-			g.Expect(result).To(Equal(test.expected), "Unexpected result for input '%s'", test.input)
 		})
 	}
 }
@@ -860,37 +689,6 @@ func TestRemoveEmptyJSONField(t *testing.T) {
 			g := NewWithT(t)
 			result := RemoveEmptyJSONField(test.input, test.field)
 			g.Expect(result).To(Equal(test.expected))
-		})
-	}
-}
-
-func TestHostFromURL(t *testing.T) {
-	tests := []struct {
-		input    string
-		expected string
-		wantErr  bool
-	}{
-		{"http://example.com", "example.com", false},
-		{"https://example.com:443", "example.com", false},
-		{"http://localhost:8080", "localhost", false},
-		{"https://127.0.0.1:9000", "127.0.0.1", false},
-		{"ftp://example.org:21", "example.org", false},
-		{"http://[::1]:8080", "::1", false},                // IPv6 localhost
-		{"http://[2001:db8::1]:443", "2001:db8::1", false}, // IPv6 example
-		{"??", "", true},           // Invalid URL
-		{"http://:8080", "", true}, // Missing hostname
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.input, func(t *testing.T) {
-			g := NewWithT(t)
-			result, err := HostFromURL(tt.input)
-			if tt.wantErr {
-				g.Expect(err).To(HaveOccurred())
-			} else {
-				g.Expect(err).ToNot(HaveOccurred())
-			}
-			g.Expect(result).To(Equal(tt.expected))
 		})
 	}
 }

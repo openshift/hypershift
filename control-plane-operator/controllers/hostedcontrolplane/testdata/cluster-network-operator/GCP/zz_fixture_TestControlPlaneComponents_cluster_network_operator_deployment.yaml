@@ -154,6 +154,8 @@ spec:
           value: metallb-frr
         - name: PROXY_INTERNAL_APISERVER_ADDRESS
           value: "true"
+        - name: GCP_CNCC_CREDENTIALS_FILE
+          value: application_default_credentials.json
         image: cluster-network-operator
         imagePullPolicy: IfNotPresent
         name: cluster-network-operator

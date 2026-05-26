@@ -3,7 +3,7 @@ package capiprovider
 import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	component "github.com/openshift/hypershift/support/controlplane-component"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/podspec"
 
 	appsv1 "k8s.io/api/apps/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -44,7 +44,7 @@ func NewComponent(deploymentSpec *appsv1.DeploymentSpec, platformPolicyRules []r
 	builder := component.NewDeploymentComponent(ComponentName, capi).
 		WithAdaptFunction(capi.adaptDeployment).
 		WithPredicate(predicate).
-		InjectAvailabilityProberContainer(util.AvailabilityProberOpts{}).
+		InjectAvailabilityProberContainer(podspec.AvailabilityProberOpts{}).
 		WithManifestAdapter(
 			"role.yaml",
 			component.WithAdaptFunction(capi.adaptRole),

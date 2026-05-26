@@ -60,7 +60,7 @@ where:
 
 Running this command creates:
 
-* 7 User-Assigned Managed Identities (one per cluster component):
+* 8 User-Assigned Managed Identities (one per cluster component):
     - Disk CSI driver
     - File CSI driver
     - Image Registry
@@ -68,7 +68,24 @@ Running this command creates:
     - Cloud Provider
     - NodePool Management
     - Network Operator
+    - Control Plane Operator
 * Federated Identity Credentials for each identity, configured with the OIDC issuer
+
+## Private Endpoint Access
+
+The **Control Plane Operator** identity is always created by `create iam azure`. For private
+clusters, this identity is used to manage Private Endpoints, Private DNS zones, VNet links,
+and DNS A records in the guest subscription.
+
+The CPO identity is assigned the **Contributor** role by default, scoped to the managed
+resource group, NSG resource group, and VNet resource group. When using
+`--assign-custom-hcp-roles`, a more restrictive custom role is used instead.
+
+!!! note
+
+    The private endpoint access topology is configured during cluster creation using
+    `--endpoint-access Private` on the `hypershift create cluster azure` command.
+    See [Deploy Azure Private Clusters](deploy-azure-private-clusters.md) for details.
 
 ## Output Format
 
@@ -91,9 +108,15 @@ The output file contains the workload identities in JSON format, directly consum
   "ingress": { ... },
   "cloudProvider": { ... },
   "nodePoolManagement": { ... },
-  "network": { ... }
+  "network": { ... },
+  "controlPlaneOperator": { ... }
 }
 ```
+
+!!! note
+
+    The `controlPlaneOperator` entry is always present. For public clusters, this identity
+    is created but not used by the control plane operator.
 
 ## Using Pre-created Identities
 
@@ -134,7 +157,11 @@ To destroy the workload identities that were created:
 ```bash
 hypershift destroy iam azure \
     --azure-creds AZURE_CREDENTIALS_FILE \
-    --workload-identities-file workload-identities.json
+    --workload-identities-file workload-identities.json \
+    --resource-group-name RESOURCE_GROUP \
+    --name CLUSTER_NAME \
+    --infra-id INFRA_ID \
+    --dns-zone-rg-name DNS_ZONE_RG
 ```
 
 The destroy command reads the output file from create to identify which identities to delete.
@@ -171,6 +198,10 @@ Both the managed identities and their federated credentials are removed.
 |------|-------------|
 | `--azure-creds` | Path to Azure credentials JSON file |
 | `--workload-identities-file` | Path to workload identities JSON file |
+| `--resource-group-name` | Resource group containing the identities |
+| `--name` | Name of the HostedCluster |
+| `--infra-id` | Unique infrastructure identifier |
+| `--dns-zone-rg-name` | Resource group containing the Azure DNS zone |
 
 ### Optional Flags for `destroy iam azure`
 
@@ -227,7 +258,10 @@ hypershift create cluster azure \
 # --- Cleanup ---
 
 # 6. Destroy the cluster
-hypershift destroy cluster azure --name ${NAME}
+hypershift destroy cluster azure \
+    --name ${NAME} \
+    --azure-creds ${AZURE_CREDS} \
+    --dns-zone-rg-name ${DNS_ZONE_RG}
 
 # 7. Destroy infrastructure
 hypershift destroy infra azure \
@@ -238,7 +272,11 @@ hypershift destroy infra azure \
 # 8. Destroy IAM resources
 hypershift destroy iam azure \
     --azure-creds ${AZURE_CREDS} \
-    --workload-identities-file workload-identities.json
+    --workload-identities-file workload-identities.json \
+    --resource-group-name ${RESOURCE_GROUP} \
+    --name ${NAME} \
+    --infra-id ${INFRA_ID} \
+    --dns-zone-rg-name ${DNS_ZONE_RG}
 ```
 
 ## See Also
@@ -246,3 +284,4 @@ hypershift destroy iam azure \
 - [Create Azure Infrastructure Separately](create-infra-separately.md)
 - [Azure Workload Identity Setup](azure-workload-identity-setup.md)
 - [Self-Managed Azure Overview](self-managed-azure-index.md)
+- [Deploy Azure Private Clusters](deploy-azure-private-clusters.md) — End-to-end guide for private endpoint access

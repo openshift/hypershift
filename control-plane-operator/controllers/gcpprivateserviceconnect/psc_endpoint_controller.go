@@ -11,6 +11,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
 
@@ -454,8 +455,8 @@ func (r *GCPPrivateServiceConnectReconciler) cleanupDNS(ctx context.Context, gcp
 
 // reconcileExternalServices creates external-dns services for private clusters with external names
 // This enables external-dns to create DNS records for private PSC endpoints with custom hostnames
-func (r *GCPPrivateServiceConnectReconciler) reconcileExternalServices(ctx context.Context, gcpPSC *hyperv1.GCPPrivateServiceConnect, hcp *hyperv1.HostedControlPlane, log logr.Logger) (ctrl.Result, error) {
-	if isPublic, externalNames := util.IsPublicHCP(hcp), hcpExternalNamesGCP(hcp); !isPublic && len(externalNames) > 0 {
+func (r *GCPPrivateServiceConnectReconciler) reconcileExternalServices(ctx context.Context, gcpPSC *hyperv1.GCPPrivateServiceConnect, hcp *hyperv1.HostedControlPlane, log logr.Logger) (ctrl.Result, error) { //nolint:unparam // result kept for interface/API consistency
+	if isPublic, externalNames := netutil.IsPublicHCP(hcp), hcpExternalNamesGCP(hcp); !isPublic && len(externalNames) > 0 {
 		// Only if not public and external names are configured, create services of type ExternalName so external-dns
 		// can create records for them
 		var errs []error
@@ -504,12 +505,12 @@ func (r *GCPPrivateServiceConnectReconciler) reconcileExternalServices(ctx conte
 // hcpExternalNamesGCP extracts external hostnames from HCP configuration for GCP
 func hcpExternalNamesGCP(hcp *hyperv1.HostedControlPlane) map[string]string {
 	result := map[string]string{}
-	apiStrategy := util.ServicePublishingStrategyByTypeForHCP(hcp, hyperv1.APIServer)
+	apiStrategy := netutil.ServicePublishingStrategyByTypeForHCP(hcp, hyperv1.APIServer)
 	if apiStrategy != nil && apiStrategy.Type == hyperv1.Route && apiStrategy.Route != nil && apiStrategy.Route.Hostname != "" {
 		result["api"] = apiStrategy.Route.Hostname
 	}
 
-	oauthStrategy := util.ServicePublishingStrategyByTypeForHCP(hcp, hyperv1.OAuthServer)
+	oauthStrategy := netutil.ServicePublishingStrategyByTypeForHCP(hcp, hyperv1.OAuthServer)
 	if oauthStrategy != nil && oauthStrategy.Type == hyperv1.Route && oauthStrategy.Route != nil && oauthStrategy.Route.Hostname != "" {
 		result["oauth"] = oauthStrategy.Route.Hostname
 	}
@@ -726,7 +727,7 @@ func (r *GCPPrivateServiceConnectReconciler) reconcilePSCEndpoint(ctx context.Co
 }
 
 // updateStatusFromEndpoint updates the CR status based on the PSC endpoint state
-func (r *GCPPrivateServiceConnectReconciler) updateStatusFromEndpoint(ctx context.Context, gcpPSC *hyperv1.GCPPrivateServiceConnect, endpoint *compute.ForwardingRule) (ctrl.Result, error) {
+func (r *GCPPrivateServiceConnectReconciler) updateStatusFromEndpoint(ctx context.Context, gcpPSC *hyperv1.GCPPrivateServiceConnect, endpoint *compute.ForwardingRule) (ctrl.Result, error) { //nolint:unparam // result kept for interface/API consistency
 	patch := client.MergeFrom(gcpPSC.DeepCopy())
 
 	// Update condition based on endpoint status

@@ -78,6 +78,144 @@ spec:
                     type: string
                 type: object
                 x-kubernetes-map-type: atomic
+              autoNode:
+                description: |-
+                  autoNode specifies the configuration for automatic node provisioning
+                  and lifecycle management. When set, nodes are automatically provisioned
+                  using the specified provisioner (e.g. Karpenter) instead of requiring
+                  manual NodePool management.
+                properties:
+                  provisionerConfig:
+                    description: provisionerConfig specifies the provisioner used
+                      for automatic node management.
+                    properties:
+                      karpenter:
+                        description: karpenter specifies the configuration for the
+                          Karpenter provisioner.
+                        properties:
+                          aws:
+                            description: aws specifies the AWS-specific configuration
+                              for Karpenter.
+                            properties:
+                              roleARN:
+                                description: "roleARN specifies the ARN of the IAM
+                                  role that Karpenter assumes to provision\nand manage
+                                  EC2 instances in the hosted cluster's AWS account.\n\nThe
+                                  referenced role must have a trust relationship that
+                                  allows it to be assumed\nby the karpenter service
+                                  account in the hosted cluster via OIDC.\nExample:\n{\n\t\"Version\":
+                                  \"2012-10-17\",\n\t\"Statement\": [\n\t\t{\n\t\t\t\"Effect\":
+                                  \"Allow\",\n\t\t\t\"Principal\": {\n\t\t\t\t\"Federated\":
+                                  \"<oidc-provider-arn>\"\n\t\t\t},\n\t\t\t\"Action\":
+                                  \"sts:AssumeRoleWithWebIdentity\",\n\t\t\t\"Condition\":
+                                  {\n\t\t\t\t\"StringEquals\": {\n\t\t\t\t\t\"<oidc-provider-name>:sub\":
+                                  \"system:serviceaccount:kube-system:karpenter\"\n\t\t\t\t}\n\t\t\t}\n\t\t}\n\t]\n}\n\nThe
+                                  following is an example of the policy document for
+                                  this role.\n\n{\n\t\"Version\": \"2012-10-17\",\n\t\"Statement\":
+                                  [\n\t\t{\n\t\t\t\"Sid\": \"AllowScopedEC2InstanceAccessActions\",\n\t\t\t\"Effect\":
+                                  \"Allow\",\n\t\t\t\"Resource\": [\n\t\t\t\t\"arn:*:ec2:*::image/*\",\n\t\t\t\t\"arn:*:ec2:*::snapshot/*\",\n\t\t\t\t\"arn:*:ec2:*:*:security-group/*\",\n\t\t\t\t\"arn:*:ec2:*:*:subnet/*\"\n\t\t\t],\n\t\t\t\"Action\":
+                                  [\n\t\t\t\t\"ec2:RunInstances\",\n\t\t\t\t\"ec2:CreateFleet\"\n\t\t\t]\n\t\t},\n\t\t{\n\t\t\t\"Sid\":
+                                  \"AllowScopedEC2LaunchTemplateAccessActions\",\n\t\t\t\"Effect\":
+                                  \"Allow\",\n\t\t\t\"Resource\": \"arn:*:ec2:*:*:launch-template/*\",\n\t\t\t\"Action\":
+                                  [\n\t\t\t\t\"ec2:RunInstances\",\n\t\t\t\t\"ec2:CreateFleet\"\n\t\t\t]\n\t\t},\n\t\t{\n\t\t\t\"Sid\":
+                                  \"AllowScopedEC2InstanceActionsWithTags\",\n\t\t\t\"Effect\":
+                                  \"Allow\",\n\t\t\t\"Resource\": [\n\t\t\t\t\"arn:*:ec2:*:*:fleet/*\",\n\t\t\t\t\"arn:*:ec2:*:*:instance/*\",\n\t\t\t\t\"arn:*:ec2:*:*:volume/*\",\n\t\t\t\t\"arn:*:ec2:*:*:network-interface/*\",\n\t\t\t\t\"arn:*:ec2:*:*:launch-template/*\",\n\t\t\t\t\"arn:*:ec2:*:*:spot-instances-request/*\"\n\t\t\t],\n\t\t\t\"Action\":
+                                  [\n\t\t\t\t\"ec2:RunInstances\",\n\t\t\t\t\"ec2:CreateFleet\",\n\t\t\t\t\"ec2:CreateLaunchTemplate\"\n\t\t\t],\n\t\t\t\"Condition\":
+                                  {\n\t\t\t\t\"StringLike\": {\n\t\t\t\t\t\"aws:RequestTag/karpenter.sh/nodepool\":
+                                  \"*\"\n\t\t\t\t}\n\t\t\t}\n\t\t},\n\t\t{\n\t\t\t\"Sid\":
+                                  \"AllowScopedResourceCreationTagging\",\n\t\t\t\"Effect\":
+                                  \"Allow\",\n\t\t\t\"Resource\": [\n\t\t\t\t\"arn:*:ec2:*:*:fleet/*\",\n\t\t\t\t\"arn:*:ec2:*:*:instance/*\",\n\t\t\t\t\"arn:*:ec2:*:*:volume/*\",\n\t\t\t\t\"arn:*:ec2:*:*:network-interface/*\",\n\t\t\t\t\"arn:*:ec2:*:*:launch-template/*\",\n\t\t\t\t\"arn:*:ec2:*:*:spot-instances-request/*\"\n\t\t\t],\n\t\t\t\"Action\":
+                                  \"ec2:CreateTags\",\n\t\t\t\"Condition\": {\n\t\t\t\t\"StringEquals\":
+                                  {\n\t\t\t\t\t\"ec2:CreateAction\": [\n\t\t\t\t\t\t\"RunInstances\",\n\t\t\t\t\t\t\"CreateFleet\",\n\t\t\t\t\t\t\"CreateLaunchTemplate\"\n\t\t\t\t\t]\n\t\t\t\t},\n\t\t\t\t\"StringLike\":
+                                  {\n\t\t\t\t\t\"aws:RequestTag/karpenter.sh/nodepool\":
+                                  \"*\"\n\t\t\t\t}\n\t\t\t}\n\t\t},\n\t\t{\n\t\t\t\"Sid\":
+                                  \"AllowScopedResourceTagging\",\n\t\t\t\"Effect\":
+                                  \"Allow\",\n\t\t\t\"Resource\": \"arn:*:ec2:*:*:instance/*\",\n\t\t\t\"Action\":
+                                  \"ec2:CreateTags\",\n\t\t\t\"Condition\": {\n\t\t\t\t\"StringLike\":
+                                  {\n\t\t\t\t\t\"aws:ResourceTag/karpenter.sh/nodepool\":
+                                  \"*\"\n\t\t\t\t}\n\t\t\t}\n\t\t},\n\t\t{\n\t\t\t\"Sid\":
+                                  \"AllowScopedDeletion\",\n\t\t\t\"Effect\": \"Allow\",\n\t\t\t\"Resource\":
+                                  [\n\t\t\t\t\"arn:*:ec2:*:*:instance/*\",\n\t\t\t\t\"arn:*:ec2:*:*:launch-template/*\"\n\t\t\t],\n\t\t\t\"Action\":
+                                  [\n\t\t\t\t\"ec2:TerminateInstances\",\n\t\t\t\t\"ec2:DeleteLaunchTemplate\"\n\t\t\t],\n\t\t\t\"Condition\":
+                                  {\n\t\t\t\t\"StringLike\": {\n\t\t\t\t\t\"aws:ResourceTag/karpenter.sh/nodepool\":
+                                  \"*\"\n\t\t\t\t}\n\t\t\t}\n\t\t},\n\t\t{\n\t\t\t\"Sid\":
+                                  \"AllowRegionalReadActions\",\n\t\t\t\"Effect\":
+                                  \"Allow\",\n\t\t\t\"Resource\": \"*\",\n\t\t\t\"Action\":
+                                  [\n\t\t\t\t\"ec2:DescribeImages\",\n\t\t\t\t\"ec2:DescribeInstances\",\n\t\t\t\t\"ec2:DescribeInstanceTypeOfferings\",\n\t\t\t\t\"ec2:DescribeInstanceTypes\",\n\t\t\t\t\"ec2:DescribeLaunchTemplates\",\n\t\t\t\t\"ec2:DescribeSecurityGroups\",\n\t\t\t\t\"ec2:DescribeSpotPriceHistory\",\n\t\t\t\t\"ec2:DescribeSubnets\"\n\t\t\t]\n\t\t},\n\t\t{\n\t\t\t\"Sid\":
+                                  \"AllowSSMReadActions\",\n\t\t\t\"Effect\": \"Allow\",\n\t\t\t\"Resource\":
+                                  \"arn:*:ssm:*::parameter/aws/service/*\",\n\t\t\t\"Action\":
+                                  \"ssm:GetParameter\"\n\t\t},\n\t\t{\n\t\t\t\"Sid\":
+                                  \"AllowPricingReadActions\",\n\t\t\t\"Effect\":
+                                  \"Allow\",\n\t\t\t\"Resource\": \"*\",\n\t\t\t\"Action\":
+                                  \"pricing:GetProducts\"\n\t\t},\n\t\t{\n\t\t\t\"Sid\":
+                                  \"AllowInterruptionQueueActions\",\n\t\t\t\"Effect\":
+                                  \"Allow\",\n\t\t\t\"Resource\": \"*\",\n\t\t\t\"Action\":
+                                  [\n\t\t\t\t\"sqs:DeleteMessage\",\n\t\t\t\t\"sqs:GetQueueUrl\",\n\t\t\t\t\"sqs:ReceiveMessage\"\n\t\t\t]\n\t\t},\n\t\t{\n\t\t\t\"Sid\":
+                                  \"AllowPassingInstanceRole\",\n\t\t\t\"Effect\":
+                                  \"Allow\",\n\t\t\t\"Resource\": \"arn:*:iam::*:role/*\",\n\t\t\t\"Action\":
+                                  \"iam:PassRole\",\n\t\t\t\"Condition\": {\n\t\t\t\t\"StringEquals\":
+                                  {\n\t\t\t\t\t\"iam:PassedToService\": [\n\t\t\t\t\t\t\"ec2.amazonaws.com\",\n\t\t\t\t\t\t\"ec2.amazonaws.com.cn\"\n\t\t\t\t\t]\n\t\t\t\t}\n\t\t\t}\n\t\t},\n\t\t{\n\t\t\t\"Sid\":
+                                  \"AllowScopedInstanceProfileCreationActions\",\n\t\t\t\"Effect\":
+                                  \"Allow\",\n\t\t\t\"Resource\": \"arn:*:iam::*:instance-profile/*\",\n\t\t\t\"Action\":
+                                  [\n\t\t\t\t\"iam:CreateInstanceProfile\"\n\t\t\t],\n\t\t\t\"Condition\":
+                                  {\n\t\t\t\t\"StringLike\": {\n\t\t\t\t\t\"aws:RequestTag/karpenter.k8s.aws/ec2nodeclass\":
+                                  \"*\"\n\t\t\t\t}\n\t\t\t}\n\t\t},\n\t\t{\n\t\t\t\"Sid\":
+                                  \"AllowScopedInstanceProfileTagActions\",\n\t\t\t\"Effect\":
+                                  \"Allow\",\n\t\t\t\"Resource\": \"arn:*:iam::*:instance-profile/*\",\n\t\t\t\"Action\":
+                                  [\n\t\t\t\t\"iam:TagInstanceProfile\"\n\t\t\t],\n\t\t\t\"Condition\":
+                                  {\n\t\t\t\t\"StringLike\": {\n\t\t\t\t\t\"aws:ResourceTag/karpenter.k8s.aws/ec2nodeclass\":
+                                  \"*\",\n\t\t\t\t\t\"aws:RequestTag/karpenter.k8s.aws/ec2nodeclass\":
+                                  \"*\"\n\t\t\t\t}\n\t\t\t}\n\t\t},\n\t\t{\n\t\t\t\"Sid\":
+                                  \"AllowScopedInstanceProfileActions\",\n\t\t\t\"Effect\":
+                                  \"Allow\",\n\t\t\t\"Resource\": \"arn:*:iam::*:instance-profile/*\",\n\t\t\t\"Action\":
+                                  [\n\t\t\t\t\"iam:AddRoleToInstanceProfile\",\n\t\t\t\t\"iam:RemoveRoleFromInstanceProfile\",\n\t\t\t\t\"iam:DeleteInstanceProfile\"\n\t\t\t],\n\t\t\t\"Condition\":
+                                  {\n\t\t\t\t\"StringLike\": {\n\t\t\t\t\t\"aws:ResourceTag/karpenter.k8s.aws/ec2nodeclass\":
+                                  \"*\"\n\t\t\t\t}\n\t\t\t}\n\t\t},\n\t\t{\n\t\t\t\"Sid\":
+                                  \"AllowInstanceProfileReadActions\",\n\t\t\t\"Effect\":
+                                  \"Allow\",\n\t\t\t\"Resource\": \"arn:*:iam::*:instance-profile/*\",\n\t\t\t\"Action\":
+                                  \"iam:GetInstanceProfile\"\n\t\t},\n\t\t{\n\t\t\t\"Sid\":
+                                  \"AllowUnscopedInstanceProfileListAction\",\n\t\t\t\"Effect\":
+                                  \"Allow\",\n\t\t\t\"Resource\": \"*\",\n\t\t\t\"Action\":
+                                  \"iam:ListInstanceProfiles\"\n\t\t}\n\t]\n}"
+                                maxLength: 2048
+                                type: string
+                                x-kubernetes-validations:
+                                - message: roleARN must be a valid AWS IAM role ARN
+                                    (e.g. arn:aws:iam::123456789012:role/MyRole)
+                                  rule: self.matches('^arn:(aws|aws-cn|aws-us-gov):iam::[0-9]{12}:role/.+$')
+                            required:
+                            - roleARN
+                            type: object
+                          platform:
+                            description: platform specifies the infrastructure platform
+                              that Karpenter should provision nodes on.
+                            enum:
+                            - AWS
+                            maxLength: 100
+                            type: string
+                        required:
+                        - platform
+                        type: object
+                        x-kubernetes-validations:
+                        - message: aws is required when platform is AWS, and forbidden
+                            otherwise
+                          rule: 'self.platform == ''AWS'' ? has(self.aws) : !has(self.aws)'
+                      name:
+                        description: name specifies the name of the provisioner to
+                          use for automatic node management.
+                        enum:
+                        - Karpenter
+                        type: string
+                    required:
+                    - name
+                    type: object
+                    x-kubernetes-validations:
+                    - message: karpenter is required when name is Karpenter, and forbidden
+                        otherwise
+                      rule: 'self.name == ''Karpenter'' ? has(self.karpenter) : !has(self.karpenter)'
+                required:
+                - provisionerConfig
+                type: object
               autoscaling:
                 description: |-
                   autoscaling specifies auto-scaling behavior that applies to all NodePools
@@ -707,7 +845,8 @@ spec:
                                       description: |-
                                         prefix is an optional field that configures the prefix that will be applied to the cluster identity attribute during the process of mapping JWT claims to cluster identity attributes.
 
-                                        When omitted (""), no prefix is applied to the cluster identity attribute.
+                                        When omitted or set to an empty string (""), no prefix is applied to the cluster identity attribute.
+                                        Must not be set to a non-empty value when expression is set.
 
                                         Example: if `prefix` is set to "myoidc:" and the `claim` in JWT contains an array of strings "a", "b" and "c", the mapping will result in an array of string "myoidc:a", "myoidc:b" and "myoidc:c".
                                       type: string
@@ -754,11 +893,9 @@ spec:
                                         Allowed values are 'Prefix', 'NoPrefix', and omitted (not provided or an empty string).
 
                                         When set to 'Prefix', the value specified in the prefix field will be prepended to the value of the JWT claim.
-
                                         The prefix field must be set when prefixPolicy is 'Prefix'.
-
+                                        Must not be set to 'Prefix' when expression is set.
                                         When set to 'NoPrefix', no prefix will be prepended to the value of the JWT claim.
-
                                         When omitted, this means no opinion and the platform is left to choose any prefixes that are applied which is subject to change over time.
                                         Currently, the platform prepends `{issuerURL}#` to the value of the JWT claim when the claim is not 'email'.
 
@@ -1339,6 +1476,9 @@ spec:
 
                           Once set, changing domain is not currently supported.
                         type: string
+                        x-kubernetes-validations:
+                        - message: domain is immutable once set
+                          rule: self == oldSelf
                       loadBalancer:
                         description: |-
                           loadBalancer contains the load balancer details in general which are not only specific to the underlying infrastructure
@@ -1678,9 +1818,10 @@ spec:
                                     operator:
                                       description: |-
                                         Operator represents a key's relationship to the value.
-                                        Valid operators are Exists and Equal. Defaults to Equal.
+                                        Valid operators are Exists, Equal, Lt, and Gt. Defaults to Equal.
                                         Exists is equivalent to wildcard for value, so that a pod can
                                         tolerate all taints of a particular category.
+                                        Lt and Gt perform numeric comparisons (requires feature gate TaintTolerationComparisonOperators).
                                       type: string
                                     tolerationSeconds:
                                       description: |-
@@ -1740,9 +1881,10 @@ spec:
                                     operator:
                                       description: |-
                                         Operator represents a key's relationship to the value.
-                                        Valid operators are Exists and Equal. Defaults to Equal.
+                                        Valid operators are Exists, Equal, Lt, and Gt. Defaults to Equal.
                                         Exists is equivalent to wildcard for value, so that a pod can
                                         tolerate all taints of a particular category.
+                                        Lt and Gt perform numeric comparisons (requires feature gate TaintTolerationComparisonOperators).
                                       type: string
                                     tolerationSeconds:
                                       description: |-
@@ -2768,6 +2910,11 @@ spec:
                             - message: RestoreSnapshotURL shouldn't contain more than
                                 1 entry
                               rule: self.size() <= 1
+                            - message: restoreSnapshotURL is immutable
+                              rule: self == oldSelf
+                            - message: restoreSnapshotURL must be a valid URL with
+                                scheme https or s3
+                              rule: self.size() == 0 || self[0].matches('^(https|s3)://.*')
                           type:
                             description: |-
                               type is the kind of persistent storage implementation to use for etcd.
@@ -2778,6 +2925,10 @@ spec:
                         required:
                         - type
                         type: object
+                        x-kubernetes-validations:
+                        - message: restoreSnapshotURL cannot be added or removed after
+                            creation
+                          rule: has(self.restoreSnapshotURL) == has(oldSelf.restoreSnapshotURL)
                     required:
                     - storage
                     type: object
@@ -5255,10 +5406,9 @@ spec:
                         - type
                         type: object
                         x-kubernetes-validations:
-                        - message: privateLink is required when type is PrivateLink,
-                            and forbidden otherwise
-                          rule: 'self.type == ''PrivateLink'' ? has(self.privateLink)
-                            : !has(self.privateLink)'
+                        - message: privateLink is forbidden when type is not PrivateLink
+                          rule: 'self.type != ''PrivateLink'' ? !has(self.privateLink)
+                            : true'
                       resourceGroup:
                         default: default
                         description: |-
@@ -5385,6 +5535,8 @@ spec:
                     x-kubernetes-validations:
                     - message: private cannot be added or removed after cluster creation
                       rule: has(self.private) == has(oldSelf.private)
+                    - message: topology cannot be removed once set
+                      rule: '!has(oldSelf.topology) || has(self.topology)'
                     - message: transitions between Public and non-Public topology
                         are not supported
                       rule: '!has(self.topology) || !has(oldSelf.topology) || (self.topology
@@ -5396,7 +5548,7 @@ spec:
                         : !has(self.private))'
                     - message: workloadIdentities.controlPlaneOperator is required
                         when Private Link is configured with WorkloadIdentities authentication
-                      rule: '!has(self.private) || !has(self.private.privateLink)
+                      rule: '!has(self.private) || self.private.type != ''PrivateLink''
                         || self.azureAuthenticationConfig.azureAuthenticationConfigType
                         != ''WorkloadIdentities'' || has(self.azureAuthenticationConfig.workloadIdentities.controlPlaneOperator)'
                   ibmcloud:
@@ -6064,8 +6216,10 @@ spec:
                             - ""
                             type: string
                           kms:
-                            description: kms is a pre-existing managed identity used
-                              to authenticate with Azure KMS.
+                            description: |-
+                              kms is a pre-existing managed identity used to authenticate with Azure KMS.
+                              This is used for managed Azure (ARO HCP) clusters.
+                              kms and workloadIdentity are mutually exclusive.
                             properties:
                               clientID:
                                 description: |-
@@ -6114,15 +6268,42 @@ spec:
                             - credentialsSecretName
                             - objectEncoding
                             type: object
+                          workloadIdentity:
+                            description: |-
+                              workloadIdentity contains the workload identity used to authenticate
+                              with Azure Key Vault for KMS encryption via a token-minter sidecar.
+                              This identity must have "Key Vault Crypto User" role on the Key Vault.
+                              kms and workloadIdentity are mutually exclusive.
+                            properties:
+                              clientID:
+                                description: clientID is client ID of a federated
+                                  managed identity used in workload identity authentication
+                                maxLength: 36
+                                minLength: 36
+                                pattern: ^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
+                                type: string
+                                x-kubernetes-validations:
+                                - message: the client ID of a managed identity must
+                                    be a valid UUID. It should be 5 groups of hyphen
+                                    separated hexadecimal characters in the form 8-4-4-4-12.
+                                  rule: self.matches('^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$')
+                            required:
+                            - clientID
+                            type: object
                         required:
                         - activeKey
-                        - kms
                         type: object
                         x-kubernetes-validations:
                         - message: backupKey.keyVaultName must match activeKey.keyVaultName;
                             both keys must reside in the same Key Vault
                           rule: '!has(self.backupKey) || self.backupKey.keyVaultName
                             == self.activeKey.keyVaultName'
+                        - message: kms and workloadIdentity are mutually exclusive
+                          rule: '!(has(self.kms) && has(self.workloadIdentity))'
+                        - message: one of kms or workloadIdentity must be set
+                          rule: has(self.kms) || has(self.workloadIdentity)
+                        - message: the KMS authentication mode is immutable once set
+                          rule: has(self.kms) == has(oldSelf.kms)
                       ibmcloud:
                         description: ibmcloud defines metadata for the IBM Cloud KMS
                           encryption strategy
@@ -6421,9 +6602,10 @@ spec:
                     operator:
                       description: |-
                         Operator represents a key's relationship to the value.
-                        Valid operators are Exists and Equal. Defaults to Equal.
+                        Valid operators are Exists, Equal, Lt, and Gt. Defaults to Equal.
                         Exists is equivalent to wildcard for value, so that a pod can
                         tolerate all taints of a particular category.
+                        Lt and Gt perform numeric comparisons (requires feature gate TaintTolerationComparisonOperators).
                       type: string
                     tolerationSeconds:
                       description: |-
@@ -6471,6 +6653,37 @@ spec:
           status:
             description: status is the status of the HostedControlPlane.
             properties:
+              autoNode:
+                description: autoNode contains the observed state of the autoNode
+                  (Karpenter) provisioner.
+                minProperties: 1
+                properties:
+                  nodeClaimCount:
+                    description: |-
+                      nodeClaimCount is the total number of NodeClaims managed by Karpenter.
+                      This represents what Karpenter intends to provision, whether or not the node object exists yet.
+                    format: int32
+                    minimum: 0
+                    type: integer
+                  nodeCount:
+                    description: |-
+                      nodeCount is the number of nodes fully provisioned by Karpenter.
+                      These are node objects that exist in the cluster and carry the karpenter.sh/nodepool label.
+                    format: int32
+                    minimum: 0
+                    type: integer
+                  vcpus:
+                    description: |-
+                      vcpus is the total number of virtual CPUs across all Karpenter-managed nodes
+                      that have registered and reported capacity. This is the sum of CPU capacity
+                      from each NodeClaim whose corresponding node exists (status.nodeName is set).
+                      This value is 0 when no Karpenter nodes are provisioned.
+                      Used by the metrics collector for billing aggregation.
+                    format: int32
+                    maximum: 1000000
+                    minimum: 0
+                    type: integer
+                type: object
               conditions:
                 description: |-
                   conditions contains details for one aspect of the current state of the HostedControlPlane.

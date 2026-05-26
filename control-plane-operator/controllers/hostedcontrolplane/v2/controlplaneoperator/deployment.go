@@ -11,7 +11,9 @@ import (
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/images"
+	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/metrics"
+	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/rhobsmonitoring"
 	"github.com/openshift/hypershift/support/util"
@@ -28,7 +30,7 @@ const (
 func (cpo *ControlPlaneOperatorOptions) adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
 	hcp := cpContext.HCP
 
-	util.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
+	podspec.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
 		c.Image = cpo.Image
 
 		imageOverrides := cpo.HostedCluster.Annotations[hyperv1.ImageOverridesAnnotation]
@@ -147,6 +149,15 @@ func (cpo *ControlPlaneOperatorOptions) adaptDeployment(cpContext component.Work
 			)
 		}
 
+		if watchListClient := os.Getenv("KUBE_FEATURE_WatchListClient"); watchListClient != "" {
+			c.Env = append(c.Env,
+				corev1.EnvVar{
+					Name:  "KUBE_FEATURE_WatchListClient",
+					Value: watchListClient,
+				},
+			)
+		}
+
 		if managedServiceType, ok := os.LookupEnv(managedServiceEnvVar); ok {
 			c.Env = append(c.Env,
 				corev1.EnvVar{
@@ -168,7 +179,7 @@ func (cpo *ControlPlaneOperatorOptions) adaptDeployment(cpContext component.Work
 
 	if hcp.Spec.AdditionalTrustBundle != nil {
 		// Add trusted-ca mount with optional configmap
-		util.DeploymentAddTrustBundleVolume(hcp.Spec.AdditionalTrustBundle, deployment)
+		podspec.DeploymentAddTrustBundleVolume(hcp.Spec.AdditionalTrustBundle, deployment)
 	}
 
 	cpo.applyPlatformSpecificConfig(hcp, deployment)
@@ -176,7 +187,7 @@ func (cpo *ControlPlaneOperatorOptions) adaptDeployment(cpContext component.Work
 	if deployment.Annotations == nil {
 		deployment.Annotations = make(map[string]string)
 	}
-	deployment.Annotations[util.HostedClusterAnnotation] = hcp.Annotations[util.HostedClusterAnnotation]
+	deployment.Annotations[k8sutil.HostedClusterAnnotation] = hcp.Annotations[k8sutil.HostedClusterAnnotation]
 
 	return nil
 }
@@ -241,6 +252,25 @@ func (cpo *ControlPlaneOperatorOptions) applyPlatformSpecificConfig(hcp *hyperv1
 				)
 				deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes,
 					azureutil.CreateVolumeForAzureSecretStoreProviderClass(config.ManagedAzureKMSSecretStoreVolumeName, config.ManagedAzureKMSSecretProviderClassName),
+				)
+			}
+		} else if azureutil.IsSelfManagedAzure(hcp.Spec.Platform.Type) {
+			if hcp.Spec.Platform.Azure.AzureAuthenticationConfig.WorkloadIdentities != nil &&
+				hcp.Spec.Platform.Azure.AzureAuthenticationConfig.WorkloadIdentities.ControlPlaneOperator.ClientID != "" {
+				deployment.Spec.Template.Spec.Containers[0].Env = append(
+					deployment.Spec.Template.Spec.Containers[0].Env,
+					corev1.EnvVar{
+						Name:  "AZURE_FEDERATED_TOKEN_FILE",
+						Value: "/var/run/secrets/openshift/serviceaccount/token",
+					},
+					corev1.EnvVar{
+						Name:  "AZURE_CLIENT_ID",
+						Value: string(hcp.Spec.Platform.Azure.AzureAuthenticationConfig.WorkloadIdentities.ControlPlaneOperator.ClientID),
+					},
+					corev1.EnvVar{
+						Name:  "AZURE_TENANT_ID",
+						Value: hcp.Spec.Platform.Azure.TenantID,
+					},
 				)
 			}
 		}

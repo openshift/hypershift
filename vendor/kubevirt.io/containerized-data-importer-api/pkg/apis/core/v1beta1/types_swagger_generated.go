@@ -11,16 +11,17 @@ func (DataVolume) SwaggerDoc() map[string]string {
 
 func (DataVolumeSpec) SwaggerDoc() map[string]string {
 	return map[string]string{
-		"":                  "DataVolumeSpec defines the DataVolume type specification",
-		"source":            "Source is the src of the data for the requested DataVolume\n+optional",
-		"sourceRef":         "SourceRef is an indirect reference to the source of data for the requested DataVolume\n+optional",
-		"pvc":               "PVC is the PVC specification",
-		"storage":           "Storage is the requested storage specification",
-		"priorityClassName": "PriorityClassName for Importer, Cloner and Uploader pod",
-		"contentType":       "DataVolumeContentType options: \"kubevirt\", \"archive\"\n+kubebuilder:validation:Enum=\"kubevirt\";\"archive\"",
-		"checkpoints":       "Checkpoints is a list of DataVolumeCheckpoints, representing stages in a multistage import.",
-		"finalCheckpoint":   "FinalCheckpoint indicates whether the current DataVolumeCheckpoint is the final checkpoint.",
-		"preallocation":     "Preallocation controls whether storage for DataVolumes should be allocated in advance.",
+		"":                   "DataVolumeSpec defines the DataVolume type specification",
+		"source":             "Source is the src of the data for the requested DataVolume\n+optional",
+		"sourceRef":          "SourceRef is an indirect reference to the source of data for the requested DataVolume\n+optional",
+		"pvc":                "PVC is the PVC specification",
+		"storage":            "Storage is the requested storage specification",
+		"priorityClassName":  "PriorityClassName for Importer, Cloner and Uploader pod",
+		"serviceAccountName": "ServiceAccountName for Importer and Uploader pod\n+optional",
+		"contentType":        "DataVolumeContentType options: \"kubevirt\", \"archive\"\n+kubebuilder:validation:Enum=\"kubevirt\";\"archive\"",
+		"checkpoints":        "Checkpoints is a list of DataVolumeCheckpoints, representing stages in a multistage import.",
+		"finalCheckpoint":    "FinalCheckpoint indicates whether the current DataVolumeCheckpoint is the final checkpoint.",
+		"preallocation":      "Preallocation controls whether storage for DataVolumes should be allocated in advance.",
 	}
 }
 
@@ -131,6 +132,7 @@ func (DataVolumeSourceHTTP) SwaggerDoc() map[string]string {
 		"certConfigMap":      "CertConfigMap is a configmap reference, containing a Certificate Authority(CA) public key, and a base64 encoded pem certificate\n+optional",
 		"extraHeaders":       "ExtraHeaders is a list of strings containing extra headers to include with HTTP transfer requests\n+optional",
 		"secretExtraHeaders": "SecretExtraHeaders is a list of Secret references, each containing an extra HTTP header that may include sensitive information\n+optional",
+		"checksum":           "Checksum is the expected checksum of the file. Format: \"algorithm:hash\", e.g., \"sha256:1234abcd...\" or \"md5:5678efgh...\"\nSupported algorithms: md5, sha1, sha256, sha512\nIf specified, the importer will verify the downloaded content matches this checksum\n+optional",
 	}
 }
 
@@ -214,6 +216,13 @@ func (StorageProfileStatus) SwaggerDoc() map[string]string {
 		"claimPropertySets":          "ClaimPropertySets computed from the spec and detected in the system\n+kubebuilder:validation:MaxItems=8",
 		"dataImportCronSourceFormat": "DataImportCronSourceFormat defines the format of the DataImportCron-created disk image sources",
 		"snapshotClass":              "SnapshotClass is optional specific VolumeSnapshotClass for CloneStrategySnapshot. If not set, a VolumeSnapshotClass is chosen according to the provisioner.",
+		"conditions":                 "Conditions contains the current conditions observed for the StorageProfile",
+	}
+}
+
+func (StorageProfileCondition) SwaggerDoc() map[string]string {
+	return map[string]string{
+		"": "StorageProfileCondition represents the state of a storage profile condition",
 	}
 }
 

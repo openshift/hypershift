@@ -11,10 +11,11 @@ RUN apt-get update && \
         curl \
         ca-certificates \
         python3-pip \
+        fuse-overlayfs \
     && rm -rf /var/lib/apt/lists/*
 
 ARG TARGETARCH
-ARG GO_VERSION=1.25.3
+ARG GO_VERSION=1.25.7
 RUN curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-${TARGETARCH}.tar.gz" | tar -C /usr/local -xz
 
 RUN OCP_ARCH=$([ "$TARGETARCH" = "amd64" ] && echo "x86_64" || echo "aarch64") && \

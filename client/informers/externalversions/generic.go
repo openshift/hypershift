@@ -23,7 +23,7 @@ import (
 	v1alpha1 "github.com/openshift/hypershift/api/auditlogpersistence/v1alpha1"
 	certificatesv1alpha1 "github.com/openshift/hypershift/api/certificates/v1alpha1"
 	v1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	karpenterv1beta1 "github.com/openshift/hypershift/api/karpenter/v1beta1"
+	v1 "github.com/openshift/hypershift/api/karpenter/v1"
 	schedulingv1alpha1 "github.com/openshift/hypershift/api/scheduling/v1alpha1"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
 	cache "k8s.io/client-go/tools/cache"
@@ -81,9 +81,9 @@ func (f *sharedInformerFactory) ForResource(resource schema.GroupVersionResource
 	case v1beta1.SchemeGroupVersion.WithResource("nodepools"):
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Hypershift().V1beta1().NodePools().Informer()}, nil
 
-		// Group=karpenter.hypershift.openshift.io, Version=v1beta1
-	case karpenterv1beta1.SchemeGroupVersion.WithResource("openshiftec2nodeclasses"):
-		return &genericInformer{resource: resource.GroupResource(), informer: f.Karpenter().V1beta1().OpenshiftEC2NodeClasses().Informer()}, nil
+		// Group=karpenter.hypershift.openshift.io, Version=v1
+	case v1.SchemeGroupVersion.WithResource("openshiftec2nodeclasses"):
+		return &genericInformer{resource: resource.GroupResource(), informer: f.Karpenter().V1().OpenshiftEC2NodeClasses().Informer()}, nil
 
 		// Group=scheduling.hypershift.openshift.io, Version=v1alpha1
 	case schedulingv1alpha1.SchemeGroupVersion.WithResource("clustersizingconfigurations"):

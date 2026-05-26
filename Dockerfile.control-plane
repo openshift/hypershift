@@ -1,4 +1,5 @@
-FROM registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.25-openshift-4.22 AS builder
+FROM registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.25-openshift-4.23 AS builder
+ARG COMMIT_HASH
 
 WORKDIR /hypershift
 
@@ -7,7 +8,7 @@ COPY . .
 RUN make control-plane-operator \
   && make control-plane-pki-operator
 
-FROM registry.ci.openshift.org/ocp/4.22:base-rhel9
+FROM registry.ci.openshift.org/ocp/4.23:base-rhel9
 COPY --from=builder /hypershift/bin/control-plane-operator /usr/bin/control-plane-operator
 COPY --from=builder /hypershift/bin/control-plane-pki-operator /usr/bin/control-plane-pki-operator
 

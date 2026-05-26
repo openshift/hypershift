@@ -54,6 +54,7 @@ func getInstallOptions(opts HyperShiftOperatorInstallOptions) install.Options {
 	installOpts.ExternalDNSCredentials = opts.ExternalDNSCredentials
 	installOpts.ExternalDNSDomainFilter = opts.ExternalDNSDomainFilter
 	installOpts.ExternalDNSProvider = opts.ExternalDNSProvider
+	installOpts.ExternalDNSInterval = "3m"
 	installOpts.HyperShiftImage = opts.HyperShiftOperatorLatestImage
 	installOpts.OIDCStorageProviderS3BucketName = opts.AWSOidcS3BucketName
 	installOpts.OIDCStorageProviderS3Credentials = opts.AWSOidcS3Credentials

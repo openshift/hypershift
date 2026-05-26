@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/feature/s3/transfermanager"
 	tmtypes "github.com/aws/aws-sdk-go-v2/feature/s3/transfermanager/types"
@@ -23,7 +24,7 @@ type S3Uploader struct {
 
 // S3TransferAPI defines the transfer manager interface used by the uploader.
 type S3TransferAPI interface {
-	PutObject(ctx context.Context, input *transfermanager.PutObjectInput, opts ...func(*transfermanager.Options)) (*transfermanager.PutObjectOutput, error)
+	UploadObject(ctx context.Context, input *transfermanager.UploadObjectInput, opts ...func(*transfermanager.Options)) (*transfermanager.UploadObjectOutput, error)
 }
 
 // NewS3Uploader creates a new S3Uploader.
@@ -53,7 +54,7 @@ func NewS3Uploader(ctx context.Context, bucket, region, credentialsFile, kmsKeyA
 		bucket:    bucket,
 		region:    region,
 		kmsKeyARN: kmsKeyARN,
-		client:    transfermanager.New(s3Client, transfermanager.Options{}),
+		client:    transfermanager.New(s3Client),
 	}, nil
 }
 
@@ -66,18 +67,18 @@ func (u *S3Uploader) Upload(ctx context.Context, snapshotPath string, key string
 	}
 	defer f.Close()
 
-	input := &transfermanager.PutObjectInput{
-		Bucket: u.bucket,
-		Key:    key,
+	input := &transfermanager.UploadObjectInput{
+		Bucket: aws.String(u.bucket),
+		Key:    aws.String(key),
 		Body:   f,
 	}
 
 	if u.kmsKeyARN != "" {
 		input.ServerSideEncryption = tmtypes.ServerSideEncryptionAwsKms
-		input.SSEKMSKeyID = u.kmsKeyARN
+		input.SSEKMSKeyID = aws.String(u.kmsKeyARN)
 	}
 
-	if _, err := u.client.PutObject(ctx, input); err != nil {
+	if _, err := u.client.UploadObject(ctx, input); err != nil {
 		return nil, fmt.Errorf("failed to upload to s3://%s/%s: %w", u.bucket, key, err)
 	}
 

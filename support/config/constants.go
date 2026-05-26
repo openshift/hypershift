@@ -28,6 +28,7 @@ const (
 	DefaultAdvertiseIPv4Address  = "172.20.0.1"
 	DefaultAdvertiseIPv6Address  = "fd00::1"
 	DefaultEtcdURL               = "https://etcd-client:2379"
+	EtcdClientPort               = 2379
 	// KASSVCLBAzurePort is needed because for Azure we currently hardcode 7443 for the SVC LB as 6443 collides with public LB rule for the management cluster.
 	// https://bugzilla.redhat.com/show_bug.cgi?id=2060650
 	// TODO(alberto): explore exposing multiple Azure frontend IPs on the load balancer.
@@ -64,6 +65,10 @@ const (
 	HypershiftImageBase = "quay.io/hypershift/hypershift-operator"
 	HypershiftImageTag  = "latest"
 )
+
+// CloudTokenMountPath is the mount path for federated workload identity tokens
+// used by cloud provider components in self-managed Azure clusters.
+const CloudTokenMountPath = "/var/run/secrets/openshift/serviceaccount"
 
 // Azure Default Values
 const (

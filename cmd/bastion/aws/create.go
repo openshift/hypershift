@@ -574,7 +574,7 @@ func existingInstance(ctx context.Context, ec2Client *ec2.Client, infraID string
 	return "", nil
 }
 
-func waitForInstanceRunning(ctx context.Context, logger logr.Logger, ec2Client *ec2.Client, instanceID string) (string, error) {
+func waitForInstanceRunning(ctx context.Context, _ logr.Logger, ec2Client *ec2.Client, instanceID string) (string, error) {
 
 	waitCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()

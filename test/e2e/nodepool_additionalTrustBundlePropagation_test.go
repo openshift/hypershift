@@ -10,7 +10,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/podspec"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -158,7 +158,7 @@ func (k *AdditionalTrustBundlePropagationTest) Run(t *testing.T, nodePool hyperv
 							return false, "Additional trust bundle configmap is still included in CPO", nil
 						}
 					}
-					if ready := util.IsDeploymentReady(k.ctx, obj); !ready {
+					if ready := podspec.IsDeploymentReady(k.ctx, obj); !ready {
 						return false, "Deployment is not ready", nil
 					}
 					return true, "Additional trust bundle configmap is not included in CPO", nil

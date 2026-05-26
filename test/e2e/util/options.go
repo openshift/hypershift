@@ -94,6 +94,9 @@ type Options struct {
 	ExternalOIDCTestUsers       string
 	// ExternalCNIProvider specifies the third-party CNI provider (e.g., "cilium", "calico")
 	ExternalCNIProvider string
+
+	// AdditionalPullSecretFile is the path to a pull secret file used by the EnsureGlobalPullSecret test
+	AdditionalPullSecretFile string
 }
 
 type HyperShiftOperatorInstallOptions struct {
@@ -196,6 +199,7 @@ type ConfigurableClusterOptions struct {
 	GCPCloudControllerServiceAccount string
 	GCPStorageServiceAccount         string
 	GCPImageRegistryServiceAccount   string
+	GCPNetworkServiceAccount         string
 	GCPServiceAccountSigningKeyPath  string
 	GCPEndpointAccess                string
 	GCPIssuerURL                     string
@@ -222,12 +226,9 @@ func (o *Options) DefaultClusterOptions(t *testing.T) PlatformAgnosticOptions {
 			ClusterCIDR:                      []string{"10.132.0.0/14"},
 			BeforeApply:                      o.BeforeApply,
 			Log:                              NewLogr(t),
-			Annotations: []string{
-				fmt.Sprintf("%s=true", hyperv1.CleanupCloudResourcesAnnotation),
-				fmt.Sprintf("%s=true", hyperv1.SkipReleaseImageValidation),
-			},
-			EtcdStorageClass:           o.ConfigurableClusterOptions.EtcdStorageClass,
-			DisableClusterCapabilities: o.ConfigurableClusterOptions.DisableClusterCapabilities,
+			Annotations:                      e2eDefaultAnnotations(),
+			EtcdStorageClass:                 o.ConfigurableClusterOptions.EtcdStorageClass,
+			DisableClusterCapabilities:       o.ConfigurableClusterOptions.DisableClusterCapabilities,
 		},
 		NonePlatform:        o.DefaultNoneOptions(),
 		AWSPlatform:         o.DefaultAWSOptions(),
@@ -457,6 +458,7 @@ func (o *Options) DefaultGCPOptions() hypershiftgcp.RawCreateOptions {
 		CloudControllerServiceAccount: o.ConfigurableClusterOptions.GCPCloudControllerServiceAccount,
 		StorageServiceAccount:         o.ConfigurableClusterOptions.GCPStorageServiceAccount,
 		ImageRegistryServiceAccount:   o.ConfigurableClusterOptions.GCPImageRegistryServiceAccount,
+		NetworkServiceAccount:         o.ConfigurableClusterOptions.GCPNetworkServiceAccount,
 		ServiceAccountSigningKeyPath:  o.ConfigurableClusterOptions.GCPServiceAccountSigningKeyPath,
 		EndpointAccess:                o.ConfigurableClusterOptions.GCPEndpointAccess,
 		IssuerURL:                     o.ConfigurableClusterOptions.GCPIssuerURL,
@@ -597,4 +599,27 @@ func (s *stringMapVar) Set(value string) error {
 
 func shouldTestCPOOverride() bool {
 	return os.Getenv("TEST_CPO_OVERRIDE") == "1"
+}
+
+func e2eDefaultAnnotations() []string {
+	annotations := []string{
+		fmt.Sprintf("%s=true", hyperv1.CleanupCloudResourcesAnnotation),
+		fmt.Sprintf("%s=true", hyperv1.SkipReleaseImageValidation),
+	}
+	if os.Getenv("E2E_RESOURCE_REQUEST_OVERRIDES") == "1" {
+		annotations = append(annotations,
+			fmt.Sprintf("%s/ignition-server.ignition-server=cpu=200m", hyperv1.ResourceRequestOverrideAnnotationPrefix),
+			fmt.Sprintf("%s/control-plane-operator.control-plane-operator=cpu=500m", hyperv1.ResourceRequestOverrideAnnotationPrefix),
+			fmt.Sprintf("%s/packageserver.packageserver=cpu=50m", hyperv1.ResourceRequestOverrideAnnotationPrefix),
+			fmt.Sprintf("%s/certified-operators-catalog.registry=cpu=30m", hyperv1.ResourceRequestOverrideAnnotationPrefix),
+			fmt.Sprintf("%s/community-operators-catalog.registry=cpu=30m", hyperv1.ResourceRequestOverrideAnnotationPrefix),
+			fmt.Sprintf("%s/redhat-marketplace-catalog.registry=cpu=30m", hyperv1.ResourceRequestOverrideAnnotationPrefix),
+			fmt.Sprintf("%s/redhat-operators-catalog.registry=cpu=30m", hyperv1.ResourceRequestOverrideAnnotationPrefix),
+			fmt.Sprintf("%s/hosted-cluster-config-operator.hosted-cluster-config-operator=cpu=100m", hyperv1.ResourceRequestOverrideAnnotationPrefix),
+			fmt.Sprintf("%s/control-plane-pki-operator.control-plane-pki-operator=cpu=30m", hyperv1.ResourceRequestOverrideAnnotationPrefix),
+			fmt.Sprintf("%s/kube-apiserver.kube-apiserver=cpu=500m", hyperv1.ResourceRequestOverrideAnnotationPrefix),
+			fmt.Sprintf("%s/cluster-version-operator.cluster-version-operator=cpu=75m", hyperv1.ResourceRequestOverrideAnnotationPrefix),
+		)
+	}
+	return annotations
 }

@@ -9,6 +9,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/support/catalogs"
 	component "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/reference"
 	"github.com/openshift/hypershift/support/util"
 
@@ -43,10 +44,10 @@ func (c *catalogOptions) adaptCatalogDeployment(cpContext component.WorkloadCont
 	}
 
 	if image != "" {
-		util.UpdateContainer("registry", deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
+		podspec.UpdateContainer("registry", deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
 			c.Image = image
 		})
-		util.UpdateContainer("extract-content", deployment.Spec.Template.Spec.InitContainers, func(c *corev1.Container) {
+		podspec.UpdateContainer("extract-content", deployment.Spec.Template.Spec.InitContainers, func(c *corev1.Container) {
 			c.Image = image
 		})
 	}

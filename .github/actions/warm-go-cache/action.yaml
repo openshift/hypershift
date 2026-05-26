@@ -1,0 +1,22 @@
+name: 'Warm Go build cache'
+description: 'Set GOCACHE via fuse-overlayfs over the EFS-backed PV or a writable fallback'
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        mkdir -p /tmp/go-build-cache
+        mounted=false
+        if [ -d /cache/go-build ] && command -v fuse-overlayfs >/dev/null 2>&1 && [ -e /dev/fuse ]; then
+          mkdir -p /tmp/go-cache-upper /tmp/go-cache-work
+          if fuse-overlayfs -o lowerdir=/cache/go-build,upperdir=/tmp/go-cache-upper,workdir=/tmp/go-cache-work /tmp/go-build-cache; then
+            mounted=true
+          else
+            echo "::warning::fuse-overlayfs mount failed, falling back to copy"
+          fi
+        fi
+        if [ "$mounted" = "false" ] && [ -d /cache/go-build ]; then
+          timeout 120 cp -a /cache/go-build/. /tmp/go-build-cache/ || \
+            echo "::warning::Failed to copy EFS cache, proceeding without cache"
+        fi
+        echo "GOCACHE=/tmp/go-build-cache" >> "$GITHUB_ENV"

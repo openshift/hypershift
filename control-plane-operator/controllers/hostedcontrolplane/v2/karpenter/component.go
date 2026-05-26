@@ -7,7 +7,7 @@ import (
 	karpenteroperatorv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/karpenteroperator"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/podspec"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
@@ -45,7 +45,7 @@ func NewComponent() component.ControlPlaneComponent {
 		).
 		WithPredicate(predicate).
 		WithDependencies(karpenteroperatorv2.ComponentName).
-		InjectAvailabilityProberContainer(util.AvailabilityProberOpts{}).
+		InjectAvailabilityProberContainer(podspec.AvailabilityProberOpts{}).
 		Build()
 }
 

@@ -6,7 +6,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	assets "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/podspec"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -111,7 +111,7 @@ func (d *deploymentProvider) IsAvailable(object *appsv1.Deployment) (status meta
 
 // IsReady implements WorkloadProvider.
 func (d *deploymentProvider) IsReady(object *appsv1.Deployment) (status metav1.ConditionStatus, reason string, message string) {
-	if util.IsDeploymentReady(context.TODO(), object) {
+	if podspec.IsDeploymentReady(context.TODO(), object) {
 		status = metav1.ConditionTrue
 		reason = hyperv1.AsExpectedReason
 		message = fmt.Sprintf("Deployment %s successfully rolled out", object.Name)

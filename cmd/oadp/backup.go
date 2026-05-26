@@ -15,6 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 // Note: CreateOptions is now defined in types.go
@@ -49,6 +50,11 @@ For detailed documentation and examples, visit:
 https://hypershift.pages.dev/how-to/disaster-recovery/dr-cli/`,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			changedFlags := make(map[string]bool)
+			cmd.Flags().Visit(func(f *pflag.Flag) { changedFlags[f.Name] = true })
+			if err := opts.validateEtcdSnapshotFlags(changedFlags); err != nil {
+				return err
+			}
 			return opts.RunBackup(cmd.Context())
 		},
 	}
@@ -67,6 +73,7 @@ https://hypershift.pages.dev/how-to/disaster-recovery/dr-cli/`,
 	cmd.Flags().BoolVar(&opts.Render, "render", false, "Render the backup object to STDOUT instead of creating it")
 	cmd.Flags().StringSliceVar(&opts.IncludedResources, "included-resources", nil, "Comma-separated list of resources to include in backup (overrides defaults)")
 	cmd.Flags().StringSliceVar(&opts.IncludeNamespaces, "include-additional-namespaces", nil, "Additional namespaces to include (HC and HCP namespaces are always included)")
+	cmd.Flags().BoolVar(&opts.UseEtcdSnapshot, "use-etcd-snapshot", false, "Use etcd snapshot mode: etcd is backed up via HCPEtcdBackup CRD snapshots instead of PV volume snapshots")
 
 	// Mark required flags
 	_ = cmd.MarkFlagRequired("hc-name")
@@ -234,25 +241,10 @@ func (o *CreateOptions) GenerateBackupObject(platform string) (*unstructured.Uns
 		backupName = GenerateBackupName(o.HCName, o.HCNamespace)
 	}
 
-	var includedResources []string
-	if o.IncludedResources != nil {
-		includedResources = o.IncludedResources
-	} else {
-		// Use default resources based on platform
-		includedResources = getDefaultResourcesForPlatform(platform)
-	}
+	includedResources := o.resolveIncludedResources(platform)
+	includedNamespaces := buildIncludedNamespaces(o.HCNamespace, o.HCName, o.IncludeNamespaces)
 
-	spec := map[string]interface{}{
-		"includedNamespaces":       buildIncludedNamespaces(o.HCNamespace, o.HCName, o.IncludeNamespaces),
-		"includedResources":        includedResources,
-		"storageLocation":          o.StorageLocation,
-		"ttl":                      o.TTL.String(),
-		"snapshotMoveData":         o.SnapshotMoveData,
-		"defaultVolumesToFsBackup": o.DefaultVolumesToFsBackup,
-		"dataMover":                "velero",
-		"snapshotVolumes":          true,
-	}
-
+	spec := o.buildBackupSpec(includedNamespaces, includedResources)
 	applyPlatformBackupSpec(spec, platform)
 
 	// For KubeVirt, generate a resource policy ConfigMap to skip RHCOS boot image PVCs

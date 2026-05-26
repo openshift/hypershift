@@ -26,19 +26,20 @@ import (
 // HostedClusterStatusApplyConfiguration represents a declarative configuration of the HostedClusterStatus type for use
 // with apply.
 type HostedClusterStatusApplyConfiguration struct {
-	Conditions               []v1.ConditionApplyConfiguration             `json:"conditions,omitempty"`
-	ControlPlaneVersion      *ControlPlaneVersionStatusApplyConfiguration `json:"controlPlaneVersion,omitempty"`
-	Version                  *ClusterVersionStatusApplyConfiguration      `json:"version,omitempty"`
-	KubeConfig               *corev1.LocalObjectReference                 `json:"kubeconfig,omitempty"`
-	CustomKubeconfig         *corev1.LocalObjectReference                 `json:"customKubeconfig,omitempty"`
-	KubeadminPassword        *corev1.LocalObjectReference                 `json:"kubeadminPassword,omitempty"`
-	IgnitionEndpoint         *string                                      `json:"ignitionEndpoint,omitempty"`
-	ControlPlaneEndpoint     *APIEndpointApplyConfiguration               `json:"controlPlaneEndpoint,omitempty"`
-	OAuthCallbackURLTemplate *string                                      `json:"oauthCallbackURLTemplate,omitempty"`
-	PayloadArch              *hypershiftv1beta1.PayloadArchType           `json:"payloadArch,omitempty"`
-	Platform                 *PlatformStatusApplyConfiguration            `json:"platform,omitempty"`
-	AutoNode                 *AutoNodeStatusApplyConfiguration            `json:"autoNode,omitempty"`
-	Configuration            *ConfigurationStatusApplyConfiguration       `json:"configuration,omitempty"`
+	Conditions                  []v1.ConditionApplyConfiguration             `json:"conditions,omitempty"`
+	ControlPlaneVersion         *ControlPlaneVersionStatusApplyConfiguration `json:"controlPlaneVersion,omitempty"`
+	Version                     *ClusterVersionStatusApplyConfiguration      `json:"version,omitempty"`
+	KubeConfig                  *corev1.LocalObjectReference                 `json:"kubeconfig,omitempty"`
+	CustomKubeconfig            *corev1.LocalObjectReference                 `json:"customKubeconfig,omitempty"`
+	KubeadminPassword           *corev1.LocalObjectReference                 `json:"kubeadminPassword,omitempty"`
+	IgnitionEndpoint            *string                                      `json:"ignitionEndpoint,omitempty"`
+	ControlPlaneEndpoint        *APIEndpointApplyConfiguration               `json:"controlPlaneEndpoint,omitempty"`
+	OAuthCallbackURLTemplate    *string                                      `json:"oauthCallbackURLTemplate,omitempty"`
+	PayloadArch                 *hypershiftv1beta1.PayloadArchType           `json:"payloadArch,omitempty"`
+	Platform                    *PlatformStatusApplyConfiguration            `json:"platform,omitempty"`
+	AutoNode                    *AutoNodeStatusApplyConfiguration            `json:"autoNode,omitempty"`
+	Configuration               *ConfigurationStatusApplyConfiguration       `json:"configuration,omitempty"`
+	LastSuccessfulEtcdBackupURL *string                                      `json:"lastSuccessfulEtcdBackupURL,omitempty"`
 }
 
 // HostedClusterStatusApplyConfiguration constructs a declarative configuration of the HostedClusterStatus type for use with
@@ -153,5 +154,13 @@ func (b *HostedClusterStatusApplyConfiguration) WithAutoNode(value *AutoNodeStat
 // If called multiple times, the Configuration field is set to the value of the last call.
 func (b *HostedClusterStatusApplyConfiguration) WithConfiguration(value *ConfigurationStatusApplyConfiguration) *HostedClusterStatusApplyConfiguration {
 	b.Configuration = value
+	return b
+}
+
+// WithLastSuccessfulEtcdBackupURL sets the LastSuccessfulEtcdBackupURL field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the LastSuccessfulEtcdBackupURL field is set to the value of the last call.
+func (b *HostedClusterStatusApplyConfiguration) WithLastSuccessfulEtcdBackupURL(value string) *HostedClusterStatusApplyConfiguration {
+	b.LastSuccessfulEtcdBackupURL = &value
 	return b
 }

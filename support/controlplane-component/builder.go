@@ -1,7 +1,7 @@
 package controlplanecomponent
 
 import (
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/podspec"
 
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
@@ -86,7 +86,7 @@ func (b *controlPlaneWorkloadBuilder[T]) InjectKonnectivityContainer(opts Konnec
 	return b
 }
 
-func (b *controlPlaneWorkloadBuilder[T]) InjectAvailabilityProberContainer(opts util.AvailabilityProberOpts) *controlPlaneWorkloadBuilder[T] {
+func (b *controlPlaneWorkloadBuilder[T]) InjectAvailabilityProberContainer(opts podspec.AvailabilityProberOpts) *controlPlaneWorkloadBuilder[T] {
 	b.workload.availabilityProberOpts = &opts
 	return b
 }

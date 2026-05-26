@@ -258,6 +258,14 @@ func HCCOClientCertSecret(ns string) *corev1.Secret {
 	return secretFor(ns, "hcco-client")
 }
 
+func KASBootstrapContainerSigner(ns string) *corev1.Secret {
+	return secretFor(ns, "kas-bootstrap-container-signer")
+}
+
+func KASBootstrapContainerClientCertSecret(ns string) *corev1.Secret {
+	return secretFor(ns, "kas-bootstrap-container-client")
+}
+
 func KASMachineBootstrapClientCertSecret(ns string) *corev1.Secret {
 	return secretFor(ns, "kas-bootstrap-client")
 }
@@ -370,6 +378,10 @@ func AzureDiskCsiDriverControllerMetricsServingCert(ns string) *corev1.Secret {
 
 func AzureFileCsiDriverControllerMetricsServingCert(ns string) *corev1.Secret {
 	return secretFor(ns, "azure-file-csi-driver-controller-metrics-serving-cert")
+}
+
+func AWSEBSCsiDriverOperatorServingCert(ns string) *corev1.Secret {
+	return secretFor(ns, "aws-ebs-csi-driver-operator-serving-cert")
 }
 
 func AWSEBSCsiDriverControllerMetricsServingCert(ns string) *corev1.Secret {

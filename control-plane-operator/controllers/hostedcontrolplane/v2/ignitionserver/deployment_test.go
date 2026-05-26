@@ -21,7 +21,7 @@ import (
 
 // TestAdaptDeployment verifies that adaptDeployment produces a deterministic deployment
 // spec and does not perform live registry connectivity checks. This addresses OCPBUGS-60185
-// where non-deterministic results from LookupMappedImage/SeekOverride caused deployment
+// where non-deterministic results from LookupMappedImage/seekOverride caused deployment
 // flapping and pod restarts.
 func TestAdaptDeployment(t *testing.T) {
 	tests := []struct {

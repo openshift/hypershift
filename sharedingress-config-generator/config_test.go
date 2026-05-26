@@ -12,8 +12,8 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	api "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/azureutil"
+	"github.com/openshift/hypershift/support/netutil"
 	testutil "github.com/openshift/hypershift/support/testutil"
-	"github.com/openshift/hypershift/support/util"
 
 	routev1 "github.com/openshift/api/route/v1"
 
@@ -28,7 +28,7 @@ func TestGenerateConfig(t *testing.T) {
 	// Library to create Routes and SVCs.
 	namedRoute := func(r *routev1.Route, mods ...func(*routev1.Route)) *routev1.Route {
 		r.Labels = map[string]string{
-			util.HCPRouteLabel: "test-ns-clustername",
+			netutil.HCPRouteLabel: "test-ns-clustername",
 		}
 		for _, m := range mods {
 			m(r)

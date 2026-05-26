@@ -105,7 +105,7 @@ func KASDeployment(controlPlaneNamespace string) *appsv1.Deployment {
 	}
 }
 
-func KASContainerAWSKMSProviderServiceAccount() *corev1.ServiceAccount {
+func KASContainerKMSProviderServiceAccount() *corev1.ServiceAccount {
 	return &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "kms-provider",

@@ -71,7 +71,7 @@ func TestReconcileAzureIdentityWebhook(t *testing.T) {
 			wh := webhook.Webhooks[0]
 			g.Expect(wh.Name).To(Equal("pod-identity-webhook.azure.mutate.io"))
 			g.Expect(wh.AdmissionReviewVersions).To(Equal([]string{"v1", "v1beta1"}))
-			g.Expect(*wh.FailurePolicy).To(Equal(admissionregistrationv1.Fail))
+			g.Expect(*wh.FailurePolicy).To(Equal(admissionregistrationv1.Ignore))
 			g.Expect(*wh.MatchPolicy).To(Equal(admissionregistrationv1.Equivalent))
 			g.Expect(*wh.ReinvocationPolicy).To(Equal(admissionregistrationv1.IfNeededReinvocationPolicy))
 			g.Expect(*wh.SideEffects).To(Equal(admissionregistrationv1.SideEffectClassNone))

@@ -4,7 +4,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/capabilities"
 	component "github.com/openshift/hypershift/support/controlplane-component"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/podspec"
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
@@ -57,8 +57,8 @@ func NewComponent(registryOverrides map[string]string, openShiftImageRegistryOve
 		Build()
 }
 
-func hccpAvailabilityProberOpts(caps *hyperv1.Capabilities) util.AvailabilityProberOpts {
-	availabilityProberOpts := util.AvailabilityProberOpts{
+func hccpAvailabilityProberOpts(caps *hyperv1.Capabilities) podspec.AvailabilityProberOpts {
+	availabilityProberOpts := podspec.AvailabilityProberOpts{
 		KubeconfigVolumeName: "kubeconfig",
 		RequiredAPIs: []schema.GroupVersionKind{
 			{Group: "imageregistry.operator.openshift.io", Version: "v1", Kind: "Config"},

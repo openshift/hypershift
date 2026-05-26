@@ -9,6 +9,7 @@ import (
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/globalconfig"
+	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/util"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -59,15 +60,15 @@ func NewConfigParams(hcp *hyperv1.HostedControlPlane, featureGates []string) Kub
 
 	kasConfig := KubeAPIServerConfigParams{
 		ExternalIPConfig:             externalIPConfig(hcp.Spec.Configuration),
-		ClusterNetwork:               util.ClusterCIDRs(hcp.Spec.Networking.ClusterNetwork),
-		ServiceNetwork:               util.ServiceCIDRs(hcp.Spec.Networking.ServiceNetwork),
+		ClusterNetwork:               netutil.ClusterCIDRs(hcp.Spec.Networking.ClusterNetwork),
+		ServiceNetwork:               netutil.ServiceCIDRs(hcp.Spec.Networking.ServiceNetwork),
 		NamedCertificates:            hcp.Spec.Configuration.GetNamedCertificates(),
-		KASPodPort:                   util.KASPodPort(hcp),
+		KASPodPort:                   netutil.KASPodPort(hcp),
 		TLSSecurityProfile:           tlsSecurityProfile(hcp.Spec.Configuration),
 		AdditionalCORSAllowedOrigins: additionalCORSAllowedOrigins(hcp.Spec.Configuration),
 		ExternalRegistryHostNames:    externalRegistryHostNames(hcp.Spec.Configuration),
 		DefaultNodeSelector:          defaultNodeSelector(hcp.Spec.Configuration),
-		AdvertiseAddress:             util.GetAdvertiseAddress(hcp, config.DefaultAdvertiseIPv4Address, config.DefaultAdvertiseIPv6Address),
+		AdvertiseAddress:             netutil.GetAdvertiseAddress(hcp, config.DefaultAdvertiseIPv4Address, config.DefaultAdvertiseIPv6Address),
 		ServiceAccountIssuerURL:      serviceAccountIssuerURL(hcp),
 		FeatureGates:                 featureGates,
 		NodePortRange:                serviceNodePortRange(hcp.Spec.Configuration),

@@ -7,6 +7,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"k8s.io/apimachinery/pkg/util/sets"
 )
 
 func TestCincinnatiVersionResolver_WhenValidResponse_ItShouldReturnReleaseImage(t *testing.T) {
@@ -169,8 +171,9 @@ func TestCincinnatiVersionResolver_WhenCacheIsExpired_ItShouldReQueryAPI(t *test
 
 	// Manually expire the cache
 	resolver.mu.Lock()
-	resolver.cache["stable-4.20/4.20.1"] = cacheEntry{
+	resolver.cache["multi/4.20.1"] = cacheEntry{
 		releaseImage: "quay.io/openshift-release-dev/ocp-release@sha256:abc123",
+		channels:     sets.New[string]("stable-4.20"),
 		expiry:       time.Now().Add(-1 * time.Minute),
 	}
 	resolver.mu.Unlock()

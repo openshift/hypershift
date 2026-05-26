@@ -14,6 +14,8 @@ import (
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/netutil"
+	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/util"
 
@@ -58,7 +60,7 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 	hcp := cpContext.HCP
 	updateMainContainer(&deployment.Spec.Template.Spec, hcp)
 
-	util.UpdateContainer("konnectivity-server", deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
+	podspec.UpdateContainer("konnectivity-server", deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
 		serverCount := component.DefaultReplicas(hcp, &KubeAPIServer{}, ComponentName)
 		c.Args = append(c.Args,
 			"--server-count",
@@ -87,20 +89,20 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 	}
 
 	if hcp.Spec.Configuration.GetAuditPolicyConfig().Profile == configv1.NoneAuditProfileType {
-		util.RemoveContainer("audit-logs", &deployment.Spec.Template.Spec)
+		podspec.RemoveContainer("audit-logs", &deployment.Spec.Template.Spec)
 	}
 
 	// With managed etcd, we should wait for the known etcd client service name to
 	// at least resolve before starting up to avoid futile connection attempts and
 	// pod crashing. For unmanaged, make no assumptions.
 	if hcp.Spec.Etcd.ManagementType == hyperv1.Unmanaged {
-		util.RemoveInitContainer("wait-for-etcd", &deployment.Spec.Template.Spec)
+		podspec.RemoveInitContainer("wait-for-etcd", &deployment.Spec.Template.Spec)
 	}
 
 	// If the built-in OAuth stack is not enabled, there is no need to do the auth-related
 	// bootstrapping step.
 	if hcp.Spec.Configuration != nil && !util.ConfigOAuthEnabled(hcp.Spec.Configuration.Authentication) {
-		util.RemoveInitContainer("init-auth-bootstrap-render", &deployment.Spec.Template.Spec)
+		podspec.RemoveInitContainer("init-auth-bootstrap-render", &deployment.Spec.Template.Spec)
 	}
 
 	if portieris, ok := hcp.Annotations[hyperv1.PortierisImageAnnotation]; ok {
@@ -125,7 +127,7 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 		applyGenericSecretEncryptionConfig(&deployment.Spec.Template.Spec)
 		switch secretEncryption.Type {
 		case hyperv1.KMS:
-			if err := applyKMSConfig(&deployment.Spec.Template.Spec, secretEncryption, newKMSImages(hcp)); err != nil {
+			if err := applyKMSConfig(&deployment.Spec.Template.Spec, secretEncryption, newKMSImages(hcp), hcp); err != nil {
 				return err
 			}
 		}
@@ -163,8 +165,8 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 }
 
 func updateMainContainer(podSpec *corev1.PodSpec, hcp *hyperv1.HostedControlPlane) {
-	util.UpdateContainer(ComponentName, podSpec.Containers, func(c *corev1.Container) {
-		c.Ports[0].ContainerPort = util.KASPodPort(hcp)
+	podspec.UpdateContainer(ComponentName, podSpec.Containers, func(c *corev1.Container) {
+		c.Ports[0].ContainerPort = netutil.KASPodPort(hcp)
 
 		kasVerbosityLevel := 2
 		if hcp.Annotations[hyperv1.KubeAPIServerVerbosityLevelAnnotation] != "" {
@@ -182,8 +184,8 @@ func updateMainContainer(podSpec *corev1.PodSpec, hcp *hyperv1.HostedControlPlan
 		// Using a CIDR is not supported by Go's default ProxyFunc, but Kube uses a custom one by default that does support it:
 		// https://github.com/kubernetes/kubernetes/blob/ab13c85316015cf9f115e29923ba9740bd1564fd/staging/src/k8s.io/apimachinery/pkg/util/net/http.go#L112-L114
 		var additionalNoProxyCIDRS []string
-		additionalNoProxyCIDRS = append(additionalNoProxyCIDRS, util.ClusterCIDRs(hcp.Spec.Networking.ClusterNetwork)...)
-		additionalNoProxyCIDRS = append(additionalNoProxyCIDRS, util.ServiceCIDRs(hcp.Spec.Networking.ServiceNetwork)...)
+		additionalNoProxyCIDRS = append(additionalNoProxyCIDRS, netutil.ClusterCIDRs(hcp.Spec.Networking.ClusterNetwork)...)
+		additionalNoProxyCIDRS = append(additionalNoProxyCIDRS, netutil.ServiceCIDRs(hcp.Spec.Networking.ServiceNetwork)...)
 		proxy.SetEnvVars(&c.Env, additionalNoProxyCIDRS...)
 
 		if hcp.Annotations[hyperv1.KubeAPIServerGOGCAnnotation] != "" {
@@ -246,7 +248,7 @@ func updateMainContainer(podSpec *corev1.PodSpec, hcp *hyperv1.HostedControlPlan
 func applyKASAuditWebhookConfigFileVolume(podSpec *corev1.PodSpec, auditWebhookRef *corev1.LocalObjectReference) {
 	podSpec.Volumes = append(podSpec.Volumes, buildKASAuditWebhookConfigFileVolume(auditWebhookRef))
 
-	util.UpdateContainer(ComponentName, podSpec.Containers, func(c *corev1.Container) {
+	podspec.UpdateContainer(ComponentName, podSpec.Containers, func(c *corev1.Container) {
 		c.VolumeMounts = append(c.VolumeMounts, kasAuditWebhookConfigFileVolumeMount.ContainerMounts(ComponentName)...)
 	})
 }
@@ -254,7 +256,7 @@ func applyKASAuditWebhookConfigFileVolume(podSpec *corev1.PodSpec, auditWebhookR
 func applyGenericSecretEncryptionConfig(podSpec *corev1.PodSpec) {
 	podSpec.Volumes = append(podSpec.Volumes, buildVolumeSecretEncryptionConfigFile())
 
-	util.UpdateContainer(ComponentName, podSpec.Containers, func(c *corev1.Container) {
+	podspec.UpdateContainer(ComponentName, podSpec.Containers, func(c *corev1.Container) {
 		c.Args = append(c.Args, fmt.Sprintf("--encryption-provider-config=%s/%s", genericSecretEncryptionConfigFileVolumeMount.Path(ComponentName, secretEncryptionConfigFileVolumeName), secretEncryptionConfigurationKey))
 
 		c.VolumeMounts = append(c.VolumeMounts, genericSecretEncryptionConfigFileVolumeMount.ContainerMounts(ComponentName)...)
@@ -280,7 +282,7 @@ func updateBootstrapInitContainer(deployment *appsv1.Deployment, hcp *hyperv1.Ho
 	}
 	featureGateYaml := featureGateBuffer.String()
 
-	util.UpdateContainer(name, deployment.Spec.Template.Spec.InitContainers, func(c *corev1.Container) {
+	podspec.UpdateContainer(name, deployment.Spec.Template.Spec.InitContainers, func(c *corev1.Container) {
 		c.Env = append(c.Env,
 			corev1.EnvVar{
 				Name:  "PAYLOAD_VERSION",
@@ -342,7 +344,7 @@ func applyAWSPodIdentityWebhookContainer(podSpec *corev1.PodSpec, hcp *hyperv1.H
 }
 
 func applyAzureWorkloadIdentityWebhookContainer(podSpec *corev1.PodSpec, hcp *hyperv1.HostedControlPlane) {
-	waitForKASScript := fmt.Sprintf(azureWorkloadIdentityWebhookWaitForKASVersionTemplate, util.KASPodPort(hcp))
+	waitForKASScript := fmt.Sprintf(azureWorkloadIdentityWebhookWaitForKASVersionTemplate, netutil.KASPodPort(hcp))
 
 	podSpec.Containers = append(podSpec.Containers, corev1.Container{
 		Name:            "azure-workload-identity-webhook",
@@ -471,7 +473,7 @@ const (
 )
 
 var (
-	volumeMounts = util.PodVolumeMounts{
+	volumeMounts = podspec.VolumeMounts{
 		ComponentName: {
 			workLogsVolumeName:                "/var/log/kube-apiserver",
 			authConfigVolumeName:              "/etc/kubernetes/auth",
@@ -492,19 +494,19 @@ var (
 		},
 	}
 
-	cloudProviderConfigVolumeMount = util.PodVolumeMounts{
+	cloudProviderConfigVolumeMount = podspec.VolumeMounts{
 		ComponentName: {
 			cloudConfigVolumeName: "/etc/kubernetes/cloud",
 		},
 	}
 
-	kasAuditWebhookConfigFileVolumeMount = util.PodVolumeMounts{
+	kasAuditWebhookConfigFileVolumeMount = podspec.VolumeMounts{
 		ComponentName: {
 			auditWebhookConfigFileVolumeName: "/etc/kubernetes/auditwebhook",
 		},
 	}
 
-	genericSecretEncryptionConfigFileVolumeMount = util.PodVolumeMounts{
+	genericSecretEncryptionConfigFileVolumeMount = podspec.VolumeMounts{
 		ComponentName: {
 			secretEncryptionConfigFileVolumeName: "/etc/kubernetes/secret-encryption",
 		},

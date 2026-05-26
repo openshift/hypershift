@@ -6,11 +6,16 @@ package upload
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	. "github.com/onsi/gomega"
 )
 
@@ -48,15 +53,32 @@ func loadTestConfig(t *testing.T) testConfig {
 
 func createTestSnapshot(t *testing.T) string {
 	t.Helper()
+	return createTestSnapshotWithSize(t, 64*1024) // 64KB fake snapshot
+}
+
+func createTestSnapshotWithSize(t *testing.T, sizeBytes int) string {
+	t.Helper()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "snapshot.db")
-	data := make([]byte, 64*1024) // 64KB fake snapshot
-	for i := range data {
-		data[i] = byte(i % 256)
-	}
-	err := os.WriteFile(path, data, 0644)
+	f, err := os.Create(path)
 	if err != nil {
 		t.Fatalf("failed to create test snapshot: %v", err)
+	}
+	defer f.Close()
+	buf := make([]byte, 1024*1024)
+	for i := range buf {
+		buf[i] = byte(i % 256)
+	}
+	for written := 0; written < sizeBytes; {
+		chunk := buf
+		if remaining := sizeBytes - written; remaining < len(chunk) {
+			chunk = chunk[:remaining]
+		}
+		n, err := f.Write(chunk)
+		if err != nil {
+			t.Fatalf("failed to write test snapshot: %v", err)
+		}
+		written += n
 	}
 	return path
 }
@@ -144,6 +166,41 @@ func TestEtcdUploadS3(t *testing.T) {
 	}
 }
 
+// TestEtcdUploadS3MultipartLargeFile validates that large files (>5MB) are correctly
+// uploaded via multipart upload with CRC32 checksum validation.
+// This test catches the InvalidPart bug present in Transfer Manager v0.1.0 (pre-GA),
+// where per-part CRC32 checksums were not propagated to CompleteMultipartUpload.
+// See: https://github.com/aws/aws-sdk-go-v2/issues/3007
+func TestEtcdUploadS3MultipartLargeFile(t *testing.T) {
+	cfg := loadTestConfig(t)
+	if cfg.AWSBucket == "" || cfg.AWSRegion == "" || cfg.AWSCredentialsFile == "" {
+		t.Skip("AWS environment variables not set (ETCD_UPLOAD_TEST_AWS_BUCKET, ETCD_UPLOAD_TEST_AWS_REGION, ETCD_UPLOAD_TEST_AWS_CREDENTIALS_FILE)")
+	}
+
+	g := NewGomegaWithT(t)
+
+	// 61MB file to force multipart upload (threshold is ~5MB)
+	snapshotPath := createTestSnapshotWithSize(t, 61*1024*1024)
+
+	stdout, stderr, err := runEtcdUpload(t,
+		"--snapshot-path", snapshotPath,
+		"--storage-type", "S3",
+		"--aws-bucket", cfg.AWSBucket,
+		"--aws-region", cfg.AWSRegion,
+		"--key-prefix", "integration-test/multipart",
+		"--credentials-file", cfg.AWSCredentialsFile,
+	)
+	g.Expect(err).ToNot(HaveOccurred(), "etcd-upload multipart failed: %s", stderr)
+	g.Expect(stdout).To(HavePrefix("s3://" + cfg.AWSBucket + "/integration-test/multipart/"))
+	g.Expect(stdout).To(HaveSuffix(".db\n"))
+	t.Logf("Multipart upload succeeded: %s", stdout)
+
+	// Cleanup: delete the uploaded object to avoid storage growth.
+	key, err := parseS3Key(stdout, cfg.AWSBucket)
+	g.Expect(err).ToNot(HaveOccurred(), "failed to parse S3 key from output")
+	deleteS3Object(t, cfg, key)
+}
+
 func TestEtcdUploadAzureBlob(t *testing.T) {
 	cfg := loadTestConfig(t)
 
@@ -215,4 +272,41 @@ func TestEtcdUploadAzureBlob(t *testing.T) {
 			tt.assertURL(g, stdout)
 		})
 	}
+}
+
+// parseS3Key extracts the object key from an s3:// URL output by etcd-upload.
+// The stdout format is "s3://<bucket>/<key>\n".
+func parseS3Key(stdout, bucket string) (string, error) {
+	prefix := fmt.Sprintf("s3://%s/", bucket)
+	trimmed := strings.TrimSpace(stdout)
+	if !strings.HasPrefix(trimmed, prefix) {
+		return "", fmt.Errorf("unexpected S3 URL format: %q", trimmed)
+	}
+	return strings.TrimPrefix(trimmed, prefix), nil
+}
+
+// deleteS3Object deletes an S3 object using the test configuration credentials.
+func deleteS3Object(t *testing.T, cfg testConfig, key string) {
+	t.Helper()
+	ctx := context.Background()
+
+	awsCfg, err := awsconfig.LoadDefaultConfig(ctx,
+		awsconfig.WithRegion(cfg.AWSRegion),
+		awsconfig.WithSharedCredentialsFiles([]string{cfg.AWSCredentialsFile}),
+	)
+	if err != nil {
+		t.Logf("Warning: failed to load AWS config for cleanup: %v", err)
+		return
+	}
+
+	s3Client := s3.NewFromConfig(awsCfg)
+	_, err = s3Client.DeleteObject(ctx, &s3.DeleteObjectInput{
+		Bucket: aws.String(cfg.AWSBucket),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		t.Logf("Warning: failed to delete S3 object s3://%s/%s: %v", cfg.AWSBucket, key, err)
+		return
+	}
+	t.Logf("Cleaned up S3 object: s3://%s/%s", cfg.AWSBucket, key)
 }

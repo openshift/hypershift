@@ -18,7 +18,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/netutil"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 )
 
@@ -132,7 +132,7 @@ func (mc *MirrorConfigsTest) Run(t *testing.T, nodePool hyperv1.NodePool, nodes 
 		},
 		[]e2eutil.Predicate[*corev1.ConfigMap]{
 			func(configMap *corev1.ConfigMap) (done bool, reasons string, err error) {
-				if want, got := util.ShortenName(KubeletConfigMap.Name, nodePool.Name, nodepool.QualifiedNameMaxLength), configMap.Name; want != got {
+				if want, got := netutil.ShortenName(KubeletConfigMap.Name, nodePool.Name, nodepool.QualifiedNameMaxLength), configMap.Name; want != got {
 					return false, fmt.Sprintf("expected kubelet config ConfigMap name to be '%s', got '%s'", want, got), nil
 				}
 				return true, fmt.Sprintf("kubelet config ConfigMap name is as expected"), nil

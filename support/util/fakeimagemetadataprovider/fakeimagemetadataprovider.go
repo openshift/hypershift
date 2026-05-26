@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/reference"
 
@@ -22,11 +21,14 @@ type FakeImageMetadataProvider interface {
 }
 
 func (f *FakeRegistryClientImageMetadataProvider) ImageMetadata(ctx context.Context, imageRef string, pullSecret []byte) (*dockerv1client.DockerImageConfig, error) {
+	if f.Err != nil {
+		return nil, f.Err
+	}
 	return f.Result, nil
 }
 
 func (f *FakeManifest) References() []distribution.Descriptor { return []distribution.Descriptor{} }
-func (f *FakeManifest) Payload() (string, []byte, error)      { return f.MediaType, []byte{}, nil }
+func (f *FakeManifest) Payload() (string, []byte, error)      { return f.MediaType, []byte("{}"), nil }
 
 type FakeRegistryClientImageMetadataProvider struct {
 	MediaType string
@@ -34,15 +36,15 @@ type FakeRegistryClientImageMetadataProvider struct {
 	Manifest  FakeManifest
 	Digest    string
 	Ref       *reference.DockerImageReference
+	Err       error
 }
 type FakeManifest struct {
 	MediaType string
 }
 
 func (f *FakeRegistryClientImageMetadataProvider) GetManifest(ctx context.Context, imageRef string, pullSecret []byte) (distribution.Manifest, error) {
-	_, _, err := registryclient.GetRepoSetup(ctx, imageRef, pullSecret)
-	if err != nil {
-		return nil, fmt.Errorf("failed to retrieve manifest %s: %w", imageRef, err)
+	if f.Err != nil {
+		return nil, f.Err
 	}
 	return &FakeManifest{
 		f.MediaType,
@@ -50,20 +52,29 @@ func (f *FakeRegistryClientImageMetadataProvider) GetManifest(ctx context.Contex
 }
 
 func (f *FakeRegistryClientImageMetadataProvider) GetDigest(ctx context.Context, imageRef string, pullSecret []byte) (digest.Digest, *reference.DockerImageReference, error) {
-	var err error
-	_, f.Ref, err = registryclient.GetRepoSetup(ctx, imageRef, pullSecret)
-	if err != nil {
-		return "", nil, fmt.Errorf("failed to retrieve manifest %s: %w", imageRef, err)
+	if f.Err != nil {
+		return "", nil, f.Err
 	}
+	ref, err := reference.Parse(imageRef)
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to parse image reference %s: %w", imageRef, err)
+	}
+	f.Ref = &ref
 	f.Ref.ID = f.Digest
 	return digest.Digest(f.Digest), f.Ref, nil
 }
 
 func (f *FakeRegistryClientImageMetadataProvider) GetMetadata(ctx context.Context, imageRef string, pullSecret []byte) (*dockerv1client.DockerImageConfig, []distribution.Descriptor, distribution.BlobStore, error) {
+	if f.Err != nil {
+		return nil, nil, nil, f.Err
+	}
 	return f.Result, []distribution.Descriptor{}, nil, nil
 }
 
 func (f *FakeRegistryClientImageMetadataProvider) GetOverride(ctx context.Context, imageRef string, pullSecret []byte) (*reference.DockerImageReference, error) {
+	if f.Err != nil {
+		return nil, f.Err
+	}
 	return f.Ref, nil
 }
 

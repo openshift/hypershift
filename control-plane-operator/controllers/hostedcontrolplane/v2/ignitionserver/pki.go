@@ -8,7 +8,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	"github.com/openshift/hypershift/support/certs"
 	component "github.com/openshift/hypershift/support/controlplane-component"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/netutil"
 
 	routev1 "github.com/openshift/api/route/v1"
 
@@ -48,7 +48,7 @@ func adaptServingCertSecret(cpContext component.WorkloadContext, secret *corev1.
 		return fmt.Errorf("failed to get ignition ca-cert secret: %v", err)
 	}
 
-	serviceStrategy := util.ServicePublishingStrategyByTypeForHCP(cpContext.HCP, hyperv1.Ignition)
+	serviceStrategy := netutil.ServicePublishingStrategyByTypeForHCP(cpContext.HCP, hyperv1.Ignition)
 	if serviceStrategy == nil {
 		return fmt.Errorf("ignition service strategy not specified")
 	}

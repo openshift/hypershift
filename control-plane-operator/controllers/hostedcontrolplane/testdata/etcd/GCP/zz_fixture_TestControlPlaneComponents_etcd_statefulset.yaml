@@ -202,7 +202,6 @@ spec:
         - grpc-proxy
         - start
         - --endpoints=https://localhost:2382
-        - --advertise-client-url=""
         - --key=/etc/etcd/tls/peer/peer.key
         - --key-file=/etc/etcd/tls/server/server.key
         - --cert=/etc/etcd/tls/peer/peer.crt
@@ -211,6 +210,7 @@ spec:
         - --trusted-ca-file=/etc/etcd/tls/etcd-metrics-ca/ca.crt
         - --listen-addr=127.0.0.1:2383
         - --metrics-addr=https://0.0.0.0:2381
+        - --advertise-client-url=
         command:
         - etcd
         image: etcd

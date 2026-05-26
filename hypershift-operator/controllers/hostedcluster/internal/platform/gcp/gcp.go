@@ -17,15 +17,15 @@ package gcp
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/gcputil"
 	"github.com/openshift/hypershift/support/images"
+	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/upsert"
-	supportutil "github.com/openshift/hypershift/support/util"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -156,9 +156,9 @@ func (p GCP) reconcileGCPCluster(gcpCluster *capigcp.GCPCluster, hcluster *hyper
 	if gcpCluster.Spec.AdditionalLabels == nil {
 		gcpCluster.Spec.AdditionalLabels = make(map[string]string)
 	}
-	gcpCluster.Spec.AdditionalLabels[supportutil.GCPLabelCluster] = hcluster.Name
+	gcpCluster.Spec.AdditionalLabels[k8sutil.GCPLabelCluster] = hcluster.Name
 	if hcluster.Spec.InfraID != "" {
-		gcpCluster.Spec.AdditionalLabels[supportutil.GCPLabelInfraID] = hcluster.Spec.InfraID
+		gcpCluster.Spec.AdditionalLabels[k8sutil.GCPLabelInfraID] = hcluster.Spec.InfraID
 	}
 
 	// Set control plane endpoint (following AWS pattern)
@@ -272,7 +272,7 @@ func (p GCP) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hype
 
 // buildVolumes creates all volumes needed for CAPG deployment including
 // credentials and webhook certificates.
-func (p GCP) buildVolumes(hcluster *hyperv1.HostedCluster) []corev1.Volume {
+func (p GCP) buildVolumes(_ *hyperv1.HostedCluster) []corev1.Volume {
 	defaultMode := int32(0640)
 	return []corev1.Volume{
 		{
@@ -323,7 +323,7 @@ func (p GCP) ReconcileCredentials(ctx context.Context, c client.Client, createOr
 	// Create credential secrets following AWS pattern
 	var errs []error
 	syncSecret := func(secret *corev1.Secret, serviceAccountEmail string) error {
-		credentials, err := buildGCPWorkloadIdentityCredentials(hcluster.Spec.Platform.GCP.WorkloadIdentity, serviceAccountEmail)
+		credentials, err := gcputil.BuildWorkloadIdentityCredentials(hcluster.Spec.Platform.GCP.WorkloadIdentity, serviceAccountEmail)
 		if err != nil {
 			return fmt.Errorf("failed to build cloud credentials secret %s/%s: %w", secret.Namespace, secret.Name, err)
 		}
@@ -344,6 +344,7 @@ func (p GCP) ReconcileCredentials(ctx context.Context, c client.Client, createOr
 		hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.CloudController: CloudControllerCredsSecret(controlPlaneNamespace),
 		hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.Storage:         GCPPDCloudCredentialsSecret(controlPlaneNamespace),
 		hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.ImageRegistry:   ImageRegistryCredsSecret(controlPlaneNamespace),
+		hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.Network:         CNCCCredsSecret(controlPlaneNamespace),
 	}
 
 	for email, secret := range credentialSecrets {
@@ -426,67 +427,17 @@ func ImageRegistryCredsSecret(controlPlaneNamespace string) *corev1.Secret {
 	}
 }
 
-// gcpCredentialSource represents the credential source configuration for GCP external account credentials.
-type gcpCredentialSource struct {
-	File   string                    `json:"file"`
-	Format gcpCredentialSourceFormat `json:"format"`
-}
-
-// gcpCredentialSourceFormat represents the format of the credential source.
-type gcpCredentialSourceFormat struct {
-	Type string `json:"type"`
-}
-
-// gcpExternalAccountCredential represents the complete GCP external account credential configuration
-// for Workload Identity Federation. This follows the Google Cloud credential configuration format.
-type gcpExternalAccountCredential struct {
-	Type                           string              `json:"type"`
-	Audience                       string              `json:"audience"`
-	SubjectTokenType               string              `json:"subject_token_type"`
-	TokenURL                       string              `json:"token_url"`
-	ServiceAccountImpersonationURL string              `json:"service_account_impersonation_url"`
-	CredentialSource               gcpCredentialSource `json:"credential_source"`
-}
-
-// buildGCPWorkloadIdentityCredentials creates the credential configuration for Google Cloud SDK
-// to use Workload Identity Federation with a specific service account email.
-func buildGCPWorkloadIdentityCredentials(wif hyperv1.GCPWorkloadIdentityConfig, serviceAccountEmail string) (string, error) {
-	if wif.ProjectNumber == "" {
-		return "", fmt.Errorf("project number cannot be empty in GCP Workload Identity Federation credentials")
-	}
-	if wif.PoolID == "" {
-		return "", fmt.Errorf("pool ID cannot be empty in GCP Workload Identity Federation credentials")
-	}
-	if wif.ProviderID == "" {
-		return "", fmt.Errorf("provider ID cannot be empty in GCP Workload Identity Federation credentials")
-	}
-	if serviceAccountEmail == "" {
-		return "", fmt.Errorf("service account email cannot be empty in GCP Workload Identity Federation credentials")
-	}
-
-	// Create the credential configuration that tells Google Cloud SDK how to use WIF
-	// This follows the standard Google Cloud credential configuration format with service account impersonation
-	// The audience must be the full resource name of the Workload Identity Provider
-	credConfig := gcpExternalAccountCredential{
-		Type:                           "external_account",
-		Audience:                       fmt.Sprintf("//iam.googleapis.com/projects/%s/locations/global/workloadIdentityPools/%s/providers/%s", wif.ProjectNumber, wif.PoolID, wif.ProviderID),
-		SubjectTokenType:               "urn:ietf:params:oauth:token-type:jwt",
-		TokenURL:                       "https://sts.googleapis.com/v1/token",
-		ServiceAccountImpersonationURL: fmt.Sprintf("https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/%s:generateAccessToken", serviceAccountEmail),
-		CredentialSource: gcpCredentialSource{
-			File: "/var/run/secrets/openshift/serviceaccount/token",
-			Format: gcpCredentialSourceFormat{
-				Type: "text",
-			},
+// CNCCCredsSecret returns the secret containing Workload Identity Federation credentials
+// for the Cloud Network Config Controller to manage cloud-level network configurations.
+// The secret name is hardcoded in the CNO managed template:
+// https://github.com/openshift/cluster-network-operator/blob/bc5af87/bindata/cloud-network-config-controller/managed/controller.yaml#L253
+func CNCCCredsSecret(controlPlaneNamespace string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: controlPlaneNamespace,
+			Name:      "cloud-network-config-controller-creds",
 		},
 	}
-
-	credentialJSON, err := json.Marshal(credConfig)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal GCP credential configuration: %w", err)
-	}
-
-	return string(credentialJSON), nil
 }
 
 // ReconcileSecretEncryption is a no-op
@@ -572,6 +523,10 @@ func (p GCP) validateWorkloadIdentityConfiguration(hcluster *hyperv1.HostedClust
 
 	if wif.ServiceAccountsEmails.ImageRegistry == "" {
 		return fmt.Errorf("image registry service account email is required")
+	}
+
+	if wif.ServiceAccountsEmails.Network == "" {
+		return fmt.Errorf("network service account email is required")
 	}
 
 	return nil

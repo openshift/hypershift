@@ -69,205 +69,200 @@ func VerifyRequestServingCPEffects(ctx context.Context, hc *hyperv1.HostedCluste
 	var errs []error
 
 	if effects.KASGoMemLimit != nil {
-		// Poll until all kube-apiserver pods have the expected GOMEMLIMIT value
-		pollCtx, cancel := context.WithTimeout(ctx, DefaultVerificationTimeout)
-		defer cancel()
-		err := wait.PollUntilContextCancel(pollCtx, DefaultPollingInterval, true, func(pctx context.Context) (bool, error) {
-			kasPods := &corev1.PodList{}
-			if err := client.List(pctx, kasPods, crclient.MatchingLabels{"app": "kube-apiserver"}, crclient.InNamespace(cpNamespace)); err != nil {
-				return false, nil
-			}
-			if len(kasPods.Items) == 0 {
-				return false, nil
-			}
-			for _, pod := range kasPods.Items {
-				foundExpected := false
-				for _, container := range pod.Spec.Containers {
-					if container.Name != "kube-apiserver" {
-						continue
-					}
-					for _, env := range container.Env {
-						if env.Name == KASGoMemLimitEnvVar {
-							if env.Value == *effects.KASGoMemLimit {
-								foundExpected = true
-							}
-							break
-						}
-					}
-					break
-				}
-				if !foundExpected {
-					return false, nil
-				}
-			}
-			return true, nil
-		})
-		if err != nil {
-			errs = append(errs, fmt.Errorf("timed out waiting for kube-apiserver pods to have %s=%s: %w", KASGoMemLimitEnvVar, *effects.KASGoMemLimit, err))
+		if err := verifyKASGoMemLimit(ctx, client, cpNamespace, effects); err != nil {
+			errs = append(errs, err)
 		}
 	}
 
 	if effects.MaximumRequestsInflight != nil || effects.MaximumMutatingRequestsInflight != nil {
-		pollCtx, cancel := context.WithTimeout(ctx, DefaultVerificationTimeout)
-		defer cancel()
-		err := wait.PollUntilContextCancel(pollCtx, DefaultPollingInterval, true, func(pctx context.Context) (bool, error) {
-			kasConfigMap := &corev1.ConfigMap{}
-			if err := client.Get(pctx, types.NamespacedName{Name: "kas-config", Namespace: cpNamespace}, kasConfigMap); err != nil {
-				return false, nil
-			}
-			data, ok := kasConfigMap.Data["config.json"]
-			if !ok || data == "" {
-				return false, nil
-			}
-			kasConfig := &kcpv1.KubeAPIServerConfig{}
-			if err := json.Unmarshal([]byte(data), &kasConfig); err != nil {
-				return false, nil
-			}
-			// Check expected values
-			if effects.MaximumRequestsInflight != nil {
-				expected := fmt.Sprintf("%d", *effects.MaximumRequestsInflight)
-				actual := ""
-				if args := kasConfig.APIServerArguments["max-requests-inflight"]; len(args) > 0 {
-					actual = args[0]
-				}
-				if actual != expected {
-					return false, nil
-				}
-			}
-			if effects.MaximumMutatingRequestsInflight != nil {
-				expected := fmt.Sprintf("%d", *effects.MaximumMutatingRequestsInflight)
-				actual := ""
-				if args := kasConfig.APIServerArguments["max-mutating-requests-inflight"]; len(args) > 0 {
-					actual = args[0]
-				}
-				if actual != expected {
-					return false, nil
-				}
-			}
-			return true, nil
-		})
-		if err != nil {
-			if effects.MaximumRequestsInflight != nil && effects.MaximumMutatingRequestsInflight != nil {
-				errs = append(errs, fmt.Errorf("timed out waiting for kube-apiserver config to have max-requests-inflight=%d and max-mutating-requests-inflight=%d: %w", *effects.MaximumRequestsInflight, *effects.MaximumMutatingRequestsInflight, err))
-			} else if effects.MaximumRequestsInflight != nil {
-				errs = append(errs, fmt.Errorf("timed out waiting for kube-apiserver config to have max-requests-inflight=%d: %w", *effects.MaximumRequestsInflight, err))
-			} else if effects.MaximumMutatingRequestsInflight != nil {
-				errs = append(errs, fmt.Errorf("timed out waiting for kube-apiserver config to have max-mutating-requests-inflight=%d: %w", *effects.MaximumMutatingRequestsInflight, err))
-			}
+		if err := verifyInflightConfig(ctx, client, cpNamespace, effects); err != nil {
+			errs = append(errs, err)
 		}
 	}
 
 	if len(effects.ResourceRequests) > 0 {
-		pollCtx, cancel := context.WithTimeout(ctx, DefaultVerificationTimeout)
-		defer cancel()
-		err := wait.PollUntilContextCancel(pollCtx, DefaultPollingInterval, true, func(pctx context.Context) (bool, error) {
-			for _, effect := range effects.ResourceRequests {
-				matched := false
-				// etcd is deployed as a StatefulSet, not a Deployment
-				if effect.DeploymentName == "etcd" {
-					statefulSet := &appsv1.StatefulSet{}
-					if err := client.Get(pctx, types.NamespacedName{Name: effect.DeploymentName, Namespace: cpNamespace}, statefulSet); err != nil {
-						return false, nil
-					}
-					for _, container := range statefulSet.Spec.Template.Spec.Containers {
-						if container.Name != effect.ContainerName {
-							continue
-						}
-						// assume match and disprove if any expected resource does not match
-						matched = true
-						if effect.Memory != nil {
-							if mr := container.Resources.Requests.Memory(); mr == nil || mr.Cmp(*effect.Memory) != 0 {
-								matched = false
-							}
-						}
-						if effect.CPU != nil {
-							if cr := container.Resources.Requests.Cpu(); cr == nil || cr.Cmp(*effect.CPU) != 0 {
-								matched = false
-							}
-						}
-						break
-					}
-				} else {
-					deployment := &appsv1.Deployment{}
-					if err := client.Get(pctx, types.NamespacedName{Name: effect.DeploymentName, Namespace: cpNamespace}, deployment); err != nil {
-						return false, nil
-					}
-					for _, container := range deployment.Spec.Template.Spec.Containers {
-						if container.Name != effect.ContainerName {
-							continue
-						}
-						// assume match and disprove if any expected resource does not match
-						matched = true
-						if effect.Memory != nil {
-							if mr := container.Resources.Requests.Memory(); mr == nil || mr.Cmp(*effect.Memory) != 0 {
-								matched = false
-							}
-						}
-						if effect.CPU != nil {
-							if cr := container.Resources.Requests.Cpu(); cr == nil || cr.Cmp(*effect.CPU) != 0 {
-								matched = false
-							}
-						}
-						break
-					}
-				}
-				if !matched {
-					return false, nil
-				}
-			}
-			return true, nil
-		})
-		if err != nil {
-			// Do a final pass to report detailed mismatches
-			for _, effect := range effects.ResourceRequests {
-				if effect.DeploymentName == "etcd" {
-					statefulSet := &appsv1.StatefulSet{}
-					if getErr := client.Get(ctx, types.NamespacedName{Name: effect.DeploymentName, Namespace: cpNamespace}, statefulSet); getErr != nil {
-						errs = append(errs, fmt.Errorf("failed to get statefulset %s: %w", effect.DeploymentName, getErr))
-						continue
-					}
-					for _, container := range statefulSet.Spec.Template.Spec.Containers {
-						if container.Name != effect.ContainerName {
-							continue
-						}
-						if effect.Memory != nil {
-							if container.Resources.Requests.Memory().Cmp(*effect.Memory) != 0 {
-								errs = append(errs, fmt.Errorf("statefulset %s has memory request set to %v, expected %v", statefulSet.Name, container.Resources.Requests.Memory(), *effect.Memory))
-							}
-						}
-						if effect.CPU != nil {
-							if container.Resources.Requests.Cpu().Cmp(*effect.CPU) != 0 {
-								errs = append(errs, fmt.Errorf("statefulset %s has cpu request set to %v, expected %v", statefulSet.Name, container.Resources.Requests.Cpu(), *effect.CPU))
-							}
-						}
-						break
-					}
-				} else {
-					deployment := &appsv1.Deployment{}
-					if getErr := client.Get(ctx, types.NamespacedName{Name: effect.DeploymentName, Namespace: cpNamespace}, deployment); getErr != nil {
-						errs = append(errs, fmt.Errorf("failed to get deployment %s: %w", effect.DeploymentName, getErr))
-						continue
-					}
-					for _, container := range deployment.Spec.Template.Spec.Containers {
-						if container.Name != effect.ContainerName {
-							continue
-						}
-						if effect.Memory != nil {
-							if container.Resources.Requests.Memory().Cmp(*effect.Memory) != 0 {
-								errs = append(errs, fmt.Errorf("deployment %s has memory request set to %v, expected %v", deployment.Name, container.Resources.Requests.Memory(), *effect.Memory))
-							}
-						}
-						if effect.CPU != nil {
-							if container.Resources.Requests.Cpu().Cmp(*effect.CPU) != 0 {
-								errs = append(errs, fmt.Errorf("deployment %s has cpu request set to %v, expected %v", deployment.Name, container.Resources.Requests.Cpu(), *effect.CPU))
-							}
-						}
-						break
-					}
-				}
-			}
-		}
+		errs = append(errs, verifyResourceRequests(ctx, client, cpNamespace, effects)...)
 	}
 
 	return utilerrors.NewAggregate(errs)
+}
+
+func verifyKASGoMemLimit(ctx context.Context, client crclient.Client, cpNamespace string, effects *schedulingv1alpha1.Effects) error {
+	pollCtx, cancel := context.WithTimeout(ctx, DefaultVerificationTimeout)
+	defer cancel()
+	err := wait.PollUntilContextCancel(pollCtx, DefaultPollingInterval, true, func(pctx context.Context) (bool, error) {
+		kasPods := &corev1.PodList{}
+		if err := client.List(pctx, kasPods, crclient.MatchingLabels{"app": "kube-apiserver"}, crclient.InNamespace(cpNamespace)); err != nil {
+			return false, nil
+		}
+		if len(kasPods.Items) == 0 {
+			return false, nil
+		}
+		for _, pod := range kasPods.Items {
+			if !podHasExpectedEnvVar(pod, "kube-apiserver", KASGoMemLimitEnvVar, *effects.KASGoMemLimit) {
+				return false, nil
+			}
+		}
+		return true, nil
+	})
+	if err != nil {
+		return fmt.Errorf("timed out waiting for kube-apiserver pods to have %s=%s: %w", KASGoMemLimitEnvVar, *effects.KASGoMemLimit, err)
+	}
+	return nil
+}
+
+func podHasExpectedEnvVar(pod corev1.Pod, containerName, envName, expectedValue string) bool {
+	for _, container := range pod.Spec.Containers {
+		if container.Name != containerName {
+			continue
+		}
+		for _, env := range container.Env {
+			if env.Name == envName {
+				return env.Value == expectedValue
+			}
+		}
+		return false
+	}
+	return false
+}
+
+func verifyInflightConfig(ctx context.Context, client crclient.Client, cpNamespace string, effects *schedulingv1alpha1.Effects) error {
+	pollCtx, cancel := context.WithTimeout(ctx, DefaultVerificationTimeout)
+	defer cancel()
+	err := wait.PollUntilContextCancel(pollCtx, DefaultPollingInterval, true, func(pctx context.Context) (bool, error) {
+		kasConfigMap := &corev1.ConfigMap{}
+		if err := client.Get(pctx, types.NamespacedName{Name: "kas-config", Namespace: cpNamespace}, kasConfigMap); err != nil {
+			return false, nil
+		}
+		data, ok := kasConfigMap.Data["config.json"]
+		if !ok || data == "" {
+			return false, nil
+		}
+		kasConfig := &kcpv1.KubeAPIServerConfig{}
+		if err := json.Unmarshal([]byte(data), &kasConfig); err != nil {
+			return false, nil
+		}
+		if !inflightArgMatches(kasConfig, "max-requests-inflight", effects.MaximumRequestsInflight) {
+			return false, nil
+		}
+		if !inflightArgMatches(kasConfig, "max-mutating-requests-inflight", effects.MaximumMutatingRequestsInflight) {
+			return false, nil
+		}
+		return true, nil
+	})
+	if err != nil {
+		return inflightTimeoutError(effects, err)
+	}
+	return nil
+}
+
+func inflightArgMatches(kasConfig *kcpv1.KubeAPIServerConfig, argName string, expected *int) bool {
+	if expected == nil {
+		return true
+	}
+	expectedStr := fmt.Sprintf("%d", *expected)
+	actual := ""
+	if args := kasConfig.APIServerArguments[argName]; len(args) > 0 {
+		actual = args[0]
+	}
+	return actual == expectedStr
+}
+
+func inflightTimeoutError(effects *schedulingv1alpha1.Effects, err error) error {
+	if effects.MaximumRequestsInflight != nil && effects.MaximumMutatingRequestsInflight != nil {
+		return fmt.Errorf("timed out waiting for kube-apiserver config to have max-requests-inflight=%d and max-mutating-requests-inflight=%d: %w", *effects.MaximumRequestsInflight, *effects.MaximumMutatingRequestsInflight, err)
+	}
+	if effects.MaximumRequestsInflight != nil {
+		return fmt.Errorf("timed out waiting for kube-apiserver config to have max-requests-inflight=%d: %w", *effects.MaximumRequestsInflight, err)
+	}
+	return fmt.Errorf("timed out waiting for kube-apiserver config to have max-mutating-requests-inflight=%d: %w", *effects.MaximumMutatingRequestsInflight, err)
+}
+
+func verifyResourceRequests(ctx context.Context, client crclient.Client, cpNamespace string, effects *schedulingv1alpha1.Effects) []error {
+	pollCtx, cancel := context.WithTimeout(ctx, DefaultVerificationTimeout)
+	defer cancel()
+	err := wait.PollUntilContextCancel(pollCtx, DefaultPollingInterval, true, func(pctx context.Context) (bool, error) {
+		for _, effect := range effects.ResourceRequests {
+			containers, err := getContainersForEffect(pctx, client, cpNamespace, effect)
+			if err != nil {
+				return false, nil
+			}
+			if !containerResourcesMatch(containers, effect) {
+				return false, nil
+			}
+		}
+		return true, nil
+	})
+	if err != nil {
+		return reportResourceMismatches(ctx, client, cpNamespace, effects)
+	}
+	return nil
+}
+
+func getContainersForEffect(ctx context.Context, client crclient.Client, cpNamespace string, effect schedulingv1alpha1.ResourceRequest) ([]corev1.Container, error) {
+	if effect.DeploymentName == "etcd" {
+		statefulSet := &appsv1.StatefulSet{}
+		if err := client.Get(ctx, types.NamespacedName{Name: effect.DeploymentName, Namespace: cpNamespace}, statefulSet); err != nil {
+			return nil, err
+		}
+		return statefulSet.Spec.Template.Spec.Containers, nil
+	}
+	deployment := &appsv1.Deployment{}
+	if err := client.Get(ctx, types.NamespacedName{Name: effect.DeploymentName, Namespace: cpNamespace}, deployment); err != nil {
+		return nil, err
+	}
+	return deployment.Spec.Template.Spec.Containers, nil
+}
+
+func containerResourcesMatch(containers []corev1.Container, effect schedulingv1alpha1.ResourceRequest) bool {
+	for _, container := range containers {
+		if container.Name != effect.ContainerName {
+			continue
+		}
+		matched := true
+		if effect.Memory != nil {
+			if mr := container.Resources.Requests.Memory(); mr == nil || mr.Cmp(*effect.Memory) != 0 {
+				matched = false
+			}
+		}
+		if effect.CPU != nil {
+			if cr := container.Resources.Requests.Cpu(); cr == nil || cr.Cmp(*effect.CPU) != 0 {
+				matched = false
+			}
+		}
+		return matched
+	}
+	return false
+}
+
+func reportResourceMismatches(ctx context.Context, client crclient.Client, cpNamespace string, effects *schedulingv1alpha1.Effects) []error {
+	var errs []error
+	for _, effect := range effects.ResourceRequests {
+		workloadKind := "deployment"
+		if effect.DeploymentName == "etcd" {
+			workloadKind = "statefulset"
+		}
+		containers, getErr := getContainersForEffect(ctx, client, cpNamespace, effect)
+		if getErr != nil {
+			errs = append(errs, fmt.Errorf("failed to get %s %s: %w", workloadKind, effect.DeploymentName, getErr))
+			continue
+		}
+		for _, container := range containers {
+			if container.Name != effect.ContainerName {
+				continue
+			}
+			if effect.Memory != nil {
+				if container.Resources.Requests.Memory().Cmp(*effect.Memory) != 0 {
+					errs = append(errs, fmt.Errorf("%s %s has memory request set to %v, expected %v", workloadKind, effect.DeploymentName, container.Resources.Requests.Memory(), *effect.Memory))
+				}
+			}
+			if effect.CPU != nil {
+				if container.Resources.Requests.Cpu().Cmp(*effect.CPU) != 0 {
+					errs = append(errs, fmt.Errorf("%s %s has cpu request set to %v, expected %v", workloadKind, effect.DeploymentName, container.Resources.Requests.Cpu(), *effect.CPU))
+				}
+			}
+			break
+		}
+	}
+	return errs
 }

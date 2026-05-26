@@ -8,8 +8,8 @@ import (
 	assets "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
 	component "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/testutil"
-	"github.com/openshift/hypershift/support/util"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -36,11 +36,20 @@ func TestConfig(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	yaml, err := util.SerializeResource(cm, api.Scheme)
+	yaml, err := k8sutil.SerializeResource(cm, api.Scheme)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	testutil.CompareWithFixture(t, yaml)
+
+	// Verify that the NLBSecurityGroupMode = Managed is present in the config
+	awsConf, exists := cm.Data["aws.conf"]
+	if !exists {
+		t.Fatalf("aws.conf key not found in ConfigMap")
+	}
+	if !strings.Contains(awsConf, "NLBSecurityGroupMode = Managed") {
+		t.Fatalf("NLBSecurityGroupMode = Managed not present in aws.conf")
+	}
 }
 
 // newTestHCP creates a HostedControlPlane with default AWS configuration for testing.

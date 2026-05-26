@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	. "github.com/onsi/gomega"
+
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
@@ -155,10 +157,12 @@ func TestGenerateBackupObjectComprehensive(t *testing.T) {
 		name                     string
 		platform                 string
 		includedResources        []string
+		useEtcdSnapshot          bool
 		expectedMinResources     int
 		expectedBaseResources    []string
 		expectedPlatformSpecific []string
-		customResourcesExact     bool // if true, expect exact match for includedResources
+		expectedAbsentResources  []string // resources that must NOT be in the list
+		customResourcesExact     bool     // if true, expect exact match for includedResources
 	}
 
 	// Use global platform resource mappings from create.go
@@ -176,7 +180,7 @@ func TestGenerateBackupObjectComprehensive(t *testing.T) {
 	tests := []testCase{
 		// Test cases for custom resources
 		{
-			name:                  "Custom resources - minimal set",
+			name:                  "When includedResources is set it should use the exact custom resources",
 			platform:              "AWS",
 			includedResources:     []string{"configmaps", "secrets", "pods"},
 			expectedMinResources:  3,
@@ -184,7 +188,7 @@ func TestGenerateBackupObjectComprehensive(t *testing.T) {
 			customResourcesExact:  true,
 		},
 		{
-			name:                  "Custom resources - specific selection",
+			name:                  "When includedResources is set for KubeVirt it should use the exact custom resources",
 			platform:              "KUBEVIRT",
 			includedResources:     []string{"hostedclusters.hypershift.openshift.io", "nodepools.hypershift.openshift.io", "secrets"},
 			expectedMinResources:  3,
@@ -193,54 +197,95 @@ func TestGenerateBackupObjectComprehensive(t *testing.T) {
 		},
 		// Test cases for default resources with different platforms
 		{
-			name:                     "Default resources - AWS platform",
+			name:                     "When using default mode for AWS it should include base and platform resources",
 			platform:                 "AWS",
 			includedResources:        nil,
 			expectedMinResources:     10,
 			expectedBaseResources:    expectedBaseResources,
 			expectedPlatformSpecific: testPlatformResources["AWS"],
+			expectedAbsentResources:  []string{"namespaces"},
 			customResourcesExact:     false,
 		},
 		{
-			name:                     "Default resources - Agent platform",
+			name:                     "When using default mode for Agent it should include base and platform resources",
 			platform:                 "AGENT",
 			includedResources:        nil,
 			expectedMinResources:     10,
 			expectedBaseResources:    expectedBaseResources,
 			expectedPlatformSpecific: testPlatformResources["AGENT"],
+			expectedAbsentResources:  []string{"namespaces"},
 			customResourcesExact:     false,
 		},
 		{
-			name:                     "Default resources - KubeVirt platform",
+			name:                     "When using default mode for KubeVirt it should include base and platform resources",
 			platform:                 "KUBEVIRT",
 			includedResources:        nil,
 			expectedMinResources:     10,
 			expectedBaseResources:    expectedBaseResources,
 			expectedPlatformSpecific: testPlatformResources["KUBEVIRT"],
+			expectedAbsentResources:  []string{"namespaces"},
 			customResourcesExact:     false,
 		},
 		{
-			name:                     "Default resources - OpenStack platform",
+			name:                     "When using default mode for OpenStack it should include base and platform resources",
 			platform:                 "OPENSTACK",
 			includedResources:        nil,
 			expectedMinResources:     10,
 			expectedBaseResources:    expectedBaseResources,
 			expectedPlatformSpecific: testPlatformResources["OPENSTACK"],
+			expectedAbsentResources:  []string{"namespaces"},
 			customResourcesExact:     false,
 		},
 		{
-			name:                     "Default resources - Azure platform",
+			name:                     "When using default mode for Azure it should include base and platform resources",
 			platform:                 "AZURE",
 			includedResources:        nil,
 			expectedMinResources:     10,
 			expectedBaseResources:    expectedBaseResources,
 			expectedPlatformSpecific: testPlatformResources["AZURE"],
+			expectedAbsentResources:  []string{"namespaces"},
+			customResourcesExact:     false,
+		},
+		// Etcd snapshot mode test cases
+		{
+			name:                     "When UseEtcdSnapshot is true it should exclude PV resources and add namespaces for AWS",
+			platform:                 "AWS",
+			useEtcdSnapshot:          true,
+			includedResources:        nil,
+			expectedMinResources:     10,
+			expectedBaseResources:    []string{"serviceaccounts", "hostedclusters.hypershift.openshift.io", "nodepools.hypershift.openshift.io", "namespaces", "secrets"},
+			expectedPlatformSpecific: testPlatformResources["AWS"],
+			expectedAbsentResources:  []string{"persistentvolumeclaims", "persistentvolumes", "deployments", "statefulsets"},
+			customResourcesExact:     false,
+		},
+		{
+			name:                     "When UseEtcdSnapshot is true it should exclude PV resources and add namespaces for Azure",
+			platform:                 "AZURE",
+			useEtcdSnapshot:          true,
+			includedResources:        nil,
+			expectedMinResources:     10,
+			expectedBaseResources:    []string{"serviceaccounts", "hostedclusters.hypershift.openshift.io", "nodepools.hypershift.openshift.io", "namespaces", "secrets"},
+			expectedPlatformSpecific: testPlatformResources["AZURE"],
+			expectedAbsentResources:  []string{"persistentvolumeclaims", "persistentvolumes", "deployments", "statefulsets"},
+			customResourcesExact:     false,
+		},
+		{
+			name:                     "When UseEtcdSnapshot is true and platform is unknown it should fallback to AWS resources",
+			platform:                 "UNKNOWN",
+			useEtcdSnapshot:          true,
+			includedResources:        nil,
+			expectedMinResources:     10,
+			expectedBaseResources:    []string{"serviceaccounts", "hostedclusters.hypershift.openshift.io", "nodepools.hypershift.openshift.io", "namespaces", "secrets"},
+			expectedPlatformSpecific: testPlatformResources["AWS"],
+			expectedAbsentResources:  []string{"persistentvolumeclaims", "persistentvolumes", "deployments", "statefulsets"},
 			customResourcesExact:     false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
 			opts := &CreateOptions{
 				HCName:                   "test-cluster",
 				HCNamespace:              "test-cluster-ns",
@@ -250,34 +295,54 @@ func TestGenerateBackupObjectComprehensive(t *testing.T) {
 				SnapshotMoveData:         true,
 				DefaultVolumesToFsBackup: false,
 				IncludedResources:        tt.includedResources,
+				UseEtcdSnapshot:          tt.useEtcdSnapshot,
 			}
 
 			backup, _, err := opts.GenerateBackupObject(tt.platform)
-			if err != nil {
-				t.Errorf("GenerateBackupObject() error = %v", err)
-				return
-			}
+			g.Expect(err).NotTo(HaveOccurred())
 
 			// Basic validation
-			if len(backup.GetName()) == 0 {
-				t.Errorf("Expected backup name to be generated, got empty string")
-			}
+			g.Expect(backup.GetName()).NotTo(BeEmpty())
+			g.Expect(backup.GetAPIVersion()).To(Equal("velero.io/v1"))
+			g.Expect(backup.GetKind()).To(Equal("Backup"))
 
-			if backup.GetAPIVersion() != "velero.io/v1" {
-				t.Errorf("Expected API version 'velero.io/v1', got %s", backup.GetAPIVersion())
-			}
+			// Etcd snapshot mode spec validations
+			if tt.useEtcdSnapshot {
+				_, dmFound, _ := unstructured.NestedString(backup.Object, "spec", "dataMover")
+				g.Expect(dmFound).To(BeFalse(), "dataMover should not be present in etcd snapshot mode")
 
-			if backup.GetKind() != "Backup" {
-				t.Errorf("Expected kind 'Backup', got %s", backup.GetKind())
+				sv, _, _ := unstructured.NestedBool(backup.Object, "spec", "snapshotVolumes")
+				g.Expect(sv).To(BeFalse(), "snapshotVolumes should be false in etcd snapshot mode")
+
+				smd, _, _ := unstructured.NestedBool(backup.Object, "spec", "snapshotMoveData")
+				g.Expect(smd).To(BeFalse(), "snapshotMoveData should be false in etcd snapshot mode")
+
+				iot, iotFound, _ := unstructured.NestedString(backup.Object, "spec", "itemOperationTimeout")
+				g.Expect(iotFound).To(BeTrue(), "itemOperationTimeout should be present")
+				g.Expect(iot).To(Equal("4h0m0s"))
+
+				er, erFound, _ := unstructured.NestedFieldNoCopy(backup.Object, "spec", "excludedResources")
+				g.Expect(erFound).To(BeTrue(), "excludedResources should be present in etcd snapshot mode")
+				if slice, ok := er.([]interface{}); ok {
+					g.Expect(slice).To(BeEmpty(), "excludedResources should be empty")
+				}
+
+				_, cstFound, _ := unstructured.NestedString(backup.Object, "spec", "csiSnapshotTimeout")
+				g.Expect(cstFound).To(BeFalse(), "csiSnapshotTimeout should not be present in etcd snapshot mode")
+			} else if !tt.customResourcesExact {
+				dm, dmFound, _ := unstructured.NestedString(backup.Object, "spec", "dataMover")
+				g.Expect(dmFound).To(BeTrue(), "dataMover should be present in default mode")
+				g.Expect(dm).To(Equal("velero"))
+
+				sv, _, _ := unstructured.NestedBool(backup.Object, "spec", "snapshotVolumes")
+				g.Expect(sv).To(BeTrue(), "snapshotVolumes should be true in default mode")
 			}
 
 			// Get included resources from spec
 			includedResourcesInterface, found, err := unstructured.NestedFieldNoCopy(backup.Object, "spec", "includedResources")
-			if err != nil || !found {
-				t.Errorf("Expected to find spec.includedResources field in backup object")
-				return
-			}
-			// Try to cast to []string first, if that fails try []interface{}
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(found).To(BeTrue(), "includedResources should be present")
+
 			var includedResources []string
 			if resourcesSlice, ok := includedResourcesInterface.([]string); ok {
 				includedResources = resourcesSlice
@@ -285,44 +350,32 @@ func TestGenerateBackupObjectComprehensive(t *testing.T) {
 				for _, res := range resourcesInterfaceSlice {
 					includedResources = append(includedResources, res.(string))
 				}
-			} else {
-				t.Errorf("Expected includedResources to be []string or []interface{}, got %T", includedResourcesInterface)
-				return
 			}
 
-			// Check minimum number of resources
-			if len(includedResources) < tt.expectedMinResources {
-				t.Errorf("Expected at least %d resources, got %d", tt.expectedMinResources, len(includedResources))
-			}
+			g.Expect(len(includedResources)).To(BeNumerically(">=", tt.expectedMinResources))
 
 			// For custom resources, check exact match
 			if tt.customResourcesExact {
-				if len(includedResources) != len(tt.expectedBaseResources) {
-					t.Errorf("Expected exactly %d resources, got %d", len(tt.expectedBaseResources), len(includedResources))
-				}
+				g.Expect(includedResources).To(HaveLen(len(tt.expectedBaseResources)))
 				for i, expected := range tt.expectedBaseResources {
-					if i < len(includedResources) && includedResources[i] != expected {
-						t.Errorf("Expected resource[%d] to be '%s', got '%s'", i, expected, includedResources[i])
+					if i < len(includedResources) {
+						g.Expect(includedResources[i]).To(Equal(expected))
 					}
 				}
-				return // Skip platform-specific checks for custom resources
+				return
 			}
 
 			// For default resources, check contains
-			resourcesStr := fmt.Sprintf("%v", includedResources)
-
-			// Check base resources are included
 			for _, expected := range tt.expectedBaseResources {
-				if !strings.Contains(resourcesStr, expected) {
-					t.Errorf("Expected %s backup to contain base resource '%s'", tt.platform, expected)
-				}
+				g.Expect(includedResources).To(ContainElement(expected), "should contain base resource '%s'", expected)
+			}
+			for _, expected := range tt.expectedPlatformSpecific {
+				g.Expect(includedResources).To(ContainElement(expected), "should contain platform resource '%s'", expected)
 			}
 
-			// Check platform-specific resources are included
-			for _, expected := range tt.expectedPlatformSpecific {
-				if !strings.Contains(resourcesStr, expected) {
-					t.Errorf("Expected %s backup to contain platform-specific resource '%s'", tt.platform, expected)
-				}
+			// Verify resources that must NOT be present
+			for _, absent := range tt.expectedAbsentResources {
+				g.Expect(includedResources).NotTo(ContainElement(absent), "should NOT contain resource '%s'", absent)
 			}
 		})
 	}

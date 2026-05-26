@@ -2,7 +2,7 @@ package controlplanecomponent
 
 import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/k8sutil"
 
 	policyv1 "k8s.io/api/policy/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -38,7 +38,7 @@ func SetHostedClusterAnnotation() option {
 			if annotations == nil {
 				annotations = map[string]string{}
 			}
-			annotations[util.HostedClusterAnnotation] = cpContext.HCP.Annotations[util.HostedClusterAnnotation]
+			annotations[k8sutil.HostedClusterAnnotation] = cpContext.HCP.Annotations[k8sutil.HostedClusterAnnotation]
 			resource.SetAnnotations(annotations)
 			return nil
 		}

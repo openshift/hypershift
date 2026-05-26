@@ -20,10 +20,11 @@ const (
 	// BackupCompleted indicates whether the etcd backup has completed.
 	BackupCompleted ConditionType = "BackupCompleted"
 
-	BackupSucceededReason         string = "BackupSucceeded"
-	BackupFailedReason            string = "BackupFailed"
-	BackupAlreadyInProgressReason string = "BackupAlreadyInProgress"
-	EtcdUnhealthyReason           string = "EtcdUnhealthy"
+	BackupSucceededReason  string = "BackupSucceeded"
+	BackupFailedReason     string = "BackupFailed"
+	BackupInProgressReason string = "BackupInProgress"
+	BackupRejectedReason   string = "BackupRejected"
+	EtcdUnhealthyReason    string = "EtcdUnhealthy"
 )
 
 // HCPEtcdBackupStorageType is the type of storage for etcd backups.

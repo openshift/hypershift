@@ -87,6 +87,14 @@ func run(ctx context.Context, opts options) error {
 	}
 
 	fmt.Println(result.URL)
+
+	// Write the URL to the termination log so the controller can read it
+	// from pod.Status.ContainerStatuses[].State.Terminated.Message
+	// without requiring additional RBAC for the Job ServiceAccount.
+	if err := os.WriteFile("/dev/termination-log", []byte(result.URL), 0644); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to write termination log: %v\n", err)
+	}
+
 	return nil
 }
 

@@ -18,6 +18,6 @@ IMAGE=docker.io/openshift/origin-release:golang-1.16
 
 ENGINE=$(get_container_engine)
 
-ENGINE_CMD="${ENGINE} run --rm -v $(pwd):/go/src/github.com/openshift/hypershift:Z  -w /go/src/github.com/openshift/hypershift $IMAGE"
+ENGINE_CMD="${ENGINE} run --rm -e COMMIT_HASH=$(git rev-parse HEAD 2>/dev/null || true) -v $(pwd):/go/src/github.com/openshift/hypershift:Z  -w /go/src/github.com/openshift/hypershift $IMAGE"
 
 ${ENGINE_CMD} $*

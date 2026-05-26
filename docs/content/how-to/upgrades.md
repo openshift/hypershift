@@ -7,6 +7,8 @@ Control Plane upgrades are driven by the HostedCluster, while Node upgrades are 
 
 For a cluster to keep fully operational during an upgrade process, Control Plane and Nodes upgrades need to be orchestrated while satisfying [Kubernetes version skew policy](https://kubernetes.io/releases/version-skew-policy/) at any time. The supported OCP versions are dictated by the running HyperShift Operator [see here](../reference/versioning-support.md) for more details on versioning.
 
+Control Plane downgrades (moving `.spec.release` to an earlier version) are not supported. Once a HostedCluster has been upgraded, the change cannot be reversed.
+
 ## HostedCluster
 `.spec.release` dictates the version of the Control Plane.
 

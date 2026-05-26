@@ -12,7 +12,7 @@ import (
 	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/podspec"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
@@ -271,7 +271,7 @@ func testAutoscalingBalancing(ctx context.Context, mgtClient crclient.Client, ho
 			if !hasBalancingIgnoreLabel {
 				return false, "autoscaler deployment does not have balancing ignore label", nil
 			}
-			return util.IsDeploymentReady(ctx, autoscalerDeployment), "autoscaler deployment not ready", nil
+			return podspec.IsDeploymentReady(ctx, autoscalerDeployment), "autoscaler deployment not ready", nil
 		}}, e2eutil.WithInterval(10*time.Second), e2eutil.WithTimeout(5*time.Minute))
 
 		// Generate workload.

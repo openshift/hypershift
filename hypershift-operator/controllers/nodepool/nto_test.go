@@ -6,8 +6,8 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/upsert"
-	supportutil "github.com/openshift/hypershift/support/util"
 
 	performanceprofilev2 "github.com/openshift/cluster-node-tuning-operator/pkg/apis/performanceprofile/v2"
 	crconditionsv1 "github.com/openshift/custom-resource-status/conditions/v1"
@@ -555,7 +555,7 @@ func TestReconcileMirroredConfigs(t *testing.T) {
 				{
 					Immutable: ptr.To(true),
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      supportutil.ShortenName("foo", npName, validation.LabelValueMaxLength),
+						Name:      netutil.ShortenName("foo", npName, validation.LabelValueMaxLength),
 						Namespace: hcpNamespace,
 						Labels: map[string]string{
 							NTOMirroredConfigLabel:               "true",
@@ -604,7 +604,7 @@ func TestReconcileMirroredConfigs(t *testing.T) {
 				{
 					Immutable: ptr.To(true),
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      supportutil.ShortenName("foo", npName, validation.LabelValueMaxLength),
+						Name:      netutil.ShortenName("foo", npName, validation.LabelValueMaxLength),
 						Namespace: hcpNamespace,
 						Labels: map[string]string{
 							NTOMirroredConfigLabel:               "true",
@@ -620,7 +620,7 @@ func TestReconcileMirroredConfigs(t *testing.T) {
 			configsForDeletion: []corev1.ConfigMap{
 				{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      supportutil.ShortenName("bar", npName, validation.LabelValueMaxLength),
+						Name:      netutil.ShortenName("bar", npName, validation.LabelValueMaxLength),
 						Namespace: hcpNamespace,
 					},
 					Data: map[string]string{
@@ -654,7 +654,7 @@ func TestReconcileMirroredConfigs(t *testing.T) {
 				{
 					Immutable: ptr.To(true),
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      supportutil.ShortenName("bar", npName, validation.LabelValueMaxLength),
+						Name:      netutil.ShortenName("bar", npName, validation.LabelValueMaxLength),
 						Namespace: hcpNamespace,
 						Labels: map[string]string{
 							NTOMirroredConfigLabel:      "true",
@@ -692,7 +692,7 @@ func TestReconcileMirroredConfigs(t *testing.T) {
 				&corev1.ConfigMap{
 					Immutable: ptr.To(true),
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      supportutil.ShortenName("bar-2", npName, validation.LabelValueMaxLength),
+						Name:      netutil.ShortenName("bar-2", npName, validation.LabelValueMaxLength),
 						Namespace: hcpNamespace,
 						Labels: map[string]string{
 							nodeTuningGeneratedConfigLabel: "true",

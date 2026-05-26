@@ -1,0 +1,308 @@
+apiVersion: apiextensions.k8s.io/v1
+name: "HCPEtcdBackup immutability"
+crdName: hcpetcdbackups.hypershift.openshift.io
+featureGates:
+  - HCPEtcdBackup
+version: v1beta1
+tests:
+  onUpdate:
+  # --- Spec-level immutability (self == oldSelf) ---
+  - name: When S3 spec storage is changed it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: S3
+          s3:
+            bucket: my-backup-bucket
+            region: us-east-1
+            keyPrefix: backups/etcd
+            credentials:
+              name: aws-credentials
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: S3
+          s3:
+            bucket: different-bucket
+            region: us-east-1
+            keyPrefix: backups/etcd
+            credentials:
+              name: aws-credentials
+    expectedError: "HCPEtcdBackupSpec is immutable"
+
+  - name: When AzureBlob spec storage is changed it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: AzureBlob
+          azureBlob:
+            container: my-backup-container
+            storageAccount: mystorageaccount
+            keyPrefix: backups/etcd
+            credentials:
+              name: azure-credentials
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: AzureBlob
+          azureBlob:
+            container: different-container
+            storageAccount: mystorageaccount
+            keyPrefix: backups/etcd
+            credentials:
+              name: azure-credentials
+    expectedError: "HCPEtcdBackupSpec is immutable"
+
+  - name: When S3 keyPrefix is changed it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: S3
+          s3:
+            bucket: my-backup-bucket
+            region: us-east-1
+            keyPrefix: backups/etcd
+            credentials:
+              name: aws-credentials
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: S3
+          s3:
+            bucket: my-backup-bucket
+            region: us-east-1
+            keyPrefix: backups/different-prefix
+            credentials:
+              name: aws-credentials
+    expectedError: "HCPEtcdBackupSpec is immutable"
+
+  - name: When S3 credentials name is changed it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: S3
+          s3:
+            bucket: my-backup-bucket
+            region: us-east-1
+            keyPrefix: backups/etcd
+            credentials:
+              name: aws-credentials
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: S3
+          s3:
+            bucket: my-backup-bucket
+            region: us-east-1
+            keyPrefix: backups/etcd
+            credentials:
+              name: different-credentials
+    expectedError: "HCPEtcdBackupSpec is immutable"
+
+  - name: When kmsKeyARN is added after creation it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: S3
+          s3:
+            bucket: my-backup-bucket
+            region: us-east-1
+            keyPrefix: backups/etcd
+            credentials:
+              name: aws-credentials
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: S3
+          s3:
+            bucket: my-backup-bucket
+            region: us-east-1
+            keyPrefix: backups/etcd
+            credentials:
+              name: aws-credentials
+            kmsKeyARN: "arn:aws:kms:us-east-1:123456789012:key/12345678-1234-1234-1234-123456789012"
+    expectedError: "HCPEtcdBackupSpec is immutable"
+
+  - name: When encryptionKeyURL is added after creation it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: AzureBlob
+          azureBlob:
+            container: my-backup-container
+            storageAccount: mystorageaccount
+            keyPrefix: backups/etcd
+            credentials:
+              name: azure-credentials
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: AzureBlob
+          azureBlob:
+            container: my-backup-container
+            storageAccount: mystorageaccount
+            keyPrefix: backups/etcd
+            credentials:
+              name: azure-credentials
+            encryptionKeyURL: "https://my-vault.vault.azure.net/keys/my-key/abc123"
+    expectedError: "HCPEtcdBackupSpec is immutable"
+
+  - name: When storageType is changed from S3 to AzureBlob it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: S3
+          s3:
+            bucket: my-backup-bucket
+            region: us-east-1
+            keyPrefix: backups/etcd
+            credentials:
+              name: aws-credentials
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: AzureBlob
+          azureBlob:
+            container: my-backup-container
+            storageAccount: mystorageaccount
+            keyPrefix: backups/etcd
+            credentials:
+              name: azure-credentials
+    expectedError: "HCPEtcdBackupSpec is immutable"
+
+  # --- Spec unchanged should pass ---
+  - name: When S3 spec is unchanged on update it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: S3
+          s3:
+            bucket: my-backup-bucket
+            region: us-east-1
+            keyPrefix: backups/etcd
+            credentials:
+              name: aws-credentials
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: S3
+          s3:
+            bucket: my-backup-bucket
+            region: us-east-1
+            keyPrefix: backups/etcd
+            credentials:
+              name: aws-credentials
+
+  - name: When AzureBlob spec is unchanged on update it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: AzureBlob
+          azureBlob:
+            container: my-backup-container
+            storageAccount: mystorageaccount
+            keyPrefix: backups/etcd
+            credentials:
+              name: azure-credentials
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: AzureBlob
+          azureBlob:
+            container: my-backup-container
+            storageAccount: mystorageaccount
+            keyPrefix: backups/etcd
+            credentials:
+              name: azure-credentials
+
+  - name: When S3 spec with kmsKeyARN is unchanged on update it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: S3
+          s3:
+            bucket: my-backup-bucket
+            region: us-east-1
+            keyPrefix: backups/etcd
+            credentials:
+              name: aws-credentials
+            kmsKeyARN: "arn:aws:kms:us-east-1:123456789012:key/12345678-1234-1234-1234-123456789012"
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: S3
+          s3:
+            bucket: my-backup-bucket
+            region: us-east-1
+            keyPrefix: backups/etcd
+            credentials:
+              name: aws-credentials
+            kmsKeyARN: "arn:aws:kms:us-east-1:123456789012:key/12345678-1234-1234-1234-123456789012"
+
+  - name: When AzureBlob spec with encryptionKeyURL is unchanged on update it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: AzureBlob
+          azureBlob:
+            container: my-backup-container
+            storageAccount: mystorageaccount
+            keyPrefix: backups/etcd
+            credentials:
+              name: azure-credentials
+            encryptionKeyURL: "https://my-vault.vault.azure.net/keys/my-key/abc123"
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: AzureBlob
+          azureBlob:
+            container: my-backup-container
+            storageAccount: mystorageaccount
+            keyPrefix: backups/etcd
+            credentials:
+              name: azure-credentials
+            encryptionKeyURL: "https://my-vault.vault.azure.net/keys/my-key/abc123"
