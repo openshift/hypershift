@@ -861,15 +861,63 @@ var ipamCRDNames = set.New(
 // related to etcd are excluded from the list. If the option EnableConversionWebhook is set to true, the CRDs related
 // to hypershift.openshift.io group are annotated with the necessary annotations to enable the conversion webhook.
 // If a client is provided, IPAM CRDs that already exist in the cluster are skipped to avoid conflicts.
+func crdIncludeFilter(opts Options, existingIPAMCRDs set.Set[string]) func(string, *apiextensionsv1.CustomResourceDefinition) bool {
+	return func(path string, crd *apiextensionsv1.CustomResourceDefinition) bool {
+		if strings.Contains(path, "payload-manifests") || strings.Contains(path, "tests/") {
+			return false
+		}
+		if strings.Contains(path, "etcd") && opts.ExcludeEtcdManifests {
+			return false
+		}
+		if strings.Contains(path, "zz_generated.crd-manifests") {
+			if strings.Contains(path, "awsendpointservices") {
+				return isAWSPlatformEnabled(opts.PlatformsToInstall)
+			}
+			if strings.Contains(path, "azureprivatelinkservices") {
+				return isAzurePlatformEnabled(opts.PlatformsToInstall)
+			}
+			if opts.TechPreviewNoUpgrade {
+				if featureSet, ok := crd.Annotations["release.openshift.io/feature-set"]; ok {
+					if featureSet != "TechPreviewNoUpgrade" {
+						return false
+					}
+				}
+			} else {
+				if featureSet, ok := crd.Annotations["release.openshift.io/feature-set"]; ok {
+					if featureSet != "Default" {
+						return false
+					}
+				}
+			}
+		}
+		if strings.Contains(path, "hypershift-operator/") {
+			return true
+		}
+		if strings.Contains(path, "cluster-api/") {
+			return !existingIPAMCRDs.Has(crd.Name)
+		}
+		if strings.Contains(path, "auditlogpersistence") {
+			return opts.EnableAuditLogPersistence
+		}
+		if len(opts.PlatformsToInstall) > 0 {
+			for _, platform := range opts.PlatformsToInstall {
+				if strings.Contains(path, strings.ToLower(platform)) {
+					return true
+				}
+			}
+			return false
+		}
+		return true
+	}
+}
+
 func setupCRDs(ctx context.Context, client crclient.Client, opts Options, operatorNamespace *corev1.Namespace, operatorService *corev1.Service) ([]crclient.Object, error) {
-	// Build a set of existing IPAM CRDs if a client is available
 	existingIPAMCRDs := set.New[string]()
 	if client != nil {
 		for crdName := range ipamCRDNames {
 			existing := &apiextensionsv1.CustomResourceDefinition{}
 			err := client.Get(ctx, crclient.ObjectKey{Name: crdName}, existing)
 			if err == nil {
-				// CRD exists, add to the set so we can skip it
 				existingIPAMCRDs.Insert(crdName)
 				fmt.Printf("Skipping existing IPAM CRD %s\n", crdName)
 			} else if !apierrors.IsNotFound(err) {
@@ -881,62 +929,8 @@ func setupCRDs(ctx context.Context, client crclient.Client, opts Options, operat
 	var crds []crclient.Object
 	crds = append(
 		crds, crdassets.CustomResourceDefinitions(
-			func(path string, crd *apiextensionsv1.CustomResourceDefinition) bool {
-				// Skip non-CRD files (featuregate manifests, envtest suites).
-				if strings.Contains(path, "payload-manifests") || strings.Contains(path, "tests/") {
-					return false
-				}
-				if strings.Contains(path, "etcd") && opts.ExcludeEtcdManifests {
-					return false
-				}
-				// If the feature generated CRD has any featureSet version then it has the format nodepool-<featureSet>.
-				if strings.Contains(path, "zz_generated.crd-manifests") {
-					if strings.Contains(path, "awsendpointservices") {
-						return isAWSPlatformEnabled(opts.PlatformsToInstall)
-					}
-					if strings.Contains(path, "azureprivatelinkservices") {
-						return isAzurePlatformEnabled(opts.PlatformsToInstall)
-					}
-					if opts.TechPreviewNoUpgrade {
-						// Skip all featureSets but TechPreviewNoUpgrade.
-						if featureSet, ok := crd.Annotations["release.openshift.io/feature-set"]; ok {
-							if featureSet != "TechPreviewNoUpgrade" {
-								return false
-							}
-						}
-					} else {
-						// Skip all featureSets but Default.
-						if featureSet, ok := crd.Annotations["release.openshift.io/feature-set"]; ok {
-							if featureSet != "Default" {
-								return false
-							}
-						}
-					}
-				}
-				if strings.Contains(path, "hypershift-operator/") {
-					return true
-				}
-				if strings.Contains(path, "cluster-api/") {
-					// Skip IPAM CRDs if they already exist in the cluster
-					if existingIPAMCRDs.Has(crd.Name) {
-						return false
-					}
-					return true
-				}
-				// Conditionally include auditlogpersistence CRD only if feature is enabled
-				if strings.Contains(path, "auditlogpersistence") {
-					return opts.EnableAuditLogPersistence
-				}
-				if len(opts.PlatformsToInstall) > 0 {
-					for _, platform := range opts.PlatformsToInstall {
-						if strings.Contains(path, strings.ToLower(platform)) {
-							return true
-						}
-					}
-					return false
-				}
-				return true
-			}, func(crd *apiextensionsv1.CustomResourceDefinition) {
+			crdIncludeFilter(opts, existingIPAMCRDs),
+			func(crd *apiextensionsv1.CustomResourceDefinition) {
 				// Check if this CRD needs a conversion webhook
 				var needsConversion bool
 				var conversionReviewVersions []string

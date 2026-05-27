@@ -374,6 +374,158 @@ func TestOptions_Validate(t *testing.T) {
 	}
 }
 
+func TestCRDIncludeFilter(t *testing.T) {
+	defaultCRD := func() *apiextensionsv1.CustomResourceDefinition {
+		return &apiextensionsv1.CustomResourceDefinition{
+			ObjectMeta: metav1.ObjectMeta{
+				Annotations: map[string]string{
+					"release.openshift.io/feature-set": "Default",
+				},
+			},
+		}
+	}
+
+	tests := []struct {
+		name   string
+		opts   Options
+		path   string
+		crd    *apiextensionsv1.CustomResourceDefinition
+		ipam   set.Set[string]
+		expect bool
+	}{
+		{
+			name:   "When path contains payload-manifests, it should be excluded",
+			path:   "hypershift-operator/payload-manifests/something.yaml",
+			crd:    defaultCRD(),
+			expect: false,
+		},
+		{
+			name:   "When path contains tests/, it should be excluded",
+			path:   "hypershift-operator/tests/something.yaml",
+			crd:    defaultCRD(),
+			expect: false,
+		},
+		{
+			name:   "When path contains etcd and ExcludeEtcdManifests is true, it should be excluded",
+			opts:   Options{ExcludeEtcdManifests: true},
+			path:   "cluster-api/etcd-something.yaml",
+			crd:    defaultCRD(),
+			expect: false,
+		},
+		{
+			name:   "When path contains etcd and ExcludeEtcdManifests is false, it should be included",
+			opts:   Options{ExcludeEtcdManifests: false},
+			path:   "cluster-api/etcd-something.yaml",
+			crd:    defaultCRD(),
+			expect: true,
+		},
+		{
+			name: "When path is a generated CRD with TechPreviewNoUpgrade annotation and TechPreviewNoUpgrade is true, it should be included",
+			opts: Options{TechPreviewNoUpgrade: true},
+			path: "hypershift-operator/zz_generated.crd-manifests/nodepools-TechPreviewNoUpgrade.yaml",
+			crd: &apiextensionsv1.CustomResourceDefinition{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						"release.openshift.io/feature-set": "TechPreviewNoUpgrade",
+					},
+				},
+			},
+			expect: true,
+		},
+		{
+			name:   "When path is a generated CRD with Default annotation and TechPreviewNoUpgrade is true, it should be excluded",
+			opts:   Options{TechPreviewNoUpgrade: true},
+			path:   "hypershift-operator/zz_generated.crd-manifests/nodepools-Default.yaml",
+			crd:    defaultCRD(),
+			expect: false,
+		},
+		{
+			name:   "When path is a generated CRD with Default annotation and TechPreviewNoUpgrade is false, it should be included",
+			path:   "hypershift-operator/zz_generated.crd-manifests/nodepools-Default.yaml",
+			crd:    defaultCRD(),
+			expect: true,
+		},
+		{
+			name:   "When path is under hypershift-operator/, it should be included",
+			path:   "hypershift-operator/something.yaml",
+			crd:    defaultCRD(),
+			expect: true,
+		},
+		{
+			name:   "When path is under cluster-api/ and CRD is not an existing IPAM CRD, it should be included",
+			path:   "cluster-api/clusters.cluster.x-k8s.io.yaml",
+			crd:    &apiextensionsv1.CustomResourceDefinition{ObjectMeta: metav1.ObjectMeta{Name: "clusters.cluster.x-k8s.io"}},
+			expect: true,
+		},
+		{
+			name:   "When path is under cluster-api/ and CRD is an existing IPAM CRD, it should be excluded",
+			path:   "cluster-api/ipaddressclaims.ipam.cluster.x-k8s.io.yaml",
+			crd:    &apiextensionsv1.CustomResourceDefinition{ObjectMeta: metav1.ObjectMeta{Name: "ipaddressclaims.ipam.cluster.x-k8s.io"}},
+			ipam:   set.New("ipaddressclaims.ipam.cluster.x-k8s.io"),
+			expect: false,
+		},
+		{
+			name:   "When path contains awsendpointservices and AWS platform is installed, it should be included",
+			opts:   Options{PlatformsToInstall: []string{"aws"}},
+			path:   "hypershift-operator/zz_generated.crd-manifests/awsendpointservices-Default.yaml",
+			crd:    defaultCRD(),
+			expect: true,
+		},
+		{
+			name:   "When path contains awsendpointservices and only Azure platform is installed, it should be excluded",
+			opts:   Options{PlatformsToInstall: []string{"azure"}},
+			path:   "hypershift-operator/zz_generated.crd-manifests/awsendpointservices-Default.yaml",
+			crd:    defaultCRD(),
+			expect: false,
+		},
+		{
+			name:   "When PlatformsToInstall includes aws, AWS provider CRDs should be included",
+			opts:   Options{PlatformsToInstall: []string{"aws"}},
+			path:   "cluster-api-provider-aws/infrastructure.cluster.x-k8s.io_awsclusters.yaml",
+			crd:    defaultCRD(),
+			expect: true,
+		},
+		{
+			name:   "When PlatformsToInstall includes only azure, AWS provider CRDs should be excluded",
+			opts:   Options{PlatformsToInstall: []string{"azure"}},
+			path:   "cluster-api-provider-aws/infrastructure.cluster.x-k8s.io_awsclusters.yaml",
+			crd:    defaultCRD(),
+			expect: false,
+		},
+		{
+			name:   "When PlatformsToInstall is empty, all platform CRDs should be included",
+			path:   "cluster-api-provider-aws/infrastructure.cluster.x-k8s.io_awsclusters.yaml",
+			crd:    defaultCRD(),
+			expect: true,
+		},
+		{
+			name:   "When path contains auditlogpersistence and EnableAuditLogPersistence is true, it should be included",
+			opts:   Options{EnableAuditLogPersistence: true},
+			path:   "auditlogpersistence/something.yaml",
+			crd:    defaultCRD(),
+			expect: true,
+		},
+		{
+			name:   "When path contains auditlogpersistence and EnableAuditLogPersistence is false, it should be excluded",
+			path:   "auditlogpersistence/something.yaml",
+			crd:    defaultCRD(),
+			expect: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			ipam := tc.ipam
+			if ipam == nil {
+				ipam = set.New[string]()
+			}
+			filter := crdIncludeFilter(tc.opts, ipam)
+			g.Expect(filter(tc.path, tc.crd)).To(Equal(tc.expect))
+		})
+	}
+}
+
 func TestSetupCRDs(t *testing.T) {
 	tests := []struct {
 		name         string
