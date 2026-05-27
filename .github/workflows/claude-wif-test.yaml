@@ -16,9 +16,12 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       (github.event.issue.pull_request &&
        contains(github.event.comment.body, '/test-wif') &&
-       github.event.comment.author_association == 'MEMBER' ||
-       github.event.comment.author_association == 'OWNER')
+       (github.event.comment.author_association == 'MEMBER' ||
+        github.event.comment.author_association == 'OWNER' ||
+        github.event.comment.author_association == 'COLLABORATOR'))
     runs-on: arc-runner-set
+    container:
+      image: quay.io/rh_ee_brcox/hypershift:ai-helpers-arm64
     timeout-minutes: 10
     env:
       HOME: /tmp
@@ -57,4 +60,4 @@ jobs:
           ANTHROPIC_VERTEX_PROJECT_ID: hosted-control-planes
         run: |
           claude --version
-          claude -p "Say hello in one sentence" --max-turns 1
+          claude -p "/hello-world:echo HyperShift" --max-turns 1
