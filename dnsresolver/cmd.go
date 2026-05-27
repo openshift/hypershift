@@ -64,10 +64,6 @@ func resolveDNS(ctx context.Context, hostName string) error {
 	return nil
 }
 
-// selfRegisterEndpointSlice creates an EndpointSlice for this pod's IP
-// so that CoreDNS can resolve the pod's DNS name without waiting for the
-// standard EndpointSlice controller, which may have a stale informer cache
-// under high cluster density.
 func selfRegisterEndpointSlice(dnsName string) error {
 	podIP := os.Getenv("POD_IP")
 	if podIP == "" {
@@ -82,11 +78,6 @@ func selfRegisterEndpointSlice(dnsName string) error {
 		return fmt.Errorf("failed to get hostname: %w", err)
 	}
 
-	serviceName, err := parseServiceName(dnsName)
-	if err != nil {
-		return fmt.Errorf("failed to parse service name from DNS name %q: %w", dnsName, err)
-	}
-
 	config, err := rest.InClusterConfig()
 	if err != nil {
 		return fmt.Errorf("failed to get in-cluster config: %w", err)
@@ -96,7 +87,20 @@ func selfRegisterEndpointSlice(dnsName string) error {
 		return fmt.Errorf("failed to create kubernetes client: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	return ensureEndpointSlice(context.Background(), client, dnsName, hostname, namespace, podIP)
+}
+
+// ensureEndpointSlice creates or updates a self-registration EndpointSlice for
+// this pod's IP so that CoreDNS can resolve the pod's DNS name without waiting
+// for the standard EndpointSlice controller, which may have a stale informer
+// cache under high cluster density.
+func ensureEndpointSlice(ctx context.Context, client kubernetes.Interface, dnsName, hostname, namespace, podIP string) error {
+	serviceName, err := parseServiceName(dnsName)
+	if err != nil {
+		return fmt.Errorf("failed to parse service name from DNS name %q: %w", dnsName, err)
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
 	pod, err := client.CoreV1().Pods(namespace).Get(ctx, hostname, metav1.GetOptions{})
