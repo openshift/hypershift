@@ -447,6 +447,7 @@ var standaloneAPIs = map[string][]string{
 		"ListRolePolicies",
 		"PutRolePolicy",
 		"RemoveRoleFromInstanceProfile",
+		"UpdateAssumeRolePolicy",
 	},
 }
 
