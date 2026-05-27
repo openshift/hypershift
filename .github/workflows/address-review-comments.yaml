@@ -1,43 +1,44 @@
-name: Test Claude Code WIF Auth
+name: Address Review Comments
 
 on:
   issue_comment:
     types: [created]
-  workflow_dispatch: {}
 
 permissions:
   id-token: write
-  contents: read
-  pull-requests: read
+  contents: write
+  pull-requests: write
 
 jobs:
-  test-wif:
+  address-review-comments:
+    concurrency:
+      group: address-review-comments-${{ github.event.issue.number }}
+      cancel-in-progress: true
     if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event.issue.pull_request &&
-       contains(github.event.comment.body, '/test-wif') &&
-       (github.event.comment.author_association == 'MEMBER' ||
-        github.event.comment.author_association == 'OWNER' ||
-        github.event.comment.author_association == 'COLLABORATOR'))
+      github.event.issue.pull_request &&
+      startsWith(github.event.comment.body, '/address-review-comments') &&
+      (github.event.comment.author_association == 'MEMBER' ||
+       github.event.comment.author_association == 'OWNER' ||
+       github.event.comment.author_association == 'COLLABORATOR')
     runs-on: arc-runner-set
-    timeout-minutes: 10
+    timeout-minutes: 30
     env:
       HOME: /tmp
     steps:
       - name: Get PR ref
-        if: github.event_name == 'issue_comment'
         id: pr
         run: |
           curl -fsSL -H "Authorization: token ${{ github.token }}" \
             "https://api.github.com/repos/${{ github.repository }}/pulls/${{ github.event.issue.number }}" > /tmp/pr.json
-          echo "ref=$(jq -r '.head.sha' /tmp/pr.json)" >> "$GITHUB_OUTPUT"
+          echo "branch=$(jq -r '.head.ref' /tmp/pr.json)" >> "$GITHUB_OUTPUT"
           echo "repo=$(jq -r '.head.repo.full_name' /tmp/pr.json)" >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
-          ref: ${{ steps.pr.outputs.ref || github.sha }}
-          repository: ${{ steps.pr.outputs.repo || github.repository }}
-          persist-credentials: false
+          ref: ${{ steps.pr.outputs.branch }}
+          repository: ${{ steps.pr.outputs.repo }}
+          persist-credentials: true
+          fetch-depth: 0
 
       - name: Authenticate to GCP via WIF
         uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2
@@ -55,21 +56,16 @@ jobs:
         run: |
           git clone --depth 1 https://github.com/openshift-eng/ai-helpers.git "$GITHUB_WORKSPACE/ai-helpers"
           mkdir -p "$HOME/.claude/plugins"
-          printf '%s\n' '{"enabledPlugins":{"hello-world@ai-helpers":true,"ai-sbom@ai-helpers":true,"jira@ai-helpers":true,"ci@ai-helpers":true}}' > "$HOME/.claude/settings.json"
+          printf '%s\n' '{"enabledPlugins":{"utils@ai-helpers":true}}' > "$HOME/.claude/settings.json"
           printf '%s\n' "{\"ai-helpers\":{\"source\":{\"source\":\"directory\",\"path\":\"$GITHUB_WORKSPACE/ai-helpers\"},\"installLocation\":\"$GITHUB_WORKSPACE/ai-helpers\",\"lastUpdated\":\"2025-10-27T12:00:00.000Z\"}}" > "$HOME/.claude/plugins/known_marketplaces.json"
 
-      - name: Test Claude Code
+      - name: Address PR review comments
         env:
           CLAUDE_CODE_USE_VERTEX: "1"
           CLOUD_ML_REGION: global
           ANTHROPIC_VERTEX_PROJECT_ID: hosted-control-planes
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.issue.number }}
         run: |
           claude --version
-          claude -p "Generate an AI SBOM for this session." --model claude-opus-4-6 --max-turns 50 | tee /tmp/claude-output.txt
-          if grep -qi "ai-assisted\|ai.sbom\|sbom" /tmp/claude-output.txt; then
-            echo "Plugin verified: ai-sbom plugin executed successfully"
-          else
-            echo "ERROR: ai-sbom plugin output not detected"
-            cat /tmp/claude-output.txt
-            exit 1
-          fi
+          claude -p "/utils:address-reviews $PR_NUMBER" --model claude-opus-4-6 --max-turns 100
