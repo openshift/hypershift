@@ -998,3 +998,64 @@ func TestConfigurationPriority(t *testing.T) {
 		})
 	}
 }
+
+func TestReconcileDefaultIngressControllerCertSecret(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name         string
+		sourceSecret *corev1.Secret
+		wantErr      bool
+		errSubstr    string
+	}{
+		{
+			name: "When source secret has both cert and key, it should succeed",
+			sourceSecret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: "source", Namespace: "test-ns"},
+				Data: map[string][]byte{
+					corev1.TLSCertKey:       []byte("cert-data"),
+					corev1.TLSPrivateKeyKey: []byte("key-data"),
+				},
+			},
+		},
+		{
+			name: "When source secret is missing the cert key, it should return an error",
+			sourceSecret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: "source", Namespace: "test-ns"},
+				Data: map[string][]byte{
+					corev1.TLSPrivateKeyKey: []byte("key-data"),
+				},
+			},
+			wantErr:   true,
+			errSubstr: "does not have a cert key",
+		},
+		{
+			name: "When source secret is missing the private key, it should return an error",
+			sourceSecret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: "source", Namespace: "test-ns"},
+				Data: map[string][]byte{
+					corev1.TLSCertKey: []byte("cert-data"),
+				},
+			},
+			wantErr:   true,
+			errSubstr: "does not have the expected key",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			certSecret := &corev1.Secret{}
+			err := ReconcileDefaultIngressControllerCertSecret(certSecret, tt.sourceSecret)
+
+			if tt.wantErr {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring(tt.errSubstr))
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(certSecret.Data).To(HaveKeyWithValue(corev1.TLSCertKey, tt.sourceSecret.Data[corev1.TLSCertKey]))
+				g.Expect(certSecret.Data).To(HaveKeyWithValue(corev1.TLSPrivateKeyKey, tt.sourceSecret.Data[corev1.TLSPrivateKeyKey]))
+			}
+		})
+	}
+}

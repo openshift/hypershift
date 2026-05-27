@@ -49,6 +49,7 @@ import (
 	controllerruntime "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	"github.com/go-logr/logr"
@@ -3108,10 +3109,12 @@ func TestReconcileDeletion(t *testing.T) {
 		name               string
 		hcp                *hyperv1.HostedControlPlane
 		existingObjects    []client.Object
+		interceptorFuncs   *interceptor.Funcs
 		expectVAPDeleted   bool
 		expectVAPBDeleted  bool
 		expectCloudCleanup bool
 		expectError        bool
+		errSubstr          string
 	}{
 		{
 			name: "When platform is Azure, it should delete the registry management state VAP and binding",
@@ -3237,13 +3240,44 @@ func TestReconcileDeletion(t *testing.T) {
 			},
 			expectCloudCleanup: false,
 		},
+		{
+			name: "When Delete fails for the VAP binding on Azure, it should return a wrapped error",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-hcp",
+					Namespace: "test-ns",
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+					},
+				},
+			},
+			existingObjects: []client.Object{
+				manifests.ValidatingAdmissionPolicyBinding(fmt.Sprintf("%s-binding", registry.AdmissionPolicyNameManagementState)),
+			},
+			interceptorFuncs: &interceptor.Funcs{
+				Delete: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.DeleteOption) error {
+					if obj.GetName() == fmt.Sprintf("%s-binding", registry.AdmissionPolicyNameManagementState) {
+						return fmt.Errorf("API server unavailable")
+					}
+					return c.Delete(ctx, obj, opts...)
+				},
+			},
+			expectError: true,
+			errSubstr:   "failed to delete ValidatingAdmissionPolicyBinding",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
 
-			guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tt.existingObjects...).Build()
+			guestClientBuilder := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tt.existingObjects...)
+			if tt.interceptorFuncs != nil {
+				guestClientBuilder = guestClientBuilder.WithInterceptorFuncs(*tt.interceptorFuncs)
+			}
+			guestClient := guestClientBuilder.Build()
 			cpClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tt.hcp).WithStatusSubresource(&hyperv1.HostedControlPlane{}).Build()
 
 			r := &reconciler{
@@ -3269,6 +3303,9 @@ func TestReconcileDeletion(t *testing.T) {
 
 			if tt.expectError {
 				g.Expect(err).To(HaveOccurred())
+				if tt.errSubstr != "" {
+					g.Expect(err.Error()).To(ContainSubstring(tt.errSubstr))
+				}
 				return
 			}
 			g.Expect(err).ToNot(HaveOccurred())

@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	. "github.com/onsi/gomega"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	corev1listers "k8s.io/client-go/listers/core/v1"
@@ -43,14 +45,11 @@ func newFakePodLister(namespace string, pods []*corev1.Pod) corev1listers.PodNam
 
 func newResolveRequest(t *testing.T, selector map[string]string) *http.Request {
 	t.Helper()
+	g := NewWithT(t)
 	body, err := json.Marshal(ResolveRequest{Selector: selector})
-	if err != nil {
-		t.Fatalf("failed to marshal request: %v", err)
-	}
+	g.Expect(err).ToNot(HaveOccurred())
 	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, resolvePath, bytes.NewReader(body))
-	if err != nil {
-		t.Fatalf("failed to create request: %v", err)
-	}
+	g.Expect(err).ToNot(HaveOccurred())
 	req.Header.Set("Content-Type", "application/json")
 	return req
 }
@@ -137,6 +136,7 @@ func TestResolverHandler(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
 			lister := newFakePodLister("test-namespace", tt.pods)
 			handler := newResolverHandler(lister)
 			req := newResolveRequest(t, tt.selector)
@@ -144,22 +144,15 @@ func TestResolverHandler(t *testing.T) {
 
 			handler.ServeHTTP(rec, req)
 
-			if rec.Code != tt.expectedCode {
-				t.Errorf("expected status code %d, got %d: %s", tt.expectedCode, rec.Code, rec.Body.String())
-			}
+			g.Expect(rec.Code).To(Equal(tt.expectedCode))
 
 			if tt.expectedPods != nil {
 				var response ResolveResponse
-				if err := json.NewDecoder(rec.Body).Decode(&response); err != nil {
-					t.Fatalf("failed to decode response: %v", err)
-				}
-				if len(response.Pods) != len(tt.expectedPods) {
-					t.Fatalf("expected %d pods, got %d", len(tt.expectedPods), len(response.Pods))
-				}
+				g.Expect(json.NewDecoder(rec.Body).Decode(&response)).To(Succeed())
+				g.Expect(response.Pods).To(HaveLen(len(tt.expectedPods)))
 				for i, expected := range tt.expectedPods {
-					if response.Pods[i].Name != expected.Name || response.Pods[i].IP != expected.IP {
-						t.Errorf("pod %d: expected %+v, got %+v", i, expected, response.Pods[i])
-					}
+					g.Expect(response.Pods[i].Name).To(Equal(expected.Name))
+					g.Expect(response.Pods[i].IP).To(Equal(expected.IP))
 				}
 			}
 		})
@@ -168,24 +161,22 @@ func TestResolverHandler(t *testing.T) {
 
 func TestResolverHandlerMethodNotAllowed(t *testing.T) {
 	t.Run("When sending GET request it should return 405", func(t *testing.T) {
+		g := NewWithT(t)
 		lister := newFakePodLister("test-namespace", nil)
 		handler := newResolverHandler(lister)
 		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, resolvePath, nil)
-		if err != nil {
-			t.Fatalf("failed to create request: %v", err)
-		}
+		g.Expect(err).ToNot(HaveOccurred())
 		rec := httptest.NewRecorder()
 
 		handler.ServeHTTP(rec, req)
 
-		if rec.Code != http.StatusMethodNotAllowed {
-			t.Errorf("expected status code %d, got %d", http.StatusMethodNotAllowed, rec.Code)
-		}
+		g.Expect(rec.Code).To(Equal(http.StatusMethodNotAllowed))
 	})
 }
 
 func TestResolverHandlerEmptySelector(t *testing.T) {
 	t.Run("When selector is empty it should return 400", func(t *testing.T) {
+		g := NewWithT(t)
 		lister := newFakePodLister("test-namespace", nil)
 		handler := newResolverHandler(lister)
 		req := newResolveRequest(t, map[string]string{})
@@ -193,26 +184,21 @@ func TestResolverHandlerEmptySelector(t *testing.T) {
 
 		handler.ServeHTTP(rec, req)
 
-		if rec.Code != http.StatusBadRequest {
-			t.Errorf("expected status code %d, got %d", http.StatusBadRequest, rec.Code)
-		}
+		g.Expect(rec.Code).To(Equal(http.StatusBadRequest))
 	})
 }
 
 func TestResolverHandlerInvalidBody(t *testing.T) {
 	t.Run("When request body is invalid JSON it should return 400", func(t *testing.T) {
+		g := NewWithT(t)
 		lister := newFakePodLister("test-namespace", nil)
 		handler := newResolverHandler(lister)
 		req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, resolvePath, bytes.NewReader([]byte("not json")))
-		if err != nil {
-			t.Fatalf("failed to create request: %v", err)
-		}
+		g.Expect(err).ToNot(HaveOccurred())
 		rec := httptest.NewRecorder()
 
 		handler.ServeHTTP(rec, req)
 
-		if rec.Code != http.StatusBadRequest {
-			t.Errorf("expected status code %d, got %d", http.StatusBadRequest, rec.Code)
-		}
+		g.Expect(rec.Code).To(Equal(http.StatusBadRequest))
 	})
 }

@@ -2,6 +2,7 @@ package gcpprivateserviceconnect
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -102,6 +103,16 @@ func TestIsNotFound(t *testing.T) {
 			name:     "When error message contains 'NOT FOUND' in uppercase it should return true",
 			err:      errors.New("RESOURCE NOT FOUND"),
 			expected: true,
+		},
+		{
+			name:     "When error is a wrapped googleapi 404 it should return true",
+			err:      fmt.Errorf("operation failed: %w", &googleapi.Error{Code: 404, Message: "not found"}),
+			expected: true,
+		},
+		{
+			name:     "When error is a wrapped googleapi 500 it should return false",
+			err:      fmt.Errorf("operation failed: %w", &googleapi.Error{Code: 500, Message: "internal error"}),
+			expected: false,
 		},
 		{
 			name:     "When error is generic without 404 it should return false",
