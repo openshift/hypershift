@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/operator"
 
 	corev1 "k8s.io/api/core/v1"
@@ -15,14 +16,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
 func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig) error {
-	// Create a predicate for the pull-secret
-	secretPredicate := predicate.NewPredicateFuncs(func(o crclient.Object) bool {
-		return o.GetNamespace() == "kube-system"
-	})
+	secretPredicate := predicate.NewPredicateFuncs(kubeSystemSecretPredicateFunc)
 
 	// Create a cache for the kube-system namespace
 	kubeSystemCache, err := cache.New(opts.Manager.GetConfig(), cache.Options{
@@ -96,5 +95,28 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 		return fmt.Errorf("failed to watch kube-system secrets: %w", err)
 	}
 
+	// Watch the CP namespace pull-secret so in-place updates to HostedCluster.spec.pullSecret
+	// promptly reconcile kube-system/original-pull-secret (and global-pull-secret) in the guest.
+	cpPullSecret := manifests.PullSecret(opts.Namespace)
+	cpPullSecretPredicate := predicate.NewPredicateFuncs(namespacedNamePredicateFunc(cpPullSecret.Namespace, cpPullSecret.Name))
+	cpEventHandler := handler.EnqueueRequestsFromMapFunc(staticReconcileMapper)
+	if err := c.Watch(source.Kind[crclient.Object](opts.CPCluster.GetCache(), &corev1.Secret{}, cpEventHandler, cpPullSecretPredicate)); err != nil {
+		return fmt.Errorf("failed to watch control plane pull secret: %w", err)
+	}
+
 	return nil
+}
+
+func kubeSystemSecretPredicateFunc(o crclient.Object) bool {
+	return o.GetNamespace() == "kube-system"
+}
+
+func namespacedNamePredicateFunc(namespace, name string) func(crclient.Object) bool {
+	return func(o crclient.Object) bool {
+		return o.GetNamespace() == namespace && o.GetName() == name
+	}
+}
+
+func staticReconcileMapper(_ context.Context, _ crclient.Object) []reconcile.Request {
+	return []reconcile.Request{{}}
 }
