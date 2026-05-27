@@ -53,10 +53,10 @@ jobs:
 
       - name: Set up ai-helpers plugins
         run: |
-          git clone --depth 1 https://github.com/openshift-eng/ai-helpers.git /tmp/ai-helpers
+          git clone --depth 1 https://github.com/openshift-eng/ai-helpers.git "$GITHUB_WORKSPACE/ai-helpers"
           mkdir -p "$HOME/.claude/plugins"
           printf '%s\n' '{"enabledPlugins":{"hello-world@ai-helpers":true,"ai-sbom@ai-helpers":true,"jira@ai-helpers":true,"ci@ai-helpers":true}}' > "$HOME/.claude/settings.json"
-          printf '%s\n' '{"ai-helpers":{"source":{"source":"directory","path":"/tmp/ai-helpers"},"installLocation":"/tmp/ai-helpers","lastUpdated":"2025-10-27T12:00:00.000Z"}}' > "$HOME/.claude/plugins/known_marketplaces.json"
+          printf '%s\n' "{\"ai-helpers\":{\"source\":{\"source\":\"directory\",\"path\":\"$GITHUB_WORKSPACE/ai-helpers\"},\"installLocation\":\"$GITHUB_WORKSPACE/ai-helpers\",\"lastUpdated\":\"2025-10-27T12:00:00.000Z\"}}" > "$HOME/.claude/plugins/known_marketplaces.json"
 
       - name: Test Claude Code
         env:
