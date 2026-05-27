@@ -27,6 +27,7 @@ import (
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	aws "github.com/openshift/hypershift/cmd/infra/aws"
 	"github.com/openshift/hypershift/cmd/install/assets"
 	crdassets "github.com/openshift/hypershift/cmd/install/assets/crds"
 	"github.com/openshift/hypershift/cmd/util"
@@ -105,6 +106,7 @@ type Options struct {
 	AWSPrivateCredentialsSecret               string
 	AWSPrivateCredentialsSecretKey            string
 	AWSPrivateRegion                          string
+	AWSPrivateRoleARN                         string
 	AzurePrivateCreds                         string
 	AzurePrivateCredentialsSecret             string
 	AzurePrivateCredentialsSecretKey          string
@@ -118,9 +120,11 @@ type Options struct {
 	OIDCStorageProviderS3Credentials          string
 	OIDCStorageProviderS3CredentialsSecret    string
 	OIDCStorageProviderS3CredentialsSecretKey string
+	OIDCStorageProviderS3RoleARN              string
 	ExternalDNSProvider                       string
 	ExternalDNSCredentials                    string
 	ExternalDNSCredentialsSecret              string
+	ExternalDNSRoleARN                        string
 	ExternalDNSDomainFilter                   string
 	ExternalDNSTxtOwnerId                     string
 	ExternalDNSImage                          string
@@ -156,17 +160,27 @@ type Options struct {
 	ScaleFromZeroCreds                        string
 	ScaleFromZeroCredentialsSecret            string
 	ScaleFromZeroCredentialsSecretKey         string
+	AWSRoleCredentialSource                   string
+	AWSOperatorRolesFile                      string
 	RenderSensitive                           bool
 	HCPEgressBlockCIDRs                       []string
 }
 
-func (o *Options) Validate() error {
-	var errs []error
+func (o *Options) Complete() error {
+	if err := o.loadOperatorRolesFile(); err != nil {
+		return err
+	}
 
 	o.ScaleFromZeroProvider = strings.TrimSpace(o.ScaleFromZeroProvider)
 	if len(o.ScaleFromZeroProvider) != 0 {
 		o.ScaleFromZeroProvider = strings.ToLower(o.ScaleFromZeroProvider)
 	}
+
+	return nil
+}
+
+func (o *Options) Validate() error {
+	var errs []error
 
 	errs = append(errs, o.validatePlatformConfig()...)
 	errs = append(errs, o.validateOIDCConfig()...)
@@ -194,8 +208,19 @@ func (o *Options) validatePlatformConfig() []error {
 	var errs []error
 	switch hyperv1.PlatformType(o.PrivatePlatform) {
 	case hyperv1.AWSPlatform:
-		if (len(o.AWSPrivateCreds) == 0 && len(o.AWSPrivateCredentialsSecret) == 0) || len(o.AWSPrivateRegion) == 0 {
-			errs = append(errs, fmt.Errorf("--aws-private-region and --aws-private-creds or --aws-private-secret are required with --private-platform=%s", hyperv1.AWSPlatform))
+		if len(o.AWSPrivateCreds) != 0 && len(o.AWSPrivateCredentialsSecret) != 0 {
+			errs = append(errs, fmt.Errorf("only one of --aws-private-creds or --aws-private-secret is supported"))
+		}
+		hasCredsFile := len(o.AWSPrivateCreds) != 0 || len(o.AWSPrivateCredentialsSecret) != 0
+		hasRoleARN := len(o.AWSPrivateRoleARN) != 0
+		if hasCredsFile && hasRoleARN {
+			errs = append(errs, fmt.Errorf("--aws-private-role-arn cannot be used with --aws-private-creds or --aws-private-secret"))
+		}
+		if !hasCredsFile && !hasRoleARN {
+			errs = append(errs, fmt.Errorf("--aws-private-creds, --aws-private-secret, or --aws-private-role-arn is required with --private-platform=%s", hyperv1.AWSPlatform))
+		}
+		if len(o.AWSPrivateRegion) == 0 {
+			errs = append(errs, fmt.Errorf("--aws-private-region is required with --private-platform=%s", hyperv1.AWSPlatform))
 		}
 	case hyperv1.GCPPlatform:
 		// GCP uses Workload Identity Federation, no credentials required.
@@ -239,11 +264,19 @@ func (o *Options) validateAzurePlatformConfig() []error {
 
 func (o *Options) validateOIDCConfig() []error {
 	var errs []error
+	hasCredsFile := len(o.OIDCStorageProviderS3CredentialsSecret) > 0 || len(o.OIDCStorageProviderS3Credentials) > 0
+	hasRoleARN := len(o.OIDCStorageProviderS3RoleARN) > 0
+	if hasCredsFile && hasRoleARN {
+		errs = append(errs, fmt.Errorf("--oidc-storage-provider-s3-role-arn cannot be used with --oidc-storage-provider-s3-credentials or --oidc-storage-provider-s3-secret"))
+	}
 	if len(o.OIDCStorageProviderS3CredentialsSecret) > 0 && len(o.OIDCStorageProviderS3Credentials) > 0 {
 		errs = append(errs, fmt.Errorf("only one of --oidc-storage-provider-s3-secret or --oidc-storage-provider-s3-credentials is supported"))
 	}
-	if (len(o.OIDCStorageProviderS3CredentialsSecret) > 0 || len(o.OIDCStorageProviderS3Credentials) > 0) &&
-		(len(o.OIDCStorageProviderS3BucketName) == 0 || len(o.OIDCStorageProviderS3Region) == 0 || len(o.OIDCStorageProviderS3CredentialsSecretKey) == 0) {
+	if (hasCredsFile || hasRoleARN) &&
+		(len(o.OIDCStorageProviderS3BucketName) == 0 || len(o.OIDCStorageProviderS3Region) == 0) {
+		errs = append(errs, fmt.Errorf("--oidc-storage-provider-s3-bucket-name and --oidc-storage-provider-s3-region are required when OIDC S3 credentials or role ARN are specified"))
+	}
+	if hasCredsFile && !hasRoleARN && len(o.OIDCStorageProviderS3CredentialsSecretKey) == 0 {
 		errs = append(errs, fmt.Errorf("all required oidc information is not set"))
 	}
 	if strings.Contains(o.OIDCStorageProviderS3BucketName, ".") {
@@ -259,8 +292,16 @@ func (o *Options) validateExternalDNSConfig() []error {
 	var errs []error
 	// Credentials are optional for GCP when using Workload Identity
 	credentialsRequired := o.ExternalDNSProvider != "google"
-	if credentialsRequired && len(o.ExternalDNSCredentials) == 0 && len(o.ExternalDNSCredentialsSecret) == 0 {
-		errs = append(errs, fmt.Errorf("--external-dns-credentials or --external-dns-credentials-secret are required with --external-dns-provider"))
+	hasCredsFile := len(o.ExternalDNSCredentials) != 0 || len(o.ExternalDNSCredentialsSecret) != 0
+	hasRoleARN := len(o.ExternalDNSRoleARN) != 0
+	if hasRoleARN && o.ExternalDNSProvider != "aws" {
+		errs = append(errs, fmt.Errorf("--external-dns-role-arn is only supported with --external-dns-provider=aws"))
+	}
+	if hasCredsFile && hasRoleARN {
+		errs = append(errs, fmt.Errorf("--external-dns-role-arn cannot be used with --external-dns-credentials or --external-dns-secret"))
+	}
+	if credentialsRequired && !hasCredsFile && !hasRoleARN {
+		errs = append(errs, fmt.Errorf("--external-dns-credentials, --external-dns-secret, or --external-dns-role-arn are required with --external-dns-provider"))
 	}
 	if len(o.ExternalDNSCredentials) != 0 && len(o.ExternalDNSCredentialsSecret) != 0 {
 		errs = append(errs, fmt.Errorf("only one of --external-dns-credentials or --external-dns-credentials-secret is supported"))
@@ -341,6 +382,14 @@ func (o *Options) validateMonitoringConfig() []error {
 
 func (o *Options) validateMiscConfig() []error {
 	var errs []error
+	hasAnyRoleARN := o.AWSPrivateRoleARN != "" || o.OIDCStorageProviderS3RoleARN != "" || o.ExternalDNSRoleARN != ""
+	if hasAnyRoleARN {
+		switch o.AWSRoleCredentialSource {
+		case aws.CredentialSourceWebIdentity, aws.CredentialSourceEC2InstanceMetadata:
+		default:
+			errs = append(errs, fmt.Errorf("--aws-role-credential-source must be %q or %q, got %q", aws.CredentialSourceWebIdentity, aws.CredentialSourceEC2InstanceMetadata, o.AWSRoleCredentialSource))
+		}
+	}
 	if len(o.ManagedService) > 0 && o.ManagedService != hyperv1.AroHCP {
 		errs = append(errs, fmt.Errorf("not a valid managed service type: %s", o.ManagedService))
 	}
@@ -399,6 +448,7 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&opts.AWSPrivateCredentialsSecret, "aws-private-secret", "", "Name of an existing secret containing the AWS private link credentials.")
 	cmd.PersistentFlags().StringVar(&opts.AWSPrivateCredentialsSecretKey, "aws-private-secret-key", opts.AWSPrivateCredentialsSecretKey, "Name of the secret key containing the AWS private link credentials.")
 	cmd.PersistentFlags().StringVar(&opts.AWSPrivateRegion, "aws-private-region", opts.AWSPrivateRegion, "AWS region where private clusters are supported by this operator")
+	cmd.PersistentFlags().StringVar(&opts.AWSPrivateRoleARN, "aws-private-role-arn", "", "IAM role ARN for the operator's EC2/ELBv2 credentials (alternative to --aws-private-creds; uses web identity or instance role based on --aws-role-credential-source)")
 	cmd.PersistentFlags().StringVar(&opts.AzurePrivateCreds, "azure-private-creds", opts.AzurePrivateCreds, "Path to an Azure credentials file with privileges sufficient to manage private cluster resources")
 	cmd.PersistentFlags().StringVar(&opts.AzurePrivateCredentialsSecret, "azure-private-secret", "", "Name of an existing secret containing the Azure private link credentials")
 	cmd.PersistentFlags().StringVar(&opts.AzurePrivateCredentialsSecretKey, "azure-private-secret-key", "credentials", "Name of the secret key containing the Azure private link credentials")
@@ -412,9 +462,11 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&opts.OIDCStorageProviderS3Credentials, "oidc-storage-provider-s3-credentials", opts.OIDCStorageProviderS3Credentials, "Credentials to use for writing the OIDC documents into the S3 bucket. Required for AWS guest clusters")
 	cmd.PersistentFlags().StringVar(&opts.OIDCStorageProviderS3CredentialsSecret, "oidc-storage-provider-s3-secret", "", "Name of an existing secret containing the OIDC S3 credentials.")
 	cmd.PersistentFlags().StringVar(&opts.OIDCStorageProviderS3CredentialsSecretKey, "oidc-storage-provider-s3-secret-key", opts.OIDCStorageProviderS3CredentialsSecretKey, "Name of the secret key containing the OIDC S3 credentials.")
+	cmd.PersistentFlags().StringVar(&opts.OIDCStorageProviderS3RoleARN, "oidc-storage-provider-s3-role-arn", "", "IAM role ARN for OIDC S3 access (alternative to --oidc-storage-provider-s3-credentials; uses web identity or instance role based on --aws-role-credential-source)")
 	cmd.PersistentFlags().StringVar(&opts.ExternalDNSProvider, "external-dns-provider", opts.ExternalDNSProvider, "Provider to use for managing DNS records using external-dns")
 	cmd.PersistentFlags().StringVar(&opts.ExternalDNSCredentials, "external-dns-credentials", opts.OIDCStorageProviderS3Credentials, "Credentials to use for managing DNS records using external-dns")
 	cmd.PersistentFlags().StringVar(&opts.ExternalDNSCredentialsSecret, "external-dns-secret", "", "Name of an existing secret containing the external-dns credentials.")
+	cmd.PersistentFlags().StringVar(&opts.ExternalDNSRoleARN, "external-dns-role-arn", "", "IAM role ARN for external-dns Route53 access (alternative to --external-dns-credentials; uses web identity or instance role based on --aws-role-credential-source)")
 	cmd.PersistentFlags().StringVar(&opts.ExternalDNSDomainFilter, "external-dns-domain-filter", "", "Restrict external-dns to changes within the specified domain.")
 	cmd.PersistentFlags().StringVar(&opts.ExternalDNSTxtOwnerId, "external-dns-txt-owner-id", "", "external-dns TXT registry owner ID.")
 	cmd.PersistentFlags().StringVar(&opts.ExternalDNSImage, "external-dns-image", opts.ExternalDNSImage, "Image to use for external-dns")
@@ -453,6 +505,8 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&opts.ScaleFromZeroCredentialsSecret, "scale-from-zero-secret", opts.ScaleFromZeroCredentialsSecret, "Name of existing secret containing scale-from-zero credentials (alternative to --scale-from-zero-creds)")
 	cmd.PersistentFlags().StringVar(&opts.ScaleFromZeroCredentialsSecretKey, "scale-from-zero-secret-key", opts.ScaleFromZeroCredentialsSecretKey, "Key within the scale-from-zero credentials secret (default: credentials)")
 	cmd.PersistentFlags().StringArrayVar(&opts.HCPEgressBlockCIDRs, "hcp-egress-block-cidrs", nil, "Static CIDRs to block in HCP namespace egress NetworkPolicies instead of dynamically-discovered hosting cluster KAS endpoint IPs. When specified, eliminates NetworkPolicy churn during hosting cluster KAS rolling restarts and avoids OVN port-group reconciliation races that can drop traffic to HCP routers. May be specified multiple times.")
+	cmd.PersistentFlags().StringVar(&opts.AWSRoleCredentialSource, "aws-role-credential-source", aws.CredentialSourceWebIdentity, "Credential source for AWS role ARN flags: 'web-identity' (uses projected SA token) or 'ec2-instance-metadata' (uses EC2 instance metadata)")
+	cmd.PersistentFlags().StringVar(&opts.AWSOperatorRolesFile, "aws-operator-roles-file", "", "Path to JSON output file from 'hypershift create operator-roles aws' (sets all three role ARN flags at once)")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		return InstallHyperShiftOperator(cmd.Context(), cmd.OutOrStdout(), opts)
@@ -469,6 +523,9 @@ func NewCommand() *cobra.Command {
 func InstallHyperShiftOperator(ctx context.Context, out io.Writer, opts Options) error {
 	opts.ApplyDefaults()
 
+	if err := opts.Complete(); err != nil {
+		return err
+	}
 	if err := opts.Validate(); err != nil {
 		return err
 	}
@@ -1372,7 +1429,13 @@ func setupExternalDNS(opts Options, operatorNamespace *corev1.Namespace) ([]crcl
 	objects = append(objects, externalDNSClusterRoleBinding)
 
 	var externalDNSSecret *corev1.Secret
-	if opts.ExternalDNSCredentials != "" {
+	if opts.ExternalDNSRoleARN != "" {
+		externalDNSSecret = assets.ExternalDNSCredsSecret{
+			Namespace:  operatorNamespace,
+			CredsBytes: []byte(awsRoleCredentialFileContent(opts.ExternalDNSRoleARN, opts.AWSRoleCredentialSource)),
+		}.Build()
+		objects = append(objects, externalDNSSecret)
+	} else if opts.ExternalDNSCredentials != "" {
 		externalDNSCreds, err := os.ReadFile(opts.ExternalDNSCredentials)
 		if err != nil {
 			return nil, err
@@ -1392,6 +1455,7 @@ func setupExternalDNS(opts Options, operatorNamespace *corev1.Namespace) ([]crcl
 		}
 	}
 
+	useWebIdentity := opts.ExternalDNSRoleARN != "" && opts.AWSRoleCredentialSource == aws.CredentialSourceWebIdentity
 	externalDNSDeployment := assets.ExternalDNSDeployment{
 		Namespace:             operatorNamespace,
 		Image:                 opts.ExternalDNSImage,
@@ -1404,6 +1468,7 @@ func setupExternalDNS(opts Options, operatorNamespace *corev1.Namespace) ([]crcl
 		GoogleProject:         opts.ExternalDNSGoogleProject,
 		Interval:              opts.ExternalDNSInterval,
 		AWSZonesCacheDuration: opts.ExternalDNSAWSZonesCacheDuration,
+		UseWebIdentity:        useWebIdentity,
 	}.Build()
 	objects = append(objects, externalDNSDeployment)
 
@@ -1586,7 +1651,14 @@ func setupAuth(opts Options, operatorNamespace *corev1.Namespace) (*corev1.Secre
 		objects = append(objects, pullSecret)
 	}
 
-	if opts.OIDCStorageProviderS3Credentials != "" {
+	if opts.OIDCStorageProviderS3RoleARN != "" {
+		oidcSecret = assets.HyperShiftOperatorOIDCProviderS3Secret{
+			Namespace:                      operatorNamespace,
+			OIDCStorageProviderS3CredBytes: []byte(awsRoleCredentialFileContent(opts.OIDCStorageProviderS3RoleARN, opts.AWSRoleCredentialSource)),
+			CredsKey:                       opts.OIDCStorageProviderS3CredentialsSecretKey,
+		}.Build()
+		objects = append(objects, oidcSecret)
+	} else if opts.OIDCStorageProviderS3Credentials != "" {
 		oidcCreds, err := os.ReadFile(opts.OIDCStorageProviderS3Credentials)
 		if err != nil {
 			return nil, nil, nil, nil, nil, err
@@ -1609,7 +1681,14 @@ func setupAuth(opts Options, operatorNamespace *corev1.Namespace) (*corev1.Secre
 
 	switch hyperv1.PlatformType(opts.PrivatePlatform) {
 	case hyperv1.AWSPlatform:
-		if opts.AWSPrivateCreds != "" {
+		if opts.AWSPrivateRoleARN != "" {
+			operatorCredentialsSecret = assets.HyperShiftOperatorCredentialsSecret{
+				Namespace:  operatorNamespace,
+				CredsBytes: []byte(awsRoleCredentialFileContent(opts.AWSPrivateRoleARN, opts.AWSRoleCredentialSource)),
+				CredsKey:   opts.AWSPrivateCredentialsSecretKey,
+			}.Build()
+			objects = append(objects, operatorCredentialsSecret)
+		} else if opts.AWSPrivateCreds != "" {
 			credBytes, err := os.ReadFile(opts.AWSPrivateCreds)
 			if err != nil {
 				return nil, nil, nil, nil, nil, err
@@ -1694,4 +1773,32 @@ func setupAuth(opts Options, operatorNamespace *corev1.Namespace) (*corev1.Secre
 	}
 
 	return oidcSecret, operatorCredentialsSecret, azureCredentialsSecret, scaleFromZeroSecret, objects, nil
+}
+
+func (o *Options) loadOperatorRolesFile() error {
+	if o.AWSOperatorRolesFile == "" {
+		return nil
+	}
+	if o.AWSPrivateRoleARN != "" || o.OIDCStorageProviderS3RoleARN != "" || o.ExternalDNSRoleARN != "" {
+		return fmt.Errorf("--aws-operator-roles-file cannot be combined with --aws-private-role-arn, --oidc-storage-provider-s3-role-arn, or --external-dns-role-arn")
+	}
+	data, err := os.ReadFile(o.AWSOperatorRolesFile)
+	if err != nil {
+		return fmt.Errorf("failed to read operator roles file: %w", err)
+	}
+	var roles aws.CreateOperatorRolesOutput
+	if err := json.Unmarshal(data, &roles); err != nil {
+		return fmt.Errorf("failed to parse operator roles file: %w", err)
+	}
+	o.AWSPrivateRoleARN = roles.OperatorEC2RoleARN
+	o.OIDCStorageProviderS3RoleARN = roles.OperatorOIDCS3RoleARN
+	o.ExternalDNSRoleARN = roles.ExternalDNSRoleARN
+	return nil
+}
+
+func awsRoleCredentialFileContent(roleARN, credentialSource string) string {
+	if credentialSource == aws.CredentialSourceEC2InstanceMetadata {
+		return fmt.Sprintf("[default]\nrole_arn = %s\ncredential_source = Ec2InstanceMetadata\n", roleARN)
+	}
+	return fmt.Sprintf("[default]\nrole_arn = %s\nweb_identity_token_file = /var/run/secrets/openshift/serviceaccount/token\n", roleARN)
 }

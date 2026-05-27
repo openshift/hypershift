@@ -258,6 +258,7 @@ type ExternalDNSDeployment struct {
 	GoogleProject         string
 	Interval              string
 	AWSZonesCacheDuration string
+	UseWebIdentity        bool
 }
 
 func (o ExternalDNSDeployment) Build() *appsv1.Deployment {
@@ -394,6 +395,36 @@ func (o ExternalDNSDeployment) Build() *appsv1.Deployment {
 				// thus we can assume us-east-1 without having to request it on the command line
 				Value: "us-east-1",
 			})
+		if o.UseWebIdentity {
+			deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env,
+				corev1.EnvVar{Name: "AWS_SDK_LOAD_CONFIG", Value: "1"},
+			)
+			deployment.Spec.Template.Spec.Containers[0].VolumeMounts = append(
+				deployment.Spec.Template.Spec.Containers[0].VolumeMounts,
+				corev1.VolumeMount{
+					Name:      "token",
+					MountPath: "/var/run/secrets/openshift/serviceaccount",
+				},
+			)
+			deployment.Spec.Template.Spec.Volumes = append(
+				deployment.Spec.Template.Spec.Volumes,
+				corev1.Volume{
+					Name: "token",
+					VolumeSource: corev1.VolumeSource{
+						Projected: &corev1.ProjectedVolumeSource{
+							Sources: []corev1.VolumeProjection{
+								{
+									ServiceAccountToken: &corev1.ServiceAccountTokenProjection{
+										Audience: "openshift",
+										Path:     "token",
+									},
+								},
+							},
+						},
+					},
+				},
+			)
+		}
 		deployment.Spec.Template.Spec.Containers[0].Args = append(deployment.Spec.Template.Spec.Containers[0].Args,
 			"--aws-zone-type=public",
 			"--aws-batch-change-interval=10s",

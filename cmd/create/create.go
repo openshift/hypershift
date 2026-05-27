@@ -24,6 +24,7 @@ func NewCommand() *cobra.Command {
 	cmd.AddCommand(cluster.NewCreateCommands())
 	cmd.AddCommand(infra.NewCreateCommand())
 	cmd.AddCommand(infra.NewCreateIAMCommand())
+	cmd.AddCommand(infra.NewCreateOperatorRolesCommand())
 	cmd.AddCommand(kubeconfig.NewCreateCommand())
 	cmd.AddCommand(nodepool.NewCreateCommand())
 	cmd.AddCommand(bastion.NewCreateCommand())

@@ -3,6 +3,7 @@ package install
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"io/fs"
 	"os"
@@ -14,6 +15,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	aws "github.com/openshift/hypershift/cmd/infra/aws"
 	"github.com/openshift/hypershift/cmd/install/assets"
 	crdassets "github.com/openshift/hypershift/cmd/install/assets/crds"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
@@ -62,6 +64,69 @@ func TestOptions_Validate(t *testing.T) {
 				PrivatePlatform:             string(hyperv1.AWSPlatform),
 				AWSPrivateCredentialsSecret: "my-secret",
 				AWSPrivateRegion:            "us-east-1",
+			},
+			expectError: false,
+		},
+		"When AWS private platform with role ARN and region it should succeed": {
+			inputOptions: Options{
+				PrivatePlatform:         string(hyperv1.AWSPlatform),
+				AWSPrivateRoleARN:       "arn:aws:iam::123456789012:role/op-ec2",
+				AWSPrivateRegion:        "us-east-1",
+				AWSRoleCredentialSource: "web-identity",
+			},
+			expectError: false,
+		},
+		"When AWS private platform with role ARN and creds file it should error": {
+			inputOptions: Options{
+				PrivatePlatform:         string(hyperv1.AWSPlatform),
+				AWSPrivateRoleARN:       "arn:aws:iam::123456789012:role/op-ec2",
+				AWSPrivateCreds:         "/path/to/credentials",
+				AWSPrivateRegion:        "us-east-1",
+				AWSRoleCredentialSource: "web-identity",
+			},
+			expectError: true,
+		},
+		"When AWS private platform with both creds file and secret it should error": {
+			inputOptions: Options{
+				PrivatePlatform:             string(hyperv1.AWSPlatform),
+				AWSPrivateCreds:             "/path/to/credentials",
+				AWSPrivateCredentialsSecret: "my-secret",
+				AWSPrivateRegion:            "us-east-1",
+			},
+			expectError: true,
+		},
+		"When AWS private platform with role ARN and no region it should error": {
+			inputOptions: Options{
+				PrivatePlatform:         string(hyperv1.AWSPlatform),
+				AWSPrivateRoleARN:       "arn:aws:iam::123456789012:role/op-ec2",
+				AWSRoleCredentialSource: "web-identity",
+			},
+			expectError: true,
+		},
+		"When role ARN is set with invalid credential source it should error": {
+			inputOptions: Options{
+				PrivatePlatform:         string(hyperv1.AWSPlatform),
+				AWSPrivateRoleARN:       "arn:aws:iam::123456789012:role/op-ec2",
+				AWSPrivateRegion:        "us-east-1",
+				AWSRoleCredentialSource: "invalid-source",
+			},
+			expectError: true,
+		},
+		"When role ARN is set with web-identity credential source it should succeed": {
+			inputOptions: Options{
+				PrivatePlatform:         string(hyperv1.AWSPlatform),
+				AWSPrivateRoleARN:       "arn:aws:iam::123456789012:role/op-ec2",
+				AWSPrivateRegion:        "us-east-1",
+				AWSRoleCredentialSource: "web-identity",
+			},
+			expectError: false,
+		},
+		"When role ARN is set with ec2-instance-metadata credential source it should succeed": {
+			inputOptions: Options{
+				PrivatePlatform:         string(hyperv1.AWSPlatform),
+				AWSPrivateRoleARN:       "arn:aws:iam::123456789012:role/op-ec2",
+				AWSPrivateRegion:        "us-east-1",
+				AWSRoleCredentialSource: "ec2-instance-metadata",
 			},
 			expectError: false,
 		},
@@ -364,7 +429,10 @@ func TestOptions_Validate(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
-			err := test.inputOptions.Validate()
+			err := test.inputOptions.Complete()
+			if err == nil {
+				err = test.inputOptions.Validate()
+			}
 			if test.expectError {
 				g.Expect(err).To(HaveOccurred())
 			} else {
@@ -2134,6 +2202,220 @@ func TestHyperShiftOperatorManifests_WebhookFlags(t *testing.T) {
 					g.Expect(crd.Spec.Conversion.Webhook.ConversionReviewVersions).To(ConsistOf("v1beta1", "v1beta2"), "CRD %s review versions", crd.Name)
 				} else {
 					g.Expect(crd.Spec.Conversion).To(BeNil(), "CRD %s should not have conversion when CAPI conversion is disabled", crd.Name)
+				}
+			}
+		})
+	}
+}
+
+func TestAwsRoleCredentialFileContent(t *testing.T) {
+	tests := map[string]struct {
+		roleARN          string
+		credentialSource string
+		expectContains   []string
+	}{
+		"When credential source is web-identity it should include token file path": {
+			roleARN:          "arn:aws:iam::123456789012:role/test-role",
+			credentialSource: aws.CredentialSourceWebIdentity,
+			expectContains: []string{
+				"role_arn = arn:aws:iam::123456789012:role/test-role",
+				"web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token",
+			},
+		},
+		"When credential source is ec2-instance-metadata it should include Ec2InstanceMetadata": {
+			roleARN:          "arn:aws:iam::123456789012:role/test-role",
+			credentialSource: aws.CredentialSourceEC2InstanceMetadata,
+			expectContains: []string{
+				"role_arn = arn:aws:iam::123456789012:role/test-role",
+				"credential_source = Ec2InstanceMetadata",
+			},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			content := awsRoleCredentialFileContent(test.roleARN, test.credentialSource)
+			for _, s := range test.expectContains {
+				g.Expect(content).To(ContainSubstring(s))
+			}
+			g.Expect(content).To(HavePrefix("[default]"))
+		})
+	}
+}
+
+func TestLoadOperatorRolesFile(t *testing.T) {
+	tests := map[string]struct {
+		setup       func(t *testing.T) Options
+		expectError bool
+		validate    func(*GomegaWithT, Options)
+	}{
+		"When no roles file is specified it should be a no-op": {
+			setup: func(t *testing.T) Options {
+				return Options{}
+			},
+			validate: func(g *GomegaWithT, o Options) {
+				g.Expect(o.AWSPrivateRoleARN).To(BeEmpty())
+				g.Expect(o.OIDCStorageProviderS3RoleARN).To(BeEmpty())
+				g.Expect(o.ExternalDNSRoleARN).To(BeEmpty())
+			},
+		},
+		"When a valid roles file is specified it should populate role ARN fields": {
+			setup: func(t *testing.T) Options {
+				roles := aws.CreateOperatorRolesOutput{
+					OperatorEC2RoleARN:    "arn:aws:iam::123456789012:role/op-ec2",
+					OperatorOIDCS3RoleARN: "arn:aws:iam::123456789012:role/op-s3",
+					ExternalDNSRoleARN:    "arn:aws:iam::123456789012:role/ext-dns",
+				}
+				data, err := json.Marshal(roles)
+				if err != nil {
+					t.Fatal(err)
+				}
+				f := filepath.Join(t.TempDir(), "roles.json")
+				if err := os.WriteFile(f, data, 0644); err != nil {
+					t.Fatal(err)
+				}
+				return Options{AWSOperatorRolesFile: f}
+			},
+			validate: func(g *GomegaWithT, o Options) {
+				g.Expect(o.AWSPrivateRoleARN).To(Equal("arn:aws:iam::123456789012:role/op-ec2"))
+				g.Expect(o.OIDCStorageProviderS3RoleARN).To(Equal("arn:aws:iam::123456789012:role/op-s3"))
+				g.Expect(o.ExternalDNSRoleARN).To(Equal("arn:aws:iam::123456789012:role/ext-dns"))
+			},
+		},
+		"When roles file conflicts with --aws-private-role-arn it should error": {
+			setup: func(t *testing.T) Options {
+				f := filepath.Join(t.TempDir(), "roles.json")
+				if err := os.WriteFile(f, []byte(`{}`), 0644); err != nil {
+					t.Fatal(err)
+				}
+				return Options{
+					AWSOperatorRolesFile: f,
+					AWSPrivateRoleARN:    "arn:aws:iam::123456789012:role/existing",
+				}
+			},
+			expectError: true,
+		},
+		"When roles file conflicts with --oidc-storage-provider-s3-role-arn it should error": {
+			setup: func(t *testing.T) Options {
+				f := filepath.Join(t.TempDir(), "roles.json")
+				if err := os.WriteFile(f, []byte(`{}`), 0644); err != nil {
+					t.Fatal(err)
+				}
+				return Options{
+					AWSOperatorRolesFile:         f,
+					OIDCStorageProviderS3RoleARN: "arn:aws:iam::123456789012:role/existing",
+				}
+			},
+			expectError: true,
+		},
+		"When roles file conflicts with --external-dns-role-arn it should error": {
+			setup: func(t *testing.T) Options {
+				f := filepath.Join(t.TempDir(), "roles.json")
+				if err := os.WriteFile(f, []byte(`{}`), 0644); err != nil {
+					t.Fatal(err)
+				}
+				return Options{
+					AWSOperatorRolesFile: f,
+					ExternalDNSRoleARN:   "arn:aws:iam::123456789012:role/existing",
+				}
+			},
+			expectError: true,
+		},
+		"When roles file does not exist it should error": {
+			setup: func(t *testing.T) Options {
+				return Options{AWSOperatorRolesFile: "/nonexistent/path/roles.json"}
+			},
+			expectError: true,
+		},
+		"When roles file contains invalid JSON it should error": {
+			setup: func(t *testing.T) Options {
+				f := filepath.Join(t.TempDir(), "roles.json")
+				if err := os.WriteFile(f, []byte("not json"), 0644); err != nil {
+					t.Fatal(err)
+				}
+				return Options{AWSOperatorRolesFile: f}
+			},
+			expectError: true,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			opts := test.setup(t)
+			err := opts.loadOperatorRolesFile()
+			if test.expectError {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+				if test.validate != nil {
+					test.validate(g, opts)
+				}
+			}
+		})
+	}
+}
+
+func TestComplete(t *testing.T) {
+	tests := map[string]struct {
+		setup       func(t *testing.T) Options
+		expectError bool
+		validate    func(*GomegaWithT, Options)
+	}{
+		"When no operator roles file it should complete successfully": {
+			setup: func(t *testing.T) Options {
+				return Options{}
+			},
+		},
+		"When ScaleFromZeroProvider has whitespace and uppercase it should normalize": {
+			setup: func(t *testing.T) Options {
+				return Options{ScaleFromZeroProvider: "  AWS  "}
+			},
+			validate: func(g *GomegaWithT, o Options) {
+				g.Expect(o.ScaleFromZeroProvider).To(Equal("aws"))
+			},
+		},
+		"When a valid operator roles file is specified it should load ARNs": {
+			setup: func(t *testing.T) Options {
+				roles := aws.CreateOperatorRolesOutput{
+					OperatorEC2RoleARN:    "arn:aws:iam::123456789012:role/op-ec2",
+					OperatorOIDCS3RoleARN: "arn:aws:iam::123456789012:role/op-s3",
+					ExternalDNSRoleARN:    "arn:aws:iam::123456789012:role/ext-dns",
+				}
+				data, err := json.Marshal(roles)
+				if err != nil {
+					t.Fatal(err)
+				}
+				f := filepath.Join(t.TempDir(), "roles.json")
+				if err := os.WriteFile(f, data, 0644); err != nil {
+					t.Fatal(err)
+				}
+				return Options{AWSOperatorRolesFile: f}
+			},
+			validate: func(g *GomegaWithT, o Options) {
+				g.Expect(o.AWSPrivateRoleARN).To(Equal("arn:aws:iam::123456789012:role/op-ec2"))
+			},
+		},
+		"When operator roles file does not exist it should return error": {
+			setup: func(t *testing.T) Options {
+				return Options{AWSOperatorRolesFile: "/nonexistent/path/roles.json"}
+			},
+			expectError: true,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			opts := test.setup(t)
+			err := opts.Complete()
+			if test.expectError {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+				if test.validate != nil {
+					test.validate(g, opts)
 				}
 			}
 		})
