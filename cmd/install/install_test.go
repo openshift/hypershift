@@ -1041,8 +1041,13 @@ func TestApplyDefaults(t *testing.T) {
 			expectedReplicas: 2,
 		},
 		{
-			name:             "When no special options are set, it should default replicas to 1",
+			name:             "When CAPI conversion webhook is enabled (default), it should set replicas to 2",
 			opts:             Options{},
+			expectedReplicas: 2,
+		},
+		{
+			name:             "When all webhooks are disabled, it should default replicas to 1",
+			opts:             Options{DisableCAPIConversionWebhook: true},
 			expectedReplicas: 1,
 		},
 	}
@@ -1792,6 +1797,192 @@ func TestHyperShiftNamespaceBuild(t *testing.T) {
 				g.Expect(ns.Labels).To(HaveKeyWithValue("openshift.io/cluster-monitoring", "true"))
 			} else {
 				g.Expect(ns.Labels).NotTo(HaveKey("openshift.io/cluster-monitoring"))
+			}
+		})
+	}
+}
+
+func TestHyperShiftOperatorManifests_WebhookFlags(t *testing.T) {
+	tests := []struct {
+		name                    string
+		opts                    Options
+		expectWebhookVolume     bool
+		expectCertDirArg        bool
+		expectValidatingArg     bool
+		expectCAPICRDConversion bool
+	}{
+		{
+			name: "When no webhook flags are set but CAPI conversion is enabled by default, it should add webhook resources and CRD conversion",
+			opts: Options{
+				PrivatePlatform: string(hyperv1.NonePlatform),
+			},
+			expectWebhookVolume:     true,
+			expectCertDirArg:        true,
+			expectValidatingArg:     false,
+			expectCAPICRDConversion: true,
+		},
+		{
+			name: "When DisableCAPIConversionWebhook is true and no other webhooks, it should not add webhook resources or CRD conversion",
+			opts: Options{
+				PrivatePlatform:              string(hyperv1.NonePlatform),
+				DisableCAPIConversionWebhook: true,
+			},
+			expectWebhookVolume:     false,
+			expectCertDirArg:        false,
+			expectValidatingArg:     false,
+			expectCAPICRDConversion: false,
+		},
+		{
+			name: "When EnableConversionWebhook is true, it should add webhook resources",
+			opts: Options{
+				PrivatePlatform:              string(hyperv1.NonePlatform),
+				DisableCAPIConversionWebhook: true,
+				EnableConversionWebhook:      true,
+			},
+			expectWebhookVolume:     true,
+			expectCertDirArg:        true,
+			expectValidatingArg:     false,
+			expectCAPICRDConversion: false,
+		},
+		{
+			name: "When EnableValidatingWebhook is true, it should add webhook resources and validating arg",
+			opts: Options{
+				PrivatePlatform:              string(hyperv1.NonePlatform),
+				DisableCAPIConversionWebhook: true,
+				EnableValidatingWebhook:      true,
+			},
+			expectWebhookVolume:     true,
+			expectCertDirArg:        true,
+			expectValidatingArg:     true,
+			expectCAPICRDConversion: false,
+		},
+		{
+			name: "When EnableDefaultingWebhook is true, it should add webhook resources",
+			opts: Options{
+				PrivatePlatform:              string(hyperv1.NonePlatform),
+				DisableCAPIConversionWebhook: true,
+				EnableDefaultingWebhook:      true,
+			},
+			expectWebhookVolume:     true,
+			expectCertDirArg:        true,
+			expectValidatingArg:     false,
+			expectCAPICRDConversion: false,
+		},
+		{
+			name: "When EnableAuditLogPersistence is true, it should add webhook resources",
+			opts: Options{
+				PrivatePlatform:              string(hyperv1.NonePlatform),
+				DisableCAPIConversionWebhook: true,
+				EnableAuditLogPersistence:    true,
+			},
+			expectWebhookVolume:     true,
+			expectCertDirArg:        true,
+			expectValidatingArg:     false,
+			expectCAPICRDConversion: false,
+		},
+		{
+			name: "When all webhook flags are enabled, it should add webhook resources with validating arg and CRD conversion",
+			opts: Options{
+				PrivatePlatform:         string(hyperv1.NonePlatform),
+				EnableConversionWebhook: true,
+				EnableDefaultingWebhook: true,
+				EnableValidatingWebhook: true,
+			},
+			expectWebhookVolume:     true,
+			expectCertDirArg:        true,
+			expectValidatingArg:     true,
+			expectCAPICRDConversion: true,
+		},
+		{
+			name: "When all enable flags are false and DisableCAPIConversionWebhook is default (false), it should add webhook resources and CRD conversion",
+			opts: Options{
+				PrivatePlatform:           string(hyperv1.NonePlatform),
+				EnableConversionWebhook:   false,
+				EnableDefaultingWebhook:   false,
+				EnableValidatingWebhook:   false,
+				EnableAuditLogPersistence: false,
+			},
+			expectWebhookVolume:     true,
+			expectCertDirArg:        true,
+			expectValidatingArg:     false,
+			expectCAPICRDConversion: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			tc.opts.HyperShiftImage = "test-image"
+			tc.opts.Namespace = "hypershift"
+			tc.opts.RenderNamespace = true
+
+			ctx := context.Background()
+			crds, objects, err := hyperShiftOperatorManifests(ctx, nil, tc.opts)
+			g.Expect(err).NotTo(HaveOccurred())
+
+			// Find the operator deployment
+			var deployment *appsv1.Deployment
+			for _, obj := range objects {
+				if d, ok := obj.(*appsv1.Deployment); ok {
+					deployment = d
+					break
+				}
+			}
+			g.Expect(deployment).NotTo(BeNil(), "should find operator deployment")
+
+			container := deployment.Spec.Template.Spec.Containers[0]
+
+			hasServingCertVolume := false
+			for _, v := range deployment.Spec.Template.Spec.Volumes {
+				if v.Name == "serving-cert" {
+					hasServingCertVolume = true
+					break
+				}
+			}
+
+			hasServingCertMount := false
+			for _, vm := range container.VolumeMounts {
+				if vm.Name == "serving-cert" {
+					hasServingCertMount = true
+					break
+				}
+			}
+
+			hasCertDirArg := false
+			hasValidatingArg := false
+			for _, arg := range container.Args {
+				if arg == "--cert-dir=/var/run/secrets/serving-cert" {
+					hasCertDirArg = true
+				}
+				if arg == "--enable-validating-webhook=true" {
+					hasValidatingArg = true
+				}
+			}
+
+			g.Expect(hasServingCertVolume).To(Equal(tc.expectWebhookVolume), "serving-cert volume")
+			g.Expect(hasServingCertMount).To(Equal(tc.expectWebhookVolume), "serving-cert volume mount")
+			g.Expect(hasCertDirArg).To(Equal(tc.expectCertDirArg), "--cert-dir arg")
+			g.Expect(hasValidatingArg).To(Equal(tc.expectValidatingArg), "--enable-validating-webhook arg")
+
+			// Validate CAPI CRD conversion webhook configuration
+			for _, obj := range crds {
+				crd, ok := obj.(*apiextensionsv1.CustomResourceDefinition)
+				if !ok {
+					continue
+				}
+				override, isCAPICRD := crdassets.CAPICRDOverrides[crd.Name]
+				if !isCAPICRD || !override.NeedsConversion {
+					continue
+				}
+
+				if tc.expectCAPICRDConversion {
+					g.Expect(crd.Spec.Conversion).NotTo(BeNil(), "CRD %s should have conversion", crd.Name)
+					g.Expect(crd.Spec.Conversion.Strategy).To(Equal(apiextensionsv1.WebhookConverter), "CRD %s conversion strategy", crd.Name)
+					g.Expect(crd.Spec.Conversion.Webhook).NotTo(BeNil(), "CRD %s should have webhook config", crd.Name)
+					g.Expect(crd.Spec.Conversion.Webhook.ConversionReviewVersions).To(ConsistOf("v1beta1", "v1beta2"), "CRD %s review versions", crd.Name)
+				} else {
+					g.Expect(crd.Spec.Conversion).To(BeNil(), "CRD %s should not have conversion when CAPI conversion is disabled", crd.Name)
+				}
 			}
 		})
 	}

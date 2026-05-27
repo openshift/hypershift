@@ -91,6 +91,7 @@ type Options struct {
 	EnableDefaultingWebhook                   bool
 	EnableValidatingWebhook                   bool
 	EnableConversionWebhook                   bool
+	DisableCAPIConversionWebhook              bool
 	Template                                  bool
 	Format                                    string
 	OutputFile                                string
@@ -353,7 +354,7 @@ func (o *Options) ApplyDefaults() {
 	switch {
 	case o.Development:
 		o.HyperShiftOperatorReplicas = 0
-	case o.EnableDefaultingWebhook || o.EnableConversionWebhook || o.EnableValidatingWebhook:
+	case o.EnableDefaultingWebhook || o.EnableConversionWebhook || o.EnableValidatingWebhook || !o.DisableCAPIConversionWebhook:
 		o.HyperShiftOperatorReplicas = 2
 	default:
 		o.HyperShiftOperatorReplicas = 1
@@ -376,6 +377,7 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().BoolVar(&opts.EnableDefaultingWebhook, "enable-defaulting-webhook", opts.EnableDefaultingWebhook, "Enable webhook for defaulting hypershift API types")
 	cmd.PersistentFlags().BoolVar(&opts.EnableValidatingWebhook, "enable-validating-webhook", opts.EnableValidatingWebhook, "Enable webhook for validating hypershift API types")
 	cmd.PersistentFlags().BoolVar(&opts.EnableConversionWebhook, "enable-conversion-webhook", opts.EnableConversionWebhook, "Enable webhook for converting hypershift API types")
+	cmd.PersistentFlags().BoolVar(&opts.DisableCAPIConversionWebhook, "disable-capi-conversion-webhook", opts.DisableCAPIConversionWebhook, "Disable conversion webhook for CAPI CRDs during v1beta1/v1beta2 transition")
 	cmd.PersistentFlags().BoolVar(&opts.ExcludeEtcdManifests, "exclude-etcd", opts.ExcludeEtcdManifests, "Leave out etcd manifests")
 	cmd.PersistentFlags().Var(&opts.PlatformMonitoring, "platform-monitoring", "Select an option for enabling platform cluster monitoring. Valid values are: None, OperatorOnly, All")
 	cmd.PersistentFlags().BoolVar(&opts.EnableCIDebugOutput, "enable-ci-debug-output", opts.EnableCIDebugOutput, "If extra CI debug output should be enabled")
@@ -944,10 +946,12 @@ func setupCRDs(ctx context.Context, client crclient.Client, opts Options, operat
 					needsConversion = true
 					conversionReviewVersions = []string{"v1beta1", "v1alpha1"}
 
-					// CAPI conversion is always required during v1beta1 -> v1beta2 transition period
-				} else if override, ok := crdassets.CAPICRDOverrides[crd.Name]; ok && override.NeedsConversion {
-					needsConversion = true
-					conversionReviewVersions = []string{"v1beta1", "v1beta2"}
+					// CAPI conversion is required during v1beta1 -> v1beta2 transition period
+				} else if !opts.DisableCAPIConversionWebhook {
+					if override, ok := crdassets.CAPICRDOverrides[crd.Name]; ok && override.NeedsConversion {
+						needsConversion = true
+						conversionReviewVersions = []string{"v1beta1", "v1beta2"}
+					}
 				}
 
 				if !needsConversion {
@@ -1255,7 +1259,7 @@ func setupOperatorResources(opts Options, userCABundleCM *corev1.ConfigMap, trus
 		Replicas:                                opts.HyperShiftOperatorReplicas,
 		EnableOCPClusterMonitoring:              opts.PlatformMonitoring == metrics.PlatformMonitoringAll,
 		EnableCIDebugOutput:                     opts.EnableCIDebugOutput,
-		EnableWebhook:                           opts.EnableDefaultingWebhook || opts.EnableConversionWebhook || opts.EnableValidatingWebhook || opts.EnableAuditLogPersistence,
+		EnableWebhook:                           opts.EnableDefaultingWebhook || opts.EnableConversionWebhook || !opts.DisableCAPIConversionWebhook || opts.EnableValidatingWebhook || opts.EnableAuditLogPersistence,
 		EnableValidatingWebhook:                 opts.EnableValidatingWebhook,
 		PrivatePlatform:                         opts.PrivatePlatform,
 		AWSPrivateRegion:                        opts.AWSPrivateRegion,
