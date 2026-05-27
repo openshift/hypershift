@@ -10,18 +10,17 @@ metadata:
     pipelinesascode.tekton.dev/max-keep-runs: "3"
     pipelinesascode.tekton.dev/on-cel-expression: |
       event == "pull_request"
-      && target_branch == "main"
+      && target_branch == "release-4.21"
       && ( "control-plane-operator/***".pathChanged() ||
            "support/***".pathChanged() ||
            ".tekton/control-plane-operator*".pathChanged() ||
-           "/Containerfile.control-plane-operator".pathChanged() )
-    pipelinesascode.tekton.dev/pipeline: ".tekton/pipelines/common-operator-build.yaml"
+           "/Containerfile.control-plane".pathChanged() )
   creationTimestamp:
   labels:
-    appstudio.openshift.io/application: control-plane-operator
-    appstudio.openshift.io/component: control-plane-operator-main
+    appstudio.openshift.io/application: control-plane-operator-4-21
+    appstudio.openshift.io/component: control-plane-operator-4-21
     pipelines.appstudio.openshift.io/type: build
-  name: control-plane-operator-main-on-pull-request
+  name: control-plane-operator-4-21-on-pull-request
   namespace: crt-redhat-acm-tenant
 spec:
   params:
@@ -30,7 +29,7 @@ spec:
   - name: revision
     value: '{{revision}}'
   - name: output-image
-    value: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-main:on-pr-{{revision}}
+    value: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-21:on-pr-{{revision}}
   - name: image-expires-after
     value: 5d
   - name: build-platforms
@@ -40,10 +39,21 @@ spec:
     value: /Containerfile.control-plane
   - name: path-context
     value: .
+  - name: build-source-image
+    value: "true"
+  - name: hermetic
+    value: "true"
   pipelineRef:
-    name: hypershift-common-operator-build
+    resolver: git
+    params:
+      - name: url
+        value: "https://github.com/openshift/hypershift.git"
+      - name: revision
+        value: main
+      - name: pathInRepo
+        value: .tekton/pipelines/common-operator-build.yaml
   taskRunTemplate:
-    serviceAccountName: build-pipeline-control-plane-operator-main
+    serviceAccountName: build-pipeline-control-plane-operator-4-21
   workspaces:
   - name: git-auth
     secret:
