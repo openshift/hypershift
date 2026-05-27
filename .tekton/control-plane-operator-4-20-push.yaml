@@ -15,7 +15,7 @@ metadata:
            "/Containerfile.control-plane-operator".pathChanged() )
   creationTimestamp:
   labels:
-    appstudio.openshift.io/application: control-plane-operator
+    appstudio.openshift.io/application: control-plane-operator-4-20
     appstudio.openshift.io/component: control-plane-operator-4-20
     pipelines.appstudio.openshift.io/type: build
   name: control-plane-operator-4-20-on-push
