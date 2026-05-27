@@ -614,6 +614,7 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
 					SecretName: "manager-serving-cert",
+					Optional:   ptr.To(true),
 				},
 			},
 		})
@@ -2091,7 +2092,6 @@ func (o HyperShiftReaderClusterRoleBinding) Build() *rbacv1.ClusterRoleBinding {
 type HyperShiftMutatingWebhookConfiguration struct {
 	Namespace                 *corev1.Namespace
 	EnableAuditLogPersistence bool
-	CABundle                  []byte
 }
 
 const (
@@ -2130,7 +2130,7 @@ func (o HyperShiftMutatingWebhookConfiguration) Build() *admissionregistrationv1
 					},
 				},
 				ClientConfig: admissionregistrationv1.WebhookClientConfig{
-					CABundle: o.CABundle,
+					CABundle: nil,
 					Service: &admissionregistrationv1.ServiceReference{
 						Namespace: "hypershift",
 						Name:      "operator",
@@ -2157,7 +2157,7 @@ func (o HyperShiftMutatingWebhookConfiguration) Build() *admissionregistrationv1
 					},
 				},
 				ClientConfig: admissionregistrationv1.WebhookClientConfig{
-					CABundle: o.CABundle,
+					CABundle: nil,
 					Service: &admissionregistrationv1.ServiceReference{
 						Namespace: "hypershift",
 						Name:      "operator",
@@ -2198,7 +2198,7 @@ func (o HyperShiftMutatingWebhookConfiguration) Build() *admissionregistrationv1
 					},
 				},
 				ClientConfig: admissionregistrationv1.WebhookClientConfig{
-					CABundle: o.CABundle,
+					CABundle: nil,
 					Service: &admissionregistrationv1.ServiceReference{
 						Namespace: "hypershift",
 						Name:      "operator",
@@ -2228,7 +2228,7 @@ func (o HyperShiftMutatingWebhookConfiguration) Build() *admissionregistrationv1
 					},
 				},
 				ClientConfig: admissionregistrationv1.WebhookClientConfig{
-					CABundle: o.CABundle,
+					CABundle: nil,
 					Service: &admissionregistrationv1.ServiceReference{
 						Namespace: "hypershift",
 						Name:      "operator",
@@ -2249,7 +2249,6 @@ func (o HyperShiftMutatingWebhookConfiguration) Build() *admissionregistrationv1
 
 type HyperShiftValidatingWebhookConfiguration struct {
 	Namespace string
-	CABundle  []byte
 }
 
 func (o HyperShiftValidatingWebhookConfiguration) Build() *admissionregistrationv1.ValidatingWebhookConfiguration {
@@ -2286,7 +2285,7 @@ func (o HyperShiftValidatingWebhookConfiguration) Build() *admissionregistration
 					},
 				},
 				ClientConfig: admissionregistrationv1.WebhookClientConfig{
-					CABundle: o.CABundle,
+					CABundle: nil,
 					Service: &admissionregistrationv1.ServiceReference{
 						Namespace: "hypershift",
 						Name:      "operator",
@@ -2315,7 +2314,7 @@ func (o HyperShiftValidatingWebhookConfiguration) Build() *admissionregistration
 					},
 				},
 				ClientConfig: admissionregistrationv1.WebhookClientConfig{
-					CABundle: o.CABundle,
+					CABundle: nil,
 					Service: &admissionregistrationv1.ServiceReference{
 						Namespace: "hypershift",
 						Name:      "operator",

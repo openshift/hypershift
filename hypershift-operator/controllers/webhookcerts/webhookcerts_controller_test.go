@@ -2,6 +2,8 @@ package webhookcerts
 
 import (
 	"context"
+	"crypto/x509"
+	"encoding/pem"
 	"testing"
 	"time"
 
@@ -407,6 +409,110 @@ func TestGenerateInitialWebhookCerts(t *testing.T) {
 		g.Expect(servingSecret.Data).To(HaveKey(corev1.TLSCertKey))
 		g.Expect(servingSecret.Data).To(HaveKey(corev1.TLSPrivateKeyKey))
 
+	})
+}
+
+func TestEnsureWebhookCerts(t *testing.T) {
+	t.Run("When no secrets exist it should create secrets", func(t *testing.T) {
+		g := NewWithT(t)
+
+		cl := fake.NewClientBuilder().WithScheme(newScheme(t)).Build()
+
+		err := EnsureWebhookCerts(t.Context(), cl, "hypershift", "operator")
+		g.Expect(err).ToNot(HaveOccurred())
+
+		caSecret := &corev1.Secret{}
+		g.Expect(cl.Get(t.Context(), client.ObjectKey{Name: CASecretName, Namespace: "hypershift"}, caSecret)).To(Succeed())
+		g.Expect(caSecret.Data).To(HaveKey(certs.CASignerCertMapKey))
+
+		servingSecret := &corev1.Secret{}
+		g.Expect(cl.Get(t.Context(), client.ObjectKey{Name: ServingCertSecretName, Namespace: "hypershift"}, servingSecret)).To(Succeed())
+		g.Expect(servingSecret.Data).To(HaveKey(corev1.TLSCertKey))
+		g.Expect(servingSecret.Data).To(HaveKey(corev1.TLSPrivateKeyKey))
+		g.Expect(servingSecret.Type).To(Equal(corev1.SecretTypeTLS))
+	})
+
+	t.Run("When secrets already exist with valid data it should not modify them", func(t *testing.T) {
+		g := NewWithT(t)
+
+		caSecret, servingSecret, _, err := GenerateInitialWebhookCerts("hypershift", "operator")
+		g.Expect(err).ToNot(HaveOccurred())
+
+		cl := fake.NewClientBuilder().WithScheme(newScheme(t)).WithObjects(caSecret, servingSecret).Build()
+
+		err = EnsureWebhookCerts(t.Context(), cl, "hypershift", "operator")
+		g.Expect(err).ToNot(HaveOccurred())
+
+		updatedServingSecret := &corev1.Secret{}
+		g.Expect(cl.Get(t.Context(), client.ObjectKey{Name: ServingCertSecretName, Namespace: "hypershift"}, updatedServingSecret)).To(Succeed())
+		g.Expect(updatedServingSecret.Data[corev1.TLSCertKey]).To(Equal(servingSecret.Data[corev1.TLSCertKey]))
+		g.Expect(updatedServingSecret.Data[corev1.TLSPrivateKeyKey]).To(Equal(servingSecret.Data[corev1.TLSPrivateKeyKey]))
+
+		updatedCASecret := &corev1.Secret{}
+		g.Expect(cl.Get(t.Context(), client.ObjectKey{Name: CASecretName, Namespace: "hypershift"}, updatedCASecret)).To(Succeed())
+		g.Expect(updatedCASecret.Data[certs.CASignerCertMapKey]).To(Equal(caSecret.Data[certs.CASignerCertMapKey]))
+		g.Expect(updatedCASecret.Data[certs.CASignerKeyMapKey]).To(Equal(caSecret.Data[certs.CASignerKeyMapKey]))
+	})
+
+	t.Run("When serving cert secret exists with empty data it should regenerate and update", func(t *testing.T) {
+		g := NewWithT(t)
+
+		emptySecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      ServingCertSecretName,
+				Namespace: "hypershift",
+			},
+			Type: corev1.SecretTypeTLS,
+			Data: map[string][]byte{},
+		}
+
+		cl := fake.NewClientBuilder().WithScheme(newScheme(t)).WithObjects(emptySecret).Build()
+
+		err := EnsureWebhookCerts(t.Context(), cl, "hypershift", "operator")
+		g.Expect(err).ToNot(HaveOccurred())
+
+		updatedServingSecret := &corev1.Secret{}
+		g.Expect(cl.Get(t.Context(), client.ObjectKey{Name: ServingCertSecretName, Namespace: "hypershift"}, updatedServingSecret)).To(Succeed())
+		g.Expect(updatedServingSecret.Data[corev1.TLSCertKey]).ToNot(BeEmpty())
+		g.Expect(updatedServingSecret.Data[corev1.TLSPrivateKeyKey]).ToNot(BeEmpty())
+
+		updatedCASecret := &corev1.Secret{}
+		g.Expect(cl.Get(t.Context(), client.ObjectKey{Name: CASecretName, Namespace: "hypershift"}, updatedCASecret)).To(Succeed())
+		g.Expect(updatedCASecret.Data[certs.CASignerCertMapKey]).ToNot(BeEmpty())
+		g.Expect(updatedCASecret.Data[certs.CASignerKeyMapKey]).ToNot(BeEmpty())
+	})
+
+	t.Run("When CA exists but serving cert is missing it should regenerate both secrets", func(t *testing.T) {
+		g := NewWithT(t)
+
+		caSecret, _, _, err := GenerateInitialWebhookCerts("hypershift", "operator")
+		g.Expect(err).ToNot(HaveOccurred())
+
+		cl := fake.NewClientBuilder().WithScheme(newScheme(t)).WithObjects(caSecret).Build()
+
+		err = EnsureWebhookCerts(t.Context(), cl, "hypershift", "operator")
+		g.Expect(err).ToNot(HaveOccurred())
+
+		// Both secrets should exist with valid data.
+		updatedCASecret := &corev1.Secret{}
+		g.Expect(cl.Get(t.Context(), client.ObjectKey{Name: CASecretName, Namespace: "hypershift"}, updatedCASecret)).To(Succeed())
+		g.Expect(updatedCASecret.Data[certs.CASignerCertMapKey]).ToNot(BeEmpty())
+		g.Expect(updatedCASecret.Data[certs.CASignerKeyMapKey]).ToNot(BeEmpty())
+
+		servingSecret := &corev1.Secret{}
+		g.Expect(cl.Get(t.Context(), client.ObjectKey{Name: ServingCertSecretName, Namespace: "hypershift"}, servingSecret)).To(Succeed())
+		g.Expect(servingSecret.Data[corev1.TLSCertKey]).ToNot(BeEmpty())
+		g.Expect(servingSecret.Data[corev1.TLSPrivateKeyKey]).ToNot(BeEmpty())
+
+		// Verify the serving cert was signed by the (possibly replaced) CA.
+		caPool := x509.NewCertPool()
+		g.Expect(caPool.AppendCertsFromPEM(updatedCASecret.Data[certs.CASignerCertMapKey])).To(BeTrue())
+		block, _ := pem.Decode(servingSecret.Data[corev1.TLSCertKey])
+		g.Expect(block).ToNot(BeNil())
+		leaf, err := x509.ParseCertificate(block.Bytes)
+		g.Expect(err).ToNot(HaveOccurred())
+		_, err = leaf.Verify(x509.VerifyOptions{Roots: caPool})
+		g.Expect(err).ToNot(HaveOccurred())
 	})
 }
 

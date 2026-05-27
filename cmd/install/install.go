@@ -30,7 +30,6 @@ import (
 	crdassets "github.com/openshift/hypershift/cmd/install/assets/crds"
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/webhookcerts"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/metrics"
@@ -717,22 +716,10 @@ func hyperShiftOperatorManifests(ctx context.Context, client crclient.Client, op
 	operatorServiceAccount, rbacObjs := setupRBAC(opts, operatorNamespace)
 	objects = append(objects, rbacObjs...)
 
-	// Generate self-managed webhook CA and serving cert when any webhook is enabled.
-	var webhookCABundle []byte
-	if opts.EnableDefaultingWebhook || opts.EnableConversionWebhook || opts.EnableValidatingWebhook || opts.EnableAuditLogPersistence {
-		caSecret, servingSecret, caBundle, err := webhookcerts.GenerateInitialWebhookCerts(operatorNamespace.Name, assets.HypershiftOperatorName)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to generate webhook certs: %w", err)
-		}
-		objects = append(objects, caSecret, servingSecret)
-		webhookCABundle = caBundle
-	}
-
 	if opts.EnableDefaultingWebhook || opts.EnableAuditLogPersistence {
 		mutatingWebhookConfiguration := assets.HyperShiftMutatingWebhookConfiguration{
 			Namespace:                 operatorNamespace,
 			EnableAuditLogPersistence: opts.EnableAuditLogPersistence,
-			CABundle:                  webhookCABundle,
 		}.Build()
 		objects = append(objects, mutatingWebhookConfiguration)
 	}
@@ -740,7 +727,6 @@ func hyperShiftOperatorManifests(ctx context.Context, client crclient.Client, op
 	if opts.EnableValidatingWebhook {
 		validatingWebhookConfiguration := assets.HyperShiftValidatingWebhookConfiguration{
 			Namespace: operatorNamespace.Name,
-			CABundle:  webhookCABundle,
 		}.Build()
 		objects = append(objects, validatingWebhookConfiguration)
 	}
@@ -792,7 +778,7 @@ func hyperShiftOperatorManifests(ctx context.Context, client crclient.Client, op
 		objects = append(objects, sharedIngressObjs...)
 	}
 
-	crds, err = setupCRDs(ctx, client, opts, operatorNamespace, operatorService, webhookCABundle)
+	crds, err = setupCRDs(ctx, client, opts, operatorNamespace, operatorService)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -835,7 +821,7 @@ var ipamCRDNames = set.New(
 // related to etcd are excluded from the list. If the option EnableConversionWebhook is set to true, the CRDs related
 // to hypershift.openshift.io group are annotated with the necessary annotations to enable the conversion webhook.
 // If a client is provided, IPAM CRDs that already exist in the cluster are skipped to avoid conflicts.
-func setupCRDs(ctx context.Context, client crclient.Client, opts Options, operatorNamespace *corev1.Namespace, operatorService *corev1.Service, webhookCABundle []byte) ([]crclient.Object, error) {
+func setupCRDs(ctx context.Context, client crclient.Client, opts Options, operatorNamespace *corev1.Namespace, operatorService *corev1.Service) ([]crclient.Object, error) {
 	// Build a set of existing IPAM CRDs if a client is available
 	existingIPAMCRDs := set.New[string]()
 	if client != nil {
@@ -928,7 +914,7 @@ func setupCRDs(ctx context.Context, client crclient.Client, opts Options, operat
 									Port:      ptr.To[int32](443),
 									Path:      ptr.To("/convert"),
 								},
-								CABundle: webhookCABundle,
+								CABundle: nil,
 							},
 							ConversionReviewVersions: []string{"v1beta1", "v1alpha1"},
 						},
