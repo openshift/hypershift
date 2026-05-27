@@ -16,28 +16,14 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       (github.event.issue.pull_request &&
        contains(github.event.comment.body, '/test-wif') &&
-       github.event.comment.author_association == 'MEMBER' ||
-       github.event.comment.author_association == 'OWNER')
+       (github.event.comment.author_association == 'MEMBER' ||
+        github.event.comment.author_association == 'OWNER' ||
+        github.event.comment.author_association == 'COLLABORATOR'))
     runs-on: arc-runner-set
     timeout-minutes: 10
     env:
       HOME: /tmp
     steps:
-      - name: Get PR ref
-        if: github.event_name == 'issue_comment'
-        id: pr
-        run: |
-          curl -fsSL -H "Authorization: token ${{ github.token }}" \
-            "https://api.github.com/repos/${{ github.repository }}/pulls/${{ github.event.issue.number }}" > /tmp/pr.json
-          echo "ref=$(jq -r '.head.sha' /tmp/pr.json)" >> "$GITHUB_OUTPUT"
-          echo "repo=$(jq -r '.head.repo.full_name' /tmp/pr.json)" >> "$GITHUB_OUTPUT"
-
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          ref: ${{ steps.pr.outputs.ref || github.sha }}
-          repository: ${{ steps.pr.outputs.repo || github.repository }}
-          persist-credentials: false
-
       - name: Authenticate to GCP via WIF
         uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2
         with:
@@ -45,16 +31,12 @@ jobs:
           service_account: claude-gha@hosted-control-planes.iam.gserviceaccount.com
           workload_identity_provider: projects/21066242673/locations/global/workloadIdentityPools/itpc-identity-pool/providers/github-com
 
-      - name: Install Claude Code
-        run: |
-          curl -fsSL https://claude.ai/install.sh | bash
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
-
-      - name: Test Claude Code
+      - name: Test Claude Code via Vertex AI
+        uses: anthropics/claude-code-action@787c5a0ce96a9a6cfb050ea0c8f4c05f2447c251 # v1
+        with:
+          use_vertex: "true"
+          prompt: "Say hello in one sentence"
+          claude_args: "--max-turns 1"
         env:
-          CLAUDE_CODE_USE_VERTEX: "1"
           CLOUD_ML_REGION: global
           ANTHROPIC_VERTEX_PROJECT_ID: hosted-control-planes
-        run: |
-          claude --version
-          claude -p "Say hello in one sentence" --max-turns 1
