@@ -46,6 +46,11 @@ func TestParseComponentVersionsLabel(t *testing.T) {
 			displayNames: "mycomponent=Invalid <Name>",
 			expectError:  true,
 		},
+		{
+			name:        "When version is not valid semver it should return an error",
+			label:       "mycomponent=not-a-version",
+			expectError: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -97,6 +102,25 @@ func TestReadComponentVersions(t *testing.T) {
 				},
 			},
 			expectKey: "machine-os",
+		},
+		{
+			name: "When version annotation has invalid semver, it should return an error",
+			tags: []imageapi.TagReference{
+				{
+					Name: "bad-image",
+					Annotations: map[string]string{
+						annotationBuildVersions: "component=not-a-semver",
+					},
+				},
+				{
+					Name: "good-image",
+					Annotations: map[string]string{
+						annotationBuildVersions: "component=1.0.0",
+					},
+				},
+			},
+			expectError: true,
+			expectKey:   "component",
 		},
 		{
 			name: "When multiple non-machine-os versions exist it should return an error",

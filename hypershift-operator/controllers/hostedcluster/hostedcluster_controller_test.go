@@ -8,6 +8,8 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"reflect"
 	"strings"
@@ -66,6 +68,8 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -6928,6 +6932,212 @@ func TestComputeEndpointServiceCondition(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			condition := computeEndpointServiceCondition(tc.resourceConditions, tc.conditionType, testErrorReason, testSuccessReason, testNotFoundMsg)
 			g.Expect(condition).To(Equal(tc.expected))
+		})
+	}
+}
+
+func TestListNodePools(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name             string
+		objects          []crclient.Object
+		interceptorFuncs interceptor.Funcs
+		clusterNamespace string
+		clusterName      string
+		wantErr          bool
+		errSubstr        string
+		expectedCount    int
+	}{
+		{
+			name: "When client List succeeds with matching NodePools, it should return filtered results",
+			objects: []crclient.Object{
+				&hyperv1.NodePool{
+					ObjectMeta: metav1.ObjectMeta{Name: "np1", Namespace: "clusters"},
+					Spec:       hyperv1.NodePoolSpec{ClusterName: "my-cluster"},
+				},
+				&hyperv1.NodePool{
+					ObjectMeta: metav1.ObjectMeta{Name: "np2", Namespace: "clusters"},
+					Spec:       hyperv1.NodePoolSpec{ClusterName: "other-cluster"},
+				},
+			},
+			clusterNamespace: "clusters",
+			clusterName:      "my-cluster",
+			expectedCount:    1,
+		},
+		{
+			name:    "When client List fails, it should return a wrapped error",
+			objects: []crclient.Object{},
+			interceptorFuncs: interceptor.Funcs{
+				List: func(ctx context.Context, c crclient.WithWatch, list crclient.ObjectList, opts ...crclient.ListOption) error {
+					return fmt.Errorf("API server unavailable")
+				},
+			},
+			clusterNamespace: "clusters",
+			clusterName:      "my-cluster",
+			wantErr:          true,
+			errSubstr:        "failed getting nodePool list",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			builder := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tt.objects...)
+			if tt.interceptorFuncs.List != nil {
+				builder = builder.WithInterceptorFuncs(tt.interceptorFuncs)
+			}
+			c := builder.Build()
+
+			result, err := listNodePools(t.Context(), c, tt.clusterNamespace, tt.clusterName)
+			if tt.wantErr {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring(tt.errSubstr))
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(result).To(HaveLen(tt.expectedCount))
+				for _, np := range result {
+					g.Expect(np.Namespace).To(Equal(tt.clusterNamespace))
+					g.Expect(np.Spec.ClusterName).To(Equal(tt.clusterName))
+				}
+			}
+		})
+	}
+}
+
+func TestReconcileCLISecretsErrors(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name             string
+		interceptorFuncs interceptor.Funcs
+		existingSecrets  []crclient.Object
+		createOrUpdate   upsert.CreateOrUpdateFN
+		wantErrSubstr    string
+	}{
+		{
+			name: "When client List fails, it should return a wrapped error",
+			interceptorFuncs: interceptor.Funcs{
+				List: func(ctx context.Context, c crclient.WithWatch, list crclient.ObjectList, opts ...crclient.ListOption) error {
+					return fmt.Errorf("connection refused")
+				},
+			},
+			wantErrSubstr: "failed to retrieve cli created secrets",
+		},
+		{
+			name: "When createOrUpdate fails for a secret, it should return a wrapped error",
+			existingSecrets: []crclient.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "cli-secret",
+						Namespace: "clusters",
+						Labels: map[string]string{
+							util.DeleteWithClusterLabelName: "true",
+							util.AutoInfraLabelName:         "test-infra",
+						},
+					},
+				},
+			},
+			createOrUpdate: func(ctx context.Context, c crclient.Client, obj crclient.Object, f controllerutil.MutateFn) (controllerutil.OperationResult, error) {
+				return controllerutil.OperationResultNone, fmt.Errorf("API conflict")
+			},
+			wantErrSubstr: "failed to set 'cli-secret' secret's owner reference",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			builder := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				WithInterceptorFuncs(tt.interceptorFuncs)
+			if len(tt.existingSecrets) > 0 {
+				builder = builder.WithObjects(tt.existingSecrets...)
+			}
+			cli := builder.Build()
+
+			r := &HostedClusterReconciler{Client: cli}
+			hc := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: "clusters",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					InfraID: "test-infra",
+				},
+			}
+
+			createOrUpdate := tt.createOrUpdate
+			if createOrUpdate == nil {
+				createOrUpdate = upsert.New(false).CreateOrUpdate
+			}
+
+			err := r.reconcileCLISecrets(t.Context(), createOrUpdate, hc)
+			g.Expect(err).To(HaveOccurred())
+			g.Expect(err.Error()).To(ContainSubstring(tt.wantErrSubstr))
+		})
+	}
+}
+
+func TestKasServingCertHashFromEndpoint(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name      string
+		setupTLS  bool
+		cancelCtx bool
+		wantErr   bool
+		errSubstr string
+	}{
+		{
+			name:     "When the TLS endpoint is healthy, it should return a non-empty certificate hash",
+			setupTLS: true,
+		},
+		{
+			name:      "When the endpoint is unreachable, it should return a dial error",
+			wantErr:   true,
+			errSubstr: "failed to dial",
+		},
+		{
+			name:      "When the context is canceled, it should return an error",
+			setupTLS:  true,
+			cancelCtx: true,
+			wantErr:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			addr := "127.0.0.1:1"
+			if tt.setupTLS {
+				server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.WriteHeader(http.StatusOK)
+				}))
+				defer server.Close()
+				addr = server.Listener.Addr().String()
+			}
+
+			ctx := t.Context()
+			if tt.cancelCtx {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithCancel(ctx)
+				cancel()
+			}
+
+			r := &HostedClusterReconciler{}
+			hashFn := r.kasServingCertHashFromEndpoint(ctx, addr)
+			hash, err := hashFn()
+
+			if tt.wantErr {
+				g.Expect(err).To(HaveOccurred())
+				if tt.errSubstr != "" {
+					g.Expect(err.Error()).To(ContainSubstring(tt.errSubstr))
+				}
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(hash).ToNot(BeEmpty())
+			}
 		})
 	}
 }

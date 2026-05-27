@@ -1,8 +1,10 @@
 package uwmtelemetry
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -14,12 +16,14 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/yaml"
 )
 
@@ -424,4 +428,133 @@ func TestReconcile(t *testing.T) {
 			test.validate(g, c)
 		})
 	}
+
+	t.Run("When telemeter-client secret Get fails with a non-NotFound error it should return the error", func(t *testing.T) {
+		g := NewWithT(t)
+		ns := "hypershift"
+		deployment := manifests.OperatorDeployment(ns)
+		cv := monitoring.ClusterVersion()
+		cv.Spec.ClusterID = "fake-cluster-id"
+
+		c := fake.NewClientBuilder().
+			WithScheme(api.Scheme).
+			WithObjects(
+				deployment,
+				monitoring.MonitoringNamespace(),
+				monitoring.UWMNamespace(),
+				cv,
+			).
+			WithInterceptorFuncs(interceptor.Funcs{
+				Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+					if _, ok := obj.(*corev1.Secret); ok && key.Name == "telemeter-client" {
+						return fmt.Errorf("API server unavailable")
+					}
+					return c.Get(ctx, key, obj, opts...)
+				},
+			}).
+			Build()
+
+		reconciler := &Reconciler{
+			Client:                 c,
+			CreateOrUpdateProvider: upsert.New(true),
+			errorHandler:           func(obj client.Object, err error) error { return err },
+			Namespace:              ns,
+		}
+		req := ctrl.Request{NamespacedName: client.ObjectKey{Name: "operator", Namespace: ns}}
+		_, err := reconciler.Reconcile(t.Context(), req)
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err).To(MatchError(ContainSubstring("failed to get telemeter-client secret")))
+	})
+
+	t.Run("When operator deployment Get fails it should return the error", func(t *testing.T) {
+		g := NewWithT(t)
+		ns := "hypershift"
+
+		c := fake.NewClientBuilder().
+			WithScheme(api.Scheme).
+			WithInterceptorFuncs(interceptor.Funcs{
+				Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+					if _, ok := obj.(*appsv1.Deployment); ok && key.Name == "operator" {
+						return fmt.Errorf("connection refused")
+					}
+					return c.Get(ctx, key, obj, opts...)
+				},
+			}).
+			Build()
+
+		reconciler := &Reconciler{
+			Client:                 c,
+			CreateOrUpdateProvider: upsert.New(true),
+			errorHandler:           func(obj client.Object, err error) error { return err },
+			Namespace:              ns,
+		}
+		req := ctrl.Request{NamespacedName: client.ObjectKey{Name: "operator", Namespace: ns}}
+		_, err := reconciler.Reconcile(t.Context(), req)
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err).To(MatchError(ContainSubstring("cannot get operator deployment")))
+	})
+
+	t.Run("When monitoring namespace Get fails with a non-NotFound error it should return the error", func(t *testing.T) {
+		g := NewWithT(t)
+		ns := "hypershift"
+		deployment := manifests.OperatorDeployment(ns)
+
+		c := fake.NewClientBuilder().
+			WithScheme(api.Scheme).
+			WithObjects(deployment).
+			WithInterceptorFuncs(interceptor.Funcs{
+				Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+					if _, ok := obj.(*corev1.Namespace); ok && key.Name == "openshift-monitoring" {
+						return fmt.Errorf("forbidden")
+					}
+					return c.Get(ctx, key, obj, opts...)
+				},
+			}).
+			Build()
+
+		reconciler := &Reconciler{
+			Client:                 c,
+			CreateOrUpdateProvider: upsert.New(true),
+			errorHandler:           func(obj client.Object, err error) error { return err },
+			Namespace:              ns,
+		}
+		req := ctrl.Request{NamespacedName: client.ObjectKey{Name: "operator", Namespace: ns}}
+		_, err := reconciler.Reconcile(t.Context(), req)
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err).To(MatchError(ContainSubstring("failed to get monitoring namespace")))
+	})
+
+	t.Run("When clusterversion Get fails it should return the error", func(t *testing.T) {
+		g := NewWithT(t)
+		ns := "hypershift"
+		deployment := manifests.OperatorDeployment(ns)
+
+		c := fake.NewClientBuilder().
+			WithScheme(api.Scheme).
+			WithObjects(
+				deployment,
+				monitoring.MonitoringNamespace(),
+				monitoring.UWMNamespace(),
+			).
+			WithInterceptorFuncs(interceptor.Funcs{
+				Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+					if _, ok := obj.(*configv1.ClusterVersion); ok {
+						return fmt.Errorf("API server unavailable")
+					}
+					return c.Get(ctx, key, obj, opts...)
+				},
+			}).
+			Build()
+
+		reconciler := &Reconciler{
+			Client:                 c,
+			CreateOrUpdateProvider: upsert.New(true),
+			errorHandler:           func(obj client.Object, err error) error { return err },
+			Namespace:              ns,
+		}
+		req := ctrl.Request{NamespacedName: client.ObjectKey{Name: "operator", Namespace: ns}}
+		_, err := reconciler.Reconcile(t.Context(), req)
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err).To(MatchError(ContainSubstring("failed to get clusterversion resource")))
+	})
 }

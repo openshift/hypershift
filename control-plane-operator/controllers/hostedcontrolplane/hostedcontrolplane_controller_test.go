@@ -4,7 +4,11 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
+	"net"
+	"net/http"
+	"net/http/httptest"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -4424,6 +4428,78 @@ func TestReconcileDeletion(t *testing.T) {
 			g.Expect(cond.Status).To(Equal(tt.wantCondStatus))
 		})
 	}
+}
+
+func TestHealthCheckKASEndpoint(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name      string
+		handler   http.HandlerFunc
+		cancelCtx bool
+		wantErr   bool
+		errSubstr string
+	}{
+		{
+			name: "When endpoint returns 200 OK, it should succeed",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusOK)
+			},
+		},
+		{
+			name: "When endpoint returns 503, it should return an unhealthy error",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusServiceUnavailable)
+			},
+			wantErr:   true,
+			errSubstr: "is not healthy",
+		},
+		{
+			name: "When context is canceled, it should return an error",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusOK)
+			},
+			cancelCtx: true,
+			wantErr:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			server := httptest.NewTLSServer(tt.handler)
+			defer server.Close()
+
+			host, portStr, err := net.SplitHostPort(server.Listener.Addr().String())
+			g.Expect(err).ToNot(HaveOccurred())
+			port, err := strconv.Atoi(portStr)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			ctx := t.Context()
+			if tt.cancelCtx {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithCancel(ctx)
+				cancel()
+			}
+
+			err = healthCheckKASEndpoint(ctx, host, port)
+			if tt.wantErr {
+				g.Expect(err).To(HaveOccurred())
+				if tt.errSubstr != "" {
+					g.Expect(err.Error()).To(ContainSubstring(tt.errSubstr))
+				}
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+			}
+		})
+	}
+
+	t.Run("When the ingress point contains invalid characters, it should return a request creation error", func(t *testing.T) {
+		g := NewWithT(t)
+		err := healthCheckKASEndpoint(t.Context(), "host\x7f", 443)
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("invalid control character"))
+	})
 }
 
 // Compile-time assertion that fakeVersionImageMetadataProvider satisfies the interface.
