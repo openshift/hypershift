@@ -51,8 +51,13 @@ func NewComponent() component.ControlPlaneComponent {
 			component.WithPredicate(defragControllerPredicate),
 		).
 		WithManifestAdapter(
-			"defrag-serviceaccount.yaml",
-			component.WithPredicate(defragControllerPredicate),
+			"etcd-serviceaccount.yaml",
+		).
+		WithManifestAdapter(
+			"etcd-self-register-role.yaml",
+		).
+		WithManifestAdapter(
+			"etcd-self-register-rolebinding.yaml",
 		).
 		Build()
 }

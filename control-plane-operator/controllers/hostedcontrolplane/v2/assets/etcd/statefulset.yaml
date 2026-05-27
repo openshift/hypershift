@@ -189,7 +189,7 @@ spec:
       initContainers:
       - args:
         - -c
-        - exec control-plane-operator resolve-dns ${HOSTNAME}.etcd-discovery.${NAMESPACE}.svc
+        - exec control-plane-operator resolve-dns --self-register ${HOSTNAME}.etcd-discovery.${NAMESPACE}.svc
         command:
         - /bin/bash
         env:
@@ -198,6 +198,11 @@ spec:
             fieldRef:
               apiVersion: v1
               fieldPath: metadata.namespace
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: status.podIP
         image: controlplane-operator
         imagePullPolicy: IfNotPresent
         name: ensure-dns

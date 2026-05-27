@@ -22,6 +22,15 @@ status:
   - group: ""
     kind: Service
     name: etcd-discovery
+  - group: rbac.authorization.k8s.io
+    kind: Role
+    name: etcd-self-register
+  - group: rbac.authorization.k8s.io
+    kind: RoleBinding
+    name: etcd-self-register
+  - group: ""
+    kind: ServiceAccount
+    name: etcd
   - group: policy
     kind: PodDisruptionBudget
     name: etcd
