@@ -54,6 +54,7 @@ func main() {
 	jd := json.NewDecoder(os.Stdin)
 	je := json.NewEncoder(os.Stdout)
 	var mu sync.Mutex
+	var wg sync.WaitGroup
 
 	je.Encode(response{KnownCommands: []string{"get", "put", "close"}})
 
@@ -61,7 +62,7 @@ func main() {
 		var req request
 		if err := jd.Decode(&req); err != nil {
 			if err == io.EOF {
-				return
+				break
 			}
 			log.Fatalf("gocacheprog: decode request: %v", err)
 		}
@@ -72,13 +73,16 @@ func main() {
 			}
 		}
 
+		wg.Add(1)
 		go func() {
+			defer wg.Done()
 			res := handleRequest(&req, *roDir, *rwDir)
 			mu.Lock()
 			je.Encode(res)
 			mu.Unlock()
 		}()
 	}
+	wg.Wait()
 }
 
 func handleRequest(req *request, roDir, rwDir string) response {
@@ -97,6 +101,9 @@ func handleRequest(req *request, roDir, rwDir string) response {
 // actionFile returns the path to a Go cache action entry.
 // Format: <dir>/<first-byte-hex>/<full-hex-actionID>-a
 func actionFile(dir string, id []byte) string {
+	if len(id) == 0 {
+		return ""
+	}
 	h := hex.EncodeToString(id)
 	return filepath.Join(dir, h[:2], h+"-a")
 }
@@ -104,6 +111,9 @@ func actionFile(dir string, id []byte) string {
 // outputFile returns the path to a Go cache data file.
 // Format: <dir>/<first-byte-hex>/<full-hex-outputID>-d
 func outputFile(dir string, id []byte) string {
+	if len(id) == 0 {
+		return ""
+	}
 	h := hex.EncodeToString(id)
 	return filepath.Join(dir, h[:2], h+"-d")
 }
@@ -160,17 +170,21 @@ func handleGet(req *request, roDir, rwDir string) response {
 
 func handlePut(req *request, rwDir string) response {
 	dPath := outputFile(rwDir, req.OutputID)
-	os.MkdirAll(filepath.Dir(dPath), 0o777)
+	if err := os.MkdirAll(filepath.Dir(dPath), 0o777); err != nil {
+		return response{ID: req.ID, Err: err.Error()}
+	}
 	if err := os.WriteFile(dPath, req.Body, 0o666); err != nil {
 		return response{ID: req.ID, Err: err.Error()}
 	}
 
 	aPath := actionFile(rwDir, req.ActionID)
-	os.MkdirAll(filepath.Dir(aPath), 0o777)
+	if err := os.MkdirAll(filepath.Dir(aPath), 0o777); err != nil {
+		return response{ID: req.ID, Err: err.Error()}
+	}
 	entry := fmt.Sprintf("v1 %s %s %d %d\n",
 		hex.EncodeToString(req.ActionID),
 		hex.EncodeToString(req.OutputID),
-		len(req.Body),
+		req.BodySize,
 		time.Now().UnixNano(),
 	)
 	if err := os.WriteFile(aPath, []byte(entry), 0o666); err != nil {
