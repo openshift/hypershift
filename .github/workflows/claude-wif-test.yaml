@@ -24,12 +24,11 @@ jobs:
       - name: Get PR ref
         if: github.event_name == 'issue_comment'
         id: pr
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
-          PR_DATA=$(gh api repos/${{ github.repository }}/pulls/${{ github.event.issue.number }})
-          echo "ref=$(echo "$PR_DATA" | jq -r '.head.sha')" >> "$GITHUB_OUTPUT"
-          echo "repo=$(echo "$PR_DATA" | jq -r '.head.repo.full_name')" >> "$GITHUB_OUTPUT"
+          curl -fsSL -H "Authorization: token ${{ github.token }}" \
+            "https://api.github.com/repos/${{ github.repository }}/pulls/${{ github.event.issue.number }}" > /tmp/pr.json
+          echo "ref=$(jq -r '.head.sha' /tmp/pr.json)" >> "$GITHUB_OUTPUT"
+          echo "repo=$(jq -r '.head.repo.full_name' /tmp/pr.json)" >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
@@ -39,7 +38,7 @@ jobs:
 
       - name: Install Claude Code
         run: |
-          curl -fsSL https://claude.ai/install.sh | sh
+          curl -fsSL https://claude.ai/install.sh | bash
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
       - name: Authenticate to GCP via WIF
