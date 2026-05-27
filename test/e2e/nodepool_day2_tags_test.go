@@ -16,6 +16,7 @@ import (
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -62,10 +63,20 @@ func (ar *NodePoolDay2TagsTest) BuildNodePoolManifest(defaultNodepool hyperv1.No
 func (ar *NodePoolDay2TagsTest) Run(t *testing.T, nodePool hyperv1.NodePool, nodes []corev1.Node) {
 	g := NewWithT(t)
 
+	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(ar.hostedCluster.Namespace, ar.hostedCluster.Name)
+
+	md := &capiv1.MachineDeployment{}
+	err := ar.mgmtClient.Get(ar.ctx, crclient.ObjectKey{
+		Name:      nodePool.Name,
+		Namespace: controlPlaneNamespace,
+	}, md)
+	g.Expect(err).NotTo(HaveOccurred(), "failed to get MachineDeployment before day-2 updates")
+	initialGeneration := md.Generation
+
 	day2TagKey := "test-day2-tag"
 	day2TagValue := "test-day2-value"
 
-	err := e2eutil.UpdateObject(t, ar.ctx, ar.mgmtClient, &nodePool, func(nodePool *hyperv1.NodePool) {
+	err = e2eutil.UpdateObject(t, ar.ctx, ar.mgmtClient, &nodePool, func(nodePool *hyperv1.NodePool) {
 		nodePool.Spec.Platform.AWS.ResourceTags = append(nodePool.Spec.Platform.AWS.ResourceTags, hyperv1.AWSResourceTag{
 			Key:   day2TagKey,
 			Value: day2TagValue,
@@ -73,10 +84,40 @@ func (ar *NodePoolDay2TagsTest) Run(t *testing.T, nodePool hyperv1.NodePool, nod
 	})
 	g.Expect(err).NotTo(HaveOccurred(), "failed to update nodePool tags")
 
+	t.Log("Updating NodePool with day-2 labels and taints")
+	err = e2eutil.UpdateObject(t, ar.ctx, ar.mgmtClient, &nodePool, func(nodePool *hyperv1.NodePool) {
+		if nodePool.Spec.NodeLabels == nil {
+			nodePool.Spec.NodeLabels = map[string]string{}
+		}
+		nodePool.Spec.NodeLabels["e2e.day2.validation"] = "true"
+
+		nodePool.Spec.Taints = append(nodePool.Spec.Taints, hyperv1.Taint{
+			Key:    "e2e-day2",
+			Value:  "test",
+			Effect: corev1.TaintEffectPreferNoSchedule,
+		})
+	})
+	g.Expect(err).NotTo(HaveOccurred(), "failed to update nodePool labels and taints")
+
 	ec2client := ec2Client(ar.clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile, ar.clusterOpts.AWSPlatform.Region)
-	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(ar.hostedCluster.Namespace, ar.hostedCluster.Name)
+
+	updatingConditions := sets.NewString(
+		hyperv1.NodePoolUpdatingConfigConditionType,
+		hyperv1.NodePoolUpdatingPlatformMachineTemplateConditionType,
+	)
+	rollingUpdateTriggered := false
 
 	g.Eventually(func(g Gomega) {
+		np := &hyperv1.NodePool{}
+		err = ar.mgmtClient.Get(ar.ctx, crclient.ObjectKeyFromObject(&nodePool), np)
+		g.Expect(err).NotTo(HaveOccurred(), "failed to get NodePool")
+
+		for _, c := range np.Status.Conditions {
+			if updatingConditions.Has(c.Type) && c.Status == corev1.ConditionTrue {
+				rollingUpdateTriggered = true
+			}
+		}
+
 		awsMachines := &capiaws.AWSMachineList{}
 		err = ar.mgmtClient.List(ar.ctx, awsMachines, crclient.InNamespace(controlPlaneNamespace), crclient.MatchingLabels{
 			capiv1.MachineDeploymentNameLabel: nodePool.Name,
@@ -87,7 +128,6 @@ func (ar *NodePoolDay2TagsTest) Run(t *testing.T, nodePool hyperv1.NodePool, nod
 			g.Expect(awsMachine.Spec.AdditionalTags).To(HaveKeyWithValue(day2TagKey, day2TagValue))
 
 			instanceID := awsMachine.Spec.InstanceID
-			// Fetch the EC2 instance to verify the tag
 			instance, err := ec2client.DescribeInstances(ar.ctx, &ec2.DescribeInstancesInput{
 				InstanceIds: []string{aws.ToString(instanceID)},
 			})
@@ -100,7 +140,10 @@ func (ar *NodePoolDay2TagsTest) Run(t *testing.T, nodePool hyperv1.NodePool, nod
 				Value: aws.String(day2TagValue),
 			}))
 		}
-	}).WithContext(ar.ctx).WithTimeout(time.Minute * 2).WithPolling(time.Second).Should(Succeed())
+	}).WithContext(ar.ctx).WithTimeout(2 * time.Minute).WithPolling(time.Second).Should(Succeed())
+
+	g.Expect(rollingUpdateTriggered).To(BeFalse(),
+		"day-2 tag, label, and taint updates should not trigger a rolling upgrade")
 
 	// Ensure the machine deployment generation is not updated after the tag change.
 	// This is to ensure that the tag change does not trigger a rolling update.
@@ -108,12 +151,11 @@ func (ar *NodePoolDay2TagsTest) Run(t *testing.T, nodePool hyperv1.NodePool, nod
 	// which is not an expected behavior.
 	// The generation should only be updated when the node pool spec changes in a way that requires a rolling update
 	// such as changing the instance type.
-	md := &capiv1.MachineDeployment{}
 	err = ar.mgmtClient.Get(ar.ctx, crclient.ObjectKey{
 		Name:      nodePool.Name,
 		Namespace: controlPlaneNamespace,
 	}, md)
-	g.Expect(err).NotTo(HaveOccurred(), "failed to get machine deployment for node pool")
-
-	g.Expect(md.Generation).To(BeEquivalentTo(1), "machine deployment generation should not change after day 2 tag update")
+	g.Expect(err).NotTo(HaveOccurred(), "failed to get MachineDeployment")
+	g.Expect(md.Generation).To(BeEquivalentTo(initialGeneration),
+		"MachineDeployment generation should not change after day-2 tag, label, and taint updates")
 }
