@@ -87,7 +87,7 @@ func TestEnsureEndpointSlice(t *testing.T) {
 
 	t.Run("When no EndpointSlice exists it should create one with correct fields", func(t *testing.T) {
 		g := NewGomegaWithT(t)
-		client := fake.NewSimpleClientset(newPod())
+		client := fake.NewClientset(newPod())
 
 		err := ensureEndpointSlice(context.Background(), client, dnsName, hostname, namespace, podIP)
 		g.Expect(err).NotTo(HaveOccurred())
@@ -133,7 +133,7 @@ func TestEnsureEndpointSlice(t *testing.T) {
 				{Addresses: []string{"10.0.0.99"}},
 			},
 		}
-		client := fake.NewSimpleClientset(newPod(), existingSlice)
+		client := fake.NewClientset(newPod(), existingSlice)
 
 		err := ensureEndpointSlice(context.Background(), client, dnsName, hostname, namespace, podIP)
 		g.Expect(err).NotTo(HaveOccurred())
@@ -145,7 +145,7 @@ func TestEnsureEndpointSlice(t *testing.T) {
 
 	t.Run("When given an IPv6 address it should set AddressTypeIPv6", func(t *testing.T) {
 		g := NewGomegaWithT(t)
-		client := fake.NewSimpleClientset(newPod())
+		client := fake.NewClientset(newPod())
 		ipv6 := "fd00::1"
 
 		err := ensureEndpointSlice(context.Background(), client, dnsName, hostname, namespace, ipv6)
@@ -159,7 +159,7 @@ func TestEnsureEndpointSlice(t *testing.T) {
 
 	t.Run("When the pod does not exist it should return an error", func(t *testing.T) {
 		g := NewGomegaWithT(t)
-		client := fake.NewSimpleClientset()
+		client := fake.NewClientset()
 
 		err := ensureEndpointSlice(context.Background(), client, dnsName, hostname, namespace, podIP)
 		g.Expect(err).To(HaveOccurred())
@@ -168,7 +168,7 @@ func TestEnsureEndpointSlice(t *testing.T) {
 
 	t.Run("When given an invalid DNS name it should return an error", func(t *testing.T) {
 		g := NewGomegaWithT(t)
-		client := fake.NewSimpleClientset(newPod())
+		client := fake.NewClientset(newPod())
 
 		err := ensureEndpointSlice(context.Background(), client, "invalid", hostname, namespace, podIP)
 		g.Expect(err).To(HaveOccurred())
@@ -185,7 +185,7 @@ func TestEnsureEndpointSlice(t *testing.T) {
 			},
 			Spec: corev1.PodSpec{NodeName: nodeName},
 		}
-		client := fake.NewSimpleClientset(pod1)
+		client := fake.NewClientset(pod1)
 
 		err := ensureEndpointSlice(context.Background(), client, "etcd-1.etcd-discovery.ocm-test-namespace.svc", "etcd-1", namespace, "10.128.64.187")
 		g.Expect(err).NotTo(HaveOccurred())
@@ -203,7 +203,7 @@ func TestEnsureEndpointSlice(t *testing.T) {
 			&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "etcd-1", Namespace: namespace, UID: "uid-1"}, Spec: corev1.PodSpec{NodeName: nodeName}},
 			&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "etcd-2", Namespace: namespace, UID: "uid-2"}, Spec: corev1.PodSpec{NodeName: nodeName}},
 		}
-		client := fake.NewSimpleClientset(pods...)
+		client := fake.NewClientset(pods...)
 
 		for i := range 3 {
 			h := metav1.ObjectMeta{Name: pods[i].(*corev1.Pod).Name}.Name
