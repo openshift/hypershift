@@ -55,7 +55,7 @@ jobs:
         run: |
           git clone --depth 1 https://github.com/openshift-eng/ai-helpers.git /tmp/ai-helpers
           mkdir -p "$HOME/.claude/plugins"
-          printf '%s\n' '{"enabledPlugins":{"hello-world@ai-helpers":true,"jira@ai-helpers":true,"ci@ai-helpers":true}}' > "$HOME/.claude/settings.json"
+          printf '%s\n' '{"enabledPlugins":{"hello-world@ai-helpers":true,"ai-sbom@ai-helpers":true,"jira@ai-helpers":true,"ci@ai-helpers":true}}' > "$HOME/.claude/settings.json"
           printf '%s\n' '{"ai-helpers":{"source":{"source":"directory","path":"/tmp/ai-helpers"},"installLocation":"/tmp/ai-helpers","lastUpdated":"2025-10-27T12:00:00.000Z"}}' > "$HOME/.claude/plugins/known_marketplaces.json"
 
       - name: Test Claude Code
@@ -65,4 +65,11 @@ jobs:
           ANTHROPIC_VERTEX_PROJECT_ID: hosted-control-planes
         run: |
           claude --version
-          claude -p "/hello-world:echo HyperShift" --max-turns 1
+          claude -p "Generate an AI SBOM for this session." --model claude-opus-4-6 --max-turns 1 | tee /tmp/claude-output.txt
+          if grep -qi "ai-assisted\|ai.sbom\|sbom" /tmp/claude-output.txt; then
+            echo "Plugin verified: ai-sbom plugin executed successfully"
+          else
+            echo "ERROR: ai-sbom plugin output not detected"
+            cat /tmp/claude-output.txt
+            exit 1
+          fi
