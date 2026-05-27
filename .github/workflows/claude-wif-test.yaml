@@ -20,8 +20,6 @@ jobs:
         github.event.comment.author_association == 'OWNER' ||
         github.event.comment.author_association == 'COLLABORATOR'))
     runs-on: arc-runner-set
-    container:
-      image: quay.io/rh_ee_brcox/hypershift:ai-helpers-arm64
     timeout-minutes: 10
     env:
       HOME: /tmp
@@ -52,6 +50,13 @@ jobs:
         run: |
           curl -fsSL https://claude.ai/install.sh | bash
           echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Set up ai-helpers plugins
+        run: |
+          git clone --depth 1 https://github.com/openshift-eng/ai-helpers.git /tmp/ai-helpers
+          mkdir -p "$HOME/.claude/plugins"
+          printf '%s\n' '{"enabledPlugins":{"hello-world@ai-helpers":true,"jira@ai-helpers":true,"ci@ai-helpers":true}}' > "$HOME/.claude/settings.json"
+          printf '%s\n' '{"ai-helpers":{"source":{"source":"directory","path":"/tmp/ai-helpers"},"installLocation":"/tmp/ai-helpers","lastUpdated":"2025-10-27T12:00:00.000Z"}}' > "$HOME/.claude/plugins/known_marketplaces.json"
 
       - name: Test Claude Code
         env:
