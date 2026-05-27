@@ -10,6 +10,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
@@ -155,12 +156,14 @@ func selfRegisterEndpointSlice(dnsName string) error {
 			return fmt.Errorf("failed to update EndpointSlice %s: %w", sliceName, err)
 		}
 		fmt.Printf("Updated self-registration EndpointSlice %s with address %s\n", sliceName, podIP)
-	} else {
+	} else if apierrors.IsNotFound(err) {
 		_, err = client.DiscoveryV1().EndpointSlices(namespace).Create(ctx, endpointSlice, metav1.CreateOptions{})
 		if err != nil {
 			return fmt.Errorf("failed to create EndpointSlice %s: %w", sliceName, err)
 		}
 		fmt.Printf("Created self-registration EndpointSlice %s with address %s\n", sliceName, podIP)
+	} else {
+		return fmt.Errorf("failed to get EndpointSlice %s: %w", sliceName, err)
 	}
 	return nil
 }
