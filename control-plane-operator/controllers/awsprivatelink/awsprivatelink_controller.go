@@ -789,15 +789,19 @@ func (r *AWSEndpointServiceReconciler) reconcileEndpointDNSRecords(ctx context.C
 
 	zn := zoneName(hcp.Name)
 	var zoneID string
-	if r.awsClientBuilder.getLocalHostedZoneID() == "" {
+	if localZoneID := r.awsClientBuilder.getLocalHostedZoneID(); localZoneID != "" {
+		zoneID = localZoneID
+	} else if awsEndpointService.Status.DNSZoneID != "" {
+		zoneID = awsEndpointService.Status.DNSZoneID
+		r.awsClientBuilder.setLocalHostedZoneID(zoneID)
+		log.Info("using DNSZoneID from status", "zoneID", zoneID)
+	} else {
 		var err error
 		zoneID, err = lookupZoneID(ctx, route53Client, zn)
 		if err != nil {
 			return nil, "", err
 		}
 		r.awsClientBuilder.setLocalHostedZoneID(zoneID)
-	} else {
-		zoneID = r.awsClientBuilder.getLocalHostedZoneID()
 	}
 
 	var fqdns []string
