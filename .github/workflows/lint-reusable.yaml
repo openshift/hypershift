@@ -30,3 +30,5 @@ jobs:
             touch hack/tools/bin/golangci-lint hack/tools/bin/kube-api-linter.so
           fi
       - run: make lint
+        env:
+          GOCACHEPROG: ""
