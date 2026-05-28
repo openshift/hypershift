@@ -830,7 +830,7 @@ func (r *reconciler) reconcileNetworkingAndSecrets(ctx context.Context, hcp *hyp
 		ovnConfig = hcp.Spec.OperatorConfiguration.ClusterNetworkOperator.OVNKubernetesConfig
 	}
 	if _, err := r.CreateOrUpdate(ctx, r.client, networkOperator, func() error {
-		networkoperator.ReconcileNetworkOperator(networkOperator, hcp.Spec.Networking.NetworkType, hcp.Spec.Platform.Type, netutil.IsDisableMultiNetwork(hcp), ovnConfig)
+		networkoperator.ReconcileNetworkOperator(networkOperator, hcp.Spec.Networking.NetworkType, hcp.Spec.Platform.Type, netutil.IsDisableMultiNetwork(hcp), ovnConfig, hasIPv6Network(hcp))
 		return nil
 	}); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile network operator: %w", err))
@@ -3640,6 +3640,25 @@ func (r *reconciler) reconcileAzureCloudNodeManager(ctx context.Context, image s
 	}
 
 	return errs
+}
+
+func hasIPv6Network(hcp *hyperv1.HostedControlPlane) bool {
+	for _, entry := range hcp.Spec.Networking.ClusterNetwork {
+		if net.IP(entry.CIDR.IP).To4() == nil {
+			return true
+		}
+	}
+	for _, entry := range hcp.Spec.Networking.ServiceNetwork {
+		if net.IP(entry.CIDR.IP).To4() == nil {
+			return true
+		}
+	}
+	for _, entry := range hcp.Spec.Networking.MachineNetwork {
+		if net.IP(entry.CIDR.IP).To4() == nil {
+			return true
+		}
+	}
+	return false
 }
 
 // imageRegistryPlatformWithPVC returns true if the platform requires a PVC for the image registry.
