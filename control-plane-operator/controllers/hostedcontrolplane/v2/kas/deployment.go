@@ -179,13 +179,17 @@ func updateMainContainer(podSpec *corev1.PodSpec, hcp *hyperv1.HostedControlPlan
 			fmt.Sprintf("--v=%d", kasVerbosityLevel),
 		)
 
-		// We have to exempt the pod and service CIDR, otherwise the proxy will get respected by the transport inside
-		// the the egress transport and that breaks the egress selection/konnektivity usage.
+		// We have to exempt the pod, service, and machine CIDRs, otherwise the proxy will get respected by the
+		// transport inside the egress transport and that breaks the egress selection/konnectivity usage.
+		// The machine network must be included because KAS connects to kubelets on node IPs
+		// (for oc logs/exec/attach) via konnectivity; without it the management cluster proxy
+		// intercepts these HTTPS connections causing TLS failures.
 		// Using a CIDR is not supported by Go's default ProxyFunc, but Kube uses a custom one by default that does support it:
 		// https://github.com/kubernetes/kubernetes/blob/ab13c85316015cf9f115e29923ba9740bd1564fd/staging/src/k8s.io/apimachinery/pkg/util/net/http.go#L112-L114
 		var additionalNoProxyCIDRS []string
 		additionalNoProxyCIDRS = append(additionalNoProxyCIDRS, netutil.ClusterCIDRs(hcp.Spec.Networking.ClusterNetwork)...)
 		additionalNoProxyCIDRS = append(additionalNoProxyCIDRS, netutil.ServiceCIDRs(hcp.Spec.Networking.ServiceNetwork)...)
+		additionalNoProxyCIDRS = append(additionalNoProxyCIDRS, netutil.MachineCIDRs(hcp.Spec.Networking.MachineNetwork)...)
 		proxy.SetEnvVars(&c.Env, additionalNoProxyCIDRS...)
 
 		if hcp.Annotations[hyperv1.KubeAPIServerGOGCAnnotation] != "" {
