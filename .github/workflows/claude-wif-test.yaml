@@ -65,7 +65,7 @@ jobs:
           ANTHROPIC_VERTEX_PROJECT_ID: hosted-control-planes
         run: |
           claude --version
-          claude -p "Generate an AI SBOM for this session." --model claude-opus-4-6 --max-turns 1 | tee /tmp/claude-output.txt
+          claude -p "Generate an AI SBOM for this session." --model claude-opus-4-6 --max-turns 50 | tee /tmp/claude-output.txt
           if grep -qi "ai-assisted\|ai.sbom\|sbom" /tmp/claude-output.txt; then
             echo "Plugin verified: ai-sbom plugin executed successfully"
           else
