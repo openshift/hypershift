@@ -173,7 +173,7 @@ func handlePut(req *request, rwDir string) response {
 	if err := os.MkdirAll(filepath.Dir(dPath), 0o777); err != nil {
 		return response{ID: req.ID, Err: err.Error()}
 	}
-	if err := os.WriteFile(dPath, req.Body, 0o666); err != nil {
+	if err := writeFileAtomic(dPath, req.Body); err != nil {
 		return response{ID: req.ID, Err: err.Error()}
 	}
 
@@ -187,10 +187,31 @@ func handlePut(req *request, rwDir string) response {
 		req.BodySize,
 		time.Now().UnixNano(),
 	)
-	if err := os.WriteFile(aPath, []byte(entry), 0o666); err != nil {
+	if err := writeFileAtomic(aPath, []byte(entry)); err != nil {
 		return response{ID: req.ID, Err: err.Error()}
 	}
 
 	return response{ID: req.ID, DiskPath: dPath}
+}
+
+// writeFileAtomic writes data to a temporary file in the same directory
+// then renames it to the target path. This prevents concurrent readers
+// from seeing a truncated file.
+func writeFileAtomic(path string, data []byte) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".tmp-*")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		os.Remove(tmpName)
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpName)
+		return err
+	}
+	return os.Rename(tmpName, path)
 }
 
