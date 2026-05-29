@@ -25,6 +25,14 @@ jobs:
     env:
       HOME: /tmp
     steps:
+      - name: Link to run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr comment "${{ github.event.issue.number }}" \
+            --repo "${{ github.repository }}" \
+            --body "🤖 Addressing review comments: [workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+
       - name: Get PR ref
         id: pr
         run: |
@@ -68,4 +76,4 @@ jobs:
           PR_NUMBER: ${{ github.event.issue.number }}
         run: |
           claude --version
-          claude -p "/utils:address-reviews $PR_NUMBER" --model claude-opus-4-6 --max-turns 100
+          claude -p "/utils:address-reviews $PR_NUMBER" --model claude-opus-4-6 --max-turns 100 --allowedTools "Bash Read Write Edit Grep Glob WebFetch"
