@@ -586,7 +586,7 @@ func (r *NodePoolReconciler) setMachineAndNodeConditions(ctx context.Context, no
 
 	r.setAllNodesHealthyCondition(nodePool, machines)
 
-	err = r.setCIDRConflictCondition(nodePool, machines, hc)
+	err = r.setCIDRConflictCondition(ctx, nodePool, machines, hc)
 	if err != nil {
 		return err
 	}
@@ -707,7 +707,13 @@ func (r *NodePoolReconciler) setAllMachinesReadyCondition(nodePool *hyperv1.Node
 	SetStatusCondition(&nodePool.Status.Conditions, *allMachinesReadyCondition)
 }
 
-func (r *NodePoolReconciler) setCIDRConflictCondition(nodePool *hyperv1.NodePool, machines []*capiv1.Machine, hc *hyperv1.HostedCluster) error {
+type cidrConflictEntry struct {
+	ip   string
+	cidr string
+}
+
+func (r *NodePoolReconciler) setCIDRConflictCondition(ctx context.Context, nodePool *hyperv1.NodePool, machines []*capiv1.Machine, hc *hyperv1.HostedCluster) error {
+	log := ctrl.LoggerFrom(ctx)
 	maxMessageLength := 256
 
 	if len(machines) < 1 || len(hc.Spec.Networking.ClusterNetwork) < 1 {
@@ -715,25 +721,68 @@ func (r *NodePoolReconciler) setCIDRConflictCondition(nodePool *hyperv1.NodePool
 		return nil
 	}
 
-	clusterNetworkStr := hc.Spec.Networking.ClusterNetwork[0].CIDR.String()
-	clusterNetwork, err := netip.ParsePrefix(clusterNetworkStr)
-	if err != nil {
-		return err
+	var clusterNetworks []netip.Prefix
+	for _, cn := range hc.Spec.Networking.ClusterNetwork {
+		prefix, err := netip.ParsePrefix(cn.CIDR.String())
+		if err != nil {
+			return err
+		}
+		clusterNetworks = append(clusterNetworks, prefix)
 	}
 
 	messages := []string{}
 	for _, machine := range machines {
+		seen := make(map[string]struct{})
+		var conflicting []cidrConflictEntry
+		hasAddressOutsideClusterNetwork := false
+
 		for _, addr := range machine.Status.Addresses {
 			if addr.Type != capiv1.MachineExternalIP && addr.Type != capiv1.MachineInternalIP {
 				continue
 			}
+
 			ipaddr, err := netip.ParseAddr(addr.Address)
 			if err != nil {
 				return err
 			}
-			if clusterNetwork.Contains(ipaddr) {
-				messages = append(messages, fmt.Sprintf("machine [%s] with ip [%s] collides with cluster-network cidr [%s]", machine.Name, addr.Address, clusterNetworkStr))
+			key := ipaddr.String()
+			if _, ok := seen[key]; ok {
+				continue
 			}
+			seen[key] = struct{}{}
+
+			if ipaddr.IsLinkLocalUnicast() || ipaddr.IsLinkLocalMulticast() {
+				continue
+			}
+
+			matchedCIDR := ""
+			for _, cn := range clusterNetworks {
+				if cn.Contains(ipaddr) {
+					matchedCIDR = cn.String()
+					break
+				}
+			}
+			if matchedCIDR != "" {
+				conflicting = append(conflicting, cidrConflictEntry{ip: addr.Address, cidr: matchedCIDR})
+			} else {
+				hasAddressOutsideClusterNetwork = true
+			}
+		}
+
+		// When a machine has addresses both inside and outside the cluster network,
+		// the in-network addresses are typically CNI-internal (e.g. OVN-Kubernetes
+		// management port IPs on KubeVirt VMs) and do not represent a real conflict.
+		// Only report a conflict when ALL of a machine's addresses fall within the
+		// cluster network, which indicates the machine's infrastructure IP genuinely
+		// overlaps with the pod CIDR.
+		if !hasAddressOutsideClusterNetwork {
+			for _, entry := range conflicting {
+				messages = append(messages, fmt.Sprintf("machine [%s] with ip [%s] collides with cluster-network cidr [%s]", machine.Name, entry.ip, entry.cidr))
+			}
+		} else if len(conflicting) > 0 {
+			log.V(4).Info("Skipping CNI-internal addresses for CIDR conflict check",
+				"machine", machine.Name,
+				"suppressedCount", len(conflicting))
 		}
 	}
 
@@ -758,6 +807,8 @@ func (r *NodePoolReconciler) setCIDRConflictCondition(nodePool *hyperv1.NodePool
 			ObservedGeneration: nodePool.Generation,
 		}
 		SetStatusCondition(&nodePool.Status.Conditions, *cidrConflictCondition)
+	} else {
+		removeStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolClusterNetworkCIDRConflictType)
 	}
 
 	return nil
