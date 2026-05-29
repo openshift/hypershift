@@ -1261,6 +1261,120 @@ func TestSetMachineAndNodeConditions(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "When machine has addresses both inside and outside cluster network it should not report cidr collision",
+			machinesGenerator: func() []client.Object {
+				return []client.Object{
+					&capiv1.Machine{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "node1",
+							Namespace: "myns-cluster-name",
+							Annotations: map[string]string{
+								nodePoolAnnotation: "myns/np-name",
+							},
+						},
+						Status: capiv1.MachineStatus{
+							Conditions: []capiv1.Condition{
+								{
+									Type:   capiv1.ReadyCondition,
+									Status: corev1.ConditionTrue,
+								},
+								{
+									Type:   capiv1.MachineNodeHealthyCondition,
+									Status: corev1.ConditionTrue,
+								},
+							},
+							Addresses: capiv1.MachineAddresses{
+								{
+									Type:    capiv1.MachineInternalIP,
+									Address: "192.168.1.10",
+								},
+								{
+									Type:    capiv1.MachineExternalIP,
+									Address: "192.168.1.10",
+								},
+								{
+									Type:    capiv1.MachineInternalIP,
+									Address: "10.10.10.2",
+								},
+								{
+									Type:    capiv1.MachineExternalIP,
+									Address: "10.10.10.2",
+								},
+							},
+						},
+					},
+				}
+			},
+			expectedAllMachine: &testCondition{
+				Status:   corev1.ConditionTrue,
+				Reason:   hyperv1.AsExpectedReason,
+				Messages: []string{hyperv1.AllIsWellMessage},
+			},
+			expectedAllNodes: &testCondition{
+				Status:   corev1.ConditionTrue,
+				Reason:   hyperv1.AsExpectedReason,
+				Messages: []string{hyperv1.AllIsWellMessage},
+			},
+			expectedCIDRCollision: nil,
+		},
+		{
+			name: "When machine has out-of-cluster address alongside link-local and in-cluster addresses it should not report cidr collision",
+			machinesGenerator: func() []client.Object {
+				return []client.Object{
+					&capiv1.Machine{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "node1",
+							Namespace: "myns-cluster-name",
+							Annotations: map[string]string{
+								nodePoolAnnotation: "myns/np-name",
+							},
+						},
+						Status: capiv1.MachineStatus{
+							Conditions: []capiv1.Condition{
+								{
+									Type:   capiv1.ReadyCondition,
+									Status: corev1.ConditionTrue,
+								},
+								{
+									Type:   capiv1.MachineNodeHealthyCondition,
+									Status: corev1.ConditionTrue,
+								},
+							},
+							Addresses: capiv1.MachineAddresses{
+								{
+									Type:    capiv1.MachineInternalIP,
+									Address: "192.168.1.10",
+								},
+								{
+									Type:    capiv1.MachineInternalIP,
+									Address: "169.254.0.2",
+								},
+								{
+									Type:    capiv1.MachineInternalIP,
+									Address: "fe80::1",
+								},
+								{
+									Type:    capiv1.MachineInternalIP,
+									Address: "10.10.10.2",
+								},
+							},
+						},
+					},
+				}
+			},
+			expectedAllMachine: &testCondition{
+				Status:   corev1.ConditionTrue,
+				Reason:   hyperv1.AsExpectedReason,
+				Messages: []string{hyperv1.AllIsWellMessage},
+			},
+			expectedAllNodes: &testCondition{
+				Status:   corev1.ConditionTrue,
+				Reason:   hyperv1.AsExpectedReason,
+				Messages: []string{hyperv1.AllIsWellMessage},
+			},
+			expectedCIDRCollision: nil,
+		},
 	} {
 		t.Run(tc.name, func(tt *testing.T) {
 			gg := NewWithT(tt)
@@ -1306,6 +1420,226 @@ func TestSetMachineAndNodeConditions(t *testing.T) {
 				tc.expectedCIDRCollision.Compare(gg, cond)
 			}
 
+		})
+	}
+}
+
+// TestSetCIDRConflictConditionDualStack tests setCIDRConflictCondition directly
+// (unit-level isolation) while TestSetMachineAndNodeConditions above exercises it
+// indirectly through the parent setMachineAndNodeConditions flow (integration-level).
+// Both exist because the dual-stack and condition-clearing scenarios are easier to
+// express with direct calls, while the integration cases verify end-to-end wiring.
+func TestSetCIDRConflictConditionDualStack(t *testing.T) {
+	t.Parallel()
+	r := NodePoolReconciler{}
+
+	for _, tc := range []struct {
+		name                  string
+		clusterNetwork        []hyperv1.ClusterNetworkEntry
+		machines              []*capiv1.Machine
+		preExistingCondition  bool
+		expectConflict        bool
+		expectMessageContains []string
+	}{
+		{
+			name: "When all addresses are inside cluster networks it should report dual-stack collision",
+			clusterNetwork: []hyperv1.ClusterNetworkEntry{
+				{CIDR: *ipnet.MustParseCIDR("10.128.0.0/14")},
+				{CIDR: *ipnet.MustParseCIDR("fd01::/48")},
+			},
+			machines: []*capiv1.Machine{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "node1"},
+					Status: capiv1.MachineStatus{
+						Addresses: capiv1.MachineAddresses{
+							{Type: capiv1.MachineInternalIP, Address: "10.128.0.5"},
+							{Type: capiv1.MachineInternalIP, Address: "fd01::5"},
+						},
+					},
+				},
+			},
+			expectConflict:        true,
+			expectMessageContains: []string{"10.128.0.5", "10.128.0.0/14", "fd01::5", "fd01::/48"},
+		},
+		{
+			name: "When machine has address outside all cluster networks it should not report dual-stack collision",
+			clusterNetwork: []hyperv1.ClusterNetworkEntry{
+				{CIDR: *ipnet.MustParseCIDR("10.128.0.0/14")},
+				{CIDR: *ipnet.MustParseCIDR("fd01::/48")},
+			},
+			machines: []*capiv1.Machine{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "node1"},
+					Status: capiv1.MachineStatus{
+						Addresses: capiv1.MachineAddresses{
+							{Type: capiv1.MachineExternalIP, Address: "192.168.1.10"},
+							{Type: capiv1.MachineInternalIP, Address: "10.128.0.5"},
+							{Type: capiv1.MachineInternalIP, Address: "fd01::5"},
+						},
+					},
+				},
+			},
+			expectConflict: false,
+		},
+		{
+			name: "When IPv4-only machine has address outside cluster network on dual-stack cluster it should not report collision",
+			clusterNetwork: []hyperv1.ClusterNetworkEntry{
+				{CIDR: *ipnet.MustParseCIDR("10.128.0.0/14")},
+				{CIDR: *ipnet.MustParseCIDR("fd01::/48")},
+			},
+			machines: []*capiv1.Machine{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "node1"},
+					Status: capiv1.MachineStatus{
+						Addresses: capiv1.MachineAddresses{
+							{Type: capiv1.MachineExternalIP, Address: "192.168.1.10"},
+							{Type: capiv1.MachineInternalIP, Address: "10.128.0.5"},
+						},
+					},
+				},
+			},
+			expectConflict: false,
+		},
+		{
+			name: "When IPv6-only address is in second CIDR it should detect dual-stack collision",
+			clusterNetwork: []hyperv1.ClusterNetworkEntry{
+				{CIDR: *ipnet.MustParseCIDR("10.128.0.0/14")},
+				{CIDR: *ipnet.MustParseCIDR("fd01::/48")},
+			},
+			machines: []*capiv1.Machine{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "node1"},
+					Status: capiv1.MachineStatus{
+						Addresses: capiv1.MachineAddresses{
+							{Type: capiv1.MachineInternalIP, Address: "fd01::a"},
+						},
+					},
+				},
+			},
+			expectConflict:        true,
+			expectMessageContains: []string{"fd01::a", "fd01::/48"},
+		},
+		{
+			name: "When machine has only link-local and in-cluster addresses it should report cidr collision",
+			clusterNetwork: []hyperv1.ClusterNetworkEntry{
+				{CIDR: *ipnet.MustParseCIDR("10.128.0.0/14")},
+			},
+			machines: []*capiv1.Machine{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "node1"},
+					Status: capiv1.MachineStatus{
+						Addresses: capiv1.MachineAddresses{
+							{Type: capiv1.MachineInternalIP, Address: "169.254.0.2"},
+							{Type: capiv1.MachineInternalIP, Address: "fe80::1"},
+							{Type: capiv1.MachineInternalIP, Address: "10.128.0.5"},
+						},
+					},
+				},
+			},
+			expectConflict:        true,
+			expectMessageContains: []string{"10.128.0.5", "10.128.0.0/14"},
+		},
+		{
+			name: "When machine has only link-local addresses it should not report cidr collision",
+			clusterNetwork: []hyperv1.ClusterNetworkEntry{
+				{CIDR: *ipnet.MustParseCIDR("10.128.0.0/14")},
+			},
+			machines: []*capiv1.Machine{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "node1"},
+					Status: capiv1.MachineStatus{
+						Addresses: capiv1.MachineAddresses{
+							{Type: capiv1.MachineInternalIP, Address: "169.254.0.2"},
+							{Type: capiv1.MachineInternalIP, Address: "fe80::1"},
+						},
+					},
+				},
+			},
+			expectConflict: false,
+		},
+		{
+			name: "When previously-conflicting machine gains out-of-cluster address it should clear the cidr conflict condition",
+			clusterNetwork: []hyperv1.ClusterNetworkEntry{
+				{CIDR: *ipnet.MustParseCIDR("10.128.0.0/14")},
+			},
+			machines: []*capiv1.Machine{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "node1"},
+					Status: capiv1.MachineStatus{
+						Addresses: capiv1.MachineAddresses{
+							{Type: capiv1.MachineExternalIP, Address: "192.168.1.10"},
+							{Type: capiv1.MachineInternalIP, Address: "10.128.0.5"},
+						},
+					},
+				},
+			},
+			preExistingCondition: true,
+			expectConflict:       false,
+		},
+		{
+			name: "When multiple machines have mixed conflict states it should only report the conflicting one",
+			clusterNetwork: []hyperv1.ClusterNetworkEntry{
+				{CIDR: *ipnet.MustParseCIDR("10.128.0.0/14")},
+			},
+			machines: []*capiv1.Machine{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "conflicting-node"},
+					Status: capiv1.MachineStatus{
+						Addresses: capiv1.MachineAddresses{
+							{Type: capiv1.MachineInternalIP, Address: "10.128.0.5"},
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "healthy-node"},
+					Status: capiv1.MachineStatus{
+						Addresses: capiv1.MachineAddresses{
+							{Type: capiv1.MachineExternalIP, Address: "192.168.1.10"},
+							{Type: capiv1.MachineInternalIP, Address: "10.128.0.6"},
+						},
+					},
+				},
+			},
+			expectConflict:        true,
+			expectMessageContains: []string{"conflicting-node", "10.128.0.5"},
+		},
+	} {
+		t.Run(tc.name, func(tt *testing.T) {
+			tt.Parallel()
+			gg := NewWithT(tt)
+			np := &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{Name: "np-ds", Namespace: "myns"},
+			}
+			if tc.preExistingCondition {
+				np.Status.Conditions = []hyperv1.NodePoolCondition{
+					{
+						Type:   hyperv1.NodePoolClusterNetworkCIDRConflictType,
+						Status: corev1.ConditionTrue,
+						Reason: hyperv1.InvalidConfigurationReason,
+					},
+				}
+			}
+			hc := &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Networking: hyperv1.ClusterNetworking{
+						ClusterNetwork: tc.clusterNetwork,
+					},
+				},
+			}
+
+			err := r.setCIDRConflictCondition(tt.Context(), np, tc.machines, hc)
+			gg.Expect(err).ToNot(HaveOccurred())
+
+			cond := FindStatusCondition(np.Status.Conditions, hyperv1.NodePoolClusterNetworkCIDRConflictType)
+			if tc.expectConflict {
+				gg.Expect(cond).ToNot(BeNil(), "expected CIDR conflict condition to be set")
+				gg.Expect(cond.Status).To(Equal(corev1.ConditionTrue))
+				for _, want := range tc.expectMessageContains {
+					gg.Expect(cond.Message).To(ContainSubstring(want))
+				}
+			} else {
+				gg.Expect(cond).To(BeNil(), "expected no CIDR conflict condition")
+			}
 		})
 	}
 }
