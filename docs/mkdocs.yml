@@ -163,7 +163,6 @@ nav:
       - 'Self-managed Azure':
         - how-to/azure/self-managed-azure-index.md
         - how-to/azure/autoscaling-self-managed.md
-        - how-to/azure/azure-workload-identity-setup.md
         - how-to/azure/create-self-managed-azure-cluster.md
         - how-to/azure/create-iam-separately.md
         - how-to/azure/create-infra-separately.md
