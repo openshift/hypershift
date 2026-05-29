@@ -30,5 +30,5 @@ COPY --from=builder /hypershift/hack/run-reqserving-e2e.sh /hypershift/hack/run-
 RUN rpm --import https://packages.microsoft.com/keys/microsoft.asc && \
     dnf install -y https://packages.microsoft.com/config/rhel/9/packages-microsoft-prod.rpm && \
     mv /etc/yum.repos.d/microsoft-prod.repo /etc/yum.repos.art/ci/ && \
-    dnf install -y azure-cli && \
+    dnf install -y azure-cli-2.72.0 && \
     dnf clean all
