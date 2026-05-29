@@ -85,7 +85,6 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false
-      - uses: ./.github/actions/warm-go-cache
       - name: Run tests
         run: make test-shard TEST_PACKAGES="${{ matrix.packages }}" COVER_PROFILE="cover-${{ matrix.shard }}.out"
       - name: Upload to Codecov

@@ -20,7 +20,6 @@ jobs:
           if [ -n "${{ github.base_ref }}" ]; then
             git fetch origin "${{ github.base_ref }}:${{ github.base_ref }}"
           fi
-      - uses: ./.github/actions/warm-go-cache
       - name: Use pre-built lint tools
         run: |
           if [ -d /opt/lint-tools ]; then
