@@ -1,6 +1,6 @@
 module github.com/openshift/hypershift
 
-go 1.25.7
+go 1.25.9
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.21.1
@@ -125,8 +125,8 @@ require (
 	sigs.k8s.io/cluster-api-provider-openstack v0.12.1
 	sigs.k8s.io/controller-runtime v0.22.4
 	sigs.k8s.io/karpenter v1.9.0
-	sigs.k8s.io/secrets-store-csi-driver v1.4.8
-	sigs.k8s.io/structured-merge-diff/v6 v6.3.1
+	sigs.k8s.io/secrets-store-csi-driver v1.6.0
+	sigs.k8s.io/structured-merge-diff/v6 v6.4.0
 	sigs.k8s.io/yaml v1.6.0
 )
 
