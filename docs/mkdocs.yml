@@ -90,6 +90,12 @@ nav:
     - 'Documentation Preview': how-to/ci/docs-preview.md
     - 'GitHub Actions Workflows': how-to/ci/github-actions.md
     - 'Sync Community Fork': how-to/ci/sync-community-fork.md
+    - 'V2 E2E Testing':
+      - how-to/ci/v2-testing/index.md
+      - 'Writing V2 Tests': how-to/ci/v2-testing/writing-tests.md
+      - 'CI Pipeline Configuration': how-to/ci/v2-testing/ci-pipeline.md
+      - 'Debugging CI Failures': how-to/ci/v2-testing/debugging.md
+      - 'Migrating from V1': how-to/ci/v2-testing/migration.md
   - 'Common':
     - how-to/common/exposing-services-from-hcp.md
     - 'Global Pull Secret': how-to/common/global-pull-secret.md
