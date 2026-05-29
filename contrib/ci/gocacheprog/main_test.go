@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -418,4 +419,64 @@ func TestConcurrentPutAndGet(t *testing.T) {
 		}()
 	}
 	wg.Wait()
+}
+
+func TestConcurrentPutSameOutputID(t *testing.T) {
+	t.Parallel()
+	rwDir := t.TempDir()
+	outputID := mustDecodeHex(t, "7777777777777777")
+	body := []byte("shared output content that all writers agree on")
+
+	// Seed one entry so GETs can find it while PUTs overwrite the data file.
+	seedAction := mustDecodeHex(t, fmt.Sprintf("%016x", 2000))
+	seedReq := &request{
+		ID: 0, Command: "put",
+		ActionID: seedAction, OutputID: outputID,
+		Body: body, BodySize: int64(len(body)),
+	}
+	if resp := handlePut(seedReq, rwDir); resp.Err != "" {
+		t.Fatalf("seed put: %s", resp.Err)
+	}
+
+	// Interleave PUTs (different ActionIDs, same OutputID) with GETs that
+	// read the data file via DiskPath. Without atomic writes, a PUT's
+	// O_TRUNC would momentarily zero the file, causing a reader to see
+	// truncated/empty content.
+	var wg sync.WaitGroup
+	var badReads atomic.Int64
+	for i := range 100 {
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			actionID := mustDecodeHex(t, fmt.Sprintf("%016x", i+2000))
+			putReq := &request{
+				ID: int64(i), Command: "put",
+				ActionID: actionID, OutputID: outputID,
+				Body: body, BodySize: int64(len(body)),
+			}
+			if resp := handlePut(putReq, rwDir); resp.Err != "" {
+				t.Errorf("put %d error: %s", i, resp.Err)
+			}
+		}()
+		go func() {
+			defer wg.Done()
+			getReq := &request{ID: int64(i + 5000), Command: "get", ActionID: seedAction}
+			resp := handleGet(getReq, "", rwDir)
+			if resp.Miss {
+				return
+			}
+			data, err := os.ReadFile(resp.DiskPath)
+			if err != nil {
+				return
+			}
+			if string(data) != string(body) {
+				badReads.Add(1)
+			}
+		}()
+	}
+	wg.Wait()
+
+	if n := badReads.Load(); n > 0 {
+		t.Errorf("got %d reads with corrupted data from concurrent PUT/GET on same OutputID", n)
+	}
 }
