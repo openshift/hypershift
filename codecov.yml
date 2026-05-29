@@ -15,6 +15,7 @@ ignore:
   - "**/*.md"
   - "**/*.yaml"
   - "**/*.yml"
+  - "**/Dockerfile*"
   - "*.mod"
   - "*.sum"
   # Generated mock files
