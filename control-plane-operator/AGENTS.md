@@ -21,7 +21,7 @@ See `support/controlplane-component/AGENTS.md` and `support/controlplane-compone
 
 ## HCCO (Hosted Cluster Config Operator)
 
-HCCO is a **separate binary in the same image**, invoked as `control-plane-operator hosted-cluster-config-operator`. It runs as a Deployment **in the guest cluster** (not the management cluster), reconciling guest-side resources: `openshift-config/pull-secret`, node configuration, in-place upgrades, global pull secret, draining, etc.
+HCCO is a **separate binary in the same image**, invoked as `control-plane-operator hosted-cluster-config-operator`. It runs as a Deployment in the control plane namespace, mainly reconciling guest-side resources: `openshift-config/pull-secret`, node configuration, in-place upgrades, global pull secret, draining, etc.
 
 HCCO controllers are in `hostedclusterconfigoperator/controllers/`. They do **not** use the v2 component framework today — this is a migration opportunity.
 
