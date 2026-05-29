@@ -3,6 +3,18 @@ codecov:
   notify:
     wait_for_ci: false
 
+flags:
+  cpo-hostedcontrolplane:
+    carryforward: true
+  cpo-other:
+    carryforward: true
+  hypershift-operator:
+    carryforward: true
+  cmd-support:
+    carryforward: true
+  other:
+    carryforward: true
+
 ignore:
   - "test/**"
   - "hack/**"
