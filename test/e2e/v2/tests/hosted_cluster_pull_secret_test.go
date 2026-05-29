@@ -343,14 +343,6 @@ func verifyDaemonSetsReady(tc *internal.TestContext, hcClient crclient.Client, n
 	}
 }
 
-func init() {
-	internal.RegisterEnvVar(
-		"E2E_ADDITIONAL_PULL_SECRET_FILE",
-		"Path to an additional pull secret file for the global pull secret lifecycle test.",
-		false,
-	)
-}
-
 var _ = Describe("Global Pull Secret", Label("lifecycle", "global-pull-secret"), func() {
 	var testCtx *internal.TestContext
 

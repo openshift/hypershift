@@ -85,9 +85,9 @@ func EnsureDefaultSecurityGroupTagsTest(getTestCtx internal.TestContextGetter) {
 			cleanup, err := e2eutil.PutRolePolicy(tc.Context, awsCredsFile, region,
 				hc.Spec.Platform.AWS.RolesRef.ControlPlaneOperatorARN, tagsPolicy)
 			Expect(err).NotTo(HaveOccurred(), "failed to put role policy for tagging default security group")
-			defer func() {
+			DeferCleanup(func() {
 				Expect(cleanup()).To(Succeed(), "failed to cleanup role policy for tagging default security group")
-			}()
+			})
 
 			day2TagKey := "test-day2-tag"
 			day2TagValue := "test-day2-value"
