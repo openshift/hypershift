@@ -1,3 +1,55 @@
+# v0.2.1 (2026-05-28)
+
+* **Bug Fix**: Feature parity for transfer manager v2 to allow range download, support checksum type config, fix error from failed transfer's follow-up due to ctx cancellation, honor mpu threshold and add back max upload parts option
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v0.2.0 (2026-05-27)
+
+* **Feature**: Add SHA-512 support for s3 operations
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v0.1.22 (2026-05-22)
+
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v0.1.21 (2026-05-06)
+
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v0.1.20 (2026-04-30)
+
+* **Bug Fix**: Reinstate Location output field on Upload operations.
+
+# v0.1.19 (2026-04-29)
+
+* **Dependency Update**: Update to smithy-go v1.25.1.
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v0.1.18 (2026-04-22)
+
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v0.1.17 (2026-04-17)
+
+* **Dependency Update**: Bump smithy-go to 1.25.0 to support endpointBdd trait
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v0.1.16 (2026-04-16)
+
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v0.1.15 (2026-04-07)
+
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v0.1.14 (2026-04-02)
+
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v0.1.13 (2026-03-31)
+
+* **Dependency Update**: Updated to the latest SDK module versions
+
 # v0.1.12 (2026-03-26)
 
 * **Dependency Update**: Updated to the latest SDK module versions
