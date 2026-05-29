@@ -120,14 +120,16 @@ func ensureEndpointSlice(ctx context.Context, client kubernetes.Interface, dnsNa
 			Namespace: namespace,
 			Labels: map[string]string{
 				discoveryv1.LabelServiceName: serviceName,
-				discoveryv1.LabelManagedBy:   "control-plane-operator",
+				discoveryv1.LabelManagedBy:   "etcd-self-register.hypershift.openshift.io",
 			},
 			OwnerReferences: []metav1.OwnerReference{
 				{
-					APIVersion: "v1",
-					Kind:       "Pod",
-					Name:       pod.Name,
-					UID:        pod.UID,
+					APIVersion:         "v1",
+					Kind:               "Pod",
+					Name:               pod.Name,
+					UID:                pod.UID,
+					Controller:         ptr.To(true),
+					BlockOwnerDeletion: ptr.To(true),
 				},
 			},
 		},

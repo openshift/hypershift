@@ -1,7 +1,7 @@
 package dnsresolver
 
 import (
-	"context"
+	"fmt"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -89,14 +89,14 @@ func TestEnsureEndpointSlice(t *testing.T) {
 		g := NewGomegaWithT(t)
 		client := fake.NewClientset(newPod())
 
-		err := ensureEndpointSlice(context.Background(), client, dnsName, hostname, namespace, podIP)
+		err := ensureEndpointSlice(t.Context(), client, dnsName, hostname, namespace, podIP)
 		g.Expect(err).NotTo(HaveOccurred())
 
-		slice, err := client.DiscoveryV1().EndpointSlices(namespace).Get(context.Background(), "etcd-discovery-self-etcd-0", metav1.GetOptions{})
+		slice, err := client.DiscoveryV1().EndpointSlices(namespace).Get(t.Context(), "etcd-discovery-self-etcd-0", metav1.GetOptions{})
 		g.Expect(err).NotTo(HaveOccurred())
 
 		g.Expect(slice.Labels[discoveryv1.LabelServiceName]).To(Equal("etcd-discovery"))
-		g.Expect(slice.Labels[discoveryv1.LabelManagedBy]).To(Equal("control-plane-operator"))
+		g.Expect(slice.Labels[discoveryv1.LabelManagedBy]).To(Equal("etcd-self-register.hypershift.openshift.io"))
 		g.Expect(slice.AddressType).To(Equal(discoveryv1.AddressTypeIPv4))
 		g.Expect(slice.Endpoints).To(HaveLen(1))
 		g.Expect(slice.Endpoints[0].Addresses).To(Equal([]string{podIP}))
@@ -125,7 +125,7 @@ func TestEnsureEndpointSlice(t *testing.T) {
 				Namespace: namespace,
 				Labels: map[string]string{
 					discoveryv1.LabelServiceName: "etcd-discovery",
-					discoveryv1.LabelManagedBy:   "control-plane-operator",
+					discoveryv1.LabelManagedBy:   "etcd-self-register.hypershift.openshift.io",
 				},
 			},
 			AddressType: discoveryv1.AddressTypeIPv4,
@@ -135,10 +135,10 @@ func TestEnsureEndpointSlice(t *testing.T) {
 		}
 		client := fake.NewClientset(newPod(), existingSlice)
 
-		err := ensureEndpointSlice(context.Background(), client, dnsName, hostname, namespace, podIP)
+		err := ensureEndpointSlice(t.Context(), client, dnsName, hostname, namespace, podIP)
 		g.Expect(err).NotTo(HaveOccurred())
 
-		slice, err := client.DiscoveryV1().EndpointSlices(namespace).Get(context.Background(), "etcd-discovery-self-etcd-0", metav1.GetOptions{})
+		slice, err := client.DiscoveryV1().EndpointSlices(namespace).Get(t.Context(), "etcd-discovery-self-etcd-0", metav1.GetOptions{})
 		g.Expect(err).NotTo(HaveOccurred())
 		g.Expect(slice.Endpoints[0].Addresses).To(Equal([]string{podIP}))
 	})
@@ -148,10 +148,10 @@ func TestEnsureEndpointSlice(t *testing.T) {
 		client := fake.NewClientset(newPod())
 		ipv6 := "fd00::1"
 
-		err := ensureEndpointSlice(context.Background(), client, dnsName, hostname, namespace, ipv6)
+		err := ensureEndpointSlice(t.Context(), client, dnsName, hostname, namespace, ipv6)
 		g.Expect(err).NotTo(HaveOccurred())
 
-		slice, err := client.DiscoveryV1().EndpointSlices(namespace).Get(context.Background(), "etcd-discovery-self-etcd-0", metav1.GetOptions{})
+		slice, err := client.DiscoveryV1().EndpointSlices(namespace).Get(t.Context(), "etcd-discovery-self-etcd-0", metav1.GetOptions{})
 		g.Expect(err).NotTo(HaveOccurred())
 		g.Expect(slice.AddressType).To(Equal(discoveryv1.AddressTypeIPv6))
 		g.Expect(slice.Endpoints[0].Addresses).To(Equal([]string{ipv6}))
@@ -161,18 +161,16 @@ func TestEnsureEndpointSlice(t *testing.T) {
 		g := NewGomegaWithT(t)
 		client := fake.NewClientset()
 
-		err := ensureEndpointSlice(context.Background(), client, dnsName, hostname, namespace, podIP)
-		g.Expect(err).To(HaveOccurred())
-		g.Expect(err.Error()).To(ContainSubstring("failed to get pod"))
+		err := ensureEndpointSlice(t.Context(), client, dnsName, hostname, namespace, podIP)
+		g.Expect(err).To(MatchError(ContainSubstring("failed to get pod")))
 	})
 
 	t.Run("When given an invalid DNS name it should return an error", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 		client := fake.NewClientset(newPod())
 
-		err := ensureEndpointSlice(context.Background(), client, "invalid", hostname, namespace, podIP)
-		g.Expect(err).To(HaveOccurred())
-		g.Expect(err.Error()).To(ContainSubstring("failed to parse service name"))
+		err := ensureEndpointSlice(t.Context(), client, "invalid", hostname, namespace, podIP)
+		g.Expect(err).To(MatchError(ContainSubstring("failed to parse service name")))
 	})
 
 	t.Run("When called for etcd-1 it should use the correct slice name and hostname", func(t *testing.T) {
@@ -187,10 +185,10 @@ func TestEnsureEndpointSlice(t *testing.T) {
 		}
 		client := fake.NewClientset(pod1)
 
-		err := ensureEndpointSlice(context.Background(), client, "etcd-1.etcd-discovery.ocm-test-namespace.svc", "etcd-1", namespace, "10.128.64.187")
+		err := ensureEndpointSlice(t.Context(), client, "etcd-1.etcd-discovery.ocm-test-namespace.svc", "etcd-1", namespace, "10.128.64.187")
 		g.Expect(err).NotTo(HaveOccurred())
 
-		slice, err := client.DiscoveryV1().EndpointSlices(namespace).Get(context.Background(), "etcd-discovery-self-etcd-1", metav1.GetOptions{})
+		slice, err := client.DiscoveryV1().EndpointSlices(namespace).Get(t.Context(), "etcd-discovery-self-etcd-1", metav1.GetOptions{})
 		g.Expect(err).NotTo(HaveOccurred())
 		g.Expect(*slice.Endpoints[0].Hostname).To(Equal("etcd-1"))
 		g.Expect(slice.Endpoints[0].Addresses).To(Equal([]string{"10.128.64.187"}))
@@ -208,12 +206,12 @@ func TestEnsureEndpointSlice(t *testing.T) {
 		for i := range 3 {
 			h := metav1.ObjectMeta{Name: pods[i].(*corev1.Pod).Name}.Name
 			dns := h + ".etcd-discovery." + namespace + ".svc"
-			ip := "10.128.64." + string(rune('1'+i))
-			err := ensureEndpointSlice(context.Background(), client, dns, h, namespace, ip)
+			ip := fmt.Sprintf("10.128.64.%d", 186+i)
+			err := ensureEndpointSlice(t.Context(), client, dns, h, namespace, ip)
 			g.Expect(err).NotTo(HaveOccurred())
 		}
 
-		slices, err := client.DiscoveryV1().EndpointSlices(namespace).List(context.Background(), metav1.ListOptions{})
+		slices, err := client.DiscoveryV1().EndpointSlices(namespace).List(t.Context(), metav1.ListOptions{})
 		g.Expect(err).NotTo(HaveOccurred())
 		g.Expect(slices.Items).To(HaveLen(3))
 	})
