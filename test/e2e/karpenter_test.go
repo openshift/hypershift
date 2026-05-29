@@ -1428,6 +1428,7 @@ func testBillingConsolidationAndPDB(ctx context.Context, mgtClient, guestClient 
 
 		// Before any Karpenter nodes are provisioned, Karpenter vCPUs should be 0.
 		waitForAutoNodeStatusVCPUs(t, ctx, mgtClient, hostedCluster, 0)
+		waitForAutoNodeStatusVCPUsStable(t, ctx, mgtClient, hostedCluster, 0, 30*time.Second)
 
 		baseline, found := getVCPUsMetric(t, ctx, mgtClient, hostedCluster)
 		g.Expect(found).To(BeTrue(), "billing metric should exist before Karpenter nodes are provisioned")
@@ -1451,6 +1452,7 @@ func testBillingConsolidationAndPDB(ctx context.Context, mgtClient, guestClient 
 
 		// t3.xlarge = 4 vCPUs; 2 nodes = 8 Karpenter vCPUs on top of baseline
 		waitForAutoNodeStatusVCPUs(t, ctx, mgtClient, hostedCluster, 8)
+		waitForAutoNodeStatusVCPUsStable(t, ctx, mgtClient, hostedCluster, 8, 30*time.Second)
 		waitForBillingMetricVCPUs(t, ctx, mgtClient, hostedCluster, baseline+8)
 
 		t.Logf("Scaling workload to 1 replica to verify deprovisioning and consolidation")
@@ -1464,6 +1466,7 @@ func testBillingConsolidationAndPDB(ctx context.Context, mgtClient, guestClient 
 
 		// t3.xlarge = 4 vCPUs; 1 node = 4 Karpenter vCPUs on top of baseline
 		waitForAutoNodeStatusVCPUs(t, ctx, mgtClient, hostedCluster, 4)
+		waitForAutoNodeStatusVCPUsStable(t, ctx, mgtClient, hostedCluster, 4, 30*time.Second)
 		waitForBillingMetricVCPUs(t, ctx, mgtClient, hostedCluster, baseline+4)
 
 		// Create a blocking PDB and leave everything dangling so cluster teardown
@@ -1649,6 +1652,22 @@ func waitForAutoNodeStatusVCPUs(t *testing.T, ctx context.Context, mgtClient crc
 		},
 		e2eutil.WithTimeout(1*time.Minute),
 	)
+}
+
+// waitForAutoNodeStatusVCPUsStable asserts that AutoNode.VCPUs does not flap
+// away from the expected value over the given duration.
+func waitForAutoNodeStatusVCPUsStable(t *testing.T, ctx context.Context, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster, expected int32, duration time.Duration) {
+	t.Helper()
+	g := NewWithT(t)
+
+	t.Logf("Asserting AutoNode.VCPUs remains stable at %d for %s", expected, duration)
+	g.Consistently(func(g Gomega) {
+		hc := &hyperv1.HostedCluster{}
+		g.Expect(mgtClient.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hc)).To(Succeed())
+		g.Expect(hc.Status.AutoNode.VCPUs).NotTo(BeNil(), "AutoNode.VCPUs became nil")
+		g.Expect(*hc.Status.AutoNode.VCPUs).To(Equal(expected))
+	}).WithTimeout(duration).WithPolling(2 * time.Second).Should(Succeed())
+	t.Logf("AutoNode.VCPUs remained stable at %d for %s", expected, duration)
 }
 
 // waitForBillingMetricVCPUs polls until the hypershift_cluster_vcpus metric
