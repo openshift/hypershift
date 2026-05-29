@@ -313,9 +313,10 @@ func (r *HCPEtcdBackupReconciler) setCondition(backup *hyperv1.HCPEtcdBackup, co
 // updateHCPBackupCondition sets a condition on the HostedControlPlane to bubble
 // up the etcd backup status. The HC controller propagates this to the HostedCluster.
 func (r *HCPEtcdBackupReconciler) updateHCPBackupCondition(ctx context.Context, hcp *hyperv1.HostedControlPlane, condition metav1.Condition) error {
+	originalHCP := hcp.DeepCopy()
 	condition.ObservedGeneration = hcp.Generation
 	meta.SetStatusCondition(&hcp.Status.Conditions, condition)
-	return r.Status().Update(ctx, hcp)
+	return r.Status().Patch(ctx, hcp, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{}))
 }
 
 // updateHostedClusterBackupURL persists the snapshot URL in the HostedCluster
