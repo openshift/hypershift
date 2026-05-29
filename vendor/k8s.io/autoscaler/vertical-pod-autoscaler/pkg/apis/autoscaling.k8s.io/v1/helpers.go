@@ -1,6 +1,3 @@
-//go:build usegocmp
-// +build usegocmp
-
 /*
 Copyright 2025 The Kubernetes Authors.
 
@@ -17,15 +14,15 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package diff
+package v1
 
-import (
-	"github.com/google/go-cmp/cmp" //nolint:depguard
-)
-
-// Diff returns a string representation of the difference between two objects.
-// When built with the usegocmp tag, it uses go-cmp/cmp to generate a diff
-// between the objects.
-func Diff(a, b any) string {
-	return cmp.Diff(a, b)
+// GetUpdateModes returns all supported UpdateModes
+func GetUpdateModes() map[UpdateMode]any {
+	return map[UpdateMode]any{
+		UpdateModeOff:               nil,
+		UpdateModeInitial:           nil,
+		UpdateModeRecreate:          nil,
+		UpdateModeAuto:              nil,
+		UpdateModeInPlaceOrRecreate: nil,
+	}
 }
