@@ -505,3 +505,121 @@ func setUpDummyMachineSet(nodePool *hyperv1.NodePool, hostedCluster *hyperv1.Hos
 	}
 	return machineSet
 }
+
+func TestSpotTerminationHandlerConfiguredCondition(t *testing.T) {
+	tests := []struct {
+		name                       string
+		spotEnabled                bool
+		terminationHandlerQueueURL string
+		existingCondition          bool
+		expectedConditionPresent   bool
+		expectedStatus             corev1.ConditionStatus
+		expectedReason             string
+		expectedMessage            string
+	}{
+		{
+			name:                       "When spot is enabled and terminationHandlerQueueURL is set it should set condition to True",
+			spotEnabled:                true,
+			terminationHandlerQueueURL: "https://sqs.us-east-1.amazonaws.com/123456789012/my-queue",
+			expectedConditionPresent:   true,
+			expectedStatus:             corev1.ConditionTrue,
+			expectedReason:             hyperv1.AsExpectedReason,
+			expectedMessage:            hyperv1.AllIsWellMessage,
+		},
+		{
+			name:                       "When spot is enabled and terminationHandlerQueueURL is empty it should set condition to False",
+			spotEnabled:                true,
+			terminationHandlerQueueURL: "",
+			expectedConditionPresent:   true,
+			expectedStatus:             corev1.ConditionFalse,
+			expectedReason:             hyperv1.TerminationHandlerQueueURLNotSetReason,
+			expectedMessage:            "Spot instances require spec.platform.aws.terminationHandlerQueueURL on the HostedCluster to enable graceful handling of spot instance terminations.",
+		},
+		{
+			name:                       "When spot is enabled and AWS platform is nil it should set condition to False",
+			spotEnabled:                true,
+			terminationHandlerQueueURL: "",
+			expectedConditionPresent:   true,
+			expectedStatus:             corev1.ConditionFalse,
+			expectedReason:             hyperv1.TerminationHandlerQueueURLNotSetReason,
+			expectedMessage:            "Spot instances require spec.platform.aws.terminationHandlerQueueURL on the HostedCluster to enable graceful handling of spot instance terminations.",
+		},
+		{
+			name:                     "When spot is not enabled it should remove the condition",
+			spotEnabled:              false,
+			existingCondition:        true,
+			expectedConditionPresent: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			nodePool := &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "test-nodepool",
+					Namespace:  "test-ns",
+					Generation: 1,
+				},
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AWSPlatform,
+					},
+				},
+			}
+
+			if tc.spotEnabled {
+				nodePool.Spec.Platform.AWS = &hyperv1.AWSNodePoolPlatform{
+					Placement: &hyperv1.PlacementOptions{
+						MarketType: hyperv1.MarketTypeSpot,
+					},
+				}
+			}
+
+			if tc.existingCondition {
+				nodePool.Status.Conditions = []hyperv1.NodePoolCondition{
+					{
+						Type:   hyperv1.NodePoolSpotTerminationHandlerConfiguredConditionType,
+						Status: corev1.ConditionFalse,
+						Reason: hyperv1.TerminationHandlerQueueURLNotSetReason,
+					},
+				}
+			}
+
+			hc := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: "test-ns",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
+				},
+			}
+
+			if tc.terminationHandlerQueueURL != "" {
+				hc.Spec.Platform.AWS = &hyperv1.AWSPlatformSpec{
+					TerminationHandlerQueueURL: tc.terminationHandlerQueueURL,
+				}
+			}
+
+			r := &NodePoolReconciler{}
+
+			_, err := r.spotTerminationHandlerConfiguredCondition(t.Context(), nodePool, hc)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			condition := FindStatusCondition(nodePool.Status.Conditions, hyperv1.NodePoolSpotTerminationHandlerConfiguredConditionType)
+			if tc.expectedConditionPresent {
+				g.Expect(condition).ToNot(BeNil())
+				g.Expect(condition.Status).To(Equal(tc.expectedStatus))
+				g.Expect(condition.Reason).To(Equal(tc.expectedReason))
+				g.Expect(condition.Message).To(Equal(tc.expectedMessage))
+				g.Expect(condition.ObservedGeneration).To(Equal(nodePool.Generation))
+			} else {
+				g.Expect(condition).To(BeNil())
+			}
+		})
+	}
+}

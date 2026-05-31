@@ -84,6 +84,12 @@ const (
 	// KubeVirtNodesLiveMigratable indicates if all (VirtualMachines) nodes of the kubevirt
 	// hosted cluster can be live migrated without experiencing a node restart
 	NodePoolKubeVirtLiveMigratableType = "KubeVirtNodesLiveMigratable"
+
+	// NodePoolSpotTerminationHandlerConfiguredConditionType signals whether the required
+	// infrastructure for graceful spot instance termination handling is configured on the HostedCluster.
+	// When False, spot interruptions will result in abrupt instance termination with no graceful pod drain.
+	// This condition is only set on NodePools with spot instances enabled.
+	NodePoolSpotTerminationHandlerConfiguredConditionType = "SpotTerminationHandlerConfigured"
 )
 
 // PerformanceProfile Conditions
@@ -114,19 +120,20 @@ const (
 
 // Reasons
 const (
-	NodePoolValidationFailedReason        = "ValidationFailed"
-	NodePoolInplaceUpgradeFailedReason    = "InplaceUpgradeFailed"
-	NodePoolNotFoundReason                = "NotFound"
-	NodePoolFailedToGetReason             = "FailedToGet"
-	IgnitionEndpointMissingReason         = "IgnitionEndpointMissing"
-	IgnitionCACertMissingReason           = "IgnitionCACertMissing"
-	IgnitionNotReached                    = "ignitionNotReached"
-	DefaultAWSSecurityGroupNotReadyReason = "DefaultSGNotReady"
-	NodePoolValidArchPlatform             = "ValidArchPlatform"
-	NodePoolInvalidArchPlatform           = "InvalidArchPlatform"
-	InvalidKubevirtMachineTemplate        = "InvalidKubevirtMachineTemplate"
-	InvalidOpenStackMachineTemplate       = "InvalidOpenStackMachineTemplate"
-	CIDRConflictReason                    = "CIDRConflict"
-	NodePoolKubeVirtLiveMigratableReason  = "KubeVirtNodesNotLiveMigratable"
-	NodePoolUnsupportedSkewReason         = "UnsupportedSkew"
+	NodePoolValidationFailedReason         = "ValidationFailed"
+	NodePoolInplaceUpgradeFailedReason     = "InplaceUpgradeFailed"
+	NodePoolNotFoundReason                 = "NotFound"
+	NodePoolFailedToGetReason              = "FailedToGet"
+	IgnitionEndpointMissingReason          = "IgnitionEndpointMissing"
+	IgnitionCACertMissingReason            = "IgnitionCACertMissing"
+	IgnitionNotReached                     = "ignitionNotReached"
+	DefaultAWSSecurityGroupNotReadyReason  = "DefaultSGNotReady"
+	NodePoolValidArchPlatform              = "ValidArchPlatform"
+	NodePoolInvalidArchPlatform            = "InvalidArchPlatform"
+	InvalidKubevirtMachineTemplate         = "InvalidKubevirtMachineTemplate"
+	InvalidOpenStackMachineTemplate        = "InvalidOpenStackMachineTemplate"
+	CIDRConflictReason                     = "CIDRConflict"
+	NodePoolKubeVirtLiveMigratableReason   = "KubeVirtNodesNotLiveMigratable"
+	NodePoolUnsupportedSkewReason          = "UnsupportedSkew"
+	TerminationHandlerQueueURLNotSetReason = "TerminationHandlerQueueURLNotSet"
 )
