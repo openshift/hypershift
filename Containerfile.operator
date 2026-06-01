@@ -1,4 +1,4 @@
-FROM registry.redhat.io/rhel9/go-toolset:1.23.6-1745588370 AS builder
+FROM registry.redhat.io/rhel9/go-toolset:1.25.9-1778675823 AS builder
 
 WORKDIR /hypershift
 
