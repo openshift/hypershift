@@ -8,16 +8,16 @@ COPY . .
 RUN make product-cli-release && \
     # Create tar.gz files for Linux architectures \
     for ARCH in amd64 arm64 ppc64le s390x; do \
-      tar -czvf ./bin/linux/${ARCH}/hcp.tar.gz -C ./bin/linux/${ARCH} ./hcp || exit 1; \
+      tar -czvf ./bin/hcp-linux-${ARCH}.tar.gz -C ./bin/linux/${ARCH} ./hcp || exit 1; \
     done && \
     # Create tar.gz files for Darwin and Windows architectures \
     for OS in darwin windows; do \
       for ARCH in amd64 arm64; do \
-        tar -czvf ./bin/${OS}/${ARCH}/hcp.tar.gz -C ./bin/${OS}/${ARCH} ./hcp || exit 1; \
+        tar -czvf ./bin/hcp-${OS}-${ARCH}.tar.gz -C ./bin/${OS}/${ARCH} ./hcp || exit 1; \
       done; \
     done && \
-    # Remove raw binaries, keep only tar.gz files \
-    find ./bin -type f ! -name "*.tar.gz" -delete
+    # Remove OS/arch subdirectories, keep only flat tar.gz files \
+    find ./bin -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} +
 
 FROM registry.redhat.io/ubi9/nginx-124:latest
 
