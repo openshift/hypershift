@@ -40453,7 +40453,7 @@ indicates the update was successfully rolled out.</p>
 </tr>
 <tr>
 <td>
-<code>startedTime,omitempty,omitzero</code></br>
+<code>startedTime,omitzero</code></br>
 <em>
 <a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#time-v1-meta">
 Kubernetes meta/v1.Time
@@ -40466,7 +40466,7 @@ Kubernetes meta/v1.Time
 </tr>
 <tr>
 <td>
-<code>completionTime,omitempty,omitzero</code></br>
+<code>completionTime,omitzero</code></br>
 <em>
 <a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#time-v1-meta">
 Kubernetes meta/v1.Time
@@ -40526,7 +40526,7 @@ the last observed generation of the HostedControlPlane spec.</p>
 <tbody>
 <tr>
 <td>
-<code>desired,omitempty,omitzero</code></br>
+<code>desired,omitzero</code></br>
 <em>
 <a href="https://docs.openshift.com/container-platform/4.10/rest_api/config_apis/config-apis-index.html">
 github.com/openshift/api/config/v1.Release
@@ -40556,7 +40556,7 @@ version with RolloutComplete=True. Entries have state Partial when the rollout i
 </tr>
 <tr>
 <td>
-<code>observedGeneration,omitempty,omitzero</code></br>
+<code>observedGeneration</code></br>
 <em>
 int64
 </em>

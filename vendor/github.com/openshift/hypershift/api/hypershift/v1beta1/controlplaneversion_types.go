@@ -14,7 +14,7 @@ type ControlPlaneVersionStatus struct {
 	// desired is the release version that the control plane is reconciling towards.
 	// It is derived from the HostedControlPlane release image fields.
 	// +required
-	Desired configv1.Release `json:"desired,omitempty,omitzero"`
+	Desired configv1.Release `json:"desired,omitzero"`
 
 	// history contains a list of versions applied to management-side control plane components. The newest entry is
 	// first in the list. Entries have state Completed when all ControlPlaneComponent resources report the target
@@ -29,7 +29,7 @@ type ControlPlaneVersionStatus struct {
 	// +optional
 	// +kubebuilder:validation:Minimum=1
 	// +kubebuilder:validation:Maximum=9007199254740992
-	ObservedGeneration int64 `json:"observedGeneration,omitempty,omitzero"`
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 }
 
 // ControlPlaneUpdateHistory is a record of a single version transition for management-side
@@ -46,13 +46,13 @@ type ControlPlaneUpdateHistory struct {
 
 	// startedTime is the time at which the update was started.
 	// +required
-	StartedTime metav1.Time `json:"startedTime,omitempty,omitzero"`
+	StartedTime metav1.Time `json:"startedTime,omitzero"`
 
 	// completionTime is the time at which the update completed. It is set
 	// when all management-side components have reached the target version.
 	// It is not set while the update is in progress.
 	// +optional
-	CompletionTime metav1.Time `json:"completionTime,omitempty,omitzero"`
+	CompletionTime metav1.Time `json:"completionTime,omitzero"`
 
 	// version is a semantic version string identifying the update version
 	// (e.g. "4.20.1").

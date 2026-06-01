@@ -97,7 +97,7 @@ type OVNKubernetesConfig struct {
 	// set ipv6.internalJoinSubnet to a value different from the management cluster's
 	// join subnet (default fd98::/64) to avoid IPv6 routing conflicts.
 	// +optional
-	IPv6 OVNIPv6Config `json:"ipv6,omitzero,omitempty"`
+	IPv6 OVNIPv6Config `json:"ipv6,omitzero"`
 
 	// mtu is the MTU to use for the tunnel interface on hosted cluster nodes.
 	// This must be 100 bytes smaller than the uplink MTU.
