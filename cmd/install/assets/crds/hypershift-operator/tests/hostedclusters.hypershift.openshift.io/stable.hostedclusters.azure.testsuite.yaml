@@ -1,0 +1,815 @@
+apiVersion: apiextensions.k8s.io/v1
+name: "HostedCluster Azure validation"
+crdName: hostedclusters.hypershift.openshift.io
+version: v1beta1
+tests:
+  onCreate:
+  # --- Azure authentication configuration validation ---
+  - name: When azureAuthenticationConfigType is ManagedIdentities but managedIdentities field is missing it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: Azure
+          azure:
+            location: eastus
+            resourceGroupName: test-rg
+            vnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet"
+            subnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+            subscriptionID: "12345678-1234-5678-9012-123456789012"
+            securityGroupID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg"
+            tenantID: "87654321-4321-8765-2109-876543210987"
+            azureAuthenticationConfig:
+              azureAuthenticationConfigType: ManagedIdentities
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "managedIdentities is required when azureAuthenticationConfigType is ManagedIdentities, and forbidden otherwise"
+
+  - name: When azureAuthenticationConfigType is WorkloadIdentities but workloadIdentities field is missing it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: Azure
+          azure:
+            location: eastus
+            resourceGroupName: test-rg
+            vnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet"
+            subnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+            subscriptionID: "12345678-1234-5678-9012-123456789012"
+            securityGroupID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg"
+            tenantID: "87654321-4321-8765-2109-876543210987"
+            azureAuthenticationConfig:
+              azureAuthenticationConfigType: WorkloadIdentities
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "workloadIdentities is required when azureAuthenticationConfigType is WorkloadIdentities, and forbidden otherwise"
+
+  - name: When azureAuthenticationConfigType is ManagedIdentities but workloadIdentities field is present it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: Azure
+          azure:
+            location: eastus
+            resourceGroupName: test-rg
+            vnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet"
+            subnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+            subscriptionID: "12345678-1234-5678-9012-123456789012"
+            securityGroupID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg"
+            tenantID: "87654321-4321-8765-2109-876543210987"
+            azureAuthenticationConfig:
+              azureAuthenticationConfigType: ManagedIdentities
+              workloadIdentities:
+                imageRegistry:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                ingress:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                file:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                disk:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                nodePoolManagement:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                cloudProvider:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                network:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "managedIdentities is required when azureAuthenticationConfigType is ManagedIdentities, and forbidden otherwise"
+
+  - name: When azureAuthenticationConfigType is WorkloadIdentities but managedIdentities field is present it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: Azure
+          azure:
+            location: eastus
+            resourceGroupName: test-rg
+            vnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet"
+            subnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+            subscriptionID: "12345678-1234-5678-9012-123456789012"
+            securityGroupID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg"
+            tenantID: "87654321-4321-8765-2109-876543210987"
+            azureAuthenticationConfig:
+              azureAuthenticationConfigType: WorkloadIdentities
+              managedIdentities:
+                controlPlane:
+                  managedIdentitiesKeyVault:
+                    name: test-kv
+                    tenantID: "87654321-4321-8765-2109-876543210987"
+                  cloudProvider:
+                    clientID: "12345678-1234-5678-9012-123456789012"
+                    objectEncoding: utf-8
+                    credentialsSecretName: cp-secret
+                  nodePoolManagement:
+                    clientID: "12345678-1234-5678-9012-123456789012"
+                    objectEncoding: utf-8
+                    credentialsSecretName: npm-secret
+                  controlPlaneOperator:
+                    clientID: "12345678-1234-5678-9012-123456789012"
+                    objectEncoding: utf-8
+                    credentialsSecretName: cpo-secret
+                  imageRegistry:
+                    clientID: "12345678-1234-5678-9012-123456789012"
+                    objectEncoding: utf-8
+                    credentialsSecretName: ir-secret
+                  ingress:
+                    clientID: "12345678-1234-5678-9012-123456789012"
+                    objectEncoding: utf-8
+                    credentialsSecretName: ingress-secret
+                  network:
+                    clientID: "12345678-1234-5678-9012-123456789012"
+                    objectEncoding: utf-8
+                    credentialsSecretName: network-secret
+                  disk:
+                    clientID: "12345678-1234-5678-9012-123456789012"
+                    objectEncoding: utf-8
+                    credentialsSecretName: disk-secret
+                  file:
+                    clientID: "12345678-1234-5678-9012-123456789012"
+                    objectEncoding: utf-8
+                    credentialsSecretName: file-secret
+                dataPlane:
+                  imageRegistryMSIClientID: "12345678-1234-5678-9012-123456789012"
+                  diskMSIClientID: "12345678-1234-5678-9012-123456789012"
+                  fileMSIClientID: "12345678-1234-5678-9012-123456789012"
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "workloadIdentities is required when azureAuthenticationConfigType is WorkloadIdentities, and forbidden otherwise"
+
+  # --- Azure OAuth publishing strategy validation ---
+  - name: When self-managed Azure uses LoadBalancer for OAuthServer it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: Azure
+          azure:
+            location: eastus
+            resourceGroupName: test-rg
+            vnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet"
+            subnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+            subscriptionID: "12345678-1234-5678-9012-123456789012"
+            securityGroupID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg"
+            tenantID: "87654321-4321-8765-2109-876543210987"
+            azureAuthenticationConfig:
+              azureAuthenticationConfigType: WorkloadIdentities
+              workloadIdentities:
+                imageRegistry:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                ingress:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                file:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                disk:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                nodePoolManagement:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                cloudProvider:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                network:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: LoadBalancer
+            loadBalancer: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+
+  - name: When self-managed Azure uses Route for OAuthServer it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: Azure
+          azure:
+            location: eastus
+            resourceGroupName: test-rg
+            vnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet"
+            subnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+            subscriptionID: "12345678-1234-5678-9012-123456789012"
+            securityGroupID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg"
+            tenantID: "87654321-4321-8765-2109-876543210987"
+            azureAuthenticationConfig:
+              azureAuthenticationConfigType: WorkloadIdentities
+              workloadIdentities:
+                imageRegistry:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                ingress:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                file:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                disk:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                nodePoolManagement:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                cloudProvider:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                network:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+
+  - name: When managed Azure uses LoadBalancer for OAuthServer it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: Azure
+          azure:
+            location: eastus
+            resourceGroupName: test-rg
+            vnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet"
+            subnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+            subscriptionID: "12345678-1234-5678-9012-123456789012"
+            securityGroupID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg"
+            tenantID: "87654321-4321-8765-2109-876543210987"
+            azureAuthenticationConfig:
+              azureAuthenticationConfigType: ManagedIdentities
+              managedIdentities:
+                controlPlane:
+                  managedIdentitiesKeyVault:
+                    name: test-kv
+                    tenantID: "87654321-4321-8765-2109-876543210987"
+                  cloudProvider:
+                    clientID: "12345678-1234-5678-9012-123456789012"
+                    objectEncoding: utf-8
+                    credentialsSecretName: cp-secret
+                  nodePoolManagement:
+                    clientID: "12345678-1234-5678-9012-123456789012"
+                    objectEncoding: utf-8
+                    credentialsSecretName: npm-secret
+                  controlPlaneOperator:
+                    clientID: "12345678-1234-5678-9012-123456789012"
+                    objectEncoding: utf-8
+                    credentialsSecretName: cpo-secret
+                  imageRegistry:
+                    clientID: "12345678-1234-5678-9012-123456789012"
+                    objectEncoding: utf-8
+                    credentialsSecretName: ir-secret
+                  ingress:
+                    clientID: "12345678-1234-5678-9012-123456789012"
+                    objectEncoding: utf-8
+                    credentialsSecretName: ingress-secret
+                  network:
+                    clientID: "12345678-1234-5678-9012-123456789012"
+                    objectEncoding: utf-8
+                    credentialsSecretName: network-secret
+                  disk:
+                    clientID: "12345678-1234-5678-9012-123456789012"
+                    objectEncoding: utf-8
+                    credentialsSecretName: disk-secret
+                  file:
+                    clientID: "12345678-1234-5678-9012-123456789012"
+                    objectEncoding: utf-8
+                    credentialsSecretName: file-secret
+                dataPlane:
+                  imageRegistryMSIClientID: "12345678-1234-5678-9012-123456789012"
+                  diskMSIClientID: "12345678-1234-5678-9012-123456789012"
+                  fileMSIClientID: "12345678-1234-5678-9012-123456789012"
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: LoadBalancer
+            loadBalancer: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "Azure managed platform (ARO HCP) requires OAuthServer to use Route"
+
+  - name: When managed Azure uses Route for OAuthServer it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: Azure
+          azure:
+            location: eastus
+            resourceGroupName: test-rg
+            vnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet"
+            subnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+            subscriptionID: "12345678-1234-5678-9012-123456789012"
+            securityGroupID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg"
+            tenantID: "87654321-4321-8765-2109-876543210987"
+            azureAuthenticationConfig:
+              azureAuthenticationConfigType: ManagedIdentities
+              managedIdentities:
+                controlPlane:
+                  managedIdentitiesKeyVault:
+                    name: test-kv
+                    tenantID: "87654321-4321-8765-2109-876543210987"
+                  cloudProvider:
+                    clientID: "12345678-1234-5678-9012-123456789012"
+                    objectEncoding: utf-8
+                    credentialsSecretName: cp-secret
+                  nodePoolManagement:
+                    clientID: "12345678-1234-5678-9012-123456789012"
+                    objectEncoding: utf-8
+                    credentialsSecretName: npm-secret
+                  controlPlaneOperator:
+                    clientID: "12345678-1234-5678-9012-123456789012"
+                    objectEncoding: utf-8
+                    credentialsSecretName: cpo-secret
+                  imageRegistry:
+                    clientID: "12345678-1234-5678-9012-123456789012"
+                    objectEncoding: utf-8
+                    credentialsSecretName: ir-secret
+                  ingress:
+                    clientID: "12345678-1234-5678-9012-123456789012"
+                    objectEncoding: utf-8
+                    credentialsSecretName: ingress-secret
+                  network:
+                    clientID: "12345678-1234-5678-9012-123456789012"
+                    objectEncoding: utf-8
+                    credentialsSecretName: network-secret
+                  disk:
+                    clientID: "12345678-1234-5678-9012-123456789012"
+                    objectEncoding: utf-8
+                    credentialsSecretName: disk-secret
+                  file:
+                    clientID: "12345678-1234-5678-9012-123456789012"
+                    objectEncoding: utf-8
+                    credentialsSecretName: file-secret
+                dataPlane:
+                  imageRegistryMSIClientID: "12345678-1234-5678-9012-123456789012"
+                  diskMSIClientID: "12345678-1234-5678-9012-123456789012"
+                  fileMSIClientID: "12345678-1234-5678-9012-123456789012"
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+
+  # --- Azure PrivateLink CEL validation ---
+  - name: When Azure PrivateLink type is set without privateLink config it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: Azure
+          azure:
+            location: eastus
+            resourceGroupName: test-rg
+            vnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet"
+            subnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+            subscriptionID: "12345678-1234-5678-9012-123456789012"
+            securityGroupID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg"
+            tenantID: "87654321-4321-8765-2109-876543210987"
+            topology: Private
+            private:
+              type: PrivateLink
+            azureAuthenticationConfig:
+              azureAuthenticationConfigType: WorkloadIdentities
+              workloadIdentities:
+                imageRegistry:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                ingress:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                file:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                disk:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                nodePoolManagement:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                cloudProvider:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                network:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                controlPlaneOperator:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+
+  - name: When Azure PrivateLink type is set with privateLink config it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: Azure
+          azure:
+            location: eastus
+            resourceGroupName: test-rg
+            vnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet"
+            subnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+            subscriptionID: "12345678-1234-5678-9012-123456789012"
+            securityGroupID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg"
+            tenantID: "87654321-4321-8765-2109-876543210987"
+            topology: Private
+            private:
+              type: PrivateLink
+              privateLink:
+                natSubnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/nat-subnet"
+            azureAuthenticationConfig:
+              azureAuthenticationConfigType: WorkloadIdentities
+              workloadIdentities:
+                imageRegistry:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                ingress:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                file:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                disk:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                nodePoolManagement:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                cloudProvider:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                network:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                controlPlaneOperator:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+
+  # --- Azure controlPlaneOperator workload identity guard ---
+  - name: When Azure PrivateLink with WorkloadIdentities has controlPlaneOperator identity it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: Azure
+          azure:
+            location: eastus
+            resourceGroupName: test-rg
+            vnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet"
+            subnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+            subscriptionID: "12345678-1234-5678-9012-123456789012"
+            securityGroupID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg"
+            tenantID: "87654321-4321-8765-2109-876543210987"
+            topology: Private
+            private:
+              type: PrivateLink
+            azureAuthenticationConfig:
+              azureAuthenticationConfigType: WorkloadIdentities
+              workloadIdentities:
+                imageRegistry:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                ingress:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                file:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                disk:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                nodePoolManagement:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                cloudProvider:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                network:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                controlPlaneOperator:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+
+  - name: When Azure PrivateLink with WorkloadIdentities is missing controlPlaneOperator identity it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: Azure
+          azure:
+            location: eastus
+            resourceGroupName: test-rg
+            vnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet"
+            subnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+            subscriptionID: "12345678-1234-5678-9012-123456789012"
+            securityGroupID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg"
+            tenantID: "87654321-4321-8765-2109-876543210987"
+            topology: Private
+            private:
+              type: PrivateLink
+            azureAuthenticationConfig:
+              azureAuthenticationConfigType: WorkloadIdentities
+              workloadIdentities:
+                imageRegistry:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                ingress:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                file:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                disk:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                nodePoolManagement:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                cloudProvider:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                network:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "workloadIdentities.controlPlaneOperator is required when Private Link is configured with WorkloadIdentities authentication"

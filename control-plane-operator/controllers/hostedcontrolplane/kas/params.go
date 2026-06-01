@@ -3,7 +3,7 @@ package kas
 import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/config"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/netutil"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -21,7 +21,7 @@ const (
 
 func NewKubeAPIServerServiceParams(hcp *hyperv1.HostedControlPlane) *KubeAPIServerServiceParams {
 	return &KubeAPIServerServiceParams{
-		AllowedCIDRBlocks: util.AllowedCIDRBlocks(hcp),
+		AllowedCIDRBlocks: netutil.AllowedCIDRBlocks(hcp),
 		OwnerReference:    config.ControllerOwnerRef(hcp),
 	}
 }

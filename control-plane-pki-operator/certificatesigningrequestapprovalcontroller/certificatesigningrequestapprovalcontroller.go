@@ -95,7 +95,7 @@ func (c *CertificateSigningRequestApprovalController) syncCertificateSigningRequ
 		return factory.SyntheticRequeueError
 	}
 	if csr != nil {
-		syncContext.Recorder().Eventf("CertificateSigningRequestApproved", "%q in is approved", csr.Name)
+		syncContext.Recorder().Eventf("CertificateSigningRequestApproved", "%q is approved", csr.Name)
 		_, err = c.kubeClient.CertificatesV1().CertificateSigningRequests().UpdateApproval(ctx, name, csr, metav1.UpdateOptions{})
 		return err
 	}
@@ -103,7 +103,7 @@ func (c *CertificateSigningRequestApprovalController) syncCertificateSigningRequ
 	return nil
 }
 
-func (c *CertificateSigningRequestApprovalController) processCertificateSigningRequest(name string) (*certificatesv1.CertificateSigningRequest, bool, error) {
+func (c *CertificateSigningRequestApprovalController) processCertificateSigningRequest(name string) (*certificatesv1.CertificateSigningRequest, bool, error) { //nolint:unparam // result kept for API consistency
 	csr, err := c.getCSR(name)
 	if apierrors.IsNotFound(err) {
 		return nil, false, nil // nothing to do

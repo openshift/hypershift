@@ -8,7 +8,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	component "github.com/openshift/hypershift/support/controlplane-component"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/podspec"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -207,7 +207,7 @@ func appendBasicIgnoreLabels(args []string, platformType hyperv1.PlatformType) [
 func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
 	hcp := cpContext.HCP
 
-	util.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
+	podspec.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
 		if image, ok := cpContext.HCP.Annotations[hyperv1.ClusterAutoscalerImage]; ok {
 			c.Image = image
 		}
@@ -217,7 +217,7 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 		c.Args = append(c.Args, autoscalerArgs(&hcp.Spec.Autoscaling, hcp.Spec.Platform.Type, ctrl.LoggerFrom(cpContext))...)
 	})
 
-	util.UpdateVolume(kubeconfigVolumeName, deployment.Spec.Template.Spec.Volumes, func(v *corev1.Volume) {
+	podspec.UpdateVolume(kubeconfigVolumeName, deployment.Spec.Template.Spec.Volumes, func(v *corev1.Volume) {
 		v.Secret.SecretName = manifests.KASServiceCAPIKubeconfigSecret(hcp.Namespace, hcp.Spec.InfraID).Name
 	})
 

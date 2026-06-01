@@ -2,8 +2,8 @@ package testutils
 
 import (
 	haproxy "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/apiserver-haproxy"
+	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/releaseinfo"
-	"github.com/openshift/hypershift/support/util"
 
 	imagev1 "github.com/openshift/api/image/v1"
 
@@ -48,7 +48,7 @@ func InitReleaseImageOrDie(version string) *releaseinfo.ReleaseImage {
 						From: &corev1.ObjectReference{Name: "capi-openstack"},
 					},
 					{
-						Name: util.AvailabilityProberImageName,
+						Name: podspec.AvailabilityProberImageName,
 						From: &corev1.ObjectReference{Name: ""},
 					},
 					{

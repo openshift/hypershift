@@ -1,0 +1,32 @@
+name: Verify (Reusable)
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify
+    runs-on: arc-runner-set
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - run: make generate update
+      - run: make staticcheck
+      - run: make fmt
+      - run: make vet
+      - run: |
+          git update-index --refresh
+          git diff-index --cached --quiet --ignore-submodules HEAD --
+          git diff-files --quiet --ignore-submodules
+          git diff --exit-code HEAD --
+          STATUS=$(git status -s)
+          if [ -n "$STATUS" ]; then
+            echo "untracked files detected:"
+            echo "$STATUS"
+            exit 1
+          fi

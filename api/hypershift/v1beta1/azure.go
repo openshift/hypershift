@@ -360,9 +360,10 @@ type AzureNodePoolOSDisk struct {
 // fields of the Hosted Cluster CR. An existing cloud resource is expected to exist under the same SubscriptionID.
 //
 // +kubebuilder:validation:XValidation:rule="has(self.private) == has(oldSelf.private)",message="private cannot be added or removed after cluster creation"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.topology) || has(self.topology)",message="topology cannot be removed once set"
 // +kubebuilder:validation:XValidation:rule="!has(self.topology) || !has(oldSelf.topology) || (self.topology == 'Public') == (oldSelf.topology == 'Public')",message="transitions between Public and non-Public topology are not supported"
 // +kubebuilder:validation:XValidation:rule="!has(self.topology) || ((self.topology == 'Private' || self.topology == 'PublicAndPrivate') ? has(self.private) : !has(self.private))",message="private is required when topology is Private or PublicAndPrivate, and forbidden otherwise"
-// +kubebuilder:validation:XValidation:rule="!has(self.private) || !has(self.private.privateLink) || self.azureAuthenticationConfig.azureAuthenticationConfigType != 'WorkloadIdentities' || has(self.azureAuthenticationConfig.workloadIdentities.controlPlaneOperator)",message="workloadIdentities.controlPlaneOperator is required when Private Link is configured with WorkloadIdentities authentication"
+// +kubebuilder:validation:XValidation:rule="!has(self.private) || self.private.type != 'PrivateLink' || self.azureAuthenticationConfig.azureAuthenticationConfigType != 'WorkloadIdentities' || has(self.azureAuthenticationConfig.workloadIdentities.controlPlaneOperator)",message="workloadIdentities.controlPlaneOperator is required when Private Link is configured with WorkloadIdentities authentication"
 type AzurePlatformSpec struct {
 	// cloud is the cloud environment identifier, valid values could be found here: https://github.com/Azure/go-autorest/blob/4c0e21ca2bbb3251fe7853e6f9df6397f53dd419/autorest/azure/environments.go#L33
 	//
@@ -667,7 +668,7 @@ const (
 // mechanism. Currently only PrivateLink is supported; additional mechanisms (e.g., Swift) may
 // be added in the future.
 //
-// +kubebuilder:validation:XValidation:rule="self.type == 'PrivateLink' ? has(self.privateLink) : !has(self.privateLink)",message="privateLink is required when type is PrivateLink, and forbidden otherwise"
+// +kubebuilder:validation:XValidation:rule="self.type != 'PrivateLink' ? !has(self.privateLink) : true",message="privateLink is forbidden when type is not PrivateLink"
 // +union
 type AzurePrivateSpec struct {
 	// type specifies the private connectivity mechanism used for the hosted cluster's API server.
@@ -809,6 +810,9 @@ const (
 // AzureKMSSpec defines metadata about the configuration of the Azure KMS Secret Encryption provider using Azure key vault
 //
 // +kubebuilder:validation:XValidation:rule="!has(self.backupKey) || self.backupKey.keyVaultName == self.activeKey.keyVaultName",message="backupKey.keyVaultName must match activeKey.keyVaultName; both keys must reside in the same Key Vault"
+// +kubebuilder:validation:XValidation:rule="!(has(self.kms) && has(self.workloadIdentity))",message="kms and workloadIdentity are mutually exclusive"
+// +kubebuilder:validation:XValidation:rule="has(self.kms) || has(self.workloadIdentity)",message="one of kms or workloadIdentity must be set"
+// +kubebuilder:validation:XValidation:rule="has(self.kms) == has(oldSelf.kms)",message="the KMS authentication mode is immutable once set"
 type AzureKMSSpec struct {
 	// activeKey defines the active key used to encrypt new secrets
 	//
@@ -820,9 +824,19 @@ type AzureKMSSpec struct {
 	BackupKey *AzureKMSKey `json:"backupKey,omitempty"`
 
 	// kms is a pre-existing managed identity used to authenticate with Azure KMS.
+	// This is used for managed Azure (ARO HCP) clusters.
+	// kms and workloadIdentity are mutually exclusive.
 	//
-	// +required
-	KMS ManagedIdentity `json:"kms"`
+	// +optional
+	KMS ManagedIdentity `json:"kms,omitzero"`
+
+	// workloadIdentity contains the workload identity used to authenticate
+	// with Azure Key Vault for KMS encryption via a token-minter sidecar.
+	// This identity must have "Key Vault Crypto User" role on the Key Vault.
+	// kms and workloadIdentity are mutually exclusive.
+	//
+	// +optional
+	WorkloadIdentity WorkloadIdentity `json:"workloadIdentity,omitzero"`
 
 	// keyVaultAccess specifies how the Key Vault should be accessed.
 	// When set to "Private", the control plane routes Key Vault traffic through

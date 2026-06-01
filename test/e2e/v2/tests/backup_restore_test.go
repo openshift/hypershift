@@ -18,6 +18,7 @@ package tests
 
 import (
 	"fmt"
+	"maps"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -30,8 +31,12 @@ import (
 	"github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/backuprestore"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/kubernetes"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -46,6 +51,15 @@ const (
 	ContextRestore                 = "Restore"
 	ContextPostRestoreControlPlane = "PostRestoreControlPlane"
 	ContextBreakControlPlane       = "BreakControlPlane"
+)
+
+const (
+	// oadpPluginConfigMapName is the name of the ConfigMap used to configure the hypershift OADP plugin.
+	oadpPluginConfigMapName = "hypershift-oadp-plugin-config"
+	// etcdBackupMethodKey is the ConfigMap key that controls the etcd backup method.
+	etcdBackupMethodKey = "etcdBackupMethod"
+	// etcdBackupMethodSnapshot is the value for etcdBackupMethodKey to use etcd snapshots.
+	etcdBackupMethodSnapshot = "etcdSnapshot"
 )
 
 type backupRestorePlatformConfig struct {
@@ -70,6 +84,17 @@ var backupRestorePlatforms = map[hyperv1.PlatformType]backupRestorePlatformConfi
 	},
 	hyperv1.AgentPlatform: {
 		excludeWorkloads: []string{"router", "karpenter", "karpenter-operator", "cloud-network-config-controller"},
+		postRestoreHook: func(testCtx *internal.TestContext) error {
+			// Restore brings back paused CAPI resources; unpause them so reconciliation resumes.
+			return backuprestore.UnpauseAgentCAPIResources(testCtx, GinkgoLogr.WithName("backup-restore"))
+		},
+	},
+	hyperv1.KubevirtPlatform: {
+		excludeWorkloads: []string{"router", "karpenter", "karpenter-operator", "cloud-network-config-controller"},
+		postRestoreHook:  nil,
+	},
+	hyperv1.AzurePlatform: {
+		excludeWorkloads: []string{"router", "karpenter", "karpenter-operator"},
 		postRestoreHook:  nil,
 	},
 }
@@ -81,7 +106,6 @@ var _ = Describe("BackupRestore", Label("backup-restore"), Ordered, Serial, func
 		prober             backuprestore.ProberManager
 		testCtx            *internal.TestContext
 		backupName         string
-		restoreName        string
 		scheduleName       string
 		expectedConditions []util.Condition
 	)
@@ -116,41 +140,12 @@ var _ = Describe("BackupRestore", Label("backup-restore"), Ordered, Serial, func
 	BeforeEach(func() {
 		testCtx = internal.GetTestContext()
 		Expect(testCtx).NotTo(BeNil())
-		if err := testCtx.ValidateControlPlaneNamespace(); err != nil {
-			AbortSuite(err.Error())
-		}
-
-		// Ensure Velero pod is running before proceeding with backup/restore tests
-		err := backuprestore.EnsureVeleroPodRunning(testCtx)
-		if err != nil {
-			Fail(fmt.Sprintf("Velero is not running: %v", err))
-		}
+		validateBeforeEach(testCtx)
 	})
 
 	Context(ContextPreBackupControlPlane, func() {
 		It("should have control plane healthy before backup", func() {
-			err := internal.ValidateControlPlaneDeploymentsReadiness(testCtx, platformCfg.excludeWorkloads)
-			Expect(err).NotTo(HaveOccurred())
-			err = internal.ValidateControlPlaneStatefulSetsReadiness(testCtx, platformCfg.excludeWorkloads)
-			Expect(err).NotTo(HaveOccurred())
-			nodePool, err := getNodePool(testCtx)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(nodePool).NotTo(BeNil())
-			npConditions := conditions.ExpectedNodePoolConditions(nodePool)
-
-			latestVersion, err := supportedversion.GetLatestSupportedOCPVersion(testCtx.Context, testCtx.MgmtClient)
-			Expect(err).NotTo(HaveOccurred())
-			if latestVersion.LT(util.Version421) {
-				delete(npConditions, hyperv1.NodePoolSupportedVersionSkewConditionType)
-			}
-
-			for conditionType, conditionStatus := range npConditions {
-				expectedConditions = append(expectedConditions, util.Condition{
-					Type:   conditionType,
-					Status: metav1.ConditionStatus(conditionStatus),
-				})
-			}
-			internal.ValidateConditions(NewWithT(GinkgoT()), nodePool, expectedConditions)
+			expectedConditions = validatePreBackupControlPlane(testCtx, platformCfg.excludeWorkloads)
 		})
 	})
 
@@ -182,6 +177,17 @@ var _ = Describe("BackupRestore", Label("backup-restore"), Ordered, Serial, func
 
 	Context(ContextBackup, func() {
 		It("should create backup and schedule successfully", func() {
+			if testCtx.GetHostedCluster().Spec.Platform.Type == hyperv1.AgentPlatform {
+				By("Pausing AgentMachine and AgentCluster CRs")
+				err := backuprestore.PauseAgentCAPIResources(testCtx, GinkgoLogr.WithName("backup-restore"))
+				Expect(err).NotTo(HaveOccurred())
+				DeferCleanup(func() {
+					if err := backuprestore.UnpauseAgentCAPIResources(testCtx, GinkgoLogr.WithName("backup-restore")); err != nil {
+						GinkgoWriter.Printf("Failed to unpause Agent CAPI resources during cleanup: %v\n", err)
+					}
+				})
+			}
+
 			// Create schedule first to test parallel execution of backup and schedule and
 			// to speed up the test execution.
 			By("Creating schedule")
@@ -227,6 +233,7 @@ var _ = Describe("BackupRestore", Label("backup-restore"), Ordered, Serial, func
 			By("Waiting for schedule to have one backup completed")
 			err = backuprestore.WaitForScheduleCompletion(testCtx, scheduleName)
 			Expect(err).NotTo(HaveOccurred())
+
 		})
 	})
 
@@ -243,9 +250,9 @@ var _ = Describe("BackupRestore", Label("backup-restore"), Ordered, Serial, func
 
 	Context(ContextPostBackupControlPlane, func() {
 		It("should have control plane healthy after backup", func() {
-			err := internal.ValidateControlPlaneDeploymentsReadiness(testCtx, platformCfg.excludeWorkloads)
+			err := internal.WaitForControlPlaneDeploymentsReadiness(testCtx, 5*time.Minute, platformCfg.excludeWorkloads)
 			Expect(err).NotTo(HaveOccurred())
-			err = internal.ValidateControlPlaneStatefulSetsReadiness(testCtx, platformCfg.excludeWorkloads)
+			err = internal.WaitForControlPlaneStatefulSetsReadiness(testCtx, 5*time.Minute, platformCfg.excludeWorkloads)
 			Expect(err).NotTo(HaveOccurred())
 		})
 	})
@@ -260,7 +267,7 @@ var _ = Describe("BackupRestore", Label("backup-restore"), Ordered, Serial, func
 	Context(ContextRestore, func() {
 		It("should restore from backup successfully", func() {
 			By("Creating Restore")
-			restoreName = oadp.GenerateRestoreName(testCtx.ClusterName, testCtx.ClusterNamespace)
+			restoreName := oadp.GenerateRestoreName(testCtx.ClusterName, testCtx.ClusterNamespace)
 			restoreOpts := &backuprestore.OADPRestoreOptions{
 				Name:              restoreName,
 				FromBackup:        backupName,
@@ -268,38 +275,15 @@ var _ = Describe("BackupRestore", Label("backup-restore"), Ordered, Serial, func
 				HCNamespace:       testCtx.ClusterNamespace,
 				IncludeNamespaces: platformCfg.additionalNamespaces,
 			}
-			err := backuprestore.RunOADPRestore(testCtx.Context, GinkgoLogr.WithName("backup-restore"), testCtx.ArtifactDir, restoreOpts)
-			Expect(err).NotTo(HaveOccurred())
-			By("Waiting for restore to complete")
-			err = backuprestore.WaitForRestoreCompletion(testCtx, restoreName)
-			Expect(err).NotTo(HaveOccurred())
-
-			if platformCfg.postRestoreHook != nil {
-				By("Running platform-specific post-restore operations")
-				err = platformCfg.postRestoreHook(testCtx)
-				Expect(err).NotTo(HaveOccurred())
-			}
+			executeRestore(testCtx, restoreOpts, platformCfg.postRestoreHook)
 		})
 	})
 
 	Context(ContextPostRestoreControlPlane, func() {
 		It("should have control plane healthy after restore", func() {
-			By("Waiting for control plane statefulsets to be ready")
-			err := internal.WaitForControlPlaneStatefulSetsReadiness(testCtx, backuprestore.RestoreTimeout, platformCfg.excludeWorkloads)
-			Expect(err).NotTo(HaveOccurred())
-			By("Waiting for control plane deployments to be ready")
-			err = internal.WaitForControlPlaneDeploymentsReadiness(testCtx, backuprestore.RestoreTimeout, platformCfg.excludeWorkloads)
-			Expect(err).NotTo(HaveOccurred())
 			// TODO(mgencur): Remove this condition once https://redhat.atlassian.net/browse/MGMT-23509 is fixed
-			if testCtx.GetHostedCluster().Spec.Platform.Type != hyperv1.AgentPlatform {
-				By("Validating NodePool conditions")
-				Eventually(func(g Gomega) {
-					nodePool, err := getNodePool(testCtx)
-					g.Expect(err).NotTo(HaveOccurred())
-					g.Expect(nodePool).NotTo(BeNil())
-					internal.ValidateConditions(g, nodePool, expectedConditions)
-				}).WithPolling(backuprestore.PollInterval).WithTimeout(backuprestore.OIDCTimeout).Should(Succeed())
-			}
+			skipNodePoolValidation := testCtx.GetHostedCluster().Spec.Platform.Type == hyperv1.AgentPlatform
+			validatePostRestoreControlPlane(testCtx, platformCfg.excludeWorkloads, expectedConditions, skipNodePoolValidation)
 		})
 	})
 })
@@ -321,3 +305,319 @@ func getNodePool(testCtx *internal.TestContext) (*hyperv1.NodePool, error) {
 	}
 	return nil, fmt.Errorf("no NodePool found for cluster %s", testCtx.ClusterName)
 }
+
+func validateBeforeEach(testCtx *internal.TestContext) {
+	testCtx.ValidateHostedCluster()
+
+	err := backuprestore.EnsureVeleroPodRunning(testCtx)
+	if err != nil {
+		Fail(fmt.Sprintf("Velero is not running: %v", err))
+	}
+}
+
+// validatePreBackupControlPlane validates that deployments, statefulsets, and NodePool conditions
+// are healthy before a backup. It returns the expected conditions for later post-restore validation.
+func validatePreBackupControlPlane(testCtx *internal.TestContext, excludeWorkloads []string) []util.Condition {
+	err := internal.WaitForControlPlaneDeploymentsReadiness(testCtx, 5*time.Minute, excludeWorkloads)
+	Expect(err).NotTo(HaveOccurred())
+	err = internal.WaitForControlPlaneStatefulSetsReadiness(testCtx, 5*time.Minute, excludeWorkloads)
+	Expect(err).NotTo(HaveOccurred())
+	nodePool, err := getNodePool(testCtx)
+	Expect(err).NotTo(HaveOccurred())
+	Expect(nodePool).NotTo(BeNil())
+	npConditions := conditions.ExpectedNodePoolConditions(nodePool)
+
+	latestVersion, err := supportedversion.GetLatestSupportedOCPVersion(testCtx.Context, testCtx.MgmtClient)
+	Expect(err).NotTo(HaveOccurred())
+	if latestVersion.LT(util.Version421) {
+		delete(npConditions, hyperv1.NodePoolSupportedVersionSkewConditionType)
+	}
+
+	var expectedConditions []util.Condition
+	for conditionType, conditionStatus := range npConditions {
+		expectedConditions = append(expectedConditions, util.Condition{
+			Type:   conditionType,
+			Status: metav1.ConditionStatus(conditionStatus),
+		})
+	}
+	internal.ValidateConditions(NewWithT(GinkgoT()), nodePool, expectedConditions)
+	return expectedConditions
+}
+
+// executeRestore runs an OADP restore, waits for completion, and optionally runs a post-restore hook.
+func executeRestore(testCtx *internal.TestContext, restoreOpts *backuprestore.OADPRestoreOptions, postRestoreHook func(*internal.TestContext) error) {
+	err := backuprestore.RunOADPRestore(testCtx.Context, GinkgoLogr.WithName("backup-restore"), testCtx.ArtifactDir, restoreOpts)
+	Expect(err).NotTo(HaveOccurred())
+	By("Waiting for restore to complete")
+	err = backuprestore.WaitForRestoreCompletion(testCtx, restoreOpts.Name)
+	Expect(err).NotTo(HaveOccurred())
+
+	if postRestoreHook != nil {
+		By("Running platform-specific post-restore operations")
+		err = postRestoreHook(testCtx)
+		Expect(err).NotTo(HaveOccurred())
+	}
+}
+
+// validatePostRestoreControlPlane waits for statefulsets and deployments to become ready after a
+// restore, and optionally validates NodePool conditions. Set skipNodePoolValidation to true when
+// NodePool validation is not applicable (e.g. Agent platform workaround).
+func validatePostRestoreControlPlane(testCtx *internal.TestContext, excludeWorkloads []string, expectedConditions []util.Condition, skipNodePoolValidation bool) {
+	By("Waiting for control plane statefulsets to be ready")
+	err := internal.WaitForControlPlaneStatefulSetsReadiness(testCtx, backuprestore.RestoreTimeout, excludeWorkloads)
+	Expect(err).NotTo(HaveOccurred())
+	By("Waiting for control plane deployments to be ready")
+	err = internal.WaitForControlPlaneDeploymentsReadiness(testCtx, backuprestore.RestoreTimeout, excludeWorkloads)
+	Expect(err).NotTo(HaveOccurred())
+	if !skipNodePoolValidation {
+		By("Validating NodePool conditions")
+		Eventually(func(g Gomega) {
+			nodePool, err := getNodePool(testCtx)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(nodePool).NotTo(BeNil())
+			internal.ValidateConditions(g, nodePool, expectedConditions)
+		}).WithPolling(backuprestore.PollInterval).WithTimeout(backuprestore.OIDCTimeout).Should(Succeed())
+	}
+}
+
+var _ = Describe("BackupRestoreEtcdSnapshot", Label("backup-restore", "etcd-snapshot"), Ordered, Serial, func() {
+
+	var (
+		platformCfg        backupRestorePlatformConfig
+		testCtx            *internal.TestContext
+		backupName         string
+		snapshotURL        string
+		expectedConditions []util.Condition
+	)
+
+	BeforeAll(func() {
+		testCtx = internal.GetTestContext()
+		Expect(testCtx).NotTo(BeNil())
+		hostedCluster := testCtx.GetHostedCluster()
+		Expect(hostedCluster).NotTo(BeNil(), "HostedCluster should be set up")
+		if hostedCluster.Spec.Platform.Type != hyperv1.AWSPlatform {
+			Skip("etcd snapshot backup test only supported on AWS")
+		}
+		platformCfg = backupRestorePlatforms[hyperv1.AWSPlatform]
+
+		By("Checking if HCPEtcdBackup feature gate is enabled")
+		hcpEtcdBackupList := &hyperv1.HCPEtcdBackupList{}
+		err := testCtx.MgmtClient.List(testCtx.Context, hcpEtcdBackupList, crclient.InNamespace(testCtx.ControlPlaneNamespace))
+		if err != nil {
+			if meta.IsNoMatchError(err) || apierrors.IsNotFound(err) {
+				Skip("HCPEtcdBackup feature gate is not enabled (CRD not installed). " +
+					"Set HYPERSHIFT_FEATURESET=TechPreviewNoUpgrade on the HyperShift operator to enable it.")
+			}
+			// Other errors are unexpected - fail loudly
+			Expect(err).NotTo(HaveOccurred(), "unexpected error listing HCPEtcdBackup resources")
+		}
+
+		By("Configuring the hypershift-oadp-plugin-config ConfigMap")
+		cm := &corev1.ConfigMap{}
+		cmKey := types.NamespacedName{
+			Name:      oadpPluginConfigMapName,
+			Namespace: backuprestore.DefaultOADPNamespace,
+		}
+		var originalData map[string]string
+		cmExisted := true
+		err = testCtx.MgmtClient.Get(testCtx.Context, cmKey, cm)
+		if apierrors.IsNotFound(err) {
+			cmExisted = false
+			cm = &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      cmKey.Name,
+					Namespace: cmKey.Namespace,
+				},
+				Data: map[string]string{
+					etcdBackupMethodKey: etcdBackupMethodSnapshot,
+				},
+			}
+			err = testCtx.MgmtClient.Create(testCtx.Context, cm)
+			Expect(err).NotTo(HaveOccurred())
+		} else {
+			Expect(err).NotTo(HaveOccurred())
+			originalData = maps.Clone(cm.Data)
+			if cm.Data == nil {
+				cm.Data = map[string]string{}
+			}
+			cm.Data[etcdBackupMethodKey] = etcdBackupMethodSnapshot
+			err = testCtx.MgmtClient.Update(testCtx.Context, cm)
+			Expect(err).NotTo(HaveOccurred())
+		}
+
+		DeferCleanup(func() {
+			By("Cleaning up hypershift-oadp-plugin-config ConfigMap")
+			configMap := &corev1.ConfigMap{}
+			if err := testCtx.MgmtClient.Get(testCtx.Context, cmKey, configMap); err != nil {
+				if !apierrors.IsNotFound(err) {
+					GinkgoWriter.Printf("Failed to get ConfigMap during cleanup: %v\n", err)
+				}
+				return
+			}
+			if !cmExisted {
+				if err := testCtx.MgmtClient.Delete(testCtx.Context, configMap); err != nil && !apierrors.IsNotFound(err) {
+					GinkgoWriter.Printf("Failed to delete ConfigMap during cleanup: %v\n", err)
+				}
+				return
+			}
+			configMap.Data = originalData
+			if err := testCtx.MgmtClient.Update(testCtx.Context, configMap); err != nil {
+				GinkgoWriter.Printf("Failed to restore ConfigMap during cleanup: %v\n", err)
+			}
+		})
+
+		By("Ensuring DPA has the hypershift plugin")
+		dpaState, err := backuprestore.EnsureDPAHypershiftPlugin(testCtx)
+		Expect(err).NotTo(HaveOccurred(), "failed to ensure DPA has hypershift plugin")
+
+		if dpaState.PluginsModified {
+			DeferCleanup(func() {
+				By("Restoring original DPA plugins")
+				if err := backuprestore.RestoreDPAPlugins(testCtx, dpaState); err != nil {
+					GinkgoWriter.Printf("Failed to restore DPA plugins during cleanup: %v\n", err)
+				}
+			})
+		}
+	})
+
+	BeforeEach(func() {
+		testCtx = internal.GetTestContext()
+		Expect(testCtx).NotTo(BeNil())
+		validateBeforeEach(testCtx)
+	})
+
+	Context(ContextPreBackupControlPlane, func() {
+		It("should have control plane healthy before backup", func() {
+			expectedConditions = validatePreBackupControlPlane(testCtx, platformCfg.excludeWorkloads)
+		})
+	})
+
+	Context(ContextBackup, func() {
+		It("should create backup with etcd snapshot method", func() {
+			By("Creating backup with etcd snapshot options")
+			backupName = oadp.GenerateBackupName(
+				testCtx.ClusterName,
+				testCtx.ClusterNamespace,
+			)
+			backupOpts := &backuprestore.OADPBackupOptions{
+				Name:            backupName,
+				HCName:          testCtx.ClusterName,
+				HCNamespace:     testCtx.ClusterNamespace,
+				StorageLocation: testCtx.ClusterName,
+				UseEtcdSnapshot: true,
+			}
+			err := backuprestore.RunOADPBackup(testCtx.Context, GinkgoLogr.WithName("backup-restore"), testCtx.ArtifactDir, backupOpts)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Waiting for backup to complete")
+			err = backuprestore.WaitForBackupCompletion(testCtx, backupName)
+			Expect(err).NotTo(HaveOccurred())
+		})
+	})
+
+	Context("VerifyEtcdSnapshotBackup", func() {
+		It("should have HCPEtcdBackup with BackupCompleted=True", func() {
+			By("Waiting for HCPEtcdBackup BackupCompleted condition to be True")
+			err := backuprestore.WaitForHCPEtcdBackupCondition(testCtx, backupName, metav1.ConditionTrue)
+			Expect(err).NotTo(HaveOccurred(), "HCPEtcdBackup %s should have BackupCompleted=True", backupName)
+		})
+
+		It("should have HCPEtcdBackup with snapshotURL matching the backup created in this run", func() {
+			By("Waiting for HCPEtcdBackup to have a snapshotURL")
+			Eventually(func(g Gomega) {
+				hcpEtcdBackupList := &hyperv1.HCPEtcdBackupList{}
+				err := testCtx.MgmtClient.List(testCtx.Context, hcpEtcdBackupList, crclient.InNamespace(testCtx.ControlPlaneNamespace))
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(hcpEtcdBackupList.Items).NotTo(BeEmpty(), "expected at least one HCPEtcdBackup resource")
+
+				found := false
+				for _, backup := range hcpEtcdBackupList.Items {
+					if backuprestore.MatchesHCPEtcdBackupName(backup.Name, backupName) && backup.Status.SnapshotURL != "" {
+						snapshotURL = backup.Status.SnapshotURL
+						found = true
+						GinkgoWriter.Printf("Found HCPEtcdBackup %s with non-empty snapshotURL\n", backup.Name)
+						break
+					}
+				}
+				g.Expect(found).To(BeTrue(), fmt.Sprintf("expected HCPEtcdBackup matching OADP backup %s to have a non-empty snapshotURL", backupName))
+			}).WithPolling(backuprestore.PollInterval).WithTimeout(backuprestore.BackupTimeout).Should(Succeed())
+		})
+
+		It("should have lastSuccessfulEtcdBackupURL on HostedCluster status matching the snapshot", func() {
+			if snapshotURL == "" {
+				Skip("snapshotURL was not captured; the snapshotURL verification spec may have failed")
+			}
+			By("Waiting for HostedCluster lastSuccessfulEtcdBackupURL to match the snapshot")
+			Eventually(func(g Gomega) {
+				hostedCluster := &hyperv1.HostedCluster{}
+				err := testCtx.MgmtClient.Get(testCtx.Context, crclient.ObjectKey{
+					Name:      testCtx.ClusterName,
+					Namespace: testCtx.ClusterNamespace,
+				}, hostedCluster)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(hostedCluster.Status.LastSuccessfulEtcdBackupURL).To(Equal(snapshotURL),
+					"expected HostedCluster lastSuccessfulEtcdBackupURL to match the snapshot created in this run")
+			}).WithPolling(backuprestore.PollInterval).WithTimeout(backuprestore.BackupTimeout).Should(Succeed())
+			GinkgoWriter.Printf("HostedCluster lastSuccessfulEtcdBackupURL matches expected snapshotURL\n")
+		})
+	})
+
+	Context(ContextBreakControlPlane, func() {
+		It("should break hosted cluster", func() {
+			err := backuprestore.BreakHostedClusterPreservingMachines(testCtx, GinkgoLogr.WithName("cleanup"))
+			Expect(err).NotTo(HaveOccurred())
+		})
+	})
+
+	Context(ContextRestore, func() {
+		It("should restore from backup successfully", func() {
+			By("Creating Restore with etcd snapshot options")
+			restoreName := oadp.GenerateRestoreName(testCtx.ClusterName, testCtx.ClusterNamespace)
+			restoreOpts := &backuprestore.OADPRestoreOptions{
+				Name:            restoreName,
+				FromBackup:      backupName,
+				HCName:          testCtx.ClusterName,
+				HCNamespace:     testCtx.ClusterNamespace,
+				UseEtcdSnapshot: true,
+			}
+			executeRestore(testCtx, restoreOpts, platformCfg.postRestoreHook)
+		})
+	})
+
+	Context(ContextPostRestoreControlPlane, func() {
+		It("should have control plane healthy after restore", func() {
+			validatePostRestoreControlPlane(testCtx, platformCfg.excludeWorkloads, expectedConditions, false)
+		})
+
+		It("should have restoreSnapshotURL set on HostedCluster after restore", func() {
+			// RestoreSnapshotURL contains a presigned URL, which differs from the
+			// original S3 URL stored in HCPEtcdBackup.Status.SnapshotURL. We verify
+			// the field is populated rather than comparing exact values.
+			Eventually(func(g Gomega) {
+				hostedCluster := &hyperv1.HostedCluster{}
+				err := testCtx.MgmtClient.Get(testCtx.Context, crclient.ObjectKey{
+					Name:      testCtx.ClusterName,
+					Namespace: testCtx.ClusterNamespace,
+				}, hostedCluster)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(hostedCluster.Spec.Etcd.Managed).NotTo(BeNil(), "expected managed etcd spec to be set")
+				g.Expect(hostedCluster.Spec.Etcd.Managed.Storage.RestoreSnapshotURL).To(HaveLen(1),
+					"expected restoreSnapshotURL to contain exactly one entry")
+				g.Expect(hostedCluster.Spec.Etcd.Managed.Storage.RestoreSnapshotURL[0]).NotTo(BeEmpty(),
+					"expected restoreSnapshotURL to be a non-empty presigned URL")
+			}).WithPolling(backuprestore.PollInterval).WithTimeout(backuprestore.RestoreTimeout).Should(Succeed())
+			GinkgoWriter.Printf("RestoreSnapshotURL is set on HostedCluster\n")
+		})
+
+		It("should have etcd-init container logs showing successful snapshot restore", func() {
+			By("Verifying etcd-0 init container logs for snapshot restore traces")
+			restConfig, err := util.GetConfig()
+			Expect(err).NotTo(HaveOccurred(), "failed to get REST config for pod log access")
+			kubeClient, err := kubernetes.NewForConfig(restConfig)
+			Expect(err).NotTo(HaveOccurred(), "failed to create kubernetes clientset")
+
+			err = backuprestore.VerifyEtcdInitLogs(testCtx.Context, GinkgoLogr.WithName("etcd-init"), kubeClient, testCtx.ControlPlaneNamespace)
+			Expect(err).NotTo(HaveOccurred(), "etcd-init container logs should confirm snapshot restore")
+		})
+	})
+})

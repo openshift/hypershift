@@ -8,7 +8,7 @@ type ClientOptions struct {
 	dialTimeout time.Duration
 }
 
-func newClientOpts(opts ...ClientOption) (*ClientOptions, error) {
+func newClientOpts(opts ...ClientOption) (*ClientOptions, error) { //nolint:unparam // result kept for API consistency
 	clientOpts := &ClientOptions{
 		dialTimeout: DefaultDialTimeout,
 	}

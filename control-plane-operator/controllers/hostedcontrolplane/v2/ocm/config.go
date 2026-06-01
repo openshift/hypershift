@@ -10,13 +10,15 @@ import (
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/globalconfig"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/k8sutil"
 
 	buildv1 "github.com/openshift/api/build/v1"
 	configv1 "github.com/openshift/api/config/v1"
 	openshiftcpv1 "github.com/openshift/api/openshiftcontrolplane/v1"
 
 	corev1 "k8s.io/api/core/v1"
+
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
@@ -29,9 +31,23 @@ func adaptConfigMap(cpContext component.WorkloadContext, cm *corev1.ConfigMap) e
 	}
 
 	ocmConfig := &openshiftcpv1.OpenShiftControllerManagerConfig{}
-	err := util.DeserializeResource(cm.Data[configKey], ocmConfig, api.Scheme)
+	err := k8sutil.DeserializeResource(cm.Data[configKey], ocmConfig, api.Scheme)
 	if err != nil {
 		return fmt.Errorf("unable to decode existing openshift controller manager configuration: %w", err)
+	}
+
+	// Fetch the existing ConfigMap from the cluster to preserve HCCO modifications
+	// (e.g., Controllers field when registry is disabled via managementState: Removed)
+	var existingControllers []string
+	existingCM := &corev1.ConfigMap{}
+	err = cpContext.Client.Get(cpContext.Context, client.ObjectKeyFromObject(cm), existingCM)
+	if err == nil && existingCM.Data != nil {
+		if existingConfigStr, exists := existingCM.Data[configKey]; exists && len(existingConfigStr) > 0 {
+			existingConfig := &openshiftcpv1.OpenShiftControllerManagerConfig{}
+			if err := k8sutil.DeserializeResource(existingConfigStr, existingConfig, api.Scheme); err == nil {
+				existingControllers = existingConfig.Controllers
+			}
+		}
 	}
 
 	observedConfig := &globalconfig.ObservedConfig{}
@@ -43,8 +59,8 @@ func adaptConfigMap(cpContext component.WorkloadContext, cm *corev1.ConfigMap) e
 	if err != nil {
 		return err
 	}
-	adaptConfig(ocmConfig, cpContext.HCP.Spec.Configuration, cpContext.ReleaseImageProvider, observedConfig.Build, cpContext.HCP.Spec.Capabilities, featureGates)
-	configStr, err := util.SerializeResource(ocmConfig, api.Scheme)
+	adaptConfig(ocmConfig, cpContext.HCP.Spec.Configuration, cpContext.ReleaseImageProvider, observedConfig.Build, cpContext.HCP.Spec.Capabilities, featureGates, existingControllers)
+	configStr, err := k8sutil.SerializeResource(ocmConfig, api.Scheme)
 	if err != nil {
 		return fmt.Errorf("failed to serialize openshift controller manager configuration: %w", err)
 	}
@@ -52,13 +68,19 @@ func adaptConfigMap(cpContext component.WorkloadContext, cm *corev1.ConfigMap) e
 	return nil
 }
 
-func adaptConfig(cfg *openshiftcpv1.OpenShiftControllerManagerConfig, configuration *hyperv1.ClusterConfiguration, releaseImageProvider imageprovider.ReleaseImageProvider, buildConfig *configv1.Build, caps *hyperv1.Capabilities, featureGates []string) {
+func adaptConfig(cfg *openshiftcpv1.OpenShiftControllerManagerConfig, configuration *hyperv1.ClusterConfiguration, releaseImageProvider imageprovider.ReleaseImageProvider, buildConfig *configv1.Build, caps *hyperv1.Capabilities, featureGates []string, existingControllers []string) {
 	cfg.Build.ImageTemplateFormat.Format = releaseImageProvider.GetImage("docker-builder")
 	cfg.Deployer.ImageTemplateFormat.Format = releaseImageProvider.GetImage("deployer")
 
+	// Preserve any existing Controllers configuration (e.g., modifications by HCCO)
+	// Only override if the ImageRegistry capability is explicitly disabled
 	if !capabilities.IsImageRegistryCapabilityEnabled(caps) {
 		cfg.Controllers = []string{"*", fmt.Sprintf("-%s", openshiftcpv1.OpenShiftServiceAccountPullSecretsController)}
 		cfg.DockerPullSecret.InternalRegistryHostname = ""
+	} else if len(existingControllers) > 0 {
+		// Preserve existing Controllers field from the cluster to maintain any HCCO modifications
+		// (e.g., when registry is disabled via managementState: Removed instead of capability)
+		cfg.Controllers = existingControllers
 	}
 
 	if configuration != nil && configuration.Image != nil {

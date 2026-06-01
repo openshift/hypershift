@@ -270,6 +270,14 @@ func IsSelfManagedAzure(platform hyperv1.PlatformType) bool {
 	return platform == hyperv1.AzurePlatform && !IsAroHCP()
 }
 
+// IsSelfManagedAzureWithWorkloadIdentity returns true if the platform is self-managed Azure
+// and workload identities are configured.
+func IsSelfManagedAzureWithWorkloadIdentity(platformType hyperv1.PlatformType, azure *hyperv1.AzurePlatformSpec) bool {
+	return IsSelfManagedAzure(platformType) &&
+		azure != nil &&
+		azure.AzureAuthenticationConfig.WorkloadIdentities != nil
+}
+
 // SetAsAroHCPTest sets the proper environment variable for the test, designating this is an ARO-HCP environment
 func SetAsAroHCPTest(t *testing.T) {
 	t.Setenv("MANAGED_SERVICE", hyperv1.AroHCP)

@@ -217,6 +217,19 @@ func TestCreateCluster(t *testing.T) {
 				"--kas-dns-name=test-dns-name.example.com",
 			},
 		},
+		{
+			name: "minimal with OVNKubernetesMTU",
+			args: []string{
+				"--name=example",
+				"--sts-creds=" + credentialsFile,
+				"--infra-json=" + infraFile,
+				"--iam-json=" + iamFile,
+				"--role-arn=fakeRoleARN",
+				"--pull-secret=" + pullSecretFile,
+				"--render-sensitive",
+				"--ovn-kubernetes-mtu=1400",
+			},
+		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			flags := pflag.NewFlagSet(testCase.name, pflag.ContinueOnError)

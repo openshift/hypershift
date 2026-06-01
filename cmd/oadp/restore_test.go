@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	. "github.com/onsi/gomega"
+
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/ptr"
@@ -13,73 +15,123 @@ import (
 )
 
 func TestGenerateRestoreObjectBasic(t *testing.T) {
-	opts := &CreateOptions{
-		HCName:                 "test-cluster",
-		HCNamespace:            "test-cluster-ns",
-		BackupName:             "test-backup-123",
-		OADPNamespace:          "openshift-adp",
-		ExistingResourcePolicy: "update",
-		RestorePVs:             ptr.To(true),
-		PreserveNodePorts:      ptr.To(true),
+	type testCase struct {
+		name                         string
+		backupName                   string
+		useEtcdSnapshot              bool
+		restorePVs                   bool
+		expectedRestorePVs           bool
+		expectedCleanupBeforeRestore bool
+		expectedVeleroBackupNameRefs bool
+		expectedExcludedContains     []string
+		expectedExcludedNotContains  []string
 	}
 
-	restore, restoreName, err := opts.GenerateRestoreObject()
-	if err != nil {
-		t.Fatalf("GenerateRestoreObject() failed: %v", err)
+	tests := []testCase{
+		{
+			name:                         "When using default mode it should generate standard restore spec",
+			backupName:                   "test-backup-123",
+			useEtcdSnapshot:              false,
+			restorePVs:                   true,
+			expectedRestorePVs:           true,
+			expectedCleanupBeforeRestore: false,
+			expectedVeleroBackupNameRefs: false,
+			expectedExcludedContains:     []string{"nodes", "events", "csinodes.storage.k8s.io", "volumeattachments.storage.k8s.io", "backuprepositories.velero.io"},
+			expectedExcludedNotContains:  nil,
+		},
+		{
+			name:                         "When using etcd snapshot mode it should generate etcd snapshot restore spec",
+			backupName:                   "test-backup-456",
+			useEtcdSnapshot:              true,
+			restorePVs:                   true,
+			expectedRestorePVs:           false,
+			expectedCleanupBeforeRestore: true,
+			expectedVeleroBackupNameRefs: true,
+			expectedExcludedContains:     []string{"nodes", "events", "backups.velero.io"},
+			expectedExcludedNotContains:  []string{"csinodes.storage.k8s.io", "volumeattachments.storage.k8s.io", "backuprepositories.velero.io"},
+		},
 	}
 
-	// Test basic properties
-	if restore.GetAPIVersion() != "velero.io/v1" {
-		t.Errorf("Expected APIVersion 'velero.io/v1', got '%s'", restore.GetAPIVersion())
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
 
-	if restore.GetKind() != "Restore" {
-		t.Errorf("Expected Kind 'Restore', got '%s'", restore.GetKind())
-	}
+			opts := &CreateOptions{
+				HCName:                 "test-cluster",
+				HCNamespace:            "test-cluster-ns",
+				BackupName:             tt.backupName,
+				OADPNamespace:          "openshift-adp",
+				ExistingResourcePolicy: "update",
+				RestorePVs:             ptr.To(tt.restorePVs),
+				PreserveNodePorts:      ptr.To(true),
+				UseEtcdSnapshot:        tt.useEtcdSnapshot,
+			}
 
-	if restore.GetNamespace() != "openshift-adp" {
-		t.Errorf("Expected namespace 'openshift-adp', got '%s'", restore.GetNamespace())
-	}
+			restore, restoreName, err := opts.GenerateRestoreObject()
+			g.Expect(err).NotTo(HaveOccurred())
 
-	// Test restore name should be auto-generated since no custom name was provided
-	// Format should be: {hcName}-{hcNamespace}-{randomSuffix}
-	expectedPattern := "test-cluster-test-cluster-ns-"
-	if !strings.HasPrefix(restoreName, expectedPattern) {
-		t.Errorf("Expected restore name to start with '%s', got '%s'", expectedPattern, restoreName)
-	}
-	// Check that the name has the random suffix (should be 6 characters)
-	if len(restoreName) != len(expectedPattern)+6 {
-		t.Errorf("Expected restore name length to be %d, got %d", len(expectedPattern)+6, len(restoreName))
-	}
+			// Basic properties
+			g.Expect(restore.GetAPIVersion()).To(Equal("velero.io/v1"))
+			g.Expect(restore.GetKind()).To(Equal("Restore"))
+			g.Expect(restore.GetNamespace()).To(Equal("openshift-adp"))
+			g.Expect(restoreName).To(HavePrefix("test-cluster-test-cluster-ns-"))
 
-	// Test spec fields
-	backupName, found, err := unstructured.NestedString(restore.Object, "spec", "backupName")
-	if err != nil {
-		t.Errorf("Failed to get backupName: %v", err)
-	}
-	if !found || backupName != "test-backup-123" {
-		t.Errorf("Expected backupName 'test-backup-123', got '%s'", backupName)
-	}
+			// backupName
+			bn, found, err := unstructured.NestedString(restore.Object, "spec", "backupName")
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(found).To(BeTrue())
+			g.Expect(bn).To(Equal(tt.backupName))
 
-	policy, found, err := unstructured.NestedString(restore.Object, "spec", "existingResourcePolicy")
-	if err != nil {
-		t.Errorf("Failed to get existingResourcePolicy: %v", err)
-	}
-	if !found || policy != "update" {
-		t.Errorf("Expected existingResourcePolicy 'update', got '%s'", policy)
-	}
+			// existingResourcePolicy
+			policy, found, err := unstructured.NestedString(restore.Object, "spec", "existingResourcePolicy")
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(found).To(BeTrue())
+			g.Expect(policy).To(Equal("update"))
 
-	// Test included namespaces
-	namespaces, found, err := unstructured.NestedStringSlice(restore.Object, "spec", "includedNamespaces")
-	if err != nil {
-		t.Errorf("Failed to get includedNamespaces: %v", err)
-	}
-	if !found || len(namespaces) != 2 {
-		t.Errorf("Expected 2 included namespaces, got %d", len(namespaces))
-	}
-	expectedNamespaces := []string{"test-cluster-ns", "test-cluster-ns-test-cluster"}
-	if len(namespaces) == 2 && (namespaces[0] != expectedNamespaces[0] || namespaces[1] != expectedNamespaces[1]) {
-		t.Errorf("Expected namespaces %v, got %v", expectedNamespaces, namespaces)
+			// includedNamespaces
+			namespaces, found, err := unstructured.NestedStringSlice(restore.Object, "spec", "includedNamespaces")
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(found).To(BeTrue())
+			g.Expect(namespaces).To(Equal([]string{"test-cluster-ns", "test-cluster-ns-test-cluster"}))
+
+			// restorePVs
+			rpv, found, err := unstructured.NestedBool(restore.Object, "spec", "restorePVs")
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(found).To(BeTrue())
+			g.Expect(rpv).To(Equal(tt.expectedRestorePVs))
+
+			// cleanupBeforeRestore
+			cbr, cbrFound, err := unstructured.NestedString(restore.Object, "spec", "cleanupBeforeRestore")
+			g.Expect(err).NotTo(HaveOccurred())
+			if tt.expectedCleanupBeforeRestore {
+				g.Expect(cbrFound).To(BeTrue(), "cleanupBeforeRestore should be present")
+				g.Expect(cbr).To(Equal("CleanupRestored"))
+			} else {
+				g.Expect(cbrFound).To(BeFalse(), "cleanupBeforeRestore should not be present")
+			}
+
+			// velero*BackupName refs
+			for _, field := range []string{"veleroManagedClustersBackupName", "veleroCredentialsBackupName", "veleroResourcesBackupName"} {
+				val, found, err := unstructured.NestedString(restore.Object, "spec", field)
+				g.Expect(err).NotTo(HaveOccurred())
+				if tt.expectedVeleroBackupNameRefs {
+					g.Expect(found).To(BeTrue(), "%s should be present", field)
+					g.Expect(val).To(Equal(tt.backupName))
+				} else {
+					g.Expect(found).To(BeFalse(), "%s should not be present", field)
+				}
+			}
+
+			// excludedResources
+			er, _, err := unstructured.NestedStringSlice(restore.Object, "spec", "excludedResources")
+			g.Expect(err).NotTo(HaveOccurred())
+			for _, expected := range tt.expectedExcludedContains {
+				g.Expect(er).To(ContainElement(expected))
+			}
+			for _, notExpected := range tt.expectedExcludedNotContains {
+				g.Expect(er).NotTo(ContainElement(notExpected))
+			}
+		})
 	}
 }
 

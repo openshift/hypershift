@@ -2,16 +2,22 @@ package metrics
 
 import (
 	"context"
+	"fmt"
 	"strconv"
+	"sync"
 	"testing"
+	"time"
+
+	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/api"
-	"github.com/openshift/hypershift/support/awsapi"
 
-	"github.com/aws/aws-sdk-go-v2/service/ec2"
-	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	ec2v2 "github.com/aws/aws-sdk-go-v2/service/ec2"
+	ec2typesv2 "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	"github.com/aws/smithy-go"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/clock"
 	"k8s.io/utils/ptr"
@@ -22,49 +28,81 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
-	"go.uber.org/mock/gomock"
 )
 
 var (
 	ignoreUnexportedDto = cmpopts.IgnoreUnexported(dto.MetricFamily{}, dto.Metric{}, dto.LabelPair{}, dto.Gauge{})
 )
 
+// awsError creates a smithy.APIError compatible error
+type awsError struct {
+	code    string
+	message string
+	fault   smithy.ErrorFault
+}
+
+func (e *awsError) Error() string {
+	return fmt.Sprintf("%s: %s", e.code, e.message)
+}
+
+func (e *awsError) ErrorCode() string {
+	return e.code
+}
+
+func (e *awsError) ErrorMessage() string {
+	return e.message
+}
+
+func (e *awsError) ErrorFault() smithy.ErrorFault {
+	return e.fault
+}
+
+func newAWSError(code, message string) error {
+	return &awsError{
+		code:    code,
+		message: message,
+		fault:   smithy.FaultUnknown,
+	}
+}
+
 type nodePoolParams struct {
 	availableNodesCount int32
 	ec2InstanceType     string
 }
 
-// newEC2MockWithVCpuMap creates a mock EC2 client that returns vCPU info
-// based on the requested instance types. Known types return specific vCPU
-// counts; unknown types return nil (simulating unexpected AWS output).
-func newEC2MockWithVCpuMap(t *testing.T) awsapi.EC2API {
-	t.Helper()
-	m := awsapi.NewMockEC2API(gomock.NewController(t))
-	m.EXPECT().DescribeInstanceTypes(gomock.Any(), gomock.Any()).
-		DoAndReturn(func(_ context.Context, input *ec2.DescribeInstanceTypesInput, _ ...func(*ec2.Options)) (*ec2.DescribeInstanceTypesOutput, error) {
-			var instanceTypesInfo []ec2types.InstanceTypeInfo
-			for _, instanceType := range input.InstanceTypes {
-				var vCpusCount *int32
-				switch string(instanceType) {
-				case "m5.xlarge":
-					vCpusCount = ptr.To[int32](4)
-				case "m5.2xlarge":
-					vCpusCount = ptr.To[int32](8)
-				}
-				instanceTypesInfo = append(instanceTypesInfo, ec2types.InstanceTypeInfo{
-					InstanceType: instanceType,
-					VCpuInfo:     &ec2types.VCpuInfo{DefaultVCpus: vCpusCount},
-				})
-			}
-			return &ec2.DescribeInstanceTypesOutput{InstanceTypes: instanceTypesInfo}, nil
-		}).AnyTimes()
-	return m
+type Ec2ClientMock struct {
+	MockedDescribeInstanceTypesFunc func(ctx context.Context, input *ec2v2.DescribeInstanceTypesInput, optFns ...func(*ec2v2.Options)) (*ec2v2.DescribeInstanceTypesOutput, error)
+}
+
+func initDescribeInstanceTypesOutput(instanceTypeInfo []ec2typesv2.InstanceTypeInfo) *ec2v2.DescribeInstanceTypesOutput {
+	return &ec2v2.DescribeInstanceTypesOutput{
+		InstanceTypes: instanceTypeInfo,
+	}
+}
+
+func initInstanceTypeInfo(instanceType string, vCpusCount int32) ec2typesv2.InstanceTypeInfo {
+	return ec2typesv2.InstanceTypeInfo{
+		InstanceType: ec2typesv2.InstanceType(instanceType),
+		VCpuInfo: &ec2typesv2.VCpuInfo{
+			DefaultVCpus: ptr.To[int32](vCpusCount),
+		},
+	}
+}
+
+func (c *Ec2ClientMock) DescribeInstanceTypes(ctx context.Context, input *ec2v2.DescribeInstanceTypesInput, optFns ...func(*ec2v2.Options)) (*ec2v2.DescribeInstanceTypesOutput, error) {
+	return c.MockedDescribeInstanceTypesFunc(ctx, input, optFns...)
 }
 
 func TestReportVCpusCountByHCluster(t *testing.T) {
 	testCases := []struct {
-		name                          string
-		npsParams                     []nodePoolParams
+		name      string
+		platform  hyperv1.PlatformType
+		npsParams []nodePoolParams
+		configMap *corev1.ConfigMap
+
+		MockedEC2DescribeInstanceTypesFunc func(ctx context.Context, input *ec2v2.DescribeInstanceTypesInput, optFns ...func(*ec2v2.Options)) (*ec2v2.DescribeInstanceTypesOutput, error)
+
+		// expected results
 		expectedVCpusCount            float64
 		expectedVCpusCountErrorReason string
 	}{
@@ -78,35 +116,140 @@ func TestReportVCpusCountByHCluster(t *testing.T) {
 			npsParams: []nodePoolParams{
 				{availableNodesCount: 0, ec2InstanceType: "m5.xlarge"},
 			},
+			MockedEC2DescribeInstanceTypesFunc: func(ctx context.Context, input *ec2v2.DescribeInstanceTypesInput, optFns ...func(*ec2v2.Options)) (*ec2v2.DescribeInstanceTypesOutput, error) {
+				return initDescribeInstanceTypesOutput([]ec2typesv2.InstanceTypeInfo{}), nil
+			},
 			expectedVCpusCount: 0,
 		},
 		{
-			name: "When there is one nodePool with 2 m5.xlarge nodes available, the total number of worker vCpus is 4",
+			name: "When there is one nodePool with 2 m5.xlarge nodes available, the total number of worker vCPUs is 8",
 			npsParams: []nodePoolParams{
 				{availableNodesCount: 2, ec2InstanceType: "m5.xlarge"},
+			},
+			MockedEC2DescribeInstanceTypesFunc: func(ctx context.Context, input *ec2v2.DescribeInstanceTypesInput, optFns ...func(*ec2v2.Options)) (*ec2v2.DescribeInstanceTypesOutput, error) {
+				return initDescribeInstanceTypesOutput([]ec2typesv2.InstanceTypeInfo{
+					initInstanceTypeInfo("m5.xlarge", 4)}), nil
 			},
 			expectedVCpusCount: 8,
 		},
 		{
-			name: "When there is two nodePools with 2 m5.2xlarge nodes available each, the total number of worker vCpus is 16",
+			name: "When there are two nodePools with 2 m5.2xlarge nodes available each, the total number of worker vCPUs is 32",
 			npsParams: []nodePoolParams{
 				{availableNodesCount: 2, ec2InstanceType: "m5.2xlarge"},
 				{availableNodesCount: 2, ec2InstanceType: "m5.2xlarge"},
+			},
+			MockedEC2DescribeInstanceTypesFunc: func(ctx context.Context, input *ec2v2.DescribeInstanceTypesInput, optFns ...func(*ec2v2.Options)) (*ec2v2.DescribeInstanceTypesOutput, error) {
+				return initDescribeInstanceTypesOutput([]ec2typesv2.InstanceTypeInfo{
+					initInstanceTypeInfo("m5.2xlarge", 8)}), nil
 			},
 			expectedVCpusCount: 32,
 		},
 		{
-			name: "When the nodePool EC2 instance type is invalid, the total number of worker vCpus is -1",
+			name: "When EC2 API returns unexpected output and no ConfigMap exists, it should report ConfigMap not found",
 			npsParams: []nodePoolParams{
 				{availableNodesCount: 2, ec2InstanceType: "hello_world"},
 			},
+			MockedEC2DescribeInstanceTypesFunc: func(ctx context.Context, input *ec2v2.DescribeInstanceTypesInput, optFns ...func(*ec2v2.Options)) (*ec2v2.DescribeInstanceTypesOutput, error) {
+				return &ec2v2.DescribeInstanceTypesOutput{}, nil
+			},
 			expectedVCpusCount:            -1,
-			expectedVCpusCountErrorReason: "unexpected AWS output",
+			expectedVCpusCountErrorReason: errRosaCPUsInstanceTypesConfigNotFound.Error(),
+		},
+		{
+			name: "When EC2 API fails and no ConfigMap exists, it should report ConfigMap not found",
+			npsParams: []nodePoolParams{
+				{availableNodesCount: 2, ec2InstanceType: "dream-instance.xlarge"},
+			},
+			MockedEC2DescribeInstanceTypesFunc: func(ctx context.Context, input *ec2v2.DescribeInstanceTypesInput, optFns ...func(*ec2v2.Options)) (*ec2v2.DescribeInstanceTypesOutput, error) {
+				return nil, newAWSError("InvalidInstanceType", "the instance type is not recognized")
+			},
+			expectedVCpusCount:            -1,
+			expectedVCpusCountErrorReason: errRosaCPUsInstanceTypesConfigNotFound.Error(),
+		},
+		{
+			name: "When EC2 API fails but ConfigMap contains the instance type, it should resolve vCPUs from ConfigMap",
+			npsParams: []nodePoolParams{
+				{availableNodesCount: 2, ec2InstanceType: "dream-instance.xlarge"},
+			},
+			configMap: &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      rosaCPUsInstanceTypeConfigMapName,
+					Namespace: rosaCPUInstanceTypeConfigMapNamespace,
+				},
+				Data: map[string]string{
+					"dream-instance.xlarge": "12",
+				},
+			},
+			MockedEC2DescribeInstanceTypesFunc: func(ctx context.Context, input *ec2v2.DescribeInstanceTypesInput, optFns ...func(*ec2v2.Options)) (*ec2v2.DescribeInstanceTypesOutput, error) {
+				return nil, newAWSError("InvalidInstanceType", "the instance type is not recognized")
+			},
+			expectedVCpusCount:            24,
+			expectedVCpusCountErrorReason: "",
+		},
+		{
+			name: "When EC2 API succeeds and ConfigMap also has a value, it should use the EC2 API vCPU count",
+			npsParams: []nodePoolParams{
+				{availableNodesCount: 3, ec2InstanceType: "m5.xlarge"},
+			},
+			configMap: &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      rosaCPUsInstanceTypeConfigMapName,
+					Namespace: rosaCPUInstanceTypeConfigMapNamespace,
+				},
+				Data: map[string]string{
+					"m5.xlarge": "16",
+				},
+			},
+			// EC2 API returns 4 vCPUs for m5.xlarge and ConfigMap says 16.
+			// EC2 API has priority; result should be 3 nodes * 4 vCPUs = 12.
+			MockedEC2DescribeInstanceTypesFunc: func(ctx context.Context, input *ec2v2.DescribeInstanceTypesInput, optFns ...func(*ec2v2.Options)) (*ec2v2.DescribeInstanceTypesOutput, error) {
+				return initDescribeInstanceTypesOutput([]ec2typesv2.InstanceTypeInfo{
+					initInstanceTypeInfo("m5.xlarge", 4)}), nil
+			},
+			expectedVCpusCount:            12,
+			expectedVCpusCountErrorReason: "",
+		},
+		{
+			name: "When EC2 API succeeds, it should use EC2 value even if ConfigMap exists with other instance types",
+			npsParams: []nodePoolParams{
+				{availableNodesCount: 2, ec2InstanceType: "m5.2xlarge"},
+			},
+			configMap: &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      rosaCPUsInstanceTypeConfigMapName,
+					Namespace: rosaCPUInstanceTypeConfigMapNamespace,
+				},
+				Data: map[string]string{
+					"other-instance.xlarge": "99",
+				},
+			},
+			MockedEC2DescribeInstanceTypesFunc: func(ctx context.Context, input *ec2v2.DescribeInstanceTypesInput, optFns ...func(*ec2v2.Options)) (*ec2v2.DescribeInstanceTypesOutput, error) {
+				return initDescribeInstanceTypesOutput([]ec2typesv2.InstanceTypeInfo{
+					initInstanceTypeInfo("m5.2xlarge", 8)}), nil
+			},
+			expectedVCpusCount:            16,
+			expectedVCpusCountErrorReason: "",
+		},
+		{
+			name:     "When nodePool platform is KubeVirt, it should return -1 with unsupported platform error",
+			platform: hyperv1.KubevirtPlatform,
+			npsParams: []nodePoolParams{
+				{availableNodesCount: 2},
+			},
+			expectedVCpusCount:            -1,
+			expectedVCpusCountErrorReason: "unsupported platform",
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			platform := tc.platform
+			if platform == "" {
+				platform = hyperv1.AWSPlatform
+			}
+
 			hcluster := &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "hc",
@@ -115,12 +258,18 @@ func TestReportVCpusCountByHCluster(t *testing.T) {
 				Spec: hyperv1.HostedClusterSpec{
 					ClusterID: "id",
 					Platform: hyperv1.PlatformSpec{
-						Type: hyperv1.AWSPlatform,
+						Type: platform,
 					},
 				},
 			}
 
 			clientBuilder := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hcluster)
+			if tc.configMap != nil {
+				clientBuilder = clientBuilder.WithObjects(tc.configMap)
+			}
+
+			ec2MockedClient := &Ec2ClientMock{}
+			ec2MockedClient.MockedDescribeInstanceTypesFunc = tc.MockedEC2DescribeInstanceTypesFunc
 
 			for k, npParam := range tc.npsParams {
 				nodePool := &hyperv1.NodePool{
@@ -131,10 +280,7 @@ func TestReportVCpusCountByHCluster(t *testing.T) {
 					Spec: hyperv1.NodePoolSpec{
 						ClusterName: "hc",
 						Platform: hyperv1.NodePoolPlatform{
-							Type: hyperv1.AWSPlatform,
-							AWS: &hyperv1.AWSNodePoolPlatform{
-								InstanceType: npParam.ec2InstanceType,
-							},
+							Type: platform,
 						},
 					},
 					Status: hyperv1.NodePoolStatus{
@@ -142,16 +288,20 @@ func TestReportVCpusCountByHCluster(t *testing.T) {
 					},
 				}
 
+				if platform == hyperv1.AWSPlatform {
+					nodePool.Spec.Platform.AWS = &hyperv1.AWSNodePoolPlatform{
+						InstanceType: npParam.ec2InstanceType,
+					}
+				}
+
 				clientBuilder = clientBuilder.WithObjects(nodePool)
 			}
 
 			reg := prometheus.NewPedanticRegistry()
-			reg.MustRegister(createNodePoolsMetricsCollector(clientBuilder.Build(), newEC2MockWithVCpuMap(t), clock.RealClock{}))
+			reg.MustRegister(createNodePoolsMetricsCollector(clientBuilder.Build(), ec2MockedClient, clock.RealClock{}))
 
 			allMetricsValues, err := reg.Gather()
-			if err != nil {
-				t.Fatalf("gathering metrics failed: %v", err)
-			}
+			g.Expect(err).ToNot(HaveOccurred())
 
 			var vCpusCountMetricValue *dto.MetricFamily
 			var vCpusComputationErrorMetricValue *dto.MetricFamily
@@ -179,7 +329,7 @@ func TestReportVCpusCountByHCluster(t *testing.T) {
 					Name: ptr.To("namespace"), Value: ptr.To("any"),
 				},
 				{
-					Name: ptr.To("platform"), Value: ptr.To(string(hyperv1.AWSPlatform)),
+					Name: ptr.To("platform"), Value: ptr.To(string(platform)),
 				},
 			}
 
@@ -207,12 +357,375 @@ func TestReportVCpusCountByHCluster(t *testing.T) {
 				}
 			}
 
+			g.Expect(cmp.Diff(vCpusCountMetricValue, expectedVCpusCountMetricValue, ignoreUnexportedDto)).To(BeEmpty())
+			g.Expect(cmp.Diff(vCpusComputationErrorMetricValue, expectedVCpusComputationErrorMetricValue, ignoreUnexportedDto)).To(BeEmpty())
+		})
+	}
+}
+
+// TestCollectConcurrency verifies that concurrent Collect calls do not race on
+// shared mutable state (ec2InstanceTypeToVCpusCount map and lastCollectTime).
+func TestCollectConcurrency(t *testing.T) {
+	hcluster := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "hc",
+			Namespace: "any",
+		},
+		Spec: hyperv1.HostedClusterSpec{
+			ClusterID: "id",
+			Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.AWSPlatform,
+			},
+		},
+	}
+
+	nodePool := &hyperv1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "np-0",
+			Namespace: "any",
+		},
+		Spec: hyperv1.NodePoolSpec{
+			ClusterName: "hc",
+			Platform: hyperv1.NodePoolPlatform{
+				Type: hyperv1.AWSPlatform,
+				AWS: &hyperv1.AWSNodePoolPlatform{
+					InstanceType: "m5.xlarge",
+				},
+			},
+		},
+		Status: hyperv1.NodePoolStatus{
+			Replicas: 2,
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(api.Scheme).
+		WithObjects(hcluster, nodePool).
+		Build()
+
+	ec2Mock := &Ec2ClientMock{
+		MockedDescribeInstanceTypesFunc: func(ctx context.Context, input *ec2v2.DescribeInstanceTypesInput, optFns ...func(*ec2v2.Options)) (*ec2v2.DescribeInstanceTypesOutput, error) {
+			// Add a small delay to widen the race window
+			time.Sleep(time.Millisecond)
+			return initDescribeInstanceTypesOutput([]ec2typesv2.InstanceTypeInfo{
+				initInstanceTypeInfo("m5.xlarge", 4),
+			}), nil
+		},
+	}
+
+	collector := createNodePoolsMetricsCollector(fakeClient, ec2Mock, clock.RealClock{})
+
+	const goroutines = 10
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+	for i := 0; i < goroutines; i++ {
+		go func() {
+			defer wg.Done()
+			ch := make(chan prometheus.Metric, 100)
+			go func() {
+				for range ch {
+				}
+			}()
+			collector.(*nodePoolsMetricsCollector).Collect(ch)
+			close(ch)
+		}()
+	}
+	wg.Wait()
+}
+
+// drainVCpuValue reads all metrics from a closed channel and returns the
+// hypershift_cluster_vcpus gauge value, or -999 if not found.
+func drainVCpuValue(ch <-chan prometheus.Metric) float64 {
+	for m := range ch {
+		if m.Desc() == vCpusCountByHClusterMetricDesc {
+			var metric dto.Metric
+			_ = m.Write(&metric)
+			return metric.GetGauge().GetValue()
+		}
+	}
+	return -999
+}
+
+func TestErrorCache(t *testing.T) {
+	t.Run("When EC2 API reports unknown instance type, it should cache the error and skip API calls on subsequent collections", func(t *testing.T) {
+		g := NewWithT(t)
+
+		var ec2CallCount int
+
+		hcluster := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "hc", Namespace: "any"},
+			Spec: hyperv1.HostedClusterSpec{
+				ClusterID: "id",
+				Platform:  hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+			},
+		}
+
+		nodePool := &hyperv1.NodePool{
+			ObjectMeta: metav1.ObjectMeta{Name: "np-0", Namespace: "any"},
+			Spec: hyperv1.NodePoolSpec{
+				ClusterName: "hc",
+				Platform: hyperv1.NodePoolPlatform{
+					Type: hyperv1.AWSPlatform,
+					AWS:  &hyperv1.AWSNodePoolPlatform{InstanceType: "unknown-type.xlarge"},
+				},
+			},
+			Status: hyperv1.NodePoolStatus{Replicas: 2},
+		}
+
+		configMap := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      rosaCPUsInstanceTypeConfigMapName,
+				Namespace: rosaCPUInstanceTypeConfigMapNamespace,
+			},
+			Data: map[string]string{"unknown-type.xlarge": "8"},
+		}
+
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(api.Scheme).
+			WithObjects(hcluster, nodePool, configMap).
+			Build()
+
+		ec2Mock := &Ec2ClientMock{
+			MockedDescribeInstanceTypesFunc: func(ctx context.Context, input *ec2v2.DescribeInstanceTypesInput, optFns ...func(*ec2v2.Options)) (*ec2v2.DescribeInstanceTypesOutput, error) {
+				ec2CallCount++
+				return nil, newAWSError("InvalidInstanceType", "the instance type is not recognized")
+			},
+		}
+
+		collector := createNodePoolsMetricsCollector(fakeClient, ec2Mock, clock.RealClock{}).(*nodePoolsMetricsCollector)
+
+		// First collect: EC2 API called, error cached, ConfigMap resolves vCPUs.
+		ch := make(chan prometheus.Metric, 200)
+		collector.Collect(ch)
+		close(ch)
+		g.Expect(ec2CallCount).To(Equal(1))
+		g.Expect(drainVCpuValue(ch)).To(BeNumerically("==", 16)) // 2 replicas * 8 vCPUs
+
+		// Second collect: error cache hit, EC2 API skipped, ConfigMap used directly.
+		ch = make(chan prometheus.Metric, 200)
+		collector.Collect(ch)
+		close(ch)
+		g.Expect(ec2CallCount).To(Equal(1), "EC2 API should not be called again due to error cache")
+		g.Expect(drainVCpuValue(ch)).To(BeNumerically("==", 16))
+	})
+
+	t.Run("When EC2 API returns a transient error, it should not cache and should retry on subsequent collections", func(t *testing.T) {
+		g := NewWithT(t)
+
+		var ec2CallCount int
+
+		hcluster := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "hc", Namespace: "any"},
+			Spec: hyperv1.HostedClusterSpec{
+				ClusterID: "id",
+				Platform:  hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+			},
+		}
+
+		nodePool := &hyperv1.NodePool{
+			ObjectMeta: metav1.ObjectMeta{Name: "np-0", Namespace: "any"},
+			Spec: hyperv1.NodePoolSpec{
+				ClusterName: "hc",
+				Platform: hyperv1.NodePoolPlatform{
+					Type: hyperv1.AWSPlatform,
+					AWS:  &hyperv1.AWSNodePoolPlatform{InstanceType: "transient-fail.xlarge"},
+				},
+			},
+			Status: hyperv1.NodePoolStatus{Replicas: 2},
+		}
+
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(api.Scheme).
+			WithObjects(hcluster, nodePool).
+			Build()
+
+		ec2Mock := &Ec2ClientMock{
+			MockedDescribeInstanceTypesFunc: func(ctx context.Context, input *ec2v2.DescribeInstanceTypesInput, optFns ...func(*ec2v2.Options)) (*ec2v2.DescribeInstanceTypesOutput, error) {
+				ec2CallCount++
+				return nil, fmt.Errorf("network timeout")
+			},
+		}
+
+		collector := createNodePoolsMetricsCollector(fakeClient, ec2Mock, clock.RealClock{}).(*nodePoolsMetricsCollector)
+
+		// First collect: EC2 API called, fails with transient error, no ConfigMap -> vCPUs = -1.
+		ch := make(chan prometheus.Metric, 200)
+		collector.Collect(ch)
+		close(ch)
+		g.Expect(ec2CallCount).To(Equal(1))
+
+		// Second collect: error NOT cached (transient error), EC2 API retried.
+		ch = make(chan prometheus.Metric, 200)
+		collector.Collect(ch)
+		close(ch)
+		g.Expect(ec2CallCount).To(Equal(2), "EC2 API should be retried when its error was transient")
+	})
+}
+
+func TestReportVCpusWithKarpenterAutoNode(t *testing.T) {
+	testCases := []struct {
+		name      string
+		autoVCPUs *int32
+		npsParams []nodePoolParams
+
+		MockedEC2DescribeInstanceTypesFunc func(ctx context.Context, input *ec2v2.DescribeInstanceTypesInput, optFns ...func(*ec2v2.Options)) (*ec2v2.DescribeInstanceTypesOutput, error)
+
+		expectedVCpusCount            float64
+		expectedVCpusCountErrorReason string
+	}{
+		{
+			name:               "When cluster has only Karpenter nodes, it should report AutoNode vCPUs",
+			autoVCPUs:          ptr.To[int32](12),
+			npsParams:          []nodePoolParams{},
+			expectedVCpusCount: 12,
+		},
+		{
+			name:      "When cluster has both Karpenter and native nodes, it should sum both",
+			autoVCPUs: ptr.To[int32](20),
+			npsParams: []nodePoolParams{
+				{availableNodesCount: 2, ec2InstanceType: "m5.xlarge"},
+			},
+			MockedEC2DescribeInstanceTypesFunc: func(ctx context.Context, input *ec2v2.DescribeInstanceTypesInput, optFns ...func(*ec2v2.Options)) (*ec2v2.DescribeInstanceTypesOutput, error) {
+				return initDescribeInstanceTypesOutput([]ec2typesv2.InstanceTypeInfo{
+					initInstanceTypeInfo("m5.xlarge", 4)}), nil
+			},
+			expectedVCpusCount: 28, // 20 Karpenter + 2*4 native
+		},
+		{
+			name:      "When AutoNode.VCPUs is nil, it should report only native vCPUs",
+			autoVCPUs: nil,
+			npsParams: []nodePoolParams{
+				{availableNodesCount: 2, ec2InstanceType: "m5.xlarge"},
+			},
+			MockedEC2DescribeInstanceTypesFunc: func(ctx context.Context, input *ec2v2.DescribeInstanceTypesInput, optFns ...func(*ec2v2.Options)) (*ec2v2.DescribeInstanceTypesOutput, error) {
+				return initDescribeInstanceTypesOutput([]ec2typesv2.InstanceTypeInfo{
+					initInstanceTypeInfo("m5.xlarge", 4)}), nil
+			},
+			expectedVCpusCount: 8,
+		},
+		{
+			name:      "When native lookup fails with Karpenter vCPUs, it should report -1",
+			autoVCPUs: ptr.To[int32](20),
+			npsParams: []nodePoolParams{
+				{availableNodesCount: 2, ec2InstanceType: "unknown-type"},
+			},
+			MockedEC2DescribeInstanceTypesFunc: func(ctx context.Context, input *ec2v2.DescribeInstanceTypesInput, optFns ...func(*ec2v2.Options)) (*ec2v2.DescribeInstanceTypesOutput, error) {
+				return &ec2v2.DescribeInstanceTypesOutput{}, nil
+			},
+			expectedVCpusCount:            -1,
+			expectedVCpusCountErrorReason: errRosaCPUsInstanceTypesConfigNotFound.Error(),
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			hcluster := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "hc",
+					Namespace: "any",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					ClusterID: "id",
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					AutoNode: hyperv1.AutoNodeStatus{
+						VCPUs: tc.autoVCPUs,
+					},
+				},
+			}
+
+			clientBuilder := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hcluster)
+
+			ec2MockedClient := &Ec2ClientMock{}
+			if tc.MockedEC2DescribeInstanceTypesFunc != nil {
+				ec2MockedClient.MockedDescribeInstanceTypesFunc = tc.MockedEC2DescribeInstanceTypesFunc
+			}
+
+			for k, npParam := range tc.npsParams {
+				nodePool := &hyperv1.NodePool{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      strconv.Itoa(k),
+						Namespace: "any",
+					},
+					Spec: hyperv1.NodePoolSpec{
+						ClusterName: "hc",
+						Platform: hyperv1.NodePoolPlatform{
+							Type: hyperv1.AWSPlatform,
+							AWS: &hyperv1.AWSNodePoolPlatform{
+								InstanceType: npParam.ec2InstanceType,
+							},
+						},
+					},
+					Status: hyperv1.NodePoolStatus{
+						Replicas: npParam.availableNodesCount,
+					},
+				}
+				clientBuilder = clientBuilder.WithObjects(nodePool)
+			}
+
+			reg := prometheus.NewPedanticRegistry()
+			reg.MustRegister(createNodePoolsMetricsCollector(clientBuilder.Build(), ec2MockedClient, clock.RealClock{}))
+
+			allMetricsValues, err := reg.Gather()
+			if err != nil {
+				t.Fatalf("gathering metrics failed: %v", err)
+			}
+
+			var vCpusCountMetricValue *dto.MetricFamily
+			var vCpusComputationErrorMetricValue *dto.MetricFamily
+			var expectedVCpusComputationErrorMetricValue *dto.MetricFamily
+
+			for _, metricValue := range allMetricsValues {
+				if metricValue != nil && metricValue.Name != nil {
+					switch *metricValue.Name {
+					case VCpusCountByHClusterMetricName:
+						vCpusCountMetricValue = metricValue
+					case VCpusComputationErrorByHClusterMetricName:
+						vCpusComputationErrorMetricValue = metricValue
+					}
+				}
+			}
+
+			expectedBaseLabels := []*dto.LabelPair{
+				{Name: ptr.To("_id"), Value: ptr.To("id")},
+				{Name: ptr.To("name"), Value: ptr.To("hc")},
+				{Name: ptr.To("namespace"), Value: ptr.To("any")},
+				{Name: ptr.To("platform"), Value: ptr.To(string(hyperv1.AWSPlatform))},
+			}
+
+			expectedVCpusCountMetricValue := &dto.MetricFamily{
+				Name: ptr.To(VCpusCountByHClusterMetricName),
+				Help: ptr.To(VCpusCountByHClusterMetricHelp),
+				Type: func() *dto.MetricType { v := dto.MetricType(1); return &v }(),
+				Metric: []*dto.Metric{{
+					Label: expectedBaseLabels,
+					Gauge: &dto.Gauge{Value: ptr.To(tc.expectedVCpusCount)},
+				}},
+			}
+
+			if tc.expectedVCpusCountErrorReason != "" {
+				expectedVCpusComputationErrorMetricValue = &dto.MetricFamily{
+					Name: ptr.To(VCpusComputationErrorByHClusterMetricName),
+					Help: ptr.To(VCpusComputationErrorByHClusterMetricHelp),
+					Type: func() *dto.MetricType { v := dto.MetricType(1); return &v }(),
+					Metric: []*dto.Metric{{
+						Label: append(expectedBaseLabels, &dto.LabelPair{
+							Name: ptr.To("reason"), Value: ptr.To(tc.expectedVCpusCountErrorReason),
+						}),
+						Gauge: &dto.Gauge{Value: ptr.To[float64](1.0)},
+					}},
+				}
+			}
+
 			if diff := cmp.Diff(vCpusCountMetricValue, expectedVCpusCountMetricValue, ignoreUnexportedDto); diff != "" {
-				t.Errorf("result differs from actual: %s", diff)
+				t.Errorf("vCpus count differs from expected: %s", diff)
 			}
 
 			if diff := cmp.Diff(vCpusComputationErrorMetricValue, expectedVCpusComputationErrorMetricValue, ignoreUnexportedDto); diff != "" {
-				t.Errorf("result differs from actual: %s", diff)
+				t.Errorf("vCpus error metric differs from expected: %s", diff)
 			}
 		})
 	}

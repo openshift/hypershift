@@ -3,7 +3,7 @@ package util
 import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/azureutil"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/netutil"
 )
 
 // UseHCPRouter returns true when the HCP routes should be served by a dedicated
@@ -21,10 +21,10 @@ func UseHCPRouter(hcp *hyperv1.HostedControlPlane) bool {
 	// (Swift enabled). LabelHCPRoutes returns true for all ARO to support the
 	// SharedIngressReconciler, but that doesn't mean a dedicated router deployment is needed.
 	if azureutil.IsAroHCP() {
-		return util.IsPrivateHCP(hcp)
+		return netutil.IsPrivateHCP(hcp)
 	}
 	// Router infrastructure is needed when:
 	// 1. Cluster has private access (Private or PublicAndPrivate) - for internal routes, OR
 	// 2. External routes are labeled for HCP router (Public with KAS DNS)
-	return util.IsPrivateHCP(hcp) || util.LabelHCPRoutes(hcp)
+	return netutil.IsPrivateHCP(hcp) || netutil.LabelHCPRoutes(hcp)
 }

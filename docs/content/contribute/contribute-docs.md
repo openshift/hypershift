@@ -36,6 +36,17 @@ to preview the site equivalent to the published site.
     edit it manually. See the [API generation section](#generate-the-api-reference)
     section for details.
 
+## Adding how-to guides
+
+When adding a new how-to guide, you must insert the entry in **alphabetical order**
+by display title within the appropriate section of the `nav:` in
+[`docs/mkdocs.yml`](https://github.com/openshift/hypershift/blob/main/docs/mkdocs.yml).
+Platform-specific guides belong under the `Platform` section.
+
+The `make verify` target includes a `verify-docs-nav` check that validates
+alphabetical ordering. If your entry is out of order, the check will fail and
+show the expected order.
+
 ## Preview the site locally
 
 To start a live preview of the site which automatically rebuilds and refreshes in

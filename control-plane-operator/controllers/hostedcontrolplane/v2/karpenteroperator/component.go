@@ -6,7 +6,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/podspec"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -54,7 +54,7 @@ func NewComponent(options *KarpenterOperatorOptions) component.ControlPlaneCompo
 			ServiceAccountNameSpace: "kube-system",
 			KubeconfigSecretName:    "service-network-admin-kubeconfig",
 		}).
-		InjectAvailabilityProberContainer(util.AvailabilityProberOpts{}).
+		InjectAvailabilityProberContainer(podspec.AvailabilityProberOpts{}).
 		Build()
 }
 

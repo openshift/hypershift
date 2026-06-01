@@ -204,7 +204,6 @@ hostedclusters.hypershift.openshift.io:
   Capability: ""
   Category: ""
   FeatureGates:
-  - AutoNodeKarpenter
   - ClusterUpdateAcceptRisks
   - ClusterVersionOperatorConfiguration
   - ExternalOIDC
@@ -216,6 +215,7 @@ hostedclusters.hypershift.openshift.io:
   - ImageStreamImportMode
   - KMSEncryptionProvider
   - OpenStack
+  - TLSAdherence
   FilenameOperatorName: ""
   FilenameOperatorOrdering: ""
   FilenameRunLevel: ""
@@ -277,7 +277,6 @@ hostedcontrolplanes.hypershift.openshift.io:
   Capability: ""
   Category: cluster-api
   FeatureGates:
-  - AutoNodeKarpenter
   - ClusterUpdateAcceptRisks
   - ClusterVersionOperatorConfiguration
   - ExternalOIDC
@@ -289,6 +288,7 @@ hostedcontrolplanes.hypershift.openshift.io:
   - ImageStreamImportMode
   - KMSEncryptionProvider
   - OpenStack
+  - TLSAdherence
   FilenameOperatorName: ""
   FilenameOperatorOrdering: ""
   FilenameRunLevel: ""

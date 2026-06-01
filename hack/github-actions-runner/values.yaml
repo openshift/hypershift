@@ -8,7 +8,7 @@ template:
   spec:
     containers:
       - name: runner
-        image: quay.io/rh_ee_brcox/arc-runner@sha256:897c2265433960b2011a1fac3a39d0ce82e8e6ead8bd317b56715896ef16c368
+        image: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/hypershift-gh-actions-runner:latest
         command: ["/home/runner/run.sh"]
         resources:
           requests:

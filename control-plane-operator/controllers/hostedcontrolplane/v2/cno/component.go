@@ -9,7 +9,8 @@ import (
 	oapiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oapi"
 	"github.com/openshift/hypershift/support/azureutil"
 	component "github.com/openshift/hypershift/support/controlplane-component"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/netutil"
+	"github.com/openshift/hypershift/support/podspec"
 
 	appsv1 "k8s.io/api/apps/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -63,7 +64,7 @@ func NewComponent() component.ControlPlaneComponent {
 			},
 			KubeconfingVolumeName: "hosted-etc-kube",
 		}).
-		InjectAvailabilityProberContainer(util.AvailabilityProberOpts{
+		InjectAvailabilityProberContainer(podspec.AvailabilityProberOpts{
 			KubeconfigVolumeName: "hosted-etc-kube",
 			RequiredAPIs: []schema.GroupVersionKind{
 				{Group: "operator.openshift.io", Version: "v1", Kind: "Network"},
@@ -109,6 +110,20 @@ type operand struct {
 	ReleaseImageKey string
 }
 
+// platformHasCloudNetworkConfigController returns true for platforms where the
+// cluster-network-operator deploys a cloud-network-config-controller.
+// This controller manages cloud-specific network configurations (e.g. EgressIP)
+// and requires cloud API credentials. Non-cloud platforms (KubeVirt, Agent, etc.)
+// do not have this deployment.
+func platformHasCloudNetworkConfigController(platformType hyperv1.PlatformType) bool {
+	switch platformType {
+	case hyperv1.AWSPlatform, hyperv1.AzurePlatform, hyperv1.GCPPlatform, hyperv1.OpenStackPlatform:
+		return true
+	default:
+		return false
+	}
+}
+
 func checkOperandsRolloutStatus(cpContext component.WorkloadContext) (bool, error) {
 	var operandsDeploymentsList []operand
 
@@ -125,16 +140,22 @@ func checkOperandsRolloutStatus(cpContext component.WorkloadContext) (bool, erro
 				ContainerName:   "approver",
 				ReleaseImageKey: "ovn-kubernetes",
 			},
-			{
+		}
+
+		// cloud-network-config-controller is only deployed by CNO on cloud platforms
+		// that have cloud APIs for network management (AWS, Azure, GCP, OpenStack).
+		// Non-cloud platforms like KubeVirt, Agent, None, etc. do not have this deployment.
+		if platformHasCloudNetworkConfigController(cpContext.HCP.Spec.Platform.Type) {
+			operandsDeploymentsList = append(operandsDeploymentsList, operand{
 				DeploymentName:  "cloud-network-config-controller",
 				ContainerName:   "controller",
 				ReleaseImageKey: "cloud-network-config-controller",
-			},
+			})
 		}
 	}
 
 	// multus-admission-controller is needed for all network types when multi-network is enabled
-	if !util.IsDisableMultiNetwork(cpContext.HCP) {
+	if !netutil.IsDisableMultiNetwork(cpContext.HCP) {
 		operandsDeploymentsList = append(operandsDeploymentsList, operand{
 			DeploymentName:  "multus-admission-controller",
 			ContainerName:   "multus-admission-controller",
@@ -160,7 +181,7 @@ func checkOperandsRolloutStatus(cpContext component.WorkloadContext) (bool, erro
 			}
 		}
 
-		if !util.IsDeploymentReady(cpContext, deployment) {
+		if !podspec.IsDeploymentReady(cpContext, deployment) {
 			errs = append(errs, fmt.Errorf("deployment %s is not ready", operand.DeploymentName))
 		}
 	}

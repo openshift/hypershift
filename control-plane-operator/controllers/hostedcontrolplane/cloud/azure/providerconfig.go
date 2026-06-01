@@ -14,6 +14,7 @@ type AzureConfig struct {
 	Cloud                        string `json:"cloud"`
 	TenantID                     string `json:"tenantId"`
 	UseManagedIdentityExtension  bool   `json:"useManagedIdentityExtension"`
+	UseWorkloadIdentityExtension bool   `json:"useWorkloadIdentityExtension"`
 	SubscriptionID               string `json:"subscriptionId"`
 	AADClientID                  string `json:"aadClientId"`
 	AADClientCertPath            string `json:"aadClientCertPath"`

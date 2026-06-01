@@ -519,11 +519,12 @@ type Capabilities struct {
 
 // +kubebuilder:validation:XValidation:rule="self.platform.type == 'IBMCloud' ? size(self.services) >= 3 : size(self.services) >= 4",message="spec.services in body should have at least 4 items or 3 for IBMCloud"
 // +kubebuilder:validation:XValidation:rule=`self.platform.type != "IBMCloud" ? self.services == oldSelf.services : true`, message="Services is immutable. Changes might result in unpredictable and disruptive behavior."
-// +kubebuilder:validation:XValidation:rule=`self.platform.type == "Azure" ? self.services.exists(s, s.service == "OAuthServer" && s.servicePublishingStrategy.type == "Route") : true`,message="Azure platform requires OAuthServer to use Route service publishing strategy"
+// +kubebuilder:validation:XValidation:rule=`self.platform.type != "Azure" || self.platform.?azure.azureAuthenticationConfig.azureAuthenticationConfigType.orValue("") == "WorkloadIdentities" || self.services.exists(s, s.service == "OAuthServer" && s.servicePublishingStrategy.type == "Route")`,message="Azure managed platform (ARO HCP) requires OAuthServer to use Route"
+// +kubebuilder:validation:XValidation:rule=`self.platform.type != "Azure" || self.platform.?azure.azureAuthenticationConfig.azureAuthenticationConfigType.orValue("") != "WorkloadIdentities" || self.services.exists(s, s.service == "OAuthServer" && (s.servicePublishingStrategy.type == "Route" || s.servicePublishingStrategy.type == "LoadBalancer"))`,message="Self-managed Azure requires OAuthServer to use Route or LoadBalancer"
 // +kubebuilder:validation:XValidation:rule=`self.platform.type == "Azure" ? self.services.exists(s, s.service == "Konnectivity" && s.servicePublishingStrategy.type == "Route") : true`,message="Azure platform requires Konnectivity to use Route service publishing strategy"
 // +kubebuilder:validation:XValidation:rule=`self.platform.type == "Azure" ? self.services.exists(s, s.service == "Ignition" && s.servicePublishingStrategy.type == "Route") : true`,message="Azure platform requires Ignition to use Route service publishing strategy"
 // +kubebuilder:validation:XValidation:rule=`has(self.issuerURL) || !has(self.serviceAccountSigningKey)`,message="If serviceAccountSigningKey is set, issuerURL must be set"
-// +kubebuilder:validation:XValidation:rule=`!self.services.exists(s, s.service == 'APIServer' && has(s.servicePublishingStrategy.loadBalancer) && s.servicePublishingStrategy.loadBalancer.hostname != "" && has(self.configuration) && has(self.configuration.apiServer) && self.configuration.apiServer.servingCerts.namedCertificates.exists(cert, cert.names.exists(n, n == s.servicePublishingStrategy.loadBalancer.hostname)))`, message="APIServer loadBalancer hostname cannot be in ClusterConfiguration.apiserver.servingCerts.namedCertificates[]"
+// +kubebuilder:validation:XValidation:rule=`!self.services.exists(s, s.service == 'APIServer' && has(s.servicePublishingStrategy.loadBalancer) && s.servicePublishingStrategy.loadBalancer.hostname != "" && has(self.configuration) && has(self.configuration.apiServer) && has(self.configuration.apiServer.servingCerts) && has(self.configuration.apiServer.servingCerts.namedCertificates) && self.configuration.apiServer.servingCerts.namedCertificates.exists(cert, has(cert.names) && cert.names.exists(n, n == s.servicePublishingStrategy.loadBalancer.hostname)))`, message="APIServer loadBalancer hostname cannot be in ClusterConfiguration.apiserver.servingCerts.namedCertificates[]"
 // +kubebuilder:validation:XValidation:rule="!has(self.operatorConfiguration) || !has(self.operatorConfiguration.clusterNetworkOperator) || !has(self.operatorConfiguration.clusterNetworkOperator.disableMultiNetwork) || !self.operatorConfiguration.clusterNetworkOperator.disableMultiNetwork || self.networking.networkType == 'Other'",message="disableMultiNetwork can only be set to true when networkType is 'Other'"
 // +kubebuilder:validation:XValidation:rule="self.networking.networkType == 'OVNKubernetes' || !has(self.operatorConfiguration) || !has(self.operatorConfiguration.clusterNetworkOperator) || !has(self.operatorConfiguration.clusterNetworkOperator.ovnKubernetesConfig)", message="ovnKubernetesConfig is forbidden when networkType is not OVNKubernetes"
 type HostedClusterSpec struct {
@@ -641,9 +642,8 @@ type HostedClusterSpec struct {
 	// autoNode specifies the configuration for automatic node provisioning and lifecycle management.
 	// When set, the provisioner(e.g. Karpenter) will be used to provision nodes for targeted workloads.
 	//
-	// +openshift:enable:FeatureGate=AutoNodeKarpenter
 	// +optional
-	AutoNode *AutoNode `json:"autoNode,omitempty"`
+	AutoNode AutoNode `json:"autoNode,omitzero"`
 
 	// etcd specifies configuration for the control plane etcd cluster. The
 	// default managementType is Managed. Once set, the managementType cannot be
@@ -673,10 +673,11 @@ type HostedClusterSpec struct {
 	// pullSecret is a local reference to a Secret that must have a ".dockerconfigjson" key whose content must be a valid Openshift pull secret JSON.
 	// If the reference is set but none of the above requirements are met, the HostedCluster will enter a degraded state.
 	// TODO(alberto): Signal this in a condition.
-	// This pull secret will be part of every payload generated by the controllers for any NodePool of the HostedCluster
-	// and it will be injected into the container runtime of all NodePools.
-	// Changing this value will trigger a rollout for all existing NodePools in the cluster.
-	// Changing the content of the secret inplace will not trigger a rollout and might result in unpredictable behaviour.
+	// This pull secret is included in NodePool ignition/bootstrap payloads and applied to the container runtime when nodes provision.
+	// Changing this value will trigger a rollout for all existing NodePools in the cluster (for both replace and inplace upgrade types).
+	// Updating the referenced Secret's data in place (without changing this reference) does not trigger that rollout.
+	// In AWS and Azure NodePools using the Replace upgrade strategy, the Secret's data in place changes
+	// will still propagate the updated credentials down to the guest cluster and kubelet config.
 	// +required
 	// +rollout
 	// TODO(alberto): have our own local reference type to include our opinions and avoid transparent changes.
@@ -1397,7 +1398,7 @@ type ProvisionerConfig struct {
 	//
 	// +optional
 	// +unionMember
-	Karpenter *KarpenterConfig `json:"karpenter,omitempty"`
+	Karpenter KarpenterConfig `json:"karpenter,omitzero"`
 }
 
 // KarpenterConfig specifies the configuration for the Karpenter provisioner
@@ -1417,7 +1418,7 @@ type KarpenterConfig struct {
 	//
 	// +optional
 	// +unionMember
-	AWS *KarpenterAWSConfig `json:"aws,omitempty"`
+	AWS KarpenterAWSConfig `json:"aws,omitzero"`
 }
 
 // KarpenterAWSConfig specifies AWS-specific configuration for the Karpenter provisioner.
@@ -1900,6 +1901,7 @@ type EtcdSpec struct {
 type ManagedEtcdSpec struct {
 	// storage specifies how etcd data is persisted.
 	// +required
+	// +kubebuilder:validation:XValidation:rule="has(self.restoreSnapshotURL) == has(oldSelf.restoreSnapshotURL)",message="restoreSnapshotURL cannot be added or removed after creation"
 	Storage ManagedEtcdStorageSpec `json:"storage"`
 
 	// backup defines the backup configuration for managed etcd, including
@@ -1951,6 +1953,8 @@ type ManagedEtcdStorageSpec struct {
 	// +kubebuilder:validation:MaxItems=1
 	// +kubebuilder:validation:items:MaxLength=1024
 	// +kubebuilder:validation:XValidation:rule="self.size() <= 1", message="RestoreSnapshotURL shouldn't contain more than 1 entry"
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="restoreSnapshotURL is immutable"
+	// +kubebuilder:validation:XValidation:rule="self.size() == 0 || self[0].matches('^(https|s3)://.*')", message="restoreSnapshotURL must be a valid URL with scheme https or s3"
 	RestoreSnapshotURL []string `json:"restoreSnapshotURL,omitempty"`
 }
 
@@ -2170,13 +2174,22 @@ type HostedClusterStatus struct {
 	Platform *PlatformStatus `json:"platform,omitempty"`
 
 	// autoNode contains the observed state of the autoNode (Karpenter) provisioner.
-	// +openshift:enable:FeatureGate=AutoNodeKarpenter
 	// +optional
 	AutoNode AutoNodeStatus `json:"autoNode,omitzero"`
 
 	// configuration contains the cluster configuration status of the HostedCluster
 	// +optional
 	Configuration *ConfigurationStatus `json:"configuration,omitempty"`
+
+	// lastSuccessfulEtcdBackupURL is the cloud storage URL of the most recent
+	// successful etcd backup snapshot. Persisted here because HCPEtcdBackup CRs
+	// are ephemeral and may be deleted by retention policies.
+	// +openshift:enable:FeatureGate=HCPEtcdBackup
+	// +optional
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=2048
+	// +kubebuilder:validation:XValidation:rule="self.matches('^(https|s3)://.*')",message="lastSuccessfulEtcdBackupURL must be a valid URL with scheme https or s3"
+	LastSuccessfulEtcdBackupURL string `json:"lastSuccessfulEtcdBackupURL,omitempty"`
 }
 
 // AutoNodeStatus contains the observed state of the AutoNode provisioner.
@@ -2193,6 +2206,16 @@ type AutoNodeStatus struct {
 	// +kubebuilder:validation:Minimum=0
 	// +optional
 	NodeClaimCount *int32 `json:"nodeClaimCount,omitempty"`
+
+	// vcpus is the total number of virtual CPUs across all Karpenter-managed nodes
+	// that have registered and reported capacity. This is the sum of CPU capacity
+	// from each NodeClaim whose corresponding node exists (status.nodeName is set).
+	// This value is 0 when no Karpenter nodes are provisioned.
+	// Used by the metrics collector for billing aggregation.
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=1000000
+	// +optional
+	VCPUs *int32 `json:"vcpus,omitempty"`
 }
 
 // PlatformStatus contains platform-specific status

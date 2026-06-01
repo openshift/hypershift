@@ -49,6 +49,30 @@ func newPodMonitorWithTLS(name, namespace string, tlsCfg *prometheusoperatorv1.S
 	}
 }
 
+func newCertVolumeTestContext(namespace string, scheme *runtime.Scheme, objects ...runtime.Object) component.WorkloadContext {
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(objects...).Build()
+	return component.WorkloadContext{
+		Context: context.Background(),
+		Client:  fakeClient,
+		HCP:     &hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{Namespace: namespace}},
+	}
+}
+
+func assertCertVolumeCount(t *testing.T, cpContext component.WorkloadContext, namespace string, expectedVolumes, expectedMounts int) ([]corev1.Volume, []corev1.VolumeMount) {
+	t.Helper()
+	volumes, mounts, err := certVolumesFromMonitors(cpContext, namespace)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(volumes) != expectedVolumes {
+		t.Errorf("expected %d volumes, got %d", expectedVolumes, len(volumes))
+	}
+	if len(mounts) != expectedMounts {
+		t.Errorf("expected %d mounts, got %d", expectedMounts, len(mounts))
+	}
+	return volumes, mounts
+}
+
 func TestCertVolumesFromMonitors(t *testing.T) {
 	t.Parallel()
 
@@ -81,7 +105,6 @@ func TestCertVolumesFromMonitors(t *testing.T) {
 				},
 			},
 		})
-		// sm2 references the same root-ca and metrics-client — should deduplicate.
 		sm2 := newServiceMonitorWithTLS("kube-controller-manager", namespace, &prometheusoperatorv1.TLSConfig{
 			SafeTLSConfig: prometheusoperatorv1.SafeTLSConfig{
 				CA: prometheusoperatorv1.SecretOrConfigMap{
@@ -103,27 +126,9 @@ func TestCertVolumesFromMonitors(t *testing.T) {
 			},
 		})
 
-		fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(sm1, sm2).Build()
-		cpContext := component.WorkloadContext{
-			Context: context.Background(),
-			Client:  fakeClient,
-			HCP:     &hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{Namespace: namespace}},
-		}
+		cpContext := newCertVolumeTestContext(namespace, scheme, sm1, sm2)
+		volumes, _ := assertCertVolumeCount(t, cpContext, namespace, 2, 2)
 
-		volumes, mounts, err := certVolumesFromMonitors(cpContext, namespace)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-
-		// Expect 2 unique volumes: metrics-client (Secret), root-ca (ConfigMap).
-		if len(volumes) != 2 {
-			t.Errorf("expected 2 volumes, got %d", len(volumes))
-		}
-		if len(mounts) != 2 {
-			t.Errorf("expected 2 mounts, got %d", len(mounts))
-		}
-
-		// Verify sorted order: metrics-client before root-ca.
 		if len(volumes) >= 2 {
 			if volumes[0].Name != "metrics-client" {
 				t.Errorf("expected first volume to be metrics-client, got %s", volumes[0].Name)
@@ -158,21 +163,8 @@ func TestCertVolumesFromMonitors(t *testing.T) {
 			},
 		})
 
-		fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(sm1, sm2).Build()
-		cpContext := component.WorkloadContext{
-			Context: context.Background(),
-			Client:  fakeClient,
-			HCP:     &hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{Namespace: namespace}},
-		}
-
-		volumes, _, err := certVolumesFromMonitors(cpContext, namespace)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-
-		if len(volumes) != 1 {
-			t.Fatalf("expected 1 volume, got %d", len(volumes))
-		}
+		cpContext := newCertVolumeTestContext(namespace, scheme, sm1, sm2)
+		volumes, _ := assertCertVolumeCount(t, cpContext, namespace, 1, 1)
 
 		cm := volumes[0].VolumeSource.ConfigMap
 		if cm == nil {
@@ -207,21 +199,8 @@ func TestCertVolumesFromMonitors(t *testing.T) {
 			},
 		})
 
-		fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(sm1, sm2).Build()
-		cpContext := component.WorkloadContext{
-			Context: context.Background(),
-			Client:  fakeClient,
-			HCP:     &hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{Namespace: namespace}},
-		}
-
-		volumes, _, err := certVolumesFromMonitors(cpContext, namespace)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-
-		if len(volumes) != 1 {
-			t.Fatalf("expected 1 volume, got %d", len(volumes))
-		}
+		cpContext := newCertVolumeTestContext(namespace, scheme, sm1, sm2)
+		volumes, _ := assertCertVolumeCount(t, cpContext, namespace, 1, 1)
 
 		cm := volumes[0].VolumeSource.ConfigMap
 		if cm == nil {
@@ -242,45 +221,15 @@ func TestCertVolumesFromMonitors(t *testing.T) {
 			},
 		}
 
-		fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(sm).Build()
-		cpContext := component.WorkloadContext{
-			Context: context.Background(),
-			Client:  fakeClient,
-			HCP:     &hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{Namespace: namespace}},
-		}
-
-		volumes, mounts, err := certVolumesFromMonitors(cpContext, namespace)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if len(volumes) != 0 {
-			t.Errorf("expected 0 volumes, got %d", len(volumes))
-		}
-		if len(mounts) != 0 {
-			t.Errorf("expected 0 mounts, got %d", len(mounts))
-		}
+		cpContext := newCertVolumeTestContext(namespace, scheme, sm)
+		assertCertVolumeCount(t, cpContext, namespace, 0, 0)
 	})
 
 	t.Run("When no monitors exist, it should return empty slices", func(t *testing.T) {
 		t.Parallel()
 
-		fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
-		cpContext := component.WorkloadContext{
-			Context: context.Background(),
-			Client:  fakeClient,
-			HCP:     &hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{Namespace: namespace}},
-		}
-
-		volumes, mounts, err := certVolumesFromMonitors(cpContext, namespace)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if len(volumes) != 0 {
-			t.Errorf("expected 0 volumes, got %d", len(volumes))
-		}
-		if len(mounts) != 0 {
-			t.Errorf("expected 0 mounts, got %d", len(mounts))
-		}
+		cpContext := newCertVolumeTestContext(namespace, scheme)
+		assertCertVolumeCount(t, cpContext, namespace, 0, 0)
 	})
 
 	t.Run("When Secret volumes are generated, they should have optional=true", func(t *testing.T) {
@@ -297,21 +246,8 @@ func TestCertVolumesFromMonitors(t *testing.T) {
 			},
 		})
 
-		fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(sm).Build()
-		cpContext := component.WorkloadContext{
-			Context: context.Background(),
-			Client:  fakeClient,
-			HCP:     &hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{Namespace: namespace}},
-		}
-
-		volumes, mounts, err := certVolumesFromMonitors(cpContext, namespace)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-
-		if len(volumes) != 1 {
-			t.Fatalf("expected 1 volume, got %d", len(volumes))
-		}
+		cpContext := newCertVolumeTestContext(namespace, scheme, sm)
+		volumes, mounts := assertCertVolumeCount(t, cpContext, namespace, 1, 1)
 
 		secret := volumes[0].VolumeSource.Secret
 		if secret == nil {
@@ -321,9 +257,6 @@ func TestCertVolumesFromMonitors(t *testing.T) {
 			t.Error("expected Secret volume to have optional=true")
 		}
 
-		if len(mounts) != 1 {
-			t.Fatalf("expected 1 mount, got %d", len(mounts))
-		}
 		expectedPath := certBasePath + "/test-secret"
 		if mounts[0].MountPath != expectedPath {
 			t.Errorf("expected mount path %q, got %q", expectedPath, mounts[0].MountPath)
@@ -344,21 +277,8 @@ func TestCertVolumesFromMonitors(t *testing.T) {
 			},
 		})
 
-		fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(sm).Build()
-		cpContext := component.WorkloadContext{
-			Context: context.Background(),
-			Client:  fakeClient,
-			HCP:     &hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{Namespace: namespace}},
-		}
-
-		volumes, _, err := certVolumesFromMonitors(cpContext, namespace)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-
-		if len(volumes) != 1 {
-			t.Fatalf("expected 1 volume, got %d", len(volumes))
-		}
+		cpContext := newCertVolumeTestContext(namespace, scheme, sm)
+		volumes, _ := assertCertVolumeCount(t, cpContext, namespace, 1, 1)
 
 		cm := volumes[0].VolumeSource.ConfigMap
 		if cm == nil {
@@ -381,26 +301,43 @@ func TestCertVolumesFromMonitors(t *testing.T) {
 			},
 		})
 
-		fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(pm).Build()
-		cpContext := component.WorkloadContext{
-			Context: context.Background(),
-			Client:  fakeClient,
-			HCP:     &hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{Namespace: namespace}},
-		}
+		cpContext := newCertVolumeTestContext(namespace, scheme, pm)
+		volumes, _ := assertCertVolumeCount(t, cpContext, namespace, 1, 1)
 
-		volumes, mounts, err := certVolumesFromMonitors(cpContext, namespace)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-
-		if len(volumes) != 1 {
-			t.Fatalf("expected 1 volume, got %d", len(volumes))
-		}
 		if volumes[0].Name != "root-ca" {
 			t.Errorf("expected volume name root-ca, got %s", volumes[0].Name)
 		}
-		if len(mounts) != 1 {
-			t.Fatalf("expected 1 mount, got %d", len(mounts))
+	})
+
+	t.Run("When resource names contain dots, it should sanitize volume names but preserve mount paths", func(t *testing.T) {
+		t.Parallel()
+
+		sm := newServiceMonitorWithTLS("cno", namespace, &prometheusoperatorv1.TLSConfig{
+			SafeTLSConfig: prometheusoperatorv1.SafeTLSConfig{
+				CA: prometheusoperatorv1.SecretOrConfigMap{
+					ConfigMap: &corev1.ConfigMapKeySelector{
+						LocalObjectReference: corev1.LocalObjectReference{Name: "openshift-service-ca.crt"},
+						Key:                  "service-ca.crt",
+					},
+				},
+			},
+		})
+
+		cpContext := newCertVolumeTestContext(namespace, scheme, sm)
+		volumes, mounts := assertCertVolumeCount(t, cpContext, namespace, 1, 1)
+
+		if volumes[0].Name != "openshift-service-ca-crt" {
+			t.Errorf("expected sanitized volume name openshift-service-ca-crt, got %s", volumes[0].Name)
+		}
+		if mounts[0].Name != "openshift-service-ca-crt" {
+			t.Errorf("expected sanitized mount name openshift-service-ca-crt, got %s", mounts[0].Name)
+		}
+		expectedPath := certBasePath + "/openshift-service-ca.crt"
+		if mounts[0].MountPath != expectedPath {
+			t.Errorf("expected mount path to preserve dots %q, got %q", expectedPath, mounts[0].MountPath)
+		}
+		if volumes[0].VolumeSource.ConfigMap.Name != "openshift-service-ca.crt" {
+			t.Errorf("expected ConfigMap source name to preserve original name, got %s", volumes[0].VolumeSource.ConfigMap.Name)
 		}
 	})
 
@@ -409,23 +346,8 @@ func TestCertVolumesFromMonitors(t *testing.T) {
 
 		pm := newPodMonitorWithTLS("cluster-autoscaler", namespace, nil)
 
-		fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(pm).Build()
-		cpContext := component.WorkloadContext{
-			Context: context.Background(),
-			Client:  fakeClient,
-			HCP:     &hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{Namespace: namespace}},
-		}
-
-		volumes, mounts, err := certVolumesFromMonitors(cpContext, namespace)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if len(volumes) != 0 {
-			t.Errorf("expected 0 volumes, got %d", len(volumes))
-		}
-		if len(mounts) != 0 {
-			t.Errorf("expected 0 mounts, got %d", len(mounts))
-		}
+		cpContext := newCertVolumeTestContext(namespace, scheme, pm)
+		assertCertVolumeCount(t, cpContext, namespace, 0, 0)
 	})
 
 	t.Run("When ServiceMonitor and PodMonitor share the same CA ref, it should deduplicate", func(t *testing.T) {
@@ -450,21 +372,8 @@ func TestCertVolumesFromMonitors(t *testing.T) {
 			},
 		})
 
-		fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(sm, pm).Build()
-		cpContext := component.WorkloadContext{
-			Context: context.Background(),
-			Client:  fakeClient,
-			HCP:     &hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{Namespace: namespace}},
-		}
-
-		volumes, _, err := certVolumesFromMonitors(cpContext, namespace)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-
-		if len(volumes) != 1 {
-			t.Errorf("expected 1 deduplicated volume, got %d", len(volumes))
-		}
+		cpContext := newCertVolumeTestContext(namespace, scheme, sm, pm)
+		assertCertVolumeCount(t, cpContext, namespace, 1, 1)
 	})
 }
 

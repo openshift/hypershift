@@ -5,7 +5,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	component "github.com/openshift/hypershift/support/controlplane-component"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/netutil"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -28,7 +28,7 @@ func adaptService(cpContext component.WorkloadContext, svc *corev1.Service) erro
 		existingServiceUsesNodePort = (existingService.Spec.Type == corev1.ServiceTypeNodePort) && (len(existingService.Spec.Ports) == 1)
 	}
 
-	strategy := util.ServicePublishingStrategyByTypeForHCP(cpContext.HCP, hyperv1.Ignition)
+	strategy := netutil.ServicePublishingStrategyByTypeForHCP(cpContext.HCP, hyperv1.Ignition)
 	if strategy == nil {
 		return fmt.Errorf("ignition service strategy not specified")
 	}

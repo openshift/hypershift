@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"maps"
 	"os"
+	"path"
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -203,13 +204,12 @@ func (a Azure) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hy
 	}
 
 	// For self-managed Azure with workload identity, instruct Azure SDK to use the minted SA token
-	if azureutil.IsSelfManagedAzure(hcluster.Spec.Platform.Type) &&
-		hcluster.Spec.Platform.Azure.AzureAuthenticationConfig.WorkloadIdentities != nil {
+	if azureutil.IsSelfManagedAzureWithWorkloadIdentity(hcluster.Spec.Platform.Type, hcluster.Spec.Platform.Azure) {
 		deploymentSpec.Template.Spec.Containers[0].Env = append(
 			deploymentSpec.Template.Spec.Containers[0].Env,
 			corev1.EnvVar{
 				Name:  "AZURE_FEDERATED_TOKEN_FILE",
-				Value: "/var/run/secrets/openshift/serviceaccount/token",
+				Value: path.Join(config.CloudTokenMountPath, "token"),
 			},
 			corev1.EnvVar{
 				Name:  "AZURE_CLIENT_ID",
@@ -232,7 +232,7 @@ func (a Azure) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hy
 
 		deploymentSpec.Template.Spec.Containers[0].VolumeMounts = append(deploymentSpec.Template.Spec.Containers[0].VolumeMounts, corev1.VolumeMount{
 			Name:      tokenVolume.Name,
-			MountPath: "/var/run/secrets/openshift/serviceaccount",
+			MountPath: config.CloudTokenMountPath,
 		})
 
 		deploymentSpec.Template.Spec.Containers = append(deploymentSpec.Template.Spec.Containers, corev1.Container{
@@ -243,7 +243,7 @@ func (a Azure) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hy
 				"--token-audience=openshift",
 				"--service-account-namespace=kube-system",
 				"--service-account-name=capi-provider",
-				"--token-file=/var/run/secrets/openshift/serviceaccount/token",
+				fmt.Sprintf("--token-file=%s", path.Join(config.CloudTokenMountPath, "token")),
 				"--kubeconfig=/etc/kubernetes/kubeconfig",
 			},
 			ImagePullPolicy: corev1.PullIfNotPresent,
@@ -256,7 +256,7 @@ func (a Azure) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hy
 			VolumeMounts: []corev1.VolumeMount{
 				{
 					Name:      tokenVolume.Name,
-					MountPath: "/var/run/secrets/openshift/serviceaccount",
+					MountPath: config.CloudTokenMountPath,
 				},
 				{
 					Name:      "svc-kubeconfig",
@@ -280,9 +280,9 @@ func (a Azure) ReconcileCredentials(ctx context.Context, c client.Client, create
 	}
 
 	// For self-managed Azure, use workload identity credentials; for managed Azure, use the existing approach
-	if azureutil.IsSelfManagedAzure(hcluster.Spec.Platform.Type) && hcluster.Spec.Platform.Azure.AzureAuthenticationConfig.WorkloadIdentities != nil {
+	if azureutil.IsSelfManagedAzureWithWorkloadIdentity(hcluster.Spec.Platform.Type, hcluster.Spec.Platform.Azure) {
 		// Add federated token file for workload identity authentication
-		baseSecretData["azure_federated_token_file"] = []byte("/var/run/secrets/openshift/serviceaccount/token")
+		baseSecretData["azure_federated_token_file"] = []byte(path.Join(config.CloudTokenMountPath, "token"))
 
 		// Create credentials for each control plane operator using workload identity client IDs
 		workloadIdentities := hcluster.Spec.Platform.Azure.AzureAuthenticationConfig.WorkloadIdentities
@@ -324,7 +324,7 @@ func (a Azure) ReconcileCredentials(ctx context.Context, c client.Client, create
 	if _, err := createOrUpdate(ctx, c, cloudNetworkConfigCreds, func() error {
 		secretData := maps.Clone(baseSecretData)
 		// For self-managed Azure with workload identities, add the network client ID
-		if azureutil.IsSelfManagedAzure(hcluster.Spec.Platform.Type) && hcluster.Spec.Platform.Azure.AzureAuthenticationConfig.WorkloadIdentities != nil {
+		if azureutil.IsSelfManagedAzureWithWorkloadIdentity(hcluster.Spec.Platform.Type, hcluster.Spec.Platform.Azure) {
 			secretData["azure_client_id"] = []byte(hcluster.Spec.Platform.Azure.AzureAuthenticationConfig.WorkloadIdentities.Network.ClientID)
 		}
 		cloudNetworkConfigCreds.Data = secretData
@@ -355,7 +355,7 @@ func (a Azure) DeleteCredentials(ctx context.Context, c client.Client, hcluster 
 	return nil
 }
 
-func reconcileAzureCluster(azureCluster *capiazure.AzureCluster, hcluster *hyperv1.HostedCluster, apiEndpoint hyperv1.APIEndpoint, azureClusterIdentity *capiazure.AzureClusterIdentity, controlPlaneNamespace string) error {
+func reconcileAzureCluster(azureCluster *capiazure.AzureCluster, hcluster *hyperv1.HostedCluster, apiEndpoint hyperv1.APIEndpoint, azureClusterIdentity *capiazure.AzureClusterIdentity, _ string) error {
 	if azureCluster.Annotations == nil {
 		azureCluster.Annotations = map[string]string{}
 	}
@@ -393,7 +393,7 @@ func reconcileAzureCluster(azureCluster *capiazure.AzureCluster, hcluster *hyper
 // resource type can be found here: https://capz.sigs.k8s.io/topics/identities.
 //
 // For non-managed Azure deployments, the AzureClusterIdentity is created using WorkloadIdentity.
-func reconcileAzureClusterIdentity(hc *hyperv1.HostedCluster, azureClusterIdentity *capiazure.AzureClusterIdentity, controlPlaneNamespace string, payloadVersion *semver.Version) error {
+func reconcileAzureClusterIdentity(hc *hyperv1.HostedCluster, azureClusterIdentity *capiazure.AzureClusterIdentity, controlPlaneNamespace string, _ *semver.Version) error {
 	if azureutil.IsAroHCP() {
 		azureCloudType, err := parseCloudType(hc.Spec.Platform.Azure.Cloud)
 		if err != nil {
@@ -464,7 +464,14 @@ func reconcileKMSConfigSecret(secret *corev1.Secret, hc *hyperv1.HostedCluster) 
 		UseInstanceMetadata:          false,
 		LoadBalancerSku:              "standard",
 		DisableOutboundSNAT:          true,
-		AADMSIDataPlaneIdentityPath:  config.ManagedAzureCertificatePath + hc.Spec.SecretEncryption.KMS.Azure.KMS.CredentialsSecretName,
+	}
+
+	if azureutil.IsAroHCP() && hc.Spec.SecretEncryption.KMS.Azure.KMS.CredentialsSecretName != "" {
+		azureConfig.AADMSIDataPlaneIdentityPath = config.ManagedAzureCertificatePath + hc.Spec.SecretEncryption.KMS.Azure.KMS.CredentialsSecretName
+	} else if hc.Spec.SecretEncryption.KMS.Azure.WorkloadIdentity.ClientID != "" {
+		azureConfig.UseWorkloadIdentityExtension = true
+	} else {
+		return fmt.Errorf("azure KMS configured but neither managed identity (kms) nor workload identity (workloadIdentity) credentials are set")
 	}
 
 	serializedConfig, err := json.MarshalIndent(azureConfig, "", "  ")

@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	. "github.com/onsi/gomega"
+
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
@@ -202,6 +204,78 @@ func TestApplyResourcePolicy(t *testing.T) {
 			t.Errorf("Expected name 'my-policy', got %v", rpMap["name"])
 		}
 	})
+}
+
+func TestValidateEtcdSnapshotFlags(t *testing.T) {
+	tests := []struct {
+		name                     string
+		useEtcdSnapshot          bool
+		snapshotMoveData         bool
+		defaultVolumesToFsBackup bool
+		changedFlags             map[string]bool // flags explicitly set by the user
+		expectErr                bool
+		errMsg                   string
+	}{
+		{
+			name:                     "When etcd snapshot is disabled it should accept any flags",
+			useEtcdSnapshot:          false,
+			snapshotMoveData:         true,
+			defaultVolumesToFsBackup: true,
+			changedFlags:             map[string]bool{"snapshot-move-data": true, "default-volumes-to-fs-backup": true},
+			expectErr:                false,
+		},
+		{
+			name:             "When etcd snapshot is enabled without explicit conflicting flags it should pass",
+			useEtcdSnapshot:  true,
+			snapshotMoveData: true, // default value, but not explicitly changed
+			changedFlags:     map[string]bool{"use-etcd-snapshot": true},
+			expectErr:        false,
+		},
+		{
+			name:             "When etcd snapshot is enabled with explicit snapshot-move-data it should return error",
+			useEtcdSnapshot:  true,
+			snapshotMoveData: true,
+			changedFlags:     map[string]bool{"use-etcd-snapshot": true, "snapshot-move-data": true},
+			expectErr:        true,
+			errMsg:           "--snapshot-move-data cannot be used with --use-etcd-snapshot",
+		},
+		{
+			name:                     "When etcd snapshot is enabled with explicit default-volumes-to-fs-backup it should return error",
+			useEtcdSnapshot:          true,
+			defaultVolumesToFsBackup: true,
+			changedFlags:             map[string]bool{"use-etcd-snapshot": true, "default-volumes-to-fs-backup": true},
+			expectErr:                true,
+			errMsg:                   "--default-volumes-to-fs-backup cannot be used with --use-etcd-snapshot",
+		},
+		{
+			name:            "When etcd snapshot is enabled with explicit restore-pvs it should return error",
+			useEtcdSnapshot: true,
+			changedFlags:    map[string]bool{"use-etcd-snapshot": true, "restore-pvs": true},
+			expectErr:       true,
+			errMsg:          "--restore-pvs cannot be used with --use-etcd-snapshot",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			opts := &CreateOptions{
+				UseEtcdSnapshot:          tt.useEtcdSnapshot,
+				SnapshotMoveData:         tt.snapshotMoveData,
+				DefaultVolumesToFsBackup: tt.defaultVolumesToFsBackup,
+			}
+
+			err := opts.validateEtcdSnapshotFlags(tt.changedFlags)
+
+			if tt.expectErr {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring(tt.errMsg))
+			} else {
+				g.Expect(err).NotTo(HaveOccurred())
+			}
+		})
+	}
 }
 
 func TestApplyPlatformBackupSpecPreservesExistingFields(t *testing.T) {

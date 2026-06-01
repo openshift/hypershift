@@ -377,7 +377,7 @@ func parseIndex(sizeClass, name string) (int, error) {
 	return strconv.Atoi(strings.TrimPrefix(name, expectedPrefix))
 }
 
-func newDeployment(namespace, sizeClass string, placeholderIndex int, pairedNodes []string) *appsv1applyconfigurations.DeploymentApplyConfiguration {
+func newDeployment(namespace, sizeClass string, placeholderIndex int, pairedNodes []string) *appsv1applyconfigurations.DeploymentApplyConfiguration { //nolint:unparam // parameter kept for clarity
 	var nodeAffinity *corev1applyconfigurations.NodeAffinityApplyConfiguration
 	if len(pairedNodes) > 0 {
 		sort.Strings(pairedNodes)

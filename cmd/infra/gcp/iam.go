@@ -25,9 +25,9 @@ const (
 	// defaultOIDCAudience is the default audience for OIDC providers.
 	defaultOIDCAudience = "openshift"
 
-	// iamPropagationTimeout is the maximum time to wait for IAM eventual consistency.
-	// GCP IAM changes typically propagate in 5-30 seconds, we allow 60 seconds to be safe.
-	iamPropagationTimeout = 60 * time.Second
+	// iamPropagationTimeout is the maximum time to wait for IAM eventual consistency and rate limit recovery.
+	// GCP IAM changes typically propagate in 5-30 seconds; 120 seconds gives room for rate limit backoff.
+	iamPropagationTimeout = 120 * time.Second
 
 	// iamPropagationInitialBackoff is the initial backoff duration for IAM retry operations.
 	iamPropagationInitialBackoff = 2 * time.Second
@@ -53,8 +53,8 @@ type ServiceAccountDefinition struct {
 	// Roles are the GCP IAM roles to assign to this GSA
 	Roles []string `json:"roles"`
 
-	// K8sServiceAccount contains the namespace and name of the K8s SA for WIF binding
-	K8sServiceAccount *K8sServiceAccountRef `json:"k8sServiceAccount,omitempty"`
+	// K8sServiceAccounts contains the namespace and name of each K8s SA for WIF binding
+	K8sServiceAccounts []K8sServiceAccountRef `json:"k8sServiceAccounts,omitempty"`
 }
 
 // K8sServiceAccountRef identifies a Kubernetes ServiceAccount for WIF binding.
@@ -68,25 +68,11 @@ type ServiceAccountsConfig struct {
 	ServiceAccounts []ServiceAccountDefinition `json:"serviceAccounts"`
 }
 
-// loadServiceAccountDefinitions loads and parses the service accounts configuration.
-// It uses the embedded JSON file by default, or can load from a custom file if provided.
-func loadServiceAccountDefinitions(customConfigPath string) ([]ServiceAccountDefinition, error) {
-	var data []byte
-	var err error
-
-	if customConfigPath != "" {
-		// Load from custom file path
-		data, err = os.ReadFile(customConfigPath)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read custom service accounts config: %w", err)
-		}
-	} else {
-		// Use embedded default configuration
-		data = defaultServiceAccountsJSON
-	}
-
+// loadServiceAccountDefinitions loads and parses the service accounts configuration
+// from the embedded JSON file.
+func loadServiceAccountDefinitions() ([]ServiceAccountDefinition, error) {
 	var config ServiceAccountsConfig
-	if err := json.Unmarshal(data, &config); err != nil {
+	if err := json.Unmarshal(defaultServiceAccountsJSON, &config); err != nil {
 		return nil, fmt.Errorf("failed to parse service accounts configuration: %w", err)
 	}
 
@@ -228,38 +214,47 @@ func (c *IAMManager) CreateOIDCProvider(ctx context.Context) (string, string, er
 	providerID := c.formatProviderID()
 	c.logger.Info("Creating OIDC Provider", "providerID", providerID, "poolID", c.formatPoolID())
 
-	jwksData, err := os.ReadFile(c.jwksFile)
-	if err != nil {
-		return "", "", fmt.Errorf("failed to read JWKS file: %w", err)
-	}
-	// Basic JSON validation
-	var js map[string]any
-	if err := json.Unmarshal(jwksData, &js); err != nil {
-		return "", "", fmt.Errorf("JWKS file contains invalid JSON: %w", err)
+	// When JWKS file is provided, embed the public keys inline in the provider.
+	// When omitted, GCP fetches the keys from the issuer URL's OIDC discovery endpoint.
+	var (
+		jwksJson string
+		err      error
+	)
+	if c.jwksFile != "" {
+		jwksJson, err = loadAndValidateJWKS(c.jwksFile)
+		if err != nil {
+			return "", "", err
+		}
+		c.logger.Info("Using inline JWKS for OIDC provider")
+	} else {
+		c.logger.Info("No JWKS file provided; GCP will fetch keys from issuer URL")
 	}
 
+	issuerURI := c.formatIssuerUri()
+	c.logger.Info("Using OIDC issuer URI", "issuerURI", issuerURI)
+
 	providerAudience := c.formatProviderAudience()
+	oidc := &iam.Oidc{
+		AllowedAudiences: []string{defaultOIDCAudience},
+		IssuerUri:        issuerURI,
+		JwksJson:         jwksJson,
+	}
+	if jwksJson == "" {
+		oidc.ForceSendFields = []string{"JwksJson"}
+	}
+
 	provider := &iam.WorkloadIdentityPoolProvider{
 		Description: fmt.Sprintf("OIDC Provider for HyperShift cluster %s", c.infraID),
 		DisplayName: providerID,
 		Disabled:    false,
-		// JWKS is sufficient for the provider;
-		// Valid OIDC issuer URL option is only relevant when JWKS is not provided.
-		// In this case, the issuer URL will be derived from infraID if not provided.
-		Oidc: &iam.Oidc{
-			AllowedAudiences: []string{defaultOIDCAudience},
-			IssuerUri:        c.formatIssuerUri(),
-			JwksJson:         string(jwksData),
-		},
+		Oidc:        oidc,
 		AttributeMapping: map[string]string{
 			"google.subject": "assertion.sub",
 		},
 	}
 	parent := c.formatPoolParent()
-	err = c.createWorkloadIdentityProvider(ctx, parent, providerID, provider)
-	if err != nil {
+	if err := c.createWorkloadIdentityProvider(ctx, parent, providerID, provider); err != nil {
 		if isAlreadyExistsError(err) {
-			// Provider exists, check and fix its state/config if needed
 			c.logger.Info("OIDC Provider already exists, checking state and configuration", "providerID", providerID)
 			return c.ensureProviderUsable(ctx, providerID, provider, providerAudience)
 		}
@@ -345,7 +340,7 @@ func (c *IAMManager) ensureProviderUsable(ctx context.Context, providerID string
 func (c *IAMManager) CreateServiceAccounts(ctx context.Context) (map[string]string, error) {
 	serviceAccountEmails := make(map[string]string)
 
-	definitions, err := loadServiceAccountDefinitions("")
+	definitions, err := loadServiceAccountDefinitions()
 	if err != nil {
 		return nil, fmt.Errorf("failed to load service account definitions: %w", err)
 	}
@@ -353,8 +348,13 @@ func (c *IAMManager) CreateServiceAccounts(ctx context.Context) (map[string]stri
 	for _, def := range definitions {
 		c.logger.Info("Processing service account", "name", def.Name)
 
-		// Create the GSA
-		email, err := c.createServiceAccount(ctx, def)
+		// Create the GSA (with retry for rate limiting)
+		var email string
+		err = c.retryWithExponentialBackoff(ctx, fmt.Sprintf("createServiceAccount-%s", def.Name), func() error {
+			var createErr error
+			email, createErr = c.createServiceAccount(ctx, def)
+			return createErr
+		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to create service account %s: %w", def.Name, err)
 		}
@@ -370,10 +370,10 @@ func (c *IAMManager) CreateServiceAccounts(ctx context.Context) (map[string]stri
 			}
 		}
 
-		// Create WIF binding if K8s SA is specified (with retry for IAM propagation)
-		if def.K8sServiceAccount != nil {
-			err := c.retryWithExponentialBackoff(ctx, fmt.Sprintf("createWIFBinding-%s", def.Name), func() error {
-				return c.createWorkloadIdentityBinding(ctx, email, def.K8sServiceAccount)
+		// Create WIF bindings for each K8s SA (with retry for IAM propagation)
+		for i, k8sSA := range def.K8sServiceAccounts {
+			err := c.retryWithExponentialBackoff(ctx, fmt.Sprintf("createWIFBinding-%s-%d", def.Name, i), func() error {
+				return c.createWorkloadIdentityBinding(ctx, email, &k8sSA)
 			})
 			if err != nil {
 				return nil, fmt.Errorf("failed to create WIF binding for %s: %w", def.Name, err)
@@ -649,10 +649,34 @@ func (c *IAMManager) waitOperation(ctx context.Context, opName string) error {
 	}
 }
 
+// loadAndValidateJWKS reads a JWKS file from disk, validates that it contains
+// well-formed JSON, and returns the raw content as a string.
+func loadAndValidateJWKS(filePath string) (string, error) {
+	jwksData, err := os.ReadFile(filePath)
+	if err != nil {
+		return "", fmt.Errorf("failed to read JWKS file: %w", err)
+	}
+	var js map[string]any
+	if err := json.Unmarshal(jwksData, &js); err != nil {
+		return "", fmt.Errorf("JWKS file contains invalid JSON: %w", err)
+	}
+	return string(jwksData), nil
+}
+
 // compareJWKS performs a semantic comparison of two JWKS JSON strings.
 // It parses both as JSON and compares the resulting structures, ignoring
 // differences in whitespace, key ordering, or formatting.
 func (c *IAMManager) compareJWKS(jwks1, jwks2 string) bool {
+	jwks1 = strings.TrimSpace(jwks1)
+	jwks2 = strings.TrimSpace(jwks2)
+
+	if jwks1 == "" && jwks2 == "" {
+		return true
+	}
+	if jwks1 == "" || jwks2 == "" {
+		return false
+	}
+
 	var obj1, obj2 map[string]any
 
 	if err := json.Unmarshal([]byte(jwks1), &obj1); err != nil {
@@ -689,6 +713,9 @@ func isTransientIAMError(err error) bool {
 		switch apiErr.Code {
 		case 404:
 			// Not found - resource may not have propagated yet
+			return true
+		case 429:
+			// Rate limited - retry after backoff
 			return true
 		case 400:
 			// Bad request - sometimes occurs during IAM propagation
@@ -769,7 +796,7 @@ func (c *IAMManager) retryWithExponentialBackoff(ctx context.Context, operationN
 }
 
 func (c *IAMManager) getProjectNumberFromID(ctx context.Context) (int64, error) {
-	project, err := c.crmService.Projects.Get(c.projectID).Do()
+	project, err := c.crmService.Projects.Get(c.projectID).Context(ctx).Do()
 	if err != nil {
 		return 0, err
 	}
@@ -973,7 +1000,7 @@ func (c *IAMManager) DeleteOIDCProvider(ctx context.Context) error {
 
 // DeleteServiceAccounts deletes all Google Service Accounts created for this cluster.
 func (c *IAMManager) DeleteServiceAccounts(ctx context.Context) error {
-	definitions, err := loadServiceAccountDefinitions("")
+	definitions, err := loadServiceAccountDefinitions()
 	if err != nil {
 		return fmt.Errorf("failed to load service account definitions: %w", err)
 	}

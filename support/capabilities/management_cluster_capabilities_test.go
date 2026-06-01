@@ -78,6 +78,16 @@ var apiResourcesConfigMulti = metav1.APIResourceList{
 	},
 }
 
+var apiResourcesAPIServer = metav1.APIResourceList{
+	GroupVersion: configv1.GroupVersion.String(),
+	APIResources: []metav1.APIResource{
+		{
+			Name:         "apiservers",
+			SingularName: "apiserver",
+		},
+	},
+}
+
 func TestIsAPIResourceRegistered(t *testing.T) {
 
 	testCases := []struct {
@@ -221,6 +231,22 @@ func TestDetectManagementCapabilities(t *testing.T) {
 			name:           "should return true if proxy is registered (same group version)",
 			client:         newFailableFakeDiscoveryClient(nil, apiResourcesHyperShift, apiResourcesRoute, apiResourcesScc, apiResourcesConfigMulti),
 			capabilityType: CapabilityProxy,
+			resultErr:      nil,
+			isRegistered:   true,
+			shouldError:    false,
+		},
+		{
+			name:           "should return false if apiserver is not registered",
+			client:         newFailableFakeDiscoveryClient(nil, apiResourcesHyperShift, apiResourcesRoute, apiResourcesScc, apiResourcesInfra),
+			capabilityType: CapabilityAPIServer,
+			resultErr:      nil,
+			isRegistered:   false,
+			shouldError:    false,
+		},
+		{
+			name:           "should return true if apiserver is registered",
+			client:         newFailableFakeDiscoveryClient(nil, apiResourcesHyperShift, apiResourcesRoute, apiResourcesScc, apiResourcesAPIServer),
+			capabilityType: CapabilityAPIServer,
 			resultErr:      nil,
 			isRegistered:   true,
 			shouldError:    false,

@@ -1,7 +1,7 @@
-.git/
 bin/
 hack/tools/bin/
 contrib/
+!contrib/ci/gocacheprog/
 .github/
 .tekton/
 .ci-operator.yaml

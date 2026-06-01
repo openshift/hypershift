@@ -8,7 +8,7 @@ import (
 	schedulingv1alpha1 "github.com/openshift/hypershift/api/scheduling/v1alpha1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	controlplaneautoscalermanifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneautoscaler"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/k8sutil"
 
 	machinev1beta1 "github.com/openshift/api/machine/v1beta1"
 
@@ -129,7 +129,7 @@ func (r *ControlPlaneAutoscalerController) Reconcile(ctx context.Context, reques
 	vpa := controlplaneautoscalermanifests.KubeAPIServerVerticalPodAutoscaler(cpNamespace)
 
 	if hc.Annotations[hyperv1.ResourceBasedControlPlaneAutoscalingAnnotation] != "true" || hc.Annotations[hyperv1.TopologyAnnotation] != hyperv1.DedicatedRequestServingComponentsTopology {
-		_, err := util.DeleteIfNeeded(ctx, r, vpa)
+		_, err := k8sutil.DeleteIfNeeded(ctx, r, vpa)
 		return ctrl.Result{}, err
 	}
 

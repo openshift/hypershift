@@ -862,3 +862,366 @@ func TestNonRequestServingMachineSetsToScale(t *testing.T) {
 		})
 	}
 }
+
+func TestCollectTakenPairLabels(t *testing.T) {
+	tests := []struct {
+		name     string
+		pods     []corev1.Pod
+		nodes    []corev1.Node
+		expected sets.Set[string]
+	}{
+		{
+			name:     "When there are no nodes and no pods, it should return empty set",
+			pods:     nil,
+			nodes:    nil,
+			expected: sets.New[string](),
+		},
+		{
+			name: "When nodes have cluster labels, their pair labels should be collected",
+			pods: nil,
+			nodes: []corev1.Node{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "n1",
+						Labels: map[string]string{
+							hyperv1.HostedClusterLabel:      "ns-hc1",
+							OSDFleetManagerPairedNodesLabel: "pair-a",
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "n2",
+						Labels: map[string]string{
+							hyperv1.HostedClusterLabel:      "ns-hc2",
+							OSDFleetManagerPairedNodesLabel: "pair-b",
+						},
+					},
+				},
+			},
+			expected: sets.New[string]("pair-a", "pair-b"),
+		},
+		{
+			name: "When nodes have no cluster label, their pair labels should not be collected",
+			pods: nil,
+			nodes: []corev1.Node{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "n1",
+						Labels: map[string]string{
+							OSDFleetManagerPairedNodesLabel: "pair-a",
+						},
+					},
+				},
+			},
+			expected: sets.New[string](),
+		},
+		{
+			name: "When pods are scheduled on nodes with pair labels, those labels should be collected",
+			pods: []corev1.Pod{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "p1"},
+					Spec:       corev1.PodSpec{NodeName: "n1"},
+				},
+			},
+			nodes: []corev1.Node{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "n1",
+						Labels: map[string]string{
+							OSDFleetManagerPairedNodesLabel: "pair-c",
+						},
+					},
+				},
+			},
+			expected: sets.New[string]("pair-c"),
+		},
+		{
+			name: "When pods have pair label in node selector, those labels should be collected",
+			pods: []corev1.Pod{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "p1"},
+					Spec: corev1.PodSpec{
+						NodeSelector: map[string]string{
+							OSDFleetManagerPairedNodesLabel: "pair-d",
+						},
+					},
+				},
+			},
+			nodes:    nil,
+			expected: sets.New[string]("pair-d"),
+		},
+		{
+			name: "When both nodes and pods contribute pair labels, it should return the union",
+			pods: []corev1.Pod{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "p1"},
+					Spec: corev1.PodSpec{
+						NodeSelector: map[string]string{
+							OSDFleetManagerPairedNodesLabel: "pair-from-pod",
+						},
+					},
+				},
+			},
+			nodes: []corev1.Node{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "n1",
+						Labels: map[string]string{
+							hyperv1.HostedClusterLabel:      "ns-hc1",
+							OSDFleetManagerPairedNodesLabel: "pair-from-node",
+						},
+					},
+				},
+			},
+			expected: sets.New[string]("pair-from-pod", "pair-from-node"),
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewWithT(t)
+			actual := collectTakenPairLabels(test.pods, test.nodes)
+			g.Expect(actual).To(Equal(test.expected))
+		})
+	}
+}
+
+func TestScaleMachineSetsForRequirement(t *testing.T) {
+	reqServingLabel := map[string]string{
+		hyperv1.RequestServingComponentLabel: "true",
+	}
+
+	mkMachineSet := func(name, sizeLabel, pairLabel string, replicas int32, availableReplicas int32) machinev1beta1.MachineSet {
+		return machinev1beta1.MachineSet{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      name,
+				Namespace: "openshift-machine-api",
+			},
+			Spec: machinev1beta1.MachineSetSpec{
+				Replicas: &replicas,
+				Template: machinev1beta1.MachineTemplateSpec{
+					Spec: machinev1beta1.MachineSpec{
+						ObjectMeta: machinev1beta1.ObjectMeta{
+							Labels: map[string]string{
+								hyperv1.NodeSizeLabel:                sizeLabel,
+								OSDFleetManagerPairedNodesLabel:      pairLabel,
+								hyperv1.RequestServingComponentLabel: reqServingLabel[hyperv1.RequestServingComponentLabel],
+							},
+						},
+					},
+				},
+			},
+			Status: machinev1beta1.MachineSetStatus{
+				AvailableReplicas: availableReplicas,
+			},
+		}
+	}
+
+	mkNode := func(name, sizeLabel, pairLabel string) corev1.Node {
+		return corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: name,
+				Annotations: map[string]string{
+					machineNameNodeAnnotation: "openshift-machine-api/" + name + "-machine",
+				},
+				Labels: map[string]string{
+					hyperv1.RequestServingComponentLabel: "true",
+					hyperv1.NodeSizeLabel:                sizeLabel,
+					OSDFleetManagerPairedNodesLabel:      pairLabel,
+				},
+			},
+		}
+	}
+
+	tests := []struct {
+		name            string
+		requirement     nodeRequirement
+		machineSets     []machinev1beta1.MachineSet
+		machines        []machinev1beta1.Machine
+		nodes           []corev1.Node
+		takenPairLabels sets.Set[string]
+		expectedNames   []string
+	}{
+		{
+			name:            "When available nodes satisfy the requirement, it should return nil",
+			requirement:     nodeRequirement{sizeLabel: "small", count: 2},
+			machineSets:     []machinev1beta1.MachineSet{mkMachineSet("ms-1", "small", "pair-a", 0, 0)},
+			machines:        nil,
+			nodes:           []corev1.Node{mkNode("n1", "small", "pair-free"), mkNode("n2", "small", "pair-free")},
+			takenPairLabels: sets.New[string](),
+			expectedNames:   nil,
+		},
+		{
+			name:        "When no nodes or pending machinesets exist, it should pick available machineset pairs",
+			requirement: nodeRequirement{sizeLabel: "small", count: 2},
+			machineSets: []machinev1beta1.MachineSet{
+				mkMachineSet("ms-1a", "small", "pair-a", 0, 0),
+				mkMachineSet("ms-1b", "small", "pair-a", 0, 0),
+			},
+			machines:        nil,
+			nodes:           nil,
+			takenPairLabels: sets.New[string](),
+			expectedNames:   []string{"ms-1a", "ms-1b"},
+		},
+		{
+			name:        "When a pending machineset exists without its pair scaled up, it should scale the pair",
+			requirement: nodeRequirement{sizeLabel: "small", count: 2},
+			machineSets: []machinev1beta1.MachineSet{
+				mkMachineSet("ms-1a", "small", "pair-a", 1, 0),
+				mkMachineSet("ms-1b", "small", "pair-a", 0, 0),
+			},
+			machines:        nil,
+			nodes:           nil,
+			takenPairLabels: sets.New[string](),
+			expectedNames:   []string{"ms-1b"},
+		},
+		{
+			name:        "When taken pair labels exclude some machinesets, those should be skipped",
+			requirement: nodeRequirement{sizeLabel: "small", count: 2},
+			machineSets: []machinev1beta1.MachineSet{
+				mkMachineSet("ms-1a", "small", "pair-taken", 0, 0),
+				mkMachineSet("ms-1b", "small", "pair-taken", 0, 0),
+				mkMachineSet("ms-2a", "small", "pair-free", 0, 0),
+				mkMachineSet("ms-2b", "small", "pair-free", 0, 0),
+			},
+			machines:        nil,
+			nodes:           nil,
+			takenPairLabels: sets.New[string]("pair-taken"),
+			expectedNames:   []string{"ms-2a", "ms-2b"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewWithT(t)
+			actual := scaleMachineSetsForRequirement(test.requirement, test.machineSets, test.machines, test.nodes, test.takenPairLabels)
+			actualNames := make([]string, 0, len(actual))
+			for _, ms := range actual {
+				actualNames = append(actualNames, ms.Name)
+			}
+			if len(test.expectedNames) == 0 {
+				g.Expect(actual).To(BeEmpty())
+			} else {
+				g.Expect(sets.New(actualNames...)).To(Equal(sets.New(test.expectedNames...)))
+			}
+		})
+	}
+}
+
+func TestPickAvailableMachineSetPairs(t *testing.T) {
+	mkMachineSet := func(name, sizeLabel, pairLabel string) machinev1beta1.MachineSet {
+		return machinev1beta1.MachineSet{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      name,
+				Namespace: "openshift-machine-api",
+			},
+			Spec: machinev1beta1.MachineSetSpec{
+				Replicas: func() *int32 { r := int32(0); return &r }(),
+				Template: machinev1beta1.MachineTemplateSpec{
+					Spec: machinev1beta1.MachineSpec{
+						ObjectMeta: machinev1beta1.ObjectMeta{
+							Labels: map[string]string{
+								hyperv1.NodeSizeLabel:                sizeLabel,
+								OSDFleetManagerPairedNodesLabel:      pairLabel,
+								hyperv1.RequestServingComponentLabel: "true",
+							},
+						},
+					},
+				},
+			},
+		}
+	}
+
+	tests := []struct {
+		name            string
+		sizeLabel       string
+		needCount       int
+		machineSets     []machinev1beta1.MachineSet
+		takenPairLabels sets.Set[string]
+		expectedNames   []string
+	}{
+		{
+			name:            "When there are no available machinesets, it should return empty",
+			sizeLabel:       "small",
+			needCount:       2,
+			machineSets:     nil,
+			takenPairLabels: sets.New[string](),
+			expectedNames:   nil,
+		},
+		{
+			name:      "When a complete pair is available, it should return both machinesets",
+			sizeLabel: "small",
+			needCount: 2,
+			machineSets: []machinev1beta1.MachineSet{
+				mkMachineSet("ms-1a", "small", "pair-1"),
+				mkMachineSet("ms-1b", "small", "pair-1"),
+			},
+			takenPairLabels: sets.New[string](),
+			expectedNames:   []string{"ms-1a", "ms-1b"},
+		},
+		{
+			name:      "When pair label is taken, it should skip that pair",
+			sizeLabel: "small",
+			needCount: 2,
+			machineSets: []machinev1beta1.MachineSet{
+				mkMachineSet("ms-1a", "small", "pair-taken"),
+				mkMachineSet("ms-1b", "small", "pair-taken"),
+				mkMachineSet("ms-2a", "small", "pair-free"),
+				mkMachineSet("ms-2b", "small", "pair-free"),
+			},
+			takenPairLabels: sets.New[string]("pair-taken"),
+			expectedNames:   []string{"ms-2a", "ms-2b"},
+		},
+		{
+			name:      "When a machineset has no matching pair, it should be skipped",
+			sizeLabel: "small",
+			needCount: 2,
+			machineSets: []machinev1beta1.MachineSet{
+				mkMachineSet("ms-1a", "small", "pair-orphan"),
+			},
+			takenPairLabels: sets.New[string](),
+			expectedNames:   nil,
+		},
+		{
+			name:      "When size does not match, it should be skipped",
+			sizeLabel: "small",
+			needCount: 2,
+			machineSets: []machinev1beta1.MachineSet{
+				mkMachineSet("ms-1a", "medium", "pair-1"),
+				mkMachineSet("ms-1b", "medium", "pair-1"),
+			},
+			takenPairLabels: sets.New[string](),
+			expectedNames:   nil,
+		},
+		{
+			name:      "When needCount is satisfied, it should stop picking pairs",
+			sizeLabel: "small",
+			needCount: 2,
+			machineSets: []machinev1beta1.MachineSet{
+				mkMachineSet("ms-1a", "small", "pair-1"),
+				mkMachineSet("ms-1b", "small", "pair-1"),
+				mkMachineSet("ms-2a", "small", "pair-2"),
+				mkMachineSet("ms-2b", "small", "pair-2"),
+			},
+			takenPairLabels: sets.New[string](),
+			expectedNames:   []string{"ms-1a", "ms-1b"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewWithT(t)
+			actual := pickAvailableMachineSetPairs(test.sizeLabel, test.needCount, test.machineSets, test.takenPairLabels)
+			actualNames := make([]string, 0, len(actual))
+			for _, ms := range actual {
+				actualNames = append(actualNames, ms.Name)
+			}
+			if len(test.expectedNames) == 0 {
+				g.Expect(actual).To(BeEmpty())
+			} else {
+				g.Expect(sets.New(actualNames...)).To(Equal(sets.New(test.expectedNames...)))
+			}
+		})
+	}
+}

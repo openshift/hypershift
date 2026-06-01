@@ -67,7 +67,6 @@ func (r *Scheduler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resul
 	}
 
 	if !hc.DeletionTimestamp.IsZero() {
-		log.Info("hostedcluster is being deleted, aborting reconcile")
 		return ctrl.Result{}, nil
 	}
 

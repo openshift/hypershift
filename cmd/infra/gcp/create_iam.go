@@ -70,13 +70,12 @@ func bindOptions(cmd *cobra.Command) *CreateIAMOptions {
 	o := &CreateIAMOptions{}
 	cmd.Flags().StringVar(&o.InfraID, infraIDFlag, o.InfraID, "Infrastructure ID to use for GCP resources.")
 	cmd.Flags().StringVar(&o.ProjectID, projectIDFlag, o.ProjectID, "GCP Project ID where resources will be created")
-	cmd.Flags().StringVar(&o.ClusterOIDCJWKSFile, clusterOIDCJWKSFlag, o.ClusterOIDCJWKSFile, "Path to a local JSON file containing OIDC provider's public key in JWKS format")
+	cmd.Flags().StringVar(&o.ClusterOIDCJWKSFile, clusterOIDCJWKSFlag, o.ClusterOIDCJWKSFile, "Path to a local JSON file containing OIDC provider's public key in JWKS format (optional if --oidc-issuer-url is set)")
 	cmd.Flags().StringVar(&o.OutputFile, outputFileFlag, o.OutputFile, "Path to output JSON file with GSA details (optional)")
-	cmd.Flags().StringVar(&o.OIDCIssuerURL, oidcIssuerURLFlag, o.OIDCIssuerURL, "Custom OIDC issuer URL (optional, defaults to https://hypershift-<infra-id>-oidc)")
+	cmd.Flags().StringVar(&o.OIDCIssuerURL, oidcIssuerURLFlag, o.OIDCIssuerURL, "OIDC issuer URL for WIF provider (optional if --oidc-jwks-file is set, defaults to https://hypershift-<infra-id>-oidc)")
 
 	_ = cmd.MarkFlagRequired(infraIDFlag)
 	_ = cmd.MarkFlagRequired(projectIDFlag)
-	_ = cmd.MarkFlagRequired(clusterOIDCJWKSFlag)
 	return o
 }
 
@@ -87,12 +86,14 @@ func (o *CreateIAMOptions) ValidateInputs() error {
 	if o.ProjectID == "" {
 		return fmt.Errorf("project-id is required")
 	}
-	if o.ClusterOIDCJWKSFile == "" {
-		return fmt.Errorf("oidc-jwks-file is required")
+	if o.ClusterOIDCJWKSFile == "" && o.OIDCIssuerURL == "" {
+		return fmt.Errorf("at least one of --oidc-jwks-file or --oidc-issuer-url is required")
 	}
 
-	if err := o.ValidateJWKSFile(); err != nil {
-		return fmt.Errorf("invalid JWKS file: %w", err)
+	if o.ClusterOIDCJWKSFile != "" {
+		if err := o.ValidateJWKSFile(); err != nil {
+			return fmt.Errorf("invalid JWKS file: %w", err)
+		}
 	}
 
 	return nil

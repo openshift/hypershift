@@ -8,7 +8,8 @@ metadata:
     pipelinesascode.tekton.dev/cancel-in-progress: "false"
     pipelinesascode.tekton.dev/max-keep-runs: "3"
     pipelinesascode.tekton.dev/on-cel-expression: event == "push" && target_branch
-      == "main" && "Dockerfile.github-actions-runner".pathChanged()
+      == "main" && ("Dockerfile.github-actions-runner".pathChanged() || "contrib/ci/gocacheprog".pathChanged()
+      || ".tekton/hypershift-gh-actions-runner-push.yaml".pathChanged())
     pipelinesascode.tekton.dev/pipeline: ".tekton/pipelines/common-operator-build.yaml"
   creationTimestamp: null
   labels:

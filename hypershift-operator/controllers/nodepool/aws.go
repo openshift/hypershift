@@ -61,29 +61,87 @@ func isSpotEnabled(nodePool *hyperv1.NodePool) bool {
 }
 
 func awsMachineTemplateSpec(infraName string, hostedCluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool, defaultSG bool, releaseImage *releaseinfo.ReleaseImage) (*capiaws.AWSMachineTemplateSpec, error) {
+	ami, err := resolveAWSAMI(hostedCluster, nodePool, releaseImage)
+	if err != nil {
+		return nil, err
+	}
 
-	var ami string
+	subnet := buildAWSSubnet(nodePool)
+	rootVolume := buildAWSRootVolume(nodePool)
+
+	securityGroups, err := buildAWSSecurityGroups(nodePool, hostedCluster, defaultSG)
+	if err != nil {
+		return nil, err
+	}
+
+	instanceProfile := fmt.Sprintf("%s-worker-profile", infraName)
+	if nodePool.Spec.Platform.AWS.InstanceProfile != "" {
+		instanceProfile = nodePool.Spec.Platform.AWS.InstanceProfile
+	}
+
+	instanceMetadataOptions := &capiaws.InstanceMetadataOptions{
+		HTTPTokens:              capiaws.HTTPTokensStateOptional,
+		HTTPPutResponseHopLimit: 2, // set to 2 as per AWS recommendation for container envs https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instancedata-data-retrieval.html#imds-considerations
+		HTTPEndpoint:            capiaws.InstanceMetadataEndpointStateEnabled,
+		InstanceMetadataTags:    capiaws.InstanceMetadataEndpointStateDisabled,
+	}
+	if value, found := nodePool.Annotations[ec2InstanceMetadataHTTPTokensAnnotation]; found && value == string(capiaws.HTTPTokensStateRequired) {
+		instanceMetadataOptions.HTTPTokens = capiaws.HTTPTokensStateRequired
+	}
+
+	awsMachineTemplateSpec := &capiaws.AWSMachineTemplateSpec{
+		Template: capiaws.AWSMachineTemplateResource{
+			Spec: capiaws.AWSMachineSpec{
+				UncompressedUserData: ptr.To(true),
+				CloudInit: capiaws.CloudInit{
+					InsecureSkipSecretsManager: true,
+					SecureSecretsBackend:       "secrets-manager",
+				},
+				IAMInstanceProfile:       instanceProfile,
+				InstanceType:             nodePool.Spec.Platform.AWS.InstanceType,
+				AMI:                      capiaws.AMIReference{ID: ptr.To(ami)},
+				AdditionalSecurityGroups: securityGroups,
+				Subnet:                   subnet,
+				RootVolume:               rootVolume,
+				AdditionalTags:           awsAdditionalTags(nodePool, hostedCluster, infraName),
+				InstanceMetadataOptions:  instanceMetadataOptions,
+			},
+		},
+	}
+
+	applyAWSPlacementOptions(nodePool, awsMachineTemplateSpec)
+
+	if hostedCluster.Annotations[hyperv1.AWSMachinePublicIPs] == "true" {
+		awsMachineTemplateSpec.Template.Spec.PublicIP = ptr.To(true)
+	}
+
+	return awsMachineTemplateSpec, nil
+}
+
+func resolveAWSAMI(hostedCluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool, releaseImage *releaseinfo.ReleaseImage) (string, error) {
+	// TODO: Should the region be included in the NodePool platform information?
 	region := hostedCluster.Spec.Platform.AWS.Region
 	arch := nodePool.Spec.Arch
 	if nodePool.Spec.Platform.AWS.AMI != "" {
-		ami = nodePool.Spec.Platform.AWS.AMI
-	} else if nodePool.Spec.Platform.AWS.ImageType == hyperv1.ImageTypeWindows {
-		// Use Windows AMI mapping when ImageType is set to Windows
-		var err error
-		ami, err = getWindowsAMI(region, arch, releaseImage)
-		if err != nil {
-			return nil, fmt.Errorf("couldn't discover a Windows AMI for release image: %w", err)
-		}
-	} else {
-		// Default behavior for Linux/RHCOS AMIs
-		// TODO: Should the region be included in the NodePool platform information?
-		var err error
-		ami, err = defaultNodePoolAMI(region, arch, releaseImage)
-		if err != nil {
-			return nil, fmt.Errorf("couldn't discover an AMI for release image: %w", err)
-		}
+		return nodePool.Spec.Platform.AWS.AMI, nil
 	}
+	// Use Windows AMI mapping when ImageType is set to Windows
+	if nodePool.Spec.Platform.AWS.ImageType == hyperv1.ImageTypeWindows {
+		ami, err := getWindowsAMI(region, arch, releaseImage)
+		if err != nil {
+			return "", fmt.Errorf("couldn't discover a Windows AMI for release image: %w", err)
+		}
+		return ami, nil
+	}
+	// Default behavior for Linux/RHCOS AMIs
+	ami, err := defaultNodePoolAMI(region, arch, releaseImage)
+	if err != nil {
+		return "", fmt.Errorf("couldn't discover an AMI for release image: %w", err)
+	}
+	return ami, nil
+}
 
+func buildAWSSubnet(nodePool *hyperv1.NodePool) *capiaws.AWSResourceReference {
 	subnet := &capiaws.AWSResourceReference{}
 	subnet.ID = nodePool.Spec.Platform.AWS.Subnet.ID
 	for k := range nodePool.Spec.Platform.AWS.Subnet.Filters {
@@ -93,27 +151,33 @@ func awsMachineTemplateSpec(infraName string, hostedCluster *hyperv1.HostedClust
 		}
 		subnet.Filters = append(subnet.Filters, filter)
 	}
+	return subnet
+}
 
+func buildAWSRootVolume(nodePool *hyperv1.NodePool) *capiaws.Volume {
 	rootVolume := &capiaws.Volume{
 		Size: EC2VolumeDefaultSize,
 	}
-	if nodePool.Spec.Platform.AWS.RootVolume != nil {
-		if nodePool.Spec.Platform.AWS.RootVolume.Type != "" {
-			rootVolume.Type = capiaws.VolumeType(nodePool.Spec.Platform.AWS.RootVolume.Type)
-		} else {
-			rootVolume.Type = capiaws.VolumeType(EC2VolumeDefaultType)
-		}
-		if nodePool.Spec.Platform.AWS.RootVolume.Size > 0 {
-			rootVolume.Size = nodePool.Spec.Platform.AWS.RootVolume.Size
-		}
-		if nodePool.Spec.Platform.AWS.RootVolume.IOPS > 0 {
-			rootVolume.IOPS = nodePool.Spec.Platform.AWS.RootVolume.IOPS
-		}
-
-		rootVolume.Encrypted = nodePool.Spec.Platform.AWS.RootVolume.Encrypted
-		rootVolume.EncryptionKey = nodePool.Spec.Platform.AWS.RootVolume.EncryptionKey
+	if nodePool.Spec.Platform.AWS.RootVolume == nil {
+		return rootVolume
 	}
+	if nodePool.Spec.Platform.AWS.RootVolume.Type != "" {
+		rootVolume.Type = capiaws.VolumeType(nodePool.Spec.Platform.AWS.RootVolume.Type)
+	} else {
+		rootVolume.Type = capiaws.VolumeType(EC2VolumeDefaultType)
+	}
+	if nodePool.Spec.Platform.AWS.RootVolume.Size > 0 {
+		rootVolume.Size = nodePool.Spec.Platform.AWS.RootVolume.Size
+	}
+	if nodePool.Spec.Platform.AWS.RootVolume.IOPS > 0 {
+		rootVolume.IOPS = nodePool.Spec.Platform.AWS.RootVolume.IOPS
+	}
+	rootVolume.Encrypted = nodePool.Spec.Platform.AWS.RootVolume.Encrypted
+	rootVolume.EncryptionKey = nodePool.Spec.Platform.AWS.RootVolume.EncryptionKey
+	return rootVolume
+}
 
+func buildAWSSecurityGroups(nodePool *hyperv1.NodePool, hostedCluster *hyperv1.HostedCluster, defaultSG bool) ([]capiaws.AWSResourceReference, error) {
 	securityGroups := []capiaws.AWSResourceReference{}
 	for _, sg := range nodePool.Spec.Platform.AWS.SecurityGroups {
 		var filters []capiaws.Filter
@@ -137,92 +201,51 @@ func awsMachineTemplateSpec(infraName string, hostedCluster *hyperv1.HostedClust
 			ID: &sgID,
 		})
 	}
+	return securityGroups, nil
+}
 
-	instanceProfile := fmt.Sprintf("%s-worker-profile", infraName)
-	if nodePool.Spec.Platform.AWS.InstanceProfile != "" {
-		instanceProfile = nodePool.Spec.Platform.AWS.InstanceProfile
+func applyAWSPlacementOptions(nodePool *hyperv1.NodePool, spec *capiaws.AWSMachineTemplateSpec) {
+	placement := nodePool.Spec.Platform.AWS.Placement
+	if placement == nil {
+		return
 	}
+	spec.Template.Spec.Tenancy = placement.Tenancy
 
-	instanceType := nodePool.Spec.Platform.AWS.InstanceType
-
-	instanceMetadataOptions := &capiaws.InstanceMetadataOptions{
-		HTTPTokens:              capiaws.HTTPTokensStateOptional,
-		HTTPPutResponseHopLimit: 2, // set to 2 as per AWS recommendation for container envs https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instancedata-data-retrieval.html#imds-considerations
-		HTTPEndpoint:            capiaws.InstanceMetadataEndpointStateEnabled,
-		InstanceMetadataTags:    capiaws.InstanceMetadataEndpointStateDisabled,
-	}
-	if value, found := nodePool.Annotations[ec2InstanceMetadataHTTPTokensAnnotation]; found && value == string(capiaws.HTTPTokensStateRequired) {
-		instanceMetadataOptions.HTTPTokens = capiaws.HTTPTokensStateRequired
-	}
-
-	awsMachineTemplateSpec := &capiaws.AWSMachineTemplateSpec{
-		Template: capiaws.AWSMachineTemplateResource{
-			Spec: capiaws.AWSMachineSpec{
-				UncompressedUserData: ptr.To(true),
-				CloudInit: capiaws.CloudInit{
-					InsecureSkipSecretsManager: true,
-					SecureSecretsBackend:       "secrets-manager",
-				},
-				IAMInstanceProfile: instanceProfile,
-				InstanceType:       instanceType,
-				AMI: capiaws.AMIReference{
-					ID: ptr.To(ami),
-				},
-				AdditionalSecurityGroups: securityGroups,
-				Subnet:                   subnet,
-				RootVolume:               rootVolume,
-				AdditionalTags:           awsAdditionalTags(nodePool, hostedCluster, infraName),
-				InstanceMetadataOptions:  instanceMetadataOptions,
-			},
-		},
-	}
-
-	if placement := nodePool.Spec.Platform.AWS.Placement; placement != nil {
-		awsMachineTemplateSpec.Template.Spec.Tenancy = placement.Tenancy
-
-		// Handle market type - placement.MarketType takes precedence over capacityReservation.MarketType
-		switch placement.MarketType {
-		case hyperv1.MarketTypeSpot:
-			// Spot instances
-			awsMachineTemplateSpec.Template.Spec.SpotMarketOptions = &capiaws.SpotMarketOptions{}
-			if placement.Spot.MaxPrice != "" {
-				awsMachineTemplateSpec.Template.Spec.SpotMarketOptions.MaxPrice = ptr.To(placement.Spot.MaxPrice)
-			}
-
-		case hyperv1.MarketTypeCapacityBlock:
-			awsMachineTemplateSpec.Template.Spec.MarketType = capiaws.MarketTypeCapacityBlock
-		case hyperv1.MarketTypeOnDemand:
-			awsMachineTemplateSpec.Template.Spec.MarketType = capiaws.MarketTypeOnDemand
-		default:
-			// If placement.MarketType is not set, fall back to capacityReservation.MarketType (deprecated)
-			if capacityReservation := placement.CapacityReservation; capacityReservation != nil {
-				//nolint:staticcheck // SA1019: capacityReservation.MarketType is deprecated but supported for backward compatibility
-				switch capacityReservation.MarketType {
-				case hyperv1.MarketTypeCapacityBlock:
-					awsMachineTemplateSpec.Template.Spec.MarketType = capiaws.MarketTypeCapacityBlock
-				case hyperv1.MarketTypeOnDemand:
-					awsMachineTemplateSpec.Template.Spec.MarketType = capiaws.MarketTypeOnDemand
-				default:
-					if placement.Tenancy != "host" && capacityReservation.ID != nil {
-						// if the tenancy is not host and the ID is set, default the market type to CapacityBlock
-						awsMachineTemplateSpec.Template.Spec.MarketType = capiaws.MarketTypeCapacityBlock
-					}
+	// Handle market type - placement.MarketType takes precedence over capacityReservation.MarketType (deprecated)
+	switch placement.MarketType {
+	case hyperv1.MarketTypeSpot:
+		// Spot instances
+		spec.Template.Spec.SpotMarketOptions = &capiaws.SpotMarketOptions{}
+		if placement.Spot.MaxPrice != "" {
+			spec.Template.Spec.SpotMarketOptions.MaxPrice = ptr.To(placement.Spot.MaxPrice)
+		}
+	case hyperv1.MarketTypeCapacityBlock:
+		spec.Template.Spec.MarketType = capiaws.MarketTypeCapacityBlock
+	case hyperv1.MarketTypeOnDemand:
+		spec.Template.Spec.MarketType = capiaws.MarketTypeOnDemand
+	default:
+		// If placement.MarketType is not set, fall back to capacityReservation.MarketType (deprecated)
+		if capacityReservation := placement.CapacityReservation; capacityReservation != nil {
+			//nolint:staticcheck // SA1019: capacityReservation.MarketType is deprecated but supported for backward compatibility
+			switch capacityReservation.MarketType {
+			case hyperv1.MarketTypeCapacityBlock:
+				spec.Template.Spec.MarketType = capiaws.MarketTypeCapacityBlock
+			case hyperv1.MarketTypeOnDemand:
+				spec.Template.Spec.MarketType = capiaws.MarketTypeOnDemand
+			default:
+				// if the tenancy is not host and the ID is set, default the market type to CapacityBlock
+				if placement.Tenancy != "host" && capacityReservation.ID != nil {
+					spec.Template.Spec.MarketType = capiaws.MarketTypeCapacityBlock
 				}
 			}
 		}
-
-		// Handle capacity reservation options
-		if capacityReservation := placement.CapacityReservation; capacityReservation != nil {
-			awsMachineTemplateSpec.Template.Spec.CapacityReservationID = capacityReservation.ID
-			awsMachineTemplateSpec.Template.Spec.CapacityReservationPreference = capiaws.CapacityReservationPreference(capacityReservation.Preference)
-		}
 	}
 
-	if hostedCluster.Annotations[hyperv1.AWSMachinePublicIPs] == "true" {
-		awsMachineTemplateSpec.Template.Spec.PublicIP = ptr.To(true)
+	// Handle capacity reservation options
+	if capacityReservation := placement.CapacityReservation; capacityReservation != nil {
+		spec.Template.Spec.CapacityReservationID = capacityReservation.ID
+		spec.Template.Spec.CapacityReservationPreference = capiaws.CapacityReservationPreference(capacityReservation.Preference)
 	}
-
-	return awsMachineTemplateSpec, nil
 }
 
 func awsAdditionalTags(nodePool *hyperv1.NodePool, hostedCluster *hyperv1.HostedCluster, infraName string) capiaws.Tags {
@@ -308,7 +331,7 @@ func (c *CAPI) reconcileAWSMachines(ctx context.Context) error {
 	return errors.NewAggregate(errs)
 }
 
-func (r *NodePoolReconciler) setAWSConditions(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string, releaseImage *releaseinfo.ReleaseImage) error {
+func (r *NodePoolReconciler) setAWSConditions(_ context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, _ string, releaseImage *releaseinfo.ReleaseImage) error {
 	if nodePool.Spec.Platform.Type == hyperv1.AWSPlatform {
 		if hcluster.Spec.Platform.AWS == nil {
 			return fmt.Errorf("the HostedCluster for this NodePool has no .Spec.Platform.AWS, this is unsupported")
@@ -379,7 +402,7 @@ func (r *NodePoolReconciler) setAWSConditions(ctx context.Context, nodePool *hyp
 	return nil
 }
 
-func (r NodePoolReconciler) validateAWSPlatformConfig(ctx context.Context, nodePool *hyperv1.NodePool, hc *hyperv1.HostedCluster, oldCondition *hyperv1.NodePoolCondition) error {
+func (r NodePoolReconciler) validateAWSPlatformConfig(ctx context.Context, nodePool *hyperv1.NodePool, hc *hyperv1.HostedCluster, _ *hyperv1.NodePoolCondition) error {
 	if nodePool.Spec.Platform.AWS.Placement != nil && nodePool.Spec.Platform.AWS.Placement.CapacityReservation != nil {
 		pullSecretBytes, err := r.getPullSecretBytes(ctx, hc)
 		if err != nil {

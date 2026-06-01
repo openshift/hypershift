@@ -1,28 +1,42 @@
 package certificaterevocationcontroller
 
 import (
+	"context"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"embed"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
+	. "github.com/onsi/gomega"
+
 	certificatesv1alpha1 "github.com/openshift/hypershift/api/certificates/v1alpha1"
 	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	certificatesv1alpha1applyconfigurations "github.com/openshift/hypershift/client/applyconfiguration/certificates/v1alpha1"
+	hcpmanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-pki-operator/certificates"
 	"github.com/openshift/hypershift/control-plane-pki-operator/manifests"
 
 	librarygocrypto "github.com/openshift/library-go/pkg/crypto"
 	"github.com/openshift/library-go/pkg/operator/certrotation"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime"
 	corev1applyconfigurations "k8s.io/client-go/applyconfigurations/core/v1"
 	metav1applyconfigurations "k8s.io/client-go/applyconfigurations/meta/v1"
+	"k8s.io/client-go/kubernetes"
+	kubefake "k8s.io/client-go/kubernetes/fake"
+	"k8s.io/client-go/rest"
+	k8stesting "k8s.io/client-go/testing"
+	"k8s.io/client-go/tools/clientcmd"
+	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	"k8s.io/client-go/util/cert"
 	testingclock "k8s.io/utils/clock/testing"
 	"k8s.io/utils/ptr"
@@ -449,10 +463,11 @@ func TestCertificateRevocationController_processCertificateRevocationRequest(t *
 			},
 		},
 		{
-			name:         "not yet propagated, nothing to do",
-			now:          postRevocationClock.Now,
-			crrNamespace: "crr-ns",
-			crrName:      "crr-name",
+			name:            "not yet propagated, nothing to do",
+			now:             postRevocationClock.Now,
+			crrNamespace:    "crr-ns",
+			crrName:         "crr-name",
+			expectedRequeue: true, // New cert not yet in total bundle, requeue to wait for TargetConfigController
 			crr: &certificatesv1alpha1.CertificateRevocationRequest{
 				ObjectMeta: metav1.ObjectMeta{Namespace: "crr-ns", Name: "crr-name"},
 				Spec:       certificatesv1alpha1.CertificateRevocationRequestSpec{SignerClass: string(certificates.CustomerBreakGlassSigner)},
@@ -833,10 +848,11 @@ func TestCertificateRevocationController_processCertificateRevocationRequest(t *
 			},
 		},
 		{
-			name:         "validating, previous still valid",
-			now:          postRevocationClock.Now,
-			crrNamespace: "crr-ns",
-			crrName:      "crr-name",
+			name:            "validating, previous still valid",
+			now:             postRevocationClock.Now,
+			crrNamespace:    "crr-ns",
+			crrName:         "crr-name",
+			expectedRequeue: true, // Old cert still in total bundle, requeue to wait for TargetConfigController
 			crr: &certificatesv1alpha1.CertificateRevocationRequest{
 				ObjectMeta: metav1.ObjectMeta{Namespace: "crr-ns", Name: "crr-name"},
 				Spec:       certificatesv1alpha1.CertificateRevocationRequestSpec{SignerClass: string(certificates.CustomerBreakGlassSigner)},
@@ -1019,6 +1035,81 @@ func TestCertificateRevocationController_processCertificateRevocationRequest(t *
 				},
 			},
 		},
+		{
+			name:            "SRE signer: validating, previous still valid (requeue path)",
+			now:             postRevocationClock.Now,
+			crrNamespace:    "crr-ns",
+			crrName:         "crr-name-sre",
+			expectedRequeue: true, // Old cert still in total bundle for SRE signer, must requeue
+			crr: &certificatesv1alpha1.CertificateRevocationRequest{
+				ObjectMeta: metav1.ObjectMeta{Namespace: "crr-ns", Name: "crr-name-sre"},
+				Spec:       certificatesv1alpha1.CertificateRevocationRequestSpec{SignerClass: string(certificates.SREBreakGlassSigner)},
+				Status: certificatesv1alpha1.CertificateRevocationRequestStatus{
+					RevocationTimestamp: ptr.To(metav1.NewTime(revocationClock.Now())),
+					PreviousSigner:      &corev1.LocalObjectReference{Name: "1pfcydcz358pa1glirkmc72sdkf5zw21uam4jbnj03pw"},
+					Conditions: []metav1.Condition{{
+						Type:               certificatesv1alpha1.LeafCertificatesRegeneratedType,
+						Status:             metav1.ConditionTrue,
+						LastTransitionTime: metav1.NewTime(postRevocationClock.Now()),
+						Reason:             hypershiftv1beta1.AsExpectedReason,
+						Message:            `All leaf certificates are re-generated.`,
+					}, {
+						Type:               certificatesv1alpha1.RootCertificatesRegeneratedType,
+						Status:             metav1.ConditionTrue,
+						LastTransitionTime: metav1.NewTime(postRevocationClock.Now()),
+						Reason:             hypershiftv1beta1.AsExpectedReason,
+						Message:            `Signer certificate crr-ns/sre-system-admin-signer regenerated.`,
+					}, {
+						Type:               certificatesv1alpha1.NewCertificatesTrustedType,
+						Status:             metav1.ConditionTrue,
+						LastTransitionTime: metav1.NewTime(postRevocationClock.Now()),
+						Reason:             hypershiftv1beta1.AsExpectedReason,
+						Message:            `New signer certificate crr-ns/sre-system-admin-signer trusted.`,
+					}},
+				},
+			},
+			secrets: []*corev1.Secret{{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace:   "crr-ns",
+					Name:        manifests.SRESystemAdminSigner("").Name,
+					Annotations: map[string]string{certrotation.CertificateIssuer: "crr-ns_sre-break-glass-signer@1234"},
+				},
+				Data: map[string][]byte{
+					corev1.TLSCertKey:       data.future.raw.signerCert,
+					corev1.TLSPrivateKeyKey: data.future.raw.signerKey,
+				},
+			}, {
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "crr-ns",
+					Name:      "1pfcydcz358pa1glirkmc72sdkf5zw21uam4jbnj03pw",
+				},
+				Data: map[string][]byte{
+					corev1.TLSCertKey:       data.original.raw.signerCert,
+					corev1.TLSPrivateKeyKey: data.original.raw.signerKey,
+				},
+			}, {
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace:   "crr-ns",
+					Name:        manifests.SRESystemAdminClientCertSecret("").Name,
+					Annotations: map[string]string{certrotation.CertificateIssuer: "crr-ns_sre-break-glass-signer@1234"},
+				},
+				Data: map[string][]byte{
+					corev1.TLSCertKey:       data.future.raw.signedCert,
+					corev1.TLSPrivateKeyKey: data.future.raw.clientKey,
+				},
+			}},
+			cms: []*corev1.ConfigMap{{
+				ObjectMeta: metav1.ObjectMeta{Namespace: "crr-ns", Name: manifests.SRESystemAdminSignerCA("").Name},
+				Data: map[string]string{
+					"ca-bundle.crt": string(data.future.raw.signerCert),
+				},
+			}, {
+				ObjectMeta: metav1.ObjectMeta{Namespace: "crr-ns", Name: manifests.TotalKASClientCABundle("").Name},
+				Data: map[string]string{
+					"ca-bundle.crt": string(data.original.raw.signerCert) + string(data.future.raw.signerCert),
+				},
+			}},
+		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			c := &CertificateRevocationController{
@@ -1046,6 +1137,9 @@ func TestCertificateRevocationController_processCertificateRevocationRequest(t *
 						}
 					}
 					return nil, apierrors.NewNotFound(corev1.SchemeGroupVersion.WithResource("configmaps").GroupResource(), name)
+				},
+				listPods: func(namespace string, selector labels.Selector) ([]*corev1.Pod, error) {
+					return nil, nil
 				},
 				skipKASConnections: true,
 			}
@@ -1075,4 +1169,860 @@ func compareActions() []cmp.Option {
 		cmpopts.IgnoreFields(metav1applyconfigurations.OwnerReferenceApplyConfiguration{}, "UID"),
 		cmpopts.IgnoreFields(metav1applyconfigurations.ConditionApplyConfiguration{}, "ObservedGeneration"),
 	}
+}
+
+func kasPodSpec() corev1.PodSpec {
+	return corev1.PodSpec{
+		Containers: []corev1.Container{{
+			Name: "kube-apiserver",
+			Ports: []corev1.ContainerPort{{
+				Name:          "client",
+				ContainerPort: 6443,
+			}},
+		}},
+	}
+}
+
+func fakeKubeClientWithKASDeployment(replicas int32) kubernetes.Interface {
+	return kubefake.NewClientset(&appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      hcpmanifests.KubeAPIServerServiceName,
+			Namespace: "test-ns",
+		},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: ptr.To(replicas),
+		},
+	})
+}
+
+func TestVerifyCertificateAgainstAllKASPods(t *testing.T) {
+	t.Parallel()
+	now := time.Now()
+	for _, testCase := range []struct {
+		name        string
+		pods        []*corev1.Pod
+		listPodsErr error
+		kasReplicas int32
+		verifyFunc  func(ctx context.Context, client kubernetes.Interface) (bool, error)
+
+		expectedResult bool
+		expectedErr    bool
+		expectedCalls  int
+	}{
+		{
+			name: "When all pods are terminating it should requeue",
+			pods: []*corev1.Pod{{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "kas-1",
+					Namespace:         "test-ns",
+					DeletionTimestamp: &metav1.Time{Time: now},
+				},
+				Spec:   kasPodSpec(),
+				Status: corev1.PodStatus{PodIP: "10.0.0.1"},
+			}},
+			expectedResult: false,
+		},
+		{
+			name:           "When no pods exist it should requeue",
+			pods:           []*corev1.Pod{},
+			expectedResult: false,
+		},
+		{
+			name: "When a non-terminating pod is not ready it should requeue",
+			pods: []*corev1.Pod{{
+				ObjectMeta: metav1.ObjectMeta{Name: "kas-1", Namespace: "test-ns"},
+				Spec:       kasPodSpec(),
+				Status: corev1.PodStatus{
+					PodIP: "10.0.0.1",
+					Conditions: []corev1.PodCondition{{
+						Type:   corev1.PodReady,
+						Status: corev1.ConditionFalse,
+					}},
+				},
+			}},
+			expectedResult: false,
+		},
+		{
+			name: "When a ready pod has empty PodIP it should requeue",
+			pods: []*corev1.Pod{{
+				ObjectMeta: metav1.ObjectMeta{Name: "kas-1", Namespace: "test-ns"},
+				Spec:       kasPodSpec(),
+				Status: corev1.PodStatus{
+					PodIP: "",
+					Conditions: []corev1.PodCondition{{
+						Type:   corev1.PodReady,
+						Status: corev1.ConditionTrue,
+					}},
+				},
+			}},
+			expectedResult: false,
+		},
+		{
+			name: "When a mix of terminating and not-ready pods exists it should requeue",
+			pods: []*corev1.Pod{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:              "kas-1",
+						Namespace:         "test-ns",
+						DeletionTimestamp: &metav1.Time{Time: now},
+					},
+					Spec: kasPodSpec(),
+					Status: corev1.PodStatus{
+						PodIP: "10.0.0.1",
+						Conditions: []corev1.PodCondition{{
+							Type:   corev1.PodReady,
+							Status: corev1.ConditionTrue,
+						}},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "kas-2", Namespace: "test-ns"},
+					Spec:       kasPodSpec(),
+					Status: corev1.PodStatus{
+						PodIP: "10.0.0.2",
+						Conditions: []corev1.PodCondition{{
+							Type:   corev1.PodReady,
+							Status: corev1.ConditionFalse,
+						}},
+					},
+				},
+			},
+			expectedResult: false,
+		},
+		{
+			name: "When ready non-terminating pods exist it should call verifyFunc for each",
+			pods: []*corev1.Pod{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "kas-1", Namespace: "test-ns"},
+					Spec:       kasPodSpec(),
+					Status: corev1.PodStatus{
+						PodIP: "10.0.0.1",
+						Conditions: []corev1.PodCondition{{
+							Type:   corev1.PodReady,
+							Status: corev1.ConditionTrue,
+						}},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "kas-2", Namespace: "test-ns"},
+					Spec:       kasPodSpec(),
+					Status: corev1.PodStatus{
+						PodIP: "10.0.0.2",
+						Conditions: []corev1.PodCondition{{
+							Type:   corev1.PodReady,
+							Status: corev1.ConditionTrue,
+						}},
+					},
+				},
+			},
+			kasReplicas: 2,
+			verifyFunc: func(_ context.Context, _ kubernetes.Interface) (bool, error) {
+				return true, nil
+			},
+			expectedResult: true,
+			expectedCalls:  2,
+		},
+		{
+			name: "When ready pod count does not match expected replicas it should requeue",
+			pods: []*corev1.Pod{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "kas-1", Namespace: "test-ns"},
+					Spec:       kasPodSpec(),
+					Status: corev1.PodStatus{
+						PodIP: "10.0.0.1",
+						Conditions: []corev1.PodCondition{{
+							Type:   corev1.PodReady,
+							Status: corev1.ConditionTrue,
+						}},
+					},
+				},
+			},
+			kasReplicas:    3,
+			expectedResult: false,
+		},
+		{
+			name: "When one pod's verifyFunc returns false it should return false",
+			pods: []*corev1.Pod{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "kas-1", Namespace: "test-ns"},
+					Spec:       kasPodSpec(),
+					Status: corev1.PodStatus{
+						PodIP: "10.0.0.1",
+						Conditions: []corev1.PodCondition{{
+							Type:   corev1.PodReady,
+							Status: corev1.ConditionTrue,
+						}},
+					},
+				},
+			},
+			kasReplicas: 1,
+			verifyFunc: func(_ context.Context, _ kubernetes.Interface) (bool, error) {
+				return false, nil
+			},
+			expectedResult: false,
+			expectedCalls:  1,
+		},
+		{
+			name:           "When listing pods fails it should return an error",
+			listPodsErr:    fmt.Errorf("connection refused"),
+			expectedResult: false,
+			expectedErr:    true,
+		},
+		{
+			name: "When verifyFunc returns an error it should return an error",
+			pods: []*corev1.Pod{{
+				ObjectMeta: metav1.ObjectMeta{Name: "kas-1", Namespace: "test-ns"},
+				Spec:       kasPodSpec(),
+				Status: corev1.PodStatus{
+					PodIP: "10.0.0.1",
+					Conditions: []corev1.PodCondition{{
+						Type:   corev1.PodReady,
+						Status: corev1.ConditionTrue,
+					}},
+				},
+			}},
+			kasReplicas: 1,
+			verifyFunc: func(_ context.Context, _ kubernetes.Interface) (bool, error) {
+				return false, fmt.Errorf("SSR failed")
+			},
+			expectedResult: false,
+			expectedErr:    true,
+			expectedCalls:  1,
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+			c := &CertificateRevocationController{
+				kubeClient: fakeKubeClientWithKASDeployment(testCase.kasReplicas),
+				listPods: func(namespace string, selector labels.Selector) ([]*corev1.Pod, error) {
+					g.Expect(namespace).To(Equal("test-ns"))
+					g.Expect(selector.String()).To(Equal(kasAppLabelSelector.String()))
+					if testCase.listPodsErr != nil {
+						return nil, testCase.listPodsErr
+					}
+					return testCase.pods, nil
+				},
+			}
+
+			// verifyFunc may not be called for all cases (e.g. when pods are terminating or not ready)
+			callCount := 0
+			verifyFunc := testCase.verifyFunc
+			if verifyFunc == nil {
+				verifyFunc = func(_ context.Context, _ kubernetes.Interface) (bool, error) {
+					t.Fatal("verifyFunc should not have been called")
+					return false, nil
+				}
+			} else {
+				original := verifyFunc
+				verifyFunc = func(ctx context.Context, client kubernetes.Interface) (bool, error) {
+					callCount++
+					return original(ctx, client)
+				}
+			}
+
+			result, err := c.verifyCertificateAgainstAllKASPods(t.Context(), "test-ns", &rest.Config{}, nil, nil, verifyFunc)
+			if testCase.expectedErr {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+			}
+			g.Expect(result).To(Equal(testCase.expectedResult))
+			g.Expect(callCount).To(Equal(testCase.expectedCalls))
+		})
+	}
+}
+
+func TestEnqueueKASPod(t *testing.T) {
+	t.Parallel()
+	crr := &certificatesv1alpha1.CertificateRevocationRequest{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-crr", Namespace: "test-ns"},
+	}
+	listCRRs := func(namespace string) ([]*certificatesv1alpha1.CertificateRevocationRequest, error) {
+		return []*certificatesv1alpha1.CertificateRevocationRequest{crr}, nil
+	}
+	listCRRsErr := func(namespace string) ([]*certificatesv1alpha1.CertificateRevocationRequest, error) {
+		return nil, fmt.Errorf("connection refused")
+	}
+
+	for _, testCase := range []struct {
+		name         string
+		obj          runtime.Object
+		listCRRs     func(namespace string) ([]*certificatesv1alpha1.CertificateRevocationRequest, error)
+		expectedKeys int
+	}{
+		{
+			name: "When pod has KAS label it should enqueue all CRRs",
+			obj: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "kas-1",
+					Namespace: "test-ns",
+					Labels:    map[string]string{"app": "kube-apiserver"},
+				},
+			},
+			listCRRs:     listCRRs,
+			expectedKeys: 1,
+		},
+		{
+			name: "When pod does not have KAS label it should return nil",
+			obj: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "etcd-0",
+					Namespace: "test-ns",
+					Labels:    map[string]string{"app": "etcd"},
+				},
+			},
+			listCRRs:     listCRRs,
+			expectedKeys: 0,
+		},
+		{
+			name: "When pod has no labels it should return nil",
+			obj: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "unlabeled",
+					Namespace: "test-ns",
+				},
+			},
+			listCRRs:     listCRRs,
+			expectedKeys: 0,
+		},
+		{
+			name:         "When object is not a pod it should return nil",
+			obj:          &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "cm"}},
+			listCRRs:     listCRRs,
+			expectedKeys: 0,
+		},
+		{
+			name: "When listing CRRs fails it should return nil",
+			obj: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "kas-1",
+					Namespace: "test-ns",
+					Labels:    map[string]string{"app": "kube-apiserver"},
+				},
+			},
+			listCRRs:     listCRRsErr,
+			expectedKeys: 0,
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+			enqueue := enqueueKASPod(testCase.listCRRs, "test-ns")
+			keys := enqueue(testCase.obj)
+			g.Expect(keys).To(HaveLen(testCase.expectedKeys))
+		})
+	}
+}
+
+func TestVerifyCertificateTrusted(t *testing.T) {
+	t.Parallel()
+	for _, testCase := range []struct {
+		name           string
+		reactor        func(action k8stesting.Action) (bool, runtime.Object, error)
+		expectedResult bool
+		expectedErr    bool
+	}{
+		{
+			name: "When SSR succeeds it should return true",
+			reactor: func(action k8stesting.Action) (bool, runtime.Object, error) {
+				return true, nil, nil
+			},
+			expectedResult: true,
+		},
+		{
+			name: "When SSR returns Unauthorized it should return false",
+			reactor: func(action k8stesting.Action) (bool, runtime.Object, error) {
+				return true, nil, apierrors.NewUnauthorized("not authorized")
+			},
+			expectedResult: false,
+		},
+		{
+			name: "When SSR returns other error it should return error",
+			reactor: func(action k8stesting.Action) (bool, runtime.Object, error) {
+				return true, nil, fmt.Errorf("connection refused")
+			},
+			expectedResult: false,
+			expectedErr:    true,
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+			fakeClient := kubefake.NewClientset()
+			fakeClient.PrependReactor("create", "selfsubjectreviews", testCase.reactor)
+
+			result, err := verifyCertificateTrusted(t.Context(), fakeClient)
+			if testCase.expectedErr {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+			}
+			g.Expect(result).To(Equal(testCase.expectedResult))
+		})
+	}
+}
+
+func TestVerifyCertificateRevoked(t *testing.T) {
+	t.Parallel()
+	for _, testCase := range []struct {
+		name           string
+		reactor        func(action k8stesting.Action) (bool, runtime.Object, error)
+		expectedResult bool
+		expectedErr    bool
+	}{
+		{
+			name: "When SSR succeeds it should return false because pod still trusts the cert",
+			reactor: func(action k8stesting.Action) (bool, runtime.Object, error) {
+				return true, nil, nil
+			},
+			expectedResult: false,
+		},
+		{
+			name: "When SSR returns Unauthorized it should return true because cert is revoked",
+			reactor: func(action k8stesting.Action) (bool, runtime.Object, error) {
+				return true, nil, apierrors.NewUnauthorized("not authorized")
+			},
+			expectedResult: true,
+		},
+		{
+			name: "When SSR returns other error it should return error",
+			reactor: func(action k8stesting.Action) (bool, runtime.Object, error) {
+				return true, nil, fmt.Errorf("connection refused")
+			},
+			expectedResult: false,
+			expectedErr:    true,
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+			fakeClient := kubefake.NewClientset()
+			fakeClient.PrependReactor("create", "selfsubjectreviews", testCase.reactor)
+
+			result, err := verifyCertificateRevoked(t.Context(), fakeClient)
+			if testCase.expectedErr {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+			}
+			g.Expect(result).To(Equal(testCase.expectedResult))
+		})
+	}
+}
+
+func makeKubeconfig(t *testing.T) []byte {
+	t.Helper()
+	kubeconfigData, err := clientcmd.Write(clientcmdapi.Config{
+		Clusters: map[string]*clientcmdapi.Cluster{
+			"default": {
+				Server:                "https://kube-apiserver:6443",
+				InsecureSkipTLSVerify: true,
+			},
+		},
+		AuthInfos: map[string]*clientcmdapi.AuthInfo{
+			"admin": {},
+		},
+		Contexts: map[string]*clientcmdapi.Context{
+			"default": {
+				Cluster:  "default",
+				AuthInfo: "admin",
+			},
+		},
+		CurrentContext: "default",
+	})
+	if err != nil {
+		t.Fatalf("failed to write kubeconfig: %v", err)
+	}
+	return kubeconfigData
+}
+
+func TestEnsureNewSignerCertificatePropagated_KASVerification(t *testing.T) {
+	t.Parallel()
+	revocationTime, err := time.Parse(time.RFC3339Nano, "2006-01-02T15:04:05.999999999Z")
+	if err != nil {
+		t.Fatalf("could not parse time: %v", err)
+	}
+	postRevocationClock := testingclock.NewFakeClock(revocationTime.Add(revocationOffset + 1*time.Hour))
+
+	data := pki(t, revocationTime)
+
+	newPropagatedCRR := func() *certificatesv1alpha1.CertificateRevocationRequest {
+		return &certificatesv1alpha1.CertificateRevocationRequest{
+			ObjectMeta: metav1.ObjectMeta{Namespace: "crr-ns", Name: "crr-name"},
+			Spec:       certificatesv1alpha1.CertificateRevocationRequestSpec{SignerClass: string(certificates.CustomerBreakGlassSigner)},
+			Status: certificatesv1alpha1.CertificateRevocationRequestStatus{
+				RevocationTimestamp: ptr.To(metav1.NewTime(revocationTime)),
+				PreviousSigner:      &corev1.LocalObjectReference{Name: "1pfcydcz358pa1glirkmc72sdkf5zw21uam4jbnj03pw"},
+				Conditions: []metav1.Condition{{
+					Type:               certificatesv1alpha1.RootCertificatesRegeneratedType,
+					Status:             metav1.ConditionTrue,
+					LastTransitionTime: metav1.NewTime(postRevocationClock.Now()),
+					Reason:             hypershiftv1beta1.AsExpectedReason,
+					Message:            `Signer certificate crr-ns/customer-system-admin-signer regenerated.`,
+				}},
+			},
+		}
+	}
+
+	newPropagatedSecrets := func(kubeconfigData []byte) []*corev1.Secret {
+		return []*corev1.Secret{{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "crr-ns",
+				Name:      manifests.CustomerSystemAdminSigner("").Name,
+			},
+			Data: map[string][]byte{
+				corev1.TLSCertKey:       data.future.raw.signerCert,
+				corev1.TLSPrivateKeyKey: data.future.raw.signerKey,
+			},
+		}, {
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "crr-ns",
+				Name:      "1pfcydcz358pa1glirkmc72sdkf5zw21uam4jbnj03pw",
+			},
+			Data: map[string][]byte{
+				corev1.TLSCertKey:       data.original.raw.signerCert,
+				corev1.TLSPrivateKeyKey: data.original.raw.signerKey,
+			},
+		}, {
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "crr-ns",
+				Name:      hcpmanifests.KASServiceKubeconfigSecret("").Name,
+			},
+			Data: map[string][]byte{
+				"kubeconfig": kubeconfigData,
+			},
+		}}
+	}
+
+	newPropagatedCMs := func() []*corev1.ConfigMap {
+		return []*corev1.ConfigMap{{
+			ObjectMeta: metav1.ObjectMeta{Namespace: "crr-ns", Name: manifests.TotalKASClientCABundle("").Name},
+			Data: map[string]string{
+				"ca-bundle.crt": string(data.original.raw.signerCert) + string(data.future.raw.signerCert),
+			},
+		}}
+	}
+
+	newPropagatedController := func(crr *certificatesv1alpha1.CertificateRevocationRequest, secrets []*corev1.Secret, cms []*corev1.ConfigMap) *CertificateRevocationController {
+		return &CertificateRevocationController{
+			getCRR: func(namespace, name string) (*certificatesv1alpha1.CertificateRevocationRequest, error) {
+				return crr, nil
+			},
+			getSecret: func(namespace, name string) (*corev1.Secret, error) {
+				for _, s := range secrets {
+					if s.Namespace == namespace && s.Name == name {
+						return s, nil
+					}
+				}
+				return nil, apierrors.NewNotFound(corev1.SchemeGroupVersion.WithResource("secrets").GroupResource(), name)
+			},
+			listSecrets: func(namespace string) ([]*corev1.Secret, error) {
+				return secrets, nil
+			},
+			getConfigMap: func(namespace, name string) (*corev1.ConfigMap, error) {
+				for _, cm := range cms {
+					if cm.Namespace == namespace && cm.Name == name {
+						return cm, nil
+					}
+				}
+				return nil, apierrors.NewNotFound(corev1.SchemeGroupVersion.WithResource("configmaps").GroupResource(), name)
+			},
+			listPods: func(namespace string, selector labels.Selector) ([]*corev1.Pod, error) {
+				return nil, nil
+			},
+			skipKASConnections: false,
+		}
+	}
+
+	t.Run("When no KAS pods exist it should requeue", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		kubeconfigData := makeKubeconfig(t)
+		crr := newPropagatedCRR()
+		secrets := newPropagatedSecrets(kubeconfigData)
+		cms := newPropagatedCMs()
+		c := newPropagatedController(crr, secrets, cms)
+
+		_, requeue, err := c.processCertificateRevocationRequest(t.Context(), "crr-ns", "crr-name", postRevocationClock.Now)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(requeue).To(BeTrue(), "should requeue when no KAS pods exist")
+	})
+
+	t.Run("When all KAS pods accept new cert but reject old cert it should requeue", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		kubeconfigData := makeKubeconfig(t)
+		crr := newPropagatedCRR()
+		secrets := newPropagatedSecrets(kubeconfigData)
+		cms := newPropagatedCMs()
+		c := newPropagatedController(crr, secrets, cms)
+
+		// Override verification: new cert is trusted, but old cert is rejected (mid-reload)
+		c.overrideVerifyCertAgainstKASPods = func(_ context.Context, _ string, _ *rest.Config, certPEM, _ []byte, verifyFunc func(context.Context, kubernetes.Interface) (bool, error)) (bool, error) {
+			fakeClient := kubefake.NewClientset()
+			if string(certPEM) == string(data.future.raw.signerCert) {
+				// new cert: trusted
+				fakeClient.PrependReactor("create", "selfsubjectreviews", func(action k8stesting.Action) (bool, runtime.Object, error) {
+					return true, nil, nil
+				})
+			} else {
+				// old cert: rejected (mid-reload)
+				fakeClient.PrependReactor("create", "selfsubjectreviews", func(action k8stesting.Action) (bool, runtime.Object, error) {
+					return true, nil, apierrors.NewUnauthorized("not authorized")
+				})
+			}
+			return verifyFunc(context.Background(), fakeClient)
+		}
+
+		_, requeue, err := c.processCertificateRevocationRequest(t.Context(), "crr-ns", "crr-name", postRevocationClock.Now)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(requeue).To(BeTrue(), "should requeue when KAS pods reject old cert during mid-reload")
+	})
+
+	t.Run("When all KAS pods accept both new and old certs it should mark trusted", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		kubeconfigData := makeKubeconfig(t)
+		crr := newPropagatedCRR()
+		secrets := newPropagatedSecrets(kubeconfigData)
+		cms := newPropagatedCMs()
+		c := newPropagatedController(crr, secrets, cms)
+
+		// Override verification: both new and old certs are trusted
+		c.overrideVerifyCertAgainstKASPods = func(_ context.Context, _ string, _ *rest.Config, _ []byte, _ []byte, verifyFunc func(context.Context, kubernetes.Interface) (bool, error)) (bool, error) {
+			fakeClient := kubefake.NewClientset()
+			fakeClient.PrependReactor("create", "selfsubjectreviews", func(action k8stesting.Action) (bool, runtime.Object, error) {
+				return true, nil, nil
+			})
+			return verifyFunc(context.Background(), fakeClient)
+		}
+
+		a, requeue, err := c.processCertificateRevocationRequest(t.Context(), "crr-ns", "crr-name", postRevocationClock.Now)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(requeue).To(BeFalse())
+		g.Expect(a).ToNot(BeNil())
+		g.Expect(a.crr).ToNot(BeNil())
+		// Should have set NewCertificatesTrustedType to True
+		var foundTrusted bool
+		for _, cond := range a.crr.Status.Conditions {
+			if cond.Type != nil && *cond.Type == certificatesv1alpha1.NewCertificatesTrustedType &&
+				cond.Status != nil && *cond.Status == metav1.ConditionTrue {
+				foundTrusted = true
+			}
+		}
+		g.Expect(foundTrusted).To(BeTrue(), "should have set NewCertificatesTrustedType condition to True")
+	})
+}
+
+func TestEnsureOldSignerCertificateRevoked_KASVerification(t *testing.T) {
+	t.Parallel()
+	revocationTime, err := time.Parse(time.RFC3339Nano, "2006-01-02T15:04:05.999999999Z")
+	if err != nil {
+		t.Fatalf("could not parse time: %v", err)
+	}
+	postRevocationClock := testingclock.NewFakeClock(revocationTime.Add(revocationOffset + 1*time.Hour))
+
+	data := pki(t, revocationTime)
+
+	newRevokedCRR := func() *certificatesv1alpha1.CertificateRevocationRequest {
+		return &certificatesv1alpha1.CertificateRevocationRequest{
+			ObjectMeta: metav1.ObjectMeta{Namespace: "crr-ns", Name: "crr-name"},
+			Spec:       certificatesv1alpha1.CertificateRevocationRequestSpec{SignerClass: string(certificates.CustomerBreakGlassSigner)},
+			Status: certificatesv1alpha1.CertificateRevocationRequestStatus{
+				RevocationTimestamp: ptr.To(metav1.NewTime(revocationTime)),
+				PreviousSigner:      &corev1.LocalObjectReference{Name: "1pfcydcz358pa1glirkmc72sdkf5zw21uam4jbnj03pw"},
+				Conditions: []metav1.Condition{{
+					Type:               certificatesv1alpha1.LeafCertificatesRegeneratedType,
+					Status:             metav1.ConditionTrue,
+					LastTransitionTime: metav1.NewTime(postRevocationClock.Now()),
+					Reason:             hypershiftv1beta1.AsExpectedReason,
+					Message:            `All leaf certificates are re-generated.`,
+				}, {
+					Type:               certificatesv1alpha1.RootCertificatesRegeneratedType,
+					Status:             metav1.ConditionTrue,
+					LastTransitionTime: metav1.NewTime(postRevocationClock.Now()),
+					Reason:             hypershiftv1beta1.AsExpectedReason,
+					Message:            `Signer certificate crr-ns/customer-system-admin-signer regenerated.`,
+				}, {
+					Type:               certificatesv1alpha1.NewCertificatesTrustedType,
+					Status:             metav1.ConditionTrue,
+					LastTransitionTime: metav1.NewTime(postRevocationClock.Now()),
+					Reason:             hypershiftv1beta1.AsExpectedReason,
+					Message:            `New signer certificate crr-ns/customer-system-admin-signer trusted.`,
+				}},
+			},
+		}
+	}
+
+	newRevokedSecrets := func(kubeconfigData []byte) []*corev1.Secret {
+		return []*corev1.Secret{{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace:   "crr-ns",
+				Name:        manifests.CustomerSystemAdminSigner("").Name,
+				Annotations: map[string]string{certrotation.CertificateIssuer: "crr-ns_customer-break-glass-signer@1234"},
+			},
+			Data: map[string][]byte{
+				corev1.TLSCertKey:       data.future.raw.signerCert,
+				corev1.TLSPrivateKeyKey: data.future.raw.signerKey,
+			},
+		}, {
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "crr-ns",
+				Name:      "1pfcydcz358pa1glirkmc72sdkf5zw21uam4jbnj03pw",
+			},
+			Data: map[string][]byte{
+				corev1.TLSCertKey:       data.original.raw.signerCert,
+				corev1.TLSPrivateKeyKey: data.original.raw.signerKey,
+			},
+		}, {
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace:   "crr-ns",
+				Name:        manifests.CustomerSystemAdminClientCertSecret("").Name,
+				Annotations: map[string]string{certrotation.CertificateIssuer: "crr-ns_customer-break-glass-signer@1234"},
+			},
+			Data: map[string][]byte{
+				corev1.TLSCertKey:       data.future.raw.signedCert,
+				corev1.TLSPrivateKeyKey: data.future.raw.clientKey,
+			},
+		}, {
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "crr-ns",
+				Name:      hcpmanifests.KASServiceKubeconfigSecret("").Name,
+			},
+			Data: map[string][]byte{
+				"kubeconfig": kubeconfigData,
+			},
+		}}
+	}
+
+	newRevokedCMs := func() []*corev1.ConfigMap {
+		return []*corev1.ConfigMap{{
+			ObjectMeta: metav1.ObjectMeta{Namespace: "crr-ns", Name: manifests.CustomerSystemAdminSignerCA("").Name},
+			Data: map[string]string{
+				"ca-bundle.crt": string(data.future.raw.signerCert),
+			},
+		}, {
+			ObjectMeta: metav1.ObjectMeta{Namespace: "crr-ns", Name: manifests.TotalKASClientCABundle("").Name},
+			Data: map[string]string{
+				"ca-bundle.crt": string(data.future.raw.signerCert),
+			},
+		}}
+	}
+
+	newRevokedController := func(crr *certificatesv1alpha1.CertificateRevocationRequest, secrets []*corev1.Secret, cms []*corev1.ConfigMap) *CertificateRevocationController {
+		return &CertificateRevocationController{
+			getCRR: func(namespace, name string) (*certificatesv1alpha1.CertificateRevocationRequest, error) {
+				return crr, nil
+			},
+			getSecret: func(namespace, name string) (*corev1.Secret, error) {
+				for _, s := range secrets {
+					if s.Namespace == namespace && s.Name == name {
+						return s, nil
+					}
+				}
+				return nil, apierrors.NewNotFound(corev1.SchemeGroupVersion.WithResource("secrets").GroupResource(), name)
+			},
+			listSecrets: func(namespace string) ([]*corev1.Secret, error) {
+				return secrets, nil
+			},
+			getConfigMap: func(namespace, name string) (*corev1.ConfigMap, error) {
+				for _, cm := range cms {
+					if cm.Namespace == namespace && cm.Name == name {
+						return cm, nil
+					}
+				}
+				return nil, apierrors.NewNotFound(corev1.SchemeGroupVersion.WithResource("configmaps").GroupResource(), name)
+			},
+			listPods: func(namespace string, selector labels.Selector) ([]*corev1.Pod, error) {
+				return nil, nil
+			},
+			skipKASConnections: false,
+		}
+	}
+
+	t.Run("When no KAS pods exist it should requeue", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		kubeconfigData := makeKubeconfig(t)
+		crr := newRevokedCRR()
+		secrets := newRevokedSecrets(kubeconfigData)
+		cms := newRevokedCMs()
+		c := newRevokedController(crr, secrets, cms)
+
+		_, requeue, err := c.processCertificateRevocationRequest(t.Context(), "crr-ns", "crr-name", postRevocationClock.Now)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(requeue).To(BeTrue(), "should requeue when no KAS pods exist")
+	})
+
+	t.Run("When all KAS pods reject old cert but also reject current cert it should requeue", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		kubeconfigData := makeKubeconfig(t)
+		crr := newRevokedCRR()
+		secrets := newRevokedSecrets(kubeconfigData)
+		cms := newRevokedCMs()
+		c := newRevokedController(crr, secrets, cms)
+
+		// Override verification: old cert is rejected, but current cert is also rejected (mid-reload)
+		c.overrideVerifyCertAgainstKASPods = func(_ context.Context, _ string, _ *rest.Config, _ []byte, _ []byte, verifyFunc func(context.Context, kubernetes.Interface) (bool, error)) (bool, error) {
+			fakeClient := kubefake.NewClientset()
+			fakeClient.PrependReactor("create", "selfsubjectreviews", func(action k8stesting.Action) (bool, runtime.Object, error) {
+				return true, nil, apierrors.NewUnauthorized("not authorized")
+			})
+			return verifyFunc(context.Background(), fakeClient)
+		}
+
+		_, requeue, err := c.processCertificateRevocationRequest(t.Context(), "crr-ns", "crr-name", postRevocationClock.Now)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(requeue).To(BeTrue(), "should requeue when KAS pods reject both old and current cert during mid-reload")
+	})
+
+	t.Run("When all KAS pods reject old cert and accept current cert it should mark revoked", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		kubeconfigData := makeKubeconfig(t)
+		crr := newRevokedCRR()
+		secrets := newRevokedSecrets(kubeconfigData)
+		cms := newRevokedCMs()
+		c := newRevokedController(crr, secrets, cms)
+
+		// Override verification: old cert is rejected (revoked), current cert is accepted
+		c.overrideVerifyCertAgainstKASPods = func(_ context.Context, _ string, _ *rest.Config, certPEM, _ []byte, verifyFunc func(context.Context, kubernetes.Interface) (bool, error)) (bool, error) {
+			fakeClient := kubefake.NewClientset()
+			if string(certPEM) == string(data.original.raw.signerCert) {
+				// old cert: revoked (unauthorized)
+				fakeClient.PrependReactor("create", "selfsubjectreviews", func(action k8stesting.Action) (bool, runtime.Object, error) {
+					return true, nil, apierrors.NewUnauthorized("not authorized")
+				})
+			} else {
+				// current cert: trusted
+				fakeClient.PrependReactor("create", "selfsubjectreviews", func(action k8stesting.Action) (bool, runtime.Object, error) {
+					return true, nil, nil
+				})
+			}
+			return verifyFunc(context.Background(), fakeClient)
+		}
+
+		a, requeue, err := c.processCertificateRevocationRequest(t.Context(), "crr-ns", "crr-name", postRevocationClock.Now)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(requeue).To(BeFalse())
+		g.Expect(a).ToNot(BeNil())
+		g.Expect(a.crr).ToNot(BeNil())
+		// Should have set PreviousCertificatesRevokedType to True
+		var foundRevoked bool
+		for _, cond := range a.crr.Status.Conditions {
+			if cond.Type != nil && *cond.Type == certificatesv1alpha1.PreviousCertificatesRevokedType &&
+				cond.Status != nil && *cond.Status == metav1.ConditionTrue {
+				foundRevoked = true
+			}
+		}
+		g.Expect(foundRevoked).To(BeTrue(), "should have set PreviousCertificatesRevokedType condition to True")
+	})
 }

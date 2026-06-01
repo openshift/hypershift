@@ -1,7 +1,10 @@
 package config
 
 import (
+	"crypto/tls"
+
 	configv1 "github.com/openshift/api/config/v1"
+	"github.com/openshift/library-go/pkg/crypto"
 )
 
 // openSSLToIANACiphersMap maps OpenSSL cipher suite names to IANA names
@@ -68,4 +71,35 @@ func CipherSuites(securityProfile *configv1.TLSSecurityProfile) []string {
 		ciphers = configv1.TLSProfiles[securityProfile.Type].Ciphers
 	}
 	return OpenSSLToIANACipherSuites(ciphers)
+}
+
+// SetMinTLSVersionUsingAPIServer returns a function capable of setting the min
+// tls version on a provided tls config struct. If the provided api server has
+// an invalid tls version this function returns an error.
+func SetMinTLSVersionUsingAPIServer(apiServerConfig *configv1.APIServer) (func(*tls.Config), error) {
+	version, err := crypto.TLSVersion(MinTLSVersion(apiServerConfig.Spec.TLSSecurityProfile))
+	if err != nil {
+		return nil, err
+	}
+	return func(tlsConfig *tls.Config) {
+		tlsConfig.MinVersion = version
+	}, nil
+}
+
+// SetCipherSuitesUsingAPIServer returns a function that is capable of setting
+// the right cipher suites on a tls config using the provided api server as
+// input. Returns an error if the provided api server contains an invalid
+// suite.
+func SetCipherSuitesUsingAPIServer(apiServerConfig *configv1.APIServer) (func(*tls.Config), error) {
+	var suites []uint16
+	for _, suiteString := range CipherSuites(apiServerConfig.Spec.TLSSecurityProfile) {
+		suite, err := crypto.CipherSuite(suiteString)
+		if err != nil {
+			return nil, err
+		}
+		suites = append(suites, suite)
+	}
+	return func(tlsConfig *tls.Config) {
+		tlsConfig.CipherSuites = suites
+	}, nil
 }

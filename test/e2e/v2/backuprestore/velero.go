@@ -5,6 +5,8 @@ package backuprestore
 import (
 	"context"
 	"fmt"
+	"log"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -422,6 +424,248 @@ func DeleteOADPSchedule(testCtx *internal.TestContext, scheduleName string) erro
 		if !apierrors.IsNotFound(err) {
 			return fmt.Errorf("failed to delete Schedule %s/%s: %w", DefaultOADPNamespace, scheduleName, err)
 		}
+	}
+
+	return nil
+}
+
+// DPAPluginState captures the original DPA state so that cleanup can restore
+// the defaultPlugins list after a test run.
+type DPAPluginState struct {
+	// Name is the name of the DPA that was modified.
+	Name string
+	// OriginalPlugins is the defaultPlugins list before modification.
+	OriginalPlugins []string
+	// PluginsModified indicates whether the DPA was actually updated.
+	PluginsModified bool
+}
+
+var dpaGVK = schema.GroupVersionKind{
+	Group:   "oadp.openshift.io",
+	Version: "v1alpha1",
+	Kind:    "DataProtectionApplicationList",
+}
+
+// EnsureDPAHypershiftPlugin ensures the first DataProtectionApplication in
+// DefaultOADPNamespace has the hypershift plugin configured. The plugin can be
+// present either in spec.configuration.velero.defaultPlugins (as "hypershift")
+// or in spec.configuration.velero.customPlugins (as an entry named
+// "hypershift-oadp-plugin"). If the plugin is already present via either
+// mechanism this is a no-op. When the plugin is appended to defaultPlugins
+// the function waits for the Velero pod to restart and become ready.
+func EnsureDPAHypershiftPlugin(testCtx *internal.TestContext) (*DPAPluginState, error) {
+	client := testCtx.MgmtClient
+	ctx := testCtx.Context
+
+	dpaList := &unstructured.UnstructuredList{}
+	dpaList.SetGroupVersionKind(dpaGVK)
+	if err := client.List(ctx, dpaList, crclient.InNamespace(DefaultOADPNamespace)); err != nil {
+		return nil, fmt.Errorf("failed to list DataProtectionApplication resources: %w", err)
+	}
+	if len(dpaList.Items) == 0 {
+		return nil, fmt.Errorf("no DataProtectionApplication resources found in namespace %s", DefaultOADPNamespace)
+	}
+
+	dpa := dpaList.Items[0]
+	plugins, _, err := unstructured.NestedStringSlice(dpa.Object, "spec", "configuration", "velero", "defaultPlugins")
+	if err != nil {
+		return nil, fmt.Errorf("failed to read defaultPlugins from DPA %s: %w", dpa.GetName(), err)
+	}
+
+	state := &DPAPluginState{
+		Name:            dpa.GetName(),
+		OriginalPlugins: plugins,
+	}
+
+	if slices.Contains(plugins, "hypershift") {
+		return state, nil
+	}
+
+	// Check if the plugin is already configured via customPlugins.
+	// Adding "hypershift" to defaultPlugins when it already exists in
+	// customPlugins causes the OADP operator to generate duplicate
+	// init containers named "hypershift-oadp-plugin" in the velero
+	// Deployment, which fails Kubernetes validation.
+	if hasHypershiftCustomPlugin(&dpa) {
+		return state, nil
+	}
+
+	// Append the hypershift plugin and update.
+	updatedPlugins := append(plugins, "hypershift")
+	if err := unstructured.SetNestedStringSlice(dpa.Object, updatedPlugins, "spec", "configuration", "velero", "defaultPlugins"); err != nil {
+		return nil, fmt.Errorf("failed to set defaultPlugins on DPA %s: %w", dpa.GetName(), err)
+	}
+	if err := client.Update(ctx, &dpa); err != nil {
+		return nil, fmt.Errorf("failed to update DPA %s with hypershift plugin: %w", dpa.GetName(), err)
+	}
+	state.PluginsModified = true
+
+	// Wait for Velero to restart and DPA to reconcile with the new plugin.
+	// Use immediate=false so the first check happens after the poll interval,
+	// giving the OADP controller time to process the spec change. With
+	// immediate=true the stale Reconciled=True status from the previous
+	// reconciliation satisfies the check before the controller reacts.
+	const dpaReconcileTimeout = 10 * time.Minute
+	var lastVeleroErr, lastDPAErr error
+	if err := wait.PollUntilContextTimeout(ctx, 10*time.Second, dpaReconcileTimeout, false, func(ctx context.Context) (bool, error) {
+		lastVeleroErr = EnsureVeleroPodRunning(testCtx)
+		if lastVeleroErr != nil {
+			log.Printf("Velero pod not ready: %v", lastVeleroErr)
+			return false, nil
+		}
+		lastDPAErr = ensureDPAReconciled(ctx, client, DefaultOADPNamespace)
+		if lastDPAErr != nil {
+			log.Printf("DPA not reconciled: %v", lastDPAErr)
+			return false, nil
+		}
+		return true, nil
+	}); err != nil {
+		// Collect final diagnostic state to aid debugging.
+		diag := collectDPADiagnostics(ctx, testCtx, client)
+		return state, fmt.Errorf("velero pod or DPA did not become ready within %v after adding hypershift plugin to DPA %s: %w\nlast velero pod check: %v\nlast DPA reconciled check: %v\n%s",
+			dpaReconcileTimeout, dpa.GetName(), err, lastVeleroErr, lastDPAErr, diag)
+	}
+
+	return state, nil
+}
+
+// collectDPADiagnostics gathers Velero pod statuses and DPA conditions for
+// inclusion in timeout error messages.
+func collectDPADiagnostics(ctx context.Context, testCtx *internal.TestContext, client crclient.Client) string {
+	var b strings.Builder
+
+	// Velero pod status.
+	podList := &corev1.PodList{}
+	labels := map[string]string{
+		"deploy":    "velero",
+		"component": "velero",
+	}
+	if err := client.List(ctx, podList, crclient.InNamespace(DefaultOADPNamespace), crclient.MatchingLabels(labels)); err != nil {
+		fmt.Fprintf(&b, "diagnostics: failed to list Velero pods: %v\n", err)
+	} else if len(podList.Items) == 0 {
+		fmt.Fprintf(&b, "diagnostics: no Velero pods found in namespace %s\n", DefaultOADPNamespace)
+	} else {
+		for _, pod := range podList.Items {
+			fmt.Fprintf(&b, "diagnostics: velero pod %s: phase=%s", pod.Name, pod.Status.Phase)
+			for _, cs := range pod.Status.ContainerStatuses {
+				fmt.Fprintf(&b, " container=%s ready=%t restarts=%d", cs.Name, cs.Ready, cs.RestartCount)
+				if cs.State.Waiting != nil {
+					fmt.Fprintf(&b, " waiting=%s(%s)", cs.State.Waiting.Reason, cs.State.Waiting.Message)
+				}
+				if cs.State.Terminated != nil {
+					fmt.Fprintf(&b, " terminated=%s(exit=%d)", cs.State.Terminated.Reason, cs.State.Terminated.ExitCode)
+				}
+			}
+			fmt.Fprintln(&b)
+		}
+	}
+
+	// DPA conditions.
+	dpaList := &unstructured.UnstructuredList{}
+	dpaList.SetGroupVersionKind(dpaGVK)
+	if err := client.List(ctx, dpaList, crclient.InNamespace(DefaultOADPNamespace)); err != nil {
+		fmt.Fprintf(&b, "diagnostics: failed to list DPA resources: %v\n", err)
+	} else {
+		for _, dpa := range dpaList.Items {
+			conditions, found, err := unstructured.NestedSlice(dpa.Object, "status", "conditions")
+			if err != nil || !found {
+				fmt.Fprintf(&b, "diagnostics: DPA %s: no conditions found\n", dpa.GetName())
+				continue
+			}
+			fmt.Fprintf(&b, "diagnostics: DPA %s conditions:", dpa.GetName())
+			for _, condIface := range conditions {
+				cond, ok := condIface.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				condType, _ := cond["type"].(string)
+				condStatus, _ := cond["status"].(string)
+				condMsg, _ := cond["message"].(string)
+				condReason, _ := cond["reason"].(string)
+				fmt.Fprintf(&b, " [%s=%s reason=%q message=%q]", condType, condStatus, condReason, condMsg)
+			}
+			fmt.Fprintln(&b)
+		}
+	}
+
+	return b.String()
+}
+
+// ensureDPAReconciled checks that at least one DPA in the namespace has
+// the Reconciled condition set to True.
+func ensureDPAReconciled(ctx context.Context, c crclient.Client, namespace string) error {
+	dpaList := &unstructured.UnstructuredList{}
+	dpaList.SetGroupVersionKind(dpaGVK)
+	if err := c.List(ctx, dpaList, crclient.InNamespace(namespace)); err != nil {
+		return fmt.Errorf("failed to list DPA resources: %w", err)
+	}
+	for _, dpa := range dpaList.Items {
+		conditions, found, err := unstructured.NestedSlice(dpa.Object, "status", "conditions")
+		if err != nil || !found {
+			continue
+		}
+		for _, condIface := range conditions {
+			cond, ok := condIface.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			if condType, _ := cond["type"].(string); condType == "Reconciled" {
+				if condStatus, _ := cond["status"].(string); condStatus == "True" {
+					return nil
+				}
+			}
+		}
+	}
+	return fmt.Errorf("no reconciled DPA found in namespace %s", namespace)
+}
+
+// hasHypershiftCustomPlugin checks whether the DPA has an entry named
+// "hypershift-oadp-plugin" in spec.configuration.velero.customPlugins.
+func hasHypershiftCustomPlugin(dpa *unstructured.Unstructured) bool {
+	customPlugins, found, err := unstructured.NestedSlice(dpa.Object, "spec", "configuration", "velero", "customPlugins")
+	if err != nil || !found {
+		return false
+	}
+	for _, p := range customPlugins {
+		plugin, ok := p.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if name, _ := plugin["name"].(string); name == "hypershift-oadp-plugin" {
+			return true
+		}
+	}
+	return false
+}
+
+// RestoreDPAPlugins restores the original defaultPlugins list on the DPA.
+// If the DPA was not modified this is a no-op.
+func RestoreDPAPlugins(testCtx *internal.TestContext, state *DPAPluginState) error {
+	if !state.PluginsModified {
+		return nil
+	}
+
+	client := testCtx.MgmtClient
+	ctx := testCtx.Context
+
+	dpa := &unstructured.Unstructured{}
+	dpa.SetGroupVersionKind(schema.GroupVersionKind{
+		Group:   "oadp.openshift.io",
+		Version: "v1alpha1",
+		Kind:    "DataProtectionApplication",
+	})
+	if err := client.Get(ctx, crclient.ObjectKey{
+		Namespace: DefaultOADPNamespace,
+		Name:      state.Name,
+	}, dpa); err != nil {
+		return fmt.Errorf("failed to get DPA %s for plugin restore: %w", state.Name, err)
+	}
+
+	if err := unstructured.SetNestedStringSlice(dpa.Object, state.OriginalPlugins, "spec", "configuration", "velero", "defaultPlugins"); err != nil {
+		return fmt.Errorf("failed to set original defaultPlugins on DPA %s: %w", state.Name, err)
+	}
+	if err := client.Update(ctx, dpa); err != nil {
+		return fmt.Errorf("failed to restore DPA %s plugins: %w", state.Name, err)
 	}
 
 	return nil

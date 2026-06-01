@@ -77,6 +77,15 @@ func NodePortOauthNetworkPolicy(namespace string) *networkingv1.NetworkPolicy {
 	}
 }
 
+func LoadBalancerOauthNetworkPolicy(namespace string) *networkingv1.NetworkPolicy {
+	return &networkingv1.NetworkPolicy{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      "loadbalancer-oauth",
+		},
+	}
+}
+
 func PrivateRouterNetworkPolicy(namespace string) *networkingv1.NetworkPolicy {
 	return &networkingv1.NetworkPolicy{
 		ObjectMeta: metav1.ObjectMeta{

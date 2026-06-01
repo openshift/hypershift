@@ -10,7 +10,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/aws"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/podspec"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -30,7 +30,7 @@ const (
 )
 
 var (
-	awsKMSVolumeMounts = util.PodVolumeMounts{
+	awsKMSVolumeMounts = podspec.VolumeMounts{
 		KasMainContainerName: {
 			kasVolumeKMSSocket().Name: "/var/run",
 		},
@@ -141,16 +141,16 @@ func (p *awsKMSProvider) GenerateKMSPodConfig() (*KMSPodConfig, error) {
 	}
 
 	podConfig := &KMSPodConfig{}
-	podConfig.Containers = append(podConfig.Containers, util.BuildContainer(kasContainerAWSKMSTokenMinter(), buildKASContainerAWSKMSTokenMinter(p.tokenMinterImage)))
-	podConfig.Containers = append(podConfig.Containers, util.BuildContainer(kasContainerAWSKMSActive(), buildKASContainerAWSKMS(p.kmsImage, p.activeKey.ARN, p.awsRegion, fmt.Sprintf("%s/%s", awsKMSVolumeMounts.Path(KasMainContainerName, kasVolumeKMSSocket().Name), activeAWSKMSUnixSocketFileName), activeAWSKMSHealthPort)))
+	podConfig.Containers = append(podConfig.Containers, podspec.BuildContainer(kasContainerAWSKMSTokenMinter(), buildKASContainerAWSKMSTokenMinter(p.tokenMinterImage)))
+	podConfig.Containers = append(podConfig.Containers, podspec.BuildContainer(kasContainerAWSKMSActive(), buildKASContainerAWSKMS(p.kmsImage, p.activeKey.ARN, p.awsRegion, fmt.Sprintf("%s/%s", awsKMSVolumeMounts.Path(KasMainContainerName, kasVolumeKMSSocket().Name), activeAWSKMSUnixSocketFileName), activeAWSKMSHealthPort)))
 	if p.backupKey != nil && len(p.backupKey.ARN) > 0 {
-		podConfig.Containers = append(podConfig.Containers, util.BuildContainer(kasContainerAWSKMSBackup(), buildKASContainerAWSKMS(p.kmsImage, p.backupKey.ARN, p.awsRegion, fmt.Sprintf("%s/%s", awsKMSVolumeMounts.Path(KasMainContainerName, kasVolumeKMSSocket().Name), backupAWSKMSUnixSocketFileName), backupAWSKMSHealthPort)))
+		podConfig.Containers = append(podConfig.Containers, podspec.BuildContainer(kasContainerAWSKMSBackup(), buildKASContainerAWSKMS(p.kmsImage, p.backupKey.ARN, p.awsRegion, fmt.Sprintf("%s/%s", awsKMSVolumeMounts.Path(KasMainContainerName, kasVolumeKMSSocket().Name), backupAWSKMSUnixSocketFileName), backupAWSKMSHealthPort)))
 	}
 
 	podConfig.Volumes = append(podConfig.Volumes,
-		util.BuildVolume(kasVolumeAWSKMSCredentials(), buildVolumeAWSKMSCredentials(aws.AWSKMSCredsSecret("").Name)),
-		util.BuildVolume(kasVolumeKMSSocket(), buildVolumeKMSSocket),
-		util.BuildVolume(kasVolumeAWSKMSCloudProviderToken(), buildKASVolumeAWSKMSCloudProviderToken),
+		podspec.BuildVolume(kasVolumeAWSKMSCredentials(), buildVolumeAWSKMSCredentials(aws.AWSKMSCredsSecret("").Name)),
+		podspec.BuildVolume(kasVolumeKMSSocket(), buildVolumeKMSSocket),
+		podspec.BuildVolume(kasVolumeAWSKMSCloudProviderToken(), buildKASVolumeAWSKMSCloudProviderToken),
 	)
 
 	podConfig.KASContainerMutate = func(c *corev1.Container) {
@@ -253,10 +253,10 @@ func buildKASContainerAWSKMSTokenMinter(image string) func(*corev1.Container) {
 		c.Command = []string{"/usr/bin/control-plane-operator", "token-minter"}
 		c.Args = []string{
 			"--token-audience=openshift",
-			fmt.Sprintf("--service-account-namespace=%s", manifests.KASContainerAWSKMSProviderServiceAccount().Namespace),
-			fmt.Sprintf("--service-account-name=%s", manifests.KASContainerAWSKMSProviderServiceAccount().Name),
+			fmt.Sprintf("--service-account-namespace=%s", manifests.KASContainerKMSProviderServiceAccount().Namespace),
+			fmt.Sprintf("--service-account-name=%s", manifests.KASContainerKMSProviderServiceAccount().Name),
 			fmt.Sprintf("--token-file=%s", path.Join(awsKMSVolumeMounts.Path(c.Name, kasVolumeAWSKMSCloudProviderToken().Name), "token")),
-			fmt.Sprintf("--kubeconfig=%s", path.Join(awsKMSVolumeMounts.Path(c.Name, kasVolumeLocalhostKubeconfig), util.KubeconfigKey)),
+			fmt.Sprintf("--kubeconfig=%s", path.Join(awsKMSVolumeMounts.Path(c.Name, kasVolumeLocalhostKubeconfig), podspec.KubeconfigKey)),
 		}
 		c.Resources.Requests = corev1.ResourceList{
 			corev1.ResourceCPU:    resource.MustParse("10m"),

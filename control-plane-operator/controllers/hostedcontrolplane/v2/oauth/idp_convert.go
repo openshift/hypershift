@@ -17,8 +17,8 @@ import (
 	manifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	kasv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kas"
 	"github.com/openshift/hypershift/support/konnectivityproxy"
+	"github.com/openshift/hypershift/support/podspec"
 	supportproxy "github.com/openshift/hypershift/support/proxy"
-	"github.com/openshift/hypershift/support/util"
 
 	configv1 "github.com/openshift/api/config/v1"
 	osinv1 "github.com/openshift/api/osin/v1"
@@ -60,7 +60,7 @@ type idpData struct {
 
 type IDPVolumeMountInfo struct {
 	Container    string
-	VolumeMounts util.PodVolumeMounts
+	VolumeMounts podspec.VolumeMounts
 	Volumes      []corev1.Volume
 }
 
@@ -92,8 +92,8 @@ func ConvertIdentityProviders(ctx context.Context, identityProviders []configv1.
 	errs := []error{}
 	volumeMountInfo := &IDPVolumeMountInfo{
 		Container: ComponentName,
-		VolumeMounts: util.PodVolumeMounts{
-			ComponentName: util.ContainerVolumeMounts{},
+		VolumeMounts: podspec.VolumeMounts{
+			ComponentName: podspec.ContainerMounts{},
 		},
 	}
 
@@ -147,289 +147,320 @@ func convertProviderConfigToIDPData(
 	namespace string,
 	skipKonnectivityDialer bool,
 ) (*idpData, error) {
-	const missingProviderFmt string = "type %s was specified, but its configuration is missing"
-
-	data := &idpData{login: true}
-
 	switch providerConfig.Type {
 	case configv1.IdentityProviderTypeBasicAuth:
-		basicAuthConfig := providerConfig.BasicAuth
-		if basicAuthConfig == nil {
-			return nil, fmt.Errorf(missingProviderFmt, providerConfig.Type)
-		}
-		provider := &osinv1.BasicAuthPasswordIdentityProvider{
-			TypeMeta: metav1.TypeMeta{
-				Kind:       "BasicAuthPasswordIdentityProvider",
-				APIVersion: osinv1.GroupVersion.String(),
-			},
-			RemoteConnectionInfo: configv1.RemoteConnectionInfo{
-				URL: basicAuthConfig.URL,
-			},
-		}
-		if basicAuthConfig.CA.Name != "" {
-			provider.RemoteConnectionInfo.CA = idpVolumeMounts.ConfigMapPath(i, basicAuthConfig.CA.Name, "ca", corev1.ServiceAccountRootCAKey)
-		}
-		if basicAuthConfig.TLSClientCert.Name != "" {
-			provider.RemoteConnectionInfo.CertFile = idpVolumeMounts.SecretPath(i, basicAuthConfig.TLSClientCert.Name, "tls-client-key", corev1.TLSCertKey)
-		}
-		if basicAuthConfig.TLSClientKey.Name != "" {
-			provider.RemoteConnectionInfo.KeyFile = idpVolumeMounts.SecretPath(i, basicAuthConfig.TLSClientKey.Name, "tls-client-key", corev1.TLSPrivateKeyKey)
-		}
-
-		data.provider = provider
-		data.challenge = true
-
+		return convertBasicAuthIDP(providerConfig, i, idpVolumeMounts)
 	case configv1.IdentityProviderTypeGitHub:
-		githubConfig := providerConfig.GitHub
-		if githubConfig == nil {
-			return nil, fmt.Errorf(missingProviderFmt, providerConfig.Type)
-		}
-		provider := &osinv1.GitHubIdentityProvider{
-			TypeMeta: metav1.TypeMeta{
-				Kind:       "GitHubIdentityProvider",
-				APIVersion: osinv1.GroupVersion.String(),
-			},
-			ClientID: githubConfig.ClientID,
-			ClientSecret: configv1.StringSource{
-				StringSourceSpec: configv1.StringSourceSpec{
-					File: idpVolumeMounts.SecretPath(i, githubConfig.ClientSecret.Name, "client-secret", configv1.ClientSecretKey),
-				},
-			},
-			Organizations: githubConfig.Organizations,
-			Teams:         githubConfig.Teams,
-			Hostname:      githubConfig.Hostname,
-		}
-		if githubConfig.CA.Name != "" {
-			provider.CA = idpVolumeMounts.ConfigMapPath(i, githubConfig.CA.Name, "ca", corev1.ServiceAccountRootCAKey)
-		}
-		data.provider = provider
-		data.challenge = false
-
+		return convertGitHubIDP(providerConfig, i, idpVolumeMounts)
 	case configv1.IdentityProviderTypeGitLab:
-		gitlabConfig := providerConfig.GitLab
-		if gitlabConfig == nil {
-			return nil, fmt.Errorf(missingProviderFmt, providerConfig.Type)
-		}
-
-		provider := &osinv1.GitLabIdentityProvider{
-			TypeMeta: metav1.TypeMeta{
-				Kind:       "GitLabIdentityProvider",
-				APIVersion: osinv1.GroupVersion.String(),
-			},
-
-			URL:      gitlabConfig.URL,
-			ClientID: gitlabConfig.ClientID,
-			ClientSecret: configv1.StringSource{
-				StringSourceSpec: configv1.StringSourceSpec{
-					File: idpVolumeMounts.SecretPath(i, gitlabConfig.ClientSecret.Name, "client-secret", configv1.ClientSecretKey),
-				},
-			},
-			Legacy: new(bool), // we require OIDC for GitLab now
-		}
-		if gitlabConfig.CA.Name != "" {
-			provider.CA = idpVolumeMounts.ConfigMapPath(i, gitlabConfig.CA.Name, "ca", corev1.ServiceAccountRootCAKey)
-		}
-
-		data.provider = provider
-		data.challenge = true
-
+		return convertGitLabIDP(providerConfig, i, idpVolumeMounts)
 	case configv1.IdentityProviderTypeGoogle:
-		googleConfig := providerConfig.Google
-		if googleConfig == nil {
-			return nil, fmt.Errorf(missingProviderFmt, providerConfig.Type)
-		}
-
-		data.provider = &osinv1.GoogleIdentityProvider{
-			TypeMeta: metav1.TypeMeta{
-				Kind:       "GoogleIdentityProvider",
-				APIVersion: osinv1.GroupVersion.String(),
-			},
-			ClientID: googleConfig.ClientID,
-			ClientSecret: configv1.StringSource{
-				StringSourceSpec: configv1.StringSourceSpec{
-					File: idpVolumeMounts.SecretPath(i, googleConfig.ClientSecret.Name, "client-secret", configv1.ClientSecretKey),
-				},
-			},
-			HostedDomain: googleConfig.HostedDomain,
-		}
-		data.challenge = false
-
+		return convertGoogleIDP(providerConfig, i, idpVolumeMounts)
 	case configv1.IdentityProviderTypeHTPasswd:
-		if providerConfig.HTPasswd == nil {
-			return nil, fmt.Errorf(missingProviderFmt, providerConfig.Type)
-		}
-
-		data.provider = &osinv1.HTPasswdPasswordIdentityProvider{
-			TypeMeta: metav1.TypeMeta{
-				Kind:       "HTPasswdPasswordIdentityProvider",
-				APIVersion: osinv1.GroupVersion.String(),
-			},
-			File: idpVolumeMounts.SecretPath(i, providerConfig.HTPasswd.FileData.Name, "file-data", configv1.HTPasswdDataKey),
-		}
-		data.challenge = true
-
+		return convertHTPasswdIDP(providerConfig, i, idpVolumeMounts)
 	case configv1.IdentityProviderTypeKeystone:
-		keystoneConfig := providerConfig.Keystone
-		if keystoneConfig == nil {
-			return nil, fmt.Errorf(missingProviderFmt, providerConfig.Type)
-		}
-
-		provider := &osinv1.KeystonePasswordIdentityProvider{
-			TypeMeta: metav1.TypeMeta{
-				Kind:       "KeystonePasswordIdentityProvider",
-				APIVersion: osinv1.GroupVersion.String(),
-			},
-			RemoteConnectionInfo: configv1.RemoteConnectionInfo{
-				URL: keystoneConfig.URL,
-			},
-			DomainName:          keystoneConfig.DomainName,
-			UseKeystoneIdentity: true, // force use of keystone ID
-		}
-		if keystoneConfig.CA.Name != "" {
-			provider.RemoteConnectionInfo.CA = idpVolumeMounts.ConfigMapPath(i, keystoneConfig.CA.Name, "ca", corev1.ServiceAccountRootCAKey)
-		}
-		if keystoneConfig.TLSClientCert.Name != "" {
-			provider.RemoteConnectionInfo.CertInfo.CertFile = idpVolumeMounts.SecretPath(i, keystoneConfig.TLSClientCert.Name, "tls-client-cert", corev1.TLSCertKey)
-		}
-		if keystoneConfig.TLSClientKey.Name != "" {
-			provider.RemoteConnectionInfo.CertInfo.KeyFile = idpVolumeMounts.SecretPath(i, keystoneConfig.TLSClientKey.Name, "tls-client-key", corev1.TLSPrivateKeyKey)
-		}
-		data.provider = provider
-		data.challenge = true
-
+		return convertKeystoneIDP(providerConfig, i, idpVolumeMounts)
 	case configv1.IdentityProviderTypeLDAP:
-		ldapConfig := providerConfig.LDAP
-		if ldapConfig == nil {
-			return nil, fmt.Errorf(missingProviderFmt, providerConfig.Type)
-		}
-
-		provider := &osinv1.LDAPPasswordIdentityProvider{
-			TypeMeta: metav1.TypeMeta{
-				Kind:       "LDAPPasswordIdentityProvider",
-				APIVersion: osinv1.GroupVersion.String(),
-			},
-			URL:      ldapConfig.URL,
-			BindDN:   ldapConfig.BindDN,
-			Insecure: ldapConfig.Insecure,
-			Attributes: osinv1.LDAPAttributeMapping{
-				ID:                ldapConfig.Attributes.ID,
-				PreferredUsername: ldapConfig.Attributes.PreferredUsername,
-				Name:              ldapConfig.Attributes.Name,
-				Email:             ldapConfig.Attributes.Email,
-			},
-		}
-		if ldapConfig.BindPassword.Name != "" {
-			provider.BindPassword = configv1.StringSource{
-				StringSourceSpec: configv1.StringSourceSpec{
-					File: idpVolumeMounts.SecretPath(i, ldapConfig.BindPassword.Name, "bind-password", configv1.BindPasswordKey),
-				},
-			}
-		}
-		if ldapConfig.CA.Name != "" {
-			provider.CA = idpVolumeMounts.ConfigMapPath(i, ldapConfig.CA.Name, "ca", corev1.ServiceAccountRootCAKey)
-		}
-		data.provider = provider
-		data.challenge = true
-
+		return convertLDAPIDP(providerConfig, i, idpVolumeMounts)
 	case configv1.IdentityProviderTypeOpenID:
-		openIDConfig := providerConfig.OpenID
-		if openIDConfig == nil {
-			return nil, fmt.Errorf(missingProviderFmt, providerConfig.Type)
-		}
-
-		openIDProvider := &osinv1.OpenIDIdentityProvider{
-			TypeMeta: metav1.TypeMeta{
-				Kind:       "OpenIDIdentityProvider",
-				APIVersion: osinv1.GroupVersion.String(),
-			},
-			ClientID: openIDConfig.ClientID,
-			ClientSecret: configv1.StringSource{
-				StringSourceSpec: configv1.StringSourceSpec{
-					File: idpVolumeMounts.SecretPath(i, openIDConfig.ClientSecret.Name, "client-secret", configv1.ClientSecretKey),
-				},
-			},
-			ExtraScopes:              openIDConfig.ExtraScopes,
-			ExtraAuthorizeParameters: openIDConfig.ExtraAuthorizeParameters,
-		}
-		//Handle special case for IBM Cloud's OIDC provider (need to override some fields not available in public api)
-		if configOverride != nil {
-			openIDProvider.URLs = configOverride.URLs
-			openIDProvider.Claims = configOverride.Claims
-		} else {
-			urls, err := discoverOpenIDURLs(ctx, kclient, openIDConfig.Issuer, corev1.ServiceAccountRootCAKey, namespace, openIDConfig.CA, skipKonnectivityDialer)
-			if err != nil {
-				return nil, err
-			}
-			openIDProvider.URLs = *urls
-			var groups []string
-			if len(openIDConfig.Claims.Groups) > 0 {
-				groups = make([]string, len(openIDConfig.Claims.Groups))
-				for i, group := range openIDConfig.Claims.Groups {
-					groups[i] = string(group)
-				}
-			}
-			openIDProvider.Claims = osinv1.OpenIDClaims{
-				// There is no longer a user-facing setting for ID as it is considered unsafe
-				ID:                []string{configv1.UserIDClaim},
-				PreferredUsername: openIDConfig.Claims.PreferredUsername,
-				Name:              openIDConfig.Claims.Name,
-				Email:             openIDConfig.Claims.Email,
-				Groups:            groups,
-			}
-		}
-		if len(openIDConfig.CA.Name) > 0 {
-			openIDProvider.CA = idpVolumeMounts.ConfigMapPath(i, openIDConfig.CA.Name, "ca", corev1.ServiceAccountRootCAKey)
-		}
-		data.provider = openIDProvider
-
-		if configOverride != nil && configOverride.Challenge != nil {
-			data.challenge = *configOverride.Challenge
-		} else {
-			// openshift CR validating in kube-apiserver does not allow
-			// challenge-redirecting IdPs to be configured with OIDC so it is safe
-			// to allow challenge-issuing flow if it's available on the OIDC side
-			challengeFlowsAllowed, err := checkOIDCPasswordGrantFlow(
-				ctx,
-				kclient,
-				openIDProvider.URLs.Token,
-				openIDConfig.ClientID,
-				namespace,
-				openIDConfig.CA,
-				openIDConfig.ClientSecret,
-				skipKonnectivityDialer,
-			)
-			if err != nil {
-				return nil, fmt.Errorf("error attempting password grant flow: %v", err)
-			}
-			data.challenge = challengeFlowsAllowed
-		}
+		return convertOpenIDIDP(ctx, providerConfig, configOverride, i, idpVolumeMounts, kclient, namespace, skipKonnectivityDialer)
 	case configv1.IdentityProviderTypeRequestHeader:
-		requestHeaderConfig := providerConfig.RequestHeader
-		if requestHeaderConfig == nil {
-			return nil, fmt.Errorf(missingProviderFmt, providerConfig.Type)
-		}
-		data.provider = &osinv1.RequestHeaderIdentityProvider{
-			TypeMeta: metav1.TypeMeta{
-				Kind:       "RequestHeaderIdentityProvider",
-				APIVersion: osinv1.GroupVersion.String(),
-			},
-			LoginURL:                 requestHeaderConfig.LoginURL,
-			ChallengeURL:             requestHeaderConfig.ChallengeURL,
-			ClientCA:                 idpVolumeMounts.ConfigMapPath(i, requestHeaderConfig.ClientCA.Name, "ca", corev1.ServiceAccountRootCAKey),
-			ClientCommonNames:        requestHeaderConfig.ClientCommonNames,
-			Headers:                  requestHeaderConfig.Headers,
-			PreferredUsernameHeaders: requestHeaderConfig.PreferredUsernameHeaders,
-			NameHeaders:              requestHeaderConfig.NameHeaders,
-			EmailHeaders:             requestHeaderConfig.EmailHeaders,
-		}
-		data.challenge = len(requestHeaderConfig.ChallengeURL) > 0
-		data.login = len(requestHeaderConfig.LoginURL) > 0
-
+		return convertRequestHeaderIDP(providerConfig, i, idpVolumeMounts)
 	default:
 		return nil, fmt.Errorf("the identity provider type '%s' is not supported", providerConfig.Type)
-	} // switch
+	}
+}
 
+func convertBasicAuthIDP(providerConfig *configv1.IdentityProviderConfig, i int, idpVolumeMounts *IDPVolumeMountInfo) (*idpData, error) {
+	const missingProviderFmt string = "type %s was specified, but its configuration is missing"
+	basicAuthConfig := providerConfig.BasicAuth
+	if basicAuthConfig == nil {
+		return nil, fmt.Errorf(missingProviderFmt, providerConfig.Type)
+	}
+	provider := &osinv1.BasicAuthPasswordIdentityProvider{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "BasicAuthPasswordIdentityProvider",
+			APIVersion: osinv1.GroupVersion.String(),
+		},
+		RemoteConnectionInfo: configv1.RemoteConnectionInfo{
+			URL: basicAuthConfig.URL,
+		},
+	}
+	if basicAuthConfig.CA.Name != "" {
+		provider.RemoteConnectionInfo.CA = idpVolumeMounts.ConfigMapPath(i, basicAuthConfig.CA.Name, "ca", corev1.ServiceAccountRootCAKey)
+	}
+	if basicAuthConfig.TLSClientCert.Name != "" {
+		provider.RemoteConnectionInfo.CertFile = idpVolumeMounts.SecretPath(i, basicAuthConfig.TLSClientCert.Name, "tls-client-cert", corev1.TLSCertKey)
+	}
+	if basicAuthConfig.TLSClientKey.Name != "" {
+		provider.RemoteConnectionInfo.KeyFile = idpVolumeMounts.SecretPath(i, basicAuthConfig.TLSClientKey.Name, "tls-client-key", corev1.TLSPrivateKeyKey)
+	}
+	return &idpData{provider: provider, challenge: true, login: true}, nil
+}
+
+func convertGitHubIDP(providerConfig *configv1.IdentityProviderConfig, i int, idpVolumeMounts *IDPVolumeMountInfo) (*idpData, error) {
+	const missingProviderFmt string = "type %s was specified, but its configuration is missing"
+	githubConfig := providerConfig.GitHub
+	if githubConfig == nil {
+		return nil, fmt.Errorf(missingProviderFmt, providerConfig.Type)
+	}
+	provider := &osinv1.GitHubIdentityProvider{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "GitHubIdentityProvider",
+			APIVersion: osinv1.GroupVersion.String(),
+		},
+		ClientID: githubConfig.ClientID,
+		ClientSecret: configv1.StringSource{
+			StringSourceSpec: configv1.StringSourceSpec{
+				File: idpVolumeMounts.SecretPath(i, githubConfig.ClientSecret.Name, "client-secret", configv1.ClientSecretKey),
+			},
+		},
+		Organizations: githubConfig.Organizations,
+		Teams:         githubConfig.Teams,
+		Hostname:      githubConfig.Hostname,
+	}
+	if githubConfig.CA.Name != "" {
+		provider.CA = idpVolumeMounts.ConfigMapPath(i, githubConfig.CA.Name, "ca", corev1.ServiceAccountRootCAKey)
+	}
+	return &idpData{provider: provider, challenge: false, login: true}, nil
+}
+
+func convertGitLabIDP(providerConfig *configv1.IdentityProviderConfig, i int, idpVolumeMounts *IDPVolumeMountInfo) (*idpData, error) {
+	const missingProviderFmt string = "type %s was specified, but its configuration is missing"
+	gitlabConfig := providerConfig.GitLab
+	if gitlabConfig == nil {
+		return nil, fmt.Errorf(missingProviderFmt, providerConfig.Type)
+	}
+	provider := &osinv1.GitLabIdentityProvider{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "GitLabIdentityProvider",
+			APIVersion: osinv1.GroupVersion.String(),
+		},
+		URL:      gitlabConfig.URL,
+		ClientID: gitlabConfig.ClientID,
+		ClientSecret: configv1.StringSource{
+			StringSourceSpec: configv1.StringSourceSpec{
+				File: idpVolumeMounts.SecretPath(i, gitlabConfig.ClientSecret.Name, "client-secret", configv1.ClientSecretKey),
+			},
+		},
+		Legacy: new(bool), // we require OIDC for GitLab now
+	}
+	if gitlabConfig.CA.Name != "" {
+		provider.CA = idpVolumeMounts.ConfigMapPath(i, gitlabConfig.CA.Name, "ca", corev1.ServiceAccountRootCAKey)
+	}
+	return &idpData{provider: provider, challenge: true, login: true}, nil
+}
+
+func convertGoogleIDP(providerConfig *configv1.IdentityProviderConfig, i int, idpVolumeMounts *IDPVolumeMountInfo) (*idpData, error) {
+	const missingProviderFmt string = "type %s was specified, but its configuration is missing"
+	googleConfig := providerConfig.Google
+	if googleConfig == nil {
+		return nil, fmt.Errorf(missingProviderFmt, providerConfig.Type)
+	}
+	provider := &osinv1.GoogleIdentityProvider{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "GoogleIdentityProvider",
+			APIVersion: osinv1.GroupVersion.String(),
+		},
+		ClientID: googleConfig.ClientID,
+		ClientSecret: configv1.StringSource{
+			StringSourceSpec: configv1.StringSourceSpec{
+				File: idpVolumeMounts.SecretPath(i, googleConfig.ClientSecret.Name, "client-secret", configv1.ClientSecretKey),
+			},
+		},
+		HostedDomain: googleConfig.HostedDomain,
+	}
+	return &idpData{provider: provider, challenge: false, login: true}, nil
+}
+
+func convertHTPasswdIDP(providerConfig *configv1.IdentityProviderConfig, i int, idpVolumeMounts *IDPVolumeMountInfo) (*idpData, error) {
+	const missingProviderFmt string = "type %s was specified, but its configuration is missing"
+	if providerConfig.HTPasswd == nil {
+		return nil, fmt.Errorf(missingProviderFmt, providerConfig.Type)
+	}
+	provider := &osinv1.HTPasswdPasswordIdentityProvider{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "HTPasswdPasswordIdentityProvider",
+			APIVersion: osinv1.GroupVersion.String(),
+		},
+		File: idpVolumeMounts.SecretPath(i, providerConfig.HTPasswd.FileData.Name, "file-data", configv1.HTPasswdDataKey),
+	}
+	return &idpData{provider: provider, challenge: true, login: true}, nil
+}
+
+func convertKeystoneIDP(providerConfig *configv1.IdentityProviderConfig, i int, idpVolumeMounts *IDPVolumeMountInfo) (*idpData, error) {
+	const missingProviderFmt string = "type %s was specified, but its configuration is missing"
+	keystoneConfig := providerConfig.Keystone
+	if keystoneConfig == nil {
+		return nil, fmt.Errorf(missingProviderFmt, providerConfig.Type)
+	}
+	provider := &osinv1.KeystonePasswordIdentityProvider{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "KeystonePasswordIdentityProvider",
+			APIVersion: osinv1.GroupVersion.String(),
+		},
+		RemoteConnectionInfo: configv1.RemoteConnectionInfo{
+			URL: keystoneConfig.URL,
+		},
+		DomainName:          keystoneConfig.DomainName,
+		UseKeystoneIdentity: true, // force use of keystone ID
+	}
+	if keystoneConfig.CA.Name != "" {
+		provider.RemoteConnectionInfo.CA = idpVolumeMounts.ConfigMapPath(i, keystoneConfig.CA.Name, "ca", corev1.ServiceAccountRootCAKey)
+	}
+	if keystoneConfig.TLSClientCert.Name != "" {
+		provider.RemoteConnectionInfo.CertInfo.CertFile = idpVolumeMounts.SecretPath(i, keystoneConfig.TLSClientCert.Name, "tls-client-cert", corev1.TLSCertKey)
+	}
+	if keystoneConfig.TLSClientKey.Name != "" {
+		provider.RemoteConnectionInfo.CertInfo.KeyFile = idpVolumeMounts.SecretPath(i, keystoneConfig.TLSClientKey.Name, "tls-client-key", corev1.TLSPrivateKeyKey)
+	}
+	return &idpData{provider: provider, challenge: true, login: true}, nil
+}
+
+func convertLDAPIDP(providerConfig *configv1.IdentityProviderConfig, i int, idpVolumeMounts *IDPVolumeMountInfo) (*idpData, error) {
+	const missingProviderFmt string = "type %s was specified, but its configuration is missing"
+	ldapConfig := providerConfig.LDAP
+	if ldapConfig == nil {
+		return nil, fmt.Errorf(missingProviderFmt, providerConfig.Type)
+	}
+	provider := &osinv1.LDAPPasswordIdentityProvider{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "LDAPPasswordIdentityProvider",
+			APIVersion: osinv1.GroupVersion.String(),
+		},
+		URL:      ldapConfig.URL,
+		BindDN:   ldapConfig.BindDN,
+		Insecure: ldapConfig.Insecure,
+		Attributes: osinv1.LDAPAttributeMapping{
+			ID:                ldapConfig.Attributes.ID,
+			PreferredUsername: ldapConfig.Attributes.PreferredUsername,
+			Name:              ldapConfig.Attributes.Name,
+			Email:             ldapConfig.Attributes.Email,
+		},
+	}
+	if ldapConfig.BindPassword.Name != "" {
+		provider.BindPassword = configv1.StringSource{
+			StringSourceSpec: configv1.StringSourceSpec{
+				File: idpVolumeMounts.SecretPath(i, ldapConfig.BindPassword.Name, "bind-password", configv1.BindPasswordKey),
+			},
+		}
+	}
+	if ldapConfig.CA.Name != "" {
+		provider.CA = idpVolumeMounts.ConfigMapPath(i, ldapConfig.CA.Name, "ca", corev1.ServiceAccountRootCAKey)
+	}
+	return &idpData{provider: provider, challenge: true, login: true}, nil
+}
+
+func convertOpenIDIDP(
+	ctx context.Context,
+	providerConfig *configv1.IdentityProviderConfig,
+	configOverride *ConfigOverride,
+	i int,
+	idpVolumeMounts *IDPVolumeMountInfo,
+	kclient crclient.Reader,
+	namespace string,
+	skipKonnectivityDialer bool,
+) (*idpData, error) {
+	const missingProviderFmt string = "type %s was specified, but its configuration is missing"
+	openIDConfig := providerConfig.OpenID
+	if openIDConfig == nil {
+		return nil, fmt.Errorf(missingProviderFmt, providerConfig.Type)
+	}
+
+	openIDProvider := &osinv1.OpenIDIdentityProvider{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "OpenIDIdentityProvider",
+			APIVersion: osinv1.GroupVersion.String(),
+		},
+		ClientID: openIDConfig.ClientID,
+		ClientSecret: configv1.StringSource{
+			StringSourceSpec: configv1.StringSourceSpec{
+				File: idpVolumeMounts.SecretPath(i, openIDConfig.ClientSecret.Name, "client-secret", configv1.ClientSecretKey),
+			},
+		},
+		ExtraScopes:              openIDConfig.ExtraScopes,
+		ExtraAuthorizeParameters: openIDConfig.ExtraAuthorizeParameters,
+	}
+	// Handle special case for IBM Cloud's OIDC provider (need to override some fields not available in public api)
+	if configOverride != nil {
+		openIDProvider.URLs = configOverride.URLs
+		openIDProvider.Claims = configOverride.Claims
+	} else {
+		urls, err := discoverOpenIDURLs(ctx, kclient, openIDConfig.Issuer, corev1.ServiceAccountRootCAKey, namespace, openIDConfig.CA, skipKonnectivityDialer)
+		if err != nil {
+			return nil, err
+		}
+		openIDProvider.URLs = *urls
+		var groups []string
+		if len(openIDConfig.Claims.Groups) > 0 {
+			groups = make([]string, len(openIDConfig.Claims.Groups))
+			for i, group := range openIDConfig.Claims.Groups {
+				groups[i] = string(group)
+			}
+		}
+		openIDProvider.Claims = osinv1.OpenIDClaims{
+			// There is no longer a user-facing setting for ID as it is considered unsafe
+			ID:                []string{configv1.UserIDClaim},
+			PreferredUsername: openIDConfig.Claims.PreferredUsername,
+			Name:              openIDConfig.Claims.Name,
+			Email:             openIDConfig.Claims.Email,
+			Groups:            groups,
+		}
+	}
+	if len(openIDConfig.CA.Name) > 0 {
+		openIDProvider.CA = idpVolumeMounts.ConfigMapPath(i, openIDConfig.CA.Name, "ca", corev1.ServiceAccountRootCAKey)
+	}
+	data := &idpData{provider: openIDProvider, login: true}
+
+	if configOverride != nil && configOverride.Challenge != nil {
+		data.challenge = *configOverride.Challenge
+	} else {
+		// openshift CR validating in kube-apiserver does not allow
+		// challenge-redirecting IdPs to be configured with OIDC so it is safe
+		// to allow challenge-issuing flow if it's available on the OIDC side
+		challengeFlowsAllowed, err := checkOIDCPasswordGrantFlow(
+			ctx,
+			kclient,
+			openIDProvider.URLs.Token,
+			openIDConfig.ClientID,
+			namespace,
+			openIDConfig.CA,
+			openIDConfig.ClientSecret,
+			skipKonnectivityDialer,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("error attempting password grant flow: %v", err)
+		}
+		data.challenge = challengeFlowsAllowed
+	}
 	return data, nil
+}
+
+func convertRequestHeaderIDP(providerConfig *configv1.IdentityProviderConfig, i int, idpVolumeMounts *IDPVolumeMountInfo) (*idpData, error) {
+	const missingProviderFmt string = "type %s was specified, but its configuration is missing"
+	requestHeaderConfig := providerConfig.RequestHeader
+	if requestHeaderConfig == nil {
+		return nil, fmt.Errorf(missingProviderFmt, providerConfig.Type)
+	}
+	provider := &osinv1.RequestHeaderIdentityProvider{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "RequestHeaderIdentityProvider",
+			APIVersion: osinv1.GroupVersion.String(),
+		},
+		LoginURL:                 requestHeaderConfig.LoginURL,
+		ChallengeURL:             requestHeaderConfig.ChallengeURL,
+		ClientCA:                 idpVolumeMounts.ConfigMapPath(i, requestHeaderConfig.ClientCA.Name, "ca", corev1.ServiceAccountRootCAKey),
+		ClientCommonNames:        requestHeaderConfig.ClientCommonNames,
+		Headers:                  requestHeaderConfig.Headers,
+		PreferredUsernameHeaders: requestHeaderConfig.PreferredUsernameHeaders,
+		NameHeaders:              requestHeaderConfig.NameHeaders,
+		EmailHeaders:             requestHeaderConfig.EmailHeaders,
+	}
+	return &idpData{
+		provider:  provider,
+		challenge: len(requestHeaderConfig.ChallengeURL) > 0,
+		login:     len(requestHeaderConfig.LoginURL) > 0,
+	}, nil
 }
 
 const (

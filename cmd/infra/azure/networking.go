@@ -2,7 +2,9 @@ package azure
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/openshift/hypershift/support/azureutil"
 
@@ -207,7 +209,8 @@ func NewVirtualNetworkLink(location string, vnetID string, registrationEnabled b
 	}
 }
 
-// CreatePrivateDNSZoneLink creates the private DNS Zone network link
+// CreatePrivateDNSZoneLink creates the private DNS Zone network link.
+// It is idempotent: if the link already exists, it returns successfully.
 func (n *NetworkManager) CreatePrivateDNSZoneLink(ctx context.Context, resourceGroupName string, name string, infraID string, vnetID string, privateDNSZoneName string) error {
 	cloudConfig, err := azureutil.GetAzureCloudConfiguration(n.cloud)
 	if err != nil {
@@ -218,13 +221,32 @@ func (n *NetworkManager) CreatePrivateDNSZoneLink(ctx context.Context, resourceG
 		return fmt.Errorf("failed to create new virtual network links client: %w", err)
 	}
 
+	linkName := name + "-" + infraID
+
+	// Check if the link already exists to handle re-runs gracefully.
+	// Azure resource IDs are case-insensitive, so use case-insensitive comparison.
+	existingLink, err := privateZoneLinkClient.Get(ctx, resourceGroupName, privateDNSZoneName, linkName, nil)
+	if err == nil &&
+		existingLink.Properties != nil &&
+		existingLink.Properties.VirtualNetwork != nil &&
+		existingLink.Properties.VirtualNetwork.ID != nil &&
+		strings.EqualFold(*existingLink.Properties.VirtualNetwork.ID, vnetID) {
+		return nil
+	}
+
 	virtualNetworkLinkParams := NewVirtualNetworkLink(VirtualNetworkLinkLocation, vnetID, false)
-	networkLinkPromise, err := privateZoneLinkClient.BeginCreateOrUpdate(ctx, resourceGroupName, privateDNSZoneName, name+"-"+infraID, virtualNetworkLinkParams, nil)
+	networkLinkPromise, err := privateZoneLinkClient.BeginCreateOrUpdate(ctx, resourceGroupName, privateDNSZoneName, linkName, virtualNetworkLinkParams, nil)
 	if err != nil {
 		return fmt.Errorf("failed to set up network link for private DNS zone: %w", err)
 	}
 	_, err = networkLinkPromise.PollUntilDone(ctx, nil)
 	if err != nil {
+		// Handle Conflict error when the DNS zone is already linked to this VNet
+		// (e.g., via a link with a different name from a previous run).
+		var respErr *azcore.ResponseError
+		if errors.As(err, &respErr) && strings.EqualFold(respErr.ErrorCode, "Conflict") {
+			return nil
+		}
 		return fmt.Errorf("failed waiting for network link for private DNS zone: %w", err)
 	}
 
@@ -431,7 +453,11 @@ func (n *NetworkManager) CreateLoadBalancer(ctx context.Context, resourceGroupNa
 	idPrefix := fmt.Sprintf("subscriptions/%s/resourceGroups/%s/providers/Microsoft.Network/loadBalancers", n.subscriptionID, resourceGroupName)
 	loadBalancerName := infraID
 
-	loadBalancerClient, err := armnetwork.NewLoadBalancersClient(n.subscriptionID, n.creds, nil)
+	cloudConfig, err := azureutil.GetAzureCloudConfiguration(n.cloud)
+	if err != nil {
+		return fmt.Errorf("failed to get cloud configuration: %w", err)
+	}
+	loadBalancerClient, err := armnetwork.NewLoadBalancersClient(n.subscriptionID, n.creds, &arm.ClientOptions{ClientOptions: azcore.ClientOptions{Cloud: cloudConfig}})
 	if err != nil {
 		return fmt.Errorf("failed to create load balancer client, %w", err)
 	}

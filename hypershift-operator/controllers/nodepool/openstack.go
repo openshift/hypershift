@@ -49,7 +49,7 @@ func (c *CAPI) openstackMachineTemplate(templateNameGenerator func(spec any) (st
 
 	return template, nil
 }
-func (r *NodePoolReconciler) setOpenStackConditions(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string, releaseImage *releaseinfo.ReleaseImage) error {
+func (r *NodePoolReconciler) setOpenStackConditions(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, _ string, releaseImage *releaseinfo.ReleaseImage) error {
 	if nodePool.Spec.Platform.OpenStack.ImageName == "" {
 		_, err := openstack.OpenStackReleaseImage(releaseImage)
 		if err != nil {

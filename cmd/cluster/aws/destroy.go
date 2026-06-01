@@ -75,6 +75,8 @@ func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error
 		}
 	}
 
+	var errs []error
+
 	o.Log.Info("Destroying infrastructure", "infraID", infraID)
 	destroyInfraOpts := awsinfra.DestroyInfraOptions{
 		Region:                       region,
@@ -91,7 +93,7 @@ func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error
 		PrivateZonesInClusterAccount: o.AWSPlatform.PrivateZonesInClusterAccount,
 	}
 	if err := destroyInfraOpts.Run(ctx); err != nil {
-		return fmt.Errorf("failed to destroy infrastructure: %w", err)
+		errs = append(errs, fmt.Errorf("failed to destroy infrastructure: %w", err))
 	}
 
 	if !o.AWSPlatform.PreserveIAM {
@@ -106,10 +108,10 @@ func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error
 			PrivateZonesInClusterAccount: o.AWSPlatform.PrivateZonesInClusterAccount,
 		}
 		if err := destroyOpts.Run(ctx); err != nil {
-			return fmt.Errorf("failed to destroy IAM: %w", err)
+			errs = append(errs, fmt.Errorf("failed to destroy IAM: %w", err))
 		}
 	}
-	return nil
+	return errors.NewAggregate(errs)
 }
 
 func DestroyCluster(ctx context.Context, o *core.DestroyOptions) error {

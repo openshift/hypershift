@@ -27,7 +27,6 @@ type reconciler struct {
 
 func (r *reconciler) Reconcile(ctx context.Context, _ reconcile.Request) (reconcile.Result, error) {
 	log := ctrl.LoggerFrom(ctx)
-	log.Info("Reconciling")
 
 	var hcp hypershiftv1beta1.HostedControlPlane
 	if err := r.lister.Get(ctx, client.ObjectKey{

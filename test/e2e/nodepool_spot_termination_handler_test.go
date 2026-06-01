@@ -15,7 +15,7 @@ import (
 	"github.com/google/uuid"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/podspec"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -192,7 +192,7 @@ func (s *SpotTerminationHandlerTest) Run(t *testing.T, nodePool hyperv1.NodePool
 					if obj.Spec.Replicas == nil || *obj.Spec.Replicas == 0 {
 						return false, "Deployment has 0 replicas", nil
 					}
-					if ready := util.IsDeploymentReady(s.ctx, obj); !ready {
+					if ready := podspec.IsDeploymentReady(s.ctx, obj); !ready {
 						return false, "Deployment is not ready", nil
 					}
 					return true, "Deployment is ready", nil

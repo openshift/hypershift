@@ -6,7 +6,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/openstack"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/netutil"
 
 	configv1 "github.com/openshift/api/config/v1"
 
@@ -31,7 +31,7 @@ func ReconcileInfrastructure(infra *configv1.Infrastructure, hcp *hyperv1.Hosted
 
 	infra.Spec.PlatformSpec.Type = configv1.PlatformType(platformType)
 	infra.Status.APIServerInternalURL = fmt.Sprintf("https://%s:%d", apiServerAddress, apiServerPort)
-	if util.IsPrivateHCP(hcp) {
+	if netutil.IsPrivateHCP(hcp) {
 		infra.Status.APIServerInternalURL = fmt.Sprintf("https://api.%s.hypershift.local:%d", hcp.Name, apiServerPort)
 	}
 

@@ -5,7 +5,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	component "github.com/openshift/hypershift/support/controlplane-component"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/netutil"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -84,7 +84,7 @@ func getCloudConfig(hcpSpec hyperv1.HostedControlPlaneSpec, credentialsSecret *c
 		}
 	}
 	config += "\n[Networking]\n"
-	config += "address-sort-order = " + util.MachineNetworksToList(hcpSpec.Networking.MachineNetwork) + "\n"
+	config += "address-sort-order = " + netutil.MachineNetworksToList(hcpSpec.Networking.MachineNetwork) + "\n"
 
 	return config
 }

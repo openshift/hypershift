@@ -1,6 +1,18 @@
 inheritance: true
 language: en-US
 reviews:
+  auto_review:
+    drafts: true
+  pre_merge_checks:
+    docstrings:
+      mode: "off"
+    custom_checks:
+      - name: "MicroShift Test Compatibility"
+        mode: "off"
+      - name: "Single Node OpenShift (SNO) Test Compatibility"
+        mode: "off"
+      - name: "OTE Binary Stdout Contract"
+        mode: "off"
   profile: chill
   high_level_summary: true
   collapse_walkthrough: true

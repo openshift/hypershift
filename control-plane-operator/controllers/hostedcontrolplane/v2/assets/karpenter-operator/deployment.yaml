@@ -42,6 +42,8 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.name
+            - name: KUBE_FEATURE_WatchListClient
+              value: "false"
           ports:
             - containerPort: 8080
               name: metrics

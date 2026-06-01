@@ -1308,6 +1308,260 @@ func TestIsKubeAPIServerPod(t *testing.T) {
 	}
 }
 
+func TestGetLastObservedRestartCount(t *testing.T) {
+	tests := []struct {
+		name        string
+		annotations map[string]string
+		expected    int32
+	}{
+		{
+			name:        "When annotation is missing, it should return 0",
+			annotations: map[string]string{},
+			expected:    0,
+		},
+		{
+			name:        "When annotation has a valid integer, it should return the parsed value",
+			annotations: map[string]string{lastObservedRestartCountAnnotation: "5"},
+			expected:    5,
+		},
+		{
+			name:        "When annotation is zero, it should return 0",
+			annotations: map[string]string{lastObservedRestartCountAnnotation: "0"},
+			expected:    0,
+		},
+		{
+			name:        "When annotation is corrupted, it should reset to 0 and return 0",
+			annotations: map[string]string{lastObservedRestartCountAnnotation: "not-a-number"},
+			expected:    0,
+		},
+		{
+			name:        "When annotations map is nil, it should return 0",
+			annotations: nil,
+			expected:    0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			pod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        "kube-apiserver-test",
+					Namespace:   "hcp-namespace",
+					Annotations: tt.annotations,
+				},
+			}
+
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(hyperapi.Scheme).
+				WithObjects(pod).
+				Build()
+
+			reconciler := &SnapshotReconciler{
+				client: fakeClient,
+				log:    logr.Discard(),
+			}
+
+			// Save original annotation value before calling function to avoid checking mutated map
+			var originalAnnotationValue string
+			if tt.annotations != nil {
+				originalAnnotationValue = tt.annotations[lastObservedRestartCountAnnotation]
+			}
+
+			result := reconciler.getLastObservedRestartCount(context.Background(), pod, logr.Discard())
+			g.Expect(result).To(Equal(tt.expected))
+
+			// When annotation was corrupted, verify it was reset on the pod
+			if originalAnnotationValue == "not-a-number" {
+				updatedPod := &corev1.Pod{}
+				err := fakeClient.Get(context.Background(), types.NamespacedName{Name: pod.Name, Namespace: pod.Namespace}, updatedPod)
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(updatedPod.Annotations[lastObservedRestartCountAnnotation]).To(Equal("0"))
+			}
+		})
+	}
+}
+
+func TestCheckSnapshotInterval(t *testing.T) {
+	tests := []struct {
+		name                 string
+		annotations          map[string]string
+		minInterval          string
+		expectedShouldCreate bool
+		expectedSkip         bool
+	}{
+		{
+			name:                 "When no last snapshot time annotation exists, it should allow snapshot creation",
+			annotations:          map[string]string{},
+			minInterval:          "1h",
+			expectedShouldCreate: true,
+			expectedSkip:         false,
+		},
+		{
+			name: "When last snapshot time is older than min interval, it should allow snapshot creation",
+			annotations: map[string]string{
+				lastSnapshotTimeAnnotation: time.Now().Add(-2 * time.Hour).Format(time.RFC3339),
+			},
+			minInterval:          "1h",
+			expectedShouldCreate: true,
+			expectedSkip:         false,
+		},
+		{
+			name: "When last snapshot time is within min interval, it should skip reconciliation",
+			annotations: map[string]string{
+				lastSnapshotTimeAnnotation: time.Now().Add(-10 * time.Minute).Format(time.RFC3339),
+			},
+			minInterval:          "1h",
+			expectedShouldCreate: false,
+			expectedSkip:         true,
+		},
+		{
+			name: "When last snapshot time annotation is corrupted, it should allow snapshot creation",
+			annotations: map[string]string{
+				lastSnapshotTimeAnnotation: "invalid-time",
+			},
+			minInterval:          "1h",
+			expectedShouldCreate: true,
+			expectedSkip:         false,
+		},
+		{
+			name: "When min interval is unparsable, it should allow snapshot creation",
+			annotations: map[string]string{
+				lastSnapshotTimeAnnotation: time.Now().Format(time.RFC3339),
+			},
+			minInterval:          "not-a-duration",
+			expectedShouldCreate: true,
+			expectedSkip:         false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			pod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        "kube-apiserver-test",
+					Namespace:   "hcp-namespace",
+					Annotations: tt.annotations,
+				},
+			}
+
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(hyperapi.Scheme).
+				WithObjects(pod).
+				Build()
+
+			reconciler := &SnapshotReconciler{
+				client: fakeClient,
+				log:    logr.Discard(),
+			}
+
+			spec := &auditlogpersistencev1alpha1.AuditLogPersistenceConfigSpec{
+				Snapshots: auditlogpersistencev1alpha1.SnapshotConfig{
+					MinInterval: tt.minInterval,
+				},
+			}
+
+			shouldSnapshot, skipReconcile := reconciler.checkSnapshotInterval(context.Background(), pod, spec, logr.Discard())
+			g.Expect(shouldSnapshot).To(Equal(tt.expectedShouldCreate))
+			g.Expect(skipReconcile).To(Equal(tt.expectedSkip))
+		})
+	}
+}
+
+func TestGetSnapshotConfig(t *testing.T) {
+	tests := []struct {
+		name        string
+		config      *auditlogpersistencev1alpha1.AuditLogPersistenceConfig
+		expectNil   bool
+		expectError bool
+	}{
+		{
+			name:      "When config does not exist, it should return nil without error",
+			config:    nil,
+			expectNil: true,
+		},
+		{
+			name: "When feature is disabled, it should return nil",
+			config: &auditlogpersistencev1alpha1.AuditLogPersistenceConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: "cluster"},
+				Spec: auditlogpersistencev1alpha1.AuditLogPersistenceConfigSpec{
+					Enabled: false,
+					Snapshots: auditlogpersistencev1alpha1.SnapshotConfig{
+						Enabled: true,
+					},
+				},
+			},
+			expectNil: true,
+		},
+		{
+			name: "When snapshots are disabled, it should return nil",
+			config: &auditlogpersistencev1alpha1.AuditLogPersistenceConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: "cluster"},
+				Spec: auditlogpersistencev1alpha1.AuditLogPersistenceConfigSpec{
+					Enabled: true,
+					Snapshots: auditlogpersistencev1alpha1.SnapshotConfig{
+						Enabled: false,
+					},
+				},
+			},
+			expectNil: true,
+		},
+		{
+			name: "When both feature and snapshots are enabled, it should return spec with defaults applied",
+			config: &auditlogpersistencev1alpha1.AuditLogPersistenceConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: "cluster"},
+				Spec: auditlogpersistencev1alpha1.AuditLogPersistenceConfigSpec{
+					Enabled: true,
+					Snapshots: auditlogpersistencev1alpha1.SnapshotConfig{
+						Enabled: true,
+					},
+				},
+			},
+			expectNil: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			var objects []client.Object
+			if tt.config != nil {
+				objects = append(objects, tt.config)
+			}
+
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(hyperapi.Scheme).
+				WithObjects(objects...).
+				Build()
+
+			reconciler := &SnapshotReconciler{
+				client: fakeClient,
+				log:    logr.Discard(),
+			}
+
+			spec, err := reconciler.getSnapshotConfig(context.Background())
+
+			if tt.expectError {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+			}
+
+			if tt.expectNil {
+				g.Expect(spec).To(BeNil())
+			} else {
+				g.Expect(spec).ToNot(BeNil())
+				// Verify defaults were applied (MinInterval should have a default)
+				g.Expect(spec.Snapshots.MinInterval).ToNot(BeEmpty())
+			}
+		})
+	}
+}
+
 func TestSnapshotReconciler_createSnapshot(t *testing.T) {
 	tests := []struct {
 		name           string

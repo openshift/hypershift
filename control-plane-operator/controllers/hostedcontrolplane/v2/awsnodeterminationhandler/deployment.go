@@ -8,7 +8,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/podspec"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -36,7 +36,7 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 	}
 
 	// Update the aws-node-termination-handler container environment variables and image
-	util.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
+	podspec.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
 		for i := range c.Env {
 			switch c.Env[i].Name {
 			case "AWS_REGION":
@@ -53,7 +53,7 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 
 	// Update the token-minter-kube container with the proper audience
 	// The token-minter command is embedded in a shell script, so we need to do string replacement
-	util.UpdateContainer(tokenMinterKubeContainerName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
+	podspec.UpdateContainer(tokenMinterKubeContainerName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
 		for i := range c.Args {
 			if strings.Contains(c.Args[i], "--token-audience=") {
 				c.Args[i] = strings.Replace(c.Args[i], "--token-audience=", fmt.Sprintf("--token-audience=%s", issuerURL), 1)

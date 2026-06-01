@@ -9,10 +9,9 @@
         "roles/compute.networkAdmin",
         "roles/iam.serviceAccountUser"
       ],
-      "k8sServiceAccount": {
-        "namespace": "kube-system",
-        "name": "capi-gcp-controller-manager"
-      }
+      "k8sServiceAccounts": [
+        {"namespace": "kube-system", "name": "capi-gcp-controller-manager"}
+      ]
     },
     {
       "name": "ctrlplane-op",
@@ -23,10 +22,9 @@
         "roles/compute.networkAdmin",
         "roles/compute.viewer"
       ],
-      "k8sServiceAccount": {
-        "namespace": "kube-system",
-        "name": "control-plane-operator"
-      }
+      "k8sServiceAccounts": [
+        {"namespace": "kube-system", "name": "control-plane-operator"}
+      ]
     },
     {
       "name": "cloud-controller",
@@ -37,10 +35,9 @@
         "roles/compute.securityAdmin",
         "roles/compute.viewer"
       ],
-      "k8sServiceAccount": {
-        "namespace": "kube-system",
-        "name": "cloud-controller-manager"
-      }
+      "k8sServiceAccounts": [
+        {"namespace": "kube-system", "name": "cloud-controller-manager"}
+      ]
     },
     {
       "name": "gcp-pd-csi",
@@ -52,20 +49,31 @@
         "roles/iam.serviceAccountUser",
         "roles/resourcemanager.tagUser"
       ],
-      "k8sServiceAccount": {
-        "namespace": "openshift-cluster-csi-drivers",
-        "name": "gcp-pd-csi-driver-controller-sa"
-      }
+      "k8sServiceAccounts": [
+        {"namespace": "openshift-cluster-csi-drivers", "name": "gcp-pd-csi-driver-controller-sa"}
+      ]
     },
     {
       "name": "image-registry",
       "displayName": "HyperShift Image Registry Operator",
       "description": "Service account for Image Registry Operator GCS storage operations",
       "roles": ["roles/storage.admin"],
-      "k8sServiceAccount": {
-        "namespace": "openshift-image-registry",
-        "name": "cluster-image-registry-operator"
-      }
+      "k8sServiceAccounts": [
+        {"namespace": "openshift-image-registry", "name": "cluster-image-registry-operator"},
+        {"namespace": "openshift-image-registry", "name": "registry"}
+      ]
+    },
+    {
+      "name": "cloud-network",
+      "displayName": "Cloud Network Config Controller Service Account",
+      "description": "Service account for cloud network configuration (egress IP, subnet management)",
+      "roles": [
+        "roles/compute.instanceAdmin.v1",
+        "roles/compute.networkUser"
+      ],
+      "k8sServiceAccounts": [
+        {"namespace": "openshift-cloud-network-config-controller", "name": "cloud-network-config-controller"}
+      ]
     }
   ]
 }

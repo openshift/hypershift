@@ -725,3 +725,157 @@ func TestReconcileInPlaceUpgradeAnnotatesMachineWithNodePoolVersion(t *testing.T
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(updatedMachine.Annotations[hyperv1.NodePoolReleaseVersionAnnotation]).To(Equal(nodePoolVersion))
 }
+
+func TestReconcileInPlaceUpgradeDegradedNodeErrorMessage(t *testing.T) {
+	_ = capiv1.AddToScheme(scheme.Scheme)
+
+	targetConfigVersion := "target-hash"
+	currentConfigVersion := "current-hash"
+	degradedReason := "disk validation failed: node disk usage exceeds threshold"
+
+	selector := map[string]string{"pool": "test"}
+
+	testCases := []struct {
+		name        string
+		nodeName    string
+		mcdState    string
+		mcdMessage  string
+		expectError bool
+	}{
+		{
+			name:        "when a node is degraded it should include the node name in the error message",
+			nodeName:    "degraded-node-xyz",
+			mcdState:    MachineConfigDaemonStateDegraded,
+			mcdMessage:  degradedReason,
+			expectError: true,
+		},
+		{
+			name:        "when a node is not degraded it should not return a degraded error",
+			nodeName:    "healthy-node",
+			mcdState:    MachineConfigDaemonStateDone,
+			mcdMessage:  "",
+			expectError: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			annotations := map[string]string{
+				nodePoolAnnotationTargetConfigVersion:  targetConfigVersion,
+				nodePoolAnnotationCurrentConfigVersion: currentConfigVersion,
+			}
+			if tc.expectError {
+				annotations[nodePoolAnnotationUpgradeInProgressTrue] = "upgrade in progress"
+			}
+
+			machineSet := &capiv1.MachineSet{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        "test-ms",
+					Namespace:   "test-ns",
+					UID:         "ms-uid",
+					Annotations: annotations,
+				},
+				Spec: capiv1.MachineSetSpec{
+					Selector: metav1.LabelSelector{MatchLabels: selector},
+				},
+			}
+
+			machine := &capiv1.Machine{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-machine",
+					Namespace: "test-ns",
+					Labels:    selector,
+					OwnerReferences: []metav1.OwnerReference{
+						{
+							Kind:       "MachineSet",
+							Name:       machineSet.Name,
+							UID:        machineSet.UID,
+							Controller: ptr.To(true),
+						},
+					},
+				},
+				Status: capiv1.MachineStatus{
+					NodeRef: &corev1.ObjectReference{Name: tc.nodeName},
+				},
+			}
+
+			node := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: tc.nodeName,
+					Annotations: map[string]string{
+						CurrentMachineConfigAnnotationKey:       currentConfigVersion,
+						DesiredMachineConfigAnnotationKey:       targetConfigVersion,
+						MachineConfigDaemonStateAnnotationKey:   tc.mcdState,
+						MachineConfigDaemonMessageAnnotationKey: tc.mcdMessage,
+					},
+				},
+			}
+
+			tokenSecret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "token-test",
+					Namespace: "test-ns",
+				},
+				Data: map[string][]byte{
+					TokenSecretPayloadKey: []byte("payload"),
+				},
+			}
+
+			mgmtClient := fake.NewClientBuilder().WithScheme(scheme.Scheme).
+				WithObjects(machineSet, machine).Build()
+			guestClient := fake.NewClientBuilder().WithScheme(scheme.Scheme).
+				WithObjects(node).Build()
+
+			r := &Reconciler{
+				client:                 mgmtClient,
+				guestClusterClient:     guestClient,
+				CreateOrUpdateProvider: upsert.New(false),
+			}
+
+			upgradeAPI := &nodePoolUpgradeAPI{
+				spec: struct {
+					targetConfigVersion string
+					poolRef             *capiv1.MachineSet
+				}{
+					targetConfigVersion: targetConfigVersion,
+					poolRef:             machineSet,
+				},
+				status: struct {
+					currentConfigVersion string
+				}{
+					currentConfigVersion: currentConfigVersion,
+				},
+			}
+
+			err := r.reconcileInPlaceUpgrade(t.Context(), upgradeAPI, tokenSecret, "mco-image", "4.18.37")
+
+			if tc.expectError {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring(tc.nodeName),
+					"error message should contain the degraded node name")
+				g.Expect(err.Error()).To(ContainSubstring(tc.mcdMessage),
+					"error message should contain the MCD degraded reason")
+
+				updatedMS := &capiv1.MachineSet{}
+				err = mgmtClient.Get(t.Context(), client.ObjectKeyFromObject(machineSet), updatedMS)
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(updatedMS.Annotations[nodePoolAnnotationUpgradeInProgressFalse]).To(
+					ContainSubstring(tc.nodeName),
+					"MachineSet annotation should contain the degraded node name")
+				_, hasTrue := updatedMS.Annotations[nodePoolAnnotationUpgradeInProgressTrue]
+				g.Expect(hasTrue).To(BeFalse(),
+					"upgradeInProgressTrue annotation should be deleted on degradation")
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+				updatedMS := &capiv1.MachineSet{}
+				err = mgmtClient.Get(t.Context(), client.ObjectKeyFromObject(machineSet), updatedMS)
+				g.Expect(err).ToNot(HaveOccurred())
+				_, hasDegraded := updatedMS.Annotations[nodePoolAnnotationUpgradeInProgressFalse]
+				g.Expect(hasDegraded).To(BeFalse(),
+					"degraded annotation should not be set for non-degraded nodes")
+			}
+		})
+	}
+}

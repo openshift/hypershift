@@ -6,6 +6,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	component "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/util"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -21,7 +22,7 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 		ips = append(ips, fmt.Sprintf("ipv4=%s", cpContext.InfraStatus.OauthAPIServerHost))
 	}
 
-	util.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
+	podspec.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
 		if image, ok := cpContext.HCP.Annotations[hyperv1.KonnectivityAgentImageAnnotation]; ok {
 			c.Image = image
 		}

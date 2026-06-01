@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/netutil"
 
 	configv1 "github.com/openshift/api/config/v1"
 
@@ -33,7 +33,7 @@ func ReconcileNetworkConfig(cfg *configv1.Network, hcp *hyperv1.HostedControlPla
 	for _, entry := range hcp.Spec.Networking.ClusterNetwork {
 		hostPrefix := uint32(entry.HostPrefix)
 		if hostPrefix == 0 {
-			ipv4, err := util.IsIPv4CIDR(entry.CIDR.String())
+			ipv4, err := netutil.IsIPv4CIDR(entry.CIDR.String())
 			if err != nil {
 				return fmt.Errorf("the CIDR %s included in the cluster network spec is not valid: %w", entry.CIDR.String(), err)
 			}
@@ -51,7 +51,7 @@ func ReconcileNetworkConfig(cfg *configv1.Network, hcp *hyperv1.HostedControlPla
 	}
 	cfg.Spec.ClusterNetwork = clusterNetwork
 	cfg.Spec.NetworkType = string(hcp.Spec.Networking.NetworkType)
-	cfg.Spec.ServiceNetwork = util.ServiceCIDRs(hcp.Spec.Networking.ServiceNetwork)
+	cfg.Spec.ServiceNetwork = netutil.ServiceCIDRs(hcp.Spec.Networking.ServiceNetwork)
 	if hcp.Spec.Configuration != nil && hcp.Spec.Configuration.Network != nil {
 		cfg.Spec.ExternalIP = hcp.Spec.Configuration.Network.ExternalIP
 		cfg.Spec.ServiceNodePortRange = hcp.Spec.Configuration.Network.ServiceNodePortRange

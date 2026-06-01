@@ -8,7 +8,6 @@ import (
 	"net/url"
 	"strings"
 
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/featuregates"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/supportedversion"
@@ -37,7 +36,7 @@ func adaptAuthConfig(cpContext component.WorkloadContext, config *corev1.ConfigM
 		return nil
 	}
 
-	authConfig, err := generateAuthConfig(cpContext, cpContext.Client, cpContext.HCP)
+	authConfig, err := GenerateAuthConfig(cpContext, cpContext.HCP.Spec.Configuration.Authentication, cpContext.Client, cpContext.HCP.Namespace)
 	if err != nil {
 		return fmt.Errorf("failed to generate authentication config: %w", err)
 	}
@@ -59,7 +58,11 @@ func adaptAuthConfig(cpContext component.WorkloadContext, config *corev1.ConfigM
 	return nil
 }
 
-func generateAuthConfig(ctx context.Context, c crclient.Reader, hcp *hyperv1.HostedControlPlane) (*AuthenticationConfiguration, error) {
+func GenerateAuthConfig(ctx context.Context, spec *configv1.AuthenticationSpec, c crclient.Reader, namespace string) (*AuthenticationConfiguration, error) {
+	if spec == nil {
+		return nil, fmt.Errorf("authentication spec cannot be nil")
+	}
+
 	config := &AuthenticationConfiguration{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "AuthenticationConfiguration",
@@ -68,8 +71,8 @@ func generateAuthConfig(ctx context.Context, c crclient.Reader, hcp *hyperv1.Hos
 		JWT: []JWTAuthenticator{},
 	}
 
-	for _, provider := range hcp.Spec.Configuration.Authentication.OIDCProviders {
-		jwt, err := generateJWTForProvider(ctx, provider, c, hcp.Namespace)
+	for _, provider := range spec.OIDCProviders {
+		jwt, err := generateJWTForProvider(ctx, provider, c, namespace)
 		if err != nil {
 			return nil, fmt.Errorf("generating JWT authenticator for provider %q: %v", provider.Name, err)
 		}
@@ -462,7 +465,7 @@ func validateAuthConfig(authConfig *AuthenticationConfiguration, disallowIssuers
 	if err != nil {
 		return fmt.Errorf("parsing kubernetes version %q", kubeVersion.String())
 	}
-	celCompiler := authenticationcel.NewCompiler(environment.MustBaseEnvSet(envVersion, true))
+	celCompiler := authenticationcel.NewCompiler(environment.MustBaseEnvSet(envVersion))
 
 	apiServerAuthConfig, err := HCPAuthConfigToAPIServerAuthConfig(authConfig)
 	if err != nil {

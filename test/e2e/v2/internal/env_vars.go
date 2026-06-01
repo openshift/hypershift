@@ -79,17 +79,18 @@ func GetEnvVarValue(name string) string {
 	return value
 }
 
-// PrintEnvVarHelp prints a formatted help message for all registered environment variables
+// PrintEnvVarHelp prints a formatted help message for all registered environment variables.
+// Output goes to stderr to avoid interfering with test framework stdout.
 func PrintEnvVarHelp() {
+	w := os.Stderr
 	if len(envVarRegistry) == 0 {
-		fmt.Println("No environment variables are registered.")
+		fmt.Fprintln(w, "No environment variables are registered.")
 		return
 	}
 
-	fmt.Println("Environment Variables:")
-	fmt.Println(strings.Repeat("=", 80))
+	fmt.Fprintln(w, "Environment Variables:")
+	fmt.Fprintln(w, strings.Repeat("=", 80))
 
-	// Sort by name for consistent output
 	var names []string
 	for name := range envVarRegistry {
 		names = append(names, name)
@@ -98,21 +99,21 @@ func PrintEnvVarHelp() {
 
 	for _, name := range names {
 		spec := envVarRegistry[name]
-		fmt.Printf("\n%s", name)
+		fmt.Fprintf(w, "\n%s", name)
 		if spec.Required {
-			fmt.Print(" (required)")
+			fmt.Fprint(w, " (required)")
 		} else {
-			fmt.Print(" (optional)")
+			fmt.Fprint(w, " (optional)")
 		}
 		if spec.Default != "" {
-			fmt.Printf(" [default: %s]", spec.Default)
+			fmt.Fprintf(w, " [default: %s]", spec.Default)
 		}
-		fmt.Printf("\n  %s\n", spec.Description)
+		fmt.Fprintf(w, "\n  %s\n", spec.Description)
 		if currentValue := os.Getenv(name); currentValue != "" {
-			fmt.Printf("  Current value: %s\n", maskSensitiveValue(name, currentValue))
+			fmt.Fprintf(w, "  Current value: %s\n", maskSensitiveValue(name, currentValue))
 		}
 	}
-	fmt.Println()
+	fmt.Fprintln(w)
 }
 
 // maskSensitiveValue masks potentially sensitive environment variable values
@@ -158,5 +159,53 @@ func init() {
 		"Path to the AWS guest infrastructure credentials file. Defaults to ~/.aws/credentials.",
 		false,
 		filepath.Join(os.Getenv("HOME"), ".aws", "credentials"),
+	)
+	RegisterEnvVarWithDefault(
+		"E2E_SERVICE_DOMAIN",
+		"Service domain used for custom DNS endpoint testing. Optional; test is skipped when empty.",
+		false,
+		"",
+	)
+	// Azure self-managed test environment variables
+	RegisterEnvVar(
+		"AZURE_PRIVATE_NAT_SUBNET_ID",
+		"Azure resource ID of the NAT subnet for Private Link Service. Auto-created by PLS controller if not set.",
+		false,
+	)
+	RegisterEnvVar(
+		"AZURE_PRIVATE_ADDITIONAL_ALLOWED_SUBSCRIPTIONS",
+		"Comma-separated list of Azure subscription IDs permitted to create Private Endpoints.",
+		false,
+	)
+	// Release image env vars for lifecycle tests
+	RegisterEnvVar(
+		"E2E_LATEST_RELEASE_IMAGE",
+		"Latest OCP release image for control plane upgrade tests.",
+		false,
+	)
+	RegisterEnvVar(
+		"E2E_PREVIOUS_RELEASE_IMAGE",
+		"N-1 OCP release image (previous minor) for control plane upgrade tests.",
+		false,
+	)
+	RegisterEnvVar(
+		"E2E_N1_RELEASE_IMAGE",
+		"N-1 minor release image for NodePool previous-release tests.",
+		false,
+	)
+	RegisterEnvVar(
+		"E2E_N2_RELEASE_IMAGE",
+		"N-2 minor release image for NodePool previous-release tests.",
+		false,
+	)
+	RegisterEnvVar(
+		"E2E_AZURE_CREDENTIALS_FILE",
+		"Path to Azure service principal credentials JSON file for platform-specific tests (auto-repair, disk encryption).",
+		false,
+	)
+	RegisterEnvVar(
+		"E2E_AZURE_DISK_ENCRYPTION_SET_ID",
+		"Azure DiskEncryptionSet resource ID for disk encryption NodePool tests.",
+		false,
 	)
 }

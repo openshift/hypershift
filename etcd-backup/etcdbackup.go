@@ -127,12 +127,12 @@ func uploadToS3(ctx context.Context, opts options) error {
 	opts.s3KeyPrefix = strings.TrimSuffix(opts.s3KeyPrefix, "/")
 	key := fmt.Sprintf("%s/%d.db", opts.s3KeyPrefix, time.Now().Unix())
 
-	uploader := transfermanager.New(s3Client, transfermanager.Options{})
-	_, err = uploader.PutObject(ctx, &transfermanager.PutObjectInput{
-		Bucket:  opts.s3BucketName,
-		Key:     key,
+	uploader := transfermanager.New(s3Client)
+	_, err = uploader.UploadObject(ctx, &transfermanager.UploadObjectInput{
+		Bucket:  aws.String(opts.s3BucketName),
+		Key:     aws.String(key),
 		Body:    f,
-		Tagging: aws.ToString(mapToTags(opts.s3ObjectTags)),
+		Tagging: mapToTags(opts.s3ObjectTags),
 	})
 
 	if err != nil {
@@ -145,8 +145,7 @@ func uploadToS3(ctx context.Context, opts options) error {
 
 func mapToTags(m map[string]string) *string {
 	if len(m) == 0 {
-		empty := ""
-		return &empty
+		return nil
 	}
 
 	// Use url.Values to ensure proper URL encoding of tag keys and values

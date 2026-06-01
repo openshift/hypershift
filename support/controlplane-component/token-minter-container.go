@@ -6,14 +6,14 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/azureutil"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/podspec"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 )
 
 const (
-	cloudTokenFileMountPath   = "/var/run/secrets/openshift/serviceaccount"
 	kubeAPITokenFileMountPath = "/var/run/secrets/kubernetes.io/serviceaccount"
 )
 
@@ -62,7 +62,7 @@ func (opts TokenMinterContainerOptions) injectTokenMinterContainer(cpContext Con
 		podSpec.Volumes = append(podSpec.Volumes, tokenVolume)
 
 		container := opts.buildContainer(cpContext.HCP, CloudToken, image, tokenVolume)
-		opts.injectContainer(cpContext.NativeSidecarContainersEnabled, podSpec, container, cloudTokenFileMountPath, tokenVolume.Name)
+		opts.injectContainer(cpContext.NativeSidecarContainersEnabled, podSpec, container, config.CloudTokenMountPath, tokenVolume.Name)
 	}
 
 	if opts.TokenType == KubeAPIServerToken || opts.TokenType == CloudAndAPIServerToken {
@@ -90,8 +90,8 @@ func (opts TokenMinterContainerOptions) injectContainer(nativeSidecarsEnabled bo
 		container.StartupProbe = &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{
 				Exec: &corev1.ExecAction{
-					// The token-minter always writes to cloudTokenFileMountPath regardless of token type.
-					Command: []string{"test", "-f", path.Join(cloudTokenFileMountPath, "token")},
+					// The token-minter always writes to CloudTokenMountPath regardless of token type.
+					Command: []string{"test", "-f", path.Join(config.CloudTokenMountPath, "token")},
 				},
 			},
 			PeriodSeconds:    1,
@@ -112,7 +112,7 @@ func (opts TokenMinterContainerOptions) injectContainer(nativeSidecarsEnabled bo
 }
 
 func (opts TokenMinterContainerOptions) buildContainer(hcp *hyperv1.HostedControlPlane, tokenType TokenType, image string, tokenVolume corev1.Volume) corev1.Container {
-	tokenFileMountPath := "/var/run/secrets/openshift/serviceaccount"
+	tokenFileMountPath := config.CloudTokenMountPath
 
 	var audience string
 	switch tokenType {
@@ -161,7 +161,7 @@ func (opts TokenMinterContainerOptions) buildContainer(hcp *hyperv1.HostedContro
 			kubeconfingVolumeName = "kubeconfig"
 		}
 
-		container.Args = append(container.Args, fmt.Sprintf("--kubeconfig=%s", path.Join(kubeconfigMountPath, util.KubeconfigKey)))
+		container.Args = append(container.Args, fmt.Sprintf("--kubeconfig=%s", path.Join(kubeconfigMountPath, podspec.KubeconfigKey)))
 		container.VolumeMounts = append(container.VolumeMounts, corev1.VolumeMount{
 			Name:      kubeconfingVolumeName,
 			MountPath: kubeconfigMountPath,

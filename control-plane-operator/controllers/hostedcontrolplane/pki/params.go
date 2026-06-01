@@ -6,7 +6,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/globalconfig"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/netutil"
 )
 
 type PKIParams struct {
@@ -83,11 +83,11 @@ func NewPKIParams(hcp *hyperv1.HostedControlPlane,
 	// Even with that, we cannot set more than one AdvertiseAddress so both
 	// are not supported at the same time.
 	// Check this for more info: https://github.com/kubernetes/enhancements/issues/2438
-	ipv4, err := util.IsIPv4CIDR(p.ServiceCIDR[0])
+	ipv4, err := netutil.IsIPv4CIDR(p.ServiceCIDR[0])
 	if err != nil || ipv4 {
-		p.NodeInternalAPIServerIP = util.AdvertiseAddressWithDefault(hcp, config.DefaultAdvertiseIPv4Address)
+		p.NodeInternalAPIServerIP = netutil.AdvertiseAddressWithDefault(hcp, config.DefaultAdvertiseIPv4Address)
 	} else {
-		p.NodeInternalAPIServerIP = util.AdvertiseAddressWithDefault(hcp, config.DefaultAdvertiseIPv6Address)
+		p.NodeInternalAPIServerIP = netutil.AdvertiseAddressWithDefault(hcp, config.DefaultAdvertiseIPv6Address)
 	}
 
 	return p

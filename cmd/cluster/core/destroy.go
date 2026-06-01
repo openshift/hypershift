@@ -63,6 +63,8 @@ type AzurePlatformDestroyOptions struct {
 	Location              string
 	ResourceGroupName     string
 	PreserveResourceGroup bool
+	Cloud                 string
+	DNSZoneRGName         string
 }
 
 type PowerVSPlatformDestroyOptions struct {

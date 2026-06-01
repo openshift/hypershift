@@ -11,6 +11,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/ptr"
 
@@ -284,6 +285,240 @@ func generateResources() (map[string]*corev1.Secret, map[string]*corev1.ConfigMa
 		configMaps[cm.Name] = cm
 	}
 	return secrets, configMaps
+}
+
+func TestApplyRequestsOverrides(t *testing.T) {
+	tests := []struct {
+		name                   string
+		annotations            map[string]string
+		containers             []corev1.Container
+		initContainers         []corev1.Container
+		expectedContainers     []corev1.Container
+		expectedInitContainers []corev1.Container
+	}{
+		{
+			name: "When overriding cpu and memory it should only update requests",
+			annotations: map[string]string{
+				"resource-request-override.hypershift.openshift.io/router.router": "cpu=500m,memory=1Gi",
+			},
+			containers: []corev1.Container{
+				{
+					Name: "router",
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("100m"),
+							corev1.ResourceMemory: resource.MustParse("256Mi"),
+						},
+					},
+				},
+			},
+			expectedContainers: []corev1.Container{
+				{
+					Name: "router",
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("500m"),
+							corev1.ResourceMemory: resource.MustParse("1Gi"),
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "When overriding aro.openshift.io/swift-nic it should set both requests and limits",
+			annotations: map[string]string{
+				"resource-request-override.hypershift.openshift.io/router.router": "aro.openshift.io/swift-nic=1",
+			},
+			containers: []corev1.Container{
+				{
+					Name: "router",
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{},
+					},
+				},
+			},
+			expectedContainers: []corev1.Container{
+				{
+					Name: "router",
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							aroSwiftNICResource: resource.MustParse("1"),
+						},
+						Limits: corev1.ResourceList{
+							aroSwiftNICResource: resource.MustParse("1"),
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "When overriding mixed resources it should set limits only for swift-nic",
+			annotations: map[string]string{
+				"resource-request-override.hypershift.openshift.io/router.router": "cpu=500m,aro.openshift.io/swift-nic=1",
+			},
+			containers: []corev1.Container{
+				{
+					Name: "router",
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU: resource.MustParse("100m"),
+						},
+					},
+				},
+			},
+			expectedContainers: []corev1.Container{
+				{
+					Name: "router",
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU:  resource.MustParse("500m"),
+							aroSwiftNICResource: resource.MustParse("1"),
+						},
+						Limits: corev1.ResourceList{
+							aroSwiftNICResource: resource.MustParse("1"),
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "When overriding an init container with swift-nic it should set both requests and limits",
+			annotations: map[string]string{
+				"resource-request-override.hypershift.openshift.io/router.init-router": "aro.openshift.io/swift-nic=2",
+			},
+			initContainers: []corev1.Container{
+				{
+					Name: "init-router",
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{},
+					},
+				},
+			},
+			expectedInitContainers: []corev1.Container{
+				{
+					Name: "init-router",
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							aroSwiftNICResource: resource.MustParse("2"),
+						},
+						Limits: corev1.ResourceList{
+							aroSwiftNICResource: resource.MustParse("2"),
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "When annotation targets a different deployment it should not apply overrides",
+			annotations: map[string]string{
+				"resource-request-override.hypershift.openshift.io/kube-apiserver.kube-apiserver": "cpu=500m",
+			},
+			containers: []corev1.Container{
+				{
+					Name: "router",
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU: resource.MustParse("100m"),
+						},
+					},
+				},
+			},
+			expectedContainers: []corev1.Container{
+				{
+					Name: "router",
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU: resource.MustParse("100m"),
+						},
+					},
+				},
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			workload := &controlPlaneWorkload[*appsv1.Deployment]{
+				name:             "router",
+				workloadProvider: &deploymentProvider{},
+				ComponentOptions: &testComponent{},
+			}
+			hcp := &hyperv1.HostedControlPlane{}
+			hcp.Annotations = test.annotations
+
+			podTemplate := &corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers:     test.containers,
+					InitContainers: test.initContainers,
+				},
+			}
+
+			workload.applyRequestsOverrides(podTemplate, hcp)
+
+			if test.expectedContainers != nil {
+				g.Expect(podTemplate.Spec.Containers).To(Equal(test.expectedContainers))
+			}
+			if test.expectedInitContainers != nil {
+				g.Expect(podTemplate.Spec.InitContainers).To(Equal(test.expectedInitContainers))
+			}
+		})
+	}
+}
+
+func TestApplyNonOvercommitableResourceLimits(t *testing.T) {
+	tests := []struct {
+		name           string
+		overrides      corev1.ResourceList
+		existingLimits corev1.ResourceList
+		expectedLimits corev1.ResourceList
+	}{
+		{
+			name: "When overriding aro.openshift.io/swift-nic it should set the limit to the same value",
+			overrides: corev1.ResourceList{
+				aroSwiftNICResource: resource.MustParse("1"),
+			},
+			expectedLimits: corev1.ResourceList{
+				aroSwiftNICResource: resource.MustParse("1"),
+			},
+		},
+		{
+			name: "When overriding standard resources it should not set limits",
+			overrides: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("500m"),
+				corev1.ResourceMemory: resource.MustParse("1Gi"),
+			},
+			expectedLimits: nil,
+		},
+		{
+			name: "When overriding a mix of standard and swift-nic resources it should only set limits for swift-nic",
+			overrides: corev1.ResourceList{
+				corev1.ResourceCPU:  resource.MustParse("500m"),
+				aroSwiftNICResource: resource.MustParse("2"),
+			},
+			existingLimits: corev1.ResourceList{
+				corev1.ResourceMemory: resource.MustParse("2Gi"),
+			},
+			expectedLimits: corev1.ResourceList{
+				corev1.ResourceMemory: resource.MustParse("2Gi"),
+				aroSwiftNICResource:   resource.MustParse("2"),
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			container := &corev1.Container{
+				Resources: corev1.ResourceRequirements{
+					Limits: test.existingLimits,
+				},
+			}
+			applyNonOvercommitableResourceLimits(container, test.overrides)
+			g.Expect(container.Resources.Limits).To(Equal(test.expectedLimits))
+		})
+	}
 }
 
 func TestSetDefaultOptions(t *testing.T) {

@@ -27,7 +27,7 @@ Before creating a self-managed Azure HostedCluster, ensure you have:
 
     This guide assumes you have already completed the workload identity configuration and management cluster setup. Follow these guides in order:
 
-    1. [Azure Workload Identity Setup](azure-workload-identity-setup.md) - Workload identities and OIDC issuer configuration
+    1. [Create Azure IAM Resources](create-iam-separately.md) - Workload identities and OIDC issuer configuration
     2. [Setup Azure Management Cluster for HyperShift](setup-management-cluster.md) - HyperShift operator installation (with or without External DNS)
 
 ### Permission Requirements
@@ -44,109 +44,76 @@ Your Azure service principal must have the following permissions:
 
 ### Infrastructure Setup
 
-Before creating the HostedCluster, set up the necessary Azure infrastructure:
-
-!!! note "About PERSISTENT_RG_NAME"
-    In Red Hat environments, a periodic Azure resource "reaper" deletes resources that are not properly tagged or not located in an approved resource group. We frequently use the `os4-common` resource group for shared, long-lived assets (for example, public DNS zones) to avoid accidental cleanup. If you are not in Red Hat infrastructure, set `PERSISTENT_RG_NAME` to any long-lived resource group in your subscription that will not be automatically reaped, or ensure your organization's required tags/policies are applied. The name does not have to be `os4-common`—use whatever persistent resource group fits your environment.
+Create the Azure infrastructure using the HyperShift CLI:
 
 ```bash
 # Set cluster configuration variables
-PREFIX="your-prefix-sm"
-RELEASE_IMAGE="quay.io/openshift-release-dev/ocp-release:XYZ"
-TAG="latest"
-
+CLUSTER_NAME="my-self-managed-cluster"
+INFRA_ID="${CLUSTER_NAME}-$(openssl rand -hex 4)"
 LOCATION="eastus"
-MANAGED_RG_NAME="${PREFIX}-managed-rg"
-VNET_RG_NAME="${PREFIX}-customer-vnet-rg"
-NSG_RG_NAME="${PREFIX}-customer-nsg-rg"
-VNET_NAME="${PREFIX}-customer-vnet"
-VNET_SUBNET1="${PREFIX}-customer-subnet-1"
-NSG="${PREFIX}-customer-nsg"
-DNS_ZONE_NAME="your-subdomain.your-parent.dns.zone.com"
-CLUSTER_NAMESPACE="clusters"
-CLUSTER_NAME="${PREFIX}-hc"
-AZURE_CREDS="/path/to/azure/credentials"
+BASE_DOMAIN="example.com"
+AZURE_CREDS="/path/to/azure-creds.json"
 PULL_SECRET="/path/to/pull-secret.json"
-HYPERSHIFT_BINARY_PATH="/path/to/hypershift/bin"
+RELEASE_IMAGE="quay.io/openshift-release-dev/ocp-release:XYZ"
+PERSISTENT_RG_NAME="os4-common"
 OIDC_ISSUER_URL="https://yourstorageaccount.blob.core.windows.net/yourstorageaccount"
 SA_TOKEN_ISSUER_PRIVATE_KEY_PATH="/path/to/serviceaccount-signer.private"
-PERSISTENT_RG_NAME="os4-common"
-PARENT_DNS_ZONE="your-parent.dns.zone.com"
 
-# Clean up any previous instances (optional)
-az group delete -n "${VNET_RG_NAME}" --yes --no-wait || true
-az group delete -n "${NSG_RG_NAME}" --yes --no-wait || true
-
-# Create managed resource group
-az group create --name "${MANAGED_RG_NAME}" --location ${LOCATION}
-
-# Create VNET & NSG resource groups
-az group create --name "${VNET_RG_NAME}" --location ${LOCATION}
-az group create --name "${NSG_RG_NAME}" --location ${LOCATION}
-
-# Create network security group
-az network nsg create \
-    --resource-group "${NSG_RG_NAME}" \
-    --name "${NSG}"
-
-# Get NSG ID
-GetNsgID=$(az network nsg list --query "[?name=='${NSG}'].id" -o tsv)
-
-# Create VNet with subnet
-az network vnet create \
-    --name "${VNET_NAME}" \
-    --resource-group "${VNET_RG_NAME}" \
-    --address-prefix 10.0.0.0/16 \
-    --subnet-name "${VNET_SUBNET1}" \
-    --subnet-prefixes 10.0.0.0/24 \
-    --nsg "${GetNsgID}"
-
-# Get VNet and Subnet IDs
-GetVnetID=$(az network vnet list --query "[?name=='${VNET_NAME}'].id" -o tsv)
-GetSubnetID=$(az network vnet subnet show \
-    --vnet-name "${VNET_NAME}" \
-    --name "${VNET_SUBNET1}" \
-    --resource-group "${VNET_RG_NAME}" \
-    --query id --output tsv)
+# Create infrastructure
+hypershift create infra azure \
+    --name ${CLUSTER_NAME} \
+    --infra-id ${INFRA_ID} \
+    --azure-creds ${AZURE_CREDS} \
+    --base-domain ${BASE_DOMAIN} \
+    --location ${LOCATION} \
+    --workload-identities-file workload-identities.json \
+    --assign-identity-roles \
+    --dns-zone-rg-name ${PERSISTENT_RG_NAME} \
+    --output-file infra-output.yaml
 ```
 
+This creates the resource groups, VNet, subnet, NSG, Private DNS zone, and load balancer for your cluster. For advanced options like using existing network resources, see [Create Azure Infrastructure Separately](create-infra-separately.md).
+
 ### Create the HostedCluster
-
-!!! note "Federated Identity Prerequisites"
-
-    Before creating the cluster, ensure that all federated identity credentials have been set up for your workload identities as described in the [Azure Workload Identity Setup](azure-workload-identity-setup.md) guide. The cluster creation will fail if these are not properly configured.
 
 !!! note "Azure Marketplace Images"
 
     For OpenShift 4.20 and later, HyperShift automatically selects the appropriate Azure Marketplace image from the release payload. You no longer need to specify `--marketplace-*` flags unless you want to use a specific custom image. See [Configuring Azure Marketplace Images](#configuring-azure-marketplace-images) for more details.
 
-Create the HostedCluster:
+Create the HostedCluster using the infrastructure output:
 
 ```bash
-# Create the HostedCluster
-${HYPERSHIFT_BINARY_PATH}/hypershift create cluster azure \
+hypershift create cluster azure \
     --name "$CLUSTER_NAME" \
-    --namespace "$CLUSTER_NAMESPACE" \
+    --infra-id "$INFRA_ID" \
     --azure-creds $AZURE_CREDS \
     --location ${LOCATION} \
     --node-pool-replicas 2 \
-    --base-domain $PARENT_DNS_ZONE \
+    --base-domain $BASE_DOMAIN \
     --pull-secret $PULL_SECRET \
     --generate-ssh \
     --release-image ${RELEASE_IMAGE} \
-    --external-dns-domain ${DNS_ZONE_NAME} \
-    --resource-group-name "${MANAGED_RG_NAME}" \
-    --vnet-id "${GetVnetID}" \
-    --subnet-id "${GetSubnetID}" \
-    --network-security-group-id "${GetNsgID}" \
     --sa-token-issuer-private-key-path "${SA_TOKEN_ISSUER_PRIVATE_KEY_PATH}" \
     --oidc-issuer-url "${OIDC_ISSUER_URL}" \
-    --control-plane-operator-image="quay.io/hypershift/hypershift:${TAG}" \
     --dns-zone-rg-name ${PERSISTENT_RG_NAME} \
     --assign-service-principal-roles \
-    --workload-identities-file ./workload-identities.json \
+    --infra-json infra-output.yaml \
     --diagnostics-storage-account-type Managed
 ```
+
+!!! tip "External DNS"
+
+    If using External DNS for automatic DNS management, also pass
+    `--external-dns-domain <your-dns-zone-name>` to the cluster creation command.
+    See [Setup Azure Management Cluster](setup-management-cluster.md) for DNS configuration.
+
+!!! tip "Private Clusters"
+
+    To create a private cluster with Azure Private Link, see
+    [Deploy Azure Private Clusters](deploy-azure-private-clusters.md).
+    Private clusters require additional setup: a NAT subnet in the management
+    cluster's VNet, `--endpoint-access Private` flag, and HyperShift operator
+    installation with `--private-platform Azure`.
 
 ### Configuring Azure Marketplace Images
 
@@ -161,7 +128,7 @@ For OpenShift 4.20+, HyperShift automatically selects the appropriate Azure Mark
 ```bash
 # No marketplace flags needed - HyperShift will auto-select the image
 # Gen2 VM generation is used by default
-${HYPERSHIFT_BINARY_PATH}/hypershift create cluster azure \
+hypershift create cluster azure \
     --name "$CLUSTER_NAME" \
     # ... other flags ...
 ```
@@ -173,7 +140,7 @@ This is the **recommended approach** as it ensures your nodes use the officially
 If you need to use a specific VM generation (Gen1 or Gen2), you can specify only the `--image-generation` flag:
 
 ```bash
-${HYPERSHIFT_BINARY_PATH}/hypershift create cluster azure \
+hypershift create cluster azure \
     --name "$CLUSTER_NAME" \
     --image-generation Gen2 \  # Or Gen1 (case-sensitive)
     # ... other flags ...
@@ -190,7 +157,7 @@ ${HYPERSHIFT_BINARY_PATH}/hypershift create cluster azure \
 If you need to use a specific custom marketplace image, provide all marketplace details:
 
 ```bash
-${HYPERSHIFT_BINARY_PATH}/hypershift create cluster azure \
+hypershift create cluster azure \
     --name "$CLUSTER_NAME" \
     --marketplace-publisher azureopenshift \
     --marketplace-offer aro4 \
@@ -214,18 +181,18 @@ When creating additional NodePools, you can specify image configuration in the s
 
 ```bash
 # Use default from release payload (OCP 4.20+)
-${HYPERSHIFT_BINARY_PATH}/hypershift create nodepool azure \
+hypershift create nodepool azure \
     --cluster-name "$CLUSTER_NAME" \
     # ... other flags ...
 
 # Or specify generation
-${HYPERSHIFT_BINARY_PATH}/hypershift create nodepool azure \
+hypershift create nodepool azure \
     --cluster-name "$CLUSTER_NAME" \
     --image-generation Gen1 \
     # ... other flags ...
 
 # Or use custom marketplace image
-${HYPERSHIFT_BINARY_PATH}/hypershift create nodepool azure \
+hypershift create nodepool azure \
     --cluster-name "$CLUSTER_NAME" \
     --marketplace-publisher azureopenshift \
     --marketplace-offer aro4 \
@@ -236,16 +203,126 @@ ${HYPERSHIFT_BINARY_PATH}/hypershift create nodepool azure \
 
 !!! important "Key Configuration Options"
     
-    - `--workload-identities-file`: References the workload identities configuration created in the setup guide
+    - `--infra-json`: Path to infrastructure output from `hypershift create infra azure` (includes workload identities)
     - `--assign-service-principal-roles`: Automatically assigns required Azure roles to workload identities
     - `--sa-token-issuer-private-key-path`: Path to the private key for service account token signing
-    - `--oidc-issuer-url`: URL of the OIDC issuer created in the workload identity setup
-    - `--vnet-id`, `--subnet-id`, `--network-security-group-id`: Custom networking infrastructure
+    - `--oidc-issuer-url`: URL of the OIDC issuer created in the IAM setup
     - `--image-generation`: (Optional) VM generation (`Gen1` or `Gen2`, defaults to `Gen2`). For OCP 4.20+, omit to use release payload defaults. See [Configuring Azure Marketplace Images](#configuring-azure-marketplace-images)
     - `--marketplace-publisher/offer/sku/version`: (Optional) Explicit Azure Marketplace image. Must specify all four flags together, or omit all to use defaults (OCP 4.20+)
     - `--dns-zone-rg-name`: Resource group containing the DNS zone (os4-common)
     - `--diagnostics-storage-account-type Managed`: Use Azure managed storage for diagnostics
-    - `--control-plane-operator-image`: Custom HyperShift operator image (optional)
+
+## Enabling KMS Encryption (etcd Encryption at Rest)
+
+Self-managed Azure HostedClusters support encrypting etcd data at rest using [Azure Key Vault](https://learn.microsoft.com/en-us/azure/key-vault/general/overview) with the KMSv2 protocol. This requires:
+
+1. An Azure Key Vault with a cryptographic key
+2. A workload identity with `Key Vault Crypto User` role on the Key Vault
+
+### Prerequisites
+
+Ensure the `kms` workload identity is included in your `workload-identities.json` file. When using `hypershift create iam azure`, pass the `--enable-kms` flag to create the KMS identity. See [Enabling KMS Identity](create-iam-separately.md#enabling-kms-identity) for details.
+
+### Create a Key Vault and Key
+
+!!! note "RBAC Key Vault Permissions"
+
+    The Key Vault is created with `--enable-rbac-authorization`, which means the creator does **not** automatically get data plane access. You must have the `Key Vault Crypto Officer` role (or equivalent) on the Key Vault to create and manage keys. If the key creation step fails with a `Forbidden` error, assign yourself the role:
+
+    ```bash
+    MY_OBJECT_ID=$(az ad signed-in-user show --query id -o tsv)
+    KV_ID=$(az keyvault show --name "${KV_NAME}" --query id -o tsv)
+    az role assignment create \
+        --assignee-object-id "${MY_OBJECT_ID}" \
+        --assignee-principal-type User \
+        --role "Key Vault Crypto Officer" \
+        --scope "${KV_ID}"
+    ```
+
+```bash
+# Create Key Vault
+KV_NAME="${CLUSTER_NAME}-kv"
+MANAGED_RG_NAME="${CLUSTER_NAME}-managed-rg"
+az keyvault create \
+    --name "${KV_NAME}" \
+    --resource-group "${MANAGED_RG_NAME}" \
+    --location "${LOCATION}" \
+    --enable-rbac-authorization
+
+# Create encryption key
+KEY_NAME="${CLUSTER_NAME}-etcd-key"
+az keyvault key create \
+    --vault-name "${KV_NAME}" \
+    --name "${KEY_NAME}" \
+    --kty RSA \
+    --size 2048
+
+# Get the key ID (used as --encryption-key-id)
+ENCRYPTION_KEY_ID=$(az keyvault key show \
+    --vault-name "${KV_NAME}" \
+    --name "${KEY_NAME}" \
+    --query key.kid -o tsv)
+```
+
+### Assign Key Vault Crypto User Role to the KMS Identity
+
+!!! warning "Manual Step Required"
+
+    The `--auto-assign-roles` / `--assign-service-principal-roles` flag does **not** assign the Key Vault role because the Key Vault scope is user-provided and not known to the CLI at role-assignment time. You must perform this role assignment manually.
+
+Grant the KMS workload identity the `Key Vault Crypto User` role on your Key Vault so it can encrypt and decrypt etcd data:
+
+```bash
+# Get the principal ID of the KMS managed identity
+# The identity name follows the pattern: {clusterName}-kms-{infraID}
+# List identities in the resource group to find the exact name:
+#   az identity list --resource-group "${PERSISTENT_RG_NAME}" --query "[?contains(name, 'kms')]" -o table
+KMS_MI_NAME=$(az identity list \
+    --resource-group "${PERSISTENT_RG_NAME}" \
+    --query "[?contains(name, '${CLUSTER_NAME}-kms')].name" -o tsv)
+KMS_PRINCIPAL_ID=$(az identity show \
+    --name "${KMS_MI_NAME}" \
+    --resource-group "${PERSISTENT_RG_NAME}" \
+    --query principalId -o tsv)
+
+# Get the Key Vault resource ID
+KV_ID=$(az keyvault show --name "${KV_NAME}" --query id -o tsv)
+
+# Assign Key Vault Crypto User role to the KMS identity
+az role assignment create \
+    --assignee-object-id "${KMS_PRINCIPAL_ID}" \
+    --assignee-principal-type ServicePrincipal \
+    --role "Key Vault Crypto User" \
+    --scope "${KV_ID}"
+```
+
+### Create the Cluster with KMS
+
+Add the `--encryption-key-id` flag to your cluster creation command:
+
+```bash
+hypershift create cluster azure \
+    --name "$CLUSTER_NAME" \
+    --infra-id "$INFRA_ID" \
+    --azure-creds $AZURE_CREDS \
+    --location ${LOCATION} \
+    --node-pool-replicas 2 \
+    --base-domain $BASE_DOMAIN \
+    --pull-secret $PULL_SECRET \
+    --generate-ssh \
+    --release-image ${RELEASE_IMAGE} \
+    --sa-token-issuer-private-key-path "${SA_TOKEN_ISSUER_PRIVATE_KEY_PATH}" \
+    --oidc-issuer-url "${OIDC_ISSUER_URL}" \
+    --dns-zone-rg-name ${PERSISTENT_RG_NAME} \
+    --assign-service-principal-roles \
+    --infra-json infra-output.yaml \
+    --encryption-key-id "${ENCRYPTION_KEY_ID}" \
+    --diagnostics-storage-account-type Managed
+```
+
+!!! note "KMS Authentication"
+
+    For self-managed Azure, the KMS provider authenticates using the `kms` workload identity specified in your `workload-identities.json`. This is different from managed Azure (ARO HCP), which uses managed identities with CSI secret store volumes. The `--kms-credentials-secret-name` flag is not needed for self-managed clusters.
 
 ## Verification
 
@@ -267,21 +344,28 @@ oc get clusterversion
 
 ## Cleanup
 
-To delete the HostedCluster:
+To delete the HostedCluster and its infrastructure:
 
 ```bash
 # Delete the HostedCluster
 hypershift destroy cluster azure \
     --name $CLUSTER_NAME \
     --azure-creds $AZURE_CREDS \
-    --resource-group-name $MANAGED_RG_NAME
+    --dns-zone-rg-name $PERSISTENT_RG_NAME
+
+# Destroy infrastructure
+hypershift destroy infra azure \
+    --name $CLUSTER_NAME \
+    --infra-id $INFRA_ID \
+    --azure-creds $AZURE_CREDS
 ```
 
 !!! note "Resource Cleanup"
     
-    The HyperShift destroy command will clean up the cluster resources. Workload identities and OIDC issuer created during setup can be reused for other clusters or cleaned up separately if no longer needed.
+    The HyperShift destroy commands clean up the cluster and infrastructure resources. Workload identities and OIDC issuer created during setup can be reused for other clusters or cleaned up separately if no longer needed. See [Destroying Workload Identities](create-iam-separately.md#destroying-workload-identities).
 
 ## Related Documentation
 
-1. [Azure Workload Identity Setup](azure-workload-identity-setup.md) - Workload identities and OIDC issuer setup
-2. [Setup Azure Management Cluster for HyperShift](setup-management-cluster.md) - DNS and HyperShift operator setup
+1. [Create Azure IAM Resources](create-iam-separately.md) - Workload identities and OIDC issuer setup
+2. [Create Azure Infrastructure Separately](create-infra-separately.md) - Advanced infrastructure options
+3. [Setup Azure Management Cluster for HyperShift](setup-management-cluster.md) - DNS and HyperShift operator setup

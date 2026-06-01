@@ -37,10 +37,11 @@ func TestAPIs(t *testing.T) {
 
 	_, thisFile, _, _ := runtime.Caller(0)
 	testDir := filepath.Dir(thisFile)
-	assetsDir := filepath.Join(testDir, "..", "..", "cmd", "install", "assets", "hypershift-operator")
+	assetsDir := filepath.Join(testDir, "..", "..", "cmd", "install", "assets", "crds", "hypershift-operator")
+	karpenterAssetsDir := filepath.Join(testDir, "..", "..", "karpenter-operator", "controllers", "karpenter", "assets")
 
 	var err error
-	suites, err = LoadTestSuiteSpecs(assetsDir)
+	suites, err = LoadTestSuiteSpecs(assetsDir, karpenterAssetsDir)
 	g.Expect(err).ToNot(HaveOccurred())
 
 	RunSpecs(t, "HyperShift API Integration Suite")

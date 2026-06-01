@@ -1,0 +1,31 @@
+name: Lint (Reusable)
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: arc-runner-set
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - run: |
+          if [ -n "${{ github.base_ref }}" ]; then
+            git fetch origin "${{ github.base_ref }}:${{ github.base_ref }}"
+          fi
+      - name: Use pre-built lint tools
+        run: |
+          if [ -d /opt/lint-tools ]; then
+            mkdir -p hack/tools/bin
+            cp /opt/lint-tools/golangci-lint hack/tools/bin/
+            cp /opt/lint-tools/kube-api-linter.so hack/tools/bin/
+            touch hack/tools/bin/golangci-lint hack/tools/bin/kube-api-linter.so
+          fi
+      - run: make lint

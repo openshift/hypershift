@@ -3,7 +3,7 @@ package dnsoperator
 import (
 	oapiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oapi"
 	component "github.com/openshift/hypershift/support/controlplane-component"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/podspec"
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
@@ -41,7 +41,7 @@ func NewComponent() component.ControlPlaneComponent {
 			MountPath: "/etc/kubernetes",
 		}).
 		WithDependencies(oapiv2.ComponentName).
-		InjectAvailabilityProberContainer(util.AvailabilityProberOpts{
+		InjectAvailabilityProberContainer(podspec.AvailabilityProberOpts{
 			KubeconfigVolumeName: component.ServiceAccountKubeconfigVolumeName,
 			RequiredAPIs: []schema.GroupVersionKind{
 				{Group: "operator.openshift.io", Version: "v1", Kind: "DNS"},

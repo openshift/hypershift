@@ -23,10 +23,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
-var autoNode = &hyperv1.AutoNode{
+var autoNode = hyperv1.AutoNode{
 	Provisioner: hyperv1.ProvisionerConfig{
 		Name: hyperv1.ProvisionerKarpenter,
-		Karpenter: &hyperv1.KarpenterConfig{
+		Karpenter: hyperv1.KarpenterConfig{
 			Platform: hyperv1.AWSPlatform,
 		},
 	},
@@ -47,21 +47,21 @@ func TestResolveKarpenterFinalizer(t *testing.T) {
 		expectError     bool
 	}{
 		{
-			name: "karpenter not enabled, no-op",
+			name: "When karpenter is not enabled and HCP has no finalizer it should no-op",
 			hc: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace},
 				Spec:       hyperv1.HostedClusterSpec{},
 			},
 		},
 		{
-			name: "HCP not found, no-op",
+			name: "When HCP is not found it should no-op",
 			hc: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace},
 				Spec:       hyperv1.HostedClusterSpec{AutoNode: autoNode},
 			},
 		},
 		{
-			name: "HCP exists without finalizer, no-op",
+			name: "When HCP exists without finalizer it should no-op",
 			hc: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace},
 				Spec:       hyperv1.HostedClusterSpec{AutoNode: autoNode},
@@ -74,7 +74,7 @@ func TestResolveKarpenterFinalizer(t *testing.T) {
 			expectFinalizer: ptr.To(false),
 		},
 		{
-			name: "KAS available, finalizer retained",
+			name: "When karpenter is enabled and KAS is available it should retain the finalizer",
 			hc: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace},
 				Spec:       hyperv1.HostedClusterSpec{AutoNode: autoNode},
@@ -86,7 +86,7 @@ func TestResolveKarpenterFinalizer(t *testing.T) {
 			expectFinalizer: ptr.To(true),
 		},
 		{
-			name: "KAS deployment missing, finalizer removed",
+			name: "When karpenter is enabled and KAS deployment is missing it should remove the finalizer",
 			hc: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace},
 				Spec:       hyperv1.HostedClusterSpec{AutoNode: autoNode},
@@ -97,7 +97,7 @@ func TestResolveKarpenterFinalizer(t *testing.T) {
 			expectFinalizer: ptr.To(false),
 		},
 		{
-			name: "KAS exists but not available, finalizer removed",
+			name: "When karpenter is enabled and KAS exists but is not available it should remove the finalizer",
 			hc: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace},
 				Spec:       hyperv1.HostedClusterSpec{AutoNode: autoNode},
@@ -109,7 +109,7 @@ func TestResolveKarpenterFinalizer(t *testing.T) {
 			expectFinalizer: ptr.To(false),
 		},
 		{
-			name: "KAS exists but no Available condition, finalizer removed",
+			name: "When karpenter is enabled and KAS exists but has no Available condition it should remove the finalizer",
 			hc: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace},
 				Spec:       hyperv1.HostedClusterSpec{AutoNode: autoNode},
@@ -122,6 +122,29 @@ func TestResolveKarpenterFinalizer(t *testing.T) {
 						Namespace: cpNamespace,
 					},
 				},
+			},
+			expectFinalizer: ptr.To(false),
+		},
+		{
+			name: "When karpenter is disabled and HCP has a stale finalizer it should remove the finalizer immediately",
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace},
+				Spec:       hyperv1.HostedClusterSpec{},
+			},
+			objects: []crclient.Object{
+				hcpWithFinalizer(hcName, cpNamespace),
+			},
+			expectFinalizer: ptr.To(false),
+		},
+		{
+			name: "When karpenter is disabled and KAS is still available it should remove the finalizer immediately",
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace},
+				Spec:       hyperv1.HostedClusterSpec{},
+			},
+			objects: []crclient.Object{
+				hcpWithFinalizer(hcName, cpNamespace),
+				kasDeployment(cpNamespace, true),
 			},
 			expectFinalizer: ptr.To(false),
 		},
@@ -252,10 +275,10 @@ func kasDeployment(namespace string, available bool) *appsv1.Deployment {
 func TestReconcileAutoNodeEnabledCondition(t *testing.T) {
 	hcpNamespace := "clusters-test"
 
-	karpenterEnabledAutoNode := &hyperv1.AutoNode{
+	karpenterEnabledAutoNode := hyperv1.AutoNode{
 		Provisioner: hyperv1.ProvisionerConfig{
 			Name: hyperv1.ProvisionerKarpenter,
-			Karpenter: &hyperv1.KarpenterConfig{
+			Karpenter: hyperv1.KarpenterConfig{
 				Platform: hyperv1.AWSPlatform,
 			},
 		},
@@ -274,14 +297,16 @@ func TestReconcileAutoNodeEnabledCondition(t *testing.T) {
 	}
 
 	tests := map[string]struct {
-		autoNode    *hyperv1.AutoNode
-		components  []hyperv1.ControlPlaneComponent
-		deployments []appsv1.Deployment
-		want        metav1.Condition
+		autoNode       hyperv1.AutoNode
+		components     []hyperv1.ControlPlaneComponent
+		deployments    []appsv1.Deployment
+		want           metav1.Condition
+		wantProgessing bool
 	}{
 		"When karpenter is enabled and components not yet created it should report progressing": {
-			autoNode:   karpenterEnabledAutoNode,
-			components: nil,
+			autoNode:       karpenterEnabledAutoNode,
+			components:     nil,
+			wantProgessing: true,
 			want: metav1.Condition{
 				Type:   string(hyperv1.AutoNodeEnabled),
 				Status: metav1.ConditionFalse,
@@ -296,6 +321,7 @@ func TestReconcileAutoNodeEnabledCondition(t *testing.T) {
 					Status:     hyperv1.ControlPlaneComponentStatus{Conditions: []metav1.Condition{rolloutCompleteTrue}},
 				},
 			},
+			wantProgessing: true,
 			want: metav1.Condition{
 				Type:   string(hyperv1.AutoNodeEnabled),
 				Status: metav1.ConditionFalse,
@@ -314,6 +340,7 @@ func TestReconcileAutoNodeEnabledCondition(t *testing.T) {
 					Status:     hyperv1.ControlPlaneComponentStatus{Conditions: []metav1.Condition{rolloutCompleteFalse}},
 				},
 			},
+			wantProgessing: true,
 			want: metav1.Condition{
 				Type:   string(hyperv1.AutoNodeEnabled),
 				Status: metav1.ConditionFalse,
@@ -339,11 +366,12 @@ func TestReconcileAutoNodeEnabledCondition(t *testing.T) {
 			},
 		},
 		"When karpenter is disabled and deployments are still present it should report progressing": {
-			autoNode: nil,
+			autoNode: hyperv1.AutoNode{},
 			deployments: []appsv1.Deployment{
 				{ObjectMeta: metav1.ObjectMeta{Name: karpenterv2.ComponentName, Namespace: hcpNamespace}},
 				{ObjectMeta: metav1.ObjectMeta{Name: karpenteroperatorv2.ComponentName, Namespace: hcpNamespace}},
 			},
+			wantProgessing: true,
 			want: metav1.Condition{
 				Type:   string(hyperv1.AutoNodeEnabled),
 				Status: metav1.ConditionFalse,
@@ -351,10 +379,11 @@ func TestReconcileAutoNodeEnabledCondition(t *testing.T) {
 			},
 		},
 		"When karpenter is disabled and only the karpenter deployment remains it should report progressing": {
-			autoNode: nil,
+			autoNode: hyperv1.AutoNode{},
 			deployments: []appsv1.Deployment{
 				{ObjectMeta: metav1.ObjectMeta{Name: karpenterv2.ComponentName, Namespace: hcpNamespace}},
 			},
+			wantProgessing: true,
 			want: metav1.Condition{
 				Type:   string(hyperv1.AutoNodeEnabled),
 				Status: metav1.ConditionFalse,
@@ -363,7 +392,7 @@ func TestReconcileAutoNodeEnabledCondition(t *testing.T) {
 		},
 		"When karpenter is disabled and CPC CRs remain but deployments are gone it should report not configured": {
 			// CPC CRs are deleted before pods terminate; once Deployments are gone teardown is complete.
-			autoNode: nil,
+			autoNode: hyperv1.AutoNode{},
 			components: []hyperv1.ControlPlaneComponent{
 				{
 					ObjectMeta: metav1.ObjectMeta{Name: karpenteroperatorv2.ComponentName, Namespace: hcpNamespace},
@@ -378,7 +407,7 @@ func TestReconcileAutoNodeEnabledCondition(t *testing.T) {
 			},
 		},
 		"When karpenter is disabled and no deployments are present it should report not configured": {
-			autoNode: nil,
+			autoNode: hyperv1.AutoNode{},
 			want: metav1.Condition{
 				Type:   string(hyperv1.AutoNodeEnabled),
 				Status: metav1.ConditionFalse,
@@ -416,13 +445,16 @@ func TestReconcileAutoNodeEnabledCondition(t *testing.T) {
 				},
 			}
 
-			got := r.reconcileAutoNodeEnabledCondition(context.Background(), hcluster, hcpNamespace)
+			got, progressing := r.reconcileAutoNodeEnabledCondition(context.Background(), hcluster, hcpNamespace)
 			got.ObservedGeneration = 0
 			got.Message = ""
 			got.LastTransitionTime = metav1.Time{}
 
 			if !equality.Semantic.DeepEqual(tc.want, got) {
-				t.Errorf("expected %+v, got %+v", tc.want, got)
+				t.Errorf("condition: expected %+v, got %+v", tc.want, got)
+			}
+			if progressing != tc.wantProgessing {
+				t.Errorf("progressing: expected %v, got %v", tc.wantProgessing, progressing)
 			}
 		})
 	}

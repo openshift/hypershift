@@ -3,7 +3,7 @@ package clusterpolicy
 import (
 	oapiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oapi"
 	component "github.com/openshift/hypershift/support/controlplane-component"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/podspec"
 )
 
 const (
@@ -37,6 +37,6 @@ func NewComponent() component.ControlPlaneComponent {
 			component.WithAdaptFunction(adaptConfigMap),
 		).
 		WithDependencies(oapiv2.ComponentName).
-		InjectAvailabilityProberContainer(util.AvailabilityProberOpts{}).
+		InjectAvailabilityProberContainer(podspec.AvailabilityProberOpts{}).
 		Build()
 }

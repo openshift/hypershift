@@ -39,9 +39,8 @@ func (f *fakeRegistryClientImageMetadataProvider) ImageMetadata(ctx context.Cont
 }
 
 func (f *fakeRegistryClientImageMetadataProvider) GetManifest(ctx context.Context, imageRef string, pullSecret []byte) (distribution.Manifest, error) {
-	_, _, err := GetRepoSetup(ctx, imageRef, pullSecret)
-	if err != nil {
-		return nil, fmt.Errorf("failed to retrieve manifest %s: %w", imageRef, err)
+	if len(pullSecret) == 0 {
+		return nil, fmt.Errorf("empty pull secret")
 	}
 	return &fakeManifest{
 		f.mediaType,
@@ -49,11 +48,11 @@ func (f *fakeRegistryClientImageMetadataProvider) GetManifest(ctx context.Contex
 }
 
 func (f *fakeRegistryClientImageMetadataProvider) GetDigest(ctx context.Context, imageRef string, pullSecret []byte) (digest.Digest, *reference.DockerImageReference, error) {
-	var err error
-	_, f.ref, err = GetRepoSetup(ctx, imageRef, pullSecret)
+	ref, err := reference.Parse(imageRef)
 	if err != nil {
-		return "", nil, fmt.Errorf("failed to retrieve manifest %s: %w", imageRef, err)
+		return "", nil, fmt.Errorf("failed to parse image reference %s: %w", imageRef, err)
 	}
+	f.ref = &ref
 	f.ref.ID = f.digest
 	return digest.Digest(f.digest), f.ref, nil
 }

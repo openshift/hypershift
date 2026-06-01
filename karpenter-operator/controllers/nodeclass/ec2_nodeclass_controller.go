@@ -10,11 +10,12 @@ import (
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1beta1"
+	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
 	"github.com/openshift/hypershift/karpenter-operator/controllers/karpenter/assets"
 	supportassets "github.com/openshift/hypershift/support/assets"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/k8sutil"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
@@ -101,6 +102,8 @@ func (r *EC2NodeClassReconciler) SetupWithManager(ctx context.Context, mgr ctrl.
 			},
 		)).
 		Watches(&awskarpenterv1.EC2NodeClass{}, &handler.EnqueueRequestForObject{}).
+		Watches(&admissionv1.ValidatingAdmissionPolicy{}, handler.EnqueueRequestsFromMapFunc(r.mapVAPToOpenShiftEC2NodeClasses)).
+		Watches(&admissionv1.ValidatingAdmissionPolicyBinding{}, handler.EnqueueRequestsFromMapFunc(r.mapVAPBindingToOpenShiftEC2NodeClasses)).
 		// Watch secrets in the management cluster and reconcile all ec2nodeclasses
 		WatchesRawSource(source.Kind[client.Object](managementCluster.GetCache(), &corev1.Secret{},
 			handler.EnqueueRequestsFromMapFunc(r.mapToOpenShiftEC2NodeClasses),
@@ -150,7 +153,7 @@ func (r *EC2NodeClassReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	}
 
 	if !openshiftEC2NodeClass.DeletionTimestamp.IsZero() {
-		exists, err := util.DeleteIfNeeded(ctx, r.guestClient, ec2NodeClass)
+		exists, err := k8sutil.DeleteIfNeeded(ctx, r.guestClient, ec2NodeClass)
 		if err != nil {
 			return ctrl.Result{}, err
 		}
@@ -222,10 +225,12 @@ func (r *EC2NodeClassReconciler) reconcileCRDs(ctx context.Context, onlyCreate b
 	errs := []error{}
 	var op controllerutil.OperationResult
 	var err error
-	for _, crd := range []*apiextensionsv1.CustomResourceDefinition{
+	for _, desired := range []*apiextensionsv1.CustomResourceDefinition{
 		crdEC2NodeClass,
 		crdOpenshiftEC2NodeClass,
 	} {
+		// We need to deep copy because Create/CreateOrUpdate mutates the object
+		crd := desired.DeepCopy()
 		if onlyCreate {
 			if err := r.guestClient.Create(ctx, crd); err != nil {
 				if !apierrors.IsAlreadyExists(err) {
@@ -234,6 +239,7 @@ func (r *EC2NodeClassReconciler) reconcileCRDs(ctx context.Context, onlyCreate b
 			}
 		} else {
 			op, err = r.CreateOrUpdate(ctx, r.guestClient, crd, func() error {
+				crd.Spec = desired.Spec
 				return nil
 			})
 			if err != nil {
@@ -282,13 +288,14 @@ func reconcileEC2NodeClass(ctx context.Context, ec2NodeClass *awskarpenterv1.EC2
 		UserData:                         ptr.To(string(userDataSecret.Data["value"])),
 		AMIFamily:                        ptr.To("Custom"),
 		AMISelectorTerms:                 amiSelectorTerms,
-		AssociatePublicIPAddress:         openshiftEC2NodeClass.Spec.KarpenterAssociatePublicIPAddress(),
+		AssociatePublicIPAddress:         karpenterAssociatePublicIPAddressFromNodeClassSpec(openshiftEC2NodeClass.Spec),
 		Tags:                             mergeEC2NodeClassTags(ctx, openshiftEC2NodeClass, hcp),
-		DetailedMonitoring:               openshiftEC2NodeClass.Spec.KarpenterDetailedMonitoring(),
-		BlockDeviceMappings:              openshiftEC2NodeClass.Spec.KarpenterBlockDeviceMapping(),
-		InstanceStorePolicy:              openshiftEC2NodeClass.Spec.KarpenterInstanceStorePolicy(),
-		MetadataOptions:                  openshiftEC2NodeClass.Spec.KarpenterMetadataOptions(),
-		CapacityReservationSelectorTerms: openshiftEC2NodeClass.Spec.KarpenterCapacityReservationSelectorTerms(),
+		DetailedMonitoring:               karpenterDetailedMonitoringFromNodeClassSpec(openshiftEC2NodeClass.Spec),
+		BlockDeviceMappings:              karpenterBlockDeviceMappingFromNodeClassSpec(openshiftEC2NodeClass.Spec),
+		InstanceStorePolicy:              karpenterInstanceStorePolicyFromNodeClassSpec(openshiftEC2NodeClass.Spec),
+		MetadataOptions:                  karpenterMetadataOptionsFromNodeClassSpec(openshiftEC2NodeClass.Spec),
+		CapacityReservationSelectorTerms: karpenterCapacityReservationSelectorTermsFromNodeClassSpec(openshiftEC2NodeClass.Spec),
+		Kubelet:                          karpenterKubeletConfigurationFromNodeClassSpec(openshiftEC2NodeClass.Spec),
 	}
 
 	// Set instance profile from HostedCluster annotation (platform-controlled)
@@ -480,7 +487,7 @@ func (r *EC2NodeClassReconciler) reconcileKarpenterSubnetsConfigMap(ctx context.
 	// delete the ConfigMap (no NodeClasses exist, or none have subnets in status yet).
 	// The ConfigMap is also cleaned up automatically via owner reference when HCP is deleted.
 	if subnetIDSet.Len() == 0 {
-		if _, err := util.DeleteIfNeeded(ctx, r.managementClient, configMap); err != nil {
+		if _, err := k8sutil.DeleteIfNeeded(ctx, r.managementClient, configMap); err != nil {
 			return fmt.Errorf("failed to delete karpenter subnets configmap: %w", err)
 		}
 		log.Info("Deleted karpenter subnets configmap (no OpenshiftEC2NodeClass resources with resolved subnets)")
@@ -669,6 +676,20 @@ func (r *EC2NodeClassReconciler) hcpAnnotationPredicate() predicate.Predicate {
 		DeleteFunc:  func(e event.DeleteEvent) bool { return false },
 		GenericFunc: func(e event.GenericEvent) bool { return false },
 	}
+}
+
+func (r *EC2NodeClassReconciler) mapVAPToOpenShiftEC2NodeClasses(ctx context.Context, o client.Object) []ctrl.Request {
+	if o.GetName() != "karpenter.ec2nodeclass.hypershift.io" {
+		return nil
+	}
+	return r.mapToOpenShiftEC2NodeClasses(ctx, o)
+}
+
+func (r *EC2NodeClassReconciler) mapVAPBindingToOpenShiftEC2NodeClasses(ctx context.Context, o client.Object) []ctrl.Request {
+	if o.GetName() != "karpenter-binding.ec2nodeclass.hypershift.io" {
+		return nil
+	}
+	return r.mapToOpenShiftEC2NodeClasses(ctx, o)
 }
 
 // mapToOpenShiftEC2NodeClasses maps a request to all OpenshiftEC2NodeClass resources

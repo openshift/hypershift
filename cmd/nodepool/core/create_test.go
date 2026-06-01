@@ -189,7 +189,7 @@ func TestValidMinorVersionCompatibility(t *testing.T) {
 			controlPlaneVersion:  "4.18.0",
 			nodePoolReleaseImage: "quay.io/openshift-release-dev/ocp-release:5.0.0-x86_64",
 			nodePoolVersion:      "5.0.0",
-			expectedError:        "NodePool major version 5 must match HostedCluster major version 4",
+			expectedError:        "NodePool version 5.0.0 cannot be higher than the HostedCluster version 4.18.0",
 		},
 	}
 

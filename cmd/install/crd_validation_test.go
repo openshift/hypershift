@@ -8,7 +8,7 @@ import (
 
 	. "github.com/onsi/gomega"
 
-	"github.com/openshift/hypershift/cmd/install/assets"
+	crdassets "github.com/openshift/hypershift/cmd/install/assets/crds"
 
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/util/yaml"
@@ -89,7 +89,7 @@ func TestHostedClusterSchedulerProfileCustomizationsDynamicResourceAllocationFie
 			g := NewGomegaWithT(t)
 
 			// Load the CRD directly from embedded filesystem to avoid parsing all CRDs
-			f, err := assets.CRDS.Open(crdPath)
+			f, err := crdassets.CRDS.Open(crdPath)
 			g.Expect(err).ToNot(HaveOccurred(), "Failed to open CRD file %s", crdPath)
 			defer f.Close()
 

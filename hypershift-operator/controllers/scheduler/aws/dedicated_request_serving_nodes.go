@@ -10,6 +10,8 @@ import (
 	schedulingv1alpha1 "github.com/openshift/hypershift/api/scheduling/v1alpha1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
 	schedulerutil "github.com/openshift/hypershift/hypershift-operator/controllers/scheduler/util"
+	"github.com/openshift/hypershift/support/k8sutil"
+	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
 
@@ -160,7 +162,6 @@ func (r *DedicatedServingComponentScheduler) Reconcile(ctx context.Context, req 
 		return ctrl.Result{}, nil
 	}
 
-	// Find existing dedicated serving content Nodes for this HC.
 	dedicatedNodesForHC := &corev1.NodeList{}
 	if err := r.List(ctx, dedicatedNodesForHC,
 		client.HasLabels{hyperv1.RequestServingComponentLabel},
@@ -184,12 +185,28 @@ func (r *DedicatedServingComponentScheduler) Reconcile(ctx context.Context, req 
 		return ctrl.Result{}, fmt.Errorf("failed to list nodes: %w", err)
 	}
 
+	nodesToUse := r.findExistingNodesForCluster(ctx, nodeList, hcluster)
+	if len(nodesToUse) < 2 {
+		r.findAvailableNodes(ctx, nodeList, nodesToUse)
+	}
+	if len(nodesToUse) < 2 {
+		return ctrl.Result{}, fmt.Errorf("failed to find enough available nodes for cluster, found %d", len(nodesToUse))
+	}
+
+	if err := r.labelAndTaintNodes(ctx, hcluster, nodesToUse); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	return ctrl.Result{}, r.updateHostedClusterAnnotations(ctx, hcluster, nodesToUse)
+}
+
+func (r *DedicatedServingComponentScheduler) findExistingNodesForCluster(ctx context.Context, nodeList *corev1.NodeList, hcluster *hyperv1.HostedCluster) map[string]*corev1.Node {
+	log := ctrl.LoggerFrom(ctx)
 	nodesToUse := map[string]*corev1.Node{}
-	// first, find any existing nodes already labeled for this hostedcluster
+	hcValue := fmt.Sprintf("%s-%s", hcluster.Namespace, hcluster.Name)
 	for i := range nodeList.Items {
 		node := &nodeList.Items[i]
 		if !node.DeletionTimestamp.IsZero() {
-			// Skip nodes that are being deleted
 			continue
 		}
 		zone, hasZoneLabel := node.Labels["topology.kubernetes.io/zone"]
@@ -200,76 +217,59 @@ func (r *DedicatedServingComponentScheduler) Reconcile(ctx context.Context, req 
 		if !hasHCLabel {
 			continue
 		}
-		if hcLabel == fmt.Sprintf("%s-%s", hcluster.Namespace, hcluster.Name) {
+		if hcLabel == hcValue {
 			nodesToUse[zone] = node
 			log.Info("Found existing node for hosted cluster", "node", node.Name, "zone", zone)
 		}
 	}
+	return nodesToUse
+}
 
-	if len(nodesToUse) < 2 {
-		for i := range nodeList.Items {
-			node := &nodeList.Items[i]
-			zone, hasZoneLabel := node.Labels["topology.kubernetes.io/zone"]
-			if !hasZoneLabel {
-				// No zone has been set on the node, we cannot use it
-				continue
-			}
-
-			_, hasHCLabel := node.Labels[hyperv1.HostedClusterLabel]
-			if hasHCLabel {
-				// The node has been allocated to a different hosted cluster, skip it
-				continue
-			}
-
-			if nodesToUse[zone] == nil {
-
-				// if the candidate Node is not paired with the existing node to use then skip.
-				paired := false
-				if len(nodesToUse) > 0 {
-					for _, n := range nodesToUse {
-						if n.Labels[OSDFleetManagerPairedNodesLabel] == node.Labels[OSDFleetManagerPairedNodesLabel] {
-							paired = true
-						}
-					}
-					if !paired {
-						continue
-					}
-				}
-
-				log.Info("Found node to allocate for hosted cluster", "node", node.Name, "zone", zone)
-				nodesToUse[zone] = node
-			}
-
-			if len(nodesToUse) == 2 {
-				break
-			}
+func (r *DedicatedServingComponentScheduler) findAvailableNodes(ctx context.Context, nodeList *corev1.NodeList, nodesToUse map[string]*corev1.Node) {
+	log := ctrl.LoggerFrom(ctx)
+	for i := range nodeList.Items {
+		node := &nodeList.Items[i]
+		zone, hasZoneLabel := node.Labels["topology.kubernetes.io/zone"]
+		if !hasZoneLabel {
+			continue
+		}
+		_, hasHCLabel := node.Labels[hyperv1.HostedClusterLabel]
+		if hasHCLabel {
+			continue
+		}
+		if nodesToUse[zone] != nil {
+			continue
+		}
+		if !isNodePairedWith(node, nodesToUse) {
+			continue
+		}
+		log.Info("Found node to allocate for hosted cluster", "node", node.Name, "zone", zone)
+		nodesToUse[zone] = node
+		if len(nodesToUse) == 2 {
+			break
 		}
 	}
-	if len(nodesToUse) < 2 {
-		return ctrl.Result{}, fmt.Errorf("failed to find enough available nodes for cluster, found %d", len(nodesToUse))
-	}
+}
 
-	nodeGoMemLimit := ""
-	lbSubnets := ""
-	pairLabel := ""
+func isNodePairedWith(candidate *corev1.Node, existing map[string]*corev1.Node) bool {
+	if len(existing) == 0 {
+		return true
+	}
+	for _, n := range existing {
+		if n.Labels[OSDFleetManagerPairedNodesLabel] == candidate.Labels[OSDFleetManagerPairedNodesLabel] {
+			return true
+		}
+	}
+	return false
+}
+
+func (r *DedicatedServingComponentScheduler) labelAndTaintNodes(ctx context.Context, hcluster *hyperv1.HostedCluster, nodesToUse map[string]*corev1.Node) error {
+	log := ctrl.LoggerFrom(ctx)
+	hcNameValue := fmt.Sprintf("%s-%s", hcluster.Namespace, hcluster.Name)
 	for _, node := range nodesToUse {
 		originalNode := node.DeepCopy()
 
-		if node.Labels[schedulerutil.GoMemLimitLabel] != "" && nodeGoMemLimit == "" {
-			nodeGoMemLimit = node.Labels[schedulerutil.GoMemLimitLabel]
-		}
-		if node.Labels[schedulerutil.LBSubnetsLabel] != "" && lbSubnets == "" {
-			lbSubnets = node.Labels[schedulerutil.LBSubnetsLabel]
-			// If subnets are separated by periods, replace them with commas
-			lbSubnets = strings.ReplaceAll(lbSubnets, ".", ",")
-		}
-		if node.Labels[OSDFleetManagerPairedNodesLabel] != "" && pairLabel == "" {
-			pairLabel = node.Labels[OSDFleetManagerPairedNodesLabel]
-		}
-
-		// Add taint and labels for specific hosted cluster
 		hasTaint := false
-		hcNameValue := fmt.Sprintf("%s-%s", hcluster.Namespace, hcluster.Name)
 		for i := range node.Spec.Taints {
 			if node.Spec.Taints[i].Key == HostedClusterTaint {
 				node.Spec.Taints[i].Value = hcNameValue
@@ -290,12 +290,32 @@ func (r *DedicatedServingComponentScheduler) Reconcile(ctx context.Context, req 
 		node.Labels[HostedClusterNamespaceLabel] = hcluster.Namespace
 
 		if err := r.Patch(ctx, node, client.MergeFromWithOptions(originalNode, client.MergeFromWithOptimisticLock{})); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to update labels and taints on node %s: %w", node.Name, err)
+			return fmt.Errorf("failed to update labels and taints on node %s: %w", node.Name, err)
 		}
 		log.Info("Node tainted and labeled for hosted cluster", "node", node.Name)
 	}
+	return nil
+}
 
-	// finally update HostedCluster with new annotation
+func (r *DedicatedServingComponentScheduler) updateHostedClusterAnnotations(ctx context.Context, hcluster *hyperv1.HostedCluster, nodesToUse map[string]*corev1.Node) error {
+	log := ctrl.LoggerFrom(ctx)
+	nodeGoMemLimit := ""
+	lbSubnets := ""
+	pairLabel := ""
+	for _, node := range nodesToUse {
+		if node.Labels[schedulerutil.GoMemLimitLabel] != "" && nodeGoMemLimit == "" {
+			nodeGoMemLimit = node.Labels[schedulerutil.GoMemLimitLabel]
+		}
+		if node.Labels[schedulerutil.LBSubnetsLabel] != "" && lbSubnets == "" {
+			lbSubnets = node.Labels[schedulerutil.LBSubnetsLabel]
+			// If subnets are separated by periods, replace them with commas
+			lbSubnets = strings.ReplaceAll(lbSubnets, ".", ",")
+		}
+		if node.Labels[OSDFleetManagerPairedNodesLabel] != "" && pairLabel == "" {
+			pairLabel = node.Labels[OSDFleetManagerPairedNodesLabel]
+		}
+	}
+
 	log.Info("Setting scheduled annotation on hosted cluster")
 	originalHcluster := hcluster.DeepCopy()
 	hcluster.Annotations[hyperv1.HostedClusterScheduledAnnotation] = "true"
@@ -310,10 +330,9 @@ func (r *DedicatedServingComponentScheduler) Reconcile(ctx context.Context, req 
 			fmt.Sprintf("%s=%s", OSDFleetManagerPairedNodesLabel, pairLabel)
 	}
 	if err := r.Patch(ctx, hcluster, client.MergeFrom(originalHcluster)); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to update hostedcluster annotation: %w", err)
+		return fmt.Errorf("failed to update hostedcluster annotation: %w", err)
 	}
-
-	return ctrl.Result{}, nil
+	return nil
 }
 
 const requestServingSchedulerAndSizerName = "DedicatedServingComponentSchedulerAndSizer"
@@ -429,26 +448,7 @@ func (r *DedicatedServingComponentSchedulerAndSizer) Reconcile(ctx context.Conte
 		return ctrl.Result{}, fmt.Errorf("failed to get cluster %q: %w", req.NamespacedName, err)
 	}
 	if !hc.DeletionTimestamp.IsZero() {
-		log.Info("hostedcluster is deleted, cleaning up")
-		if controllerutil.ContainsFinalizer(hc, schedulerFinalizer) {
-			if controllerutil.ContainsFinalizer(hc, hostedcluster.HostedClusterFinalizer) {
-				// Wait until the hosted cluster finalizer is removed
-				return ctrl.Result{}, nil
-			}
-			// Ensure that any placeholder deployment is deleted
-			if err := r.deletePlaceholderDeployment(ctx, hc); err != nil {
-				return ctrl.Result{}, err
-			}
-			if err := r.deletePairConfigMaps(ctx, hc); err != nil {
-				return ctrl.Result{}, err
-			}
-			controllerutil.RemoveFinalizer(hc, schedulerFinalizer)
-			if err := r.Update(ctx, hc); err != nil {
-				return ctrl.Result{}, err
-			}
-		}
-
-		return ctrl.Result{}, nil
+		return r.handleDeletion(ctx, hc)
 	}
 	if hcTopology := hc.Annotations[hyperv1.TopologyAnnotation]; hcTopology != hyperv1.DedicatedRequestServingComponentsTopology {
 		log.Info("hostedcluster does not use isolated request serving components, nothing to do")
@@ -465,7 +465,7 @@ func (r *DedicatedServingComponentSchedulerAndSizer) Reconcile(ctx context.Conte
 	isPaused, duration, err := util.ProcessPausedUntilField(hc.Spec.PausedUntil, time.Now())
 	if err != nil {
 		log.Error(err, "error processing hosted cluster paused field")
-		return ctrl.Result{}, nil // user needs to reformat the field, returning error is useless
+		return ctrl.Result{}, nil
 	}
 	if isPaused {
 		log.Info("Reconciliation paused", "pausedUntil", *hc.Spec.PausedUntil)
@@ -489,34 +489,11 @@ func (r *DedicatedServingComponentSchedulerAndSizer) Reconcile(ctx context.Conte
 		return ctrl.Result{}, nil
 	}
 
-	// Find existing dedicated serving content Nodes for this HC.
-	dedicatedNodes := &corev1.NodeList{}
-	if err := r.List(ctx, dedicatedNodes,
-		client.HasLabels{hyperv1.RequestServingComponentLabel},
-	); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to list nodes: %w", err)
-	}
-
-	var goalNodes, availableNodes []corev1.Node
-	var pairLabel string
-	for _, node := range dedicatedNodes.Items {
-		if !node.DeletionTimestamp.IsZero() {
-			continue
-		}
-		if node.Labels[hyperv1.HostedClusterLabel] == clusterKey(hc) {
-			if node.Labels[OSDFleetManagerPairedNodesLabel] != "" && pairLabel == "" {
-				pairLabel = node.Labels[OSDFleetManagerPairedNodesLabel]
-			}
-			if node.Labels[hyperv1.NodeSizeLabel] == desiredSize && pairLabel != "" && node.Labels[OSDFleetManagerPairedNodesLabel] == pairLabel && node.DeletionTimestamp.IsZero() {
-				goalNodes = append(goalNodes, node)
-			}
-		} else if node.Labels[hyperv1.HostedClusterLabel] == "" {
-			availableNodes = append(availableNodes, node)
-		}
+	goalNodes, availableNodes, pairLabel, err := r.classifyDedicatedNodes(ctx, hc, desiredSize)
+	if err != nil {
+		return ctrl.Result{}, err
 	}
 	if pairLabel == "" {
-		// If no nodes were labeled, but only a configmap was created, find the pair label
-		// to use from the configmaps
 		pairLabel, err = r.pairLabelFromConfigMaps(ctx, hc.Namespace, hc.Name)
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to get pair label from configmaps: %w", err)
@@ -525,72 +502,12 @@ func (r *DedicatedServingComponentSchedulerAndSizer) Reconcile(ctx context.Conte
 
 	log = log.WithValues("pairLabel", pairLabel)
 
-	// Find any nodes that are in the same fleet manager group and have the right size
-	// but are not labeled with the hosted cluster label. Ensure that these nodes are labeled
-	// and tainted with the hosted cluster label. This can happen if not all nodes were labeled/tainted
-	// when they were initially selected.
-	if pairLabel != "" {
-		if err := r.ensurePairConfigMap(ctx, pairLabel, hc.Namespace, hc.Name); err != nil {
-			return ctrl.Result{}, fmt.Errorf("cannot ensure pair label %s config map: %w", pairLabel, err)
-		}
-		var needClusterLabel []corev1.Node
-		for _, node := range availableNodes {
-			if node.Labels[hyperv1.NodeSizeLabel] == desiredSize && node.Labels[OSDFleetManagerPairedNodesLabel] == pairLabel {
-				needClusterLabel = append(needClusterLabel, node)
-			}
-		}
-		if len(needClusterLabel) > 0 {
-			log.Info("backfilling node labels")
-			for _, node := range needClusterLabel {
-				if err := r.ensureHostedClusterLabelAndTaint(ctx, hc, &node); err != nil {
-					return ctrl.Result{}, err
-				}
-			}
-			return ctrl.Result{Requeue: true}, nil
-		}
-	} else {
-		// If there isn't a current pair label, then we can select from available nodes selected by placeholders.
-		sizeConfig := schedulerutil.SizeConfiguration(&config, desiredSize)
-		if sizeConfig == nil {
-			return ctrl.Result{}, fmt.Errorf("could not find size configuration for size %s", desiredSize)
-		}
-
-		// If placeholders are present, use those
-		if sizeConfig.Management != nil && sizeConfig.Management.Placeholders > 0 {
-			candidateNodes, err := r.nodesFromPlaceholders(ctx, desiredSize)
-			if err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to get nodes from placeholders: %w", err)
-			}
-			if len(candidateNodes) > 0 {
-				pairLabel = candidateNodes[0].Labels[OSDFleetManagerPairedNodesLabel]
-				if pairLabel == "" {
-					return ctrl.Result{}, fmt.Errorf("node %s has no pair label", candidateNodes[0].Name)
-				}
-				log.WithValues("pairLabel", candidateNodes[0].Labels[OSDFleetManagerPairedNodesLabel]).Info("claiming candidate nodes")
-				if err := r.ensurePairConfigMap(ctx, pairLabel, hc.Namespace, hc.Name); err != nil {
-					return ctrl.Result{}, fmt.Errorf("cannot ensure pair label %s config map: %w", pairLabel, err)
-				}
-				for _, node := range candidateNodes {
-					if err := r.ensureHostedClusterLabelAndTaint(ctx, hc, &node); err != nil {
-						return ctrl.Result{}, err
-					}
-				}
-				return ctrl.Result{Requeue: true}, nil
-			}
-		}
+	if result, done, err := r.backfillOrClaimNodes(ctx, hc, desiredSize, pairLabel, availableNodes, &config); done {
+		return result, err
 	}
 
-	nodeNamesByZone := map[string]string{}
-	nodesByZone := map[string]corev1.Node{}
-	for _, node := range goalNodes {
-		if zone := node.Labels[corev1.LabelTopologyZone]; zone != "" {
-			if _, hasNode := nodesByZone[zone]; !hasNode {
-				nodesByZone[zone] = node
-				nodeNamesByZone[zone] = node.Name
-			}
-		}
-	}
-	log = log.WithValues("nodes", nodeNamesByZone)
+	nodesByZone := r.goalNodesByZone(goalNodes)
+	log = log.WithValues("nodes", nodeNamesByZoneMap(nodesByZone))
 
 	if len(nodesByZone) > 1 {
 		log.Info("sufficient nodes exist for placement")
@@ -606,7 +523,142 @@ func (r *DedicatedServingComponentSchedulerAndSizer) Reconcile(ctx context.Conte
 		return ctrl.Result{}, nil
 	}
 
-	// Create a deployment to ensure nodes of the right size are created
+	return r.deployAndLabelPlaceholderNodes(ctx, hc, desiredSize, pairLabel, nodesByZone)
+}
+
+func (r *DedicatedServingComponentSchedulerAndSizer) handleDeletion(ctx context.Context, hc *hyperv1.HostedCluster) (ctrl.Result, error) {
+	log := ctrl.LoggerFrom(ctx)
+	log.Info("hostedcluster is deleted, cleaning up")
+	if controllerutil.ContainsFinalizer(hc, schedulerFinalizer) {
+		if controllerutil.ContainsFinalizer(hc, hostedcluster.HostedClusterFinalizer) {
+			return ctrl.Result{}, nil
+		}
+		if err := r.deletePlaceholderDeployment(ctx, hc); err != nil {
+			return ctrl.Result{}, err
+		}
+		if err := r.deletePairConfigMaps(ctx, hc); err != nil {
+			return ctrl.Result{}, err
+		}
+		controllerutil.RemoveFinalizer(hc, schedulerFinalizer)
+		if err := r.Update(ctx, hc); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+	return ctrl.Result{}, nil
+}
+
+func (r *DedicatedServingComponentSchedulerAndSizer) classifyDedicatedNodes(ctx context.Context, hc *hyperv1.HostedCluster, desiredSize string) (goalNodes, availableNodes []corev1.Node, pairLabel string, err error) {
+	dedicatedNodes := &corev1.NodeList{}
+	if err := r.List(ctx, dedicatedNodes, client.HasLabels{hyperv1.RequestServingComponentLabel}); err != nil {
+		return nil, nil, "", fmt.Errorf("failed to list nodes: %w", err)
+	}
+	for _, node := range dedicatedNodes.Items {
+		if !node.DeletionTimestamp.IsZero() {
+			continue
+		}
+		if node.Labels[hyperv1.HostedClusterLabel] == clusterKey(hc) {
+			if node.Labels[OSDFleetManagerPairedNodesLabel] != "" && pairLabel == "" {
+				pairLabel = node.Labels[OSDFleetManagerPairedNodesLabel]
+			}
+			if node.Labels[hyperv1.NodeSizeLabel] == desiredSize && pairLabel != "" && node.Labels[OSDFleetManagerPairedNodesLabel] == pairLabel && node.DeletionTimestamp.IsZero() {
+				goalNodes = append(goalNodes, node)
+			}
+		} else if node.Labels[hyperv1.HostedClusterLabel] == "" {
+			availableNodes = append(availableNodes, node)
+		}
+	}
+	return goalNodes, availableNodes, pairLabel, nil
+}
+
+func (r *DedicatedServingComponentSchedulerAndSizer) backfillOrClaimNodes(ctx context.Context, hc *hyperv1.HostedCluster, desiredSize, pairLabel string, availableNodes []corev1.Node, config *schedulingv1alpha1.ClusterSizingConfiguration) (ctrl.Result, bool, error) {
+	log := ctrl.LoggerFrom(ctx)
+	if pairLabel != "" {
+		if err := r.ensurePairConfigMap(ctx, pairLabel, hc.Namespace, hc.Name); err != nil {
+			return ctrl.Result{}, true, fmt.Errorf("cannot ensure pair label %s config map: %w", pairLabel, err)
+		}
+		var needClusterLabel []corev1.Node
+		for _, node := range availableNodes {
+			if node.Labels[hyperv1.NodeSizeLabel] == desiredSize && node.Labels[OSDFleetManagerPairedNodesLabel] == pairLabel {
+				needClusterLabel = append(needClusterLabel, node)
+			}
+		}
+		// Find any nodes that are in the same fleet manager group and have the right size
+		// but are not labeled with the hosted cluster label. Ensure that these nodes are labeled
+		// and tainted with the hosted cluster label. This can happen if not all nodes were labeled/tainted
+		// when they were initially selected.
+		if len(needClusterLabel) > 0 {
+			log.Info("backfilling node labels")
+			for _, node := range needClusterLabel {
+				if err := r.ensureHostedClusterLabelAndTaint(ctx, hc, &node); err != nil {
+					return ctrl.Result{}, true, err
+				}
+			}
+			return ctrl.Result{Requeue: true}, true, nil
+		}
+		return ctrl.Result{}, false, nil
+	}
+
+	result, claimed, err := r.claimPlaceholderNodes(ctx, hc, desiredSize, config)
+	if claimed {
+		return result, true, err
+	}
+	return ctrl.Result{}, false, nil
+}
+
+func (r *DedicatedServingComponentSchedulerAndSizer) claimPlaceholderNodes(ctx context.Context, hc *hyperv1.HostedCluster, desiredSize string, config *schedulingv1alpha1.ClusterSizingConfiguration) (ctrl.Result, bool, error) {
+	log := ctrl.LoggerFrom(ctx)
+	sizeConfig := schedulerutil.SizeConfiguration(config, desiredSize)
+	if sizeConfig == nil {
+		return ctrl.Result{}, true, fmt.Errorf("could not find size configuration for size %s", desiredSize)
+	}
+	if sizeConfig.Management == nil || sizeConfig.Management.Placeholders <= 0 {
+		return ctrl.Result{}, false, nil
+	}
+	candidateNodes, err := r.nodesFromPlaceholders(ctx, desiredSize)
+	if err != nil {
+		return ctrl.Result{}, true, fmt.Errorf("failed to get nodes from placeholders: %w", err)
+	}
+	if len(candidateNodes) == 0 {
+		return ctrl.Result{}, false, nil
+	}
+	pairLabel := candidateNodes[0].Labels[OSDFleetManagerPairedNodesLabel]
+	if pairLabel == "" {
+		return ctrl.Result{}, true, fmt.Errorf("node %s has no pair label", candidateNodes[0].Name)
+	}
+	log.WithValues("pairLabel", pairLabel).Info("claiming candidate nodes")
+	if err := r.ensurePairConfigMap(ctx, pairLabel, hc.Namespace, hc.Name); err != nil {
+		return ctrl.Result{}, true, fmt.Errorf("cannot ensure pair label %s config map: %w", pairLabel, err)
+	}
+	for _, node := range candidateNodes {
+		if err := r.ensureHostedClusterLabelAndTaint(ctx, hc, &node); err != nil {
+			return ctrl.Result{}, true, err
+		}
+	}
+	return ctrl.Result{Requeue: true}, true, nil
+}
+
+func (r *DedicatedServingComponentSchedulerAndSizer) goalNodesByZone(goalNodes []corev1.Node) map[string]corev1.Node {
+	nodesByZone := map[string]corev1.Node{}
+	for _, node := range goalNodes {
+		if zone := node.Labels[corev1.LabelTopologyZone]; zone != "" {
+			if _, hasNode := nodesByZone[zone]; !hasNode {
+				nodesByZone[zone] = node
+			}
+		}
+	}
+	return nodesByZone
+}
+
+func nodeNamesByZoneMap(nodesByZone map[string]corev1.Node) map[string]string {
+	result := map[string]string{}
+	for zone, node := range nodesByZone {
+		result[zone] = node.Name
+	}
+	return result
+}
+
+func (r *DedicatedServingComponentSchedulerAndSizer) deployAndLabelPlaceholderNodes(ctx context.Context, hc *hyperv1.HostedCluster, desiredSize, pairLabel string, nodesByZone map[string]corev1.Node) (ctrl.Result, error) {
+	log := ctrl.LoggerFrom(ctx)
 	nodesNeeded := 2 - len(nodesByZone)
 	if nodesNeeded < 0 {
 		nodesNeeded = 0
@@ -616,36 +668,43 @@ func (r *DedicatedServingComponentSchedulerAndSizer) Reconcile(ctx context.Conte
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	if deployment != nil && util.IsDeploymentReady(ctx, deployment) {
-		log.Info("placeholder ready, adding node labels")
-		nodes, err := r.deploymentNodes(ctx, deployment)
-		if err != nil {
-			return ctrl.Result{}, err
-		}
-		pairLabel = ""
-		if len(nodes) > 0 {
-			pairLabel = nodes[0].Labels[OSDFleetManagerPairedNodesLabel]
-			if pairLabel == "" {
-				return ctrl.Result{}, fmt.Errorf("node %s has no fleetmanager pair label", nodes[0].Name)
-			}
-		}
-		if pairLabel == "" {
-			return ctrl.Result{}, fmt.Errorf("cannot determine pair label")
-		}
-		if err = r.ensurePairConfigMap(ctx, pairLabel, hc.Namespace, hc.Name); err != nil {
-			return ctrl.Result{}, fmt.Errorf("cannot ensure pair label %s config map: %w", pairLabel, err)
-		}
-		for _, node := range nodes {
-			if err := r.ensureHostedClusterLabelAndTaint(ctx, hc, &node); err != nil {
-				return ctrl.Result{}, err
-			}
-		}
-		log.Info("removing placeholder")
-		if err := r.deletePlaceholderDeployment(ctx, hc); err != nil {
+	if deployment == nil || !podspec.IsDeploymentReady(ctx, deployment) {
+		return ctrl.Result{}, nil
+	}
+	log.Info("placeholder ready, adding node labels")
+	nodes, err := r.deploymentNodes(ctx, deployment)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	pairLabel, err = r.resolvePairLabelFromNodes(nodes)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if err = r.ensurePairConfigMap(ctx, pairLabel, hc.Namespace, hc.Name); err != nil {
+		return ctrl.Result{}, fmt.Errorf("cannot ensure pair label %s config map: %w", pairLabel, err)
+	}
+	for _, node := range nodes {
+		if err := r.ensureHostedClusterLabelAndTaint(ctx, hc, &node); err != nil {
 			return ctrl.Result{}, err
 		}
 	}
+	// Ensure that any placeholder deployment is deleted
+	log.Info("removing placeholder")
+	if err := r.deletePlaceholderDeployment(ctx, hc); err != nil {
+		return ctrl.Result{}, err
+	}
 	return ctrl.Result{}, nil
+}
+
+func (r *DedicatedServingComponentSchedulerAndSizer) resolvePairLabelFromNodes(nodes []corev1.Node) (string, error) {
+	if len(nodes) > 0 {
+		pairLabel := nodes[0].Labels[OSDFleetManagerPairedNodesLabel]
+		if pairLabel == "" {
+			return "", fmt.Errorf("node %s has no fleetmanager pair label", nodes[0].Name)
+		}
+		return pairLabel, nil
+	}
+	return "", fmt.Errorf("cannot determine pair label")
 }
 
 func (r *DedicatedServingComponentSchedulerAndSizer) ensurePairConfigMap(ctx context.Context, pairLabel, hcNamespace, hcName string) error {
@@ -702,7 +761,7 @@ func (r *DedicatedServingComponentSchedulerAndSizer) nodesFromPlaceholders(ctx c
 		if d.Labels[hyperv1.HostedClusterSizeLabel] != size {
 			continue
 		}
-		if util.IsDeploymentReady(ctx, d) {
+		if podspec.IsDeploymentReady(ctx, d) {
 			deployment = d
 			break
 		}
@@ -763,7 +822,7 @@ func (r *DedicatedServingComponentSchedulerAndSizer) ensureHostedClusterLabelAnd
 
 func (r *DedicatedServingComponentSchedulerAndSizer) deletePlaceholderDeployment(ctx context.Context, hc *hyperv1.HostedCluster) error {
 	deployment := placeholderDeployment(hc)
-	_, err := util.DeleteIfNeeded(ctx, r, deployment)
+	_, err := k8sutil.DeleteIfNeeded(ctx, r, deployment)
 	return err
 }
 

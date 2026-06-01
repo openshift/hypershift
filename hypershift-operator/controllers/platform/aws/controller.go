@@ -12,11 +12,12 @@ import (
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/awsapi"
+	"github.com/openshift/hypershift/support/capabilities"
+	"github.com/openshift/hypershift/support/globalconfig"
+	"github.com/openshift/hypershift/support/k8sutil"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	"github.com/openshift/hypershift/support/upsert"
 	supportutil "github.com/openshift/hypershift/support/util"
-
-	configv1 "github.com/openshift/api/config/v1"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/aws/arn"
@@ -60,8 +61,9 @@ const (
 type AWSEndpointServiceReconciler struct {
 	client.Client
 	upsert.CreateOrUpdateProvider
-	ec2Client   awsapi.EC2API
-	elbv2Client awsapi.ELBV2API
+	ManagementClusterCapabilities capabilities.CapabiltyChecker
+	ec2Client                     awsapi.EC2API
+	elbv2Client                   awsapi.ELBV2API
 }
 
 func awsEndpointServicesByName(ns string) []reconcile.Request {
@@ -263,8 +265,6 @@ func (r *AWSEndpointServiceReconciler) Reconcile(ctx context.Context, req ctrl.R
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("no logger found: %w", err)
 	}
-	log.Info("reconciling")
-
 	// Fetch the AWSEndpointService
 	obj := &hyperv1.AWSEndpointService{
 		ObjectMeta: metav1.ObjectMeta{
@@ -371,7 +371,6 @@ func (r *AWSEndpointServiceReconciler) Reconcile(ctx context.Context, req ctrl.R
 		}
 	}
 
-	log.Info("reconciliation complete")
 	// always requeue to catch and report out of band changes in AWS
 	// NOTICE: if the RequeueAfter interval is short enough, it could result in hitting some AWS request limits.
 	return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
@@ -381,7 +380,7 @@ func reconcileAWSEndpointService(ctx context.Context, c client.Client, awsEndpoi
 	if awsEndpointService.Annotations == nil {
 		awsEndpointService.Annotations = make(map[string]string)
 	}
-	awsEndpointService.Annotations[supportutil.HostedClusterAnnotation] = fmt.Sprintf("%s/%s", hc.Namespace, hc.Name)
+	awsEndpointService.Annotations[k8sutil.HostedClusterAnnotation] = fmt.Sprintf("%s/%s", hc.Namespace, hc.Name)
 	return reconcileAWSEndpointServiceSubnetIDs(ctx, c, awsEndpointService, hc)
 }
 
@@ -461,13 +460,11 @@ func listKarpenterSubnetIDs(ctx context.Context, c client.Client, namespace stri
 	return subnetIDs, nil
 }
 
-func (r *AWSEndpointServiceReconciler) reconcileAWSEndpointServiceStatus(ctx context.Context, awsEndpointService *hyperv1.AWSEndpointService, hostedCluster *hyperv1.HostedCluster, ec2Client awsapi.EC2API, elbv2Client awsapi.ELBV2API) error {
-	log := ctrl.LoggerFrom(ctx)
-
-	// If a previous awsendpointservice that points to an ingress controller exists, remove it
+// If a previous awsendpointservice that points to an ingress controller exists, remove it
+func (r *AWSEndpointServiceReconciler) deleteObsoleteEndpointService(ctx context.Context, awsEndpointService *hyperv1.AWSEndpointService) (done bool, err error) {
 	endpointServices := &hyperv1.AWSEndpointServiceList{}
 	if err := r.List(ctx, endpointServices, client.InNamespace(awsEndpointService.Namespace)); err != nil {
-		return fmt.Errorf("failed to list aws endpoint services in namespace: %s: %w", awsEndpointService.Namespace, err)
+		return false, fmt.Errorf("failed to list aws endpoint services in namespace: %s: %w", awsEndpointService.Namespace, err)
 	}
 	privateRouterEPServiceName := fmt.Sprintf("router-%s", awsEndpointService.Namespace)
 	hasPrivateRouterEPService := false
@@ -481,26 +478,29 @@ func (r *AWSEndpointServiceReconciler) reconcileAWSEndpointServiceStatus(ctx con
 		}
 	}
 	// Only if both router and private ingress controller AWSEndpointServices exist, delete the obsolete one
-	if hasPrivateRouterEPService && hasPrivateIngressControllerEPService {
-		privateIngressControllerEPService := &hyperv1.AWSEndpointService{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      privateRouterEPServiceName,
-				Namespace: awsEndpointService.Namespace,
-			},
-		}
-		if err := r.Delete(ctx, privateIngressControllerEPService); err != nil {
-			return fmt.Errorf("failed to delete awsendpointservice %s: %w", client.ObjectKeyFromObject(privateIngressControllerEPService).String(), err)
-		}
-		// No need to further reconcile if the endpointservice is the one we just deleted.
-		if awsEndpointService.Name == privateRouterEPServiceName {
-			return nil
-		}
+	if !hasPrivateRouterEPService || !hasPrivateIngressControllerEPService {
+		return false, nil
 	}
+	privateIngressControllerEPService := &hyperv1.AWSEndpointService{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      privateRouterEPServiceName,
+			Namespace: awsEndpointService.Namespace,
+		},
+	}
+	if err := r.Delete(ctx, privateIngressControllerEPService); err != nil {
+		return false, fmt.Errorf("failed to delete awsendpointservice %s: %w", client.ObjectKeyFromObject(privateIngressControllerEPService).String(), err)
+	}
+	if awsEndpointService.Name == privateRouterEPServiceName {
+		return true, nil
+	}
+	return false, nil
+}
 
-	serviceName := awsEndpointService.Status.EndpointServiceName
-	var serviceID string
+func (r *AWSEndpointServiceReconciler) ensureVpcEndpointService(ctx context.Context, awsEndpointService *hyperv1.AWSEndpointService, ec2Client awsapi.EC2API, elbv2Client awsapi.ELBV2API) (serviceName string, serviceID string, err error) {
+	log := ctrl.LoggerFrom(ctx)
+
+	serviceName = awsEndpointService.Status.EndpointServiceName
 	if len(serviceName) != 0 {
-		// check if Endpoint Service exists in AWS
 		output, err := ec2Client.DescribeVpcEndpointServiceConfigurations(ctx, &ec2.DescribeVpcEndpointServiceConfigurationsInput{
 			Filters: []ec2types.Filter{
 				{
@@ -512,90 +512,94 @@ func (r *AWSEndpointServiceReconciler) reconcileAWSEndpointServiceStatus(ctx con
 		if err != nil {
 			var apiErr smithy.APIError
 			if errors.As(err, &apiErr) {
-				return errors.New(apiErr.ErrorCode())
+				return "", "", errors.New(apiErr.ErrorCode())
 			}
-			return err
+			return "", "", err
 		}
 		if len(output.ServiceConfigurations) == 0 {
 			// clear the EndpointServiceName so a new Endpoint Service is created on the requeue
 			awsEndpointService.Status.EndpointServiceName = ""
-			return fmt.Errorf("endpoint service %s not found, resetting status", serviceName)
+			return "", "", fmt.Errorf("endpoint service %s not found, resetting status", serviceName)
 		}
 		serviceID = aws.ToString(output.ServiceConfigurations[0].ServiceId)
 		log.Info("endpoint service exists", "serviceName", serviceName)
-	} else {
-		// determine the LB ARN
-		lbName := awsEndpointService.Spec.NetworkLoadBalancerName
-		output, err := elbv2Client.DescribeLoadBalancers(ctx, &elbv2.DescribeLoadBalancersInput{
-			Names: []string{lbName},
-		})
-		if err != nil {
-			var smithyErr smithy.APIError
-			if errors.As(err, &smithyErr) {
-				return errors.New(smithyErr.ErrorCode())
-			}
-			return err
-		}
-		if len(output.LoadBalancers) == 0 {
-			return fmt.Errorf("load balancer %s not found", lbName)
-		}
-		lb := output.LoadBalancers[0]
-		lbARN := lb.LoadBalancerArn
-		if lbARN == nil {
-			return fmt.Errorf("load balancer ARN is nil")
-		}
-		if lb.State == nil || lb.State.Code != elbv2types.LoadBalancerStateEnumActive {
-			return fmt.Errorf("load balancer %s is not yet active", *lbARN)
-		}
-
-		managementClusterInfrastructure := &configv1.Infrastructure{ObjectMeta: metav1.ObjectMeta{Name: "cluster"}}
-		if err := r.Get(ctx, client.ObjectKeyFromObject(managementClusterInfrastructure), managementClusterInfrastructure); err != nil {
-			return fmt.Errorf("failed to get management cluster infrastructure: %w", err)
-		}
-
-		// create the Endpoint Service
-		createEndpointServiceOutput, err := ec2Client.CreateVpcEndpointServiceConfiguration(ctx, &ec2.CreateVpcEndpointServiceConfigurationInput{
-			// TODO: we should probably do some sort of automated acceptance check against the VPC ID in the HostedCluster
-			AcceptanceRequired:      aws.Bool(false),
-			NetworkLoadBalancerArns: []string{aws.ToString(lbARN)},
-			TagSpecifications: []ec2types.TagSpecification{{
-				ResourceType: ec2types.ResourceTypeVpcEndpointService,
-				Tags: append(apiTagToEC2Tag(awsEndpointService.Spec.ResourceTags), ec2types.Tag{
-					Key:   aws.String("kubernetes.io/cluster/" + managementClusterInfrastructure.Status.InfrastructureName),
-					Value: aws.String("owned"),
-				}),
-			}},
-		})
-		if err != nil {
-			var apiErr smithy.APIError
-			if errors.As(err, &apiErr) {
-				if apiErr.ErrorCode() == "InvalidParameter" {
-					// TODO: optional filter by regex on error msg (could be fragile)
-					// e.g. "LBs are already associated with another VPC Endpoint Service Configuration"
-					log.Info("service endpoint might already exist, attempting adoption")
-					var err error
-					serviceName, serviceID, err = findExistingVpcEndpointService(ctx, ec2Client, aws.ToString(lbARN))
-					if err != nil {
-						log.Info("existing endpoint service not found, adoption failed", "err", err)
-						return errors.New(apiErr.ErrorCode())
-					}
-				} else {
-					return errors.New(apiErr.ErrorCode())
-				}
-			}
-			if len(serviceName) == 0 {
-				return err
-			}
-			log.Info("endpoint service adopted", "serviceName", serviceName)
-		} else {
-			serviceName = aws.ToString(createEndpointServiceOutput.ServiceConfiguration.ServiceName)
-			serviceID = aws.ToString(createEndpointServiceOutput.ServiceConfiguration.ServiceId)
-			log.Info("endpoint service created", "serviceName", serviceName)
-		}
+		return serviceName, serviceID, nil
 	}
-	awsEndpointService.Status.EndpointServiceName = serviceName
 
-	// reconcile permissions for aws endpoint service
+	lbName := awsEndpointService.Spec.NetworkLoadBalancerName
+	output, err := elbv2Client.DescribeLoadBalancers(ctx, &elbv2.DescribeLoadBalancersInput{
+		Names: []string{lbName},
+	})
+	if err != nil {
+		var smithyErr smithy.APIError
+		if errors.As(err, &smithyErr) {
+			return "", "", errors.New(smithyErr.ErrorCode())
+		}
+		return "", "", err
+	}
+	if len(output.LoadBalancers) == 0 {
+		return "", "", fmt.Errorf("load balancer %s not found", lbName)
+	}
+	lb := output.LoadBalancers[0]
+	lbARN := lb.LoadBalancerArn
+	if lbARN == nil {
+		return "", "", fmt.Errorf("load balancer ARN is nil")
+	}
+	if lb.State == nil || lb.State.Code != elbv2types.LoadBalancerStateEnumActive {
+		return "", "", fmt.Errorf("load balancer %s is not yet active", *lbARN)
+	}
+
+	tags := apiTagToEC2Tag(awsEndpointService.Spec.ResourceTags)
+	if r.ManagementClusterCapabilities.Has(capabilities.CapabilityInfrastructure) {
+		managementClusterInfrastructure := globalconfig.InfrastructureConfig()
+		if err := r.Get(ctx, client.ObjectKeyFromObject(managementClusterInfrastructure), managementClusterInfrastructure); err != nil {
+			return "", "", fmt.Errorf("failed to get management cluster infrastructure: %w", err)
+		}
+		tags = append(tags, ec2types.Tag{
+			Key:   aws.String("kubernetes.io/cluster/" + managementClusterInfrastructure.Status.InfrastructureName),
+			Value: aws.String("owned"),
+		})
+	}
+
+	createEndpointServiceOutput, err := ec2Client.CreateVpcEndpointServiceConfiguration(ctx, &ec2.CreateVpcEndpointServiceConfigurationInput{
+		// TODO: we should probably do some sort of automated acceptance check against the VPC ID in the HostedCluster
+		AcceptanceRequired:      aws.Bool(false),
+		NetworkLoadBalancerArns: []string{aws.ToString(lbARN)},
+		TagSpecifications: []ec2types.TagSpecification{{
+			ResourceType: ec2types.ResourceTypeVpcEndpointService,
+			Tags:         tags,
+		}},
+	})
+	if err != nil {
+		var apiErr smithy.APIError
+		if errors.As(err, &apiErr) {
+			if apiErr.ErrorCode() == "InvalidParameter" {
+				// TODO: optional filter by regex on error msg (could be fragile)
+				// e.g. "LBs are already associated with another VPC Endpoint Service Configuration"
+				log.Info("service endpoint might already exist, attempting adoption")
+				var adoptErr error
+				serviceName, serviceID, adoptErr = findExistingVpcEndpointService(ctx, ec2Client, aws.ToString(lbARN))
+				if adoptErr != nil {
+					log.Info("existing endpoint service not found, adoption failed", "err", adoptErr)
+					return "", "", errors.New(apiErr.ErrorCode())
+				}
+			} else {
+				return "", "", errors.New(apiErr.ErrorCode())
+			}
+		}
+		if len(serviceName) == 0 {
+			return "", "", err
+		}
+		log.Info("endpoint service adopted", "serviceName", serviceName)
+	} else {
+		serviceName = aws.ToString(createEndpointServiceOutput.ServiceConfiguration.ServiceName)
+		serviceID = aws.ToString(createEndpointServiceOutput.ServiceConfiguration.ServiceId)
+		log.Info("endpoint service created", "serviceName", serviceName)
+	}
+	return serviceName, serviceID, nil
+}
+
+func (r *AWSEndpointServiceReconciler) reconcileEndpointServicePermissions(ctx context.Context, serviceID string, hostedCluster *hyperv1.HostedCluster, ec2Client awsapi.EC2API) error {
 	permResp, err := ec2Client.DescribeVpcEndpointServicePermissions(ctx, &ec2.DescribeVpcEndpointServicePermissionsInput{
 		ServiceId: aws.String(serviceID),
 	})
@@ -615,22 +619,44 @@ func (r *AWSEndpointServiceReconciler) reconcileAWSEndpointServiceStatus(ctx con
 	desiredPerms := sets.NewString(controlPlaneOperatorRoleARN)
 	desiredPerms = desiredPerms.Insert(hostedCluster.Spec.Platform.AWS.AdditionalAllowedPrincipals...)
 
-	if !desiredPerms.Equal(oldPerms) {
-		input := &ec2.ModifyVpcEndpointServicePermissionsInput{
-			ServiceId: aws.String(serviceID),
-		}
-		if added := desiredPerms.Difference(oldPerms).List(); len(added) > 0 {
-			input.AddAllowedPrincipals = added
-		}
-		if removed := oldPerms.Difference(desiredPerms).List(); len(removed) > 0 {
-			input.RemoveAllowedPrincipals = removed
-		}
-		_, err := ec2Client.ModifyVpcEndpointServicePermissions(ctx, input)
-		if err != nil {
-			return fmt.Errorf("failed to update vpc endpoint permissions: %w", err)
-		}
+	if desiredPerms.Equal(oldPerms) {
+		return nil
+	}
+
+	input := &ec2.ModifyVpcEndpointServicePermissionsInput{
+		ServiceId: aws.String(serviceID),
+	}
+	if added := desiredPerms.Difference(oldPerms).List(); len(added) > 0 {
+		input.AddAllowedPrincipals = added
+	}
+	if removed := oldPerms.Difference(desiredPerms).List(); len(removed) > 0 {
+		input.RemoveAllowedPrincipals = removed
+	}
+	_, err = ec2Client.ModifyVpcEndpointServicePermissions(ctx, input)
+	if err != nil {
+		return fmt.Errorf("failed to update vpc endpoint permissions: %w", err)
+	}
+	return nil
+}
+
+func (r *AWSEndpointServiceReconciler) reconcileAWSEndpointServiceStatus(ctx context.Context, awsEndpointService *hyperv1.AWSEndpointService, hostedCluster *hyperv1.HostedCluster, ec2Client awsapi.EC2API, elbv2Client awsapi.ELBV2API) error {
+	done, err := r.deleteObsoleteEndpointService(ctx, awsEndpointService)
+	if err != nil {
+		return err
+	}
+	if done {
+		return nil
+	}
+
+	serviceName, serviceID, err := r.ensureVpcEndpointService(ctx, awsEndpointService, ec2Client, elbv2Client)
+	if err != nil {
+		return err
 	}
 	awsEndpointService.Status.EndpointServiceName = serviceName
+
+	if err := r.reconcileEndpointServicePermissions(ctx, serviceID, hostedCluster, ec2Client); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -836,7 +862,7 @@ func (r *AWSEndpointServiceReconciler) hostedControlPlane(ctx context.Context, h
 }
 
 func hostedClusterNamespaceAndName(hcp *hyperv1.HostedControlPlane) (string, string) {
-	hcNamespaceName, exists := hcp.Annotations[supportutil.HostedClusterAnnotation]
+	hcNamespaceName, exists := hcp.Annotations[k8sutil.HostedClusterAnnotation]
 	if !exists {
 		return "", ""
 	}

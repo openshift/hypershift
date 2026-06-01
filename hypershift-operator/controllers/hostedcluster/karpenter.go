@@ -23,9 +23,8 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
 	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/k8sutil"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
-	"github.com/openshift/hypershift/support/upsert"
-	hyperutil "github.com/openshift/hypershift/support/util"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -38,39 +37,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
-func (r *HostedClusterReconciler) reconcileKarpenterOperator(cpContext controlplanecomponent.ControlPlaneContext, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hypershiftOperatorImage, controlPlaneOperatorImage string) error {
-	// TODO(jkyros): I rearranged this so we always reconcile so it can at least attempt to disable if it's turned off. I was planning on moving the KubeletConfig configmap creation
-	// into the karpenter-operator as part of the KubeletConfig work so this should get cleaner.
-	if karpenterutil.IsKarpenterEnabled(hcluster.Spec.AutoNode) && hcluster.Status.KubeConfig != nil && hcluster.Status.IgnitionEndpoint != "" {
-		// Generate configMap with KubeletConfig to register Nodes with karpenter expected taint.
-		configMap := &corev1.ConfigMap{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      karpenterutil.KarpenterTaintConfigMapName,
-				Namespace: cpContext.HCP.Namespace,
-			},
-		}
-
-		kubeletConfig := fmt.Sprintf(`apiVersion: machineconfiguration.openshift.io/v1
-kind: KubeletConfig
-metadata:
-  name: %s
-spec:
-  kubeletConfig:
-    registerWithTaints:
-      - key: "karpenter.sh/unregistered"
-        value: "true"
-        effect: "NoExecute"`, karpenterutil.KarpenterTaintConfigMapName)
-
-		_, err := createOrUpdate(cpContext, r.Client, configMap, func() error {
-			configMap.Data = map[string]string{
-				"config": kubeletConfig,
-			}
-			return nil
-		})
-		if err != nil {
-			return fmt.Errorf("failed to create configmap: %w", err)
-		}
-	}
+func (r *HostedClusterReconciler) reconcileKarpenterOperator(cpContext controlplanecomponent.ControlPlaneContext, hcluster *hyperv1.HostedCluster, hypershiftOperatorImage, controlPlaneOperatorImage string) error {
+	// The taint ConfigMap (set-karpenter-taint) is created by the karpenter-operator itself.
 
 	if !karpenterutil.IsKarpenterEnabled(hcluster.Spec.AutoNode) {
 
@@ -92,7 +60,7 @@ spec:
 			}
 		}
 		// Also delete the taint ConfigMap — it is only valid while Karpenter is enabled.
-		if _, err := hyperutil.DeleteIfNeeded(cpContext, r.Client, &corev1.ConfigMap{
+		if _, err := k8sutil.DeleteIfNeeded(cpContext, r.Client, &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      karpenterutil.KarpenterTaintConfigMapName,
 				Namespace: cpContext.HCP.Namespace,
@@ -118,18 +86,16 @@ spec:
 }
 
 // resolveKarpenterFinalizer removes the karpenter finalizer from the HCP
-// when the karpenter-operator cannot do so itself because the guest KAS is down.
+// when the karpenter-operator cannot do so itself. This covers two scenarios:
 //
-// This breaks the deadlock where:
-//  1. The HostedCluster deletion waits for the HCP to be removed
-//  2. The HCP can't be removed because it has the karpenter finalizer
-//  3. The karpenter-operator can't remove the finalizer because the guest KAS is down
-//     and it depends on guest-side watches to function
+//  1. The guest KAS is down during HostedCluster deletion, so the karpenter-operator
+//     cannot reach its guest-side watches to process the finalizer.
+//  2. AutoNode was disabled before the HostedCluster was deleted, so the karpenter-operator
+//     deployment was removed and cannot process the finalizer at all.
+//
+// Without this fallback the HCP would be stuck in terminating with the karpenter finalizer
+// blocking deletion indefinitely.
 func (r *HostedClusterReconciler) resolveKarpenterFinalizer(ctx context.Context, hc *hyperv1.HostedCluster) error {
-	if !karpenterutil.IsKarpenterEnabled(hc.Spec.AutoNode) {
-		return nil
-	}
-
 	log := ctrl.LoggerFrom(ctx)
 	cpNamespace := manifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name)
 
@@ -142,12 +108,19 @@ func (r *HostedClusterReconciler) resolveKarpenterFinalizer(ctx context.Context,
 		return nil
 	}
 
-	kasAvailable, err := isKASAvailable(ctx, hcp.Namespace, r.Client)
-	if err != nil {
-		return fmt.Errorf("failed to check KAS availability: %w", err)
-	}
-	if kasAvailable {
-		return nil
+	// When AutoNode is still enabled, defer to the karpenter-operator for graceful
+	// cleanup — only force-remove the finalizer once the guest KAS is down and the
+	// operator can no longer reach its watches.
+	// When AutoNode is disabled, the karpenter-operator deployment is already gone,
+	// so there is no controller to process the finalizer and we must remove it immediately.
+	if karpenterutil.IsKarpenterEnabled(hc.Spec.AutoNode) {
+		kasAvailable, err := isKASAvailable(ctx, hcp.Namespace, r.Client)
+		if err != nil {
+			return fmt.Errorf("failed to check KAS availability: %w", err)
+		}
+		if kasAvailable {
+			return nil
+		}
 	}
 
 	original := hcp.DeepCopy()
@@ -191,7 +164,13 @@ func isKASAvailable(ctx context.Context, cpNamespace string, c client.Client) (b
 //   - True  / AsExpected          — Karpenter enabled in spec AND both components fully rolled out.
 //   - False / AutoNodeProgressing — Enable or disable operation is in progress.
 //   - False / AutoNodeNotConfigured — Karpenter not in spec AND no components present.
-func (r *HostedClusterReconciler) reconcileAutoNodeEnabledCondition(ctx context.Context, hcluster *hyperv1.HostedCluster, hcpNamespace string) metav1.Condition {
+//
+// reconcileAutoNodeEnabledCondition returns the AutoNodeEnabled condition and whether
+// the caller should requeue to poll for progress. The second return value is true when
+// an enable or disable operation is still in flight; the HC reconciler does not watch
+// ControlPlaneComponent resources, so a periodic requeue is needed to pick up status
+// changes from the karpenter-operator's CPC updates.
+func (r *HostedClusterReconciler) reconcileAutoNodeEnabledCondition(ctx context.Context, hcluster *hyperv1.HostedCluster, hcpNamespace string) (metav1.Condition, bool) {
 	condition := metav1.Condition{
 		Type:               string(hyperv1.AutoNodeEnabled),
 		ObservedGeneration: hcluster.Generation,
@@ -205,7 +184,7 @@ func (r *HostedClusterReconciler) reconcileAutoNodeEnabledCondition(ctx context.
 		condition.Status = metav1.ConditionUnknown
 		condition.Reason = hyperv1.AutoNodeEvaluationFailedReason
 		condition.Message = fmt.Sprintf("failed to list ControlPlaneComponents: %v", err)
-		return condition
+		return condition, false
 	}
 
 	// Grab all of our karpenter components
@@ -222,7 +201,7 @@ func (r *HostedClusterReconciler) reconcileAutoNodeEnabledCondition(ctx context.
 			condition.Status = metav1.ConditionFalse
 			condition.Reason = hyperv1.AutoNodeProgressingReason
 			condition.Message = "AutoNode is being enabled: waiting for components to be created"
-			return condition
+			return condition, true
 		}
 		// Check if they're ready
 		var notReady []string
@@ -241,13 +220,13 @@ func (r *HostedClusterReconciler) reconcileAutoNodeEnabledCondition(ctx context.
 			condition.Status = metav1.ConditionFalse
 			condition.Reason = hyperv1.AutoNodeProgressingReason
 			condition.Message = fmt.Sprintf("AutoNode is being enabled: %s", strings.Join(notReady, "; "))
-			return condition
+			return condition, true
 		}
 		// Otherwise report ready
 		condition.Status = metav1.ConditionTrue
 		condition.Reason = hyperv1.AsExpectedReason
 		condition.Message = "AutoNode is ready"
-		return condition
+		return condition, false
 	}
 
 	// Karpenter not enabled — check if Deployments are still terminating.
@@ -263,7 +242,7 @@ func (r *HostedClusterReconciler) reconcileAutoNodeEnabledCondition(ctx context.
 			condition.Status = metav1.ConditionUnknown
 			condition.Reason = hyperv1.AutoNodeEvaluationFailedReason
 			condition.Message = fmt.Sprintf("failed to check karpenter deployments: %v", err)
-			return condition
+			return condition, false
 		}
 	}
 
@@ -271,11 +250,11 @@ func (r *HostedClusterReconciler) reconcileAutoNodeEnabledCondition(ctx context.
 		condition.Status = metav1.ConditionFalse
 		condition.Reason = hyperv1.AutoNodeProgressingReason
 		condition.Message = fmt.Sprintf("AutoNode is being disabled: waiting for deployments to be removed: %s", strings.Join(runningDeployments, ", "))
-		return condition
+		return condition, true
 	}
 
 	condition.Status = metav1.ConditionFalse
 	condition.Reason = hyperv1.AutoNodeNotConfiguredReason
 	condition.Message = "AutoNode provisioner is not configured"
-	return condition
+	return condition, false
 }

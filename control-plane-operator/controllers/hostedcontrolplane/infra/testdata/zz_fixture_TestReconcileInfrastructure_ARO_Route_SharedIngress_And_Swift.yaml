@@ -274,23 +274,7 @@ services:
         targetPort: https
       selector:
         app: private-router
-      type: LoadBalancer
-    status:
-      loadBalancer: {}
-  - metadata:
-      labels:
-        app: private-router
-      name: router
-      namespace: test-namespace
-    spec:
-      ports:
-      - name: https
-        port: 443
-        protocol: TCP
-        targetPort: https
-      selector:
-        app: private-router
-      type: LoadBalancer
+      type: ClusterIP
     status:
       loadBalancer: {}
   metadata: {}

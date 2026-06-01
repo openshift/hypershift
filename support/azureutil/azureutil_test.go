@@ -741,6 +741,72 @@ func isCapabilityDisabled(capabilities *hyperv1.Capabilities, capability hyperv1
 	return false
 }
 
+func TestIsSelfManagedAzureWithWorkloadIdentity(t *testing.T) {
+	tests := []struct {
+		name         string
+		platformType hyperv1.PlatformType
+		azure        *hyperv1.AzurePlatformSpec
+		managedSvc   string
+		expected     bool
+	}{
+		{
+			name:         "When Azure platform with workload identities configured it should return true",
+			platformType: hyperv1.AzurePlatform,
+			azure: &hyperv1.AzurePlatformSpec{
+				AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+					WorkloadIdentities: &hyperv1.AzureWorkloadIdentities{},
+				},
+			},
+			expected: true,
+		},
+		{
+			name:         "When Azure platform with nil workload identities it should return false",
+			platformType: hyperv1.AzurePlatform,
+			azure: &hyperv1.AzurePlatformSpec{
+				AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{},
+			},
+			expected: false,
+		},
+		{
+			name:         "When Azure platform with nil azure spec it should return false",
+			platformType: hyperv1.AzurePlatform,
+			azure:        nil,
+			expected:     false,
+		},
+		{
+			name:         "When non-Azure platform with workload identities it should return false",
+			platformType: hyperv1.AWSPlatform,
+			azure: &hyperv1.AzurePlatformSpec{
+				AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+					WorkloadIdentities: &hyperv1.AzureWorkloadIdentities{},
+				},
+			},
+			expected: false,
+		},
+		{
+			name:         "When ARO-HCP managed service with workload identities it should return false",
+			platformType: hyperv1.AzurePlatform,
+			azure: &hyperv1.AzurePlatformSpec{
+				AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+					WorkloadIdentities: &hyperv1.AzureWorkloadIdentities{},
+				},
+			},
+			managedSvc: hyperv1.AroHCP,
+			expected:   false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			if tc.managedSvc != "" {
+				t.Setenv("MANAGED_SERVICE", tc.managedSvc)
+			}
+			g.Expect(IsSelfManagedAzureWithWorkloadIdentity(tc.platformType, tc.azure)).To(Equal(tc.expected))
+		})
+	}
+}
+
 func TestNewARMClientOptions(t *testing.T) {
 	tests := []struct {
 		name               string

@@ -3,8 +3,8 @@ package hostedcluster
 import (
 	"testing"
 
+	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/upsert"
-	hyperutil "github.com/openshift/hypershift/support/util"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -51,7 +51,7 @@ func TestCreateOrUpdateWithAnnotationFactory(t *testing.T) {
 					Name:      "foo",
 					Namespace: "bar",
 					Annotations: map[string]string{
-						hyperutil.HostedClusterAnnotation: annotationValue,
+						k8sutil.HostedClusterAnnotation: annotationValue,
 					},
 				},
 			},
@@ -85,8 +85,8 @@ func TestCreateOrUpdateWithAnnotationFactory(t *testing.T) {
 					Name:      "foo",
 					Namespace: "bar",
 					Annotations: map[string]string{
-						hyperutil.HostedClusterAnnotation: annotationValue,
-						"foo":                             "bar",
+						k8sutil.HostedClusterAnnotation: annotationValue,
+						"foo":                           "bar",
 					},
 				},
 			},

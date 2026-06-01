@@ -14,7 +14,7 @@ RUN apt-get update && \
     && rm -rf /var/lib/apt/lists/*
 
 ARG TARGETARCH
-ARG GO_VERSION=1.25.3
+ARG GO_VERSION=1.25.7
 RUN curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-${TARGETARCH}.tar.gz" | tar -C /usr/local -xz
 
 RUN OCP_ARCH=$([ "$TARGETARCH" = "amd64" ] && echo "x86_64" || echo "aarch64") && \
@@ -33,5 +33,8 @@ RUN cd /tmp/tools && \
     CGO_ENABLED=1 GO111MODULE=on GOWORK=off GOFLAGS=-mod=vendor go build -buildmode=plugin \
         -o /opt/lint-tools/kube-api-linter.so sigs.k8s.io/kube-api-linter/pkg/plugin && \
     rm -rf /tmp/tools
+
+COPY contrib/ci/gocacheprog/ /tmp/gocacheprog/
+RUN cd /tmp/gocacheprog && go build -o /usr/local/bin/gocacheprog . && rm -rf /tmp/gocacheprog
 
 USER runner

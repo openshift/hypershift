@@ -271,6 +271,8 @@ func (cg *ConfigGenerator) defaultAndValidateConfigManifest(manifest []byte) ([]
 	_ = configv1.Install(scheme)
 	_ = configv1alpha1.Install(scheme)
 
+	manifest = backwardcompat.NormalizeV1Alpha1ClusterImagePolicy(manifest)
+
 	yamlSerializer := serializer.NewSerializerWithOptions(
 		serializer.DefaultMetaFactory, scheme, scheme,
 		serializer.SerializerOptions{Yaml: true, Pretty: true, Strict: false},
@@ -293,7 +295,7 @@ func (cg *ConfigGenerator) defaultAndValidateConfigManifest(manifest []byte) ([]
 		}
 	case *v1alpha1.ImageContentSourcePolicy:
 	case *configv1.ImageDigestMirrorSet:
-	case *configv1alpha1.ClusterImagePolicy:
+	case *configv1.ClusterImagePolicy:
 	case *mcfgv1.KubeletConfig:
 		obj.Spec.MachineConfigPoolSelector = &metav1.LabelSelector{
 			MatchLabels: map[string]string{

@@ -6,7 +6,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	component "github.com/openshift/hypershift/support/controlplane-component"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/podspec"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
@@ -44,7 +44,7 @@ func NewComponent() component.ControlPlaneComponent {
 			component.WithAdaptFunction(adaptPodMonitor),
 		).
 		WithPredicate(predicate).
-		InjectAvailabilityProberContainer(util.AvailabilityProberOpts{}).
+		InjectAvailabilityProberContainer(podspec.AvailabilityProberOpts{}).
 		Build()
 }
 

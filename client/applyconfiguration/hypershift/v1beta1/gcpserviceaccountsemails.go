@@ -29,6 +29,7 @@ type GCPServiceAccountsEmailsApplyConfiguration struct {
 	CloudController *hypershiftv1beta1.GCPServiceAccountEmail `json:"cloudController,omitempty"`
 	Storage         *hypershiftv1beta1.GCPServiceAccountEmail `json:"storage,omitempty"`
 	ImageRegistry   *hypershiftv1beta1.GCPServiceAccountEmail `json:"imageRegistry,omitempty"`
+	Network         *hypershiftv1beta1.GCPServiceAccountEmail `json:"network,omitempty"`
 }
 
 // GCPServiceAccountsEmailsApplyConfiguration constructs a declarative configuration of the GCPServiceAccountsEmails type for use with
@@ -74,5 +75,13 @@ func (b *GCPServiceAccountsEmailsApplyConfiguration) WithStorage(value hypershif
 // If called multiple times, the ImageRegistry field is set to the value of the last call.
 func (b *GCPServiceAccountsEmailsApplyConfiguration) WithImageRegistry(value hypershiftv1beta1.GCPServiceAccountEmail) *GCPServiceAccountsEmailsApplyConfiguration {
 	b.ImageRegistry = &value
+	return b
+}
+
+// WithNetwork sets the Network field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the Network field is set to the value of the last call.
+func (b *GCPServiceAccountsEmailsApplyConfiguration) WithNetwork(value hypershiftv1beta1.GCPServiceAccountEmail) *GCPServiceAccountsEmailsApplyConfiguration {
+	b.Network = &value
 	return b
 }

@@ -202,11 +202,6 @@ linters:
           - kubeapilinter
         path: hypershift/v1beta1/openstack.go
         text: 'arrayofstruct: OpenStackPlatformSpec.Subnets is an array of structs, but the struct has no required fields. At least one field should be marked as required to prevent ambiguous YAML configurations'
-      - linters:
-          - kubeapilinter
-        path: karpenter/v1beta1/karpenter_types.go
-        text: 'arrayofstruct: OpenshiftEC2NodeClassSpec.CapacityReservationSelectorTerms is an array of structs, but the struct has no required fields. At least one field should be marked as required to prevent ambiguous YAML configurations'
-
       # conditions (1 issue)
       - linters:
           - kubeapilinter
@@ -324,6 +319,27 @@ linters:
           - kubeapilinter
         path: hypershift/v1beta1/openstack.go
         text: 'nobools: field OpenStackPlatformSpec.DisableExternalNetwork pointer should not use a bool. Use a string type with meaningful constant values as an enum.'
+      - linters:
+          - kubeapilinter
+        path: karpenter/v1/kubelet_config.go
+        text: 'nobools: field KubeletConfiguration.CPUCFSQuota pointer should not use a bool. Use a string type with meaningful constant values as an enum.'
+
+      - linters:
+          - kubeapilinter
+        path: karpenter/v1/karpenter_types.go
+        text: 'minlength: field OpenshiftEC2NodeClassSpec.Kubelet type KubeletConfiguration must have a minimum properties, add kubebuilder:validation:MinProperties marker'
+      - linters:
+          - kubeapilinter
+        path: karpenter/v1/karpenter_types.go
+        text: 'optionalfields: field OpenshiftEC2NodeClassSpec.Kubelet has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: karpenter/v1/kubelet_config.go
+        text: 'nodurations: field KubeletConfiguration.EvictionSoftGracePeriod map value should not use a Duration. Use an integer type with units in the name to avoid the need for clients to implement Go style duration parsing.'
+      - linters:
+          - kubeapilinter
+        path: karpenter/v1/kubelet_config.go
+        text: 'nomaps: field KubeletConfiguration\.(SystemReserved|KubeReserved|EvictionHard|EvictionSoft|EvictionSoftGracePeriod)'
 
       # statussubresource (1 issue)
       - linters:

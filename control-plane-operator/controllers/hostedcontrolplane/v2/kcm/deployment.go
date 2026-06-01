@@ -8,6 +8,8 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/netutil"
+	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/util"
 
@@ -30,10 +32,10 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 		return err
 	}
 
-	util.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
+	podspec.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
 		c.Args = append(c.Args,
-			fmt.Sprintf("--cluster-cidr=%s", util.FirstClusterCIDR(hcp.Spec.Networking.ClusterNetwork)),
-			fmt.Sprintf("--service-cluster-ip-range=%s", util.FirstServiceCIDR(hcp.Spec.Networking.ServiceNetwork)),
+			fmt.Sprintf("--cluster-cidr=%s", netutil.FirstClusterCIDR(hcp.Spec.Networking.ClusterNetwork)),
+			fmt.Sprintf("--service-cluster-ip-range=%s", netutil.FirstServiceCIDR(hcp.Spec.Networking.ServiceNetwork)),
 		)
 		// This value comes from the Cloud Provider Azure documentation: https://cloud-provider-azure.sigs.k8s.io/install/azure-ccm/#kube-controller-manager
 		if hcp.Spec.Platform.Type == hyperv1.AzurePlatform {

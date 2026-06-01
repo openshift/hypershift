@@ -48,14 +48,24 @@ func TestValidateInputs(t *testing.T) {
 			expectedError: "project-id is required",
 		},
 		{
-			name: "When oidc-jwks-file is missing it should return error",
+			name: "When neither oidc-jwks-file nor oidc-issuer-url is provided it should return error",
 			opts: &CreateIAMOptions{
 				InfraID:             "test-infra-id",
 				ProjectID:           "test-project-id",
 				ClusterOIDCJWKSFile: "",
+				OIDCIssuerURL:       "",
 			},
 			setupJWKSFile: false,
-			expectedError: "oidc-jwks-file is required",
+			expectedError: "at least one of --oidc-jwks-file or --oidc-issuer-url is required",
+		},
+		{
+			name: "When only oidc-issuer-url is provided it should pass validation",
+			opts: &CreateIAMOptions{
+				InfraID:       "test-infra-id",
+				ProjectID:     "test-project-id",
+				OIDCIssuerURL: "https://oidc.example.com/my-cluster",
+			},
+			setupJWKSFile: false,
 		},
 		{
 			name: "When JWKS validation fails it should return error",
@@ -68,7 +78,7 @@ func TestValidateInputs(t *testing.T) {
 			expectedError: "invalid JWKS file",
 		},
 		{
-			name: "When all fields including optional OIDCIssuerURL are provided it should pass validation",
+			name: "When both oidc-jwks-file and oidc-issuer-url are provided it should pass validation",
 			opts: &CreateIAMOptions{
 				InfraID:       "test-infra-id",
 				ProjectID:     "test-project-id",

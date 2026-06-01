@@ -7,6 +7,7 @@ data:
     KubernetesClusterID = my-infra-ID
     SubnetID = my-subnet-ID
     ClusterServiceLoadBalancerHealthProbeMode = Shared
+    NLBSecurityGroupMode = Managed
     ClusterServiceSharedLoadBalancerHealthProbePath = /healthz
     ClusterServiceSharedLoadBalancerHealthProbePort = 10256
 kind: ConfigMap

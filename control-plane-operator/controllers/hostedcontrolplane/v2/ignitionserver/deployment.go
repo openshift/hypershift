@@ -8,6 +8,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	"github.com/openshift/hypershift/support/api"
 	component "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/util"
 
@@ -39,21 +40,21 @@ func (ign *ignitionServer) adaptDeployment(cpContext component.WorkloadContext, 
 		}
 		featureGateYAML := featureGateBuffer.String()
 
-		util.UpdateContainer("fetch-feature-gate", deployment.Spec.Template.Spec.InitContainers, func(c *corev1.Container) {
-			util.UpsertEnvVar(c, corev1.EnvVar{
+		podspec.UpdateContainer("fetch-feature-gate", deployment.Spec.Template.Spec.InitContainers, func(c *corev1.Container) {
+			podspec.UpsertEnvVar(c, corev1.EnvVar{
 				Name:  "FEATURE_GATE_YAML",
 				Value: featureGateYAML,
 			})
 		})
 	}
 
-	util.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
+	podspec.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
 		c.Args = append(c.Args,
 			"--registry-overrides", util.ConvertRegistryOverridesToCommandLineFlag(ign.releaseProvider.GetRegistryOverrides()),
 			"--platform", string(hcp.Spec.Platform.Type),
 		)
 
-		util.UpsertEnvVar(c, corev1.EnvVar{
+		podspec.UpsertEnvVar(c, corev1.EnvVar{
 			Name:  "OPENSHIFT_IMG_OVERRIDES",
 			Value: util.ConvertOpenShiftImageRegistryOverridesToCommandLineFlag(ign.releaseProvider.GetOpenShiftImageRegistryOverrides()),
 		})
@@ -63,11 +64,11 @@ func (ign *ignitionServer) adaptDeployment(cpContext component.WorkloadContext, 
 
 	if hcp.Spec.AdditionalTrustBundle != nil {
 		// Add trusted-ca mount with optional configmap
-		util.DeploymentAddTrustBundleVolume(hcp.Spec.AdditionalTrustBundle, deployment)
+		podspec.DeploymentAddTrustBundleVolume(hcp.Spec.AdditionalTrustBundle, deployment)
 	}
 
 	if hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
-		util.UpdateVolume("serving-cert", deployment.Spec.Template.Spec.Volumes, func(v *corev1.Volume) {
+		podspec.UpdateVolume("serving-cert", deployment.Spec.Template.Spec.Volumes, func(v *corev1.Volume) {
 			v.Secret.SecretName = ignitionserver.IgnitionServingCertSecret("").Name
 		})
 	}

@@ -168,7 +168,7 @@ func etagPtr(e azcore.ETag) *azcore.ETag {
 }
 
 // newAzureBlobUploaderWithClient creates an AzureBlobUploader with a provided client (for testing).
-func newAzureBlobUploaderWithClient(container, storageAccount, encryptionScope string, client AzureBlobUploadAPI) *AzureBlobUploader {
+func newAzureBlobUploaderWithClient(container, storageAccount, encryptionScope string, client AzureBlobUploadAPI) *AzureBlobUploader { //nolint:unparam // parameter kept for API consistency
 	return &AzureBlobUploader{
 		container:       container,
 		storageAccount:  storageAccount,

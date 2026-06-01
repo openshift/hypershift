@@ -10,8 +10,8 @@ import (
 	"os"
 
 	"github.com/openshift/hypershift/support/konnectivityproxy"
+	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/supportedversion"
-	"github.com/openshift/hypershift/support/util"
 
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/utils/ptr"
@@ -190,7 +190,7 @@ func dialThroughProxyFunc(httpProxy *goproxy.ProxyHttpServer, proxyURL string, p
 func shouldDialDirectFunc(connectDirectlyToCloudAPIs bool, isCloudAPI func(string) bool, userProxyFunc func(*url.URL) (*url.URL, error)) func(*url.URL) (bool, error) {
 	return func(u *url.URL) (bool, error) {
 		if connectDirectlyToCloudAPIs {
-			hostName, err := util.HostFromURL(u.String())
+			hostName, err := netutil.HostFromURL(u.String())
 			if err != nil {
 				return false, err
 			}

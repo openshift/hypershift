@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net"
 	"reflect"
+	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -18,11 +20,14 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cvo"
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	cpoauth "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/oauth"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ocm"
+	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
 	alerts "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/alerts"
 	azureresources "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/azure"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/cco"
 	ccm "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/cloudcontrollermanager/azure"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/crd"
+	gcpresources "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/gcp"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/ingress"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/kas"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/konnectivity"
@@ -39,12 +44,15 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/registry"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/storage"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/operator"
+	metricsproxy "github.com/openshift/hypershift/control-plane-operator/metrics-proxy"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/globalconfig"
+	"github.com/openshift/hypershift/support/k8sutil"
+	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
@@ -52,7 +60,9 @@ import (
 	"github.com/openshift/api/annotations"
 	configv1 "github.com/openshift/api/config/v1"
 	imageregistryv1 "github.com/openshift/api/imageregistry/v1"
+	openshiftcpv1 "github.com/openshift/api/openshiftcontrolplane/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
+	routev1 "github.com/openshift/api/route/v1"
 
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -81,6 +91,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
+	"sigs.k8s.io/yaml"
 
 	"github.com/blang/semver"
 	"github.com/go-logr/logr"
@@ -121,6 +132,8 @@ exec /bin/azure-cloud-node-manager \
   --enable-deprecated-beta-topology-labels \
   --wait-routes=false
 `
+
+var disabledServiceAccountPullSecretsController = fmt.Sprintf("-%s", openshiftcpv1.OpenShiftServiceAccountPullSecretsController)
 
 type reconciler struct {
 	client         client.Client
@@ -299,12 +312,32 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 		return fmt.Errorf("failed to watch ConfigMap: %w", err)
 	}
 
+	// Watch metrics-proxy Route on the control plane cluster for hostname changes.
+	if err := c.Watch(source.Kind[client.Object](opts.CPCluster.GetCache(), &routev1.Route{}, eventHandler())); err != nil {
+		return fmt.Errorf("failed to watch Route: %w", err)
+	}
+
+	// Watch HostedControlPlane namespace pull-secret on the control plane cluster so guest pull secrets
+	// (openshift-config, openshift) reconcile promptly when the hypershift-operator
+	// syncs in-place updates from HostedCluster.spec.pullSecret.
+	// The globalps controller has its own CP pull-secret watch for kube-system/original-pull-secret.
+	cpPullSecret := manifests.PullSecret(opts.Namespace)
+	cpPullSecretPredicate := predicate.NewPredicateFuncs(namespacedNamePredicateFunc(cpPullSecret.Namespace, cpPullSecret.Name))
+	if err := c.Watch(source.Kind[client.Object](opts.CPCluster.GetCache(), &corev1.Secret{}, eventHandler(), cpPullSecretPredicate)); err != nil {
+		return fmt.Errorf("failed to watch control plane pull secret: %w", err)
+	}
+
 	return nil
+}
+
+func namespacedNamePredicateFunc(namespace, name string) func(client.Object) bool {
+	return func(o client.Object) bool {
+		return o.GetNamespace() == namespace && o.GetName() == name
+	}
 }
 
 func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result, error) {
 	log := ctrl.LoggerFrom(ctx)
-	log.Info("Reconciling")
 
 	hcp := manifests.HostedControlPlane(r.hcpNamespace, r.hcpName)
 	if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(hcp), hcp); err != nil {
@@ -312,31 +345,7 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 	}
 
 	if !hcp.DeletionTimestamp.IsZero() {
-		// Delete admission policies during cluster deletion to allow HCCO cleanup operations for ARO HCP
-		if hcp.Spec.Platform.Type == hyperv1.AzurePlatform {
-			registryConfigManagementStateAdmissionPolicy := registry.AdmissionPolicy{Name: registry.AdmissionPolicyNameManagementState}
-			// During cluster deletion, delete the admission policy and its binding to allow CIRO cleanup
-			log.Info("Cluster is being deleted, deleting registry management state admission policy and binding to allow cleanup")
-
-			// Delete binding first to avoid dangling reference
-			binding := manifests.ValidatingAdmissionPolicyBinding(fmt.Sprintf("%s-binding", registryConfigManagementStateAdmissionPolicy.Name))
-			_, err := util.DeleteIfNeeded(ctx, r.client, binding)
-			if err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to delete ValidatingAdmissionPolicyBinding %s: %v", binding.Name, err)
-			}
-
-			// Delete policy
-			vap := manifests.ValidatingAdmissionPolicy(registryConfigManagementStateAdmissionPolicy.Name)
-			if _, err := util.DeleteIfNeeded(ctx, r.client, vap); err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to delete ValidatingAdmissionPolicy %s: %v", vap.Name, err)
-			}
-		}
-
-		if shouldCleanupCloudResources(hcp) {
-			log.Info("Cleaning up hosted cluster cloud resources")
-			return r.destroyCloudResources(ctx, hcp)
-		}
-		return ctrl.Result{}, nil
+		return r.reconcileDeletion(ctx, log, hcp)
 	}
 
 	if isPaused, duration := util.IsReconciliationPaused(log, hcp.Spec.PausedUntil); isPaused {
@@ -422,12 +431,247 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 		errs = append(errs, fmt.Errorf("failed to reconcile rbac: %w", err))
 	}
 
-	// Reconcile the image registry only if the image registry capability is enabled.
-	// Skip this step if the user explicitly disabled image registry.
+	errs = append(errs, r.reconcileRegistryAndIngress(ctx, hcp, log)...)
+
+	errs = append(errs, r.reconcileAPIServicesAndOAuth(ctx, hcp, log, releaseImage)...)
+
+	errs = append(errs, r.reconcileNetworkingAndSecrets(ctx, hcp, log, pullSecret)...)
+
+	log.Info("reconciling olm resources")
+	errs = append(errs, r.reconcileOLM(ctx, hcp, pullSecret)...)
+
+	errs = append(errs, r.reconcileStorageAndMisc(ctx, log, hcp, releaseImage)...)
+	r.cleanupLegacyResources(ctx, log, hcp, releaseImage, &errs)
+
+	errs = append(errs, r.reconcilePlatformSpecificResources(ctx, log, hcp, releaseImage)...)
+
+	if result, err := r.reconcileClusterRecovery(ctx, log, hcp, errs); err != nil || result.RequeueAfter > 0 {
+		return result, utilerrors.NewAggregate(append(errs, err))
+	}
+
+	return ctrl.Result{}, utilerrors.NewAggregate(errs)
+}
+
+func (r *reconciler) reconcileStorageAndMisc(ctx context.Context, log logr.Logger, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) []error {
+	var errs []error
+
+	log.Info("reconciling kubelet configs")
+	if err := r.reconcileKubeletConfig(ctx); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile kubelet config: %w", err))
+	}
+
+	if hostedcontrolplane.IsStorageAndCSIManaged(hcp) {
+		log.Info("reconciling storage resources")
+		errs = append(errs, r.reconcileStorage(ctx, hcp)...)
+
+		log.Info("reconciling node level csi configuration")
+		if err := r.reconcileCSIDriver(ctx, hcp, releaseImage); err != nil {
+			errs = append(errs, err)
+		}
+	}
+
+	recyclerServiceAccount := manifests.RecyclerServiceAccount()
+	if _, err := r.CreateOrUpdate(ctx, r.client, recyclerServiceAccount, func() error {
+		return nil
+	}); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile pv recycler service account: %w", err))
+	}
+
+	log.Info("reconciling observed configuration")
+	errs = append(errs, r.reconcileObservedConfiguration(ctx, hcp)...)
+
+	errs = append(errs, r.ensureGuestAdmissionWebhooksAreValid(ctx))
+	return errs
+}
+
+func (r *reconciler) cleanupLegacyResources(ctx context.Context, log logr.Logger, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage, errs *[]error) {
+	if !r.isClusterVersionUpdated(ctx, releaseImage.Version()) {
+		return
+	}
+	deleteDNSOperatorDeploymentOnce.Do(func() {
+		dnsOperatorDeployment := manifests.DNSOperatorDeployment()
+		log.Info("removing any existing DNS operator deployment")
+		if err := r.uncachedClient.Delete(ctx, dnsOperatorDeployment); err != nil && !apierrors.IsNotFound(err) {
+			*errs = append(*errs, err)
+		}
+	})
+	deleteCVORemovedResourcesOnce.Do(func() {
+		resources := cvo.ResourcesToRemove(hcp.Spec.Platform.Type)
+		for _, resource := range resources {
+			log.Info("removing existing resources", "resource", resource)
+			if err := r.uncachedClient.Delete(ctx, resource); err != nil && !apierrors.IsNotFound(err) {
+				*errs = append(*errs, err)
+			}
+		}
+	})
+}
+
+func (r *reconciler) reconcileDeletion(ctx context.Context, log logr.Logger, hcp *hyperv1.HostedControlPlane) (ctrl.Result, error) {
+	// Delete admission policies during cluster deletion to allow HCCO cleanup operations for ARO HCP
+	if hcp.Spec.Platform.Type == hyperv1.AzurePlatform {
+		registryConfigManagementStateAdmissionPolicy := registry.AdmissionPolicy{Name: registry.AdmissionPolicyNameManagementState}
+		log.Info("Cluster is being deleted, deleting registry management state admission policy and binding to allow cleanup")
+
+		binding := manifests.ValidatingAdmissionPolicyBinding(fmt.Sprintf("%s-binding", registryConfigManagementStateAdmissionPolicy.Name))
+		if _, err := k8sutil.DeleteIfNeeded(ctx, r.client, binding); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to delete ValidatingAdmissionPolicyBinding %s: %v", binding.Name, err)
+		}
+
+		vap := manifests.ValidatingAdmissionPolicy(registryConfigManagementStateAdmissionPolicy.Name)
+		if _, err := k8sutil.DeleteIfNeeded(ctx, r.client, vap); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to delete ValidatingAdmissionPolicy %s: %v", vap.Name, err)
+		}
+	}
+
+	if shouldCleanupCloudResources(hcp) {
+		log.Info("Cleaning up hosted cluster cloud resources")
+		return r.destroyCloudResources(ctx, hcp)
+	}
+	return ctrl.Result{}, nil
+}
+
+func (r *reconciler) reconcilePlatformSpecificResources(ctx context.Context, log logr.Logger, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) []error {
+	var errs []error
+	switch hcp.Spec.Platform.Type {
+	case hyperv1.AWSPlatform:
+		log.Info("reconciling AWS specific resources")
+		errs = append(errs, r.reconcileAWSIdentityWebhook(ctx)...)
+	case hyperv1.AzurePlatform:
+		log.Info("reconciling Azure specific resources")
+		errs = append(errs, r.reconcileAzureCloudNodeManager(ctx, releaseImage.ComponentImages()["azure-cloud-node-manager"])...)
+		errs = append(errs, r.reconcileAzureIdentityWebhook(ctx)...)
+	}
+	return errs
+}
+
+func (r *reconciler) reconcileClusterRecovery(ctx context.Context, log logr.Logger, hcp *hyperv1.HostedControlPlane, existingErrs []error) (ctrl.Result, error) {
+	if _, exists := hcp.Annotations[hyperv1.HostedClusterRestoredFromBackupAnnotation]; !exists {
+		return ctrl.Result{}, nil
+	}
+
+	condition := &metav1.Condition{
+		Type:   string(hyperv1.HostedClusterRestoredFromBackup),
+		Reason: hyperv1.RecoveryFinishedReason,
+	}
+
+	finished, err := r.reconcileRestoredCluster(ctx, hcp)
+	if err != nil {
+		log.Error(err, "failed to reconcile hosted cluster recovery")
+		return ctrl.Result{}, utilerrors.NewAggregate(append(existingErrs, err))
+	}
+
+	if !finished {
+		log.Info("hosted cluster recovery not finished yet")
+		condition.Status = metav1.ConditionFalse
+		condition.Message = "Hosted cluster recovery not finished yet"
+	} else {
+		log.Info("hosted cluster recovery finished")
+		condition.Status = metav1.ConditionTrue
+		condition.Message = "Hosted cluster recovery finished"
+	}
+
+	meta.SetStatusCondition(&hcp.Status.Conditions, *condition)
+	log.Info("setting condition", "type", condition.Type, "status", condition.Status, "message", condition.Message)
+	if err := r.cpClient.Status().Update(ctx, hcp); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to update status on hcp for hosted cluster recovery: %w. Condition error message: %v", err, condition.Message)
+	}
+	log.Info("successfully updated hcp status with recovery condition")
+
+	if !finished {
+		return ctrl.Result{RequeueAfter: 120 * time.Second}, nil
+	}
+	return ctrl.Result{}, nil
+}
+
+func (r *reconciler) reconcileCSIDriver(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) error {
+	switch hcp.Spec.Platform.Type {
+	case hyperv1.KubevirtPlatform:
+		// Most csi drivers should be laid down by the Cluster Storage Operator (CSO) instead of
+		// the hcco operator. Only KubeVirt is unique at the moment.
+		err := kubevirtcsi.ReconcileTenant(r.client, hcp, ctx, r.CreateOrUpdate, releaseImage.ComponentImages())
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (r *reconciler) reconcileRegistryAndIngress(ctx context.Context, hcp *hyperv1.HostedControlPlane, log logr.Logger) []error {
+	var errs []error
+
+	registryConfig := manifests.Registry()
+	var registryConfigExists bool
+	if err := r.client.Get(ctx, client.ObjectKeyFromObject(registryConfig), registryConfig); err != nil {
+		if !apierrors.IsNotFound(err) {
+			errs = append(errs, fmt.Errorf("failed to get registry config: %w", err))
+		}
+	} else {
+		registryConfigExists = true
+	}
+
 	if capabilities.IsImageRegistryCapabilityEnabled(hcp.Spec.Capabilities) {
-		log.Info("reconciling image registry")
-		if regErrs := r.reconcileImageRegistry(ctx, hcp); len(regErrs) > 0 {
-			errs = append(errs, regErrs...)
+		// For platforms where cluster-image-registry-operator (CIRO) needs a PVC to be created, bootstrap needs to happen
+		// in CIRO before the registry config is created. For now, this is the case for the OpenStack platform.
+		// If the object exist, we reconcile the registry config for other fields as it should be fine since the PVC would
+		// exist at this point.
+		if imageRegistryPlatformWithPVC(hcp.Spec.Platform.Type) && (!registryConfigExists || registryConfig == nil) {
+			log.Info("skipping registry config to let CIRO bootstrap")
+		} else {
+			log.Info("reconciling image registry validating admission policy")
+			if r.platformType == hyperv1.AzurePlatform {
+				if err := registry.ReconcileRegistryConfigValidatingAdmissionPolicies(ctx, hcp, r.client, r.CreateOrUpdate); err != nil {
+					errs = append(errs, fmt.Errorf("failed to reconcile image registry validating admission policy: %w", err))
+				}
+			}
+			log.Info("reconciling registry config")
+			if _, err := r.CreateOrUpdate(ctx, r.client, registryConfig, func() error {
+				return registry.ReconcileRegistryConfig(registryConfig, r.platformType, hcp.Spec.InfrastructureAvailabilityPolicy)
+			}); err != nil {
+				errs = append(errs, fmt.Errorf("failed to reconcile imageregistry config: %w", err))
+			}
+
+			// TODO: remove this when ROSA HCP stops setting the managementState to Removed to disable the Image Registry
+			if r.platformType != hyperv1.IBMCloudPlatform && r.platformType != hyperv1.AzurePlatform {
+				ocmConfigMap := cpomanifests.OpenShiftControllerManagerConfig(r.hcpNamespace)
+				if _, err := r.CreateOrUpdate(ctx, r.cpClient, ocmConfigMap, func() error {
+					if ocmConfigMap.Data == nil {
+						return nil
+					}
+					config := &openshiftcpv1.OpenShiftControllerManagerConfig{}
+					if configStr, exists := ocmConfigMap.Data[ocm.ConfigKey]; exists && len(configStr) > 0 {
+						if err := k8sutil.DeserializeResource(configStr, config, api.Scheme); err != nil {
+							return fmt.Errorf("unable to decode existing openshift controller manager configuration: %w", err)
+						}
+					}
+					if registryConfig.Spec.ManagementState == operatorv1.Removed {
+						if isServiceAccountPullSecretsControllerDisabled(config.Controllers) {
+							// Already disabled; returning nil without mutation causes CreateOrUpdate to skip the update.
+							return nil
+						}
+						log.Info("imageregistry operator managementstate is removed, disabling serviceaccount-pull-secrets controller")
+						if len(config.Controllers) == 0 {
+							config.Controllers = []string{"*", disabledServiceAccountPullSecretsController}
+						} else {
+							config.Controllers = append(config.Controllers, disabledServiceAccountPullSecretsController)
+						}
+					} else if isServiceAccountPullSecretsControllerDisabled(config.Controllers) {
+						log.Info("imageregistry operator managementstate is no longer removed, re-enabling serviceaccount-pull-secrets controller")
+						config.Controllers = removeDisabledServiceAccountPullSecretsController(config.Controllers)
+					} else {
+						// No change needed; returning nil without mutation causes CreateOrUpdate to skip the update.
+						return nil
+					}
+					configStr, err := k8sutil.SerializeResource(config, api.Scheme)
+					if err != nil {
+						return fmt.Errorf("failed to serialize openshift controller manager configuration: %w", err)
+					}
+					ocmConfigMap.Data[ocm.ConfigKey] = configStr
+					return nil
+				}); err != nil {
+					errs = append(errs, fmt.Errorf("failed to reconcile openshift-controller-manager config: %w", err))
+				}
+			}
 		}
 	}
 
@@ -447,8 +691,7 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 			}
 		}
 	}
-	// Reconcile the IngressController resource only if the ingress capability is enabled.
-	// Skip this step if the user explicitly disabled ingress.
+
 	if capabilities.IsIngressCapabilityEnabled(hcp.Spec.Capabilities) {
 		log.Info("reconciling ingress controller")
 		if err := r.reconcileIngressController(ctx, hcp); err != nil {
@@ -460,6 +703,12 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 	if err := r.reconcileAuthOIDC(ctx, hcp); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile oauth client secrets: %w", err))
 	}
+
+	return errs
+}
+
+func (r *reconciler) reconcileAPIServicesAndOAuth(ctx context.Context, hcp *hyperv1.HostedControlPlane, log logr.Logger, releaseImage *releaseinfo.ReleaseImage) []error {
+	var errs []error
 
 	log.Info("reconciling kube control plane signer secret")
 	kubeControlPlaneSignerSecret := &corev1.Secret{
@@ -540,29 +789,7 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 	}
 
 	if util.HCPOAuthEnabled(hcp) {
-		log.Info("reconciling openshift oauth apiserver apiservices")
-		if err := r.reconcileOpenshiftOAuthAPIServerAPIServices(ctx, hcp); err != nil {
-			errs = append(errs, fmt.Errorf("failed to reconcile openshift apiserver service: %w", err))
-		}
-
-		log.Info("reconciling openshift oauth apiserver service")
-		openshiftOAuthAPIServerService := manifests.OpenShiftOAuthAPIServerClusterService()
-		if _, err := r.CreateOrUpdate(ctx, r.client, openshiftOAuthAPIServerService, func() error {
-			oapi.ReconcileClusterService(openshiftOAuthAPIServerService)
-			return nil
-		}); err != nil {
-			errs = append(errs, fmt.Errorf("failed to reconcile openshift oauth apiserver service: %w", err))
-		}
-
-		log.Info("reconciling openshift oauth apiserver endpoints")
-		if err := r.reconcileOpenshiftOAuthAPIServerEndpoints(ctx, hcp); err != nil {
-			errs = append(errs, fmt.Errorf("failed to reconcile openshift apiserver endpoints: %w", err))
-		}
-
-		log.Info("reconciling kubeadmin password hash secret")
-		if err := r.reconcileKubeadminPasswordHashSecret(ctx, hcp); err != nil {
-			errs = append(errs, fmt.Errorf("failed to reconcile kubeadmin password hash secret: %w", err))
-		}
+		errs = append(errs, r.reconcileOAuthAPIServerResources(ctx, hcp, log)...)
 	}
 
 	log.Info("reconciling kube apiserver service monitor")
@@ -573,6 +800,47 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 		errs = append(errs, fmt.Errorf("failed to reconcile the kube apiserver service monitor: %w", err))
 	}
 
+	log.Info("reconciling control plane metrics forwarder")
+	if err := r.reconcileMetricsForwarder(ctx, hcp, releaseImage); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile metrics forwarder: %w", err))
+	}
+
+	return errs
+}
+
+func (r *reconciler) reconcileOAuthAPIServerResources(ctx context.Context, hcp *hyperv1.HostedControlPlane, log logr.Logger) []error {
+	var errs []error
+
+	log.Info("reconciling openshift oauth apiserver apiservices")
+	if err := r.reconcileOpenshiftOAuthAPIServerAPIServices(ctx, hcp); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile openshift oauth apiserver apiservices: %w", err))
+	}
+
+	log.Info("reconciling openshift oauth apiserver service")
+	openshiftOAuthAPIServerService := manifests.OpenShiftOAuthAPIServerClusterService()
+	if _, err := r.CreateOrUpdate(ctx, r.client, openshiftOAuthAPIServerService, func() error {
+		oapi.ReconcileClusterService(openshiftOAuthAPIServerService)
+		return nil
+	}); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile openshift oauth apiserver service: %w", err))
+	}
+
+	log.Info("reconciling openshift oauth apiserver endpoints")
+	if err := r.reconcileOpenshiftOAuthAPIServerEndpoints(ctx, hcp); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile openshift oauth apiserver endpoints: %w", err))
+	}
+
+	log.Info("reconciling kubeadmin password hash secret")
+	if err := r.reconcileKubeadminPasswordHashSecret(ctx, hcp); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile kubeadmin password hash secret: %w", err))
+	}
+
+	return errs
+}
+
+func (r *reconciler) reconcileNetworkingAndSecrets(ctx context.Context, hcp *hyperv1.HostedControlPlane, log logr.Logger, pullSecret *corev1.Secret) []error {
+	var errs []error
+
 	log.Info("reconciling network operator")
 	networkOperator := networkoperator.NetworkOperator()
 	var ovnConfig *hyperv1.OVNKubernetesConfig
@@ -580,7 +848,7 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 		ovnConfig = hcp.Spec.OperatorConfiguration.ClusterNetworkOperator.OVNKubernetesConfig
 	}
 	if _, err := r.CreateOrUpdate(ctx, r.client, networkOperator, func() error {
-		networkoperator.ReconcileNetworkOperator(networkOperator, hcp.Spec.Networking.NetworkType, hcp.Spec.Platform.Type, util.IsDisableMultiNetwork(hcp), ovnConfig)
+		networkoperator.ReconcileNetworkOperator(networkOperator, hcp.Spec.Networking.NetworkType, hcp.Spec.Platform.Type, netutil.IsDisableMultiNetwork(hcp), ovnConfig, hasIPv6Network(hcp))
 		return nil
 	}); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile network operator: %w", err))
@@ -589,6 +857,7 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 	if err := networkoperator.DetectSuboptimalMTU(ctx, r.cpClient, networkOperator, hcp); err != nil {
 		errs = append(errs, err)
 	}
+
 	// this allows users to disable data collection in sensitive environments
 	// solves https://issues.redhat.com/browse/OCPBUGS-12208
 	ensureExistsReconciliationStrategy := false
@@ -685,128 +954,105 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 		errs = append(errs, fmt.Errorf("failed to reconcile openshift controller manager service ca bundle: %w", err))
 	}
 
-	log.Info("reconciling olm resources")
-	errs = append(errs, r.reconcileOLM(ctx, hcp, pullSecret)...)
-
-	log.Info("reconciling kubelet configs")
-	if err := r.reconcileKubeletConfig(ctx); err != nil {
-		errs = append(errs, fmt.Errorf("failed to reconcile kubelet config: %w", err))
-	}
-
-	if hostedcontrolplane.IsStorageAndCSIManaged(hcp) {
-		log.Info("reconciling storage resources")
-		errs = append(errs, r.reconcileStorage(ctx, hcp)...)
-
-		log.Info("reconciling node level csi configuration")
-		if err := r.reconcileCSIDriver(ctx, hcp, releaseImage); err != nil {
-			errs = append(errs, err)
-		}
-	}
-
-	recyclerServiceAccount := manifests.RecyclerServiceAccount()
-	if _, err := r.CreateOrUpdate(ctx, r.client, recyclerServiceAccount, func() error {
-		return nil
-	}); err != nil {
-		errs = append(errs, fmt.Errorf("failed to reconcile pv recycler service account: %w", err))
-	}
-
-	log.Info("reconciling observed configuration")
-	errs = append(errs, r.reconcileObservedConfiguration(ctx, hcp)...)
-
-	errs = append(errs, r.ensureGuestAdmissionWebhooksAreValid(ctx))
-
-	// Delete the DNS operator deployment in the hosted cluster, if it is
-	// present there.  A separate DNS operator deployment runs as part of
-	// the hosted control-plane, but an upgraded cluster might still have
-	// an old DNS operator deployment in the hosted cluster.  The caching
-	// client has a label selector that doesn't match the deployment,
-	// so we must use the uncached client for this delete call.  To avoid
-	// excessive API calls using the uncached client, the delete call is
-	// guarded using a sync.Once.
-	if r.isClusterVersionUpdated(ctx, releaseImage.Version()) {
-		deleteDNSOperatorDeploymentOnce.Do(func() {
-			dnsOperatorDeployment := manifests.DNSOperatorDeployment()
-			log.Info("removing any existing DNS operator deployment")
-			if err := r.uncachedClient.Delete(ctx, dnsOperatorDeployment); err != nil && !apierrors.IsNotFound(err) {
-				errs = append(errs, err)
-			}
-		})
-		deleteCVORemovedResourcesOnce.Do(func() {
-			resources := cvo.ResourcesToRemove(hcp.Spec.Platform.Type)
-			for _, resource := range resources {
-				log.Info("removing existing resources", "resource", resource)
-				if err := r.uncachedClient.Delete(ctx, resource); err != nil && !apierrors.IsNotFound(err) {
-					errs = append(errs, err)
-				}
-			}
-		})
-	}
-
-	// Reconcile platform specific resources
-	switch hcp.Spec.Platform.Type {
-	case hyperv1.AWSPlatform:
-		log.Info("reconciling AWS specific resources")
-		errs = append(errs, r.reconcileAWSIdentityWebhook(ctx)...)
-	case hyperv1.AzurePlatform:
-		log.Info("reconciling Azure specific resources")
-		errs = append(errs, r.reconcileAzureCloudNodeManager(ctx, releaseImage.ComponentImages()["azure-cloud-node-manager"])...)
-		errs = append(errs, r.reconcileAzureIdentityWebhook(ctx)...)
-	}
-
-	// Reconcile hostedCluster recovery if the hosted cluster was restored from backup
-	if _, exists := hcp.Annotations[hyperv1.HostedClusterRestoredFromBackupAnnotation]; exists {
-		var (
-			finished bool
-			err      error
-		)
-		condition := &metav1.Condition{
-			Type:   string(hyperv1.HostedClusterRestoredFromBackup),
-			Reason: hyperv1.RecoveryFinishedReason,
-		}
-
-		finished, err = r.reconcileRestoredCluster(ctx, hcp)
-		if err != nil {
-			log.Error(err, "failed to reconcile hosted cluster recovery")
-			return ctrl.Result{}, utilerrors.NewAggregate(append(errs, err))
-		}
-
-		if !finished {
-			log.Info("hosted cluster recovery not finished yet")
-			condition.Status = metav1.ConditionFalse
-			condition.Message = "Hosted cluster recovery not finished yet"
-			meta.SetStatusCondition(&hcp.Status.Conditions, *condition)
-			log.Info("setting condition", "type", condition.Type, "status", condition.Status, "message", condition.Message)
-			if err := r.cpClient.Status().Update(ctx, hcp); err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to update status on hcp for hosted cluster recovery: %w. Condition error message: %v", err, condition.Message)
-			}
-			log.Info("successfully updated hcp status with recovery not finished condition")
-
-			return ctrl.Result{RequeueAfter: 120 * time.Second}, nil
-		}
-
-		log.Info("hosted cluster recovery finished")
-		condition.Status = metav1.ConditionTrue
-		condition.Message = "Hosted cluster recovery finished"
-		meta.SetStatusCondition(&hcp.Status.Conditions, *condition)
-		log.Info("setting condition", "type", condition.Type, "status", condition.Status, "message", condition.Message)
-		if err := r.cpClient.Status().Update(ctx, hcp); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to update status on hcp for hosted cluster recovery: %w. Condition error message: %v", err, condition.Message)
-		}
-		log.Info("successfully updated hcp status with recovery finished condition")
-	}
-
-	return ctrl.Result{}, utilerrors.NewAggregate(errs)
+	return errs
 }
 
-func (r *reconciler) reconcileCSIDriver(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) error {
-	switch hcp.Spec.Platform.Type {
-	case hyperv1.KubevirtPlatform:
-		// Most csi drivers should be laid down by the Cluster Storage Operator (CSO) instead of
-		// the hcco operator. Only KubeVirt is unique at the moment.
-		err := kubevirtcsi.ReconcileTenant(r.client, hcp, ctx, r.CreateOrUpdate, releaseImage.ComponentImages())
-		if err != nil {
-			return err
+func (r *reconciler) reconcileMetricsForwarder(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) error {
+	deployment := manifests.MetricsForwarderDeployment()
+	cm := manifests.MetricsForwarderConfigMap()
+	servingCA := manifests.MetricsForwarderServingCA()
+	podMonitor := manifests.MetricsForwarderPodMonitor()
+
+	if _, disabled := hcp.Annotations[hyperv1.DisableMonitoringServices]; disabled {
+		return k8sutil.DeleteAllIfNeeded(ctx, r.client, deployment, cm, servingCA, podMonitor)
+	}
+	if _, enabled := hcp.Annotations[hyperv1.EnableMetricsForwarding]; !enabled {
+		return k8sutil.DeleteAllIfNeeded(ctx, r.client, deployment, cm, servingCA, podMonitor)
+	}
+
+	route := &routev1.Route{}
+	if err := r.cpClient.Get(ctx, types.NamespacedName{
+		Namespace: r.hcpNamespace,
+		Name:      "metrics-proxy",
+	}, route); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
 		}
+		return fmt.Errorf("failed to get metrics-proxy route: %w", err)
+	}
+	if len(route.Status.Ingress) == 0 || route.Status.Ingress[0].Host == "" {
+		return nil
+	}
+	routeHost := route.Status.Ingress[0].Host
+
+	caCertSecret := &corev1.Secret{}
+	if err := r.cpClient.Get(ctx, types.NamespacedName{
+		Namespace: r.hcpNamespace,
+		Name:      "metrics-proxy-ca-cert",
+	}, caCertSecret); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("failed to get metrics-proxy CA cert: %w", err)
+	}
+	caCert, ok := caCertSecret.Data[corev1.TLSCertKey]
+	if !ok || len(caCert) == 0 {
+		return nil
+	}
+
+	scrapeConfigCM := &corev1.ConfigMap{}
+	if err := r.cpClient.Get(ctx, types.NamespacedName{
+		Namespace: r.hcpNamespace,
+		Name:      "metrics-proxy-config",
+	}, scrapeConfigCM); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("failed to get metrics-proxy config: %w", err)
+	}
+
+	var cfg metricsproxy.FileConfig
+	if err := yaml.Unmarshal([]byte(scrapeConfigCM.Data["config.yaml"]), &cfg); err != nil {
+		return fmt.Errorf("failed to parse metrics-proxy config: %w", err)
+	}
+	if len(cfg.Components) == 0 {
+		return nil
+	}
+	componentNames := make([]string, 0, len(cfg.Components))
+	for _, comp := range cfg.Components {
+		componentNames = append(componentNames, comp.Name)
+	}
+	sort.Strings(componentNames)
+
+	haproxyImage, ok := releaseImage.ComponentImages()["haproxy-router"]
+	if !ok {
+		return fmt.Errorf("haproxy-router image not found in release payload")
+	}
+
+	if _, err := r.CreateOrUpdate(ctx, r.client, cm, func() error {
+		return monitoring.ReconcileMetricsForwarderConfigMap(cm, routeHost)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile metrics forwarder config: %w", err)
+	}
+
+	configHash := util.HashSimple(cm.Data["haproxy.cfg"])
+
+	if _, err := r.CreateOrUpdate(ctx, r.client, deployment, func() error {
+		return monitoring.ReconcileMetricsForwarderDeployment(deployment, haproxyImage, configHash)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile metrics forwarder deployment: %w", err)
+	}
+
+	if _, err := r.CreateOrUpdate(ctx, r.client, servingCA, func() error {
+		return monitoring.ReconcileMetricsForwarderServingCA(servingCA, caCert)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile metrics forwarder serving CA: %w", err)
+	}
+
+	if _, err := r.CreateOrUpdate(ctx, r.client, podMonitor, func() error {
+		return monitoring.ReconcileMetricsForwarderPodMonitor(podMonitor, componentNames, routeHost)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile metrics forwarder pod monitor: %w", err)
 	}
 
 	return nil
@@ -1264,7 +1510,7 @@ func (r *reconciler) reconcileAuthOIDC(ctx context.Context, hcp *hyperv1.HostedC
 						errs = append(errs, fmt.Errorf("failed to get OIDCClient secret %s: %w", oidcClient.ClientSecret.Name, err))
 						continue
 					}
-					if azureutil.IsAroHCP() && util.HasAnnotationWithValue(&src, hyperv1.HostedClusterSourcedAnnotation, "true") {
+					if azureutil.IsAroHCP() && k8sutil.HasAnnotationWithValue(&src, hyperv1.HostedClusterSourcedAnnotation, "true") {
 						// This is a day-2 secret. We shouldn't copy it, instead it'll be provided by the end-user on the hosted cluster.
 						continue
 					}
@@ -1318,7 +1564,7 @@ func (r *reconciler) reconcileKonnectivityAgent(ctx context.Context, hcp *hyperv
 	} else {
 		hostedKonnectivityCA := manifests.KonnectivityHostedCAConfigMap()
 		if _, err := r.CreateOrUpdate(ctx, r.client, hostedKonnectivityCA, func() error {
-			util.CopyConfigMap(hostedKonnectivityCA, controlPlaneKonnectivityCA)
+			k8sutil.CopyConfigMap(hostedKonnectivityCA, controlPlaneKonnectivityCA)
 			return nil
 		}); err != nil {
 			errs = append(errs, fmt.Errorf("failed to reconcile konnectivity CA config map: %w", err))
@@ -1600,11 +1846,13 @@ func (r *reconciler) reconcileControlPlaneConnectionAvailable(ctx context.Contex
 	cm := manifests.KASConnectionCheckerConfigMap()
 	if err := r.client.Get(ctx, client.ObjectKeyFromObject(cm), cm); err != nil {
 		if apierrors.IsNotFound(err) {
+			// CPO has not created the configmap yet, wait for create
 			condition.Reason = hyperv1.ControlPlaneConnectionConfigMapNotFoundReason
 			condition.Message = fmt.Sprintf("Connectivity check ConfigMap %s/%s not found; the hosted cluster config operator may not have reconciled it yet",
 				manifests.KASConnectionCheckerNamespace, manifests.KASConnectionCheckerConfigMapName)
 			return r.patchHCPStatusCondition(ctx, hcp, condition)
 		}
+		// This should not happen as we are started by the CPO after the configmap should be created
 		condition.Reason = hyperv1.ReconcileErrorReason
 		condition.Message = fmt.Sprintf("Failed to get connectivity check ConfigMap %s/%s: %v",
 			manifests.KASConnectionCheckerNamespace, manifests.KASConnectionCheckerConfigMapName, err)
@@ -1680,8 +1928,8 @@ func (r *reconciler) reconcileOpenshiftOAuthAPIServerAPIServices(ctx context.Con
 func (r *reconciler) reconcileKASEndpoints(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
 	var errs []error
 
-	kasAdvertiseAddress := util.GetAdvertiseAddress(hcp, config.DefaultAdvertiseIPv4Address, config.DefaultAdvertiseIPv6Address)
-	kasEndpointsPort := util.KASPodPort(hcp)
+	kasAdvertiseAddress := netutil.GetAdvertiseAddress(hcp, config.DefaultAdvertiseIPv4Address, config.DefaultAdvertiseIPv6Address)
+	kasEndpointsPort := netutil.KASPodPort(hcp)
 
 	// We only keep reconciling the endpoint for existing clusters that are relying on this for nodes haproxy to work.
 	// Otherwise, changing the haproxy config to !=443 would result in a NodePool rollout which want to avoid for existing clusters.
@@ -1818,7 +2066,7 @@ func (r *reconciler) reconcileUserCertCABundle(ctx context.Context, hcp *hyperv1
 		}
 	} else {
 		// If the HostedControlPlane has no additional trust bundle, delete the user-ca-bundle ConfigMap if it exists
-		if deleted, err := util.DeleteIfNeeded(ctx, r.client, userCAConfigMap); err != nil {
+		if deleted, err := k8sutil.DeleteIfNeeded(ctx, r.client, userCAConfigMap); err != nil {
 			return fmt.Errorf("failed to delete unused user-ca-bundle ConfigMap: %w", err)
 		} else if deleted {
 			log.Info("deleted unused user-ca-bundle ConfigMap", "name", userCAConfigMap.Name, "namespace", userCAConfigMap.Namespace)
@@ -1843,7 +2091,7 @@ func (r *reconciler) reconcileProxyCABundle(ctx context.Context, hcp *hyperv1.Ho
 			return fmt.Errorf("failed to reconcile the proxy CA bundle ConfigMap: %w", err)
 		}
 	} else {
-		if _, err := util.DeleteIfNeeded(ctx, r.client, proxyCADestination); err != nil {
+		if _, err := k8sutil.DeleteIfNeeded(ctx, r.client, proxyCADestination); err != nil {
 			return err
 		}
 	}
@@ -2037,6 +2285,10 @@ func (r *reconciler) reconcileCloudCredentialSecrets(ctx context.Context, hcp *h
 				errs = append(errs, fmt.Errorf("failed to reconcile powervs image registry cloud credentials secret %w", err))
 			}
 		}
+	case hyperv1.GCPPlatform:
+		if hcp.Spec.Platform.GCP != nil {
+			errs = append(errs, gcpresources.SetupOperandCredentials(ctx, r.client, r.CreateOrUpdateProvider, hcp)...)
+		}
 	}
 	return errs
 }
@@ -2061,7 +2313,7 @@ func (r *reconciler) reconcileOpenStackCredentialsSecret(ctx context.Context, pl
 // reconcileOperatorHub gets the OperatorHubConfig from the HCP, for now the controller only reconcile over the DisableAllDefaultSources field and only once.
 // After that the HCCO checks the OperatorHub object in the HC to manage the OLM resources.
 // TODO (jparrill): Include in the reconciliation the OperatorHub.Sources to disable only the selected sources.
-func (r *reconciler) reconcileOperatorHub(ctx context.Context, operatorHub *configv1.OperatorHub, hcp *hyperv1.HostedControlPlane) []error {
+func (r *reconciler) reconcileOperatorHub(ctx context.Context, operatorHub *configv1.OperatorHub, hcp *hyperv1.HostedControlPlane) []error { //nolint:unparam // result kept for interface/API consistency
 	log := ctrl.LoggerFrom(ctx)
 	log.Info("Reconciling HCP OperatorHub config")
 	if operatorHub.ResourceVersion == "" {
@@ -2127,7 +2379,7 @@ func (r *reconciler) reconcileOLM(ctx context.Context, hcp *hyperv1.HostedContro
 	for _, catalog := range catalogs {
 		cs := catalog.manifest()
 		if operatorHub.Spec.DisableAllDefaultSources {
-			if _, err := util.DeleteIfNeeded(ctx, r.client, cs); err != nil {
+			if _, err := k8sutil.DeleteIfNeeded(ctx, r.client, cs); err != nil {
 				if !apierrors.IsNotFound(err) {
 					errs = append(errs, fmt.Errorf("failed to delete catalogSource %s/%s: %w", cs.Namespace, cs.Name, err))
 				}
@@ -2418,7 +2670,7 @@ func (r *reconciler) reconcileAzureIdentityWebhook(ctx context.Context) []error 
 		errs = append(errs, fmt.Errorf("failed to reconcile %T %s: %w", clusterRoleBinding, clusterRoleBinding.Name, err))
 	}
 
-	failFailurePolicy := admissionregistrationv1.Fail
+	ignoreFailurePolicy := admissionregistrationv1.Ignore
 	sideEffectsNone := admissionregistrationv1.SideEffectClassNone
 	matchEquivalent := admissionregistrationv1.Equivalent
 	reinvocationIfNeeded := admissionregistrationv1.IfNeededReinvocationPolicy
@@ -2431,7 +2683,7 @@ func (r *reconciler) reconcileAzureIdentityWebhook(ctx context.Context) []error 
 				CABundle: []byte(r.rootCA),
 				URL:      ptr.To("https://127.0.0.1:9443/mutate-v1-pod"),
 			},
-			FailurePolicy:      &failFailurePolicy,
+			FailurePolicy:      &ignoreFailurePolicy,
 			MatchPolicy:        &matchEquivalent,
 			ReinvocationPolicy: &reinvocationIfNeeded,
 			ObjectSelector: &metav1.LabelSelector{
@@ -2763,7 +3015,7 @@ func (r *reconciler) reconcileKubeletConfig(ctx context.Context) error {
 			continue
 		}
 		log.Info("delete mirror config ConfigMap", "config", client.ObjectKeyFromObject(cm).String())
-		if _, err := util.DeleteIfNeeded(ctx, r.client, cm); err != nil {
+		if _, err := k8sutil.DeleteIfNeeded(ctx, r.client, cm); err != nil {
 			return fmt.Errorf("failed to delete ConfigMap %s: %w", client.ObjectKeyFromObject(cm).String(), err)
 		}
 	}
@@ -2784,7 +3036,7 @@ func (r *reconciler) deleteImmutableConfigMapIfNeeded(ctx context.Context, log l
 
 	if existingCM.Immutable != nil && *existingCM.Immutable {
 		log.Info("deleting immutable KubeletConfig ConfigMap to recreate as mutable", "configMap", client.ObjectKeyFromObject(existingCM).String())
-		if _, err := util.DeleteIfNeeded(ctx, r.client, existingCM); err != nil {
+		if _, err := k8sutil.DeleteIfNeeded(ctx, r.client, existingCM); err != nil {
 			return fmt.Errorf("failed to delete immutable ConfigMap %s: %w", client.ObjectKeyFromObject(existingCM).String(), err)
 		}
 	}
@@ -3116,7 +3368,7 @@ func isConnectionError(err error) bool {
 // cleanupResources generically deletes resources of a given type using an optional filter
 // function. The result is a boolean indicating whether resources were found that match
 // the filter and an error if one occurred.
-func cleanupResources(ctx context.Context, c client.Client, list client.ObjectList, filter func(client.Object) bool, force bool) (bool, error) {
+func cleanupResources(ctx context.Context, c client.Client, list client.ObjectList, filter func(client.Object) bool, force bool) (bool, error) { //nolint:unparam // result kept for interface/API consistency
 	log := ctrl.LoggerFrom(ctx)
 	if err := c.List(ctx, list); err != nil {
 		return false, fmt.Errorf("cannot list %T: %w", list, err)
@@ -3233,7 +3485,7 @@ func (r *reconciler) reconcileImageContentPolicyType(ctx context.Context, hcp *h
 	icsp := globalconfig.ImageContentSourcePolicy()
 
 	// Delete any current ICSP
-	_, err := util.DeleteIfNeeded(ctx, r.client, icsp)
+	_, err := k8sutil.DeleteIfNeeded(ctx, r.client, icsp)
 	if err != nil {
 		return fmt.Errorf("failed to delete image content source policy configuration configmap: %w", err)
 	}
@@ -3408,6 +3660,25 @@ func (r *reconciler) reconcileAzureCloudNodeManager(ctx context.Context, image s
 	return errs
 }
 
+func hasIPv6Network(hcp *hyperv1.HostedControlPlane) bool {
+	for _, entry := range hcp.Spec.Networking.ClusterNetwork {
+		if net.IP(entry.CIDR.IP).To4() == nil {
+			return true
+		}
+	}
+	for _, entry := range hcp.Spec.Networking.ServiceNetwork {
+		if net.IP(entry.CIDR.IP).To4() == nil {
+			return true
+		}
+	}
+	for _, entry := range hcp.Spec.Networking.MachineNetwork {
+		if net.IP(entry.CIDR.IP).To4() == nil {
+			return true
+		}
+	}
+	return false
+}
+
 // imageRegistryPlatformWithPVC returns true if the platform requires a PVC for the image registry.
 func imageRegistryPlatformWithPVC(platform hyperv1.PlatformType) bool {
 	switch platform {
@@ -3418,51 +3689,19 @@ func imageRegistryPlatformWithPVC(platform hyperv1.PlatformType) bool {
 	}
 }
 
-// reconcileImageRegistry reconciles the image registry configuration.
-// It handles:
-// - Platform-specific PVC logic (e.g., OpenStack needs CIRO bootstrap first)
-// - Validating admission policies (Azure only)
-// - Registry configuration reconciliation
-func (r *reconciler) reconcileImageRegistry(
-	ctx context.Context,
-	hcp *hyperv1.HostedControlPlane,
-) []error {
-	log := ctrl.LoggerFrom(ctx)
-	var errs []error
+func isServiceAccountPullSecretsControllerDisabled(controllers []string) bool {
+	return slices.Contains(controllers, disabledServiceAccountPullSecretsController)
+}
 
-	registryConfig := manifests.Registry()
-	var registryConfigExists bool
-	// Check if the registry config exists
-	if err := r.client.Get(ctx, client.ObjectKeyFromObject(registryConfig), registryConfig); err != nil {
-		if !apierrors.IsNotFound(err) {
-			return []error{fmt.Errorf("failed to get registry config: %w", err)}
-		}
-	} else {
-		registryConfigExists = true
-	}
-
-	// For platforms where cluster-image-registry-operator (CIRO) needs a PVC to be created, bootstrap needs to happen
-	// in CIRO before the registry config is created. For now, this is the case for the OpenStack platform.
-	// If the object exist, we reconcile the registry config for other fields as it should be fine since the PVC would
-	// exist at this point.
-	if imageRegistryPlatformWithPVC(hcp.Spec.Platform.Type) && (!registryConfigExists || registryConfig == nil) {
-		log.Info("skipping registry config to let CIRO bootstrap")
-		return nil
-	}
-
-	log.Info("reconciling image registry validating admission policy")
-	if r.platformType == hyperv1.AzurePlatform {
-		if err := registry.ReconcileRegistryConfigValidatingAdmissionPolicies(ctx, hcp, r.client, r.CreateOrUpdate); err != nil {
-			errs = append(errs, fmt.Errorf("failed to reconcile image registry validating admission policy: %w", err))
+func removeDisabledServiceAccountPullSecretsController(controllers []string) []string {
+	filtered := make([]string, 0, len(controllers))
+	for _, c := range controllers {
+		if c != disabledServiceAccountPullSecretsController {
+			filtered = append(filtered, c)
 		}
 	}
-
-	log.Info("reconciling registry config")
-	if _, err := r.CreateOrUpdate(ctx, r.client, registryConfig, func() error {
-		return registry.ReconcileRegistryConfig(registryConfig, r.platformType, hcp.Spec.InfrastructureAvailabilityPolicy)
-	}); err != nil {
-		errs = append(errs, fmt.Errorf("failed to reconcile imageregistry config: %w", err))
+	if len(filtered) == 0 {
+		return []string{"*"}
 	}
-
-	return errs
+	return filtered
 }

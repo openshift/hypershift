@@ -8,8 +8,8 @@ import (
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/upsert"
-	supportutil "github.com/openshift/hypershift/support/util"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -127,7 +127,7 @@ func (r *GCPPrivateServiceConnectReconciler) Reconcile(ctx context.Context, req 
 	}
 
 	// 4. Find the hosted cluster using annotation (set by customer-side controller)
-	hc, err := r.hostedClusterFromAnnotation(ctx, gcpPSC)
+	hc, err := k8sutil.HostedClusterFromAnnotation(ctx, r.Client, gcpPSC)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to get hosted cluster: %w", err)
 	}
@@ -150,7 +150,7 @@ func (r *GCPPrivateServiceConnectReconciler) Reconcile(ctx context.Context, req 
 }
 
 // reconcileGCPPrivateServiceConnectSpec reconciles the GCPPrivateServiceConnect spec fields
-func (r *GCPPrivateServiceConnectReconciler) reconcileGCPPrivateServiceConnectSpec(ctx context.Context, gcpPSC *hyperv1.GCPPrivateServiceConnect, hc *hyperv1.HostedCluster) error {
+func (r *GCPPrivateServiceConnectReconciler) reconcileGCPPrivateServiceConnectSpec(ctx context.Context, gcpPSC *hyperv1.GCPPrivateServiceConnect, _ *hyperv1.HostedCluster) error {
 	// Set ForwardingRuleName if not already populated
 	if gcpPSC.Spec.ForwardingRuleName == "" {
 		forwardingRuleName, err := r.lookupForwardingRuleName(ctx, gcpPSC)
@@ -385,7 +385,7 @@ func (r *GCPPrivateServiceConnectReconciler) buildConsumerAcceptLists(acceptList
 }
 
 // updateStatusFromServiceAttachment updates the CR status based on Service Attachment state
-func (r *GCPPrivateServiceConnectReconciler) updateStatusFromServiceAttachment(ctx context.Context, gcpPSC *hyperv1.GCPPrivateServiceConnect, serviceAttachment *compute.ServiceAttachment) (ctrl.Result, error) {
+func (r *GCPPrivateServiceConnectReconciler) updateStatusFromServiceAttachment(ctx context.Context, gcpPSC *hyperv1.GCPPrivateServiceConnect, serviceAttachment *compute.ServiceAttachment) (ctrl.Result, error) { //nolint:unparam // result kept for API consistency
 	patch := client.MergeFrom(gcpPSC.DeepCopy())
 
 	// Update status fields
@@ -463,7 +463,7 @@ func (r *GCPPrivateServiceConnectReconciler) delete(ctx context.Context, gcpPSC 
 }
 
 // handleGCPError handles GCP API errors with appropriate retry logic
-func (r *GCPPrivateServiceConnectReconciler) handleGCPError(ctx context.Context, gcpPSC *hyperv1.GCPPrivateServiceConnect, reason string, err error) (ctrl.Result, error) {
+func (r *GCPPrivateServiceConnectReconciler) handleGCPError(ctx context.Context, gcpPSC *hyperv1.GCPPrivateServiceConnect, reason string, err error) (ctrl.Result, error) { //nolint:unparam // error return kept for API consistency
 	log := r.Log.WithValues("gcpprivateserviceconnect", gcpPSC.Name)
 
 	// Extract GCP error details
@@ -535,25 +535,6 @@ func (r *GCPPrivateServiceConnectReconciler) extractGCPRegionFromEnv() (string, 
 		return "", fmt.Errorf("GCP_REGION environment variable is required")
 	}
 	return region, nil
-}
-
-// hostedClusterFromAnnotation retrieves the HostedCluster using the annotation on GCPPrivateServiceConnect
-func (r *GCPPrivateServiceConnectReconciler) hostedClusterFromAnnotation(ctx context.Context, gcpPSC *hyperv1.GCPPrivateServiceConnect) (*hyperv1.HostedCluster, error) {
-	hcNamespaceName, exists := gcpPSC.Annotations[supportutil.HostedClusterAnnotation]
-	if !exists {
-		return nil, fmt.Errorf("GCPPrivateServiceConnect %s/%s missing %s annotation", gcpPSC.Namespace, gcpPSC.Name, supportutil.HostedClusterAnnotation)
-	}
-
-	parts := strings.SplitN(hcNamespaceName, "/", 2)
-	if len(parts) != 2 {
-		return nil, fmt.Errorf("invalid %s annotation format: %s", supportutil.HostedClusterAnnotation, hcNamespaceName)
-	}
-
-	hc := &hyperv1.HostedCluster{}
-	if err := r.Get(ctx, client.ObjectKey{Namespace: parts[0], Name: parts[1]}, hc); err != nil {
-		return nil, fmt.Errorf("failed to get hosted cluster %s/%s: %w", parts[0], parts[1], err)
-	}
-	return hc, nil
 }
 
 // isReconciliationPaused checks if reconciliation should be paused and returns the pause duration

@@ -21,6 +21,8 @@ package v1beta1
 // with apply.
 type OVNKubernetesConfigApplyConfiguration struct {
 	IPv4 *OVNIPv4ConfigApplyConfiguration `json:"ipv4,omitempty"`
+	IPv6 *OVNIPv6ConfigApplyConfiguration `json:"ipv6,omitempty"`
+	MTU  *int32                           `json:"mtu,omitempty"`
 }
 
 // OVNKubernetesConfigApplyConfiguration constructs a declarative configuration of the OVNKubernetesConfig type for use with
@@ -34,5 +36,21 @@ func OVNKubernetesConfig() *OVNKubernetesConfigApplyConfiguration {
 // If called multiple times, the IPv4 field is set to the value of the last call.
 func (b *OVNKubernetesConfigApplyConfiguration) WithIPv4(value *OVNIPv4ConfigApplyConfiguration) *OVNKubernetesConfigApplyConfiguration {
 	b.IPv4 = value
+	return b
+}
+
+// WithIPv6 sets the IPv6 field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the IPv6 field is set to the value of the last call.
+func (b *OVNKubernetesConfigApplyConfiguration) WithIPv6(value *OVNIPv6ConfigApplyConfiguration) *OVNKubernetesConfigApplyConfiguration {
+	b.IPv6 = value
+	return b
+}
+
+// WithMTU sets the MTU field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the MTU field is set to the value of the last call.
+func (b *OVNKubernetesConfigApplyConfiguration) WithMTU(value int32) *OVNKubernetesConfigApplyConfiguration {
+	b.MTU = &value
 	return b
 }

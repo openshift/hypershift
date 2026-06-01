@@ -5,14 +5,14 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/netutil"
 )
 
 func GetKASServerCertificatesSANs(externalAPIAddress, internalAPIAddress string, serviceCIDRs []string, nodeInternalAPIServerIP string) ([]string, []string, error) {
 	svcAddresses := make([]string, 0)
 
 	for _, serviceCIDR := range serviceCIDRs {
-		serviceIP, err := util.FirstUsableIP(serviceCIDR)
+		serviceIP, err := netutil.FirstUsableIP(serviceCIDR)
 		if err != nil {
 			return nil, nil, fmt.Errorf("cannot get the first usable IP from CIDR %s: %w", serviceIP, err)
 		}

@@ -7,8 +7,8 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	controlplanecomponent "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
 	"github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/testutil"
-	"github.com/openshift/hypershift/support/util"
 
 	v1 "github.com/openshift/api/config/v1"
 	openshiftcpv1 "github.com/openshift/api/openshiftcontrolplane/v1"
@@ -69,19 +69,19 @@ func TestReconcileOpenShiftControllerManagerConfig(t *testing.T) {
 			}
 
 			config := &openshiftcpv1.OpenShiftControllerManagerConfig{}
-			err = util.DeserializeResource(configMap.Data[configKey], config, api.Scheme)
+			err = k8sutil.DeserializeResource(configMap.Data[configKey], config, api.Scheme)
 			if err != nil {
 				t.Fatalf("unable to decode existing openshift controller manager configuration: %v", err)
 			}
 
-			adaptConfig(config, hcp.Spec.Configuration, imageProvider, buildConfig, hcp.Spec.Capabilities, []string{"foo=true", "bar=false"})
-			configStr, err := util.SerializeResource(config, api.Scheme)
+			adaptConfig(config, hcp.Spec.Configuration, imageProvider, buildConfig, hcp.Spec.Capabilities, []string{"foo=true", "bar=false"}, nil)
+			configStr, err := k8sutil.SerializeResource(config, api.Scheme)
 			if err != nil {
 				t.Fatalf("failed to serialize openshift controller manager configuration: %v", err)
 			}
 			configMap.Data[configKey] = configStr
 
-			configMapYaml, err := util.SerializeResource(configMap, api.Scheme)
+			configMapYaml, err := k8sutil.SerializeResource(configMap, api.Scheme)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -96,4 +96,90 @@ func TestReconcileOpenShiftControllerManagerConfig(t *testing.T) {
 
 	t.Run("WithAllCapabilitiesEnabled", testFunc(nil))
 	t.Run("WithCapabilitiesEnabledAndDisabled", testFunc(caps))
+}
+
+func TestAdaptConfig_PreservesExistingControllers(t *testing.T) {
+	hcp := &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test",
+			Namespace: "test-namespace",
+		},
+		Spec: hyperv1.HostedControlPlaneSpec{
+			ReleaseImage: "quay.io/ocp-dev/test-release-image:latest",
+			Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.AWSPlatform,
+			},
+			IssuerURL: "https://www.example.com",
+			Configuration: &hyperv1.ClusterConfiguration{
+				Image: &v1.ImageSpec{},
+			},
+			// ImageRegistry capability is enabled (default)
+		},
+	}
+	images := map[string]string{
+		"docker-builder": "quay.io/test/docker-builder",
+		"deployer":       "quay.io/test/deployer",
+	}
+	imageProvider := imageprovider.NewFromImages(images)
+
+	// Simulate HCCO setting the Controllers field to disable pull secrets controller
+	// (e.g., when registry is disabled via managementState: Removed)
+	existingControllersFromCluster := []string{"*", "-openshift.io/serviceaccount-pull-secrets"}
+
+	config := &openshiftcpv1.OpenShiftControllerManagerConfig{}
+	config.ServingInfo = &v1.HTTPServingInfo{}
+
+	// Adapt config with ImageRegistry capability enabled (not explicitly disabled)
+	adaptConfig(config, hcp.Spec.Configuration, imageProvider, &v1.Build{}, nil, []string{}, existingControllersFromCluster)
+
+	// Verify that the Controllers field is preserved
+	if len(config.Controllers) != 2 {
+		t.Errorf("expected Controllers to be preserved with 2 entries, got %d: %v", len(config.Controllers), config.Controllers)
+	}
+	if config.Controllers[0] != "*" || config.Controllers[1] != "-openshift.io/serviceaccount-pull-secrets" {
+		t.Errorf("expected Controllers to be preserved as ['*', '-openshift.io/serviceaccount-pull-secrets'], got %v", config.Controllers)
+	}
+}
+
+func TestAdaptConfig_DisabledImageRegistryCapability(t *testing.T) {
+	hcp := &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test",
+			Namespace: "test-namespace",
+		},
+		Spec: hyperv1.HostedControlPlaneSpec{
+			ReleaseImage: "quay.io/ocp-dev/test-release-image:latest",
+			Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.AWSPlatform,
+			},
+			IssuerURL: "https://www.example.com",
+			Configuration: &hyperv1.ClusterConfiguration{
+				Image: &v1.ImageSpec{},
+			},
+			Capabilities: &hyperv1.Capabilities{
+				Disabled: []hyperv1.OptionalCapability{
+					hyperv1.ImageRegistryCapability,
+				},
+			},
+		},
+	}
+	images := map[string]string{
+		"docker-builder": "quay.io/test/docker-builder",
+		"deployer":       "quay.io/test/deployer",
+	}
+	imageProvider := imageprovider.NewFromImages(images)
+
+	config := &openshiftcpv1.OpenShiftControllerManagerConfig{}
+	config.ServingInfo = &v1.HTTPServingInfo{}
+
+	// Adapt config with ImageRegistry capability explicitly disabled
+	adaptConfig(config, hcp.Spec.Configuration, imageProvider, &v1.Build{}, hcp.Spec.Capabilities, []string{}, nil)
+
+	// Verify that the Controllers field is set to disable pull secrets controller
+	if len(config.Controllers) != 2 {
+		t.Errorf("expected Controllers to be set with 2 entries, got %d: %v", len(config.Controllers), config.Controllers)
+	}
+	if config.Controllers[0] != "*" || config.Controllers[1] != "-openshift.io/serviceaccount-pull-secrets" {
+		t.Errorf("expected Controllers to be set as ['*', '-openshift.io/serviceaccount-pull-secrets'], got %v", config.Controllers)
+	}
 }

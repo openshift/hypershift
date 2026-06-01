@@ -14,9 +14,11 @@ runner pods that pick up GitHub Actions jobs and terminate after completion.
 ### How It Works
 
 When a PR is opened against `openshift/hypershift`, GitHub triggers the workflow
-files defined in `.github/workflows/`. Each workflow file (e.g., `lint.yaml`,
-`codespell.yaml`) specifies `runs-on: arc-runner-set`, which tells GitHub to
-route the job to our self-hosted runners instead of GitHub-hosted runners.
+files defined in `.github/workflows/`. All workflows follow a **caller + reusable**
+pattern: each caller workflow (e.g., `lint.yaml`) delegates to a reusable workflow
+(e.g., `lint-reusable.yaml`) pinned at `@main` via `uses:`. The reusable workflow
+contains the actual job steps and specifies `runs-on: arc-runner-set`, which tells
+GitHub to route the job to our self-hosted runners instead of GitHub-hosted runners.
 
 **Note:** These runners are scoped to the `openshift/hypershift` repository
 only (via `githubConfigUrl` in the Helm values). PRs in other OpenShift repos
@@ -42,7 +44,8 @@ connection to GitHub's Actions service — essentially saying "I'm here, send me
 jobs."
 
 **Phase 2 — Job matching (on every PR):**
-When a PR triggers a workflow, GitHub reads the workflow YAML and sees
+When a PR triggers a workflow, the caller workflow delegates to the reusable
+workflow pinned at `@main`. GitHub reads the reusable workflow YAML and sees
 `runs-on: arc-runner-set`. It checks its registry of runners and finds one
 registered under that label for `openshift/hypershift`. It queues the job for
 that runner set. The Listener — already connected — receives the job
@@ -61,7 +64,7 @@ arrow — everything flows outbound from the cluster to GitHub:
 sequenceDiagram
     participant Dev as Developer
     participant GH as GitHub API<br/>(api.github.com)
-    participant WF as Workflow YAML<br/>(.github/workflows/*.yaml)
+    participant WF as Workflow YAML<br/>(.github/workflows/*-reusable.yaml)
     participant Listener as ARC Listener<br/>(arc-systems namespace)
     participant Controller as ARC Controller<br/>(arc-systems namespace)
     participant Runner as Runner Pod<br/>(arc-runners namespace)
@@ -77,7 +80,7 @@ sequenceDiagram
     rect rgb(255, 248, 240)
         Note over Dev,GH: Phase 2: Job Matching (on PR)
         Dev->>GH: Opens / updates PR
-        GH->>WF: Evaluates workflow triggers<br/>(on: pull_request)
+        GH->>WF: Evaluates caller triggers<br/>(on: pull_request)<br/>Caller delegates to reusable@main
         WF->>GH: Creates jobs with<br/>runs-on: arc-runner-set
         GH->>GH: Matches label to registered<br/>runner scale set
         GH-->>Listener: Job notification delivered<br/>over existing long-poll<br/>(no inbound connection needed)
@@ -125,9 +128,12 @@ required for HyperShift development:
 - **Go** (matching the project's `go.mod` version)
 - **make**, **gcc** (build toolchain)
 - **oc** / **kubectl** (OpenShift/Kubernetes CLI)
+- **golangci-lint** and **kube-api-linter plugin** (pre-built for faster CI)
 
-The base image is pinned by digest (not `:latest`) for reproducibility. The
-custom image is also referenced by digest in the Helm values.
+The image is built automatically by Konflux on every push to `main` that
+modifies `Dockerfile.github-actions-runner`, and published to
+`quay.io/redhat-user-workloads/crt-redhat-acm-tenant/hypershift-gh-actions-runner`.
+The Konflux build produces multi-arch images (amd64 + arm64).
 
 #### Resource Sizing
 Each runner pod requests **4 CPU / 16GB RAM**, matching the resource profile of
@@ -164,7 +170,8 @@ from landing on a single node.
 - **Seccomp**: `RuntimeDefault` profile applied.
 - **SELinux**: Context applied by OpenShift.
 - **Minimal RBAC**: Runner service account is `arc-runner-set-gha-rs-no-permission`.
-- **Image pinning**: Both the base and custom images are referenced by digest.
+- **Image pinning**: The base image in the Dockerfile is pinned by digest. The
+  runner image can be pinned to a specific Konflux build by commit SHA tag.
 
 #### Authentication
 Runners authenticate to GitHub using a **GitHub App** (not a PAT). The App
@@ -219,27 +226,21 @@ export KUBECONFIG=/path/to/hosted-cluster-kubeconfig
 chmod 600 "$KUBECONFIG"
 ```
 
-### 2. Build and Push the Runner Image
+### 2. Runner Image
 
-Build the custom ARM64 runner image and push it to Quay:
+The runner image is built automatically by Konflux. The Tekton push pipeline
+in `.tekton/hypershift-gh-actions-runner-push.yaml` triggers on changes to
+`Dockerfile.github-actions-runner` and publishes multi-arch images to:
 
-```bash
-podman build --platform linux/arm64 \
-  -t quay.io/rh_ee_brcox/arc-runner:latest \
-  -f Dockerfile.github-actions-runner .
-
-podman push quay.io/rh_ee_brcox/arc-runner:latest
+```
+quay.io/redhat-user-workloads/crt-redhat-acm-tenant/hypershift-gh-actions-runner
 ```
 
-After pushing, get the remote digest for the values file:
+No manual build step is needed. To verify the latest image:
 
 ```bash
-skopeo inspect docker://quay.io/rh_ee_brcox/arc-runner:latest \
-  | python3 -c "import sys,json; print(json.load(sys.stdin)['Digest'])"
+skopeo inspect docker://quay.io/redhat-user-workloads/crt-redhat-acm-tenant/hypershift-gh-actions-runner:latest
 ```
-
-Update the `image` field in `hack/github-actions-runner/values.yaml` with the
-new digest.
 
 ### 3. Install the ARC Controller
 
@@ -408,18 +409,49 @@ spec:
 
 ## Using the Runners in Workflows
 
-Reference the runner label `arc-runner-set` in your GitHub Actions workflow:
+All HyperShift workflows use a caller + reusable pattern. The caller defines
+triggers and delegates to a reusable workflow pinned at `@main`. The reusable
+workflow contains the job steps and `runs-on: arc-runner-set`.
+
+**Caller workflow** (e.g., `my-check.yaml`):
 
 ```yaml
+name: My Check
+
+on:
+  pull_request:
+    branches:
+      - main
+      - release-4.22
+
 jobs:
-  build:
+  my-check:
+    uses: openshift/hypershift/.github/workflows/my-check-reusable.yaml@main
+    permissions:
+      contents: read
+```
+
+**Reusable workflow** (e.g., `my-check-reusable.yaml`):
+
+```yaml
+name: My Check (Reusable)
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  my-check:
     runs-on: arc-runner-set
     steps:
       - uses: actions/checkout@v4
-      - run: go version
-      - run: oc version --client
-      - run: make build
+      - run: make my-check
 ```
+
+This pattern ensures PRs cannot modify the workflow code they execute under
+(the reusable workflow is resolved from `@main`, not from the PR branch).
 
 ## Verification
 
@@ -470,17 +502,24 @@ oc -n arc-monitoring get route grafana -o jsonpath='{.spec.host}'
 
 When updating Go or other tooling:
 
-1. Update the `Dockerfile.github-actions-runner` in the repo root
-2. Rebuild and push the image (see Step 2)
-3. Get the new remote digest via `skopeo inspect`
-4. Update the digest in `hack/github-actions-runner/values.yaml`
-5. Run the Helm upgrade:
+1. Update `Dockerfile.github-actions-runner` in the repo root
+2. Merge to `main` — Konflux will automatically build and push the new image
+3. New runner pods will pick up the `:latest` tag on next job execution
+
+To force an immediate rollout, run the Helm upgrade:
 
 ```bash
 helm upgrade arc-runner-set \
   --namespace arc-runners \
   oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set \
   -f hack/github-actions-runner/values.yaml
+```
+
+To pin to a specific build instead of `:latest`, use the commit SHA tag:
+
+```bash
+# In values.yaml, replace the image with:
+image: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/hypershift-gh-actions-runner:<commit-sha>
 ```
 
 ## Teardown

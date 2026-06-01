@@ -2,13 +2,12 @@ name: Codespell
 
 on:
   pull_request:
-    branches: [main]
+    branches:
+      - main
+      - release-4.22
 
 jobs:
   codespell:
-    name: Codespell
-    runs-on: arc-runner-set
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v6
-      - run: make verify-codespell
+    uses: openshift/hypershift/.github/workflows/codespell-reusable.yaml@main
+    permissions:
+      contents: read

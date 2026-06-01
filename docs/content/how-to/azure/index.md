@@ -24,10 +24,9 @@ Self-managed Azure uses an OpenShift cluster (running on any platform - AWS, Azu
 **Guides:**
 
 - [Self-Managed Azure Overview](self-managed-azure-index.md) - Architecture and deployment workflow
-- [Azure Workload Identity Setup](azure-workload-identity-setup.md) - Set up managed identities and OIDC federation
+- [Create Azure IAM Resources](create-iam-separately.md) - Set up OIDC issuer, managed identities, and workload identity federation
 - [Setup Azure Management Cluster](setup-management-cluster.md) - Install HyperShift operator
 - [Create a Self-Managed Azure HostedCluster](create-self-managed-azure-cluster.md) - Deploy your first hosted cluster
-- [Create Azure IAM Resources Separately](create-iam-separately.md) - Manage workload identities independently
 - [Create Azure Infrastructure Separately](create-infra-separately.md) - Create infrastructure before cluster
 
 ## Comparison
