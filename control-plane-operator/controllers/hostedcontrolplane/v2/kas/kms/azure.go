@@ -195,12 +195,6 @@ func (p *azureKMSProvider) GenerateKMSPodConfig() (*KMSPodConfig, error) {
 		)
 	}
 
-	if p.isSelfManaged {
-		podConfig.Containers = append(podConfig.Containers,
-			podspec.BuildContainer(kasContainerAzureKMSTokenMinter(), p.buildKASContainerAzureKMSTokenMinter()),
-		)
-	}
-
 	podConfig.KASContainerMutate = func(c *corev1.Container) {
 		c.VolumeMounts = append(c.VolumeMounts, azureKMSVolumeMounts.ContainerMounts(KasMainContainerName)...)
 	}

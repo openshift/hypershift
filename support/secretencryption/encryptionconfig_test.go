@@ -10,6 +10,55 @@ import (
 	apiserverv1 "k8s.io/apiserver/pkg/apis/apiserver/v1"
 )
 
+func TestDecodeEncryptionConfiguration(t *testing.T) {
+	t.Parallel()
+
+	t.Run("When given valid YAML it should parse correctly", func(t *testing.T) {
+		g := NewWithT(t)
+		yaml := `apiVersion: apiserver.config.k8s.io/v1
+kind: EncryptionConfiguration
+resources:
+  - resources:
+      - secrets
+    providers:
+      - kms:
+          name: my-kms
+          apiVersion: v2
+          endpoint: unix:///tmp/kms.sock
+      - identity: {}
+`
+		cfg, err := DecodeEncryptionConfiguration([]byte(yaml))
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(cfg.Resources).To(HaveLen(1))
+		g.Expect(cfg.Resources[0].Providers).To(HaveLen(2))
+		g.Expect(cfg.Resources[0].Providers[0].KMS.Name).To(Equal("my-kms"))
+	})
+
+	t.Run("When given empty bytes it should return an empty config", func(t *testing.T) {
+		g := NewWithT(t)
+		cfg, err := DecodeEncryptionConfiguration([]byte{})
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(cfg.Resources).To(BeEmpty())
+	})
+
+	t.Run("When given malformed YAML it should return an error", func(t *testing.T) {
+		g := NewWithT(t)
+		_, err := DecodeEncryptionConfiguration([]byte("not: valid: yaml: {{"))
+		g.Expect(err).To(HaveOccurred())
+	})
+
+	t.Run("When given YAML with wrong kind it should return an error", func(t *testing.T) {
+		g := NewWithT(t)
+		yaml := `apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: test
+`
+		_, err := DecodeEncryptionConfiguration([]byte(yaml))
+		g.Expect(err).To(HaveOccurred())
+	})
+}
+
 func kmsConfig(providers ...apiserverv1.ProviderConfiguration) *apiserverv1.EncryptionConfiguration {
 	return &apiserverv1.EncryptionConfiguration{
 		Resources: []apiserverv1.ResourceConfiguration{

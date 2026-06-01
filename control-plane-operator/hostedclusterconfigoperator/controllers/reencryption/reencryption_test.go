@@ -179,7 +179,7 @@ func withHistory(entries ...hyperv1.EncryptionMigrationHistory) func(*hyperv1.Ho
 }
 
 func aescbcKeyStatus(secretName, dataHash string) *hyperv1.SecretEncryptionKeyStatus {
-	return secretencryption.KeyStatusFromAESCBCSpec(corev1.LocalObjectReference{Name: secretName}, dataHash)
+	return secretencryption.KeyStatusFromAESCBCSpec(secretName, dataHash)
 }
 
 func awsKeyStatus(arn string) *hyperv1.SecretEncryptionKeyStatus {

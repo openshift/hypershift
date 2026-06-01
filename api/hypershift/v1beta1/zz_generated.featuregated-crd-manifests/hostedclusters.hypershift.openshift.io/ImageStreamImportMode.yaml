@@ -6057,8 +6057,11 @@ spec:
                                 description: arn is the Amazon Resource Name for the
                                   encryption key
                                 maxLength: 2048
-                                pattern: '^arn:'
+                                minLength: 1
                                 type: string
+                                x-kubernetes-validations:
+                                - message: arn must start with 'arn:'
+                                  rule: self.startsWith('arn:')
                             required:
                             - arn
                             type: object
@@ -6091,8 +6094,11 @@ spec:
                                 description: arn is the Amazon Resource Name for the
                                   encryption key
                                 maxLength: 2048
-                                pattern: '^arn:'
+                                minLength: 1
                                 type: string
+                                x-kubernetes-validations:
+                                - message: arn must start with 'arn:'
+                                  rule: self.startsWith('arn:')
                             required:
                             - arn
                             type: object
@@ -6118,6 +6124,7 @@ spec:
                                 description: keyName is the name of the keyvault key
                                   used for encrypt/decrypt
                                 maxLength: 255
+                                minLength: 1
                                 type: string
                               keyVaultName:
                                 description: |-
@@ -6125,11 +6132,13 @@ spec:
                                   Your Microsoft Entra application used to create the cluster must be authorized to access this keyvault, e.g using the AzureCLI:
                                   `az keyvault set-policy -n $KEYVAULT_NAME --key-permissions decrypt encrypt --spn <YOUR APPLICATION CLIENT ID>`
                                 maxLength: 255
+                                minLength: 1
                                 type: string
                               keyVersion:
                                 description: keyVersion contains the version of the
                                   key to use
                                 maxLength: 255
+                                minLength: 1
                                 type: string
                             required:
                             - keyName
@@ -6148,6 +6157,7 @@ spec:
                                 description: keyName is the name of the keyvault key
                                   used for encrypt/decrypt
                                 maxLength: 255
+                                minLength: 1
                                 type: string
                               keyVaultName:
                                 description: |-
@@ -6155,11 +6165,13 @@ spec:
                                   Your Microsoft Entra application used to create the cluster must be authorized to access this keyvault, e.g using the AzureCLI:
                                   `az keyvault set-policy -n $KEYVAULT_NAME --key-permissions decrypt encrypt --spn <YOUR APPLICATION CLIENT ID>`
                                 maxLength: 255
+                                minLength: 1
                                 type: string
                               keyVersion:
                                 description: keyVersion contains the version of the
                                   key to use
                                 maxLength: 255
+                                minLength: 1
                                 type: string
                             required:
                             - keyName
@@ -6323,15 +6335,18 @@ spec:
                                   description: correlationID is an identifier used
                                     to track all api call usage from hypershift
                                   maxLength: 255
+                                  minLength: 1
                                   type: string
                                 crkID:
                                   description: crkID is the customer rook key id
                                   maxLength: 255
+                                  minLength: 1
                                   type: string
                                 instanceID:
                                   description: instanceID is the id for the key protect
                                     instance
                                   maxLength: 255
+                                  minLength: 1
                                   type: string
                                 keyVersion:
                                   description: |-
@@ -6344,8 +6359,11 @@ spec:
                                   description: url is the url to call key protect
                                     apis over
                                   maxLength: 2048
-                                  pattern: ^https://
+                                  minLength: 1
                                   type: string
+                                  x-kubernetes-validations:
+                                  - message: url must start with 'https://'
+                                    rule: self.startsWith('https://')
                               required:
                               - correlationID
                               - crkID
@@ -7050,16 +7068,22 @@ spec:
                               the AESCBC key.
                             properties:
                               name:
-                                default: ""
                                 description: |-
-                                  Name of the referent.
-                                  This field is effectively required, but due to backwards compatibility is
-                                  allowed to be empty. Instances of this type with an empty value here are
-                                  almost certainly wrong.
-                                  More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                  name is the name of the Secret. It must be a valid DNS-1123 subdomain: at most
+                                  253 characters, consisting of lowercase alphanumeric characters, hyphens, and periods.
+                                  Each period-separated segment must start and end with an alphanumeric character.
+                                maxLength: 253
+                                minLength: 1
                                 type: string
+                                x-kubernetes-validations:
+                                - message: name must consist only of lowercase alphanumeric
+                                    characters, hyphens, and periods. Each period-separated
+                                    segment must start and end with an alphanumeric
+                                    character.
+                                  rule: self.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$')
+                            required:
+                            - name
                             type: object
-                            x-kubernetes-map-type: atomic
                         required:
                         - dataHash
                         - secret
@@ -7071,8 +7095,11 @@ spec:
                             description: arn is the Amazon Resource Name for the encryption
                               key
                             maxLength: 2048
-                            pattern: '^arn:'
+                            minLength: 1
                             type: string
+                            x-kubernetes-validations:
+                            - message: arn must start with 'arn:'
+                              rule: self.startsWith('arn:')
                         required:
                         - arn
                         type: object
@@ -7083,6 +7110,7 @@ spec:
                             description: keyName is the name of the keyvault key used
                               for encrypt/decrypt
                             maxLength: 255
+                            minLength: 1
                             type: string
                           keyVaultName:
                             description: |-
@@ -7090,11 +7118,13 @@ spec:
                               Your Microsoft Entra application used to create the cluster must be authorized to access this keyvault, e.g using the AzureCLI:
                               `az keyvault set-policy -n $KEYVAULT_NAME --key-permissions decrypt encrypt --spn <YOUR APPLICATION CLIENT ID>`
                             maxLength: 255
+                            minLength: 1
                             type: string
                           keyVersion:
                             description: keyVersion contains the version of the key
                               to use
                             maxLength: 255
+                            minLength: 1
                             type: string
                         required:
                         - keyName
@@ -7109,15 +7139,18 @@ spec:
                             description: correlationID is an identifier used to track
                               all api call usage from hypershift
                             maxLength: 255
+                            minLength: 1
                             type: string
                           crkID:
                             description: crkID is the customer rook key id
                             maxLength: 255
+                            minLength: 1
                             type: string
                           instanceID:
                             description: instanceID is the id for the key protect
                               instance
                             maxLength: 255
+                            minLength: 1
                             type: string
                           keyVersion:
                             description: |-
@@ -7129,8 +7162,11 @@ spec:
                           url:
                             description: url is the url to call key protect apis over
                             maxLength: 2048
-                            pattern: ^https://
+                            minLength: 1
                             type: string
+                            x-kubernetes-validations:
+                            - message: url must start with 'https://'
+                              rule: self.startsWith('https://')
                         required:
                         - correlationID
                         - crkID
@@ -7267,16 +7303,22 @@ spec:
                               the AESCBC key.
                             properties:
                               name:
-                                default: ""
                                 description: |-
-                                  Name of the referent.
-                                  This field is effectively required, but due to backwards compatibility is
-                                  allowed to be empty. Instances of this type with an empty value here are
-                                  almost certainly wrong.
-                                  More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                  name is the name of the Secret. It must be a valid DNS-1123 subdomain: at most
+                                  253 characters, consisting of lowercase alphanumeric characters, hyphens, and periods.
+                                  Each period-separated segment must start and end with an alphanumeric character.
+                                maxLength: 253
+                                minLength: 1
                                 type: string
+                                x-kubernetes-validations:
+                                - message: name must consist only of lowercase alphanumeric
+                                    characters, hyphens, and periods. Each period-separated
+                                    segment must start and end with an alphanumeric
+                                    character.
+                                  rule: self.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$')
+                            required:
+                            - name
                             type: object
-                            x-kubernetes-map-type: atomic
                         required:
                         - dataHash
                         - secret
@@ -7288,8 +7330,11 @@ spec:
                             description: arn is the Amazon Resource Name for the encryption
                               key
                             maxLength: 2048
-                            pattern: '^arn:'
+                            minLength: 1
                             type: string
+                            x-kubernetes-validations:
+                            - message: arn must start with 'arn:'
+                              rule: self.startsWith('arn:')
                         required:
                         - arn
                         type: object
@@ -7300,6 +7345,7 @@ spec:
                             description: keyName is the name of the keyvault key used
                               for encrypt/decrypt
                             maxLength: 255
+                            minLength: 1
                             type: string
                           keyVaultName:
                             description: |-
@@ -7307,11 +7353,13 @@ spec:
                               Your Microsoft Entra application used to create the cluster must be authorized to access this keyvault, e.g using the AzureCLI:
                               `az keyvault set-policy -n $KEYVAULT_NAME --key-permissions decrypt encrypt --spn <YOUR APPLICATION CLIENT ID>`
                             maxLength: 255
+                            minLength: 1
                             type: string
                           keyVersion:
                             description: keyVersion contains the version of the key
                               to use
                             maxLength: 255
+                            minLength: 1
                             type: string
                         required:
                         - keyName
@@ -7326,15 +7374,18 @@ spec:
                             description: correlationID is an identifier used to track
                               all api call usage from hypershift
                             maxLength: 255
+                            minLength: 1
                             type: string
                           crkID:
                             description: crkID is the customer rook key id
                             maxLength: 255
+                            minLength: 1
                             type: string
                           instanceID:
                             description: instanceID is the id for the key protect
                               instance
                             maxLength: 255
+                            minLength: 1
                             type: string
                           keyVersion:
                             description: |-
@@ -7346,8 +7397,11 @@ spec:
                           url:
                             description: url is the url to call key protect apis over
                             maxLength: 2048
-                            pattern: ^https://
+                            minLength: 1
                             type: string
+                            x-kubernetes-validations:
+                            - message: url must start with 'https://'
+                              rule: self.startsWith('https://')
                         required:
                         - correlationID
                         - crkID

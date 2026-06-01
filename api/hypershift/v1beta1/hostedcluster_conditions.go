@@ -356,13 +356,12 @@ const (
 	AutoNodeProgressingReason      = "AutoNodeProgressing"
 	AutoNodeEvaluationFailedReason = "AutoNodeEvaluationFailed"
 
-	ReadOnlyRolloutInProgressReason     = "ReadOnlyRolloutInProgress"
-	WritePromotionInProgressReason      = "WritePromotionInProgress"
-	ReEncryptionInProgressReason        = "ReEncryptionInProgress"
-	ReEncryptionCompletedReason         = "ReEncryptionCompleted"
-	ReEncryptionFailedReason            = "ReEncryptionFailed"
-	ReEncryptionWaitingForKASReason     = "ReEncryptionWaitingForKASConvergence"
-	ReEncryptionPersistentFailureReason = "ReEncryptionPersistentFailure"
+	ReadOnlyRolloutInProgressReason = "ReadOnlyRolloutInProgress"
+	WritePromotionInProgressReason  = "WritePromotionInProgress"
+	ReEncryptionInProgressReason    = "ReEncryptionInProgress"
+	ReEncryptionCompletedReason     = "ReEncryptionCompleted"
+	ReEncryptionFailedReason        = "ReEncryptionFailed"
+	ReEncryptionWaitingForKASReason = "ReEncryptionWaitingForKASConvergence"
 )
 
 // Messages.

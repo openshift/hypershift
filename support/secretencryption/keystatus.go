@@ -2,8 +2,6 @@ package secretencryption
 
 import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-
-	corev1 "k8s.io/api/core/v1"
 )
 
 // KeyStatusFromAzureSpec creates a SecretEncryptionKeyStatus from an Azure KMS key spec.
@@ -35,11 +33,11 @@ func KeyStatusFromIBMCloudSpec(entries []hyperv1.IBMCloudKMSKeyEntry) *hyperv1.S
 }
 
 // KeyStatusFromAESCBCSpec creates a SecretEncryptionKeyStatus from an AESCBC spec.
-func KeyStatusFromAESCBCSpec(secretRef corev1.LocalObjectReference, dataHash string) *hyperv1.SecretEncryptionKeyStatus {
+func KeyStatusFromAESCBCSpec(secretName string, dataHash string) *hyperv1.SecretEncryptionKeyStatus {
 	return &hyperv1.SecretEncryptionKeyStatus{
 		Provider: hyperv1.SecretEncryptionProviderAESCBC,
 		AESCBC: hyperv1.AESCBCKeyStatus{
-			Secret:   secretRef,
+			Secret:   hyperv1.SecretReference{Name: secretName},
 			DataHash: dataHash,
 		},
 	}
@@ -77,7 +75,7 @@ func KeyStatusFromSpec(spec *hyperv1.SecretEncryptionSpec, aescbcDataHash string
 		if spec.AESCBC == nil {
 			return nil
 		}
-		return KeyStatusFromAESCBCSpec(spec.AESCBC.ActiveKey, aescbcDataHash)
+		return KeyStatusFromAESCBCSpec(spec.AESCBC.ActiveKey.Name, aescbcDataHash)
 	}
 	return nil
 }

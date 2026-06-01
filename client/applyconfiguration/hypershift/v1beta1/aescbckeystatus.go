@@ -17,15 +17,11 @@ limitations under the License.
 
 package v1beta1
 
-import (
-	v1 "k8s.io/api/core/v1"
-)
-
 // AESCBCKeyStatusApplyConfiguration represents a declarative configuration of the AESCBCKeyStatus type for use
 // with apply.
 type AESCBCKeyStatusApplyConfiguration struct {
-	Secret   *v1.LocalObjectReference `json:"secret,omitempty"`
-	DataHash *string                  `json:"dataHash,omitempty"`
+	Secret   *SecretReferenceApplyConfiguration `json:"secret,omitempty"`
+	DataHash *string                            `json:"dataHash,omitempty"`
 }
 
 // AESCBCKeyStatusApplyConfiguration constructs a declarative configuration of the AESCBCKeyStatus type for use with
@@ -37,8 +33,8 @@ func AESCBCKeyStatus() *AESCBCKeyStatusApplyConfiguration {
 // WithSecret sets the Secret field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the Secret field is set to the value of the last call.
-func (b *AESCBCKeyStatusApplyConfiguration) WithSecret(value v1.LocalObjectReference) *AESCBCKeyStatusApplyConfiguration {
-	b.Secret = &value
+func (b *AESCBCKeyStatusApplyConfiguration) WithSecret(value *SecretReferenceApplyConfiguration) *AESCBCKeyStatusApplyConfiguration {
+	b.Secret = value
 	return b
 }
 

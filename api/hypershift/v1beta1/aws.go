@@ -1080,7 +1080,8 @@ type AWSKMSAuthSpec struct {
 type AWSKMSKeyEntry struct {
 	// arn is the Amazon Resource Name for the encryption key
 	// +required
-	// +kubebuilder:validation:Pattern=`^arn:`
+	// +kubebuilder:validation:XValidation:rule="self.startsWith('arn:')",message="arn must start with 'arn:'"
+	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=2048
 	ARN string `json:"arn,omitempty"`
 }

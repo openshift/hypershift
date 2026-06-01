@@ -128,4 +128,58 @@ func TestFingerprintFromKeyStatus(t *testing.T) {
 		}
 		g.Expect(FingerprintFromKeyStatus(status)).To(Equal(FingerprintAWSKMSKey(arn)))
 	})
+
+	t.Run("When IBMCloud status is provided it should match spec fingerprint", func(t *testing.T) {
+		g := NewWithT(t)
+		entry := hyperv1.IBMCloudKMSKeyEntry{CRKID: "crk1", InstanceID: "inst1", KeyVersion: 1}
+		status := &hyperv1.SecretEncryptionKeyStatus{
+			Provider: hyperv1.SecretEncryptionProviderIBMCloud,
+			IBMCloud: entry,
+		}
+		g.Expect(FingerprintFromKeyStatus(status)).To(Equal(FingerprintIBMCloudKMSKeyList([]hyperv1.IBMCloudKMSKeyEntry{entry})))
+	})
+
+	t.Run("When AESCBC status is provided it should match spec fingerprint", func(t *testing.T) {
+		g := NewWithT(t)
+		status := &hyperv1.SecretEncryptionKeyStatus{
+			Provider: hyperv1.SecretEncryptionProviderAESCBC,
+			AESCBC: hyperv1.AESCBCKeyStatus{
+				Secret:   hyperv1.SecretReference{Name: "my-secret"},
+				DataHash: "abc123",
+			},
+		}
+		g.Expect(FingerprintFromKeyStatus(status)).To(Equal(FingerprintAESCBCKey("my-secret", "abc123")))
+	})
+
+	t.Run("When Azure status has empty fields it should return empty string", func(t *testing.T) {
+		g := NewWithT(t)
+		status := &hyperv1.SecretEncryptionKeyStatus{
+			Provider: hyperv1.SecretEncryptionProviderAzure,
+		}
+		g.Expect(FingerprintFromKeyStatus(status)).To(BeEmpty())
+	})
+
+	t.Run("When AWS status has empty ARN it should return empty string", func(t *testing.T) {
+		g := NewWithT(t)
+		status := &hyperv1.SecretEncryptionKeyStatus{
+			Provider: hyperv1.SecretEncryptionProviderAWS,
+		}
+		g.Expect(FingerprintFromKeyStatus(status)).To(BeEmpty())
+	})
+
+	t.Run("When IBMCloud status has empty CRKID it should return empty string", func(t *testing.T) {
+		g := NewWithT(t)
+		status := &hyperv1.SecretEncryptionKeyStatus{
+			Provider: hyperv1.SecretEncryptionProviderIBMCloud,
+		}
+		g.Expect(FingerprintFromKeyStatus(status)).To(BeEmpty())
+	})
+
+	t.Run("When AESCBC status has empty data hash it should return empty string", func(t *testing.T) {
+		g := NewWithT(t)
+		status := &hyperv1.SecretEncryptionKeyStatus{
+			Provider: hyperv1.SecretEncryptionProviderAESCBC,
+		}
+		g.Expect(FingerprintFromKeyStatus(status)).To(BeEmpty())
+	})
 }

@@ -2117,7 +2117,6 @@ type SecretEncryptionStatus struct {
 }
 
 // SecretEncryptionKeyStatus records the active key identity using the same types as the spec.
-// +k8s:deepcopy-gen=true
 // +kubebuilder:validation:XValidation:rule="self.provider == 'Azure' ? has(self.azure) : !has(self.azure)",message="azure is required when provider is Azure, and forbidden otherwise"
 // +kubebuilder:validation:XValidation:rule="self.provider == 'AWS' ? has(self.aws) : !has(self.aws)",message="aws is required when provider is AWS, and forbidden otherwise"
 // +kubebuilder:validation:XValidation:rule="self.provider == 'IBMCloud' ? has(self.ibmCloud) : !has(self.ibmCloud)",message="ibmCloud is required when provider is IBMCloud, and forbidden otherwise"
@@ -2149,11 +2148,10 @@ type SecretEncryptionKeyStatus struct {
 
 // AESCBCKeyStatus contains a reference to the AESCBC key secret and a SHA-256 hash
 // of its contents for fingerprinting.
-// +k8s:deepcopy-gen=true
 type AESCBCKeyStatus struct {
 	// secret is a reference to the secret containing the AESCBC key.
 	// +required
-	Secret corev1.LocalObjectReference `json:"secret,omitempty"`
+	Secret SecretReference `json:"secret,omitzero"`
 	// dataHash is the hex-encoded SHA-256 hash of the secret's "key" data field
 	// at the time re-encryption completed.
 	// +required
@@ -2163,7 +2161,6 @@ type AESCBCKeyStatus struct {
 }
 
 // EncryptionKeyReference identifies an encryption key by its provider and fingerprint.
-// +k8s:deepcopy-gen=true
 type EncryptionKeyReference struct {
 	// provider identifies the encryption provider.
 	// +required
@@ -2211,7 +2208,7 @@ type EncryptionMigrationHistory struct {
 	State EncryptionMigrationState `json:"state,omitempty"`
 	// startedTime is when the rotation was initiated.
 	// +required
-	StartedTime metav1.Time `json:"startedTime,omitempty"`
+	StartedTime metav1.Time `json:"startedTime,omitzero"`
 	// completionTime is when the rotation finished. Not set while the rotation is in progress.
 	// +optional
 	CompletionTime metav1.Time `json:"completionTime,omitzero"`

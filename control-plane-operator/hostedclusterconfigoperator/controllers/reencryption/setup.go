@@ -6,6 +6,7 @@ import (
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/operator"
 
 	"github.com/openshift/library-go/pkg/operator/encryption/controllers/migrators"
@@ -69,24 +70,30 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 		return fmt.Errorf("failed to watch HostedControlPlane: %w", err)
 	}
 
+	hcpRequest := []reconcile.Request{{NamespacedName: types.NamespacedName{
+		Namespace: opts.Namespace,
+		Name:      opts.HCPName,
+	}}}
+
 	// Watch KAS Deployment in the CP cluster for convergence detection.
-	hcpMapper := func(_ context.Context, obj crclient.Object) []reconcile.Request {
-		if obj.GetNamespace() == opts.Namespace {
-			return []reconcile.Request{{NamespacedName: types.NamespacedName{
-				Namespace: opts.Namespace,
-				Name:      opts.HCPName,
-			}}}
-		}
-		return nil
-	}
 	if err := c.Watch(source.Kind[crclient.Object](opts.CPCluster.GetCache(), &appsv1.Deployment{},
-		handler.EnqueueRequestsFromMapFunc(hcpMapper))); err != nil {
+		handler.EnqueueRequestsFromMapFunc(func(_ context.Context, obj crclient.Object) []reconcile.Request {
+			if obj.GetNamespace() == opts.Namespace && obj.GetName() == manifests.KASDeployment("").Name {
+				return hcpRequest
+			}
+			return nil
+		}))); err != nil {
 		return fmt.Errorf("failed to watch KAS Deployment: %w", err)
 	}
 
-	// Watch Secrets in the CP cluster namespace (for AESCBC key changes).
+	// Watch the encryption config Secret in the CP cluster namespace.
 	if err := c.Watch(source.Kind[crclient.Object](opts.CPCluster.GetCache(), &corev1.Secret{},
-		handler.EnqueueRequestsFromMapFunc(hcpMapper))); err != nil {
+		handler.EnqueueRequestsFromMapFunc(func(_ context.Context, obj crclient.Object) []reconcile.Request {
+			if obj.GetNamespace() == opts.Namespace && obj.GetName() == manifests.KASSecretEncryptionConfigFile("").Name {
+				return hcpRequest
+			}
+			return nil
+		}))); err != nil {
 		return fmt.Errorf("failed to watch Secrets: %w", err)
 	}
 

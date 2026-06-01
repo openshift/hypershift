@@ -20,19 +20,23 @@ type IBMCloudKMSSpec struct {
 // IBMCloudKMSKeyEntry defines metadata for an IBM Cloud KMS encryption key
 type IBMCloudKMSKeyEntry struct {
 	// crkID is the customer rook key id
+	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=255
 	// +required
 	CRKID string `json:"crkID,omitempty"`
 	// instanceID is the id for the key protect instance
+	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=255
 	// +required
 	InstanceID string `json:"instanceID,omitempty"`
 	// correlationID is an identifier used to track all api call usage from hypershift
+	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=255
 	// +required
 	CorrelationID string `json:"correlationID,omitempty"`
 	// url is the url to call key protect apis over
-	// +kubebuilder:validation:Pattern=`^https://`
+	// +kubebuilder:validation:XValidation:rule="self.startsWith('https://')",message="url must start with 'https://'"
+	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=2048
 	// +required
 	URL string `json:"url,omitempty"`
@@ -41,7 +45,7 @@ type IBMCloudKMSKeyEntry struct {
 	// +kubebuilder:validation:Minimum=0
 	// +kubebuilder:validation:Maximum=2147483647
 	// +required
-	KeyVersion int `json:"keyVersion,omitempty"`
+	KeyVersion int `json:"keyVersion"`
 }
 
 // IBMCloudKMSAuthSpec defines metadata for how authentication is done with IBM Cloud KMS

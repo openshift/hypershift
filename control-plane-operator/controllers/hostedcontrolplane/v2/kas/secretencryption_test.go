@@ -2,9 +2,7 @@ package kas
 
 import (
 	"bytes"
-	"context"
 	"encoding/base64"
-	"fmt"
 	"testing"
 	"time"
 
@@ -22,9 +20,7 @@ import (
 	v1 "k8s.io/apiserver/pkg/apis/apiserver/v1"
 	"k8s.io/utils/ptr"
 
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
-	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	"github.com/google/go-cmp/cmp"
 )
@@ -393,40 +389,50 @@ func TestGetKMSAPIVersion(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name       string
-		secret     *corev1.Secret
-		client     client.Client
-		wantErr    bool
-		errSubstr  string
+		config     *v1.EncryptionConfiguration
 		wantResult string
 	}{
 		{
-			name: "When client Get returns a non-NotFound error, it should return a wrapped error",
-			secret: &corev1.Secret{
-				ObjectMeta: metav1.ObjectMeta{Name: "encryption-config", Namespace: "test-ns"},
-			},
-			client: fake.NewClientBuilder().WithInterceptorFuncs(interceptor.Funcs{
-				Get: func(_ context.Context, _ client.WithWatch, _ client.ObjectKey, _ client.Object, _ ...client.GetOption) error {
-					return fmt.Errorf("connection refused")
-				},
-			}).Build(),
-			wantErr:   true,
-			errSubstr: "failed to get existing secret encryption config",
+			name:       "When config is nil it should return default v2",
+			config:     nil,
+			wantResult: "v2",
 		},
 		{
-			name: "When secret contains invalid YAML, it should return a decode error",
-			secret: &corev1.Secret{
-				ObjectMeta: metav1.ObjectMeta{Name: "encryption-config", Namespace: "test-ns"},
-				Data: map[string][]byte{
-					secretEncryptionConfigurationKey: []byte("not-valid-yaml: {{{"),
+			name: "When config has no KMS provider it should return default v2",
+			config: &v1.EncryptionConfiguration{
+				Resources: []v1.ResourceConfiguration{
+					{
+						Providers: []v1.ProviderConfiguration{
+							{Identity: &v1.IdentityConfiguration{}},
+						},
+					},
 				},
 			},
-			wantErr:   true,
-			errSubstr: "cannot decode resource",
+			wantResult: "v2",
 		},
 		{
-			name: "When secret does not exist, it should return default v2",
-			secret: &corev1.Secret{
-				ObjectMeta: metav1.ObjectMeta{Name: "encryption-config", Namespace: "test-ns"},
+			name: "When config has KMS v1 provider it should return v1",
+			config: &v1.EncryptionConfiguration{
+				Resources: []v1.ResourceConfiguration{
+					{
+						Providers: []v1.ProviderConfiguration{
+							{KMS: &v1.KMSConfiguration{APIVersion: "v1"}},
+						},
+					},
+				},
+			},
+			wantResult: "v1",
+		},
+		{
+			name: "When config has KMS v2 provider it should return v2",
+			config: &v1.EncryptionConfiguration{
+				Resources: []v1.ResourceConfiguration{
+					{
+						Providers: []v1.ProviderConfiguration{
+							{KMS: &v1.KMSConfiguration{APIVersion: "v2"}},
+						},
+					},
+				},
 			},
 			wantResult: "v2",
 		},
@@ -435,28 +441,8 @@ func TestGetKMSAPIVersion(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
-
-			c := tt.client
-			if c == nil {
-				c = fake.NewClientBuilder().Build()
-			}
-			if tt.secret.Data != nil && tt.client == nil {
-				c = fake.NewClientBuilder().WithObjects(tt.secret).Build()
-			}
-
-			cpContext := controlplanecomponent.WorkloadContext{
-				Context: t.Context(),
-				Client:  c,
-			}
-
-			result, err := getKMSAPIVersion(cpContext, tt.secret)
-			if tt.wantErr {
-				g.Expect(err).To(HaveOccurred())
-				g.Expect(err.Error()).To(ContainSubstring(tt.errSubstr))
-			} else {
-				g.Expect(err).ToNot(HaveOccurred())
-				g.Expect(result).To(Equal(tt.wantResult))
-			}
+			result := getKMSAPIVersion(tt.config)
+			g.Expect(result).To(Equal(tt.wantResult))
 		})
 	}
 }
@@ -648,7 +634,7 @@ func TestDeriveAESCBCEncryptionConfig(t *testing.T) {
 				ActiveKey: hyperv1.SecretEncryptionKeyStatus{
 					Provider: hyperv1.SecretEncryptionProviderAESCBC,
 					AESCBC: hyperv1.AESCBCKeyStatus{
-						Secret:   corev1.LocalObjectReference{Name: "aescbc-key-1"},
+						Secret:   hyperv1.SecretReference{Name: "aescbc-key-1"},
 						DataHash: "activehash",
 					},
 				},
@@ -682,14 +668,14 @@ func TestDeriveAESCBCEncryptionConfig(t *testing.T) {
 				ActiveKey: hyperv1.SecretEncryptionKeyStatus{
 					Provider: hyperv1.SecretEncryptionProviderAESCBC,
 					AESCBC: hyperv1.AESCBCKeyStatus{
-						Secret:   corev1.LocalObjectReference{Name: "old-key-secret"},
+						Secret:   hyperv1.SecretReference{Name: "old-key-secret"},
 						DataHash: "oldhash",
 					},
 				},
 				TargetKey: hyperv1.SecretEncryptionKeyStatus{
 					Provider: hyperv1.SecretEncryptionProviderAESCBC,
 					AESCBC: hyperv1.AESCBCKeyStatus{
-						Secret:   corev1.LocalObjectReference{Name: "new-key-secret"},
+						Secret:   hyperv1.SecretReference{Name: "new-key-secret"},
 						DataHash: "newhash",
 					},
 				},
@@ -742,14 +728,14 @@ func TestDeriveAESCBCEncryptionConfig(t *testing.T) {
 				ActiveKey: hyperv1.SecretEncryptionKeyStatus{
 					Provider: hyperv1.SecretEncryptionProviderAESCBC,
 					AESCBC: hyperv1.AESCBCKeyStatus{
-						Secret:   corev1.LocalObjectReference{Name: "old-key-secret"},
+						Secret:   hyperv1.SecretReference{Name: "old-key-secret"},
 						DataHash: "oldhash",
 					},
 				},
 				TargetKey: hyperv1.SecretEncryptionKeyStatus{
 					Provider: hyperv1.SecretEncryptionProviderAESCBC,
 					AESCBC: hyperv1.AESCBCKeyStatus{
-						Secret:   corev1.LocalObjectReference{Name: "new-key-secret"},
+						Secret:   hyperv1.SecretReference{Name: "new-key-secret"},
 						DataHash: "newhash",
 					},
 				},

@@ -37066,10 +37066,10 @@ of its contents for fingerprinting.</p>
 <tbody>
 <tr>
 <td>
-<code>secret</code></br>
+<code>secret,omitzero</code></br>
 <em>
-<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#localobjectreference-v1-core">
-Kubernetes core/v1.LocalObjectReference
+<a href="#hypershift.openshift.io/v1beta1.SecretReference">
+SecretReference
 </a>
 </em>
 </td>
@@ -42687,7 +42687,7 @@ EncryptionMigrationState
 </tr>
 <tr>
 <td>
-<code>startedTime</code></br>
+<code>startedTime,omitzero</code></br>
 <em>
 <a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#time-v1-meta">
 Kubernetes meta/v1.Time
@@ -52182,6 +52182,7 @@ history[0] is not Completed or Interrupted.</p>
 ###SecretReference { #hypershift.openshift.io/v1beta1.SecretReference }
 <p>
 (<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AESCBCKeyStatus">AESCBCKeyStatus</a>, 
 <a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupAzureBlob">HCPEtcdBackupAzureBlob</a>, 
 <a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupS3">HCPEtcdBackupS3</a>)
 </p>

@@ -890,16 +890,19 @@ type AzureKMSKey struct {
 	// keyVaultName is the name of the keyvault. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
 	// Your Microsoft Entra application used to create the cluster must be authorized to access this keyvault, e.g using the AzureCLI:
 	// `az keyvault set-policy -n $KEYVAULT_NAME --key-permissions decrypt encrypt --spn <YOUR APPLICATION CLIENT ID>`
+	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=255
 	// +required
 	KeyVaultName string `json:"keyVaultName,omitempty"`
 
 	// keyName is the name of the keyvault key used for encrypt/decrypt
+	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=255
 	// +required
 	KeyName string `json:"keyName,omitempty"`
 
 	// keyVersion contains the version of the key to use
+	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=255
 	// +required
 	KeyVersion string `json:"keyVersion,omitempty"`

@@ -21,6 +21,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -36,6 +37,10 @@ import (
 const (
 	// maxHistoryEntries is the maximum number of entries kept in the rotation history.
 	maxHistoryEntries = 5
+
+	requeueWaitingForKAS     = 30 * time.Second
+	requeueMigrationProgress = 10 * time.Second
+	requeueMigrationFailure  = 60 * time.Second
 )
 
 // Reconciler watches for encryption key changes on the HCP spec and drives the
@@ -71,7 +76,11 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		}
 		log.Info("Successfully patched HCP status")
 		recordMigrationState(r.hcpNamespace, r.hcpName, hcp.Status.SecretEncryption)
-		recordMigrationDuration(r.hcpNamespace, r.hcpName, hcp.Status.SecretEncryption)
+		previousState := encryptionHistoryState(originalHCP.Status.SecretEncryption)
+		currentState := encryptionHistoryState(hcp.Status.SecretEncryption)
+		if currentState == hyperv1.EncryptionMigrationStateCompleted && previousState != currentState {
+			recordMigrationDuration(r.hcpNamespace, r.hcpName, hcp.Status.SecretEncryption)
+		}
 	}
 
 	return result, nil
@@ -104,7 +113,7 @@ func (r *Reconciler) reconcile(ctx context.Context, log logr.Logger, hcp *hyperv
 
 	// Case 2: A rotation is already in progress (targetKey is set).
 	if hcp.Status.SecretEncryption.TargetKey.Provider != "" {
-		return r.handleInProgressRotation(ctx, log, hcp, specKeyStatus, specFingerprint)
+		return r.handleInProgressRotation(ctx, log, hcp, specFingerprint)
 	}
 
 	// Case 3: No rotation in progress and spec matches status -> steady state.
@@ -115,6 +124,13 @@ func (r *Reconciler) reconcile(ctx context.Context, log logr.Logger, hcp *hyperv
 
 	// Case 4: Spec key differs from status active key -> start new rotation.
 	return r.startNewRotation(log, hcp, specKeyStatus, specFingerprint, statusActiveFingerprint)
+}
+
+func encryptionHistoryState(status hyperv1.SecretEncryptionStatus) hyperv1.EncryptionMigrationState {
+	if len(status.History) == 0 {
+		return ""
+	}
+	return status.History[0].State
 }
 
 // handleEncryptionNotConfigured clears the targetKey and removes the EtcdDataEncryptionUpToDate condition.
@@ -174,7 +190,7 @@ func (r *Reconciler) startNewRotation(log logr.Logger, hcp *hyperv1.HostedContro
 // handleInProgressRotation derives the current phase from observable state and acts accordingly.
 // It inspects the EncryptionConfiguration and KAS Deployment convergence rather than
 // reading history[0].state. The history state is updated for observability only.
-func (r *Reconciler) handleInProgressRotation(ctx context.Context, log logr.Logger, hcp *hyperv1.HostedControlPlane, _ *hyperv1.SecretEncryptionKeyStatus, specFingerprint string) (reconcile.Result, error) {
+func (r *Reconciler) handleInProgressRotation(ctx context.Context, log logr.Logger, hcp *hyperv1.HostedControlPlane, specFingerprint string) (reconcile.Result, error) {
 	targetFingerprint := secretencryption.FingerprintFromKeyStatus(&hcp.Status.SecretEncryption.TargetKey)
 
 	if specFingerprint != targetFingerprint {
@@ -219,7 +235,7 @@ func (r *Reconciler) handleInProgressRotation(ctx context.Context, log logr.Logg
 			Message:            "Waiting for new encryption key to be added to EncryptionConfiguration",
 			ObservedGeneration: hcp.Generation,
 		})
-		return reconcile.Result{RequeueAfter: 30 * time.Second}, nil
+		return reconcile.Result{RequeueAfter: requeueWaitingForKAS}, nil
 
 	case role == secretencryption.TargetKeyReadOnly && !converged:
 		// Target key is read-only but KAS hasn't fully rolled out with it.
@@ -232,7 +248,7 @@ func (r *Reconciler) handleInProgressRotation(ctx context.Context, log logr.Logg
 			Message:            "Waiting for KAS to converge with new encryption key in read-only mode",
 			ObservedGeneration: hcp.Generation,
 		})
-		return reconcile.Result{RequeueAfter: 30 * time.Second}, nil
+		return reconcile.Result{RequeueAfter: requeueWaitingForKAS}, nil
 
 	case role == secretencryption.TargetKeyReadOnly && converged:
 		// KAS converged with target key as read-only — ready for write promotion.
@@ -258,13 +274,13 @@ func (r *Reconciler) handleInProgressRotation(ctx context.Context, log logr.Logg
 			Message:            "Waiting for KAS to converge with new encryption key as write provider",
 			ObservedGeneration: hcp.Generation,
 		})
-		return reconcile.Result{RequeueAfter: 30 * time.Second}, nil
+		return reconcile.Result{RequeueAfter: requeueWaitingForKAS}, nil
 
 	case role == secretencryption.TargetKeyWrite && converged:
 		// Target key is write provider and KAS converged — run migrations.
 		log.Info("KAS converged with target key as write provider, running migrations")
 		r.setHistoryState(hcp, hyperv1.EncryptionMigrationStateMigrating)
-		return r.handleMigratingPhase(ctx, log, hcp)
+		return r.handleMigratingPhase(log, hcp)
 
 	default:
 		return reconcile.Result{}, nil
@@ -280,6 +296,9 @@ func (r *Reconciler) deriveTargetKeyRole(ctx context.Context, hcp *hyperv1.Hoste
 		Name:      manifests.KASSecretEncryptionConfigFile("").Name,
 	}
 	if err := r.cpClient.Get(ctx, secretKey, secret); err != nil {
+		if apierrors.IsNotFound(err) {
+			return secretencryption.TargetKeyAbsent, nil
+		}
 		return secretencryption.TargetKeyAbsent, fmt.Errorf("failed to get encryption config secret: %w", err)
 	}
 
@@ -359,10 +378,10 @@ func (r *Reconciler) setHistoryState(hcp *hyperv1.HostedControlPlane, state hype
 }
 
 // handleMigratingPhase creates/monitors StorageVersionMigration CRs for each encrypted resource.
-func (r *Reconciler) handleMigratingPhase(_ context.Context, log logr.Logger, hcp *hyperv1.HostedControlPlane) (reconcile.Result, error) {
+func (r *Reconciler) handleMigratingPhase(log logr.Logger, hcp *hyperv1.HostedControlPlane) (reconcile.Result, error) {
 	if !r.migrator.HasSynced() {
 		log.Info("Migrator cache not yet synced, requeuing")
-		return reconcile.Result{RequeueAfter: 10 * time.Second}, nil
+		return reconcile.Result{RequeueAfter: requeueMigrationProgress}, nil
 	}
 
 	resources := r.encryptedResources(hcp)
@@ -397,7 +416,7 @@ func (r *Reconciler) handleMigratingPhase(_ context.Context, log logr.Logger, hc
 			ObservedGeneration: hcp.Generation,
 		})
 		recordMigrationFailure(r.hcpNamespace, r.hcpName)
-		return reconcile.Result{RequeueAfter: 60 * time.Second}, nil
+		return reconcile.Result{RequeueAfter: requeueMigrationFailure}, nil
 	}
 
 	if !allFinished {
@@ -409,7 +428,7 @@ func (r *Reconciler) handleMigratingPhase(_ context.Context, log logr.Logger, hc
 			Message:            "Re-encrypting etcd data with new encryption key",
 			ObservedGeneration: hcp.Generation,
 		})
-		return reconcile.Result{RequeueAfter: 30 * time.Second}, nil
+		return reconcile.Result{RequeueAfter: requeueWaitingForKAS}, nil
 	}
 
 	// All migrations completed successfully.
@@ -446,6 +465,9 @@ func (r *Reconciler) isKASConverged(ctx context.Context, log logr.Logger, hcp *h
 	deployment := &appsv1.Deployment{}
 	kasRef := manifests.KASDeployment(hcp.Namespace)
 	if err := r.cpClient.Get(ctx, crclient.ObjectKeyFromObject(kasRef), deployment); err != nil {
+		if apierrors.IsNotFound(err) {
+			return false, nil
+		}
 		return false, fmt.Errorf("failed to get KAS deployment: %w", err)
 	}
 
