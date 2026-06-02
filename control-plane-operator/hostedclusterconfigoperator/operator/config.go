@@ -223,7 +223,7 @@ func (c *HostedClusterConfigOperatorConfig) Start(ctx context.Context) error {
 	for controllerName, setupFunc := range c.ControllerFuncs {
 		c.Logger.Info("setting up controller", "controller", controllerName)
 		if err := setupFunc(ctx, c); err != nil {
-			return fmt.Errorf("cannot setup controller %s: %v", controllerName, err)
+			return fmt.Errorf("cannot setup controller %s: %w", controllerName, err)
 		}
 	}
 	return c.Manager.Start(ctx)

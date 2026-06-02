@@ -103,13 +103,13 @@ func NewStartCommand() *cobra.Command {
 			}
 		}
 
-		check(log, url, time.Second, time.Second, opts.requiredAPIsParsed, opts.waitForInfrastructureResource, opts.waitForClusterRolebinding, opts.waitForLabeledPodsGone, discoveryClient, kubeClient)
+		check(cmd.Context(), log, url, time.Second, time.Second, opts.requiredAPIsParsed, opts.waitForInfrastructureResource, opts.waitForClusterRolebinding, opts.waitForLabeledPodsGone, discoveryClient, kubeClient)
 	}
 
 	return cmd
 }
 
-func check(log logr.Logger, target *url.URL, requestTimeout time.Duration, sleepTime time.Duration, requiredAPIs []schema.GroupVersionKind, waitForInfrastructureResource bool, waitForClusterRolebinding, waitForLabeledPodsGone string, discoveryClient discovery.DiscoveryInterface, kubeClient crclient.Client) {
+func check(ctx context.Context, log logr.Logger, target *url.URL, requestTimeout time.Duration, sleepTime time.Duration, requiredAPIs []schema.GroupVersionKind, waitForInfrastructureResource bool, waitForClusterRolebinding, waitForLabeledPodsGone string, discoveryClient discovery.DiscoveryInterface, kubeClient crclient.Client) {
 	log = log.WithValues("sleepTime", sleepTime.String())
 	client := &http.Client{
 		Timeout: requestTimeout,
@@ -118,7 +118,12 @@ func check(log logr.Logger, target *url.URL, requestTimeout time.Duration, sleep
 		},
 	}
 	for ; ; time.Sleep(sleepTime) {
-		response, err := client.Get(target.String())
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, target.String(), nil)
+		if err != nil {
+			log.Error(err, "Failed to create request, retrying...")
+			continue
+		}
+		response, err := client.Do(req)
 		if err != nil {
 			log.Error(err, "Request failed, retrying...")
 			continue

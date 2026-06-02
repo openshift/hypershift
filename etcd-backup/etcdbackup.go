@@ -120,7 +120,7 @@ func uploadToS3(ctx context.Context, opts options) error {
 
 	f, err := os.Open(opts.snapshotFilePath)
 	if err != nil {
-		return fmt.Errorf("failed to open file %q, %v", opts.snapshotFilePath, err)
+		return fmt.Errorf("failed to open file %q, %w", opts.snapshotFilePath, err)
 	}
 	defer f.Close()
 

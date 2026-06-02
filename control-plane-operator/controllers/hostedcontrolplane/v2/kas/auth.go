@@ -74,7 +74,7 @@ func GenerateAuthConfig(ctx context.Context, spec *configv1.AuthenticationSpec, 
 	for _, provider := range spec.OIDCProviders {
 		jwt, err := generateJWTForProvider(ctx, provider, c, namespace)
 		if err != nil {
-			return nil, fmt.Errorf("generating JWT authenticator for provider %q: %v", provider.Name, err)
+			return nil, fmt.Errorf("generating JWT authenticator for provider %q: %w", provider.Name, err)
 		}
 		config.JWT = append(config.JWT, jwt)
 	}
@@ -86,23 +86,23 @@ func generateJWTForProvider(ctx context.Context, provider configv1.OIDCProvider,
 
 	issuer, err := generateIssuer(ctx, provider.Issuer, client, namespace)
 	if err != nil {
-		return out, fmt.Errorf("generating issuer: %v", err)
+		return out, fmt.Errorf("generating issuer: %w", err)
 	}
 
 	claimMappings, err := generateClaimMappings(provider.ClaimMappings, issuer.URL)
 	if err != nil {
-		return out, fmt.Errorf("generating claim mappings: %v", err)
+		return out, fmt.Errorf("generating claim mappings: %w", err)
 	}
 
 	claimValidationRules, err := generateClaimValidationRules(provider.ClaimValidationRules...)
 	if err != nil {
-		return out, fmt.Errorf("generating claim validation rules: %v", err)
+		return out, fmt.Errorf("generating claim validation rules: %w", err)
 	}
 
 	if featuregates.Gate().Enabled(featuregates.ExternalOIDCWithUpstreamParity) {
 		userValidationRules, err := generateUserValidationRules(provider.UserValidationRules...)
 		if err != nil {
-			return out, fmt.Errorf("generating userValidationRules for provider %q: %v", provider.Name, err)
+			return out, fmt.Errorf("generating userValidationRules for provider %q: %w", provider.Name, err)
 		}
 		out.UserValidationRules = userValidationRules
 	}
@@ -128,7 +128,7 @@ func generateIssuer(ctx context.Context, issuer configv1.TokenIssuer, client crc
 			// Validate the URL scheme
 			u, err := url.Parse(issuer.DiscoveryURL)
 			if err != nil {
-				return out, fmt.Errorf("invalid discovery URL: %v", err)
+				return out, fmt.Errorf("invalid discovery URL: %w", err)
 			}
 			if strings.TrimRight(issuer.DiscoveryURL, "/") == strings.TrimRight(issuer.URL, "/") {
 				return out, fmt.Errorf("discovery URL must not be identical to issuer URL")
@@ -155,7 +155,7 @@ func generateIssuer(ctx context.Context, issuer configv1.TokenIssuer, client crc
 	if len(issuer.CertificateAuthority.Name) > 0 {
 		ca, err := getCertificateAuthorityFromConfigMap(ctx, client, issuer.CertificateAuthority.Name, namespace)
 		if err != nil {
-			return out, fmt.Errorf("getting certificate authority for issuer: %v", err)
+			return out, fmt.Errorf("getting certificate authority for issuer: %w", err)
 		}
 		out.CertificateAuthority = ca
 	}
@@ -182,12 +182,12 @@ func generateClaimMappings(claimMappings configv1.TokenClaimMappings, issuerURL 
 
 	username, err := generateUsernameClaimMapping(claimMappings.Username, issuerURL)
 	if err != nil {
-		return out, fmt.Errorf("generating username claim mapping: %v", err)
+		return out, fmt.Errorf("generating username claim mapping: %w", err)
 	}
 
 	groups, err := generateGroupsClaimMapping(claimMappings.Groups)
 	if err != nil {
-		return out, fmt.Errorf("generating groups claim mapping: %v", err)
+		return out, fmt.Errorf("generating groups claim mapping: %w", err)
 	}
 
 	out.Username = username
@@ -196,12 +196,12 @@ func generateClaimMappings(claimMappings configv1.TokenClaimMappings, issuerURL 
 	if featuregates.Gate().Enabled(featuregates.ExternalOIDCWithUIDAndExtraClaimMappings) {
 		uid, err := generateUIDClaimMapping(claimMappings.UID)
 		if err != nil {
-			return out, fmt.Errorf("generating uid claim mapping: %v", err)
+			return out, fmt.Errorf("generating uid claim mapping: %w", err)
 		}
 
 		extras, err := generateExtraClaimMapping(claimMappings.Extra...)
 		if err != nil {
-			return out, fmt.Errorf("generating extra claim mapping: %v", err)
+			return out, fmt.Errorf("generating extra claim mapping: %w", err)
 		}
 
 		out.UID = uid
@@ -419,7 +419,7 @@ func generateUserValidationRules(rules ...configv1.TokenUserValidationRule) ([]U
 	for _, r := range rules {
 		uvr, err := generateUserValidationRule(r)
 		if err != nil {
-			errs = append(errs, fmt.Errorf("generating userValidationRule: %v", err))
+			errs = append(errs, fmt.Errorf("generating userValidationRule: %w", err))
 			continue
 		}
 		out = append(out, uvr)
@@ -469,7 +469,7 @@ func validateAuthConfig(authConfig *AuthenticationConfiguration, disallowIssuers
 
 	apiServerAuthConfig, err := HCPAuthConfigToAPIServerAuthConfig(authConfig)
 	if err != nil {
-		return fmt.Errorf("converting from HCP auth config type to apiserver auth config type: %v", err)
+		return fmt.Errorf("converting from HCP auth config type to apiserver auth config type: %w", err)
 	}
 
 	fieldErrors := validation.ValidateAuthenticationConfiguration(celCompiler, apiServerAuthConfig, disallowIssuers)
@@ -483,13 +483,13 @@ func validateAuthConfig(authConfig *AuthenticationConfiguration, disallowIssuers
 func HCPAuthConfigToAPIServerAuthConfig(authConfig *AuthenticationConfiguration) (*apiserver.AuthenticationConfiguration, error) {
 	outBytes, err := json.Marshal(authConfig)
 	if err != nil {
-		return nil, fmt.Errorf("marshaling HCP auth config to JSON: %v", err)
+		return nil, fmt.Errorf("marshaling HCP auth config to JSON: %w", err)
 	}
 
 	apiserverAuthConfig := &apiserver.AuthenticationConfiguration{}
 	err = json.Unmarshal(outBytes, apiserverAuthConfig)
 	if err != nil {
-		return nil, fmt.Errorf("unmarshalling HCP auth config JSON to apiserver auth config: %v", err)
+		return nil, fmt.Errorf("unmarshalling HCP auth config JSON to apiserver auth config: %w", err)
 	}
 
 	return apiserverAuthConfig, nil

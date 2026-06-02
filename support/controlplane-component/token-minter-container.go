@@ -41,7 +41,7 @@ type TokenMinterContainerOptions struct {
 	// defaults to 'kubeconfig'
 	KubeconfingVolumeName string
 
-	// KubeconfigSecretName is the name of the the kubeconfig secret used to mint the token in the target cluster.
+	// KubeconfigSecretName is the name of the kubeconfig secret used to mint the token in the target cluster.
 	KubeconfigSecretName string
 
 	// OneShot, if true, will cause the token-minter container to exit after minting the token.

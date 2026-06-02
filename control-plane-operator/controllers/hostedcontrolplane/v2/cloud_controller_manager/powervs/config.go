@@ -38,7 +38,7 @@ func adaptConfig(cpContext component.WorkloadContext, cm *corev1.ConfigMap) erro
 	configData := &bytes.Buffer{}
 	err := template.Execute(configData, config)
 	if err != nil {
-		return fmt.Errorf("error while parsing ccm config map template %v", err)
+		return fmt.Errorf("error while parsing ccm config map template %w", err)
 	}
 
 	cm.Data[configKey] = configData.String()

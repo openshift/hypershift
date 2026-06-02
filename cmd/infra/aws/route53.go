@@ -188,7 +188,10 @@ func (o *DestroyInfraOptions) CleanupPublicZone(ctx context.Context, client awsa
 	name := o.BaseDomain
 	id, err := LookupZone(ctx, client, name, false)
 	if err != nil {
-		return nil
+		if strings.Contains(err.Error(), "not found") {
+			return nil
+		}
+		return fmt.Errorf("failed to lookup public hosted zone %s: %w", name, err)
 	}
 	recordName := fmt.Sprintf("*.apps.%s.%s", o.Name, o.BaseDomain)
 	err = deleteRecord(ctx, client, id, recordName)
@@ -239,12 +242,12 @@ func setSOAMinimum(ctx context.Context, client awsapi.ROUTE53API, id, name strin
 func deleteZone(ctx context.Context, id string, client awsapi.ROUTE53API, logger logr.Logger) error {
 	err := deleteRecords(ctx, client, id, logger)
 	if err != nil {
-		return fmt.Errorf("failed to delete hosted zone records: %v", err)
+		return fmt.Errorf("failed to delete hosted zone records: %w", err)
 	}
 	if _, err = client.DeleteHostedZone(ctx, &route53.DeleteHostedZoneInput{
 		Id: aws.String(id),
 	}); err != nil {
-		return fmt.Errorf("failed to delete hosted zone: %v", err)
+		return fmt.Errorf("failed to delete hosted zone: %w", err)
 	}
 	return nil
 }

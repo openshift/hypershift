@@ -76,7 +76,7 @@ func WaitForControlPlaneWorkloadsReady(ctx context.Context, hc *hyperv1.HostedCl
 	defer cancel()
 	err = wait.PollUntilContextCancel(statefulSetCtx, DefaultPollingInterval, true, func(ctx context.Context) (bool, error) {
 		if err := client.List(ctx, statefulSets, crclient.InNamespace(cpNamespace)); err != nil {
-			return false, nil
+			return false, nil //nolint:nilerr // retry until statefulsets are listable
 		}
 		if len(statefulSets.Items) == 0 {
 			return false, nil

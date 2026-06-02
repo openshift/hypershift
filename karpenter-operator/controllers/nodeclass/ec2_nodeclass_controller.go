@@ -420,7 +420,7 @@ func (r *EC2NodeClassReconciler) reconcileStatus(ctx context.Context, ec2NodeCla
 
 	if !reflect.DeepEqual(originalObj.Status, openshiftNodeClass.Status) {
 		if err := r.guestClient.Status().Patch(ctx, openshiftNodeClass, client.MergeFrom(originalObj)); err != nil {
-			return fmt.Errorf("failed to update status: %v", err)
+			return fmt.Errorf("failed to update status: %w", err)
 		}
 	}
 

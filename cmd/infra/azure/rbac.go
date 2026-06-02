@@ -117,7 +117,7 @@ func (r *RBACManager) assignRolesForComponents(ctx context.Context, opts *Create
 	}
 
 	for component, clientID := range components {
-		objectID, err := r.getObjectIDFromClientID(string(clientID), token)
+		objectID, err := r.getObjectIDFromClientID(ctx, string(clientID), token)
 		if err != nil {
 			return err
 		}
@@ -150,7 +150,7 @@ func (r *RBACManager) AssignDataPlaneRoles(ctx context.Context, opts *CreateInfr
 	}
 
 	// Setup Data Plane MI role assignments
-	objectID, err := r.getObjectIDFromClientID(dataPlaneIdentities.ImageRegistryMSIClientID, token)
+	objectID, err := r.getObjectIDFromClientID(ctx, dataPlaneIdentities.ImageRegistryMSIClientID, token)
 	if err != nil {
 		return err
 	}
@@ -159,7 +159,7 @@ func (r *RBACManager) AssignDataPlaneRoles(ctx context.Context, opts *CreateInfr
 		return err
 	}
 
-	objectID, err = r.getObjectIDFromClientID(dataPlaneIdentities.DiskMSIClientID, token)
+	objectID, err = r.getObjectIDFromClientID(ctx, dataPlaneIdentities.DiskMSIClientID, token)
 	if err != nil {
 		return err
 	}
@@ -168,7 +168,7 @@ func (r *RBACManager) AssignDataPlaneRoles(ctx context.Context, opts *CreateInfr
 		return err
 	}
 
-	objectID, err = r.getObjectIDFromClientID(dataPlaneIdentities.FileMSIClientID, token)
+	objectID, err = r.getObjectIDFromClientID(ctx, dataPlaneIdentities.FileMSIClientID, token)
 	if err != nil {
 		return err
 	}
@@ -366,7 +366,7 @@ func (r *RBACManager) getAzureToken() (azcore.AccessToken, error) {
 	return token, nil
 }
 
-func (r *RBACManager) getObjectIDFromClientID(clientID string, token azcore.AccessToken) (string, error) {
+func (r *RBACManager) getObjectIDFromClientID(ctx context.Context, clientID string, token azcore.AccessToken) (string, error) {
 	// Validate clientID is a UUID to prevent OData injection
 	uuidPattern := regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 	if !uuidPattern.MatchString(clientID) {
@@ -377,7 +377,7 @@ func (r *RBACManager) getObjectIDFromClientID(clientID string, token azcore.Acce
 	url := graphAPIEndpoint + "?" + strings.ReplaceAll(filterQuery, " ", "%20")
 
 	// Make the API request
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to create request: %w", err)
 	}

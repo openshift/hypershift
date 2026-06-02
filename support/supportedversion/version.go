@@ -220,7 +220,7 @@ func LookupDefaultOCPVersion(ctx context.Context, releaseStream string, client c
 
 	version, err := retrieveSupportedOCPVersion(ctx, releaseURL, client)
 	if err != nil {
-		return ocpVersion{}, fmt.Errorf("failed to get OCP version from release URL %s: %v", releaseURL, err)
+		return ocpVersion{}, fmt.Errorf("failed to get OCP version from release URL %s: %w", releaseURL, err)
 	}
 
 	return version, nil
@@ -267,7 +267,7 @@ func LookupLatestSupportedRelease(ctx context.Context, hc *hyperv1.HostedCluster
 
 	var version ocpVersion
 
-	req, err := http.NewRequestWithContext(ctx, "GET", releaseURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, releaseURL, nil)
 	if err != nil {
 		return "", err
 	}
@@ -336,7 +336,7 @@ func GetSupportedOCPVersions(ctx context.Context, namespace string, client crcli
 		// Fetch the supported versions ConfigMap from the specified namespace
 		supportedVersions = manifests.ConfigMap(namespace)
 		if err := client.Get(ctx, crclient.ObjectKeyFromObject(supportedVersions), supportedVersions); err != nil {
-			return SupportedVersions{}, "", fmt.Errorf("failed to find supported versions on the server: %v", err)
+			return SupportedVersions{}, "", fmt.Errorf("failed to find supported versions on the server: %w", err)
 		}
 	}
 
@@ -350,7 +350,7 @@ func GetSupportedOCPVersions(ctx context.Context, namespace string, client crcli
 	// Check if the ConfigMap contains the supported versions key
 	if supportedVersionData, present := supportedVersions.Data[config.ConfigMapVersionsKey]; present {
 		if err := json.Unmarshal([]byte(supportedVersionData), &versions); err != nil {
-			return SupportedVersions{}, "", fmt.Errorf("failed to parse supported versions on the server: %v", err)
+			return SupportedVersions{}, "", fmt.Errorf("failed to parse supported versions on the server: %w", err)
 		}
 
 		return versions, serverVersion, nil
@@ -483,7 +483,7 @@ func retrieveSupportedOCPVersion(ctx context.Context, releaseURL string, client 
 	configMapList := &corev1.ConfigMapList{}
 	err := client.List(ctx, configMapList, crclient.MatchingLabels{"hypershift.openshift.io/supported-versions": "true"})
 	if err != nil {
-		return ocpVersion{}, fmt.Errorf("failed to list ConfigMaps to find supported versions: %v", err)
+		return ocpVersion{}, fmt.Errorf("failed to list ConfigMaps to find supported versions: %w", err)
 	}
 	for _, configMap := range configMapList.Items {
 		if configMap.Name == "supported-versions" {
@@ -500,14 +500,18 @@ func retrieveSupportedOCPVersion(ctx context.Context, releaseURL string, client 
 	// Get the latest supported OCP version from the supported versions ConfigMap
 	supportedOCPVersions, _, err := GetSupportedOCPVersions(ctx, namespace, client, supportedVersions)
 	if err != nil {
-		return ocpVersion{}, fmt.Errorf("failed to get supported OCP versions: %v", err)
+		return ocpVersion{}, fmt.Errorf("failed to get supported OCP versions: %w", err)
 	}
 	if len(supportedOCPVersions.Versions) == 0 {
 		return ocpVersion{}, fmt.Errorf("no supported OCP versions found in the ConfigMap")
 	}
 
 	// Fetch the release information from the URL
-	resp, err := http.Get(releaseURL)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, releaseURL, nil)
+	if err != nil {
+		return ocpVersion{}, err
+	}
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return ocpVersion{}, err
 	}

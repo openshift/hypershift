@@ -96,7 +96,7 @@ func getKMSAPIVersion(cpContext component.WorkloadContext, secret *corev1.Secret
 		if apierrors.IsNotFound(err) {
 			return apiVersion, nil
 		}
-		return "", fmt.Errorf("failed to get existing secret encryption config: %v", err)
+		return "", fmt.Errorf("failed to get existing secret encryption config: %w", err)
 	}
 
 	encryptionConfigBytes := secret.Data[secretEncryptionConfigurationKey]
@@ -104,10 +104,10 @@ func getKMSAPIVersion(cpContext component.WorkloadContext, secret *corev1.Secret
 		currentConfig := apiserverv1.EncryptionConfiguration{}
 		gvks, _, err := api.Scheme.ObjectKinds(&currentConfig)
 		if err != nil || len(gvks) == 0 {
-			return "", fmt.Errorf("cannot determine gvk of resource: %v", err)
+			return "", fmt.Errorf("cannot determine gvk of resource: %w", err)
 		}
 		if _, _, err = api.YamlSerializer.Decode(encryptionConfigBytes, &gvks[0], &currentConfig); err != nil {
-			return "", fmt.Errorf("cannot decode resource: %v", err)
+			return "", fmt.Errorf("cannot decode resource: %w", err)
 		}
 
 		// Only look at write keys to return the APIVersion currently used.

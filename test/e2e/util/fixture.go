@@ -186,7 +186,7 @@ func createCluster(ctx context.Context, hc *hyperv1.HostedCluster, opts *Platfor
 func renderCreate(ctx context.Context, opts *core.RawCreateOptions, platformOpts core.PlatformValidator, outputFile string, renderLogFile string, createLogFile string) error {
 	renderLog, err := os.Create(renderLogFile)
 	if err != nil {
-		return fmt.Errorf("failed to render render log: %w", err)
+		return fmt.Errorf("failed to render log: %w", err)
 	}
 	renderLogger := zap.New(zapcore.NewCore(zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig()), zapcore.Lock(renderLog), zap.DebugLevel))
 	defer func() {
@@ -204,7 +204,7 @@ func renderCreate(ctx context.Context, opts *core.RawCreateOptions, platformOpts
 
 	createLog, err := os.Create(createLogFile)
 	if err != nil {
-		return fmt.Errorf("failed to create create log: %w", err)
+		return fmt.Errorf("failed to create log: %w", err)
 	}
 	createLogger := zap.New(zapcore.NewCore(zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig()), zapcore.Lock(createLog), zap.DebugLevel))
 	defer func() {
@@ -225,7 +225,7 @@ func destroyCluster(ctx context.Context, t *testing.T, hc *hyperv1.HostedCluster
 	destroyLogFile := filepath.Join(outputDir, "destroy.log")
 	destroyLog, err := os.Create(destroyLogFile)
 	if err != nil {
-		return fmt.Errorf("failed to destroy destroy log: %w", err)
+		return fmt.Errorf("failed to destroy log: %w", err)
 	}
 	destroyLogger := zap.New(zapcore.NewCore(zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig()), zapcore.Lock(destroyLog), zap.DebugLevel))
 	defer func() {

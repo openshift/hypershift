@@ -372,7 +372,7 @@ func componentsFakeObjects() ([]client.Object, error) {
 	caCfg := certs.CertCfg{IsCA: true, Subject: pkix.Name{CommonName: "root-ca", OrganizationalUnit: []string{"ou"}}}
 	key, cert, err := certs.GenerateSelfSignedCertificate(&caCfg)
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate self signed CA: %v", err)
+		return nil, fmt.Errorf("failed to generate self signed CA: %w", err)
 	}
 	csrSigner := manifests.CSRSignerCASecret(testComponentNamespace)
 	csrSigner.Data = map[string][]byte{

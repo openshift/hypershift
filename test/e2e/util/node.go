@@ -33,12 +33,12 @@ func EnsureNodeCommunication(t *testing.T, ctx context.Context, client crclient.
 		err = wait.PollUntilContextTimeout(ctx, 10*time.Second, 5*time.Minute, true, func(ctx context.Context) (done bool, err error) {
 			podList, err := guestClient.CoreV1().Pods("kube-system").List(ctx, metav1.ListOptions{LabelSelector: "app=konnectivity-agent"})
 			if err != nil || len(podList.Items) == 0 {
-				return false, nil
+				return false, nil //nolint:nilerr // retry until konnectivity-agent pod is available
 			}
 
 			_, err = guestClient.CoreV1().Pods("kube-system").GetLogs(podList.Items[0].Name, &corev1.PodLogOptions{Container: "konnectivity-agent"}).DoRaw(ctx)
 			if err != nil {
-				return false, nil
+				return false, nil //nolint:nilerr // retry until logs are available
 			}
 
 			return true, nil

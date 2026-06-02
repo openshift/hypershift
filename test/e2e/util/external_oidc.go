@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -264,7 +265,10 @@ func ChangeUserForKeycloakExtOIDC(t *testing.T, ctx context.Context, clientCfg *
 		"username":   []string{username},
 	}
 
-	response, err := httpClient.PostForm(requestURL, formData)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, requestURL, strings.NewReader(formData.Encode()))
+	g.Expect(err).NotTo(HaveOccurred())
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	response, err := httpClient.Do(req)
 	g.Expect(err).NotTo(HaveOccurred())
 	defer response.Body.Close()
 	g.Expect(response.StatusCode).To(Equal(http.StatusOK))

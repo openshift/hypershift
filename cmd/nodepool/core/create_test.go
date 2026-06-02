@@ -1,6 +1,8 @@
 package core
 
 import (
+	"context"
+	"fmt"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -16,6 +18,7 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 )
 
 func TestValidateHostedClusterPayloadSupportsNodePoolCPUArch(t *testing.T) {
@@ -104,6 +107,23 @@ func TestValidateHostedClusterPayloadSupportsNodePoolCPUArch(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("When client.Get fails with a non-NotFound error it should return the error", func(t *testing.T) {
+		g := NewWithT(t)
+
+		c := fake.NewClientBuilder().
+			WithScheme(api.Scheme).
+			WithInterceptorFuncs(interceptor.Funcs{
+				Get: func(_ context.Context, _ client.WithWatch, _ client.ObjectKey, _ client.Object, _ ...client.GetOption) error {
+					return fmt.Errorf("API server unavailable")
+				},
+			}).
+			Build()
+
+		err := validateHostedClusterPayloadSupportsNodePoolCPUArch(t.Context(), c, "hc", "clusters", hyperv1.ArchitectureAMD64)
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err).To(MatchError(ContainSubstring("failed to get HostedCluster to check payload type")))
+	})
 }
 
 func TestValidMinorVersionCompatibility(t *testing.T) {

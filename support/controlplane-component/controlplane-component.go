@@ -177,7 +177,7 @@ func (c *controlPlaneWorkload[T]) Reconcile(cpContext ControlPlaneContext) error
 
 	unavailableDependencies, err := c.checkDependencies(cpContext)
 	if err != nil {
-		return fmt.Errorf("failed checking for dependencies availability: %v", err)
+		return fmt.Errorf("failed checking for dependencies availability: %w", err)
 	}
 	var reconcilationError error
 	if len(unavailableDependencies) == 0 {
@@ -311,7 +311,7 @@ func (c *controlPlaneWorkload[T]) update(cpContext ControlPlaneContext) error {
 func (c *controlPlaneWorkload[T]) reconcileWorkload(cpContext ControlPlaneContext) error {
 	workloadObj, err := c.workloadProvider.LoadManifest(c.Name())
 	if err != nil {
-		return fmt.Errorf("failed loading workload manifest: %v", err)
+		return fmt.Errorf("failed loading workload manifest: %w", err)
 	}
 	// make sure that the Deployment/Statefulset name matches the component name.
 	workloadObj.SetName(c.Name())
@@ -320,7 +320,7 @@ func (c *controlPlaneWorkload[T]) reconcileWorkload(cpContext ControlPlaneContex
 	oldWorkloadObj := c.workloadProvider.NewObject()
 	if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(workloadObj), oldWorkloadObj); err != nil {
 		if !apierrors.IsNotFound(err) {
-			return fmt.Errorf("failed to get old workload object: %v", err)
+			return fmt.Errorf("failed to get old workload object: %w", err)
 		}
 	}
 

@@ -865,7 +865,7 @@ func (r *HostedControlPlaneReconciler) reconcileControlPlaneVersionStatus(ctx co
 		// Persist the Partial entry before returning the error.
 		hostedControlPlane.Status.ControlPlaneVersion = ensureControlPlaneVersionPartial(hostedControlPlane, clk, releaseImage.Version(), resolvedImage)
 		if patchErr := r.Client.Status().Patch(ctx, hostedControlPlane, client.MergeFromWithOptions(originalHostedControlPlane, client.MergeFromWithOptimisticLock{})); patchErr != nil {
-			return fmt.Errorf("failed to patch status after component list failure: %w (list error: %v)", patchErr, listErr)
+			return fmt.Errorf("failed to patch status after component list failure: %w (list error: %w)", patchErr, listErr)
 		}
 		return fmt.Errorf("failed to list control plane components for version reconciliation: %w", listErr)
 	}
@@ -944,9 +944,9 @@ func (r *HostedControlPlaneReconciler) healthCheckKASLoadBalancers(ctx context.C
 		// When the cluster is private, checking the load balancers will depend on whether the load balancer is
 		// using the right subnets. To avoid uncertainty, we'll limit the check to the service endpoint.
 		if hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
-			return healthCheckKASEndpoint(manifests.KubeAPIServerService("").Name, config.KASSVCIBMCloudPort)
+			return healthCheckKASEndpoint(ctx, manifests.KubeAPIServerService("").Name, config.KASSVCIBMCloudPort)
 		}
-		return healthCheckKASEndpoint(manifests.KubeAPIServerService("").Name, config.KASSVCPort)
+		return healthCheckKASEndpoint(ctx, manifests.KubeAPIServerService("").Name, config.KASSVCPort)
 	case serviceStrategy.Type == hyperv1.Route:
 		if hcp.Spec.Platform.Type != hyperv1.IBMCloudPlatform {
 			externalRoute := manifests.KubeAPIServerExternalPublicRoute(hcp.Namespace)
@@ -958,7 +958,7 @@ func (r *HostedControlPlaneReconciler) healthCheckKASLoadBalancers(ctx context.C
 			if err != nil {
 				return err
 			}
-			return healthCheckKASEndpoint(endpoint, port)
+			return healthCheckKASEndpoint(ctx, endpoint, port)
 		}
 	case serviceStrategy.Type == hyperv1.LoadBalancer:
 		svc := manifests.KubeAPIServerService(hcp.Namespace)
@@ -987,20 +987,25 @@ func (r *HostedControlPlaneReconciler) healthCheckKASLoadBalancers(ctx context.C
 		} else if LBIngress.IP != "" {
 			ingressPoint = LBIngress.IP
 		}
-		return healthCheckKASEndpoint(ingressPoint, port)
+		return healthCheckKASEndpoint(ctx, ingressPoint, port)
 	}
 	return nil
 }
 
-func healthCheckKASEndpoint(ingressPoint string, port int) error {
+func healthCheckKASEndpoint(ctx context.Context, ingressPoint string, port int) error {
 	healthEndpoint := fmt.Sprintf("https://%s:%d/healthz", ingressPoint, port)
 
 	httpClient := util.InsecureHTTPClient()
 	httpClient.Timeout = 10 * time.Second
-	resp, err := httpClient.Get(healthEndpoint)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, healthEndpoint, nil)
 	if err != nil {
 		return err
 	}
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("APIServer endpoint %s is not healthy", ingressPoint)
@@ -1454,14 +1459,14 @@ func (r *HostedControlPlaneReconciler) reconcileKonnectivityCerts(ctx context.Co
 	if _, err := createOrUpdate(ctx, r, konnectivitySigner, func() error {
 		return pki.ReconcileKonnectivitySignerSecret(konnectivitySigner, p.OwnerRef)
 	}); err != nil {
-		return fmt.Errorf("failed to reconcile konnectivity signer secret: %v", err)
+		return fmt.Errorf("failed to reconcile konnectivity signer secret: %w", err)
 	}
 
 	konnectivityCACM := manifests.KonnectivityCAConfigMap(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, konnectivityCACM, func() error {
 		return pki.ReconcileKonnectivityConfigMap(konnectivityCACM, p.OwnerRef, konnectivitySigner)
 	}); err != nil {
-		return fmt.Errorf("failed to reconcile konnectivity CA config map: %v", err)
+		return fmt.Errorf("failed to reconcile konnectivity CA config map: %w", err)
 	}
 
 	konnectivityServerSecret := manifests.KonnectivityServerSecret(hcp.Namespace)
@@ -2134,7 +2139,7 @@ func (r *HostedControlPlaneReconciler) reconcileCoreIgnitionConfig(ctx context.C
 		}
 		data, hasSSHKeyData := sshKeySecret.Data["id_rsa.pub"]
 		if !hasSSHKeyData {
-			return fmt.Errorf("SSH key secret secret %s is missing the id_rsa.pub key", hcp.Spec.SSHKey.Name)
+			return fmt.Errorf("SSH key secret %s is missing the id_rsa.pub key", hcp.Spec.SSHKey.Name)
 		}
 		sshKey = string(data)
 	}
@@ -3184,11 +3189,11 @@ func (r *HostedControlPlaneReconciler) verifyResourceGroupLocationsMatch(ctx con
 		certPath := config.ManagedAzureCertificatePath + hcp.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.ControlPlaneOperator.CredentialsSecretName
 		cloudConfig, err := hyperazureutil.GetAzureCloudConfiguration(hcp.Spec.Platform.Azure.Cloud)
 		if err != nil {
-			return fmt.Errorf("failed to get Azure cloud configuration: %v", err)
+			return fmt.Errorf("failed to get Azure cloud configuration: %w", err)
 		}
 		creds, err = dataplane.NewUserAssignedIdentityCredential(ctx, certPath, dataplane.WithClientOpts(azcore.ClientOptions{Cloud: cloudConfig}), dataplane.WithLogger(&log))
 		if err != nil {
-			return fmt.Errorf("failed to create azure creds to verify resource group locations: %v", err)
+			return fmt.Errorf("failed to create azure creds to verify resource group locations: %w", err)
 		}
 
 		r.cpoAzureCredentialsLoaded.Store(key, creds)
@@ -3204,17 +3209,17 @@ func (r *HostedControlPlaneReconciler) verifyResourceGroupLocationsMatch(ctx con
 	// Retrieve full vnet information from the VNET ID
 	vnet, err := hyperazureutil.GetVnetInfoFromVnetID(ctx, hcp.Spec.Platform.Azure.VnetID, hcp.Spec.Platform.Azure.SubscriptionID, creds, cloudName)
 	if err != nil {
-		return fmt.Errorf("failed to get vnet info to verify its location: %v", err)
+		return fmt.Errorf("failed to get vnet info to verify its location: %w", err)
 	}
 	// Retrieve full network security group information from the network security group ID
 	nsg, err := hyperazureutil.GetNetworkSecurityGroupInfo(ctx, hcp.Spec.Platform.Azure.SecurityGroupID, hcp.Spec.Platform.Azure.SubscriptionID, creds, cloudName)
 	if err != nil {
-		return fmt.Errorf("failed to get network security group info to verify its location: %v", err)
+		return fmt.Errorf("failed to get network security group info to verify its location: %w", err)
 	}
 	// Retrieve full resource group information from the resource group name
 	rg, err := hyperazureutil.GetResourceGroupInfo(ctx, hcp.Spec.Platform.Azure.ResourceGroupName, hcp.Spec.Platform.Azure.SubscriptionID, creds, cloudName)
 	if err != nil {
-		return fmt.Errorf("failed to get resource group info to verify its location: %v", err)
+		return fmt.Errorf("failed to get resource group info to verify its location: %w", err)
 	}
 	// Verify the vnet resource group location, network security group resource group location, and the managed resource group location match
 	if ptr.Deref(vnet.Location, "") != ptr.Deref(nsg.Location, "") || ptr.Deref(nsg.Location, "") != ptr.Deref(rg.Location, "") {

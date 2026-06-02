@@ -18,6 +18,8 @@ import (
 	"testing"
 	"time"
 
+	. "github.com/onsi/gomega"
+
 	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-pki-operator/certificates"
 
@@ -535,6 +537,26 @@ func TestSign(t *testing.T) {
 	if d := cmp.Diff(*certs[0], want, IgnoreUnset()); d != "" {
 		t.Errorf("unexpected diff: %v", d)
 	}
+}
+
+func TestSign_WhenCSRSignatureIsCorrupted_ItShouldReturnAnError(t *testing.T) {
+	t.Parallel()
+	g := NewWithT(t)
+	ca := certificateAuthority(t)
+	pk := privateKey(t)
+	csrb, err := x509.CreateCertificateRequest(insecureRand, &x509.CertificateRequest{
+		Subject: pkix.Name{CommonName: "test-cn"},
+	}, pk)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	x509cr, err := certificates.ParseCSR(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: csrb}))
+	g.Expect(err).ToNot(HaveOccurred())
+
+	x509cr.Signature[0] ^= 0xFF
+
+	_, err = sign(ca, x509cr, []certificatesv1.KeyUsage{certificatesv1.UsageClientAuth}, time.Hour, nil, time.Now)
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(err.Error()).To(HavePrefix("unable to verify certificate request signature"))
 }
 
 func TestDuration(t *testing.T) {

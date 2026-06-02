@@ -78,7 +78,7 @@ func DumpJournals(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluster, 
 		return nil
 	}
 
-	return runJournalDumpScript(t, hc, artifactDir, copyJournalFile, privateKeyFile, bastionIP, machineIPs, machineInstances)
+	return runJournalDumpScript(ctx, t, hc, artifactDir, copyJournalFile, privateKeyFile, bastionIP, machineIPs, machineInstances)
 }
 
 func setupSSHKey(ctx context.Context, hc *hyperv1.HostedCluster) (string, error) {
@@ -133,7 +133,7 @@ func setupBastionLoggers(artifactDir string) (*zap.Logger, *zap.Logger, error) {
 	createLogFile := filepath.Join(artifactDir, "create-bastion.log")
 	createLog, err := os.Create(createLogFile)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create create log: %w", err)
+		return nil, nil, fmt.Errorf("failed to create log: %w", err)
 	}
 	createLogger := zap.New(zapcore.NewCore(zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig()), zapcore.Lock(createLog), zap.DebugLevel))
 
@@ -269,7 +269,7 @@ func authorizeSSHAccess(ctx context.Context, hc *hyperv1.HostedCluster, awsCreds
 	return nil
 }
 
-func runJournalDumpScript(t *testing.T, hc *hyperv1.HostedCluster, artifactDir, copyJournalFile, privateKeyFile, bastionIP string, machineIPs []string, machineInstances []ec2types.Instance) error {
+func runJournalDumpScript(ctx context.Context, t *testing.T, hc *hyperv1.HostedCluster, artifactDir, copyJournalFile, privateKeyFile, bastionIP string, machineIPs []string, machineInstances []ec2types.Instance) error {
 	dumpJournalsLogFile := filepath.Join(artifactDir, "dump-machine-journals.log")
 	dumpJournalsLog, err := os.Create(dumpJournalsLogFile)
 	if err != nil {
@@ -277,7 +277,7 @@ func runJournalDumpScript(t *testing.T, hc *hyperv1.HostedCluster, artifactDir, 
 	}
 
 	outputDir := filepath.Join(artifactDir, "machine-journals")
-	scriptCmd := exec.Command(copyJournalFile, outputDir)
+	scriptCmd := exec.CommandContext(ctx, copyJournalFile, outputDir)
 	env := os.Environ()
 	env = append(env, fmt.Sprintf("BASTION_IP=%s", bastionIP))
 	env = append(env, fmt.Sprintf("INSTANCE_IPS=%s", strings.Join(machineIPs, " ")))

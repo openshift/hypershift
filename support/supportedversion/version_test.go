@@ -1,6 +1,7 @@
 package supportedversion
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -19,6 +20,7 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	"github.com/blang/semver"
 )
@@ -927,6 +929,13 @@ func TestRetrieveSupportedOCPVersion(t *testing.T) {
 			expectedErrMsg: "failed to get supported OCP versions",
 		},
 		{
+			name:           "When the release URL is invalid, expect a request creation error",
+			cm:             supportedVersionsCM,
+			releaseURL:     "://invalid-url",
+			expectErr:      true,
+			expectedErrMsg: "parse",
+		},
+		{
 			name:       "When the ConfigMap supports older versions, expect the latest older version to be returned",
 			cm:         olderSupportedVersionsCM,
 			releaseURL: mockServer.URL + "/api/v1/releasestream/4-stable-multi/tags",
@@ -961,6 +970,44 @@ func TestRetrieveSupportedOCPVersion(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestRetrieveSupportedOCPVersion_ListFailure(t *testing.T) {
+	g := NewWithT(t)
+
+	scheme := api.Scheme
+	g.Expect(corev1.AddToScheme(scheme)).To(Succeed())
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithInterceptorFuncs(interceptor.Funcs{
+			List: func(ctx context.Context, c client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
+				return fmt.Errorf("connection refused")
+			},
+		}).
+		Build()
+
+	_, err := retrieveSupportedOCPVersion(t.Context(), "https://example.com/tags", fakeClient)
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(err.Error()).To(ContainSubstring("failed to list ConfigMaps to find supported versions"))
+}
+
+func TestLookupDefaultOCPVersion_ListFailure(t *testing.T) {
+	g := NewWithT(t)
+
+	scheme := api.Scheme
+	g.Expect(corev1.AddToScheme(scheme)).To(Succeed())
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithInterceptorFuncs(interceptor.Funcs{
+			List: func(ctx context.Context, c client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
+				return fmt.Errorf("connection refused")
+			},
+		}).
+		Build()
+
+	_, err := LookupDefaultOCPVersion(t.Context(), "", fakeClient)
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(err.Error()).To(ContainSubstring("failed to get OCP version from release URL"))
 }
 
 func TestGetArchFromStream(t *testing.T) {

@@ -75,7 +75,7 @@ func GetAzureCloudConfiguration(cloudName string) (cloud.Configuration, error) {
 func GetSubnetNameFromSubnetID(subnetID string) (string, error) {
 	subnet, err := arm.ParseResourceID(subnetID)
 	if err != nil {
-		return "", fmt.Errorf("failed to parse subnet ID %q: %v", subnetID, err)
+		return "", fmt.Errorf("failed to parse subnet ID %q: %w", subnetID, err)
 	}
 
 	if !strings.EqualFold(subnet.ResourceType.Type, "virtualnetworks/subnets") {
@@ -94,7 +94,7 @@ func GetSubnetNameFromSubnetID(subnetID string) (string, error) {
 func GetNameAndResourceGroupFromNetworkSecurityGroupID(nsgID string) (string, string, error) {
 	nsg, err := arm.ParseResourceID(nsgID)
 	if err != nil {
-		return "", "", fmt.Errorf("failed to parse network security group ID %q: %v", nsgID, err)
+		return "", "", fmt.Errorf("failed to parse network security group ID %q: %w", nsgID, err)
 	}
 
 	if !strings.EqualFold(nsg.ResourceType.Type, "networkSecurityGroups") {
@@ -117,7 +117,7 @@ func GetNameAndResourceGroupFromNetworkSecurityGroupID(nsgID string) (string, st
 func GetVnetNameAndResourceGroupFromVnetID(vnetID string) (string, string, error) {
 	vnet, err := arm.ParseResourceID(vnetID)
 	if err != nil {
-		return "", "", fmt.Errorf("failed to parse vnet ID %q: %v", vnetID, err)
+		return "", "", fmt.Errorf("failed to parse vnet ID %q: %w", vnetID, err)
 	}
 
 	if !strings.EqualFold(vnet.ResourceType.Type, "virtualNetworks") {
@@ -141,7 +141,7 @@ func GetVnetNameAndResourceGroupFromVnetID(vnetID string) (string, string, error
 func GetVnetInfoFromVnetID(ctx context.Context, vnetID string, subscriptionID string, azureCreds azcore.TokenCredential, cloudName string) (armnetwork.VirtualNetworksClientGetResponse, error) {
 	partialVnetInfo, err := arm.ParseResourceID(vnetID)
 	if err != nil {
-		return armnetwork.VirtualNetworksClientGetResponse{}, fmt.Errorf("failed to parse vnet information from vnet ID %q: %v", vnetID, err)
+		return armnetwork.VirtualNetworksClientGetResponse{}, fmt.Errorf("failed to parse vnet information from vnet ID %q: %w", vnetID, err)
 	}
 
 	if !strings.EqualFold(partialVnetInfo.ResourceType.Type, "virtualNetworks") {
@@ -210,7 +210,7 @@ func getFullVnetInfo(ctx context.Context, subscriptionID string, vnetResourceGro
 func GetNetworkSecurityGroupInfo(ctx context.Context, nsgID string, subscriptionID string, azureCreds azcore.TokenCredential, cloudName string) (armnetwork.SecurityGroupsClientGetResponse, error) {
 	partialNSGInfo, err := arm.ParseResourceID(nsgID)
 	if err != nil {
-		return armnetwork.SecurityGroupsClientGetResponse{}, fmt.Errorf("failed to parse network security group id %q: %v", nsgID, err)
+		return armnetwork.SecurityGroupsClientGetResponse{}, fmt.Errorf("failed to parse network security group id %q: %w", nsgID, err)
 	}
 
 	cloudConfig, err := GetAzureCloudConfiguration(cloudName)

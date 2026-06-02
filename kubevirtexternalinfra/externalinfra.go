@@ -222,8 +222,8 @@ func (k *kubevirtInfraClientImp) GetInfraKubevirtVersion(ctx context.Context) (*
 
 	result = restClient.Get().AbsPath(uri).Do(ctx)
 	if data, err := result.Raw(); err != nil {
-		connErr, isConnectionErr := err.(*url.Error)
-		if isConnectionErr {
+		var connErr *url.Error
+		if errors.As(err, &connErr) {
 			err = connErr.Err
 		}
 

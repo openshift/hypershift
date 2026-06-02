@@ -317,10 +317,14 @@ func TestCreatePrivateZone(t *testing.T) {
 
 func TestCleanupPublicZone(t *testing.T) {
 	tests := []struct {
-		name          string
-		setupMock     func(*awsapi.MockROUTE53API)
-		expectError   bool
-		errorContains string
+		name             string
+		redact           bool
+		setupMock        func(*awsapi.MockROUTE53API)
+		expectError      bool
+		errorContains    string
+		useCtx           func() context.Context
+		wantLogRedacted  bool
+		wantLogSubstring string
 	}{
 		{
 			name: "When zone and wildcard record exist it should delete the record and return nil",
@@ -341,6 +345,27 @@ func TestCleanupPublicZone(t *testing.T) {
 			},
 		},
 		{
+			name:   "When zone and wildcard record exist with redact enabled it should delete the record and redact the domain in logs",
+			redact: true,
+			setupMock: func(m *awsapi.MockROUTE53API) {
+				m.EXPECT().ListHostedZones(gomock.Any(), gomock.Any(), gomock.Any()).
+					Return(publicZonePage("PUBZONE", testBaseDomain), nil)
+				m.EXPECT().ListResourceRecordSets(gomock.Any(), gomock.Any(), gomock.Any()).
+					Return(&route53.ListResourceRecordSetsOutput{
+						ResourceRecordSets: []route53types.ResourceRecordSet{
+							{
+								Name: aws.String("*.apps." + testCluster + "." + testBaseDomain + "."),
+								Type: route53types.RRTypeA,
+							},
+						},
+					}, nil)
+				m.EXPECT().ChangeResourceRecordSets(gomock.Any(), gomock.Any(), gomock.Any()).
+					Return(&route53.ChangeResourceRecordSetsOutput{}, nil)
+			},
+			wantLogRedacted:  true,
+			wantLogSubstring: "[REDACTED]",
+		},
+		{
 			name: "When the zone is not found it should return nil as a no-op",
 			setupMock: func(m *awsapi.MockROUTE53API) {
 				m.EXPECT().ListHostedZones(gomock.Any(), gomock.Any(), gomock.Any()).
@@ -357,6 +382,16 @@ func TestCleanupPublicZone(t *testing.T) {
 						ResourceRecordSets: []route53types.ResourceRecordSet{},
 					}, nil)
 			},
+		},
+		{
+			name:   "When LookupZone fails with a non-not-found error it should return a wrapped error",
+			useCtx: cancelledCtx,
+			setupMock: func(m *awsapi.MockROUTE53API) {
+				m.EXPECT().ListHostedZones(gomock.Any(), gomock.Any(), gomock.Any()).
+					Return(nil, errors.New("throttling exception"))
+			},
+			expectError:   true,
+			errorContains: "failed to lookup public hosted zone",
 		},
 		{
 			name: "When ChangeResourceRecordSets fails with a non-404 error it should return the error",
@@ -382,28 +417,44 @@ func TestCleanupPublicZone(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
 			ctrl := gomock.NewController(t)
 			mockR53 := awsapi.NewMockROUTE53API(ctrl)
 			tt.setupMock(mockR53)
 
-			o := &DestroyInfraOptions{
-				BaseDomain: testBaseDomain,
-				Name:       testCluster,
-				Log:        logr.Discard(),
+			ctx := t.Context()
+			if tt.useCtx != nil {
+				ctx = tt.useCtx()
 			}
-			err := o.CleanupPublicZone(context.Background(), mockR53)
+
+			var logOutput strings.Builder
+			logger := logr.Discard()
+			if tt.wantLogRedacted {
+				logger = funcr.New(func(prefix, args string) {
+					logOutput.WriteString(args)
+				}, funcr.Options{})
+			}
+
+			o := &DestroyInfraOptions{
+				BaseDomain:       testBaseDomain,
+				Name:             testCluster,
+				RedactBaseDomain: tt.redact,
+				Log:              logger,
+			}
+			err := o.CleanupPublicZone(ctx, mockR53)
 
 			if tt.expectError {
-				if err == nil {
-					t.Fatal("expected error, got nil")
-				}
-				if tt.errorContains != "" && !strings.Contains(err.Error(), tt.errorContains) {
-					t.Errorf("expected error containing %q, got: %v", tt.errorContains, err)
+				g.Expect(err).To(HaveOccurred())
+				if tt.errorContains != "" {
+					g.Expect(err).To(MatchError(ContainSubstring(tt.errorContains)))
 				}
 			} else {
-				if err != nil {
-					t.Errorf("expected no error, got: %v", err)
-				}
+				g.Expect(err).ToNot(HaveOccurred())
+			}
+
+			if tt.wantLogRedacted {
+				g.Expect(logOutput.String()).To(ContainSubstring(tt.wantLogSubstring))
+				g.Expect(logOutput.String()).ToNot(ContainSubstring(testBaseDomain))
 			}
 		})
 	}

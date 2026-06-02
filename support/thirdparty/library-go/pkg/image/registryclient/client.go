@@ -2,6 +2,7 @@ package registryclient
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"hash"
 	"io"
@@ -181,7 +182,7 @@ func (c *Context) Ping(ctx context.Context, registry *url.URL, insecure bool) (h
 	}
 
 	// follow redirects
-	redirect, err := c.ping(src, insecure, t)
+	redirect, err := c.ping(ctx, src, insecure, t)
 
 	c.lock.Lock()
 	defer c.lock.Unlock()
@@ -223,14 +224,14 @@ func (c *Context) Repository(ctx context.Context, registry *url.URL, repoName st
 	return NewLimitedRetryRepository(repo, c.Retries, limiter), nil
 }
 
-func (c *Context) ping(registry url.URL, insecure bool, transport http.RoundTripper) (*url.URL, error) {
+func (c *Context) ping(ctx context.Context, registry url.URL, insecure bool, transport http.RoundTripper) (*url.URL, error) {
 	pingClient := &http.Client{
 		Transport: transport,
 		Timeout:   15 * time.Second,
 	}
 	target := registry
 	target.Path = path.Join(target.Path, "v2") + "/"
-	req, err := http.NewRequest("GET", target.String(), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target.String(), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -238,7 +239,7 @@ func (c *Context) ping(registry url.URL, insecure bool, transport http.RoundTrip
 	if err != nil {
 		if insecure && registry.Scheme == "https" {
 			registry.Scheme = "http"
-			_, nErr := c.ping(registry, true, transport)
+			_, nErr := c.ping(ctx, registry, true, transport)
 			if nErr != nil {
 				return nil, nErr
 			}
@@ -377,20 +378,24 @@ func isTemporaryHTTPError(err error) (time.Duration, bool) {
 	if err == nil {
 		return 0, false
 	}
-	switch t := err.(type) {
-	case net.Error:
-		return time.Second, t.Timeout()
-	case errcode.ErrorCoder:
+	var netErr net.Error
+	if errors.As(err, &netErr) {
+		return time.Second, netErr.Timeout()
+	}
+	var errorCoder errcode.ErrorCoder
+	if errors.As(err, &errorCoder) {
 		// note: we explicitly do not check errcode.ErrorCodeUnknown because that is used in
 		// a wide range of scenarios to convey "generic error", not "retryable error"
-		switch t.ErrorCode() {
+		switch errorCoder.ErrorCode() {
 		case errcode.ErrorCodeUnavailable:
 			return 5 * time.Second, true
 		case errcode.ErrorCodeTooManyRequests:
 			return 2 * time.Second, true
 		}
-	case *registryclient.UnexpectedHTTPResponseError:
-		switch t.StatusCode {
+	}
+	var unexpectedErr *registryclient.UnexpectedHTTPResponseError
+	if errors.As(err, &unexpectedErr) {
+		switch unexpectedErr.StatusCode {
 		case http.StatusInternalServerError, http.StatusGatewayTimeout, http.StatusServiceUnavailable, http.StatusBadGateway:
 			return 5 * time.Second, true
 		case http.StatusTooManyRequests:
@@ -692,7 +697,7 @@ func (r *readSeekCloserVerifier) Read(p []byte) (n int, err error) {
 		if n > 0 {
 			r.hash.Write(p[:n])
 		}
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			actual := digest.NewDigest(r.expect.Algorithm(), r.hash)
 			if actual != r.expect {
 				return n, fmt.Errorf("content integrity error: the blob streamed from digest %s does not match the digest calculated from the content %s", r.expect, actual)

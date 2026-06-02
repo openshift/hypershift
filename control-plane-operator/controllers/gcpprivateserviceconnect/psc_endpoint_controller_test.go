@@ -3,6 +3,7 @@ package gcpprivateserviceconnect
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -21,6 +22,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/api/googleapi"
 )
 
 func TestConstructEndpointName(t *testing.T) {
@@ -257,8 +259,26 @@ func TestIsNotFoundError(t *testing.T) {
 			err:      assert.AnError,
 			expected: false,
 		},
-		// Note: We can't easily test the GCP API error case without importing the full GCP SDK
-		// and creating mock errors, but the logic is straightforward
+		{
+			name:     "When given a GCP 404 error it should return true",
+			err:      &googleapi.Error{Code: 404, Message: "not found"},
+			expected: true,
+		},
+		{
+			name:     "When given a GCP 500 error it should return false",
+			err:      &googleapi.Error{Code: 500, Message: "internal error"},
+			expected: false,
+		},
+		{
+			name:     "When given a wrapped GCP 404 error it should return true",
+			err:      fmt.Errorf("operation failed: %w", &googleapi.Error{Code: 404, Message: "not found"}),
+			expected: true,
+		},
+		{
+			name:     "When given a wrapped GCP 500 error it should return false",
+			err:      fmt.Errorf("operation failed: %w", &googleapi.Error{Code: 500, Message: "internal error"}),
+			expected: false,
+		},
 	}
 
 	for _, tt := range tests {

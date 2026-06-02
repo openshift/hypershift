@@ -53,6 +53,16 @@ func TestIsNotFoundError(t *testing.T) {
 			err:      nil,
 			expected: false,
 		},
+		{
+			name:     "When given a wrapped GCP 404 error it should return true",
+			err:      fmt.Errorf("operation failed: %w", &googleapi.Error{Code: 404}),
+			expected: true,
+		},
+		{
+			name:     "When given a wrapped GCP 500 error it should return false",
+			err:      fmt.Errorf("operation failed: %w", &googleapi.Error{Code: 500}),
+			expected: false,
+		},
 	}
 
 	for _, test := range tests {

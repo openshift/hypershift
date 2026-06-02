@@ -109,7 +109,7 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 	kubeadminPasswordSecret := common.KubeadminPasswordSecret(deployment.Namespace)
 	if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(kubeadminPasswordSecret), kubeadminPasswordSecret); err != nil {
 		if !apierrors.IsNotFound(err) {
-			return fmt.Errorf("failed to get kubeadmin password secret: %v", err)
+			return fmt.Errorf("failed to get kubeadmin password secret: %w", err)
 		}
 		delete(deployment.Spec.Template.ObjectMeta.Annotations, KubeadminSecretHashAnnotation)
 	} else {

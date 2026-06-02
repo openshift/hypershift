@@ -61,15 +61,15 @@ var (
 // from being updated/deleted from the DataPlane side.
 func ReconcileKASValidatingAdmissionPolicies(ctx context.Context, hcp *hyperv1.HostedControlPlane, client client.Client, createOrUpdate upsert.CreateOrUpdateFN) error {
 	if err := reconcileConfigValidatingAdmissionPolicy(ctx, hcp, client, createOrUpdate); err != nil {
-		return fmt.Errorf("failed to reconcile Config Validating Admission Policy: %v", err)
+		return fmt.Errorf("failed to reconcile Config Validating Admission Policy: %w", err)
 	}
 
 	if err := reconcileMirrorValidatingAdmissionPolicy(ctx, hcp, client, createOrUpdate); err != nil {
-		return fmt.Errorf("failed to reconcile Mirror Validating Admission Policies: %v", err)
+		return fmt.Errorf("failed to reconcile Mirror Validating Admission Policies: %w", err)
 	}
 
 	if err := reconcileInfraValidatingAdmissionPolicy(ctx, hcp, client, createOrUpdate); err != nil {
-		return fmt.Errorf("failed to reconcile Infrastructure Validating Admission Policy: %v", err)
+		return fmt.Errorf("failed to reconcile Infrastructure Validating Admission Policy: %w", err)
 	}
 
 	if err := reconcileConfigMapsValidatingAdmissionPolicy(ctx, client, createOrUpdate); err != nil {
@@ -109,7 +109,7 @@ func reconcileConfigValidatingAdmissionPolicy(ctx context.Context, hcp *hyperv1.
 	configAdmissionPolicy.Validations = []k8sadmissionv1.Validation{HCCOUserValidation}
 	configAdmissionPolicy.MatchConstraints = constructPolicyMatchConstraints(configResources, configAPIVersion, configAPIGroup, []k8sadmissionv1.OperationType{"UPDATE", "DELETE"})
 	if err := configAdmissionPolicy.reconcileAdmissionPolicy(ctx, client, createOrUpdate); err != nil {
-		return fmt.Errorf("error reconciling Config Validating Admission Policy: %v", err)
+		return fmt.Errorf("error reconciling Config Validating Admission Policy: %w", err)
 	}
 
 	return nil
@@ -128,7 +128,7 @@ func reconcileInfraValidatingAdmissionPolicy(ctx context.Context, _ *hyperv1.Hos
 	infraAdmissionPolicy.Validations = []k8sadmissionv1.Validation{HCCOUserValidation}
 	infraAdmissionPolicy.MatchConstraints = constructPolicyMatchConstraints(infraResources, infraAPIVersion, infraAPIGroup, []k8sadmissionv1.OperationType{"UPDATE", "DELETE"})
 	if err := infraAdmissionPolicy.reconcileAdmissionPolicy(ctx, client, createOrUpdate); err != nil {
-		return fmt.Errorf("error reconciling Infrastructure Validating Admission Policy: %v", err)
+		return fmt.Errorf("error reconciling Infrastructure Validating Admission Policy: %w", err)
 	}
 
 	return nil
@@ -152,7 +152,7 @@ func reconcileMirrorValidatingAdmissionPolicy(ctx context.Context, hcp *hyperv1.
 	mirrorAdmissionPolicy.Validations = []k8sadmissionv1.Validation{HCCOUserValidation}
 	mirrorAdmissionPolicy.MatchConstraints = constructPolicyMatchConstraints(mirrorResources, mirrorAPIVersion, mirrorAPIGroup, allAdmissionPoliciesOperations)
 	if err := mirrorAdmissionPolicy.reconcileAdmissionPolicy(ctx, client, createOrUpdate); err != nil {
-		return fmt.Errorf("error reconciling Mirror Validating Admission Policy: %v", err)
+		return fmt.Errorf("error reconciling Mirror Validating Admission Policy: %w", err)
 	}
 
 	// ICSP lives in other API, this is why we need to create another vap and vap-binding
@@ -164,7 +164,7 @@ func reconcileMirrorValidatingAdmissionPolicy(ctx context.Context, hcp *hyperv1.
 	icspAdmissionPolicy.Validations = []k8sadmissionv1.Validation{HCCOUserValidation}
 	icspAdmissionPolicy.MatchConstraints = constructPolicyMatchConstraints(icspResources, icspAPIVersion, icspAPIGroup, allAdmissionPoliciesOperations)
 	if err := icspAdmissionPolicy.reconcileAdmissionPolicy(ctx, client, createOrUpdate); err != nil {
-		return fmt.Errorf("error reconciling ICSP Validating Admission Policy: %v", err)
+		return fmt.Errorf("error reconciling ICSP Validating Admission Policy: %w", err)
 	}
 
 	return nil
@@ -182,7 +182,7 @@ func reconcileConfigMapsValidatingAdmissionPolicy(ctx context.Context, client cl
 	// we want to block changes only for configmaps with "hypershift.openshift.io/mirrored-config" label
 	mirroredConfigsAdmissionPolicy.MatchConstraints.ObjectSelector = &metav1.LabelSelector{MatchLabels: map[string]string{nodepool.NTOMirroredConfigLabel: "true"}}
 	if err := mirroredConfigsAdmissionPolicy.reconcileAdmissionPolicy(ctx, client, createOrUpdate); err != nil {
-		return fmt.Errorf("error reconciling mirrored ConfigMaps Validating Admission Policy: %v", err)
+		return fmt.Errorf("error reconciling mirrored ConfigMaps Validating Admission Policy: %w", err)
 	}
 	return nil
 }
@@ -200,7 +200,7 @@ func (ap *AdmissionPolicy) reconcileAdmissionPolicy(ctx context.Context, client 
 
 		return nil
 	}); err != nil {
-		return fmt.Errorf("failed to create/update Validating Admission Policy with name %s: %v", ap.Name, err)
+		return fmt.Errorf("failed to create/update Validating Admission Policy with name %s: %w", ap.Name, err)
 	}
 
 	policyBinding := manifests.ValidatingAdmissionPolicyBinding(fmt.Sprintf("%s-binding", ap.Name))
@@ -209,7 +209,7 @@ func (ap *AdmissionPolicy) reconcileAdmissionPolicy(ctx context.Context, client 
 		policyBinding.Spec.ValidationActions = []k8sadmissionv1.ValidationAction{k8sadmissionv1.Deny}
 		return nil
 	}); err != nil {
-		return fmt.Errorf("failed to create/update Validating Admission Policy Binding with name %s: %v", ap.Name, err)
+		return fmt.Errorf("failed to create/update Validating Admission Policy Binding with name %s: %w", ap.Name, err)
 	}
 
 	return nil

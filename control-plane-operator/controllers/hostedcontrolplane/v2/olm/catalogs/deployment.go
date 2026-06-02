@@ -35,7 +35,7 @@ func (c *catalogOptions) adaptCatalogDeployment(cpContext component.WorkloadCont
 		existingDeployment := &appsv1.Deployment{}
 		if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(deployment), existingDeployment); err != nil {
 			if !apierrors.IsNotFound(err) {
-				return fmt.Errorf("failed to get existing deployment: %v", err)
+				return fmt.Errorf("failed to get existing deployment: %w", err)
 			}
 		} else {
 			// If deployment already exists, imagestream tag will already populate the container image
@@ -96,7 +96,7 @@ func getCatalogImagesOverrides(cpContext component.WorkloadContext, capabilityIm
 
 		digest, _, err := cpContext.ImageMetadataProvider.GetDigest(cpContext, imageRef.Exact(), pullSecret.Data[corev1.DockerConfigJsonKey])
 		if err != nil {
-			return nil, fmt.Errorf("failed to get manifest for image %s: %v", imageRef.Exact(), err)
+			return nil, fmt.Errorf("failed to get manifest for image %s: %w", imageRef.Exact(), err)
 		}
 		imageRef.ID = digest.String()
 
