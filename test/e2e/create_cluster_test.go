@@ -125,6 +125,7 @@ func TestCreateCluster(t *testing.T) {
 
 		e2eutil.EnsureGlobalPullSecret(t, ctx, mgtClient, hostedCluster, globalOpts.AdditionalPullSecretFile)
 		e2eutil.EnsureMetricsForwarderWorking(t, ctx, mgtClient, hostedCluster)
+		e2eutil.ValidateCPOMetrics(t, ctx, mgtClient, hostedCluster)
 
 		// Verify CPO override image if TEST_CPO_OVERRIDE=1 is set
 		if os.Getenv("TEST_CPO_OVERRIDE") == "1" {
