@@ -765,6 +765,7 @@ func (r *LocalIgnitionProvider) reconcileValidReleaseInfoCondition(ctx context.C
 	}
 
 	hostedControlPlane := hcpList.Items[0]
+	originalHCP := hostedControlPlane.DeepCopy()
 
 	if len(releaseImageProvider.GetMissingImages()) == 0 {
 		meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, metav1.Condition{
@@ -784,7 +785,7 @@ func (r *LocalIgnitionProvider) reconcileValidReleaseInfoCondition(ctx context.C
 		})
 	}
 
-	return r.Client.Status().Update(ctx, &hostedControlPlane)
+	return r.Client.Status().Patch(ctx, &hostedControlPlane, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{}))
 }
 
 // copyFile copies a file named src to dst, preserving attributes.

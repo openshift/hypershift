@@ -1998,10 +1998,11 @@ func (r *HostedControlPlaneReconciler) reconcileValidIDPConfigurationCondition(c
 			Message: fmt.Sprintf("failed to initialize identity providers: %v", err),
 		}
 	}
-	// Update the condition on the HCP if it has changed
+	// Patch the condition on the HCP if it has changed
+	originalHCP := hcp.DeepCopy()
 	if meta.SetStatusCondition(&hcp.Status.Conditions, new) {
-		if err := r.Status().Update(ctx, hcp); err != nil {
-			return fmt.Errorf("failed to update valid IDP configuration condition: %w", err)
+		if err := r.Status().Patch(ctx, hcp, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{})); err != nil {
+			return fmt.Errorf("failed to patch valid IDP configuration condition: %w", err)
 		}
 	}
 	return nil
@@ -2518,14 +2519,15 @@ func (r *HostedControlPlaneReconciler) removeCloudResources(ctx context.Context,
 			if resourcesDestroyedCond != nil && resourcesDestroyedCond.Message != "" {
 				message = fmt.Sprintf("%s (last status: %s)", message, resourcesDestroyedCond.Message)
 			}
+			originalHCP := hcp.DeepCopy()
 			meta.SetStatusCondition(&hcp.Status.Conditions, metav1.Condition{
 				Type:    string(hyperv1.CloudResourcesDestroyed),
 				Status:  metav1.ConditionFalse,
 				Reason:  string(hyperv1.CloudResourcesDeletionTimedOutReason),
 				Message: message,
 			})
-			if err := r.Status().Update(ctx, hcp); err != nil {
-				return false, fmt.Errorf("failed to update cloud resources destroyed condition: %w", err)
+			if err := r.Status().Patch(ctx, hcp, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{})); err != nil {
+				return false, fmt.Errorf("failed to patch cloud resources destroyed condition: %w", err)
 			}
 			return true, nil
 		}
@@ -2550,6 +2552,7 @@ func (r *HostedControlPlaneReconciler) removeCloudResources(ctx context.Context,
 		return false, nil
 	}
 	if cvoScaledDownCond == nil || cvoScaledDownCond.Status != metav1.ConditionTrue {
+		originalHCP := hcp.DeepCopy()
 		cvoScaledDownCond = &metav1.Condition{
 			Type:               string(hyperv1.CVOScaledDown),
 			Status:             metav1.ConditionTrue,
@@ -2557,8 +2560,8 @@ func (r *HostedControlPlaneReconciler) removeCloudResources(ctx context.Context,
 			LastTransitionTime: metav1.Now(),
 		}
 		meta.SetStatusCondition(&hcp.Status.Conditions, *cvoScaledDownCond)
-		if err := r.Status().Update(ctx, hcp); err != nil {
-			return false, fmt.Errorf("failed to set CVO scaled down condition: %w", err)
+		if err := r.Status().Patch(ctx, hcp, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{})); err != nil {
+			return false, fmt.Errorf("failed to patch CVO scaled down condition: %w", err)
 		}
 	}
 	return false, nil
