@@ -378,6 +378,8 @@ nav:
   - 'Test Information/Debugging':
     - 'ARO HCP / AKS e2e':
       - reference/test-information-debugging/Azure/test-artifacts-directory-structure.md
+    - 'GCP / GKE e2e (v2)':
+      - reference/test-information-debugging/GCP/test-artifacts-directory-structure.md
   - reference/SLOs.md
   - reference/versioning-support.md
   - reference/service-publishing-strategies.md
