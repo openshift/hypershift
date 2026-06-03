@@ -62,6 +62,11 @@ reviews:
 
     # Test fixtures and data
     - "!**/testdata/**"
+  path_instructions:
+    - path: "test/e2e/v2/**/*.go"
+      instructions: |
+        Strictly enforce all standards documented in test/e2e/v2/AGENTS.md
+        when reviewing changes to this file. Flag any violations.
   tools:
     golangci-lint:
       enabled: true
@@ -71,7 +76,7 @@ knowledge_base:
   code_guidelines:
     enabled: true
     filePatterns:
-      - AGENTS.md
+      - "**/AGENTS.md"
       - .claude/agents/*.md
       - .cursor/rules/*.mdc
   learnings:
