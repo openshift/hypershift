@@ -147,12 +147,12 @@ func TestConnectDialFunc(t *testing.T) {
 	lookupErr := errors.New("lookup failed")
 
 	tests := []struct {
-		name               string
-		shouldDialDirect   bool
+		name                string
+		shouldDialDirect    bool
 		shouldDialDirectErr error
-		expectDialDirect   bool
-		expectDialProxy    bool
-		expectErr          error
+		expectDialDirect    bool
+		expectDialProxy     bool
+		expectErr           error
 	}{
 		{
 			name:             "When shouldDialDirect returns true it should dial directly with request context",
