@@ -92,7 +92,7 @@ func NodePoolMachineconfigRolloutTest(getTestCtx internal.TestContextGetter) {
 			Skip("test is skipped for KubeVirt platform until https://issues.redhat.com/browse/CNV-38196 is addressed")
 		}
 
-		guestClient := testCtx.GetHostedClusterClient()
+		hcClient := testCtx.GetHostedClusterClient()
 
 		ctx := testCtx.Context
 
@@ -114,9 +114,11 @@ func NodePoolMachineconfigRolloutTest(getTestCtx internal.TestContextGetter) {
 		err := testCtx.MgmtClient.Create(ctx, np)
 		Expect(err).NotTo(HaveOccurred(), "failed to create NodePool %s", np.Name)
 		GinkgoWriter.Printf("Created NodePool %s\n", np.Name)
-		defer cleanupNodePool(ctx, testCtx.MgmtClient, np)
+		DeferCleanup(func() {
+			cleanupNodePool(ctx, testCtx.MgmtClient, np)
+		})
 
-		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, guestClient, np, hc.Spec.Platform.Type)
+		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, hcClient, np, hc.Spec.Platform.Type)
 
 		// Build MachineConfig with a custom file at /etc/custom-config
 		ignitionConfig := ignitionapi.Config{
@@ -153,6 +155,11 @@ func NodePoolMachineconfigRolloutTest(getTestCtx internal.TestContextGetter) {
 			Data: map[string]string{"config": string(serializedMC)},
 		}
 		Expect(testCtx.MgmtClient.Create(ctx, mcConfigMap)).To(Succeed(), "failed to create MachineConfig ConfigMap")
+		DeferCleanup(func() {
+			if err := testCtx.MgmtClient.Delete(ctx, mcConfigMap); err != nil && !apierrors.IsNotFound(err) {
+				Expect(err).NotTo(HaveOccurred(), "cleanup: failed to delete ConfigMap %s", mcConfigMap.Name)
+			}
+		})
 		GinkgoWriter.Printf("Created MachineConfig ConfigMap %s\n", mcConfigMap.Name)
 
 		original := np.DeepCopy()
@@ -162,11 +169,11 @@ func NodePoolMachineconfigRolloutTest(getTestCtx internal.TestContextGetter) {
 
 		// Build verification DaemonSet that checks /etc/custom-config exists
 		ds := buildMachineConfigVerificationDaemonSet(np)
-		Expect(guestClient.Create(ctx, ds)).To(Succeed(), "failed to create verification DaemonSet")
+		Expect(hcClient.Create(ctx, ds)).To(Succeed(), "failed to create verification DaemonSet")
 
 		e2eutil.WaitForNodePoolConfigUpdateCompleteWithPlatform(GinkgoTB(), ctx, testCtx.MgmtClient, np, hc.Spec.Platform.Type)
-		waitForDaemonSetRollout(ctx, guestClient, ds, 1, np.Spec.Platform.Type)
-		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, guestClient, np, hc.Spec.Platform.Type)
+		waitForDaemonSetRollout(ctx, hcClient, ds, 1, np.Spec.Platform.Type)
+		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, hcClient, np, hc.Spec.Platform.Type)
 
 		// TODO: EnsureNoCrashingPods, EnsureAllContainersHavePullPolicyIfNotPresent,
 		// EnsureHCPContainersHaveResourceRequests, EnsureNoPodsWithTooHighPriority
@@ -190,7 +197,7 @@ func NodePoolNTORolloutTest(getTestCtx internal.TestContextGetter) {
 			Skip("test is skipped for OpenStack platform until https://issues.redhat.com/browse/OSASINFRA-3566 is addressed")
 		}
 
-		guestClient := testCtx.GetHostedClusterClient()
+		hcClient := testCtx.GetHostedClusterClient()
 
 		ctx := testCtx.Context
 
@@ -212,9 +219,11 @@ func NodePoolNTORolloutTest(getTestCtx internal.TestContextGetter) {
 		err := testCtx.MgmtClient.Create(ctx, np)
 		Expect(err).NotTo(HaveOccurred(), "failed to create NodePool %s", np.Name)
 		GinkgoWriter.Printf("Created NodePool %s\n", np.Name)
-		defer cleanupNodePool(ctx, testCtx.MgmtClient, np)
+		DeferCleanup(func() {
+			cleanupNodePool(ctx, testCtx.MgmtClient, np)
+		})
 
-		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, guestClient, np, hc.Spec.Platform.Type)
+		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, hcClient, np, hc.Spec.Platform.Type)
 
 		tuningCM := &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
@@ -224,6 +233,11 @@ func NodePoolNTORolloutTest(getTestCtx internal.TestContextGetter) {
 			Data: map[string]string{tuningConfigKey: hugepagesTunedYAML},
 		}
 		Expect(testCtx.MgmtClient.Create(ctx, tuningCM)).To(Succeed(), "failed to create Tuned ConfigMap")
+		DeferCleanup(func() {
+			if err := testCtx.MgmtClient.Delete(ctx, tuningCM); err != nil && !apierrors.IsNotFound(err) {
+				Expect(err).NotTo(HaveOccurred(), "cleanup: failed to delete ConfigMap %s", tuningCM.Name)
+			}
+		})
 
 		original := np.DeepCopy()
 		np.Spec.TuningConfig = append(np.Spec.TuningConfig, corev1.LocalObjectReference{Name: tuningCM.Name})
@@ -231,11 +245,11 @@ func NodePoolNTORolloutTest(getTestCtx internal.TestContextGetter) {
 			"failed to patch NodePool %s with TuningConfig", np.Name)
 
 		ds := buildNTOVerificationDaemonSet(np)
-		Expect(guestClient.Create(ctx, ds)).To(Succeed(), "failed to create NTO verification DaemonSet")
+		Expect(hcClient.Create(ctx, ds)).To(Succeed(), "failed to create NTO verification DaemonSet")
 
 		e2eutil.WaitForNodePoolConfigUpdateCompleteWithPlatform(GinkgoTB(), ctx, testCtx.MgmtClient, np, hc.Spec.Platform.Type)
-		waitForDaemonSetRollout(ctx, guestClient, ds, 2, np.Spec.Platform.Type)
-		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, guestClient, np, hc.Spec.Platform.Type)
+		waitForDaemonSetRollout(ctx, hcClient, ds, 2, np.Spec.Platform.Type)
+		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, hcClient, np, hc.Spec.Platform.Type)
 
 		// TODO: EnsureNoCrashingPods, EnsureAllContainersHavePullPolicyIfNotPresent,
 		// EnsureHCPContainersHaveResourceRequests, EnsureNoPodsWithTooHighPriority
@@ -257,7 +271,7 @@ func NodePoolNTOInPlaceTest(getTestCtx internal.TestContextGetter) {
 			Skip("test is skipped for OpenStack platform until https://issues.redhat.com/browse/OSASINFRA-3566 is addressed")
 		}
 
-		guestClient := testCtx.GetHostedClusterClient()
+		hcClient := testCtx.GetHostedClusterClient()
 
 		ctx := testCtx.Context
 
@@ -273,9 +287,11 @@ func NodePoolNTOInPlaceTest(getTestCtx internal.TestContextGetter) {
 		err := testCtx.MgmtClient.Create(ctx, np)
 		Expect(err).NotTo(HaveOccurred(), "failed to create NodePool %s", np.Name)
 		GinkgoWriter.Printf("Created NodePool %s\n", np.Name)
-		defer cleanupNodePool(ctx, testCtx.MgmtClient, np)
+		DeferCleanup(func() {
+			cleanupNodePool(ctx, testCtx.MgmtClient, np)
+		})
 
-		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, guestClient, np, hc.Spec.Platform.Type)
+		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, hcClient, np, hc.Spec.Platform.Type)
 
 		tuningCM := &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
@@ -285,6 +301,11 @@ func NodePoolNTOInPlaceTest(getTestCtx internal.TestContextGetter) {
 			Data: map[string]string{tuningConfigKey: hugepagesTunedYAML},
 		}
 		Expect(testCtx.MgmtClient.Create(ctx, tuningCM)).To(Succeed(), "failed to create Tuned ConfigMap")
+		DeferCleanup(func() {
+			if err := testCtx.MgmtClient.Delete(ctx, tuningCM); err != nil && !apierrors.IsNotFound(err) {
+				Expect(err).NotTo(HaveOccurred(), "cleanup: failed to delete ConfigMap %s", tuningCM.Name)
+			}
+		})
 
 		original := np.DeepCopy()
 		np.Spec.TuningConfig = append(np.Spec.TuningConfig, corev1.LocalObjectReference{Name: tuningCM.Name})
@@ -292,11 +313,11 @@ func NodePoolNTOInPlaceTest(getTestCtx internal.TestContextGetter) {
 			"failed to patch NodePool %s with TuningConfig", np.Name)
 
 		ds := buildNTOVerificationDaemonSet(np)
-		Expect(guestClient.Create(ctx, ds)).To(Succeed(), "failed to create NTO verification DaemonSet")
+		Expect(hcClient.Create(ctx, ds)).To(Succeed(), "failed to create NTO verification DaemonSet")
 
 		e2eutil.WaitForNodePoolConfigUpdateCompleteWithPlatform(GinkgoTB(), ctx, testCtx.MgmtClient, np, hc.Spec.Platform.Type)
-		waitForDaemonSetRollout(ctx, guestClient, ds, 2, np.Spec.Platform.Type)
-		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, guestClient, np, hc.Spec.Platform.Type)
+		waitForDaemonSetRollout(ctx, hcClient, ds, 2, np.Spec.Platform.Type)
+		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, hcClient, np, hc.Spec.Platform.Type)
 
 		// TODO: EnsureNoCrashingPods, EnsureAllContainersHavePullPolicyIfNotPresent,
 		// EnsureHCPContainersHaveResourceRequests, EnsureNoPodsWithTooHighPriority
@@ -312,7 +333,7 @@ func NodePoolReplaceUpgradeTest(getTestCtx internal.TestContextGetter) {
 		testCtx.ValidateHostedClusterClient()
 
 		hc := testCtx.GetHostedCluster()
-		guestClient := testCtx.GetHostedClusterClient()
+		hcClient := testCtx.GetHostedClusterClient()
 
 		previousImage := internal.GetEnvVarValue("E2E_PREVIOUS_RELEASE_IMAGE")
 		latestImage := internal.GetEnvVarValue("E2E_LATEST_RELEASE_IMAGE")
@@ -341,9 +362,11 @@ func NodePoolReplaceUpgradeTest(getTestCtx internal.TestContextGetter) {
 		err := testCtx.MgmtClient.Create(ctx, np)
 		Expect(err).NotTo(HaveOccurred(), "failed to create NodePool %s", np.Name)
 		GinkgoWriter.Printf("Created NodePool %s at previous release %s\n", np.Name, previousImage)
-		defer cleanupNodePool(ctx, testCtx.MgmtClient, np)
+		DeferCleanup(func() {
+			cleanupNodePool(ctx, testCtx.MgmtClient, np)
+		})
 
-		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, guestClient, np, hc.Spec.Platform.Type)
+		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, hcClient, np, hc.Spec.Platform.Type)
 
 		// Update NodePool to latest release image
 		GinkgoWriter.Printf("Upgrading NodePool %s to latest release %s\n", np.Name, latestImage)
@@ -383,7 +406,7 @@ func NodePoolReplaceUpgradeTest(getTestCtx internal.TestContextGetter) {
 			e2eutil.WithTimeout(upgradeTimeout),
 		)
 
-		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, guestClient, np, hc.Spec.Platform.Type)
+		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, hcClient, np, hc.Spec.Platform.Type)
 
 		// TODO: EnsureNodesLabelsAndTaints, EnsureNodesRuntime require *testing.T
 	})
@@ -397,7 +420,7 @@ func NodePoolInPlaceUpgradeTest(getTestCtx internal.TestContextGetter) {
 		testCtx.ValidateHostedClusterClient()
 
 		hc := testCtx.GetHostedCluster()
-		guestClient := testCtx.GetHostedClusterClient()
+		hcClient := testCtx.GetHostedClusterClient()
 
 		previousImage := internal.GetEnvVarValue("E2E_PREVIOUS_RELEASE_IMAGE")
 		latestImage := internal.GetEnvVarValue("E2E_LATEST_RELEASE_IMAGE")
@@ -420,9 +443,11 @@ func NodePoolInPlaceUpgradeTest(getTestCtx internal.TestContextGetter) {
 		err := testCtx.MgmtClient.Create(ctx, np)
 		Expect(err).NotTo(HaveOccurred(), "failed to create NodePool %s", np.Name)
 		GinkgoWriter.Printf("Created NodePool %s at previous release %s\n", np.Name, previousImage)
-		defer cleanupNodePool(ctx, testCtx.MgmtClient, np)
+		DeferCleanup(func() {
+			cleanupNodePool(ctx, testCtx.MgmtClient, np)
+		})
 
-		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, guestClient, np, hc.Spec.Platform.Type)
+		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, hcClient, np, hc.Spec.Platform.Type)
 
 		GinkgoWriter.Printf("Upgrading NodePool %s to latest release %s\n", np.Name, latestImage)
 		Expect(e2eutil.UpdateObject(GinkgoTB(), ctx, testCtx.MgmtClient, np, func(obj *hyperv1.NodePool) {
@@ -461,7 +486,7 @@ func NodePoolInPlaceUpgradeTest(getTestCtx internal.TestContextGetter) {
 			e2eutil.WithTimeout(upgradeTimeout),
 		)
 
-		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, guestClient, np, hc.Spec.Platform.Type)
+		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, hcClient, np, hc.Spec.Platform.Type)
 
 		// TODO: EnsureNodesLabelsAndTaints, EnsureNodesRuntime require *testing.T
 	})
@@ -481,7 +506,7 @@ func NodePoolRollingUpgradeTest(getTestCtx internal.TestContextGetter) {
 			Skip("rolling upgrade test only supported on AWS and Azure platforms")
 		}
 
-		guestClient := testCtx.GetHostedClusterClient()
+		hcClient := testCtx.GetHostedClusterClient()
 
 		ctx := testCtx.Context
 
@@ -503,9 +528,11 @@ func NodePoolRollingUpgradeTest(getTestCtx internal.TestContextGetter) {
 		err := testCtx.MgmtClient.Create(ctx, np)
 		Expect(err).NotTo(HaveOccurred(), "failed to create NodePool %s", np.Name)
 		GinkgoWriter.Printf("Created NodePool %s with 2 replicas\n", np.Name)
-		defer cleanupNodePool(ctx, testCtx.MgmtClient, np)
+		DeferCleanup(func() {
+			cleanupNodePool(ctx, testCtx.MgmtClient, np)
+		})
 
-		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, guestClient, np, platform)
+		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, hcClient, np, platform)
 
 		// Change instance type / VM size to trigger rolling upgrade
 		var newInstanceType, newVMSize string
@@ -578,7 +605,7 @@ func NodePoolPrevReleaseN1Test(getTestCtx internal.TestContextGetter) {
 			Skip("E2E_N1_RELEASE_IMAGE not set, skipping N-1 release test")
 		}
 
-		guestClient := testCtx.GetHostedClusterClient()
+		hcClient := testCtx.GetHostedClusterClient()
 
 		ctx := testCtx.Context
 
@@ -594,9 +621,11 @@ func NodePoolPrevReleaseN1Test(getTestCtx internal.TestContextGetter) {
 		err := testCtx.MgmtClient.Create(ctx, np)
 		Expect(err).NotTo(HaveOccurred(), "failed to create NodePool %s", np.Name)
 		GinkgoWriter.Printf("Created NodePool %s at N-1 release %s\n", np.Name, n1Image)
-		defer cleanupNodePool(ctx, testCtx.MgmtClient, np)
+		DeferCleanup(func() {
+			cleanupNodePool(ctx, testCtx.MgmtClient, np)
+		})
 
-		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, guestClient, np, hc.Spec.Platform.Type)
+		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, hcClient, np, hc.Spec.Platform.Type)
 
 		// TODO: EnsureNodesLabelsAndTaints requires *testing.T
 	})
@@ -615,7 +644,7 @@ func NodePoolPrevReleaseN2Test(getTestCtx internal.TestContextGetter) {
 			Skip("E2E_N2_RELEASE_IMAGE not set, skipping N-2 release test")
 		}
 
-		guestClient := testCtx.GetHostedClusterClient()
+		hcClient := testCtx.GetHostedClusterClient()
 
 		ctx := testCtx.Context
 
@@ -631,9 +660,11 @@ func NodePoolPrevReleaseN2Test(getTestCtx internal.TestContextGetter) {
 		err := testCtx.MgmtClient.Create(ctx, np)
 		Expect(err).NotTo(HaveOccurred(), "failed to create NodePool %s", np.Name)
 		GinkgoWriter.Printf("Created NodePool %s at N-2 release %s\n", np.Name, n2Image)
-		defer cleanupNodePool(ctx, testCtx.MgmtClient, np)
+		DeferCleanup(func() {
+			cleanupNodePool(ctx, testCtx.MgmtClient, np)
+		})
 
-		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, guestClient, np, hc.Spec.Platform.Type)
+		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, hcClient, np, hc.Spec.Platform.Type)
 
 		// TODO: EnsureNodesLabelsAndTaints requires *testing.T
 	})
@@ -652,7 +683,7 @@ func NodePoolMirrorConfigsTest(getTestCtx internal.TestContextGetter) {
 			Skip("mirror configs test only applicable for 4.18+")
 		}
 
-		guestClient := testCtx.GetHostedClusterClient()
+		hcClient := testCtx.GetHostedClusterClient()
 
 		ctx := testCtx.Context
 
@@ -667,9 +698,11 @@ func NodePoolMirrorConfigsTest(getTestCtx internal.TestContextGetter) {
 		err := testCtx.MgmtClient.Create(ctx, np)
 		Expect(err).NotTo(HaveOccurred(), "failed to create NodePool %s", np.Name)
 		GinkgoWriter.Printf("Created NodePool %s\n", np.Name)
-		defer cleanupNodePool(ctx, testCtx.MgmtClient, np)
+		DeferCleanup(func() {
+			cleanupNodePool(ctx, testCtx.MgmtClient, np)
+		})
 
-		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, guestClient, np, hc.Spec.Platform.Type)
+		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, hcClient, np, hc.Spec.Platform.Type)
 
 		kcConfigMap := &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
@@ -681,7 +714,7 @@ func NodePoolMirrorConfigsTest(getTestCtx internal.TestContextGetter) {
 		Expect(testCtx.MgmtClient.Create(ctx, kcConfigMap)).To(Succeed(), "failed to create KubeletConfig ConfigMap")
 		DeferCleanup(func() {
 			if err := testCtx.MgmtClient.Delete(ctx, kcConfigMap); err != nil && !apierrors.IsNotFound(err) {
-				GinkgoWriter.Printf("Warning: failed to cleanup KubeletConfig ConfigMap %s: %v\n", kcConfigMap.Name, err)
+				Expect(err).NotTo(HaveOccurred(), "cleanup: failed to delete ConfigMap %s", kcConfigMap.Name)
 			}
 		})
 
@@ -694,7 +727,7 @@ func NodePoolMirrorConfigsTest(getTestCtx internal.TestContextGetter) {
 		e2eutil.EventuallyObjects(GinkgoTB(), ctx, "KubeletConfig should be mirrored to the hosted cluster",
 			func(ctx context.Context) ([]*corev1.ConfigMap, error) {
 				list := &corev1.ConfigMapList{}
-				err := guestClient.List(ctx, list, crclient.InNamespace(configManagedNamespace),
+				err := hcClient.List(ctx, list, crclient.InNamespace(configManagedNamespace),
 					crclient.MatchingLabels(map[string]string{
 						nodepool.KubeletConfigConfigMapLabel: "true",
 						hyperv1.NodePoolLabel:                np.Name,
@@ -746,7 +779,7 @@ func NodePoolMirrorConfigsTest(getTestCtx internal.TestContextGetter) {
 		e2eutil.EventuallyObjects(GinkgoTB(), ctx, "KubeletConfig ConfigMap to be deleted from hosted cluster",
 			func(ctx context.Context) ([]*corev1.ConfigMap, error) {
 				list := &corev1.ConfigMapList{}
-				err := guestClient.List(ctx, list, crclient.InNamespace(configManagedNamespace),
+				err := hcClient.List(ctx, list, crclient.InNamespace(configManagedNamespace),
 					crclient.MatchingLabels(map[string]string{
 						nodepool.KubeletConfigConfigMapLabel: "true",
 						hyperv1.NodePoolLabel:                np.Name,
@@ -779,7 +812,7 @@ func NodePoolTrustBundleTest(getTestCtx internal.TestContextGetter) {
 		e2eutil.GinkgoAtLeast(e2eutil.Version418)
 
 		hc := testCtx.GetHostedCluster()
-		guestClient := testCtx.GetHostedClusterClient()
+		hcClient := testCtx.GetHostedClusterClient()
 
 		ctx := testCtx.Context
 
@@ -792,9 +825,11 @@ func NodePoolTrustBundleTest(getTestCtx internal.TestContextGetter) {
 		})
 		Expect(testCtx.MgmtClient.Create(ctx, np)).To(Succeed(), "failed to create NodePool %s", np.Name)
 		GinkgoWriter.Printf("Created NodePool %s for trust bundle test\n", np.Name)
-		defer cleanupNodePool(ctx, testCtx.MgmtClient, np)
+		DeferCleanup(func() {
+			cleanupNodePool(ctx, testCtx.MgmtClient, np)
+		})
 
-		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, guestClient, np, hc.Spec.Platform.Type)
+		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, hcClient, np, hc.Spec.Platform.Type)
 
 		// Create additional trust bundle ConfigMap
 		trustBundle := &corev1.ConfigMap{
@@ -805,6 +840,11 @@ func NodePoolTrustBundleTest(getTestCtx internal.TestContextGetter) {
 			Data: map[string]string{"ca-bundle.crt": "dummy"},
 		}
 		Expect(testCtx.MgmtClient.Create(ctx, trustBundle)).To(Succeed(), "failed to create trust bundle ConfigMap")
+		DeferCleanup(func() {
+			if err := testCtx.MgmtClient.Delete(ctx, trustBundle); err != nil && !apierrors.IsNotFound(err) {
+				Expect(err).NotTo(HaveOccurred(), "cleanup: failed to delete ConfigMap %s", trustBundle.Name)
+			}
+		})
 
 		// Update HostedCluster to reference the trust bundle
 		GinkgoWriter.Printf("Updating HostedCluster with additional trust bundle %s\n", trustBundle.Name)
@@ -813,14 +853,14 @@ func NodePoolTrustBundleTest(getTestCtx internal.TestContextGetter) {
 		})).To(Succeed(), "failed to update HostedCluster with trust bundle")
 
 		// Defer cleanup: remove trust bundle reference from HostedCluster
-		defer func() {
-			err := e2eutil.UpdateObject(GinkgoTB(), ctx, testCtx.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
+		DeferCleanup(func() {
+			err := e2eutil.UpdateObject(GinkgoTB(), ctx, testCtx.MgmtClient, testCtx.GetHostedCluster(), func(obj *hyperv1.HostedCluster) {
 				obj.Spec.AdditionalTrustBundle = nil
 			})
-			if err != nil {
-				GinkgoWriter.Printf("WARNING: failed to clean up trust bundle reference: %v\n", err)
+			if err != nil && !apierrors.IsNotFound(err) {
+				Expect(err).NotTo(HaveOccurred(), "cleanup: failed to remove additional trust bundle")
 			}
-		}()
+		})
 
 		e2eutil.EventuallyObject(GinkgoTB(), ctx, fmt.Sprintf("NodePool %s/%s to begin updating", np.Namespace, np.Name),
 			func(ctx context.Context) (*hyperv1.NodePool, error) {
@@ -866,7 +906,7 @@ func NodePoolTrustBundleTest(getTestCtx internal.TestContextGetter) {
 		e2eutil.EventuallyObject(GinkgoTB(), ctx, "user-ca-bundle to exist in hosted cluster",
 			func(ctx context.Context) (*corev1.ConfigMap, error) {
 				cm := &corev1.ConfigMap{}
-				err := guestClient.Get(ctx, crclient.ObjectKeyFromObject(userCAConfigMap), cm)
+				err := hcClient.Get(ctx, crclient.ObjectKeyFromObject(userCAConfigMap), cm)
 				return cm, err
 			},
 			[]e2eutil.Predicate[*corev1.ConfigMap]{
@@ -947,7 +987,7 @@ func NodePoolTrustBundleTest(getTestCtx internal.TestContextGetter) {
 
 		// Verify user-ca-bundle is deleted from the hosted cluster (4.22+)
 		if e2eutil.IsGreaterThanOrEqualTo(e2eutil.Version422) {
-			e2eutil.EventuallyNotFound(GinkgoTB(), ctx, guestClient, userCAConfigMap,
+			e2eutil.EventuallyNotFound(GinkgoTB(), ctx, hcClient, userCAConfigMap,
 				e2eutil.WithInterval(10*time.Second), e2eutil.WithTimeout(5*time.Minute),
 			)
 		}
@@ -967,7 +1007,7 @@ func NodePoolNTOPerformanceProfileTest(getTestCtx internal.TestContextGetter) {
 			Skip("test is skipped for OpenStack platform until https://issues.redhat.com/browse/OSASINFRA-3566 is addressed")
 		}
 
-		guestClient := testCtx.GetHostedClusterClient()
+		hcClient := testCtx.GetHostedClusterClient()
 
 		ctx := testCtx.Context
 
@@ -982,9 +1022,11 @@ func NodePoolNTOPerformanceProfileTest(getTestCtx internal.TestContextGetter) {
 		err := testCtx.MgmtClient.Create(ctx, np)
 		Expect(err).NotTo(HaveOccurred(), "failed to create NodePool %s", np.Name)
 		GinkgoWriter.Printf("Created NodePool %s\n", np.Name)
-		defer cleanupNodePool(ctx, testCtx.MgmtClient, np)
+		DeferCleanup(func() {
+			cleanupNodePool(ctx, testCtx.MgmtClient, np)
+		})
 
-		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, guestClient, np, hc.Spec.Platform.Type)
+		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, hcClient, np, hc.Spec.Platform.Type)
 
 		ppConfigMap := &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
@@ -996,7 +1038,7 @@ func NodePoolNTOPerformanceProfileTest(getTestCtx internal.TestContextGetter) {
 		Expect(testCtx.MgmtClient.Create(ctx, ppConfigMap)).To(Succeed(), "failed to create PerformanceProfile ConfigMap")
 		DeferCleanup(func() {
 			if err := testCtx.MgmtClient.Delete(ctx, ppConfigMap); err != nil && !apierrors.IsNotFound(err) {
-				GinkgoWriter.Printf("Warning: failed to cleanup PerformanceProfile ConfigMap %s: %v\n", ppConfigMap.Name, err)
+				Expect(err).NotTo(HaveOccurred(), "cleanup: failed to delete ConfigMap %s", ppConfigMap.Name)
 			}
 		})
 
@@ -1128,7 +1170,7 @@ func NodePoolAutoRepairTest(getTestCtx internal.TestContextGetter) {
 			Skip("auto-repair test only supported on AWS and Azure platforms")
 		}
 
-		guestClient := testCtx.GetHostedClusterClient()
+		hcClient := testCtx.GetHostedClusterClient()
 
 		ctx := testCtx.Context
 
@@ -1144,9 +1186,11 @@ func NodePoolAutoRepairTest(getTestCtx internal.TestContextGetter) {
 		err := testCtx.MgmtClient.Create(ctx, np)
 		Expect(err).NotTo(HaveOccurred(), "failed to create NodePool %s", np.Name)
 		GinkgoWriter.Printf("Created auto-repair NodePool %s\n", np.Name)
-		defer cleanupNodePool(ctx, testCtx.MgmtClient, np)
+		DeferCleanup(func() {
+			cleanupNodePool(ctx, testCtx.MgmtClient, np)
+		})
 
-		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, guestClient, np, platform)
+		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, hcClient, np, platform)
 
 		// TODO: Implement cloud-specific instance termination logic.
 		// For AWS: use EC2 TerminateInstances API to terminate the node's backing instance.
@@ -1173,7 +1217,7 @@ func NodePoolDiskEncryptionTest(getTestCtx internal.TestContextGetter) {
 			Skip("E2E_AZURE_DISK_ENCRYPTION_SET_ID not set, skipping disk encryption test")
 		}
 
-		guestClient := testCtx.GetHostedClusterClient()
+		hcClient := testCtx.GetHostedClusterClient()
 
 		ctx := testCtx.Context
 
@@ -1191,9 +1235,11 @@ func NodePoolDiskEncryptionTest(getTestCtx internal.TestContextGetter) {
 		err := testCtx.MgmtClient.Create(ctx, np)
 		Expect(err).NotTo(HaveOccurred(), "failed to create NodePool %s", np.Name)
 		GinkgoWriter.Printf("Created disk encryption NodePool %s\n", np.Name)
-		defer cleanupNodePool(ctx, testCtx.MgmtClient, np)
+		DeferCleanup(func() {
+			cleanupNodePool(ctx, testCtx.MgmtClient, np)
+		})
 
-		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, guestClient, np, hc.Spec.Platform.Type)
+		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, hcClient, np, hc.Spec.Platform.Type)
 
 		// TODO: Verify disk encryption is applied by checking AzureMachine specs
 		// in the control plane namespace. This requires importing CAPI Azure types

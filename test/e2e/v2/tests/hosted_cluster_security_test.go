@@ -45,12 +45,12 @@ import (
 )
 
 func RegisterHostedClusterSecurityTests(getTestCtx internal.TestContextGetter) {
-	EnsureGuestWebhooksValidatedTest(getTestCtx)
+	EnsureHostedClusterWebhooksValidatedTest(getTestCtx)
 	EnsureAdmissionPoliciesTest(getTestCtx)
 	EnsureNetworkPoliciesTest(getTestCtx)
 }
 
-func EnsureGuestWebhooksValidatedTest(getTestCtx internal.TestContextGetter) {
+func EnsureHostedClusterWebhooksValidatedTest(getTestCtx internal.TestContextGetter) {
 	When("a webhook targeting a control plane service is created in the hosted cluster", func() {
 		It("should be automatically deleted", func() {
 			tc := getTestCtx()

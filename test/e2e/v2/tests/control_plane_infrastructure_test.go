@@ -91,6 +91,7 @@ func InfrastructureRegistryValidationTest(getTestCtx internal.TestContextGetter)
 			testCtx := getTestCtx()
 
 			var podsNotBelongingToWorkloads []string
+			namespacesChecked := 0
 
 			for _, namespace := range internal.GetInfrastructureNamespaces() {
 				ns := &corev1.Namespace{}
@@ -99,6 +100,7 @@ func InfrastructureRegistryValidationTest(getTestCtx internal.TestContextGetter)
 					continue
 				}
 				Expect(err).NotTo(HaveOccurred(), "failed to get namespace %s", namespace)
+				namespacesChecked++
 
 				podList := &corev1.PodList{}
 				err = testCtx.MgmtClient.List(testCtx.Context, podList, &crclient.ListOptions{
@@ -122,6 +124,8 @@ func InfrastructureRegistryValidationTest(getTestCtx internal.TestContextGetter)
 				}
 			}
 
+			Expect(namespacesChecked).NotTo(BeZero(),
+				"expected at least one infrastructure namespace to exist")
 			Expect(podsNotBelongingToWorkloads).To(BeEmpty(),
 				"The following pods do not belong to any predefined infrastructure workload:\n%s",
 				strings.Join(podsNotBelongingToWorkloads, "\n"))
@@ -156,6 +160,10 @@ func InfrastructureResourceRequestsTest(getTestCtx internal.TestContextGetter) {
 						if workload.MatchesPod(pod) {
 							matchingPods = append(matchingPods, pod)
 						}
+					}
+
+					if len(matchingPods) == 0 {
+						Skip(fmt.Sprintf("no matching pods found for workload %s", workload.Name))
 					}
 
 					var failures []string

@@ -82,7 +82,7 @@ func DeploymentGenerationTest(getTestCtx internal.TestContextGetter) {
 					}
 
 					deployment := &appsv1.Deployment{}
-					err := testCtx.MgmtClient.Get(context.Background(), crclient.ObjectKey{
+					err := testCtx.MgmtClient.Get(testCtx.Context, crclient.ObjectKey{
 						Namespace: testCtx.ControlPlaneNamespace,
 						Name:      workload.Name,
 					}, deployment)
@@ -722,6 +722,8 @@ func WorkloadRegistryValidationTest(getTestCtx internal.TestContextGetter) {
 				Namespace: testCtx.ControlPlaneNamespace,
 			})
 			Expect(err).NotTo(HaveOccurred(), "failed to list pods in control plane namespace")
+			Expect(podList.Items).NotTo(BeEmpty(),
+				"expected pods in control plane namespace %s", testCtx.ControlPlaneNamespace)
 
 			workloadSelectors := make(map[string]labels.Selector)
 			for _, workload := range workloads {
@@ -767,7 +769,7 @@ func SecurityContextUIDTest(getTestCtx internal.TestContextGetter) {
 
 			// Get the control plane namespace to check for UID annotation
 			controlPlaneNamespace := &corev1.Namespace{}
-			err := testCtx.MgmtClient.Get(context.Background(), crclient.ObjectKey{Name: testCtx.ControlPlaneNamespace}, controlPlaneNamespace)
+			err := testCtx.MgmtClient.Get(testCtx.Context, crclient.ObjectKey{Name: testCtx.ControlPlaneNamespace}, controlPlaneNamespace)
 			Expect(err).NotTo(HaveOccurred(), "failed to get namespace %s", testCtx.ControlPlaneNamespace)
 
 			uid, ok := controlPlaneNamespace.Annotations["hypershift.openshift.io/default-security-context-uid"]

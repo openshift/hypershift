@@ -80,6 +80,8 @@ func EnsureCAPIFinalizersTest(getTestCtx internal.TestContextGetter) {
 	When("CAPI components are deployed", func() {
 		It("should have component finalizers on all CAPI deployments", func() {
 			tc := getTestCtx()
+			Expect(hcc.CAPIComponents).NotTo(BeEmpty(),
+				"expected CAPI components to be defined in HostedControlPlaneConfiguration")
 			for _, name := range hcc.CAPIComponents {
 				deployment := &appsv1.Deployment{}
 				Expect(tc.MgmtClient.Get(tc.Context, crclient.ObjectKey{
