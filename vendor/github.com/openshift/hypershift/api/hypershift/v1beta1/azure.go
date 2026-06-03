@@ -362,7 +362,7 @@ type AzureNodePoolOSDisk struct {
 // +kubebuilder:validation:XValidation:rule="has(self.private) == has(oldSelf.private)",message="private cannot be added or removed after cluster creation"
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.topology) || has(self.topology)",message="topology cannot be removed once set"
 // +kubebuilder:validation:XValidation:rule="!has(self.topology) || !has(oldSelf.topology) || (self.topology == 'Public') == (oldSelf.topology == 'Public')",message="transitions between Public and non-Public topology are not supported"
-// +kubebuilder:validation:XValidation:rule="!has(self.topology) || ((self.topology == 'Private' || self.topology == 'PublicAndPrivate') ? has(self.private) : !has(self.private))",message="private is required when topology is Private or PublicAndPrivate, and forbidden otherwise"
+// +kubebuilder:validation:XValidation:rule="has(self.topology) && (self.topology == 'Private' || self.topology == 'PublicAndPrivate') ? has(self.private) : !has(self.private)",message="private is required when topology is Private or PublicAndPrivate, and forbidden otherwise"
 // +kubebuilder:validation:XValidation:rule="!has(self.private) || self.private.type != 'PrivateLink' || self.azureAuthenticationConfig.azureAuthenticationConfigType != 'WorkloadIdentities' || has(self.azureAuthenticationConfig.workloadIdentities.controlPlaneOperator)",message="workloadIdentities.controlPlaneOperator is required when Private Link is configured with WorkloadIdentities authentication"
 type AzurePlatformSpec struct {
 	// cloud is the cloud environment identifier, valid values could be found here: https://github.com/Azure/go-autorest/blob/4c0e21ca2bbb3251fe7853e6f9df6397f53dd419/autorest/azure/environments.go#L33
@@ -668,7 +668,7 @@ const (
 // mechanism. Currently only PrivateLink is supported; additional mechanisms (e.g., Swift) may
 // be added in the future.
 //
-// +kubebuilder:validation:XValidation:rule="self.type != 'PrivateLink' ? !has(self.privateLink) : true",message="privateLink is forbidden when type is not PrivateLink"
+// +kubebuilder:validation:XValidation:rule="self.type == 'PrivateLink' ? has(self.privateLink) : !has(self.privateLink)",message="privateLink is required when type is PrivateLink, and forbidden otherwise"
 // +union
 type AzurePrivateSpec struct {
 	// type specifies the private connectivity mechanism used for the hosted cluster's API server.

@@ -548,7 +548,7 @@ tests:
             route: {}
 
   # --- Azure PrivateLink CEL validation ---
-  - name: When Azure PrivateLink type is set without privateLink config it should pass
+  - name: When Azure PrivateLink type is set without privateLink config it should fail
     initial: |
       apiVersion: hypershift.openshift.io/v1beta1
       kind: HostedCluster
@@ -613,6 +613,7 @@ tests:
           servicePublishingStrategy:
             type: Route
             route: {}
+    expectedError: "privateLink is required when type is PrivateLink, and forbidden otherwise"
 
   - name: When Azure PrivateLink type is set with privateLink config it should pass
     initial: |
@@ -703,6 +704,8 @@ tests:
             topology: Private
             private:
               type: PrivateLink
+              privateLink:
+                natSubnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/nat-subnet"
             azureAuthenticationConfig:
               azureAuthenticationConfigType: WorkloadIdentities
               workloadIdentities:
@@ -769,6 +772,8 @@ tests:
             topology: Private
             private:
               type: PrivateLink
+              privateLink:
+                natSubnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/nat-subnet"
             azureAuthenticationConfig:
               azureAuthenticationConfigType: WorkloadIdentities
               workloadIdentities:
@@ -813,3 +818,140 @@ tests:
             type: Route
             route: {}
     expectedError: "workloadIdentities.controlPlaneOperator is required when Private Link is configured with WorkloadIdentities authentication"
+
+  - name: When Azure private is set without topology it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: Azure
+          azure:
+            location: eastus
+            resourceGroupName: test-rg
+            vnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet"
+            subnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+            subscriptionID: "12345678-1234-5678-9012-123456789012"
+            securityGroupID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg"
+            tenantID: "87654321-4321-8765-2109-876543210987"
+            private:
+              type: PrivateLink
+              privateLink:
+                natSubnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/nat-subnet"
+            azureAuthenticationConfig:
+              azureAuthenticationConfigType: WorkloadIdentities
+              workloadIdentities:
+                imageRegistry:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                ingress:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                file:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                disk:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                nodePoolManagement:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                cloudProvider:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                network:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                controlPlaneOperator:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "private is required when topology is Private or PublicAndPrivate, and forbidden otherwise"
+
+  - name: When Azure private is set with Public topology it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: Azure
+          azure:
+            location: eastus
+            resourceGroupName: test-rg
+            vnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet"
+            subnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+            subscriptionID: "12345678-1234-5678-9012-123456789012"
+            securityGroupID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg"
+            tenantID: "87654321-4321-8765-2109-876543210987"
+            topology: Public
+            private:
+              type: PrivateLink
+              privateLink:
+                natSubnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/nat-subnet"
+            azureAuthenticationConfig:
+              azureAuthenticationConfigType: WorkloadIdentities
+              workloadIdentities:
+                imageRegistry:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                ingress:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                file:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                disk:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                nodePoolManagement:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                cloudProvider:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                network:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                controlPlaneOperator:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "private is required when topology is Private or PublicAndPrivate, and forbidden otherwise"
