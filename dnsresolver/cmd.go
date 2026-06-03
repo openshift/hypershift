@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openshift/hypershift/support/netutil"
+
 	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -43,6 +45,9 @@ func NewCommand() *cobra.Command {
 		},
 	}
 
+	// --self-register creates an EndpointSlice for this pod before waiting for DNS resolution.
+	// This bypasses stale kube-controller-manager EndpointSlice cache issues under high HCP density,
+	// where the standard controller can delay DNS updates by minutes to hours.
 	cmd.Flags().BoolVar(&selfRegister, "self-register", false, "Register this pod's IP into an EndpointSlice before resolving DNS")
 	return cmd
 }
@@ -108,9 +113,14 @@ func ensureEndpointSlice(ctx context.Context, client kubernetes.Interface, dnsNa
 		return fmt.Errorf("failed to get pod %s/%s: %w", namespace, hostname, err)
 	}
 
-	addressType := discoveryv1.AddressTypeIPv4
-	if net.ParseIP(podIP) != nil && net.ParseIP(podIP).To4() == nil {
-		addressType = discoveryv1.AddressTypeIPv6
+	// Determine address type based on pod IP
+	isIPv4, err := netutil.IsIPv4Address(podIP)
+	if err != nil {
+		return fmt.Errorf("failed to parse pod IP %s: %w", podIP, err)
+	}
+	addressType := discoveryv1.AddressTypeIPv6
+	if isIPv4 {
+		addressType = discoveryv1.AddressTypeIPv4
 	}
 
 	sliceName := fmt.Sprintf("%s-self-%s", serviceName, hostname)

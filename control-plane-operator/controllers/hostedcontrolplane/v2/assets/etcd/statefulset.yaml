@@ -187,6 +187,9 @@ spec:
         - mountPath: /etc/etcd/tls/etcd-ca
           name: etcd-ca
       initContainers:
+      # Self-register this pod's IP into an EndpointSlice before waiting for DNS resolution.
+      # This bypasses stale kube-controller-manager EndpointSlice cache issues under high HCP density
+      # (2,500+ namespaces), where the standard controller can delay DNS updates by minutes to hours.
       - args:
         - -c
         - exec control-plane-operator resolve-dns --self-register ${HOSTNAME}.etcd-discovery.${NAMESPACE}.svc
