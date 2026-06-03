@@ -9,6 +9,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	"github.com/openshift/hypershift/support/globalconfig"
+	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
 
@@ -326,10 +327,11 @@ func (r *Reconciler) reconcileUpgradePods(ctx context.Context, hostedClusterClie
 			node.Annotations[DesiredDrainerAnnotationKey] == node.Annotations[LastAppliedDrainerAnnotationKey] &&
 			node.Annotations[MachineConfigDaemonStateAnnotationKey] == MachineConfigDaemonStateDone {
 			// the node is updated and does not require a MCD running
-			if err := deleteUpgradePodIfExists(ctx, hostedClusterClient, pod); err != nil {
+			if existed, err := k8sutil.DeleteIfNeeded(ctx, hostedClusterClient, pod); err != nil {
 				return err
+			} else if existed {
+				log.Info("Deleted idle upgrade pod")
 			}
-			log.Info("Deleted idle upgrade pod")
 		} else {
 			if err := hostedClusterClient.Get(ctx, types.NamespacedName{Namespace: pod.Namespace, Name: pod.Name}, pod); err != nil {
 				if !apierrors.IsNotFound(err) {
@@ -364,22 +366,6 @@ func (r *Reconciler) reconcileUpgradePods(ctx context.Context, hostedClusterClie
 				}
 			}
 		}
-	}
-	return nil
-}
-
-func deleteUpgradePodIfExists(ctx context.Context, c client.Client, pod *corev1.Pod) error {
-	if err := c.Get(ctx, client.ObjectKeyFromObject(pod), pod); err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil
-		}
-		return fmt.Errorf("error getting upgrade MCD pod %s: %w", pod.Name, err)
-	}
-	if pod.DeletionTimestamp != nil {
-		return nil
-	}
-	if err := c.Delete(ctx, pod); err != nil && !apierrors.IsNotFound(err) {
-		return fmt.Errorf("error deleting upgrade MCD pod %s: %w", pod.Name, err)
 	}
 	return nil
 }
@@ -513,7 +499,7 @@ func deleteUpgradeManifests(ctx context.Context, hostedClusterClient client.Clie
 	namespace := inPlaceUpgradeNamespace(poolName)
 	for _, node := range nodes {
 		pod := inPlaceUpgradePod(namespace.Name, node.Name)
-		if err := deleteUpgradePodIfExists(ctx, hostedClusterClient, pod); err != nil {
+		if _, err := k8sutil.DeleteIfNeeded(ctx, hostedClusterClient, pod); err != nil {
 			return err
 		}
 	}
