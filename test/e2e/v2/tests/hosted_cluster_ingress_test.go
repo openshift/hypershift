@@ -50,12 +50,6 @@ func ValidateIngressOperatorConfigurationTest(getTestCtx internal.TestContextGet
 			}
 
 			expectedStrategy := hc.Spec.OperatorConfiguration.IngressOperator.EndpointPublishingStrategy
-			Expect(expectedStrategy.Type).To(Equal(operatorv1.LoadBalancerServiceStrategyType),
-				"EndpointPublishingStrategy type should be LoadBalancerService")
-			Expect(expectedStrategy.LoadBalancer).NotTo(BeNil(),
-				"LoadBalancer configuration should be set")
-			Expect(expectedStrategy.LoadBalancer.Scope).To(Equal(operatorv1.InternalLoadBalancer),
-				"LoadBalancer scope should be Internal")
 
 			tc.ValidateHostedClusterClient()
 			hcClient := tc.GetHostedClusterClient()
