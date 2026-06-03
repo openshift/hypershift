@@ -173,6 +173,15 @@ func TestEnsureEndpointSlice(t *testing.T) {
 		g.Expect(err).To(MatchError(ContainSubstring("failed to parse service name")))
 	})
 
+	t.Run("When given a malformed IP address it should return an error", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		client := fake.NewClientset(newPod())
+		invalidIP := "not-an-ip-address"
+
+		err := ensureEndpointSlice(t.Context(), client, dnsName, hostname, namespace, invalidIP)
+		g.Expect(err).To(MatchError(ContainSubstring("failed to parse pod IP")))
+	})
+
 	t.Run("When called for etcd-1 it should use the correct slice name and hostname", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 		pod1 := &corev1.Pod{
