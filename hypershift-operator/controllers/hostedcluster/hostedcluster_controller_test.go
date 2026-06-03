@@ -1910,6 +1910,7 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 									Disk:               hyperv1.WorkloadIdentity{ClientID: "12345678-1234-1234-1234-123456789abc"},
 									NodePoolManagement: hyperv1.WorkloadIdentity{ClientID: "12345678-1234-1234-1234-123456789abc"},
 									CloudProvider:      hyperv1.WorkloadIdentity{ClientID: "12345678-1234-1234-1234-123456789abc"},
+									Network:            hyperv1.WorkloadIdentity{ClientID: "12345678-1234-1234-1234-123456789abc"},
 								},
 							},
 							TenantID: "12345678-1234-1234-1234-123456789abc",

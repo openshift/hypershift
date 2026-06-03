@@ -164,6 +164,13 @@ const (
 	// A failure here indicates that the input is invalid, or permissions are missing to use the encryption key.
 	ValidAzureKMSConfig ConditionType = "ValidAzureKMSConfig"
 
+	// ValidAzureWorkloadIdentity indicates whether the required Azure Workload Identity
+	// configuration is present and valid in the HostedCluster spec. This validates that
+	// all mandatory managed identity client IDs are specified for self-managed Azure clusters
+	// using WorkloadIdentities authentication. A failure here indicates the cluster was
+	// created without running "hypershift create iam azure" or the spec is incomplete.
+	ValidAzureWorkloadIdentity ConditionType = "ValidAzureWorkloadIdentity"
+
 	// ValidGCPCredentials indicates if GCP credentials are valid and operational
 	// for the HostedCluster. This includes service account authentication and
 	// proper IAM permissions for CAPG controllers.
@@ -306,8 +313,11 @@ const (
 
 	InvalidIAMRoleReason = "InvalidIAMRole"
 
-	InvalidAzureCredentialsReason = "InvalidAzureCredentials"
-	AzureErrorReason              = "AzureError"
+	InvalidAzureCredentialsReason            = "InvalidAzureCredentials"
+	AzureWorkloadIdentityNotConfiguredReason = "WorkloadIdentityNotConfigured"
+	AzureWorkloadIdentityIncompleteReason    = "WorkloadIdentityIncomplete"
+	AzureWorkloadIdentityValidReason         = "ValidWorkloadIdentityConfiguration"
+	AzureErrorReason                         = "AzureError"
 
 	ExternalDNSHostNotReachableReason = "ExternalDNSHostNotReachable"
 

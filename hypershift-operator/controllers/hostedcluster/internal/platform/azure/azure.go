@@ -205,6 +205,7 @@ func (a Azure) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hy
 
 	// For self-managed Azure with workload identity, instruct Azure SDK to use the minted SA token
 	if azureutil.IsSelfManagedAzureWithWorkloadIdentity(hcluster.Spec.Platform.Type, hcluster.Spec.Platform.Azure) {
+
 		deploymentSpec.Template.Spec.Containers[0].Env = append(
 			deploymentSpec.Template.Spec.Containers[0].Env,
 			corev1.EnvVar{
@@ -281,6 +282,15 @@ func (a Azure) ReconcileCredentials(ctx context.Context, c client.Client, create
 
 	// For self-managed Azure, use workload identity credentials; for managed Azure, use the existing approach
 	if azureutil.IsSelfManagedAzureWithWorkloadIdentity(hcluster.Spec.Platform.Type, hcluster.Spec.Platform.Azure) {
+		// Validate workload identity configuration before proceeding.
+		// TODO(RFE-9351 Phase 2): Set ValidAzureWorkloadIdentity condition directly on
+		// hcluster.Status.Conditions instead of relying on error propagation through
+		// PlatformCredentialsFound. This requires either changing ReconcileCredentials to
+		// return []metav1.Condition or moving validation to the controller level.
+		if condition := validateWorkloadIdentityConfig(hcluster); condition != nil && condition.Status == metav1.ConditionFalse {
+			return fmt.Errorf("azure workload identity validation failed: %s", condition.Message)
+		}
+
 		// Add federated token file for workload identity authentication
 		baseSecretData["azure_federated_token_file"] = []byte(path.Join(config.CloudTokenMountPath, "token"))
 
@@ -325,6 +335,7 @@ func (a Azure) ReconcileCredentials(ctx context.Context, c client.Client, create
 		secretData := maps.Clone(baseSecretData)
 		// For self-managed Azure with workload identities, add the network client ID
 		if azureutil.IsSelfManagedAzureWithWorkloadIdentity(hcluster.Spec.Platform.Type, hcluster.Spec.Platform.Azure) {
+
 			secretData["azure_client_id"] = []byte(hcluster.Spec.Platform.Azure.AzureAuthenticationConfig.WorkloadIdentities.Network.ClientID)
 		}
 		cloudNetworkConfigCreds.Data = secretData
@@ -485,4 +496,76 @@ func reconcileKMSConfigSecret(secret *corev1.Secret, hc *hyperv1.HostedCluster) 
 	secret.Data[azure.CloudConfigKey] = serializedConfig
 
 	return nil
+}
+
+// validateWorkloadIdentityConfig validates that all required Azure Workload Identity
+// client IDs are present in the HostedCluster spec. Returns a metav1.Condition
+// reflecting the validation result. Currently the caller uses only the error path
+// (condition.Status == ConditionFalse); the condition struct is retained so Phase 2
+// can wire it directly onto HostedCluster.Status.Conditions.
+func validateWorkloadIdentityConfig(hcluster *hyperv1.HostedCluster) *metav1.Condition {
+	azureSpec := hcluster.Spec.Platform.Azure
+	if azureSpec == nil {
+		return nil
+	}
+
+	authConfig := azureSpec.AzureAuthenticationConfig
+	if authConfig.AzureAuthenticationConfigType != hyperv1.AzureAuthenticationTypeWorkloadIdentities {
+		return nil
+	}
+
+	wi := authConfig.WorkloadIdentities
+	if wi == nil {
+		return &metav1.Condition{
+			Type:               string(hyperv1.ValidAzureWorkloadIdentity),
+			Status:             metav1.ConditionFalse,
+			Reason:             hyperv1.AzureWorkloadIdentityNotConfiguredReason,
+			ObservedGeneration: hcluster.Generation,
+			Message:            "workloadIdentities is not configured; run 'hypershift create iam azure' to create the required managed identities and federated credentials",
+		}
+	}
+
+	var missing []string
+	if wi.CloudProvider.ClientID == "" {
+		missing = append(missing, "cloudProvider")
+	}
+	if wi.NodePoolManagement.ClientID == "" {
+		missing = append(missing, "nodePoolManagement")
+	}
+	if wi.Ingress.ClientID == "" {
+		missing = append(missing, "ingress")
+	}
+	if wi.ImageRegistry.ClientID == "" {
+		missing = append(missing, "imageRegistry")
+	}
+	if wi.Disk.ClientID == "" {
+		missing = append(missing, "disk")
+	}
+	if wi.File.ClientID == "" {
+		missing = append(missing, "file")
+	}
+	if wi.Network.ClientID == "" {
+		missing = append(missing, "network")
+	}
+	if azureSpec.Private.Type == hyperv1.AzurePrivateTypePrivateLink && wi.ControlPlaneOperator.ClientID == "" {
+		missing = append(missing, "controlPlaneOperator (required for Private Link)")
+	}
+
+	if len(missing) > 0 {
+		return &metav1.Condition{
+			Type:               string(hyperv1.ValidAzureWorkloadIdentity),
+			Status:             metav1.ConditionFalse,
+			Reason:             hyperv1.AzureWorkloadIdentityIncompleteReason,
+			ObservedGeneration: hcluster.Generation,
+			Message:            fmt.Sprintf("workloadIdentities is missing required clientID for: %s", strings.Join(missing, ", ")),
+		}
+	}
+
+	return &metav1.Condition{
+		Type:               string(hyperv1.ValidAzureWorkloadIdentity),
+		Status:             metav1.ConditionTrue,
+		Reason:             hyperv1.AzureWorkloadIdentityValidReason,
+		ObservedGeneration: hcluster.Generation,
+		Message:            "All required workload identity client IDs are configured",
+	}
 }
