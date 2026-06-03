@@ -289,8 +289,7 @@ func (h *hypershiftTest) after(hostedCluster *hyperv1.HostedCluster, platform hy
 		// so skipping until we fix it.
 		// TODO(alberto): consider drop this gate when we fix OCPBUGS-61291.
 		if hostedCluster.Spec.Platform.Type != hyperv1.NonePlatform {
-			// Private clusters may won't be reachable from the test runner; assume workers exist.
-			hasWorkerNodes := true
+			hasWorkerNodes := false
 			if !util.IsPrivateHC(hostedCluster) {
 				guestClient := WaitForGuestClient(t, t.Context(), h.client, hostedCluster)
 				var nodeList corev1.NodeList
@@ -298,6 +297,24 @@ func (h *hypershiftTest) after(hostedCluster *hyperv1.HostedCluster, platform hy
 					t.Errorf("failed to list nodes in guest cluster: %v", err)
 				}
 				hasWorkerNodes = len(nodeList.Items) > 0
+			} else {
+				// Private clusters are not reachable from the test runner;
+				// determine worker node expectation from NodePool replicas.
+				var nodePoolList hyperv1.NodePoolList
+				if err := h.client.List(t.Context(), &nodePoolList, crclient.InNamespace(hostedCluster.Namespace)); err != nil {
+					t.Errorf("failed to list NodePools: %v", err)
+				}
+				for i := range nodePoolList.Items {
+					np := &nodePoolList.Items[i]
+					if np.Spec.Replicas != nil && *np.Spec.Replicas > 0 {
+						hasWorkerNodes = true
+						break
+					}
+					if np.Spec.AutoScaling != nil && np.Spec.AutoScaling.Max > 0 {
+						hasWorkerNodes = true
+						break
+					}
+				}
 			}
 			ValidateHostedClusterConditions(t, t.Context(), h.client, hostedCluster, hasWorkerNodes, 10*time.Minute, h.upgradeContext)
 		}
