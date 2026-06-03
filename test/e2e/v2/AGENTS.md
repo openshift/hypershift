@@ -11,7 +11,7 @@ This is a Ginkgo v2 BDD test suite for validating hosted cluster control planes.
 
 ## Architecture
 
-The framework is organized into three packages under `test/e2e/v2/`:
+The framework is organized into the following packages under `test/e2e/v2/`:
 
 - `internal/` — Framework internals (test context, workload registry, fail handler, env var management). Do not add tests here.
 - `tests/` — All standard v2 test files. Each file is feature-scoped with a top-level `Describe` and `Label`. The suite entry point is `suite_test.go`.
@@ -77,6 +77,18 @@ Register all environment variables via `RegisterEnvVar()` or `RegisterEnvVarWith
 ### 9. State Mutation and Cleanup
 
 When a test mutates cluster state, capture the original state before mutation and defer restoration. In cleanup functions, check `apierrors.IsNotFound()` to handle cases where the resource was already deleted.
+
+When creating a resource, register `DeferCleanup` immediately after `Create` — not later in the test flow. If the test fails before reaching a manual deletion, the resource leaks. Manual deletion is fine as part of test verification, but `DeferCleanup` ensures cleanup on all exit paths.
+
+```go
+Expect(hcClient.Create(tc.Context, secret)).To(Succeed())
+DeferCleanup(func() {
+    err := hcClient.Delete(tc.Context, secret)
+    if err != nil && !apierrors.IsNotFound(err) {
+        Expect(err).NotTo(HaveOccurred(), "cleanup: failed to delete %s", secret.Name)
+    }
+})
+```
 
 ### 10. Labels
 
@@ -146,6 +158,49 @@ Expect(routeList.Items).NotTo(BeEmpty(),
 for i := range routeList.Items {
     // per-item assertions
 }
+```
+
+This also applies to condition-search loops: when iterating with `if match { ... break }`, add a `found` boolean and assert it's true after the loop. An unmatched loop silently passes.
+
+```go
+found := false
+for _, cond := range nodePool.Status.Conditions {
+    if cond.Type == expectedType {
+        found = true
+        // assertions on cond
+        break
+    }
+}
+Expect(found).To(BeTrue(), "expected condition %s on NodePool %s", expectedType, nodePool.Name)
+```
+
+### 17. Idempotent Resource Creation
+
+When a helper function creates a resource that might already exist, don't silently return on `AlreadyExists`. Either reconcile the existing resource to the desired state (Get + Update) or fail with a diagnostic message. Silent return masks stale state that can invalidate test baselines.
+
+```go
+err := hcClient.Create(tc.Context, secret)
+if apierrors.IsAlreadyExists(err) {
+    existing := &corev1.Secret{}
+    Expect(hcClient.Get(tc.Context, crclient.ObjectKeyFromObject(secret), existing)).To(Succeed())
+    existing.Data = secret.Data
+    existing.Type = secret.Type
+    Expect(hcClient.Update(tc.Context, existing)).To(Succeed())
+    return
+}
+Expect(err).NotTo(HaveOccurred(), "failed to create additional-pull-secret")
+```
+
+### 18. Dynamic Assertion Values
+
+When a test extracts a value from one resource to validate against another (e.g., `expectedStrategy` from HostedCluster checked against IngressController), use the extracted variable in assertions — not hardcoded enum constants. Hardcoded values make the test brittle and hide the logical contract being verified.
+
+```go
+// WRONG — hardcoded constants
+g.Expect(ic.Spec.EndpointPublishingStrategy.Type).To(Equal(operatorv1.LoadBalancerServiceStrategyType))
+
+// RIGHT — compare against the extracted expectation
+g.Expect(ic.Spec.EndpointPublishingStrategy.Type).To(Equal(expectedStrategy.Type))
 ```
 
 ## Expanding v2
