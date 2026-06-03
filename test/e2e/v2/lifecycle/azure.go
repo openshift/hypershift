@@ -205,20 +205,20 @@ func (a *AzurePlatformConfig) TestMatrix(releaseImage string) TestMatrix {
 			{
 				Name:        "public",
 				ClusterFile: "cluster-name-public",
-				LabelFilter: "self-managed-azure-public || nodepool-lifecycle || secret-encryption",
+				LabelFilter: "self-managed-azure-public || nodepool-lifecycle || secret-encryption || control-plane-workloads || hosted-cluster-security",
 				Skip:        "KAS allowed CIDRs",
 				JUnitFile:   "junit_self_managed_azure_public.xml",
 			},
 			{
 				Name:        "private",
 				ClusterFile: "cluster-name-private",
-				LabelFilter: "self-managed-azure-private",
+				LabelFilter: "self-managed-azure-private || hosted-cluster-compliance",
 				JUnitFile:   "junit_self_managed_azure_private.xml",
 			},
 			{
 				Name:        "oauth-lb",
 				ClusterFile: "cluster-name-oauth-lb",
-				LabelFilter: "self-managed-azure-oauth-lb",
+				LabelFilter: "self-managed-azure-oauth-lb || hosted-cluster-health || hosted-cluster-metrics || hosted-cluster-image-registry",
 				JUnitFile:   "junit_self_managed_azure_oauth_lb.xml",
 			},
 			{
