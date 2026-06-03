@@ -7,24 +7,18 @@ import (
 )
 
 func HCPOAuthEnabled(hcp *hyperv1.HostedControlPlane) bool {
-	return oauthEnabled(hcp.Spec.Configuration)
-}
-
-func HCOAuthEnabled(hc *hyperv1.HostedCluster) bool {
-	return oauthEnabled(hc.Spec.Configuration)
+	return hcp.Spec.Configuration == nil || ConfigOAuthEnabled(hcp.Spec.Configuration.Authentication)
 }
 
 func ConfigOAuthEnabled(authentication *configv1.AuthenticationSpec) bool {
-	if authentication != nil &&
-		authentication.Type == configv1.AuthenticationTypeOIDC {
+	if authentication == nil {
+		return true
+	}
+
+	switch authentication.Type {
+	case configv1.AuthenticationTypeIntegratedOAuth, configv1.AuthenticationTypeNone, "":
+		return true
+	default:
 		return false
 	}
-	return true
-}
-
-func oauthEnabled(config *hyperv1.ClusterConfiguration) bool {
-	if config != nil {
-		return ConfigOAuthEnabled(config.Authentication)
-	}
-	return true
 }
