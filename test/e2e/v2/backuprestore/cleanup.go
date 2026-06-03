@@ -20,7 +20,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/discovery"
-	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -139,7 +139,6 @@ func removeHCPFinalizers(testCtx *internal.TestContext, hcpName, hcpNamespace st
 				Namespace: hcpNamespace,
 				Name:      hcpName,
 			}, hcp)
-
 			if err != nil {
 				if apierrors.IsNotFound(err) {
 					return true, nil

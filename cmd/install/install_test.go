@@ -374,6 +374,158 @@ func TestOptions_Validate(t *testing.T) {
 	}
 }
 
+func TestCRDIncludeFilter(t *testing.T) {
+	defaultCRD := func() *apiextensionsv1.CustomResourceDefinition {
+		return &apiextensionsv1.CustomResourceDefinition{
+			ObjectMeta: metav1.ObjectMeta{
+				Annotations: map[string]string{
+					"release.openshift.io/feature-set": "Default",
+				},
+			},
+		}
+	}
+
+	tests := []struct {
+		name   string
+		opts   Options
+		path   string
+		crd    *apiextensionsv1.CustomResourceDefinition
+		ipam   set.Set[string]
+		expect bool
+	}{
+		{
+			name:   "When path contains payload-manifests, it should be excluded",
+			path:   "hypershift-operator/payload-manifests/something.yaml",
+			crd:    defaultCRD(),
+			expect: false,
+		},
+		{
+			name:   "When path contains tests/, it should be excluded",
+			path:   "hypershift-operator/tests/something.yaml",
+			crd:    defaultCRD(),
+			expect: false,
+		},
+		{
+			name:   "When path contains etcd and ExcludeEtcdManifests is true, it should be excluded",
+			opts:   Options{ExcludeEtcdManifests: true},
+			path:   "cluster-api/etcd-something.yaml",
+			crd:    defaultCRD(),
+			expect: false,
+		},
+		{
+			name:   "When path contains etcd and ExcludeEtcdManifests is false, it should be included",
+			opts:   Options{ExcludeEtcdManifests: false},
+			path:   "cluster-api/etcd-something.yaml",
+			crd:    defaultCRD(),
+			expect: true,
+		},
+		{
+			name: "When path is a generated CRD with TechPreviewNoUpgrade annotation and TechPreviewNoUpgrade is true, it should be included",
+			opts: Options{TechPreviewNoUpgrade: true},
+			path: "hypershift-operator/zz_generated.crd-manifests/nodepools-TechPreviewNoUpgrade.yaml",
+			crd: &apiextensionsv1.CustomResourceDefinition{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						"release.openshift.io/feature-set": "TechPreviewNoUpgrade",
+					},
+				},
+			},
+			expect: true,
+		},
+		{
+			name:   "When path is a generated CRD with Default annotation and TechPreviewNoUpgrade is true, it should be excluded",
+			opts:   Options{TechPreviewNoUpgrade: true},
+			path:   "hypershift-operator/zz_generated.crd-manifests/nodepools-Default.yaml",
+			crd:    defaultCRD(),
+			expect: false,
+		},
+		{
+			name:   "When path is a generated CRD with Default annotation and TechPreviewNoUpgrade is false, it should be included",
+			path:   "hypershift-operator/zz_generated.crd-manifests/nodepools-Default.yaml",
+			crd:    defaultCRD(),
+			expect: true,
+		},
+		{
+			name:   "When path is under hypershift-operator/, it should be included",
+			path:   "hypershift-operator/something.yaml",
+			crd:    defaultCRD(),
+			expect: true,
+		},
+		{
+			name:   "When path is under cluster-api/ and CRD is not an existing IPAM CRD, it should be included",
+			path:   "cluster-api/clusters.cluster.x-k8s.io.yaml",
+			crd:    &apiextensionsv1.CustomResourceDefinition{ObjectMeta: metav1.ObjectMeta{Name: "clusters.cluster.x-k8s.io"}},
+			expect: true,
+		},
+		{
+			name:   "When path is under cluster-api/ and CRD is an existing IPAM CRD, it should be excluded",
+			path:   "cluster-api/ipaddressclaims.ipam.cluster.x-k8s.io.yaml",
+			crd:    &apiextensionsv1.CustomResourceDefinition{ObjectMeta: metav1.ObjectMeta{Name: "ipaddressclaims.ipam.cluster.x-k8s.io"}},
+			ipam:   set.New("ipaddressclaims.ipam.cluster.x-k8s.io"),
+			expect: false,
+		},
+		{
+			name:   "When path contains awsendpointservices and AWS platform is installed, it should be included",
+			opts:   Options{PlatformsToInstall: []string{"aws"}},
+			path:   "hypershift-operator/zz_generated.crd-manifests/awsendpointservices-Default.yaml",
+			crd:    defaultCRD(),
+			expect: true,
+		},
+		{
+			name:   "When path contains awsendpointservices and only Azure platform is installed, it should be excluded",
+			opts:   Options{PlatformsToInstall: []string{"azure"}},
+			path:   "hypershift-operator/zz_generated.crd-manifests/awsendpointservices-Default.yaml",
+			crd:    defaultCRD(),
+			expect: false,
+		},
+		{
+			name:   "When PlatformsToInstall includes aws, AWS provider CRDs should be included",
+			opts:   Options{PlatformsToInstall: []string{"aws"}},
+			path:   "cluster-api-provider-aws/infrastructure.cluster.x-k8s.io_awsclusters.yaml",
+			crd:    defaultCRD(),
+			expect: true,
+		},
+		{
+			name:   "When PlatformsToInstall includes only azure, AWS provider CRDs should be excluded",
+			opts:   Options{PlatformsToInstall: []string{"azure"}},
+			path:   "cluster-api-provider-aws/infrastructure.cluster.x-k8s.io_awsclusters.yaml",
+			crd:    defaultCRD(),
+			expect: false,
+		},
+		{
+			name:   "When PlatformsToInstall is empty, all platform CRDs should be included",
+			path:   "cluster-api-provider-aws/infrastructure.cluster.x-k8s.io_awsclusters.yaml",
+			crd:    defaultCRD(),
+			expect: true,
+		},
+		{
+			name:   "When path contains auditlogpersistence and EnableAuditLogPersistence is true, it should be included",
+			opts:   Options{EnableAuditLogPersistence: true},
+			path:   "auditlogpersistence/something.yaml",
+			crd:    defaultCRD(),
+			expect: true,
+		},
+		{
+			name:   "When path contains auditlogpersistence and EnableAuditLogPersistence is false, it should be excluded",
+			path:   "auditlogpersistence/something.yaml",
+			crd:    defaultCRD(),
+			expect: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			ipam := tc.ipam
+			if ipam == nil {
+				ipam = set.New[string]()
+			}
+			filter := crdIncludeFilter(tc.opts, ipam)
+			g.Expect(filter(tc.path, tc.crd)).To(Equal(tc.expect))
+		})
+	}
+}
+
 func TestSetupCRDs(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -413,7 +565,7 @@ func TestSetupCRDs(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
-			crds, err := setupCRDs(t.Context(), nil, tc.inputOptions, &corev1.Namespace{}, nil)
+			crds, err := setupCRDs(t.Context(), nil, tc.inputOptions, &corev1.Namespace{}, &corev1.Service{})
 			g.Expect(err).ToNot(HaveOccurred())
 			nodePoolCRDS := make([]crclient.Object, 0)
 			var machineDeploymentCRD crclient.Object
@@ -1041,8 +1193,13 @@ func TestApplyDefaults(t *testing.T) {
 			expectedReplicas: 2,
 		},
 		{
-			name:             "When no special options are set, it should default replicas to 1",
+			name:             "When CAPI conversion webhook is enabled (default), it should set replicas to 2",
 			opts:             Options{},
+			expectedReplicas: 2,
+		},
+		{
+			name:             "When all webhooks are disabled, it should default replicas to 1",
+			opts:             Options{DisableCAPIConversionWebhook: true},
 			expectedReplicas: 1,
 		},
 	}
@@ -1792,6 +1949,192 @@ func TestHyperShiftNamespaceBuild(t *testing.T) {
 				g.Expect(ns.Labels).To(HaveKeyWithValue("openshift.io/cluster-monitoring", "true"))
 			} else {
 				g.Expect(ns.Labels).NotTo(HaveKey("openshift.io/cluster-monitoring"))
+			}
+		})
+	}
+}
+
+func TestHyperShiftOperatorManifests_WebhookFlags(t *testing.T) {
+	tests := []struct {
+		name                    string
+		opts                    Options
+		expectWebhookVolume     bool
+		expectCertDirArg        bool
+		expectValidatingArg     bool
+		expectCAPICRDConversion bool
+	}{
+		{
+			name: "When no webhook flags are set but CAPI conversion is enabled by default, it should add webhook resources and CRD conversion",
+			opts: Options{
+				PrivatePlatform: string(hyperv1.NonePlatform),
+			},
+			expectWebhookVolume:     true,
+			expectCertDirArg:        true,
+			expectValidatingArg:     false,
+			expectCAPICRDConversion: true,
+		},
+		{
+			name: "When DisableCAPIConversionWebhook is true and no other webhooks, it should not add webhook resources or CRD conversion",
+			opts: Options{
+				PrivatePlatform:              string(hyperv1.NonePlatform),
+				DisableCAPIConversionWebhook: true,
+			},
+			expectWebhookVolume:     false,
+			expectCertDirArg:        false,
+			expectValidatingArg:     false,
+			expectCAPICRDConversion: false,
+		},
+		{
+			name: "When EnableConversionWebhook is true, it should add webhook resources",
+			opts: Options{
+				PrivatePlatform:              string(hyperv1.NonePlatform),
+				DisableCAPIConversionWebhook: true,
+				EnableConversionWebhook:      true,
+			},
+			expectWebhookVolume:     true,
+			expectCertDirArg:        true,
+			expectValidatingArg:     false,
+			expectCAPICRDConversion: false,
+		},
+		{
+			name: "When EnableValidatingWebhook is true, it should add webhook resources and validating arg",
+			opts: Options{
+				PrivatePlatform:              string(hyperv1.NonePlatform),
+				DisableCAPIConversionWebhook: true,
+				EnableValidatingWebhook:      true,
+			},
+			expectWebhookVolume:     true,
+			expectCertDirArg:        true,
+			expectValidatingArg:     true,
+			expectCAPICRDConversion: false,
+		},
+		{
+			name: "When EnableDefaultingWebhook is true, it should add webhook resources",
+			opts: Options{
+				PrivatePlatform:              string(hyperv1.NonePlatform),
+				DisableCAPIConversionWebhook: true,
+				EnableDefaultingWebhook:      true,
+			},
+			expectWebhookVolume:     true,
+			expectCertDirArg:        true,
+			expectValidatingArg:     false,
+			expectCAPICRDConversion: false,
+		},
+		{
+			name: "When EnableAuditLogPersistence is true, it should add webhook resources",
+			opts: Options{
+				PrivatePlatform:              string(hyperv1.NonePlatform),
+				DisableCAPIConversionWebhook: true,
+				EnableAuditLogPersistence:    true,
+			},
+			expectWebhookVolume:     true,
+			expectCertDirArg:        true,
+			expectValidatingArg:     false,
+			expectCAPICRDConversion: false,
+		},
+		{
+			name: "When all webhook flags are enabled, it should add webhook resources with validating arg and CRD conversion",
+			opts: Options{
+				PrivatePlatform:         string(hyperv1.NonePlatform),
+				EnableConversionWebhook: true,
+				EnableDefaultingWebhook: true,
+				EnableValidatingWebhook: true,
+			},
+			expectWebhookVolume:     true,
+			expectCertDirArg:        true,
+			expectValidatingArg:     true,
+			expectCAPICRDConversion: true,
+		},
+		{
+			name: "When all enable flags are false and DisableCAPIConversionWebhook is default (false), it should add webhook resources and CRD conversion",
+			opts: Options{
+				PrivatePlatform:           string(hyperv1.NonePlatform),
+				EnableConversionWebhook:   false,
+				EnableDefaultingWebhook:   false,
+				EnableValidatingWebhook:   false,
+				EnableAuditLogPersistence: false,
+			},
+			expectWebhookVolume:     true,
+			expectCertDirArg:        true,
+			expectValidatingArg:     false,
+			expectCAPICRDConversion: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			tc.opts.HyperShiftImage = "test-image"
+			tc.opts.Namespace = "hypershift"
+			tc.opts.RenderNamespace = true
+
+			ctx := context.Background()
+			crds, objects, err := hyperShiftOperatorManifests(ctx, nil, tc.opts)
+			g.Expect(err).NotTo(HaveOccurred())
+
+			// Find the operator deployment
+			var deployment *appsv1.Deployment
+			for _, obj := range objects {
+				if d, ok := obj.(*appsv1.Deployment); ok {
+					deployment = d
+					break
+				}
+			}
+			g.Expect(deployment).NotTo(BeNil(), "should find operator deployment")
+
+			container := deployment.Spec.Template.Spec.Containers[0]
+
+			hasServingCertVolume := false
+			for _, v := range deployment.Spec.Template.Spec.Volumes {
+				if v.Name == "serving-cert" {
+					hasServingCertVolume = true
+					break
+				}
+			}
+
+			hasServingCertMount := false
+			for _, vm := range container.VolumeMounts {
+				if vm.Name == "serving-cert" {
+					hasServingCertMount = true
+					break
+				}
+			}
+
+			hasCertDirArg := false
+			hasValidatingArg := false
+			for _, arg := range container.Args {
+				if arg == "--cert-dir=/var/run/secrets/serving-cert" {
+					hasCertDirArg = true
+				}
+				if arg == "--enable-validating-webhook=true" {
+					hasValidatingArg = true
+				}
+			}
+
+			g.Expect(hasServingCertVolume).To(Equal(tc.expectWebhookVolume), "serving-cert volume")
+			g.Expect(hasServingCertMount).To(Equal(tc.expectWebhookVolume), "serving-cert volume mount")
+			g.Expect(hasCertDirArg).To(Equal(tc.expectCertDirArg), "--cert-dir arg")
+			g.Expect(hasValidatingArg).To(Equal(tc.expectValidatingArg), "--enable-validating-webhook arg")
+
+			// Validate CAPI CRD conversion webhook configuration
+			for _, obj := range crds {
+				crd, ok := obj.(*apiextensionsv1.CustomResourceDefinition)
+				if !ok {
+					continue
+				}
+				override, isCAPICRD := crdassets.CAPICRDOverrides[crd.Name]
+				if !isCAPICRD || !override.NeedsConversion {
+					continue
+				}
+
+				if tc.expectCAPICRDConversion {
+					g.Expect(crd.Spec.Conversion).NotTo(BeNil(), "CRD %s should have conversion", crd.Name)
+					g.Expect(crd.Spec.Conversion.Strategy).To(Equal(apiextensionsv1.WebhookConverter), "CRD %s conversion strategy", crd.Name)
+					g.Expect(crd.Spec.Conversion.Webhook).NotTo(BeNil(), "CRD %s should have webhook config", crd.Name)
+					g.Expect(crd.Spec.Conversion.Webhook.ConversionReviewVersions).To(ConsistOf("v1beta1", "v1beta2"), "CRD %s review versions", crd.Name)
+				} else {
+					g.Expect(crd.Spec.Conversion).To(BeNil(), "CRD %s should not have conversion when CAPI conversion is disabled", crd.Name)
+				}
 			}
 		})
 	}

@@ -54,7 +54,6 @@ import (
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/awsapi"
 	"github.com/openshift/hypershift/support/azureutil"
-	"github.com/openshift/hypershift/support/backwardcompat"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
@@ -101,7 +100,7 @@ import (
 	"k8s.io/utils/clock"
 	"k8s.io/utils/ptr"
 
-	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -2002,7 +2001,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Reconcile the CAPI manager components
-	err = r.reconcileCAPIManager(cpContext, createOrUpdate, hcluster, releaseImageVersion)
+	err = r.reconcileCAPIManager(cpContext, createOrUpdate, hcluster)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile capi manager: %w", err)
 	}
@@ -2525,7 +2524,7 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 }
 
 // reconcileCAPIManager orchestrates all CAPI manager components.
-func (r *HostedClusterReconciler) reconcileCAPIManager(cpContext controlplanecomponent.ControlPlaneContext, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, releaseVersion semver.Version) error {
+func (r *HostedClusterReconciler) reconcileCAPIManager(cpContext controlplanecomponent.ControlPlaneContext, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster) error {
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespaceObject(hcluster.Namespace, hcluster.Name)
 	err := r.Client.Get(cpContext, client.ObjectKeyFromObject(controlPlaneNamespace), controlPlaneNamespace)
 	if err != nil {
@@ -2553,18 +2552,6 @@ func (r *HostedClusterReconciler) reconcileCAPIManager(cpContext controlplanecom
 	}
 
 	imageOverride := hcluster.Annotations[hyperv1.ClusterAPIManagerImage]
-
-	if imageOverride == "" {
-		pullSecret, err := hyperutil.GetPullSecretBytes(cpContext, r.Client, hcluster)
-		if err != nil {
-			return err
-		}
-
-		imageOverride, err = backwardcompat.GetBackwardCompatibleCAPIImage(cpContext, pullSecret, r.RegistryProvider.GetReleaseProvider(), releaseVersion, ImageStreamCAPI)
-		if err != nil {
-			return err
-		}
-	}
 
 	capiManager := capimanagerv2.NewComponent(imageOverride)
 	if err := capiManager.Reconcile(cpContext); err != nil {
@@ -3002,6 +2989,15 @@ func reconcileCAPIManagerClusterRoleBinding(binding *rbacv1.ClusterRoleBinding, 
 		{
 			Kind:      "ServiceAccount",
 			Name:      sa.Name,
+			Namespace: sa.Namespace,
+		},
+
+		// capi-provider shares this role because it only grants read-only access to CRDs (get, list, watch).
+		// See reconcileCAPIManagerClusterRole above for the role definition.
+		// If the CAPI manager role scope diverges beyond CRDs, capi-provider will need its own ClusterRole and ClusterRoleBinding.
+		{
+			Kind:      "ServiceAccount",
+			Name:      "capi-provider",
 			Namespace: sa.Namespace,
 		},
 	}
