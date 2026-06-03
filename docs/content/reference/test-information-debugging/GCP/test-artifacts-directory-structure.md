@@ -7,8 +7,8 @@ This document describes the artifact directory structure produced by the `e2e-v2
 ```
 <run-id>/
 ├── build-log.txt        # main CI operator execution log
-├── clone-log.txt        # human-readable git clone and PR merge output
-├── clone-records.json   # machine-readable clone details: commands, durations, PR metadata
+├── clone-log.txt        # human-readable git clone and PR merge output (presubmit only)
+├── clone-records.json   # machine-readable clone details: commands, durations, PR metadata (presubmit only)
 ├── finished.json        # job completion: result (SUCCESS/FAILURE), timestamp, commit SHAs
 ├── podinfo.json         # full Kubernetes Pod spec of the CI pod
 ├── prowjob.json         # full ProwJob CR: job name, refs, spec, labels
@@ -27,7 +27,7 @@ artifacts/
 ├── ci-operator.log             # CI operator execution log
 ├── junit_operator.xml          # JUnit results for all step graph steps
 ├── metadata.json               # repo, PR, commit SHAs, pod name, work namespace
-├── build-logs/                 # binary compilation logs
+├── build-logs/                 # binary compilation logs (presubmit only)
 │   ├── hypershift-amd64.log
 │   ├── hypershift-cli-amd64.log
 │   ├── hypershift-operator-amd64.log
@@ -38,6 +38,9 @@ artifacts/
 │   ├── events.json             # Kubernetes events
 │   ├── imagestreams.json       # ImageStream pipeline tags
 │   └── pods.json               # build pods
+├── release/                    # resolved release payload (periodic only)
+│   └── artifacts/
+│       └── release-images-latest  # ImageStream with all component image SHAs for this run
 └── e2e-v2-gke/                 # all step artifacts for the e2e-v2-gke workflow
 ```
 
@@ -70,11 +73,18 @@ e2e-v2-gke/
 │       │   └── core/
 │       │       └── nodes/
 │       │           └── <node-name>.yaml
+│       ├── hostedcluster-<hc-name>/  # guest cluster dump (worker node logs + all guest namespaces)
+│       │   ├── aggregated-discovery-api.yaml
+│       │   ├── aggregated-discovery-apis.yaml
+│       │   ├── event-filter.html
+│       │   ├── timestamp
+│       │   ├── worker.nodes.log      # journal logs from worker nodes
+│       │   ├── cluster-scoped-resources/
+│       │   └── namespaces/           # guest namespaces (kube-system, openshift-*, etc.)
 │       └── namespaces/
 │           ├── clusters/
 │           │   ├── core/
-│           │   │   ├── configmaps/
-│           │   │   └── events/
+│           │   │   └── configmaps/
 │           │   └── hypershift.openshift.io/
 │           │       ├── hostedclusters/
 │           │       └── nodepools/
@@ -95,6 +105,7 @@ e2e-v2-gke/
 │           │   │   ├── events/
 │           │   │   ├── persistentvolumeclaims/
 │           │   │   ├── pods/
+│           │   │   │   └── logs/     # one log file per container
 │           │   │   └── services/
 │           │   ├── hypershift.openshift.io/
 │           │   │   ├── controlplanecomponents/
@@ -140,6 +151,10 @@ e2e-v2-gke/
 
 | What you're looking for | Path |
 |-------------------------|------|
+| Guest cluster dump | `artifacts/e2e-v2-gke/dump/artifacts/hostedcluster-<hc-name>/` |
+| Guest cluster namespaces | `artifacts/e2e-v2-gke/dump/artifacts/hostedcluster-<hc-name>/namespaces/` |
+| Worker node logs | `artifacts/e2e-v2-gke/dump/artifacts/hostedcluster-<hc-name>/worker.nodes.log` |
+| Control plane pod logs | `artifacts/e2e-v2-gke/dump/artifacts/namespaces/clusters-<hc-name>/core/pods/logs/` |
 | HostedCluster CR | `artifacts/e2e-v2-gke/dump/artifacts/namespaces/clusters/hypershift.openshift.io/hostedclusters/` |
 | NodePool CR | `artifacts/e2e-v2-gke/dump/artifacts/namespaces/clusters/hypershift.openshift.io/nodepools/` |
 | HostedControlPlane CR | `artifacts/e2e-v2-gke/dump/artifacts/namespaces/clusters-<hc-name>/hypershift.openshift.io/hostedcontrolplanes/` |
