@@ -29,6 +29,20 @@ const (
 	// NodePoolReleaseVersionAnnotation is set on userdata Secrets (Replace strategy) and on Machines (InPlace strategy)
 	// to track the OCP release version associated with each machine.
 	NodePoolReleaseVersionAnnotation = "hypershift.openshift.io/release-version"
+
+	// NodeScaleDownAnnotation is applied to Nodes in the hosted cluster by users.
+	// When set to exactly "true" (case-sensitive), the HCCO Node Controller sets
+	// cluster.x-k8s.io/delete-machine=yes on the corresponding Machine, giving it
+	// top priority for deletion during NodePool scale-down.
+	//
+	// This annotation is a deletion-priority hint, not a trigger: the annotated
+	// Machine is only removed when a scale-down actually occurs (e.g., the NodePool
+	// replica count is reduced or the cluster autoscaler decides to shrink the pool).
+	//
+	// Removing this annotation from the Node causes the controller to remove the
+	// delete-machine annotation from the Machine, allowing the user to change
+	// their mind before scale-down occurs.
+	NodeScaleDownAnnotation = "hypershift.openshift.io/scale-down"
 )
 
 // ImageType specifies the type of image to use for node instances.

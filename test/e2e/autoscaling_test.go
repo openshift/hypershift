@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -144,7 +145,49 @@ func testAutoscaling(ctx context.Context, mgtClient crclient.Client, hostedClust
 
 		// Wait for one more node.
 		// TODO (alberto): have ability for NodePool to label Nodes and let workload target specific Nodes.
-		_ = e2eutil.WaitForNReadyNodes(t, ctx, guestClient, max, hostedCluster.Spec.Platform.Type)
+		nodes = e2eutil.WaitForNReadyNodes(t, ctx, guestClient, max, hostedCluster.Spec.Platform.Type)
+
+		// --- Targeted scale-down verification (CNTRLPLANE-3318) ---
+		// Sort nodes oldest-first; annotate the oldest so CAPI prioritizes it for
+		// deletion even though its default policy (newest-first) would keep it.
+		sort.Slice(nodes, func(i, j int) bool {
+			return nodes[i].CreationTimestamp.Before(&nodes[j].CreationTimestamp)
+		})
+		targetNode := &nodes[0]
+		t.Logf("Target node (oldest) for targeted scale-down: %s (created %s)", targetNode.Name, targetNode.CreationTimestamp)
+
+		machineName := targetNode.Annotations[capiv1.MachineAnnotation]
+		g.Expect(machineName).NotTo(BeEmpty(), "node %s should have %s annotation", targetNode.Name, capiv1.MachineAnnotation)
+		machineNamespace := targetNode.Annotations[capiv1.ClusterNamespaceAnnotation]
+		g.Expect(machineNamespace).NotTo(BeEmpty(), "node %s should have %s annotation", targetNode.Name, capiv1.ClusterNamespaceAnnotation)
+
+		err = e2eutil.UpdateObject(t, ctx, guestClient, targetNode, func(obj *corev1.Node) {
+			if obj.Annotations == nil {
+				obj.Annotations = make(map[string]string)
+			}
+			obj.Annotations[hyperv1.NodeScaleDownAnnotation] = "true"
+		})
+		g.Expect(err).NotTo(HaveOccurred(), "failed to annotate node for targeted scale-down")
+		t.Logf("Annotated node %s with %s=true", targetNode.Name, hyperv1.NodeScaleDownAnnotation)
+
+		e2eutil.EventuallyObject(t, ctx,
+			fmt.Sprintf("Machine %s/%s to get delete-machine annotation", machineNamespace, machineName),
+			func(ctx context.Context) (*capiv1.Machine, error) {
+				machine := &capiv1.Machine{}
+				err := mgtClient.Get(ctx, crclient.ObjectKey{Namespace: machineNamespace, Name: machineName}, machine)
+				return machine, err
+			},
+			[]e2eutil.Predicate[*capiv1.Machine]{
+				func(m *capiv1.Machine) (done bool, reasons string, err error) {
+					_, has := m.Annotations[capiv1.DeleteMachineAnnotation]
+					return has, fmt.Sprintf("delete-machine annotation present: %v", has), nil
+				},
+			},
+			e2eutil.WithTimeout(5*time.Minute),
+			e2eutil.WithoutConditionDump(),
+		)
+		t.Logf("HCCO sync verified: Machine %s has delete-machine annotation", machineName)
+		targetNodeName := targetNode.Name
 
 		// Delete workload.
 		cascadeDelete := metav1.DeletePropagationForeground
@@ -155,7 +198,12 @@ func testAutoscaling(ctx context.Context, mgtClient crclient.Client, hostedClust
 		t.Logf("Deleted workload")
 
 		// Wait for one less node.
-		_ = e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes, hostedCluster.Spec.Platform.Type)
+		remainingNodes := e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes, hostedCluster.Spec.Platform.Type)
+		for _, n := range remainingNodes {
+			g.Expect(n.Name).NotTo(Equal(targetNodeName),
+				"annotated node %s should have been deleted during scale-down", targetNodeName)
+		}
+		t.Logf("Targeted scale-down verified: annotated node %s was deleted", targetNodeName)
 	}
 }
 

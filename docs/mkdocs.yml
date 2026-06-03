@@ -82,6 +82,7 @@ nav:
     - how-to/automated-machine-management/node-tuning.md
     - how-to/automated-machine-management/nodepool-lifecycle.md
     - how-to/automated-machine-management/scale-to-zero-dataplane.md
+    - how-to/automated-machine-management/targeted-scale-down.md
   - how-to/autoscaling.md
   - 'CI':
     - 'AI-Assisted CI Jobs': how-to/ci/ai-assisted-ci-jobs.md

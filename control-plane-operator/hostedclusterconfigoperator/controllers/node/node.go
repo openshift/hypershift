@@ -46,29 +46,33 @@ func (r *reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		return ctrl.Result{}, fmt.Errorf("failed to get Node: %w", err)
 	}
 
-	var apiErr *apierrors.StatusError
-	nodePoolName, err := r.nodeToNodePoolName(ctx, node)
+	machine, err := r.getMachineForNode(ctx, node)
 	if err != nil {
+		var apiErr *apierrors.StatusError
 		if errors.As(err, &apiErr) && !apierrors.IsNotFound(err) {
-			// Return error and retry only if the API interaction failed. Other errors are because the nodeToNodePoolName expected
-			// annotations are not in place yet, so we'll reconcile triggered by the event which sets them in the Node.
 			return ctrl.Result{}, err
-		} else {
-			log.Error(err, "failed to get nodePool name from Node")
-			return ctrl.Result{}, nil
 		}
+		log.Error(err, "failed to get Machine for Node, CAPI annotations may not be set yet")
+		return ctrl.Result{}, nil
+	}
+
+	// Must run before labelsHaveSynced: scale-down annotation sync applies to all nodes, not just unsynchronized ones.
+	if err := r.reconcileDeleteMachineAnnotation(ctx, node, machine); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to reconcile delete-machine annotation: %w", err)
 	}
 
 	if labelsHaveSynced(node) {
 		return reconcile.Result{}, nil
 	}
 
-	machine, err := r.getMachineForNode(ctx, node)
-	if err != nil {
-		return reconcile.Result{}, err
+	nodePoolName, ok := machine.Annotations[nodePoolAnnotation]
+	if !ok || nodePoolName == "" {
+		log.Info("Missing nodePoolAnnotation on Machine, skipping label sync", "machine", machine.Name)
+		return ctrl.Result{}, nil
 	}
+
 	labelsToSync := getManagedLabels(machine.Labels)
-	labelsToSync[hyperv1.NodePoolLabel] = nodePoolName
+	labelsToSync[hyperv1.NodePoolLabel] = supportutil.ParseNamespacedName(nodePoolName).Name
 
 	var taints []corev1.Taint
 	taintsInJSON := machine.Annotations[nodePoolAnnotationTaints]
@@ -96,6 +100,38 @@ func (r *reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 
 	log.Info("Reconciled Node", "result", result)
 	return reconcile.Result{}, nil
+}
+
+func (r *reconciler) reconcileDeleteMachineAnnotation(ctx context.Context, node *corev1.Node, machine *capiv1.Machine) error {
+	if machine.DeletionTimestamp != nil {
+		return nil
+	}
+
+	nodeWantsScaleDown := node.Annotations[hyperv1.NodeScaleDownAnnotation] == "true"
+	_, machineHasDelete := machine.Annotations[capiv1.DeleteMachineAnnotation]
+
+	if nodeWantsScaleDown && !machineHasDelete {
+		machineToPatch := machine.DeepCopy()
+		patch := client.MergeFrom(machine.DeepCopy())
+		if machineToPatch.Annotations == nil {
+			machineToPatch.Annotations = make(map[string]string)
+		}
+		machineToPatch.Annotations[capiv1.DeleteMachineAnnotation] = "yes"
+		if err := r.client.Patch(ctx, machineToPatch, patch); err != nil {
+			return fmt.Errorf("failed to set delete-machine annotation on Machine %s/%s: %w", machine.Namespace, machine.Name, err)
+		}
+		ctrl.LoggerFrom(ctx).Info("Set delete-machine annotation on Machine", "machine", machine.Name)
+	} else if !nodeWantsScaleDown && machineHasDelete {
+		machineToPatch := machine.DeepCopy()
+		patch := client.MergeFrom(machine.DeepCopy())
+		delete(machineToPatch.Annotations, capiv1.DeleteMachineAnnotation)
+		if err := r.client.Patch(ctx, machineToPatch, patch); err != nil {
+			return fmt.Errorf("failed to remove delete-machine annotation from Machine %s/%s: %w", machine.Namespace, machine.Name, err)
+		}
+		ctrl.LoggerFrom(ctx).Info("Removed delete-machine annotation from Machine", "machine", machine.Name)
+	}
+
+	return nil
 }
 
 func getManagedLabels(labels map[string]string) map[string]string {
@@ -140,17 +176,4 @@ func labelsHaveSynced(node *corev1.Node) bool {
 	}
 
 	return false
-}
-func (r *reconciler) nodeToNodePoolName(ctx context.Context, node *corev1.Node) (string, error) {
-	machine, err := r.getMachineForNode(ctx, node)
-	if err != nil {
-		return "", err
-	}
-
-	nodePoolName, ok := machine.Annotations[nodePoolAnnotation]
-	if !ok || nodePoolName == "" {
-		return "", fmt.Errorf("failed to find nodePoolAnnotation on Machine %q", machine.Name)
-	}
-
-	return supportutil.ParseNamespacedName(nodePoolName).Name, nil
 }
