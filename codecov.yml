@@ -3,6 +3,15 @@ codecov:
   notify:
     wait_for_ci: false
 
+coverage:
+  status:
+    project:
+      default:
+        informational: true
+    patch:
+      default:
+        target: 80%
+
 flags:
   cpo-hostedcontrolplane:
     carryforward: true
