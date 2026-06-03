@@ -114,6 +114,7 @@ nav:
       - how-to/disaster-recovery/etcd-snapshot-backup/index.md
       - how-to/disaster-recovery/etcd-snapshot-backup/backup-flow.md
       - how-to/disaster-recovery/etcd-snapshot-backup/restore-flow.md
+      - how-to/disaster-recovery/etcd-snapshot-backup/managed-services-credentials.md
   - 'Disconnected':
     - how-to/disconnected/index.md
     - how-to/disconnected/image-content-sources.md
