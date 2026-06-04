@@ -47,7 +47,7 @@ func AutoscalingScaleUpDownTest(getTestCtx internal.TestContextGetter) {
 		testCtx.ValidateHostedClusterClient()
 
 		hc := testCtx.GetHostedCluster()
-		guestClient := testCtx.GetHostedClusterClient()
+		hcClient := testCtx.GetHostedClusterClient()
 		ctx := testCtx.Context
 
 		// Find the default NodePool to copy platform config
@@ -63,14 +63,16 @@ func AutoscalingScaleUpDownTest(getTestCtx internal.TestContextGetter) {
 		GinkgoWriter.Printf("Created autoscaling NodePool %s with min=1, max=3\n", autoscalingNP.Name)
 
 		// Ensure cleanup
-		defer cleanupNodePool(ctx, testCtx.MgmtClient, autoscalingNP)
+		DeferCleanup(func() {
+			cleanupNodePool(ctx, testCtx.MgmtClient, autoscalingNP)
+		})
 
 		npLabelSelector := e2eutil.WithClientOptions(crclient.MatchingLabelsSelector{
 			Selector: labels.SelectorFromSet(labels.Set{hyperv1.NodePoolLabel: autoscalingNP.Name}),
 		})
 
 		// Wait for NodePool to be ready with 1 node (min replicas)
-		nodes := e2eutil.WaitForNReadyNodesWithOptions(GinkgoTB(), ctx, guestClient, 1, hc.Spec.Platform.Type, fmt.Sprintf("for NodePool %s", autoscalingNP.Name), npLabelSelector)
+		nodes := e2eutil.WaitForNReadyNodesWithOptions(GinkgoTB(), ctx, hcClient, 1, hc.Spec.Platform.Type, fmt.Sprintf("for NodePool %s", autoscalingNP.Name), npLabelSelector)
 		Expect(nodes).To(HaveLen(1), "should have exactly 1 node initially")
 
 		// Get node capacity for workload sizing
@@ -83,19 +85,21 @@ func AutoscalingScaleUpDownTest(getTestCtx internal.TestContextGetter) {
 		// cluster autoscaler must scale it up.
 		workloadMemRequest := *resource.NewQuantity(bytes/2, resource.BinarySI)
 		workload := newAutoscalingWorkload(3, workloadMemRequest, autoscalingLabel)
-		err = guestClient.Create(ctx, workload)
+		err = hcClient.Create(ctx, workload)
 		Expect(err).NotTo(HaveOccurred(), "failed to create workload")
 
-		defer cleanupWorkload(ctx, guestClient, workload)
+		DeferCleanup(func() {
+			cleanupWorkload(ctx, hcClient, workload)
+		})
 
 		// Wait for scale-up to 3 nodes
-		e2eutil.WaitForNReadyNodesWithOptions(GinkgoTB(), ctx, guestClient, 3, hc.Spec.Platform.Type, fmt.Sprintf("for NodePool %s", autoscalingNP.Name), npLabelSelector)
+		e2eutil.WaitForNReadyNodesWithOptions(GinkgoTB(), ctx, hcClient, 3, hc.Spec.Platform.Type, fmt.Sprintf("for NodePool %s", autoscalingNP.Name), npLabelSelector)
 
 		// Delete workload to trigger scale-down
-		cleanupWorkload(ctx, guestClient, workload)
+		cleanupWorkload(ctx, hcClient, workload)
 
 		// Wait for scale-down to 1 node (min replicas)
-		e2eutil.WaitForNReadyNodesWithOptions(GinkgoTB(), ctx, guestClient, 1, hc.Spec.Platform.Type, fmt.Sprintf("for NodePool %s", autoscalingNP.Name), npLabelSelector)
+		e2eutil.WaitForNReadyNodesWithOptions(GinkgoTB(), ctx, hcClient, 1, hc.Spec.Platform.Type, fmt.Sprintf("for NodePool %s", autoscalingNP.Name), npLabelSelector)
 	})
 }
 
@@ -110,7 +114,7 @@ func AutoscalingBalancingTest(getTestCtx internal.TestContextGetter) {
 		e2eutil.GinkgoAtLeast(e2eutil.Version420)
 
 		hc := testCtx.GetHostedCluster()
-		guestClient := testCtx.GetHostedClusterClient()
+		hcClient := testCtx.GetHostedClusterClient()
 		ctx := testCtx.Context
 		cpNamespace := testCtx.ControlPlaneNamespace
 
@@ -133,15 +137,12 @@ func AutoscalingBalancingTest(getTestCtx internal.TestContextGetter) {
 
 		DeferCleanup(func() {
 			latest := &hyperv1.HostedCluster{}
-			if err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(hc), latest); err != nil {
-				GinkgoWriter.Printf("Warning: failed to get HostedCluster for cleanup: %v\n", err)
-				return
-			}
+			Expect(testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(hc), latest)).To(Succeed(),
+				"cleanup: failed to get HostedCluster for autoscaling config reset")
 			patch := crclient.MergeFrom(latest.DeepCopy())
 			latest.Spec.Autoscaling = hyperv1.ClusterAutoscaling{}
-			if err := testCtx.MgmtClient.Patch(ctx, latest, patch); err != nil {
-				GinkgoWriter.Printf("Warning: failed to reset autoscaler config: %v\n", err)
-			}
+			Expect(testCtx.MgmtClient.Patch(ctx, latest, patch)).To(Succeed(),
+				"cleanup: failed to reset autoscaler config on HostedCluster")
 		})
 
 		// Wait for autoscaler deployment to pick up the new config
@@ -184,12 +185,16 @@ func AutoscalingBalancingTest(getTestCtx internal.TestContextGetter) {
 		autoscalingNP1 := buildAutoscalingNodePool(defaultNP, 1, 3, np1Labels)
 		err = testCtx.MgmtClient.Create(ctx, autoscalingNP1)
 		Expect(err).NotTo(HaveOccurred(), "failed to create first autoscaling NodePool")
-		defer cleanupNodePool(ctx, testCtx.MgmtClient, autoscalingNP1)
+		DeferCleanup(func() {
+			cleanupNodePool(ctx, testCtx.MgmtClient, autoscalingNP1)
+		})
 
 		autoscalingNP2 := buildAutoscalingNodePool(defaultNP, 1, 3, np2Labels)
 		err = testCtx.MgmtClient.Create(ctx, autoscalingNP2)
 		Expect(err).NotTo(HaveOccurred(), "failed to create second autoscaling NodePool")
-		defer cleanupNodePool(ctx, testCtx.MgmtClient, autoscalingNP2)
+		DeferCleanup(func() {
+			cleanupNodePool(ctx, testCtx.MgmtClient, autoscalingNP2)
+		})
 
 		np1LabelSelector := e2eutil.WithClientOptions(crclient.MatchingLabelsSelector{
 			Selector: labels.SelectorFromSet(labels.Set{hyperv1.NodePoolLabel: autoscalingNP1.Name}),
@@ -199,8 +204,8 @@ func AutoscalingBalancingTest(getTestCtx internal.TestContextGetter) {
 		})
 
 		// Wait for initial nodes (1 per NodePool at min replicas)
-		nodes := e2eutil.WaitForNReadyNodesWithOptions(GinkgoTB(), ctx, guestClient, 1, hc.Spec.Platform.Type, "for NP1", np1LabelSelector)
-		e2eutil.WaitForNReadyNodesWithOptions(GinkgoTB(), ctx, guestClient, 1, hc.Spec.Platform.Type, "for NP2", np2LabelSelector)
+		nodes := e2eutil.WaitForNReadyNodesWithOptions(GinkgoTB(), ctx, hcClient, 1, hc.Spec.Platform.Type, "for NP1", np1LabelSelector)
+		e2eutil.WaitForNReadyNodesWithOptions(GinkgoTB(), ctx, hcClient, 1, hc.Spec.Platform.Type, "for NP2", np2LabelSelector)
 
 		// Get node capacity for workload sizing
 		memCapacity := nodes[0].Status.Allocatable[corev1.ResourceMemory]
@@ -210,9 +215,11 @@ func AutoscalingBalancingTest(getTestCtx internal.TestContextGetter) {
 		// Create workload targeting the autoscaling NodePools via the shared label.
 		workloadMemRequest := *resource.NewQuantity(bytes/2, resource.BinarySI)
 		workload := newAutoscalingWorkload(4, workloadMemRequest, sharedLabel)
-		err = guestClient.Create(ctx, workload)
+		err = hcClient.Create(ctx, workload)
 		Expect(err).NotTo(HaveOccurred(), "failed to create workload")
-		defer cleanupWorkload(ctx, guestClient, workload)
+		DeferCleanup(func() {
+			cleanupWorkload(ctx, hcClient, workload)
+		})
 
 		// Wait for total 4 nodes across both NPs, then verify balanced distribution
 		Eventually(func() (bool, error) {

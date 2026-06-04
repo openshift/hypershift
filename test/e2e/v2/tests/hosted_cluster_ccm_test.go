@@ -17,7 +17,6 @@ limitations under the License.
 package tests
 
 import (
-	"context"
 	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -51,7 +50,7 @@ func GCPCloudControllerManagerTest(getTestCtx internal.TestContextGetter) {
 				Expect(hostedClusterClient).NotTo(BeNil(), "hosted cluster client is nil; HostedCluster may not have KubeConfig status set")
 
 				nodes = &corev1.NodeList{}
-				Expect(hostedClusterClient.List(context.Background(), nodes)).To(Succeed())
+				Expect(hostedClusterClient.List(testCtx.Context, nodes)).To(Succeed())
 				Expect(nodes.Items).NotTo(BeEmpty(), "cluster should have nodes")
 			})
 
@@ -112,6 +111,7 @@ var _ = Describe("Hosted Cluster CCM", Label("hosted-cluster-ccm"), func() {
 	BeforeEach(func() {
 		testCtx = internal.GetTestContext()
 		Expect(testCtx).NotTo(BeNil(), "test context should be set up in BeforeSuite")
+		testCtx.ValidateHostedCluster()
 	})
 
 	RegisterHostedClusterCCMTests(func() *internal.TestContext { return testCtx })

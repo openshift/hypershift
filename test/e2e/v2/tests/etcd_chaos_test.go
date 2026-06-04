@@ -126,13 +126,14 @@ func EtcdKillRandomMembersTest(getTestCtx internal.TestContextGetter) {
 		ctx := testCtx.Context
 		cpNamespace := testCtx.ControlPlaneNamespace
 
-		guestClient := testCtx.GetHostedClusterClient()
+		hcClient := testCtx.GetHostedClusterClient()
 
 		// Create marker data that should survive the chaos
-		markerCM := createMarkerConfigMap(ctx, guestClient)
+		markerCM := createMarkerConfigMap(ctx, hcClient)
 		DeferCleanup(func() {
-			if err := guestClient.Delete(ctx, markerCM); err != nil && !apierrors.IsNotFound(err) {
-				GinkgoWriter.Printf("Warning: failed to cleanup marker ConfigMap: %v\n", err)
+			err := hcClient.Delete(ctx, markerCM)
+			if err != nil && !apierrors.IsNotFound(err) {
+				Expect(err).NotTo(HaveOccurred(), "cleanup: failed to delete marker ConfigMap %s", markerCM.Name)
 			}
 		})
 
@@ -160,7 +161,7 @@ func EtcdKillRandomMembersTest(getTestCtx internal.TestContextGetter) {
 
 		waitForEtcdConvergence(ctx, testCtx.MgmtClient, cpNamespace, ptr.Deref(etcdSts.Spec.Replicas, 0))
 
-		verifyMarkerSurvived(ctx, guestClient, markerCM)
+		verifyMarkerSurvived(ctx, hcClient, markerCM)
 	})
 }
 
@@ -173,13 +174,14 @@ func EtcdKillAllMembersTest(getTestCtx internal.TestContextGetter) {
 		ctx := testCtx.Context
 		cpNamespace := testCtx.ControlPlaneNamespace
 
-		guestClient := testCtx.GetHostedClusterClient()
+		hcClient := testCtx.GetHostedClusterClient()
 
 		// Create marker data that should survive the chaos
-		markerCM := createMarkerConfigMap(ctx, guestClient)
+		markerCM := createMarkerConfigMap(ctx, hcClient)
 		DeferCleanup(func() {
-			if err := guestClient.Delete(ctx, markerCM); err != nil && !apierrors.IsNotFound(err) {
-				GinkgoWriter.Printf("Warning: failed to cleanup marker ConfigMap: %v\n", err)
+			err := hcClient.Delete(ctx, markerCM)
+			if err != nil && !apierrors.IsNotFound(err) {
+				Expect(err).NotTo(HaveOccurred(), "cleanup: failed to delete marker ConfigMap %s", markerCM.Name)
 			}
 		})
 
@@ -236,7 +238,7 @@ func EtcdKillAllMembersTest(getTestCtx internal.TestContextGetter) {
 
 		waitForEtcdConvergence(ctx, testCtx.MgmtClient, cpNamespace, ptr.Deref(etcdSts.Spec.Replicas, 0))
 
-		verifyMarkerSurvived(ctx, guestClient, markerCM)
+		verifyMarkerSurvived(ctx, hcClient, markerCM)
 	})
 }
 

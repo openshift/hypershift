@@ -56,6 +56,10 @@ func EnsureDefaultSecurityGroupTagsTest(getTestCtx internal.TestContextGetter) {
 				Skip("default security group tags test is only for AWS platform")
 			}
 
+			Expect(hc.Status.Platform).NotTo(BeNil(),
+				"HostedCluster %s/%s should have platform status", hc.Namespace, hc.Name)
+			Expect(hc.Status.Platform.AWS).NotTo(BeNil(),
+				"HostedCluster %s/%s should have AWS platform status", hc.Namespace, hc.Name)
 			sgID := hc.Status.Platform.AWS.DefaultWorkerSecurityGroupID
 			Expect(sgID).NotTo(BeEmpty(), "HostedCluster status should have DefaultWorkerSecurityGroupID set")
 
@@ -202,6 +206,12 @@ func AWSCCMWithCustomizationsTest(getTestCtx internal.TestContextGetter) {
 					},
 				}
 				Expect(hcClient.Create(tc.Context, testSvc)).To(Succeed(), "failed to create LoadBalancer service")
+				DeferCleanup(func() {
+					err := hcClient.Delete(tc.Context, testSvc)
+					if err != nil && !apierrors.IsNotFound(err) {
+						Expect(err).NotTo(HaveOccurred(), "cleanup: failed to delete test service %s", testSvc.Name)
+					}
+				})
 
 				var lbHostname string
 				Eventually(func(g Gomega) {
