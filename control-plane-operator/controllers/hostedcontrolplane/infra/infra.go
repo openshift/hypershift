@@ -52,6 +52,15 @@ type InfrastructureStatus struct {
 	NeedExternalRouter      bool
 }
 
+func (s InfrastructureStatus) String() string {
+	return fmt.Sprintf("apiHost=%s apiPort=%d konnectivityHost=%s konnectivityPort=%d oauthEnabled=%t oauthHost=%s oauthPort=%d needInternalRouter=%t internalRouterHost=%s needExternalRouter=%t externalRouterHost=%s message=%s",
+		s.APIHost, s.APIPort, s.KonnectivityHost, s.KonnectivityPort,
+		s.OAuthEnabled, s.OAuthHost, s.OAuthPort,
+		s.NeedInternalRouter, s.InternalHCPRouterHost,
+		s.NeedExternalRouter, s.ExternalHCPRouterHost,
+		s.Message)
+}
+
 func (s InfrastructureStatus) IsReady() bool {
 	isReady := len(s.APIHost) > 0 &&
 		len(s.KonnectivityHost) > 0 &&
@@ -527,7 +536,7 @@ func (r *Reconciler) reconcileAPIServerServiceStatus(ctx context.Context, hcp *h
 		return "", 0, "", errors.New("APIServer service strategy not specified")
 	}
 
-	if sharedingress.UseSharedIngress() || (hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform && serviceStrategy.Type == hyperv1.Route) {
+	if serviceStrategy.Type == hyperv1.Route && (sharedingress.UseSharedIngress() || hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform) {
 		return sharedingress.KasRouteHostname(hcp), sharedingress.ExternalDNSLBPort, "", nil
 	}
 

@@ -148,13 +148,16 @@ func ReconcileServiceClusterIP(svc *corev1.Service, owner *metav1.OwnerReference
 func ReconcileServiceStatus(svc *corev1.Service, strategy *hyperv1.ServicePublishingStrategy, apiServerPort int, messageCollector events.MessageCollector) (host string, port int32, message string, err error) {
 	switch strategy.Type {
 	case hyperv1.LoadBalancer:
+		if strategy.LoadBalancer != nil && strategy.LoadBalancer.Hostname != "" {
+			host = strategy.LoadBalancer.Hostname
+			port = int32(apiServerPort)
+			return
+		}
 		if message, err := k8sutil.CollectLBMessageIfNotProvisioned(svc, messageCollector); err != nil || message != "" {
 			return host, port, message, err
 		}
 		port = int32(apiServerPort)
 		switch {
-		case strategy.LoadBalancer != nil && strategy.LoadBalancer.Hostname != "":
-			host = strategy.LoadBalancer.Hostname
 		case svc.Status.LoadBalancer.Ingress[0].Hostname != "":
 			host = svc.Status.LoadBalancer.Ingress[0].Hostname
 		case svc.Status.LoadBalancer.Ingress[0].IP != "":
@@ -396,11 +399,12 @@ func ReconcileKonnectivityServerServiceStatus(svc *corev1.Service, route *routev
 			port = 443
 			return
 		}
-		if route.Spec.Host == "" {
+		routeHost := netutil.RouteHost(route)
+		if routeHost == "" {
 			return
 		}
 		port = 443
-		host = route.Spec.Host
+		host = routeHost
 	}
 	return
 }

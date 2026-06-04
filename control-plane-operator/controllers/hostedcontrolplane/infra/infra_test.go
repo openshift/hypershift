@@ -29,13 +29,14 @@ import (
 )
 
 const (
-	testNamespace        = "test-namespace"
-	testClusterName      = "test-cluster"
-	testIngressDomain    = "apps.example.com"
-	testKASHostname      = "api.test.example.com"
-	testOAuthHostname    = "oauth.test.example.com"
-	testOAuthLBHostname  = "oauth.test.elb.amazonaws.com"
-	testKonnectivityHost = "konnectivity.test.example.com"
+	testNamespace           = "test-namespace"
+	testClusterName         = "test-cluster"
+	testIngressDomain       = "apps.example.com"
+	testKASHostname         = "api.test.example.com"
+	testKASLBConfiguredHost = "kube-apiserver.test-namespace.svc.cluster.local"
+	testOAuthHostname       = "oauth.test.example.com"
+	testOAuthLBHostname     = "oauth.test.elb.amazonaws.com"
+	testKonnectivityHost    = "konnectivity.test.example.com"
 )
 
 // infraResources holds all the infrastructure resources created by the reconciler.
@@ -107,6 +108,21 @@ func withServices(hcp *hyperv1.HostedControlPlane, services []hyperv1.ServicePub
 	return hcp
 }
 
+// baseNoneHCP creates a basic HostedControlPlane for testing with None platform.
+func baseNoneHCP() *hyperv1.HostedControlPlane {
+	return &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      testClusterName,
+			Namespace: testNamespace,
+		},
+		Spec: hyperv1.HostedControlPlaneSpec{
+			Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.NonePlatform,
+			},
+		},
+	}
+}
+
 // allServicesRouteWithHostnames creates service publishing strategies with all services using Route type with required hostnames.
 // Note: APIServer requires a hostname when using Route publishing.
 func allServicesRouteWithHostnames() []hyperv1.ServicePublishingStrategyMapping {
@@ -155,6 +171,47 @@ func kasServiceLoadBalancerOthersRoute() []hyperv1.ServicePublishingStrategyMapp
 			Service: hyperv1.APIServer,
 			ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
 				Type: hyperv1.LoadBalancer,
+			},
+		},
+		{
+			Service: hyperv1.Konnectivity,
+			ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.Route,
+				Route: &hyperv1.RoutePublishingStrategy{
+					Hostname: testKonnectivityHost,
+				},
+			},
+		},
+		{
+			Service: hyperv1.OAuthServer,
+			ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.Route,
+				Route: &hyperv1.RoutePublishingStrategy{
+					Hostname: testOAuthHostname,
+				},
+			},
+		},
+		{
+			Service: hyperv1.Ignition,
+			ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.Route,
+			},
+		},
+	}
+}
+
+// kasServiceLoadBalancerWithHostnameOthersRoute creates service publishing strategies with LoadBalancer (with a
+// configured hostname) for APIServer and Route for others (Konnectivity, OAuthServer, Ignition).
+// This simulates the infraless test pattern where the KAS hostname is set to the internal ClusterIP service DNS.
+func kasServiceLoadBalancerWithHostnameOthersRoute() []hyperv1.ServicePublishingStrategyMapping {
+	return []hyperv1.ServicePublishingStrategyMapping{
+		{
+			Service: hyperv1.APIServer,
+			ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.LoadBalancer,
+				LoadBalancer: &hyperv1.LoadBalancerPublishingStrategy{
+					Hostname: testKASLBConfiguredHost,
+				},
 			},
 		},
 		{
@@ -461,6 +518,29 @@ func TestReconcileInfrastructure(t *testing.T) {
 				NeedExternalRouter:    false,
 			},
 		},
+		// NonePlatform test cases
+		{
+			name: "When NonePlatform cluster has KAS LoadBalancer with configured hostname, it should use hostname without waiting for LB",
+			hcp: withServices(
+				baseNoneHCP(),
+				kasServiceLoadBalancerWithHostnameOthersRoute(),
+			),
+			expectError: false,
+			// For NonePlatform with LoadBalancer + configured hostname:
+			// - APIHost comes from the configured LoadBalancer.Hostname (bypasses LB wait)
+			// - No routers needed (NonePlatform is "public" by default, KAS uses LB not Route)
+			expectedStatus: &InfrastructureStatus{
+				APIHost:            testKASLBConfiguredHost,
+				APIPort:            config.KASSVCPort,
+				OAuthEnabled:       true,
+				OAuthHost:          testOAuthHostname,
+				OAuthPort:          443,
+				KonnectivityHost:   testKonnectivityHost,
+				KonnectivityPort:   443,
+				NeedInternalRouter: false,
+				NeedExternalRouter: false,
+			},
+		},
 		// Azure self-managed test cases
 		{
 			name: "When Azure self-managed cluster has KAS Route with hostname, it should need an external router",
@@ -552,6 +632,32 @@ func TestReconcileInfrastructure(t *testing.T) {
 			expectedStatus: &InfrastructureStatus{
 				APIHost:            testKASHostname,
 				APIPort:            443,
+				OAuthEnabled:       true,
+				OAuthHost:          testOAuthHostname,
+				OAuthPort:          443,
+				KonnectivityHost:   testKonnectivityHost,
+				KonnectivityPort:   443,
+				NeedInternalRouter: false,
+				NeedExternalRouter: false,
+			},
+		},
+		{
+			name: "When ARO shared ingress is enabled with KAS LoadBalancer strategy, it should use LoadBalancer host not shared ingress",
+			hcp: withServices(
+				baseAzureHCP(),
+				kasServiceLoadBalancerOthersRoute(),
+			),
+			setupEnv: func(t *testing.T) {
+				t.Setenv("MANAGED_SERVICE", hyperv1.AroHCP)
+			},
+			expectError: false,
+			// When UseSharedIngress()=true but APIServer strategy is LoadBalancer,
+			// the shared ingress path must be skipped and the host must come from
+			// the KAS LoadBalancer service status instead of KasRouteHostname().
+			// Azure uses port 7443 to avoid collision with the management cluster's KAS.
+			expectedStatus: &InfrastructureStatus{
+				APIHost:            testKASLBHostname,
+				APIPort:            config.KASSVCLBAzurePort,
 				OAuthEnabled:       true,
 				OAuthHost:          testOAuthHostname,
 				OAuthPort:          443,
