@@ -2999,6 +2999,14 @@ func (r *reconciler) reconcileKubeletConfig(ctx context.Context) error {
 		if err := r.deleteImmutableConfigMapIfNeeded(ctx, log, hostedClusterCM); err != nil {
 			return err
 		}
+		// DeleteIfNeededWithPredicate populates hostedClusterCM via Get with all server-side
+		// fields. Reinitialize to avoid leaking stale fields into the subsequent CreateOrUpdate.
+		hostedClusterCM = &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      cm.Name,
+				Namespace: ConfigManagedNamespace,
+			},
+		}
 
 		if result, err := r.CreateOrUpdate(ctx, r.client, hostedClusterCM, func() error {
 			return mutateKubeletConfig(&cm, hostedClusterCM)
@@ -3021,6 +3029,19 @@ func (r *reconciler) reconcileKubeletConfig(ctx context.Context) error {
 		if want.Has(cm.Name) {
 			continue
 		}
+		// Mirrored CMs have a source in the HCP namespace managed by the NodePool controller.
+		// During delete+recreate migrations or transient API errors the source can be briefly
+		// absent. Deleting the guest copy here would cause NTO to regenerate MachineConfigs
+		// without it, triggering MCO node rollouts. If the source is permanently removed
+		// (e.g. NodePool deletion), the orphaned guest CM is harmless and will be cleaned up
+		// when the HostedCluster is deleted.
+		// TODO(OCPBUGS-88738): check whether the owning NodePool (via NodePoolLabel) still exists
+		// before unconditionally skipping, to allow cleanup of truly orphaned CMs.
+		if cm.Labels[nodepool.NTOMirroredConfigLabel] == "true" {
+			log.Info("skipping deletion of mirrored ConfigMap; source may be transiently absent or permanently removed after NodePool deletion",
+				"configMap", client.ObjectKeyFromObject(cm).String())
+			continue
+		}
 		log.Info("delete mirror config ConfigMap", "config", client.ObjectKeyFromObject(cm).String())
 		if _, err := k8sutil.DeleteIfNeeded(ctx, r.client, cm); err != nil {
 			return fmt.Errorf("failed to delete ConfigMap %s: %w", client.ObjectKeyFromObject(cm).String(), err)
@@ -3029,26 +3050,22 @@ func (r *reconciler) reconcileKubeletConfig(ctx context.Context) error {
 	return nil
 }
 
-// deleteImmutableConfigMapIfNeeded checks if a ConfigMap exists and is immutable,
-// and deletes it if necessary to allow recreation as a mutable ConfigMap.
-// This handles migration from immutable ConfigMaps to mutable ones.
+// deleteImmutableConfigMapIfNeeded deletes an existing immutable ConfigMap only if it
+// carries the KubeletConfigConfigMapLabel ownership label, allowing it to be recreated
+// as mutable by the subsequent CreateOrUpdate.
 func (r *reconciler) deleteImmutableConfigMapIfNeeded(ctx context.Context, log logr.Logger, cm *corev1.ConfigMap) error {
-	existingCM := &corev1.ConfigMap{}
-	if err := r.client.Get(ctx, client.ObjectKeyFromObject(cm), existingCM); err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil
+	_, err := k8sutil.DeleteIfNeededWithPredicate(ctx, r.client, cm, func(existing *corev1.ConfigMap) bool {
+		if existing.Labels[nodepool.KubeletConfigConfigMapLabel] != "true" {
+			return false
 		}
-		return fmt.Errorf("failed to get ConfigMap %s: %w", client.ObjectKeyFromObject(cm).String(), err)
-	}
-
-	if existingCM.Immutable != nil && *existingCM.Immutable {
-		log.Info("deleting immutable KubeletConfig ConfigMap to recreate as mutable", "configMap", client.ObjectKeyFromObject(existingCM).String())
-		if _, err := k8sutil.DeleteIfNeeded(ctx, r.client, existingCM); err != nil {
-			return fmt.Errorf("failed to delete immutable ConfigMap %s: %w", client.ObjectKeyFromObject(existingCM).String(), err)
+		if existing.Immutable != nil && *existing.Immutable {
+			log.Info("deleting immutable KubeletConfig ConfigMap to recreate as mutable",
+				"configMap", client.ObjectKeyFromObject(existing).String())
+			return true
 		}
-	}
-
-	return nil
+		return false
+	})
+	return err
 }
 
 func mutateKubeletConfig(controlPlaneConfigMap, hostedClusterConfigMap *corev1.ConfigMap) error {

@@ -792,7 +792,7 @@ func NodePoolMirrorConfigsTest(getTestCtx internal.TestContextGetter) {
 			},
 			[]e2eutil.Predicate[[]*corev1.ConfigMap]{
 				func(configMaps []*corev1.ConfigMap) (done bool, reasons string, err error) {
-					want, got := 0, len(configMaps)
+					want, got := 1, len(configMaps)
 					return want == got, fmt.Sprintf("expected %d KubeletConfig ConfigMaps, got %d", want, got), nil
 				},
 			}, nil,
