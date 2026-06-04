@@ -14,12 +14,12 @@ The following guidelines will help ensure a smooth contribution process for both
     1. Write commit subjects in [imperative mood](https://en.wikipedia.org/wiki/Imperative_mood) (e.g., "Fix bug" not "Fixed bug")
     2. Follow [conventional commit format](https://www.conventionalcommits.org/) and include "Why" and "How" in commit messages
 
-> **💡 Tip: Install precommit hooks**
+> **Tip: Install pre-commit hooks**
 >
-> Install `precommit` to automatically catch issues before committing. This helps catch spelling mistakes, formatting issues, and test failures early in your development process.
+> Install `pre-commit` to automatically catch issues before committing. This helps catch spelling mistakes, formatting issues, and test failures early in your development process.
 >
 > * [Installation instructions](https://pre-commit.com/#install)
-> * [HyperShift-specific tips](./precommit-hook-help.md)
+> * [HyperShift-specific tips](docs/content/contribute/precommit-hook-help.md)
 
 ## Creating a Pull Request
 1. **For small changes** (under 200 lines): Create your change and submit a pull request directly.
@@ -28,34 +28,35 @@ The following guidelines will help ensure a smooth contribution process for both
 
 3. **Write a clear PR title**: Prefix with your Jira ticket number (e.g., "OCPBUGS-12345: Fix memory leak in controller"). See [example PR](https://github.com/openshift/hypershift/pull/2233).
 
-4. **Open the PR in draft mode**: This prevents automatic CI job execution and avoids notifying the approver before the PR has been reviewed. Once your PR is in draft mode:
+4. **Explain the value**: Always describe how your change improves the project in the PR description.
 
-   - **Run necessary CI jobs manually**: Use `/test` commands to selectively run jobs:
-     - `/test <job-name>` - Run a specific CI job
-     - `/test <job-1> <job-2>` - Run a specific set of CI jobs
-     - `/test all` - Run all CI jobs
+### CI
 
-   - **Request reviews**: Use `/auto-cc` to assign reviewers
+This project uses [Prow](https://docs.ci.openshift.org/) and [GitHub Actions](https://github.com/openshift/hypershift/actions) for CI. Lightweight checks (linting, unit tests, verification) run automatically on pushes and pull requests. E2E tests that consume real cloud infrastructure only run after a reviewer grants `/lgtm`, to avoid unnecessary resource usage on work-in-progress PRs.
 
-   - **Assign an approver**: Use `/assign @approver` to assign an approver. Usually the openshift-ci assistant will suggest an approver based on the changes and the OWNERS file.
+Useful Prow commands:
 
-   Only mark the PR as "Ready for Review" once all required tests are passing and required labels are applied:
+- `/test <job-name>` - Run a specific CI job
+- `/test all` - Run all CI jobs
+- `/retest` - Re-run failed CI jobs
+- `/retest-required` - Re-run failed required CI jobs
+- `/pipeline required` - Trigger all second-phase CI jobs (e2e tests gated behind `/lgtm`)
+- `/label tide/merge-method-squash` - Squash commits on merge (useful for PRs with multiple related commits)
 
-   **Required labels to merge:**
-   - `approved` - From an approver via `/approve`
-   - `lgtm` - From a reviewer via `/lgtm`
-   - `jira/valid-reference` - PR title contains a valid Jira ticket reference (or NO-JIRA in case no associated issue)
-       **DISCLAIMER:** NO-JIRA should be use sparingly. Please have a Jira issue associated with your PR whenever possible. 
-   - `area/*` - Area label (e.g., `area/documentation`, `area/control-plane`)
-   - `verified` - QA verification passed (for more information refer to the [documentation](https://docs.ci.openshift.org/docs/architecture/jira/#the-verified-label))
+### Required labels to merge
 
-   **Conditionally required:**
-   - `jira/valid-bug` - Required for bug fixes
-   - `backport-risk-assessed` - Required for backports
+- `approved` - From an approver via `/approve`
+- `lgtm` - From a reviewer via `/lgtm`
+- `jira/valid-reference` - PR title contains a valid Jira ticket reference (or NO-JIRA if no associated issue)
+    **Note:** NO-JIRA should be used sparingly. Please have a Jira issue associated with your PR whenever possible.
+- `area/*` - Area label (e.g., `area/documentation`, `area/control-plane`)
+- `verified` - QA verification passed (for more information refer to the [documentation](https://docs.ci.openshift.org/docs/architecture/jira/#the-verified-label))
 
-5. **Explain the value**: Always describe how your change improves the project in the PR description.
+**Conditionally required:**
+- `jira/valid-bug` - Required for bug fixes
+- `backport-risk-assessed` - Required for backports
 
-> **📝 Note: Release Information**
+> **Note: Release Information**
 >
 > This repository contains code for both the HyperShift Operator and Control Plane Operator (part of OCP payload), which may have different release cadences.
 
@@ -91,3 +92,9 @@ Use these Prow commands to manage assignments:
    - Use `/assign @new-approver`
 
 Remember: If the openshift-ci assistant assigns unsuitable reviewers or approvers, don't hesitate to adjust the assignments. Being proactive helps ensure your PR gets timely and appropriate review.
+
+## Agentic Software Development
+
+The HyperShift team operates an Agentic Software Development Life Cycle (ASDLC) that integrates AI agents into the development workflow. Agents can assist with issue analysis, implementation, code review, and CI triage using reusable skills and knowledge bases.
+
+See [docs/content/how-to/agentic-sdlc.md](docs/content/how-to/agentic-sdlc.md) for the full framework, available building blocks, and how to use them in your workflow.
