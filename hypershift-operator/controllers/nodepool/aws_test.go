@@ -27,6 +27,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
+	"github.com/coreos/stream-metadata-go/stream"
+	"github.com/coreos/stream-metadata-go/stream/rhcos"
 	"github.com/google/go-cmp/cmp"
 )
 
@@ -269,12 +271,12 @@ func TestAWSMachineTemplateSpec(t *testing.T) {
 						Name: "4.17.0",
 					},
 				},
-				StreamMetadata: &releaseinfo.CoreOSStreamMetadata{
-					Architectures: map[string]releaseinfo.CoreOSArchitecture{
+				StreamMetadata: &stream.Stream{
+					Architectures: map[string]stream.Arch{
 						"x86_64": {
-							RHCOS: releaseinfo.CoreRHCOSImage{
-								AWSWinLi: releaseinfo.CoreAWSWinLi{
-									Regions: map[string]releaseinfo.CoreAWSWinLiRegion{
+							RHELCoreOSExtensions: &rhcos.Extensions{
+								AwsWinLi: &rhcos.ReplicatedImage{
+									Regions: map[string]rhcos.SingleImage{
 										"us-east-1": {
 											Release: "418.94.202410090804-0",
 											Image:   "ami-0abcdef1234567890",
@@ -707,8 +709,8 @@ func TestGetWindowsAMI(t *testing.T) {
 						Name: "4.17.0",
 					},
 				},
-				StreamMetadata: &releaseinfo.CoreOSStreamMetadata{
-					Architectures: map[string]releaseinfo.CoreOSArchitecture{},
+				StreamMetadata: &stream.Stream{
+					Architectures: map[string]stream.Arch{},
 				},
 			},
 			expectedError: "couldn't find OS metadata for architecture \"amd64\"",
@@ -723,11 +725,11 @@ func TestGetWindowsAMI(t *testing.T) {
 						Name: "4.17.0",
 					},
 				},
-				StreamMetadata: &releaseinfo.CoreOSStreamMetadata{
-					Architectures: map[string]releaseinfo.CoreOSArchitecture{
+				StreamMetadata: &stream.Stream{
+					Architectures: map[string]stream.Arch{
 						"x86_64": {
-							RHCOS: releaseinfo.CoreRHCOSImage{
-								AWSWinLi: releaseinfo.CoreAWSWinLi{
+							RHELCoreOSExtensions: &rhcos.Extensions{
+								AwsWinLi: &rhcos.ReplicatedImage{
 									Regions: nil,
 								},
 							},
@@ -747,12 +749,12 @@ func TestGetWindowsAMI(t *testing.T) {
 						Name: "4.17.0",
 					},
 				},
-				StreamMetadata: &releaseinfo.CoreOSStreamMetadata{
-					Architectures: map[string]releaseinfo.CoreOSArchitecture{
+				StreamMetadata: &stream.Stream{
+					Architectures: map[string]stream.Arch{
 						"x86_64": {
-							RHCOS: releaseinfo.CoreRHCOSImage{
-								AWSWinLi: releaseinfo.CoreAWSWinLi{
-									Regions: map[string]releaseinfo.CoreAWSWinLiRegion{
+							RHELCoreOSExtensions: &rhcos.Extensions{
+								AwsWinLi: &rhcos.ReplicatedImage{
+									Regions: map[string]rhcos.SingleImage{
 										"us-east-1": {
 											Release: "418.94.202410090804-0",
 											Image:   "ami-testimage",
@@ -776,12 +778,12 @@ func TestGetWindowsAMI(t *testing.T) {
 						Name: "4.17.0",
 					},
 				},
-				StreamMetadata: &releaseinfo.CoreOSStreamMetadata{
-					Architectures: map[string]releaseinfo.CoreOSArchitecture{
+				StreamMetadata: &stream.Stream{
+					Architectures: map[string]stream.Arch{
 						"x86_64": {
-							RHCOS: releaseinfo.CoreRHCOSImage{
-								AWSWinLi: releaseinfo.CoreAWSWinLi{
-									Regions: map[string]releaseinfo.CoreAWSWinLiRegion{
+							RHELCoreOSExtensions: &rhcos.Extensions{
+								AwsWinLi: &rhcos.ReplicatedImage{
+									Regions: map[string]rhcos.SingleImage{
 										"us-east-1": {
 											Release: "418.94.202410090804-0",
 											Image:   "",
@@ -805,12 +807,12 @@ func TestGetWindowsAMI(t *testing.T) {
 						Name: "4.17.0",
 					},
 				},
-				StreamMetadata: &releaseinfo.CoreOSStreamMetadata{
-					Architectures: map[string]releaseinfo.CoreOSArchitecture{
+				StreamMetadata: &stream.Stream{
+					Architectures: map[string]stream.Arch{
 						"x86_64": {
-							RHCOS: releaseinfo.CoreRHCOSImage{
-								AWSWinLi: releaseinfo.CoreAWSWinLi{
-									Regions: map[string]releaseinfo.CoreAWSWinLiRegion{
+							RHELCoreOSExtensions: &rhcos.Extensions{
+								AwsWinLi: &rhcos.ReplicatedImage{
+									Regions: map[string]rhcos.SingleImage{
 										"us-east-1": {
 											Release: "418.94.202410090804-0",
 											Image:   "ami-0abcdef1234567890",
@@ -838,12 +840,12 @@ func TestGetWindowsAMI(t *testing.T) {
 						Name: "4.17.0",
 					},
 				},
-				StreamMetadata: &releaseinfo.CoreOSStreamMetadata{
-					Architectures: map[string]releaseinfo.CoreOSArchitecture{
+				StreamMetadata: &stream.Stream{
+					Architectures: map[string]stream.Arch{
 						"x86_64": {
-							RHCOS: releaseinfo.CoreRHCOSImage{
-								AWSWinLi: releaseinfo.CoreAWSWinLi{
-									Regions: map[string]releaseinfo.CoreAWSWinLiRegion{
+							RHELCoreOSExtensions: &rhcos.Extensions{
+								AwsWinLi: &rhcos.ReplicatedImage{
+									Regions: map[string]rhcos.SingleImage{
 										"us-east-1": {
 											Release: "418.94.202410090804-0",
 											Image:   "ami-0abcdef1234567890",
@@ -1048,12 +1050,12 @@ func TestResolveAWSAMI(t *testing.T) {
 		ImageStream: &v1.ImageStream{
 			ObjectMeta: metav1.ObjectMeta{Name: "4.17.0"},
 		},
-		StreamMetadata: &releaseinfo.CoreOSStreamMetadata{
-			Architectures: map[string]releaseinfo.CoreOSArchitecture{
+		StreamMetadata: &stream.Stream{
+			Architectures: map[string]stream.Arch{
 				"x86_64": {
-					RHCOS: releaseinfo.CoreRHCOSImage{
-						AWSWinLi: releaseinfo.CoreAWSWinLi{
-							Regions: map[string]releaseinfo.CoreAWSWinLiRegion{
+					RHELCoreOSExtensions: &rhcos.Extensions{
+						AwsWinLi: &rhcos.ReplicatedImage{
+							Regions: map[string]rhcos.SingleImage{
 								"us-east-1": {
 									Release: "418.94.202410090804-0",
 									Image:   "ami-windows-us-east-1",

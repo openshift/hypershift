@@ -437,12 +437,11 @@ func getWindowsAMI(region string, specifiedArch string, releaseImage *releaseinf
 	}
 
 	// Access the rhel-coreos-extensions aws-winli data
-	winliData := archData.RHCOS.AWSWinLi
-	if winliData.Regions == nil {
+	if archData.RHELCoreOSExtensions == nil || archData.RHELCoreOSExtensions.AwsWinLi == nil || archData.RHELCoreOSExtensions.AwsWinLi.Regions == nil {
 		return "", fmt.Errorf("no aws-winli regions data found in release image metadata")
 	}
 
-	regionData, exists := winliData.Regions[region]
+	regionData, exists := archData.RHELCoreOSExtensions.AwsWinLi.Regions[region]
 	if !exists {
 		return "", fmt.Errorf("no Windows AMI found for region %s in release image metadata", region)
 	}
