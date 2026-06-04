@@ -2993,6 +2993,8 @@ func (r *reconciler) reconcileKubeletConfig(ctx context.Context) error {
 		if err := r.deleteImmutableConfigMapIfNeeded(ctx, log, hostedClusterCM); err != nil {
 			return err
 		}
+		hostedClusterCM.SetResourceVersion("")
+		hostedClusterCM.Immutable = nil
 
 		if result, err := r.CreateOrUpdate(ctx, r.client, hostedClusterCM, func() error {
 			return mutateKubeletConfig(&cm, hostedClusterCM)
@@ -3015,6 +3017,11 @@ func (r *reconciler) reconcileKubeletConfig(ctx context.Context) error {
 		if want.Has(cm.Name) {
 			continue
 		}
+		if cm.Labels[nodepool.NTOMirroredConfigLabel] == "true" {
+			log.Info("skipping deletion of mirrored ConfigMap with transiently absent source",
+				"configMap", client.ObjectKeyFromObject(cm).String())
+			continue
+		}
 		log.Info("delete mirror config ConfigMap", "config", client.ObjectKeyFromObject(cm).String())
 		if _, err := k8sutil.DeleteIfNeeded(ctx, r.client, cm); err != nil {
 			return fmt.Errorf("failed to delete ConfigMap %s: %w", client.ObjectKeyFromObject(cm).String(), err)
@@ -3023,26 +3030,19 @@ func (r *reconciler) reconcileKubeletConfig(ctx context.Context) error {
 	return nil
 }
 
-// deleteImmutableConfigMapIfNeeded checks if a ConfigMap exists and is immutable,
-// and deletes it if necessary to allow recreation as a mutable ConfigMap.
-// This handles migration from immutable ConfigMaps to mutable ones.
 func (r *reconciler) deleteImmutableConfigMapIfNeeded(ctx context.Context, log logr.Logger, cm *corev1.ConfigMap) error {
-	existingCM := &corev1.ConfigMap{}
-	if err := r.client.Get(ctx, client.ObjectKeyFromObject(cm), existingCM); err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil
+	_, err := k8sutil.DeleteIfNeededWithPredicate(ctx, r.client, cm, func(existing *corev1.ConfigMap) bool {
+		if existing.Labels[nodepool.KubeletConfigConfigMapLabel] != "true" {
+			return false
 		}
-		return fmt.Errorf("failed to get ConfigMap %s: %w", client.ObjectKeyFromObject(cm).String(), err)
-	}
-
-	if existingCM.Immutable != nil && *existingCM.Immutable {
-		log.Info("deleting immutable KubeletConfig ConfigMap to recreate as mutable", "configMap", client.ObjectKeyFromObject(existingCM).String())
-		if _, err := k8sutil.DeleteIfNeeded(ctx, r.client, existingCM); err != nil {
-			return fmt.Errorf("failed to delete immutable ConfigMap %s: %w", client.ObjectKeyFromObject(existingCM).String(), err)
+		if existing.Immutable != nil && *existing.Immutable {
+			log.Info("deleting immutable KubeletConfig ConfigMap to recreate as mutable",
+				"configMap", client.ObjectKeyFromObject(existing).String())
+			return true
 		}
-	}
-
-	return nil
+		return false
+	})
+	return err
 }
 
 func mutateKubeletConfig(controlPlaneConfigMap, hostedClusterConfigMap *corev1.ConfigMap) error {
