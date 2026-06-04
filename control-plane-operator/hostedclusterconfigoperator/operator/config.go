@@ -56,29 +56,30 @@ func cacheLabelSelector() labels.Selector {
 type ControllerSetupFunc func(context.Context, *HostedClusterConfigOperatorConfig) error
 
 type HostedClusterConfigOperatorConfig struct {
-	Manager                      ctrl.Manager
-	Config                       *rest.Config
-	TargetConfig                 *rest.Config
-	KubevirtInfraConfig          *rest.Config
-	TargetCreateOrUpdateProvider upsert.CreateOrUpdateProvider
-	CPCluster                    cluster.Cluster
-	Logger                       logr.Logger
-	Versions                     map[string]string
-	HCPName                      string
-	Namespace                    string
-	InitialCA                    string
-	ClusterSignerCA              string
-	Controllers                  []string
-	PlatformType                 hyperv1.PlatformType
-	ControllerFuncs              map[string]ControllerSetupFunc
-	ReleaseProvider              releaseinfo.Provider
-	KonnectivityAddress          string
-	KonnectivityPort             int32
-	OAuthAddress                 string
-	OAuthPort                    int32
-	OperateOnReleaseImage        string
-	EnableCIDebugOutput          bool
-	ImageMetaDataProvider        util.ImageMetadataProvider
+	Manager                       ctrl.Manager
+	Config                        *rest.Config
+	TargetConfig                  *rest.Config
+	KubevirtInfraConfig           *rest.Config
+	TargetCreateOrUpdateProvider  upsert.CreateOrUpdateProvider
+	CPCluster                     cluster.Cluster
+	Logger                        logr.Logger
+	Versions                      map[string]string
+	HCPName                       string
+	Namespace                     string
+	InitialCA                     string
+	ClusterSignerCA               string
+	Controllers                   []string
+	PlatformType                  hyperv1.PlatformType
+	ControllerFuncs               map[string]ControllerSetupFunc
+	ReleaseProvider               releaseinfo.Provider
+	KonnectivityAddress           string
+	KonnectivityPort              int32
+	OAuthAddress                  string
+	OAuthPort                     int32
+	OperateOnReleaseImage         string
+	EnableCIDebugOutput           bool
+	ImageMetaDataProvider         util.ImageMetadataProvider
+	ManagementClusterCapabilities capabilities.CapabiltyChecker
 
 	kubeClient kubeclient.Interface
 }

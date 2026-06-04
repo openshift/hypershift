@@ -313,8 +313,12 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 	}
 
 	// Watch metrics-proxy Route on the control plane cluster for hostname changes.
-	if err := c.Watch(source.Kind[client.Object](opts.CPCluster.GetCache(), &routev1.Route{}, eventHandler())); err != nil {
-		return fmt.Errorf("failed to watch Route: %w", err)
+	// Skip when the management cluster does not expose the route.openshift.io API
+	// (non-OpenShift management cluster); otherwise the watch fails and HCCO does not start.
+	if opts.ManagementClusterCapabilities.Has(capabilities.CapabilityRoute) {
+		if err := c.Watch(source.Kind[client.Object](opts.CPCluster.GetCache(), &routev1.Route{}, eventHandler())); err != nil {
+			return fmt.Errorf("failed to watch Route: %w", err)
+		}
 	}
 
 	// Watch HostedControlPlane namespace pull-secret on the control plane cluster so guest pull secrets
