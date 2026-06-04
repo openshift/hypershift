@@ -353,7 +353,9 @@ func WaitForGuestClient(t testing.TB, ctx context.Context, client crclient.Clien
 	guestConfig.QPS = -1
 	guestConfig.Burst = -1
 
-	connectTimeout := 10 * time.Minute
+	// 15 minutes accounts for cloud LB provisioning (3-5 min on Azure/AWS)
+	// plus time for the guest API server to become reachable.
+	connectTimeout := 15 * time.Minute
 	if timeoutOverride := os.Getenv("GUEST_CONNECT_TIMEOUT"); timeoutOverride != "" {
 		connectTimeout, err = time.ParseDuration(timeoutOverride)
 		if err != nil {
