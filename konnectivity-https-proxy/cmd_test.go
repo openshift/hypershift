@@ -106,41 +106,58 @@ func TestShouldDialDirectFunc(t *testing.T) {
 }
 
 func TestDialDirectFunc(t *testing.T) {
-	t.Run("When dialing with a valid listener it should connect successfully", func(t *testing.T) {
-		g := NewGomegaWithT(t)
+	dialErr := errors.New("dial failed")
 
-		listener, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
-		g.Expect(err).NotTo(HaveOccurred())
-		defer listener.Close()
-
-		httpProxy := goproxy.NewProxyHttpServer()
-		httpProxy.Tr = &http.Transport{
-			DialContext: (&net.Dialer{}).DialContext,
-		}
-
-		dialFn := dialDirectFunc(httpProxy)
-		conn, err := dialFn(t.Context(), "tcp", listener.Addr().String())
-		g.Expect(err).NotTo(HaveOccurred())
-		g.Expect(conn).NotTo(BeNil())
-		conn.Close()
-	})
-
-	t.Run("When the transport DialContext fails it should return an error", func(t *testing.T) {
-		g := NewGomegaWithT(t)
-
-		expectedErr := errors.New("dial failed")
-		httpProxy := goproxy.NewProxyHttpServer()
-		httpProxy.Tr = &http.Transport{
-			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-				return nil, expectedErr
+	tests := []struct {
+		name      string
+		dialCtx   func(ctx context.Context, network, addr string) (net.Conn, error)
+		addr      func(t *testing.T) string
+		expectErr error
+	}{
+		{
+			name:    "When dialing with a valid listener it should connect successfully",
+			dialCtx: (&net.Dialer{}).DialContext,
+			addr: func(t *testing.T) string {
+				listener, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
+				if err != nil {
+					t.Fatalf("failed to create listener: %v", err)
+				}
+				t.Cleanup(func() { listener.Close() })
+				return listener.Addr().String()
 			},
-		}
+		},
+		{
+			name: "When the transport DialContext fails it should return an error",
+			dialCtx: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				return nil, dialErr
+			},
+			addr:      func(t *testing.T) string { return "127.0.0.1:1" },
+			expectErr: dialErr,
+		},
+	}
 
-		dialFn := dialDirectFunc(httpProxy)
-		conn, err := dialFn(t.Context(), "tcp", "127.0.0.1:1")
-		g.Expect(err).To(MatchError(expectedErr))
-		g.Expect(conn).To(BeNil())
-	})
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			httpProxy := goproxy.NewProxyHttpServer()
+			httpProxy.Tr = &http.Transport{
+				DialContext: tc.dialCtx,
+			}
+
+			dialFn := dialDirectFunc(httpProxy)
+			conn, err := dialFn(t.Context(), "tcp", tc.addr(t))
+
+			if tc.expectErr != nil {
+				g.Expect(err).To(MatchError(tc.expectErr))
+				g.Expect(conn).To(BeNil())
+			} else {
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(conn).NotTo(BeNil())
+				conn.Close()
+			}
+		})
+	}
 }
 
 func TestConnectDialFunc(t *testing.T) {
@@ -176,12 +193,12 @@ func TestConnectDialFunc(t *testing.T) {
 
 			type contextKey string
 			reqCtx := context.WithValue(t.Context(), contextKey("test"), "value")
-			req, err := http.NewRequestWithContext(reqCtx, "CONNECT", "https://example.com:443", nil)
+			req, err := http.NewRequestWithContext(reqCtx, http.MethodConnect, "https://example.com:443", nil)
 			g.Expect(err).NotTo(HaveOccurred())
 
 			directCalled := false
 			proxyCalled := false
-			var capturedCtx context.Context
+			var capturedCtx any
 
 			dialDirectly := func(ctx context.Context, network, addr string) (net.Conn, error) {
 				directCalled = true
@@ -209,7 +226,7 @@ func TestConnectDialFunc(t *testing.T) {
 			g.Expect(proxyCalled).To(Equal(tc.expectDialProxy))
 			if tc.expectDialDirect {
 				g.Expect(capturedCtx).To(Equal(reqCtx))
-				g.Expect(capturedCtx.Value(contextKey("test"))).To(Equal("value"))
+				g.Expect(capturedCtx.(context.Context).Value(contextKey("test"))).To(Equal("value"))
 			}
 		})
 	}
