@@ -5,6 +5,8 @@ import (
 	"math/rand"
 	"testing"
 
+	. "github.com/onsi/gomega"
+
 	routev1 "github.com/openshift/api/route/v1"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -463,6 +465,95 @@ func TestRemoveHCPRouteLabel(t *testing.T) {
 					t.Errorf("Expected HCP label to be removed, but it still exists")
 				}
 			}
+		})
+	}
+}
+
+func TestRouteHost(t *testing.T) {
+	testCases := []struct {
+		name         string
+		route        *routev1.Route
+		expectedHost string
+	}{
+		{
+			name:         "When route is nil, it should return empty string",
+			route:        nil,
+			expectedHost: "",
+		},
+		{
+			name: "When Spec.Host is set, it should return Spec.Host",
+			route: &routev1.Route{
+				Spec: routev1.RouteSpec{
+					Host: "oauth.example.com",
+				},
+			},
+			expectedHost: "oauth.example.com",
+		},
+		{
+			name: "When Spec.Host is set and Status.Ingress is also populated, it should prefer Spec.Host",
+			route: &routev1.Route{
+				Spec: routev1.RouteSpec{
+					Host: "oauth.example.com",
+				},
+				Status: routev1.RouteStatus{
+					Ingress: []routev1.RouteIngress{
+						{
+							Host:                    "ingress.example.com",
+							RouterCanonicalHostname: "canonical.example.com",
+						},
+					},
+				},
+			},
+			expectedHost: "oauth.example.com",
+		},
+		{
+			name: "When Spec.Host is empty and Status.Ingress[0].Host is set, it should return Ingress Host",
+			route: &routev1.Route{
+				Status: routev1.RouteStatus{
+					Ingress: []routev1.RouteIngress{
+						{
+							Host: "ingress.example.com",
+						},
+					},
+				},
+			},
+			expectedHost: "ingress.example.com",
+		},
+		{
+			name: "When Spec.Host and Ingress Host are empty but RouterCanonicalHostname is set, it should return empty string",
+			route: &routev1.Route{
+				Status: routev1.RouteStatus{
+					Ingress: []routev1.RouteIngress{
+						{
+							RouterCanonicalHostname: "router-canonical.example.com",
+						},
+					},
+				},
+			},
+			expectedHost: "",
+		},
+		{
+			name: "When all host fields are empty, it should return empty string",
+			route: &routev1.Route{
+				Status: routev1.RouteStatus{
+					Ingress: []routev1.RouteIngress{
+						{},
+					},
+				},
+			},
+			expectedHost: "",
+		},
+		{
+			name:         "When Status.Ingress slice is empty, it should return empty string",
+			route:        &routev1.Route{},
+			expectedHost: "",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			g.Expect(RouteHost(tc.route)).To(Equal(tc.expectedHost))
 		})
 	}
 }
