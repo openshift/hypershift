@@ -654,7 +654,30 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 
 	pullSecretBytes, err := hyperutil.GetPullSecretBytes(ctx, r.Client, hcluster)
 	if err != nil {
-		return ctrl.Result{}, err
+		log.Error(err, "failed to get pull secret")
+		// Ensure even with a bad pull secret we process pod placement decisions
+		// before returning the pull secret error for requeue.
+		hcp = controlplaneoperator.HostedControlPlane(controlPlaneNamespace.Name, hcluster.Name)
+		isAutoscalingNeeded, autoscaleErr := r.isAutoscalingNeeded(ctx, hcluster)
+		if autoscaleErr != nil {
+			log.Error(autoscaleErr, "failed to determine if autoscaler is needed during pull secret recovery, defaulting to true")
+			isAutoscalingNeeded = true
+		}
+		isAWSNodeTerminationHandlerNeeded, nthErr := r.isAWSNodeTerminationHandlerNeeded(ctx, hcluster)
+		if nthErr != nil {
+			log.Error(nthErr, "failed to determine if AWS node termination handler is needed during pull secret recovery, defaulting to true")
+			isAWSNodeTerminationHandlerNeeded = true
+		}
+		_, hcpErr := createOrUpdate(ctx, r.Client, hcp, func() error {
+			// Skip cert annotation resolution during pull secret recovery — it requires
+			// the pull secret to resolve the CPO image, which is unavailable here.
+			return reconcileHostedControlPlane(hcp, hcluster, isAutoscalingNeeded, isAWSNodeTerminationHandlerNeeded,
+				func() (map[string]string, error) { return nil, nil })
+		})
+		if hcpErr != nil {
+			log.Error(hcpErr, "failed to reconcile hostedcontrolplane during pull secret recovery")
+		}
+		return ctrl.Result{}, fmt.Errorf("failed to get pull secret: %w", err)
 	}
 
 	controlPlaneOperatorImage, err := hyperutil.GetControlPlaneOperatorImage(ctx, hcluster, releaseProvider, r.HypershiftOperatorImage, pullSecretBytes)

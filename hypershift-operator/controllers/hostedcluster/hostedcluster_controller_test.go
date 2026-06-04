@@ -256,6 +256,195 @@ func TestHasBeenAvailable(t *testing.T) {
 	}
 }
 
+func TestReconcileWhenPullSecretMissing(t *testing.T) {
+	t.Parallel()
+	g := NewWithT(t)
+
+	hcluster := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-cluster",
+			Namespace: "any",
+			Annotations: map[string]string{
+				hyperv1.RequestServingNodeAdditionalSelectorAnnotation: `{"node-role.kubernetes.io/worker": ""}`,
+			},
+		},
+		Spec: hyperv1.HostedClusterSpec{
+			ClusterID: "id",
+			InfraID:   "infra-id",
+			Networking: hyperv1.ClusterNetworking{
+				ClusterNetwork: []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.1.0/24")}},
+			},
+			Services: []hyperv1.ServicePublishingStrategyMapping{
+				{
+					Service: hyperv1.Ignition,
+					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+						Type: hyperv1.LoadBalancer,
+					},
+				},
+			},
+			PullSecret: corev1.LocalObjectReference{
+				Name: "pull-secret",
+			},
+			Release: hyperv1.Release{Image: "quay.io/openshift-release-dev/ocp-release:4.15.0"},
+			Etcd:    hyperv1.EtcdSpec{ManagementType: hyperv1.Managed},
+			Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.AWSPlatform,
+			},
+			NodeSelector: map[string]string{
+				"node-role.kubernetes.io/worker": "",
+			},
+		},
+	}
+
+	hcpNs := hcpmanifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
+	hcp := controlplaneoperator.HostedControlPlane(hcpNs, hcluster.Name)
+
+	// Create the namespace so createOrUpdate can find it
+	ns := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{Name: hcpNs},
+	}
+
+	// No pull secret in the fake client — this is the scenario we're testing
+	objects := []crclient.Object{
+		hcp,
+		hcluster,
+		ns,
+	}
+
+	client := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).WithStatusSubresource(hcluster).Build()
+
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+	mockedProvider := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(mockCtrl)
+
+	r := &HostedClusterReconciler{
+		Client:                        client,
+		Clock:                         clocktesting.NewFakeClock(time.Now()),
+		CertRotationScale:             24 * time.Hour,
+		createOrUpdate:                func(reconcile.Request) upsert.CreateOrUpdateFN { return ctrl.CreateOrUpdate },
+		ManagementClusterCapabilities: &fakecapabilities.FakeSupportNoCapabilities{},
+		RegistryProvider: fakeReleaseProvider{
+			releaseProvider: mockedProvider,
+			metadataProvider: fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
+				Result: &dockerv1client.DockerImageConfig{},
+			},
+		},
+		now: func() metav1.Time { return metav1.NewTime(time.Now()) },
+	}
+
+	ctx := t.Context()
+	_, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: crclient.ObjectKeyFromObject(hcluster)})
+
+	// When the pull secret is missing, reconciliation should return an error for requeue
+	g.Expect(err).To(HaveOccurred(), "When pull secret is missing it should return an error")
+	g.Expect(err.Error()).To(ContainSubstring("failed to get pull secret"), "When pull secret is missing the error should mention pull secret")
+
+	// Verify reconcileHostedControlPlane still ran — the HCP should have the HostedCluster's spec fields
+	updatedHCP := controlplaneoperator.HostedControlPlane(hcpNs, hcluster.Name)
+	err = client.Get(ctx, crclient.ObjectKeyFromObject(updatedHCP), updatedHCP)
+	g.Expect(err).ToNot(HaveOccurred(), "When pull secret is missing it should still be able to get the HCP")
+
+	g.Expect(updatedHCP.Spec.NodeSelector).To(Equal(hcluster.Spec.NodeSelector),
+		"When pull secret is missing it should still propagate NodeSelector to HCP")
+	g.Expect(updatedHCP.Annotations).To(HaveKeyWithValue(
+		hyperv1.RequestServingNodeAdditionalSelectorAnnotation,
+		hcluster.Annotations[hyperv1.RequestServingNodeAdditionalSelectorAnnotation]),
+		"When pull secret is missing it should still propagate RequestServingNodeAdditionalSelector to HCP")
+	g.Expect(updatedHCP.Spec.ReleaseImage).To(Equal(hcluster.Spec.Release.Image),
+		"When pull secret is missing it should still propagate ReleaseImage to HCP")
+
+	// With no NodePools in the fake client, autoscaling is not needed so the
+	// autoscaler should be disabled. This validates the defaulting logic in the
+	// pull secret recovery path.
+	g.Expect(updatedHCP.Annotations).To(HaveKeyWithValue(
+		hyperv1.DisableClusterAutoscalerAnnotation, "true"),
+		"When pull secret is missing and no NodePools exist it should disable the cluster autoscaler")
+}
+
+func TestReconcileWhenPullSecretMissingAndNodePoolListFails(t *testing.T) {
+	t.Parallel()
+	g := NewWithT(t)
+
+	hcluster := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-cluster",
+			Namespace: "any",
+		},
+		Spec: hyperv1.HostedClusterSpec{
+			ClusterID: "id",
+			InfraID:   "infra-id",
+			Networking: hyperv1.ClusterNetworking{
+				ClusterNetwork: []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.1.0/24")}},
+			},
+			Services: []hyperv1.ServicePublishingStrategyMapping{
+				{
+					Service: hyperv1.Ignition,
+					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+						Type: hyperv1.LoadBalancer,
+					},
+				},
+			},
+			PullSecret: corev1.LocalObjectReference{
+				Name: "pull-secret",
+			},
+			Release: hyperv1.Release{Image: "quay.io/openshift-release-dev/ocp-release:4.15.0"},
+			Etcd:    hyperv1.EtcdSpec{ManagementType: hyperv1.Managed},
+			Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.AWSPlatform,
+			},
+		},
+	}
+
+	hcpNs := hcpmanifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
+	hcp := controlplaneoperator.HostedControlPlane(hcpNs, hcluster.Name)
+	ns := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{Name: hcpNs},
+	}
+
+	fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hcp, hcluster, ns).WithStatusSubresource(hcluster).
+		WithInterceptorFuncs(interceptor.Funcs{
+			List: func(ctx context.Context, client crclient.WithWatch, list crclient.ObjectList, opts ...crclient.ListOption) error {
+				if _, ok := list.(*hyperv1.NodePoolList); ok {
+					return fmt.Errorf("simulated list error")
+				}
+				return client.List(ctx, list, opts...)
+			},
+		}).Build()
+
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+	mockedProvider := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(mockCtrl)
+
+	r := &HostedClusterReconciler{
+		Client:                        fakeClient,
+		Clock:                         clocktesting.NewFakeClock(time.Now()),
+		CertRotationScale:             24 * time.Hour,
+		createOrUpdate:                func(reconcile.Request) upsert.CreateOrUpdateFN { return ctrl.CreateOrUpdate },
+		ManagementClusterCapabilities: &fakecapabilities.FakeSupportNoCapabilities{},
+		RegistryProvider: fakeReleaseProvider{
+			releaseProvider: mockedProvider,
+			metadataProvider: fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
+				Result: &dockerv1client.DockerImageConfig{},
+			},
+		},
+		now: func() metav1.Time { return metav1.NewTime(time.Now()) },
+	}
+
+	ctx := t.Context()
+	_, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: crclient.ObjectKeyFromObject(hcluster)})
+
+	g.Expect(err).To(HaveOccurred(), "When pull secret is missing it should return an error")
+
+	updatedHCP := controlplaneoperator.HostedControlPlane(hcpNs, hcluster.Name)
+	err = fakeClient.Get(ctx, crclient.ObjectKeyFromObject(updatedHCP), updatedHCP)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	// When NodePool list fails, isAutoscalingNeeded defaults to true, so the
+	// autoscaler should NOT be disabled (annotation should be absent).
+	g.Expect(updatedHCP.Annotations).NotTo(HaveKey(hyperv1.DisableClusterAutoscalerAnnotation),
+		"When NodePool list fails during pull secret recovery it should default to keeping the autoscaler enabled")
+}
+
 func TestReconcileHostedControlPlaneAdditionalTrustBundle(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
