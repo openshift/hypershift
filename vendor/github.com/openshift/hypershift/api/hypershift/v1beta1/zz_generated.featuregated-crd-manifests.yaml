@@ -313,6 +313,7 @@ nodepools.hypershift.openshift.io:
   Category: ""
   FeatureGates:
   - GCPPlatform
+  - OSStreams
   - OpenStack
   FilenameOperatorName: ""
   FilenameOperatorOrdering: ""

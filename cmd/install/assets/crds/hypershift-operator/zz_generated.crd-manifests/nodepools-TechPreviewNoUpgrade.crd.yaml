@@ -330,6 +330,39 @@ spec:
                   After the timeout, any remaining attached volumes will be ignored and the removal of the machine will continue.
                   Changing this field propagate inplace into existing Nodes.
                 type: string
+              osImageStream:
+                description: |-
+                  osImageStream specifies an OS stream to be used for nodes in this pool.
+
+                  This field can be optionally set to a known OSImageStream name to change
+                  the OS and Extension images with a well-known, tested, release-provided
+                  set of images. This enables a streamlined way of switching the pool's
+                  node OS to a different version than the cluster default, such as
+                  transitioning to a major RHEL version.
+
+                  When set, the referenced stream overrides the default OS images for the
+                  pool. When omitted, the pool uses the release version's default stream
+                  (rhel-9 for OCP < 5.0, rhel-10 for OCP >= 5.0).
+                  Changing this field triggers a rollout. Forward transitions
+                  (rhel-9 -> rhel-10) are allowed; backward transitions
+                  (rhel-10 -> rhel-9) are rejected by CEL validation because
+                  in-place OS downgrades are not supported.
+                properties:
+                  name:
+                    description: name is a required reference to an OSImageStream
+                      to be used for the pool.
+                    enum:
+                    - rhel-9
+                    - rhel-10
+                    type: string
+                required:
+                - name
+                type: object
+                x-kubernetes-validations:
+                - message: OS stream downgrade from rhel-10 to rhel-9 is not allowed;
+                    create a new NodePool instead
+                  rule: '!has(oldSelf.name) || oldSelf.name != ''rhel-10'' || self.name
+                    != ''rhel-9'''
               pausedUntil:
                 description: |-
                   pausedUntil is a field that can be used to pause reconciliation on the NodePool controller. Resulting in any change to the NodePool being ignored.
@@ -2104,6 +2137,22 @@ spec:
                     x-kubernetes-list-type: atomic
                 required:
                 - nodeVersions
+                type: object
+              osImageStream:
+                description: |-
+                  osImageStream reports the OS stream observed on the nodes in this pool.
+
+                  When omitted, the pool is using the release version's default OS images.
+                properties:
+                  name:
+                    description: name is a required reference to an OSImageStream
+                      to be used for the pool.
+                    enum:
+                    - rhel-9
+                    - rhel-10
+                    type: string
+                required:
+                - name
                 type: object
               platform:
                 description: platform holds the specific statuses
