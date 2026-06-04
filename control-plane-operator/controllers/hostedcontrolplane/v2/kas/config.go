@@ -14,6 +14,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/openstack"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
+	"github.com/openshift/hypershift/control-plane-operator/featuregates"
 	"github.com/openshift/hypershift/support/certs"
 	hcpconfig "github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
@@ -195,7 +196,7 @@ func generateConfig(p KubeAPIServerConfigParams) (*kcpv1.KubeAPIServerConfig, er
 	args.Set("egress-selector-config-file", cpath(egressSelectorConfigVolumeName, EgressSelectorConfigKey))
 	args.Set("enable-admission-plugins", enabledAdmissionPlugins(p)...)
 	args.Set("disable-admission-plugins", disabledAdmissionPlugins(p)...)
-	if util.ConfigOAuthEnabled(p.Authentication) {
+	if util.ConfigOAuthEnabled(p.Authentication) || featuregates.Gate().Enabled(featuregates.ExternalOIDCExternalClaimsSourcing) {
 		args.Set("authentication-token-webhook-config-file", cpath(authTokenWebhookConfigVolumeName, KubeconfigKey))
 		args.Set("authentication-token-webhook-version", "v1")
 	} else {
