@@ -213,4 +213,15 @@ func init() {
 		"Path to an additional pull secret file for the global pull secret lifecycle test.",
 		false,
 	)
+	// External OIDC test environment variables
+	RegisterEnvVar(
+		"E2E_EXTERNAL_OIDC_CA_BUNDLE_FILE",
+		"Path to the CA bundle file for the External OIDC issuer (Keycloak). Written by the lifecycle PostCreate.",
+		false,
+	)
+	RegisterEnvVar(
+		"E2E_EXTERNAL_OIDC_TEST_USERS",
+		"Comma-separated list of test users in user:password format for External OIDC testing. Written by the lifecycle PostCreate.",
+		false,
+	)
 }
