@@ -16,6 +16,9 @@ import (
 
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+
+	"github.com/coreos/stream-metadata-go/stream"
+	"github.com/coreos/stream-metadata-go/stream/rhcos"
 )
 
 func TestAzureMachineTemplateSpec(t *testing.T) {
@@ -1113,11 +1116,11 @@ func TestDefaultAzureNodePoolImage(t *testing.T) {
 
 // createMockReleaseImage creates a mock release image for testing
 func createMockReleaseImage(version string, hasMarketplaceMetadata bool) *releaseinfo.ReleaseImage {
-	architecture := releaseinfo.CoreOSArchitecture{
-		Artifacts: map[string]releaseinfo.CoreOSArtifact{},
-		Images:    releaseinfo.CoreOSImages{},
-		RHCOS: releaseinfo.CoreRHCOSImage{
-			AzureDisk: releaseinfo.CoreAzureDisk{
+	architecture := stream.Arch{
+		Artifacts: map[string]stream.PlatformArtifacts{},
+		Images:    stream.Images{},
+		RHELCoreOSExtensions: &rhcos.Extensions{
+			AzureDisk: &rhcos.AzureDisk{
 				Release: "9.6.20250701-0",
 				URL:     "https://rhcos.blob.core.windows.net/imagebucket/rhcos-9.6.20250701-0-azure.x86_64.vhd",
 			},
@@ -1125,16 +1128,16 @@ func createMockReleaseImage(version string, hasMarketplaceMetadata bool) *releas
 	}
 
 	if hasMarketplaceMetadata {
-		architecture.RHCOS.Marketplace = releaseinfo.CoreMarketplace{
-			Azure: releaseinfo.CoreAzureMarketplace{
-				NoPurchasePlan: releaseinfo.CoreAzureMarketplaceNoPurchasePlan{
-					HyperVGen1: &releaseinfo.CoreAzureMarketplaceImage{
+		architecture.RHELCoreOSExtensions.Marketplace = &rhcos.Marketplace{
+			Azure: &rhcos.AzureMarketplace{
+				NoPurchasePlan: &rhcos.AzureMarketplaceImages{
+					Gen1: &rhcos.AzureMarketplaceImage{
 						Publisher: "azureopenshift",
 						Offer:     "aro4",
 						SKU:       "aro_419",
 						Version:   "419.6.20250523",
 					},
-					HyperVGen2: &releaseinfo.CoreAzureMarketplaceImage{
+					Gen2: &rhcos.AzureMarketplaceImage{
 						Publisher: "azureopenshift",
 						Offer:     "aro4",
 						SKU:       "419-v2",
@@ -1145,12 +1148,12 @@ func createMockReleaseImage(version string, hasMarketplaceMetadata bool) *releas
 		}
 	}
 
-	architectures := map[string]releaseinfo.CoreOSArchitecture{
+	architectures := map[string]stream.Arch{
 		"x86_64":  architecture,
 		"aarch64": architecture, // ARM64 uses the same marketplace metadata
 	}
 
-	streamMetadata := &releaseinfo.CoreOSStreamMetadata{
+	streamMetadata := &stream.Stream{
 		Stream:        "test-stream",
 		Architectures: architectures,
 	}

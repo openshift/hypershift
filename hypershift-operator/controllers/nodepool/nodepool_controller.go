@@ -745,7 +745,10 @@ func defaultNodePoolAMI(region string, specifiedArch string, releaseImage *relea
 		return "", fmt.Errorf("couldn't find OS metadata for architecture %q", specifiedArch)
 	}
 
-	regionData, hasRegionData := arch.Images.AWS.Regions[region]
+	if arch.Images.Aws == nil {
+		return "", fmt.Errorf("release image metadata has no AWS images")
+	}
+	regionData, hasRegionData := arch.Images.Aws.Regions[region]
 	if !hasRegionData {
 		return "", fmt.Errorf("couldn't find AWS image for region %q", region)
 	}
@@ -769,10 +772,10 @@ func defaultNodePoolGCPImage(specifiedArch string, releaseImage *releaseinfo.Rel
 		return "", fmt.Errorf("couldn't find OS metadata for architecture %q", specifiedArch)
 	}
 
-	if len(arch.Images.GCP.Project) == 0 || len(arch.Images.GCP.Name) == 0 {
+	if arch.Images.Gcp == nil || len(arch.Images.Gcp.Project) == 0 || len(arch.Images.Gcp.Name) == 0 {
 		return "", fmt.Errorf("release image metadata has no GCP image for architecture %q", specifiedArch)
 	}
-	return fmt.Sprintf("projects/%s/global/images/%s", arch.Images.GCP.Project, arch.Images.GCP.Name), nil
+	return fmt.Sprintf("projects/%s/global/images/%s", arch.Images.Gcp.Project, arch.Images.Gcp.Name), nil
 }
 
 // MachineDeploymentComplete considers a MachineDeployment to be complete once all of its desired replicas

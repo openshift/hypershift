@@ -42,6 +42,7 @@ require (
 	github.com/clarketm/json v1.17.1
 	github.com/coreos/go-systemd v0.0.0-20191104093116-d3cd4ed1dbcf
 	github.com/coreos/ignition/v2 v2.25.1
+	github.com/coreos/stream-metadata-go v0.4.11
 	github.com/distribution/reference v0.6.0
 	github.com/docker/distribution v2.8.3+incompatible
 	github.com/elazarl/goproxy v1.7.2
