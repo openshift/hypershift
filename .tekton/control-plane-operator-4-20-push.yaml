@@ -6,13 +6,7 @@ metadata:
     build.appstudio.redhat.com/commit_sha: '{{revision}}'
     build.appstudio.redhat.com/target_branch: '{{target_branch}}'
     pipelinesascode.tekton.dev/max-keep-runs: "3"
-    pipelinesascode.tekton.dev/on-cel-expression: |
-      event == "push"
-      && target_branch == "release-4.20"
-      && ( "control-plane-operator/***".pathChanged() ||
-           "support/***".pathChanged() ||
-           ".tekton/control-plane-operator*".pathChanged() ||
-           "/Containerfile.control-plane-operator".pathChanged() )
+    pipelinesascode.tekton.dev/on-cel-expression: event == "push" && target_branch == "release-4.20"
   creationTimestamp:
   labels:
     appstudio.openshift.io/application: control-plane-operator-4-20
