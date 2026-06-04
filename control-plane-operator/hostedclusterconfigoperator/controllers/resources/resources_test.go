@@ -1610,6 +1610,7 @@ func TestReconcileKubeletConfig(t *testing.T) {
 		hostedControlPlaneObjects      []client.Object
 		existHostedControlPlaneObjects []client.Object
 		expectedHostedClusterObjects   []client.Object
+		preservedObjects               []client.Object
 	}{
 		{
 			name: "copy kubelet config from control plane NS",
@@ -1647,6 +1648,66 @@ func TestReconcileKubeletConfig(t *testing.T) {
 				makeKubeletConfigConfigMap(netutil.ShortenName("bar", npName1, validation.LabelValueMaxLength), hcNamespace, kubeletConfig1),
 			},
 		},
+		{
+			name:                      "When source CM is transiently absent, it should not delete the mirrored guest-side CM",
+			hostedControlPlaneObjects: []client.Object{},
+			existHostedControlPlaneObjects: []client.Object{
+				makeMirroredKubeletConfigConfigMap(netutil.ShortenName("bar", npName1, validation.LabelValueMaxLength), hcNamespace, npName1, kubeletConfig1),
+			},
+			expectedHostedClusterObjects: []client.Object{
+				makeMirroredKubeletConfigConfigMap(netutil.ShortenName("bar", npName1, validation.LabelValueMaxLength), hcNamespace, npName1, kubeletConfig1),
+			},
+		},
+		{
+			// Defensive: this path is only reachable for CMs created before NTOMirroredConfigLabel was introduced.
+			name:                      "When source CM is absent and guest CM is not mirrored, it should be deleted",
+			hostedControlPlaneObjects: []client.Object{},
+			existHostedControlPlaneObjects: []client.Object{
+				makeKubeletConfigConfigMap(netutil.ShortenName("bar", npName1, validation.LabelValueMaxLength), hcNamespace, kubeletConfig1),
+			},
+			expectedHostedClusterObjects: []client.Object{},
+		},
+		{
+			name: "When guest CM is immutable but not a KubeletConfig, it should not be deleted",
+			hostedControlPlaneObjects: []client.Object{
+				makeKubeletConfigConfigMap(netutil.ShortenName("bar", npName1, validation.LabelValueMaxLength), hcpNamespace, kubeletConfig1),
+			},
+			existHostedControlPlaneObjects: []client.Object{
+				// Immutable CM without KubeletConfigConfigMapLabel — should be left alone.
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "unrelated-immutable-cm",
+						Namespace: hcNamespace,
+						Labels:    map[string]string{"some-other-label": "true"},
+					},
+					Immutable: ptr.To(true),
+					Data:      map[string]string{"key": "value"},
+				},
+			},
+			expectedHostedClusterObjects: []client.Object{
+				makeKubeletConfigConfigMap(netutil.ShortenName("bar", npName1, validation.LabelValueMaxLength), hcNamespace, kubeletConfig1),
+			},
+			preservedObjects: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "unrelated-immutable-cm",
+						Namespace: hcNamespace,
+					},
+				},
+			},
+		},
+		{
+			name: "When guest CM is immutable, it should be deleted and recreated as mutable",
+			hostedControlPlaneObjects: []client.Object{
+				makeKubeletConfigConfigMap(netutil.ShortenName("bar", npName1, validation.LabelValueMaxLength), hcpNamespace, kubeletConfig1),
+			},
+			existHostedControlPlaneObjects: []client.Object{
+				makeImmutableKubeletConfigConfigMap(netutil.ShortenName("bar", npName1, validation.LabelValueMaxLength), hcNamespace, kubeletConfig1),
+			},
+			expectedHostedClusterObjects: []client.Object{
+				makeKubeletConfigConfigMap(netutil.ShortenName("bar", npName1, validation.LabelValueMaxLength), hcNamespace, kubeletConfig1),
+			},
+		},
 	}
 
 	for _, tc := range testCases {
@@ -1661,7 +1722,14 @@ func TestReconcileKubeletConfig(t *testing.T) {
 			}
 			g.Expect(r.reconcileKubeletConfig(t.Context())).To(Succeed())
 			for _, obj := range tc.expectedHostedClusterObjects {
-				g.Expect(r.client.Get(t.Context(), client.ObjectKeyFromObject(obj), obj)).To(Succeed(), "failed to get %s", client.ObjectKeyFromObject(obj))
+				actual := &corev1.ConfigMap{}
+				g.Expect(r.client.Get(t.Context(), client.ObjectKeyFromObject(obj), actual)).To(Succeed(), "failed to get %s", client.ObjectKeyFromObject(obj))
+				g.Expect(actual.Immutable).To(BeNil(), "recreated ConfigMap %s should be mutable", client.ObjectKeyFromObject(obj))
+			}
+			for _, obj := range tc.preservedObjects {
+				actual := &corev1.ConfigMap{}
+				g.Expect(r.client.Get(t.Context(), client.ObjectKeyFromObject(obj), actual)).To(Succeed(),
+					"preserved object %s should still exist after reconcile", client.ObjectKeyFromObject(obj))
 			}
 			listOpts := []client.ListOption{
 				client.InNamespace(hcNamespace),
@@ -1744,6 +1812,39 @@ func makeKubeletConfigConfigMap(name, namespace, data string) *corev1.ConfigMap 
 				nodepool.KubeletConfigConfigMapLabel: "true",
 			},
 		},
+		Data: map[string]string{
+			"config": data,
+		},
+	}
+}
+
+func makeMirroredKubeletConfigConfigMap(name, namespace, nodePoolName, data string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+			Labels: map[string]string{
+				nodepool.KubeletConfigConfigMapLabel: "true",
+				nodepool.NTOMirroredConfigLabel:      "true",
+				hyperv1.NodePoolLabel:                nodePoolName,
+			},
+		},
+		Data: map[string]string{
+			"config": data,
+		},
+	}
+}
+
+func makeImmutableKubeletConfigConfigMap(name, namespace, data string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+			Labels: map[string]string{
+				nodepool.KubeletConfigConfigMapLabel: "true",
+			},
+		},
+		Immutable: ptr.To(true),
 		Data: map[string]string{
 			"config": data,
 		},
