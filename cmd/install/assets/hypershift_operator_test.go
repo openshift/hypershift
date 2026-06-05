@@ -847,6 +847,24 @@ func TestBuildArgs(t *testing.T) {
 				fmt.Sprintf("--private-platform=%s", hyperv1.AWSPlatform),
 			},
 		},
+		{
+			name: "When HCPEgressBlockCIDRs is set, it should include one flag per CIDR",
+			deployment: HyperShiftOperatorDeployment{
+				PrivatePlatform:     string(hyperv1.NonePlatform),
+				HCPEgressBlockCIDRs: []string{"10.0.0.0/16", "10.1.0.0/16"},
+			},
+			expectContains: []string{
+				"--hcp-egress-block-cidrs=10.0.0.0/16",
+				"--hcp-egress-block-cidrs=10.1.0.0/16",
+			},
+		},
+		{
+			name: "When HCPEgressBlockCIDRs is empty, it should not include the flag",
+			deployment: HyperShiftOperatorDeployment{
+				PrivatePlatform: string(hyperv1.NonePlatform),
+			},
+			expectNotContains: []string{"--hcp-egress-block-cidrs"},
+		},
 	}
 
 	for _, tc := range tests {

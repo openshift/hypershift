@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -156,6 +157,7 @@ type Options struct {
 	ScaleFromZeroCredentialsSecret            string
 	ScaleFromZeroCredentialsSecretKey         string
 	RenderSensitive                           bool
+	HCPEgressBlockCIDRs                       []string
 }
 
 func (o *Options) Validate() error {
@@ -173,8 +175,19 @@ func (o *Options) Validate() error {
 	errs = append(errs, o.validateScaleFromZeroConfig()...)
 	errs = append(errs, o.validateMonitoringConfig()...)
 	errs = append(errs, o.validateMiscConfig()...)
+	errs = append(errs, o.validateHCPEgressBlockCIDRs()...)
 
 	return errors.NewAggregate(errs)
+}
+
+func (o *Options) validateHCPEgressBlockCIDRs() []error {
+	var errs []error
+	for _, cidr := range o.HCPEgressBlockCIDRs {
+		if _, _, err := net.ParseCIDR(cidr); err != nil {
+			errs = append(errs, fmt.Errorf("invalid --hcp-egress-block-cidrs value %q: %w", cidr, err))
+		}
+	}
+	return errs
 }
 
 func (o *Options) validatePlatformConfig() []error {
@@ -439,6 +452,7 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&opts.ScaleFromZeroCreds, "scale-from-zero-creds", opts.ScaleFromZeroCreds, "Path to credentials file for scale-from-zero instance type queries")
 	cmd.PersistentFlags().StringVar(&opts.ScaleFromZeroCredentialsSecret, "scale-from-zero-secret", opts.ScaleFromZeroCredentialsSecret, "Name of existing secret containing scale-from-zero credentials (alternative to --scale-from-zero-creds)")
 	cmd.PersistentFlags().StringVar(&opts.ScaleFromZeroCredentialsSecretKey, "scale-from-zero-secret-key", opts.ScaleFromZeroCredentialsSecretKey, "Key within the scale-from-zero credentials secret (default: credentials)")
+	cmd.PersistentFlags().StringArrayVar(&opts.HCPEgressBlockCIDRs, "hcp-egress-block-cidrs", nil, "Static CIDRs to block in HCP namespace egress NetworkPolicies instead of dynamically-discovered hosting cluster KAS endpoint IPs. When specified, eliminates NetworkPolicy churn during hosting cluster KAS rolling restarts and avoids OVN port-group reconciliation races that can drop traffic to HCP routers. May be specified multiple times.")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		return InstallHyperShiftOperator(cmd.Context(), cmd.OutOrStdout(), opts)
@@ -1294,6 +1308,7 @@ func setupOperatorResources(opts Options, userCABundleCM *corev1.ConfigMap, trus
 		ScaleFromZeroSecret:                     scaleFromZeroSecret,
 		ScaleFromZeroSecretKey:                  opts.ScaleFromZeroCredentialsSecretKey,
 		ScaleFromZeroProvider:                   opts.ScaleFromZeroProvider,
+		HCPEgressBlockCIDRs:                     opts.HCPEgressBlockCIDRs,
 	}.Build()
 	operatorService := assets.HyperShiftOperatorService{
 		Namespace: operatorNamespace,

@@ -70,13 +70,19 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 		return fmt.Errorf("failed to reconcile kube-apiserver network policy: %w", err)
 	}
 
-	//nolint:staticcheck // SA1019: corev1.Endpoints is intentionally used for backward compatibility
-	kubernetesEndpoint := &corev1.Endpoints{ObjectMeta: metav1.ObjectMeta{Name: "kubernetes", Namespace: "default"}}
-	if err := r.Get(ctx, client.ObjectKeyFromObject(kubernetesEndpoint), kubernetesEndpoint); err != nil {
-		return fmt.Errorf("failed to get management cluster network config: %w", err)
+	var kasBlock []string
+	if len(r.HCPEgressBlockCIDRs) > 0 {
+		kasBlock = append(kasBlock, r.HCPEgressBlockCIDRs...)
+	} else {
+		//nolint:staticcheck // SA1019: corev1.Endpoints is intentionally used for backward compatibility
+		kubernetesEndpoint := &corev1.Endpoints{ObjectMeta: metav1.ObjectMeta{Name: "kubernetes", Namespace: "default"}}
+		if err := r.Get(ctx, client.ObjectKeyFromObject(kubernetesEndpoint), kubernetesEndpoint); err != nil {
+			return fmt.Errorf("getting management cluster kubernetes endpoints: %w", err)
+		}
+		kasBlock = kasEndpointsToCIDRs(kubernetesEndpoint)
 	}
 
-	if err := r.reconcileManagementKASPolicies(ctx, createOrUpdate, hcluster, hcp, controlPlaneNamespaceName, managementClusterNetwork, kubernetesEndpoint, controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel); err != nil {
+	if err := r.reconcileManagementKASPolicies(ctx, createOrUpdate, hcluster, hcp, controlPlaneNamespaceName, managementClusterNetwork, kasBlock, controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel); err != nil {
 		return err
 	}
 
@@ -96,7 +102,7 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 		return fmt.Errorf("failed to reconcile monitoring network policy: %w", err)
 	}
 
-	if err := r.reconcilePlatformNetworkPolicies(ctx, log, createOrUpdate, hcluster, kubernetesEndpoint, managementClusterNetwork, version, controlPlaneNamespaceName); err != nil {
+	if err := r.reconcilePlatformNetworkPolicies(ctx, log, createOrUpdate, hcluster, kasBlock, managementClusterNetwork, version, controlPlaneNamespaceName); err != nil {
 		return err
 	}
 
@@ -114,15 +120,14 @@ func (r *HostedClusterReconciler) getManagementClusterNetwork(ctx context.Contex
 	return managementClusterNetwork, nil
 }
 
-//nolint:staticcheck // SA1019: corev1.Endpoints is intentionally used for backward compatibility
-func (r *HostedClusterReconciler) reconcileManagementKASPolicies(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, controlPlaneNamespaceName string, managementClusterNetwork *configv1.Network, kubernetesEndpoint *corev1.Endpoints, controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel bool) error {
+func (r *HostedClusterReconciler) reconcileManagementKASPolicies(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, controlPlaneNamespaceName string, managementClusterNetwork *configv1.Network, kasBlock []string, controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel bool) error {
 	if !controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel || hcluster.Spec.Platform.Type != hyperv1.AWSPlatform {
 		return nil
 	}
 
 	policy := networkpolicy.ManagementKASNetworkPolicy(controlPlaneNamespaceName)
 	if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
-		return reconcileManagementKASNetworkPolicy(policy, managementClusterNetwork, kubernetesEndpoint, r.ManagementClusterCapabilities.Has(capabilities.CapabilityDNS))
+		return reconcileManagementKASNetworkPolicy(policy, managementClusterNetwork, kasBlock, r.ManagementClusterCapabilities.Has(capabilities.CapabilityDNS))
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile kube-apiserver network policy: %w", err)
 	}
@@ -139,14 +144,13 @@ func (r *HostedClusterReconciler) reconcileManagementKASPolicies(ctx context.Con
 	return nil
 }
 
-//nolint:staticcheck // SA1019: corev1.Endpoints is intentionally used for backward compatibility
-func (r *HostedClusterReconciler) reconcilePlatformNetworkPolicies(ctx context.Context, log logr.Logger, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, kubernetesEndpoint *corev1.Endpoints, managementClusterNetwork *configv1.Network, version semver.Version, controlPlaneNamespaceName string) error {
+func (r *HostedClusterReconciler) reconcilePlatformNetworkPolicies(ctx context.Context, log logr.Logger, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, kasBlock []string, managementClusterNetwork *configv1.Network, version semver.Version, controlPlaneNamespaceName string) error {
 	switch hcluster.Spec.Platform.Type {
 	case hyperv1.AWSPlatform, hyperv1.AzurePlatform, hyperv1.GCPPlatform:
 		policy := networkpolicy.PrivateRouterNetworkPolicy(controlPlaneNamespaceName)
 		ingressOnly := version.Major == 4 && version.Minor < 14
 		if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
-			return reconcilePrivateRouterNetworkPolicy(policy, hcluster, kubernetesEndpoint, r.ManagementClusterCapabilities.Has(capabilities.CapabilityDNS), managementClusterNetwork, ingressOnly)
+			return reconcilePrivateRouterNetworkPolicy(policy, hcluster, kasBlock, r.ManagementClusterCapabilities.Has(capabilities.CapabilityDNS), managementClusterNetwork, ingressOnly)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile private router network policy: %w", err)
 		}
@@ -290,8 +294,7 @@ func reconcileKASNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyp
 	return nil
 }
 
-//nolint:staticcheck // SA1019: corev1.Endpoints is intentionally used for backward compatibility
-func reconcilePrivateRouterNetworkPolicy(policy *networkingv1.NetworkPolicy, _ *hyperv1.HostedCluster, kubernetesEndpoint *corev1.Endpoints, isOpenShiftDNS bool, managementClusterNetwork *configv1.Network, ingressOnly bool) error {
+func reconcilePrivateRouterNetworkPolicy(policy *networkingv1.NetworkPolicy, _ *hyperv1.HostedCluster, kasBlockExceptions []string, isOpenShiftDNS bool, managementClusterNetwork *configv1.Network, ingressOnly bool) error {
 	httpPort := intstr.FromInt(8080)
 	httpsPort := intstr.FromInt(8443)
 	protocol := corev1.ProtocolTCP
@@ -330,11 +333,12 @@ func reconcilePrivateRouterNetworkPolicy(policy *networkingv1.NetworkPolicy, _ *
 		}
 	}
 
-	// Allow to any destination not on the management cluster service network
-	// i.e. block all inter-namespace egress not allowed by other rules.
-	// Also do not allow Kubernetes endpoint IPs explicitly
-	// i.e. block access to management cluster KAS.
-	exceptions := append(kasEndpointsToCIDRs(kubernetesEndpoint), clusterNetworks...)
+	// Allow to any destination not on the management cluster pod network and
+	// not on the KAS block CIDRs (either KAS endpoint /32s or the MC machine
+	// network CIDR depending on operator configuration).
+	exceptions := make([]string, 0, len(kasBlockExceptions)+len(clusterNetworks))
+	exceptions = append(exceptions, kasBlockExceptions...)
+	exceptions = append(exceptions, clusterNetworks...)
 	policy.Spec.Egress = []networkingv1.NetworkPolicyEgressRule{
 		{
 			To: []networkingv1.NetworkPolicyPeer{
@@ -815,9 +819,7 @@ func reconcileSameNamespaceNetworkPolicy(policy *networkingv1.NetworkPolicy) err
 
 // reconcileManagementKASNetworkPolicy selects pods excluding the ones having NeedManagementKASAccessLabel and specific operands.
 // It denies egress traffic to the management cluster clusterNetwork and to the KAS endpoints.
-//
-//nolint:staticcheck // SA1019: corev1.Endpoints is intentionally used for backward compatibility
-func reconcileManagementKASNetworkPolicy(policy *networkingv1.NetworkPolicy, managementClusterNetwork *configv1.Network, kubernetesEndpoint *corev1.Endpoints, isOpenShiftDNS bool) error {
+func reconcileManagementKASNetworkPolicy(policy *networkingv1.NetworkPolicy, managementClusterNetwork *configv1.Network, kasBlockExceptions []string, isOpenShiftDNS bool) error {
 	// Allow traffic to same namespace
 	policy.Spec.Egress = []networkingv1.NetworkPolicyEgressRule{
 		{
@@ -837,11 +839,12 @@ func reconcileManagementKASNetworkPolicy(policy *networkingv1.NetworkPolicy, man
 		}
 	}
 
-	// Allow to any destination not on the management cluster service network
-	// i.e. block all inter-namespace egress not allowed by other rules.
-	// Also do not allow Kubernetes endpoint IPs explicitly
-	// i.e. block access to management cluster KAS.
-	exceptions := append(kasEndpointsToCIDRs(kubernetesEndpoint), clusterNetworks...)
+	// Allow to any destination not on the management cluster pod network and
+	// not on the KAS block CIDRs (either KAS endpoint /32s or the MC machine
+	// network CIDR depending on operator configuration).
+	exceptions := make([]string, 0, len(kasBlockExceptions)+len(clusterNetworks))
+	exceptions = append(exceptions, kasBlockExceptions...)
+	exceptions = append(exceptions, clusterNetworks...)
 	policy.Spec.Egress = append(policy.Spec.Egress,
 		networkingv1.NetworkPolicyEgressRule{
 			To: []networkingv1.NetworkPolicyPeer{

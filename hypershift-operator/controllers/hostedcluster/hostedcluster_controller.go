@@ -218,6 +218,12 @@ type HostedClusterReconciler struct {
 	// via the shared ingress. Defaults to probeSharedIngressEndpoint. Override
 	// in tests to avoid real network calls.
 	ProbeSharedIngressEndpoint func(context context.Context, serviceIP string, servicePort int, kasHostname string) bool
+	// HCPEgressBlockCIDRs, when non-empty, provides a static list of CIDRs to
+	// block in HCP namespace egress NetworkPolicies. These replace the
+	// dynamically-discovered management cluster KAS endpoint IPs, eliminating
+	// NetworkPolicy churn during KAS rolling restarts that can trigger OVN
+	// port-group reconciliation races and cause traffic drops to HCP routers.
+	HCPEgressBlockCIDRs []string
 }
 
 // +kubebuilder:rbac:groups=hypershift.openshift.io,resources=hostedclusters,verbs=get;list;watch;create;update;patch;delete
