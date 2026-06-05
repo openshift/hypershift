@@ -1,0 +1,34 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dashboard-allow-ingress
+  namespace: jira-agent-dashboard
+spec:
+  podSelector:
+    matchLabels:
+      app: jira-agent-dashboard
+      component: dashboard
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              network.openshift.io/policy-group: ingress
+      ports:
+        - port: 4443
+          protocol: TCP
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: deny-all-scraper
+  namespace: jira-agent-dashboard
+spec:
+  podSelector:
+    matchLabels:
+      app: jira-agent-dashboard
+      component: scraper
+  policyTypes:
+    - Ingress
+  ingress: []
