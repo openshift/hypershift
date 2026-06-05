@@ -18,8 +18,8 @@ import (
 // You can have a maximum of two sets of service-specific credentials for each
 // supported service per user.
 //
-// You can create service-specific credentials for Amazon Bedrock, CodeCommit and
-// Amazon Keyspaces (for Apache Cassandra).
+// You can create service-specific credentials for Amazon Bedrock, Amazon
+// CloudWatch Logs, CodeCommit and Amazon Keyspaces (for Apache Cassandra).
 //
 // You can reset the password to a new service-generated value by calling [ResetServiceSpecificCredential].
 //
@@ -66,8 +66,8 @@ type CreateServiceSpecificCredentialInput struct {
 	UserName *string
 
 	// The number of days until the service specific credential expires. This field is
-	// only valid for Bedrock API keys and must be a positive integer. When not
-	// specified, the credential will not expire.
+	// only valid for Bedrock and CloudWatch Logs API keys and must be a positive
+	// integer. When not specified, the credential will not expire.
 	CredentialAgeDays *int32
 
 	noSmithyDocumentSerde
@@ -124,7 +124,7 @@ func (c *Client) addOperationCreateServiceSpecificCredentialMiddlewares(stack *m
 	if err = addComputePayloadSHA256(stack); err != nil {
 		return err
 	}
-	if err = addRetry(stack, options); err != nil {
+	if err = addRetry(stack, options, c); err != nil {
 		return err
 	}
 	if err = addRawResponseToMetadata(stack); err != nil {
@@ -146,9 +146,6 @@ func (c *Client) addOperationCreateServiceSpecificCredentialMiddlewares(stack *m
 		return err
 	}
 	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
-		return err
-	}
-	if err = addTimeOffsetBuild(stack, c); err != nil {
 		return err
 	}
 	if err = addUserAgentRetryMode(stack, options); err != nil {
