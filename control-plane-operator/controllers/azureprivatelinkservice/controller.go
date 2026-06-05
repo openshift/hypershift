@@ -269,7 +269,7 @@ func (r *AzurePrivateLinkServiceReconciler) Reconcile(ctx context.Context, req c
 		controllerutil.AddFinalizer(azPLS, azurePrivateLinkServiceFinalizer)
 		if err := r.Update(ctx, azPLS); err != nil {
 			if apierrors.IsConflict(err) {
-				return ctrl.Result{Requeue: true}, nil
+				return ctrl.Result{RequeueAfter: time.Second}, nil
 			}
 			return ctrl.Result{}, err
 		}
@@ -368,7 +368,7 @@ func (r *AzurePrivateLinkServiceReconciler) ensureHCPFinalizer(ctx context.Conte
 	controllerutil.AddFinalizer(hcp, hcpAzurePLSFinalizerName)
 	if err := r.Patch(ctx, hcp, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{})); err != nil {
 		if apierrors.IsConflict(err) {
-			return ctrl.Result{Requeue: true}, nil
+			return ctrl.Result{RequeueAfter: time.Second}, nil
 		}
 		return ctrl.Result{}, fmt.Errorf("failed to add HCP finalizer: %w", err)
 	}
@@ -400,7 +400,7 @@ func (r *AzurePrivateLinkServiceReconciler) reconcileHCPDeletion(ctx context.Con
 	controllerutil.RemoveFinalizer(hcp, hcpAzurePLSFinalizerName)
 	if err := r.Patch(ctx, hcp, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{})); err != nil {
 		if apierrors.IsConflict(err) {
-			return ctrl.Result{Requeue: true}, nil
+			return ctrl.Result{RequeueAfter: time.Second}, nil
 		}
 		return ctrl.Result{}, fmt.Errorf("failed to remove HCP finalizer: %w", err)
 	}
