@@ -40,6 +40,7 @@ const (
 	TokenSecretAnnotation                   = "hypershift.openshift.io/ignition-config"
 	TokenSecretNodePoolUpgradeType          = "hypershift.openshift.io/node-pool-upgrade-type"
 	TokenSecretTokenGenerationTime          = "hypershift.openshift.io/last-token-generation-time"
+	TokenSecretOSStreamKey                  = "os-stream"
 	// Set the ttl 1h above the reconcile resync period so every existing
 	// token Secret has the chance to rotate their token ID during a reconciliation cycle
 	// while the expired ones get eventually garbageCollected.
@@ -83,7 +84,8 @@ func NewPayloadStore() *ExpiringCache {
 type IgnitionProvider interface {
 	// GetPayload returns the ignition payload content for
 	// the provided release image and a config string containing 0..N MachineConfig yaml definitions.
-	GetPayload(ctx context.Context, payloadImage, config, pullSecretHash, additionalTrustBundleHash, hcConfigurationHash string) ([]byte, error)
+	// osStream is the resolved RHEL OS stream name (e.g. "rhel-9", "rhel-10") or empty for legacy behavior.
+	GetPayload(ctx context.Context, payloadImage, config, pullSecretHash, additionalTrustBundleHash, hcConfigurationHash, osStream string) ([]byte, error)
 }
 
 // TokenSecretReconciler watches token Secrets
@@ -271,9 +273,10 @@ func (r *TokenSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	pullSecretHash := string(tokenSecret.Data[TokenSecretPullSecretHashKey])
 	hcConfigurationHash := string(tokenSecret.Data[TokenSecretHCConfigurationHashKey])
 	additionalTrustBundleHash := string(tokenSecret.Data[TokenSecretAdditionalTrustBundleHashKey])
+	osStream := string(tokenSecret.Data[TokenSecretOSStreamKey])
 	payload, err := func() ([]byte, error) {
 		start := time.Now()
-		payload, err := r.IgnitionProvider.GetPayload(ctx, releaseImage, config.String(), pullSecretHash, additionalTrustBundleHash, hcConfigurationHash)
+		payload, err := r.IgnitionProvider.GetPayload(ctx, releaseImage, config.String(), pullSecretHash, additionalTrustBundleHash, hcConfigurationHash, osStream)
 		if err != nil {
 			return nil, fmt.Errorf("error getting ignition payload: %w", err)
 		}

@@ -34,3 +34,22 @@ func DeserializeImageMetadata(data []byte) (*CoreOSStreamMetadata, error) {
 	}
 	return &coreOSMeta, nil
 }
+
+// DeserializeMultiStreamImageMetadata reads the "streams" key from a boot image
+// ConfigMap for payloads that carry multiple OS streams (e.g. rhel-9 and rhel-10).
+// Returns nil if the "streams" key is absent (legacy single-stream payload).
+func DeserializeMultiStreamImageMetadata(data []byte) (map[string]*CoreOSStreamMetadata, error) {
+	var coreOSMetaCM corev1.ConfigMap
+	if err := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(data), 100).Decode(&coreOSMetaCM); err != nil {
+		return nil, fmt.Errorf("couldn't read image lookup data as serialized ConfigMap: %w\nraw data:\n%s", err, string(data))
+	}
+	streamsData, hasStreamsData := coreOSMetaCM.Data["streams"]
+	if !hasStreamsData {
+		return nil, nil
+	}
+	var streams map[string]*CoreOSStreamMetadata
+	if err := json.Unmarshal([]byte(streamsData), &streams); err != nil {
+		return nil, fmt.Errorf("couldn't decode multi-stream metadata: %w\n%s", err, streamsData)
+	}
+	return streams, nil
+}

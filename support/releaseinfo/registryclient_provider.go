@@ -41,8 +41,13 @@ func (p *RegistryClientProvider) Lookup(ctx context.Context, image string, pullS
 		return nil, err
 	}
 
+	// Parse multi-stream metadata if present (5.0+ payloads).
+	// Errors are non-fatal since the legacy single-stream is sufficient for < 5.0.
+	streamsMeta, _ := DeserializeMultiStreamImageMetadata(fileContents[ReleaseImageMetadataFile])
+
 	return &ReleaseImage{
-		ImageStream:    imageStream,
-		StreamMetadata: coreOSMeta,
+		ImageStream:     imageStream,
+		StreamMetadata:  coreOSMeta,
+		StreamsMetadata: streamsMeta,
 	}, nil
 }

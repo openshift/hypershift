@@ -38,7 +38,8 @@ type ProviderWithOpenShiftImageRegistryOverrides interface {
 // discover constituent component image information.
 type ReleaseImage struct {
 	*imageapi.ImageStream `json:",inline"`
-	StreamMetadata        *CoreOSStreamMetadata `json:"streamMetadata"`
+	StreamMetadata        *CoreOSStreamMetadata            `json:"streamMetadata"`
+	StreamsMetadata       map[string]*CoreOSStreamMetadata `json:"streamsMetadata,omitempty"`
 }
 
 type CoreOSStreamMetadata struct {
