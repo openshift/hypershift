@@ -443,8 +443,8 @@ github.com/googleapis/gax-go/v2 v2.22.0 h1:PjIWBpgGIVKGoCXuiCoP64altEJCj3/Ei+kSU
 github.com/googleapis/gax-go/v2 v2.22.0/go.mod h1:irWBbALSr0Sk3qlqb9SyJ1h68WjgeFuiOzI4Rqw5+aY=
 github.com/googleapis/gnostic v0.5.1/go.mod h1:6U4PtQXGIEt/Z3h5MAT7FNofLnw9vXk2cUuW7uA/OeU=
 github.com/googleapis/gnostic v0.5.5/go.mod h1:7+EbHbldMins07ALC74bsA81Ovc97DwqyJO1AENw9kA=
-github.com/gophercloud/gophercloud/v2 v2.10.0 h1:NRadC0aHNvy4iMoFXj5AFiPmut/Sj3hAPAo9B59VMGc=
-github.com/gophercloud/gophercloud/v2 v2.10.0/go.mod h1:Ki/ILhYZr/5EPebrPL9Ej+tUg4lqx71/YH2JWVeU+Qk=
+github.com/gophercloud/gophercloud/v2 v2.12.0 h1:Gxmc/Bog1UDKkxTcQW7MSPTDviJXpLeEgVeN5KrxoCo=
+github.com/gophercloud/gophercloud/v2 v2.12.0/go.mod h1:H7TTOxbLy8RIaHSNhI2GCrWIzw4Xpw8Xn2mBhCUT5kA=
 github.com/gorilla/mux v1.8.0/go.mod h1:DVbg23sWSpFRCP0SfiEN6jmj59UnW/n46BH5rLB71So=
 github.com/gorilla/mux v1.8.1 h1:TuBL49tXwgrFYWhqrNgrUNEY92u81SPhu7sTdzQEiWY=
 github.com/gorilla/mux v1.8.1/go.mod h1:AKf9I4AEqPTmMytcMc0KkNouC66V3BtZ4qD5fmWSiMQ=
@@ -498,6 +498,8 @@ github.com/json-iterator/go v1.1.7/go.mod h1:KdQUCv79m/52Kvf8AW2vK1V8akMuk1QjK/u
 github.com/json-iterator/go v1.1.12 h1:PV8peI4a0ysnczrg+LtxykD8LfKY9ML6u2jnxaEnrnM=
 github.com/json-iterator/go v1.1.12/go.mod h1:e30LSqwooZae/UwlEbR2852Gd8hjQvJoHmT4TnhNGBo=
 github.com/julienschmidt/httprouter v1.2.0/go.mod h1:SYymIcj16QtmaHHD7aYtjjsJG7VTCxuUUipMqKk8s4w=
+github.com/k-orc/openstack-resource-controller/v2 v2.6.0 h1:KKmdPiec2rzXv8NWWF01qQT6pIp4pILhDTnj45Nq7Uc=
+github.com/k-orc/openstack-resource-controller/v2 v2.6.0/go.mod h1:4G1kcWulFGyWqzde7AyCRjA6qpuZ8V4B3O3eluN3djU=
 github.com/keybase/go-keychain v0.0.1 h1:way+bWYa6lDppZoZcgMbYsvC7GxljxrskdNInRtuthU=
 github.com/keybase/go-keychain v0.0.1/go.mod h1:PdEILRW3i9D8JcdM+FmY6RwkHGnhHxXwkPPMeUgOK1k=
 github.com/kisielk/errcheck v1.5.0/go.mod h1:pFxgyoBC7bSaBwPgfKdkLd5X25qrDl4LWUI2bnpBCr8=
@@ -595,8 +597,8 @@ github.com/onsi/gomega v1.7.1/go.mod h1:XdKZgCCFLUoM/7CFJVPcG8C1xQ1AJ0vpAezJrB7J
 github.com/onsi/gomega v1.10.1/go.mod h1:iN09h71vgCQne3DLsj+A5owkum+a2tYe+TOCB1ybHNo=
 github.com/onsi/gomega v1.17.0/go.mod h1:HnhC7FXeEQY45zxNK3PPoIUhzk/80Xly9PcubAlGdZY=
 github.com/onsi/gomega v1.18.1/go.mod h1:0q+aL8jAiMXy9hbwj2mr5GziHiwhAIQpFmmtT5hitRs=
-github.com/onsi/gomega v1.40.0 h1:Vtol0e1MghCD2ZVIilPDIg44XSL9l2QAn8ZNaljWcJc=
-github.com/onsi/gomega v1.40.0/go.mod h1:M/Uqpu/8qTjtzCLUA2zJHX9Iilrau25x1PdoSRbWh5A=
+github.com/onsi/gomega v1.41.0 h1:OwKp4pXNgVxf6sCplzYo794OFNuoL2q2SBMU5NSWOjA=
+github.com/onsi/gomega v1.41.0/go.mod h1:M/Uqpu/8qTjtzCLUA2zJHX9Iilrau25x1PdoSRbWh5A=
 github.com/opencontainers/go-digest v1.0.0 h1:apOUWs51W5PlhuyGyz9FCeeBIOUDA/6nW8Oi/yOhh5U=
 github.com/opencontainers/go-digest v1.0.0/go.mod h1:0JzlMkj0TRzQZfJkVvzbP0HBR3IKzErnv2BNG4W4MAM=
 github.com/opencontainers/image-spec v1.1.1 h1:y0fUlFfIZhPF1W537XOLg0/fcx6zcHCJwooC2xJA040=
@@ -1084,10 +1086,8 @@ sigs.k8s.io/cluster-api-provider-ibmcloud v0.12.0 h1:0+jfWLg+UmnGOdHZ9SrEpnUJgQP
 sigs.k8s.io/cluster-api-provider-ibmcloud v0.12.0/go.mod h1:OENB/2pEx2IgYAovlV7qHvOJYyBoKc94TxNqnjjyWYs=
 sigs.k8s.io/cluster-api-provider-kubevirt v0.11.1 h1:6He4EkFNVsEpYsObVRh1agt1/CxhqdqsOvEvyjRWWzk=
 sigs.k8s.io/cluster-api-provider-kubevirt v0.11.1/go.mod h1:so1WRGRRsxT4lqS0htpUqXrXLy0guBklh9UPVxoilLY=
-sigs.k8s.io/cluster-api-provider-openstack v0.13.3 h1:qBPgWG1E3wiiK8+VR5a3jnKGTyDPo6ZbXruTLOXw/3w=
-sigs.k8s.io/cluster-api-provider-openstack v0.13.3/go.mod h1:McuqrgmgsbK4yaC1HKqJ7dxKnOERmXQedUUL15sqelQ=
-sigs.k8s.io/cluster-api-provider-openstack/orc v0.0.0-20250113192833-e4f56a2b4f32 h1:AkFSgi+dAnPLtg+SXjtCf3rDzjI/mskDiJ1PWHZoRno=
-sigs.k8s.io/cluster-api-provider-openstack/orc v0.0.0-20250113192833-e4f56a2b4f32/go.mod h1:hQOMZZjzuAt9pdLaE/tj5ByDTVNBkqNaP10ijnqNZfU=
+sigs.k8s.io/cluster-api-provider-openstack v0.14.4 h1:dvvDcPkvXqGJD/C+FchNWqW6E2OlREviJ/AJ8S6Z+uk=
+sigs.k8s.io/cluster-api-provider-openstack v0.14.4/go.mod h1:OJRiKdPY3SoYKMXDbzVgqwa9j8GBie31Pt8oiMtVT2Q=
 sigs.k8s.io/controller-runtime v0.22.5 h1:v3nfSUMowX/2WMp27J9slwGFyAt7IV0YwBxAkrUr0GE=
 sigs.k8s.io/controller-runtime v0.22.5/go.mod h1:pc5SoYWnWI6I+cBHYYdZ7B6YHZVY5xNfll88JB+vniI=
 sigs.k8s.io/json v0.0.0-20211020170558-c049b76a60c6/go.mod h1:p4QtZmO4uMYipTQNzagwnNoseA6OxSUutVw05NhYDRs=
@@ -1105,8 +1105,8 @@ sigs.k8s.io/secrets-store-csi-driver v1.4.8 h1:YmL0lx9HMYqeZCnLyOZRMuGAZXmP/e42U
 sigs.k8s.io/secrets-store-csi-driver v1.4.8/go.mod h1:IawZyjzh3xGt6hHdckJUf3ls04O0zG5H550PEZz/beo=
 sigs.k8s.io/structured-merge-diff/v4 v4.0.2/go.mod h1:bJZC9H9iH24zzfZ/41RGcq60oK1F7G282QMXDPYydCw=
 sigs.k8s.io/structured-merge-diff/v4 v4.2.1/go.mod h1:j/nl6xW8vLS49O8YvXW1ocPhZawJtm+Yrr7PPRQ0Vg4=
-sigs.k8s.io/structured-merge-diff/v6 v6.3.2 h1:kwVWMx5yS1CrnFWA/2QHyRVJ8jM6dBA80uLmm0wJkk8=
-sigs.k8s.io/structured-merge-diff/v6 v6.3.2/go.mod h1:M3W8sfWvn2HhQDIbGWj3S099YozAsymCo/wrT5ohRUE=
+sigs.k8s.io/structured-merge-diff/v6 v6.4.0 h1:qmp2e3ZfFi1/jJbDGpD4mt3wyp6PE1NfKHCYLqgNQJo=
+sigs.k8s.io/structured-merge-diff/v6 v6.4.0/go.mod h1:M3W8sfWvn2HhQDIbGWj3S099YozAsymCo/wrT5ohRUE=
 sigs.k8s.io/yaml v1.2.0/go.mod h1:yfXDCHCao9+ENCvLSE62v9VSji2MKu5jeNfTrofGhJc=
 sigs.k8s.io/yaml v1.3.0/go.mod h1:GeOyir5tyXNByN85N/dRIT9es5UQNerPYEKK56eTBm8=
 sigs.k8s.io/yaml v1.6.0 h1:G8fkbMSAFqgEFgh4b1wmtzDnioxFCUgTZhlbj5P9QYs=

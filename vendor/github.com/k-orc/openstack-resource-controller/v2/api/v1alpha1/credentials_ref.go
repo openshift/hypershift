@@ -16,21 +16,28 @@ limitations under the License.
 
 package v1alpha1
 
+const (
+	// CloudCredentialsConfigSecretKey is the key for the clouds configuration in the cloud credentials secret.
+	CloudCredentialsConfigSecretKey = "clouds.yaml"
+	// CloudCredencialsCASecretKey is the key for the CA certificate in the cloud credentials secret.
+	CloudCredencialsCASecretKey = "cacert"
+)
+
 // CloudCredentialsReference is a reference to a secret containing OpenStack credentials.
 type CloudCredentialsReference struct {
-	// SecretName is the name of a secret in the same namespace as the resource being provisioned.
+	// secretName is the name of a secret in the same namespace as the resource being provisioned.
 	// The secret must contain a key named `clouds.yaml` which contains an OpenStack clouds.yaml file.
 	// The secret may optionally contain a key named `cacert` containing a PEM-encoded CA certificate.
-	// +kubebuilder:validation:Required
+	// +required
 	// +kubebuilder:validation:MinLength:=1
 	// +kubebuilder:validation:MaxLength:=253
-	SecretName string `json:"secretName"`
+	SecretName string `json:"secretName,omitempty"`
 
-	// CloudName specifies the name of the entry in the clouds.yaml file to use.
-	// +kubebuilder:validation:Required
+	// cloudName specifies the name of the entry in the clouds.yaml file to use.
+	// +required
 	// +kubebuilder:validation:MinLength:=1
 	// +kubebuilder:validation:MaxLength:=256
-	CloudName string `json:"cloudName"`
+	CloudName string `json:"cloudName,omitempty"`
 }
 
 // CloudCredentialsRefProvider is an interface for obtaining OpenStack credentials from an API object

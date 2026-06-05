@@ -14,7 +14,7 @@ import (
 	capiopenstackv1beta1 "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	orc "github.com/k-orc/openstack-resource-controller/api/v1alpha1"
+	orc "github.com/k-orc/openstack-resource-controller/v2/api/v1alpha1"
 )
 
 func MachineTemplateSpec(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool, releaseImage *releaseinfo.ReleaseImage) (*capiopenstackv1beta1.OpenStackMachineTemplateSpec, error) {
@@ -111,7 +111,7 @@ func ReconcileOpenStackImageSpec(hcluster *hyperv1.HostedCluster, openStackImage
 	}
 
 	openStackImageSpec.Resource = &orc.ImageResourceSpec{
-		Name: imageName,
+		Name: &imageName,
 		Content: &orc.ImageContent{
 			ContainerFormat: "bare",
 			DiskFormat:      "qcow2",
@@ -166,10 +166,10 @@ func OpenStackReleaseImage(releaseImage *releaseinfo.ReleaseImage) (string, erro
 }
 
 // PrefixedClusterImageName returns a prefixed name of the image for the given HostedCluster.
-func PrefixedClusterImageName(hcluster *hyperv1.HostedCluster, releaseImage *releaseinfo.ReleaseImage) (string, error) {
+func PrefixedClusterImageName(hcluster *hyperv1.HostedCluster, releaseImage *releaseinfo.ReleaseImage) (orc.OpenStackName, error) {
 	releaseVersion, err := OpenStackReleaseImage(releaseImage)
 	if err != nil {
 		return "", err
 	}
-	return hcluster.Name + "-rhcos-" + releaseVersion, nil
+	return orc.OpenStackName(hcluster.Name + "-rhcos-" + releaseVersion), nil
 }

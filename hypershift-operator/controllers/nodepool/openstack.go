@@ -15,7 +15,7 @@ import (
 	capiopenstackv1beta1 "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	orc "github.com/k-orc/openstack-resource-controller/api/v1alpha1"
+	orc "github.com/k-orc/openstack-resource-controller/v2/api/v1alpha1"
 )
 
 func (c *CAPI) openstackMachineTemplate(templateNameGenerator func(spec any) (string, error)) (*capiopenstackv1beta1.OpenStackMachineTemplate, error) {

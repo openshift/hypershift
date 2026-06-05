@@ -441,9 +441,10 @@ func (a OpenStack) CAPIProviderPolicyRules() []rbacv1.PolicyRule {
 		},
 		// We deploy ORC in the same namespace as the CAPI provider, so we need to create the
 		// necessary RBAC policy rules for ORC to manage the OpenStack resources.
+		// Note that we use a wildcard here ORC has a lot of resources.
 		{
 			APIGroups: []string{"openstack.k-orc.cloud"},
-			Resources: []string{"images", "images/status"},
+			Resources: []string{"*"},
 			Verbs:     []string{rbacv1.VerbAll},
 		},
 	}

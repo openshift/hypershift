@@ -62,7 +62,7 @@ import (
 	secretsstorev1 "sigs.k8s.io/secrets-store-csi-driver/apis/v1"
 
 	"github.com/go-logr/logr"
-	orcv1alpha1 "github.com/k-orc/openstack-resource-controller/api/v1alpha1"
+	orcv1alpha1 "github.com/k-orc/openstack-resource-controller/v2/api/v1alpha1"
 	snapshotv1 "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	"github.com/spf13/cobra"
