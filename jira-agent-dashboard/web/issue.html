@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Issue Detail - JIRA Agent Dashboard</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="container">
+    <nav>
+      <h1>JIRA Agent</h1>
+      <ul>
+        <li><a href="index.html">Overview</a></li>
+        <li><a href="issues.html">Issues</a></li>
+        <li><a href="comments.html">Comments</a></li>
+      </ul>
+    </nav>
+
+    <main>
+      <!-- Breadcrumb -->
+      <div class="breadcrumb">
+        <a href="index.html">Overview</a> &gt;
+        <a href="issues.html">Issues</a> &gt;
+        <span id="breadcrumb-key">Loading...</span>
+      </div>
+
+      <!-- Issue Header -->
+      <div class="issue-header" id="issue-header">
+        <div class="loading">Loading issue details</div>
+      </div>
+
+      <!-- Phase Breakdown -->
+      <div class="phase-breakdown">
+        <h3>Phase Breakdown</h3>
+        <div id="phase-breakdown" style="height: 300px;">
+          <canvas id="phase-chart"></canvas>
+        </div>
+      </div>
+
+      <!-- PR Metrics -->
+      <h3 style="margin-bottom: 15px;">PR Metrics</h3>
+      <div class="metrics-grid" id="pr-metrics">
+        <div class="loading">Loading metrics</div>
+      </div>
+
+      <!-- Review Comments -->
+      <div class="comments-section">
+        <h3>Review Comments</h3>
+        <div id="comments-list">
+          <div class="loading">Loading comments</div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="js/app.js"></script>
+  <script src="js/issue-detail.js"></script>
+</body>
+</html>
