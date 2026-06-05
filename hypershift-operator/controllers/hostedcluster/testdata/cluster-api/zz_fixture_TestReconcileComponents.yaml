@@ -7,7 +7,7 @@ metadata:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: cluster-api
   namespace: hcp-namespace
-  resourceVersion: "1"
+  resourceVersion: "2"
 spec:
   replicas: 1
   revisionHistoryLimit: 2

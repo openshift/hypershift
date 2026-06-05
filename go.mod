@@ -66,9 +66,9 @@ require (
 	github.com/openshift/cloud-credential-operator v0.0.0-20250225003505-216fd1a30ec3
 	github.com/openshift/cluster-api-provider-agent/api v0.0.0-20260120122324-898e638ec7d1
 	github.com/openshift/cluster-autoscaler-operator v0.0.1-0.20241204142113-43631b045675
-	github.com/openshift/cluster-node-tuning-operator v0.0.0-20250225115807-f166846b7256
+	github.com/openshift/cluster-node-tuning-operator v0.0.0-20260527203700-73801cc280b3
 	github.com/openshift/custom-resource-status v1.1.3-0.20220503160415-f2fdb4999d87
-	github.com/openshift/hypershift/api v0.0.0-20240604072534-cd2d5291e2b7
+	github.com/openshift/hypershift/api v0.0.0-20250724113115-0281b49cc465
 	github.com/openshift/library-go v0.0.0-20251204132909-8814e976a023
 	github.com/openshift/multi-operator-manager v0.0.0-20260112172834-b64ebc8c627b
 	github.com/operator-framework/api v0.37.0
@@ -301,7 +301,7 @@ require (
 	k8s.io/csi-translation-lib v0.35.0 // indirect
 	k8s.io/kms v0.35.1 // indirect
 	k8s.io/kube-openapi v0.0.0-20251125145642-4e65d59e963e // indirect
-	k8s.io/kubelet v0.32.2 // indirect
+	k8s.io/kubelet v0.33.3 // indirect
 	kubevirt.io/controller-lifecycle-operator-sdk/api v0.2.4 // indirect
 	sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.33.0 // indirect
 	sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730 // indirect
@@ -318,9 +318,6 @@ replace github.com/k-orc/openstack-resource-controller => sigs.k8s.io/cluster-ap
 
 // CVE-2025-30204
 replace github.com/golang-jwt/jwt/v4 => github.com/golang-jwt/jwt/v4 v4.5.2
-
-// webhook.Validator deprecation in v0.20 breaks everything, conversion is nontrivial
-replace sigs.k8s.io/controller-runtime => sigs.k8s.io/controller-runtime v0.19.7
 
 // Use our openshift version of karpenter instead of upstream
 replace github.com/aws/karpenter-provider-aws => github.com/openshift/aws-karpenter-provider-aws v0.0.0-20260311064431-f0be9c72e5bf
