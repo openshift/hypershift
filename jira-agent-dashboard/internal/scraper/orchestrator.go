@@ -74,13 +74,13 @@ func (o *Orchestrator) RunStep(ctx context.Context, step string) error {
 	switch step {
 	case "prow":
 		log.Println("Scraping new job runs from Prow CI artifacts...")
-		return o.scrapeNewJobRuns(ctx)
+		return o.runAndRecord(ctx, "prow", func() error { return o.scrapeNewJobRuns(ctx) })
 	case "github":
 		log.Println("Refreshing PR state and comments from GitHub...")
-		return o.refreshGitHub(ctx)
+		return o.runAndRecord(ctx, "github", func() error { return o.refreshGitHub(ctx) })
 	case "complexity":
 		log.Println("Analyzing PR complexity...")
-		return o.analyzeComplexity(ctx)
+		return o.runAndRecord(ctx, "complexity", func() error { return o.analyzeComplexity(ctx) })
 	case "fix-timestamps":
 		log.Println("Fixing job run timestamps from GCS metadata...")
 		return o.fixTimestamps(ctx)
@@ -101,16 +101,16 @@ func (o *Orchestrator) RunStep(ctx context.Context, step string) error {
 		return o.ExportUnclassified(ctx, o.outputPath)
 	case "import-classifications":
 		log.Println("Importing comment classifications...")
-		return o.ImportClassifications(ctx, o.inputPath)
+		return o.runAndRecord(ctx, "classify", func() error { return o.ImportClassifications(ctx, o.inputPath) })
 	case "all":
 		log.Println("Starting full scrape cycle...")
-		if err := o.scrapeNewJobRuns(ctx); err != nil {
+		if err := o.runAndRecord(ctx, "prow", func() error { return o.scrapeNewJobRuns(ctx) }); err != nil {
 			return fmt.Errorf("scraping new job runs: %w", err)
 		}
-		if err := o.refreshGitHub(ctx); err != nil {
+		if err := o.runAndRecord(ctx, "github", func() error { return o.refreshGitHub(ctx) }); err != nil {
 			return fmt.Errorf("refreshing GitHub: %w", err)
 		}
-		if err := o.analyzeComplexity(ctx); err != nil {
+		if err := o.runAndRecord(ctx, "complexity", func() error { return o.analyzeComplexity(ctx) }); err != nil {
 			return fmt.Errorf("analyzing complexity: %w", err)
 		}
 		log.Println("Scrape cycle complete.")
@@ -118,6 +118,25 @@ func (o *Orchestrator) RunStep(ctx context.Context, step string) error {
 	default:
 		return fmt.Errorf("unknown step %q, valid steps: prow, github, complexity, all", step)
 	}
+}
+
+func (o *Orchestrator) runAndRecord(_ context.Context, step string, fn func() error) error {
+	start := time.Now()
+	err := fn()
+	status := "success"
+	if err != nil {
+		status = "failure"
+	}
+	recordErr := o.store.RecordScraperRun(&db.ScraperRun{
+		Step:       step,
+		StartedAt:  start,
+		FinishedAt: time.Now(),
+		Status:     status,
+	})
+	if recordErr != nil {
+		log.Printf("Warning: could not record scraper run for step %s: %v", step, recordErr)
+	}
+	return err
 }
 
 // scrapeNewJobRuns lists builds from GCS and imports any that are not yet in the DB.

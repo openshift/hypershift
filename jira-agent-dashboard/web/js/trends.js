@@ -427,8 +427,69 @@ function setupTimeRangeHandlers() {
   document.getElementById('date-to').addEventListener('change', applyCustomDateRange);
 }
 
+// --- Scraper Status Banner ---
+
+const STEP_INFO = {
+  prow:     { label: 'Prow Scrape',    tip: 'Last time the Prow scraper ran to import new jira-agent job runs, issues, and phase metrics from CI build logs' },
+  github:   { label: 'GitHub Sync',    tip: 'Last time PR state, diff stats, and review comments were refreshed from GitHub' },
+  classify: { label: 'Classification', tip: 'Last time the comment classification job ran to assign severity and topic labels to review comments using Claude' }
+};
+
+function timeAgo(isoStr) {
+  const ms = Date.now() - new Date(isoStr).getTime();
+  const mins = Math.floor(ms / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return mins + 'm ago';
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return hours + 'h ago';
+  const days = Math.floor(hours / 24);
+  return days + 'd ago';
+}
+
+function staleness(isoStr, step) {
+  const hours = (Date.now() - new Date(isoStr).getTime()) / 3600000;
+  const threshold = step === 'classify' ? 48 : 24;
+  if (hours > threshold * 2) return 'error';
+  if (hours > threshold) return 'stale';
+  return 'ok';
+}
+
+async function loadScraperStatus() {
+  const container = document.getElementById('scraper-status');
+  if (!container) return;
+  try {
+    const runs = await fetchAPI('/api/scraper-status');
+    const byStep = {};
+    (runs || []).forEach(r => { byStep[r.step] = r; });
+
+    container.innerHTML = Object.keys(STEP_INFO).map(step => {
+      const info = STEP_INFO[step];
+      const r = byStep[step];
+      if (!r) {
+        return `<div class="scraper-status-item">
+          <span class="step-dot stale"></span>
+          <span class="step-label">${escapeHTML(info.label)} <span class="info-tip" data-tip="${escapeHTML(info.tip)}">i</span></span>
+          <span class="step-time">awaiting first run</span>
+        </div>`;
+      }
+      const dot = r.status === 'failure' ? 'error' : staleness(r.finished_at, step);
+      const statusSuffix = r.status === 'failure' ? ' (failed)' : '';
+      const ts = new Date(r.finished_at);
+      const fmtTime = ts.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ' ' + ts.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+      return `<div class="scraper-status-item">
+        <span class="step-dot ${dot}"></span>
+        <span class="step-label">${escapeHTML(info.label)} <span class="info-tip" data-tip="${escapeHTML(info.tip)}">i</span></span>
+        <span class="step-time">${fmtTime} (${timeAgo(r.finished_at)})${statusSuffix}</span>
+      </div>`;
+    }).join('');
+  } catch {
+    container.style.display = 'none';
+  }
+}
+
 // Initialize on page load — default to last 7 days
 document.addEventListener('DOMContentLoaded', () => {
   setupTimeRangeHandlers();
   applyRange('7d');
+  loadScraperStatus();
 });

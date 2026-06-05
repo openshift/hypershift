@@ -80,6 +80,15 @@ type IssueWithBuildID struct {
 	BuildID string
 }
 
+type ScraperRun struct {
+	ID             int64
+	Step           string
+	StartedAt      time.Time
+	FinishedAt     time.Time
+	Status         string
+	ItemsProcessed int
+}
+
 type WeeklyTrend struct {
 	WeekStart         time.Time
 	TotalIssues       int

@@ -77,6 +77,15 @@ CREATE TABLE IF NOT EXISTS pr_complexity (
 	cognitive_complexity_delta REAL,
 	complexity_analyzed INTEGER DEFAULT 0
 );
+
+CREATE TABLE IF NOT EXISTS scraper_runs (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	step TEXT NOT NULL,
+	started_at DATETIME NOT NULL,
+	finished_at DATETIME NOT NULL,
+	status TEXT NOT NULL,
+	items_processed INTEGER DEFAULT 0
+);
 `
 	_, err = db.Exec(schema)
 	if err != nil {

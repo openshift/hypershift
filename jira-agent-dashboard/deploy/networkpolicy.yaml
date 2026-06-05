@@ -18,6 +18,8 @@ spec:
       ports:
         - port: 4443
           protocol: TCP
+        - port: 8080
+          protocol: TCP
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

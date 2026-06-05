@@ -275,7 +275,7 @@ function renderCommentList(comments) {
     const confidenceHTML = comment.confidence != null
       ? `<span class="classification-label">Confidence:</span> <span class="tag confidence" title="Classification confidence">${(comment.confidence * 100).toFixed(0)}%</span>`
       : '';
-    const editLink = comment.issue_id
+    const editLink = comment.issue_id && !window.location.hostname.startsWith('dashboard-public')
       ? `<a href="issue.html?id=${comment.issue_id}" class="edit-classification-link" title="Edit classification on issue detail page">Edit</a>`
       : '';
     classDiv.innerHTML = `

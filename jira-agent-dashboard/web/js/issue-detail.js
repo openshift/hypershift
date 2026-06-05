@@ -205,6 +205,7 @@ function renderPRMetrics() {
 // Render review comments list
 function renderReviewComments() {
   const container = document.getElementById('comments-list');
+  const isReadOnly = window.location.hostname.startsWith('dashboard-public');
 
   if (!issueData.comments || issueData.comments.length === 0) {
     container.innerHTML = '<p>No review comments found.</p>';
@@ -237,14 +238,14 @@ function renderReviewComments() {
       <div class="comment-body">${escapeHTML(comment.body || '')}</div>
       <div class="comment-classification">
         <label>Severity:</label>
-        <select class="severity-select" data-comment-id="${comment.id}">
+        <select class="severity-select" data-comment-id="${comment.id}" ${isReadOnly ? 'disabled' : ''}>
           ${severitySelect}
         </select>
         <label>Topic:</label>
-        <select class="topic-select" data-comment-id="${comment.id}">
+        <select class="topic-select" data-comment-id="${comment.id}" ${isReadOnly ? 'disabled' : ''}>
           ${topicSelect}
         </select>
-        <button class="save-btn" data-comment-id="${comment.id}">Save</button>
+        ${isReadOnly ? '' : `<button class="save-btn" data-comment-id="${comment.id}">Save</button>`}
       </div>
     `;
 

@@ -21,6 +21,7 @@ func NewServer(store *db.Store, webDir string) *Server {
 	s.mux.HandleFunc("GET /api/comments/summary", s.handleGetCommentsSummary)
 	s.mux.HandleFunc("GET /api/comments/{issueID}", s.handleGetComments)
 	s.mux.HandleFunc("PATCH /api/comments/{id}", s.handlePatchComment)
+	s.mux.HandleFunc("GET /api/scraper-status", s.handleGetScraperStatus)
 	fs := http.FileServer(http.Dir(webDir))
 	s.mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-cache, must-revalidate")

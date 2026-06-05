@@ -316,6 +316,11 @@ func (s *Server) handleGetComments(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handlePatchComment(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("X-Forwarded-User") == "" {
+		http.Error(w, "authentication required", http.StatusForbidden)
+		return
+	}
+
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		http.Error(w, "invalid comment id", http.StatusBadRequest)
@@ -441,6 +446,26 @@ func calculateQualityScore(prState string, comments []db.ReviewComment, linesCha
 	}
 
 	return outcome + severity + density + topics
+}
+
+func (s *Server) handleGetScraperStatus(w http.ResponseWriter, _ *http.Request) {
+	runs, err := s.store.GetLatestScraperRuns()
+	if err != nil {
+		internalError(w, "fetching scraper status", err)
+		return
+	}
+
+	result := make([]ScraperStatus, len(runs))
+	for i, r := range runs {
+		result[i] = ScraperStatus{
+			Step:           r.Step,
+			FinishedAt:     r.FinishedAt.Format("2006-01-02T15:04:05Z"),
+			Status:         r.Status,
+			ItemsProcessed: r.ItemsProcessed,
+		}
+	}
+
+	writeJSON(w, result)
 }
 
 func parseDateRange(r *http.Request) (time.Time, time.Time, error) {

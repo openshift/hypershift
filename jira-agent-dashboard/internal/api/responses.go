@@ -81,3 +81,11 @@ type ClassificationUpdate struct {
 	Topic      string   `json:"topic"`
 	Confidence *float64 `json:"confidence,omitempty"`
 }
+
+// ScraperStatus represents the most recent run of a scraper step.
+type ScraperStatus struct {
+	Step           string `json:"step"`
+	FinishedAt     string `json:"finished_at"`
+	Status         string `json:"status"`
+	ItemsProcessed int    `json:"items_processed"`
+}

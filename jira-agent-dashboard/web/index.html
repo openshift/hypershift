@@ -22,6 +22,17 @@
         <h2>Dashboard Overview</h2>
       </div>
 
+      <!-- About + Pipeline Status -->
+      <div class="overview-hero">
+        <div class="overview-about">
+          <p>This dashboard tracks the <strong>HyperShift JIRA Agent</strong> — an automated system that picks up Jira issues, generates code fixes with Claude, opens pull requests, and responds to reviewer feedback. It scrapes Prow CI artifacts and GitHub to surface issue outcomes, cost breakdowns, merge timelines, and review comment analysis across every agent run.</p>
+        </div>
+        <div class="overview-pipeline">
+          <h4>Pipeline Status</h4>
+          <div id="scraper-status" class="scraper-status-list"></div>
+        </div>
+      </div>
+
       <!-- Time Range Selector -->
       <div class="time-range">
         <label>Time Range:</label>

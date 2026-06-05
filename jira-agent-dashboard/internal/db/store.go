@@ -712,6 +712,38 @@ ORDER BY week_start
 	return trends, rows.Err()
 }
 
+// RecordScraperRun inserts a scraper run record.
+func (s *Store) RecordScraperRun(run *ScraperRun) error {
+	_, err := s.db.Exec(
+		`INSERT INTO scraper_runs (step, started_at, finished_at, status, items_processed) VALUES (?, ?, ?, ?, ?)`,
+		run.Step, run.StartedAt, run.FinishedAt, run.Status, run.ItemsProcessed,
+	)
+	return err
+}
+
+// GetLatestScraperRuns returns the most recent run for each step.
+func (s *Store) GetLatestScraperRuns() ([]ScraperRun, error) {
+	rows, err := s.db.Query(
+		`SELECT id, step, started_at, finished_at, status, items_processed
+		 FROM scraper_runs
+		 WHERE id IN (SELECT MAX(id) FROM scraper_runs GROUP BY step)
+		 ORDER BY step`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var runs []ScraperRun
+	for rows.Next() {
+		var r ScraperRun
+		if err := rows.Scan(&r.ID, &r.Step, &r.StartedAt, &r.FinishedAt, &r.Status, &r.ItemsProcessed); err != nil {
+			return nil, err
+		}
+		runs = append(runs, r)
+	}
+	return runs, rows.Err()
+}
+
 func nilIfEmpty(s string) interface{} {
 	if s == "" {
 		return nil

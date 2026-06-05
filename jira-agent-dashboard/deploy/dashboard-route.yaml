@@ -12,3 +12,18 @@ spec:
   tls:
     termination: reencrypt
     insecureEdgeTerminationPolicy: Redirect
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: dashboard-public
+  namespace: jira-agent-dashboard
+spec:
+  to:
+    kind: Service
+    name: dashboard
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
