@@ -465,12 +465,34 @@ func TestReconcileServiceStatus(t *testing.T) {
 		expectedErr     error
 	}{
 		{
-			name: "When LoadBalancer strategy has a configured hostname, it should return the hostname without waiting for LB provisioning",
+			name: "When LoadBalancer strategy has a configured hostname but LB is not provisioned, it should still wait for LB",
 			svc: &corev1.Service{
 				ObjectMeta: v1.ObjectMeta{
 					CreationTimestamp: v1.NewTime(time.Now().Add(-5 * time.Minute)),
 				},
 				// No LoadBalancer ingress status — LB not yet provisioned
+			},
+			strategy: &hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.LoadBalancer,
+				LoadBalancer: &hyperv1.LoadBalancerPublishingStrategy{
+					Hostname: "kube-apiserver.my-hcp-ns.svc.cluster.local",
+				},
+			},
+			apiServerPort:   config.KASSVCPort,
+			expectedHost:    "",
+			expectedPort:    0,
+			expectedMessage: "load balancer is not provisioned",
+		},
+		{
+			name: "When LoadBalancer strategy has a configured hostname and LB is provisioned, it should return the configured hostname",
+			svc: &corev1.Service{
+				Status: corev1.ServiceStatus{
+					LoadBalancer: corev1.LoadBalancerStatus{
+						Ingress: []corev1.LoadBalancerIngress{
+							{Hostname: "kas.test.elb.amazonaws.com"},
+						},
+					},
+				},
 			},
 			strategy: &hyperv1.ServicePublishingStrategy{
 				Type: hyperv1.LoadBalancer,

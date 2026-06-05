@@ -570,6 +570,17 @@ func (r *Reconciler) reconcileAPIServerServiceStatus(ctx context.Context, hcp *h
 		}
 	}
 
+	// NonePlatform with a configured LoadBalancer hostname: return the hostname
+	// immediately without waiting for the LB Service to be provisioned.
+	// On NonePlatform there is no cloud provider to provision a real LB, so the
+	// configured hostname (typically a cluster-internal DNS name) is authoritative.
+	if hcp.Spec.Platform.Type == hyperv1.NonePlatform &&
+		serviceStrategy.Type == hyperv1.LoadBalancer &&
+		serviceStrategy.LoadBalancer != nil &&
+		serviceStrategy.LoadBalancer.Hostname != "" {
+		return serviceStrategy.LoadBalancer.Hostname, int32(kasSVCLBPort), "", nil
+	}
+
 	if err = r.Client.Get(ctx, client.ObjectKeyFromObject(svc), svc); err != nil {
 		if apierrors.IsNotFound(err) {
 			err = nil
