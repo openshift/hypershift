@@ -6,10 +6,12 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/netutil"
+	"github.com/openshift/hypershift/support/oadp"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -264,4 +266,18 @@ func buildIncludedNamespaces(hcNamespace, hcName string, additionalNamespaces []
 	}
 
 	return namespaces
+}
+
+// autoIncludeAgentNamespace appends the Agent platform's agentNamespace to the
+// IncludeNamespaces list when the platform is AGENT, deduplicating if the user
+// already specified it explicitly.
+func autoIncludeAgentNamespace(o *CreateOptions, info *oadp.PlatformInfo) {
+	if info.Type != "AGENT" || info.AgentNamespace == "" {
+		return
+	}
+	if slices.Contains(o.IncludeNamespaces, info.AgentNamespace) {
+		return
+	}
+	o.IncludeNamespaces = append(o.IncludeNamespaces, info.AgentNamespace)
+	o.Log.Info("Auto-detected agent namespace, including in operation", "namespace", info.AgentNamespace)
 }

@@ -42,6 +42,7 @@ type CreateOptions struct {
 	IncludeNamespaces      []string
 	RestorePVs             *bool
 	PreserveNodePorts      *bool
+	VerifyBackup           bool
 
 	// Schedule-specific optional flags
 	Paused             bool
