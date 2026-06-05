@@ -8,6 +8,7 @@ import (
 	"os"
 	"path"
 	"strings"
+	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/azure"
@@ -24,11 +25,14 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/utils/ptr"
 
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	"github.com/blang/semver"
 )
@@ -353,6 +357,34 @@ func (a Azure) CAPIProviderPolicyRules() []rbacv1.PolicyRule {
 
 func (a Azure) DeleteCredentials(ctx context.Context, c client.Client, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error {
 	return nil
+}
+
+const orphanedMachineDeletionThreshold = 5 * time.Minute
+
+func (Azure) DeleteOrphanedMachines(ctx context.Context, c client.Client, hc *hyperv1.HostedCluster, controlPlaneNamespace string) error {
+	azureMachineList := capiazure.AzureMachineList{}
+	if err := c.List(ctx, &azureMachineList, client.InNamespace(controlPlaneNamespace)); err != nil {
+		return fmt.Errorf("failed to list AzureMachines in %s: %w", controlPlaneNamespace, err)
+	}
+	logger := ctrl.LoggerFrom(ctx)
+	var errs []error
+	for i := range azureMachineList.Items {
+		m := &azureMachineList.Items[i]
+		if m.DeletionTimestamp.IsZero() {
+			continue
+		}
+		if time.Since(m.DeletionTimestamp.Time) < orphanedMachineDeletionThreshold {
+			continue
+		}
+		original := m.DeepCopy()
+		controllerutil.RemoveFinalizer(m, capiazure.MachineFinalizer)
+		if err := c.Patch(ctx, m, client.MergeFrom(original)); err != nil {
+			errs = append(errs, fmt.Errorf("failed to remove finalizers from AzureMachine %s/%s: %w", m.Namespace, m.Name, err))
+			continue
+		}
+		logger.Info("Removed finalizers from orphaned AzureMachine stuck in deletion", "machine", client.ObjectKeyFromObject(m), "deletionTimestamp", m.DeletionTimestamp.Time)
+	}
+	return utilerrors.NewAggregate(errs)
 }
 
 func reconcileAzureCluster(azureCluster *capiazure.AzureCluster, hcluster *hyperv1.HostedCluster, apiEndpoint hyperv1.APIEndpoint, azureClusterIdentity *capiazure.AzureClusterIdentity, _ string) error {

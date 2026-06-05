@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"testing"
+	"time"
 
 	. "github.com/onsi/gomega"
 
@@ -15,6 +16,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -524,6 +526,147 @@ func TestReconcileKMSConfigSecret(t *testing.T) {
 			g.Expect(cfg.LoadBalancerSku).To(Equal("standard"))
 
 			tc.validate(g, cfg)
+		})
+	}
+}
+
+func TestDeleteOrphanedMachines(t *testing.T) {
+	controlPlaneNamespace := "test-cp-ns"
+	hc := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-hc",
+			Namespace: "clusters",
+		},
+	}
+
+	testCases := []struct {
+		name             string
+		existingMachines []capiazure.AzureMachine
+		expectFinalizers map[string]bool
+		expectError      bool
+	}{
+		{
+			name:             "When no AzureMachines exist, it should return nil",
+			existingMachines: nil,
+			expectFinalizers: map[string]bool{},
+		},
+		{
+			name: "When an AzureMachine is not being deleted, it should not remove finalizers",
+			existingMachines: []capiazure.AzureMachine{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:       "machine-active",
+						Namespace:  controlPlaneNamespace,
+						Finalizers: []string{capiazure.MachineFinalizer},
+					},
+					Spec: capiazure.AzureMachineSpec{
+						VMSize: "Standard_D4s_v4",
+						OSDisk: capiazure.OSDisk{OSType: "Linux", DiskSizeGB: ptr.To[int32](128), ManagedDisk: &capiazure.ManagedDiskParameters{StorageAccountType: "Premium_LRS"}},
+					},
+				},
+			},
+			expectFinalizers: map[string]bool{"machine-active": true},
+		},
+		{
+			name: "When an AzureMachine is being deleted but under the threshold, it should not remove finalizers",
+			existingMachines: []capiazure.AzureMachine{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:              "machine-recent",
+						Namespace:         controlPlaneNamespace,
+						Finalizers:        []string{capiazure.MachineFinalizer},
+						DeletionTimestamp: &metav1.Time{Time: time.Now().Add(-1 * time.Minute)},
+					},
+					Spec: capiazure.AzureMachineSpec{
+						VMSize: "Standard_D4s_v4",
+						OSDisk: capiazure.OSDisk{OSType: "Linux", DiskSizeGB: ptr.To[int32](128), ManagedDisk: &capiazure.ManagedDiskParameters{StorageAccountType: "Premium_LRS"}},
+					},
+				},
+			},
+			expectFinalizers: map[string]bool{"machine-recent": true},
+		},
+		{
+			name: "When an AzureMachine is being deleted and over the threshold, it should remove the Azure finalizer",
+			existingMachines: []capiazure.AzureMachine{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:              "machine-stuck",
+						Namespace:         controlPlaneNamespace,
+						Finalizers:        []string{capiazure.MachineFinalizer},
+						DeletionTimestamp: &metav1.Time{Time: time.Now().Add(-10 * time.Minute)},
+					},
+					Spec: capiazure.AzureMachineSpec{
+						VMSize: "Standard_D4s_v4",
+						OSDisk: capiazure.OSDisk{OSType: "Linux", DiskSizeGB: ptr.To[int32](128), ManagedDisk: &capiazure.ManagedDiskParameters{StorageAccountType: "Premium_LRS"}},
+					},
+				},
+			},
+			expectFinalizers: map[string]bool{"machine-stuck": false},
+		},
+		{
+			name: "When an AzureMachine has other finalizers, it should only remove the Azure finalizer",
+			existingMachines: []capiazure.AzureMachine{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:              "machine-multi-finalizer",
+						Namespace:         controlPlaneNamespace,
+						Finalizers:        []string{"some-other-controller.io/finalizer", capiazure.MachineFinalizer},
+						DeletionTimestamp: &metav1.Time{Time: time.Now().Add(-10 * time.Minute)},
+					},
+					Spec: capiazure.AzureMachineSpec{
+						VMSize: "Standard_D4s_v4",
+						OSDisk: capiazure.OSDisk{OSType: "Linux", DiskSizeGB: ptr.To[int32](128), ManagedDisk: &capiazure.ManagedDiskParameters{StorageAccountType: "Premium_LRS"}},
+					},
+				},
+			},
+			expectFinalizers: map[string]bool{"machine-multi-finalizer": false},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			var objects []client.Object
+			for i := range tc.existingMachines {
+				objects = append(objects, &tc.existingMachines[i])
+			}
+
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				WithObjects(objects...).
+				Build()
+
+			azure := Azure{}
+			err := azure.DeleteOrphanedMachines(t.Context(), fakeClient, hc, controlPlaneNamespace)
+
+			if tc.expectError {
+				g.Expect(err).To(HaveOccurred(), "expected DeleteOrphanedMachines to return an error")
+			} else {
+				g.Expect(err).ToNot(HaveOccurred(), "expected DeleteOrphanedMachines to succeed")
+			}
+
+			var machineList capiazure.AzureMachineList
+			g.Expect(fakeClient.List(t.Context(), &machineList, client.InNamespace(controlPlaneNamespace))).To(Succeed(), "expected to list AzureMachines")
+
+			for _, m := range machineList.Items {
+				expectHasAzureFinalizer, exists := tc.expectFinalizers[m.Name]
+				if !exists {
+					continue
+				}
+				g.Expect(controllerutil.ContainsFinalizer(&m, capiazure.MachineFinalizer)).To(Equal(expectHasAzureFinalizer),
+					"unexpected Azure finalizer state on %s", m.Name)
+			}
+
+			// Verify non-Azure finalizers are preserved on multi-finalizer machines
+			if tc.name == "When an AzureMachine has other finalizers, it should only remove the Azure finalizer" {
+				for _, m := range machineList.Items {
+					if m.Name == "machine-multi-finalizer" {
+						g.Expect(m.Finalizers).To(ContainElement("some-other-controller.io/finalizer"),
+							"non-Azure finalizer should be preserved")
+					}
+				}
+			}
 		})
 	}
 }
