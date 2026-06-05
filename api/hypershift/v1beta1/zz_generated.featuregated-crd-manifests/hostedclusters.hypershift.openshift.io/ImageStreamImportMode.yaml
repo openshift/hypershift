@@ -5285,25 +5285,58 @@ spec:
                                     (e.g., /subscriptions/{sub}/resourceGroups/{rg}/providers/Microsoft.Network/virtualNetworks/{vnet}/subnets/{subnet})
                                   rule: self.matches('^/subscriptions/[^/]+/resourceGroups/[^/]+/providers/Microsoft\\.Network/virtualNetworks/[^/]+/subnets/[^/]+$')
                             type: object
+                          swift:
+                            description: |-
+                              swift configures Azure Swift pod networking for private API server access.
+                              Swift networking requires the management cluster to be pre-configured with
+                              Azure Swift support; this is not provisioned by HyperShift automatically.
+                              This field is required when type is "Swift" and must not be set otherwise.
+                            properties:
+                              podNetworkInstance:
+                                description: |-
+                                  podNetworkInstance is the name of a PodNetworkInstance custom resource in the
+                                  hosted control plane namespace. This resource configures Azure Swift pod networking
+                                  for private connectivity to the hosted cluster's router pods.
+                                  The value must be a valid Kubernetes object name (RFC 1123 DNS label): lowercase
+                                  alphanumeric characters or hyphens, must start and end with an alphanumeric character.
+                                  This field is immutable once set.
+                                maxLength: 63
+                                minLength: 1
+                                type: string
+                                x-kubernetes-validations:
+                                - message: 'podNetworkInstance must be a valid DNS
+                                    label: lowercase alphanumeric characters or hyphens,
+                                    must start and end with an alphanumeric character'
+                                  rule: self.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?$')
+                            required:
+                            - podNetworkInstance
+                            type: object
+                            x-kubernetes-validations:
+                            - message: podNetworkInstance is immutable
+                              rule: self.podNetworkInstance == oldSelf.podNetworkInstance
                           type:
                             description: |-
                               type specifies the private connectivity mechanism used for the hosted cluster's API server.
                               "PrivateLink" selects Azure Private Link Service for private API server access.
+                              "Swift" selects Azure Swift pod networking for private API server access, used by ARO HCP.
                               This field is immutable once set.
                             enum:
                             - PrivateLink
+                            - Swift
                             type: string
-                            x-kubernetes-validations:
-                            - message: type is immutable
-                              rule: self == oldSelf
                         required:
                         - type
                         type: object
                         x-kubernetes-validations:
+                        - message: type is immutable
+                          rule: '!has(oldSelf.type) || self.type == oldSelf.type'
                         - message: privateLink is required when type is PrivateLink,
                             and forbidden otherwise
                           rule: 'self.type == ''PrivateLink'' ? has(self.privateLink)
                             : !has(self.privateLink)'
+                        - message: swift is required when type is Swift, and forbidden
+                            otherwise
+                          rule: 'self.type == ''Swift'' ? has(self.swift) : !has(self.swift)'
                       resourceGroup:
                         default: default
                         description: |-
