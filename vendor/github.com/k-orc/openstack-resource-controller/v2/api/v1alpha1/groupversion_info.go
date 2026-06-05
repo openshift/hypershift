@@ -14,7 +14,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package v1alpha1 contains API Schema definitions for the openstack v1alpha1 API group
 // +kubebuilder:object:generate=true
 // +groupName=openstack.k-orc.cloud
 // +k8s:openapi-gen=true

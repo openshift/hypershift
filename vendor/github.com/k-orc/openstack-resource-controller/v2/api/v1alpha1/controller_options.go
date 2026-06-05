@@ -1,5 +1,5 @@
 /*
-Copyright 2024 The Kubernetes Authors.
+Copyright 2024 The ORC Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -46,7 +46,7 @@ const (
 )
 
 type ManagedOptions struct {
-	// OnDelete specifies the behaviour of the controller when the ORC
+	// onDelete specifies the behaviour of the controller when the ORC
 	// object is deleted. Options are `delete` - delete the OpenStack resource;
 	// `detach` - do not delete the OpenStack resource. If not specified, the
 	// default is `delete`.

@@ -1393,9 +1393,10 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 				Verbs:     []string{"create", "delete", "get", "list", "update", "watch"},
 			},
 			// This allows hypershift operator to grant RBAC permissions for ORC to the capi-provider.
+			// We use a wildcard since ORC has a lot of resources.
 			{
 				APIGroups: []string{"openstack.k-orc.cloud"},
-				Resources: []string{"images", "images/status"},
+				Resources: []string{"*"},
 				Verbs:     []string{rbacv1.VerbAll},
 			},
 			{ // This allows the kubevirt csi driver to hotplug volumes to KubeVirt VMs.
