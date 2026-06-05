@@ -330,6 +330,38 @@ spec:
                   After the timeout, any remaining attached volumes will be ignored and the removal of the machine will continue.
                   Changing this field propagate inplace into existing Nodes.
                 type: string
+              osImageStream:
+                description: |-
+                  osImageStream specifies the RHEL OS stream for nodes in this pool.
+
+                  This field can be optionally set to a known OSImageStream name to change
+                  the OS and Extension images with a well-known, tested, release-provided
+                  set of images. This enables a streamlined way of switching the pool's
+                  node OS to a different version than the cluster default, such as
+                  transitioning to a major RHEL version.
+
+                  When set, the referenced stream overrides the default OS stream
+                  determined by the release version. When omitted, the pool uses
+                  the release version's default stream (rhel-9 for OCP < 5.0,
+                  rhel-10 for OCP >= 5.0).
+
+                  Changing this field triggers a NodePool rollout. Forward transitions
+                  (rhel-9 to rhel-10) are allowed; backward transitions
+                  (rhel-10 to rhel-9) are rejected by CEL validation because
+                  in-place OS downgrades are not supported.
+                properties:
+                  name:
+                    description: name is the OS image stream name (e.g. "rhel-9",
+                      "rhel-10").
+                    enum:
+                    - rhel-9
+                    - rhel-10
+                    maxLength: 253
+                    minLength: 1
+                    type: string
+                required:
+                - name
+                type: object
               pausedUntil:
                 description: |-
                   pausedUntil is a field that can be used to pause reconciliation on the NodePool controller. Resulting in any change to the NodePool being ignored.
@@ -1978,6 +2010,10 @@ spec:
                 for AWS platform
               rule: '!has(self.autoScaling) || self.autoScaling.min > 0 || self.platform.type
                 == ''AWS'''
+            - message: OS stream downgrade from rhel-10 to rhel-9 is not allowed
+              rule: '!has(oldSelf.osImageStream) || !has(oldSelf.osImageStream.name)
+                || oldSelf.osImageStream.name != ''rhel-10'' || (has(self.osImageStream)
+                && has(self.osImageStream.name) && self.osImageStream.name == ''rhel-10'')'
           status:
             description: status is the latest observed status of the NodePool.
             properties:
@@ -2104,6 +2140,23 @@ spec:
                     x-kubernetes-list-type: atomic
                 required:
                 - nodeVersions
+                type: object
+              osImageStream:
+                description: |-
+                  osImageStream reports the observed OS image stream running on nodes
+                  in this pool. Set by the controller based on the resolved stream.
+                properties:
+                  name:
+                    description: name is the OS image stream name (e.g. "rhel-9",
+                      "rhel-10").
+                    enum:
+                    - rhel-9
+                    - rhel-10
+                    maxLength: 253
+                    minLength: 1
+                    type: string
+                required:
+                - name
                 type: object
               platform:
                 description: platform holds the specific statuses

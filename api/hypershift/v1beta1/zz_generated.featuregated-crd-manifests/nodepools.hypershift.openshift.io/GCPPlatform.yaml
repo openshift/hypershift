@@ -1790,6 +1790,10 @@ spec:
                 for AWS platform
               rule: '!has(self.autoScaling) || self.autoScaling.min > 0 || self.platform.type
                 == ''AWS'''
+            - message: OS stream downgrade from rhel-10 to rhel-9 is not allowed
+              rule: '!has(oldSelf.osImageStream) || !has(oldSelf.osImageStream.name)
+                || oldSelf.osImageStream.name != ''rhel-10'' || (has(self.osImageStream)
+                && has(self.osImageStream.name) && self.osImageStream.name == ''rhel-10'')'
           status:
             description: status is the latest observed status of the NodePool.
             properties:

@@ -25,20 +25,21 @@ import (
 // NodePoolSpecApplyConfiguration represents a declarative configuration of the NodePoolSpec type for use
 // with apply.
 type NodePoolSpecApplyConfiguration struct {
-	ClusterName             *string                                `json:"clusterName,omitempty"`
-	Release                 *ReleaseApplyConfiguration             `json:"release,omitempty"`
-	Platform                *NodePoolPlatformApplyConfiguration    `json:"platform,omitempty"`
-	Replicas                *int32                                 `json:"replicas,omitempty"`
-	Management              *NodePoolManagementApplyConfiguration  `json:"management,omitempty"`
-	AutoScaling             *NodePoolAutoScalingApplyConfiguration `json:"autoScaling,omitempty"`
-	Config                  []v1.LocalObjectReference              `json:"config,omitempty"`
-	NodeDrainTimeout        *metav1.Duration                       `json:"nodeDrainTimeout,omitempty"`
-	NodeVolumeDetachTimeout *metav1.Duration                       `json:"nodeVolumeDetachTimeout,omitempty"`
-	NodeLabels              map[string]string                      `json:"nodeLabels,omitempty"`
-	Taints                  []TaintApplyConfiguration              `json:"taints,omitempty"`
-	PausedUntil             *string                                `json:"pausedUntil,omitempty"`
-	TuningConfig            []v1.LocalObjectReference              `json:"tuningConfig,omitempty"`
-	Arch                    *string                                `json:"arch,omitempty"`
+	ClusterName             *string                                   `json:"clusterName,omitempty"`
+	Release                 *ReleaseApplyConfiguration                `json:"release,omitempty"`
+	Platform                *NodePoolPlatformApplyConfiguration       `json:"platform,omitempty"`
+	Replicas                *int32                                    `json:"replicas,omitempty"`
+	Management              *NodePoolManagementApplyConfiguration     `json:"management,omitempty"`
+	AutoScaling             *NodePoolAutoScalingApplyConfiguration    `json:"autoScaling,omitempty"`
+	Config                  []v1.LocalObjectReference                 `json:"config,omitempty"`
+	NodeDrainTimeout        *metav1.Duration                          `json:"nodeDrainTimeout,omitempty"`
+	NodeVolumeDetachTimeout *metav1.Duration                          `json:"nodeVolumeDetachTimeout,omitempty"`
+	NodeLabels              map[string]string                         `json:"nodeLabels,omitempty"`
+	Taints                  []TaintApplyConfiguration                 `json:"taints,omitempty"`
+	PausedUntil             *string                                   `json:"pausedUntil,omitempty"`
+	TuningConfig            []v1.LocalObjectReference                 `json:"tuningConfig,omitempty"`
+	Arch                    *string                                   `json:"arch,omitempty"`
+	OSImageStream           *OSImageStreamReferenceApplyConfiguration `json:"osImageStream,omitempty"`
 }
 
 // NodePoolSpecApplyConfiguration constructs a declarative configuration of the NodePoolSpec type for use with
@@ -171,5 +172,13 @@ func (b *NodePoolSpecApplyConfiguration) WithTuningConfig(values ...v1.LocalObje
 // If called multiple times, the Arch field is set to the value of the last call.
 func (b *NodePoolSpecApplyConfiguration) WithArch(value string) *NodePoolSpecApplyConfiguration {
 	b.Arch = &value
+	return b
+}
+
+// WithOSImageStream sets the OSImageStream field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the OSImageStream field is set to the value of the last call.
+func (b *NodePoolSpecApplyConfiguration) WithOSImageStream(value *OSImageStreamReferenceApplyConfiguration) *NodePoolSpecApplyConfiguration {
+	b.OSImageStream = value
 	return b
 }

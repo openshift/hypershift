@@ -1,0 +1,240 @@
+apiVersion: apiextensions.k8s.io/v1
+name: "NodePool osImageStream validation"
+crdName: nodepools.hypershift.openshift.io
+featureGates:
+  - OSStreams
+version: v1beta1
+tests:
+  onCreate:
+  - name: When osImageStream name is rhel-9 it should succeed
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: NodePool
+      spec:
+        arch: amd64
+        clusterName: some-cluster
+        management:
+          autoRepair: false
+          upgradeType: Replace
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
+        replicas: 0
+        platform:
+          aws:
+            instanceProfile: a-profile
+            instanceType: m6a.2xlarge
+            rootVolume:
+              size: 120
+              type: gp3
+            subnet:
+              id: "subnet-any"
+          type: AWS
+        osImageStream:
+          name: rhel-9
+    expectedError: ""
+
+  - name: When osImageStream name is rhel-10 it should succeed
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: NodePool
+      spec:
+        arch: amd64
+        clusterName: some-cluster
+        management:
+          autoRepair: false
+          upgradeType: Replace
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
+        replicas: 0
+        platform:
+          aws:
+            instanceProfile: a-profile
+            instanceType: m6a.2xlarge
+            rootVolume:
+              size: 120
+              type: gp3
+            subnet:
+              id: "subnet-any"
+          type: AWS
+        osImageStream:
+          name: rhel-10
+    expectedError: ""
+
+  - name: When osImageStream name is invalid it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: NodePool
+      spec:
+        arch: amd64
+        clusterName: some-cluster
+        management:
+          autoRepair: false
+          upgradeType: Replace
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
+        replicas: 0
+        platform:
+          aws:
+            instanceProfile: a-profile
+            instanceType: m6a.2xlarge
+            rootVolume:
+              size: 120
+              type: gp3
+            subnet:
+              id: "subnet-any"
+          type: AWS
+        osImageStream:
+          name: invalid-stream
+    expectedError: "Unsupported value"
+
+  onUpdate:
+  - name: When osImageStream is updated from rhel-9 to rhel-10 it should succeed
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: NodePool
+      spec:
+        arch: amd64
+        clusterName: some-cluster
+        management:
+          autoRepair: false
+          upgradeType: Replace
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
+        replicas: 0
+        platform:
+          aws:
+            instanceProfile: a-profile
+            instanceType: m6a.2xlarge
+            rootVolume:
+              size: 120
+              type: gp3
+            subnet:
+              id: "subnet-any"
+          type: AWS
+        osImageStream:
+          name: rhel-9
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: NodePool
+      spec:
+        arch: amd64
+        clusterName: some-cluster
+        management:
+          autoRepair: false
+          upgradeType: Replace
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
+        replicas: 0
+        platform:
+          aws:
+            instanceProfile: a-profile
+            instanceType: m6a.2xlarge
+            rootVolume:
+              size: 120
+              type: gp3
+            subnet:
+              id: "subnet-any"
+          type: AWS
+        osImageStream:
+          name: rhel-10
+    expectedError: ""
+
+  - name: When osImageStream is downgraded from rhel-10 to rhel-9 it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: NodePool
+      spec:
+        arch: amd64
+        clusterName: some-cluster
+        management:
+          autoRepair: false
+          upgradeType: Replace
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
+        replicas: 0
+        platform:
+          aws:
+            instanceProfile: a-profile
+            instanceType: m6a.2xlarge
+            rootVolume:
+              size: 120
+              type: gp3
+            subnet:
+              id: "subnet-any"
+          type: AWS
+        osImageStream:
+          name: rhel-10
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: NodePool
+      spec:
+        arch: amd64
+        clusterName: some-cluster
+        management:
+          autoRepair: false
+          upgradeType: Replace
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
+        replicas: 0
+        platform:
+          aws:
+            instanceProfile: a-profile
+            instanceType: m6a.2xlarge
+            rootVolume:
+              size: 120
+              type: gp3
+            subnet:
+              id: "subnet-any"
+          type: AWS
+        osImageStream:
+          name: rhel-9
+    expectedError: "OS stream downgrade from rhel-10 to rhel-9 is not allowed"
+
+  - name: When osImageStream is removed after being set to rhel-10 it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: NodePool
+      spec:
+        arch: amd64
+        clusterName: some-cluster
+        management:
+          autoRepair: false
+          upgradeType: Replace
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
+        replicas: 0
+        platform:
+          aws:
+            instanceProfile: a-profile
+            instanceType: m6a.2xlarge
+            rootVolume:
+              size: 120
+              type: gp3
+            subnet:
+              id: "subnet-any"
+          type: AWS
+        osImageStream:
+          name: rhel-10
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: NodePool
+      spec:
+        arch: amd64
+        clusterName: some-cluster
+        management:
+          autoRepair: false
+          upgradeType: Replace
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
+        replicas: 0
+        platform:
+          aws:
+            instanceProfile: a-profile
+            instanceType: m6a.2xlarge
+            rootVolume:
+              size: 120
+              type: gp3
+            subnet:
+              id: "subnet-any"
+          type: AWS
+    expectedError: "OS stream downgrade from rhel-10 to rhel-9 is not allowed"

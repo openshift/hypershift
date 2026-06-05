@@ -34,6 +34,12 @@ const (
 	// alpha: v0.1.49
 	// beta: x.y.z
 	HCPEtcdBackup featuregate.Feature = "HCPEtcdBackup"
+
+	// OSStreams enables per-NodePool RHEL OS stream selection (rhel-9 / rhel-10).
+	// owner: @enxebre
+	// alpha: v0.1.49
+	// beta: x.y.z
+	OSStreams featuregate.Feature = "OSStreams"
 )
 
 // Initialize new features here
@@ -44,6 +50,7 @@ var (
 	openStackFeature               = featuregates.NewFeature(OpenStack, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
 	gcpHCPFeature                  = featuregates.NewFeature(GCPPlatform, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
 	hcpEtcdBackupFeature           = featuregates.NewFeature(HCPEtcdBackup, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
+	osStreamsFeature                = featuregates.NewFeature(OSStreams, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
 )
 
 func init() {
@@ -52,6 +59,7 @@ func init() {
 	allFeatures.AddFeature(openStackFeature)
 	allFeatures.AddFeature(gcpHCPFeature)
 	allFeatures.AddFeature(hcpEtcdBackupFeature)
+	allFeatures.AddFeature(osStreamsFeature)
 
 	// Default to configuring the Default featureset
 	ConfigureFeatureSet(string(configv1.Default))

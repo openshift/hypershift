@@ -107,6 +107,7 @@ type NodePool struct {
 // +kubebuilder:validation:XValidation:rule="self.arch != 's390x' || has(self.platform.kubevirt)", message="s390x is only supported on KubeVirt platform"
 // +kubebuilder:validation:XValidation:rule="!has(self.platform.aws) || !has(self.platform.aws.imageType) || self.platform.aws.imageType != 'Windows' || self.arch == 'amd64'", message="ImageType 'Windows' requires arch 'amd64' (AWS only)"
 // +kubebuilder:validation:XValidation:rule="!has(self.autoScaling) || self.autoScaling.min > 0 || self.platform.type == 'AWS'", message="Scale-from-zero (autoScaling.min=0) is currently only supported for AWS platform"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.osImageStream) || !has(oldSelf.osImageStream.name) || oldSelf.osImageStream.name != 'rhel-10' || (has(self.osImageStream) && has(self.osImageStream.name) && self.osImageStream.name == 'rhel-10')",message="OS stream downgrade from rhel-10 to rhel-9 is not allowed"
 type NodePoolSpec struct {
 	// clusterName is the name of the HostedCluster this NodePool belongs to.
 	// If a HostedCluster with this name doesn't exist, the controller will no-op until it exists.
@@ -238,6 +239,29 @@ type NodePoolSpec struct {
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="Arch is immutable"
 	// +optional
 	Arch string `json:"arch,omitempty"`
+
+	// osImageStream specifies the RHEL OS stream for nodes in this pool.
+	//
+	// This field can be optionally set to a known OSImageStream name to change
+	// the OS and Extension images with a well-known, tested, release-provided
+	// set of images. This enables a streamlined way of switching the pool's
+	// node OS to a different version than the cluster default, such as
+	// transitioning to a major RHEL version.
+	//
+	// When set, the referenced stream overrides the default OS stream
+	// determined by the release version. When omitted, the pool uses
+	// the release version's default stream (rhel-9 for OCP < 5.0,
+	// rhel-10 for OCP >= 5.0).
+	//
+	// Changing this field triggers a NodePool rollout. Forward transitions
+	// (rhel-9 to rhel-10) are allowed; backward transitions
+	// (rhel-10 to rhel-9) are rejected by CEL validation because
+	// in-place OS downgrades are not supported.
+	//
+	// +rollout
+	// +openshift:enable:FeatureGate=OSStreams
+	// +optional
+	OSImageStream OSImageStreamReference `json:"osImageStream,omitempty,omitzero"`
 }
 
 // NodePoolStatus is the latest observed status of a NodePool.
@@ -263,11 +287,31 @@ type NodePoolStatus struct {
 	// +optional
 	Platform *NodePoolPlatformStatus `json:"platform,omitempty"`
 
+	// osImageStream reports the observed OS image stream running on nodes
+	// in this pool. Set by the controller based on the resolved stream.
+	//
+	// +openshift:enable:FeatureGate=OSStreams
+	// +optional
+	OSImageStream OSImageStreamReference `json:"osImageStream,omitempty,omitzero"`
+
 	// conditions represents the latest available observations of the node pool's
 	// current state.
 	// +kubebuilder:validation:MaxItems=100
 	// +optional
 	Conditions []NodePoolCondition `json:"conditions,omitempty"`
+}
+
+// OSImageStreamReference identifies an OS image stream by name.
+// This mirrors machineconfiguration.openshift.io/v1.OSImageStreamReference
+// to avoid coupling the API module to the MCO types.
+type OSImageStreamReference struct {
+	// name is the OS image stream name (e.g. "rhel-9", "rhel-10").
+	//
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=253
+	// +kubebuilder:validation:Enum=rhel-9;rhel-10
+	Name string `json:"name,omitempty"`
 }
 
 // NodePoolNodesInfo aggregates observed information about nodes belonging to this NodePool.

@@ -37002,6 +37002,33 @@ TODO: This is set as optional to prevent validation from failing due to a limita
 <a href="https://github.com/kubernetes/kubernetes/issues/108768#issuecomment-1253912215">https://github.com/kubernetes/kubernetes/issues/108768#issuecomment-1253912215</a></p>
 </td>
 </tr>
+<tr>
+<td>
+<code>osImageStream,omitempty,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.OSImageStreamReference">
+OSImageStreamReference
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>osImageStream specifies the RHEL OS stream for nodes in this pool.</p>
+<p>This field can be optionally set to a known OSImageStream name to change
+the OS and Extension images with a well-known, tested, release-provided
+set of images. This enables a streamlined way of switching the pool&rsquo;s
+node OS to a different version than the cluster default, such as
+transitioning to a major RHEL version.</p>
+<p>When set, the referenced stream overrides the default OS stream
+determined by the release version. When omitted, the pool uses
+the release version&rsquo;s default stream (rhel-9 for OCP &lt; 5.0,
+rhel-10 for OCP &gt;= 5.0).</p>
+<p>Changing this field triggers a NodePool rollout. Forward transitions
+(rhel-9 to rhel-10) are allowed; backward transitions
+(rhel-10 to rhel-9) are rejected by CEL validation because
+in-place OS downgrades are not supported.</p>
+</td>
+</tr>
 </table>
 </td>
 </tr>
@@ -49033,6 +49060,33 @@ TODO: This is set as optional to prevent validation from failing due to a limita
 <a href="https://github.com/kubernetes/kubernetes/issues/108768#issuecomment-1253912215">https://github.com/kubernetes/kubernetes/issues/108768#issuecomment-1253912215</a></p>
 </td>
 </tr>
+<tr>
+<td>
+<code>osImageStream,omitempty,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.OSImageStreamReference">
+OSImageStreamReference
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>osImageStream specifies the RHEL OS stream for nodes in this pool.</p>
+<p>This field can be optionally set to a known OSImageStream name to change
+the OS and Extension images with a well-known, tested, release-provided
+set of images. This enables a streamlined way of switching the pool&rsquo;s
+node OS to a different version than the cluster default, such as
+transitioning to a major RHEL version.</p>
+<p>When set, the referenced stream overrides the default OS stream
+determined by the release version. When omitted, the pool uses
+the release version&rsquo;s default stream (rhel-9 for OCP &lt; 5.0,
+rhel-10 for OCP &gt;= 5.0).</p>
+<p>Changing this field triggers a NodePool rollout. Forward transitions
+(rhel-9 to rhel-10) are allowed; backward transitions
+(rhel-10 to rhel-9) are rejected by CEL validation because
+in-place OS downgrades are not supported.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###NodePoolStatus { #hypershift.openshift.io/v1beta1.NodePoolStatus }
@@ -49103,6 +49157,21 @@ NodePoolPlatformStatus
 <td>
 <em>(Optional)</em>
 <p>platform holds the specific statuses</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>osImageStream,omitempty,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.OSImageStreamReference">
+OSImageStreamReference
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>osImageStream reports the observed OS image stream running on nodes
+in this pool. Set by the controller based on the resolved stream.</p>
 </td>
 </tr>
 <tr>
@@ -49256,6 +49325,38 @@ the guest cluster.</p>
 the management cluster.</p>
 </td>
 </tr></tbody>
+</table>
+###OSImageStreamReference { #hypershift.openshift.io/v1beta1.OSImageStreamReference }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.NodePoolSpec">NodePoolSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.NodePoolStatus">NodePoolStatus</a>)
+</p>
+<p>
+<p>OSImageStreamReference identifies an OS image stream by name.
+This mirrors machineconfiguration.openshift.io/v1.OSImageStreamReference
+to avoid coupling the API module to the MCO types.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>name</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>name is the OS image stream name (e.g. &ldquo;rhel-9&rdquo;, &ldquo;rhel-10&rdquo;).</p>
+</td>
+</tr>
+</tbody>
 </table>
 ###OVNIPv4Config { #hypershift.openshift.io/v1beta1.OVNIPv4Config }
 <p>
