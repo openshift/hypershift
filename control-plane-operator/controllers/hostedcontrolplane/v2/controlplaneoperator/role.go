@@ -39,7 +39,7 @@ func adaptRole(cpContext component.WorkloadContext, role *rbacv1.Role) error {
 		})
 	}
 
-	if azureutil.IsAroHCP() {
+	if azureutil.IsAroHCPByHCP(cpContext.HCP) {
 		role.Rules = append(role.Rules, rbacv1.PolicyRule{
 			APIGroups: []string{"secrets-store.csi.x-k8s.io"},
 			Resources: []string{"secretproviderclasses"},

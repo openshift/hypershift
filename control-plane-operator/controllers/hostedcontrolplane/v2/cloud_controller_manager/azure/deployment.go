@@ -21,18 +21,18 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 		c.Args = append(c.Args,
 			fmt.Sprintf("--cluster-name=%s", cpContext.HCP.Spec.InfraID),
 		)
-		if azureutil.IsAroHCP() {
+		if azureutil.IsAroHCPByHCP(cpContext.HCP) {
 			c.VolumeMounts = append(c.VolumeMounts,
 				azureutil.CreateVolumeMountForAzureSecretStoreProviderClass(config.ManagedAzureCloudProviderSecretStoreVolumeName),
 			)
 		}
 	})
 
-	if azureutil.IsAroHCP() {
+	if azureutil.IsAroHCPByHCP(cpContext.HCP) {
 		deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes,
 			azureutil.CreateVolumeForAzureSecretStoreProviderClass(config.ManagedAzureCloudProviderSecretStoreVolumeName, config.ManagedAzureCloudProviderSecretProviderClassName),
 		)
-	} else if azureutil.IsSelfManagedAzure(cpContext.HCP.Spec.Platform.Type) {
+	} else {
 		deployment.Spec.Template.Spec.ServiceAccountName = "azure-cloud-controller-manager"
 	}
 

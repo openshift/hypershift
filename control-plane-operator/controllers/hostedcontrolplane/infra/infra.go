@@ -15,7 +15,6 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/oauth"
 	routerutil "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/router/util"
 	sharedingress "github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
-	hyperazureutil "github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/events"
 	"github.com/openshift/hypershift/support/k8sutil"
@@ -454,9 +453,9 @@ func (r *Reconciler) reconcileHCPRouterServices(ctx context.Context, hcp *hyperv
 		return nil
 	}
 
-	// ARO HCP doesn't need LB services; Swift handles connectivity.
-	// Only reconcile a ClusterIP private router service.
-	if hyperazureutil.IsAroHCP() {
+	// ARO HCP doesn't need LB services; shared ingress or Swift handles
+	// connectivity. Only reconcile a ClusterIP private router service.
+	if netutil.UseSwiftNetworkingHCP(hcp) || netutil.UseSharedIngressHCP(hcp) {
 		if _, err := k8sutil.DeleteIfNeeded(ctx, r.Client, pubSvc); err != nil {
 			return fmt.Errorf("failed to delete public router service: %w", err)
 		}
@@ -527,7 +526,7 @@ func (r *Reconciler) reconcileAPIServerServiceStatus(ctx context.Context, hcp *h
 		return "", 0, "", errors.New("APIServer service strategy not specified")
 	}
 
-	if sharedingress.UseSharedIngress() || (hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform && serviceStrategy.Type == hyperv1.Route) {
+	if netutil.UseSharedIngressHCP(hcp) || (hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform && serviceStrategy.Type == hyperv1.Route) {
 		return sharedingress.KasRouteHostname(hcp), sharedingress.ExternalDNSLBPort, "", nil
 	}
 
@@ -684,15 +683,15 @@ func (r *Reconciler) reconcileClusterIPServiceStatus(ctx context.Context, svc *c
 }
 
 func (r *Reconciler) reconcileInternalRouterServiceStatus(ctx context.Context, hcp *hyperv1.HostedControlPlane) (host string, needed bool, message string, err error) {
-	// ARO is always private but there's no router service. Connection goes through swift.
-	if !netutil.IsPrivateHCP(hcp) || hyperazureutil.IsAroHCP() || hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
+	// Skip when not private, or when shared ingress / Swift handles connectivity, or IBM Cloud.
+	if !netutil.IsPrivateHCP(hcp) || netutil.UseSwiftNetworkingHCP(hcp) || netutil.UseSharedIngressHCP(hcp) || hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
 		return
 	}
 	return r.reconcileRouterServiceStatus(ctx, manifests.PrivateRouterService(hcp.Namespace), events.NewMessageCollector(ctx, r.Client))
 }
 
 func (r *Reconciler) reconcileExternalRouterServiceStatus(ctx context.Context, hcp *hyperv1.HostedControlPlane) (host string, needed bool, message string, err error) {
-	if !netutil.IsPublicHCP(hcp) || !netutil.LabelHCPRoutes(hcp) || sharedingress.UseSharedIngress() || hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
+	if !netutil.IsPublicHCP(hcp) || !netutil.LabelHCPRoutes(hcp) || netutil.UseSharedIngressHCP(hcp) || hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
 		return
 	}
 	return r.reconcileRouterServiceStatus(ctx, manifests.RouterPublicService(hcp.Namespace), events.NewMessageCollector(ctx, r.Client))
