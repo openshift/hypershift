@@ -991,7 +991,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 
 	// Copy Azure Private Link conditions from the AzurePrivateLinkService resources.
 	// ARO HCP uses Swift networking, not Private Link Services.
-	if hcluster.Spec.Platform.Type == hyperv1.AzurePlatform && !azureutil.IsAroHCP() {
+	if hcluster.Spec.Platform.Type == hyperv1.AzurePlatform && !netutil.UseSwiftNetworkingHC(hcluster) {
 		hcpNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 		var azPLSList hyperv1.AzurePrivateLinkServiceList
 		if err := r.List(ctx, &azPLSList, &client.ListOptions{Namespace: hcpNamespace}); err != nil {
@@ -2069,7 +2069,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			return ctrl.Result{}, err
 		}
 	case hyperv1.AzurePlatform:
-		if azureutil.IsAroHCP() {
+		if azureutil.IsAroHCPByHC(hcluster) {
 			// Reconcile CPO SecretProviderClass CR
 			cpoSecretProviderClass := cpomanifests.ManagedAzureSecretProviderClass(config.ManagedAzureCPOSecretProviderClassName, hcp.Namespace)
 			if _, err = createOrUpdate(ctx, r, cpoSecretProviderClass, func() error {
@@ -2090,7 +2090,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 
 		if hcluster.Spec.SecretEncryption != nil && hcluster.Spec.SecretEncryption.KMS != nil {
-			if azureutil.IsAroHCP() {
+			if azureutil.IsAroHCPByHC(hcluster) {
 				// Reconcile KMS SecretProviderClass CR
 				kmsSecretProviderClass := cpomanifests.ManagedAzureSecretProviderClass(config.ManagedAzureKMSSecretProviderClassName, hcp.Namespace)
 				if _, err := createOrUpdate(ctx, r, kmsSecretProviderClass, func() error {
@@ -2111,6 +2111,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 
 	if err := r.reconcileKarpenterOperator(cpContext, hcluster, r.HypershiftOperatorImage, controlPlaneOperatorImage); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile karpenter operator: %w", err)
+	}
 	}
 
 	log.Info("successfully reconciled")
@@ -3996,7 +3997,7 @@ func (r *HostedClusterReconciler) validateAzureConfig(hc *hyperv1.HostedCluster)
 	// When topology is Private or PublicAndPrivate, the private field must be configured
 	// to provide Azure Private Link Service settings for private API server access.
 	// ARO HCP uses Swift networking, not Private Link Services.
-	if !azureutil.IsAroHCP() &&
+	if !netutil.UseSwiftNetworkingHC(hc) &&
 		hc.Spec.Platform.Azure.Topology != "" &&
 		hc.Spec.Platform.Azure.Topology != hyperv1.AzureTopologyPublic &&
 		hc.Spec.Platform.Azure.Private.Type == "" {
@@ -5217,7 +5218,7 @@ func ensureReferencedResourceAnnotation(ctx context.Context, client client.Clien
 }
 
 func ensureHostedResourcesAreEmpty(ctx context.Context, crclient client.Client, hcluster *hyperv1.HostedCluster, obj client.Object) error {
-	if !azureutil.IsAroHCP() || !k8sutil.HasAnnotationWithValue(obj, hyperv1.HostedClusterSourcedAnnotation, "true") {
+	if !azureutil.IsAroHCPByHC(hcluster) || !k8sutil.HasAnnotationWithValue(obj, hyperv1.HostedClusterSourcedAnnotation, "true") {
 		return nil
 	}
 	var cm corev1.Secret
