@@ -42,6 +42,7 @@ type ConfigGenerator struct {
 	hostedCluster         *hyperv1.HostedCluster
 	nodePool              *hyperv1.NodePool
 	controlplaneNamespace string
+	usesRunc              bool
 	*rolloutConfig
 }
 
@@ -60,6 +61,11 @@ type rolloutConfig struct {
 	// TODO(alberto): consider let haproxyRawConfig be an implementation detail of ConfigGenerator.
 	// For now, it's a required input to keep the haproxy business logic and files outside the scope of this initial refactor.
 	haproxyRawConfig string
+	// rhelStream is the explicit RHEL stream from spec.osImageStream.name.
+	// Only populated from explicit user input, never from resolved defaults.
+	// Empty string is a no-op in the hash, ensuring implicit streams don't
+	// cause accidental rollouts on upgrade.
+	rhelStream string
 }
 
 // NewConfigGenerator is the contract to create a new ConfigGenerator.
@@ -99,6 +105,7 @@ func NewConfigGenerator(ctx context.Context, client client.Client, hostedCluster
 		return nil, err
 	}
 	cg.rolloutConfig.mcoRawConfig = mcoRawConfig
+	cg.rolloutConfig.rhelStream = nodePool.Spec.OSImageStream.Name
 
 	return cg, nil
 }
@@ -118,7 +125,7 @@ func (cg *ConfigGenerator) CompressedAndEncoded() (*bytes.Buffer, error) {
 // TODO(alberto): hash the struct directly instead of the string representation field by field.
 // This is kept like this for now to contain the scope of the refactor and avoid backward compatibility issues.
 func (cg *ConfigGenerator) Hash() string {
-	return supportutil.HashSimple(cg.mcoRawConfig + cg.releaseImage.Version() + cg.pullSecretName + cg.additionalTrustBundleName + cg.globalConfig)
+	return supportutil.HashSimple(cg.mcoRawConfig + cg.releaseImage.Version() + cg.pullSecretName + cg.additionalTrustBundleName + cg.globalConfig + cg.rhelStream)
 }
 
 // HashWithOutVersion is like Hash but doesn't compute the release version.
@@ -126,7 +133,7 @@ func (cg *ConfigGenerator) Hash() string {
 // TODO(alberto): This was left inconsistent in https://github.com/openshift/hypershift/pull/3795/files. It should also contain cg.globalConfig.
 // This is kept like this for now to contain the scope of the refactor and avoid backward compatibility issues.
 func (cg *ConfigGenerator) HashWithoutVersion() string {
-	return supportutil.HashSimple(cg.mcoRawConfig + cg.pullSecretName + cg.additionalTrustBundleName)
+	return supportutil.HashSimple(cg.mcoRawConfig + cg.pullSecretName + cg.additionalTrustBundleName + cg.rhelStream)
 }
 
 func (cg *ConfigGenerator) Version() string {
@@ -308,6 +315,10 @@ func (cg *ConfigGenerator) defaultAndValidateConfigManifest(manifest []byte) ([]
 			return nil, fmt.Errorf("failed to encode kubelet config after setting built-in MCP selector: %w", err)
 		}
 	case *mcfgv1.ContainerRuntimeConfig:
+		if obj.Spec.ContainerRuntimeConfig != nil &&
+			obj.Spec.ContainerRuntimeConfig.DefaultRuntime == mcfgv1.ContainerRuntimeDefaultRuntimeRunc {
+			cg.usesRunc = true
+		}
 		obj.Spec.MachineConfigPoolSelector = &metav1.LabelSelector{
 			MatchLabels: map[string]string{
 				"machineconfiguration.openshift.io/mco-built-in": "",

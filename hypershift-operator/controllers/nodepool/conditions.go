@@ -374,7 +374,7 @@ func (r *NodePoolReconciler) validMachineConfigCondition(ctx context.Context, no
 	}
 
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
-	_, err = NewConfigGenerator(ctx, r.Client, hcluster, nodePool, releaseImage, haproxyRawConfig, controlPlaneNamespace)
+	configGenerator, err := NewConfigGenerator(ctx, r.Client, hcluster, nodePool, releaseImage, haproxyRawConfig, controlPlaneNamespace)
 	if err != nil {
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolValidMachineConfigConditionType,
@@ -385,12 +385,34 @@ func (r *NodePoolReconciler) validMachineConfigCondition(ctx context.Context, no
 		})
 		return &ctrl.Result{}, fmt.Errorf("failed to generate config: %w", err)
 	}
-	SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+
+	// Validate OS image stream selection against release version and runc usage.
+	releaseVersion, err := semver.Parse(releaseImage.Version())
+	if err != nil {
+		return &ctrl.Result{}, fmt.Errorf("failed to parse release version for stream validation: %w", err)
+	}
+	_, fallbackMsg, streamErr := getRHELStream(nodePool.Spec.OSImageStream.Name, releaseVersion, configGenerator.usesRunc)
+	if streamErr != nil {
+		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+			Type:               hyperv1.NodePoolValidMachineConfigConditionType,
+			Status:             corev1.ConditionFalse,
+			Reason:             hyperv1.NodePoolValidationFailedReason,
+			Message:            streamErr.Error(),
+			ObservedGeneration: nodePool.Generation,
+		})
+		return &ctrl.Result{}, nil
+	}
+
+	condition := hyperv1.NodePoolCondition{
 		Type:               hyperv1.NodePoolValidMachineConfigConditionType,
 		Status:             corev1.ConditionTrue,
 		Reason:             hyperv1.AsExpectedReason,
 		ObservedGeneration: nodePool.Generation,
-	})
+	}
+	if fallbackMsg != "" {
+		condition.Message = fallbackMsg
+	}
+	SetStatusCondition(&nodePool.Status.Conditions, condition)
 
 	return nil, nil
 }
