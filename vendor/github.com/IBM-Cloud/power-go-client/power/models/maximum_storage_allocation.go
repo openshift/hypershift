@@ -19,7 +19,7 @@ import (
 // swagger:model MaximumStorageAllocation
 type MaximumStorageAllocation struct {
 
-	// Maximum allocation storage size (GB)
+	// Maximum allocation storage size (GiB)
 	// Required: true
 	MaxAllocationSize *int64 `json:"maxAllocationSize"`
 

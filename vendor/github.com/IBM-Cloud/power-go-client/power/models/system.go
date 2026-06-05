@@ -48,7 +48,7 @@ type System struct {
 	// Total number of physical cores in the Pod
 	TotalPhysCores float64 `json:"totalPhysCores,omitempty"`
 
-	// Total amount of physical memory in the Pod (GB)
+	// Total amount of physical memory in the Pod (GiB)
 	TotalPhysMemory int64 `json:"totalPhysMemory,omitempty"`
 }
 

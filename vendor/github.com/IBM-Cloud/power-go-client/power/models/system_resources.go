@@ -46,7 +46,7 @@ type SystemResources struct {
 	// Required: true
 	TotalPhysCores *float64 `json:"totalPhysCores"`
 
-	// Total amount of physical memory in the Pod (GB)
+	// Total amount of physical memory in the Pod (GiB)
 	// Required: true
 	TotalPhysMemory *int64 `json:"totalPhysMemory"`
 }

@@ -23,11 +23,11 @@ type StoragePoolCombined struct {
 	// Required: true
 	PoolName *string `json:"poolName"`
 
-	// Available/Unused pool capacity (GB)
+	// Available/Unused pool capacity (GiB)
 	// Required: true
 	Storage *int64 `json:"storage"`
 
-	// Total pool capacity (GB)
+	// Total pool capacity (GiB)
 	// Required: true
 	TotalStorage *int64 `json:"totalStorage"`
 }
