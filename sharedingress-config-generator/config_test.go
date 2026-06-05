@@ -108,6 +108,21 @@ func TestGenerateConfig(t *testing.T) {
 						Spec: hyperv1.HostedClusterSpec{
 							ClusterID:            "hc1-UUID",
 							KubeAPIServerDNSName: "kube-apiserver-public-custom.example.com",
+							Platform: hyperv1.PlatformSpec{
+								Type: hyperv1.AzurePlatform,
+								Azure: &hyperv1.AzurePlatformSpec{
+									Private: hyperv1.AzurePrivateSpec{
+										Type: hyperv1.AzurePrivateTypeSwift,
+										Swift: hyperv1.AzureSwiftSpec{
+											PodNetworkInstance: "test-pni",
+										},
+									},
+									Topology: hyperv1.AzureTopologyPublicAndPrivate,
+									AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+										AzureAuthenticationConfigType: hyperv1.AzureAuthenticationTypeManagedIdentities,
+									},
+								},
+							},
 						},
 					},
 					routes: []client.Object{
@@ -136,6 +151,21 @@ func TestGenerateConfig(t *testing.T) {
 									AllowedCIDRBlocks: []hyperv1.CIDRBlock{
 										"1.1.1.1/32",
 										"192.168.1.1/24",
+									},
+								},
+							},
+							Platform: hyperv1.PlatformSpec{
+								Type: hyperv1.AzurePlatform,
+								Azure: &hyperv1.AzurePlatformSpec{
+									Private: hyperv1.AzurePrivateSpec{
+										Type: hyperv1.AzurePrivateTypeSwift,
+										Swift: hyperv1.AzureSwiftSpec{
+											PodNetworkInstance: "test-pni",
+										},
+									},
+									Topology: hyperv1.AzureTopologyPublicAndPrivate,
+									AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+										AzureAuthenticationConfigType: hyperv1.AzureAuthenticationTypeManagedIdentities,
 									},
 								},
 							},
@@ -174,14 +204,20 @@ func TestGenerateConfig(t *testing.T) {
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      "hc1",
 							Namespace: "test",
-							Annotations: map[string]string{
-								hyperv1.SwiftPodNetworkInstanceAnnotation: "test-swift-instance",
-							},
 						},
 						Spec: hyperv1.HostedClusterSpec{
 							ClusterID: "hc1-UUID",
 							Platform: hyperv1.PlatformSpec{
 								Type: hyperv1.AzurePlatform,
+								Azure: &hyperv1.AzurePlatformSpec{
+									Private: hyperv1.AzurePrivateSpec{
+										Type: hyperv1.AzurePrivateTypeSwift,
+										Swift: hyperv1.AzureSwiftSpec{
+											PodNetworkInstance: "test-pni",
+										},
+									},
+									Topology: hyperv1.AzureTopologyPrivate,
+								},
 							},
 						},
 					},

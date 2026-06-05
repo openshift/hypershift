@@ -535,20 +535,28 @@ func TestReconcileInfrastructure(t *testing.T) {
 			},
 		},
 		// ARO HCP test cases - use shared ingress
+		// Three variants cover each Swift detection path independently:
+		// 1. Annotation-only (legacy fallback: env var + annotation, no API fields)
+		// 2. API-only (Private.Type=Swift, no annotation)
+		// 3. Both annotation AND API fields (coexistence during migration)
 		{
-			name: "ARO_Route_SharedIngress",
-			hcp: withServices(
-				baseAzureHCP(),
-				allServicesRouteWithHostnames(),
-			),
+			name: "ARO_Route_SharedIngress_AnnotationFallback",
+			hcp: func() *hyperv1.HostedControlPlane {
+				hcp := withServices(baseAzureHCP(), allServicesRouteWithHostnames())
+				hcp.Annotations = map[string]string{
+					hyperv1.SwiftPodNetworkInstanceAnnotation: "swift-network-instance",
+				}
+				hcp.Spec.Platform.Azure.AzureAuthenticationConfig = hyperv1.AzureAuthenticationConfiguration{
+					AzureAuthenticationConfigType: hyperv1.AzureAuthenticationTypeManagedIdentities,
+				}
+				return hcp
+			}(),
 			setupEnv: func(t *testing.T) {
 				t.Setenv("MANAGED_SERVICE", hyperv1.AroHCP)
 			},
 			expectError: false,
-			// For ARO with shared ingress:
-			// - APIHost comes directly from strategy.Route.Hostname
-			// - Port is 443 (ExternalDNSLBPort)
-			// - No internal/external routers needed (shared ingress handles it)
+			// Legacy fallback: Swift detected via env var + annotation.
+			// Same behavior as API field path: shared ingress, no routers.
 			expectedStatus: &InfrastructureStatus{
 				APIHost:            testKASHostname,
 				APIPort:            443,
@@ -562,11 +570,17 @@ func TestReconcileInfrastructure(t *testing.T) {
 			},
 		},
 		{
-			name: "ARO_Route_SharedIngress_And_Swift",
+			name: "ARO_Route_SharedIngress_APIField",
 			hcp: func() *hyperv1.HostedControlPlane {
 				hcp := withServices(baseAzureHCP(), allServicesRouteWithHostnames())
-				hcp.Annotations = map[string]string{
-					hyperv1.SwiftPodNetworkInstanceAnnotation: "swift-network-instance",
+				hcp.Spec.Platform.Azure.Private = hyperv1.AzurePrivateSpec{
+					Type: hyperv1.AzurePrivateTypeSwift,
+					Swift: hyperv1.AzureSwiftSpec{
+						PodNetworkInstance: "test-pni",
+					},
+				}
+				hcp.Spec.Platform.Azure.AzureAuthenticationConfig = hyperv1.AzureAuthenticationConfiguration{
+					AzureAuthenticationConfigType: hyperv1.AzureAuthenticationTypeManagedIdentities,
 				}
 				return hcp
 			}(),
@@ -574,11 +588,44 @@ func TestReconcileInfrastructure(t *testing.T) {
 				t.Setenv("MANAGED_SERVICE", hyperv1.AroHCP)
 			},
 			expectError: false,
-			// For ARO with Swift:
-			// - Swift handles pod networking, so no router services are needed
-			// - APIHost comes from shared ingress (KasRouteHostname)
-			// - Port is 443 (ExternalDNSLBPort)
-			// - Konnectivity (and ignition see v2/ignitionserver) Routes use hypershift.local, kas and auth use both hypershift.local and external routes
+			// New path: Swift detected via Private.Type=Swift API field.
+			// Same behavior: shared ingress, no routers.
+			expectedStatus: &InfrastructureStatus{
+				APIHost:            testKASHostname,
+				APIPort:            443,
+				OAuthEnabled:       true,
+				OAuthHost:          testOAuthHostname,
+				OAuthPort:          443,
+				KonnectivityHost:   testKonnectivityHost,
+				KonnectivityPort:   443,
+				NeedInternalRouter: false,
+				NeedExternalRouter: false,
+			},
+		},
+		{
+			name: "ARO_Route_SharedIngress_Both",
+			hcp: func() *hyperv1.HostedControlPlane {
+				hcp := withServices(baseAzureHCP(), allServicesRouteWithHostnames())
+				hcp.Annotations = map[string]string{
+					hyperv1.SwiftPodNetworkInstanceAnnotation: "swift-network-instance",
+				}
+				hcp.Spec.Platform.Azure.Private = hyperv1.AzurePrivateSpec{
+					Type: hyperv1.AzurePrivateTypeSwift,
+					Swift: hyperv1.AzureSwiftSpec{
+						PodNetworkInstance: "swift-network-instance",
+					},
+				}
+				hcp.Spec.Platform.Azure.AzureAuthenticationConfig = hyperv1.AzureAuthenticationConfiguration{
+					AzureAuthenticationConfigType: hyperv1.AzureAuthenticationTypeManagedIdentities,
+				}
+				return hcp
+			}(),
+			setupEnv: func(t *testing.T) {
+				t.Setenv("MANAGED_SERVICE", hyperv1.AroHCP)
+			},
+			expectError: false,
+			// Coexistence: both annotation and API field set during migration.
+			// API field takes precedence; same behavior as API-only path.
 			expectedStatus: &InfrastructureStatus{
 				APIHost:            testKASHostname,
 				APIPort:            443,
@@ -1573,20 +1620,7 @@ func TestReconcileHCPRouterServices(t *testing.T) {
 			expectedServices:             nil,
 		},
 		{
-			name:                         "When ARO is enabled it should not create any services",
-			endpointAccess:               hyperv1.Public,
-			exposeAPIServerThroughRouter: true,
-			expectedServices:             nil,
-			setupEnv: func(t *testing.T) {
-				t.Setenv("MANAGED_SERVICE", hyperv1.AroHCP)
-			},
-			hcpModifier: func(hcp *hyperv1.HostedControlPlane) {
-				hcp.Spec.Platform.Type = hyperv1.AzurePlatform
-				hcp.Spec.Platform.AWS = nil
-			},
-		},
-		{
-			name:                         "When ARO with Swift is enabled it should create only a ClusterIP private router service",
+			name:                         "When ARO with Swift annotation fallback it should create only a ClusterIP private router service",
 			endpointAccess:               hyperv1.Public,
 			exposeAPIServerThroughRouter: true,
 			expectedServices: []corev1.Service{
@@ -1618,6 +1652,91 @@ func TestReconcileHCPRouterServices(t *testing.T) {
 				hcp.Spec.Platform.AWS = nil
 				hcp.Annotations = map[string]string{
 					hyperv1.SwiftPodNetworkInstanceAnnotation: "swift-network-instance",
+				}
+			},
+		},
+		{
+			name:                         "When ARO with Swift API fields it should create only a ClusterIP private router service",
+			endpointAccess:               hyperv1.Public,
+			exposeAPIServerThroughRouter: true,
+			expectedServices: []corev1.Service{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "private-router",
+						Namespace: namespace,
+						Labels:    map[string]string{"app": "private-router"},
+					},
+					Spec: corev1.ServiceSpec{
+						Type:     corev1.ServiceTypeClusterIP,
+						Selector: map[string]string{"app": "private-router"},
+						Ports: []corev1.ServicePort{
+							{
+								Name:       "https",
+								Port:       443,
+								TargetPort: intstr.FromString("https"),
+								Protocol:   corev1.ProtocolTCP,
+							},
+						},
+					},
+				},
+			},
+			setupEnv: func(t *testing.T) {
+				t.Setenv("MANAGED_SERVICE", hyperv1.AroHCP)
+			},
+			hcpModifier: func(hcp *hyperv1.HostedControlPlane) {
+				hcp.Spec.Platform.Type = hyperv1.AzurePlatform
+				hcp.Spec.Platform.AWS = nil
+				hcp.Spec.Platform.Azure = &hyperv1.AzurePlatformSpec{
+					Private: hyperv1.AzurePrivateSpec{
+						Type: hyperv1.AzurePrivateTypeSwift,
+						Swift: hyperv1.AzureSwiftSpec{
+							PodNetworkInstance: "test-pni",
+						},
+					},
+				}
+			},
+		},
+		{
+			name:                         "When ARO with both Swift annotation and API fields it should create only a ClusterIP private router service",
+			endpointAccess:               hyperv1.Public,
+			exposeAPIServerThroughRouter: true,
+			expectedServices: []corev1.Service{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "private-router",
+						Namespace: namespace,
+						Labels:    map[string]string{"app": "private-router"},
+					},
+					Spec: corev1.ServiceSpec{
+						Type:     corev1.ServiceTypeClusterIP,
+						Selector: map[string]string{"app": "private-router"},
+						Ports: []corev1.ServicePort{
+							{
+								Name:       "https",
+								Port:       443,
+								TargetPort: intstr.FromString("https"),
+								Protocol:   corev1.ProtocolTCP,
+							},
+						},
+					},
+				},
+			},
+			setupEnv: func(t *testing.T) {
+				t.Setenv("MANAGED_SERVICE", hyperv1.AroHCP)
+			},
+			hcpModifier: func(hcp *hyperv1.HostedControlPlane) {
+				hcp.Spec.Platform.Type = hyperv1.AzurePlatform
+				hcp.Spec.Platform.AWS = nil
+				hcp.Annotations = map[string]string{
+					hyperv1.SwiftPodNetworkInstanceAnnotation: "swift-network-instance",
+				}
+				hcp.Spec.Platform.Azure = &hyperv1.AzurePlatformSpec{
+					Private: hyperv1.AzurePrivateSpec{
+						Type: hyperv1.AzurePrivateTypeSwift,
+						Swift: hyperv1.AzureSwiftSpec{
+							PodNetworkInstance: "swift-network-instance",
+						},
+					},
 				}
 			},
 		},
@@ -1788,7 +1907,7 @@ func TestReconcileInternalRouterServiceStatus(t *testing.T) {
 		wantMsg    string
 	}{
 		{
-			name: "When ARO swift is enabled it should not need internal router",
+			name: "When ARO swift is enabled via annotation fallback it should not need internal router",
 			setup: func(t *testing.T) {
 				t.Setenv("MANAGED_SERVICE", hyperv1.AroHCP)
 			},
@@ -1805,6 +1924,63 @@ func TestReconcileInternalRouterServiceStatus(t *testing.T) {
 						Type: hyperv1.AzurePlatform,
 						Azure: &hyperv1.AzurePlatformSpec{
 							Location: "eastus",
+						},
+					},
+				},
+			},
+			wantNeeded: false,
+		},
+		{
+			name: "When ARO swift is enabled via API field it should not need internal router",
+			setup: func(t *testing.T) {
+				t.Setenv("MANAGED_SERVICE", hyperv1.AroHCP)
+			},
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-hcp",
+					Namespace: "test-namespace",
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							Location: "eastus",
+							Private: hyperv1.AzurePrivateSpec{
+								Type: hyperv1.AzurePrivateTypeSwift,
+								Swift: hyperv1.AzureSwiftSpec{
+									PodNetworkInstance: "swift-network-instance",
+								},
+							},
+						},
+					},
+				},
+			},
+			wantNeeded: false,
+		},
+		{
+			name: "When ARO swift is enabled via both annotation and API field it should not need internal router",
+			setup: func(t *testing.T) {
+				t.Setenv("MANAGED_SERVICE", hyperv1.AroHCP)
+			},
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-hcp",
+					Namespace: "test-namespace",
+					Annotations: map[string]string{
+						hyperv1.SwiftPodNetworkInstanceAnnotation: "swift-network-instance",
+					},
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							Location: "eastus",
+							Private: hyperv1.AzurePrivateSpec{
+								Type: hyperv1.AzurePrivateTypeSwift,
+								Swift: hyperv1.AzureSwiftSpec{
+									PodNetworkInstance: "swift-network-instance",
+								},
+							},
 						},
 					},
 				},

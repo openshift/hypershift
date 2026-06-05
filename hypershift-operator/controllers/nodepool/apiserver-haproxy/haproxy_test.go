@@ -396,6 +396,14 @@ kind: Config`
 			hc: hc(func(hc *hyperv1.HostedCluster) {
 				hc.Spec.Platform.Type = hyperv1.AzurePlatform
 				hc.Spec.Platform.AWS = nil
+				hc.Spec.Platform.Azure = &hyperv1.AzurePlatformSpec{
+					Private: hyperv1.AzurePrivateSpec{
+						Type: hyperv1.AzurePrivateTypeSwift,
+						Swift: hyperv1.AzureSwiftSpec{
+							PodNetworkInstance: "test-swift-instance",
+						},
+					},
+				}
 				hc.ObjectMeta.Annotations = map[string]string{
 					hyperv1.SwiftPodNetworkInstanceAnnotation: "test-swift-instance",
 				}
@@ -422,13 +430,25 @@ kind: Config`
 			expectedHAProxyConfigContent: []string{"api.hc.hypershift.local:443"},
 		},
 		{
-			name: "When ARO  and no Swift is used (CI) it should use the shared ingress LB service IP, port 6443 and proxy protocol",
+			name: "When ARO shared ingress is used it should use the shared ingress LB service IP, port 6443 and proxy protocol",
 			setupEnv: func(t *testing.T) {
 				azureutil.SetAsAroHCPTest(t)
 			},
 			hc: hc(func(hc *hyperv1.HostedCluster) {
 				hc.Spec.Platform.Type = hyperv1.AzurePlatform
 				hc.Spec.Platform.AWS = nil
+				hc.Spec.Platform.Azure = &hyperv1.AzurePlatformSpec{
+					Topology: hyperv1.AzureTopologyPublic,
+					Private: hyperv1.AzurePrivateSpec{
+						Type: hyperv1.AzurePrivateTypeSwift,
+						Swift: hyperv1.AzureSwiftSpec{
+							PodNetworkInstance: "test-pni",
+						},
+					},
+					AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+						AzureAuthenticationConfigType: hyperv1.AzureAuthenticationTypeManagedIdentities,
+					},
+				}
 				hc.Status.KubeConfig = &corev1.LocalObjectReference{Name: "kk"}
 				hc.Spec.Networking.ServiceNetwork = []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}}
 				hc.Spec.Services = []hyperv1.ServicePublishingStrategyMapping{

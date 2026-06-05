@@ -2652,12 +2652,29 @@ kind: Config`),
 					Namespace: "clusters",
 				},
 				Spec: hyperv1.HostedClusterSpec{
-					Platform: hyperv1.PlatformSpec{
-						Type: hyperv1.AWSPlatform,
-						AWS: &hyperv1.AWSPlatformSpec{
-							EndpointAccess: hyperv1.Public,
-						},
-					},
+					Platform: func() hyperv1.PlatformSpec {
+						if tc.useSharedIngress {
+							return hyperv1.PlatformSpec{
+								Type: hyperv1.AzurePlatform,
+								Azure: &hyperv1.AzurePlatformSpec{
+									Topology: hyperv1.AzureTopologyPublicAndPrivate,
+									Private: hyperv1.AzurePrivateSpec{
+										Type:  hyperv1.AzurePrivateTypeSwift,
+										Swift: hyperv1.AzureSwiftSpec{PodNetworkInstance: "test-pni"},
+									},
+									AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+										AzureAuthenticationConfigType: hyperv1.AzureAuthenticationTypeManagedIdentities,
+									},
+								},
+							}
+						}
+						return hyperv1.PlatformSpec{
+							Type: hyperv1.AWSPlatform,
+							AWS: &hyperv1.AWSPlatformSpec{
+								EndpointAccess: hyperv1.Public,
+							},
+						}
+					}(),
 					Networking: hyperv1.ClusterNetworking{
 						ServiceNetwork: []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}},
 					},
