@@ -1117,8 +1117,8 @@ github.com/openshift/cluster-api-provider-agent/api/v1beta1
 ## explicit; go 1.22.0
 github.com/openshift/cluster-autoscaler-operator/pkg/apis/autoscaling/v1
 github.com/openshift/cluster-autoscaler-operator/pkg/apis/autoscaling/v1beta1
-# github.com/openshift/cluster-node-tuning-operator v0.0.0-20250225115807-f166846b7256
-## explicit; go 1.22.0
+# github.com/openshift/cluster-node-tuning-operator v0.0.0-20260527203700-73801cc280b3
+## explicit; go 1.24.0
 github.com/openshift/cluster-node-tuning-operator/pkg/apis/performanceprofile/v1
 github.com/openshift/cluster-node-tuning-operator/pkg/apis/performanceprofile/v2
 github.com/openshift/cluster-node-tuning-operator/pkg/apis/tuned
@@ -1127,7 +1127,7 @@ github.com/openshift/cluster-node-tuning-operator/pkg/performanceprofile/control
 # github.com/openshift/custom-resource-status v1.1.3-0.20220503160415-f2fdb4999d87
 ## explicit; go 1.12
 github.com/openshift/custom-resource-status/conditions/v1
-# github.com/openshift/hypershift/api v0.0.0-20240604072534-cd2d5291e2b7 => ./api
+# github.com/openshift/hypershift/api v0.0.0-20250724113115-0281b49cc465 => ./api
 ## explicit; go 1.25.7
 github.com/openshift/hypershift/api/auditlogpersistence
 github.com/openshift/hypershift/api/auditlogpersistence/v1alpha1
@@ -1465,7 +1465,6 @@ golang.org/x/crypto/ssh
 golang.org/x/crypto/ssh/internal/bcrypt_pbkdf
 # golang.org/x/exp v0.0.0-20251219203646-944ab1f22d93
 ## explicit; go 1.24.0
-golang.org/x/exp/maps
 golang.org/x/exp/slices
 # golang.org/x/mod v0.35.0
 ## explicit; go 1.25.0
@@ -2528,8 +2527,8 @@ k8s.io/kubectl/pkg/util/openapi
 k8s.io/kubectl/pkg/util/templates
 k8s.io/kubectl/pkg/util/term
 k8s.io/kubectl/pkg/validation
-# k8s.io/kubelet v0.32.2
-## explicit; go 1.23.0
+# k8s.io/kubelet v0.33.3
+## explicit; go 1.24.0
 k8s.io/kubelet/config/v1beta1
 # k8s.io/pod-security-admission v0.35.1
 ## explicit; go 1.25.0
@@ -2626,8 +2625,8 @@ sigs.k8s.io/cluster-api-provider-openstack/api/v1alpha1
 sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1
 sigs.k8s.io/cluster-api-provider-openstack/pkg/utils/errors
 sigs.k8s.io/cluster-api-provider-openstack/pkg/utils/optional
-# sigs.k8s.io/controller-runtime v0.22.4 => sigs.k8s.io/controller-runtime v0.19.7
-## explicit; go 1.22.0
+# sigs.k8s.io/controller-runtime v0.22.4
+## explicit; go 1.24.0
 sigs.k8s.io/controller-runtime
 sigs.k8s.io/controller-runtime/pkg/builder
 sigs.k8s.io/controller-runtime/pkg/cache
@@ -2643,6 +2642,7 @@ sigs.k8s.io/controller-runtime/pkg/cluster
 sigs.k8s.io/controller-runtime/pkg/config
 sigs.k8s.io/controller-runtime/pkg/controller
 sigs.k8s.io/controller-runtime/pkg/controller/controllerutil
+sigs.k8s.io/controller-runtime/pkg/controller/priorityqueue
 sigs.k8s.io/controller-runtime/pkg/conversion
 sigs.k8s.io/controller-runtime/pkg/envtest
 sigs.k8s.io/controller-runtime/pkg/event
@@ -2654,6 +2654,7 @@ sigs.k8s.io/controller-runtime/pkg/internal/field/selector
 sigs.k8s.io/controller-runtime/pkg/internal/flock
 sigs.k8s.io/controller-runtime/pkg/internal/httpserver
 sigs.k8s.io/controller-runtime/pkg/internal/log
+sigs.k8s.io/controller-runtime/pkg/internal/metrics
 sigs.k8s.io/controller-runtime/pkg/internal/objectutil
 sigs.k8s.io/controller-runtime/pkg/internal/recorder
 sigs.k8s.io/controller-runtime/pkg/internal/source
@@ -2678,6 +2679,7 @@ sigs.k8s.io/controller-runtime/pkg/webhook
 sigs.k8s.io/controller-runtime/pkg/webhook/admission
 sigs.k8s.io/controller-runtime/pkg/webhook/admission/metrics
 sigs.k8s.io/controller-runtime/pkg/webhook/conversion
+sigs.k8s.io/controller-runtime/pkg/webhook/conversion/metrics
 sigs.k8s.io/controller-runtime/pkg/webhook/internal/metrics
 # sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730
 ## explicit; go 1.23
@@ -2801,6 +2803,5 @@ sigs.k8s.io/yaml/kyaml
 # github.com/openshift/hypershift/api => ./api
 # github.com/k-orc/openstack-resource-controller => sigs.k8s.io/cluster-api-provider-openstack/orc v0.0.0-20250113192833-e4f56a2b4f32
 # github.com/golang-jwt/jwt/v4 => github.com/golang-jwt/jwt/v4 v4.5.2
-# sigs.k8s.io/controller-runtime => sigs.k8s.io/controller-runtime v0.19.7
 # github.com/aws/karpenter-provider-aws => github.com/openshift/aws-karpenter-provider-aws v0.0.0-20260311064431-f0be9c72e5bf
 # sigs.k8s.io/karpenter => github.com/openshift/kubernetes-sigs-karpenter v0.0.0-20260310165629-67e201b559d5
