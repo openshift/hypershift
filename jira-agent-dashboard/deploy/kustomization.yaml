@@ -7,6 +7,7 @@ resources:
   - dashboard-deployment.yaml
   - dashboard-route.yaml
   - scraper-cronjob.yaml
+  - gcp-wif-config.yaml
   - networkpolicy.yaml
   - rbac.yaml
 # Secrets are NOT included — apply them manually from secrets.yaml.example

@@ -1,4 +1,4 @@
-.PHONY: build test lint clean dashboard scraper image deploy
+.PHONY: build test lint clean dashboard scraper image classify-image deploy
 
 GO := go
 BINARY_DIR := bin
@@ -25,6 +25,9 @@ clean:
 
 image:
 	podman build -t jira-agent-dashboard:latest -f Containerfile .
+
+classify-image:
+	podman build -t jira-agent-dashboard:classify -f Containerfile.classify .
 
 deploy:
 	kubectl apply -k deploy/

@@ -14,7 +14,10 @@ import (
 )
 
 func main() {
-	step := flag.String("step", "all", "Scrape step to run: prow, github, complexity, or all")
+	step := flag.String("step", "all", "Scrape step to run: prow, github, complexity, export-unclassified, import-classifications, or all")
+	output := flag.String("output", "", "Output file path (for export-unclassified)")
+	input := flag.String("input", "", "Input file path (for import-classifications)")
+	skillConfig := flag.String("skill-config", "", "Path to classify-review-comment config.json for label validation (for import-classifications)")
 	flag.Parse()
 
 	log.Printf("jira-agent-scraper starting (step=%s)...", *step)
@@ -70,6 +73,7 @@ func main() {
 
 	// Create orchestrator and run
 	orch := scraper.NewOrchestrator(store, gcsClient, githubClient, complexityAnalyzer)
+	orch.SetIOPaths(*output, *input, *skillConfig)
 
 	ctx := context.Background()
 	if err := orch.RunStep(ctx, *step); err != nil {

@@ -118,3 +118,78 @@ spec:
               secret:
                 secretName: github-app-key
                 defaultMode: 0400
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: scraper-classify
+  namespace: jira-agent-dashboard
+  labels:
+    app: jira-agent-dashboard
+    component: scraper
+    scraper-step: classify
+spec:
+  schedule: "30 7 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 1800
+      template:
+        spec:
+          restartPolicy: Never
+          serviceAccountName: dashboard
+          automountServiceAccountToken: true
+          containers:
+            - name: classify
+              image: quay.io/rh_ee_brcox/jira-agent-dashboard:classify
+              imagePullPolicy: Always
+              env:
+                - name: DB_PATH
+                  value: /data/dashboard.db
+                - name: GOOGLE_APPLICATION_CREDENTIALS
+                  value: /etc/gcp-wif/credential-config.json
+                - name: CLAUDE_CODE_USE_VERTEX
+                  value: "1"
+                - name: CLOUD_ML_REGION
+                  value: global
+                - name: ANTHROPIC_VERTEX_PROJECT_ID
+                  value: hosted-control-planes
+              volumeMounts:
+                - name: db
+                  mountPath: /data
+                - name: gcp-wif-config
+                  mountPath: /etc/gcp-wif
+                  readOnly: true
+                - name: gcp-wif-token
+                  mountPath: /var/run/secrets/gcp-wif
+                  readOnly: true
+              resources:
+                requests:
+                  cpu: 200m
+                  memory: 512Mi
+                limits:
+                  cpu: "1"
+                  memory: 1Gi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: ["ALL"]
+                readOnlyRootFilesystem: false
+                runAsNonRoot: true
+          volumes:
+            - name: db
+              persistentVolumeClaim:
+                claimName: dashboard-db
+            - name: gcp-wif-config
+              configMap:
+                name: gcp-wif-config
+            - name: gcp-wif-token
+              projected:
+                sources:
+                  - serviceAccountToken:
+                      audience: "//iam.googleapis.com/projects/482048258650/locations/global/workloadIdentityPools/k8s-dashboard-pool/providers/k8s-jira-dashboard"
+                      expirationSeconds: 3600
+                      path: token

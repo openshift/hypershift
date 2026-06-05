@@ -338,6 +338,49 @@ func (s *Store) GetUnclassifiedComments() ([]ReviewComment, error) {
 	return s.scanReviewComments(rows)
 }
 
+// GetUnclassifiedCommentsWithContext returns unclassified comments with the PR URL from the parent issue.
+func (s *Store) GetUnclassifiedCommentsWithContext() ([]CommentWithContext, error) {
+	query := fmt.Sprintf(
+		`SELECT rc.id, rc.issue_id, rc.github_comment_id, rc.author, rc.body, rc.created_at,
+		        rc.severity, rc.topic, rc.confidence, rc.ai_classified, rc.human_override, COALESCE(i.pr_url, '')
+		 FROM review_comments rc
+		 JOIN issues i ON rc.issue_id = i.id
+		 WHERE rc.severity IS NULL %s ORDER BY rc.id`, commentFilterSQL("rc.author", "rc.body"))
+	rows, err := s.db.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var results []CommentWithContext
+	for rows.Next() {
+		var c CommentWithContext
+		var severity, topic sql.NullString
+		var confidence sql.NullFloat64
+		var aiClassified, humanOverride int
+		err := rows.Scan(
+			&c.ID, &c.IssueID, &c.GitHubCommentID, &c.Author, &c.Body, &c.CreatedAt,
+			&severity, &topic, &confidence, &aiClassified, &humanOverride, &c.PRURL,
+		)
+		if err != nil {
+			return nil, err
+		}
+		if severity.Valid {
+			c.Severity = severity.String
+		}
+		if topic.Valid {
+			c.Topic = topic.String
+		}
+		if confidence.Valid {
+			c.Confidence = &confidence.Float64
+		}
+		c.AIClassified = aiClassified != 0
+		c.HumanOverride = humanOverride != 0
+		results = append(results, c)
+	}
+	return results, rows.Err()
+}
+
 func (s *Store) scanReviewComments(rows *sql.Rows) ([]ReviewComment, error) {
 	var comments []ReviewComment
 	for rows.Next() {
@@ -451,6 +494,15 @@ func (s *Store) UpdateCommentClassification(id int64, severity, topic string, co
 	_, err := s.db.Exec(
 		`UPDATE review_comments SET severity = ?, topic = ?, confidence = ?, human_override = ? WHERE id = ?`,
 		severity, topic, confidence, boolToInt(humanOverride), id,
+	)
+	return err
+}
+
+// UpdateCommentAIClassification updates classification fields and marks the comment as AI-classified.
+func (s *Store) UpdateCommentAIClassification(id int64, severity, topic string, confidence *float64) error {
+	_, err := s.db.Exec(
+		`UPDATE review_comments SET severity = ?, topic = ?, confidence = ?, ai_classified = 1, human_override = 0 WHERE id = ?`,
+		severity, topic, confidence, id,
 	)
 	return err
 }

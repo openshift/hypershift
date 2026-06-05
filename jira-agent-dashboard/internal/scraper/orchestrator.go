@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -37,6 +38,9 @@ type Orchestrator struct {
 	gcs        GCSClient
 	gh         GitHubAPI
 	complexity ComplexityAnalyzerAPI
+	outputPath      string
+	inputPath       string
+	skillConfigPath string
 }
 
 // NewOrchestrator creates an Orchestrator with the given dependencies.
@@ -47,6 +51,13 @@ func NewOrchestrator(store *db.Store, gcs GCSClient, gh GitHubAPI, ca Complexity
 		gh:         gh,
 		complexity: ca,
 	}
+}
+
+// SetIOPaths configures file paths for export/import steps.
+func (o *Orchestrator) SetIOPaths(output, input, skillConfig string) {
+	o.outputPath = output
+	o.inputPath = input
+	o.skillConfigPath = skillConfig
 }
 
 // Run executes all scrape steps sequentially.
@@ -85,6 +96,12 @@ func (o *Orchestrator) RunStep(ctx context.Context, step string) error {
 	case "backfill-pr-stats":
 		log.Println("Backfilling PR diff stats from GitHub for all issues...")
 		return o.backfillPRStats(ctx)
+	case "export-unclassified":
+		log.Println("Exporting unclassified comments...")
+		return o.ExportUnclassified(ctx, o.outputPath)
+	case "import-classifications":
+		log.Println("Importing comment classifications...")
+		return o.ImportClassifications(ctx, o.inputPath)
 	case "all":
 		log.Println("Starting full scrape cycle...")
 		if err := o.scrapeNewJobRuns(ctx); err != nil {
@@ -658,4 +675,140 @@ func extractOwnerRepo(prURL string) (string, string) {
 		return "", ""
 	}
 	return matches[1], matches[2]
+}
+
+// ExportComment is the JSON structure written by export-unclassified.
+type ExportComment struct {
+	ID     int64  `json:"id"`
+	Author string `json:"author"`
+	Body   string `json:"body"`
+	PRURL  string `json:"pr_url,omitempty"`
+}
+
+// ClassificationResult is the JSON structure expected by import-classifications.
+type ClassificationResult struct {
+	ID         int64    `json:"id"`
+	Severity   string   `json:"severity"`
+	Topic      string   `json:"topic"`
+	Confidence *float64 `json:"confidence,omitempty"`
+}
+
+// skillConfig represents the classify-review-comment config.json structure.
+type skillConfig struct {
+	Severity []struct {
+		Value string `json:"value"`
+	} `json:"severity"`
+	Topic []struct {
+		Value string `json:"value"`
+	} `json:"topic"`
+}
+
+func loadAllowedLabels(configPath string) (severities, topics map[string]bool, err error) {
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return nil, nil, fmt.Errorf("reading skill config %s: %w", configPath, err)
+	}
+	var cfg skillConfig
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return nil, nil, fmt.Errorf("parsing skill config: %w", err)
+	}
+	severities = make(map[string]bool, len(cfg.Severity))
+	for _, s := range cfg.Severity {
+		severities[s.Value] = true
+	}
+	topics = make(map[string]bool, len(cfg.Topic))
+	for _, t := range cfg.Topic {
+		topics[t.Value] = true
+	}
+	return severities, topics, nil
+}
+
+// ExportUnclassified writes unclassified comments to a JSON file.
+func (o *Orchestrator) ExportUnclassified(_ context.Context, outputPath string) error {
+	if outputPath == "" {
+		return fmt.Errorf("--output is required for export-unclassified")
+	}
+
+	comments, err := o.store.GetUnclassifiedCommentsWithContext()
+	if err != nil {
+		return fmt.Errorf("querying unclassified comments: %w", err)
+	}
+
+	var exports []ExportComment
+	for _, c := range comments {
+		exports = append(exports, ExportComment{
+			ID:     c.ID,
+			Author: c.Author,
+			Body:   c.Body,
+			PRURL:  c.PRURL,
+		})
+	}
+
+	data, err := json.MarshalIndent(exports, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshaling comments: %w", err)
+	}
+
+	if err := os.WriteFile(outputPath, data, 0644); err != nil {
+		return fmt.Errorf("writing %s: %w", outputPath, err)
+	}
+
+	log.Printf("Exported %d unclassified comments to %s", len(exports), outputPath)
+	return nil
+}
+
+// ImportClassifications reads classification results from a JSON file and updates the DB.
+// When skillConfigPath is set, it validates severity/topic values against the skill's config.json.
+func (o *Orchestrator) ImportClassifications(_ context.Context, inputPath string) error {
+	if inputPath == "" {
+		return fmt.Errorf("--input is required for import-classifications")
+	}
+
+	var validSeverities, validTopics map[string]bool
+	if o.skillConfigPath != "" {
+		var err error
+		validSeverities, validTopics, err = loadAllowedLabels(o.skillConfigPath)
+		if err != nil {
+			return fmt.Errorf("loading skill config for validation: %w", err)
+		}
+		log.Printf("Loaded %d severity and %d topic labels from %s", len(validSeverities), len(validTopics), o.skillConfigPath)
+	}
+
+	data, err := os.ReadFile(inputPath)
+	if err != nil {
+		return fmt.Errorf("reading %s: %w", inputPath, err)
+	}
+
+	var results []ClassificationResult
+	if err := json.Unmarshal(data, &results); err != nil {
+		return fmt.Errorf("parsing classifications: %w", err)
+	}
+
+	updated, rejected := 0, 0
+	for _, r := range results {
+		if r.Severity == "" && r.Topic == "" {
+			continue
+		}
+		if validSeverities != nil && !validSeverities[r.Severity] {
+			log.Printf("Rejected comment %d: invalid severity %q", r.ID, r.Severity)
+			rejected++
+			continue
+		}
+		if validTopics != nil && !validTopics[r.Topic] {
+			log.Printf("Rejected comment %d: invalid topic %q", r.ID, r.Topic)
+			rejected++
+			continue
+		}
+		if err := o.store.UpdateCommentAIClassification(r.ID, r.Severity, r.Topic, r.Confidence); err != nil {
+			log.Printf("Warning: could not update comment %d: %v", r.ID, err)
+			continue
+		}
+		updated++
+	}
+
+	if rejected > 0 {
+		log.Printf("Rejected %d classifications with invalid labels", rejected)
+	}
+	log.Printf("Imported %d/%d classifications from %s", updated, len(results), inputPath)
+	return nil
 }
