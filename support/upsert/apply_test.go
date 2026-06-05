@@ -45,9 +45,11 @@ func TestApplyManifest(t *testing.T) {
 	existingDeployment.DeletionTimestamp = &metav1.Time{Time: time.Now()}
 	existingDeployment.ManagedFields = []metav1.ManagedFieldsEntry{
 		{
-			Manager:   "hypershift-controlplane-manager",
-			Operation: metav1.ManagedFieldsOperationUpdate,
-			Time:      &metav1.Time{},
+			Manager:    "hypershift-controlplane-manager",
+			Operation:  metav1.ManagedFieldsOperationUpdate,
+			APIVersion: "apps/v1",
+			FieldsType: "FieldsV1",
+			Time:       &metav1.Time{},
 		},
 	}
 
