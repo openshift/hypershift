@@ -32,7 +32,8 @@ func ReconcileMetricsForwarderDeployment(deployment *appsv1.Deployment, haproxyI
 			ObjectMeta: metav1.ObjectMeta{
 				Labels: labels,
 				Annotations: map[string]string{
-					"metrics-forwarder-config-checksum": configHash,
+					"metrics-forwarder-config-checksum":       configHash,
+					"target.workload.openshift.io/management": `{"effect": "PreferredDuringScheduling"}`,
 				},
 			},
 			Spec: corev1.PodSpec{
