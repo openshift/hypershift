@@ -137,6 +137,22 @@ func MetricsClientClusterRoleBinding() *rbacv1.ClusterRoleBinding {
 	}
 }
 
+func MetricsResourcesClusterRole() *rbacv1.ClusterRole {
+	return &rbacv1.ClusterRole{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "hypershift-metrics-resources-reader",
+		},
+	}
+}
+
+func MetricsResourcesClusterRoleBinding() *rbacv1.ClusterRoleBinding {
+	return &rbacv1.ClusterRoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "hypershift-metrics-resources-reader",
+		},
+	}
+}
+
 func AuthenticatedReaderForAuthenticatedUserRolebinding() *rbacv1.RoleBinding {
 	return &rbacv1.RoleBinding{
 		ObjectMeta: metav1.ObjectMeta{

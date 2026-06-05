@@ -24,6 +24,22 @@ spec:
         key: tls.key
         name: metrics-client
       serverName: kube-scheduler
+  - scheme: https
+    path: /metrics/resources
+    targetPort: client
+    tlsConfig:
+      ca:
+        configMap:
+          key: ca.crt
+          name: root-ca
+      cert:
+        secret:
+          key: tls.crt
+          name: metrics-client
+      keySecret:
+        key: tls.key
+        name: metrics-client
+      serverName: kube-scheduler
   selector:
     matchLabels:
       app: kube-scheduler

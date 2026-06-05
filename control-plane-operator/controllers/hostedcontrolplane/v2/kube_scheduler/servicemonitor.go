@@ -12,8 +12,12 @@ func adaptServiceMonitor(cpContext component.WorkloadContext, sm *prometheusoper
 	sm.Spec.NamespaceSelector = prometheusoperatorv1.NamespaceSelector{
 		MatchNames: []string{sm.Namespace},
 	}
+
 	sm.Spec.Endpoints[0].MetricRelabelConfigs = metrics.SchedulerRelabelConfigs(cpContext.MetricsSet)
 	util.ApplyClusterIDLabel(&sm.Spec.Endpoints[0], cpContext.HCP.Spec.ClusterID)
+
+	sm.Spec.Endpoints[1].MetricRelabelConfigs = metrics.SchedulerResourceRelabelConfigs(cpContext.MetricsSet)
+	util.ApplyClusterIDLabel(&sm.Spec.Endpoints[1], cpContext.HCP.Spec.ClusterID)
 
 	return nil
 }
