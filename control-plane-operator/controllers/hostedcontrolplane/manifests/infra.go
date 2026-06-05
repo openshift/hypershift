@@ -93,6 +93,9 @@ func OauthServerService(hostedClusterNamespace string) *corev1.Service {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      oauthServiceName,
 			Namespace: hostedClusterNamespace,
+			Labels: map[string]string{
+				"app": "oauth-openshift",
+			},
 		},
 	}
 }
@@ -138,6 +141,9 @@ func KonnectivityServerService(hostedClusterNamespace string) *corev1.Service {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      konnectivityServerServiceName,
 			Namespace: hostedClusterNamespace,
+			Labels: map[string]string{
+				"app": "konnectivity-server",
+			},
 		},
 	}
 }
