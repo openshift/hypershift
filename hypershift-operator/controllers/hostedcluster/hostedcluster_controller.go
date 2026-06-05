@@ -213,6 +213,11 @@ type HostedClusterReconciler struct {
 	FeatureSet configv1.FeatureSet
 
 	OpenShiftTrustedCAFilePath string
+
+	// ProbeSharedIngressEndpoint tests whether a public endpoint is reachable
+	// via the shared ingress. Defaults to probeSharedIngressEndpoint. Override
+	// in tests to avoid real network calls.
+	ProbeSharedIngressEndpoint func(context context.Context, serviceIP string, servicePort int, kasHostname string) bool
 }
 
 // +kubebuilder:rbac:groups=hypershift.openshift.io,resources=hostedclusters,verbs=get;list;watch;create;update;patch;delete
@@ -2112,6 +2117,11 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	if err := r.reconcileKarpenterOperator(cpContext, hcluster, r.HypershiftOperatorImage, controlPlaneOperatorImage); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile karpenter operator: %w", err)
 	}
+
+	if pubEndpointRequeue, err := r.reconcilePublicEndpointExposedCondition(ctx, hcluster); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to reconcile PublicEndpointExposed condition: %w", err)
+	} else if pubEndpointRequeue != nil && (requeueAfter == nil || *pubEndpointRequeue < *requeueAfter) {
+		requeueAfter = pubEndpointRequeue
 	}
 
 	log.Info("successfully reconciled")
@@ -5408,4 +5418,111 @@ func computeAzurePLSCondition(azPLSList hyperv1.AzurePrivateLinkServiceList, con
 		resourceConditions[i] = pls.Status.Conditions
 	}
 	return computeEndpointServiceCondition(resourceConditions, conditionType, hyperv1.AzurePLSErrorReason, hyperv1.AzurePLSSuccessReason, "AzurePrivateLinkService conditions not found")
+}
+
+const publicEndpointProbeTimeout = 3 * time.Second
+
+func (r *HostedClusterReconciler) reconcilePublicEndpointExposedCondition(ctx context.Context, hc *hyperv1.HostedCluster) (*time.Duration, error) {
+	if !netutil.UseSwiftNetworkingHC(hc) {
+		return nil, nil
+	}
+
+	kasStrategy := netutil.ServicePublishingStrategyByTypeByHC(hc, hyperv1.APIServer)
+	if kasStrategy == nil || kasStrategy.Route == nil || kasStrategy.Route.Hostname == "" {
+		return nil, nil
+	}
+	kasHostname := kasStrategy.Route.Hostname
+
+	svc := &corev1.Service{}
+	svcKey := client.ObjectKey{Namespace: "hypershift-sharedingress", Name: "router"}
+	if err := r.Client.Get(ctx, svcKey, svc); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to get shared ingress service: %w", err)
+	}
+	if svc.Spec.ClusterIP == "" || svc.Spec.ClusterIP == "None" {
+		return nil, nil
+	}
+
+	lbReady := len(svc.Status.LoadBalancer.Ingress) > 0 &&
+		(svc.Status.LoadBalancer.Ingress[0].Hostname != "" || svc.Status.LoadBalancer.Ingress[0].IP != "")
+	usesSharedIngress := netutil.UseSharedIngressHC(hc)
+
+	if !lbReady && usesSharedIngress {
+		condition := metav1.Condition{
+			Type:               string(hyperv1.PublicEndpointExposed),
+			Status:             metav1.ConditionFalse,
+			Reason:             hyperv1.PublicEndpointConvergenceInProgressReason,
+			Message:            "Shared ingress LoadBalancer is not ready",
+			ObservedGeneration: hc.Generation,
+		}
+		if meta.SetStatusCondition(&hc.Status.Conditions, condition) {
+			if err := r.Client.Status().Update(ctx, hc); err != nil {
+				return nil, fmt.Errorf("failed to update PublicEndpointExposed condition: %w", err)
+			}
+		}
+		d := 10 * time.Second
+		return &d, nil
+	}
+
+	probeFn := r.ProbeSharedIngressEndpoint
+	if probeFn == nil {
+		probeFn = probeSharedIngressEndpoint
+	}
+	exposed := probeFn(ctx, svc.Spec.ClusterIP, 443, kasHostname)
+
+	var condition metav1.Condition
+	condition.Type = string(hyperv1.PublicEndpointExposed)
+	condition.ObservedGeneration = hc.Generation
+	var requeue *time.Duration
+
+	switch {
+	case exposed && usesSharedIngress:
+		condition.Status = metav1.ConditionTrue
+		condition.Reason = hyperv1.PublicEndpointSharedIngressConfiguredReason
+		condition.Message = "Public API server endpoint is reachable via shared ingress"
+
+	case !exposed && usesSharedIngress:
+		condition.Status = metav1.ConditionFalse
+		condition.Reason = hyperv1.PublicEndpointConvergenceInProgressReason
+		condition.Message = "Public endpoint configuration in progress"
+		d := 10 * time.Second
+		requeue = &d
+
+	case exposed && !usesSharedIngress:
+		condition.Status = metav1.ConditionTrue
+		condition.Reason = hyperv1.PublicEndpointConvergenceInProgressReason
+		condition.Message = "Public endpoint removal in progress"
+		d := 10 * time.Second
+		requeue = &d
+
+	case !exposed && !usesSharedIngress:
+		condition.Status = metav1.ConditionFalse
+		condition.Reason = hyperv1.PublicEndpointTopologyPrivateReason
+		condition.Message = "Public API server endpoint is not exposed via shared ingress"
+	}
+
+	if meta.SetStatusCondition(&hc.Status.Conditions, condition) {
+		if err := r.Client.Status().Update(ctx, hc); err != nil {
+			return nil, fmt.Errorf("failed to update PublicEndpointExposed condition: %w", err)
+		}
+	}
+	return requeue, nil
+}
+
+func probeSharedIngressEndpoint(context context.Context, serviceIP string, servicePort int, kasHostname string) bool {
+	dialer := &tls.Dialer{
+		NetDialer: &net.Dialer{Timeout: publicEndpointProbeTimeout},
+		Config: &tls.Config{
+			ServerName:         kasHostname,
+			InsecureSkipVerify: true, //nolint:gosec
+		},
+	}
+	conn, err := dialer.DialContext(context, "tcp", net.JoinHostPort(serviceIP, strconv.Itoa(servicePort)))
+	if err != nil {
+		return false
+	}
+	conn.Close()
+	return true
 }
