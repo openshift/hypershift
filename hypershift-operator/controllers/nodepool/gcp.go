@@ -168,7 +168,7 @@ func resolveGCPImage(nodePool *hyperv1.NodePool, releaseImage *releaseinfo.Relea
 	}
 
 	// Resolve image from release metadata
-	image, err := defaultNodePoolGCPImage(nodePool.Spec.Arch, releaseImage)
+	image, err := defaultNodePoolGCPImage(nodePool.Spec.Arch, releaseImage, nodePool.Spec.OSImageStream.Name)
 	if err != nil {
 		return "", fmt.Errorf("couldn't discover a GCP image for release image: %w", err)
 	}

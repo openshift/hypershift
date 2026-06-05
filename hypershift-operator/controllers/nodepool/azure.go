@@ -81,7 +81,7 @@ func defaultAzureNodePoolImage(nodePool *hyperv1.NodePool, releaseImage *release
 	}
 
 	// Extract marketplace metadata from release payload
-	azureMarketplace, err := getAzureMarketplaceMetadata(releaseImage, streamArch)
+	azureMarketplace, err := getAzureMarketplaceMetadata(releaseImage, streamArch, nodePool.Spec.OSImageStream.Name)
 	if err != nil {
 		return fmt.Errorf("failed to get Azure Marketplace metadata: %w", err)
 	}
@@ -120,12 +120,18 @@ func defaultAzureNodePoolImage(nodePool *hyperv1.NodePool, releaseImage *release
 }
 
 // getAzureMarketplaceMetadata extracts Azure Marketplace metadata from the release payload
-func getAzureMarketplaceMetadata(releaseImage *releaseinfo.ReleaseImage, arch string) (*azureMarketplaceMetadata, error) {
-	if releaseImage.StreamMetadata == nil {
+func getAzureMarketplaceMetadata(releaseImage *releaseinfo.ReleaseImage, arch string, streamName ...string) (*azureMarketplaceMetadata, error) {
+	metadata := releaseImage.StreamMetadata
+	if len(streamName) > 0 && streamName[0] != "" && releaseImage.StreamsMetadata != nil {
+		if m, ok := releaseImage.StreamsMetadata[streamName[0]]; ok {
+			metadata = m
+		}
+	}
+	if metadata == nil {
 		return nil, nil // No stream metadata available
 	}
 
-	archData, foundArch := releaseImage.StreamMetadata.Architectures[arch]
+	archData, foundArch := metadata.Architectures[arch]
 	if !foundArch {
 		return nil, fmt.Errorf("architecture %s not found in stream metadata", arch)
 	}

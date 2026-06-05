@@ -36,7 +36,7 @@ var LocalStorageVolumes = []string{
 	"hotplug-disks",
 }
 
-func defaultImage(nodePoolArch string, releaseImage *releaseinfo.ReleaseImage) (string, string, error) {
+func defaultImage(nodePoolArch string, releaseImage *releaseinfo.ReleaseImage, streamName string) (string, string, error) {
 	var archName string
 	switch nodePoolArch {
 	case hyperv1.ArchitectureS390X:
@@ -44,7 +44,17 @@ func defaultImage(nodePoolArch string, releaseImage *releaseinfo.ReleaseImage) (
 	default:
 		archName = hyperv1.ArchAliases[hyperv1.ArchitectureAMD64]
 	}
-	arch, foundArch := releaseImage.StreamMetadata.Architectures[archName]
+
+	metadata := releaseImage.StreamMetadata
+	if streamName != "" && releaseImage.StreamsMetadata != nil {
+		if m, ok := releaseImage.StreamsMetadata[streamName]; ok {
+			metadata = m
+		}
+	}
+	if metadata == nil {
+		return "", "", fmt.Errorf("release image stream metadata is nil")
+	}
+	arch, foundArch := metadata.Architectures[archName]
 
 	if !foundArch {
 		return "", "", fmt.Errorf("couldn't find OS metadata for architecture %q", archName)
@@ -87,7 +97,7 @@ func GetImage(nodePool *hyperv1.NodePool, releaseImage *releaseinfo.ReleaseImage
 		return newBootImage(imageName, isHTTP), nil
 	}
 
-	imageName, imageHash, err := defaultImage(nodePool.Spec.Arch, releaseImage)
+	imageName, imageHash, err := defaultImage(nodePool.Spec.Arch, releaseImage, nodePool.Spec.OSImageStream.Name)
 	if err != nil && allowUnsupportedRHCOSVariants(nodePool) {
 		imageName, imageHash, err = openstack.OpenstackDefaultImage(releaseImage)
 		if err != nil {

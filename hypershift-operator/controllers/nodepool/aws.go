@@ -134,7 +134,7 @@ func resolveAWSAMI(hostedCluster *hyperv1.HostedCluster, nodePool *hyperv1.NodeP
 		return ami, nil
 	}
 	// Default behavior for Linux/RHCOS AMIs
-	ami, err := defaultNodePoolAMI(region, arch, releaseImage)
+	ami, err := defaultNodePoolAMI(region, arch, releaseImage, nodePool.Spec.OSImageStream.Name)
 	if err != nil {
 		return "", fmt.Errorf("couldn't discover an AMI for release image: %w", err)
 	}
@@ -361,7 +361,7 @@ func (r *NodePoolReconciler) setAWSConditions(_ context.Context, nodePool *hyper
 			})
 		} else {
 			// Default behavior for Linux/RHCOS AMIs
-			ami, err := defaultNodePoolAMI(hcluster.Spec.Platform.AWS.Region, nodePool.Spec.Arch, releaseImage)
+			ami, err := defaultNodePoolAMI(hcluster.Spec.Platform.AWS.Region, nodePool.Spec.Arch, releaseImage, nodePool.Spec.OSImageStream.Name)
 			if err != nil {
 				SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 					Type:               hyperv1.NodePoolValidPlatformImageType,

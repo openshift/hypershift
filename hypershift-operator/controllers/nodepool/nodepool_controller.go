@@ -398,6 +398,11 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		return ctrl.Result{}, err
 	}
 
+	// Report the resolved OS stream in status.
+	if token.resolvedStream != "" {
+		nodePool.Status.OSImageStream = hyperv1.OSImageStreamReference{Name: token.resolvedStream}
+	}
+
 	// non automated infrastructure should not have any machine level cluster-api components
 	if !isAutomatedMachineManagement(nodePool) {
 		targetConfigHash := token.HashWithoutVersion()
