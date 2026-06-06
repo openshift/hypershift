@@ -49,6 +49,8 @@ func run(ctx context.Context, opts Options) error {
 	}))
 	ctrl.SetLogger(logger)
 
+	fieldOwner := filepath.Base(os.Args[0])
+
 	adminCFG, err := clientcmd.BuildConfigFromFlags("", os.Getenv("KUBECONFIG_ADMIN"))
 	if err != nil {
 		return fmt.Errorf("failed to get admin config: %w", err)
@@ -57,18 +59,17 @@ func run(ctx context.Context, opts Options) error {
 	if err != nil {
 		return fmt.Errorf("failed to create admin client: %w", err)
 	}
+	adminClient = client.WithFieldOwner(adminClient, fieldOwner)
 
 	cfg, err := ctrl.GetConfig()
 	if err != nil {
 		return fmt.Errorf("failed to get config: %w", err)
 	}
-	client, err := client.New(cfg, client.Options{Scheme: configScheme})
+	bootstrapClient, err := client.New(cfg, client.Options{Scheme: configScheme})
 	if err != nil {
 		return fmt.Errorf("failed to create client: %w", err)
 	}
-
-	adminApplyClient := &applyClient{client: adminClient}
-	applyClient := &applyClient{client: client}
+	bootstrapClient = client.WithFieldOwner(bootstrapClient, fieldOwner)
 
 	// Apply the kas-bootstrap-container rolebinding first with the admin client
 	// to grant cluster-admin to the system:kas-bootstrap-container identity.
@@ -81,7 +82,7 @@ func run(ctx context.Context, opts Options) error {
 	// This to avoid unnecessary restarts of this container.
 	if err := wait.PollUntilContextTimeout(ctx, 500*time.Millisecond, 3*time.Minute, true,
 		func(ctx context.Context) (done bool, err error) {
-			if err := applyManifest(ctx, adminApplyClient, filepath.Join(opts.ResourcesPath, kasBootstrapContainerRolebindingManifest)); err != nil {
+			if err := applyManifest(ctx, adminClient, filepath.Join(opts.ResourcesPath, kasBootstrapContainerRolebindingManifest)); err != nil {
 				logger.Error(err, "failed to apply kas-bootstrap-container rolebinding, retrying")
 				return false, nil
 			}
@@ -93,7 +94,7 @@ func run(ctx context.Context, opts Options) error {
 	// Apply the rest of the manifests with the system:kas-bootstrap-container identity
 	if err := wait.PollUntilContextTimeout(ctx, 500*time.Millisecond, 50*time.Second, true,
 		func(ctx context.Context) (done bool, err error) {
-			if err := applyBootstrapManifests(ctx, applyClient, opts.ResourcesPath); err != nil {
+			if err := applyBootstrapManifests(ctx, bootstrapClient, opts.ResourcesPath); err != nil {
 				logger.Error(err, "failed to apply bootstrap resources, retrying")
 				return false, nil
 			}
@@ -205,22 +206,7 @@ func parseFeatureGateV1(objBytes []byte) (*configv1.FeatureGate, error) {
 	return requiredObj.(*configv1.FeatureGate), nil
 }
 
-// NOTE: This is a temporary solution until the controller-runtime is upgraded to at least version 0.22.
-// The current controller-runtime version has a bug that prevents testing server side apply with the fake.Client.
-// This bug was fixed in version 0.22.
-type Apply interface {
-	Apply(ctx context.Context, obj *unstructured.Unstructured, opts ...client.PatchOption) error
-}
-
-type applyClient struct {
-	client client.Client
-}
-
-func (c *applyClient) Apply(ctx context.Context, obj *unstructured.Unstructured, opts ...client.PatchOption) error {
-	return c.client.Patch(ctx, obj, client.Apply, opts...)
-}
-
-func applyManifest(ctx context.Context, applyClient Apply, path string) error {
+func applyManifest(ctx context.Context, c client.Client, path string) error {
 	logger := ctrl.LoggerFrom(ctx).WithName("kas-bootstrap")
 	logger.Info("Applying manifest", "path", path)
 
@@ -239,15 +225,14 @@ func applyManifest(ctx context.Context, applyClient Apply, path string) error {
 		return fmt.Errorf("failed to convert to unstructured: %w", err)
 	}
 
-	fieldOwner := filepath.Base(os.Args[0])
-	if err := applyClient.Apply(ctx, &unstructured.Unstructured{Object: unstructuredObj}, client.FieldOwner(fieldOwner), client.ForceOwnership); err != nil {
+	if err := c.Apply(ctx, client.ApplyConfigurationFromUnstructured(&unstructured.Unstructured{Object: unstructuredObj}), client.ForceOwnership); err != nil {
 		return fmt.Errorf("failed to apply file %s: %w", path, err)
 	}
 
 	return nil
 }
 
-func applyBootstrapManifests(ctx context.Context, applyClient Apply, filesPath string) error {
+func applyBootstrapManifests(ctx context.Context, applyClient client.Client, filesPath string) error {
 	logger := ctrl.LoggerFrom(ctx).WithName("kas-bootstrap")
 
 	// Fail early if the specified path does not exist.

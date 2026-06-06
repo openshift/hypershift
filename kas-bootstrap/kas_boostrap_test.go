@@ -14,11 +14,12 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	"go.uber.org/zap/zapcore"
@@ -373,30 +374,22 @@ func TestReconcileFeatureGate(t *testing.T) {
 	}
 }
 
-// fakeApplyClient wraps a fake client.Client and implements the Apply interface
-// by using Create instead of Patch with client.Apply, because the current
-// controller-runtime version has a bug that prevents server-side apply with fake.Client.
-// Once controller-runtime is upgraded to >= 0.22, this can be replaced.
-type fakeApplyClient struct {
-	client.Client
-}
-
-func newFakeApplyClient() *fakeApplyClient {
+func newFakeClient() client.Client {
 	c := fake.NewClientBuilder().WithScheme(configScheme).Build()
-	return &fakeApplyClient{Client: c}
+	return client.WithFieldOwner(c, "kas-bootstrap-test")
 }
 
-func (c *fakeApplyClient) Apply(ctx context.Context, obj *unstructured.Unstructured, opts ...client.PatchOption) error {
-	return c.Client.Create(ctx, obj)
-}
-
-// errorApplyClient is an Apply implementation that always returns an error.
-type errorApplyClient struct {
-	err error
-}
-
-func (c *errorApplyClient) Apply(ctx context.Context, obj *unstructured.Unstructured, opts ...client.PatchOption) error {
-	return c.err
+// newErrorApplyClient returns a client.Client whose Apply always fails with err,
+// delegating every other method to a real fake client.
+func newErrorApplyClient(err error) client.Client {
+	return interceptor.NewClient(
+		fake.NewClientBuilder().WithScheme(configScheme).Build(),
+		interceptor.Funcs{
+			Apply: func(_ context.Context, _ client.WithWatch, _ runtime.ApplyConfiguration, _ ...client.ApplyOption) error {
+				return err
+			},
+		},
+	)
 }
 
 func TestApplyManifest(t *testing.T) {
@@ -407,36 +400,36 @@ func TestApplyManifest(t *testing.T) {
 
 	testCases := []struct {
 		name      string
-		setup     func(t *testing.T, g Gomega) (Apply, string)
+		setup     func(t *testing.T, g Gomega) (client.Client, string)
 		expectErr string
 	}{
 		{
 			name: "when the manifest file does not exist it should return an error",
-			setup: func(t *testing.T, g Gomega) (Apply, string) {
-				return newFakeApplyClient(), filepath.Join(t.TempDir(), "nonexistent.yaml")
+			setup: func(t *testing.T, g Gomega) (client.Client, string) {
+				return newFakeClient(), filepath.Join(t.TempDir(), "nonexistent.yaml")
 			},
 			expectErr: "failed to read file",
 		},
 		{
 			name: "when the manifest file contains invalid YAML it should return a decode error",
-			setup: func(t *testing.T, g Gomega) (Apply, string) {
+			setup: func(t *testing.T, g Gomega) (client.Client, string) {
 				invalidPath := filepath.Join(t.TempDir(), "invalid.yaml")
 				g.Expect(os.WriteFile(invalidPath, []byte("not: a: valid: k8s: resource"), 0644)).To(Succeed())
-				return newFakeApplyClient(), invalidPath
+				return newFakeClient(), invalidPath
 			},
 			expectErr: "failed to decode file",
 		},
 		{
 			name: "when the apply client returns an error it should propagate",
-			setup: func(t *testing.T, g Gomega) (Apply, string) {
-				return &errorApplyClient{err: fmt.Errorf("connection refused")}, filepath.Join(".", "testdata", kasBootstrapContainerRolebindingManifest)
+			setup: func(t *testing.T, g Gomega) (client.Client, string) {
+				return newErrorApplyClient(fmt.Errorf("connection refused")), filepath.Join(".", "testdata", kasBootstrapContainerRolebindingManifest)
 			},
 			expectErr: "failed to apply file",
 		},
 		{
 			name: "when the manifest is valid it should apply successfully",
-			setup: func(t *testing.T, g Gomega) (Apply, string) {
-				return newFakeApplyClient(), "./testdata/0000_10_config-operator_01_featuregates.crd.yaml"
+			setup: func(t *testing.T, g Gomega) (client.Client, string) {
+				return newFakeClient(), "./testdata/0000_10_config-operator_01_featuregates.crd.yaml"
 			},
 		},
 	}
@@ -465,7 +458,7 @@ func TestApplyBootstrapManifests(t *testing.T) {
 
 	t.Run("when the files path does not exist it should return an error", func(t *testing.T) {
 		g := NewGomegaWithT(t)
-		c := newFakeApplyClient()
+		c := newFakeClient()
 		err := applyBootstrapManifests(t.Context(), c, filepath.Join(t.TempDir(), "testdata-not-exist"))
 		g.Expect(err).To(HaveOccurred())
 		g.Expect(err.Error()).To(ContainSubstring("does not exist"))
@@ -473,7 +466,7 @@ func TestApplyBootstrapManifests(t *testing.T) {
 
 	t.Run("when the apply client returns an error it should propagate", func(t *testing.T) {
 		g := NewGomegaWithT(t)
-		c := &errorApplyClient{err: fmt.Errorf("connection refused")}
+		c := newErrorApplyClient(fmt.Errorf("connection refused"))
 		err := applyBootstrapManifests(t.Context(), c, "./testdata")
 		g.Expect(err).To(HaveOccurred())
 		g.Expect(err.Error()).To(ContainSubstring("failed to apply file"))
@@ -481,7 +474,7 @@ func TestApplyBootstrapManifests(t *testing.T) {
 
 	t.Run("it should skip the kas-bootstrap-container-rolebinding manifest", func(t *testing.T) {
 		g := NewGomegaWithT(t)
-		c := newFakeApplyClient()
+		c := newFakeClient()
 		err := applyBootstrapManifests(t.Context(), c, "./testdata")
 		g.Expect(err).ToNot(HaveOccurred())
 
@@ -505,7 +498,7 @@ func TestApplyBootstrapManifests(t *testing.T) {
 		err = os.WriteFile(filepath.Join(tmpDir, "README.md"), []byte("# not a k8s resource"), 0644)
 		g.Expect(err).ToNot(HaveOccurred())
 
-		c := newFakeApplyClient()
+		c := newFakeClient()
 		err = applyBootstrapManifests(t.Context(), c, tmpDir)
 		g.Expect(err).ToNot(HaveOccurred())
 
@@ -519,7 +512,7 @@ func TestApplyBootstrapManifests(t *testing.T) {
 
 	t.Run("it should apply all yaml manifests except the rolebinding", func(t *testing.T) {
 		g := NewGomegaWithT(t)
-		c := newFakeApplyClient()
+		c := newFakeClient()
 		err := applyBootstrapManifests(t.Context(), c, "./testdata")
 		g.Expect(err).ToNot(HaveOccurred())
 
