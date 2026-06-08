@@ -33,11 +33,7 @@ import (
 )
 
 func (r *AWSMachineTemplate) SetupWebhookWithManager(mgr ctrl.Manager) error {
-	w := new(AWSMachineTemplateWebhook)
-	return ctrl.NewWebhookManagedBy(mgr).
-		For(&AWSMachineTemplate{}).
-		WithValidator(w).
-		Complete()
+	return nil
 }
 
 // AWSMachineTemplateWebhook implements a custom validation webhook for AWSMachineTemplate.
