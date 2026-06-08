@@ -898,9 +898,6 @@ github.com/googleapis/gax-go/v2/callctx
 github.com/googleapis/gax-go/v2/internal
 github.com/googleapis/gax-go/v2/internallog
 github.com/googleapis/gax-go/v2/internallog/internal
-# github.com/gophercloud/gophercloud/v2 v2.12.0
-## explicit; go 1.25.0
-github.com/gophercloud/gophercloud/v2
 # github.com/gorilla/mux v1.8.1
 ## explicit; go 1.20
 github.com/gorilla/mux
@@ -1156,9 +1153,8 @@ github.com/openshift/cloud-credential-operator/pkg/apis/cloudcredential/v1
 github.com/openshift/cloud-credential-operator/pkg/cmd/provisioning
 github.com/openshift/cloud-credential-operator/pkg/cmd/provisioning/ibmcloud
 github.com/openshift/cloud-credential-operator/pkg/ibmcloud
-# github.com/openshift/cluster-api-provider-agent/api v0.0.0-20260120122324-898e638ec7d1
-## explicit; go 1.25
-github.com/openshift/cluster-api-provider-agent/api/v1alpha1
+# github.com/openshift/cluster-api-provider-agent/api v0.0.0-20260120122324-898e638ec7d1 => ./pkg/capi/agent
+## explicit; go 1.25.7
 github.com/openshift/cluster-api-provider-agent/api/v1beta1
 # github.com/openshift/cluster-autoscaler-operator v0.0.1-0.20241204142113-43631b045675
 ## explicit; go 1.22.0
@@ -2663,9 +2659,7 @@ sigs.k8s.io/cluster-api/api/core/v1beta1
 sigs.k8s.io/cluster-api/api/core/v1beta2
 sigs.k8s.io/cluster-api/api/ipam/v1beta1
 sigs.k8s.io/cluster-api/api/ipam/v1beta2
-sigs.k8s.io/cluster-api/cmd/clusterctl/api/v1alpha3
 sigs.k8s.io/cluster-api/errors
-sigs.k8s.io/cluster-api/feature
 sigs.k8s.io/cluster-api/util
 sigs.k8s.io/cluster-api/util/annotations
 sigs.k8s.io/cluster-api/util/conditions
@@ -2673,31 +2667,24 @@ sigs.k8s.io/cluster-api/util/conditions/deprecated/v1beta1
 sigs.k8s.io/cluster-api/util/conversion
 sigs.k8s.io/cluster-api/util/labels/format
 sigs.k8s.io/cluster-api/util/patch
-# sigs.k8s.io/cluster-api-provider-aws/v2 v2.13.0
-## explicit; go 1.25.0
-sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta1
+# sigs.k8s.io/cluster-api-provider-aws/v2 v2.13.0 => ./pkg/capi/aws
+## explicit; go 1.25.7
 sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2
-sigs.k8s.io/cluster-api-provider-aws/v2/controlplane/rosa/api/v1beta2
-sigs.k8s.io/cluster-api-provider-aws/v2/exp/api/v1beta1
-sigs.k8s.io/cluster-api-provider-aws/v2/exp/api/v1beta2
-sigs.k8s.io/cluster-api-provider-aws/v2/feature
-sigs.k8s.io/cluster-api-provider-aws/v2/iam/api/v1beta1
-# sigs.k8s.io/cluster-api-provider-azure v1.26.0
-## explicit; go 1.25.0
+# sigs.k8s.io/cluster-api-provider-azure v1.26.0 => ./pkg/capi/azure
+## explicit; go 1.25.7
 sigs.k8s.io/cluster-api-provider-azure/api/v1beta1
 sigs.k8s.io/cluster-api-provider-azure/util/azure
-# sigs.k8s.io/cluster-api-provider-gcp v1.13.1
-## explicit; go 1.25.8
+# sigs.k8s.io/cluster-api-provider-gcp v1.13.1 => ./pkg/capi/gcp
+## explicit; go 1.25.7
 sigs.k8s.io/cluster-api-provider-gcp/api/v1beta1
-# sigs.k8s.io/cluster-api-provider-ibmcloud v0.13.1
-## explicit; go 1.24.0
-sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta1
+# sigs.k8s.io/cluster-api-provider-ibmcloud v0.13.1 => ./pkg/capi/ibmcloud
+## explicit; go 1.25.7
 sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2
-# sigs.k8s.io/cluster-api-provider-kubevirt v0.11.2
-## explicit; go 1.24.0
+# sigs.k8s.io/cluster-api-provider-kubevirt v0.11.2 => ./pkg/capi/kubevirt
+## explicit; go 1.25.7
 sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1
-# sigs.k8s.io/cluster-api-provider-openstack v0.14.8
-## explicit; go 1.24.0
+# sigs.k8s.io/cluster-api-provider-openstack v0.14.8 => ./pkg/capi/openstack
+## explicit; go 1.25.7
 sigs.k8s.io/cluster-api-provider-openstack/api/v1alpha1
 sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1
 sigs.k8s.io/cluster-api-provider-openstack/pkg/utils/errors
@@ -2888,3 +2875,10 @@ sigs.k8s.io/yaml/kyaml
 # github.com/openshift/hypershift/api => ./api
 # github.com/aws/karpenter-provider-aws => github.com/openshift/aws-karpenter-provider-aws v0.0.0-20260722223016-abcf7d1e3417
 # sigs.k8s.io/karpenter => github.com/openshift/kubernetes-sigs-karpenter v0.0.0-20260721214330-2b8ed744bf1c
+# github.com/openshift/cluster-api-provider-agent/api => ./pkg/capi/agent
+# sigs.k8s.io/cluster-api-provider-aws/v2 => ./pkg/capi/aws
+# sigs.k8s.io/cluster-api-provider-azure => ./pkg/capi/azure
+# sigs.k8s.io/cluster-api-provider-gcp => ./pkg/capi/gcp
+# sigs.k8s.io/cluster-api-provider-ibmcloud => ./pkg/capi/ibmcloud
+# sigs.k8s.io/cluster-api-provider-kubevirt => ./pkg/capi/kubevirt
+# sigs.k8s.io/cluster-api-provider-openstack => ./pkg/capi/openstack

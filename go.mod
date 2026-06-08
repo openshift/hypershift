@@ -223,7 +223,6 @@ require (
 	github.com/google/s2a-go v0.1.9 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.18 // indirect
 	github.com/googleapis/gax-go/v2 v2.23.0 // indirect
-	github.com/gophercloud/gophercloud/v2 v2.12.0 // indirect
 	github.com/gorilla/mux v1.8.1 // indirect
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674 // indirect
 	github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus v1.1.0 // indirect
@@ -319,3 +318,17 @@ replace sigs.k8s.io/karpenter => github.com/openshift/kubernetes-sigs-karpenter 
 
 // Temporary: NTO main requires kube-openapi v0.35.1 (fake tag that only resolves via NTO's own replace)
 replace k8s.io/kube-openapi v0.35.1 => k8s.io/kube-openapi v0.0.0-20260519202549-bbf5c5577288
+
+replace github.com/openshift/cluster-api-provider-agent/api => ./pkg/capi/agent
+
+replace sigs.k8s.io/cluster-api-provider-aws/v2 => ./pkg/capi/aws
+
+replace sigs.k8s.io/cluster-api-provider-azure => ./pkg/capi/azure
+
+replace sigs.k8s.io/cluster-api-provider-gcp => ./pkg/capi/gcp
+
+replace sigs.k8s.io/cluster-api-provider-ibmcloud => ./pkg/capi/ibmcloud
+
+replace sigs.k8s.io/cluster-api-provider-kubevirt => ./pkg/capi/kubevirt
+
+replace sigs.k8s.io/cluster-api-provider-openstack => ./pkg/capi/openstack

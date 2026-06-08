@@ -16,12 +16,6 @@ limitations under the License.
 
 package v1beta2
 
-import (
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	clusterv1 "sigs.k8s.io/cluster-api/cmd/clusterctl/api/v1alpha3"
-)
-
 const (
 	defaultIPv4ZeroCIDR = "0.0.0.0/0"
 	defaultIPv6ZeroCIDR = "::/0"
@@ -84,14 +78,8 @@ func SetDefaults_AWSClusterSpec(s *AWSClusterSpec) { //nolint:golint,stylecheck
 	}
 }
 
-// SetDefaults_Labels is used to default cluster scope resources for clusterctl move.
-func SetDefaults_Labels(obj *metav1.ObjectMeta) { //nolint:golint,stylecheck
-	// Defaults to set label if no labels have been set
-	if obj.Labels == nil {
-		obj.Labels = map[string]string{
-			clusterv1.ClusterctlMoveHierarchyLabel: ""}
-	}
-}
+//nolint:golint,stylecheck
+// Defaults to set label if no labels have been set
 
 // SetDefaults_AWSMachineSpec is used by defaulter-gen.
 func SetDefaults_AWSMachineSpec(obj *AWSMachineSpec) { //nolint:golint,stylecheck
