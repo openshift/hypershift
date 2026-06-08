@@ -1,4 +1,8 @@
-This file provides guidance when working with code in this repository.
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+**Note:** `CLAUDE.md` is a symlink to `AGENTS.md` — they are the same file. Edit `AGENTS.md` directly.
 
 ## Repository Overview
 
@@ -50,9 +54,23 @@ make hypershift               # Build CLI
 ### Testing
 
 ```bash
-make test                     # Run unit tests with race detection
-make e2e                      # Build E2E test binaries
-make tests                    # Compile all tests
+make test                     # Run all unit tests with race detection
+make test-envtest-ocp         # Run envtest CRD validation tests (OCP versions)
+make test-envtest-kube        # Run envtest CRD validation tests (vanilla k8s)
+make test-envtest-api-all     # Run envtest for both OCP and vanilla k8s
+make e2e                      # Build all E2E test binaries
+make e2ev2                    # Build v2 E2E test binary
+make tests                    # Compile all tests (no execution)
+```
+
+To run a single unit test or package:
+```bash
+GO111MODULE=on GOWORK=off GOFLAGS=-mod=vendor go test -race -run TestName ./path/to/package/...
+```
+
+To run envtest against a single k8s version:
+```bash
+ENVTEST_OCP_K8S_VERSIONS=1.35.0 make test-envtest-ocp
 ```
 
 ### Code Quality
@@ -60,19 +78,28 @@ make tests                    # Compile all tests
 ```bash
 make lint                     # Run golangci-lint
 make lint-fix                 # Auto-fix linting issues
-make verify                   # Full verification (generate, fmt, vet, lint, etc.)
+make api-lint-fix             # Run kube-api-linter and auto-fix API violations
+make verify                   # Full verification (generate, update, staticcheck, fmt, vet, lint, codespell, gitlint)
 make staticcheck              # Run staticcheck on core packages
 make fmt                      # Format code
 make vet                      # Run go vet
+make verify-codespell         # Catch spelling errors in markdown
 ```
 
 ### API and Code Generation
 
 ```bash
-make api                      # Regenerate all API resources and CRDs
-make generate                 # Run go generate
+make api                      # Regenerate all CRDs, deepcopy, clients
+make api-lint-fix             # Run API linter (kube-api-linter) and auto-fix violations
+make generate                 # Run go generate (cleans stale *_mock.go files first)
 make clients                  # Update generated clients
-make update                   # Full update (api-deps, workspace-sync, deps, api, api-docs, clients)
+make update                   # Full update pipeline: api-deps → workspace-sync → deps → api → api-docs → clients → docs-aggregate
+```
+
+### Pre-Submission
+
+```bash
+make pre-commit               # Full check: build + verify + test + gitlint (run before creating PRs)
 ```
 
 ### Development Workflow
@@ -114,9 +141,13 @@ See test/envtest/README.md for details
 
 ## Key Development Patterns
 
-### Code quality, formatting and conventions
+### Code Conventions
 
-Please see /hypershift/.cursor/rules/code-formatting.mdc
+- Use `make lint-fix` after writing Go code to automatically fix most linting issues
+- Run `make verify` before committing
+- Use Gherkin syntax for unit test names: "When... it should..."
+- Prefer gomega for unit test assertions
+- For the kube-api-linter (`make api-lint-fix`): trust its findings and do not add exclusions unless explicitly told to by a human reviewer
 
 ### Operator Controllers
 
@@ -186,11 +217,10 @@ This means:
 
 ## Common Gotchas
 
-- **`api/` is a separate Go module**: Always run `make update` after modifying types in the `api/` package. See [Multi-Module Structure](#multi-module-structure) above for details.
-- **Do not modify `vendor/` directories directly**: They are managed by `go mod vendor` via `make update`.
 - Use `make verify` before submitting PRs to catch formatting/generation issues.
 - Platform-specific controllers require their respective cloud credentials for testing.
 - E2E tests need proper cloud infrastructure setup (S3 buckets, DNS zones, etc.).
+- `make generate` cleans stale `*_mock.go` files via `git clean -fx` before regenerating — don't hand-edit mock files.
 
 ## Commit Messages
 
@@ -226,9 +256,3 @@ Follow the template in `.github/PULL_REQUEST_TEMPLATE.md`.
 ### After Review Comments
 
 After addressing review feedback, use the `restructure-hypershift-commits` skill again to reorganize commits before force-pushing. This keeps the commit history clean for subsequent review rounds.
-
-## Code conventions
-
-- Prefer Gherkin Syntax to define unit test cases, e.g. "When... it should..."
-- Prefer gomega for unit test assertions
-
