@@ -3,4 +3,11 @@ go 1.25.7
 use (
 	./hypershift
 	./hypershift/api
+	./hypershift/pkg/capi/agent
+	./hypershift/pkg/capi/aws
+	./hypershift/pkg/capi/azure
+	./hypershift/pkg/capi/gcp
+	./hypershift/pkg/capi/ibmcloud
+	./hypershift/pkg/capi/kubevirt
+	./hypershift/pkg/capi/openstack
 )

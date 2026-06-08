@@ -91,8 +91,10 @@ pre-commit: all verify test
 
 build: hypershift-operator control-plane-operator control-plane-pki-operator karpenter-operator hypershift product-cli
 
+CAPI_PROVIDERS := agent aws azure gcp ibmcloud kubevirt openstack
+
 .PHONY: update
-update: api-deps workspace-sync deps api api-docs clients docs-aggregate
+update: api-deps capi-sync workspace-sync deps api api-docs clients docs-aggregate
 
 GOLANGCI_LINT := $(abspath $(TOOLS_BIN_DIR)/golangci-lint)
 $(GOLANGCI_LINT): $(TOOLS_DIR)/go.mod # Build golangci-lint from tools folder.
@@ -280,12 +282,15 @@ cluster-api: $(CONTROLLER_GEN)
 	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/sigs.k8s.io/cluster-api/api/ipam/..." output:crd:artifacts:config=cmd/install/assets/crds/cluster-api
 	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/sigs.k8s.io/cluster-api/api/addons/..." output:crd:artifacts:config=cmd/install/assets/crds/cluster-api
 
+# CAPI provider CRD targets must run controller-gen from the workspace directory
+# because each pkg/capi/<provider> is a separate Go module with a minimal go.mod.
+# The workspace resolves cross-module dependencies that controller-gen needs.
+CAPI_CRD_GEN = cd $(DIR)/hack/workspace && GOWORK=$(DIR)/hack/workspace/go.work GOFLAGS= $(CONTROLLER_GEN) $(CRD_OPTIONS)
+
 .PHONY: cluster-api-provider-aws
 cluster-api-provider-aws: $(CONTROLLER_GEN)
 	rm -rf cmd/install/assets/crds/cluster-api-provider-aws/*.yaml
-	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/sigs.k8s.io/cluster-api-provider-aws/v2/api/..." output:crd:artifacts:config=cmd/install/assets/crds/cluster-api-provider-aws
-	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/sigs.k8s.io/cluster-api-provider-aws/v2/exp/api/..." output:crd:artifacts:config=cmd/install/assets/crds/cluster-api-provider-aws
-
+	$(CAPI_CRD_GEN) paths="sigs.k8s.io/cluster-api-provider-aws/v2/..." output:crd:artifacts:config=$(DIR)/cmd/install/assets/crds/cluster-api-provider-aws
 # remove ROSA CRDs
 	rm -rf cmd/install/assets/crds/cluster-api-provider-aws/infrastructure.cluster.x-k8s.io_rosa*.yaml
 # remove EKS CRDs
@@ -295,34 +300,34 @@ cluster-api-provider-aws: $(CONTROLLER_GEN)
 .PHONY: cluster-api-provider-gcp
 cluster-api-provider-gcp: $(CONTROLLER_GEN)
 	rm -rf cmd/install/assets/crds/cluster-api-provider-gcp/*.yaml
-	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/sigs.k8s.io/cluster-api-provider-gcp/api/..." output:crd:artifacts:config=cmd/install/assets/crds/cluster-api-provider-gcp
+	$(CAPI_CRD_GEN) paths="sigs.k8s.io/cluster-api-provider-gcp/..." output:crd:artifacts:config=$(DIR)/cmd/install/assets/crds/cluster-api-provider-gcp
 
 .PHONY: cluster-api-provider-ibmcloud
 cluster-api-provider-ibmcloud: $(CONTROLLER_GEN)
 	rm -rf cmd/install/assets/crds/cluster-api-provider-ibmcloud/*.yaml
-	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/sigs.k8s.io/cluster-api-provider-ibmcloud/api/..." output:crd:artifacts:config=cmd/install/assets/crds/cluster-api-provider-ibmcloud
+	$(CAPI_CRD_GEN) paths="sigs.k8s.io/cluster-api-provider-ibmcloud/..." output:crd:artifacts:config=$(DIR)/cmd/install/assets/crds/cluster-api-provider-ibmcloud
 
 .PHONY: cluster-api-provider-kubevirt
 cluster-api-provider-kubevirt: $(CONTROLLER_GEN)
 	rm -rf cmd/install/assets/crds/cluster-api-provider-kubevirt/*.yaml
-	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1" output:crd:artifacts:config=cmd/install/assets/crds/cluster-api-provider-kubevirt
+	$(CAPI_CRD_GEN) paths="sigs.k8s.io/cluster-api-provider-kubevirt/..." output:crd:artifacts:config=$(DIR)/cmd/install/assets/crds/cluster-api-provider-kubevirt
 
 .PHONY: cluster-api-provider-agent
 cluster-api-provider-agent: $(CONTROLLER_GEN)
 	rm -rf cmd/install/assets/crds/cluster-api-provider-agent/*.yaml
-	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/github.com/openshift/cluster-api-provider-agent/api/..." output:crd:artifacts:config=cmd/install/assets/crds/cluster-api-provider-agent
+	$(CAPI_CRD_GEN) paths="github.com/openshift/cluster-api-provider-agent/api/..." output:crd:artifacts:config=$(DIR)/cmd/install/assets/crds/cluster-api-provider-agent
 
 .PHONY: cluster-api-provider-azure
 cluster-api-provider-azure: $(CONTROLLER_GEN)
 	rm -rf cmd/install/assets/crds/cluster-api-provider-azure/*.yaml
-	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/sigs.k8s.io/cluster-api-provider-azure/api/..." output:crd:artifacts:config=cmd/install/assets/crds/cluster-api-provider-azure
+	$(CAPI_CRD_GEN) paths="sigs.k8s.io/cluster-api-provider-azure/..." output:crd:artifacts:config=$(DIR)/cmd/install/assets/crds/cluster-api-provider-azure
 # remove CAPZ managed CRDS
 	rm -rf cmd/install/assets/crds/cluster-api-provider-azure/infrastructure.cluster.x-k8s.io_azuremanaged*.yaml
 
 .PHONY: cluster-api-provider-openstack
 cluster-api-provider-openstack: $(CONTROLLER_GEN)
 	rm -rf cmd/install/assets/crds/cluster-api-provider-openstack/*.yaml
-	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/sigs.k8s.io/cluster-api-provider-openstack/api/..." output:crd:artifacts:config=cmd/install/assets/crds/cluster-api-provider-openstack
+	$(CAPI_CRD_GEN) paths="sigs.k8s.io/cluster-api-provider-openstack/..." output:crd:artifacts:config=$(DIR)/cmd/install/assets/crds/cluster-api-provider-openstack
 	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/github.com/k-orc/openstack-resource-controller/..." output:crd:artifacts:config=cmd/install/assets/crds/cluster-api-provider-openstack
 
 .PHONY: api-docs
@@ -549,6 +554,31 @@ api-deps:
 	  $(GO) mod verify && \
 	  $(GO) list -m -mod=readonly -json all > /dev/null
 
+CAPI_SYNC_STAMPS := $(foreach p,$(CAPI_PROVIDERS),$(DIR)/pkg/capi/$(p)/.synced)
+
+# Per-provider sync: re-run only when hack/capi-vendor/<provider>/go.mod changes.
+$(DIR)/pkg/capi/%/.synced: $(DIR)/hack/capi-vendor/%/go.mod $(CONTROLLER_GEN)
+	@echo "Resolving CAPI provider deps: $*"
+	cd $(DIR)/hack/capi-vendor/$* && $(GO) mod tidy && $(GO) mod download
+	@echo "Syncing CAPI provider: $*"
+	CONTROLLER_GEN=$(CONTROLLER_GEN) $(DIR)/hack/capi-sync-provider.sh $*
+	@touch $@
+
+.PHONY: capi-deps
+capi-deps:
+	@for p in $(CAPI_PROVIDERS); do \
+	  echo "Resolving CAPI provider deps: $$p"; \
+	  cd $(DIR)/hack/capi-vendor/$$p && $(GO) mod tidy && $(GO) mod download; \
+	done
+
+.PHONY: capi-sync
+capi-sync: $(CAPI_SYNC_STAMPS)
+
+.PHONY: capi-sync-force
+capi-sync-force:
+	@rm -f $(CAPI_SYNC_STAMPS)
+	@$(MAKE) capi-sync
+
 .PHONY: workspace-sync
 workspace-sync:
 	cd hack/workspace && \
@@ -601,7 +631,7 @@ verify-docs-nav: $(PYYAML_STAMP) ## Verify docs nav entries are sorted alphabeti
 
 .PHONY: verify-codespell
 verify-codespell: codespell ## Verify codespell.
-	@$(CODESPELL) --count --ignore-words=./.codespellignore --skip="./hack/tools/bin/codespell_dist,./docs/site/*,./vendor/*,./api/vendor/*,./hack/tools/vendor/*,./api/hypershift/v1alpha1/*,./support/thirdparty/*,./docs/content/reference/*,./hack/tools/bin/*,./cmd/install/assets/*,./go.sum,./api/go.sum,./hack/workspace/go.work.sum,./api/hypershift/v1beta1/zz_generated.featuregated-crd-manifests,./hack/tools/go.mod,./hack/tools/go.sum,./karpenter-operator/controllers/karpenter/assets/*.yaml,./dev/*"
+	@$(CODESPELL) --count --ignore-words=./.codespellignore --skip="./hack/tools/bin/codespell_dist,./docs/site/*,./vendor/*,./api/vendor/*,./hack/tools/vendor/*,./api/hypershift/v1alpha1/*,./support/thirdparty/*,./docs/content/reference/*,./hack/tools/bin/*,./cmd/install/assets/*,./go.sum,./api/go.sum,./hack/workspace/go.work.sum,./api/hypershift/v1beta1/zz_generated.featuregated-crd-manifests,./hack/tools/go.mod,./hack/tools/go.sum,./karpenter-operator/controllers/karpenter/assets/*.yaml,./dev/*,./pkg/capi/*,./hack/capi-vendor/*"
 
 .PHONY: verify-api-deps
 verify-api-deps: $(VERIFY_API_DEPS) ## Verify API dependencies against allowlist.
