@@ -30,7 +30,7 @@ Most CPO development uses the cpov2 framework in `support/controlplane-component
 
 Components use a fluent builder API: `component.NewDeploymentComponent(name, opts).WithAdaptFunction(...).WithPredicate(...).WithDependencies(...).Build()`. Adapt functions dynamically modify manifests based on `HostedControlPlane` spec. Predicates gate component reconciliation. Dependencies block until other components are `Available`.
 
-See `support/controlplane-component/README.md` for the full guide to adding new components.
+See `support/controlplane-component/README.md` for the full guide to adding new components. See `support/controlplane-component/CLAUDE.md` for key files, CR representation, and reuse beyond CPO (Karpenter Operator, HyperShift Operator).
 
 ### Key Directories
 
@@ -147,9 +147,15 @@ See .claude/skills/dev
 - Tests CRD validation rules (CEL, OpenAPI schema) against real kube-apiserver + etcd
 - Test cases are YAML-driven following the openshift/api convention
 - Each YAML file defines `onCreate` and `onUpdate` test cases with expected errors
+- Test suite YAMLs live in `cmd/install/assets/crds/hypershift-operator/tests/{crd-group}/` (not in `test/envtest/` itself)
 - Run with `make test-envtest-ocp` (OpenShift k8s versions) or `make test-envtest-kube` (vanilla k8s versions), or `make test-envtest-api-all` for both
 - Tests run across multiple Kubernetes versions (1.30–1.35) to verify validation ratcheting and compatibility
 - Feature gate filtering: test suites can target stable, tech-preview, or feature-gated CRD variants
+
+To run envtest for a single suite, use Ginkgo's `--focus` flag with the suite name pattern (names follow `[GVR][FeatureSet=...][File=...] suite-name`):
+```bash
+GO111MODULE=on GOWORK=off GOFLAGS=-mod=vendor go test -tags envtest -race ./test/envtest/... -- --focus="hostedclusters.*etcd"
+```
 
 See test/envtest/README.md for details
 
@@ -191,7 +197,7 @@ See api/AGENTS.md
 
 ### Validation: CEL Over Webhooks
 
-Do not add new validation logic to the admission webhook. Use CEL validation rules instead. See .claude/rules/webhook-validation.md for rationale and guidance.
+Do not add new validation logic to the admission webhook. Use CEL validation rules instead. See .claude/rules/webhook-validation.md for rationale and guidance. The exception is CAPI resources, where a conversion webhook is required during the v1beta2 migration period.
 
 ### Design Invariants
 
