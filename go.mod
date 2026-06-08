@@ -151,13 +151,11 @@ require (
 	github.com/PaesslerAG/jsonpath v0.1.1 // indirect
 	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 // indirect
-	github.com/asaskevich/govalidator/v11 v11.0.2-0.20250122183457-e11347878e23 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.13 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.18.29 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.29 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.29 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/v4a v1.4.30 // indirect
-	github.com/aws/aws-sdk-go-v2/service/eks v1.77.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.12 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.9.22 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.29 // indirect
@@ -223,7 +221,6 @@ require (
 	github.com/google/s2a-go v0.1.9 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.15 // indirect
 	github.com/googleapis/gax-go/v2 v2.22.0 // indirect
-	github.com/gophercloud/gophercloud/v2 v2.12.0 // indirect
 	github.com/gorilla/mux v1.8.1 // indirect
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674 // indirect
 	github.com/gregjones/httpcache v0.0.0-20190611155906-901d90724c79 // indirect
@@ -251,7 +248,6 @@ require (
 	github.com/mxk/go-flowrate v0.0.0-20140419014527-cca7078d478f // indirect
 	github.com/oklog/ulid v1.3.1 // indirect
 	github.com/opencontainers/selinux v1.13.0 // indirect
-	github.com/openshift-online/ocm-common v0.0.31 // indirect
 	github.com/opentracing/opentracing-go v1.2.0 // indirect
 	github.com/patrickmn/go-cache v2.1.0+incompatible // indirect
 	github.com/peterbourgon/diskv v2.0.1+incompatible // indirect
@@ -297,6 +293,7 @@ require (
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 	k8s.io/cloud-provider v0.35.0 // indirect
+	k8s.io/cluster-bootstrap v0.34.3 // indirect
 	k8s.io/component-helpers v0.35.1 // indirect
 	k8s.io/csi-translation-lib v0.35.0 // indirect
 	k8s.io/kms v0.35.1 // indirect
@@ -311,6 +308,22 @@ require (
 )
 
 replace github.com/openshift/hypershift/api => ./api
+
+replace (
+	github.com/openshift/cluster-api-provider-agent/api => ./pkg/capi/agent
+	sigs.k8s.io/cluster-api-provider-aws/v2 => ./pkg/capi/aws
+	sigs.k8s.io/cluster-api-provider-azure => ./pkg/capi/azure
+	sigs.k8s.io/cluster-api-provider-gcp => ./pkg/capi/gcp
+	sigs.k8s.io/cluster-api-provider-ibmcloud => ./pkg/capi/ibmcloud
+	sigs.k8s.io/cluster-api-provider-kubevirt => ./pkg/capi/kubevirt
+	sigs.k8s.io/cluster-api-provider-openstack => ./pkg/capi/openstack
+)
+
+// orc currently lives in CAPO
+replace github.com/k-orc/openstack-resource-controller => sigs.k8s.io/cluster-api-provider-openstack/orc v0.0.0-20250113192833-e4f56a2b4f32
+
+// CVE-2025-30204
+replace github.com/golang-jwt/jwt/v4 => github.com/golang-jwt/jwt/v4 v4.5.2
 
 // Use our openshift version of karpenter instead of upstream
 replace github.com/aws/karpenter-provider-aws => github.com/openshift/aws-karpenter-provider-aws v0.0.0-20260311064431-f0be9c72e5bf

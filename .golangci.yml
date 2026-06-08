@@ -43,6 +43,10 @@ linters:
           - unparam
         path: 'support/thirdparty/'
       - linters:
+          - gocyclo
+          - unparam
+        path: 'hack/copy-capi-types/'
+      - linters:
           - staticcheck
         text: 'SA1019: hcp.Status.Version is deprecated: Use versionStatus.desired.version instead.'
       - linters:
@@ -90,6 +94,7 @@ linters:
       - third_party$
       - builtin$
       - examples$
+      - pkg/capi/
 severity:
   default: error
 formatters:
@@ -115,3 +120,4 @@ formatters:
       - third_party$
       - builtin$
       - examples$
+      - pkg/capi/
