@@ -40,6 +40,7 @@ func TestReconcileMetricsForwarderDeployment(t *testing.T) {
 			err := ReconcileMetricsForwarderDeployment(deployment, tt.image, tt.configHash)
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(deployment.Spec.Template.Annotations).To(HaveKeyWithValue("metrics-forwarder-config-checksum", tt.configHash))
+			g.Expect(deployment.Spec.Template.Annotations).To(HaveKeyWithValue("target.workload.openshift.io/management", `{"effect": "PreferredDuringScheduling"}`))
 			g.Expect(deployment.Spec.Template.Spec.Containers).To(HaveLen(1))
 			g.Expect(deployment.Spec.Template.Spec.Containers[0].Image).To(Equal(tt.image))
 		})

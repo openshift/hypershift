@@ -25,7 +25,7 @@ func Setup(mgr manager.Manager, deploymentNamespace string, deploymentName strin
 	// We do not want this controller to require leader election, as that slows things down drastically when there is a proxy
 	// and if we have multiple instances running, they should all attempt to do the same change. This means we can not use
 	// the builder and have to wrap the controller.
-	c, err := controller.NewUnmanaged("proxy", mgr, controller.Options{
+	c, err := controller.NewUnmanaged("proxy", controller.Options{
 		Reconciler: &reconciler{
 			client:              mgr.GetClient(),
 			deploymentNamespace: deploymentNamespace,

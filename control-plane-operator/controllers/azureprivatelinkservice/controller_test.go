@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"testing"
+	"time"
 
 	. "github.com/onsi/gomega"
 
@@ -3426,7 +3427,7 @@ func TestReconcile_WhenFinalizerAddConflicts_ItShouldRequeue(t *testing.T) {
 	})
 
 	g.Expect(err).ToNot(HaveOccurred())
-	g.Expect(result.Requeue).To(BeTrue(), "should requeue on conflict")
+	g.Expect(result.RequeueAfter).To(Equal(time.Second), "should requeue on conflict")
 }
 
 func TestEnsureHCPFinalizer_WhenPatchConflicts_ItShouldRequeue(t *testing.T) {
@@ -3457,7 +3458,7 @@ func TestEnsureHCPFinalizer_WhenPatchConflicts_ItShouldRequeue(t *testing.T) {
 
 	result, err := r.ensureHCPFinalizer(t.Context(), hcp, testr.New(t))
 	g.Expect(err).ToNot(HaveOccurred())
-	g.Expect(result.Requeue).To(BeTrue(), "should requeue on conflict")
+	g.Expect(result.RequeueAfter).To(Equal(time.Second), "should requeue on conflict")
 }
 
 func TestReconcileHCPDeletion_WhenPatchConflicts_ItShouldRequeue(t *testing.T) {
@@ -3499,7 +3500,7 @@ func TestReconcileHCPDeletion_WhenPatchConflicts_ItShouldRequeue(t *testing.T) {
 
 	result, err := r.reconcileHCPDeletion(t.Context(), azPLS, hcp, testr.New(t))
 	g.Expect(err).ToNot(HaveOccurred())
-	g.Expect(result.Requeue).To(BeTrue(), "should requeue on conflict")
+	g.Expect(result.RequeueAfter).To(Equal(time.Second), "should requeue on conflict")
 }
 
 func TestUpdatePrivateEndpointStatus_WhenStatusPatchFails_ItShouldReturnError(t *testing.T) {
