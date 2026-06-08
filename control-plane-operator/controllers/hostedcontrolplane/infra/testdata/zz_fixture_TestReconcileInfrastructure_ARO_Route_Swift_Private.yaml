@@ -28,28 +28,6 @@ routes:
   - metadata:
       labels:
         hypershift.openshift.io/hosted-control-plane: test-namespace
-      name: kube-apiserver
-      namespace: test-namespace
-      ownerReferences:
-      - apiVersion: hypershift.openshift.io/v1beta1
-        blockOwnerDeletion: true
-        controller: true
-        kind: HostedControlPlane
-        name: test-cluster
-        uid: ""
-    spec:
-      host: api.test.example.com
-      tls:
-        insecureEdgeTerminationPolicy: None
-        termination: passthrough
-      to:
-        kind: Service
-        name: kube-apiserver
-        weight: null
-    status: {}
-  - metadata:
-      labels:
-        hypershift.openshift.io/hosted-control-plane: test-namespace
         hypershift.openshift.io/internal-route: "true"
       name: kube-apiserver-internal
       namespace: test-namespace
@@ -73,7 +51,9 @@ routes:
   - metadata:
       labels:
         hypershift.openshift.io/hosted-control-plane: test-namespace
-      name: oauth
+        hypershift.openshift.io/internal-route: "true"
+        hypershift.openshift.io/route-visibility: private
+      name: kube-apiserver-private
       namespace: test-namespace
       ownerReferences:
       - apiVersion: hypershift.openshift.io/v1beta1
@@ -83,13 +63,13 @@ routes:
         name: test-cluster
         uid: ""
     spec:
-      host: oauth.test.example.com
+      host: api.test.example.com
       tls:
         insecureEdgeTerminationPolicy: None
         termination: passthrough
       to:
         kind: Service
-        name: oauth-openshift
+        name: kube-apiserver
         weight: null
     status: {}
   - metadata:
@@ -107,6 +87,30 @@ routes:
         uid: ""
     spec:
       host: oauth.apps.test-cluster.hypershift.local
+      tls:
+        insecureEdgeTerminationPolicy: None
+        termination: passthrough
+      to:
+        kind: Service
+        name: oauth-openshift
+        weight: null
+    status: {}
+  - metadata:
+      labels:
+        hypershift.openshift.io/hosted-control-plane: test-namespace
+        hypershift.openshift.io/internal-route: "true"
+        hypershift.openshift.io/route-visibility: private
+      name: oauth-private
+      namespace: test-namespace
+      ownerReferences:
+      - apiVersion: hypershift.openshift.io/v1beta1
+        blockOwnerDeletion: true
+        controller: true
+        kind: HostedControlPlane
+        name: test-cluster
+        uid: ""
+    spec:
+      host: oauth.test.example.com
       tls:
         insecureEdgeTerminationPolicy: None
         termination: passthrough

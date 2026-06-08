@@ -535,10 +535,6 @@ func TestReconcileInfrastructure(t *testing.T) {
 			},
 		},
 		// ARO HCP test cases - use shared ingress
-		// Three variants cover each Swift detection path independently:
-		// 1. Annotation-only (legacy fallback: env var + annotation, no API fields)
-		// 2. API-only (Private.Type=Swift, no annotation)
-		// 3. Both annotation AND API fields (coexistence during migration)
 		{
 			name: "ARO_Route_SharedIngress_AnnotationFallback",
 			hcp: func() *hyperv1.HostedControlPlane {
@@ -555,8 +551,10 @@ func TestReconcileInfrastructure(t *testing.T) {
 				t.Setenv("MANAGED_SERVICE", hyperv1.AroHCP)
 			},
 			expectError: false,
-			// Legacy fallback: Swift detected via env var + annotation.
-			// Same behavior as API field path: shared ingress, no routers.
+			// For ARO with shared ingress:
+			// - APIHost comes directly from strategy.Route.Hostname
+			// - Port is 443 (ExternalDNSLBPort)
+			// - No internal/external routers needed (shared ingress handles it)
 			expectedStatus: &InfrastructureStatus{
 				APIHost:            testKASHostname,
 				APIPort:            443,
@@ -570,9 +568,10 @@ func TestReconcileInfrastructure(t *testing.T) {
 			},
 		},
 		{
-			name: "ARO_Route_SharedIngress_APIField",
+			name: "ARO_Route_Swift_PublicAndPrivate",
 			hcp: func() *hyperv1.HostedControlPlane {
 				hcp := withServices(baseAzureHCP(), allServicesRouteWithHostnames())
+				hcp.Spec.Platform.Azure.Topology = hyperv1.AzureTopologyPublicAndPrivate
 				hcp.Spec.Platform.Azure.Private = hyperv1.AzurePrivateSpec{
 					Type: hyperv1.AzurePrivateTypeSwift,
 					Swift: hyperv1.AzureSwiftSpec{
@@ -584,12 +583,9 @@ func TestReconcileInfrastructure(t *testing.T) {
 				}
 				return hcp
 			}(),
-			setupEnv: func(t *testing.T) {
-				t.Setenv("MANAGED_SERVICE", hyperv1.AroHCP)
-			},
 			expectError: false,
-			// New path: Swift detected via Private.Type=Swift API field.
-			// Same behavior: shared ingress, no routers.
+			// New path: Swift detected via Private.Type=Swift API field with PublicAndPrivate topology.
+			// shared ingress for public access, internal router for private access.
 			expectedStatus: &InfrastructureStatus{
 				APIHost:            testKASHostname,
 				APIPort:            443,
@@ -603,12 +599,13 @@ func TestReconcileInfrastructure(t *testing.T) {
 			},
 		},
 		{
-			name: "ARO_Route_SharedIngress_Both",
+			name: "ARO_Route_Swift_Private",
 			hcp: func() *hyperv1.HostedControlPlane {
 				hcp := withServices(baseAzureHCP(), allServicesRouteWithHostnames())
 				hcp.Annotations = map[string]string{
 					hyperv1.SwiftPodNetworkInstanceAnnotation: "swift-network-instance",
 				}
+				hcp.Spec.Platform.Azure.Topology = hyperv1.AzureTopologyPrivate
 				hcp.Spec.Platform.Azure.Private = hyperv1.AzurePrivateSpec{
 					Type: hyperv1.AzurePrivateTypeSwift,
 					Swift: hyperv1.AzureSwiftSpec{
@@ -620,12 +617,9 @@ func TestReconcileInfrastructure(t *testing.T) {
 				}
 				return hcp
 			}(),
-			setupEnv: func(t *testing.T) {
-				t.Setenv("MANAGED_SERVICE", hyperv1.AroHCP)
-			},
 			expectError: false,
-			// Coexistence: both annotation and API field set during migration.
-			// API field takes precedence; same behavior as API-only path.
+			// Swift detected via Private.Type=Swift API field with Private topology.
+			// No shared ingress needed, internal router needed.
 			expectedStatus: &InfrastructureStatus{
 				APIHost:            testKASHostname,
 				APIPort:            443,
@@ -643,7 +637,7 @@ func TestReconcileInfrastructure(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
-			ctx := context.Background()
+			ctx := t.Context()
 
 			// Run optional environment setup
 			if tc.setupEnv != nil {
@@ -723,16 +717,24 @@ func TestReconcileInfrastructure(t *testing.T) {
 // It unconditionally tries to provision all possible services/routes, ignoring "not found" errors.
 func simulateInfraProvisioning(ctx context.Context, c client.Client, hcp *hyperv1.HostedControlPlane, externalRouterLBHost, internalRouterLBHost, kasLBHost string) error {
 	// List of all LoadBalancer services that might need provisioning
-	lbServices := []struct {
+	type lbService struct {
 		svc      *corev1.Service
 		hostname string
-	}{
-		{manifests.RouterPublicService(hcp.Namespace), externalRouterLBHost},
-		{manifests.PrivateRouterService(hcp.Namespace), internalRouterLBHost},
+	}
+	lbServices := []lbService{
 		{manifests.KubeAPIServerService(hcp.Namespace), kasLBHost},
 		{manifests.KubeAPIServerPrivateService(hcp.Namespace), kasLBHost},
 		{manifests.KubeAPIServerServiceAzureLB(hcp.Namespace), kasLBHost},
 		{manifests.OauthServerService(hcp.Namespace), testOAuthLBHostname},
+	}
+
+	// If not using Swift or shared ingress, provision the public and private router services as LB services
+	// Otherwise, only private-router service is created as ClusterIP service.
+	if !netutil.UseSwiftNetworkingHCP(hcp) && !netutil.UseSharedIngressHCP(hcp) {
+		lbServices = append(lbServices, []lbService{
+			{manifests.RouterPublicService(hcp.Namespace), externalRouterLBHost},
+			{manifests.PrivateRouterService(hcp.Namespace), internalRouterLBHost},
+		}...)
 	}
 
 	for _, lb := range lbServices {

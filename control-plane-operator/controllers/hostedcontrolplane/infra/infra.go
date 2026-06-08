@@ -526,7 +526,7 @@ func (r *Reconciler) reconcileAPIServerServiceStatus(ctx context.Context, hcp *h
 		return "", 0, "", errors.New("APIServer service strategy not specified")
 	}
 
-	if netutil.UseSharedIngressHCP(hcp) || (hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform && serviceStrategy.Type == hyperv1.Route) {
+	if netutil.UseSharedIngressHCP(hcp) || netutil.UseSwiftNetworkingHCP(hcp) || (hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform && serviceStrategy.Type == hyperv1.Route) {
 		return sharedingress.KasRouteHostname(hcp), sharedingress.ExternalDNSLBPort, "", nil
 	}
 
