@@ -64,6 +64,20 @@ type ClusterMonitoringSpecApplyConfiguration struct {
 	// requests, and no custom tolerations or topology spread constraints.
 	// When set, at least one field must be specified within thanosQuerierConfig.
 	ThanosQuerierConfig *ThanosQuerierConfigApplyConfiguration `json:"thanosQuerierConfig,omitempty"`
+	// nodeExporterConfig is an optional field that can be used to configure the node-exporter agent
+	// that runs as a DaemonSet in the openshift-monitoring namespace. The node-exporter agent collects
+	// hardware and OS-level metrics from every node in the cluster.
+	// When omitted, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
+	NodeExporterConfig *NodeExporterConfigApplyConfiguration `json:"nodeExporterConfig,omitempty"`
+	// monitoringPluginConfig is an optional field that can be used to configure the monitoring plugin
+	// that runs as a dynamic plugin of the OpenShift web console. The monitoring plugin provides
+	// the monitoring UI in the OpenShift web console for visualizing metrics, alerts, and dashboards.
+	// When omitted, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
+	// The current default deploys the monitoring-plugin as a single-replica Deployment
+	// on linux nodes with 10m CPU and 50Mi memory requests, and no custom tolerations
+	// or topology spread constraints.
+	// When set, at least one field must be specified within monitoringPluginConfig.
+	MonitoringPluginConfig *MonitoringPluginConfigApplyConfiguration `json:"monitoringPluginConfig,omitempty"`
 }
 
 // ClusterMonitoringSpecApplyConfiguration constructs a declarative configuration of the ClusterMonitoringSpec type for use with
@@ -141,5 +155,21 @@ func (b *ClusterMonitoringSpecApplyConfiguration) WithTelemeterClientConfig(valu
 // If called multiple times, the ThanosQuerierConfig field is set to the value of the last call.
 func (b *ClusterMonitoringSpecApplyConfiguration) WithThanosQuerierConfig(value *ThanosQuerierConfigApplyConfiguration) *ClusterMonitoringSpecApplyConfiguration {
 	b.ThanosQuerierConfig = value
+	return b
+}
+
+// WithNodeExporterConfig sets the NodeExporterConfig field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the NodeExporterConfig field is set to the value of the last call.
+func (b *ClusterMonitoringSpecApplyConfiguration) WithNodeExporterConfig(value *NodeExporterConfigApplyConfiguration) *ClusterMonitoringSpecApplyConfiguration {
+	b.NodeExporterConfig = value
+	return b
+}
+
+// WithMonitoringPluginConfig sets the MonitoringPluginConfig field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the MonitoringPluginConfig field is set to the value of the last call.
+func (b *ClusterMonitoringSpecApplyConfiguration) WithMonitoringPluginConfig(value *MonitoringPluginConfigApplyConfiguration) *ClusterMonitoringSpecApplyConfiguration {
+	b.MonitoringPluginConfig = value
 	return b
 }
