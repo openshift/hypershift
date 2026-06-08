@@ -14,12 +14,7 @@ import (
 
 // SetupWebhookWithManager will setup the webhooks for the ROSANetwork.
 func (r *ROSANetwork) SetupWebhookWithManager(mgr ctrl.Manager) error {
-	w := new(rosaNetworkWebhook)
-	return ctrl.NewWebhookManagedBy(mgr).
-		For(r).
-		WithValidator(w).
-		WithDefaulter(w).
-		Complete()
+	return nil
 }
 
 // +kubebuilder:webhook:verbs=create;update,path=/validate-infrastructure-cluster-x-k8s-io-v1beta2-rosanetwork,mutating=false,failurePolicy=fail,matchPolicy=Equivalent,groups=infrastructure.cluster.x-k8s.io,resources=rosanetworks,versions=v1beta2,name=validation.rosanetwork.infrastructure.cluster.x-k8s.io,sideEffects=None,admissionReviewVersions=v1;v1beta1
