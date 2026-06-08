@@ -4453,7 +4453,9 @@ var schemaYAML = typed.YAMLObject(`types:
         list:
           elementType:
             namedType: com.github.openshift.api.operator.v1alpha1.ClusterAPIInstallerRevisionManifestSubstitution
-          elementRelationship: atomic
+          elementRelationship: associative
+          keys:
+          - key
     - name: name
       type:
         scalar: string

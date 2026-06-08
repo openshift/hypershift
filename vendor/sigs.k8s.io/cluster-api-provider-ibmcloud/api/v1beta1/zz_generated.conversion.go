@@ -1415,6 +1415,7 @@ func autoConvert_v1beta2_IBMVPCMachineSpec_To_v1beta1_IBMVPCMachineSpec(in *v1be
 	if err := Convert_Slice_Pointer_v1beta2_IBMVPCResourceReference_To_Slice_Pointer_string(&in.SSHKeys, &out.SSHKeys, s); err != nil {
 		return err
 	}
+	// WARNING: in.AdditionalVolumes requires manual conversion: does not exist in peer-type
 	return nil
 }
 

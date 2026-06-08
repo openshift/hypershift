@@ -33,12 +33,7 @@ import (
 var _ = ctrl.Log.WithName("awsclusterroleidentity-resource")
 
 func (r *AWSClusterRoleIdentity) SetupWebhookWithManager(mgr ctrl.Manager) error {
-	w := new(awsClusterRoleIdentityWebhook)
-	return ctrl.NewWebhookManagedBy(mgr).
-		For(r).
-		WithValidator(w).
-		WithDefaulter(w).
-		Complete()
+	return nil
 }
 
 // +kubebuilder:webhook:verbs=create;update,path=/validate-infrastructure-cluster-x-k8s-io-v1beta2-awsclusterroleidentity,mutating=false,failurePolicy=fail,matchPolicy=Equivalent,groups=infrastructure.cluster.x-k8s.io,resources=awsclusterroleidentities,versions=v1beta2,name=validation.awsclusterroleidentity.infrastructure.cluster.x-k8s.io,sideEffects=None,admissionReviewVersions=v1;v1beta1

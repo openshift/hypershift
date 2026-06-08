@@ -15,12 +15,7 @@ import (
 
 // SetupWebhookWithManager will setup the webhooks for the ROSARoleConfig.
 func (r *ROSARoleConfig) SetupWebhookWithManager(mgr ctrl.Manager) error {
-	w := new(rosaRoleConfigWebhook)
-	return ctrl.NewWebhookManagedBy(mgr).
-		For(r).
-		WithValidator(w).
-		WithDefaulter(w).
-		Complete()
+	return nil
 }
 
 // +kubebuilder:webhook:verbs=create;update,path=/validate-infrastructure-cluster-x-k8s-io-v1beta2-rosaroleconfig,mutating=false,failurePolicy=fail,matchPolicy=Equivalent,groups=infrastructure.cluster.x-k8s.io,resources=rosaroleconfigs,versions=v1beta2,name=validation.rosaroleconfig.infrastructure.cluster.x-k8s.io,sideEffects=None,admissionReviewVersions=v1;v1beta1
