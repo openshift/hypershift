@@ -14,11 +14,23 @@ Project documentation is published via MkDocs. The site structure and navigation
 
 ### Core Components
 
-- **hypershift-operator**: Main operator managing HostedCluster and NodePool resources
-- **control-plane-operator**: Manages control plane components for hosted clusters. See support/controlplane-component/README.md
+- **hypershift-operator**: Main operator managing HostedCluster and NodePool resources on the management cluster
+- **control-plane-operator (CPO)**: Manages control plane components for hosted clusters using the cpov2 framework
 - **control-plane-pki-operator**: Handles PKI and certificate management
 - **karpenter-operator**: Manages Karpenter resources for auto-scaling
 - **ignition-server**: Serves ignition configs for node bootstrapping
+
+### Control Plane Component Framework (cpov2)
+
+Most CPO development uses the cpov2 framework in `support/controlplane-component/`. Each control plane component (KAS, etcd, OAuth, KCM, etc.) is a `ControlPlaneComponent` with:
+
+- **Manifests**: Embedded YAML in `control-plane-operator/controllers/hostedcontrolplane/v2/assets/{component-name}/`
+- **Component code**: In `control-plane-operator/controllers/hostedcontrolplane/v2/{component}/component.go`
+- **Registration**: In `control-plane-operator/controllers/hostedcontrolplane/hostedcontrolplane_controller.go` via `registerComponents()`
+
+Components use a fluent builder API: `component.NewDeploymentComponent(name, opts).WithAdaptFunction(...).WithPredicate(...).WithDependencies(...).Build()`. Adapt functions dynamically modify manifests based on `HostedControlPlane` spec. Predicates gate component reconciliation. Dependencies block until other components are `Available`.
+
+See `support/controlplane-component/README.md` for the full guide to adding new components.
 
 ### Key Directories
 
@@ -73,6 +85,12 @@ To run envtest against a single k8s version:
 ENVTEST_OCP_K8S_VERSIONS=1.35.0 make test-envtest-ocp
 ```
 
+To run envtest versions in parallel:
+```bash
+ENVTEST_JOBS=MAX make test-envtest-ocp     # All versions in parallel
+ENVTEST_JOBS=3 make test-envtest-ocp       # Up to 3 versions in parallel
+```
+
 ### Code Quality
 
 ```bash
@@ -84,6 +102,7 @@ make staticcheck              # Run staticcheck on core packages
 make fmt                      # Format code
 make vet                      # Run go vet
 make verify-codespell         # Catch spelling errors in markdown
+make run-gitlint              # Validate commit message format
 ```
 
 ### API and Code Generation
@@ -176,7 +195,13 @@ Do not add new validation logic to the admission webhook. Use CEL validation rul
 
 ### Design Invariants
 
-See [docs/content/reference/goals-and-design-invariants.md](docs/content/reference/goals-and-design-invariants.md) for security and architectural invariants that all code changes must respect.
+All code changes must respect these invariants (full details in [docs/content/reference/goals-and-design-invariants.md](docs/content/reference/goals-and-design-invariants.md)):
+
+- **Unidirectional communication**: Management cluster → hosted cluster only. A hosted cluster has no awareness of its management cluster.
+- **Namespace isolation**: Management-to-hosted communication is only allowed from within each control plane namespace.
+- **Worker node purity**: Compute workers run only user workloads — no HyperShift CRDs, CRs, or pods that let users manipulate HyperShift-owned features.
+- **No user credential management**: HyperShift components must not own or manage user infrastructure platform credentials.
+- **CP/data plane ingress separation**: Control plane ingress (SNI-based routing via private router on management cluster) and data plane ingress (standard OpenShift ingress operator on guest cluster) are orthogonal and must not be conflated.
 
 ### Versioning
 
@@ -215,16 +240,37 @@ This means:
 - Running `go build ./...` or `go vet ./...` from the repository root will **not** compile the `api/` module — it is a separate module. To build/vet the API module, run commands from within the `api/` directory.
 - The `hack/workspace/` directory contains a Go workspace configuration (`go.work`) that can be used for local development across both modules.
 
+## Jira Integration
+
+- **Features/epics/stories/tasks**: Create in the **CNTRLPLANE** project (Red Hat OpenShift Control Planes)
+- **Bugs**: Create in the **OCPBUGS** project (OpenShift Bugs)
+- **Components**: Use `HyperShift / ARO` for ARO HCP, `HyperShift / ROSA` for ROSA HCP, or `HyperShift` when platform is unclear
+- PR titles are prefixed with the Jira ticket: `OCPBUGS-12345: Fix memory leak` or `NO-JIRA:` when no issue exists
+
 ## Common Gotchas
 
 - Use `make verify` before submitting PRs to catch formatting/generation issues.
 - Platform-specific controllers require their respective cloud credentials for testing.
 - E2E tests need proper cloud infrastructure setup (S3 buckets, DNS zones, etc.).
 - `make generate` cleans stale `*_mock.go` files via `git clean -fx` before regenerating — don't hand-edit mock files.
+- The `api/` module is separate — new symbols added there cause `undefined` errors in the main module until you run `make update`.
+- When writing CEL validation for optional+immutable fields, you need both "cannot be changed" and "cannot be removed" rules (see api/AGENTS.md).
 
 ## Commit Messages
 
-Use the `git-commit-format` skill for formatting rules and required footers. Validate with `make run-gitlint`. Do NOT put Jira IDs in commit messages — they belong only in PR titles.
+Use conventional commit format. Validate with `make run-gitlint`. Do NOT put Jira IDs in commit messages — they belong only in PR titles.
+
+```
+<type>(<scope>): <description>
+
+[optional body]
+
+Signed-off-by: <name> <email>
+```
+
+Types: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`, `build`, `ci`, `perf`, `revert`. Title max 120 chars, body lines max 140 chars. The `Signed-off-by` footer is required — get name/email from `git config user.name` and `git config user.email`.
+
+Use the `git-commit-format` skill for full details and examples.
 
 ### Restructuring Commits Before PR Submission
 
