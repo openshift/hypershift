@@ -256,9 +256,9 @@ type NodePoolSpec struct {
 	// in-place OS downgrades are not supported.
 	//
 	// +openshift:enable:FeatureGate=OSStreams
-	// +kubebuilder:validation:XValidation:rule="!has(oldSelf.name) || oldSelf.name != 'rhel-10' || self.name != 'rhel-9'",message="OS stream downgrade from rhel-10 to rhel-9 is not allowed; create a new NodePool instead"
+	// +kubebuilder:validation:XValidation:rule="!has(oldSelf.name) || oldSelf.name != 'rhel-10' || (has(self.name) && self.name != 'rhel-9')",message="OS stream downgrade from rhel-10 to rhel-9 is not allowed; create a new NodePool instead"
 	// +optional
-	OSImageStream OSImageStreamReference `json:"osImageStream,omitempty,omitzero"`
+	OSImageStream OSImageStreamReference `json:"osImageStream,omitzero"`
 }
 
 // OSImageStreamReference references an OSImageStream by name.
@@ -298,7 +298,7 @@ type NodePoolStatus struct {
 	// When omitted, the pool is using the release version's default OS images.
 	// +openshift:enable:FeatureGate=OSStreams
 	// +optional
-	OSImageStream OSImageStreamReference `json:"osImageStream,omitempty,omitzero"`
+	OSImageStream OSImageStreamReference `json:"osImageStream,omitzero"`
 
 	// conditions represents the latest available observations of the node pool's
 	// current state.

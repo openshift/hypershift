@@ -37004,7 +37004,7 @@ TODO: This is set as optional to prevent validation from failing due to a limita
 </tr>
 <tr>
 <td>
-<code>osImageStream,omitempty,omitzero</code></br>
+<code>osImageStream,omitzero</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.OSImageStreamReference">
 OSImageStreamReference
@@ -49061,7 +49061,7 @@ TODO: This is set as optional to prevent validation from failing due to a limita
 </tr>
 <tr>
 <td>
-<code>osImageStream,omitempty,omitzero</code></br>
+<code>osImageStream,omitzero</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.OSImageStreamReference">
 OSImageStreamReference
@@ -49159,7 +49159,7 @@ NodePoolPlatformStatus
 </tr>
 <tr>
 <td>
-<code>osImageStream,omitempty,omitzero</code></br>
+<code>osImageStream,omitzero</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.OSImageStreamReference">
 OSImageStreamReference

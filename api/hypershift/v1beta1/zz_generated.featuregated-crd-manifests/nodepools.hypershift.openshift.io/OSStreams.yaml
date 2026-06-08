@@ -358,8 +358,8 @@ spec:
                 x-kubernetes-validations:
                 - message: OS stream downgrade from rhel-10 to rhel-9 is not allowed;
                     create a new NodePool instead
-                  rule: '!has(oldSelf.name) || oldSelf.name != ''rhel-10'' || self.name
-                    != ''rhel-9'''
+                  rule: '!has(oldSelf.name) || oldSelf.name != ''rhel-10'' || (has(self.name)
+                    && self.name != ''rhel-9'')'
               pausedUntil:
                 description: |-
                   pausedUntil is a field that can be used to pause reconciliation on the NodePool controller. Resulting in any change to the NodePool being ignored.
