@@ -55,7 +55,7 @@ make fmt                      # Format code
 make vet                      # Run go vet
 make verify-codespell         # Catch spelling errors in markdown
 make run-gitlint              # Validate commit message format
-make pre-commit               # Full pre-PR gate (update, build, verify, test, gitlint)
+make pre-commit               # Full pre-PR gate (build, e2e compile, verify, test)
 ```
 
 ### API and Code Generation
@@ -126,13 +126,13 @@ Use conventional commit format. Validate with `make run-gitlint`. Do NOT put Jir
 Signed-off-by: <name> <email>
 ```
 
-Types: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`, `build`, `ci`, `perf`, `revert`. Title max 120 chars, body lines max 140 chars. The `Signed-off-by` footer is required — get name/email from `git config user.name` and `git config user.email`.
+Types: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`, `build`, `ci`, `perf`, `revert`. Title max 120 chars, body lines max 140 chars. Include a `Signed-off-by` footer — get name/email from `git config user.name` and `git config user.email`.
 
 Use the `git-commit-format` skill for full details and examples.
 
 ### Restructuring Commits Before PR Submission
 
-Before creating a PR or after addressing review comments, use the `restructure-hypershift-commits` skill to reorganize all branch commits into logical, component-based commits. This ensures every PR has a clean, reviewable commit history grouped by architectural boundary.
+Before creating a PR or after addressing review comments, use the `restructure-commits` skill to reorganize all branch commits into logical, component-based commits. This ensures every PR has a clean, reviewable commit history grouped by architectural boundary.
 
 ## Pull Requests
 
@@ -140,8 +140,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contribution guidelines. Key
 
 ### Before Creating a PR
 
-1. Use the `restructure-hypershift-commits` skill to organize commits by component (see [Restructuring Commits](#restructuring-commits-before-pr-submission) above)
-2. Run `make pre-commit` to update dependencies, build, verify formatting, run tests, and validate commit messages via gitlint
+1. Use the `restructure-commits` skill to organize commits by component (see [Restructuring Commits](#restructuring-commits-before-pr-submission) above)
+2. Run `make pre-commit` to build, compile e2e tests, run verification (formatting, linting, gitlint), and run unit tests
 
 ### PR Title
 
@@ -159,7 +159,7 @@ Follow the template in `.github/PULL_REQUEST_TEMPLATE.md`.
 
 ### After Review Comments
 
-After addressing review feedback, use the `restructure-hypershift-commits` skill again to reorganize commits before force-pushing. This keeps the commit history clean for subsequent review rounds.
+After addressing review feedback, use the `restructure-commits` skill again to reorganize commits before force-pushing. This keeps the commit history clean for subsequent review rounds.
 
 ## Code Conventions
 

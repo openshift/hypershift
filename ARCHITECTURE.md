@@ -34,6 +34,7 @@ See [Goals and Design Invariants](docs/content/reference/goals-and-design-invari
 
 - AWS — self-managed and managed (ROSA HCP)
 - Azure — self-managed and managed (ARO HCP)
+- GCP
 - IBM Cloud (PowerVS)
 - KubeVirt
 - OpenStack
