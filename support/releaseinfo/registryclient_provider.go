@@ -36,13 +36,15 @@ func (p *RegistryClientProvider) Lookup(ctx context.Context, image string, pullS
 	if _, ok := fileContents[ReleaseImageMetadataFile]; !ok {
 		return nil, fmt.Errorf("release image metadata file not found in release image %s", image)
 	}
-	coreOSMeta, err := DeserializeImageMetadata(fileContents[ReleaseImageMetadataFile])
+	streamsResult, err := DeserializeMultiStreamImageMetadata(fileContents[ReleaseImageMetadataFile])
 	if err != nil {
 		return nil, err
 	}
 
 	return &ReleaseImage{
 		ImageStream:    imageStream,
-		StreamMetadata: coreOSMeta,
+		StreamMetadata: streamsResult.Default,
+		Streams:        streamsResult.Streams,
+		DefaultStream:  streamsResult.DefaultName,
 	}, nil
 }

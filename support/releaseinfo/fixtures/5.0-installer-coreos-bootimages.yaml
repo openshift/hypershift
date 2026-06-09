@@ -1,0 +1,146 @@
+apiVersion: v1
+data:
+  releaseVersion: 0.0.1-snapshot
+  stream: |
+    {
+      "stream": "scos-5.0",
+      "metadata": {
+        "last-modified": "2026-01-15T10:00:00Z",
+        "generator": "test-generator"
+      },
+      "architectures": {
+        "x86_64": {
+          "artifacts": {
+            "metal": {
+              "release": "500.90.202601151000-0",
+              "formats": {
+                "iso": {
+                  "disk": {
+                    "location": "https://example.com/rhel9-metal.x86_64.iso",
+                    "sha256": "aaaa1111"
+                  }
+                }
+              }
+            }
+          },
+          "images": {
+            "aws": {
+              "regions": {
+                "us-east-1": {
+                  "release": "500.90.202601151000-0",
+                  "image": "ami-rhel9-x86-useast1"
+                }
+              }
+            },
+            "gcp": {
+              "project": "rhel9-project",
+              "family": "rhel9-family",
+              "image": "rhel9-gcp-image",
+              "name": "rhel9-gcp-image"
+            }
+          },
+          "rhel-coreos-extensions": {
+            "azure-disk": {
+              "url": "https://example.com/rhel9-azure.x86_64.vhd"
+            }
+          }
+        }
+      }
+    }
+  streams: |
+    {
+      "rhel-9": {
+        "stream": "scos-5.0",
+        "metadata": {
+          "last-modified": "2026-01-15T10:00:00Z",
+          "generator": "test-generator"
+        },
+        "architectures": {
+          "x86_64": {
+            "artifacts": {
+              "metal": {
+                "release": "500.90.202601151000-0",
+                "formats": {
+                  "iso": {
+                    "disk": {
+                      "location": "https://example.com/rhel9-metal.x86_64.iso",
+                      "sha256": "aaaa1111"
+                    }
+                  }
+                }
+              }
+            },
+            "images": {
+              "aws": {
+                "regions": {
+                  "us-east-1": {
+                    "release": "500.90.202601151000-0",
+                    "image": "ami-rhel9-x86-useast1"
+                  }
+                }
+              },
+              "gcp": {
+                "project": "rhel9-project",
+                "family": "rhel9-family",
+                "image": "rhel9-gcp-image",
+                "name": "rhel9-gcp-image"
+              }
+            },
+            "rhel-coreos-extensions": {
+              "azure-disk": {
+                "url": "https://example.com/rhel9-azure.x86_64.vhd"
+              }
+            }
+          }
+        }
+      },
+      "rhel-10": {
+        "stream": "scos-5.0-rhel10",
+        "metadata": {
+          "last-modified": "2026-01-15T10:00:00Z",
+          "generator": "test-generator"
+        },
+        "architectures": {
+          "x86_64": {
+            "artifacts": {
+              "metal": {
+                "release": "500.90.202601151000-0",
+                "formats": {
+                  "iso": {
+                    "disk": {
+                      "location": "https://example.com/rhel10-metal.x86_64.iso",
+                      "sha256": "bbbb2222"
+                    }
+                  }
+                }
+              }
+            },
+            "images": {
+              "aws": {
+                "regions": {
+                  "us-east-1": {
+                    "release": "500.90.202601151000-0",
+                    "image": "ami-rhel10-x86-useast1"
+                  }
+                }
+              },
+              "gcp": {
+                "project": "rhel10-project",
+                "family": "rhel10-family",
+                "image": "rhel10-gcp-image",
+                "name": "rhel10-gcp-image"
+              }
+            },
+            "rhel-coreos-extensions": {
+              "azure-disk": {
+                "url": "https://example.com/rhel10-azure.x86_64.vhd"
+              }
+            }
+          }
+        }
+      }
+    }
+kind: ConfigMap
+metadata:
+  name: coreos-bootimages
+  namespace: openshift-machine-config-operator

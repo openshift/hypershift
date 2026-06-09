@@ -5,9 +5,10 @@ import (
 
 	. "github.com/onsi/gomega"
 
-	"github.com/openshift/hypershift/support/releaseinfo/fixtures"
-
+	"github.com/coreos/stream-metadata-go/stream"
 	imageapi "github.com/openshift/api/image/v1"
+
+	"github.com/openshift/hypershift/support/releaseinfo/fixtures"
 )
 
 func TestParseComponentVersionsLabel(t *testing.T) {
@@ -195,4 +196,77 @@ func TestReleaseInfoKubeVirt(t *testing.T) {
 	if arch.Images.KubeVirt == nil || arch.Images.KubeVirt.DigestRef == "" {
 		t.Fatal("metadata does not contain a digest ref for kubevirt")
 	}
+}
+
+func TestStreamForPool(t *testing.T) {
+	defaultStream := &stream.Stream{Stream: "scos-5.0"}
+	rhel9Stream := &stream.Stream{Stream: "scos-5.0"}
+	rhel10Stream := &stream.Stream{Stream: "scos-5.0-rhel10"}
+
+	t.Run("When streamName is empty it should return default stream", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		ri := &ReleaseImage{
+			StreamMetadata: defaultStream,
+			Streams: map[string]*stream.Stream{
+				"rhel-9":  rhel9Stream,
+				"rhel-10": rhel10Stream,
+			},
+			DefaultStream: "rhel-9",
+		}
+		result, err := ri.StreamForPool("")
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(result).To(Equal(defaultStream))
+	})
+
+	t.Run("When streamName matches a stream it should return that stream", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		ri := &ReleaseImage{
+			StreamMetadata: defaultStream,
+			Streams: map[string]*stream.Stream{
+				"rhel-9":  rhel9Stream,
+				"rhel-10": rhel10Stream,
+			},
+			DefaultStream: "rhel-9",
+		}
+		result, err := ri.StreamForPool("rhel-10")
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(result).To(Equal(rhel10Stream))
+	})
+
+	t.Run("When streamName is unknown it should return error", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		ri := &ReleaseImage{
+			StreamMetadata: defaultStream,
+			Streams: map[string]*stream.Stream{
+				"rhel-9":  rhel9Stream,
+				"rhel-10": rhel10Stream,
+			},
+			DefaultStream: "rhel-9",
+		}
+		_, err := ri.StreamForPool("rhel-11")
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("rhel-11"))
+		g.Expect(err.Error()).To(ContainSubstring("rhel-9"))
+		g.Expect(err.Error()).To(ContainSubstring("rhel-10"))
+	})
+
+	t.Run("When Streams is nil and streamName is empty it should return default", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		ri := &ReleaseImage{
+			StreamMetadata: defaultStream,
+		}
+		result, err := ri.StreamForPool("")
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(result).To(Equal(defaultStream))
+	})
+
+	t.Run("When Streams is nil and streamName is non-empty it should return error", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		ri := &ReleaseImage{
+			StreamMetadata: defaultStream,
+		}
+		_, err := ri.StreamForPool("rhel-10")
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("no streams available"))
+	})
 }

@@ -39,7 +39,36 @@ type ProviderWithOpenShiftImageRegistryOverrides interface {
 // discover constituent component image information.
 type ReleaseImage struct {
 	*imageapi.ImageStream `json:",inline"`
-	StreamMetadata        *stream.Stream `json:"streamMetadata"`
+	StreamMetadata        *stream.Stream            `json:"streamMetadata"`
+	Streams               map[string]*stream.Stream `json:"streams,omitempty"`
+	DefaultStream         string                    `json:"defaultStream,omitempty"`
+}
+
+// StreamForPool returns the stream metadata for a given stream name. If
+// streamName is empty, the default stream (StreamMetadata) is returned.
+// If a non-empty name is given, it must match a key in the Streams map.
+func (i *ReleaseImage) StreamForPool(streamName string) (*stream.Stream, error) {
+	if streamName == "" {
+		return i.StreamMetadata, nil
+	}
+	if i.Streams == nil {
+		return nil, fmt.Errorf("stream %q not found: no streams available", streamName)
+	}
+	s, ok := i.Streams[streamName]
+	if !ok {
+		return nil, fmt.Errorf("stream %q not found, available streams: %v", streamName, i.availableStreamNames())
+	}
+	return s, nil
+}
+
+// availableStreamNames returns a sorted list of stream names from the Streams map.
+func (i *ReleaseImage) availableStreamNames() []string {
+	names := make([]string, 0, len(i.Streams))
+	for name := range i.Streams {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 func (i *ReleaseImage) Version() string {
