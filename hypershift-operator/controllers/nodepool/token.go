@@ -171,8 +171,23 @@ func (t *Token) getIgnitionCACert(ctx context.Context) ([]byte, error) {
 	return caCertBytes, nil
 }
 
+// isOutdated returns true when a spec-driven change (version or config) requires
+// new token and user-data secrets. Management-side-only changes (e.g. HAProxy image
+// bumps) return false — existing secrets remain valid and the MachineDeployment
+// continues to reference them.
 func (t *Token) isOutdated() bool {
-	return t.Hash() != t.nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion]
+	currentRolloutConfig := t.nodePool.Annotations[nodePoolAnnotationCurrentRolloutConfig]
+	if currentRolloutConfig == "" {
+		// Annotation absent: either a new NodePool (need to create secrets) or
+		// an existing NodePool after operator upgrade (secrets already exist).
+		if _, hasOldAnnotation := t.nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion]; hasOldAnnotation {
+			return false
+		}
+		return true
+	}
+	versionChanged := t.Version() != t.nodePool.Status.Version
+	configChanged := t.RolloutHashWithoutVersion() != currentRolloutConfig
+	return versionChanged || configChanged
 }
 
 func (t *Token) cleanupOutdated(ctx context.Context) error {
@@ -232,13 +247,21 @@ func setExpirationTimestampOnToken(ctx context.Context, c client.Client, tokenSe
 func (t *Token) Reconcile(ctx context.Context) error {
 	log := ctrl.LoggerFrom(ctx)
 
-	if t.isOutdated() {
+	outdated := t.isOutdated()
+	if outdated {
 		if err := t.cleanupOutdated(ctx); err != nil {
 			return fmt.Errorf("failed to cleanup outdated token Secrets: %w", err)
 		}
 	}
 
-	tokenSecret := t.TokenSecret()
+	// When isOutdated() is false but Hash() differs from the deployed annotation
+	// (management-side-only change), reconcile the deployed secrets instead of
+	// creating orphans under the new hash. The MachineDeployment keeps referencing
+	// the deployed secrets, so we must maintain them — otherwise the ignition
+	// server's token rotation will eventually invalidate the token UUID embedded
+	// in the user data secret, causing new machines to fail with HTTP 511.
+	tokenSecret, userDataSecret := t.effectiveSecrets(outdated)
+
 	if result, err := t.CreateOrUpdate(ctx, t.Client, tokenSecret, func() error {
 		return t.reconcileTokenSecret(tokenSecret)
 	}); err != nil {
@@ -253,7 +276,6 @@ func (t *Token) Reconcile(ctx context.Context) error {
 		return fmt.Errorf("token secret is missing token key")
 	}
 
-	userDataSecret := t.UserDataSecret()
 	if result, err := t.CreateOrUpdate(ctx, t.Client, userDataSecret, func() error {
 		return t.reconcileUserDataSecret(log, userDataSecret, string(tokenBytes))
 	}); err != nil {
@@ -262,6 +284,35 @@ func (t *Token) Reconcile(ctx context.Context) error {
 		log.Info("Reconciled user data Secret", "result", result)
 	}
 	return nil
+}
+
+// effectiveSecrets returns the token and user data secrets that Reconcile should
+// maintain. When a spec-driven change occurred (outdated=true) or no prior
+// secrets exist, it returns secrets named with the current Hash(). When only
+// management-side content changed (Hash differs but rollout hash is unchanged),
+// it returns the deployed secrets so they stay in sync with token rotation.
+func (t *Token) effectiveSecrets(outdated bool) (*corev1.Secret, *corev1.Secret) {
+	if !outdated {
+		deployedHash := t.nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion]
+		if deployedHash != "" && deployedHash != t.Hash() {
+			return t.secretsForHash(deployedHash)
+		}
+	}
+	return t.TokenSecret(), t.UserDataSecret()
+}
+
+func (t *Token) secretsForHash(hash string) (*corev1.Secret, *corev1.Secret) {
+	return &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: t.controlplaneNamespace,
+				Name:      fmt.Sprintf("%s-%s-%s", TokenSecretPrefix, t.nodePool.GetName(), hash),
+			},
+		}, &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: t.controlplaneNamespace,
+				Name:      fmt.Sprintf("%s-%s-%s", UserDataSecrePrefix, t.nodePool.GetName(), hash),
+			},
+		}
 }
 
 const UserDataSecrePrefix = "user-data"

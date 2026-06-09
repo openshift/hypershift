@@ -645,19 +645,28 @@ func (r *EC2NodeClassReconciler) getUserDataSecret(ctx context.Context, openshif
 
 	expectedNodePoolName := karpenterutil.KarpenterNodePoolName(openshiftEC2NodeClass)
 
-	for _, secret := range secretList.Items {
+	var newest *corev1.Secret
+	for i := range secretList.Items {
+		secret := &secretList.Items[i]
 		annotations := secret.GetAnnotations()
 		if annotations == nil || annotations[hyperkarpenterv1.TokenSecretNodePoolAnnotation] == "" {
 			continue
 		}
-		// we want the userData secret, not the token secret
 		if annotations[nodepool.TokenSecretAnnotation] == "true" {
 			continue
 		}
 		nodePoolAnnotation := util.ParseNamespacedName(annotations[hyperkarpenterv1.TokenSecretNodePoolAnnotation])
-		if nodePoolAnnotation.Name == expectedNodePoolName {
-			return &secret, nil
+		if nodePoolAnnotation.Name != expectedNodePoolName {
+			continue
 		}
+		if newest == nil || secret.CreationTimestamp.After(newest.CreationTimestamp.Time) ||
+			(secret.CreationTimestamp.Equal(&newest.CreationTimestamp) && secret.Name > newest.Name) {
+			newest = secret
+		}
+	}
+
+	if newest != nil {
+		return newest, nil
 	}
 
 	return nil, fmt.Errorf("%w: expectedNodePoolName: %s, nodeclassName: %s", errKarpenterUserDataSecretNotFound, expectedNodePoolName, openshiftEC2NodeClass.Name)
