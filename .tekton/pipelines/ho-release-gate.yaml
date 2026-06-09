@@ -1,0 +1,319 @@
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: ho-release-gate
+spec:
+  params:
+  - name: snapshot-name
+    type: string
+    description: Name of the Konflux Snapshot to validate
+  - name: ho-image
+    type: string
+    description: HyperShift Operator container image reference from the Snapshot
+
+  tasks:
+  - name: extract-image
+    taskSpec:
+      params:
+      - name: snapshot-name
+        type: string
+      - name: ho-image
+        type: string
+      results:
+      - name: ho-image
+        description: Validated HO image reference
+      - name: snapshot-name
+        description: Snapshot name (passed through)
+      steps:
+      - name: validate
+        image: registry.redhat.io/openshift4/ose-cli:latest
+        script: |
+          #!/bin/bash
+          set -euo pipefail
+
+          echo "=== extract-image ==="
+          echo "Snapshot:  $(params.snapshot-name)"
+          echo "HO image:  $(params.ho-image)"
+
+          if [[ -z "$(params.ho-image)" ]]; then
+            echo "ERROR: ho-image parameter is empty"
+            exit 1
+          fi
+
+          DIGEST=$(echo "$(params.ho-image)" | grep -oP 'sha256:[a-f0-9]+' || echo "N/A")
+          echo "Digest:    ${DIGEST}"
+
+          COMMIT=$(oc get snapshot "$(params.snapshot-name)" -o jsonpath='{.spec.components[?(@.name=="hypershift-operator-main")].source.git.revision}' 2>/dev/null || echo "N/A")
+          echo "Commit:    ${COMMIT}"
+
+          echo "=== validation passed ==="
+
+          echo -n "$(params.ho-image)" > $(results.ho-image.path)
+          echo -n "$(params.snapshot-name)" > $(results.snapshot-name.path)
+    params:
+    - name: snapshot-name
+      value: $(params.snapshot-name)
+    - name: ho-image
+      value: $(params.ho-image)
+
+  - name: run-e2e
+    runAfter: [extract-image]
+    timeout: "5h30m0s"
+    taskSpec:
+      params:
+      - name: ho-image
+        type: string
+      results:
+      - name: result
+        description: Test result (passed/failed/error)
+      - name: prow-job-url
+        description: URL of the Prow job run
+      steps:
+      - name: trigger-and-poll
+        image: quay.io/konflux-ci/appstudio-utils:latest
+        env:
+        - name: GANGWAY_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: gangway-token
+              key: token
+        script: |
+          #!/bin/bash
+          set -euo pipefail
+
+          GANGWAY_URL="https://gangway-ci.apps.ci.l2s4.p1.openshiftapps.com/v1/executions"
+          JOB_NAME="periodic-ci-openshift-hypershift-release-5.0-periodics-e2e-aks"
+          HO_IMAGE="$(params.ho-image)"
+          POLL_INTERVAL=600
+          TIMEOUT=14400
+
+          echo "=== run-e2e: trigger ==="
+          echo "Job:       ${JOB_NAME}"
+          echo "HO image:  ${HO_IMAGE}"
+          echo "Overrides:"
+          echo "  OVERRIDE_IMAGE_HYPERSHIFT_OPERATOR = ${HO_IMAGE}"
+          echo "  OVERRIDE_IMAGE_HYPERSHIFT_TESTS    = registry.ci.openshift.org/hypershift/hypershift-tests:latest"
+          echo "  MULTISTAGE_PARAM_OVERRIDE_CI_TESTS_RUN = TestCreateCluster (NOTE: not effective, see known limitations)"
+          echo "Poll interval: ${POLL_INTERVAL}s | Timeout: ${TIMEOUT}s"
+
+          RESPONSE=$(curl -s -w '\n%{http_code}' -X POST \
+            -H "Authorization: Bearer ${GANGWAY_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"job_name\": \"${JOB_NAME}\",
+              \"job_execution_type\": \"1\",
+              \"pod_spec_options\": {
+                \"envs\": {
+                  \"OVERRIDE_IMAGE_HYPERSHIFT_OPERATOR\": \"${HO_IMAGE}\",
+                  \"OVERRIDE_IMAGE_HYPERSHIFT_TESTS\": \"registry.ci.openshift.org/hypershift/hypershift-tests:latest\",
+                  \"MULTISTAGE_PARAM_OVERRIDE_CI_TESTS_RUN\": \"TestCreateCluster\"
+                }
+              }
+            }" \
+            "${GANGWAY_URL}")
+
+          HTTP_CODE=$(echo "${RESPONSE}" | tail -1)
+          BODY=$(echo "${RESPONSE}" | sed '$d')
+
+          if [[ "${HTTP_CODE}" != "200" ]]; then
+            echo "ERROR: Trigger failed — HTTP ${HTTP_CODE}"
+            echo "Raw response:"
+            echo "${BODY}"
+            echo -n "error" > $(results.result.path)
+            echo -n "" > $(results.prow-job-url.path)
+            exit 0
+          fi
+
+          if ! echo "${BODY}" | jq empty 2>/dev/null; then
+            echo "ERROR: Trigger response is not valid JSON"
+            echo "Raw response:"
+            echo "${BODY}"
+            echo -n "error" > $(results.result.path)
+            echo -n "" > $(results.prow-job-url.path)
+            exit 0
+          fi
+
+          JOB_ID=$(echo "${BODY}" | jq -r '.id')
+          if [[ -z "${JOB_ID}" || "${JOB_ID}" == "null" ]]; then
+            echo "ERROR: Failed to parse job ID"
+            echo "Raw response:"
+            echo "${BODY}"
+            echo -n "error" > $(results.result.path)
+            echo -n "" > $(results.prow-job-url.path)
+            exit 0
+          fi
+
+          echo ""
+          echo "=== run-e2e: triggered ==="
+          echo "Job ID:    ${JOB_ID}"
+
+          JOB_URL=""
+          for i in $(seq 1 10); do
+            POLL_RESPONSE=$(curl -s -w '\n%{http_code}' -H "Authorization: Bearer ${GANGWAY_TOKEN}" "${GANGWAY_URL}/${JOB_ID}")
+            POLL_CODE=$(echo "${POLL_RESPONSE}" | tail -1)
+            POLL_BODY=$(echo "${POLL_RESPONSE}" | sed '$d')
+            if [[ "${POLL_CODE}" != "200" ]]; then
+              echo "WARN: URL poll returned HTTP ${POLL_CODE}, retrying..."
+              sleep 15
+              continue
+            fi
+            JOB_URL=$(echo "${POLL_BODY}" | jq -r '.job_url')
+            [[ "${JOB_URL}" != "" && "${JOB_URL}" != "null" ]] && break
+            sleep 15
+          done
+          echo "Prow URL:  ${JOB_URL}"
+          echo -n "${JOB_URL}" > $(results.prow-job-url.path)
+
+          echo ""
+          echo "=== run-e2e: polling ==="
+          POLL_COUNT=0
+          ELAPSED=0
+          while [ ${ELAPSED} -lt ${TIMEOUT} ]; do
+            POLL_COUNT=$((POLL_COUNT + 1))
+            POLL_RESPONSE=$(curl -s -w '\n%{http_code}' -H "Authorization: Bearer ${GANGWAY_TOKEN}" "${GANGWAY_URL}/${JOB_ID}")
+            POLL_CODE=$(echo "${POLL_RESPONSE}" | tail -1)
+            POLL_BODY=$(echo "${POLL_RESPONSE}" | sed '$d')
+            TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+            if [[ "${POLL_CODE}" != "200" ]]; then
+              echo "[${TIMESTAMP}] Poll #${POLL_COUNT} (${ELAPSED}s) — HTTP ${POLL_CODE} — token may have expired"
+              echo "Raw response:"
+              echo "${POLL_BODY}"
+              echo -n "error" > $(results.result.path)
+              exit 0
+            fi
+
+            if ! echo "${POLL_BODY}" | jq empty 2>/dev/null; then
+              echo "[${TIMESTAMP}] Poll #${POLL_COUNT} (${ELAPSED}s) — HTTP ${POLL_CODE} — response is not valid JSON"
+              echo "Raw response:"
+              echo "${POLL_BODY}"
+              echo -n "error" > $(results.result.path)
+              exit 0
+            fi
+
+            STATUS=$(echo "${POLL_BODY}" | jq -r '.job_status')
+            echo "[${TIMESTAMP}] Poll #${POLL_COUNT} (${ELAPSED}s) — HTTP ${POLL_CODE} — ${STATUS}"
+
+            case "${STATUS}" in
+              SUCCESS)
+                echo ""
+                echo "=== run-e2e: PASSED ==="
+                echo "Full response:"
+                echo "${POLL_BODY}" | jq .
+                echo "Prow URL:   ${JOB_URL}"
+                echo -n "passed" > $(results.result.path)
+                exit 0
+                ;;
+              FAILURE|ABORTED|ERROR)
+                echo ""
+                echo "=== run-e2e: FAILED (${STATUS}) ==="
+                echo "Full response:"
+                echo "${POLL_BODY}" | jq .
+                echo "Prow URL:   ${JOB_URL}"
+                echo -n "failed" > $(results.result.path)
+                exit 0
+                ;;
+            esac
+
+            sleep ${POLL_INTERVAL}
+            ELAPSED=$((ELAPSED + POLL_INTERVAL))
+          done
+
+          echo ""
+          echo "=== run-e2e: TIMEOUT after ${TIMEOUT}s ==="
+          echo -n "error" > $(results.result.path)
+    params:
+    - name: ho-image
+      value: $(tasks.extract-image.results.ho-image)
+
+  - name: evaluate-results
+    runAfter: [run-e2e]
+    taskSpec:
+      params:
+      - name: e2e-result
+        type: string
+      - name: e2e-prow-url
+        type: string
+      results:
+      - name: gate-passed
+        description: Whether the release gate passed (true/false)
+      steps:
+      - name: evaluate
+        image: registry.redhat.io/openshift4/ose-cli:latest
+        script: |
+          #!/bin/bash
+          set -euo pipefail
+
+          E2E_RESULT="$(params.e2e-result)"
+          E2E_PROW_URL="$(params.e2e-prow-url)"
+
+          echo "=== evaluate-results ==="
+          echo "Test suites:"
+          echo "  run-e2e: ${E2E_RESULT} (${E2E_PROW_URL})"
+
+          GATE_PASSED="true"
+          if [[ "${E2E_RESULT}" != "passed" ]]; then
+            GATE_PASSED="false"
+          fi
+
+          echo ""
+          echo "Gate verdict: ${GATE_PASSED}"
+          echo -n "${GATE_PASSED}" > $(results.gate-passed.path)
+
+          if [[ "${GATE_PASSED}" == "false" ]]; then
+            echo ""
+            echo "=== GATE FAILED — image will NOT be promoted ==="
+            exit 1
+          fi
+
+          echo ""
+          echo "=== GATE PASSED — proceeding to release ==="
+    params:
+    - name: e2e-result
+      value: $(tasks.run-e2e.results.result)
+    - name: e2e-prow-url
+      value: $(tasks.run-e2e.results.prow-job-url)
+
+  finally:
+  - name: create-release
+    when:
+    - input: $(tasks.evaluate-results.results.gate-passed)
+      operator: in
+      values: ["true"]
+    taskSpec:
+      params:
+      - name: snapshot-name
+        type: string
+      steps:
+      - name: create
+        image: registry.redhat.io/openshift4/ose-cli:latest
+        script: |
+          #!/bin/bash
+          set -euo pipefail
+
+          SNAPSHOT="$(params.snapshot-name)"
+
+          echo "=== create-release ==="
+          echo "Snapshot:     ${SNAPSHOT}"
+          echo "ReleasePlan:  nightly-promotion-aro-hcp"
+
+          RELEASE_OUTPUT=$(oc create -f - <<EOF
+          apiVersion: appstudio.redhat.com/v1alpha1
+          kind: Release
+          metadata:
+            generateName: nightly-promotion-aro-hcp-
+            namespace: crt-redhat-acm-tenant
+          spec:
+            snapshot: ${SNAPSHOT}
+            releasePlan: nightly-promotion-aro-hcp
+            gracePeriodDays: 7
+          EOF
+          )
+
+          RELEASE_NAME=$(echo "${RELEASE_OUTPUT}" | grep -oP 'release\.appstudio\.redhat\.com/\K[^ ]+' || echo "unknown")
+          echo "Created:      ${RELEASE_NAME}"
+          echo ""
+          echo "=== create-release: done ==="
+    params:
+    - name: snapshot-name
+      value: $(tasks.extract-image.results.snapshot-name)
