@@ -1,3 +1,5 @@
+HyperShift is middleware for hosting OpenShift control planes at scale, decoupling control planes (running as pods on a management cluster) from worker nodes (running in separate infrastructure).
+
 This file provides non-obvious development guidance for the HyperShift repository. It is intentionally minimal — detailed guidance lives in the referenced files below and should be updated there, not here.
 
 `CLAUDE.md` is a symlink to this file (`AGENTS.md`). Both names resolve to the same content. The `AGENTS.md` name is the canonical one; `CLAUDE.md` exists so that Claude Code auto-loads it.
@@ -22,6 +24,7 @@ Project documentation is published via MkDocs. The site structure and navigation
 | **Versioning and support** | [docs/content/reference/versioning-support.md](docs/content/reference/versioning-support.md) |
 | **Upgrades lifecycle** | [docs/content/how-to/upgrades.md](docs/content/how-to/upgrades.md) |
 | **Contributing and PR workflow** | [CONTRIBUTING.md](CONTRIBUTING.md) |
+| **Agentic SDLC framework** | [docs/content/how-to/agentic-sdlc.md](docs/content/how-to/agentic-sdlc.md) |
 | **Pre-commit hooks** | [docs/content/contribute/precommit-hook-help.md](docs/content/contribute/precommit-hook-help.md) |
 
 ## Pull Secret Cycling
