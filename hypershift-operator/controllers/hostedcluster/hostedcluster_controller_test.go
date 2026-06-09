@@ -260,131 +260,143 @@ func TestHasBeenAvailable(t *testing.T) {
 	}
 }
 
-func TestReconcileWhenPullSecretMissing(t *testing.T) {
+func TestReconcileWhenPullSecretUnavailable(t *testing.T) {
 	t.Parallel()
-	g := NewWithT(t)
 
-	hcluster := &hyperv1.HostedCluster{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-cluster",
-			Namespace: "any",
-			Annotations: map[string]string{
-				hyperv1.RequestServingNodeAdditionalSelectorAnnotation: `{"node-role.kubernetes.io/worker": ""}`,
-			},
+	tests := []struct {
+		name         string
+		extraObjects []crclient.Object
+	}{
+		{
+			name: "When the pull secret is missing it should still reconcile the HCP",
 		},
-		Spec: hyperv1.HostedClusterSpec{
-			ClusterID: "id",
-			InfraID:   "infra-id",
-			Networking: hyperv1.ClusterNetworking{
-				ClusterNetwork: []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.1.0/24")}},
-			},
-			Services: []hyperv1.ServicePublishingStrategyMapping{
-				{
-					Service: hyperv1.Ignition,
-					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-						Type: hyperv1.LoadBalancer,
-					},
+		{
+			name: "When the pull secret is corrupted it should still reconcile the HCP",
+			extraObjects: []crclient.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "pull-secret", Namespace: "any"},
+					Data:       map[string][]byte{},
 				},
 			},
-			PullSecret: corev1.LocalObjectReference{
-				Name: "pull-secret",
-			},
-			Release: hyperv1.Release{Image: "quay.io/openshift-release-dev/ocp-release:4.15.0"},
-			Etcd:    hyperv1.EtcdSpec{ManagementType: hyperv1.Managed},
-			Platform: hyperv1.PlatformSpec{
-				Type: hyperv1.AWSPlatform,
-			},
-			NodeSelector: map[string]string{
-				"node-role.kubernetes.io/worker": "",
-			},
 		},
 	}
 
-	hcpNs := hcpmanifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
-	hcp := controlplaneoperator.HostedControlPlane(hcpNs, hcluster.Name)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
 
-	// Create the namespace so createOrUpdate can find it
-	ns := &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{Name: hcpNs},
+			hcluster := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: "any",
+					Annotations: map[string]string{
+						hyperv1.RequestServingNodeAdditionalSelectorAnnotation: `{"node-role.kubernetes.io/worker": ""}`,
+					},
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					ClusterID: "12345678-1234-1234-1234-123456789abc",
+					InfraID:   "infra-id",
+					Networking: hyperv1.ClusterNetworking{
+						ClusterNetwork: []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.1.0/24")}},
+						ServiceNetwork: []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.31.0.0/16")}},
+					},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.Ignition,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.Route,
+							},
+						},
+					},
+					PullSecret: corev1.LocalObjectReference{Name: "pull-secret"},
+					Release:    hyperv1.Release{Image: "quay.io/openshift-release-dev/ocp-release:4.15.0"},
+					Etcd:       hyperv1.EtcdSpec{ManagementType: hyperv1.Managed},
+					Platform:   hyperv1.PlatformSpec{Type: hyperv1.NonePlatform},
+					NodeSelector: map[string]string{
+						"node-role.kubernetes.io/worker": "",
+					},
+				},
+			}
+
+			hcpNs := hcpmanifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
+			hcp := controlplaneoperator.HostedControlPlane(hcpNs, hcluster.Name)
+			ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: hcpNs}}
+
+			objects := append([]crclient.Object{hcp, hcluster, ns}, tc.extraObjects...)
+			client := fake.NewClientBuilder().WithScheme(api.Scheme).
+				WithObjects(objects...).WithStatusSubresource(hcluster).Build()
+
+			mockCtrl := gomock.NewController(t)
+			defer mockCtrl.Finish()
+			mockedProvider := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(mockCtrl)
+
+			r := &HostedClusterReconciler{
+				Client:                        client,
+				Clock:                         clocktesting.NewFakeClock(time.Now()),
+				CertRotationScale:             24 * time.Hour,
+				createOrUpdate:                func(reconcile.Request) upsert.CreateOrUpdateFN { return ctrl.CreateOrUpdate },
+				ManagementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
+				RegistryProvider: fakeReleaseProvider{
+					releaseProvider: mockedProvider,
+					metadataProvider: fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
+						Result: &dockerv1client.DockerImageConfig{},
+					},
+				},
+				now: func() metav1.Time { return metav1.NewTime(time.Now()) },
+			}
+
+			ctx := t.Context()
+			_, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: crclient.ObjectKeyFromObject(hcluster)})
+
+			// Reconciliation should return an error for requeue via the error-collection
+			// framework (PullSecretSync and CPOImageAndNamespace record critical errors).
+			g.Expect(err).To(HaveOccurred(), "it should return an error")
+			g.Expect(err.Error()).To(ContainSubstring("pull secret"), "the error should mention pull secret")
+
+			// CoreHCPChain should still run — HCP spec fields must be propagated
+			// even during a pull secret outage.
+			updatedHCP := controlplaneoperator.HostedControlPlane(hcpNs, hcluster.Name)
+			err = client.Get(ctx, crclient.ObjectKeyFromObject(updatedHCP), updatedHCP)
+			g.Expect(err).ToNot(HaveOccurred(), "it should still be able to get the HCP")
+
+			g.Expect(updatedHCP.Spec.NodeSelector).To(Equal(hcluster.Spec.NodeSelector),
+				"it should still propagate NodeSelector to HCP")
+			g.Expect(updatedHCP.Annotations).To(HaveKeyWithValue(
+				hyperv1.RequestServingNodeAdditionalSelectorAnnotation,
+				hcluster.Annotations[hyperv1.RequestServingNodeAdditionalSelectorAnnotation]),
+				"it should still propagate RequestServingNodeAdditionalSelector to HCP")
+			g.Expect(updatedHCP.Spec.ReleaseImage).To(Equal(hcluster.Spec.Release.Image),
+				"it should still propagate ReleaseImage to HCP")
+			g.Expect(updatedHCP.Annotations).To(HaveKeyWithValue(
+				hyperv1.DisableClusterAutoscalerAnnotation, "true"),
+				"it should disable the cluster autoscaler when no NodePools exist")
+		})
 	}
-
-	// No pull secret in the fake client — this is the scenario we're testing
-	objects := []crclient.Object{
-		hcp,
-		hcluster,
-		ns,
-	}
-
-	client := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).WithStatusSubresource(hcluster).Build()
-
-	mockCtrl := gomock.NewController(t)
-	defer mockCtrl.Finish()
-	mockedProvider := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(mockCtrl)
-
-	r := &HostedClusterReconciler{
-		Client:                        client,
-		Clock:                         clocktesting.NewFakeClock(time.Now()),
-		CertRotationScale:             24 * time.Hour,
-		createOrUpdate:                func(reconcile.Request) upsert.CreateOrUpdateFN { return ctrl.CreateOrUpdate },
-		ManagementClusterCapabilities: &fakecapabilities.FakeSupportNoCapabilities{},
-		RegistryProvider: fakeReleaseProvider{
-			releaseProvider: mockedProvider,
-			metadataProvider: fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
-				Result: &dockerv1client.DockerImageConfig{},
-			},
-		},
-		now: func() metav1.Time { return metav1.NewTime(time.Now()) },
-	}
-
-	ctx := t.Context()
-	_, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: crclient.ObjectKeyFromObject(hcluster)})
-
-	// When the pull secret is missing, reconciliation should return an error for requeue
-	g.Expect(err).To(HaveOccurred(), "When pull secret is missing it should return an error")
-	g.Expect(err.Error()).To(ContainSubstring("failed to get pull secret"), "When pull secret is missing the error should mention pull secret")
-
-	// Verify reconcileHostedControlPlane still ran — the HCP should have the HostedCluster's spec fields
-	updatedHCP := controlplaneoperator.HostedControlPlane(hcpNs, hcluster.Name)
-	err = client.Get(ctx, crclient.ObjectKeyFromObject(updatedHCP), updatedHCP)
-	g.Expect(err).ToNot(HaveOccurred(), "When pull secret is missing it should still be able to get the HCP")
-
-	g.Expect(updatedHCP.Spec.NodeSelector).To(Equal(hcluster.Spec.NodeSelector),
-		"When pull secret is missing it should still propagate NodeSelector to HCP")
-	g.Expect(updatedHCP.Annotations).To(HaveKeyWithValue(
-		hyperv1.RequestServingNodeAdditionalSelectorAnnotation,
-		hcluster.Annotations[hyperv1.RequestServingNodeAdditionalSelectorAnnotation]),
-		"When pull secret is missing it should still propagate RequestServingNodeAdditionalSelector to HCP")
-	g.Expect(updatedHCP.Spec.ReleaseImage).To(Equal(hcluster.Spec.Release.Image),
-		"When pull secret is missing it should still propagate ReleaseImage to HCP")
-
-	// With no NodePools in the fake client, autoscaling is not needed so the
-	// autoscaler should be disabled. This validates the defaulting logic in the
-	// pull secret recovery path.
-	g.Expect(updatedHCP.Annotations).To(HaveKeyWithValue(
-		hyperv1.DisableClusterAutoscalerAnnotation, "true"),
-		"When pull secret is missing and no NodePools exist it should disable the cluster autoscaler")
 }
 
 func TestReconcileWhenPullSecretMissingAndNodePoolListFails(t *testing.T) {
 	t.Parallel()
 	g := NewWithT(t)
 
+	clusterID := "12345678-1234-1234-1234-123456789abc"
 	hcluster := &hyperv1.HostedCluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test-cluster",
 			Namespace: "any",
 		},
 		Spec: hyperv1.HostedClusterSpec{
-			ClusterID: "id",
+			ClusterID: clusterID,
 			InfraID:   "infra-id",
 			Networking: hyperv1.ClusterNetworking{
 				ClusterNetwork: []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.1.0/24")}},
+				ServiceNetwork: []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.31.0.0/16")}},
 			},
 			Services: []hyperv1.ServicePublishingStrategyMapping{
 				{
 					Service: hyperv1.Ignition,
 					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-						Type: hyperv1.LoadBalancer,
+						Type: hyperv1.Route,
 					},
 				},
 			},
@@ -394,7 +406,7 @@ func TestReconcileWhenPullSecretMissingAndNodePoolListFails(t *testing.T) {
 			Release: hyperv1.Release{Image: "quay.io/openshift-release-dev/ocp-release:4.15.0"},
 			Etcd:    hyperv1.EtcdSpec{ManagementType: hyperv1.Managed},
 			Platform: hyperv1.PlatformSpec{
-				Type: hyperv1.AWSPlatform,
+				Type: hyperv1.NonePlatform,
 			},
 		},
 	}
@@ -424,7 +436,7 @@ func TestReconcileWhenPullSecretMissingAndNodePoolListFails(t *testing.T) {
 		Clock:                         clocktesting.NewFakeClock(time.Now()),
 		CertRotationScale:             24 * time.Hour,
 		createOrUpdate:                func(reconcile.Request) upsert.CreateOrUpdateFN { return ctrl.CreateOrUpdate },
-		ManagementClusterCapabilities: &fakecapabilities.FakeSupportNoCapabilities{},
+		ManagementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
 		RegistryProvider: fakeReleaseProvider{
 			releaseProvider: mockedProvider,
 			metadataProvider: fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
@@ -2557,7 +2569,7 @@ func TestValidateReleaseImage(t *testing.T) {
 			releaseImageLoookup: func(_ context.Context, _ string, _ []byte) (*releaseinfo.ReleaseImage, error) {
 				return testutils.InitReleaseImageOrDie("4.15.0"), nil
 			},
-			expectedResult:        errors.New("failed to get pull secret: secrets \"pull-secret\" not found"),
+			expectedResult:        errors.New("pull secret unavailable: secrets \"pull-secret\" not found"),
 			expectedNotFoundError: true,
 		},
 		{
@@ -2581,7 +2593,7 @@ func TestValidateReleaseImage(t *testing.T) {
 			releaseImageLoookup: func(_ context.Context, _ string, _ []byte) (*releaseinfo.ReleaseImage, error) {
 				return testutils.InitReleaseImageOrDie("4.15.0"), nil
 			},
-			expectedResult: errors.New("expected .dockerconfigjson key in pull secret"),
+			expectedResult: errors.New("pull secret unavailable: expected .dockerconfigjson key in secret \"pull-secret\""),
 		},
 		{
 			name: "unable to pull release image, error",

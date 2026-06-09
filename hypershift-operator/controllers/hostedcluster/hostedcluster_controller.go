@@ -668,56 +668,16 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	releaseProvider := r.RegistryProvider.GetReleaseProvider()
 	registryClientImageMetadataProvider := r.RegistryProvider.GetMetadataProvider()
 
-	pullSecretBytes, err := hyperutil.GetPullSecretBytes(ctx, r.Client, hcluster)
-	if err != nil {
-		log.Error(err, "failed to get pull secret")
-		// Ensure even with a bad pull secret we process pod placement decisions
-		// before returning the pull secret error for requeue.
-		hcp = controlplaneoperator.HostedControlPlane(controlPlaneNamespace.Name, hcluster.Name)
-		isAutoscalingNeeded, autoscaleErr := r.isAutoscalingNeeded(ctx, hcluster)
-		if autoscaleErr != nil {
-			log.Error(autoscaleErr, "failed to determine if autoscaler is needed during pull secret recovery, defaulting to true")
-			isAutoscalingNeeded = true
-		}
-		isAWSNodeTerminationHandlerNeeded, nthErr := r.isAWSNodeTerminationHandlerNeeded(ctx, hcluster)
-		if nthErr != nil {
-			log.Error(nthErr, "failed to determine if AWS node termination handler is needed during pull secret recovery, defaulting to true")
-			isAWSNodeTerminationHandlerNeeded = true
-		}
-		_, hcpErr := createOrUpdate(ctx, r.Client, hcp, func() error {
-			// Skip cert annotation resolution during pull secret recovery — it requires
-			// the pull secret to resolve the CPO image, which is unavailable here.
-			return reconcileHostedControlPlane(hcp, hcluster, isAutoscalingNeeded, isAWSNodeTerminationHandlerNeeded,
-				func() (map[string]string, error) { return nil, nil })
-		})
-		if hcpErr != nil {
-			log.Error(hcpErr, "failed to reconcile hostedcontrolplane during pull secret recovery")
-		}
-		return ctrl.Result{}, fmt.Errorf("failed to get pull secret: %w", err)
-	}
-
-	controlPlaneOperatorImage, err := hyperutil.GetControlPlaneOperatorImage(ctx, hcluster, releaseProvider, r.HypershiftOperatorImage, pullSecretBytes)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to get controlPlaneOperatorImage: %w", err)
-	}
-	controlPlaneOperatorImageLabels, err := hyperutil.GetControlPlaneOperatorImageLabels(ctx, hcluster, controlPlaneOperatorImage, pullSecretBytes, registryClientImageMetadataProvider)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to get controlPlaneOperatorImageLabels: %w", err)
-	}
-
-	_, cpoSupportsKASCustomKubeconfig := controlPlaneOperatorImageLabels[controlPlaneOperatorSupportsKASCustomKubeconfigLabel]
-
-	if cpoSupportsKASCustomKubeconfig {
-		if len(hcluster.Spec.KubeAPIServerDNSName) > 0 {
-			CustomKubeconfigSecret := manifests.KubeConfigExternalSecret(hcluster.Namespace, hcluster.Name)
-			err := r.Client.Get(ctx, client.ObjectKeyFromObject(CustomKubeconfigSecret), CustomKubeconfigSecret)
-			if err != nil {
-				if !apierrors.IsNotFound(err) {
-					return ctrl.Result{}, fmt.Errorf("failed to reconcile external kubeconfig secret: %w", err)
-				}
-			} else {
-				hcluster.Status.CustomKubeconfig = &corev1.LocalObjectReference{Name: CustomKubeconfigSecret.Name}
+	// Set kubeconfig status unconditionally — all supported CPO versions expose the custom kubeconfig.
+	if len(hcluster.Spec.KubeAPIServerDNSName) > 0 {
+		CustomKubeconfigSecret := manifests.KubeConfigExternalSecret(hcluster.Namespace, hcluster.Name)
+		err := r.Client.Get(ctx, client.ObjectKeyFromObject(CustomKubeconfigSecret), CustomKubeconfigSecret)
+		if err != nil {
+			if !apierrors.IsNotFound(err) {
+				return ctrl.Result{}, fmt.Errorf("failed to reconcile external kubeconfig secret: %w", err)
 			}
+		} else {
+			hcluster.Status.CustomKubeconfig = &corev1.LocalObjectReference{Name: CustomKubeconfigSecret.Name}
 		}
 	}
 
@@ -1236,7 +1196,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 				condition.Status = metav1.ConditionFalse
 				condition.Message = err.Error()
 
-				if apierrors.IsNotFound(err) {
+				if errors.Is(err, hyperutil.ErrPullSecretUnavailable) {
 					condition.Reason = hyperv1.SecretNotFoundReason
 				} else {
 					condition.Reason = hyperv1.InvalidImageReason
@@ -1253,24 +1213,24 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	// Set HostedCluster payload arch
 	payloadArch, err := hyperutil.DetermineHostedClusterPayloadArch(ctx, r.Client, hcluster, registryClientImageMetadataProvider)
 	if err != nil {
-		condition := metav1.Condition{
-			Type:               string(hyperv1.ValidReleaseImage),
-			ObservedGeneration: hcluster.Generation,
+		log.Error(err, "failed to determine payload arch")
+		reason := hyperv1.PayloadArchNotFoundReason
+		if errors.Is(err, hyperutil.ErrPullSecretUnavailable) {
+			reason = hyperv1.SecretNotFoundReason
 		}
-		condition.Status = metav1.ConditionFalse
-		condition.Message = err.Error()
-		condition.Reason = hyperv1.PayloadArchNotFoundReason
-		meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
-
-		return ctrl.Result{}, err
+		meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
+			Type:               string(hyperv1.ValidReleaseImage),
+			Status:             metav1.ConditionFalse,
+			ObservedGeneration: hcluster.Generation,
+			Message:            err.Error(),
+			Reason:             reason,
+		})
+	} else {
+		hcluster.Status.PayloadArch = payloadArch
 	}
 
-	hcluster.Status.PayloadArch = payloadArch
+	var releaseImage *releaseinfo.ReleaseImage
 
-	releaseImage, err := r.lookupReleaseImage(ctx, hcluster, releaseProvider)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to lookup release image: %w", err)
-	}
 	// Set Progressing condition
 	{
 		condition := metav1.Condition{
@@ -1281,24 +1241,36 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			Reason:             hyperv1.AsExpectedReason,
 		}
 		refWithDigest := func() (string, error) {
-			_, ref, err := registryClientImageMetadataProvider.GetDigest(ctx, hcluster.Spec.Release.Image, pullSecretBytes)
+			ps, psErr := hyperutil.GetPullSecretBytes(ctx, r.Client, hcluster)
+			if psErr != nil {
+				return "", psErr
+			}
+			_, ref, err := registryClientImageMetadataProvider.GetDigest(ctx, hcluster.Spec.Release.Image, ps)
 			if err != nil {
 				return "", err
 			}
 			return ref.String(), nil
 		}
 
-		progressing, err := isProgressing(hcluster, releaseImage, refWithDigest)
+		releaseImage, err = r.lookupReleaseImage(ctx, hcluster, releaseProvider)
 		if err != nil {
 			condition.Status = metav1.ConditionFalse
 			condition.Message = err.Error()
 			condition.Reason = hyperv1.BlockedReason
+		} else {
+			progressing, err := isProgressing(hcluster, releaseImage, refWithDigest)
+			if err != nil {
+				condition.Status = metav1.ConditionFalse
+				condition.Message = err.Error()
+				condition.Reason = hyperv1.BlockedReason
+			}
+			if progressing {
+				condition.Status = metav1.ConditionTrue
+				condition.Message = "HostedCluster is deploying, upgrading, or reconfiguring"
+				condition.Reason = "Progressing"
+			}
 		}
-		if progressing {
-			condition.Status = metav1.ConditionTrue
-			condition.Message = "HostedCluster is deploying, upgrading, or reconfiguring"
-			condition.Reason = "Progressing"
-		}
+
 		meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
 	}
 
@@ -1369,100 +1341,26 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		validReleaseImage := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.ValidReleaseImage))
 		if validReleaseImage != nil && validReleaseImage.Status == metav1.ConditionFalse {
 			if validReleaseImage.Reason == hyperv1.SecretNotFoundReason {
-				return ctrl.Result{}, fmt.Errorf("%s", validReleaseImage.Message)
-			}
-			log.Error(fmt.Errorf("release image is invalid"), "reconciliation is blocked", "message", validReleaseImage.Message)
-			return ctrl.Result{}, nil
-		}
-		upgrading, msg, err := isUpgrading(hcluster, releaseImage)
-		if upgrading {
-			if err != nil {
-				log.Error(err, "reconciliation is blocked", "message", validReleaseImage.Message)
+				// Continue with degraded reconciliation — PullSecretSync will capture
+				// the error as critical and CoreHCPChain will still reconcile the HCP.
+				log.Error(fmt.Errorf("%s", validReleaseImage.Message), "pull secret unavailable, continuing with degraded reconciliation")
+			} else {
+				log.Error(fmt.Errorf("release image is invalid"), "reconciliation is blocked", "message", validReleaseImage.Message)
 				return ctrl.Result{}, nil
 			}
-			if msg != "" {
-				log.Info(msg)
-			}
 		}
-	}
-
-	cpoHasUtilities := false
-	if _, hasLabel := controlPlaneOperatorImageLabels[controlPlaneOperatorSubcommandsLabel]; hasLabel {
-		cpoHasUtilities = true
-	}
-	utilitiesImage := controlPlaneOperatorImage
-	if !cpoHasUtilities {
-		utilitiesImage = r.HypershiftOperatorImage
-	}
-
-	_, controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel := controlPlaneOperatorImageLabels[controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel]
-	_, controlPlanePKIOperatorSignsCSRs := controlPlaneOperatorImageLabels[controlPlanePKIOperatorSignsCSRsLabel]
-	_, useRestrictedPSA := controlPlaneOperatorImageLabels[useRestrictedPodSecurityLabel]
-	_, defaultToControlPlaneV2 := controlPlaneOperatorImageLabels[defaultToControlPlaneV2Label]
-
-	// Reconcile the hosted cluster namespace
-	_, err = createOrUpdate(ctx, r.Client, controlPlaneNamespace, func() error {
-		if controlPlaneNamespace.Labels == nil {
-			controlPlaneNamespace.Labels = make(map[string]string)
-		}
-		controlPlaneNamespace.Labels[ControlPlaneNamespaceLabelKey] = "true"
-
-		// Set pod security labels on HCP namespace
-		psaOverride := hcluster.Annotations[hyperv1.PodSecurityAdmissionLabelOverrideAnnotation]
-		if psaOverride != "" {
-			controlPlaneNamespace.Labels["pod-security.kubernetes.io/enforce"] = psaOverride
-			controlPlaneNamespace.Labels["pod-security.kubernetes.io/audit"] = psaOverride
-			controlPlaneNamespace.Labels["pod-security.kubernetes.io/warn"] = psaOverride
-		} else if useRestrictedPSA {
-			controlPlaneNamespace.Labels["pod-security.kubernetes.io/enforce"] = "restricted"
-			controlPlaneNamespace.Labels["pod-security.kubernetes.io/audit"] = "restricted"
-			controlPlaneNamespace.Labels["pod-security.kubernetes.io/warn"] = "restricted"
-		} else {
-			controlPlaneNamespace.Labels["pod-security.kubernetes.io/enforce"] = "privileged"
-			controlPlaneNamespace.Labels["pod-security.kubernetes.io/audit"] = "privileged"
-			controlPlaneNamespace.Labels["pod-security.kubernetes.io/warn"] = "privileged"
-		}
-		controlPlaneNamespace.Labels["security.openshift.io/scc.podSecurityLabelSync"] = "false"
-
-		// Enable monitoring for hosted control plane namespaces
-		if r.EnableOCPClusterMonitoring {
-			controlPlaneNamespace.Labels["openshift.io/cluster-monitoring"] = "true"
-		}
-
-		if r.SetDefaultSecurityContext {
-			// Only set the SecurtyContext UID annotation if it's not already set.
-			_, ok := controlPlaneNamespace.Annotations[DefaultSecurityContextUIDAnnnotation]
-			if !ok {
-				uid, err := getNextAvailableSecurityContextUID(ctx, r.Client)
+		if releaseImage != nil {
+			upgrading, msg, err := isUpgrading(hcluster, releaseImage)
+			if upgrading {
 				if err != nil {
-					return fmt.Errorf("failed to get next available SecurityContext UID: %w", err)
+					log.Error(err, "reconciliation is blocked", "message", validReleaseImage.Message)
+					return ctrl.Result{}, nil
 				}
-				if controlPlaneNamespace.Annotations == nil {
-					controlPlaneNamespace.Annotations = make(map[string]string)
+				if msg != "" {
+					log.Info(msg)
 				}
-				controlPlaneNamespace.Annotations[DefaultSecurityContextUIDAnnnotation] = strconv.FormatInt(uid, 10)
 			}
 		}
-
-		// Enable observability operator monitoring
-		metrics.EnableOBOMonitoring(controlPlaneNamespace)
-
-		propagateAzureResourceIDAnnotation(hcluster, controlPlaneNamespace)
-
-		return nil
-	})
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to reconcile namespace: %w", err)
-	}
-
-	p, err := platform.GetPlatform(ctx, hcluster, releaseProvider, utilitiesImage, pullSecretBytes)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-
-	releaseImageVersion, err := semver.Parse(releaseImage.Version())
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to parse release image version: %w", err)
 	}
 
 	// --- Categorized reconcile operations with structured error reporting ---
@@ -1472,11 +1370,52 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	//   - nonCritical: failures are collected but never block other work.
 	//
 	// Blocking rules:
-	//   - Critical sync failures (Phase 6a) → Phase 8 components blocked.
-	//   - Core HCP chain failure / nil HCP (Phase 7) → Phase 8 components blocked.
-	//   - Non-critical sync (Phase 6b) → never blocked, always runs.
+	//   - Critical sync failures → Phase 8 components blocked.
+	//   - Core HCP chain failure / nil HCP → Phase 8 components blocked.
+	//   - Non-critical sync → never blocked, always runs.
 
 	report := &reconcileReport{legacy: r.ReconcileLegacy}
+
+	// Phase 5: Pull secret, CPO image resolution, and namespace setup.
+	// These are grouped because namespace PSA labels depend on CPO image labels —
+	// reconciling the namespace without them could downgrade security. When this
+	// block fails (e.g. pull secret unavailable), the namespace retains its
+	// existing labels from a previous successful reconcile, and CoreHCPChain
+	// still runs to propagate HCP spec fields.
+	var pullSecretBytes []byte
+	controlPlaneOperatorImage := r.HypershiftOperatorImage
+	var controlPlaneOperatorImageLabels map[string]string
+
+	report.execute("CPOImageAndNamespace", critical, func() error {
+		var err error
+		pullSecretBytes, err = hyperutil.GetPullSecretBytes(ctx, r.Client, hcluster)
+		if err != nil {
+			return fmt.Errorf("failed to get pull secret: %w", err)
+		}
+		controlPlaneOperatorImage, err = hyperutil.GetControlPlaneOperatorImage(ctx, hcluster, releaseProvider, r.HypershiftOperatorImage, pullSecretBytes)
+		if err != nil {
+			return fmt.Errorf("failed to get controlPlaneOperatorImage: %w", err)
+		}
+		controlPlaneOperatorImageLabels, err = hyperutil.GetControlPlaneOperatorImageLabels(ctx, hcluster, controlPlaneOperatorImage, pullSecretBytes, registryClientImageMetadataProvider)
+		if err != nil {
+			return fmt.Errorf("failed to get controlPlaneOperatorImageLabels: %w", err)
+		}
+
+		return r.reconcileControlPlaneNamespace(ctx, createOrUpdate, hcluster, controlPlaneNamespace, controlPlaneOperatorImageLabels)
+	})
+
+	cpoHasUtilities := false
+	utilitiesImage := r.HypershiftOperatorImage
+	if _, hasLabel := controlPlaneOperatorImageLabels[controlPlaneOperatorSubcommandsLabel]; hasLabel {
+		cpoHasUtilities = true
+		utilitiesImage = controlPlaneOperatorImage
+	}
+	// Platform is a hard prerequisite — all framework operations use the platform
+	// interface and would panic on nil. GetPlatform handles nil pullSecretBytes.
+	p, err := platform.GetPlatform(ctx, hcluster, releaseProvider, utilitiesImage, pullSecretBytes)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
 
 	// Phase 6a: Critical sync operations.
 	// These must succeed for downstream component deployments to function.
@@ -1538,6 +1477,11 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		return r.reconcileGlobalConfigSync(ctx, hcluster, createOrUpdate, controlPlaneNamespace.Name)
 	})
 
+	_, cpoSupportsKASCustomKubeconfig := controlPlaneOperatorImageLabels[controlPlaneOperatorSupportsKASCustomKubeconfigLabel]
+	_, controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel := controlPlaneOperatorImageLabels[controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel]
+	_, controlPlanePKIOperatorSignsCSRs := controlPlaneOperatorImageLabels[controlPlanePKIOperatorSignsCSRsLabel]
+	_, defaultToControlPlaneV2 := controlPlaneOperatorImageLabels[defaultToControlPlaneV2Label]
+
 	// Phase 7: Core HCP chain — sequential (HCP → InfraCR → CAPI Cluster).
 	// Always runs regardless of Phase 6a failures (these are K8s resource operations).
 	report.execute("CoreHCPChain", critical, func() error {
@@ -1557,6 +1501,30 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		return r.reconcileKubeconfigAndPasswordSync(ctx, createOrUpdate, hcluster, hcp, cpoSupportsKASCustomKubeconfig)
 	})
 
+	report.executeOrBlock("PlatformOIDCAndCSI", func() error {
+		return r.reconcilePlatformSpecific(ctx, log, hcluster, hcp, createOrUpdate)
+	})
+
+	report.executeOrBlock("MonitoringAndCLISecrets", func() error {
+		return r.reconcileAuxiliary(ctx, createOrUpdate, hcluster, hcp)
+	})
+
+	// Release image version is critical because OperatorDeployments and
+	// RBACAndPolicies depend on it — a zero-value version would produce
+	// wrong deployments. Failure here blocks those downstream operations.
+	var releaseImageVersion semver.Version
+	report.execute("ReleaseImageVersion", critical, func() error {
+		if releaseImage == nil {
+			return fmt.Errorf("release image is not available")
+		}
+		var err error
+		releaseImageVersion, err = semver.Parse(releaseImage.Version())
+		if err != nil {
+			return fmt.Errorf("failed to parse release image version: %w", err)
+		}
+		return nil
+	})
+
 	report.executeOrBlock("OperatorDeployments", func() error {
 		return r.reconcileOperatorDeployments(ctx, createOrUpdate, hcluster, hcp, controlPlaneNamespace, p,
 			controlPlaneOperatorImage, utilitiesImage,
@@ -1567,14 +1535,6 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		return r.reconcileRBACAndPolicies(ctx, log, createOrUpdate, hcluster, hcp,
 			controlPlanePKIOperatorSignsCSRs, controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel,
 			releaseImageVersion)
-	})
-
-	report.executeOrBlock("PlatformOIDCAndCSI", func() error {
-		return r.reconcilePlatformSpecific(ctx, log, hcluster, hcp, createOrUpdate)
-	})
-
-	report.executeOrBlock("MonitoringAndCLISecrets", func() error {
-		return r.reconcileAuxiliary(ctx, createOrUpdate, hcluster, hcp)
 	})
 
 	report.executeOrBlock("PublicEndpointExposed", func() error {
@@ -1783,7 +1743,7 @@ func (r *HostedClusterReconciler) reconcilePlatformCredentialsWithStatus(
 			Message:            err.Error(),
 		})
 		if statusErr := r.Client.Status().Update(ctx, hcluster); statusErr != nil {
-			return fmt.Errorf("failed to reconcile platform credentials: %s, failed to update status: %w", err, statusErr)
+			return fmt.Errorf("failed to reconcile platform credentials: %w, failed to update status: %w", err, statusErr)
 		}
 		return fmt.Errorf("failed to reconcile platform credentials: %w", err)
 	}
@@ -1857,6 +1817,65 @@ func (r *HostedClusterReconciler) reconcileRestoredFromBackupWithStatus(
 
 // reconcilePullSecretSync syncs the pull secret from the HostedCluster namespace
 // to the control plane namespace.
+func (r *HostedClusterReconciler) reconcileControlPlaneNamespace(
+	ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN,
+	hcluster *hyperv1.HostedCluster, controlPlaneNamespace *corev1.Namespace,
+	controlPlaneOperatorImageLabels map[string]string,
+) error {
+	_, useRestrictedPSA := controlPlaneOperatorImageLabels[useRestrictedPodSecurityLabel]
+
+	_, err := createOrUpdate(ctx, r.Client, controlPlaneNamespace, func() error {
+		if controlPlaneNamespace.Labels == nil {
+			controlPlaneNamespace.Labels = make(map[string]string)
+		}
+		controlPlaneNamespace.Labels[ControlPlaneNamespaceLabelKey] = "true"
+
+		psaOverride := hcluster.Annotations[hyperv1.PodSecurityAdmissionLabelOverrideAnnotation]
+		if psaOverride != "" {
+			controlPlaneNamespace.Labels["pod-security.kubernetes.io/enforce"] = psaOverride
+			controlPlaneNamespace.Labels["pod-security.kubernetes.io/audit"] = psaOverride
+			controlPlaneNamespace.Labels["pod-security.kubernetes.io/warn"] = psaOverride
+		} else if useRestrictedPSA {
+			controlPlaneNamespace.Labels["pod-security.kubernetes.io/enforce"] = "restricted"
+			controlPlaneNamespace.Labels["pod-security.kubernetes.io/audit"] = "restricted"
+			controlPlaneNamespace.Labels["pod-security.kubernetes.io/warn"] = "restricted"
+		} else {
+			controlPlaneNamespace.Labels["pod-security.kubernetes.io/enforce"] = "privileged"
+			controlPlaneNamespace.Labels["pod-security.kubernetes.io/audit"] = "privileged"
+			controlPlaneNamespace.Labels["pod-security.kubernetes.io/warn"] = "privileged"
+		}
+		controlPlaneNamespace.Labels["security.openshift.io/scc.podSecurityLabelSync"] = "false"
+
+		if r.EnableOCPClusterMonitoring {
+			controlPlaneNamespace.Labels["openshift.io/cluster-monitoring"] = "true"
+		}
+
+		if r.SetDefaultSecurityContext {
+			_, ok := controlPlaneNamespace.Annotations[DefaultSecurityContextUIDAnnnotation]
+			if !ok {
+				uid, err := getNextAvailableSecurityContextUID(ctx, r.Client)
+				if err != nil {
+					return fmt.Errorf("failed to get next available SecurityContext UID: %w", err)
+				}
+				if controlPlaneNamespace.Annotations == nil {
+					controlPlaneNamespace.Annotations = make(map[string]string)
+				}
+				controlPlaneNamespace.Annotations[DefaultSecurityContextUIDAnnnotation] = strconv.FormatInt(uid, 10)
+			}
+		}
+
+		metrics.EnableOBOMonitoring(controlPlaneNamespace)
+
+		propagateAzureResourceIDAnnotation(hcluster, controlPlaneNamespace)
+
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to reconcile namespace: %w", err)
+	}
+	return nil
+}
+
 func (r *HostedClusterReconciler) reconcilePullSecretSync(
 	ctx context.Context, hcluster *hyperv1.HostedCluster, createOrUpdate upsert.CreateOrUpdateFN,
 	controlPlaneNamespace string,
