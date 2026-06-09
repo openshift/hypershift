@@ -39,8 +39,10 @@ func TestYStreamVersionSkew(t *testing.T) {
 	defer cancel()
 
 	// Only run on AWS platform for now
+	t.Logf("DEBUG: globalOpts.Platform = %q, PlatformRaw = %q, Expected = %q",
+		globalOpts.Platform, globalOpts.PlatformRaw, hyperv1.AWSPlatform)
 	if globalOpts.Platform != hyperv1.AWSPlatform {
-		t.Skip("Y-stream version skew test currently only supports AWS platform")
+		t.Skipf("Y-stream version skew test currently only supports AWS platform (got: %s)", globalOpts.Platform)
 	}
 
 	// Require both previous and latest release images
