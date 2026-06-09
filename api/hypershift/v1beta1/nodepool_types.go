@@ -238,6 +238,36 @@ type NodePoolSpec struct {
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="Arch is immutable"
 	// +optional
 	Arch string `json:"arch,omitempty"`
+
+	// osImageStream specifies an OS stream to be used for nodes in this pool.
+	//
+	// This field can be optionally set to a known OSImageStream name to change
+	// the OS and Extension images with a well-known, tested, release-provided
+	// set of images. This enables a streamlined way of switching the pool's
+	// node OS to a different version than the cluster default, such as
+	// transitioning to a major RHEL version.
+	//
+	// When set, the referenced stream overrides the default OS images for the
+	// pool. When omitted, the pool uses the release version's default stream
+	// (rhel-9 for OCP < 5.0, rhel-10 for OCP >= 5.0).
+	// Changing this field triggers a rollout. Forward transitions
+	// (rhel-9 -> rhel-10) are allowed; backward transitions
+	// (rhel-10 -> rhel-9) are rejected by CEL validation because
+	// in-place OS downgrades are not supported.
+	//
+	// +openshift:enable:FeatureGate=OSStreams
+	// +kubebuilder:validation:XValidation:rule="!has(oldSelf.name) || oldSelf.name != 'rhel-10' || (has(self.name) && self.name != 'rhel-9')",message="OS stream downgrade from rhel-10 to rhel-9 is not allowed; create a new NodePool instead"
+	// +optional
+	OSImageStream OSImageStreamReference `json:"osImageStream,omitzero"`
+}
+
+// OSImageStreamReference references an OSImageStream by name.
+type OSImageStreamReference struct {
+	// name is a required reference to an OSImageStream to be used for the pool.
+	//
+	// +required
+	// +kubebuilder:validation:Enum=rhel-9;rhel-10
+	Name string `json:"name,omitempty"`
 }
 
 // NodePoolStatus is the latest observed status of a NodePool.
@@ -262,6 +292,13 @@ type NodePoolStatus struct {
 	// platform holds the specific statuses
 	// +optional
 	Platform *NodePoolPlatformStatus `json:"platform,omitempty"`
+
+	// osImageStream reports the OS stream observed on the nodes in this pool.
+	//
+	// When omitted, the pool is using the release version's default OS images.
+	// +openshift:enable:FeatureGate=OSStreams
+	// +optional
+	OSImageStream OSImageStreamReference `json:"osImageStream,omitzero"`
 
 	// conditions represents the latest available observations of the node pool's
 	// current state.
