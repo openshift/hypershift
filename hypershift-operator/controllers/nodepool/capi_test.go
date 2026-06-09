@@ -2813,14 +2813,15 @@ func TestSetMachineDeploymentFailureDomain(t *testing.T) {
 
 func TestPropagateVersionAndTemplate(t *testing.T) {
 	testCases := []struct {
-		name                 string
-		currentBootstrapName string
-		currentVersion       string
-		templateName         string
-		currentInfraRefName  string
-		useDifferentUserData bool
-		expectedUpdating     bool
-		expectedInfraRefName string
+		name                    string
+		currentBootstrapName    string
+		currentVersion          string
+		templateName            string
+		currentInfraRefName     string
+		useDifferentUserData    bool
+		rolloutConfigAnnotation string
+		expectedUpdating        bool
+		expectedInfraRefName    string
 	}{
 		{
 			name:                 "When user data secret name differs from current bootstrap, it should propagate version and return true",
@@ -2860,16 +2861,42 @@ func TestPropagateVersionAndTemplate(t *testing.T) {
 			expectedUpdating:     false,
 			expectedInfraRefName: "same-template",
 		},
+		{
+			name:                    "When rollout hash differs and MachineDeployment has old values, it should propagate and return true",
+			currentBootstrapName:    "old-userdata",
+			currentVersion:          "4.17.0",
+			templateName:            "same-template",
+			currentInfraRefName:     "same-template",
+			rolloutConfigAnnotation: "stale-hash",
+			expectedUpdating:        true,
+			expectedInfraRefName:    "same-template",
+		},
+		{
+			name:                    "When rollout hash differs but MachineDeployment already has correct values, it should return false",
+			currentBootstrapName:    "", // will be set to match computed name
+			currentVersion:          "4.17.0",
+			templateName:            "same-template",
+			currentInfraRefName:     "same-template",
+			rolloutConfigAnnotation: "stale-hash",
+			expectedUpdating:        false,
+			expectedInfraRefName:    "same-template",
+		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
 
+			annotations := map[string]string{}
+			if tc.rolloutConfigAnnotation != "" {
+				annotations[nodePoolAnnotationCurrentRolloutConfig] = tc.rolloutConfigAnnotation
+			}
+
 			nodePool := &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-np",
-					Namespace: "test-ns",
+					Name:        "test-np",
+					Namespace:   "test-ns",
+					Annotations: annotations,
 				},
 			}
 

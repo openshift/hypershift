@@ -171,8 +171,23 @@ func (t *Token) getIgnitionCACert(ctx context.Context) ([]byte, error) {
 	return caCertBytes, nil
 }
 
+// isOutdated returns true when a spec-driven change (version or config) requires
+// new token and user-data secrets. Management-side-only changes (e.g. HAProxy image
+// bumps) return false — existing secrets remain valid and the MachineDeployment
+// continues to reference them.
 func (t *Token) isOutdated() bool {
-	return t.Hash() != t.nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion]
+	currentRolloutConfig := t.nodePool.Annotations[nodePoolAnnotationCurrentRolloutConfig]
+	if currentRolloutConfig == "" {
+		// Annotation absent: either a new NodePool (need to create secrets) or
+		// an existing NodePool after operator upgrade (secrets already exist).
+		if _, hasOldAnnotation := t.nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion]; hasOldAnnotation {
+			return false
+		}
+		return true
+	}
+	versionChanged := t.Version() != t.nodePool.Status.Version
+	configChanged := t.RolloutHashWithoutVersion() != currentRolloutConfig
+	return versionChanged || configChanged
 }
 
 func (t *Token) cleanupOutdated(ctx context.Context) error {
@@ -232,10 +247,17 @@ func setExpirationTimestampOnToken(ctx context.Context, c client.Client, tokenSe
 func (t *Token) Reconcile(ctx context.Context) error {
 	log := ctrl.LoggerFrom(ctx)
 
-	if t.isOutdated() {
-		if err := t.cleanupOutdated(ctx); err != nil {
-			return fmt.Errorf("failed to cleanup outdated token Secrets: %w", err)
-		}
+	if !t.isOutdated() {
+		// Rollout hash and version unchanged. Existing secrets are valid and
+		// the MachineDeployment continues to reference them. Skip secret
+		// creation and cleanup to prevent orphaned secrets on management-side
+		// config changes (e.g. HAProxy image bumps).
+		log.V(4).Info("Token secrets up to date, skipping reconciliation")
+		return nil
+	}
+
+	if err := t.cleanupOutdated(ctx); err != nil {
+		return fmt.Errorf("failed to cleanup outdated token Secrets: %w", err)
 	}
 
 	tokenSecret := t.TokenSecret()

@@ -805,6 +805,399 @@ func TestHashWithoutVersion(t *testing.T) {
 	}
 }
 
+func TestRolloutHash(t *testing.T) {
+	baseCaseUserConfig := "test config"
+	baseCaseReleaseVersion := "4.7.0"
+	baseCasePullSecretName := "pull-secret"
+	baseCaseAdditionalTrustBundleName := "trust-bundle"
+	baseCaseGlobalConfig := "global config"
+	baseCaseRolloutGlobalConfig := "rollout global config"
+	baseCaseHAProxyRawConfig := "haproxy static pod manifest with image digest"
+
+	newConfigGenerator := func(mods ...func(*rolloutConfig)) *ConfigGenerator {
+		rc := &rolloutConfig{
+			// mcoRawConfig includes haproxy in production (prepended by parse()),
+			// so we simulate that by concatenating haproxy + user config.
+			mcoRawConfig:              baseCaseHAProxyRawConfig + "\n---\n" + baseCaseUserConfig,
+			rolloutMcoRawConfig:       baseCaseUserConfig,
+			pullSecretName:            baseCasePullSecretName,
+			additionalTrustBundleName: baseCaseAdditionalTrustBundleName,
+			globalConfig:              baseCaseGlobalConfig,
+			rolloutGlobalConfig:       baseCaseRolloutGlobalConfig,
+			haproxyRawConfig:          baseCaseHAProxyRawConfig,
+			releaseImage: &releaseinfo.ReleaseImage{
+				ImageStream: &imageapi.ImageStream{
+					ObjectMeta: metav1.ObjectMeta{Name: baseCaseReleaseVersion},
+				},
+			},
+		}
+		for _, mod := range mods {
+			mod(rc)
+		}
+		return &ConfigGenerator{rolloutConfig: rc}
+	}
+
+	baseCG := newConfigGenerator()
+	baseCaseRolloutHash := baseCG.RolloutHash()
+
+	testCases := []struct {
+		name          string
+		modify        func(*rolloutConfig)
+		expectChanged bool
+	}{
+		{
+			name: "When only the haproxyRawConfig changes it should NOT change the RolloutHash",
+			modify: func(rc *rolloutConfig) {
+				rc.haproxyRawConfig = "different-haproxy-image:v2"
+				rc.mcoRawConfig = "different-haproxy-image:v2" + "\n---\n" + baseCaseUserConfig
+			},
+			expectChanged: false,
+		},
+		{
+			name: "When the user config changes it should change the RolloutHash",
+			modify: func(rc *rolloutConfig) {
+				rc.rolloutMcoRawConfig = "different user config"
+				rc.mcoRawConfig = baseCaseHAProxyRawConfig + "\n---\n" + "different user config"
+			},
+			expectChanged: true,
+		},
+		{
+			name:          "When the pullSecretName changes it should change the RolloutHash",
+			modify:        func(rc *rolloutConfig) { rc.pullSecretName = "different-pull-secret" },
+			expectChanged: true,
+		},
+		{
+			name:          "When the additionalTrustBundleName changes it should change the RolloutHash",
+			modify:        func(rc *rolloutConfig) { rc.additionalTrustBundleName = "different-trust-bundle" },
+			expectChanged: true,
+		},
+		{
+			name:          "When the rolloutGlobalConfig changes it should change the RolloutHash",
+			modify:        func(rc *rolloutConfig) { rc.rolloutGlobalConfig = "different spec proxy config" },
+			expectChanged: true,
+		},
+		{
+			name:          "When only the full globalConfig changes it should NOT change the RolloutHash",
+			modify:        func(rc *rolloutConfig) { rc.globalConfig = "different platform-computed proxy config" },
+			expectChanged: false,
+		},
+		{
+			name: "When the release version changes it should change the RolloutHash",
+			modify: func(rc *rolloutConfig) {
+				rc.releaseImage = &releaseinfo.ReleaseImage{
+					ImageStream: &imageapi.ImageStream{
+						ObjectMeta: metav1.ObjectMeta{Name: "4.8.0"},
+					},
+				}
+			},
+			expectChanged: true,
+		},
+		{
+			name:          "When the rhelStream changes it should change the RolloutHash",
+			modify:        func(rc *rolloutConfig) { rc.rhelStream = "rhel-10" },
+			expectChanged: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			cg := newConfigGenerator(tc.modify)
+			rolloutHash := cg.RolloutHash()
+			g.Expect(rolloutHash).ToNot(BeEmpty())
+
+			if tc.expectChanged {
+				g.Expect(rolloutHash).ToNot(Equal(baseCaseRolloutHash),
+					"RolloutHash should change for spec-driven input changes")
+			} else {
+				g.Expect(rolloutHash).To(Equal(baseCaseRolloutHash),
+					"RolloutHash should NOT change for management-side input changes")
+			}
+		})
+	}
+
+	t.Run("When haproxyRawConfig changes the payload Hash should still change", func(t *testing.T) {
+		g := NewWithT(t)
+
+		original := newConfigGenerator()
+		modified := newConfigGenerator(func(rc *rolloutConfig) {
+			rc.haproxyRawConfig = "completely-different-haproxy-manifest"
+			rc.mcoRawConfig = "completely-different-haproxy-manifest" + "\n---\n" + baseCaseUserConfig
+		})
+
+		g.Expect(modified.RolloutHash()).To(Equal(original.RolloutHash()),
+			"RolloutHash must be stable across management-side changes")
+		g.Expect(modified.Hash()).ToNot(Equal(original.Hash()),
+			"payload Hash must still reflect management-side changes")
+	})
+}
+
+func TestRolloutHashAnnotationSeeding(t *testing.T) {
+	t.Run("When the nodePoolCurrentRolloutConfig annotation is absent it should not signal isUpdatingConfig", func(t *testing.T) {
+		g := NewWithT(t)
+
+		rolloutHash := "abc123"
+		nodePool := &hyperv1.NodePool{
+			ObjectMeta: metav1.ObjectMeta{
+				Annotations: map[string]string{},
+			},
+		}
+
+		_, seeded := nodePool.Annotations[nodePoolAnnotationCurrentRolloutConfig]
+		g.Expect(seeded).To(BeFalse(), "annotation should be absent before seeding")
+
+		nodePool.Annotations[nodePoolAnnotationCurrentRolloutConfig] = rolloutHash
+
+		g.Expect(nodePool.Annotations[nodePoolAnnotationCurrentRolloutConfig]).To(Equal(rolloutHash),
+			"annotation should be set to the computed rollout hash")
+	})
+
+	t.Run("When the nodePoolCurrentRolloutConfig annotation matches the current hash it should not trigger a rollout", func(t *testing.T) {
+		g := NewWithT(t)
+
+		rolloutHash := "abc123"
+		nodePool := &hyperv1.NodePool{
+			ObjectMeta: metav1.ObjectMeta{
+				Annotations: map[string]string{
+					nodePoolAnnotationCurrentRolloutConfig: rolloutHash,
+				},
+			},
+		}
+
+		isUpdating := rolloutHash != nodePool.Annotations[nodePoolAnnotationCurrentRolloutConfig]
+		g.Expect(isUpdating).To(BeFalse(), "no rollout should be triggered when hashes match")
+	})
+
+	t.Run("When the nodePoolCurrentRolloutConfig annotation differs from the current hash it should trigger a rollout", func(t *testing.T) {
+		g := NewWithT(t)
+
+		oldHash := "abc123"
+		newHash := "def456"
+		nodePool := &hyperv1.NodePool{
+			ObjectMeta: metav1.ObjectMeta{
+				Annotations: map[string]string{
+					nodePoolAnnotationCurrentRolloutConfig: oldHash,
+				},
+			},
+		}
+
+		isUpdating := newHash != nodePool.Annotations[nodePoolAnnotationCurrentRolloutConfig]
+		g.Expect(isUpdating).To(BeTrue(), "rollout should be triggered when hashes differ")
+	})
+}
+
+func TestRolloutGlobalConfigString(t *testing.T) {
+	t.Run("When hosted cluster has proxy spec, rolloutGlobalConfig should not include platform-computed NoProxy entries", func(t *testing.T) {
+		g := NewWithT(t)
+
+		hcluster := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test",
+				Namespace: "test",
+			},
+			Spec: hyperv1.HostedClusterSpec{
+				Platform: hyperv1.PlatformSpec{
+					Type: hyperv1.AWSPlatform,
+					AWS: &hyperv1.AWSPlatformSpec{
+						Region: "us-east-1",
+					},
+				},
+				Networking: hyperv1.ClusterNetworking{
+					ServiceNetwork: []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("10.96.0.0/12")}},
+					ClusterNetwork: []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("10.244.0.0/16")}},
+				},
+				Configuration: &hyperv1.ClusterConfiguration{
+					Proxy: &configv1.ProxySpec{
+						HTTPProxy:  "http://proxy.example.com:3128",
+						HTTPSProxy: "https://proxy.example.com:3128",
+						NoProxy:    ".example.com",
+					},
+				},
+			},
+		}
+
+		rolloutConfig, err := rolloutGlobalConfigString(hcluster)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		fullConfig, err := globalConfigString(hcluster)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		g.Expect(rolloutConfig).ToNot(Equal(fullConfig),
+			"rolloutGlobalConfig should differ from fullConfig when platform adds NoProxy defaults")
+
+		g.Expect(rolloutConfig).ToNot(ContainSubstring("169.254.169.254"),
+			"rolloutGlobalConfig should not contain AWS metadata endpoint added by defaultProxyStatus")
+		g.Expect(rolloutConfig).ToNot(ContainSubstring("10.96.0.0"),
+			"rolloutGlobalConfig should not contain service network CIDRs added by defaultProxyStatus")
+	})
+
+	t.Run("When hosted cluster has no proxy spec, both configs should be equal", func(t *testing.T) {
+		g := NewWithT(t)
+
+		hcluster := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test",
+				Namespace: "test",
+			},
+			Spec: hyperv1.HostedClusterSpec{
+				Platform: hyperv1.PlatformSpec{
+					Type: hyperv1.AWSPlatform,
+				},
+			},
+		}
+
+		rolloutConfig, err := rolloutGlobalConfigString(hcluster)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		fullConfig, err := globalConfigString(hcluster)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		g.Expect(rolloutConfig).To(Equal(fullConfig),
+			"without proxy spec, both configs should produce the same output")
+	})
+
+	t.Run("When proxy spec changes, rolloutGlobalConfig should change", func(t *testing.T) {
+		g := NewWithT(t)
+
+		hcluster1 := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "test"},
+			Spec: hyperv1.HostedClusterSpec{
+				Configuration: &hyperv1.ClusterConfiguration{
+					Proxy: &configv1.ProxySpec{
+						HTTPProxy: "http://proxy1.example.com:3128",
+					},
+				},
+			},
+		}
+
+		hcluster2 := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "test"},
+			Spec: hyperv1.HostedClusterSpec{
+				Configuration: &hyperv1.ClusterConfiguration{
+					Proxy: &configv1.ProxySpec{
+						HTTPProxy: "http://proxy2.example.com:3128",
+					},
+				},
+			},
+		}
+
+		config1, err := rolloutGlobalConfigString(hcluster1)
+		g.Expect(err).ToNot(HaveOccurred())
+		config2, err := rolloutGlobalConfigString(hcluster2)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		g.Expect(config1).ToNot(Equal(config2),
+			"different proxy specs should produce different rolloutGlobalConfig values")
+	})
+}
+
+func TestIsOutdated(t *testing.T) {
+	makeToken := func(version string, nodePool *hyperv1.NodePool) *Token {
+		return &Token{
+			ConfigGenerator: &ConfigGenerator{
+				rolloutConfig: &rolloutConfig{
+					rolloutMcoRawConfig:       "config",
+					pullSecretName:            "pull",
+					additionalTrustBundleName: "trust",
+					rolloutGlobalConfig:       "global",
+					releaseImage: &releaseinfo.ReleaseImage{
+						ImageStream: &imageapi.ImageStream{
+							ObjectMeta: metav1.ObjectMeta{Name: version},
+						},
+					},
+				},
+				nodePool: nodePool,
+			},
+		}
+	}
+
+	// Pre-compute the rollout hash for the base config so annotations can match.
+	baseToken := makeToken("4.18.0", &hyperv1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{}},
+	})
+	baseRolloutHash := baseToken.RolloutHashWithoutVersion()
+
+	testCases := []struct {
+		name     string
+		token    *Token
+		expected bool
+	}{
+		{
+			name: "New NodePool with no annotations should be outdated",
+			token: makeToken("4.18.0", &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{},
+				},
+			}),
+			expected: true,
+		},
+		{
+			name: "Existing NodePool after upgrade with old annotation but no new annotation should not be outdated",
+			token: makeToken("4.18.0", &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						nodePoolAnnotationCurrentConfigVersion: "old-hash",
+					},
+				},
+				Status: hyperv1.NodePoolStatus{
+					Version: "4.18.0",
+				},
+			}),
+			expected: false,
+		},
+		{
+			name: "When rollout hash matches and version matches it should not be outdated",
+			token: makeToken("4.18.0", &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						nodePoolAnnotationCurrentRolloutConfig: baseRolloutHash,
+					},
+				},
+				Status: hyperv1.NodePoolStatus{
+					Version: "4.18.0",
+				},
+			}),
+			expected: false,
+		},
+		{
+			name: "When version changes it should be outdated",
+			token: makeToken("4.19.0", &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						nodePoolAnnotationCurrentRolloutConfig: baseRolloutHash,
+					},
+				},
+				Status: hyperv1.NodePoolStatus{
+					Version: "4.18.0",
+				},
+			}),
+			expected: true,
+		},
+		{
+			name: "When rollout config changes it should be outdated",
+			token: makeToken("4.18.0", &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						nodePoolAnnotationCurrentRolloutConfig: "stale-rollout-hash",
+					},
+				},
+				Status: hyperv1.NodePoolStatus{
+					Version: "4.18.0",
+				},
+			}),
+			expected: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			g.Expect(tc.token.isOutdated()).To(Equal(tc.expected))
+		})
+	}
+}
+
 func TestGenerateMCORawConfig(t *testing.T) {
 	coreMachineConfig1 := `
 apiVersion: machineconfiguration.openshift.io/v1
@@ -1617,7 +2010,7 @@ status:
 				cg.haproxyRawConfig = haproxyIgnititionConfig
 			}
 
-			got, err := cg.generateMCORawConfig(t.Context(), hc.Spec.Capabilities)
+			got, _, err := cg.generateMCORawConfig(t.Context(), hc.Spec.Capabilities)
 			if tc.error {
 				g.Expect(err).To(HaveOccurred())
 				if tc.missingCoreConfig {

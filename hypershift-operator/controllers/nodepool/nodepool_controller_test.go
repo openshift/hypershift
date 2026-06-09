@@ -61,7 +61,7 @@ func TestIsUpdatingConfig(t *testing.T) {
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
-						nodePoolAnnotationCurrentConfig: "same",
+						nodePoolAnnotationCurrentRolloutConfig: "same",
 					},
 				},
 			},
@@ -73,12 +73,22 @@ func TestIsUpdatingConfig(t *testing.T) {
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
-						nodePoolAnnotationCurrentConfig: "config1",
+						nodePoolAnnotationCurrentRolloutConfig: "config1",
 					},
 				},
 			},
 			target: "config2",
 			expect: true,
+		},
+		{
+			name: "it is not updating when annotation is absent",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{},
+				},
+			},
+			target: "config1",
+			expect: false,
 		},
 	}
 

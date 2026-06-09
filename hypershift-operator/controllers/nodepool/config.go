@@ -68,8 +68,16 @@ type rolloutConfig struct {
 	additionalTrustBundleName string
 	// globalConfig represents input from hostedCluster.spec.config that requires a NodePool rollout.
 	globalConfig string
+	// rolloutGlobalConfig is the global config derived only from user-set spec fields
+	// (proxy spec, image spec) without reconciling platform-specific defaults like
+	// Status.NoProxy entries. Used only for rollout hash computation.
+	rolloutGlobalConfig string
 	// rawConfig is an mco consumable version of NodePool.spec.config, tuneConfig and any hypershift core machine config.
 	mcoRawConfig string
+	// rolloutMcoRawConfig is mcoRawConfig without management-side content (haproxy).
+	// Used only for rollout hash computation so that management-side image changes
+	// do not trigger node replacement.
+	rolloutMcoRawConfig string
 	// TODO(alberto): consider let haproxyRawConfig be an implementation detail of ConfigGenerator.
 	// For now, it's a required input to keep the haproxy business logic and files outside the scope of this initial refactor.
 	haproxyRawConfig string
@@ -96,6 +104,11 @@ func NewConfigGenerator(ctx context.Context, client client.Client, hostedCluster
 	}
 
 	globalConfig, err := globalConfigString(hostedCluster)
+	if err != nil {
+		return nil, err
+	}
+
+	rolloutGlobalConfig, err := rolloutGlobalConfigString(hostedCluster)
 	if err != nil {
 		return nil, err
 	}
@@ -135,11 +148,12 @@ func NewConfigGenerator(ctx context.Context, client client.Client, hostedCluster
 		// from rhel-9 to rhel-10 should have their own dedicated e2e.
 		resolvedRHELStreamForBootImage: StreamRHEL9,
 		rolloutConfig: &rolloutConfig{
-			releaseImage:     releaseImage,
-			pullSecretName:   hostedCluster.Spec.PullSecret.Name,
-			globalConfig:     globalConfig,
-			haproxyRawConfig: haproxyRawConfig,
-			rhelStream:       rhelStream,
+			releaseImage:        releaseImage,
+			pullSecretName:      hostedCluster.Spec.PullSecret.Name,
+			globalConfig:        globalConfig,
+			rolloutGlobalConfig: rolloutGlobalConfig,
+			haproxyRawConfig:    haproxyRawConfig,
+			rhelStream:          rhelStream,
 		},
 	}
 
@@ -147,11 +161,12 @@ func NewConfigGenerator(ctx context.Context, client client.Client, hostedCluster
 		cg.rolloutConfig.additionalTrustBundleName = hostedCluster.Spec.AdditionalTrustBundle.Name
 	}
 
-	mcoRawConfig, err := cg.generateMCORawConfig(ctx, hostedCluster.Spec.Capabilities)
+	mcoRawConfig, rolloutMcoRawConfig, err := cg.generateMCORawConfig(ctx, hostedCluster.Spec.Capabilities)
 	if err != nil {
 		return nil, err
 	}
 	cg.rolloutConfig.mcoRawConfig = mcoRawConfig
+	cg.rolloutConfig.rolloutMcoRawConfig = rolloutMcoRawConfig
 
 	return cg, nil
 }
@@ -182,24 +197,39 @@ func (cg *ConfigGenerator) HashWithoutVersion() string {
 	return supportutil.HashSimple(cg.mcoRawConfig + cg.pullSecretName + cg.additionalTrustBundleName + cg.rhelStream)
 }
 
+// RolloutHash returns a hash derived only from spec-driven inputs that require node replacement.
+// Management-side changes (e.g. HAProxy image digest bumps, platform-computed proxy defaults)
+// are excluded, so they do not trigger Replace or InPlace rollouts.
+func (cg *ConfigGenerator) RolloutHash() string {
+	return supportutil.HashSimple(cg.rolloutMcoRawConfig + cg.releaseImage.Version() + cg.pullSecretName + cg.additionalTrustBundleName + cg.rolloutGlobalConfig + cg.rhelStream)
+}
+
+// RolloutHashWithoutVersion is like RolloutHash but excludes the release version.
+// Used to detect config-only changes for the UpdatingConfig condition,
+// separate from version changes which have their own condition.
+func (cg *ConfigGenerator) RolloutHashWithoutVersion() string {
+	return supportutil.HashSimple(cg.rolloutMcoRawConfig + cg.pullSecretName + cg.additionalTrustBundleName + cg.rolloutGlobalConfig + cg.rhelStream)
+}
+
 func (cg *ConfigGenerator) Version() string {
 	return cg.releaseImage.Version()
 }
 
 // generateMCORawConfig generates a mco consumable artifact of the mco Config.
-func (cg *ConfigGenerator) generateMCORawConfig(ctx context.Context, caps *hyperv1.Capabilities) (configsRaw string, err error) {
+// It returns two strings: the full config (including haproxy) and the rollout config (excluding haproxy).
+func (cg *ConfigGenerator) generateMCORawConfig(ctx context.Context, caps *hyperv1.Capabilities) (configsRaw, rolloutConfigsRaw string, err error) {
 	var configs []corev1.ConfigMap
 
 	// Look for core ignition configs in the control plane namespace.
 	coreConfigs, err := cg.getCoreConfigs(ctx)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	configs = append(configs, coreConfigs...)
 
 	userConfig, err := cg.getUserConfigs(ctx)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	configs = append(configs, userConfig...)
 
@@ -207,12 +237,22 @@ func (cg *ConfigGenerator) generateMCORawConfig(ctx context.Context, caps *hyper
 		// Look for NTO generated MachineConfigs from the hosted control plane namespace
 		nodeTuningGeneratedConfigs, err := getNTOGeneratedConfig(ctx, cg)
 		if err != nil {
-			return "", err
+			return "", "", err
 		}
 		configs = append(configs, nodeTuningGeneratedConfigs...)
 	}
 
-	return cg.parse(configs)
+	fullConfig, err := cg.parse(configs)
+	if err != nil {
+		return "", "", err
+	}
+
+	rolloutConfig, err := cg.parseWithoutHaproxy(configs)
+	if err != nil {
+		return "", "", err
+	}
+
+	return fullConfig, rolloutConfig, nil
 }
 
 // getUserConfigs returns a slice with all the configMaps in nodePool.Spec.Config.
@@ -279,11 +319,21 @@ func (e *MissingCoreConfigError) Error() string {
 
 // parse loops over a slice of configMaps and returns a string with the concatenated content if they are MCO consumable APIs.
 func (cg *ConfigGenerator) parse(configs []corev1.ConfigMap) (string, error) {
+	return cg.doParse(configs, cg.haproxyRawConfig)
+}
+
+// parseWithoutHaproxy is like parse but excludes haproxy content.
+// Used to compute the rollout-only MCO config that is insensitive to management-side image changes.
+func (cg *ConfigGenerator) parseWithoutHaproxy(configs []corev1.ConfigMap) (string, error) {
+	return cg.doParse(configs, "")
+}
+
+func (cg *ConfigGenerator) doParse(configs []corev1.ConfigMap, haproxyConfig string) (string, error) {
 	var errors []error
 	var allConfigPlainText []string
 
-	if cg.haproxyRawConfig != "" {
-		allConfigPlainText = append(allConfigPlainText, cg.haproxyRawConfig)
+	if haproxyConfig != "" {
+		allConfigPlainText = append(allConfigPlainText, haproxyConfig)
 	}
 
 	for _, config := range configs {
@@ -405,6 +455,36 @@ func globalConfigString(hcluster *hyperv1.HostedCluster) (string, error) {
 	rawConfig := globalConfigBytes.String()
 
 	// Some fields in the ClusterConfiguration have changes that are not backwards compatible with older versions of the CPO.
+	return backwardcompat.GetBackwardCompatibleConfigString(rawConfig), nil
+}
+
+// rolloutGlobalConfigString returns a global config string derived only from user-set spec fields
+// (proxy spec, image spec) without reconciling platform-specific defaults. This ensures that
+// operator code changes to computed defaults (e.g., new NoProxy entries like network CIDRs or
+// 169.254.169.254 for AWS) do not change the rollout hash and trigger unintended rollouts.
+// The full reconciled config continues to be used for payload generation via globalConfigString.
+func rolloutGlobalConfigString(hcluster *hyperv1.HostedCluster) (string, error) {
+	proxy := globalconfig.ProxyConfig()
+	globalconfig.ReconcileProxyConfig(proxy, hcluster.Spec.Configuration)
+
+	image := globalconfig.ImageConfig()
+	globalconfig.ReconcileImageConfigFromHostedCluster(image, hcluster)
+
+	globalConfigBytes := bytes.NewBuffer(nil)
+
+	proxyBytes, err := api.CompatibleJSONEncode(proxy)
+	if err != nil {
+		return "", fmt.Errorf("failed to encode proxy global config: %w", err)
+	}
+	globalConfigBytes.Write(proxyBytes)
+
+	imageBytes, err := api.CompatibleJSONEncode(image)
+	if err != nil {
+		return "", fmt.Errorf("failed to encode image global config: %w", err)
+	}
+	globalConfigBytes.Write(imageBytes)
+
+	rawConfig := globalConfigBytes.String()
 	return backwardcompat.GetBackwardCompatibleConfigString(rawConfig), nil
 }
 
