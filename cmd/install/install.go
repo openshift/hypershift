@@ -30,7 +30,6 @@ import (
 	crdassets "github.com/openshift/hypershift/cmd/install/assets/crds"
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/webhookcerts"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/metrics"
@@ -92,6 +91,7 @@ type Options struct {
 	EnableDefaultingWebhook                   bool
 	EnableValidatingWebhook                   bool
 	EnableConversionWebhook                   bool
+	DisableCAPIConversionWebhook              bool
 	Template                                  bool
 	Format                                    string
 	OutputFile                                string
@@ -354,7 +354,7 @@ func (o *Options) ApplyDefaults() {
 	switch {
 	case o.Development:
 		o.HyperShiftOperatorReplicas = 0
-	case o.EnableDefaultingWebhook || o.EnableConversionWebhook || o.EnableValidatingWebhook:
+	case o.EnableDefaultingWebhook || o.EnableConversionWebhook || o.EnableValidatingWebhook || !o.DisableCAPIConversionWebhook:
 		o.HyperShiftOperatorReplicas = 2
 	default:
 		o.HyperShiftOperatorReplicas = 1
@@ -377,6 +377,7 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().BoolVar(&opts.EnableDefaultingWebhook, "enable-defaulting-webhook", opts.EnableDefaultingWebhook, "Enable webhook for defaulting hypershift API types")
 	cmd.PersistentFlags().BoolVar(&opts.EnableValidatingWebhook, "enable-validating-webhook", opts.EnableValidatingWebhook, "Enable webhook for validating hypershift API types")
 	cmd.PersistentFlags().BoolVar(&opts.EnableConversionWebhook, "enable-conversion-webhook", opts.EnableConversionWebhook, "Enable webhook for converting hypershift API types")
+	cmd.PersistentFlags().BoolVar(&opts.DisableCAPIConversionWebhook, "disable-capi-conversion-webhook", opts.DisableCAPIConversionWebhook, "Disable conversion webhook for CAPI CRDs during v1beta1/v1beta2 transition")
 	cmd.PersistentFlags().BoolVar(&opts.ExcludeEtcdManifests, "exclude-etcd", opts.ExcludeEtcdManifests, "Leave out etcd manifests")
 	cmd.PersistentFlags().Var(&opts.PlatformMonitoring, "platform-monitoring", "Select an option for enabling platform cluster monitoring. Valid values are: None, OperatorOnly, All")
 	cmd.PersistentFlags().BoolVar(&opts.EnableCIDebugOutput, "enable-ci-debug-output", opts.EnableCIDebugOutput, "If extra CI debug output should be enabled")
@@ -677,7 +678,6 @@ func WaitUntilAvailable(ctx context.Context, opts Options) (*appsv1.Deployment, 
 		}
 		fmt.Printf("Endpoints available\n")
 		return true, nil
-
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to wait for operator service endpoints: %w", err)
@@ -756,22 +756,10 @@ func hyperShiftOperatorManifests(ctx context.Context, client crclient.Client, op
 	operatorServiceAccount, rbacObjs := setupRBAC(opts, operatorNamespace)
 	objects = append(objects, rbacObjs...)
 
-	// Generate self-managed webhook CA and serving cert when any webhook is enabled.
-	var webhookCABundle []byte
-	if opts.EnableDefaultingWebhook || opts.EnableConversionWebhook || opts.EnableValidatingWebhook || opts.EnableAuditLogPersistence {
-		caSecret, servingSecret, caBundle, err := webhookcerts.GenerateInitialWebhookCerts(operatorNamespace.Name, assets.HypershiftOperatorName)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to generate webhook certs: %w", err)
-		}
-		objects = append(objects, caSecret, servingSecret)
-		webhookCABundle = caBundle
-	}
-
 	if opts.EnableDefaultingWebhook || opts.EnableAuditLogPersistence {
 		mutatingWebhookConfiguration := assets.HyperShiftMutatingWebhookConfiguration{
 			Namespace:                 operatorNamespace,
 			EnableAuditLogPersistence: opts.EnableAuditLogPersistence,
-			CABundle:                  webhookCABundle,
 		}.Build()
 		objects = append(objects, mutatingWebhookConfiguration)
 	}
@@ -779,7 +767,6 @@ func hyperShiftOperatorManifests(ctx context.Context, client crclient.Client, op
 	if opts.EnableValidatingWebhook {
 		validatingWebhookConfiguration := assets.HyperShiftValidatingWebhookConfiguration{
 			Namespace: operatorNamespace.Name,
-			CABundle:  webhookCABundle,
 		}.Build()
 		objects = append(objects, validatingWebhookConfiguration)
 	}
@@ -831,7 +818,7 @@ func hyperShiftOperatorManifests(ctx context.Context, client crclient.Client, op
 		objects = append(objects, sharedIngressObjs...)
 	}
 
-	crds, err = setupCRDs(ctx, client, opts, operatorNamespace, operatorService, webhookCABundle)
+	crds, err = setupCRDs(ctx, client, opts, operatorNamespace, operatorService)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -874,15 +861,63 @@ var ipamCRDNames = set.New(
 // related to etcd are excluded from the list. If the option EnableConversionWebhook is set to true, the CRDs related
 // to hypershift.openshift.io group are annotated with the necessary annotations to enable the conversion webhook.
 // If a client is provided, IPAM CRDs that already exist in the cluster are skipped to avoid conflicts.
-func setupCRDs(ctx context.Context, client crclient.Client, opts Options, operatorNamespace *corev1.Namespace, operatorService *corev1.Service, webhookCABundle []byte) ([]crclient.Object, error) {
-	// Build a set of existing IPAM CRDs if a client is available
+func crdIncludeFilter(opts Options, existingIPAMCRDs set.Set[string]) func(string, *apiextensionsv1.CustomResourceDefinition) bool {
+	return func(path string, crd *apiextensionsv1.CustomResourceDefinition) bool {
+		if strings.Contains(path, "payload-manifests") || strings.Contains(path, "tests/") {
+			return false
+		}
+		if strings.Contains(path, "etcd") && opts.ExcludeEtcdManifests {
+			return false
+		}
+		if strings.Contains(path, "zz_generated.crd-manifests") {
+			if strings.Contains(path, "awsendpointservices") {
+				return isAWSPlatformEnabled(opts.PlatformsToInstall)
+			}
+			if strings.Contains(path, "azureprivatelinkservices") {
+				return isAzurePlatformEnabled(opts.PlatformsToInstall)
+			}
+			if opts.TechPreviewNoUpgrade {
+				if featureSet, ok := crd.Annotations["release.openshift.io/feature-set"]; ok {
+					if featureSet != "TechPreviewNoUpgrade" {
+						return false
+					}
+				}
+			} else {
+				if featureSet, ok := crd.Annotations["release.openshift.io/feature-set"]; ok {
+					if featureSet != "Default" {
+						return false
+					}
+				}
+			}
+		}
+		if strings.Contains(path, "hypershift-operator/") {
+			return true
+		}
+		if strings.Contains(path, "cluster-api/") {
+			return !existingIPAMCRDs.Has(crd.Name)
+		}
+		if strings.Contains(path, "auditlogpersistence") {
+			return opts.EnableAuditLogPersistence
+		}
+		if len(opts.PlatformsToInstall) > 0 {
+			for _, platform := range opts.PlatformsToInstall {
+				if strings.Contains(path, strings.ToLower(platform)) {
+					return true
+				}
+			}
+			return false
+		}
+		return true
+	}
+}
+
+func setupCRDs(ctx context.Context, client crclient.Client, opts Options, operatorNamespace *corev1.Namespace, operatorService *corev1.Service) ([]crclient.Object, error) {
 	existingIPAMCRDs := set.New[string]()
 	if client != nil {
 		for crdName := range ipamCRDNames {
 			existing := &apiextensionsv1.CustomResourceDefinition{}
 			err := client.Get(ctx, crclient.ObjectKey{Name: crdName}, existing)
 			if err == nil {
-				// CRD exists, add to the set so we can skip it
 				existingIPAMCRDs.Insert(crdName)
 				fmt.Printf("Skipping existing IPAM CRD %s\n", crdName)
 			} else if !apierrors.IsNotFound(err) {
@@ -894,84 +929,45 @@ func setupCRDs(ctx context.Context, client crclient.Client, opts Options, operat
 	var crds []crclient.Object
 	crds = append(
 		crds, crdassets.CustomResourceDefinitions(
-			func(path string, crd *apiextensionsv1.CustomResourceDefinition) bool {
-				// Skip non-CRD files (featuregate manifests, envtest suites).
-				if strings.Contains(path, "payload-manifests") || strings.Contains(path, "tests/") {
-					return false
-				}
-				if strings.Contains(path, "etcd") && opts.ExcludeEtcdManifests {
-					return false
-				}
-				// If the feature generated CRD has any featureSet version then it has the format nodepool-<featureSet>.
-				if strings.Contains(path, "zz_generated.crd-manifests") {
-					if strings.Contains(path, "awsendpointservices") {
-						return isAWSPlatformEnabled(opts.PlatformsToInstall)
-					}
-					if strings.Contains(path, "azureprivatelinkservices") {
-						return isAzurePlatformEnabled(opts.PlatformsToInstall)
-					}
-					if opts.TechPreviewNoUpgrade {
-						// Skip all featureSets but TechPreviewNoUpgrade.
-						if featureSet, ok := crd.Annotations["release.openshift.io/feature-set"]; ok {
-							if featureSet != "TechPreviewNoUpgrade" {
-								return false
-							}
-						}
-					} else {
-						// Skip all featureSets but Default.
-						if featureSet, ok := crd.Annotations["release.openshift.io/feature-set"]; ok {
-							if featureSet != "Default" {
-								return false
-							}
-						}
+			crdIncludeFilter(opts, existingIPAMCRDs),
+			func(crd *apiextensionsv1.CustomResourceDefinition) {
+				// Check if this CRD needs a conversion webhook
+				var needsConversion bool
+				var conversionReviewVersions []string
+
+				// Hypershift conversion can be toggled with a flag
+				if crd.Spec.Group == "hypershift.openshift.io" && opts.EnableConversionWebhook {
+					needsConversion = true
+					conversionReviewVersions = []string{"v1beta1", "v1alpha1"}
+
+					// CAPI conversion is required during v1beta1 -> v1beta2 transition period
+				} else if !opts.DisableCAPIConversionWebhook {
+					if override, ok := crdassets.CAPICRDOverrides[crd.Name]; ok && override.NeedsConversion {
+						needsConversion = true
+						conversionReviewVersions = []string{"v1beta1", "v1beta2"}
 					}
 				}
-				if strings.Contains(path, "hypershift-operator/") {
-					return true
+
+				if !needsConversion {
+					return
 				}
-				if strings.Contains(path, "cluster-api/") {
-					// Skip IPAM CRDs if they already exist in the cluster
-					if existingIPAMCRDs.Has(crd.Name) {
-						return false
-					}
-					return true
+
+				if crd.Annotations == nil {
+					crd.Annotations = map[string]string{}
 				}
-				// Conditionally include auditlogpersistence CRD only if feature is enabled
-				if strings.Contains(path, "auditlogpersistence") {
-					return opts.EnableAuditLogPersistence
-				}
-				if len(opts.PlatformsToInstall) > 0 {
-					for _, platform := range opts.PlatformsToInstall {
-						if strings.Contains(path, strings.ToLower(platform)) {
-							return true
-						}
-					}
-					return false
-				}
-				return true
-			}, func(crd *apiextensionsv1.CustomResourceDefinition) {
-				if crd.Spec.Group == "hypershift.openshift.io" {
-					if !opts.EnableConversionWebhook {
-						return
-					}
-					if crd.Annotations != nil {
-						crd.Annotations = map[string]string{}
-					}
-					crd.Spec.Conversion = &apiextensionsv1.CustomResourceConversion{
-						Strategy: apiextensionsv1.WebhookConverter,
-						Webhook: &apiextensionsv1.WebhookConversion{
-							ClientConfig: &apiextensionsv1.WebhookClientConfig{
-								Service: &apiextensionsv1.ServiceReference{
-									Namespace: operatorNamespace.Name,
-									Name:      operatorService.Name,
-									Port:      ptr.To[int32](443),
-									Path:      ptr.To("/convert"),
-								},
-								CABundle: webhookCABundle,
+				crd.Spec.Conversion = &apiextensionsv1.CustomResourceConversion{
+					Strategy: apiextensionsv1.WebhookConverter,
+					Webhook: &apiextensionsv1.WebhookConversion{
+						ClientConfig: &apiextensionsv1.WebhookClientConfig{
+							Service: &apiextensionsv1.ServiceReference{
+								Namespace: operatorNamespace.Name,
+								Name:      operatorService.Name,
+								Port:      ptr.To[int32](443),
+								Path:      ptr.To("/convert"),
 							},
-							ConversionReviewVersions: []string{"v1beta1", "v1alpha1"},
 						},
-					}
+						ConversionReviewVersions: conversionReviewVersions,
+					},
 				}
 			},
 		)...,
@@ -1257,7 +1253,7 @@ func setupOperatorResources(opts Options, userCABundleCM *corev1.ConfigMap, trus
 		Replicas:                                opts.HyperShiftOperatorReplicas,
 		EnableOCPClusterMonitoring:              opts.PlatformMonitoring == metrics.PlatformMonitoringAll,
 		EnableCIDebugOutput:                     opts.EnableCIDebugOutput,
-		EnableWebhook:                           opts.EnableDefaultingWebhook || opts.EnableConversionWebhook || opts.EnableValidatingWebhook || opts.EnableAuditLogPersistence,
+		EnableWebhook:                           opts.EnableDefaultingWebhook || opts.EnableConversionWebhook || !opts.DisableCAPIConversionWebhook || opts.EnableValidatingWebhook || opts.EnableAuditLogPersistence,
 		EnableValidatingWebhook:                 opts.EnableValidatingWebhook,
 		PrivatePlatform:                         opts.PrivatePlatform,
 		AWSPrivateRegion:                        opts.AWSPrivateRegion,

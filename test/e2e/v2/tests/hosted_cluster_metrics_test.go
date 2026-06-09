@@ -189,7 +189,7 @@ func EnsureMetricsForwarderWorkingTest(getTestCtx internal.TestContextGetter) {
 				g.Expect(pod.Status.Phase).To(Equal(corev1.PodRunning), "prometheus pod should be running")
 			}, 5*time.Minute, 10*time.Second).Should(Succeed())
 
-			By("Verifying guest Prometheus is scraping kube-apiserver via the metrics-forwarder")
+			By("Verifying hosted cluster Prometheus is scraping kube-apiserver via the metrics-forwarder")
 			Eventually(func(g Gomega) {
 				output, err := v2util.RunCommandInPod(tc.Context, hcClientset, hcRestConfig,
 					monitoringNamespace, promPodName, "prometheus",

@@ -100,7 +100,7 @@ spec:
           value: info
         - name: WEBHOOK_URL
         - name: WORKERS
-          value: "10"
+          value: "20"
         - name: METADATA_TRIES
           value: "3"
         - name: KUBERNETES_SERVICE_HOST

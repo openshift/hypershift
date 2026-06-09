@@ -1,8 +1,15 @@
 package konnectivityproxy
 
 import (
+	"fmt"
+	"io"
+	"net"
+	"net/http"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	. "github.com/onsi/gomega"
 
 	"k8s.io/apimachinery/pkg/util/sets"
 
@@ -271,6 +278,151 @@ func TestKonnectivityHealthEndRetryPreventsStubbornFlag(t *testing.T) {
 	if !kh.beginRetry() {
 		t.Error("expected retry to be allowed after endRetry and interval")
 	}
+}
+
+// startTCPEchoServer starts a TCP server that echoes back anything it receives.
+// All accepted connections inherit a deadline so io.Copy never blocks indefinitely.
+func startTCPEchoServer(t *testing.T) net.Listener {
+	t.Helper()
+	ln, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to start echo server: %v", err)
+	}
+	t.Cleanup(func() { ln.Close() })
+
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				defer conn.Close()
+				if err := conn.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
+					return
+				}
+				if _, err := io.Copy(conn, conn); err != nil {
+					return
+				}
+			}()
+		}
+	}()
+	return ln
+}
+
+// startConnectProxy starts an HTTP CONNECT proxy that increments connectCount
+// for every successful tunnel. Relay goroutines are bounded by per-connection
+// deadlines so they cannot outlive the test.
+func startConnectProxy(t *testing.T, connectCount *atomic.Int32) net.Listener {
+	t.Helper()
+	ln, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to start proxy server: %v", err)
+	}
+	t.Cleanup(func() { ln.Close() })
+
+	srv := &http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodConnect {
+				http.Error(w, "only CONNECT supported", http.StatusMethodNotAllowed)
+				return
+			}
+			connectCount.Add(1)
+
+			target, err := (&net.Dialer{Timeout: 5 * time.Second}).DialContext(r.Context(), "tcp", r.Host)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadGateway)
+				return
+			}
+			defer target.Close()
+			if err := target.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+
+			w.WriteHeader(http.StatusOK)
+			hijacker, ok := w.(http.Hijacker)
+			if !ok {
+				http.Error(w, "hijack not supported", http.StatusInternalServerError)
+				return
+			}
+			client, _, err := hijacker.Hijack()
+			if err != nil {
+				return
+			}
+			defer client.Close()
+			if err := client.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
+				return
+			}
+
+			done := make(chan struct{}, 2)
+			relay := func(dst, src net.Conn) {
+				io.Copy(dst, src) //nolint:errcheck // relay best-effort; deadline bounds lifetime
+				done <- struct{}{}
+			}
+			go relay(target, client)
+			go relay(client, target)
+			<-done
+		}),
+	}
+	t.Cleanup(func() { srv.Close() })
+	go func() { _ = srv.Serve(ln) }()
+	return ln
+}
+
+func TestDialDirectWithProxy(t *testing.T) {
+	const testTimeout = 5 * time.Second
+
+	t.Run("When HTTPS_PROXY is set it should route through the proxy", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		t.Setenv("HTTP_PROXY", "")
+		t.Setenv("HTTPS_PROXY", "")
+		t.Setenv("NO_PROXY", "")
+		echo := startTCPEchoServer(t)
+		var connectCount atomic.Int32
+		proxyLn := startConnectProxy(t, &connectCount)
+		t.Setenv("HTTPS_PROXY", fmt.Sprintf("http://%s", proxyLn.Addr().String()))
+
+		p := &konnectivityProxy{}
+		conn, err := p.dialDirectWithProxy("tcp", echo.Addr().String())
+		g.Expect(err).NotTo(HaveOccurred(), "dialDirectWithProxy should succeed")
+		defer conn.Close()
+		g.Expect(conn.SetDeadline(time.Now().Add(testTimeout))).To(Succeed())
+
+		msg := []byte("hello")
+		_, err = conn.Write(msg)
+		g.Expect(err).NotTo(HaveOccurred(), "write should succeed")
+		buf := make([]byte, len(msg))
+		_, err = io.ReadFull(conn, buf)
+		g.Expect(err).NotTo(HaveOccurred(), "read should succeed")
+		g.Expect(string(buf)).To(Equal(string(msg)))
+		g.Expect(connectCount.Load()).To(Equal(int32(1)), "proxy should receive 1 CONNECT request")
+	})
+
+	t.Run("When HTTPS_PROXY is not set it should connect directly", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		echo := startTCPEchoServer(t)
+		var connectCount atomic.Int32
+		startConnectProxy(t, &connectCount)
+		t.Setenv("HTTPS_PROXY", "")
+		t.Setenv("HTTP_PROXY", "")
+		t.Setenv("NO_PROXY", "")
+
+		p := &konnectivityProxy{}
+		conn, err := p.dialDirectWithProxy("tcp", echo.Addr().String())
+		g.Expect(err).NotTo(HaveOccurred(), "dialDirectWithProxy should succeed")
+		defer conn.Close()
+		g.Expect(conn.SetDeadline(time.Now().Add(testTimeout))).To(Succeed())
+
+		msg := []byte("hello")
+		_, err = conn.Write(msg)
+		g.Expect(err).NotTo(HaveOccurred(), "write should succeed")
+		buf := make([]byte, len(msg))
+		_, err = io.ReadFull(conn, buf)
+		g.Expect(err).NotTo(HaveOccurred(), "read should succeed")
+		g.Expect(string(buf)).To(Equal(string(msg)))
+		g.Expect(connectCount.Load()).To(Equal(int32(0)), "proxy should receive 0 CONNECT requests")
+	})
 }
 
 func TestIsCloudAPI(t *testing.T) {

@@ -146,12 +146,12 @@ func ManifestToImageConfig(ctx context.Context, srcManifest distribution.Manifes
 		}
 		configJSON, err := blobs.Get(ctx, t.Config.Digest)
 		if err != nil {
-			return nil, nil, fmt.Errorf("cannot retrieve image configuration for %s: %v", location, err)
+			return nil, nil, fmt.Errorf("cannot retrieve image configuration for %s: %w", location, err)
 		}
 		klog.V(4).Infof("Raw image config json:\n%s", string(configJSON))
 		config := &dockerv1client.DockerImageConfig{}
 		if err := json.Unmarshal(configJSON, &config); err != nil {
-			return nil, nil, fmt.Errorf("unable to parse image configuration: %v", err)
+			return nil, nil, fmt.Errorf("unable to parse image configuration: %w", err)
 		}
 
 		base := config
@@ -169,12 +169,12 @@ func ManifestToImageConfig(ctx context.Context, srcManifest distribution.Manifes
 		}
 		configJSON, err := blobs.Get(ctx, t.Config.Digest)
 		if err != nil {
-			return nil, nil, fmt.Errorf("cannot retrieve image configuration for %s: %v", location, err)
+			return nil, nil, fmt.Errorf("cannot retrieve image configuration for %s: %w", location, err)
 		}
 		klog.V(4).Infof("Raw image config json:\n%s", string(configJSON))
 		config := &dockerv1client.DockerImageConfig{}
 		if err := json.Unmarshal(configJSON, &config); err != nil {
-			return nil, nil, fmt.Errorf("unable to parse image configuration: %v", err)
+			return nil, nil, fmt.Errorf("unable to parse image configuration: %w", err)
 		}
 
 		base := config
@@ -219,11 +219,11 @@ func ProcessManifestList(ctx context.Context, srcDigest digest.Digest, srcManife
 			var err error
 			t, err = manifestlist.FromDescriptors(filtered)
 			if err != nil {
-				return nil, nil, "", fmt.Errorf("unable to filter source image %s manifest list: %v", ref, err)
+				return nil, nil, "", fmt.Errorf("unable to filter source image %s manifest list: %w", ref, err)
 			}
 			_, body, err := t.Payload()
 			if err != nil {
-				return nil, nil, "", fmt.Errorf("unable to filter source image %s manifest list (bad payload): %v", ref, err)
+				return nil, nil, "", fmt.Errorf("unable to filter source image %s manifest list (bad payload): %w", ref, err)
 			}
 			manifestList = t
 			manifestDigest, err = registryclient.ContentDigestForManifest(t, srcDigest.Algorithm())
@@ -236,7 +236,7 @@ func ProcessManifestList(ctx context.Context, srcDigest digest.Digest, srcManife
 		for i, manifest := range filtered {
 			childManifest, err := manifests.Get(ctx, manifest.Digest, PreferManifestList)
 			if err != nil {
-				return nil, nil, "", fmt.Errorf("unable to retrieve source image %s manifest #%d from manifest list: %v", ref, i+1, err)
+				return nil, nil, "", fmt.Errorf("unable to retrieve source image %s manifest #%d from manifest list: %w", ref, i+1, err)
 			}
 			childManifests = append(childManifests, childManifest)
 		}

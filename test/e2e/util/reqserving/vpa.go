@@ -177,8 +177,7 @@ func waitForVPAResource(ctx context.Context) error {
 		// Use targeted discovery instead of full server discovery for better performance
 		_, err := disc.ServerResourcesForGroupVersion(vpaautoscalingv1.SchemeGroupVersion.String())
 		if err != nil {
-			// VPA API group not available yet
-			return false, nil
+			return false, nil //nolint:nilerr // VPA API group not available yet, retry
 		}
 		return true, nil
 	})

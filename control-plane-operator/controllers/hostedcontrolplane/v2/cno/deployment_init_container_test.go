@@ -147,7 +147,7 @@ func TestRewriteConfigInitContainer(t *testing.T) {
 
 			testScript := buildTestScript(script, kubectlLog)
 
-			cmd := exec.Command("bash", "-c", testScript)
+			cmd := exec.CommandContext(t.Context(), "bash", "-c", testScript)
 			cmd.Env = []string{
 				"KUBERNETES_SERVICE_HOST=" + tt.host,
 				"KUBERNETES_SERVICE_PORT=" + tt.port,

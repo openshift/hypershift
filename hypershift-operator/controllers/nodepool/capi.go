@@ -29,7 +29,7 @@ import (
 	capigcp "sigs.k8s.io/cluster-api-provider-gcp/api/v1beta1"
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
 	capiopenstackv1beta1 "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
-	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
@@ -403,17 +403,13 @@ func deleteMachineHealthCheck(ctx context.Context, c client.Client, mhc *capiv1.
 
 func (c *CAPI) reconcileMachineDeployment(ctx context.Context, log logr.Logger,
 	machineDeployment *capiv1.MachineDeployment,
-	machineTemplateCR client.Object) error {
-
+	machineTemplateCR client.Object,
+) error {
 	nodePool := c.nodePool
 	capiClusterName := c.capiClusterName
 
 	c.setMachineDeploymentMetadata(machineDeployment, capiClusterName)
 
-	// Set defaults. These are normally set by the CAPI machinedeployment webhook.
-	// However, since we don't run the webhook, CAPI updates the machinedeployment
-	// after it has been created with defaults.
-	machineDeployment.Spec.MinReadySeconds = ptr.To[int32](0)
 	machineDeployment.Spec.ClusterName = capiClusterName
 	if machineDeployment.Spec.Selector.MatchLabels == nil {
 		machineDeployment.Spec.Selector.MatchLabels = map[string]string{}
@@ -665,8 +661,8 @@ func taintsToJSON(taints []hyperv1.Taint) (string, error) {
 }
 
 func (c *CAPI) reconcileMachineHealthCheck(ctx context.Context,
-	mhc *capiv1.MachineHealthCheck) error {
-
+	mhc *capiv1.MachineHealthCheck,
+) error {
 	log := ctrl.LoggerFrom(ctx)
 	nodePool := c.nodePool
 	hc := c.hostedCluster
@@ -863,8 +859,8 @@ func generateMachineTemplateName(nodePool *hyperv1.NodePool, machineTemplateSpec
 
 func (c *CAPI) reconcileMachineSet(ctx context.Context,
 	machineSet *capiv1.MachineSet,
-	machineTemplateCR client.Object) error {
-
+	machineTemplateCR client.Object,
+) error {
 	nodePool := c.nodePool
 	userDataSecret := c.UserDataSecret()
 	capiClusterName := c.capiClusterName
@@ -886,7 +882,6 @@ func (c *CAPI) reconcileMachineSet(ctx context.Context,
 	machineSet.Labels[capiv1.ClusterNameLabel] = capiClusterName
 
 	resourcesName := generateName(capiClusterName, nodePool.Spec.ClusterName, nodePool.GetName())
-	machineSet.Spec.MinReadySeconds = int32(0)
 
 	gvk, err := apiutil.GVKForObject(machineTemplateCR, api.Scheme)
 	if err != nil {
@@ -1341,7 +1336,7 @@ func (c *CAPI) getExistingMachineTemplate(ctx context.Context, template client.O
 			if client.IgnoreNotFound(err) != nil {
 				return fmt.Errorf("failed to get MachineSet %s: %w", ms.Name, err)
 			}
-			//MachineSet does not exist, return NotFoundError.
+			// MachineSet does not exist, return NotFoundError.
 			return err
 		}
 		templateName = ms.Spec.Template.Spec.InfrastructureRef.Name

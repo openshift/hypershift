@@ -1122,3 +1122,22 @@ users:
 		})
 	}
 }
+
+func TestConvertIdentityProviders_ErrorWrapping(t *testing.T) {
+	t.Parallel()
+	g := NewWithT(t)
+
+	providers := []configv1.IdentityProvider{
+		{
+			Name: "bad-provider",
+			IdentityProviderConfig: configv1.IdentityProviderConfig{
+				Type: "UnsupportedType",
+			},
+		},
+	}
+
+	c := fake.NewClientBuilder().WithScheme(scheme.Scheme).Build()
+	_, _, err := ConvertIdentityProviders(t.Context(), providers, nil, c, "test-ns")
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(err.Error()).To(ContainSubstring("failed to apply IDP bad-provider config"))
+}

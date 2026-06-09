@@ -23,6 +23,7 @@ const (
 	defaultOIDCIssuerURL      = "https://smazure.blob.core.windows.net/smazure"
 	defaultSATokenKeyPath     = "/etc/hypershift-ci-jobs-self-managed-azure-e2e/serviceaccount-signer.private"
 	defaultWorkloadIdentities = "/etc/hypershift-ci-jobs-self-managed-azure-e2e/workload-identities.json"
+	defaultEncryptionKeyID    = "/etc/hypershift-ci-jobs-self-managed-azure-e2e/AZURE_ENCRYPTION_KEY_ID"
 )
 
 // AzurePlatformConfig holds Azure-specific configuration for the
@@ -36,6 +37,7 @@ type AzurePlatformConfig struct {
 	dnsZoneRG          string
 	privateNATSubnetID string
 	sharedDir          string
+	encryptionKeyID    string
 
 	marketplacePublisher string
 	marketplaceOffer     string
@@ -71,6 +73,16 @@ func NewAzurePlatformConfig(sharedDir string) *AzurePlatformConfig {
 		log.Printf("WARNING: AZURE_PRIVATE_NAT_SUBNET_ID is not set; private cluster creation will fail")
 	}
 
+	cfg.encryptionKeyID = os.Getenv("AZURE_ENCRYPTION_KEY_ID")
+	if cfg.encryptionKeyID == "" {
+		if data, err := os.ReadFile(defaultEncryptionKeyID); err == nil {
+			cfg.encryptionKeyID = strings.TrimSpace(string(data))
+		}
+	}
+	if cfg.encryptionKeyID == "" {
+		log.Printf("WARNING: AZURE_ENCRYPTION_KEY_ID is not set; secret encryption tests will be skipped")
+	}
+
 	if cfg.marketplaceSKU == "" && cfg.marketplacePublisher != "" && sharedDir != "" {
 		if data, err := os.ReadFile(filepath.Join(sharedDir, "azure-marketplace-image-sku")); err == nil {
 			cfg.marketplaceSKU = strings.TrimSpace(string(data))
@@ -92,10 +104,16 @@ func (a *AzurePlatformConfig) DefaultBaseDomain() string {
 }
 
 func (a *AzurePlatformConfig) ClusterSpecs(releaseImage, n1Image string) []ClusterSpec {
+	var publicExtraArgs []string
+	if a.encryptionKeyID != "" {
+		publicExtraArgs = append(publicExtraArgs, "--encryption-key-id="+a.encryptionKeyID)
+	}
+
 	return []ClusterSpec{
 		{
 			Variant:    "public",
 			OutputFile: "cluster-name-public",
+			ExtraArgs:  publicExtraArgs,
 		},
 		{
 			Variant:    "private",
@@ -187,20 +205,20 @@ func (a *AzurePlatformConfig) TestMatrix(releaseImage string) TestMatrix {
 			{
 				Name:        "public",
 				ClusterFile: "cluster-name-public",
-				LabelFilter: "self-managed-azure-public || nodepool-lifecycle",
+				LabelFilter: "self-managed-azure-public || nodepool-lifecycle || secret-encryption || control-plane-workloads || hosted-cluster-security",
 				Skip:        "KAS allowed CIDRs",
 				JUnitFile:   "junit_self_managed_azure_public.xml",
 			},
 			{
 				Name:        "private",
 				ClusterFile: "cluster-name-private",
-				LabelFilter: "self-managed-azure-private",
+				LabelFilter: "self-managed-azure-private || hosted-cluster-compliance",
 				JUnitFile:   "junit_self_managed_azure_private.xml",
 			},
 			{
 				Name:        "oauth-lb",
 				ClusterFile: "cluster-name-oauth-lb",
-				LabelFilter: "self-managed-azure-oauth-lb",
+				LabelFilter: "self-managed-azure-oauth-lb || hosted-cluster-health || hosted-cluster-metrics || hosted-cluster-image-registry",
 				JUnitFile:   "junit_self_managed_azure_oauth_lb.xml",
 			},
 			{

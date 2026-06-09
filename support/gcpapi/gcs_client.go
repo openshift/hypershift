@@ -2,6 +2,7 @@ package gcpapi
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -42,7 +43,8 @@ func (g *GCSClient) UploadObject(ctx context.Context, bucket, objectName string,
 func (g *GCSClient) DeleteObject(ctx context.Context, bucket, objectName string) error {
 	err := g.objects.Delete(bucket, objectName).Context(ctx).Do()
 	if err != nil {
-		if gerr, ok := err.(*googleapi.Error); ok && gerr.Code == http.StatusNotFound {
+		var gerr *googleapi.Error
+		if errors.As(err, &gerr) && gerr.Code == http.StatusNotFound {
 			return nil
 		}
 		return fmt.Errorf("failed to delete gs://%s/%s: %w", bucket, objectName, err)

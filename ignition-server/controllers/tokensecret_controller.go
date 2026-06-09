@@ -275,7 +275,7 @@ func (r *TokenSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		start := time.Now()
 		payload, err := r.IgnitionProvider.GetPayload(ctx, releaseImage, config.String(), pullSecretHash, additionalTrustBundleHash, hcConfigurationHash)
 		if err != nil {
-			return nil, fmt.Errorf("error getting ignition payload: %v", err)
+			return nil, fmt.Errorf("error getting ignition payload: %w", err)
 		}
 		duration := time.Since(start).Round(time.Second).Seconds()
 		log.Info("got ignition payload", "duration", duration)

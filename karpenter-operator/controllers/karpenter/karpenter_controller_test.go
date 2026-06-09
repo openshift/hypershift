@@ -20,6 +20,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -35,21 +36,25 @@ func TestKarpenterDeletion(t *testing.T) {
 	scheme := api.Scheme
 	now := time.Now()
 
+	const testNamespace = "test-namespace"
+
 	testCases := []struct {
 		name                                string
 		hcp                                 *hyperv1.HostedControlPlane
+		managementObjects                   []client.Object
 		objects                             []client.Object
 		expectedNodePools                   int
 		expectedNodeClaims                  int
 		eventuallyKarpenterFinalizerRemoved bool
-		// expectedAnnotations maps NodeClaim name to whether it should have the termination timestamp annotation
-		expectedAnnotations map[string]bool
+		// expectedTerminationAnnotations maps NodeClaim name to whether it should have the termination timestamp annotation
+		expectedTerminationAnnotations map[string]bool
 	}{
 		{
 			name: "when hcp is deleted with no resources, it should remove karpenter finalizer",
 			hcp: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-hcp",
+					Name:      "test-hcp",
+					Namespace: testNamespace,
 					DeletionTimestamp: &metav1.Time{
 						Time: now,
 					},
@@ -68,7 +73,8 @@ func TestKarpenterDeletion(t *testing.T) {
 			name: "when hcp is deleted, it should delete karpenter NodePools and remove karpenter finalizer",
 			hcp: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-hcp",
+					Name:      "test-hcp",
+					Namespace: testNamespace,
 					DeletionTimestamp: &metav1.Time{
 						Time: now,
 					},
@@ -98,7 +104,8 @@ func TestKarpenterDeletion(t *testing.T) {
 			name: "when hcp is deleted, it should not remove karpenter finalizer if karpenter NodePools still exist",
 			hcp: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-hcp",
+					Name:      "test-hcp",
+					Namespace: testNamespace,
 					DeletionTimestamp: &metav1.Time{
 						Time: now,
 					},
@@ -125,7 +132,8 @@ func TestKarpenterDeletion(t *testing.T) {
 			name: "when hcp is deleted, it should set termination annotation on NodeClaims and not remove finalizer until they are gone",
 			hcp: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-hcp",
+					Name:      "test-hcp",
+					Namespace: testNamespace,
 					DeletionTimestamp: &metav1.Time{
 						Time: now,
 					},
@@ -163,7 +171,7 @@ func TestKarpenterDeletion(t *testing.T) {
 			expectedNodePools:                   0,
 			expectedNodeClaims:                  2,
 			eventuallyKarpenterFinalizerRemoved: false,
-			expectedAnnotations: map[string]bool{
+			expectedTerminationAnnotations: map[string]bool{
 				"test-nodeclaim-1": true,
 				"test-nodeclaim-2": true,
 			},
@@ -172,7 +180,8 @@ func TestKarpenterDeletion(t *testing.T) {
 			name: "when NodeClaim already has termination annotation, it should not set it again (idempotency)",
 			hcp: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-hcp",
+					Name:      "test-hcp",
+					Namespace: testNamespace,
 					DeletionTimestamp: &metav1.Time{
 						Time: now,
 					},
@@ -198,7 +207,7 @@ func TestKarpenterDeletion(t *testing.T) {
 			expectedNodePools:                   0,
 			expectedNodeClaims:                  1,
 			eventuallyKarpenterFinalizerRemoved: false,
-			expectedAnnotations: map[string]bool{
+			expectedTerminationAnnotations: map[string]bool{
 				"test-nodeclaim-1": true, // Already has annotation, should still have it
 			},
 		},
@@ -206,7 +215,8 @@ func TestKarpenterDeletion(t *testing.T) {
 			name: "when NodeClaim has no deletion timestamp (orphaned), it should be explicitly deleted then get termination annotation",
 			hcp: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-hcp",
+					Name:      "test-hcp",
+					Namespace: testNamespace,
 					DeletionTimestamp: &metav1.Time{
 						Time: now,
 					},
@@ -227,10 +237,86 @@ func TestKarpenterDeletion(t *testing.T) {
 			expectedNodePools:                   0,
 			expectedNodeClaims:                  1, // Still exists due to finalizer
 			eventuallyKarpenterFinalizerRemoved: false,
-			expectedAnnotations: map[string]bool{
+			expectedTerminationAnnotations: map[string]bool{
 				// First reconcile explicitly deletes it (sets DeletionTimestamp),
 				// second reconcile sees DeletionTimestamp and sets termination annotation
 				"test-nodeclaim-orphaned": true,
+			},
+		},
+		{
+			name: "when CAPI Cluster is deleting but HCP is not, it should start node cleanup without removing karpenter finalizer",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-hcp",
+					Namespace: testNamespace,
+					Finalizers: []string{
+						karpenterutil.KarpenterFinalizer,
+						"some-other-finalizer",
+					},
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					InfraID: "test-infra-id",
+				},
+			},
+			managementObjects: []client.Object{
+				&capiv1.Cluster{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:              "test-infra-id",
+						Namespace:         testNamespace,
+						DeletionTimestamp: &metav1.Time{Time: now},
+						Finalizers:        []string{"capi-finalizer"},
+					},
+				},
+			},
+			objects: []client.Object{
+				&karpenterv1.NodePool{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-nodepool-1",
+					},
+				},
+			},
+			expectedNodePools:                   0,
+			expectedNodeClaims:                  0,
+			eventuallyKarpenterFinalizerRemoved: false,
+		},
+		{
+			name: "when CAPI Cluster is deleting with NodeClaims, it should clean up nodes without removing karpenter finalizer",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-hcp",
+					Namespace: testNamespace,
+					Finalizers: []string{
+						karpenterutil.KarpenterFinalizer,
+					},
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					InfraID: "test-infra-id",
+				},
+			},
+			managementObjects: []client.Object{
+				&capiv1.Cluster{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:              "test-infra-id",
+						Namespace:         testNamespace,
+						DeletionTimestamp: &metav1.Time{Time: now},
+						Finalizers:        []string{"capi-finalizer"},
+					},
+				},
+			},
+			objects: []client.Object{
+				&karpenterv1.NodeClaim{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:              "test-nodeclaim-1",
+						DeletionTimestamp: &metav1.Time{Time: now},
+						Finalizers:        []string{"karpenter-finalizer"},
+					},
+				},
+			},
+			expectedNodePools:                   0,
+			expectedNodeClaims:                  1,
+			eventuallyKarpenterFinalizerRemoved: false,
+			expectedTerminationAnnotations: map[string]bool{
+				"test-nodeclaim-1": true,
 			},
 		},
 	}
@@ -250,6 +336,7 @@ func TestKarpenterDeletion(t *testing.T) {
 						Name: "pull-secret",
 					},
 				}).
+				WithObjects(tc.managementObjects...).
 				Build()
 
 			fakeGuestClient := fake.NewClientBuilder().
@@ -261,6 +348,7 @@ func TestKarpenterDeletion(t *testing.T) {
 				ManagementClient: fakeManagementClient,
 				GuestClient:      fakeGuestClient,
 				ReleaseProvider:  mockedProvider,
+				Namespace:        testNamespace,
 			}
 
 			ctx := log.IntoContext(t.Context(), testr.New(t))
@@ -295,7 +383,7 @@ func TestKarpenterDeletion(t *testing.T) {
 			g.Expect(nodeClaimList.Items).To(HaveLen(tc.expectedNodeClaims))
 
 			// verify annotations if specified
-			for nodeClaimName, shouldHaveAnnotation := range tc.expectedAnnotations {
+			for nodeClaimName, shouldHaveAnnotation := range tc.expectedTerminationAnnotations {
 				nodeClaim := &karpenterv1.NodeClaim{}
 				err := fakeGuestClient.Get(ctx, client.ObjectKey{Name: nodeClaimName}, nodeClaim)
 				g.Expect(err).NotTo(HaveOccurred())

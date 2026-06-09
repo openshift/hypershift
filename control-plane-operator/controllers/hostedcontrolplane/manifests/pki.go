@@ -272,6 +272,8 @@ func KASMachineBootstrapClientCertSecret(ns string) *corev1.Secret {
 
 func KCMServerCertSecret(ns string) *corev1.Secret { return secretFor(ns, "kcm-server") }
 
+func SchedulerServerCertSecret(ns string) *corev1.Secret { return secretFor(ns, "scheduler-server") }
+
 func ServiceAccountSigningKeySecret(ns string) *corev1.Secret { return secretFor(ns, "sa-signing-key") }
 
 func OpenShiftAPIServerCertSecret(ns string) *corev1.Secret {

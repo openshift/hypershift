@@ -81,11 +81,11 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 	bootstrapUpdateErrors := []error{}
 	for _, bootstrapContainer := range bootstrapContainers {
 		if err := updateBootstrapInitContainer(deployment, hcp, payloadVersion, bootstrapContainer); err != nil {
-			bootstrapUpdateErrors = append(bootstrapUpdateErrors, fmt.Errorf("updating bootstrap container %q: %v", bootstrapContainer, err))
+			bootstrapUpdateErrors = append(bootstrapUpdateErrors, fmt.Errorf("updating bootstrap container %q: %w", bootstrapContainer, err))
 		}
 	}
 	if err := errors.Join(bootstrapUpdateErrors...); err != nil {
-		return fmt.Errorf("updating bootstrap containers: %v", err)
+		return fmt.Errorf("updating bootstrap containers: %w", err)
 	}
 
 	if hcp.Spec.Configuration.GetAuditPolicyConfig().Profile == configv1.NoneAuditProfileType {
@@ -180,7 +180,7 @@ func updateMainContainer(podSpec *corev1.PodSpec, hcp *hyperv1.HostedControlPlan
 		)
 
 		// We have to exempt the pod and service CIDR, otherwise the proxy will get respected by the transport inside
-		// the the egress transport and that breaks the egress selection/konnektivity usage.
+		// the egress transport and that breaks the egress selection/konnektivity usage.
 		// Using a CIDR is not supported by Go's default ProxyFunc, but Kube uses a custom one by default that does support it:
 		// https://github.com/kubernetes/kubernetes/blob/ab13c85316015cf9f115e29923ba9740bd1564fd/staging/src/k8s.io/apimachinery/pkg/util/net/http.go#L112-L114
 		var additionalNoProxyCIDRS []string

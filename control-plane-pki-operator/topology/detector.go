@@ -37,7 +37,7 @@ func (d Detector) DetectTopology(ctx context.Context, restClient *rest.Config) (
 
 	hcp, err := client.HostedControlPlanes(namespace).Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
-		return "", fmt.Errorf("failed to get hosted control plane %s/%s: %q", namespace, name, err)
+		return "", fmt.Errorf("failed to get hosted control plane %s/%s: %w", namespace, name, err)
 	}
 
 	if hcp == nil {

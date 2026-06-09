@@ -288,7 +288,7 @@ func (p *konnectivityProxy) DialContext(ctx context.Context, network string, req
 	}
 	konnectivityConnection, err := tlsDialer.DialContext(ctx, "tcp", konnectivityServerAddress)
 	if err != nil {
-		return nil, fmt.Errorf("dialing proxy %q failed: %v", konnectivityServerAddress, err)
+		return nil, fmt.Errorf("dialing proxy %q failed: %w", konnectivityServerAddress, err)
 	}
 
 	// Bound CONNECT handshake I/O to avoid indefinite stalls and clear on success.
@@ -323,10 +323,10 @@ func (p *konnectivityProxy) DialContext(ctx context.Context, network string, req
 	res, err := http.ReadResponse(br, nil)
 	if err != nil {
 		_ = konnectivityConnection.Close()
-		return nil, fmt.Errorf("reading HTTP response from CONNECT to %s via proxy %s failed: %v",
+		return nil, fmt.Errorf("reading HTTP response from CONNECT to %s via proxy %s failed: %w",
 			requestAddress, konnectivityServerAddress, err)
 	}
-	if res.StatusCode != 200 {
+	if res.StatusCode != http.StatusOK {
 		log.Info("Status code was not 200", "statusCode", res.StatusCode)
 		_ = konnectivityConnection.Close()
 		return nil, fmt.Errorf("proxy error from %s while dialing %s: %v", konnectivityServerAddress, requestAddress, res.Status)

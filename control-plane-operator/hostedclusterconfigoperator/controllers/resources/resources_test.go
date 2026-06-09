@@ -14,6 +14,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ocm"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/kas"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
@@ -21,6 +22,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/globalconfig"
+	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
@@ -29,6 +31,7 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	imageapi "github.com/openshift/api/image/v1"
+	openshiftcpv1 "github.com/openshift/api/openshiftcontrolplane/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
 
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
@@ -49,11 +52,13 @@ import (
 	controllerruntime "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
 	"go.uber.org/zap/zaptest"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type testClient struct {
@@ -76,11 +81,16 @@ var initialObjects = []client.Object{
 	globalconfig.ProjectConfig(),
 	globalconfig.BuildConfig(),
 	globalconfig.ProxyConfig(),
-	// Not running bcrypt hashing for the kubeadmin secret massively speeds up the tests, 4s vs 0.1s (and for -race its ~10x that)
+	// Use a valid bcrypt hash of "test" (matching fakeKubeadminPasswordSecret) so the
+	// CompareHashAndPassword check passes and avoids re-hashing on every reconcile.
+	// MinCost keeps the tests fast (~0.1s vs ~4s with DefaultCost, ~10x worse with -race).
 	&corev1.Secret{
 		ObjectMeta: manifests.KubeadminPasswordHashSecret().ObjectMeta,
 		Data: map[string][]byte{
-			"kubeadmin": []byte("something"),
+			"kubeadmin": func() []byte {
+				h, _ := bcrypt.GenerateFromPassword([]byte("test"), bcrypt.MinCost)
+				return h
+			}(),
 		},
 	},
 	manifests.NodeTuningClusterOperator(),
@@ -490,7 +500,9 @@ func TestReconcileKubeadminPasswordHashSecret(t *testing.T) {
 	tests := map[string]struct {
 		inputHCP                                 *hyperv1.HostedControlPlane
 		inputObjects                             []client.Object
+		existingHashSecret                       *corev1.Secret
 		expectKubeadminPasswordHashSecretToExist bool
+		expectHashPreserved                      bool
 	}{
 		"when kubeadminPasswordSecret exists the hash secret is created": {
 			inputHCP: &hyperv1.HostedControlPlane{
@@ -512,6 +524,62 @@ func TestReconcileKubeadminPasswordHashSecret(t *testing.T) {
 			},
 			expectKubeadminPasswordHashSecretToExist: true,
 		},
+		"When existing hash does not match the password it should regenerate the hash": {
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testHCPName,
+					Namespace: testNamespace,
+				},
+			},
+			inputObjects: []client.Object{
+				&corev1.Secret{
+					ObjectMeta: manifests.KubeadminPasswordSecret(testNamespace).ObjectMeta,
+					Data: map[string][]byte{
+						"password": []byte(`adminpass`),
+					},
+				},
+				&appsv1.Deployment{
+					ObjectMeta: manifests.OAuthDeployment(testNamespace).ObjectMeta,
+				},
+			},
+			existingHashSecret: &corev1.Secret{
+				ObjectMeta: manifests.KubeadminPasswordHashSecret().ObjectMeta,
+				Data: map[string][]byte{
+					"kubeadmin": []byte("stale-non-matching-hash"),
+				},
+			},
+			expectKubeadminPasswordHashSecretToExist: true,
+		},
+		"When hash already matches password it should not regenerate": {
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testHCPName,
+					Namespace: testNamespace,
+				},
+			},
+			inputObjects: []client.Object{
+				&corev1.Secret{
+					ObjectMeta: manifests.KubeadminPasswordSecret(testNamespace).ObjectMeta,
+					Data: map[string][]byte{
+						"password": []byte(`adminpass`),
+					},
+				},
+				&appsv1.Deployment{
+					ObjectMeta: manifests.OAuthDeployment(testNamespace).ObjectMeta,
+				},
+			},
+			existingHashSecret: &corev1.Secret{
+				ObjectMeta: manifests.KubeadminPasswordHashSecret().ObjectMeta,
+				Data: map[string][]byte{
+					"kubeadmin": func() []byte {
+						h, _ := bcrypt.GenerateFromPassword([]byte("adminpass"), bcrypt.MinCost)
+						return h
+					}(),
+				},
+			},
+			expectKubeadminPasswordHashSecretToExist: true,
+			expectHashPreserved:                      true,
+		},
 		"when kubeadminPasswordSecret doesn't exist the hash secret is not created": {
 			inputHCP: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
@@ -530,8 +598,12 @@ func TestReconcileKubeadminPasswordHashSecret(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
+			guestClientBuilder := fake.NewClientBuilder().WithScheme(api.Scheme)
+			if test.existingHashSecret != nil {
+				guestClientBuilder = guestClientBuilder.WithObjects(test.existingHashSecret)
+			}
 			r := &reconciler{
-				client:                 fake.NewClientBuilder().WithScheme(api.Scheme).Build(),
+				client:                 guestClientBuilder.Build(),
 				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
 				cpClient:               fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(append(test.inputObjects, test.inputHCP)...).Build(),
 				hcpName:                testHCPName,
@@ -543,7 +615,17 @@ func TestReconcileKubeadminPasswordHashSecret(t *testing.T) {
 				actualKubeAdminSecret := manifests.KubeadminPasswordHashSecret()
 				err := r.client.Get(t.Context(), client.ObjectKeyFromObject(actualKubeAdminSecret), actualKubeAdminSecret)
 				g.Expect(err).To(BeNil())
-				g.Expect(len(actualKubeAdminSecret.Data["kubeadmin"]) > 0).To(BeTrue())
+				g.Expect(actualKubeAdminSecret.Data["kubeadmin"]).ToNot(BeEmpty())
+				if test.expectHashPreserved {
+					g.Expect(actualKubeAdminSecret.Data["kubeadmin"]).To(Equal(test.existingHashSecret.Data["kubeadmin"]))
+				}
+				passwordSecret := manifests.KubeadminPasswordSecret(testNamespace)
+				err = r.cpClient.Get(t.Context(), client.ObjectKeyFromObject(passwordSecret), passwordSecret)
+				g.Expect(err).To(BeNil())
+				g.Expect(bcrypt.CompareHashAndPassword(
+					actualKubeAdminSecret.Data["kubeadmin"],
+					passwordSecret.Data["password"],
+				)).To(BeNil())
 			} else {
 				actualKubeAdminSecret := manifests.KubeadminPasswordHashSecret()
 				err := r.client.Get(t.Context(), client.ObjectKeyFromObject(actualKubeAdminSecret), actualKubeAdminSecret)
@@ -3108,10 +3190,12 @@ func TestReconcileDeletion(t *testing.T) {
 		name               string
 		hcp                *hyperv1.HostedControlPlane
 		existingObjects    []client.Object
+		interceptorFuncs   *interceptor.Funcs
 		expectVAPDeleted   bool
 		expectVAPBDeleted  bool
 		expectCloudCleanup bool
 		expectError        bool
+		errSubstr          string
 	}{
 		{
 			name: "When platform is Azure, it should delete the registry management state VAP and binding",
@@ -3237,13 +3321,44 @@ func TestReconcileDeletion(t *testing.T) {
 			},
 			expectCloudCleanup: false,
 		},
+		{
+			name: "When Delete fails for the VAP binding on Azure, it should return a wrapped error",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-hcp",
+					Namespace: "test-ns",
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+					},
+				},
+			},
+			existingObjects: []client.Object{
+				manifests.ValidatingAdmissionPolicyBinding(fmt.Sprintf("%s-binding", registry.AdmissionPolicyNameManagementState)),
+			},
+			interceptorFuncs: &interceptor.Funcs{
+				Delete: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.DeleteOption) error {
+					if obj.GetName() == fmt.Sprintf("%s-binding", registry.AdmissionPolicyNameManagementState) {
+						return fmt.Errorf("API server unavailable")
+					}
+					return c.Delete(ctx, obj, opts...)
+				},
+			},
+			expectError: true,
+			errSubstr:   "failed to delete ValidatingAdmissionPolicyBinding",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
 
-			guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tt.existingObjects...).Build()
+			guestClientBuilder := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tt.existingObjects...)
+			if tt.interceptorFuncs != nil {
+				guestClientBuilder = guestClientBuilder.WithInterceptorFuncs(*tt.interceptorFuncs)
+			}
+			guestClient := guestClientBuilder.Build()
 			cpClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tt.hcp).WithStatusSubresource(&hyperv1.HostedControlPlane{}).Build()
 
 			r := &reconciler{
@@ -3269,6 +3384,9 @@ func TestReconcileDeletion(t *testing.T) {
 
 			if tt.expectError {
 				g.Expect(err).To(HaveOccurred())
+				if tt.errSubstr != "" {
+					g.Expect(err.Error()).To(ContainSubstring(tt.errSubstr))
+				}
 				return
 			}
 			g.Expect(err).ToNot(HaveOccurred())
@@ -3907,6 +4025,185 @@ func TestEnsureGuestAdmissionWebhooksAreValid(t *testing.T) {
 						t.Fatalf("unexpected object type %T in guestObjects for expectWebhookAlive check", obj)
 					}
 				}
+			}
+		})
+	}
+}
+
+func TestIsServiceAccountPullSecretsControllerDisabled(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name        string
+		controllers []string
+		expected    bool
+	}{
+		{
+			name:        "When controllers is nil, it should return false",
+			controllers: nil,
+			expected:    false,
+		},
+		{
+			name:        "When controllers is empty, it should return false",
+			controllers: []string{},
+			expected:    false,
+		},
+		{
+			name:        "When controller is disabled, it should return true",
+			controllers: []string{"*", "-openshift.io/serviceaccount-pull-secrets"},
+			expected:    true,
+		},
+		{
+			name:        "When controllers has other entries but not the disabled one, it should return false",
+			controllers: []string{"*", "-some-other-controller"},
+			expected:    false,
+		},
+		{
+			name:        "When only the wildcard is present, it should return false",
+			controllers: []string{"*"},
+			expected:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+			g.Expect(isServiceAccountPullSecretsControllerDisabled(tt.controllers)).To(Equal(tt.expected))
+		})
+	}
+}
+
+func TestReconcileRegistryAndIngress_ServiceAccountPullSecretsController(t *testing.T) {
+	t.Parallel()
+
+	hcpNamespace := "test-hcp-ns"
+
+	serializeOCMConfig := func(t *testing.T, controllers []string) string {
+		t.Helper()
+		config := &openshiftcpv1.OpenShiftControllerManagerConfig{
+			Controllers: controllers,
+		}
+		data, err := k8sutil.SerializeResource(config, api.Scheme)
+		if err != nil {
+			t.Fatalf("failed to serialize OCM config: %v", err)
+		}
+		return data
+	}
+
+	tests := []struct {
+		name                   string
+		platformType           hyperv1.PlatformType
+		managementState        operatorv1.ManagementState
+		existingOCMControllers []string
+		hasExistingOCMConfig   bool
+		expectedControllers    []string
+	}{
+		{
+			name:                   "When managementState is Removed, it should disable serviceaccount-pull-secrets controller",
+			platformType:           hyperv1.AWSPlatform,
+			managementState:        operatorv1.Removed,
+			existingOCMControllers: nil,
+			hasExistingOCMConfig:   true,
+			expectedControllers:    []string{"*", disabledServiceAccountPullSecretsController},
+		},
+		{
+			name:                   "When managementState changes from Removed to Managed, it should re-enable serviceaccount-pull-secrets controller",
+			platformType:           hyperv1.AWSPlatform,
+			managementState:        operatorv1.Managed,
+			existingOCMControllers: []string{"*", disabledServiceAccountPullSecretsController},
+			hasExistingOCMConfig:   true,
+			expectedControllers:    []string{"*"},
+		},
+		{
+			name:                   "When managementState is Managed and controller is already enabled, it should not change controllers",
+			platformType:           hyperv1.AWSPlatform,
+			managementState:        operatorv1.Managed,
+			existingOCMControllers: []string{"*"},
+			hasExistingOCMConfig:   true,
+			expectedControllers:    []string{"*"},
+		},
+		{
+			name:                   "When platform is IBMCloud, it should not modify OCM config regardless of managementState",
+			platformType:           hyperv1.IBMCloudPlatform,
+			managementState:        operatorv1.Removed,
+			existingOCMControllers: nil,
+			hasExistingOCMConfig:   true,
+			expectedControllers:    nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			registryConfig := manifests.Registry()
+			registryConfig.Spec.ManagementState = tt.managementState
+
+			guestClient := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				WithObjects(registryConfig).
+				Build()
+
+			ocmConfigMap := cpomanifests.OpenShiftControllerManagerConfig(hcpNamespace)
+			if tt.hasExistingOCMConfig {
+				ocmConfigMap.Data = map[string]string{}
+				if tt.existingOCMControllers != nil {
+					ocmConfigMap.Data[ocm.ConfigKey] = serializeOCMConfig(t, tt.existingOCMControllers)
+				} else {
+					ocmConfigMap.Data[ocm.ConfigKey] = serializeOCMConfig(t, nil)
+				}
+			}
+
+			cpClient := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				WithObjects(ocmConfigMap).
+				Build()
+
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-hcp",
+					Namespace: hcpNamespace,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: tt.platformType,
+					},
+				},
+			}
+
+			r := &reconciler{
+				client:                 guestClient,
+				cpClient:               cpClient,
+				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
+				platformType:           tt.platformType,
+				hcpNamespace:           hcpNamespace,
+			}
+
+			log := zapr.NewLogger(zaptest.NewLogger(t))
+			errs := r.reconcileRegistryAndIngress(t.Context(), hcp, log)
+			for _, e := range errs {
+				g.Expect(e.Error()).ToNot(ContainSubstring("openshift-controller-manager config"), "unexpected OCM config error: %v", e)
+			}
+
+			resultConfigMap := cpomanifests.OpenShiftControllerManagerConfig(hcpNamespace)
+			err := cpClient.Get(t.Context(), client.ObjectKeyFromObject(resultConfigMap), resultConfigMap)
+			g.Expect(err).ToNot(HaveOccurred(), "failed to get OCM ConfigMap")
+
+			if tt.expectedControllers == nil {
+				config := &openshiftcpv1.OpenShiftControllerManagerConfig{}
+				if configStr, exists := resultConfigMap.Data[ocm.ConfigKey]; exists && len(configStr) > 0 {
+					err := k8sutil.DeserializeResource(configStr, config, api.Scheme)
+					g.Expect(err).ToNot(HaveOccurred(), "failed to deserialize OCM config")
+				}
+				g.Expect(config.Controllers).To(BeNil(), "controllers should remain nil for excluded platform")
+			} else {
+				config := &openshiftcpv1.OpenShiftControllerManagerConfig{}
+				configStr, exists := resultConfigMap.Data[ocm.ConfigKey]
+				g.Expect(exists).To(BeTrue(), "OCM config should exist")
+				err := k8sutil.DeserializeResource(configStr, config, api.Scheme)
+				g.Expect(err).ToNot(HaveOccurred(), "failed to deserialize OCM config")
+				g.Expect(config.Controllers).To(Equal(tt.expectedControllers))
 			}
 		})
 	}

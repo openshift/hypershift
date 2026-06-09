@@ -67,7 +67,7 @@ func (s *server) validate() error {
 }
 
 func (s *server) run(ctx context.Context) error {
-	listener, err := net.Listen("tcp", s.listenAddr)
+	listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", s.listenAddr)
 	if err != nil {
 		return fmt.Errorf("failed to listen on tcp:%s: %w", s.listenAddr, err)
 	}
@@ -87,7 +87,7 @@ func (s *server) run(ctx context.Context) error {
 		go func() {
 			defer conn.Close()
 
-			backendConn, err := net.Dial("tcp", s.proxyAddr)
+			backendConn, err := (&net.Dialer{}).DialContext(ctx, "tcp", s.proxyAddr)
 			if err != nil {
 				s.log.Error(err, "failed diaing backend", "proxyAddr", s.proxyAddr)
 				return
@@ -95,7 +95,7 @@ func (s *server) run(ctx context.Context) error {
 			defer backendConn.Close()
 
 			req := &http.Request{
-				Method:     "CONNECT",
+				Method:     http.MethodConnect,
 				URL:        &url.URL{Host: s.apiServerAddr},
 				Proto:      "HTTP/1.1",
 				ProtoMajor: 1,
@@ -111,7 +111,7 @@ func (s *server) run(ctx context.Context) error {
 				s.log.Error(err, "failed to read response to connect request")
 				return
 			}
-			if response.StatusCode != 200 {
+			if response.StatusCode != http.StatusOK {
 				s.log.Error(fmt.Errorf("got unexpected statuscode %d to CONNECT request", response.StatusCode), "failed to establish a connection through http connect")
 				return
 			}

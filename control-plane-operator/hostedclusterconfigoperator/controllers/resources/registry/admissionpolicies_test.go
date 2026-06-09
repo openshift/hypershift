@@ -2,6 +2,7 @@ package registry
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -150,9 +151,11 @@ func TestReconcileRegistryConfigManagementStateValidatingAdmissionPolicy(t *test
 
 func TestReconcileRegistryConfigValidatingAdmissionPolicies(t *testing.T) {
 	tests := []struct {
-		name        string
-		hcp         *hyperv1.HostedControlPlane
-		expectError bool
+		name           string
+		hcp            *hyperv1.HostedControlPlane
+		createOrUpdate func(ctx context.Context, c client.Client, obj client.Object, f controllerutil.MutateFn) (controllerutil.OperationResult, error)
+		expectError    bool
+		errSubstr      string
 	}{
 		{
 			name: "When reconciliation succeeds it should return no error",
@@ -175,33 +178,74 @@ func TestReconcileRegistryConfigValidatingAdmissionPolicies(t *testing.T) {
 			},
 			expectError: false,
 		},
+		{
+			name: "When createOrUpdate fails for VAP, it should return a wrapped error",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: "test-namespace",
+				},
+			},
+			createOrUpdate: func(ctx context.Context, c client.Client, obj client.Object, f controllerutil.MutateFn) (controllerutil.OperationResult, error) {
+				if _, ok := obj.(*k8sadmissionv1.ValidatingAdmissionPolicy); ok {
+					return controllerutil.OperationResultNone, fmt.Errorf("API conflict")
+				}
+				if err := f(); err != nil {
+					return controllerutil.OperationResultNone, err
+				}
+				return controllerutil.OperationResultCreated, nil
+			},
+			expectError: true,
+			errSubstr:   "failed to reconcile ManagementState Validating Admission Policy",
+		},
+		{
+			name: "When createOrUpdate fails for binding, it should return a wrapped error",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: "test-namespace",
+				},
+			},
+			createOrUpdate: func(ctx context.Context, c client.Client, obj client.Object, f controllerutil.MutateFn) (controllerutil.OperationResult, error) {
+				if _, ok := obj.(*k8sadmissionv1.ValidatingAdmissionPolicyBinding); ok {
+					return controllerutil.OperationResultNone, fmt.Errorf("API conflict")
+				}
+				if err := f(); err != nil {
+					return controllerutil.OperationResultNone, err
+				}
+				return controllerutil.OperationResultCreated, nil
+			},
+			expectError: true,
+			errSubstr:   "failed to create/update Validating Admission Policy Binding",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
 
-			// Create a fake client
 			scheme := hyperapi.Scheme
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 
-			// Create a mock createOrUpdate function
-			mockCreateOrUpdate := func(ctx context.Context, c client.Client, obj client.Object, f controllerutil.MutateFn) (controllerutil.OperationResult, error) {
-				if err := f(); err != nil {
-					return controllerutil.OperationResultNone, err
+			createOrUpdate := tt.createOrUpdate
+			if createOrUpdate == nil {
+				createOrUpdate = func(ctx context.Context, c client.Client, obj client.Object, f controllerutil.MutateFn) (controllerutil.OperationResult, error) {
+					if err := f(); err != nil {
+						return controllerutil.OperationResultNone, err
+					}
+					return controllerutil.OperationResultCreated, nil
 				}
-				return controllerutil.OperationResultCreated, nil
 			}
 
-			// Create a context with a logger
 			ctx := ctrl.LoggerInto(context.Background(), ctrl.Log)
 
-			// Call the function
-			err := ReconcileRegistryConfigValidatingAdmissionPolicies(ctx, tt.hcp, fakeClient, mockCreateOrUpdate)
+			err := ReconcileRegistryConfigValidatingAdmissionPolicies(ctx, tt.hcp, fakeClient, createOrUpdate)
 
-			// Verify error expectations
 			if tt.expectError {
 				g.Expect(err).To(HaveOccurred())
+				if tt.errSubstr != "" {
+					g.Expect(err.Error()).To(ContainSubstring(tt.errSubstr))
+				}
 			} else {
 				g.Expect(err).NotTo(HaveOccurred())
 			}

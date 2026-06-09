@@ -18,7 +18,7 @@ import (
 	clientcmd "k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 
-	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -181,7 +181,7 @@ func adaptBootstrapKubeconfigSecret(cpContext component.WorkloadContext, secret 
 func adaptAWSPodIdentityWebhookKubeconfigSecret(cpContext component.WorkloadContext, secret *corev1.Secret) error {
 	csrSigner := manifests.CSRSignerCASecret(cpContext.HCP.Namespace)
 	if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(csrSigner), csrSigner); err != nil {
-		return fmt.Errorf("failed to get cluster-signer-ca secret: %v", err)
+		return fmt.Errorf("failed to get cluster-signer-ca secret: %w", err)
 	}
 	rootCA := manifests.RootCASecret(cpContext.HCP.Namespace)
 	if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(rootCA), rootCA); err != nil {

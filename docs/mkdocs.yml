@@ -82,6 +82,7 @@ nav:
     - how-to/automated-machine-management/node-tuning.md
     - how-to/automated-machine-management/nodepool-lifecycle.md
     - how-to/automated-machine-management/scale-to-zero-dataplane.md
+    - 'Spot Instances': how-to/automated-machine-management/spot-instances.md
   - how-to/autoscaling.md
   - 'CI':
     - 'AI-Assisted CI Jobs': how-to/ci/ai-assisted-ci-jobs.md
@@ -90,6 +91,12 @@ nav:
     - 'Documentation Preview': how-to/ci/docs-preview.md
     - 'GitHub Actions Workflows': how-to/ci/github-actions.md
     - 'Sync Community Fork': how-to/ci/sync-community-fork.md
+    - 'V2 E2E Testing':
+      - how-to/ci/v2-testing/index.md
+      - 'Writing V2 Tests': how-to/ci/v2-testing/writing-tests.md
+      - 'CI Pipeline Configuration': how-to/ci/v2-testing/ci-pipeline.md
+      - 'Debugging CI Failures': how-to/ci/v2-testing/debugging.md
+      - 'Migrating from V1': how-to/ci/v2-testing/migration.md
   - 'Common':
     - how-to/common/exposing-services-from-hcp.md
     - 'Global Pull Secret': how-to/common/global-pull-secret.md
@@ -113,6 +120,7 @@ nav:
       - how-to/disaster-recovery/etcd-snapshot-backup/index.md
       - how-to/disaster-recovery/etcd-snapshot-backup/backup-flow.md
       - how-to/disaster-recovery/etcd-snapshot-backup/restore-flow.md
+      - how-to/disaster-recovery/etcd-snapshot-backup/managed-services-credentials.md
   - 'Disconnected':
     - how-to/disconnected/index.md
     - how-to/disconnected/image-content-sources.md
@@ -163,7 +171,6 @@ nav:
       - 'Self-managed Azure':
         - how-to/azure/self-managed-azure-index.md
         - how-to/azure/autoscaling-self-managed.md
-        - how-to/azure/azure-workload-identity-setup.md
         - how-to/azure/create-self-managed-azure-cluster.md
         - how-to/azure/create-iam-separately.md
         - how-to/azure/create-infra-separately.md
@@ -377,6 +384,8 @@ nav:
   - 'Test Information/Debugging':
     - 'ARO HCP / AKS e2e':
       - reference/test-information-debugging/Azure/test-artifacts-directory-structure.md
+    - 'GCP / GKE e2e (v2)':
+      - reference/test-information-debugging/GCP/test-artifacts-directory-structure.md
   - reference/SLOs.md
   - reference/versioning-support.md
   - reference/service-publishing-strategies.md

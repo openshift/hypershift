@@ -71,7 +71,7 @@ func createTargetConfig(ctx context.Context, c TargetConfigController, recorder 
 
 	_, _, err := ManageClientCABundle(ctx, c.configMapLister, c.kubeClient.CoreV1(), recorder, c.hostedControlPlane)
 	if err != nil {
-		errors = append(errors, fmt.Errorf("%q: %v", "configmap/"+pkimanifests.TotalKASClientCABundle("placeholder").Name, err))
+		errors = append(errors, fmt.Errorf("%q: %w", "configmap/"+pkimanifests.TotalKASClientCABundle("placeholder").Name, err))
 	}
 
 	if len(errors) > 0 {

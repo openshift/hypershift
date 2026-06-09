@@ -1,4 +1,4 @@
-FROM ghcr.io/actions/actions-runner@sha256:1ad983536759ceec39ed75a2c8f007ca8c37b66eee35ed86f13623b29a4db97d
+FROM ghcr.io/actions/actions-runner@sha256:b6614fce332517f74d0a76e7c762fb08e4f2ff13dcf333183397c8a5725b6e8e
 
 USER root
 
@@ -11,7 +11,11 @@ RUN apt-get update && \
         curl \
         ca-certificates \
         python3-pip \
-        fuse-overlayfs \
+        skopeo \
+    && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg -o /usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends gh \
     && rm -rf /var/lib/apt/lists/*
 
 ARG TARGETARCH
@@ -34,5 +38,8 @@ RUN cd /tmp/tools && \
     CGO_ENABLED=1 GO111MODULE=on GOWORK=off GOFLAGS=-mod=vendor go build -buildmode=plugin \
         -o /opt/lint-tools/kube-api-linter.so sigs.k8s.io/kube-api-linter/pkg/plugin && \
     rm -rf /tmp/tools
+
+COPY contrib/ci/gocacheprog/ /tmp/gocacheprog/
+RUN cd /tmp/gocacheprog && go build -o /usr/local/bin/gocacheprog . && rm -rf /tmp/gocacheprog
 
 USER runner

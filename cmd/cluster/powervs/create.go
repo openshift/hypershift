@@ -243,7 +243,7 @@ var _ core.Platform = (*CreateOptions)(nil)
 func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:          "powervs",
-		Short:        "Creates basic functional HostedCluster resources on PowerVS PowerVS",
+		Short:        "Creates basic functional HostedCluster resources on PowerVS",
 		SilenceUsage: true,
 	}
 

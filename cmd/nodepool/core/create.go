@@ -195,12 +195,13 @@ func validateHostedClusterPayloadSupportsNodePoolCPUArch(ctx context.Context, cl
 	logger := ctrl.LoggerFrom(ctx)
 
 	hc := &hyperv1.HostedCluster{}
-	err := client.Get(context.Background(), types.NamespacedName{Namespace: namespace, Name: name}, hc)
+	err := client.Get(ctx, types.NamespacedName{Namespace: namespace, Name: name}, hc)
 	if err != nil {
-		// This is expected to happen when we create a cluster since there is no created HostedCluster CR to check the
-		// payload from.
-		logger.Info("WARNING: failed to get HostedCluster to check payload type")
-		return nil
+		if apierrors.IsNotFound(err) {
+			logger.Info("WARNING: failed to get HostedCluster to check payload type")
+			return nil
+		}
+		return fmt.Errorf("failed to get HostedCluster to check payload type: %w", err)
 	}
 
 	if hc.Status.PayloadArch == "" {

@@ -2,6 +2,7 @@ package gcp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -470,7 +471,8 @@ func (r *GCPPrivateServiceConnectReconciler) handleGCPError(ctx context.Context,
 	var requeueAfter time.Duration
 	var message string
 
-	if googleErr, ok := err.(*googleapi.Error); ok {
+	var googleErr *googleapi.Error
+	if errors.As(err, &googleErr) {
 		switch googleErr.Code {
 		case 429: // Rate limit
 			requeueAfter = time.Minute * 5
@@ -513,7 +515,8 @@ func (r *GCPPrivateServiceConnectReconciler) handleGCPError(ctx context.Context,
 
 // isNotFoundError checks if an error is a GCP 404 Not Found error
 func isNotFoundError(err error) bool {
-	if googleErr, ok := err.(*googleapi.Error); ok {
+	var googleErr *googleapi.Error
+	if errors.As(err, &googleErr) {
 		return googleErr.Code == 404
 	}
 	return false

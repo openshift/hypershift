@@ -20,7 +20,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
-	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -1002,7 +1002,7 @@ func (r *NodePoolReconciler) supportedVersionSkewCondition(ctx context.Context, 
 			Message:            err.Error(),
 			ObservedGeneration: nodePool.Generation,
 		})
-		return nil, nil
+		return nil, nil //nolint:nilerr // validation error is surfaced via status condition, not returned
 	}
 	SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 		Type:               hyperv1.NodePoolSupportedVersionSkewConditionType,

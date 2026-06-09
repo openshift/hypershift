@@ -436,6 +436,14 @@ func TestReconcile(t *testing.T) {
 			},
 		}
 
+		// Non-terminal backup from tc4a (still in-progress)
+		tc4aBackup := &hyperv1.HCPEtcdBackup{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "pr8139-tc4a",
+				Namespace: testHCPNamespace,
+			},
+		}
+
 		// Active Job from the first backup (tc4a)
 		activeJob := &batchv1.Job{
 			ObjectMeta: metav1.ObjectMeta{
@@ -478,7 +486,7 @@ func TestReconcile(t *testing.T) {
 			},
 		}
 
-		r := newReconciler(rejectedBackup, activeJob, np, role, rb)
+		r := newReconciler(rejectedBackup, tc4aBackup, activeJob, np, role, rb)
 		ctx := context.Background()
 
 		result, err := r.Reconcile(ctx, ctrl.Request{
@@ -685,7 +693,7 @@ func TestCleanupResources(t *testing.T) {
 		g.Expect(err).ToNot(HaveOccurred())
 	})
 
-	t.Run("When another backup Job is active it should skip cleanup", func(t *testing.T) {
+	t.Run("When another non-terminal backup exists it should skip cleanup", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 		backup := newHCPEtcdBackup()
 
@@ -709,31 +717,15 @@ func TestCleanupResources(t *testing.T) {
 			},
 		}
 
-		// Active Job from another backup in the same HCP namespace
-		activeJob := &batchv1.Job{
+		// Another non-terminal backup in the same namespace (no Job yet — race window)
+		otherBackup := &hyperv1.HCPEtcdBackup{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      "etcd-backup-other-backup",
-				Namespace: testHONamespace,
-				Labels: map[string]string{
-					LabelApp:          LabelName,
-					LabelBackupName:   "other-backup",
-					LabelHCPNamespace: testHCPNamespace,
-				},
-			},
-			Spec: batchv1.JobSpec{
-				Template: corev1.PodTemplateSpec{
-					Spec: corev1.PodSpec{
-						Containers:    []corev1.Container{{Name: "test", Image: "test:latest"}},
-						RestartPolicy: corev1.RestartPolicyNever,
-					},
-				},
-			},
-			Status: batchv1.JobStatus{
-				Active: 1,
+				Name:      "other-backup",
+				Namespace: testHCPNamespace,
 			},
 		}
 
-		r := newReconciler(backup, np, role, rb, activeJob)
+		r := newReconciler(backup, np, role, rb, otherBackup)
 		ctx := context.Background()
 
 		err := r.cleanupResources(ctx, backup)
@@ -743,6 +735,58 @@ func TestCleanupResources(t *testing.T) {
 		g.Expect(r.Get(ctx, types.NamespacedName{Name: NetworkPolicyName, Namespace: testHCPNamespace}, &networkingv1.NetworkPolicy{})).To(Succeed())
 		g.Expect(r.Get(ctx, types.NamespacedName{Name: RBACName, Namespace: testHCPNamespace}, &rbacv1.Role{})).To(Succeed())
 		g.Expect(r.Get(ctx, types.NamespacedName{Name: RBACName, Namespace: testHCPNamespace}, &rbacv1.RoleBinding{})).To(Succeed())
+	})
+
+	t.Run("When all other backups are terminal it should proceed with cleanup", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		backup := newHCPEtcdBackup()
+
+		np := &networkingv1.NetworkPolicy{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      NetworkPolicyName,
+				Namespace: testHCPNamespace,
+			},
+		}
+		role := &rbacv1.Role{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      RBACName,
+				Namespace: testHCPNamespace,
+			},
+		}
+		rb := &rbacv1.RoleBinding{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      RBACName,
+				Namespace: testHCPNamespace,
+			},
+		}
+
+		// Another backup that already completed (terminal)
+		completedBackup := &hyperv1.HCPEtcdBackup{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "completed-backup",
+				Namespace: testHCPNamespace,
+			},
+			Status: hyperv1.HCPEtcdBackupStatus{
+				Conditions: []metav1.Condition{
+					{
+						Type:   string(hyperv1.BackupCompleted),
+						Status: metav1.ConditionTrue,
+						Reason: hyperv1.BackupSucceededReason,
+					},
+				},
+			},
+		}
+
+		r := newReconciler(backup, np, role, rb, completedBackup)
+		ctx := context.Background()
+
+		err := r.cleanupResources(ctx, backup)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		// All resources should be deleted
+		g.Expect(r.Get(ctx, types.NamespacedName{Name: NetworkPolicyName, Namespace: testHCPNamespace}, &networkingv1.NetworkPolicy{})).ToNot(Succeed())
+		g.Expect(r.Get(ctx, types.NamespacedName{Name: RBACName, Namespace: testHCPNamespace}, &rbacv1.Role{})).ToNot(Succeed())
+		g.Expect(r.Get(ctx, types.NamespacedName{Name: RBACName, Namespace: testHCPNamespace}, &rbacv1.RoleBinding{})).ToNot(Succeed())
 	})
 }
 
@@ -918,59 +962,117 @@ func TestSetEncryptionMetadata(t *testing.T) {
 }
 
 func TestBuildUploadArgs(t *testing.T) {
-	t.Run("When storage type is S3 it should build S3 upload args", func(t *testing.T) {
-		g := NewGomegaWithT(t)
-		backup := newHCPEtcdBackup()
-		r := newReconciler(backup)
-
-		args, credSecret, err := r.buildUploadArgs(backup)
-		g.Expect(err).ToNot(HaveOccurred())
-		g.Expect(credSecret).To(Equal("aws-creds"))
-		g.Expect(args).To(ContainElements(
-			"--storage-type", "S3",
-			"--aws-bucket", "my-bucket",
-			"--aws-region", "us-east-1",
-			"--key-prefix", "backups/test",
-		))
-	})
-
-	t.Run("When S3 has KMS key it should include kms-key-arn flag", func(t *testing.T) {
-		g := NewGomegaWithT(t)
-		backup := newHCPEtcdBackup()
-		backup.Spec.Storage.S3.KMSKeyARN = "arn:aws:kms:us-east-1:123456789012:key/test"
-		r := newReconciler(backup)
-
-		args, _, err := r.buildUploadArgs(backup)
-		g.Expect(err).ToNot(HaveOccurred())
-		g.Expect(args).To(ContainElements("--aws-kms-key-arn", "arn:aws:kms:us-east-1:123456789012:key/test"))
-	})
-
-	t.Run("When storage type is AzureBlob it should build Azure upload args", func(t *testing.T) {
-		g := NewGomegaWithT(t)
-		backup := &hyperv1.HCPEtcdBackup{
+	newAzureBackup := func(encryptionKeyURL string) *hyperv1.HCPEtcdBackup {
+		return &hyperv1.HCPEtcdBackup{
 			Spec: hyperv1.HCPEtcdBackupSpec{
 				Storage: hyperv1.HCPEtcdBackupStorage{
 					StorageType: hyperv1.AzureBlobBackupStorage,
 					AzureBlob: hyperv1.HCPEtcdBackupAzureBlob{
-						Container:      "my-container",
-						StorageAccount: "mystorageaccount",
-						KeyPrefix:      "backups",
-						Credentials:    hyperv1.SecretReference{Name: "azure-creds"},
+						Container:        "my-container",
+						StorageAccount:   "mystorageaccount",
+						KeyPrefix:        "backups",
+						Credentials:      hyperv1.SecretReference{Name: "azure-creds"},
+						EncryptionKeyURL: encryptionKeyURL,
 					},
 				},
 			},
 		}
-		r := newReconciler()
+	}
 
-		args, credSecret, err := r.buildUploadArgs(backup)
-		g.Expect(err).ToNot(HaveOccurred())
-		g.Expect(credSecret).To(Equal("azure-creds"))
-		g.Expect(args).To(ContainElements(
-			"--storage-type", "AzureBlob",
-			"--azure-container", "my-container",
-			"--azure-storage-account", "mystorageaccount",
-		))
-	})
+	tests := []struct {
+		name           string
+		backup         *hyperv1.HCPEtcdBackup
+		creds          resolvedCredentials
+		wantErr        string
+		wantContain    []string
+		wantNotContain []string
+	}{
+		{
+			name:   "When storage type is S3 with static credentials it should build S3 upload args with credentials-file",
+			backup: newHCPEtcdBackup(),
+			creds:  resolvedCredentials{Mode: credentialModeAWSStatic, SecretName: "aws-creds"},
+			wantContain: []string{
+				"--storage-type", "S3",
+				"--aws-bucket", "my-bucket",
+				"--aws-region", "us-east-1",
+				"--key-prefix", "backups/test",
+				"--credentials-file",
+			},
+		},
+		{
+			name:           "When storage type is S3 with STS credentials it should omit credentials-file",
+			backup:         newHCPEtcdBackup(),
+			creds:          resolvedCredentials{Mode: credentialModeAWSSTS, SecretName: "aws-creds", RoleARN: "arn:aws:iam::123:role/test"},
+			wantContain:    []string{"--storage-type", "S3"},
+			wantNotContain: []string{"--credentials-file"},
+		},
+		{
+			name: "When S3 has KMS key it should include kms-key-arn flag",
+			backup: func() *hyperv1.HCPEtcdBackup {
+				b := newHCPEtcdBackup()
+				b.Spec.Storage.S3.KMSKeyARN = "arn:aws:kms:us-east-1:123456789012:key/test"
+				return b
+			}(),
+			creds:       resolvedCredentials{Mode: credentialModeAWSStatic, SecretName: "aws-creds"},
+			wantContain: []string{"--aws-kms-key-arn", "arn:aws:kms:us-east-1:123456789012:key/test"},
+		},
+		{
+			name:   "When storage type is AzureBlob with client-secret it should include credentials-file and azure-auth-type",
+			backup: newAzureBackup(""),
+			creds:  resolvedCredentials{Mode: credentialModeAzureClientSecret, SecretName: "azure-creds"},
+			wantContain: []string{
+				"--storage-type", "AzureBlob",
+				"--azure-container", "my-container",
+				"--azure-storage-account", "mystorageaccount",
+				"--credentials-file",
+				"--azure-auth-type", "client-secret",
+			},
+		},
+		{
+			name:           "When storage type is AzureBlob with workload-identity it should omit credentials-file and azure-auth-type",
+			backup:         newAzureBackup(""),
+			creds:          resolvedCredentials{Mode: credentialModeAzureWorkloadIdentity, SecretName: "azure-creds", ClientID: "client-123"},
+			wantContain:    []string{"--storage-type", "AzureBlob"},
+			wantNotContain: []string{"--credentials-file", "--azure-auth-type"},
+		},
+		{
+			name:        "When storage type is AzureBlob with encryption key it should include azure-encryption-scope",
+			backup:      newAzureBackup("https://myvault.vault.azure.net/keys/mykey"),
+			creds:       resolvedCredentials{Mode: credentialModeAzureClientSecret, SecretName: "azure-creds"},
+			wantContain: []string{"--azure-encryption-scope", "https://myvault.vault.azure.net/keys/mykey"},
+		},
+		{
+			name: "When storage type is unsupported it should return an error",
+			backup: &hyperv1.HCPEtcdBackup{
+				Spec: hyperv1.HCPEtcdBackupSpec{
+					Storage: hyperv1.HCPEtcdBackupStorage{StorageType: "UnknownStorage"},
+				},
+			},
+			creds:   resolvedCredentials{Mode: credentialModeAWSStatic, SecretName: "some-creds"},
+			wantErr: "unsupported storage type",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			r := newReconciler()
+
+			args, err := r.buildUploadArgs(tt.backup, tt.creds)
+			if tt.wantErr != "" {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring(tt.wantErr))
+				return
+			}
+			g.Expect(err).ToNot(HaveOccurred())
+			for _, elem := range tt.wantContain {
+				g.Expect(args).To(ContainElement(elem), "expected arg %q to be present", elem)
+			}
+			for _, elem := range tt.wantNotContain {
+				g.Expect(args).ToNot(ContainElement(elem), "expected arg %q to be absent", elem)
+			}
+		})
+	}
 }
 
 func TestEnforceRetention(t *testing.T) {
@@ -1035,7 +1137,7 @@ func TestEnforceRetention(t *testing.T) {
 		for i := range 3 {
 			b := &hyperv1.HCPEtcdBackup{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "backup-" + string(rune('a'+i)),
+					Name:      fmt.Sprintf("backup-%d", i),
 					Namespace: testHCPNamespace,
 				},
 				Status: hyperv1.HCPEtcdBackupStatus{
@@ -1155,7 +1257,8 @@ func TestCreateBackupJob(t *testing.T) {
 		r := newReconciler(backup, hcp, pullSecret, credSecret)
 		ctx := context.Background()
 
-		err := r.createBackupJob(ctx, backup, hcp)
+		creds := resolvedCredentials{Mode: credentialModeAWSStatic, SecretName: "aws-creds"}
+		err := r.createBackupJob(ctx, backup, hcp, creds)
 		g.Expect(err).ToNot(HaveOccurred())
 
 		// Find the created Job
@@ -1234,7 +1337,8 @@ func TestCreateBackupJob(t *testing.T) {
 		r := newReconciler(backup, hcp, pullSecret)
 		ctx := context.Background()
 
-		err := r.createBackupJob(ctx, backup, hcp)
+		creds := resolvedCredentials{Mode: credentialModeAWSStatic, SecretName: "aws-creds"}
+		err := r.createBackupJob(ctx, backup, hcp, creds)
 		g.Expect(err).ToNot(HaveOccurred())
 
 		jobList := &batchv1.JobList{}
@@ -1283,7 +1387,8 @@ func TestCreateBackupJob(t *testing.T) {
 		r := newReconciler(backup, hcp, pullSecret, credSecret)
 		ctx := context.Background()
 
-		err := r.createBackupJob(ctx, backup, hcp)
+		creds := resolvedCredentials{Mode: credentialModeAzureClientSecret, SecretName: "azure-creds"}
+		err := r.createBackupJob(ctx, backup, hcp, creds)
 		g.Expect(err).ToNot(HaveOccurred())
 
 		jobList := &batchv1.JobList{}
@@ -1308,7 +1413,8 @@ func TestCreateBackupJob(t *testing.T) {
 		r := newReconciler(backup, hcp)
 		ctx := context.Background()
 
-		err := r.createBackupJob(ctx, backup, hcp)
+		creds := resolvedCredentials{Mode: credentialModeAWSStatic, SecretName: "aws-creds"}
+		err := r.createBackupJob(ctx, backup, hcp, creds)
 		g.Expect(err).To(HaveOccurred())
 		g.Expect(err.Error()).To(ContainSubstring("pull secret"))
 	})
@@ -1336,7 +1442,8 @@ func TestCreateBackupJob(t *testing.T) {
 		r := newReconciler(backup, hcp, pullSecret, credSecret)
 		ctx := context.Background()
 
-		err := r.createBackupJob(ctx, backup, hcp)
+		creds := resolvedCredentials{Mode: credentialModeAWSStatic, SecretName: "aws-creds"}
+		err := r.createBackupJob(ctx, backup, hcp, creds)
 		g.Expect(err).ToNot(HaveOccurred())
 
 		jobList := &batchv1.JobList{}
@@ -1345,6 +1452,264 @@ func TestCreateBackupJob(t *testing.T) {
 
 		upload := jobList.Items[0].Spec.Template.Spec.Containers[0]
 		g.Expect(upload.Command).To(ContainElements("--aws-kms-key-arn", "arn:aws:kms:us-east-1:123456789012:key/test-key"))
+	})
+
+	t.Run("When AWS STS mode it should create Job with projected token volume and env vars", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		backup := newHCPEtcdBackup()
+		hcp := newHostedControlPlane()
+		pullSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: pullSecretName, Namespace: testHCPNamespace},
+			Data:       map[string][]byte{corev1.DockerConfigJsonKey: []byte(`{"auths":{}}`)},
+		}
+		credSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: "aws-creds", Namespace: testHONamespace},
+		}
+		r := newReconciler(backup, hcp, pullSecret, credSecret)
+		ctx := context.Background()
+
+		creds := resolvedCredentials{
+			Mode:       credentialModeAWSSTS,
+			SecretName: "aws-creds",
+			RoleARN:    "arn:aws:iam::123456789012:role/etcd-backup",
+		}
+		err := r.createBackupJob(ctx, backup, hcp, creds)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		jobList := &batchv1.JobList{}
+		g.Expect(r.List(ctx, jobList, client.InNamespace(testHONamespace))).To(Succeed())
+		g.Expect(jobList.Items).To(HaveLen(1))
+
+		podSpec := jobList.Items[0].Spec.Template.Spec
+
+		// Should NOT have credentials volume
+		for _, v := range podSpec.Volumes {
+			g.Expect(v.Name).ToNot(Equal(volumeCredentials), "credentials volume should not be present in STS mode")
+		}
+
+		// Should have projected token volume
+		var tokenVolume *corev1.Volume
+		for i := range podSpec.Volumes {
+			if podSpec.Volumes[i].Name == volumeAWSIAMToken {
+				tokenVolume = &podSpec.Volumes[i]
+				break
+			}
+		}
+		g.Expect(tokenVolume).ToNot(BeNil(), "projected token volume should be present")
+		g.Expect(tokenVolume.Projected).ToNot(BeNil())
+		g.Expect(tokenVolume.Projected.Sources).To(HaveLen(1))
+		g.Expect(tokenVolume.Projected.Sources[0].ServiceAccountToken.Audience).To(Equal("sts.amazonaws.com"))
+
+		// Upload container env vars
+		upload := podSpec.Containers[0]
+		g.Expect(upload.Env).To(ContainElements(
+			corev1.EnvVar{Name: "AWS_ROLE_ARN", Value: "arn:aws:iam::123456789012:role/etcd-backup"},
+			corev1.EnvVar{Name: "AWS_WEB_IDENTITY_TOKEN_FILE", Value: mountPathAWSIAMToken + "/token"},
+		))
+
+		// Upload container should mount token volume, not credentials
+		var hasCreds, hasToken bool
+		for _, m := range upload.VolumeMounts {
+			if m.Name == volumeCredentials {
+				hasCreds = true
+			}
+			if m.Name == volumeAWSIAMToken {
+				hasToken = true
+			}
+		}
+		g.Expect(hasCreds).To(BeFalse(), "credentials mount should not be present in STS mode")
+		g.Expect(hasToken).To(BeTrue(), "token mount should be present in STS mode")
+
+		// Upload args should NOT have --credentials-file
+		g.Expect(upload.Command).ToNot(ContainElement("--credentials-file"))
+	})
+
+	t.Run("When Azure Workload Identity mode it should create Job with WI pod label and no credentials volume", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		backup := &hyperv1.HCPEtcdBackup{
+			ObjectMeta: metav1.ObjectMeta{Name: testBackupName, Namespace: testHCPNamespace},
+			Spec: hyperv1.HCPEtcdBackupSpec{
+				Storage: hyperv1.HCPEtcdBackupStorage{
+					StorageType: hyperv1.AzureBlobBackupStorage,
+					AzureBlob: hyperv1.HCPEtcdBackupAzureBlob{
+						Container:      "my-container",
+						StorageAccount: "mystorageaccount",
+						KeyPrefix:      "backups/test",
+						Credentials:    hyperv1.SecretReference{Name: "azure-creds"},
+					},
+				},
+			},
+		}
+		hcp := newHostedControlPlane()
+		pullSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: pullSecretName, Namespace: testHCPNamespace},
+			Data:       map[string][]byte{corev1.DockerConfigJsonKey: []byte(`{"auths":{}}`)},
+		}
+		credSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: "azure-creds", Namespace: testHONamespace},
+		}
+		r := newReconciler(backup, hcp, pullSecret, credSecret)
+		ctx := context.Background()
+
+		creds := resolvedCredentials{
+			Mode:       credentialModeAzureWorkloadIdentity,
+			SecretName: "azure-creds",
+			ClientID:   "client-789",
+		}
+		err := r.createBackupJob(ctx, backup, hcp, creds)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		jobList := &batchv1.JobList{}
+		g.Expect(r.List(ctx, jobList, client.InNamespace(testHONamespace))).To(Succeed())
+		g.Expect(jobList.Items).To(HaveLen(1))
+
+		podSpec := jobList.Items[0].Spec.Template.Spec
+
+		// Should NOT have credentials volume
+		for _, v := range podSpec.Volumes {
+			g.Expect(v.Name).ToNot(Equal(volumeCredentials), "credentials volume should not be present in WI mode")
+		}
+
+		// Pod template should have WI label
+		podLabels := jobList.Items[0].Spec.Template.Labels
+		g.Expect(podLabels["azure.workload.identity/use"]).To(Equal("true"))
+
+		// Upload container should NOT mount credentials
+		upload := podSpec.Containers[0]
+		for _, m := range upload.VolumeMounts {
+			g.Expect(m.Name).ToNot(Equal(volumeCredentials), "credentials mount should not be present in WI mode")
+		}
+
+		// Upload args should NOT have --credentials-file or --azure-auth-type
+		g.Expect(upload.Command).ToNot(ContainElement("--credentials-file"))
+		g.Expect(upload.Command).ToNot(ContainElement("--azure-auth-type"))
+	})
+
+	t.Run("When Azure managed-identity mode it should include credentials-file and azure-auth-type managed-identity", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		backup := &hyperv1.HCPEtcdBackup{
+			ObjectMeta: metav1.ObjectMeta{Name: testBackupName, Namespace: testHCPNamespace},
+			Spec: hyperv1.HCPEtcdBackupSpec{
+				Storage: hyperv1.HCPEtcdBackupStorage{
+					StorageType: hyperv1.AzureBlobBackupStorage,
+					AzureBlob: hyperv1.HCPEtcdBackupAzureBlob{
+						Container:      "my-container",
+						StorageAccount: "mystorageaccount",
+						KeyPrefix:      "backups/test",
+						Credentials:    hyperv1.SecretReference{Name: "azure-creds"},
+					},
+				},
+			},
+		}
+		hcp := newHostedControlPlane()
+		pullSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: pullSecretName, Namespace: testHCPNamespace},
+			Data:       map[string][]byte{corev1.DockerConfigJsonKey: []byte(`{"auths":{}}`)},
+		}
+		credSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: "azure-creds", Namespace: testHONamespace},
+		}
+		r := newReconciler(backup, hcp, pullSecret, credSecret)
+		ctx := context.Background()
+
+		creds := resolvedCredentials{Mode: credentialModeAzureManagedIdentity, SecretName: "azure-creds"}
+		err := r.createBackupJob(ctx, backup, hcp, creds)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		jobList := &batchv1.JobList{}
+		g.Expect(r.List(ctx, jobList, client.InNamespace(testHONamespace))).To(Succeed())
+		g.Expect(jobList.Items).To(HaveLen(1))
+
+		upload := jobList.Items[0].Spec.Template.Spec.Containers[0]
+		g.Expect(upload.Command).To(ContainElements("--credentials-file"))
+		g.Expect(upload.Command).To(ContainElements("--azure-auth-type", "managed-identity"))
+
+		// Pod template should NOT have WI label
+		podLabels := jobList.Items[0].Spec.Template.Labels
+		g.Expect(podLabels).ToNot(HaveKey("azure.workload.identity/use"))
+	})
+}
+
+func TestEnsureServiceAccountWithCredentials(t *testing.T) {
+	t.Run("When Azure Workload Identity mode and SA has pre-configured annotation it should preserve it", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		preConfiguredSA := &corev1.ServiceAccount{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      jobServiceAccountName,
+				Namespace: testHONamespace,
+				Annotations: map[string]string{
+					"azure.workload.identity/client-id": "preconfigured-client-id",
+				},
+			},
+		}
+		r := newReconciler(preConfiguredSA)
+		ctx := context.Background()
+
+		creds := resolvedCredentials{
+			Mode:     credentialModeAzureWorkloadIdentity,
+			ClientID: "different-client-id-from-secret",
+		}
+		g.Expect(r.ensureServiceAccount(ctx, creds)).To(Succeed())
+
+		sa := &corev1.ServiceAccount{}
+		g.Expect(r.Get(ctx, types.NamespacedName{Name: jobServiceAccountName, Namespace: testHONamespace}, sa)).To(Succeed())
+		g.Expect(sa.Annotations["azure.workload.identity/client-id"]).To(Equal("preconfigured-client-id"))
+	})
+
+	t.Run("When Azure Workload Identity mode and SA has no annotation it should set it from credential secret", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		r := newReconciler()
+		ctx := context.Background()
+
+		creds := resolvedCredentials{
+			Mode:     credentialModeAzureWorkloadIdentity,
+			ClientID: "client-789",
+		}
+		g.Expect(r.ensureServiceAccount(ctx, creds)).To(Succeed())
+
+		sa := &corev1.ServiceAccount{}
+		g.Expect(r.Get(ctx, types.NamespacedName{Name: jobServiceAccountName, Namespace: testHONamespace}, sa)).To(Succeed())
+		g.Expect(sa.Annotations["azure.workload.identity/client-id"]).To(Equal("client-789"))
+	})
+
+	t.Run("When non-WI mode it should not annotate the ServiceAccount", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		r := newReconciler()
+		ctx := context.Background()
+
+		creds := resolvedCredentials{Mode: credentialModeAWSStatic}
+		g.Expect(r.ensureServiceAccount(ctx, creds)).To(Succeed())
+
+		sa := &corev1.ServiceAccount{}
+		g.Expect(r.Get(ctx, types.NamespacedName{Name: jobServiceAccountName, Namespace: testHONamespace}, sa)).To(Succeed())
+		g.Expect(sa.Annotations).ToNot(HaveKey("azure.workload.identity/client-id"))
+	})
+
+	t.Run("When switching from WI to static mode it should remove the annotation", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		preConfiguredSA := &corev1.ServiceAccount{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      jobServiceAccountName,
+				Namespace: testHONamespace,
+				Annotations: map[string]string{
+					"azure.workload.identity/client-id": "client-789",
+				},
+			},
+		}
+		r := newReconciler(preConfiguredSA)
+		ctx := context.Background()
+
+		// First: verify WI preserves annotation
+		wiCreds := resolvedCredentials{Mode: credentialModeAzureWorkloadIdentity, ClientID: "ignored"}
+		g.Expect(r.ensureServiceAccount(ctx, wiCreds)).To(Succeed())
+
+		// Then: update with static
+		staticCreds := resolvedCredentials{Mode: credentialModeAWSStatic}
+		g.Expect(r.ensureServiceAccount(ctx, staticCreds)).To(Succeed())
+
+		sa := &corev1.ServiceAccount{}
+		g.Expect(r.Get(ctx, types.NamespacedName{Name: jobServiceAccountName, Namespace: testHONamespace}, sa)).To(Succeed())
+		g.Expect(sa.Annotations).ToNot(HaveKey("azure.workload.identity/client-id"))
 	})
 }
 
@@ -1693,6 +2058,605 @@ func TestValidatePrerequisites(t *testing.T) {
 	}
 }
 
+func TestResolveControlPlaneOperatorImage(t *testing.T) {
+	t.Run("When HCP has ControlPlaneOperatorImage annotation it should use the override", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		hcp := newHostedControlPlane()
+		hcp.Annotations[hyperv1.ControlPlaneOperatorImageAnnotation] = "quay.io/custom/cpo:override"
+		pullSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: pullSecretName, Namespace: testHCPNamespace},
+			Data:       map[string][]byte{corev1.DockerConfigJsonKey: []byte(`{"auths":{}}`)},
+		}
+		r := newReconciler(hcp, pullSecret)
+
+		image, err := r.resolveControlPlaneOperatorImage(context.Background(), hcp, testReleaseImage, pullSecret.Data[corev1.DockerConfigJsonKey])
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(image).To(Equal("quay.io/custom/cpo:override"))
+	})
+
+	t.Run("When HCP has no annotation it should resolve from release payload", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		hcp := newHostedControlPlane()
+		r := newReconciler(hcp)
+
+		image, err := r.resolveControlPlaneOperatorImage(context.Background(), hcp, testReleaseImage, []byte(`{"auths":{}}`))
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(image).To(Equal(testCPOImage))
+	})
+
+	t.Run("When release payload has no hypershift component it should fallback to HO image", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		hcp := newHostedControlPlane()
+		r := newReconciler(hcp)
+		r.ReleaseProvider = &emptyReleaseProvider{}
+
+		image, err := r.resolveControlPlaneOperatorImage(context.Background(), hcp, testReleaseImage, []byte(`{"auths":{}}`))
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(image).To(Equal("quay.io/hypershift/hypershift:latest"))
+	})
+}
+
+type emptyReleaseProvider struct{}
+
+func (f *emptyReleaseProvider) Lookup(_ context.Context, _ string, _ []byte) (*releaseinfo.ReleaseImage, error) {
+	return &releaseinfo.ReleaseImage{
+		ImageStream: &imageapi.ImageStream{
+			Spec: imageapi.ImageStreamSpec{
+				Tags: []imageapi.TagReference{},
+			},
+		},
+	}, nil
+}
+
+func (f *emptyReleaseProvider) GetRegistryOverrides() map[string]string { return nil }
+func (f *emptyReleaseProvider) GetOpenShiftImageRegistryOverrides() map[string][]string {
+	return nil
+}
+func (f *emptyReleaseProvider) GetMirroredReleaseImage() string { return "" }
+
+func TestCreateResourcesAndJob(t *testing.T) {
+	t.Run("When createBackupJob fails with NotFound it should cleanup resources and set BackupFailed", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		backup := newHCPEtcdBackup()
+		hcp := newHostedControlPlane()
+		credSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: "aws-creds", Namespace: testHONamespace},
+			Data:       map[string][]byte{"credentials": []byte("fake-creds")},
+		}
+		// No pull secret — createBackupJob will fail with NotFound
+		r := newReconciler(backup, hcp, credSecret)
+		ctx := context.Background()
+
+		result, err := r.createResourcesAndJob(ctx, backup, hcp)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(result).To(Equal(ctrl.Result{}))
+
+		updated := &hyperv1.HCPEtcdBackup{}
+		g.Expect(r.Get(ctx, types.NamespacedName{Name: testBackupName, Namespace: testHCPNamespace}, updated)).To(Succeed())
+		g.Expect(updated.Status.Conditions).To(HaveLen(1))
+		g.Expect(updated.Status.Conditions[0].Reason).To(Equal(hyperv1.BackupFailedReason))
+		g.Expect(updated.Status.Conditions[0].Message).To(ContainSubstring("pull secret"))
+	})
+
+	t.Run("When credential secret is not found it should set BackupFailed", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		backup := newHCPEtcdBackup()
+		hcp := newHostedControlPlane()
+		r := newReconciler(backup, hcp) // no credential secret
+		ctx := context.Background()
+
+		result, err := r.createResourcesAndJob(ctx, backup, hcp)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(result).To(Equal(ctrl.Result{}))
+
+		updated := &hyperv1.HCPEtcdBackup{}
+		g.Expect(r.Get(ctx, types.NamespacedName{Name: testBackupName, Namespace: testHCPNamespace}, updated)).To(Succeed())
+		g.Expect(updated.Status.Conditions[0].Reason).To(Equal(hyperv1.BackupFailedReason))
+		g.Expect(updated.Status.Conditions[0].Message).To(ContainSubstring("credential Secret"))
+	})
+}
+
+func TestCleanupResourcesWithDeleteErrors(t *testing.T) {
+	t.Run("When delete returns a real error it should propagate the first error", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		backup := newHCPEtcdBackup()
+
+		np := &networkingv1.NetworkPolicy{
+			ObjectMeta: metav1.ObjectMeta{Name: NetworkPolicyName, Namespace: testHCPNamespace},
+		}
+
+		s := newScheme()
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(s).
+			WithObjects(backup, np).
+			WithStatusSubresource(&hyperv1.HCPEtcdBackup{}).
+			WithInterceptorFuncs(interceptor.Funcs{
+				Delete: func(ctx context.Context, cl client.WithWatch, obj client.Object, opts ...client.DeleteOption) error {
+					if _, ok := obj.(*networkingv1.NetworkPolicy); ok {
+						return fmt.Errorf("simulated delete failure")
+					}
+					return cl.Delete(ctx, obj, opts...)
+				},
+			}).
+			Build()
+
+		r := &HCPEtcdBackupReconciler{
+			Client:            fakeClient,
+			OperatorNamespace: testHONamespace,
+		}
+
+		err := r.cleanupResources(context.Background(), backup)
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("simulated delete failure"))
+	})
+}
+
+func TestHandleJobStatusEdgeCases(t *testing.T) {
+	t.Run("When Job succeeds but getSnapshotURLFromPod fails it should still succeed with empty URL", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		backup := newHCPEtcdBackup()
+		hcp := newHostedControlPlane()
+		hc := newHostedCluster()
+		job := newTestJob(batchv1.JobStatus{
+			Conditions: []batchv1.JobCondition{
+				{Type: batchv1.JobComplete, Status: corev1.ConditionTrue},
+			},
+		})
+
+		s := newScheme()
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(s).
+			WithObjects(backup, job, hcp, hc).
+			WithStatusSubresource(&hyperv1.HCPEtcdBackup{}, &hyperv1.HostedControlPlane{}, &hyperv1.HostedCluster{}).
+			WithInterceptorFuncs(interceptor.Funcs{
+				List: func(ctx context.Context, cl client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
+					if _, ok := list.(*corev1.PodList); ok {
+						return fmt.Errorf("simulated pod list failure")
+					}
+					return cl.List(ctx, list, opts...)
+				},
+			}).
+			Build()
+
+		r := &HCPEtcdBackupReconciler{
+			Client:            fakeClient,
+			OperatorNamespace: testHONamespace,
+		}
+
+		result, err := r.handleJobStatus(context.Background(), backup, job, hcp)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(result).To(Equal(ctrl.Result{}))
+
+		updated := &hyperv1.HCPEtcdBackup{}
+		g.Expect(r.Get(context.Background(), types.NamespacedName{Name: testBackupName, Namespace: testHCPNamespace}, updated)).To(Succeed())
+		g.Expect(updated.Status.Conditions[0].Reason).To(Equal(hyperv1.BackupSucceededReason))
+		g.Expect(updated.Status.SnapshotURL).To(BeEmpty())
+	})
+
+	t.Run("When Job succeeds with no termination message it should succeed with empty URL and not update HC", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		backup := newHCPEtcdBackup()
+		hcp := newHostedControlPlane()
+		hc := newHostedCluster()
+		job := newTestJob(batchv1.JobStatus{
+			Conditions: []batchv1.JobCondition{
+				{Type: batchv1.JobComplete, Status: corev1.ConditionTrue},
+			},
+		})
+		// Pod exists but upload container has no termination message
+		pod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "backup-pod", Namespace: testHONamespace,
+				Labels: map[string]string{"batch.kubernetes.io/job-name": "etcd-backup-test"},
+			},
+			Spec: corev1.PodSpec{
+				Containers:    []corev1.Container{{Name: "upload", Image: "test:latest"}},
+				RestartPolicy: corev1.RestartPolicyNever,
+			},
+			Status: corev1.PodStatus{
+				ContainerStatuses: []corev1.ContainerStatus{
+					{Name: "upload", State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{ExitCode: 0}}},
+				},
+			},
+		}
+		r := newReconciler(backup, job, hcp, hc, pod)
+
+		result, err := r.handleJobStatus(context.Background(), backup, job, hcp)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(result).To(Equal(ctrl.Result{}))
+
+		updated := &hyperv1.HCPEtcdBackup{}
+		g.Expect(r.Get(context.Background(), types.NamespacedName{Name: testBackupName, Namespace: testHCPNamespace}, updated)).To(Succeed())
+		g.Expect(updated.Status.Conditions[0].Reason).To(Equal(hyperv1.BackupSucceededReason))
+		g.Expect(updated.Status.SnapshotURL).To(BeEmpty())
+
+		// HC should not have been updated since URL was empty
+		updatedHC := &hyperv1.HostedCluster{}
+		g.Expect(r.Get(context.Background(), types.NamespacedName{Name: testHCName, Namespace: testHCNamespace}, updatedHC)).To(Succeed())
+		g.Expect(updatedHC.Status.LastSuccessfulEtcdBackupURL).To(BeEmpty())
+	})
+}
+
+func TestReconcileTerminalCleansUpAndEnforcesRetention(t *testing.T) {
+	t.Run("When backup is terminal it should cleanup RBAC and NetworkPolicy and enforce retention", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		ctx := context.Background()
+
+		baseTime := time.Now().Add(-7 * time.Hour)
+
+		// The backup being reconciled is terminal (succeeded)
+		backup := newHCPEtcdBackup()
+		backup.ObjectMeta.CreationTimestamp = metav1.NewTime(baseTime.Add(6 * time.Hour))
+		backup.Status.Conditions = []metav1.Condition{
+			{
+				Type:   string(hyperv1.BackupCompleted),
+				Status: metav1.ConditionTrue,
+				Reason: hyperv1.BackupSucceededReason,
+			},
+		}
+
+		// 6 older completed backups (total 7 with above, max is 5 → should delete 2 oldest)
+		var objs []client.Object
+		objs = append(objs, backup)
+		for i := range 6 {
+			b := &hyperv1.HCPEtcdBackup{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              fmt.Sprintf("old-backup-%d", i),
+					Namespace:         testHCPNamespace,
+					CreationTimestamp: metav1.NewTime(baseTime.Add(time.Duration(i) * time.Hour)),
+				},
+				Status: hyperv1.HCPEtcdBackupStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:   string(hyperv1.BackupCompleted),
+							Status: metav1.ConditionTrue,
+							Reason: hyperv1.BackupSucceededReason,
+						},
+					},
+				},
+			}
+			objs = append(objs, b)
+		}
+
+		// Shared resources that should be cleaned up (no other non-terminal backup)
+		np := &networkingv1.NetworkPolicy{
+			ObjectMeta: metav1.ObjectMeta{Name: NetworkPolicyName, Namespace: testHCPNamespace},
+		}
+		role := &rbacv1.Role{
+			ObjectMeta: metav1.ObjectMeta{Name: RBACName, Namespace: testHCPNamespace},
+		}
+		rb := &rbacv1.RoleBinding{
+			ObjectMeta: metav1.ObjectMeta{Name: RBACName, Namespace: testHCPNamespace},
+		}
+		objs = append(objs, np, role, rb)
+
+		r := newReconciler(objs...)
+		r.MaxBackupCount = 5
+
+		result, err := r.Reconcile(ctx, ctrl.Request{
+			NamespacedName: types.NamespacedName{Name: testBackupName, Namespace: testHCPNamespace},
+		})
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(result).To(Equal(ctrl.Result{}))
+
+		// RBAC and NetworkPolicy should be gone
+		g.Expect(r.Get(ctx, types.NamespacedName{Name: NetworkPolicyName, Namespace: testHCPNamespace}, &networkingv1.NetworkPolicy{})).ToNot(Succeed())
+		g.Expect(r.Get(ctx, types.NamespacedName{Name: RBACName, Namespace: testHCPNamespace}, &rbacv1.Role{})).ToNot(Succeed())
+		g.Expect(r.Get(ctx, types.NamespacedName{Name: RBACName, Namespace: testHCPNamespace}, &rbacv1.RoleBinding{})).ToNot(Succeed())
+
+		// Retention: should have kept only 5 completed backups
+		remaining := &hyperv1.HCPEtcdBackupList{}
+		g.Expect(r.List(ctx, remaining, client.InNamespace(testHCPNamespace))).To(Succeed())
+		g.Expect(remaining.Items).To(HaveLen(5))
+	})
+}
+
+func TestReconcileMonitorsExistingJob(t *testing.T) {
+	t.Run("When backup has an existing completed Job it should set BackupSucceeded via Reconcile", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		backup := newHCPEtcdBackup()
+		hcp := newHostedControlPlane()
+		hc := newHostedCluster()
+		sts := newEtcdStatefulSet(3, 3)
+		credSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: "aws-creds", Namespace: testHONamespace},
+			Data:       map[string][]byte{"credentials": []byte("fake-creds")},
+		}
+
+		completedJob := &batchv1.Job{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "etcd-backup-" + testBackupName,
+				Namespace: testHONamespace,
+				Labels: map[string]string{
+					LabelApp:          LabelName,
+					LabelBackupName:   testBackupName,
+					LabelHCPNamespace: testHCPNamespace,
+				},
+			},
+			Spec: batchv1.JobSpec{
+				Template: corev1.PodTemplateSpec{
+					Spec: corev1.PodSpec{
+						Containers:    []corev1.Container{{Name: "test", Image: "test:latest"}},
+						RestartPolicy: corev1.RestartPolicyNever,
+					},
+				},
+			},
+			Status: batchv1.JobStatus{
+				Conditions: []batchv1.JobCondition{
+					{Type: batchv1.JobComplete, Status: corev1.ConditionTrue},
+				},
+			},
+		}
+		pod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "backup-pod", Namespace: testHONamespace,
+				Labels: map[string]string{"batch.kubernetes.io/job-name": "etcd-backup-" + testBackupName},
+			},
+			Spec: corev1.PodSpec{
+				Containers:    []corev1.Container{{Name: "upload", Image: "test:latest"}},
+				RestartPolicy: corev1.RestartPolicyNever,
+			},
+			Status: corev1.PodStatus{
+				ContainerStatuses: []corev1.ContainerStatus{
+					{
+						Name: "upload",
+						State: corev1.ContainerState{
+							Terminated: &corev1.ContainerStateTerminated{
+								ExitCode: 0,
+								Message:  "s3://bucket/snapshot.db",
+							},
+						},
+					},
+				},
+			},
+		}
+
+		r := newReconciler(backup, hcp, hc, sts, credSecret, completedJob, pod)
+		ctx := context.Background()
+
+		result, err := r.Reconcile(ctx, ctrl.Request{
+			NamespacedName: types.NamespacedName{Name: testBackupName, Namespace: testHCPNamespace},
+		})
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(result).To(Equal(ctrl.Result{}))
+
+		updated := &hyperv1.HCPEtcdBackup{}
+		g.Expect(r.Get(ctx, types.NamespacedName{Name: testBackupName, Namespace: testHCPNamespace}, updated)).To(Succeed())
+		g.Expect(updated.Status.Conditions[0].Reason).To(Equal(hyperv1.BackupSucceededReason))
+		g.Expect(updated.Status.SnapshotURL).To(Equal("s3://bucket/snapshot.db"))
+	})
+
+	t.Run("When backup has an existing failed Job it should set BackupFailed via Reconcile", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		backup := newHCPEtcdBackup()
+		hcp := newHostedControlPlane()
+		sts := newEtcdStatefulSet(3, 3)
+		credSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: "aws-creds", Namespace: testHONamespace},
+			Data:       map[string][]byte{"credentials": []byte("fake-creds")},
+		}
+
+		failedJob := &batchv1.Job{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "etcd-backup-" + testBackupName,
+				Namespace: testHONamespace,
+				Labels: map[string]string{
+					LabelApp:          LabelName,
+					LabelBackupName:   testBackupName,
+					LabelHCPNamespace: testHCPNamespace,
+				},
+			},
+			Spec: batchv1.JobSpec{
+				Template: corev1.PodTemplateSpec{
+					Spec: corev1.PodSpec{
+						Containers:    []corev1.Container{{Name: "test", Image: "test:latest"}},
+						RestartPolicy: corev1.RestartPolicyNever,
+					},
+				},
+			},
+			Status: batchv1.JobStatus{
+				Conditions: []batchv1.JobCondition{
+					{Type: batchv1.JobFailed, Status: corev1.ConditionTrue, Message: "BackoffLimitExceeded"},
+				},
+			},
+		}
+
+		r := newReconciler(backup, hcp, sts, credSecret, failedJob)
+		ctx := context.Background()
+
+		result, err := r.Reconcile(ctx, ctrl.Request{
+			NamespacedName: types.NamespacedName{Name: testBackupName, Namespace: testHCPNamespace},
+		})
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(result).To(Equal(ctrl.Result{}))
+
+		updated := &hyperv1.HCPEtcdBackup{}
+		g.Expect(r.Get(ctx, types.NamespacedName{Name: testBackupName, Namespace: testHCPNamespace}, updated)).To(Succeed())
+		g.Expect(updated.Status.Conditions[0].Reason).To(Equal(hyperv1.BackupFailedReason))
+		g.Expect(updated.Status.Conditions[0].Message).To(ContainSubstring("BackoffLimitExceeded"))
+	})
+}
+
+func TestReconcileHappyPathWithSTS(t *testing.T) {
+	t.Run("When AWS STS credentials it should create Job with projected token via full Reconcile", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		backup := newHCPEtcdBackup()
+		hcp := newHostedControlPlane()
+		sts := newEtcdStatefulSet(3, 3)
+		pullSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: pullSecretName, Namespace: testHCPNamespace},
+			Data:       map[string][]byte{corev1.DockerConfigJsonKey: []byte(`{"auths":{}}`)},
+		}
+		credSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: "aws-creds", Namespace: testHONamespace},
+			Data:       map[string][]byte{"credentials": []byte("arn:aws:iam::123456789012:role/etcd-backup")},
+		}
+		r := newReconciler(backup, hcp, sts, pullSecret, credSecret)
+		ctx := context.Background()
+
+		result, err := r.Reconcile(ctx, ctrl.Request{
+			NamespacedName: types.NamespacedName{Name: testBackupName, Namespace: testHCPNamespace},
+		})
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(result.RequeueAfter).To(Equal(requeueInterval))
+
+		jobList := &batchv1.JobList{}
+		g.Expect(r.List(ctx, jobList, client.InNamespace(testHONamespace))).To(Succeed())
+		g.Expect(jobList.Items).To(HaveLen(1))
+
+		podSpec := jobList.Items[0].Spec.Template.Spec
+		// Should have projected token volume, not credentials
+		var hasToken, hasCreds bool
+		for _, v := range podSpec.Volumes {
+			if v.Name == volumeAWSIAMToken {
+				hasToken = true
+			}
+			if v.Name == volumeCredentials {
+				hasCreds = true
+			}
+		}
+		g.Expect(hasToken).To(BeTrue())
+		g.Expect(hasCreds).To(BeFalse())
+
+		upload := podSpec.Containers[0]
+		g.Expect(upload.Env).To(ContainElement(corev1.EnvVar{
+			Name:  "AWS_ROLE_ARN",
+			Value: "arn:aws:iam::123456789012:role/etcd-backup",
+		}))
+	})
+}
+
+func TestReconcileHappyPathWithAzureWI(t *testing.T) {
+	t.Run("When Azure Workload Identity credentials it should annotate SA and create Job via full Reconcile", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		backup := &hyperv1.HCPEtcdBackup{
+			ObjectMeta: metav1.ObjectMeta{Name: testBackupName, Namespace: testHCPNamespace},
+			Spec: hyperv1.HCPEtcdBackupSpec{
+				Storage: hyperv1.HCPEtcdBackupStorage{
+					StorageType: hyperv1.AzureBlobBackupStorage,
+					AzureBlob: hyperv1.HCPEtcdBackupAzureBlob{
+						Container:      "my-container",
+						StorageAccount: "mystorageaccount",
+						KeyPrefix:      "backups/test",
+						Credentials:    hyperv1.SecretReference{Name: "azure-creds"},
+					},
+				},
+			},
+		}
+		hcp := newHostedControlPlane()
+		sts := newEtcdStatefulSet(3, 3)
+		pullSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: pullSecretName, Namespace: testHCPNamespace},
+			Data:       map[string][]byte{corev1.DockerConfigJsonKey: []byte(`{"auths":{}}`)},
+		}
+		credSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: "azure-creds", Namespace: testHONamespace},
+			Data: map[string][]byte{
+				"cloud": []byte("AZURE_CLIENT_ID=my-client-id\nAZURE_TENANT_ID=my-tenant\n"),
+			},
+		}
+		r := newReconciler(backup, hcp, sts, pullSecret, credSecret)
+		ctx := context.Background()
+
+		result, err := r.Reconcile(ctx, ctrl.Request{
+			NamespacedName: types.NamespacedName{Name: testBackupName, Namespace: testHCPNamespace},
+		})
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(result.RequeueAfter).To(Equal(requeueInterval))
+
+		// Verify SA was annotated with the client ID
+		sa := &corev1.ServiceAccount{}
+		g.Expect(r.Get(ctx, types.NamespacedName{Name: jobServiceAccountName, Namespace: testHONamespace}, sa)).To(Succeed())
+		g.Expect(sa.Annotations["azure.workload.identity/client-id"]).To(Equal("my-client-id"))
+
+		// Verify Job has WI pod label
+		jobList := &batchv1.JobList{}
+		g.Expect(r.List(ctx, jobList, client.InNamespace(testHONamespace))).To(Succeed())
+		g.Expect(jobList.Items).To(HaveLen(1))
+		g.Expect(jobList.Items[0].Spec.Template.Labels["azure.workload.identity/use"]).To(Equal("true"))
+
+		// Verify no credentials volume
+		for _, v := range jobList.Items[0].Spec.Template.Spec.Volumes {
+			g.Expect(v.Name).ToNot(Equal(volumeCredentials))
+		}
+	})
+}
+
+func TestEnsureRBACIdempotency(t *testing.T) {
+	t.Run("When ensureRBAC is called twice it should not error", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		backup := newHCPEtcdBackup()
+		r := newReconciler(backup)
+		ctx := context.Background()
+
+		g.Expect(r.ensureRBAC(ctx, backup)).To(Succeed())
+		g.Expect(r.ensureRBAC(ctx, backup)).To(Succeed())
+
+		role := &rbacv1.Role{}
+		g.Expect(r.Get(ctx, types.NamespacedName{Name: RBACName, Namespace: testHCPNamespace}, role)).To(Succeed())
+		g.Expect(role.Rules).To(HaveLen(2))
+	})
+}
+
+func TestEnforceRetentionDeleteRace(t *testing.T) {
+	t.Run("When an old backup was already deleted by another controller it should skip NotFound and succeed", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+
+		baseTime := time.Now().Add(-7 * time.Hour)
+		var backups []client.Object
+		for i := range 7 {
+			b := &hyperv1.HCPEtcdBackup{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              fmt.Sprintf("backup-%d", i),
+					Namespace:         testHCPNamespace,
+					CreationTimestamp: metav1.NewTime(baseTime.Add(time.Duration(i) * time.Hour)),
+				},
+				Status: hyperv1.HCPEtcdBackupStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:   string(hyperv1.BackupCompleted),
+							Status: metav1.ConditionTrue,
+							Reason: hyperv1.BackupSucceededReason,
+						},
+					},
+				},
+			}
+			backups = append(backups, b)
+		}
+
+		deleteCount := 0
+		s := newScheme()
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(s).
+			WithObjects(backups...).
+			WithStatusSubresource(&hyperv1.HCPEtcdBackup{}).
+			WithInterceptorFuncs(interceptor.Funcs{
+				Delete: func(ctx context.Context, cl client.WithWatch, obj client.Object, opts ...client.DeleteOption) error {
+					deleteCount++
+					if deleteCount == 1 {
+						// Simulate race: backup-0 already deleted by another controller
+						return apierrors.NewNotFound(
+							schema.GroupResource{Group: "hypershift.openshift.io", Resource: "hcpetcdbackups"},
+							obj.GetName(),
+						)
+					}
+					return cl.Delete(ctx, obj, opts...)
+				},
+			}).
+			Build()
+
+		r := &HCPEtcdBackupReconciler{
+			Client:            fakeClient,
+			OperatorNamespace: testHONamespace,
+			MaxBackupCount:    5,
+		}
+
+		err := r.enforceRetention(context.Background(), testHCPNamespace)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(deleteCount).To(Equal(2))
+	})
+}
+
 func TestGetSnapshotURLFromPod(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -1785,4 +2749,79 @@ func TestGetSnapshotURLFromPod(t *testing.T) {
 			g.Expect(url).To(Equal(tt.expected))
 		})
 	}
+}
+
+func TestUpdateHCPBackupCondition(t *testing.T) {
+	t.Parallel()
+
+	t.Run("When patching a backup condition, it should not stomp unrelated status fields", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		hcp := newHostedControlPlane()
+		hcp.Generation = 3
+		hcp.Status.AutoNode = hyperv1.AutoNodeStatus{
+			VCPUs: ptr.To[int32](8),
+		}
+
+		r := newReconciler(hcp)
+
+		err := r.updateHCPBackupCondition(t.Context(), hcp, metav1.Condition{
+			Type:    string(hyperv1.EtcdBackupSucceeded),
+			Status:  metav1.ConditionTrue,
+			Reason:  "BackupComplete",
+			Message: "backup finished",
+		})
+		g.Expect(err).ToNot(HaveOccurred())
+
+		var updated hyperv1.HostedControlPlane
+		g.Expect(r.Get(t.Context(), types.NamespacedName{
+			Name:      testHCPName,
+			Namespace: testHCPNamespace,
+		}, &updated)).To(Succeed())
+
+		cond := meta.FindStatusCondition(updated.Status.Conditions, string(hyperv1.EtcdBackupSucceeded))
+		g.Expect(cond).ToNot(BeNil())
+		g.Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+		g.Expect(cond.Reason).To(Equal("BackupComplete"))
+		g.Expect(cond.ObservedGeneration).To(Equal(int64(3)))
+
+		g.Expect(updated.Status.AutoNode.VCPUs).To(Equal(ptr.To[int32](8)),
+			"autoNode should be preserved — patch must not stomp unrelated fields")
+	})
+
+	t.Run("When patching a backup condition onto an HCP with existing conditions, it should preserve them", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		hcp := newHostedControlPlane()
+		hcp.Status.Conditions = []metav1.Condition{
+			{
+				Type:   string(hyperv1.ClusterVersionAvailable),
+				Status: metav1.ConditionTrue,
+				Reason: "OK",
+			},
+		}
+
+		r := newReconciler(hcp)
+
+		err := r.updateHCPBackupCondition(t.Context(), hcp, metav1.Condition{
+			Type:    string(hyperv1.EtcdBackupSucceeded),
+			Status:  metav1.ConditionTrue,
+			Reason:  "BackupComplete",
+			Message: "backup finished",
+		})
+		g.Expect(err).ToNot(HaveOccurred())
+
+		var updated hyperv1.HostedControlPlane
+		g.Expect(r.Get(t.Context(), types.NamespacedName{
+			Name:      testHCPName,
+			Namespace: testHCPNamespace,
+		}, &updated)).To(Succeed())
+
+		g.Expect(updated.Status.Conditions).To(HaveLen(2),
+			"both the existing condition and the new backup condition should be present")
+		g.Expect(meta.FindStatusCondition(updated.Status.Conditions, string(hyperv1.ClusterVersionAvailable))).ToNot(BeNil())
+		g.Expect(meta.FindStatusCondition(updated.Status.Conditions, string(hyperv1.EtcdBackupSucceeded))).ToNot(BeNil())
+	})
 }

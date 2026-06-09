@@ -40,6 +40,12 @@ repos:
         entry: make lint-fix
         language: system
         stages: [pre-commit]
+      - id: run-gitlint
+        name: Run gitlint
+        description: Runs `make run-gitlint` to validate commit messages.
+        entry: make run-gitlint
+        language: system
+        stages: [pre-commit]
       - id: make-verify
         name: Run make verify
         description: Runs `make verify`.

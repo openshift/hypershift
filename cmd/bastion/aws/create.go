@@ -146,7 +146,7 @@ func (o *CreateBastionOpts) Run(ctx context.Context, logger logr.Logger) (string
 		var err error
 		sshPublicKey, err = os.ReadFile(o.SSHKeyFile)
 		if err != nil {
-			return "", "", fmt.Errorf("cannot read SSH public key from %s: %v", o.SSHKeyFile, err)
+			return "", "", fmt.Errorf("cannot read SSH public key from %s: %w", o.SSHKeyFile, err)
 		}
 	}
 

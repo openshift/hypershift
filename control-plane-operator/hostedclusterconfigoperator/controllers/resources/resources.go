@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -131,6 +132,8 @@ exec /bin/azure-cloud-node-manager \
   --enable-deprecated-beta-topology-labels \
   --wait-routes=false
 `
+
+var disabledServiceAccountPullSecretsController = fmt.Sprintf("-%s", openshiftcpv1.OpenShiftServiceAccountPullSecretsController)
 
 type reconciler struct {
 	client         client.Client
@@ -310,8 +313,12 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 	}
 
 	// Watch metrics-proxy Route on the control plane cluster for hostname changes.
-	if err := c.Watch(source.Kind[client.Object](opts.CPCluster.GetCache(), &routev1.Route{}, eventHandler())); err != nil {
-		return fmt.Errorf("failed to watch Route: %w", err)
+	// Skip when the management cluster does not expose the route.openshift.io API
+	// (non-OpenShift management cluster); otherwise the watch fails and HCCO does not start.
+	if opts.ManagementClusterCapabilities.Has(capabilities.CapabilityRoute) {
+		if err := c.Watch(source.Kind[client.Object](opts.CPCluster.GetCache(), &routev1.Route{}, eventHandler())); err != nil {
+			return fmt.Errorf("failed to watch Route: %w", err)
+		}
 	}
 
 	// Watch HostedControlPlane namespace pull-secret on the control plane cluster so guest pull secrets
@@ -511,12 +518,12 @@ func (r *reconciler) reconcileDeletion(ctx context.Context, log logr.Logger, hcp
 
 		binding := manifests.ValidatingAdmissionPolicyBinding(fmt.Sprintf("%s-binding", registryConfigManagementStateAdmissionPolicy.Name))
 		if _, err := k8sutil.DeleteIfNeeded(ctx, r.client, binding); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to delete ValidatingAdmissionPolicyBinding %s: %v", binding.Name, err)
+			return ctrl.Result{}, fmt.Errorf("failed to delete ValidatingAdmissionPolicyBinding %s: %w", binding.Name, err)
 		}
 
 		vap := manifests.ValidatingAdmissionPolicy(registryConfigManagementStateAdmissionPolicy.Name)
 		if _, err := k8sutil.DeleteIfNeeded(ctx, r.client, vap); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to delete ValidatingAdmissionPolicy %s: %v", vap.Name, err)
+			return ctrl.Result{}, fmt.Errorf("failed to delete ValidatingAdmissionPolicy %s: %w", vap.Name, err)
 		}
 	}
 
@@ -567,12 +574,13 @@ func (r *reconciler) reconcileClusterRecovery(ctx context.Context, log logr.Logg
 		condition.Message = "Hosted cluster recovery finished"
 	}
 
+	originalHCP := hcp.DeepCopy()
 	meta.SetStatusCondition(&hcp.Status.Conditions, *condition)
 	log.Info("setting condition", "type", condition.Type, "status", condition.Status, "message", condition.Message)
-	if err := r.cpClient.Status().Update(ctx, hcp); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to update status on hcp for hosted cluster recovery: %w. Condition error message: %v", err, condition.Message)
+	if err := r.cpClient.Status().Patch(ctx, hcp, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{})); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to patch status on hcp for hosted cluster recovery: %w. Condition error message: %v", err, condition.Message)
 	}
-	log.Info("successfully updated hcp status with recovery condition")
+	log.Info("successfully patched hcp status with recovery condition")
 
 	if !finished {
 		return ctrl.Result{RequeueAfter: 120 * time.Second}, nil
@@ -629,8 +637,7 @@ func (r *reconciler) reconcileRegistryAndIngress(ctx context.Context, hcp *hyper
 			}
 
 			// TODO: remove this when ROSA HCP stops setting the managementState to Removed to disable the Image Registry
-			if registryConfig.Spec.ManagementState == operatorv1.Removed && r.platformType != hyperv1.IBMCloudPlatform && r.platformType != hyperv1.AzurePlatform {
-				log.Info("imageregistry operator managementstate is removed, disabling openshift-controller-manager controllers and cleaning up resources")
+			if r.platformType != hyperv1.IBMCloudPlatform && r.platformType != hyperv1.AzurePlatform {
 				ocmConfigMap := cpomanifests.OpenShiftControllerManagerConfig(r.hcpNamespace)
 				if _, err := r.CreateOrUpdate(ctx, r.cpClient, ocmConfigMap, func() error {
 					if ocmConfigMap.Data == nil {
@@ -638,12 +645,28 @@ func (r *reconciler) reconcileRegistryAndIngress(ctx context.Context, hcp *hyper
 					}
 					config := &openshiftcpv1.OpenShiftControllerManagerConfig{}
 					if configStr, exists := ocmConfigMap.Data[ocm.ConfigKey]; exists && len(configStr) > 0 {
-						err := k8sutil.DeserializeResource(configStr, config, api.Scheme)
-						if err != nil {
+						if err := k8sutil.DeserializeResource(configStr, config, api.Scheme); err != nil {
 							return fmt.Errorf("unable to decode existing openshift controller manager configuration: %w", err)
 						}
 					}
-					config.Controllers = []string{"*", fmt.Sprintf("-%s", openshiftcpv1.OpenShiftServiceAccountPullSecretsController)}
+					if registryConfig.Spec.ManagementState == operatorv1.Removed {
+						if isServiceAccountPullSecretsControllerDisabled(config.Controllers) {
+							// Already disabled; returning nil without mutation causes CreateOrUpdate to skip the update.
+							return nil
+						}
+						log.Info("imageregistry operator managementstate is removed, disabling serviceaccount-pull-secrets controller")
+						if len(config.Controllers) == 0 {
+							config.Controllers = []string{"*", disabledServiceAccountPullSecretsController}
+						} else {
+							config.Controllers = append(config.Controllers, disabledServiceAccountPullSecretsController)
+						}
+					} else if isServiceAccountPullSecretsControllerDisabled(config.Controllers) {
+						log.Info("imageregistry operator managementstate is no longer removed, re-enabling serviceaccount-pull-secrets controller")
+						config.Controllers = removeDisabledServiceAccountPullSecretsController(config.Controllers)
+					} else {
+						// No change needed; returning nil without mutation causes CreateOrUpdate to skip the update.
+						return nil
+					}
 					configStr, err := k8sutil.SerializeResource(config, api.Scheme)
 					if err != nil {
 						return fmt.Errorf("failed to serialize openshift controller manager configuration: %w", err)
@@ -830,7 +853,7 @@ func (r *reconciler) reconcileNetworkingAndSecrets(ctx context.Context, hcp *hyp
 		ovnConfig = hcp.Spec.OperatorConfiguration.ClusterNetworkOperator.OVNKubernetesConfig
 	}
 	if _, err := r.CreateOrUpdate(ctx, r.client, networkOperator, func() error {
-		networkoperator.ReconcileNetworkOperator(networkOperator, hcp.Spec.Networking.NetworkType, hcp.Spec.Platform.Type, netutil.IsDisableMultiNetwork(hcp), ovnConfig)
+		networkoperator.ReconcileNetworkOperator(networkOperator, hcp.Spec.Networking.NetworkType, hcp.Spec.Platform.Type, netutil.IsDisableMultiNetwork(hcp), ovnConfig, hasIPv6Network(hcp))
 		return nil
 	}); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile network operator: %w", err))
@@ -1687,8 +1710,8 @@ func (r *reconciler) patchHCPStatusCondition(ctx context.Context, hcp *hyperv1.H
 	if !meta.SetStatusCondition(&hcp.Status.Conditions, *condition) {
 		return nil // No status change; avoid unnecessary API call.
 	}
-	if err := r.cpClient.Status().Patch(ctx, hcp, client.MergeFrom(originalHCP)); err != nil {
-		return fmt.Errorf("failed to update HostedControlPlane status with %s condition: %w", condition.Type, err)
+	if err := r.cpClient.Status().Patch(ctx, hcp, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{})); err != nil {
+		return fmt.Errorf("failed to patch HostedControlPlane status with %s condition: %w", condition.Type, err)
 	}
 	log.Info(string(condition.Type) + " condition updated")
 	return nil
@@ -1996,7 +2019,7 @@ func (r *reconciler) reconcileKubeadminPasswordHashSecret(ctx context.Context, h
 		kubeadminPasswordSecret.Annotations[cpoauth.KubeadminSecretHashAnnotation] = string(kubeadminPasswordHashSecret.Data["kubeadmin"])
 		return nil
 	}); err != nil {
-		return fmt.Errorf("failed to annotate kubeadmin-password secret in hcp namespace: %v", err)
+		return fmt.Errorf("failed to annotate kubeadmin-password secret in hcp namespace: %w", err)
 	}
 
 	return nil
@@ -2728,8 +2751,8 @@ func (r *reconciler) destroyCloudResources(ctx context.Context, hcp *hyperv1.Hos
 	meta.SetStatusCondition(&hcp.Status.Conditions, *resourcesDestroyedCond)
 
 	if !equality.Semantic.DeepEqual(hcp, originalHCP) {
-		if err := r.cpClient.Status().Update(ctx, hcp); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to set resources destroyed condition: %w", err)
+		if err := r.cpClient.Status().Patch(ctx, hcp, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{})); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to patch resources destroyed condition: %w", err)
 		}
 	}
 
@@ -3642,6 +3665,25 @@ func (r *reconciler) reconcileAzureCloudNodeManager(ctx context.Context, image s
 	return errs
 }
 
+func hasIPv6Network(hcp *hyperv1.HostedControlPlane) bool {
+	for _, entry := range hcp.Spec.Networking.ClusterNetwork {
+		if net.IP(entry.CIDR.IP).To4() == nil {
+			return true
+		}
+	}
+	for _, entry := range hcp.Spec.Networking.ServiceNetwork {
+		if net.IP(entry.CIDR.IP).To4() == nil {
+			return true
+		}
+	}
+	for _, entry := range hcp.Spec.Networking.MachineNetwork {
+		if net.IP(entry.CIDR.IP).To4() == nil {
+			return true
+		}
+	}
+	return false
+}
+
 // imageRegistryPlatformWithPVC returns true if the platform requires a PVC for the image registry.
 func imageRegistryPlatformWithPVC(platform hyperv1.PlatformType) bool {
 	switch platform {
@@ -3650,4 +3692,21 @@ func imageRegistryPlatformWithPVC(platform hyperv1.PlatformType) bool {
 	default:
 		return false
 	}
+}
+
+func isServiceAccountPullSecretsControllerDisabled(controllers []string) bool {
+	return slices.Contains(controllers, disabledServiceAccountPullSecretsController)
+}
+
+func removeDisabledServiceAccountPullSecretsController(controllers []string) []string {
+	filtered := make([]string, 0, len(controllers))
+	for _, c := range controllers {
+		if c != disabledServiceAccountPullSecretsController {
+			filtered = append(filtered, c)
+		}
+	}
+	if len(filtered) == 0 {
+		return []string{"*"}
+	}
+	return filtered
 }

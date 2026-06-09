@@ -106,7 +106,12 @@ func InstallHostedCluster(ctx context.Context, logger logr.Logger, opts *Options
 
 	pullSpec := opts.ReleaseImage
 	if pullSpec == "" {
-		resp, err := http.Get(fmt.Sprintf(`https://multi.ocp.releases.ci.openshift.org/api/v1/releasestream/%s-0.nightly-multi/latest`, supportedversion.LatestSupportedVersion.String()))
+		releaseURL := fmt.Sprintf(`https://multi.ocp.releases.ci.openshift.org/api/v1/releasestream/%s-0.nightly-multi/latest`, supportedversion.LatestSupportedVersion.String())
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, releaseURL, nil)
+		if err != nil {
+			return CleanupSentinel, fmt.Errorf("couldn't create release image request: %w", err)
+		}
+		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			return CleanupSentinel, fmt.Errorf("couldn't fetch latest release image: %w", err)
 		}
@@ -175,7 +180,7 @@ func InstallHostedCluster(ctx context.Context, logger logr.Logger, opts *Options
 		if SkippedCleanupSteps().HasAny("all", "hosted-clusters") {
 			return nil
 		}
-		logger.Info("dumping hosted hosted cluster assets")
+		logger.Info("dumping hosted cluster assets")
 		dumpLogPath := filepath.Join("install", "assets.dump.yaml")
 		dumpCmd := exec.CommandContext(ctx, opts.OCPath,
 			"get", "--ignore-not-found", "--show-managed-fields", "-f", filepath.Join(opts.ArtifactDir, yamlPath), "--kubeconfig", opts.Kubeconfig,

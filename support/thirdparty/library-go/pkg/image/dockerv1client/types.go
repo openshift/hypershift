@@ -73,7 +73,7 @@ type Descriptor struct {
 	Size int64 `json:"size,omitempty"`
 
 	// Digest uniquely identifies the content. A byte stream can be verified
-	// against against this digest.
+	// against this digest.
 	Digest string `json:"digest,omitempty"`
 }
 

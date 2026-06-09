@@ -45,7 +45,7 @@ func adaptServingCertSecret(cpContext component.WorkloadContext, secret *corev1.
 		if apierrors.IsNotFound(err) {
 			return nil
 		}
-		return fmt.Errorf("failed to get ignition ca-cert secret: %v", err)
+		return fmt.Errorf("failed to get ignition ca-cert secret: %w", err)
 	}
 
 	serviceStrategy := netutil.ServicePublishingStrategyByTypeForHCP(cpContext.HCP, hyperv1.Ignition)
@@ -67,7 +67,7 @@ func adaptServingCertSecret(cpContext component.WorkloadContext, secret *corev1.
 			if apierrors.IsNotFound(err) {
 				return nil
 			}
-			return fmt.Errorf("failed to get ignition route: %v", err)
+			return fmt.Errorf("failed to get ignition route: %w", err)
 		}
 		// The route must be admitted and assigned a host before we can generate certs
 		if len(ignitionServerRoute.Status.Ingress) == 0 || len(ignitionServerRoute.Status.Ingress[0].Host) == 0 {

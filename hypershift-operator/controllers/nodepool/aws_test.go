@@ -2,6 +2,7 @@ package nodepool
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
@@ -22,7 +23,7 @@ import (
 	"k8s.io/utils/ptr"
 
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
-	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -148,8 +149,8 @@ func TestAWSMachineTemplateSpec(t *testing.T) {
 			name:          "NotReady error is returned if no sg specified and no cluster sg is available",
 			clusterStatus: &hyperv1.HostedClusterStatus{Platform: &hyperv1.PlatformStatus{AWS: &hyperv1.AWSPlatformStatus{DefaultWorkerSecurityGroupID: ""}}},
 			checkError: func(t *testing.T, err error) {
-				_, isNotReady := err.(*NotReadyError)
-				if err == nil || !isNotReady {
+				var notReadyErr *NotReadyError
+				if err == nil || !errors.As(err, &notReadyErr) {
 					t.Errorf("did not get expected NotReady error")
 				}
 			},
@@ -1479,8 +1480,8 @@ func TestBuildAWSSecurityGroups(t *testing.T) {
 			if tc.expectError {
 				g.Expect(err).To(HaveOccurred())
 				if tc.expectNotReady {
-					_, isNotReady := err.(*NotReadyError)
-					g.Expect(isNotReady).To(BeTrue())
+					var notReadyErr *NotReadyError
+					g.Expect(errors.As(err, &notReadyErr)).To(BeTrue())
 				}
 			} else {
 				g.Expect(err).ToNot(HaveOccurred())

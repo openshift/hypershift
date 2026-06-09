@@ -30,7 +30,7 @@ func (r *HostedControlPlaneReconciler) setupKASClientSigners(
 		}
 
 		if _, err := createOrUpdate(ctx, r, s, applyFunc); err != nil {
-			return nil, fmt.Errorf("failed to reconcile secret '%s/%s': %v", s.Namespace, s.Name, err)
+			return nil, fmt.Errorf("failed to reconcile secret '%s/%s': %w", s.Namespace, s.Name, err)
 		}
 		return s, nil
 	}
@@ -41,7 +41,7 @@ func (r *HostedControlPlaneReconciler) setupKASClientSigners(
 		}
 
 		if _, err := createOrUpdate(ctx, r, target, applyFunc); err != nil {
-			return nil, fmt.Errorf("failed to reconcile secret '%s/%s': %v", target.Namespace, target.Name, err)
+			return nil, fmt.Errorf("failed to reconcile secret '%s/%s': %w", target.Namespace, target.Name, err)
 		}
 		return target, nil
 	}

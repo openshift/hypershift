@@ -1235,7 +1235,7 @@ func validateMgmtClusterAndNodePoolCPUArchitectures(ctx context.Context, opts *R
 	if !validMultiArchImage {
 		mgmtClusterCPUArch, err := hyperutil.GetMgmtClusterCPUArch(kc)
 		if err != nil {
-			return fmt.Errorf("failed to check mgmt cluster CPU arch: %v", err)
+			return fmt.Errorf("failed to check mgmt cluster CPU arch: %w", err)
 		}
 
 		if !strings.EqualFold(mgmtClusterCPUArch, opts.Arch) {
@@ -1253,7 +1253,7 @@ func validateMgmtClusterAndNodePoolCPUArchitectures(ctx context.Context, opts *R
 func validateVersion(ctx context.Context, versionCLI string, client crclient.Client) error {
 	_, operatorVersion, err := supportedversion.GetSupportedOCPVersions(ctx, "hypershift", client, nil)
 	if err != nil {
-		return fmt.Errorf("failed to get supported OCP versions: %v", err)
+		return fmt.Errorf("failed to get supported OCP versions: %w", err)
 	}
 	if operatorVersion != versionCLI {
 		return fmt.Errorf("version mismatch detected, CLI: %s, Operator: %s", versionCLI, operatorVersion)

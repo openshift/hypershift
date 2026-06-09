@@ -144,6 +144,8 @@ func ImageRegistryCapabilityEnabledTest(getTestCtx internal.TestContextGetter) {
 				}
 				Expect(hc.Spec.Platform.GCP).NotTo(BeNil(),
 					"GCP platform spec must be set for GCP HostedCluster %s/%s", hc.Namespace, hc.Name)
+				Expect(hc.Spec.Platform.GCP.WorkloadIdentity).NotTo(BeNil(),
+					"GCP platform spec should have WorkloadIdentity configured for HostedCluster %s/%s", hc.Namespace, hc.Name)
 				imageRegistryEmail = string(hc.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.ImageRegistry)
 				Expect(imageRegistryEmail).NotTo(BeEmpty(),
 					"imageRegistry service account email must be set in GCP WorkloadIdentity config for %s/%s",

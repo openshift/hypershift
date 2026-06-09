@@ -1136,8 +1136,15 @@ func TestReconcileOAuthService(t *testing.T) {
 			if err := fakeClient.List(ctx, &actualServices); err != nil {
 				t.Fatalf("failed to list services: %v", err)
 			}
+			if actualServices.Items == nil {
+				actualServices.Items = []corev1.Service{}
+			}
 
-			if diff := testutil.MarshalYamlAndDiff(&actualServices, &corev1.ServiceList{Items: tc.expectedServices}, t); diff != "" {
+			expectedServices := tc.expectedServices
+			if expectedServices == nil {
+				expectedServices = []corev1.Service{}
+			}
+			if diff := testutil.MarshalYamlAndDiff(&actualServices, &corev1.ServiceList{Items: expectedServices}, t); diff != "" {
 				t.Errorf("actual services differ from expected: %s", diff)
 			}
 
@@ -1145,7 +1152,14 @@ func TestReconcileOAuthService(t *testing.T) {
 			if err := fakeClient.List(ctx, &actualRoutes); err != nil {
 				t.Fatalf("failed to list routes: %v", err)
 			}
-			if diff := testutil.MarshalYamlAndDiff(&actualRoutes, &routev1.RouteList{Items: tc.expectedRoutes}, t); diff != "" {
+			if actualRoutes.Items == nil {
+				actualRoutes.Items = []routev1.Route{}
+			}
+			expectedRoutes := tc.expectedRoutes
+			if expectedRoutes == nil {
+				expectedRoutes = []routev1.Route{}
+			}
+			if diff := testutil.MarshalYamlAndDiff(&actualRoutes, &routev1.RouteList{Items: expectedRoutes}, t); diff != "" {
 				t.Errorf("actual routes differ from expected: %s", diff)
 			}
 		})
@@ -1451,8 +1465,15 @@ func TestReconcileAPIServerService(t *testing.T) {
 			if err := fakeClient.List(ctx, &actualServices); err != nil {
 				t.Fatalf("failed to list services: %v", err)
 			}
+			if actualServices.Items == nil {
+				actualServices.Items = []corev1.Service{}
+			}
 
-			if diff := testutil.MarshalYamlAndDiff(&actualServices, &corev1.ServiceList{Items: tc.expectedServices}, t); diff != "" {
+			expectedServices := tc.expectedServices
+			if expectedServices == nil {
+				expectedServices = []corev1.Service{}
+			}
+			if diff := testutil.MarshalYamlAndDiff(&actualServices, &corev1.ServiceList{Items: expectedServices}, t); diff != "" {
 				t.Errorf("actual services differ from expected: %s", diff)
 			}
 
@@ -1460,7 +1481,14 @@ func TestReconcileAPIServerService(t *testing.T) {
 			if err := fakeClient.List(ctx, &actualRoutes); err != nil {
 				t.Fatalf("failed to list routes: %v", err)
 			}
-			if diff := testutil.MarshalYamlAndDiff(&actualRoutes, &routev1.RouteList{Items: tc.expectedRoutes}, t); diff != "" {
+			if actualRoutes.Items == nil {
+				actualRoutes.Items = []routev1.Route{}
+			}
+			expectedRoutes := tc.expectedRoutes
+			if expectedRoutes == nil {
+				expectedRoutes = []routev1.Route{}
+			}
+			if diff := testutil.MarshalYamlAndDiff(&actualRoutes, &routev1.RouteList{Items: expectedRoutes}, t); diff != "" {
 				t.Errorf("actual routes differ from expected: %s", diff)
 			}
 		})
@@ -1475,7 +1503,8 @@ func TestReconcileHCPRouterServices(t *testing.T) {
 				Name:      "router",
 				Namespace: namespace,
 				Annotations: map[string]string{
-					"service.beta.kubernetes.io/aws-load-balancer-type": "nlb",
+					"service.beta.kubernetes.io/aws-load-balancer-type":   "nlb",
+					"service.beta.kubernetes.io/aws-load-balancer-scheme": "internet-facing",
 				},
 				Labels: map[string]string{"app": "private-router"},
 			},
@@ -1497,6 +1526,7 @@ func TestReconcileHCPRouterServices(t *testing.T) {
 		return publicService(append(m, func(s *corev1.Service) {
 			s.Name = "private-router"
 			s.Annotations["service.beta.kubernetes.io/aws-load-balancer-internal"] = "true"
+			delete(s.Annotations, "service.beta.kubernetes.io/aws-load-balancer-scheme")
 		})...)
 	}
 	withCrossZoneAnnotation := func(svc *corev1.Service) {
@@ -1669,7 +1699,14 @@ func TestReconcileHCPRouterServices(t *testing.T) {
 			if err := c.List(ctx, &services); err != nil {
 				t.Fatalf("failed to list services: %v", err)
 			}
-			if diff := testutil.MarshalYamlAndDiff(&services, &corev1.ServiceList{Items: tc.expectedServices}, t); diff != "" {
+			expectedServices := tc.expectedServices
+			if expectedServices == nil {
+				expectedServices = []corev1.Service{}
+			}
+			if services.Items == nil {
+				services.Items = []corev1.Service{}
+			}
+			if diff := testutil.MarshalYamlAndDiff(&services, &corev1.ServiceList{Items: expectedServices}, t); diff != "" {
 				t.Errorf("actual services differ from expected: %s", diff)
 			}
 		})

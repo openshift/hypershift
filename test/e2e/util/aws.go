@@ -375,7 +375,7 @@ func CreateCapacityReservation(ctx context.Context, awsCreds, awsRegion, instanc
 			CapacityReservationIds: []string{crID},
 		})
 		if err != nil {
-			return false, nil // transient error, retry
+			return false, nil //nolint:nilerr // transient error, retry
 		}
 		if len(desc.CapacityReservations) == 0 {
 			return false, nil

@@ -103,7 +103,7 @@ func VerifyRequestServingPodDistribution(ctx context.Context, hc *hyperv1.Hosted
 		for depName, expectedReplicas := range expectedDeployments {
 			dep := &appsv1.Deployment{}
 			if err := client.Get(pctx, crclient.ObjectKey{Namespace: cpNamespace, Name: depName}, dep); err != nil {
-				errs = append(errs, fmt.Errorf("failed to get deployment %s: %v", depName, err))
+				errs = append(errs, fmt.Errorf("failed to get deployment %s: %w", depName, err))
 				continue
 			}
 			if dep.Spec.Replicas == nil || *dep.Spec.Replicas != int32(expectedReplicas) {

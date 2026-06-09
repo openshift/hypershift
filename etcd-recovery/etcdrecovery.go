@@ -476,7 +476,7 @@ func isEndpointHealthy(ctx context.Context, opts options, name, endpointURL stri
 	healthCtx, healthCtxCancel := context.WithTimeout(ctx, defaultEtcdClientTimeout)
 	defer healthCtxCancel()
 	_, err = cli.Get(healthCtx, "health")
-	if err != nil && err != rpctypes.ErrPermissionDenied {
+	if err != nil && !errors.Is(err, rpctypes.ErrPermissionDenied) {
 		log.Error(err, "cannot access etcd endpoint, returning healthy=false")
 		return false
 	}

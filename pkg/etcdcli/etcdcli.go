@@ -307,7 +307,7 @@ func (g *etcdClientGetter) UnhealthyMembers(ctx context.Context) ([]*etcdserverp
 	defer cancel()
 	etcdCluster, err := cli.MemberList(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("could not get member list %v", err)
+		return nil, fmt.Errorf("could not get member list: %w", err)
 	}
 
 	memberHealth := getMemberHealth(ctx, etcdCluster.Members)

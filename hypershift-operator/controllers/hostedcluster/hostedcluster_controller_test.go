@@ -8,6 +8,8 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"reflect"
 	"strings"
@@ -62,10 +64,12 @@ import (
 
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	capibmv1 "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2"
-	"sigs.k8s.io/cluster-api/api/v1beta1"
+	"sigs.k8s.io/cluster-api/api/core/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -252,6 +256,195 @@ func TestHasBeenAvailable(t *testing.T) {
 	}
 }
 
+func TestReconcileWhenPullSecretMissing(t *testing.T) {
+	t.Parallel()
+	g := NewWithT(t)
+
+	hcluster := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-cluster",
+			Namespace: "any",
+			Annotations: map[string]string{
+				hyperv1.RequestServingNodeAdditionalSelectorAnnotation: `{"node-role.kubernetes.io/worker": ""}`,
+			},
+		},
+		Spec: hyperv1.HostedClusterSpec{
+			ClusterID: "id",
+			InfraID:   "infra-id",
+			Networking: hyperv1.ClusterNetworking{
+				ClusterNetwork: []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.1.0/24")}},
+			},
+			Services: []hyperv1.ServicePublishingStrategyMapping{
+				{
+					Service: hyperv1.Ignition,
+					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+						Type: hyperv1.LoadBalancer,
+					},
+				},
+			},
+			PullSecret: corev1.LocalObjectReference{
+				Name: "pull-secret",
+			},
+			Release: hyperv1.Release{Image: "quay.io/openshift-release-dev/ocp-release:4.15.0"},
+			Etcd:    hyperv1.EtcdSpec{ManagementType: hyperv1.Managed},
+			Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.AWSPlatform,
+			},
+			NodeSelector: map[string]string{
+				"node-role.kubernetes.io/worker": "",
+			},
+		},
+	}
+
+	hcpNs := hcpmanifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
+	hcp := controlplaneoperator.HostedControlPlane(hcpNs, hcluster.Name)
+
+	// Create the namespace so createOrUpdate can find it
+	ns := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{Name: hcpNs},
+	}
+
+	// No pull secret in the fake client — this is the scenario we're testing
+	objects := []crclient.Object{
+		hcp,
+		hcluster,
+		ns,
+	}
+
+	client := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).WithStatusSubresource(hcluster).Build()
+
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+	mockedProvider := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(mockCtrl)
+
+	r := &HostedClusterReconciler{
+		Client:                        client,
+		Clock:                         clocktesting.NewFakeClock(time.Now()),
+		CertRotationScale:             24 * time.Hour,
+		createOrUpdate:                func(reconcile.Request) upsert.CreateOrUpdateFN { return ctrl.CreateOrUpdate },
+		ManagementClusterCapabilities: &fakecapabilities.FakeSupportNoCapabilities{},
+		RegistryProvider: fakeReleaseProvider{
+			releaseProvider: mockedProvider,
+			metadataProvider: fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
+				Result: &dockerv1client.DockerImageConfig{},
+			},
+		},
+		now: func() metav1.Time { return metav1.NewTime(time.Now()) },
+	}
+
+	ctx := t.Context()
+	_, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: crclient.ObjectKeyFromObject(hcluster)})
+
+	// When the pull secret is missing, reconciliation should return an error for requeue
+	g.Expect(err).To(HaveOccurred(), "When pull secret is missing it should return an error")
+	g.Expect(err.Error()).To(ContainSubstring("failed to get pull secret"), "When pull secret is missing the error should mention pull secret")
+
+	// Verify reconcileHostedControlPlane still ran — the HCP should have the HostedCluster's spec fields
+	updatedHCP := controlplaneoperator.HostedControlPlane(hcpNs, hcluster.Name)
+	err = client.Get(ctx, crclient.ObjectKeyFromObject(updatedHCP), updatedHCP)
+	g.Expect(err).ToNot(HaveOccurred(), "When pull secret is missing it should still be able to get the HCP")
+
+	g.Expect(updatedHCP.Spec.NodeSelector).To(Equal(hcluster.Spec.NodeSelector),
+		"When pull secret is missing it should still propagate NodeSelector to HCP")
+	g.Expect(updatedHCP.Annotations).To(HaveKeyWithValue(
+		hyperv1.RequestServingNodeAdditionalSelectorAnnotation,
+		hcluster.Annotations[hyperv1.RequestServingNodeAdditionalSelectorAnnotation]),
+		"When pull secret is missing it should still propagate RequestServingNodeAdditionalSelector to HCP")
+	g.Expect(updatedHCP.Spec.ReleaseImage).To(Equal(hcluster.Spec.Release.Image),
+		"When pull secret is missing it should still propagate ReleaseImage to HCP")
+
+	// With no NodePools in the fake client, autoscaling is not needed so the
+	// autoscaler should be disabled. This validates the defaulting logic in the
+	// pull secret recovery path.
+	g.Expect(updatedHCP.Annotations).To(HaveKeyWithValue(
+		hyperv1.DisableClusterAutoscalerAnnotation, "true"),
+		"When pull secret is missing and no NodePools exist it should disable the cluster autoscaler")
+}
+
+func TestReconcileWhenPullSecretMissingAndNodePoolListFails(t *testing.T) {
+	t.Parallel()
+	g := NewWithT(t)
+
+	hcluster := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-cluster",
+			Namespace: "any",
+		},
+		Spec: hyperv1.HostedClusterSpec{
+			ClusterID: "id",
+			InfraID:   "infra-id",
+			Networking: hyperv1.ClusterNetworking{
+				ClusterNetwork: []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.1.0/24")}},
+			},
+			Services: []hyperv1.ServicePublishingStrategyMapping{
+				{
+					Service: hyperv1.Ignition,
+					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+						Type: hyperv1.LoadBalancer,
+					},
+				},
+			},
+			PullSecret: corev1.LocalObjectReference{
+				Name: "pull-secret",
+			},
+			Release: hyperv1.Release{Image: "quay.io/openshift-release-dev/ocp-release:4.15.0"},
+			Etcd:    hyperv1.EtcdSpec{ManagementType: hyperv1.Managed},
+			Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.AWSPlatform,
+			},
+		},
+	}
+
+	hcpNs := hcpmanifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
+	hcp := controlplaneoperator.HostedControlPlane(hcpNs, hcluster.Name)
+	ns := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{Name: hcpNs},
+	}
+
+	fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hcp, hcluster, ns).WithStatusSubresource(hcluster).
+		WithInterceptorFuncs(interceptor.Funcs{
+			List: func(ctx context.Context, client crclient.WithWatch, list crclient.ObjectList, opts ...crclient.ListOption) error {
+				if _, ok := list.(*hyperv1.NodePoolList); ok {
+					return fmt.Errorf("simulated list error")
+				}
+				return client.List(ctx, list, opts...)
+			},
+		}).Build()
+
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+	mockedProvider := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(mockCtrl)
+
+	r := &HostedClusterReconciler{
+		Client:                        fakeClient,
+		Clock:                         clocktesting.NewFakeClock(time.Now()),
+		CertRotationScale:             24 * time.Hour,
+		createOrUpdate:                func(reconcile.Request) upsert.CreateOrUpdateFN { return ctrl.CreateOrUpdate },
+		ManagementClusterCapabilities: &fakecapabilities.FakeSupportNoCapabilities{},
+		RegistryProvider: fakeReleaseProvider{
+			releaseProvider: mockedProvider,
+			metadataProvider: fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
+				Result: &dockerv1client.DockerImageConfig{},
+			},
+		},
+		now: func() metav1.Time { return metav1.NewTime(time.Now()) },
+	}
+
+	ctx := t.Context()
+	_, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: crclient.ObjectKeyFromObject(hcluster)})
+
+	g.Expect(err).To(HaveOccurred(), "When pull secret is missing it should return an error")
+
+	updatedHCP := controlplaneoperator.HostedControlPlane(hcpNs, hcluster.Name)
+	err = fakeClient.Get(ctx, crclient.ObjectKeyFromObject(updatedHCP), updatedHCP)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	// When NodePool list fails, isAutoscalingNeeded defaults to true, so the
+	// autoscaler should NOT be disabled (annotation should be absent).
+	g.Expect(updatedHCP.Annotations).NotTo(HaveKey(hyperv1.DisableClusterAutoscalerAnnotation),
+		"When NodePool list fails during pull secret recovery it should default to keeping the autoscaler enabled")
+}
+
 func TestReconcileHostedControlPlaneAdditionalTrustBundle(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -305,6 +498,64 @@ func TestReconcileHostedControlPlaneAdditionalTrustBundle(t *testing.T) {
 			}
 			if !equality.Semantic.DeepEqual(test.expectedAdditionalTrustBundle, updated.Spec.AdditionalTrustBundle) {
 				t.Error(cmp.Diff(test.expectedAdditionalTrustBundle, updated.Spec.AdditionalTrustBundle))
+			}
+		})
+	}
+}
+
+func TestReconcileHostedControlPlaneLabelSync(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name           string
+		hcLabels       map[string]string
+		hcpLabels      map[string]string
+		expectedLabels map[string]string
+	}{
+		{
+			name:           "When HC has api.openshift.com labels, it should copy them to HCP",
+			hcLabels:       map[string]string{"api.openshift.com/limited-support": "true", "api.openshift.com/name": "test"},
+			hcpLabels:      map[string]string{},
+			expectedLabels: map[string]string{"api.openshift.com/limited-support": "true", "api.openshift.com/name": "test"},
+		},
+		{
+			name:           "When HC removes an api.openshift.com label, it should remove the stale label from HCP",
+			hcLabels:       map[string]string{"api.openshift.com/name": "test"},
+			hcpLabels:      map[string]string{"api.openshift.com/limited-support": "true", "api.openshift.com/name": "old"},
+			expectedLabels: map[string]string{"api.openshift.com/name": "test"},
+		},
+		{
+			name:           "When HC has no api.openshift.com labels, it should preserve non-api.openshift.com labels on HCP",
+			hcLabels:       map[string]string{},
+			hcpLabels:      map[string]string{"api.openshift.com/limited-support": "true", "cluster.x-k8s.io/cluster-name": "keep-me"},
+			expectedLabels: map[string]string{"cluster.x-k8s.io/cluster-name": "keep-me"},
+		},
+		{
+			name:           "When HC labels are nil, it should remove all api.openshift.com labels from HCP",
+			hcLabels:       nil,
+			hcpLabels:      map[string]string{"api.openshift.com/limited-support": "true"},
+			expectedLabels: map[string]string{},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			hc := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Labels: test.hcLabels},
+			}
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Labels: test.hcpLabels},
+			}
+			err := reconcileHostedControlPlane(hcp, hc, false, false, func() (map[string]string, error) { return nil, nil })
+			g.Expect(err).ToNot(HaveOccurred())
+
+			for key, val := range test.expectedLabels {
+				g.Expect(hcp.Labels).To(HaveKeyWithValue(key, val))
+			}
+			for key := range hcp.Labels {
+				if strings.HasPrefix(key, apiOpenShiftComLabelPrefix) {
+					g.Expect(test.expectedLabels).To(HaveKey(key), "unexpected label %s=%s still on HCP", key, hcp.Labels[key])
+				}
 			}
 		})
 	}
@@ -3918,13 +4169,14 @@ func TestComputeAWSEndpointServiceCondition(t *testing.T) {
 func TestValidateSliceNetworkCIDRs(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name        string
-		mn          []hyperv1.MachineNetworkEntry
-		cn          []hyperv1.ClusterNetworkEntry
-		sn          []hyperv1.ServiceNetworkEntry
-		networkType hyperv1.NetworkType
-		ovnConfig   *hyperv1.OVNKubernetesConfig
-		wantErr     bool
+		name         string
+		mn           []hyperv1.MachineNetworkEntry
+		cn           []hyperv1.ClusterNetworkEntry
+		sn           []hyperv1.ServiceNetworkEntry
+		networkType  hyperv1.NetworkType
+		platformType hyperv1.PlatformType
+		ovnConfig    *hyperv1.OVNKubernetesConfig
+		wantErr      bool
 	}{
 		{
 			name:        "given a conflicting IPv6 clusterNetwork overlapped with machineNetwork, it should fail",
@@ -4069,6 +4321,143 @@ func TestValidateSliceNetworkCIDRs(t *testing.T) {
 			},
 			wantErr: false,
 		},
+		{
+			name:        "When OVN-Kubernetes with valid IPv6 InternalJoinSubnet it should succeed",
+			mn:          []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd02::/48")}},
+			cn:          []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd01::/64")}},
+			sn:          []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd03::/112")}},
+			networkType: hyperv1.OVNKubernetes,
+			ovnConfig: &hyperv1.OVNKubernetesConfig{
+				IPv6: hyperv1.OVNIPv6Config{
+					InternalJoinSubnet: "fd99::/64",
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name:        "When OVN-Kubernetes with valid IPv6 InternalTransitSwitchSubnet it should succeed",
+			mn:          []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd02::/48")}},
+			cn:          []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd01::/64")}},
+			sn:          []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd03::/112")}},
+			networkType: hyperv1.OVNKubernetes,
+			ovnConfig: &hyperv1.OVNKubernetesConfig{
+				IPv6: hyperv1.OVNIPv6Config{
+					InternalTransitSwitchSubnet: "fd97:1::/64",
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name:        "When OVN-Kubernetes IPv6 InternalJoinSubnet overlaps with MachineNetwork it should fail",
+			mn:          []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd99::/48")}},
+			cn:          []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd01::/64")}},
+			sn:          []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd03::/112")}},
+			networkType: hyperv1.OVNKubernetes,
+			ovnConfig: &hyperv1.OVNKubernetesConfig{
+				IPv6: hyperv1.OVNIPv6Config{
+					InternalJoinSubnet: "fd99::/64",
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name:        "When OVN-Kubernetes IPv6 subnets overlap with each other it should fail",
+			mn:          []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd02::/48")}},
+			cn:          []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd01::/64")}},
+			sn:          []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd03::/112")}},
+			networkType: hyperv1.OVNKubernetes,
+			ovnConfig: &hyperv1.OVNKubernetesConfig{
+				IPv6: hyperv1.OVNIPv6Config{
+					InternalJoinSubnet:          "fd99::/64",
+					InternalTransitSwitchSubnet: "fd99::/48",
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name:        "When OVN-Kubernetes with both valid IPv4 and IPv6 subnets it should succeed",
+			mn:          []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}},
+			cn:          []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("10.128.0.0/14")}},
+			sn:          []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.30.0.0/16")}},
+			networkType: hyperv1.OVNKubernetes,
+			ovnConfig: &hyperv1.OVNKubernetesConfig{
+				IPv4: &hyperv1.OVNIPv4Config{
+					InternalJoinSubnet: "100.64.0.0/16",
+				},
+				IPv6: hyperv1.OVNIPv6Config{
+					InternalJoinSubnet: "fd99::/64",
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name:        "When OVN-Kubernetes with empty IPv6 subnet strings it should succeed",
+			mn:          []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}},
+			cn:          []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("10.128.0.0/14")}},
+			sn:          []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.30.0.0/16")}},
+			networkType: hyperv1.OVNKubernetes,
+			ovnConfig: &hyperv1.OVNKubernetesConfig{
+				IPv6: hyperv1.OVNIPv6Config{
+					InternalJoinSubnet:          "",
+					InternalTransitSwitchSubnet: "",
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name:         "When KubeVirt OVN-Kubernetes with no IPv6 config and MachineNetwork overlaps default fd99::/64 it should fail",
+			mn:           []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd99::/48")}},
+			cn:           []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd01::/64")}},
+			sn:           []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd02::/112")}},
+			networkType:  hyperv1.OVNKubernetes,
+			platformType: hyperv1.KubevirtPlatform,
+			ovnConfig:    nil,
+			wantErr:      true,
+		},
+		{
+			name:         "When KubeVirt OVN-Kubernetes with no IPv6 config and non-overlapping networks it should succeed",
+			mn:           []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd01::/48")}},
+			cn:           []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd02::/64")}},
+			sn:           []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd03::/112")}},
+			networkType:  hyperv1.OVNKubernetes,
+			platformType: hyperv1.KubevirtPlatform,
+			ovnConfig:    nil,
+			wantErr:      false,
+		},
+		{
+			name:         "When KubeVirt OVN-Kubernetes with explicit IPv6 join subnet it should use explicit value not default",
+			mn:           []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd99::/48")}},
+			cn:           []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd01::/64")}},
+			sn:           []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd02::/112")}},
+			networkType:  hyperv1.OVNKubernetes,
+			platformType: hyperv1.KubevirtPlatform,
+			ovnConfig: &hyperv1.OVNKubernetesConfig{
+				IPv6: hyperv1.OVNIPv6Config{
+					InternalJoinSubnet: "fdaa::/64",
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name:         "When KubeVirt OVN-Kubernetes with no IPv4 config and MachineNetwork overlaps default 100.66.0.0/16 it should fail",
+			mn:           []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("100.66.0.0/24")}},
+			cn:           []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("10.128.0.0/14")}},
+			sn:           []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.30.0.0/16")}},
+			networkType:  hyperv1.OVNKubernetes,
+			platformType: hyperv1.KubevirtPlatform,
+			ovnConfig:    nil,
+			wantErr:      true,
+		},
+		{
+			name:         "When KubeVirt OVN-Kubernetes with no IPv4 config and non-overlapping networks it should succeed",
+			mn:           []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}},
+			cn:           []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("10.128.0.0/14")}},
+			sn:           []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.30.0.0/16")}},
+			networkType:  hyperv1.OVNKubernetes,
+			platformType: hyperv1.KubevirtPlatform,
+			ovnConfig:    nil,
+			wantErr:      false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -4079,6 +4468,9 @@ func TestValidateSliceNetworkCIDRs(t *testing.T) {
 					Namespace: "any",
 				},
 				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: tt.platformType,
+					},
 					Networking: hyperv1.ClusterNetworking{
 						NetworkType:    tt.networkType,
 						MachineNetwork: tt.mn,
@@ -4088,9 +4480,7 @@ func TestValidateSliceNetworkCIDRs(t *testing.T) {
 				},
 			}
 
-			// Set OVN configuration if provided
 			if tt.ovnConfig != nil {
-				//OperatorConfiguration
 				hc.Spec.OperatorConfiguration = &hyperv1.OperatorConfiguration{
 					ClusterNetworkOperator: &hyperv1.ClusterNetworkOperatorSpec{
 						OVNKubernetesConfig: tt.ovnConfig,
@@ -6731,6 +7121,212 @@ func TestComputeEndpointServiceCondition(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			condition := computeEndpointServiceCondition(tc.resourceConditions, tc.conditionType, testErrorReason, testSuccessReason, testNotFoundMsg)
 			g.Expect(condition).To(Equal(tc.expected))
+		})
+	}
+}
+
+func TestListNodePools(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name             string
+		objects          []crclient.Object
+		interceptorFuncs interceptor.Funcs
+		clusterNamespace string
+		clusterName      string
+		wantErr          bool
+		errSubstr        string
+		expectedCount    int
+	}{
+		{
+			name: "When client List succeeds with matching NodePools, it should return filtered results",
+			objects: []crclient.Object{
+				&hyperv1.NodePool{
+					ObjectMeta: metav1.ObjectMeta{Name: "np1", Namespace: "clusters"},
+					Spec:       hyperv1.NodePoolSpec{ClusterName: "my-cluster"},
+				},
+				&hyperv1.NodePool{
+					ObjectMeta: metav1.ObjectMeta{Name: "np2", Namespace: "clusters"},
+					Spec:       hyperv1.NodePoolSpec{ClusterName: "other-cluster"},
+				},
+			},
+			clusterNamespace: "clusters",
+			clusterName:      "my-cluster",
+			expectedCount:    1,
+		},
+		{
+			name:    "When client List fails, it should return a wrapped error",
+			objects: []crclient.Object{},
+			interceptorFuncs: interceptor.Funcs{
+				List: func(ctx context.Context, c crclient.WithWatch, list crclient.ObjectList, opts ...crclient.ListOption) error {
+					return fmt.Errorf("API server unavailable")
+				},
+			},
+			clusterNamespace: "clusters",
+			clusterName:      "my-cluster",
+			wantErr:          true,
+			errSubstr:        "failed getting nodePool list",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			builder := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tt.objects...)
+			if tt.interceptorFuncs.List != nil {
+				builder = builder.WithInterceptorFuncs(tt.interceptorFuncs)
+			}
+			c := builder.Build()
+
+			result, err := listNodePools(t.Context(), c, tt.clusterNamespace, tt.clusterName)
+			if tt.wantErr {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring(tt.errSubstr))
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(result).To(HaveLen(tt.expectedCount))
+				for _, np := range result {
+					g.Expect(np.Namespace).To(Equal(tt.clusterNamespace))
+					g.Expect(np.Spec.ClusterName).To(Equal(tt.clusterName))
+				}
+			}
+		})
+	}
+}
+
+func TestReconcileCLISecretsErrors(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name             string
+		interceptorFuncs interceptor.Funcs
+		existingSecrets  []crclient.Object
+		createOrUpdate   upsert.CreateOrUpdateFN
+		wantErrSubstr    string
+	}{
+		{
+			name: "When client List fails, it should return a wrapped error",
+			interceptorFuncs: interceptor.Funcs{
+				List: func(ctx context.Context, c crclient.WithWatch, list crclient.ObjectList, opts ...crclient.ListOption) error {
+					return fmt.Errorf("connection refused")
+				},
+			},
+			wantErrSubstr: "failed to retrieve cli created secrets",
+		},
+		{
+			name: "When createOrUpdate fails for a secret, it should return a wrapped error",
+			existingSecrets: []crclient.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "cli-secret",
+						Namespace: "clusters",
+						Labels: map[string]string{
+							util.DeleteWithClusterLabelName: "true",
+							util.AutoInfraLabelName:         "test-infra",
+						},
+					},
+				},
+			},
+			createOrUpdate: func(ctx context.Context, c crclient.Client, obj crclient.Object, f controllerutil.MutateFn) (controllerutil.OperationResult, error) {
+				return controllerutil.OperationResultNone, fmt.Errorf("API conflict")
+			},
+			wantErrSubstr: "failed to set 'cli-secret' secret's owner reference",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			builder := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				WithInterceptorFuncs(tt.interceptorFuncs)
+			if len(tt.existingSecrets) > 0 {
+				builder = builder.WithObjects(tt.existingSecrets...)
+			}
+			cli := builder.Build()
+
+			r := &HostedClusterReconciler{Client: cli}
+			hc := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: "clusters",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					InfraID: "test-infra",
+				},
+			}
+
+			createOrUpdate := tt.createOrUpdate
+			if createOrUpdate == nil {
+				createOrUpdate = upsert.New(false).CreateOrUpdate
+			}
+
+			err := r.reconcileCLISecrets(t.Context(), createOrUpdate, hc)
+			g.Expect(err).To(HaveOccurred())
+			g.Expect(err.Error()).To(ContainSubstring(tt.wantErrSubstr))
+		})
+	}
+}
+
+func TestKasServingCertHashFromEndpoint(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name      string
+		setupTLS  bool
+		cancelCtx bool
+		wantErr   bool
+		errSubstr string
+	}{
+		{
+			name:     "When the TLS endpoint is healthy, it should return a non-empty certificate hash",
+			setupTLS: true,
+		},
+		{
+			name:      "When the endpoint is unreachable, it should return a dial error",
+			wantErr:   true,
+			errSubstr: "failed to dial",
+		},
+		{
+			name:      "When the context is canceled, it should return an error",
+			setupTLS:  true,
+			cancelCtx: true,
+			wantErr:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			addr := "127.0.0.1:1"
+			if tt.setupTLS {
+				server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.WriteHeader(http.StatusOK)
+				}))
+				defer server.Close()
+				addr = server.Listener.Addr().String()
+			}
+
+			ctx := t.Context()
+			if tt.cancelCtx {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithCancel(ctx)
+				cancel()
+			}
+
+			r := &HostedClusterReconciler{}
+			hashFn := r.kasServingCertHashFromEndpoint(ctx, addr)
+			hash, err := hashFn()
+
+			if tt.wantErr {
+				g.Expect(err).To(HaveOccurred())
+				if tt.errSubstr != "" {
+					g.Expect(err.Error()).To(ContainSubstring(tt.errSubstr))
+				}
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(hash).ToNot(BeEmpty())
+			}
 		})
 	}
 }

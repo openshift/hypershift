@@ -26,7 +26,8 @@ import (
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
-	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	"sigs.k8s.io/cluster-api/util/conversion"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
@@ -637,7 +638,6 @@ func RunTestMachineTemplateBuilders(t *testing.T, preCreateMachineTemplate bool)
 		},
 		Spec: hyperv1.NodePoolSpec{
 			Platform: hyperv1.NodePoolPlatform{
-
 				Type: hyperv1.AWSPlatform,
 				AWS: &hyperv1.AWSNodePoolPlatform{
 					InstanceType:    "",
@@ -2943,6 +2943,291 @@ func TestPropagateLabelsAndTaintsToMachines(t *testing.T) {
 	}
 }
 
+// TestPauseUnpauseCycle is a regression test for the interaction between pausing
+// NodePools and the Cluster Autoscaler (OCPBUGS-78152 / CNTRLPLANE-3040).
+//
+// It verifies that:
+//   - When a MachineDeployment/MachineSet is paused, the pause annotation is set
+//   - When reconcileMachineDeployment/reconcileMachineSet runs after unpause, the
+//     pause annotation is removed and autoscaler annotations are preserved
+//   - setMachineDeploymentReplicas clamps replicas within [min, max] bounds regardless
+//     of external modifications (e.g. CAS decrementing replicas while paused)
+func TestPauseUnpauseCycle(t *testing.T) {
+	t.Parallel()
+	testCases := []struct {
+		name              string
+		upgradeType       hyperv1.UpgradeType
+		platformType      hyperv1.PlatformType
+		initialReplicas   int32
+		autoscalingMin    int32
+		autoscalingMax    int32
+		replicasAtUnpause int32
+		expectedReplicas  int32
+	}{
+		{
+			name:              "When a paused MachineDeployment is unpaused it should remove the pause annotation and preserve replicas",
+			upgradeType:       hyperv1.UpgradeTypeReplace,
+			platformType:      hyperv1.AWSPlatform,
+			initialReplicas:   4,
+			autoscalingMin:    1,
+			autoscalingMax:    4,
+			replicasAtUnpause: 4,
+			expectedReplicas:  4,
+		},
+		{
+			name:              "When a paused MachineDeployment has replicas decremented to min it should keep replicas at min on unpause",
+			upgradeType:       hyperv1.UpgradeTypeReplace,
+			platformType:      hyperv1.AWSPlatform,
+			initialReplicas:   4,
+			autoscalingMin:    1,
+			autoscalingMax:    4,
+			replicasAtUnpause: 1,
+			expectedReplicas:  1,
+		},
+		{
+			name:              "When a paused MachineDeployment has replicas decremented below min it should clamp to min on unpause",
+			upgradeType:       hyperv1.UpgradeTypeReplace,
+			platformType:      hyperv1.AWSPlatform,
+			initialReplicas:   4,
+			autoscalingMin:    2,
+			autoscalingMax:    4,
+			replicasAtUnpause: 1,
+			expectedReplicas:  2,
+		},
+		{
+			name:              "When a paused MachineDeployment has replicas incremented above max it should clamp to max on unpause",
+			upgradeType:       hyperv1.UpgradeTypeReplace,
+			platformType:      hyperv1.AWSPlatform,
+			initialReplicas:   4,
+			autoscalingMin:    1,
+			autoscalingMax:    4,
+			replicasAtUnpause: 6,
+			expectedReplicas:  4,
+		},
+		{
+			name:              "When a paused MachineDeployment on AWS with min 0 it should allow scale to zero on unpause",
+			upgradeType:       hyperv1.UpgradeTypeReplace,
+			platformType:      hyperv1.AWSPlatform,
+			initialReplicas:   4,
+			autoscalingMin:    0,
+			autoscalingMax:    4,
+			replicasAtUnpause: 0,
+			expectedReplicas:  0,
+		},
+		{
+			name:              "When a paused MachineDeployment on non-AWS with min 0 it should clamp to effective min 1 on unpause",
+			upgradeType:       hyperv1.UpgradeTypeReplace,
+			platformType:      hyperv1.KubevirtPlatform,
+			initialReplicas:   4,
+			autoscalingMin:    0,
+			autoscalingMax:    4,
+			replicasAtUnpause: 0,
+			expectedReplicas:  1,
+		},
+		{
+			name:              "When a paused MachineSet is unpaused it should remove the pause annotation and preserve replicas",
+			upgradeType:       hyperv1.UpgradeTypeInPlace,
+			platformType:      hyperv1.AWSPlatform,
+			initialReplicas:   4,
+			autoscalingMin:    1,
+			autoscalingMax:    4,
+			replicasAtUnpause: 4,
+			expectedReplicas:  4,
+		},
+		{
+			name:              "When a paused MachineSet has replicas decremented below min it should clamp to min on unpause",
+			upgradeType:       hyperv1.UpgradeTypeInPlace,
+			platformType:      hyperv1.AWSPlatform,
+			initialReplicas:   4,
+			autoscalingMin:    2,
+			autoscalingMax:    4,
+			replicasAtUnpause: 1,
+			expectedReplicas:  2,
+		},
+		{
+			name:              "When a paused MachineSet has replicas incremented above max it should clamp to max on unpause",
+			upgradeType:       hyperv1.UpgradeTypeInPlace,
+			platformType:      hyperv1.AWSPlatform,
+			initialReplicas:   4,
+			autoscalingMin:    1,
+			autoscalingMax:    4,
+			replicasAtUnpause: 6,
+			expectedReplicas:  4,
+		},
+		{
+			name:              "When a paused MachineSet on AWS with min 0 it should allow scale to zero on unpause",
+			upgradeType:       hyperv1.UpgradeTypeInPlace,
+			platformType:      hyperv1.AWSPlatform,
+			initialReplicas:   4,
+			autoscalingMin:    0,
+			autoscalingMax:    4,
+			replicasAtUnpause: 0,
+			expectedReplicas:  0,
+		},
+		{
+			name:              "When a paused MachineSet on non-AWS with min 0 it should clamp to effective min 1 on unpause",
+			upgradeType:       hyperv1.UpgradeTypeInPlace,
+			platformType:      hyperv1.KubevirtPlatform,
+			initialReplicas:   4,
+			autoscalingMin:    0,
+			autoscalingMax:    4,
+			replicasAtUnpause: 0,
+			expectedReplicas:  1,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			nodePool := &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-nodepool",
+					Namespace: "test-namespace",
+				},
+				Spec: hyperv1.NodePoolSpec{
+					ClusterName: "test-cluster",
+					AutoScaling: &hyperv1.NodePoolAutoScaling{
+						Min: ptr.To[int32](tc.autoscalingMin),
+						Max: tc.autoscalingMax,
+					},
+					Management: hyperv1.NodePoolManagement{
+						UpgradeType: tc.upgradeType,
+						Replace: &hyperv1.ReplaceUpgrade{
+							Strategy: hyperv1.UpgradeStrategyRollingUpdate,
+							RollingUpdate: &hyperv1.RollingUpdate{
+								MaxUnavailable: ptr.To(intstr.FromInt(0)),
+								MaxSurge:       ptr.To(intstr.FromInt(1)),
+							},
+						},
+					},
+					Platform: hyperv1.NodePoolPlatform{
+						Type: tc.platformType,
+					},
+				},
+			}
+			if tc.platformType == hyperv1.AWSPlatform {
+				nodePool.Spec.Platform.AWS = &hyperv1.AWSNodePoolPlatform{AMI: "test-ami"}
+			}
+
+			hostedCluster := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: "test-namespace",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: tc.platformType,
+					},
+				},
+			}
+			if tc.platformType == hyperv1.AWSPlatform {
+				hostedCluster.Spec.Platform.AWS = &hyperv1.AWSPlatformSpec{}
+			}
+
+			controlPlaneNamespace := "test-cp-namespace"
+			c := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
+			capiObj := &CAPI{
+				Token: &Token{
+					ConfigGenerator: &ConfigGenerator{
+						nodePool:              nodePool,
+						hostedCluster:         hostedCluster,
+						controlplaneNamespace: controlPlaneNamespace,
+						Client:                c,
+						rolloutConfig: &rolloutConfig{
+							releaseImage: &releaseinfo.ReleaseImage{
+								ImageStream: &imageapi.ImageStream{
+									ObjectMeta: metav1.ObjectMeta{
+										Name: "target-version",
+									},
+								},
+							},
+						},
+					},
+					cpoCapabilities:        &CPOCapabilities{},
+					CreateOrUpdateProvider: upsert.New(false),
+				},
+				capiClusterName: "test-cluster",
+			}
+
+			// Create MachineDeployment and MachineSet with initial replicas and autoscaler annotations.
+			md := capiObj.machineDeployment()
+			md.Spec.Replicas = ptr.To[int32](tc.initialReplicas)
+			md.Annotations = map[string]string{
+				autoscalerMinAnnotation: fmt.Sprintf("%d", tc.autoscalingMin),
+				autoscalerMaxAnnotation: fmt.Sprintf("%d", tc.autoscalingMax),
+			}
+			g.Expect(c.Create(t.Context(), md)).To(Succeed())
+
+			ms := capiObj.machineSet()
+			ms.Spec.Replicas = ptr.To[int32](tc.initialReplicas)
+			ms.Annotations = map[string]string{
+				autoscalerMinAnnotation: fmt.Sprintf("%d", tc.autoscalingMin),
+				autoscalerMaxAnnotation: fmt.Sprintf("%d", tc.autoscalingMax),
+			}
+			g.Expect(c.Create(t.Context(), ms)).To(Succeed())
+
+			// Step 1: Pause.
+			g.Expect(capiObj.Pause(t.Context())).To(Succeed())
+
+			g.Expect(c.Get(t.Context(), client.ObjectKeyFromObject(md), md)).To(Succeed())
+			g.Expect(md.Annotations).To(HaveKeyWithValue(capiv1.PausedAnnotation, "true"))
+
+			g.Expect(c.Get(t.Context(), client.ObjectKeyFromObject(ms), ms)).To(Succeed())
+			g.Expect(ms.Annotations).To(HaveKeyWithValue(capiv1.PausedAnnotation, "true"))
+
+			// Step 2: Simulate replica drift while paused (e.g. CAS decrementing via Scale subresource).
+			if tc.upgradeType == hyperv1.UpgradeTypeReplace {
+				md.Spec.Replicas = ptr.To[int32](tc.replicasAtUnpause)
+				g.Expect(c.Update(t.Context(), md)).To(Succeed())
+			} else {
+				ms.Spec.Replicas = ptr.To[int32](tc.replicasAtUnpause)
+				g.Expect(c.Update(t.Context(), ms)).To(Succeed())
+			}
+
+			// Step 3: Unpause by calling the reconcile functions (simulates the NodePool controller
+			// reconciling after PausedUntil expires, which calls capi.Reconcile()).
+			log := ctrl.LoggerFrom(t.Context())
+			template := &capiaws.AWSMachineTemplate{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-template",
+					Namespace: controlPlaneNamespace,
+				},
+			}
+
+			// For non-AWS platforms, effectiveMin is clamped to 1 when autoscalingMin is 0.
+			expectedMinAnnotation := tc.autoscalingMin
+			if tc.autoscalingMin == 0 && tc.platformType != hyperv1.AWSPlatform {
+				expectedMinAnnotation = 1
+			}
+
+			if tc.upgradeType == hyperv1.UpgradeTypeReplace {
+				g.Expect(c.Get(t.Context(), client.ObjectKeyFromObject(md), md)).To(Succeed())
+				g.Expect(capiObj.reconcileMachineDeployment(t.Context(), log, md, template)).To(Succeed())
+
+				// Verify pause annotation removed.
+				g.Expect(md.Annotations).NotTo(HaveKey(capiv1.PausedAnnotation))
+				// Verify replicas clamped within autoscaler bounds.
+				g.Expect(*md.Spec.Replicas).To(Equal(tc.expectedReplicas))
+				// Verify autoscaler annotations preserved.
+				g.Expect(md.Annotations).To(HaveKeyWithValue(autoscalerMinAnnotation, fmt.Sprintf("%d", expectedMinAnnotation)))
+				g.Expect(md.Annotations).To(HaveKeyWithValue(autoscalerMaxAnnotation, fmt.Sprintf("%d", tc.autoscalingMax)))
+			} else {
+				g.Expect(c.Get(t.Context(), client.ObjectKeyFromObject(ms), ms)).To(Succeed())
+				g.Expect(capiObj.reconcileMachineSet(t.Context(), ms, template)).To(Succeed())
+
+				// Verify pause annotation removed.
+				g.Expect(ms.Annotations).NotTo(HaveKey(capiv1.PausedAnnotation))
+				// Verify replicas clamped within autoscaler bounds.
+				g.Expect(*ms.Spec.Replicas).To(Equal(tc.expectedReplicas))
+				// Verify autoscaler annotations preserved.
+				g.Expect(ms.Annotations).To(HaveKeyWithValue(autoscalerMinAnnotation, fmt.Sprintf("%d", expectedMinAnnotation)))
+				g.Expect(ms.Annotations).To(HaveKeyWithValue(autoscalerMaxAnnotation, fmt.Sprintf("%d", tc.autoscalingMax)))
+			}
+		})
+	}
+}
+
 func TestNewCAPI(t *testing.T) {
 	t.Parallel()
 	testCases := []struct {
@@ -2991,6 +3276,147 @@ func TestNewCAPI(t *testing.T) {
 				g.Expect(capi.Token).To(BeEquivalentTo(tc.token))
 				g.Expect(capi.capiClusterName).To(Equal(tc.capiClusterName))
 			}
+		})
+	}
+}
+
+func TestMachineDeploymentComplete(t *testing.T) {
+	two := int32(2)
+	three := int32(3)
+
+	conversionData := func(replicas, upToDate, available int32, observedGen int64) string {
+		data := map[string]any{
+			"apiVersion": "cluster.x-k8s.io/v1beta2",
+			"kind":       "MachineDeployment",
+			"spec":       map[string]any{"replicas": replicas},
+			"status": map[string]any{
+				"observedGeneration": observedGen,
+				"replicas":           replicas,
+				"upToDateReplicas":   upToDate,
+				"availableReplicas":  available,
+			},
+		}
+		raw, _ := json.Marshal(data)
+		return string(raw)
+	}
+
+	testCases := []struct {
+		name     string
+		md       *capiv1.MachineDeployment
+		expected bool
+	}{
+		{
+			name: "When all v1beta1 and v1beta2 fields agree it should return true",
+			md: &capiv1.MachineDeployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Generation: 2,
+					Annotations: map[string]string{
+						conversion.DataAnnotation: conversionData(2, 2, 2, 2),
+					},
+				},
+				Spec:   capiv1.MachineDeploymentSpec{Replicas: &two},
+				Status: capiv1.MachineDeploymentStatus{Replicas: 2, UpdatedReplicas: 2, AvailableReplicas: 2, ObservedGeneration: 2},
+			},
+			expected: true,
+		},
+		{
+			name: "When v1beta1 looks complete but v1beta2 upToDateReplicas disagrees it should return false",
+			md: &capiv1.MachineDeployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Generation: 2,
+					Annotations: map[string]string{
+						conversion.DataAnnotation: conversionData(2, 0, 2, 2),
+					},
+				},
+				Spec:   capiv1.MachineDeploymentSpec{Replicas: &two},
+				Status: capiv1.MachineDeploymentStatus{Replicas: 2, UpdatedReplicas: 2, AvailableReplicas: 2, ObservedGeneration: 2},
+			},
+			expected: false,
+		},
+		{
+			name: "When v1beta1 looks complete but v1beta2 replicas shows surge it should return false",
+			md: &capiv1.MachineDeployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Generation: 2,
+					Annotations: map[string]string{
+						conversion.DataAnnotation: conversionData(3, 2, 2, 2),
+					},
+				},
+				Spec:   capiv1.MachineDeploymentSpec{Replicas: &two},
+				Status: capiv1.MachineDeploymentStatus{Replicas: 2, UpdatedReplicas: 2, AvailableReplicas: 2, ObservedGeneration: 2},
+			},
+			expected: false,
+		},
+		{
+			name: "When v1beta1 looks complete but v1beta2 observedGeneration is stale it should return false",
+			md: &capiv1.MachineDeployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Generation: 2,
+					Annotations: map[string]string{
+						conversion.DataAnnotation: conversionData(2, 2, 2, 1),
+					},
+				},
+				Spec:   capiv1.MachineDeploymentSpec{Replicas: &two},
+				Status: capiv1.MachineDeploymentStatus{Replicas: 2, UpdatedReplicas: 2, AvailableReplicas: 2, ObservedGeneration: 2},
+			},
+			expected: false,
+		},
+		{
+			name: "When v1beta1 is not complete it should return false without checking conversion data",
+			md: &capiv1.MachineDeployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Generation: 2,
+				},
+				Spec:   capiv1.MachineDeploymentSpec{Replicas: &two},
+				Status: capiv1.MachineDeploymentStatus{Replicas: 3, UpdatedReplicas: 1, AvailableReplicas: 2, ObservedGeneration: 2},
+			},
+			expected: false,
+		},
+		{
+			name: "When no conversion-data annotation exists it should fall back to v1beta1 only",
+			md: &capiv1.MachineDeployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Generation: 1,
+				},
+				Spec:   capiv1.MachineDeploymentSpec{Replicas: &two},
+				Status: capiv1.MachineDeploymentStatus{Replicas: 2, UpdatedReplicas: 2, AvailableReplicas: 2, ObservedGeneration: 1},
+			},
+			expected: true,
+		},
+		{
+			name: "When conversion-data annotation is malformed it should fall back to v1beta1 result",
+			md: &capiv1.MachineDeployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Generation: 1,
+					Annotations: map[string]string{
+						conversion.DataAnnotation: "not-valid-json",
+					},
+				},
+				Spec:   capiv1.MachineDeploymentSpec{Replicas: &two},
+				Status: capiv1.MachineDeploymentStatus{Replicas: 2, UpdatedReplicas: 2, AvailableReplicas: 2, ObservedGeneration: 1},
+			},
+			expected: true,
+		},
+		{
+			name: "When v1beta1 replicas does not match spec it should return false",
+			md: &capiv1.MachineDeployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Generation: 2,
+					Annotations: map[string]string{
+						conversion.DataAnnotation: conversionData(3, 2, 2, 2),
+					},
+				},
+				Spec:   capiv1.MachineDeploymentSpec{Replicas: &three},
+				Status: capiv1.MachineDeploymentStatus{Replicas: 2, UpdatedReplicas: 2, AvailableReplicas: 2, ObservedGeneration: 2},
+			},
+			expected: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			g.Expect(MachineDeploymentComplete(tc.md)).To(Equal(tc.expected))
 		})
 	}
 }

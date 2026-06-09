@@ -3,6 +3,8 @@ package ingress
 import (
 	"testing"
 
+	. "github.com/onsi/gomega"
+
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/netutil"
 
@@ -53,6 +55,69 @@ func TestReconcileRouterServiceAnnotations(t *testing.T) {
 	}
 	if got := svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-target-node-labels"]; got != targetNodesLabel {
 		t.Fatalf("expected target node labels annotation to be '%s', got %q", targetNodesLabel, got)
+	}
+}
+
+// When reconciling an external (non-internal) AWS router service
+// it should set aws-load-balancer-scheme to internet-facing.
+func TestReconcileRouterService_WhenExternalAWS_ItShouldSetInternetFacingScheme(t *testing.T) {
+	g := NewGomegaWithT(t)
+
+	hcp := &hyperv1.HostedControlPlane{}
+	hcp.Spec.Platform.Type = hyperv1.AWSPlatform
+
+	svc := &corev1.Service{}
+
+	err := ReconcileRouterService(svc, false /* internal */, true /* cross-zone */, hcp)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	g.Expect(svc.Annotations).To(HaveKeyWithValue(
+		"service.beta.kubernetes.io/aws-load-balancer-scheme", "internet-facing"))
+	g.Expect(svc.Annotations).ToNot(HaveKey(
+		"service.beta.kubernetes.io/aws-load-balancer-internal"))
+}
+
+func TestReconcileRouterService_WhenSwitchingMode_ItShouldRemoveConflictingAnnotation(t *testing.T) {
+	tests := []struct {
+		name         string
+		internal     bool
+		preExisting  map[string]string
+		expectKey    string
+		expectValue  string
+		expectAbsent string
+	}{
+		{
+			name:         "When switching from internal to external it should remove the internal annotation",
+			internal:     false,
+			preExisting:  map[string]string{"service.beta.kubernetes.io/aws-load-balancer-internal": "true"},
+			expectKey:    "service.beta.kubernetes.io/aws-load-balancer-scheme",
+			expectValue:  "internet-facing",
+			expectAbsent: "service.beta.kubernetes.io/aws-load-balancer-internal",
+		},
+		{
+			name:         "When switching from external to internal it should remove the scheme annotation",
+			internal:     true,
+			preExisting:  map[string]string{"service.beta.kubernetes.io/aws-load-balancer-scheme": "internet-facing"},
+			expectKey:    "service.beta.kubernetes.io/aws-load-balancer-internal",
+			expectValue:  "true",
+			expectAbsent: "service.beta.kubernetes.io/aws-load-balancer-scheme",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			hcp := &hyperv1.HostedControlPlane{}
+			hcp.Spec.Platform.Type = hyperv1.AWSPlatform
+
+			svc := &corev1.Service{}
+			svc.Annotations = tt.preExisting
+
+			err := ReconcileRouterService(svc, tt.internal, true /* cross-zone */, hcp)
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(svc.Annotations).To(HaveKeyWithValue(tt.expectKey, tt.expectValue))
+			g.Expect(svc.Annotations).ToNot(HaveKey(tt.expectAbsent))
+		})
 	}
 }
 

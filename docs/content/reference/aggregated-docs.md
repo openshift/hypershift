@@ -6131,6 +6131,205 @@ After these steps, you will see how the (in the AWS case) instances will be term
 
 ---
 
+## Source: docs/content/how-to/automated-machine-management/spot-instances.md
+
+---
+title: Spot Instances
+---
+
+# Spot Instances
+
+AWS Spot instances use spare EC2 capacity at significantly reduced prices compared to on-demand instances, but may be interrupted with a 2-minute warning when EC2 needs the capacity back. HyperShift supports Spot instances for NodePools on AWS, with built-in graceful termination handling via SQS queues.
+
+!!! important
+
+    Spot instances are suitable for fault-tolerant, stateless, and flexible workloads. They are **not recommended** for workloads that cannot tolerate interruptions.
+
+## Prerequisites
+
+Before creating a Spot instance NodePool, you must set up an SQS queue and EventBridge rules to receive EC2 interruption events. The AWS Node Termination Handler (NTH) deployed by HyperShift polls this queue and cordons/drains nodes before they are terminated, providing best-effort graceful shutdown.
+
+### 1. Create the SQS queue
+
+Create an SQS queue to receive Spot interruption notifications:
+
+```shell
+export CLUSTER_NAME="my-cluster"
+export AWS_REGION="us-east-1"
+
+aws sqs create-queue \
+  --queue-name "${CLUSTER_NAME}-spot-interruption-queue" \
+  --region "${AWS_REGION}"
+```
+
+Note the queue URL from the output — you will need it when creating the HostedCluster.
+
+### 2. Create EventBridge rules
+
+Create EventBridge rules to route EC2 Spot interruption warnings and rebalance recommendations to the SQS queue:
+
+```shell
+QUEUE_ARN=$(aws sqs get-queue-attributes \
+  --queue-url "https://sqs.${AWS_REGION}.amazonaws.com/$(aws sts get-caller-identity --query Account --output text)/${CLUSTER_NAME}-spot-interruption-queue" \
+  --attribute-names QueueArn \
+  --query 'Attributes.QueueArn' --output text)
+
+aws events put-rule \
+  --name "${CLUSTER_NAME}-spot-interruption-warning" \
+  --event-pattern '{"source":["aws.ec2"],"detail-type":["EC2 Spot Instance Interruption Warning"]}' \
+  --region "${AWS_REGION}"
+
+aws events put-targets \
+  --rule "${CLUSTER_NAME}-spot-interruption-warning" \
+  --targets "Id=1,Arn=${QUEUE_ARN}" \
+  --region "${AWS_REGION}"
+
+aws events put-rule \
+  --name "${CLUSTER_NAME}-rebalance-recommendation" \
+  --event-pattern '{"source":["aws.ec2"],"detail-type":["EC2 Instance Rebalance Recommendation"]}' \
+  --region "${AWS_REGION}"
+
+aws events put-targets \
+  --rule "${CLUSTER_NAME}-rebalance-recommendation" \
+  --targets "Id=1,Arn=${QUEUE_ARN}" \
+  --region "${AWS_REGION}"
+```
+
+### 3. Configure SQS queue policy
+
+Allow EventBridge to send messages to the queue:
+
+```shell
+ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+QUEUE_URL="https://sqs.${AWS_REGION}.amazonaws.com/${ACCOUNT_ID}/${CLUSTER_NAME}-spot-interruption-queue"
+
+aws sqs set-queue-attributes \
+  --queue-url "${QUEUE_URL}" \
+  --attributes '{
+    "Policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"events.amazonaws.com\"},\"Action\":\"sqs:SendMessage\",\"Resource\":\"'${QUEUE_ARN}'\"}]}"
+  }'
+```
+
+## Creating a Spot Instance NodePool
+
+### Step 1: Set the SQS queue URL on the HostedCluster
+
+The SQS queue URL is configured at the HostedCluster level in `spec.platform.aws.terminationHandlerQueueURL`. This enables the AWS Node Termination Handler component for all Spot NodePools in the cluster:
+
+```yaml
+apiVersion: hypershift.openshift.io/v1beta1
+kind: HostedCluster
+metadata:
+  name: my-cluster
+  namespace: clusters
+spec:
+  platform:
+    type: AWS
+    aws:
+      region: us-east-1
+      terminationHandlerQueueURL: "https://sqs.us-east-1.amazonaws.com/123456789012/my-cluster-spot-interruption-queue"
+      # ... other AWS configuration
+  # ... other spec fields
+```
+
+If you already have a running HostedCluster, you can patch it:
+
+```shell
+oc patch hostedcluster my-cluster -n clusters --type merge -p '{
+  "spec": {
+    "platform": {
+      "aws": {
+        "terminationHandlerQueueURL": "https://sqs.us-east-1.amazonaws.com/123456789012/my-cluster-spot-interruption-queue"
+      }
+    }
+  }
+}'
+```
+
+### Step 2: Create a NodePool with Spot market type
+
+Create a NodePool with `spec.platform.aws.placement.marketType` set to `Spot`:
+
+```yaml
+apiVersion: hypershift.openshift.io/v1beta1
+kind: NodePool
+metadata:
+  name: spot-workers
+  namespace: clusters
+spec:
+  clusterName: my-cluster
+  replicas: 3
+  release:
+    image: quay.io/openshift-release-dev/ocp-release:4.18.0-x86_64
+  management:
+    autoRepair: true
+    upgradeType: Replace
+  platform:
+    type: AWS
+    aws:
+      instanceType: m5.xlarge
+      instanceProfile: my-cluster-worker
+      rootVolume:
+        size: 120
+        type: gp3
+      placement:
+        marketType: Spot
+```
+
+### Setting a maximum price (optional)
+
+You can request Spot Instances at the Spot price, capped at the On-Demand price, or you can specify the maximum amount you're willing to pay:
+
+```yaml
+spec:
+  platform:
+    aws:
+      placement:
+        marketType: Spot
+        spot:
+          maxPrice: "0.50"
+```
+
+The value is a decimal string representing the price per hour in USD.
+
+## Behavior
+
+When a NodePool is created with `marketType: Spot`, HyperShift labels all Machines and Nodes with `hypershift.openshift.io/interruptible-instance` and tags the EC2 instances with `aws-node-termination-handler/managed` so they can be identified by the termination handling components.
+
+### Graceful termination with SQS (recommended)
+
+When `terminationHandlerQueueURL` is set on the HostedCluster and at least one NodePool has `marketType: Spot`, HyperShift automatically deploys the Node Termination Handler (NTH) as a control plane component. The termination flow is:
+
+1. AWS sends a Spot interruption warning (2-minute notice) or rebalance recommendation to the SQS queue via EventBridge
+2. NTH polls the queue and identifies the affected node
+3. NTH cordons the node and drains it, respecting PodDisruptionBudgets
+4. NTH taints the node (e.g., `aws-node-termination-handler/spot-itn`)
+5. The spot remediation controller detects the taint, annotates the corresponding Machine with `hypershift.openshift.io/spot-interruption-signal`, and deletes it
+6. The machine controller provisions a replacement Spot instance
+
+### Fallback without SQS
+
+Without the SQS queue, AWS terminates the instance abruptly with no graceful drain. In this case, the CAPI Machine enters a `Failed` state and the MachineHealthCheck triggers remediation to create a replacement. This path is slower and does not provide graceful pod shutdown.
+
+### MachineHealthCheck
+
+HyperShift creates a dedicated MachineHealthCheck (`<nodepool-name>-spot`) for each Spot NodePool. This MachineHealthCheck:
+
+- Targets only Machines with the `hypershift.openshift.io/interruptible-instance` label
+- Sets `maxUnhealthy: 100%` because Spot reclamation can affect all instances simultaneously
+- Uses an 8-minute unhealthy timeout (accounts for the 2-minute AWS notice plus shutdown time)
+- Serves as a safety net in case the NTH + remediation controller path does not trigger
+
+### Constraints
+
+- Spot instances **cannot** be combined with Capacity Reservations
+- Spot instances require **default** tenancy (dedicated tenancy is not supported)
+- `spot` options (e.g., `maxPrice`) can only be specified when `marketType` is `Spot`
+- Replacement instances are always Spot — if Spot capacity is unavailable, the replacement Machine will go `Failed` and the MachineHealthCheck will continue to retry remediation
+
+
+---
+
 ## Source: docs/content/how-to/autoscaling.md
 
 # Autoscaling
@@ -9618,145 +9817,6 @@ spec:
 
 ---
 
-## Source: docs/content/how-to/azure/azure-workload-identity-setup.md
-
-# Azure Workload Identity Setup for Self-Managed Clusters
-
-!!! note "Developer Preview in OCP 4.21"
-    
-    Self-managed Azure HostedClusters are available as a Developer Preview feature in OpenShift Container Platform 4.21.
-
-This document describes how to set up Azure Workload Identities and OIDC issuer for self-managed Azure HostedClusters.
-
-!!! warning "Persistent Resource Groups"
-    
-    When setting up workload identities and OIDC issuer for the first time, create them in a **persistent resource group** that will not be deleted when individual clusters are destroyed. This allows you to reuse the same workload identities and OIDC issuer across multiple HostedClusters, reducing setup time and avoiding unnecessary resource recreation.
-    
-    - Use a persistent resource group like `os4-common`.
-    - This resource group should be separate from the cluster-specific resource groups that get created and deleted with each HostedCluster.
-    - The OIDC issuer storage account should also be created in this persistent resource group.
-
-## Prerequisites
-
-- Azure CLI (`az`) installed and configured
-- `jq` command-line JSON processor
-- Cloud Credential Operator (CCO) tool installed
-- Appropriate Azure permissions
-
-## Create Azure Workload Identities
-
-!!! note "OIDC Issuer Required"
-
-    Before running this command, you need an OIDC issuer URL. If you haven't set this up yet, see Configure OIDC Issuer below first.
-
-You can create the required managed identities and federated credentials using the HyperShift CLI:
-
-```bash
-# Set environment variables
-PERSISTENT_RG_NAME="os4-common"  # Use persistent resource group
-LOCATION="eastus"
-CLUSTER_NAME="my-self-managed-cluster"
-INFRA_ID="${CLUSTER_NAME}-$(openssl rand -hex 4)"
-AZURE_CREDS="/path/to/azure-creds.json"
-
-# Create persistent resource group (if it doesn't exist)
-az group create --name $PERSISTENT_RG_NAME --location $LOCATION
-
-# Create workload identities using the HyperShift CLI
-# (requires OIDC issuer URL - see next section if you haven't set this up yet)
-hypershift create iam azure \
-    --name $CLUSTER_NAME \
-    --infra-id $INFRA_ID \
-    --azure-creds $AZURE_CREDS \
-    --location $LOCATION \
-    --resource-group-name $PERSISTENT_RG_NAME \
-    --oidc-issuer-url $OIDC_ISSUER_URL \
-    --output-file workload-identities.json
-```
-
-This creates 7 managed identities with federated credentials for:
-
-- Disk CSI driver
-- File CSI driver
-- Image Registry
-- Ingress Operator
-- Cloud Provider
-- NodePool Management
-- Network Operator
-
-To also create a KMS identity for Azure Key Vault etcd encryption at rest, add the `--enable-kms` flag:
-
-```bash
-hypershift create iam azure \
-    --name $CLUSTER_NAME \
-    --infra-id $INFRA_ID \
-    --azure-creds $AZURE_CREDS \
-    --location $LOCATION \
-    --resource-group-name $PERSISTENT_RG_NAME \
-    --oidc-issuer-url $OIDC_ISSUER_URL \
-    --output-file workload-identities.json \
-    --enable-kms
-```
-
-!!! warning "KMS Key Vault Role Assignment"
-
-    If you use `--enable-kms`, you must **manually** assign the `Key Vault Crypto User` role to the KMS identity on your Key Vault. The `--auto-assign-roles` flag does not cover this because the Key Vault scope is user-provided. See Enabling KMS Encryption for the role assignment commands.
-
-For complete documentation on the IAM commands, see Create Azure IAM Resources Separately.
-
-## Configure OIDC Issuer
-
-Use the Cloud Credential Operator (CCO) tool to create the OIDC issuer:
-
-```bash
-# Set OIDC issuer variables (reusing variables from previous steps)
-OIDC_STORAGE_ACCOUNT_NAME="yourstorageaccount"
-TENANT_ID="your-tenant-id"
-# SUBSCRIPTION_ID and PERSISTENT_RG_NAME already set from previous section
-# Create an RSA key pair and save the private and public key
-ccoctl azure create-key-pair  
-
-SA_TOKEN_ISSUER_PRIVATE_KEY_PATH="/path/to/serviceaccount-signer.private"
-SA_TOKEN_ISSUER_PUBLIC_KEY_PATH="/path/to/serviceaccount-signer.public"
-
-# Create OIDC issuer using CCO tool in os4-common resource group
-ccoctl azure create-oidc-issuer \
-    --oidc-resource-group-name ${PERSISTENT_RG_NAME} \
-    --tenant-id ${TENANT_ID} \
-    --region ${LOCATION} \
-    --name ${OIDC_STORAGE_ACCOUNT_NAME} \
-    --subscription-id ${SUBSCRIPTION_ID} \
-    --public-key-file ${SA_TOKEN_ISSUER_PUBLIC_KEY_PATH}
-
-# Set OIDC issuer URL
-OIDC_ISSUER_URL="https://${OIDC_STORAGE_ACCOUNT_NAME}.blob.core.windows.net/${OIDC_STORAGE_ACCOUNT_NAME}"
-```
-
-## Verification
-
-Verify the setup:
-
-```bash
-# List created managed identities
-az identity list --resource-group $PERSISTENT_RG_NAME --output table
-
-# Verify federated credentials for one identity
-az identity federated-credential list \
-    --identity-name "${AZURE_DISK_MI_NAME}" \
-    --resource-group $PERSISTENT_RG_NAME
-
-# Test OIDC issuer accessibility
-curl -s "${OIDC_ISSUER_URL}/.well-known/openid-configuration" | jq .
-```
-
-## Next Steps
-
-After setting up workload identities, you can proceed to:
-
-- Setup Azure Management Cluster for HyperShift
-
----
-
 ## Source: docs/content/how-to/azure/create-azure-cluster-on-aks.md
 
 # Create an Azure Hosted Cluster on AKS
@@ -10327,6 +10387,10 @@ title: Create Azure IAM resources separately
 
 # Create Azure IAM resources separately
 
+!!! note "Developer Preview in OCP 4.21"
+
+    Self-managed Azure HostedClusters are available as a Developer Preview feature in OpenShift Container Platform 4.21.
+
 The `hypershift create iam azure` command creates Azure workload identities separately from infrastructure,
 following the same pattern as AWS and GCP. This enables you to manage IAM resources independently from
 your cluster infrastructure lifecycle.
@@ -10334,15 +10398,30 @@ your cluster infrastructure lifecycle.
 ## Overview
 
 For self-managed Azure HyperShift clusters, workload identities authenticate cluster components to Azure
-services using OIDC federation. You must create identities separately using `create iam azure` and then
+services using OIDC federation. The setup consists of two steps:
+
+1. **Configure an OIDC Issuer** using the Cloud Credential Operator (CCO) tool
+2. **Create workload identities** using `hypershift create iam azure`
+
+You must create identities separately using `create iam azure` and then
 consume them during infrastructure or cluster creation via the `--workload-identities-file` flag.
 
-This approach provides control over the IAM lifecycle and follows the same pattern as AWS and GCP platforms.
+!!! warning "Persistent Resource Groups"
+
+    When setting up workload identities and OIDC issuer for the first time, create them in a **persistent resource group** that will not be deleted when individual clusters are destroyed. This allows you to reuse the same workload identities and OIDC issuer across multiple HostedClusters, reducing setup time and avoiding unnecessary resource recreation.
+
+    - Use a persistent resource group like `os4-common`.
+    - This resource group should be separate from the cluster-specific resource groups that get created and deleted with each HostedCluster.
+    - The OIDC issuer storage account should also be created in this persistent resource group.
 
 ## Prerequisites
 
 Before creating Azure IAM resources, ensure you have:
 
+- Azure CLI (`az`) installed and configured
+- Cloud Credential Operator (CCO) tool (`ccoctl`) installed
+- `jq` command-line JSON processor
+- Appropriate Azure permissions
 - An Azure credentials file with the following format:
     ```json
     {
@@ -10353,20 +10432,57 @@ Before creating Azure IAM resources, ensure you have:
     }
     ```
 - An existing resource group where the managed identities will be created
-- An OIDC issuer URL for workload identity federation
+
+## Configure OIDC Issuer
+
+Before creating workload identities, you need an OIDC issuer URL. Use the Cloud Credential Operator (CCO) tool to create one:
+
+```bash
+# Set OIDC issuer variables
+PERSISTENT_RG_NAME="os4-common"  # Use persistent resource group
+LOCATION="eastus"
+OIDC_STORAGE_ACCOUNT_NAME="yourstorageaccount"
+TENANT_ID="your-tenant-id"
+SUBSCRIPTION_ID="your-subscription-id"
+
+# Create persistent resource group (if it doesn't exist)
+az group create --name $PERSISTENT_RG_NAME --location $LOCATION
+
+# Create an RSA key pair and save the private and public key
+ccoctl azure create-key-pair
+
+SA_TOKEN_ISSUER_PRIVATE_KEY_PATH="/path/to/serviceaccount-signer.private"
+SA_TOKEN_ISSUER_PUBLIC_KEY_PATH="/path/to/serviceaccount-signer.public"
+
+# Create OIDC issuer using CCO tool in persistent resource group
+ccoctl azure create-oidc-issuer \
+    --oidc-resource-group-name ${PERSISTENT_RG_NAME} \
+    --tenant-id ${TENANT_ID} \
+    --region ${LOCATION} \
+    --name ${OIDC_STORAGE_ACCOUNT_NAME} \
+    --subscription-id ${SUBSCRIPTION_ID} \
+    --public-key-file ${SA_TOKEN_ISSUER_PUBLIC_KEY_PATH}
+
+# Set OIDC issuer URL
+OIDC_ISSUER_URL="https://${OIDC_STORAGE_ACCOUNT_NAME}.blob.core.windows.net/${OIDC_STORAGE_ACCOUNT_NAME}"
+```
 
 ## Creating Workload Identities
 
 Use the `hypershift create iam azure` command:
 
 ```bash
+CLUSTER_NAME="my-self-managed-cluster"
+INFRA_ID="${CLUSTER_NAME}-$(openssl rand -hex 4)"
+AZURE_CREDS="/path/to/azure-creds.json"
+
 hypershift create iam azure \
-    --name CLUSTER_NAME \
-    --infra-id INFRA_ID \
-    --azure-creds AZURE_CREDENTIALS_FILE \
-    --location LOCATION \
-    --resource-group-name RESOURCE_GROUP \
-    --oidc-issuer-url OIDC_ISSUER_URL \
+    --name $CLUSTER_NAME \
+    --infra-id $INFRA_ID \
+    --azure-creds $AZURE_CREDS \
+    --location $LOCATION \
+    --resource-group-name $PERSISTENT_RG_NAME \
+    --oidc-issuer-url $OIDC_ISSUER_URL \
     --output-file workload-identities.json
 ```
 
@@ -10375,11 +10491,11 @@ where:
 * `CLUSTER_NAME` is the name of the hosted cluster you intend to create.
 * `INFRA_ID` is a unique identifier used to name Azure resources. Typically this is the cluster name
     with a random suffix appended.
-* `AZURE_CREDENTIALS_FILE` points to an Azure credentials file with permission to create
+* `AZURE_CREDS` points to an Azure credentials file with permission to create
     managed identities and federated credentials.
 * `LOCATION` is the Azure region for the managed identities (e.g., `eastus`, `westus2`).
-* `RESOURCE_GROUP` is the name of an existing resource group where identities will be created.
-* `OIDC_ISSUER_URL` is the URL of the OIDC identity provider used for workload identity federation.
+* `PERSISTENT_RG_NAME` is the name of an existing resource group where identities will be created.
+* `OIDC_ISSUER_URL` is the URL of the OIDC identity provider created in the previous step.
 
 Running this command creates:
 
@@ -10393,6 +10509,26 @@ Running this command creates:
     - Network Operator
     - Control Plane Operator
 * Federated Identity Credentials for each identity, configured with the OIDC issuer
+
+### Enabling KMS Identity
+
+To also create a KMS identity for Azure Key Vault etcd encryption at rest, add the `--enable-kms` flag:
+
+```bash
+hypershift create iam azure \
+    --name $CLUSTER_NAME \
+    --infra-id $INFRA_ID \
+    --azure-creds $AZURE_CREDS \
+    --location $LOCATION \
+    --resource-group-name $PERSISTENT_RG_NAME \
+    --oidc-issuer-url $OIDC_ISSUER_URL \
+    --output-file workload-identities.json \
+    --enable-kms
+```
+
+!!! warning "KMS Key Vault Role Assignment"
+
+    If you use `--enable-kms`, you must **manually** assign the `Key Vault Crypto User` role to the KMS identity on your Key Vault. The `--auto-assign-roles` flag does not cover this because the Key Vault scope is user-provided. See Enabling KMS Encryption for the role assignment commands.
 
 ## Private Endpoint Access
 
@@ -10473,6 +10609,23 @@ hypershift create cluster azure \
     --workload-identities-file workload-identities.json
 ```
 
+## Verification
+
+Verify the setup:
+
+```bash
+# List created managed identities
+az identity list --resource-group $PERSISTENT_RG_NAME --output table
+
+# Verify federated credentials for one identity
+az identity federated-credential list \
+    --identity-name "${CLUSTER_NAME}-disk-${INFRA_ID}" \
+    --resource-group $PERSISTENT_RG_NAME
+
+# Test OIDC issuer accessibility
+curl -s "${OIDC_ISSUER_URL}/.well-known/openid-configuration" | jq .
+```
+
 ## Destroying Workload Identities
 
 To destroy the workload identities that were created:
@@ -10504,16 +10657,17 @@ Both the managed identities and their federated credentials are removed.
 | `--name` | Name of the HostedCluster |
 | `--infra-id` | Unique infrastructure identifier |
 | `--azure-creds` | Path to Azure credentials JSON file |
-| `--location` | Azure region for identities |
+| `--resource-group-name` | Resource group for identities |
 | `--oidc-issuer-url` | OIDC issuer URL for federation |
+| `--output-file` | Output file path |
 
 ### Optional Flags for `create iam azure`
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `--resource-group-name` | Resource group for identities | `{name}-{infra-id}` |
-| `--output-file` | Output file path | `{name}-iam-output.json` |
+| `--location` | Azure region for identities | `eastus` |
 | `--cloud` | Azure cloud environment | `AzurePublicCloud` |
+| `--enable-kms` | Create KMS identity for etcd encryption | `false` |
 
 ### Required Flags for `destroy iam azure`
 
@@ -10543,22 +10697,37 @@ export INFRA_ID="${NAME}-$(openssl rand -hex 4)"
 export LOCATION="eastus"
 export BASE_DOMAIN="example.com"
 export AZURE_CREDS="/path/to/azure-creds.json"
-export OIDC_ISSUER_URL="https://my-oidc-issuer.com"
+export PERSISTENT_RG_NAME="os4-common"
+export TENANT_ID="your-tenant-id"
+export SUBSCRIPTION_ID="your-subscription-id"
+export OIDC_STORAGE_ACCOUNT_NAME="yourstorageaccount"
+export RELEASE_IMAGE="quay.io/openshift-release-dev/ocp-release:XYZ"
 
-# 2. Create a resource group for identities
-az group create --name ${NAME}-rg --location ${LOCATION}
+# 2. Create persistent resource group (if it doesn't exist)
+az group create --name ${PERSISTENT_RG_NAME} --location ${LOCATION}
 
-# 3. Create workload identities
+# 3. Create OIDC issuer
+ccoctl azure create-key-pair
+ccoctl azure create-oidc-issuer \
+    --oidc-resource-group-name ${PERSISTENT_RG_NAME} \
+    --tenant-id ${TENANT_ID} \
+    --region ${LOCATION} \
+    --name ${OIDC_STORAGE_ACCOUNT_NAME} \
+    --subscription-id ${SUBSCRIPTION_ID} \
+    --public-key-file /path/to/serviceaccount-signer.public
+export OIDC_ISSUER_URL="https://${OIDC_STORAGE_ACCOUNT_NAME}.blob.core.windows.net/${OIDC_STORAGE_ACCOUNT_NAME}"
+
+# 4. Create workload identities
 hypershift create iam azure \
     --name ${NAME} \
     --infra-id ${INFRA_ID} \
     --azure-creds ${AZURE_CREDS} \
     --location ${LOCATION} \
-    --resource-group-name ${NAME}-rg \
+    --resource-group-name ${PERSISTENT_RG_NAME} \
     --oidc-issuer-url ${OIDC_ISSUER_URL} \
     --output-file workload-identities.json
 
-# 4. Create infrastructure using pre-created identities
+# 5. Create infrastructure using pre-created identities
 hypershift create infra azure \
     --name ${NAME} \
     --infra-id ${INFRA_ID} \
@@ -10566,9 +10735,11 @@ hypershift create infra azure \
     --base-domain ${BASE_DOMAIN} \
     --location ${LOCATION} \
     --workload-identities-file workload-identities.json \
+    --assign-identity-roles \
+    --dns-zone-rg-name ${PERSISTENT_RG_NAME} \
     --output-file infra-output.yaml
 
-# 5. Create the cluster
+# 6. Create the cluster
 hypershift create cluster azure \
     --name ${NAME} \
     --infra-id ${INFRA_ID} \
@@ -10576,36 +10747,42 @@ hypershift create cluster azure \
     --base-domain ${BASE_DOMAIN} \
     --location ${LOCATION} \
     --pull-secret /path/to/pull-secret \
-    --infra-json infra-output.yaml
+    --generate-ssh \
+    --release-image ${RELEASE_IMAGE} \
+    --sa-token-issuer-private-key-path /path/to/serviceaccount-signer.private \
+    --oidc-issuer-url ${OIDC_ISSUER_URL} \
+    --dns-zone-rg-name ${PERSISTENT_RG_NAME} \
+    --assign-service-principal-roles \
+    --infra-json infra-output.yaml \
+    --diagnostics-storage-account-type Managed
 
 # --- Cleanup ---
 
-# 6. Destroy the cluster
+# 7. Destroy the cluster
 hypershift destroy cluster azure \
     --name ${NAME} \
     --azure-creds ${AZURE_CREDS} \
-    --dns-zone-rg-name ${DNS_ZONE_RG}
+    --dns-zone-rg-name ${PERSISTENT_RG_NAME}
 
-# 7. Destroy infrastructure
+# 8. Destroy infrastructure
 hypershift destroy infra azure \
     --name ${NAME} \
     --infra-id ${INFRA_ID} \
     --azure-creds ${AZURE_CREDS}
 
-# 8. Destroy IAM resources
+# 9. Destroy IAM resources (only if no longer needed)
 hypershift destroy iam azure \
     --azure-creds ${AZURE_CREDS} \
     --workload-identities-file workload-identities.json \
-    --resource-group-name ${RESOURCE_GROUP} \
+    --resource-group-name ${PERSISTENT_RG_NAME} \
     --name ${NAME} \
     --infra-id ${INFRA_ID} \
-    --dns-zone-rg-name ${DNS_ZONE_RG}
+    --dns-zone-rg-name ${PERSISTENT_RG_NAME}
 ```
 
 ## See Also
 
 - Create Azure Infrastructure Separately
-- Azure Workload Identity Setup
 - Self-Managed Azure Overview
 - Deploy Azure Private Clusters — End-to-end guide for private endpoint access
 
@@ -10880,7 +11057,7 @@ Before creating a self-managed Azure HostedCluster, ensure you have:
 
     This guide assumes you have already completed the workload identity configuration and management cluster setup. Follow these guides in order:
 
-    1. Azure Workload Identity Setup - Workload identities and OIDC issuer configuration
+    1. Create Azure IAM Resources - Workload identities and OIDC issuer configuration
     2. Setup Azure Management Cluster for HyperShift - HyperShift operator installation (with or without External DNS)
 
 ### Permission Requirements
@@ -10895,123 +11072,70 @@ Your Azure service principal must have the following permissions:
 
 ## Creating the Self-Managed Azure HostedCluster
 
-!!! tip "Alternative: Use `create infra azure` and `create iam azure`"
-
-    This guide creates Azure infrastructure manually with `az` CLI commands for
-    transparency. Alternatively, you can use the HyperShift CLI to automate
-    infrastructure and IAM creation:
-
-    - Create Azure IAM Resources Separately — `hypershift create iam azure`
-    - Create Azure Infrastructure Separately — `hypershift create infra azure`
-
-    The private cluster guide (Deploy Azure Private Clusters)
-    uses these automated commands and is the recommended approach for private topology.
-
 ### Infrastructure Setup
 
-Before creating the HostedCluster, set up the necessary Azure infrastructure:
-
-!!! note "About PERSISTENT_RG_NAME"
-    In Red Hat environments, a periodic Azure resource "reaper" deletes resources that are not properly tagged or not located in an approved resource group. We frequently use the `os4-common` resource group for shared, long-lived assets (for example, public DNS zones) to avoid accidental cleanup. If you are not in Red Hat infrastructure, set `PERSISTENT_RG_NAME` to any long-lived resource group in your subscription that will not be automatically reaped, or ensure your organization's required tags/policies are applied. The name does not have to be `os4-common`—use whatever persistent resource group fits your environment.
+Create the Azure infrastructure using the HyperShift CLI:
 
 ```bash
 # Set cluster configuration variables
-PREFIX="your-prefix-sm"
-RELEASE_IMAGE="quay.io/openshift-release-dev/ocp-release:XYZ"
-TAG="latest"
-
+CLUSTER_NAME="my-self-managed-cluster"
+INFRA_ID="${CLUSTER_NAME}-$(openssl rand -hex 4)"
 LOCATION="eastus"
-MANAGED_RG_NAME="${PREFIX}-managed-rg"
-VNET_RG_NAME="${PREFIX}-customer-vnet-rg"
-NSG_RG_NAME="${PREFIX}-customer-nsg-rg"
-VNET_NAME="${PREFIX}-customer-vnet"
-VNET_SUBNET1="${PREFIX}-customer-subnet-1"
-NSG="${PREFIX}-customer-nsg"
-DNS_ZONE_NAME="your-subdomain.your-parent.dns.zone.com"
-CLUSTER_NAMESPACE="clusters"
-CLUSTER_NAME="${PREFIX}-hc"
-AZURE_CREDS="/path/to/azure/credentials"
+BASE_DOMAIN="example.com"
+AZURE_CREDS="/path/to/azure-creds.json"
 PULL_SECRET="/path/to/pull-secret.json"
-HYPERSHIFT_BINARY_PATH="/path/to/hypershift/bin"
+RELEASE_IMAGE="quay.io/openshift-release-dev/ocp-release:XYZ"
+PERSISTENT_RG_NAME="os4-common"
 OIDC_ISSUER_URL="https://yourstorageaccount.blob.core.windows.net/yourstorageaccount"
 SA_TOKEN_ISSUER_PRIVATE_KEY_PATH="/path/to/serviceaccount-signer.private"
-PERSISTENT_RG_NAME="os4-common"
-PARENT_DNS_ZONE="your-parent.dns.zone.com"
 
-# Clean up any previous instances (optional)
-az group delete -n "${VNET_RG_NAME}" --yes --no-wait || true
-az group delete -n "${NSG_RG_NAME}" --yes --no-wait || true
-
-# Create managed resource group
-az group create --name "${MANAGED_RG_NAME}" --location ${LOCATION}
-
-# Create VNET & NSG resource groups
-az group create --name "${VNET_RG_NAME}" --location ${LOCATION}
-az group create --name "${NSG_RG_NAME}" --location ${LOCATION}
-
-# Create network security group
-az network nsg create \
-    --resource-group "${NSG_RG_NAME}" \
-    --name "${NSG}"
-
-# Get NSG ID
-GetNsgID=$(az network nsg list --query "[?name=='${NSG}'].id" -o tsv)
-
-# Create VNet with subnet
-az network vnet create \
-    --name "${VNET_NAME}" \
-    --resource-group "${VNET_RG_NAME}" \
-    --address-prefix 10.0.0.0/16 \
-    --subnet-name "${VNET_SUBNET1}" \
-    --subnet-prefixes 10.0.0.0/24 \
-    --nsg "${GetNsgID}"
-
-# Get VNet and Subnet IDs
-GetVnetID=$(az network vnet list --query "[?name=='${VNET_NAME}'].id" -o tsv)
-GetSubnetID=$(az network vnet subnet show \
-    --vnet-name "${VNET_NAME}" \
-    --name "${VNET_SUBNET1}" \
-    --resource-group "${VNET_RG_NAME}" \
-    --query id --output tsv)
+# Create infrastructure
+hypershift create infra azure \
+    --name ${CLUSTER_NAME} \
+    --infra-id ${INFRA_ID} \
+    --azure-creds ${AZURE_CREDS} \
+    --base-domain ${BASE_DOMAIN} \
+    --location ${LOCATION} \
+    --workload-identities-file workload-identities.json \
+    --assign-identity-roles \
+    --dns-zone-rg-name ${PERSISTENT_RG_NAME} \
+    --output-file infra-output.yaml
 ```
 
+This creates the resource groups, VNet, subnet, NSG, Private DNS zone, and load balancer for your cluster. For advanced options like using existing network resources, see Create Azure Infrastructure Separately.
+
 ### Create the HostedCluster
-
-!!! note "Federated Identity Prerequisites"
-
-    Before creating the cluster, ensure that all federated identity credentials have been set up for your workload identities as described in the Azure Workload Identity Setup guide. The cluster creation will fail if these are not properly configured.
 
 !!! note "Azure Marketplace Images"
 
     For OpenShift 4.20 and later, HyperShift automatically selects the appropriate Azure Marketplace image from the release payload. You no longer need to specify `--marketplace-*` flags unless you want to use a specific custom image. See Configuring Azure Marketplace Images for more details.
 
-Create the HostedCluster:
+Create the HostedCluster using the infrastructure output:
 
 ```bash
-# Create the HostedCluster
-${HYPERSHIFT_BINARY_PATH}/hypershift create cluster azure \
+hypershift create cluster azure \
     --name "$CLUSTER_NAME" \
-    --namespace "$CLUSTER_NAMESPACE" \
+    --infra-id "$INFRA_ID" \
     --azure-creds $AZURE_CREDS \
     --location ${LOCATION} \
     --node-pool-replicas 2 \
-    --base-domain $PARENT_DNS_ZONE \
+    --base-domain $BASE_DOMAIN \
     --pull-secret $PULL_SECRET \
     --generate-ssh \
     --release-image ${RELEASE_IMAGE} \
-    --external-dns-domain ${DNS_ZONE_NAME} \
-    --resource-group-name "${MANAGED_RG_NAME}" \
-    --vnet-id "${GetVnetID}" \
-    --subnet-id "${GetSubnetID}" \
-    --network-security-group-id "${GetNsgID}" \
     --sa-token-issuer-private-key-path "${SA_TOKEN_ISSUER_PRIVATE_KEY_PATH}" \
     --oidc-issuer-url "${OIDC_ISSUER_URL}" \
-    --control-plane-operator-image="quay.io/hypershift/hypershift:${TAG}" \
     --dns-zone-rg-name ${PERSISTENT_RG_NAME} \
     --assign-service-principal-roles \
-    --workload-identities-file ./workload-identities.json \
+    --infra-json infra-output.yaml \
     --diagnostics-storage-account-type Managed
 ```
+
+!!! tip "External DNS"
+
+    If using External DNS for automatic DNS management, also pass
+    `--external-dns-domain <your-dns-zone-name>` to the cluster creation command.
+    See Setup Azure Management Cluster for DNS configuration.
 
 !!! tip "Private Clusters"
 
@@ -11020,15 +11144,6 @@ ${HYPERSHIFT_BINARY_PATH}/hypershift create cluster azure \
     Private clusters require additional setup: a NAT subnet in the management
     cluster's VNet, `--endpoint-access Private` flag, and HyperShift operator
     installation with `--private-platform Azure`.
-
-!!! warning "Private Clusters: Avoid DNS Zone Shadowing"
-
-    If creating a **private** Azure HostedCluster, ensure `--external-dns-domain` does
-    not match `{clusterName}.{baseDomain}` or its parent domain. A matching value
-    causes an Azure Private DNS zone to shadow `*.apps` resolution, breaking console
-    and all ingress. This cannot be fixed after creation. See
-    External DNS Domain Must Not Match Cluster Domain
-    for details.
 
 ### Configuring Azure Marketplace Images
 
@@ -11043,7 +11158,7 @@ For OpenShift 4.20+, HyperShift automatically selects the appropriate Azure Mark
 ```bash
 # No marketplace flags needed - HyperShift will auto-select the image
 # Gen2 VM generation is used by default
-${HYPERSHIFT_BINARY_PATH}/hypershift create cluster azure \
+hypershift create cluster azure \
     --name "$CLUSTER_NAME" \
     # ... other flags ...
 ```
@@ -11055,7 +11170,7 @@ This is the **recommended approach** as it ensures your nodes use the officially
 If you need to use a specific VM generation (Gen1 or Gen2), you can specify only the `--image-generation` flag:
 
 ```bash
-${HYPERSHIFT_BINARY_PATH}/hypershift create cluster azure \
+hypershift create cluster azure \
     --name "$CLUSTER_NAME" \
     --image-generation Gen2 \  # Or Gen1 (case-sensitive)
     # ... other flags ...
@@ -11072,7 +11187,7 @@ ${HYPERSHIFT_BINARY_PATH}/hypershift create cluster azure \
 If you need to use a specific custom marketplace image, provide all marketplace details:
 
 ```bash
-${HYPERSHIFT_BINARY_PATH}/hypershift create cluster azure \
+hypershift create cluster azure \
     --name "$CLUSTER_NAME" \
     --marketplace-publisher azureopenshift \
     --marketplace-offer aro4 \
@@ -11096,18 +11211,18 @@ When creating additional NodePools, you can specify image configuration in the s
 
 ```bash
 # Use default from release payload (OCP 4.20+)
-${HYPERSHIFT_BINARY_PATH}/hypershift create nodepool azure \
+hypershift create nodepool azure \
     --cluster-name "$CLUSTER_NAME" \
     # ... other flags ...
 
 # Or specify generation
-${HYPERSHIFT_BINARY_PATH}/hypershift create nodepool azure \
+hypershift create nodepool azure \
     --cluster-name "$CLUSTER_NAME" \
     --image-generation Gen1 \
     # ... other flags ...
 
 # Or use custom marketplace image
-${HYPERSHIFT_BINARY_PATH}/hypershift create nodepool azure \
+hypershift create nodepool azure \
     --cluster-name "$CLUSTER_NAME" \
     --marketplace-publisher azureopenshift \
     --marketplace-offer aro4 \
@@ -11118,16 +11233,14 @@ ${HYPERSHIFT_BINARY_PATH}/hypershift create nodepool azure \
 
 !!! important "Key Configuration Options"
     
-    - `--workload-identities-file`: References the workload identities configuration created in the setup guide
+    - `--infra-json`: Path to infrastructure output from `hypershift create infra azure` (includes workload identities)
     - `--assign-service-principal-roles`: Automatically assigns required Azure roles to workload identities
     - `--sa-token-issuer-private-key-path`: Path to the private key for service account token signing
-    - `--oidc-issuer-url`: URL of the OIDC issuer created in the workload identity setup
-    - `--vnet-id`, `--subnet-id`, `--network-security-group-id`: Custom networking infrastructure
+    - `--oidc-issuer-url`: URL of the OIDC issuer created in the IAM setup
     - `--image-generation`: (Optional) VM generation (`Gen1` or `Gen2`, defaults to `Gen2`). For OCP 4.20+, omit to use release payload defaults. See Configuring Azure Marketplace Images
     - `--marketplace-publisher/offer/sku/version`: (Optional) Explicit Azure Marketplace image. Must specify all four flags together, or omit all to use defaults (OCP 4.20+)
     - `--dns-zone-rg-name`: Resource group containing the DNS zone (os4-common)
     - `--diagnostics-storage-account-type Managed`: Use Azure managed storage for diagnostics
-    - `--control-plane-operator-image`: Custom HyperShift operator image (optional)
 
 ## Enabling KMS Encryption (etcd Encryption at Rest)
 
@@ -11138,19 +11251,7 @@ Self-managed Azure HostedClusters support encrypting etcd data at rest using Azu
 
 ### Prerequisites
 
-Ensure the `kms` workload identity is included in your `workload-identities.json` file. When using `hypershift create iam azure`, pass the `--enable-kms` flag to create the KMS identity (using the `INFRA_ID` set during Azure Workload Identity Setup):
-
-```bash
-hypershift create iam azure \
-    --name "$CLUSTER_NAME" \
-    --infra-id "$INFRA_ID" \
-    --azure-creds "$AZURE_CREDS" \
-    --location "$LOCATION" \
-    --resource-group-name "$PERSISTENT_RG_NAME" \
-    --oidc-issuer-url "$OIDC_ISSUER_URL" \
-    --output-file ./workload-identities.json \
-    --enable-kms
-```
+Ensure the `kms` workload identity is included in your `workload-identities.json` file. When using `hypershift create iam azure`, pass the `--enable-kms` flag to create the KMS identity. See Enabling KMS Identity for details.
 
 ### Create a Key Vault and Key
 
@@ -11170,7 +11271,8 @@ hypershift create iam azure \
 
 ```bash
 # Create Key Vault
-KV_NAME="${PREFIX}-kv"
+KV_NAME="${CLUSTER_NAME}-kv"
+MANAGED_RG_NAME="${CLUSTER_NAME}-managed-rg"
 az keyvault create \
     --name "${KV_NAME}" \
     --resource-group "${MANAGED_RG_NAME}" \
@@ -11178,7 +11280,7 @@ az keyvault create \
     --enable-rbac-authorization
 
 # Create encryption key
-KEY_NAME="${PREFIX}-etcd-key"
+KEY_NAME="${CLUSTER_NAME}-etcd-key"
 az keyvault key create \
     --vault-name "${KV_NAME}" \
     --name "${KEY_NAME}" \
@@ -11229,26 +11331,21 @@ az role assignment create \
 Add the `--encryption-key-id` flag to your cluster creation command:
 
 ```bash
-${HYPERSHIFT_BINARY_PATH}/hypershift create cluster azure \
+hypershift create cluster azure \
     --name "$CLUSTER_NAME" \
-    --namespace "$CLUSTER_NAMESPACE" \
+    --infra-id "$INFRA_ID" \
     --azure-creds $AZURE_CREDS \
     --location ${LOCATION} \
     --node-pool-replicas 2 \
-    --base-domain $PARENT_DNS_ZONE \
+    --base-domain $BASE_DOMAIN \
     --pull-secret $PULL_SECRET \
     --generate-ssh \
     --release-image ${RELEASE_IMAGE} \
-    --external-dns-domain ${DNS_ZONE_NAME} \
-    --resource-group-name "${MANAGED_RG_NAME}" \
-    --vnet-id "${GetVnetID}" \
-    --subnet-id "${GetSubnetID}" \
-    --network-security-group-id "${GetNsgID}" \
     --sa-token-issuer-private-key-path "${SA_TOKEN_ISSUER_PRIVATE_KEY_PATH}" \
     --oidc-issuer-url "${OIDC_ISSUER_URL}" \
     --dns-zone-rg-name ${PERSISTENT_RG_NAME} \
     --assign-service-principal-roles \
-    --workload-identities-file ./workload-identities.json \
+    --infra-json infra-output.yaml \
     --encryption-key-id "${ENCRYPTION_KEY_ID}" \
     --diagnostics-storage-account-type Managed
 ```
@@ -11277,25 +11374,32 @@ oc get clusterversion
 
 ## Cleanup
 
-To delete the HostedCluster:
+To delete the HostedCluster and its infrastructure:
 
 ```bash
 # Delete the HostedCluster
 hypershift destroy cluster azure \
     --name $CLUSTER_NAME \
     --azure-creds $AZURE_CREDS \
-    --resource-group-name $MANAGED_RG_NAME \
     --dns-zone-rg-name $PERSISTENT_RG_NAME
+
+# Destroy infrastructure
+hypershift destroy infra azure \
+    --name $CLUSTER_NAME \
+    --infra-id $INFRA_ID \
+    --azure-creds $AZURE_CREDS
 ```
 
 !!! note "Resource Cleanup"
     
-    The HyperShift destroy command will clean up the cluster resources. Workload identities and OIDC issuer created during setup can be reused for other clusters or cleaned up separately if no longer needed.
+    The HyperShift destroy commands clean up the cluster and infrastructure resources. Workload identities and OIDC issuer created during setup can be reused for other clusters or cleaned up separately if no longer needed. See Destroying Workload Identities.
 
 ## Related Documentation
 
-1. Azure Workload Identity Setup - Workload identities and OIDC issuer setup
-2. Setup Azure Management Cluster for HyperShift - DNS and HyperShift operator setup
+1. Create Azure IAM Resources - Workload identities and OIDC issuer setup
+2. Create Azure Infrastructure Separately - Advanced infrastructure options
+3. Setup Azure Management Cluster for HyperShift - DNS and HyperShift operator setup
+
 
 ---
 
@@ -11771,74 +11875,6 @@ The deletion process automatically cleans up Private Link resources in the corre
     1. `<clusterName>.hypershift.local` — synthetic internal zone with `api` and `*.apps` records
     2. `<baseDomain>` — base domain zone with `api-<clusterName>` and `oauth-<clusterName>` records
 
-### External DNS Domain Must Not Match Cluster Domain
-
-!!! warning "Azure Private DNS Zone Shadowing"
-
-    On private Azure HostedClusters, do **not** set `--external-dns-domain` to a value
-    that matches or is a parent domain of `{clusterName}.{baseDomain}`. For example,
-    if your cluster is named `my-cluster` with base domain `example.com`, do not use
-    `--external-dns-domain my-cluster.example.com` or `--external-dns-domain example.com`.
-
-    This misconfiguration **cannot be corrected after cluster creation** because the
-    relevant fields (`spec.services`, `spec.dns.baseDomain`, and `metadata.name`) are
-    all immutable. The cluster must be destroyed and recreated with a different
-    `--external-dns-domain` value.
-
-    **Safe example**: If your cluster is `my-cluster` with base domain `example.com`,
-    use a separate subdomain such as `--external-dns-domain custom-dns.example.com`
-    that does not overlap with `my-cluster.example.com`.
-
-#### What Goes Wrong
-
-Private Azure clusters use two separate routing paths:
-
-1. **Management-plane router** (`private-router`): An HAProxy pod in the hosted
-   control plane namespace, fronted by an internal load balancer and exposed to the
-   guest VNet through Azure Private Link. Worker nodes reach this router via the
-   Private Endpoint IP. HAProxy uses SNI-based routing and only has ACLs for
-   `.hypershift.local` hostnames (KAS, ignition, konnectivity, OAuth). Any hostname
-   that does not match an ACL falls through to the `default_backend kube_api`, which
-   returns KAS certificates.
-
-2. **Data-plane router** (`router-default`): The OpenShift ingress controller running
-   on worker nodes, serving `*.apps.{clusterName}.{baseDomain}` hostnames with the
-   correct wildcard ingress certificate.
-
-When `--external-dns-domain` matches the cluster domain, the PLS controller creates a
-Private DNS zone named `{clusterName}.{baseDomain}`. This zone becomes authoritative
-for **all** queries under that name within the guest VNet, including
-`*.apps.{clusterName}.{baseDomain}`. Since the zone only has `api` and `oauth` A
-records pointing to the Private Endpoint IP, apps queries either:
-
-- Return **NXDOMAIN** (if no `*.apps` record exists in the zone), or
-- Resolve to the **Private Endpoint IP**, which routes to `private-router` (HAProxy).
-  Because `*.apps` hostnames do not match any HAProxy SNI ACL, traffic falls through
-  to `kube_api` and the client receives a **TLS certificate mismatch** (KAS cert
-  instead of the ingress wildcard cert).
-
-Neither outcome is usable. The console, OAuth login, and all application routes are
-unreachable.
-
-#### Why the Controller Cannot Self-Heal
-
-The controller cannot fix this by adding a `*.apps` wildcard record to the shadowing
-zone because:
-
-- The Private Endpoint IP routes to the management-plane `private-router`, not the
-  data-plane `router-default`. Adding `*.apps → PE IP` would route apps traffic to
-  HAProxy, which does not serve those hostnames.
-- The correct target (the data-plane ingress IP on worker nodes) is not available to
-  the PLS controller. The controller runs in the control plane and has no client to
-  the guest cluster. There is no HCP status field that reports the guest ingress IP,
-  and the HostedCluster Controller Operator (HCCO) does not propagate it back.
-
-When the controller detects shadowing, it sets `AzurePrivateDNSAvailable=False` with
-reason `BaseDomainShadowsClusterDomain` and skips zone creation entirely. This
-prevents the shadowing zone from being created, but the `api` and `oauth` hostnames
-from `--external-dns-domain` will not resolve via Private DNS. The cluster must be
-recreated with a non-overlapping domain.
-
 ### Condition Debugging
 
 If the cluster gets stuck, check the `AzurePrivateLinkService` CR conditions:
@@ -11852,7 +11888,7 @@ oc get azureprivatelinkservices -n clusters-${CLUSTER_NAME} -o jsonpath='{.items
 | `AzureInternalLoadBalancerAvailable` = False | The `private-router` Service hasn't received an ILB IP yet. Check the Service status and Azure networking. |
 | `AzurePLSCreated` = False | PLS creation failed. Check NAT subnet policies, credentials, and the HO operator logs. |
 | `AzurePrivateEndpointAvailable` = False | PE creation failed or connection not approved. Check the PLS auto-approval list and CPO logs. |
-| `AzurePrivateDNSAvailable` = False | DNS zone or record creation failed. If the reason is `BaseDomainShadowsClusterDomain`, the `--external-dns-domain` value overlaps with the cluster domain — the cluster must be recreated with a different value. See External DNS Domain Must Not Match Cluster Domain. |
+| `AzurePrivateDNSAvailable` = False | DNS zone or record creation failed. Check CPO identity permissions in the guest subscription. |
 
 ## Related Documentation
 
@@ -12241,10 +12277,9 @@ Self-managed Azure uses an OpenShift cluster (running on any platform - AWS, Azu
 **Guides:**
 
 - Self-Managed Azure Overview - Architecture and deployment workflow
-- Azure Workload Identity Setup - Set up managed identities and OIDC federation
+- Create Azure IAM Resources - Set up OIDC issuer, managed identities, and workload identity federation
 - Setup Azure Management Cluster - Install HyperShift operator
 - Create a Self-Managed Azure HostedCluster - Deploy your first hosted cluster
-- Create Azure IAM Resources Separately - Manage workload identities independently
 - Create Azure Infrastructure Separately - Create infrastructure before cluster
 
 ## Comparison
@@ -12525,10 +12560,7 @@ You can create workload identities using either:
 
 **When to Complete**: This is a one-time setup that can be reused across multiple hosted clusters. Complete this before proceeding to Phase 2.
 
-👉 **Guides**:
-
-- Azure Workload Identity Setup - Overview with CLI and OIDC configuration
-- Create Azure IAM Resources Separately - Detailed IAM command reference
+👉 **Guide**: Create Azure IAM Resources - OIDC issuer configuration and workload identity creation
 
 ### Phase 2: Management Cluster Setup
 
@@ -12627,7 +12659,7 @@ Self-managed Azure HyperShift implements several security best practices:
 
 Begin your self-managed Azure HyperShift deployment by following the guides in order:
 
-1. **Azure Workload Identity Setup** - Set up managed identities and OIDC federation (or use Create Azure IAM Resources Separately for CLI-based setup)
+1. **Create Azure IAM Resources** - Set up OIDC issuer, managed identities, and workload identity federation
 2. **Setup Azure Management Cluster for HyperShift** - Install HyperShift operator (with or without External DNS)
 3. **Create a Self-Managed Azure HostedCluster** - Deploy your first hosted cluster
 4. **Deploy Azure Private Clusters** (Optional) - Configure private endpoint access with Azure Private Link
@@ -13803,6 +13835,1116 @@ The workflow requires one secret configured at the repository level:
 
 3. Verify the workflow runs successfully on the next push to `main`.
 4. Delete the old token from your GitHub account.
+
+
+---
+
+## Source: docs/content/how-to/ci/v2-testing/ci-pipeline.md
+
+# CI Pipeline Configuration
+
+This page explains how v2 tests run in CI, covering the two-repo model, step registry structure, CI binaries, and how to add or modify CI jobs.
+
+## Two-Repo Model
+
+The HyperShift v2 testing architecture spans two repositories:
+
+- **openshift/hypershift**: Owns test code, test binaries, and the CLI
+- **openshift/release**: Owns job definitions, step registry, and CI orchestration
+
+The `hypershift-tests` image is the bridge between these repos. Built from `Dockerfile.e2e`, it ships compiled test binaries to `/hypershift/bin/`. The image contains both v1 and v2 test binaries; this page covers only v2.
+
+When you add a new v2 test to the hypershift repo and tag it with an existing Ginkgo label filter, it automatically runs in CI the next time the job executes. No release repo changes are needed unless you're adding a new cluster variant, label filter, or platform.
+
+## Step Registry Anatomy
+
+Prow jobs are built from a hierarchy of reusable components in the openshift/release step registry. We'll use the Azure self-managed job as a concrete example.
+
+### Workflow
+
+The top-level workflow orchestrates the entire job. For Azure self-managed v2 tests, this is `hypershift-azure-e2e-v2-self-managed-workflow.yaml`:
+
+```yaml
+workflow:
+  as: hypershift-azure-e2e-v2-self-managed
+  steps:
+    pre:
+    - ref: hypershift-azure-create-selfmanaged-guests
+    test:
+    - ref: hypershift-azure-run-e2e-v2-selfmanaged
+    post:
+    - ref: hypershift-azure-dump-selfmanaged-guests
+    - ref: hypershift-azure-destroy-selfmanaged-guests
+  env:
+  - name: HYPERSHIFT_PLATFORM
+    default: "azure"
+```
+
+The workflow sets `HYPERSHIFT_PLATFORM: "azure"` to tell the CI binaries which `PlatformConfig` to load, then chains together four steps: create → run → dump → destroy.
+
+### Steps
+
+The workflow references individual refs (using `ref:` directives), which may themselves be part of larger chains. In the step registry, a **ref** is a single step (a shell script that calls a binary), while a **chain** groups multiple refs together. The Azure self-managed v2 workflow references refs directly, but those refs may also appear in shared chains used by other jobs.
+
+The four logical phases are:
+
+- **Create** (shared with v1): Provisions management cluster infrastructure, installs HyperShift operator
+- **Run** (v2-specific): Executes the test matrix
+- **Dump** (shared with v1): Collects must-gather artifacts
+- **Destroy** (shared with v1): Tears down clusters and infrastructure
+
+Only the workflow and run ref are v2-specific. The create, dump, and destroy refs are shared between v1 and v2 jobs.
+
+### Ref Scripts
+
+Each ref is a thin shell script that invokes a Go binary from the `hypershift-tests` image. Here's the typical pattern:
+
+```bash
+#!/bin/bash
+set -euo pipefail
+
+HYPERSHIFT_BINARY="${HYPERSHIFT_BINARY:-/hypershift/bin/hypershift}"
+
+/hypershift/bin/create-guests
+```
+
+The ref script sets up the environment, then calls the compiled binary. All v2-specific logic lives in the binary, not the shell script.
+
+For the full Azure self-managed step registry, see openshift/release#79347.
+
+### Step Execution Order
+
+```mermaid
+flowchart LR
+    A["create-selfmanaged-guests"] --> B["run-e2e-v2-selfmanaged"]
+    B --> C["dump-selfmanaged-guests"]
+    C --> D["destroy-selfmanaged-guests"]
+```
+
+The `pre` steps run before tests (setup), `test` steps run the actual tests, and `post` steps run after tests regardless of test outcome (cleanup).
+
+## The Four CI Binaries
+
+All v2 CI logic is implemented in Go binaries built from `test/e2e/v2/cmd/` and shipped in the `hypershift-tests` image at `/hypershift/bin/`.
+
+### `create-guests`
+
+**Source:** `test/e2e/v2/cmd/create-guests/`  
+**Shipped as:** `/hypershift/bin/create-guests`
+
+Creates hosted clusters in parallel using a five-phase flow:
+
+1. **Cluster creation**: Calls `hypershift create cluster <platform>` in parallel for each `ClusterSpec` in the platform's test matrix. Cluster names are derived from `PROW_JOB_ID` via SHA-256 hashing: `{variant}-{sha256(prowJobID)[:10]}`
+
+2. **Post-create hooks**: Runs platform-specific `PostCreate()` hooks. For example, Azure patches the `OperatorConfiguration` CRD to enable lifecycle tests
+
+3. **Wait for available**: Watches each cluster's `HostedClusterAvailable` condition with timeout
+
+4. **Wait for rollout**: Watches for version rollout completion on each cluster. If rollout fails, emits JUnit XML marking the cluster creation as failed
+
+5. **Write cluster names**: Writes cluster names to `SHARED_DIR` files for consumption by `run-tests`
+
+If any cluster fails to create or roll out, the binary exits non-zero and the job fails fast.
+
+### `run-tests`
+
+**Source:** `test/e2e/v2/cmd/run-tests/`  
+**Shipped as:** `/hypershift/bin/run-tests`
+
+Reads cluster names from `SHARED_DIR` files, then executes the platform's test matrix. For each `TestGroup`:
+
+```bash
+bin/test-e2e-v2 \
+  --ginkgo.label-filter="<filter>" \
+  --ginkgo.junit-report="<junit-file>" \
+  --ginkgo.timeout="3h" \
+  --ginkgo.skip="<skip-pattern>" \
+  --ginkgo.v
+```
+
+with `E2E_HOSTED_CLUSTER_NAME` and `E2E_HOSTED_CLUSTER_NAMESPACE` set to the appropriate cluster name and namespace. The `--ginkgo.timeout` defaults to `3h` (overridable via `GINKGO_TIMEOUT` env var) and `--ginkgo.skip` is included when the `TestGroup.Skip` field is non-empty.
+
+Before running any tests, `run-tests` calls `platform.SetupTestEnv(sharedDir)` to let the platform configure any environment variables needed by tests (for example, reading subnet IDs or other infrastructure details from `SHARED_DIR` files).
+
+Whether a group runs in parallel or sequentially is determined by its placement in the `TestMatrix` struct returned by `PlatformConfig.TestMatrix()`:
+
+```go
+type TestMatrix struct {
+    Parallel   []TestGroup       // all run concurrently
+    Sequential []SequentialGroup // each group runs its Steps in order
+}
+```
+
+**`Parallel`** groups run concurrently across multiple clusters. This maximizes throughput and is the common case.
+
+**`Sequential`** groups run their `Steps` one after another on the same cluster. If any step fails, remaining steps in that group are skipped. Use sequential groups for ordered workflows like upgrade → validate → downgrade.
+
+See Labels for how to control which tests run in each group.
+
+### `dump-guests`
+
+**Source:** `test/e2e/v2/cmd/dump-guests/`  
+**Shipped as:** `/hypershift/bin/dump-guests`
+
+Calls `hypershift dump cluster` in parallel for all clusters, collecting must-gather artifacts to `ARTIFACT_DIR`. Unlike `create` and `destroy`, the dump command is platform-agnostic (no platform subcommand).
+
+This binary **always exits 0** to ensure cleanup steps run even if dump fails.
+
+### `destroy-guests`
+
+**Source:** `test/e2e/v2/cmd/destroy-guests/`  
+**Shipped as:** `/hypershift/bin/destroy-guests`
+
+Calls `hypershift destroy cluster <platform>` in parallel for all clusters.
+
+Exits non-zero if any cluster fails to destroy. Logs `ACTION REQUIRED` messages to stdout for orphaned resources, which appear in job logs for manual cleanup.
+
+## When to Create New CI Clusters
+
+Not every test needs its own cluster. Use this decision framework:
+
+```mermaid
+flowchart TD
+    A["Does your test mutate cluster state?"] -->|No| B["Add to existing cluster"]
+    A -->|Yes| C["Can it share with other mutating tests?"]
+    C -->|Yes| D["Reuse existing cluster"]
+    C -->|No| E["New ClusterSpec needed<br>~15-20 min added to job"]
+```
+
+### Examples
+
+- **Read-only health check**: Add to existing public cluster. No mutation, so safe to share.
+- **Autoscaling + nodepool lifecycle**: Share an existing cluster variant. Both tests mutate NodePools, but in non-conflicting ways.
+- **Upgrade test** (needs N-1 image, HA control plane): New cluster variant required. Upgrade state cannot be shared.
+
+### Adding a New ClusterSpec
+
+If you need a new cluster variant, add it to both `ClusterSpecs()` and `TestMatrix()` in your platform's lifecycle file (e.g., `test/e2e/v2/lifecycle/azure.go`):
+
+```diff
+// ClusterSpecs() — cluster creation parameters
++{
++    Variant:    "my-new-variant",
++    OutputFile: "cluster-name-my-new-variant",
++    ExtraArgs:  []string{"--my-flag=value"},
++},
+
+// TestMatrix() — test execution parameters
++{
++    Name:        "my-new-variant",
++    ClusterFile: "cluster-name-my-new-variant",
++    LabelFilter: "my-new-label",
++    JUnitFile:   "junit_my_new_variant.xml",
++    // Optional fields:
++    // Skip:     "regex-of-tests-to-skip",
++    // ExtraEnv: []string{"KEY=value"},
++},
+```
+
+Each new `ClusterSpec` adds approximately 15–20 minutes to the job runtime (cluster creation + rollout + deletion). Only add new variants when state sharing is impossible.
+
+## Adding a Test to an Existing CI Job
+
+When you write a new v2 test and want it to run in CI, the process depends on whether your test's label is already in an existing label filter.
+
+### Case 1: Label Already Exists in Filter
+
+If your test uses a label that's already in a `TestGroup.LabelFilter` (e.g., `nodepool-lifecycle`), **no changes are needed**. The test automatically runs the next time the job executes.
+
+### Case 2: New Label
+
+If your test introduces a new label, add it to the appropriate `TestGroup.LabelFilter` in the platform's test matrix:
+
+```diff
+ {
+     Name:        "public",
+     ClusterFile: "cluster-name-public",
+-    LabelFilter: "self-managed-azure-public || nodepool-lifecycle",
++    LabelFilter: "self-managed-azure-public || nodepool-lifecycle || my-new-label",
+     JUnitFile:   "junit_self_managed_azure_public.xml",
+ },
+```
+
+**No release repo changes are needed in either case.** The test matrix lives in the hypershift repo, and the `hypershift-tests` image is rebuilt for every PR.
+
+## Adding a New CI Job for a New Platform
+
+Adding v2 support for a new platform requires changes in both repositories.
+
+### Step 1: Implement PlatformConfig (hypershift repo)
+
+Create `test/e2e/v2/lifecycle/<platform>.go` implementing the `PlatformConfig` interface. Use `azure.go` as a reference:
+
+```go
+// Abbreviated — see platform.go for the full interface.
+type PlatformConfig interface {
+    ClusterSpecs(releaseImage, n1Image string) []ClusterSpec
+    TestMatrix(releaseImage string) TestMatrix
+    PostCreate(ctx context.Context, cl crclient.WithWatch, namespace string, clusterNames map[string]string) error
+    // Also: Name(), DefaultBaseDomain(), CreateArgs(),
+    // SetupTestEnv(sharedDir), DestroyArgs()
+}
+```
+
+See `test/e2e/v2/lifecycle/platform.go` for the full `PlatformConfig` interface, including `Name()`, `DefaultBaseDomain()`, `CreateArgs()`, `SetupTestEnv()`, and `DestroyArgs()`.
+
+Register your platform in the `NewPlatformConfig()` switch in `test/e2e/v2/lifecycle/platform.go`:
+
+```diff
+ func NewPlatformConfig(platform, sharedDir string) (PlatformConfig, error) {
+     switch platform {
+     case "azure", "":
+         return NewAzurePlatformConfig(sharedDir), nil
++    case "my-platform":
++        return NewMyPlatformConfig(sharedDir), nil
+     default:
+         return nil, fmt.Errorf("unsupported platform %q (supported: azure)", platform)
+     }
+ }
+```
+
+### Step 2: Add Step Registry Components (release repo)
+
+Create a workflow, chain, and ref in the openshift/release step registry:
+
+1. **Workflow**: `hypershift-<platform>-e2e-v2-<variant>-workflow.yaml`
+2. **Ref**: `hypershift-<platform>-run-e2e-v2-<variant>.yaml` (shell script that calls `/hypershift/bin/run-tests`)
+
+Reuse existing create/dump/destroy chains where possible (they're usually platform-specific but v1/v2-agnostic).
+
+### Step 3: Wire into Job Definition
+
+Add the job to `ci-operator/config/openshift/hypershift/openshift-hypershift-main.yaml`:
+
+```yaml
+- as: e2e-<platform>-v2-<variant>
+  steps:
+    workflow: hypershift-<platform>-e2e-v2-<variant>
+  always_run: false
+  skip_if_only_changed: "^docs/|^contrib/|^\.github/|^.*\\.md$"
+```
+
+Regenerate CI config with `make jobs WHAT=openshift/hypershift` from the release repo root.
+
+For a complete example, see the Azure self-managed v2 implementation in openshift/hypershift#8527.
+
+## Job Configuration Knobs
+
+Common CI configuration points and where to find them:
+
+| Knob | File | Description |
+|------|------|-------------|
+| `always_run` | `ci-operator/config/openshift/hypershift/openshift-hypershift-main.yaml` | `true` runs the job on every PR; `false` requires `/test <job-name>` |
+| `skip_if_only_changed` | `ci-operator/config/openshift/hypershift/openshift-hypershift-main.yaml` | Regex of file paths that skip the job when they're the only changes |
+| Image dependencies | Workflow/ref YAML | `release:latest`, `release:n1minor` provide OpenShift release images as environment variables |
+| Timeout | Ref YAML `timeout` field | Per-step timeout (e.g., `150m` for lifecycle tests that create clusters) |
+| `HYPERSHIFT_PLATFORM` | Workflow YAML `env` | Tells CI binaries which `PlatformConfig` to load from `test/e2e/v2/lifecycle/` |
+
+All step registry YAML lives in openshift/release. Job definitions live in ci-operator/config/openshift/hypershift/.
+
+After editing job config, regenerate with `make jobs WHAT=openshift/hypershift` from the release repo root, then submit a PR to openshift/release.
+
+
+---
+
+## Source: docs/content/how-to/ci/v2-testing/debugging.md
+
+# Debugging CI Failures
+
+This guide explains how to diagnose failing v2 CI jobs by tracing test failures to their source clusters and reading diagnostic artifacts.
+
+## Finding Test Results
+
+Each `TestGroup` produces a JUnit XML file named by its `JUnitFile` field. These land in `ARTIFACT_DIR` in the Prow job artifacts.
+
+For example, the Azure self-managed job produces:
+
+- `junit_self_managed_azure_public.xml`
+- `junit_self_managed_azure_private.xml`
+- `junit_self_managed_azure_oauth_lb.xml`
+- `junit_nodepool_autoscaling.xml`
+- `junit_lifecycle_upgrade.xml`
+- `junit_lifecycle_etcd_chaos.xml`
+
+Additionally, `create-guests` emits `junit_hosted_cluster_{name}.xml` for each cluster that reaches Phase 4 (version rollout wait), recording either success or failure. On failure, the JUnit file contains the `HostedCluster` and `NodePool` conditions at the time of failure. On success, it records a passing test case confirming the rollout completed.
+
+## Mapping Failures to Clusters
+
+To find which cluster a failing test ran against, trace the path:
+
+1. **JUnit file name** → `TestGroup.Name` (e.g., `junit_self_managed_azure_public.xml` → `"public"`)
+2. **TestGroup.Name** → `TestGroup.ClusterFile` (e.g., `"public"` → `"cluster-name-public"`)
+3. **ClusterFile** → cluster name derived from `PROW_JOB_ID` + variant (e.g., `public-a1b2c3d4e5`)
+
+The `run-tests` step log shows the mapping explicitly:
+
+```text
+Running public tests against public-a1b2c3d4e5...
+Running private tests against private-f6e7d8c9b0...
+```
+
+To find the cluster name for a failing test, search the `run-tests` step log for the line matching the test group name.
+
+## Reading Ginkgo Verbose Output
+
+The `--ginkgo.v` flag produces verbose output that maps test failures to their source code structure.
+
+When a test is running, Ginkgo prints the full test description. The exact format depends on the Ginkgo version; with Ginkgo v2 it looks approximately like:
+
+```text
+Control Plane Workloads Deployment generation kube-apiserver should not indicate rapid rollouts
+```
+
+This maps to the nested test block structure:
+
+```go
+Describe("Control Plane Workloads") →
+    Context("Deployment generation") →
+        Context("kube-apiserver") →
+            It("should not indicate rapid rollouts")
+```
+
+On failure, Ginkgo prints:
+
+- The exact `It` block description
+- The assertion that failed (e.g., `Expected <5> to be <= <3>`)
+- File path and line number (e.g., `control_plane_workloads_test.go:42`)
+- Full label set (e.g., `[control-plane-workloads]`)
+
+Use this information to locate the failing test in the codebase and understand what condition was violated.
+
+## create-guests Failures
+
+The most common failure point in v2 jobs is Phase 4 (version rollout wait) in `create-guests`. When this happens:
+
+1. **Check for JUnit XML**: Look for `junit_hosted_cluster_*.xml` in artifacts
+2. **Read conditions**: The JUnit file contains `HostedCluster` and `NodePool` conditions at the time of failure
+3. **No JUnit file?**: If no JUnit file exists, the failure happened before Phase 4 — check the `create-guests` step log for earlier phases
+
+Common pre-Phase 4 failures:
+
+- **Phase 1 (cluster creation)**: `hypershift create cluster` command failure — check for invalid flags or missing credentials
+- **Phase 2 (post-create hooks)**: Platform-specific hook failure — check for API errors when patching resources
+- **Phase 3 (wait Available)**: Timeout waiting for `HostedClusterAvailable` condition — indicates control plane startup failure
+- **Phase 5 (write cluster names)**: Failure writing cluster names to `SHARED_DIR` — rare, typically caused by filesystem or permissions errors
+
+## dump-guests Artifacts
+
+`hypershift dump cluster` collects must-gather, events, pod logs, and other diagnostics. These appear in the Prow artifact directory under `artifacts/<step-name>/`.
+
+The `dump-guests` binary exits non-zero if required environment variables (`PROW_JOB_ID`, `ARTIFACT_DIR`) are missing. Once environment setup succeeds, it **always exits 0** even if individual cluster dumps fail, so missing artifacts indicate a dump failure for that cluster. To diagnose:
+
+1. Check the `dump-guests` step log for `WARNING` messages
+2. Look for timeout or API errors when fetching resources
+3. Verify the cluster still existed when dump ran (it may have been deleted by an earlier cleanup step)
+
+Common artifacts to check:
+
+- `namespaces/<control-plane-namespace>/pods/` — pod logs for control plane components
+- `cluster-scoped-resources/events/` — cluster events showing resource creation/deletion
+- `namespaces/<control-plane-namespace>/core/events.yaml` — control plane events
+- `namespaces/openshift-*/` — hosted cluster namespace logs
+
+## Understanding Informing Test Skips
+
+When a test labeled `Informing` fails, the custom fail handler converts it to a skip. It appears as "skipped" (not "failed") in JUnit reports.
+
+To see the actual failure reason, look at the Ginkgo verbose output in the `run-tests` step log. The skip message includes the original failure:
+
+```text
+[SKIP] informing test failure: Expected <false> to be true
+```
+
+The test failure does not block CI or appear in the JUnit summary. This is by design — `Informing` tests are informational only.
+
+!!! warning "Informing tests are invisible to Sippy"
+    Informing test failures do not appear in Sippy or Component Readiness dashboards. If you need a test to be tracked by these tools, do not use the `Informing` label.
+
+
+---
+
+## Source: docs/content/how-to/ci/v2-testing/index.md
+
+# V2 E2E Test Framework
+
+## Why V2
+
+The v1 framework produced test results where a single test case failure appeared as 4–5 separate failures due to how tests were structured. This made Sippy triage impossible and prevented HyperShift from being represented in Component Readiness. The v2 framework (Ginkgo v2 + structured JUnit reporting) produces one JUnit entry per `It` block, which these tools consume directly.
+
+## Architecture
+
+```mermaid
+flowchart TD
+    Prow[Prow Job Trigger] --> CIO[ci-operator]
+    CIO --> Build[Build hypershift-tests image]
+    
+    Build --> Image[hypershift-tests image]
+    
+    subgraph "openshift/hypershift repo"
+        Tests[test/e2e/v2/tests/]
+        CMD[test/e2e/v2/cmd/]
+        Platform[test/e2e/v2/lifecycle/]
+        Dockerfile[Dockerfile.e2e]
+    end
+    
+    subgraph "openshift/release repo"
+        StepRegistry[Step Registry]
+        JobConfig[Job Config]
+        Workflow[workflow YAML]
+        Chain[chain YAML]
+        Ref[ref YAML]
+        
+        Workflow --> Chain
+        Chain --> Ref
+    end
+    
+    Tests --> Dockerfile
+    CMD --> Dockerfile
+    Platform --> Dockerfile
+    Dockerfile --> Image
+    
+    Image --> Binaries["hypershift/bin/<br>create-guests, run-tests,<br>dump-guests, destroy-guests,<br>test-e2e-v2"]
+    
+    Binaries --> Ref
+    StepRegistry --> Workflow
+    JobConfig --> Workflow
+    
+    style Image fill:#e1f5ff
+    style Binaries fill:#ffe1e1
+```
+
+!!! note "Image contents"
+    The `hypershift-tests` image ships both v1 and v2 test binaries. This documentation covers only the v2 components.
+
+## Key Concepts
+
+- **Ginkgo labels** — Tags on `Describe`/`It` blocks (e.g., `hosted-cluster-health`, `lifecycle`) used by `--ginkgo.label-filter` to select which tests run on which cluster.
+
+- **PlatformConfig** — Interface in `test/e2e/v2/lifecycle/platform.go` that encapsulates all platform-specific configuration. Implement this to add a new platform.
+
+- **TestContext** — Shared context initialized in `BeforeSuite` from environment variables. Provides management client (created eagerly in `SetupTestContextFromEnv`) and hosted cluster client (lazy-loaded via `sync.Once` in `GetHostedClusterClient`), along with cluster name/namespace.
+
+- **Informing tests** — Tests labeled `Informing` that convert failures to skips via the custom fail handler. They appear as "skipped" in JUnit and don't fail CI or appear in Sippy.
+
+- **CI binaries** — Four compiled Go programs (`create-guests`, `run-tests`, `dump-guests`, `destroy-guests`) that replace inline bash in the release repo step registry.
+
+- **Step registry** — The openshift/release repo's hierarchy of workflow → chain → ref YAML files that define CI job steps.
+
+## Test Execution Flow
+
+1. Prow triggers the CI job (e.g., `e2e-azure-v2-self-managed`)
+2. ci-operator builds the `hypershift-tests` image from `Dockerfile.e2e`
+3. **create-guests** creates clusters in parallel — 5 phases: create, post-create hooks, wait Available, wait version rollout, write cluster names to `SHARED_DIR`. Emits JUnit XML to `ARTIFACT_DIR` recording success or failure for each cluster's version rollout.
+4. **run-tests** invokes `bin/test-e2e-v2` once per `TestGroup` with a different `--ginkgo.label-filter` and `E2E_HOSTED_CLUSTER_NAME`. Whether groups run concurrently or sequentially is determined by placement in the `TestMatrix` struct — groups in `TestMatrix.Parallel` run concurrently, while groups in `TestMatrix.Sequential` run their steps one after another on the same cluster.
+5. **dump-guests** collects diagnostic artifacts in parallel. Always exits 0.
+6. **destroy-guests** tears down all clusters in parallel. Exits non-zero if any destroy fails.
+
+!!! info "Key insight"
+    `run-tests` doesn't run tests itself — it invokes the same compiled `bin/test-e2e-v2` binary multiple times with different label filters and cluster targets.
+
+## Directory Structure
+
+```text
+test/e2e/v2/
+├── tests/           — All Ginkgo test files + suite_test.go entry point
+├── internal/        — Framework internals (TestContext, env vars, fail handler, workload registry)
+├── lifecycle/       — Platform-specific config (PlatformConfig interface + implementations)
+├── cmd/             — CI binary source (create-guests, run-tests, dump-guests, destroy-guests)
+├── util/            — Shared test utilities (pod exec, metrics)
+└── backuprestore/   — Backup/restore test helpers (Velero, prober, CLI wrappers)
+```
+
+!!! note
+    This structure may expand as the framework evolves.
+
+## Scope
+
+Azure self-managed is the reference implementation used throughout these docs. The framework is platform-agnostic — AWS, GCP HCP, and other platforms will follow the same patterns by implementing the `PlatformConfig` interface.
+
+## Framework Conventions
+
+For detailed coding standards, test patterns, and framework conventions, see the v2 framework AGENTS.md.
+
+
+---
+
+## Source: docs/content/how-to/ci/v2-testing/migration.md
+
+# Migrating from V1 to V2
+
+## The Fundamental Shift
+
+The v1 and v2 test frameworks differ fundamentally in how they manage cluster lifecycle, not just in syntax or test organization.
+
+In v1, each test owns its cluster lifecycle. `e2eutil.NewHypershiftTest(...).Execute(...)` creates a fresh cluster, runs the test function, then tears down the cluster. Tests are self-contained units that manage their own infrastructure:
+
+```go
+func TestMyFeature(t *testing.T) {
+    ctx, cancel := context.WithCancel(testContext)
+    defer cancel()
+
+    clusterOpts := globalOpts.DefaultClusterOptions(t)
+
+    e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+        // Test logic here - cluster is created, live, and will be destroyed after
+    }).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "my-feature", globalOpts.ServiceAccountSigningKey)
+}
+```
+
+In v2, clusters are pre-created infrastructure shared across tests. The `create-guests` binary provisions clusters before any tests run, and tests consume them as read-only resources via `TestContext`. Tests do not create or destroy clusters:
+
+```go
+var _ = Describe("My Feature", Label("my-feature"), func() {
+    var testCtx *internal.TestContext
+
+    BeforeEach(func() {
+        testCtx = internal.GetTestContext()
+        Expect(testCtx).NotTo(BeNil(), "test context should be set up in BeforeSuite")
+        testCtx.ValidateHostedCluster()
+    })
+
+    It("should work correctly", func() {
+        // Test logic here - cluster already exists, test is read-only
+    })
+})
+```
+
+!!! note "Simplified example"
+    This example omits the `RegisterXxxTests` + `TestContextGetter` pattern used by real tests. See the canonical test pattern for the full structure.
+
+This architectural change has several implications for migration:
+
+- **Remove all cluster creation/teardown logic** - `e2eutil.NewHypershiftTest`, `Execute()`, and `globalOpts` are v1-only constructs.
+- **Tests that customized cluster creation need new infrastructure** - If your v1 test created clusters with special NodePool configurations, specific release images, or non-default platform settings, you need to define a new `ClusterSpec` variant in the platform's `PlatformConfig` (see Adding a New ClusterSpec).
+- **Test setup shifts from imperative to declarative** - Instead of building a test object with options, you acquire a `TestContext` pointing to pre-existing infrastructure.
+
+## V1 vs V2 at a Glance
+
+| Aspect | V1 | V2 |
+|--------|----|----|
+| Framework | `testing.T` + Gomega | Ginkgo v2 + Gomega |
+| Test structure | `func TestFoo(t *testing.T)` + `e2eutil.NewHypershiftTest` | `Describe`/`It` blocks + `TestContext` |
+| Subtests | `t.Run()` | Nested `It` blocks |
+| Test selection | Separate binaries / build tags | Ginkgo labels + `--label-filter` |
+| Cluster lifecycle | Per-test creation via `e2eutil.NewHypershiftTest(...).Execute(...)` | Pre-created by `create-guests`, shared via `TestContext` |
+| CI scripts | Inline bash in release repo | Compiled Go binaries in hypershift repo |
+| Reporting | Ad-hoc (single failure → 4-5 reported failures) | Structured JUnit, one entry per `It` (Sippy/CR compatible) |
+| Build tag | `e2e` | `e2ev2` (or `e2ev2 && backuprestore`) |
+
+## Refactoring Shared Helpers (Prerequisite)
+
+Before porting a test, check if it calls shared helper functions in `test/e2e/util/`. Many helpers were originally written to accept `*testing.T`, not `testing.TB`. Since Ginkgo's `GinkgoTB()` returns `testing.TB`, these helpers cannot be called directly from v2 tests.
+
+Recommended workflow:
+
+1. Identify all shared helpers your test calls (e.g., `util.EnsureNoCrashingPods`, `util.EnsureNodeCountMatchesNodePoolReplicas`)
+2. Check each helper's signature - does it take `*testing.T` or `testing.TB`?
+3. If it takes `*testing.T`, refactor the helper to accept `testing.TB` in a separate PR
+4. Then port the test
+
+!!! info "Example: Lifecycle Test Helper Refactoring"
+    PR openshift/hypershift#8527 widened 12 shared helpers from `*testing.T` to `testing.TB` as part of migrating the lifecycle tests. This pattern ensures helpers work with both v1 (`*testing.T`) and v2 (`GinkgoTB()`) tests during the transition period.
+
+!!! warning "Helpers that call `t.Run()` need deeper refactoring"
+    Widening `*testing.T` to `testing.TB` is not sufficient for helpers that call `t.Run()` internally. The `testing.TB` interface does not include the `Run()` method, so these helpers will fail to compile after the signature change. You must restructure such helpers to remove the internal `t.Run()` calls -- for example, by having the helper return results that the caller asserts in separate `It` blocks, or by splitting the helper into smaller functions that do not need subtests.
+
+## Porting Step-by-Step
+
+Follow this checklist when migrating a test from v1 to v2:
+
+1. **Remove cluster lifecycle management** - Delete `e2eutil.NewHypershiftTest`, `Execute()`, and `globalOpts` calls. Your test no longer creates or destroys clusters.
+
+2. **Replace test function with `Describe` block** - Change from:
+    ```go
+    func TestFoo(t *testing.T) { ... }
+    ```
+    to:
+    ```go
+    var _ = Describe("Feature", Label("my-label"), func() { ... })
+    ```
+
+3. **Add `BeforeEach` setup** - Acquire and validate `TestContext`:
+    ```go
+    var testCtx *internal.TestContext
+
+    BeforeEach(func() {
+        testCtx = internal.GetTestContext()
+        Expect(testCtx).NotTo(BeNil(), "test context should be set up in BeforeSuite")
+        testCtx.ValidateHostedCluster()
+    })
+    ```
+
+4. **Replace `t.Run()` subtests with `It` blocks** - Nested `t.Run()` calls become separate `It` specs:
+    ```go
+    // V1
+    t.Run("subtest A", func(t *testing.T) { ... })
+    t.Run("subtest B", func(t *testing.T) { ... })
+
+    // V2
+    It("should pass subtest A", func() { ... })
+    It("should pass subtest B", func() { ... })
+    ```
+
+5. **Replace `t.Fatal`/`t.Errorf` with Gomega assertions** - If your v1 test still uses raw `testing.T` assertions (not Gomega), convert to `Expect().To()` and `Eventually()`:
+    ```go
+    // V1
+    if err != nil {
+        t.Fatalf("operation failed: %v", err)
+    }
+
+    // V2
+    Expect(err).NotTo(HaveOccurred(), "operation failed")
+    ```
+
+6. **Add appropriate labels** - Every `Describe` and `It` block should have labels for filtering. See writing tests: labels for the label taxonomy.
+
+7. **Change build tag** - Update from:
+    ```go
+    //go:build e2e
+    ```
+    to:
+    ```go
+    //go:build e2ev2
+    ```
+    (or `//go:build e2ev2 && backuprestore` for backup-restore tests)
+
+8. **Add `Register*Tests()` export function** - Follow the canonical test pattern to make your test suite discoverable:
+    ```go
+    func RegisterMyFeatureTests(getTestCtx internal.TestContextGetter) {
+        It("should do something", func() {
+            tc := getTestCtx()
+            // test specs using tc
+        })
+    }
+    ```
+
+!!! tip "Real-World Examples"
+    PR openshift/hypershift#8527 demonstrates all these steps in practice, porting the lifecycle tests from v1 to v2.
+
+## Common Pitfalls
+
+### `testing.TB` lacks `Run()`
+
+The `testing.TB` interface does not include the `Run()` method, so `t.Run()` subtests cannot be called from Ginkgo tests. You must restructure subtest logic as separate `It` blocks:
+
+```go
+// WRONG - GinkgoTB() does not support Run()
+t := GinkgoTB()
+t.Run("subtest", func(t *testing.T) { ... })
+
+// RIGHT - use separate It blocks
+It("should pass subtest", func() { ... })
+```
+
+### `BeforeEach` runs per `It`
+
+`BeforeEach` hooks execute before every `It` spec. If you need one-time setup that should not repeat, use `BeforeAll` inside an `Ordered` container:
+
+```go
+var _ = Describe("Feature", Ordered, func() {
+    var expensiveResource *SomeResource
+
+    BeforeAll(func() {
+        expensiveResource = createExpensiveResource()
+    })
+
+    It("test A", func() { /* uses expensiveResource */ })
+    It("test B", func() { /* uses expensiveResource */ })
+})
+```
+
+### `Eventually` needs explicit timeouts
+
+Always pass `.WithTimeout()` and `.WithPolling()` to `Eventually` assertions. Without them, Gomega uses short defaults that may not suit cluster operations:
+
+```go
+// WRONG - relies on default 1s timeout
+Eventually(func() error { return checkCondition() }).Should(Succeed())
+
+// RIGHT - explicit timeouts for cluster ops
+Eventually(func() error { return checkCondition() }).
+    WithTimeout(5*time.Minute).
+    WithPolling(10*time.Second).
+    Should(Succeed())
+```
+
+### Build tag
+
+Do not forget to change the build tag. Tests with the wrong tag will not be compiled by the v2 test binaries:
+
+```go
+// WRONG - v1 tag
+//go:build e2e
+
+// RIGHT - v2 tag
+//go:build e2ev2
+```
+
+For backup-restore tests, use the combined tag:
+
+```go
+//go:build e2ev2 && backuprestore
+```
+
+## What Stays in V1
+
+V1 tests still exist and are actively running in CI. Not all tests have been migrated to v2, and some may remain in v1 indefinitely.
+
+Tests remain in v1 when:
+
+- **They depend heavily on `t.Run()` subtest trees** - Complex nested subtest logic that does not map cleanly to Ginkgo `It` blocks.
+- **They call helper functions that still require `*testing.T`** - Helpers that have not yet been widened to accept `testing.TB`.
+- **They require unique cluster configurations** - Tests that need custom NodePool settings, specific platform configurations, or particular release images for which no `ClusterSpec` variant has been defined yet in the platform's `PlatformConfig`.
+
+See `test/e2e/` for current v1 test locations. There is no exhaustive backlog of tests to migrate - tests are ported to v2 as platforms transition to the v2 framework and as test maintainers see value in the migration.
+
+
+---
+
+## Source: docs/content/how-to/ci/v2-testing/writing-tests.md
+
+# Writing V2 Tests
+
+This guide teaches developers how to add new v2 tests to the HyperShift test suite.
+
+## Test file conventions
+
+Every v2 test file must follow these conventions:
+
+- Start with `//go:build e2ev2` build tag
+- Live in package `tests` under `test/e2e/v2/tests/`
+- Be named `feature_area_test.go` (e.g., `hosted_cluster_health_test.go`)
+- Export a `RegisterXxxTests(getTestCtx internal.TestContextGetter)` function
+
+!!! note "Backup-restore tests"
+    Tests that perform backup and restore operations use a combined build tag `//go:build e2ev2 && backuprestore`. These tests compile into a separate binary `bin/test-backuprestore` (via `make backuprestore-e2e`), not `bin/test-e2e-v2`. This separation allows backup-restore tests to run with different concurrency settings and lifecycle requirements.
+
+## Suite bootstrap
+
+The test suite bootstraps through `suite_test.go` in the `test/e2e/v2/tests/` package:
+
+```go
+//go:build e2ev2
+
+package tests
+
+import (
+    "context"
+    "testing"
+
+    . "github.com/onsi/ginkgo/v2"
+    . "github.com/onsi/gomega"
+
+    "github.com/openshift/hypershift/test/e2e/v2/internal"
+    ctrl "sigs.k8s.io/controller-runtime"
+    zap "sigs.k8s.io/controller-runtime/pkg/log/zap"
+)
+
+func TestE2EV2(t *testing.T) {
+    if internal.GetEnvVarValue("E2E_SHOW_ENV_HELP") != "" {
+        internal.PrintEnvVarHelp()
+        return
+    }
+    RegisterFailHandler(internal.InformingAwareFailHandler)
+    RunSpecs(t, "HyperShift End To End Test Suite")
+}
+
+var _ = BeforeSuite(func() {
+    ctx := context.Background()
+    ctrl.SetLogger(zap.New())
+    testCtx, err := internal.SetupTestContextFromEnv(ctx)
+    Expect(err).NotTo(HaveOccurred(), "failed to setup test context")
+    Expect(testCtx).NotTo(BeNil(), "test context should not be nil")
+    internal.SetTestContext(testCtx)
+})
+```
+
+Key points:
+
+- `RegisterFailHandler(internal.InformingAwareFailHandler)` installs the custom handler that converts `Informing`-labeled test failures to skips
+- `BeforeSuite` reads `E2E_HOSTED_CLUSTER_NAME` and `E2E_HOSTED_CLUSTER_NAMESPACE` from environment and creates a shared `TestContext`
+
+## Canonical test pattern
+
+Tests follow this standard pattern, based on `DeploymentGenerationTest` in `control_plane_workloads_test.go`:
+
+```go
+func DeploymentGenerationTest(getTestCtx internal.TestContextGetter) {
+    Context("Deployment generation", func() {
+        BeforeEach(func() {
+            testCtx := getTestCtx()
+            hostedCluster := testCtx.GetHostedCluster()
+            if hostedCluster == nil || hostedCluster.CreationTimestamp.IsZero() ||
+                time.Since(hostedCluster.CreationTimestamp.Time) > 4*time.Hour {
+                Skip("Deployment generation test is only for recently created hosted clusters")
+            }
+        })
+
+        for _, workload := range workloads {
+            if workload.Type != "Deployment" { continue }
+            Context(workload.Name, func() {
+                It("should not indicate rapid rollouts", func() {
+                    testCtx := getTestCtx()
+                    hostedCluster := testCtx.GetHostedCluster()
+                    if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
+                        Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
+                    }
+                    // ... get deployment, check generation ...
+                    Expect(deployment.Generation).To(BeNumerically("<=", maxAllowedGeneration),
+                        "Deployment %s has generation %d which exceeds max allowed %d",
+                        workload.Name, deployment.Generation, maxAllowedGeneration)
+                })
+            })
+        }
+    })
+}
+
+var _ = Describe("Control Plane Workloads", Label("control-plane-workloads"), func() {
+    var testCtx *internal.TestContext
+    BeforeEach(func() {
+        testCtx = internal.GetTestContext()
+        Expect(testCtx).NotTo(BeNil(), "test context should be set up in BeforeSuite")
+        testCtx.ValidateHostedCluster()
+    })
+    RegisterControlPlaneWorkloadsTests(func() *internal.TestContext { return testCtx })
+})
+```
+
+The pattern:
+
+1. `Register*Tests` functions take a `TestContextGetter` parameter
+2. The top-level `Describe` block uses `Label(...)` for test filtering
+3. The `Describe` block calls the register function to add test cases
+4. `BeforeEach` in the top-level block validates the hosted cluster exists
+
+## Labels (two-layer model)
+
+The v2 framework uses a two-layer labeling model for test organization and filtering.
+
+### Layer 1: Labels on test blocks
+
+Labels are attached to `Describe` or `Context` blocks to categorize tests:
+
+| Category | Labels |
+|----------|--------|
+| Lifecycle | `lifecycle`, `control-plane-upgrade`, `nodepool-lifecycle`, `nodepool-autoscaling`, `etcd-chaos`, `backup-restore` |
+| Health/Compliance | `hosted-cluster-health`, `hosted-cluster-compliance`, `hosted-cluster-security`, `hosted-cluster-dns`, `hosted-cluster-metrics`, `hosted-cluster-image-registry`, `hosted-cluster-ccm`, `control-plane-workloads`, `routes` |
+| Platform-specific | `Azure`, `GCP`, `hosted-cluster-azure`, `self-managed-azure-public`, `self-managed-azure-private`, `self-managed-azure-oauth-lb` |
+| Meta | `Informing` |
+
+### Layer 2: Label-filter expressions
+
+The CI pipeline uses label-filter expressions in TestMatrix configurations to select which tests run for each cluster configuration. Example from Azure TestMatrix:
+
+```go
+Parallel: []TestGroup{
+    {
+        Name:        "public",
+        ClusterFile: "cluster-name-public",
+        LabelFilter: "self-managed-azure-public || nodepool-lifecycle",
+        JUnitFile:   "junit_self_managed_azure_public.xml",
+    },
+    // ...
+},
+Sequential: []SequentialGroup{
+    {
+        Name: "upgrade",
+        Steps: []TestGroup{
+            {
+                Name:        "control-plane-upgrade",
+                ClusterFile: "cluster-name-upgrade",
+                LabelFilter: "control-plane-upgrade",
+                JUnitFile:   "junit_control_plane_upgrade.xml",
+            },
+            // additional steps run in order within this group
+        },
+    },
+},
+```
+
+`Parallel` groups all run concurrently. Each `SequentialGroup` also runs concurrently with everything else, but its internal `Steps` run one after another -- if any step fails, subsequent steps are skipped.
+
+!!! tip "Adding a test with an existing label"
+    If your test uses a label already in a filter expression (e.g., `hosted-cluster-health`), it runs automatically in the appropriate CI jobs. If you introduce a new label, you must add it to existing filter expressions in the TestMatrix configuration in the hypershift repository (not the release repository).
+
+## Platform guards
+
+Use `Skip` in `BeforeEach` to skip tests when platform preconditions are not met:
+
+```go
+BeforeEach(func() {
+    testCtx := getTestCtx()
+    hostedCluster := testCtx.GetHostedCluster()
+    if hostedCluster == nil || hostedCluster.Spec.Platform.Type != hyperv1.AzurePlatform {
+        Skip("Azure-specific test; skipping on non-Azure cluster")
+    }
+})
+```
+
+### Informing skip-conversion
+
+The `Informing` label marks tests as informational. When an `Informing`-labeled test fails, the custom failure handler converts it to a skip instead of a failure:
+
+```go
+func InformingAwareFailHandler(message string, callerSkip ...int) {
+    labels := CurrentSpecReport().Labels()
+    if slices.Contains(labels, "Informing") {
+        Skip("informing test failure: " + message, callerSkip...)
+    }
+    Fail(message, callerSkip...)
+}
+```
+
+This allows tests to run and report failures without blocking CI jobs.
+
+## TestContext
+
+The `TestContext` struct provides access to the hosted cluster and clients:
+
+| Field/Method | Description |
+|-------------|-------------|
+| `MgmtClient` | Management cluster controller-runtime client |
+| `GetHostedCluster()` | Returns `*HostedCluster`, cached via `sync.Once`. Returns nil if not configured. **Panics** on fetch failure. |
+| `GetHostedClusterClient()` | Returns hosted cluster controller-runtime client. Lazy-loaded. Returns nil if the HostedCluster is not available or its KubeConfig status is not set. **Panics** on other initialization failures. |
+| `ClusterName` / `ClusterNamespace` | HostedCluster name and namespace from environment |
+| `ControlPlaneNamespace` | Derived: `{namespace}-{name}` (e.g., `clusters-my-cluster`). Dots in the name are replaced with hyphens. |
+| `ArtifactDir` | Directory for test artifacts, from the `ARTIFACT_DIR` environment variable |
+| `ValidateHostedCluster()` | Skips if no cluster configured; panics if fetch fails |
+| `ValidateHostedClusterClient()` | Calls `ValidateHostedCluster()`, then panics if the hosted cluster client is nil (e.g., kubeconfig not ready) |
+| `HostedClusterConfigured` | `bool` — `true` when both `ClusterName` and `ClusterNamespace` are populated. This is what `ValidateHostedCluster()` checks internally to decide between skip and fetch. |
+| `GetHostedClusterRESTConfig()` | Returns `*rest.Config` for the hosted cluster, lazy-loaded via `sync.Once`. Useful when a test needs a `kubernetes.Interface` client or a custom REST client beyond what `GetHostedClusterClient()` provides. |
+| `Context` | Embedded `context.Context` — use for all API calls |
+
+!!! warning "Panic-on-failure"
+    `GetHostedCluster()`, `GetHostedClusterClient()`, and `ValidateHostedCluster()` panic on API failures (not just missing configuration). This ensures test failures are loud and visible rather than silently skipping important checks. Use `ValidateHostedCluster()` in top-level `BeforeEach` blocks to fail fast when the cluster is missing.
+
+## Environment variables
+
+The v2 framework maintains a registry of environment variables. To add a new variable:
+
+```go
+// In env_vars.go init()
+RegisterEnvVar("E2E_MY_NEW_VAR", "Description of what it does", false)
+
+// In test code
+value := internal.GetEnvVarValue("E2E_MY_NEW_VAR")  // panics if unregistered
+```
+
+To see the full current list of registered environment variables:
+
+```bash
+E2E_SHOW_ENV_HELP=1 bin/test-e2e-v2
+```
+
+## Assertions and gotchas
+
+### Direct Gomega assertions
+
+```go
+Expect(x).To(Equal(y))
+Expect(ptr).NotTo(BeNil())
+```
+
+### Eventually for async checks
+
+```go
+Eventually(func() bool {
+    // ... check condition ...
+    return condition
+}).WithTimeout(5*time.Minute).WithPolling(10*time.Second).Should(BeTrue())
+```
+
+For pointer safety, vacuous pass prevention, IPv6 URL construction, and the non-lifecycle vs. lifecycle mutation rule, see AGENTS.md conventions #11, #13, #15, #16.
+
+## Lifecycle vs non-lifecycle tests
+
+### Non-lifecycle tests
+
+Non-lifecycle tests are read-only and skip when preconditions are missing. They must not modify cluster state to create preconditions — see AGENTS.md Convention #13 for the full rule and examples.
+
+### Lifecycle tests
+
+Lifecycle tests may modify cluster state but must:
+
+- Use the `lifecycle` label
+- Capture and restore original state in cleanup
+- Check `IsNotFound()` in cleanup to handle missing resources gracefully
+
+```go
+var _ = Describe("NodePool Lifecycle", Label("lifecycle", "nodepool-lifecycle"), func() {
+    var originalReplicas int32
+    BeforeEach(func() {
+        // Capture original state
+        nodePool := getNodePool()
+        Expect(nodePool.Spec.Replicas).NotTo(BeNil(),
+            "nodePool %s/%s should have replicas set", nodePool.Namespace, nodePool.Name)
+        originalReplicas = *nodePool.Spec.Replicas
+    })
+    AfterEach(func() {
+        // Restore original state
+        nodePool := getNodePool()
+        nodePool.Spec.Replicas = &originalReplicas
+        if err := mgmtClient.Update(ctx, nodePool); err != nil && !apierrors.IsNotFound(err) {
+            Fail(fmt.Sprintf("failed to restore nodepool replicas: %v", err))
+        }
+    })
+    // ... test cases ...
+})
+```
+
+### Backup-restore tests
+
+Backup-restore tests are a special case:
+
+- Use combined build tag `//go:build e2ev2 && backuprestore`
+- Use `Ordered, Serial` decorators to ensure sequential execution
+- Compile into separate binary `bin/test-backuprestore` (via `make backuprestore-e2e`)
+- Run with reduced parallelism to avoid resource contention
+
+## Adding a workload to the registry
+
+To add a new control plane workload to the compliance tests, add a `WorkloadSpec` entry to the slice returned by `GetControlPlaneWorkloads()` in `test/e2e/v2/internal/workload_registry.go`:
+
+```go
+{Name: "my-new-component", Type: "Deployment", PodSelector: map[string]string{"app": "my-new-component"}},
+```
+
+All existing compliance tests (pod security, resource requests/limits, image verification, etc.) automatically cover the new workload.
+
+For platform-specific workloads, use the `Platform` field:
+
+```go
+azurePlatform := hyperv1.AzurePlatform
+// ...
+{Name: "azure-cloud-controller-manager", Type: "Deployment", PodSelector: map[string]string{"app": "cloud-controller-manager"}, Platform: &azurePlatform},
+```
+
+## Running tests locally
+
+Set the required environment variables and run the test binary:
+
+```bash
+export KUBECONFIG=/path/to/management-cluster-kubeconfig
+export E2E_HOSTED_CLUSTER_NAME=my-cluster
+export E2E_HOSTED_CLUSTER_NAMESPACE=clusters
+
+make e2ev2
+bin/test-e2e-v2 --ginkgo.label-filter="hosted-cluster-health" --ginkgo.v
+
+# For backup-restore tests
+make backuprestore-e2e
+bin/test-backuprestore --ginkgo.label-filter="backup-restore" --ginkgo.v
+
+# See all registered environment variables
+E2E_SHOW_ENV_HELP=1 bin/test-e2e-v2
+```
+
+Use `--ginkgo.label-filter` to run specific test categories. Use `--ginkgo.v` for verbose output. Use `--ginkgo.focus` to run a single test by name:
+
+```bash
+# Run a single test by name (regex match against the full description path)
+bin/test-e2e-v2 --ginkgo.focus="should not indicate rapid rollouts" --ginkgo.v
+```
 
 
 ---
@@ -18763,6 +19905,338 @@ Step-by-step description of the backup process: how the OADP plugin triggers the
 ### Restore Flow
 
 Step-by-step description of the restore process: how the OADP plugin injects the snapshot URL, how the Control Plane Operator restores etcd, and how the cluster recovers.
+
+### Managed Services Credentials
+
+Credential configuration for managed platforms (ROSA HCP and ARO HCP) that use federated credentials (AWS STS/IRSA and Azure Workload Identity) instead of static keys. Covers auto-detection logic, Secret format requirements, and infrastructure prerequisites.
+
+
+---
+
+## Source: docs/content/how-to/disaster-recovery/etcd-snapshot-backup/managed-services-credentials.md
+
+---
+title: Managed Services Credentials
+---
+
+# Managed Services Credential Configuration
+
+!!! warning "Tech Preview"
+
+    This feature requires the `HCPEtcdBackup` feature gate enabled in the HyperShift Operator.
+
+The HCPEtcdBackup controller automatically detects the authentication mode from the credential Secret referenced in the backup specification. This page describes how to configure credentials for managed service platforms (ROSA HCP and ARO HCP) that use short-lived, federated credentials instead of long-lived static keys.
+
+## OADP Plugin Secret Flow
+
+The credential Secret originates in the OADP namespace (typically `openshift-adp`) and is always named `cloud-credentials`. It always uses the `cloud` data key. When the OADP HyperShift plugin triggers an etcd snapshot backup, it copies this Secret to the HyperShift Operator namespace, remapping the key and preserving the original:
+
+| | Namespace | Secret Name | Data Keys |
+|---|-----------|-------------|-----------|
+| **Source** | `<OADP_NAMESPACE/VELERO_NAMESPACE>` | `cloud-credentials` | `cloud` |
+| **Destination** | `hypershift` (HO namespace) | `cloud-credentials` | `credentials` (remapped from `cloud`) + `cloud` (preserved) |
+
+The destination Secret contains both keys with the same content. The controller's credential auto-detection logic reads from the destination copy:
+
+- For **S3** storage: reads the `credentials` key (remapped from `cloud`)
+- For **Azure Blob** storage: checks the `cloud` key first (preserved original), then falls back to `credentials`
+
+No manual Secret creation or copying is required — the OADP plugin handles this automatically for both ROSA HCP and ARO HCP.
+
+## Credential Auto-Detection
+
+The controller inspects the content of the credential Secret to determine the authentication mode. No explicit configuration flag is required — the Secret format itself drives the behavior.
+
+### AWS Credential Modes
+
+| Mode | Detection | PodSpec Behavior |
+|------|-----------|------------------|
+| **Static** | `credentials` key contains an AWS credentials file (`[default]` profile) | Mounts credentials file at `/etc/etcd-backup-creds/credentials`, passes `--credentials-file` |
+| **STS/IRSA** | `credentials` key contains a bare IAM role ARN (`arn:aws:iam::...`) | Projected SA token volume (`sts.amazonaws.com` audience), `AWS_ROLE_ARN` and `AWS_WEB_IDENTITY_TOKEN_FILE` env vars, no credentials file |
+
+### Azure Credential Modes
+
+| Mode | Detection | PodSpec Behavior |
+|------|-----------|------------------|
+| **Workload Identity** | Secret has a `cloud` key containing a non-empty `AZURE_CLIENT_ID=` value | Pod label `azure.workload.identity/use=true`, SA annotated with `azure.workload.identity/client-id`, no credentials file, no `--azure-auth-type` flag |
+| **Client Secret** | `credentials` key contains JSON with a non-empty `clientSecret` field | Mounts credentials file, passes `--credentials-file` and `--azure-auth-type client-secret` |
+| **Managed Identity** | `credentials` key contains JSON without a `clientSecret` field | Mounts credentials file, passes `--credentials-file` and `--azure-auth-type managed-identity` |
+
+## ROSA HCP (AWS STS/IRSA)
+
+ROSA HCP clusters use IAM Roles for Service Accounts (IRSA) via AWS Security Token Service (STS). The backup Job Pod authenticates to S3 using a projected ServiceAccount token exchanged for temporary AWS credentials.
+
+### Prerequisites
+
+1. An S3 bucket for storing etcd snapshots
+2. An IAM role with a trust policy allowing the OIDC provider associated with your management cluster
+3. The IAM role must have permissions to write objects to the target S3 bucket
+
+#### IAM Role Trust Policy
+
+The trust policy must allow the `etcd-backup-job` ServiceAccount in the HyperShift Operator namespace to assume the role:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Federated": "arn:aws:iam::<ACCOUNT_ID>:oidc-provider/<OIDC_PROVIDER>"
+      },
+      "Action": "sts:AssumeRoleWithWebIdentity",
+      "Condition": {
+        "StringEquals": {
+          "<OIDC_PROVIDER>:sub": "system:serviceaccount:<HO_NAMESPACE>:etcd-backup-job"
+        }
+      }
+    }
+  ]
+}
+```
+
+Replace:
+
+- `<ACCOUNT_ID>`: Your AWS account ID
+- `<OIDC_PROVIDER>`: The OIDC provider URL for your management cluster (without `https://`)
+- `<HO_NAMESPACE>`: The namespace where the HyperShift Operator runs (typically `hypershift`)
+
+#### IAM Role Permissions
+
+The role needs S3 write access:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutObject",
+        "s3:AbortMultipartUpload"
+      ],
+      "Resource": [
+        "arn:aws:s3:::<BUCKET_NAME>",
+        "arn:aws:s3:::<BUCKET_NAME>/*"
+      ]
+    }
+  ]
+}
+```
+
+!!! note
+
+    The `s3:PutObject` permission authorizes all multipart upload operations (`CreateMultipartUpload`, `UploadPart`, `CompleteMultipartUpload`) used by the AWS SDK v2 Transfer Manager, which automatically splits files larger than 5 MB into multipart uploads. Etcd snapshots typically range from 30-100 MB, so multipart upload is used in practice. `s3:AbortMultipartUpload` is included to clean up incomplete uploads on failure.
+
+### Credential Secret Format
+
+The credential Secret in the OADP namespace uses the `cloud` key with the IAM role ARN:
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cloud-credentials
+  namespace: <OADP_NAMESPACE/VELERO_NAMESPACE>
+type: Opaque
+stringData:
+  cloud: "arn:aws:iam::<ACCOUNT_ID>:role/<ROLE_NAME>"
+```
+
+The OADP plugin copies this Secret to the HyperShift Operator namespace, remapping `cloud` → `credentials` and preserving the original `cloud` key (see OADP Plugin Secret Flow). The controller reads the `credentials` key in the destination copy and detects STS mode when the value starts with `arn:`.
+
+!!! note
+
+    The `cloud` value must be a bare ARN string, not an AWS credentials file.
+
+### HCPEtcdBackup CR
+
+```yaml
+apiVersion: hypershift.openshift.io/v1beta1
+kind: HCPEtcdBackup
+metadata:
+  name: my-backup
+  namespace: <HCP_NAMESPACE>
+spec:
+  storage:
+    storageType: S3
+    s3:
+      bucket: <BUCKET_NAME>
+      region: <REGION>
+      keyPrefix: etcd-backups
+      credentials:
+        name: cloud-credentials
+```
+
+### What Happens at Runtime
+
+When the controller detects STS mode:
+
+1. The ServiceAccount `etcd-backup-job` is created in the HO namespace (no special annotations needed for AWS IRSA — the projected token handles authentication)
+2. The Job Pod gets a projected volume with a ServiceAccount token using audience `sts.amazonaws.com` and 1-hour expiration
+3. The upload container receives environment variables `AWS_ROLE_ARN` and `AWS_WEB_IDENTITY_TOKEN_FILE`
+4. No credentials file is mounted — the AWS SDK uses the projected token to assume the role via STS
+
+## ARO HCP (Azure Workload Identity)
+
+ARO HCP clusters use Azure AD Workload Identity for pod-level authentication. The backup Job Pod authenticates to Azure Blob Storage using a federated token projected by the Azure Workload Identity webhook.
+
+### Prerequisites
+
+1. An Azure Storage Account with a blob container for storing etcd snapshots
+2. A User-Assigned Managed Identity with a federated credential configured for the backup Job's ServiceAccount
+3. The managed identity must have `Storage Blob Data Contributor` role on the storage account
+
+#### Federated Credential
+
+Create a federated credential on the managed identity that trusts the `etcd-backup-job` ServiceAccount:
+
+```bash
+az identity federated-credential create \
+  --name etcd-backup-fedcred \
+  --identity-name <MANAGED_IDENTITY_NAME> \
+  --resource-group <RESOURCE_GROUP> \
+  --issuer <OIDC_ISSUER_URL> \
+  --subject "system:serviceaccount:<HO_NAMESPACE>:etcd-backup-job" \
+  --audiences "api://AzureADTokenExchange"
+```
+
+Replace:
+
+- `<MANAGED_IDENTITY_NAME>`: Name of the User-Assigned Managed Identity
+- `<RESOURCE_GROUP>`: Resource group containing the managed identity
+- `<OIDC_ISSUER_URL>`: The OIDC issuer URL of your management cluster
+- `<HO_NAMESPACE>`: The namespace where the HyperShift Operator runs (typically `hypershift`)
+
+!!! important
+
+    The subject must match exactly: `system:serviceaccount:<HO_NAMESPACE>:etcd-backup-job`. The Job runs in the HO namespace, not the HCP namespace.
+
+#### Storage Account Role Assignment
+
+Assign the `Storage Blob Data Contributor` role to the managed identity on the storage account:
+
+```bash
+az role assignment create \
+  --assignee-object-id $(az identity show -n <MANAGED_IDENTITY_NAME> -g <RESOURCE_GROUP> --query principalId -o tsv) \
+  --role "Storage Blob Data Contributor" \
+  --scope /subscriptions/<SUBSCRIPTION_ID>/resourceGroups/<RESOURCE_GROUP>/providers/Microsoft.Storage/storageAccounts/<STORAGE_ACCOUNT>
+```
+
+### Credential Secret Format
+
+The credential Secret in the OADP namespace uses the `cloud` key with Azure identity configuration in key-value format:
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cloud-credentials
+  namespace: <OADP_NAMESPACE/VELERO_NAMESPACE>
+type: Opaque
+stringData:
+  cloud: |
+    AZURE_SUBSCRIPTION_ID=<SUBSCRIPTION_ID>
+    AZURE_TENANT_ID=<TENANT_ID>
+    AZURE_CLIENT_ID=<MANAGED_IDENTITY_CLIENT_ID>
+    AZURE_RESOURCE_GROUP=<RESOURCE_GROUP>
+    AZURE_CLOUD_NAME=AzurePublicCloud
+```
+
+The OADP plugin copies this Secret to the HyperShift Operator namespace, remapping `cloud` → `credentials` and preserving the original `cloud` key (see OADP Plugin Secret Flow). The controller reads the destination copy and detects Workload Identity mode when it finds the `cloud` key. It extracts the `AZURE_CLIENT_ID` value to annotate the ServiceAccount.
+
+!!! note
+
+    Fields like `AZURE_FEDERATED_TOKEN_FILE` and `AZURE_AUTHORITY_HOST` are not needed in the Secret — they are injected at runtime by the Azure Workload Identity webhook into the Pod environment.
+
+### HCPEtcdBackup CR
+
+```yaml
+apiVersion: hypershift.openshift.io/v1beta1
+kind: HCPEtcdBackup
+metadata:
+  name: my-backup
+  namespace: <HCP_NAMESPACE>
+spec:
+  storage:
+    storageType: AzureBlob
+    azureBlob:
+      container: <CONTAINER_NAME>
+      storageAccount: <STORAGE_ACCOUNT>
+      keyPrefix: etcd-backups
+      credentials:
+        name: cloud-credentials
+```
+
+### What Happens at Runtime
+
+When the controller detects Azure Workload Identity mode:
+
+1. The ServiceAccount `etcd-backup-job` is created in the HO namespace with annotation `azure.workload.identity/client-id: <CLIENT_ID>`
+2. The Job Pod template gets the label `azure.workload.identity/use: "true"`
+3. The Azure Workload Identity webhook mutates the Pod to inject:
+    - A projected volume with a federated token
+    - Environment variables `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_FEDERATED_TOKEN_FILE`, `AZURE_AUTHORITY_HOST`
+4. No credentials file is mounted and no `--azure-auth-type` flag is passed — the Azure SDK uses the injected federated token
+
+## OADP Plugin Integration
+
+The OADP HyperShift plugin handles credential propagation automatically for both ROSA HCP and ARO HCP. No manual Secret creation or copying is required. The plugin copies the `cloud-credentials` Secret from the OADP namespace to the HyperShift Operator namespace, performing key remapping as described in the OADP Plugin Secret Flow section above. The controller then auto-detects the credential mode from the destination Secret content.
+
+## Troubleshooting
+
+### AWS STS: Access Denied
+
+```text
+An error occurred (AccessDenied) when calling the <S3_OPERATION> operation
+```
+
+- Verify the IAM role trust policy allows the correct OIDC provider and ServiceAccount subject
+- Confirm the IAM role has all required S3 permissions on the target bucket (`s3:PutObject`, `s3:AbortMultipartUpload`) — see IAM Role Permissions
+- Check that the OIDC provider URL matches the management cluster's issuer
+
+### Azure WI: No Matching Federated Identity Record
+
+```text
+AADSTS700213: No matching federated identity record found for presented assertion subject
+```
+
+- Verify the federated credential subject matches exactly: `system:serviceaccount:<HO_NAMESPACE>:etcd-backup-job`
+- The Job runs in the HO namespace (e.g., `hypershift`), not the HCP namespace
+- Confirm the OIDC issuer URL matches the management cluster's issuer
+- Check the audience is set to `api://AzureADTokenExchange`
+
+### Secret Key Mismatch
+
+If the controller falls through to the wrong credential mode, check the destination Secret (in the HO namespace) has the expected keys after plugin copying:
+
+- AWS: must have a `credentials` key (remapped from `cloud` by the plugin)
+- Azure WI: must have a `cloud` key (preserved by the plugin; the presence of this key triggers WI mode). `AZURE_CLIENT_ID=` should be included in the value for SA annotation
+- Azure Client Secret: must have a `credentials` key with JSON containing `clientSecret`
+
+### Job Pods Not Starting
+
+Check the ServiceAccount and its annotations:
+
+```bash
+kubectl get sa etcd-backup-job -n <HO_NAMESPACE> -o yaml
+```
+
+- For Azure WI: the SA must have annotation `azure.workload.identity/client-id`
+- For AWS STS: verify the projected volume appears in the Pod spec
+
+### Verifying PodSpec
+
+Inspect the generated Job to confirm the correct credential mode was applied:
+
+```bash
+kubectl get job -n <HO_NAMESPACE> -l app=etcd-backup -o yaml
+```
+
+- **AWS STS**: Look for `AWS_ROLE_ARN` env var and `aws-iam-token` projected volume
+- **Azure WI**: Look for pod label `azure.workload.identity/use: "true"` and no `--credentials-file` in container args
+- **Static/Client Secret**: Look for `backup-credentials` volume and `--credentials-file` in container args
 
 
 ---
@@ -47841,6 +49315,73 @@ The value must be in proper IPV4 CIDR format</p>
 </tr>
 </tbody>
 </table>
+###OVNIPv6Config { #hypershift.openshift.io/v1beta1.OVNIPv6Config }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.OVNKubernetesConfig">OVNKubernetesConfig</a>)
+</p>
+<p>
+<p>OVNIPv6Config contains IPv6-specific configuration options for OVN-Kubernetes.
+<a href="https://github.com/openshift/api/blob/6d3c4e25a8d3aeb57ad61649d80c38cbd27d1cc8/operator/v1/types_network.go#L541-L570">https://github.com/openshift/api/blob/6d3c4e25a8d3aeb57ad61649d80c38cbd27d1cc8/operator/v1/types_network.go#L541-L570</a></p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>internalTransitSwitchSubnet</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>internalTransitSwitchSubnet is a v6 subnet in IPv6 CIDR format used internally
+by OVN-Kubernetes for the distributed transit switch in the OVN Interconnect
+architecture that connects the cluster routers on each node together to enable
+east west traffic. The subnet chosen should not overlap with other networks
+specified for OVN-Kubernetes as well as other networks used on the host.
+When omitted, this means no opinion and the platform is left to choose a reasonable
+default which is subject to change over time.
+The current default subnet is fd97::/64.
+The subnet must be large enough to accommodate one IP per node in your cluster.
+The value must be a valid IPv6 CIDR (e.g. fd97::/64). IPv4 addresses,
+IPv4-mapped IPv6 addresses, and dual-stack addresses are not permitted.
+The prefix length must be in the range /0 to /125 inclusive.
+This field is immutable once set.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>internalJoinSubnet</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>internalJoinSubnet is a v6 subnet used internally by ovn-kubernetes in case the
+default one is being already used by something else. It must not overlap with
+any other subnet being used by OpenShift or by the node network. The size of the
+subnet must be larger than the number of nodes.
+The current default value is fd98::/64.
+For KubeVirt hosted clusters, if this field is not set, HyperShift will
+automatically use fd99::/64 to avoid collisions with the management cluster&rsquo;s
+default join subnet (fd98::/64).
+The subnet must be large enough to accommodate one IP per node in your cluster.
+The value must be a valid IPv6 CIDR (e.g. fd98::/64). IPv4 addresses,
+IPv4-mapped IPv6 addresses, and dual-stack addresses are not permitted.
+The prefix length must be in the range /0 to /125 inclusive.
+This field is immutable once set.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###OVNKubernetesConfig { #hypershift.openshift.io/v1beta1.OVNKubernetesConfig }
 <p>
 (<em>Appears on:</em>
@@ -47872,6 +49413,25 @@ OVNIPv4Config
 <p>ipv4 allows users to configure IP settings for IPv4 connections. When omitted,
 this means no opinions and the default configuration is used. Check individual
 fields within ipv4 for details of default values.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>ipv6,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.OVNIPv6Config">
+OVNIPv6Config
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>ipv6 allows users to configure IP settings for IPv6 connections. When omitted,
+this means no opinions and the default configuration is used. Check individual
+fields within ipv6 for details of default values.
+For KubeVirt hosted clusters using dual-stack networking, it is recommended to
+set ipv6.internalJoinSubnet to a value different from the management cluster&rsquo;s
+join subnet (default fd98::/64) to avoid IPv6 routing conflicts.</p>
 </td>
 </tr>
 <tr>
@@ -53964,7 +55524,7 @@ You can use an existing VNet and NSG from the same resource group, which places 
 
 ## Related Documentation
 
-- Azure Workload Identity Setup - Set up managed identities and OIDC federation
+- Create Azure IAM Resources - Set up OIDC issuer, managed identities, and workload identity federation
 - Setup Azure Management Cluster for HyperShift - Install HyperShift operator
 - Create a Self-Managed Azure HostedCluster - Deploy your first hosted cluster
 - Self-Managed Azure Overview - Comprehensive overview
@@ -57848,6 +59408,202 @@ This is where the **actual control plane pods run**. Look here for:
 - **Azure DNS integration**: External DNS manages DNS records for hosted cluster API endpoints
 - **Common failure patterns**: Permission issues with Azure DNS zones, rate limiting, DNS propagation delays
 - **Log format**: Look for Azure API calls, DNS record operations, and error responses in external-dns logs
+
+
+---
+
+## Source: docs/content/reference/test-information-debugging/GCP/test-artifacts-directory-structure.md
+
+# GCP E2E Test Artifacts (v2 Framework)
+
+This document describes the artifact directory structure produced by the `e2e-v2-gke` workflow.
+
+## Top-Level Files
+
+```
+<run-id>/
+├── build-log.txt        # main CI operator execution log
+├── clone-log.txt        # human-readable git clone and PR merge output (presubmit only)
+├── clone-records.json   # machine-readable clone details: commands, durations, PR metadata (presubmit only)
+├── finished.json        # job completion: result (SUCCESS/FAILURE), timestamp, commit SHAs
+├── podinfo.json         # full Kubernetes Pod spec of the CI pod
+├── prowjob.json         # full ProwJob CR: job name, refs, spec, labels
+├── prowjob_junit.xml    # single JUnit test: "Job run should complete before timeout"
+├── sidecar-logs.json    # Prow sidecar: secret censoring and artifact upload logs
+├── started.json         # job start: timestamp, PR number, repos and commit SHAs
+└── artifacts/           # all CI step artifacts and build outputs
+```
+
+## `artifacts/`
+
+```
+artifacts/
+├── ci-operator-metrics.json    # step durations and success/failure events per step
+├── ci-operator-step-graph.json # full step graph: names, dependencies, timing, K8s manifests
+├── ci-operator.log             # CI operator execution log
+├── junit_operator.xml          # JUnit results for all step graph steps
+├── metadata.json               # repo, PR, commit SHAs, pod name, work namespace
+├── build-logs/                 # binary compilation logs (presubmit only)
+│   ├── hypershift-amd64.log
+│   ├── hypershift-cli-amd64.log
+│   ├── hypershift-operator-amd64.log
+│   ├── hypershift-tests-amd64.log
+│   └── src-amd64.log
+├── build-resources/            # K8s resources created during the build phase
+│   ├── builds.json             # OpenShift Build objects
+│   ├── events.json             # Kubernetes events
+│   ├── imagestreams.json       # ImageStream pipeline tags
+│   └── pods.json               # build pods
+├── release/                    # resolved release payload (periodic only)
+│   └── artifacts/
+│       └── release-images-latest  # ImageStream with all component image SHAs for this run
+└── e2e-v2-gke/                 # all step artifacts for the e2e-v2-gke workflow
+```
+
+## `artifacts/e2e-v2-gke/`
+
+The workflow runs 13 explicit steps. Each step directory contains `build-log.txt`, `finished.json`, and `sidecar-logs.json`. Steps with additional artifacts are noted below.
+
+```
+e2e-v2-gke/
+├── ipi-install-rbac/  # grants image-puller RBAC to the CI pod
+├── hypershift-gcp-gke-prerequisites/  # installs CRDs (prometheus-operator, Route, DNSEndpoint)
+├── hypershift-gcp-gke-provision/  # creates ephemeral GCP projects, GKE Autopilot cluster
+├── hypershift-install/  # installs HyperShift operator with GCP support
+├── hypershift-gcp-control-plane-setup/  # creates operator GCP SA, configures WIF for PSC and ExternalDNS
+├── hypershift-gcp-hosted-cluster-setup/  # generates RSA keypair, creates WIF pool/SAs, HC network
+├── create-hostedcluster/  # runs `hypershift create cluster gcp`
+│   └── artifacts/
+│       └── junit_hosted_cluster.xml
+├── tests/  # runs Ginkgo v2 test suite
+│   └── artifacts/
+│       └── junit_report.xml
+├── dump/  # runs `hypershift dump cluster`, collects cluster state
+│   └── artifacts/
+│       ├── hypershift-dump.tar
+│       ├── aggregated-discovery-api.yaml
+│       ├── aggregated-discovery-apis.yaml
+│       ├── event-filter.html
+│       ├── timestamp
+│       ├── cluster-scoped-resources/
+│       │   └── core/
+│       │       └── nodes/
+│       │           └── <node-name>.yaml
+│       ├── hostedcluster-<hc-name>/  # guest cluster dump (worker node logs + all guest namespaces)
+│       │   ├── aggregated-discovery-api.yaml
+│       │   ├── aggregated-discovery-apis.yaml
+│       │   ├── event-filter.html
+│       │   ├── timestamp
+│       │   ├── worker.nodes.log      # journal logs from worker nodes
+│       │   ├── cluster-scoped-resources/
+│       │   └── namespaces/           # guest namespaces (kube-system, openshift-*, etc.)
+│       └── namespaces/
+│           ├── clusters/
+│           │   ├── core/
+│           │   │   └── configmaps/
+│           │   └── hypershift.openshift.io/
+│           │       ├── hostedclusters/
+│           │       └── nodepools/
+│           ├── clusters-<hc-name>/
+│           │   ├── apps/
+│           │   │   ├── deployments/
+│           │   │   ├── replicasets/
+│           │   │   └── statefulsets/
+│           │   ├── batch/
+│           │   ├── cluster.x-k8s.io/
+│           │   │   ├── clusters/
+│           │   │   ├── machinedeployments/
+│           │   │   ├── machines/
+│           │   │   └── machinesets/
+│           │   ├── core/
+│           │   │   ├── configmaps/
+│           │   │   ├── endpoints/
+│           │   │   ├── events/
+│           │   │   ├── persistentvolumeclaims/
+│           │   │   ├── pods/
+│           │   │   │   └── logs/     # one log file per container
+│           │   │   └── services/
+│           │   ├── hypershift.openshift.io/
+│           │   │   ├── controlplanecomponents/
+│           │   │   └── hostedcontrolplanes/
+│           │   ├── monitoring.coreos.com/
+│           │   ├── networking.k8s.io/
+│           │   ├── policy/
+│           │   └── route.openshift.io/
+│           └── hypershift/
+│               ├── apps/
+│               │   ├── deployments/
+│               │   └── replicasets/
+│               ├── core/
+│               │   ├── configmaps/
+│               │   ├── endpoints/
+│               │   ├── events/
+│               │   ├── pods/
+│               │   └── services/
+│               └── monitoring.coreos.com/
+│                   ├── podmonitors/
+│                   └── servicemonitors/
+├── hypershift-k8sgpt/  # K8sGPT AI-powered analysis per namespace
+│   └── artifacts/
+│       ├── hostedcluster/
+│       │   └── result.json
+│       └── namespaces/
+│           ├── clusters/
+│           │   └── result.json
+│           ├── clusters-<hc-name>/
+│           │   └── result.json
+│           └── hypershift/
+│               └── result.json
+├── hypershift-debug/  # generates quick-access debug links
+│   └── artifacts/
+│       └── custom-link-tools.html
+├── hypershift-gcp-gke-deprovision/  # deletes hosted-cluster and control-plane GCP projects
+└── destroy/  # runs `hypershift destroy cluster gcp`
+```
+
+## Quick Navigation Index
+
+### Key Resources
+
+| What you're looking for | Path |
+|-------------------------|------|
+| Guest cluster dump | `artifacts/e2e-v2-gke/dump/artifacts/hostedcluster-<hc-name>/` |
+| Guest cluster namespaces | `artifacts/e2e-v2-gke/dump/artifacts/hostedcluster-<hc-name>/namespaces/` |
+| Worker node logs | `artifacts/e2e-v2-gke/dump/artifacts/hostedcluster-<hc-name>/worker.nodes.log` |
+| Control plane pod logs | `artifacts/e2e-v2-gke/dump/artifacts/namespaces/clusters-<hc-name>/core/pods/logs/` |
+| HostedCluster CR | `artifacts/e2e-v2-gke/dump/artifacts/namespaces/clusters/hypershift.openshift.io/hostedclusters/` |
+| NodePool CR | `artifacts/e2e-v2-gke/dump/artifacts/namespaces/clusters/hypershift.openshift.io/nodepools/` |
+| HostedControlPlane CR | `artifacts/e2e-v2-gke/dump/artifacts/namespaces/clusters-<hc-name>/hypershift.openshift.io/hostedcontrolplanes/` |
+| Control plane pods | `artifacts/e2e-v2-gke/dump/artifacts/namespaces/clusters-<hc-name>/core/pods/` |
+| Control plane deployments | `artifacts/e2e-v2-gke/dump/artifacts/namespaces/clusters-<hc-name>/apps/deployments/` |
+| CAPI machines | `artifacts/e2e-v2-gke/dump/artifacts/namespaces/clusters-<hc-name>/cluster.x-k8s.io/machines/` |
+| HyperShift operator pods | `artifacts/e2e-v2-gke/dump/artifacts/namespaces/hypershift/core/pods/` |
+| HyperShift operator deployments | `artifacts/e2e-v2-gke/dump/artifacts/namespaces/hypershift/apps/deployments/` |
+| K8sGPT analysis (control plane) | `artifacts/e2e-v2-gke/hypershift-k8sgpt/artifacts/namespaces/clusters-<hc-name>/result.json` |
+| K8sGPT analysis (operator) | `artifacts/e2e-v2-gke/hypershift-k8sgpt/artifacts/namespaces/hypershift/result.json` |
+| Cluster creation result | `artifacts/e2e-v2-gke/create-hostedcluster/artifacts/junit_hosted_cluster.xml` |
+| Test results | `artifacts/e2e-v2-gke/tests/artifacts/junit_report.xml` |
+
+> `<hc-name>` is the HostedCluster name (e.g. `gcp-hc-2e2dd848`), making the full namespace `clusters-<hc-name>`. The actual value is visible in the `artifacts/e2e-v2-gke/dump/artifacts/namespaces/` directory listing.
+
+## Test Results
+
+| File | Description |
+|------|-------------|
+| `artifacts/e2e-v2-gke/create-hostedcluster/artifacts/junit_hosted_cluster.xml` | Cluster creation result |
+| `artifacts/e2e-v2-gke/tests/artifacts/junit_report.xml` | Full Ginkgo v2 test results |
+| `artifacts/junit_operator.xml` | CI operator-level results |
+
+## K8sGPT Analysis
+
+The `hypershift-k8sgpt` step produces AI-powered analysis per scope:
+
+| File | Scope |
+|------|-------|
+| `artifacts/e2e-v2-gke/hypershift-k8sgpt/artifacts/hostedcluster/result.json` | HostedCluster |
+| `artifacts/e2e-v2-gke/hypershift-k8sgpt/artifacts/namespaces/clusters/result.json` | `clusters` namespace |
+| `artifacts/e2e-v2-gke/hypershift-k8sgpt/artifacts/namespaces/clusters-<hc-name>/result.json` | Control plane namespace |
+| `artifacts/e2e-v2-gke/hypershift-k8sgpt/artifacts/namespaces/hypershift/result.json` | `hypershift` namespace |
 
 
 ---

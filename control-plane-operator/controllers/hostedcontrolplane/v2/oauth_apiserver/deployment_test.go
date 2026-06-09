@@ -148,6 +148,51 @@ func TestAdaptDeployment(t *testing.T) {
 				container := podspec.FindContainer(ComponentName, deployment.Spec.Template.Spec.Containers)
 				g.Expect(container).ToNot(BeNil())
 				g.Expect(container.Args).To(ContainElement("--tls-min-version=VersionTLS13"))
+				g.Expect(container.Args).ToNot(ContainElement(ContainSubstring("--tls-cipher-suites=")))
+			},
+		},
+		{
+			name: "When TLS security profile is Intermediate, it should configure tls-cipher-suites",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-hcp",
+					Namespace: "test-ns",
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
+					IssuerURL: "https://test-issuer.example.com",
+					Etcd: hyperv1.EtcdSpec{
+						ManagementType: hyperv1.Managed,
+					},
+					Configuration: &hyperv1.ClusterConfiguration{
+						APIServer: &configv1.APIServerSpec{
+							TLSSecurityProfile: &configv1.TLSSecurityProfile{
+								Type:         configv1.TLSProfileIntermediateType,
+								Intermediate: &configv1.IntermediateTLSProfile{},
+							},
+						},
+					},
+				},
+			},
+			validate: func(t *testing.T, g *GomegaWithT, hcp *hyperv1.HostedControlPlane) {
+
+				deployment, loadErr := assets.LoadDeploymentManifest(ComponentName)
+				g.Expect(loadErr).ToNot(HaveOccurred())
+
+				cpContext := component.WorkloadContext{
+					Client: fake.NewClientBuilder().WithScheme(api.Scheme).Build(),
+					HCP:    hcp,
+				}
+
+				err := adaptDeployment(cpContext, deployment)
+				g.Expect(err).ToNot(HaveOccurred())
+
+				container := podspec.FindContainer(ComponentName, deployment.Spec.Template.Spec.Containers)
+				g.Expect(container).ToNot(BeNil())
+				g.Expect(container.Args).To(ContainElement("--tls-min-version=VersionTLS12"))
+				g.Expect(container.Args).To(ContainElement(ContainSubstring("--tls-cipher-suites=")))
 			},
 		},
 		{

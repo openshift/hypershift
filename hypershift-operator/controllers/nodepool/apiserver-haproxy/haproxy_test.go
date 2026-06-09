@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	. "github.com/onsi/gomega"
+
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/api/util/ipnet"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
@@ -513,6 +515,50 @@ kind: Config`
 			}
 
 			testutil.CompareWithFixture(t, haproxyConfig.Data)
+		})
+	}
+}
+
+func TestJoinDefaultPortIfMissing(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		addr     string
+		expected string
+		wantErr  bool
+	}{
+		{
+			name:     "When HTTPS URL has no port it should add port 443",
+			addr:     "https://proxy.example.com",
+			expected: "https://proxy.example.com:443",
+		},
+		{
+			name:     "When HTTP URL has no port it should add port 80",
+			addr:     "http://proxy.example.com",
+			expected: "http://proxy.example.com:80",
+		},
+		{
+			name:     "When HTTPS URL already has a port it should keep existing port",
+			addr:     "https://proxy.example.com:8443",
+			expected: "https://proxy.example.com:8443",
+		},
+		{
+			name:    "When URL has no scheme it should return an error",
+			addr:    "proxy.example.com",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			result, err := joinDefaultPortIfMissing(tt.addr)
+			if tt.wantErr {
+				g.Expect(err).To(HaveOccurred())
+				return
+			}
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(result).To(Equal(tt.expected))
 		})
 	}
 }

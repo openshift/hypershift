@@ -1,0 +1,29 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: kube-scheduler
+  annotations:
+    hypershift.openshift.io/metrics-job: kube-scheduler
+    hypershift.openshift.io/metrics-namespace: openshift-kube-scheduler
+    hypershift.openshift.io/metrics-service: kube-scheduler
+    hypershift.openshift.io/metrics-endpoint: https
+spec:
+  endpoints:
+  - scheme: https
+    targetPort: client
+    tlsConfig:
+      ca:
+        configMap:
+          key: ca.crt
+          name: root-ca
+      cert:
+        secret:
+          key: tls.crt
+          name: metrics-client
+      keySecret:
+        key: tls.key
+        name: metrics-client
+      serverName: kube-scheduler
+  selector:
+    matchLabels:
+      app: kube-scheduler

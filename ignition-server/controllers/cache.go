@@ -59,7 +59,7 @@ func (c *ExpiringCache) Set(key string, value CacheValue) {
 	c.Lock()
 	defer c.Unlock()
 
-	// Renew expiring time every time time we Set.
+	// Renew expiring time every time we Set.
 	c.cache[key] = &entry{
 		value:  value,
 		expiry: time.Now().Add(c.ttl),

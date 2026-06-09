@@ -40,7 +40,7 @@ func NewRunCommand() *cobra.Command {
 		Name:           "feature-gate",
 		PayloadVersion: os.Getenv("PAYLOAD_VERSION"),
 	}
-	cmd.Flags().StringVar(&opts.File, "file", opts.File, "The path path to the file that contains the feature gate YAML to apply.")
+	cmd.Flags().StringVar(&opts.File, "file", opts.File, "The path to the file that contains the feature gate YAML to apply.")
 	cmd.Flags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "The control plane namespace for the feature gate configmap.")
 	cmd.Flags().StringVar(&opts.Name, "name", opts.Name, "The name of the feature gate configmap.")
 	cmd.Flags().StringVar(&opts.PayloadVersion, "payload-version", opts.PayloadVersion, "The payload version of the control plane.")

@@ -126,7 +126,7 @@ func (c *CertificateSigningController) processCertificateSigningRequest(ctx cont
 
 	x509cr, err := certificates.ParseCSR(csr.Spec.Request)
 	if err != nil {
-		return nil, false, nil, fmt.Errorf("unable to parse csr %q: %v", csr.Name, err)
+		return nil, false, nil, fmt.Errorf("unable to parse csr %q: %w", csr.Name, err)
 	}
 	if validationErr := c.validator(csr, x509cr); validationErr != nil {
 		cfg := certificatesv1applyconfigurations.CertificateSigningRequest(name)
@@ -158,7 +158,7 @@ func (c *CertificateSigningController) processCertificateSigningRequest(ctx cont
 
 func sign(ca *librarygocrypto.CA, x509cr *x509.CertificateRequest, usages []certificatesv1.KeyUsage, certTTL time.Duration, expirationSeconds *int32, now func() time.Time) ([]byte, error) {
 	if err := x509cr.CheckSignature(); err != nil {
-		return nil, fmt.Errorf("unable to verify certificate request signature: %v", err)
+		return nil, fmt.Errorf("unable to verify certificate request signature: %w", err)
 	}
 
 	notBefore, notAfter, err := boundaries(

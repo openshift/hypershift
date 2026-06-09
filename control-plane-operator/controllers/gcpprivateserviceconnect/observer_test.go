@@ -3,6 +3,7 @@ package gcpprivateserviceconnect
 import (
 	"context"
 	"testing"
+	"time"
 
 	. "github.com/onsi/gomega"
 
@@ -103,7 +104,7 @@ func TestReconcileIntegration(t *testing.T) {
 		requestName         string
 		service             *corev1.Service
 		hcp                 *hyperv1.HostedControlPlane
-		expectRequeue       bool
+		expectRequeueAfter  time.Duration
 		expectError         bool
 		expectGCPPSCCreated bool
 	}{
@@ -148,7 +149,7 @@ func TestReconcileIntegration(t *testing.T) {
 					},
 				},
 			},
-			expectRequeue:       false,
+			expectRequeueAfter:  0,
 			expectError:         false,
 			expectGCPPSCCreated: true,
 		},
@@ -172,7 +173,7 @@ func TestReconcileIntegration(t *testing.T) {
 					},
 				},
 			},
-			expectRequeue:       false,
+			expectRequeueAfter:  0,
 			expectError:         false,
 			expectGCPPSCCreated: false,
 		},
@@ -194,7 +195,7 @@ func TestReconcileIntegration(t *testing.T) {
 					},
 				},
 			},
-			expectRequeue:       false,
+			expectRequeueAfter:  0,
 			expectError:         false,
 			expectGCPPSCCreated: false,
 		},
@@ -218,7 +219,7 @@ func TestReconcileIntegration(t *testing.T) {
 					},
 				},
 			},
-			expectRequeue:       false,
+			expectRequeueAfter:  0,
 			expectError:         false,
 			expectGCPPSCCreated: false,
 		},
@@ -273,7 +274,7 @@ func TestReconcileIntegration(t *testing.T) {
 				g.Expect(err).ToNot(HaveOccurred())
 			}
 
-			g.Expect(result.Requeue).To(Equal(tt.expectRequeue))
+			g.Expect(result.RequeueAfter).To(Equal(tt.expectRequeueAfter))
 
 			// Check if GCPPrivateServiceConnect CR was created
 			if tt.expectGCPPSCCreated {

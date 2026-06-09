@@ -7,6 +7,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -72,7 +73,7 @@ import (
 	"k8s.io/client-go/util/retry"
 	"k8s.io/utils/ptr"
 
-	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
@@ -233,7 +234,7 @@ func DeleteNamespace(t *testing.T, ctx context.Context, client crclient.Client, 
 		return false, nil
 	})
 	if err != nil {
-		return fmt.Errorf("namespace still exists after deletion timeout: %v", err)
+		return fmt.Errorf("namespace still exists after deletion timeout: %w", err)
 	}
 	if os.Getenv("EVENTUALLY_VERBOSE") != "false" {
 		t.Logf("Deleted namespace %s", namespace)
@@ -397,7 +398,7 @@ func GetGuestKubeconfigHost(t *testing.T, ctx context.Context, client crclient.C
 	guestKubeConfigSecretData := WaitForGuestKubeConfig(t, ctx, client, hostedCluster)
 	guestConfig, err := clientcmd.RESTConfigFromKubeConfig(guestKubeConfigSecretData)
 	if err != nil {
-		return "", fmt.Errorf("couldn't load guest kubeconfig: %v", err)
+		return "", fmt.Errorf("couldn't load guest kubeconfig: %w", err)
 	}
 
 	host := guestConfig.Host
@@ -419,7 +420,7 @@ func WaitForGuestKubeconfigHostUpdate(t *testing.T, ctx context.Context, client 
 		newHost, getHostError = GetGuestKubeconfigHost(t, ctx, client, hostedCluster)
 		if getHostError != nil {
 			t.Logf("failed to get guest kubeconfig host: %v", getHostError)
-			return false, nil
+			return false, nil //nolint:nilerr // retry until kubeconfig host is available
 		}
 		if newHost == oldHost {
 			t.Logf("guest kubeconfig host is not yet updated, keep polling")
@@ -441,12 +442,16 @@ func WaitForGuestKubeconfigHostResolutionUpdate(t *testing.T, ctx context.Contex
 	err := wait.PollUntilContextTimeout(ctx, 15*time.Second, 30*time.Minute, true, func(ctx context.Context) (done bool, err error) {
 		host := strings.TrimPrefix(uri, "https://")
 		host = strings.Split(host, ":")[0]
-		ips, err := net.LookupIP(host)
+		ipAddrs, err := (&net.Resolver{}).LookupIPAddr(ctx, host)
 		if err != nil {
 			t.Logf("failed to resolve guest kubeconfig host: %v", err)
 			return false, nil
 		}
-		ip := ips[0].String()
+		if len(ipAddrs) == 0 {
+			t.Logf("guest kubeconfig host resolved with no IPs yet")
+			return false, nil
+		}
+		ip := ipAddrs[0].IP.String()
 		if endpointAccess == hyperv1.Private {
 			if strings.HasPrefix(ip, "10.") {
 				t.Logf("kubeconfig host now resolves to private address")
@@ -1608,7 +1613,7 @@ func GetMetricsFromPod(ctx context.Context, c crclient.Client, componentName, co
 	command := []string{"curl", "-s", fmt.Sprintf("http://127.0.0.1:%s/metrics", port)}
 	cmdOutput, err := RunCommandInPod(ctx, c, componentName, namespaceName, command, containerName, 5*time.Minute)
 	if err != nil {
-		return nil, fmt.Errorf("couldn't obtain any metrics: %v", err)
+		return nil, fmt.Errorf("couldn't obtain any metrics: %w", err)
 	}
 	if len(cmdOutput) == 0 {
 		return nil, fmt.Errorf("no metrics found")
@@ -2247,7 +2252,7 @@ func createAdditionalPullSecret(ctx context.Context, guestClient crclient.Client
 	}
 
 	if err := guestClient.Create(ctx, secret); err != nil && !apierrors.IsAlreadyExists(err) {
-		return fmt.Errorf("failed to create secret: %v", err)
+		return fmt.Errorf("failed to create secret: %w", err)
 	}
 
 	return nil
@@ -2392,9 +2397,9 @@ func EnsureKubeAPIDNSNameCustomCert(t *testing.T, ctx context.Context, mgmtClien
 		start := time.Now()
 		g.Eventually(func() error {
 			t.Logf("[%s] Waiting until the URL is resolvable: %s", time.Now().Format(time.RFC3339), customApiServerHost)
-			_, err := net.LookupIP(customApiServerHost)
+			_, err := (&net.Resolver{}).LookupIPAddr(ctx, customApiServerHost)
 			if err != nil {
-				return fmt.Errorf("failed to resolve the custom DNS name: %v", err)
+				return fmt.Errorf("failed to resolve the custom DNS name: %w", err)
 			}
 			t.Logf("resolved the custom DNS name after %s\n", time.Since(start))
 			return nil
@@ -2567,7 +2572,7 @@ func EnsureKubeAPIDNSNameCustomCert(t *testing.T, ctx context.Context, mgmtClien
 		err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
 			latestHC := &hyperv1.HostedCluster{}
 			if err := mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(hc), latestHC); err != nil {
-				return fmt.Errorf("failed to get latest HostedCluster: %v", err)
+				return fmt.Errorf("failed to get latest HostedCluster: %w", err)
 			}
 			latestHC.Spec.Configuration.APIServer.ServingCerts.NamedCertificates = []configv1.APIServerNamedServingCert{}
 			return mgmtClient.Update(ctx, latestHC)
@@ -2874,7 +2879,7 @@ func getIngressRouterDefaultIP(t *testing.T, ctx context.Context, client crclien
 		}
 		return getErr == nil, err
 	}); err != nil {
-		return "", fmt.Errorf("router-default service did't become available: %v", err)
+		return "", fmt.Errorf("router-default service did't become available: %w", err)
 	}
 
 	routerDefaultIP := defaultIngressRouterService.Status.LoadBalancer.Ingress[0].IP
@@ -4514,7 +4519,7 @@ func ApplyYAMLBytes(ctx context.Context, c crclient.Client, yamlContent []byte, 
 	for {
 		obj := &unstructured.Unstructured{}
 		if err := decoder.Decode(obj); err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				return nil
 			}
 			return fmt.Errorf("failed to decode YAML: %w", err)
@@ -4638,7 +4643,7 @@ func EnsureNodeTuningOperatorMetricsEndpoint(t *testing.T, ctx context.Context, 
 			}
 			cmdOutput, err := RunCommandInPod(ctx, mgmtClient, "cluster-node-tuning-operator", hcpNamespace, httpsCommand, "cluster-node-tuning-operator", 30*time.Second)
 			if err != nil {
-				return fmt.Errorf("failed to get metrics via ServiceMonitor HTTPS at %s: %v", httpsServiceURL, err)
+				return fmt.Errorf("failed to get metrics via ServiceMonitor HTTPS at %s: %w", httpsServiceURL, err)
 			}
 			if len(cmdOutput) == 0 {
 				return fmt.Errorf("no metrics returned via ServiceMonitor HTTPS at %s", httpsServiceURL)

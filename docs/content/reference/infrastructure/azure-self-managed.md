@@ -281,7 +281,7 @@ You can use an existing VNet and NSG from the same resource group, which places 
 
 ## Related Documentation
 
-- [Azure Workload Identity Setup](../../how-to/azure/azure-workload-identity-setup.md) - Set up managed identities and OIDC federation
+- [Create Azure IAM Resources](../../how-to/azure/create-iam-separately.md) - Set up OIDC issuer, managed identities, and workload identity federation
 - [Setup Azure Management Cluster for HyperShift](../../how-to/azure/setup-management-cluster.md) - Install HyperShift operator
 - [Create a Self-Managed Azure HostedCluster](../../how-to/azure/create-self-managed-azure-cluster.md) - Deploy your first hosted cluster
 - [Self-Managed Azure Overview](../../how-to/azure/self-managed-azure-index.md) - Comprehensive overview

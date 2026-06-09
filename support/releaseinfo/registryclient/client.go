@@ -67,7 +67,7 @@ func ExtractImageFiles(ctx context.Context, imageRef string, pullSecret []byte, 
 		err := func() error {
 			r, err := fromBlobs.Open(ctx, layer.Digest)
 			if err != nil {
-				return fmt.Errorf("unable to access the source layer %s: %v", layer.Digest, err)
+				return fmt.Errorf("unable to access the source layer %s: %w", layer.Digest, err)
 			}
 			defer r.Close()
 			rc, err := dockerarchive.DecompressStream(r)
@@ -137,7 +137,7 @@ func ExtractImageFile(ctx context.Context, imageRef string, pullSecret []byte, f
 		err := func() error {
 			r, err := fromBlobs.Open(ctx, layer.Digest)
 			if err != nil {
-				return fmt.Errorf("unable to access the source layer %s: %v", layer.Digest, err)
+				return fmt.Errorf("unable to access the source layer %s: %w", layer.Digest, err)
 			}
 			defer r.Close()
 			rc, err := dockerarchive.DecompressStream(r)
@@ -195,7 +195,7 @@ func ExtractImageFilesToDir(ctx context.Context, imageRef string, pullSecret []b
 		err := func() error {
 			r, err := fromBlobs.Open(ctx, layer.Digest)
 			if err != nil {
-				return fmt.Errorf("unable to access the source layer %s: %v", layer.Digest, err)
+				return fmt.Errorf("unable to access the source layer %s: %w", layer.Digest, err)
 			}
 			defer r.Close()
 			rc, err := dockerarchive.DecompressStream(r)
