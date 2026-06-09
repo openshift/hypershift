@@ -29,6 +29,7 @@ spec:
         component.hypershift.openshift.io/config-hash: 1cdcee0c
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       labels:
+        app: cloud-controller-manager
         hypershift.openshift.io/control-plane-component: openstack-cloud-controller-manager
         hypershift.openshift.io/hosted-control-plane: hcp-namespace
         infrastructure.openshift.io/cloud-controller-manager: OpenStack
