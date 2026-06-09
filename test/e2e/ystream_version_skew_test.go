@@ -89,8 +89,8 @@ func TestYStreamVersionSkew(t *testing.T) {
 								Size: 120,
 								Type: "gp3",
 							},
-							Subnet: &hyperv1.AWSResourceReference{
-								ID: &zone, // Use zone as subnet selector
+							Subnet: hyperv1.AWSResourceReference{
+								// Subnet will be auto-selected by availability zone
 							},
 						},
 					},
@@ -272,7 +272,7 @@ func waitForNodePoolReady(t *testing.T, ctx context.Context, client crclient.Cli
 
 		for _, cond := range latest.Status.Conditions {
 			if cond.Type == hyperv1.NodePoolReadyConditionType {
-				if cond.Status == metav1.ConditionTrue {
+				if cond.Status == corev1.ConditionTrue {
 					t.Logf("NodePool %s is ready", nodePool.Name)
 					return true, nil
 				}
