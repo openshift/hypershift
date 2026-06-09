@@ -1,8 +1,10 @@
+# AGENTS.md
+
+This file provides guidance to AI coding agents when working with code in this repository. `CLAUDE.md` is a symlink to this file so that Claude Code auto-loads it; the `AGENTS.md` name is canonical.
+
 HyperShift is middleware for hosting OpenShift control planes at scale, decoupling control planes (running as pods on a management cluster) from worker nodes (running in separate infrastructure).
 
-This file provides non-obvious development guidance for the HyperShift repository. It is intentionally minimal — detailed guidance lives in the referenced files below and should be updated there, not here.
-
-`CLAUDE.md` is a symlink to this file (`AGENTS.md`). Both names resolve to the same content. The `AGENTS.md` name is the canonical one; `CLAUDE.md` exists so that Claude Code auto-loads it.
+This file is intentionally minimal — detailed guidance lives in the referenced files below and should be updated there, not here.
 
 For architecture, components, and platform support, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
