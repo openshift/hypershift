@@ -96,9 +96,6 @@ spec:
                               is serving.
                             format: int32
                             type: integer
-                        required:
-                        - host
-                        - port
                         type: object
                       network:
                         description: Network is the reference to the Network to use
@@ -216,9 +213,6 @@ spec:
                               is serving.
                             format: int32
                             type: integer
-                        required:
-                        - host
-                        - port
                         type: object
                       cosInstance:
                         description: |-
