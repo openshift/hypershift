@@ -1535,9 +1535,25 @@ func TestDefaultImage(t *testing.T) {
 	tests := []struct {
 		name           string
 		arch           string
+		releaseImage   *releaseinfo.ReleaseImage
 		expectedImage  string
 		expectedDigest string
+		expectedError  bool
 	}{
+		{
+			name: "When KubeVirt image metadata is nil, it should return error",
+			arch: hyperv1.ArchitectureAMD64,
+			releaseImage: &releaseinfo.ReleaseImage{
+				StreamMetadata: &stream.Stream{
+					Architectures: map[string]stream.Arch{
+						hyperv1.ArchAliases[hyperv1.ArchitectureAMD64]: {
+							Images: stream.Images{},
+						},
+					},
+				},
+			},
+			expectedError: true,
+		},
 		{
 			name:           "s390x architecture",
 			arch:           hyperv1.ArchitectureS390X,
@@ -1560,7 +1576,17 @@ func TestDefaultImage(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			img, digest, err := defaultImage(tt.arch, ri)
+			testRI := tt.releaseImage
+			if testRI == nil {
+				testRI = ri
+			}
+			img, digest, err := defaultImage(tt.arch, testRI)
+			if tt.expectedError {
+				if err == nil {
+					t.Fatalf("expected error but got nil")
+				}
+				return
+			}
 			if err != nil {
 				t.Fatalf("unexpected error for %s: %v", tt.arch, err)
 			}
