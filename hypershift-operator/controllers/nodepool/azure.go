@@ -14,6 +14,7 @@ import (
 	"k8s.io/utils/ptr"
 
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
+	capzutil "sigs.k8s.io/cluster-api-provider-azure/util/azure"
 
 	"github.com/blang/semver"
 )
@@ -167,7 +168,7 @@ func getAzureMarketplaceMetadata(releaseImage *releaseinfo.ReleaseImage, arch st
 	return result, nil
 }
 
-func azureMachineTemplateSpec(nodePool *hyperv1.NodePool) (*capiazure.AzureMachineTemplateSpec, error) {
+func azureMachineTemplateSpec(nodePool *hyperv1.NodePool, acrIdentityResourceID string) (*capiazure.AzureMachineTemplateSpec, error) {
 	subnetName, err := azureutil.GetSubnetNameFromSubnetID(nodePool.Spec.Platform.Azure.SubnetID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to determine subnet name for Azure machine: %w", err)
@@ -244,6 +245,16 @@ func azureMachineTemplateSpec(nodePool *hyperv1.NodePool) (*capiazure.AzureMachi
 		}
 	}
 
+	if acrIdentityResourceID != "" {
+		azureMachineTemplate.Template.Spec.Identity = capiazure.VMIdentityUserAssigned
+		azureMachineTemplate.Template.Spec.UserAssignedIdentities = append(
+			azureMachineTemplate.Template.Spec.UserAssignedIdentities,
+			capiazure.UserAssignedIdentity{
+				ProviderID: capzutil.ProviderIDPrefix + acrIdentityResourceID,
+			},
+		)
+	}
+
 	azureMachineTemplate.Template.Spec.SSHPublicKey = dummySSHKey
 
 	return azureMachineTemplate, nil
@@ -255,7 +266,12 @@ func (c *CAPI) azureMachineTemplate(_ context.Context, templateNameGenerator fun
 		return nil, fmt.Errorf("failed to apply Azure image defaults: %w", err)
 	}
 
-	spec, err := azureMachineTemplateSpec(c.nodePool)
+	var acrIdentityResourceID string
+	if c.hostedCluster != nil && c.hostedCluster.Spec.Platform.Azure != nil && c.hostedCluster.Spec.Platform.Azure.ContainerRegistry.Credentials.ManagedIdentity.ResourceID != "" {
+		acrIdentityResourceID = string(c.hostedCluster.Spec.Platform.Azure.ContainerRegistry.Credentials.ManagedIdentity.ResourceID)
+	}
+
+	spec, err := azureMachineTemplateSpec(c.nodePool, acrIdentityResourceID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate AzureMachineTemplateSpec: %w", err)
 	}
