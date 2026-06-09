@@ -10,6 +10,10 @@ spec:
   - name: ho-image
     type: string
     description: HyperShift Operator container image reference from the Snapshot
+  - name: e2e-job-names
+    type: string
+    description: JSON array of Prow periodic job names to run in parallel
+    default: '["periodic-ci-openshift-hypershift-release-5.0-periodics-e2e-aks","periodic-ci-openshift-hypershift-release-5.0-periodics-e2e-azure-aks-ovn-conformance"]'
 
   tasks:
   - name: extract-image
@@ -63,11 +67,11 @@ spec:
       params:
       - name: ho-image
         type: string
+      - name: e2e-job-names
+        type: string
       results:
-      - name: result
-        description: Test result (passed/failed/error)
-      - name: prow-job-url
-        description: URL of the Prow job run
+      - name: results-json
+        description: "JSON array of per-job results: [{job, result, url}, ...]"
       steps:
       - name: trigger-and-poll
         image: quay.io/konflux-ci/appstudio-utils:latest
@@ -82,182 +86,250 @@ spec:
           set -euo pipefail
 
           GANGWAY_URL="https://gangway-ci.apps.ci.l2s4.p1.openshiftapps.com/v1/executions"
-          JOB_NAME="periodic-ci-openshift-hypershift-release-5.0-periodics-e2e-aks"
           HO_IMAGE="$(params.ho-image)"
+          JOB_NAMES_JSON='$(params.e2e-job-names)'
           POLL_INTERVAL=600
           TIMEOUT=14400
+          TRIGGER_DELAY=5
 
-          echo "=== run-e2e: trigger ==="
-          echo "Job:       ${JOB_NAME}"
+          echo "=== run-e2e: setup ==="
           echo "HO image:  ${HO_IMAGE}"
-          echo "Overrides:"
-          echo "  OVERRIDE_IMAGE_HYPERSHIFT_OPERATOR = ${HO_IMAGE}"
-          echo "  OVERRIDE_IMAGE_HYPERSHIFT_TESTS    = registry.ci.openshift.org/hypershift/hypershift-tests:latest"
-          echo "  MULTISTAGE_PARAM_OVERRIDE_CI_TESTS_RUN = TestCreateCluster (NOTE: not effective, see known limitations)"
+          echo "Jobs:      ${JOB_NAMES_JSON}"
           echo "Poll interval: ${POLL_INTERVAL}s | Timeout: ${TIMEOUT}s"
 
-          RESPONSE=$(curl -s -w '\n%{http_code}' -X POST \
-            -H "Authorization: Bearer ${GANGWAY_TOKEN}" \
-            -H "Content-Type: application/json" \
-            -d "{
-              \"job_name\": \"${JOB_NAME}\",
-              \"job_execution_type\": \"1\",
-              \"pod_spec_options\": {
-                \"envs\": {
-                  \"OVERRIDE_IMAGE_HYPERSHIFT_OPERATOR\": \"${HO_IMAGE}\",
-                  \"OVERRIDE_IMAGE_HYPERSHIFT_TESTS\": \"registry.ci.openshift.org/hypershift/hypershift-tests:latest\",
-                  \"MULTISTAGE_PARAM_OVERRIDE_CI_TESTS_RUN\": \"TestCreateCluster\"
-                }
-              }
-            }" \
-            "${GANGWAY_URL}")
-
-          HTTP_CODE=$(echo "${RESPONSE}" | tail -1)
-          BODY=$(echo "${RESPONSE}" | sed '$d')
-
-          if [[ "${HTTP_CODE}" != "200" ]]; then
-            echo "ERROR: Trigger failed — HTTP ${HTTP_CODE}"
-            echo "Raw response:"
-            echo "${BODY}"
-            echo -n "error" > $(results.result.path)
-            echo -n "" > $(results.prow-job-url.path)
-            exit 0
-          fi
-
-          if ! echo "${BODY}" | jq empty 2>/dev/null; then
-            echo "ERROR: Trigger response is not valid JSON"
-            echo "Raw response:"
-            echo "${BODY}"
-            echo -n "error" > $(results.result.path)
-            echo -n "" > $(results.prow-job-url.path)
-            exit 0
-          fi
-
-          JOB_ID=$(echo "${BODY}" | jq -r '.id')
-          if [[ -z "${JOB_ID}" || "${JOB_ID}" == "null" ]]; then
-            echo "ERROR: Failed to parse job ID"
-            echo "Raw response:"
-            echo "${BODY}"
-            echo -n "error" > $(results.result.path)
-            echo -n "" > $(results.prow-job-url.path)
-            exit 0
-          fi
-
+          NUM_JOBS=$(echo "${JOB_NAMES_JSON}" | jq -r 'length')
+          echo "Total jobs: ${NUM_JOBS}"
           echo ""
-          echo "=== run-e2e: triggered ==="
-          echo "Job ID:    ${JOB_ID}"
 
-          JOB_URL=""
-          for i in $(seq 1 10); do
-            POLL_RESPONSE=$(curl -s -w '\n%{http_code}' -H "Authorization: Bearer ${GANGWAY_TOKEN}" "${GANGWAY_URL}/${JOB_ID}")
-            POLL_CODE=$(echo "${POLL_RESPONSE}" | tail -1)
-            POLL_BODY=$(echo "${POLL_RESPONSE}" | sed '$d')
-            if [[ "${POLL_CODE}" != "200" ]]; then
-              echo "WARN: URL poll returned HTTP ${POLL_CODE}, retrying..."
-              sleep 15
+          declare -A JOB_IDS
+          declare -A JOB_URLS
+          declare -A JOB_RESULTS
+
+          echo "=== run-e2e: triggering ${NUM_JOBS} jobs ==="
+          for i in $(seq 0 $((NUM_JOBS - 1))); do
+            JOB_NAME=$(echo "${JOB_NAMES_JSON}" | jq -r ".[$i]")
+            SHORT_NAME=$(echo "${JOB_NAME}" | sed 's/periodic-ci-openshift-hypershift-release-5.0-periodics-//')
+            echo ""
+            echo "--- Triggering [${SHORT_NAME}] ---"
+            echo "  Full name: ${JOB_NAME}"
+
+            RESPONSE=$(curl -s -w '\n%{http_code}' -X POST \
+              -H "Authorization: Bearer ${GANGWAY_TOKEN}" \
+              -H "Content-Type: application/json" \
+              -d "{
+                \"job_name\": \"${JOB_NAME}\",
+                \"job_execution_type\": \"1\",
+                \"pod_spec_options\": {
+                  \"envs\": {
+                    \"OVERRIDE_IMAGE_HYPERSHIFT_OPERATOR\": \"${HO_IMAGE}\",
+                    \"OVERRIDE_IMAGE_HYPERSHIFT_TESTS\": \"registry.ci.openshift.org/hypershift/hypershift-tests:latest\"
+                  }
+                }
+              }" \
+              "${GANGWAY_URL}")
+
+            HTTP_CODE=$(echo "${RESPONSE}" | tail -1)
+            BODY=$(echo "${RESPONSE}" | sed '$d')
+
+            if [[ "${HTTP_CODE}" != "200" ]]; then
+              echo "  ERROR: Trigger failed — HTTP ${HTTP_CODE}"
+              echo "  Raw response: ${BODY}"
+              JOB_RESULTS["${JOB_NAME}"]="error"
+              JOB_URLS["${JOB_NAME}"]=""
               continue
             fi
-            JOB_URL=$(echo "${POLL_BODY}" | jq -r '.job_url')
-            [[ "${JOB_URL}" != "" && "${JOB_URL}" != "null" ]] && break
-            sleep 15
+
+            if ! echo "${BODY}" | jq empty 2>/dev/null; then
+              echo "  ERROR: Response is not valid JSON"
+              echo "  Raw response: ${BODY}"
+              JOB_RESULTS["${JOB_NAME}"]="error"
+              JOB_URLS["${JOB_NAME}"]=""
+              continue
+            fi
+
+            JOB_ID=$(echo "${BODY}" | jq -r '.id')
+            if [[ -z "${JOB_ID}" || "${JOB_ID}" == "null" ]]; then
+              echo "  ERROR: Failed to parse job ID"
+              echo "  Raw response: ${BODY}"
+              JOB_RESULTS["${JOB_NAME}"]="error"
+              JOB_URLS["${JOB_NAME}"]=""
+              continue
+            fi
+
+            echo "  Job ID: ${JOB_ID}"
+            JOB_IDS["${JOB_NAME}"]="${JOB_ID}"
+            JOB_RESULTS["${JOB_NAME}"]="pending"
+            JOB_URLS["${JOB_NAME}"]=""
+
+            if [[ $i -lt $((NUM_JOBS - 1)) ]]; then
+              sleep ${TRIGGER_DELAY}
+            fi
           done
-          echo "Prow URL:  ${JOB_URL}"
-          echo -n "${JOB_URL}" > $(results.prow-job-url.path)
 
           echo ""
-          echo "=== run-e2e: polling ==="
+          echo "=== run-e2e: resolving Prow URLs ==="
+          for JOB_NAME in "${!JOB_IDS[@]}"; do
+            JOB_ID="${JOB_IDS[$JOB_NAME]}"
+            SHORT_NAME=$(echo "${JOB_NAME}" | sed 's/periodic-ci-openshift-hypershift-release-5.0-periodics-//')
+            for attempt in $(seq 1 10); do
+              POLL_RESPONSE=$(curl -s -w '\n%{http_code}' -H "Authorization: Bearer ${GANGWAY_TOKEN}" "${GANGWAY_URL}/${JOB_ID}")
+              POLL_CODE=$(echo "${POLL_RESPONSE}" | tail -1)
+              POLL_BODY=$(echo "${POLL_RESPONSE}" | sed '$d')
+              if [[ "${POLL_CODE}" == "200" ]]; then
+                URL=$(echo "${POLL_BODY}" | jq -r '.job_url // empty')
+                if [[ -n "${URL}" ]]; then
+                  JOB_URLS["${JOB_NAME}"]="${URL}"
+                  echo "  [${SHORT_NAME}] ${URL}"
+                  break
+                fi
+              fi
+              sleep 15
+            done
+            if [[ -z "${JOB_URLS[$JOB_NAME]}" ]]; then
+              echo "  [${SHORT_NAME}] WARN: could not resolve URL"
+            fi
+          done
+
+          echo ""
+          echo "=== run-e2e: polling all jobs ==="
           POLL_COUNT=0
           ELAPSED=0
-          while [ ${ELAPSED} -lt ${TIMEOUT} ]; do
+          while [[ ${ELAPSED} -lt ${TIMEOUT} ]]; do
+            PENDING=0
+            for JOB_NAME in "${!JOB_IDS[@]}"; do
+              [[ "${JOB_RESULTS[$JOB_NAME]}" != "pending" ]] && continue
+              PENDING=$((PENDING + 1))
+            done
+            [[ ${PENDING} -eq 0 ]] && break
+
             POLL_COUNT=$((POLL_COUNT + 1))
-            POLL_RESPONSE=$(curl -s -w '\n%{http_code}' -H "Authorization: Bearer ${GANGWAY_TOKEN}" "${GANGWAY_URL}/${JOB_ID}")
-            POLL_CODE=$(echo "${POLL_RESPONSE}" | tail -1)
-            POLL_BODY=$(echo "${POLL_RESPONSE}" | sed '$d')
             TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+            echo ""
+            echo "[${TIMESTAMP}] Poll #${POLL_COUNT} (${ELAPSED}s) — ${PENDING} job(s) pending"
 
-            if [[ "${POLL_CODE}" != "200" ]]; then
-              echo "[${TIMESTAMP}] Poll #${POLL_COUNT} (${ELAPSED}s) — HTTP ${POLL_CODE} — token may have expired"
-              echo "Raw response:"
-              echo "${POLL_BODY}"
-              echo -n "error" > $(results.result.path)
-              exit 0
-            fi
+            for JOB_NAME in "${!JOB_IDS[@]}"; do
+              [[ "${JOB_RESULTS[$JOB_NAME]}" != "pending" ]] && continue
 
-            if ! echo "${POLL_BODY}" | jq empty 2>/dev/null; then
-              echo "[${TIMESTAMP}] Poll #${POLL_COUNT} (${ELAPSED}s) — HTTP ${POLL_CODE} — response is not valid JSON"
-              echo "Raw response:"
-              echo "${POLL_BODY}"
-              echo -n "error" > $(results.result.path)
-              exit 0
-            fi
+              JOB_ID="${JOB_IDS[$JOB_NAME]}"
+              SHORT_NAME=$(echo "${JOB_NAME}" | sed 's/periodic-ci-openshift-hypershift-release-5.0-periodics-//')
 
-            STATUS=$(echo "${POLL_BODY}" | jq -r '.job_status')
-            echo "[${TIMESTAMP}] Poll #${POLL_COUNT} (${ELAPSED}s) — HTTP ${POLL_CODE} — ${STATUS}"
+              POLL_RESPONSE=$(curl -s -w '\n%{http_code}' -H "Authorization: Bearer ${GANGWAY_TOKEN}" "${GANGWAY_URL}/${JOB_ID}")
+              POLL_CODE=$(echo "${POLL_RESPONSE}" | tail -1)
+              POLL_BODY=$(echo "${POLL_RESPONSE}" | sed '$d')
 
-            case "${STATUS}" in
-              SUCCESS)
-                echo ""
-                echo "=== run-e2e: PASSED ==="
-                echo "Full response:"
-                echo "${POLL_BODY}" | jq .
-                echo "Prow URL:   ${JOB_URL}"
-                echo -n "passed" > $(results.result.path)
-                exit 0
-                ;;
-              FAILURE|ABORTED|ERROR)
-                echo ""
-                echo "=== run-e2e: FAILED (${STATUS}) ==="
-                echo "Full response:"
-                echo "${POLL_BODY}" | jq .
-                echo "Prow URL:   ${JOB_URL}"
-                echo -n "failed" > $(results.result.path)
-                exit 0
-                ;;
-            esac
+              if [[ "${POLL_CODE}" != "200" ]]; then
+                echo "  [${SHORT_NAME}] HTTP ${POLL_CODE} — token may have expired"
+                echo "  Raw response: ${POLL_BODY}"
+                JOB_RESULTS["${JOB_NAME}"]="error"
+                continue
+              fi
+
+              if ! echo "${POLL_BODY}" | jq empty 2>/dev/null; then
+                echo "  [${SHORT_NAME}] response is not valid JSON"
+                JOB_RESULTS["${JOB_NAME}"]="error"
+                continue
+              fi
+
+              STATUS=$(echo "${POLL_BODY}" | jq -r '.job_status')
+              echo "  [${SHORT_NAME}] ${STATUS}"
+
+              case "${STATUS}" in
+                SUCCESS)
+                  JOB_RESULTS["${JOB_NAME}"]="passed"
+                  echo "  [${SHORT_NAME}] PASSED"
+                  ;;
+                FAILURE|ABORTED|ERROR)
+                  JOB_RESULTS["${JOB_NAME}"]="failed"
+                  echo "  [${SHORT_NAME}] FAILED (${STATUS})"
+                  ;;
+              esac
+            done
+
+            PENDING_AFTER=0
+            for JOB_NAME in "${!JOB_IDS[@]}"; do
+              [[ "${JOB_RESULTS[$JOB_NAME]}" == "pending" ]] && PENDING_AFTER=$((PENDING_AFTER + 1))
+            done
+            [[ ${PENDING_AFTER} -eq 0 ]] && break
 
             sleep ${POLL_INTERVAL}
             ELAPSED=$((ELAPSED + POLL_INTERVAL))
           done
 
+          for JOB_NAME in "${!JOB_RESULTS[@]}"; do
+            if [[ "${JOB_RESULTS[$JOB_NAME]}" == "pending" ]]; then
+              JOB_RESULTS["${JOB_NAME}"]="error"
+              SHORT_NAME=$(echo "${JOB_NAME}" | sed 's/periodic-ci-openshift-hypershift-release-5.0-periodics-//')
+              echo "  [${SHORT_NAME}] TIMEOUT"
+            fi
+          done
+
           echo ""
-          echo "=== run-e2e: TIMEOUT after ${TIMEOUT}s ==="
-          echo -n "error" > $(results.result.path)
+          echo "=== run-e2e: building results ==="
+          RESULTS_JSON="["
+          FIRST=true
+          for i in $(seq 0 $((NUM_JOBS - 1))); do
+            JOB_NAME=$(echo "${JOB_NAMES_JSON}" | jq -r ".[$i]")
+            RESULT="${JOB_RESULTS[$JOB_NAME]}"
+            URL="${JOB_URLS[$JOB_NAME]:-}"
+            SHORT_NAME=$(echo "${JOB_NAME}" | sed 's/periodic-ci-openshift-hypershift-release-5.0-periodics-//')
+            echo "  ${SHORT_NAME}: ${RESULT} (${URL})"
+            if [[ "${FIRST}" == "true" ]]; then
+              FIRST=false
+            else
+              RESULTS_JSON+=","
+            fi
+            RESULTS_JSON+="{\"job\":\"${JOB_NAME}\",\"result\":\"${RESULT}\",\"url\":\"${URL}\"}"
+          done
+          RESULTS_JSON+="]"
+
+          echo ""
+          echo "Results JSON: ${RESULTS_JSON}"
+          echo -n "${RESULTS_JSON}" > $(results.results-json.path)
     params:
     - name: ho-image
       value: $(tasks.extract-image.results.ho-image)
+    - name: e2e-job-names
+      value: $(params.e2e-job-names)
 
   - name: evaluate-results
     runAfter: [run-e2e]
     taskSpec:
       params:
-      - name: e2e-result
-        type: string
-      - name: e2e-prow-url
+      - name: results-json
         type: string
       results:
       - name: gate-passed
         description: Whether the release gate passed (true/false)
       steps:
       - name: evaluate
-        image: registry.redhat.io/openshift4/ose-cli:latest
+        image: quay.io/konflux-ci/appstudio-utils:latest
         script: |
           #!/bin/bash
           set -euo pipefail
 
-          E2E_RESULT="$(params.e2e-result)"
-          E2E_PROW_URL="$(params.e2e-prow-url)"
+          RESULTS_JSON='$(params.results-json)'
 
           echo "=== evaluate-results ==="
-          echo "Test suites:"
-          echo "  run-e2e: ${E2E_RESULT} (${E2E_PROW_URL})"
+          echo ""
 
+          NUM_JOBS=$(echo "${RESULTS_JSON}" | jq -r 'length')
           GATE_PASSED="true"
-          if [[ "${E2E_RESULT}" != "passed" ]]; then
-            GATE_PASSED="false"
-          fi
+
+          printf "%-50s %-10s %s\n" "JOB" "RESULT" "URL"
+          printf "%-50s %-10s %s\n" "---" "------" "---"
+
+          for i in $(seq 0 $((NUM_JOBS - 1))); do
+            JOB=$(echo "${RESULTS_JSON}" | jq -r ".[$i].job" | sed 's/periodic-ci-openshift-hypershift-release-5.0-periodics-//')
+            RESULT=$(echo "${RESULTS_JSON}" | jq -r ".[$i].result")
+            URL=$(echo "${RESULTS_JSON}" | jq -r ".[$i].url")
+            printf "%-50s %-10s %s\n" "${JOB}" "${RESULT}" "${URL}"
+            if [[ "${RESULT}" != "passed" ]]; then
+              GATE_PASSED="false"
+            fi
+          done
 
           echo ""
-          echo "Gate verdict: ${GATE_PASSED}"
+          echo "Gate verdict: ${GATE_PASSED} (${NUM_JOBS} job(s), AND logic)"
           echo -n "${GATE_PASSED}" > $(results.gate-passed.path)
 
           if [[ "${GATE_PASSED}" == "false" ]]; then
@@ -269,10 +341,8 @@ spec:
           echo ""
           echo "=== GATE PASSED — proceeding to release ==="
     params:
-    - name: e2e-result
-      value: $(tasks.run-e2e.results.result)
-    - name: e2e-prow-url
-      value: $(tasks.run-e2e.results.prow-job-url)
+    - name: results-json
+      value: $(tasks.run-e2e.results.results-json)
 
   finally:
   - name: create-release
