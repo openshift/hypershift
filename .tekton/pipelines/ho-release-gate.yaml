@@ -31,6 +31,9 @@ spec:
       steps:
       - name: validate
         image: registry.redhat.io/openshift4/ose-cli:latest
+        env:
+        - name: HOME
+          value: /tekton/home
         script: |
           #!/bin/bash
           set -euo pipefail
@@ -90,12 +93,15 @@ spec:
           JOB_NAMES_JSON='$(params.e2e-job-names)'
           POLL_INTERVAL=600
           TIMEOUT=14400
-          TRIGGER_DELAY=5
+          TRIGGER_DELAY=60
+          RATE_LIMIT_BACKOFF=120
+          MAX_RETRIES=3
 
           echo "=== run-e2e: setup ==="
           echo "HO image:  ${HO_IMAGE}"
           echo "Jobs:      ${JOB_NAMES_JSON}"
           echo "Poll interval: ${POLL_INTERVAL}s | Timeout: ${TIMEOUT}s"
+          echo "Trigger delay: ${TRIGGER_DELAY}s | Rate limit backoff: ${RATE_LIMIT_BACKOFF}s"
 
           NUM_JOBS=$(echo "${JOB_NAMES_JSON}" | jq -r 'length')
           echo "Total jobs: ${NUM_JOBS}"
@@ -113,27 +119,41 @@ spec:
             echo "--- Triggering [${SHORT_NAME}] ---"
             echo "  Full name: ${JOB_NAME}"
 
-            RESPONSE=$(curl -s -w '\n%{http_code}' -X POST \
-              -H "Authorization: Bearer ${GANGWAY_TOKEN}" \
-              -H "Content-Type: application/json" \
-              -d "{
-                \"job_name\": \"${JOB_NAME}\",
-                \"job_execution_type\": \"1\",
-                \"pod_spec_options\": {
-                  \"envs\": {
-                    \"OVERRIDE_IMAGE_HYPERSHIFT_OPERATOR\": \"${HO_IMAGE}\",
-                    \"OVERRIDE_IMAGE_HYPERSHIFT_TESTS\": \"registry.ci.openshift.org/hypershift/hypershift-tests:latest\"
+            TRIGGERED=false
+            for retry in $(seq 1 ${MAX_RETRIES}); do
+              RESPONSE=$(curl -s -w '\n%{http_code}' -X POST \
+                -H "Authorization: Bearer ${GANGWAY_TOKEN}" \
+                -H "Content-Type: application/json" \
+                -d "{
+                  \"job_name\": \"${JOB_NAME}\",
+                  \"job_execution_type\": \"1\",
+                  \"pod_spec_options\": {
+                    \"envs\": {
+                      \"OVERRIDE_IMAGE_HYPERSHIFT_OPERATOR\": \"${HO_IMAGE}\",
+                      \"OVERRIDE_IMAGE_HYPERSHIFT_TESTS\": \"registry.ci.openshift.org/hypershift/hypershift-tests:latest\"
+                    }
                   }
-                }
-              }" \
-              "${GANGWAY_URL}")
+                }" \
+                "${GANGWAY_URL}")
 
-            HTTP_CODE=$(echo "${RESPONSE}" | tail -1)
-            BODY=$(echo "${RESPONSE}" | sed '$d')
+              HTTP_CODE=$(echo "${RESPONSE}" | tail -1)
+              BODY=$(echo "${RESPONSE}" | sed '$d')
 
-            if [[ "${HTTP_CODE}" != "200" ]]; then
-              echo "  ERROR: Trigger failed — HTTP ${HTTP_CODE}"
-              echo "  Raw response: ${BODY}"
+              if [[ "${HTTP_CODE}" == "200" ]]; then
+                TRIGGERED=true
+                break
+              elif [[ "${HTTP_CODE}" == "429" || "${HTTP_CODE}" -ge 500 ]]; then
+                echo "  WARN: HTTP ${HTTP_CODE} (attempt ${retry}/${MAX_RETRIES}) — retrying in ${RATE_LIMIT_BACKOFF}s"
+                sleep ${RATE_LIMIT_BACKOFF}
+              else
+                echo "  ERROR: Trigger failed — HTTP ${HTTP_CODE}"
+                echo "  Raw response: ${BODY}"
+                break
+              fi
+            done
+
+            if [[ "${TRIGGERED}" != "true" ]]; then
+              echo "  ERROR: Trigger failed after ${MAX_RETRIES} attempts"
               JOB_RESULTS["${JOB_NAME}"]="error"
               JOB_URLS["${JOB_NAME}"]=""
               continue
@@ -217,8 +237,11 @@ spec:
               POLL_CODE=$(echo "${POLL_RESPONSE}" | tail -1)
               POLL_BODY=$(echo "${POLL_RESPONSE}" | sed '$d')
 
-              if [[ "${POLL_CODE}" != "200" ]]; then
-                echo "  [${SHORT_NAME}] HTTP ${POLL_CODE} — token may have expired"
+              if [[ "${POLL_CODE}" == "429" || "${POLL_CODE}" -ge 500 ]]; then
+                echo "  [${SHORT_NAME}] HTTP ${POLL_CODE} — rate limited, will retry next cycle"
+                continue
+              elif [[ "${POLL_CODE}" != "200" ]]; then
+                echo "  [${SHORT_NAME}] HTTP ${POLL_CODE} — auth error or unexpected failure"
                 echo "  Raw response: ${POLL_BODY}"
                 JOB_RESULTS["${JOB_NAME}"]="error"
                 continue
@@ -357,6 +380,9 @@ spec:
       steps:
       - name: create
         image: registry.redhat.io/openshift4/ose-cli:latest
+        env:
+        - name: HOME
+          value: /tekton/home
         script: |
           #!/bin/bash
           set -euo pipefail
