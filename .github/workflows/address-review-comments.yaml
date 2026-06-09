@@ -41,10 +41,20 @@ jobs:
           echo "branch=$(jq -r '.head.ref' /tmp/pr.json)" >> "$GITHUB_OUTPUT"
           echo "repo=$(jq -r '.head.repo.full_name' /tmp/pr.json)" >> "$GITHUB_OUTPUT"
 
+      - name: Select token for PR repo
+        id: token
+        run: |
+          if [[ "${{ steps.pr.outputs.repo }}" == "hypershift-community/hypershift" ]]; then
+            echo "use_fork_token=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "use_fork_token=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           ref: ${{ steps.pr.outputs.branch }}
           repository: ${{ steps.pr.outputs.repo }}
+          token: ${{ steps.token.outputs.use_fork_token == 'true' && secrets.COMMUNITY_FORK_TOKEN || github.token }}
           persist-credentials: true
           fetch-depth: 0
 
@@ -72,7 +82,7 @@ jobs:
           CLAUDE_CODE_USE_VERTEX: "1"
           CLOUD_ML_REGION: global
           ANTHROPIC_VERTEX_PROJECT_ID: hosted-control-planes
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.token.outputs.use_fork_token == 'true' && secrets.COMMUNITY_FORK_TOKEN || github.token }}
           PR_NUMBER: ${{ github.event.issue.number }}
         run: |
           claude --version
