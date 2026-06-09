@@ -65,6 +65,7 @@ func RegisterNodePoolLifecycleTests(getTestCtx internal.TestContextGetter) {
 	NodePoolNTOPerformanceProfileTest(getTestCtx)
 	NodePoolAutoRepairTest(getTestCtx)
 	NodePoolDiskEncryptionTest(getTestCtx)
+	RegisterPredictableRolloutTests(getTestCtx)
 }
 
 var _ = Describe("NodePool Lifecycle", Label("lifecycle", "nodepool-lifecycle"), func() {
