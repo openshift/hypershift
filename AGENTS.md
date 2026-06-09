@@ -1,4 +1,8 @@
-This file provides non-obvious development guidance for the HyperShift repository. For architecture, components, and platform support, see [ARCHITECTURE.md](ARCHITECTURE.md).
+This file provides non-obvious development guidance for the HyperShift repository. It is intentionally minimal — detailed guidance lives in the referenced files below and should be updated there, not here.
+
+`CLAUDE.md` is a symlink to this file (`AGENTS.md`). Both names resolve to the same content. The `AGENTS.md` name is the canonical one; `CLAUDE.md` exists so that Claude Code auto-loads it.
+
+For architecture, components, and platform support, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 Project documentation is published via MkDocs. The site structure and navigation are defined in [docs/mkdocs.yml](docs/mkdocs.yml), with content under `docs/content/`. When adding or reorganizing documentation pages, update the `nav` section in `mkdocs.yml` to keep the site navigation in sync.
 
@@ -27,4 +31,3 @@ See [docs/content/how-to/common/global-pull-secret.md](docs/content/how-to/commo
 ## Fleet-Wide Rollout Impact
 
 Changes to config data, secrets, or any value that feeds into a NodePool config hash will trigger a rollout across **all** HostedClusters. Before adding new data to ignition configs, MachineConfigs, or any resource reconciled into the data plane, check whether the change affects the NodePool config hash (search for `hashStruct` / `configHash`). If it does, the PR **must** pass `e2e-aws-upgrade-hypershift-operator` to prove the rollout is safe.
-
