@@ -225,6 +225,14 @@ func (a OpenStack) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _
 						"--namespace=$(MY_NAMESPACE)",
 						"--leader-elect",
 						"--v=2",
+						// HyperShift runs CAPO in a namespace-scoped deployment and manages CRDs
+						// itself. CAPO v0.14 introduced a crdmigrator controller that requires
+						// cluster-scoped RBAC (list openstackclusteridentities, patch
+						// customresourcedefinitions) that we do not and cannot grant. Skipping
+						// all phases causes crdmigrator.SetupWithManager to return early without
+						// registering the controller, eliminating the spurious RBAC errors.
+						"--skip-crd-migration-phases=StorageVersionMigration",
+						"--skip-crd-migration-phases=CleanupManagedFields",
 					},
 					Resources: corev1.ResourceRequirements{
 						Requests: corev1.ResourceList{
