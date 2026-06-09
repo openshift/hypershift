@@ -21,6 +21,8 @@ Project documentation is published via MkDocs. The site structure and navigation
 | **Design invariants** | [docs/content/reference/goals-and-design-invariants.md](docs/content/reference/goals-and-design-invariants.md) |
 | **Versioning and support** | [docs/content/reference/versioning-support.md](docs/content/reference/versioning-support.md) |
 | **Upgrades lifecycle** | [docs/content/how-to/upgrades.md](docs/content/how-to/upgrades.md) |
+| **Contributing and PR workflow** | [CONTRIBUTING.md](CONTRIBUTING.md) |
+| **Pre-commit hooks** | [docs/content/contribute/precommit-hook-help.md](docs/content/contribute/precommit-hook-help.md) |
 
 ## Pull Secret Cycling
 

@@ -97,6 +97,14 @@ This means:
 - Running `go build ./...` or `go vet ./...` from the repository root will **not** compile the `api/` module — it is a separate module. To build/vet the API module, run commands from within the `api/` directory.
 - The `hack/workspace/` directory contains a Go workspace configuration (`go.work`) that can be used for local development across both modules.
 
+## Pre-PR Gate
+
+Run `make pre-commit` before submitting a PR. It executes the full sequence: build, e2e compile, verify (formatting, linting, gitlint), and unit tests. This is the single command that catches most CI failures locally.
+
+## Go Version
+
+This repository requires **Go 1.25+**. The `api/` module uses `omitzero` struct tags (available since Go 1.24) and other features that require this minimum version.
+
 ## Common Gotchas
 
 - **`api/` is a separate Go module**: Always run `make update` after modifying types in the `api/` package. See [Multi-Module Structure](#multi-module-structure) above for details.
