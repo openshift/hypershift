@@ -117,14 +117,14 @@ require (
 	k8s.io/utils v0.0.0-20260108192941-914a6e750570
 	kubevirt.io/api v1.8.2
 	kubevirt.io/containerized-data-importer-api v1.65.0
-	sigs.k8s.io/cluster-api v1.11.7
+	sigs.k8s.io/cluster-api v1.12.7
 	sigs.k8s.io/cluster-api-provider-aws/v2 v2.10.0
 	sigs.k8s.io/cluster-api-provider-azure v1.22.0
 	sigs.k8s.io/cluster-api-provider-gcp v1.11.0
 	sigs.k8s.io/cluster-api-provider-ibmcloud v0.12.0
 	sigs.k8s.io/cluster-api-provider-kubevirt v0.11.1
 	sigs.k8s.io/cluster-api-provider-openstack v0.13.3
-	sigs.k8s.io/controller-runtime v0.22.4
+	sigs.k8s.io/controller-runtime v0.22.5
 	sigs.k8s.io/karpenter v1.9.0
 	sigs.k8s.io/kube-storage-version-migrator v0.0.6-0.20230721195810-5c8923c5ff96
 	sigs.k8s.io/secrets-store-csi-driver v1.4.8

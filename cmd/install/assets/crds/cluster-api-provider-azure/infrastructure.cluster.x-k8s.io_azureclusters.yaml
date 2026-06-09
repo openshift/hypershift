@@ -572,9 +572,6 @@ spec:
                     description: port is the port on which the API server is serving.
                     format: int32
                     type: integer
-                required:
-                - host
-                - port
                 type: object
               extendedLocation:
                 description: ExtendedLocation is an optional set of ExtendedLocation

@@ -62,9 +62,6 @@ spec:
                     description: port is the port on which the API server is serving.
                     format: int32
                     type: integer
-                required:
-                - host
-                - port
                 type: object
               controlPlaneLoadBalancer:
                 description: ControlPlaneLoadBalancer is optional configuration for
@@ -252,9 +249,6 @@ spec:
                     description: port is the port on which the API server is serving.
                     format: int32
                     type: integer
-                required:
-                - host
-                - port
                 type: object
               controlPlaneLoadBalancer:
                 description: |-
