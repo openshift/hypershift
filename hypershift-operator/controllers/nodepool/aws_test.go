@@ -716,6 +716,44 @@ func TestGetWindowsAMI(t *testing.T) {
 			expectedError: "couldn't find OS metadata for architecture \"amd64\"",
 		},
 		{
+			name:   "When RHELCoreOSExtensions is nil, it should return error",
+			region: "us-east-1",
+			arch:   hyperv1.ArchitectureAMD64,
+			releaseImage: &releaseinfo.ReleaseImage{
+				ImageStream: &v1.ImageStream{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "4.17.0",
+					},
+				},
+				StreamMetadata: &stream.Stream{
+					Architectures: map[string]stream.Arch{
+						"x86_64": {},
+					},
+				},
+			},
+			expectedError: "no rhel-coreos-extensions data found in release image metadata",
+		},
+		{
+			name:   "When AwsWinLi is nil, it should return error",
+			region: "us-east-1",
+			arch:   hyperv1.ArchitectureAMD64,
+			releaseImage: &releaseinfo.ReleaseImage{
+				ImageStream: &v1.ImageStream{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "4.17.0",
+					},
+				},
+				StreamMetadata: &stream.Stream{
+					Architectures: map[string]stream.Arch{
+						"x86_64": {
+							RHELCoreOSExtensions: &rhcos.Extensions{},
+						},
+					},
+				},
+			},
+			expectedError: "no aws-winli regions data found in release image metadata",
+		},
+		{
 			name:   "no aws-winli regions data",
 			region: "us-east-1",
 			arch:   hyperv1.ArchitectureAMD64,

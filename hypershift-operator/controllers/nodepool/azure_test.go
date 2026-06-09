@@ -950,6 +950,34 @@ func TestDefaultAzureNodePoolImage(t *testing.T) {
 			expectedMarketplaceImage: nil,
 		},
 		{
+			name: "skip defaulting when RHELCoreOSExtensions is nil",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Arch: hyperv1.ArchitectureAMD64,
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzureNodePoolPlatform{
+							Image: hyperv1.AzureVMImage{},
+						},
+					},
+				},
+			},
+			releaseImage: &releaseinfo.ReleaseImage{
+				ImageStream: &imageapi.ImageStream{
+					ObjectMeta: metav1.ObjectMeta{Name: "4.20.0"},
+				},
+				StreamMetadata: &stream.Stream{
+					Architectures: map[string]stream.Arch{
+						"x86_64": {
+							Images: stream.Images{},
+						},
+					},
+				},
+			},
+			expectedImageType:        "",
+			expectedMarketplaceImage: nil,
+		},
+		{
 			name: "skip defaulting when no marketplace metadata available",
 			nodePool: &hyperv1.NodePool{
 				Spec: hyperv1.NodePoolSpec{
