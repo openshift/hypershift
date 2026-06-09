@@ -27,7 +27,7 @@ spec:
   template:
     metadata:
       annotations:
-        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: cert-work,tmp-dir
+        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: tmp-dir
         component.hypershift.openshift.io/config-hash: 022a8a3ab4d55cfe
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       labels:
@@ -78,7 +78,8 @@ spec:
       containers:
       - args:
         - --config=/etc/kubernetes/config/config.json
-        - --cert-dir=/var/run/kubernetes
+        - --tls-cert-file=/etc/kubernetes/certs/tls.crt
+        - --tls-private-key-file=/etc/kubernetes/certs/tls.key
         - --secure-port=10259
         - --authentication-kubeconfig=/etc/kubernetes/kubeconfig/kubeconfig
         - --authorization-kubeconfig=/etc/kubernetes/kubeconfig/kubeconfig
@@ -198,6 +199,10 @@ spec:
           successThreshold: 1
           timeoutSeconds: 5
         name: kube-scheduler
+        ports:
+        - containerPort: 10259
+          name: client
+          protocol: TCP
         resources:
           requests:
             cpu: 25m
@@ -206,8 +211,8 @@ spec:
           readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
-        - mountPath: /var/run/kubernetes
-          name: cert-work
+        - mountPath: /etc/kubernetes/certs
+          name: serving-cert
         - mountPath: /etc/kubernetes/kubeconfig
           name: kubeconfig
         - mountPath: /etc/kubernetes/config
@@ -240,8 +245,10 @@ spec:
           defaultMode: 420
           name: kube-scheduler
         name: scheduler-config
-      - emptyDir: {}
-        name: cert-work
+      - name: serving-cert
+        secret:
+          defaultMode: 416
+          secretName: scheduler-server
       - name: kubeconfig
         secret:
           defaultMode: 416
