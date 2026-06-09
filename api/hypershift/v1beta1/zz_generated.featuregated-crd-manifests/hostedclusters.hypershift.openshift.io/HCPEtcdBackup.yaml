@@ -5970,7 +5970,7 @@ spec:
                   If the reference is set but none of the above requirements are met, the HostedCluster will enter a degraded state.
                   This pull secret is included in NodePool ignition/bootstrap payloads and applied to the container runtime when nodes provision.
                   Changing this value will trigger a rollout for all existing NodePools in the cluster (for both replace and inplace upgrade types).
-                  Updating the referenced Secret's data in place (without changing this reference) does not trigger that rollout.
+                  Updating the referenced Secret's data in place (without changing this reference) will also trigger a rollout.
                   In AWS and Azure NodePools using the Replace upgrade strategy, the Secret's data in place changes
                   will still propagate the updated credentials down to the guest cluster and kubelet config.
                 properties:

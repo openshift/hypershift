@@ -15,7 +15,6 @@ import (
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
-	supportutil "github.com/openshift/hypershift/support/util"
 
 	configv1 "github.com/openshift/api/config/v1"
 
@@ -50,18 +49,14 @@ const (
 // Token knows how to create an UUUID token for a unique configGenerator Hash.
 // It also knows how to manage the lifecycle of a corresponding token secret that it is used by the tokenSecret controller to generate the final ignition payload
 // and a user data secret that points to the ignition server URL using the UUUID as an authenticator header to get that payload.
+// Pull secret and additional trust bundle content hashes are computed in ConfigGenerator.rolloutConfig
+// so that in-place data changes are reflected in the rollout hash and trigger a NodePool rollout.
 type Token struct {
 	upsert.CreateOrUpdateProvider
 	cpoCapabilities *CPOCapabilities
 	*ConfigGenerator
-	// TODO(alberto): we don't really support content inplace changes for fields like pull secret and AdditionalTrustBundle.
-	// In fact we only trigger a rollout if the .Name referenced in the field changes.
-	// Consider removing these hash checks and consolidate with the rolloutConfig struct input.
-	// This is kept like this for now to contain the scope of the refactor and avoid backward compatibility issues.
-	pullSecretHash            []byte
-	additionalTrustBundleHash []byte
-	globalConfigHash          []byte
-	userData                  *userData
+	globalConfigHash []byte
+	userData         *userData
 }
 
 // userData contains the input necessary to generate the user data secret
@@ -82,31 +77,6 @@ func NewToken(ctx context.Context, configGenerator *ConfigGenerator, cpoCapabili
 		return nil, fmt.Errorf("cpoCapabilities can't be nil")
 	}
 
-	// TODO(alberto): tempReconciler is a NodePoolReconciler used temporarily until getPullSecretBytes and getAdditionalTrustBundle are factored.
-	// This is kept like this for now to contain the scope of the refactor and avoid backward compatibility issues.
-	tempReconciler := &NodePoolReconciler{
-		Client: configGenerator.Client,
-	}
-	pullSecretBytes, err := tempReconciler.getPullSecretBytes(ctx, configGenerator.hostedCluster)
-	if err != nil {
-		return nil, err
-	}
-
-	additionalTrustBundleCM := &corev1.ConfigMap{}
-	additionalTrustBundle := ""
-	if configGenerator.hostedCluster.Spec.AdditionalTrustBundle != nil {
-		additionalTrustBundleCM, err = tempReconciler.getAdditionalTrustBundle(ctx, configGenerator.hostedCluster)
-		if err != nil {
-			return nil, err
-		}
-		additionalTrustBundle = additionalTrustBundleCM.Data["ca-bundle.crt"]
-	}
-
-	// TODO(alberto): This hash should be consolidated with configGenerator using globalConfigString as that is what configGenerator uses to create a configGenerator.Hash() and so what triggers a rollout.
-	// This inconsistency was introduced by https://github.com/openshift/hypershift/pull/3795
-	// See reconcileTokenSecret and https://github.com/openshift/hypershift/pull/4057 for more info on how this is used.
-	// This is kept like this for now to contain the scope of the refactor and avoid backward compatibility issues.
-
 	// Some fields in the ClusterConfiguration have changes that are not backwards compatible with older versions of the CPO.
 	hcConfigurationHash, err := backwardcompat.GetBackwardCompatibleConfigHash(configGenerator.hostedCluster.Spec.Configuration)
 	if err != nil {
@@ -114,12 +84,10 @@ func NewToken(ctx context.Context, configGenerator *ConfigGenerator, cpoCapabili
 	}
 
 	token := &Token{
-		CreateOrUpdateProvider:    upsert.New(false),
-		ConfigGenerator:           configGenerator,
-		cpoCapabilities:           cpoCapabilities,
-		pullSecretHash:            []byte(supportutil.HashSimple(pullSecretBytes)),
-		additionalTrustBundleHash: []byte(supportutil.HashSimple(additionalTrustBundle)),
-		globalConfigHash:          []byte(hcConfigurationHash),
+		CreateOrUpdateProvider: upsert.New(false),
+		ConfigGenerator:        configGenerator,
+		cpoCapabilities:        cpoCapabilities,
+		globalConfigHash:       []byte(hcConfigurationHash),
 	}
 
 	// User data input.
@@ -351,8 +319,8 @@ func (t *Token) reconcileTokenSecret(tokenSecret *corev1.Secret) error {
 
 		// Hash values that are used by the "token secret controller" / "local ignition provider"  to determine if this input
 		// have changed before generating a payload for it.
-		tokenSecret.Data[TokenSecretPullSecretHashKey] = t.pullSecretHash
-		tokenSecret.Data[TokenSecretAdditionalTrustBundleKey] = t.additionalTrustBundleHash
+		tokenSecret.Data[TokenSecretPullSecretHashKey] = []byte(t.ConfigGenerator.pullSecretHash)
+		tokenSecret.Data[TokenSecretAdditionalTrustBundleKey] = []byte(t.ConfigGenerator.additionalTrustBundleHash)
 		tokenSecret.Data[TokenSecretHCConfigurationHashKey] = t.globalConfigHash
 	}
 	// TODO (alberto): Only apply this on creation and change the hash generation to only use triggering upgrade fields.

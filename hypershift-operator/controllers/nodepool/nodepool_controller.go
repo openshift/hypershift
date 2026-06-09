@@ -134,8 +134,8 @@ func (r *NodePoolReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&hyperv1.HostedCluster{}, handler.EnqueueRequestsFromMapFunc(r.enqueueNodePoolsForHostedCluster), builder.WithPredicates(supportutil.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()))).
 		Watches(&capiv1.MachineDeployment{}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool), builder.WithPredicates(supportutil.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()))).
 		Watches(&capiv1.MachineSet{}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool), builder.WithPredicates(supportutil.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()))).
-		// We want to reconcile when the user data Secret or the token Secret is unexpectedly changed out of band.
-		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool), builder.WithPredicates(supportutil.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()))).
+		// We want to reconcile when the user data Secret, the token Secret, or the pull secret is changed.
+		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(r.enqueueNodePoolsForSecret), builder.WithPredicates(supportutil.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()))).
 		// We want to reconcile when the ConfigMaps referenced by the spec.config and also the core ones change.
 		Watches(&corev1.ConfigMap{}, handler.EnqueueRequestsFromMapFunc(r.enqueueNodePoolsForConfig), builder.WithPredicates(supportutil.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()))).
 		WithOptions(controller.Options{
@@ -982,6 +982,39 @@ func enqueueParentNodePool(ctx context.Context, obj client.Object) []reconcile.R
 	return []reconcile.Request{
 		{NamespacedName: supportutil.ParseNamespacedName(nodePoolName)},
 	}
+}
+
+func (r *NodePoolReconciler) enqueueNodePoolsForSecret(ctx context.Context, obj client.Object) []reconcile.Request {
+	if reqs := enqueueParentNodePool(ctx, obj); len(reqs) > 0 {
+		return reqs
+	}
+
+	log := ctrl.LoggerFrom(ctx)
+	hcList := &hyperv1.HostedClusterList{}
+	if err := r.List(ctx, hcList, client.InNamespace(obj.GetNamespace())); err != nil {
+		log.Error(err, "Failed to list HostedClusters")
+		return nil
+	}
+	npList := &hyperv1.NodePoolList{}
+	if err := r.List(ctx, npList, client.InNamespace(obj.GetNamespace())); err != nil {
+		log.Error(err, "Failed to list NodePools")
+		return nil
+	}
+	var result []reconcile.Request
+	for i := range hcList.Items {
+		hc := &hcList.Items[i]
+		if hc.Spec.PullSecret.Name != obj.GetName() {
+			continue
+		}
+		for j := range npList.Items {
+			if npList.Items[j].Spec.ClusterName == hc.Name {
+				result = append(result, reconcile.Request{
+					NamespacedName: client.ObjectKeyFromObject(&npList.Items[j]),
+				})
+			}
+		}
+	}
+	return result
 }
 
 func (r *NodePoolReconciler) listSecrets(ctx context.Context, nodePool *hyperv1.NodePool) ([]corev1.Secret, error) {

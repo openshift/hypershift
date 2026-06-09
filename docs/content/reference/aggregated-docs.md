@@ -36413,7 +36413,7 @@ If the reference is set but none of the above requirements are met, the HostedCl
 TODO(alberto): Signal this in a condition.
 This pull secret is included in NodePool ignition/bootstrap payloads and applied to the container runtime when nodes provision.
 Changing this value will trigger a rollout for all existing NodePools in the cluster (for both replace and inplace upgrade types).
-Updating the referenced Secret&rsquo;s data in place (without changing this reference) does not trigger that rollout.
+Updating the referenced Secret&rsquo;s data in place (without changing this reference) will also trigger a rollout.
 In AWS and Azure NodePools using the Replace upgrade strategy, the Secret&rsquo;s data in place changes
 will still propagate the updated credentials down to the guest cluster and kubelet config.
 TODO(alberto): have our own local reference type to include our opinions and avoid transparent changes.</p>
@@ -44722,7 +44722,7 @@ If the reference is set but none of the above requirements are met, the HostedCl
 TODO(alberto): Signal this in a condition.
 This pull secret is included in NodePool ignition/bootstrap payloads and applied to the container runtime when nodes provision.
 Changing this value will trigger a rollout for all existing NodePools in the cluster (for both replace and inplace upgrade types).
-Updating the referenced Secret&rsquo;s data in place (without changing this reference) does not trigger that rollout.
+Updating the referenced Secret&rsquo;s data in place (without changing this reference) will also trigger a rollout.
 In AWS and Azure NodePools using the Replace upgrade strategy, the Secret&rsquo;s data in place changes
 will still propagate the updated credentials down to the guest cluster and kubelet config.
 TODO(alberto): have our own local reference type to include our opinions and avoid transparent changes.</p>

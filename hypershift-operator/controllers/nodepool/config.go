@@ -27,6 +27,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	serializer "k8s.io/apimachinery/pkg/runtime/serializer/json"
+	"k8s.io/apimachinery/pkg/types"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/yaml"
 
@@ -52,7 +53,9 @@ type ConfigGenerator struct {
 type rolloutConfig struct {
 	releaseImage              *releaseinfo.ReleaseImage
 	pullSecretName            string
+	pullSecretHash            string
 	additionalTrustBundleName string
+	additionalTrustBundleHash string
 	// globalConfig represents input from hostedCluster.spec.config that requires a NodePool rollout.
 	globalConfig string
 	// rawConfig is an mco consumable version of NodePool.spec.config, tuneConfig and any hypershift core machine config.
@@ -77,6 +80,15 @@ func NewConfigGenerator(ctx context.Context, client client.Client, hostedCluster
 		return nil, err
 	}
 
+	pullSecret := &corev1.Secret{}
+	if err := client.Get(ctx, types.NamespacedName{Namespace: hostedCluster.Namespace, Name: hostedCluster.Spec.PullSecret.Name}, pullSecret); err != nil {
+		return nil, fmt.Errorf("cannot get pull secret %s/%s: %w", hostedCluster.Namespace, hostedCluster.Spec.PullSecret.Name, err)
+	}
+	pullSecretData, hasPullSecret := pullSecret.Data[corev1.DockerConfigJsonKey]
+	if !hasPullSecret {
+		return nil, fmt.Errorf("pull secret %s/%s missing %q key", hostedCluster.Namespace, hostedCluster.Spec.PullSecret.Name, corev1.DockerConfigJsonKey)
+	}
+
 	cg := &ConfigGenerator{
 		Client:                client,
 		hostedCluster:         hostedCluster,
@@ -85,6 +97,7 @@ func NewConfigGenerator(ctx context.Context, client client.Client, hostedCluster
 		rolloutConfig: &rolloutConfig{
 			releaseImage:     releaseImage,
 			pullSecretName:   hostedCluster.Spec.PullSecret.Name,
+			pullSecretHash:   supportutil.HashSimple(pullSecretData),
 			globalConfig:     globalConfig,
 			haproxyRawConfig: haproxyRawConfig,
 		},
@@ -92,6 +105,15 @@ func NewConfigGenerator(ctx context.Context, client client.Client, hostedCluster
 
 	if hostedCluster.Spec.AdditionalTrustBundle != nil {
 		cg.rolloutConfig.additionalTrustBundleName = hostedCluster.Spec.AdditionalTrustBundle.Name
+		additionalTrustBundle := &corev1.ConfigMap{}
+		if err := client.Get(ctx, types.NamespacedName{Namespace: hostedCluster.Namespace, Name: hostedCluster.Spec.AdditionalTrustBundle.Name}, additionalTrustBundle); err != nil {
+			return nil, fmt.Errorf("cannot get additional trust bundle %s/%s: %w", hostedCluster.Namespace, hostedCluster.Spec.AdditionalTrustBundle.Name, err)
+		}
+		bundleData, hasBundle := additionalTrustBundle.Data["ca-bundle.crt"]
+		if !hasBundle {
+			return nil, fmt.Errorf("additional trust bundle %s/%s missing %q key", hostedCluster.Namespace, hostedCluster.Spec.AdditionalTrustBundle.Name, "ca-bundle.crt")
+		}
+		cg.rolloutConfig.additionalTrustBundleHash = supportutil.HashSimple(bundleData)
 	}
 
 	mcoRawConfig, err := cg.generateMCORawConfig(ctx, hostedCluster.Spec.Capabilities)
@@ -118,7 +140,7 @@ func (cg *ConfigGenerator) CompressedAndEncoded() (*bytes.Buffer, error) {
 // TODO(alberto): hash the struct directly instead of the string representation field by field.
 // This is kept like this for now to contain the scope of the refactor and avoid backward compatibility issues.
 func (cg *ConfigGenerator) Hash() string {
-	return supportutil.HashSimple(cg.mcoRawConfig + cg.releaseImage.Version() + cg.pullSecretName + cg.additionalTrustBundleName + cg.globalConfig)
+	return supportutil.HashSimple(cg.mcoRawConfig + cg.releaseImage.Version() + cg.pullSecretName + cg.pullSecretHash + cg.additionalTrustBundleName + cg.additionalTrustBundleHash + cg.globalConfig)
 }
 
 // HashWithOutVersion is like Hash but doesn't compute the release version.
@@ -126,7 +148,7 @@ func (cg *ConfigGenerator) Hash() string {
 // TODO(alberto): This was left inconsistent in https://github.com/openshift/hypershift/pull/3795/files. It should also contain cg.globalConfig.
 // This is kept like this for now to contain the scope of the refactor and avoid backward compatibility issues.
 func (cg *ConfigGenerator) HashWithoutVersion() string {
-	return supportutil.HashSimple(cg.mcoRawConfig + cg.pullSecretName + cg.additionalTrustBundleName)
+	return supportutil.HashSimple(cg.mcoRawConfig + cg.pullSecretName + cg.pullSecretHash + cg.additionalTrustBundleName + cg.additionalTrustBundleHash)
 }
 
 func (cg *ConfigGenerator) Version() string {

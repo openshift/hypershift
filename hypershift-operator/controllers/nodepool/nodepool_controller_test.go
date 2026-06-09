@@ -3309,3 +3309,119 @@ func TestNodePoolReconciler_reconcile(t *testing.T) {
 		})
 	}
 }
+
+func TestEnqueueNodePoolsForSecret(t *testing.T) {
+	namespace := "test-ns"
+
+	hostedCluster := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-hc",
+			Namespace: namespace,
+		},
+		Spec: hyperv1.HostedClusterSpec{
+			PullSecret: corev1.LocalObjectReference{
+				Name: "my-pull-secret",
+			},
+		},
+	}
+
+	nodePool1 := &hyperv1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "np-1",
+			Namespace: namespace,
+		},
+		Spec: hyperv1.NodePoolSpec{
+			ClusterName: "test-hc",
+		},
+	}
+
+	nodePool2 := &hyperv1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "np-2",
+			Namespace: namespace,
+		},
+		Spec: hyperv1.NodePoolSpec{
+			ClusterName: "test-hc",
+		},
+	}
+
+	nodePoolOther := &hyperv1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "np-other",
+			Namespace: namespace,
+		},
+		Spec: hyperv1.NodePoolSpec{
+			ClusterName: "other-hc",
+		},
+	}
+
+	testCases := []struct {
+		name          string
+		secret        client.Object
+		objects       []client.Object
+		expectedCount int
+		expectedNames []string
+	}{
+		{
+			name: "When secret has nodePool annotation it should use enqueueParentNodePool",
+			secret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "token-secret",
+					Namespace: namespace,
+					Annotations: map[string]string{
+						nodePoolAnnotation: namespace + "/" + "np-1",
+					},
+				},
+			},
+			objects:       []client.Object{hostedCluster, nodePool1, nodePool2},
+			expectedCount: 1,
+			expectedNames: []string{"np-1"},
+		},
+		{
+			name: "When secret is a pull secret it should enqueue all matching NodePools",
+			secret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "my-pull-secret",
+					Namespace: namespace,
+				},
+			},
+			objects:       []client.Object{hostedCluster, nodePool1, nodePool2, nodePoolOther},
+			expectedCount: 2,
+			expectedNames: []string{"np-1", "np-2"},
+		},
+		{
+			name: "When secret is not a pull secret and has no annotation it should return empty",
+			secret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "unrelated-secret",
+					Namespace: namespace,
+				},
+			},
+			objects:       []client.Object{hostedCluster, nodePool1, nodePool2},
+			expectedCount: 0,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			scheme := runtime.NewScheme()
+			g.Expect(hyperv1.AddToScheme(scheme)).To(Succeed())
+			g.Expect(corev1.AddToScheme(scheme)).To(Succeed())
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(tc.objects...).Build()
+
+			r := &NodePoolReconciler{
+				Client: fakeClient,
+			}
+
+			ctx := ctrl.LoggerInto(context.Background(), ctrl.Log)
+			reqs := r.enqueueNodePoolsForSecret(ctx, tc.secret)
+			g.Expect(reqs).To(HaveLen(tc.expectedCount))
+			for _, name := range tc.expectedNames {
+				g.Expect(reqs).To(ContainElement(reconcile.Request{
+					NamespacedName: types.NamespacedName{Namespace: namespace, Name: name},
+				}))
+			}
+		})
+	}
+}

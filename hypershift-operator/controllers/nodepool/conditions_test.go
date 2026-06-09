@@ -189,7 +189,7 @@ func TestUpdatingConfigCondition(t *testing.T) {
 					Name:      "nodepool-name",
 					Namespace: "myns",
 					Annotations: map[string]string{
-						nodePoolAnnotationCurrentConfig: "08e4f890",
+						nodePoolAnnotationCurrentConfig: "002a8236",
 					},
 				},
 				Spec: hyperv1.NodePoolSpec{

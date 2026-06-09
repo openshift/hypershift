@@ -100,6 +100,10 @@ func TestNewToken(t *testing.T) {
 				},
 				nodePool:              &hyperv1.NodePool{},
 				controlplaneNamespace: controlplaneNamespace,
+				rolloutConfig: &rolloutConfig{
+					pullSecretHash:            supportutil.HashSimple([]byte(`{"auths":{"example.com":{"auth":"dGVzdDp0ZXN0"}}}`)),
+					additionalTrustBundleHash: supportutil.HashSimple("test-ca-bundle"),
+				},
 			},
 			fakeObjects: []crclient.Object{
 				pullSecret,
@@ -140,66 +144,8 @@ func TestNewToken(t *testing.T) {
 			cpoCapabilities: &CPOCapabilities{},
 			expectedError:   "ignition endpoint is not set",
 		},
-		{
-			name: "When missing pullsecret it should fail",
-			configGenerator: &ConfigGenerator{
-				hostedCluster: &hyperv1.HostedCluster{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      hcName,
-						Namespace: hcNamespace,
-					},
-					Spec: hyperv1.HostedClusterSpec{
-						PullSecret: corev1.LocalObjectReference{
-							Name: pullSecret.GetName(),
-						},
-						AdditionalTrustBundle: &corev1.LocalObjectReference{
-							Name: additionalTrustBundle.GetName(),
-						},
-					},
-					Status: hyperv1.HostedClusterStatus{
-						IgnitionEndpoint: "https://example.com",
-					},
-				},
-				nodePool:              &hyperv1.NodePool{},
-				controlplaneNamespace: controlplaneNamespace,
-			},
-			fakeObjects: []crclient.Object{
-				additionalTrustBundle,
-				ignitionServerCACert,
-			},
-			cpoCapabilities: &CPOCapabilities{},
-			expectedError:   "cannot get pull secret namespace/pull-secret: secrets \"pull-secret\" not found",
-		},
-		{
-			name: "When missing additionalTrustBundle it should fail",
-			configGenerator: &ConfigGenerator{
-				hostedCluster: &hyperv1.HostedCluster{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      hcName,
-						Namespace: hcNamespace,
-					},
-					Spec: hyperv1.HostedClusterSpec{
-						PullSecret: corev1.LocalObjectReference{
-							Name: pullSecret.GetName(),
-						},
-						AdditionalTrustBundle: &corev1.LocalObjectReference{
-							Name: additionalTrustBundle.GetName(),
-						},
-					},
-					Status: hyperv1.HostedClusterStatus{
-						IgnitionEndpoint: "https://example.com",
-					},
-				},
-				nodePool:              &hyperv1.NodePool{},
-				controlplaneNamespace: controlplaneNamespace,
-			},
-			fakeObjects: []crclient.Object{
-				pullSecret,
-				ignitionServerCACert,
-			},
-			cpoCapabilities: &CPOCapabilities{},
-			expectedError:   "cannot get additionalTrustBundle namespace/additional-trust-bundle: configmaps \"additional-trust-bundle\"",
-		},
+		// NOTE: "missing pullsecret" and "missing additionalTrustBundle" error cases
+		// are now validated in NewConfigGenerator, not NewToken.
 		{
 			name: "When missing ignitionServerCACert it should fail",
 			configGenerator: &ConfigGenerator{
@@ -293,13 +239,13 @@ func TestNewToken(t *testing.T) {
 			g.Expect(token).NotTo(BeNil())
 
 			// Validate expected hashes against raw strings to guarantee expected output.
-			expectedPullSecretHash := []byte(supportutil.HashSimple([]byte(`{"auths":{"example.com":{"auth":"dGVzdDp0ZXN0"}}}`)))
-			expectedAdditionalTrustBundleHash := []byte(supportutil.HashSimple("test-ca-bundle"))
+			expectedPullSecretHash := supportutil.HashSimple([]byte(`{"auths":{"example.com":{"auth":"dGVzdDp0ZXN0"}}}`))
+			expectedAdditionalTrustBundleHash := supportutil.HashSimple("test-ca-bundle")
 			expectedGlobalConfig, err := supportutil.HashStruct(tc.configGenerator.hostedCluster.Spec.Configuration)
 			g.Expect(err).To(Not(HaveOccurred()))
 
-			g.Expect(token.pullSecretHash).To(Equal(expectedPullSecretHash))
-			g.Expect(token.additionalTrustBundleHash).To(Equal(expectedAdditionalTrustBundleHash))
+			g.Expect(token.ConfigGenerator.pullSecretHash).To(Equal(expectedPullSecretHash))
+			g.Expect(token.ConfigGenerator.additionalTrustBundleHash).To(Equal(expectedAdditionalTrustBundleHash))
 			g.Expect(token.globalConfigHash).To(Equal([]byte(expectedGlobalConfig)))
 
 			// Validate user data.
@@ -617,8 +563,10 @@ func TestTokenReconcile(t *testing.T) {
 							},
 						},
 					},
-					globalConfig: "test-global-config",
-					mcoRawConfig: "raw-config",
+					pullSecretHash:            supportutil.HashSimple([]byte(`{"auths":{"example.com":{"auth":"dGVzdDp0ZXN0"}}}`)),
+					additionalTrustBundleHash: supportutil.HashSimple("test-ca-bundle"),
+					globalConfig:              "test-global-config",
+					mcoRawConfig:              "raw-config",
 				},
 			},
 			fakeObjects: []crclient.Object{
@@ -679,8 +627,10 @@ func TestTokenReconcile(t *testing.T) {
 							},
 						},
 					},
-					globalConfig: "test-global-config",
-					mcoRawConfig: "raw-config",
+					pullSecretHash:            supportutil.HashSimple([]byte(`{"auths":{"example.com":{"auth":"dGVzdDp0ZXN0"}}}`)),
+					additionalTrustBundleHash: supportutil.HashSimple("test-ca-bundle"),
+					globalConfig:              "test-global-config",
+					mcoRawConfig:              "raw-config",
 				},
 			},
 			fakeObjects: []crclient.Object{
@@ -748,7 +698,7 @@ func TestTokenReconcile(t *testing.T) {
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(decodedAndDecompressed.String()).To(Equal("raw-config"))
 
-			// Validate hashes are set.
+			// Validate hashes are set. These come from ConfigGenerator which computes HashSimple([]byte(...)).
 			expectedPullSecretHash := []byte(supportutil.HashSimple([]byte(`{"auths":{"example.com":{"auth":"dGVzdDp0ZXN0"}}}`)))
 			expectedAdditionalTrustBundleHash := []byte(supportutil.HashSimple("test-ca-bundle"))
 			expectedGlobalConfig, err := supportutil.HashStruct(tc.configGenerator.hostedCluster.Spec.Configuration)
