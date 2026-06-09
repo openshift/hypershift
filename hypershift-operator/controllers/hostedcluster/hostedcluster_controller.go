@@ -113,6 +113,7 @@ import (
 	"github.com/blang/semver"
 	"github.com/go-logr/logr"
 	"github.com/google/uuid"
+	orcv1alpha1 "github.com/k-orc/openstack-resource-controller/v2/api/v1alpha1"
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	"gopkg.in/ini.v1"
 )
@@ -3648,6 +3649,30 @@ func deleteGCPPrivateServiceConnect(ctx context.Context, c client.Client, _ *hyp
 	return false, nil
 }
 
+// deleteOpenStackOrcImages deletes all ORC Image CRs in the control plane namespace and waits for
+// them to be fully removed. ORC Images have a finalizer that is only removed after the controller
+// has deleted the corresponding Glance image. This must complete before the namespace is deleted,
+// because namespace deletion terminates the CAPO/ORC pod, leaving the finalizer permanently stuck.
+func deleteOpenStackOrcImages(ctx context.Context, c client.Client, namespace string) (bool, error) {
+	imageList := &orcv1alpha1.ImageList{}
+	if err := c.List(ctx, imageList, &client.ListOptions{Namespace: namespace}); err != nil {
+		if apierrors.IsNotFound(err) || meta.IsNoMatchError(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("error listing ORC Images in namespace %s: %w", namespace, err)
+	}
+	for i := range imageList.Items {
+		img := &imageList.Items[i]
+		if img.DeletionTimestamp != nil {
+			continue
+		}
+		if err := c.Delete(ctx, img); err != nil && !apierrors.IsNotFound(err) {
+			return false, fmt.Errorf("error deleting ORC Image %s in namespace %s: %w", img.Name, namespace, err)
+		}
+	}
+	return len(imageList.Items) != 0, nil
+}
+
 func deleteControlPlaneOperatorRBAC(ctx context.Context, c client.Client, rbacNamespace string, controlPlaneNamespace string) error {
 	if _, err := k8sutil.DeleteIfNeeded(ctx, c, &rbacv1.Role{ObjectMeta: metav1.ObjectMeta{Name: "control-plane-operator-" + controlPlaneNamespace, Namespace: rbacNamespace}}); err != nil {
 		return err
@@ -3769,6 +3794,17 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.Hosted
 		}
 		if exists {
 			log.Info("Waiting for gcpprivateserviceconnect deletion", "controlPlaneNamespace", controlPlaneNamespace)
+			return false, nil
+		}
+	}
+
+	if hc.Spec.Platform.Type == hyperv1.OpenStackPlatform {
+		exists, err := deleteOpenStackOrcImages(ctx, r.Client, controlPlaneNamespace)
+		if err != nil {
+			return false, err
+		}
+		if exists {
+			log.Info("Waiting for ORC Image deletion", "controlPlaneNamespace", controlPlaneNamespace)
 			return false, nil
 		}
 	}
