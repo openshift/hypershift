@@ -1826,6 +1826,7 @@ func TestApplyAWSPlacementOptions(t *testing.T) {
 	testCases := []struct {
 		name                             string
 		nodePool                         *hyperv1.NodePool
+		expectedNestedVirtualization     capiaws.NestedVirtualizationPolicy
 		expectedSpotMarketOptions        *capiaws.SpotMarketOptions
 		expectedMarketType               capiaws.MarketType
 		expectedTenancy                  string
@@ -1843,6 +1844,21 @@ func TestApplyAWSPlacementOptions(t *testing.T) {
 					},
 				},
 			},
+		},
+		{
+			name: "When nested virtualization is enabled, it should set CPUOptions on spec",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						AWS: &hyperv1.AWSNodePoolPlatform{
+							CpuOptions: hyperv1.CpuOptions{
+								NestedVirtualization: "enabled",
+							},
+						},
+					},
+				},
+			},
+			expectedNestedVirtualization: capiaws.NestedVirtualizationPolicyEnabled,
 		},
 		{
 			name: "When marketType is Spot with no MaxPrice, it should set empty SpotMarketOptions",
@@ -1990,6 +2006,7 @@ func TestApplyAWSPlacementOptions(t *testing.T) {
 			spec := &capiaws.AWSMachineTemplateSpec{}
 			applyAWSPlacementOptions(tc.nodePool, spec)
 
+			g.Expect(spec.Template.Spec.CPUOptions.NestedVirtualization).To(Equal(tc.expectedNestedVirtualization))
 			g.Expect(spec.Template.Spec.SpotMarketOptions).To(Equal(tc.expectedSpotMarketOptions))
 			g.Expect(spec.Template.Spec.MarketType).To(Equal(tc.expectedMarketType))
 			g.Expect(spec.Template.Spec.Tenancy).To(Equal(tc.expectedTenancy))
