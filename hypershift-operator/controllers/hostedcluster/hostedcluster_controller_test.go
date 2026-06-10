@@ -1804,7 +1804,7 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 							SubscriptionID:    "12345678-1234-1234-1234-123456789abc",
 							SecurityGroupID:   "/subscriptions/12345678-1234-1234-1234-123456789abc/resourceGroups/test-resource-group/providers/Microsoft.Network/networkSecurityGroups/test-nsg",
 							AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
-								AzureAuthenticationConfigType: "WorkloadIdentities",
+								AzureAuthenticationConfigType: hyperv1.AzureAuthenticationTypeManagedIdentities,
 								WorkloadIdentities: &hyperv1.AzureWorkloadIdentities{
 									ImageRegistry:      hyperv1.WorkloadIdentity{ClientID: "12345678-1234-1234-1234-123456789abc"},
 									Ingress:            hyperv1.WorkloadIdentity{ClientID: "12345678-1234-1234-1234-123456789abc"},
@@ -1868,6 +1868,12 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 								},
 							},
 							TenantID: "12345678-1234-1234-1234-123456789abc",
+							Private: hyperv1.AzurePrivateSpec{
+								Type: hyperv1.AzurePrivateTypeSwift,
+								Swift: hyperv1.AzureSwiftSpec{
+									PodNetworkInstance: "test-pni",
+								},
+							},
 						},
 					},
 					Release: hyperv1.Release{
@@ -5395,6 +5401,22 @@ func TestEnsureHostedResourcesAreEmpty(t *testing.T) {
 					Namespace: namespace,
 				},
 			}
+			if tc.setAROHCP {
+				hcluster.Spec.Platform = hyperv1.PlatformSpec{
+					Type: hyperv1.AzurePlatform,
+					Azure: &hyperv1.AzurePlatformSpec{
+						Private: hyperv1.AzurePrivateSpec{
+							Type: hyperv1.AzurePrivateTypeSwift,
+							Swift: hyperv1.AzureSwiftSpec{
+								PodNetworkInstance: "test-pni",
+							},
+						},
+						AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+							AzureAuthenticationConfigType: hyperv1.AzureAuthenticationTypeManagedIdentities,
+						},
+					},
+				}
+			}
 
 			// Create a Secret that would exist in the cluster
 			secret := &corev1.Secret{
@@ -6939,6 +6961,12 @@ func TestValidateAzureConfig(t *testing.T) {
 						Type: hyperv1.AzurePlatform,
 						Azure: &hyperv1.AzurePlatformSpec{
 							Topology: hyperv1.AzureTopologyPrivate,
+							Private: hyperv1.AzurePrivateSpec{
+								Type: hyperv1.AzurePrivateTypeSwift,
+								Swift: hyperv1.AzureSwiftSpec{
+									PodNetworkInstance: "test-pni",
+								},
+							},
 						},
 					},
 				},

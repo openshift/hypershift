@@ -4407,8 +4407,7 @@ in the format xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 <p>
 <p>AzurePrivateSpec configures private connectivity to an Azure hosted cluster&rsquo;s API server.
 It is a discriminated union keyed on the type field, which selects the private connectivity
-mechanism. Currently only PrivateLink is supported; additional mechanisms (e.g., Swift) may
-be added in the future.</p>
+mechanism.</p>
 </p>
 <table>
 <thead>
@@ -4430,6 +4429,7 @@ AzurePrivateType
 <td>
 <p>type specifies the private connectivity mechanism used for the hosted cluster&rsquo;s API server.
 &ldquo;PrivateLink&rdquo; selects Azure Private Link Service for private API server access.
+&ldquo;Swift&rdquo; selects Azure Swift pod networking for private API server access, used by ARO HCP.
 This field is immutable once set.</p>
 </td>
 </tr>
@@ -4446,6 +4446,23 @@ AzurePrivateLinkSpec
 <em>(Optional)</em>
 <p>privateLink configures Azure Private Link Service for private API server access.
 This field is required when type is &ldquo;PrivateLink&rdquo; and must not be set otherwise.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>swift,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureSwiftSpec">
+AzureSwiftSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>swift configures Azure Swift pod networking for private API server access.
+Swift networking requires the management cluster to be pre-configured with
+Azure Swift support; this is not provisioned by HyperShift automatically.
+This field is required when type is &ldquo;Swift&rdquo; and must not be set otherwise.</p>
 </td>
 </tr>
 </tbody>
@@ -4470,6 +4487,12 @@ hosted cluster&rsquo;s API server. This acts as the discriminator for the AzureP
 <td><p>AzurePrivateTypePrivateLink specifies private connectivity using Azure Private Link Service.
 In this mode, the operator creates a Private Link Service backed by the management cluster&rsquo;s
 internal load balancer, and a Private Endpoint in the guest VNet for private API server access.</p>
+</td>
+</tr><tr><td><p>&#34;Swift&#34;</p></td>
+<td><p>AzurePrivateTypeSwift specifies private connectivity using Azure Swift pod networking.
+In this mode, Azure Swift assigns a private IP from the customer VNet directly
+to the hosted cluster&rsquo;s router pods, providing private API server access without a
+separate Private Link Service. This is used by ARO HCP managed clusters.</p>
 </td>
 </tr></tbody>
 </table>
@@ -4543,6 +4566,42 @@ The expected format is:</p>
 Must be exactly 36 characters consisting of hexadecimal digits [0-9a-fA-F] and hyphens
 in the format xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx (e.g., &ldquo;550e8400-e29b-41d4-a716-446655440000&rdquo;).</p>
 </p>
+###AzureSwiftSpec { #hypershift.openshift.io/v1beta1.AzureSwiftSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzurePrivateSpec">AzurePrivateSpec</a>)
+</p>
+<p>
+<p>AzureSwiftSpec configures Azure Swift pod networking for private API server access.
+Swift assigns a private IP from the customer VNet directly to the hosted cluster&rsquo;s
+router pods, providing private connectivity without a separate Private Link Service.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>podNetworkInstance</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>podNetworkInstance is the name of a PodNetworkInstance custom resource in the
+hosted control plane namespace. This resource configures Azure Swift pod networking
+for private connectivity to the hosted cluster&rsquo;s router pods.
+The value must be a valid Kubernetes object name (RFC 1123 DNS label): lowercase
+alphanumeric characters or hyphens, must start and end with an alphanumeric character.
+This field is immutable once set.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###AzureTopologyType { #hypershift.openshift.io/v1beta1.AzureTopologyType }
 <p>
 (<em>Appears on:</em>
@@ -5980,6 +6039,12 @@ hosted cluster can be live migrated without experiencing a node restart</p>
 <td><p>PlatformCredentialsFound indicates that credentials required for the
 desired platform are valid.
 A failure here is unlikely to resolve without the changing user input.</p>
+</td>
+</tr><tr><td><p>&#34;PublicEndpointExposed&#34;</p></td>
+<td><p>PublicEndpointExposed indicates whether public API server endpoints are
+currently configured and exposed for this cluster via the management
+cluster&rsquo;s shared ingress. Status reflects observed state: True means
+public endpoints are reachable, False means they are not.</p>
 </td>
 </tr><tr><td><p>&#34;ReconciliationActive&#34;</p></td>
 <td><p>ReconciliationActive indicates if reconciliation of the HostedCluster is

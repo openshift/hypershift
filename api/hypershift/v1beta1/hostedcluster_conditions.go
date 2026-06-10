@@ -252,6 +252,19 @@ const (
 	// **False / AutoNodeProgressing** means AutoNode is being enabled or disabled — the operation is in progress.
 	// **False / AutoNodeNotConfigured** means AutoNode is not configured in the spec and all Karpenter components have been removed.
 	AutoNodeEnabled ConditionType = "AutoNodeEnabled"
+
+	// PublicEndpointExposed indicates whether public API server endpoints are
+	// currently configured and exposed for this cluster via the management
+	// cluster's shared ingress. Status reflects observed state: True means
+	// public endpoints are reachable, False means they are not.
+	PublicEndpointExposed ConditionType = "PublicEndpointExposed"
+)
+
+// Reasons for PublicEndpointExposed condition.
+const (
+	PublicEndpointSharedIngressConfiguredReason = "SharedIngressConfigured"
+	PublicEndpointTopologyPrivateReason         = "TopologyPrivate"
+	PublicEndpointConvergenceInProgressReason   = "ConvergenceInProgress"
 )
 
 // Reasons.

@@ -28,9 +28,9 @@ func adaptAzureCSISecret(cpContext component.WorkloadContext, managedIdentity hy
 		Location:       azureSpec.Location,
 	}
 
-	if azureutil.IsAroHCP() {
+	if azureutil.IsAroHCPByHCP(cpContext.HCP) {
 		azureConfig.AADMSIDataPlaneIdentityPath = path.Join(hyperconfig.ManagedAzureCertificatePath, managedIdentity.CredentialsSecretName)
-	} else if azureutil.IsSelfManagedAzure(cpContext.HCP.Spec.Platform.Type) {
+	} else {
 		azureConfig.UseFederatedWorkloadIdentityExtension = true
 		azureConfig.AADClientID = string(workloadIdentity.ClientID)
 		azureConfig.AADFederatedTokenFile = "/var/run/secrets/openshift/serviceaccount/token"
@@ -55,9 +55,9 @@ func adaptAzureCSISecret(cpContext component.WorkloadContext, managedIdentity hy
 func adaptAzureCSIDiskSecret(cpContext component.WorkloadContext, secret *corev1.Secret) error {
 	var managedIdentity hyperv1.ManagedIdentity
 	var workloadIdentity hyperv1.WorkloadIdentity
-	if azureutil.IsAroHCP() {
+	if azureutil.IsAroHCPByHCP(cpContext.HCP) {
 		managedIdentity = cpContext.HCP.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.Disk
-	} else if azureutil.IsSelfManagedAzure(cpContext.HCP.Spec.Platform.Type) {
+	} else {
 		workloadIdentity = cpContext.HCP.Spec.Platform.Azure.AzureAuthenticationConfig.WorkloadIdentities.Disk
 	}
 	return adaptAzureCSISecret(cpContext, managedIdentity, workloadIdentity, secret)
@@ -72,9 +72,9 @@ func adaptAzureCSIDiskSecretProvider(cpContext component.WorkloadContext, secret
 func adaptAzureCSIFileSecret(cpContext component.WorkloadContext, secret *corev1.Secret) error {
 	var managedIdentity hyperv1.ManagedIdentity
 	var workloadIdentity hyperv1.WorkloadIdentity
-	if azureutil.IsAroHCP() {
+	if azureutil.IsAroHCPByHCP(cpContext.HCP) {
 		managedIdentity = cpContext.HCP.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.File
-	} else if azureutil.IsSelfManagedAzure(cpContext.HCP.Spec.Platform.Type) {
+	} else {
 		workloadIdentity = cpContext.HCP.Spec.Platform.Azure.AzureAuthenticationConfig.WorkloadIdentities.File
 	}
 	return adaptAzureCSISecret(cpContext, managedIdentity, workloadIdentity, secret)

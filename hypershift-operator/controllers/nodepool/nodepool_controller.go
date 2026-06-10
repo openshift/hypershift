@@ -16,12 +16,12 @@ import (
 	haproxy "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/apiserver-haproxy"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/instancetype"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/kubevirt"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 	"github.com/openshift/hypershift/support/awsapi"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/k8sutil"
+	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/supportedversion"
 	"github.com/openshift/hypershift/support/upsert"
@@ -1084,21 +1084,17 @@ func (r *NodePoolReconciler) getAdditionalTrustBundle(ctx context.Context, hoste
 
 // resolveHAProxyImage determines which HAProxy image to use based on priority:
 // 1. NodePool annotation (highest priority)
-// 2. Environment variable override (when shared ingress enabled)
-// 3. Hardcoded default (when shared ingress enabled)
-// 4. Release payload (default)
-func resolveHAProxyImage(nodePool *hyperv1.NodePool, releaseImage *releaseinfo.ReleaseImage) (string, error) {
-	// Check NodePool annotation first (highest priority)
+// 2. Shared ingress image (when cluster uses shared ingress for public endpoints)
+// 3. Release payload (default)
+func resolveHAProxyImage(nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, releaseImage *releaseinfo.ReleaseImage) (string, error) {
 	if annotationImage := strings.TrimSpace(nodePool.Annotations[hyperv1.NodePoolHAProxyImageAnnotation]); annotationImage != "" {
 		return annotationImage, nil
 	}
 
-	// Check if shared ingress is enabled
-	if sharedingress.UseSharedIngress() {
+	if netutil.UseSharedIngressHC(hcluster) {
 		return images.GetSharedIngressHAProxyImage(), nil
 	}
 
-	// Fall back to release payload image
 	haProxyImage, ok := releaseImage.ComponentImages()[haproxy.HAProxyRouterImageName]
 	if !ok {
 		return "", fmt.Errorf("release image doesn't have a %s image", haproxy.HAProxyRouterImageName)
@@ -1107,7 +1103,7 @@ func resolveHAProxyImage(nodePool *hyperv1.NodePool, releaseImage *releaseinfo.R
 }
 
 func (r *NodePoolReconciler) generateHAProxyRawConfig(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, releaseImage *releaseinfo.ReleaseImage) (string, error) {
-	haProxyImage, err := resolveHAProxyImage(nodePool, releaseImage)
+	haProxyImage, err := resolveHAProxyImage(nodePool, hcluster, releaseImage)
 	if err != nil {
 		return "", err
 	}

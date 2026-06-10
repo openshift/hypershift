@@ -3036,7 +3036,7 @@ func (r *HostedControlPlaneReconciler) validateAzureKMSConfig(ctx context.Contex
 	}
 	azureKmsSpec := hcp.Spec.SecretEncryption.KMS.Azure
 
-	if hyperazureutil.IsAroHCP() {
+	if hyperazureutil.IsAroHCPByHCP(hcp) {
 		key := hcp.Namespace + kmsAzureCredentials
 
 		// We need to only store the Azure credentials once and reuse them after that.
