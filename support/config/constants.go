@@ -49,6 +49,7 @@ const (
 	CVOPrometheusURLEnvVar                        = "CVO_PROMETHEUS_URL"
 
 	EnableEtcdRecoveryEnvVar = "ENABLE_ETCD_RECOVERY"
+	ReconcileLegacyEnvVar    = "HYPERSHIFT_RECONCILE_LEGACY"
 
 	AuditWebhookService = "audit-webhook"
 
