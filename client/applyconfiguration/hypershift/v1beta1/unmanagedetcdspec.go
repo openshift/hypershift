@@ -20,8 +20,9 @@ package v1beta1
 // UnmanagedEtcdSpecApplyConfiguration represents a declarative configuration of the UnmanagedEtcdSpec type for use
 // with apply.
 type UnmanagedEtcdSpecApplyConfiguration struct {
-	Endpoint *string                          `json:"endpoint,omitempty"`
-	TLS      *EtcdTLSConfigApplyConfiguration `json:"tls,omitempty"`
+	Endpoint *string                                    `json:"endpoint,omitempty"`
+	TLS      *EtcdTLSConfigApplyConfiguration           `json:"tls,omitempty"`
+	Shards   []UnmanagedEtcdShardSpecApplyConfiguration `json:"shards,omitempty"`
 }
 
 // UnmanagedEtcdSpecApplyConfiguration constructs a declarative configuration of the UnmanagedEtcdSpec type for use with
@@ -43,5 +44,18 @@ func (b *UnmanagedEtcdSpecApplyConfiguration) WithEndpoint(value string) *Unmana
 // If called multiple times, the TLS field is set to the value of the last call.
 func (b *UnmanagedEtcdSpecApplyConfiguration) WithTLS(value *EtcdTLSConfigApplyConfiguration) *UnmanagedEtcdSpecApplyConfiguration {
 	b.TLS = value
+	return b
+}
+
+// WithShards adds the given value to the Shards field in the declarative configuration
+// and returns the receiver, so that objects can be build by chaining "With" function invocations.
+// If called multiple times, values provided by each call will be appended to the Shards field.
+func (b *UnmanagedEtcdSpecApplyConfiguration) WithShards(values ...*UnmanagedEtcdShardSpecApplyConfiguration) *UnmanagedEtcdSpecApplyConfiguration {
+	for i := range values {
+		if values[i] == nil {
+			panic("nil value passed to WithShards")
+		}
+		b.Shards = append(b.Shards, *values[i])
+	}
 	return b
 }
