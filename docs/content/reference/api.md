@@ -1947,6 +1947,21 @@ PlacementOptions
 <p>placement specifies the placement options for the EC2 instances.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>cpuOptions,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.CpuOptions">
+CpuOptions
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>cpuOptions specifies CPU configuration for EC2 instances.
+Supported on C8i, M8i, and R8i instance families.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###AWSPlatformSpec { #hypershift.openshift.io/v1beta1.AWSPlatformSpec }
@@ -6836,6 +6851,37 @@ int64
 <td>
 <em>(Optional)</em>
 <p>observedGeneration reports which generation of the HostedControlPlane spec is being synced.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###CpuOptions { #hypershift.openshift.io/v1beta1.CpuOptions }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AWSNodePoolPlatform">AWSNodePoolPlatform</a>)
+</p>
+<p>
+<p>CpuOptions specifies CPU configuration for EC2 instances.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>nestedVirtualization</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>nestedVirtualization indicates whether to enable nested virtualization on the instance.
+Supported on C8i, M8i, and R8i instance families.</p>
 </td>
 </tr>
 </tbody>
