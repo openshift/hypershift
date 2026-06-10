@@ -39,6 +39,9 @@ const (
 	awsPodIdentityWebhookServingCertVolumeName = "aws-pod-identity-webhook-serving-certs"
 	awsPodIdentityWebhookKubeconfigVolumeName  = "aws-pod-identity-webhook-kubeconfig"
 
+	awsIAMAuthConfigVolumeName = "aws-iam-auth-config"
+	awsIAMAuthStateVolumeName  = "aws-iam-auth-state"
+
 	azureWorkloadIdentityWebhookServingCertVolumeName = "azure-wi-webhook-serving-certs"
 	azureWorkloadIdentityWebhookKubeconfigVolumeName  = "azure-wi-webhook-kubeconfig"
 )
@@ -139,6 +142,10 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 		if err := applyAzureWorkloadIdentityWebhookContainer(&deployment.Spec.Template.Spec, hcp); err != nil {
 			return fmt.Errorf("failed to create azure workload identity webhook container: %w", err)
 		}
+	}
+
+	if _, ok := hcp.Annotations["hypershift.openshift.io/aws-iam-authenticator"]; ok {
+		applyAWSIAMAuthenticatorContainer(&deployment.Spec.Template.Spec)
 	}
 
 	if hcp.Spec.AuditWebhook != nil && len(hcp.Spec.AuditWebhook.Name) > 0 {
@@ -387,6 +394,55 @@ func applyAWSPodIdentityWebhookContainer(podSpec *corev1.PodSpec, hcp *hyperv1.H
 			Name: awsPodIdentityWebhookKubeconfigVolumeName,
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{SecretName: manifests.AWSPodIdentityWebhookKubeconfig("").Name},
+			},
+		},
+	)
+}
+
+func applyAWSIAMAuthenticatorContainer(podSpec *corev1.PodSpec) {
+	podSpec.Containers = append(podSpec.Containers, corev1.Container{
+		Name:            "aws-iam-authenticator",
+		Image:           "public.ecr.aws/eks-distro/kubernetes-sigs/aws-iam-authenticator:v0.7.13-eks-1-35-9",
+		ImagePullPolicy: corev1.PullIfNotPresent,
+		Command: []string{
+			"/aws-iam-authenticator",
+			"server",
+			"--config=/etc/aws-iam-auth/config.yaml",
+			"--state-dir=/var/aws-iam-auth/state",
+			"--kubeconfig-pregenerated=true",
+		},
+		Ports: []corev1.ContainerPort{
+			{
+				Name:          "https",
+				ContainerPort: 21362,
+				Protocol:      corev1.ProtocolTCP,
+			},
+		},
+		Resources: corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("10m"),
+				corev1.ResourceMemory: resource.MustParse("25Mi"),
+			},
+		},
+		VolumeMounts: []corev1.VolumeMount{
+			{Name: awsIAMAuthConfigVolumeName, MountPath: "/etc/aws-iam-auth", ReadOnly: true},
+			{Name: awsIAMAuthStateVolumeName, MountPath: "/var/aws-iam-auth/state"},
+		},
+	})
+
+	podSpec.Volumes = append(podSpec.Volumes,
+		corev1.Volume{
+			Name: awsIAMAuthConfigVolumeName,
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{Name: "aws-iam-auth-config"},
+				},
+			},
+		},
+		corev1.Volume{
+			Name: awsIAMAuthStateVolumeName,
+			VolumeSource: corev1.VolumeSource{
+				EmptyDir: &corev1.EmptyDirVolumeSource{},
 			},
 		},
 	)

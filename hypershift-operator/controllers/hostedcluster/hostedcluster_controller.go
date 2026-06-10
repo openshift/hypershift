@@ -1430,6 +1430,28 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		return r.reconcileSecretEncryptionSync(ctx, hcluster, createOrUpdate, controlPlaneNamespace.Name, p)
 	})
 
+	// Sync aws-iam-auth-config ConfigMap from HC namespace to HCP namespace
+	if _, ok := hcluster.Annotations["hypershift.openshift.io/aws-iam-authenticator"]; ok {
+		report.execute("AWSIAMAuthConfigSync", nonCritical, func() error {
+			var src corev1.ConfigMap
+			if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.GetNamespace(), Name: "aws-iam-auth-config"}, &src); err != nil {
+				return fmt.Errorf("failed to get aws-iam-auth-config: %w", err)
+			}
+			dst := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{
+				Namespace: controlPlaneNamespace.Name,
+				Name:      "aws-iam-auth-config",
+			}}
+			_, err := createOrUpdate(ctx, r.Client, dst, func() error {
+				dst.Data = src.Data
+				return nil
+			})
+			if err != nil {
+				return fmt.Errorf("failed to reconcile aws-iam-auth-config: %w", err)
+			}
+			return nil
+		})
+	}
+
 	// Phase 6b: Non-critical sync operations.
 	// These run independently and never block downstream work.
 	// TODO: move RestoredFromBackup to Phase 4 — it's status/annotation propagation, not a sync operation.
@@ -2631,6 +2653,7 @@ func reconcileHostedControlPlaneAnnotations(hcp *hyperv1.HostedControlPlane, hcl
 		"hypershift.openshift.io/aws-termination-handler-queue-url",
 		hyperv1.SwiftPodNetworkInstanceAnnotation,
 		hyperv1.EnableMetricsForwarding,
+		"hypershift.openshift.io/aws-iam-authenticator",
 	}
 	for _, key := range mirroredAnnotations {
 		val, hasVal := hcluster.Annotations[key]

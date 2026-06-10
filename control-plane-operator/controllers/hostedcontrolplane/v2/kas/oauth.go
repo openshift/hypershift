@@ -60,6 +60,15 @@ func adaptOauthMetadata(cpContext component.WorkloadContext, cfg *corev1.ConfigM
 }
 
 func adaptAuthenticationTokenWebhookConfigSecret(cpContext component.WorkloadContext, secret *corev1.Secret) error {
+	if _, ok := cpContext.HCP.Annotations["hypershift.openshift.io/aws-iam-authenticator"]; ok {
+		kubeConfigBytes, err := generateAWSIAMAuthWebhookConfig()
+		if err != nil {
+			return err
+		}
+		secret.Data[KubeconfigKey] = kubeConfigBytes
+		return nil
+	}
+
 	authenticatorCertSecret := manifests.OpenshiftAuthenticatorCertSecret(cpContext.HCP.Namespace)
 	if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(authenticatorCertSecret), authenticatorCertSecret); err != nil {
 		return fmt.Errorf("failed to get authenticator cert secret: %w", err)
@@ -87,6 +96,30 @@ func adaptAuthenticationTokenWebhookConfigSecret(cpContext component.WorkloadCon
 	}
 	secret.Data[KubeconfigKey] = kubeConfigBytes
 	return nil
+}
+
+func generateAWSIAMAuthWebhookConfig() ([]byte, error) {
+	kubeCfg := clientcmdapi.Config{
+		Kind:       "Config",
+		APIVersion: "v1",
+	}
+	kubeCfg.Clusters = map[string]*clientcmdapi.Cluster{
+		"aws-iam-authenticator": {
+			Server:                "https://localhost:21362/authenticate",
+			InsecureSkipTLSVerify: true,
+		},
+	}
+	kubeCfg.AuthInfos = map[string]*clientcmdapi.AuthInfo{
+		"aws-iam-authenticator": {},
+	}
+	kubeCfg.Contexts = map[string]*clientcmdapi.Context{
+		"webhook": {
+			Cluster:  "aws-iam-authenticator",
+			AuthInfo: "aws-iam-authenticator",
+		},
+	}
+	kubeCfg.CurrentContext = "webhook"
+	return clientcmd.Write(kubeCfg)
 }
 
 func generateAuthenticationTokenWebhookConfig(url string, crtBytes, keyBytes, caBytes []byte) ([]byte, error) {
