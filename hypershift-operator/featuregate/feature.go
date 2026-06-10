@@ -40,6 +40,12 @@ const (
 	// alpha: v0.1.79
 	// beta: x.y.z
 	KarpenterOperator featuregate.Feature = "KarpenterOperator"
+
+	// EtcdSharding enables etcd sharding by resource kind, allowing resources to be
+	// routed to dedicated etcd instances for improved performance and isolation.
+	// alpha: v0.1.49
+	// beta: x.y.z
+	EtcdSharding featuregate.Feature = "EtcdSharding"
 )
 
 // Initialize new features here
@@ -51,6 +57,7 @@ var (
 	gcpHCPFeature                  = featuregates.NewFeature(GCPPlatform, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
 	hcpEtcdBackupFeature           = featuregates.NewFeature(HCPEtcdBackup, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
 	karpenterOperatorFeature       = featuregates.NewFeature(KarpenterOperator, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
+	etcdShardingFeature            = featuregates.NewFeature(EtcdSharding, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
 )
 
 func init() {
@@ -60,6 +67,7 @@ func init() {
 	allFeatures.AddFeature(gcpHCPFeature)
 	allFeatures.AddFeature(hcpEtcdBackupFeature)
 	allFeatures.AddFeature(karpenterOperatorFeature)
+	allFeatures.AddFeature(etcdShardingFeature)
 
 	// Default to configuring the Default featureset
 	ConfigureFeatureSet(string(configv1.Default))

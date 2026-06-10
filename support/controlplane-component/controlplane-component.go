@@ -129,6 +129,7 @@ type controlPlaneWorkload[T client.Object] struct {
 	ComponentOptions
 
 	name             string
+	assetDir         string
 	workloadProvider WorkloadProvider[T]
 
 	// list of component names that this component depends on.
@@ -154,6 +155,15 @@ type controlPlaneWorkload[T client.Object] struct {
 
 	customOperandsRolloutCheck   func(cpContext WorkloadContext) (bool, error)
 	monitorOperandsRolloutStatus bool
+}
+
+// AssetDirName returns the asset directory name for loading manifests.
+// If assetDir is set, it overrides the component name for asset loading.
+func (c *controlPlaneWorkload[T]) AssetDirName() string {
+	if c.assetDir != "" {
+		return c.assetDir
+	}
+	return c.name
 }
 
 // Name implements ControlPlaneComponent.
@@ -212,12 +222,25 @@ func (c *controlPlaneWorkload[T]) delete(cpContext ControlPlaneContext) error {
 	}
 
 	// delete all resources.
-	if err := assets.ForEachManifest(c.name, func(manifestName string) error {
-		obj, _, err := assets.LoadManifest(c.name, manifestName)
+	// When using WithAssetDir, the raw manifest names may not match the
+	// component's actual resource names (manifest adapters rename them).
+	// Run each adapter's adapt function so the object has the correct name
+	// before deletion.
+	if err := assets.ForEachManifest(c.AssetDirName(), func(manifestName string) error {
+		obj, _, err := assets.LoadManifest(c.AssetDirName(), manifestName)
 		if err != nil {
 			return err
 		}
 		obj.SetNamespace(cpContext.HCP.Namespace)
+
+		// Apply manifest adapter renames so we delete the right resource.
+		if adapter, exists := c.manifestsAdapters[manifestName]; exists {
+			if adapter.adapt != nil {
+				if err := adapter.adapt(cpContext.workloadContext(), obj); err != nil {
+					return err
+				}
+			}
+		}
 
 		if cpContext.GVKAccessChecker != nil {
 			accessible, err := cpContext.GVKAccessChecker.GetOrProbe(cpContext, obj)
@@ -250,8 +273,8 @@ func (c *controlPlaneWorkload[T]) update(cpContext ControlPlaneContext) error {
 	hcp := cpContext.HCP
 	ownerRef := config.OwnerRefFrom(hcp)
 	// reconcile resources such as ConfigMaps and Secrets first, as the deployment might depend on them.
-	if err := assets.ForEachManifest(c.name, func(manifestName string) error {
-		obj, _, err := assets.LoadManifest(c.name, manifestName)
+	if err := assets.ForEachManifest(c.AssetDirName(), func(manifestName string) error {
+		obj, _, err := assets.LoadManifest(c.AssetDirName(), manifestName)
 		if err != nil {
 			return err
 		}
@@ -309,7 +332,7 @@ func (c *controlPlaneWorkload[T]) update(cpContext ControlPlaneContext) error {
 }
 
 func (c *controlPlaneWorkload[T]) reconcileWorkload(cpContext ControlPlaneContext) error {
-	workloadObj, err := c.workloadProvider.LoadManifest(c.Name())
+	workloadObj, err := c.workloadProvider.LoadManifest(c.AssetDirName())
 	if err != nil {
 		return fmt.Errorf("failed loading workload manifest: %w", err)
 	}

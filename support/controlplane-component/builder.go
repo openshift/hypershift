@@ -53,6 +53,11 @@ func NewJobComponent(name string, opts ComponentOptions) *controlPlaneWorkloadBu
 	}
 }
 
+func (b *controlPlaneWorkloadBuilder[T]) WithAssetDir(dir string) *controlPlaneWorkloadBuilder[T] {
+	b.workload.assetDir = dir
+	return b
+}
+
 func (b *controlPlaneWorkloadBuilder[T]) WithAdaptFunction(adapt func(cpContext WorkloadContext, obj T) error) *controlPlaneWorkloadBuilder[T] {
 	b.workload.adapt = adapt
 	return b
