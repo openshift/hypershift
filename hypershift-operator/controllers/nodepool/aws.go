@@ -207,6 +207,10 @@ func buildAWSSecurityGroups(nodePool *hyperv1.NodePool, hostedCluster *hyperv1.H
 }
 
 func applyAWSPlacementOptions(nodePool *hyperv1.NodePool, spec *capiaws.AWSMachineTemplateSpec) {
+	if cpuOptions := nodePool.Spec.Platform.AWS.CpuOptions; cpuOptions.NestedVirtualization != "" {
+		spec.Template.Spec.CPUOptions.NestedVirtualization = capiaws.NestedVirtualizationPolicy(cpuOptions.NestedVirtualization)
+	}
+
 	placement := nodePool.Spec.Platform.AWS.Placement
 	if placement == nil {
 		return
@@ -248,6 +252,7 @@ func applyAWSPlacementOptions(nodePool *hyperv1.NodePool, spec *capiaws.AWSMachi
 		spec.Template.Spec.CapacityReservationID = capacityReservation.ID
 		spec.Template.Spec.CapacityReservationPreference = capiaws.CapacityReservationPreference(capacityReservation.Preference)
 	}
+
 }
 
 func awsAdditionalTags(nodePool *hyperv1.NodePool, hostedCluster *hyperv1.HostedCluster, infraName string) capiaws.Tags {
