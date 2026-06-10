@@ -3798,6 +3798,22 @@ func TestReconcileExternalDNSStatusCondition(t *testing.T) {
 			expectedCondReason: hyperv1.StatusUnknownReason,
 			expectedMessage:    "External DNS is not configured",
 		},
+		{
+			name: "When disable-external-dns-management annotation is true, it should set ExternalDNSReachable to True",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "test-hcp",
+					Namespace:  testNamespace,
+					Generation: 1,
+					Annotations: map[string]string{
+						hyperv1.DisableExternalDNSManagementAnnotation: "true",
+					},
+				},
+			},
+			expectedCondStatus: metav1.ConditionTrue,
+			expectedCondReason: hyperv1.ExternalDNSManagementDisabledReason,
+			expectedMessage:    "External DNS management is disabled by annotation",
+		},
 	}
 
 	for _, tc := range testCases {

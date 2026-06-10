@@ -347,7 +347,7 @@ func (r *Reconciler) reconcileOAuthServerService(ctx context.Context, hcp *hyper
 	p := oauth.NewOAuthServiceParams(hcp)
 	oauthServerService := manifests.OauthServerService(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r.Client, oauthServerService, func() error {
-		return oauth.ReconcileService(oauthServerService, p.OwnerRef, serviceStrategy, hcp.Spec.Platform.Type, netutil.IsPrivateHCP(hcp))
+		return oauth.ReconcileService(oauthServerService, p.OwnerRef, serviceStrategy, hcp.Spec.Platform.Type, netutil.IsPrivateHCP(hcp), hcp.Annotations[hyperv1.DisableExternalDNSManagementAnnotation] == "true")
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile OAuth service: %w", err)
 	}

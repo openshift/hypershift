@@ -159,6 +159,14 @@ const (
 	// ExternalDNSHostnameAnnotation is the annotation external-dns uses to register DNS name for different HCP services.
 	ExternalDNSHostnameAnnotation = "external-dns.alpha.kubernetes.io/hostname"
 
+	// DisableExternalDNSManagementAnnotation when set to "true" on a HostedCluster prevents the
+	// control-plane-operator from adding the external-dns hostname annotation to LoadBalancer services
+	// (KAS, Konnectivity, and OAuth). It does not affect ExternalName services used by
+	// AWS PrivateLink or GCP Private Service Connect.
+	// This allows users to manage their own DNS records for the API and Konnectivity endpoints.
+	// The value must be exactly "true" to take effect; key-existence alone is not sufficient.
+	DisableExternalDNSManagementAnnotation = "hypershift.openshift.io/disable-external-dns-management"
+
 	// ForceUpgradeToAnnotation is the annotation that forces HostedCluster upgrade even if the underlying ClusterVersion
 	// is reporting it is not Upgradeable.  The annotation value must be set to the release image being forced.
 	ForceUpgradeToAnnotation = "hypershift.openshift.io/force-upgrade-to"
