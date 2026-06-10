@@ -27,6 +27,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
@@ -41,6 +42,7 @@ import (
 
 func RegisterHostedClusterAWSTests(getTestCtx internal.TestContextGetter) {
 	EnsureDefaultSecurityGroupTagsTest(getTestCtx)
+	EnsureInfrastructureResourceTagsTest(getTestCtx)
 	AWSCCMWithCustomizationsTest(getTestCtx)
 }
 
@@ -122,6 +124,66 @@ func EnsureDefaultSecurityGroupTagsTest(getTestCtx internal.TestContextGetter) {
 					Value: aws.String(day2TagValue),
 				}), "day-2 tag should be applied to the default worker security group")
 			}, 10*time.Minute, time.Second).Should(Succeed())
+		})
+	})
+}
+
+func EnsureInfrastructureResourceTagsTest(getTestCtx internal.TestContextGetter) {
+	When("a HostedCluster is created with additional AWS resource tags", func() {
+		It("should propagate those tags to the infrastructure resource in the hosted cluster", Label("AWS"), func() {
+			tc := getTestCtx()
+			hc := tc.GetHostedCluster()
+			if hc.Spec.Platform.Type != hyperv1.AWSPlatform {
+				Skip("hosted cluster infrastructure resource tags test is only for AWS platform")
+			}
+			if hc.Spec.Platform.AWS == nil {
+				Skip("HostedCluster does not have AWS platform spec")
+			}
+
+			specTags := hc.Spec.Platform.AWS.ResourceTags
+			if len(specTags) == 0 {
+				Skip("HostedCluster does not have AWS resource tags configured")
+			}
+
+			// Filter kubernetes.io prefixed keys to match production logic in
+			// support/globalconfig/infrastructure.go which skips them to avoid
+			// breaking the AWS CSI driver.
+			var expectedTags []configv1.AWSResourceTag
+			for _, tag := range specTags {
+				if strings.HasPrefix(tag.Key, "kubernetes.io") {
+					continue
+				}
+				expectedTags = append(expectedTags, configv1.AWSResourceTag{
+					Key:   tag.Key,
+					Value: tag.Value,
+				})
+			}
+			if len(expectedTags) == 0 {
+				Skip("HostedCluster has only kubernetes.io-prefixed tags which are filtered out")
+			}
+
+			tc.ValidateHostedClusterClient()
+			hcClient := tc.GetHostedClusterClient()
+
+			infra := &configv1.Infrastructure{}
+			Expect(hcClient.Get(tc.Context, crclient.ObjectKey{Name: "cluster"}, infra)).To(Succeed(),
+				"failed to get infrastructure/cluster from hosted cluster")
+
+			Expect(infra.Status.PlatformStatus).NotTo(BeNil(),
+				"infrastructure/cluster should have platform status")
+			Expect(infra.Status.PlatformStatus.AWS).NotTo(BeNil(),
+				"infrastructure/cluster should have AWS platform status")
+			Expect(infra.Status.PlatformStatus.AWS.ResourceTags).NotTo(BeEmpty(),
+				"infrastructure/cluster AWS platform status should have resource tags")
+
+			for _, expected := range expectedTags {
+				Expect(infra.Status.PlatformStatus.AWS.ResourceTags).To(
+					ContainElement(expected),
+					"infrastructure resource should contain tag %s=%s", expected.Key, expected.Value)
+			}
+
+			Expect(infra.Status.PlatformStatus.AWS.ResourceTags).To(HaveLen(len(expectedTags)),
+				"infrastructure resource should have exactly the non-kubernetes.io tags, no extra tags should leak through")
 		})
 	})
 }
