@@ -22,7 +22,8 @@ import (
 )
 
 type Options struct {
-	Namespace string
+	Namespace        string
+	LeaderElectionID string
 }
 
 func NewStartCommand() *cobra.Command {
@@ -36,6 +37,7 @@ func NewStartCommand() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&opts.Namespace, "namespace", os.Getenv("MY_NAMESPACE"), "The namespace this operator lives in (required)")
+	cmd.Flags().StringVar(&opts.LeaderElectionID, "leader-election-id", "etcd-defrag-controller-leader-elect", "The leader election lease name")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctx, cancel := context.WithCancel(context.Background())
@@ -70,7 +72,7 @@ func run(ctx context.Context, opts Options) error {
 	mgr, err := ctrl.NewManager(restConfig, ctrl.Options{
 		Scheme:                        hyperapi.Scheme,
 		LeaderElection:                true,
-		LeaderElectionID:              "etcd-defrag-controller-leader-elect",
+		LeaderElectionID:              opts.LeaderElectionID,
 		LeaderElectionResourceLock:    "leases",
 		LeaderElectionNamespace:       opts.Namespace,
 		LeaderElectionReleaseOnCancel: true,
