@@ -17,8 +17,10 @@ type nodePoolAutoScalingNMinus1 struct {
 }
 
 type awsNodePoolPlatformNMinus1 struct {
-	InstanceType string               `json:"instanceType"`
-	Subnet       AWSResourceReference `json:"subnet"`
+	// instanceType is the EC2 instance type.
+	InstanceType string `json:"instanceType"` //nolint:kubeapilinter // test-only N-1 compat struct
+	// subnet is the subnet reference.
+	Subnet AWSResourceReference `json:"subnet"` //nolint:kubeapilinter // test-only N-1 compat struct
 }
 
 func TestNodePoolAutoScalingSerializationCompatibility(t *testing.T) {
