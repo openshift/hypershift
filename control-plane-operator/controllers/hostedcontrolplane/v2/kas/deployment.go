@@ -108,6 +108,15 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 	// pod crashing. For unmanaged, make no assumptions.
 	if hcp.Spec.Etcd.ManagementType == hyperv1.Unmanaged {
 		podspec.RemoveInitContainer("wait-for-etcd", &deployment.Spec.Template.Spec)
+	} else if hcp.Spec.Etcd.Managed != nil && len(hcp.Spec.Etcd.Managed.Shards) > 0 {
+		var dnsChecks []string
+		dnsChecks = append(dnsChecks, "while ! nslookup etcd-client.$(POD_NAMESPACE).svc; do sleep 1; done")
+		for _, shard := range hcp.Spec.Etcd.Managed.Shards {
+			dnsChecks = append(dnsChecks, fmt.Sprintf("while ! nslookup etcd-client-%s.$(POD_NAMESPACE).svc; do sleep 1; done", shard.Name))
+		}
+		podspec.UpdateContainer("wait-for-etcd", deployment.Spec.Template.Spec.InitContainers, func(c *corev1.Container) {
+			c.Args = []string{"-c", fmt.Sprintf("#!/bin/sh\n%s", strings.Join(dnsChecks, "\n"))}
+		})
 	}
 
 	// If the built-in OAuth stack is not enabled, there is no need to do the auth-related

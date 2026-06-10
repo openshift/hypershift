@@ -243,6 +243,16 @@ func (r *HostedControlPlaneReconciler) registerComponents(hcp *hyperv1.HostedCon
 	r.components = append(r.components,
 		pkioperatorv2.NewComponent(r.CertRotationScale),
 		etcdv2.NewComponent(),
+	)
+
+	// Register additional etcd shard components conditionally
+	if hcp.Spec.Etcd.ManagementType == hyperv1.Managed && hcp.Spec.Etcd.Managed != nil {
+		for _, shard := range hcp.Spec.Etcd.Managed.Shards {
+			r.components = append(r.components, etcdv2.NewShardComponent(shard))
+		}
+	}
+
+	r.components = append(r.components,
 		fgv2.NewComponent(),
 		kasv2.NewComponent(),
 		kcmv2.NewComponent(),
@@ -1412,6 +1422,29 @@ func (r *HostedControlPlaneReconciler) reconcileEtcdCerts(ctx context.Context, h
 		return pki.ReconcileEtcdMetricsClientSecret(etcdMetricsClientSecret, etcdMetricsSignerSecret, p.OwnerRef)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile etcd client secret: %w", err)
+	}
+
+	// Reconcile per-shard server and peer TLS secrets.
+	// Shards reuse the default etcd-client-tls secret for client auth (same CA),
+	// but need their own server/peer certs with shard-specific DNS SANs.
+	if hcp.Spec.Etcd.ManagementType == hyperv1.Managed && hcp.Spec.Etcd.Managed != nil {
+		for _, shard := range hcp.Spec.Etcd.Managed.Shards {
+			shardName := fmt.Sprintf("etcd-%s", shard.Name)
+
+			shardServerSecret := manifests.EtcdShardServerSecret(hcp.Namespace, shardName)
+			if _, err := createOrUpdate(ctx, r, shardServerSecret, func() error {
+				return pki.ReconcileEtcdShardServerSecret(shardServerSecret, etcdSignerSecret, p.OwnerRef, shardName)
+			}); err != nil {
+				return fmt.Errorf("failed to reconcile etcd shard %s server secret: %w", shardName, err)
+			}
+
+			shardPeerSecret := manifests.EtcdShardPeerSecret(hcp.Namespace, shardName)
+			if _, err := createOrUpdate(ctx, r, shardPeerSecret, func() error {
+				return pki.ReconcileEtcdShardPeerSecret(shardPeerSecret, etcdSignerSecret, p.OwnerRef, shardName)
+			}); err != nil {
+				return fmt.Errorf("failed to reconcile etcd shard %s peer secret: %w", shardName, err)
+			}
+		}
 	}
 
 	return nil
