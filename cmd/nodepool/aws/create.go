@@ -22,6 +22,7 @@ type AWSPlatformCreateOptions struct {
 	RootVolumeIOPS          int64
 	RootVolumeSize          int64
 	RootVolumeEncryptionKey string
+	NestedVirtualization    string
 }
 
 type RawAWSPlatformCreateOptions struct {
@@ -104,6 +105,7 @@ func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
 	}
 
 	BindDeveloperOptions(platformOpts, cmd.Flags())
+	cmd.Flags().StringVar(&platformOpts.NestedVirtualization, "nested-virtualization", platformOpts.NestedVirtualization, "Enable nested virtualization on EC2 instances (enabled or disabled). Supported on C8i, M8i, and R8i instance families.")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
@@ -169,6 +171,11 @@ func (o *CompletedAWSPlatformCreateOptions) UpdateNodePool(ctx context.Context, 
 	if len(o.SecurityGroupID) > 0 {
 		nodePool.Spec.Platform.AWS.SecurityGroups = []hyperv1.AWSResourceReference{
 			{ID: &o.SecurityGroupID},
+		}
+	}
+	if o.NestedVirtualization != "" {
+		nodePool.Spec.Platform.AWS.CpuOptions = hyperv1.CpuOptions{
+			NestedVirtualization: o.NestedVirtualization,
 		}
 	}
 	return nil

@@ -61,6 +61,7 @@ type RawCreateOptions struct {
 	AutoNode                         bool
 	UseROSAManagedPolicies           bool
 	SharedRole                       bool
+	NestedVirtualization             string
 }
 
 // validatedCreateOptions is a private wrapper that enforces a call of Validate() before Complete() can be invoked.
@@ -406,6 +407,11 @@ func (o *CreateOptions) GenerateNodePools(constructor core.DefaultNodePoolConstr
 				EncryptionKey: o.RootVolumeEncryptionKey,
 			},
 		}
+		if o.NestedVirtualization != "" {
+			nodePool.Spec.Platform.AWS.CpuOptions = hyperv1.CpuOptions{
+				NestedVirtualization: o.NestedVirtualization,
+			}
+		}
 		nodePools = append(nodePools, nodePool)
 	}
 	return nodePools
@@ -505,6 +511,7 @@ func bindCoreOptions(opts *RawCreateOptions, flags *flag.FlagSet) {
 	flags.BoolVar(&opts.PublicOnly, "public-only", opts.PublicOnly, "If true, creates a cluster that does not have private subnets or NAT gateway and assigns public IPs to all instances.")
 	flags.BoolVar(&opts.UseROSAManagedPolicies, "use-rosa-managed-policies", opts.UseROSAManagedPolicies, "Use ROSA managed policies for the operator roles and worker instance profile")
 	flags.BoolVar(&opts.SharedRole, "shared-role", opts.SharedRole, "Create a single shared role with all role policies instead of individual component roles")
+	flags.StringVar(&opts.NestedVirtualization, "nested-virtualization", opts.NestedVirtualization, "Enable nested virtualization on EC2 instances (enabled or disabled). Supported on C8i, M8i, and R8i instance families.")
 
 	_ = flags.MarkDeprecated("multi-arch", "Multi-arch validation is now performed automatically based on the release image and signaled in the HostedCluster.Status.PayloadArch.")
 }
