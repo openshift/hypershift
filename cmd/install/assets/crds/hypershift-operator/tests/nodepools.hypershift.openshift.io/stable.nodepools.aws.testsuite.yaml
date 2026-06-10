@@ -55,7 +55,7 @@ tests:
               id: "subnet-any"
             cpuOptions: {}
           type: AWS
-    expectedError: "platform.aws.cpuOptions: Invalid value: \"object\": should have at least 1 properties"
+    expectedError: "cpuOptions in body should have at least 1 properties"
 
   - name: when nested virtualization has an invalid value it should fail
     initial: |
@@ -82,7 +82,7 @@ tests:
             cpuOptions:
               nestedVirtualization: unsupported
           type: AWS
-    expectedError: "Unsupported value: \"unsupported\": supported values: \"disabled\", \"enabled\""
+    expectedError: "Unsupported value: \"unsupported\": supported values: \"enabled\", \"disabled\""
 
   # --- AWS Placement / Capacity Reservation validation ---
   - name: when tenancy is host and capacity reservation is specified it should fail
