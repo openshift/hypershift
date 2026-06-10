@@ -299,22 +299,31 @@ func updateBootstrapInitContainer(deployment *appsv1.Deployment, hcp *hyperv1.Ho
 }
 
 func applyAWSPodIdentityWebhookContainer(podSpec *corev1.PodSpec, hcp *hyperv1.HostedControlPlane) {
+	command := []string{
+		"/usr/bin/aws-pod-identity-webhook",
+		"--annotation-prefix=eks.amazonaws.com",
+		"--in-cluster=false",
+		"--kubeconfig=/var/run/app/kubeconfig/kubeconfig",
+		"--logtostderr",
+		"--port=4443",
+		fmt.Sprintf("--aws-default-region=%s", hcp.Spec.Platform.AWS.Region),
+		"--tls-cert=/var/run/app/certs/tls.crt",
+		"--tls-key=/var/run/app/certs/tls.key",
+		"--token-audience=openshift",
+	}
+
+	if tlsMinVersion := config.MinTLSVersion(hcp.Spec.Configuration.GetTLSSecurityProfile()); tlsMinVersion != "" {
+		command = append(command, fmt.Sprintf("--tls-min-version=%s", tlsMinVersion))
+	}
+	if cipherSuites := config.CipherSuites(hcp.Spec.Configuration.GetTLSSecurityProfile()); len(cipherSuites) != 0 {
+		command = append(command, fmt.Sprintf("--tls-cipher-suites=%s", strings.Join(cipherSuites, ",")))
+	}
+
 	podSpec.Containers = append(podSpec.Containers, corev1.Container{
 		Name:            "aws-pod-identity-webhook",
 		Image:           "aws-pod-identity-webhook",
 		ImagePullPolicy: corev1.PullIfNotPresent,
-		Command: []string{
-			"/usr/bin/aws-pod-identity-webhook",
-			"--annotation-prefix=eks.amazonaws.com",
-			"--in-cluster=false",
-			"--kubeconfig=/var/run/app/kubeconfig/kubeconfig",
-			"--logtostderr",
-			"--port=4443",
-			fmt.Sprintf("--aws-default-region=%s", hcp.Spec.Platform.AWS.Region),
-			"--tls-cert=/var/run/app/certs/tls.crt",
-			"--tls-key=/var/run/app/certs/tls.key",
-			"--token-audience=openshift",
-		},
+		Command:         command,
 		Resources: corev1.ResourceRequirements{
 			Requests: corev1.ResourceList{
 				corev1.ResourceCPU:    resource.MustParse("10m"),
