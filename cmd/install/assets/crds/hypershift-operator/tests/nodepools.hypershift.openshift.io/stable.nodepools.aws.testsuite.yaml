@@ -4,6 +4,86 @@ crdName: nodepools.hypershift.openshift.io
 version: v1beta1
 tests:
   onCreate:
+  # --- AWS CPU options validation ---
+  - name: when nested virtualization is enabled it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: NodePool
+      spec:
+        arch: amd64
+        clusterName: some-cluster
+        management:
+          autoRepair: false
+          upgradeType: Replace
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
+        replicas: 0
+        platform:
+          aws:
+            instanceProfile: a-profile
+            instanceType: m6i.large
+            rootVolume:
+              size: 120
+              type: gp3
+            subnet:
+              id: "subnet-any"
+            cpuOptions:
+              nestedVirtualization: enabled
+          type: AWS
+
+  - name: when cpuOptions is empty it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: NodePool
+      spec:
+        arch: amd64
+        clusterName: some-cluster
+        management:
+          autoRepair: false
+          upgradeType: Replace
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
+        replicas: 0
+        platform:
+          aws:
+            instanceProfile: a-profile
+            instanceType: m6i.large
+            rootVolume:
+              size: 120
+              type: gp3
+            subnet:
+              id: "subnet-any"
+            cpuOptions: {}
+          type: AWS
+    expectedError: "platform.aws.cpuOptions: Invalid value: \"object\": should have at least 1 properties"
+
+  - name: when nested virtualization has an invalid value it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: NodePool
+      spec:
+        arch: amd64
+        clusterName: some-cluster
+        management:
+          autoRepair: false
+          upgradeType: Replace
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
+        replicas: 0
+        platform:
+          aws:
+            instanceProfile: a-profile
+            instanceType: m6i.large
+            rootVolume:
+              size: 120
+              type: gp3
+            subnet:
+              id: "subnet-any"
+            cpuOptions:
+              nestedVirtualization: unsupported
+          type: AWS
+    expectedError: "Unsupported value: \"unsupported\": supported values: \"disabled\", \"enabled\""
+
   # --- AWS Placement / Capacity Reservation validation ---
   - name: when tenancy is host and capacity reservation is specified it should fail
     initial: |
