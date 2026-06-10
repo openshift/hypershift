@@ -137,6 +137,28 @@ func ReconcileInternalRoute(route *routev1.Route, hcName string, serviceName str
 	return nil
 }
 
+// RouteHost returns the hostname for a route.
+//
+// It checks Spec.Host first (set by the OpenShift default router or explicitly
+// by the CPO), then falls back to Status.Ingress[0].Host (populated by
+// ReconcileRouteStatus from Spec.Host).
+//
+// RouterCanonicalHostname is intentionally not used: it is the shared router
+// LB address, not a route-specific hostname, so it cannot be used for SNI
+// routing or endpoint configuration.
+func RouteHost(route *routev1.Route) string {
+	if route == nil {
+		return ""
+	}
+	if route.Spec.Host != "" {
+		return route.Spec.Host
+	}
+	if len(route.Status.Ingress) > 0 && route.Status.Ingress[0].Host != "" {
+		return route.Status.Ingress[0].Host
+	}
+	return ""
+}
+
 func AddHCPRouteLabel(target crclient.Object) {
 	labels := target.GetLabels()
 	if labels == nil {

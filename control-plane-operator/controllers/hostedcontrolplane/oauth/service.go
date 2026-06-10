@@ -7,6 +7,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	azureutil "github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/netutil"
 
 	routev1 "github.com/openshift/api/route/v1"
 
@@ -91,12 +92,13 @@ func ReconcileServiceStatus(svc *corev1.Service, route *routev1.Route, strategy 
 			port = RouteExternalPort
 			return
 		}
-		if route.Spec.Host == "" {
+		routeHost := netutil.RouteHost(route)
+		if routeHost == "" {
 			message = fmt.Sprintf("OAuth service route does not contain valid host; %v since creation", duration.ShortHumanDuration(time.Since(route.ObjectMeta.CreationTimestamp.Time)))
 			return
 		}
 		port = RouteExternalPort
-		host = route.Spec.Host
+		host = routeHost
 	case hyperv1.NodePort:
 		if strategy.NodePort == nil {
 			err = fmt.Errorf("strategy details not specified for OAuth nodeport type service")

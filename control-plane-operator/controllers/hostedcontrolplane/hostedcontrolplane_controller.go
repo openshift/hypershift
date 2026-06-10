@@ -760,7 +760,7 @@ func (r *HostedControlPlaneReconciler) reconcileInfrastructureStatusCondition(ct
 			Reason:  hyperv1.WaitingOnInfrastructureReadyReason,
 			Message: message,
 		}
-		r.Log.Info("Infrastructure is not yet ready")
+		r.Log.Info("Infrastructure is not yet ready", "infraStatus", infraStatus)
 	}
 	newCondition.ObservedGeneration = hostedControlPlane.Generation
 	meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, newCondition)
@@ -1091,7 +1091,7 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 		return reconcile.Result{}, fmt.Errorf("failed to look up infra status: %w", err)
 	}
 	if !infraStatus.IsReady() {
-		r.Log.Info("Waiting for infrastructure to be ready before proceeding")
+		r.Log.Info("Waiting for infrastructure to be ready before proceeding", "infraStatus", infraStatus)
 		return reconcile.Result{RequeueAfter: time.Minute}, nil
 	}
 

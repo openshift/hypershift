@@ -309,6 +309,49 @@ func TestReconcileServiceStatus(t *testing.T) {
 			expectedMessage: "OAuth LoadBalancer not yet provisioned; 5m since creation",
 		},
 		{
+			name: "When Route strategy has Spec.Host empty but Status.Ingress[0].RouterCanonicalHostname is set, it should return empty host because RouterCanonicalHostname is not route-specific",
+			svc:  &corev1.Service{},
+			route: &routev1.Route{
+				ObjectMeta: metav1.ObjectMeta{
+					CreationTimestamp: metav1.NewTime(time.Now().Add(-1 * time.Minute)),
+				},
+				Status: routev1.RouteStatus{
+					Ingress: []routev1.RouteIngress{
+						{
+							RouterCanonicalHostname: "router-canonical.aks.example.com",
+						},
+					},
+				},
+			},
+			strategy: &v1beta1.ServicePublishingStrategy{
+				Type: v1beta1.Route,
+			},
+			expectedHost:    "",
+			expectedPort:    0,
+			expectedMessage: "OAuth service route does not contain valid host; 1m since creation",
+		},
+		{
+			name: "When Route strategy has Spec.Host empty but Status.Ingress[0].Host is set, it should return the ingress host and port 443",
+			svc:  &corev1.Service{},
+			route: &routev1.Route{
+				ObjectMeta: metav1.ObjectMeta{
+					CreationTimestamp: metav1.NewTime(time.Now().Add(-1 * time.Minute)),
+				},
+				Status: routev1.RouteStatus{
+					Ingress: []routev1.RouteIngress{
+						{
+							Host: "ingress.example.com",
+						},
+					},
+				},
+			},
+			strategy: &v1beta1.ServicePublishingStrategy{
+				Type: v1beta1.Route,
+			},
+			expectedHost: "ingress.example.com",
+			expectedPort: 443,
+		},
+		{
 			name: "When LoadBalancer ingress has neither hostname nor IP, it should return a message indicating blank ingress",
 			svc: &corev1.Service{
 				ObjectMeta: metav1.ObjectMeta{

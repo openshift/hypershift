@@ -3,16 +3,22 @@ package kas
 import (
 	"fmt"
 	"testing"
+	"time"
 
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/events"
+
+	routev1 "github.com/openshift/api/route/v1"
 
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 func TestReconcileService(t *testing.T) {
@@ -434,6 +440,277 @@ func TestKonnectivityServiceReconcile(t *testing.T) {
 				g.Expect(tc.svc_in.Spec.Ports).To(Equal(tc.svc_out.Spec.Ports))
 			} else {
 				g.Expect(tc.err.Error()).To(Equal(err.Error()))
+			}
+		})
+	}
+}
+
+type fakeMessageCollector struct{}
+
+func (c *fakeMessageCollector) ErrorMessages(resource crclient.Object) ([]string, error) {
+	return nil, nil
+}
+
+var _ events.MessageCollector = &fakeMessageCollector{}
+
+func TestReconcileServiceStatus(t *testing.T) {
+	testCases := []struct {
+		name            string
+		svc             *corev1.Service
+		strategy        *hyperv1.ServicePublishingStrategy
+		apiServerPort   int
+		expectedHost    string
+		expectedPort    int32
+		expectedMessage string
+		expectedErr     error
+	}{
+		{
+			name: "When LoadBalancer strategy has a configured hostname but LB is not provisioned, it should still wait for LB",
+			svc: &corev1.Service{
+				ObjectMeta: v1.ObjectMeta{
+					CreationTimestamp: v1.NewTime(time.Now().Add(-5 * time.Minute)),
+				},
+				// No LoadBalancer ingress status — LB not yet provisioned
+			},
+			strategy: &hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.LoadBalancer,
+				LoadBalancer: &hyperv1.LoadBalancerPublishingStrategy{
+					Hostname: "kube-apiserver.my-hcp-ns.svc.cluster.local",
+				},
+			},
+			apiServerPort:   config.KASSVCPort,
+			expectedHost:    "",
+			expectedPort:    0,
+			expectedMessage: "load balancer is not provisioned",
+		},
+		{
+			name: "When LoadBalancer strategy has a configured hostname and LB is provisioned, it should return the configured hostname",
+			svc: &corev1.Service{
+				Status: corev1.ServiceStatus{
+					LoadBalancer: corev1.LoadBalancerStatus{
+						Ingress: []corev1.LoadBalancerIngress{
+							{Hostname: "kas.test.elb.amazonaws.com"},
+						},
+					},
+				},
+			},
+			strategy: &hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.LoadBalancer,
+				LoadBalancer: &hyperv1.LoadBalancerPublishingStrategy{
+					Hostname: "kube-apiserver.my-hcp-ns.svc.cluster.local",
+				},
+			},
+			apiServerPort: config.KASSVCPort,
+			expectedHost:  "kube-apiserver.my-hcp-ns.svc.cluster.local",
+			expectedPort:  int32(config.KASSVCPort),
+		},
+		{
+			name: "When LoadBalancer strategy has no configured hostname and LB is not provisioned, it should return a message",
+			svc: &corev1.Service{
+				ObjectMeta: v1.ObjectMeta{
+					CreationTimestamp: v1.NewTime(time.Now().Add(-5 * time.Minute)),
+				},
+			},
+			strategy: &hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.LoadBalancer,
+			},
+			apiServerPort:   config.KASSVCPort,
+			expectedHost:    "",
+			expectedPort:    0,
+			expectedMessage: "load balancer is not provisioned",
+		},
+		{
+			name: "When LoadBalancer strategy has no configured hostname and LB has ingress hostname, it should return the LB hostname",
+			svc: &corev1.Service{
+				Status: corev1.ServiceStatus{
+					LoadBalancer: corev1.LoadBalancerStatus{
+						Ingress: []corev1.LoadBalancerIngress{
+							{Hostname: "kas.test.elb.amazonaws.com"},
+						},
+					},
+				},
+			},
+			strategy: &hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.LoadBalancer,
+			},
+			apiServerPort: config.KASSVCPort,
+			expectedHost:  "kas.test.elb.amazonaws.com",
+			expectedPort:  int32(config.KASSVCPort),
+		},
+		{
+			name: "When LoadBalancer strategy has no configured hostname and LB has ingress IP, it should return the LB IP",
+			svc: &corev1.Service{
+				Status: corev1.ServiceStatus{
+					LoadBalancer: corev1.LoadBalancerStatus{
+						Ingress: []corev1.LoadBalancerIngress{
+							{IP: "10.0.0.1"},
+						},
+					},
+				},
+			},
+			strategy: &hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.LoadBalancer,
+			},
+			apiServerPort: config.KASSVCPort,
+			expectedHost:  "10.0.0.1",
+			expectedPort:  int32(config.KASSVCPort),
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			host, port, message, err := ReconcileServiceStatus(tc.svc, tc.strategy, tc.apiServerPort, &fakeMessageCollector{})
+			if tc.expectedErr != nil {
+				g.Expect(err).To(MatchError(tc.expectedErr))
+			} else {
+				g.Expect(err).To(BeNil())
+			}
+			g.Expect(host).To(Equal(tc.expectedHost))
+			g.Expect(port).To(Equal(tc.expectedPort))
+			if tc.expectedMessage != "" {
+				g.Expect(message).To(ContainSubstring(tc.expectedMessage))
+			} else {
+				g.Expect(message).To(BeEmpty())
+			}
+		})
+	}
+}
+
+func TestReconcileKonnectivityServerServiceStatus(t *testing.T) {
+	testCases := []struct {
+		name            string
+		svc             *corev1.Service
+		route           *routev1.Route
+		strategy        *hyperv1.ServicePublishingStrategy
+		expectedHost    string
+		expectedPort    int32
+		expectedMessage string
+		expectedErr     error
+	}{
+		{
+			name: "When Route strategy has Spec.Host set, it should return Spec.Host and port 443",
+			svc:  &corev1.Service{},
+			route: &routev1.Route{
+				Spec: routev1.RouteSpec{
+					Host: "konnectivity.example.com",
+				},
+			},
+			strategy: &hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.Route,
+			},
+			expectedHost: "konnectivity.example.com",
+			expectedPort: 443,
+		},
+		{
+			name:  "When Route strategy has configured hostname, it should return the configured hostname and port 443",
+			svc:   &corev1.Service{},
+			route: &routev1.Route{},
+			strategy: &hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.Route,
+				Route: &hyperv1.RoutePublishingStrategy{
+					Hostname: "konnectivity.configured.example.com",
+				},
+			},
+			expectedHost: "konnectivity.configured.example.com",
+			expectedPort: 443,
+		},
+		{
+			name: "When Route strategy has Spec.Host empty but Status.Ingress[0].RouterCanonicalHostname is set, it should return empty host because RouterCanonicalHostname is not route-specific",
+			svc:  &corev1.Service{},
+			route: &routev1.Route{
+				Status: routev1.RouteStatus{
+					Ingress: []routev1.RouteIngress{
+						{
+							RouterCanonicalHostname: "router-canonical.aks.example.com",
+						},
+					},
+				},
+			},
+			strategy: &hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.Route,
+			},
+			expectedHost: "",
+			expectedPort: 0,
+		},
+		{
+			name: "When Route strategy has Spec.Host empty but Status.Ingress[0].Host is set, it should return the ingress host and port 443",
+			svc:  &corev1.Service{},
+			route: &routev1.Route{
+				Status: routev1.RouteStatus{
+					Ingress: []routev1.RouteIngress{
+						{
+							Host: "ingress.example.com",
+						},
+					},
+				},
+			},
+			strategy: &hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.Route,
+			},
+			expectedHost: "ingress.example.com",
+			expectedPort: 443,
+		},
+		{
+			name:  "When Route strategy has all host fields empty, it should return empty host and port 0",
+			svc:   &corev1.Service{},
+			route: &routev1.Route{},
+			strategy: &hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.Route,
+			},
+			expectedHost: "",
+			expectedPort: 0,
+		},
+		{
+			name: "When LoadBalancer strategy has no ingress, it should return a message indicating LB is not provisioned",
+			svc: &corev1.Service{
+				ObjectMeta: v1.ObjectMeta{
+					CreationTimestamp: v1.NewTime(time.Now().Add(-5 * time.Minute)),
+				},
+			},
+			route: &routev1.Route{},
+			strategy: &hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.LoadBalancer,
+			},
+			expectedHost:    "",
+			expectedPort:    0,
+			expectedMessage: "Konnectivity load balancer is not provisioned",
+		},
+		{
+			name: "When LoadBalancer strategy has an ingress hostname, it should return the hostname and the konnectivity port",
+			svc: &corev1.Service{
+				Status: corev1.ServiceStatus{
+					LoadBalancer: corev1.LoadBalancerStatus{
+						Ingress: []corev1.LoadBalancerIngress{
+							{Hostname: "lb.example.com"},
+						},
+					},
+				},
+			},
+			route: &routev1.Route{},
+			strategy: &hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.LoadBalancer,
+			},
+			expectedHost: "lb.example.com",
+			expectedPort: int32(KonnectivityServerPort),
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			host, port, message, err := ReconcileKonnectivityServerServiceStatus(tc.svc, tc.route, tc.strategy, &fakeMessageCollector{})
+			if tc.expectedErr != nil {
+				g.Expect(err).To(MatchError(tc.expectedErr))
+			} else {
+				g.Expect(err).To(BeNil())
+			}
+			g.Expect(host).To(Equal(tc.expectedHost))
+			g.Expect(port).To(Equal(tc.expectedPort))
+			if tc.expectedMessage != "" {
+				g.Expect(message).To(ContainSubstring(tc.expectedMessage))
+			} else {
+				g.Expect(message).To(BeEmpty())
 			}
 		})
 	}

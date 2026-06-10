@@ -396,11 +396,12 @@ func ReconcileKonnectivityServerServiceStatus(svc *corev1.Service, route *routev
 			port = 443
 			return
 		}
-		if route.Spec.Host == "" {
+		routeHost := netutil.RouteHost(route)
+		if routeHost == "" {
 			return
 		}
 		port = 443
-		host = route.Spec.Host
+		host = routeHost
 	}
 	return
 }
