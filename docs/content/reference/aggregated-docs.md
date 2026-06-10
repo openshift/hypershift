@@ -44400,6 +44400,118 @@ and the user is responsible for doing so.</p>
 </td>
 </tr></tbody>
 </table>
+###EtcdShardResource { #hypershift.openshift.io/v1beta1.EtcdShardResource }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.ManagedEtcdShardSpec">ManagedEtcdShardSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.UnmanagedEtcdShardSpec">UnmanagedEtcdShardSpec</a>)
+</p>
+<p>
+<p>EtcdShardResource identifies a Kubernetes resource type to be routed to an
+etcd shard. It is used to build the KAS &ndash;etcd-servers-overrides flag.
+The combination of apiGroup and resource uniquely identifies a resource type.</p>
+<p>Routing only takes effect for resource types compiled into the
+kube-apiserver binary (built-in types such as events, pods, or
+coordination.k8s.io/leases). This is a kube-apiserver limitation:
+&ndash;etcd-servers-overrides does not apply to other resource types. In
+particular, resources backed by CustomResourceDefinitions and resources
+served by aggregated API servers (such as the openshift.io groups served
+by openshift-apiserver and oauth-apiserver) are NOT routed: entries for
+such resources are accepted but have no effect, and their data remains in
+the default shard while the configured shard stays empty.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>apiGroup</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>apiGroup is the API group of the resource (e.g., &ldquo;coordination.k8s.io&rdquo;
+for leases). An empty string designates the core API group (e.g.,
+events, pods, configmaps). For core-group resources, specify
+apiGroup: &ldquo;&rdquo; explicitly (e.g., {apiGroup: &ldquo;&rdquo;, resource: &ldquo;events&rdquo;}).
+When non-empty, must be at most 253 characters in length and consist
+of only lowercase alphanumeric characters, hyphens and periods. Each
+period separated segment must start and end with an alphanumeric
+character.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>resource</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>resource is the plural resource name (e.g., &ldquo;events&rdquo;, &ldquo;leases&rdquo;,
+&ldquo;configmaps&rdquo;). Must be a valid DNS label (RFC 1123): lowercase
+alphanumeric characters or hyphens, starting and ending with an
+alphanumeric character, max 63 characters.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###EtcdShardSchedulingSpec { #hypershift.openshift.io/v1beta1.EtcdShardSchedulingSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.ManagedEtcdShardSpec">ManagedEtcdShardSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.ManagedEtcdSpec">ManagedEtcdSpec</a>)
+</p>
+<p>
+<p>EtcdShardSchedulingSpec configures pod placement for a single etcd shard.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>nodeSelector</code></br>
+<em>
+map[string]string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>nodeSelector constrains this shard&rsquo;s pods to nodes matching the
+specified labels, in addition to the framework&rsquo;s control plane node
+selector. Keys and values must be valid Kubernetes label key/value
+pairs. Maximum 16 entries.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>tolerations</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#toleration-v1-core">
+[]Kubernetes core/v1.Toleration
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>tolerations allows this shard&rsquo;s pods to schedule on nodes with
+matching taints, in addition to the framework&rsquo;s control plane
+tolerations. Maximum 16 entries.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###EtcdSpec { #hypershift.openshift.io/v1beta1.EtcdSpec }
 <p>
 (<em>Appears on:</em>
@@ -49935,6 +50047,210 @@ string
 </tr>
 </tbody>
 </table>
+###ManagedEtcdShardPersistentVolumeSpec { #hypershift.openshift.io/v1beta1.ManagedEtcdShardPersistentVolumeSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.ManagedEtcdShardStorageSpec">ManagedEtcdShardStorageSpec</a>)
+</p>
+<p>
+<p>ManagedEtcdShardPersistentVolumeSpec configures PVC storage for an etcd shard.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>storageClassName</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>storageClassName overrides the StorageClass for this shard&rsquo;s PVCs.
+If not specified, the parent ManagedEtcdSpec&rsquo;s storageClassName is used.
+Must be a valid DNS1123 subdomain (lowercase alphanumeric, hyphens, or
+dots, starting and ending with an alphanumeric character), max 253
+characters.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###ManagedEtcdShardSpec { #hypershift.openshift.io/v1beta1.ManagedEtcdShardSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.ManagedEtcdSpec">ManagedEtcdSpec</a>)
+</p>
+<p>
+<p>ManagedEtcdShardSpec defines the configuration for a single etcd shard
+within a managed etcd deployment.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>name</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>name is a unique identifier for this shard. It is used to derive
+resource names (e.g., StatefulSet &ldquo;etcd-{name}&rdquo;, Service
+&ldquo;etcd-client-{name}&rdquo;).
+Must be a valid DNS1123 label (lowercase alphanumeric with hyphens,
+starting and ending with an alphanumeric character), max 48 characters.
+Immutable once set.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>resources</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.EtcdShardResource">
+[]EtcdShardResource
+</a>
+</em>
+</td>
+<td>
+<p>resources is the list of Kubernetes resource types routed to this
+shard. Each entry identifies a resource by its API group and plural
+resource name. For example, events in the core group would be
+{apiGroup: &ldquo;&rdquo;, resource: &ldquo;events&rdquo;}, and leases in the coordination group would be
+{apiGroup: &ldquo;coordination.k8s.io&rdquo;, resource: &ldquo;leases&rdquo;}.
+Only resource types built into the kube-apiserver are routed; entries
+for CRD-backed or aggregated API resources have no effect (see
+EtcdShardResource).
+Minimum 1, maximum 20 entries. Immutable once set.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>storage,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ManagedEtcdShardStorageSpec">
+ManagedEtcdShardStorageSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>storage configures the storage backend for this shard.
+If not specified, the shard inherits PersistentVolume storage from
+the parent ManagedEtcdSpec.Storage. Immutable once set.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>replicas</code></br>
+<em>
+int32
+</em>
+</td>
+<td>
+<p>replicas is the number of etcd replicas for this shard. Must be 1 or 3.
+Immutable once set.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>scheduling,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.EtcdShardSchedulingSpec">
+EtcdShardSchedulingSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>scheduling configures per-shard pod placement constraints. These
+constraints are merged with the framework&rsquo;s control plane node
+isolation settings (nodeSelector, tolerations, topology spread).</p>
+</td>
+</tr>
+</tbody>
+</table>
+###ManagedEtcdShardStorageSpec { #hypershift.openshift.io/v1beta1.ManagedEtcdShardStorageSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.ManagedEtcdShardSpec">ManagedEtcdShardSpec</a>)
+</p>
+<p>
+<p>ManagedEtcdShardStorageSpec configures storage for a single etcd shard.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>type</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ManagedEtcdShardStorageType">
+ManagedEtcdShardStorageType
+</a>
+</em>
+</td>
+<td>
+<p>type is the kind of storage implementation to use for this shard.
+PersistentVolume uses PVCs; EmptyDir uses ephemeral node storage (tmpfs).</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>persistentVolume,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ManagedEtcdShardPersistentVolumeSpec">
+ManagedEtcdShardPersistentVolumeSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>persistentVolume configures PVC-based storage for this shard.
+Only valid when type is PersistentVolume.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###ManagedEtcdShardStorageType { #hypershift.openshift.io/v1beta1.ManagedEtcdShardStorageType }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.ManagedEtcdShardStorageSpec">ManagedEtcdShardStorageSpec</a>)
+</p>
+<p>
+<p>ManagedEtcdShardStorageType defines the type of storage for an etcd shard.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;EmptyDir&#34;</p></td>
+<td><p>EmptyDirEtcdShardStorage uses memory-backed EmptyDir for shard storage.</p>
+</td>
+</tr><tr><td><p>&#34;PersistentVolume&#34;</p></td>
+<td><p>PersistentVolumeEtcdShardStorage uses PersistentVolumes for shard storage.</p>
+</td>
+</tr></tbody>
+</table>
 ###ManagedEtcdSpec { #hypershift.openshift.io/v1beta1.ManagedEtcdSpec }
 <p>
 (<em>Appears on:</em>
@@ -49979,6 +50295,44 @@ HCPEtcdBackupConfig
 <p>backup defines the backup configuration for managed etcd, including
 optional KMS key settings for artifact encryption in cloud storage.
 This configuration is only used when an HCPEtcdBackup CR exists.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>scheduling,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.EtcdShardSchedulingSpec">
+EtcdShardSchedulingSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>scheduling specifies scheduling constraints for the default etcd shard pods.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>shards</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ManagedEtcdShardSpec">
+[]ManagedEtcdShardSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>shards defines additional etcd shards for resource-level routing.
+The existing storage and scheduling fields above configure
+the default shard (catch-all for all resources not explicitly
+routed). Entries in this list define non-default shards,
+each deployed as an independent StatefulSet and ControlPlaneComponent.
+Minimum 1, maximum 10 entries. Resources must not overlap across
+shards. Immutable after creation: shards cannot be added, removed,
+or reordered.</p>
+<p>WARNING: In the current TechPreview implementation, shard data is NOT
+included in HCPEtcdBackup. Resources routed to shards will not be
+backed up. This will be addressed before promotion beyond TechPreview.</p>
 </td>
 </tr>
 </tbody>
@@ -54528,6 +54882,73 @@ Valid effects are NoSchedule, PreferNoSchedule and NoExecute.</p>
 </tr>
 </tbody>
 </table>
+###UnmanagedEtcdShardSpec { #hypershift.openshift.io/v1beta1.UnmanagedEtcdShardSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.UnmanagedEtcdSpec">UnmanagedEtcdSpec</a>)
+</p>
+<p>
+<p>UnmanagedEtcdShardSpec defines the configuration for a single etcd shard
+within an unmanaged (externally operated) etcd deployment.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>name</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>name is a unique identifier for this shard.
+Must be a valid DNS1123 label (lowercase alphanumeric with hyphens,
+starting and ending with an alphanumeric character), max 48 characters.
+Immutable once set.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>resources</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.EtcdShardResource">
+[]EtcdShardResource
+</a>
+</em>
+</td>
+<td>
+<p>resources is the list of Kubernetes resource types routed to this
+shard. Uses the same format as ManagedEtcdShardSpec.Resources.
+Only resource types built into the kube-apiserver are routed; entries
+for CRD-backed or aggregated API resources have no effect (see
+EtcdShardResource).
+Minimum 1, maximum 20 entries. Immutable once set.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>endpoint</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>endpoint is the full etcd client endpoint URL for this shard.
+Must be a valid HTTPS URL, max 267 characters. Immutable once set.
+All shards must share the same CA and client certificate as the
+top-level UnmanagedEtcdSpec.TLS, because kube-apiserver uses a
+single &ndash;etcd-cafile/&ndash;etcd-certfile/&ndash;etcd-keyfile for all etcd
+connections; &ndash;etcd-servers-overrides only overrides server URLs.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###UnmanagedEtcdSpec { #hypershift.openshift.io/v1beta1.UnmanagedEtcdSpec }
 <p>
 (<em>Appears on:</em>
@@ -54570,6 +54991,27 @@ EtcdTLSConfig
 </td>
 <td>
 <p>tls specifies TLS configuration for HTTPS etcd client endpoints.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>shards</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.UnmanagedEtcdShardSpec">
+[]UnmanagedEtcdShardSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>shards defines additional etcd shards for resource-level routing.
+The top-level endpoint and tls fields define the default shard
+(the catch-all for all resources not explicitly routed). Entries
+in this list define non-default shards, each with its own endpoint
+and TLS configuration.
+Minimum 1, maximum 10 entries. Resources must not overlap across
+shards. Immutable after creation: shards cannot be added, removed,
+or reordered.</p>
 </td>
 </tr>
 </tbody>
