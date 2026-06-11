@@ -64,5 +64,5 @@ func isImageRegistryCapabilityEnabled(cpContext component.WorkloadContext) (bool
 }
 
 func isAroHCP(cpContext component.WorkloadContext) bool {
-	return azureutil.IsAroHCP()
+	return azureutil.IsAroHCPByHCP(cpContext.HCP)
 }

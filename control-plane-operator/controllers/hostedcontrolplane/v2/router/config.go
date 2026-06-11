@@ -62,7 +62,7 @@ func adaptConfig(cpContext component.WorkloadContext, cm *corev1.ConfigMap) erro
 	}
 
 	var keyVaultFQDN string
-	if azureutil.IsAroHCP() && azureutil.IsPrivateKeyVault(cpContext.HCP) {
+	if azureutil.IsAroHCPByHCP(cpContext.HCP) && azureutil.IsPrivateKeyVault(cpContext.HCP) {
 		kvFQDN, err := azureutil.GetKeyVaultFQDN(cpContext.HCP)
 		if err != nil {
 			return fmt.Errorf("failed to get Key Vault FQDN: %w", err)

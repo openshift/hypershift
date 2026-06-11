@@ -1303,7 +1303,7 @@ func (r *reconciler) reconcileRBAC(ctx context.Context, hcp *hyperv1.HostedContr
 		manifestAndReconcile[*rbacv1.RoleBinding]{manifest: manifests.KASConnectionCheckerRoleBinding, reconcile: rbac.ReconcileKASConnectionCheckerRoleBinding},
 	}
 
-	if azureutil.IsAroHCP() {
+	if azureutil.IsAroHCPByHCP(hcp) {
 		rbacReconciler = append(rbacReconciler,
 			manifestAndReconcile[*rbacv1.ClusterRole]{manifest: manifests.AzureDiskCSIDriverNodeServiceAccountRole, reconcile: rbac.ReconcileAzureDiskCSIDriverNodeServiceAccountClusterRole},
 			manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: manifests.AzureDiskCSIDriverNodeServiceAccountRoleBinding, reconcile: rbac.ReconcileAzureDiskCSIDriverNodeServiceAccountClusterRoleBinding},
@@ -1456,7 +1456,7 @@ func (r *reconciler) reconcileAuthOIDC(ctx context.Context, hcp *hyperv1.HostedC
 						errs = append(errs, fmt.Errorf("failed to get OIDCClient secret %s: %w", oidcClient.ClientSecret.Name, err))
 						continue
 					}
-					if azureutil.IsAroHCP() && util.HasAnnotationWithValue(&src, hyperv1.HostedClusterSourcedAnnotation, "true") {
+					if azureutil.IsAroHCPByHCP(hcp) && util.HasAnnotationWithValue(&src, hyperv1.HostedClusterSourcedAnnotation, "true") {
 						// This is a day-2 secret. We shouldn't copy it, instead it'll be provided by the end-user on the hosted cluster.
 						continue
 					}
@@ -2126,7 +2126,7 @@ func (r *reconciler) reconcileCloudCredentialSecrets(ctx context.Context, hcp *h
 		}
 
 		// Set up the operand credentials for either managed or self-managed Azure environments
-		errs = azureresources.SetupOperandCredentials(ctx, r.client, r.CreateOrUpdateProvider, hcp, secretData, azureutil.IsAroHCP())
+		errs = azureresources.SetupOperandCredentials(ctx, r.client, r.CreateOrUpdateProvider, hcp, secretData, azureutil.IsAroHCPByHCP(hcp))
 		if len(errs) > 0 {
 			return errs
 		}
@@ -3400,7 +3400,7 @@ func (r *reconciler) reconcileStorage(ctx context.Context, hcp *hyperv1.HostedCo
 			operatorv1.ManilaCSIDriver,
 		}
 	case hyperv1.AzurePlatform:
-		if azureutil.IsSelfManagedAzure(hcp.Spec.Platform.Type) {
+		if !azureutil.IsAroHCPByHCP(hcp) {
 			driverNames = []operatorv1.CSIDriverName{
 				operatorv1.AzureDiskCSIDriver,
 				operatorv1.AzureFileCSIDriver,

@@ -90,9 +90,9 @@ func adaptServiceAccount(cpContext component.WorkloadContext, sa *corev1.Service
 }
 
 func isAroHCP(cpContext component.WorkloadContext) bool {
-	return azureutil.IsAroHCP()
+	return azureutil.IsAroHCPByHCP(cpContext.HCP)
 }
 
 func isSelfManagedAzure(cpContext component.WorkloadContext) bool {
-	return !azureutil.IsAroHCP()
+	return !azureutil.IsAroHCPByHCP(cpContext.HCP)
 }

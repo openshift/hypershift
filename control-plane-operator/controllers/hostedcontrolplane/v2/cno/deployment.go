@@ -149,7 +149,7 @@ func buildCNOEnvVars(cpContext component.WorkloadContext) ([]corev1.EnvVar, erro
 	// For managed Azure deployments, we pass the env variables for:
 	// - the SecretProviderClass for the Secrets Store CSI driver to use on the CNCC deployment
 	// - the filepath of the credentials
-	if azureutil.IsAroHCP() {
+	if azureutil.IsAroHCPByHCP(hcp) {
 		cnoEnv = append(cnoEnv,
 			corev1.EnvVar{
 				Name:  config.ManagedAzureSecretProviderClassEnvVarKey,

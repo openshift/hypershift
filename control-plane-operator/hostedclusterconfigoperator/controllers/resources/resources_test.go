@@ -1930,6 +1930,20 @@ func TestReconcileAuthOIDC(t *testing.T) {
 					Namespace: testNamespace,
 				},
 				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							Private: hyperv1.AzurePrivateSpec{
+								Type: hyperv1.AzurePrivateTypeSwift,
+								Swift: hyperv1.AzureSwiftSpec{
+									PodNetworkInstance: "test-pni",
+								},
+							},
+							AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+								AzureAuthenticationConfigType: hyperv1.AzureAuthenticationTypeManagedIdentities,
+							},
+						},
+					},
 					Configuration: &hyperv1.ClusterConfiguration{
 						Authentication: &configv1.AuthenticationSpec{
 							Type: configv1.AuthenticationTypeOIDC,
@@ -2029,6 +2043,20 @@ func TestReconcileAuthOIDC(t *testing.T) {
 					Namespace: testNamespace,
 				},
 				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							Private: hyperv1.AzurePrivateSpec{
+								Type: hyperv1.AzurePrivateTypeSwift,
+								Swift: hyperv1.AzureSwiftSpec{
+									PodNetworkInstance: "test-pni",
+								},
+							},
+							AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+								AzureAuthenticationConfigType: hyperv1.AzureAuthenticationTypeManagedIdentities,
+							},
+						},
+					},
 					Configuration: &hyperv1.ClusterConfiguration{
 						Authentication: &configv1.AuthenticationSpec{
 							Type: configv1.AuthenticationTypeOIDC,

@@ -2,7 +2,6 @@ package util
 
 import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/util"
 )
 
@@ -17,11 +16,10 @@ func UseHCPRouter(hcp *hyperv1.HostedControlPlane) bool {
 	if hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
 		return false
 	}
-	// For ARO HCP, the dedicated HCP router is only needed when the cluster is private
-	// (Swift enabled). LabelHCPRoutes returns true for all ARO to support the
-	// SharedIngressReconciler, but that doesn't mean a dedicated router deployment is needed.
-	if azureutil.IsAroHCP() {
-		return util.IsPrivateHCP(hcp)
+	// SharedIngress handles public routing for ARO-HCP; a dedicated HCP
+	// router is only needed when the cluster also has private access.
+	if util.UseSharedIngressHCP(hcp) && !util.IsPrivateHCP(hcp) {
+		return false
 	}
 	// Router infrastructure is needed when:
 	// 1. Cluster has private access (Private or PublicAndPrivate) - for internal routes, OR

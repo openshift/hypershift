@@ -26,6 +26,7 @@ import (
 type AzurePrivateSpecApplyConfiguration struct {
 	Type        *hypershiftv1beta1.AzurePrivateType     `json:"type,omitempty"`
 	PrivateLink *AzurePrivateLinkSpecApplyConfiguration `json:"privateLink,omitempty"`
+	Swift       *AzureSwiftSpecApplyConfiguration       `json:"swift,omitempty"`
 }
 
 // AzurePrivateSpecApplyConfiguration constructs a declarative configuration of the AzurePrivateSpec type for use with
@@ -47,5 +48,13 @@ func (b *AzurePrivateSpecApplyConfiguration) WithType(value hypershiftv1beta1.Az
 // If called multiple times, the PrivateLink field is set to the value of the last call.
 func (b *AzurePrivateSpecApplyConfiguration) WithPrivateLink(value *AzurePrivateLinkSpecApplyConfiguration) *AzurePrivateSpecApplyConfiguration {
 	b.PrivateLink = value
+	return b
+}
+
+// WithSwift sets the Swift field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the Swift field is set to the value of the last call.
+func (b *AzurePrivateSpecApplyConfiguration) WithSwift(value *AzureSwiftSpecApplyConfiguration) *AzurePrivateSpecApplyConfiguration {
+	b.Swift = value
 	return b
 }

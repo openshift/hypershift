@@ -1022,7 +1022,7 @@ func (r *HostedControlPlaneReconciler) validateConfigAndClusterCapabilities(ctx 
 		}
 	}
 
-	if hcp.Spec.Platform.Type == hyperv1.AzurePlatform && hyperazureutil.IsAroHCP() {
+	if hcp.Spec.Platform.Type == hyperv1.AzurePlatform && hyperazureutil.IsAroHCPByHCP(hcp) {
 		if err := r.verifyResourceGroupLocationsMatch(ctx, hcp); err != nil {
 			return err
 		}
@@ -2934,7 +2934,7 @@ func (r *HostedControlPlaneReconciler) validateAzureKMSConfig(ctx context.Contex
 	}
 	azureKmsSpec := hcp.Spec.SecretEncryption.KMS.Azure
 
-	if hyperazureutil.IsAroHCP() {
+	if hyperazureutil.IsAroHCPByHCP(hcp) {
 		key := hcp.Namespace + kmsAzureCredentials
 
 		// We need to only store the Azure credentials once and reuse them after that.
