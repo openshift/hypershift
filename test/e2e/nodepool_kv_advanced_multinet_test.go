@@ -22,7 +22,7 @@ import (
 	"k8s.io/utils/ptr"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	capkv1alpha1 "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
-	clusterapiv1beta1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/cluster-api/util"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -261,7 +261,7 @@ func (k KubeVirtAdvancedMultinetTest) firstMachineAddress() (string, error) {
 	namespace := manifests.HostedControlPlaneNamespace(k.infra.HostedCluster().Namespace, k.infra.HostedCluster().Name)
 	if err := k.infra.MGMTClient().List(k.infra.Ctx(), &machineList, client.InNamespace(namespace),
 		client.MatchingLabels{
-			clusterapiv1beta1.MachineDeploymentNameLabel: k.nodePoolName,
+			capiv1.MachineDeploymentNameLabel: k.nodePoolName,
 		}); err != nil {
 		return "", err
 	}
