@@ -17,10 +17,14 @@ limitations under the License.
 
 package v1beta1
 
+import (
+	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+)
+
 // CpuOptionsApplyConfiguration represents a declarative configuration of the CpuOptions type for use
 // with apply.
 type CpuOptionsApplyConfiguration struct {
-	NestedVirtualization *string `json:"nestedVirtualization,omitempty"`
+	NestedVirtualization *hypershiftv1beta1.NestedVirtualizationPolicy `json:"nestedVirtualization,omitempty"`
 }
 
 // CpuOptionsApplyConfiguration constructs a declarative configuration of the CpuOptions type for use with
@@ -32,7 +36,7 @@ func CpuOptions() *CpuOptionsApplyConfiguration {
 // WithNestedVirtualization sets the NestedVirtualization field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the NestedVirtualization field is set to the value of the last call.
-func (b *CpuOptionsApplyConfiguration) WithNestedVirtualization(value string) *CpuOptionsApplyConfiguration {
+func (b *CpuOptionsApplyConfiguration) WithNestedVirtualization(value hypershiftv1beta1.NestedVirtualizationPolicy) *CpuOptionsApplyConfiguration {
 	b.NestedVirtualization = &value
 	return b
 }
