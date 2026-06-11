@@ -13,7 +13,7 @@ spec:
   - name: e2e-job-names
     type: string
     description: JSON array of Prow periodic job names to run in parallel
-    default: '["periodic-ci-openshift-hypershift-release-5.0-periodics-e2e-aks","periodic-ci-openshift-hypershift-release-5.0-periodics-hcm-azure-e2e-aks-upgrade-minor"]'
+    default: '[]'
 
   tasks:
   - name: extract-image
@@ -104,6 +104,10 @@ spec:
           echo "Trigger delay: ${TRIGGER_DELAY}s | Rate limit backoff: ${RATE_LIMIT_BACKOFF}s"
 
           NUM_JOBS=$(echo "${JOB_NAMES_JSON}" | jq -r 'length')
+          if [[ "${NUM_JOBS}" -eq 0 ]]; then
+            echo "ERROR: e2e-job-names is empty — at least one job is required"
+            exit 1
+          fi
           echo "Total jobs: ${NUM_JOBS}"
           echo ""
 
