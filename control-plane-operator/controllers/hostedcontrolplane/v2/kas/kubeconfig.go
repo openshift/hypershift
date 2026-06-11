@@ -112,6 +112,20 @@ func adaptKASBootstrapContainerKubeconfigSecret(cpContext component.WorkloadCont
 	return nil
 }
 
+// generateKubeConfigWithServingCerts builds a kubeconfig that trusts both the root CA and any
+// additional serving certificate CAs from namedCertificates. It fetches the combined CA bundle
+// and the specified client certificate secret, then generates the kubeconfig bytes.
+func generateKubeConfigWithServingCerts(cpContext component.WorkloadContext, certSecret *corev1.Secret, url string) ([]byte, error) {
+	totalRootCA, err := combineRootCAWithServingCerts(cpContext)
+	if err != nil {
+		return nil, fmt.Errorf("failed to include serving certificates: %w", err)
+	}
+	if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(certSecret), certSecret); err != nil {
+		return nil, fmt.Errorf("failed to get client cert secret %s: %w", certSecret.Name, err)
+	}
+	return generateKubeConfig(totalRootCA, certSecret, url)
+}
+
 func adapExternalAdminKubeconfigSecret(cpContext component.WorkloadContext, secret *corev1.Secret) error {
 	if cpContext.HCP.Spec.KubeConfig != nil {
 		secret.Name = cpContext.HCP.Spec.KubeConfig.Name
@@ -122,7 +136,8 @@ func adapExternalAdminKubeconfigSecret(cpContext component.WorkloadContext, secr
 	if !netutil.IsPublicHCP(cpContext.HCP) && !netutil.IsRouteKAS(cpContext.HCP) {
 		url = internalURL(cpContext.InfraStatus, cpContext.HCP.Name)
 	}
-	kubeconfig, err := GenerateKubeConfig(cpContext, manifests.SystemAdminClientCertSecret(cpContext.HCP.Namespace), url)
+
+	kubeconfig, err := generateKubeConfigWithServingCerts(cpContext, manifests.SystemAdminClientCertSecret(cpContext.HCP.Namespace), url)
 	if err != nil {
 		return fmt.Errorf("failed to generate kubeconfig: %w", err)
 	}
@@ -138,17 +153,7 @@ func adaptCustomAdminKubeconfigSecret(cpContext component.WorkloadContext, secre
 	hcp := cpContext.HCP
 	url := customExternalURL(hcp.Spec.KubeAPIServerDNSName, cpContext.InfraStatus.APIPort)
 
-	totalRootCA, err := combineRootCAWithServingCerts(cpContext)
-	if err != nil {
-		return fmt.Errorf("failed to include serving certificates: %w", err)
-	}
-
-	certSecret := manifests.SystemAdminClientCertSecret(hcp.Namespace)
-	if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(certSecret), certSecret); err != nil {
-		return fmt.Errorf("failed to get system admin client cert secret: %w", err)
-	}
-
-	kubeconfig, err := generateKubeConfig(totalRootCA, certSecret, url)
+	kubeconfig, err := generateKubeConfigWithServingCerts(cpContext, manifests.SystemAdminClientCertSecret(hcp.Namespace), url)
 	if err != nil {
 		return fmt.Errorf("failed to generate kubeconfig: %w", err)
 	}
@@ -166,7 +171,8 @@ func adaptBootstrapKubeconfigSecret(cpContext component.WorkloadContext, secret 
 	if netutil.IsPrivateHCP(cpContext.HCP) {
 		url = internalURL(cpContext.InfraStatus, cpContext.HCP.Name)
 	}
-	kubeconfig, err := GenerateKubeConfig(cpContext, manifests.KASMachineBootstrapClientCertSecret(cpContext.HCP.Namespace), url)
+
+	kubeconfig, err := generateKubeConfigWithServingCerts(cpContext, manifests.KASMachineBootstrapClientCertSecret(cpContext.HCP.Namespace), url)
 	if err != nil {
 		return fmt.Errorf("failed to generate kubeconfig: %w", err)
 	}
@@ -314,7 +320,10 @@ func combineRootCAWithServingCerts(cpContext component.WorkloadContext) (*corev1
 	// Write the root CA cert first
 	buffer.Write(rootCA.Data[certs.CASignerCertMapKey])
 
-	// Collect and write all additional certificates
+	// Append the tls.crt from each named certificate secret. In practice tls.crt contains the
+	// full PEM chain (leaf + intermediates + signing CA), so appending it to the trust bundle
+	// gives clients the CA needed to verify the serving certificate. Self-signed certs (as used
+	// in e2e tests) also work because the leaf itself is the trust anchor.
 	for _, servingCert := range hcp.Spec.Configuration.APIServer.ServingCerts.NamedCertificates {
 		certSecret := &corev1.Secret{}
 		if err := cpContext.Client.Get(cpContext, client.ObjectKey{
