@@ -12,7 +12,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/util/sets"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -26,6 +25,23 @@ const (
 	OutputCRDs      Outputs = "crds"
 	OutputResources Outputs = "resources"
 )
+
+func (o Outputs) IsValid() bool {
+	switch o {
+	case OutputAll, OutputCRDs, OutputResources:
+		return true
+	default:
+		return false
+	}
+}
+
+func (o Outputs) IncludesCRDs() bool {
+	return o == OutputAll || o == OutputCRDs
+}
+
+func (o Outputs) IncludesResources() bool {
+	return o == OutputAll || o == OutputResources
+}
 
 var (
 	RenderFormatYaml = "yaml"
@@ -89,9 +105,8 @@ func (o *Options) ValidateRender() error {
 		return fmt.Errorf("--format must be %s or %s", RenderFormatYaml, RenderFormatJson)
 	}
 
-	outputs := sets.New(OutputAll, OutputCRDs, OutputResources)
-	if !outputs.Has(Outputs(o.OutputTypes)) {
-		return fmt.Errorf("--outputs must be one of %v", outputs.UnsortedList())
+	if !Outputs(o.OutputTypes).IsValid() {
+		return fmt.Errorf("invalid --outputs value %q: must be '%s', '%s', or '%s'", o.OutputTypes, OutputAll, OutputCRDs, OutputResources)
 	}
 
 	return nil
@@ -129,14 +144,13 @@ func RenderHyperShiftOperator(ctx context.Context, cmdOut io.Writer, opts *Optio
 		}
 	}
 
+	scope := Outputs(opts.OutputTypes)
 	var objectsToRender []crclient.Object
-	switch Outputs(opts.OutputTypes) {
-	case OutputAll:
-		objectsToRender = append(crds, objects...)
-	case OutputCRDs:
-		objectsToRender = crds
-	case OutputResources:
-		objectsToRender = objects
+	if scope.IncludesCRDs() {
+		objectsToRender = append(objectsToRender, crds...)
+	}
+	if scope.IncludesResources() {
+		objectsToRender = append(objectsToRender, objects...)
 	}
 
 	if !opts.RenderSensitive {

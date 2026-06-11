@@ -425,6 +425,42 @@ func TestOptions_Validate(t *testing.T) {
 			},
 			expectError: false,
 		},
+		"when install-scope is all it should not error": {
+			inputOptions: Options{
+				PrivatePlatform: string(hyperv1.NonePlatform),
+				InstallScope:    string(OutputAll),
+			},
+			expectError: false,
+		},
+		"when install-scope is crds it should not error": {
+			inputOptions: Options{
+				PrivatePlatform: string(hyperv1.NonePlatform),
+				InstallScope:    string(OutputCRDs),
+			},
+			expectError: false,
+		},
+		"when install-scope is resources it should not error": {
+			inputOptions: Options{
+				PrivatePlatform: string(hyperv1.NonePlatform),
+				InstallScope:    string(OutputResources),
+			},
+			expectError: false,
+		},
+		"when install-scope is invalid it should error": {
+			inputOptions: Options{
+				PrivatePlatform: string(hyperv1.NonePlatform),
+				InstallScope:    "bogus",
+			},
+			expectError: true,
+		},
+		"when install-scope is crds with wait-until-available it should error": {
+			inputOptions: Options{
+				PrivatePlatform:    string(hyperv1.NonePlatform),
+				InstallScope:       string(OutputCRDs),
+				WaitUntilAvailable: true,
+			},
+			expectError: true,
+		},
 	}
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -812,6 +848,94 @@ func TestRenderHyperShiftOperator_RenderSensitive(t *testing.T) {
 		}
 		g.Expect(nonWebhookSecretCount).To(BeNumerically(">", 0), "expected at least one non-webhook secret to be rendered")
 	})
+}
+
+func TestRenderOutputsScope(t *testing.T) {
+	baseOpts := Options{
+		PrivatePlatform: string(hyperv1.NonePlatform),
+		Format:          RenderFormatYaml,
+		RenderSensitive: true,
+	}
+
+	tests := []struct {
+		name            string
+		outputs         string
+		expectCRDs      bool
+		expectResources bool
+		expectError     bool
+	}{
+		{"when outputs is all it should include CRDs and resources", string(OutputAll), true, true, false},
+		{"when outputs is crds it should include only CRDs", string(OutputCRDs), true, false, false},
+		{"when outputs is resources it should include only resources", string(OutputResources), false, true, false},
+		{"when outputs is invalid it should error", "bogus", false, false, true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewGomegaWithT(t)
+
+			opts := baseOpts
+			opts.OutputTypes = tc.outputs
+			var buf bytes.Buffer
+			err := RenderHyperShiftOperator(t.Context(), &buf, &opts)
+			if tc.expectError {
+				g.Expect(err).To(HaveOccurred(), "expected error for --outputs=%s", tc.outputs)
+				return
+			}
+			g.Expect(err).NotTo(HaveOccurred(), "RenderHyperShiftOperator failed for --outputs=%s", tc.outputs)
+
+			var crdCount, resourceCount int
+			for doc := range strings.SplitSeq(buf.String(), "\n---\n") {
+				if strings.TrimSpace(doc) == "" {
+					continue
+				}
+				obj, _, err := hyperapi.YamlSerializer.Decode([]byte(doc), nil, nil)
+				g.Expect(err).NotTo(HaveOccurred(), "failed to decode rendered manifest")
+				if _, isCRD := obj.(*apiextensionsv1.CustomResourceDefinition); isCRD {
+					crdCount++
+				} else {
+					resourceCount++
+				}
+			}
+
+			if tc.expectCRDs {
+				g.Expect(crdCount).To(BeNumerically(">", 0), "expected CRDs in output for --outputs=%s", tc.outputs)
+			} else {
+				g.Expect(crdCount).To(Equal(0), "expected no CRDs in output for --outputs=%s, got %d", tc.outputs, crdCount)
+			}
+			if tc.expectResources {
+				g.Expect(resourceCount).To(BeNumerically(">", 0), "expected resources in output for --outputs=%s", tc.outputs)
+			} else {
+				g.Expect(resourceCount).To(Equal(0), "expected no resources in output for --outputs=%s, got %d", tc.outputs, resourceCount)
+			}
+		})
+	}
+}
+
+func TestOutputsHelpers(t *testing.T) {
+	tests := []struct {
+		name              string
+		output            Outputs
+		isValid           bool
+		includesCRDs      bool
+		includesResources bool
+	}{
+		{"when output is all it should be valid and include both", OutputAll, true, true, true},
+		{"when output is crds it should be valid and include only CRDs", OutputCRDs, true, true, false},
+		{"when output is resources it should be valid and include only resources", OutputResources, true, false, true},
+		{"when output is empty it should be invalid", Outputs(""), false, false, false},
+		{"when output is bogus it should be invalid", Outputs("bogus"), false, false, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewGomegaWithT(t)
+			g.Expect(tc.output.IsValid()).To(Equal(tc.isValid))
+			g.Expect(tc.output.IncludesCRDs()).To(Equal(tc.includesCRDs))
+			g.Expect(tc.output.IncludesResources()).To(Equal(tc.includesResources))
+		})
+	}
 }
 
 func TestHyperShiftOperatorManifests_SharedIngress(t *testing.T) {
@@ -1280,6 +1404,45 @@ func TestApplyDefaults(t *testing.T) {
 			g.Expect(tc.opts.RenderNamespace).To(BeTrue())
 		})
 	}
+}
+
+func TestFilterManifestsByScope(t *testing.T) {
+	t.Parallel()
+	fakeCRD := &apiextensionsv1.CustomResourceDefinition{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-crd"},
+	}
+	fakeDeployment := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-deployment"},
+	}
+	crds := []crclient.Object{fakeCRD}
+	objects := []crclient.Object{fakeDeployment}
+
+	tests := []struct {
+		name            string
+		scope           Outputs
+		expectCRDs      int
+		expectResources int
+	}{
+		{"when scope is all it should return both CRDs and resources", OutputAll, 1, 1},
+		{"when scope is crds it should return only CRDs", OutputCRDs, 1, 0},
+		{"when scope is resources it should return only resources", OutputResources, 0, 1},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewGomegaWithT(t)
+			gotCRDs, gotObjects := filterManifestsByScope(crds, objects, tc.scope)
+			g.Expect(gotCRDs).To(HaveLen(tc.expectCRDs))
+			g.Expect(gotObjects).To(HaveLen(tc.expectResources))
+		})
+	}
+}
+
+func TestNewInstallOptionsWithDefaults_InstallScope(t *testing.T) {
+	g := NewGomegaWithT(t)
+	opts := NewInstallOptionsWithDefaults()
+	g.Expect(opts.InstallScope).To(Equal(string(OutputAll)), "InstallScope should default to 'all'")
 }
 
 func TestIsAWSPlatformEnabled(t *testing.T) {
