@@ -21,7 +21,7 @@ jobs:
        github.event.comment.author_association == 'OWNER' ||
        github.event.comment.author_association == 'COLLABORATOR')
     runs-on: arc-runner-set
-    timeout-minutes: 30
+    timeout-minutes: 45
     env:
       HOME: /tmp
     steps:
