@@ -2649,6 +2649,51 @@ spec:
                   -kubebuilder:validation:XValidation:rule=`self.all(key, size(self[key]) <= 63 && self[key].matches('^(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?$'))`, message="label value must be 63 characters or less (can be empty), consist of alphanumeric characters, dashes (-), underscores (_) or dots (.), and begin and end with an alphanumeric character"
                 maxProperties: 20
                 type: object
+              monitoring:
+                description: |-
+                  monitoring configures monitoring for the hosted cluster, including
+                  forwarding of control plane metrics to the hosted cluster's monitoring stack.
+                  When omitted, metrics forwarding is not configured and will be inactive.
+                minProperties: 1
+                properties:
+                  metricsForwarding:
+                    description: |-
+                      metricsForwarding configures forwarding of control plane metrics into
+                      the hosted cluster's monitoring stack.
+                      When omitted, metrics forwarding behavior is determined by the
+                      hypershift.openshift.io/enable-metrics-forwarding annotation for backward compatibility.
+                      If neither is set, metrics forwarding is disabled.
+                    properties:
+                      mode:
+                        description: |-
+                          mode controls whether metrics forwarding is active for this hosted cluster.
+                          When set to "Forward", metrics-proxy and endpoint-resolver are deployed in the
+                          control plane, and a metrics-forwarder is deployed in the hosted cluster.
+                          When set to "None", metrics forwarding is inactive.
+                        enum:
+                        - Forward
+                        - None
+                        type: string
+                    required:
+                    - mode
+                    type: object
+                  metricsSet:
+                    description: |-
+                      metricsSet specifies which set of metrics to collect and forward.
+                      This overrides the global METRICS_SET environment variable configured on the HyperShift Operator.
+                      When not specified, the global METRICS_SET value is used, which defaults to "Telemetry".
+
+                      "Telemetry" collects only the minimal set of metrics required for OpenShift Telemetry.
+                      "SRE" collects the Telemetry set plus additional metrics defined in the sre-metric-set ConfigMap,
+                      needed for SRE dashboards and alerts.
+                      "All" collects all metrics from control plane components without filtering,
+                      which produces significantly higher metrics volume.
+                    enum:
+                    - Telemetry
+                    - SRE
+                    - All
+                    type: string
+                type: object
               networking:
                 description: |-
                   networking specifies network configuration for the cluster.
