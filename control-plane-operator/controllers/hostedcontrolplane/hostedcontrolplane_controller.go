@@ -237,7 +237,6 @@ func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager, create
 }
 
 func (r *HostedControlPlaneReconciler) registerComponents(hcp *hyperv1.HostedControlPlane) {
-
 	r.components = append(r.components,
 		pkioperatorv2.NewComponent(r.CertRotationScale),
 		etcdv2.NewComponent(),
@@ -680,6 +679,11 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	hostedControlPlane.Status.Initialized = true
+
+	// Set status.initialization.controlPlaneInitialized for CAPI 1.11 v1beta2 contract.
+	// CAPI reads this field from the ControlPlane provider object to determine if the
+	// control plane is initialized (ControlPlaneInitialized condition on the CAPI Cluster).
+	hostedControlPlane.Status.Initialization.ControlPlaneInitialized = ptr.To(true)
 
 	meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, util.GenerateReconciliationActiveCondition(hostedControlPlane.Spec.PausedUntil, hostedControlPlane.Generation))
 	// Always update status based on the current state of the world.

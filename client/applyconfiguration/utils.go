@@ -251,6 +251,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.HostedClusterStatusApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("HostedControlPlane"):
 		return &hypershiftv1beta1.HostedControlPlaneApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("HostedControlPlaneInitializationStatus"):
+		return &hypershiftv1beta1.HostedControlPlaneInitializationStatusApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("HostedControlPlaneSpec"):
 		return &hypershiftv1beta1.HostedControlPlaneSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("HostedControlPlaneStatus"):

@@ -25,8 +25,7 @@ import (
 	"github.com/go-logr/logr"
 )
 
-type hostedClusterDefaulter struct {
-}
+type hostedClusterDefaulter struct{}
 
 type nodePoolDefaulter struct {
 	client client.Client

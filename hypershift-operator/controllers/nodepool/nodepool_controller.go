@@ -42,7 +42,7 @@ import (
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	capiopenstackv1beta1 "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
-	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/cluster-api/util"
 	"sigs.k8s.io/cluster-api/util/patch"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -804,12 +804,17 @@ func defaultNodePoolGCPImage(specifiedArch string, releaseImage *releaseinfo.Rel
 // v1beta1 fields indicate completion we cross-check against the v1beta2 status stored in the
 // Status.V1Beta2 field, which is kept current on every status-subresource write.
 func MachineDeploymentComplete(deployment *capiv1.MachineDeployment) bool {
-	newStatus := &deployment.Status
-	v1beta1Complete := newStatus.UpdatedReplicas == *(deployment.Spec.Replicas) &&
-		newStatus.Replicas == *(deployment.Spec.Replicas) &&
-		newStatus.AvailableReplicas == *(deployment.Spec.Replicas) &&
-		newStatus.ObservedGeneration >= deployment.Generation
-	if !v1beta1Complete {
+	desired := ptr.Deref(deployment.Spec.Replicas, 0)
+	s := &deployment.Status
+
+	// As long as storage version is v1beta1 conversion happens, causing flickering on this check.
+	// TODO(bclement): Remove conversion data check when storage version is v1beta2
+	conversionComplete := ptr.Deref(s.UpToDateReplicas, 0) == desired &&
+		ptr.Deref(s.Replicas, 0) == desired &&
+		ptr.Deref(s.AvailableReplicas, 0) == desired &&
+		s.ObservedGeneration >= deployment.Generation
+
+	if !conversionComplete {
 		return false
 	}
 	return machineDeploymentCompleteFromV1Beta2Status(deployment)

@@ -21,7 +21,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 
-	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -690,7 +690,7 @@ func getNodesForMachineSet(ctx context.Context, c client.Reader, hostedClusterCl
 	var nodes []*corev1.Node
 	nodeToMachine := make(map[string]*capiv1.Machine)
 	for i, machine := range machineSetOwnedMachines {
-		if machine.Status.NodeRef != nil {
+		if machine.Status.NodeRef.IsDefined() {
 			node := &corev1.Node{}
 			if err := hostedClusterClient.Get(ctx, client.ObjectKey{Name: machine.Status.NodeRef.Name}, node); err != nil {
 				return nil, nil, fmt.Errorf("error getting node: %w", err)
