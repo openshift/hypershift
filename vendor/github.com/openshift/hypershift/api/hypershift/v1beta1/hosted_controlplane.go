@@ -431,6 +431,17 @@ type HostedControlPlaneStatus struct {
 	// secretEncryption tracks the state of secret encryption key rotation and re-encryption.
 	// +optional
 	SecretEncryption SecretEncryptionStatus `json:"secretEncryption,omitzero"`
+	// Initialization contains fields that track the status of the initialization of the HostedControlPlane.
+	// +optional
+	// +kubebuilder:validation:MinProperties=1
+	Initialization HostedControlPlaneInitializationStatus `json:"initialization,omitzero"`
+}
+
+// HostedControlPlaneInitializationStatus defines the observed initialization state of the HostedControlPlane.
+type HostedControlPlaneInitializationStatus struct {
+	// ControlPlaneInitialized denotes whether the control plane has been initialized.
+	// +optional
+	ControlPlaneInitialized *bool `json:"controlPlaneInitialized,omitempty"`
 }
 
 // APIEndpoint represents a reachable Kubernetes API endpoint.

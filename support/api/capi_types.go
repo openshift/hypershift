@@ -9,5 +9,8 @@ import (
 	_ "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta1"
 	_ "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2"
 	_ "sigs.k8s.io/cluster-api/api/addons/v1beta1"
-	_ "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	_ "sigs.k8s.io/cluster-api/api/addons/v1beta2"
+	_ "sigs.k8s.io/cluster-api/api/core/v1beta2"
+	_ "sigs.k8s.io/cluster-api/api/ipam/v1beta1"
+	_ "sigs.k8s.io/cluster-api/api/ipam/v1beta2"
 )
