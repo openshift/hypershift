@@ -143,8 +143,8 @@ func EnsureMetricsForwarderWorkingTest(getTestCtx internal.TestContextGetter) {
 				Skip("metrics forwarder requires version >= 4.22")
 			}
 
-			if hostedCluster.Annotations[hyperv1.EnableMetricsForwarding] != "true" {
-				Skip("metrics forwarding annotation not set on hosted cluster; skipping verification test")
+			if hostedCluster.Spec.Monitoring.MetricsForwarding.Mode != hyperv1.MetricsForwardingModeForward {
+				Skip("metrics forwarding not enabled on hosted cluster; skipping verification test")
 			}
 
 			By("Waiting for management-side metrics deployments")

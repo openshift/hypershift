@@ -46,15 +46,12 @@ func EnsureMetricsForwarderWorking(t *testing.T, ctx context.Context, mgtClient 
 		g := NewWithT(t)
 		hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
 
-		// 1. Enable metrics forwarding by adding the annotation.
+		// 1. Enable metrics forwarding via spec.
 		t.Log("Enabling metrics forwarding on HostedCluster")
 		err := UpdateObject(t, ctx, mgtClient, hostedCluster, func(obj *hyperv1.HostedCluster) {
-			if obj.Annotations == nil {
-				obj.Annotations = make(map[string]string)
-			}
-			obj.Annotations[hyperv1.EnableMetricsForwarding] = "true"
+			obj.Spec.Monitoring.MetricsForwarding.Mode = hyperv1.MetricsForwardingModeForward
 		})
-		g.Expect(err).NotTo(HaveOccurred(), "failed to patch HostedCluster with EnableMetricsForwarding annotation")
+		g.Expect(err).NotTo(HaveOccurred(), "failed to enable metrics forwarding on HostedCluster")
 
 		// 2. Wait for management-side deployments.
 		t.Log("Waiting for endpoint-resolver deployment")

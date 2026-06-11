@@ -27,7 +27,7 @@ func (r *endpointResolver) NeedsManagementKASAccess() bool {
 
 func NewComponent() component.ControlPlaneComponent {
 	return component.NewDeploymentComponent(ComponentName, &endpointResolver{}).
-		WithPredicate(predicate).
+		WithPredicate(Predicate).
 		WithManifestAdapter(
 			"ca-cert.yaml",
 			component.WithAdaptFunction(adaptCACertSecret),
@@ -43,8 +43,7 @@ func NewComponent() component.ControlPlaneComponent {
 		Build()
 }
 
-func predicate(cpContext component.WorkloadContext) (bool, error) {
+func Predicate(cpContext component.WorkloadContext) (bool, error) {
 	_, disableMonitoring := cpContext.HCP.Annotations[hyperv1.DisableMonitoringServices]
-	_, enableMetricsForwarding := cpContext.HCP.Annotations[hyperv1.EnableMetricsForwarding]
-	return !disableMonitoring && enableMetricsForwarding, nil
+	return !disableMonitoring && cpContext.HCP.Spec.Monitoring.MetricsForwarding.Mode == hyperv1.MetricsForwardingModeForward, nil
 }
