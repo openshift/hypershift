@@ -31,6 +31,32 @@ tests:
               nestedVirtualization: enabled
           type: AWS
 
+  - name: when nested virtualization is disabled it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: NodePool
+      spec:
+        arch: amd64
+        clusterName: some-cluster
+        management:
+          autoRepair: false
+          upgradeType: Replace
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
+        replicas: 0
+        platform:
+          aws:
+            instanceProfile: a-profile
+            instanceType: m6i.large
+            rootVolume:
+              size: 120
+              type: gp3
+            subnet:
+              id: "subnet-any"
+            cpuOptions:
+              nestedVirtualization: disabled
+          type: AWS
+
   - name: when cpuOptions is empty it should fail
     initial: |
       apiVersion: hypershift.openshift.io/v1beta1

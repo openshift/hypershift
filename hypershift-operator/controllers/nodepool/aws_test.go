@@ -1491,7 +1491,7 @@ func TestBuildAWSSecurityGroups(t *testing.T) {
 	}
 }
 
-func TestApplyAWSPlacementOptions(t *testing.T) {
+func TestApplyAWSMachineOptions(t *testing.T) {
 	capacityReservationID := "cr-0123456789abcdef0"
 
 	testCases := []struct {
@@ -1523,13 +1523,38 @@ func TestApplyAWSPlacementOptions(t *testing.T) {
 					Platform: hyperv1.NodePoolPlatform{
 						AWS: &hyperv1.AWSNodePoolPlatform{
 							CpuOptions: hyperv1.CpuOptions{
-								NestedVirtualization: "enabled",
+								NestedVirtualization: hyperv1.NestedVirtualizationEnabled,
 							},
 						},
 					},
 				},
 			},
 			expectedNestedVirtualization: capiaws.NestedVirtualizationPolicyEnabled,
+		},
+		{
+			name: "When nested virtualization is disabled, it should set CPUOptions on spec",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						AWS: &hyperv1.AWSNodePoolPlatform{
+							CpuOptions: hyperv1.CpuOptions{
+								NestedVirtualization: hyperv1.NestedVirtualizationDisabled,
+							},
+						},
+					},
+				},
+			},
+			expectedNestedVirtualization: capiaws.NestedVirtualizationPolicyDisabled,
+		},
+		{
+			name: "When AWS platform is nil, it should not modify spec",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						AWS: nil,
+					},
+				},
+			},
 		},
 		{
 			name: "When marketType is Spot with no MaxPrice, it should set empty SpotMarketOptions",
@@ -1675,7 +1700,7 @@ func TestApplyAWSPlacementOptions(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
 			spec := &capiaws.AWSMachineTemplateSpec{}
-			applyAWSPlacementOptions(tc.nodePool, spec)
+			applyAWSMachineOptions(tc.nodePool, spec)
 
 			g.Expect(spec.Template.Spec.CPUOptions.NestedVirtualization).To(Equal(tc.expectedNestedVirtualization))
 			g.Expect(spec.Template.Spec.SpotMarketOptions).To(Equal(tc.expectedSpotMarketOptions))

@@ -100,7 +100,7 @@ Example Release Branch PR (4.22)
 ---
 
 ### Update TestGrid
-We need to update TestGrid to include the new OCP version tests. 
+We need to update TestGrid to include the new OCP version tests.
 
 Here is an Example PR to do that.
 
@@ -885,9 +885,9 @@ its basic test
 ## Source: docs/content/contribute/precommit-hook-help.md
 
 # General Help on Using precommit Hooks in the HyperShift Repo
-precommit hooks are helpful in catching issues prior to any new code or pull request appearing in the HyperShift repo. 
-In the long run, the precommit hooks will help you save time by catching issues that would normally cause the `verify` 
-and `unit` tests fail on your pull request. The following sections will walk you through how to quickly install the 
+precommit hooks are helpful in catching issues prior to any new code or pull request appearing in the HyperShift repo.
+In the long run, the precommit hooks will help you save time by catching issues that would normally cause the `verify`
+and `unit` tests fail on your pull request. The following sections will walk you through how to quickly install the
 hooks, quickly uninstall the hooks, and how to bypass the hooks.
 
 ## Installing precommit hooks
@@ -899,7 +899,7 @@ pre-commit installed at .git/hooks/pre-commit
 pre-commit installed at .git/hooks/pre-push
 ```
 
-The jobs ran at the pre-commit and pre-push stages are defined in the .golangci.yml file at the base of the HyperShift 
+The jobs ran at the pre-commit and pre-push stages are defined in the .golangci.yml file at the base of the HyperShift
 repo.
 
 ## Uninstalling precommit hooks
@@ -915,7 +915,7 @@ pre-push uninstalled
 Sometimes you may want to bypass the precommit hooks on a `git push` command, for example, if you just updated something really minor, updating your local `main` branch, or just needed to rerun a `go mod tidy` command, etc. To ignore the `pre-push` hooks, just add the `--no-verify` flag to your command.
 
 ```shell
-% git push --set-upstream origin remove-autorest --no-verify 
+% git push --set-upstream origin remove-autorest --no-verify
 % git push -f --no-verify
 ```
 
@@ -1015,8 +1015,8 @@ To run the HyperShift Operator locally, follow these steps:
 
 2. Build HyperShift.
 
-!!! note     
- 
+!!! note  
+
     `requires go v1.22+
 
 ```shell linenums="1"
@@ -1030,16 +1030,16 @@ To run the HyperShift Operator locally, follow these steps:
     export HYPERSHIFT_BUCKET_NAME="your-bucket"
   ```
 
-!!! note 
+!!! note
 
     `Consider setting HYPERSHIFT_REGION and HYPERSHIFT_BUCKET_NAME in your shell init script (e.g., $HOME/.bashrc).
 
-!!! note 
+!!! note
 
     `Default values are provided for HYPERSHIFT_REGION and HYPERSHIFT_BUCKET_NAME so Step #4 will function without requiring you to export any values.
 
 4. Install HyperShift in development mode which causes the operator deployment to be deployment scaled to zero so that it doesn't conflict with your local operator process (see Prerequisites):
-  
+
 ```shell linenums="1"
   make hypershift-install-aws-dev
 ```
@@ -2641,11 +2641,11 @@ you should adjust to your own environment.
         sudo install -m 0755 bin/hypershift /usr/local/bin/hypershift
         ```
 2. Admin access to an OpenShift cluster (version 4.12+) specified by the `KUBECONFIG` environment variable.
-3. The OpenShift CLI (`oc`) or Kubernetes CLI (`kubectl`). 
-4. A valid pull secret file for the `quay.io/openshift-release-dev` repository. 
+3. The OpenShift CLI (`oc`) or Kubernetes CLI (`kubectl`).
+4. A valid pull secret file for the `quay.io/openshift-release-dev` repository.
 5. AWS credentials with permissions to create infrastructure for the cluster. You will need:
      - An IAM role ARN with the required permissions
-     - STS credentials (session token) that can be generated using `aws sts get-session-token` 
+     - STS credentials (session token) that can be generated using `aws sts get-session-token`
 6. A Route53 public zone for cluster DNS records. To create a public zone:
         ```shell linenums="1"
         BASE_DOMAIN=www.example.com
@@ -2654,7 +2654,7 @@ you should adjust to your own environment.
 
     !!! important
 
-        To access applications in your guest clusters, the public zone must be routable. If the public zone exists, skip 
+        To access applications in your guest clusters, the public zone must be routable. If the public zone exists, skip
         this step. Otherwise, the public zone will affect the existing functions.
 
 7. An S3 bucket with public access to host OIDC discovery documents for your clusters. To create the bucket in *us-east-1*:
@@ -2713,7 +2713,7 @@ hypershift install \
   --enable-defaulting-webhook true
 ```
 
-!!! note 
+!!! note
 
     `enable-defaulting-webhook` is only for OCP version 4.14 and higher.
 
@@ -2806,12 +2806,12 @@ hypershift create cluster aws \
 !!! note
 
     A default NodePool will be created for the cluster with 3 replicas per the
-    `--node-pool-replicas` flag. 
+    `--node-pool-replicas` flag.
 
-!!! note 
+!!! note
 
-    The default NodePool name will be a combination of your cluster name and zone name for 
-    AWS (example, `example-us-east-1a`). For other providers, the default NodePool 
+    The default NodePool name will be a combination of your cluster name and zone name for
+    AWS (example, `example-us-east-1a`). For other providers, the default NodePool
     name will be the same as the cluster name.
 
 !!! note
@@ -3667,7 +3667,7 @@ If 10 minutes passes without requiring the additional capacity the agent will be
 
 # Create Heterogeneous NodePools on Agent HostedClusters
 
-This document explains how to create heterogeneous nodepools on agent platform. 
+This document explains how to create heterogeneous nodepools on agent platform.
 Please refer to set up the env for agent cluster, this document only covers the things you need to configure to have heterogeneous nodepools.
 
 ## Configure AgentServiceConfig with two heterogeneous architecture OS images
@@ -3729,7 +3729,7 @@ When you are creating heterogeneous nodepool, please make sure the workers are r
 
 ## Create a Hosted Cluster
 
-Need to use multi arch release image while creating the cluster to use heterogeneous nodepools. Find the latest multi arch images from here 
+Need to use multi arch release image while creating the cluster to use heterogeneous nodepools. Find the latest multi arch images from here
 ~~~sh
 export CLUSTERS_NAMESPACE="clusters"
 export HOSTED_CLUSTER_NAME="example"
@@ -3738,7 +3738,7 @@ export BASEDOMAIN="krnl.es"
 export PULL_SECRET_FILE=$PWD/pull-secret
 export OCP_RELEASE=4.15.0-multi
 export MACHINE_CIDR=192.168.122.0/24
-# Typically the namespace is created by the hypershift-operator 
+# Typically the namespace is created by the hypershift-operator
 # but agent cluster creation generates a capi-provider role that
 # needs the namespace to already exist
 oc create ns ${HOSTED_CONTROL_PLANE_NAMESPACE}
@@ -5316,7 +5316,7 @@ spec:
         contents: |
           [Unit]
           Description=Example Service
-          
+
           [Service]
           ExecStart=/usr/local/bin/example-service
           Restart=always
@@ -5336,7 +5336,7 @@ EOF
 ### 2. Create ConfigMaps for every configuration resource
 
 ```shell
-oc create configmap example-machineconfig -n clusters --from-file config=machine-config.yaml 
+oc create configmap example-machineconfig -n clusters --from-file config=machine-config.yaml
 oc create configmap example-crc -n clusters --from-file config=cr-config.yaml
 ```
 
@@ -5610,7 +5610,7 @@ If you would like to set some node-level tuning on the nodes in your hosted clus
     rendered   7m36s
     tuned-1    65s
     ```
-   
+
     List the Profiles in the hosted cluster:
     ```
     oc --kubeconfig="$HC_KUBECONFIG" get Profiles -n openshift-cluster-node-tuning-operator
@@ -5636,8 +5636,8 @@ If you would like to set some node-level tuning on the nodes in your hosted clus
     vm.dirty_ratio = 55
     ```
 
-## Applying tuning which requires kernel boot parameters 
-You can also use the Node Tuning Operator for more complex tuning which requires setting kernel boot parameters. 
+## Applying tuning which requires kernel boot parameters
+You can also use the Node Tuning Operator for more complex tuning which requires setting kernel boot parameters.
 As an example, the following steps can be followed to create a NodePool with huge pages reserved.
 
 1. Create the following ConfigMap which contains a Tuned object manifest for creating 10 hugepages of size 2M.
@@ -5730,7 +5730,7 @@ As an example, the following steps can be followed to create a NodePool with hug
     hugepages-8dfb1fed   1m23s
     rendered             123m
     ```
-   
+
     List the Profiles in the hosted cluster:
     ```
     oc --kubeconfig="$HC_KUBECONFIG" get Profiles -n openshift-cluster-node-tuning-operator
@@ -5879,7 +5879,7 @@ Several conditions can prevent Node(s) from being drained successfully:
 
 #### Prevention
 
-To prevent Nodes from becoming stuck when scaling down, set the `.spec.nodeDrainTimeout` and `.spec.nodeVolumeDetachTimeout` in the NodePool CR to a value greater than `0s`. 
+To prevent Nodes from becoming stuck when scaling down, set the `.spec.nodeDrainTimeout` and `.spec.nodeVolumeDetachTimeout` in the NodePool CR to a value greater than `0s`.
 
 This forces Nodes to be removed once the timeout specified in the field has been reached, regardless of whether the node can be drained or the volumes can be detached successfully.
 
@@ -6499,7 +6499,7 @@ title: Create Arm NodePools on AWS HostedClusters
 
 The `arch` field was added to the NodePool Spec in OCP 4.14. The `arch` field sets the required processor architecture for the NodePool (currently only supported on AWS).
 
-!!! note 
+!!! note
 
     Currently, the only valid values for '--arch' are 'arm64' and 'amd64'. The HyperShift CLI will default to 'amd64' when the 'arch' field is not specified by the user.
 
@@ -6739,7 +6739,7 @@ instance type `t3.large`, matching the `node.kubernetes.io/instance-type`
 selector in the `NodePool`.
 
 Create a Karpenter NodePool with the configuration for the workload:
- 
+
 ```sh
 cat << EOF | oc apply -f -
 apiVersion: karpenter.sh/v1
@@ -6801,7 +6801,7 @@ spec:
            - labelSelector:
                matchLabels:
                  app: web-app
-             topologyKey: "kubernetes.io/hostname"   
+             topologyKey: "kubernetes.io/hostname"  
      securityContext:
        runAsUser: 1000
        runAsGroup: 3000
@@ -6963,13 +6963,13 @@ stringData:
 ```
 
 !!! important
-    
-    The required parameters when using a secret to create a cluster are `--secret-creds <SECRET_NAME> --namespace <NAMESPACE_NAME>`. 
-    
+
+    The required parameters when using a secret to create a cluster are `--secret-creds <SECRET_NAME> --namespace <NAMESPACE_NAME>`.
+
     If `--namespace` is not included, then the "clusters" namespace will used.
 
 !!! note
-    
+
     The labels on this secret allow it to be displayed by the multi-cluster engine console.
 
 ## Create a HostedCluster using a credential secret
@@ -7145,8 +7145,8 @@ where
 
 !!! note
 
-    The --generate-ssh flag is optional but is a good idea to have in case you need to ssh 
-    to your workers. An ssh key will have been generated for you and stored as a secret in the 
+    The --generate-ssh flag is optional but is a good idea to have in case you need to ssh
+    to your workers. An ssh key will have been generated for you and stored as a secret in the
     same namespace as the hosted cluster.
 
 Running this command should result in the following resources getting applied to your cluster:
@@ -7158,7 +7158,7 @@ Running this command should result in the following resources getting applied to
 * 3 AWS STS secrets for control plane components
 * 1 SSH key secret (if --generate-ssh was specified)
 
-You can also add the `--render` flag to the command and redirect output to a file where you 
+You can also add the `--render` flag to the command and redirect output to a file where you
 can do further editing of the resources before applying them to the cluster.
 
 
@@ -7228,7 +7228,7 @@ Getting started guide prerequisites. The
 following steps will reference elements of the steps you already performed.
 
 1. Create the private cluster IAM policy document.
-    
+
     === "Shell"
 
         ```shell
@@ -8417,7 +8417,7 @@ title: External DNS
 
 # External DNS
 
-Hypershift separation between Control Plane and Data Plane enables two independent areas for DNS configuration: 
+Hypershift separation between Control Plane and Data Plane enables two independent areas for DNS configuration:
 
 * Ingress for workloads within the hosted cluster (traditionally *.apps.service-consumer-domain.com).
 * Ingress for service endpoints within the management cluster (e.g. api / oauth endpoints via *.service-provider-domain.com).
@@ -8505,7 +8505,7 @@ Having a vanilla Openshift cluster, follow this steps
 <details>
 <summary>Deploy Hypershift and ExternalDNS operators with the external Public HostedZone already created</summary>
 
-- Ensure the public hosted zone already exists, in our case is `service-provider-domain.com` 
+- Ensure the public hosted zone already exists, in our case is `service-provider-domain.com`
 - Hypershift Deployment command
 ```bash
 export KUBECONFIG=<PATH TO MANAGEMENT's CLUSTER's KUBECONFIG's>
@@ -8531,7 +8531,7 @@ hypershift install \
 <summary>Deploy HostedCluster using ExternalDNS feature</summary>
 
 - Ensure the `externaldns` operator is up and the internal flags points to the desired public hosted zone
-- HostedCluster Deployment command 
+- HostedCluster Deployment command
 ```bash
 export KUBECONFIG=<MGMT Cluster Kubeconfig>
 export AWS_CREDS=~/.aws/credentials
@@ -8557,7 +8557,7 @@ Let's remark some things from this command:<br>
 
 ```bash
 - external-dns-domain: Points to our public externalDNS hosted zone service-provider-domain.com, typically in an AWS account owned by the service provider.
-- base-domain: Points to the public hosted zone service-consumer-domain.com, typically in an AWS account owned by the service consumer. 
+- base-domain: Points to the public hosted zone service-consumer-domain.com, typically in an AWS account owned by the service consumer.
 - endpoint-access: Is set as PublicAndPrivate. ExternalDNS feature only could be used with Public and PublicAndPrivate configurations.
 ```
 
@@ -9535,7 +9535,7 @@ you can check the following:
     oc get machinedeployment -n $CONTROL_PLANE_NAMESPACE
     oc get machineset -n $CONTROL_PLANE_NAMESPACE
     ```
-    In the case that no machinedeployment has been created look at the logs of the hypershift 
+    In the case that no machinedeployment has been created look at the logs of the hypershift
     operator:
     ```
     oc logs deployment/operator -n hypershift
@@ -9553,7 +9553,7 @@ you can check the following:
     ```
     ./bin/hypershift console-logs aws --name $HC_NAME --aws-creds ~/.aws/credentials --output-dir /tmp/console-logs
     ```
-   
+
     The console logs will be placed in the destination directory.
     When looking at the console logs look for any errors accessing the ignition endpoint via https. If there are,
     then issue is somehow the ignition endpoint exposed by the control plane is not accessible from the worker
@@ -9564,19 +9564,19 @@ you can check the following:
    and running a utility script that will download logs from the machines.
 
     Extract the public/private key for the cluster. If you created the cluster with the --generate-ssh flag, a
-    ssh key for your cluster was placed in the same namespace as the hosted cluster (default `clusters`). If you 
+    ssh key for your cluster was placed in the same namespace as the hosted cluster (default `clusters`). If you
     specified your own key and know how to access it, you can skip this step.
     ```
     mkdir /tmp/ssh
     oc get secret -n clusters ${HC_NAME}-ssh-key -o jsonpath='{ .data.id_rsa }' | base64 -d > /tmp/ssh/id_rsa
     oc get secret -n clusters ${HC_NAME}-ssh-key -o jsonpath='{ .data.id_rsa\.pub }' | base64 -d > /tmp/ssh/id_rsa.pub
     ```
- 
+
     Create a bastion machine
     ```
     ./bin/hypershift create bastion aws --aws-creds ~/.aws/credentials --name $CLUSTER_NAME --ssh-key-file /tmp/ssh/id_rsa.pub
     ```
- 
+
     Run the following script to extract journals from each of your workers:
     ```
     mkdir /tmp/journals
@@ -9584,7 +9584,7 @@ you can check the following:
     SSH_PRIVATE_KEY=/tmp/ssh/id_rsa
     ./test/e2e/util/dump/copy-machine-journals.sh /tmp/journals
     ```
- 
+
     Machine journals should be placed in the `/tmp/journals` directory in compressed format. Extract them and look for a repeating
     error near the bottom that should indicate why the kubelet has not been able to join the cluster.
 
@@ -9821,7 +9821,7 @@ spec:
 
 # Create an Azure Hosted Cluster on AKS
 ## General
-This document describes how to set up an Azure Hosted Cluster on an AKS management cluster with an ExternalDNS setup. 
+This document describes how to set up an Azure Hosted Cluster on an AKS management cluster with an ExternalDNS setup.
 Azure HostedClusters on AKS are supported from OCP 4.19.0+.
 
 This guide provides both automated script-based setup and manual step-by-step instructions. The automated scripts are located in the /contrib/managed-azure folder in the HyperShift repo and can significantly simplify the setup process.
@@ -9864,25 +9864,25 @@ For the quickest setup, you can use the automated scripts:
 3. **Create Azure credentials file** (see Manual Setup Step 2 below for details)
 
 4. **Run the complete automated setup** (authentication is automatic):
-   
+
    For your **first cluster** (includes one-time resource setup):
    ```sh
    ../contrib/managed-azure/setup_all.sh --first-time
    ```
-   
+
    For **additional clusters** (reuses existing resources):
    ```sh
    ../contrib/managed-azure/setup_all.sh
    ```
-   
+
    View the script: setup_all.sh
 
 !!! note "Automatic Authentication"
-    
+
     The setup script automatically logs you into Azure if you're not already authenticated. No separate login step is required!
 
 !!! warning "Important: One-Time Setup Components"
-    
+
     Three scripts create resources that should be **reused across multiple clusters** to avoid quota issues: setup_MIv3_kv.sh (service principals and Key Vault), setup_oidc_provider.sh (OIDC issuer), and setup_dataplane_identities.sh (data plane identities). Use the `--first-time` flag only for your first cluster setup. For subsequent clusters, run the script without this flag to skip the one-time setup and reuse existing resources.
 
 !!! tip
@@ -9940,10 +9940,10 @@ cat <<EOF > azure-creds.json
 EOF
 ```
 !!! warning
-      
-    In order for your Hypershift cluster to create properly, the Microsoft Graph `Application.ReadWrite.OwnedBy` 
-    permission must be added to your Service Principal and it also must be assigned to User Access Administrator at the 
-    subscription level. 
+
+    In order for your Hypershift cluster to create properly, the Microsoft Graph `Application.ReadWrite.OwnedBy`
+    permission must be added to your Service Principal and it also must be assigned to User Access Administrator at the
+    subscription level.
 
     In most cases, you'll need to submit a DPTP request to have this done.
 
@@ -9951,7 +9951,7 @@ EOF
 **Goal**: Set up managed identities, key vault, and service principals required for the control plane components. This includes creating certificate-based authentication for various OpenShift services and storing credentials securely.
 
 !!! warning "One-Time Setup Only (Steps 3-5)"
-    
+
     Steps 3-5 create resources that should be **reused across multiple clusters** to avoid Azure quota limits: service principals and Key Vault (setup_MIv3_kv.sh), OIDC issuer (setup_oidc_provider.sh), and data plane identities (setup_dataplane_identities.sh). Only run these steps once per environment. For subsequent clusters, use `setup_all.sh` without the `--first-time` flag to skip these one-time setup steps.
 
 **Automated Script**: setup_MIv3_kv.sh
@@ -10260,16 +10260,16 @@ This section walks through how to:
 1. Set up a new resource group, key vault, and key for etcd encryption using KMSv2
 1. Set up the role assignment between the KMS managed identity (MI) and the key vault
 1. Set up the flags needed when creating the Azure HostedCluster
-1. Verify the etcd encryption is setup and working properly 
+1. Verify the etcd encryption is setup and working properly
 
-There is a `setup_etcd_kv.sh` script in the contrib folder in the HyperShift repo to help automate the first couple of 
+There is a `setup_etcd_kv.sh` script in the contrib folder in the HyperShift repo to help automate the first couple of
 steps mentioned above. However, this guide will manually walk through those steps.
 
-1a) Create a resource group for the key vault that will house the key used for etcd encryption. 
+1a) Create a resource group for the key vault that will house the key used for etcd encryption.
 
 !!! note
 
-    It is assumed this key vault is a different key vault, let's call it MI KV, than the one containing all of the 
+    It is assumed this key vault is a different key vault, let's call it MI KV, than the one containing all of the
     managed identities for the control plane. However, the managed identity for KMS is assumed to be in the MI KV.
 
 ```bash
@@ -10281,7 +10281,7 @@ az group create --name example-kms --location eastus
 az keyvault create --name example-kms --resource-group example-kms --location eastus --enable-rbac-authorization
 ```
 
-1c) Create a key in the etcd encryption key vault and capture the ID in a variable, KEY_ID. This will be passed when 
+1c) Create a key in the etcd encryption key vault and capture the ID in a variable, KEY_ID. This will be passed when
 creating the Azure HostedCluster in a later step below.
 ```bash
 KEY_ID=$(az keyvault key create \
@@ -10293,7 +10293,7 @@ KEY_ID=$(az keyvault key create \
   -o tsv)
 ```
 
-2) Create a role assignment between the KMS MI and the resource group where the etcd encryption key vault is located so 
+2) Create a role assignment between the KMS MI and the resource group where the etcd encryption key vault is located so
 that it can encrypt & decrypt objects.
 
 ```bash
@@ -10309,12 +10309,12 @@ az role assignment create --assignee $OBJECT_ID --role "Key Vault Crypto User" \
 `--kms-credentials-secret-name <your KMS credentials secret name>`
 ```
 
-4) Here are some different things you can do to confirm etcd encryption using KMSv2 is set up properly on the 
+4) Here are some different things you can do to confirm etcd encryption using KMSv2 is set up properly on the
 HCP/HostedCluster:
 
 First, confirm the kube-apiserver pod is using the `encryption-provider-config` flag such as:
 ```
---encryption-provider-config=/etc/kubernetes/secret-encryption/config.yaml 
+--encryption-provider-config=/etc/kubernetes/secret-encryption/config.yaml
 ```
 
 If you look at this data, it should contain something like this:
@@ -10337,16 +10337,16 @@ resources:
   - oauthauthorizetokens.oauth.openshift.io
 ```
 
-Next, confirm the ` azure-kms-provider-active` container in the kube-apiserver pod is running properly, there are no 
-errors in the log, and the config file is using the KMS MI. The config file path can be found in the flag on the 
+Next, confirm the ` azure-kms-provider-active` container in the kube-apiserver pod is running properly, there are no
+errors in the log, and the config file is using the KMS MI. The config file path can be found in the flag on the
 container spec:
 ```
---config-file-path=/etc/kubernetes/azure.json 
+--config-file-path=/etc/kubernetes/azure.json
 ```
 
 If you review this data, you should see the KMS MI credentials secret used within it.
 
-Finally, you can create a secret on the HostedCluster and then check the secret on etcd in the etcd pod on the HCP 
+Finally, you can create a secret on the HostedCluster and then check the secret on etcd in the etcd pod on the HCP
 directly:
 
 1) Create a secret on the HostedCluster. Example `kubectl create secret generic kms-test --from-literal=foo=bar`.
@@ -10363,7 +10363,7 @@ export ETCDCTL_CERT=/etc/etcd/tls/client/etcd-client.crt
 export ETCDCTL_KEY=/etc/etcd/tls/client/etcd-client.key
 export ETCDCTL_ENDPOINTS=https://etcd-client:2379
 ```
-5) Get the secret created on the HostedCluster `etcdctl get /kubernetes.io/secrets/default/kms-test`. You should see it 
+5) Get the secret created on the HostedCluster `etcdctl get /kubernetes.io/secrets/default/kms-test`. You should see it
 is encrypted with KMSv2 by the azure provider:
 ```
 k8s:enc:kms:v2:azure-8298bce7:
@@ -11031,7 +11031,7 @@ See Create Azure IAM Resources Separately.
 # Create a Self-Managed Azure HostedCluster
 
 !!! note "Developer Preview in OCP 4.21"
-    
+
     Self-managed Azure HostedClusters are available as a Developer Preview feature in OpenShift Container Platform 4.21.
 
 This document describes how to create a self-managed Azure HostedCluster using workload identities for authentication.
@@ -11232,7 +11232,7 @@ hypershift create nodepool azure \
 ```
 
 !!! important "Key Configuration Options"
-    
+
     - `--infra-json`: Path to infrastructure output from `hypershift create infra azure` (includes workload identities)
     - `--assign-service-principal-roles`: Automatically assigns required Azure roles to workload identities
     - `--sa-token-issuer-private-key-path`: Path to the private key for service account token signing
@@ -11391,7 +11391,7 @@ hypershift destroy infra azure \
 ```
 
 !!! note "Resource Cleanup"
-    
+
     The HyperShift destroy commands clean up the cluster and infrastructure resources. Workload identities and OIDC issuer created during setup can be reused for other clusters or cleaned up separately if no longer needed. See Destroying Workload Identities.
 
 ## Related Documentation
@@ -12967,7 +12967,7 @@ oc get machinedeployment -n $CONTROL_PLANE_NAMESPACE
 oc get machineset -n $CONTROL_PLANE_NAMESPACE
 ```
 
-In the case that no machinedeployment was created, look at the logs of the hypershift 
+In the case that no machinedeployment was created, look at the logs of the hypershift
 operator:
 ```
 oc logs -l app=operator -n hypershift --tail=$NUMBER_OF_LINES
@@ -12979,9 +12979,9 @@ oc logs deployment/capi-provider -c manager -n $CONTROL_PLANE_NAMESPACE
 ```
 
 ## Create a bastion to SSH to a node
-If the machines look like they have been provisioned correctly, you can directly access the virtual machines related to your nodes through a bastion. 
+If the machines look like they have been provisioned correctly, you can directly access the virtual machines related to your nodes through a bastion.
 
-### Prerequisites 
+### Prerequisites
 - Download the `az` cli
 - Add the following extensions to the cli:
   - `az extension update --name bastionaz extension update --name bastion`
@@ -13459,7 +13459,7 @@ Check the status of OpenShift Container Platform release payload controllers for
 !!! warning - "HyperShift job is failing and blocking a payload release"
 
     When either HyperShift job is blocking a payload release:
-    
+
     - Open a chat thread in #team-ocp-hypershift to start a dialogue on what is happening and to begin root causing the problem.
     - In addition, alert #forum-ocp-oversight we are aware of the issue and working to root cause the problem.
 
@@ -13484,7 +13484,7 @@ We care about the following jobs (you can filter by these names if desired):
 
 !!! tip - "Tip - How to check the job test results"
 
-    For any of these jobs, if you click on the running man emblem, Sippy will show you all the test runs. 
+    For any of these jobs, if you click on the running man emblem, Sippy will show you all the test runs.
     For each of the test runs, you can click the Prow ship emblem to see the test results of the individual run.
 
 !!! warning - "What to do when a job is permafailing"
@@ -14277,38 +14277,38 @@ The v1 framework produced test results where a single test case failure appeared
 flowchart TD
     Prow[Prow Job Trigger] --> CIO[ci-operator]
     CIO --> Build[Build hypershift-tests image]
-    
+
     Build --> Image[hypershift-tests image]
-    
+
     subgraph "openshift/hypershift repo"
         Tests[test/e2e/v2/tests/]
         CMD[test/e2e/v2/cmd/]
         Platform[test/e2e/v2/lifecycle/]
         Dockerfile[Dockerfile.e2e]
     end
-    
+
     subgraph "openshift/release repo"
         StepRegistry[Step Registry]
         JobConfig[Job Config]
         Workflow[workflow YAML]
         Chain[chain YAML]
         Ref[ref YAML]
-        
+
         Workflow --> Chain
         Chain --> Ref
     end
-    
+
     Tests --> Dockerfile
     CMD --> Dockerfile
     Platform --> Dockerfile
     Dockerfile --> Image
-    
+
     Image --> Binaries["hypershift/bin/<br>create-guests, run-tests,<br>dump-guests, destroy-guests,<br>test-e2e-v2"]
-    
+
     Binaries --> Ref
     StepRegistry --> Workflow
     JobConfig --> Workflow
-    
+
     style Image fill:#e1f5ff
     style Binaries fill:#ffe1e1
 ```
@@ -15624,15 +15624,15 @@ Port 53/TCP+UDP   - DNS (to DNS servers)
 
 # Multi-arch on Hosted Control Planes
 ## General
-Several platforms now support multi-arch capable HostedClusters when a multi-arch release image or stream is used for 
-the HostedCluster. This means a HostedCluster can manage NodePools with different CPU architectures. 
+Several platforms now support multi-arch capable HostedClusters when a multi-arch release image or stream is used for
+the HostedCluster. This means a HostedCluster can manage NodePools with different CPU architectures.
 
 !!! note
 
-    An individual NodePool only supports one CPU architecture and cannot support multiple CPU architectures within the 
+    An individual NodePool only supports one CPU architecture and cannot support multiple CPU architectures within the
     same NodePool.
 
-The most up-to-date information on what CPU types are supported on a platform can be found 
+The most up-to-date information on what CPU types are supported on a platform can be found
 by looking at the NodePool controller function to validate NodePool CPU and platform here.
 
 As of September 2024:
@@ -15643,25 +15643,25 @@ As of September 2024:
 
 ## Multi-arch Validation
 ### HyperShift Operator
-The HyperShift Operator, through the HostedCluster controller, will update a field, HostedCluster.Status.PayloadArch, 
-with the payload type of the HostedCluster release image. The valid options for this field are: Multi, ARM64, AMD64, or 
+The HyperShift Operator, through the HostedCluster controller, will update a field, HostedCluster.Status.PayloadArch,
+with the payload type of the HostedCluster release image. The valid options for this field are: Multi, ARM64, AMD64, or
 PPC64LE.
 
-When a NodePool is added to a HostedCluster, the HyperShift Operator, through the NodePool controller, will check the 
-NodePool.Spec.Arch against the HostedCluster.Status.PayloadArch to ensure the NodePool can be managed by the 
-HostedCluster. If HostedCluster.Status.PayloadArch is not `Multi` and it does not exactly match NodePool.Spec.Arch, the 
-NodePool controller will block reconciliation of the NodePool and set a status condition on the NodePool CR stating the 
+When a NodePool is added to a HostedCluster, the HyperShift Operator, through the NodePool controller, will check the
+NodePool.Spec.Arch against the HostedCluster.Status.PayloadArch to ensure the NodePool can be managed by the
+HostedCluster. If HostedCluster.Status.PayloadArch is not `Multi` and it does not exactly match NodePool.Spec.Arch, the
+NodePool controller will block reconciliation of the NodePool and set a status condition on the NodePool CR stating the
 NodePool cannot be supported by the HostedCluster payload type.
 
 ### HCP CLI
-Create Cluster CLI commands will check to see if a multi-arch release image or stream is being used for the 
-HostedCluster payload. If a multi-arch release image or stream is not used, the CLI will check the management cluster 
+Create Cluster CLI commands will check to see if a multi-arch release image or stream is being used for the
+HostedCluster payload. If a multi-arch release image or stream is not used, the CLI will check the management cluster
 and NodePool CPU architectures match; if they do not match, the CLI will return an error and stop creating the cluster.
 
-The Create NodePool CLI commands for AWS and Azure will attempt to validate the NodePool CPU architecture against the 
-HostedCluster.Status.PayloadArch if the HostedCluster exists. If a HostedCluster doesn't exist, for instance when 
-creating a new HostedCluster, a warning message will be displayed stating there was a failure to get the HostedCluster 
-to check the payload status. If the HostedCluster.Status.PayloadArch exists and isn't multi or does not match the 
+The Create NodePool CLI commands for AWS and Azure will attempt to validate the NodePool CPU architecture against the
+HostedCluster.Status.PayloadArch if the HostedCluster exists. If a HostedCluster doesn't exist, for instance when
+creating a new HostedCluster, a warning message will be displayed stating there was a failure to get the HostedCluster
+to check the payload status. If the HostedCluster.Status.PayloadArch exists and isn't multi or does not match the
 NodePool CPU architecture, the CLI will return an error and stop creating resources.
 
 ---
@@ -15756,7 +15756,7 @@ oc logs -n <HostedControlPlane namespace> -l app=kube-apiserver -f -c kube-apise
 ## Overview
 
 In standalone OpenShift, cluster configuration is achieved via cluster-scoped resources in the `config.openshift.io/v1`
-API group. Resources such as APIServer, OAuth, and Proxy allow adding additional named certificates to the Kube APIServer, 
+API group. Resources such as APIServer, OAuth, and Proxy allow adding additional named certificates to the Kube APIServer,
 adding identity providers, configuring the global proxy, etc. In HyperShift, configuration resources that
 impact the control plane need to be specified in the HostedCluster resource instead of inside the guest cluster. The
 resources still exist inside the guest cluster, but their source of truth is the HostedCluster and are continuously
@@ -16130,7 +16130,7 @@ spec:
           servingCertificate:
             name: my-oauth-cert-secret   # [2]
 ```
-<1> Replace this with the actual host name of your OAuth route. 
+<1> Replace this with the actual host name of your OAuth route.
 
 <2> Replace it with the name of the Secret created in step 3.
 
@@ -16157,7 +16157,7 @@ It would be something like:
 ```bash
 subject=CN=openshift-oauth
 issuer=CN=openshift-oauth
-X509v3 Subject Alternative Name: 
+X509v3 Subject Alternative Name:
     DNS:oauth-${HC_NAMESPACE}-${CLUSTER_NAME}.apps.rosa.hypershift-ci-2.1xls.p3.openshiftapps.com
 ```
 
@@ -21384,7 +21384,7 @@ In addition:
 ```yaml
   spec:
     nodeSelector:
-      role.kubernetes.io/infra: "" 
+      role.kubernetes.io/infra: ""
 ```
 
 ## Custom Taints and Tolerations
@@ -21413,12 +21413,12 @@ basis. This control allows for groups of Hosted Clusters to be colocated
 and isolated from other Hosted Clusters. It also allows for custom
 placement of Hosted Clusters within infra and master nodes.
 
-## Scheduling Topology Options 
+## Scheduling Topology Options
 
 Cluster Service Providers may choose how hosted control planes are isolated or co-located. The three different options are:
 
  - Shared Everything
- - Shared Nothing 
+ - Shared Nothing
  - Dedicated Request Serving
 
 These options can be seen as a spectrum of isolation. Shared Everything is the least isolated, Dedicated Request Serving (Shared Some) and then Shared Nothing being the most isolated option.
@@ -22873,12 +22873,12 @@ A how-to page shows how to do a single thing, typically by giving a short sequen
 This document describes different installation flags or methods for HyperShift Operator (HO).
 
 ## Limiting the CAPI CRDs installed
-The HO uses the Cluster API (CAPI) to manage the nodes in the NodePool. By default, the HO installation will install all 
-CAPI related CRDs. If you want to limit the CRDs installed, you can set the `--limit-crd-install` flag to a 
-comma-separated list of CRDs to install. The valid values for this flag are: AWS, Azure, IBMCloud, KubeVirt, Agent, 
+The HO uses the Cluster API (CAPI) to manage the nodes in the NodePool. By default, the HO installation will install all
+CAPI related CRDs. If you want to limit the CRDs installed, you can set the `--limit-crd-install` flag to a
+comma-separated list of CRDs to install. The valid values for this flag are: AWS, Azure, IBMCloud, KubeVirt, Agent,
 OpenStack.
 
-For example, to only install the AWS and Azure related CAPI CRDs, you would use 
+For example, to only install the AWS and Azure related CAPI CRDs, you would use
 the following flag in your HO install command:
 
 ```bash
@@ -22888,7 +22888,7 @@ the following flag in your HO install command:
 !!! important
 
     Limiting the CAPI CRDs installed means the HO will only be able to manage HostedClusters of the same platform.
-    For example, in the above example, if you limit the CRDs to AWS and Azure, the HO will only be able to manage 
+    For example, in the above example, if you limit the CRDs to AWS and Azure, the HO will only be able to manage
     AWS and Azure HostedClusters.
 
 ---
@@ -22932,10 +22932,10 @@ namespace my-namespace.
 
 ## Using Secondary Network as Default
 
-Users managing a network (DHCP, routing, etc...) can use that network 
+Users managing a network (DHCP, routing, etc...) can use that network
 as the default one for the kubevirt hosted clusters, to do so
-disable pod default network and attach an additional one that connects to it 
-with the hcp command line tool arguments `--attach-default-network=false` and 
+disable pod default network and attach an additional one that connects to it
+with the hcp command line tool arguments `--attach-default-network=false` and
 `--additional-network`.
 
 ```shell linenums="1"
@@ -24524,7 +24524,7 @@ first be exposed as a resource on the Node that the GPU resides on. For
 example this Nvidia Operator documentation outlines how to expose Nvidia GPUs
 as a resource on an OpenShift cluster. Once the GPU is exposed as an
 extended resource
-on the node, it can then be assigned to a NodePool. 
+on the node, it can then be assigned to a NodePool.
 
 ## Attaching GPU devices to NodePools Using the CLI
 
@@ -26059,7 +26059,7 @@ In a Hosted Control Plane (HCP) architecture, the etcd database plays a critical
 Hosted Kubernetes control plane components. By default, Hypershift provisions etcd data on a Persistent Volume Claim (PVC),
 which relies on the default StorageClass defined in the Management Cluster.
 
-However, HyperShift allows you to easily choose another storage class when desired. 
+However, HyperShift allows you to easily choose another storage class when desired.
 On OpenStack, the default RWO StorageClass is generally Cinder via its CSI driver to provision storage.
 While this driver is suitable for general workloads, it is not ideal for etcd due to the latency and performance characteristics
 of network-attached storage.
@@ -26129,7 +26129,7 @@ spec:
     * `forceWipeDevicesAndDestroyAllData` is set to True because the default nova ephemeral disk comes formatted in vfat.
     * `thinPoolConfig` can be used but it will affect the performance therefore we don't recommend it.
 
-Now we create the resource: 
+Now we create the resource:
 
 ```shell
 oc apply -f lvmcluster.yaml
@@ -26968,7 +26968,7 @@ places the CLI tool within the `/usr/local/bin` directory.
 !!! note
 
     The command below is the same if you use docker.
-  
+
 ```shell
 podman run --rm --privileged -it -v \
 $PWD:/output docker.io/library/golang:1.23 /bin/bash -c \
@@ -27638,8 +27638,8 @@ where
 * RESOURCE_GROUP is the resource group in IBM Cloud where your infrastructure resources will be created.
 * RELEASE_IMAGE is the latest multi arch release image.
 * PULL_SECRET is a file that contains a valid OpenShift pull secret.
-* node-pool-replicas is worker node count. 
-* TRANSIT_GATEWAY_LOCATION is the location where you want to create the transit gateway. 
+* node-pool-replicas is worker node count.
+* TRANSIT_GATEWAY_LOCATION is the location where you want to create the transit gateway.
 
 Running this command will create infra and manifests for the hosted cluster and deploys it.
 
@@ -28176,7 +28176,7 @@ Use following environment variables to set custom endpoint.
 IBMCLOUD_POWER_API_ENDPOINT    - to setup PowerVS custom endpoint
 IBMCLOUD_VPC_API_ENDPOINT      - to setup VPC custom endpoint
 IBMCLOUD_PLATFORM_API_ENDPOINT - to setup platform services custom endpoint
-IBMCLOUD_COS_API_ENDPOINT      - to setup COS custom endpoint, can use this to set up custom endpoints mentioned here https://cloud.ibm.com/docs/cloud-object-storage?topic=cloud-object-storage-endpoints#endpoints-region 
+IBMCLOUD_COS_API_ENDPOINT      - to setup COS custom endpoint, can use this to set up custom endpoints mentioned here https://cloud.ibm.com/docs/cloud-object-storage?topic=cloud-object-storage-endpoints#endpoints-region
 ```
 
 ---
@@ -29022,7 +29022,7 @@ hypershift dump cluster \
 ### How to view the ignition payload
 
 1. Define the HCP namespace where the user-data secret is stored
-```shell 
+```shell
 HCP_NAMESPACE="<hcp-namespace>"
 ```
 1. Find the user-data secret in the HCP namespace
@@ -29134,7 +29134,7 @@ title: Home
 # HyperShift
 
 HyperShift is middleware for hosting OpenShift control
-planes at scale that solves for cost and time to provision, as well as portability 
+planes at scale that solves for cost and time to provision, as well as portability
 cross cloud with strong separation of concerns between management and workloads.
 Clusters are fully compliant OpenShift Container Platform (OCP)
 clusters and are compatible with standard OCP and Kubernetes toolchains.
@@ -35649,7 +35649,7 @@ In this section we will expose the more frequent recipes the people could use fo
 ## Source: docs/content/reference/SLOs.md
 
 # SLOs
-This project is committed to satisfy a number of internal SLOs. 
+This project is committed to satisfy a number of internal SLOs.
 These SLOs can be taken as reference by consumers to aggregate them and help define their own SLOs.
 
 These SLOs/SLIs are currently just referential and monitored as part of our CI runs.
@@ -37802,7 +37802,7 @@ addition to any security groups specified in the NodePool.</p>
 ###AWSResourceReference { #hypershift.openshift.io/v1beta1.AWSResourceReference }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.AWSCloudProviderConfig">AWSCloudProviderConfig</a>, 
+<a href="#hypershift.openshift.io/v1beta1.AWSCloudProviderConfig">AWSCloudProviderConfig</a>,
 <a href="#hypershift.openshift.io/v1beta1.AWSNodePoolPlatform">AWSNodePoolPlatform</a>)
 </p>
 <p>
@@ -37851,7 +37851,7 @@ They are applied according to the rules defined by the AWS API:
 ###AWSResourceTag { #hypershift.openshift.io/v1beta1.AWSResourceTag }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.AWSNodePoolPlatform">AWSNodePoolPlatform</a>, 
+<a href="#hypershift.openshift.io/v1beta1.AWSNodePoolPlatform">AWSNodePoolPlatform</a>,
 <a href="#hypershift.openshift.io/v1beta1.AWSPlatformSpec">AWSPlatformSpec</a>)
 </p>
 <p>
@@ -38746,7 +38746,7 @@ string
 ###AutoNode { #hypershift.openshift.io/v1beta1.AutoNode }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>,
 <a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
 </p>
 <p>
@@ -38778,7 +38778,7 @@ ProvisionerConfig
 ###AutoNodeStatus { #hypershift.openshift.io/v1beta1.AutoNodeStatus }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.HostedClusterStatus">HostedClusterStatus</a>, 
+<a href="#hypershift.openshift.io/v1beta1.HostedClusterStatus">HostedClusterStatus</a>,
 <a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneStatus">HostedControlPlaneStatus</a>)
 </p>
 <p>
@@ -38839,7 +38839,7 @@ Used by the metrics collector for billing aggregation.</p>
 ###AvailabilityPolicy { #hypershift.openshift.io/v1beta1.AvailabilityPolicy }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>,
 <a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
 </p>
 <p>
@@ -38964,7 +38964,7 @@ This is only valid for self-managed Azure.</p>
 ###AzureClientID { #hypershift.openshift.io/v1beta1.AzureClientID }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.ManagedIdentity">ManagedIdentity</a>, 
+<a href="#hypershift.openshift.io/v1beta1.ManagedIdentity">ManagedIdentity</a>,
 <a href="#hypershift.openshift.io/v1beta1.WorkloadIdentity">WorkloadIdentity</a>)
 </p>
 <p>
@@ -40246,7 +40246,7 @@ Azure&rsquo;s API.</p>
 ###AzureSubnetResourceID { #hypershift.openshift.io/v1beta1.AzureSubnetResourceID }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.AzurePrivateLinkServiceSpec">AzurePrivateLinkServiceSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.AzurePrivateLinkServiceSpec">AzurePrivateLinkServiceSpec</a>,
 <a href="#hypershift.openshift.io/v1beta1.AzurePrivateLinkSpec">AzurePrivateLinkSpec</a>)
 </p>
 <p>
@@ -40258,7 +40258,7 @@ The expected format is:</p>
 ###AzureSubscriptionID { #hypershift.openshift.io/v1beta1.AzureSubscriptionID }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.AzurePrivateLinkServiceSpec">AzurePrivateLinkServiceSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.AzurePrivateLinkServiceSpec">AzurePrivateLinkServiceSpec</a>,
 <a href="#hypershift.openshift.io/v1beta1.AzurePrivateLinkSpec">AzurePrivateLinkSpec</a>)
 </p>
 <p>
@@ -40594,7 +40594,7 @@ used in workload identity authentication for Azure Private Link Service operatio
 ###Capabilities { #hypershift.openshift.io/v1beta1.Capabilities }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>,
 <a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
 </p>
 <p>
@@ -40765,7 +40765,7 @@ of an instance</p>
 ###ClusterAutoscaling { #hypershift.openshift.io/v1beta1.ClusterAutoscaling }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>,
 <a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
 </p>
 <p>
@@ -40940,7 +40940,7 @@ Maximum of 3 expanders can be specified.</p>
 ###ClusterConfiguration { #hypershift.openshift.io/v1beta1.ClusterConfiguration }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>,
 <a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
 </p>
 <p>
@@ -41220,7 +41220,7 @@ This is only consumed when NetworkType is OVNKubernetes.</p>
 ###ClusterNetworking { #hypershift.openshift.io/v1beta1.ClusterNetworking }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>,
 <a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
 </p>
 <p>
@@ -41380,7 +41380,7 @@ Defaults to &ldquo;Normal&rdquo;.</p>
 ###ClusterVersionStatus { #hypershift.openshift.io/v1beta1.ClusterVersionStatus }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.HostedClusterStatus">HostedClusterStatus</a>, 
+<a href="#hypershift.openshift.io/v1beta1.HostedClusterStatus">HostedClusterStatus</a>,
 <a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneStatus">HostedControlPlaneStatus</a>)
 </p>
 <p>
@@ -41860,7 +41860,7 @@ and reports missing images if any.</p>
 ###ConfigurationStatus { #hypershift.openshift.io/v1beta1.ConfigurationStatus }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.HostedClusterStatus">HostedClusterStatus</a>, 
+<a href="#hypershift.openshift.io/v1beta1.HostedClusterStatus">HostedClusterStatus</a>,
 <a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneStatus">HostedControlPlaneStatus</a>)
 </p>
 <p>
@@ -42255,7 +42255,7 @@ string
 ###ControlPlaneVersionStatus { #hypershift.openshift.io/v1beta1.ControlPlaneVersionStatus }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.HostedClusterStatus">HostedClusterStatus</a>, 
+<a href="#hypershift.openshift.io/v1beta1.HostedClusterStatus">HostedClusterStatus</a>,
 <a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneStatus">HostedControlPlaneStatus</a>)
 </p>
 <p>
@@ -42321,7 +42321,8 @@ int64
 <a href="#hypershift.openshift.io/v1beta1.AWSNodePoolPlatform">AWSNodePoolPlatform</a>)
 </p>
 <p>
-<p>CpuOptions specifies CPU configuration for EC2 instances.</p>
+<p>CpuOptions specifies CPU configuration for EC2 instances.
+At least one field must be specified when cpuOptions is present.</p>
 </p>
 <table>
 <thead>
@@ -42335,7 +42336,9 @@ int64
 <td>
 <code>nestedVirtualization</code></br>
 <em>
-string
+<a href="#hypershift.openshift.io/v1beta1.NestedVirtualizationPolicy">
+NestedVirtualizationPolicy
+</a>
 </em>
 </td>
 <td>
@@ -42349,7 +42352,7 @@ Supported on C8i, M8i, and R8i instance families.</p>
 ###DNSSpec { #hypershift.openshift.io/v1beta1.DNSSpec }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>,
 <a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
 </p>
 <p>
@@ -42603,7 +42606,7 @@ and the user is responsible for doing so.</p>
 ###EtcdSpec { #hypershift.openshift.io/v1beta1.EtcdSpec }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>,
 <a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
 </p>
 <p>
@@ -42767,8 +42770,8 @@ string
 ###FilterByNeutronTags { #hypershift.openshift.io/v1beta1.FilterByNeutronTags }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.NetworkFilter">NetworkFilter</a>, 
-<a href="#hypershift.openshift.io/v1beta1.RouterFilter">RouterFilter</a>, 
+<a href="#hypershift.openshift.io/v1beta1.NetworkFilter">NetworkFilter</a>,
+<a href="#hypershift.openshift.io/v1beta1.RouterFilter">RouterFilter</a>,
 <a href="#hypershift.openshift.io/v1beta1.SubnetFilter">SubnetFilter</a>)
 </p>
 <p>
@@ -43589,7 +43592,7 @@ Standard instances run until explicitly stopped and are not subject to automatic
 ###GCPResourceLabel { #hypershift.openshift.io/v1beta1.GCPResourceLabel }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.GCPNodePoolPlatform">GCPNodePoolPlatform</a>, 
+<a href="#hypershift.openshift.io/v1beta1.GCPNodePoolPlatform">GCPNodePoolPlatform</a>,
 <a href="#hypershift.openshift.io/v1beta1.GCPPlatformSpec">GCPPlatformSpec</a>)
 </p>
 <p>
@@ -43642,8 +43645,8 @@ See <a href="https://cloud.google.com/compute/docs/labeling-resources">https://c
 ###GCPResourceName { #hypershift.openshift.io/v1beta1.GCPResourceName }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.GCPNodePoolPlatform">GCPNodePoolPlatform</a>, 
-<a href="#hypershift.openshift.io/v1beta1.GCPPrivateServiceConnectSpec">GCPPrivateServiceConnectSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.GCPNodePoolPlatform">GCPNodePoolPlatform</a>,
+<a href="#hypershift.openshift.io/v1beta1.GCPPrivateServiceConnectSpec">GCPPrivateServiceConnectSpec</a>,
 <a href="#hypershift.openshift.io/v1beta1.GCPResourceReference">GCPResourceReference</a>)
 </p>
 <p>
@@ -43692,7 +43695,7 @@ See <a href="https://cloud.google.com/compute/docs/naming-resources">https://clo
 ###GCPServiceAccountEmail { #hypershift.openshift.io/v1beta1.GCPServiceAccountEmail }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.GCPNodeServiceAccount">GCPNodeServiceAccount</a>, 
+<a href="#hypershift.openshift.io/v1beta1.GCPNodeServiceAccount">GCPNodeServiceAccount</a>,
 <a href="#hypershift.openshift.io/v1beta1.GCPServiceAccountsEmails">GCPServiceAccountsEmails</a>)
 </p>
 <p>
@@ -46407,7 +46410,7 @@ call IBM Cloud KMS APIs</p>
 ###IBMCloudPlatformSpec { #hypershift.openshift.io/v1beta1.IBMCloudPlatformSpec }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.NodePoolPlatform">NodePoolPlatform</a>, 
+<a href="#hypershift.openshift.io/v1beta1.NodePoolPlatform">NodePoolPlatform</a>,
 <a href="#hypershift.openshift.io/v1beta1.PlatformSpec">PlatformSpec</a>)
 </p>
 <p>
@@ -46440,7 +46443,7 @@ github.com/openshift/api/config/v1.IBMCloudProviderType
 ###ImageContentSource { #hypershift.openshift.io/v1beta1.ImageContentSource }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>,
 <a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
 </p>
 <p>
@@ -47519,7 +47522,7 @@ Value of Filesystem is implied when not included in claim spec.</p>
 ###KubevirtPlatformCredentials { #hypershift.openshift.io/v1beta1.KubevirtPlatformCredentials }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.KubeVirtNodePoolStatus">KubeVirtNodePoolStatus</a>, 
+<a href="#hypershift.openshift.io/v1beta1.KubeVirtNodePoolStatus">KubeVirtNodePoolStatus</a>,
 <a href="#hypershift.openshift.io/v1beta1.KubevirtPlatformSpec">KubevirtPlatformSpec</a>)
 </p>
 <p>
@@ -48208,7 +48211,7 @@ is empty.</p>
 ###ManagedIdentity { #hypershift.openshift.io/v1beta1.ManagedIdentity }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.AzureKMSSpec">AzureKMSSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.AzureKMSSpec">AzureKMSSpec</a>,
 <a href="#hypershift.openshift.io/v1beta1.ControlPlaneManagedIdentities">ControlPlaneManagedIdentities</a>)
 </p>
 <p>
@@ -48278,7 +48281,7 @@ credentialsSecretName must also be unique within the Azure Key Vault. See more d
 ###MarketType { #hypershift.openshift.io/v1beta1.MarketType }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.CapacityReservationOptions">CapacityReservationOptions</a>, 
+<a href="#hypershift.openshift.io/v1beta1.CapacityReservationOptions">CapacityReservationOptions</a>,
 <a href="#hypershift.openshift.io/v1beta1.PlacementOptions">PlacementOptions</a>)
 </p>
 <p>
@@ -48321,6 +48324,29 @@ Spot instances use spare EC2 capacity at reduced prices but may be interrupted.<
 <td></td>
 </tr><tr><td><p>&#34;Enable&#34;</p></td>
 <td></td>
+</tr></tbody>
+</table>
+###NestedVirtualizationPolicy { #hypershift.openshift.io/v1beta1.NestedVirtualizationPolicy }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.CpuOptions">CpuOptions</a>)
+</p>
+<p>
+<p>NestedVirtualizationPolicy indicates whether nested virtualization is enabled or disabled.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;disabled&#34;</p></td>
+<td><p>NestedVirtualizationDisabled disables nested virtualization on the instance.</p>
+</td>
+</tr><tr><td><p>&#34;enabled&#34;</p></td>
+<td><p>NestedVirtualizationEnabled enables nested virtualization on the instance.</p>
+</td>
 </tr></tbody>
 </table>
 ###NetworkFilter { #hypershift.openshift.io/v1beta1.NetworkFilter }
@@ -48397,7 +48423,7 @@ FilterByNeutronTags
 ###NetworkParam { #hypershift.openshift.io/v1beta1.NetworkParam }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.OpenStackPlatformSpec">OpenStackPlatformSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.OpenStackPlatformSpec">OpenStackPlatformSpec</a>,
 <a href="#hypershift.openshift.io/v1beta1.PortSpec">PortSpec</a>)
 </p>
 <p>
@@ -49412,7 +49438,7 @@ progress and detecting stuck nodes.</p>
 ###OLMCatalogPlacement { #hypershift.openshift.io/v1beta1.OLMCatalogPlacement }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>,
 <a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
 </p>
 <p>
@@ -49438,7 +49464,7 @@ the management cluster.</p>
 ###OSImageStreamReference { #hypershift.openshift.io/v1beta1.OSImageStreamReference }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.NodePoolSpec">NodePoolSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.NodePoolSpec">NodePoolSpec</a>,
 <a href="#hypershift.openshift.io/v1beta1.NodePoolStatus">NodePoolStatus</a>)
 </p>
 <p>
@@ -49974,7 +50000,7 @@ This value must be a valid IPv4 or IPv6 address.</p>
 ###OperatorConfiguration { #hypershift.openshift.io/v1beta1.OperatorConfiguration }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>,
 <a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
 </p>
 <p>
@@ -50244,7 +50270,7 @@ do not support Capacity Reservations. Compatible with &ldquo;default&rdquo; and 
 ###PlatformSpec { #hypershift.openshift.io/v1beta1.PlatformSpec }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>,
 <a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
 </p>
 <p>
@@ -50390,7 +50416,7 @@ GCPPlatformSpec
 ###PlatformStatus { #hypershift.openshift.io/v1beta1.PlatformStatus }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.HostedClusterStatus">HostedClusterStatus</a>, 
+<a href="#hypershift.openshift.io/v1beta1.HostedClusterStatus">HostedClusterStatus</a>,
 <a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneStatus">HostedControlPlaneStatus</a>)
 </p>
 <p>
@@ -50423,8 +50449,8 @@ AWSPlatformStatus
 ###PlatformType { #hypershift.openshift.io/v1beta1.PlatformType }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.KarpenterConfig">KarpenterConfig</a>, 
-<a href="#hypershift.openshift.io/v1beta1.NodePoolPlatform">NodePoolPlatform</a>, 
+<a href="#hypershift.openshift.io/v1beta1.KarpenterConfig">KarpenterConfig</a>,
+<a href="#hypershift.openshift.io/v1beta1.NodePoolPlatform">NodePoolPlatform</a>,
 <a href="#hypershift.openshift.io/v1beta1.PlatformSpec">PlatformSpec</a>)
 </p>
 <p>
@@ -51068,7 +51094,7 @@ crn:v1:bluemix:public:iam::::serviceRole:Manager</li>
 ###PowerVSResourceReference { #hypershift.openshift.io/v1beta1.PowerVSResourceReference }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.PowerVSNodePoolPlatform">PowerVSNodePoolPlatform</a>, 
+<a href="#hypershift.openshift.io/v1beta1.PowerVSNodePoolPlatform">PowerVSNodePoolPlatform</a>,
 <a href="#hypershift.openshift.io/v1beta1.PowerVSPlatformSpec">PowerVSPlatformSpec</a>)
 </p>
 <p>
@@ -51278,7 +51304,7 @@ KarpenterConfig
 ###Release { #hypershift.openshift.io/v1beta1.Release }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>,
 <a href="#hypershift.openshift.io/v1beta1.NodePoolSpec">NodePoolSpec</a>)
 </p>
 <p>
@@ -51712,7 +51738,7 @@ When omitted, the autoscaler defaults to 50%.</p>
 ###SecretEncryptionSpec { #hypershift.openshift.io/v1beta1.SecretEncryptionSpec }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>,
 <a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
 </p>
 <p>
@@ -51796,7 +51822,7 @@ AESCBCSpec
 ###SecretReference { #hypershift.openshift.io/v1beta1.SecretReference }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupAzureBlob">HCPEtcdBackupAzureBlob</a>, 
+<a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupAzureBlob">HCPEtcdBackupAzureBlob</a>,
 <a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupS3">HCPEtcdBackupS3</a>)
 </p>
 <p>
@@ -51934,7 +51960,7 @@ The specifics of the setup are platform dependent.</p>
 ###ServicePublishingStrategyMapping { #hypershift.openshift.io/v1beta1.ServicePublishingStrategyMapping }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>,
 <a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
 </p>
 <p>
@@ -52518,7 +52544,7 @@ string
 ###WorkloadIdentity { #hypershift.openshift.io/v1beta1.WorkloadIdentity }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.AzureKMSSpec">AzureKMSSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.AzureKMSSpec">AzureKMSSpec</a>,
 <a href="#hypershift.openshift.io/v1beta1.AzureWorkloadIdentities">AzureWorkloadIdentities</a>)
 </p>
 <p>
@@ -53853,28 +53879,28 @@ Each component has an adapter that calls `ReconcileManagedAzureSecretProviderCla
 ## Source: docs/content/reference/architecture/managed-azure/secrets-csi.md
 
 # Secrets CSI Usage
-The Secrets CSI driver is used in HyperShift's managed Azure architecture in order to read secrets from Azure Key Vault 
-and mount them as files in a pod. This allows for the secure storage of sensitive information such as credentials and 
+The Secrets CSI driver is used in HyperShift's managed Azure architecture in order to read secrets from Azure Key Vault
+and mount them as files in a pod. This allows for the secure storage of sensitive information such as credentials and
 certificates.
 
 More information on Secrets CSI driver can be found in the official documentation.
 
 ## Overview
-A single managed identity is used to pull any secrets or certificates from Azure Key Vault. The managed identity is 
-created when the AKS cluster is created. For example, this happens when the flag 
-`enable-addons azure-keyvault-secrets-provider` is provided when creating the AKS cluster using the Azure CLI. 
+A single managed identity is used to pull any secrets or certificates from Azure Key Vault. The managed identity is
+created when the AKS cluster is created. For example, this happens when the flag
+`enable-addons azure-keyvault-secrets-provider` is provided when creating the AKS cluster using the Azure CLI.
 
 !!! important
 
-    The created managed identity is expected to have the `Key Vault Secrets User` role assigned to it so that it can read 
+    The created managed identity is expected to have the `Key Vault Secrets User` role assigned to it so that it can read
     secrets and credentials from the Azure Key Vault.
 
 !!! important
 
     This managed identity will be used by any HostedClusters managed by the HO to read secrets from the Azure Key Vault.
 
-This managed identity is passed in as a client ID to the HyperShift Operator during installation through the flag 
-`aro-hcp-key-vault-users-client-id`. This client ID will be passed in to every created SecretProviderClass CR and used 
+This managed identity is passed in as a client ID to the HyperShift Operator during installation through the flag
+`aro-hcp-key-vault-users-client-id`. This client ID will be passed in to every created SecretProviderClass CR and used
 in the field called `userAssignedIdentityID`.
 
 ## SecretsProviderClass CRs
@@ -53919,7 +53945,7 @@ spec:
 ```
 
 ## How SecretProviderClass CR is Used
-The SecretProviderClass CR is then used by the Secrets CSI driver to mount the secret, `objectName` in the above 
+The SecretProviderClass CR is then used by the Secrets CSI driver to mount the secret, `objectName` in the above
 example, into the pod as a file in a volume mount. Here is an example of a pod spec that mounts the secret:
 
 ```yaml
@@ -53941,7 +53967,7 @@ example, into the pod as a file in a volume mount. Here is an example of a pod s
         name: cpo-cert
 ```
 
-The mounted secret can be viewed in the pod by navigating to the `/mnt/certs` directory and catting the file. In this 
+The mounted secret can be viewed in the pod by navigating to the `/mnt/certs` directory and catting the file. In this
 example, something like:
 
 ```bash
@@ -53979,7 +54005,7 @@ The following components use a configuration file in order to know where to find
 For an example, see the official documentation.
 
 ### Consumed through a CR
-Finally, the nodepool management provider (CAPZ) uses a CR, AzureClusterIdentity, to identify where the secret is 
+Finally, the nodepool management provider (CAPZ) uses a CR, AzureClusterIdentity, to identify where the secret is
 mounted in the pod.
 
 For an example, see the official documentation.
@@ -54212,11 +54238,11 @@ graph TD
   reconcile --> is-deleted{{Deleted?}}
   is-deleted -->|Yes| teardown([Teardown])
   is-deleted -->|No| sync([Sync])
-  
+
   teardown -->teardown-complete{{Teardown complete?}}
   teardown-complete -->|Yes| return
   teardown-complete -->|No| reconcile
-  
+
   sync --> create-namespace([Create Namespace])
   create-namespace --> deploy-cp-operator([Deploy Control Plane Operator])
   deploy-cp-operator --> deploy-capi-manager([Deploy CAPI Manager])
@@ -54228,9 +54254,9 @@ graph TD
   has-initial-nodes -->|Yes| create-node-pool([Create NodePool])
   has-initial-nodes -->|No| return
   create-node-pool --> return
-  
+
   return([End])
-  
+
 ```
 
 #### NodePool Controller
@@ -54241,16 +54267,16 @@ graph TD
   reconcile --> is-deleted{{Deleted?}}
   is-deleted -->|Yes| teardown([Teardown])
   is-deleted -->|No| sync([Sync])
-  
+
   sync --> create-capi-machineset([Create CAPIMachineSet])
   create-capi-machineset --> create-capi-infra-machine-template([Create CAPIInfrastructureMachineTemplate])
-  
+
   create-capi-infra-machine-template --> return
-  
+
   teardown -->teardown-complete{{Teardown complete?}}
   teardown-complete -->|Yes| return
   teardown-complete -->|No| reconcile
-  
+
   return([End])
 ```
 
@@ -54263,19 +54289,19 @@ graph TD
   reconcile --> is-deleted{{Deleted?}}
   is-deleted -->|Yes| teardown([Teardown])
   is-deleted -->|No| sync([Sync])
-  
+
   teardown -->teardown-complete{{Teardown complete?}}
   teardown-complete -->|Yes| return
   teardown-complete -->|No| reconcile
-  
+
   sync --> get-hosted-control-plane([Get HostedControlPlane])
   get-hosted-control-plane -->is-hcp-ready{{Is HostedControlPlane ready?}}
   is-hcp-ready -->|No| reconcile
   is-hcp-ready -->|Yes| update-infra-status([Update ExternalInfraCluster status])
   update-infra-status --> return
-  
+
   return([End])
-  
+
 ```
 
 ### Control Plane Operator
@@ -54300,20 +54326,20 @@ graph TD
   reconcile --> is-deleted{{Deleted?}}
   is-deleted -->|Yes| teardown([Teardown])
   is-deleted -->|No| sync([Sync])
-  
+
   teardown -->teardown-complete{{Teardown complete?}}
   teardown-complete -->|Yes| return
   teardown-complete -->|No| reconcile
-  
+
   sync --> create-infra([Deploy Control Plane<br>Components])
   create-infra --> create-config-operator([Deploy Hosted Cluster<br>Config Operator])
   create-config-operator -->is-infra-ready{{Infra ready?}}
   is-infra-ready -->|Yes| update-hosted-controlplane-ready([Update HostedControlPlane status])
   is-infra-ready -->|No| reconcile
   update-hosted-controlplane-ready --> return
-  
+
   return([End])
-  
+
 ```
 
 ### Hosted Cluster Config Operator
@@ -57812,7 +57838,7 @@ This section describes the manifests that are used for each platform.
 
 # Multi-platform support
 
-A platform is an infrastructure environment where different HyperShift components can run enabling them to make a series of assumptions, e.g. AWS, Azure, Kubevirt, Agent, None. 
+A platform is an infrastructure environment where different HyperShift components can run enabling them to make a series of assumptions, e.g. AWS, Azure, Kubevirt, Agent, None.
 
 HyperShift provides semantics and support for platforms at different levels: HostedCluster, NodePools and management cluster.
 This document outlines the support matrix that involved these three entities.
@@ -58209,13 +58235,13 @@ graph RL
         end
         MCIngress[Management Cluster<br/>Ingress]
     end
-    
+
     DataPlane[Data Plane]
     ExtUsers[External Users]
-    
+
     DataPlane --> Router
     ExtUsers --> Router
-    
+
     Router --> KAS
     Router --> OAuth
     Router --> Konnectivity
@@ -58267,15 +58293,15 @@ graph RL
         end
         MCIngress[Management Cluster<br/>Ingress]
     end
-    
+
     DataPlane[Data Plane]
     ExtUsers[External Users]
-    
+
     DataPlane --> KASLB
     DataPlane --> MCIngress
     ExtUsers --> KASLB
     ExtUsers --> MCIngress
-    
+
     KASLB --> KAS
     MCIngress --> OAuth
     MCIngress --> Konnectivity
@@ -58337,16 +58363,16 @@ graph RL
         end
         MCIngress[Management Cluster<br/>Ingress]
     end
-    
+
     DataPlane[Data Plane]
     ExtUsers[External Users]
-    
+
     DataPlane -->|PrivateLink| InternalLB
     ExtUsers --> ExternalLB
-    
+
     InternalLB --> Router
     ExternalLB --> Router
-    
+
     Router --> KAS
     Router --> OAuth
     Router --> Konnectivity
@@ -58400,16 +58426,16 @@ graph RL
         end
         MCIngress[Management Cluster<br/>Ingress]
     end
-    
+
     DataPlane[Data Plane]
     ExtUsers[External Users]
 
     ExtUsers ~~~ DataPlane
-    
+
     DataPlane --> |PrivateLink| RouterInternalLB
     ExtUsers --> KASLB
     ExtUsers -->|OAuth| MCIngress
-    
+
     KASLB --> KAS
     RouterInternalLB --> Router
     MCIngress --> OAuth
@@ -58884,16 +58910,16 @@ graph RL
         end
         MCIngress[Management Cluster<br/>Ingress]
     end
-    
+
     DataPlane[Data Plane]
     ExtUsers[External Users]
-    
+
     DataPlane -->|Private Service Connect| InternalLB
     ExtUsers --> ExternalLB
-    
+
     InternalLB --> Router
     ExternalLB --> Router
-    
+
     Router --> KAS
     Router --> OAuth
     Router --> Konnectivity
@@ -58948,15 +58974,15 @@ graph RL
         end
         MCIngress[Management Cluster<br/>Ingress]
     end
-    
+
     DataPlane[Data Plane]
     ExtUsers[External Users]
 
     DataPlane -->|Private Service Connect| InternalLB
     ExtUsers-->|Private Service Connect| InternalLB
-    
+
     InternalLB --> Router
-    
+
     Router --> KAS
     Router --> OAuth
     Router --> Konnectivity
@@ -59038,15 +59064,15 @@ graph RL
         end
         MCIngress[Management Cluster<br/>Ingress]
     end
-    
+
     DataPlane[Data Plane]
     ExtUsers[External Users]
-    
+
     DataPlane --> ExternalLB
     ExtUsers --> ExternalLB
-    
+
     ExternalLB --> Router
-    
+
     Router --> KAS
     Router --> OAuth
     Router --> Konnectivity
@@ -59099,13 +59125,13 @@ graph RL
         end
         Node1[Management Node<br/>192.168.1.100]
     end
-    
+
     DataPlane[Data Plane]
     ExtUsers[External Users]
-    
+
     DataPlane --> |NodePort| Node1
     ExtUsers --> |NodePort| Node1
-    
+
     Node1 --> KAS
     Node1 --> OAuth
     Node1 --> Konnectivity
@@ -59192,13 +59218,13 @@ graph RL
         end
         Node1[Management Node<br/>10.0.0.100]
     end
-    
+
     DataPlane[Data Plane]
     ExtUsers[External Users]
-    
+
     DataPlane --> |NodePort:30000| Node1
     ExtUsers --> |NodePort:30000| Node1
-    
+
     Node1 --> KAS
     Node1 --> OAuth
     Node1 --> Konnectivity
@@ -59262,15 +59288,15 @@ graph RL
         end
         MCIngress[Management Cluster<br/>Ingress]
     end
-    
+
     DataPlane[Data Plane]
     ExtUsers[External Users]
-    
+
     DataPlane --> KASLB
     DataPlane --> MCIngress
     ExtUsers --> KASLB
     ExtUsers --> MCIngress
-    
+
     KASLB --> KAS
     MCIngress --> OAuth
     MCIngress --> Konnectivity
@@ -59425,7 +59451,7 @@ These components manage the infrastructure and node lifecycle. Critical for scal
     - *Look for*: CSR approval failures, certificate issues preventing node join
 
 ### 🏁 Start Here: Primary Resources for Debugging
-**Always check these HyperShift custom resources first** 
+**Always check these HyperShift custom resources first**
 
 - their status sections provide high-level cluster state:
     - **HostedCluster**: `artifacts/e2e-aks/hypershift-azure-run-e2e/artifacts/Test*/namespaces/e2e-clusters-*/hypershift.openshift.io/hostedclusters/*.yaml`
@@ -59449,7 +59475,7 @@ These components manage the infrastructure and node lifecycle. Critical for scal
 
 ## 📋 Understanding Test Results
 
-Each test directory (i.e. `artifacts/e2e-aks/hypershift-azure-run-e2e/artifacts/Test*`) represents a different validation scenario. 
+Each test directory (i.e. `artifacts/e2e-aks/hypershift-azure-run-e2e/artifacts/Test*`) represents a different validation scenario.
 
 Check the `junit.xml` files for test pass/fail status (i.e. `artifacts/e2e-aks/hypershift-azure-run-e2e/artifacts/junit.xml`), and use the corresponding namespace directories to drill down into specific component failures.
 
@@ -59577,7 +59603,7 @@ This is where the **actual control plane pods run**. Look here for:
 ### Finding Control Plane Issues
 1. **Start with overall test status**: Check `finished.json` for high-level failure info
 2. **Check HyperShift custom resources**: Examine HostedCluster, HostedControlPlane, and NodePool status sections for error conditions
-3. **Check test execution**: Look at `artifacts/e2e-aks/hypershift-azure-run-e2e/artifacts/Test*/create.log` 
+3. **Check test execution**: Look at `artifacts/e2e-aks/hypershift-azure-run-e2e/artifacts/Test*/create.log`
 4. **Find control plane pods**: Navigate to `artifacts/e2e-aks/hypershift-azure-run-e2e/artifacts/Test*/namespaces/e2e-clusters-*-{test-name}-*/core/pods/`
 5. **Review specific component logs**: Check `core/pods/logs/{component-name}-*-{container}.log`
 
@@ -59846,21 +59872,21 @@ Information above is subject to change; check IBM Cloud documentation or
 contact IBM development.
 
 ### Management Cluster
-In general, the upstream HyperShift project does not place strict requirements on the OpenShift version of your 
-management cluster. This may vary depending on the particular platform; for example, Kubevirt requires management 
+In general, the upstream HyperShift project does not place strict requirements on the OpenShift version of your
+management cluster. This may vary depending on the particular platform; for example, Kubevirt requires management
 clusters with OCP 4.14 and higher.
 
-The HO determines what versions of OCP can be installed through the HostedCluster (HC); see the HO section for 
-more details. However, different versions of the HO are thoroughly tested only on a limited set of OpenShift versions, 
+The HO determines what versions of OCP can be installed through the HostedCluster (HC); see the HO section for
+more details. However, different versions of the HO are thoroughly tested only on a limited set of OpenShift versions,
 and this should inform your deployment decisions.
 
 #### Production Use Cases
-For production use & support, it is required to use a downstream product which bundles a supported build of the 
-HyperShift Operator. This downstream product is called Multi-Cluster Engine (MCE) and it is available through 
-OpenShift's OperatorHub. 
+For production use & support, it is required to use a downstream product which bundles a supported build of the
+HyperShift Operator. This downstream product is called Multi-Cluster Engine (MCE) and it is available through
+OpenShift's OperatorHub.
 
-MCE versions _do_ require specific OCP versions for the Management Cluster to remain in a supported state. 
-Each version documents its own support matrix. For example, 
+MCE versions _do_ require specific OCP versions for the Management Cluster to remain in a supported state.
+Each version documents its own support matrix. For example,
 
 - MCE 2.5
 - MCE 2.4
@@ -59871,15 +59897,15 @@ As a heuristic, a new release of MCE will run on:
 - The latest GA version of OpenShift
 - Two versions prior to the latest GA version
 
-Versions of MCE can also be obtained with the Advanced Cluster Management (ACM) offering. If you are running ACM, refer 
+Versions of MCE can also be obtained with the Advanced Cluster Management (ACM) offering. If you are running ACM, refer
 to product documentation to determine the bundled MCE version.
 
-The full list of HostedCluster OCP versions that can be installed via the HO on a Management Cluster will depend on the 
-version of the installed HO. However, if you are running a tested configuration or MCE, this list will always include at 
-least (a) the same OCP version as the Management Cluster and (b) Two previous minor versions relative to the Management 
-Cluster. For example, if the Management Cluster is running 4.16 and a supported version of MCE, then the HO will at 
-least be able to install 4.16, 4.15, and 4.14 Hosted Clusters. See the Multi-Cluster Engine section, under the expanded 
-section titled "OpenShift Advanced Cluster Management" on this page for more details. 
+The full list of HostedCluster OCP versions that can be installed via the HO on a Management Cluster will depend on the
+version of the installed HO. However, if you are running a tested configuration or MCE, this list will always include at
+least (a) the same OCP version as the Management Cluster and (b) Two previous minor versions relative to the Management
+Cluster. For example, if the Management Cluster is running 4.16 and a supported version of MCE, then the HO will at
+least be able to install 4.16, 4.15, and 4.14 Hosted Clusters. See the Multi-Cluster Engine section, under the expanded
+section titled "OpenShift Advanced Cluster Management" on this page for more details.
 
 ### API
 There are two user facing resources exposed by HyperShift: HostedClusters and NodePools.
@@ -59887,18 +59913,18 @@ There are two user facing resources exposed by HyperShift: HostedClusters and No
 The HyperShift API version policy generally aligns with the Kubernetes API versioning.
 
 ### HO
-The upstream HyperShift project does not release new versions aligned with the OpenShift release cadence. New versions 
-of the HO are periodically tagged from the `main` branch. These versions are tested and consumed by internal Red Hat 
-managed services, and you can use these versions directly. However, for supported production use, you should use a 
+The upstream HyperShift project does not release new versions aligned with the OpenShift release cadence. New versions
+of the HO are periodically tagged from the `main` branch. These versions are tested and consumed by internal Red Hat
+managed services, and you can use these versions directly. However, for supported production use, you should use a
 supported version of MCE.
 
-The HO is tagged at particular commits as part of merging new HO versions for Red Hat managed services; there is no 
+The HO is tagged at particular commits as part of merging new HO versions for Red Hat managed services; there is no
 particular tagging scheme for this effort.
 
 A list of the tags can be found here.
 
-Once installed, the HO creates a ConfigMap called `supported-versions` into the Hypershift namespace, which describes 
-the HostedClusters supported versions that could be deployed. 
+Once installed, the HO creates a ConfigMap called `supported-versions` into the Hypershift namespace, which describes
+the HostedClusters supported versions that could be deployed.
 
 Here is an example `supported-versions` ConfigMap:
 ```
@@ -59919,7 +59945,7 @@ metadata:
 
 !!! important
 
-        You cannot install HCs higher than what the HO supports. In the example above, HCs using images greater than 
+        You cannot install HCs higher than what the HO supports. In the example above, HCs using images greater than
         4.17 cannot be created.
 
 ### CPO
@@ -59930,10 +59956,10 @@ The CPO is released as part of each OCP payload release image. You can find thos
 - multi-arch
 
 ### HyperShift CLI
-The HyperShift CLI is a helper utility used only for development and testing purposes. No compatibility policies are 
+The HyperShift CLI is a helper utility used only for development and testing purposes. No compatibility policies are
 guaranteed.
 
-It helps create required infrastructure needed for a HostedCluster CR and NodePool CR to successfully install. 
+It helps create required infrastructure needed for a HostedCluster CR and NodePool CR to successfully install.
 
 #### Showing General Version Information
 Running the following command will show what the latest OCP version the CLI supports against your KUBECONFIG:
@@ -59986,7 +60012,7 @@ Supported NodePool versions:
 Unsupported NodePool versions:
 - Higher patch in same minor: `4.18.6`, `4.18.10` (NodePool patch cannot exceed HostedCluster patch)
 - Higher minor version: `4.19.0`, `4.19.z`, `4.20.0` and above
-- Beyond N-3 minor version: `4.14.z`, `4.13.z` and below 
+- Beyond N-3 minor version: `4.14.z`, `4.13.z` and below
 
 ### Version Compatibility Validation
 

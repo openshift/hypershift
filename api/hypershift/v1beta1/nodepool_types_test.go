@@ -119,7 +119,7 @@ func TestAWSNodePoolPlatformSerializationCompatibility(t *testing.T) {
 					ID: ptr.To("subnet-1234567890abcdef0"),
 				},
 				CpuOptions: CpuOptions{
-					NestedVirtualization: "enabled",
+					NestedVirtualization: NestedVirtualizationEnabled,
 				},
 			},
 			expectedJSON: `{"instanceType":"m6i.large","subnet":{"id":"subnet-1234567890abcdef0"},"cpuOptions":{"nestedVirtualization":"enabled"}}`,
