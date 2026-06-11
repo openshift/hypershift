@@ -71,6 +71,24 @@ func TestDeserializeMultiStreamImageMetadata(t *testing.T) {
 		g.Expect(rhel10Arch.Images.Gcp.Name).To(Equal("rhel10-gcp-image"))
 	})
 
+	t.Run("When streams key is present but empty it should return error", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+
+		data := []byte(`{"data":{"streams":"{}"}}`)
+		_, err := DeserializeMultiStreamImageMetadata(data)
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("'streams' key is present but empty"))
+	})
+
+	t.Run("When a stream entry has null metadata it should return error", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+
+		data := []byte(`{"data":{"streams":"{\"rhel-9\": null}"}}`)
+		_, err := DeserializeMultiStreamImageMetadata(data)
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("has null metadata"))
+	})
+
 	t.Run("When DeserializeImageMetadata is called on a multi-stream ConfigMap it should return default stream only", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 

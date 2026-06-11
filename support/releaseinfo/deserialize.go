@@ -69,6 +69,14 @@ func DeserializeMultiStreamImageMetadata(data []byte) (*StreamsResult, error) {
 		if err := json.Unmarshal([]byte(streamsData), &streams); err != nil {
 			return nil, fmt.Errorf("couldn't decode multi-stream metadata data: %w\n%s", err, streamsData)
 		}
+		if len(streams) == 0 {
+			return nil, fmt.Errorf("'streams' key is present but empty")
+		}
+		for name, s := range streams {
+			if s == nil {
+				return nil, fmt.Errorf("stream %q has null metadata", name)
+			}
+		}
 	}
 
 	if defaultStream == nil && streams == nil {

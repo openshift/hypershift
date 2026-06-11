@@ -5,10 +5,11 @@ import (
 
 	. "github.com/onsi/gomega"
 
-	"github.com/coreos/stream-metadata-go/stream"
+	"github.com/openshift/hypershift/support/releaseinfo/fixtures"
+
 	imageapi "github.com/openshift/api/image/v1"
 
-	"github.com/openshift/hypershift/support/releaseinfo/fixtures"
+	"github.com/coreos/stream-metadata-go/stream"
 )
 
 func TestParseComponentVersionsLabel(t *testing.T) {

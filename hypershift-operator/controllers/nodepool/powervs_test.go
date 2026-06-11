@@ -51,4 +51,34 @@ func TestGetPowerVSImage(t *testing.T) {
 			g.Expect(err.Error()).To(ContainSubstring(tc.expectedError))
 		})
 	}
+
+	t.Run("When valid PowerVS image exists for region it should return the image", func(t *testing.T) {
+		g := NewWithT(t)
+		releaseImage := &releaseinfo.ReleaseImage{
+			StreamMetadata: &stream.Stream{
+				Architectures: map[string]stream.Arch{
+					"ppc64le": {
+						Images: stream.Images{
+							PowerVS: &stream.ReplicatedObject{
+								Regions: map[string]stream.SingleObject{
+									"us-south": {
+										Release: "rhcos-4.14.0",
+										Object:  "rhcos-414.92.202311241643-0-ppc64le-powervs.ova.gz",
+										Bucket:  "rhcos-powervs-images-us-south",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+		img, region, err := getPowerVSImage("us-south", releaseImage)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(region).To(Equal("us-south"))
+		// Dots in release name are replaced with hyphens
+		g.Expect(img.Release).To(Equal("rhcos-4-14-0"))
+		g.Expect(img.Object).To(Equal("rhcos-414.92.202311241643-0-ppc64le-powervs.ova.gz"))
+		g.Expect(img.Bucket).To(Equal("rhcos-powervs-images-us-south"))
+	})
 }
