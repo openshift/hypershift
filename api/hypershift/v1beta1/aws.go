@@ -158,6 +158,8 @@ type SpotOptions struct {
 }
 
 // CpuOptions specifies CPU configuration for EC2 instances.
+// At least one field must be specified when cpuOptions is present.
+//
 // +kubebuilder:validation:MinProperties=1
 type CpuOptions struct {
 	// nestedVirtualization indicates whether to enable nested virtualization on the instance.
@@ -165,8 +167,19 @@ type CpuOptions struct {
 	//
 	// +optional
 	// +kubebuilder:validation:Enum=enabled;disabled
-	NestedVirtualization string `json:"nestedVirtualization,omitempty"`
+	NestedVirtualization NestedVirtualizationPolicy `json:"nestedVirtualization,omitempty"`
 }
+
+// NestedVirtualizationPolicy indicates whether nested virtualization is enabled or disabled.
+type NestedVirtualizationPolicy string
+
+const (
+	// NestedVirtualizationEnabled enables nested virtualization on the instance.
+	NestedVirtualizationEnabled NestedVirtualizationPolicy = "enabled"
+
+	// NestedVirtualizationDisabled disables nested virtualization on the instance.
+	NestedVirtualizationDisabled NestedVirtualizationPolicy = "disabled"
+)
 
 // MarketType describes the market type for EC2 instances.
 type MarketType string
