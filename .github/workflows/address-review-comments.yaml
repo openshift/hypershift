@@ -91,4 +91,4 @@ jobs:
           claude plugin marketplace add enxebre/ai-scripts
           claude plugin install git@enxebre
           claude --version
-          claude -p "/utils:address-reviews $PR_NUMBER" --model claude-opus-4-6 --max-turns 100 --allowedTools "Bash Read Write Edit Grep Glob WebFetch"
+          claude -p "/utils:address-reviews $PR_NUMBER" --model claude-opus-4-6 --max-turns 200 --allowedTools "Bash Read Write Edit Grep Glob WebFetch"
