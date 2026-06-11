@@ -60,6 +60,9 @@ type rolloutConfig struct {
 	// TODO(alberto): consider let haproxyRawConfig be an implementation detail of ConfigGenerator.
 	// For now, it's a required input to keep the haproxy business logic and files outside the scope of this initial refactor.
 	haproxyRawConfig string
+	// rhelStream holds the explicit spec value from nodePool.Spec.OSImageStream.Name.
+	// It is never the resolved default — only the user-specified value.
+	rhelStream string
 }
 
 // NewConfigGenerator is the contract to create a new ConfigGenerator.
@@ -99,6 +102,7 @@ func NewConfigGenerator(ctx context.Context, client client.Client, hostedCluster
 		return nil, err
 	}
 	cg.rolloutConfig.mcoRawConfig = mcoRawConfig
+	cg.rhelStream = nodePool.Spec.OSImageStream.Name
 
 	return cg, nil
 }
@@ -118,7 +122,7 @@ func (cg *ConfigGenerator) CompressedAndEncoded() (*bytes.Buffer, error) {
 // TODO(alberto): hash the struct directly instead of the string representation field by field.
 // This is kept like this for now to contain the scope of the refactor and avoid backward compatibility issues.
 func (cg *ConfigGenerator) Hash() string {
-	return supportutil.HashSimple(cg.mcoRawConfig + cg.releaseImage.Version() + cg.pullSecretName + cg.additionalTrustBundleName + cg.globalConfig)
+	return supportutil.HashSimple(cg.mcoRawConfig + cg.releaseImage.Version() + cg.pullSecretName + cg.additionalTrustBundleName + cg.globalConfig + cg.rhelStream)
 }
 
 // HashWithOutVersion is like Hash but doesn't compute the release version.
@@ -131,6 +135,13 @@ func (cg *ConfigGenerator) HashWithoutVersion() string {
 
 func (cg *ConfigGenerator) Version() string {
 	return cg.releaseImage.Version()
+}
+
+// UsesRunc checks whether any of the NodePool's referenced configs contain
+// a ContainerRuntimeConfig with spec.containerRuntimeConfig.defaultRuntime set to "runc".
+func (cg *ConfigGenerator) UsesRunc() bool {
+	return strings.Contains(cg.mcoRawConfig, `"defaultRuntime":"runc"`) ||
+		strings.Contains(cg.mcoRawConfig, `defaultRuntime: runc`)
 }
 
 // generateMCORawConfig generates a mco consumable artifact of the mco Config.

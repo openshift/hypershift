@@ -736,11 +736,21 @@ func isAutoscalingEnabled(nodePool *hyperv1.NodePool) bool {
 	return nodePool.Spec.AutoScaling != nil
 }
 
-func defaultNodePoolAMI(region string, specifiedArch string, releaseImage *releaseinfo.ReleaseImage) (string, error) {
-	if releaseImage.StreamMetadata == nil {
+func defaultNodePoolAMI(region string, specifiedArch string, releaseImage *releaseinfo.ReleaseImage, osStreams ...string) (string, error) {
+	// When an OS stream is specified, use stream-specific metadata if available.
+	osStream := ""
+	if len(osStreams) > 0 {
+		osStream = osStreams[0]
+	}
+
+	streamMeta := releaseImage.StreamMetadata
+	if osStream != "" {
+		streamMeta = releaseImage.StreamMetadataForStream(osStream)
+	}
+	if streamMeta == nil {
 		return "", fmt.Errorf("release image stream metadata is nil")
 	}
-	arch, foundArch := releaseImage.StreamMetadata.Architectures[hyperv1.ArchAliases[specifiedArch]]
+	arch, foundArch := streamMeta.Architectures[hyperv1.ArchAliases[specifiedArch]]
 	if !foundArch {
 		return "", fmt.Errorf("couldn't find OS metadata for architecture %q", specifiedArch)
 	}
@@ -759,15 +769,26 @@ func defaultNodePoolAMI(region string, specifiedArch string, releaseImage *relea
 }
 
 // defaultNodePoolGCPImage returns the default GCP image for a given architecture from release metadata.
-func defaultNodePoolGCPImage(specifiedArch string, releaseImage *releaseinfo.ReleaseImage) (string, error) {
+func defaultNodePoolGCPImage(specifiedArch string, releaseImage *releaseinfo.ReleaseImage, osStreams ...string) (string, error) {
 	if releaseImage == nil {
 		return "", fmt.Errorf("release image is nil, cannot determine GCP image")
 	}
-	if releaseImage.StreamMetadata == nil {
+
+	// When an OS stream is specified, use stream-specific metadata if available.
+	osStream := ""
+	if len(osStreams) > 0 {
+		osStream = osStreams[0]
+	}
+
+	streamMeta := releaseImage.StreamMetadata
+	if osStream != "" {
+		streamMeta = releaseImage.StreamMetadataForStream(osStream)
+	}
+	if streamMeta == nil {
 		return "", fmt.Errorf("release image stream metadata is nil, cannot determine GCP image for architecture %q", specifiedArch)
 	}
 
-	arch, foundArch := releaseImage.StreamMetadata.Architectures[hyperv1.ArchAliases[specifiedArch]]
+	arch, foundArch := streamMeta.Architectures[hyperv1.ArchAliases[specifiedArch]]
 	if !foundArch {
 		return "", fmt.Errorf("couldn't find OS metadata for architecture %q", specifiedArch)
 	}

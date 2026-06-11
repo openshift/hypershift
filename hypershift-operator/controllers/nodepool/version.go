@@ -3,7 +3,9 @@ package nodepool
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"sort"
+	"strconv"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 
@@ -11,6 +13,28 @@ import (
 
 	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
 )
+
+// rhcosMajorVersionRe extracts the major version from an RHCOS version string.
+// RHCOS version format example: "Red Hat Enterprise Linux CoreOS 419.97.202503170921-0 (Plow)"
+// The first digit(s) before the minor version indicate the OCP major: 4xx = RHEL 9, 5xx = RHEL 10.
+var rhcosMajorVersionRe = regexp.MustCompile(`CoreOS\s+(\d)`)
+
+// inferOSStreamFromNodeInfo derives the RHEL stream from the node's OS image version string.
+// Returns "rhel-9" for OCP 4.x (RHCOS 4xx), "rhel-10" for OCP 5.x (RHCOS 5xx), or empty string if undetermined.
+func inferOSStreamFromNodeInfo(osImage string) string {
+	matches := rhcosMajorVersionRe.FindStringSubmatch(osImage)
+	if len(matches) < 2 {
+		return ""
+	}
+	major, err := strconv.Atoi(matches[1])
+	if err != nil {
+		return ""
+	}
+	if major >= 5 {
+		return "rhel-10"
+	}
+	return "rhel-9"
+}
 
 // versionKey is used as a map key for grouping machines by version.
 type versionKey struct {
@@ -86,7 +110,8 @@ func (r *NodePoolReconciler) nodeVersionsFromMachines(_ context.Context, machine
 }
 
 // setNodesInfoStatus aggregates node version and health information from CAPI Machines
-// and sets it on nodePool.Status.NodesInfo.
+// and sets it on nodePool.Status.NodesInfo. It also infers and sets status.osImageStream
+// from the observed OS image version on nodes.
 func (r *NodePoolReconciler) setNodesInfoStatus(ctx context.Context, nodePool *hyperv1.NodePool) error {
 	machines, err := r.getMachinesForNodePool(ctx, nodePool)
 	if err != nil {
@@ -96,6 +121,41 @@ func (r *NodePoolReconciler) setNodesInfoStatus(ctx context.Context, nodePool *h
 	nodeVersions := r.nodeVersionsFromMachines(ctx, machines, nodePool)
 	nodePool.Status.NodesInfo = hyperv1.NodePoolNodesInfo{
 		NodeVersions: nodeVersions,
+	}
+
+	// Infer OS stream from observed node OS image versions.
+	// Set status.osImageStream when a majority of nodes report a consistent stream.
+	streamCounts := map[string]int{}
+	total := 0
+	for _, machine := range machines {
+		if machine.Status.NodeInfo == nil {
+			continue
+		}
+		stream := inferOSStreamFromNodeInfo(machine.Status.NodeInfo.OperatingSystem)
+		if stream == "" {
+			// Try the OSImage field which contains the full version string
+			stream = inferOSStreamFromNodeInfo(machine.Status.NodeInfo.OSImage)
+		}
+		if stream != "" {
+			streamCounts[stream]++
+			total++
+		}
+	}
+	if total > 0 {
+		// Find the majority stream
+		bestStream := ""
+		bestCount := 0
+		for s, c := range streamCounts {
+			if c > bestCount {
+				bestStream = s
+				bestCount = c
+			}
+		}
+		if bestCount > total/2 {
+			nodePool.Status.OSImageStream = hyperv1.OSImageStreamReference{
+				Name: bestStream,
+			}
+		}
 	}
 
 	return nil

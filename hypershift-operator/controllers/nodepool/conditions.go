@@ -374,7 +374,7 @@ func (r *NodePoolReconciler) validMachineConfigCondition(ctx context.Context, no
 	}
 
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
-	_, err = NewConfigGenerator(ctx, r.Client, hcluster, nodePool, releaseImage, haproxyRawConfig, controlPlaneNamespace)
+	configGenerator, err := NewConfigGenerator(ctx, r.Client, hcluster, nodePool, releaseImage, haproxyRawConfig, controlPlaneNamespace)
 	if err != nil {
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolValidMachineConfigConditionType,
@@ -385,6 +385,33 @@ func (r *NodePoolReconciler) validMachineConfigCondition(ctx context.Context, no
 		})
 		return &ctrl.Result{}, fmt.Errorf("failed to generate config: %w", err)
 	}
+
+	// Validate RHEL stream selection after config generation succeeds.
+	if nodePool.Spec.OSImageStream.Name != "" {
+		releaseVersion, parseErr := semver.ParseTolerant(releaseImage.Version())
+		if parseErr != nil {
+			SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+				Type:               hyperv1.NodePoolValidMachineConfigConditionType,
+				Status:             corev1.ConditionFalse,
+				Reason:             hyperv1.NodePoolValidationFailedReason,
+				Message:            fmt.Sprintf("failed to parse release version for RHEL stream validation: %v", parseErr),
+				ObservedGeneration: nodePool.Generation,
+			})
+			return &ctrl.Result{}, nil
+		}
+		_, streamErr := getRHELStream(nodePool.Spec.OSImageStream.Name, releaseVersion, configGenerator.UsesRunc())
+		if streamErr != nil {
+			SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+				Type:               hyperv1.NodePoolValidMachineConfigConditionType,
+				Status:             corev1.ConditionFalse,
+				Reason:             hyperv1.NodePoolValidationFailedReason,
+				Message:            fmt.Sprintf("invalid OS image stream configuration: %v", streamErr),
+				ObservedGeneration: nodePool.Generation,
+			})
+			return &ctrl.Result{}, nil
+		}
+	}
+
 	SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 		Type:               hyperv1.NodePoolValidMachineConfigConditionType,
 		Status:             corev1.ConditionTrue,
