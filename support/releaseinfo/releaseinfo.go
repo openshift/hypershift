@@ -39,7 +39,20 @@ type ProviderWithOpenShiftImageRegistryOverrides interface {
 // discover constituent component image information.
 type ReleaseImage struct {
 	*imageapi.ImageStream `json:",inline"`
-	StreamMetadata        *stream.Stream `json:"streamMetadata"`
+	StreamMetadata        *stream.Stream            `json:"streamMetadata"`
+	StreamsMetadata       map[string]*stream.Stream `json:"streamsMetadata,omitempty"`
+}
+
+// StreamMetadataForStream returns the stream metadata for the given OS stream name.
+// If multi-stream metadata is available and contains the requested stream, that stream's metadata is returned.
+// Otherwise, it falls back to the legacy single-stream metadata.
+func (r *ReleaseImage) StreamMetadataForStream(streamName string) *stream.Stream {
+	if r.StreamsMetadata != nil {
+		if s, ok := r.StreamsMetadata[streamName]; ok {
+			return s
+		}
+	}
+	return r.StreamMetadata
 }
 
 func (i *ReleaseImage) Version() string {
