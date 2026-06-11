@@ -70,12 +70,12 @@ jobs:
           curl -fsSL https://claude.ai/install.sh | bash
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
-      - name: Set up ai-helpers plugins
+      - name: Install tool dependencies
         run: |
-          git clone --depth 1 https://github.com/openshift-eng/ai-helpers.git "$GITHUB_WORKSPACE/ai-helpers"
-          mkdir -p "$HOME/.claude/plugins"
-          printf '%s\n' '{"enabledPlugins":{"utils@ai-helpers":true}}' > "$HOME/.claude/settings.json"
-          printf '%s\n' "{\"ai-helpers\":{\"source\":{\"source\":\"directory\",\"path\":\"$GITHUB_WORKSPACE/ai-helpers\"},\"installLocation\":\"$GITHUB_WORKSPACE/ai-helpers\",\"lastUpdated\":\"2025-10-27T12:00:00.000Z\"}}" > "$HOME/.claude/plugins/known_marketplaces.json"
+          go install golang.org/x/tools/gopls@latest
+          echo "$HOME/go/bin" >> $GITHUB_PATH
+          pip install --break-system-packages pre-commit
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
 
       - name: Address PR review comments
         env:
@@ -85,5 +85,10 @@ jobs:
           GH_TOKEN: ${{ steps.token.outputs.use_fork_token == 'true' && secrets.COMMUNITY_FORK_TOKEN || github.token }}
           PR_NUMBER: ${{ github.event.issue.number }}
         run: |
+          claude plugin marketplace add openshift-eng/ai-helpers
+          claude plugin install utils@ai-helpers
+          claude plugin install golang@ai-helpers
+          claude plugin marketplace add enxebre/ai-scripts
+          claude plugin install git@enxebre
           claude --version
           claude -p "/utils:address-reviews $PR_NUMBER" --model claude-opus-4-6 --max-turns 100 --allowedTools "Bash Read Write Edit Grep Glob WebFetch"
