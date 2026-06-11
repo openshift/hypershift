@@ -191,7 +191,7 @@ func (c *CAPI) Reconcile(ctx context.Context) error {
 		// When MHC RemediationAllowed is False, override the Ready condition to signal
 		// that auto-repair is blocked because too many machines are unhealthy.
 		if remediationAllowed := findMHCRemediationAllowedCondition(mhc.Status.Conditions); remediationAllowed != nil {
-			if remediationAllowed.Status == corev1.ConditionFalse {
+			if remediationAllowed.Status == metav1.ConditionFalse {
 				SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 					Type:               hyperv1.NodePoolReadyConditionType,
 					Status:             corev1.ConditionFalse,
@@ -1462,10 +1462,10 @@ func (r *NodePoolReconciler) getMachinesForNodePool(ctx context.Context, nodePoo
 	return sortedByCreationTimestamp(machinesForNodePool), nil
 }
 
-// findMHCRemediationAllowedCondition finds the RemediationAllowed condition in a CAPI Conditions slice.
-func findMHCRemediationAllowedCondition(conditions capiv1.Conditions) *capiv1.Condition {
+// findMHCRemediationAllowedCondition finds the RemediationAllowed condition in the MachineHealthCheck status conditions.
+func findMHCRemediationAllowedCondition(conditions []metav1.Condition) *metav1.Condition {
 	for i := range conditions {
-		if conditions[i].Type == capiv1.RemediationAllowedCondition {
+		if conditions[i].Type == capiv1.MachineHealthCheckRemediationAllowedCondition {
 			return &conditions[i]
 		}
 	}

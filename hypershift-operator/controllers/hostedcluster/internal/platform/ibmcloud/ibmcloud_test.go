@@ -122,7 +122,7 @@ func TestReconcileCAPIInfraCR(t *testing.T) {
 					Ready: true,
 				},
 				Spec: capiibmv1.IBMVPCClusterSpec{
-					ControlPlaneEndpoint: capiv1.APIEndpoint{
+					ControlPlaneEndpoint: capiv1beta1.APIEndpoint{
 						Port: fakeAPIEndpoint.Port,
 						Host: fakeAPIEndpoint.Host,
 					},

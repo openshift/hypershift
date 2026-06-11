@@ -23,7 +23,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
-	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -189,7 +189,8 @@ func (s *SpotTerminationHandlerTest) Run(t *testing.T, nodePool hyperv1.NodePool
 				Namespace: controlPlaneNamespace,
 			},
 		}
-		e2eutil.EventuallyObject(t, s.ctx, fmt.Sprintf("Waiting for deployment %s/%s to be ready", controlPlaneNamespace, awsNodeTerminationHandlerDeploymentName),
+		e2eutil.EventuallyObject(
+			t, s.ctx, fmt.Sprintf("Waiting for deployment %s/%s to be ready", controlPlaneNamespace, awsNodeTerminationHandlerDeploymentName),
 			func(ctx context.Context) (*appsv1.Deployment, error) {
 				err := s.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(terminationHandlerDeployment), terminationHandlerDeployment)
 				return terminationHandlerDeployment, err
@@ -218,7 +219,8 @@ func (s *SpotTerminationHandlerTest) Run(t *testing.T, nodePool hyperv1.NodePool
 				Namespace: controlPlaneNamespace,
 			},
 		}
-		e2eutil.EventuallyObject(t, s.ctx, fmt.Sprintf("Waiting for MachineHealthCheck %s/%s to be created with correct selector", controlPlaneNamespace, spotMHCName),
+		e2eutil.EventuallyObject(
+			t, s.ctx, fmt.Sprintf("Waiting for MachineHealthCheck %s/%s to be created with correct selector", controlPlaneNamespace, spotMHCName),
 			func(ctx context.Context) (*capiv1.MachineHealthCheck, error) {
 				err := s.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(spotMHC), spotMHC)
 				return spotMHC, err

@@ -17,7 +17,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
 
-	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -77,8 +77,8 @@ func TestReconcileDefaultIngressEndpoints(t *testing.T) {
 	vmWorker2Meta := newObjectMeta("ns1", "vm-worker2")
 
 	addressesByMachine := map[string][]string{
-		worker1Meta.Name: []string{"192.168.1.3", "2001:db8:a0b:12f0::3"},
-		worker2Meta.Name: []string{"192.168.1.4", "2001:db8:a0b:12f0::4"},
+		worker1Meta.Name: {"192.168.1.3", "2001:db8:a0b:12f0::3"},
+		worker2Meta.Name: {"192.168.1.4", "2001:db8:a0b:12f0::4"},
 	}
 
 	protocolTCP := corev1.ProtocolTCP
@@ -98,7 +98,7 @@ func TestReconcileDefaultIngressEndpoints(t *testing.T) {
 				TypeMeta:   machineTypeMeta,
 				ObjectMeta: worker1Meta,
 				Spec: capiv1.MachineSpec{
-					InfrastructureRef: corev1.ObjectReference{
+					InfrastructureRef: capiv1.ContractVersionedObjectReference{
 						Name: vmWorker1Meta.Name,
 					},
 				},
@@ -120,7 +120,7 @@ func TestReconcileDefaultIngressEndpoints(t *testing.T) {
 				TypeMeta:   machineTypeMeta,
 				ObjectMeta: worker2Meta,
 				Spec: capiv1.MachineSpec{
-					InfrastructureRef: corev1.ObjectReference{
+					InfrastructureRef: capiv1.ContractVersionedObjectReference{
 						Name: vmWorker2Meta.Name,
 					},
 				},
@@ -388,7 +388,7 @@ func TestReconcileDefaultIngressEndpoints(t *testing.T) {
 			TypeMeta:   machineTypeMeta,
 			ObjectMeta: worker1Meta,
 			Spec: capiv1.MachineSpec{
-				InfrastructureRef: corev1.ObjectReference{
+				InfrastructureRef: capiv1.ContractVersionedObjectReference{
 					Name: vmWorker1Meta.Name,
 				},
 			},
@@ -406,7 +406,7 @@ func TestReconcileDefaultIngressEndpoints(t *testing.T) {
 			TypeMeta:   machineTypeMeta,
 			ObjectMeta: worker2Meta,
 			Spec: capiv1.MachineSpec{
-				InfrastructureRef: corev1.ObjectReference{
+				InfrastructureRef: capiv1.ContractVersionedObjectReference{
 					Name: vmWorker2Meta.Name,
 				},
 			},
@@ -427,7 +427,7 @@ func TestReconcileDefaultIngressEndpoints(t *testing.T) {
 			TypeMeta:   machineTypeMeta,
 			ObjectMeta: worker1Meta,
 			Spec: capiv1.MachineSpec{
-				InfrastructureRef: corev1.ObjectReference{
+				InfrastructureRef: capiv1.ContractVersionedObjectReference{
 					Name: vmWorker1Meta.Name,
 				},
 			},
@@ -445,7 +445,7 @@ func TestReconcileDefaultIngressEndpoints(t *testing.T) {
 			TypeMeta:   machineTypeMeta,
 			ObjectMeta: worker2Meta,
 			Spec: capiv1.MachineSpec{
-				InfrastructureRef: corev1.ObjectReference{
+				InfrastructureRef: capiv1.ContractVersionedObjectReference{
 					Name: vmWorker2Meta.Name,
 				},
 			},
@@ -504,7 +504,7 @@ func TestReconcileDefaultIngressEndpoints(t *testing.T) {
 		},
 		{
 			name:             "With Failing machine with internal addresses and passthrow service should mark endpointslices as not ready/not serving",
-			machines:         pairOfDualStackMachines(capiv1.MachinePhaseRunning, capiv1.MachinePhaseFailed),
+			machines:         pairOfDualStackMachines(capiv1.MachinePhaseRunning, capiv1.MachinePhaseDeleting),
 			virtualMachines:  pairOfVirtualMachines,
 			services:         []corev1.Service{defaultIngressService},
 			expectedServices: []corev1.Service{defaultIngressService},
@@ -628,7 +628,6 @@ func TestReconcileDefaultIngressEndpoints(t *testing.T) {
 			_, err = yaml.Marshal(obtainedServicesList)
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(obtainedServicesList.Items).To(WithTransform(resetResourceVersionFromServices, ConsistOf(tc.expectedServices)))
-
 		})
 	}
 }
