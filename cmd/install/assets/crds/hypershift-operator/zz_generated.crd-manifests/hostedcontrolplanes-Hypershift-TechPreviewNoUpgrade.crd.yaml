@@ -8752,10 +8752,8 @@ spec:
                   https://github.com/kubernetes-sigs/cluster-api/blob/65e5385bffd71bf4aad3cf34a537f11b217c7fab/controllers/machine_controller.go#L468
                 type: boolean
               initialization:
-                description: |-
-                  initialization contains fields that track the status of the initialization of the HostedControlPlane.
-                  This satisfies the CAPI v1beta2 ControlPlane provider contract:
-                  https://github.com/kubernetes-sigs/cluster-api/blob/v1.11.5/api/core/v1beta2/cluster_types.go#L1371-L1379
+                description: initialization contains fields that track the status
+                  of the initialization of the HostedControlPlane.
                 minProperties: 1
                 properties:
                   controlPlaneInitialized:
