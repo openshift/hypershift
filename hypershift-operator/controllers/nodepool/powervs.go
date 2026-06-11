@@ -14,6 +14,8 @@ import (
 	capipowervs "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2"
 	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
+
+	"github.com/coreos/stream-metadata-go/stream"
 )
 
 const (
@@ -48,7 +50,7 @@ func getImageRegion(region string) string {
 
 func ibmPowerVSMachineTemplateSpec(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool, releaseImage *releaseinfo.ReleaseImage) (*capipowervs.IBMPowerVSMachineTemplateSpec, error) {
 	// Validate PowerVS platform specific input
-	var coreOSPowerVSImage *releaseinfo.CoreOSPowerVSImage
+	var coreOSPowerVSImage *stream.SingleObject
 	coreOSPowerVSImage, _, err := getPowerVSImage(hcluster.Spec.Platform.PowerVS.Region, releaseImage)
 	if err != nil {
 		return nil, fmt.Errorf("couldn't discover a PowerVS Image for release image: %w", err)
@@ -108,10 +110,14 @@ func (c *CAPI) ibmPowerVSMachineTemplate(templateNameGenerator func(spec any) (s
 	return template, nil
 }
 
-func getPowerVSImage(region string, releaseImage *releaseinfo.ReleaseImage) (*releaseinfo.CoreOSPowerVSImage, string, error) {
+func getPowerVSImage(region string, releaseImage *releaseinfo.ReleaseImage) (*stream.SingleObject, string, error) {
 	arch, foundArch := releaseImage.StreamMetadata.Architectures["ppc64le"]
 	if !foundArch {
 		return nil, "", fmt.Errorf("couldn't find OS metadata for architecture %q", "ppc64le")
+	}
+
+	if arch.Images.PowerVS == nil {
+		return nil, "", fmt.Errorf("release image metadata has no PowerVS images")
 	}
 
 	COSRegion := getImageRegion(region)
@@ -135,7 +141,7 @@ func IBMPowerVSImage(namespace, name string) *capipowervs.IBMPowerVSImage {
 	}
 }
 
-func reconcileIBMPowerVSImage(ibmPowerVSImage *capipowervs.IBMPowerVSImage, hcluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool, infraID, region string, img *releaseinfo.CoreOSPowerVSImage) error {
+func reconcileIBMPowerVSImage(ibmPowerVSImage *capipowervs.IBMPowerVSImage, hcluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool, infraID, region string, img *stream.SingleObject) error {
 	if ibmPowerVSImage.Annotations == nil {
 		ibmPowerVSImage.Annotations = make(map[string]string)
 	}
@@ -155,7 +161,7 @@ func reconcileIBMPowerVSImage(ibmPowerVSImage *capipowervs.IBMPowerVSImage, hclu
 
 func (r *NodePoolReconciler) setPowerVSconditions(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string, releaseImage *releaseinfo.ReleaseImage) error {
 	log := ctrl.LoggerFrom(ctx)
-	var coreOSPowerVSImage *releaseinfo.CoreOSPowerVSImage
+	var coreOSPowerVSImage *stream.SingleObject
 	coreOSPowerVSImage, powervsImageRegion, err := getPowerVSImage(hcluster.Spec.Platform.PowerVS.Region, releaseImage)
 	if err != nil {
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{

@@ -11,6 +11,7 @@ import (
 
 	imagev1 "github.com/openshift/api/image/v1"
 
+	"github.com/coreos/stream-metadata-go/stream"
 	"github.com/docker/distribution"
 )
 
@@ -22,7 +23,7 @@ func TestProviderWithOpenShiftImageRegistryOverridesDecorator_Lookup(t *testing.
 	canonicalReleaseImage := "canonical-release-image"
 	releaseImage := &ReleaseImage{
 		ImageStream:    &imagev1.ImageStream{},
-		StreamMetadata: &CoreOSStreamMetadata{},
+		StreamMetadata: &stream.Stream{},
 	}
 
 	// Create registry providers delegating to a cached provider so we can mock the cache content for the mirroredReleaseImage.
@@ -64,7 +65,7 @@ func TestProviderWithOpenShiftImageRegistryOverridesDecorator_LookupWithNilRepoS
 	directImage := "quay.io/openshift-release-dev/ocp-release:4.16.13-x86_64"
 	releaseImage := &ReleaseImage{
 		ImageStream:    &imagev1.ImageStream{},
-		StreamMetadata: &CoreOSStreamMetadata{},
+		StreamMetadata: &stream.Stream{},
 	}
 
 	delegate := &RegistryMirrorProviderDecorator{

@@ -9,6 +9,8 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/yaml"
+
+	"github.com/coreos/stream-metadata-go/stream"
 )
 
 func DeserializeImageStream(data []byte) (*imageapi.ImageStream, error) {
@@ -19,7 +21,7 @@ func DeserializeImageStream(data []byte) (*imageapi.ImageStream, error) {
 	return &imageStream, nil
 }
 
-func DeserializeImageMetadata(data []byte) (*CoreOSStreamMetadata, error) {
+func DeserializeImageMetadata(data []byte) (*stream.Stream, error) {
 	var coreOSMetaCM corev1.ConfigMap
 	if err := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(data), 100).Decode(&coreOSMetaCM); err != nil {
 		return nil, fmt.Errorf("couldn't read image lookup data as serialized ConfigMap: %w\nraw data:\n%s", err, string(data))
@@ -28,7 +30,7 @@ func DeserializeImageMetadata(data []byte) (*CoreOSStreamMetadata, error) {
 	if !hasStreamData {
 		return nil, fmt.Errorf("coreos stream metadata configmap is missing the 'stream' key")
 	}
-	var coreOSMeta CoreOSStreamMetadata
+	var coreOSMeta stream.Stream
 	if err := json.Unmarshal([]byte(streamData), &coreOSMeta); err != nil {
 		return nil, fmt.Errorf("couldn't decode stream metadata data: %w\n%s", err, streamData)
 	}

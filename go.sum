@@ -225,6 +225,8 @@ github.com/coreos/go-systemd/v22 v22.6.0 h1:aGVa/v8B7hpb0TKl0MWoAavPDmHvobFe5R5z
 github.com/coreos/go-systemd/v22 v22.6.0/go.mod h1:iG+pp635Fo7ZmV/j14KUcmEyWF+0X7Lua8rrTWzYgWU=
 github.com/coreos/ignition/v2 v2.25.1 h1:mrXOVwb4ZPlLG1tIki5em604Yiz5oRFlWkISrEYpHds=
 github.com/coreos/ignition/v2 v2.25.1/go.mod h1:Px9MZK4oLhMUM3QMzzRhKbHowc5Hkf+VUu67i0gmsNw=
+github.com/coreos/stream-metadata-go v0.4.11 h1:sQQOpI+v/eTyYO76r7jJeCmqZcm1oQYKdwirFJ7f0M0=
+github.com/coreos/stream-metadata-go v0.4.11/go.mod h1:dTE8UEFgyUcrbdUg7vGT3uIP7S8a1IwUlmWLKlOp8G8=
 github.com/coreos/vcontext v0.0.0-20231102161604-685dc7299dc5 h1:sMZSC2BW5LKCdvNbfN12SbKrNvtLBUNjfHZmMvI2ItY=
 github.com/coreos/vcontext v0.0.0-20231102161604-685dc7299dc5/go.mod h1:Salmysdw7DAVuobBW/LwsKKgpyCPHUhjyJoMJD+ZJiI=
 github.com/cpuguy83/go-md2man/v2 v2.0.6/go.mod h1:oOW0eioCTA6cOiMLiUPZOpcVxMig6NIQQ7OS05n1F4g=

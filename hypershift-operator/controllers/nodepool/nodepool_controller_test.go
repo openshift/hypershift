@@ -42,6 +42,7 @@ import (
 	"sigs.k8s.io/yaml"
 
 	ignitionapi "github.com/coreos/ignition/v2/config/v3_2/types"
+	"github.com/coreos/stream-metadata-go/stream"
 	"github.com/google/go-cmp/cmp"
 	"github.com/vincent-petithory/dataurl"
 )
@@ -591,6 +592,21 @@ func TestDefaultNodePoolAMI(t *testing.T) {
 			expectedImage: "",
 		},
 		{
+			name:          "fail because Aws images is nil",
+			region:        "us-east-1",
+			specifiedArch: "amd64",
+			releaseImage: &releaseinfo.ReleaseImage{
+				StreamMetadata: &stream.Stream{
+					Architectures: map[string]stream.Arch{
+						"x86_64": {
+							Images: stream.Images{},
+						},
+					},
+				},
+			},
+			expectedImage: "",
+		},
+		{
 			name:          "fail because stream metadata is nil",
 			region:        "us-east-1",
 			specifiedArch: "amd64",
@@ -646,6 +662,9 @@ func TestDefaultNodePoolAMI(t *testing.T) {
 			} else if strings.Contains(tc.name, "stream metadata is nil") {
 				g.Expect(tc.image).To(BeEmpty())
 				g.Expect(tc.err.Error()).To(Equal("release image stream metadata is nil"))
+			} else if strings.Contains(tc.name, "Aws images is nil") {
+				g.Expect(tc.image).To(BeEmpty())
+				g.Expect(tc.err.Error()).To(Equal("release image metadata has no AWS images"))
 			} else {
 				g.Expect(tc.image).To(BeEmpty())
 				g.Expect(tc.err.Error()).To(Equal("release image metadata has no image for region \"" + tc.region + "\""))
