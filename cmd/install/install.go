@@ -158,6 +158,7 @@ type Options struct {
 	ScaleFromZeroCredentialsSecretKey         string
 	RenderSensitive                           bool
 	HCPEgressBlockCIDRs                       []string
+	InstallScope                              string
 }
 
 func (o *Options) Validate() error {
@@ -166,6 +167,10 @@ func (o *Options) Validate() error {
 	o.ScaleFromZeroProvider = strings.TrimSpace(o.ScaleFromZeroProvider)
 	if len(o.ScaleFromZeroProvider) != 0 {
 		o.ScaleFromZeroProvider = strings.ToLower(o.ScaleFromZeroProvider)
+	}
+
+	if o.InstallScope != "" && !Outputs(o.InstallScope).IsValid() {
+		errs = append(errs, fmt.Errorf("invalid --install-scope value %q: must be '%s', '%s', or '%s'", o.InstallScope, OutputAll, OutputCRDs, OutputResources))
 	}
 
 	errs = append(errs, o.validatePlatformConfig()...)
@@ -453,6 +458,7 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&opts.ScaleFromZeroCredentialsSecret, "scale-from-zero-secret", opts.ScaleFromZeroCredentialsSecret, "Name of existing secret containing scale-from-zero credentials (alternative to --scale-from-zero-creds)")
 	cmd.PersistentFlags().StringVar(&opts.ScaleFromZeroCredentialsSecretKey, "scale-from-zero-secret-key", opts.ScaleFromZeroCredentialsSecretKey, "Key within the scale-from-zero credentials secret (default: credentials)")
 	cmd.PersistentFlags().StringArrayVar(&opts.HCPEgressBlockCIDRs, "hcp-egress-block-cidrs", nil, "Static CIDRs to block in HCP namespace egress NetworkPolicies instead of dynamically-discovered hosting cluster KAS endpoint IPs. When specified, eliminates NetworkPolicy churn during hosting cluster KAS rolling restarts and avoids OVN port-group reconciliation races that can drop traffic to HCP routers. May be specified multiple times.")
+	cmd.PersistentFlags().StringVar(&opts.InstallScope, "install-scope", "all", "Scope of installation: 'all' installs CRDs and resources (default), 'crds' installs only CRDs, 'resources' installs only resources (operator deployment and RBAC)")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		return InstallHyperShiftOperator(cmd.Context(), cmd.OutOrStdout(), opts)
@@ -483,58 +489,67 @@ func InstallHyperShiftOperator(ctx context.Context, out io.Writer, opts Options)
 		return err
 	}
 
-	// Validate all CRDs via dry-run before applying
-	if err := dryRunValidateCRDs(ctx, out, crds); err != nil {
-		return err
+	scope := Outputs(opts.InstallScope)
+	if scope == "" {
+		scope = OutputAll
 	}
 
-	// Coordinate with Cluster CAPI Operator if the ClusterAPI API is available.
-	// This is done after dry-run so the ClusterAPI config is not mutated if CRDs
-	// cannot be applied.
-	config, err := util.GetConfig()
-	if err != nil {
-		return fmt.Errorf("failed to get kubernetes config: %w", err)
-	}
-	discoveryClient, err := discovery.NewDiscoveryClientForConfig(config)
-	if err != nil {
-		return fmt.Errorf("failed to create discovery client: %w", err)
-	}
-	registered, err := isClusterAPIRegistered(discoveryClient)
-	if err != nil {
-		return err
-	}
-	if registered {
-		fmt.Fprintf(out, "ClusterAPI API detected, coordinating with Cluster CAPI Operator\n")
-		generation, err := ensureUnmanagedCRDs(ctx, out, client, crds)
+	if scope.IncludesCRDs() {
+		// Validate all CRDs via dry-run before applying
+		if err := dryRunValidateCRDs(ctx, out, crds); err != nil {
+			return err
+		}
+
+		// Coordinate with Cluster CAPI Operator if the ClusterAPI API is available.
+		// This is done after dry-run so the ClusterAPI config is not mutated if CRDs
+		// cannot be applied.
+		config, err := util.GetConfig()
+		if err != nil {
+			return fmt.Errorf("failed to get kubernetes config: %w", err)
+		}
+		discoveryClient, err := discovery.NewDiscoveryClientForConfig(config)
+		if err != nil {
+			return fmt.Errorf("failed to create discovery client: %w", err)
+		}
+		registered, err := isClusterAPIRegistered(discoveryClient)
 		if err != nil {
 			return err
 		}
-		if generation > 0 {
-			if err := waitForCAPIOperatorSync(ctx, out, client, generation); err != nil {
+		if registered {
+			fmt.Fprintf(out, "ClusterAPI API detected, coordinating with Cluster CAPI Operator\n")
+			generation, err := ensureUnmanagedCRDs(ctx, out, client, crds)
+			if err != nil {
+				return err
+			}
+			if generation > 0 {
+				if err := waitForCAPIOperatorSync(ctx, out, client, generation); err != nil {
+					return err
+				}
+			}
+		}
+
+		err = apply(ctx, out, crds)
+		if err != nil {
+			return err
+		}
+
+		if opts.WaitUntilAvailable || opts.WaitUntilEstablished {
+			if err := waitUntilEstablished(ctx, crds); err != nil {
 				return err
 			}
 		}
 	}
 
-	err = apply(ctx, out, crds)
-	if err != nil {
-		return err
-	}
-
-	if opts.WaitUntilAvailable || opts.WaitUntilEstablished {
-		if err := waitUntilEstablished(ctx, crds); err != nil {
+	if scope.IncludesResources() {
+		err = apply(ctx, out, objects)
+		if err != nil {
 			return err
 		}
-	}
 
-	err = apply(ctx, out, objects)
-	if err != nil {
-		return err
-	}
-
-	if opts.WaitUntilAvailable {
-		if _, err := WaitUntilAvailable(ctx, opts); err != nil {
-			return err
+		if opts.WaitUntilAvailable {
+			if _, err := WaitUntilAvailable(ctx, opts); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
