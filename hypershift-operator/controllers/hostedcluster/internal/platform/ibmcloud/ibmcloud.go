@@ -15,7 +15,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	capiibmv1 "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2"
-	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	capiv1beta1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -24,7 +25,8 @@ type IBMCloud struct{}
 func (p IBMCloud) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
 	hcluster *hyperv1.HostedCluster,
 	controlPlaneNamespace string,
-	apiEndpoint hyperv1.APIEndpoint) (client.Object, error) {
+	apiEndpoint hyperv1.APIEndpoint,
+) (client.Object, error) {
 	// TODO: will adjust reconcile for non-upi platforms when CAPI components ready
 	if hcluster.Spec.Platform.IBMCloud != nil && (hcluster.Spec.Platform.IBMCloud.ProviderType == configv1.IBMCloudProviderTypeUPI ||
 		hcluster.Spec.Platform.IBMCloud.ProviderType == configv1.IBMCloudProviderTypeClassic || hcluster.Spec.Platform.IBMCloud.ProviderType == configv1.IBMCloudProviderTypeVPC) {
@@ -44,7 +46,7 @@ func (p IBMCloud) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, cre
 
 		// Set the values for upper level controller
 		ibmCluster.Status.Ready = true
-		ibmCluster.Spec.ControlPlaneEndpoint = capiv1.APIEndpoint{
+		ibmCluster.Spec.ControlPlaneEndpoint = capiv1beta1.APIEndpoint{
 			Host: apiEndpoint.Host,
 			Port: apiEndpoint.Port,
 		}
@@ -62,13 +64,15 @@ func (p IBMCloud) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ 
 
 func (p IBMCloud) ReconcileCredentials(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
 	hcluster *hyperv1.HostedCluster,
-	controlPlaneNamespace string) error {
+	controlPlaneNamespace string,
+) error {
 	return nil
 }
 
 func (IBMCloud) ReconcileSecretEncryption(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
 	hcluster *hyperv1.HostedCluster,
-	controlPlaneNamespace string) error {
+	controlPlaneNamespace string,
+) error {
 	if hcluster.Spec.SecretEncryption.KMS.IBMCloud == nil {
 		return fmt.Errorf("ibm kms metadata nil")
 	}
