@@ -1083,6 +1083,138 @@ func TestIsSpotEnabled(t *testing.T) {
 	}
 }
 
+func TestSetAWSConditions(t *testing.T) {
+	t.Parallel()
+
+	releaseImageWithStreams := &releaseinfo.ReleaseImage{
+		ImageStream: &v1.ImageStream{
+			ObjectMeta: metav1.ObjectMeta{Name: "4.17.0"},
+		},
+		StreamMetadata: &stream.Stream{
+			Architectures: map[string]stream.Arch{
+				"x86_64": {
+					Images: stream.Images{
+						Aws: &stream.AwsImage{
+							Regions: map[string]stream.SingleImage{
+								"us-east-1": {Release: "4.17.0", Image: "ami-linux-us-east-1"},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	testCases := []struct {
+		name              string
+		nodePool          *hyperv1.NodePool
+		hostedCluster     *hyperv1.HostedCluster
+		releaseImage      *releaseinfo.ReleaseImage
+		expectError       bool
+		expectedCondType  string
+		expectedCondValue corev1.ConditionStatus
+	}{
+		{
+			name: "When Linux nodePool resolves AMI successfully it should set ValidPlatformImage to true",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Arch:     hyperv1.ArchitectureAMD64,
+					Platform: hyperv1.NodePoolPlatform{Type: hyperv1.AWSPlatform, AWS: &hyperv1.AWSNodePoolPlatform{}},
+				},
+			},
+			hostedCluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{AWS: &hyperv1.AWSPlatformSpec{Region: "us-east-1"}},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Platform: &hyperv1.PlatformStatus{AWS: &hyperv1.AWSPlatformStatus{DefaultWorkerSecurityGroupID: "sg-123"}},
+				},
+			},
+			releaseImage:      releaseImageWithStreams,
+			expectedCondType:  string(hyperv1.NodePoolValidPlatformImageType),
+			expectedCondValue: corev1.ConditionTrue,
+		},
+		{
+			name: "When stream metadata is nil it should set ValidPlatformImage to false",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Arch:     hyperv1.ArchitectureAMD64,
+					Platform: hyperv1.NodePoolPlatform{Type: hyperv1.AWSPlatform, AWS: &hyperv1.AWSNodePoolPlatform{}},
+					Release:  hyperv1.Release{Image: "quay.io/test:4.17"},
+				},
+			},
+			hostedCluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{AWS: &hyperv1.AWSPlatformSpec{Region: "us-east-1"}},
+				},
+			},
+			releaseImage: &releaseinfo.ReleaseImage{
+				ImageStream:    &v1.ImageStream{ObjectMeta: metav1.ObjectMeta{Name: "4.17.0"}},
+				StreamMetadata: nil,
+			},
+			expectError:       true,
+			expectedCondType:  string(hyperv1.NodePoolValidPlatformImageType),
+			expectedCondValue: corev1.ConditionFalse,
+		},
+		{
+			name: "When region has no AMI it should set ValidPlatformImage to false",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Arch:     hyperv1.ArchitectureAMD64,
+					Platform: hyperv1.NodePoolPlatform{Type: hyperv1.AWSPlatform, AWS: &hyperv1.AWSNodePoolPlatform{}},
+					Release:  hyperv1.Release{Image: "quay.io/test:4.17"},
+				},
+			},
+			hostedCluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{AWS: &hyperv1.AWSPlatformSpec{Region: "ap-nowhere-1"}},
+				},
+			},
+			releaseImage:      releaseImageWithStreams,
+			expectError:       true,
+			expectedCondType:  string(hyperv1.NodePoolValidPlatformImageType),
+			expectedCondValue: corev1.ConditionFalse,
+		},
+		{
+			name: "When HostedCluster has no AWS platform it should return error",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Arch:     hyperv1.ArchitectureAMD64,
+					Platform: hyperv1.NodePoolPlatform{Type: hyperv1.AWSPlatform, AWS: &hyperv1.AWSNodePoolPlatform{}},
+				},
+			},
+			hostedCluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{},
+				},
+			},
+			releaseImage: releaseImageWithStreams,
+			expectError:  true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			r := &NodePoolReconciler{}
+			err := r.setAWSConditions(t.Context(), tc.nodePool, tc.hostedCluster, "", tc.releaseImage)
+			if tc.expectError {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+			}
+
+			if tc.expectedCondType != "" {
+				cond := FindStatusCondition(tc.nodePool.Status.Conditions, tc.expectedCondType)
+				g.Expect(cond).ToNot(BeNil())
+				g.Expect(cond.Status).To(Equal(tc.expectedCondValue))
+			}
+		})
+	}
+}
+
 func TestResolveAWSAMI(t *testing.T) {
 	releaseImageWithMetadata := &releaseinfo.ReleaseImage{
 		ImageStream: &v1.ImageStream{
@@ -1091,6 +1223,13 @@ func TestResolveAWSAMI(t *testing.T) {
 		StreamMetadata: &stream.Stream{
 			Architectures: map[string]stream.Arch{
 				"x86_64": {
+					Images: stream.Images{
+						Aws: &stream.AwsImage{
+							Regions: map[string]stream.SingleImage{
+								"us-east-1": {Release: "4.17.0", Image: "ami-linux-us-east-1"},
+							},
+						},
+					},
 					RHELCoreOSExtensions: &rhcos.Extensions{
 						AwsWinLi: &rhcos.ReplicatedImage{
 							Regions: map[string]rhcos.SingleImage{
@@ -1160,6 +1299,22 @@ func TestResolveAWSAMI(t *testing.T) {
 			},
 			releaseImage: releaseImageWithMetadata,
 			expectError:  true,
+		},
+		{
+			name: "When nodePool has default Linux type it should resolve AMI from stream metadata",
+			hostedCluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{AWS: &hyperv1.AWSPlatformSpec{Region: "us-east-1"}},
+				},
+			},
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Arch:     hyperv1.ArchitectureAMD64,
+					Platform: hyperv1.NodePoolPlatform{AWS: &hyperv1.AWSNodePoolPlatform{}},
+				},
+			},
+			releaseImage: releaseImageWithMetadata,
+			expectedAMI:  "ami-linux-us-east-1",
 		},
 		{
 			name: "When nodePool has no AMI and default Linux type with nil stream metadata, it should return error",
