@@ -607,7 +607,7 @@ func (p *LocalIgnitionProvider) runMCSAndFetchPayload(ctx context.Context, dirs 
 	return payload, err
 }
 
-func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage, customConfig, pullSecretHash, additionalTrustBundleHash, hcConfigurationHash string) ([]byte, error) {
+func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage, customConfig, pullSecretHash, additionalTrustBundleHash, hcConfigurationHash, osStream string) ([]byte, error) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
@@ -708,16 +708,7 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage, cu
 		return nil, fmt.Errorf("failed to parse payload version: %w", err)
 	}
 
-	// set the component to the correct binary name and file path based on the payload version
-	clusterConfigComponent := "cluster-config-api"
-	clusterConfigComponentShort := "cca"
-	clusterConfigFile := "usr/bin/render"
-
-	if payloadVersion.LT(semver.Version{Major: 4, Minor: 15}) {
-		clusterConfigComponent = "cluster-config-operator"
-		clusterConfigComponentShort = "cco"
-		clusterConfigFile = "usr/bin/cluster-config-operator"
-	}
+	clusterConfigComponent, clusterConfigComponentShort, clusterConfigFile := resolveClusterConfigComponent(payloadVersion)
 
 	if err := p.extractMCOBinaries(ctx, "/usr/lib/os-release", mcoImage, pullSecret, dirs.binDir); err != nil {
 		return nil, fmt.Errorf("failed to download MCO binaries: %w", err)
@@ -741,6 +732,11 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage, cu
 		return nil, fmt.Errorf("failed to execute machine-config-operator: %w", err)
 	}
 
+	// Generate OSImageStream CR to tell MCC bootstrap which RHEL stream to select.
+	if err := writeOSImageStreamCR(dirs.mccDir, osStream); err != nil {
+		return nil, fmt.Errorf("error writing OSImageStream CR: %w", err)
+	}
+
 	// Next, run the MCC using templates and MCO output as input, producing output for the MCS.
 	if err := p.runMCC(ctx, dirs, imageProvider, payloadVersion); err != nil {
 		return nil, fmt.Errorf("failed to execute machine-config-controller: %w", err)
@@ -753,6 +749,32 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage, cu
 	}
 
 	return payload, nil
+}
+
+// writeOSImageStreamCR generates a 99_osimagestream.yaml file in the MCC manifest directory.
+// This CR tells the MCC bootstrap which RHEL stream to use when rendering MachineConfigs.
+// When osStream is empty, no file is written (legacy behavior).
+func writeOSImageStreamCR(mccDir, osStream string) error {
+	if osStream == "" {
+		return nil
+	}
+	cr := fmt.Sprintf(`apiVersion: machineconfiguration.openshift.io/v1alpha1
+kind: OSImageStream
+metadata:
+  name: cluster
+spec:
+  defaultStream: %s
+`, osStream)
+	return os.WriteFile(filepath.Join(mccDir, "99_osimagestream.yaml"), []byte(cr), 0644)
+}
+
+// resolveClusterConfigComponent returns the component name, short name, and binary file path
+// based on the payload version.
+func resolveClusterConfigComponent(payloadVersion semver.Version) (component, shortName, file string) {
+	if payloadVersion.LT(semver.Version{Major: 4, Minor: 15}) {
+		return "cluster-config-operator", "cco", "usr/bin/cluster-config-operator"
+	}
+	return "cluster-config-api", "cca", "usr/bin/render"
 }
 
 func (r *LocalIgnitionProvider) reconcileValidReleaseInfoCondition(ctx context.Context, releaseImageProvider *imageprovider.SimpleReleaseImageProvider) error {
