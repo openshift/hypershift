@@ -18,32 +18,39 @@ func TestPredicate(t *testing.T) {
 	tests := []struct {
 		name        string
 		annotations map[string]string
+		monitoring  hyperv1.MonitoringSpec
 		expected    bool
 	}{
 		{
-			name:        "When both annotations are absent, it should return false",
+			name:        "When metrics forwarding mode is not set, it should return false",
 			annotations: map[string]string{},
 			expected:    false,
 		},
 		{
-			name: "When only DisableMonitoringServices is present, it should return false",
-			annotations: map[string]string{
-				hyperv1.DisableMonitoringServices: "true",
+			name:        "When DisableMonitoringServices is set, it should return false even if forwarding is enabled",
+			annotations: map[string]string{hyperv1.DisableMonitoringServices: "true"},
+			monitoring: hyperv1.MonitoringSpec{
+				MetricsForwarding: hyperv1.MetricsForwardingSpec{
+					Mode: hyperv1.MetricsForwardingModeForward,
+				},
 			},
 			expected: false,
 		},
 		{
-			name: "When only EnableMetricsForwarding is present, it should return true",
-			annotations: map[string]string{
-				hyperv1.EnableMetricsForwarding: "true",
+			name: "When metrics forwarding mode is Enabled, it should return true",
+			monitoring: hyperv1.MonitoringSpec{
+				MetricsForwarding: hyperv1.MetricsForwardingSpec{
+					Mode: hyperv1.MetricsForwardingModeForward,
+				},
 			},
 			expected: true,
 		},
 		{
-			name: "When both annotations are present, it should return false",
-			annotations: map[string]string{
-				hyperv1.DisableMonitoringServices: "true",
-				hyperv1.EnableMetricsForwarding:   "true",
+			name: "When metrics forwarding mode is Disabled, it should return false",
+			monitoring: hyperv1.MonitoringSpec{
+				MetricsForwarding: hyperv1.MetricsForwardingSpec{
+					Mode: hyperv1.MetricsForwardingModeNone,
+				},
 			},
 			expected: false,
 		},
@@ -58,6 +65,9 @@ func TestPredicate(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: tc.annotations,
 				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Monitoring: tc.monitoring,
+				},
 			}
 
 			cpContext := component.WorkloadContext{
@@ -65,7 +75,7 @@ func TestPredicate(t *testing.T) {
 				HCP:     hcp,
 			}
 
-			result, err := predicate(cpContext)
+			result, err := Predicate(cpContext)
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(result).To(Equal(tc.expected))
 		})

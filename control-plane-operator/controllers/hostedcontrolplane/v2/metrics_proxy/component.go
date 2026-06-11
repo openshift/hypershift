@@ -38,7 +38,7 @@ func NewComponent(defaultIngressDomain string) component.ControlPlaneComponent {
 
 	return component.NewDeploymentComponent(ComponentName, mp).
 		WithAdaptFunction(adaptDeployment).
-		WithPredicate(predicate).
+		WithPredicate(endpointresolverv2.Predicate).
 		WithManifestAdapter(
 			"service.yaml",
 		).
@@ -64,10 +64,4 @@ func NewComponent(defaultIngressDomain string) component.ControlPlaneComponent {
 		).
 		WithDependencies(endpointresolverv2.ComponentName).
 		Build()
-}
-
-func predicate(cpContext component.WorkloadContext) (bool, error) {
-	_, disableMonitoring := cpContext.HCP.Annotations[hyperv1.DisableMonitoringServices]
-	_, enableMetricsForwarding := cpContext.HCP.Annotations[hyperv1.EnableMetricsForwarding]
-	return !disableMonitoring && enableMetricsForwarding, nil
 }
