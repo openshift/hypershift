@@ -188,6 +188,13 @@ type HostedControlPlaneSpec struct {
 	// +optional
 	OperatorConfiguration *OperatorConfiguration `json:"operatorConfiguration,omitempty"`
 
+	// monitoring configures monitoring for the hosted cluster, including
+	// forwarding of control plane metrics to the hosted cluster's monitoring stack.
+	// When omitted, metrics forwarding is not configured and will be inactive.
+	//
+	// +optional
+	Monitoring MonitoringSpec `json:"monitoring,omitzero"`
+
 	// imageContentSources lists sources/repositories for the release-image content.
 	// +optional
 	// +kubebuilder:validation:MaxItems=255

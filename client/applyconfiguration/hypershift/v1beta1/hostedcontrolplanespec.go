@@ -49,6 +49,7 @@ type HostedControlPlaneSpecApplyConfiguration struct {
 	Etcd                             *EtcdSpecApplyConfiguration                          `json:"etcd,omitempty"`
 	Configuration                    *ClusterConfigurationApplyConfiguration              `json:"configuration,omitempty"`
 	OperatorConfiguration            *OperatorConfigurationApplyConfiguration             `json:"operatorConfiguration,omitempty"`
+	Monitoring                       *MonitoringSpecApplyConfiguration                    `json:"monitoring,omitempty"`
 	ImageContentSources              []ImageContentSourceApplyConfiguration               `json:"imageContentSources,omitempty"`
 	AdditionalTrustBundle            *corev1.LocalObjectReference                         `json:"additionalTrustBundle,omitempty"`
 	SecretEncryption                 *SecretEncryptionSpecApplyConfiguration              `json:"secretEncryption,omitempty"`
@@ -254,6 +255,14 @@ func (b *HostedControlPlaneSpecApplyConfiguration) WithConfiguration(value *Clus
 // If called multiple times, the OperatorConfiguration field is set to the value of the last call.
 func (b *HostedControlPlaneSpecApplyConfiguration) WithOperatorConfiguration(value *OperatorConfigurationApplyConfiguration) *HostedControlPlaneSpecApplyConfiguration {
 	b.OperatorConfiguration = value
+	return b
+}
+
+// WithMonitoring sets the Monitoring field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the Monitoring field is set to the value of the last call.
+func (b *HostedControlPlaneSpecApplyConfiguration) WithMonitoring(value *MonitoringSpecApplyConfiguration) *HostedControlPlaneSpecApplyConfiguration {
+	b.Monitoring = value
 	return b
 }
 
