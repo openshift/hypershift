@@ -15,6 +15,7 @@ import (
 	"k8s.io/utils/ptr"
 
 	capo "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
+	capiv1beta1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
 
 	"github.com/blang/semver"
 	"github.com/google/go-cmp/cmp"
@@ -76,7 +77,7 @@ func TestReconcileOpenStackCluster(t *testing.T) {
 					},
 				},
 				NetworkMTU: ptr.To(1500),
-				ControlPlaneEndpoint: &capiv1.APIEndpoint{
+				ControlPlaneEndpoint: &capiv1beta1.APIEndpoint{
 					Host: "api-endpoint",
 					Port: 6443,
 				},
@@ -125,7 +126,7 @@ func TestReconcileOpenStackCluster(t *testing.T) {
 				},
 				Subnets: []capo.SubnetParam{{ID: ptr.To(subnetID)}},
 				Network: &capo.NetworkParam{ID: ptr.To(networkID)},
-				ControlPlaneEndpoint: &capiv1.APIEndpoint{
+				ControlPlaneEndpoint: &capiv1beta1.APIEndpoint{
 					Host: "api-endpoint",
 					Port: 6443,
 				},
@@ -189,7 +190,7 @@ func TestReconcileOpenStackCluster(t *testing.T) {
 						},
 					},
 				},
-				ControlPlaneEndpoint: &capiv1.APIEndpoint{
+				ControlPlaneEndpoint: &capiv1beta1.APIEndpoint{
 					Host: "api-endpoint",
 					Port: 6443,
 				},

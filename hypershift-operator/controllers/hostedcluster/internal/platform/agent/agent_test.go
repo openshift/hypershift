@@ -19,6 +19,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
+	capiv1beta1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -172,7 +173,7 @@ func TestReconcileCAPIInfraCR(t *testing.T) {
 						Url:                    "https://" + ignitionEndpoint + "/ignition",
 						CaCertificateReference: &agentv1.CaCertificateReference{Name: caSecret.Name, Namespace: caSecret.Namespace},
 					},
-					ControlPlaneEndpoint: capiv1.APIEndpoint{
+					ControlPlaneEndpoint: capiv1beta1.APIEndpoint{
 						Port: APIEndpoint.Port,
 						Host: APIEndpoint.Host,
 					},

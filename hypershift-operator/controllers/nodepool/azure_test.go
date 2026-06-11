@@ -53,7 +53,7 @@ func TestAzureMachineTemplateSpec(t *testing.T) {
 			},
 			expectedAzureMachineTemplateSpec: &capiazure.AzureMachineTemplateSpec{
 				Template: capiazure.AzureMachineTemplateResource{
-					ObjectMeta: clusterv1.ObjectMeta{Labels: nil, Annotations: nil},
+					ObjectMeta: clusterv1beta1.ObjectMeta{Labels: nil, Annotations: nil},
 					Spec: capiazure.AzureMachineSpec{
 						ProviderID:    nil,
 						VMSize:        "Standard_D2_v2",
@@ -127,7 +127,7 @@ func TestAzureMachineTemplateSpec(t *testing.T) {
 			},
 			expectedAzureMachineTemplateSpec: &capiazure.AzureMachineTemplateSpec{
 				Template: capiazure.AzureMachineTemplateResource{
-					ObjectMeta: clusterv1.ObjectMeta{Labels: nil, Annotations: nil},
+					ObjectMeta: clusterv1beta1.ObjectMeta{Labels: nil, Annotations: nil},
 					Spec: capiazure.AzureMachineSpec{
 						ProviderID:    nil,
 						VMSize:        "Standard_D2_v2",
@@ -206,7 +206,7 @@ func TestAzureMachineTemplateSpec(t *testing.T) {
 			},
 			expectedAzureMachineTemplateSpec: &capiazure.AzureMachineTemplateSpec{
 				Template: capiazure.AzureMachineTemplateResource{
-					ObjectMeta: clusterv1.ObjectMeta{Labels: nil, Annotations: nil},
+					ObjectMeta: clusterv1beta1.ObjectMeta{Labels: nil, Annotations: nil},
 					Spec: capiazure.AzureMachineSpec{
 						ProviderID:    nil,
 						VMSize:        "Standard_D2_v2",
@@ -296,7 +296,7 @@ func TestAzureMachineTemplateSpec(t *testing.T) {
 			},
 			expectedAzureMachineTemplateSpec: &capiazure.AzureMachineTemplateSpec{
 				Template: capiazure.AzureMachineTemplateResource{
-					ObjectMeta: clusterv1.ObjectMeta{Labels: nil, Annotations: nil},
+					ObjectMeta: clusterv1beta1.ObjectMeta{Labels: nil, Annotations: nil},
 					Spec: capiazure.AzureMachineSpec{
 						ProviderID:    nil,
 						VMSize:        "Standard_D2_v2",
@@ -392,7 +392,7 @@ func TestAzureMachineTemplateSpec(t *testing.T) {
 			},
 			expectedAzureMachineTemplateSpec: &capiazure.AzureMachineTemplateSpec{
 				Template: capiazure.AzureMachineTemplateResource{
-					ObjectMeta: clusterv1.ObjectMeta{Labels: nil, Annotations: nil},
+					ObjectMeta: clusterv1beta1.ObjectMeta{Labels: nil, Annotations: nil},
 					Spec: capiazure.AzureMachineSpec{
 						ProviderID:    nil,
 						VMSize:        "Standard_D2_v2",
@@ -535,7 +535,7 @@ func TestAzureMachineTemplateSpec(t *testing.T) {
 			acrIdentityResourceID: "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/test-mi",
 			expectedAzureMachineTemplateSpec: &capiazure.AzureMachineTemplateSpec{
 				Template: capiazure.AzureMachineTemplateResource{
-					ObjectMeta: clusterv1.ObjectMeta{Labels: nil, Annotations: nil},
+					ObjectMeta: clusterv1beta1.ObjectMeta{Labels: nil, Annotations: nil},
 					Spec: capiazure.AzureMachineSpec{
 						ProviderID:    nil,
 						VMSize:        "Standard_D2_v2",
@@ -612,7 +612,7 @@ func TestAzureMachineTemplateSpec(t *testing.T) {
 			},
 			expectedAzureMachineTemplateSpec: &capiazure.AzureMachineTemplateSpec{
 				Template: capiazure.AzureMachineTemplateResource{
-					ObjectMeta: clusterv1.ObjectMeta{Labels: nil, Annotations: nil},
+					ObjectMeta: clusterv1beta1.ObjectMeta{Labels: nil, Annotations: nil},
 					Spec: capiazure.AzureMachineSpec{
 						ProviderID:    nil,
 						VMSize:        "Standard_D2_v2",

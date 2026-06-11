@@ -20,7 +20,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
-	"sigs.k8s.io/cluster-api/api/core/v1beta1"
+	"sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/blang/semver"
@@ -487,8 +487,8 @@ spec:
 	return pullSecret, ignitionServerCACert, machineConfig, ignitionConfig, ignitionConfig2, ignitionConfig3
 }
 
-func setUpDummyMachineSet(nodePool *hyperv1.NodePool, hostedCluster *hyperv1.HostedCluster, machineSetUpgradeFail bool) *v1beta1.MachineSet {
-	machineSet := &v1beta1.MachineSet{
+func setUpDummyMachineSet(nodePool *hyperv1.NodePool, hostedCluster *hyperv1.HostedCluster, machineSetUpgradeFail bool) *v1beta2.MachineSet {
+	machineSet := &v1beta2.MachineSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      nodePool.Name,
 			Namespace: hostedCluster.Namespace + "-" + hostedCluster.Name,
