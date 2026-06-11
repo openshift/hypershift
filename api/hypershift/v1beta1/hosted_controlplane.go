@@ -432,8 +432,6 @@ type HostedControlPlaneStatus struct {
 	// +optional
 	SecretEncryption SecretEncryptionStatus `json:"secretEncryption,omitzero"`
 	// initialization contains fields that track the status of the initialization of the HostedControlPlane.
-	// This satisfies the CAPI v1beta2 ControlPlane provider contract:
-	// https://github.com/kubernetes-sigs/cluster-api/blob/v1.11.5/api/core/v1beta2/cluster_types.go#L1371-L1379
 	// +optional
 	Initialization HostedControlPlaneInitializationStatus `json:"initialization,omitzero"`
 }
