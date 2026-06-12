@@ -7,9 +7,11 @@ import (
 )
 
 const (
-	AuthFailure           = "AuthFailure"
-	DependencyViolation   = "DependencyViolation"
-	UnauthorizedOperation = "UnauthorizedOperation"
+	AuthFailure               = "AuthFailure"
+	DependencyViolation       = "DependencyViolation"
+	UnauthorizedOperation     = "UnauthorizedOperation"
+	InvalidGroupNotFound      = "InvalidGroup.NotFound"
+	InvalidPermissionNotFound = "InvalidPermission.NotFound"
 )
 
 func AWSErrorCode(err error) string {

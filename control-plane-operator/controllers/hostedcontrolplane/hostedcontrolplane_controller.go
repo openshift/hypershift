@@ -374,7 +374,7 @@ func (r *HostedControlPlaneReconciler) reconcileDeletion(ctx context.Context, ho
 	if shouldCleanupCloudResources(r.Log, hostedControlPlane) {
 		if code, destroyErr := r.destroyAWSDefaultSecurityGroup(ctx, hostedControlPlane); destroyErr != nil {
 			condition.Message = "failed to delete AWS default security group"
-			if code == "DependencyViolation" {
+			if code == supportawsutil.DependencyViolation {
 				condition.Message = destroyErr.Error()
 			}
 			condition.Reason = hyperv1.AWSErrorReason
@@ -388,8 +388,9 @@ func (r *HostedControlPlaneReconciler) reconcileDeletion(ctx context.Context, ho
 			switch code {
 			case "UnauthorizedOperation":
 				r.Log.Error(destroyErr, "Skipping AWS default security group deletion because of unauthorized operation.")
-			case "DependencyViolation":
-				r.Log.Error(destroyErr, "Skipping AWS default security group deletion because of dependency violation.")
+			case supportawsutil.DependencyViolation:
+				r.Log.Info("AWS default security group has dependencies, will retry", "error", destroyErr.Error())
+				return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 			default:
 				return ctrl.Result{}, fmt.Errorf("failed to delete AWS default security group: %w", destroyErr)
 			}
@@ -2876,9 +2877,11 @@ func (r *HostedControlPlaneReconciler) destroyAWSDefaultSecurityGroup(ctx contex
 			IpPermissions: sg.IpPermissions,
 		}); err != nil {
 			code := supportawsutil.AWSErrorCode(err)
-			log.Error(err, "failed to revoke security group ingress permissions", "SecurityGroupID", aws.ToString(sg.GroupId), "code", code)
-
-			return code, fmt.Errorf("failed to revoke security group ingress rules: %s", code)
+			if !supportawsutil.ShouldIgnoreRevokePermissionError(code) {
+				log.Error(err, "failed to revoke security group ingress permissions", "SecurityGroupID", aws.ToString(sg.GroupId), "code", code)
+				return code, fmt.Errorf("failed to revoke security group ingress rules: %s", code)
+			}
+			log.Info("security group ingress permission already revoked", "SecurityGroupID", aws.ToString(sg.GroupId))
 		}
 	}
 
@@ -2888,9 +2891,11 @@ func (r *HostedControlPlaneReconciler) destroyAWSDefaultSecurityGroup(ctx contex
 			IpPermissions: sg.IpPermissionsEgress,
 		}); err != nil {
 			code := supportawsutil.AWSErrorCode(err)
-			log.Error(err, "failed to revoke security group egress permissions", "SecurityGroupID", aws.ToString(sg.GroupId), "code", code)
-
-			return code, fmt.Errorf("failed to revoke security group egress rules: %s", code)
+			if !supportawsutil.ShouldIgnoreRevokePermissionError(code) {
+				log.Error(err, "failed to revoke security group egress permissions", "SecurityGroupID", aws.ToString(sg.GroupId), "code", code)
+				return code, fmt.Errorf("failed to revoke security group egress rules: %s", code)
+			}
+			log.Info("security group egress permission already revoked", "SecurityGroupID", aws.ToString(sg.GroupId))
 		}
 	}
 
@@ -2898,8 +2903,11 @@ func (r *HostedControlPlaneReconciler) destroyAWSDefaultSecurityGroup(ctx contex
 		GroupId: sg.GroupId,
 	}); err != nil {
 		code := supportawsutil.AWSErrorCode(err)
+		if supportawsutil.ShouldIgnoreSGNotFound(code) {
+			log.Info("security group already deleted", "SecurityGroupID", aws.ToString(sg.GroupId))
+			return "", nil
+		}
 		log.Error(err, "failed to delete security group", "SecurityGroupID", aws.ToString(sg.GroupId), "code", code)
-
 		return code, fmt.Errorf("failed to delete security group %s: %s", aws.ToString(sg.GroupId), code)
 	}
 

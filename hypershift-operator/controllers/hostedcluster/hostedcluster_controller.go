@@ -3302,7 +3302,10 @@ func (r *HostedClusterReconciler) deleteNodePools(ctx context.Context, c client.
 }
 
 // deleteAWSEndpointServices loops over AWSEndpointServiceList items and sends a delete request for each.
-// If the HC has no valid aws credentials it removes the CPO finalizer for each AWSEndpointService.
+// For items already being deleted, the CPO finalizer is preserved during the grace period when
+// credentials are valid or unknown, giving CPO time to clean up AWS resources. After the grace
+// period expires (or immediately when credentials are invalid), the finalizer is removed so
+// deletion can proceed.
 // It returns true if len(awsEndpointServiceList.Items) != 0.
 func deleteAWSEndpointServices(ctx context.Context, c client.Client, hc *hyperv1.HostedCluster, namespace string) (bool, error) {
 	log := ctrl.LoggerFrom(ctx)
@@ -3310,13 +3313,25 @@ func deleteAWSEndpointServices(ctx context.Context, c client.Client, hc *hyperv1
 	if err := c.List(ctx, &awsEndpointServiceList, &client.ListOptions{Namespace: namespace}); err != nil && !apierrors.IsNotFound(err) {
 		return false, fmt.Errorf("error listing awsendpointservices in namespace %s: %w", namespace, err)
 	}
+	credentialStatus := platformaws.GetCredentialStatus(hc)
 	for _, ep := range awsEndpointServiceList.Items {
 		if ep.DeletionTimestamp != nil {
-			if platformaws.GetCredentialStatus(hc) == platformaws.CredentialStatusValid && time.Since(ep.DeletionTimestamp.Time) < awsEndpointDeletionGracePeriod {
-				continue
+			withinGracePeriod := time.Since(ep.DeletionTimestamp.Time) < awsEndpointDeletionGracePeriod
+			switch credentialStatus {
+			case platformaws.CredentialStatusUnknown:
+				if withinGracePeriod {
+					log.Info("AWS credential status is unknown, preserving CPO finalizer during grace period", "name", ep.Name)
+					continue
+				}
+				log.Info("AWS credential status is unknown and grace period expired, removing CPO finalizer", "name", ep.Name)
+			case platformaws.CredentialStatusValid:
+				if withinGracePeriod {
+					continue
+				}
+			case platformaws.CredentialStatusInvalid:
+				// fall through to finalizer removal immediately
 			}
 
-			// We remove the CPO finalizer if there's no valid credentials so deletion can proceed.
 			cpoFinalizer := "hypershift.openshift.io/control-plane-operator-finalizer"
 			if controllerutil.ContainsFinalizer(&ep, cpoFinalizer) {
 				controllerutil.RemoveFinalizer(&ep, cpoFinalizer)
@@ -3324,7 +3339,7 @@ func deleteAWSEndpointServices(ctx context.Context, c client.Client, hc *hyperv1
 					return false, fmt.Errorf("failed to remove finalizer from awsendpointservice: %w", err)
 				}
 			}
-			log.Info("Removed CPO finalizer for awsendpointservice because the HC has no valid aws credentials", "name", ep.Name, "endpoint-id", ep.Status.EndpointID)
+			log.Info("Removed CPO finalizer for awsendpointservice", "name", ep.Name, "endpoint-id", ep.Status.EndpointID, "credentialStatus", credentialStatus)
 			continue
 		}
 
