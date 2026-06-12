@@ -109,6 +109,7 @@ func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingSt
 	case hyperv1.Route:
 		if hcp.Spec.Platform.Type != hyperv1.IBMCloudPlatform || svc.Spec.Type != corev1.ServiceTypeNodePort {
 			svc.Spec.Type = corev1.ServiceTypeClusterIP
+			svc.Annotations["service.kubernetes.io/topology-mode"] = "Auto"
 		}
 	default:
 		return fmt.Errorf("invalid publishing strategy for Kube API server service: %s", strategy.Type)
