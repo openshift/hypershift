@@ -37,10 +37,14 @@ import (
 	"sync"
 	"time"
 
+	routev1 "github.com/openshift/api/route/v1"
+
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/test/e2e/v2/lifecycle"
 
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -53,6 +57,9 @@ var scheme = runtime.NewScheme()
 
 func init() {
 	utilruntime.Must(hyperv1.AddToScheme(scheme))
+	utilruntime.Must(corev1.AddToScheme(scheme))
+	utilruntime.Must(appsv1.AddToScheme(scheme))
+	utilruntime.Must(routev1.AddToScheme(scheme))
 }
 
 const defaultNamespace = "clusters"
@@ -134,6 +141,16 @@ func run(ctx context.Context, cfg envConfig) error {
 		clusterNames[spec.OutputFile] = name
 	}
 
+	// Phase 0: Platform-specific pre-create hooks (e.g., deploy OIDC providers).
+	log.Println("Phase 0: Running platform pre-create hooks")
+	mgmtClientPre, err := newMgmtClient()
+	if err != nil {
+		return fmt.Errorf("creating management cluster client for pre-create: %w", err)
+	}
+	if err := cfg.platform.PreCreate(ctx, mgmtClientPre, cfg.namespace); err != nil {
+		return fmt.Errorf("platform pre-create hook: %w", err)
+	}
+
 	// Phase 1: Create all clusters in parallel.
 	log.Printf("Phase 1: Creating %d clusters in parallel", len(named))
 	createErrors := createClustersParallel(ctx, cfg, named)
@@ -176,8 +193,15 @@ func run(ctx context.Context, cfg envConfig) error {
 		}
 	}
 
-	// Phase 4: Watch for version rollout completion on all clusters.
-	log.Println("Phase 4: Waiting for version rollout completion on all clusters")
+	// Phase 4: Platform-specific post-available hooks (e.g., waiting for
+	// day-2 config transitions now that control plane components exist).
+	log.Println("Phase 4: Running platform post-available hooks")
+	if err := cfg.platform.PostAvailable(ctx, mgmtClient, cfg.namespace, clusterNames); err != nil {
+		return fmt.Errorf("platform post-available hook: %w", err)
+	}
+
+	// Phase 5: Watch for version rollout completion on all clusters.
+	log.Println("Phase 5: Waiting for version rollout completion on all clusters")
 	rolloutErrors := waitForVersionRollout(ctx, mgmtClient, cfg, named)
 	anyRolloutFailed := false
 	for _, ns := range named {
@@ -191,8 +215,15 @@ func run(ctx context.Context, cfg envConfig) error {
 		}
 	}
 
-	// Phase 5: Write cluster names to SHARED_DIR.
-	log.Println("Phase 5: Writing cluster names to SHARED_DIR")
+	// Phase 6: Day-2 operations that disrupt ClusterOperators (e.g., External OIDC).
+	// These run after VersionState=Completed so the initial rollout isn't blocked.
+	log.Println("Phase 6: Running platform post-version-rollout hooks (day-2 operations)")
+	if err := cfg.platform.PostVersionRollout(ctx, mgmtClient, cfg.namespace, clusterNames); err != nil {
+		return fmt.Errorf("platform post-version-rollout hook: %w", err)
+	}
+
+	// Phase 7: Write cluster names to SHARED_DIR.
+	log.Println("Phase 7: Writing cluster names to SHARED_DIR")
 	for _, ns := range named {
 		outputPath := filepath.Join(cfg.sharedDir, ns.OutputFile)
 		if err := os.WriteFile(outputPath, []byte(ns.name), 0600); err != nil {
@@ -346,52 +377,55 @@ func waitForVersionRollout(ctx context.Context, cl crclient.WithWatch, cfg envCo
 }
 
 func watchForCondition(ctx context.Context, cl crclient.WithWatch, namespace, name string, predicate func(*hyperv1.HostedCluster) bool) error {
+	key := crclient.ObjectKey{Namespace: namespace, Name: name}
 	hc := &hyperv1.HostedCluster{}
-	if err := cl.Get(ctx, crclient.ObjectKey{Namespace: namespace, Name: name}, hc); err == nil {
-		if predicate(hc) {
-			return nil
-		}
-	}
-
-	hcList := &hyperv1.HostedClusterList{}
-	watcher, err := cl.Watch(ctx, hcList,
-		crclient.InNamespace(namespace),
-		crclient.MatchingFields{"metadata.name": name},
-	)
-	if err != nil {
-		return fmt.Errorf("starting watch for %s/%s: %w", namespace, name, err)
-	}
-	defer watcher.Stop()
-
-	if err := cl.Get(ctx, crclient.ObjectKey{Namespace: namespace, Name: name}, hc); err == nil {
-		if predicate(hc) {
-			return nil
-		}
-	}
 
 	for {
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("timed out waiting for %s/%s: %w", namespace, name, ctx.Err())
-		case event, ok := <-watcher.ResultChan():
-			if !ok {
-				return fmt.Errorf("watch channel closed for %s/%s", namespace, name)
-			}
-			if event.Type == watch.Error {
-				return fmt.Errorf("watch error for %s/%s: %v", namespace, name, event.Object)
-			}
-			if event.Type != watch.Added && event.Type != watch.Modified {
-				continue
-			}
-			watchedHC, ok := event.Object.(*hyperv1.HostedCluster)
-			if !ok {
-				continue
-			}
-			logClusterProgress(watchedHC)
-			if predicate(watchedHC) {
+		if err := cl.Get(ctx, key, hc); err == nil {
+			if predicate(hc) {
 				return nil
 			}
 		}
+
+		hcList := &hyperv1.HostedClusterList{}
+		watcher, err := cl.Watch(ctx, hcList,
+			crclient.InNamespace(namespace),
+			crclient.MatchingFields{"metadata.name": name},
+		)
+		if err != nil {
+			return fmt.Errorf("starting watch for %s/%s: %w", namespace, name, err)
+		}
+
+		closed := false
+		for !closed {
+			select {
+			case <-ctx.Done():
+				watcher.Stop()
+				return fmt.Errorf("timed out waiting for %s/%s: %w", namespace, name, ctx.Err())
+			case event, ok := <-watcher.ResultChan():
+				if !ok {
+					closed = true
+					break
+				}
+				if event.Type == watch.Error {
+					closed = true
+					break
+				}
+				if event.Type != watch.Added && event.Type != watch.Modified {
+					continue
+				}
+				watchedHC, ok := event.Object.(*hyperv1.HostedCluster)
+				if !ok {
+					continue
+				}
+				logClusterProgress(watchedHC)
+				if predicate(watchedHC) {
+					watcher.Stop()
+					return nil
+				}
+			}
+		}
+		watcher.Stop()
 	}
 }
 
