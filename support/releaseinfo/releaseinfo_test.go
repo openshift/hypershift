@@ -8,6 +8,8 @@ import (
 	"github.com/openshift/hypershift/support/releaseinfo/fixtures"
 
 	imageapi "github.com/openshift/api/image/v1"
+
+	"github.com/coreos/stream-metadata-go/stream"
 )
 
 func TestParseComponentVersionsLabel(t *testing.T) {
@@ -164,7 +166,7 @@ func TestReadComponentVersions(t *testing.T) {
 
 // TestReleaseInfoPowerVS test validates the presence of the powervs images in the 4.10 release
 func TestReleaseInfoPowerVS(t *testing.T) {
-	metadata, err := DeserializeImageMetadata(fixtures.CoreOSBootImagesYAML_4_10)
+	metadata, _, err := DeserializeImageMetadata(fixtures.CoreOSBootImagesYAML_4_10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -184,7 +186,7 @@ func TestReleaseInfoPowerVS(t *testing.T) {
 
 // TestReleaseInfoKubeVirt tests validates the presence of the kubevirt images
 func TestReleaseInfoKubeVirt(t *testing.T) {
-	metadata, err := DeserializeImageMetadata(fixtures.CoreOSBootImagesYAML_4_10)
+	metadata, _, err := DeserializeImageMetadata(fixtures.CoreOSBootImagesYAML_4_10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -194,5 +196,182 @@ func TestReleaseInfoKubeVirt(t *testing.T) {
 	}
 	if arch.Images.KubeVirt == nil || arch.Images.KubeVirt.DigestRef == "" {
 		t.Fatal("metadata does not contain a digest ref for kubevirt")
+	}
+}
+
+func TestStreamForName(t *testing.T) {
+	rhel9Stream := &stream.Stream{
+		Stream: "rhcos-4.21",
+		Architectures: map[string]stream.Arch{
+			"x86_64": {},
+		},
+	}
+	rhel10Stream := &stream.Stream{
+		Stream: "rhcos-5.0",
+		Architectures: map[string]stream.Arch{
+			"x86_64": {},
+		},
+	}
+
+	tests := []struct {
+		name           string
+		releaseImage   *ReleaseImage
+		streamName     string
+		expectStream   string
+		expectError    bool
+		expectContains string
+	}{
+		{
+			name: "When name is empty it should return the default stream",
+			releaseImage: &ReleaseImage{
+				ImageStream: &imageapi.ImageStream{},
+				StreamMetadata: &stream.Stream{
+					Stream:        "rhcos-4.10",
+					Architectures: map[string]stream.Arch{"x86_64": {}},
+				},
+			},
+			streamName:   "",
+			expectStream: "rhcos-4.10",
+		},
+		{
+			name: "When name matches a stream it should return that stream",
+			releaseImage: &ReleaseImage{
+				ImageStream: &imageapi.ImageStream{},
+				StreamMetadata: &stream.Stream{
+					Stream:        "rhcos-4.10",
+					Architectures: map[string]stream.Arch{"x86_64": {}},
+				},
+				OSStreams: map[string]*stream.Stream{
+					"rhel-9":  rhel9Stream,
+					"rhel-10": rhel10Stream,
+				},
+			},
+			streamName:   "rhel-10",
+			expectStream: "rhcos-5.0",
+		},
+		{
+			name: "When name does not match any stream it should return an error listing available streams",
+			releaseImage: &ReleaseImage{
+				ImageStream: &imageapi.ImageStream{},
+				StreamMetadata: &stream.Stream{
+					Stream:        "rhcos-4.10",
+					Architectures: map[string]stream.Arch{"x86_64": {}},
+				},
+				OSStreams: map[string]*stream.Stream{
+					"rhel-9":  rhel9Stream,
+					"rhel-10": rhel10Stream,
+				},
+			},
+			streamName:     "rhel-8",
+			expectError:    true,
+			expectContains: "rhel-9",
+		},
+		{
+			name: "When OSStreams is nil and name is non-empty it should fall back to StreamMetadata",
+			releaseImage: &ReleaseImage{
+				ImageStream: &imageapi.ImageStream{},
+				StreamMetadata: &stream.Stream{
+					Stream:        "rhcos-4.10",
+					Architectures: map[string]stream.Arch{"x86_64": {}},
+				},
+			},
+			streamName:   "rhel-10",
+			expectStream: "rhcos-4.10",
+		},
+		{
+			name: "When StreamMetadata is nil and name is empty it should return an error",
+			releaseImage: &ReleaseImage{
+				ImageStream: &imageapi.ImageStream{},
+			},
+			streamName:  "",
+			expectError: true,
+		},
+		{
+			name: "When StreamMetadata is nil and OSStreams has entries it should return an error for empty name",
+			releaseImage: &ReleaseImage{
+				ImageStream: &imageapi.ImageStream{},
+				OSStreams: map[string]*stream.Stream{
+					"rhel-9": rhel9Stream,
+				},
+			},
+			streamName:  "",
+			expectError: true,
+		},
+		{
+			name: "When StreamMetadata is nil and OSStreams has matching entry it should return that stream",
+			releaseImage: &ReleaseImage{
+				ImageStream: &imageapi.ImageStream{},
+				OSStreams: map[string]*stream.Stream{
+					"rhel-9": rhel9Stream,
+				},
+			},
+			streamName:   "rhel-9",
+			expectStream: "rhcos-4.21",
+		},
+		{
+			name: "When StreamMetadata is nil and OSStreams has no matching entry it should return an error",
+			releaseImage: &ReleaseImage{
+				ImageStream: &imageapi.ImageStream{},
+				OSStreams: map[string]*stream.Stream{
+					"rhel-9": rhel9Stream,
+				},
+			},
+			streamName:     "rhel-10",
+			expectError:    true,
+			expectContains: "rhel-10",
+		},
+		{
+			name: "When both StreamMetadata and OSStreams are nil it should return an error for non-empty name",
+			releaseImage: &ReleaseImage{
+				ImageStream: &imageapi.ImageStream{},
+			},
+			streamName:  "rhel-10",
+			expectError: true,
+		},
+		{
+			name: "When OSStreams is an empty map it should return an error",
+			releaseImage: &ReleaseImage{
+				ImageStream: &imageapi.ImageStream{},
+				StreamMetadata: &stream.Stream{
+					Stream: "rhcos-4.10",
+				},
+				OSStreams: map[string]*stream.Stream{},
+			},
+			streamName:  "rhel-10",
+			expectError: true,
+		},
+		{
+			name: "When OSStreams entry has nil value it should return an error listing available streams",
+			releaseImage: &ReleaseImage{
+				ImageStream: &imageapi.ImageStream{},
+				StreamMetadata: &stream.Stream{
+					Stream: "rhcos-4.10",
+				},
+				OSStreams: map[string]*stream.Stream{
+					"rhel-10": nil,
+					"rhel-9":  rhel9Stream,
+				},
+			},
+			streamName:     "rhel-10",
+			expectError:    true,
+			expectContains: "rhel-9",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			result, err := tt.releaseImage.StreamForName(tt.streamName)
+			if tt.expectError {
+				g.Expect(err).To(HaveOccurred())
+				if tt.expectContains != "" {
+					g.Expect(err.Error()).To(ContainSubstring(tt.expectContains))
+				}
+				return
+			}
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(result.Stream).To(Equal(tt.expectStream))
+		})
 	}
 }

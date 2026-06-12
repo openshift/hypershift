@@ -35,11 +35,51 @@ type ProviderWithOpenShiftImageRegistryOverrides interface {
 	GetMirroredReleaseImage() string
 }
 
+const (
+	StreamRHEL9  = "rhel-9"
+	StreamRHEL10 = "rhel-10"
+)
+
 // ReleaseImage wraps an ImageStream with some utilities that help the user
 // discover constituent component image information.
 type ReleaseImage struct {
 	*imageapi.ImageStream `json:",inline"`
 	StreamMetadata        *stream.Stream `json:"streamMetadata"`
+	// OSStreams holds per-stream metadata parsed from the ConfigMap "streams" key.
+	// Nil for single-stream payloads (OCP < 5.0).
+	OSStreams map[string]*stream.Stream `json:"-"`
+}
+
+// StreamForName returns stream metadata by name. If name is empty, returns
+// the default stream (StreamMetadata). If name is non-empty, looks up
+// OSStreams and returns an error if the named stream is not found.
+func (i *ReleaseImage) StreamForName(name string) (*stream.Stream, error) {
+	if name == "" {
+		if i.StreamMetadata == nil {
+			return nil, fmt.Errorf("no default stream metadata available")
+		}
+		return i.StreamMetadata, nil
+	}
+	if i.OSStreams != nil {
+		meta, ok := i.OSStreams[name]
+		if !ok || meta == nil {
+			available := make([]string, 0, len(i.OSStreams))
+			for k, v := range i.OSStreams {
+				if v != nil {
+					available = append(available, k)
+				}
+			}
+			sort.Strings(available)
+			return nil, fmt.Errorf("stream %q not found; available streams: %v", name, available)
+		}
+		return meta, nil
+	}
+	// Fallback to legacy StreamMetadata for single-stream payloads (OCP < 5.0)
+	// where OSStreams is nil but StreamMetadata carries the data.
+	if i.StreamMetadata != nil {
+		return i.StreamMetadata, nil
+	}
+	return nil, fmt.Errorf("stream %q not found and no default stream metadata available", name)
 }
 
 func (i *ReleaseImage) Version() string {
