@@ -14,6 +14,7 @@ The list of components restarted are listed below:
 
 * catalog-operator
 * certified-operators-catalog
+* cloud-network-config-controller (cloud platforms only: AWS, Azure, GCP, OpenStack)
 * cluster-api
 * cluster-autoscaler
 * cluster-policy-controller
@@ -29,11 +30,14 @@ The list of components restarted are listed below:
 * kube-controller-manager
 * kube-scheduler
 * machine-approver
+* multus-admission-controller (if multi-network is enabled)
+* network-node-identity
 * oauth-openshift
 * olm-operator
 * openshift-apiserver
 * openshift-controller-manager
 * openshift-oauth-apiserver
+* ovnkube-control-plane
 * packageserver
 * redhat-marketplace-catalog
 * redhat-operators-catalog
