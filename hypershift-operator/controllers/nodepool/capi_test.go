@@ -1696,6 +1696,98 @@ func TestCAPIReconcile(t *testing.T) {
 			},
 			expectedError: false,
 		},
+		{
+			name: "When NodeDrainTimeout and NodeVolumeDetachTimeout are set, they should propagate to MachineDeployment",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-nodepool",
+					Namespace: "test-namespace",
+				},
+				Spec: hyperv1.NodePoolSpec{
+					ClusterName: "test-cluster",
+					Management: hyperv1.NodePoolManagement{
+						UpgradeType: hyperv1.UpgradeTypeReplace,
+						Replace: &hyperv1.ReplaceUpgrade{
+							Strategy: hyperv1.UpgradeStrategyRollingUpdate,
+							RollingUpdate: &hyperv1.RollingUpdate{
+								MaxUnavailable: &maxUnavailable,
+								MaxSurge:       &maxSurge,
+							},
+						},
+						AutoRepair: false,
+					},
+					Replicas:                ptr.To[int32](3),
+					NodeDrainTimeout:        &metav1.Duration{Duration: 10 * time.Minute},
+					NodeVolumeDetachTimeout: &metav1.Duration{Duration: 5 * time.Minute},
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AWSPlatform,
+						AWS: &hyperv1.AWSNodePoolPlatform{
+							AMI: "an-ami",
+						},
+					},
+				},
+			},
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "test-namespace"},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+						AWS: &hyperv1.AWSPlatformSpec{
+							Region:                      "",
+							CloudProviderConfig:         &hyperv1.AWSCloudProviderConfig{},
+							ServiceEndpoints:            []hyperv1.AWSServiceEndpoint{},
+							RolesRef:                    hyperv1.AWSRolesRef{},
+							ResourceTags:                []hyperv1.AWSResourceTag{},
+							EndpointAccess:              "",
+							AdditionalAllowedPrincipals: []string{},
+							MultiArch:                   false,
+						},
+					},
+				},
+			},
+			machineSet: &capiv1.MachineSet{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-machineset",
+					Namespace: "test-namespace-test-cluster",
+					Annotations: map[string]string{
+						nodePoolAnnotation: "test-namespace/test-nodepool",
+					},
+				},
+				Spec: capiv1.MachineSetSpec{
+					Template: capiv1.MachineTemplateSpec{
+						Spec: capiv1.MachineSpec{
+							InfrastructureRef: corev1.ObjectReference{
+								Kind:       "AWSMachineTemplate",
+								APIVersion: "infrastructure.cluster.x-k8s.io/v1beta2",
+								Namespace:  "test-namespace-test-cluster",
+								Name:       awsMachineTemplateName,
+							},
+						},
+					},
+				},
+			},
+			templates: []client.Object{
+				&capiaws.AWSMachineTemplate{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "does-not-match-infra-ref-name",
+						Namespace: "test-namespace-test-cluster",
+						Annotations: map[string]string{
+							nodePoolAnnotation: "test-namespace/test-nodepool",
+						},
+					},
+				},
+				&capiaws.AWSMachineTemplate{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      awsMachineTemplateName,
+						Namespace: "test-namespace-test-cluster",
+						Annotations: map[string]string{
+							nodePoolAnnotation: "test-namespace/test-nodepool",
+						},
+					},
+				},
+			},
+			expectedError: false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -1872,6 +1964,167 @@ func TestCAPIReconcile(t *testing.T) {
 					g.Expect(tt.nodePool.Status.Version).To(BeEmpty())
 				}
 			}
+		})
+	}
+}
+
+// TestCAPIReconcile_machineset is specific for UpgradeTypeInPlace.
+func TestCAPIReconcile_machineset(t *testing.T) {
+	t.Parallel()
+	awsMachineTemplateName := "test-nodepool-28d5cf5a"
+	capiClusterName := "infra-id"
+
+	tests := []struct {
+		name     string
+		nodePool *hyperv1.NodePool
+	}{
+		{
+			name: "When NodeDrainTimeout and NodeVolumeDetachTimeout are set, they should propagate to MachineSet",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-nodepool",
+					Namespace: "test-namespace",
+				},
+				Spec: hyperv1.NodePoolSpec{
+					ClusterName: "test-cluster",
+					Management: hyperv1.NodePoolManagement{
+						UpgradeType: hyperv1.UpgradeTypeInPlace,
+						InPlace:     &hyperv1.InPlaceUpgrade{},
+					},
+					Replicas:                ptr.To[int32](3),
+					NodeDrainTimeout:        &metav1.Duration{Duration: 10 * time.Minute},
+					NodeVolumeDetachTimeout: &metav1.Duration{Duration: 5 * time.Minute},
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AWSPlatform,
+						AWS: &hyperv1.AWSNodePoolPlatform{
+							AMI: "an-ami",
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "When NodeDrainTimeout and NodeVolumeDetachTimeout are nil, they should propagate as nil to MachineSet",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-nodepool",
+					Namespace: "test-namespace",
+				},
+				Spec: hyperv1.NodePoolSpec{
+					ClusterName: "test-cluster",
+					Management: hyperv1.NodePoolManagement{
+						UpgradeType: hyperv1.UpgradeTypeInPlace,
+						InPlace:     &hyperv1.InPlaceUpgrade{},
+					},
+					Replicas: ptr.To[int32](3),
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AWSPlatform,
+						AWS: &hyperv1.AWSNodePoolPlatform{
+							AMI: "an-ami",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			hostedCluster := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "test-namespace"},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+						AWS: &hyperv1.AWSPlatformSpec{
+							Region:                      "",
+							CloudProviderConfig:         &hyperv1.AWSCloudProviderConfig{},
+							ServiceEndpoints:            []hyperv1.AWSServiceEndpoint{},
+							RolesRef:                    hyperv1.AWSRolesRef{},
+							ResourceTags:                []hyperv1.AWSResourceTag{},
+							EndpointAccess:              "",
+							AdditionalAllowedPrincipals: []string{},
+							MultiArch:                   false,
+						},
+					},
+				},
+			}
+
+			existingMachineSet := &capiv1.MachineSet{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      tt.nodePool.GetName(),
+					Namespace: "test-namespace-test-cluster",
+					Annotations: map[string]string{
+						nodePoolAnnotation: "test-namespace/test-nodepool",
+					},
+				},
+				Spec: capiv1.MachineSetSpec{
+					Template: capiv1.MachineTemplateSpec{
+						Spec: capiv1.MachineSpec{
+							InfrastructureRef: corev1.ObjectReference{
+								Kind:       "AWSMachineTemplate",
+								APIVersion: "infrastructure.cluster.x-k8s.io/v1beta2",
+								Namespace:  "test-namespace-test-cluster",
+								Name:       awsMachineTemplateName,
+							},
+						},
+					},
+				},
+			}
+
+			templates := []client.Object{
+				&capiaws.AWSMachineTemplate{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      awsMachineTemplateName,
+						Namespace: "test-namespace-test-cluster",
+						Annotations: map[string]string{
+							nodePoolAnnotation: "test-namespace/test-nodepool",
+						},
+					},
+				},
+			}
+
+			c := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				WithObjects(tt.nodePool, existingMachineSet).
+				WithObjects(templates...).
+				Build()
+
+			controlplaneNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+			capi := &CAPI{
+				Token: &Token{
+					ConfigGenerator: &ConfigGenerator{
+						Client:                c,
+						hostedCluster:         hostedCluster,
+						nodePool:              tt.nodePool,
+						controlplaneNamespace: controlplaneNamespace,
+						rolloutConfig: &rolloutConfig{
+							releaseImage: &releaseinfo.ReleaseImage{
+								ImageStream: &imageapi.ImageStream{
+									ObjectMeta: metav1.ObjectMeta{
+										Name: "target-version",
+									},
+								},
+							},
+						},
+					},
+					cpoCapabilities:        &CPOCapabilities{},
+					CreateOrUpdateProvider: upsert.New(false),
+				},
+				capiClusterName: capiClusterName,
+				ApplyProvider:   upsert.NewApplyProvider(false),
+			}
+
+			err := capi.Reconcile(t.Context())
+			g.Expect(err).NotTo(HaveOccurred())
+
+			ms := &capiv1.MachineSet{}
+			err = capi.Client.Get(t.Context(), client.ObjectKey{Namespace: controlplaneNamespace, Name: tt.nodePool.GetName()}, ms)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(ms.Spec.Template.Spec.NodeDrainTimeout).To(Equal(tt.nodePool.Spec.NodeDrainTimeout))
+			g.Expect(ms.Spec.Template.Spec.NodeVolumeDetachTimeout).To(Equal(tt.nodePool.Spec.NodeVolumeDetachTimeout))
 		})
 	}
 }
