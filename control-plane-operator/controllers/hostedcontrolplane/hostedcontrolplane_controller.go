@@ -2043,6 +2043,12 @@ func (r *HostedControlPlaneReconciler) cleanupClusterNetworkOperatorResources(ct
 		if err := cnov2.SetRestartAnnotationAndPatch(ctx, r.Client, ovnKubeControlPlaneDeployment, restartAnnotation); err != nil {
 			return fmt.Errorf("failed to restart ovnkube-control-plane: %w", err)
 		}
+
+		// CNO manages overall cloud-network-config-controller deployment on cloud platforms (AWS/Azure/GCP/OpenStack). CPO manages restarts.
+		cloudNetworkConfigControllerDeployment := manifests.CloudNetworkConfigControllerDeployment(hcp.Namespace)
+		if err := cnov2.SetRestartAnnotationAndPatch(ctx, r.Client, cloudNetworkConfigControllerDeployment, restartAnnotation); err != nil {
+			return fmt.Errorf("failed to restart cloud-network-config-controller: %w", err)
+		}
 	}
 
 	// Clean up ovnkube-sbdb Route if exists

@@ -91,11 +91,10 @@ func SetRestartAnnotationAndPatch(ctx context.Context, crclient client.Client, d
 	}
 
 	patch := dep.DeepCopy()
-	podMeta := patch.Spec.Template.ObjectMeta
-	if podMeta.Annotations == nil {
-		podMeta.Annotations = map[string]string{}
+	if patch.Spec.Template.ObjectMeta.Annotations == nil {
+		patch.Spec.Template.ObjectMeta.Annotations = map[string]string{}
 	}
-	podMeta.Annotations[hyperv1.RestartDateAnnotation] = restartAnnotation
+	patch.Spec.Template.ObjectMeta.Annotations[hyperv1.RestartDateAnnotation] = restartAnnotation
 
 	if err := crclient.Patch(ctx, patch, client.MergeFrom(dep)); err != nil {
 		return fmt.Errorf("failed to set restart annotation: %w", err)
