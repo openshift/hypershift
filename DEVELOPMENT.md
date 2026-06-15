@@ -103,7 +103,7 @@ Run `make pre-commit` before submitting a PR. It executes the full sequence: bui
 
 ## Go Version
 
-This repository requires **Go 1.25+**. The `api/` module uses `omitzero` struct tags (available since Go 1.24) and other features that require this minimum version.
+The minimum Go version is declared in [`go.mod`](go.mod). The `api/` module uses `omitzero` struct tags (available since Go 1.24) and other features that require this minimum version.
 
 ## Common Gotchas
 
