@@ -385,7 +385,7 @@ func RegisterNodePoolAutoscalingTests(getTestCtx internal.TestContextGetter) {
 	AutoscalingBalancingTest(getTestCtx)
 }
 
-var _ = Describe("NodePool Autoscaling", Label("lifecycle", "nodepool-autoscaling"), func() {
+var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:NodePoolAutoscaling] NodePool Autoscaling", Label("lifecycle", "nodepool-autoscaling"), func() {
 	var testCtx *internal.TestContext
 
 	BeforeEach(func() {

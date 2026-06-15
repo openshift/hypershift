@@ -51,7 +51,7 @@ func RegisterHostedClusterSecurityTests(getTestCtx internal.TestContextGetter) {
 }
 
 func EnsureHostedClusterWebhooksValidatedTest(getTestCtx internal.TestContextGetter) {
-	When("a webhook targeting a control plane service is created in the hosted cluster", func() {
+	When("[Feature:WebhookValidation] a webhook targeting a control plane service is created in the hosted cluster", func() {
 		It("should be automatically deleted", func() {
 			tc := getTestCtx()
 			tc.ValidateHostedClusterClient()
@@ -101,7 +101,7 @@ func EnsureHostedClusterWebhooksValidatedTest(getTestCtx internal.TestContextGet
 }
 
 func EnsureAdmissionPoliciesTest(getTestCtx internal.TestContextGetter) {
-	When("checking admission policies on a public hosted cluster", Ordered, func() {
+	When("[Feature:AdmissionPolicies] checking admission policies on a public hosted cluster", Ordered, func() {
 		var tc *internal.TestContext
 		var hcClient crclient.Client
 		var hostedCluster *hyperv1.HostedCluster
@@ -212,7 +212,7 @@ func EnsureAdmissionPoliciesTest(getTestCtx internal.TestContextGetter) {
 }
 
 func EnsureNetworkPoliciesTest(getTestCtx internal.TestContextGetter) {
-	When("checking network policies on an AWS hosted cluster", func() {
+	When("[Feature:NetworkPolicies] checking network policies on an AWS hosted cluster", func() {
 		BeforeEach(func() {
 			tc := getTestCtx()
 			hostedCluster := tc.GetHostedCluster()
@@ -327,7 +327,7 @@ func EnsureNetworkPoliciesTest(getTestCtx internal.TestContextGetter) {
 	})
 }
 
-var _ = Describe("Hosted Cluster Security", Label("hosted-cluster-security"), func() {
+var _ = Describe("[sig-hypershift][Jira:Hypershift] Hosted Cluster Security", Label("hosted-cluster-security"), func() {
 	var testCtx *internal.TestContext
 
 	BeforeEach(func() {

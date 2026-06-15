@@ -186,7 +186,7 @@ func ValidateConfigurationStatusTest(getTestCtx internal.TestContextGetter) {
 	})
 }
 
-var _ = Describe("Hosted Cluster Health", Label("hosted-cluster-health"), func() {
+var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:Health] Hosted Cluster Health", Label("hosted-cluster-health"), func() {
 	var testCtx *internal.TestContext
 
 	BeforeEach(func() {

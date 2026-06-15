@@ -76,7 +76,7 @@ func ValidateIngressOperatorConfigurationTest(getTestCtx internal.TestContextGet
 	})
 }
 
-var _ = Describe("Hosted Cluster Ingress", Label("hosted-cluster-ingress"), func() {
+var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:Ingress] Hosted Cluster Ingress", Label("hosted-cluster-ingress"), func() {
 	var testCtx *internal.TestContext
 
 	BeforeEach(func() {

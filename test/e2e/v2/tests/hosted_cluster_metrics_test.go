@@ -308,7 +308,7 @@ func EnsureNodeTuningOperatorMetricsEndpointTest(getTestCtx internal.TestContext
 	})
 }
 
-var _ = Describe("Hosted Cluster Metrics", Label("hosted-cluster-metrics"), func() {
+var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:Metrics] Hosted Cluster Metrics", Label("hosted-cluster-metrics"), func() {
 	var testCtx *internal.TestContext
 
 	BeforeEach(func() {

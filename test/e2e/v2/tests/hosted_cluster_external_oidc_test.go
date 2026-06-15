@@ -56,7 +56,7 @@ func RegisterExternalOIDCTests(getTestCtx internal.TestContextGetter) {
 	ExternalOIDCKeycloakAuthTest(getTestCtx)
 }
 
-var _ = Describe("External OIDC", Label("external-oidc"), func() {
+var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:ExternalOIDC] External OIDC", Label("external-oidc"), func() {
 	var testCtx *internal.TestContext
 
 	BeforeEach(func() {

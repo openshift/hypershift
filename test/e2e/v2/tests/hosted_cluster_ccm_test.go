@@ -105,7 +105,7 @@ func RegisterHostedClusterCCMTests(getTestCtx internal.TestContextGetter) {
 	GCPCloudControllerManagerTest(getTestCtx)
 }
 
-var _ = Describe("Hosted Cluster CCM", Label("hosted-cluster-ccm"), func() {
+var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:CloudControllerManager] Hosted Cluster CCM", Label("hosted-cluster-ccm"), func() {
 	var testCtx *internal.TestContext
 
 	BeforeEach(func() {

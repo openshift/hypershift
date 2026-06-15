@@ -68,7 +68,7 @@ func EnsureKubeAPIDNSNameCustomCertTest(getTestCtx internal.TestContextGetter) {
 	})
 }
 
-var _ = Describe("Hosted Cluster DNS", Label("hosted-cluster-dns"), func() {
+var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:DNS] Hosted Cluster DNS", Label("hosted-cluster-dns"), func() {
 	var testCtx *internal.TestContext
 
 	BeforeEach(func() {

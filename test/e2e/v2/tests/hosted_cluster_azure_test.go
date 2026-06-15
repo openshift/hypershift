@@ -41,7 +41,7 @@ import (
 // These tests verify workload identity, KAS allowed CIDRs, and ingress operator configuration
 // on Azure platform clusters.
 func AzurePublicClusterTest(getTestCtx internal.TestContextGetter) {
-	Context("Azure Public Cluster", Label("Azure", "self-managed-azure-public"), func() {
+	Context("[Feature:AzureWorkloadIdentity] Azure Public Cluster", Label("Azure", "self-managed-azure-public"), func() {
 		BeforeEach(func() {
 			testCtx := getTestCtx()
 			hc := testCtx.GetHostedCluster()
@@ -88,7 +88,7 @@ func AzurePublicClusterTest(getTestCtx internal.TestContextGetter) {
 // These tests verify private-router Service annotation, PrivateLinkService CRs, and DNS zone configuration
 // on Azure clusters with Private topology.
 func AzurePrivateTopologyTest(getTestCtx internal.TestContextGetter) {
-	Context("Azure Private Topology", Label("Azure", "self-managed-azure-private"), Ordered, func() {
+	Context("[Feature:AzurePrivateLink] Azure Private Topology", Label("Azure", "self-managed-azure-private"), Ordered, func() {
 		var testCtx *internal.TestContext
 		var controlPlaneNamespace string
 
@@ -227,7 +227,7 @@ func listPLS(ctx context.Context, client crclient.Client, namespace string) ([]*
 // These tests verify that OAuth is properly exposed via a LoadBalancer Service and that the
 // OAuth token flow works through that endpoint.
 func AzureOAuthLoadBalancerTest(getTestCtx internal.TestContextGetter) {
-	Context("Azure OAuth LoadBalancer", Label("Azure", "self-managed-azure-oauth-lb"), func() {
+	Context("[Feature:AzureOAuth] Azure OAuth LoadBalancer", Label("Azure", "self-managed-azure-oauth-lb"), func() {
 		BeforeEach(func() {
 			testCtx := getTestCtx()
 			hc := testCtx.GetHostedCluster()
@@ -293,7 +293,7 @@ func RegisterHostedClusterAzureTests(getTestCtx internal.TestContextGetter) {
 	AzureOAuthLoadBalancerTest(getTestCtx)
 }
 
-var _ = Describe("Hosted Cluster Azure", Label("hosted-cluster-azure"), func() {
+var _ = Describe("[sig-hypershift][Jira:Hypershift] Hosted Cluster Azure", Label("hosted-cluster-azure"), func() {
 	var testCtx *internal.TestContext
 
 	BeforeEach(func() {

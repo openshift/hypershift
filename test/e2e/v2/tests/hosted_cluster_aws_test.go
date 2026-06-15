@@ -45,7 +45,7 @@ func RegisterHostedClusterAWSTests(getTestCtx internal.TestContextGetter) {
 }
 
 func EnsureDefaultSecurityGroupTagsTest(getTestCtx internal.TestContextGetter) {
-	When("a day-2 resource tag is added to the HostedCluster spec", func() {
+	When("[Feature:AWSSecurityGroups] a day-2 resource tag is added to the HostedCluster spec", func() {
 		It("should apply the tag to the default worker security group via AWS API", Label("AWS"), func() {
 			tc := getTestCtx()
 			if e2eutil.IsLessThan(e2eutil.Version420) {
@@ -127,7 +127,7 @@ func EnsureDefaultSecurityGroupTagsTest(getTestCtx internal.TestContextGetter) {
 }
 
 func AWSCCMWithCustomizationsTest(getTestCtx internal.TestContextGetter) {
-	Context("AWS CCM NLB Security Group", Label("AWS", "CCM"), func() {
+	Context("[Feature:AWSNLB] AWS CCM NLB Security Group", Label("AWS", "CCM"), func() {
 		BeforeEach(func() {
 			tc := getTestCtx()
 			if e2eutil.IsLessThan(e2eutil.Version423) {
@@ -275,7 +275,7 @@ func extractLBNameFromHostname(hostname string) string {
 	return firstLabel[:lastHyphen]
 }
 
-var _ = Describe("Hosted Cluster AWS", Label("lifecycle", "hosted-cluster-aws"), func() {
+var _ = Describe("[sig-hypershift][Jira:Hypershift] Hosted Cluster AWS", Label("lifecycle", "hosted-cluster-aws"), func() {
 	var testCtx *internal.TestContext
 
 	BeforeEach(func() {

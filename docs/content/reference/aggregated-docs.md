@@ -14699,7 +14699,7 @@ func DeploymentGenerationTest(getTestCtx internal.TestContextGetter) {
     })
 }
 
-var _ = Describe("Control Plane Workloads", Label("control-plane-workloads"), func() {
+var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:ControlPlaneWorkloads] Control Plane Workloads", Label("control-plane-workloads"), func() {
     var testCtx *internal.TestContext
     BeforeEach(func() {
         testCtx = internal.GetTestContext()
@@ -14766,6 +14766,52 @@ Sequential: []SequentialGroup{
 
 !!! tip "Adding a test with an existing label"
     If your test uses a label already in a filter expression (e.g., `hosted-cluster-health`), it runs automatically in the appropriate CI jobs. If you introduce a new label, you must add it to existing filter expressions in the TestMatrix configuration in the hypershift repository (not the release repository).
+
+## Sippy/CR test name annotations
+
+All test name strings must include annotations for Sippy Component Readiness (CR) mapping. These are parsed from the full Ginkgo test path and enable automatic Jira component assignment and per-feature regression tracking.
+
+**Required annotations:**
+
+1. **`[sig-hypershift][Jira:Hypershift]`** — on every top-level `Describe` block. Maps all tests to the Hypershift Jira component.
+2. **`[Feature:XYZ]`** — maps to a specific feature/capability. Placement depends on the file:
+    - **On the `Describe`** when the entire file tests one cohesive feature (most files).
+    - **On individual `Context`/`When` blocks** when a file covers multiple distinct capabilities.
+
+Feature names use PascalCase with no spaces (e.g., `BackupRestore`, `AzurePrivateLink`, `NodePoolLifecycle`).
+
+**Single-feature file:**
+
+```go
+var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:Health] Hosted Cluster Health", Label("hosted-cluster-health"), func() {
+    // all tests in this file map to Feature:Health
+})
+```
+
+**Multi-feature file** (e.g., platform-specific files covering multiple capabilities):
+
+```go
+var _ = Describe("[sig-hypershift][Jira:Hypershift] Hosted Cluster Azure", Label("hosted-cluster-azure"), func() {
+    // Jira component set at Describe level, Feature set per Context
+})
+
+Context("[Feature:AzureWorkloadIdentity] Azure Public Cluster", Label("Azure"), func() {
+    It("should mutate pods with workload identity federated credentials", func() { ... })
+})
+
+Context("[Feature:AzurePrivateLink] Azure Private Topology", Label("Azure"), func() {
+    It("should create AzurePrivateLinkService CR with PLS alias", func() { ... })
+})
+```
+
+!!! warning "Do not rename tests after Sippy import"
+    Renaming tests after Sippy imports them loses historical data and requires manual re-mapping. Add annotations before tests are imported.
+
+Check existing Feature names before adding new ones:
+
+```bash
+grep -r '\Feature:' test/e2e/v2/tests/
+```
 
 ## Platform guards
 
@@ -14854,7 +14900,7 @@ Eventually(func() bool {
 }).WithTimeout(5*time.Minute).WithPolling(10*time.Second).Should(BeTrue())
 ```
 
-For pointer safety, vacuous pass prevention, IPv6 URL construction, and the non-lifecycle vs. lifecycle mutation rule, see AGENTS.md conventions #11, #13, #15, #16.
+For pointer safety, vacuous pass prevention, IPv6 URL construction, and the non-lifecycle vs. lifecycle mutation rule, see [AGENTS.md conventions #11, #13, #15, #16.
 
 ## Lifecycle vs non-lifecycle tests
 
@@ -14871,7 +14917,7 @@ Lifecycle tests may modify cluster state but must:
 - Check `IsNotFound()` in cleanup to handle missing resources gracefully
 
 ```go
-var _ = Describe("NodePool Lifecycle", Label("lifecycle", "nodepool-lifecycle"), func() {
+var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:NodePoolLifecycle] NodePool Lifecycle", Label("lifecycle", "nodepool-lifecycle"), func() {
     var originalReplicas int32
     BeforeEach(func() {
         // Capture original state
