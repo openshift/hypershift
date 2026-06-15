@@ -527,7 +527,8 @@ func TestSetDefaultOptions(t *testing.T) {
 	_ = corev1.AddToScheme(scheme)
 	_ = appsv1.AddToScheme(scheme)
 
-	t.Run("etcd sets SecurityContext with custom UID", func(t *testing.T) {
+	t.Run("When SetDefaultSecurityContext is true it should set RunAsUser and FSGroup", func(t *testing.T) {
+		t.Parallel()
 		g := NewGomegaWithT(t)
 
 		workload := &controlPlaneWorkload[*appsv1.StatefulSet]{
@@ -548,7 +549,7 @@ func TestSetDefaultOptions(t *testing.T) {
 		g.Expect(workloadObject.Spec.Template.Spec.SecurityContext.FSGroup).To(Equal(ptr.To(int64(1002))))
 	})
 
-	imageProvider := imageprovider.NewFromImages(map[string]string{
+	releaseProvider := imageprovider.NewFromImages(map[string]string{
 		"hyperkube": "quay.io/test/hyperkube:latest",
 	})
 
@@ -560,7 +561,7 @@ func TestSetDefaultOptions(t *testing.T) {
 		expectedResources  corev1.ResourceRequirements
 	}{
 		{
-			name: "existing resources with both requests and limits are fully preserved",
+			name: "When existing resources have both requests and limits it should fully preserve them",
 			containerResources: corev1.ResourceRequirements{
 				Requests: corev1.ResourceList{
 					corev1.ResourceCPU:    resource.MustParse("100m"),
@@ -591,7 +592,7 @@ func TestSetDefaultOptions(t *testing.T) {
 			},
 		},
 		{
-			name: "without existing resources container keeps its manifest defaults",
+			name: "When no existing resources are set it should keep the manifest defaults",
 			containerResources: corev1.ResourceRequirements{
 				Requests: corev1.ResourceList{
 					corev1.ResourceCPU:    resource.MustParse("100m"),
@@ -610,6 +611,7 @@ func TestSetDefaultOptions(t *testing.T) {
 
 	for _, test := range resourceTests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			g := NewGomegaWithT(t)
 
 			workload := &controlPlaneWorkload[*appsv1.Deployment]{
@@ -640,7 +642,7 @@ func TestSetDefaultOptions(t *testing.T) {
 			err := workload.setDefaultOptions(ControlPlaneContext{
 				HCP:                  hcp,
 				Client:               fake.NewClientBuilder().WithScheme(scheme).Build(),
-				ReleaseImageProvider: imageProvider,
+				ReleaseImageProvider: releaseProvider,
 			}, deployment, test.existingResources)
 			g.Expect(err).NotTo(HaveOccurred())
 
