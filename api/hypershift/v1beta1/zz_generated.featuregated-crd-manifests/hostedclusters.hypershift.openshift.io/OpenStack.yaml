@@ -7216,6 +7216,8 @@ spec:
             - message: ovnKubernetesConfig is forbidden when networkType is not OVNKubernetes
               rule: self.networking.networkType == 'OVNKubernetes' || !has(self.operatorConfiguration)
                 || !has(self.operatorConfiguration.clusterNetworkOperator) || !has(self.operatorConfiguration.clusterNetworkOperator.ovnKubernetesConfig)
+            - message: secretEncryption cannot be removed once configured
+              rule: '!has(oldSelf.secretEncryption) || has(self.secretEncryption)'
           status:
             description: status is the latest observed status of the HostedCluster.
             properties:

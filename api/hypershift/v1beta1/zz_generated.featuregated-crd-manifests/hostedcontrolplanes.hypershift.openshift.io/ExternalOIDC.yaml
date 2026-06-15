@@ -6799,6 +6799,8 @@ spec:
                 || !has(self.operatorConfiguration.clusterNetworkOperator.disableMultiNetwork)
                 || !self.operatorConfiguration.clusterNetworkOperator.disableMultiNetwork
                 || self.networking.networkType == ''Other'''
+            - message: secretEncryption cannot be removed once configured
+              rule: '!has(oldSelf.secretEncryption) || has(self.secretEncryption)'
           status:
             description: status is the status of the HostedControlPlane.
             properties:
