@@ -52,7 +52,7 @@ func main() {
 		hypershiftBin = "hypershift"
 	}
 
-	specs := platform.ClusterSpecs("", "")
+	specs := platform.ClusterSpecs("", "", "")
 
 	log.Printf("Destroying %d clusters derived from PROW_JOB_ID=%s", len(specs), prowJobID)
 

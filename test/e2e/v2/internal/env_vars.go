@@ -199,6 +199,11 @@ func init() {
 		false,
 	)
 	RegisterEnvVar(
+		"E2E_N3_RELEASE_IMAGE",
+		"N-3 minor release image for multi-hop upgrade tests.",
+		false,
+	)
+	RegisterEnvVar(
 		"E2E_AZURE_CREDENTIALS_FILE",
 		"Path to Azure service principal credentials JSON file for platform-specific tests (auto-repair, disk encryption).",
 		false,

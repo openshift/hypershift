@@ -51,7 +51,11 @@ func main() {
 	// Let the platform set up any env vars it needs for tests.
 	platform.SetupTestEnv(sharedDir)
 
-	matrix := platform.TestMatrix(releaseImage)
+	n1Image := os.Getenv("OCP_IMAGE_N1")
+	n2Image := os.Getenv("OCP_IMAGE_N2")
+	n3Image := os.Getenv("OCP_IMAGE_N3")
+
+	matrix := platform.TestMatrix(releaseImage, n1Image, n2Image, n3Image)
 
 	var (
 		mu      sync.Mutex

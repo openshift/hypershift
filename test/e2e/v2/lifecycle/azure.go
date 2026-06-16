@@ -109,7 +109,7 @@ func (a *AzurePlatformConfig) DefaultBaseDomain() string {
 	return "hcp-sm-azure.azure.devcluster.openshift.com"
 }
 
-func (a *AzurePlatformConfig) ClusterSpecs(releaseImage, n1Image string) []ClusterSpec {
+func (a *AzurePlatformConfig) ClusterSpecs(releaseImage, n1Image, n3Image string) []ClusterSpec {
 	var publicExtraArgs []string
 	if a.encryptionKeyID != "" {
 		publicExtraArgs = append(publicExtraArgs, "--encryption-key-id="+a.encryptionKeyID)
@@ -138,6 +138,12 @@ func (a *AzurePlatformConfig) ClusterSpecs(releaseImage, n1Image string) []Clust
 			Variant:      "upgrade",
 			OutputFile:   "cluster-name-upgrade",
 			ReleaseImage: n1Image,
+			ExtraArgs:    []string{"--control-plane-availability-policy=HighlyAvailable"},
+		},
+		{
+			Variant:      "multi-hop-upgrade",
+			OutputFile:   "cluster-name-multi-hop-upgrade",
+			ReleaseImage: n3Image,
 			ExtraArgs:    []string{"--control-plane-availability-policy=HighlyAvailable"},
 		},
 		{
@@ -327,7 +333,7 @@ func (a *AzurePlatformConfig) postCreateExternalOIDC(ctx context.Context, cl crc
 	return nil
 }
 
-func (a *AzurePlatformConfig) TestMatrix(releaseImage string) TestMatrix {
+func (a *AzurePlatformConfig) TestMatrix(releaseImage, n1Image, n2Image, n3Image string) TestMatrix {
 	return TestMatrix{
 		Parallel: []TestGroup{
 			{
@@ -378,6 +384,23 @@ func (a *AzurePlatformConfig) TestMatrix(releaseImage string) TestMatrix {
 						ClusterFile: "cluster-name-upgrade",
 						LabelFilter: "etcd-chaos",
 						JUnitFile:   "junit_lifecycle_etcd_chaos.xml",
+					},
+				},
+			},
+			{
+				Name: "multi-hop-upgrade",
+				Steps: []TestGroup{
+					{
+						Name:        "multi-hop-upgrade",
+						ClusterFile: "cluster-name-multi-hop-upgrade",
+						LabelFilter: "multi-hop-upgrade",
+						JUnitFile:   "junit_lifecycle_multi_hop_upgrade.xml",
+						ExtraEnv: []string{
+								fmt.Sprintf("E2E_LATEST_RELEASE_IMAGE=%s", releaseImage),
+								fmt.Sprintf("E2E_N1_RELEASE_IMAGE=%s", n1Image),
+								fmt.Sprintf("E2E_N2_RELEASE_IMAGE=%s", n2Image),
+								fmt.Sprintf("E2E_N3_RELEASE_IMAGE=%s", n3Image),
+							},
 					},
 				},
 			},

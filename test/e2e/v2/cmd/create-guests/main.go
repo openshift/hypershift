@@ -71,6 +71,7 @@ type envConfig struct {
 	artifactDir  string
 	releaseImage string
 	n1Image      string
+	n3Image      string
 
 	baseDomain  string
 	nodeCount   int
@@ -109,6 +110,7 @@ func loadEnvConfig() envConfig {
 		artifactDir:  mustGetenv("ARTIFACT_DIR"),
 		releaseImage: mustGetenv("RELEASE_IMAGE_LATEST"),
 		n1Image:      os.Getenv("OCP_IMAGE_N1"),
+		n3Image:      os.Getenv("OCP_IMAGE_N3"),
 
 		baseDomain:  envOrDefault("HYPERSHIFT_BASE_DOMAIN", platform.DefaultBaseDomain()),
 		nodeCount:   envOrDefaultInt("HYPERSHIFT_NODE_COUNT", 3),
@@ -125,12 +127,15 @@ func loadEnvConfig() envConfig {
 	if cfg.n1Image == "" {
 		cfg.n1Image = cfg.releaseImage
 	}
+	if cfg.n3Image == "" {
+		cfg.n3Image = cfg.n1Image
+	}
 
 	return cfg
 }
 
 func run(ctx context.Context, cfg envConfig) error {
-	specs := cfg.platform.ClusterSpecs(cfg.releaseImage, cfg.n1Image)
+	specs := cfg.platform.ClusterSpecs(cfg.releaseImage, cfg.n1Image, cfg.n3Image)
 
 	// Derive cluster names and build the name map.
 	named := make([]namedSpec, len(specs))

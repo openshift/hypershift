@@ -55,9 +55,9 @@ type PlatformConfig interface {
 	DefaultBaseDomain() string
 
 	// ClusterSpecs returns the cluster variants this platform creates.
-	// The releaseImage and n1Image are the current and N-1 release
-	// images from the CI environment.
-	ClusterSpecs(releaseImage, n1Image string) []ClusterSpec
+	// The releaseImage is the current release, n1Image is N-1, and
+	// n3Image is N-3.
+	ClusterSpecs(releaseImage, n1Image, n3Image string) []ClusterSpec
 
 	// CreateArgs returns platform-specific args for
 	// "hypershift create cluster <platform>".
@@ -85,7 +85,8 @@ type PlatformConfig interface {
 	PostVersionRollout(ctx context.Context, cl crclient.WithWatch, namespace string, clusterNames map[string]string) error
 
 	// TestMatrix returns the test groups for this platform.
-	TestMatrix(releaseImage string) TestMatrix
+	// n1Image, n2Image, n3Image are the N-1, N-2, N-3 release images.
+	TestMatrix(releaseImage, n1Image, n2Image, n3Image string) TestMatrix
 
 	// SetupTestEnv sets platform-specific environment variables
 	// before test execution (e.g., reading subnet IDs from
@@ -95,7 +96,6 @@ type PlatformConfig interface {
 	// DestroyArgs returns platform-specific args for
 	// "hypershift destroy cluster <platform>".
 	DestroyArgs() []string
-
 }
 
 // NewPlatformConfig creates a PlatformConfig for the given platform
@@ -119,4 +119,3 @@ func DeriveClusterName(prowJobID, variant string) string {
 	hash := sha256.Sum256([]byte(prowJobID))
 	return variant + "-" + fmt.Sprintf("%x", hash)[:10]
 }
-
