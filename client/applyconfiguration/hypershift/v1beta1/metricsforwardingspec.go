@@ -24,7 +24,8 @@ import (
 // MetricsForwardingSpecApplyConfiguration represents a declarative configuration of the MetricsForwardingSpec type for use
 // with apply.
 type MetricsForwardingSpecApplyConfiguration struct {
-	Mode *hypershiftv1beta1.MetricsForwardingMode `json:"mode,omitempty"`
+	Mode       *hypershiftv1beta1.MetricsForwardingMode `json:"mode,omitempty"`
+	MetricsSet *hypershiftv1beta1.MetricsSet            `json:"metricsSet,omitempty"`
 }
 
 // MetricsForwardingSpecApplyConfiguration constructs a declarative configuration of the MetricsForwardingSpec type for use with
@@ -38,5 +39,13 @@ func MetricsForwardingSpec() *MetricsForwardingSpecApplyConfiguration {
 // If called multiple times, the Mode field is set to the value of the last call.
 func (b *MetricsForwardingSpecApplyConfiguration) WithMode(value hypershiftv1beta1.MetricsForwardingMode) *MetricsForwardingSpecApplyConfiguration {
 	b.Mode = &value
+	return b
+}
+
+// WithMetricsSet sets the MetricsSet field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the MetricsSet field is set to the value of the last call.
+func (b *MetricsForwardingSpecApplyConfiguration) WithMetricsSet(value hypershiftv1beta1.MetricsSet) *MetricsForwardingSpecApplyConfiguration {
+	b.MetricsSet = &value
 	return b
 }
