@@ -37,6 +37,13 @@ import (
 	"github.com/go-logr/logr"
 )
 
+const (
+	// globalPSNodeLabel is the label applied to Nodes to indicate they are eligible for
+	// the GlobalPullSecret DaemonSet. Only Replace (MachineDeployment) nodes get this label;
+	// InPlace (MachineSet) nodes are excluded to avoid conflicts with Machine Config Daemon.
+	globalPSNodeLabel = "hypershift.openshift.io/nodepool-globalps-enabled"
+)
+
 // CAPI Knows how to reconcile all the CAPI resources for a unique token.
 // TODO(alberto): consider stronger decoupling from Token by making it an interface
 // and let nodepool, hostedcluster, and client be fields of CAPI / interface methods.
@@ -454,20 +461,28 @@ func (c *CAPI) reconcileMachineDeployment(ctx context.Context, log logr.Logger,
 			continue
 		}
 
-		if machine.Annotations == nil {
-			machine.Annotations = make(map[string]string)
-		}
-		if machine.Labels == nil {
-			machine.Labels = make(map[string]string)
-		}
-
 		if result, err := controllerutil.CreateOrPatch(ctx, c.Client, &machine, func() error {
+			if machine.Labels == nil {
+				machine.Labels = make(map[string]string)
+			}
+			if machine.Annotations == nil {
+				machine.Annotations = make(map[string]string)
+			}
+
 			// Propagate labels.
 			for k, v := range nodePool.Spec.NodeLabels {
 				// Propagated managed labels down to Machines with a known hardcoded prefix
 				// so the CPO HCCO Node controller can recognize them and apply them to Nodes.
 				labelKey := fmt.Sprintf("%s.%s", labelManagedPrefix, k)
 				machine.Labels[labelKey] = v
+			}
+
+			// Propagate globalPS managed label to Machines so the HCCO Node controller
+			// applies it to Nodes. This enables the GlobalPullSecret DaemonSet to
+			// schedule on Replace nodes. Only AWS and Azure platforms support this.
+			if nodePool.Spec.Platform.Type == hyperv1.AWSPlatform || nodePool.Spec.Platform.Type == hyperv1.AzurePlatform {
+				globalPSLabelKey := fmt.Sprintf("%s.%s", labelManagedPrefix, globalPSNodeLabel)
+				machine.Labels[globalPSLabelKey] = "true"
 			}
 
 			// Propagate taints.
