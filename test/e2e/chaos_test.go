@@ -465,6 +465,7 @@ func testSingleMemberRecovery(parentCtx context.Context, client crclient.Client,
 // RequestServingNodeAdditionalSelector) to the HostedControlPlane even when the
 // pull secret is corrupted. This is a regression test for OCPBUGS-77268.
 func TestPullSecretUnavailable(t *testing.T) {
+	e2eutil.AtLeast(t, e2eutil.Version423)
 	t.Parallel()
 
 	ctx, cancel := context.WithCancel(testContext)
