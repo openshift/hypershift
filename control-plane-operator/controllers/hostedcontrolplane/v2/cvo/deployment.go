@@ -22,6 +22,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	policyv1 "k8s.io/api/policy/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -148,6 +149,7 @@ var (
 		"0000_50_olm_06-psm-operator.deployment.ibm-cloud-managed.yaml",
 		"0000_50_olm_06-psm-operator.service.yaml",
 		"0000_50_olm_06-psm-operator.servicemonitor.yaml",
+		"0000_50_olm_00-packageserver.pdb.yaml",
 		"0000_50_olm_07-olm-operator.deployment.ibm-cloud-managed.yaml",
 		"0000_50_olm_07-olm-operator.deployment.yaml",
 		"0000_50_olm_07-collect-profiles.cronjob.yaml",
@@ -266,6 +268,7 @@ func resourcesToRemove(platformType hyperv1.PlatformType) []client.Object {
 	switch platformType {
 	case hyperv1.IBMCloudPlatform, hyperv1.PowerVSPlatform:
 		return []client.Object{
+			&policyv1.PodDisruptionBudget{ObjectMeta: metav1.ObjectMeta{Name: "packageserver-pdb", Namespace: "openshift-operator-lifecycle-manager"}},
 			&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "network-operator", Namespace: "openshift-network-operator"}},
 			&rbacv1.ClusterRoleBinding{ObjectMeta: metav1.ObjectMeta{Name: "default-account-cluster-network-operator"}},
 			&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "cluster-node-tuning-operator", Namespace: "openshift-cluster-node-tuning-operator"}},
@@ -273,6 +276,7 @@ func resourcesToRemove(platformType hyperv1.PlatformType) []client.Object {
 		}
 	default:
 		return []client.Object{
+			&policyv1.PodDisruptionBudget{ObjectMeta: metav1.ObjectMeta{Name: "packageserver-pdb", Namespace: "openshift-operator-lifecycle-manager"}},
 			&apiextensionsv1.CustomResourceDefinition{ObjectMeta: metav1.ObjectMeta{Name: "machineconfigs.machineconfiguration.openshift.io"}},
 			&apiextensionsv1.CustomResourceDefinition{ObjectMeta: metav1.ObjectMeta{Name: "machineconfigpools.machineconfiguration.openshift.io"}},
 			&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "network-operator", Namespace: "openshift-network-operator"}},

@@ -163,6 +163,7 @@ spec:
           rm -f /var/payload/release-manifests/0000_50_olm_06-psm-operator.deployment.ibm-cloud-managed.yaml
           rm -f /var/payload/release-manifests/0000_50_olm_06-psm-operator.service.yaml
           rm -f /var/payload/release-manifests/0000_50_olm_06-psm-operator.servicemonitor.yaml
+          rm -f /var/payload/release-manifests/0000_50_olm_00-packageserver.pdb.yaml
           rm -f /var/payload/release-manifests/0000_50_olm_07-olm-operator.deployment.ibm-cloud-managed.yaml
           rm -f /var/payload/release-manifests/0000_50_olm_07-olm-operator.deployment.yaml
           rm -f /var/payload/release-manifests/0000_50_olm_07-collect-profiles.cronjob.yaml
@@ -199,6 +200,15 @@ spec:
           rm -f /var/payload/release-manifests/0000_50_cluster-csi-snapshot-controller-operator_07_deployment-ibm-cloud-managed.yaml
           rm -f /var/payload/release-manifests/0000_03_marketplace-operator_02_operatorhub.cr.yaml
           cat > /var/payload/release-manifests/0000_01_cleanup.yaml <<EOF
+          ---
+          apiVersion: policy/v1
+          kind: PodDisruptionBudget
+          metadata:
+            name: packageserver-pdb
+            namespace: openshift-operator-lifecycle-manager
+            annotations:
+              include.release.openshift.io/ibm-cloud-managed: "true"
+              release.openshift.io/delete: "true"
           ---
           apiVersion: apiextensions.k8s.io/v1
           kind: CustomResourceDefinition
