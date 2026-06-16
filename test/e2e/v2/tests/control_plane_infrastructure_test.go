@@ -187,7 +187,7 @@ func RegisterControlPlaneInfrastructureTests(getTestCtx internal.TestContextGett
 	InfrastructureResourceRequestsTest(getTestCtx)
 }
 
-var _ = Describe("Control Plane Infrastructure Workloads", Label("control-plane-workloads"), func() {
+var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:ControlPlaneInfrastructure] Control Plane Infrastructure Workloads", Label("control-plane-workloads"), func() {
 	var testCtx *internal.TestContext
 	BeforeEach(func() {
 		testCtx = internal.GetTestContext()

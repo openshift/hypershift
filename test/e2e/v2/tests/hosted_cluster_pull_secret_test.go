@@ -343,7 +343,7 @@ func verifyDaemonSetsReady(tc *internal.TestContext, hcClient crclient.Client, n
 	}
 }
 
-var _ = Describe("Global Pull Secret", Label("lifecycle", "global-pull-secret"), func() {
+var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:GlobalPullSecret] Global Pull Secret", Label("lifecycle", "global-pull-secret"), func() {
 	var testCtx *internal.TestContext
 
 	BeforeEach(func() {

@@ -67,7 +67,7 @@ func EnsureNodeCommunicationTest(getTestCtx internal.TestContextGetter) {
 	})
 }
 
-var _ = Describe("Hosted Cluster Node Communication", Label("hosted-cluster-node-communication"), func() {
+var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:NodeCommunication] Hosted Cluster Node Communication", Label("hosted-cluster-node-communication"), func() {
 	var testCtx *internal.TestContext
 
 	BeforeEach(func() {

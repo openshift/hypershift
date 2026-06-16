@@ -68,7 +68,7 @@ func EnsureAllRoutesUseHCPRouterTest(getTestCtx internal.TestContextGetter) {
 	})
 }
 
-var _ = Describe("Hosted Cluster Compliance", Label("hosted-cluster-compliance"), func() {
+var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:Compliance] Hosted Cluster Compliance", Label("hosted-cluster-compliance"), func() {
 	var testCtx *internal.TestContext
 
 	BeforeEach(func() {

@@ -279,7 +279,7 @@ func verifyExternalAccountCred(credData []byte, key, expectedEmail string) {
 		"service_account_impersonation_url should reference the imageRegistry GSA email %s", expectedEmail)
 }
 
-var _ = Describe("Hosted Cluster Image Registry", Label("hosted-cluster-image-registry"), func() {
+var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:ImageRegistry] Hosted Cluster Image Registry", Label("hosted-cluster-image-registry"), func() {
 	var testCtx *internal.TestContext
 
 	BeforeEach(func() {

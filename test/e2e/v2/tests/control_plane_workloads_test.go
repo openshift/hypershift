@@ -1065,7 +1065,7 @@ func RegisterControlPlaneWorkloadsTests(getTestCtx internal.TestContextGetter) {
 	SecurityContextUIDTest(getTestCtx)
 }
 
-var _ = Describe("Control Plane Workloads", Label("control-plane-workloads"), func() {
+var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:ControlPlaneWorkloads] Control Plane Workloads", Label("control-plane-workloads"), func() {
 	var (
 		testCtx *internal.TestContext
 	)

@@ -46,7 +46,7 @@ func TestE2EV2(t *testing.T) {
 	RegisterFailHandler(internal.InformingAwareFailHandler)
 
 	// Run the ginkgo test suite
-	RunSpecs(t, "HyperShift End To End Test Suite")
+	RunSpecs(t, "hypershift-e2e")
 }
 
 var _ = BeforeSuite(func() {

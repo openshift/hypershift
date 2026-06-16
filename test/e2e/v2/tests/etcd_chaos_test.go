@@ -52,7 +52,7 @@ func RegisterEtcdChaosTests(getTestCtx internal.TestContextGetter) {
 	EtcdMissingMemberRecoveryTest(getTestCtx)
 }
 
-var _ = Describe("Etcd Chaos", Label("lifecycle", "etcd-chaos"), Ordered, func() {
+var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:EtcdResilience] Etcd Chaos", Label("lifecycle", "etcd-chaos"), Ordered, func() {
 	var testCtx *internal.TestContext
 
 	BeforeAll(func() {
