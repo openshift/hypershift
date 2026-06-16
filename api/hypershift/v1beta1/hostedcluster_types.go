@@ -959,6 +959,22 @@ type MetricsForwardingSpec struct {
 	//
 	// +required
 	Mode MetricsForwardingMode `json:"mode,omitempty"`
+
+	// metricsSet specifies which set of metrics to forward to the hosted
+	// cluster's monitoring stack. This controls only the metrics-proxy forwarding
+	// path and does not affect management-cluster-side ServiceMonitor/PodMonitor
+	// relabel configurations.
+	// When not specified, the value from monitoring.metricsSet is used, which itself
+	// falls back to the global METRICS_SET environment variable (default "Telemetry").
+	//
+	// "Telemetry" forwards only the minimal set of metrics required for OpenShift Telemetry.
+	// "SRE" forwards the Telemetry set plus additional metrics defined in the sre-metric-set
+	// ConfigMap, needed for SRE dashboards and alerts.
+	// "All" forwards all metrics from control plane components without filtering,
+	// which produces significantly higher metrics volume.
+	//
+	// +optional
+	MetricsSet MetricsSet `json:"metricsSet,omitempty"`
 }
 
 // ImageContentSource specifies image mirrors that can be used by cluster nodes

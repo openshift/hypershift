@@ -49530,11 +49530,36 @@ control plane, and a metrics-forwarder is deployed in the hosted cluster.
 When set to &ldquo;None&rdquo;, metrics forwarding is inactive.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>metricsSet</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.MetricsSet">
+MetricsSet
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>metricsSet specifies which set of metrics to forward to the hosted
+cluster&rsquo;s monitoring stack. This controls only the metrics-proxy forwarding
+path and does not affect management-cluster-side ServiceMonitor/PodMonitor
+relabel configurations.
+When not specified, the value from monitoring.metricsSet is used, which itself
+falls back to the global METRICS_SET environment variable (default &ldquo;Telemetry&rdquo;).</p>
+<p>&ldquo;Telemetry&rdquo; forwards only the minimal set of metrics required for OpenShift Telemetry.
+&ldquo;SRE&rdquo; forwards the Telemetry set plus additional metrics defined in the sre-metric-set
+ConfigMap, needed for SRE dashboards and alerts.
+&ldquo;All&rdquo; forwards all metrics from control plane components without filtering,
+which produces significantly higher metrics volume.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###MetricsSet { #hypershift.openshift.io/v1beta1.MetricsSet }
 <p>
 (<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.MetricsForwardingSpec">MetricsForwardingSpec</a>, 
 <a href="#hypershift.openshift.io/v1beta1.MonitoringSpec">MonitoringSpec</a>)
 </p>
 <p>
