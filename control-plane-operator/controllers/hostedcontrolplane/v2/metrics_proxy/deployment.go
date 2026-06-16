@@ -20,6 +20,9 @@ import (
 
 func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
 	metricsSet := cpContext.MetricsSet
+	if fwdSet := cpContext.HCP.Spec.Monitoring.MetricsForwarding.MetricsSet; fwdSet != "" {
+		metricsSet = metrics.MetricsSet(fwdSet)
+	}
 	if metricsSet == "" {
 		metricsSet = metrics.MetricsSetAll
 	}

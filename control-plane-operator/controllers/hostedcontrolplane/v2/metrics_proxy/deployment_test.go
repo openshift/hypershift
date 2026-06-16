@@ -4,9 +4,13 @@ import (
 	"context"
 	"testing"
 
+	. "github.com/onsi/gomega"
+
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	component "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/metrics"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -621,4 +625,95 @@ func TestCertVolumeOptionalFlag(t *testing.T) {
 			t.Error("expected ptr.To(true) to return *true")
 		}
 	})
+}
+
+func TestAdaptDeployment_MetricsSetOverride(t *testing.T) {
+	t.Parallel()
+
+	namespace := "clusters-test"
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+	_ = prometheusoperatorv1.AddToScheme(scheme)
+
+	baseDeployment := func() *appsv1.Deployment {
+		return &appsv1.Deployment{
+			Spec: appsv1.DeploymentSpec{
+				Template: corev1.PodTemplateSpec{
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{
+							{Name: ComponentName},
+						},
+					},
+				},
+			},
+		}
+	}
+
+	metricsSetArg := func(dep *appsv1.Deployment) string {
+		for _, c := range dep.Spec.Template.Spec.Containers {
+			if c.Name == ComponentName {
+				for i, arg := range c.Args {
+					if arg == "--metrics-set" && i+1 < len(c.Args) {
+						return c.Args[i+1]
+					}
+				}
+			}
+		}
+		return ""
+	}
+
+	tests := []struct {
+		name               string
+		contextMetricsSet  metrics.MetricsSet
+		forwardingSet      hyperv1.MetricsSet
+		expectedMetricsSet string
+	}{
+		{
+			name:               "When MetricsForwarding.MetricsSet is set it should override cpContext.MetricsSet",
+			contextMetricsSet:  metrics.MetricsSetTelemetry,
+			forwardingSet:      hyperv1.MetricsSetAll,
+			expectedMetricsSet: string(metrics.MetricsSetAll),
+		},
+		{
+			name:               "When MetricsForwarding.MetricsSet is empty it should use cpContext.MetricsSet",
+			contextMetricsSet:  metrics.MetricsSetSRE,
+			forwardingSet:      "",
+			expectedMetricsSet: string(metrics.MetricsSetSRE),
+		},
+		{
+			name:               "When both MetricsForwarding.MetricsSet and cpContext.MetricsSet are empty it should default to All",
+			contextMetricsSet:  "",
+			forwardingSet:      "",
+			expectedMetricsSet: string(metrics.MetricsSetAll),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+			cpContext := component.WorkloadContext{
+				Context:    context.Background(),
+				Client:     fakeClient,
+				MetricsSet: tt.contextMetricsSet,
+				HCP: &hyperv1.HostedControlPlane{
+					ObjectMeta: metav1.ObjectMeta{Namespace: namespace},
+					Spec: hyperv1.HostedControlPlaneSpec{
+						Monitoring: hyperv1.MonitoringSpec{
+							MetricsForwarding: hyperv1.MetricsForwardingSpec{
+								MetricsSet: tt.forwardingSet,
+							},
+						},
+					},
+				},
+			}
+
+			dep := baseDeployment()
+			err := adaptDeployment(cpContext, dep)
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(metricsSetArg(dep)).To(Equal(tt.expectedMetricsSet))
+		})
+	}
 }
