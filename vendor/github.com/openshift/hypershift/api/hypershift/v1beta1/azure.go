@@ -653,7 +653,7 @@ const (
 // AzurePrivateType specifies the type of private connectivity mechanism used for the Azure
 // hosted cluster's API server. This acts as the discriminator for the AzurePrivateSpec union.
 //
-// +kubebuilder:validation:Enum=PrivateLink
+// +kubebuilder:validation:Enum=PrivateLink;Swift
 type AzurePrivateType string
 
 const (
@@ -661,23 +661,30 @@ const (
 	// In this mode, the operator creates a Private Link Service backed by the management cluster's
 	// internal load balancer, and a Private Endpoint in the guest VNet for private API server access.
 	AzurePrivateTypePrivateLink AzurePrivateType = "PrivateLink"
+
+	// AzurePrivateTypeSwift specifies private connectivity using Azure Swift pod networking.
+	// In this mode, Azure Swift assigns a private IP from the customer VNet directly
+	// to the hosted cluster's router pods, providing private API server access without a
+	// separate Private Link Service. This is used by ARO HCP managed clusters.
+	AzurePrivateTypeSwift AzurePrivateType = "Swift"
 )
 
 // AzurePrivateSpec configures private connectivity to an Azure hosted cluster's API server.
 // It is a discriminated union keyed on the type field, which selects the private connectivity
-// mechanism. Currently only PrivateLink is supported; additional mechanisms (e.g., Swift) may
-// be added in the future.
+// mechanism.
 //
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.type) || self.type == oldSelf.type",message="type is immutable"
 // +kubebuilder:validation:XValidation:rule="self.type == 'PrivateLink' ? has(self.privateLink) : !has(self.privateLink)",message="privateLink is required when type is PrivateLink, and forbidden otherwise"
+// +kubebuilder:validation:XValidation:rule="self.type == 'Swift' ? has(self.swift) : !has(self.swift)",message="swift is required when type is Swift, and forbidden otherwise"
 // +union
 type AzurePrivateSpec struct {
 	// type specifies the private connectivity mechanism used for the hosted cluster's API server.
 	// "PrivateLink" selects Azure Private Link Service for private API server access.
+	// "Swift" selects Azure Swift pod networking for private API server access, used by ARO HCP.
 	// This field is immutable once set.
 	//
 	// +unionDiscriminator
 	// +required
-	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="type is immutable"
 	Type AzurePrivateType `json:"type,omitempty"`
 
 	// privateLink configures Azure Private Link Service for private API server access.
@@ -686,6 +693,15 @@ type AzurePrivateSpec struct {
 	// +optional
 	// +unionMember
 	PrivateLink AzurePrivateLinkSpec `json:"privateLink,omitzero"`
+
+	// swift configures Azure Swift pod networking for private API server access.
+	// Swift networking requires the management cluster to be pre-configured with
+	// Azure Swift support; this is not provisioned by HyperShift automatically.
+	// This field is required when type is "Swift" and must not be set otherwise.
+	//
+	// +optional
+	// +unionMember
+	Swift AzureSwiftSpec `json:"swift,omitzero"`
 }
 
 // AzurePrivateLinkSpec configures Azure Private Link Service connectivity.
@@ -714,6 +730,26 @@ type AzurePrivateLinkSpec struct {
 	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:MaxItems=50
 	AdditionalAllowedSubscriptions []AzureSubscriptionID `json:"additionalAllowedSubscriptions,omitempty"`
+}
+
+// AzureSwiftSpec configures Azure Swift pod networking for private API server access.
+// Swift assigns a private IP from the customer VNet directly to the hosted cluster's
+// router pods, providing private connectivity without a separate Private Link Service.
+//
+// +kubebuilder:validation:XValidation:rule="self.podNetworkInstance == oldSelf.podNetworkInstance",message="podNetworkInstance is immutable"
+type AzureSwiftSpec struct {
+	// podNetworkInstance is the name of a PodNetworkInstance custom resource in the
+	// hosted control plane namespace. This resource configures Azure Swift pod networking
+	// for private connectivity to the hosted cluster's router pods.
+	// The value must be a valid Kubernetes object name (RFC 1123 DNS label): lowercase
+	// alphanumeric characters or hyphens, must start and end with an alphanumeric character.
+	// This field is immutable once set.
+	//
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=63
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?$')",message="podNetworkInstance must be a valid DNS label: lowercase alphanumeric characters or hyphens, must start and end with an alphanumeric character"
+	PodNetworkInstance string `json:"podNetworkInstance,omitempty"`
 }
 
 // ControlPlaneManagedIdentities contains the managed identities on the HCP control plane needing to authenticate with

@@ -108,6 +108,120 @@ func Test_diffIDs(t *testing.T) {
 	}
 }
 
+func Test_deduplicateSubnetsByAZ(t *testing.T) {
+	tests := []struct {
+		name               string
+		subnetIDs          []string
+		cachedAZs          map[string]string
+		describeOutput     *ec2v2.DescribeSubnetsOutput
+		describeErr        error
+		expectDescribeCall bool
+		expectedSubnets    []string
+		expectErr          bool
+	}{
+		{
+			name:            "When empty subnet list it should return empty",
+			subnetIDs:       []string{},
+			expectedSubnets: []string{},
+		},
+		{
+			name:            "When single subnet it should pass through without DescribeSubnets call",
+			subnetIDs:       []string{"subnet-aaa"},
+			expectedSubnets: []string{"subnet-aaa"},
+		},
+		{
+			name:      "When subnets in different AZs it should keep all",
+			subnetIDs: []string{"subnet-aaa", "subnet-bbb"},
+			describeOutput: &ec2v2.DescribeSubnetsOutput{
+				Subnets: []ec2types.Subnet{
+					{SubnetId: aws.String("subnet-aaa"), AvailabilityZone: aws.String("us-east-1a")},
+					{SubnetId: aws.String("subnet-bbb"), AvailabilityZone: aws.String("us-east-1b")},
+				},
+			},
+			expectDescribeCall: true,
+			expectedSubnets:    []string{"subnet-aaa", "subnet-bbb"},
+		},
+		{
+			name:      "When multiple subnets in same AZ it should keep lexicographically first",
+			subnetIDs: []string{"subnet-bbb", "subnet-aaa"},
+			describeOutput: &ec2v2.DescribeSubnetsOutput{
+				Subnets: []ec2types.Subnet{
+					{SubnetId: aws.String("subnet-bbb"), AvailabilityZone: aws.String("us-east-1a")},
+					{SubnetId: aws.String("subnet-aaa"), AvailabilityZone: aws.String("us-east-1a")},
+				},
+			},
+			expectDescribeCall: true,
+			expectedSubnets:    []string{"subnet-aaa"},
+		},
+		{
+			name:      "When mixed same-AZ and different-AZ subnets it should dedup correctly",
+			subnetIDs: []string{"subnet-aaa", "subnet-bbb", "subnet-ccc"},
+			describeOutput: &ec2v2.DescribeSubnetsOutput{
+				Subnets: []ec2types.Subnet{
+					{SubnetId: aws.String("subnet-aaa"), AvailabilityZone: aws.String("us-east-1a")},
+					{SubnetId: aws.String("subnet-bbb"), AvailabilityZone: aws.String("us-east-1a")},
+					{SubnetId: aws.String("subnet-ccc"), AvailabilityZone: aws.String("us-east-1b")},
+				},
+			},
+			expectDescribeCall: true,
+			expectedSubnets:    []string{"subnet-aaa", "subnet-ccc"},
+		},
+		{
+			name:               "When cache covers all subnets it should not call DescribeSubnets",
+			subnetIDs:          []string{"subnet-aaa", "subnet-bbb"},
+			cachedAZs:          map[string]string{"subnet-aaa": "us-east-1a", "subnet-bbb": "us-east-1b"},
+			expectDescribeCall: false,
+			expectedSubnets:    []string{"subnet-aaa", "subnet-bbb"},
+		},
+		{
+			name:      "When cache covers some subnets it should call DescribeSubnets only for new ones",
+			subnetIDs: []string{"subnet-aaa", "subnet-bbb", "subnet-ccc"},
+			cachedAZs: map[string]string{"subnet-aaa": "us-east-1a"},
+			describeOutput: &ec2v2.DescribeSubnetsOutput{
+				Subnets: []ec2types.Subnet{
+					{SubnetId: aws.String("subnet-bbb"), AvailabilityZone: aws.String("us-east-1b")},
+					{SubnetId: aws.String("subnet-ccc"), AvailabilityZone: aws.String("us-east-1c")},
+				},
+			},
+			expectDescribeCall: true,
+			expectedSubnets:    []string{"subnet-aaa", "subnet-bbb", "subnet-ccc"},
+		},
+		{
+			name:               "When DescribeSubnets fails it should return error",
+			subnetIDs:          []string{"subnet-aaa", "subnet-bbb"},
+			describeErr:        fmt.Errorf("access denied"),
+			expectDescribeCall: true,
+			expectErr:          true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			mockCtrl := gomock.NewController(t)
+			mockEC2 := awsapi.NewMockEC2API(mockCtrl)
+
+			if tt.expectDescribeCall {
+				mockEC2.EXPECT().DescribeSubnets(gomock.Any(), gomock.Any()).Return(tt.describeOutput, tt.describeErr)
+			}
+
+			r := &AWSEndpointServiceReconciler{
+				subnetAZCache: tt.cachedAZs,
+			}
+
+			gotSubnets, err := r.deduplicateSubnetsByAZ(context.Background(), mockEC2, tt.subnetIDs)
+
+			if tt.expectErr {
+				g.Expect(err).To(HaveOccurred())
+				return
+			}
+
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(gotSubnets).To(Equal(tt.expectedSubnets))
+		})
+	}
+}
+
 func TestRecordForService(t *testing.T) {
 	testCases := []struct {
 		name           string

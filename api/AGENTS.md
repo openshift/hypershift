@@ -69,7 +69,7 @@ When graduating a field from overflow to a typed struct field:
 
 ### Best Practices and Patterns
 
-Use api/karpenter/v1beta1/karpenter_types.go and api/hypershift/v1beta1/etcdbackup_types.go as examples of best practices and patterns.
+Use api/karpenter/v1/karpenter_types.go and api/hypershift/v1beta1/etcdbackup_types.go as examples of best practices and patterns.
 
 Don't use the other existing APIs as examples as they might have many legacy constraints.
 

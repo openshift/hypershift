@@ -172,11 +172,11 @@ func TestReleaseInfoPowerVS(t *testing.T) {
 	if !ok {
 		t.Fatal("metadata does not contain the ppc64le architecture")
 	}
-	if len(arch.Images.PowerVS.Regions) == 0 {
+	if arch.Images.PowerVS == nil || len(arch.Images.PowerVS.Regions) == 0 {
 		t.Fatal("metadata does not contain any powervs regions")
 	}
 	for _, region := range arch.Images.PowerVS.Regions {
-		if region.Release == "" || region.Object == "" || region.Bucket == "" || region.URL == "" {
+		if region.Release == "" || region.Object == "" || region.Bucket == "" || region.Url == "" {
 			t.Fatalf("none of the fields in the image can be empty: %+v", region)
 		}
 	}
@@ -192,7 +192,7 @@ func TestReleaseInfoKubeVirt(t *testing.T) {
 	if !ok {
 		t.Fatal("metadata does not contain the x86_64 architecture")
 	}
-	if arch.Images.Kubevirt.DigestRef == "" {
+	if arch.Images.KubeVirt == nil || arch.Images.KubeVirt.DigestRef == "" {
 		t.Fatal("metadata does not contain a digest ref for kubevirt")
 	}
 }

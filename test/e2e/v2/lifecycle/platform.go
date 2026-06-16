@@ -63,9 +63,26 @@ type PlatformConfig interface {
 	// "hypershift create cluster <platform>".
 	CreateArgs() []string
 
+	// PreCreate runs platform-specific setup before clusters are
+	// created (e.g., deploying OIDC providers that must be ready
+	// before the cluster exists).
+	PreCreate(ctx context.Context, cl crclient.WithWatch, namespace string) error
+
 	// PostCreate runs platform-specific setup after clusters are
 	// created (e.g., patching OperatorConfiguration).
 	PostCreate(ctx context.Context, cl crclient.WithWatch, namespace string, clusterNames map[string]string) error
+
+	// PostAvailable runs platform-specific operations after all
+	// clusters reach the Available condition (e.g., waiting for
+	// day-2 configuration transitions to complete). Control plane
+	// components are guaranteed to exist at this point.
+	PostAvailable(ctx context.Context, cl crclient.WithWatch, namespace string, clusterNames map[string]string) error
+
+	// PostVersionRollout runs day-2 operations after all clusters
+	// reach VersionState=Completed. Use this for configuration changes
+	// that disrupt ClusterOperators (e.g., External OIDC), which would
+	// block the initial version rollout if applied earlier.
+	PostVersionRollout(ctx context.Context, cl crclient.WithWatch, namespace string, clusterNames map[string]string) error
 
 	// TestMatrix returns the test groups for this platform.
 	TestMatrix(releaseImage string) TestMatrix

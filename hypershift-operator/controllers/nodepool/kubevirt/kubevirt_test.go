@@ -21,6 +21,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
+	"github.com/coreos/stream-metadata-go/stream"
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
 	"github.com/google/go-cmp/cmp"
@@ -1511,18 +1512,18 @@ func generateNodeTemplate(options ...nodeTemplateOption) *capikubevirt.VirtualMa
 func TestDefaultImage(t *testing.T) {
 	// Create a mock ReleaseImage with architecture-specific Kubevirt images
 	ri := &releaseinfo.ReleaseImage{
-		StreamMetadata: &releaseinfo.CoreOSStreamMetadata{
-			Architectures: map[string]releaseinfo.CoreOSArchitecture{
+		StreamMetadata: &stream.Stream{
+			Architectures: map[string]stream.Arch{
 				hyperv1.ArchitectureS390X: {
-					Images: releaseinfo.CoreOSImages{
-						Kubevirt: releaseinfo.CoreOSKubevirtImages{
+					Images: stream.Images{
+						KubeVirt: &stream.ContainerImage{
 							DigestRef: "quay.io/openshift/release@sha256:s390x1234",
 						},
 					},
 				},
 				hyperv1.ArchAliases[hyperv1.ArchitectureAMD64]: {
-					Images: releaseinfo.CoreOSImages{
-						Kubevirt: releaseinfo.CoreOSKubevirtImages{
+					Images: stream.Images{
+						KubeVirt: &stream.ContainerImage{
 							DigestRef: "quay.io/openshift/release@sha256:x86_641234",
 						},
 					},
@@ -1534,9 +1535,25 @@ func TestDefaultImage(t *testing.T) {
 	tests := []struct {
 		name           string
 		arch           string
+		releaseImage   *releaseinfo.ReleaseImage
 		expectedImage  string
 		expectedDigest string
+		expectedError  bool
 	}{
+		{
+			name: "When KubeVirt image metadata is nil, it should return error",
+			arch: hyperv1.ArchitectureAMD64,
+			releaseImage: &releaseinfo.ReleaseImage{
+				StreamMetadata: &stream.Stream{
+					Architectures: map[string]stream.Arch{
+						hyperv1.ArchAliases[hyperv1.ArchitectureAMD64]: {
+							Images: stream.Images{},
+						},
+					},
+				},
+			},
+			expectedError: true,
+		},
 		{
 			name:           "s390x architecture",
 			arch:           hyperv1.ArchitectureS390X,
@@ -1559,7 +1576,17 @@ func TestDefaultImage(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			img, digest, err := defaultImage(tt.arch, ri)
+			testRI := tt.releaseImage
+			if testRI == nil {
+				testRI = ri
+			}
+			img, digest, err := defaultImage(tt.arch, testRI)
+			if tt.expectedError {
+				if err == nil {
+					t.Fatalf("expected error but got nil")
+				}
+				return
+			}
 			if err != nil {
 				t.Fatalf("unexpected error for %s: %v", tt.arch, err)
 			}

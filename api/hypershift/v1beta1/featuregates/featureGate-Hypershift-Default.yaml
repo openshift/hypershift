@@ -35,6 +35,9 @@
                     },
                     {
                         "name": "HCPEtcdBackup"
+                    },
+                    {
+                        "name": "OSStreams"
                     }
                 ],
                 "enabled": [

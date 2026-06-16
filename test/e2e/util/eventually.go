@@ -26,7 +26,7 @@ import (
 
 func defaultOptions() *EventuallyOptions {
 	return &EventuallyOptions{
-		interval:       3 * time.Second, // Increased from 1s to 2s globally to reduce API load
+		interval:       3 * time.Second, // Polling interval set globally to reduce API load
 		timeout:        10 * time.Minute,
 		immediate:      true,
 		dumpConditions: true,

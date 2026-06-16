@@ -15,6 +15,7 @@ import (
 	"github.com/openshift/hypershift/support/awsutil"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/rhobsmonitoring"
 	"github.com/openshift/hypershift/support/upsert"
 
@@ -79,7 +80,7 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 		return err
 	}
 
-	if sharedingress.UseSharedIngress() {
+	if netutil.UseSharedIngressHC(hcluster) {
 		policy := networkpolicy.SharedIngressNetworkPolicy(controlPlaneNamespaceName)
 		if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
 			return reconcileSharedIngressNetworkPolicy(policy, hcluster)

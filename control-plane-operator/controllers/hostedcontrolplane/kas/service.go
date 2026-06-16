@@ -79,7 +79,7 @@ func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingSt
 			if strategy.LoadBalancer != nil && strategy.LoadBalancer.Hostname != "" {
 				svc.Annotations[hyperv1.ExternalDNSHostnameAnnotation] = strategy.LoadBalancer.Hostname
 			}
-			if !azureutil.IsAroHCP() {
+			if !azureutil.IsAroHCPByHCP(hcp) {
 				svc.Spec.LoadBalancerSourceRanges = apiAllowedCIDRBlocks
 			}
 

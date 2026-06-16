@@ -133,6 +133,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.AzurePrivateSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AzureResourceManagedIdentities"):
 		return &hypershiftv1beta1.AzureResourceManagedIdentitiesApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("AzureSwiftSpec"):
+		return &hypershiftv1beta1.AzureSwiftSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AzureVMImage"):
 		return &hypershiftv1beta1.AzureVMImageApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AzureWorkloadIdentities"):
@@ -345,6 +347,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.OpenStackPlatformSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("OperatorConfiguration"):
 		return &hypershiftv1beta1.OperatorConfigurationApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("OSImageStreamReference"):
+		return &hypershiftv1beta1.OSImageStreamReferenceApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("OVNIPv4Config"):
 		return &hypershiftv1beta1.OVNIPv4ConfigApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("OVNIPv6Config"):

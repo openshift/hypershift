@@ -85,6 +85,10 @@ func generateRouterConfig(ctx context.Context, client crclient.Client, w io.Writ
 		if !hc.DeletionTimestamp.IsZero() {
 			continue
 		}
+		// Skip clusters that don't use shared ingress (Private topology or non-Swift).
+		if !netutil.UseSharedIngressHC(&hc) {
+			continue
+		}
 
 		backends, externalDNSBackends, err := getBackendsForHostedCluster(ctx, hc, client)
 		if err != nil {

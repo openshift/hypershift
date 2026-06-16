@@ -816,6 +816,14 @@ func NodePoolTrustBundleTest(getTestCtx internal.TestContextGetter) {
 
 		ctx := testCtx.Context
 
+		const (
+			defaultPollInterval                 = 15 * time.Second
+			nodePoolConfigUpdateStartTimeout    = 5 * time.Minute
+			nodePoolConfigUpdateFinishTimeout   = 20 * time.Minute
+			cpoDeploymentUpdateTimeout          = 10 * time.Minute
+			guestUserCABundlePropagationTimeout = 5 * time.Minute
+		)
+
 		defaultNP := getDefaultNodePool(ctx, testCtx.MgmtClient, hc)
 		Expect(defaultNP).NotTo(BeNil(), "default NodePool should exist")
 
@@ -874,7 +882,7 @@ func NodePoolTrustBundleTest(getTestCtx internal.TestContextGetter) {
 					Status: metav1.ConditionTrue,
 				}),
 			},
-			e2eutil.WithInterval(10*time.Second), e2eutil.WithTimeout(5*time.Minute),
+			e2eutil.WithInterval(defaultPollInterval), e2eutil.WithTimeout(nodePoolConfigUpdateStartTimeout),
 		)
 
 		e2eutil.EventuallyObject(GinkgoTB(), ctx, fmt.Sprintf("NodePool %s/%s to stop updating", np.Namespace, np.Name),
@@ -893,7 +901,7 @@ func NodePoolTrustBundleTest(getTestCtx internal.TestContextGetter) {
 					Status: metav1.ConditionTrue,
 				}),
 			},
-			e2eutil.WithInterval(10*time.Second), e2eutil.WithTimeout(20*time.Minute),
+			e2eutil.WithInterval(defaultPollInterval), e2eutil.WithTimeout(nodePoolConfigUpdateFinishTimeout),
 		)
 
 		// Verify user-ca-bundle exists in the hosted cluster
@@ -912,7 +920,7 @@ func NodePoolTrustBundleTest(getTestCtx internal.TestContextGetter) {
 			[]e2eutil.Predicate[*corev1.ConfigMap]{
 				func(obj *corev1.ConfigMap) (bool, string, error) { return true, "exists", nil },
 			},
-			e2eutil.WithInterval(10*time.Second), e2eutil.WithTimeout(5*time.Minute),
+			e2eutil.WithInterval(defaultPollInterval), e2eutil.WithTimeout(guestUserCABundlePropagationTimeout),
 		)
 
 		// Remove trust bundle from HostedCluster
@@ -948,6 +956,7 @@ func NodePoolTrustBundleTest(getTestCtx internal.TestContextGetter) {
 					return true, "trust bundle volume removed from CPO", nil
 				},
 			},
+			e2eutil.WithInterval(defaultPollInterval), e2eutil.WithTimeout(cpoDeploymentUpdateTimeout),
 		)
 
 		// Wait for NodePool to cycle again
@@ -963,7 +972,7 @@ func NodePoolTrustBundleTest(getTestCtx internal.TestContextGetter) {
 					Status: metav1.ConditionTrue,
 				}),
 			},
-			e2eutil.WithInterval(10*time.Second), e2eutil.WithTimeout(5*time.Minute),
+			e2eutil.WithInterval(defaultPollInterval), e2eutil.WithTimeout(nodePoolConfigUpdateStartTimeout),
 		)
 
 		e2eutil.EventuallyObject(GinkgoTB(), ctx, fmt.Sprintf("NodePool %s/%s to stop updating after trust bundle removal", np.Namespace, np.Name),
@@ -982,7 +991,7 @@ func NodePoolTrustBundleTest(getTestCtx internal.TestContextGetter) {
 					Status: metav1.ConditionTrue,
 				}),
 			},
-			e2eutil.WithInterval(10*time.Second), e2eutil.WithTimeout(20*time.Minute),
+			e2eutil.WithInterval(defaultPollInterval), e2eutil.WithTimeout(nodePoolConfigUpdateFinishTimeout),
 		)
 
 		// Verify user-ca-bundle is deleted from the hosted cluster (4.22+)
