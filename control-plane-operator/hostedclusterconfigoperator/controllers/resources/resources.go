@@ -759,8 +759,8 @@ func (r *reconciler) reconcileAPIServicesAndOAuth(ctx context.Context, hcp *hype
 	if !ok {
 		errs = append(errs, fmt.Errorf("failed to find cli image in release"))
 	} else {
-		if err := r.reconcileKASConnectionCheckerDeployment(ctx, hcp, cliImage); err != nil {
-			errs = append(errs, fmt.Errorf("failed to reconcile KAS connection checker deployment: %w", err))
+		if err := r.reconcileKASConnectionChecker(ctx, hcp, cliImage); err != nil {
+			errs = append(errs, fmt.Errorf("failed to reconcile KAS connection checker: %w", err))
 		}
 	}
 
@@ -1717,7 +1717,7 @@ func (r *reconciler) patchHCPStatusCondition(ctx context.Context, hcp *hyperv1.H
 	return nil
 }
 
-func (r *reconciler) reconcileKASConnectionCheckerDeployment(ctx context.Context, hcp *hyperv1.HostedControlPlane, cliImage string) error {
+func (r *reconciler) reconcileKASConnectionChecker(ctx context.Context, hcp *hyperv1.HostedControlPlane, cliImage string) error {
 	endpoint := getKASHealthCheckEndpoint(hcp.Spec.Platform.Type)
 
 	serviceAccount := manifests.KASConnectionCheckerServiceAccount()
@@ -1773,6 +1773,10 @@ done`, endpoint, manifests.KASConnectionCheckerConfigMapName, manifests.KASConne
 		}
 		deployment.Spec.Template.ObjectMeta.Annotations = map[string]string{
 			"openshift.io/required-scc": "restricted-v2",
+			// Allow the cluster autoscaler to evict this pod during scale-down.
+			// Without this annotation, kube-system pods without a PDB are treated
+			// as unmovable system pods that block node scale-down.
+			"cluster-autoscaler.kubernetes.io/safe-to-evict": "true",
 		}
 
 		deployment.Spec.Template.Spec.ServiceAccountName = manifests.KASConnectionCheckerName
@@ -1794,30 +1798,24 @@ done`, endpoint, manifests.KASConnectionCheckerConfigMapName, manifests.KASConne
 			},
 		}
 
-		// Tolerate NoSchedule taints so it can be scheduled on tainted nodes,
-		// and specific NoExecute taints so it is not evicted from unhealthy nodes.
-		// A catch-all {Operator: Exists} toleration is NOT used because it also
-		// bypasses the NodeUnschedulable filter, causing replacement pods to be
-		// scheduled back onto cordoned nodes during drain — creating an infinite
-		// eviction loop that blocks node rollouts.
-		deployment.Spec.Template.Spec.Tolerations = []corev1.Toleration{
+		// Spread pods across nodes.
+		deployment.Spec.Template.Spec.TopologySpreadConstraints = []corev1.TopologySpreadConstraint{
 			{
-				Operator: corev1.TolerationOpExists,
-				Effect:   corev1.TaintEffectNoSchedule,
-			},
-			{
-				Key:               "node.kubernetes.io/unreachable",
-				Operator:          corev1.TolerationOpExists,
-				Effect:            corev1.TaintEffectNoExecute,
-				TolerationSeconds: ptr.To[int64](120),
-			},
-			{
-				Key:               "node.kubernetes.io/not-ready",
-				Operator:          corev1.TolerationOpExists,
-				Effect:            corev1.TaintEffectNoExecute,
-				TolerationSeconds: ptr.To[int64](120),
+				MaxSkew:           1,
+				TopologyKey:       "kubernetes.io/hostname",
+				WhenUnsatisfiable: corev1.ScheduleAnyway,
+				LabelSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{
+						"app": manifests.KASConnectionCheckerName,
+					},
+				},
 			},
 		}
+
+		// No custom tolerations — the previous blanket NoSchedule toleration
+		// matched the cordon taint, causing a drain loop. Kubernetes provides
+		// default NoExecute tolerations via DefaultTolerationSeconds.
+		deployment.Spec.Template.Spec.Tolerations = nil
 
 		return nil
 	}); err != nil {

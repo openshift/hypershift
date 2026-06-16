@@ -4659,3 +4659,42 @@ func EnsureNodeTuningOperatorMetricsEndpoint(t *testing.T, ctx context.Context, 
 		t.Logf("✅ Node-tuning-operator metrics endpoint validation completed successfully")
 	})
 }
+
+// EnsureKASConnectionCheckerSpec verifies that the kas-connection-checker
+// deployment in the hosted cluster has the cluster-autoscaler safe-to-evict
+// annotation and no custom tolerations. Without the annotation, kube-system
+// pods without a PDB block cluster autoscaler node scale-down. Without
+// clearing tolerations, a blanket NoSchedule toleration matches the cordon
+// taint and causes a drain loop.
+// The fix ships in the HCCO starting from 4.23; older release images do not
+// include these changes, so the test is skipped for earlier CPO versions.
+func EnsureKASConnectionCheckerSpec(t *testing.T, ctx context.Context, guestClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	t.Run("EnsureKASConnectionCheckerSpec", func(t *testing.T) {
+		CPOAtLeast(t, Version423, hostedCluster)
+		g := NewWithT(t)
+
+		dep := &appsv1.Deployment{}
+		err := guestClient.Get(ctx, crclient.ObjectKey{
+			Namespace: hccomanifests.KASConnectionCheckerNamespace,
+			Name:      hccomanifests.KASConnectionCheckerName,
+		}, dep)
+		g.Expect(err).NotTo(HaveOccurred(), "failed to get kas-connection-checker deployment")
+
+		annotations := dep.Spec.Template.Annotations
+		g.Expect(annotations).To(HaveKeyWithValue(
+			"cluster-autoscaler.kubernetes.io/safe-to-evict", "true",
+		), "kas-connection-checker pod template should have safe-to-evict annotation")
+
+		g.Expect(dep.Spec.Template.Spec.Tolerations).To(BeEmpty(),
+			"kas-connection-checker pod template should have no custom tolerations")
+
+		g.Expect(dep.Spec.Template.Spec.TopologySpreadConstraints).To(HaveLen(1),
+			"kas-connection-checker should have exactly one topology spread constraint")
+		tsc := dep.Spec.Template.Spec.TopologySpreadConstraints[0]
+		g.Expect(tsc.MaxSkew).To(Equal(int32(1)))
+		g.Expect(tsc.TopologyKey).To(Equal("kubernetes.io/hostname"))
+		g.Expect(tsc.WhenUnsatisfiable).To(Equal(corev1.ScheduleAnyway))
+		g.Expect(tsc.LabelSelector).ToNot(BeNil(), "topology spread constraint should have a label selector")
+		g.Expect(tsc.LabelSelector.MatchLabels).To(HaveKeyWithValue("app", "kas-connection-checker"))
+	})
+}
