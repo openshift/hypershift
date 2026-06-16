@@ -8,6 +8,8 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 
+	configv1 "github.com/openshift/api/config/v1"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -36,13 +38,7 @@ func TestApplyAzureWorkloadIdentityWebhookContainer(t *testing.T) {
 				},
 			},
 			validatePod: func(g *GomegaWithT, podSpec *corev1.PodSpec) {
-				var webhookContainer *corev1.Container
-				for i := range podSpec.Containers {
-					if podSpec.Containers[i].Name == "azure-workload-identity-webhook" {
-						webhookContainer = &podSpec.Containers[i]
-						break
-					}
-				}
+				webhookContainer := findContainerByNameInPod(podSpec, "azure-workload-identity-webhook")
 				g.Expect(webhookContainer).NotTo(BeNil(), "webhook container should exist")
 
 				g.Expect(webhookContainer.Image).To(Equal("azure-workload-identity-webhook"))
@@ -72,13 +68,7 @@ func TestApplyAzureWorkloadIdentityWebhookContainer(t *testing.T) {
 				},
 			},
 			validatePod: func(g *GomegaWithT, podSpec *corev1.PodSpec) {
-				var webhookContainer *corev1.Container
-				for i := range podSpec.Containers {
-					if podSpec.Containers[i].Name == "azure-workload-identity-webhook" {
-						webhookContainer = &podSpec.Containers[i]
-						break
-					}
-				}
+				webhookContainer := findContainerByNameInPod(podSpec, "azure-workload-identity-webhook")
 				g.Expect(webhookContainer).NotTo(BeNil())
 
 				envMap := make(map[string]string)
@@ -107,13 +97,7 @@ func TestApplyAzureWorkloadIdentityWebhookContainer(t *testing.T) {
 				},
 			},
 			validatePod: func(g *GomegaWithT, podSpec *corev1.PodSpec) {
-				var webhookContainer *corev1.Container
-				for i := range podSpec.Containers {
-					if podSpec.Containers[i].Name == "azure-workload-identity-webhook" {
-						webhookContainer = &podSpec.Containers[i]
-						break
-					}
-				}
+				webhookContainer := findContainerByNameInPod(podSpec, "azure-workload-identity-webhook")
 				g.Expect(webhookContainer).NotTo(BeNil())
 
 				g.Expect(webhookContainer.StartupProbe).NotTo(BeNil())
@@ -164,13 +148,7 @@ func TestApplyAzureWorkloadIdentityWebhookContainer(t *testing.T) {
 					manifests.AzureWorkloadIdentityWebhookKubeconfig("").Name,
 				))
 
-				var webhookContainer *corev1.Container
-				for i := range podSpec.Containers {
-					if podSpec.Containers[i].Name == "azure-workload-identity-webhook" {
-						webhookContainer = &podSpec.Containers[i]
-						break
-					}
-				}
+				webhookContainer := findContainerByNameInPod(podSpec, "azure-workload-identity-webhook")
 				g.Expect(webhookContainer).NotTo(BeNil())
 
 				mountPaths := make(map[string]string)
@@ -181,13 +159,218 @@ func TestApplyAzureWorkloadIdentityWebhookContainer(t *testing.T) {
 				g.Expect(mountPaths).To(HaveKeyWithValue(azureWorkloadIdentityWebhookKubeconfigVolumeName, "/var/run/app/kubeconfig"))
 			},
 		},
+		{
+			name: "Azure workload identity container start script has the kubernetes api server port set",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-hcp",
+					Namespace: "test-ns",
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							TenantID: "test-tenant-id",
+							Cloud:    "AzurePublicCloud",
+						},
+					},
+				},
+			},
+			validatePod: func(g *GomegaWithT, podSpec *corev1.PodSpec) {
+				webhookContainer := findContainerByNameInPod(podSpec, "azure-workload-identity-webhook")
+				g.Expect(webhookContainer).NotTo(BeNil(), "webhook container should exist")
+
+				g.Expect(webhookContainer.Image).To(Equal("azure-workload-identity-webhook"))
+				g.Expect(webhookContainer.Command).To(Equal([]string{"/bin/sh", "-ec"}))
+				g.Expect(webhookContainer.Args).To(HaveLen(1))
+				g.Expect(webhookContainer.Args[0]).To(ContainSubstring(`https://localhost:6443/version`))
+			},
+		},
+		{
+			name: "Azure workload identity container start script has tls flags by default",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-hcp",
+					Namespace: "test-ns",
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							TenantID: "test-tenant-id",
+							Cloud:    "AzurePublicCloud",
+						},
+					},
+				},
+			},
+			validatePod: func(g *GomegaWithT, podSpec *corev1.PodSpec) {
+				webhookContainer := findContainerByNameInPod(podSpec, "azure-workload-identity-webhook")
+				g.Expect(webhookContainer).NotTo(BeNil(), "webhook container should exist")
+
+				g.Expect(webhookContainer.Image).To(Equal("azure-workload-identity-webhook"))
+				g.Expect(webhookContainer.Command).To(Equal([]string{"/bin/sh", "-ec"}))
+				g.Expect(webhookContainer.Args).To(HaveLen(1))
+				g.Expect(webhookContainer.Args[0]).To(ContainSubstring(`--tls-min-version=VersionTLS12`))
+				g.Expect(webhookContainer.Args[0]).To(ContainSubstring(`--tls-cipher-suites=`))
+			},
+		},
+		{
+			name: "When using intermediate TLS profile it should have the correct tls flags",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-hcp",
+					Namespace: "test-ns",
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							TenantID: "test-tenant-id",
+							Cloud:    "AzurePublicCloud",
+						},
+					},
+					Configuration: &hyperv1.ClusterConfiguration{
+						APIServer: &configv1.APIServerSpec{
+							TLSSecurityProfile: &configv1.TLSSecurityProfile{
+								Type: configv1.TLSProfileIntermediateType,
+							},
+						},
+					},
+				},
+			},
+			validatePod: func(g *GomegaWithT, podSpec *corev1.PodSpec) {
+				webhookContainer := findContainerByNameInPod(podSpec, "azure-workload-identity-webhook")
+				g.Expect(webhookContainer).NotTo(BeNil(), "webhook container should exist")
+
+				g.Expect(webhookContainer.Image).To(Equal("azure-workload-identity-webhook"))
+				g.Expect(webhookContainer.Command).To(Equal([]string{"/bin/sh", "-ec"}))
+				g.Expect(webhookContainer.Args).To(HaveLen(1))
+				g.Expect(webhookContainer.Args[0]).To(ContainSubstring(`--tls-min-version=VersionTLS12`))
+				g.Expect(webhookContainer.Args[0]).To(ContainSubstring(`--tls-cipher-suites=`))
+			},
+		},
+		{
+			name: "When using old TLS profile it should have the correct tls flags",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-hcp",
+					Namespace: "test-ns",
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							TenantID: "test-tenant-id",
+							Cloud:    "AzurePublicCloud",
+						},
+					},
+					Configuration: &hyperv1.ClusterConfiguration{
+						APIServer: &configv1.APIServerSpec{
+							TLSSecurityProfile: &configv1.TLSSecurityProfile{
+								Type: configv1.TLSProfileOldType,
+							},
+						},
+					},
+				},
+			},
+			validatePod: func(g *GomegaWithT, podSpec *corev1.PodSpec) {
+				webhookContainer := findContainerByNameInPod(podSpec, "azure-workload-identity-webhook")
+				g.Expect(webhookContainer).NotTo(BeNil(), "webhook container should exist")
+
+				g.Expect(webhookContainer.Image).To(Equal("azure-workload-identity-webhook"))
+				g.Expect(webhookContainer.Command).To(Equal([]string{"/bin/sh", "-ec"}))
+				g.Expect(webhookContainer.Args).To(HaveLen(1))
+				g.Expect(webhookContainer.Args[0]).To(ContainSubstring(`--tls-min-version=VersionTLS10`))
+				g.Expect(webhookContainer.Args[0]).To(ContainSubstring(`--tls-cipher-suites=`))
+			},
+		},
+		{
+			name: "When using modern TLS profile it should have the correct tls flags",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-hcp",
+					Namespace: "test-ns",
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							TenantID: "test-tenant-id",
+							Cloud:    "AzurePublicCloud",
+						},
+					},
+					Configuration: &hyperv1.ClusterConfiguration{
+						APIServer: &configv1.APIServerSpec{
+							TLSSecurityProfile: &configv1.TLSSecurityProfile{
+								Type: configv1.TLSProfileModernType,
+							},
+						},
+					},
+				},
+			},
+			validatePod: func(g *GomegaWithT, podSpec *corev1.PodSpec) {
+				webhookContainer := findContainerByNameInPod(podSpec, "azure-workload-identity-webhook")
+				g.Expect(webhookContainer).NotTo(BeNil(), "webhook container should exist")
+
+				g.Expect(webhookContainer.Image).To(Equal("azure-workload-identity-webhook"))
+				g.Expect(webhookContainer.Command).To(Equal([]string{"/bin/sh", "-ec"}))
+				g.Expect(webhookContainer.Args).To(HaveLen(1))
+				g.Expect(webhookContainer.Args[0]).To(ContainSubstring(`--tls-min-version=VersionTLS13`))
+				g.Expect(webhookContainer.Args[0]).NotTo(ContainSubstring(`--tls-cipher-suites=`))
+			},
+		},
+		{
+			name: "When using custom TLS profile it should have the correct tls flags",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-hcp",
+					Namespace: "test-ns",
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							TenantID: "test-tenant-id",
+							Cloud:    "AzurePublicCloud",
+						},
+					},
+					Configuration: &hyperv1.ClusterConfiguration{
+						APIServer: &configv1.APIServerSpec{
+							TLSSecurityProfile: &configv1.TLSSecurityProfile{
+								Type: configv1.TLSProfileCustomType,
+								Custom: &configv1.CustomTLSProfile{
+									TLSProfileSpec: configv1.TLSProfileSpec{
+										MinTLSVersion: configv1.VersionTLS11,
+										Ciphers: []string{
+											"ECDHE-ECDSA-AES128-GCM-SHA256",
+											"ECDHE-RSA-AES128-GCM-SHA256",
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			validatePod: func(g *GomegaWithT, podSpec *corev1.PodSpec) {
+				webhookContainer := findContainerByNameInPod(podSpec, "azure-workload-identity-webhook")
+				g.Expect(webhookContainer).NotTo(BeNil(), "webhook container should exist")
+
+				g.Expect(webhookContainer.Image).To(Equal("azure-workload-identity-webhook"))
+				g.Expect(webhookContainer.Command).To(Equal([]string{"/bin/sh", "-ec"}))
+				g.Expect(webhookContainer.Args).To(HaveLen(1))
+				g.Expect(webhookContainer.Args[0]).To(ContainSubstring(`--tls-min-version=VersionTLS11`))
+				g.Expect(webhookContainer.Args[0]).To(ContainSubstring(`--tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256`))
+			},
+		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
 			podSpec := &corev1.PodSpec{}
-			applyAzureWorkloadIdentityWebhookContainer(podSpec, tc.hcp)
+			err := applyAzureWorkloadIdentityWebhookContainer(podSpec, tc.hcp)
+			g.Expect(err).To(BeNil())
 			tc.validatePod(g, podSpec)
 		})
 	}
