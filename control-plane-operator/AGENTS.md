@@ -1,6 +1,6 @@
 # Control Plane Operator (CPO)
 
-CPO manages the lifecycle of individual hosted control plane components (KAS, etcd, OAuth, routers, cloud controllers, etc.). It runs as a **per-HCP Deployment** in the HCP namespace on the management cluster — one CPO instance per hosted cluster.
+CPO manages the lifecycle of individual hosted control plane components (KAS, etcd, OAuth, routers, cloud controllers, etc.). It runs as a **per-HCP Deployment** in the HCP namespace on the management cluster — one CPO instance per hosted cluster. It currently manages ~40 control plane components.
 
 ## Delivery Lifecycle
 
@@ -30,7 +30,7 @@ HCCO controllers are in `hostedclusterconfigoperator/controllers/`. They do **no
 | Directory | Purpose |
 |-----------|---------|
 | `controllers/hostedcontrolplane/` | Main HCP reconciler (legacy orchestration + v2 component dispatch) |
-| `controllers/hostedcontrolplane/v2/` | v2 component implementations (~30 components) |
+| `controllers/hostedcontrolplane/v2/` | v2 component implementations (~40 components) |
 | `controllers/hostedcontrolplane/v2/assets/` | Embedded YAML manifests per component |
 | `controllers/hostedcontrolplane/pki/` | Certificate and CA generation |
 | `controllers/hostedcontrolplane/cloud/` | Cloud provider-specific reconciliation (AWS, Azure, OpenStack) |

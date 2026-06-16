@@ -23,16 +23,39 @@ make test-envtest-kube        # Run envtest for vanilla k8s versions
 make test-envtest-api-all     # Run envtest for both
 ```
 
+To run a single unit test or package:
+```bash
+GO111MODULE=on GOWORK=off GOFLAGS=-mod=vendor go test -race -run TestName ./path/to/package/...
+```
+
+To run envtest against a single k8s version:
+```bash
+ENVTEST_OCP_K8S_VERSIONS=1.35.0 make test-envtest-ocp
+```
+
+To run envtest versions in parallel:
+```bash
+ENVTEST_JOBS=MAX make test-envtest-ocp     # All versions in parallel
+ENVTEST_JOBS=3 make test-envtest-ocp       # Up to 3 versions in parallel
+```
+
+To run envtest for a single suite, use Ginkgo's `--focus` flag:
+```bash
+GO111MODULE=on GOWORK=off GOFLAGS=-mod=vendor go test -tags envtest -race ./test/envtest/... -- --focus="hostedclusters.*etcd"
+```
+
 ### Code Quality
 
 ```bash
 make lint                     # Run golangci-lint
 make lint-fix                 # Auto-fix linting issues
-make verify                   # Full verification (generate, fmt, vet, lint, etc.)
+make verify                   # Full verification (generate, update, staticcheck, fmt, vet, lint, codespell, gitlint)
 make staticcheck              # Run staticcheck on core packages
 make fmt                      # Format code
 make vet                      # Run go vet
-make pre-commit               # Full pre-PR gate (update, build, verify, test, gitlint)
+make verify-codespell         # Catch spelling errors in markdown
+make run-gitlint              # Validate commit message format
+make pre-commit               # Full pre-PR gate (build, e2e compile, verify, test)
 ```
 
 ### API and Code Generation
@@ -40,7 +63,7 @@ make pre-commit               # Full pre-PR gate (update, build, verify, test, g
 ```bash
 make api                      # Regenerate all CRDs, deepcopy, clients
 make api-lint-fix             # Run API linter and auto-fix violations
-make generate                 # Run go generate
+make generate                 # Run go generate (cleans stale *_mock.go files first)
 make clients                  # Update generated clients
 make update                   # Full update (api-deps, workspace-sync, deps, api, api-docs, clients, docs-aggregate)
 ```
@@ -74,6 +97,14 @@ This means:
 - Running `go build ./...` or `go vet ./...` from the repository root will **not** compile the `api/` module — it is a separate module. To build/vet the API module, run commands from within the `api/` directory.
 - The `hack/workspace/` directory contains a Go workspace configuration (`go.work`) that can be used for local development across both modules.
 
+## Pre-PR Gate
+
+Run `make pre-commit` before submitting a PR. It executes the full sequence: build, e2e compile, verify (formatting, linting, gitlint), and unit tests. This is the single command that catches most CI failures locally.
+
+## Go Version
+
+The minimum Go version is declared in [`go.mod`](go.mod). The `api/` module uses `omitzero` struct tags (available since Go 1.24) and other features that require this minimum version.
+
 ## Common Gotchas
 
 - **`api/` is a separate Go module**: Always run `make update` after modifying types in the `api/` package. See [Multi-Module Structure](#multi-module-structure) above for details.
@@ -81,16 +112,35 @@ This means:
 - Use `make verify` before submitting PRs to catch formatting/generation issues.
 - Platform-specific controllers require their respective cloud credentials for testing.
 - E2E tests need proper cloud infrastructure setup (S3 buckets, DNS zones, etc.).
+- `make generate` cleans stale `*_mock.go` files via `git clean -fx` before regenerating — don't hand-edit mock files.
 - **No unrelated changes in PRs**: Do not include cosmetic formatting, whitespace, or import reordering changes in files unrelated to the PR's purpose. Unrelated changes increase review surface and make PRs harder to revert cleanly. If you notice something worth cleaning up, do it in a separate PR.
 - **Follow existing codebase patterns**: Before implementing a new approach (e.g., using service-ca operator for TLS), search the codebase for how similar problems are already solved (e.g., `reconcileSelfSignedCA`). HyperShift self-signs certificates — use the existing self-signing pattern instead of relying on external certificate operators.
 
+## Jira Integration
+
+- **Features/epics/stories/tasks**: Create in the **CNTRLPLANE** project (Red Hat OpenShift Control Planes)
+- **Bugs**: Create in the **OCPBUGS** project (OpenShift Bugs)
+- **Components**: Use `HyperShift / ARO` for ARO HCP, `HyperShift / ROSA` for ROSA HCP, or `HyperShift` when platform is unclear
+
 ## Commit Messages
 
-Use the `git-commit-format` skill for formatting rules and required footers. Validate with `make run-gitlint`. Do NOT put Jira IDs in commit messages — they belong only in PR titles.
+Use conventional commit format. Validate with `make run-gitlint`. Do NOT put Jira IDs in commit messages — they belong only in PR titles.
+
+```
+<type>(<scope>): <description>
+
+[optional body]
+
+Signed-off-by: <name> <email>
+```
+
+Types: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`, `build`, `ci`, `perf`, `revert`. Title max 120 chars, body lines max 140 chars. Include a `Signed-off-by` footer — get name/email from `git config user.name` and `git config user.email`.
+
+Use the `git-commit-format` skill for full details and examples.
 
 ### Restructuring Commits Before PR Submission
 
-Before creating a PR or after addressing review comments, use the `restructure-hypershift-commits` skill to reorganize all branch commits into logical, component-based commits. This ensures every PR has a clean, reviewable commit history grouped by architectural boundary.
+Before creating a PR or after addressing review comments, use the `restructure-commits` skill to reorganize all branch commits into logical, component-based commits. This ensures every PR has a clean, reviewable commit history grouped by architectural boundary.
 
 ## Pull Requests
 
@@ -98,8 +148,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contribution guidelines. Key
 
 ### Before Creating a PR
 
-1. Use the `restructure-hypershift-commits` skill to organize commits by component (see [Restructuring Commits](#restructuring-commits-before-pr-submission) above)
-2. Run `make pre-commit` to update dependencies, build, verify formatting, run tests, and validate commit messages via gitlint
+1. Use the `restructure-commits` skill to organize commits by component (see [Restructuring Commits](#restructuring-commits-before-pr-submission) above)
+2. Run `make pre-commit` to build, compile e2e tests, run verification (formatting, linting, gitlint), and run unit tests
 
 ### PR Title
 
@@ -117,7 +167,7 @@ Follow the template in `.github/PULL_REQUEST_TEMPLATE.md`.
 
 ### After Review Comments
 
-After addressing review feedback, use the `restructure-hypershift-commits` skill again to reorganize commits before force-pushing. This keeps the commit history clean for subsequent review rounds.
+After addressing review feedback, use the `restructure-commits` skill again to reorganize commits before force-pushing. This keeps the commit history clean for subsequent review rounds.
 
 ## Code Conventions
 

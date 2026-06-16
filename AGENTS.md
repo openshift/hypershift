@@ -1,4 +1,12 @@
-This file provides non-obvious development guidance for the HyperShift repository. For architecture, components, and platform support, see [ARCHITECTURE.md](ARCHITECTURE.md).
+# AGENTS.md
+
+This file provides guidance to AI coding agents when working with code in this repository. `CLAUDE.md` is a symlink to this file so that Claude Code auto-loads it; the `AGENTS.md` name is canonical.
+
+HyperShift is middleware for hosting OpenShift control planes at scale, decoupling control planes (running as pods on a management cluster) from worker nodes (running in separate infrastructure).
+
+This file is intentionally minimal — detailed guidance lives in the referenced files below and should be updated there, not here.
+
+For architecture, components, and platform support, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 Project documentation is published via MkDocs. The site structure and navigation are defined in [docs/mkdocs.yml](docs/mkdocs.yml), with content under `docs/content/`. When adding or reorganizing documentation pages, update the `nav` section in `mkdocs.yml` to keep the site navigation in sync.
 
@@ -17,6 +25,9 @@ Project documentation is published via MkDocs. The site structure and navigation
 | **Design invariants** | [docs/content/reference/goals-and-design-invariants.md](docs/content/reference/goals-and-design-invariants.md) |
 | **Versioning and support** | [docs/content/reference/versioning-support.md](docs/content/reference/versioning-support.md) |
 | **Upgrades lifecycle** | [docs/content/how-to/upgrades.md](docs/content/how-to/upgrades.md) |
+| **Contributing and PR workflow** | [CONTRIBUTING.md](CONTRIBUTING.md) |
+| **Agentic SDLC framework** | [docs/content/how-to/agentic-sdlc.md](docs/content/how-to/agentic-sdlc.md) |
+| **Pre-commit hooks** | [docs/content/contribute/precommit-hook-help.md](docs/content/contribute/precommit-hook-help.md) |
 
 ## Pull Secret Cycling
 
@@ -27,4 +38,3 @@ See [docs/content/how-to/common/global-pull-secret.md](docs/content/how-to/commo
 ## Fleet-Wide Rollout Impact
 
 Changes to config data, secrets, or any value that feeds into a NodePool config hash will trigger a rollout across **all** HostedClusters. Before adding new data to ignition configs, MachineConfigs, or any resource reconciled into the data plane, check whether the change affects the NodePool config hash (search for `hashStruct` / `configHash`). If it does, the PR **must** pass `e2e-aws-upgrade-hypershift-operator` to prove the rollout is safe.
-
