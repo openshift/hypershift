@@ -29,6 +29,12 @@ import (
 	"github.com/go-logr/logr"
 )
 
+func isEtcdStatefulSetHealthy(sts *appsv1.StatefulSet) bool {
+	return sts.Spec.Replicas != nil &&
+		sts.Status.ReadyReplicas == *sts.Spec.Replicas &&
+		sts.Status.AvailableReplicas == *sts.Spec.Replicas
+}
+
 type etcdJobStatus struct {
 	exists     bool
 	finished   bool
@@ -62,12 +68,31 @@ func (r *HostedClusterReconciler) reconcileETCDMemberRecovery(ctx context.Contex
 // It returns (done, err) where done=true means the caller should return immediately
 // without falling through to detectAndTriggerEtcdRecovery.
 func (r *HostedClusterReconciler) handleExistingEtcdRecoveryJob(ctx context.Context, log logr.Logger, hcluster *hyperv1.HostedCluster, recoveryJob *batchv1.Job, jobStatus *etcdJobStatus) (bool, error) {
+	hcpNS := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
+
 	if !jobStatus.finished {
 		log.Info("waiting for etcd recovery job to complete")
 		return true, nil
 	}
 
 	if !jobStatus.successful {
+		etcdStatefulSet := etcdrecoverymanifests.EtcdStatefulSet(hcpNS)
+		if err := r.Get(ctx, crclient.ObjectKeyFromObject(etcdStatefulSet), etcdStatefulSet); err != nil {
+			if !apierrors.IsNotFound(err) {
+				return false, fmt.Errorf("failed to get etcd statefulset: %w", err)
+			}
+		} else if isEtcdStatefulSetHealthy(etcdStatefulSet) {
+			log.Info("etcd recovered despite failed recovery job, cleaning up")
+			if err := r.cleanupEtcdRecoveryObjects(ctx, hcluster); err != nil {
+				return false, fmt.Errorf("failed to cleanup etcd recovery job: %w", err)
+			}
+			if err := r.setEtcdRecoveryCondition(ctx, hcluster, metav1.ConditionFalse, hyperv1.AsExpectedReason, "Etcd recovered despite failed recovery job."); err != nil {
+				return false, err
+			}
+			return true, nil
+		}
+
+		// Etcd is still unhealthy after the failed recovery job; report manual intervention needed.
 		if err := r.setEtcdRecoveryCondition(ctx, hcluster, metav1.ConditionFalse, hyperv1.EtcdRecoveryJobFailedReason, "Error in Etcd Recovery job: the Etcd cluster requires manual intervention."); err != nil {
 			return false, err
 		}
@@ -80,7 +105,7 @@ func (r *HostedClusterReconciler) handleExistingEtcdRecoveryJob(ctx context.Cont
 		return false, fmt.Errorf("failed to cleanup etcd recovery job: %w", err)
 	}
 
-	if err := r.setEtcdRecoveryCondition(ctx, hcluster, metav1.ConditionFalse, hyperv1.AsExpectedReason, "ETCD Recovery job succeeded."); err != nil {
+	if err := r.setEtcdRecoveryCondition(ctx, hcluster, metav1.ConditionFalse, hyperv1.AsExpectedReason, "Etcd recovery job succeeded."); err != nil {
 		return false, err
 	}
 
@@ -100,8 +125,11 @@ func (r *HostedClusterReconciler) setEtcdRecoveryCondition(ctx context.Context, 
 		LastTransitionTime: r.now(),
 	}
 
+	// Update the condition if the status or reason changed. The reason check
+	// is needed to transition from EtcdRecoveryJobFailed -> AsExpected when
+	// etcd self-heals (both use Status=False).
 	oldCondition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.EtcdRecoveryActive))
-	if oldCondition == nil || oldCondition.Status != condition.Status {
+	if oldCondition == nil || oldCondition.Status != condition.Status || oldCondition.Reason != condition.Reason {
 		meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
 		if err := r.Client.Status().Update(ctx, hcluster); err != nil {
 			return fmt.Errorf("failed to update etcd recovery job condition: %w", err)
@@ -117,8 +145,9 @@ func (r *HostedClusterReconciler) detectAndTriggerEtcdRecovery(ctx context.Conte
 			log.Info("etcd statefulset does not yet exist")
 			return nil, nil
 		}
+		return nil, fmt.Errorf("failed to get etcd statefulset: %w", err)
 	}
-	fullyAvailable := etcdStatefulSet.Status.ReadyReplicas == 3 && etcdStatefulSet.Status.AvailableReplicas == 3
+	fullyAvailable := isEtcdStatefulSetHealthy(etcdStatefulSet)
 	if !fullyAvailable {
 		log.Info("etcd is not reporting fully available, need to watch")
 	}
@@ -134,6 +163,18 @@ func (r *HostedClusterReconciler) detectAndTriggerEtcdRecovery(ctx context.Conte
 		if !fullyAvailable {
 			return &requeueAfter, nil
 		}
+
+		// Only clear conditions with EtcdRecoveryJobFailedReason. Conditions set
+		// during active recovery (Status=True/Reason=AsExpected) are managed by
+		// handleExistingEtcdRecoveryJob when the job completes.
+		oldCondition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.EtcdRecoveryActive))
+		if oldCondition != nil && oldCondition.Reason == hyperv1.EtcdRecoveryJobFailedReason {
+			log.Info("etcd is healthy but EtcdRecoveryActive has stale failure condition, clearing it")
+			if err := r.setEtcdRecoveryCondition(ctx, hcluster, metav1.ConditionFalse, hyperv1.AsExpectedReason, "Etcd cluster is healthy."); err != nil {
+				return nil, err
+			}
+		}
+
 		return nil, nil
 	}
 
@@ -143,7 +184,7 @@ func (r *HostedClusterReconciler) detectAndTriggerEtcdRecovery(ctx context.Conte
 		return nil, err
 	}
 
-	if err := r.setEtcdRecoveryCondition(ctx, hcluster, metav1.ConditionTrue, hyperv1.AsExpectedReason, "ETCD Recovery job in progress."); err != nil {
+	if err := r.setEtcdRecoveryCondition(ctx, hcluster, metav1.ConditionTrue, hyperv1.AsExpectedReason, "Etcd recovery job in progress."); err != nil {
 		return nil, err
 	}
 

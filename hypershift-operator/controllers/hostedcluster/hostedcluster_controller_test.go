@@ -30,6 +30,7 @@ import (
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
 	hcpmanifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
+	etcdrecoverymanifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests/etcdrecovery"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/azureutil"
@@ -50,9 +51,11 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 
 	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	errors2 "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -7357,4 +7360,300 @@ func TestKasServingCertHashFromEndpoint(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestReconcileETCDMemberRecovery(t *testing.T) {
+	hcpNS := "clusters-test-hc"
+
+	healthyEtcdPods := func() []crclient.Object {
+		var pods []crclient.Object
+		for i := 0; i < 3; i++ {
+			pods = append(pods, &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      fmt.Sprintf("etcd-%d", i),
+					Namespace: hcpNS,
+					Labels:    map[string]string{"app": "etcd"},
+				},
+				Status: corev1.PodStatus{
+					ContainerStatuses: []corev1.ContainerStatus{
+						{
+							Name:  "etcd",
+							State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}},
+						},
+					},
+				},
+			})
+		}
+		return pods
+	}
+
+	recoveredEtcdPods := func() []crclient.Object {
+		var pods []crclient.Object
+		for i := 0; i < 3; i++ {
+			pods = append(pods, &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      fmt.Sprintf("etcd-%d", i),
+					Namespace: hcpNS,
+					Labels:    map[string]string{"app": "etcd"},
+				},
+				Status: corev1.PodStatus{
+					ContainerStatuses: []corev1.ContainerStatus{
+						{
+							Name:         "etcd",
+							RestartCount: 3,
+							State:        corev1.ContainerState{Running: &corev1.ContainerStateRunning{}},
+						},
+					},
+				},
+			})
+		}
+		return pods
+	}
+
+	initEtcdStatefulSet := func(specReplicas, readyReplicas, availableReplicas int32) *appsv1.StatefulSet {
+		return &appsv1.StatefulSet{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "etcd",
+				Namespace: hcpNS,
+			},
+			Spec: appsv1.StatefulSetSpec{
+				Replicas: ptr.To[int32](specReplicas),
+			},
+			Status: appsv1.StatefulSetStatus{
+				ReadyReplicas:     readyReplicas,
+				AvailableReplicas: availableReplicas,
+			},
+		}
+	}
+
+	healthyStatefulSet := func() *appsv1.StatefulSet { return initEtcdStatefulSet(3, 3, 3) }
+	unhealthyStatefulSet := func() *appsv1.StatefulSet { return initEtcdStatefulSet(3, 2, 2) }
+
+	staleCondition := func() metav1.Condition {
+		return metav1.Condition{
+			Type:               string(hyperv1.EtcdRecoveryActive),
+			Status:             metav1.ConditionFalse,
+			Reason:             hyperv1.EtcdRecoveryJobFailedReason,
+			Message:            "Error in Etcd Recovery job: the Etcd cluster requires manual intervention.",
+			LastTransitionTime: metav1.Now(),
+		}
+	}
+
+	failedJob := func() *batchv1.Job {
+		job := etcdrecoverymanifests.EtcdRecoveryJob(hcpNS)
+		job.Status = batchv1.JobStatus{
+			Conditions: []batchv1.JobCondition{
+				{
+					Type:   batchv1.JobFailed,
+					Status: corev1.ConditionTrue,
+				},
+			},
+		}
+		return job
+	}
+
+	testCases := []struct {
+		name             string
+		objects          []crclient.Object
+		conditions       []metav1.Condition
+		expectedReason   string
+		conditionExists  bool
+		expectJobDeleted bool
+	}{
+		{
+			name:            "When etcd is healthy and stale EtcdRecoveryJobFailed condition exists it should clear the condition",
+			conditions:      []metav1.Condition{staleCondition()},
+			objects:         append(healthyEtcdPods(), healthyStatefulSet()),
+			expectedReason:  hyperv1.AsExpectedReason,
+			conditionExists: true,
+		},
+		{
+			name:            "When etcd is healthy and no EtcdRecoveryActive condition exists it should not add one",
+			conditions:      []metav1.Condition{},
+			objects:         append(healthyEtcdPods(), healthyStatefulSet()),
+			conditionExists: false,
+		},
+		{
+			name:             "When failed job exists but etcd recovered it should cleanup job and clear condition",
+			conditions:       []metav1.Condition{staleCondition()},
+			objects:          append(healthyEtcdPods(), healthyStatefulSet(), failedJob()),
+			expectedReason:   hyperv1.AsExpectedReason,
+			conditionExists:  true,
+			expectJobDeleted: true,
+		},
+		{
+			name:            "When etcd pods have restarted but recovered it should clear the stale condition",
+			conditions:      []metav1.Condition{staleCondition()},
+			objects:         append(recoveredEtcdPods(), healthyStatefulSet()),
+			expectedReason:  hyperv1.AsExpectedReason,
+			conditionExists: true,
+		},
+		{
+			name:            "When failed job exists and etcd is still unhealthy it should keep the failure condition",
+			conditions:      []metav1.Condition{staleCondition()},
+			objects:         append(healthyEtcdPods(), unhealthyStatefulSet(), failedJob()),
+			expectedReason:  hyperv1.EtcdRecoveryJobFailedReason,
+			conditionExists: true,
+		},
+		{
+			name:            "When failed job exists and etcd statefulset does not exist it should report failure",
+			conditions:      []metav1.Condition{staleCondition()},
+			objects:         append(healthyEtcdPods(), failedJob()),
+			expectedReason:  hyperv1.EtcdRecoveryJobFailedReason,
+			conditionExists: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			hcluster := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-hc",
+					Namespace: "clusters",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Etcd: hyperv1.EtcdSpec{
+						ManagementType: hyperv1.Managed,
+					},
+					ControllerAvailabilityPolicy: hyperv1.HighlyAvailable,
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Conditions: tc.conditions,
+				},
+			}
+
+			objects := append([]crclient.Object{hcluster}, tc.objects...)
+			client := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				WithObjects(objects...).
+				WithStatusSubresource(hcluster).
+				Build()
+
+			r := &HostedClusterReconciler{
+				Client:             client,
+				now:                metav1.Now,
+				EnableEtcdRecovery: true,
+			}
+
+			_, err := r.reconcileETCDMemberRecovery(
+				ctrl.LoggerInto(t.Context(), zap.New(zap.UseDevMode(true))),
+				hcluster,
+				upsert.New(false).CreateOrUpdate,
+			)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			updatedHC := &hyperv1.HostedCluster{}
+			g.Expect(client.Get(t.Context(), crclient.ObjectKeyFromObject(hcluster), updatedHC)).To(Succeed())
+
+			condition := meta.FindStatusCondition(updatedHC.Status.Conditions, string(hyperv1.EtcdRecoveryActive))
+			if tc.conditionExists {
+				g.Expect(condition).ToNot(BeNil())
+				g.Expect(condition.Reason).To(Equal(tc.expectedReason))
+			} else {
+				g.Expect(condition).To(BeNil())
+			}
+			if tc.expectJobDeleted {
+				job := etcdrecoverymanifests.EtcdRecoveryJob(hcpNS)
+				err := client.Get(t.Context(), crclient.ObjectKeyFromObject(job), job)
+				g.Expect(errors2.IsNotFound(err)).To(BeTrue(), "expected failed recovery job to be deleted")
+			}
+		})
+	}
+
+	t.Run("When StatefulSet Get fails with transient error it should return the error", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+
+		hcluster := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-hc",
+				Namespace: "clusters",
+			},
+			Spec: hyperv1.HostedClusterSpec{
+				Etcd: hyperv1.EtcdSpec{
+					ManagementType: hyperv1.Managed,
+				},
+				ControllerAvailabilityPolicy: hyperv1.HighlyAvailable,
+			},
+		}
+
+		objects := append([]crclient.Object{hcluster}, healthyEtcdPods()...)
+		client := fake.NewClientBuilder().
+			WithScheme(api.Scheme).
+			WithObjects(objects...).
+			WithStatusSubresource(hcluster).
+			WithInterceptorFuncs(interceptor.Funcs{
+				Get: func(ctx context.Context, client crclient.WithWatch, key crclient.ObjectKey, obj crclient.Object, opts ...crclient.GetOption) error {
+					if _, ok := obj.(*appsv1.StatefulSet); ok {
+						return fmt.Errorf("connection refused")
+					}
+					return client.Get(ctx, key, obj, opts...)
+				},
+			}).
+			Build()
+
+		r := &HostedClusterReconciler{
+			Client:             client,
+			now:                metav1.Now,
+			EnableEtcdRecovery: true,
+		}
+
+		_, err := r.reconcileETCDMemberRecovery(
+			ctrl.LoggerInto(t.Context(), zap.New(zap.UseDevMode(true))),
+			hcluster,
+			upsert.New(false).CreateOrUpdate,
+		)
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("failed to get etcd statefulset"))
+	})
+
+	t.Run("When failed job exists and StatefulSet Get fails with transient error it should return the error", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+
+		hcluster := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-hc",
+				Namespace: "clusters",
+			},
+			Spec: hyperv1.HostedClusterSpec{
+				Etcd: hyperv1.EtcdSpec{
+					ManagementType: hyperv1.Managed,
+				},
+				ControllerAvailabilityPolicy: hyperv1.HighlyAvailable,
+			},
+			Status: hyperv1.HostedClusterStatus{
+				Conditions: []metav1.Condition{staleCondition()},
+			},
+		}
+
+		objects := append([]crclient.Object{hcluster, failedJob()}, healthyEtcdPods()...)
+		client := fake.NewClientBuilder().
+			WithScheme(api.Scheme).
+			WithObjects(objects...).
+			WithStatusSubresource(hcluster).
+			WithInterceptorFuncs(interceptor.Funcs{
+				Get: func(ctx context.Context, client crclient.WithWatch, key crclient.ObjectKey, obj crclient.Object, opts ...crclient.GetOption) error {
+					if _, ok := obj.(*appsv1.StatefulSet); ok {
+						return fmt.Errorf("connection refused")
+					}
+					return client.Get(ctx, key, obj, opts...)
+				},
+			}).
+			Build()
+
+		r := &HostedClusterReconciler{
+			Client:             client,
+			now:                metav1.Now,
+			EnableEtcdRecovery: true,
+		}
+
+		_, err := r.reconcileETCDMemberRecovery(
+			ctrl.LoggerInto(t.Context(), zap.New(zap.UseDevMode(true))),
+			hcluster,
+			upsert.New(false).CreateOrUpdate,
+		)
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("failed to get etcd statefulset"))
+	})
 }
