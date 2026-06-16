@@ -1528,6 +1528,9 @@ spec:
             - release
             type: object
             x-kubernetes-validations:
+            - message: osImageStream cannot be removed once set; create a new NodePool
+                instead
+              rule: '!has(oldSelf.osImageStream) || has(self.osImageStream)'
             - message: Arch is required once set
               rule: '!has(oldSelf.arch) || has(self.arch)'
             - message: Setting Arch to arm64 is only supported for AWS, Azure, Agent,
