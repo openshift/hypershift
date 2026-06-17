@@ -2032,7 +2032,7 @@ func TestEnsureOldSignerCertificateRevoked_KASVerification(t *testing.T) {
 
 		_, _, err := c.processCertificateRevocationRequest(t.Context(), "crr-ns", "crr-name", postRevocationClock.Now)
 		g.Expect(err).To(HaveOccurred())
-		g.Expect(err.Error()).To(ContainSubstring("current signer certificate"))
+		g.Expect(err.Error()).To(ContainSubstring("current signer secret"))
 		g.Expect(err.Error()).To(ContainSubstring("had no data for"))
 	})
 
@@ -2053,6 +2053,7 @@ func TestEnsureOldSignerCertificateRevoked_KASVerification(t *testing.T) {
 
 		_, _, err := c.processCertificateRevocationRequest(t.Context(), "crr-ns", "crr-name", postRevocationClock.Now)
 		g.Expect(err).To(HaveOccurred())
-		g.Expect(err.Error()).To(ContainSubstring("found no certificate in secret"))
+		g.Expect(err.Error()).To(ContainSubstring("current signer secret"))
+		g.Expect(err.Error()).To(ContainSubstring("had no data for"))
 	})
 }

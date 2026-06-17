@@ -452,6 +452,15 @@ func (c *CertificateRevocationController) commitRevocationTimestamp(ctx context.
 }
 
 func (c *CertificateRevocationController) generateNewSignerCertificate(ctx context.Context, namespace string, name string, now func() time.Time, crr *certificatesv1alpha1.CertificateRevocationRequest) (bool, *actions, bool, error) {
+	// Check the condition first to avoid unnecessary secret loading when this phase
+	// is already complete. This prevents validation errors in completed phases from
+	// blocking later phases in the pipeline.
+	for _, condition := range crr.Status.Conditions {
+		if condition.Type == certificatesv1alpha1.RootCertificatesRegeneratedType && condition.Status == metav1.ConditionTrue {
+			return false, nil, false, nil
+		}
+	}
+
 	signer, ok := secretForSignerClass(namespace, certificates.SignerClass(crr.Spec.SignerClass))
 	if !ok {
 		// we should never reach this case as we validate the class before transitioning states, and it's immutable
@@ -689,13 +698,22 @@ func verifyCertificateRevoked(ctx context.Context, client kubernetes.Interface) 
 }
 
 func (c *CertificateRevocationController) ensureNewSignerCertificatePropagated(ctx context.Context, namespace string, name string, now func() time.Time, crr *certificatesv1alpha1.CertificateRevocationRequest) (bool, *actions, bool, error) {
+	// Check the condition first to avoid unnecessary secret loading when this phase
+	// is already complete. This prevents validation errors in completed phases from
+	// blocking later phases in the pipeline.
+	for _, condition := range crr.Status.Conditions {
+		if condition.Type == certificatesv1alpha1.NewCertificatesTrustedType && condition.Status == metav1.ConditionTrue {
+			return false, nil, false, nil
+		}
+	}
+
 	signer, ok := secretForSignerClass(namespace, certificates.SignerClass(crr.Spec.SignerClass))
 	if !ok {
 		// we should never reach this case as we validate the class before transitioning states, and it's immutable
 		return true, nil, false, nil
 	}
 
-	signerSecert, signers, err := c.loadCertificateSecret(signer.Namespace, signer.Name)
+	signerSecret, signers, err := c.loadCertificateSecret(signer.Namespace, signer.Name)
 	if err != nil {
 		return true, nil, false, err
 	}
@@ -703,14 +721,14 @@ func (c *CertificateRevocationController) ensureNewSignerCertificatePropagated(c
 		return true, nil, false, nil
 	}
 
-	currentCertPEM, ok := signerSecert.Data[corev1.TLSCertKey]
+	currentCertPEM, ok := signerSecret.Data[corev1.TLSCertKey]
 	if !ok || len(currentCertPEM) == 0 {
-		return true, nil, false, fmt.Errorf("current signer certificate %s/%s had no data for %s", signerSecert.Namespace, signerSecert.Name, corev1.TLSCertKey)
+		return true, nil, false, fmt.Errorf("current signer secret %s/%s had no data for %s", signerSecret.Namespace, signerSecret.Name, corev1.TLSCertKey)
 	}
 
-	currentKeyPEM, ok := signerSecert.Data[corev1.TLSPrivateKeyKey]
+	currentKeyPEM, ok := signerSecret.Data[corev1.TLSPrivateKeyKey]
 	if !ok || len(currentKeyPEM) == 0 {
-		return true, nil, false, fmt.Errorf("current signer certificate %s/%s had no data for %s", signerSecert.Namespace, signerSecert.Name, corev1.TLSPrivateKeyKey)
+		return true, nil, false, fmt.Errorf("current signer secret %s/%s had no data for %s", signerSecret.Namespace, signerSecret.Name, corev1.TLSPrivateKeyKey)
 	}
 
 	totalClientCA := manifests.TotalKASClientCABundle(namespace)
@@ -720,17 +738,6 @@ func (c *CertificateRevocationController) ensureNewSignerCertificatePropagated(c
 	}
 	if totalClientTrustBundle == nil {
 		return true, nil, false, nil
-	}
-
-	var recorded bool
-	for _, condition := range crr.Status.Conditions {
-		if condition.Type == certificatesv1alpha1.NewCertificatesTrustedType && condition.Status == metav1.ConditionTrue {
-			recorded = true
-			break
-		}
-	}
-	if recorded {
-		return false, nil, false, nil
 	}
 
 	// the real gate for this phase is that KAS has loaded the updated trust bundle and now
@@ -1015,22 +1022,22 @@ func (c *CertificateRevocationController) ensureOldSignerCertificateRevoked(ctx 
 	if !ok {
 		return true, nil, false, nil
 	}
-	signerSecret, _, err := c.loadCertificateSecret(signer.Namespace, signer.Name)
-	if err != nil {
-		return true, nil, false, err
+	signerSecret, err := c.getSecret(signer.Namespace, signer.Name)
+	if apierrors.IsNotFound(err) {
+		return true, nil, false, nil // try again later
 	}
-	if signerSecret == nil {
-		return true, nil, false, nil
+	if err != nil {
+		return true, nil, false, fmt.Errorf("could not fetch current signer secret %s/%s: %w", signer.Namespace, signer.Name, err)
 	}
 
 	currentCertPEM, ok := signerSecret.Data[corev1.TLSCertKey]
 	if !ok || len(currentCertPEM) == 0 {
-		return true, nil, false, fmt.Errorf("current signer certificate %s/%s had no data for %s", signerSecret.Namespace, signerSecret.Name, corev1.TLSCertKey)
+		return true, nil, false, fmt.Errorf("current signer secret %s/%s had no data for %s", signerSecret.Namespace, signerSecret.Name, corev1.TLSCertKey)
 	}
 
 	currentKeyPEM, ok := signerSecret.Data[corev1.TLSPrivateKeyKey]
 	if !ok || len(currentKeyPEM) == 0 {
-		return true, nil, false, fmt.Errorf("current signer certificate %s/%s had no data for %s", signerSecret.Namespace, signerSecret.Name, corev1.TLSPrivateKeyKey)
+		return true, nil, false, fmt.Errorf("current signer secret %s/%s had no data for %s", signerSecret.Namespace, signerSecret.Name, corev1.TLSPrivateKeyKey)
 	}
 
 	totalClientCA := manifests.TotalKASClientCABundle(namespace)
