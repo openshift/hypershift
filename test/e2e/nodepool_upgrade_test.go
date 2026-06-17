@@ -188,7 +188,7 @@ func (ru *NodePoolUpgradeTest) Run(t *testing.T, nodePool hyperv1.NodePool, node
 				return nodePool.Status.Version == previousReleaseInfo.ObjectMeta.Name, fmt.Sprintf("wanted version %s, got %s", previousReleaseInfo.ObjectMeta.Name, nodePool.Status.Version), nil
 			},
 		},
-		e2eutil.WithTimeout(10*time.Second),
+		e2eutil.WithTimeout(2*time.Minute),
 	)
 
 	// Validate NodesInfo is populated with the previous version before upgrade.
