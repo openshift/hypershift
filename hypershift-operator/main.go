@@ -18,6 +18,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"net"
 	"os"
 	"strings"
 	"time"
@@ -156,6 +157,7 @@ type StartOptions struct {
 	ScaleFromZeroProvider                  string
 	ScaleFromZeroCreds                     string
 	EtcdBackupMaxCount                     int
+	HCPEgressBlockCIDRs                    []string
 }
 
 func NewStartCommand() *cobra.Command {
@@ -196,6 +198,7 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.ScaleFromZeroProvider, "scale-from-zero-provider", opts.ScaleFromZeroProvider, "Platform type for scale-from-zero autoscaling (aws)")
 	cmd.Flags().StringVar(&opts.ScaleFromZeroCreds, "scale-from-zero-creds", opts.ScaleFromZeroCreds, "Path to credentials file for scale-from-zero instance type queries")
 	cmd.Flags().IntVar(&opts.EtcdBackupMaxCount, "etcd-backup-max-count", 5, "Maximum number of completed HCPEtcdBackup CRs to retain per HostedControlPlane")
+	cmd.Flags().StringArrayVar(&opts.HCPEgressBlockCIDRs, "hcp-egress-block-cidrs", nil, "Static CIDRs to block in HCP namespace egress NetworkPolicies instead of dynamically-discovered hosting cluster KAS endpoint IPs. When specified, eliminates NetworkPolicy churn during hosting cluster KAS rolling restarts and avoids OVN port-group reconciliation races that can drop traffic to HCP routers. May be specified multiple times (e.g. --hcp-egress-block-cidrs=10.0.0.0/16 --hcp-egress-block-cidrs=10.1.0.0/16).")
 
 	// Attempt to determine featureset prior to adding featuregate flags.
 	// It is safe to get the empty string from this as the empty string is the default featureset.
@@ -218,6 +221,13 @@ func NewStartCommand() *cobra.Command {
 		default:
 			fmt.Printf("Unsupported private platform: %q\n", opts.PrivatePlatform)
 			os.Exit(1)
+		}
+
+		for _, cidr := range opts.HCPEgressBlockCIDRs {
+			if _, _, err := net.ParseCIDR(cidr); err != nil {
+				fmt.Fprintf(os.Stderr, "invalid --hcp-egress-block-cidrs value %q: %v\n", cidr, err)
+				os.Exit(1)
+			}
 		}
 
 		if err := run(ctx, &opts, ctrl.Log.WithName("setup")); err != nil {
@@ -528,6 +538,7 @@ func setupHostedClusterController(ctx context.Context, mgr ctrl.Manager, opts *S
 		EnableEtcdRecovery:                      enableEtcdRecovery,
 		FeatureSet:                              featuregate.FeatureSet(),
 		OpenShiftTrustedCAFilePath:              "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem",
+		HCPEgressBlockCIDRs:                     opts.HCPEgressBlockCIDRs,
 	}
 	if opts.OIDCStorageProviderS3BucketName != "" {
 		awsSession := awsutil.NewSession(ctx, "hypershift-operator-oidc-bucket", opts.OIDCStorageProviderS3Credentials, "", "", opts.OIDCStorageProviderS3Region)

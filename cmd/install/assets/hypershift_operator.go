@@ -527,6 +527,7 @@ type HyperShiftOperatorDeployment struct {
 	ScaleFromZeroSecret                     *corev1.Secret
 	ScaleFromZeroSecretKey                  string
 	ScaleFromZeroProvider                   string
+	HCPEgressBlockCIDRs                     []string
 }
 
 func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
@@ -755,6 +756,9 @@ func (o HyperShiftOperatorDeployment) buildArgs() []string {
 		fmt.Sprintf("--enable-ocp-cluster-monitoring=%t", o.EnableOCPClusterMonitoring),
 		fmt.Sprintf("--enable-ci-debug-output=%t", o.EnableCIDebugOutput),
 		fmt.Sprintf("--private-platform=%s", o.PrivatePlatform),
+	}
+	for _, cidr := range o.HCPEgressBlockCIDRs {
+		args = append(args, fmt.Sprintf("--hcp-egress-block-cidrs=%s", cidr))
 	}
 	if o.RegistryOverrides != "" {
 		args = append(args, fmt.Sprintf("--registry-overrides=%s", o.RegistryOverrides))
