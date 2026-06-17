@@ -4559,7 +4559,8 @@ func TestReconcileIngressControllerKubevirtHTTPRoute(t *testing.T) {
 			}
 
 			ctx := logr.NewContext(t.Context(), zapr.NewLogger(zaptest.NewLogger(t)))
-			_ = r.reconcileIngressController(ctx, hcp)
+			errs := r.reconcileIngressController(ctx, hcp)
+			g.Expect(errs).To(BeNil(), "reconcileIngressController should succeed without errors")
 
 			httpRouteName := fmt.Sprintf("%s-%s", manifests.IngressDefaultIngressPassthroughHTTPRouteName, generateID)
 			httpRoute := &routev1.Route{}
@@ -4579,19 +4580,16 @@ func TestEnsureIngressControllersRemovedHTTPRoute(t *testing.T) {
 	tests := []struct {
 		name                   string
 		baseDomainPT           bool
-		preCreateHTTPRoute     bool
 		expectHTTPRouteDeleted bool
 	}{
 		{
 			name:                   "When KubeVirt HCP has baseDomainPassthrough enabled, it should delete the HTTP passthrough route during cleanup",
 			baseDomainPT:           true,
-			preCreateHTTPRoute:     true,
 			expectHTTPRouteDeleted: true,
 		},
 		{
 			name:                   "When baseDomainPassthrough is disabled, it should not attempt to delete the HTTP passthrough route",
 			baseDomainPT:           false,
-			preCreateHTTPRoute:     false,
 			expectHTTPRouteDeleted: false,
 		},
 	}
@@ -4642,15 +4640,11 @@ func TestEnsureIngressControllersRemovedHTTPRoute(t *testing.T) {
 				Build()
 
 			httpRouteName := fmt.Sprintf("%s-%s", manifests.IngressDefaultIngressPassthroughHTTPRouteName, generateID)
-			infraObjects := []client.Object{}
-			if tt.preCreateHTTPRoute {
-				infraObjects = append(infraObjects,
-					&routev1.Route{ObjectMeta: metav1.ObjectMeta{Name: httpRouteName, Namespace: hcpNamespace}},
-				)
-			}
+			// Always pre-create the route so that both cases can assert whether it was
+			// deleted (baseDomainPassthrough=true) or left untouched (baseDomainPassthrough=false).
 			infraClient := fake.NewClientBuilder().
 				WithScheme(api.Scheme).
-				WithObjects(infraObjects...).
+				WithObjects(&routev1.Route{ObjectMeta: metav1.ObjectMeta{Name: httpRouteName, Namespace: hcpNamespace}}).
 				Build()
 
 			ctx := logr.NewContext(t.Context(), zapr.NewLogger(zaptest.NewLogger(t)))
@@ -4664,7 +4658,11 @@ func TestEnsureIngressControllersRemovedHTTPRoute(t *testing.T) {
 
 			httpRoute := &routev1.Route{}
 			err := infraClient.Get(t.Context(), client.ObjectKey{Namespace: hcpNamespace, Name: httpRouteName}, httpRoute)
-			g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "HTTP passthrough route should not be present on infra client after cleanup")
+			if tt.expectHTTPRouteDeleted {
+				g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "HTTP passthrough route should be deleted from infra client when baseDomainPassthrough is enabled")
+			} else {
+				g.Expect(err).ToNot(HaveOccurred(), "HTTP passthrough route should still exist on infra client when baseDomainPassthrough is disabled")
+			}
 		})
 	}
 }
