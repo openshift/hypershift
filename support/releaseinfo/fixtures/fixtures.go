@@ -15,3 +15,6 @@ var ImageReferencesJSON_4_10 []byte
 
 //go:embed 4.10-installer-coreos-bootimages.yaml
 var CoreOSBootImagesYAML_4_10 []byte
+
+//go:embed 5.0-installer-coreos-bootimages.yaml
+var CoreOSBootImagesYAML_5_0 []byte

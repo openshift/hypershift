@@ -42,6 +42,7 @@ func (p *RegistryMirrorProviderDecorator) Lookup(ctx context.Context, image stri
 	return &ReleaseImage{
 		ImageStream:    imageStream,
 		StreamMetadata: releaseImage.StreamMetadata,
+		OSStreams:      releaseImage.OSStreams,
 	}, nil
 }
 
