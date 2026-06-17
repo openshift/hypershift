@@ -5,8 +5,6 @@ import (
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/aws"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/openstack"
 	"github.com/openshift/hypershift/support/netutil"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -18,6 +16,18 @@ const (
 	// CloudProviderCMName is the name of the ConfigMap used to store cloud provider configuration
 	// in the guest cluster's openshift-config namespace.
 	CloudProviderCMName = "cloud-provider-config"
+
+	// AWSProviderConfigKey is the key for the AWS cloud provider configuration
+	// in the cloud-provider-config ConfigMap.
+	AWSProviderConfigKey = "aws.conf"
+
+	// OpenStackCloudConfigKey is the key for the OpenStack cloud configuration
+	// in the cloud-provider-config ConfigMap.
+	OpenStackCloudConfigKey = "cloud.conf"
+
+	// CABundleKey is the key for the CA certificate bundle in cloud-provider-config ConfigMaps.
+	// Used by both AWS and OpenStack platforms when custom trust bundles are configured.
+	CABundleKey = "ca-bundle.pem"
 )
 
 func InfrastructureConfig() *configv1.Infrastructure {
@@ -65,7 +75,7 @@ func ReconcileInfrastructure(infra *configv1.Infrastructure, hcp *hyperv1.Hosted
 	switch platformType {
 	case hyperv1.AWSPlatform:
 		infra.Spec.CloudConfig.Name = CloudProviderCMName
-		infra.Spec.CloudConfig.Key = aws.ProviderConfigKey
+		infra.Spec.CloudConfig.Key = AWSProviderConfigKey
 		if infra.Spec.PlatformSpec.AWS == nil {
 			infra.Spec.PlatformSpec.AWS = &configv1.AWSPlatformSpec{}
 		}
@@ -108,7 +118,7 @@ func ReconcileInfrastructure(infra *configv1.Infrastructure, hcp *hyperv1.Hosted
 		infra.Spec.PlatformSpec.OpenStack = &configv1.OpenStackPlatformSpec{}
 		// This ConfigMap is populated by the local ignition provider and given to MCO
 		infra.Spec.CloudConfig.Name = CloudProviderCMName
-		infra.Spec.CloudConfig.Key = openstack.CloudConfigKey
+		infra.Spec.CloudConfig.Key = OpenStackCloudConfigKey
 		infra.Status.PlatformStatus.OpenStack = &configv1.OpenStackPlatformStatus{
 			CloudName:            "openstack",
 			LoadBalancer:         &configv1.OpenStackPlatformLoadBalancer{Type: configv1.LoadBalancerTypeUserManaged},

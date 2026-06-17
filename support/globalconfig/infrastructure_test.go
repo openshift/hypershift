@@ -7,8 +7,6 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/aws"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/openstack"
 
 	configv1 "github.com/openshift/api/config/v1"
 
@@ -206,7 +204,7 @@ func TestReconcileInfrastructure(t *testing.T) {
 			}(),
 			verify: func(g Gomega, infra *configv1.Infrastructure) {
 				g.Expect(infra.Spec.CloudConfig.Name).To(Equal(CloudProviderCMName))
-				g.Expect(infra.Spec.CloudConfig.Key).To(Equal(aws.ProviderConfigKey))
+				g.Expect(infra.Spec.CloudConfig.Key).To(Equal(AWSProviderConfigKey))
 			},
 		},
 		{
@@ -316,7 +314,7 @@ func TestReconcileInfrastructure(t *testing.T) {
 				g.Expect(infra.Status.Platform).To(Equal(configv1.OpenStackPlatformType))
 				g.Expect(infra.Spec.PlatformSpec.OpenStack).ToNot(BeNil())
 				g.Expect(infra.Spec.CloudConfig.Name).To(Equal(CloudProviderCMName))
-				g.Expect(infra.Spec.CloudConfig.Key).To(Equal(openstack.CloudConfigKey))
+				g.Expect(infra.Spec.CloudConfig.Key).To(Equal(OpenStackCloudConfigKey))
 			},
 		},
 		{

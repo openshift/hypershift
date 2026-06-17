@@ -10,7 +10,6 @@ import (
 const (
 	Provider          = podspec.AWSCloudProviderName
 	ProviderConfigKey = "aws.conf"
-	CABundleKey       = "ca-bundle.pem"
 )
 
 func AWSKMSCredsSecret(controlPlaneNamespace string) *corev1.Secret {

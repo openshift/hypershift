@@ -2533,9 +2533,9 @@ func (r *reconciler) reconcileCloudConfig(ctx context.Context, hcp *hyperv1.Host
 			}
 			cm.Data[aws.ProviderConfigKey] = providerConfig
 			if caBundle != "" {
-				cm.Data[aws.CABundleKey] = caBundle
+				cm.Data[globalconfig.CABundleKey] = caBundle
 			} else {
-				delete(cm.Data, aws.CABundleKey)
+				delete(cm.Data, globalconfig.CABundleKey)
 			}
 			return nil
 		}); err != nil {
