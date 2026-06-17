@@ -176,7 +176,7 @@ $(VERIFY_API_DEPS): $(TOOLS_DIR)/go.mod # Build verify-api-deps tool
 .PHONY: generate
 generate: $(MOCKGEN)
 	@echo "Cleaning stale mock files..."
-	git clean -fx -- '*_mock.go'
+	git clean -fx -- '*_mock.go' 2>/dev/null || true
 	$(GO) generate ./...
 
 # Compile all tests
