@@ -1009,3 +1009,33 @@ func (tr *TestResources) SetupAuthenticatedUserWithGroup(
 		SelfSubjectReview: selfSubjectReview,
 	}, nil
 }
+
+// AuthenticateAndGetSelfSubjectReview authenticates a user and returns their SelfSubjectReview
+// When it should authenticate and get self subject review for a specific user
+func (tr *TestResources) AuthenticateAndGetSelfSubjectReview(
+	ctx context.Context,
+	t *testing.T,
+	username string,
+	password string,
+	clientCfg *rest.Config,
+	extOIDCConfig *ExtOIDCConfig,
+) (*kauthnv1.SelfSubjectReview, error) {
+	g := NewWithT(t)
+
+	// Create a temporary auth config with these credentials
+	tempConfig := *extOIDCConfig
+	tempConfig.TestUsers = username + ":" + password
+
+	// Authenticate as this user
+	authKubeConfig := ChangeUserForKeycloakExtOIDC(t, ctx, clientCfg, &tempConfig)
+	authClient, err := kauthnv1typedclient.NewForConfig(authKubeConfig)
+	g.Expect(err).NotTo(HaveOccurred())
+
+	// Get self subject review
+	selfSubjectReview, err := authClient.SelfSubjectReviews().Create(ctx, &kauthnv1.SelfSubjectReview{}, metav1.CreateOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get self subject review: %w", err)
+	}
+
+	return selfSubjectReview, nil
+}
