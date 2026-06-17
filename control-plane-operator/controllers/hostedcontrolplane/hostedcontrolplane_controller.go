@@ -2021,30 +2021,6 @@ func (r *HostedControlPlaneReconciler) reconcileValidIDPConfigurationCondition(c
 }
 
 func (r *HostedControlPlaneReconciler) cleanupClusterNetworkOperatorResources(ctx context.Context, hcp *hyperv1.HostedControlPlane, hasRouteCap bool) error {
-	if restartAnnotation, ok := hcp.Annotations[hyperv1.RestartDateAnnotation]; ok {
-		// CNO manages overall multus-admission-controller deployment. CPO manages restarts.
-		// TODO: why is this not done in CNO?
-		// Only restart multus deployment if Multus is not disabled
-		if !netutil.IsDisableMultiNetwork(hcp) {
-			multusDeployment := manifests.MultusAdmissionControllerDeployment(hcp.Namespace)
-			if err := cnov2.SetRestartAnnotationAndPatch(ctx, r.Client, multusDeployment, restartAnnotation); err != nil {
-				return fmt.Errorf("failed to restart multus admission controller: %w", err)
-			}
-		}
-
-		// CNO manages overall network-node-identity deployment. CPO manages restarts.
-		networkNodeIdentityDeployment := manifests.NetworkNodeIdentityDeployment(hcp.Namespace)
-		if err := cnov2.SetRestartAnnotationAndPatch(ctx, r.Client, networkNodeIdentityDeployment, restartAnnotation); err != nil {
-			return fmt.Errorf("failed to restart network node identity: %w", err)
-		}
-
-		// CNO manages overall ovnkube-control-plane deployment. CPO manages restarts.  Note that cnov2.SetRestartAnnotationAndPatch just returns err == nil if the deployment isn't found (so if OVN isn't being used)
-		ovnKubeControlPlaneDeployment := manifests.OVNKubeControlPlaneDeployment(hcp.Namespace)
-		if err := cnov2.SetRestartAnnotationAndPatch(ctx, r.Client, ovnKubeControlPlaneDeployment, restartAnnotation); err != nil {
-			return fmt.Errorf("failed to restart ovnkube-control-plane: %w", err)
-		}
-	}
-
 	// Clean up ovnkube-sbdb Route if exists
 	if hasRouteCap {
 		if _, err := k8sutil.DeleteIfNeeded(ctx, r.Client, manifests.OVNKubeSBDBRoute(hcp.Namespace)); err != nil {
