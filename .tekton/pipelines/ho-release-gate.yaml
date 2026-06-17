@@ -418,3 +418,100 @@ spec:
     params:
     - name: snapshot-name
       value: $(tasks.extract-image.results.snapshot-name)
+
+  - name: notify-slack
+    when:
+    - input: $(tasks.status)
+      operator: in
+      values: ["Failed"]
+    taskSpec:
+      params:
+      - name: snapshot-name
+        type: string
+      - name: results-json
+        type: string
+      steps:
+      - name: send-notification
+        image: quay.io/konflux-ci/appstudio-utils:latest
+        env:
+        - name: SLACK_WEBHOOK_URL
+          valueFrom:
+            secretKeyRef:
+              name: slack-webhook
+              key: url
+        script: |
+          #!/bin/bash
+          set -euo pipefail
+
+          SNAPSHOT="$(params.snapshot-name)"
+          RESULTS_JSON='$(params.results-json)'
+          PIPELINE_RUN="$(context.pipelineRun.name)"
+
+          echo "=== notify-slack ==="
+          echo "Snapshot:     ${SNAPSHOT}"
+          echo "PipelineRun:  ${PIPELINE_RUN}"
+
+          RESULT_LINES=""
+          if [[ -n "${RESULTS_JSON}" ]] && echo "${RESULTS_JSON}" | jq empty 2>/dev/null; then
+            NUM_JOBS=$(echo "${RESULTS_JSON}" | jq -r 'length')
+            for i in $(seq 0 $((NUM_JOBS - 1))); do
+              JOB=$(echo "${RESULTS_JSON}" | jq -r ".[$i].job" | sed 's/periodic-ci-openshift-hypershift-release-5.0-periodics-//')
+              RESULT=$(echo "${RESULTS_JSON}" | jq -r ".[$i].result")
+              URL=$(echo "${RESULTS_JSON}" | jq -r ".[$i].url")
+              if [[ "${RESULT}" == "passed" ]]; then
+                EMOJI=":white_check_mark:"
+              else
+                EMOJI=":red_circle:"
+              fi
+              if [[ -n "${URL}" && "${URL}" != "null" ]]; then
+                RESULT_LINES="${RESULT_LINES}\\n${EMOJI} \`${JOB}\` - ${RESULT} (<${URL}|Prow>)"
+              else
+                RESULT_LINES="${RESULT_LINES}\\n${EMOJI} \`${JOB}\` - ${RESULT}"
+              fi
+            done
+          else
+            RESULT_LINES="\\n:x: Pipeline failed before tests started. Check PipelineRun logs."
+          fi
+
+          PAYLOAD=$(cat <<EOFPAYLOAD
+          {
+            "attachments": [{
+              "color": "#D32F2F",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {"type": "mrkdwn", "text": ":x: *HO Release Gate FAILED*"}
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    {"type": "mrkdwn", "text": "*Snapshot:*\n${SNAPSHOT}"},
+                    {"type": "mrkdwn", "text": "*PipelineRun:*\n${PIPELINE_RUN}"}
+                  ]
+                },
+                {"type": "divider"},
+                {
+                  "type": "section",
+                  "text": {"type": "mrkdwn", "text": "*Test Results:*${RESULT_LINES}"}
+                }
+              ]
+            }]
+          }
+          EOFPAYLOAD
+          )
+
+          HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+            -H 'Content-type: application/json' \
+            --data "${PAYLOAD}" \
+            "${SLACK_WEBHOOK_URL}")
+
+          echo "Slack response: HTTP ${HTTP_CODE}"
+          if [[ "${HTTP_CODE}" != "200" ]]; then
+            echo "WARN: Slack notification failed"
+          fi
+          echo "=== notify-slack: done ==="
+    params:
+    - name: snapshot-name
+      value: $(tasks.extract-image.results.snapshot-name)
+    - name: results-json
+      value: $(tasks.run-e2e.results.results-json)
