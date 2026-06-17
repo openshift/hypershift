@@ -77,8 +77,9 @@ type ExtOIDCConfig struct {
 	IssuerCAConfigmapName string
 	IssuerCABundleFile    string
 
-	// custom field for adding custom auth configuration
-	CustomAuthSpec *configv1.AuthenticationSpec
+	// CustomizeAuthSpec allows tests to modify the baseline auth configuration
+	// The function receives the generated baseline spec and can modify it in place
+	CustomizeAuthSpec func(*configv1.AuthenticationSpec)
 }
 
 func GetExtOIDCConfig(provider, cliClientID, consoleClientID, issuerURL, consoleSecret, issuerCABundleFile, testUsers string) *ExtOIDCConfig {
@@ -168,17 +169,6 @@ func (config *ExtOIDCConfig) GetAuthenticationConfig() *configv1.AuthenticationS
 	}
 
 	if featuregates.Gate().Enabled(featuregates.ExternalOIDCWithUpstreamParity) {
-		// Check if ExternalOIDCWithUIDAndExtraClaimMappings feature gate is enabled.
-		// If not, we will need to add extra mapping to access email for username
-		// verification later.
-		if !featuregates.Gate().Enabled(featuregates.ExternalOIDCWithUIDAndExtraClaimMappings) {
-			authnSpec.OIDCProviders[0].ClaimMappings.Extra = append(authnSpec.OIDCProviders[0].ClaimMappings.Extra,
-				configv1.ExtraMapping{
-					Key:             ExternalOIDCExtraKeyFoo,
-					ValueExpression: ExternalOIDCExtraKeyFooValueExpression,
-				},
-			)
-		}
 		// Use CEL expression for username mapping instead of static claim
 		authnSpec.OIDCProviders[0].ClaimMappings.Username = configv1.UsernameClaimMapping{
 			Expression: "claims.email.split('@')[0]",
@@ -222,6 +212,11 @@ func (config *ExtOIDCConfig) GetAuthenticationConfig() *configv1.AuthenticationS
 		}
 	}
 
+	// Apply custom modifications if provided
+	if config.CustomizeAuthSpec != nil {
+		config.CustomizeAuthSpec(authnSpec)
+	}
+
 	return authnSpec
 }
 
@@ -246,7 +241,7 @@ func ValidateAuthenticationSpec(t testing.TB, ctx context.Context, client crclie
 	actualAuth := hostedCluster.Spec.Configuration.Authentication
 	g.Expect(actualAuth.OIDCProviders).NotTo(BeEmpty())
 
-	if featuregates.Gate().Enabled(featuregates.ExternalOIDCWithUpstreamParity) || featuregates.Gate().Enabled(featuregates.ExternalOIDCWithUIDAndExtraClaimMappings) {
+	if featuregates.Gate().Enabled(featuregates.ExternalOIDCWithUIDAndExtraClaimMappings) {
 		g.Expect(actualAuth.OIDCProviders[0].ClaimMappings.Extra).NotTo(BeEmpty())
 	}
 
