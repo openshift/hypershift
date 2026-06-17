@@ -306,16 +306,15 @@ func validateClusterPreIDP(t *testing.T, ctx context.Context, client crclient.Cl
 
 }
 
-// WaitForOAuthLoadBalancerReady waits for the oauth-openshift LoadBalancer Service to have an
-// external endpoint allocated and for the /healthz endpoint to return HTTP 200.
-// It returns the OAuth hostname from the HostedCluster's service publishing strategy,
-// which matches the TLS certificate SANs, rather than the raw LoadBalancer IP.
-func WaitForOAuthLoadBalancerReady(t testing.TB, ctx context.Context, client crclient.Client, restConfig *restclient.Config, hostedCluster *hyperv1.HostedCluster) string {
+// WaitForOAuthLoadBalancerEndpoint waits for the oauth-openshift LoadBalancer Service to have an
+// endpoint allocated and returns the OAuth hostname from the HostedCluster's service publishing
+// strategy. This hostname matches the TLS certificate SANs and is the one ExternalDNS creates
+// a DNS record for. Unlike WaitForOAuthLoadBalancerReady, this does not perform a direct
+// /healthz check, making it suitable for private topology clusters where the LoadBalancer
+// endpoint is not directly reachable from the test runner.
+func WaitForOAuthLoadBalancerEndpoint(t testing.TB, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) string {
 	g := NewWithT(t)
 
-	// Get the OAuth hostname from the HostedCluster's service publishing strategy.
-	// This is the hostname that the TLS certificate is issued for and that ExternalDNS
-	// creates a DNS record for, so it must be used for TLS connections.
 	oauthStrategy := netutil.ServicePublishingStrategyByTypeByHC(hostedCluster, hyperv1.OAuthServer)
 	g.Expect(oauthStrategy).ToNot(BeNil(), "OAuth service publishing strategy not found in HostedCluster spec")
 	g.Expect(oauthStrategy.LoadBalancer).ToNot(BeNil(), "OAuth LoadBalancer strategy not found")
@@ -323,7 +322,6 @@ func WaitForOAuthLoadBalancerReady(t testing.TB, ctx context.Context, client crc
 	g.Expect(oauthHost).ToNot(BeEmpty(), "OAuth LoadBalancer hostname is empty")
 	t.Logf("OAuth hostname from HostedCluster spec: %s", oauthHost)
 
-	// Wait for the LoadBalancer to get an external endpoint (confirms LB is provisioned)
 	hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
 	svc := hcpmanifests.OauthServerService(hcpNamespace)
 	err := wait.PollUntilContextTimeout(ctx, 5*time.Second, 10*time.Minute, true, func(ctx context.Context) (done bool, err error) {
@@ -347,8 +345,18 @@ func WaitForOAuthLoadBalancerReady(t testing.TB, ctx context.Context, client crc
 	})
 	g.Expect(err).ToNot(HaveOccurred(), "failed waiting for oauth-openshift LoadBalancer endpoint")
 
-	// Wait for the OAuth hostname to be resolvable via DNS (ExternalDNS creates the record)
-	// and for the /healthz endpoint to return HTTP 200
+	return oauthHost
+}
+
+// WaitForOAuthLoadBalancerReady waits for the oauth-openshift LoadBalancer Service to have an
+// external endpoint allocated and for the /healthz endpoint to return HTTP 200.
+// It returns the OAuth hostname from the HostedCluster's service publishing strategy.
+// For private topology clusters where the /healthz endpoint is not directly reachable,
+// use WaitForOAuthLoadBalancerEndpoint instead.
+func WaitForOAuthLoadBalancerReady(t testing.TB, ctx context.Context, client crclient.Client, restConfig *restclient.Config, hostedCluster *hyperv1.HostedCluster) string {
+	oauthHost := WaitForOAuthLoadBalancerEndpoint(t, ctx, client, hostedCluster)
+
+	g := NewWithT(t)
 	request, err := http.NewRequestWithContext(ctx, http.MethodHead, fmt.Sprintf("https://%s/healthz", oauthHost), nil)
 	g.Expect(err).ToNot(HaveOccurred())
 
@@ -378,16 +386,16 @@ func WaitForOAuthLoadBalancerReady(t testing.TB, ctx context.Context, client crc
 	return oauthHost
 }
 
-func ValidateOAuthWithIdentityProviderViaLoadBalancer(t testing.TB, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+// ValidateOAuthIdentityProviderFlow validates the full OAuth identity provider flow against
+// a LoadBalancer endpoint: kubeadmin login, htpasswd IDP setup, testuser login, and
+// kubeadmin secret removal. It takes the oauthHost to use for token requests, allowing
+// callers to control whether the host was obtained via WaitForOAuthLoadBalancerReady
+// (with health check) or WaitForOAuthLoadBalancerEndpoint (without).
+func ValidateOAuthIdentityProviderFlow(t testing.TB, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, oauthHost string) {
 	g := NewWithT(t)
-
 	guestConfig, err := guestRestConfig(t, ctx, client, hostedCluster)
 	g.Expect(err).ToNot(HaveOccurred())
 
-	// Wait for OAuth LoadBalancer to be ready
-	oauthHost := WaitForOAuthLoadBalancerReady(t, ctx, client, guestConfig, hostedCluster)
-
-	// Validate kubeadmin login through the LoadBalancer (works without IDPs)
 	hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
 	kubeadminPasswordSecret := configmanifests.KubeadminPasswordSecret(hcpNamespace)
 	err = client.Get(ctx, crclient.ObjectKeyFromObject(kubeadminPasswordSecret), kubeadminPasswordSecret)
@@ -399,7 +407,6 @@ func ValidateOAuthWithIdentityProviderViaLoadBalancer(t testing.TB, ctx context.
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(user.Name).To(Equal("kube:admin"))
 
-	// Set up htpasswd identity provider
 	secret := corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "htpasswd",
@@ -435,18 +442,25 @@ func ValidateOAuthWithIdentityProviderViaLoadBalancer(t testing.TB, ctx context.
 	})
 	g.Expect(err).ToNot(HaveOccurred(), "failed to update hostedcluster identity providers")
 
-	// Wait for OAuth config to pick up the new identity provider
 	WaitForOauthConfig(t, ctx, client, hostedCluster)
 
-	// Validate testuser login through the LoadBalancer
 	accessToken = WaitForOAuthTokenByHost(t, ctx, oauthHost, guestConfig, "testuser", "password")
 
 	user, err = GetUserForToken(guestConfig, accessToken)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(user.Name).To(Equal("testuser"))
 
-	// Validate kubeadmin secret was removed after IDP was added
 	validateClusterPostIDP(t, ctx, client, hostedCluster)
+}
+
+func ValidateOAuthWithIdentityProviderViaLoadBalancer(t testing.TB, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	g := NewWithT(t)
+
+	guestConfig, err := guestRestConfig(t, ctx, client, hostedCluster)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	oauthHost := WaitForOAuthLoadBalancerReady(t, ctx, client, guestConfig, hostedCluster)
+	ValidateOAuthIdentityProviderFlow(t, ctx, client, hostedCluster, oauthHost)
 }
 
 // EnsureOAuthWithIdentityProviderViaLoadBalancer is the LoadBalancer equivalent of
