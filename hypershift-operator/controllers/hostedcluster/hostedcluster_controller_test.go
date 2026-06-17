@@ -7827,7 +7827,7 @@ func TestReconcileKubeconfigAndPasswordSync_WhenKubeconfigFails_ItShouldStillSyn
 	}
 	createOrUpdate := upsert.New(false).CreateOrUpdate
 
-	err := r.reconcileKubeconfigAndPasswordSync(t.Context(), createOrUpdate, hcluster, hcp, false)
+	_, err := r.reconcileKubeconfigAndPasswordSync(t.Context(), createOrUpdate, hcluster, hcp, false)
 
 	// Kubeconfig sync should have failed
 	if err == nil || !strings.Contains(err.Error(), "kubeconfig") {

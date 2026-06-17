@@ -6,6 +6,7 @@ import (
 	"time"
 
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
+	"k8s.io/apimachinery/pkg/util/sets"
 )
 
 // operationCategory classifies a reconcile operation for error handling and blocking.
@@ -31,23 +32,25 @@ type operationResult struct {
 type reconcileReport struct {
 	results      []operationResult
 	requeueAfter *time.Duration
-	legacy       bool
+}
+
+// requestRequeue records a requeue duration, keeping the minimum across all callers.
+func (r *reconcileReport) requestRequeue(d *time.Duration) {
+	if d == nil {
+		return
+	}
+	if r.requeueAfter == nil || *d < *r.requeueAfter {
+		r.requeueAfter = d
+	}
 }
 
 // execute runs fn and records its result.
-// In legacy mode, any prior failure blocks execution.
 func (r *reconcileReport) execute(name string, cat operationCategory, fn func() error) {
-	if r.legacy && r.hasAnyFailure() {
-		r.results = append(r.results, operationResult{name: name, category: cat, blocked: true})
-		return
-	}
 	r.results = append(r.results, operationResult{name: name, category: cat, err: fn()})
 }
 
 // executeOrBlock runs fn and records its result as nonCritical, or records
-// a blocked entry if a prior operation should block downstream work.
-// In fail-fast mode, any prior failure blocks; in error-collecting mode,
-// only critical failures block.
+// a blocked entry if a prior critical operation failed.
 func (r *reconcileReport) executeOrBlock(name string, fn func() error) {
 	if r.shouldBlock() {
 		r.results = append(r.results, operationResult{name: name, category: nonCritical, blocked: true})
@@ -66,54 +69,37 @@ func (r *reconcileReport) hasCriticalFailure() bool {
 	return false
 }
 
-// hasAnyFailure returns true if any operation has actually failed (not blocked).
-func (r *reconcileReport) hasAnyFailure() bool {
-	for _, res := range r.results {
-		if res.err != nil && !res.blocked {
-			return true
-		}
-	}
-	return false
-}
-
 // shouldBlock returns true if subsequent dependent operations should be skipped.
-// In legacy mode, any failure blocks. Otherwise only critical failures block.
+// Only critical failures block.
 func (r *reconcileReport) shouldBlock() bool {
-	if r.legacy {
-		return r.hasAnyFailure()
-	}
 	return r.hasCriticalFailure()
 }
 
-// criticalFailureNames returns the deduplicated names of critical operations that failed.
+// criticalFailureNames returns the sorted, deduplicated names of critical operations that failed.
 func (r *reconcileReport) criticalFailureNames() []string {
-	var names []string
-	seen := make(map[string]bool)
+	names := sets.New[string]()
 	for _, res := range r.results {
-		if res.category == critical && res.err != nil && !res.blocked && !seen[res.name] {
-			names = append(names, res.name)
-			seen[res.name] = true
+		if res.category == critical && res.err != nil && !res.blocked {
+			names.Insert(res.name)
 		}
 	}
-	return names
+	return sets.List(names)
 }
 
-// blockedNames returns the deduplicated names of operations that were blocked.
+// blockedNames returns the sorted, deduplicated names of operations that were blocked.
 func (r *reconcileReport) blockedNames() []string {
-	var names []string
-	seen := make(map[string]bool)
+	names := sets.New[string]()
 	for _, res := range r.results {
-		if res.blocked && !seen[res.name] {
-			names = append(names, res.name)
-			seen[res.name] = true
+		if res.blocked {
+			names.Insert(res.name)
 		}
 	}
-	return names
+	return sets.List(names)
 }
 
 // allErrors returns all non-nil errors from operations that actually ran.
 // Blocked operations are excluded — they carry no diagnostic value beyond
-// what conditionMessage() already reports.
+// what logSummary() already reports.
 func (r *reconcileReport) allErrors() []error {
 	var errs []error
 	for _, res := range r.results {
@@ -152,8 +138,8 @@ func (r *reconcileReport) criticalErrors() []error {
 	return errs
 }
 
-// conditionMessage builds a short summary for structured logging.
-func (r *reconcileReport) conditionMessage() string {
+// logSummary builds a short summary for structured logging.
+func (r *reconcileReport) logSummary() string {
 	criticalNames := r.criticalFailureNames()
 	if len(criticalNames) == 0 {
 		return ""
