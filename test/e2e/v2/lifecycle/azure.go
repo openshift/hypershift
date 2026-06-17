@@ -339,12 +339,6 @@ func (a *AzurePlatformConfig) TestMatrix(releaseImage string) TestMatrix {
 				JUnitFile:   "junit_self_managed_azure_public.xml",
 			},
 			{
-				Name:        "private",
-				ClusterFile: "cluster-name-private",
-				LabelFilter: "self-managed-azure-private || self-managed-azure-oauth-lb-private || hosted-cluster-compliance",
-				JUnitFile:   "junit_self_managed_azure_private.xml",
-			},
-			{
 				Name:        "oauth-lb",
 				ClusterFile: "cluster-name-oauth-lb",
 				LabelFilter: "self-managed-azure-oauth-lb || hosted-cluster-health || hosted-cluster-metrics || hosted-cluster-image-registry",
@@ -364,6 +358,23 @@ func (a *AzurePlatformConfig) TestMatrix(releaseImage string) TestMatrix {
 			},
 		},
 		Sequential: []SequentialGroup{
+			{
+				Name: "private-and-oauth",
+				Steps: []TestGroup{
+					{
+						Name:        "private",
+						ClusterFile: "cluster-name-private",
+						LabelFilter: "self-managed-azure-private || hosted-cluster-compliance",
+						JUnitFile:   "junit_self_managed_azure_private.xml",
+					},
+					{
+						Name:        "oauth-lb-private",
+						ClusterFile: "cluster-name-private",
+						LabelFilter: "self-managed-azure-oauth-lb-private",
+						JUnitFile:   "junit_self_managed_azure_oauth_lb_private.xml",
+					},
+				},
+			},
 			{
 				Name: "upgrade-and-chaos",
 				Steps: []TestGroup{

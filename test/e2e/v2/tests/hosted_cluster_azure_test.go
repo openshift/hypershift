@@ -378,7 +378,8 @@ func AzureOAuthLoadBalancerPrivateTest(getTestCtx internal.TestContextGetter) {
 
 		It("should complete OAuth token flow through LoadBalancer endpoint", func() {
 			ctx := testCtx.Context
-			e2eutil.ValidateOAuthWithIdentityProviderViaLoadBalancer(GinkgoTB(), ctx, testCtx.MgmtClient, hc)
+			oauthHost := e2eutil.WaitForOAuthLoadBalancerEndpoint(GinkgoTB(), ctx, testCtx.MgmtClient, hc)
+			e2eutil.ValidateOAuthIdentityProviderFlow(GinkgoTB(), ctx, testCtx.MgmtClient, hc, oauthHost)
 		})
 	})
 }
