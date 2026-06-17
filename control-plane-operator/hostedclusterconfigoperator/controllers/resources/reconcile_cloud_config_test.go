@@ -10,6 +10,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/aws"
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/certs"
+	"github.com/openshift/hypershift/support/globalconfig"
 
 	configv1 "github.com/openshift/api/config/v1"
 
@@ -78,7 +79,7 @@ func TestReconcileCloudConfig_AWS(t *testing.T) {
 				}, cm)
 				g.Expect(err).ToNot(HaveOccurred())
 				g.Expect(cm.Data).To(HaveKeyWithValue(aws.ProviderConfigKey, "[Global]\nZone = us-east-1a\nVPC = vpc-123\n"))
-				g.Expect(cm.Data).To(HaveKeyWithValue(aws.CABundleKey, "-----BEGIN CERTIFICATE-----\nfake-ca-bundle\n-----END CERTIFICATE-----\n"))
+				g.Expect(cm.Data).To(HaveKeyWithValue(globalconfig.CABundleKey, "-----BEGIN CERTIFICATE-----\nfake-ca-bundle\n-----END CERTIFICATE-----\n"))
 			},
 		},
 		{
@@ -113,7 +114,7 @@ func TestReconcileCloudConfig_AWS(t *testing.T) {
 				}, cm)
 				g.Expect(err).ToNot(HaveOccurred())
 				g.Expect(cm.Data).To(HaveKeyWithValue(aws.ProviderConfigKey, "[Global]\nZone = us-east-1a\nVPC = vpc-123\n"))
-				g.Expect(cm.Data).To(HaveKeyWithValue(aws.CABundleKey, "-----BEGIN CERTIFICATE-----\nproxy-ca-bundle\n-----END CERTIFICATE-----\n"))
+				g.Expect(cm.Data).To(HaveKeyWithValue(globalconfig.CABundleKey, "-----BEGIN CERTIFICATE-----\nproxy-ca-bundle\n-----END CERTIFICATE-----\n"))
 			},
 		},
 		{
@@ -140,7 +141,7 @@ func TestReconcileCloudConfig_AWS(t *testing.T) {
 				}, cm)
 				g.Expect(err).ToNot(HaveOccurred())
 				g.Expect(cm.Data).To(HaveKeyWithValue(aws.ProviderConfigKey, "[Global]\nZone = us-east-1a\nVPC = vpc-123\n"))
-				g.Expect(cm.Data).ToNot(HaveKey(aws.CABundleKey))
+				g.Expect(cm.Data).ToNot(HaveKey(globalconfig.CABundleKey))
 			},
 		},
 		{
@@ -167,8 +168,8 @@ func TestReconcileCloudConfig_AWS(t *testing.T) {
 						Name:      CloudProviderCMName,
 					},
 					Data: map[string]string{
-						aws.ProviderConfigKey: "[Global]\nZone = us-east-1a\nVPC = vpc-123\n",
-						aws.CABundleKey:       "old-ca-bundle",
+						aws.ProviderConfigKey:   "[Global]\nZone = us-east-1a\nVPC = vpc-123\n",
+						globalconfig.CABundleKey: "old-ca-bundle",
 					},
 				},
 			},
@@ -180,7 +181,7 @@ func TestReconcileCloudConfig_AWS(t *testing.T) {
 				}, cm)
 				g.Expect(err).ToNot(HaveOccurred())
 				g.Expect(cm.Data).To(HaveKeyWithValue(aws.ProviderConfigKey, "[Global]\nZone = us-east-1a\nVPC = vpc-123\n"))
-				g.Expect(cm.Data).ToNot(HaveKey(aws.CABundleKey))
+				g.Expect(cm.Data).ToNot(HaveKey(globalconfig.CABundleKey))
 			},
 		},
 		{
@@ -227,7 +228,7 @@ func TestReconcileCloudConfig_AWS(t *testing.T) {
 				}, cm)
 				g.Expect(err).ToNot(HaveOccurred())
 				g.Expect(cm.Data).To(HaveKeyWithValue(aws.ProviderConfigKey, "[Global]\nZone = us-east-1a\nVPC = vpc-123\n"))
-				g.Expect(cm.Data).ToNot(HaveKey(aws.CABundleKey))
+				g.Expect(cm.Data).ToNot(HaveKey(globalconfig.CABundleKey))
 			},
 		},
 		{
@@ -309,7 +310,7 @@ func TestReconcileCloudConfig_AWS(t *testing.T) {
 				}, cm)
 				g.Expect(err).ToNot(HaveOccurred())
 				g.Expect(cm.Data).To(HaveKeyWithValue(aws.ProviderConfigKey, "[Global]\nZone = us-east-1a\nVPC = vpc-123\n"))
-				g.Expect(cm.Data).ToNot(HaveKey(aws.CABundleKey))
+				g.Expect(cm.Data).ToNot(HaveKey(globalconfig.CABundleKey))
 			},
 		},
 		{
@@ -340,7 +341,7 @@ func TestReconcileCloudConfig_AWS(t *testing.T) {
 				}, cm)
 				g.Expect(err).ToNot(HaveOccurred())
 				g.Expect(cm.Data).To(HaveKeyWithValue(aws.ProviderConfigKey, "[Global]\nZone = us-east-1a\nVPC = vpc-123\n"))
-				g.Expect(cm.Data).ToNot(HaveKey(aws.CABundleKey))
+				g.Expect(cm.Data).ToNot(HaveKey(globalconfig.CABundleKey))
 			},
 		},
 	}
