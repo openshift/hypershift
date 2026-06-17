@@ -395,18 +395,19 @@ spec:
 
           echo "=== create-release ==="
           echo "Snapshot:     ${SNAPSHOT}"
-          echo "ReleasePlan:  nightly-promotion-aro-hcp"
+          echo "ReleasePlan:  hypershift-operator-ho-release-gate-aro-hcp"
 
           RELEASE_OUTPUT=$(oc create -f - <<EOF
           apiVersion: appstudio.redhat.com/v1alpha1
           kind: Release
           metadata:
-            generateName: nightly-promotion-aro-hcp-
+            generateName: hypershift-operator-ho-release-gate-aro-hcp-
             namespace: crt-redhat-acm-tenant
+            labels:
+              release.appstudio.openshift.io/author: system_serviceaccount_crt-redhat-acm-tenant_nightly-promotion-sa
           spec:
             snapshot: ${SNAPSHOT}
-            releasePlan: nightly-promotion-aro-hcp
-            gracePeriodDays: 7
+            releasePlan: hypershift-operator-ho-release-gate-aro-hcp
           EOF
           )
 
