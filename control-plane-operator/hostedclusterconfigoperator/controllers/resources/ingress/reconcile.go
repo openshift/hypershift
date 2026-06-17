@@ -139,16 +139,22 @@ func ReconcileDefaultIngressControllerCertSecret(certSecret *corev1.Secret, sour
 
 func ReconcileDefaultIngressPassthroughService(service *corev1.Service, defaultNodePort *corev1.Service, hcp *hyperv1.HostedControlPlane) error {
 	detectedHTTPSNodePort := int32(0)
+	detectedHTTPNodePort := int32(0)
 
 	for _, port := range defaultNodePort.Spec.Ports {
-		if port.Port == 443 {
+		switch port.Port {
+		case 443:
 			detectedHTTPSNodePort = port.NodePort
-			break
+		case 80:
+			detectedHTTPNodePort = port.NodePort
 		}
 	}
 
 	if detectedHTTPSNodePort == 0 {
 		return fmt.Errorf("unable to detect default ingress NodePort https port")
+	}
+	if detectedHTTPNodePort == 0 {
+		return fmt.Errorf("unable to detect default ingress NodePort http port")
 	}
 
 	if service.Labels == nil {
@@ -160,6 +166,12 @@ func ReconcileDefaultIngressPassthroughService(service *corev1.Service, defaultN
 			Protocol:   corev1.ProtocolTCP,
 			Port:       443,
 			TargetPort: intstr.FromInt(int(detectedHTTPSNodePort)),
+		},
+		{
+			Name:       "http-80",
+			Protocol:   corev1.ProtocolTCP,
+			Port:       80,
+			TargetPort: intstr.FromInt(int(detectedHTTPNodePort)),
 		},
 	}
 
@@ -181,6 +193,29 @@ func ReconcileDefaultIngressPassthroughRoute(route *routev1.Route, cpService *co
 	route.Spec.Host = fmt.Sprintf("https.apps.%s.%s", hcp.Name, hcp.Spec.DNS.BaseDomain)
 	route.Spec.TLS = &routev1.TLSConfig{
 		Termination: routev1.TLSTerminationPassthrough,
+	}
+	route.Spec.To = routev1.RouteTargetReference{
+		Kind: "Service",
+		Name: cpService.Name,
+	}
+	route.Labels[hyperv1.InfraIDLabel] = hcp.Spec.InfraID
+
+	return nil
+}
+
+// ReconcileDefaultIngressPassthroughHTTPRoute reconciles a plain HTTP wildcard route on the infra/mgmt cluster
+// that forwards insecure (non-TLS) traffic to the guest cluster's router HTTP NodePort via the passthrough
+// service. This enables insecure routes created in the guest cluster to be reachable from outside.
+func ReconcileDefaultIngressPassthroughHTTPRoute(route *routev1.Route, cpService *corev1.Service, hcp *hyperv1.HostedControlPlane) error {
+	if route.Labels == nil {
+		route.Labels = map[string]string{}
+	}
+	route.Spec.WildcardPolicy = routev1.WildcardPolicySubdomain
+	// The HTTP route is anchored at apps.{hcpName}.{baseDomain} so that the wildcard
+	// *.apps.{hcpName}.{baseDomain} matches the domain used by insecure guest cluster routes.
+	route.Spec.Host = fmt.Sprintf("apps.%s.%s", hcp.Name, hcp.Spec.DNS.BaseDomain)
+	route.Spec.Port = &routev1.RoutePort{
+		TargetPort: intstr.FromString("http-80"),
 	}
 	route.Spec.To = routev1.RouteTargetReference{
 		Kind: "Service",

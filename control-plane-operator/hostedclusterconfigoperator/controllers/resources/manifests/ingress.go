@@ -54,3 +54,13 @@ func IngressDefaultIngressPassthroughRoute(namespace string) *routev1.Route {
 		},
 	}
 }
+
+const IngressDefaultIngressPassthroughHTTPRouteName = "default-ingress-passthrough-http-route"
+
+func IngressDefaultIngressPassthroughHTTPRoute(namespace string) *routev1.Route {
+	return &routev1.Route{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+		},
+	}
+}

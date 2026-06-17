@@ -9,9 +9,11 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 
 	operatorv1 "github.com/openshift/api/operator/v1"
+	routev1 "github.com/openshift/api/route/v1"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
 func TestReconcileDefaultIngressController(t *testing.T) {
@@ -1056,6 +1058,173 @@ func TestReconcileDefaultIngressControllerCertSecret(t *testing.T) {
 				g.Expect(certSecret.Data).To(HaveKeyWithValue(corev1.TLSCertKey, tt.sourceSecret.Data[corev1.TLSCertKey]))
 				g.Expect(certSecret.Data).To(HaveKeyWithValue(corev1.TLSPrivateKeyKey, tt.sourceSecret.Data[corev1.TLSPrivateKeyKey]))
 			}
+		})
+	}
+}
+
+func TestReconcileDefaultIngressPassthroughService(t *testing.T) {
+	t.Parallel()
+
+	hcp := &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{Name: "guest", Namespace: "clusters-guest"},
+		Spec: hyperv1.HostedControlPlaneSpec{
+			InfraID: "test-infra-id",
+		},
+	}
+
+	tests := []struct {
+		name            string
+		defaultNodePort *corev1.Service
+		wantErr         bool
+		errSubstr       string
+		validateService func(g Gomega, svc *corev1.Service)
+	}{
+		{
+			name: "When NodePort service has both HTTP and HTTPS ports, it should configure both ports in the passthrough service",
+			defaultNodePort: &corev1.Service{
+				Spec: corev1.ServiceSpec{
+					Ports: []corev1.ServicePort{
+						{Port: 80, NodePort: 32080},
+						{Port: 443, NodePort: 32443},
+					},
+				},
+			},
+			validateService: func(g Gomega, svc *corev1.Service) {
+				g.Expect(svc.Spec.Ports).To(HaveLen(2))
+				g.Expect(svc.Spec.Ports).To(ContainElements(
+					corev1.ServicePort{
+						Name:       "https-443",
+						Protocol:   corev1.ProtocolTCP,
+						Port:       443,
+						TargetPort: intstr.FromInt(32443),
+					},
+					corev1.ServicePort{
+						Name:       "http-80",
+						Protocol:   corev1.ProtocolTCP,
+						Port:       80,
+						TargetPort: intstr.FromInt(32080),
+					},
+				))
+				g.Expect(svc.Spec.Selector).To(BeEmpty())
+				g.Expect(svc.Spec.Type).To(Equal(corev1.ServiceTypeClusterIP))
+				g.Expect(svc.Labels).To(HaveKeyWithValue(hyperv1.InfraIDLabel, "test-infra-id"))
+			},
+		},
+		{
+			name: "When NodePort service is missing the HTTPS port, it should return an error",
+			defaultNodePort: &corev1.Service{
+				Spec: corev1.ServiceSpec{
+					Ports: []corev1.ServicePort{
+						{Port: 80, NodePort: 32080},
+					},
+				},
+			},
+			wantErr:   true,
+			errSubstr: "unable to detect default ingress NodePort https port",
+		},
+		{
+			name: "When NodePort service is missing the HTTP port, it should return an error",
+			defaultNodePort: &corev1.Service{
+				Spec: corev1.ServiceSpec{
+					Ports: []corev1.ServicePort{
+						{Port: 443, NodePort: 32443},
+					},
+				},
+			},
+			wantErr:   true,
+			errSubstr: "unable to detect default ingress NodePort http port",
+		},
+		{
+			name: "When NodePort service has no ports, it should return an error for the missing HTTPS port",
+			defaultNodePort: &corev1.Service{
+				Spec: corev1.ServiceSpec{
+					Ports: []corev1.ServicePort{},
+				},
+			},
+			wantErr:   true,
+			errSubstr: "unable to detect default ingress NodePort https port",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			svc := &corev1.Service{}
+			err := ReconcileDefaultIngressPassthroughService(svc, tt.defaultNodePort, hcp)
+			if tt.wantErr {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring(tt.errSubstr))
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+				tt.validateService(g, svc)
+			}
+		})
+	}
+}
+
+func TestReconcileDefaultIngressPassthroughHTTPRoute(t *testing.T) {
+	t.Parallel()
+
+	hcp := &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{Name: "guest", Namespace: "clusters-guest"},
+		Spec: hyperv1.HostedControlPlaneSpec{
+			InfraID: "test-infra-id",
+			DNS: hyperv1.DNSSpec{
+				BaseDomain: "apps.mgmt.example.com",
+			},
+		},
+	}
+
+	cpService := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{Name: "default-ingress-passthrough-service-abc123"},
+	}
+
+	tests := []struct {
+		name          string
+		hcp           *hyperv1.HostedControlPlane
+		validateRoute func(g Gomega, route *routev1.Route)
+	}{
+		{
+			name: "When HCP has baseDomainPassthrough enabled, it should create an HTTP wildcard route for insecure guest routes",
+			hcp:  hcp,
+			validateRoute: func(g Gomega, route *routev1.Route) {
+				g.Expect(route.Spec.WildcardPolicy).To(Equal(routev1.WildcardPolicySubdomain))
+				g.Expect(route.Spec.Host).To(Equal("apps.guest.apps.mgmt.example.com"))
+				g.Expect(route.Spec.TLS).To(BeNil())
+				g.Expect(route.Spec.Port).To(Equal(&routev1.RoutePort{
+					TargetPort: intstr.FromString("http-80"),
+				}))
+				g.Expect(route.Spec.To.Name).To(Equal(cpService.Name))
+				g.Expect(route.Labels).To(HaveKeyWithValue(hyperv1.InfraIDLabel, "test-infra-id"))
+			},
+		},
+		{
+			name: "When HCP has a different name and baseDomain, it should set the correct HTTP route host",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: "mycluster", Namespace: "clusters-mycluster"},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					InfraID: "my-infra-id",
+					DNS: hyperv1.DNSSpec{
+						BaseDomain: "apps.production.example.com",
+					},
+				},
+			},
+			validateRoute: func(g Gomega, route *routev1.Route) {
+				g.Expect(route.Spec.Host).To(Equal("apps.mycluster.apps.production.example.com"))
+				g.Expect(route.Spec.WildcardPolicy).To(Equal(routev1.WildcardPolicySubdomain))
+				g.Expect(route.Spec.TLS).To(BeNil())
+				g.Expect(route.Labels).To(HaveKeyWithValue(hyperv1.InfraIDLabel, "my-infra-id"))
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			route := &routev1.Route{}
+			err := ReconcileDefaultIngressPassthroughHTTPRoute(route, cpService, tt.hcp)
+			g.Expect(err).ToNot(HaveOccurred())
+			tt.validateRoute(g, route)
 		})
 	}
 }
