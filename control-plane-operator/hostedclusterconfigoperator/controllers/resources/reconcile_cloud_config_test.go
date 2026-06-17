@@ -168,7 +168,7 @@ func TestReconcileCloudConfig_AWS(t *testing.T) {
 						Name:      CloudProviderCMName,
 					},
 					Data: map[string]string{
-						aws.ProviderConfigKey:   "[Global]\nZone = us-east-1a\nVPC = vpc-123\n",
+						aws.ProviderConfigKey:    "[Global]\nZone = us-east-1a\nVPC = vpc-123\n",
 						globalconfig.CABundleKey: "old-ca-bundle",
 					},
 				},
