@@ -443,7 +443,8 @@ func (o *CreateInfraOptions) CreatePrivateRouteTable(ctx context.Context, l logr
 		isRetriable := func(err error) bool {
 			var apiErr smithy.APIError
 			if errors.As(err, &apiErr) {
-				return strings.EqualFold(apiErr.ErrorCode(), invalidNATGatewayError)
+				return strings.EqualFold(apiErr.ErrorCode(), invalidNATGatewayError) ||
+					strings.EqualFold(apiErr.ErrorCode(), invalidRouteTableID)
 			}
 			return false
 		}
@@ -530,10 +531,20 @@ func (o *CreateInfraOptions) CreatePublicRouteTable(ctx context.Context, l logr.
 
 	// Create route to internet gateway
 	if !o.hasInternetGatewayRoute(routeTable, igwID) {
-		_, err = client.CreateRoute(ctx, &ec2.CreateRouteInput{
-			DestinationCidrBlock: aws.String("0.0.0.0/0"),
-			RouteTableId:         aws.String(tableID),
-			GatewayId:            aws.String(igwID),
+		isRetriable := func(err error) bool {
+			var apiErr smithy.APIError
+			if errors.As(err, &apiErr) {
+				return strings.EqualFold(apiErr.ErrorCode(), invalidRouteTableID)
+			}
+			return false
+		}
+		err = retry.OnError(retryBackoff, isRetriable, func() error {
+			_, err = client.CreateRoute(ctx, &ec2.CreateRouteInput{
+				DestinationCidrBlock: aws.String("0.0.0.0/0"),
+				RouteTableId:         aws.String(tableID),
+				GatewayId:            aws.String(igwID),
+			})
+			return err
 		})
 		if err != nil {
 			return "", fmt.Errorf("cannot create route to internet gateway: %w", err)
