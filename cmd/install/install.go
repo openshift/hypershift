@@ -20,7 +20,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -197,19 +196,16 @@ func (o *Options) Validate() error {
 	errs = append(errs, o.validateScaleFromZeroConfig()...)
 	errs = append(errs, o.validateMonitoringConfig()...)
 	errs = append(errs, o.validateMiscConfig()...)
-	errs = append(errs, o.validateHCPEgressBlockCIDRs()...)
+	errs = append(errs, o.validateHCPEgressBlockCIDRs())
 
 	return errors.NewAggregate(errs)
 }
 
-func (o *Options) validateHCPEgressBlockCIDRs() []error {
-	var errs []error
-	for _, cidr := range o.HCPEgressBlockCIDRs {
-		if _, _, err := net.ParseCIDR(cidr); err != nil {
-			errs = append(errs, fmt.Errorf("invalid --hcp-egress-block-cidrs value %q: %w", cidr, err))
-		}
+func (o *Options) validateHCPEgressBlockCIDRs() error {
+	if err := util.ValidateIPv4CIDRs(o.HCPEgressBlockCIDRs); err != nil {
+		return fmt.Errorf("invalid --hcp-egress-block-cidrs: %w", err)
 	}
-	return errs
+	return nil
 }
 
 func (o *Options) validatePlatformConfig() []error {
@@ -509,7 +505,7 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&opts.ScaleFromZeroCreds, "scale-from-zero-creds", opts.ScaleFromZeroCreds, "Path to credentials file for scale-from-zero instance type queries")
 	cmd.PersistentFlags().StringVar(&opts.ScaleFromZeroCredentialsSecret, "scale-from-zero-secret", opts.ScaleFromZeroCredentialsSecret, "Name of existing secret containing scale-from-zero credentials (alternative to --scale-from-zero-creds)")
 	cmd.PersistentFlags().StringVar(&opts.ScaleFromZeroCredentialsSecretKey, "scale-from-zero-secret-key", opts.ScaleFromZeroCredentialsSecretKey, "Key within the scale-from-zero credentials secret (default: credentials)")
-	cmd.PersistentFlags().StringArrayVar(&opts.HCPEgressBlockCIDRs, "hcp-egress-block-cidrs", nil, "Static CIDRs to block in HCP namespace egress NetworkPolicies instead of dynamically-discovered hosting cluster KAS endpoint IPs. When specified, eliminates NetworkPolicy churn during hosting cluster KAS rolling restarts and avoids OVN port-group reconciliation races that can drop traffic to HCP routers. May be specified multiple times.")
+	cmd.PersistentFlags().StringArrayVar(&opts.HCPEgressBlockCIDRs, "hcp-egress-block-cidrs", nil, "Static CIDRs to block in HCP namespace egress NetworkPolicies instead of dynamically-discovered hosting cluster KAS endpoint IPs. When specified, eliminates NetworkPolicy churn during hosting cluster KAS rolling restarts and avoids OVN port-group reconciliation races that can drop traffic to HCP routers. Only IPv4 CIDRs are supported. May be specified multiple times.")
 	cmd.PersistentFlags().StringVar(&opts.AWSRoleCredentialSource, "aws-role-credential-source", aws.CredentialSourceWebIdentity, "Credential source for AWS role ARN flags: 'web-identity' (uses projected SA token) or 'ec2-instance-metadata' (uses EC2 instance metadata)")
 	cmd.PersistentFlags().StringVar(&opts.AWSOperatorRolesFile, "aws-operator-roles-file", "", "Path to JSON output file from 'hypershift create operator-roles aws' (sets all three role ARN flags at once)")
 	cmd.Flags().StringVar(&opts.InstallScope, "install-scope", string(OutputAll), "Scope of installation: 'all' installs CRDs and resources (default), 'crds' installs only CRDs, 'resources' installs only resources assuming CRDs were installed previously (operator deployment and RBAC)")
