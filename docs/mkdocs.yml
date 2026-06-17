@@ -10,6 +10,8 @@ plugins:
 - mermaid2:
     version: 11.2.0
     javascript: https://unpkg.com/mermaid@11.2.0/dist/mermaid.min.js
+    arguments:
+      securityLevel: loose
 - glightbox:
     touchNavigation: true
     loop: false
@@ -87,10 +89,13 @@ nav:
   - 'CI':
     - 'AI-Assisted CI Jobs': how-to/ci/ai-assisted-ci-jobs.md
     - how-to/ci/ci-infrastructure.md
-    - how-to/ci/checking-ci.md
     - 'Documentation Preview': how-to/ci/docs-preview.md
     - 'GitHub Actions Workflows': how-to/ci/github-actions.md
     - 'Sync Community Fork': how-to/ci/sync-community-fork.md
+    - 'Triage':
+      - how-to/ci/triage/index.md
+      - 'Presubmit Failures': how-to/ci/triage/presubmit-failures.md
+      - 'Daily CI Health': how-to/ci/triage/daily-health.md
     - 'V2 E2E Testing':
       - how-to/ci/v2-testing/index.md
       - 'Writing V2 Tests': how-to/ci/v2-testing/writing-tests.md
