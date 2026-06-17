@@ -1,0 +1,136 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: dashboard
+  namespace: jira-agent-dashboard
+  annotations:
+    serviceaccounts.openshift.io/oauth-redirectreference.primary: '{"kind":"OAuthRedirectReference","apiVersion":"v1","reference":{"kind":"Route","name":"dashboard"}}'
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dashboard
+  namespace: jira-agent-dashboard
+  labels:
+    app: jira-agent-dashboard
+    component: dashboard
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: jira-agent-dashboard
+      component: dashboard
+  template:
+    metadata:
+      labels:
+        app: jira-agent-dashboard
+        component: dashboard
+    spec:
+      serviceAccountName: dashboard
+      automountServiceAccountToken: true  # required by oauth-proxy
+      containers:
+        - name: oauth-proxy
+          image: quay.io/openshift/origin-oauth-proxy:latest
+          args:
+            - --https-address=:4443
+            - --provider=openshift
+            - --openshift-service-account=dashboard
+            - --upstream=http://localhost:8080
+            - --tls-cert=/etc/tls/private/tls.crt
+            - --tls-key=/etc/tls/private/tls.key
+            - --cookie-secret-file=/etc/proxy/secrets/session_secret
+            - --openshift-delegate-urls={"/":{"resource":"services","verb":"get","namespace":"jira-agent-dashboard"}}
+          ports:
+            - containerPort: 4443
+              name: https
+          volumeMounts:
+            - name: proxy-tls
+              mountPath: /etc/tls/private
+              readOnly: true
+            - name: proxy-sessions
+              mountPath: /etc/proxy/secrets
+              readOnly: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            runAsNonRoot: true
+        - name: dashboard
+          image: quay.io/rh_ee_brcox/jira-agent-dashboard:latest
+          command: ["/usr/local/bin/dashboard"]
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: DB_PATH
+              value: /data/dashboard.db
+            - name: PORT
+              value: "8080"
+            - name: WEB_DIR
+              value: /opt/dashboard/web
+          volumeMounts:
+            - name: db
+              mountPath: /data
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+      volumes:
+        - name: db
+          persistentVolumeClaim:
+            claimName: dashboard-db
+        - name: proxy-tls
+          secret:
+            secretName: dashboard-tls
+        - name: proxy-sessions
+          secret:
+            secretName: dashboard-proxy-session
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dashboard
+  namespace: jira-agent-dashboard
+  annotations:
+    service.beta.openshift.io/serving-cert-secret-name: dashboard-tls
+  labels:
+    app: jira-agent-dashboard
+spec:
+  selector:
+    app: jira-agent-dashboard
+    component: dashboard
+  ports:
+    - port: 4443
+      targetPort: 4443
+      name: https
+    - port: 8080
+      targetPort: 8080
+      name: http
