@@ -3265,24 +3265,24 @@ func (r *reconciler) ensureIngressControllersRemoved(ctx context.Context, hcp *h
 				manifests.IngressDefaultIngressPassthroughRouteName,
 				hcp.Spec.Platform.Kubevirt.GenerateID)
 
-		err := r.kubevirtInfraClient.Delete(ctx, cpService)
-		if err != nil && !apierrors.IsNotFound(err) {
-			errs = append(errs, fmt.Errorf("failed to delete %s: %w", client.ObjectKeyFromObject(cpService).String(), err))
-		}
+			err := r.kubevirtInfraClient.Delete(ctx, cpService)
+			if err != nil && !apierrors.IsNotFound(err) {
+				errs = append(errs, fmt.Errorf("failed to delete %s: %w", client.ObjectKeyFromObject(cpService).String(), err))
+			}
 
-		err = r.kubevirtInfraClient.Delete(ctx, cpPassthroughRoute)
-		if err != nil && !apierrors.IsNotFound(err) {
-			errs = append(errs, fmt.Errorf("failed to delete %s: %w", client.ObjectKeyFromObject(cpPassthroughRoute).String(), err))
-		}
+			err = r.kubevirtInfraClient.Delete(ctx, cpPassthroughRoute)
+			if err != nil && !apierrors.IsNotFound(err) {
+				errs = append(errs, fmt.Errorf("failed to delete %s: %w", client.ObjectKeyFromObject(cpPassthroughRoute).String(), err))
+			}
 
-		cpHTTPRoute := manifests.IngressDefaultIngressPassthroughHTTPRoute(namespace)
-		cpHTTPRoute.Name = fmt.Sprintf("%s-%s",
-			manifests.IngressDefaultIngressPassthroughHTTPRouteName,
-			hcp.Spec.Platform.Kubevirt.GenerateID)
-		err = r.kubevirtInfraClient.Delete(ctx, cpHTTPRoute)
-		if err != nil && !apierrors.IsNotFound(err) {
-			errs = append(errs, fmt.Errorf("failed to delete %s: %w", client.ObjectKeyFromObject(cpHTTPRoute).String(), err))
-		}
+			cpHTTPRoute := manifests.IngressDefaultIngressPassthroughHTTPRoute(namespace)
+			cpHTTPRoute.Name = fmt.Sprintf("%s-%s",
+				manifests.IngressDefaultIngressPassthroughHTTPRouteName,
+				hcp.Spec.Platform.Kubevirt.GenerateID)
+			err = r.kubevirtInfraClient.Delete(ctx, cpHTTPRoute)
+			if err != nil && !apierrors.IsNotFound(err) {
+				errs = append(errs, fmt.Errorf("failed to delete %s: %w", client.ObjectKeyFromObject(cpHTTPRoute).String(), err))
+			}
 		}
 	}
 
