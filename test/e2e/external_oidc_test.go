@@ -366,86 +366,18 @@ func TestExternalOIDC(t *testing.T) {
 
 	// experiment: see if we can pass custom auth config to test here
 	customClusterOpts := clusterOpts
-	config := customClusterOpts.ExtOIDCConfig
-	customClusterOpts.ExtOIDCConfig.CustomAuthSpec = &configv1.AuthenticationSpec{
-		Type: configv1.AuthenticationTypeOIDC,
-		OIDCProviders: []configv1.OIDCProvider{
+	customClusterOpts.ExtOIDCConfig.CustomizeAuthSpec = func(spec *configv1.AuthenticationSpec) {
+		// Customize UID mapping to use claim instead of expression
+		spec.OIDCProviders[0].ClaimMappings.UID = &configv1.TokenClaimOrExpressionMapping{
+			Claim: "sub",
+		}
+		// Keep only one extra mapping instead of two
+		spec.OIDCProviders[0].ClaimMappings.Extra = []configv1.ExtraMapping{
 			{
-				Name: config.OIDCProviderName,
-				Issuer: configv1.TokenIssuer{
-					Audiences: []configv1.TokenAudience{
-						configv1.TokenAudience(config.CliClientID),
-						configv1.TokenAudience(config.ConsoleClientID),
-					},
-					URL: config.IssuerURL,
-					CertificateAuthority: configv1.ConfigMapNameReference{
-						Name: config.IssuerCAConfigmapName,
-					},
-				},
-				OIDCClients: []configv1.OIDCClientConfig{
-					{
-						ClientID:           config.CliClientID,
-						ComponentName:      "cli",
-						ComponentNamespace: "openshift-console",
-						ExtraScopes:        []string{"email"},
-					},
-					{
-						ClientID: config.ConsoleClientID,
-						ClientSecret: configv1.SecretNameReference{
-							Name: config.ConsoleClientSecretName,
-						},
-						ComponentName:      "console",
-						ComponentNamespace: "openshift-console",
-						ExtraScopes:        []string{"email"},
-					},
-				},
-				ClaimMappings: configv1.TokenClaimMappings{
-					UID: &configv1.TokenClaimOrExpressionMapping{
-						Claim: "sub",
-					},
-					Username: configv1.UsernameClaimMapping{
-						Expression: "claims.email.split('@')[0]",
-					},
-					Groups: configv1.PrefixedClaimMapping{
-						TokenClaimMapping: configv1.TokenClaimMapping{
-							Expression: "claims.?groups.orValue([])",
-						},
-					},
-					Extra: []configv1.ExtraMapping{
-						{
-							Key:             "extratest.openshift.com/foo",
-							ValueExpression: "claims.email",
-						},
-					},
-				},
-				ClaimValidationRules: []configv1.TokenClaimValidationRule{
-					{
-						Type: configv1.TokenValidationRuleTypeCEL,
-						CEL: configv1.TokenClaimValidationCELRule{
-							Expression: "has(claims.email) && claims.email != ''",
-							Message:    "email claim must be present and non-empty",
-						},
-					},
-					{
-						Type: configv1.TokenValidationRuleTypeCEL,
-						CEL: configv1.TokenClaimValidationCELRule{
-							Expression: "claims.email_verified == true",
-							Message:    "email_verified claim must be true",
-						},
-					},
-				},
-				UserValidationRules: []configv1.TokenUserValidationRule{
-					{
-						Expression: "!user.username.startsWith('system:')",
-						Message:    "username cannot use reserved system: prefix",
-					},
-					{
-						Expression: "!user.username.contains('forbidden')",
-						Message:    "username cannot contain the word 'forbidden'",
-					},
-				},
+				Key:             "extratest.openshift.com/foo",
+				ValueExpression: "claims.email",
 			},
-		},
+		}
 	}
 	// currently is still under feature gate - having the tests
 	// run like this mean easy removal of feature gate check
