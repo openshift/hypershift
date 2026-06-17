@@ -404,13 +404,14 @@ func (t *Token) reconcileUserDataSecret(log logr.Logger, userDataSecret *corev1.
 }
 
 func setKarpenterAMILabels(log logr.Logger, userDataSecret *corev1.Secret, region string, releaseImage *releaseinfo.ReleaseImage, platform hyperv1.PlatformType) error {
+	// TODO(CNTRLPLANE-3553): resolve streamName via GetRHELStream once osImageStream API field is available
 	supportedArchitectures, err := karpenterutil.SupportedArchitectures(platform)
 	if err != nil {
 		return fmt.Errorf("failed to get supported architectures: %w", err)
 	}
 	supported := 0
 	for _, arch := range supportedArchitectures {
-		ami, err := defaultNodePoolAMI(region, arch, releaseImage)
+		ami, err := defaultNodePoolAMI(region, arch, "", releaseImage)
 		if err != nil {
 			// skip unavailable architectures gracefully
 			log.Error(err, "failed to get default NodePool AMI for architecture", "architecture", arch)

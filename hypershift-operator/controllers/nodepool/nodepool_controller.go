@@ -736,11 +736,18 @@ func isAutoscalingEnabled(nodePool *hyperv1.NodePool) bool {
 	return nodePool.Spec.AutoScaling != nil
 }
 
-func defaultNodePoolAMI(region string, specifiedArch string, releaseImage *releaseinfo.ReleaseImage) (string, error) {
-	if releaseImage.StreamMetadata == nil {
-		return "", fmt.Errorf("release image stream metadata is nil")
+// defaultNodePoolAMI resolves the default AWS AMI for a NodePool from release image stream metadata.
+// TODO(CNTRLPLANE-3553): once the osImageStream API field is available, callers should resolve
+// streamName via GetRHELStream and pass it here instead of hardcoding "".
+func defaultNodePoolAMI(region string, specifiedArch string, streamName string, releaseImage *releaseinfo.ReleaseImage) (string, error) {
+	if releaseImage == nil {
+		return "", fmt.Errorf("release image is nil")
 	}
-	arch, foundArch := releaseImage.StreamMetadata.Architectures[hyperv1.ArchAliases[specifiedArch]]
+	streamMeta, err := releaseImage.StreamForName(streamName)
+	if err != nil {
+		return "", fmt.Errorf("couldn't resolve stream metadata: %w", err)
+	}
+	arch, foundArch := streamMeta.Architectures[hyperv1.ArchAliases[specifiedArch]]
 	if !foundArch {
 		return "", fmt.Errorf("couldn't find OS metadata for architecture %q", specifiedArch)
 	}
