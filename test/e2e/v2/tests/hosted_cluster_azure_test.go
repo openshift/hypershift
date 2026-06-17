@@ -688,7 +688,7 @@ func AzureOAuthLoadBalancerTest(getTestCtx internal.TestContextGetter) {
 // The OAuth token flow test requires the test runner to have network connectivity
 // to the Azure VNet (e.g., running in the management cluster or via VPN/peering).
 func AzureOAuthLoadBalancerPrivateTest(getTestCtx internal.TestContextGetter) {
-	Context("Azure OAuth LoadBalancer in Private Topology", Label("Azure", "self-managed-azure-oauth-lb-private"), Ordered, func() {
+	Context("[Feature:AzureOAuth] Azure OAuth LoadBalancer in Private Topology", Label("Azure", "self-managed-azure-oauth-lb-private"), Ordered, func() {
 		var testCtx *internal.TestContext
 		var controlPlaneNamespace string
 		var hc *hyperv1.HostedCluster
