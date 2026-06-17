@@ -16,7 +16,7 @@ func TestReconcileReport(t *testing.T) {
 		g.Expect(report.hasCriticalFailure()).To(BeFalse())
 		g.Expect(report.allErrors()).To(BeEmpty())
 		g.Expect(report.aggregate()).To(BeNil())
-		g.Expect(report.conditionMessage()).To(BeEmpty())
+		g.Expect(report.logSummary()).To(BeEmpty())
 		g.Expect(report.criticalFailureNames()).To(BeEmpty())
 		g.Expect(report.blockedNames()).To(BeEmpty())
 	})
@@ -30,7 +30,7 @@ func TestReconcileReport(t *testing.T) {
 		g.Expect(report.hasCriticalFailure()).To(BeFalse())
 		g.Expect(report.allErrors()).To(BeEmpty())
 		g.Expect(report.aggregate()).To(BeNil())
-		g.Expect(report.conditionMessage()).To(BeEmpty())
+		g.Expect(report.logSummary()).To(BeEmpty())
 	})
 
 	t.Run("When a critical operation fails it should report critical failure", func(t *testing.T) {
@@ -112,41 +112,8 @@ func TestReconcileReport(t *testing.T) {
 	})
 }
 
-func TestLegacyMode(t *testing.T) {
-	t.Run("When a non-critical operation fails in legacy mode it should block subsequent execute calls", func(t *testing.T) {
-		g := NewWithT(t)
-		report := &reconcileReport{legacy: true}
-		report.execute("SSHKeySync", nonCritical, func() error {
-			return fmt.Errorf("key not found")
-		})
-		executed := false
-		report.execute("GlobalConfigSync", nonCritical, func() error {
-			executed = true
-			return nil
-		})
-
-		g.Expect(executed).To(BeFalse())
-		g.Expect(report.blockedNames()).To(ConsistOf("GlobalConfigSync"))
-		g.Expect(report.allErrors()).To(HaveLen(1))
-	})
-
-	t.Run("When a non-critical operation fails in legacy mode it should block executeOrBlock calls", func(t *testing.T) {
-		g := NewWithT(t)
-		report := &reconcileReport{legacy: true}
-		report.execute("SSHKeySync", nonCritical, func() error {
-			return fmt.Errorf("key not found")
-		})
-		executed := false
-		report.executeOrBlock("OperatorDeployments", func() error {
-			executed = true
-			return nil
-		})
-
-		g.Expect(executed).To(BeFalse())
-		g.Expect(report.blockedNames()).To(ConsistOf("OperatorDeployments"))
-	})
-
-	t.Run("When in default mode it should allow non-critical errors without blocking execute", func(t *testing.T) {
+func TestBlockingBehavior(t *testing.T) {
+	t.Run("When a non-critical operation fails it should allow subsequent execute calls", func(t *testing.T) {
 		g := NewWithT(t)
 		report := &reconcileReport{}
 		report.execute("SSHKeySync", nonCritical, func() error {
@@ -163,7 +130,7 @@ func TestLegacyMode(t *testing.T) {
 		g.Expect(report.allErrors()).To(HaveLen(1))
 	})
 
-	t.Run("When in default mode it should allow non-critical errors without blocking executeOrBlock", func(t *testing.T) {
+	t.Run("When a non-critical operation fails it should allow executeOrBlock calls", func(t *testing.T) {
 		g := NewWithT(t)
 		report := &reconcileReport{}
 		report.execute("SSHKeySync", nonCritical, func() error {
@@ -179,7 +146,7 @@ func TestLegacyMode(t *testing.T) {
 		g.Expect(report.blockedNames()).To(BeEmpty())
 	})
 
-	t.Run("When in default mode it should still block on critical failure", func(t *testing.T) {
+	t.Run("When a critical operation fails it should block executeOrBlock calls", func(t *testing.T) {
 		g := NewWithT(t)
 		report := &reconcileReport{}
 		report.execute("PullSecretSync", critical, func() error {
@@ -252,7 +219,7 @@ func TestExecuteOrBlock(t *testing.T) {
 	})
 }
 
-func TestConditionMessage(t *testing.T) {
+func TestLogSummary(t *testing.T) {
 	t.Run("When only critical failures exist it should format critical failures", func(t *testing.T) {
 		g := NewWithT(t)
 		report := &reconcileReport{}
@@ -263,8 +230,8 @@ func TestConditionMessage(t *testing.T) {
 			return fmt.Errorf("invalid")
 		})
 
-		msg := report.conditionMessage()
-		g.Expect(msg).To(Equal("critical failures: [PullSecretSync, PlatformCredentials]"))
+		msg := report.logSummary()
+		g.Expect(msg).To(Equal("critical failures: [PlatformCredentials, PullSecretSync]"))
 	})
 
 	t.Run("When only blocked operations exist (no critical failure) it should return empty", func(t *testing.T) {
@@ -273,7 +240,7 @@ func TestConditionMessage(t *testing.T) {
 		report.executeOrBlock("OperatorDeployments", func() error { return nil })
 		report.executeOrBlock("Auxiliary", func() error { return nil })
 
-		g.Expect(report.conditionMessage()).To(BeEmpty())
+		g.Expect(report.logSummary()).To(BeEmpty())
 	})
 
 	t.Run("When both critical failures and blocked operations exist it should format both", func(t *testing.T) {
@@ -285,8 +252,8 @@ func TestConditionMessage(t *testing.T) {
 		report.executeOrBlock("OperatorDeployments", func() error { return nil })
 		report.executeOrBlock("Auxiliary", func() error { return nil })
 
-		msg := report.conditionMessage()
-		g.Expect(msg).To(Equal("critical failures: [PullSecretSync]; blocked operations: [OperatorDeployments, Auxiliary]"))
+		msg := report.logSummary()
+		g.Expect(msg).To(Equal("critical failures: [PullSecretSync]; blocked operations: [Auxiliary, OperatorDeployments]"))
 	})
 
 	t.Run("When no failures or blocked operations exist it should return empty string", func(t *testing.T) {
@@ -295,7 +262,7 @@ func TestConditionMessage(t *testing.T) {
 		report.execute("PullSecretSync", critical, func() error { return nil })
 		report.execute("SSHKeySync", nonCritical, func() error { return nil })
 
-		g.Expect(report.conditionMessage()).To(BeEmpty())
+		g.Expect(report.logSummary()).To(BeEmpty())
 	})
 
 	t.Run("When only non-critical failures exist it should return empty string", func(t *testing.T) {
@@ -305,7 +272,7 @@ func TestConditionMessage(t *testing.T) {
 			return fmt.Errorf("key not found")
 		})
 
-		g.Expect(report.conditionMessage()).To(BeEmpty())
+		g.Expect(report.logSummary()).To(BeEmpty())
 	})
 }
 

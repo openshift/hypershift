@@ -371,6 +371,8 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	var res reconcile.Result
 	if r.overwriteReconcile != nil {
 		res, err = r.overwriteReconcile(ctx, req, log, hcluster)
+	} else if r.ReconcileLegacy {
+		res, err = r.reconcileLegacy(ctx, req, log, hcluster)
 	} else {
 		res, err = r.reconcile(ctx, req, log, hcluster)
 	}
@@ -1374,7 +1376,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	//   - Core HCP chain failure / nil HCP → Phase 8 components blocked.
 	//   - Non-critical sync → never blocked, always runs.
 
-	report := &reconcileReport{legacy: r.ReconcileLegacy}
+	report := &reconcileReport{}
 
 	// Phase 5: Pull secret, CPO image resolution, and namespace setup.
 	// These are grouped because namespace PSA labels depend on CPO image labels —
@@ -1468,7 +1470,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			if etcdErr != nil {
 				return fmt.Errorf("failed to perform etcd member recovery: %w", etcdErr)
 			}
-			report.requeueAfter = requeueAfter
+			report.requestRequeue(requeueAfter)
 			return nil
 		})
 	}
@@ -1480,7 +1482,13 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	_, cpoSupportsKASCustomKubeconfig := controlPlaneOperatorImageLabels[controlPlaneOperatorSupportsKASCustomKubeconfigLabel]
 	_, controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel := controlPlaneOperatorImageLabels[controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel]
 	_, controlPlanePKIOperatorSignsCSRs := controlPlaneOperatorImageLabels[controlPlanePKIOperatorSignsCSRsLabel]
-	_, defaultToControlPlaneV2 := controlPlaneOperatorImageLabels[defaultToControlPlaneV2Label]
+	// Default to true when labels are unavailable (pull secret outage) — all
+	// current CPO images set v2-isdefault=true. Defaulting to false would
+	// incorrectly enable the stale cert check on CPOv2 clusters.
+	defaultToControlPlaneV2 := true
+	if controlPlaneOperatorImageLabels != nil {
+		_, defaultToControlPlaneV2 = controlPlaneOperatorImageLabels[defaultToControlPlaneV2Label]
+	}
 
 	// Phase 7: Core HCP chain — sequential (HCP → InfraCR → CAPI Cluster).
 	// Always runs regardless of Phase 6a failures (these are K8s resource operations).
@@ -1497,8 +1505,13 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		return nil
 	})
 
+	// Phase 8a: Components that don't depend on release image version.
+	// Evaluated before ReleaseImageVersion so they run even when the
+	// release image is unavailable.
 	report.executeOrBlock("KubeconfigAndPasswordSync", func() error {
-		return r.reconcileKubeconfigAndPasswordSync(ctx, createOrUpdate, hcluster, hcp, cpoSupportsKASCustomKubeconfig)
+		requeue, err := r.reconcileKubeconfigAndPasswordSync(ctx, createOrUpdate, hcluster, hcp, cpoSupportsKASCustomKubeconfig)
+		report.requestRequeue(requeue)
+		return err
 	})
 
 	report.executeOrBlock("PlatformOIDCAndCSI", func() error {
@@ -1509,9 +1522,9 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		return r.reconcileAuxiliary(ctx, createOrUpdate, hcluster, hcp)
 	})
 
-	// Release image version is critical because OperatorDeployments and
-	// RBACAndPolicies depend on it — a zero-value version would produce
-	// wrong deployments. Failure here blocks those downstream operations.
+	// Phase 8b: Release-image-dependent components.
+	// ReleaseImageVersion is critical — a zero-value version would produce
+	// wrong deployments. Failure here blocks OperatorDeployments and RBACAndPolicies.
 	var releaseImageVersion semver.Version
 	report.execute("ReleaseImageVersion", critical, func() error {
 		if releaseImage == nil {
@@ -1542,9 +1555,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		if err != nil {
 			return fmt.Errorf("failed to reconcile PublicEndpointExposed condition: %w", err)
 		}
-		if pubEndpointRequeue != nil && (report.requeueAfter == nil || *pubEndpointRequeue < *report.requeueAfter) {
-			report.requeueAfter = pubEndpointRequeue
-		}
+		report.requestRequeue(pubEndpointRequeue)
 		return nil
 	})
 
@@ -1562,7 +1573,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 
 	if errs := report.allErrors(); len(errs) == 0 {
 		log.Info("successfully reconciled")
-	} else if msg := report.conditionMessage(); msg != "" {
+	} else if msg := report.logSummary(); msg != "" {
 		log.Info("reconciliation completed with errors", "summary", msg)
 	}
 	return result, report.aggregate()
@@ -1630,18 +1641,19 @@ func (r *HostedClusterReconciler) reconcileKubeconfigAndPasswordSync(
 	ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN,
 	hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane,
 	cpoSupportsKASCustomKubeconfig bool,
-) error {
+) (*time.Duration, error) {
 	var errs []error
 	if err := r.reconcileKubeconfigSync(ctx, hcluster, hcp, createOrUpdate); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile kubeconfig: %w", err))
 	}
-	if err := r.reconcileCustomKubeconfigSync(ctx, hcluster, hcp, createOrUpdate, cpoSupportsKASCustomKubeconfig); err != nil {
+	requeue, err := r.reconcileCustomKubeconfigSync(ctx, hcluster, hcp, createOrUpdate, cpoSupportsKASCustomKubeconfig)
+	if err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile custom kubeconfig: %w", err))
 	}
 	if err := r.reconcileKubeadminPasswordSync(ctx, hcluster, hcp, createOrUpdate); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile kubeadmin password: %w", err))
 	}
-	return utilerrors.NewAggregate(errs)
+	return requeue, utilerrors.NewAggregate(errs)
 }
 
 // reconcileOperatorDeployments groups CPO, CAPI manager/provider, and karpenter operator
@@ -1815,8 +1827,8 @@ func (r *HostedClusterReconciler) reconcileRestoredFromBackupWithStatus(
 	return nil
 }
 
-// reconcilePullSecretSync syncs the pull secret from the HostedCluster namespace
-// to the control plane namespace.
+// reconcileControlPlaneNamespace reconciles the control plane namespace labels
+// and annotations (PSA, monitoring, security context UID).
 func (r *HostedClusterReconciler) reconcileControlPlaneNamespace(
 	ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN,
 	hcluster *hyperv1.HostedCluster, controlPlaneNamespace *corev1.Namespace,
@@ -1950,10 +1962,10 @@ func (r *HostedClusterReconciler) reconcileSecretEncryptionSync(
 		if err != nil {
 			return fmt.Errorf("failed reconciling aescbc active key: %w", err)
 		}
-		if hcluster.Spec.SecretEncryption.AESCBC.BackupKey != nil && len(hcluster.Spec.SecretEncryption.AESCBC.BackupKey.Name) > 0 {
+		if hcluster.Spec.SecretEncryption.AESCBC.BackupKey != nil && len(hcluster.Spec.SecretEncryption.AESCBC.BackupKey.Name) > 0 { //nolint:staticcheck
 			var src corev1.Secret
-			if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.SecretEncryption.AESCBC.BackupKey.Name}, &src); err != nil {
-				return fmt.Errorf("failed to get backup aescbc secret %s: %w", hcluster.Spec.SecretEncryption.AESCBC.BackupKey.Name, err)
+			if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.SecretEncryption.AESCBC.BackupKey.Name}, &src); err != nil { //nolint:staticcheck
+				return fmt.Errorf("failed to get backup aescbc secret %s: %w", hcluster.Spec.SecretEncryption.AESCBC.BackupKey.Name, err) //nolint:staticcheck
 			}
 			if err := ensureReferencedResourceAnnotation(ctx, r.Client, hcluster.Name, &src); err != nil {
 				return fmt.Errorf("failed to set referenced resource annotation: %w", err)
@@ -2221,31 +2233,26 @@ func (r *HostedClusterReconciler) reconcileKubeconfigSync(
 func (r *HostedClusterReconciler) reconcileCustomKubeconfigSync(
 	ctx context.Context, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane,
 	createOrUpdate upsert.CreateOrUpdateFN, cpoSupportsKASCustomKubeconfig bool,
-) error {
+) (*time.Duration, error) {
 	if !cpoSupportsKASCustomKubeconfig {
-		return nil
+		return nil, nil
 	}
 	if len(hcp.Spec.KubeAPIServerDNSName) > 0 {
-		_, err := r.reconcileCustomExternalKubeconfig(ctx, createOrUpdate, hcp, hcluster)
-		if err != nil {
-			return err
-		}
-	} else {
-		// Delete the custom external kubeconfig secret if it exists and the external name is not set
-		if hcluster.Status.CustomKubeconfig != nil {
-			customKubeconfig := &corev1.Secret{
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: hcluster.Namespace,
-					Name:      hcluster.Status.CustomKubeconfig.Name,
-				},
-			}
-			if _, err := k8sutil.DeleteIfNeeded(ctx, r.Client, customKubeconfig); err != nil {
-				return fmt.Errorf("failed to delete custom external kubeconfig secret %q: %w", client.ObjectKeyFromObject(customKubeconfig), err)
-			}
-			hcluster.Status.CustomKubeconfig = nil
-		}
+		return r.reconcileCustomExternalKubeconfig(ctx, createOrUpdate, hcp, hcluster)
 	}
-	return nil
+	if hcluster.Status.CustomKubeconfig != nil {
+		customKubeconfig := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: hcluster.Namespace,
+				Name:      hcluster.Status.CustomKubeconfig.Name,
+			},
+		}
+		if _, err := k8sutil.DeleteIfNeeded(ctx, r.Client, customKubeconfig); err != nil {
+			return nil, fmt.Errorf("failed to delete custom external kubeconfig secret %q: %w", client.ObjectKeyFromObject(customKubeconfig), err)
+		}
+		hcluster.Status.CustomKubeconfig = nil
+	}
+	return nil, nil
 }
 
 // reconcileKubeadminPasswordSync syncs the kubeadmin password secret from the HCP
@@ -2315,7 +2322,7 @@ func (r *HostedClusterReconciler) reconcileAuxiliary(
 	if err := r.reconcileSREMetricsConfig(ctx, createOrUpdate, hcp); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile SRE metrics config: %w", err))
 	}
-	if _, err := r.reconcileOpenShiftTrustedCAs(ctx, hcp); err != nil {
+	if err := r.reconcileOpenShiftTrustedCAs(ctx, hcp); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile OpenShift trusted CAs: %w", err))
 	}
 	return utilerrors.NewAggregate(errs)
@@ -2329,14 +2336,6 @@ func (r *HostedClusterReconciler) reconcilePlatformSpecific(
 ) error {
 	switch hcluster.Spec.Platform.Type {
 	case hyperv1.KubevirtPlatform:
-		if hcluster.Spec.Platform.Kubevirt != nil && hcluster.Spec.Platform.Kubevirt.Credentials != nil {
-			if err := r.Client.Status().Update(ctx, hcluster); err != nil {
-				if apierrors.IsConflict(err) {
-					return fmt.Errorf("failed to update status after network policy RBAC check: %w", err)
-				}
-				return fmt.Errorf("failed to update status after network policy RBAC check: %w", err)
-			}
-		}
 		if err := r.reconcileKubevirtCSIClusterRBAC(ctx, createOrUpdate, hcluster); err != nil {
 			return fmt.Errorf("failed to reconcile kubevirt CSI cluster wide RBAC: %w", err)
 		}
@@ -3069,7 +3068,7 @@ func (r *HostedClusterReconciler) reconcileKubevirtCSIClusterRBAC(ctx context.Co
 
 // reconcileOpenShiftTrustedCAs checks for the existence of /etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem, if it exists,
 // creates a new ConfigMap to be mounted in the CPO deployment utilizing the file
-func (r *HostedClusterReconciler) reconcileOpenShiftTrustedCAs(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane) (bool, error) {
+func (r *HostedClusterReconciler) reconcileOpenShiftTrustedCAs(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane) error {
 	trustedCABundle := new(bytes.Buffer)
 	var trustCABundleFile []byte
 
@@ -3077,29 +3076,29 @@ func (r *HostedClusterReconciler) reconcileOpenShiftTrustedCAs(ctx context.Conte
 	if err == nil {
 		trustCABundleFile, err = os.ReadFile(r.OpenShiftTrustedCAFilePath)
 		if err != nil {
-			return false, fmt.Errorf("unable to read trust bundle file: %w", err)
+			return fmt.Errorf("unable to read trust bundle file: %w", err)
 		}
 	}
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return false, nil
+			return nil
 		}
 
-		return false, err
+		return err
 	}
 
 	if _, err = trustedCABundle.Write(trustCABundleFile); err != nil {
-		return false, fmt.Errorf("unable to write trust bundle to buffer: %w", err)
+		return fmt.Errorf("unable to write trust bundle to buffer: %w", err)
 	}
 
 	// Next, save the contents to a new ConfigMap in the hosted control plane's namespace
 	openShiftTrustedCABundleConfigMapForCPO := manifests.OpenShiftTrustedCABundleForNamespace(hostedControlPlane.Namespace)
 	openShiftTrustedCABundleConfigMapForCPO.Data["ca-bundle.crt"] = trustedCABundle.String()
 	if _, err = controllerutil.CreateOrUpdate(ctx, r.Client, openShiftTrustedCABundleConfigMapForCPO, NoopReconcile); err != nil {
-		return false, fmt.Errorf("failed to create openshift-config-managed-trusted-ca-bundle for CPO deployment %T: %w", trustedCABundle.String(), err)
+		return fmt.Errorf("failed to create openshift-config-managed-trusted-ca-bundle for CPO deployment %T: %w", trustedCABundle.String(), err)
 	}
 
-	return true, nil
+	return nil
 }
 
 func servicePublishingStrategyByType(hcp *hyperv1.HostedCluster, svcType hyperv1.ServiceType) *hyperv1.ServicePublishingStrategy {
