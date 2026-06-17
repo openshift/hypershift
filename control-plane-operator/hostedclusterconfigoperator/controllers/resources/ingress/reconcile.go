@@ -211,6 +211,9 @@ func ReconcileDefaultIngressPassthroughHTTPRoute(route *routev1.Route, cpService
 		route.Labels = map[string]string{}
 	}
 	route.Spec.WildcardPolicy = routev1.WildcardPolicySubdomain
+	// Explicitly clear any existing TLS configuration to ensure this route serves plain HTTP.
+	// Without this, a previously TLS-enabled route would persist TLS on update.
+	route.Spec.TLS = nil
 	// The HTTP route is anchored at apps.{hcpName}.{baseDomain} so that the wildcard
 	// *.apps.{hcpName}.{baseDomain} matches the domain used by insecure guest cluster routes.
 	route.Spec.Host = fmt.Sprintf("apps.%s.%s", hcp.Name, hcp.Spec.DNS.BaseDomain)
