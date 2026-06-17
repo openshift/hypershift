@@ -15,6 +15,7 @@ import (
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/secretencryption"
+	"github.com/openshift/hypershift/support/util"
 
 	"github.com/openshift/library-go/pkg/operator/encryption/controllers/migrators"
 
@@ -394,6 +395,10 @@ func (r *Reconciler) handleMigratingPhase(log logr.Logger, hcp *hyperv1.HostedCo
 	for _, gr := range resources {
 		finished, result, _, err := r.migrator.EnsureMigration(gr, writeKey)
 		if err != nil {
+			if strings.Contains(err.Error(), "failed to find version") {
+				log.Info("Skipping migration for resource not found in discovery", "resource", gr.String())
+				continue
+			}
 			return reconcile.Result{}, fmt.Errorf("failed to ensure migration for %s: %w", gr, err)
 		}
 		if !finished {
@@ -507,6 +512,8 @@ func (r *Reconciler) keyStatusFromSpec(ctx context.Context, hcp *hyperv1.HostedC
 }
 
 // encryptedResources returns the list of GroupResources that need re-encryption.
+// Resources served by API servers that are not deployed (e.g. oauth resources
+// when ExternalOIDC is configured) are excluded since they have no data to migrate.
 func (r *Reconciler) encryptedResources(hcp *hyperv1.HostedControlPlane) []schema.GroupResource {
 	spec := hcp.Spec.SecretEncryption
 	if spec == nil {
@@ -523,9 +530,14 @@ func (r *Reconciler) encryptedResources(hcp *hyperv1.HostedControlPlane) []schem
 		return nil
 	}
 
+	oauthEnabled := util.HCPOAuthEnabled(hcp)
 	resources := make([]schema.GroupResource, 0, len(resourceStrings))
 	for _, rs := range resourceStrings {
-		resources = append(resources, parseGroupResource(rs))
+		gr := parseGroupResource(rs)
+		if !oauthEnabled && gr.Group == "oauth.openshift.io" {
+			continue
+		}
+		resources = append(resources, gr)
 	}
 	return resources
 }

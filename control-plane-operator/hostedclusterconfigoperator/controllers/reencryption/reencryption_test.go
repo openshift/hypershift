@@ -18,6 +18,8 @@ import (
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/secretencryption"
 
+	configv1 "github.com/openshift/api/config/v1"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -52,7 +54,8 @@ var (
 
 // fakeMigrator implements the Migrator interface for testing.
 type fakeMigrator struct {
-	migrations map[string]*fakeMigrationState
+	migrations      map[string]*fakeMigrationState
+	discoveryErrors map[schema.GroupResource]error
 }
 
 type fakeMigrationState struct {
@@ -63,11 +66,15 @@ type fakeMigrationState struct {
 
 func newFakeMigrator() *fakeMigrator {
 	return &fakeMigrator{
-		migrations: make(map[string]*fakeMigrationState),
+		migrations:      make(map[string]*fakeMigrationState),
+		discoveryErrors: make(map[schema.GroupResource]error),
 	}
 }
 
 func (f *fakeMigrator) EnsureMigration(gr schema.GroupResource, writeKey string) (finished bool, result error, ts time.Time, err error) {
+	if discoveryErr, ok := f.discoveryErrors[gr]; ok {
+		return false, nil, time.Time{}, discoveryErr
+	}
 	key := fmt.Sprintf("%s/%s", gr.String(), writeKey)
 	state, exists := f.migrations[key]
 	if !exists {
@@ -156,6 +163,17 @@ func withKMSEncryption() func(*hyperv1.HostedControlPlane) {
 					Region:    "us-east-1",
 				},
 			},
+		}
+	}
+}
+
+func withExternalOIDC() func(*hyperv1.HostedControlPlane) {
+	return func(hcp *hyperv1.HostedControlPlane) {
+		if hcp.Spec.Configuration == nil {
+			hcp.Spec.Configuration = &hyperv1.ClusterConfiguration{}
+		}
+		hcp.Spec.Configuration.Authentication = &configv1.AuthenticationSpec{
+			Type: configv1.AuthenticationTypeOIDC,
 		}
 	}
 }
@@ -818,6 +836,55 @@ func TestReconcile(t *testing.T) {
 				g.Expect(hcp.Status.SecretEncryption.TargetKey.Provider).ToNot(BeEmpty())
 			},
 		},
+		{
+			name: "When in Migrating phase with KMS and some resources are not discoverable it should skip them and complete",
+			cpObjects: func() []client.Object {
+				oldKS := awsKeyStatus("arn:aws:kms:us-east-1:123456789012:key/old-key")
+				newKS := awsKeyStatus("arn:aws:kms:us-east-1:123456789012:key/test-key-1")
+				return []client.Object{
+					newHCP(
+						withKMSEncryption(),
+						withActiveKey(oldKS),
+						withTargetKey(newKS),
+						withHistory(hyperv1.EncryptionMigrationHistory{
+							From:        secretencryption.KeyReferenceFromStatus(oldKS),
+							To:          secretencryption.KeyReferenceFromStatus(newKS),
+							State:       hyperv1.EncryptionMigrationStateMigrating,
+							StartedTime: metav1.Time{Time: fixedTime},
+						}),
+					),
+					convergedKASDeployment(testNamespace),
+					encryptionConfigSecret(testNamespace, hyperv1.KMS,
+						awsProviderKeyName("arn:aws:kms:us-east-1:123456789012:key/test-key-1"),
+						awsProviderKeyName("arn:aws:kms:us-east-1:123456789012:key/old-key")),
+				}
+			}(),
+			migrator: func() *fakeMigrator {
+				m := newFakeMigrator()
+				fp := secretencryption.FingerprintAWSKMSKey("arn:aws:kms:us-east-1:123456789012:key/test-key-1")
+				writeKey := fmt.Sprintf("encryption-key-%s", fp)
+				// Complete discoverable resources.
+				m.completeMigration(schema.GroupResource{Resource: "secrets"}, writeKey)
+				m.completeMigration(schema.GroupResource{Resource: "configmaps"}, writeKey)
+				m.completeMigration(schema.GroupResource{Resource: "routes", Group: "route.openshift.io"}, writeKey)
+				// Simulate discovery failure for oauth resources (not served or not discoverable).
+				m.discoveryErrors[schema.GroupResource{Resource: "oauthaccesstokens", Group: "oauth.openshift.io"}] =
+					fmt.Errorf("failed to find version for oauthaccesstokens.oauth.openshift.io, discoveryErr=<nil>")
+				m.discoveryErrors[schema.GroupResource{Resource: "oauthauthorizetokens", Group: "oauth.openshift.io"}] =
+					fmt.Errorf("failed to find version for oauthauthorizetokens.oauth.openshift.io, discoveryErr=<nil>")
+				return m
+			},
+			validate: func(t *testing.T, g Gomega, cl client.Client, _ *fakeMigrator) {
+				hcp := getHCP(context.Background(), g, cl)
+				g.Expect(hcp.Status.SecretEncryption.TargetKey.Provider).To(BeEmpty())
+				g.Expect(hcp.Status.SecretEncryption.ActiveKey.Provider).To(Equal(hyperv1.SecretEncryptionProviderAWS))
+				g.Expect(hcp.Status.SecretEncryption.History[0].State).To(Equal(hyperv1.EncryptionMigrationStateCompleted))
+
+				cond := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.EtcdDataEncryptionUpToDate))
+				g.Expect(cond).ToNot(BeNil())
+				g.Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -945,6 +1012,19 @@ func TestEncryptedResources(t *testing.T) {
 		g.Expect(resources).To(ContainElement(schema.GroupResource{Group: "route.openshift.io", Resource: "routes"}))
 		g.Expect(resources).To(ContainElement(schema.GroupResource{Group: "oauth.openshift.io", Resource: "oauthaccesstokens"}))
 		g.Expect(resources).To(ContainElement(schema.GroupResource{Group: "oauth.openshift.io", Resource: "oauthauthorizetokens"}))
+	})
+
+	t.Run("When encryption type is KMS and OAuth is disabled it should exclude oauth resources", func(t *testing.T) {
+		g := NewWithT(t)
+		r := &Reconciler{}
+		hcp := newHCP(withKMSEncryption(), withExternalOIDC())
+		resources := r.encryptedResources(hcp)
+		g.Expect(resources).To(HaveLen(3))
+		g.Expect(resources).To(ContainElement(schema.GroupResource{Resource: "secrets"}))
+		g.Expect(resources).To(ContainElement(schema.GroupResource{Resource: "configmaps"}))
+		g.Expect(resources).To(ContainElement(schema.GroupResource{Group: "route.openshift.io", Resource: "routes"}))
+		g.Expect(resources).NotTo(ContainElement(schema.GroupResource{Group: "oauth.openshift.io", Resource: "oauthaccesstokens"}))
+		g.Expect(resources).NotTo(ContainElement(schema.GroupResource{Group: "oauth.openshift.io", Resource: "oauthauthorizetokens"}))
 	})
 
 	t.Run("When encryption is not configured it should return nil", func(t *testing.T) {
