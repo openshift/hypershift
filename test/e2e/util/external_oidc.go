@@ -220,6 +220,47 @@ func (config *ExtOIDCConfig) GetAuthenticationConfig() *configv1.AuthenticationS
 	return authnSpec
 }
 
+// AuthConfigDefault returns nil (no customization - uses feature-gate-driven defaults).
+// When it should use default auth configuration without customization
+func AuthConfigDefault() func(*configv1.AuthenticationSpec) {
+	return nil
+}
+
+// AuthConfigUIDFromClaim customizes auth spec to use claim-based UID instead of expression.
+// When it should customize UID mapping to use claim instead of expression
+func AuthConfigUIDFromClaim() func(*configv1.AuthenticationSpec) {
+	return func(spec *configv1.AuthenticationSpec) {
+		spec.OIDCProviders[0].ClaimMappings.UID = &configv1.TokenClaimOrExpressionMapping{
+			Claim: "sub",
+		}
+	}
+}
+
+// AuthConfigMinimalExtraMappings reduces extra mappings to a single test mapping.
+// When it should customize extra mappings to use minimal configuration
+func AuthConfigMinimalExtraMappings() func(*configv1.AuthenticationSpec) {
+	return func(spec *configv1.AuthenticationSpec) {
+		spec.OIDCProviders[0].ClaimMappings.Extra = []configv1.ExtraMapping{
+			{
+				Key:             "extratest.openshift.com/foo",
+				ValueExpression: "claims.email",
+			},
+		}
+	}
+}
+
+// AuthConfigCombined combines multiple customization functions.
+// When it should combine multiple auth spec customizations
+func AuthConfigCombined(customizers ...func(*configv1.AuthenticationSpec)) func(*configv1.AuthenticationSpec) {
+	return func(spec *configv1.AuthenticationSpec) {
+		for _, customize := range customizers {
+			if customize != nil {
+				customize(spec)
+			}
+		}
+	}
+}
+
 // ValidateAuthenticationSpec validates the external OIDC configuration and the expected HostedCluster authentication configuration before running the test
 func ValidateAuthenticationSpec(t testing.TB, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, config *ExtOIDCConfig) {
 	g := NewWithT(t)
