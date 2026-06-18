@@ -96,12 +96,15 @@ spec:
           TRIGGER_DELAY=60
           RATE_LIMIT_BACKOFF=120
           MAX_RETRIES=3
+          INITIAL_DELAY=2700
+          POLL_STAGGER=30
 
           echo "=== run-e2e: setup ==="
           echo "HO image:  ${HO_IMAGE}"
           echo "Jobs:      ${JOB_NAMES_JSON}"
           echo "Poll interval: ${POLL_INTERVAL}s | Timeout: ${TIMEOUT}s"
           echo "Trigger delay: ${TRIGGER_DELAY}s | Rate limit backoff: ${RATE_LIMIT_BACKOFF}s"
+          echo "Initial delay: ${INITIAL_DELAY}s | Poll stagger: ${POLL_STAGGER}s"
 
           NUM_JOBS=$(echo "${JOB_NAMES_JSON}" | jq -r 'length')
           if [[ "${NUM_JOBS}" -eq 0 ]]; then
@@ -215,9 +218,12 @@ spec:
           done
 
           echo ""
+          echo "=== run-e2e: waiting ${INITIAL_DELAY}s before first poll ==="
+          sleep ${INITIAL_DELAY}
+          ELAPSED=${INITIAL_DELAY}
+
           echo "=== run-e2e: polling all jobs ==="
           POLL_COUNT=0
-          ELAPSED=0
           while [[ ${ELAPSED} -lt ${TIMEOUT} ]]; do
             PENDING=0
             for JOB_NAME in "${!JOB_IDS[@]}"; do
@@ -231,8 +237,14 @@ spec:
             echo ""
             echo "[${TIMESTAMP}] Poll #${POLL_COUNT} (${ELAPSED}s) — ${PENDING} job(s) pending"
 
+            POLL_IDX=0
             for JOB_NAME in "${!JOB_IDS[@]}"; do
               [[ "${JOB_RESULTS[$JOB_NAME]}" != "pending" ]] && continue
+
+              if [[ ${POLL_IDX} -gt 0 ]]; then
+                sleep ${POLL_STAGGER}
+              fi
+              POLL_IDX=$((POLL_IDX + 1))
 
               JOB_ID="${JOB_IDS[$JOB_NAME]}"
               SHORT_NAME=$(echo "${JOB_NAME}" | sed 's/periodic-ci-openshift-hypershift-release-5.0-periodics-//')
