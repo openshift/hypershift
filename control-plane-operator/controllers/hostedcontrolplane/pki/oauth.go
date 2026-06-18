@@ -15,7 +15,7 @@ func ReconcileOAuthServerCert(secret, ca *corev1.Secret, ownerRef config.OwnerRe
 	if oauthIP != nil {
 		ips = append(ips, externalOAuthAddress)
 	} else {
-		dnsNames = append(dnsNames, externalOAuthAddress)
+		dnsNames = append(dnsNames, externalOAuthAddress, "oauth-openshift."+secret.GetNamespace()+".svc.cluster.local")
 	}
 	return reconcileSignedCertWithAddresses(secret, ca, ownerRef, "openshift-oauth", []string{"openshift"}, X509UsageClientServerAuth, dnsNames, ips)
 }
