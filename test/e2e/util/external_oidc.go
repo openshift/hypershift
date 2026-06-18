@@ -27,10 +27,8 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	configv1typedclient "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1"
 
-	kauthnv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	kauthnv1typedclient "k8s.io/client-go/kubernetes/typed/authentication/v1"
 	"k8s.io/client-go/rest"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 
@@ -49,14 +47,6 @@ const (
 	ExternalOIDCExtraKeyBarValueExpression = "extra-test-mark"
 	ExternalOIDCExtraKeyFoo                = "extratest.openshift.com/foo"
 	ExternalOIDCExtraKeyFooValueExpression = "claims.email" // This is a variable, not a string literal
-
-	// CEL expressions for claim validation rules
-	ClaimValidationExprEmailExists   = "has(claims.email) && claims.email != ''"
-	ClaimValidationExprEmailVerified = "claims.email_verified == true"
-
-	// CEL expressions for user validation rules
-	UserValidationExprNoSystemPrefix  = "!user.username.startsWith('system:')"
-	UserValidationExprNoForbiddenWord = "!user.username.contains('forbidden')"
 )
 
 type ExtOIDCConfig struct {
@@ -151,22 +141,22 @@ func (config *ExtOIDCConfig) GetAuthenticationConfig() *configv1.AuthenticationS
 		},
 	}
 
-	// Now that ExternalOIDCWithUIDAndExtraClaimMappings is promoted to default feature set,
-	// we can add to config with no feature gate checks.
-	authnSpec.OIDCProviders[0].ClaimMappings.UID = &configv1.TokenClaimOrExpressionMapping{
-		Expression: fmt.Sprintf(`"%s" + claims.sub + "%s"`, ExternalOIDCUIDExpressionPrefix, ExternalOIDCUIDExpressionSubfix),
-	}
+	if featuregates.Gate().Enabled(featuregates.ExternalOIDCWithUIDAndExtraClaimMappings) {
+		authnSpec.OIDCProviders[0].ClaimMappings.UID = &configv1.TokenClaimOrExpressionMapping{
+			Expression: fmt.Sprintf(`"%s" + claims.sub + "%s"`, ExternalOIDCUIDExpressionPrefix, ExternalOIDCUIDExpressionSubfix),
+		}
 
-	authnSpec.OIDCProviders[0].ClaimMappings.Extra = append(authnSpec.OIDCProviders[0].ClaimMappings.Extra,
-		configv1.ExtraMapping{
-			Key:             ExternalOIDCExtraKeyBar,
-			ValueExpression: fmt.Sprintf(`"%s"`, ExternalOIDCExtraKeyBarValueExpression),
-		},
-		configv1.ExtraMapping{
-			Key:             ExternalOIDCExtraKeyFoo,
-			ValueExpression: ExternalOIDCExtraKeyFooValueExpression,
-		},
-	)
+		authnSpec.OIDCProviders[0].ClaimMappings.Extra = append(authnSpec.OIDCProviders[0].ClaimMappings.Extra,
+			configv1.ExtraMapping{
+				Key:             ExternalOIDCExtraKeyBar,
+				ValueExpression: fmt.Sprintf(`"%s"`, ExternalOIDCExtraKeyBarValueExpression),
+			},
+			configv1.ExtraMapping{
+				Key:             ExternalOIDCExtraKeyFoo,
+				ValueExpression: ExternalOIDCExtraKeyFooValueExpression,
+			},
+		)
+	}
 
 	// Apply custom modifications if provided
 	if config.CustomizeAuthSpec != nil {
@@ -174,101 +164,6 @@ func (config *ExtOIDCConfig) GetAuthenticationConfig() *configv1.AuthenticationS
 	}
 
 	return authnSpec
-}
-
-// AuthConfigWithUpstreamParity applies ExternalOIDCWithUpstreamParity feature gate configuration.
-// This includes:
-//   - CEL expressions for username/groups (no prefixes)
-//   - Claim validation rules (email exists, email_verified)
-//   - User validation rules (no system: prefix, no 'forbidden' word)
-//
-// NOTE: When using AuthConfigCombined(), this should be applied FIRST, then other customizations
-// that override specific fields (e.g., AuthConfigUIDFromClaim(), AuthConfigMinimalExtraMappings()).
-func AuthConfigWithUpstreamParity() func(*configv1.AuthenticationSpec) {
-	return func(spec *configv1.AuthenticationSpec) {
-		// Use CEL expression for username mapping instead of static claim
-		spec.OIDCProviders[0].ClaimMappings.Username = configv1.UsernameClaimMapping{
-			Expression: "claims.email.split('@')[0]",
-		}
-
-		// Use CEL expression for groups mapping instead of static claim
-		spec.OIDCProviders[0].ClaimMappings.Groups = configv1.PrefixedClaimMapping{
-			TokenClaimMapping: configv1.TokenClaimMapping{
-				Expression: "claims.?groups.orValue([])",
-			},
-		}
-
-		// Add claim validation rules
-		spec.OIDCProviders[0].ClaimValidationRules = []configv1.TokenClaimValidationRule{
-			{
-				Type: configv1.TokenValidationRuleTypeCEL,
-				CEL: configv1.TokenClaimValidationCELRule{
-					Expression: ClaimValidationExprEmailExists,
-					Message:    "email claim must be present and non-empty",
-				},
-			},
-			{
-				Type: configv1.TokenValidationRuleTypeCEL,
-				CEL: configv1.TokenClaimValidationCELRule{
-					Expression: ClaimValidationExprEmailVerified,
-					Message:    "email_verified claim must be true",
-				},
-			},
-		}
-
-		// Add user validation rules
-		spec.OIDCProviders[0].UserValidationRules = []configv1.TokenUserValidationRule{
-			{
-				Expression: UserValidationExprNoSystemPrefix,
-				Message:    "username cannot use reserved system: prefix",
-			},
-			{
-				Expression: UserValidationExprNoForbiddenWord,
-				Message:    "username cannot contain the word 'forbidden'",
-			},
-		}
-	}
-}
-
-// AuthConfigDefault returns nil (no customization - uses feature-gate-driven defaults).
-// When it should use default auth configuration without customization
-func AuthConfigDefault() func(*configv1.AuthenticationSpec) {
-	return nil
-}
-
-// AuthConfigUIDFromClaim customizes auth spec to use claim-based UID instead of expression.
-// When it should customize UID mapping to use claim instead of expression
-func AuthConfigUIDFromClaim() func(*configv1.AuthenticationSpec) {
-	return func(spec *configv1.AuthenticationSpec) {
-		spec.OIDCProviders[0].ClaimMappings.UID = &configv1.TokenClaimOrExpressionMapping{
-			Claim: "sub",
-		}
-	}
-}
-
-// AuthConfigMinimalExtraMappings reduces extra mappings to a single test mapping.
-// When it should customize extra mappings to use minimal configuration
-func AuthConfigMinimalExtraMappings() func(*configv1.AuthenticationSpec) {
-	return func(spec *configv1.AuthenticationSpec) {
-		spec.OIDCProviders[0].ClaimMappings.Extra = []configv1.ExtraMapping{
-			{
-				Key:             "extratest.openshift.com/foo",
-				ValueExpression: "claims.email",
-			},
-		}
-	}
-}
-
-// AuthConfigCombined combines multiple customization functions.
-// When it should combine multiple auth spec customizations
-func AuthConfigCombined(customizers ...func(*configv1.AuthenticationSpec)) func(*configv1.AuthenticationSpec) {
-	return func(spec *configv1.AuthenticationSpec) {
-		for _, customize := range customizers {
-			if customize != nil {
-				customize(spec)
-			}
-		}
-	}
 }
 
 // ValidateAuthenticationSpec validates the external OIDC configuration and the expected HostedCluster authentication configuration before running the test
@@ -294,9 +189,6 @@ func ValidateAuthenticationSpec(t testing.TB, ctx context.Context, client crclie
 
 	if featuregates.Gate().Enabled(featuregates.ExternalOIDCWithUIDAndExtraClaimMappings) {
 		g.Expect(actualAuth.OIDCProviders[0].ClaimMappings.Extra).NotTo(BeEmpty())
-	}
-
-	if featuregates.Gate().Enabled(featuregates.ExternalOIDCWithUIDAndExtraClaimMappings) {
 		g.Expect(actualAuth.OIDCProviders[0].ClaimMappings.UID).NotTo(BeNil())
 	}
 
@@ -333,15 +225,6 @@ func IsExternalOIDCCluster(t testing.TB, ctx context.Context, clientCfg *rest.Co
 	}
 	t.Logf("Found authentication type used: %v", authConfig.Spec.Type)
 	return authConfig.Spec.Type == configv1.AuthenticationTypeOIDC, nil
-}
-
-// ChangeClientForKeycloakExtOIDC changes the guest client using a keycloak user config
-func ChangeClientForKeycloakExtOIDC(t testing.TB, ctx context.Context, clientCfg *rest.Config, authConfig *ExtOIDCConfig) crclient.Client {
-	g := NewWithT(t)
-	newConfig := ChangeUserForKeycloakExtOIDC(t, ctx, clientCfg, authConfig)
-	client, err := crclient.New(newConfig, crclient.Options{Scheme: scheme})
-	g.Expect(err).NotTo(HaveOccurred(), "could not create guest client using the new config")
-	return client
 }
 
 // ChangeUserForKeycloakExtOIDC changes the user of current CLI session for a Keycloak external OIDC cluster
@@ -432,15 +315,7 @@ func ChangeUserForKeycloakExtOIDC(t testing.TB, ctx context.Context, clientCfg *
 	err = os.WriteFile(filepath.Join(tokenCacheDir, "oc", tokenCacheFile), []byte(tokenCache), 0600)
 	g.Expect(err).NotTo(HaveOccurred())
 
-	clientConfigForExtOIDCUser := GetClientConfigForKeycloakOIDCUser(clientCfg, authConfig, tokenCacheDir)
-	authClient, err := kauthnv1typedclient.NewForConfig(clientConfigForExtOIDCUser)
-	g.Expect(err).NotTo(HaveOccurred())
-
-	selfSubjectReview, err := authClient.SelfSubjectReviews().Create(ctx, &kauthnv1.SelfSubjectReview{}, metav1.CreateOptions{})
-	g.Expect(err).NotTo(HaveOccurred())
-
-	t.Logf("Detected external OIDC cluster using Keycloak as the provider. The user is now %q", selfSubjectReview.Status.UserInfo.Username)
-	return clientConfigForExtOIDCUser
+	return GetClientConfigForKeycloakOIDCUser(clientCfg, authConfig, tokenCacheDir)
 }
 
 // GetClientConfigForKeycloakOIDCUser gets a client config for an external OIDC cluster
@@ -451,7 +326,7 @@ func GetClientConfigForKeycloakOIDCUser(clientCfg *rest.Config, authConfig *ExtO
 		"--issuer-url=" + authConfig.IssuerURL,
 		"--client-id=" + authConfig.CliClientID,
 		"--extra-scopes=email,profile",
-		"--callback-address=127.0.0.1:0",
+		"--callback-address=127.0.0.1:8080",
 		"--certificate-authority=" + authConfig.IssuerCABundleFile,
 	}
 
