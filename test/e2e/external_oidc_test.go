@@ -4,8 +4,7 @@ package e2e
 
 import (
 	"context"
-	"slices"
-	"strings"
+	"os"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -15,6 +14,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	kauthnv1 "k8s.io/api/authentication/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kauthnv1typedclient "k8s.io/client-go/kubernetes/typed/authentication/v1"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -22,62 +22,50 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/featuregates"
 )
 
-// TestExternalOIDC validates external OIDC authentication across feature gate configurations.
-//
-// Feature Gate Evolution:
-//   - ExternalOIDC: Base OIDC support (graduated to Default)
-//   - ExternalOIDCWithUIDAndExtraClaimMappings: Adds UID expression + Extra mappings (graduated to Default)
-//   - ExternalOIDCWithUpstreamParity: Adds CEL expressions, validation rules (currently TechPreviewNoUpgrade)
-//
-// Test Execution Matrix:
-//
-// 1. Base test execution (lines ~94-155):
-//   - Always runs - tests graduated features (ExternalOIDC + ExternalOIDCWithUIDAndExtraClaimMappings)
-//   - Feature set: Default
-//   - Auth config: Static claim mappings with prefixes + UID expression + Extra mappings
-//   - Tests: Basic OIDC, username/groups with prefixes, UID/Extra
-//   - Artifact dir: "external-oidc"
-//
-// 2. Upstream parity tests (lines ~157-464):
-//   - Only runs when ExternalOIDCWithUpstreamParity enabled
-//   - Feature set: TechPreviewNoUpgrade
-//   - Auth config: CEL expressions (no prefixes) + validation rules + UID/Extra
-//   - Tests: CEL username/groups expressions, claim validation, user validation
-//   - Artifact dir: "ext-oidc-upstream-parity"
-//
-// 3. Custom config tests (lines ~466-end):
-//   - Only runs when ExternalOIDCWithUpstreamParity enabled
-//   - Feature set: TechPreviewNoUpgrade
-//   - Auth config: Upstream parity + custom UID (claim-based) + minimal Extra mappings
-//   - Tests: Validates that customization preserves upstream parity validation rules
-//   - Artifact dir: "ext-oidc-custom-uid"
-//
-// Auth Config by Execution:
-//
-// Execution 1 (Default feature set):
-//
-//	Username: Static claim "email" WITH prefix
-//	Groups:   Static claim "groups" WITH prefix
-//	UID:      Expression ("testuid-" + claims.sub + "-uidtest")
-//	Extra:    2 mappings (bar, foo)
-//
-// Execution 2 (TechPreviewNoUpgrade + AuthConfigWithUpstreamParity):
-//
-//	Username: CEL expression (claims.email.split('@')[0]) - NO prefix
-//	Groups:   CEL expression (claims.?groups.orValue([])) - NO prefix
-//	UID:      Expression ("testuid-" + claims.sub + "-uidtest")
-//	Extra:    2 mappings (bar, foo)
-//	ClaimValidationRules:  email exists, email_verified
-//	UserValidationRules:   no system: prefix, no 'forbidden' word
-//
-// Execution 3 (TechPreviewNoUpgrade + AuthConfigWithUpstreamParity + customizations):
-//
-//	Username: CEL expression (preserved from upstream parity)
-//	Groups:   CEL expression (preserved from upstream parity)
-//	UID:      Claim "sub" (OVERRIDDEN by AuthConfigUIDFromClaim)
-//	Extra:    1 mapping (REPLACED by AuthConfigMinimalExtraMappings)
-//	ClaimValidationRules:  (preserved from upstream parity)
-//	UserValidationRules:   (preserved from upstream parity)
+// createTestUserWithGroupAndCustomUsername creates a Keycloak user with a custom username pattern, group, and password.
+func createTestUserWithGroup(ctx context.Context, kc *e2eutil.KeycloakAdminClient, usernamePrefix string, emailVerified bool) (string, string, string, string, error) {
+	// create group
+	groupName := e2eutil.GenerateRandomPassword(16)
+
+	// create user with custom username
+	username := e2eutil.GenerateRandomPassword(16)
+	if len(usernamePrefix) > 0 {
+		username = usernamePrefix + username
+	}
+	email := username + "@test.example.com"
+
+	password := e2eutil.GenerateRandomPassword(16)
+
+	user := e2eutil.KeycloakUser{
+		Username:      username,
+		Enabled:       true,
+		FirstName:     username,
+		LastName:      "Test",
+		Email:         email,
+		EmailVerified: emailVerified,
+		Groups:        []string{groupName},
+		Credentials: []e2eutil.KeycloakCredential{
+			{
+				Type:      "password",
+				Value:     password,
+				Temporary: false,
+			},
+		},
+	}
+
+	_, err := kc.CreateGroup(ctx, groupName)
+	if err != nil {
+		return "", "", "", "", err
+	}
+
+	_, err = kc.CreateUser(ctx, user)
+	if err != nil {
+		return "", "", "", "", err
+	}
+
+	return username, email, password, groupName, nil
+}
+
 func TestExternalOIDC(t *testing.T) {
 	e2eutil.AtLeast(t, e2eutil.Version419)
 
@@ -94,6 +82,10 @@ func TestExternalOIDC(t *testing.T) {
 	clusterOpts.NodePoolReplicas = 1
 	clusterOpts.FeatureSet = string(configv1.Default)
 
+	if os.Getenv("TECH_PREVIEW_NO_UPGRADE") == "true" {
+		clusterOpts.FeatureSet = string(configv1.TechPreviewNoUpgrade)
+	}
+
 	featuregates.ConfigureFeatureSet(clusterOpts.FeatureSet)
 
 	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
@@ -101,62 +93,155 @@ func TestExternalOIDC(t *testing.T) {
 		g.Expect(hostedCluster.Spec.Configuration.Authentication).NotTo(BeNil())
 		g.Expect(hostedCluster.Spec.Configuration.Authentication.OIDCProviders).NotTo(BeEmpty())
 		clientCfg := e2eutil.WaitForGuestRestConfig(t, ctx, mgtClient, hostedCluster)
-		authKubeConfig := e2eutil.ChangeUserForKeycloakExtOIDC(t, ctx, clientCfg, clusterOpts.ExtOIDCConfig)
-		authClient, err := kauthnv1typedclient.NewForConfig(authKubeConfig)
-		g.Expect(err).NotTo(HaveOccurred())
-		selfSubjectReview, err := authClient.SelfSubjectReviews().Create(ctx, &kauthnv1.SelfSubjectReview{}, metav1.CreateOptions{})
-		g.Expect(err).NotTo(HaveOccurred())
-		t.Logf("selfSubjectReview %+v", selfSubjectReview)
+
+		// Setup Keycloak admin client
+		kc, err := e2eutil.SetupKeycloakAdminClientFromCluster(ctx, t, mgtClient, clusterOpts.ExtOIDCConfig)
+		if err != nil {
+			t.Skipf("Could not setup Keycloak admin client: %v", err)
+		}
 
 		t.Run("[OCPFeatureGate:ExternalOIDC] test keycloak external OIDC", func(t *testing.T) {
 			// No gates exist for ExternalOIDC as it has already been enabled by default.
-			t.Logf("begin to test external OIDC %s", globalOpts.ExternalOIDCProvider)
-			e2eutil.ChangeClientForKeycloakExtOIDC(t, ctx, clientCfg, clusterOpts.ExtOIDCConfig)
-			t.Logf("successfully get oidc user client")
-		})
-
-		// ExternalOIDCWithUIDAndExtraClaimMappings has graduated to Default feature set
-		// Auth config includes: UID expression + Extra claim mappings
-		// Auth config uses: Static claim-based username/groups WITH prefixes (legacy behavior)
-
-		// Legacy prefixed mappings test only runs when ExternalOIDCWithUpstreamParity is NOT enabled
-		// Config: Username/Groups use static claims with prefixes (claim: "email", prefix: "prefix-")
-		// When ExternalOIDCWithUpstreamParity IS enabled, it overwrites with CEL expressions (no prefixes)
-		t.Run("[OCPFeatureGate:ExternalOIDCWithUIDAndExtraClaimMappings] Test external OIDC userInfo username and groups", func(t *testing.T) {
 			g := NewWithT(t)
-			t.Logf("begin to test external OIDC with external OIDC userInfo username")
-			g.Expect(selfSubjectReview.Status.UserInfo.Username).NotTo(BeEmpty())
-			g.Expect(selfSubjectReview.Status.UserInfo.Username).Should(ContainSubstring(clusterOpts.ExtOIDCConfig.UserPrefix))
-
-			t.Logf("begin to test external OIDC userInfo Groups")
-			g.Expect(selfSubjectReview.Status.UserInfo.Groups).NotTo(BeEmpty())
-			g.Expect(selfSubjectReview.Status.UserInfo.Groups).Should(ContainElements(ContainSubstring(clusterOpts.ExtOIDCConfig.GroupPrefix)))
-		})
-
-		// UID and Extra mappings are present in Default feature set
-		// Config: UID expression ("testuid-" + claims.sub + "-uidtest") + 2 Extra mappings
-		t.Run("[OCPFeatureGate:ExternalOIDCWithUIDAndExtraClaimMappings] Test external OIDC userInfo UID and Extra", func(t *testing.T) {
-			g := NewWithT(t)
-			t.Logf("begin to test external OIDC userInfo UID")
-			g.Expect(selfSubjectReview.Status.UserInfo.UID).NotTo(BeEmpty())
-			g.Expect(selfSubjectReview.Status.UserInfo.UID).Should(ContainSubstring(e2eutil.ExternalOIDCUIDExpressionPrefix))
-			g.Expect(selfSubjectReview.Status.UserInfo.UID).Should(ContainSubstring(e2eutil.ExternalOIDCUIDExpressionSubfix))
-
-			t.Logf("begin to test external OIDC userInfo Extra")
-			g.Expect(selfSubjectReview.Status.UserInfo.Extra).NotTo(BeEmpty())
-			g.Expect(selfSubjectReview.Status.UserInfo.Extra).Should(HaveKey(e2eutil.ExternalOIDCExtraKeyBar))
-			g.Expect(selfSubjectReview.Status.UserInfo.Extra).Should(HaveKey(e2eutil.ExternalOIDCExtraKeyFoo))
-		})
-
-		t.Run("[OCPFeatureGate:ExternalOIDCWithUIDAndExtraClaimMappings] Test external OIDC: check co status using oauth client", func(t *testing.T) {
-			g := NewWithT(t)
-			t.Logf("begin to test for checking co status")
-			client, err := configv1client.NewForConfig(authKubeConfig)
+			username, email, password, groupName, err := createTestUserWithGroup(ctx, kc, "", true)
 			g.Expect(err).NotTo(HaveOccurred())
-			_, err = client.ConfigV1().ClusterOperators().Get(ctx, "image-registry", metav1.GetOptions{})
-			g.Expect(err).To(HaveOccurred())
+
+			testAuthConfig := *clusterOpts.ExtOIDCConfig
+			testAuthConfig.TestUsers = username + ":" + password
+			testUserKubeConfig := e2eutil.ChangeUserForKeycloakExtOIDC(t, ctx, clientCfg, &testAuthConfig)
+			testAuthClient, err := kauthnv1typedclient.NewForConfig(testUserKubeConfig)
+			g.Expect(err).NotTo(HaveOccurred())
+
+			selfSubjectReview, err := testAuthClient.SelfSubjectReviews().Create(ctx, &kauthnv1.SelfSubjectReview{}, metav1.CreateOptions{})
+			g.Expect(err).NotTo(HaveOccurred(), "user should be authenticated + able to do SelfSubjectReview")
+			g.Expect(selfSubjectReview.Status.UserInfo.Username).To(Equal(clusterOpts.ExtOIDCConfig.UserPrefix+email), "username should be mapped correctly")
+			g.Expect(selfSubjectReview.Status.UserInfo.Groups).To(HaveLen(2), "user should have groups system:authenticated and IdP group")
+			g.Expect(selfSubjectReview.Status.UserInfo.Groups).To(ContainElements("system:authenticated", clusterOpts.ExtOIDCConfig.GroupPrefix+groupName))
+
+			t.Logf("successfully get oidc user client")
+
 		})
 
+		if featuregates.Gate().Enabled(featuregates.ExternalOIDCWithUIDAndExtraClaimMappings) {
+			// ExternalOIDCWithUIDAndExtraClaimMappings has graduated to Default feature set
+			// Auth config includes: UID expression + Extra claim mappings
+			// Auth config uses: Static claim-based username/groups WITH prefixes (legacy behavior)
+			t.Run("[OCPFeatureGate:ExternalOIDCWithUIDAndExtraClaimMappings] Test external OIDC userInfo username", func(t *testing.T) {
+				g := NewWithT(t)
+				username, email, password, groupName, err := createTestUserWithGroup(ctx, kc, "", true)
+				g.Expect(err).NotTo(HaveOccurred())
+
+				testAuthConfig := *clusterOpts.ExtOIDCConfig
+				testAuthConfig.TestUsers = username + ":" + password
+				testUserKubeConfig := e2eutil.ChangeUserForKeycloakExtOIDC(t, ctx, clientCfg, &testAuthConfig)
+				testAuthClient, err := kauthnv1typedclient.NewForConfig(testUserKubeConfig)
+				g.Expect(err).NotTo(HaveOccurred())
+
+				selfSubjectReview, err := testAuthClient.SelfSubjectReviews().Create(ctx, &kauthnv1.SelfSubjectReview{}, metav1.CreateOptions{})
+				g.Expect(err).NotTo(HaveOccurred(), "user should be authenticated + able to do SelfSubjectReview")
+				g.Expect(selfSubjectReview.Status.UserInfo.Username).To(Equal(clusterOpts.ExtOIDCConfig.UserPrefix+email), "username should be mapped correctly")
+				g.Expect(selfSubjectReview.Status.UserInfo.Groups).To(HaveLen(2), "user should have groups system:authenticated and IdP group")
+				g.Expect(selfSubjectReview.Status.UserInfo.Groups).To(ContainElements("system:authenticated", clusterOpts.ExtOIDCConfig.GroupPrefix+groupName))
+
+				t.Logf("begin to test external OIDC with external OIDC userInfo username")
+				g.Expect(selfSubjectReview.Status.UserInfo.Username).NotTo(BeEmpty())
+				g.Expect(selfSubjectReview.Status.UserInfo.Username).Should(ContainSubstring(clusterOpts.ExtOIDCConfig.UserPrefix))
+			})
+
+			t.Run("[OCPFeatureGate:ExternalOIDCWithUIDAndExtraClaimMappings] Test external OIDC userInfo Groups", func(t *testing.T) {
+				g := NewWithT(t)
+				username, email, password, groupName, err := createTestUserWithGroup(ctx, kc, "", true)
+				g.Expect(err).NotTo(HaveOccurred())
+
+				testAuthConfig := *clusterOpts.ExtOIDCConfig
+				testAuthConfig.TestUsers = username + ":" + password
+				testUserKubeConfig := e2eutil.ChangeUserForKeycloakExtOIDC(t, ctx, clientCfg, &testAuthConfig)
+				testAuthClient, err := kauthnv1typedclient.NewForConfig(testUserKubeConfig)
+				g.Expect(err).NotTo(HaveOccurred())
+
+				selfSubjectReview, err := testAuthClient.SelfSubjectReviews().Create(ctx, &kauthnv1.SelfSubjectReview{}, metav1.CreateOptions{})
+				g.Expect(err).NotTo(HaveOccurred(), "user should be authenticated + able to do SelfSubjectReview")
+				g.Expect(selfSubjectReview.Status.UserInfo.Username).To(Equal(clusterOpts.ExtOIDCConfig.UserPrefix+email), "username should be mapped correctly")
+				g.Expect(selfSubjectReview.Status.UserInfo.Groups).To(HaveLen(2), "user should have groups system:authenticated and IdP group")
+				g.Expect(selfSubjectReview.Status.UserInfo.Groups).To(ContainElements("system:authenticated", clusterOpts.ExtOIDCConfig.GroupPrefix+groupName))
+
+				t.Logf("begin to test external OIDC userInfo Groups")
+				g.Expect(selfSubjectReview.Status.UserInfo.Groups).NotTo(BeEmpty())
+				g.Expect(selfSubjectReview.Status.UserInfo.Groups).Should(ContainElements(ContainSubstring(clusterOpts.ExtOIDCConfig.GroupPrefix)))
+			})
+
+			// UID and Extra mappings are present in Default feature set
+			// Config: UID expression ("testuid-" + claims.sub + "-uidtest") + 2 Extra mappings
+			t.Run("[OCPFeatureGate:ExternalOIDCWithUIDAndExtraClaimMappings] Test external OIDC userInfo UID", func(t *testing.T) {
+				g := NewWithT(t)
+				username, email, password, groupName, err := createTestUserWithGroup(ctx, kc, "", true)
+				g.Expect(err).NotTo(HaveOccurred())
+
+				testAuthConfig := *clusterOpts.ExtOIDCConfig
+				testAuthConfig.TestUsers = username + ":" + password
+				testUserKubeConfig := e2eutil.ChangeUserForKeycloakExtOIDC(t, ctx, clientCfg, &testAuthConfig)
+				testAuthClient, err := kauthnv1typedclient.NewForConfig(testUserKubeConfig)
+				g.Expect(err).NotTo(HaveOccurred())
+
+				selfSubjectReview, err := testAuthClient.SelfSubjectReviews().Create(ctx, &kauthnv1.SelfSubjectReview{}, metav1.CreateOptions{})
+				g.Expect(err).NotTo(HaveOccurred(), "user should be authenticated + able to do SelfSubjectReview")
+				g.Expect(selfSubjectReview.Status.UserInfo.Username).To(Equal(clusterOpts.ExtOIDCConfig.UserPrefix+email), "username should be mapped correctly")
+				g.Expect(selfSubjectReview.Status.UserInfo.Groups).To(HaveLen(2), "user should have groups system:authenticated and IdP group")
+				g.Expect(selfSubjectReview.Status.UserInfo.Groups).To(ContainElements("system:authenticated", clusterOpts.ExtOIDCConfig.GroupPrefix+groupName))
+
+				t.Logf("begin to test external OIDC userInfo UID")
+				g.Expect(selfSubjectReview.Status.UserInfo.UID).NotTo(BeEmpty())
+				g.Expect(selfSubjectReview.Status.UserInfo.UID).Should(ContainSubstring(e2eutil.ExternalOIDCUIDExpressionPrefix))
+				g.Expect(selfSubjectReview.Status.UserInfo.UID).Should(ContainSubstring(e2eutil.ExternalOIDCUIDExpressionSubfix))
+			})
+
+			t.Run("[OCPFeatureGate:ExternalOIDCWithUIDAndExtraClaimMappings] Test external OIDC userInfo Extra", func(t *testing.T) {
+				g := NewWithT(t)
+				username, email, password, groupName, err := createTestUserWithGroup(ctx, kc, "", true)
+				g.Expect(err).NotTo(HaveOccurred())
+
+				testAuthConfig := *clusterOpts.ExtOIDCConfig
+				testAuthConfig.TestUsers = username + ":" + password
+				testUserKubeConfig := e2eutil.ChangeUserForKeycloakExtOIDC(t, ctx, clientCfg, &testAuthConfig)
+				testAuthClient, err := kauthnv1typedclient.NewForConfig(testUserKubeConfig)
+				g.Expect(err).NotTo(HaveOccurred())
+
+				selfSubjectReview, err := testAuthClient.SelfSubjectReviews().Create(ctx, &kauthnv1.SelfSubjectReview{}, metav1.CreateOptions{})
+				g.Expect(err).NotTo(HaveOccurred(), "user should be authenticated + able to do SelfSubjectReview")
+				g.Expect(selfSubjectReview.Status.UserInfo.Username).To(Equal(clusterOpts.ExtOIDCConfig.UserPrefix+email), "username should be mapped correctly")
+				g.Expect(selfSubjectReview.Status.UserInfo.Groups).To(HaveLen(2), "user should have groups system:authenticated and IdP group")
+				g.Expect(selfSubjectReview.Status.UserInfo.Groups).To(ContainElements("system:authenticated", clusterOpts.ExtOIDCConfig.GroupPrefix+groupName))
+
+				t.Logf("begin to test external OIDC userInfo Extra")
+				g.Expect(selfSubjectReview.Status.UserInfo.Extra).NotTo(BeEmpty())
+				g.Expect(selfSubjectReview.Status.UserInfo.Extra).Should(HaveKey(e2eutil.ExternalOIDCExtraKeyBar))
+				g.Expect(selfSubjectReview.Status.UserInfo.Extra).Should(HaveKey(e2eutil.ExternalOIDCExtraKeyFoo))
+			})
+
+			t.Run("[OCPFeatureGate:ExternalOIDCWithUIDAndExtraClaimMappings] Test external OIDC: check co status using oauth client", func(t *testing.T) {
+				g := NewWithT(t)
+				username, email, password, groupName, err := createTestUserWithGroup(ctx, kc, "", true)
+				g.Expect(err).NotTo(HaveOccurred())
+
+				testAuthConfig := *clusterOpts.ExtOIDCConfig
+				testAuthConfig.TestUsers = username + ":" + password
+				testUserKubeConfig := e2eutil.ChangeUserForKeycloakExtOIDC(t, ctx, clientCfg, &testAuthConfig)
+				testAuthClient, err := kauthnv1typedclient.NewForConfig(testUserKubeConfig)
+				g.Expect(err).NotTo(HaveOccurred())
+
+				selfSubjectReview, err := testAuthClient.SelfSubjectReviews().Create(ctx, &kauthnv1.SelfSubjectReview{}, metav1.CreateOptions{})
+				g.Expect(err).NotTo(HaveOccurred(), "user should be authenticated + able to do SelfSubjectReview")
+				g.Expect(selfSubjectReview.Status.UserInfo.Username).To(Equal(clusterOpts.ExtOIDCConfig.UserPrefix+email), "username should be mapped correctly")
+				g.Expect(selfSubjectReview.Status.UserInfo.Groups).To(HaveLen(2), "user should have groups system:authenticated and IdP group")
+				g.Expect(selfSubjectReview.Status.UserInfo.Groups).To(ContainElements("system:authenticated", clusterOpts.ExtOIDCConfig.GroupPrefix+groupName))
+
+				t.Logf("begin to test for checking cluster operator status")
+				client, err := configv1client.NewForConfig(testUserKubeConfig)
+				g.Expect(err).NotTo(HaveOccurred())
+				_, err = client.ConfigV1().ClusterOperators().Get(ctx, "image-registry", metav1.GetOptions{})
+				g.Expect(err).To(HaveOccurred())
+			})
+		}
 	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "external-oidc", globalOpts.ServiceAccountSigningKey)
 
 	// ExternalOIDCWithUpstreamParity tests - Tests CEL expressions and validation rules
@@ -166,7 +251,38 @@ func TestExternalOIDC(t *testing.T) {
 	if featuregates.Gate().Enabled(featuregates.ExternalOIDCWithUpstreamParity) {
 		upstreamParityOpts := clusterOpts
 		upstreamParityOpts.FeatureSet = string(configv1.TechPreviewNoUpgrade)
-		upstreamParityOpts.ExtOIDCConfig.CustomizeAuthSpec = e2eutil.AuthConfigWithUpstreamParity()
+		upstreamParityOpts.ExtOIDCConfig.CustomizeAuthSpec = func(spec *configv1.AuthenticationSpec) {
+			// Use CEL expression for username mapping instead of static claim
+			spec.OIDCProviders[0].ClaimMappings.Username = configv1.UsernameClaimMapping{
+				Expression: "claims.email.split('@')[0]",
+			}
+
+			// Use CEL expression for groups mapping instead of static claim
+			spec.OIDCProviders[0].ClaimMappings.Groups = configv1.PrefixedClaimMapping{
+				TokenClaimMapping: configv1.TokenClaimMapping{
+					Expression: "claims.?groups.orValue([])",
+				},
+			}
+
+			// Add claim validation rules
+			spec.OIDCProviders[0].ClaimValidationRules = []configv1.TokenClaimValidationRule{
+				{
+					Type: configv1.TokenValidationRuleTypeCEL,
+					CEL: configv1.TokenClaimValidationCELRule{
+						Expression: "claims.email_verified == true",
+						Message:    "email_verified claim must be true",
+					},
+				},
+			}
+
+			// Add user validation rules
+			spec.OIDCProviders[0].UserValidationRules = []configv1.TokenUserValidationRule{
+				{
+					Expression: "!user.username.contains('forbidden')",
+					Message:    "username cannot contain the word 'forbidden'",
+				},
+			}
+		}
 
 		featuregates.ConfigureFeatureSet(upstreamParityOpts.FeatureSet)
 
@@ -182,310 +298,57 @@ func TestExternalOIDC(t *testing.T) {
 				t.Skipf("Could not setup Keycloak admin client: %v", err)
 			}
 
-			t.Run("[OCPFeatureGate:ExternalOIDCWithUpstreamParity] Test CEL username expression mapping", func(t *testing.T) {
+			t.Run("[OCPFeatureGate:ExternalOIDCWithUpstreamParity] Token is valid + authn'd, username/groups mapped correctly", func(t *testing.T) {
 				g := NewWithT(t)
-				t.Logf("begin to test CEL username expression mapping")
-
-				// Setup: Create test resources with automatic cleanup
-				testResources, err := e2eutil.NewTestResources(ctx, kc, upstreamParityOpts.ExtOIDCConfig)
-				g.Expect(err).NotTo(HaveOccurred())
-				defer testResources.Cleanup(ctx, t)
-
-				// Setup: Create authenticated test user with group
-				testUser, err := testResources.SetupAuthenticatedUserWithGroup(ctx, t, "cel-test-user", "cel-test-group", clientCfg, upstreamParityOpts.ExtOIDCConfig)
+				username, _, password, groupName, err := createTestUserWithGroup(ctx, kc, "", true)
 				g.Expect(err).NotTo(HaveOccurred())
 
-				// Verify: Username is email prefix (before @)
-				expectedUsername := strings.Split(testUser.Email, "@")[0]
-				g.Expect(testUser.SelfSubjectReview.Status.UserInfo.Username).Should(Equal(expectedUsername),
-					"username should be email prefix from CEL expression: claims.email.split('@')[0]")
-				g.Expect(testUser.SelfSubjectReview.Status.UserInfo.Username).NotTo(ContainSubstring("@"),
-					"username should not contain @ symbol")
-				t.Logf("CEL username expression correctly mapped '%s' to '%s'", testUser.Email, testUser.SelfSubjectReview.Status.UserInfo.Username)
-
-				// Edge case test: preferred_username vs email-derived username mismatch
-				// Tests that CEL expression uses claims.email, not claims.preferred_username
-				t.Logf("Edge case test: Creating user with preferred_username different from email local part")
-				preferredUsername := "cel-preferred-" + e2eutil.GenerateRandomPassword(8)
-				actualEmail := "cel-email-" + e2eutil.GenerateRandomPassword(8) + "@test.example.com"
-				preferredPassword := e2eutil.GenerateRandomPassword(16)
-
-				// In Keycloak, the 'username' field becomes the 'preferred_username' claim
-				// So we create a user where username != email local part
-				_, err = testResources.CreateTestUser(ctx, t, preferredUsername, actualEmail, preferredPassword)
-				g.Expect(err).NotTo(HaveOccurred())
-				t.Logf("Created user: preferred_username='%s', email='%s'", preferredUsername, actualEmail)
-
-				// Authenticate as this user
-				preferredAuthConfig := *upstreamParityOpts.ExtOIDCConfig
-				preferredAuthConfig.TestUsers = preferredUsername + ":" + preferredPassword
-				preferredReview, err := testResources.AuthenticateAndGetSelfSubjectReview(ctx, t, preferredUsername, preferredPassword, clientCfg, &preferredAuthConfig)
+				testAuthConfig := *upstreamParityOpts.ExtOIDCConfig
+				testAuthConfig.TestUsers = username + ":" + password
+				testUserKubeConfig := e2eutil.ChangeUserForKeycloakExtOIDC(t, ctx, clientCfg, &testAuthConfig)
+				testAuthClient, err := kauthnv1typedclient.NewForConfig(testUserKubeConfig)
 				g.Expect(err).NotTo(HaveOccurred())
 
-				// Verify: K8s username should come from email claim, NOT preferred_username claim
-				expectedUsername = strings.Split(actualEmail, "@")[0]
-				g.Expect(preferredReview.Status.UserInfo.Username).Should(Equal(expectedUsername),
-					"username should be derived from email claim via CEL expression, not from preferred_username claim")
-				g.Expect(preferredReview.Status.UserInfo.Username).NotTo(Equal(preferredUsername),
-					"username should NOT equal preferred_username when they differ")
-				t.Logf("✓ CEL expression correctly used email claim over preferred_username: K8s username='%s' (from email='%s'), preferred_username='%s'",
-					preferredReview.Status.UserInfo.Username, actualEmail, preferredUsername)
-
-				// Verify: Groups are mapped without prefix
-				g.Expect(testUser.SelfSubjectReview.Status.UserInfo.Groups).NotTo(BeEmpty(),
-					"user should have groups from Keycloak")
-				hasTestGroup := false
-				for _, group := range testUser.SelfSubjectReview.Status.UserInfo.Groups {
-					if group == testUser.GroupName {
-						hasTestGroup = true
-					}
-					g.Expect(group).NotTo(HavePrefix(upstreamParityOpts.ExtOIDCConfig.GroupPrefix),
-						"groups should not have prefix when using CEL expression")
-				}
-				g.Expect(hasTestGroup).To(BeTrue(), "user should be member of test group: %s", testUser.GroupName)
-				t.Logf("CEL groups expression correctly mapped groups: %v", testUser.SelfSubjectReview.Status.UserInfo.Groups)
+				selfSubjectReview, err := testAuthClient.SelfSubjectReviews().Create(ctx, &kauthnv1.SelfSubjectReview{}, metav1.CreateOptions{})
+				g.Expect(err).NotTo(HaveOccurred(), "user should be authenticated + able to do SelfSubjectReview")
+				g.Expect(selfSubjectReview.Status.UserInfo.Username).To(Equal(username), "username should be mapped correctly")
+				g.Expect(selfSubjectReview.Status.UserInfo.Groups).To(HaveLen(2), "user should have groups system:authenticated and IdP group")
+				g.Expect(selfSubjectReview.Status.UserInfo.Groups).To(ContainElements("system:authenticated", groupName))
 			})
 
-			t.Run("[OCPFeatureGate:ExternalOIDCWithUpstreamParity] Test CEL groups expression mapping", func(t *testing.T) {
+			t.Run("[OCPFeatureGate:ExternalOIDCWithUpstreamParity] Token is valid, user not authn'd, claim validations not passed", func(t *testing.T) {
 				g := NewWithT(t)
-				t.Logf("begin to test CEL groups expression mapping")
+				username, _, password, _, err := createTestUserWithGroup(ctx, kc, "", false)
 
-				// Setup: Create test resources with automatic cleanup
-				testResources, err := e2eutil.NewTestResources(ctx, kc, upstreamParityOpts.ExtOIDCConfig)
-				g.Expect(err).NotTo(HaveOccurred())
-				defer testResources.Cleanup(ctx, t)
-
-				// Verify: Groups expression is configured
-				g.Expect(hostedCluster.Spec.Configuration.Authentication.OIDCProviders[0].ClaimMappings.Groups.Expression).NotTo(BeEmpty())
-				t.Logf("CEL groups expression configured: %s", hostedCluster.Spec.Configuration.Authentication.OIDCProviders[0].ClaimMappings.Groups.Expression)
-
-				// Setup: Create authenticated test user with group
-				testUser, err := testResources.SetupAuthenticatedUserWithGroup(ctx, t, "cel-groups-test-user", "cel-groups-test-group", clientCfg, upstreamParityOpts.ExtOIDCConfig)
+				testAuthConfig := *upstreamParityOpts.ExtOIDCConfig
+				testAuthConfig.TestUsers = username + ":" + password
+				testUserKubeConfig := e2eutil.ChangeUserForKeycloakExtOIDC(t, ctx, clientCfg, &testAuthConfig)
+				testAuthClient, err := kauthnv1typedclient.NewForConfig(testUserKubeConfig)
 				g.Expect(err).NotTo(HaveOccurred())
 
-				// Verify: User has groups from Keycloak
-				g.Expect(testUser.SelfSubjectReview.Status.UserInfo.Groups).NotTo(BeEmpty(),
-					"user should have groups from Keycloak")
+				_, err = testAuthClient.SelfSubjectReviews().Create(ctx, &kauthnv1.SelfSubjectReview{}, metav1.CreateOptions{})
 
-				// Verify: Groups are mapped without prefix (CEL expression removes prefix)
-				for _, group := range testUser.SelfSubjectReview.Status.UserInfo.Groups {
-					g.Expect(group).NotTo(HavePrefix(upstreamParityOpts.ExtOIDCConfig.GroupPrefix),
-						"groups should not have prefix when using CEL expression")
-				}
-
-				// Verify: User is member of the test group
-				hasTestGroup := slices.Contains(testUser.SelfSubjectReview.Status.UserInfo.Groups, testUser.GroupName)
-				g.Expect(hasTestGroup).To(BeTrue(), "user should be member of test group: %s", testUser.GroupName)
-				t.Logf("CEL groups expression successfully mapped groups without prefix: %v", testUser.SelfSubjectReview.Status.UserInfo.Groups)
-
-				// Negative test: User without groups should still authenticate
-				// The CEL expression claims.?groups.orValue([]) handles missing groups claim gracefully
-				t.Logf("Negative test: Creating user without group membership")
-				noGroupUsername := "cel-no-groups-" + e2eutil.GenerateRandomPassword(8)
-				noGroupEmail := noGroupUsername + "@test.example.com"
-				noGroupPassword := e2eutil.GenerateRandomPassword(16)
-				_, err = testResources.CreateTestUser(ctx, t, noGroupUsername, noGroupEmail, noGroupPassword)
-				g.Expect(err).NotTo(HaveOccurred())
-
-				// Authenticate user without groups - should SUCCEED with empty groups
-				noGroupReview, err := testResources.AuthenticateAndGetSelfSubjectReview(ctx, t, noGroupUsername, noGroupPassword, clientCfg, upstreamParityOpts.ExtOIDCConfig)
-				g.Expect(err).NotTo(HaveOccurred(), "authentication should succeed even when user has no groups")
-				t.Logf("✓ User without groups authenticated successfully with groups: %v", noGroupReview.Status.UserInfo.Groups)
+				g.Expect(err).To(HaveOccurred(), "user should not be authenticated + able to do SelfSubjectReview")
+				g.Expect(apierrors.IsUnauthorized(err)).To(BeTrue(), "should receive an unauthorized error when trying to create SelfSubjectReview")
 			})
 
-			t.Run("[OCPFeatureGate:ExternalOIDCWithUpstreamParity] Test claim validation rules", func(t *testing.T) {
+			t.Run("[OCPFeatureGate:ExternalOIDCWithUpstreamParity] Token is valid, user not authn'd, user validations not passed", func(t *testing.T) {
 				g := NewWithT(t)
-				t.Logf("begin to test claim validation rules")
-
-				// Setup: Create test resources with automatic cleanup
-				testResources, err := e2eutil.NewTestResources(ctx, kc, upstreamParityOpts.ExtOIDCConfig)
+				username, _, password, _, err := createTestUserWithGroup(ctx, kc, "cel-test-user-forbidden", true)
 				g.Expect(err).NotTo(HaveOccurred())
-				defer testResources.Cleanup(ctx, t)
 
-				// Verify: Claim validation rules are configured
-				g.Expect(hostedCluster.Spec.Configuration.Authentication.OIDCProviders[0].ClaimValidationRules).NotTo(BeEmpty())
-				claimRules := hostedCluster.Spec.Configuration.Authentication.OIDCProviders[0].ClaimValidationRules
-				g.Expect(claimRules).Should(HaveLen(2))
-
-				// Verify: Rules are CEL type with expected expressions
-				g.Expect(claimRules[0].Type).Should(BeEquivalentTo("CEL"))
-				g.Expect(claimRules[0].CEL.Expression).Should(BeEquivalentTo(e2eutil.ClaimValidationExprEmailExists))
-				g.Expect(claimRules[1].Type).Should(BeEquivalentTo("CEL"))
-				g.Expect(claimRules[1].CEL.Expression).Should(BeEquivalentTo(e2eutil.ClaimValidationExprEmailVerified))
-
-				// Test 1: Valid user - email exists and email_verified=true
-				// Should PASS validation and authenticate successfully
-				t.Logf("Test 1: Creating user with valid claims (email exists, email_verified=true)")
-				validUser, err := testResources.SetupAuthenticatedUserWithGroup(ctx, t, "claim-valid-user", "claim-valid-group", clientCfg, upstreamParityOpts.ExtOIDCConfig)
-				g.Expect(err).NotTo(HaveOccurred(), "authentication must succeed when all claim validation rules pass")
-				g.Expect(validUser.Email).NotTo(BeEmpty(), "test user email must be non-empty")
-				t.Logf("✓ User with email='%s' and email_verified=true authenticated successfully", validUser.Email)
-
-				// Test 2: Invalid user - email_verified=false
-				// Demonstrates rule 2 requirement: claims.email_verified == true
-				t.Logf("Test 2: Creating user with email_verified=false (violates rule 2)")
-				invalidUsername := "claim-invalid-user-" + e2eutil.GenerateRandomPassword(8)
-				invalidEmail := invalidUsername + "@test.example.com"
-				invalidPassword := e2eutil.GenerateRandomPassword(16)
-				invalidUserID, err := testResources.CreateTestUserWithEmailVerification(ctx, t, invalidUsername, invalidEmail, invalidPassword, false)
-				g.Expect(err).NotTo(HaveOccurred(), "creating user in Keycloak should succeed")
-				g.Expect(invalidEmail).NotTo(BeEmpty(), "test user has non-empty email but email_verified=false")
-				t.Logf("✓ Created user '%s' with email='%s' and email_verified=false (ID: %s)", invalidUsername, invalidEmail, invalidUserID)
-
-				// Attempt to authenticate - should FAIL due to claim validation rule 2
-				err = testResources.TryAuthenticateUser(ctx, t, invalidUsername, invalidPassword, clientCfg, upstreamParityOpts.ExtOIDCConfig)
-				g.Expect(err).To(HaveOccurred(), "authentication must fail when email_verified=false")
-				t.Logf("✓ User with email_verified=false correctly rejected: %v", err)
-
-				// Test 3: Invalid - empty email (violates rule 1)
-				// Demonstrates rule 1 requirement: has(claims.email) && claims.email != ''
-				t.Logf("Test 3: Creating user with empty email (violates rule 1)")
-				emptyEmailUsername := "claim-empty-email-" + e2eutil.GenerateRandomPassword(8)
-				emptyEmailPassword := e2eutil.GenerateRandomPassword(16)
-				emptyEmailUserID, err := testResources.CreateTestUserWithEmailVerification(ctx, t, emptyEmailUsername, "", emptyEmailPassword, true)
-				g.Expect(err).NotTo(HaveOccurred(), "creating user in Keycloak should succeed")
-				t.Logf("✓ Created user '%s' with email='' and email_verified=true (ID: %s)", emptyEmailUsername, emptyEmailUserID)
-
-				// Attempt to authenticate - should FAIL due to claim validation rule 1
-				err = testResources.TryAuthenticateUser(ctx, t, emptyEmailUsername, emptyEmailPassword, clientCfg, upstreamParityOpts.ExtOIDCConfig)
-				g.Expect(err).To(HaveOccurred(), "authentication must fail when email is empty")
-				g.Expect(err.Error()).Should(ContainSubstring("Unauthorized"),
-					"empty email user cannot authenticate as it violates user validation rule")
-				t.Logf("✓ User with empty email correctly rejected: %v", err)
-
-				t.Logf("Claim validation rules successfully validated: only users with non-empty email and email_verified=true can authenticate")
-			})
-
-			t.Run("[OCPFeatureGate:ExternalOIDCWithUpstreamParity] Test user validation rules", func(t *testing.T) {
-				g := NewWithT(t)
-				t.Logf("begin to test user validation rules")
-
-				// Setup: Create test resources with automatic cleanup
-				testResources, err := e2eutil.NewTestResources(ctx, kc, upstreamParityOpts.ExtOIDCConfig)
+				testAuthConfig := *upstreamParityOpts.ExtOIDCConfig
+				testAuthConfig.TestUsers = username + ":" + password
+				testUserKubeConfig := e2eutil.ChangeUserForKeycloakExtOIDC(t, ctx, clientCfg, &testAuthConfig)
+				testAuthClient, err := kauthnv1typedclient.NewForConfig(testUserKubeConfig)
 				g.Expect(err).NotTo(HaveOccurred())
-				defer testResources.Cleanup(ctx, t)
 
-				// Verify: User validation rules are configured
-				g.Expect(hostedCluster.Spec.Configuration.Authentication.OIDCProviders[0].UserValidationRules).NotTo(BeEmpty())
-				userRules := hostedCluster.Spec.Configuration.Authentication.OIDCProviders[0].UserValidationRules
-				g.Expect(userRules).Should(HaveLen(2), "should have two user validation rules")
+				_, err = testAuthClient.SelfSubjectReviews().Create(ctx, &kauthnv1.SelfSubjectReview{}, metav1.CreateOptions{})
 
-				// Verify: Rules use expected CEL expressions
-				expressions := []string{userRules[0].Expression, userRules[1].Expression}
-				g.Expect(expressions).Should(ContainElement(e2eutil.UserValidationExprNoSystemPrefix))
-				g.Expect(expressions).Should(ContainElement(e2eutil.UserValidationExprNoForbiddenWord))
-				t.Logf("User validation rules configured: %v", expressions)
-
-				// Test 1: Valid user - passes all validation rules
-				// Should PASS validation and authenticate successfully
-				t.Logf("Test 1: Creating user with valid username (no system: prefix, no 'forbidden' word)")
-				validUser, err := testResources.SetupAuthenticatedUserWithGroup(ctx, t, "user-valid", "user-valid-group", clientCfg, upstreamParityOpts.ExtOIDCConfig)
-				g.Expect(err).NotTo(HaveOccurred(), "authentication must succeed when all validation rules pass")
-
-				// Username is derived from email via CEL: claims.email.split('@')[0]
-				expectedUsername := strings.Split(validUser.Email, "@")[0]
-				g.Expect(validUser.SelfSubjectReview.Status.UserInfo.Username).Should(Equal(expectedUsername))
-				g.Expect(validUser.SelfSubjectReview.Status.UserInfo.Username).NotTo(HavePrefix("system:"))
-				g.Expect(validUser.SelfSubjectReview.Status.UserInfo.Username).NotTo(ContainSubstring("forbidden"))
-				t.Logf("✓ User with username='%s' authenticated successfully", validUser.SelfSubjectReview.Status.UserInfo.Username)
-
-				// Test 2: Invalid user - username contains "forbidden"
-				// Demonstrates the testable user validation rule: !user.username.contains('forbidden')
-				t.Logf("Test 2: Creating user with 'forbidden' in username (violates user validation rule)")
-				forbiddenUsername := "user-forbidden-" + e2eutil.GenerateRandomPassword(8)
-				forbiddenEmail := forbiddenUsername + "@test.example.com"
-				forbiddenPassword := e2eutil.GenerateRandomPassword(16)
-				forbiddenUserID, err := testResources.CreateTestUser(ctx, t, forbiddenUsername, forbiddenEmail, forbiddenPassword)
-				g.Expect(err).NotTo(HaveOccurred(), "creating user in Keycloak should succeed")
-				t.Logf("Created user with email='%s', mapped username will be '%s' (ID: %s)", forbiddenEmail, forbiddenUsername, forbiddenUserID)
-
-				// Try to authenticate - should FAIL due to user validation rule
-				err = testResources.TryAuthenticateUser(ctx, t, forbiddenUsername, forbiddenPassword, clientCfg, upstreamParityOpts.ExtOIDCConfig)
-				g.Expect(err).To(HaveOccurred(), "authentication must fail when username contains 'forbidden'")
-				g.Expect(err.Error()).Should(ContainSubstring("Unauthorized"),
-					"forbidden user cannot authenticate as it violates user validation rule")
-				t.Logf("✓ User with 'forbidden' in username correctly rejected with error: %v", err)
-
-				// NOTE: We cannot test the negative case for the system: prefix rule via Keycloak
-				// because RFC 5322 email addresses do not allow colons in the local part.
-				// Since username = claims.email.split('@')[0], we would need an email like
-				// "system:admin@test.example.com", which is invalid per email standards.
-				// The system: prefix rule should be tested via unit tests or envtest where claims can be mocked.
-
-				t.Logf("User validation rules successfully validated: users with 'forbidden' in username are rejected")
+				g.Expect(err).To(HaveOccurred(), "user should not be authenticated + able to do SelfSubjectReview")
+				g.Expect(apierrors.IsUnauthorized(err)).To(BeTrue(), "should receive an unauthorized error when trying to create SelfSubjectReview")
 			})
 		}).Execute(&upstreamParityOpts, globalOpts.Platform, globalOpts.ArtifactDir, "ext-oidc-upstream-parity", globalOpts.ServiceAccountSigningKey)
-
-		// Custom config test - Tests configuration customization via CustomizeAuthSpec
-		// Demonstrates that CustomizeAuthSpec can override specific fields while keeping others
-		// Base config from AuthConfigWithUpstreamParity includes:
-		//   - CEL username/groups expressions
-		//   - Claim validation rules
-		//   - User validation rules
-		// CustomizeAuthSpec OVERRIDES:
-		//   - UID: Changes from expression to claim-based (Claim: "sub")
-		//   - Extra: Reduces from 2 mappings to 1 mapping
-		// CustomizeAuthSpec PRESERVES (does not touch):
-		//   - Username/Groups CEL expressions
-		//   - Claim validation rules
-		//   - User validation rules
-		customClusterOpts := clusterOpts
-		customClusterOpts.FeatureSet = string(configv1.TechPreviewNoUpgrade)
-		customClusterOpts.ExtOIDCConfig.CustomizeAuthSpec = e2eutil.AuthConfigCombined(
-			e2eutil.AuthConfigWithUpstreamParity(),
-			e2eutil.AuthConfigUIDFromClaim(),
-			e2eutil.AuthConfigMinimalExtraMappings(),
-		)
-
-		featuregates.ConfigureFeatureSet(customClusterOpts.FeatureSet)
-
-		e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
-			g.Expect(hostedCluster.Spec.Configuration).NotTo(BeNil())
-			g.Expect(hostedCluster.Spec.Configuration.Authentication).NotTo(BeNil())
-			g.Expect(hostedCluster.Spec.Configuration.Authentication.OIDCProviders).NotTo(BeEmpty())
-			clientCfg := e2eutil.WaitForGuestRestConfig(t, ctx, mgtClient, hostedCluster)
-
-			// Setup Keycloak admin client
-			kc, err := e2eutil.SetupKeycloakAdminClientFromCluster(ctx, t, mgtClient, customClusterOpts.ExtOIDCConfig)
-			if err != nil {
-				t.Skipf("Could not setup Keycloak admin client: %v", err)
-			}
-
-			t.Run("[OCPFeatureGate:ExternalOIDCWithUpstreamParity] Test user validation rules (custom UID config)", func(t *testing.T) {
-				// This test works because validation rules are preserved from upstream parity config
-				// Only UID and Extra mappings were customized
-				g := NewWithT(t)
-				t.Logf("begin to test user validation rules with custom UID config")
-
-				// Setup: Create test resources with automatic cleanup
-				testResources, err := e2eutil.NewTestResources(ctx, kc, customClusterOpts.ExtOIDCConfig)
-				g.Expect(err).NotTo(HaveOccurred())
-				defer testResources.Cleanup(ctx, t)
-
-				// Verify: User validation rules are configured (preserved from upstream parity)
-				g.Expect(hostedCluster.Spec.Configuration.Authentication.OIDCProviders[0].UserValidationRules).NotTo(BeEmpty())
-				userRules := hostedCluster.Spec.Configuration.Authentication.OIDCProviders[0].UserValidationRules
-				g.Expect(userRules).Should(HaveLen(2), "should have two user validation rules")
-
-				// Verify: Rules use expected CEL expressions
-				expressions := []string{userRules[0].Expression, userRules[1].Expression}
-				g.Expect(expressions).Should(ContainElement(e2eutil.UserValidationExprNoSystemPrefix))
-				g.Expect(expressions).Should(ContainElement(e2eutil.UserValidationExprNoForbiddenWord))
-				t.Logf("User validation rules configured: %v", expressions)
-
-				// Test: Valid user - passes all validation rules
-				t.Logf("Creating user with valid username (no system: prefix, no 'forbidden' word)")
-				validUser, err := testResources.SetupAuthenticatedUserWithGroup(ctx, t, "custom-user-valid", "custom-user-valid-group", clientCfg, customClusterOpts.ExtOIDCConfig)
-				g.Expect(err).NotTo(HaveOccurred(), "authentication must succeed when all validation rules pass")
-
-				// Username is derived from email via CEL: claims.email.split('@')[0]
-				expectedUsername := strings.Split(validUser.Email, "@")[0]
-				g.Expect(validUser.SelfSubjectReview.Status.UserInfo.Username).Should(Equal(expectedUsername))
-				g.Expect(validUser.SelfSubjectReview.Status.UserInfo.Username).NotTo(HavePrefix("system:"))
-				g.Expect(validUser.SelfSubjectReview.Status.UserInfo.Username).NotTo(ContainSubstring("forbidden"))
-				t.Logf("✓ User with username='%s' authenticated successfully with custom UID config", validUser.SelfSubjectReview.Status.UserInfo.Username)
-			})
-		}).Execute(&customClusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "ext-oidc-custom-uid", globalOpts.ServiceAccountSigningKey)
 	}
 
 }
