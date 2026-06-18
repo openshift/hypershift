@@ -8,4 +8,11 @@ spec:
     tasks: "5h30m0s"
     finally: "30m0s"
   pipelineRef:
-    name: ho-release-gate
+    resolver: git
+    params:
+      - name: url
+        value: https://github.com/Nirshal/hypershift
+      - name: revision
+        value: ho-release-gate-pipeline
+      - name: pathInRepo
+        value: .tekton/pipelines/ho-release-gate.yaml
