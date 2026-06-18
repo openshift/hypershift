@@ -486,7 +486,7 @@ spec:
                   "type": "section",
                   "fields": [
                     {"type": "mrkdwn", "text": "*Snapshot:*\n${SNAPSHOT}"},
-                    {"type": "mrkdwn", "text": "*PipelineRun:*\n${PIPELINE_RUN}"}
+                    {"type": "mrkdwn", "text": "*PipelineRun:*\n<https://konflux-ui.apps.stone-prd-rh01.pg1f.p1.openshiftapps.com/ns/crt-redhat-acm-tenant/applications/hypershift-operator/pipelineruns/${PIPELINE_RUN}/|${PIPELINE_RUN}>"}
                   ]
                 },
                 {"type": "divider"},
