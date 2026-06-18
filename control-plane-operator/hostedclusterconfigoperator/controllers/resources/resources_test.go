@@ -3226,7 +3226,7 @@ func TestReconcileMetricsForwarder(t *testing.T) {
 			expectCleanup:   true,
 		},
 		{
-			name: "When metrics forwarding mode is Disabled, it should delete existing resources",
+			name: "When metrics forwarding mode is None, it should delete existing resources",
 			monitoring: hyperv1.MonitoringSpec{
 				MetricsForwarding: hyperv1.MetricsForwardingSpec{
 					Mode: hyperv1.MetricsForwardingModeNone,
@@ -3240,6 +3240,21 @@ func TestReconcileMetricsForwarder(t *testing.T) {
 			},
 			expectCleanup: true,
 		},
+		{
+			name: "When metrics forwarding mode is Forward, it should not delete resources",
+			monitoring: hyperv1.MonitoringSpec{
+				MetricsForwarding: hyperv1.MetricsForwardingSpec{
+					Mode: hyperv1.MetricsForwardingModeForward,
+				},
+			},
+			existingObjects: []client.Object{
+				manifests.MetricsForwarderDeployment(),
+				manifests.MetricsForwarderConfigMap(),
+				manifests.MetricsForwarderServingCA(),
+				manifests.MetricsForwarderPodMonitor(),
+			},
+			expectCleanup: false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -3247,8 +3262,11 @@ func TestReconcileMetricsForwarder(t *testing.T) {
 			g := NewGomegaWithT(t)
 
 			guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tt.existingObjects...).Build()
+			cpClient := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
 			r := &reconciler{
 				client:                 guestClient,
+				cpClient:               cpClient,
+				hcpNamespace:           "test-ns",
 				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
 			}
 
@@ -3278,6 +3296,18 @@ func TestReconcileMetricsForwarder(t *testing.T) {
 
 				podMonitor := manifests.MetricsForwarderPodMonitor()
 				g.Expect(apierrors.IsNotFound(guestClient.Get(t.Context(), client.ObjectKeyFromObject(podMonitor), podMonitor))).To(BeTrue(), "pod monitor should be deleted")
+			} else {
+				deployment := manifests.MetricsForwarderDeployment()
+				g.Expect(guestClient.Get(t.Context(), client.ObjectKeyFromObject(deployment), deployment)).To(Succeed(), "deployment should be preserved")
+
+				cm := manifests.MetricsForwarderConfigMap()
+				g.Expect(guestClient.Get(t.Context(), client.ObjectKeyFromObject(cm), cm)).To(Succeed(), "configmap should be preserved")
+
+				servingCA := manifests.MetricsForwarderServingCA()
+				g.Expect(guestClient.Get(t.Context(), client.ObjectKeyFromObject(servingCA), servingCA)).To(Succeed(), "serving CA should be preserved")
+
+				podMonitor := manifests.MetricsForwarderPodMonitor()
+				g.Expect(guestClient.Get(t.Context(), client.ObjectKeyFromObject(podMonitor), podMonitor)).To(Succeed(), "pod monitor should be preserved")
 			}
 		})
 	}

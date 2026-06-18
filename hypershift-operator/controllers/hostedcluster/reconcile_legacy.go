@@ -1676,6 +1676,8 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 			return ctrl.Result{}, fmt.Errorf("failed to parse SecurityContext UID: %w", err)
 		}
 	}
+
+	metricsSet := r.effectiveMetricsSet(hcluster.Spec.Monitoring)
 	cpContext := controlplanecomponent.ControlPlaneContext{
 		Context:                   ctx,
 		Client:                    r.Client,
@@ -1684,7 +1686,7 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 		SetDefaultSecurityContext: r.SetDefaultSecurityContext,
 		DefaultSecurityContextUID: securityContextUID,
 		EnableCIDebugOutput:       r.EnableCIDebugOutput,
-		MetricsSet:                r.MetricsSet,
+		MetricsSet:                metricsSet,
 		ReleaseImageProvider:      imageProvider,
 		OmitOwnerReference:        true,
 	}

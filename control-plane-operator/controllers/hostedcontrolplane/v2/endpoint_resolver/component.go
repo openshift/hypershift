@@ -43,6 +43,7 @@ func NewComponent() component.ControlPlaneComponent {
 		Build()
 }
 
+// Predicate returns true when metrics forwarding components should be deployed.
 func Predicate(cpContext component.WorkloadContext) (bool, error) {
 	_, disableMonitoring := cpContext.HCP.Annotations[hyperv1.DisableMonitoringServices]
 	return !disableMonitoring && cpContext.HCP.Spec.Monitoring.MetricsForwarding.Mode == hyperv1.MetricsForwardingModeForward, nil
