@@ -89,36 +89,7 @@ func ReconcileNetworkOperator(network *operatorv1.Network, networkType hyperv1.N
 		if network.Spec.DefaultNetwork.OVNKubernetesConfig == nil {
 			network.Spec.DefaultNetwork.OVNKubernetesConfig = &operatorv1.OVNKubernetesConfig{}
 		}
-		ovnCfg := network.Spec.DefaultNetwork.OVNKubernetesConfig
-		// Apply IPv4 configuration
-		if ovnConfig.IPv4 != nil {
-			if ovnCfg.IPv4 == nil {
-				ovnCfg.IPv4 = &operatorv1.IPv4OVNKubernetesConfig{}
-			}
-			if ovnConfig.IPv4.InternalJoinSubnet != "" {
-				ovnCfg.IPv4.InternalJoinSubnet = ovnConfig.IPv4.InternalJoinSubnet
-			}
-			if ovnConfig.IPv4.InternalTransitSwitchSubnet != "" {
-				ovnCfg.IPv4.InternalTransitSwitchSubnet = ovnConfig.IPv4.InternalTransitSwitchSubnet
-			}
-		}
-		// Apply IPv6 configuration
-		if ovnConfig.IPv6.InternalJoinSubnet != "" {
-			if ovnCfg.IPv6 == nil {
-				ovnCfg.IPv6 = &operatorv1.IPv6OVNKubernetesConfig{}
-			}
-			ovnCfg.IPv6.InternalJoinSubnet = ovnConfig.IPv6.InternalJoinSubnet
-		}
-		if ovnConfig.IPv6.InternalTransitSwitchSubnet != "" {
-			if ovnCfg.IPv6 == nil {
-				ovnCfg.IPv6 = &operatorv1.IPv6OVNKubernetesConfig{}
-			}
-			ovnCfg.IPv6.InternalTransitSwitchSubnet = ovnConfig.IPv6.InternalTransitSwitchSubnet
-		}
-		// Apply MTU configuration
-		if ovnConfig.MTU > 0 {
-			ovnCfg.MTU = ptr.To(uint32(ovnConfig.MTU))
-		}
+		applyOVNConfig(network.Spec.DefaultNetwork.OVNKubernetesConfig, ovnConfig)
 	}
 
 	// Setting the management state is required in order to create
@@ -132,6 +103,48 @@ func ReconcileNetworkOperator(network *operatorv1.Network, networkType hyperv1.N
 	// Set disableMultiNetwork to disable Multus CNI and related components
 	if disableMultiNetwork {
 		network.Spec.DisableMultiNetwork = &disableMultiNetwork
+	}
+}
+
+// applyOVNConfig applies user-specified OVN configuration to the network operator config.
+// User-specified values take precedence over platform defaults (e.g., KubeVirt's 100.66.0.0/16).
+func applyOVNConfig(ovnCfg *operatorv1.OVNKubernetesConfig, ovnConfig *hyperv1.OVNKubernetesConfig) {
+	// Apply IPv4 configuration
+	if ovnConfig.IPv4 != nil {
+		if ovnCfg.IPv4 == nil {
+			ovnCfg.IPv4 = &operatorv1.IPv4OVNKubernetesConfig{}
+		}
+		if ovnConfig.IPv4.InternalJoinSubnet != "" {
+			ovnCfg.IPv4.InternalJoinSubnet = ovnConfig.IPv4.InternalJoinSubnet
+		}
+		if ovnConfig.IPv4.InternalTransitSwitchSubnet != "" {
+			ovnCfg.IPv4.InternalTransitSwitchSubnet = ovnConfig.IPv4.InternalTransitSwitchSubnet
+		}
+	}
+	// Apply IPv6 configuration
+	if ovnConfig.IPv6.InternalJoinSubnet != "" {
+		if ovnCfg.IPv6 == nil {
+			ovnCfg.IPv6 = &operatorv1.IPv6OVNKubernetesConfig{}
+		}
+		ovnCfg.IPv6.InternalJoinSubnet = ovnConfig.IPv6.InternalJoinSubnet
+	}
+	if ovnConfig.IPv6.InternalTransitSwitchSubnet != "" {
+		if ovnCfg.IPv6 == nil {
+			ovnCfg.IPv6 = &operatorv1.IPv6OVNKubernetesConfig{}
+		}
+		ovnCfg.IPv6.InternalTransitSwitchSubnet = ovnConfig.IPv6.InternalTransitSwitchSubnet
+	}
+	// Apply MTU configuration
+	if ovnConfig.MTU > 0 {
+		ovnCfg.MTU = ptr.To(uint32(ovnConfig.MTU))
+	}
+	// Apply V4InternalSubnet configuration.
+	if ovnConfig.V4InternalSubnet != "" {
+		ovnCfg.V4InternalSubnet = ovnConfig.V4InternalSubnet
+	}
+	// Apply V6InternalSubnet configuration.
+	if ovnConfig.V6InternalSubnet != "" {
+		ovnCfg.V6InternalSubnet = ovnConfig.V6InternalSubnet
 	}
 }
 
