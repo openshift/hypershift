@@ -92,4 +92,4 @@ jobs:
           claude plugin marketplace add enxebre/ai-scripts
           claude plugin install git@enxebre
           claude --version
-          claude -p "Rebase this branch onto the latest main and force push. Steps: 1) git fetch origin main 2) git rebase origin/main 3) If there are conflicts, resolve them while preserving the intent of the PR changes 4) git push --force-with-lease. Report what was done." --model claude-opus-4-6 --max-turns 50 --allowedTools "Bash Read Write Edit Grep Glob"
+          claude -p "Rebase this branch onto the latest main and force push. You are running in CI. Force push with --force-with-lease when done without asking for confirmation. Steps: 1) git fetch origin main 2) git rebase origin/main 3) If there are conflicts, resolve them while preserving the intent of the PR changes 4) git push --force-with-lease. Report what was done." --model claude-opus-4-6 --max-turns 50 --allowedTools "Bash Read Write Edit Grep Glob"
