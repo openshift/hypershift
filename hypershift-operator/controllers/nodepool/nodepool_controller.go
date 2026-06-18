@@ -797,44 +797,63 @@ func defaultNodePoolGCPImage(specifiedArch string, releaseImage *releaseinfo.Rel
 // MachineDeploymentComplete considers a MachineDeployment to be complete once all of its desired replicas
 // are updated and available, and no old machines are running.
 //
-// In CAPI v1.11+, the controller writes status natively in v1beta2 and the v1beta1 status
-// fields come from conversion. The converted v1beta1 fields (especially UpdatedReplicas,
-// which maps from deprecated.v1beta1.updatedReplicas rather than the native upToDateReplicas)
-// can transiently disagree with the v1beta2 native fields. To guard against this, when the
-// v1beta1 fields indicate completion we cross-check against the v1beta2 status stored in the
-// Status.V1Beta2 field, which is kept current on every status-subresource write.
-func MachineDeploymentComplete(deployment *capiv1.MachineDeployment) bool {
+// When targetMachineTemplate is non-empty, it additionally verifies that at least one MachineSet
+// references that template. This guards against a race where CAPI updates ObservedGeneration
+// before recalculating replica counts after a spec change, causing status to briefly look complete
+// while still reflecting the old template.
+// TODO(bclement): Remove additional checks once storage version is v1beta2
+func MachineDeploymentComplete(ctx context.Context, c client.Reader, deployment *capiv1.MachineDeployment, targetMachineTemplate string) bool {
+	log := ctrl.LoggerFrom(ctx)
 	desired := ptr.Deref(deployment.Spec.Replicas, 0)
-	s := &deployment.Status
+	newStatus := &deployment.Status
 
-	// As long as storage version is v1beta1 conversion happens, causing flickering on this check.
-	// TODO(bclement): Remove conversion data check when storage version is v1beta2
-	conversionComplete := ptr.Deref(s.UpToDateReplicas, 0) == desired &&
-		ptr.Deref(s.Replicas, 0) == desired &&
-		ptr.Deref(s.AvailableReplicas, 0) == desired &&
-		s.ObservedGeneration >= deployment.Generation
+	log.Info("MachineDeployment readiness",
+		"Spec.Replicas", deployment.Spec.Replicas,
+		"Replicas", newStatus.Replicas,
+		"AvailableReplicas", newStatus.AvailableReplicas,
+		"UpToDateReplicas", newStatus.UpToDateReplicas,
+		"Generation", deployment.Generation,
+		"ObservedGeneration", newStatus.ObservedGeneration,
+	)
 
-	if !conversionComplete {
+	// differentiate the nil and 0 cases
+	if newStatus.Replicas == nil || newStatus.AvailableReplicas == nil || newStatus.UpToDateReplicas == nil {
 		return false
 	}
-	return machineDeploymentCompleteFromV1Beta2Status(deployment)
-}
 
-// machineDeploymentCompleteFromV1Beta2Status verifies that the native v1beta2 status fields
-// also indicate completion. The v1beta1 Status.V1Beta2 field is populated by the v1beta2-to-v1beta1
-// conversion on every status-subresource write, so it is always current.
-// If V1Beta2 is nil (e.g. CAPI < v1.11), returns true to preserve backwards compatibility.
-func machineDeploymentCompleteFromV1Beta2Status(deployment *capiv1.MachineDeployment) bool {
-	v1beta2 := deployment.Status.V1Beta2
-	if v1beta2 == nil {
+	v1beta2Complete := *newStatus.AvailableReplicas == desired &&
+		*newStatus.Replicas == desired &&
+		*newStatus.UpToDateReplicas == desired &&
+		newStatus.ObservedGeneration >= deployment.Generation
+
+	log.Info("MachineDeployment readiness", "Complete", v1beta2Complete)
+
+	if !v1beta2Complete {
+		return false
+	}
+
+	if targetMachineTemplate == "" {
 		return true
 	}
-	if v1beta2.UpToDateReplicas == nil || v1beta2.AvailableReplicas == nil {
+
+	machineSets := &capiv1.MachineSetList{}
+	if err := c.List(ctx, machineSets,
+		client.InNamespace(deployment.Namespace),
+		client.MatchingLabels{capiv1.MachineDeploymentNameLabel: deployment.Name},
+	); err != nil {
+		log.Error(err, "Failed to list MachineSets for MachineDeployment, cannot verify completion")
 		return false
 	}
-	desired := ptr.Deref(deployment.Spec.Replicas, 0)
-	return *v1beta2.UpToDateReplicas == desired &&
-		*v1beta2.AvailableReplicas == desired
+
+	for i := range machineSets.Items {
+		if machineSets.Items[i].Spec.Template.Spec.InfrastructureRef.Name == targetMachineTemplate {
+			return true
+		}
+	}
+
+	log.Info("MachineDeployment reports complete but no MachineSet references target template yet, skipping",
+		"target", targetMachineTemplate, "machineSetCount", len(machineSets.Items))
+	return false
 }
 
 // GetHostedClusterByName finds and return a HostedCluster object using the specified params.

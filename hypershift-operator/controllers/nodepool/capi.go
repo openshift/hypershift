@@ -498,7 +498,17 @@ func (c *CAPI) reconcileMachineDeployment(ctx context.Context, log logr.Logger,
 		return nil
 	}
 
-	c.reconcileMachineDeploymentStatus(log, machineDeployment, machineTemplateCR)
+	// Guard: if the MachineDeployment spec was updated in a previous reconcile but CAPI hasn't
+	// fully rolled it out yet, status fields may be stale from the previous generation. Reconciling
+	// status now would falsely mark the update as complete and prevent Updating* conditions from
+	// ever transitioning to True.
+	if machineDeployment.Status.ObservedGeneration < machineDeployment.Generation {
+		log.Info("MachineDeployment status is stale, skipping status reconciliation",
+			"generation", machineDeployment.Generation, "observedGeneration", machineDeployment.Status.ObservedGeneration)
+		return nil
+	}
+
+	c.reconcileMachineDeploymentStatus(ctx, log, machineDeployment, machineTemplateCR)
 
 	return nil
 }
@@ -620,7 +630,7 @@ func (c *CAPI) propagateVersionAndTemplate(log logr.Logger, machineDeployment *c
 	return isUpdating
 }
 
-func (c *CAPI) reconcileMachineDeploymentStatus(log logr.Logger, machineDeployment *capiv1.MachineDeployment, machineTemplateCR client.Object) {
+func (c *CAPI) reconcileMachineDeploymentStatus(ctx context.Context, log logr.Logger, machineDeployment *capiv1.MachineDeployment, machineTemplateCR client.Object) {
 	nodePool := c.nodePool
 	targetVersion := c.Version()
 	targetConfigHash := c.HashWithoutVersion()
@@ -628,7 +638,7 @@ func (c *CAPI) reconcileMachineDeploymentStatus(log logr.Logger, machineDeployme
 
 	// If the MachineDeployment is now processing we know
 	// is at the expected version (spec.version) and config (userData Secret) so we reconcile status and annotation.
-	if MachineDeploymentComplete(machineDeployment) {
+	if MachineDeploymentComplete(ctx, c.Client, machineDeployment, machineTemplateCR.GetName()) {
 		if nodePool.Status.Version != targetVersion {
 			log.Info("Version update complete",
 				"previous", nodePool.Status.Version, "new", targetVersion)
