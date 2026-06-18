@@ -1,0 +1,127 @@
+name: Claude on PR (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      command-name:
+        description: Concurrency group prefix and label for the command
+        type: string
+        required: true
+      status-message:
+        description: Text for the PR status comment (e.g. "Rebasing PR onto main")
+        type: string
+        required: true
+      claude-prompt:
+        description: The prompt passed to Claude via -p
+        type: string
+        required: true
+      max-turns:
+        description: Maximum number of Claude turns
+        type: number
+        default: 200
+      allowed-tools:
+        description: Space-separated list of allowed Claude tools
+        type: string
+        default: "Bash Read Write Edit Grep Glob WebFetch"
+
+jobs:
+  run:
+    concurrency:
+      group: ${{ inputs.command-name }}-${{ github.event.issue.number }}
+      cancel-in-progress: true
+    runs-on: arc-runner-set
+    timeout-minutes: 45
+    env:
+      HOME: /tmp
+    steps:
+      - name: Link to run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STATUS_MESSAGE: ${{ inputs.status-message }}
+        run: |
+          gh pr comment "${{ github.event.issue.number }}" \
+            --repo "${{ github.repository }}" \
+            --body "🤖 ${STATUS_MESSAGE}: [workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+
+      - name: Get PR ref
+        id: pr
+        run: |
+          curl -fsSL -H "Authorization: token ${{ github.token }}" \
+            "https://api.github.com/repos/${{ github.repository }}/pulls/${{ github.event.issue.number }}" > /tmp/pr.json
+          echo "branch=$(jq -r '.head.ref' /tmp/pr.json)" >> "$GITHUB_OUTPUT"
+          echo "repo=$(jq -r '.head.repo.full_name' /tmp/pr.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Select token for PR repo
+        id: token
+        env:
+          PR_REPO: ${{ steps.pr.outputs.repo }}
+        run: |
+          if [[ "$PR_REPO" == "hypershift-community/hypershift" ]]; then
+            echo "use_fork_token=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "use_fork_token=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Generate community fork token
+        if: steps.token.outputs.use_fork_token == 'true'
+        id: app-token
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2
+        with:
+          app-id: ${{ secrets.JIRA_SOLVE_CI_APP_ID }}
+          private-key: ${{ secrets.JIRA_SOLVE_CI_PRIVATE_KEY }}
+          owner: hypershift-community
+          repositories: hypershift
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ steps.pr.outputs.branch }}
+          repository: ${{ steps.pr.outputs.repo }}
+          token: ${{ steps.app-token.outputs.token || github.token }}
+          persist-credentials: true
+          fetch-depth: 0
+
+      - name: Authenticate to GCP via WIF
+        id: gcp-auth
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          project_id: hosted-control-planes
+          service_account: claude-gha@hosted-control-planes.iam.gserviceaccount.com
+          workload_identity_provider: projects/21066242673/locations/global/workloadIdentityPools/itpc-identity-pool/providers/github-com
+
+      - name: Move GCP credentials out of workspace
+        run: |
+          install -m 0600 "${{ steps.gcp-auth.outputs.credentials_file_path }}" "$RUNNER_TEMP/gcp-credentials.json"
+          echo "CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE=$RUNNER_TEMP/gcp-credentials.json" >> "$GITHUB_ENV"
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/gcp-credentials.json" >> "$GITHUB_ENV"
+          echo "GOOGLE_GHA_CREDS_PATH=$RUNNER_TEMP/gcp-credentials.json" >> "$GITHUB_ENV"
+
+      - name: Install Claude Code
+        run: |
+          curl -fsSL https://claude.ai/install.sh | bash
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Install tool dependencies
+        run: |
+          go install golang.org/x/tools/gopls@latest
+          echo "$HOME/go/bin" >> $GITHUB_PATH
+          pip install --break-system-packages pre-commit
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Run Claude
+        env:
+          CLAUDE_CODE_USE_VERTEX: "1"
+          CLOUD_ML_REGION: global
+          ANTHROPIC_VERTEX_PROJECT_ID: hosted-control-planes
+          GH_TOKEN: ${{ steps.app-token.outputs.token || github.token }}
+          PR_NUMBER: ${{ github.event.issue.number }}
+          CLAUDE_PROMPT: ${{ inputs.claude-prompt }}
+          MAX_TURNS: ${{ inputs.max-turns }}
+          ALLOWED_TOOLS: ${{ inputs.allowed-tools }}
+        run: |
+          claude plugin marketplace add openshift-eng/ai-helpers
+          claude plugin install utils@ai-helpers
+          claude plugin install golang@ai-helpers
+          claude plugin marketplace add enxebre/ai-scripts
+          claude plugin install git@enxebre
+          claude --version
+          claude -p "$CLAUDE_PROMPT" --model claude-opus-4-6 --max-turns "$MAX_TURNS" --allowedTools "$ALLOWED_TOOLS"
