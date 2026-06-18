@@ -16,6 +16,7 @@ import (
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 
 	"github.com/blang/semver"
+	"github.com/coreos/stream-metadata-go/stream"
 )
 
 // dummySSHKey is a base64 encoded dummy SSH public key.
@@ -81,7 +82,11 @@ func defaultAzureNodePoolImage(nodePool *hyperv1.NodePool, releaseImage *release
 	}
 
 	// Extract marketplace metadata from release payload
-	azureMarketplace, err := getAzureMarketplaceMetadata(releaseImage, streamArch)
+	streamMeta, err := releaseImage.StreamForName("")
+	if err != nil {
+		return fmt.Errorf("couldn't resolve stream metadata: %w", err)
+	}
+	azureMarketplace, err := getAzureMarketplaceMetadata(streamMeta, streamArch)
 	if err != nil {
 		return fmt.Errorf("failed to get Azure Marketplace metadata: %w", err)
 	}
@@ -119,13 +124,13 @@ func defaultAzureNodePoolImage(nodePool *hyperv1.NodePool, releaseImage *release
 	return nil
 }
 
-// getAzureMarketplaceMetadata extracts Azure Marketplace metadata from the release payload
-func getAzureMarketplaceMetadata(releaseImage *releaseinfo.ReleaseImage, arch string) (*azureMarketplaceMetadata, error) {
-	if releaseImage.StreamMetadata == nil {
+// getAzureMarketplaceMetadata extracts Azure Marketplace metadata from stream metadata.
+func getAzureMarketplaceMetadata(streamMeta *stream.Stream, arch string) (*azureMarketplaceMetadata, error) {
+	if streamMeta == nil {
 		return nil, nil // No stream metadata available
 	}
 
-	archData, foundArch := releaseImage.StreamMetadata.Architectures[arch]
+	archData, foundArch := streamMeta.Architectures[arch]
 	if !foundArch {
 		return nil, fmt.Errorf("architecture %s not found in stream metadata", arch)
 	}

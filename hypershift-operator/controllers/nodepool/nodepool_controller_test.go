@@ -542,25 +542,23 @@ func TestCreateValidGeneratedPayloadCondition(t *testing.T) {
 func TestDefaultNodePoolAMI(t *testing.T) {
 	t.Parallel()
 
-	basicReleaseImage := &releaseinfo.ReleaseImage{
-		StreamMetadata: &stream.Stream{
-			Architectures: map[string]stream.Arch{
-				"x86_64": {
-					Images: stream.Images{
-						Aws: &stream.AwsImage{
-							Regions: map[string]stream.SingleImage{
-								"us-east-1": {Release: "4.12.0", Image: "us-east-1-x86_64-image"},
-							},
+	basicStream := &stream.Stream{
+		Architectures: map[string]stream.Arch{
+			"x86_64": {
+				Images: stream.Images{
+					Aws: &stream.AwsImage{
+						Regions: map[string]stream.SingleImage{
+							"us-east-1": {Release: "4.12.0", Image: "us-east-1-x86_64-image"},
 						},
 					},
 				},
-				"aarch64": {
-					Images: stream.Images{
-						Aws: &stream.AwsImage{
-							Regions: map[string]stream.SingleImage{
-								"us-east-1": {Release: "4.12.0", Image: "us-east-1-aarch64-image"},
-								"us-west-1": {Release: "4.12.0", Image: ""},
-							},
+			},
+			"aarch64": {
+				Images: stream.Images{
+					Aws: &stream.AwsImage{
+						Regions: map[string]stream.SingleImage{
+							"us-east-1": {Release: "4.12.0", Image: "us-east-1-aarch64-image"},
+							"us-west-1": {Release: "4.12.0", Image: ""},
 						},
 					},
 				},
@@ -572,14 +570,21 @@ func TestDefaultNodePoolAMI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to parse multi-stream fixture: %v", err)
 	}
-	multiStreamReleaseImage := &releaseinfo.ReleaseImage{StreamMetadata: defaultStream, OSStreams: osStreams}
+	ri := &releaseinfo.ReleaseImage{StreamMetadata: defaultStream, OSStreams: osStreams}
+	rhel9Stream, err := ri.StreamForName("rhel-9")
+	if err != nil {
+		t.Fatalf("failed to resolve rhel-9 stream: %v", err)
+	}
+	rhel10Stream, err := ri.StreamForName("rhel-10")
+	if err != nil {
+		t.Fatalf("failed to resolve rhel-10 stream: %v", err)
+	}
 
 	testCases := []struct {
 		name          string
 		region        string
 		specifiedArch string
-		streamName    string
-		releaseImage  *releaseinfo.ReleaseImage
+		streamMeta    *stream.Stream
 		expectedImage string
 		expectedErr   string
 	}{
@@ -588,45 +593,42 @@ func TestDefaultNodePoolAMI(t *testing.T) {
 			name:          "When resolving amd64 AMI it should return the correct image",
 			region:        "us-east-1",
 			specifiedArch: "amd64",
-			releaseImage:  basicReleaseImage,
+			streamMeta:    basicStream,
 			expectedImage: "us-east-1-x86_64-image",
 		},
 		{
 			name:          "When resolving arm64 AMI it should return the correct image",
 			region:        "us-east-1",
 			specifiedArch: "arm64",
-			releaseImage:  basicReleaseImage,
+			streamMeta:    basicStream,
 			expectedImage: "us-east-1-aarch64-image",
 		},
 		{
 			name:          "When resolving rhel-9 stream it should return the rhel-9 AMI",
 			region:        "us-east-1",
 			specifiedArch: "amd64",
-			streamName:    "rhel-9",
-			releaseImage:  multiStreamReleaseImage,
+			streamMeta:    rhel9Stream,
 			expectedImage: "ami-06a6b025350ff1e23",
 		},
 		{
 			name:          "When resolving rhel-10 stream it should return the rhel-10 AMI",
 			region:        "us-east-1",
 			specifiedArch: "amd64",
-			streamName:    "rhel-10",
-			releaseImage:  multiStreamReleaseImage,
+			streamMeta:    rhel10Stream,
 			expectedImage: "ami-04b3d999e39d62c5b",
 		},
 		{
 			name:          "When resolving rhel-10 arm64 stream it should return the rhel-10 arm64 AMI",
 			region:        "us-east-1",
 			specifiedArch: "arm64",
-			streamName:    "rhel-10",
-			releaseImage:  multiStreamReleaseImage,
+			streamMeta:    rhel10Stream,
 			expectedImage: "ami-0d7237e6b04d9a9e1",
 		},
 		{
 			name:          "When using default stream it should return the default AMI",
 			region:        "us-east-1",
 			specifiedArch: "amd64",
-			releaseImage:  multiStreamReleaseImage,
+			streamMeta:    defaultStream,
 			expectedImage: "ami-06a6b025350ff1e23",
 		},
 		// --- Sad paths ---
@@ -634,36 +636,29 @@ func TestDefaultNodePoolAMI(t *testing.T) {
 			name:          "When region is not found it should return error",
 			region:        "us-east-2",
 			specifiedArch: "amd64",
-			releaseImage:  basicReleaseImage,
+			streamMeta:    basicStream,
 			expectedErr:   `couldn't find AWS image for region "us-east-2"`,
 		},
 		{
 			name:          "When architecture is not found it should return error",
 			region:        "us-east-1",
 			specifiedArch: "s390x",
-			releaseImage:  basicReleaseImage,
+			streamMeta:    basicStream,
 			expectedErr:   `couldn't find OS metadata for architecture "s390x"`,
 		},
 		{
 			name:          "When image data is empty for region it should return error",
 			region:        "us-west-1",
 			specifiedArch: "arm64",
-			releaseImage:  basicReleaseImage,
+			streamMeta:    basicStream,
 			expectedErr:   `release image metadata has no image for region "us-west-1"`,
 		},
 		{
 			name:          "When stream metadata is nil it should return error",
 			region:        "us-east-1",
 			specifiedArch: "amd64",
-			releaseImage:  &releaseinfo.ReleaseImage{StreamMetadata: nil},
-			expectedErr:   "couldn't resolve stream metadata: no default stream metadata available",
-		},
-		{
-			name:          "When release image is nil it should return error",
-			region:        "us-east-1",
-			specifiedArch: "amd64",
-			releaseImage:  nil,
-			expectedErr:   "release image is nil",
+			streamMeta:    nil,
+			expectedErr:   "stream metadata is nil",
 		},
 	}
 
@@ -672,7 +667,7 @@ func TestDefaultNodePoolAMI(t *testing.T) {
 			t.Parallel()
 			g := NewWithT(t)
 
-			image, err := defaultNodePoolAMI(tc.region, tc.specifiedArch, tc.streamName, tc.releaseImage)
+			image, err := defaultNodePoolAMI(tc.region, tc.specifiedArch, tc.streamMeta)
 			if tc.expectedErr != "" {
 				g.Expect(err).To(HaveOccurred())
 				g.Expect(err.Error()).To(Equal(tc.expectedErr))

@@ -5,8 +5,6 @@ import (
 
 	. "github.com/onsi/gomega"
 
-	"github.com/openshift/hypershift/support/releaseinfo"
-
 	"github.com/coreos/stream-metadata-go/stream"
 )
 
@@ -14,18 +12,16 @@ func TestGetPowerVSImage(t *testing.T) {
 	testCases := []struct {
 		name          string
 		region        string
-		releaseImage  *releaseinfo.ReleaseImage
+		streamMeta    *stream.Stream
 		expectedError string
 	}{
 		{
 			name:   "When PowerVS images is nil, it should return error",
 			region: "us-south",
-			releaseImage: &releaseinfo.ReleaseImage{
-				StreamMetadata: &stream.Stream{
-					Architectures: map[string]stream.Arch{
-						"ppc64le": {
-							Images: stream.Images{},
-						},
+			streamMeta: &stream.Stream{
+				Architectures: map[string]stream.Arch{
+					"ppc64le": {
+						Images: stream.Images{},
 					},
 				},
 			},
@@ -34,10 +30,8 @@ func TestGetPowerVSImage(t *testing.T) {
 		{
 			name:   "When architecture is not found, it should return error",
 			region: "us-south",
-			releaseImage: &releaseinfo.ReleaseImage{
-				StreamMetadata: &stream.Stream{
-					Architectures: map[string]stream.Arch{},
-				},
+			streamMeta: &stream.Stream{
+				Architectures: map[string]stream.Arch{},
 			},
 			expectedError: "couldn't find OS metadata for architecture",
 		},
@@ -46,7 +40,7 @@ func TestGetPowerVSImage(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
-			_, _, err := getPowerVSImage(tc.region, tc.releaseImage)
+			_, _, err := getPowerVSImage(tc.region, tc.streamMeta)
 			g.Expect(err).To(HaveOccurred())
 			g.Expect(err.Error()).To(ContainSubstring(tc.expectedError))
 		})

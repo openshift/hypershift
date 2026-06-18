@@ -205,25 +205,28 @@ func TestOpenStackMachineTemplate(t *testing.T) {
 func TestOpenstackDefaultImage(t *testing.T) {
 	testCases := []struct {
 		name          string
-		releaseImage  *releaseinfo.ReleaseImage
+		streamMeta    *stream.Stream
 		expectedURL   string
 		expectedHash  string
 		expectedError bool
 	}{
 		{
+			name:          "nil stream metadata",
+			streamMeta:    nil,
+			expectedError: true,
+		},
+		{
 			name: "valid metadata",
-			releaseImage: &releaseinfo.ReleaseImage{
-				StreamMetadata: &stream.Stream{
-					Architectures: map[string]stream.Arch{
-						"x86_64": {
-							Artifacts: map[string]stream.PlatformArtifacts{
-								"openstack": {
-									Formats: map[string]stream.ImageFormat{
-										"qcow2.gz": {
-											Disk: &stream.Artifact{
-												Location: "https://example.com/image.qcow2.gz",
-												Sha256:   "abcdef1234567890",
-											},
+			streamMeta: &stream.Stream{
+				Architectures: map[string]stream.Arch{
+					"x86_64": {
+						Artifacts: map[string]stream.PlatformArtifacts{
+							"openstack": {
+								Formats: map[string]stream.ImageFormat{
+									"qcow2.gz": {
+										Disk: &stream.Artifact{
+											Location: "https://example.com/image.qcow2.gz",
+											Sha256:   "abcdef1234567890",
 										},
 									},
 								},
@@ -238,29 +241,25 @@ func TestOpenstackDefaultImage(t *testing.T) {
 		},
 		{
 			name:          "missing architecture",
-			releaseImage:  &releaseinfo.ReleaseImage{StreamMetadata: &stream.Stream{Architectures: map[string]stream.Arch{}}},
+			streamMeta:    &stream.Stream{Architectures: map[string]stream.Arch{}},
 			expectedError: true,
 		},
 		{
 			name: "missing openstack artifact",
-			releaseImage: &releaseinfo.ReleaseImage{
-				StreamMetadata: &stream.Stream{
-					Architectures: map[string]stream.Arch{
-						"x86_64": {Artifacts: map[string]stream.PlatformArtifacts{}},
-					},
+			streamMeta: &stream.Stream{
+				Architectures: map[string]stream.Arch{
+					"x86_64": {Artifacts: map[string]stream.PlatformArtifacts{}},
 				},
 			},
 			expectedError: true,
 		},
 		{
 			name: "missing qcow2.gz format",
-			releaseImage: &releaseinfo.ReleaseImage{
-				StreamMetadata: &stream.Stream{
-					Architectures: map[string]stream.Arch{
-						"x86_64": {
-							Artifacts: map[string]stream.PlatformArtifacts{
-								"openstack": {Formats: map[string]stream.ImageFormat{}},
-							},
+			streamMeta: &stream.Stream{
+				Architectures: map[string]stream.Arch{
+					"x86_64": {
+						Artifacts: map[string]stream.PlatformArtifacts{
+							"openstack": {Formats: map[string]stream.ImageFormat{}},
 						},
 					},
 				},
@@ -269,15 +268,13 @@ func TestOpenstackDefaultImage(t *testing.T) {
 		},
 		{
 			name: "missing disk artifact",
-			releaseImage: &releaseinfo.ReleaseImage{
-				StreamMetadata: &stream.Stream{
-					Architectures: map[string]stream.Arch{
-						"x86_64": {
-							Artifacts: map[string]stream.PlatformArtifacts{
-								"openstack": {
-									Formats: map[string]stream.ImageFormat{
-										"qcow2.gz": {},
-									},
+			streamMeta: &stream.Stream{
+				Architectures: map[string]stream.Arch{
+					"x86_64": {
+						Artifacts: map[string]stream.PlatformArtifacts{
+							"openstack": {
+								Formats: map[string]stream.ImageFormat{
+									"qcow2.gz": {},
 								},
 							},
 						},
@@ -290,7 +287,7 @@ func TestOpenstackDefaultImage(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			url, hash, err := OpenstackDefaultImage(tc.releaseImage)
+			url, hash, err := OpenstackDefaultImage(tc.streamMeta)
 			if tc.expectedError {
 				if err == nil {
 					t.Error("expected error but got nil")
@@ -313,20 +310,23 @@ func TestOpenstackDefaultImage(t *testing.T) {
 func TestOpenStackReleaseImage(t *testing.T) {
 	testCases := []struct {
 		name           string
-		releaseImage   *releaseinfo.ReleaseImage
+		streamMeta     *stream.Stream
 		expectedResult string
 		expectedError  bool
 	}{
 		{
+			name:          "nil stream metadata",
+			streamMeta:    nil,
+			expectedError: true,
+		},
+		{
 			name: "valid metadata",
-			releaseImage: &releaseinfo.ReleaseImage{
-				StreamMetadata: &stream.Stream{
-					Architectures: map[string]stream.Arch{
-						"x86_64": {
-							Artifacts: map[string]stream.PlatformArtifacts{
-								"openstack": {
-									Release: "4.9.0",
-								},
+			streamMeta: &stream.Stream{
+				Architectures: map[string]stream.Arch{
+					"x86_64": {
+						Artifacts: map[string]stream.PlatformArtifacts{
+							"openstack": {
+								Release: "4.9.0",
 							},
 						},
 					},
@@ -337,16 +337,14 @@ func TestOpenStackReleaseImage(t *testing.T) {
 		},
 		{
 			name:          "missing architecture",
-			releaseImage:  &releaseinfo.ReleaseImage{StreamMetadata: &stream.Stream{Architectures: map[string]stream.Arch{}}},
+			streamMeta:    &stream.Stream{Architectures: map[string]stream.Arch{}},
 			expectedError: true,
 		},
 		{
 			name: "missing openstack artifact",
-			releaseImage: &releaseinfo.ReleaseImage{
-				StreamMetadata: &stream.Stream{
-					Architectures: map[string]stream.Arch{
-						"x86_64": {Artifacts: map[string]stream.PlatformArtifacts{}},
-					},
+			streamMeta: &stream.Stream{
+				Architectures: map[string]stream.Arch{
+					"x86_64": {Artifacts: map[string]stream.PlatformArtifacts{}},
 				},
 			},
 			expectedError: true,
@@ -355,7 +353,7 @@ func TestOpenStackReleaseImage(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			result, err := OpenStackReleaseImage(tc.releaseImage)
+			result, err := OpenStackReleaseImage(tc.streamMeta)
 			if tc.expectedError {
 				if err == nil {
 					t.Error("expected error but got nil")
@@ -456,9 +454,7 @@ func TestReconcileOpenStackImageSpec(t *testing.T) {
 			},
 			releaseImage: &releaseinfo.ReleaseImage{
 				StreamMetadata: &stream.Stream{
-					Architectures: map[string]stream.Arch{
-						// Missing x86_64 architecture data will cause the OpenstackDefaultImage to fail
-					},
+					Architectures: map[string]stream.Arch{},
 				},
 			},
 			expectedError:          true,
@@ -498,10 +494,21 @@ func TestClusterImageName(t *testing.T) {
 	testCases := []struct {
 		name           string
 		hostedCluster  *hyperv1.HostedCluster
-		releaseImage   *releaseinfo.ReleaseImage
+		streamMeta     *stream.Stream
 		expectedResult string
 		expectedError  bool
 	}{
+		{
+			name: "nil stream metadata",
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: "clusters",
+				},
+			},
+			streamMeta:    nil,
+			expectedError: true,
+		},
 		{
 			name: "valid release image",
 			hostedCluster: &hyperv1.HostedCluster{
@@ -510,14 +517,12 @@ func TestClusterImageName(t *testing.T) {
 					Namespace: "clusters",
 				},
 			},
-			releaseImage: &releaseinfo.ReleaseImage{
-				StreamMetadata: &stream.Stream{
-					Architectures: map[string]stream.Arch{
-						"x86_64": {
-							Artifacts: map[string]stream.PlatformArtifacts{
-								"openstack": {
-									Release: "4.19.0",
-								},
+			streamMeta: &stream.Stream{
+				Architectures: map[string]stream.Arch{
+					"x86_64": {
+						Artifacts: map[string]stream.PlatformArtifacts{
+							"openstack": {
+								Release: "4.19.0",
 							},
 						},
 					},
@@ -534,10 +539,8 @@ func TestClusterImageName(t *testing.T) {
 					Namespace: "clusters",
 				},
 			},
-			releaseImage: &releaseinfo.ReleaseImage{
-				StreamMetadata: &stream.Stream{
-					Architectures: map[string]stream.Arch{},
-				},
+			streamMeta: &stream.Stream{
+				Architectures: map[string]stream.Arch{},
 			},
 			expectedError: true,
 		},
@@ -549,12 +552,10 @@ func TestClusterImageName(t *testing.T) {
 					Namespace: "clusters",
 				},
 			},
-			releaseImage: &releaseinfo.ReleaseImage{
-				StreamMetadata: &stream.Stream{
-					Architectures: map[string]stream.Arch{
-						"x86_64": {
-							Artifacts: map[string]stream.PlatformArtifacts{},
-						},
+			streamMeta: &stream.Stream{
+				Architectures: map[string]stream.Arch{
+					"x86_64": {
+						Artifacts: map[string]stream.PlatformArtifacts{},
 					},
 				},
 			},
@@ -564,7 +565,7 @@ func TestClusterImageName(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			result, err := PrefixedClusterImageName(tc.hostedCluster, tc.releaseImage)
+			result, err := PrefixedClusterImageName(tc.hostedCluster, tc.streamMeta)
 			if tc.expectedError {
 				if err == nil {
 					t.Error("expected error but got nil")

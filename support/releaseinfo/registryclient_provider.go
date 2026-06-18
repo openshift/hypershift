@@ -41,6 +41,15 @@ func (p *RegistryClientProvider) Lookup(ctx context.Context, image string, pullS
 		return nil, err
 	}
 
+	if coreOSMeta == nil && len(osStreams) > 0 {
+		for _, s := range osStreams {
+			if s != nil {
+				coreOSMeta = s
+				break
+			}
+		}
+	}
+
 	return &ReleaseImage{
 		ImageStream:    imageStream,
 		StreamMetadata: coreOSMeta,

@@ -51,7 +51,11 @@ func (c *CAPI) openstackMachineTemplate(templateNameGenerator func(spec any) (st
 }
 func (r *NodePoolReconciler) setOpenStackConditions(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, _ string, releaseImage *releaseinfo.ReleaseImage) error {
 	if nodePool.Spec.Platform.OpenStack.ImageName == "" {
-		_, err := openstack.OpenStackReleaseImage(releaseImage)
+		streamMeta, err := releaseImage.StreamForName("")
+		if err != nil {
+			return fmt.Errorf("couldn't resolve stream metadata: %w", err)
+		}
+		_, err = openstack.OpenStackReleaseImage(streamMeta)
 		if err != nil {
 			SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 				Type:               hyperv1.NodePoolValidPlatformImageType,
@@ -89,7 +93,11 @@ func (r *NodePoolReconciler) setOpenStackConditions(ctx context.Context, nodePoo
 // An ORC object will be created or updated with the image spec.
 // The image name will be returned.
 func (r *NodePoolReconciler) reconcileOpenStackImageCR(ctx context.Context, client client.Client, hcluster *hyperv1.HostedCluster, release *releaseinfo.ReleaseImage, nodePool *hyperv1.NodePool) (string, error) {
-	releaseVersion, err := openstack.OpenStackReleaseImage(release)
+	streamMeta, err := release.StreamForName("")
+	if err != nil {
+		return "", fmt.Errorf("couldn't resolve stream metadata: %w", err)
+	}
+	releaseVersion, err := openstack.OpenStackReleaseImage(streamMeta)
 	if err != nil {
 		return "", err
 	}

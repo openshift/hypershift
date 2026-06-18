@@ -20,6 +20,7 @@ import (
 
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
 
+	"github.com/coreos/stream-metadata-go/stream"
 	jsonpatch "github.com/evanphx/json-patch/v5"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	"kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
@@ -36,7 +37,7 @@ var LocalStorageVolumes = []string{
 	"hotplug-disks",
 }
 
-func defaultImage(nodePoolArch string, releaseImage *releaseinfo.ReleaseImage) (string, string, error) {
+func defaultImage(nodePoolArch string, streamMeta *stream.Stream) (string, string, error) {
 	var archName string
 	switch nodePoolArch {
 	case hyperv1.ArchitectureS390X:
@@ -44,7 +45,7 @@ func defaultImage(nodePoolArch string, releaseImage *releaseinfo.ReleaseImage) (
 	default:
 		archName = hyperv1.ArchAliases[hyperv1.ArchitectureAMD64]
 	}
-	arch, foundArch := releaseImage.StreamMetadata.Architectures[archName]
+	arch, foundArch := streamMeta.Architectures[archName]
 
 	if !foundArch {
 		return "", "", fmt.Errorf("couldn't find OS metadata for architecture %q", archName)
@@ -90,9 +91,13 @@ func GetImage(nodePool *hyperv1.NodePool, releaseImage *releaseinfo.ReleaseImage
 		return newBootImage(imageName, isHTTP), nil
 	}
 
-	imageName, imageHash, err := defaultImage(nodePool.Spec.Arch, releaseImage)
+	streamMeta, err := releaseImage.StreamForName("")
+	if err != nil {
+		return nil, fmt.Errorf("couldn't resolve stream metadata: %w", err)
+	}
+	imageName, imageHash, err := defaultImage(nodePool.Spec.Arch, streamMeta)
 	if err != nil && allowUnsupportedRHCOSVariants(nodePool) {
-		imageName, imageHash, err = openstack.OpenstackDefaultImage(releaseImage)
+		imageName, imageHash, err = openstack.OpenstackDefaultImage(streamMeta)
 		if err != nil {
 			return nil, err
 		}

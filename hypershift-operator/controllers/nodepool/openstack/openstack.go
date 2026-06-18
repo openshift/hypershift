@@ -14,6 +14,7 @@ import (
 	capiopenstackv1beta1 "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/coreos/stream-metadata-go/stream"
 	orc "github.com/k-orc/openstack-resource-controller/api/v1alpha1"
 )
 
@@ -27,7 +28,11 @@ func MachineTemplateSpec(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.Node
 			Name: ptr.To(nodePool.Spec.Platform.OpenStack.ImageName),
 		}
 	} else {
-		releaseVersion, err := OpenStackReleaseImage(releaseImage)
+		streamMeta, err := releaseImage.StreamForName("")
+		if err != nil {
+			return nil, fmt.Errorf("couldn't resolve stream metadata: %w", err)
+		}
+		releaseVersion, err := OpenStackReleaseImage(streamMeta)
 		if err != nil {
 			return nil, err
 		}
@@ -95,7 +100,11 @@ func GetOpenStackClusterForHostedCluster(ctx context.Context, c client.Client, h
 // ReconcileOpenStackImageSpec reconciles the OpenStack ImageSpec for the given HostedCluster.
 // The image spec will be set to the default RHCOS image for the given release.
 func ReconcileOpenStackImageSpec(hcluster *hyperv1.HostedCluster, openStackImageSpec *orc.ImageSpec, release *releaseinfo.ReleaseImage) error {
-	imageURL, imageHash, err := OpenstackDefaultImage(release)
+	streamMeta, err := release.StreamForName("")
+	if err != nil {
+		return fmt.Errorf("couldn't resolve stream metadata: %w", err)
+	}
+	imageURL, imageHash, err := OpenstackDefaultImage(streamMeta)
 	if err != nil {
 		return fmt.Errorf("failed to lookup RHCOS image: %w", err)
 	}
@@ -105,7 +114,7 @@ func ReconcileOpenStackImageSpec(hcluster *hyperv1.HostedCluster, openStackImage
 		CloudName:  hcluster.Spec.Platform.OpenStack.IdentityRef.CloudName,
 	}
 
-	imageName, err := PrefixedClusterImageName(hcluster, release)
+	imageName, err := PrefixedClusterImageName(hcluster, streamMeta)
 	if err != nil {
 		return fmt.Errorf("failed to get image name: %w", err)
 	}
@@ -129,10 +138,13 @@ func ReconcileOpenStackImageSpec(hcluster *hyperv1.HostedCluster, openStackImage
 	return nil
 }
 
-// OpenstackDefaultImage returns the default RHCOS image for the given release.
+// OpenstackDefaultImage returns the default RHCOS image for the given stream metadata.
 // The image URL and SHA256 hash are returned.
-func OpenstackDefaultImage(releaseImage *releaseinfo.ReleaseImage) (string, string, error) {
-	arch, foundArch := releaseImage.StreamMetadata.Architectures["x86_64"]
+func OpenstackDefaultImage(streamMeta *stream.Stream) (string, string, error) {
+	if streamMeta == nil {
+		return "", "", fmt.Errorf("stream metadata is nil")
+	}
+	arch, foundArch := streamMeta.Architectures["x86_64"]
 	if !foundArch {
 		return "", "", fmt.Errorf("couldn't find OS metadata for architecture %q", "x86_64")
 	}
@@ -152,9 +164,12 @@ func OpenstackDefaultImage(releaseImage *releaseinfo.ReleaseImage) (string, stri
 }
 
 // OpenStackReleaseImage returns the release version for the OpenStack image.
-// The release version is extracted from the release metadata.
-func OpenStackReleaseImage(releaseImage *releaseinfo.ReleaseImage) (string, error) {
-	arch, foundArch := releaseImage.StreamMetadata.Architectures["x86_64"]
+// The release version is extracted from stream metadata.
+func OpenStackReleaseImage(streamMeta *stream.Stream) (string, error) {
+	if streamMeta == nil {
+		return "", fmt.Errorf("stream metadata is nil")
+	}
+	arch, foundArch := streamMeta.Architectures["x86_64"]
 	if !foundArch {
 		return "", fmt.Errorf("couldn't find OS metadata for architecture %q", "x86_64")
 	}
@@ -166,8 +181,8 @@ func OpenStackReleaseImage(releaseImage *releaseinfo.ReleaseImage) (string, erro
 }
 
 // PrefixedClusterImageName returns a prefixed name of the image for the given HostedCluster.
-func PrefixedClusterImageName(hcluster *hyperv1.HostedCluster, releaseImage *releaseinfo.ReleaseImage) (string, error) {
-	releaseVersion, err := OpenStackReleaseImage(releaseImage)
+func PrefixedClusterImageName(hcluster *hyperv1.HostedCluster, streamMeta *stream.Stream) (string, error) {
+	releaseVersion, err := OpenStackReleaseImage(streamMeta)
 	if err != nil {
 		return "", err
 	}
