@@ -1,0 +1,11 @@
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  name: ho-release-gate-run
+spec:
+  timeouts:
+    pipeline: "6h0m0s"
+    tasks: "5h30m0s"
+    finally: "30m0s"
+  pipelineRef:
+    name: ho-release-gate

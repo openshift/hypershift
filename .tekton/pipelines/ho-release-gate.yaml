@@ -4,12 +4,9 @@ metadata:
   name: ho-release-gate
 spec:
   params:
-  - name: snapshot-name
+  - name: SNAPSHOT
     type: string
-    description: Name of the Konflux Snapshot to validate
-  - name: ho-image
-    type: string
-    description: HyperShift Operator container image reference from the Snapshot
+    description: JSON payload of the Konflux Snapshot (injected by Integration Service)
   - name: e2e-blocking-job-names
     type: string
     description: JSON array of blocking Prow periodic job names (gate fails if any fail)
@@ -27,49 +24,55 @@ spec:
   - name: extract-image
     taskSpec:
       params:
-      - name: snapshot-name
-        type: string
-      - name: ho-image
+      - name: SNAPSHOT
         type: string
       results:
       - name: ho-image
         description: Validated HO image reference
       - name: snapshot-name
-        description: Snapshot name (passed through)
+        description: Snapshot name (from PipelineRun label)
       steps:
       - name: validate
-        image: registry.redhat.io/openshift4/ose-cli:latest
+        image: quay.io/konflux-ci/appstudio-utils:latest
         env:
         - name: HOME
           value: /tekton/home
+        - name: SNAPSHOT_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.labels['appstudio.openshift.io/snapshot']
         script: |
           #!/bin/bash
           set -euo pipefail
 
-          echo "=== extract-image ==="
-          echo "Snapshot:  $(params.snapshot-name)"
-          echo "HO image:  $(params.ho-image)"
+          SNAPSHOT_JSON='$(params.SNAPSHOT)'
 
-          if [[ -z "$(params.ho-image)" ]]; then
-            echo "ERROR: ho-image parameter is empty"
+          echo "=== extract-image ==="
+          echo "Snapshot:  ${SNAPSHOT_NAME}"
+
+          HO_IMAGE=$(echo "${SNAPSHOT_JSON}" | jq -r '.components[] | select(.name=="hypershift-operator-main") | .containerImage')
+
+          if [[ -z "${HO_IMAGE}" || "${HO_IMAGE}" == "null" ]]; then
+            echo "ERROR: could not extract HO image from SNAPSHOT JSON"
+            echo "SNAPSHOT JSON: ${SNAPSHOT_JSON}"
             exit 1
           fi
 
-          DIGEST=$(echo "$(params.ho-image)" | grep -oP 'sha256:[a-f0-9]+' || echo "N/A")
+          echo "HO image:  ${HO_IMAGE}"
+
+          DIGEST=$(echo "${HO_IMAGE}" | grep -oP 'sha256:[a-f0-9]+' || echo "N/A")
           echo "Digest:    ${DIGEST}"
 
-          COMMIT=$(oc get snapshot "$(params.snapshot-name)" -o jsonpath='{.spec.components[?(@.name=="hypershift-operator-main")].source.git.revision}' 2>/dev/null || echo "N/A")
-          echo "Commit:    ${COMMIT}"
+          REVISION=$(echo "${SNAPSHOT_JSON}" | jq -r '.components[] | select(.name=="hypershift-operator-main") | .source.git.revision' || echo "N/A")
+          echo "Commit:    ${REVISION}"
 
           echo "=== validation passed ==="
 
-          echo -n "$(params.ho-image)" > $(results.ho-image.path)
-          echo -n "$(params.snapshot-name)" > $(results.snapshot-name.path)
+          echo -n "${HO_IMAGE}" > $(results.ho-image.path)
+          echo -n "${SNAPSHOT_NAME}" > $(results.snapshot-name.path)
     params:
-    - name: snapshot-name
-      value: $(params.snapshot-name)
-    - name: ho-image
-      value: $(params.ho-image)
+    - name: SNAPSHOT
+      value: $(params.SNAPSHOT)
 
   - name: run-e2e
     runAfter: [extract-image]
@@ -471,59 +474,12 @@ spec:
           fi
 
           echo ""
-          echo "=== GATE PASSED - proceeding to release ==="
+          echo "=== GATE PASSED - auto-release will promote the image ==="
     params:
     - name: results-json
       value: $(tasks.run-e2e.results.results-json)
 
   finally:
-  - name: create-release
-    when:
-    - input: $(tasks.evaluate-results.results.gate-passed)
-      operator: in
-      values: ["true"]
-    taskSpec:
-      params:
-      - name: snapshot-name
-        type: string
-      steps:
-      - name: create
-        image: registry.redhat.io/openshift4/ose-cli:latest
-        env:
-        - name: HOME
-          value: /tekton/home
-        script: |
-          #!/bin/bash
-          set -euo pipefail
-
-          SNAPSHOT="$(params.snapshot-name)"
-
-          echo "=== create-release ==="
-          echo "Snapshot:     ${SNAPSHOT}"
-          echo "ReleasePlan:  hypershift-operator-ho-release-gate-aro-hcp"
-
-          RELEASE_OUTPUT=$(oc create -f - <<EOF
-          apiVersion: appstudio.redhat.com/v1alpha1
-          kind: Release
-          metadata:
-            generateName: hypershift-operator-ho-release-gate-aro-hcp-
-            namespace: crt-redhat-acm-tenant
-            labels:
-              release.appstudio.openshift.io/author: system_serviceaccount_crt-redhat-acm-tenant_nightly-promotion-sa
-          spec:
-            snapshot: ${SNAPSHOT}
-            releasePlan: hypershift-operator-ho-release-gate-aro-hcp
-          EOF
-          )
-
-          RELEASE_NAME=$(echo "${RELEASE_OUTPUT}" | grep -oP 'release\.appstudio\.redhat\.com/\K[^ ]+' || echo "unknown")
-          echo "Created:      ${RELEASE_NAME}"
-          echo ""
-          echo "=== create-release: done ==="
-    params:
-    - name: snapshot-name
-      value: $(tasks.extract-image.results.snapshot-name)
-
   - name: notify-slack
     taskSpec:
       params:
