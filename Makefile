@@ -144,7 +144,7 @@ verify-codecov: ## Validate codecov.yml against Codecov's API.
 		| tee /dev/stderr | grep -q "^Valid!"
 
 .PHONY: verify-parallel
-verify-parallel: verify-codespell verify-codecov verify-api-deps lint cpo-container-sync run-gitlint verify-docs-nav
+verify-parallel: verify-codespell verify-codecov verify-api-deps lint cpo-container-sync run-gitlint verify-docs-nav verify-toplevel-dirs
 
 .PHONY: verify
 verify: generate update staticcheck fmt vet
@@ -606,6 +606,10 @@ verify-codespell: codespell ## Verify codespell.
 .PHONY: verify-api-deps
 verify-api-deps: $(VERIFY_API_DEPS) ## Verify API dependencies against allowlist.
 	@$(VERIFY_API_DEPS)
+
+.PHONY: verify-toplevel-dirs
+verify-toplevel-dirs: ## Verify top-level directory list is in sync with hack/ci/toplevel-dirs.txt.
+	@bash hack/ci/verify-toplevel-dirs.sh
 
 .PHONY: run-gitlint
 run-gitlint: $(GITLINT)
