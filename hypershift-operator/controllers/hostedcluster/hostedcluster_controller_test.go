@@ -7657,3 +7657,107 @@ func TestReconcileETCDMemberRecovery(t *testing.T) {
 		g.Expect(err.Error()).To(ContainSubstring("failed to get etcd statefulset"))
 	})
 }
+
+func TestPropagateAzureResourceIDAnnotation(t *testing.T) {
+	const testResourceID = "/subscriptions/00000000/resourceGroups/rg/providers/Microsoft.RedHatOpenShift/hcpOpenShiftClusters/cluster1"
+
+	tests := []struct {
+		name               string
+		isAroHCP           bool
+		hcluster           *hyperv1.HostedCluster
+		nsAnnotations      map[string]string
+		expectedAnnotation string
+	}{
+		{
+			name:     "When ARO-HCP cluster has resource ID annotation, it should propagate to namespace",
+			isAroHCP: true,
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						hyperv1.ManagedAzureResourceIDAnnotation: testResourceID,
+					},
+				},
+			},
+			nsAnnotations:      nil,
+			expectedAnnotation: testResourceID,
+		},
+		{
+			name:     "When ARO-HCP cluster has no resource ID annotation, it should remove it from namespace",
+			isAroHCP: true,
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{},
+			},
+			nsAnnotations: map[string]string{
+				hyperv1.ManagedAzureResourceIDAnnotation: testResourceID,
+			},
+			expectedAnnotation: "",
+		},
+		{
+			name: "When non-ARO-HCP cluster has resource ID annotation, it should not propagate to namespace",
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						hyperv1.ManagedAzureResourceIDAnnotation: testResourceID,
+					},
+				},
+			},
+			nsAnnotations:      nil,
+			expectedAnnotation: "",
+		},
+		{
+			name:     "When non-ARO-HCP cluster has resource ID on namespace, it should remove it",
+			hcluster: &hyperv1.HostedCluster{},
+			nsAnnotations: map[string]string{
+				hyperv1.ManagedAzureResourceIDAnnotation: testResourceID,
+			},
+			expectedAnnotation: "",
+		},
+		{
+			name:     "When ARO-HCP cluster has resource ID annotation, it should update existing namespace annotation",
+			isAroHCP: true,
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						hyperv1.ManagedAzureResourceIDAnnotation: testResourceID,
+					},
+				},
+			},
+			nsAnnotations: map[string]string{
+				hyperv1.ManagedAzureResourceIDAnnotation: "old-value",
+				"some-other-annotation":                  "preserved",
+			},
+			expectedAnnotation: testResourceID,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.isAroHCP {
+				azureutil.SetAsAroHCPTest(t)
+			}
+			g := NewGomegaWithT(t)
+			ns := &corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: tc.nsAnnotations,
+				},
+			}
+
+			propagateAzureResourceIDAnnotation(tc.hcluster, ns)
+
+			if tc.expectedAnnotation != "" {
+				g.Expect(ns.Annotations).To(HaveKeyWithValue(
+					hyperv1.ManagedAzureResourceIDAnnotation, tc.expectedAnnotation,
+				))
+			} else {
+				g.Expect(ns.Annotations).ToNot(HaveKey(hyperv1.ManagedAzureResourceIDAnnotation))
+			}
+
+			// Verify other annotations are not disturbed
+			for k, v := range tc.nsAnnotations {
+				if k != hyperv1.ManagedAzureResourceIDAnnotation {
+					g.Expect(ns.Annotations).To(HaveKeyWithValue(k, v))
+				}
+			}
+		})
+	}
+}

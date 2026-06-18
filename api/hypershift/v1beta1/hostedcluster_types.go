@@ -78,6 +78,11 @@ const (
 	// AWSKMSProviderImage is an annotation that allows the specification of the AWS kms provider image.
 	// Upstream code located at: https://github.com/kubernetes-sigs/aws-encryption-provider
 	AWSKMSProviderImage = "hypershift.openshift.io/aws-kms-provider-image"
+	// ManagedAzureResourceIDAnnotation is an annotation set by Cluster Service on the HostedCluster CR
+	// containing the Azure resource ID. It is propagated to the hosted control plane namespace.
+	// This annotation is consumed by ARO-HCP logging and observability components to correlate the
+	// HostedCluster with the corresponding Azure resources.
+	ManagedAzureResourceIDAnnotation = "azure.microsoft.com/hcp-cluster-azure-resource-id"
 	// IBMCloudKMSProviderImage is an annotation that allows the specification of the IBM Cloud kms provider image.
 	IBMCloudKMSProviderImage = "hypershift.openshift.io/ibmcloud-kms-provider-image"
 	// PortierisImageAnnotation is an annotation that allows the specification of the portieries component
