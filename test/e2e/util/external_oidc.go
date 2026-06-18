@@ -151,38 +151,55 @@ func (config *ExtOIDCConfig) GetAuthenticationConfig() *configv1.AuthenticationS
 		},
 	}
 
-	if featuregates.Gate().Enabled(featuregates.ExternalOIDCWithUIDAndExtraClaimMappings) {
-		authnSpec.OIDCProviders[0].ClaimMappings.UID = &configv1.TokenClaimOrExpressionMapping{
-			Expression: fmt.Sprintf(`"%s" + claims.sub + "%s"`, ExternalOIDCUIDExpressionPrefix, ExternalOIDCUIDExpressionSubfix),
-		}
-
-		authnSpec.OIDCProviders[0].ClaimMappings.Extra = append(authnSpec.OIDCProviders[0].ClaimMappings.Extra,
-			configv1.ExtraMapping{
-				Key:             ExternalOIDCExtraKeyBar,
-				ValueExpression: fmt.Sprintf(`"%s"`, ExternalOIDCExtraKeyBarValueExpression),
-			},
-			configv1.ExtraMapping{
-				Key:             ExternalOIDCExtraKeyFoo,
-				ValueExpression: ExternalOIDCExtraKeyFooValueExpression,
-			},
-		)
+	// Now that ExternalOIDCWithUIDAndExtraClaimMappings is promoted to default feature set,
+	// we can add to config with no feature gate checks.
+	authnSpec.OIDCProviders[0].ClaimMappings.UID = &configv1.TokenClaimOrExpressionMapping{
+		Expression: fmt.Sprintf(`"%s" + claims.sub + "%s"`, ExternalOIDCUIDExpressionPrefix, ExternalOIDCUIDExpressionSubfix),
 	}
 
-	if featuregates.Gate().Enabled(featuregates.ExternalOIDCWithUpstreamParity) {
+	authnSpec.OIDCProviders[0].ClaimMappings.Extra = append(authnSpec.OIDCProviders[0].ClaimMappings.Extra,
+		configv1.ExtraMapping{
+			Key:             ExternalOIDCExtraKeyBar,
+			ValueExpression: fmt.Sprintf(`"%s"`, ExternalOIDCExtraKeyBarValueExpression),
+		},
+		configv1.ExtraMapping{
+			Key:             ExternalOIDCExtraKeyFoo,
+			ValueExpression: ExternalOIDCExtraKeyFooValueExpression,
+		},
+	)
+
+	// Apply custom modifications if provided
+	if config.CustomizeAuthSpec != nil {
+		config.CustomizeAuthSpec(authnSpec)
+	}
+
+	return authnSpec
+}
+
+// AuthConfigWithUpstreamParity applies ExternalOIDCWithUpstreamParity feature gate configuration.
+// This includes:
+//   - CEL expressions for username/groups (no prefixes)
+//   - Claim validation rules (email exists, email_verified)
+//   - User validation rules (no system: prefix, no 'forbidden' word)
+//
+// NOTE: When using AuthConfigCombined(), this should be applied FIRST, then other customizations
+// that override specific fields (e.g., AuthConfigUIDFromClaim(), AuthConfigMinimalExtraMappings()).
+func AuthConfigWithUpstreamParity() func(*configv1.AuthenticationSpec) {
+	return func(spec *configv1.AuthenticationSpec) {
 		// Use CEL expression for username mapping instead of static claim
-		authnSpec.OIDCProviders[0].ClaimMappings.Username = configv1.UsernameClaimMapping{
+		spec.OIDCProviders[0].ClaimMappings.Username = configv1.UsernameClaimMapping{
 			Expression: "claims.email.split('@')[0]",
 		}
 
 		// Use CEL expression for groups mapping instead of static claim
-		authnSpec.OIDCProviders[0].ClaimMappings.Groups = configv1.PrefixedClaimMapping{
+		spec.OIDCProviders[0].ClaimMappings.Groups = configv1.PrefixedClaimMapping{
 			TokenClaimMapping: configv1.TokenClaimMapping{
 				Expression: "claims.?groups.orValue([])",
 			},
 		}
 
 		// Add claim validation rules
-		authnSpec.OIDCProviders[0].ClaimValidationRules = []configv1.TokenClaimValidationRule{
+		spec.OIDCProviders[0].ClaimValidationRules = []configv1.TokenClaimValidationRule{
 			{
 				Type: configv1.TokenValidationRuleTypeCEL,
 				CEL: configv1.TokenClaimValidationCELRule{
@@ -200,7 +217,7 @@ func (config *ExtOIDCConfig) GetAuthenticationConfig() *configv1.AuthenticationS
 		}
 
 		// Add user validation rules
-		authnSpec.OIDCProviders[0].UserValidationRules = []configv1.TokenUserValidationRule{
+		spec.OIDCProviders[0].UserValidationRules = []configv1.TokenUserValidationRule{
 			{
 				Expression: UserValidationExprNoSystemPrefix,
 				Message:    "username cannot use reserved system: prefix",
@@ -211,13 +228,6 @@ func (config *ExtOIDCConfig) GetAuthenticationConfig() *configv1.AuthenticationS
 			},
 		}
 	}
-
-	// Apply custom modifications if provided
-	if config.CustomizeAuthSpec != nil {
-		config.CustomizeAuthSpec(authnSpec)
-	}
-
-	return authnSpec
 }
 
 // AuthConfigDefault returns nil (no customization - uses feature-gate-driven defaults).
