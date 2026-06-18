@@ -37,7 +37,7 @@ func TestPredicate(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "When metrics forwarding mode is Enabled, it should return true",
+			name: "When metrics forwarding mode is Forward, it should return true",
 			monitoring: hyperv1.MonitoringSpec{
 				MetricsForwarding: hyperv1.MetricsForwardingSpec{
 					Mode: hyperv1.MetricsForwardingModeForward,
@@ -46,7 +46,7 @@ func TestPredicate(t *testing.T) {
 			expected: true,
 		},
 		{
-			name: "When metrics forwarding mode is Disabled, it should return false",
+			name: "When metrics forwarding mode is None, it should return false",
 			monitoring: hyperv1.MonitoringSpec{
 				MetricsForwarding: hyperv1.MetricsForwardingSpec{
 					Mode: hyperv1.MetricsForwardingModeNone,
