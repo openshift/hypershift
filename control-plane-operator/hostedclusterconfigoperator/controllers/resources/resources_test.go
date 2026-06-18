@@ -4580,16 +4580,25 @@ func TestEnsureIngressControllersRemovedHTTPRoute(t *testing.T) {
 	tests := []struct {
 		name                   string
 		baseDomainPT           bool
+		preCreateRoute         bool
 		expectHTTPRouteDeleted bool
 	}{
 		{
 			name:                   "When KubeVirt HCP has baseDomainPassthrough enabled, it should delete the HTTP passthrough route during cleanup",
 			baseDomainPT:           true,
+			preCreateRoute:         true,
+			expectHTTPRouteDeleted: true,
+		},
+		{
+			name:                   "When baseDomainPassthrough is enabled but the HTTP route does not exist, cleanup should be idempotent",
+			baseDomainPT:           true,
+			preCreateRoute:         false,
 			expectHTTPRouteDeleted: true,
 		},
 		{
 			name:                   "When baseDomainPassthrough is disabled, it should not attempt to delete the HTTP passthrough route",
 			baseDomainPT:           false,
+			preCreateRoute:         true,
 			expectHTTPRouteDeleted: false,
 		},
 	}
@@ -4640,12 +4649,12 @@ func TestEnsureIngressControllersRemovedHTTPRoute(t *testing.T) {
 				Build()
 
 			httpRouteName := fmt.Sprintf("%s-%s", manifests.IngressDefaultIngressPassthroughHTTPRouteName, generateID)
-			// Always pre-create the route so that both cases can assert whether it was
-			// deleted (baseDomainPassthrough=true) or left untouched (baseDomainPassthrough=false).
-			infraClient := fake.NewClientBuilder().
-				WithScheme(api.Scheme).
-				WithObjects(&routev1.Route{ObjectMeta: metav1.ObjectMeta{Name: httpRouteName, Namespace: hcpNamespace}}).
-				Build()
+
+			infraBuilder := fake.NewClientBuilder().WithScheme(api.Scheme)
+			if tt.preCreateRoute {
+				infraBuilder = infraBuilder.WithObjects(&routev1.Route{ObjectMeta: metav1.ObjectMeta{Name: httpRouteName, Namespace: hcpNamespace}})
+			}
+			infraClient := infraBuilder.Build()
 
 			ctx := logr.NewContext(t.Context(), zapr.NewLogger(zaptest.NewLogger(t)))
 			r := &reconciler{
@@ -4654,7 +4663,8 @@ func TestEnsureIngressControllersRemovedHTTPRoute(t *testing.T) {
 				kubevirtInfraClient: infraClient,
 			}
 
-			_, _ = r.ensureIngressControllersRemoved(ctx, hcp)
+			_, cleanupErr := r.ensureIngressControllersRemoved(ctx, hcp)
+			g.Expect(cleanupErr).To(BeNil(), "ensureIngressControllersRemoved should not return an error")
 
 			httpRoute := &routev1.Route{}
 			err := infraClient.Get(t.Context(), client.ObjectKey{Namespace: hcpNamespace, Name: httpRouteName}, httpRoute)

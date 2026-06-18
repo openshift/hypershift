@@ -25414,6 +25414,15 @@ be `*.apps.guest.apps.mgmt-cluster.example.com`.
     outside. Edge routes (which redirect HTTP to HTTPS at the guest router) are
     also supported.
 
+!!! warning
+
+    Enabling `baseDomainPassthrough` makes **plain HTTP (insecure) guest cluster
+    routes externally reachable**. Prior to this feature, only HTTPS routes were
+    accessible; plain HTTP routes returned "Application Not Found". Cluster
+    administrators who relied on the previous behavior of HTTP being rejected
+    should be aware of this change and apply appropriate network policies or
+    route admission controls if plain HTTP access is not desired.
+
 ## Customized Ingress and DNS Behavior
 
 In lieu of the default ingress and DNS behavior, it is also possible to

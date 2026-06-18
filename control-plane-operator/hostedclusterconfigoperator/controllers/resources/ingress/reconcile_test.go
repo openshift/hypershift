@@ -1096,13 +1096,13 @@ func TestReconcileDefaultIngressPassthroughService(t *testing.T) {
 						Name:       "https-443",
 						Protocol:   corev1.ProtocolTCP,
 						Port:       443,
-						TargetPort: intstr.FromInt(32443),
+						TargetPort: intstr.FromInt32(32443),
 					},
 					corev1.ServicePort{
 						Name:       "http-80",
 						Protocol:   corev1.ProtocolTCP,
 						Port:       80,
-						TargetPort: intstr.FromInt(32080),
+						TargetPort: intstr.FromInt32(32080),
 					},
 				))
 				g.Expect(svc.Spec.Selector).To(BeEmpty())
@@ -1123,7 +1123,7 @@ func TestReconcileDefaultIngressPassthroughService(t *testing.T) {
 			errSubstr: "unable to detect default ingress NodePort https port",
 		},
 		{
-			name: "When NodePort service is missing the HTTP port, it should return an error",
+			name: "When NodePort service is missing the HTTP port, it should succeed with only HTTPS port configured",
 			defaultNodePort: &corev1.Service{
 				Spec: corev1.ServiceSpec{
 					Ports: []corev1.ServicePort{
@@ -1131,8 +1131,12 @@ func TestReconcileDefaultIngressPassthroughService(t *testing.T) {
 					},
 				},
 			},
-			wantErr:   true,
-			errSubstr: "unable to detect default ingress NodePort http port",
+			validateService: func(g Gomega, svc *corev1.Service) {
+				g.Expect(svc.Spec.Ports).To(HaveLen(1))
+				g.Expect(svc.Spec.Ports[0].Name).To(Equal("https-443"))
+				g.Expect(svc.Spec.Ports[0].Port).To(Equal(int32(443)))
+				g.Expect(svc.Spec.Type).To(Equal(corev1.ServiceTypeClusterIP))
+			},
 		},
 		{
 			name: "When NodePort service has no ports, it should return an error for the missing HTTPS port",
@@ -1182,6 +1186,7 @@ func TestReconcileDefaultIngressPassthroughHTTPRoute(t *testing.T) {
 	tests := []struct {
 		name          string
 		hcp           *hyperv1.HostedControlPlane
+		existingRoute *routev1.Route
 		validateRoute func(g Gomega, route *routev1.Route)
 	}{
 		{
@@ -1196,6 +1201,21 @@ func TestReconcileDefaultIngressPassthroughHTTPRoute(t *testing.T) {
 				}))
 				g.Expect(route.Spec.To.Name).To(Equal(cpService.Name))
 				g.Expect(route.Labels).To(HaveKeyWithValue(hyperv1.InfraIDLabel, "test-infra-id"))
+			},
+		},
+		{
+			name: "When route already has TLS config, it should clear it to ensure plain HTTP",
+			hcp:  hcp,
+			existingRoute: &routev1.Route{
+				Spec: routev1.RouteSpec{
+					TLS: &routev1.TLSConfig{
+						Termination: routev1.TLSTerminationEdge,
+					},
+				},
+			},
+			validateRoute: func(g Gomega, route *routev1.Route) {
+				g.Expect(route.Spec.TLS).To(BeNil(), "pre-existing TLS config must be cleared on the HTTP route")
+				g.Expect(route.Spec.Host).To(Equal("apps.guest.apps.mgmt.example.com"))
 			},
 		},
 		{
@@ -1221,7 +1241,10 @@ func TestReconcileDefaultIngressPassthroughHTTPRoute(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
-			route := &routev1.Route{}
+			route := tt.existingRoute
+			if route == nil {
+				route = &routev1.Route{}
+			}
 			err := ReconcileDefaultIngressPassthroughHTTPRoute(route, cpService, tt.hcp)
 			g.Expect(err).ToNot(HaveOccurred())
 			tt.validateRoute(g, route)

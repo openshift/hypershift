@@ -137,6 +137,13 @@ func ReconcileDefaultIngressControllerCertSecret(certSecret *corev1.Secret, sour
 	return nil
 }
 
+const (
+	// httpsPortName is the named port for HTTPS traffic in the passthrough service and routes.
+	httpsPortName = "https-443"
+	// httpPortName is the named port for plain HTTP traffic in the passthrough service and routes.
+	httpPortName = "http-80"
+)
+
 func ReconcileDefaultIngressPassthroughService(service *corev1.Service, defaultNodePort *corev1.Service, hcp *hyperv1.HostedControlPlane) error {
 	detectedHTTPSNodePort := int32(0)
 	detectedHTTPNodePort := int32(0)
@@ -153,27 +160,31 @@ func ReconcileDefaultIngressPassthroughService(service *corev1.Service, defaultN
 	if detectedHTTPSNodePort == 0 {
 		return fmt.Errorf("unable to detect default ingress NodePort https port")
 	}
-	if detectedHTTPNodePort == 0 {
-		return fmt.Errorf("unable to detect default ingress NodePort http port")
-	}
 
 	if service.Labels == nil {
 		service.Labels = map[string]string{}
 	}
-	service.Spec.Ports = []corev1.ServicePort{
+
+	ports := []corev1.ServicePort{
 		{
-			Name:       "https-443",
+			Name:       httpsPortName,
 			Protocol:   corev1.ProtocolTCP,
 			Port:       443,
-			TargetPort: intstr.FromInt(int(detectedHTTPSNodePort)),
-		},
-		{
-			Name:       "http-80",
-			Protocol:   corev1.ProtocolTCP,
-			Port:       80,
-			TargetPort: intstr.FromInt(int(detectedHTTPNodePort)),
+			TargetPort: intstr.FromInt32(detectedHTTPSNodePort),
 		},
 	}
+	if detectedHTTPNodePort != 0 {
+		ports = append(ports, corev1.ServicePort{
+			Name:       httpPortName,
+			Protocol:   corev1.ProtocolTCP,
+			Port:       80,
+			TargetPort: intstr.FromInt32(detectedHTTPNodePort),
+		})
+	}
+	// If the HTTP NodePort is not yet available (e.g. the ingress operator is still
+	// initializing the NodePort service), HTTPS is still reconciled. The next sync
+	// loop will add the HTTP port once it appears — making this self-healing.
+	service.Spec.Ports = ports
 
 	// The endpoints reconciliation is done at nodepool controller to support
 	// secondary networks.
@@ -193,6 +204,11 @@ func ReconcileDefaultIngressPassthroughRoute(route *routev1.Route, cpService *co
 	route.Spec.Host = fmt.Sprintf("https.apps.%s.%s", hcp.Name, hcp.Spec.DNS.BaseDomain)
 	route.Spec.TLS = &routev1.TLSConfig{
 		Termination: routev1.TLSTerminationPassthrough,
+	}
+	// Explicitly select the HTTPS port so that the router always picks the right
+	// backend port now that the passthrough service exposes two named ports (443 + 80).
+	route.Spec.Port = &routev1.RoutePort{
+		TargetPort: intstr.FromString(httpsPortName),
 	}
 	route.Spec.To = routev1.RouteTargetReference{
 		Kind: "Service",
@@ -218,7 +234,7 @@ func ReconcileDefaultIngressPassthroughHTTPRoute(route *routev1.Route, cpService
 	// *.apps.{hcpName}.{baseDomain} matches the domain used by insecure guest cluster routes.
 	route.Spec.Host = fmt.Sprintf("apps.%s.%s", hcp.Name, hcp.Spec.DNS.BaseDomain)
 	route.Spec.Port = &routev1.RoutePort{
-		TargetPort: intstr.FromString("http-80"),
+		TargetPort: intstr.FromString(httpPortName),
 	}
 	route.Spec.To = routev1.RouteTargetReference{
 		Kind: "Service",
