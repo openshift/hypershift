@@ -613,6 +613,15 @@ func TestCollectSecretOrConfigMapRef(t *testing.T) {
 	})
 }
 
+func TestMetricsSetConstantsInSync(t *testing.T) {
+	t.Parallel()
+	g := NewWithT(t)
+
+	g.Expect(string(hyperv1.MetricsSetTelemetry)).To(Equal(string(metrics.MetricsSetTelemetry)))
+	g.Expect(string(hyperv1.MetricsSetSRE)).To(Equal(string(metrics.MetricsSetSRE)))
+	g.Expect(string(hyperv1.MetricsSetAll)).To(Equal(string(metrics.MetricsSetAll)))
+}
+
 // Verify certRef is correctly identified for the ptr.To helper.
 func TestCertVolumeOptionalFlag(t *testing.T) {
 	t.Parallel()
