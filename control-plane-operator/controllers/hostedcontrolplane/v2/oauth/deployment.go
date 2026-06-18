@@ -52,8 +52,9 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 				},
 			})
 		}
-
+		noProxy := []string{manifests.KubeAPIServerService("").Name, config.AuditWebhookService, getOAuthServiceDNS(cpContext.HCP.Namespace)}
 		if cpContext.HCP.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
+<<<<<<< HEAD
 			noProxy := []string{
 				manifests.KubeAPIServerService("").Name, config.AuditWebhookService,
 				"iam.cloud.ibm.com", "iam.test.cloud.ibm.com",
@@ -62,7 +63,15 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 				Name:  "NO_PROXY",
 				Value: strings.Join(noProxy, ","),
 			})
+=======
+			noProxy = append(noProxy, "iam.cloud.ibm.com", "iam.test.cloud.ibm.com")
+>>>>>>> 8ef294737 (fix(cpo): use in-cluster URL for oauth-server MasterURL)
 		}
+
+		podspec.UpsertEnvVar(c, corev1.EnvVar{
+			Name:  "NO_PROXY",
+			Value: strings.Join(noProxy, ","),
+		})
 	})
 
 	configuration := cpContext.HCP.Spec.Configuration

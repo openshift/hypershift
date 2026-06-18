@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/oauth"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
@@ -33,6 +35,15 @@ type ConfigOverride struct {
 	URLs      osinv1.OpenIDURLs   `json:"urls,omitempty"`
 	Claims    osinv1.OpenIDClaims `json:"claims,omitempty"`
 	Challenge *bool               `json:"challenge,omitempty"`
+}
+
+// getOAuthServiceDNS returns the internal cluster DNS name for the OAuth service
+// in the given namespace.
+func getOAuthServiceDNS(namespace string) string {
+	if namespace == "" {
+		return ""
+	}
+	return manifests.OauthServerService("").Name + "." + namespace + ".svc.cluster.local"
 }
 
 func adaptAuditConfig(cpContext component.WorkloadContext, cm *corev1.ConfigMap) error {
@@ -70,7 +81,7 @@ func adaptOAuthConfig(cpContext component.WorkloadContext, cfg *osinv1.OsinServe
 
 	masterUrl := fmt.Sprintf("https://%s:%d", cpContext.InfraStatus.OAuthHost, cpContext.InfraStatus.OAuthPort)
 	controlPlaneEndpoint := cpContext.HCP.Status.ControlPlaneEndpoint
-	cfg.OAuthConfig.MasterURL = masterUrl
+	cfg.OAuthConfig.MasterURL = fmt.Sprintf("https://%s:%d", getOAuthServiceDNS(cpContext.HCP.Namespace), oauth.OAuthServerPort)
 	cfg.OAuthConfig.MasterPublicURL = masterUrl
 	cfg.OAuthConfig.LoginURL = fmt.Sprintf("https://%s:%d", controlPlaneEndpoint.Host, controlPlaneEndpoint.Port)
 	// loginURLOverride can be used to specify an override for the oauth config login url. The need for this arises
