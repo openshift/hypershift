@@ -128,8 +128,8 @@ github.com/aws/aws-sdk-go-v2/internal/ini v1.8.6 h1:qYQ4pzQ2Oz6WpQ8T3HvGHnZydA72
 github.com/aws/aws-sdk-go-v2/internal/ini v1.8.6/go.mod h1:O3h0IK87yXci+kg6flUKzJnWeziQUKciKrLjcatSNcY=
 github.com/aws/aws-sdk-go-v2/internal/v4a v1.4.22 h1:rWyie/PxDRIdhNf4DzRk0lvjVOqFJuNnO8WwaIRVxzQ=
 github.com/aws/aws-sdk-go-v2/internal/v4a v1.4.22/go.mod h1:zd/JsJ4P7oGfUhXn1VyLqaRZwPmZwg44Jf2dS84Dm3Y=
-github.com/aws/aws-sdk-go-v2/service/ec2 v1.279.2 h1:MG12Z/W1zzJLkw2gCU2gKZ872rqLM0pi9LdkZ/z3FHc=
-github.com/aws/aws-sdk-go-v2/service/ec2 v1.279.2/go.mod h1:Uy+C+Sc58jozdoL1McQr8bDsEvNFx+/nBY+vpO1HVUY=
+github.com/aws/aws-sdk-go-v2/service/ec2 v1.288.0 h1:cRu1CgKDK0qYNJRZBWaktwGZ6fvcFiKZm1Huzesc47s=
+github.com/aws/aws-sdk-go-v2/service/ec2 v1.288.0/go.mod h1:Uy+C+Sc58jozdoL1McQr8bDsEvNFx+/nBY+vpO1HVUY=
 github.com/aws/aws-sdk-go-v2/service/eks v1.77.0 h1:Z5mTpmbJKU7jEM7xoXI5tO4Nm0JUZSgVSFkpYuu6Ic0=
 github.com/aws/aws-sdk-go-v2/service/eks v1.77.0/go.mod h1:Qg678m+87sCuJhcsZojenz8mblYG+Tq86V4m3hjVz0s=
 github.com/aws/aws-sdk-go-v2/service/elasticloadbalancing v1.29.6 h1:9grU/+HRwLXJV8XUjEPThJj/H+0oHkeNBFpSSfZekeg=
@@ -603,8 +603,6 @@ github.com/opencontainers/image-spec v1.1.1 h1:y0fUlFfIZhPF1W537XOLg0/fcx6zcHCJw
 github.com/opencontainers/image-spec v1.1.1/go.mod h1:qpqAh3Dmcf36wStyyWU+kCeDgrGnAve2nCC8+7h8Q0M=
 github.com/opencontainers/selinux v1.13.0 h1:Zza88GWezyT7RLql12URvoxsbLfjFx988+LGaWfbL84=
 github.com/opencontainers/selinux v1.13.0/go.mod h1:XxWTed+A/s5NNq4GmYScVy+9jzXhGBVEOAyucdRUY8s=
-github.com/openshift-online/ocm-common v0.0.31 h1:csxB4UQAUhwhDOVBmOzUKgtemuwV9rhCkzMoeFX8zCQ=
-github.com/openshift-online/ocm-common v0.0.31/go.mod h1:VEkuZp9aqbXtetZ5ycND6QpvhykvTuBF3oPsVM1X3vI=
 github.com/openshift/api v0.0.0-20260416105050-3c6b218b8a80 h1:r0S/yoZAI0iWo1JvoIijaIgWGWf/izg4WiV7Wrtz16k=
 github.com/openshift/api v0.0.0-20260416105050-3c6b218b8a80/go.mod h1:pyVjK0nZ4sRs4fuQVQ4rubsJdahI1PB94LnQ8sGdvxo=
 github.com/openshift/aws-karpenter-provider-aws v0.0.0-20260311064431-f0be9c72e5bf h1:ymEMrGiXp+PTd+Xd0Y7Jx8cNzaidg51AFyy+5tcvz+c=
@@ -1076,8 +1074,8 @@ sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.33.0 h1:qPrZsv1cwQiFe
 sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.33.0/go.mod h1:Ve9uj1L+deCXFrPOk1LpFXqTg7LCFzFso6PA48q/XZw=
 sigs.k8s.io/cluster-api v1.11.7 h1:RPEpDy6iBn13lLEj9bmq845ib47/joSBkM0Rqlhd1GI=
 sigs.k8s.io/cluster-api v1.11.7/go.mod h1:LfMVDJoVNoHj/FJuwAlNYiN1QNYqojGAJ0czqRi31yI=
-sigs.k8s.io/cluster-api-provider-aws/v2 v2.10.0 h1:E28NopVRAtnenHsfh54VwS2uEpGAkW0bv6Y19bqAwCg=
-sigs.k8s.io/cluster-api-provider-aws/v2 v2.10.0/go.mod h1:cuuFljMXGat8qW+lvSdYEWReR0DSauv19/rh+bpobl4=
+sigs.k8s.io/cluster-api-provider-aws/v2 v2.11.1 h1:Z/H2UtjE9frE2syrDksLZy4ouvz8CaUZk4HoVDUgSbE=
+sigs.k8s.io/cluster-api-provider-aws/v2 v2.11.1/go.mod h1:8zr5dWU+ZTJdEqwbkOEGErLfg8/LJzSSVbjgR7MDyu0=
 sigs.k8s.io/cluster-api-provider-azure v1.22.0 h1:TL+QXMVCeY2zR41PSlH2jyhQivDXXPGT8wqG4LX92ss=
 sigs.k8s.io/cluster-api-provider-azure v1.22.0/go.mod h1:ivn6SfniydSCKi+pzGUaNlH1rFcavqRKw0iy1g9l7Nc=
 sigs.k8s.io/cluster-api-provider-gcp v1.11.0 h1:I3sroBY64nAGCzt3aerpGMM76WU3UyjP429kEC0vJ5Y=

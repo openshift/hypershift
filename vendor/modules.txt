@@ -374,16 +374,11 @@ github.com/aws/aws-sdk-go-v2/internal/ini
 github.com/aws/aws-sdk-go-v2/internal/v4a
 github.com/aws/aws-sdk-go-v2/internal/v4a/internal/crypto
 github.com/aws/aws-sdk-go-v2/internal/v4a/internal/v4
-# github.com/aws/aws-sdk-go-v2/service/ec2 v1.279.2
+# github.com/aws/aws-sdk-go-v2/service/ec2 v1.288.0
 ## explicit; go 1.23
 github.com/aws/aws-sdk-go-v2/service/ec2
 github.com/aws/aws-sdk-go-v2/service/ec2/internal/endpoints
 github.com/aws/aws-sdk-go-v2/service/ec2/types
-# github.com/aws/aws-sdk-go-v2/service/eks v1.77.0
-## explicit; go 1.23
-github.com/aws/aws-sdk-go-v2/service/eks
-github.com/aws/aws-sdk-go-v2/service/eks/internal/endpoints
-github.com/aws/aws-sdk-go-v2/service/eks/types
 # github.com/aws/aws-sdk-go-v2/service/elasticloadbalancing v1.29.6
 ## explicit; go 1.22
 github.com/aws/aws-sdk-go-v2/service/elasticloadbalancing
@@ -1004,9 +999,6 @@ github.com/opencontainers/image-spec/specs-go/v1
 ## explicit; go 1.19
 github.com/opencontainers/selinux/go-selinux
 github.com/opencontainers/selinux/pkg/pwalkdir
-# github.com/openshift-online/ocm-common v0.0.31
-## explicit; go 1.21
-github.com/openshift-online/ocm-common/pkg/resource/validations
 # github.com/openshift/api v0.0.0-20260416105050-3c6b218b8a80
 ## explicit; go 1.25.0
 github.com/openshift/api
@@ -1449,7 +1441,6 @@ go.yaml.in/yaml/v3
 # golang.org/x/crypto v0.51.0
 ## explicit; go 1.25.0
 golang.org/x/crypto/bcrypt
-golang.org/x/crypto/blake2b
 golang.org/x/crypto/blowfish
 golang.org/x/crypto/chacha20
 golang.org/x/crypto/chacha20poly1305
@@ -2594,7 +2585,7 @@ sigs.k8s.io/cluster-api/util/conversion
 sigs.k8s.io/cluster-api/util/labels/format
 sigs.k8s.io/cluster-api/util/patch
 sigs.k8s.io/cluster-api/util/topology
-# sigs.k8s.io/cluster-api-provider-aws/v2 v2.10.0
+# sigs.k8s.io/cluster-api-provider-aws/v2 v2.11.1
 ## explicit; go 1.24.0
 sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta1
 sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2
@@ -2603,8 +2594,6 @@ sigs.k8s.io/cluster-api-provider-aws/v2/exp/api/v1beta1
 sigs.k8s.io/cluster-api-provider-aws/v2/exp/api/v1beta2
 sigs.k8s.io/cluster-api-provider-aws/v2/feature
 sigs.k8s.io/cluster-api-provider-aws/v2/iam/api/v1beta1
-sigs.k8s.io/cluster-api-provider-aws/v2/pkg/eks
-sigs.k8s.io/cluster-api-provider-aws/v2/pkg/hash
 # sigs.k8s.io/cluster-api-provider-azure v1.22.0
 ## explicit; go 1.24.6
 sigs.k8s.io/cluster-api-provider-azure/api/v1beta1
