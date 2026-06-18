@@ -51,7 +51,7 @@ func AzurePublicClusterTest(getTestCtx internal.TestContextGetter) {
 		})
 
 		It("should mutate pods with workload identity federated credentials", func() {
-			e2eutil.GinkgoAtLeast(e2eutil.Version422)
+			e2eutil.GinkgoAtLeast(e2eutil.Version420)
 			testCtx := getTestCtx()
 			hc := testCtx.GetHostedCluster()
 			e2eutil.WaitForGuestKubeConfig(GinkgoTB(), testCtx.Context, testCtx.MgmtClient, hc)
