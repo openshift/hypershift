@@ -82,6 +82,8 @@ type ClusterNetworkOperatorSpec struct {
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.ipv6) || has(self.ipv6)", message="ipv6 is immutable once set and cannot be removed"
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.ipv6) || !has(oldSelf.ipv6.internalJoinSubnet) || (has(self.ipv6) && has(self.ipv6.internalJoinSubnet))", message="ipv6.internalJoinSubnet cannot be removed once set"
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.ipv6) || !has(oldSelf.ipv6.internalTransitSwitchSubnet) || (has(self.ipv6) && has(self.ipv6.internalTransitSwitchSubnet))", message="ipv6.internalTransitSwitchSubnet cannot be removed once set"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.v4InternalSubnet) || has(self.v4InternalSubnet)",message="v4InternalSubnet is immutable once set and cannot be removed"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.v6InternalSubnet) || has(self.v6InternalSubnet)",message="v6InternalSubnet is immutable once set and cannot be removed"
 // +kubebuilder:validation:MinProperties=1
 type OVNKubernetesConfig struct {
 	// ipv4 allows users to configure IP settings for IPv4 connections. When omitted,
@@ -115,6 +117,46 @@ type OVNKubernetesConfig struct {
 	// +kubebuilder:validation:Maximum=9216
 	// +optional
 	MTU int32 `json:"mtu,omitempty"`
+
+	// v4InternalSubnet is a v4 subnet used internally by ovn-kubernetes in case the
+	// default one is being already used by something else. It must not overlap with
+	// any other subnet being used by OpenShift or by the node network. The size of the
+	// subnet must be larger than the number of nodes. Once set, the value is immutable
+	// and cannot be modified in subsequent updates.
+	// The default is 100.64.0.0/16.
+	// The value must be in IPv4 CIDR notation (e.g., 192.168.0.0/16), consisting of
+	// four decimal octets (0-255) separated by dots, followed by a slash and a prefix
+	// length. The prefix length must be between 0 and 30 inclusive, and the first
+	// octet must not be 0.
+	// The value must be between 9 and 18 characters in length.
+	// This field is immutable once set.
+	// +kubebuilder:validation:MaxLength=18
+	// +kubebuilder:validation:MinLength=9
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="v4InternalSubnet is immutable once set"
+	// +kubebuilder:validation:XValidation:rule="isCIDR(self) && cidr(self).ip().family() == 4",message="Subnet must be in a valid IPv4 CIDR format"
+	// +kubebuilder:validation:XValidation:rule="isCIDR(self) && cidr(self).prefixLength() <= 30",message="subnet must be in the range /0 to /30 inclusive"
+	// +kubebuilder:validation:XValidation:rule="isCIDR(self) && cidr(self).ip().family() == 4 && int(self.split('.')[0]) > 0",message="first IP address octet must not be 0"
+	// +optional
+	V4InternalSubnet string `json:"v4InternalSubnet,omitempty"`
+
+	// v6InternalSubnet is a v6 subnet used internally by ovn-kubernetes in case the
+	// default one is being already used by something else. It must not overlap with
+	// any other subnet being used by OpenShift or by the node network. The size of the
+	// subnet must be larger than the number of nodes. Once set, the value is immutable
+	// and cannot be modified in subsequent updates.
+	// The default is fd98::/64.
+	// The value must be in IPv6 CIDR notation (e.g., fd98::/64), consisting of an
+	// IPv6 address followed by a slash and a prefix length. The prefix length must
+	// be between 0 and 125 inclusive.
+	// The value must be between 4 and 48 characters in length.
+	// This field is immutable once set.
+	// +kubebuilder:validation:MaxLength=48
+	// +kubebuilder:validation:MinLength=4
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="v6InternalSubnet is immutable once set"
+	// +kubebuilder:validation:XValidation:rule="isCIDR(self) && cidr(self).ip().family() == 6",message="Subnet must be in valid IPv6 CIDR format"
+	// +kubebuilder:validation:XValidation:rule="isCIDR(self) && cidr(self).prefixLength() <= 125",message="subnet must be in the range /0 to /125 inclusive"
+	// +optional
+	V6InternalSubnet string `json:"v6InternalSubnet,omitempty"`
 }
 
 // OVNIPv4Config contains IPv4-specific configuration options for OVN-Kubernetes.
