@@ -4373,23 +4373,15 @@ func validateSliceNetworkCIDRs(hc *hyperv1.HostedCluster) field.ErrorList {
 
 	if hc.Spec.Networking.NetworkType == hyperv1.OVNKubernetes &&
 		hc.Spec.OperatorConfiguration != nil && hc.Spec.OperatorConfiguration.ClusterNetworkOperator != nil &&
-		hc.Spec.OperatorConfiguration.ClusterNetworkOperator.OVNKubernetesConfig != nil &&
-		hc.Spec.OperatorConfiguration.ClusterNetworkOperator.OVNKubernetesConfig.IPv4 != nil {
-		ovnConfig := hc.Spec.OperatorConfiguration.ClusterNetworkOperator.OVNKubernetesConfig.IPv4
-		if ovnConfig.InternalJoinSubnet != "" {
-			_, cidr, err := net.ParseCIDR(ovnConfig.InternalJoinSubnet)
-			if err == nil {
-				ce := cidrEntry{*cidr, *field.NewPath("spec", "operatorConfiguration", "clusterNetworkOperator", "ovnKubernetesConfig", "ipv4", "internalJoinSubnet")}
-				cidrEntries = append(cidrEntries, ce)
-			}
+		hc.Spec.OperatorConfiguration.ClusterNetworkOperator.OVNKubernetesConfig != nil {
+		ovnKubeConfig := hc.Spec.OperatorConfiguration.ClusterNetworkOperator.OVNKubernetesConfig
+		ovnBasePath := []string{"spec", "operatorConfiguration", "clusterNetworkOperator", "ovnKubernetesConfig"}
+		if ovnKubeConfig.IPv4 != nil {
+			cidrEntries = appendCIDREntry(cidrEntries, ovnKubeConfig.IPv4.InternalJoinSubnet, append(ovnBasePath, "ipv4", "internalJoinSubnet")...)
+			cidrEntries = appendCIDREntry(cidrEntries, ovnKubeConfig.IPv4.InternalTransitSwitchSubnet, append(ovnBasePath, "ipv4", "internalTransitSwitchSubnet")...)
 		}
-		if ovnConfig.InternalTransitSwitchSubnet != "" {
-			_, cidr, err := net.ParseCIDR(ovnConfig.InternalTransitSwitchSubnet)
-			if err == nil {
-				ce := cidrEntry{*cidr, *field.NewPath("spec", "operatorConfiguration", "clusterNetworkOperator", "ovnKubernetesConfig", "ipv4", "internalTransitSwitchSubnet")}
-				cidrEntries = append(cidrEntries, ce)
-			}
-		}
+		cidrEntries = appendCIDREntry(cidrEntries, ovnKubeConfig.V4InternalSubnet, append(ovnBasePath, "v4InternalSubnet")...)
+		cidrEntries = appendCIDREntry(cidrEntries, ovnKubeConfig.V6InternalSubnet, append(ovnBasePath, "v6InternalSubnet")...)
 	}
 
 	if hc.Spec.Networking.NetworkType == hyperv1.OVNKubernetes {
@@ -4436,6 +4428,17 @@ func validateSliceNetworkCIDRs(hc *hyperv1.HostedCluster) field.ErrorList {
 		}
 	}
 	return compareCIDREntries(cidrEntries)
+}
+
+func appendCIDREntry(entries []cidrEntry, cidrStr string, pathElements ...string) []cidrEntry {
+	if cidrStr == "" || len(pathElements) == 0 {
+		return entries
+	}
+	_, cidr, err := net.ParseCIDR(cidrStr)
+	if err != nil {
+		return entries
+	}
+	return append(entries, cidrEntry{*cidr, *field.NewPath(pathElements[0], pathElements[1:]...)})
 }
 
 type cidrEntry struct {
