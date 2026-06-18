@@ -1,6 +1,7 @@
 package ingressoperator
 
 import (
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
@@ -11,6 +12,8 @@ import (
 )
 
 func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
+	hcp := cpContext.HCP
+
 	podspec.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
 		podspec.UpsertEnvVar(c, corev1.EnvVar{
 			Name: "RELEASE_VERSION", Value: cpContext.UserReleaseImageProvider.Version(),
@@ -22,7 +25,7 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 			Name: "CANARY_IMAGE", Value: cpContext.UserReleaseImageProvider.GetImage("cluster-ingress-operator"),
 		})
 
-		if cpContext.HCP.Spec.FIPS {
+		if hcp.Spec.FIPS {
 			podspec.UpsertEnvVar(c, corev1.EnvVar{
 				Name: "FIPS_ENABLED", Value: "true",
 			})
@@ -32,9 +35,9 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 		// we authenticate with Azure API through UserAssignedCredential authentication. We also mount the
 		// SecretProviderClass for the Secrets Store CSI driver to use; it will grab the JSON object stored in the
 		// MANAGED_AZURE_HCP_CREDENTIALS_FILE_PATH and mount it as a volume in the ingress pod in the path.
-		if azureutil.IsAroHCPByHCP(cpContext.HCP) {
+		if azureutil.IsAroHCPByHCP(hcp) {
 			c.Env = append(c.Env,
-				azureutil.CreateEnvVarsForAzureManagedIdentity(cpContext.HCP.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.Ingress.CredentialsSecretName)...)
+				azureutil.CreateEnvVarsForAzureManagedIdentity(hcp.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.Ingress.CredentialsSecretName)...)
 
 			c.VolumeMounts = append(c.VolumeMounts,
 				azureutil.CreateVolumeMountForAzureSecretStoreProviderClass(config.ManagedAzureIngressSecretStoreVolumeName),
@@ -44,6 +47,10 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 			)
 		}
 	})
+
+	if hcp.Spec.Platform.Type == hyperv1.AWSPlatform && hcp.Spec.AdditionalTrustBundle != nil {
+		podspec.DeploymentAddAWSCABundleVolume(hcp.Spec.AdditionalTrustBundle, deployment, cpContext.ReleaseImageProvider.GetImage(podspec.CPOImageName))
+	}
 
 	return nil
 }

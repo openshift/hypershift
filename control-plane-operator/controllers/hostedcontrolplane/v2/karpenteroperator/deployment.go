@@ -70,6 +70,10 @@ func (karp *KarpenterOperatorOptions) adaptDeployment(cpContext component.Worklo
 				)
 			}
 		})
+
+		if hcp.Spec.AdditionalTrustBundle != nil {
+			podspec.DeploymentAddAWSCABundleVolume(hcp.Spec.AdditionalTrustBundle, deployment, cpContext.ReleaseImageProvider.GetImage(podspec.CPOImageName))
+		}
 	}
 
 	return nil

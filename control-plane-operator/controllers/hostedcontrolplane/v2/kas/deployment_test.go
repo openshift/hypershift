@@ -85,3 +85,94 @@ func TestAddImagePrePullInitContainers(t *testing.T) {
 		})
 	}
 }
+
+func TestApplyAWSCABundleToKMSContainers(t *testing.T) {
+	testCases := []struct {
+		name              string
+		containers        []corev1.Container
+		expectActiveWired bool
+		expectBackupWired bool
+	}{
+		{
+			name: "When both active and backup KMS containers exist it should wire both",
+			containers: []corev1.Container{
+				{Name: "kube-apiserver"},
+				{Name: "aws-kms-token-minter"},
+				{Name: "aws-kms-active"},
+				{Name: "aws-kms-backup"},
+			},
+			expectActiveWired: true,
+			expectBackupWired: true,
+		},
+		{
+			name: "When only active KMS container exists it should wire active only",
+			containers: []corev1.Container{
+				{Name: "kube-apiserver"},
+				{Name: "aws-kms-token-minter"},
+				{Name: "aws-kms-active"},
+			},
+			expectActiveWired: true,
+			expectBackupWired: false,
+		},
+		{
+			name: "When no KMS containers exist it should not wire any containers",
+			containers: []corev1.Container{
+				{Name: "kube-apiserver"},
+				{Name: "konnectivity-server"},
+			},
+			expectActiveWired: false,
+			expectBackupWired: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			podSpec := &corev1.PodSpec{
+				Containers: tc.containers,
+			}
+
+			applyAWSCABundleToKMSContainers(podSpec)
+
+			assertContainerWired := func(containerName string, expectWired bool) {
+				for _, c := range podSpec.Containers {
+					if c.Name != containerName {
+						continue
+					}
+					if expectWired {
+						g.Expect(c.VolumeMounts).To(ContainElement(SatisfyAll(
+							HaveField("Name", "aws-ca-bundle"),
+							HaveField("MountPath", "/etc/pki/ca-trust/extracted/hypershift"),
+							HaveField("ReadOnly", true),
+						)), "%s should have aws-ca-bundle volume mount", containerName)
+						g.Expect(c.Env).To(ContainElement(SatisfyAll(
+							HaveField("Name", "AWS_CA_BUNDLE"),
+							HaveField("Value", "/etc/pki/ca-trust/extracted/hypershift/combined-ca-bundle.pem"),
+						)), "%s should have AWS_CA_BUNDLE env var", containerName)
+					} else {
+						g.Expect(c.VolumeMounts).ToNot(ContainElement(HaveField("Name", "aws-ca-bundle")),
+							"%s should not have aws-ca-bundle volume mount", containerName)
+						g.Expect(c.Env).ToNot(ContainElement(HaveField("Name", "AWS_CA_BUNDLE")),
+							"%s should not have AWS_CA_BUNDLE env var", containerName)
+					}
+					return
+				}
+				if expectWired {
+					t.Errorf("container %s not found but expected to be wired", containerName)
+				}
+			}
+
+			assertContainerWired("aws-kms-active", tc.expectActiveWired)
+			assertContainerWired("aws-kms-backup", tc.expectBackupWired)
+
+			// Token minter should never be wired (it doesn't call AWS APIs).
+			for _, c := range podSpec.Containers {
+				if c.Name == "aws-kms-token-minter" {
+					g.Expect(c.Env).ToNot(ContainElement(HaveField("Name", "AWS_CA_BUNDLE")),
+						"aws-kms-token-minter should not have AWS_CA_BUNDLE")
+				}
+			}
+		})
+	}
+}

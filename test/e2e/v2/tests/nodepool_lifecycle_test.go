@@ -923,6 +923,70 @@ func NodePoolTrustBundleTest(getTestCtx internal.TestContextGetter) {
 			e2eutil.WithInterval(defaultPollInterval), e2eutil.WithTimeout(guestUserCABundlePropagationTimeout),
 		)
 
+		// Verify AWS_CA_BUNDLE wiring on the aws-cloud-controller-manager deployment
+		cpNamespace := manifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name)
+		if hc.Spec.Platform.Type == hyperv1.AWSPlatform {
+			awsCCMDeployment := &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "aws-cloud-controller-manager",
+					Namespace: cpNamespace,
+				},
+			}
+			e2eutil.EventuallyObject(GinkgoTB(), ctx, "aws-cloud-controller-manager to have AWS_CA_BUNDLE wiring",
+				func(ctx context.Context) (*appsv1.Deployment, error) {
+					deploy := &appsv1.Deployment{}
+					err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(awsCCMDeployment), deploy)
+					return deploy, err
+				},
+				[]e2eutil.Predicate[*appsv1.Deployment]{
+					func(obj *appsv1.Deployment) (bool, string, error) {
+						container := podspec.FindContainer("aws-cloud-controller-manager", obj.Spec.Template.Spec.Containers)
+						if container == nil {
+							return false, "aws-cloud-controller-manager container not found", nil
+						}
+						hasEnv := false
+						for _, env := range container.Env {
+							if env.Name == "AWS_CA_BUNDLE" && env.Value == podspec.AWSCABundleMountPath+"/"+podspec.AWSCABundleFileName {
+								hasEnv = true
+								break
+							}
+						}
+						if !hasEnv {
+							return false, "AWS_CA_BUNDLE env var not found on aws-cloud-controller-manager container", nil
+						}
+
+						hasInitContainer := false
+						for _, ic := range obj.Spec.Template.Spec.InitContainers {
+							if ic.Name == "setup-aws-ca-bundle" {
+								hasInitContainer = true
+								break
+							}
+						}
+						if !hasInitContainer {
+							return false, "setup-aws-ca-bundle init container not found", nil
+						}
+
+						hasVolume := false
+						for _, v := range obj.Spec.Template.Spec.Volumes {
+							if v.Name == podspec.AWSCABundleVolumeName && v.EmptyDir != nil {
+								hasVolume = true
+								break
+							}
+						}
+						if !hasVolume {
+							return false, "aws-ca-bundle volume not found", nil
+						}
+
+						if ready := podspec.IsDeploymentReady(ctx, obj); !ready {
+							return false, "Deployment is not ready", nil
+						}
+						return true, "AWS_CA_BUNDLE wiring is present and deployment is ready", nil
+					},
+				},
+				e2eutil.WithInterval(10*time.Second), e2eutil.WithTimeout(5*time.Minute),
+			)
+		}
+
 		// Remove trust bundle from HostedCluster
 		GinkgoWriter.Printf("Removing additional trust bundle from HostedCluster\n")
 		Expect(e2eutil.UpdateObject(GinkgoTB(), ctx, testCtx.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
@@ -930,7 +994,6 @@ func NodePoolTrustBundleTest(getTestCtx internal.TestContextGetter) {
 		})).To(Succeed(), "failed to remove trust bundle from HostedCluster")
 
 		// Verify CPO deployment no longer mounts the trust bundle
-		cpNamespace := manifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name)
 		cpoDeployment := &appsv1.Deployment{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "control-plane-operator",
@@ -958,6 +1021,47 @@ func NodePoolTrustBundleTest(getTestCtx internal.TestContextGetter) {
 			},
 			e2eutil.WithInterval(defaultPollInterval), e2eutil.WithTimeout(cpoDeploymentUpdateTimeout),
 		)
+
+		// Verify AWS_CA_BUNDLE wiring is removed from the aws-cloud-controller-manager deployment
+		if hc.Spec.Platform.Type == hyperv1.AWSPlatform {
+			awsCCMDeployment := &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "aws-cloud-controller-manager",
+					Namespace: cpNamespace,
+				},
+			}
+			e2eutil.EventuallyObject(GinkgoTB(), ctx, "aws-cloud-controller-manager to have AWS_CA_BUNDLE wiring removed",
+				func(ctx context.Context) (*appsv1.Deployment, error) {
+					deploy := &appsv1.Deployment{}
+					err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(awsCCMDeployment), deploy)
+					return deploy, err
+				},
+				[]e2eutil.Predicate[*appsv1.Deployment]{
+					func(obj *appsv1.Deployment) (bool, string, error) {
+						container := podspec.FindContainer("aws-cloud-controller-manager", obj.Spec.Template.Spec.Containers)
+						if container == nil {
+							return false, "aws-cloud-controller-manager container not found", nil
+						}
+						for _, env := range container.Env {
+							if env.Name == "AWS_CA_BUNDLE" {
+								return false, "AWS_CA_BUNDLE env var is still present", nil
+							}
+						}
+
+						for _, ic := range obj.Spec.Template.Spec.InitContainers {
+							if ic.Name == "setup-aws-ca-bundle" {
+								return false, "setup-aws-ca-bundle init container is still present", nil
+							}
+						}
+
+						if ready := podspec.IsDeploymentReady(ctx, obj); !ready {
+							return false, "Deployment is not ready", nil
+						}
+						return true, "AWS_CA_BUNDLE wiring is removed and deployment is ready", nil
+					},
+				},
+			)
+		}
 
 		// Wait for NodePool to cycle again
 		e2eutil.EventuallyObject(GinkgoTB(), ctx, fmt.Sprintf("NodePool %s/%s to begin updating after trust bundle removal", np.Namespace, np.Name),

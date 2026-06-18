@@ -130,6 +130,10 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 			if err := applyKMSConfig(&deployment.Spec.Template.Spec, secretEncryption, newKMSImages(hcp), hcp); err != nil {
 				return err
 			}
+			if secretEncryption.KMS != nil && secretEncryption.KMS.Provider == hyperv1.AWS && hcp.Spec.AdditionalTrustBundle != nil {
+				podspec.DeploymentAddAWSCABundleSetup(hcp.Spec.AdditionalTrustBundle, deployment, cpContext.ReleaseImageProvider.GetImage(podspec.CPOImageName))
+				applyAWSCABundleToKMSContainers(&deployment.Spec.Template.Spec)
+			}
 		}
 	}
 
@@ -162,6 +166,14 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 	}
 
 	return nil
+}
+
+// applyAWSCABundleToKMSContainers adds the combined CA bundle volume mount and AWS_CA_BUNDLE
+// environment variable to the AWS KMS sidecar containers (aws-kms-active and aws-kms-backup).
+// The volumes and init container must already be set up via DeploymentAddAWSCABundleSetup.
+func applyAWSCABundleToKMSContainers(podSpec *corev1.PodSpec) {
+	podspec.UpdateContainer("aws-kms-active", podSpec.Containers, podspec.ContainerAddAWSCABundle)
+	podspec.UpdateContainer("aws-kms-backup", podSpec.Containers, podspec.ContainerAddAWSCABundle)
 }
 
 func updateMainContainer(podSpec *corev1.PodSpec, hcp *hyperv1.HostedControlPlane) {

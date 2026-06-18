@@ -62,6 +62,10 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 		}
 	})
 
+	if hcp.Spec.AdditionalTrustBundle != nil {
+		podspec.DeploymentAddAWSCABundleVolume(hcp.Spec.AdditionalTrustBundle, deployment, cpContext.ReleaseImageProvider.GetImage(podspec.CPOImageName))
+	}
+
 	// Set replicas based on whether termination handler is needed
 	// If the disable annotation is present, scale to 0 replicas
 	deployment.Spec.Replicas = ptr.To[int32](1)
