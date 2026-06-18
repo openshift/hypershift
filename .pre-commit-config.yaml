@@ -51,6 +51,7 @@ repos:
         description: Runs `make verify`.
         entry: make verify
         language: system
+        pass_filenames: false
         stages: [pre-push]
         require_serial: true
       - id: make-test
@@ -58,6 +59,7 @@ repos:
         description: Runs `make test`.
         entry: make test
         language: system
+        pass_filenames: false
         stages: [ pre-push ]
 exclude: '^vendor/|^hack/tools/vendor/|^api/vendor/'
 fail_fast: true
