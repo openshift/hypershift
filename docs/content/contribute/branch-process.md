@@ -6,6 +6,7 @@ These are a set of tasks we need to perform on every OCP branching. We need to:
 1. Update the Renovate configuration to include the new release branch - [Update Renovate](#update-renovate-configuration)
 1. Update the OpenShift Release repository to fix the step registry configuration files - [OpenShift/Release](#openshiftrelease-repository)
 1. Update TestGrid to include the new OCP version tests - [TestGrid](#update-testgrid)
+1. Add upgrade-from-.0 periodic jobs for ROSA and ARO HCP once the new version is GA - [Upgrade-from-.0 Periodics](#add-upgrade-from-0-periodic-jobs)
 
 !!! danger
     If test platform are testing new OCP releases before the release is cut the hypershift test will fail and block payloads until:
@@ -94,3 +95,26 @@ We should also ensure that the latest release branch is using the Hypershift Ope
 We need to update TestGrid to include the new OCP version tests. 
 
 Here is an [Example PR](https://github.com/kubernetes/test-infra/pull/35535) to do that.
+
+---
+
+### Add Upgrade-from-.0 Periodic Jobs
+
+Once a new OCP minor version goes GA, we need to add upgrade-from-.0 periodic jobs for both AWS (ROSA) and Azure (ARO HCP) platforms in the [openshift/release](https://github.com/openshift/release) repository. These jobs validate that clusters can upgrade from CPO version 4.Y.0 to 4.Y.latest without triggering NodePool rollouts.
+
+Jobs to create for each new GA version:
+
+- **AWS (ROSA):** `periodic-ci-openshift-hypershift-release-4.Y-periodics-hcm-upgrade-dot-zero-to-latest-aws-ovn`
+- **Azure (ARO HCP):** `periodic-ci-openshift-hypershift-release-4.Y-periodics-hcm-upgrade-dot-zero-to-latest-azure`
+
+The CI operator configs live at:
+
+- `ci-operator/config/openshift/hypershift/openshift-hypershift-release-4.Y__periodics-hcm-upgrade.yaml` (AWS)
+- `ci-operator/config/openshift/hypershift/openshift-hypershift-release-4.Y__periodics-hcm-azure.yaml` (Azure)
+
+Use the existing job configurations from the prior OCP version as a template. Both jobs run the `TestUpgradeControlPlane` test with `PREVIOUS_RELEASE_IMAGE` set to 4.Y.0 and `LATEST_RELEASE_IMAGE` set to 4.Y.latest.
+
+For detailed requirements and job specifications, see:
+
+- [CNTRLPLANE-1852](https://redhat.atlassian.net/browse/CNTRLPLANE-1852) — AWS (ROSA) upgrade-from-.0 periodic job spec
+- [CNTRLPLANE-1854](https://redhat.atlassian.net/browse/CNTRLPLANE-1854) — Azure (ARO HCP) upgrade-from-.0 periodic job spec
