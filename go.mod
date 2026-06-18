@@ -270,7 +270,7 @@ require (
 	github.com/xlab/treeprint v1.2.0 // indirect
 	go.etcd.io/etcd/pkg/v3 v3.6.11 // indirect
 	go.etcd.io/raft/v3 v3.6.0 // indirect
-	go.mongodb.org/mongo-driver v1.17.3 // indirect
+	go.mongodb.org/mongo-driver v1.17.7 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.67.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.67.0 // indirect
