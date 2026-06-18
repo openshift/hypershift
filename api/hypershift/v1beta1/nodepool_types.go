@@ -101,6 +101,7 @@ type NodePool struct {
 }
 
 // NodePoolSpec is the desired behavior of a NodePool.
+// +openshift:validation:FeatureGateAwareXValidation:featureGate=OSStreams,rule="!has(oldSelf.osImageStream) || has(self.osImageStream)",message="osImageStream cannot be removed once set; create a new NodePool instead"
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.arch) || has(self.arch)", message="Arch is required once set"
 // +kubebuilder:validation:XValidation:rule="self.arch != 'arm64' || has(self.platform.aws) || has(self.platform.azure) || has(self.platform.agent) || self.platform.type == 'GCP' || self.platform.type == 'None'", message="Setting Arch to arm64 is only supported for AWS, Azure, Agent, GCP and None"
 // +kubebuilder:validation:XValidation:rule="!has(self.replicas) || !has(self.autoScaling)", message="Both replicas or autoScaling should not be set"
@@ -260,6 +261,13 @@ type NodePoolSpec struct {
 	// +optional
 	OSImageStream OSImageStreamReference `json:"osImageStream,omitzero"`
 }
+
+const (
+	// OSImageStreamRHEL9 is the OS image stream name for RHEL 9.
+	OSImageStreamRHEL9 = "rhel-9"
+	// OSImageStreamRHEL10 is the OS image stream name for RHEL 10.
+	OSImageStreamRHEL10 = "rhel-10"
+)
 
 // OSImageStreamReference references an OSImageStream by name.
 type OSImageStreamReference struct {
