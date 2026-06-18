@@ -92,4 +92,4 @@ jobs:
           claude plugin marketplace add enxebre/ai-scripts
           claude plugin install git@enxebre
           claude --version
-          claude -p "/restructure-commits" --model claude-opus-4-6 --max-turns 200 --allowedTools "Bash Read Write Edit Grep Glob WebFetch"
+          claude -p "/restructure-commits -- You are running in CI. Force push with --force-with-lease when done without asking for confirmation." --model claude-opus-4-6 --max-turns 200 --allowedTools "Bash Read Write Edit Grep Glob WebFetch"
