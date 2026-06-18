@@ -407,5 +407,6 @@ nav:
   - 'Run hypershift-operator locally': contribute/run-hypershift-operator-locally.md
   - 'CPO Overrides': contribute/cpo-overrides.md
   - 'Contribute to docs': contribute/contribute-docs.md
+  - 'Retrospective Guidelines': contribute/retrospective-guidelines.md
 - 'Videos':
   - videos/index.md
