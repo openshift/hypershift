@@ -59,11 +59,19 @@ jobs:
           fetch-depth: 0
 
       - name: Authenticate to GCP via WIF
+        id: gcp-auth
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
         with:
           project_id: hosted-control-planes
           service_account: claude-gha@hosted-control-planes.iam.gserviceaccount.com
           workload_identity_provider: projects/21066242673/locations/global/workloadIdentityPools/itpc-identity-pool/providers/github-com
+
+      - name: Move GCP credentials out of workspace
+        run: |
+          install -m 0600 "${{ steps.gcp-auth.outputs.credentials_file_path }}" "$RUNNER_TEMP/gcp-credentials.json"
+          echo "CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE=$RUNNER_TEMP/gcp-credentials.json" >> "$GITHUB_ENV"
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/gcp-credentials.json" >> "$GITHUB_ENV"
+          echo "GOOGLE_GHA_CREDS_PATH=$RUNNER_TEMP/gcp-credentials.json" >> "$GITHUB_ENV"
 
       - name: Install Claude Code
         run: |
