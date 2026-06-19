@@ -1333,6 +1333,8 @@ func (r *reconciler) reconcileRBAC(ctx context.Context, hcp *hyperv1.HostedContr
 		manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: manifests.NodeBootstrapperClusterRoleBinding, reconcile: rbac.ReconcileNodeBootstrapperClusterRoleBinding},
 		manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: manifests.CSRRenewalClusterRoleBinding, reconcile: rbac.ReconcileCSRRenewalClusterRoleBinding},
 		manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: manifests.MetricsClientClusterRoleBinding, reconcile: rbac.ReconcileGenericMetricsClusterRoleBinding("system:serviceaccount:hypershift:prometheus")},
+		manifestAndReconcile[*rbacv1.ClusterRole]{manifest: manifests.MetricsResourcesClusterRole, reconcile: rbac.ReconcileMetricsResourcesClusterRole},
+		manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: manifests.MetricsResourcesClusterRoleBinding, reconcile: rbac.ReconcileMetricsResourcesClusterRoleBinding},
 
 		manifestAndReconcile[*rbacv1.RoleBinding]{manifest: manifests.IngressToRouteControllerRoleBinding, reconcile: rbac.ReconcileIngressToRouteControllerRoleBinding},
 

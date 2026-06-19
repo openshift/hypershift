@@ -34,37 +34,55 @@ func TestAdaptServiceMonitor(t *testing.T) {
 			},
 		},
 		{
-			name:       "When service monitor is adapted it should apply cluster ID label",
+			name:       "When service monitor is adapted it should apply cluster ID label to both endpoints",
 			metricsSet: metrics.MetricsSetAll,
 			clusterID:  "cluster-abc-123",
 			validate: func(t *testing.T, sm *prometheusoperatorv1.ServiceMonitor, err error) {
 				g := NewWithT(t)
 				g.Expect(err).ToNot(HaveOccurred())
-				g.Expect(sm.Spec.Endpoints).To(HaveLen(1))
+				g.Expect(sm.Spec.Endpoints).To(HaveLen(2))
 
-				relabelConfigs := sm.Spec.Endpoints[0].RelabelConfigs
-				foundClusterIDLabel := false
-				for _, config := range relabelConfigs {
-					if config.TargetLabel == "_id" && config.Replacement != nil && *config.Replacement == "cluster-abc-123" {
-						foundClusterIDLabel = true
-						break
+				for i, ep := range sm.Spec.Endpoints {
+					foundClusterIDLabel := false
+					for _, config := range ep.RelabelConfigs {
+						if config.TargetLabel == "_id" && config.Replacement != nil && *config.Replacement == "cluster-abc-123" {
+							foundClusterIDLabel = true
+							break
+						}
 					}
+					g.Expect(foundClusterIDLabel).To(BeTrue(), "cluster ID label should be applied to endpoint %d", i)
 				}
-				g.Expect(foundClusterIDLabel).To(BeTrue(), "cluster ID label should be applied")
 			},
 		},
 		{
-			name:       "When metrics set is Telemetry it should drop all metrics",
+			name:       "When metrics set is Telemetry it should drop all metrics on both endpoints",
 			metricsSet: metrics.MetricsSetTelemetry,
 			clusterID:  "test-cluster",
 			validate: func(t *testing.T, sm *prometheusoperatorv1.ServiceMonitor, err error) {
 				g := NewWithT(t)
 				g.Expect(err).ToNot(HaveOccurred())
-				g.Expect(sm.Spec.Endpoints).To(HaveLen(1))
+				g.Expect(sm.Spec.Endpoints).To(HaveLen(2))
 
 				g.Expect(sm.Spec.Endpoints[0].MetricRelabelConfigs).To(HaveLen(2))
 				g.Expect(sm.Spec.Endpoints[0].MetricRelabelConfigs[0].Action).To(Equal("drop"))
 				g.Expect(sm.Spec.Endpoints[0].MetricRelabelConfigs[0].Regex).To(Equal(".*"))
+
+				g.Expect(sm.Spec.Endpoints[1].MetricRelabelConfigs).To(HaveLen(2))
+				g.Expect(sm.Spec.Endpoints[1].MetricRelabelConfigs[0].Action).To(Equal("drop"))
+				g.Expect(sm.Spec.Endpoints[1].MetricRelabelConfigs[0].Regex).To(Equal(".*"))
+			},
+		},
+		{
+			name:       "When metrics set is All it should not add metric relabel configs on the resources endpoint",
+			metricsSet: metrics.MetricsSetAll,
+			clusterID:  "test-cluster",
+			validate: func(t *testing.T, sm *prometheusoperatorv1.ServiceMonitor, err error) {
+				g := NewWithT(t)
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(sm.Spec.Endpoints).To(HaveLen(2))
+
+				g.Expect(sm.Spec.Endpoints[1].MetricRelabelConfigs).To(HaveLen(1))
+				g.Expect(sm.Spec.Endpoints[1].MetricRelabelConfigs[0].TargetLabel).To(Equal("_id"))
 			},
 		},
 	}
@@ -98,6 +116,10 @@ func TestAdaptServiceMonitor(t *testing.T) {
 					Endpoints: []prometheusoperatorv1.Endpoint{
 						{
 							Port: "metrics",
+						},
+						{
+							Port: "metrics",
+							Path: "/metrics/resources",
 						},
 					},
 				},
