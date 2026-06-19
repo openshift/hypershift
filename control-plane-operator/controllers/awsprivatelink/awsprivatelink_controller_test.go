@@ -1920,3 +1920,56 @@ func TestReconcileEndpointDNSRecords(t *testing.T) {
 		})
 	}
 }
+
+func TestIsAWSThrottleError(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		expected bool
+	}{
+		{
+			name:     "Throttling error should be detected",
+			err:      &testAPIError{code: "Throttling"},
+			expected: true,
+		},
+		{
+			name:     "ThrottlingException should be detected",
+			err:      &testAPIError{code: "ThrottlingException"},
+			expected: true,
+		},
+		{
+			name:     "RequestLimitExceeded should be detected",
+			err:      &testAPIError{code: "RequestLimitExceeded"},
+			expected: true,
+		},
+		{
+			name:     "TooManyRequestsException should be detected",
+			err:      &testAPIError{code: "TooManyRequestsException"},
+			expected: true,
+		},
+		{
+			name:     "Non-throttle AWS error should not be detected",
+			err:      &testAPIError{code: "NoSuchHostedZone"},
+			expected: false,
+		},
+		{
+			name:     "Non-AWS error should not be detected",
+			err:      errors.New("network error"),
+			expected: false,
+		},
+		{
+			name:     "Nil error should not be detected",
+			err:      nil,
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := isAWSThrottleError(tt.err)
+			if result != tt.expected {
+				t.Errorf("isAWSThrottleError() = %v, want %v", result, tt.expected)
+			}
+		})
+	}
+}
