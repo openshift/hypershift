@@ -77,3 +77,95 @@ func TestAdaptDeployment(t *testing.T) {
 		})
 	}
 }
+
+func TestAdaptDeploymentAWSCABundle(t *testing.T) {
+	testCases := []struct {
+		name            string
+		platformType    hyperv1.PlatformType
+		additionalTrust *corev1.LocalObjectReference
+		expectCABundle  bool
+	}{
+		{
+			name:            "When AWS platform with additional trust bundle it should add combined CA bundle",
+			platformType:    hyperv1.AWSPlatform,
+			additionalTrust: &corev1.LocalObjectReference{Name: "user-ca-bundle"},
+			expectCABundle:  true,
+		},
+		{
+			name:            "When AWS platform without additional trust bundle it should not add CA bundle",
+			platformType:    hyperv1.AWSPlatform,
+			additionalTrust: nil,
+			expectCABundle:  false,
+		},
+		{
+			name:            "When non-AWS platform with additional trust bundle it should not add CA bundle",
+			platformType:    hyperv1.KubevirtPlatform,
+			additionalTrust: &corev1.LocalObjectReference{Name: "user-ca-bundle"},
+			expectCABundle:  false,
+		},
+	}
+
+	hcp := &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-cluster",
+			Namespace: "clusters-test-cluster",
+		},
+		Spec: hyperv1.HostedControlPlaneSpec{},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			hcp.Spec.Platform.Type = tc.platformType
+			hcp.Spec.AdditionalTrustBundle = tc.additionalTrust
+
+			cpContext := component.WorkloadContext{
+				Context:                  t.Context(),
+				HCP:                      hcp,
+				ReleaseImageProvider:     testutil.FakeImageProvider(),
+				UserReleaseImageProvider: testutil.FakeImageProvider(),
+			}
+
+			deployment, err := assets.LoadDeploymentManifest(ComponentName)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			err = adaptDeployment(cpContext, deployment)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			volumes := deployment.Spec.Template.Spec.Volumes
+			initContainers := deployment.Spec.Template.Spec.InitContainers
+			container := deployment.Spec.Template.Spec.Containers[0]
+
+			if tc.expectCABundle {
+				g.Expect(volumes).To(ContainElement(SatisfyAll(
+					HaveField("Name", "user-ca-bundle"),
+					HaveField("VolumeSource.ConfigMap.Name", "user-ca-bundle"),
+				)))
+				g.Expect(volumes).To(ContainElement(SatisfyAll(
+					HaveField("Name", "aws-ca-bundle"),
+					HaveField("VolumeSource.EmptyDir", Not(BeNil())),
+				)))
+				g.Expect(initContainers).To(ContainElement(SatisfyAll(
+					HaveField("Name", "setup-aws-ca-bundle"),
+					HaveField("Image", "controlplane-operator"),
+				)))
+				g.Expect(container.VolumeMounts).To(ContainElement(SatisfyAll(
+					HaveField("Name", "aws-ca-bundle"),
+					HaveField("MountPath", "/etc/pki/ca-trust/extracted/hypershift"),
+					HaveField("ReadOnly", true),
+				)))
+				g.Expect(container.Env).To(ContainElement(SatisfyAll(
+					HaveField("Name", "AWS_CA_BUNDLE"),
+					HaveField("Value", "/etc/pki/ca-trust/extracted/hypershift/combined-ca-bundle.pem"),
+				)))
+			} else {
+				g.Expect(volumes).ToNot(ContainElement(HaveField("Name", "user-ca-bundle")))
+				g.Expect(volumes).ToNot(ContainElement(HaveField("Name", "aws-ca-bundle")))
+				g.Expect(initContainers).ToNot(ContainElement(HaveField("Name", "setup-aws-ca-bundle")))
+				g.Expect(container.VolumeMounts).ToNot(ContainElement(HaveField("Name", "aws-ca-bundle")))
+				g.Expect(container.Env).ToNot(ContainElement(HaveField("Name", "AWS_CA_BUNDLE")))
+			}
+		})
+	}
+}
