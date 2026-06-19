@@ -20,6 +20,7 @@ GENAPIDOCS := $(abspath $(TOOLS_BIN_DIR)/gen-crd-api-reference-docs)
 MOCKGEN := $(abspath $(TOOLS_BIN_DIR)/mockgen)
 YQ := $(abspath $(TOOLS_BIN_DIR)/yq)
 VERIFY_API_DEPS := $(abspath $(TOOLS_BIN_DIR)/verify-api-deps)
+CRD_SCHEMA_CHECK := $(abspath $(TOOLS_BIN_DIR)/crd-schema-check)
 
 CODESPELL_VER := 2.4.1
 CODESPELL_BIN := codespell
@@ -143,8 +144,15 @@ verify-codecov: ## Validate codecov.yml against Codecov's API.
 		--data-binary @codecov.yml https://codecov.io/validate \
 		| tee /dev/stderr | grep -q "^Valid!"
 
+.PHONY: verify-crd-schema
+verify-crd-schema: $(CRD_SCHEMA_CHECK) ## Verify CRD schemas for breaking changes against base branch.
+	$(CRD_SCHEMA_CHECK) --comparison-base=$(PULL_BASE_SHA) \
+		--config=hack/tools/crd-schema-check/crdify-config.yaml \
+		--crd-dir=cmd/install/assets/crds/hypershift-operator \
+		--crd-dir=karpenter-operator/controllers/karpenter/assets/zz_generated.crd-manifests
+
 .PHONY: verify-parallel
-verify-parallel: verify-codespell verify-codecov verify-api-deps lint cpo-container-sync run-gitlint verify-docs-nav
+verify-parallel: verify-codespell verify-codecov verify-api-deps verify-crd-schema lint cpo-container-sync run-gitlint verify-docs-nav
 
 .PHONY: verify
 verify: generate update staticcheck fmt vet
@@ -172,6 +180,8 @@ $(MOCKGEN): ${TOOLS_DIR}/go.mod
 $(VERIFY_API_DEPS): $(TOOLS_DIR)/go.mod # Build verify-api-deps tool
 	cd $(TOOLS_DIR); $(GO) build -o $(BIN_DIR)/verify-api-deps ./verify-api-deps
 
+$(CRD_SCHEMA_CHECK): $(TOOLS_DIR)/go.mod # Build crd-schema-check tool
+	cd $(TOOLS_DIR); $(GO) build -o $(BIN_DIR)/crd-schema-check ./crd-schema-check
 
 .PHONY: generate
 generate: $(MOCKGEN)
