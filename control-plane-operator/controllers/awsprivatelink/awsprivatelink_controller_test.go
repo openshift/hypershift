@@ -1768,13 +1768,14 @@ func TestExtractNLBName(t *testing.T) {
 
 func TestReconcileEndpointDNSRecords(t *testing.T) {
 	testCases := []struct {
-		name            string
-		awsEndpointSvc  *hyperv1.AWSEndpointService
-		hcp             *hyperv1.HostedControlPlane
-		setupMocks      func(*gomock.Controller) (*MockawsClientProvider, *awsapi.MockROUTE53API)
-		expectedZoneID  string
-		expectError     bool
-		expectFQDNCount int
+		name                   string
+		awsEndpointSvc         *hyperv1.AWSEndpointService
+		hcp                    *hyperv1.HostedControlPlane
+		setupMocks             func(*gomock.Controller) (*MockawsClientProvider, *awsapi.MockROUTE53API)
+		expectedZoneID         string
+		expectError            bool
+		expectFQDNCount        int
+		expectDNSZoneIDCleared bool
 	}{
 		{
 			name: "When Status.DNSZoneID is set and in-memory cache is empty, it should use the status value",
@@ -1967,6 +1968,39 @@ func TestReconcileEndpointDNSRecords(t *testing.T) {
 			},
 			expectError: true,
 		},
+		{
+			name: "When CreateRecord fails with NoSuchHostedZone, it should clear both caches",
+			awsEndpointSvc: &hyperv1.AWSEndpointService{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "kube-apiserver-private",
+					Namespace: "clusters-test",
+				},
+				Status: hyperv1.AWSEndpointServiceStatus{
+					DNSZoneID: "ZSTALE",
+				},
+			},
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-hcp",
+					Namespace: "clusters-test",
+				},
+			},
+			setupMocks: func(mockCtrl *gomock.Controller) (*MockawsClientProvider, *awsapi.MockROUTE53API) {
+				mockBuilder := NewMockawsClientProvider(mockCtrl)
+				mockRoute53 := awsapi.NewMockROUTE53API(mockCtrl)
+
+				mockBuilder.EXPECT().getLocalHostedZoneID().Return("")
+				mockBuilder.EXPECT().setLocalHostedZoneID("ZSTALE")
+				mockBuilder.EXPECT().setLocalHostedZoneID("")
+
+				mockRoute53.EXPECT().ChangeResourceRecordSets(gomock.Any(), gomock.Any(), gomock.Any()).
+					Return(nil, &route53types.NoSuchHostedZone{Message: aws.String("Hosted zone ZSTALE not found")})
+
+				return mockBuilder, mockRoute53
+			},
+			expectError:            true,
+			expectDNSZoneIDCleared: true,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -1993,6 +2027,9 @@ func TestReconcileEndpointDNSRecords(t *testing.T) {
 				g.Expect(err).ToNot(HaveOccurred())
 				g.Expect(zoneID).To(Equal(tc.expectedZoneID))
 				g.Expect(fqdns).To(HaveLen(tc.expectFQDNCount))
+			}
+			if tc.expectDNSZoneIDCleared {
+				g.Expect(tc.awsEndpointSvc.Status.DNSZoneID).To(BeEmpty())
 			}
 		})
 	}
