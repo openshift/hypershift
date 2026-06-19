@@ -2648,7 +2648,7 @@ func TestReconcileMachineDeploymentStatus(t *testing.T) {
 		expectedReadyConditionSet    bool
 	}{
 		{
-			name: "When MachineDeployment is complete, it should update nodePool version and annotations",
+			name: "When MachineDeployment is complete, it should update nodePool version",
 			machineDeployment: &capiv1.MachineDeployment{
 				ObjectMeta: metav1.ObjectMeta{Generation: 1},
 				Spec: capiv1.MachineDeploymentSpec{

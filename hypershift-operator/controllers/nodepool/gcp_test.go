@@ -514,6 +514,7 @@ func TestGcpMachineTemplateSpec(t *testing.T) {
 				tc.hc,
 				tc.nodePool,
 				releaseImage,
+				"",
 			)
 
 			if tc.expectedErr {
@@ -535,6 +536,7 @@ func TestDefaultNodePoolGCPImage(t *testing.T) {
 	testCases := []struct {
 		name           string
 		arch           string
+		rhelStream     string
 		releaseImage   *releaseinfo.ReleaseImage
 		expectedImage  string
 		expectedErr    bool
@@ -655,13 +657,56 @@ func TestDefaultNodePoolGCPImage(t *testing.T) {
 			expectedErr:    true,
 			expectedErrMsg: "release image metadata has no GCP image for architecture \"amd64\"",
 		},
+		{
+			name:       "When named stream is set, it should look up OSStreams map",
+			arch:       hyperv1.ArchitectureAMD64,
+			rhelStream: "rhel-10",
+			releaseImage: &releaseinfo.ReleaseImage{
+				StreamMetadata: &stream.Stream{
+					Architectures: map[string]stream.Arch{
+						"x86_64": {
+							Images: stream.Images{
+								Gcp: &stream.GcpImage{
+									Project: "rhcos-cloud",
+									Name:    "rhcos-9-6-default-gcp-x86-64",
+								},
+							},
+						},
+					},
+				},
+				OSStreams: map[string]*stream.Stream{
+					"rhel-10": {
+						Architectures: map[string]stream.Arch{
+							"x86_64": {
+								Images: stream.Images{
+									Gcp: &stream.GcpImage{
+										Project: "rhcos-cloud",
+										Name:    "rhcos-10-0-20251023-0-gcp-x86-64",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedImage: "projects/rhcos-cloud/global/images/rhcos-10-0-20251023-0-gcp-x86-64",
+			expectedErr:   false,
+		},
+		{
+			name:           "When stream metadata is nil with empty stream name, it should return error",
+			arch:           hyperv1.ArchitectureAMD64,
+			rhelStream:     "",
+			releaseImage:   &releaseinfo.ReleaseImage{},
+			expectedErr:    true,
+			expectedErrMsg: "couldn't resolve stream metadata",
+		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
 
-			image, err := defaultNodePoolGCPImage(tc.arch, tc.releaseImage)
+			image, err := defaultNodePoolGCPImage(tc.arch, tc.releaseImage, tc.rhelStream)
 
 			if tc.expectedErr {
 				g.Expect(err).To(HaveOccurred())
