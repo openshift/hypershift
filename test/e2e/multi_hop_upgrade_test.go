@@ -31,6 +31,12 @@ func TestMultiHopUpgrade(t *testing.T) {
 		t.Logf("  image[%d]: %s", i, img)
 	}
 
+	// Set the release version to the starting image so version-gated condition
+	// checks in ValidateHostedClusterConditions use the correct thresholds.
+	if err := e2eutil.SetReleaseImageVersion(ctx, imageChain[0], globalOpts.ConfigurableClusterOptions.PullSecretFile); err != nil {
+		t.Fatalf("failed to set release image version for starting image: %v", err)
+	}
+
 	clusterOpts := globalOpts.DefaultClusterOptions(t)
 	clusterOpts.ReleaseImage = imageChain[0]
 	clusterOpts.ControlPlaneAvailabilityPolicy = string(hyperv1.HighlyAvailable)
