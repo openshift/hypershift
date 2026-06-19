@@ -19,6 +19,9 @@ spec:
     type: string
     description: Label identifying which service release gate this is (e.g. ARO HCP)
     default: "ARO HCP"
+  - name: release-plan-name
+    type: string
+    description: Name of the ReleasePlan to reference when creating the Release CR
 
   tasks:
   - name: extract-image
@@ -44,6 +47,9 @@ spec:
         script: |
           #!/bin/bash
           set -euo pipefail
+
+          echo -n "unknown" > $(results.snapshot-name.path)
+          echo -n "unknown" > $(results.ho-image.path)
 
           SNAPSHOT_JSON='$(params.SNAPSHOT)'
 
@@ -100,6 +106,8 @@ spec:
         script: |
           #!/bin/bash
           set -euo pipefail
+
+          echo -n "[]" > $(results.results-json.path)
 
           GANGWAY_URL="https://gangway-ci.apps.ci.l2s4.p1.openshiftapps.com/v1/executions"
           HO_IMAGE="$(params.ho-image)"
@@ -419,6 +427,8 @@ spec:
           #!/bin/bash
           set -euo pipefail
 
+          echo -n "false" > $(results.gate-passed.path)
+
           RESULTS_JSON='$(params.results-json)'
 
           echo "=== evaluate-results ==="
@@ -470,14 +480,81 @@ spec:
           if [[ "${GATE_PASSED}" == "false" ]]; then
             echo ""
             echo "=== GATE FAILED - image will NOT be promoted ==="
-            exit 1
+          else
+            echo ""
+            echo "=== GATE PASSED - create-release will create the Release CR ==="
           fi
-
-          echo ""
-          echo "=== GATE PASSED - auto-release will promote the image ==="
     params:
     - name: results-json
       value: $(tasks.run-e2e.results.results-json)
+
+  - name: create-release
+    runAfter: [evaluate-results]
+    taskSpec:
+      params:
+      - name: gate-passed
+        type: string
+      - name: snapshot-name
+        type: string
+      - name: release-plan-name
+        type: string
+      results:
+      - name: release-name
+        description: Name of the created Release CR (or N/A if gate failed)
+      steps:
+      - name: create
+        image: quay.io/konflux-ci/appstudio-utils:latest
+        script: |
+          #!/bin/bash
+          set -euo pipefail
+
+          echo -n "N/A" > $(results.release-name.path)
+
+          GATE_PASSED="$(params.gate-passed)"
+          SNAPSHOT="$(params.snapshot-name)"
+          RELEASE_PLAN="$(params.release-plan-name)"
+
+          if [[ "${GATE_PASSED}" != "true" ]]; then
+            echo "=== create-release: gate did not pass - skipping ==="
+            echo -n "N/A" > $(results.release-name.path)
+            exit 1
+          fi
+
+          echo "=== create-release ==="
+          echo "Snapshot:     ${SNAPSHOT}"
+          echo "ReleasePlan:  ${RELEASE_PLAN}"
+
+          set +e
+          RELEASE_NAME=$(oc create -f - -o jsonpath='{.metadata.name}' <<EOFRELEASE
+          apiVersion: appstudio.redhat.com/v1alpha1
+          kind: Release
+          metadata:
+            generateName: ${RELEASE_PLAN}-
+            labels:
+              release.appstudio.openshift.io/author: rh-ee-alesross
+          spec:
+            releasePlan: ${RELEASE_PLAN}
+            snapshot: ${SNAPSHOT}
+          EOFRELEASE
+          )
+          CREATE_RC=$?
+          set -e
+
+          if [[ ${CREATE_RC} -ne 0 ]]; then
+            echo "ERROR: Failed to create Release CR (exit code ${CREATE_RC})"
+            echo -n "N/A" > $(results.release-name.path)
+            exit 1
+          fi
+
+          echo "Release created: ${RELEASE_NAME}"
+          echo -n "${RELEASE_NAME}" > $(results.release-name.path)
+    params:
+    - name: gate-passed
+      value: $(tasks.evaluate-results.results.gate-passed)
+    - name: snapshot-name
+      value: $(tasks.extract-image.results.snapshot-name)
+    - name: release-plan-name
+      value: $(params.release-plan-name)
 
   finally:
   - name: notify-slack
@@ -490,6 +567,8 @@ spec:
       - name: gate-passed
         type: string
       - name: gate-label
+        type: string
+      - name: release-name
         type: string
       steps:
       - name: send-notification
@@ -508,6 +587,7 @@ spec:
           RESULTS_JSON='$(params.results-json)'
           GATE_PASSED="$(params.gate-passed)"
           GATE_LABEL="$(params.gate-label)"
+          RELEASE_NAME="$(params.release-name)"
           PIPELINE_RUN="$(context.pipelineRun.name)"
 
           echo "=== notify-slack ==="
@@ -515,6 +595,15 @@ spec:
           echo "PipelineRun:  ${PIPELINE_RUN}"
           echo "Gate passed:  ${GATE_PASSED}"
           echo "Gate label:   ${GATE_LABEL}"
+          echo "Release:      ${RELEASE_NAME}"
+
+          KONFLUX_BASE="https://konflux-ui.apps.stone-prd-rh01.pg1f.p1.openshiftapps.com/ns/crt-redhat-acm-tenant/applications/hypershift-operator"
+
+          if [[ "${RELEASE_NAME}" != "N/A" && -n "${RELEASE_NAME}" ]]; then
+            RELEASE_FIELD="<${KONFLUX_BASE}/releases/${RELEASE_NAME}/|${RELEASE_NAME}>"
+          else
+            RELEASE_FIELD="N/A"
+          fi
 
           if [[ "${GATE_PASSED}" == "true" ]]; then
             COLOR="#2E7D32"
@@ -576,7 +665,8 @@ spec:
                   "type": "section",
                   "fields": [
                     {"type": "mrkdwn", "text": "*Snapshot:*\n${SNAPSHOT}"},
-                    {"type": "mrkdwn", "text": "*PipelineRun:*\n<https://konflux-ui.apps.stone-prd-rh01.pg1f.p1.openshiftapps.com/ns/crt-redhat-acm-tenant/applications/hypershift-operator/pipelineruns/${PIPELINE_RUN}/|${PIPELINE_RUN}>"}
+                    {"type": "mrkdwn", "text": "*PipelineRun:*\n<${KONFLUX_BASE}/pipelineruns/${PIPELINE_RUN}/|${PIPELINE_RUN}>"},
+                    {"type": "mrkdwn", "text": "*Release:*\n${RELEASE_FIELD}"}
                   ]
                 },
                 {"type": "divider"},
@@ -609,3 +699,61 @@ spec:
       value: $(tasks.evaluate-results.results.gate-passed)
     - name: gate-label
       value: $(params.gate-label)
+    - name: release-name
+      value: $(tasks.create-release.results.release-name)
+
+  - name: notify-slack-error
+    when:
+    - input: $(tasks.create-release.status)
+      operator: in
+      values: ["None"]
+    taskSpec:
+      steps:
+      - name: send-error-notification
+        image: quay.io/konflux-ci/appstudio-utils:latest
+        env:
+        - name: SLACK_WEBHOOK_URL
+          valueFrom:
+            secretKeyRef:
+              name: slack-webhook
+              key: url
+        script: |
+          #!/bin/bash
+          set -euo pipefail
+
+          PIPELINE_RUN="$(context.pipelineRun.name)"
+          KONFLUX_BASE="https://konflux-ui.apps.stone-prd-rh01.pg1f.p1.openshiftapps.com/ns/crt-redhat-acm-tenant/applications/hypershift-operator"
+
+          echo "=== notify-slack-error ==="
+          echo "Pipeline failed before reaching the release gate evaluation."
+          echo "PipelineRun: ${PIPELINE_RUN}"
+
+          PAYLOAD=$(cat <<EOFPAYLOAD
+          {
+            "attachments": [{
+              "color": "#D32F2F",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {"type": "mrkdwn", "text": ":x: *HO Release Gate - Pipeline Error*\nPipeline failed before reaching the evaluation phase. Check PipelineRun logs."}
+                },
+                {
+                  "type": "section",
+                  "text": {"type": "mrkdwn", "text": "*PipelineRun:*\n<${KONFLUX_BASE}/pipelineruns/${PIPELINE_RUN}/|${PIPELINE_RUN}>"}
+                }
+              ]
+            }]
+          }
+          EOFPAYLOAD
+          )
+
+          HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+            -H 'Content-type: application/json' \
+            --data "${PAYLOAD}" \
+            "${SLACK_WEBHOOK_URL}")
+
+          echo "Slack response: HTTP ${HTTP_CODE}"
+          if [[ "${HTTP_CODE}" != "200" ]]; then
+            echo "WARN: Slack error notification failed"
+          fi
+          echo "=== notify-slack-error: done ==="
