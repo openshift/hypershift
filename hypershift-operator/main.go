@@ -295,6 +295,11 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		return fmt.Errorf("failed to reconcile deprecation ValidatingAdmissionPolicy: %w", err)
 	}
 
+	// Reconcile encryption rotation guard ValidatingAdmissionPolicy if supported
+	if err := reconcileEncryptionRotationGuardVAP(ctx, apiReadingClient, mgmtClusterCaps, log); err != nil {
+		return fmt.Errorf("failed to reconcile encryption rotation guard ValidatingAdmissionPolicy: %w", err)
+	}
+
 	registryProvider, err := globalconfig.NewCommonRegistryProvider(ctx, mgmtClusterCaps, apiReadingClient, opts.RegistryOverrides)
 	if err != nil {
 		return fmt.Errorf("failed to create registry provider: %w", err)
@@ -1022,5 +1027,73 @@ func reconcileDeprecationValidatingAdmissionPolicy(ctx context.Context, client c
 	}
 
 	log.Info("Successfully reconciled deprecation ValidatingAdmissionPolicy")
+	return nil
+}
+
+// reconcileEncryptionRotationGuardVAP reconciles a ValidatingAdmissionPolicy that blocks
+// encryption key rotation while re-encryption is in progress (EtcdDataEncryptionUpToDate=False).
+func reconcileEncryptionRotationGuardVAP(ctx context.Context, client crclient.Client, mgmtClusterCaps *capabilities.ManagementClusterCapabilities, log logr.Logger) error {
+	if !mgmtClusterCaps.Has(capabilities.CapabilityValidatingAdmissionPolicy) {
+		log.Info("ValidatingAdmissionPolicy not supported, skipping encryption rotation guard policy reconciliation")
+		return nil
+	}
+
+	log.Info("Reconciling encryption rotation guard ValidatingAdmissionPolicy")
+
+	policy := &admissionregistrationv1.ValidatingAdmissionPolicy{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "hostedcluster-block-key-rotation-during-reencryption",
+		},
+	}
+	if _, err := controllerutil.CreateOrUpdate(ctx, client, policy, func() error {
+		policy.Spec.FailurePolicy = ptr.To(admissionregistrationv1.Ignore)
+		if policy.Spec.MatchConstraints == nil {
+			policy.Spec.MatchConstraints = &admissionregistrationv1.MatchResources{}
+		}
+		policy.Spec.MatchConstraints.ResourceRules = []admissionregistrationv1.NamedRuleWithOperations{
+			{
+				RuleWithOperations: admissionregistrationv1.RuleWithOperations{
+					Operations: []admissionregistrationv1.OperationType{
+						admissionregistrationv1.Update,
+					},
+					Rule: admissionregistrationv1.Rule{
+						APIGroups:   []string{"hypershift.openshift.io"},
+						APIVersions: []string{"v1beta1"},
+						Resources:   []string{"hostedclusters"},
+					},
+				},
+			},
+		}
+		// Allow the update if any of:
+		//   1. No conditions exist yet (new cluster)
+		//   2. EtcdDataEncryptionUpToDate is not False (no re-encryption in progress)
+		//   3. secretEncryption spec is unchanged between old and new object
+		policy.Spec.Validations = []admissionregistrationv1.Validation{
+			{
+				Expression: `!has(object.status.conditions) || !object.status.conditions.exists(c, c.type == 'EtcdDataEncryptionUpToDate' && c.status == 'False') || (!has(object.spec.secretEncryption) && !has(oldObject.spec.secretEncryption)) || (has(object.spec.secretEncryption) && has(oldObject.spec.secretEncryption) && object.spec.secretEncryption == oldObject.spec.secretEncryption)`,
+				Message:    "Cannot change the active encryption key while re-encryption is in progress (EtcdDataEncryptionUpToDate=False). Wait for re-encryption to complete before rotating again.",
+			},
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile encryption rotation guard ValidatingAdmissionPolicy: %w", err)
+	}
+
+	binding := &admissionregistrationv1.ValidatingAdmissionPolicyBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: policy.Name,
+		},
+	}
+	if _, err := controllerutil.CreateOrUpdate(ctx, client, binding, func() error {
+		binding.Spec.PolicyName = policy.Name
+		binding.Spec.ValidationActions = []admissionregistrationv1.ValidationAction{
+			admissionregistrationv1.Deny,
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile encryption rotation guard ValidatingAdmissionPolicyBinding: %w", err)
+	}
+
+	log.Info("Successfully reconciled encryption rotation guard ValidatingAdmissionPolicy")
 	return nil
 }

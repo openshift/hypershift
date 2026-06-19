@@ -84,6 +84,7 @@ spec:
         - --openshift-config=/etc/kubernetes/config/config.json
         - --v=2
         - --encryption-provider-config=/etc/kubernetes/secret-encryption/config.yaml
+        - --encryption-provider-config-automatic-reload=false
         command:
         - hyperkube
         env:

@@ -2,8 +2,7 @@ package kas
 
 import (
 	"bytes"
-	"context"
-	"fmt"
+	"encoding/base64"
 	"testing"
 	"time"
 
@@ -15,14 +14,13 @@ import (
 	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/util"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	v1 "k8s.io/apiserver/pkg/apis/apiserver/v1"
 	"k8s.io/utils/ptr"
 
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
-	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	"github.com/google/go-cmp/cmp"
 )
@@ -113,7 +111,25 @@ func TestReconcileKMSEncryptionConfigAWS(t *testing.T) {
 				Data: make(map[string][]byte),
 			}
 
-			clientBuilder := fake.NewClientBuilder().WithScheme(api.Scheme)
+			kasDeployment := &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "kube-apiserver",
+					Generation: 1,
+				},
+				Spec: appsv1.DeploymentSpec{
+					Replicas: ptr.To[int32](1),
+				},
+				Status: appsv1.DeploymentStatus{
+					ObservedGeneration:  1,
+					Replicas:            1,
+					UpdatedReplicas:     1,
+					ReadyReplicas:       1,
+					AvailableReplicas:   1,
+					UnavailableReplicas: 0,
+				},
+			}
+
+			clientBuilder := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(kasDeployment)
 			if tc.config != nil {
 				buff := bytes.NewBuffer([]byte{})
 				err := api.YamlSerializer.Encode(tc.config, buff)
@@ -373,40 +389,50 @@ func TestGetKMSAPIVersion(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name       string
-		secret     *corev1.Secret
-		client     client.Client
-		wantErr    bool
-		errSubstr  string
+		config     *v1.EncryptionConfiguration
 		wantResult string
 	}{
 		{
-			name: "When client Get returns a non-NotFound error, it should return a wrapped error",
-			secret: &corev1.Secret{
-				ObjectMeta: metav1.ObjectMeta{Name: "encryption-config", Namespace: "test-ns"},
-			},
-			client: fake.NewClientBuilder().WithInterceptorFuncs(interceptor.Funcs{
-				Get: func(_ context.Context, _ client.WithWatch, _ client.ObjectKey, _ client.Object, _ ...client.GetOption) error {
-					return fmt.Errorf("connection refused")
-				},
-			}).Build(),
-			wantErr:   true,
-			errSubstr: "failed to get existing secret encryption config",
+			name:       "When config is nil it should return default v2",
+			config:     nil,
+			wantResult: "v2",
 		},
 		{
-			name: "When secret contains invalid YAML, it should return a decode error",
-			secret: &corev1.Secret{
-				ObjectMeta: metav1.ObjectMeta{Name: "encryption-config", Namespace: "test-ns"},
-				Data: map[string][]byte{
-					secretEncryptionConfigurationKey: []byte("not-valid-yaml: {{{"),
+			name: "When config has no KMS provider it should return default v2",
+			config: &v1.EncryptionConfiguration{
+				Resources: []v1.ResourceConfiguration{
+					{
+						Providers: []v1.ProviderConfiguration{
+							{Identity: &v1.IdentityConfiguration{}},
+						},
+					},
 				},
 			},
-			wantErr:   true,
-			errSubstr: "cannot decode resource",
+			wantResult: "v2",
 		},
 		{
-			name: "When secret does not exist, it should return default v2",
-			secret: &corev1.Secret{
-				ObjectMeta: metav1.ObjectMeta{Name: "encryption-config", Namespace: "test-ns"},
+			name: "When config has KMS v1 provider it should return v1",
+			config: &v1.EncryptionConfiguration{
+				Resources: []v1.ResourceConfiguration{
+					{
+						Providers: []v1.ProviderConfiguration{
+							{KMS: &v1.KMSConfiguration{APIVersion: "v1"}},
+						},
+					},
+				},
+			},
+			wantResult: "v1",
+		},
+		{
+			name: "When config has KMS v2 provider it should return v2",
+			config: &v1.EncryptionConfiguration{
+				Resources: []v1.ResourceConfiguration{
+					{
+						Providers: []v1.ProviderConfiguration{
+							{KMS: &v1.KMSConfiguration{APIVersion: "v2"}},
+						},
+					},
+				},
 			},
 			wantResult: "v2",
 		},
@@ -415,28 +441,8 @@ func TestGetKMSAPIVersion(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
-
-			c := tt.client
-			if c == nil {
-				c = fake.NewClientBuilder().Build()
-			}
-			if tt.secret.Data != nil && tt.client == nil {
-				c = fake.NewClientBuilder().WithObjects(tt.secret).Build()
-			}
-
-			cpContext := controlplanecomponent.WorkloadContext{
-				Context: t.Context(),
-				Client:  c,
-			}
-
-			result, err := getKMSAPIVersion(cpContext, tt.secret)
-			if tt.wantErr {
-				g.Expect(err).To(HaveOccurred())
-				g.Expect(err.Error()).To(ContainSubstring(tt.errSubstr))
-			} else {
-				g.Expect(err).ToNot(HaveOccurred())
-				g.Expect(result).To(Equal(tt.wantResult))
-			}
+			result := getKMSAPIVersion(tt.config)
+			g.Expect(result).To(Equal(tt.wantResult))
 		})
 	}
 }
@@ -500,4 +506,302 @@ func generateExpectedEncryptionConfig(apiVersion string) *v1.EncryptionConfigura
 	}
 
 	return config
+}
+
+func TestDeriveAESCBCEncryptionConfig(t *testing.T) {
+	t.Parallel()
+
+	const testNamespace = "test-namespace"
+
+	newAESCBCKeySecret := func(name string, keyData []byte) *corev1.Secret {
+		return &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: testNamespace},
+			Data:       map[string][]byte{hyperv1.AESCBCKeySecretKey: keyData},
+		}
+	}
+
+	convergedKASDeployment := func() *appsv1.Deployment {
+		return &appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       "kube-apiserver",
+				Namespace:  testNamespace,
+				Generation: 1,
+			},
+			Spec: appsv1.DeploymentSpec{
+				Replicas: ptr.To[int32](1),
+			},
+			Status: appsv1.DeploymentStatus{
+				ObservedGeneration:  1,
+				Replicas:            1,
+				UpdatedReplicas:     1,
+				ReadyReplicas:       1,
+				AvailableReplicas:   1,
+				UnavailableReplicas: 0,
+			},
+		}
+	}
+
+	decodeEncryptionConfig := func(g Gomega, data []byte) *v1.EncryptionConfiguration {
+		cfg := &v1.EncryptionConfiguration{}
+		gvks, _, err := api.Scheme.ObjectKinds(cfg)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(gvks).NotTo(BeEmpty())
+		_, _, err = api.YamlSerializer.Decode(data, &gvks[0], cfg)
+		g.Expect(err).NotTo(HaveOccurred())
+		return cfg
+	}
+
+	testCases := []struct {
+		name          string
+		secretObjects []*corev1.Secret
+		secretSpec    *hyperv1.SecretEncryptionSpec
+		encStatus     *hyperv1.SecretEncryptionStatus
+		currentConfig *v1.EncryptionConfiguration
+		kasConverged  bool
+		verify        func(g Gomega, data []byte)
+	}{
+		{
+			name: "When status has no active key it should use spec active key as write key",
+			secretObjects: []*corev1.Secret{
+				newAESCBCKeySecret("aescbc-key-1", []byte("active-key-data")),
+			},
+			secretSpec: &hyperv1.SecretEncryptionSpec{
+				Type: hyperv1.AESCBC,
+				AESCBC: &hyperv1.AESCBCSpec{
+					ActiveKey: corev1.LocalObjectReference{Name: "aescbc-key-1"},
+				},
+			},
+			encStatus: nil,
+			verify: func(g Gomega, data []byte) {
+				cfg := decodeEncryptionConfig(g, data)
+				g.Expect(cfg.Resources).To(HaveLen(1))
+				providers := cfg.Resources[0].Providers
+				g.Expect(providers).To(HaveLen(2))
+				g.Expect(providers[0].AESCBC).NotTo(BeNil())
+				g.Expect(providers[0].AESCBC.Keys).To(HaveLen(1))
+
+				expectedName, err := AESCBCKeyName([]byte("active-key-data"))
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(providers[0].AESCBC.Keys[0].Name).To(Equal(expectedName))
+				g.Expect(providers[0].AESCBC.Keys[0].Secret).To(Equal(base64.StdEncoding.EncodeToString([]byte("active-key-data"))))
+
+				g.Expect(providers[1].Identity).NotTo(BeNil())
+			},
+		},
+		{
+			name: "When status has no active key and backup key is set it should use both keys",
+			secretObjects: []*corev1.Secret{
+				newAESCBCKeySecret("aescbc-key-1", []byte("active-key-data")),
+				newAESCBCKeySecret("aescbc-backup", []byte("backup-key-data")),
+			},
+			secretSpec: &hyperv1.SecretEncryptionSpec{
+				Type: hyperv1.AESCBC,
+				AESCBC: &hyperv1.AESCBCSpec{
+					ActiveKey: corev1.LocalObjectReference{Name: "aescbc-key-1"},
+					BackupKey: &corev1.LocalObjectReference{Name: "aescbc-backup"},
+				},
+			},
+			encStatus: nil,
+			verify: func(g Gomega, data []byte) {
+				cfg := decodeEncryptionConfig(g, data)
+				g.Expect(cfg.Resources).To(HaveLen(1))
+				providers := cfg.Resources[0].Providers
+				g.Expect(providers).To(HaveLen(2))
+				g.Expect(providers[0].AESCBC).NotTo(BeNil())
+				g.Expect(providers[0].AESCBC.Keys).To(HaveLen(2))
+
+				activeKeyName, err := AESCBCKeyName([]byte("active-key-data"))
+				g.Expect(err).NotTo(HaveOccurred())
+				backupKeyName, err := AESCBCKeyName([]byte("backup-key-data"))
+				g.Expect(err).NotTo(HaveOccurred())
+
+				g.Expect(providers[0].AESCBC.Keys[0].Name).To(Equal(activeKeyName))
+				g.Expect(providers[0].AESCBC.Keys[1].Name).To(Equal(backupKeyName))
+			},
+		},
+		{
+			name: "When no rotation in progress it should use spec active key only",
+			secretObjects: []*corev1.Secret{
+				newAESCBCKeySecret("aescbc-key-1", []byte("active-key-data")),
+			},
+			secretSpec: &hyperv1.SecretEncryptionSpec{
+				Type: hyperv1.AESCBC,
+				AESCBC: &hyperv1.AESCBCSpec{
+					ActiveKey: corev1.LocalObjectReference{Name: "aescbc-key-1"},
+				},
+			},
+			encStatus: &hyperv1.SecretEncryptionStatus{
+				ActiveKey: hyperv1.SecretEncryptionKeyStatus{
+					Provider: hyperv1.SecretEncryptionProviderAESCBC,
+					AESCBC: hyperv1.AESCBCKeyStatus{
+						Secret:   hyperv1.SecretReference{Name: "aescbc-key-1"},
+						DataHash: "activehash",
+					},
+				},
+			},
+			verify: func(g Gomega, data []byte) {
+				cfg := decodeEncryptionConfig(g, data)
+				g.Expect(cfg.Resources).To(HaveLen(1))
+				providers := cfg.Resources[0].Providers
+				g.Expect(providers).To(HaveLen(2))
+				g.Expect(providers[0].AESCBC).NotTo(BeNil())
+				g.Expect(providers[0].AESCBC.Keys).To(HaveLen(1))
+
+				expectedName, err := AESCBCKeyName([]byte("active-key-data"))
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(providers[0].AESCBC.Keys[0].Name).To(Equal(expectedName))
+			},
+		},
+		{
+			name: "When rotation in progress and target key is read-only it should keep old key as write",
+			secretObjects: []*corev1.Secret{
+				newAESCBCKeySecret("old-key-secret", []byte("old-key-data")),
+				newAESCBCKeySecret("new-key-secret", []byte("new-key-data")),
+			},
+			secretSpec: &hyperv1.SecretEncryptionSpec{
+				Type: hyperv1.AESCBC,
+				AESCBC: &hyperv1.AESCBCSpec{
+					ActiveKey: corev1.LocalObjectReference{Name: "new-key-secret"},
+				},
+			},
+			encStatus: &hyperv1.SecretEncryptionStatus{
+				ActiveKey: hyperv1.SecretEncryptionKeyStatus{
+					Provider: hyperv1.SecretEncryptionProviderAESCBC,
+					AESCBC: hyperv1.AESCBCKeyStatus{
+						Secret:   hyperv1.SecretReference{Name: "old-key-secret"},
+						DataHash: "oldhash",
+					},
+				},
+				TargetKey: hyperv1.SecretEncryptionKeyStatus{
+					Provider: hyperv1.SecretEncryptionProviderAESCBC,
+					AESCBC: hyperv1.AESCBCKeyStatus{
+						Secret:   hyperv1.SecretReference{Name: "new-key-secret"},
+						DataHash: "newhash",
+					},
+				},
+			},
+			currentConfig: func() *v1.EncryptionConfiguration {
+				oldKeyName, _ := AESCBCKeyName([]byte("old-key-data"))
+				targetKeyName, _ := AESCBCKeyName([]byte("new-key-data"))
+				return &v1.EncryptionConfiguration{
+					Resources: []v1.ResourceConfiguration{{
+						Providers: []v1.ProviderConfiguration{
+							{AESCBC: &v1.AESConfiguration{Keys: []v1.Key{
+								{Name: oldKeyName, Secret: base64.StdEncoding.EncodeToString([]byte("old-key-data"))},
+								{Name: targetKeyName, Secret: base64.StdEncoding.EncodeToString([]byte("new-key-data"))},
+							}}},
+							{Identity: &v1.IdentityConfiguration{}},
+						},
+					}},
+				}
+			}(),
+			kasConverged: false,
+			verify: func(g Gomega, data []byte) {
+				cfg := decodeEncryptionConfig(g, data)
+				g.Expect(cfg.Resources).To(HaveLen(1))
+				providers := cfg.Resources[0].Providers
+				g.Expect(providers[0].AESCBC).NotTo(BeNil())
+				g.Expect(providers[0].AESCBC.Keys).To(HaveLen(2))
+
+				oldKeyName, err := AESCBCKeyName([]byte("old-key-data"))
+				g.Expect(err).NotTo(HaveOccurred())
+				targetKeyName, err := AESCBCKeyName([]byte("new-key-data"))
+				g.Expect(err).NotTo(HaveOccurred())
+
+				g.Expect(providers[0].AESCBC.Keys[0].Name).To(Equal(oldKeyName), "old key should remain the write key")
+				g.Expect(providers[0].AESCBC.Keys[1].Name).To(Equal(targetKeyName), "target key should be read-only")
+			},
+		},
+		{
+			name: "When rotation in progress and target key should be promoted it should swap keys",
+			secretObjects: []*corev1.Secret{
+				newAESCBCKeySecret("old-key-secret", []byte("old-key-data")),
+				newAESCBCKeySecret("new-key-secret", []byte("new-key-data")),
+			},
+			secretSpec: &hyperv1.SecretEncryptionSpec{
+				Type: hyperv1.AESCBC,
+				AESCBC: &hyperv1.AESCBCSpec{
+					ActiveKey: corev1.LocalObjectReference{Name: "new-key-secret"},
+				},
+			},
+			encStatus: &hyperv1.SecretEncryptionStatus{
+				ActiveKey: hyperv1.SecretEncryptionKeyStatus{
+					Provider: hyperv1.SecretEncryptionProviderAESCBC,
+					AESCBC: hyperv1.AESCBCKeyStatus{
+						Secret:   hyperv1.SecretReference{Name: "old-key-secret"},
+						DataHash: "oldhash",
+					},
+				},
+				TargetKey: hyperv1.SecretEncryptionKeyStatus{
+					Provider: hyperv1.SecretEncryptionProviderAESCBC,
+					AESCBC: hyperv1.AESCBCKeyStatus{
+						Secret:   hyperv1.SecretReference{Name: "new-key-secret"},
+						DataHash: "newhash",
+					},
+				},
+			},
+			currentConfig: func() *v1.EncryptionConfiguration {
+				oldKeyName, _ := AESCBCKeyName([]byte("old-key-data"))
+				targetKeyName, _ := AESCBCKeyName([]byte("new-key-data"))
+				return &v1.EncryptionConfiguration{
+					Resources: []v1.ResourceConfiguration{{
+						Providers: []v1.ProviderConfiguration{
+							{AESCBC: &v1.AESConfiguration{Keys: []v1.Key{
+								{Name: oldKeyName, Secret: base64.StdEncoding.EncodeToString([]byte("old-key-data"))},
+								{Name: targetKeyName, Secret: base64.StdEncoding.EncodeToString([]byte("new-key-data"))},
+							}}},
+							{Identity: &v1.IdentityConfiguration{}},
+						},
+					}},
+				}
+			}(),
+			kasConverged: true,
+			verify: func(g Gomega, data []byte) {
+				cfg := decodeEncryptionConfig(g, data)
+				g.Expect(cfg.Resources).To(HaveLen(1))
+				providers := cfg.Resources[0].Providers
+				g.Expect(providers[0].AESCBC).NotTo(BeNil())
+				g.Expect(providers[0].AESCBC.Keys).To(HaveLen(2))
+
+				oldKeyName, err := AESCBCKeyName([]byte("old-key-data"))
+				g.Expect(err).NotTo(HaveOccurred())
+				targetKeyName, err := AESCBCKeyName([]byte("new-key-data"))
+				g.Expect(err).NotTo(HaveOccurred())
+
+				g.Expect(providers[0].AESCBC.Keys[0].Name).To(Equal(targetKeyName), "target key should be promoted to write key")
+				g.Expect(providers[0].AESCBC.Keys[1].Name).To(Equal(oldKeyName), "old key should become read-only")
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			kasDeployment := convergedKASDeployment()
+			clientBuilder := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(kasDeployment)
+			for _, s := range tc.secretObjects {
+				clientBuilder.WithObjects(s)
+			}
+
+			cpContext := controlplanecomponent.WorkloadContext{
+				HCP: &hyperv1.HostedControlPlane{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: testNamespace,
+					},
+					Spec: hyperv1.HostedControlPlaneSpec{
+						SecretEncryption: tc.secretSpec,
+					},
+				},
+				Client: clientBuilder.Build(),
+			}
+
+			data, err := deriveAESCBCEncryptionConfig(cpContext, tc.secretSpec, tc.encStatus, tc.currentConfig, tc.kasConverged)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(data).NotTo(BeEmpty())
+
+			tc.verify(g, data)
+		})
+	}
 }

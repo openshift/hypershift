@@ -5935,6 +5935,9 @@ spec:
                         description: |-
                           backupKey defines the old key during the rotation process so previously created
                           secrets can continue to be decrypted until they are all re-encrypted with the active key.
+
+                          Deprecated: This field will be ignored when status.secretEncryption.activeKey is set.
+                          The system automatically manages the previous key via the status field.
                         properties:
                           name:
                             default: ""
@@ -5966,8 +5969,11 @@ spec:
                                 description: arn is the Amazon Resource Name for the
                                   encryption key
                                 maxLength: 2048
-                                pattern: '^arn:'
+                                minLength: 1
                                 type: string
+                                x-kubernetes-validations:
+                                - message: arn must start with 'arn:'
+                                  rule: self.startsWith('arn:')
                             required:
                             - arn
                             type: object
@@ -5992,13 +5998,19 @@ spec:
                             description: |-
                               backupKey defines the old key during the rotation process so previously created
                               secrets can continue to be decrypted until they are all re-encrypted with the active key.
+
+                              Deprecated: This field will be ignored when status.secretEncryption.activeKey is set.
+                              The system automatically manages the previous key via the status field.
                             properties:
                               arn:
                                 description: arn is the Amazon Resource Name for the
                                   encryption key
                                 maxLength: 2048
-                                pattern: '^arn:'
+                                minLength: 1
                                 type: string
+                                x-kubernetes-validations:
+                                - message: arn must start with 'arn:'
+                                  rule: self.startsWith('arn:')
                             required:
                             - arn
                             type: object
@@ -6024,6 +6036,7 @@ spec:
                                 description: keyName is the name of the keyvault key
                                   used for encrypt/decrypt
                                 maxLength: 255
+                                minLength: 1
                                 type: string
                               keyVaultName:
                                 description: |-
@@ -6031,11 +6044,13 @@ spec:
                                   Your Microsoft Entra application used to create the cluster must be authorized to access this keyvault, e.g using the AzureCLI:
                                   `az keyvault set-policy -n $KEYVAULT_NAME --key-permissions decrypt encrypt --spn <YOUR APPLICATION CLIENT ID>`
                                 maxLength: 255
+                                minLength: 1
                                 type: string
                               keyVersion:
                                 description: keyVersion contains the version of the
                                   key to use
                                 maxLength: 255
+                                minLength: 1
                                 type: string
                             required:
                             - keyName
@@ -6046,11 +6061,15 @@ spec:
                             description: |-
                               backupKey defines the old key during the rotation process so previously created
                               secrets can continue to be decrypted until they are all re-encrypted with the active key.
+
+                              Deprecated: This field will be ignored when status.secretEncryption.activeKey is set.
+                              The system automatically manages the previous key via the status field.
                             properties:
                               keyName:
                                 description: keyName is the name of the keyvault key
                                   used for encrypt/decrypt
                                 maxLength: 255
+                                minLength: 1
                                 type: string
                               keyVaultName:
                                 description: |-
@@ -6058,11 +6077,13 @@ spec:
                                   Your Microsoft Entra application used to create the cluster must be authorized to access this keyvault, e.g using the AzureCLI:
                                   `az keyvault set-policy -n $KEYVAULT_NAME --key-permissions decrypt encrypt --spn <YOUR APPLICATION CLIENT ID>`
                                 maxLength: 255
+                                minLength: 1
                                 type: string
                               keyVersion:
                                 description: keyVersion contains the version of the
                                   key to use
                                 maxLength: 255
+                                minLength: 1
                                 type: string
                             required:
                             - keyName
@@ -6226,15 +6247,18 @@ spec:
                                   description: correlationID is an identifier used
                                     to track all api call usage from hypershift
                                   maxLength: 255
+                                  minLength: 1
                                   type: string
                                 crkID:
                                   description: crkID is the customer rook key id
                                   maxLength: 255
+                                  minLength: 1
                                   type: string
                                 instanceID:
                                   description: instanceID is the id for the key protect
                                     instance
                                   maxLength: 255
+                                  minLength: 1
                                   type: string
                                 keyVersion:
                                   description: |-
@@ -6247,8 +6271,11 @@ spec:
                                   description: url is the url to call key protect
                                     apis over
                                   maxLength: 2048
-                                  pattern: ^https://
+                                  minLength: 1
                                   type: string
+                                  x-kubernetes-validations:
+                                  - message: url must start with 'https://'
+                                    rule: self.startsWith('https://')
                               required:
                               - correlationID
                               - crkID
@@ -6515,6 +6542,8 @@ spec:
                 || !has(self.operatorConfiguration.clusterNetworkOperator.disableMultiNetwork)
                 || !self.operatorConfiguration.clusterNetworkOperator.disableMultiNetwork
                 || self.networking.networkType == ''Other'''
+            - message: secretEncryption cannot be removed once configured
+              rule: '!has(oldSelf.secretEncryption) || has(self.secretEncryption)'
           status:
             description: status is the status of the HostedControlPlane.
             properties:
@@ -6894,6 +6923,398 @@ spec:
                   Deprecated: Use versionStatus.desired.image instead.
                 maxLength: 255
                 type: string
+              secretEncryption:
+                description: secretEncryption tracks the state of secret encryption
+                  key rotation and re-encryption.
+                minProperties: 1
+                properties:
+                  activeKey:
+                    description: |-
+                      activeKey is the encryption key specification that all etcd data is confirmed encrypted with.
+                      Updated after successful re-encryption.
+                    properties:
+                      aescbc:
+                        description: aescbc holds a reference to the AESCBC key secret.
+                        properties:
+                          dataHash:
+                            description: |-
+                              dataHash is the hex-encoded SHA-256 hash of the secret's "key" data field
+                              at the time re-encryption completed.
+                            maxLength: 64
+                            minLength: 1
+                            type: string
+                          secret:
+                            description: secret is a reference to the secret containing
+                              the AESCBC key.
+                            properties:
+                              name:
+                                description: |-
+                                  name is the name of the Secret. It must be a valid DNS-1123 subdomain: at most
+                                  253 characters, consisting of lowercase alphanumeric characters, hyphens, and periods.
+                                  Each period-separated segment must start and end with an alphanumeric character.
+                                maxLength: 253
+                                minLength: 1
+                                type: string
+                                x-kubernetes-validations:
+                                - message: name must consist only of lowercase alphanumeric
+                                    characters, hyphens, and periods. Each period-separated
+                                    segment must start and end with an alphanumeric
+                                    character.
+                                  rule: self.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$')
+                            required:
+                            - name
+                            type: object
+                        required:
+                        - dataHash
+                        - secret
+                        type: object
+                      aws:
+                        description: aws holds the AWS KMS key identity fields.
+                        properties:
+                          arn:
+                            description: arn is the Amazon Resource Name for the encryption
+                              key
+                            maxLength: 2048
+                            minLength: 1
+                            type: string
+                            x-kubernetes-validations:
+                            - message: arn must start with 'arn:'
+                              rule: self.startsWith('arn:')
+                        required:
+                        - arn
+                        type: object
+                      azure:
+                        description: azure holds the Azure KMS key identity fields.
+                        properties:
+                          keyName:
+                            description: keyName is the name of the keyvault key used
+                              for encrypt/decrypt
+                            maxLength: 255
+                            minLength: 1
+                            type: string
+                          keyVaultName:
+                            description: |-
+                              keyVaultName is the name of the keyvault. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
+                              Your Microsoft Entra application used to create the cluster must be authorized to access this keyvault, e.g using the AzureCLI:
+                              `az keyvault set-policy -n $KEYVAULT_NAME --key-permissions decrypt encrypt --spn <YOUR APPLICATION CLIENT ID>`
+                            maxLength: 255
+                            minLength: 1
+                            type: string
+                          keyVersion:
+                            description: keyVersion contains the version of the key
+                              to use
+                            maxLength: 255
+                            minLength: 1
+                            type: string
+                        required:
+                        - keyName
+                        - keyVaultName
+                        - keyVersion
+                        type: object
+                      ibmCloud:
+                        description: ibmCloud holds the IBM Cloud KMS key identity
+                          fields.
+                        properties:
+                          correlationID:
+                            description: correlationID is an identifier used to track
+                              all api call usage from hypershift
+                            maxLength: 255
+                            minLength: 1
+                            type: string
+                          crkID:
+                            description: crkID is the customer rook key id
+                            maxLength: 255
+                            minLength: 1
+                            type: string
+                          instanceID:
+                            description: instanceID is the id for the key protect
+                              instance
+                            maxLength: 255
+                            minLength: 1
+                            type: string
+                          keyVersion:
+                            description: |-
+                              keyVersion is a unique number associated with the key. The number increments whenever a new
+                              key is enabled for data encryption.
+                            maximum: 2147483647
+                            minimum: 0
+                            type: integer
+                          url:
+                            description: url is the url to call key protect apis over
+                            maxLength: 2048
+                            minLength: 1
+                            type: string
+                            x-kubernetes-validations:
+                            - message: url must start with 'https://'
+                              rule: self.startsWith('https://')
+                        required:
+                        - correlationID
+                        - crkID
+                        - instanceID
+                        - keyVersion
+                        - url
+                        type: object
+                      provider:
+                        description: provider identifies the encryption provider.
+                        enum:
+                        - Azure
+                        - AWS
+                        - IBMCloud
+                        - AESCBC
+                        type: string
+                    required:
+                    - provider
+                    type: object
+                    x-kubernetes-validations:
+                    - message: azure is required when provider is Azure, and forbidden
+                        otherwise
+                      rule: 'self.provider == ''Azure'' ? has(self.azure) : !has(self.azure)'
+                    - message: aws is required when provider is AWS, and forbidden
+                        otherwise
+                      rule: 'self.provider == ''AWS'' ? has(self.aws) : !has(self.aws)'
+                    - message: ibmCloud is required when provider is IBMCloud, and
+                        forbidden otherwise
+                      rule: 'self.provider == ''IBMCloud'' ? has(self.ibmCloud) :
+                        !has(self.ibmCloud)'
+                    - message: aescbc is required when provider is AESCBC, and forbidden
+                        otherwise
+                      rule: 'self.provider == ''AESCBC'' ? has(self.aescbc) : !has(self.aescbc)'
+                  history:
+                    description: |-
+                      history contains a list of key rotations applied to this cluster. The newest
+                      entry is first in the list. Entries have state Completed when re-encryption
+                      has finished. The current rotation phase is always history[0].state when
+                      history[0] is not Completed or Interrupted.
+                    items:
+                      description: EncryptionMigrationHistory records a key rotation,
+                        including in-progress rotations.
+                      properties:
+                        completionTime:
+                          description: completionTime is when the rotation finished.
+                            Not set while the rotation is in progress.
+                          format: date-time
+                          type: string
+                        from:
+                          description: from is the key that data was migrated from
+                            (the previous active key).
+                          properties:
+                            fingerprint:
+                              description: fingerprint is the hex-encoded SHA-256
+                                hash of the key's identity fields.
+                              maxLength: 64
+                              minLength: 1
+                              type: string
+                            provider:
+                              description: provider identifies the encryption provider.
+                              enum:
+                              - Azure
+                              - AWS
+                              - IBMCloud
+                              - AESCBC
+                              type: string
+                          required:
+                          - fingerprint
+                          - provider
+                          type: object
+                        startedTime:
+                          description: startedTime is when the rotation was initiated.
+                          format: date-time
+                          type: string
+                        state:
+                          description: state tracks the current phase of this rotation.
+                          enum:
+                          - ReadOnlyDeploy
+                          - WritePromote
+                          - Migrating
+                          - Completed
+                          - Interrupted
+                          type: string
+                        to:
+                          description: to is the key that data was migrated to (the
+                            target key).
+                          properties:
+                            fingerprint:
+                              description: fingerprint is the hex-encoded SHA-256
+                                hash of the key's identity fields.
+                              maxLength: 64
+                              minLength: 1
+                              type: string
+                            provider:
+                              description: provider identifies the encryption provider.
+                              enum:
+                              - Azure
+                              - AWS
+                              - IBMCloud
+                              - AESCBC
+                              type: string
+                          required:
+                          - fingerprint
+                          - provider
+                          type: object
+                      required:
+                      - from
+                      - startedTime
+                      - state
+                      - to
+                      type: object
+                    maxItems: 5
+                    minItems: 1
+                    type: array
+                    x-kubernetes-list-type: atomic
+                  targetKey:
+                    description: |-
+                      targetKey is the key being rolled out during an active rotation. Snapshot from
+                      spec.secretEncryption's active key when the rotation starts. The CPO uses this
+                      (not the current spec) during the rotation, so mid-rotation spec changes are
+                      safely queued until the current rotation completes. Cleared when rotation completes.
+                    properties:
+                      aescbc:
+                        description: aescbc holds a reference to the AESCBC key secret.
+                        properties:
+                          dataHash:
+                            description: |-
+                              dataHash is the hex-encoded SHA-256 hash of the secret's "key" data field
+                              at the time re-encryption completed.
+                            maxLength: 64
+                            minLength: 1
+                            type: string
+                          secret:
+                            description: secret is a reference to the secret containing
+                              the AESCBC key.
+                            properties:
+                              name:
+                                description: |-
+                                  name is the name of the Secret. It must be a valid DNS-1123 subdomain: at most
+                                  253 characters, consisting of lowercase alphanumeric characters, hyphens, and periods.
+                                  Each period-separated segment must start and end with an alphanumeric character.
+                                maxLength: 253
+                                minLength: 1
+                                type: string
+                                x-kubernetes-validations:
+                                - message: name must consist only of lowercase alphanumeric
+                                    characters, hyphens, and periods. Each period-separated
+                                    segment must start and end with an alphanumeric
+                                    character.
+                                  rule: self.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$')
+                            required:
+                            - name
+                            type: object
+                        required:
+                        - dataHash
+                        - secret
+                        type: object
+                      aws:
+                        description: aws holds the AWS KMS key identity fields.
+                        properties:
+                          arn:
+                            description: arn is the Amazon Resource Name for the encryption
+                              key
+                            maxLength: 2048
+                            minLength: 1
+                            type: string
+                            x-kubernetes-validations:
+                            - message: arn must start with 'arn:'
+                              rule: self.startsWith('arn:')
+                        required:
+                        - arn
+                        type: object
+                      azure:
+                        description: azure holds the Azure KMS key identity fields.
+                        properties:
+                          keyName:
+                            description: keyName is the name of the keyvault key used
+                              for encrypt/decrypt
+                            maxLength: 255
+                            minLength: 1
+                            type: string
+                          keyVaultName:
+                            description: |-
+                              keyVaultName is the name of the keyvault. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
+                              Your Microsoft Entra application used to create the cluster must be authorized to access this keyvault, e.g using the AzureCLI:
+                              `az keyvault set-policy -n $KEYVAULT_NAME --key-permissions decrypt encrypt --spn <YOUR APPLICATION CLIENT ID>`
+                            maxLength: 255
+                            minLength: 1
+                            type: string
+                          keyVersion:
+                            description: keyVersion contains the version of the key
+                              to use
+                            maxLength: 255
+                            minLength: 1
+                            type: string
+                        required:
+                        - keyName
+                        - keyVaultName
+                        - keyVersion
+                        type: object
+                      ibmCloud:
+                        description: ibmCloud holds the IBM Cloud KMS key identity
+                          fields.
+                        properties:
+                          correlationID:
+                            description: correlationID is an identifier used to track
+                              all api call usage from hypershift
+                            maxLength: 255
+                            minLength: 1
+                            type: string
+                          crkID:
+                            description: crkID is the customer rook key id
+                            maxLength: 255
+                            minLength: 1
+                            type: string
+                          instanceID:
+                            description: instanceID is the id for the key protect
+                              instance
+                            maxLength: 255
+                            minLength: 1
+                            type: string
+                          keyVersion:
+                            description: |-
+                              keyVersion is a unique number associated with the key. The number increments whenever a new
+                              key is enabled for data encryption.
+                            maximum: 2147483647
+                            minimum: 0
+                            type: integer
+                          url:
+                            description: url is the url to call key protect apis over
+                            maxLength: 2048
+                            minLength: 1
+                            type: string
+                            x-kubernetes-validations:
+                            - message: url must start with 'https://'
+                              rule: self.startsWith('https://')
+                        required:
+                        - correlationID
+                        - crkID
+                        - instanceID
+                        - keyVersion
+                        - url
+                        type: object
+                      provider:
+                        description: provider identifies the encryption provider.
+                        enum:
+                        - Azure
+                        - AWS
+                        - IBMCloud
+                        - AESCBC
+                        type: string
+                    required:
+                    - provider
+                    type: object
+                    x-kubernetes-validations:
+                    - message: azure is required when provider is Azure, and forbidden
+                        otherwise
+                      rule: 'self.provider == ''Azure'' ? has(self.azure) : !has(self.azure)'
+                    - message: aws is required when provider is AWS, and forbidden
+                        otherwise
+                      rule: 'self.provider == ''AWS'' ? has(self.aws) : !has(self.aws)'
+                    - message: ibmCloud is required when provider is IBMCloud, and
+                        forbidden otherwise
+                      rule: 'self.provider == ''IBMCloud'' ? has(self.ibmCloud) :
+                        !has(self.ibmCloud)'
+                    - message: aescbc is required when provider is AESCBC, and forbidden
+                        otherwise
+                      rule: 'self.provider == ''AESCBC'' ? has(self.aescbc) : !has(self.aescbc)'
+                type: object
               version:
                 description: |-
                   version is the semantic version of the release applied by

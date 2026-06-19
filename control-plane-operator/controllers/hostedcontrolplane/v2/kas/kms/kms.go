@@ -1,6 +1,8 @@
 package kms
 
 import (
+	"github.com/openshift/hypershift/support/secretencryption"
+
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/apiserver/pkg/apis/apiserver/v1"
 )
@@ -20,7 +22,7 @@ type KMSProvider interface {
 
 const (
 	KasMainContainerName        = "kube-apiserver"
-	encryptionConfigurationKind = "EncryptionConfiguration"
+	encryptionConfigurationKind = secretencryption.EncryptionConfigurationKind
 
 	kasVolumeLocalhostKubeconfig = "localhost-kubeconfig"
 )

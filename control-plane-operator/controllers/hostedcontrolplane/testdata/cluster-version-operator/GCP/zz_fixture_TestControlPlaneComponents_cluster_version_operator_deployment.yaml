@@ -305,6 +305,24 @@ spec:
             annotations:
               include.release.openshift.io/ibm-cloud-managed: "true"
               release.openshift.io/delete: "true"
+          ---
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: kube-storage-version-migrator-operator
+            namespace: openshift-kube-storage-version-migrator-operator
+            annotations:
+              include.release.openshift.io/ibm-cloud-managed: "true"
+              release.openshift.io/delete: "true"
+          ---
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: migrator
+            namespace: openshift-kube-storage-version-migrator
+            annotations:
+              include.release.openshift.io/ibm-cloud-managed: "true"
+              release.openshift.io/delete: "true"
           EOF
         command:
         - /bin/bash

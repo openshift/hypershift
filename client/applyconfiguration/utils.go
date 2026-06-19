@@ -65,6 +65,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		// Group=hypershift.openshift.io, Version=v1beta1
 	case v1beta1.SchemeGroupVersion.WithKind("AddressPair"):
 		return &hypershiftv1beta1.AddressPairApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("AESCBCKeyStatus"):
+		return &hypershiftv1beta1.AESCBCKeyStatusApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AESCBCSpec"):
 		return &hypershiftv1beta1.AESCBCSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AgentNodePoolPlatform"):
@@ -179,6 +181,10 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.DNSSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("DNSZoneStatus"):
 		return &hypershiftv1beta1.DNSZoneStatusApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("EncryptionKeyReference"):
+		return &hypershiftv1beta1.EncryptionKeyReferenceApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("EncryptionMigrationHistory"):
+		return &hypershiftv1beta1.EncryptionMigrationHistoryApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("EtcdSpec"):
 		return &hypershiftv1beta1.EtcdSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("EtcdTLSConfig"):
@@ -393,8 +399,12 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.RouterParamApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ScaleDownConfig"):
 		return &hypershiftv1beta1.ScaleDownConfigApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("SecretEncryptionKeyStatus"):
+		return &hypershiftv1beta1.SecretEncryptionKeyStatusApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("SecretEncryptionSpec"):
 		return &hypershiftv1beta1.SecretEncryptionSpecApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("SecretEncryptionStatus"):
+		return &hypershiftv1beta1.SecretEncryptionStatusApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("SecretReference"):
 		return &hypershiftv1beta1.SecretReferenceApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ServiceNetworkEntry"):
