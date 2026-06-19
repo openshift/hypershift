@@ -40,6 +40,7 @@ import (
 	cpov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/controlplaneoperator"
 	"github.com/openshift/hypershift/control-plane-pki-operator/certificates"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform"
+	platformagent "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/agent"
 	platformaws "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/aws"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/proxy"
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
@@ -2043,7 +2044,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Reconcile the CAPI provider components
-	if err = r.reconcileCAPIProvider(cpContext, hcluster, hcp, p); err != nil {
+	if err = r.reconcileCAPIProvider(cpContext, createOrUpdate, hcluster, hcp, p); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile capi provider: %w", err)
 	}
 
@@ -2605,7 +2606,7 @@ func (r *HostedClusterReconciler) reconcileCAPIManager(cpContext controlplanecom
 
 // reconcileCAPIProvider orchestrates reconciliation of the CAPI provider
 // components for a given platform.
-func (r *HostedClusterReconciler) reconcileCAPIProvider(cpContext controlplanecomponent.ControlPlaneContext, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, p platform.Platform,
+func (r *HostedClusterReconciler) reconcileCAPIProvider(cpContext controlplanecomponent.ControlPlaneContext, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, p platform.Platform,
 ) error {
 	capiProviderDeploymentSpec, err := p.CAPIProviderDeploymentSpec(hcluster, hcp)
 	if err != nil {
@@ -2629,6 +2630,12 @@ func (r *HostedClusterReconciler) reconcileCAPIProvider(cpContext controlplaneco
 	if err != nil {
 		if !apierrors.IsNotFound(err) {
 			return fmt.Errorf("failed to fetch capi provider deployment: %w", err)
+		}
+		// Deployment does not exist yet — perform first-time platform RBAC setup.
+		if hcluster.Spec.Platform.Type == hyperv1.AgentPlatform {
+			if err := platformagent.ReconcileCAPIProviderRole(cpContext, r.Client, createOrUpdate, hcluster, controlPlaneNamespace.Name); err != nil {
+				return fmt.Errorf("failed to reconcile agent CAPI provider role: %w", err)
+			}
 		}
 	}
 	if err == nil {
