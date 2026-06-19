@@ -419,11 +419,6 @@ func (c *CAPI) reconcileMachineDeployment(ctx context.Context, log logr.Logger,
 	}
 	machineDeployment.Labels[capiv1.ClusterNameLabel] = capiClusterName
 
-	// Set defaults. These are normally set by the CAPI machinedeployment webhook.
-	// However, since we don't run the webhook, CAPI updates the machinedeployment
-	// after it has been created with defaults.
-	machineDeployment.Spec.MinReadySeconds = ptr.To[int32](0)
-
 	machineDeployment.Spec.ClusterName = capiClusterName
 	if machineDeployment.Spec.Selector.MatchLabels == nil {
 		machineDeployment.Spec.Selector.MatchLabels = map[string]string{}
@@ -880,7 +875,6 @@ func (c *CAPI) reconcileMachineSet(ctx context.Context,
 	machineSet.Labels[capiv1.ClusterNameLabel] = capiClusterName
 
 	resourcesName := generateName(capiClusterName, nodePool.Spec.ClusterName, nodePool.GetName())
-	machineSet.Spec.MinReadySeconds = int32(0)
 
 	gvk, err := apiutil.GVKForObject(machineTemplateCR, api.Scheme)
 	if err != nil {
