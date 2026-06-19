@@ -7,16 +7,22 @@ import (
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	manifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/azureutil"
+	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/k8sutil"
+	"github.com/openshift/hypershift/support/netutil"
 
 	azruntime "github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v5"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/privatedns/armprivatedns"
 
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/utils/ptr"
 
@@ -122,6 +128,12 @@ const (
 	//      performs Azure resource cleanup, and removes this finalizer from the HCP.
 	//   3. HCP deletion then proceeds, tearing down credentials and the namespace.
 	hcpAzurePLSFinalizerName = "hypershift.openshift.io/azure-pls-endpoint-cleanup"
+
+	// externalPrivateServiceLabelAzure labels ExternalName Services created for external-dns
+	// integration. When a cluster is private and has custom Route hostnames configured,
+	// these services tell external-dns to create public DNS records pointing to the PrivateEndpoint IP,
+	// allowing management cluster and external clients to resolve the KAS/OAuth hostnames.
+	externalPrivateServiceLabelAzure = "hypershift.openshift.io/azure-pls-external-private-svc"
 )
 
 // PrivateEndpointsAPI abstracts the Azure Private Endpoints client.
@@ -339,7 +351,16 @@ func (r *AzurePrivateLinkServiceReconciler) Reconcile(ctx context.Context, req c
 		}
 	}
 
-	// 11. Set overall Available condition
+	// 11. Reconcile ExternalPrivateService resources for external-dns integration.
+	// When the cluster is private and has custom Route hostnames, create ExternalName
+	// Services annotated for external-dns so public DNS records resolve to the PE IP.
+	if azPLS.Name == privateRouterCRName {
+		if err := r.reconcileExternalServices(ctx, azPLS, hcp, log); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+
+	// 12. Set overall Available condition
 	patch := client.MergeFrom(azPLS.DeepCopy())
 	meta.SetStatusCondition(&azPLS.Status.Conditions, metav1.Condition{
 		Type:               string(hyperv1.AzurePrivateLinkServiceAvailable),
@@ -352,7 +373,7 @@ func (r *AzurePrivateLinkServiceReconciler) Reconcile(ctx context.Context, req c
 		return ctrl.Result{}, fmt.Errorf("failed to update Available condition: %w", err)
 	}
 
-	// 12. Requeue for drift detection
+	// 13. Requeue for drift detection
 	return ctrl.Result{RequeueAfter: azureutil.DriftDetectionRequeueInterval}, nil
 }
 
@@ -822,6 +843,88 @@ func (r *AzurePrivateLinkServiceReconciler) hasSiblingCR(ctx context.Context, az
 		}
 	}
 	return false, nil
+}
+
+// externalPrivateServiceEntry pairs a Service manifest with its Route hostname for external-dns.
+type externalPrivateServiceEntry struct {
+	service  *corev1.Service
+	hostname string
+}
+
+// reconcileExternalServices creates or removes ExternalName Services for external-dns
+// integration. When the cluster is private and has custom Route hostnames configured,
+// these services cause external-dns to create public DNS A records pointing to the PrivateEndpoint IP,
+// enabling management cluster controllers and external clients to resolve KAS/OAuth hostnames.
+// When the cluster transitions to public, any existing services are cleaned up.
+func (r *AzurePrivateLinkServiceReconciler) reconcileExternalServices(ctx context.Context, azPLS *hyperv1.AzurePrivateLinkService, hcp *hyperv1.HostedControlPlane, log logr.Logger) error {
+	entries := hcpExternalPrivateServices(hcp)
+	if len(entries) == 0 {
+		return nil
+	}
+
+	if netutil.IsPublicHCP(hcp) {
+		svcs := make([]client.Object, len(entries))
+		for i, entry := range entries {
+			svcs[i] = entry.service
+		}
+		return k8sutil.DeleteAllIfNeeded(ctx, r.Client, svcs...)
+	}
+
+	var errs []error
+	for _, entry := range entries {
+		svc := entry.service
+		if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, svc, func() error {
+			log.Info("Reconciling external name service", "service", svc.Name, "hostname", entry.hostname)
+			return reconcileExternalService(svc, hcp, entry.hostname, azPLS.Status.PrivateEndpointIP)
+		}); err != nil {
+			errs = append(errs, fmt.Errorf("failed to reconcile %s external service: %w", svc.Name, err))
+		}
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("failed to create external services for private endpoints: %w", utilerrors.NewAggregate(errs))
+	}
+	return nil
+}
+
+func reconcileExternalService(svc *corev1.Service, hcp *hyperv1.HostedControlPlane, hostName, targetIP string) error {
+	ownerRef := config.OwnerRefFrom(hcp)
+	ownerRef.ApplyTo(svc)
+	if svc.Labels == nil {
+		svc.Labels = map[string]string{}
+	}
+	if svc.Annotations == nil {
+		svc.Annotations = map[string]string{}
+	}
+	svc.Labels[externalPrivateServiceLabelAzure] = "true"
+	svc.Annotations[hyperv1.ExternalDNSHostnameAnnotation] = hostName
+	svc.Spec.Type = corev1.ServiceTypeExternalName
+	svc.Spec.ExternalName = targetIP
+	return nil
+}
+
+// hcpExternalPrivateServices returns the list of ExternalName Service entries for each
+// service publishing strategy that uses a Route with a configured hostname.
+func hcpExternalPrivateServices(hcp *hyperv1.HostedControlPlane) []externalPrivateServiceEntry {
+	type candidate struct {
+		serviceType hyperv1.ServiceType
+		manifestFn  func(string) *corev1.Service
+	}
+	candidates := []candidate{
+		{hyperv1.APIServer, manifests.KubeAPIServerExternalPrivateService},
+		{hyperv1.OAuthServer, manifests.OauthServerExternalPrivateService},
+	}
+
+	var entries []externalPrivateServiceEntry
+	for _, c := range candidates {
+		strategy := netutil.ServicePublishingStrategyByTypeForHCP(hcp, c.serviceType)
+		if strategy != nil && strategy.Type == hyperv1.Route && strategy.Route != nil && strategy.Route.Hostname != "" {
+			entries = append(entries, externalPrivateServiceEntry{
+				service:  c.manifestFn(hcp.Namespace),
+				hostname: strategy.Route.Hostname,
+			})
+		}
+	}
+	return entries
 }
 
 // handleAzureError provides differentiated backoff for Azure API errors.
