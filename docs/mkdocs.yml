@@ -176,6 +176,7 @@ nav:
         - how-to/azure/create-infra-separately.md
         - how-to/azure/deploy-azure-private-clusters.md
         - how-to/azure/setup-management-cluster.md
+        - how-to/azure/backup-and-restore-etcd-snapshot.md
       - 'Troubleshooting':
         - how-to/azure/troubleshooting/index.md
         - how-to/azure/troubleshooting/debug-nodes.md

@@ -72,3 +72,10 @@ export CCOCTL_BINARY_PATH="${CCOCTL_BINARY_PATH:-${HOME}/cloud-credential-operat
 export AZURE_CREDS="${AZURE_CREDS:-${HOME}/.azure/credentials}"
 export PULL_SECRET="${PULL_SECRET:-${HOME}/all-the-pull-secrets.json}"
 export WORKLOAD_IDENTITIES_FILE="${WORKLOAD_IDENTITIES_FILE:-./workload-identities.json}"
+
+# Etcd backup configuration
+export BACKUP_STORAGE_ACCOUNT_NAME="${PREFIX//[^a-z0-9]/}backup"
+export BACKUP_CONTAINER_NAME="${PREFIX}-etcd-backups"
+export BACKUP_MI_NAME="${PREFIX}-etcd-backup-mi"
+export BACKUP_SECRET_NAME="etcd-backup-azure-credentials"
+export HO_NAMESPACE="${HO_NAMESPACE:-hypershift}"

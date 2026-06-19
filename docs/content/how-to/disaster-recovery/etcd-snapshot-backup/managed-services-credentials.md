@@ -263,6 +263,16 @@ When the controller detects Azure Workload Identity mode:
     - Environment variables `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_FEDERATED_TOKEN_FILE`, `AZURE_AUTHORITY_HOST`
 4. No credentials file is mounted and no `--azure-auth-type` flag is passed — the Azure SDK uses the injected federated token
 
+## Self-Managed Azure
+
+Self-managed Azure uses the same Workload Identity mechanism as ARO HCP. The credential Secret format, auto-detection logic, and runtime behavior are identical. The differences are in infrastructure setup:
+
+- The managed identity and federated credential are created manually (or via `contrib/self-managed-azure/setup_backup.sh`)
+- The OIDC issuer URL comes from the management cluster (AKS or OCP), not from an ARO HCP environment
+- The storage account is provisioned independently
+
+For a complete step-by-step guide, see [Etcd Snapshot Backup for Self-Managed Azure](../../how-to/azure/backup-and-restore-etcd-snapshot.md).
+
 ## OADP Plugin Integration
 
 The OADP HyperShift plugin handles credential propagation automatically for both ROSA HCP and ARO HCP. No manual Secret creation or copying is required. The plugin copies the `cloud-credentials` Secret from the OADP namespace to the HyperShift Operator namespace, performing key remapping as described in the [OADP Plugin Secret Flow](#oadp-plugin-secret-flow) section above. The controller then auto-detects the credential mode from the destination Secret content.
