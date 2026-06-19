@@ -18,8 +18,6 @@ var (
 		"GCP_PD_DRIVER_IMAGE":                             "gcp-pd-csi-driver",
 		"OPENSTACK_CINDER_DRIVER_OPERATOR_IMAGE":          "openstack-cinder-csi-driver-operator",
 		"OPENSTACK_CINDER_DRIVER_IMAGE":                   "openstack-cinder-csi-driver",
-		"OVIRT_DRIVER_OPERATOR_IMAGE":                     "ovirt-csi-driver-operator",
-		"OVIRT_DRIVER_IMAGE":                              "ovirt-csi-driver",
 		"MANILA_DRIVER_OPERATOR_IMAGE":                    "csi-driver-manila-operator",
 		"MANILA_DRIVER_IMAGE":                             "csi-driver-manila",
 		"MANILA_NFS_DRIVER_IMAGE":                         "csi-driver-nfs",
