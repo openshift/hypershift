@@ -4050,6 +4050,75 @@ func TestReconcileExternalServices_WhenPublic_ItShouldDeleteExistingServices(t *
 	}, oauthSvc))).To(BeTrue(), "OAuth ExternalPrivateService should be deleted")
 }
 
+func TestReconcileExternalService_WhenServiceHasExistingLabelsAndAnnotations_ItShouldPreserveThem(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+
+	hcp := newTestHCP(t, "test-hcp", "test-ns", "api.example.com")
+	svc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        "kube-apiserver-private",
+			Namespace:   "test-ns",
+			Labels:      map[string]string{"existing-label": "value"},
+			Annotations: map[string]string{"existing-annotation": "value"},
+		},
+	}
+
+	err := reconcileExternalService(svc, hcp, "api.custom.example.com", "10.0.1.5")
+	g.Expect(err).ToNot(HaveOccurred())
+
+	g.Expect(svc.Labels).To(HaveKeyWithValue("existing-label", "value"))
+	g.Expect(svc.Labels).To(HaveKeyWithValue(externalPrivateServiceLabelAzure, "true"))
+	g.Expect(svc.Annotations).To(HaveKeyWithValue("existing-annotation", "value"))
+	g.Expect(svc.Annotations).To(HaveKeyWithValue(hyperv1.ExternalDNSHostnameAnnotation, "api.custom.example.com"))
+	g.Expect(svc.Spec.Type).To(Equal(corev1.ServiceTypeExternalName))
+	g.Expect(svc.Spec.ExternalName).To(Equal("10.0.1.5"))
+}
+
+func TestReconcileExternalServices_WhenCreateOrUpdateFails_ItShouldReturnAggregateError(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+	scheme := newTestScheme(t, g)
+
+	hcp := newTestHCP(t, "test-hcp", "test-ns", "api.example.com")
+	hcp.Spec.Platform.Type = hyperv1.AzurePlatform
+	hcp.Spec.Platform.Azure = &hyperv1.AzurePlatformSpec{
+		Topology: hyperv1.AzureTopologyPrivate,
+	}
+	hcp.Spec.Services = []hyperv1.ServicePublishingStrategyMapping{
+		{
+			Service: hyperv1.APIServer,
+			ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+				Type:  hyperv1.Route,
+				Route: &hyperv1.RoutePublishingStrategy{Hostname: "api.custom.example.com"},
+			},
+		},
+	}
+
+	azPLS := newTestAzurePLS(t, "private-router", "test-ns")
+	azPLS.Status.PrivateEndpointIP = "10.0.1.5"
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(hcp, azPLS).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+				if _, ok := obj.(*corev1.Service); ok {
+					return fmt.Errorf("simulated create failure")
+				}
+				return c.Create(ctx, obj, opts...)
+			},
+		}).
+		Build()
+
+	r := &AzurePrivateLinkServiceReconciler{Client: fakeClient}
+
+	err := r.reconcileExternalServices(t.Context(), azPLS, hcp, testr.New(t))
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(err).To(MatchError(ContainSubstring("failed to create external services for private endpoints")))
+	g.Expect(err).To(MatchError(ContainSubstring("failed to reconcile kube-apiserver-private-external external service")))
+}
+
 func TestReconcileExternalServices_WhenPrivateWithNoExternalNames_ItShouldNotCreateServices(t *testing.T) {
 	t.Parallel()
 	g := NewGomegaWithT(t)
