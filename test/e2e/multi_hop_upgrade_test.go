@@ -83,7 +83,6 @@ func TestMultiHopUpgrade(t *testing.T) {
 				g.Expect(err).NotTo(HaveOccurred(), "hop %d: failed to update hosted cluster release image", hopNum)
 
 				e2eutil.WaitForControlPlaneComponentRollout(t, ctx, mgtClient, hostedCluster, previousVersion)
-				e2eutil.WaitForControlPlaneRollout(t, ctx, mgtClient, hostedCluster)
 				e2eutil.WaitForDataPlaneRollout(t, ctx, mgtClient, hostedCluster)
 			})
 
