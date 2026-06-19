@@ -35,6 +35,7 @@ func NewScraper() *Scraper {
 // the correct CA, client cert, and client key for that specific component.
 func (s *Scraper) ScrapeAll(ctx context.Context, targets []ScrapeTarget, metricsPath, scheme, tlsServerName string, tlsConfig *tls.Config) []ScrapeResult {
 	client := buildScrapeClient(tlsServerName, tlsConfig)
+	defer client.CloseIdleConnections()
 
 	results := make([]ScrapeResult, len(targets))
 	var wg sync.WaitGroup
@@ -64,7 +65,8 @@ func buildScrapeClient(tlsServerName string, tlsConfig *tls.Config) *http.Client
 	return &http.Client{
 		Timeout: scrapeTimeout,
 		Transport: &http.Transport{
-			TLSClientConfig: tlsCfg,
+			TLSClientConfig:   tlsCfg,
+			DisableKeepAlives: true,
 		},
 	}
 }
