@@ -167,6 +167,7 @@ func TestNewDestroyCommands(t *testing.T) {
 					"cluster-grace-period",
 					"destroy-cloud-resources",
 					"infra-id",
+					"kubeconfig",
 					"name",
 					"namespace",
 				}

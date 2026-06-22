@@ -297,14 +297,20 @@ func ConvertImageRegistryOverrideStringToMap(envVar string) map[string][]string 
 }
 
 func GetKubeClientSet() (kubeclient.Interface, error) {
-	cfg, err := cmdutil.GetConfig()
+	return GetKubeClientSetWithKubeconfig("")
+}
+
+// GetKubeClientSetWithKubeconfig creates a Kubernetes clientset using the specified kubeconfig
+// file path. If kubeconfigPath is empty, it falls back to the default kubeconfig resolution.
+func GetKubeClientSetWithKubeconfig(kubeconfigPath string) (kubeclient.Interface, error) {
+	cfg, err := cmdutil.GetConfigWithKubeconfig(kubeconfigPath)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("unable to get kubernetes config: %w", err)
 	}
 
 	kc, err := kubeclient.NewForConfig(cfg)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("unable to create kubernetes clientset: %w", err)
 	}
 
 	return kc, nil
