@@ -365,6 +365,8 @@ func (a *AzurePlatformConfig) TestMatrix(releaseImage string) TestMatrix {
 		},
 		Sequential: []SequentialGroup{
 			{
+				// Read-only private tests run first; oauth-lb-private mutates cluster state
+				// (htpasswd IDP, kubeadmin secret removal) and must run after.
 				Name: "private-and-oauth",
 				Steps: []TestGroup{
 					{

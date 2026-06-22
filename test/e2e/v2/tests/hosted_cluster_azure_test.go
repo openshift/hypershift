@@ -43,31 +43,6 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func oauthServiceLBPredicates() []e2eutil.Predicate[*corev1.Service] {
-	return []e2eutil.Predicate[*corev1.Service]{
-		func(svc *corev1.Service) (done bool, reasons string, err error) {
-			if svc.Spec.Type != corev1.ServiceTypeLoadBalancer {
-				return false, fmt.Sprintf("expected Service type LoadBalancer, got %s", svc.Spec.Type), nil
-			}
-			return true, "oauth-openshift Service is type LoadBalancer", nil
-		},
-		func(svc *corev1.Service) (done bool, reasons string, err error) {
-			if len(svc.Status.LoadBalancer.Ingress) == 0 {
-				return false, "LoadBalancer has no ingress entries yet", nil
-			}
-			ingress := svc.Status.LoadBalancer.Ingress[0]
-			if ingress.IP == "" && ingress.Hostname == "" {
-				return false, "LoadBalancer ingress has no IP or hostname", nil
-			}
-			host := ingress.IP
-			if host == "" {
-				host = ingress.Hostname
-			}
-			return true, fmt.Sprintf("oauth-openshift LoadBalancer endpoint ready: %s", host), nil
-		},
-	}
-}
-
 // AzurePublicClusterTest registers tests for Azure public cluster validation.
 // These tests verify workload identity, KAS allowed CIDRs, and ingress operator configuration
 // on Azure platform clusters.
@@ -657,7 +632,7 @@ func AzureOAuthLoadBalancerTest(getTestCtx internal.TestContextGetter) {
 			}
 		})
 
-		It("should create oauth-openshift Service as LoadBalancer with external IP", func() {
+		It("should create oauth-openshift Service as LoadBalancer with endpoint", func() {
 			testCtx := getTestCtx()
 			ctx := testCtx.Context
 			controlPlaneNamespace := testCtx.ControlPlaneNamespace
@@ -778,3 +753,30 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift] Hosted Cluster Azure", Label
 
 	RegisterHostedClusterAzureTests(func() *internal.TestContext { return testCtx })
 })
+
+// oauthServiceLBPredicates returns predicates that verify the oauth-openshift Service
+// is type LoadBalancer and has an allocated ingress endpoint (IP or Hostname).
+func oauthServiceLBPredicates() []e2eutil.Predicate[*corev1.Service] {
+	return []e2eutil.Predicate[*corev1.Service]{
+		func(svc *corev1.Service) (done bool, reasons string, err error) {
+			if svc.Spec.Type != corev1.ServiceTypeLoadBalancer {
+				return false, fmt.Sprintf("expected Service type LoadBalancer, got %s", svc.Spec.Type), nil
+			}
+			return true, "oauth-openshift Service is type LoadBalancer", nil
+		},
+		func(svc *corev1.Service) (done bool, reasons string, err error) {
+			if len(svc.Status.LoadBalancer.Ingress) == 0 {
+				return false, "LoadBalancer has no ingress entries yet", nil
+			}
+			ingress := svc.Status.LoadBalancer.Ingress[0]
+			if ingress.IP == "" && ingress.Hostname == "" {
+				return false, "LoadBalancer ingress has no IP or hostname", nil
+			}
+			host := ingress.IP
+			if host == "" {
+				host = ingress.Hostname
+			}
+			return true, fmt.Sprintf("oauth-openshift LoadBalancer endpoint ready: %s", host), nil
+		},
+	}
+}
