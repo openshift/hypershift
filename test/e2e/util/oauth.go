@@ -333,14 +333,22 @@ func WaitForOAuthLoadBalancerEndpoint(t testing.TB, ctx context.Context, client 
 			return false, nil
 		}
 		if len(svc.Status.LoadBalancer.Ingress) == 0 {
-			t.Logf("Waiting for oauth-openshift LoadBalancer to get an external endpoint")
+			t.Logf("Waiting for oauth-openshift LoadBalancer to get an endpoint")
 			return false, nil
 		}
 		ingress := svc.Status.LoadBalancer.Ingress[0]
 		if ingress.IP == "" && ingress.Hostname == "" {
 			return false, nil
 		}
-		t.Logf("OAuth LoadBalancer has external endpoint: %s%s", ingress.IP, ingress.Hostname)
+		ip := ingress.IP
+		if ip == "" {
+			ip = "<none>"
+		}
+		hostname := ingress.Hostname
+		if hostname == "" {
+			hostname = "<none>"
+		}
+		t.Logf("OAuth LoadBalancer endpoint ready (IP=%s, Hostname=%s)", ip, hostname)
 		return true, nil
 	})
 	g.Expect(err).ToNot(HaveOccurred(), "failed waiting for oauth-openshift LoadBalancer endpoint")
@@ -349,7 +357,7 @@ func WaitForOAuthLoadBalancerEndpoint(t testing.TB, ctx context.Context, client 
 }
 
 // WaitForOAuthLoadBalancerReady waits for the oauth-openshift LoadBalancer Service to have an
-// external endpoint allocated and for the /healthz endpoint to return HTTP 200.
+// endpoint allocated and for the /healthz endpoint to return HTTP 200.
 // It returns the OAuth hostname from the HostedCluster's service publishing strategy.
 // For private topology clusters where the /healthz endpoint is not directly reachable,
 // use WaitForOAuthLoadBalancerEndpoint instead.
@@ -386,11 +394,11 @@ func WaitForOAuthLoadBalancerReady(t testing.TB, ctx context.Context, client crc
 	return oauthHost
 }
 
-// ValidateOAuthIdentityProviderFlow validates the full OAuth identity provider flow against
-// a LoadBalancer endpoint: kubeadmin login, htpasswd IDP setup, testuser login, and
-// kubeadmin secret removal. It takes the oauthHost to use for token requests, allowing
-// callers to control whether the host was obtained via WaitForOAuthLoadBalancerReady
-// (with health check) or WaitForOAuthLoadBalancerEndpoint (without).
+// ValidateOAuthIdentityProviderFlow validates the full OAuth identity provider flow
+// against the given oauthHost: kubeadmin login, htpasswd IDP setup, testuser login,
+// and kubeadmin secret removal. The oauthHost can come from any source, such as
+// WaitForOAuthLoadBalancerReady (with health check) or WaitForOAuthLoadBalancerEndpoint
+// (endpoint only, suitable for private topology).
 func ValidateOAuthIdentityProviderFlow(t testing.TB, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, oauthHost string) {
 	g := NewWithT(t)
 	guestConfig, err := guestRestConfig(t, ctx, client, hostedCluster)
@@ -453,6 +461,9 @@ func ValidateOAuthIdentityProviderFlow(t testing.TB, ctx context.Context, client
 	validateClusterPostIDP(t, ctx, client, hostedCluster)
 }
 
+// ValidateOAuthWithIdentityProviderViaLoadBalancer combines WaitForOAuthLoadBalancerReady
+// (with /healthz check) and ValidateOAuthIdentityProviderFlow. For private topology
+// clusters where /healthz is unreachable, call those functions separately.
 func ValidateOAuthWithIdentityProviderViaLoadBalancer(t testing.TB, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	g := NewWithT(t)
 
