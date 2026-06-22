@@ -351,6 +351,7 @@ nav:
       - 'PrivateLink': reference/architecture/aws/privatelink.md
     - 'Azure':
       - 'PrivateLink': reference/architecture/azure/privatelink.md
+    - 'Private Topology DNS': reference/architecture/private-topology-dns.md
     - 'Multicluster Engine and Agent': reference/architecture/mce-and-agent.md
     - 'Managed Azure':
         - reference/architecture/managed-azure/secrets-csi.md
