@@ -179,9 +179,7 @@ type dialContextFunc func(ctx context.Context, network, addr string) (net.Conn, 
 type dialRequestFunc func(req *http.Request, network, addr string) (net.Conn, error)
 
 func dialDirectFunc(httpProxy *goproxy.ProxyHttpServer) dialContextFunc {
-	return func(ctx context.Context, network, addr string) (net.Conn, error) {
-		return httpProxy.Tr.DialContext(ctx, network, addr)
-	}
+	return httpProxy.Tr.DialContext
 }
 
 func dialThroughProxyFunc(httpProxy *goproxy.ProxyHttpServer, proxyURL string, proxyURLUser *url.Userinfo) dialFunc {
