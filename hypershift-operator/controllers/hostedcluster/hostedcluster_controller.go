@@ -579,7 +579,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 
 		if hcDestroyGracePeriod > 0 {
-			if hostedClusterDestroyedCondition == nil {
+			if hostedClusterDestroyedCondition == nil || hostedClusterDestroyedCondition.Status != metav1.ConditionTrue {
 				hostedClusterDestroyedCondition = &metav1.Condition{
 					Type:               string(hyperv1.HostedClusterDestroyed),
 					Status:             metav1.ConditionTrue,
