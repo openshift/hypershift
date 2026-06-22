@@ -3,7 +3,7 @@ package aws
 import (
 	hypershiftaws "github.com/openshift/hypershift/cmd/cluster/aws"
 	"github.com/openshift/hypershift/cmd/cluster/core"
-	"github.com/openshift/hypershift/cmd/log"
+	cmdutil "github.com/openshift/hypershift/cmd/util"
 
 	"github.com/spf13/cobra"
 )
@@ -36,7 +36,7 @@ func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 		}
 
 		if err = hypershiftaws.DestroyCluster(cmd.Context(), opts); err != nil {
-			log.Log.Error(err, "Failed to destroy cluster")
+			cmdutil.NewLogger().Error(err, "Failed to destroy cluster")
 			return err
 		}
 

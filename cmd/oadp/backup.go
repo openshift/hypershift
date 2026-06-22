@@ -7,8 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openshift/hypershift/cmd/log"
-	"github.com/openshift/hypershift/cmd/util"
+	cmdutil "github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/support/oadp"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -24,7 +23,7 @@ import (
 
 func NewCreateBackupCommand() *cobra.Command {
 	opts := &CreateOptions{
-		Log: log.Log,
+		Log: cmdutil.NewLogger(),
 	}
 
 	cmd := &cobra.Command{
@@ -91,7 +90,7 @@ func (o *CreateOptions) RunBackup(ctx context.Context) error {
 	// Client is needed for validations and actual creation
 	if o.Client == nil {
 		var err error
-		o.Client, err = util.GetClient()
+		o.Client, err = cmdutil.GetClient()
 		if err != nil {
 			if o.Render {
 				// In render mode, if we can't connect to cluster, we'll still render but skip validations

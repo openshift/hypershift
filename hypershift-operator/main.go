@@ -722,8 +722,7 @@ func setupPlatformControllers(mgr ctrl.Manager, opts *StartOptions, mgmtClusterC
 		if err := (&gcp.GCPPrivateServiceConnectReconciler{
 			Client:                 mgr.GetClient(),
 			CreateOrUpdateProvider: createOrUpdate,
-			Log:                    ctrl.Log.WithName("controllers").WithName("GCPPrivateServiceConnect"),
-		}).SetupWithManager(mgr); err != nil {
+		}).SetupWithManager(mgr, mgr.GetLogger().WithName(gcp.ControllerName)); err != nil {
 			return fmt.Errorf("unable to create GCPPrivateServiceConnect controller: %w", err)
 		}
 	case hyperv1.AzurePlatform:
@@ -1000,7 +999,6 @@ func setupAuditLogPersistence(mgr ctrl.Manager, opts *StartOptions, log logr.Log
 		hookServer := mgr.GetWebhookServer()
 		hookServer.Register("/mutate-kas-audit-logs", &webhook.Admission{
 			Handler: auditlogpersistence.NewPodWebhookHandler(
-				mgr.GetLogger(),
 				mgr.GetClient(),
 				admission.NewDecoder(mgr.GetScheme()),
 			),
@@ -1008,7 +1006,6 @@ func setupAuditLogPersistence(mgr ctrl.Manager, opts *StartOptions, log logr.Log
 
 		hookServer.Register("/mutate-kas-audit-log-config", &webhook.Admission{
 			Handler: auditlogpersistence.NewConfigMapWebhookHandler(
-				mgr.GetLogger(),
 				mgr.GetClient(),
 				admission.NewDecoder(mgr.GetScheme()),
 			),

@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
-	"github.com/openshift/hypershift/cmd/log"
+	cmdutil "github.com/openshift/hypershift/cmd/util"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
@@ -176,7 +176,7 @@ func NewCreateCLIRoleCommand() *cobra.Command {
 
 	_ = cmd.MarkFlagRequired("aws-creds")
 
-	logger := log.Log
+	logger := cmdutil.NewLogger()
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		if err := opts.Run(cmd.Context(), logger); err != nil {
 			logger.Error(err, "failed to create cli role")

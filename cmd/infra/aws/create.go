@@ -11,8 +11,7 @@ import (
 	"time"
 
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
-	"github.com/openshift/hypershift/cmd/log"
-	"github.com/openshift/hypershift/cmd/util"
+	cmdutil "github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/support/awsapi"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -47,7 +46,7 @@ type CreateInfraOptions struct {
 	SingleNATGateway            bool
 	VPCCIDR                     string
 
-	CredentialsSecretData *util.CredentialsSecretData
+	CredentialsSecretData *cmdutil.CredentialsSecretData
 
 	VPCOwnerCredentialOpts       awsutil.AWSCredentialsOptions
 	PrivateZonesInClusterAccount bool
@@ -129,7 +128,7 @@ func NewCreateCommand() *cobra.Command {
 	opts.AWSCredentialsOpts.BindFlags(cmd.Flags())
 	opts.VPCOwnerCredentialOpts.BindVPCOwnerFlags(cmd.Flags())
 
-	l := log.Log
+	l := cmdutil.NewLogger()
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		err := opts.AWSCredentialsOpts.Validate()
 		if err != nil {
@@ -528,7 +527,7 @@ func (o *CreateInfraOptions) createProxyHost(ctx context.Context, l logr.Logger,
 
 	var result proxyInfo
 
-	publicSSHKey, privateSSHKey, err := util.GenerateSSHKeys()
+	publicSSHKey, privateSSHKey, err := cmdutil.GenerateSSHKeys()
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate proxy ssh keys: %w", err)
 	}

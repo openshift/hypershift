@@ -107,6 +107,8 @@ type SubnetsAPI interface {
 	NewListPager(resourceGroupName string, virtualNetworkName string, options *armnetwork.SubnetsClientListOptions) *azruntime.Pager[armnetwork.SubnetsClientListResponse]
 }
 
+const ControllerName = "azureprivatelinkservice"
+
 // AzurePrivateLinkServiceController reconciles AzurePrivateLinkService resources.
 // It watches AzurePrivateLinkService CRDs across all namespaces and manages
 // the lifecycle of Azure Private Link Service resources.
@@ -121,6 +123,7 @@ type AzurePrivateLinkServiceController struct {
 // SetupWithManager sets up the controller with the Manager.
 func (r *AzurePrivateLinkServiceController) SetupWithManager(mgr ctrl.Manager) error {
 	_, err := ctrl.NewControllerManagedBy(mgr).
+		Named(ControllerName).
 		For(&hyperv1.AzurePrivateLinkService{}).
 		WithOptions(controller.Options{
 			RateLimiter:             workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](3*time.Second, 30*time.Second),

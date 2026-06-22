@@ -10,8 +10,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
-	"github.com/openshift/hypershift/cmd/log"
-	"github.com/openshift/hypershift/cmd/util"
+	cmdutil "github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/support/awsapi"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -52,7 +51,7 @@ func NewCommand() *cobra.Command {
 	_ = cmd.MarkFlagRequired("name")
 	_ = cmd.MarkFlagRequired("output-dir")
 
-	logger := log.Log
+	logger := cmdutil.NewLogger()
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		err := opts.AWSCredentialsOpts.Validate()
 		if err != nil {
@@ -70,7 +69,7 @@ func NewCommand() *cobra.Command {
 }
 
 func (o *ConsoleLogOpts) Run(ctx context.Context) error {
-	c, err := util.GetClient()
+	c, err := cmdutil.GetClient()
 	if err != nil {
 		return err
 	}

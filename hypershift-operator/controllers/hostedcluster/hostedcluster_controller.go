@@ -158,6 +158,8 @@ var (
 	CAPIComponents                         = []string{capimanagerv2.ComponentName, capiproviderv2.ComponentName}
 )
 
+const ControllerName = "hostedcluster"
+
 // HostedClusterReconciler reconciles a HostedCluster object
 type HostedClusterReconciler struct {
 	client.Client
@@ -246,6 +248,7 @@ func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpd
 	// namespaces, the events are filtered to enqueue only those resources which
 	// are annotated as being associated with a hostedcluster (using an annotation).
 	bldr := ctrl.NewControllerManagedBy(mgr).
+		Named(ControllerName).
 		For(&hyperv1.HostedCluster{}, builder.WithPredicates(hyperutil.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()))).
 		WithOptions(controller.Options{
 			RateLimiter:             workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](1*time.Second, 10*time.Second),

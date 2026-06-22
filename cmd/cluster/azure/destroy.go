@@ -11,7 +11,6 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	azureinfra "github.com/openshift/hypershift/cmd/infra/azure"
-	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
@@ -47,7 +46,7 @@ func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 	_ = cmd.MarkFlagRequired("azure-creds")
 	_ = cmd.MarkFlagRequired("dns-zone-rg-name")
 
-	logger := log.Log
+	logger := util.NewLogger()
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()

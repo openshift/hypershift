@@ -20,8 +20,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-
-	"github.com/go-logr/logr"
 )
 
 const (
@@ -33,8 +31,6 @@ const (
 // and reconciles a GCPPrivateServiceConnect CR representation for it.
 type GCPPrivateServiceObserver struct {
 	client.Client
-
-	log logr.Logger
 
 	ControllerName   string
 	ServiceNamespace string
@@ -48,8 +44,6 @@ func ControllerName(name string) string {
 }
 
 func (r *GCPPrivateServiceObserver) SetupWithManager(ctx context.Context, mgr ctrl.Manager) error {
-	r.log = ctrl.Log.WithName(r.ControllerName).WithValues("name", r.ServiceName, "namespace", r.ServiceNamespace)
-
 	return ctrl.NewControllerManagedBy(mgr).
 		Named(r.ControllerName).
 		For(&corev1.Service{}).
@@ -60,6 +54,8 @@ func (r *GCPPrivateServiceObserver) SetupWithManager(ctx context.Context, mgr ct
 }
 
 func (r *GCPPrivateServiceObserver) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	log := ctrl.LoggerFrom(ctx)
+
 	if req.Name != r.ServiceName {
 		return ctrl.Result{}, nil
 	}
@@ -68,7 +64,7 @@ func (r *GCPPrivateServiceObserver) Reconcile(ctx context.Context, req ctrl.Requ
 	svc := &corev1.Service{}
 	if err := r.Get(ctx, req.NamespacedName, svc); err != nil {
 		if apierrors.IsNotFound(err) {
-			r.log.Info("service not found")
+			log.Info("service not found")
 			return ctrl.Result{}, nil
 		}
 		return ctrl.Result{}, err
@@ -76,14 +72,14 @@ func (r *GCPPrivateServiceObserver) Reconcile(ctx context.Context, req ctrl.Requ
 
 	// Verify this is an Internal Load Balancer
 	if !isInternalLoadBalancer(svc) {
-		r.log.Info("service is not Internal LoadBalancer type, skipping", "loadBalancerType", svc.Annotations[gcpLoadBalancerTypeAnnotation])
+		log.Info("service is not Internal LoadBalancer type, skipping", "loadBalancerType", svc.Annotations[gcpLoadBalancerTypeAnnotation])
 		return ctrl.Result{}, nil
 	}
 
 	// Extract LoadBalancer IP and validate it's ready
 	loadBalancerIP, hasValidIP := k8sutil.ExtractLoadBalancerIP(svc)
 	if !hasValidIP {
-		r.log.Info("LoadBalancer IP not ready yet")
+		log.Info("LoadBalancer IP not ready yet")
 		return ctrl.Result{}, nil
 	}
 
