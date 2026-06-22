@@ -8,8 +8,7 @@ import (
 	"time"
 
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
-	"github.com/openshift/hypershift/cmd/log"
-	"github.com/openshift/hypershift/cmd/util"
+	cmdutil "github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/support/awsapi"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -32,7 +31,7 @@ type DestroyIAMOptions struct {
 	VPCOwnerCredentialsOpts      awsutil.AWSCredentialsOptions
 	PrivateZonesInClusterAccount bool
 
-	CredentialsSecretData *util.CredentialsSecretData
+	CredentialsSecretData *cmdutil.CredentialsSecretData
 }
 
 func NewDestroyIAMCommand() *cobra.Command {
@@ -45,7 +44,7 @@ func NewDestroyIAMCommand() *cobra.Command {
 	opts := DestroyIAMOptions{
 		Region:  "us-east-1",
 		InfraID: "",
-		Log:     log.Log,
+		Log:     cmdutil.NewLogger(),
 	}
 
 	cmd.Flags().StringVar(&opts.InfraID, "infra-id", opts.InfraID, "Infrastructure ID to use for AWS resources.")

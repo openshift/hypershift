@@ -16,6 +16,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apiserver/pkg/storage/names"
 
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
@@ -32,22 +33,22 @@ const (
 )
 
 type PodWebhookHandler struct {
-	log     logr.Logger
 	client  client.Client
 	decoder admission.Decoder
 }
 
 var _ admission.Handler = &PodWebhookHandler{}
 
-func NewPodWebhookHandler(log logr.Logger, c client.Client, decoder admission.Decoder) *PodWebhookHandler {
+func NewPodWebhookHandler(c client.Client, decoder admission.Decoder) *PodWebhookHandler {
 	return &PodWebhookHandler{
-		log:     log.WithName("audit-log-persistence-pod-webhook"),
 		client:  c,
 		decoder: decoder,
 	}
 }
 
 func (h *PodWebhookHandler) Handle(ctx context.Context, req admission.Request) admission.Response {
+	log := ctrl.LoggerFrom(ctx).WithName("audit-log-persistence-pod-webhook")
+
 	// Only handle Pod resources
 	if req.Kind.Group != "" || req.Kind.Kind != "Pod" {
 		return admission.Allowed("")
@@ -64,7 +65,7 @@ func (h *PodWebhookHandler) Handle(ctx context.Context, req admission.Request) a
 		if apierrors.IsNotFound(err) {
 			return admission.Allowed("")
 		}
-		h.log.Error(err, "Failed to get namespace", "namespace", req.Namespace)
+		log.Error(err, "Failed to get namespace", "namespace", req.Namespace)
 		return admission.Errored(http.StatusInternalServerError, fmt.Errorf("failed to get namespace %s: %w", req.Namespace, err))
 	}
 
@@ -75,7 +76,7 @@ func (h *PodWebhookHandler) Handle(ctx context.Context, req admission.Request) a
 	// Decode the pod first to check both name and generateName
 	pod := &corev1.Pod{}
 	if err := h.decoder.Decode(req, pod); err != nil {
-		h.log.Error(err, "Failed to decode pod")
+		log.Error(err, "Failed to decode pod")
 		return admission.Errored(http.StatusBadRequest, err)
 	}
 
@@ -101,7 +102,7 @@ func (h *PodWebhookHandler) Handle(ctx context.Context, req admission.Request) a
 		if apierrors.IsNotFound(err) {
 			return admission.Allowed("")
 		}
-		h.log.Error(err, "Failed to get AuditLogPersistenceConfig")
+		log.Error(err, "Failed to get AuditLogPersistenceConfig")
 		return admission.Errored(http.StatusInternalServerError, fmt.Errorf("failed to get AuditLogPersistenceConfig: %w", err))
 	}
 
@@ -116,28 +117,28 @@ func (h *PodWebhookHandler) Handle(ctx context.Context, req admission.Request) a
 
 	// Mutate the pod
 	mutated := pod.DeepCopy()
-	if err := h.mutatePod(ctx, mutated, spec); err != nil {
-		h.log.Error(err, "Failed to mutate pod for audit log persistence")
+	if err := h.mutatePod(ctx, mutated, spec, log); err != nil {
+		log.Error(err, "Failed to mutate pod for audit log persistence")
 		return admission.Errored(http.StatusInternalServerError, fmt.Errorf("failed to mutate pod: %w", err))
 	}
 
 	mutatedRaw, err := json.Marshal(mutated)
 	if err != nil {
-		h.log.Error(err, "Failed to marshal mutated pod")
+		log.Error(err, "Failed to marshal mutated pod")
 		return admission.Errored(http.StatusInternalServerError, fmt.Errorf("failed to marshal mutated pod: %w", err))
 	}
 
-	h.log.Info("Successfully mutated pod for audit log persistence", "pod", mutated.Name, "namespace", pod.Namespace, "pvc", pvcNamePrefix+mutated.Name)
+	log.Info("Successfully mutated pod for audit log persistence", "pod", mutated.Name, "namespace", pod.Namespace, "pvc", pvcNamePrefix+mutated.Name)
 	return admission.PatchResponseFromRaw(req.Object.Raw, mutatedRaw)
 }
 
-func (h *PodWebhookHandler) mutatePod(ctx context.Context, pod *corev1.Pod, spec *auditlogpersistencev1alpha1.AuditLogPersistenceConfigSpec) error {
+func (h *PodWebhookHandler) mutatePod(ctx context.Context, pod *corev1.Pod, spec *auditlogpersistencev1alpha1.AuditLogPersistenceConfigSpec, log logr.Logger) error {
 	// If pod has generateName but no name, generate a final name
 	// This ensures we have a stable name for PVC creation
 	// Use the same name generator that Kubernetes uses internally
 	if pod.Name == "" && pod.GenerateName != "" {
 		generatedName := names.SimpleNameGenerator.GenerateName(pod.GenerateName)
-		h.log.V(1).Info("Generating pod name from generateName", "generateName", pod.GenerateName, "generatedName", generatedName)
+		log.V(1).Info("Generating pod name from generateName", "generateName", pod.GenerateName, "generatedName", generatedName)
 		pod.Name = generatedName
 		pod.GenerateName = ""
 	}
@@ -195,19 +196,19 @@ func (h *PodWebhookHandler) mutatePod(ctx context.Context, pod *corev1.Pod, spec
 	// Create or update the PVC
 	if err := h.client.Create(ctx, pvc); err != nil {
 		if !apierrors.IsAlreadyExists(err) {
-			h.log.Error(err, "Failed to create PVC", "pvcName", pvcName)
+			log.Error(err, "Failed to create PVC", "pvcName", pvcName)
 			return fmt.Errorf("failed to create PVC %s: %w", pvcName, err)
 		}
 		// PVC already exists, update owner references if needed
 		existingPVC := &corev1.PersistentVolumeClaim{}
 		if err := h.client.Get(ctx, types.NamespacedName{Name: pvcName, Namespace: pod.Namespace}, existingPVC); err != nil {
-			h.log.Error(err, "Failed to get existing PVC", "pvcName", pvcName)
+			log.Error(err, "Failed to get existing PVC", "pvcName", pvcName)
 			return fmt.Errorf("failed to get existing PVC %s: %w", pvcName, err)
 		}
 		if replicaSetOwner != nil && len(existingPVC.OwnerReferences) == 0 {
 			existingPVC.OwnerReferences = pvc.OwnerReferences
 			if err := h.client.Update(ctx, existingPVC); err != nil {
-				h.log.Error(err, "Failed to update PVC owner references", "pvcName", pvcName)
+				log.Error(err, "Failed to update PVC owner references", "pvcName", pvcName)
 				return fmt.Errorf("failed to update PVC %s: %w", pvcName, err)
 			}
 		}

@@ -8,8 +8,7 @@ import (
 	"time"
 
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
-	"github.com/openshift/hypershift/cmd/log"
-	"github.com/openshift/hypershift/cmd/util"
+	cmdutil "github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/support/awsapi"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -42,7 +41,7 @@ type DestroyInfraOptions struct {
 	AwsInfraGracePeriod time.Duration
 	Log                 logr.Logger
 
-	CredentialsSecretData *util.CredentialsSecretData
+	CredentialsSecretData *cmdutil.CredentialsSecretData
 
 	AWSEbsCsiDriverControllerCredentialsFile    string
 	CloudControllerCredentialsFile              string
@@ -124,7 +123,7 @@ func NewDestroyCommand() *cobra.Command {
 	opts := DestroyInfraOptions{
 		Region: "us-east-1",
 		Name:   "example",
-		Log:    log.Log,
+		Log:    cmdutil.NewLogger(),
 
 		AWSCredentialsOpts: DefaultDelegatedAWSCredentialOptions(),
 	}

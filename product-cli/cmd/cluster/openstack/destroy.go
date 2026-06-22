@@ -8,7 +8,7 @@ import (
 
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	"github.com/openshift/hypershift/cmd/cluster/openstack"
-	"github.com/openshift/hypershift/cmd/log"
+	cmdutil "github.com/openshift/hypershift/cmd/util"
 
 	"github.com/spf13/cobra"
 )
@@ -20,7 +20,7 @@ func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 		SilenceUsage: true,
 	}
 
-	logger := log.Log
+	logger := cmdutil.NewLogger()
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()

@@ -405,12 +405,11 @@ func TestMutateConfigMap(t *testing.T) {
 			g := NewWithT(t)
 
 			handler := &ConfigMapWebhookHandler{
-				log:     logr.Discard(),
 				client:  nil,
 				decoder: nil,
 			}
 
-			err := handler.mutateConfigMap(tt.configMap, &tt.config.Spec)
+			err := handler.mutateConfigMap(tt.configMap, &tt.config.Spec, logr.Discard())
 
 			if tt.expectedError {
 				g.Expect(err).To(HaveOccurred())

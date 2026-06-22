@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/openshift/hypershift/cmd/log"
+	cmdutil "github.com/openshift/hypershift/cmd/util"
 
 	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
@@ -65,7 +65,7 @@ func NewCreateCommand() *cobra.Command {
 	_ = cmd.MarkFlagRequired("region")
 	_ = cmd.MarkFlagRequired("infra-id")
 
-	logger := log.Log
+	logger := cmdutil.NewLogger()
 	cmd.PreRunE = func(cmd *cobra.Command, args []string) error {
 		return opts.Validate()
 	}

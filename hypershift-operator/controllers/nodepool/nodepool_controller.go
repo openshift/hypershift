@@ -98,6 +98,8 @@ const (
 	NTOMirroredConfigLabel = "hypershift.openshift.io/mirrored-config"
 )
 
+const ControllerName = "nodepool"
+
 type NodePoolReconciler struct {
 	client.Client
 	recorder        record.EventRecorder
@@ -134,6 +136,7 @@ var capiRelatedNodePoolManagedResourcesToWatch = []client.Object{
 
 func (r *NodePoolReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	bldr := ctrl.NewControllerManagedBy(mgr).
+		Named(ControllerName).
 		For(&hyperv1.NodePool{}, builder.WithPredicates(supportutil.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()))).
 		// We want to reconcile when the HostedCluster IgnitionEndpoint is available.
 		Watches(&hyperv1.HostedCluster{}, handler.EnqueueRequestsFromMapFunc(r.enqueueNodePoolsForHostedCluster), builder.WithPredicates(supportutil.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()))).
@@ -155,6 +158,7 @@ func (r *NodePoolReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}
 
 	if err := ctrl.NewControllerManagedBy(mgr).
+		Named("secretjanitor").
 		For(&corev1.Secret{}, builder.WithPredicates(supportutil.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()))).
 		WithOptions(controller.Options{
 			RateLimiter:             workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](1*time.Second, 10*time.Second),

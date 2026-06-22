@@ -12,8 +12,7 @@ import (
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/cmd/log"
-	"github.com/openshift/hypershift/cmd/util"
+	cmdutil "github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
 
@@ -183,7 +182,7 @@ func (r *RBACManager) AssignDataPlaneRoles(ctx context.Context, opts *CreateInfr
 // assignRole assigns a scoped role to the service principal assignee
 func (r *RBACManager) assignRole(ctx context.Context, client roleAssignmentClient, infraID, component, assigneeID, role, scope string) error {
 	// Generate the role assignment name
-	roleAssignmentName := util.GenerateRoleAssignmentName(infraID, component, scope)
+	roleAssignmentName := cmdutil.GenerateRoleAssignmentName(infraID, component, scope)
 
 	// Generate the role definition ID
 	roleDefinitionID := fmt.Sprintf("/subscriptions/%s/providers/Microsoft.Authorization/roleDefinitions/%s", r.subscriptionID, role)
@@ -217,7 +216,7 @@ func (r *RBACManager) assignRole(ctx context.Context, client roleAssignmentClien
 				continue
 			}
 			if strings.EqualFold(*ra.Properties.Scope, scope) && strings.EqualFold(*ra.Properties.RoleDefinitionID, roleDefinitionID) && strings.EqualFold(*ra.Properties.PrincipalID, assigneeID) {
-				log.Log.Info("Skipping role assignment creation, matching assignment already exists.", "role", role, "assigneeID", assigneeID, "scope", scope)
+				cmdutil.NewLogger().Info("Skipping role assignment creation, matching assignment already exists.", "role", role, "assigneeID", assigneeID, "scope", scope)
 				return nil
 			}
 		}
@@ -233,7 +232,7 @@ func (r *RBACManager) assignRole(ctx context.Context, client roleAssignmentClien
 			existing.Properties.RoleDefinitionID != nil &&
 			strings.EqualFold(*existing.Properties.PrincipalID, assigneeID) &&
 			strings.EqualFold(*existing.Properties.RoleDefinitionID, roleDefinitionID) {
-			log.Log.Info("Skipping role assignment creation, role assignment already exists.", "role", role, "assigneeID", assigneeID, "scope", scope)
+			cmdutil.NewLogger().Info("Skipping role assignment creation, role assignment already exists.", "role", role, "assigneeID", assigneeID, "scope", scope)
 			return nil
 		}
 		// Stale assignment — different principal owns this deterministic name.
@@ -241,7 +240,7 @@ func (r *RBACManager) assignRole(ctx context.Context, client roleAssignmentClien
 		if existing.Properties != nil && existing.Properties.PrincipalID != nil {
 			stalePrincipal = *existing.Properties.PrincipalID
 		}
-		log.Log.Info("Deleting stale role assignment with mismatched principal",
+		cmdutil.NewLogger().Info("Deleting stale role assignment with mismatched principal",
 			"role", role, "expectedPrincipal", assigneeID,
 			"stalePrincipal", stalePrincipal,
 			"scope", scope)
@@ -255,7 +254,7 @@ func (r *RBACManager) assignRole(ctx context.Context, client roleAssignmentClien
 			if respErr.StatusCode == http.StatusNotFound {
 				// proceed to create
 			} else if respErr.StatusCode == http.StatusForbidden || strings.EqualFold(respErr.ErrorCode, "AuthorizationFailed") {
-				log.Log.Info("Get not permitted; will attempt create and rely on 409 for idempotency.", "role", role, "assigneeID", assigneeID, "scope", scope)
+				cmdutil.NewLogger().Info("Get not permitted; will attempt create and rely on 409 for idempotency.", "role", role, "assigneeID", assigneeID, "scope", scope)
 			} else {
 				return fmt.Errorf("failed checking role assignment existence: %w", err)
 			}
@@ -268,12 +267,12 @@ func (r *RBACManager) assignRole(ctx context.Context, client roleAssignmentClien
 	if err != nil {
 		var respErr *azcore.ResponseError
 		if errors.As(err, &respErr) && (respErr.StatusCode == http.StatusConflict || strings.EqualFold(respErr.ErrorCode, "RoleAssignmentExists")) {
-			log.Log.Info("Failed role assignment creation, role assignment already exists.", "role", role, "assigneeID", assigneeID, "scope", scope)
+			cmdutil.NewLogger().Info("Failed role assignment creation, role assignment already exists.", "role", role, "assigneeID", assigneeID, "scope", scope)
 			return nil
 		}
 		return fmt.Errorf("failed to create role assignment: %w", err)
 	}
-	log.Log.Info("successfully created role assignment", "role", role, "assigneeID", assigneeID, "scope", scope)
+	cmdutil.NewLogger().Info("successfully created role assignment", "role", role, "assigneeID", assigneeID, "scope", scope)
 	return nil
 }
 
@@ -316,7 +315,7 @@ func (r *RBACManager) cleanupRoleAssignments(ctx context.Context, l logr.Logger,
 	for _, component := range components {
 		_, scopes := azureutil.GetServicePrincipalScopes(r.subscriptionID, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName, dnsZoneRG, component, assignCustomHCPRoles)
 		for _, scope := range scopes {
-			name := util.GenerateRoleAssignmentName(infraID, component, scope)
+			name := cmdutil.GenerateRoleAssignmentName(infraID, component, scope)
 			if err := r.deleteRoleAssignmentByName(ctx, l, client, scope, name, component); err != nil {
 				deleteErrors = append(deleteErrors, err)
 			}
@@ -326,7 +325,7 @@ func (r *RBACManager) cleanupRoleAssignments(ctx context.Context, l logr.Logger,
 	// Cleanup data plane role assignments (only scoped to managed RG)
 	managedRG := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", r.subscriptionID, resourceGroupName)
 	for _, component := range dataPlaneComponents {
-		name := util.GenerateRoleAssignmentName(infraID, component, managedRG)
+		name := cmdutil.GenerateRoleAssignmentName(infraID, component, managedRG)
 		if err := r.deleteRoleAssignmentByName(ctx, l, client, managedRG, name, component); err != nil {
 			deleteErrors = append(deleteErrors, err)
 		}

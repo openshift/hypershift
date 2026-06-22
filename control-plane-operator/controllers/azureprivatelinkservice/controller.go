@@ -175,7 +175,8 @@ type RecordSetsAPI interface {
 //   - Microsoft.Network/privateDnsZones/read, write, delete (DNS zone lifecycle)
 //   - Microsoft.Network/privateDnsZones/virtualNetworkLinks/read, write, delete (VNet link)
 //   - Microsoft.Network/privateDnsZones/A/read, write, delete (A record management)
-//
+const ReconcilerControllerName = "azureprivatelinkservice"
+
 // Azure SDK client interfaces are used instead of concrete types to enable unit testing.
 type AzurePrivateLinkServiceReconciler struct {
 	client.Client
@@ -192,6 +193,7 @@ type AzurePrivateLinkServiceReconciler struct {
 // HCP deletion until Azure resource cleanup is complete.
 func (r *AzurePrivateLinkServiceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	_, err := ctrl.NewControllerManagedBy(mgr).
+		Named(ReconcilerControllerName).
 		For(&hyperv1.AzurePrivateLinkService{}).
 		Watches(&hyperv1.HostedControlPlane{}, handler.EnqueueRequestsFromMapFunc(
 			r.mapHCPToAzurePLS(),

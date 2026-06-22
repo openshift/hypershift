@@ -5,8 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/openshift/hypershift/cmd/log"
-	"github.com/openshift/hypershift/cmd/util"
+	cmdutil "github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
 
@@ -25,7 +24,7 @@ type DestroyInfraOptions struct {
 	Location              string
 	InfraID               string
 	CredentialsFile       string
-	Credentials           *util.AzureCreds
+	Credentials           *cmdutil.AzureCreds
 	ResourceGroupName     string
 	PreserveResourceGroup bool
 	Cloud                 string
@@ -55,7 +54,7 @@ func NewDestroyCommand() *cobra.Command {
 	_ = cmd.MarkFlagRequired("azure-creds")
 	_ = cmd.MarkFlagRequired("name")
 
-	logger := log.Log
+	logger := cmdutil.NewLogger()
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		if err := opts.Run(cmd.Context(), logger); err != nil {
 			logger.Error(err, "Failed to destroy infrastructure")
@@ -81,17 +80,17 @@ func DefaultDestroyOptions() *DestroyInfraOptions {
 // This exposes only the self-managed Azure flags relevant for the productized CLI.
 func BindDestroyProductFlags(opts *DestroyInfraOptions, flags *pflag.FlagSet) {
 	// Required flags
-	flags.StringVar(&opts.InfraID, "infra-id", opts.InfraID, util.InfraIDDescription)
-	flags.StringVar(&opts.CredentialsFile, "azure-creds", opts.CredentialsFile, util.AzureCredsDescription)
+	flags.StringVar(&opts.InfraID, "infra-id", opts.InfraID, cmdutil.InfraIDDescription)
+	flags.StringVar(&opts.CredentialsFile, "azure-creds", opts.CredentialsFile, cmdutil.AzureCredsDescription)
 	flags.StringVar(&opts.Name, "name", opts.Name, "A name for the HostedCluster")
 
 	// Location and cloud
-	flags.StringVar(&opts.Location, "location", opts.Location, util.LocationDescription)
+	flags.StringVar(&opts.Location, "location", opts.Location, cmdutil.LocationDescription)
 	flags.StringVar(&opts.Cloud, "cloud", opts.Cloud, "Azure cloud environment (AzurePublicCloud, AzureUSGovernmentCloud, AzureChinaCloud)")
 
 	// Resource group
-	flags.StringVar(&opts.ResourceGroupName, "resource-group-name", opts.ResourceGroupName, util.ResourceGroupNameDescription)
-	flags.BoolVar(&opts.PreserveResourceGroup, "preserve-resource-group", opts.PreserveResourceGroup, util.PreserveResourceGroupDescription)
+	flags.StringVar(&opts.ResourceGroupName, "resource-group-name", opts.ResourceGroupName, cmdutil.ResourceGroupNameDescription)
+	flags.BoolVar(&opts.PreserveResourceGroup, "preserve-resource-group", opts.PreserveResourceGroup, cmdutil.PreserveResourceGroupDescription)
 }
 
 // Validate validates the DestroyInfraOptions before running the destroy operation.
@@ -116,7 +115,7 @@ func (o *DestroyInfraOptions) Run(ctx context.Context, logger logr.Logger) error
 	var destroyFuture *runtime.Poller[armresources.ResourceGroupsClientDeleteResponse]
 
 	// Setup subscription ID and Azure credential information
-	subscriptionID, azureCreds, err := util.SetupAzureCredentials(logger, o.Credentials, o.CredentialsFile)
+	subscriptionID, azureCreds, err := cmdutil.SetupAzureCredentials(logger, o.Credentials, o.CredentialsFile)
 	if err != nil {
 		return fmt.Errorf("failed to setup Azure credentials: %w", err)
 	}

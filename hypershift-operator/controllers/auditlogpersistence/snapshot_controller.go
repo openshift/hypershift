@@ -41,7 +41,6 @@ const (
 
 type SnapshotReconciler struct {
 	client client.Client
-	log    logr.Logger
 }
 
 // SetupSnapshotController sets up the snapshot controller that watches Pods and creates
@@ -49,7 +48,6 @@ type SnapshotReconciler struct {
 func SetupSnapshotController(mgr ctrl.Manager) error {
 	reconciler := &SnapshotReconciler{
 		client: mgr.GetClient(),
-		log:    mgr.GetLogger().WithName(snapshotControllerName),
 	}
 
 	err := ctrl.NewControllerManagedBy(mgr).
@@ -139,7 +137,7 @@ func (r *SnapshotReconciler) checkSnapshotInterval(ctx context.Context, pod *cor
 }
 
 func (r *SnapshotReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	log := r.log.WithValues("pod", req.NamespacedName)
+	log := ctrl.LoggerFrom(ctx)
 
 	pod := &corev1.Pod{}
 	if err := r.client.Get(ctx, req.NamespacedName, pod); err != nil {

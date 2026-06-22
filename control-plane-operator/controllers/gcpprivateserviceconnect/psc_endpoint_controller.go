@@ -111,6 +111,8 @@ func (b *gcpClientBuilder) getClient(ctx context.Context) (*compute.Service, err
 	return InitCustomerGCPClient(ctx)
 }
 
+const ReconcilerControllerName = "gcpprivateserviceconnect"
+
 // GCPPrivateServiceConnectReconciler manages PSC endpoints in customer projects
 type GCPPrivateServiceConnectReconciler struct {
 	client.Client
@@ -121,6 +123,7 @@ type GCPPrivateServiceConnectReconciler struct {
 // SetupWithManager sets up the controller with the Manager.
 func (r *GCPPrivateServiceConnectReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	_, err := ctrl.NewControllerManagedBy(mgr).
+		Named(ReconcilerControllerName).
 		For(&hyperv1.GCPPrivateServiceConnect{}).
 		WithOptions(controller.Options{
 			RateLimiter:             workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](3*time.Second, 30*time.Second),

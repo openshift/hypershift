@@ -15,7 +15,6 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1"
 	scheduling "github.com/openshift/hypershift/api/scheduling/v1alpha1"
-	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
@@ -150,7 +149,7 @@ func NewDumpCommand() *cobra.Command {
 		ArtifactDir:    "",
 		ArchiveDump:    true,
 		AgentNamespace: "",
-		Log:            log.Log,
+		Log:            util.NewLogger(),
 	}
 
 	cmd.Flags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "The namespace of the hostedcluster to dump")

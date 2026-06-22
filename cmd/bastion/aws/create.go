@@ -11,7 +11,6 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
-	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -64,7 +63,7 @@ func NewCreateCommand() *cobra.Command {
 	_ = cmd.MarkFlagFilename("ssh-key-file")
 	_ = cmd.MarkFlagFilename("aws-creds")
 
-	logger := log.Log
+	logger := util.NewLogger()
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		if err := opts.Validate(); err != nil {
 			logger.Error(err, "Invalid arguments")
