@@ -124,4 +124,4 @@ jobs:
           claude plugin marketplace add enxebre/ai-scripts
           claude plugin install git@enxebre
           claude --version
-          claude -p "$CLAUDE_PROMPT" --model claude-opus-4-6 --max-turns "$MAX_TURNS" --allowedTools "$ALLOWED_TOOLS" --output-format stream-json
+          claude -p "$CLAUDE_PROMPT" --model claude-opus-4-6 --max-turns "$MAX_TURNS" --allowedTools "$ALLOWED_TOOLS" --verbose --output-format stream-json
