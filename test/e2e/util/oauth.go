@@ -399,6 +399,8 @@ func WaitForOAuthLoadBalancerReady(t testing.TB, ctx context.Context, client crc
 // and kubeadmin secret removal. The oauthHost can come from any source, such as
 // WaitForOAuthLoadBalancerReady (with health check) or WaitForOAuthLoadBalancerEndpoint
 // (endpoint only, suitable for private topology).
+// This function mutates cluster state (creates htpasswd Secret, patches OAuth config,
+// deletes kubeadmin secret) and should only be used in lifecycle tests.
 func ValidateOAuthIdentityProviderFlow(t testing.TB, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, oauthHost string) {
 	g := NewWithT(t)
 	guestConfig, err := guestRestConfig(t, ctx, client, hostedCluster)
