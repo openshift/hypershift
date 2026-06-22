@@ -1,0 +1,5 @@
+/* Reduce whitespace on wide screens using percentages */
+.md-main__inner {
+    max-width: 90%; /* Adjust this percentage as needed */
+    margin: 0 auto;
+}

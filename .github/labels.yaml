@@ -1,0 +1,6 @@
+# This should enable comments such as "/area hypershift-operator" to add
+# the label to a PR/Issue
+# See https://github.com/jpmcb/prow-github-actions/blob/main/docs/labeling.md
+area:
+- 'hypershift-operator'
+- 'control-plane-operator'

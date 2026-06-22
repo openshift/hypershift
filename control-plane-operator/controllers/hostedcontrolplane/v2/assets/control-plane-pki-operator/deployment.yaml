@@ -1,0 +1,67 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: control-plane-pki-operator
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app: control-plane-pki-operator
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: control-plane-pki-operator
+    spec:
+      containers:
+      - args:
+        - operator
+        - --namespace
+        - $(HOSTED_CONTROL_PLANE_NAMESPACE)
+        command:
+        - /usr/bin/control-plane-pki-operator
+        env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.name
+        - name: HOSTED_CONTROL_PLANE_NAMESPACE
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+        - name: HOSTED_CONTROL_PLANE_NAME
+          value: example-779zw
+        - name: CERT_ROTATION_SCALE
+          value: 20m0s
+        image: controlplane-pki-operator
+        name: control-plane-pki-operator
+        ports:
+        - containerPort: 8443
+          name: metrics
+          protocol: TCP
+        resources:
+          requests:
+            cpu: 10m
+            memory: 80Mi
+        volumeMounts:
+        - mountPath: /etc/pki/ca-trust/extracted/pem
+          name: openshift-config-managed-trusted-ca-bundle
+          readOnly: true
+      serviceAccount: control-plane-pki-operator
+      serviceAccountName: control-plane-pki-operator
+      volumes:
+      - configMap:
+          defaultMode: 420
+          items:
+          - key: ca-bundle.crt
+            path: tls-ca-bundle.pem
+          name: openshift-config-managed-trusted-ca-bundle
+          optional: true
+        name: openshift-config-managed-trusted-ca-bundle

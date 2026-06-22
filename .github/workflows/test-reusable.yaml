@@ -1,0 +1,97 @@
+name: Unit Tests (Reusable)
+
+on:
+  workflow_call:
+    secrets:
+      CODECOV_TOKEN:
+        required: false
+  push:
+    branches:
+      - main
+      - release-4.22
+
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    name: Detect Changes
+    runs-on: arc-runner-set
+    timeout-minutes: 5
+    outputs:
+      run_tests: ${{ steps.changes.outputs.run_tests }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        env:
+          HOME: /tmp
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Check for non-contrib changes
+        id: changes
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "run_tests=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          elif [ "${{ github.event_name }}" = "pull_request" ]; then
+            FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
+          else
+            if [ "${{ github.event.before }}" = "0000000000000000000000000000000000000000" ]; then
+              echo "run_tests=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            FILES=$(git diff --name-only ${{ github.event.before }}..${{ github.sha }})
+          fi
+          if echo "$FILES" | grep -qvE '^(contrib|\.github|docs)/'; then
+            echo "run_tests=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run_tests=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  test:
+    name: Unit Tests (${{ matrix.shard }})
+    needs: changes
+    if: needs.changes.outputs.run_tests == 'true'
+    runs-on: arc-runner-set
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shard: cpo-hostedcontrolplane
+            packages: ./control-plane-operator/controllers/hostedcontrolplane/...
+          - shard: cpo-other
+            packages: ./control-plane-operator/controllers/awsprivatelink/... ./control-plane-operator/controllers/azureprivatelinkservice/... ./control-plane-operator/controllers/gcpprivateserviceconnect/... ./control-plane-operator/controllers/healthcheck/... ./control-plane-operator/controllers/openshiftmanager/... ./control-plane-operator/endpoint-resolver/... ./control-plane-operator/hostedclusterconfigoperator/... ./control-plane-operator/metrics-proxy/...
+          - shard: hypershift-operator
+            packages: ./hypershift-operator/...
+          - shard: cmd-support
+            packages: ./cmd/... ./support/...
+          - shard: other
+            packages: ./karpenter-operator/... ./control-plane-pki-operator/... ./contrib/... ./ignition-server/... ./pkg/... ./dnsresolver/... ./product-cli/... ./client/... ./test/integration/... ./test/e2e/util/... ./test/util/... ./availability-prober/... ./konnectivity-socks5-proxy/... ./konnectivity-https-proxy/... ./kubernetes-default-proxy/... ./kubevirtexternalinfra/... ./etcd-defrag/... ./etcd-backup/... ./etcd-recovery/... ./etcd-upload/... ./kas-bootstrap/... ./sharedingress-config-generator/... ./sync-fg-configmap/... ./sync-global-pullsecret/... ./token-minter/...
+    env:
+      GOMODCACHE: /tmp/go-mod-cache
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        env:
+          HOME: /tmp
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Run tests
+        run: make test-shard TEST_PACKAGES="${{ matrix.packages }}" COVER_PROFILE="cover-${{ matrix.shard }}.out"
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
+        env:
+          HOME: /tmp
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+        with:
+          files: cover-${{ matrix.shard }}.out
+          flags: ${{ matrix.shard }}

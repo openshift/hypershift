@@ -1,0 +1,1128 @@
+package util
+
+import (
+	"context"
+	"fmt"
+	"testing"
+	"time"
+
+	. "github.com/onsi/gomega"
+
+	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
+	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/reference"
+
+	"k8s.io/apimachinery/pkg/util/cache"
+
+	"github.com/docker/distribution"
+	"github.com/opencontainers/go-digest"
+	"go.uber.org/mock/gomock"
+)
+
+// fakeManifest is a minimal implementation of distribution.Manifest for testing.
+type fakeManifest struct {
+	refs []distribution.Descriptor
+}
+
+func (f *fakeManifest) References() []distribution.Descriptor { return f.refs }
+func (f *fakeManifest) Payload() (string, []byte, error) {
+	return "application/vnd.docker.distribution.manifest.v2+json", []byte("{}"), nil
+}
+
+func TestGetDigest(t *testing.T) {
+	testCases := []struct {
+		name           string
+		imageRef       string
+		overrides      map[string][]string
+		setupMock      func(ctrl *gomock.Controller) func(ctx context.Context, imageRef string, pullSecret []byte) (distribution.Repository, *reference.DockerImageReference, error)
+		expectedErr    bool
+		expectedDigest digest.Digest
+		validateCache  bool
+	}{
+		{
+			name:        "When providing an invalid image reference it should return an error",
+			imageRef:    "::invalid-image-ref",
+			overrides:   map[string][]string{},
+			setupMock:   nil,
+			expectedErr: true,
+		},
+		{
+			name:      "When resolving a tag it should return the digest from the tag service",
+			imageRef:  "quay.io/openshift-release-dev/ocp-release:4.16.12-multi",
+			overrides: map[string][]string{},
+			setupMock: func(ctrl *gomock.Controller) func(ctx context.Context, imageRef string, pullSecret []byte) (distribution.Repository, *reference.DockerImageReference, error) {
+				expectedDigest := digest.Digest("sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+				mockRepo := NewMockRepository(ctrl)
+				mockTags := NewMockTagService(ctrl)
+				mockTags.EXPECT().Get(gomock.Any(), "4.16.12-multi").Return(distribution.Descriptor{Digest: expectedDigest}, nil)
+				mockRepo.EXPECT().Tags(gomock.Any()).Return(mockTags)
+				return func(ctx context.Context, imageRef string, pullSecret []byte) (distribution.Repository, *reference.DockerImageReference, error) {
+					ref, _ := reference.Parse(imageRef)
+					return mockRepo, &ref, nil
+				}
+			},
+			expectedErr:    false,
+			expectedDigest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			validateCache:  true,
+		},
+		{
+			name:      "When providing an image with a digest ID it should return that digest directly",
+			imageRef:  "quay.io/openshift-release-dev/ocp-release@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+			overrides: map[string][]string{},
+			setupMock: func(ctrl *gomock.Controller) func(ctx context.Context, imageRef string, pullSecret []byte) (distribution.Repository, *reference.DockerImageReference, error) {
+				mockRepo := NewMockRepository(ctrl)
+				return func(ctx context.Context, imageRef string, pullSecret []byte) (distribution.Repository, *reference.DockerImageReference, error) {
+					ref, _ := reference.Parse(imageRef)
+					return mockRepo, &ref, nil
+				}
+			},
+			expectedErr:    false,
+			expectedDigest: "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+			validateCache:  true,
+		},
+		{
+			name:      "When the digest is already cached it should return from cache without calling repoSetupFn",
+			imageRef:  "quay.io/openshift-release-dev/ocp-release:4.16.12-cached",
+			overrides: map[string][]string{},
+			setupMock: func(ctrl *gomock.Controller) func(ctx context.Context, imageRef string, pullSecret []byte) (distribution.Repository, *reference.DockerImageReference, error) {
+				cachedDigest := digest.Digest("sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc")
+				digestCache.Add("quay.io/openshift-release-dev/ocp-release:4.16.12-cached", cachedDigest, cacheTTL)
+				// repoSetupFn should not be called; if it is, the test fails
+				return func(ctx context.Context, imageRef string, pullSecret []byte) (distribution.Repository, *reference.DockerImageReference, error) {
+					t.Fatal("repoSetupFn should not be called when digest is cached")
+					return nil, nil, nil
+				}
+			},
+			expectedErr:    false,
+			expectedDigest: "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+		},
+		{
+			name:      "When the repo setup fails it should return an error",
+			imageRef:  "quay.io/openshift-release-dev/ocp-release:4.16.12-fail",
+			overrides: map[string][]string{},
+			setupMock: func(ctrl *gomock.Controller) func(ctx context.Context, imageRef string, pullSecret []byte) (distribution.Repository, *reference.DockerImageReference, error) {
+				return func(ctx context.Context, imageRef string, pullSecret []byte) (distribution.Repository, *reference.DockerImageReference, error) {
+					return nil, nil, fmt.Errorf("connection refused")
+				}
+			},
+			expectedErr: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			// Clear caches for isolation
+			digestCache = newTestLRUCache()
+
+			ctrl := gomock.NewController(t)
+
+			provider := &RegistryClientImageMetadataProvider{
+				OpenShiftImageRegistryOverrides: tc.overrides,
+			}
+			if tc.setupMock != nil {
+				provider.repoSetupFn = tc.setupMock(ctrl)
+			}
+
+			ctx := t.Context()
+			d, ref, err := provider.GetDigest(ctx, tc.imageRef, []byte("{}"))
+			if tc.expectedErr {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(d).To(Equal(tc.expectedDigest))
+				g.Expect(ref).NotTo(BeNil())
+			}
+
+			if tc.validateCache {
+				_, exists := digestCache.Get(tc.imageRef)
+				g.Expect(exists).To(BeTrue(), "digest should be cached after successful call")
+			}
+		})
+	}
+}
+
+func TestGetManifest(t *testing.T) {
+	testCases := []struct {
+		name        string
+		imageRef    string
+		overrides   map[string][]string
+		setupMock   func(ctrl *gomock.Controller) func(ctx context.Context, imageRef string, pullSecret []byte) (distribution.Repository, *reference.DockerImageReference, error)
+		expectedErr bool
+	}{
+		{
+			name:        "When providing an invalid image reference it should return an error",
+			imageRef:    "::invalid-image-ref",
+			overrides:   map[string][]string{},
+			setupMock:   nil,
+			expectedErr: true,
+		},
+		{
+			name:      "When pulling a manifest by tag it should resolve the tag and return the manifest",
+			imageRef:  "quay.io/openshift-release-dev/ocp-release:4.16.12-x86_64",
+			overrides: map[string][]string{},
+			setupMock: func(ctrl *gomock.Controller) func(ctx context.Context, imageRef string, pullSecret []byte) (distribution.Repository, *reference.DockerImageReference, error) {
+				expectedDigest := digest.Digest("sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd")
+				mockRepo := NewMockRepository(ctrl)
+				mockTags := NewMockTagService(ctrl)
+				mockManifests := NewMockManifestService(ctrl)
+				mockTags.EXPECT().Get(gomock.Any(), "4.16.12-x86_64").Return(distribution.Descriptor{Digest: expectedDigest}, nil)
+				mockRepo.EXPECT().Tags(gomock.Any()).Return(mockTags)
+				mockRepo.EXPECT().Manifests(gomock.Any()).Return(mockManifests, nil)
+				mockManifests.EXPECT().Get(gomock.Any(), expectedDigest, gomock.Any()).Return(&fakeManifest{}, nil)
+				return func(ctx context.Context, imageRef string, pullSecret []byte) (distribution.Repository, *reference.DockerImageReference, error) {
+					ref, _ := reference.Parse(imageRef)
+					return mockRepo, &ref, nil
+				}
+			},
+			expectedErr: false,
+		},
+		{
+			name:      "When pulling a manifest by digest it should use the digest directly",
+			imageRef:  "quay.io/openshift-release-dev/ocp-release@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+			overrides: map[string][]string{},
+			setupMock: func(ctrl *gomock.Controller) func(ctx context.Context, imageRef string, pullSecret []byte) (distribution.Repository, *reference.DockerImageReference, error) {
+				expectedDigest := digest.Digest("sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")
+				mockRepo := NewMockRepository(ctrl)
+				mockManifests := NewMockManifestService(ctrl)
+				mockRepo.EXPECT().Manifests(gomock.Any()).Return(mockManifests, nil)
+				mockManifests.EXPECT().Get(gomock.Any(), expectedDigest, gomock.Any()).Return(&fakeManifest{}, nil)
+				return func(ctx context.Context, imageRef string, pullSecret []byte) (distribution.Repository, *reference.DockerImageReference, error) {
+					ref, _ := reference.Parse(imageRef)
+					return mockRepo, &ref, nil
+				}
+			},
+			expectedErr: false,
+		},
+		{
+			name:      "When a manifest is cached it should return from cache without calling repoSetupFn",
+			imageRef:  "quay.io/openshift-release-dev/ocp-release:4.16.12-cached",
+			overrides: map[string][]string{},
+			setupMock: func(ctrl *gomock.Controller) func(ctx context.Context, imageRef string, pullSecret []byte) (distribution.Repository, *reference.DockerImageReference, error) {
+				manifestsCache.Add("quay.io/openshift-release-dev/ocp-release:4.16.12-cached", &fakeManifest{}, cacheTTL)
+				return func(ctx context.Context, imageRef string, pullSecret []byte) (distribution.Repository, *reference.DockerImageReference, error) {
+					t.Fatal("repoSetupFn should not be called when manifest is cached")
+					return nil, nil, nil
+				}
+			},
+			expectedErr: false,
+		},
+		{
+			name:      "When the repo setup fails it should return an error",
+			imageRef:  "quay.io/openshift-release-dev/ocp-release:4.16.12-fail",
+			overrides: map[string][]string{},
+			setupMock: func(ctrl *gomock.Controller) func(ctx context.Context, imageRef string, pullSecret []byte) (distribution.Repository, *reference.DockerImageReference, error) {
+				return func(ctx context.Context, imageRef string, pullSecret []byte) (distribution.Repository, *reference.DockerImageReference, error) {
+					return nil, nil, fmt.Errorf("connection refused")
+				}
+			},
+			expectedErr: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			// Clear caches for isolation
+			manifestsCache = newTestLRUCache()
+
+			ctrl := gomock.NewController(t)
+
+			provider := &RegistryClientImageMetadataProvider{
+				OpenShiftImageRegistryOverrides: tc.overrides,
+			}
+			if tc.setupMock != nil {
+				provider.repoSetupFn = tc.setupMock(ctrl)
+			}
+
+			ctx := t.Context()
+			m, err := provider.GetManifest(ctx, tc.imageRef, []byte("{}"))
+			if tc.expectedErr {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(m).NotTo(BeNil())
+			}
+		})
+	}
+}
+
+// newTestLRUCache creates a fresh LRU cache for test isolation.
+func newTestLRUCache() *cache.LRUExpireCache {
+	return cache.NewLRUExpireCache(1000)
+}
+
+func TestGetRegistryOverrides(t *testing.T) {
+	ctx := t.Context()
+	testsCases := []struct {
+		name           string
+		ref            reference.DockerImageReference
+		source         string
+		mirror         string
+		expectedImgRef *reference.DockerImageReference
+		expectAnErr    bool
+		overrideFound  bool
+	}{
+		{
+			name: "if failed to parse source image",
+			ref: reference.DockerImageReference{
+				Registry:  "quay.io",
+				Name:      "ocp-release",
+				Namespace: "openshift-release-dev",
+				Tag:       "4.15.0-rc.0-multi",
+			},
+			source:         "",
+			mirror:         "",
+			expectedImgRef: nil,
+			expectAnErr:    true,
+			overrideFound:  false,
+		},
+		{
+			name: "if registry override coincidence not found",
+			ref: reference.DockerImageReference{
+				Registry:  "quay.io",
+				Name:      "ocp",
+				Namespace: "openshift-release-dev",
+				Tag:       "4.15.0-rc.0-multi",
+			},
+			source: "quay.io/openshift-release-dev/ocp-release:4.15.0-rc.0-multi",
+			mirror: "myregistry.io/openshift-release-dev/ocp-release:4.15.0-rc.0-multi",
+			expectedImgRef: &reference.DockerImageReference{
+				Registry:  "quay.io",
+				Name:      "ocp",
+				Namespace: "openshift-release-dev",
+				Tag:       "4.15.0-rc.0-multi",
+			},
+			expectAnErr:   false,
+			overrideFound: false,
+		},
+		{
+			name: "if registry override coincidence is found",
+			ref: reference.DockerImageReference{
+				Registry:  "quay.io",
+				Name:      "ocp-release",
+				Namespace: "openshift-release-dev",
+				Tag:       "4.15.0-rc.0-multi",
+			},
+			source: "quay.io/openshift-release-dev/ocp-release:4.15.0-rc.0-multi",
+			mirror: "myregistry.io/openshift-release-dev/ocp-release:4.15.0-rc.0-multi",
+			expectedImgRef: &reference.DockerImageReference{
+				Registry:  "myregistry.io",
+				Name:      "ocp-release",
+				Namespace: "openshift-release-dev",
+				Tag:       "4.15.0-rc.0-multi",
+			},
+			expectAnErr:   false,
+			overrideFound: true,
+		},
+		{
+			name: "if registry override partial coincidence is found",
+			ref: reference.DockerImageReference{
+				Registry:  "quay.io",
+				Name:      "busybox",
+				Namespace: "mce",
+				Tag:       "multiarch",
+			},
+			source: "quay.io/mce",
+			mirror: "quay.io/openshifttest",
+			expectedImgRef: &reference.DockerImageReference{
+				Registry:  "quay.io",
+				Name:      "busybox",
+				Namespace: "openshifttest",
+				Tag:       "multiarch",
+			},
+			expectAnErr:   false,
+			overrideFound: true,
+		},
+	}
+	for _, tc := range testsCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			imgRef, overrideFound, err := GetRegistryOverrides(ctx, tc.ref, tc.source, tc.mirror)
+			g.Expect(imgRef).To(Equal(tc.expectedImgRef))
+			g.Expect(err != nil).To(Equal(tc.expectAnErr))
+			g.Expect(overrideFound).To(Equal(tc.overrideFound))
+		})
+	}
+}
+
+func TestSeekOverride(t *testing.T) {
+	testsCases := []struct {
+		name           string
+		overrides      map[string][]string
+		imageRef       reference.DockerImageReference
+		expectedImgRef *reference.DockerImageReference
+	}{
+		{
+			name:      "if no overrides are provided, and multi mirrors",
+			overrides: map[string][]string{},
+			imageRef: reference.DockerImageReference{
+				Registry:  "quay.io",
+				Name:      "ocp-release",
+				Namespace: "openshift-release-dev",
+				Tag:       "4.15.0-rc.0-multi",
+			},
+			expectedImgRef: &reference.DockerImageReference{
+				Registry:  "quay.io",
+				Name:      "ocp-release",
+				Namespace: "openshift-release-dev",
+				Tag:       "4.15.0-rc.0-multi",
+			},
+		},
+		{
+			name:      "if registry override exact coincidence is found",
+			overrides: fakeOverrides(),
+			imageRef: reference.DockerImageReference{
+				Registry:  "quay.io",
+				Name:      "ocp-release",
+				Namespace: "openshift-release-dev",
+				Tag:       "4.15.0-rc.0-multi",
+			},
+			expectedImgRef: &reference.DockerImageReference{
+				Registry:  "myregistry1.io",
+				Name:      "ocp-release",
+				Namespace: "openshift-release-dev",
+				Tag:       "4.15.0-rc.0-multi",
+			},
+		},
+		{
+			name:      "if registry override partial coincidence is found",
+			overrides: fakeOverrides(),
+			imageRef: reference.DockerImageReference{
+				Registry:  "quay.io",
+				Name:      "busybox",
+				Namespace: "mce",
+				Tag:       "multiarch",
+			},
+			expectedImgRef: &reference.DockerImageReference{
+				Registry:  "quay.io",
+				Name:      "busybox",
+				Namespace: "openshifttest",
+				Tag:       "multiarch",
+			},
+		},
+		{
+			name:      "if registry override coincidence is not found",
+			overrides: fakeOverrides(),
+			imageRef: reference.DockerImageReference{
+				Registry:  "quay.io",
+				Name:      "testimage",
+				Namespace: "test-namespace",
+				Tag:       "latest",
+			},
+			expectedImgRef: &reference.DockerImageReference{
+				Registry:  "quay.io",
+				Name:      "testimage",
+				Namespace: "test-namespace",
+				Tag:       "latest",
+			},
+		},
+		{
+			name:      "if failed to find registry override",
+			overrides: fakeOverrides(),
+			imageRef: reference.DockerImageReference{
+				Registry:  "quay.io",
+				Name:      "cnv-image",
+				Namespace: "cnv",
+				Tag:       "latest",
+			},
+			expectedImgRef: &reference.DockerImageReference{
+				Registry:  "quay.io",
+				Name:      "cnv-image",
+				Namespace: "cnv",
+				Tag:       "latest",
+			},
+		},
+		{
+			name:      "if registry override exact coincidence is found, and using ID",
+			overrides: fakeOverrides(),
+			imageRef: reference.DockerImageReference{
+				Registry:  "registry.build01.ci.openshift.org",
+				Name:      "release",
+				Namespace: "ci-op-p2mqdwjp",
+				ID:        "sha256:b272d47dded73ec8d9eb01a8e39cd62a453d2799c1785ecd538aa8cd15693bf0",
+			},
+			expectedImgRef: &reference.DockerImageReference{
+				Registry:  "quay.io",
+				Name:      "ocp-release",
+				Namespace: "openshifttest",
+				ID:        "sha256:b272d47dded73ec8d9eb01a8e39cd62a453d2799c1785ecd538aa8cd15693bf0",
+			},
+		},
+		{
+			//busybox@sha256:c5439d7db88ab5423999530349d327b04279ad3161d7596d2126dfb5b02bfd1f
+			name:      "if registry override partial coincidence is found, and using ID",
+			overrides: fakeOverrides(),
+			imageRef: reference.DockerImageReference{
+				Registry:  "quay.io",
+				Name:      "busybox",
+				Namespace: "mce",
+				ID:        "sha256:c5439d7db88ab5423999530349d327b04279ad3161d7596d2126dfb5b02bfd1f",
+			},
+			expectedImgRef: &reference.DockerImageReference{
+				Registry:  "quay.io",
+				Name:      "busybox",
+				Namespace: "openshifttest",
+				ID:        "sha256:c5439d7db88ab5423999530349d327b04279ad3161d7596d2126dfb5b02bfd1f",
+			},
+		},
+		{
+			name:      "if only the root registry is provided",
+			overrides: fakeOverrides(),
+			imageRef: reference.DockerImageReference{
+				Registry:  "registry.build02.ci.openshift.org",
+				Name:      "ocp-release",
+				Namespace: "openshifttest",
+				ID:        "sha256:b272d47dded73ec8d9eb01a8e39cd62a453d2799c1785ecd538aa8cd15693bf0",
+			},
+			expectedImgRef: &reference.DockerImageReference{
+				Registry:  "quay.io",
+				Name:      "ocp-release",
+				Namespace: "openshifttest",
+				ID:        "sha256:b272d47dded73ec8d9eb01a8e39cd62a453d2799c1785ecd538aa8cd15693bf0",
+			},
+		},
+		{
+			name:      "if only the root registry is provided and multiple mirrors are provided",
+			overrides: fakeOverrides(),
+			imageRef: reference.DockerImageReference{
+				Registry:  "registry.build03.ci.openshift.org",
+				Name:      "ocp-release",
+				Namespace: "openshifttest",
+				ID:        "sha256:b272d47dded73ec8d9eb01a8e39cd62a453d2799c1785ecd538aa8cd15693bf0",
+			},
+			expectedImgRef: &reference.DockerImageReference{
+				Registry:  "myregistry1.io",
+				Name:      "ocp-release",
+				Namespace: "openshifttest",
+				ID:        "sha256:b272d47dded73ec8d9eb01a8e39cd62a453d2799c1785ecd538aa8cd15693bf0",
+			},
+		},
+	}
+
+	// Mock metadataGetter that always succeeds, avoiding real network calls.
+	fakeGetter := func(ctx context.Context, imageRef string, pullSecret []byte) (*dockerv1client.DockerImageConfig, []distribution.Descriptor, distribution.BlobStore, error) {
+		return &dockerv1client.DockerImageConfig{}, nil, nil, nil
+	}
+
+	for _, tc := range testsCases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+			g := NewGomegaWithT(t)
+			pullSecret := []byte(`{"auths":{}}`)
+			provider := &RegistryClientImageMetadataProvider{
+				OpenShiftImageRegistryOverrides: tc.overrides,
+				metadataGetter:                  fakeGetter,
+			}
+			imgRef := provider.seekOverride(ctx, tc.imageRef, pullSecret)
+			g.Expect(imgRef).To(Equal(tc.expectedImgRef), fmt.Sprintf("Expected image reference to be equal to: %v, \nbut got: %v", tc.expectedImgRef, imgRef))
+		})
+	}
+}
+
+func TestGetMetadataGetter(t *testing.T) {
+	t.Run("When metadataGetter is nil it should return the default getMetadata function", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		provider := &RegistryClientImageMetadataProvider{}
+
+		getter := provider.getMetadataGetter()
+		g.Expect(getter).ToNot(BeNil())
+	})
+
+	t.Run("When metadataGetter is set it should return the injected function", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		called := false
+		custom := func(ctx context.Context, imageRef string, pullSecret []byte) (*dockerv1client.DockerImageConfig, []distribution.Descriptor, distribution.BlobStore, error) {
+			called = true
+			return nil, nil, nil, nil
+		}
+		provider := &RegistryClientImageMetadataProvider{metadataGetter: custom}
+
+		getter := provider.getMetadataGetter()
+		g.Expect(getter).ToNot(BeNil())
+		_, _, _, _ = getter(context.Background(), "", nil)
+		g.Expect(called).To(BeTrue())
+	})
+}
+
+func fakeOverrides() map[string][]string {
+	return map[string][]string{
+		"quay.io/openshift-release-dev/ocp-release": {
+			"myregistry1.io/openshift-release-dev/ocp-release",
+			"quay.io/openshifttest/ocp-release",
+		},
+		"quay.io/mce": {
+			"quay.io/openshifttest",
+		},
+		"registry.build01.ci.openshift.org/ci-op-p2mqdwjp/release": {
+			"quay.io/openshifttest/ocp-release",
+		},
+		"registry.ci.openshift.org/ocp/4.18-2025-01-04-031500": {
+			"virthost.ostest.test.metalkube.org:5000/localimages/local-release-image",
+		},
+		"registry.build02.ci.openshift.org": {
+			"quay.io",
+		},
+		"registry.build03.ci.openshift.org": {
+			"myregistry1.io",
+			"myregistry2.io",
+			"quay.io",
+		},
+		"quay.io/prometheus": {
+			"brew.registry.redhat.io/prometheus",
+		},
+	}
+}
+
+func TestTryOnlyNamespaceOverride(t *testing.T) {
+	testsCases := []struct {
+		name           string
+		ref            reference.DockerImageReference
+		sourceRef      reference.DockerImageReference
+		mirrorRef      reference.DockerImageReference
+		expectedImgRef *reference.DockerImageReference
+		overrideFound  bool
+		expectAnErr    bool
+	}{
+		{
+			name: "if namespace override is found",
+			ref: reference.DockerImageReference{
+				Registry:  "quay.io",
+				Name:      "ocp-release",
+				Namespace: "openshift-release-dev",
+				Tag:       "4.15.0-rc.0-multi",
+			},
+			sourceRef: reference.DockerImageReference{
+				Registry: "quay.io",
+				Name:     "openshift-release-dev",
+			},
+			mirrorRef: reference.DockerImageReference{
+				Registry: "myregistry.io",
+				Name:     "openshift-release-dev",
+			},
+			expectedImgRef: &reference.DockerImageReference{
+				Registry:  "myregistry.io",
+				Name:      "ocp-release",
+				Namespace: "openshift-release-dev",
+				Tag:       "4.15.0-rc.0-multi",
+			},
+			overrideFound: true,
+			expectAnErr:   false,
+		},
+		{
+			name: "if namespace override is not found - namespace not empty",
+			ref: reference.DockerImageReference{
+				Registry:  "quay.io",
+				Name:      "ocp-release",
+				Namespace: "openshift-release-dev",
+				Tag:       "4.15.0-rc.0-multi",
+			},
+			sourceRef: reference.DockerImageReference{
+				Namespace: "test",
+				Name:      "openshift-release-dev",
+			},
+			mirrorRef: reference.DockerImageReference{
+				Registry: "myregistry.io",
+			},
+			expectedImgRef: nil,
+			overrideFound:  false,
+			expectAnErr:    false,
+		},
+		{
+			name: "if namespace override is not found - name mismatch",
+			ref: reference.DockerImageReference{
+				Registry:  "quay.io",
+				Name:      "ocp-release",
+				Namespace: "openshift-release-dev",
+				Tag:       "4.15.0-rc.0-multi",
+			},
+			sourceRef: reference.DockerImageReference{
+				Name: "different-namespace",
+			},
+			mirrorRef: reference.DockerImageReference{
+				Registry: "myregistry.io",
+			},
+			expectedImgRef: nil,
+			overrideFound:  false,
+			expectAnErr:    false,
+		},
+	}
+
+	for _, tc := range testsCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			imgRef, overrideFound, err := tryOnlyNamespaceOverride(tc.ref, tc.sourceRef, tc.mirrorRef)
+			g.Expect(imgRef).To(Equal(tc.expectedImgRef))
+			g.Expect(overrideFound).To(Equal(tc.overrideFound))
+			g.Expect(err != nil).To(Equal(tc.expectAnErr))
+		})
+	}
+}
+
+func TestTryExactCoincidenceOverride(t *testing.T) {
+	testsCases := []struct {
+		name           string
+		ref            reference.DockerImageReference
+		sourceRef      reference.DockerImageReference
+		mirrorRef      reference.DockerImageReference
+		expectedImgRef *reference.DockerImageReference
+		overrideFound  bool
+		expectAnErr    bool
+	}{
+		{
+			name: "if exact coincidence override is found",
+			ref: reference.DockerImageReference{
+				Registry:  "quay.io",
+				Name:      "ocp-release",
+				Namespace: "openshift-release-dev",
+				Tag:       "4.15.0-rc.0-multi",
+			},
+			sourceRef: reference.DockerImageReference{
+				Registry:  "quay.io",
+				Name:      "ocp-release",
+				Namespace: "openshift-release-dev",
+			},
+			mirrorRef: reference.DockerImageReference{
+				Registry:  "myregistry.io",
+				Namespace: "openshift-release-dev",
+				Name:      "ocp-release",
+			},
+			expectedImgRef: &reference.DockerImageReference{
+				Registry:  "myregistry.io",
+				Name:      "ocp-release",
+				Namespace: "openshift-release-dev",
+				Tag:       "4.15.0-rc.0-multi",
+			},
+			overrideFound: true,
+			expectAnErr:   false,
+		},
+		{
+			name: "if exact coincidence override is not found",
+			ref: reference.DockerImageReference{
+				Registry:  "quay.io",
+				Name:      "ocp-release",
+				Namespace: "openshift-release-dev",
+				Tag:       "4.15.0-rc.0-multi",
+			},
+			sourceRef: reference.DockerImageReference{
+				Registry:  "quay.io",
+				Name:      "different-name",
+				Namespace: "openshift-release-dev",
+			},
+			mirrorRef: reference.DockerImageReference{
+				Registry: "myregistry.io",
+			},
+			expectedImgRef: nil,
+			overrideFound:  false,
+			expectAnErr:    false,
+		},
+	}
+
+	for _, tc := range testsCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			imgRef, overrideFound, err := tryExactCoincidenceOverride(tc.ref, tc.sourceRef, tc.mirrorRef)
+			if tc.overrideFound {
+				g.Expect(imgRef).To(Equal(tc.expectedImgRef))
+			} else {
+				g.Expect(imgRef).To(BeNil())
+			}
+			g.Expect(overrideFound).To(Equal(tc.overrideFound))
+			g.Expect(err != nil).To(Equal(tc.expectAnErr))
+		})
+	}
+}
+
+func TestTryOnlyRootRegistryOverride(t *testing.T) {
+	testsCases := []struct {
+		name           string
+		ref            reference.DockerImageReference
+		sourceRef      reference.DockerImageReference
+		mirrorRef      reference.DockerImageReference
+		expectedImgRef *reference.DockerImageReference
+		overrideFound  bool
+		expectAnErr    bool
+	}{
+		{
+			name: "if root registry override is found",
+			ref: reference.DockerImageReference{
+				Registry:  "registry.build02.ci.openshift.org",
+				Name:      "release",
+				Namespace: "ocp",
+				Tag:       "4.15.0-rc.0-multi",
+			},
+			sourceRef: reference.DockerImageReference{
+				Name: "registry.build02.ci.openshift.org",
+			},
+			mirrorRef: reference.DockerImageReference{
+				Name: "virthost.ostest.test.metalkube.org:5000",
+			},
+			expectedImgRef: &reference.DockerImageReference{
+				Registry:  "virthost.ostest.test.metalkube.org:5000",
+				Name:      "release",
+				Namespace: "ocp",
+				Tag:       "4.15.0-rc.0-multi",
+			},
+			overrideFound: true,
+			expectAnErr:   false,
+		},
+		{
+			name: "if root registry override is not found - namespace not empty",
+			ref: reference.DockerImageReference{
+				Registry:  "registry.build02.ci.openshift.org",
+				Name:      "release",
+				Namespace: "ocp",
+				Tag:       "4.15.0-rc.0-multi",
+			},
+			sourceRef: reference.DockerImageReference{
+				Namespace: "test",
+				Name:      "registry.build02.ci.openshift.org",
+			},
+			mirrorRef: reference.DockerImageReference{
+				Registry: "virthost.ostest.test.metalkube.org:5000",
+			},
+			expectedImgRef: nil,
+			overrideFound:  false,
+			expectAnErr:    false,
+		},
+		{
+			name: "if root registry override is not found - registry not empty",
+			ref: reference.DockerImageReference{
+				Registry:  "registry.build02.ci.openshift.org",
+				Name:      "release",
+				Namespace: "ocp",
+				Tag:       "4.15.0-rc.0-multi",
+			},
+			sourceRef: reference.DockerImageReference{
+				Registry: "test",
+				Name:     "registry.build02.ci.openshift.org",
+			},
+			mirrorRef: reference.DockerImageReference{
+				Registry: "virthost.ostest.test.metalkube.org:5000",
+			},
+			expectedImgRef: nil,
+			overrideFound:  false,
+			expectAnErr:    false,
+		},
+		{
+			name: "if root registry override is not found - name mismatch",
+			ref: reference.DockerImageReference{
+				Registry:  "registry.build02.ci.openshift.org",
+				Name:      "release",
+				Namespace: "ocp",
+				Tag:       "4.15.0-rc.0-multi",
+			},
+			sourceRef: reference.DockerImageReference{
+				Name: "different-registry",
+			},
+			mirrorRef: reference.DockerImageReference{
+				Registry: "virthost.ostest.test.metalkube.org:5000",
+			},
+			expectedImgRef: nil,
+			overrideFound:  false,
+			expectAnErr:    false,
+		},
+	}
+
+	for _, tc := range testsCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			imgRef, overrideFound, err := tryOnlyRootRegistryOverride(tc.ref, tc.sourceRef, tc.mirrorRef)
+			if tc.overrideFound {
+				g.Expect(imgRef).To(Equal(tc.expectedImgRef))
+			} else {
+				g.Expect(imgRef).To(BeNil())
+			}
+			g.Expect(overrideFound).To(Equal(tc.overrideFound))
+			g.Expect(err != nil).To(Equal(tc.expectAnErr))
+		})
+	}
+}
+
+func TestMirrorAvailabilityCache(t *testing.T) {
+	g := NewGomegaWithT(t)
+
+	// Create a new cache instance for testing
+	testCache := &MirrorAvailabilityCache{
+		cache: make(map[string]mirrorCacheEntry),
+	}
+
+	testURL := "test-mirror.example.com/image:tag"
+	testPullSecret := []byte(`{"auths":{"registry.example.com":{"username":"test","password":"secret"}}}`)
+
+	t.Run("cache miss returns false", func(t *testing.T) {
+		available, found := testCache.get(testURL, testPullSecret)
+		g.Expect(found).To(BeFalse())
+		g.Expect(available).To(BeFalse())
+	})
+
+	t.Run("cache hit returns stored value", func(t *testing.T) {
+		// Set available = true
+		testCache.set(testURL, testPullSecret, true)
+
+		available, found := testCache.get(testURL, testPullSecret)
+		g.Expect(found).To(BeTrue())
+		g.Expect(available).To(BeTrue())
+	})
+
+	t.Run("cache stores negative results", func(t *testing.T) {
+		testURL2 := "unavailable-mirror.example.com/image:tag"
+
+		// Set available = false
+		testCache.set(testURL2, testPullSecret, false)
+
+		available, found := testCache.get(testURL2, testPullSecret)
+		g.Expect(found).To(BeTrue())
+		g.Expect(available).To(BeFalse())
+	})
+
+	t.Run("cache expiration works", func(t *testing.T) {
+		testURL3 := "expired-mirror.example.com/image:tag"
+
+		// Set with false (1 minute TTL)
+		testCache.set(testURL3, testPullSecret, false)
+
+		// Manually expire the entry
+		cacheKey3 := generateCacheKey(testURL3, testPullSecret)
+		testCache.mutex.Lock()
+		if entry, exists := testCache.cache[cacheKey3]; exists {
+			entry.timestamp = time.Now().Add(-2 * time.Minute) // 2 minutes ago
+			testCache.cache[cacheKey3] = entry
+		}
+		testCache.mutex.Unlock()
+
+		// Should be cache miss now
+		available, found := testCache.get(testURL3, testPullSecret)
+		g.Expect(found).To(BeFalse())
+		g.Expect(available).To(BeFalse())
+
+		// Entry should be cleaned up
+		testCache.mutex.RLock()
+		_, exists := testCache.cache[cacheKey3]
+		testCache.mutex.RUnlock()
+		g.Expect(exists).To(BeFalse())
+	})
+
+	t.Run("TTL is different for available vs unavailable", func(t *testing.T) {
+		availableURL := "available-ttl.example.com/image:tag"
+		unavailableURL := "unavailable-ttl.example.com/image:tag"
+
+		testCache.set(availableURL, testPullSecret, true)
+		testCache.set(unavailableURL, testPullSecret, false)
+
+		availableCacheKey := generateCacheKey(availableURL, testPullSecret)
+		unavailableCacheKey := generateCacheKey(unavailableURL, testPullSecret)
+
+		testCache.mutex.RLock()
+		availableEntry := testCache.cache[availableCacheKey]
+		unavailableEntry := testCache.cache[unavailableCacheKey]
+		testCache.mutex.RUnlock()
+
+		g.Expect(availableEntry.ttl).To(Equal(5 * time.Minute))
+		g.Expect(unavailableEntry.ttl).To(Equal(1 * time.Minute))
+	})
+
+	t.Run("concurrent access is thread safe", func(t *testing.T) {
+		concurrentURL := "concurrent-test.example.com/image:tag"
+
+		// Test concurrent reads and writes
+		done := make(chan bool, 10)
+
+		// Start multiple goroutines that read and write
+		for i := 0; i < 5; i++ {
+			go func() {
+				testCache.set(concurrentURL, testPullSecret, true)
+				testCache.get(concurrentURL, testPullSecret)
+				done <- true
+			}()
+		}
+
+		for i := 0; i < 5; i++ {
+			go func() {
+				testCache.set(concurrentURL, testPullSecret, false)
+				testCache.get(concurrentURL, testPullSecret)
+				done <- true
+			}()
+		}
+
+		// Wait for all goroutines to complete
+		for i := 0; i < 10; i++ {
+			<-done
+		}
+
+		// Should not panic and should have some value
+		_, found := testCache.get(concurrentURL, testPullSecret)
+		g.Expect(found).To(BeTrue())
+	})
+}
+
+func TestSeekOverrideWithCache(t *testing.T) {
+	g := NewGomegaWithT(t)
+
+	// Reset the global cache for clean test
+	mirrorCache.mutex.Lock()
+	mirrorCache.cache = make(map[string]mirrorCacheEntry)
+	mirrorCache.mutex.Unlock()
+
+	ctx := context.Background()
+
+	// Mock metadataGetter that simulates an unavailable mirror, avoiding real network calls.
+	failingGetter := func(ctx context.Context, imageRef string, pullSecret []byte) (*dockerv1client.DockerImageConfig, []distribution.Descriptor, distribution.BlobStore, error) {
+		return nil, nil, nil, fmt.Errorf("simulated mirror unavailable")
+	}
+
+	t.Run("cache prevents repeated network verification", func(t *testing.T) {
+		overrides := map[string][]string{
+			"quay.io": {"mirror.example.com"},
+		}
+
+		parsedRef := reference.DockerImageReference{
+			Registry:  "quay.io",
+			Namespace: "test",
+			Name:      "image",
+			Tag:       "latest",
+		}
+
+		provider := &RegistryClientImageMetadataProvider{
+			OpenShiftImageRegistryOverrides: overrides,
+			metadataGetter:                  failingGetter,
+		}
+
+		// First call will attempt verification (which will fail via mock)
+		// and cache the result
+		result1 := provider.seekOverride(ctx, parsedRef, []byte(`{"auths":{}}`))
+
+		// Second call should use cache and return same result without network call
+		result2 := provider.seekOverride(ctx, parsedRef, []byte(`{"auths":{}}`))
+
+		g.Expect(result1).To(Equal(result2))
+
+		// Check that result is cached
+		mirrorURL := "mirror.example.com/test/image:latest"
+		pullSecret := []byte(`{"auths":{}}`)
+		_, found := mirrorCache.get(mirrorURL, pullSecret)
+		g.Expect(found).To(BeTrue(), "Mirror availability should be cached")
+	})
+
+	t.Run("cache respects different mirror URLs", func(t *testing.T) {
+		parsedRef := reference.DockerImageReference{
+			Registry:  "quay.io",
+			Namespace: "test",
+			Name:      "image",
+			Tag:       "latest",
+		}
+
+		// Test with first mirror
+		provider1 := &RegistryClientImageMetadataProvider{
+			OpenShiftImageRegistryOverrides: map[string][]string{
+				"quay.io": {"mirror1.example.com"},
+			},
+			metadataGetter: failingGetter,
+		}
+		provider1.seekOverride(ctx, parsedRef, []byte(`{"auths":{}}`))
+
+		// Test with second mirror
+		provider2 := &RegistryClientImageMetadataProvider{
+			OpenShiftImageRegistryOverrides: map[string][]string{
+				"quay.io": {"mirror2.example.com"},
+			},
+			metadataGetter: failingGetter,
+		}
+		provider2.seekOverride(ctx, parsedRef, []byte(`{"auths":{}}`))
+
+		// Both mirrors should be cached separately
+		pullSecret := []byte(`{"auths":{}}`)
+		_, found1 := mirrorCache.get("mirror1.example.com/test/image:latest", pullSecret)
+		_, found2 := mirrorCache.get("mirror2.example.com/test/image:latest", pullSecret)
+
+		g.Expect(found1).To(BeTrue(), "First mirror should be cached")
+		g.Expect(found2).To(BeTrue(), "Second mirror should be cached")
+	})
+}
+
+func TestSeekOverrideFallsBackWhenMirrorUnavailable(t *testing.T) {
+	g := NewGomegaWithT(t)
+
+	// Reset the global cache
+	mirrorCache.mutex.Lock()
+	mirrorCache.cache = make(map[string]mirrorCacheEntry)
+	mirrorCache.mutex.Unlock()
+
+	ctx := context.Background()
+
+	provider := &RegistryClientImageMetadataProvider{
+		OpenShiftImageRegistryOverrides: map[string][]string{
+			"quay.io": {"nonexistent-mirror.invalid"},
+		},
+		// Mock metadataGetter that simulates an unavailable mirror, avoiding real network calls.
+		metadataGetter: func(ctx context.Context, imageRef string, pullSecret []byte) (*dockerv1client.DockerImageConfig, []distribution.Descriptor, distribution.BlobStore, error) {
+			return nil, nil, nil, fmt.Errorf("simulated mirror unavailable")
+		},
+	}
+
+	parsedRef := reference.DockerImageReference{
+		Registry:  "quay.io",
+		Namespace: "test",
+		Name:      "image",
+		Tag:       "latest",
+	}
+
+	// This should fail verification and fallback to original image
+	result := provider.seekOverride(ctx, parsedRef, []byte(`{"auths":{}}`))
+
+	// Should return original reference since mirror is invalid
+	g.Expect(result.Registry).To(Equal("quay.io"))
+	g.Expect(result.Namespace).To(Equal("test"))
+	g.Expect(result.Name).To(Equal("image"))
+	g.Expect(result.Tag).To(Equal("latest"))
+
+	// Should cache the negative result
+	mirrorURL := "nonexistent-mirror.invalid/test/image:latest"
+	pullSecret := []byte(`{"auths":{}}`)
+	available, found := mirrorCache.get(mirrorURL, pullSecret)
+	g.Expect(found).To(BeTrue())
+	g.Expect(available).To(BeFalse())
+}
+
+func TestCacheCleanupOnExpiration(t *testing.T) {
+	g := NewGomegaWithT(t)
+
+	testCache := &MirrorAvailabilityCache{
+		cache: make(map[string]mirrorCacheEntry),
+	}
+
+	testPullSecret := []byte(`{"auths":{"registry.example.com":{"username":"test","password":"secret"}}}`)
+
+	// Add multiple entries
+	testCache.set("url1.example.com/image:tag", testPullSecret, true)
+	testCache.set("url2.example.com/image:tag", testPullSecret, false)
+	testCache.set("url3.example.com/image:tag", testPullSecret, true)
+
+	// Verify all are cached
+	g.Expect(len(testCache.cache)).To(Equal(3))
+
+	// Manually expire some entries
+	cacheKey1 := generateCacheKey("url1.example.com/image:tag", testPullSecret)
+	cacheKey2 := generateCacheKey("url2.example.com/image:tag", testPullSecret)
+
+	testCache.mutex.Lock()
+	for cacheKey, entry := range testCache.cache {
+		if cacheKey == cacheKey1 || cacheKey == cacheKey2 {
+			entry.timestamp = time.Now().Add(-10 * time.Minute) // Long ago
+			testCache.cache[cacheKey] = entry
+		}
+	}
+	testCache.mutex.Unlock()
+
+	// Access expired entries should clean them up
+	testCache.get("url1.example.com/image:tag", testPullSecret)
+	testCache.get("url2.example.com/image:tag", testPullSecret)
+
+	// Only non-expired entry should remain
+	testCache.mutex.RLock()
+	remainingEntries := len(testCache.cache)
+	testCache.mutex.RUnlock()
+
+	g.Expect(remainingEntries).To(Equal(1))
+}

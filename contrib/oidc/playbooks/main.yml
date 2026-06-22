@@ -1,0 +1,6 @@
+---
+- name: Set up AWS Infrastructure
+  import_playbook: infra_setup.yml
+
+- name: Configure Dex OIDC Provider
+  import_playbook: oidc_configure.yml

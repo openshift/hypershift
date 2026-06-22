@@ -1,0 +1,66 @@
+# TODO: Prune the RBACs as cluster-storage-operator and aws-ebs-csi-driver-operator are pruned.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: cluster-storage-operator
+rules:
+  - apiGroups:
+      - coordination.k8s.io
+    resources:
+      - leases
+    verbs:
+      - '*'
+  - apiGroups:
+      - apps
+    resources:
+      - deployments
+      - replicasets
+    verbs:
+      - '*'
+  - apiGroups:
+      - policy
+    resources:
+      - poddisruptionbudgets
+    verbs:
+      - '*'
+  - apiGroups:
+      - ""
+    resources:
+      - serviceaccounts
+      - services
+      - configmaps
+      - pods
+      - endpoints
+      - events
+      - secrets
+    verbs:
+      - '*'
+  - apiGroups:
+      - ""
+    resources:
+      - events
+    verbs:
+      - create
+      - patch
+      - update
+  - apiGroups:
+      - rbac.authorization.k8s.io
+    resources:
+      - roles
+      - rolebindings
+    verbs:
+      - watch
+      - list
+      - get
+      - create
+      - delete
+      - patch
+      - update
+  - apiGroups:
+      - hypershift.openshift.io
+    resources:
+      - hostedcontrolplanes
+    verbs:
+      - watch
+      - list
+      - get

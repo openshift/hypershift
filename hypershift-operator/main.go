@@ -1,0 +1,1099 @@
+/*
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package main
+
+import (
+	"context"
+	"crypto/tls"
+	"fmt"
+	"net"
+	"os"
+	"strings"
+	"time"
+
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
+	"github.com/openshift/hypershift/cmd/install/assets"
+	pkiconfig "github.com/openshift/hypershift/control-plane-pki-operator/config"
+	etcdrecovery "github.com/openshift/hypershift/etcd-recovery"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/auditlogpersistence"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/etcdbackup"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
+	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedclustersizing"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/instancetype"
+	awsinstancetype "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/instancetype/aws"
+	npmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/metrics"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/platform/aws"
+	azureplatform "github.com/openshift/hypershift/hypershift-operator/controllers/platform/azure"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/platform/gcp"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/proxy"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/resourcebasedcpautoscaler"
+	awsscheduler "github.com/openshift/hypershift/hypershift-operator/controllers/scheduler/aws"
+	azurescheduler "github.com/openshift/hypershift/hypershift-operator/controllers/scheduler/azure"
+	sharedingress "github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
+	hosupportedversion "github.com/openshift/hypershift/hypershift-operator/controllers/supportedversion"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/uwmtelemetry"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/webhookcerts"
+	"github.com/openshift/hypershift/hypershift-operator/featuregate"
+	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
+	sharedingressconfiggenerator "github.com/openshift/hypershift/sharedingress-config-generator"
+	hyperapi "github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/awsapi"
+	"github.com/openshift/hypershift/support/azureutil"
+	"github.com/openshift/hypershift/support/capabilities"
+	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/gcpapi"
+	"github.com/openshift/hypershift/support/globalconfig"
+	"github.com/openshift/hypershift/support/metrics"
+	"github.com/openshift/hypershift/support/netutil"
+	"github.com/openshift/hypershift/support/supportedversion"
+	"github.com/openshift/hypershift/support/upsert"
+
+	operatorv1 "github.com/openshift/api/operator/v1"
+	configv1 "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1"
+
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v5"
+
+	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/discovery"
+	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
+	"k8s.io/client-go/rest"
+	"k8s.io/utils/ptr"
+	"k8s.io/utils/set"
+
+	ctrl "sigs.k8s.io/controller-runtime"
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
+	"sigs.k8s.io/controller-runtime/pkg/webhook"
+	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
+	"sigs.k8s.io/yaml"
+
+	"github.com/go-logr/logr"
+	"github.com/spf13/cobra"
+	"go.uber.org/zap/zapcore"
+)
+
+func main() {
+	// Ensure compatibility with Kubernetes API servers that do not fully support the
+	// 'sendInitialEvents' watch parameter by disabling the WatchListClient feature by default.
+	// This must be set before any informers are initialized, as the environment variable
+	// is only evaluated during the initial feature gate check.
+	// If the KUBE_FEATURE_WatchListClient variable is unset, default it to "false".
+	if _, ok := os.LookupEnv("KUBE_FEATURE_WatchListClient"); !ok {
+		os.Setenv("KUBE_FEATURE_WatchListClient", "false")
+	}
+
+	ctrl.SetLogger(zap.New(zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
+		o.EncodeTime = zapcore.RFC3339TimeEncoder
+	})))
+
+	cmd := &cobra.Command{
+		Use: "hypershift-operator",
+		Run: func(cmd *cobra.Command, args []string) {
+			_ = cmd.Help()
+			os.Exit(1)
+		},
+	}
+
+	cmd.Version = supportedversion.String()
+
+	cmd.AddCommand(NewStartCommand())
+	cmd.AddCommand(NewInitCommand())
+	cmd.AddCommand(etcdrecovery.NewRecoveryCommand())
+	cmd.AddCommand(sharedingressconfiggenerator.NewStartCommand())
+
+	if err := cmd.Execute(); err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "%v\n", err)
+		os.Exit(1)
+	}
+}
+
+type StartOptions struct {
+	Namespace                              string
+	DeploymentName                         string
+	PodName                                string
+	MetricsAddr                            string
+	CertDir                                string
+	EnableOCPClusterMonitoring             bool
+	EnableCIDebugOutput                    bool
+	ControlPlaneOperatorImage              string
+	RegistryOverrides                      map[string]string
+	PrivatePlatform                        string
+	OIDCStorageProviderS3BucketName        string
+	OIDCStorageProviderS3Region            string
+	OIDCStorageProviderS3Credentials       string
+	GCPOIDCStorageBucketName               string
+	EnableUWMTelemetryRemoteWrite          bool
+	EnableValidatingWebhook                bool
+	EnableDedicatedRequestServingIsolation bool
+	ScaleFromZeroProvider                  string
+	ScaleFromZeroCreds                     string
+	EtcdBackupMaxCount                     int
+	HCPEgressBlockCIDRs                    []string
+}
+
+func NewStartCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "run",
+		Short: "Runs the Hypershift operator",
+	}
+
+	opts := StartOptions{
+		Namespace:                        "hypershift",
+		DeploymentName:                   "operator",
+		MetricsAddr:                      "0",
+		CertDir:                          "",
+		ControlPlaneOperatorImage:        "",
+		RegistryOverrides:                map[string]string{},
+		PrivatePlatform:                  string(hyperv1.NonePlatform),
+		OIDCStorageProviderS3Region:      "",
+		OIDCStorageProviderS3Credentials: "",
+	}
+
+	cmd.Flags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "The namespace this operator lives in")
+	cmd.Flags().StringVar(&opts.DeploymentName, "deployment-name", opts.DeploymentName, "Legacy flag, does nothing. Use --pod-name instead.")
+	cmd.Flags().StringVar(&opts.PodName, "pod-name", opts.PodName, "The name of the pod the operator runs in")
+	cmd.Flags().StringVar(&opts.MetricsAddr, "metrics-addr", opts.MetricsAddr, "The address the metric endpoint binds to.")
+	cmd.Flags().StringVar(&opts.CertDir, "cert-dir", opts.CertDir, "Path to the serving key and cert for manager")
+	cmd.Flags().StringVar(&opts.ControlPlaneOperatorImage, "control-plane-operator-image", opts.ControlPlaneOperatorImage, "A control plane operator image to use (defaults to match this operator if running in a deployment)")
+	cmd.Flags().BoolVar(&opts.EnableOCPClusterMonitoring, "enable-ocp-cluster-monitoring", opts.EnableOCPClusterMonitoring, "Development-only option that will make your OCP cluster unsupported: If the cluster Prometheus should be configured to scrape metrics")
+	cmd.Flags().BoolVar(&opts.EnableCIDebugOutput, "enable-ci-debug-output", false, "If extra CI debug output should be enabled")
+	cmd.Flags().StringToStringVar(&opts.RegistryOverrides, "registry-overrides", map[string]string{}, "registry-overrides contains the source registry string as a key and the destination registry string as value. Images before being applied are scanned for the source registry string and if found the string is replaced with the destination registry string. Format is: sr1=dr1,sr2=dr2")
+	cmd.Flags().StringVar(&opts.PrivatePlatform, "private-platform", opts.PrivatePlatform, "Platform on which private clusters are supported by this operator (supports \"AWS\", \"Azure\", \"GCP\", or \"None\")")
+	cmd.Flags().StringVar(&opts.OIDCStorageProviderS3BucketName, "oidc-storage-provider-s3-bucket-name", "", "Name of the bucket in which to store the clusters OIDC discovery information. Required for AWS guest clusters")
+	cmd.Flags().StringVar(&opts.GCPOIDCStorageBucketName, "gcp-oidc-storage-bucket-name", "", "Name of the GCS bucket in which to store the clusters OIDC discovery information. Required for GCP guest clusters using issuer URL discovery")
+	cmd.Flags().StringVar(&opts.OIDCStorageProviderS3Region, "oidc-storage-provider-s3-region", opts.OIDCStorageProviderS3Region, "Region in which the OIDC bucket is located. Required for AWS guest clusters")
+	cmd.Flags().StringVar(&opts.OIDCStorageProviderS3Credentials, "oidc-storage-provider-s3-credentials", opts.OIDCStorageProviderS3Credentials, "Location of the credentials file for the OIDC bucket. Required for AWS guest clusters.")
+	cmd.Flags().BoolVar(&opts.EnableUWMTelemetryRemoteWrite, "enable-uwm-telemetry-remote-write", opts.EnableUWMTelemetryRemoteWrite, "If true, enables a controller that ensures user workload monitoring is enabled and that it is configured to remote write telemetry metrics from control planes")
+	cmd.Flags().BoolVar(&opts.EnableValidatingWebhook, "enable-validating-webhook", false, "Enable webhook for validating hypershift API types")
+	cmd.Flags().BoolVar(&opts.EnableDedicatedRequestServingIsolation, "enable-dedicated-request-serving-isolation", true, "If true, enables scheduling of request serving components to dedicated nodes")
+	cmd.Flags().StringVar(&opts.ScaleFromZeroProvider, "scale-from-zero-provider", opts.ScaleFromZeroProvider, "Platform type for scale-from-zero autoscaling (aws)")
+	cmd.Flags().StringVar(&opts.ScaleFromZeroCreds, "scale-from-zero-creds", opts.ScaleFromZeroCreds, "Path to credentials file for scale-from-zero instance type queries")
+	cmd.Flags().IntVar(&opts.EtcdBackupMaxCount, "etcd-backup-max-count", 5, "Maximum number of completed HCPEtcdBackup CRs to retain per HostedControlPlane")
+	cmd.Flags().StringArrayVar(&opts.HCPEgressBlockCIDRs, "hcp-egress-block-cidrs", nil, "Static CIDRs to block in HCP namespace egress NetworkPolicies instead of dynamically-discovered hosting cluster KAS endpoint IPs. When specified, eliminates NetworkPolicy churn during hosting cluster KAS rolling restarts and avoids OVN port-group reconciliation races that can drop traffic to HCP routers. May be specified multiple times (e.g. --hcp-egress-block-cidrs=10.0.0.0/16 --hcp-egress-block-cidrs=10.1.0.0/16).")
+
+	// Attempt to determine featureset prior to adding featuregate flags.
+	// It is safe to get the empty string from this as the empty string is the default featureset.
+	// This should _generally_ be safe to do here because any unknown featureset provided in the environment
+	// variable should result in using the default featureset.
+	featureSet := os.Getenv("HYPERSHIFT_FEATURESET")
+	// Doing this call first should explicitly configure the default gate state
+	// for the provided featureset. This makes it so that specifying feature gates
+	// via the `--feature-gates` flag will always override whatever has been configured
+	// by the featureset.
+	featuregate.ConfigureFeatureSet(featureSet)
+	featuregate.Gate().AddFlag(cmd.Flags())
+
+	cmd.Run = func(cmd *cobra.Command, args []string) {
+		ctx, cancel := context.WithCancel(ctrl.SetupSignalHandler())
+		defer cancel()
+
+		switch hyperv1.PlatformType(opts.PrivatePlatform) {
+		case hyperv1.AWSPlatform, hyperv1.AzurePlatform, hyperv1.GCPPlatform, hyperv1.NonePlatform:
+		default:
+			fmt.Printf("Unsupported private platform: %q\n", opts.PrivatePlatform)
+			os.Exit(1)
+		}
+
+		for _, cidr := range opts.HCPEgressBlockCIDRs {
+			if _, _, err := net.ParseCIDR(cidr); err != nil {
+				fmt.Fprintf(os.Stderr, "invalid --hcp-egress-block-cidrs value %q: %v\n", cidr, err)
+				os.Exit(1)
+			}
+		}
+
+		if err := run(ctx, &opts, ctrl.Log.WithName("setup")); err != nil {
+			fmt.Println(err)
+			os.Exit(1)
+		}
+	}
+
+	return cmd
+}
+
+func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
+	log.Info("Starting hypershift-operator-manager", "version", supportedversion.String())
+
+	if err := validateStartOptions(opts, log); err != nil {
+		return err
+	}
+
+	restConfig := ctrl.GetConfigOrDie()
+	restConfig.UserAgent = "hypershift-operator-manager"
+	kubeDiscoveryClient, err := discovery.NewDiscoveryClientForConfig(restConfig)
+	if err != nil {
+		return fmt.Errorf("unable to create discovery client: %w", err)
+	}
+
+	mgmtClusterCaps, err := capabilities.DetectManagementClusterCapabilities(kubeDiscoveryClient)
+	if err != nil {
+		return fmt.Errorf("unable to detect cluster capabilities: %w", err)
+	}
+
+	webhookOptions, err := configureWebhookOptions(ctx, restConfig, mgmtClusterCaps, opts)
+	if err != nil {
+		return err
+	}
+
+	mgr, err := createManager(restConfig, webhookOptions, opts)
+	if err != nil {
+		return err
+	}
+
+	operatorImage, err := resolveOperatorImage(ctx, mgr, opts, log)
+	if err != nil {
+		return err
+	}
+
+	createOrUpdate := upsert.New(opts.EnableCIDebugOutput)
+
+	metricsSet, sreConfigHash, err := setupMetricsSet(mgr, opts, log)
+	if err != nil {
+		return err
+	}
+
+	apiReadingClient, err := crclient.New(mgr.GetConfig(), crclient.Options{Scheme: hyperapi.Scheme})
+	if err != nil {
+		return fmt.Errorf("failed to construct api reading client: %w", err)
+	}
+
+	if opts.CertDir != "" {
+		if err := webhookcerts.EnsureWebhookCerts(ctx, apiReadingClient, opts.Namespace, assets.HypershiftOperatorName); err != nil {
+			return fmt.Errorf("failed to bootstrap webhook certs: %w", err)
+		}
+	}
+
+	if err := reconcileDeprecationValidatingAdmissionPolicy(ctx, apiReadingClient, mgmtClusterCaps, log); err != nil {
+		return fmt.Errorf("failed to reconcile deprecation ValidatingAdmissionPolicy: %w", err)
+	}
+
+	// Reconcile encryption rotation guard ValidatingAdmissionPolicy if supported
+	if err := reconcileEncryptionRotationGuardVAP(ctx, apiReadingClient, mgmtClusterCaps, log); err != nil {
+		return fmt.Errorf("failed to reconcile encryption rotation guard ValidatingAdmissionPolicy: %w", err)
+	}
+
+	registryProvider, err := globalconfig.NewCommonRegistryProvider(ctx, mgmtClusterCaps, apiReadingClient, opts.RegistryOverrides)
+	if err != nil {
+		return fmt.Errorf("failed to create registry provider: %w", err)
+	}
+
+	if err := setupHostedClusterController(ctx, mgr, opts, mgmtClusterCaps, operatorImage, createOrUpdate, metricsSet, sreConfigHash, registryProvider, log); err != nil {
+		return err
+	}
+
+	if err := cleanupLegacyWebhook(ctx, mgr, opts); err != nil {
+		return err
+	}
+
+	ec2Client := setupEC2Client(ctx, opts)
+	npmetrics.CreateAndRegisterNodePoolsMetricsCollector(mgr.GetClient(), ec2Client)
+
+	if err := setupNodePoolController(ctx, mgr, opts, operatorImage, createOrUpdate, registryProvider, ec2Client, log); err != nil {
+		return err
+	}
+
+	if mgmtClusterCaps.Has(capabilities.CapabilityProxy) {
+		if err := proxy.Setup(mgr, opts.Namespace, opts.DeploymentName); err != nil {
+			return fmt.Errorf("failed to set up the proxy controller: %w", err)
+		}
+	}
+
+	enableSizeTagging := os.Getenv("ENABLE_SIZE_TAGGING") == "1"
+	if enableSizeTagging {
+		if err := hostedclustersizing.SetupWithManager(ctx, mgr, operatorImage, registryProvider.ReleaseProvider, registryProvider.MetadataProvider); err != nil {
+			return fmt.Errorf("failed to set up hosted cluster sizing operator: %w", err)
+		}
+	}
+
+	if err := setupPlatformControllers(mgr, opts, mgmtClusterCaps, createOrUpdate, log); err != nil {
+		return err
+	}
+
+	if err := setupSupportControllers(mgr, opts, mgmtClusterCaps, operatorImage, createOrUpdate, registryProvider, log); err != nil {
+		return err
+	}
+
+	if err := setupSchedulerControllers(ctx, mgr, opts, createOrUpdate, enableSizeTagging, log); err != nil {
+		return err
+	}
+
+	if err := reconcileDefaultIngressController(ctx, apiReadingClient, log); err != nil {
+		return err
+	}
+
+	if err := setupOperatorInfoMetric(mgr); err != nil {
+		return fmt.Errorf("failed to setup metrics: %w", err)
+	}
+
+	if err := setupAuditLogPersistence(mgr, opts, log); err != nil {
+		return err
+	}
+
+	log.Info("starting manager")
+	return mgr.Start(ctx)
+}
+
+func validateStartOptions(opts *StartOptions, log logr.Logger) error {
+	if opts.EtcdBackupMaxCount < 1 {
+		return fmt.Errorf("--etcd-backup-max-count must be at least 1, got %d", opts.EtcdBackupMaxCount)
+	}
+
+	supportedProviders := set.New("aws")
+	if opts.ScaleFromZeroCreds != "" {
+		if opts.ScaleFromZeroProvider == "" {
+			return fmt.Errorf("--scale-from-zero-provider is required when using --scale-from-zero-creds")
+		}
+		if !supportedProviders.Has(strings.ToLower(opts.ScaleFromZeroProvider)) {
+			return fmt.Errorf("invalid --scale-from-zero-provider: %s (must be one of: %v)", opts.ScaleFromZeroProvider, supportedProviders.UnsortedList())
+		}
+		if _, err := os.Stat(opts.ScaleFromZeroCreds); err != nil {
+			if os.IsNotExist(err) {
+				return fmt.Errorf("--scale-from-zero-creds file does not exist: %s", opts.ScaleFromZeroCreds)
+			}
+			return fmt.Errorf("--scale-from-zero-creds file is not accessible: %w", err)
+		}
+		log.Info("Scale-from-zero enabled", "provider", opts.ScaleFromZeroProvider, "credentialsFile", opts.ScaleFromZeroCreds)
+	} else if opts.ScaleFromZeroProvider != "" {
+		log.Info("WARNING: --scale-from-zero-provider is set but --scale-from-zero-creds is empty; scale-from-zero will be disabled", "provider", opts.ScaleFromZeroProvider)
+	}
+	return nil
+}
+
+func configureWebhookOptions(ctx context.Context, restConfig *rest.Config, mgmtClusterCaps *capabilities.ManagementClusterCapabilities, opts *StartOptions) (webhook.Options, error) {
+	webhookOptions := webhook.Options{Port: 9443, CertDir: opts.CertDir}
+	if !mgmtClusterCaps.Has(capabilities.CapabilityAPIServer) {
+		return webhookOptions, nil
+	}
+
+	configClient, err := configv1.NewForConfig(restConfig)
+	if err != nil {
+		return webhookOptions, fmt.Errorf("unable to create config client: %w", err)
+	}
+
+	apiServerConfig, err := configClient.APIServers().Get(ctx, "cluster", metav1.GetOptions{})
+	if err != nil {
+		return webhookOptions, fmt.Errorf("unable to get the api server config: %w", err)
+	}
+
+	minTLSVersionSetter, err := config.SetMinTLSVersionUsingAPIServer(apiServerConfig)
+	if err != nil {
+		return webhookOptions, fmt.Errorf("unable to configure webhook server tls version: %w", err)
+	}
+
+	cipherSuitesSetter, err := config.SetCipherSuitesUsingAPIServer(apiServerConfig)
+	if err != nil {
+		return webhookOptions, fmt.Errorf("unable to configure webhook server cipher suites: %w", err)
+	}
+
+	webhookOptions.TLSOpts = []func(*tls.Config){minTLSVersionSetter, cipherSuitesSetter}
+	return webhookOptions, nil
+}
+
+func createManager(restConfig *rest.Config, webhookOptions webhook.Options, opts *StartOptions) (ctrl.Manager, error) {
+	leaseDuration := time.Second * 60
+	renewDeadline := time.Second * 40
+	retryPeriod := time.Second * 15
+	mgr, err := ctrl.NewManager(restConfig, ctrl.Options{
+		Scheme: hyperapi.Scheme,
+		Metrics: metricsserver.Options{
+			BindAddress: opts.MetricsAddr,
+		},
+		WebhookServer: webhook.NewServer(webhookOptions),
+		Client: crclient.Options{
+			Cache: &crclient.CacheOptions{
+				Unstructured: true,
+			},
+		},
+		LeaderElection:                true,
+		LeaderElectionID:              "hypershift-operator-leader-elect",
+		LeaderElectionResourceLock:    "leases",
+		LeaderElectionReleaseOnCancel: true,
+		LeaderElectionNamespace:       opts.Namespace,
+		LeaseDuration:                 &leaseDuration,
+		RenewDeadline:                 &renewDeadline,
+		RetryPeriod:                   &retryPeriod,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("unable to start manager: %w", err)
+	}
+	return mgr, nil
+}
+
+func resolveOperatorImage(ctx context.Context, mgr ctrl.Manager, opts *StartOptions, log logr.Logger) (string, error) {
+	lookupOperatorImage := func(userSpecifiedImage string) (string, error) {
+		if len(userSpecifiedImage) > 0 {
+			log.Info("using image from arguments", "image", userSpecifiedImage)
+			return userSpecifiedImage, nil
+		}
+		me := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Namespace: opts.Namespace, Name: opts.PodName}}
+		if err := mgr.GetAPIReader().Get(ctx, crclient.ObjectKeyFromObject(me), me); err != nil {
+			return "", fmt.Errorf("failed to get operator pod %s: %w", crclient.ObjectKeyFromObject(me), err)
+		}
+		// Use the container status to make sure we get the sha256 reference rather than a potentially
+		// floating tag.
+		for _, container := range me.Status.ContainerStatuses {
+			if container.Name == "operator" {
+				return strings.TrimPrefix(container.ImageID, "docker-pullable://"), nil
+			}
+		}
+		return "", fmt.Errorf("couldn't locate operator container on deployment")
+	}
+	var operatorImage string
+	var err error
+	if err := wait.PollUntilContextTimeout(ctx, 5*time.Second, 30*time.Second, true, func(ctx context.Context) (bool, error) {
+		operatorImage, err = lookupOperatorImage(opts.ControlPlaneOperatorImage)
+		if err != nil {
+			return false, err
+		}
+		// Apparently this is occasionally set to an empty string
+		if operatorImage == "" {
+			log.Info("operator image is empty, retrying")
+			return false, nil
+		}
+		return true, nil
+	}); err != nil {
+		return "", fmt.Errorf("failed to find operator image: %w", err)
+	}
+
+	log.Info("using hosted control plane operator image", "operator-image", operatorImage)
+	return operatorImage, nil
+}
+
+func setupMetricsSet(mgr ctrl.Manager, opts *StartOptions, log logr.Logger) (metrics.MetricsSet, string, error) {
+	metricsSet, err := metrics.MetricsSetFromEnv()
+	if err != nil {
+		return "", "", err
+	}
+	log.Info("Using metrics set", "set", metricsSet.String())
+
+	sreConfigHash := ""
+	if metricsSet == metrics.MetricsSetSRE {
+		readerClient := mgr.GetAPIReader()
+		cm := metrics.SREMetricsSetConfigurationConfigMap(opts.Namespace)
+		err := readerClient.Get(context.Background(), crclient.ObjectKeyFromObject(cm), cm)
+		if err != nil {
+			if apierrors.IsNotFound(err) {
+				log.Info("WARNING: no configuration found for the SRE metrics set")
+			} else {
+				return "", "", fmt.Errorf("unable to read SRE metrics set configmap: %w", err)
+			}
+		} else {
+			if err := metrics.LoadSREMetricsSetConfigurationFromConfigMap(cm); err != nil {
+				return "", "", fmt.Errorf("unable to load SRE metrics configuration: %w", err)
+			}
+			sreConfigHash = metrics.SREMetricsSetConfigHash(cm)
+		}
+	}
+	return metricsSet, sreConfigHash, nil
+}
+
+func setupHostedClusterController(ctx context.Context, mgr ctrl.Manager, opts *StartOptions, mgmtClusterCaps *capabilities.ManagementClusterCapabilities, operatorImage string, createOrUpdate upsert.CreateOrUpdateProvider, metricsSet metrics.MetricsSet, sreConfigHash string, registryProvider globalconfig.CommonRegistryProvider, log logr.Logger) error {
+	monitoringDashboards := (os.Getenv("MONITORING_DASHBOARDS") == "1")
+	enableCVOManagementClusterMetricsAccess := (os.Getenv(config.EnableCVOManagementClusterMetricsAccessEnvVar) == "1")
+	enableEtcdRecovery := os.Getenv(config.EnableEtcdRecoveryEnvVar) == "1"
+
+	certRotationScale, err := pkiconfig.GetCertRotationScale()
+	if err != nil {
+		return fmt.Errorf("could not load cert rotation scale: %w", err)
+	}
+
+	hostedClusterReconciler := &hostedcluster.HostedClusterReconciler{
+		Client:                                  mgr.GetClient(),
+		ManagementClusterCapabilities:           mgmtClusterCaps,
+		HypershiftOperatorImage:                 operatorImage,
+		RegistryOverrides:                       opts.RegistryOverrides,
+		RegistryProvider:                        registryProvider,
+		EnableOCPClusterMonitoring:              opts.EnableOCPClusterMonitoring,
+		EnableCIDebugOutput:                     opts.EnableCIDebugOutput,
+		MetricsSet:                              metricsSet,
+		OperatorNamespace:                       opts.Namespace,
+		SREConfigHash:                           sreConfigHash,
+		KubevirtInfraClients:                    kvinfra.NewKubevirtInfraClientMap(),
+		MonitoringDashboards:                    monitoringDashboards,
+		CertRotationScale:                       certRotationScale,
+		EnableCVOManagementClusterMetricsAccess: enableCVOManagementClusterMetricsAccess,
+		EnableEtcdRecovery:                      enableEtcdRecovery,
+		FeatureSet:                              featuregate.FeatureSet(),
+		OpenShiftTrustedCAFilePath:              "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem",
+		HCPEgressBlockCIDRs:                     opts.HCPEgressBlockCIDRs,
+	}
+	if opts.OIDCStorageProviderS3BucketName != "" {
+		awsSession := awsutil.NewSession(ctx, "hypershift-operator-oidc-bucket", opts.OIDCStorageProviderS3Credentials, "", "", opts.OIDCStorageProviderS3Region)
+		awsConfig := awsutil.NewConfig()
+		s3Client := s3.NewFromConfig(*awsSession, func(o *s3.Options) {
+			o.Retryer = awsConfig()
+		})
+		hostedClusterReconciler.S3Client = s3Client
+		hostedClusterReconciler.OIDCStorageProviderS3BucketName = opts.OIDCStorageProviderS3BucketName
+	}
+	if opts.GCPOIDCStorageBucketName != "" {
+		gcsClient, err := gcpapi.NewGCSClient(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to create GCS storage client: %w", err)
+		}
+		hostedClusterReconciler.GCSClient = gcsClient
+		hostedClusterReconciler.GCPOIDCStorageBucketName = opts.GCPOIDCStorageBucketName
+	}
+	if err := hostedClusterReconciler.SetupWithManager(mgr, createOrUpdate, metricsSet, opts.Namespace); err != nil {
+		return fmt.Errorf("unable to create controller: %w", err)
+	}
+	if opts.CertDir != "" {
+		if err := hostedcluster.SetupWebhookWithManager(mgr, registryProvider.MetadataProvider, log); err != nil {
+			return fmt.Errorf("unable to create webhook: %w", err)
+		}
+	}
+	hcmetrics.CreateAndRegisterHostedClustersMetricsCollector(mgr.GetClient())
+	return nil
+}
+
+func cleanupLegacyWebhook(ctx context.Context, mgr ctrl.Manager, opts *StartOptions) error {
+	// Since we dropped the validation webhook server we need to ensure this resource doesn't exist
+	// otherwise it will intercept kas requests and fail.
+	// TODO (alberto): dropped in 4.14.
+	if opts.EnableValidatingWebhook {
+		return nil
+	}
+	validatingWebhookConfiguration := &admissionregistrationv1.ValidatingWebhookConfiguration{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "ValidatingWebhookConfiguration",
+			APIVersion: admissionregistrationv1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: opts.Namespace,
+			Name:      hyperv1.GroupVersion.Group,
+		},
+	}
+	if err := mgr.GetClient().Delete(ctx, validatingWebhookConfiguration); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return err
+		}
+	}
+	return nil
+}
+
+func setupEC2Client(ctx context.Context, opts *StartOptions) awsapi.EC2API {
+	if hyperv1.PlatformType(opts.PrivatePlatform) != hyperv1.AWSPlatform {
+		return nil
+	}
+	awsSession := awsutil.NewSession(ctx, "hypershift-operator", "", "", "", "")
+	awsConfig := awsutil.NewConfig()
+	return ec2.NewFromConfig(*awsSession, func(o *ec2.Options) {
+		o.Retryer = awsConfig()
+	})
+}
+
+func setupNodePoolController(ctx context.Context, mgr ctrl.Manager, opts *StartOptions, operatorImage string, createOrUpdate upsert.CreateOrUpdateProvider, registryProvider globalconfig.CommonRegistryProvider, ec2Client awsapi.EC2API, log logr.Logger) error {
+	var instanceTypeProvider instancetype.Provider
+	if opts.ScaleFromZeroCreds != "" && opts.ScaleFromZeroProvider != "" {
+		switch strings.ToLower(opts.ScaleFromZeroProvider) {
+		case "aws":
+			awsSession := awsutil.NewSession(ctx, "hypershift-operator-scale-from-zero", opts.ScaleFromZeroCreds, "", "", "")
+			awsConfig := awsutil.NewConfig()
+			scaleFromZeroEC2Client := ec2.NewFromConfig(*awsSession, func(o *ec2.Options) {
+				o.Retryer = awsConfig()
+			})
+			instanceTypeProvider = awsinstancetype.NewProvider(scaleFromZeroEC2Client)
+			log.Info("Instance type provider initialized", "provider", opts.ScaleFromZeroProvider)
+		default:
+			log.Info("WARNING: Unsupported scale-from-zero provider", "provider", opts.ScaleFromZeroProvider)
+		}
+	}
+
+	if err := (&nodepool.NodePoolReconciler{
+		Client:                  mgr.GetClient(),
+		ReleaseProvider:         registryProvider.ReleaseProvider,
+		CreateOrUpdateProvider:  createOrUpdate,
+		HypershiftOperatorImage: operatorImage,
+		ImageMetadataProvider:   registryProvider.MetadataProvider,
+		KubevirtInfraClients:    kvinfra.NewKubevirtInfraClientMap(),
+		EC2Client:               ec2Client,
+		InstanceTypeProvider:    instanceTypeProvider,
+	}).SetupWithManager(mgr); err != nil {
+		return fmt.Errorf("unable to create controller: %w", err)
+	}
+	return nil
+}
+
+func setupPlatformControllers(mgr ctrl.Manager, opts *StartOptions, mgmtClusterCaps *capabilities.ManagementClusterCapabilities, createOrUpdate upsert.CreateOrUpdateProvider, log logr.Logger) error {
+	switch hyperv1.PlatformType(opts.PrivatePlatform) {
+	case hyperv1.AWSPlatform:
+		if err := (&aws.AWSEndpointServiceReconciler{
+			Client:                        mgr.GetClient(),
+			CreateOrUpdateProvider:        createOrUpdate,
+			ManagementClusterCapabilities: mgmtClusterCaps,
+		}).SetupWithManager(mgr); err != nil {
+			return fmt.Errorf("unable to create controller: %w", err)
+		}
+	case hyperv1.GCPPlatform:
+		if err := (&gcp.GCPPrivateServiceConnectReconciler{
+			Client:                 mgr.GetClient(),
+			CreateOrUpdateProvider: createOrUpdate,
+			Log:                    ctrl.Log.WithName("controllers").WithName("GCPPrivateServiceConnect"),
+		}).SetupWithManager(mgr); err != nil {
+			return fmt.Errorf("unable to create GCPPrivateServiceConnect controller: %w", err)
+		}
+	case hyperv1.AzurePlatform:
+		if err := setupAzurePlatformController(mgr, log); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func setupAzurePlatformController(mgr ctrl.Manager, log logr.Logger) error {
+	// ARO HCP uses Swift networking, not Private Link Services
+	if azureutil.IsAroHCP() {
+		return nil
+	}
+	azureCloudName := os.Getenv("AZURE_CLOUD_NAME")
+	if azureCloudName == "" {
+		azureCloudName = config.DefaultAzureCloud
+	}
+	cloudConfig, err := azureutil.GetAzureCloudConfiguration(azureCloudName)
+	if err != nil {
+		return fmt.Errorf("failed to get Azure cloud configuration: %w", err)
+	}
+
+	azureCreds, err := resolveAzureCredentials(cloudConfig, log)
+	if err != nil {
+		return err
+	}
+
+	azureSubscriptionID := os.Getenv("AZURE_SUBSCRIPTION_ID")
+	if azureSubscriptionID == "" {
+		return fmt.Errorf("AZURE_SUBSCRIPTION_ID environment variable is required for Azure platform")
+	}
+	armClientOpts := azureutil.NewARMClientOptions(cloudConfig)
+	plsClient, err := armnetwork.NewPrivateLinkServicesClient(azureSubscriptionID, azureCreds, armClientOpts)
+	if err != nil {
+		return fmt.Errorf("failed to create Azure Private Link Services client: %w", err)
+	}
+	lbClient, err := armnetwork.NewLoadBalancersClient(azureSubscriptionID, azureCreds, armClientOpts)
+	if err != nil {
+		return fmt.Errorf("failed to create Azure Load Balancers client: %w", err)
+	}
+	subnetsClient, err := armnetwork.NewSubnetsClient(azureSubscriptionID, azureCreds, armClientOpts)
+	if err != nil {
+		return fmt.Errorf("failed to create Azure Subnets client: %w", err)
+	}
+	azureResourceGroup := os.Getenv("AZURE_RESOURCE_GROUP")
+	if azureResourceGroup == "" {
+		return fmt.Errorf("AZURE_RESOURCE_GROUP environment variable is required for Azure platform")
+	}
+	if err := (&azureplatform.AzurePrivateLinkServiceController{
+		Client:                  mgr.GetClient(),
+		PrivateLinkServices:     plsClient,
+		LoadBalancers:           lbClient,
+		Subnets:                 subnetsClient,
+		ManagementResourceGroup: azureResourceGroup,
+	}).SetupWithManager(mgr); err != nil {
+		return fmt.Errorf("unable to create AzurePrivateLinkService controller: %w", err)
+	}
+	return nil
+}
+
+func resolveAzureCredentials(cloudConfig cloud.Configuration, log logr.Logger) (azcore.TokenCredential, error) {
+	if plsClientID := os.Getenv("AZURE_PLS_CLIENT_ID"); plsClientID != "" {
+		log.Info("Using Azure Workload Identity for PLS operations", "clientID", plsClientID)
+		creds, err := azidentity.NewDefaultAzureCredential(
+			&azidentity.DefaultAzureCredentialOptions{
+				ClientOptions: azcore.ClientOptions{Cloud: cloudConfig},
+			},
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create Azure workload identity credentials: %w", err)
+		}
+		return creds, nil
+	}
+
+	credFile := os.Getenv("AZURE_CREDENTIALS_FILE")
+	if credFile == "" {
+		return nil, fmt.Errorf("either AZURE_PLS_CLIENT_ID or AZURE_CREDENTIALS_FILE must be set for Azure Private Link Service operations")
+	}
+
+	raw, err := os.ReadFile(credFile)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read Azure credentials file %q: %w", credFile, err)
+	}
+	var parsedCreds struct {
+		SubscriptionID string `json:"subscriptionId"`
+		ClientID       string `json:"clientId"`
+		ClientSecret   string `json:"clientSecret"`
+		TenantID       string `json:"tenantId"`
+	}
+	if err := yaml.Unmarshal(raw, &parsedCreds); err != nil {
+		return nil, fmt.Errorf("failed to parse Azure credentials file %q: %w", credFile, err)
+	}
+	creds, err := azidentity.NewClientSecretCredential(
+		parsedCreds.TenantID, parsedCreds.ClientID, parsedCreds.ClientSecret,
+		&azidentity.ClientSecretCredentialOptions{
+			ClientOptions: azcore.ClientOptions{Cloud: cloudConfig},
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Azure client secret credentials: %w", err)
+	}
+	if os.Getenv("AZURE_SUBSCRIPTION_ID") == "" {
+		_ = os.Setenv("AZURE_SUBSCRIPTION_ID", parsedCreds.SubscriptionID)
+	}
+	return creds, nil
+}
+
+func setupSupportControllers(mgr ctrl.Manager, opts *StartOptions, mgmtClusterCaps *capabilities.ManagementClusterCapabilities, operatorImage string, createOrUpdate upsert.CreateOrUpdateProvider, registryProvider globalconfig.CommonRegistryProvider, log logr.Logger) error {
+	if err := hosupportedversion.New(mgr.GetClient(), createOrUpdate, opts.Namespace).
+		SetupWithManager(mgr); err != nil {
+		return fmt.Errorf("unable to create supported version controller: %w", err)
+	}
+
+	// If enabled, start controller to ensure UWM stack is enabled and configured
+	// to remotely write telemetry metrics.
+	if opts.EnableUWMTelemetryRemoteWrite {
+		if err := (&uwmtelemetry.Reconciler{
+			Namespace:              opts.Namespace,
+			Client:                 mgr.GetClient(),
+			CreateOrUpdateProvider: createOrUpdate,
+		}).SetupWithManager(mgr); err != nil {
+			return fmt.Errorf("unable to create uwm telemetry controller: %w", err)
+		}
+		log.Info("UWM telemetry remote write controller enabled")
+	} else {
+		log.Info("UWM telemetry remote write controller disabled")
+	}
+
+	if featuregate.Gate().Enabled(featuregate.HCPEtcdBackup) {
+		etcdBackupReconciler := &etcdbackup.HCPEtcdBackupReconciler{
+			Client:                  mgr.GetClient(),
+			OperatorNamespace:       opts.Namespace,
+			ReleaseProvider:         registryProvider.ReleaseProvider,
+			HypershiftOperatorImage: operatorImage,
+			MaxBackupCount:          opts.EtcdBackupMaxCount,
+		}
+		if err := etcdBackupReconciler.SetupWithManager(mgr); err != nil {
+			return fmt.Errorf("unable to create etcd backup controller: %w", err)
+		}
+	}
+
+	if sharedingress.UseSharedIngress() {
+		sharedIngress := sharedingress.SharedIngressReconciler{
+			Namespace:                     opts.Namespace,
+			ManagementClusterCapabilities: mgmtClusterCaps,
+			HypershiftOperatorImage:       operatorImage,
+		}
+		if err := sharedIngress.SetupWithManager(mgr, createOrUpdate); err != nil {
+			return fmt.Errorf("unable to create dedicated sharedingress controller: %w", err)
+		}
+	}
+
+	if opts.CertDir != "" {
+		webhookCertReconciler := &webhookcerts.WebhookCertReconciler{
+			Namespace:   opts.Namespace,
+			ServiceName: "operator",
+		}
+		if err := webhookCertReconciler.SetupWithManager(mgr, createOrUpdate); err != nil {
+			return fmt.Errorf("unable to create webhook cert controller: %w", err)
+		}
+	}
+	return nil
+}
+
+func setupSchedulerControllers(ctx context.Context, mgr ctrl.Manager, opts *StartOptions, createOrUpdate upsert.CreateOrUpdateProvider, enableSizeTagging bool, log logr.Logger) error {
+	if opts.EnableDedicatedRequestServingIsolation && !azureutil.IsAroHCP() {
+		if enableSizeTagging {
+			if err := setupSizeTaggingSchedulers(ctx, mgr, createOrUpdate); err != nil {
+				return err
+			}
+		} else {
+			if err := setupLegacySchedulers(mgr, createOrUpdate); err != nil {
+				return err
+			}
+		}
+	} else {
+		log.Info("Dedicated request serving isolation controllers disabled")
+	}
+
+	if enableSizeTagging && azureutil.IsAroHCP() {
+		hcScheduler := azurescheduler.Scheduler{}
+		if err := hcScheduler.SetupWithManager(mgr); err != nil {
+			return fmt.Errorf("unable to create aro scheduler controller: %w", err)
+		}
+	}
+	return nil
+}
+
+func setupSizeTaggingSchedulers(ctx context.Context, mgr ctrl.Manager, createOrUpdate upsert.CreateOrUpdateProvider) error {
+	hcScheduler := awsscheduler.DedicatedServingComponentSchedulerAndSizer{}
+	if err := hcScheduler.SetupWithManager(ctx, mgr, createOrUpdate); err != nil {
+		return fmt.Errorf("unable to create dedicated serving component scheduler/resizer controller: %w", err)
+	}
+	placeholderScheduler := awsscheduler.PlaceholderScheduler{}
+	if err := placeholderScheduler.SetupWithManager(ctx, mgr); err != nil {
+		return fmt.Errorf("unable to create placeholder scheduler controller: %w", err)
+	}
+	autoScaler := awsscheduler.RequestServingNodeAutoscaler{}
+	if err := autoScaler.SetupWithManager(mgr); err != nil {
+		return fmt.Errorf("unable to create autoscaler controller: %w", err)
+	}
+	deScaler := awsscheduler.MachineSetDescaler{}
+	if err := deScaler.SetupWithManager(mgr); err != nil {
+		return fmt.Errorf("unable to create machine set descaler controller: %w", err)
+	}
+	nonRequestServingNodeAutoscaler := awsscheduler.NonRequestServingNodeAutoscaler{}
+	if err := nonRequestServingNodeAutoscaler.SetupWithManager(mgr); err != nil {
+		return fmt.Errorf("unable to create non request serving node autoscaler controller: %w", err)
+	}
+	if err := resourcebasedcpautoscaler.SetupWithManager(mgr); err != nil {
+		return fmt.Errorf("unable to setup control plane autoscaler controller: %w", err)
+	}
+	return nil
+}
+
+func setupLegacySchedulers(mgr ctrl.Manager, createOrUpdate upsert.CreateOrUpdateProvider) error {
+	nodeReaper := awsscheduler.DedicatedServingComponentNodeReaper{
+		Client: mgr.GetClient(),
+	}
+	if err := nodeReaper.SetupWithManager(mgr); err != nil {
+		return fmt.Errorf("unable to create dedicated serving component node reaper controller: %w", err)
+	}
+	hcScheduler := awsscheduler.DedicatedServingComponentScheduler{
+		Client: mgr.GetClient(),
+	}
+	if err := hcScheduler.SetupWithManager(mgr, createOrUpdate); err != nil {
+		return fmt.Errorf("unable to create dedicated serving component scheduler controller: %w", err)
+	}
+	return nil
+}
+
+func reconcileDefaultIngressController(ctx context.Context, apiReadingClient crclient.Client, log logr.Logger) error {
+	ic := &operatorv1.IngressController{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "default",
+			Namespace: "openshift-ingress-operator",
+		},
+	}
+	if err := apiReadingClient.Get(ctx, types.NamespacedName{Namespace: ic.Namespace, Name: ic.Name}, ic); err == nil {
+		if _, err := controllerutil.CreateOrUpdate(ctx, apiReadingClient, ic, func() error {
+			if ic.Spec.RouteSelector == nil {
+				ic.Spec.RouteSelector = &metav1.LabelSelector{}
+			}
+			if ic.Spec.RouteSelector.MatchExpressions == nil {
+				ic.Spec.RouteSelector.MatchExpressions = []metav1.LabelSelectorRequirement{}
+			}
+			for i, requirement := range ic.Spec.RouteSelector.MatchExpressions {
+				if requirement.Key != netutil.HCPRouteLabel {
+					continue
+				}
+				ic.Spec.RouteSelector.MatchExpressions[i].Operator = metav1.LabelSelectorOpDoesNotExist
+				return nil
+			}
+			ic.Spec.RouteSelector.MatchExpressions = append(ic.Spec.RouteSelector.MatchExpressions, metav1.LabelSelectorRequirement{
+				Key:      netutil.HCPRouteLabel,
+				Operator: metav1.LabelSelectorOpDoesNotExist,
+			})
+			return nil
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile default ingress controller: %w", err)
+		}
+		log.Info("reconciled default ingress controller")
+	} else if !apierrors.IsNotFound(err) && !meta.IsNoMatchError(err) {
+		return fmt.Errorf("failed to get ingress controller: %w", err)
+	}
+	return nil
+}
+
+func setupAuditLogPersistence(mgr ctrl.Manager, opts *StartOptions, log logr.Logger) error {
+	enableAuditLogPersistence := os.Getenv("ENABLE_AUDIT_LOG_PERSISTENCE") == "true"
+	if enableAuditLogPersistence && opts.CertDir != "" {
+		hookServer := mgr.GetWebhookServer()
+		hookServer.Register("/mutate-kas-audit-logs", &webhook.Admission{
+			Handler: auditlogpersistence.NewPodWebhookHandler(
+				mgr.GetLogger(),
+				mgr.GetClient(),
+				admission.NewDecoder(mgr.GetScheme()),
+			),
+		})
+
+		hookServer.Register("/mutate-kas-audit-log-config", &webhook.Admission{
+			Handler: auditlogpersistence.NewConfigMapWebhookHandler(
+				mgr.GetLogger(),
+				mgr.GetClient(),
+				admission.NewDecoder(mgr.GetScheme()),
+			),
+		})
+
+		log.Info("Audit log persistence webhooks registered")
+	}
+
+	if enableAuditLogPersistence {
+		if err := auditlogpersistence.SetupSnapshotController(mgr); err != nil {
+			return fmt.Errorf("failed to set up snapshot controller: %w", err)
+		}
+		log.Info("Audit log persistence snapshot controller enabled")
+	} else {
+		log.Info("Audit log persistence feature disabled")
+	}
+	return nil
+}
+
+// reconcileDeprecationValidatingAdmissionPolicy reconciles the deprecation ValidatingAdmissionPolicy
+// if the management cluster supports ValidatingAdmissionPolicy.
+func reconcileDeprecationValidatingAdmissionPolicy(ctx context.Context, client crclient.Client, mgmtClusterCaps *capabilities.ManagementClusterCapabilities, log logr.Logger) error {
+	// Check if ValidatingAdmissionPolicy is supported
+	if !mgmtClusterCaps.Has(capabilities.CapabilityValidatingAdmissionPolicy) {
+		log.Info("ValidatingAdmissionPolicy not supported, skipping deprecation policy reconciliation")
+		return nil
+	}
+
+	log.Info("Reconciling deprecation ValidatingAdmissionPolicy")
+
+	// Reconcile ValidatingAdmissionPolicy
+	deprecationPolicy := &admissionregistrationv1.ValidatingAdmissionPolicy{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "hypershift.openshift.io-deprecation-policy",
+		},
+	}
+	if _, err := controllerutil.CreateOrUpdate(ctx, client, deprecationPolicy, func() error {
+		deprecationPolicy.Spec.FailurePolicy = ptr.To(admissionregistrationv1.Ignore)
+		if deprecationPolicy.Spec.MatchConstraints == nil {
+			deprecationPolicy.Spec.MatchConstraints = &admissionregistrationv1.MatchResources{}
+		}
+		deprecationPolicy.Spec.MatchConstraints.ResourceRules = []admissionregistrationv1.NamedRuleWithOperations{
+			{
+				RuleWithOperations: admissionregistrationv1.RuleWithOperations{
+					Operations: []admissionregistrationv1.OperationType{
+						admissionregistrationv1.Create,
+						admissionregistrationv1.Update,
+					},
+					Rule: admissionregistrationv1.Rule{
+						APIGroups:   []string{"hypershift.openshift.io"},
+						APIVersions: []string{"v1beta1"},
+						Resources:   []string{"hostedclusters"},
+					},
+				},
+			},
+		}
+		deprecationPolicy.Spec.Validations = []admissionregistrationv1.Validation{
+			{
+				Expression: "!(has(object.spec.configuration) && has(object.spec.configuration.scheduler) && has(object.spec.configuration.scheduler.profileCustomizations) && has(object.spec.configuration.scheduler.profileCustomizations.dynamicResourceAllocation))",
+				Message:    "The field spec.configuration.scheduler.profileCustomizations.dynamicResourceAllocation is deprecated and has no effect",
+			},
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile ValidatingAdmissionPolicy: %w", err)
+	}
+
+	// Reconcile ValidatingAdmissionPolicyBinding
+	deprecationPolicyBinding := &admissionregistrationv1.ValidatingAdmissionPolicyBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: deprecationPolicy.Name,
+		},
+	}
+	if _, err := controllerutil.CreateOrUpdate(ctx, client, deprecationPolicyBinding, func() error {
+		deprecationPolicyBinding.Spec.PolicyName = deprecationPolicy.Name
+		deprecationPolicyBinding.Spec.ValidationActions = []admissionregistrationv1.ValidationAction{
+			admissionregistrationv1.Warn,
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile ValidatingAdmissionPolicyBinding: %w", err)
+	}
+
+	log.Info("Successfully reconciled deprecation ValidatingAdmissionPolicy")
+	return nil
+}
+
+// reconcileEncryptionRotationGuardVAP reconciles a ValidatingAdmissionPolicy that blocks
+// encryption key rotation while re-encryption is in progress (EtcdDataEncryptionUpToDate=False).
+func reconcileEncryptionRotationGuardVAP(ctx context.Context, client crclient.Client, mgmtClusterCaps *capabilities.ManagementClusterCapabilities, log logr.Logger) error {
+	if !mgmtClusterCaps.Has(capabilities.CapabilityValidatingAdmissionPolicy) {
+		log.Info("ValidatingAdmissionPolicy not supported, skipping encryption rotation guard policy reconciliation")
+		return nil
+	}
+
+	log.Info("Reconciling encryption rotation guard ValidatingAdmissionPolicy")
+
+	policy := &admissionregistrationv1.ValidatingAdmissionPolicy{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "hostedcluster-block-key-rotation-during-reencryption",
+		},
+	}
+	if _, err := controllerutil.CreateOrUpdate(ctx, client, policy, func() error {
+		policy.Spec.FailurePolicy = ptr.To(admissionregistrationv1.Ignore)
+		if policy.Spec.MatchConstraints == nil {
+			policy.Spec.MatchConstraints = &admissionregistrationv1.MatchResources{}
+		}
+		policy.Spec.MatchConstraints.ResourceRules = []admissionregistrationv1.NamedRuleWithOperations{
+			{
+				RuleWithOperations: admissionregistrationv1.RuleWithOperations{
+					Operations: []admissionregistrationv1.OperationType{
+						admissionregistrationv1.Update,
+					},
+					Rule: admissionregistrationv1.Rule{
+						APIGroups:   []string{"hypershift.openshift.io"},
+						APIVersions: []string{"v1beta1"},
+						Resources:   []string{"hostedclusters"},
+					},
+				},
+			},
+		}
+		// Allow the update if any of:
+		//   1. No conditions exist yet (new cluster)
+		//   2. EtcdDataEncryptionUpToDate is not False (no re-encryption in progress)
+		//   3. secretEncryption spec is unchanged between old and new object
+		policy.Spec.Validations = []admissionregistrationv1.Validation{
+			{
+				Expression: `!has(object.status.conditions) || !object.status.conditions.exists(c, c.type == 'EtcdDataEncryptionUpToDate' && c.status == 'False') || (!has(object.spec.secretEncryption) && !has(oldObject.spec.secretEncryption)) || (has(object.spec.secretEncryption) && has(oldObject.spec.secretEncryption) && object.spec.secretEncryption == oldObject.spec.secretEncryption)`,
+				Message:    "Cannot change the active encryption key while re-encryption is in progress (EtcdDataEncryptionUpToDate=False). Wait for re-encryption to complete before rotating again.",
+			},
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile encryption rotation guard ValidatingAdmissionPolicy: %w", err)
+	}
+
+	binding := &admissionregistrationv1.ValidatingAdmissionPolicyBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: policy.Name,
+		},
+	}
+	if _, err := controllerutil.CreateOrUpdate(ctx, client, binding, func() error {
+		binding.Spec.PolicyName = policy.Name
+		binding.Spec.ValidationActions = []admissionregistrationv1.ValidationAction{
+			admissionregistrationv1.Deny,
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile encryption rotation guard ValidatingAdmissionPolicyBinding: %w", err)
+	}
+
+	log.Info("Successfully reconciled encryption rotation guard ValidatingAdmissionPolicy")
+	return nil
+}

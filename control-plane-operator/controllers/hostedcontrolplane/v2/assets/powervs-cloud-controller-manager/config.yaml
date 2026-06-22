@@ -1,0 +1,23 @@
+apiVersion: v1
+data:
+  ccm-config: |
+    [global]
+    version = 1.1.0
+    [kubernetes]
+    config-file = /etc/kubernetes/kubeconfig
+    [provider]
+    cluster-default-provider = g2
+    g2Credentials = /etc/vpc/ibmcloud_api_key
+    g2workerServiceAccountID = {{.G2workerServiceAccountID}}
+    g2ResourceGroupName = {{.G2ResourceGroupName}}
+    g2VpcSubnetNames = {{.G2VpcSubnetNames}}
+    g2VpcName = {{.G2VpcName}}
+    accountID = {{.AccountID}}
+    clusterID = {{.ClusterID}}
+    region = {{.Region}}
+    powerVSCloudInstanceID = {{.PowerVSCloudInstanceID}}
+    powerVSRegion = {{.PowerVSRegion}}
+    powerVSZone = {{.PowerVSZone}}
+kind: ConfigMap
+metadata:
+  name: ccm-config

@@ -1,0 +1,6 @@
+go 1.25.7
+
+use (
+	./hypershift
+	./hypershift/api
+)

@@ -1,0 +1,13 @@
+name: Codespell
+
+on:
+  pull_request:
+    branches:
+      - main
+      - release-4.22
+
+jobs:
+  codespell:
+    uses: openshift/hypershift/.github/workflows/codespell-reusable.yaml@main
+    permissions:
+      contents: read

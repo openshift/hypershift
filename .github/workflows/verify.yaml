@@ -1,0 +1,13 @@
+name: Verify
+
+on:
+  pull_request:
+    branches:
+      - main
+      - release-4.22
+
+jobs:
+  verify:
+    uses: openshift/hypershift/.github/workflows/verify-reusable.yaml@main
+    permissions:
+      contents: read

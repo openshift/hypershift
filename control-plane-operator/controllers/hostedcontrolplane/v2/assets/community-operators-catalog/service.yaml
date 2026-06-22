@@ -1,0 +1,13 @@
+kind: Service
+apiVersion: v1
+metadata:
+  name: community-operators
+spec:
+  ports:
+    - name: grpc
+      protocol: TCP
+      port: 50051
+      targetPort: 50051
+  selector:
+    olm.catalogSource: community-operators
+  type: ClusterIP

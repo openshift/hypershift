@@ -1,0 +1,13 @@
+name: Gitlint
+
+on:
+  pull_request:
+    branches:
+      - main
+      - release-4.22
+
+jobs:
+  gitlint:
+    uses: openshift/hypershift/.github/workflows/gitlint-reusable.yaml@main
+    permissions:
+      contents: read

@@ -1,0 +1,11 @@
+# Example configuration
+default: "4"
+overrides:
+- workloadKind: Deployment
+  workloadName: kube-apiserver
+  containerName: kube-apiserver
+  value: "8"
+exclusions:
+- workloadKind: Job
+  workloadName: featuregate-generator
+  containerName: "*"

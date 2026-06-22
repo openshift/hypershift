@@ -1,0 +1,62 @@
+codecov:
+  branch: main
+  notify:
+    wait_for_ci: false
+
+flags:
+  cpo-hostedcontrolplane:
+    carryforward: true
+  cpo-other:
+    carryforward: true
+  hypershift-operator:
+    carryforward: true
+  cmd-support:
+    carryforward: true
+  other:
+    carryforward: true
+
+ignore:
+  - "test/**"
+  - "hack/**"
+  - "client/**"
+  - "vendor/**"
+  - "support/thirdparty/**"
+  - "docs/**"
+  - "Makefile"
+  - ".*/**"
+  - "**/*.md"
+  - "**/*.yaml"
+  - "**/*.yml"
+  - "**/Dockerfile*"
+  - "*.mod"
+  - "*.sum"
+  # Generated mock files
+  - "**/*_mock.go"
+  - "**/*mock*.go"
+  # Test fakes and helpers
+  - "**/fake*/*.go"
+  # Files containing only types, structs, or constants (no executable code)
+  - "control-plane-operator/controllers/hostedcontrolplane/cloud/azure/providerconfig.go"
+  - "control-plane-operator/controllers/hostedcontrolplane/ocm/config.go"
+  - "control-plane-operator/controllers/hostedcontrolplane/kas/auth_types.go"
+  - "control-plane-operator/controllers/hostedcontrolplane/v2/kas/auth_types.go"
+  - "control-plane-operator/metrics-proxy/types.go"
+  - "support/config/constants.go"
+  - "support/config/types.go"
+  - "support/awsapi/*.go"
+  - "support/azureutil/constants.go"
+  - "support/api/capi_types.go"
+  - "support/releaseinfo/fixtures/fixtures.go"
+  - "cmd/oadp/types.go"
+  - "cmd/util/azure_flag_descriptions.go"
+  - "cmd/cluster/azure/types.go"
+  - "cmd/infra/azure/types.go"
+  - "cmd/infra/gcp/constants.go"
+  - "cmd/log/log.go"
+  - "pkg/etcdcli/interfaces.go"
+  - "hypershift-operator/controllers/nodepool/instancetype/instancetype.go"
+  - "api/ibmcapi/types.go"
+
+comment:
+  layout: "condensed_header, diff, files, flags, components"
+  behavior: default

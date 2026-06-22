@@ -1,0 +1,13 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: machine-approver
+  namespace: HCP_NAMESPACE
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: machine-approver
+subjects:
+- kind: ServiceAccount
+  name: machine-approver
+  namespace: HCP_NAMESPACE

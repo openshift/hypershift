@@ -1,0 +1,8 @@
+{
+  "name": "hypershift",
+  "description": "HyperShift development workflow skills and commands",
+  "version": "0.0.1",
+  "author": {
+    "name": "github.com/openshift/hypershift"
+  }
+}

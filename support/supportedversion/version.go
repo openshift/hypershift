@@ -1,0 +1,589 @@
+package supportedversion
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"runtime/debug"
+	"sort"
+	"strings"
+
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	manifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests/supportedversion"
+	"github.com/openshift/hypershift/support/config"
+
+	corev1 "k8s.io/api/core/v1"
+
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/blang/semver"
+)
+
+// https://docs.ci.openshift.org/docs/getting-started/useful-links/#services
+const (
+	releaseURLTemplate = "https://%s.ocp.releases.ci.openshift.org/api/v1/releasestream/%s/tags"
+)
+
+// LatestSupportedVersion is the latest minor OCP version supported by the
+// HyperShift operator.
+// NOTE: The .0 (z release) should be ignored. It's only here to support
+// semver parsing.
+var (
+	LatestSupportedVersion      = semver.MustParse("5.0.0")
+	MinSupportedVersion         = semver.MustParse("4.14.0")
+	IBMCloudMinSupportedVersion = semver.MustParse("4.14.0")
+	// prevLatestSupportedMajor holds the value of the latest version before we updated to a new major.
+	// This value is only used internally to compute the list of supported versions when we have 2
+	// different major versions at the same time.
+	prevLatestSupportedMajor = semver.MustParse("4.23.0")
+)
+
+// ocpVersionToKubeVersion maps OCP versions to their corresponding Kubernetes versions.
+// This mapping is used to determine the Kubernetes version for a given OCP version.
+var ocpVersionToKubeVersion = map[string]semver.Version{
+	"4.14.0": semver.MustParse("1.27.0"),
+	"4.15.0": semver.MustParse("1.28.0"),
+	"4.16.0": semver.MustParse("1.29.0"),
+	"4.17.0": semver.MustParse("1.30.0"),
+	"4.18.0": semver.MustParse("1.31.0"),
+	"4.19.0": semver.MustParse("1.32.0"),
+	"4.20.0": semver.MustParse("1.33.0"),
+	"4.21.0": semver.MustParse("1.34.0"),
+	"4.22.0": semver.MustParse("1.35.0"),
+	"4.23.0": semver.MustParse("1.36.0"),
+}
+
+func GetKubeVersionForSupportedVersion(supportedVersion semver.Version) (*semver.Version, error) {
+	normalized, err := normalizeToV4(supportedVersion)
+	if err != nil {
+		return nil, err
+	}
+	lookupKey := semver.Version{Major: normalized.Major, Minor: normalized.Minor}
+	kubeVersion, ok := ocpVersionToKubeVersion[lookupKey.String()]
+	if !ok {
+		return nil, fmt.Errorf("unknown supported version %q", supportedVersion.String())
+	}
+
+	return &kubeVersion, nil
+}
+
+// Get the minimum OCP version for HostedClusters, not the management cluster where HO runs.
+func GetMinSupportedVersion(hc *hyperv1.HostedCluster) semver.Version {
+	if _, exists := hc.Annotations[hyperv1.SkipReleaseImageValidation]; exists {
+		return semver.MustParse("0.0.0")
+	}
+
+	defaultMinVersion := MinSupportedVersion
+	switch hc.Spec.Platform.Type {
+	// Red Hat OpenShift on IBM Cloud (ROKS) may support OCP versions beyond
+	// standard OCP version support timelines (see [1]). Please contact ROKS
+	// development before changing values here.
+	// [1] https://cloud.ibm.com/docs/openshift?topic=openshift-openshift_versions
+	case hyperv1.IBMCloudPlatform:
+		return IBMCloudMinSupportedVersion
+	default:
+		return defaultMinVersion
+	}
+}
+
+func Supported() []string {
+	versions := []string{trimVersion(LatestSupportedVersion.String())}
+	if LatestSupportedVersion.Major > MinSupportedVersion.Major {
+		// Include remaining minor versions of the latest major (e.g. 5.2 -> 5.1, 5.0)
+		for i := 0; i < int(LatestSupportedVersion.Minor); i++ {
+			versions = append(versions, trimVersion(subtractMinor(&LatestSupportedVersion, uint64(i+1)).String()))
+		}
+		// Bridge from the previous major's latest minor down to MinSupportedVersion
+		for i := int(prevLatestSupportedMajor.Minor); i >= int(MinSupportedVersion.Minor); i-- {
+			v := semver.Version{Major: prevLatestSupportedMajor.Major, Minor: uint64(i), Patch: 0}
+			versions = append(versions, trimVersion(v.String()))
+		}
+	} else {
+		// If no major change simply count minors backwards
+		for i := 0; i < int(LatestSupportedVersion.Minor-MinSupportedVersion.Minor); i++ {
+			versions = append(versions, trimVersion(subtractMinor(&LatestSupportedVersion, uint64(i+1)).String()))
+		}
+	}
+	return versions
+}
+
+func trimVersion(version string) string {
+	return strings.TrimSuffix(version, ".0")
+}
+
+func subtractMinor(version *semver.Version, count uint64) *semver.Version {
+	result := *version
+	if result.Minor >= count {
+		result.Minor -= count
+	} else {
+		result.Minor = 0
+	}
+	return &result
+}
+
+// Version thresholds used by IsValidReleaseVersion, parsed once at package init.
+var (
+	minReleaseVersion = semver.MustParse("4.8.0")
+	sdnMaxVersion     = semver.MustParse("4.10.0")
+)
+
+func IsValidReleaseVersion(version, currentVersion, maxSupportedVersion, minSupportedVersion *semver.Version, networkType hyperv1.NetworkType, platformType hyperv1.PlatformType) error {
+	// Normalize all versions to 4.x for consistent comparison across the 4.x/5.x boundary.
+	normalizedVersion, err := normalizeToV4(*version)
+	if err != nil {
+		return err
+	}
+	normalizedMax, err := normalizeToV4(*maxSupportedVersion)
+	if err != nil {
+		return err
+	}
+	normalizedMin, err := normalizeToV4(*minSupportedVersion)
+	if err != nil {
+		return err
+	}
+	normalizedLatest, err := normalizeToV4(LatestSupportedVersion)
+	if err != nil {
+		return err
+	}
+
+	displayMax := maxSupportedVersion
+	if normalizedMax.GT(normalizedLatest) {
+		normalizedMax = normalizedLatest
+		displayMax = &LatestSupportedVersion
+	}
+
+	if normalizedVersion.LT(minReleaseVersion) {
+		return fmt.Errorf("releases before 4.8 are not supported. Attempting to use: %q", version)
+	}
+
+	if currentVersion != nil {
+		normalizedCurrent, err := normalizeToV4(*currentVersion)
+		if err != nil {
+			return err
+		}
+		if normalizedCurrent.Minor > normalizedVersion.Minor {
+			return fmt.Errorf("y-stream downgrade from %q to %q is not supported", currentVersion, version)
+		}
+
+		if networkType == hyperv1.OpenShiftSDN && normalizedCurrent.Minor < normalizedVersion.Minor {
+			return fmt.Errorf("y-stream upgrade from %q to %q is not for OpenShiftSDN", currentVersion, version)
+		}
+	}
+
+	normalizedVersionMinorOnly := semver.Version{Major: 4, Minor: normalizedVersion.Minor}
+	if networkType == hyperv1.OpenShiftSDN && currentVersion == nil && normalizedVersionMinorOnly.GT(sdnMaxVersion) && platformType != hyperv1.PowerVSPlatform {
+		return fmt.Errorf("cannot use OpenShiftSDN with OCP version %q > 4.10", version)
+	}
+
+	if networkType == hyperv1.OVNKubernetes && currentVersion == nil && normalizedVersionMinorOnly.LTE(sdnMaxVersion) {
+		return fmt.Errorf("cannot use OVNKubernetes with OCP version %q < 4.11", version)
+	}
+
+	if normalizedVersion.Minor > normalizedMax.Minor {
+		return fmt.Errorf("the latest version supported is: %q. Attempting to use: %q", trimVersion(displayMax.String()), version)
+	}
+
+	if normalizedVersion.Minor < normalizedMin.Minor {
+		return fmt.Errorf("the minimum version supported for platform %s is: %q. Attempting to use: %q", string(platformType), trimVersion(minSupportedVersion.String()), version)
+	}
+
+	return nil
+}
+
+type ocpVersion struct {
+	Name        string `json:"name"`
+	PullSpec    string `json:"pullSpec"`
+	DownloadURL string `json:"downloadURL"`
+}
+
+// LookupDefaultOCPVersion retrieves the default OCP version from release streams.
+// It supports two modes of operation:
+//
+//  1. When releaseStream is empty: Uses the default release stream (4-stable-multi) and looks up supported OCP versions
+//     from the HyperShift operator's ConfigMap to find the latest supported version that is not a release candidate.
+//
+//  2. When releaseStream is provided: Uses the specified release stream. The function detects the architecture from
+//     the stream suffix (e.g., "-multi", "-arm64", "-ppc64le", "-s390x") and routes to the appropriate endpoint.
+//     Streams without a recognized suffix default to the amd64 endpoint.
+//
+// All streams use the /tags endpoint which returns a list of versions, enabling proper RC filtering and version
+// validation against the supported-versions ConfigMap.
+func LookupDefaultOCPVersion(ctx context.Context, releaseStream string, client crclient.Client) (ocpVersion, error) {
+	if len(releaseStream) == 0 {
+		releaseStream = config.DefaultReleaseStream
+	}
+
+	arch := getArchFromStream(releaseStream)
+	releaseURL := fmt.Sprintf(releaseURLTemplate, arch, releaseStream)
+
+	version, err := retrieveSupportedOCPVersion(ctx, releaseURL, client)
+	if err != nil {
+		return ocpVersion{}, fmt.Errorf("failed to get OCP version from release URL %s: %w", releaseURL, err)
+	}
+
+	return version, nil
+}
+
+// getArchFromStream returns the architecture identifier for the release stream endpoint.
+// It detects the architecture from the stream suffix:
+//   - "-multi" -> "multi" (multi-arch images)
+//   - "-arm64" -> "arm64" (aarch64 images)
+//   - "-ppc64le" -> "ppc64le" (IBM Power images)
+//   - "-s390x" -> "s390x" (IBM Z images)
+//   - default -> "amd64" (x86_64 images)
+func getArchFromStream(releaseStream string) string {
+	switch {
+	case strings.HasSuffix(releaseStream, "-multi"):
+		return "multi"
+	case strings.HasSuffix(releaseStream, "-arm64"):
+		return "arm64"
+	case strings.HasSuffix(releaseStream, "-ppc64le"):
+		return "ppc64le"
+	case strings.HasSuffix(releaseStream, "-s390x"):
+		return "s390x"
+	default:
+		return "amd64"
+	}
+}
+
+// LookupLatestSupportedRelease picks the latest multi-arch image supported by this Hypershift Operator
+func LookupLatestSupportedRelease(ctx context.Context, hc *hyperv1.HostedCluster) (string, error) {
+	minSupportedVersion := GetMinSupportedVersion(hc)
+
+	// Normalize LatestSupportedVersion to 4.x so the filter range is correct
+	// even when LatestSupportedVersion is 5.x (e.g. 5.0 -> 4.23).
+	normalizedLatest, err := normalizeToV4(LatestSupportedVersion)
+	if err != nil {
+		return "", fmt.Errorf("failed to normalize latest supported version: %w", err)
+	}
+
+	prefix := "https://multi.ocp.releases.ci.openshift.org/api/v1/releasestream/4-stable-multi/latest"
+	filter := fmt.Sprintf("in=>4.%d.%d+<+4.%d.0-a",
+		minSupportedVersion.Minor, minSupportedVersion.Patch, normalizedLatest.Minor+1)
+
+	releaseURL := fmt.Sprintf("%s?%s", prefix, filter)
+
+	var version ocpVersion
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, releaseURL, nil)
+	if err != nil {
+		return "", err
+	}
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+	err = json.Unmarshal(body, &version)
+	if err != nil {
+		return "", err
+	}
+	return version.PullSpec, nil
+}
+
+// commitHash is set via -ldflags at build time as a fallback when
+// Go's VCS stamping is unavailable (e.g. git worktrees, vendored builds).
+var commitHash string
+
+// GetRevision returns the overall codebase version. It's for detecting
+// what code a binary was built from.
+func GetRevision() string {
+	bi, ok := debug.ReadBuildInfo()
+	if ok {
+		for _, setting := range bi.Settings {
+			if setting.Key == "vcs.revision" {
+				return setting.Value
+			}
+		}
+	}
+
+	if commitHash != "" {
+		return commitHash
+	}
+	return "<unknown>"
+}
+
+func String() string {
+	return fmt.Sprintf("openshift/hypershift: %s. Latest supported OCP: %s", GetRevision(), LatestSupportedVersion)
+}
+
+type SupportedVersions struct {
+	Versions []string `json:"versions"`
+}
+
+// GetSupportedOCPVersions retrieves the supported OCP versions from the server. It fetches the ConfigMap containing the
+// supported versions and the server version from the specified namespace and unmarshals the versions into a
+// SupportedVersions struct. If the ConfigMap or the required keys are not found, it returns an error. The function
+// returns the supported versions, the server version, and any error encountered during the process.
+func GetSupportedOCPVersions(ctx context.Context, namespace string, client crclient.Client, supportedVersions *corev1.ConfigMap) (SupportedVersions, string, error) {
+	var versions SupportedVersions
+	var serverVersion string
+
+	if supportedVersions == nil {
+		// Fetch the supported versions ConfigMap from the specified namespace
+		supportedVersions = manifests.ConfigMap(namespace)
+		if err := client.Get(ctx, crclient.ObjectKeyFromObject(supportedVersions), supportedVersions); err != nil {
+			return SupportedVersions{}, "", fmt.Errorf("failed to find supported versions on the server: %w", err)
+		}
+	}
+
+	// Check if the ConfigMap contains the server version key
+	if serverVersionValue, present := supportedVersions.Data[config.ConfigMapServerVersionKey]; present {
+		serverVersion = serverVersionValue
+	} else {
+		return SupportedVersions{}, "", fmt.Errorf("the server did not advertise its HyperShift version")
+	}
+
+	// Check if the ConfigMap contains the supported versions key
+	if supportedVersionData, present := supportedVersions.Data[config.ConfigMapVersionsKey]; present {
+		if err := json.Unmarshal([]byte(supportedVersionData), &versions); err != nil {
+			return SupportedVersions{}, "", fmt.Errorf("failed to parse supported versions on the server: %w", err)
+		}
+
+		return versions, serverVersion, nil
+	} else {
+		return SupportedVersions{}, "", fmt.Errorf("the server did not advertise supported OCP versions")
+	}
+}
+
+// GetLatestSupportedOCPVersion returns the latest supported OCP version advertised
+// by the HyperShift operator's supported-versions ConfigMap in the "hypershift" namespace.
+func GetLatestSupportedOCPVersion(ctx context.Context, client crclient.Client) (semver.Version, error) {
+	supportedVersions, _, err := GetSupportedOCPVersions(ctx, "hypershift", client, nil)
+	if err != nil {
+		return semver.Version{}, err
+	}
+	if len(supportedVersions.Versions) == 0 {
+		return semver.Version{}, fmt.Errorf("no supported OCP versions found")
+	}
+	latest, err := semver.Parse(supportedVersions.Versions[0] + ".0")
+	if err != nil {
+		return semver.Version{}, fmt.Errorf("failed to parse version %q: %w", supportedVersions.Versions[0], err)
+	}
+	return latest, nil
+}
+
+type ocpTags struct {
+	Name string       `json:"name"`
+	Tags []ocpVersion `json:"tags"`
+}
+
+// v5MinorOffset is the 4.x minor version that corresponds to 5.0.
+// OCP 5.0 is equivalent to OCP 4.23 (dual versioning), so 5.x maps to 4.(v5MinorOffset+x).
+const v5MinorOffset uint64 = 23
+
+// normalizeToV4 converts a version to the 4.x numbering scheme for comparison.
+// OCP 5.0 is equivalent to OCP 4.23, so 5.x maps to 4.(23+x).
+// Versions already in the 4.x series are returned unchanged.
+// NOTE: Only handles Major 4 and 5. If a future major version (e.g., 6.x) is
+// introduced, this function must be updated to include the new mapping.
+func normalizeToV4(v semver.Version) (semver.Version, error) {
+	switch v.Major {
+	case 4:
+		return v, nil
+	case 5:
+		return semver.Version{
+			Major: 4,
+			Minor: v.Minor + v5MinorOffset,
+			Patch: v.Patch,
+			Pre:   v.Pre,
+			Build: v.Build,
+		}, nil
+	default:
+		return semver.Version{}, fmt.Errorf("unsupported major version %d; only 4.x and 5.x are supported", v.Major)
+	}
+}
+
+// denormalizeFromV4 converts a normalized 4.x minor version back to the display version.
+// Minor versions >= v5MinorOffset are mapped to 5.x; lower values remain 4.x.
+func denormalizeFromV4(minor uint64) (major, displayMinor uint64) {
+	if minor >= v5MinorOffset {
+		return 5, minor - v5MinorOffset
+	}
+	return 4, minor
+}
+
+// PreviousMinorVersion returns the OpenShift version that is n minor releases
+// before v, correctly handling the 5.0 == 4.23 version bridge.
+// For example, PreviousMinorVersion(5.0.0, 2) returns (4, 21).
+func PreviousMinorVersion(v semver.Version, n uint64) (major, minor uint64, err error) {
+	normalized, err := normalizeToV4(v)
+	if err != nil {
+		return 0, 0, err
+	}
+	if normalized.Minor < n {
+		return 0, 0, fmt.Errorf("cannot go back %d minor versions from %s (normalized minor %d)", n, v, normalized.Minor)
+	}
+	major, minor = denormalizeFromV4(normalized.Minor - n)
+	return major, minor, nil
+}
+
+// ValidateVersionSkew validates the version skew between HostedCluster and NodePool versions.
+// Returns nil if the version skew is supported, otherwise returns a descriptive error.
+// All 4.y versions support n-3 version skew (e.g., 4.18 HostedCluster supports NodePools running 4.17, 4.16, and 4.15).
+// OCP 5.0 is equivalent to 4.23, so cross-major-version skew is handled via normalization.
+func ValidateVersionSkew(hostedClusterVersion, nodePoolVersion *semver.Version) error {
+	// Normalize versions to 4.x equivalents for comparison.
+	// OCP 5.0 == 4.23 (dual versioning), so cross-major-version skew
+	// (e.g., HC=5.0, NP=4.22) is valid within the n-3 skew policy.
+	normalizedHC, err := normalizeToV4(*hostedClusterVersion)
+	if err != nil {
+		return err
+	}
+	normalizedNP, err := normalizeToV4(*nodePoolVersion)
+	if err != nil {
+		return err
+	}
+
+	if normalizedNP.GT(normalizedHC) {
+		return fmt.Errorf("NodePool version %s cannot be higher than the HostedCluster version %s",
+			nodePoolVersion, hostedClusterVersion)
+	}
+
+	versionDiff := int(normalizedHC.Minor) - int(normalizedNP.Minor)
+	maxAllowedDiff := 3
+
+	if versionDiff > maxAllowedDiff {
+		minSupportedMinor := max(int(normalizedHC.Minor)-maxAllowedDiff, 0)
+		minMajor, minMinor := denormalizeFromV4(uint64(minSupportedMinor))
+		return fmt.Errorf("NodePool minor version %d.%d is less than %d.%d, which is the minimum NodePool version compatible with the %d.%d HostedCluster",
+			nodePoolVersion.Major, nodePoolVersion.Minor,
+			minMajor, minMinor,
+			hostedClusterVersion.Major, hostedClusterVersion.Minor)
+	}
+
+	return nil
+}
+
+// retrieveSupportedOCPVersion retrieves the latest supported OCP version from the supported-versions ConfigMap,
+// fetches release information from the provided release URL, and returns the latest supported OCP version that is
+// not a release candidate and is compatible with the currently installed HyperShift operator.
+//
+// The releaseURL should point to a /tags endpoint which returns a list of all available versions for the stream.
+// The function filters out release candidates and validates versions against the supported-versions ConfigMap,
+// returning the newest supported non-RC version.
+func retrieveSupportedOCPVersion(ctx context.Context, releaseURL string, client crclient.Client) (ocpVersion, error) {
+	var supportedVersions *corev1.ConfigMap
+	var namespace string
+
+	// Find the supported versions ConfigMap since it may be in a different namespace than the default "hypershift"
+	configMapList := &corev1.ConfigMapList{}
+	err := client.List(ctx, configMapList, crclient.MatchingLabels{"hypershift.openshift.io/supported-versions": "true"})
+	if err != nil {
+		return ocpVersion{}, fmt.Errorf("failed to list ConfigMaps to find supported versions: %w", err)
+	}
+	for _, configMap := range configMapList.Items {
+		if configMap.Name == "supported-versions" {
+			supportedVersions = &configMap
+			namespace = configMap.Namespace
+			break
+		}
+	}
+
+	if namespace == "" {
+		return ocpVersion{}, fmt.Errorf("failed to find supported versions ConfigMap")
+	}
+
+	// Get the latest supported OCP version from the supported versions ConfigMap
+	supportedOCPVersions, _, err := GetSupportedOCPVersions(ctx, namespace, client, supportedVersions)
+	if err != nil {
+		return ocpVersion{}, fmt.Errorf("failed to get supported OCP versions: %w", err)
+	}
+	if len(supportedOCPVersions.Versions) == 0 {
+		return ocpVersion{}, fmt.Errorf("no supported OCP versions found in the ConfigMap")
+	}
+
+	// Fetch the release information from the URL
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, releaseURL, nil)
+	if err != nil {
+		return ocpVersion{}, err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return ocpVersion{}, err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return ocpVersion{}, err
+	}
+
+	// Try to parse as tags response first (multi-arch /tags endpoint)
+	var stableOCPVersions ocpTags
+	if err := json.Unmarshal(body, &stableOCPVersions); err == nil && len(stableOCPVersions.Tags) > 0 {
+		// Successfully parsed as tags - find latest supported non-RC version
+		return findLatestSupportedVersion(supportedOCPVersions.Versions, stableOCPVersions.Tags, releaseURL)
+	}
+
+	// Try to parse as single version response (amd64 /latest endpoint)
+	var singleVersion ocpVersion
+	if err := json.Unmarshal(body, &singleVersion); err == nil && singleVersion.Name != "" {
+		// Got a single version - check if it's supported and not RC
+		if strings.Contains(singleVersion.Name, "rc") {
+			return ocpVersion{}, fmt.Errorf("the latest version in stream is a release candidate (%s), which is not supported by this HyperShift Operator", singleVersion.Name)
+		}
+
+		// Check if this version is in our supported list
+		for _, supportedVer := range supportedOCPVersions.Versions {
+			if strings.Contains(singleVersion.Name, supportedVer) {
+				return singleVersion, nil
+			}
+		}
+
+		return ocpVersion{}, fmt.Errorf("version %s from release stream is not supported by this HyperShift Operator (supported: %v)",
+			singleVersion.Name, supportedOCPVersions.Versions)
+	}
+
+	return ocpVersion{}, fmt.Errorf("failed to parse response from release URL %s", releaseURL)
+}
+
+// findLatestSupportedVersion finds the latest version from a list of tags that is both supported by the
+// HyperShift operator and not a release candidate. It filters out RC versions, sorts the remaining tags
+// by version (newest first), and returns the first tag that matches a supported version.
+func findLatestSupportedVersion(supportedVersions []string, tags []ocpVersion, releaseURL string) (ocpVersion, error) {
+	// Filter out release candidates
+	var nonRCTags []ocpVersion
+	for _, tag := range tags {
+		if !strings.Contains(tag.Name, "rc") {
+			nonRCTags = append(nonRCTags, tag)
+		}
+	}
+
+	// Sort non-RC tags by version in descending order (newest first)
+	sort.Slice(nonRCTags, func(i, j int) bool {
+		semverI, errI := semver.Parse(nonRCTags[i].Name)
+		semverJ, errJ := semver.Parse(nonRCTags[j].Name)
+
+		// If parsing fails, fall back to string comparison
+		if errI != nil || errJ != nil {
+			return nonRCTags[i].Name > nonRCTags[j].Name
+		}
+
+		// Compare semver (GT returns true if i > j, which gives us descending order)
+		return semverI.GT(semverJ)
+	})
+
+	// Find the first tag that matches a supported version
+	for _, tag := range nonRCTags {
+		for _, version := range supportedVersions {
+			if strings.Contains(tag.Name, version) {
+				return tag, nil
+			}
+		}
+	}
+
+	return ocpVersion{}, fmt.Errorf("failed to find the latest supported OCP version in the release stream %s", releaseURL)
+}

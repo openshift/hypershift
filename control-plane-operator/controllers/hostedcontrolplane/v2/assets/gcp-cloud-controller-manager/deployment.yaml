@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cloud-controller-manager
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app: cloud-controller-manager
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: cloud-controller-manager
+    spec:
+      containers:
+      - name: cloud-controller-manager
+        image: gcp-cloud-controller-manager
+        imagePullPolicy: IfNotPresent
+        command:
+        - /bin/gcp-cloud-controller-manager
+        args:
+        - --cloud-provider=gce
+        - --use-service-account-credentials=false
+        - --kubeconfig=/etc/kubernetes/kubeconfig/kubeconfig
+        - --cloud-config=/etc/cloud/cloud.conf
+        - --configure-cloud-routes=false
+        - --controllers=*,-nodeipam
+        - --leader-elect=true
+        - --leader-elect-lease-duration=137s
+        - --leader-elect-renew-deadline=107s
+        - --leader-elect-retry-period=26s
+        - --leader-elect-resource-namespace=openshift-cloud-controller-manager
+        - --authentication-kubeconfig=/etc/kubernetes/kubeconfig/kubeconfig
+        - --authorization-kubeconfig=/etc/kubernetes/kubeconfig/kubeconfig
+        env:
+        - name: GOOGLE_APPLICATION_CREDENTIALS
+          value: /etc/gcp/credentials/application_default_credentials.json
+        resources:
+          requests:
+            cpu: 75m
+            memory: 60Mi
+        volumeMounts:
+        - mountPath: /etc/cloud
+          name: cloud-config
+        - mountPath: /etc/kubernetes/kubeconfig
+          name: kubeconfig
+        - mountPath: /etc/gcp/credentials
+          name: cloud-credentials
+      volumes:
+      - name: kubeconfig
+        secret:
+          defaultMode: 420
+          secretName: service-network-admin-kubeconfig
+      - name: cloud-config
+        configMap:
+          defaultMode: 420
+          name: gcp-cloud-config
+      - name: cloud-credentials
+        secret:
+          defaultMode: 420
+          secretName: cloud-controller-manager-creds

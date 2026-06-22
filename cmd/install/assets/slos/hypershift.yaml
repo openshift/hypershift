@@ -1,0 +1,12 @@
+groups:
+- name: "slos.rules"
+  interval: "30s"
+  rules:
+  - alert: "HypershiftSLOTimeToAvailability"
+    expr:  "hypershift_cluster_available_duration_seconds > 300"
+    for:   "1s"
+    labels:
+      severity: "slo"
+    annotations:
+      summary:     "Time for cluster to become available should be < 5min"
+      description: "Time for cluster to become available should be < 5min"

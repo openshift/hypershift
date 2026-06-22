@@ -1,0 +1,31 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: arc-controller-metrics
+  namespace: arc-systems
+  labels:
+    app.kubernetes.io/name: arc-controller
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: arc-controller
+  endpoints:
+    - port: metrics
+      interval: 30s
+      path: /metrics
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: arc-listener-metrics
+  namespace: arc-systems
+  labels:
+    app.kubernetes.io/name: arc-listener
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: arc-listener
+  endpoints:
+    - port: metrics
+      interval: 30s
+      path: /metrics

@@ -1,0 +1,29 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: arc-runner-alerts
+  namespace: arc-systems
+  labels:
+    app.kubernetes.io/name: arc-controller
+spec:
+  groups:
+    - name: arc-runner-health
+      rules:
+        - alert: ARCRunnersOffline
+          expr: gha_registered_runners == 0 and gha_min_runners > 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "No ARC runners registered with GitHub"
+            description: "No runners have been registered for the arc-runner-set scale set for more than 5 minutes. GitHub Actions jobs will not be picked up."
+            runbook_url: "https://github.com/openshift/hypershift/blob/main/hack/github-actions-runner/README.md"
+        - alert: ARCQueueDepthHigh
+          expr: (gha_assigned_jobs - gha_running_jobs) > 20
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "ARC job queue depth is high"
+            description: "More than 20 GitHub Actions jobs have been queued for over 10 minutes, indicating a CI bottleneck. Consider scaling up runners or nodes."
+            runbook_url: "https://github.com/openshift/hypershift/blob/main/hack/github-actions-runner/README.md"

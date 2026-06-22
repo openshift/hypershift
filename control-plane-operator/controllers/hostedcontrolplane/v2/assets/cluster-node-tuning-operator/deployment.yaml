@@ -1,0 +1,96 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cluster-node-tuning-operator
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      name: cluster-node-tuning-operator
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      annotations:
+        target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
+      labels:
+        app: cluster-node-tuning-operator
+        name: cluster-node-tuning-operator
+    spec:
+      containers:
+      - args:
+        - -v=0
+        command:
+        - cluster-node-tuning-operator
+        env:
+        - name: RELEASE_VERSION
+          value: ""
+        - name: HYPERSHIFT
+          value: "true"
+        - name: MY_NAMESPACE
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+        - name: WATCH_NAMESPACE
+          value: openshift-cluster-node-tuning-operator
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.name
+        - name: RESYNC_PERIOD
+          value: "600"
+        - name: CLUSTER_NODE_TUNED_IMAGE
+          value: ""
+        - name: KUBECONFIG
+          value: /etc/kubernetes/kubeconfig
+        image: cluster-node-tuning-operator
+        imagePullPolicy: IfNotPresent
+        name: cluster-node-tuning-operator
+        ports:
+        - containerPort: 60000
+          name: metrics
+          protocol: TCP
+        resources:
+          requests:
+            cpu: 10m
+            memory: 50Mi
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /etc/secrets
+          name: node-tuning-operator-tls
+        - mountPath: /tmp/metrics-client-ca
+          name: metrics-client-ca
+        - mountPath: /var/run/configmaps/trusted-ca/
+          name: trusted-ca
+        - mountPath: /etc/kubernetes
+          name: hosted-kubeconfig
+      restartPolicy: Always
+      serviceAccount: cluster-node-tuning-operator
+      serviceAccountName: cluster-node-tuning-operator
+      volumes:
+      - name: node-tuning-operator-tls
+        secret:
+          defaultMode: 420
+          secretName: node-tuning-operator-tls
+      - name: metrics-client-ca
+        secret:
+          defaultMode: 420
+          secretName: metrics-client
+      - configMap:
+          defaultMode: 420
+          items:
+          - key: ca-bundle.crt
+            path: tls-ca-bundle.pem
+          name: trusted-ca
+          optional: true
+        name: trusted-ca
+      - name: hosted-kubeconfig
+        secret:
+          defaultMode: 420
+          secretName: service-network-admin-kubeconfig

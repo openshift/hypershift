@@ -1,0 +1,59 @@
+apiVersion: v1
+data:
+  config.yaml: |
+    admission: {}
+    apiVersion: osin.config.openshift.io/v1
+    auditConfig:
+      auditFilePath: ""
+      enabled: false
+      logFormat: ""
+      maximumFileRetentionDays: 0
+      maximumFileSizeMegabytes: 0
+      maximumRetainedFiles: 0
+      policyConfiguration: null
+      policyFile: ""
+      webHookKubeConfig: ""
+      webHookMode: ""
+    corsAllowedOrigins: null
+    kind: OsinServerConfig
+    kubeClientConfig:
+      connectionOverrides:
+        acceptContentTypes: ""
+        burst: 400
+        contentType: ""
+        qps: 400
+      kubeConfig: /etc/kubernetes/secrets/svc-kubeconfig/kubeconfig
+    oauthConfig:
+      alwaysShowProviderSelection: false
+      assetPublicURL: ""
+      grantConfig:
+        method: deny  # force denial as this field must be set per OAuth client
+        serviceAccountMethod: prompt
+      identityProviders: []
+      masterCA: /etc/kubernetes/certs/master-ca/ca.crt
+      sessionConfig:
+        sessionMaxAgeSeconds: 300
+        sessionName: ssn
+        sessionSecretsFile: /etc/kubernetes/secrets/session/v4-0-config-system-session
+      templates:
+        error: /etc/kubernetes/secrets/templates/error/errors.html
+        login: /etc/kubernetes/secrets/templates/login/login.html
+        providerSelection: /etc/kubernetes/secrets/templates/providers/providers.html
+      tokenConfig:
+        accessTokenMaxAgeSeconds: 86400
+        authorizeTokenMaxAgeSeconds: 300
+    servingInfo:
+      bindAddress: 0.0.0.0:6443
+      bindNetwork: tcp
+      certFile: /etc/kubernetes/certs/serving-cert/tls.crt
+      keyFile: /etc/kubernetes/certs/serving-cert/tls.key
+      maxRequestsInFlight: 1000
+      requestTimeoutSeconds: 300
+    storageConfig:
+      ca: ""
+      certFile: ""
+      keyFile: ""
+      storagePrefix: ""
+kind: ConfigMap
+metadata:
+  name: oauth-openshift

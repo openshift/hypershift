@@ -1,0 +1,128 @@
+package util
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"testing"
+
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/releaseinfo"
+
+	"github.com/blang/semver"
+	"github.com/onsi/ginkgo/v2"
+)
+
+var (
+	// y-stream versions supported by e2e in main
+	Version50  = semver.MustParse("5.0.0")
+	Version423 = semver.MustParse("4.23.0")
+	Version422 = semver.MustParse("4.22.0")
+	Version421 = semver.MustParse("4.21.0")
+	Version420 = semver.MustParse("4.20.0")
+	Version419 = semver.MustParse("4.19.0")
+	Version418 = semver.MustParse("4.18.0")
+	Version417 = semver.MustParse("4.17.0")
+	Version416 = semver.MustParse("4.16.0")
+	Version415 = semver.MustParse("4.15.0")
+	Version414 = semver.MustParse("4.14.0")
+
+	releaseVersion semver.Version
+)
+
+func init() {
+	// Ensure that the version constants are valid semver versions
+	// This is a compile-time check to ensure that the versions are valid
+	// semver versions.
+	_ = Version50
+	_ = Version423
+	_ = Version422
+	_ = Version421
+	_ = Version420
+	_ = Version419
+	_ = Version418
+	_ = Version417
+	_ = Version416
+	_ = Version415
+	_ = Version414
+}
+
+func SetReleaseImageVersion(ctx context.Context, latestReleaseImage string, pullSecretFile string) error {
+	data, err := os.ReadFile(pullSecretFile)
+	if err != nil {
+		return fmt.Errorf("error reading file: %w", err)
+	}
+	releaseInfoProvider := releaseinfo.RegistryClientProvider{}
+	releaseImage, err := releaseInfoProvider.Lookup(ctx, latestReleaseImage, data)
+	if err != nil {
+		return fmt.Errorf("error looking up latest release image: %w", err)
+	}
+	releaseVersion, err = semver.Parse(releaseImage.Version())
+	if err != nil {
+		return fmt.Errorf("error parsing version: %w", err)
+	}
+	releaseVersion.Patch = 0
+	releaseVersion.Pre = nil
+	releaseVersion.Build = nil
+	return nil
+}
+
+func SetReleaseVersionFromHostedCluster(ctx context.Context, hostedCluster *hyperv1.HostedCluster) error {
+	if hostedCluster.Status.Version == nil || len(hostedCluster.Status.Version.History) == 0 || hostedCluster.Status.Version.History[0].Version == "" {
+		fmt.Fprintf(ginkgo.GinkgoWriter, "WARNING: cannot determine release version from HostedCluster")
+		return nil
+	}
+	hcVersion := hostedCluster.Status.Version.History[0].Version
+	var err error
+	releaseVersion, err = semver.Parse(hcVersion)
+	if err != nil {
+		return fmt.Errorf("error parsing version: %w", err)
+	}
+	releaseVersion.Patch = 0
+	releaseVersion.Pre = nil
+	releaseVersion.Build = nil
+	return nil
+}
+
+func AtLeast(t *testing.T, version semver.Version) {
+	if releaseVersion.LT(version) {
+		t.Skipf("Only tested in %s and later", version)
+	}
+}
+
+func GinkgoAtLeast(version semver.Version) {
+	if releaseVersion.LT(version) {
+		ginkgo.Skip(fmt.Sprintf("Only tested in %s and later", version))
+	}
+}
+
+func CPOAtLeast(t *testing.T, version semver.Version, hc *hyperv1.HostedCluster) {
+	if hc.Status.Version == nil || hc.Status.Version.Desired.Version == "" {
+		t.Logf("Desired version is not set on the HostedCluster using latestReleaseImage: %s", releaseVersion)
+		AtLeast(t, version)
+	}
+	cpoVersion := semver.MustParse(hc.Status.Version.Desired.Version)
+	if cpoVersion.LT(version) {
+		t.Skipf("Only tested in %s and later", version)
+	}
+}
+
+func IsLessThan(version semver.Version) bool {
+	return releaseVersion.LT(version)
+}
+
+func IsGreaterThanOrEqualTo(version semver.Version) bool {
+	return releaseVersion.GE(version)
+}
+
+// ShouldRunKarpenterTests skips the test unless the Karpenter v1 API is available.
+// The v1 API exists on 4.23+, but when the operator is built from main and
+// tested against a 4.22 hosted cluster, set RUN_KARPENTER_TESTS=true to
+// lower the gate to 4.22.
+func ShouldRunKarpenterTests(t *testing.T) {
+	if os.Getenv("RUN_KARPENTER_TESTS") == "true" {
+		AtLeast(t, Version422)
+	} else {
+		AtLeast(t, Version423)
+	}
+}

@@ -1,0 +1,23 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: ingress-operator
+spec:
+  namespaceSelector:
+    matchNames:
+    - HCP_NAMESPACE
+  podMetricsEndpoints:
+  - bearerTokenSecret:
+      key: ""
+    interval: 60s
+    metricRelabelings:
+    - action: drop
+      regex: (.*)
+      sourceLabels:
+      - __name__
+    path: /metrics
+    port: metrics
+    scheme: http
+  selector:
+    matchLabels:
+      name: ingress-operator

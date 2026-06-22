@@ -1,0 +1,668 @@
+DIR := ${CURDIR}
+
+# Image URL to use all building/pushing image targets
+IMG ?= hypershift:latest
+
+# Produce CRDs that work back to Kubernetes 1.11 (no version conversion)
+CRD_OPTIONS ?= "crd"
+
+# Runtime CLI to use for building and pushing images
+RUNTIME ?= $(shell sh hack/utils.sh get_container_engine)
+
+ARTIFACT_DIR ?= /tmp/artifacts
+TOOLS_DIR=./hack/tools
+BIN_DIR=bin
+TOOLS_BIN_DIR := $(TOOLS_DIR)/$(BIN_DIR)
+CONTROLLER_GEN := $(abspath $(TOOLS_BIN_DIR)/controller-gen)
+CODE_GEN := $(abspath $(TOOLS_BIN_DIR)/codegen)
+STATICCHECK := $(abspath $(TOOLS_BIN_DIR)/staticcheck)
+GENAPIDOCS := $(abspath $(TOOLS_BIN_DIR)/gen-crd-api-reference-docs)
+MOCKGEN := $(abspath $(TOOLS_BIN_DIR)/mockgen)
+YQ := $(abspath $(TOOLS_BIN_DIR)/yq)
+VERIFY_API_DEPS := $(abspath $(TOOLS_BIN_DIR)/verify-api-deps)
+
+CODESPELL_VER := 2.4.1
+CODESPELL_BIN := codespell
+CODESPELL_DIST_DIR := codespell_dist
+CODESPELL := $(TOOLS_BIN_DIR)/$(CODESPELL_DIST_DIR)/$(CODESPELL_BIN)
+
+GITLINT_VER := 0.19.1
+GITLINT_DIST_DIR := gitlint_dist
+GITLINT_BIN := gitlint
+GITLINT := $(TOOLS_BIN_DIR)/$(GITLINT_DIST_DIR)/$(GITLINT_BIN)-bin
+
+PYYAML_VER := 6.0.3
+PYYAML_DIST_DIR := pyyaml_dist
+PYYAML_STAMP := $(TOOLS_BIN_DIR)/$(PYYAML_DIST_DIR)/.installed
+
+PROMTOOL=$(abspath $(TOOLS_BIN_DIR)/promtool)
+
+# Setup envtest for running tests that require a Kubernetes API server
+# SETUP_ENVTEST_VER is the version of setup-envtest to use, matching the version in hack/tools/go.mod
+KUBEBUILDER_ENVTEST_KUBERNETES_VERSION ?= 1.34.0
+SETUP_ENVTEST_VER := release-0.22
+SETUP_ENVTEST := $(abspath $(TOOLS_BIN_DIR)/setup-envtest)
+ENVTEST_ASSETS_DIR ?= $(abspath $(TOOLS_BIN_DIR)/envtest)
+ENVTEST_OCP_ASSETS_DIR ?= $(abspath $(TOOLS_BIN_DIR)/envtest-ocp)
+ENVTEST_KUBE_ASSETS_DIR ?= $(abspath $(TOOLS_BIN_DIR)/envtest-kube)
+
+GO_GCFLAGS ?= -gcflags=all='-N -l'
+GO=GO111MODULE=on GOWORK=off GOFLAGS=-mod=vendor go
+GOWS=GO111MODULE=on GOWORK=$(shell pwd)/hack/workspace/go.work GOFLAGS=-mod=vendor go
+COMMIT_HASH ?= $(shell git rev-parse HEAD 2>/dev/null)
+VERSION_PKG=github.com/openshift/hypershift/support/supportedversion
+GO_LDFLAGS=-ldflags '-X $(VERSION_PKG).commitHash=$(COMMIT_HASH)'
+GO_BUILD_RECIPE=CGO_ENABLED=1 $(GO) build $(GO_GCFLAGS) $(GO_LDFLAGS)
+GO_CLI_RECIPE=CGO_ENABLED=0 $(GO) build $(GO_GCFLAGS) -ldflags '-X $(VERSION_PKG).commitHash=$(COMMIT_HASH) -extldflags "-static"'
+GO_E2E_RECIPE=CGO_ENABLED=1 $(GO) test $(GO_GCFLAGS) -tags e2e -c
+GO_E2EV2_RECIPE=CGO_ENABLED=1 $(GO) test $(GO_GCFLAGS) -tags e2ev2 -c
+GO_BACKUPRESTORE_E2E_RECIPE=CGO_ENABLED=1 $(GO) test $(GO_GCFLAGS) -tags e2ev2,backuprestore -c
+GO_REQSERVING_E2E_RECIPE=CGO_ENABLED=1 $(GO) test $(GO_GCFLAGS) -tags reqserving -c
+
+OUT_DIR ?= bin
+
+# run the HO locally
+HYPERSHIFT_INSTALL_AWS := ./hack/dev/aws/hypershft-install-aws.sh
+RUN_OPERATOR_LOCALLY_AWS := ./hack/dev/aws/run-operator-locally-aws-dev.sh
+
+OPENSHIFT_CI ?= false
+FAIL_FAST ?= true
+
+# Do not fail fast in OpenShift CI, it's expensive to start the cluster, run all tests and report the results.
+ifeq ($(OPENSHIFT_CI),true)
+	FAIL_FAST = false
+endif
+
+# Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
+ifeq (,$(shell go env GOBIN))
+GOBIN=$(shell go env GOPATH)/bin
+else
+GOBIN=$(shell go env GOBIN)
+endif
+
+# Change HOME to writeable location in CI for staticcheck
+ifeq ("/","${HOME}")
+HOME=/tmp
+endif
+
+all: build e2e tests
+
+pre-commit: all verify test
+
+build: hypershift-operator control-plane-operator control-plane-pki-operator karpenter-operator hypershift product-cli
+
+.PHONY: update
+update: api-deps workspace-sync deps api api-docs clients docs-aggregate
+
+GOLANGCI_LINT := $(abspath $(TOOLS_BIN_DIR)/golangci-lint)
+$(GOLANGCI_LINT): $(TOOLS_DIR)/go.mod # Build golangci-lint from tools folder.
+	cd $(TOOLS_DIR); $(GO) build -tags=tools -o $(GOLANGCI_LINT) github.com/golangci/golangci-lint/v2/cmd/golangci-lint
+
+KUBEAPILINTER_PLUGIN := $(abspath $(TOOLS_BIN_DIR)/kube-api-linter.so)
+$(KUBEAPILINTER_PLUGIN): $(TOOLS_DIR)/go.mod # Build kube-api-linter as Go plugin
+	cd $(TOOLS_DIR); CGO_ENABLED=1 $(GO) build -buildmode=plugin -o $(KUBEAPILINTER_PLUGIN) sigs.k8s.io/kube-api-linter/pkg/plugin
+
+# When not otherwise set, diff/lint against the upstream main branch.
+# This is always set in OpenShift CI.
+UPSTREAM_REMOTE ?= $(shell git remote -v 2>/dev/null | grep 'openshift/hypershift.*fetch' | head -1 | cut -f1)
+PULL_BASE_SHA ?= $(if $(UPSTREAM_REMOTE),$(UPSTREAM_REMOTE)/main,main)
+
+.PHONY: api-lint
+api-lint: $(GOLANGCI_LINT) $(KUBEAPILINTER_PLUGIN)
+	cd api && $(GOLANGCI_LINT) run --config ./.golangci.yml --modules-download-mode=readonly -v --new-from-rev=${PULL_BASE_SHA}
+
+.PHONY: api-lint-fix
+api-lint-fix: $(GOLANGCI_LINT) $(KUBEAPILINTER_PLUGIN)
+	cd api && $(GOLANGCI_LINT) run --config ./.golangci.yml --fix -v --new-from-rev=${PULL_BASE_SHA}
+
+.PHONY: lint
+lint: generate
+	$(MAKE) api-lint; api_rc=$$?; \
+	$(GOLANGCI_LINT) run --config ./.golangci.yml --modules-download-mode=readonly -v; main_rc=$$?; \
+	exit $$(( api_rc > main_rc ? api_rc : main_rc ))
+
+.PHONY: lint-fix
+lint-fix: generate
+	$(MAKE) api-lint-fix; api_rc=$$?; \
+	$(GOLANGCI_LINT) run --config ./.golangci.yml --fix -v; main_rc=$$?; \
+	exit $$(( api_rc > main_rc ? api_rc : main_rc ))
+
+.PHONY: verify-git-clean
+verify-git-clean:
+	git diff-index --cached --quiet --ignore-submodules HEAD --
+	git diff-files --quiet --ignore-submodules
+	git diff --exit-code HEAD --
+	$(eval STATUS = $(shell git status -s))
+	$(if $(strip $(STATUS)),$(error untracked files detected: ${STATUS}))
+
+.PHONY: verify-codecov
+verify-codecov: ## Validate codecov.yml against Codecov's API.
+	@curl --silent --show-error \
+		--connect-timeout 5 --max-time 30 \
+		--retry 3 --retry-all-errors --retry-delay 1 \
+		--data-binary @codecov.yml https://codecov.io/validate \
+		| tee /dev/stderr | grep -q "^Valid!"
+
+.PHONY: verify-parallel
+verify-parallel: verify-codespell verify-codecov verify-api-deps lint cpo-container-sync run-gitlint verify-docs-nav
+
+.PHONY: verify
+verify: generate update staticcheck fmt vet
+	$(MAKE) -j verify-parallel
+	$(MAKE) verify-git-clean
+
+$(CONTROLLER_GEN): $(TOOLS_DIR)/go.mod # Build controller-gen from tools folder.
+	cd $(TOOLS_DIR); $(GO) build -tags=tools -o $(BIN_DIR)/controller-gen sigs.k8s.io/controller-tools/cmd/controller-gen
+
+$(YQ): $(TOOLS_DIR)/go.mod # Build yq v4 from tools folder.
+	cd $(TOOLS_DIR); $(GO) build -tags=tools -o $(BIN_DIR)/yq github.com/mikefarah/yq/v4
+
+$(CODE_GEN): $(TOOLS_DIR)/go.mod # Build code-gen from tools folder.
+	cd $(TOOLS_DIR); $(GO) build -tags=tools -o $(BIN_DIR)/codegen github.com/openshift/api/tools/codegen/cmd
+
+$(STATICCHECK): $(TOOLS_DIR)/go.mod # Build staticcheck from tools folder.
+	cd $(TOOLS_DIR); $(GO) build -tags=tools -o $(BIN_DIR)/staticcheck honnef.co/go/tools/cmd/staticcheck
+
+$(GENAPIDOCS): $(TOOLS_DIR)/go.mod
+	cd $(TOOLS_DIR); $(GO) build -tags=tools -o $(GENAPIDOCS) github.com/ahmetb/gen-crd-api-reference-docs
+
+$(MOCKGEN): ${TOOLS_DIR}/go.mod
+	cd $(TOOLS_DIR); $(GO) build -tags=tools -o $(BIN_DIR)/mockgen go.uber.org/mock/mockgen
+
+$(VERIFY_API_DEPS): $(TOOLS_DIR)/go.mod # Build verify-api-deps tool
+	cd $(TOOLS_DIR); $(GO) build -o $(BIN_DIR)/verify-api-deps ./verify-api-deps
+
+
+.PHONY: generate
+generate: $(MOCKGEN)
+	@echo "Cleaning stale mock files..."
+	git clean -fx -- '*_mock.go'
+	$(GO) generate ./...
+
+# Compile all tests
+.PHONY: tests
+tests: generate
+	$(GO) test -o /dev/null -c ./...
+
+# Build hypershift-operator binary
+.PHONY: hypershift-operator
+hypershift-operator:
+	$(GO_BUILD_RECIPE) -o $(OUT_DIR)/hypershift-operator ./hypershift-operator
+
+.PHONY: karpenter-operator
+karpenter-operator:
+	$(GO_BUILD_RECIPE) -o $(OUT_DIR)/karpenter-operator ./karpenter-operator
+
+.PHONY: karpenter-api
+# Sync upstream CRDs from vendor, apply OpenShift CEL/schema adjustments, then generate OpenshiftEC2NodeClass from api/karpenter.
+karpenter-api: $(CONTROLLER_GEN) $(YQ)
+	karpenter-operator/hack/crds-sync.sh
+	karpenter-operator/hack/adjust-cel.sh
+	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./api/karpenter/..." output:crd:artifacts:config=karpenter-operator/controllers/karpenter/assets
+	cp karpenter-operator/controllers/karpenter/assets/karpenter.hypershift.openshift.io_openshiftec2nodeclasses.yaml karpenter-operator/controllers/karpenter/assets/zz_generated.crd-manifests/openshiftec2nodeclasses.crd.yaml
+	$(GO) run ./hack/kubelet-ratcheting-gen/main.go
+
+.PHONY: control-plane-operator
+control-plane-operator:
+	$(GO_BUILD_RECIPE) -o $(OUT_DIR)/control-plane-operator ./control-plane-operator
+
+.PHONY: control-plane-pki-operator
+control-plane-pki-operator:
+	$(GO_BUILD_RECIPE) -o $(OUT_DIR)/control-plane-pki-operator ./control-plane-pki-operator
+
+.PHONY: hypershift
+hypershift:
+	$(GO_BUILD_RECIPE) -o $(OUT_DIR)/hypershift .
+
+.PHONY: hypershift-no-cgo
+hypershift-no-cgo:
+	$(GO_CLI_RECIPE) -o $(OUT_DIR)/hypershift-no-cgo .
+
+.PHONY: product-cli
+product-cli:
+	$(GO_CLI_RECIPE) -o $(OUT_DIR)/hcp ./product-cli
+
+.PHONY: product-cli-release
+product-cli-release:
+	@for OS in linux; do for ARCH in amd64 arm64 ppc64 ppc64le s390x; do \
+		echo "# Building $${OS}/$${ARCH}/hcp"; \
+		GOOS=$${OS} GOARCH=$${ARCH} $(GO_CLI_RECIPE) -o $(OUT_DIR)/$${OS}/$${ARCH}/hcp ./product-cli \
+			|| exit 1; \
+		done; \
+	done
+	@for OS in darwin windows; do for ARCH in amd64 arm64; do \
+		echo "# Building $${OS}/$${ARCH}/hcp"; \
+		GOOS=$${OS} GOARCH=$${ARCH} $(GO_CLI_RECIPE) -o $(OUT_DIR)/$${OS}/$${ARCH}/hcp ./product-cli \
+			|| exit 1; \
+		done; \
+	done
+
+# Run this when updating any of the types in the api package to regenerate the
+# deepcopy code and CRD manifest files.
+.PHONY: api
+api: hypershift-api cluster-api cluster-api-provider-aws cluster-api-provider-gcp cluster-api-provider-ibmcloud cluster-api-provider-kubevirt cluster-api-provider-agent cluster-api-provider-azure cluster-api-provider-openstack karpenter-api api-docs
+
+.PHONY: hypershift-api
+hypershift-api: $(CONTROLLER_GEN) $(CODE_GEN)
+	# Clean up autogenerated files.
+	rm -rf ./api/hypershift/v1beta1/zz_generated.featuregated-crd-manifests
+	rm -rf ./api/hypershift/v1beta1/zz_generated.featuregated-crd-manifests.yaml
+	# Clean generated assets but preserve tests/ (envtest suites).
+	find cmd/install/assets/crds/hypershift-operator/ -maxdepth 1 -not -name 'hypershift-operator' -not -name 'tests' -not -name 'doc.go' | xargs rm -rf
+
+	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./api/..."
+
+	# These consolidate with the 3 steps used to generate CRDs by openshift/api.
+	(cd ./api && $(CODE_GEN) empty-partial-schemas)
+	(cd ./api && $(CODE_GEN) schemapatch)
+	(cd ./api && $(CODE_GEN) crd-manifest-merge --manifest-merge:payload-manifest-path ./hypershift/v1beta1/featuregates)
+
+	# Move final CRDs to the install folder.
+	mv ./api/hypershift/v1beta1/zz_generated.crd-manifests cmd/install/assets/crds/hypershift-operator/
+
+	# Copy featuregate manifests alongside CRDs for envtest.
+	mkdir -p cmd/install/assets/crds/hypershift-operator/payload-manifests/featuregates
+	cp ./api/hypershift/v1beta1/featuregates/*.yaml cmd/install/assets/crds/hypershift-operator/payload-manifests/featuregates/
+
+	# Remove SelfManagedHA CRDs
+	rm -rf cmd/install/assets/crds/hypershift-operator/zz_generated.crd-manifests/hostedclusters-SelfManagedHA-*.yaml
+	rm -rf cmd/install/assets/crds/hypershift-operator/zz_generated.crd-manifests/hostedcontrolplanes-SelfManagedHA-*.yaml
+
+	# Generate additional CRDs.
+	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./api/scheduling/..." output:crd:artifacts:config=cmd/install/assets/crds/hypershift-operator
+	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./api/certificates/..." output:crd:artifacts:config=cmd/install/assets/crds/hypershift-operator
+	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./api/auditlogpersistence/..." output:crd:artifacts:config=cmd/install/assets/crds/hypershift-operator
+
+.PHONY: cluster-api
+cluster-api: $(CONTROLLER_GEN)
+	rm -rf cmd/install/assets/crds/cluster-api/*.yaml
+	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/sigs.k8s.io/cluster-api/api/core/..." output:crd:artifacts:config=cmd/install/assets/crds/cluster-api
+	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/sigs.k8s.io/cluster-api/api/ipam/..." output:crd:artifacts:config=cmd/install/assets/crds/cluster-api
+	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/sigs.k8s.io/cluster-api/api/addons/..." output:crd:artifacts:config=cmd/install/assets/crds/cluster-api
+
+.PHONY: cluster-api-provider-aws
+cluster-api-provider-aws: $(CONTROLLER_GEN)
+	rm -rf cmd/install/assets/crds/cluster-api-provider-aws/*.yaml
+	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/sigs.k8s.io/cluster-api-provider-aws/v2/api/..." output:crd:artifacts:config=cmd/install/assets/crds/cluster-api-provider-aws
+	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/sigs.k8s.io/cluster-api-provider-aws/v2/exp/api/..." output:crd:artifacts:config=cmd/install/assets/crds/cluster-api-provider-aws
+
+# remove ROSA CRDs
+	rm -rf cmd/install/assets/crds/cluster-api-provider-aws/infrastructure.cluster.x-k8s.io_rosa*.yaml
+# remove EKS CRDs
+	rm -rf cmd/install/assets/crds/cluster-api-provider-aws/infrastructure.cluster.x-k8s.io_awsmanaged*.yaml
+	rm -rf cmd/install/assets/crds/cluster-api-provider-aws/infrastructure.cluster.x-k8s.io_awsfargateprofiles.yaml
+
+.PHONY: cluster-api-provider-gcp
+cluster-api-provider-gcp: $(CONTROLLER_GEN)
+	rm -rf cmd/install/assets/crds/cluster-api-provider-gcp/*.yaml
+	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/sigs.k8s.io/cluster-api-provider-gcp/api/..." output:crd:artifacts:config=cmd/install/assets/crds/cluster-api-provider-gcp
+
+.PHONY: cluster-api-provider-ibmcloud
+cluster-api-provider-ibmcloud: $(CONTROLLER_GEN)
+	rm -rf cmd/install/assets/crds/cluster-api-provider-ibmcloud/*.yaml
+	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/sigs.k8s.io/cluster-api-provider-ibmcloud/api/..." output:crd:artifacts:config=cmd/install/assets/crds/cluster-api-provider-ibmcloud
+
+.PHONY: cluster-api-provider-kubevirt
+cluster-api-provider-kubevirt: $(CONTROLLER_GEN)
+	rm -rf cmd/install/assets/crds/cluster-api-provider-kubevirt/*.yaml
+	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1" output:crd:artifacts:config=cmd/install/assets/crds/cluster-api-provider-kubevirt
+
+.PHONY: cluster-api-provider-agent
+cluster-api-provider-agent: $(CONTROLLER_GEN)
+	rm -rf cmd/install/assets/crds/cluster-api-provider-agent/*.yaml
+	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/github.com/openshift/cluster-api-provider-agent/api/..." output:crd:artifacts:config=cmd/install/assets/crds/cluster-api-provider-agent
+
+.PHONY: cluster-api-provider-azure
+cluster-api-provider-azure: $(CONTROLLER_GEN)
+	rm -rf cmd/install/assets/crds/cluster-api-provider-azure/*.yaml
+	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/sigs.k8s.io/cluster-api-provider-azure/api/..." output:crd:artifacts:config=cmd/install/assets/crds/cluster-api-provider-azure
+# remove CAPZ managed CRDS
+	rm -rf cmd/install/assets/crds/cluster-api-provider-azure/infrastructure.cluster.x-k8s.io_azuremanaged*.yaml
+
+.PHONY: cluster-api-provider-openstack
+cluster-api-provider-openstack: $(CONTROLLER_GEN)
+	rm -rf cmd/install/assets/crds/cluster-api-provider-openstack/*.yaml
+	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/sigs.k8s.io/cluster-api-provider-openstack/api/..." output:crd:artifacts:config=cmd/install/assets/crds/cluster-api-provider-openstack
+	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/github.com/k-orc/openstack-resource-controller/..." output:crd:artifacts:config=cmd/install/assets/crds/cluster-api-provider-openstack
+
+.PHONY: api-docs
+api-docs: $(GENAPIDOCS)
+	hack/gen-api-docs.sh $(GENAPIDOCS) $(DIR)
+
+.PHONY: clients
+clients: delegating_client
+	GOWORK=off GO=GO111MODULE=on GOFLAGS=-mod=readonly hack/update-codegen.sh
+
+.PHONY: release
+release:
+	go run ./hack/tools/release/notes.go --from=${FROM} --to=${TO} --token=${TOKEN}
+
+.PHONY: docs-aggregate
+docs-aggregate:
+	$(GO) run ./hack/tools/docs-aggregator/main.go
+
+.PHONY: delegating_client
+delegating_client:
+	go run ./cmd/infra/aws/delegatingclientgenerator/main.go > ./cmd/infra/aws/delegating_client.txt
+	mv ./cmd/infra/aws/delegating_client.txt ./cmd/infra/aws/delegating_client.go
+	$(GO) fmt ./cmd/infra/aws/delegating_client.go
+
+# Build setup-envtest from tools folder
+$(SETUP_ENVTEST): $(TOOLS_DIR)/go.mod
+	cd $(TOOLS_DIR); $(GO) build -tags=tools -o $(SETUP_ENVTEST) sigs.k8s.io/controller-runtime/tools/setup-envtest
+
+.PHONY: setup-envtest
+setup-envtest: $(SETUP_ENVTEST) ## Setup envtest binaries (etcd, kube-apiserver)
+	$(eval KUBEBUILDER_ASSETS := $(shell $(SETUP_ENVTEST) use --use-env --bin-dir $(ENVTEST_ASSETS_DIR) -p path $(KUBEBUILDER_ENVTEST_KUBERNETES_VERSION)))
+	@if [ -z "$(KUBEBUILDER_ASSETS)" ]; then echo "Failed to find kubebuilder assets, see errors above"; exit 1; fi
+	@echo "KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS)"
+
+# Run tests
+.PHONY: test
+
+# Determine the number of CPU cores
+NUM_CORES := $(shell getconf _NPROCESSORS_ONLN || echo 1)
+
+test: generate
+	@echo "Running tests with $(NUM_CORES) parallel jobs..."
+	$(GO) test -race -parallel=$(NUM_CORES) -count=1 -timeout=30m ./... -coverprofile cover.out
+
+# Run a subset of unit tests (used by CI sharding).
+# Usage: make test-shard TEST_PACKAGES="./cmd/... ./support/..." COVER_PROFILE="cover-shard.out"
+TEST_PACKAGES ?= ./...
+COVER_PROFILE ?= cover.out
+.PHONY: test-shard
+test-shard: generate
+	@echo "Running shard tests for packages: $(TEST_PACKAGES)"
+	$(GO) test -race -parallel=$(NUM_CORES) -count=1 -timeout=30m $(TEST_PACKAGES) -coverprofile $(COVER_PROFILE)
+
+# OCP envtest index for downstream kubebuilder assets
+ENVTEST_OCP_INDEX := https://raw.githubusercontent.com/openshift/api/master/envtest-releases.yaml
+# OCP version to Kubernetes version mapping (OCP 4.x -> K8s 1.(x+13))
+# OCP 4.17=1.30, 4.18=1.31, 4.19=1.32, 4.20=1.33, 4.21=1.34, 4.22=1.35
+ENVTEST_OCP_K8S_VERSIONS ?= 1.30.3 1.31.2 1.32.1 1.33.2 1.34.1 1.35.1
+
+# Vanilla Kubernetes versions for envtest (upstream kubebuilder assets)
+ENVTEST_KUBE_VERSIONS ?= 1.31.0 1.32.0 1.33.0 1.34.0 1.35.0
+
+# Parallel envtest execution: 0 = sequential (default), N = N parallel jobs, MAX = all versions in parallel.
+ENVTEST_JOBS ?= 0
+
+# Internal pattern target for parallel sub-make. Do not call directly.
+# Expects ENVTEST_BIN_DIR and optionally ENVTEST_INDEX_FLAG via sub-make variables.
+_run-single-envtest-%:
+	@log=$$(mktemp); \
+	echo "=== Running envtest for K8s $* ===" > "$$log"; \
+	KUBEBUILDER_ASSETS="$$($(SETUP_ENVTEST) use --use-env --bin-dir $(ENVTEST_BIN_DIR) -p path $(ENVTEST_INDEX_FLAG) $*)" \
+	$(GO) test -tags envtest -race -count=1 -timeout=30m ./test/envtest/... >> "$$log" 2>&1; \
+	rc=$$?; \
+	cat "$$log"; \
+	rm -f "$$log"; \
+	exit $$rc
+
+.PHONY: test-envtest-ocp
+test-envtest-ocp: generate $(SETUP_ENVTEST) ## Run envtest tests for all supported OCP versions (ENVTEST_JOBS=0|N|MAX)
+ifeq ($(ENVTEST_JOBS),0)
+	@for k8s_ver in $(ENVTEST_OCP_K8S_VERSIONS); do \
+		echo "=== Running envtest for OCP (K8s $$k8s_ver) ==="; \
+		KUBEBUILDER_ASSETS="$$($(SETUP_ENVTEST) use --use-env --bin-dir $(ENVTEST_OCP_ASSETS_DIR) -p path --index $(ENVTEST_OCP_INDEX) $$k8s_ver)" \
+		$(GO) test -tags envtest -race -count=1 -timeout=30m ./test/envtest/... || exit 1; \
+	done
+	@echo "=== All OCP envtest versions passed ==="
+else
+	@echo "=== Pre-fetching OCP envtest assets ==="
+	@for k8s_ver in $(ENVTEST_OCP_K8S_VERSIONS); do \
+		echo "  Fetching K8s $$k8s_ver..."; \
+		$(SETUP_ENVTEST) use --use-env --bin-dir $(ENVTEST_OCP_ASSETS_DIR) -p path --index $(ENVTEST_OCP_INDEX) $$k8s_ver > /dev/null || { echo "Failed to fetch envtest assets for $$k8s_ver"; exit 1; }; \
+	done
+  ifeq ($(ENVTEST_JOBS),MAX)
+	@echo "=== Running OCP envtest in parallel (jobs=$(words $(ENVTEST_OCP_K8S_VERSIONS))) ==="
+	@$(MAKE) -j$(words $(ENVTEST_OCP_K8S_VERSIONS)) --no-print-directory \
+		ENVTEST_BIN_DIR="$(ENVTEST_OCP_ASSETS_DIR)" \
+		ENVTEST_INDEX_FLAG="--index $(ENVTEST_OCP_INDEX)" \
+		$(addprefix _run-single-envtest-,$(ENVTEST_OCP_K8S_VERSIONS))
+  else
+	@echo "=== Running OCP envtest in parallel (jobs=$(ENVTEST_JOBS)) ==="
+	@$(MAKE) -j$(ENVTEST_JOBS) --no-print-directory \
+		ENVTEST_BIN_DIR="$(ENVTEST_OCP_ASSETS_DIR)" \
+		ENVTEST_INDEX_FLAG="--index $(ENVTEST_OCP_INDEX)" \
+		$(addprefix _run-single-envtest-,$(ENVTEST_OCP_K8S_VERSIONS))
+  endif
+	@echo "=== All OCP envtest versions passed ==="
+endif
+
+.PHONY: test-envtest-kube
+test-envtest-kube: generate $(SETUP_ENVTEST) ## Run envtest tests for all supported Kubernetes versions (ENVTEST_JOBS=0|N|MAX)
+ifeq ($(ENVTEST_JOBS),0)
+	@for k8s_ver in $(ENVTEST_KUBE_VERSIONS); do \
+		echo "=== Running envtest for Kubernetes $$k8s_ver ==="; \
+		KUBEBUILDER_ASSETS="$$($(SETUP_ENVTEST) use --use-env --bin-dir $(ENVTEST_KUBE_ASSETS_DIR) -p path $$k8s_ver)" \
+		$(GO) test -tags envtest -race -count=1 -timeout=30m ./test/envtest/... || exit 1; \
+	done
+	@echo "=== All Kubernetes envtest versions passed ==="
+else
+	@echo "=== Pre-fetching Kubernetes envtest assets ==="
+	@for k8s_ver in $(ENVTEST_KUBE_VERSIONS); do \
+		echo "  Fetching K8s $$k8s_ver..."; \
+		$(SETUP_ENVTEST) use --use-env --bin-dir $(ENVTEST_KUBE_ASSETS_DIR) -p path $$k8s_ver > /dev/null || { echo "Failed to fetch envtest assets for $$k8s_ver"; exit 1; }; \
+	done
+  ifeq ($(ENVTEST_JOBS),MAX)
+	@echo "=== Running Kubernetes envtest in parallel (jobs=$(words $(ENVTEST_KUBE_VERSIONS))) ==="
+	@$(MAKE) -j$(words $(ENVTEST_KUBE_VERSIONS)) --no-print-directory \
+		ENVTEST_BIN_DIR="$(ENVTEST_KUBE_ASSETS_DIR)" \
+		ENVTEST_INDEX_FLAG="" \
+		$(addprefix _run-single-envtest-,$(ENVTEST_KUBE_VERSIONS))
+  else
+	@echo "=== Running Kubernetes envtest in parallel (jobs=$(ENVTEST_JOBS)) ==="
+	@$(MAKE) -j$(ENVTEST_JOBS) --no-print-directory \
+		ENVTEST_BIN_DIR="$(ENVTEST_KUBE_ASSETS_DIR)" \
+		ENVTEST_INDEX_FLAG="" \
+		$(addprefix _run-single-envtest-,$(ENVTEST_KUBE_VERSIONS))
+  endif
+	@echo "=== All Kubernetes envtest versions passed ==="
+endif
+
+.PHONY: test-envtest-api-all
+test-envtest-api-all: test-envtest-ocp test-envtest-kube ## Run all envtest API tests (ENVTEST_JOBS=0|N|MAX)
+
+.PHONY: e2e
+e2e: reqserving-e2e e2ev2 backuprestore-e2e
+	$(GO_E2E_RECIPE) -o bin/test-e2e ./test/e2e
+	$(GO_BUILD_RECIPE) -o bin/test-setup ./test/setup
+	cd $(TOOLS_DIR); GO111MODULE=on GOFLAGS=-mod=vendor GOWORK=off go build -tags=tools -o ../../bin/gotestsum gotest.tools/gotestsum
+
+# Build request serving e2e tests
+.PHONY: reqserving-e2e
+reqserving-e2e:
+	CGO_ENABLED=1 $(GO) test $(GO_GCFLAGS) -tags reqserving -c -o bin/test-reqserving ./test/reqserving-e2e
+
+# Build e2e v2 tests
+.PHONY: e2ev2
+e2ev2:
+	$(GO_E2EV2_RECIPE) -o bin/test-e2e-v2 ./test/e2e/v2/tests
+
+.PHONY: e2ev2-create-guests
+e2ev2-create-guests:
+	$(GO_BUILD_RECIPE) -tags e2ev2 -o bin/create-guests ./test/e2e/v2/cmd/create-guests
+
+.PHONY: e2ev2-run-tests
+e2ev2-run-tests:
+	$(GO_BUILD_RECIPE) -tags e2ev2 -o bin/run-tests ./test/e2e/v2/cmd/run-tests
+
+.PHONY: e2ev2-destroy-guests
+e2ev2-destroy-guests:
+	$(GO_BUILD_RECIPE) -tags e2ev2 -o bin/destroy-guests ./test/e2e/v2/cmd/destroy-guests
+
+.PHONY: e2ev2-dump-guests
+e2ev2-dump-guests:
+	$(GO_BUILD_RECIPE) -tags e2ev2 -o bin/dump-guests ./test/e2e/v2/cmd/dump-guests
+
+.PHONY: backuprestore-e2e
+backuprestore-e2e:
+	$(GO_BACKUPRESTORE_E2E_RECIPE) -o bin/test-backuprestore ./test/e2e/v2/tests
+
+.PHONY: test-backup-restore
+test-backup-restore: backuprestore-e2e
+	mkdir -p $(ARTIFACT_DIR)
+	ARTIFACT_DIR=$(ARTIFACT_DIR) bin/test-backuprestore \
+	  --ginkgo.v \
+	  --ginkgo.no-color=$(OPENSHIFT_CI) \
+	  --ginkgo.junit-report="$(ARTIFACT_DIR)/junit.xml" \
+	  --ginkgo.label-filter="backup-restore" \
+	  --ginkgo.fail-fast=$(FAIL_FAST) \
+	  --ginkgo.timeout=2h
+
+# Run go fmt against code
+.PHONY: fmt
+fmt:
+	$(GO) fmt ./...
+
+# Run go vet against code
+.PHONY: vet
+vet:
+	$(GO) vet -tags integration,e2e,reqserving,e2ev2,backuprestore ./...
+
+# jparrill: The RHTAP tool is breaking the RHTAP builds from Feb 27th, so we're stop using it for now
+# more info here https://redhat-internal.slack.com/archives/C031USXS2FJ/p1710177462151639
+#.PHONY: build-promtool
+#build-promtool:
+#	cd $(TOOLS_DIR); $(GO) build -o $(PROMTOOL) github.com/prometheus/prometheus/cmd/promtool
+#
+#.PHONY: promtool
+#promtool: build-promtool
+#	cd $(TOOLS_DIR); $(PROMTOOL) check rules ../../cmd/install/assets/slos/*.yaml ../../cmd/install/assets/recordingrules/*.yaml ../../control-plane-operator/controllers/hostedcontrolplane/kas/assets/*.yaml
+
+# Updates Go modules
+.PHONY: deps
+deps:
+	$(GO) mod tidy
+	$(GO) mod vendor
+	$(GO) mod verify
+	$(GO) list -m -mod=readonly -json all > /dev/null
+	(cd hack/tools && $(GO) mod tidy && $(GO) mod vendor && $(GO) mod verify && $(GO) list -m -mod=readonly -json all > /dev/null)
+
+.PHONY: api-deps
+api-deps:
+	cd api && \
+	  $(GO) mod tidy && \
+	  $(GO) mod vendor && \
+	  $(GO) mod verify && \
+	  $(GO) list -m -mod=readonly -json all > /dev/null
+
+.PHONY: workspace-sync
+workspace-sync:
+	cd hack/workspace && \
+	  $(GOWS) work sync
+
+# Run staticcheck
+# How to ignore failures https://staticcheck.io/docs/configuration#line-based-linter-directives
+.PHONY: staticcheck
+staticcheck: $(STATICCHECK)
+	$(STATICCHECK) \
+		./control-plane-operator/... \
+		./control-plane-pki-operator/... \
+		./hypershift-operator/controllers/... \
+		./ignition-server/... \
+		./cmd/... \
+		./support/certs/... \
+		./support/releaseinfo/... \
+		./support/upsert/... \
+		./konnectivity-socks5-proxy/... \
+		./contrib/... \
+		./availability-prober/... \
+		./test/integration/... \
+
+# Build the docker image with official golang image
+.PHONY: docker-build
+docker-build:
+	${RUNTIME} build --build-arg COMMIT_HASH=$(COMMIT_HASH) . -t ${IMG}
+
+# Push the docker image
+.PHONY: docker-push
+docker-push:
+	${RUNTIME} push ${IMG}
+
+.PHONY: regenerate-pki
+regenerate-pki:
+	REGENERATE_PKI=1 $(GO) test ./control-plane-pki-operator/...
+	REGENERATE_PKI=1 $(GO) test ./test/e2e/... -run TestRegeneratePKI
+
+.PHONY: hypershift-install-aws-dev
+hypershift-install-aws-dev:
+	@$(HYPERSHIFT_INSTALL_AWS)
+
+.PHONY: run-operator-locally-aws-dev
+run-operator-locally-aws-dev:
+	@$(RUN_OPERATOR_LOCALLY_AWS)
+
+.PHONY: verify-docs-nav
+verify-docs-nav: $(PYYAML_STAMP) ## Verify docs nav entries are sorted alphabetically.
+	PYTHONPATH=$(TOOLS_BIN_DIR)/$(PYYAML_DIST_DIR) python3 hack/verify-docs-nav-order.py
+
+.PHONY: verify-codespell
+verify-codespell: codespell ## Verify codespell.
+	@$(CODESPELL) --count --ignore-words=./.codespellignore --skip="./hack/tools/bin/codespell_dist,./docs/site/*,./vendor/*,./api/vendor/*,./hack/tools/vendor/*,./api/hypershift/v1alpha1/*,./support/thirdparty/*,./docs/content/reference/*,./hack/tools/bin/*,./cmd/install/assets/*,./go.sum,./api/go.sum,./hack/workspace/go.work.sum,./api/hypershift/v1beta1/zz_generated.featuregated-crd-manifests,./hack/tools/go.mod,./hack/tools/go.sum,./karpenter-operator/controllers/karpenter/assets/*.yaml,./dev/*"
+
+.PHONY: verify-api-deps
+verify-api-deps: $(VERIFY_API_DEPS) ## Verify API dependencies against allowlist.
+	@$(VERIFY_API_DEPS)
+
+.PHONY: run-gitlint
+run-gitlint: $(GITLINT)
+ifdef PULL_BASE_SHA
+	@echo "Linting commits from $(PULL_BASE_SHA) to $(PULL_PULL_SHA) (CI: PR targeting $(PULL_BASE_SHA))"
+	@$(GITLINT) --commits $(PULL_BASE_SHA)..$(PULL_PULL_SHA)
+else
+	$(eval MERGE_BASE := $(shell \
+		git merge-base HEAD origin/HEAD 2>/dev/null || \
+		git merge-base HEAD origin/main 2>/dev/null || \
+		git merge-base HEAD origin/master 2>/dev/null || \
+		echo "HEAD~1" \
+	))
+	@echo "Linting commits from $(MERGE_BASE) to HEAD (local development)"
+	@$(GITLINT) --commits $(MERGE_BASE)..HEAD
+endif
+
+.PHONY: cpo-container-sync
+cpo-container-sync:
+	@echo "Syncing CPO container images"
+	./hack/tools/git-hooks/cpo-containerfiles-in-sync.sh ./Containerfile.control-plane ./Dockerfile.control-plane
+
+## Run Karpenter upstream e2e tests. Requires:
+# - KARPENTER_CORE_DIR to be set to the path of the karpenter-core repository
+# - current context to be set to a hosted cluster with AutoNode enabled.
+# - an annotation to be applied to the HCP to stop reconcillation (hypershift.openshift.io/karpenter-core-e2e-override=true)
+.PHONY: karpenter-upstream-e2e
+karpenter-upstream-e2e:
+	./karpenter-operator/e2e/upstream-e2e.sh
+
+## --------------------------------------
+## Tooling Binaries
+## --------------------------------------
+
+##@ pyyaml
+$(PYYAML_STAMP): ## Install pyyaml for verify-docs-nav.
+	rm -rf $(TOOLS_BIN_DIR)/$(PYYAML_DIST_DIR) && \
+	mkdir -p $(TOOLS_BIN_DIR)/$(PYYAML_DIST_DIR) && \
+	python3 -m pip install --target=$(TOOLS_BIN_DIR)/$(PYYAML_DIST_DIR) pyyaml==$(PYYAML_VER) --upgrade && \
+	touch $@
+
+##@ codespell
+codespell : $(CODESPELL) ## Build a local copy of codespell.
+$(CODESPELL): ## Build codespell from tools folder.
+		mkdir -p $(TOOLS_BIN_DIR); \
+		mkdir -p $(TOOLS_BIN_DIR)/$(CODESPELL_DIST_DIR); \
+		mkdir -p $(TOOLS_BIN_DIR)/$(CODESPELL_DIST_DIR)/bin; \
+		mkdir -p $(TOOLS_BIN_DIR)/$(CODESPELL_DIST_DIR); \
+	 	python3 -m pip install --target=$(TOOLS_BIN_DIR)/$(CODESPELL_DIST_DIR) $(CODESPELL_BIN)==$(CODESPELL_VER) --upgrade; \
+		mv $(TOOLS_BIN_DIR)/$(CODESPELL_DIST_DIR)/bin/$(CODESPELL_BIN) $(TOOLS_BIN_DIR)/$(CODESPELL_DIST_DIR); \
+		rm -r $(TOOLS_BIN_DIR)/$(CODESPELL_DIST_DIR)/bin;
+
+##@ gitlint
+gitlint : $(GITLINT) ## Install local copy of gitlint
+$(GITLINT): $(TOOLS_DIR)/go.mod
+	mkdir -p $(TOOLS_BIN_DIR); \
+	mkdir -p $(TOOLS_BIN_DIR)/$(GITLINT_DIST_DIR); \
+	python3 -m pip install --target=$(TOOLS_BIN_DIR)/$(GITLINT_DIST_DIR) gitlint==$(GITLINT_VER) --upgrade; \
+	cp $(TOOLS_BIN_DIR)/$(GITLINT_DIST_DIR)/bin/$(GITLINT_BIN) $(TOOLS_BIN_DIR)/$(GITLINT_DIST_DIR)/$(GITLINT_BIN)-bin; \
+	chmod +x $(TOOLS_BIN_DIR)/$(GITLINT_DIST_DIR)/$(GITLINT_BIN)-bin;

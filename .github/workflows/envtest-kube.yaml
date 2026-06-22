@@ -1,0 +1,14 @@
+name: Envtest Vanilla Kube API Validation
+
+on:
+  pull_request:
+    branches:
+      - main
+      - release-4.22
+  workflow_dispatch: {}
+
+jobs:
+  envtest-kube:
+    uses: openshift/hypershift/.github/workflows/envtest-kube-reusable.yaml@main
+    permissions:
+      contents: read

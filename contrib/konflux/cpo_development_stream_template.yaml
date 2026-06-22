@@ -1,0 +1,60 @@
+apiVersion: projctl.konflux.dev/v1beta1
+kind: ProjectDevelopmentStreamTemplate
+metadata:
+  name: hypershift-cpo-template
+spec:
+  project: crt-redhat-acm-tenant
+  variables:
+  - name: version
+    description: A version number for a new development stream
+  - name: versionName
+    description: A K8s-compliant name for the version
+    defaultValue: "{{hyphenize .version}}"
+
+  resources:
+  - apiVersion: appstudio.redhat.com/v1alpha1
+    kind: Application
+    metadata:
+      name: "control-plane-operator-{{.versionName}}"
+    spec:
+      displayName: "control-plane-operator-{{.versionName}}"
+
+  - apiVersion: appstudio.redhat.com/v1alpha1
+    kind: Component
+    metadata:
+      annotations:
+        build.appstudio.openshift.io/request: configure-pac
+        build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+        git-provider: github
+        git-provider-url: https://github.com
+      name: control-plane-operator-{{.versionName}}
+    spec:
+      application: "control-plane-operator-{{.versionName}}"
+      componentName: "control-plane-operator-{{.versionName}}"
+      containerImage: "quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-{{.versionName}}"
+      source:
+        git:
+          context: ./
+          dockerfileUrl: Containerfile.control-plane
+          revision: "release-{{.version}}"
+          url: https://github.com/openshift/hypershift
+
+  - apiVersion: appstudio.redhat.com/v1alpha1
+    kind: ImageRepository
+    metadata:
+      name: control-plane-operator-{{.versionName}}
+      labels:
+        appstudio.redhat.com/application: control-plane-operator-{{.versionName}}
+        appstudio.redhat.com/component: control-plane-operator-{{.versionName}}
+      annotations:
+        image-controller.appstudio.redhat.com/update-component-image: 'true'
+    spec:
+      image:
+        name: crt-redhat-acm-tenant/control-plane-operator-{{.versionName}}
+        visibility: public
+      notifications:
+        - config:
+            url: 'https://bombino.preprod.api.redhat.com/v1/sbom/quay/push'
+          event: repo_push
+          method: webhook
+          title: SBOM-event-to-Bombino

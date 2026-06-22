@@ -1,0 +1,85 @@
+name: Envtest OCP API Validation (Reusable)
+
+on:
+  workflow_call:
+  push:
+    branches:
+      - main
+      - release-4.22
+
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    name: Detect Changes
+    runs-on: arc-runner-set
+    outputs:
+      should_run: ${{ steps.check.outputs.should_run }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check for relevant file changes
+        id: check
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          if [ -n "${PR_BASE_SHA:-}" ] && [ -n "${PR_HEAD_SHA:-}" ]; then
+            ref="${PR_BASE_SHA}...${PR_HEAD_SHA}"
+          elif [ -n "${PUSH_BEFORE_SHA:-}" ] && [ "$PUSH_BEFORE_SHA" != "0000000000000000000000000000000000000000" ]; then
+            ref="${PUSH_BEFORE_SHA}..HEAD"
+          else
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if git diff --name-only "$ref" | grep -qE '^(api/|test/envtest/|cmd/install/assets/crds/hypershift-operator/tests/|karpenter-operator/controllers/karpenter/assets/tests/|\.github/workflows/envtest-ocp(-reusable)?\.yaml$)'; then
+            echo "should_run=true"
+          else
+            echo "should_run=false"
+          fi >> "$GITHUB_OUTPUT"
+
+  envtest-ocp:
+    name: Envtest OCP (K8s ${{ matrix.version }})
+    needs: changes
+    if: needs.changes.outputs.should_run == 'true'
+    runs-on: arc-runner-set
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        # OCP 4.17=1.30, 4.18=1.31, 4.19=1.32, 4.20=1.33, 4.21=1.34, 4.22=1.35
+        version: ["1.30.3", "1.31.2", "1.32.1", "1.33.2", "1.34.1", "1.35.1"]
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - run: make test-envtest-ocp ENVTEST_OCP_K8S_VERSIONS="${{ matrix.version }}"
+
+  conclusion:
+    name: Conclusion
+    needs:
+      - changes
+      - envtest-ocp
+    if: always()
+    runs-on: arc-runner-set
+    steps:
+      - name: Aggregate results
+        run: |
+          changes_result="${{ needs.changes.result }}"
+          envtest_result="${{ needs.envtest-ocp.result }}"
+          if [ "$changes_result" != "success" ]; then
+            echo "Change detection failed: $changes_result"
+            exit 1
+          fi
+          if [ "$envtest_result" = "success" ] || [ "$envtest_result" = "skipped" ]; then
+            echo "All envtest jobs passed or were skipped"
+            exit 0
+          else
+            echo "Envtest jobs failed: $envtest_result"
+            exit 1
+          fi

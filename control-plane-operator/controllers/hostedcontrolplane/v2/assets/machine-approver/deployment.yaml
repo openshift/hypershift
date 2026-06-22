@@ -1,0 +1,58 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: machine-approver
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: machine-approver
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: machine-approver
+      name: machine-approver
+    spec:
+      containers:
+      - args:
+        - --config=/var/run/configmaps/config/config.yaml
+        - -v=3
+        - --logtostderr
+        - --apigroup=cluster.x-k8s.io
+        - --workload-cluster-kubeconfig=/etc/kubernetes/kubeconfig/kubeconfig
+        - --disable-status-controller
+        command:
+        - /usr/bin/machine-approver
+        image: cluster-machine-approver
+        imagePullPolicy: IfNotPresent
+        name: machine-approver
+        resources:
+          requests:
+            cpu: 10m
+            memory: 50Mi
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /etc/kubernetes/kubeconfig
+          name: kubeconfig
+        - mountPath: /var/run/configmaps/config
+          name: config
+      restartPolicy: Always
+      serviceAccount: machine-approver
+      serviceAccountName: machine-approver
+      terminationGracePeriodSeconds: 30
+      volumes:
+      - name: kubeconfig
+        secret:
+          defaultMode: 420
+          secretName: service-network-admin-kubeconfig      
+      - configMap:
+          defaultMode: 440
+          name: machine-approver-config
+          optional: true
+        name: config

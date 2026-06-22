@@ -1,0 +1,13 @@
+name: CPO Container Sync
+
+on:
+  pull_request:
+    branches:
+      - main
+      - release-4.22
+
+jobs:
+  cpo-container-sync:
+    uses: openshift/hypershift/.github/workflows/cpo-container-sync-reusable.yaml@main
+    permissions:
+      contents: read

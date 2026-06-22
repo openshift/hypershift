@@ -1,0 +1,15 @@
+name: Unit Tests
+
+on:
+  pull_request:
+    branches:
+      - main
+      - release-4.22
+  workflow_dispatch: {}
+
+jobs:
+  test:
+    uses: openshift/hypershift/.github/workflows/test-reusable.yaml@main
+    permissions:
+      contents: read
+    secrets: inherit

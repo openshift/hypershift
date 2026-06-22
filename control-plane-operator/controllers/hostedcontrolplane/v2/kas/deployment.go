@@ -1,0 +1,526 @@
+package kas
+
+import (
+	"bytes"
+	"errors"
+	"fmt"
+	"strconv"
+	"strings"
+
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/azureutil"
+	"github.com/openshift/hypershift/support/config"
+	component "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/netutil"
+	"github.com/openshift/hypershift/support/podspec"
+	"github.com/openshift/hypershift/support/proxy"
+	"github.com/openshift/hypershift/support/util"
+
+	configv1 "github.com/openshift/api/config/v1"
+
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/utils/ptr"
+
+	"sigs.k8s.io/controller-runtime/pkg/client"
+)
+
+const (
+	kasNamedCertificateMountPathPrefix = "/etc/kubernetes/certs/named"
+
+	awsPodIdentityWebhookServingCertVolumeName = "aws-pod-identity-webhook-serving-certs"
+	awsPodIdentityWebhookKubeconfigVolumeName  = "aws-pod-identity-webhook-kubeconfig"
+
+	azureWorkloadIdentityWebhookServingCertVolumeName = "azure-wi-webhook-serving-certs"
+	azureWorkloadIdentityWebhookKubeconfigVolumeName  = "azure-wi-webhook-kubeconfig"
+
+	azureWorkloadIdentityWebhookWaitForKASVersionTemplate = `set -u
+until curl -kfsS "https://localhost:%d/version" >/dev/null; do
+  echo "waiting for kube-apiserver /version endpoint to become available"
+  sleep 2
+done
+exec /usr/bin/azure-workload-identity-webhook \
+  --webhook-cert-dir=/var/run/app/certs \
+  --health-addr=:9440 \
+  --audience=api://AzureADTokenExchange \
+  --kubeconfig=/var/run/app/kubeconfig/kubeconfig \
+  --metrics-addr=:9441 \
+  --log-level=info \
+  --disable-cert-rotation
+`
+)
+
+func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
+	hcp := cpContext.HCP
+	updateMainContainer(&deployment.Spec.Template.Spec, hcp)
+
+	podspec.UpdateContainer("konnectivity-server", deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
+		serverCount := component.DefaultReplicas(hcp, &KubeAPIServer{}, ComponentName)
+		c.Args = append(c.Args,
+			"--server-count",
+			strconv.Itoa(int(serverCount)),
+		)
+
+		cipherSuites := config.CipherSuites(hcp.Spec.Configuration.GetTLSSecurityProfile())
+		if len(cipherSuites) != 0 {
+			c.Args = append(c.Args, fmt.Sprintf("--cipher-suites=%s", strings.Join(cipherSuites, ",")))
+		}
+	})
+
+	payloadVersion := cpContext.UserReleaseImageProvider.Version()
+	bootstrapContainers := []string{
+		"init-bootstrap-render",
+		"init-auth-bootstrap-render",
+	}
+	bootstrapUpdateErrors := []error{}
+	for _, bootstrapContainer := range bootstrapContainers {
+		if err := updateBootstrapInitContainer(deployment, hcp, payloadVersion, bootstrapContainer); err != nil {
+			bootstrapUpdateErrors = append(bootstrapUpdateErrors, fmt.Errorf("updating bootstrap container %q: %w", bootstrapContainer, err))
+		}
+	}
+	if err := errors.Join(bootstrapUpdateErrors...); err != nil {
+		return fmt.Errorf("updating bootstrap containers: %w", err)
+	}
+
+	if hcp.Spec.Configuration.GetAuditPolicyConfig().Profile == configv1.NoneAuditProfileType {
+		podspec.RemoveContainer("audit-logs", &deployment.Spec.Template.Spec)
+	}
+
+	// With managed etcd, we should wait for the known etcd client service name to
+	// at least resolve before starting up to avoid futile connection attempts and
+	// pod crashing. For unmanaged, make no assumptions.
+	if hcp.Spec.Etcd.ManagementType == hyperv1.Unmanaged {
+		podspec.RemoveInitContainer("wait-for-etcd", &deployment.Spec.Template.Spec)
+	}
+
+	// If the built-in OAuth stack is not enabled, there is no need to do the auth-related
+	// bootstrapping step.
+	if hcp.Spec.Configuration != nil && !util.ConfigOAuthEnabled(hcp.Spec.Configuration.Authentication) {
+		podspec.RemoveInitContainer("init-auth-bootstrap-render", &deployment.Spec.Template.Spec)
+	}
+
+	if portieris, ok := hcp.Annotations[hyperv1.PortierisImageAnnotation]; ok {
+		applyPortieriesConfig(&deployment.Spec.Template.Spec, portieris)
+	}
+
+	switch hcp.Spec.Platform.Type {
+	case hyperv1.AWSPlatform:
+		applyAWSPodIdentityWebhookContainer(&deployment.Spec.Template.Spec, hcp)
+	case hyperv1.AzurePlatform:
+		if hcp.Spec.Platform.Azure == nil {
+			return fmt.Errorf("azure platform type requires spec.platform.azure")
+		}
+		applyAzureWorkloadIdentityWebhookContainer(&deployment.Spec.Template.Spec, hcp)
+	}
+
+	if hcp.Spec.AuditWebhook != nil && len(hcp.Spec.AuditWebhook.Name) > 0 {
+		applyKASAuditWebhookConfigFileVolume(&deployment.Spec.Template.Spec, hcp.Spec.AuditWebhook)
+	}
+
+	if secretEncryption := hcp.Spec.SecretEncryption; secretEncryption != nil {
+		applyGenericSecretEncryptionConfig(&deployment.Spec.Template.Spec)
+		switch secretEncryption.Type {
+		case hyperv1.KMS:
+			encConfigSecret := manifests.KASSecretEncryptionConfigFile(hcp.Namespace)
+			currentConfig, err := readCurrentEncryptionConfig(cpContext, encConfigSecret)
+			if err != nil {
+				return fmt.Errorf("failed to read current encryption config: %w", err)
+			}
+			kasReady, err := isKASConverged(cpContext)
+			if err != nil {
+				return fmt.Errorf("failed to check KAS convergence: %w", err)
+			}
+			if err := applyKMSConfig(&deployment.Spec.Template.Spec, secretEncryption, &hcp.Status.SecretEncryption, currentConfig, kasReady, newKMSImages(hcp), hcp); err != nil {
+				return err
+			}
+		}
+	}
+
+	// Pre-pull images to avoid startup delays between containers and timeout errors.
+	// Avoids flakiness in e2e tests
+	addImagePrePullInitContainers(&deployment.Spec.Template.Spec)
+
+	// When running on ARO HCP, add a hostAlias so the azure-kms-provider
+	// sidecar resolves the Key Vault FQDN to the private-router Service ClusterIP.
+	// The private router has access to the customer VNet (via Swift) and can reach the
+	// Key Vault's private endpoint, acting as a TCP passthrough relay.
+	if azureutil.IsAroHCPByHCP(hcp) && azureutil.IsPrivateKeyVault(hcp) {
+		kvFQDN, err := azureutil.GetKeyVaultFQDN(hcp)
+		if err != nil {
+			return fmt.Errorf("failed to get Key Vault FQDN for hostAlias: %w", err)
+		}
+
+		routerSvc := manifests.PrivateRouterService(hcp.Namespace)
+		if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(routerSvc), routerSvc); err != nil {
+			return fmt.Errorf("failed to get private-router service: %w", err)
+		}
+
+		deployment.Spec.Template.Spec.HostAliases = append(
+			deployment.Spec.Template.Spec.HostAliases,
+			corev1.HostAlias{
+				IP:        routerSvc.Spec.ClusterIP,
+				Hostnames: []string{kvFQDN},
+			},
+		)
+	}
+
+	return nil
+}
+
+func updateMainContainer(podSpec *corev1.PodSpec, hcp *hyperv1.HostedControlPlane) {
+	podspec.UpdateContainer(ComponentName, podSpec.Containers, func(c *corev1.Container) {
+		c.Ports[0].ContainerPort = netutil.KASPodPort(hcp)
+
+		kasVerbosityLevel := 2
+		if hcp.Annotations[hyperv1.KubeAPIServerVerbosityLevelAnnotation] != "" {
+			parsedKASVerbosityValue, err := strconv.Atoi(hcp.Annotations[hyperv1.KubeAPIServerVerbosityLevelAnnotation])
+			if err == nil {
+				kasVerbosityLevel = parsedKASVerbosityValue
+			}
+		}
+		c.Args = append(c.Args,
+			fmt.Sprintf("--v=%d", kasVerbosityLevel),
+		)
+
+		// We have to exempt the pod and service CIDR, otherwise the proxy will get respected by the transport inside
+		// the egress transport and that breaks the egress selection/konnektivity usage.
+		// Using a CIDR is not supported by Go's default ProxyFunc, but Kube uses a custom one by default that does support it:
+		// https://github.com/kubernetes/kubernetes/blob/ab13c85316015cf9f115e29923ba9740bd1564fd/staging/src/k8s.io/apimachinery/pkg/util/net/http.go#L112-L114
+		var additionalNoProxyCIDRS []string
+		additionalNoProxyCIDRS = append(additionalNoProxyCIDRS, netutil.ClusterCIDRs(hcp.Spec.Networking.ClusterNetwork)...)
+		additionalNoProxyCIDRS = append(additionalNoProxyCIDRS, netutil.ServiceCIDRs(hcp.Spec.Networking.ServiceNetwork)...)
+		proxy.SetEnvVars(&c.Env, additionalNoProxyCIDRS...)
+
+		if hcp.Annotations[hyperv1.KubeAPIServerGOGCAnnotation] != "" {
+			c.Env = append(c.Env, corev1.EnvVar{
+				Name:  "GOGC",
+				Value: hcp.Annotations[hyperv1.KubeAPIServerGOGCAnnotation],
+			})
+		}
+		if hcp.Annotations[hyperv1.KubeAPIServerGOMemoryLimitAnnotation] != "" {
+			c.Env = append(c.Env, corev1.EnvVar{
+				Name:  "GOMEMLIMIT",
+				Value: hcp.Annotations[hyperv1.KubeAPIServerGOMemoryLimitAnnotation],
+			})
+		}
+
+		if hcp.Spec.SecretEncryption != nil {
+			// Adjust KAS liveness probe to not have a hard dependency on kms so problems isolated to kms don't
+			// cause the entire kube-apiserver to restart and potentially enter CrashloopBackoff
+			totalProviderInstances := 0
+			switch hcp.Spec.SecretEncryption.Type {
+			case hyperv1.KMS:
+				if hcp.Spec.SecretEncryption.KMS != nil {
+					switch hcp.Spec.SecretEncryption.KMS.Provider {
+					case hyperv1.AWS:
+						if hcp.Spec.SecretEncryption.KMS.AWS != nil {
+							// Always will have an active key
+							totalProviderInstances = 1
+							if hcp.Spec.SecretEncryption.KMS.AWS.BackupKey != nil && len(hcp.Spec.SecretEncryption.KMS.AWS.BackupKey.ARN) > 0 { //nolint:staticcheck
+								totalProviderInstances++
+							}
+						}
+					}
+				}
+				// TODO: also adjust LivenessProbe for azure/ibm kms?
+			}
+			for i := 0; i < totalProviderInstances; i++ {
+				c.LivenessProbe.HTTPGet.Path = c.LivenessProbe.HTTPGet.Path + fmt.Sprintf("&exclude=kms-provider-%d", i)
+			}
+		}
+
+		for i, namedCert := range hcp.Spec.Configuration.GetNamedCertificates() {
+			volumeName := fmt.Sprintf("named-cert-%d", i+1)
+			podSpec.Volumes = append(podSpec.Volumes, corev1.Volume{
+				Name: volumeName,
+				VolumeSource: corev1.VolumeSource{
+					Secret: &corev1.SecretVolumeSource{
+						SecretName:  namedCert.ServingCertificate.Name,
+						DefaultMode: ptr.To[int32](0o640),
+					},
+				},
+			})
+			c.VolumeMounts = append(c.VolumeMounts, corev1.VolumeMount{
+				Name:      volumeName,
+				MountPath: fmt.Sprintf("%s-%d", kasNamedCertificateMountPathPrefix, i+1),
+			})
+		}
+	})
+}
+
+func applyKASAuditWebhookConfigFileVolume(podSpec *corev1.PodSpec, auditWebhookRef *corev1.LocalObjectReference) {
+	podSpec.Volumes = append(podSpec.Volumes, buildKASAuditWebhookConfigFileVolume(auditWebhookRef))
+
+	podspec.UpdateContainer(ComponentName, podSpec.Containers, func(c *corev1.Container) {
+		c.VolumeMounts = append(c.VolumeMounts, kasAuditWebhookConfigFileVolumeMount.ContainerMounts(ComponentName)...)
+	})
+}
+
+func applyGenericSecretEncryptionConfig(podSpec *corev1.PodSpec) {
+	podSpec.Volumes = append(podSpec.Volumes, buildVolumeSecretEncryptionConfigFile())
+
+	podspec.UpdateContainer(ComponentName, podSpec.Containers, func(c *corev1.Container) {
+		c.Args = append(c.Args,
+			fmt.Sprintf("--encryption-provider-config=%s/%s", genericSecretEncryptionConfigFileVolumeMount.Path(ComponentName, secretEncryptionConfigFileVolumeName), secretEncryptionConfigurationKey),
+			"--encryption-provider-config-automatic-reload=false",
+		)
+
+		c.VolumeMounts = append(c.VolumeMounts, genericSecretEncryptionConfigFileVolumeMount.ContainerMounts(ComponentName)...)
+	})
+}
+
+func updateBootstrapInitContainer(deployment *appsv1.Deployment, hcp *hyperv1.HostedControlPlane, payloadVersion, name string) error {
+	clusterFeatureGate := configv1.FeatureGate{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: configv1.SchemeGroupVersion.String(),
+			Kind:       "FeatureGate",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "cluster",
+		},
+	}
+	if hcp.Spec.Configuration != nil && hcp.Spec.Configuration.FeatureGate != nil {
+		clusterFeatureGate.Spec = *hcp.Spec.Configuration.FeatureGate
+	}
+	featureGateBuffer := &bytes.Buffer{}
+	if err := api.YamlSerializer.Encode(&clusterFeatureGate, featureGateBuffer); err != nil {
+		return fmt.Errorf("failed to encode feature gates: %w", err)
+	}
+	featureGateYaml := featureGateBuffer.String()
+
+	podspec.UpdateContainer(name, deployment.Spec.Template.Spec.InitContainers, func(c *corev1.Container) {
+		c.Env = append(c.Env,
+			corev1.EnvVar{
+				Name:  "PAYLOAD_VERSION",
+				Value: payloadVersion,
+			},
+			corev1.EnvVar{
+				Name:  "FEATURE_GATE_YAML",
+				Value: featureGateYaml,
+			},
+		)
+	})
+
+	return nil
+}
+
+func applyAWSPodIdentityWebhookContainer(podSpec *corev1.PodSpec, hcp *hyperv1.HostedControlPlane) {
+	podSpec.Containers = append(podSpec.Containers, corev1.Container{
+		Name:            "aws-pod-identity-webhook",
+		Image:           "aws-pod-identity-webhook",
+		ImagePullPolicy: corev1.PullIfNotPresent,
+		Command: []string{
+			"/usr/bin/aws-pod-identity-webhook",
+			"--annotation-prefix=eks.amazonaws.com",
+			"--in-cluster=false",
+			"--kubeconfig=/var/run/app/kubeconfig/kubeconfig",
+			"--logtostderr",
+			"--port=4443",
+			fmt.Sprintf("--aws-default-region=%s", hcp.Spec.Platform.AWS.Region),
+			"--tls-cert=/var/run/app/certs/tls.crt",
+			"--tls-key=/var/run/app/certs/tls.key",
+			"--token-audience=openshift",
+		},
+		Resources: corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("10m"),
+				corev1.ResourceMemory: resource.MustParse("25Mi"),
+			},
+		},
+		VolumeMounts: []corev1.VolumeMount{
+			{Name: awsPodIdentityWebhookServingCertVolumeName, MountPath: "/var/run/app/certs"},
+			{Name: awsPodIdentityWebhookKubeconfigVolumeName, MountPath: "/var/run/app/kubeconfig"},
+		},
+	})
+
+	podSpec.Volumes = append(podSpec.Volumes,
+		corev1.Volume{
+			Name: awsPodIdentityWebhookServingCertVolumeName,
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{SecretName: manifests.AWSPodIdentityWebhookServingCert("").Name},
+			},
+		},
+		corev1.Volume{
+			Name: awsPodIdentityWebhookKubeconfigVolumeName,
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{SecretName: manifests.AWSPodIdentityWebhookKubeconfig("").Name},
+			},
+		},
+	)
+}
+
+func applyAzureWorkloadIdentityWebhookContainer(podSpec *corev1.PodSpec, hcp *hyperv1.HostedControlPlane) {
+	waitForKASScript := fmt.Sprintf(azureWorkloadIdentityWebhookWaitForKASVersionTemplate, netutil.KASPodPort(hcp))
+
+	podSpec.Containers = append(podSpec.Containers, corev1.Container{
+		Name:            "azure-workload-identity-webhook",
+		Image:           "azure-workload-identity-webhook",
+		ImagePullPolicy: corev1.PullIfNotPresent,
+		Command:         []string{"/bin/sh", "-ec"},
+		Args:            []string{waitForKASScript},
+		Env: []corev1.EnvVar{
+			{Name: "AZURE_TENANT_ID", Value: hcp.Spec.Platform.Azure.TenantID},
+			{Name: "AZURE_ENVIRONMENT", Value: hcp.Spec.Platform.Azure.Cloud},
+		},
+		Resources: corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("10m"),
+				corev1.ResourceMemory: resource.MustParse("25Mi"),
+			},
+		},
+		StartupProbe: &corev1.Probe{
+			ProbeHandler: corev1.ProbeHandler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Path:   "/healthz",
+					Port:   intstr.FromInt(9440),
+					Scheme: corev1.URISchemeHTTP,
+				},
+			},
+			PeriodSeconds:    10,
+			FailureThreshold: 30,
+		},
+		LivenessProbe: &corev1.Probe{
+			ProbeHandler: corev1.ProbeHandler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Path:   "/healthz",
+					Port:   intstr.FromInt(9440),
+					Scheme: corev1.URISchemeHTTP,
+				},
+			},
+			PeriodSeconds: 20,
+		},
+		ReadinessProbe: &corev1.Probe{
+			ProbeHandler: corev1.ProbeHandler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Path:   "/readyz",
+					Port:   intstr.FromInt(9440),
+					Scheme: corev1.URISchemeHTTP,
+				},
+			},
+			InitialDelaySeconds: 5,
+			PeriodSeconds:       10,
+		},
+		VolumeMounts: []corev1.VolumeMount{
+			{Name: azureWorkloadIdentityWebhookServingCertVolumeName, MountPath: "/var/run/app/certs"},
+			{Name: azureWorkloadIdentityWebhookKubeconfigVolumeName, MountPath: "/var/run/app/kubeconfig"},
+		},
+	})
+
+	podSpec.Volumes = append(podSpec.Volumes,
+		corev1.Volume{
+			Name: azureWorkloadIdentityWebhookServingCertVolumeName,
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{SecretName: manifests.AzureWorkloadIdentityWebhookServingCert("").Name},
+			},
+		},
+		corev1.Volume{
+			Name: azureWorkloadIdentityWebhookKubeconfigVolumeName,
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{SecretName: manifests.AzureWorkloadIdentityWebhookKubeconfig("").Name},
+			},
+		},
+	)
+}
+
+func buildKASAuditWebhookConfigFileVolume(auditWebhookRef *corev1.LocalObjectReference) corev1.Volume {
+	v := corev1.Volume{
+		Name: auditWebhookConfigFileVolumeName,
+	}
+	v.Secret = &corev1.SecretVolumeSource{}
+	v.Secret.SecretName = auditWebhookRef.Name
+	return v
+}
+
+// addImagePrePullInitContainers adds an init container to pre-pull the kube-apiserver image.
+// This ensures the image is cached on the node before the regular containers start, reducing startup time.
+func addImagePrePullInitContainers(podSpec *corev1.PodSpec) {
+	image := ""
+	for _, c := range podSpec.Containers {
+		if c.Name == ComponentName {
+			image = c.Image
+		}
+	}
+
+	if image == "" {
+		return
+	}
+
+	prePullInitContainer := corev1.Container{
+		Name:            fmt.Sprintf("pre-pull-image-%s", ComponentName),
+		Image:           image,
+		ImagePullPolicy: corev1.PullIfNotPresent,
+		Command:         []string{"/bin/sh", "-c", fmt.Sprintf("echo 'Image for %s pre-pulled: %s'; exit 0", ComponentName, image)},
+	}
+
+	// Prepend the pre-pull init container to the existing init containers.
+	// This ensures the image is pulled before any other init containers run.
+	podSpec.InitContainers = append([]corev1.Container{prePullInitContainer}, podSpec.InitContainers...)
+}
+
+const (
+	workLogsVolumeName             = "logs"
+	authConfigVolumeName           = "auth-config"
+	auditConfigVolumeName          = "audit-config"
+	serverCertVolumeName           = "server-crt"
+	serverPrivateCertVolumeName    = "server-private-crt"
+	kubeletClientCAVolumeName      = "kubelet-client-ca"
+	aggregatorCertVolumeName       = "aggregator-crt"
+	egressSelectorConfigVolumeName = "egress-selector-config"
+	serviceAccountKeyVolumeName    = "svcacct-key"
+	kubeletClientCertVolumeName    = "kubelet-client-crt"
+	etcdClientCertVolumeName       = "etcd-client-crt"
+	oauthMetadataVolumeName        = "oauth-metadata"
+	etcdCAVolumeName               = "etcd-ca"
+
+	authTokenWebhookConfigVolumeName = "auth-token-webhook-config"
+	cloudConfigVolumeName            = "cloud-config"
+
+	auditWebhookConfigFileVolumeName = "kas-audit-webhook"
+)
+
+var (
+	volumeMounts = podspec.VolumeMounts{
+		ComponentName: {
+			workLogsVolumeName:                "/var/log/kube-apiserver",
+			authConfigVolumeName:              "/etc/kubernetes/auth",
+			auditConfigVolumeName:             "/etc/kubernetes/audit",
+			serverCertVolumeName:              "/etc/kubernetes/certs/server",
+			serverPrivateCertVolumeName:       "/etc/kubernetes/certs/server-private",
+			aggregatorCertVolumeName:          "/etc/kubernetes/certs/aggregator",
+			etcdCAVolumeName:                  "/etc/kubernetes/certs/etcd-ca",
+			etcdClientCertVolumeName:          "/etc/kubernetes/certs/etcd",
+			serviceAccountKeyVolumeName:       "/etc/kubernetes/secrets/svcacct-key",
+			oauthMetadataVolumeName:           "/etc/kubernetes/oauth",
+			authTokenWebhookConfigVolumeName:  "/etc/kubernetes/auth-token-webhook",
+			kubeletClientCertVolumeName:       "/etc/kubernetes/certs/kubelet",
+			kubeletClientCAVolumeName:         "/etc/kubernetes/certs/kubelet-ca",
+			egressSelectorConfigVolumeName:    "/etc/kubernetes/egress-selector",
+			common.VolumeAggregatorCA().Name:  "/etc/kubernetes/certs/aggregator-ca",
+			common.VolumeTotalClientCA().Name: "/etc/kubernetes/certs/client-ca",
+		},
+	}
+
+	cloudProviderConfigVolumeMount = podspec.VolumeMounts{
+		ComponentName: {
+			cloudConfigVolumeName: "/etc/kubernetes/cloud",
+		},
+	}
+
+	kasAuditWebhookConfigFileVolumeMount = podspec.VolumeMounts{
+		ComponentName: {
+			auditWebhookConfigFileVolumeName: "/etc/kubernetes/auditwebhook",
+		},
+	}
+
+	genericSecretEncryptionConfigFileVolumeMount = podspec.VolumeMounts{
+		ComponentName: {
+			secretEncryptionConfigFileVolumeName: "/etc/kubernetes/secret-encryption",
+		},
+	}
+)

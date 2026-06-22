@@ -1,0 +1,702 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "graphTooltip": 1,
+  "links": [],
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 100,
+      "panels": [],
+      "title": "API Server",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 1 },
+      "id": 1,
+      "lines": true,
+      "linewidth": 1,
+      "fill": 1,
+      "stack": false,
+      "nullPointMode": "null",
+      "targets": [
+        {
+          "expr": "sum(rate(apiserver_request_total{job=\"apiserver\"}[$__rate_interval])) by (verb)",
+          "legendFormat": "{{ verb }}",
+          "refId": "A"
+        }
+      ],
+      "title": "API Request Rate by Verb",
+      "tooltip": { "shared": true, "sort": 0, "value_type": "individual" },
+      "type": "graph",
+      "xaxis": { "mode": "time", "show": true },
+      "yaxes": [
+        { "format": "reqps", "show": true },
+        { "format": "short", "show": true }
+      ],
+      "legend": {
+        "show": true,
+        "values": true,
+        "avg": true,
+        "max": true,
+        "alignAsTable": true,
+        "rightSide": false
+      }
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 1 },
+      "id": 2,
+      "lines": true,
+      "linewidth": 1,
+      "fill": 1,
+      "stack": false,
+      "nullPointMode": "null",
+      "targets": [
+        {
+          "expr": "sum(rate(apiserver_request_total{job=\"apiserver\", code=~\"5..\"}[$__rate_interval])) by (resource)",
+          "legendFormat": "5xx {{ resource }}",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(apiserver_request_total{job=\"apiserver\", code=~\"4..\"}[$__rate_interval])) by (resource)",
+          "legendFormat": "4xx {{ resource }}",
+          "refId": "B"
+        }
+      ],
+      "title": "API Error Rate by Resource",
+      "tooltip": { "shared": true, "sort": 0, "value_type": "individual" },
+      "type": "graph",
+      "xaxis": { "mode": "time", "show": true },
+      "yaxes": [
+        { "format": "reqps", "show": true },
+        { "format": "short", "show": true }
+      ],
+      "legend": {
+        "show": true,
+        "values": true,
+        "avg": true,
+        "max": true,
+        "alignAsTable": true,
+        "rightSide": false
+      }
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 1 },
+      "id": 3,
+      "lines": true,
+      "linewidth": 1,
+      "fill": 1,
+      "stack": false,
+      "nullPointMode": "null",
+      "targets": [
+        {
+          "expr": "sum(apiserver_current_inflight_requests{job=\"apiserver\"}) by (request_kind)",
+          "legendFormat": "{{ request_kind }}",
+          "refId": "A"
+        }
+      ],
+      "title": "Inflight Requests",
+      "tooltip": { "shared": true, "sort": 0, "value_type": "individual" },
+      "type": "graph",
+      "xaxis": { "mode": "time", "show": true },
+      "yaxes": [
+        { "format": "short", "show": true },
+        { "format": "short", "show": true }
+      ],
+      "legend": {
+        "show": true,
+        "values": true,
+        "avg": true,
+        "max": true,
+        "alignAsTable": true,
+        "rightSide": false
+      }
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 9 },
+      "id": 4,
+      "lines": true,
+      "linewidth": 1,
+      "fill": 1,
+      "stack": false,
+      "nullPointMode": "null",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(apiserver_request_duration_seconds_bucket{job=\"apiserver\", verb!=\"WATCH\"}[$__rate_interval])) by (verb, le))",
+          "legendFormat": "p99 {{ verb }}",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(apiserver_request_duration_seconds_bucket{job=\"apiserver\", verb!=\"WATCH\"}[$__rate_interval])) by (verb, le))",
+          "legendFormat": "p50 {{ verb }}",
+          "refId": "B"
+        }
+      ],
+      "title": "API Request Latency (excluding WATCH)",
+      "tooltip": { "shared": true, "sort": 0, "value_type": "individual" },
+      "type": "graph",
+      "xaxis": { "mode": "time", "show": true },
+      "yaxes": [
+        { "format": "s", "show": true },
+        { "format": "short", "show": true }
+      ],
+      "legend": {
+        "show": true,
+        "values": true,
+        "avg": true,
+        "max": true,
+        "alignAsTable": true,
+        "rightSide": false
+      }
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 9 },
+      "id": 5,
+      "lines": true,
+      "linewidth": 1,
+      "fill": 1,
+      "stack": true,
+      "nullPointMode": "null",
+      "targets": [
+        {
+          "expr": "apiserver_storage_objects{job=\"apiserver\"}",
+          "legendFormat": "{{ resource }}",
+          "refId": "A"
+        }
+      ],
+      "title": "API Server Storage Objects by Resource",
+      "tooltip": { "shared": true, "sort": 0, "value_type": "individual" },
+      "type": "graph",
+      "xaxis": { "mode": "time", "show": true },
+      "yaxes": [
+        { "format": "short", "show": true },
+        { "format": "short", "show": true }
+      ],
+      "legend": {
+        "show": true,
+        "values": true,
+        "current": true,
+        "alignAsTable": true,
+        "rightSide": false
+      }
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 17 },
+      "id": 101,
+      "panels": [],
+      "title": "etcd",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 18 },
+      "id": 10,
+      "lines": true,
+      "linewidth": 1,
+      "fill": 1,
+      "stack": false,
+      "nullPointMode": "null",
+      "targets": [
+        {
+          "expr": "etcd_mvcc_db_total_size_in_bytes{job=\"etcd\"}",
+          "legendFormat": "DB size ({{ pod }})",
+          "refId": "A"
+        },
+        {
+          "expr": "etcd_mvcc_db_total_size_in_use_in_bytes{job=\"etcd\"}",
+          "legendFormat": "DB in-use ({{ pod }})",
+          "refId": "B"
+        }
+      ],
+      "title": "etcd Database Size",
+      "tooltip": { "shared": true, "sort": 0, "value_type": "individual" },
+      "type": "graph",
+      "xaxis": { "mode": "time", "show": true },
+      "yaxes": [
+        { "format": "bytes", "show": true },
+        { "format": "short", "show": true }
+      ],
+      "legend": {
+        "show": true,
+        "values": true,
+        "current": true,
+        "max": true,
+        "alignAsTable": true,
+        "rightSide": false
+      }
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 18 },
+      "id": 11,
+      "lines": true,
+      "linewidth": 1,
+      "fill": 1,
+      "stack": false,
+      "nullPointMode": "null",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(etcd_disk_wal_fsync_duration_seconds_bucket{job=\"etcd\"}[$__rate_interval])) by (pod, le))",
+          "legendFormat": "p99 WAL fsync ({{ pod }})",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(etcd_disk_backend_commit_duration_seconds_bucket{job=\"etcd\"}[$__rate_interval])) by (pod, le))",
+          "legendFormat": "p99 backend commit ({{ pod }})",
+          "refId": "B"
+        }
+      ],
+      "title": "etcd Disk Latency (p99)",
+      "tooltip": { "shared": true, "sort": 0, "value_type": "individual" },
+      "type": "graph",
+      "xaxis": { "mode": "time", "show": true },
+      "yaxes": [
+        { "format": "s", "show": true },
+        { "format": "short", "show": true }
+      ],
+      "legend": {
+        "show": true,
+        "values": true,
+        "avg": true,
+        "max": true,
+        "alignAsTable": true,
+        "rightSide": false
+      }
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 18 },
+      "id": 12,
+      "lines": true,
+      "linewidth": 1,
+      "fill": 1,
+      "stack": false,
+      "nullPointMode": "null",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(etcd_network_peer_round_trip_time_seconds_bucket{job=\"etcd\"}[$__rate_interval])) by (pod, le))",
+          "legendFormat": "p99 peer RTT ({{ pod }})",
+          "refId": "A"
+        }
+      ],
+      "title": "etcd Peer Network Round-Trip Time (p99)",
+      "tooltip": { "shared": true, "sort": 0, "value_type": "individual" },
+      "type": "graph",
+      "xaxis": { "mode": "time", "show": true },
+      "yaxes": [
+        { "format": "s", "show": true },
+        { "format": "short", "show": true }
+      ],
+      "legend": {
+        "show": true,
+        "values": true,
+        "avg": true,
+        "max": true,
+        "alignAsTable": true,
+        "rightSide": false
+      }
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 26 },
+      "id": 13,
+      "lines": true,
+      "linewidth": 2,
+      "fill": 0,
+      "stack": false,
+      "nullPointMode": "null",
+      "targets": [
+        {
+          "expr": "changes(etcd_server_leader_changes_seen_total{job=\"etcd\"}[1h])",
+          "legendFormat": "leader changes/h ({{ pod }})",
+          "refId": "A"
+        }
+      ],
+      "title": "etcd Leader Changes (per hour)",
+      "tooltip": { "shared": true, "sort": 0, "value_type": "individual" },
+      "type": "graph",
+      "xaxis": { "mode": "time", "show": true },
+      "yaxes": [
+        { "format": "short", "show": true },
+        { "format": "short", "show": true }
+      ],
+      "legend": {
+        "show": true,
+        "values": true,
+        "current": true,
+        "alignAsTable": true,
+        "rightSide": false
+      }
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 26 },
+      "id": 14,
+      "targets": [
+        {
+          "expr": "etcd_server_has_leader{job=\"etcd\"}",
+          "legendFormat": "{{ pod }}",
+          "refId": "A"
+        }
+      ],
+      "title": "etcd Has Leader",
+      "type": "singlestat",
+      "valueName": "current",
+      "format": "none",
+      "colorBackground": true,
+      "colorValue": false,
+      "thresholds": "0.5",
+      "colors": ["#d44a3a", "#299c46", "#299c46"],
+      "valueMaps": [
+        { "value": "0", "op": "=", "text": "NO" },
+        { "value": "1", "op": "=", "text": "YES" }
+      ],
+      "sparkline": { "show": false, "full": false }
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 34 },
+      "id": 102,
+      "panels": [],
+      "title": "Cluster Operators & CVO",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 35 },
+      "id": 20,
+      "targets": [
+        {
+          "expr": "cluster_operator_up{job=\"cluster-version-operator\"}",
+          "legendFormat": "{{ name }}",
+          "refId": "A"
+        }
+      ],
+      "title": "Cluster Operator Status",
+      "type": "singlestat",
+      "valueName": "current",
+      "format": "none",
+      "colorBackground": true,
+      "colorValue": false,
+      "thresholds": "0.5",
+      "colors": ["#d44a3a", "#299c46", "#299c46"],
+      "valueMaps": [
+        { "value": "0", "op": "=", "text": "DOWN" },
+        { "value": "1", "op": "=", "text": "UP" }
+      ],
+      "sparkline": { "show": false, "full": false }
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 35 },
+      "id": 21,
+      "styles": [
+        {
+          "alias": "Operator",
+          "pattern": "name",
+          "type": "string"
+        },
+        {
+          "alias": "Condition",
+          "pattern": "condition",
+          "type": "string"
+        },
+        {
+          "alias": "Reason",
+          "pattern": "reason",
+          "type": "string"
+        },
+        {
+          "alias": "Value",
+          "pattern": "Value",
+          "type": "number",
+          "decimals": 0,
+          "colorMode": "cell",
+          "thresholds": ["0.5", "0.5"],
+          "colors": ["rgba(245, 54, 54, 0.9)", "rgba(245, 54, 54, 0.9)", "rgba(50, 172, 45, 0.9)"]
+        },
+        {
+          "pattern": "Time",
+          "type": "hidden"
+        },
+        {
+          "pattern": "__name__",
+          "type": "hidden"
+        },
+        {
+          "pattern": "endpoint",
+          "type": "hidden"
+        },
+        {
+          "pattern": "instance",
+          "type": "hidden"
+        },
+        {
+          "pattern": "job",
+          "type": "hidden"
+        },
+        {
+          "pattern": "namespace",
+          "type": "hidden"
+        },
+        {
+          "pattern": "pod",
+          "type": "hidden"
+        },
+        {
+          "pattern": "service",
+          "type": "hidden"
+        }
+      ],
+      "targets": [
+        {
+          "expr": "cluster_operator_conditions{job=\"cluster-version-operator\"}",
+          "format": "table",
+          "legendFormat": "",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Cluster Operator Conditions",
+      "type": "table"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 4, "w": 12, "x": 0, "y": 43 },
+      "id": 22,
+      "targets": [
+        {
+          "expr": "cluster_version{job=\"cluster-version-operator\", type=\"current\"}",
+          "legendFormat": "{{ version }}",
+          "refId": "A"
+        }
+      ],
+      "title": "Cluster Version",
+      "type": "singlestat",
+      "valueName": "current",
+      "format": "none",
+      "colorBackground": true,
+      "colorValue": false,
+      "thresholds": "",
+      "colors": ["#3274d9", "#3274d9", "#3274d9"],
+      "sparkline": { "show": false, "full": false }
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 47 },
+      "id": 103,
+      "panels": [],
+      "title": "Scheduler",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 48 },
+      "id": 30,
+      "lines": true,
+      "linewidth": 1,
+      "fill": 1,
+      "stack": false,
+      "nullPointMode": "null",
+      "targets": [
+        {
+          "expr": "sum(rate(scheduler_e2e_scheduling_duration_seconds_count{job=\"kube-controller-manager\"}[$__rate_interval]))",
+          "legendFormat": "scheduling attempts/s",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(scheduler_schedule_attempts_total{job=\"kube-controller-manager\"}[$__rate_interval])) by (result)",
+          "legendFormat": "{{ result }}",
+          "refId": "B"
+        }
+      ],
+      "title": "Scheduling Rate & Results",
+      "tooltip": { "shared": true, "sort": 0, "value_type": "individual" },
+      "type": "graph",
+      "xaxis": { "mode": "time", "show": true },
+      "yaxes": [
+        { "format": "ops", "show": true },
+        { "format": "short", "show": true }
+      ],
+      "legend": {
+        "show": true,
+        "values": true,
+        "avg": true,
+        "max": true,
+        "alignAsTable": true,
+        "rightSide": false
+      }
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 48 },
+      "id": 31,
+      "lines": true,
+      "linewidth": 1,
+      "fill": 1,
+      "stack": false,
+      "nullPointMode": "null",
+      "targets": [
+        {
+          "expr": "sum(rate(scheduler_pending_pods{job=\"kube-controller-manager\"}[$__rate_interval])) by (queue)",
+          "legendFormat": "pending ({{ queue }})",
+          "refId": "A"
+        }
+      ],
+      "title": "Pending Pods by Queue",
+      "tooltip": { "shared": true, "sort": 0, "value_type": "individual" },
+      "type": "graph",
+      "xaxis": { "mode": "time", "show": true },
+      "yaxes": [
+        { "format": "short", "show": true },
+        { "format": "short", "show": true }
+      ],
+      "legend": {
+        "show": true,
+        "values": true,
+        "avg": true,
+        "max": true,
+        "alignAsTable": true,
+        "rightSide": false
+      }
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 56 },
+      "id": 104,
+      "panels": [],
+      "title": "Controller Manager",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 57 },
+      "id": 40,
+      "lines": true,
+      "linewidth": 1,
+      "fill": 1,
+      "stack": false,
+      "nullPointMode": "null",
+      "targets": [
+        {
+          "expr": "sum(workqueue_depth{job=\"kube-controller-manager\"}) by (name)",
+          "legendFormat": "{{ name }}",
+          "refId": "A"
+        }
+      ],
+      "title": "Controller Work Queue Depth",
+      "tooltip": { "shared": true, "sort": 0, "value_type": "individual" },
+      "type": "graph",
+      "xaxis": { "mode": "time", "show": true },
+      "yaxes": [
+        { "format": "short", "show": true },
+        { "format": "short", "show": true }
+      ],
+      "legend": {
+        "show": true,
+        "values": true,
+        "avg": true,
+        "max": true,
+        "alignAsTable": true,
+        "rightSide": false
+      }
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 57 },
+      "id": 41,
+      "lines": true,
+      "linewidth": 1,
+      "fill": 1,
+      "stack": false,
+      "nullPointMode": "null",
+      "targets": [
+        {
+          "expr": "sum(rate(workqueue_adds_total{job=\"kube-controller-manager\"}[$__rate_interval])) by (name)",
+          "legendFormat": "{{ name }}",
+          "refId": "A"
+        }
+      ],
+      "title": "Controller Work Queue Adds Rate",
+      "tooltip": { "shared": true, "sort": 0, "value_type": "individual" },
+      "type": "graph",
+      "xaxis": { "mode": "time", "show": true },
+      "yaxes": [
+        { "format": "ops", "show": true },
+        { "format": "short", "show": true }
+      ],
+      "legend": {
+        "show": true,
+        "values": true,
+        "avg": true,
+        "max": true,
+        "alignAsTable": true,
+        "rightSide": false
+      }
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 65 },
+      "id": 105,
+      "panels": [],
+      "title": "OLM",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 66 },
+      "id": 50,
+      "targets": [
+        {
+          "expr": "csv_succeeded{job=\"olm-operator\"}",
+          "legendFormat": "{{ name }}",
+          "refId": "A"
+        }
+      ],
+      "title": "ClusterServiceVersion Status",
+      "type": "singlestat",
+      "valueName": "current",
+      "format": "none",
+      "colorBackground": true,
+      "colorValue": false,
+      "thresholds": "0.5",
+      "colors": ["#d44a3a", "#299c46", "#299c46"],
+      "valueMaps": [
+        { "value": "0", "op": "=", "text": "FAILED" },
+        { "value": "1", "op": "=", "text": "OK" }
+      ],
+      "sparkline": { "show": false, "full": false }
+    }
+  ],
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["hosted-control-planes", "control-plane-metrics"],
+  "templating": {
+    "list": [
+      {
+        "current": { "selected": false, "text": "default", "value": "default" },
+        "hide": 0,
+        "label": "Data Source",
+        "name": "datasource",
+        "options": [],
+        "query": "prometheus",
+        "refresh": 1,
+        "type": "datasource"
+      }
+    ]
+  },
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "timezone": "UTC",
+  "title": "Hosted Cluster Control Plane",
+  "version": 1
+}

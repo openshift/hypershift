@@ -1,0 +1,43 @@
+package storage
+
+import (
+	"strconv"
+
+	"github.com/openshift/hypershift/support/azureutil"
+	"github.com/openshift/hypershift/support/config"
+	component "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/podspec"
+
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+)
+
+func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
+	podspec.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
+		envReplacer := newEnvironmentReplacer(cpContext.ReleaseImageProvider, cpContext.UserReleaseImageProvider)
+		envReplacer.replaceEnvVars(c.Env)
+
+		// For managed Azure, we need to supply a couple of environment variables for CSO to pass on to the CSI controllers for disk and file.
+		// CSO passes those on to the CSI deployment here - https://github.com/openshift/cluster-storage-operator/pull/517/files.
+		// CSI then mounts the Secrets Provider Class here - https://github.com/openshift/csi-operator/pull/309/files.
+		if azureutil.IsAroHCPByHCP(cpContext.HCP) {
+			c.Env = append(c.Env,
+				corev1.EnvVar{
+					Name:  "ARO_HCP_SECRET_PROVIDER_CLASS_FOR_DISK",
+					Value: config.ManagedAzureDiskCSISecretStoreProviderClassName,
+				},
+				corev1.EnvVar{
+					Name:  "ARO_HCP_SECRET_PROVIDER_CLASS_FOR_FILE",
+					Value: config.ManagedAzureFileCSISecretStoreProviderClassName,
+				})
+		}
+
+		// We set this so cluster-storage-operator knows which User ID to run the CSI controller pods as.
+		// This is needed when these pods are run on a management cluster that is non-OpenShift such as AKS.
+		if cpContext.SetDefaultSecurityContext {
+			c.Env = append(c.Env, corev1.EnvVar{Name: "RUN_AS_USER", Value: strconv.Itoa(int(cpContext.DefaultSecurityContextUID))})
+		}
+	})
+
+	return nil
+}

@@ -1,0 +1,11 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: cluster-node-tuning-operator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: cluster-node-tuning-operator
+subjects:
+- kind: ServiceAccount
+  name: cluster-node-tuning-operator

@@ -1,0 +1,26 @@
+name: Address Review Comments
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  id-token: write
+  contents: write
+  pull-requests: write
+
+jobs:
+  address-review-comments:
+    if: >-
+      github.event.issue.pull_request &&
+      startsWith(github.event.comment.body, '/address-review-comments') &&
+      (github.event.comment.author_association == 'MEMBER' ||
+       github.event.comment.author_association == 'OWNER' ||
+       github.event.comment.author_association == 'COLLABORATOR')
+    uses: ./.github/workflows/reusable-claude-on-pr.yaml
+    with:
+      command-name: address-review-comments
+      status-message: "Addressing review comments"
+      claude-prompt: "/utils:address-reviews ${{ github.event.issue.number }}"
+      max-turns: 200
+    secrets: inherit

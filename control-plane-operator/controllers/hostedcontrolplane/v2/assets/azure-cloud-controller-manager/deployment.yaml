@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cloud-controller-manager
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app: cloud-controller-manager
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: cloud-controller-manager
+    spec:
+      containers:
+      - args:
+        - --cloud-config=/etc/cloud/cloud.conf
+        - --cloud-provider=azure
+        - --controllers=*,-cloud-node
+        - --configure-cloud-routes=false
+        - --bind-address=127.0.0.1
+        - --leader-elect=true
+        - --route-reconciliation-period=10s
+        - --kubeconfig=/etc/kubernetes/kubeconfig/kubeconfig
+        - --leader-elect-lease-duration=137s
+        - --leader-elect-renew-deadline=107s
+        - --leader-elect-retry-period=26s
+        - --leader-elect-resource-namespace=openshift-cloud-controller-manager
+        - --v=4
+        command:
+        - /bin/azure-cloud-controller-manager
+        image: azure-cloud-controller-manager
+        imagePullPolicy: IfNotPresent
+        name: cloud-controller-manager
+        resources:
+          requests:
+            cpu: 75m
+            memory: 60Mi
+        volumeMounts:
+        - mountPath: /etc/cloud
+          name: cloud-config
+        - mountPath: /etc/kubernetes/kubeconfig
+          name: kubeconfig
+      volumes:
+      - name: kubeconfig
+        secret:
+          defaultMode: 416
+          secretName: service-network-admin-kubeconfig
+      - name: cloud-config
+        secret:
+          defaultMode: 416
+          secretName: azure-cloud-config

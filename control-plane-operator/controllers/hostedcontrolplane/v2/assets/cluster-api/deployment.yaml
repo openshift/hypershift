@@ -1,0 +1,75 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cluster-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cluster-api
+      name: cluster-api
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: cluster-api
+        name: cluster-api
+    spec:
+      containers:
+      - args:
+        - --namespace
+        - $(MY_NAMESPACE)
+        - --v=4
+        - --leader-elect=true
+        - --leader-elect-lease-duration=137s
+        - --leader-elect-retry-period=26s
+        - --leader-elect-renew-deadline=107s
+        env:
+        - name: MY_NAMESPACE
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+        image: cluster-capi-controllers
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 5
+          httpGet:
+            path: /healthz
+            port: 9440
+            scheme: HTTP
+          initialDelaySeconds: 60
+          periodSeconds: 60
+          successThreshold: 1
+          timeoutSeconds: 5
+        name: manager
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /readyz
+            port: 9440
+            scheme: HTTP
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 5
+        resources:
+          requests:
+            cpu: 10m
+            memory: 40Mi
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /tmp/k8s-webhook-server/serving-certs
+          name: capi-webhooks-tls
+          readOnly: true
+      serviceAccount: cluster-api
+      serviceAccountName: cluster-api
+      volumes:
+      - name: capi-webhooks-tls
+        secret:
+          defaultMode: 416
+          secretName: capi-webhooks-tls

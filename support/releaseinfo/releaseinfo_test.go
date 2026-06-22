@@ -1,0 +1,377 @@
+package releaseinfo
+
+import (
+	"testing"
+
+	. "github.com/onsi/gomega"
+
+	"github.com/openshift/hypershift/support/releaseinfo/fixtures"
+
+	imageapi "github.com/openshift/api/image/v1"
+
+	"github.com/coreos/stream-metadata-go/stream"
+)
+
+func TestParseComponentVersionsLabel(t *testing.T) {
+	tests := []struct {
+		name         string
+		label        string
+		displayNames string
+		expectError  bool
+		expectKey    string
+		expectName   string
+	}{
+		{
+			name:         "When display name has no periods it should parse successfully",
+			label:        "rhel-coreos=98.20260101.0",
+			displayNames: "rhel-coreos=Red Hat Enterprise Linux CoreOS 98",
+			expectKey:    "rhel-coreos",
+			expectName:   "Red Hat Enterprise Linux CoreOS 98",
+		},
+		{
+			name:         "When display name contains periods it should parse successfully",
+			label:        "rhel-coreos=98.20260101.0",
+			displayNames: "rhel-coreos=Red Hat Enterprise Linux CoreOS 9.8",
+			expectKey:    "rhel-coreos",
+			expectName:   "Red Hat Enterprise Linux CoreOS 9.8",
+		},
+		{
+			name:         "When display name contains parentheses and colons it should parse successfully",
+			label:        "mycomponent=1.0.0",
+			displayNames: "mycomponent=My Component (v1.0): Beta",
+			expectKey:    "mycomponent",
+			expectName:   "My Component (v1.0): Beta",
+		},
+		{
+			name:         "When display name contains invalid characters it should return an error",
+			label:        "mycomponent=1.0.0",
+			displayNames: "mycomponent=Invalid <Name>",
+			expectError:  true,
+		},
+		{
+			name:        "When version is not valid semver it should return an error",
+			label:       "mycomponent=not-a-version",
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			versions, err := parseComponentVersionsLabel(tt.label, tt.displayNames)
+			if tt.expectError {
+				if err == nil {
+					t.Fatal("expected error but got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			cv, ok := versions[tt.expectKey]
+			if !ok {
+				t.Fatalf("expected key %q in versions", tt.expectKey)
+			}
+			if cv.DisplayName != tt.expectName {
+				t.Errorf("expected display name %q, got %q", tt.expectName, cv.DisplayName)
+			}
+		})
+	}
+}
+
+func TestReadComponentVersions(t *testing.T) {
+	tests := []struct {
+		name        string
+		tags        []imageapi.TagReference
+		expectError bool
+		expectKey   string
+	}{
+		{
+			name: "When multiple machine-os versions exist it should not return an error",
+			tags: []imageapi.TagReference{
+				{
+					Name: "machine-os-content",
+					Annotations: map[string]string{
+						annotationBuildVersions:             "machine-os=1.0.0",
+						annotationBuildVersionsDisplayNames: "machine-os=Machine OS 1",
+					},
+				},
+				{
+					Name: "machine-os-content-2",
+					Annotations: map[string]string{
+						annotationBuildVersions:             "machine-os=2.0.0",
+						annotationBuildVersionsDisplayNames: "machine-os=Machine OS 2",
+					},
+				},
+			},
+			expectKey: "machine-os",
+		},
+		{
+			name: "When version annotation has invalid semver, it should return an error",
+			tags: []imageapi.TagReference{
+				{
+					Name: "bad-image",
+					Annotations: map[string]string{
+						annotationBuildVersions: "component=not-a-semver",
+					},
+				},
+				{
+					Name: "good-image",
+					Annotations: map[string]string{
+						annotationBuildVersions: "component=1.0.0",
+					},
+				},
+			},
+			expectError: true,
+			expectKey:   "component",
+		},
+		{
+			name: "When multiple non-machine-os versions exist it should return an error",
+			tags: []imageapi.TagReference{
+				{
+					Name: "component-a",
+					Annotations: map[string]string{
+						annotationBuildVersions: "other-component=1.0.0",
+					},
+				},
+				{
+					Name: "component-b",
+					Annotations: map[string]string{
+						annotationBuildVersions: "other-component=2.0.0",
+					},
+				},
+			},
+			expectError: true,
+			expectKey:   "other-component",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			is := &imageapi.ImageStream{
+				Spec: imageapi.ImageStreamSpec{
+					Tags: tt.tags,
+				},
+			}
+			versions, errs := readComponentVersions(is)
+			if tt.expectError {
+				g.Expect(errs).NotTo(BeEmpty(), "expected errors but got none")
+			} else {
+				g.Expect(errs).To(BeEmpty(), "expected no errors but got: %v", errs)
+			}
+			g.Expect(versions).To(HaveKey(tt.expectKey))
+		})
+	}
+}
+
+// TestReleaseInfoPowerVS test validates the presence of the powervs images in the 4.10 release
+func TestReleaseInfoPowerVS(t *testing.T) {
+	metadata, _, err := DeserializeImageMetadata(fixtures.CoreOSBootImagesYAML_4_10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	arch, ok := metadata.Architectures["ppc64le"]
+	if !ok {
+		t.Fatal("metadata does not contain the ppc64le architecture")
+	}
+	if arch.Images.PowerVS == nil || len(arch.Images.PowerVS.Regions) == 0 {
+		t.Fatal("metadata does not contain any powervs regions")
+	}
+	for _, region := range arch.Images.PowerVS.Regions {
+		if region.Release == "" || region.Object == "" || region.Bucket == "" || region.Url == "" {
+			t.Fatalf("none of the fields in the image can be empty: %+v", region)
+		}
+	}
+}
+
+// TestReleaseInfoKubeVirt tests validates the presence of the kubevirt images
+func TestReleaseInfoKubeVirt(t *testing.T) {
+	metadata, _, err := DeserializeImageMetadata(fixtures.CoreOSBootImagesYAML_4_10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	arch, ok := metadata.Architectures["x86_64"]
+	if !ok {
+		t.Fatal("metadata does not contain the x86_64 architecture")
+	}
+	if arch.Images.KubeVirt == nil || arch.Images.KubeVirt.DigestRef == "" {
+		t.Fatal("metadata does not contain a digest ref for kubevirt")
+	}
+}
+
+func TestStreamForName(t *testing.T) {
+	rhel9Stream := &stream.Stream{
+		Stream: "rhcos-4.21",
+		Architectures: map[string]stream.Arch{
+			"x86_64": {},
+		},
+	}
+	rhel10Stream := &stream.Stream{
+		Stream: "rhcos-5.0",
+		Architectures: map[string]stream.Arch{
+			"x86_64": {},
+		},
+	}
+
+	tests := []struct {
+		name           string
+		releaseImage   *ReleaseImage
+		streamName     string
+		expectStream   string
+		expectError    bool
+		expectContains string
+	}{
+		{
+			name: "When name is empty it should return the default stream",
+			releaseImage: &ReleaseImage{
+				ImageStream: &imageapi.ImageStream{},
+				StreamMetadata: &stream.Stream{
+					Stream:        "rhcos-4.10",
+					Architectures: map[string]stream.Arch{"x86_64": {}},
+				},
+			},
+			streamName:   "",
+			expectStream: "rhcos-4.10",
+		},
+		{
+			name: "When name matches a stream it should return that stream",
+			releaseImage: &ReleaseImage{
+				ImageStream: &imageapi.ImageStream{},
+				StreamMetadata: &stream.Stream{
+					Stream:        "rhcos-4.10",
+					Architectures: map[string]stream.Arch{"x86_64": {}},
+				},
+				OSStreams: map[string]*stream.Stream{
+					"rhel-9":  rhel9Stream,
+					"rhel-10": rhel10Stream,
+				},
+			},
+			streamName:   "rhel-10",
+			expectStream: "rhcos-5.0",
+		},
+		{
+			name: "When name does not match any stream it should return an error listing available streams",
+			releaseImage: &ReleaseImage{
+				ImageStream: &imageapi.ImageStream{},
+				StreamMetadata: &stream.Stream{
+					Stream:        "rhcos-4.10",
+					Architectures: map[string]stream.Arch{"x86_64": {}},
+				},
+				OSStreams: map[string]*stream.Stream{
+					"rhel-9":  rhel9Stream,
+					"rhel-10": rhel10Stream,
+				},
+			},
+			streamName:     "rhel-8",
+			expectError:    true,
+			expectContains: "rhel-9",
+		},
+		{
+			name: "When OSStreams is nil and name is non-empty it should fall back to StreamMetadata",
+			releaseImage: &ReleaseImage{
+				ImageStream: &imageapi.ImageStream{},
+				StreamMetadata: &stream.Stream{
+					Stream:        "rhcos-4.10",
+					Architectures: map[string]stream.Arch{"x86_64": {}},
+				},
+			},
+			streamName:   "rhel-10",
+			expectStream: "rhcos-4.10",
+		},
+		{
+			name: "When StreamMetadata is nil and name is empty it should return an error",
+			releaseImage: &ReleaseImage{
+				ImageStream: &imageapi.ImageStream{},
+			},
+			streamName:  "",
+			expectError: true,
+		},
+		{
+			name: "When StreamMetadata is nil and OSStreams has entries it should return an error for empty name",
+			releaseImage: &ReleaseImage{
+				ImageStream: &imageapi.ImageStream{},
+				OSStreams: map[string]*stream.Stream{
+					"rhel-9": rhel9Stream,
+				},
+			},
+			streamName:  "",
+			expectError: true,
+		},
+		{
+			name: "When StreamMetadata is nil and OSStreams has matching entry it should return that stream",
+			releaseImage: &ReleaseImage{
+				ImageStream: &imageapi.ImageStream{},
+				OSStreams: map[string]*stream.Stream{
+					"rhel-9": rhel9Stream,
+				},
+			},
+			streamName:   "rhel-9",
+			expectStream: "rhcos-4.21",
+		},
+		{
+			name: "When StreamMetadata is nil and OSStreams has no matching entry it should return an error",
+			releaseImage: &ReleaseImage{
+				ImageStream: &imageapi.ImageStream{},
+				OSStreams: map[string]*stream.Stream{
+					"rhel-9": rhel9Stream,
+				},
+			},
+			streamName:     "rhel-10",
+			expectError:    true,
+			expectContains: "rhel-10",
+		},
+		{
+			name: "When both StreamMetadata and OSStreams are nil it should return an error for non-empty name",
+			releaseImage: &ReleaseImage{
+				ImageStream: &imageapi.ImageStream{},
+			},
+			streamName:  "rhel-10",
+			expectError: true,
+		},
+		{
+			name: "When OSStreams is an empty map it should return an error",
+			releaseImage: &ReleaseImage{
+				ImageStream: &imageapi.ImageStream{},
+				StreamMetadata: &stream.Stream{
+					Stream: "rhcos-4.10",
+				},
+				OSStreams: map[string]*stream.Stream{},
+			},
+			streamName:  "rhel-10",
+			expectError: true,
+		},
+		{
+			name: "When OSStreams entry has nil value it should return an error listing available streams",
+			releaseImage: &ReleaseImage{
+				ImageStream: &imageapi.ImageStream{},
+				StreamMetadata: &stream.Stream{
+					Stream: "rhcos-4.10",
+				},
+				OSStreams: map[string]*stream.Stream{
+					"rhel-10": nil,
+					"rhel-9":  rhel9Stream,
+				},
+			},
+			streamName:     "rhel-10",
+			expectError:    true,
+			expectContains: "rhel-9",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			result, err := tt.releaseImage.StreamForName(tt.streamName)
+			if tt.expectError {
+				g.Expect(err).To(HaveOccurred())
+				if tt.expectContains != "" {
+					g.Expect(err.Error()).To(ContainSubstring(tt.expectContains))
+				}
+				return
+			}
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(result.Stream).To(Equal(tt.expectStream))
+		})
+	}
+}

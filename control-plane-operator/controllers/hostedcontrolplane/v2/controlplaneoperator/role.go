@@ -1,0 +1,62 @@
+package controlplaneoperator
+
+import (
+	"os"
+
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/awsutil"
+	"github.com/openshift/hypershift/support/azureutil"
+	"github.com/openshift/hypershift/support/config"
+	component "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/k8sutil"
+	"github.com/openshift/hypershift/support/rhobsmonitoring"
+
+	rbacv1 "k8s.io/api/rbac/v1"
+)
+
+func adaptRole(cpContext component.WorkloadContext, role *rbacv1.Role) error {
+	if os.Getenv(config.EnableCVOManagementClusterMetricsAccessEnvVar) == "1" {
+		role.Rules = append(role.Rules, rbacv1.PolicyRule{
+			APIGroups: []string{"metrics.k8s.io"},
+			Resources: []string{"pods"},
+			Verbs:     []string{"get"},
+		})
+	}
+
+	if os.Getenv(rhobsmonitoring.EnvironmentVariable) == "1" && awsutil.IsROSAHCP(cpContext.HCP) {
+		role.Rules = append(role.Rules, rbacv1.PolicyRule{
+			APIGroups: []string{"metrics.k8s.io"},
+			Resources: []string{"pods"},
+			Verbs:     []string{"get"},
+		})
+	}
+
+	if cpContext.HCP.Spec.Platform.Type == hyperv1.GCPPlatform {
+		role.Rules = append(role.Rules, rbacv1.PolicyRule{
+			APIGroups: []string{"externaldns.k8s.io"},
+			Resources: []string{"dnsendpoints"},
+			Verbs:     []string{"create", "get", "update", "delete"},
+		})
+	}
+
+	if azureutil.IsAroHCPByHCP(cpContext.HCP) {
+		role.Rules = append(role.Rules, rbacv1.PolicyRule{
+			APIGroups: []string{"secrets-store.csi.x-k8s.io"},
+			Resources: []string{"secretproviderclasses"},
+			Verbs: []string{
+				"get",
+				"list",
+				"create",
+				"update",
+				"watch",
+			},
+		})
+	}
+
+	if role.Annotations == nil {
+		role.Annotations = map[string]string{}
+	}
+	role.Annotations[k8sutil.HostedClusterAnnotation] = cpContext.HCP.Annotations[k8sutil.HostedClusterAnnotation]
+
+	return nil
+}
