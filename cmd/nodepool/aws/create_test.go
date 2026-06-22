@@ -39,7 +39,7 @@ func TestCreateNodePool_When_flags_are_parsed_it_should_generate_correct_nodepoo
 		{
 			name: "custom root volume configuration",
 			args: []string{
-				"--instance-type=m6g.large",
+				"--instance-type=m8g.large",
 				"--subnet-id=subnet-arm64",
 				"--root-volume-type=io2",
 				"--root-volume-size=200",
@@ -249,7 +249,7 @@ func TestUpdateNodePool_When_instance_type_is_empty_it_should_default_based_on_a
 		expectedInstanceType string
 	}{
 		{"amd64", "m5.large"},
-		{"arm64", "m6g.large"},
+		{"arm64", "m8g.large"},
 	}
 
 	for _, tc := range testCases {

@@ -268,9 +268,9 @@ func TestTransformInstanceTypeInfo_WhenValidInput_ItShouldTransformCorrectly(t *
 		},
 		{
 			name:  "When instance is ARM it should set correct architecture",
-			input: makeInstanceTypeInfo("m6g.xlarge", string(ec2types.ArchitectureTypeArm64), 4, 16384, 0),
+			input: makeInstanceTypeInfo("m8g.xlarge", string(ec2types.ArchitectureTypeArm64), 4, 16384, 0),
 			expected: &instancetype.InstanceTypeInfo{
-				InstanceType:    "m6g.xlarge",
+				InstanceType:    "m8g.xlarge",
 				VCPU:            4,
 				MemoryMb:        16384,
 				GPU:             0,
