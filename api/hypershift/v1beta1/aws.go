@@ -1018,6 +1018,9 @@ type AWSKMSSpec struct {
 	ActiveKey AWSKMSKeyEntry `json:"activeKey"`
 	// backupKey defines the old key during the rotation process so previously created
 	// secrets can continue to be decrypted until they are all re-encrypted with the active key.
+	//
+	// Deprecated: This field will be ignored when status.secretEncryption.activeKey is set.
+	// The system automatically manages the previous key via the status field.
 	// +optional
 	BackupKey *AWSKMSKeyEntry `json:"backupKey,omitempty"`
 	// auth defines metadata about the management of credentials used to interact with AWS KMS
@@ -1077,9 +1080,10 @@ type AWSKMSAuthSpec struct {
 type AWSKMSKeyEntry struct {
 	// arn is the Amazon Resource Name for the encryption key
 	// +required
-	// +kubebuilder:validation:Pattern=`^arn:`
+	// +kubebuilder:validation:XValidation:rule="self.startsWith('arn:')",message="arn must start with 'arn:'"
+	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=2048
-	ARN string `json:"arn"`
+	ARN string `json:"arn,omitempty"`
 }
 
 // AWSPlatformStatus contains status specific to the AWS platform

@@ -5,9 +5,11 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
-	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
 	component "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/secretencryption"
+	"github.com/openshift/hypershift/support/util"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -17,8 +19,8 @@ import (
 )
 
 const (
-	secretEncryptionConfigurationKey = "config.yaml"
-	encryptionConfigurationKind      = "EncryptionConfiguration"
+	secretEncryptionConfigurationKey = secretencryption.EncryptionConfigurationKey
+	encryptionConfigurationKind      = secretencryption.EncryptionConfigurationKind
 
 	secretEncryptionConfigFileVolumeName = "kas-secret-encryption-config"
 )
@@ -30,43 +32,23 @@ func secretEncryptionConfigPredicate(cpContext component.WorkloadContext) bool {
 func adaptSecretEncryptionConfig(cpContext component.WorkloadContext, secret *corev1.Secret) error {
 	var data []byte
 	secretEncryption := cpContext.HCP.Spec.SecretEncryption
+	encStatus := &cpContext.HCP.Status.SecretEncryption
+
+	// Read the live encryption config from the cluster to derive the two-stage rollout state.
+	currentConfig, err := readCurrentEncryptionConfig(cpContext, secret)
+	if err != nil {
+		return fmt.Errorf("failed to read current encryption config: %w", err)
+	}
+
+	// Check KAS convergence — needed to decide whether to promote the target key.
+	kasConverged, err := isKASConverged(cpContext)
+	if err != nil {
+		return fmt.Errorf("failed to check KAS convergence: %w", err)
+	}
+
 	switch secretEncryption.Type {
 	case hyperv1.AESCBC:
-		if secretEncryption.AESCBC == nil || len(secretEncryption.AESCBC.ActiveKey.Name) == 0 {
-			return fmt.Errorf("aescbc metadata not specified")
-		}
-		activeKeySecret := &corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      secretEncryption.AESCBC.ActiveKey.Name,
-				Namespace: cpContext.HCP.Namespace,
-			},
-		}
-		if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(activeKeySecret), activeKeySecret); err != nil {
-			return fmt.Errorf("failed to get aescbc active secret: %w", err)
-		}
-		if _, ok := activeKeySecret.Data[hyperv1.AESCBCKeySecretKey]; !ok {
-			return fmt.Errorf("aescbc key field '%s' in active key secret not specified", hyperv1.AESCBCKeySecretKey)
-		}
-		aesCBCActiveKey := activeKeySecret.Data[hyperv1.AESCBCKeySecretKey]
-		var aesCBCBackupKey []byte
-		if secretEncryption.AESCBC.BackupKey != nil && len(secretEncryption.AESCBC.BackupKey.Name) > 0 {
-			backupKeySecret := &corev1.Secret{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      secretEncryption.AESCBC.BackupKey.Name,
-					Namespace: cpContext.HCP.Namespace,
-				},
-			}
-			if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(backupKeySecret), backupKeySecret); err != nil {
-				return fmt.Errorf("failed to get aescbc backup key secret: %w", err)
-			}
-			if _, ok := backupKeySecret.Data[hyperv1.AESCBCKeySecretKey]; !ok {
-				return fmt.Errorf("aescbc key field %s in backup key secret not specified", hyperv1.AESCBCKeySecretKey)
-			}
-			aesCBCBackupKey = backupKeySecret.Data[hyperv1.AESCBCKeySecretKey]
-		}
-
-		var err error
-		data, err = generateAESCBCEncryptionConfig(aesCBCActiveKey, aesCBCBackupKey)
+		data, err = deriveAESCBCEncryptionConfig(cpContext, secretEncryption, encStatus, currentConfig, kasConverged)
 		if err != nil {
 			return err
 		}
@@ -74,11 +56,8 @@ func adaptSecretEncryptionConfig(cpContext component.WorkloadContext, secret *co
 		if secretEncryption.KMS == nil {
 			return fmt.Errorf("kms metadata not specified")
 		}
-		apiVersion, err := getKMSAPIVersion(cpContext, secret)
-		if err != nil {
-			return err
-		}
-		data, err = generateKMSEncryptionConfig(secretEncryption.KMS, apiVersion)
+		apiVersion := getKMSAPIVersion(currentConfig)
+		data, err = generateKMSEncryptionConfig(secretEncryption.KMS, encStatus, currentConfig, kasConverged, apiVersion)
 		if err != nil {
 			return err
 		}
@@ -88,36 +67,133 @@ func adaptSecretEncryptionConfig(cpContext component.WorkloadContext, secret *co
 	return nil
 }
 
-// getKMSAPIVersion returns the KMS API version from the given EncryptionConfig secret.
-// If the current state is using the IdentityProvider, the function returns v2 as the default version to start with.
-func getKMSAPIVersion(cpContext component.WorkloadContext, secret *corev1.Secret) (string, error) {
-	apiVersion := "v2"
-	if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(secret), secret); err != nil {
+// isKASConverged checks if the KAS Deployment has fully rolled out.
+// Returns false (not error) if the deployment doesn't exist yet.
+func isKASConverged(cpContext component.WorkloadContext) (bool, error) {
+	kasDeployment := &appsv1.Deployment{}
+	kasRef := manifests.KASDeployment(cpContext.HCP.Namespace)
+	if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(kasRef), kasDeployment); err != nil {
 		if apierrors.IsNotFound(err) {
-			return apiVersion, nil
+			return false, nil
 		}
-		return "", fmt.Errorf("failed to get existing secret encryption config: %v", err)
+		return false, fmt.Errorf("failed to get KAS deployment: %w", err)
+	}
+	return util.IsDeploymentReady(cpContext, kasDeployment), nil
+}
+
+// readCurrentEncryptionConfig reads the live encryption config secret from the
+// cluster and parses its EncryptionConfiguration. Returns nil (not an error)
+// if the secret does not exist yet.
+func readCurrentEncryptionConfig(cpContext component.WorkloadContext, templateSecret *corev1.Secret) (*apiserverv1.EncryptionConfiguration, error) {
+	existingSecret := &corev1.Secret{}
+	if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(templateSecret), existingSecret); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, nil
+		}
+		return nil, err
 	}
 
-	encryptionConfigBytes := secret.Data[secretEncryptionConfigurationKey]
-	if len(encryptionConfigBytes) > 0 {
-		currentConfig := apiserverv1.EncryptionConfiguration{}
-		gvks, _, err := api.Scheme.ObjectKinds(&currentConfig)
-		if err != nil || len(gvks) == 0 {
-			return "", fmt.Errorf("cannot determine gvk of resource: %v", err)
-		}
-		if _, _, err = api.YamlSerializer.Decode(encryptionConfigBytes, &gvks[0], &currentConfig); err != nil {
-			return "", fmt.Errorf("cannot decode resource: %v", err)
-		}
+	configBytes := existingSecret.Data[secretEncryptionConfigurationKey]
+	if len(configBytes) == 0 {
+		return nil, nil
+	}
 
-		// Only look at write keys to return the APIVersion currently used.
+	return secretencryption.DecodeEncryptionConfiguration(configBytes)
+}
+
+// deriveAESCBCEncryptionConfig determines the AESCBC write and read keys using
+// the two-stage rollout pattern, then generates the EncryptionConfiguration.
+//
+// Two-stage derivation:
+//   - No targetKey: spec.activeKey is the sole write key.
+//   - targetKey set, target not yet promoted in current config: ReadOnlyDeploy —
+//     old key (status.activeKey) writes, new key (status.targetKey) reads.
+//   - targetKey set and already promoted in current config: WritePromote/Migrating —
+//     new key (status.targetKey) writes, old key (status.activeKey) reads.
+//   - status has no active key (upgrade transition): fall back to spec.backupKey.
+func deriveAESCBCEncryptionConfig(cpContext component.WorkloadContext, secretEncryption *hyperv1.SecretEncryptionSpec, encStatus *hyperv1.SecretEncryptionStatus, currentConfig *apiserverv1.EncryptionConfiguration, kasConverged bool) ([]byte, error) {
+	if secretEncryption.AESCBC == nil || len(secretEncryption.AESCBC.ActiveKey.Name) == 0 {
+		return nil, fmt.Errorf("aescbc metadata not specified")
+	}
+
+	if encStatus == nil || encStatus.ActiveKey.Provider == "" {
+		// Upgrade transition or initial setup: use spec keys with deprecated backupKey fallback.
+		writeKeyData, err := fetchAESCBCKeyData(cpContext, secretEncryption.AESCBC.ActiveKey.Name)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get aescbc active key: %w", err)
+		}
+		var readKeyData []byte
+		if secretEncryption.AESCBC.BackupKey != nil && len(secretEncryption.AESCBC.BackupKey.Name) > 0 { //nolint:staticcheck
+			readKeyData, err = fetchAESCBCKeyData(cpContext, secretEncryption.AESCBC.BackupKey.Name) //nolint:staticcheck
+			if err != nil {
+				return nil, fmt.Errorf("failed to get aescbc backup key: %w", err)
+			}
+		}
+		return generateAESCBCEncryptionConfig(writeKeyData, readKeyData)
+	}
+
+	if encStatus.TargetKey.Provider == "" || encStatus.TargetKey.AESCBC.DataHash == "" || encStatus.ActiveKey.AESCBC.DataHash == "" {
+		// No rotation in progress or provider mismatch: spec.activeKey is the sole write key.
+		writeKeyData, err := fetchAESCBCKeyData(cpContext, secretEncryption.AESCBC.ActiveKey.Name)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get aescbc active key: %w", err)
+		}
+		return generateAESCBCEncryptionConfig(writeKeyData, nil)
+	}
+
+	// Rotation in progress. Fetch both keys.
+	targetSecretName := encStatus.TargetKey.AESCBC.Secret.Name
+	oldSecretName := encStatus.ActiveKey.AESCBC.Secret.Name
+	targetKeyData, err := fetchAESCBCKeyData(cpContext, targetSecretName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get aescbc target key secret %q: %w", targetSecretName, err)
+	}
+	oldKeyData, err := fetchAESCBCKeyData(cpContext, oldSecretName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get aescbc old key secret %q: %w", oldSecretName, err)
+	}
+
+	// Determine stage from current EncryptionConfiguration.
+	targetKeyName, err := AESCBCKeyName(targetKeyData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to compute aescbc target key name: %w", err)
+	}
+	if secretencryption.ShouldPromoteTargetKey(currentConfig, targetKeyName, hyperv1.AESCBC, kasConverged) {
+		return generateAESCBCEncryptionConfig(targetKeyData, oldKeyData)
+	}
+	// ReadOnlyDeploy: old key writes, target key reads.
+	return generateAESCBCEncryptionConfig(oldKeyData, targetKeyData)
+}
+
+// fetchAESCBCKeyData retrieves the AESCBC key data from a named secret.
+func fetchAESCBCKeyData(cpContext component.WorkloadContext, secretName string) ([]byte, error) {
+	keySecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      secretName,
+			Namespace: cpContext.HCP.Namespace,
+		},
+	}
+	if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(keySecret), keySecret); err != nil {
+		return nil, err
+	}
+	keyData, ok := keySecret.Data[hyperv1.AESCBCKeySecretKey]
+	if !ok {
+		return nil, fmt.Errorf("aescbc key field %q not found in secret %q", hyperv1.AESCBCKeySecretKey, secretName)
+	}
+	return keyData, nil
+}
+
+// getKMSAPIVersion extracts the KMS API version from the current EncryptionConfiguration.
+// Returns "v2" as default if no config exists or no KMS provider is configured.
+func getKMSAPIVersion(currentConfig *apiserverv1.EncryptionConfiguration) string {
+	if currentConfig != nil {
 		for _, r := range currentConfig.Resources {
 			if len(r.Providers) > 0 && r.Providers[0].KMS != nil {
-				return r.Providers[0].KMS.APIVersion, nil
+				return r.Providers[0].KMS.APIVersion
 			}
 		}
 	}
-	return apiVersion, nil
+	return "v2"
 }
 
 func buildVolumeSecretEncryptionConfigFile() corev1.Volume {

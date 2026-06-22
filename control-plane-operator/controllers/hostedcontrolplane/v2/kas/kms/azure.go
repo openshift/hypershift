@@ -35,6 +35,15 @@ const (
 	azureProviderConfigNamePrefix = "azure"
 )
 
+// AzureKMSProviderName computes the EncryptionConfiguration KMS provider name for an Azure KMS key.
+func AzureKMSProviderName(key hyperv1.AzureKMSKey) (string, error) {
+	h, err := util.HashStruct(key)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s-%s", azureProviderConfigNamePrefix, h), nil
+}
+
 var (
 	azureKMSVolumeMounts = util.PodVolumeMounts{
 		KasMainContainerName: {
@@ -57,15 +66,19 @@ var (
 var _ KMSProvider = &azureKMSProvider{}
 
 type azureKMSProvider struct {
+	writeKey hyperv1.AzureKMSKey
+	readKey  *hyperv1.AzureKMSKey
 	kmsSpec  *hyperv1.AzureKMSSpec
 	kmsImage string
 }
 
-func NewAzureKMSProvider(kmsSpec *hyperv1.AzureKMSSpec, image string) (*azureKMSProvider, error) {
+func NewAzureKMSProvider(writeKey hyperv1.AzureKMSKey, readKey *hyperv1.AzureKMSKey, kmsSpec *hyperv1.AzureKMSSpec, image string) (*azureKMSProvider, error) {
 	if kmsSpec == nil {
 		return nil, fmt.Errorf("azure kms metadata not specified")
 	}
 	return &azureKMSProvider{
+		writeKey: writeKey,
+		readKey:  readKey,
 		kmsSpec:  kmsSpec,
 		kmsImage: image,
 	}, nil
@@ -74,26 +87,26 @@ func NewAzureKMSProvider(kmsSpec *hyperv1.AzureKMSSpec, image string) (*azureKMS
 func (p *azureKMSProvider) GenerateKMSEncryptionConfig(apiVersion string) (*v1.EncryptionConfiguration, error) {
 	var providerConfiguration []v1.ProviderConfiguration
 
-	activeKeyHash, err := util.HashStruct(p.kmsSpec.ActiveKey)
+	writeKeyName, err := AzureKMSProviderName(p.writeKey)
 	if err != nil {
 		return nil, err
 	}
 	providerConfiguration = append(providerConfiguration, v1.ProviderConfiguration{
 		KMS: &v1.KMSConfiguration{
-			Name:       fmt.Sprintf("%s-%s", azureProviderConfigNamePrefix, activeKeyHash),
+			Name:       writeKeyName,
 			APIVersion: apiVersion,
 			Endpoint:   azureActiveKMSUnixSocket,
 			Timeout:    &metav1.Duration{Duration: 35 * time.Second},
 		},
 	})
-	if p.kmsSpec.BackupKey != nil {
-		backupKeyHash, err := util.HashStruct(p.kmsSpec.BackupKey)
+	if p.readKey != nil {
+		readKeyName, err := AzureKMSProviderName(*p.readKey)
 		if err != nil {
 			return nil, err
 		}
 		providerConfiguration = append(providerConfiguration, v1.ProviderConfiguration{
 			KMS: &v1.KMSConfiguration{
-				Name:       fmt.Sprintf("%s-%s", azureProviderConfigNamePrefix, backupKeyHash),
+				Name:       readKeyName,
 				APIVersion: apiVersion,
 				Endpoint:   azureBackupKMSUnixSocket,
 				Timeout:    &metav1.Duration{Duration: 35 * time.Second},
@@ -131,13 +144,13 @@ func (p *azureKMSProvider) GenerateKMSPodConfig() (*KMSPodConfig, error) {
 	podConfig.Containers = append(podConfig.Containers,
 		util.BuildContainer(
 			kasContainerAzureKMSActive(),
-			p.buildKASContainerAzureKMS(p.kmsSpec.ActiveKey, azureActiveKMSUnixSocket, azureActiveKMSHealthPort, azureActiveKMSMetricsAddr)),
+			p.buildKASContainerAzureKMS(p.writeKey, azureActiveKMSUnixSocket, azureActiveKMSHealthPort, azureActiveKMSMetricsAddr)),
 	)
-	if p.kmsSpec.BackupKey != nil {
+	if p.readKey != nil {
 		podConfig.Containers = append(podConfig.Containers,
 			util.BuildContainer(
 				kasContainerAzureKMSBackup(),
-				p.buildKASContainerAzureKMS(*p.kmsSpec.BackupKey, azureBackupKMSUnixSocket, azureBackupKMSHealthPort, azureBackupKMSMetricsAddr)),
+				p.buildKASContainerAzureKMS(*p.readKey, azureBackupKMSUnixSocket, azureBackupKMSHealthPort, azureBackupKMSMetricsAddr)),
 		)
 	}
 

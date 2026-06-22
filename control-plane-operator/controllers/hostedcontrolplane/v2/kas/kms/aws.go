@@ -29,6 +29,15 @@ const (
 	kmsAPIVersionV1                = "v1"
 )
 
+// AWSKMSProviderName computes the EncryptionConfiguration KMS provider name for an AWS KMS key ARN.
+func AWSKMSProviderName(arn string) (string, error) {
+	hasher := fnv.New32()
+	if _, err := hasher.Write([]byte(arn)); err != nil {
+		return "", fmt.Errorf("failed to hash AWS KMS ARN: %w", err)
+	}
+	return fmt.Sprintf("%s-%d", awsKeyNamePrefix, hasher.Sum32()), nil
+}
+
 var (
 	awsKMSVolumeMounts = util.PodVolumeMounts{
 		KasMainContainerName: {
@@ -64,14 +73,14 @@ type awsKMSProvider struct {
 	tokenMinterImage string
 }
 
-func NewAWSKMSProvider(kmsSpec *hyperv1.AWSKMSSpec, kmsImage, tokenMinterImage string) (*awsKMSProvider, error) {
-	if kmsSpec == nil {
-		return nil, fmt.Errorf("AWS kms metadata not specified")
+func NewAWSKMSProvider(writeKey hyperv1.AWSKMSKeyEntry, readKey *hyperv1.AWSKMSKeyEntry, region string, kmsImage, tokenMinterImage string) (*awsKMSProvider, error) {
+	if len(writeKey.ARN) == 0 {
+		return nil, fmt.Errorf("AWS KMS write key ARN is empty")
 	}
 	return &awsKMSProvider{
-		activeKey:        kmsSpec.ActiveKey,
-		backupKey:        kmsSpec.BackupKey,
-		awsRegion:        kmsSpec.Region,
+		activeKey:        writeKey,
+		backupKey:        readKey,
+		awsRegion:        region,
 		kmsImage:         kmsImage,
 		tokenMinterImage: tokenMinterImage,
 	}, nil
@@ -82,29 +91,27 @@ func (p *awsKMSProvider) GenerateKMSEncryptionConfig(apiVersion string) (*v1.Enc
 	if len(p.activeKey.ARN) == 0 {
 		return nil, fmt.Errorf("active key metadata is nil")
 	}
-	hasher := fnv.New32()
-	_, err := hasher.Write([]byte(p.activeKey.ARN))
+	activeKeyName, err := AWSKMSProviderName(p.activeKey.ARN)
 	if err != nil {
 		return nil, err
 	}
 	providerConfiguration = append(providerConfiguration, v1.ProviderConfiguration{
 		KMS: &v1.KMSConfiguration{
 			APIVersion: apiVersion,
-			Name:       fmt.Sprintf("%s-%d", awsKeyNamePrefix, hasher.Sum32()),
+			Name:       activeKeyName,
 			Endpoint:   activeAWSKMSUnixSocket,
 			Timeout:    &metav1.Duration{Duration: 35 * time.Second},
 		},
 	})
 	if p.backupKey != nil && len(p.backupKey.ARN) > 0 {
-		hasher = fnv.New32()
-		_, err := hasher.Write([]byte(p.backupKey.ARN))
+		backupKeyName, err := AWSKMSProviderName(p.backupKey.ARN)
 		if err != nil {
 			return nil, err
 		}
 		providerConfiguration = append(providerConfiguration, v1.ProviderConfiguration{
 			KMS: &v1.KMSConfiguration{
 				APIVersion: apiVersion,
-				Name:       fmt.Sprintf("%s-%d", awsKeyNamePrefix, hasher.Sum32()),
+				Name:       backupKeyName,
 				Endpoint:   backupAWSKMSUnixSocket,
 				Timeout:    &metav1.Duration{Duration: 35 * time.Second},
 			},
@@ -155,7 +162,6 @@ func (p *awsKMSProvider) GenerateKMSPodConfig() (*KMSPodConfig, error) {
 
 	podConfig.KASContainerMutate = func(c *corev1.Container) {
 		c.VolumeMounts = append(c.VolumeMounts, awsKMSVolumeMounts.ContainerMounts(KasMainContainerName)...)
-		c.Args = append(c.Args, "--encryption-provider-config-automatic-reload=false")
 	}
 
 	return podConfig, nil

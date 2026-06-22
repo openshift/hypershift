@@ -7,6 +7,7 @@ import (
 	"hash/fnv"
 
 	"github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/config"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	v1 "k8s.io/apiserver/pkg/apis/apiserver/v1"
@@ -14,29 +15,36 @@ import (
 
 const aescbcKeyNamePrefix = "key"
 
+// AESCBCKeyName computes the EncryptionConfiguration key name for an AESCBC key.
+func AESCBCKeyName(keyData []byte) (string, error) {
+	hasher := fnv.New32()
+	if _, err := hasher.Write(keyData); err != nil {
+		return "", fmt.Errorf("failed to hash AESCBC key: %w", err)
+	}
+	return fmt.Sprintf("%s-%d", aescbcKeyNamePrefix, hasher.Sum32()), nil
+}
+
 func generateAESCBCEncryptionConfig(activeKey []byte, backupKey []byte) ([]byte, error) {
 	var providerConfiguration []v1.ProviderConfiguration
 	var keyList []v1.Key
 	if len(activeKey) == 0 {
 		return nil, fmt.Errorf("active key is empty")
 	}
-	hasher := fnv.New32()
-	_, err := hasher.Write(activeKey)
+	activeKeyName, err := AESCBCKeyName(activeKey)
 	if err != nil {
 		return nil, err
 	}
 	keyList = append(keyList, v1.Key{
-		Name:   fmt.Sprintf("%s-%d", aescbcKeyNamePrefix, hasher.Sum32()),
+		Name:   activeKeyName,
 		Secret: base64.StdEncoding.EncodeToString(activeKey),
 	})
 	if len(backupKey) > 0 {
-		hasher = fnv.New32()
-		_, err := hasher.Write(backupKey)
+		backupKeyName, err := AESCBCKeyName(backupKey)
 		if err != nil {
 			return nil, err
 		}
 		keyList = append(keyList, v1.Key{
-			Name:   fmt.Sprintf("%s-%d", aescbcKeyNamePrefix, hasher.Sum32()),
+			Name:   backupKeyName,
 			Secret: base64.StdEncoding.EncodeToString(backupKey),
 		})
 	}
@@ -55,14 +63,13 @@ func generateAESCBCEncryptionConfig(activeKey []byte, backupKey []byte) ([]byte,
 		},
 		Resources: []v1.ResourceConfiguration{
 			{
-				Resources: []string{"secrets"},
+				Resources: config.AESCBCEncryptedObjects(),
 				Providers: providerConfiguration,
 			},
 		},
 	}
 	bufferInstance := bytes.NewBuffer([]byte{})
-	err = api.YamlSerializer.Encode(&encryptionConfig, bufferInstance)
-	if err != nil {
+	if err := api.YamlSerializer.Encode(&encryptionConfig, bufferInstance); err != nil {
 		return nil, err
 	}
 	return bufferInstance.Bytes(), nil

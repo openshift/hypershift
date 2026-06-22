@@ -264,6 +264,13 @@ func GetControlPlaneWorkloads() []WorkloadSpec {
 		},
 		{
 			Type: "Deployment",
+			Name: "kube-storage-version-migrator",
+			PodSelector: map[string]string{
+				"app": "kube-storage-version-migrator",
+			},
+		},
+		{
+			Type: "Deployment",
 			Name: "machine-approver",
 			PodSelector: map[string]string{
 				"app": "machine-approver",

@@ -29,6 +29,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/machine"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/node"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/nodecount"
+	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/reencryption"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/spotremediation"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/operator"
@@ -70,6 +71,7 @@ var controllerFuncs = map[string]operator.ControllerSetupFunc{
 	"drainer":                      drainer.Setup,
 	hcpstatus.ControllerName:       hcpstatus.Setup,
 	spotremediation.ControllerName: spotremediation.Setup,
+	reencryption.ControllerName:    reencryption.Setup,
 }
 
 type HostedClusterConfigOperator struct {
