@@ -731,6 +731,8 @@ func TestEventHandling(t *testing.T) {
 	mockedProviderWithOpenshiftImageRegistryOverrides.EXPECT().
 		Lookup(gomock.Any(), gomock.Any(), gomock.Any()).
 		Return(testutils.InitReleaseImageOrDie("4.15.0"), nil).AnyTimes()
+	mockedProviderWithOpenshiftImageRegistryOverrides.EXPECT().
+		GetRegistryOverrides().Return(map[string]string{"registry": "override"}).AnyTimes()
 	mockEC2 := awsapi.NewMockEC2API(mockCtrl)
 	mockEC2.EXPECT().DescribeVpcEndpoints(gomock.Any(), gomock.Any()).Return(&ec2.DescribeVpcEndpointsOutput{}, fmt.Errorf("not ready")).AnyTimes()
 
@@ -814,6 +816,8 @@ func TestNonReadyInfraTriggersRequeueAfter(t *testing.T) {
 	mockedProviderWithOpenshiftImageRegistryOverrides.EXPECT().
 		Lookup(gomock.Any(), gomock.Any(), gomock.Any()).
 		Return(testutils.InitReleaseImageOrDie("4.15.0"), nil).AnyTimes()
+	mockedProviderWithOpenshiftImageRegistryOverrides.EXPECT().
+		GetRegistryOverrides().Return(map[string]string{"registry": "override"}).AnyTimes()
 	mockEC2 := awsapi.NewMockEC2API(mockCtrl)
 	mockEC2.EXPECT().DescribeVpcEndpoints(gomock.Any(), gomock.Any()).Return(&ec2.DescribeVpcEndpointsOutput{}, fmt.Errorf("not ready")).AnyTimes()
 	hcp := sampleHCP(t)
