@@ -563,6 +563,32 @@ func TestReconcileDeletion(t *testing.T) {
 			expectRequeue:   true,
 			expectFinalizer: true,
 		},
+		{
+			name: "When Route53 hosted zone is already deleted externally it should treat deletion as successful",
+			awsEndpointSvc: &hyperv1.AWSEndpointService{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "private-router",
+					Namespace:         "clusters-test",
+					DeletionTimestamp: &now,
+					Finalizers:        []string{finalizer},
+				},
+				Status: hyperv1.AWSEndpointServiceStatus{
+					DNSNames:  []string{"api.example.com"},
+					DNSZoneID: "Z1234567890",
+				},
+			},
+			setupMocks: func(mockCtrl *gomock.Controller) *MockawsClientProvider {
+				mockBuilder := NewMockawsClientProvider(mockCtrl)
+				mockEC2 := awsapi.NewMockEC2API(mockCtrl)
+				mockRoute53 := awsapi.NewMockROUTE53API(mockCtrl)
+				mockRoute53.EXPECT().ListResourceRecordSets(gomock.Any(), gomock.Any()).Return(
+					nil, &route53types.NoSuchHostedZone{Message: aws.String("Hosted zone Z1234567890 not found")})
+				mockBuilder.EXPECT().getClients(gomock.Any()).Return(mockEC2, mockRoute53, nil)
+				return mockBuilder
+			},
+			expectError:     false,
+			expectFinalizer: false,
+		},
 	}
 
 	for _, tc := range testCases {
