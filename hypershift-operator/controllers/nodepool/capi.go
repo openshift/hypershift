@@ -56,6 +56,18 @@ type CAPI struct {
 	upsert.ApplyProvider
 }
 
+// hasStatusCapacity checks if a machine template has Status.Capacity populated
+// by the infrastructure provider (native scale-from-zero support).
+func hasStatusCapacity(template client.Object) bool {
+	switch t := template.(type) {
+	case *capiaws.AWSMachineTemplate:
+		return len(t.Status.Capacity) > 0
+	case *capiazure.AzureMachineTemplate:
+		return len(t.Status.Capacity) > 0
+	}
+	return false
+}
+
 func newCAPI(token *Token, capiClusterName string) (*CAPI, error) {
 	if token == nil {
 		return nil, fmt.Errorf("token can not be nil")
@@ -473,7 +485,8 @@ func (c *CAPI) reconcileMachineDeployment(ctx context.Context, log logr.Logger,
 		}
 	}
 
-	setMachineDeploymentReplicas(nodePool, machineDeployment, c.scaleFromZeroPlatform)
+	scaleFromZeroSupported := hasStatusCapacity(machineTemplateCR) || nodePool.Spec.Platform.Type == c.scaleFromZeroPlatform
+	setMachineDeploymentReplicas(nodePool, machineDeployment, scaleFromZeroSupported)
 
 	if updated := c.propagateVersionAndTemplate(log, machineDeployment, machineTemplateCR); updated {
 		return nil
@@ -757,7 +770,7 @@ func (c *CAPI) reconcileMachineHealthCheck(ctx context.Context,
 
 // setMachineDeploymentReplicas sets wanted replicas:
 // If autoscaling is enabled we reconcile min/max annotations and leave replicas untouched.
-func setMachineDeploymentReplicas(nodePool *hyperv1.NodePool, machineDeployment *capiv1.MachineDeployment, scaleFromZeroPlatform hyperv1.PlatformType) {
+func setMachineDeploymentReplicas(nodePool *hyperv1.NodePool, machineDeployment *capiv1.MachineDeployment, scaleFromZeroSupported bool) {
 	if machineDeployment.Annotations == nil {
 		machineDeployment.Annotations = make(map[string]string)
 	}
@@ -769,12 +782,11 @@ func setMachineDeploymentReplicas(nodePool *hyperv1.NodePool, machineDeployment 
 		// 1. if it's a new MachineDeployment, or the replicas field of the old MachineDeployment is <= min size, use min size
 		// 2. if the replicas field of the old MachineDeployment is > max size, use max size
 		//
-		// Guard: Enforce min=1 for non-AWS platforms to prevent scale-from-zero issues.
-		// Even if API validation fails or pre-existing objects exist with min=0, this prevents
-		// NodePools from being permanently stuck at 0 replicas on platforms that don't support
-		// scale-from-zero metadata.
+		// Guard: Enforce min=1 when scale-from-zero is not supported to prevent
+		// NodePools from being permanently stuck at 0 replicas without the
+		// capacity metadata the autoscaler needs to scale back up.
 		effectiveMin := ptr.Deref(nodePool.Spec.AutoScaling.Min, 0)
-		if effectiveMin == 0 && nodePool.Spec.Platform.Type != hyperv1.AWSPlatform && nodePool.Spec.Platform.Type != scaleFromZeroPlatform {
+		if effectiveMin == 0 && !scaleFromZeroSupported {
 			effectiveMin = 1
 		}
 
@@ -958,7 +970,8 @@ func (c *CAPI) reconcileMachineSet(ctx context.Context,
 	}
 	machineSet.Spec.Template.Annotations[nodePoolAnnotationTaints] = taintsInJSON
 
-	setMachineSetReplicas(nodePool, machineSet, c.scaleFromZeroPlatform)
+	scaleFromZeroSupported := hasStatusCapacity(machineTemplateCR) || nodePool.Spec.Platform.Type == c.scaleFromZeroPlatform
+	setMachineSetReplicas(nodePool, machineSet, scaleFromZeroSupported)
 
 	isUpdating := false
 	// Propagate version and userData Secret to the MachineSet.
@@ -1065,7 +1078,7 @@ func machineSetInPlaceRolloutIsComplete(machineSet *capiv1.MachineSet) bool {
 
 // setMachineSetReplicas sets wanted replicas:
 // If autoscaling is enabled we reconcile min/max annotations and leave replicas untouched.
-func setMachineSetReplicas(nodePool *hyperv1.NodePool, machineSet *capiv1.MachineSet, scaleFromZeroPlatform hyperv1.PlatformType) {
+func setMachineSetReplicas(nodePool *hyperv1.NodePool, machineSet *capiv1.MachineSet, scaleFromZeroSupported bool) {
 	if machineSet.Annotations == nil {
 		machineSet.Annotations = make(map[string]string)
 	}
@@ -1077,12 +1090,11 @@ func setMachineSetReplicas(nodePool *hyperv1.NodePool, machineSet *capiv1.Machin
 		// 1. if it's a new MachineSet, or the replicas field of the old MachineSet is <= min size, use min size
 		// 2. if the replicas field of the old MachineSet is > max size, use max size
 		//
-		// Guard: Enforce min=1 for non-AWS platforms to prevent scale-from-zero issues.
-		// Even if API validation fails or pre-existing objects exist with min=0, this prevents
-		// NodePools from being permanently stuck at 0 replicas on platforms that don't support
-		// scale-from-zero metadata.
+		// Guard: Enforce min=1 when scale-from-zero is not supported to prevent
+		// NodePools from being permanently stuck at 0 replicas without the
+		// capacity metadata the autoscaler needs to scale back up.
 		effectiveMin := ptr.Deref(nodePool.Spec.AutoScaling.Min, 0)
-		if effectiveMin == 0 && nodePool.Spec.Platform.Type != hyperv1.AWSPlatform && nodePool.Spec.Platform.Type != scaleFromZeroPlatform {
+		if effectiveMin == 0 && !scaleFromZeroSupported {
 			effectiveMin = 1
 		}
 

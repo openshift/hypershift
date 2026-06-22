@@ -60,3 +60,6 @@ __pycache__/
 .venv/
 venv/
 *.egg
+.claude/skills/dev/azure-sandbox-create/
+.claude/skills/dev/azure-sandbox-destroy/
+.claude/skills/dev/azure-sandbox-refresh/

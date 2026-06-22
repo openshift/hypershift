@@ -83,6 +83,7 @@ func setScaleFromZeroAnnotationsOnObject(ctx context.Context, provider instancet
 		statusCapacity = template.Status.Capacity
 	case *capiazure.AzureMachineTemplate:
 		instanceType = template.Spec.Template.Spec.VMSize
+		statusCapacity = template.Status.Capacity
 	default:
 		return fmt.Errorf("unsupported machine template type: %T", machineTemplate)
 	}
