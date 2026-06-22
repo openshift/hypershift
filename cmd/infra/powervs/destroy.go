@@ -117,8 +117,8 @@ func NewDestroyCommand() *cobra.Command {
 	_ = cmd.Flags().MarkHidden("cloud-instance-id")
 	_ = cmd.Flags().MarkHidden("transit-gateway")
 
-	logger := cmdutil.NewLogger().WithName(opts.InfraID)
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		logger := cmdutil.NewLogger().WithName(opts.InfraID)
 		if err := opts.Run(cmd.Context(), logger); err != nil {
 			logger.Error(err, "Failed to destroy infrastructure")
 			return err
