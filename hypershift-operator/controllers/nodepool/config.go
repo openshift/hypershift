@@ -12,6 +12,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	kvinfra "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/kubevirt"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/backwardcompat"
 	"github.com/openshift/hypershift/support/capabilities"
@@ -212,7 +213,53 @@ func (cg *ConfigGenerator) generateMCORawConfig(ctx context.Context, caps *hyper
 		configs = append(configs, nodeTuningGeneratedConfigs...)
 	}
 
+	// Generate platform-specific MachineConfigs.
+	platformConfigs, err := cg.getPlatformConfigs()
+	if err != nil {
+		return "", err
+	}
+	configs = append(configs, platformConfigs...)
+
 	return cg.parse(configs)
+}
+
+// getPlatformConfigs returns platform-specific MachineConfig ConfigMaps
+// based on the NodePool's platform configuration.
+func (cg *ConfigGenerator) getPlatformConfigs() ([]corev1.ConfigMap, error) {
+	var rawConfig string
+	var err error
+
+	switch cg.nodePool.Spec.Platform.Type {
+	case hyperv1.KubevirtPlatform:
+		rawConfig, err = cg.kubevirtPlatformConfig()
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate platform config: %w", err)
+	}
+
+	if rawConfig == "" {
+		return nil, nil
+	}
+
+	return []corev1.ConfigMap{
+		{
+			Data: map[string]string{
+				TokenSecretConfigKey: rawConfig,
+			},
+		},
+	}, nil
+}
+
+// kubevirtPlatformConfig generates KubeVirt-specific MachineConfig content.
+// For NodePools using multus as primary network (AttachDefaultNetwork=false) on
+// clusters with IPv6 networking, it generates an override that replaces the
+// MCO-rendered nmstate files (which assume the default pod network) with no-op
+// content, allowing standard network auto-configuration (SLAAC) to work.
+// For every other NodePool nothing is generated, keeping the NodePool config
+// hash unchanged so that upgrading the HyperShift operator does not trigger a
+// rollout.
+func (cg *ConfigGenerator) kubevirtPlatformConfig() (string, error) {
+	return kvinfra.GenerateNetworkOverrideMachineConfig(cg.nodePool, cg.hostedCluster.Spec.Networking)
 }
 
 // getUserConfigs returns a slice with all the configMaps in nodePool.Spec.Config.
