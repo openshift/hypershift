@@ -59,7 +59,7 @@ func GetClient() (crclient.Client, error) {
 // the default kubeconfig resolution.
 func GetClientWithKubeconfig(kubeconfigPath string) (crclient.Client, error) {
 	if os.Getenv("FAKE_CLIENT") == "true" {
-		return fake.NewFakeClient(), nil
+		return fake.NewClientBuilder().WithScheme(hyperapi.Scheme).Build(), nil
 	}
 
 	config, err := GetConfigWithKubeconfig(kubeconfigPath)
