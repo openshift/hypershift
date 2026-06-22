@@ -227,8 +227,8 @@ func NewCreateCommand() *cobra.Command {
 	_ = cmd.MarkFlagRequired("resource-group")
 	_ = cmd.MarkFlagRequired("infra-id")
 
-	logger := cmdutil.NewLogger().WithName(opts.InfraID)
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		logger := cmdutil.NewLogger().WithName(opts.InfraID)
 		if err := opts.Run(cmd.Context(), logger); err != nil {
 			logger.Error(err, "Failed to create infrastructure")
 			return err

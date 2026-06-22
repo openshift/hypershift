@@ -8,8 +8,7 @@ import (
 	"strings"
 
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
-	"github.com/openshift/hypershift/cmd/log"
-	"github.com/openshift/hypershift/cmd/util"
+	cmdutil "github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/support/awsapi"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -78,7 +77,7 @@ func NewCreateOperatorRolesCommand() *cobra.Command {
 
 	_ = cmd.MarkFlagRequired("oidc-storage-provider-s3-bucket-name")
 
-	logger := log.Log
+	logger := cmdutil.NewLogger()
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		if err := opts.Validate(cmd.Context()); err != nil {
 			return err
@@ -95,7 +94,7 @@ func (o *CreateOperatorRolesOptions) Validate(ctx context.Context) error {
 	}
 	if o.OIDCIssuerURL == "" && o.InstanceRoleARN == "" {
 		// Auto-discover OIDC issuer from management cluster
-		client, err := util.GetClient()
+		client, err := cmdutil.GetClient()
 		if err != nil {
 			return fmt.Errorf("no --oidc-issuer-url or --instance-role-arn specified, and failed to connect to cluster for auto-discovery: %w", err)
 		}
@@ -323,7 +322,7 @@ func (o *CreateOperatorRolesOptions) output(results *CreateOperatorRolesOutput, 
 }
 
 func (o *CreateOperatorRolesOptions) parseAdditionalTags() error {
-	parsed, err := util.ParseAWSTags(o.AdditionalTags)
+	parsed, err := cmdutil.ParseAWSTags(o.AdditionalTags)
 	if err != nil {
 		return err
 	}

@@ -1556,7 +1556,7 @@ func (r *HostedControlPlaneReconciler) reconcileOLMAndMiscCerts(ctx context.Cont
 		NodeTuningOperatorService := manifests.ClusterNodeTuningOperatorMetricsService(hcp.Namespace)
 		err := removeServiceCAAnnotationAndSecret(ctx, r.Client, NodeTuningOperatorService, NodeTuningOperatorServingCert)
 		if err != nil {
-			log.Error(err, "failed to remove service ca annotation and secret: %w")
+			log.Error(err, "failed to remove service ca annotation and secret")
 		}
 		if _, err = createOrUpdate(ctx, r, NodeTuningOperatorServingCert, func() error {
 			return pki.ReconcileNodeTuningOperatorServingCertSecret(NodeTuningOperatorServingCert, rootCASecret, p.OwnerRef)
@@ -1763,7 +1763,7 @@ func (r *HostedControlPlaneReconciler) reconcileAzurePlatformCerts(ctx context.C
 	AzureDiskCsiDriverOperatorServingCert := manifests.AzureDiskCSIDriverOperatorServingCertSecret(hcp.Namespace)
 	AzureDiskCsiDriverOperatorService := manifests.AzureDiskCSIDriverOperatorMetricsService(hcp.Namespace)
 	if err := removeServiceCAAnnotationAndSecret(ctx, r.Client, AzureDiskCsiDriverOperatorService, AzureDiskCsiDriverOperatorServingCert); err != nil {
-		log.Error(err, "failed to remove service ca annotation and secret: %w")
+		log.Error(err, "failed to remove service ca annotation and secret")
 	}
 	if _, err := createOrUpdate(ctx, r, AzureDiskCsiDriverOperatorServingCert, func() error {
 		z := pki.ReconcileAzureDiskCsiDriverOperatorMetricsServingCertSecret(AzureDiskCsiDriverOperatorServingCert, rootCASecret, p.OwnerRef)
@@ -1796,7 +1796,7 @@ func (r *HostedControlPlaneReconciler) reconcileAzurePlatformCerts(ctx context.C
 	AzureFileCsiDriverOperatorServingCert := manifests.AzureFileCSIDriverOperatorServingCertSecret(hcp.Namespace)
 	AzureFileCsiDriverOperatorService := manifests.AzureFileCSIDriverOperatorMetricsService(hcp.Namespace)
 	if err := removeServiceCAAnnotationAndSecret(ctx, r.Client, AzureFileCsiDriverOperatorService, AzureFileCsiDriverOperatorServingCert); err != nil {
-		log.Error(err, "failed to remove service ca annotation and secret: %w")
+		log.Error(err, "failed to remove service ca annotation and secret")
 	}
 	if _, err := createOrUpdate(ctx, r, AzureFileCsiDriverOperatorServingCert, func() error {
 		z := pki.ReconcileAzureFileCsiDriverOperatorMetricsServingCertSecret(AzureFileCsiDriverOperatorServingCert, rootCASecret, p.OwnerRef)
