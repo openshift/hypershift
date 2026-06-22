@@ -62,7 +62,7 @@ func TestMultiHopUpgrade(t *testing.T) {
 		}
 		g.Expect(defaultNP).NotTo(BeNil(), "default NodePool should exist for multi-hop upgrade")
 
-		upgradeTimeout := nodePoolUpgradeTimeout(hostedCluster.Spec.Platform.Type)
+		upgradeTimeout := 45 * time.Minute
 
 		for i := 1; i < len(imageChain); i++ {
 			targetImage := imageChain[i]
@@ -162,13 +162,4 @@ func buildV1ReleaseImageChain() []string {
 		}
 	}
 	return chain
-}
-
-func nodePoolUpgradeTimeout(platform hyperv1.PlatformType) time.Duration {
-	switch platform {
-	case hyperv1.AzurePlatform, hyperv1.KubevirtPlatform:
-		return 45 * time.Minute
-	default:
-		return 20 * time.Minute
-	}
 }
