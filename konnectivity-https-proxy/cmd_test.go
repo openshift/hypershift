@@ -191,8 +191,7 @@ func TestConnectDialFunc(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
 
-			type contextKey string
-			reqCtx := context.WithValue(t.Context(), contextKey("test"), "value")
+			reqCtx := t.Context()
 			req, err := http.NewRequestWithContext(reqCtx, http.MethodConnect, "https://example.com:443", nil)
 			g.Expect(err).NotTo(HaveOccurred())
 
@@ -226,7 +225,6 @@ func TestConnectDialFunc(t *testing.T) {
 			g.Expect(proxyCalled).To(Equal(tc.expectDialProxy))
 			if tc.expectDialDirect {
 				g.Expect(capturedCtx).To(Equal(reqCtx))
-				g.Expect(capturedCtx.(context.Context).Value(contextKey("test"))).To(Equal("value"))
 			}
 		})
 	}
