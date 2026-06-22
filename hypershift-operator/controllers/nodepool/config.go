@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	kvinfra "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/kubevirt"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/backwardcompat"
 	"github.com/openshift/hypershift/support/capabilities"
@@ -159,7 +160,62 @@ func (cg *ConfigGenerator) generateMCORawConfig(ctx context.Context, caps *hyper
 		configs = append(configs, nodeTuningGeneratedConfigs...)
 	}
 
+	// Generate platform-specific MachineConfigs.
+	platformConfigs, err := cg.getPlatformConfigs()
+	if err != nil {
+		return "", err
+	}
+	configs = append(configs, platformConfigs...)
+
 	return cg.parse(configs)
+}
+
+// getPlatformConfigs returns platform-specific MachineConfig ConfigMaps
+// based on the NodePool's platform configuration.
+func (cg *ConfigGenerator) getPlatformConfigs() ([]corev1.ConfigMap, error) {
+	var rawConfig string
+	var err error
+
+	switch cg.nodePool.Spec.Platform.Type {
+	case hyperv1.KubevirtPlatform:
+		rawConfig, err = cg.kubevirtPlatformConfig()
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate platform config: %w", err)
+	}
+
+	if rawConfig == "" {
+		return nil, nil
+	}
+
+	return []corev1.ConfigMap{
+		{
+			Data: map[string]string{
+				TokenSecretConfigKey: rawConfig,
+			},
+		},
+	}, nil
+}
+
+// kubevirtPlatformConfig generates KubeVirt-specific MachineConfig content.
+// For NodePools using the default pod network, it generates nmstate configurations
+// that set up IPv6 DHCPv6 and the ARP proxy gateway route.
+// For NodePools using multus as primary network, it generates an override that
+// replaces the MCO-rendered nmstate files with no-op content, allowing standard
+// network auto-configuration (SLAAC) to work.
+func (cg *ConfigGenerator) kubevirtPlatformConfig() (string, error) {
+	// Generate nmstate config for default pod network
+	defaultNetConfig, err := kvinfra.GenerateNetworkMachineConfig(cg.nodePool)
+	if err != nil {
+		return "", err
+	}
+	if defaultNetConfig != "" {
+		return defaultNetConfig, nil
+	}
+
+	// Generate override for multus primary network to neutralize
+	// MCO-rendered nmstate files that assume pod network.
+	return kvinfra.GenerateNetworkOverrideMachineConfig(cg.nodePool)
 }
 
 // getUserConfigs returns a slice with all the configMaps in nodePool.Spec.Config.

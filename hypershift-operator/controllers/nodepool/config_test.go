@@ -1740,6 +1740,128 @@ spec:
 	}
 }
 
+func TestGetPlatformConfigs(t *testing.T) {
+	testCases := []struct {
+		name          string
+		nodePool      *hyperv1.NodePool
+		expectConfigs bool
+		expectError   bool
+	}{
+		{
+			name: "When platform is KubeVirt with default network it should return platform config",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type:     hyperv1.KubevirtPlatform,
+						Kubevirt: &hyperv1.KubevirtNodePoolPlatform{
+							// AttachDefaultNetwork defaults to true when nil
+						},
+					},
+				},
+			},
+			expectConfigs: true,
+		},
+		{
+			name: "When platform is KubeVirt with multus it should return override config",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.KubevirtPlatform,
+						Kubevirt: &hyperv1.KubevirtNodePoolPlatform{
+							AttachDefaultNetwork: boolPtr(false),
+							AdditionalNetworks: []hyperv1.KubevirtNetwork{
+								{Name: "ns1/localnet-net"},
+							},
+						},
+					},
+				},
+			},
+			expectConfigs: true,
+		},
+		{
+			name: "When platform is AWS it should return no configs",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AWSPlatform,
+					},
+				},
+			},
+			expectConfigs: false,
+		},
+		{
+			name: "When platform is KubeVirt with nil Kubevirt spec it should return no configs",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.KubevirtPlatform,
+					},
+				},
+			},
+			expectConfigs: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			cg := &ConfigGenerator{
+				nodePool: tc.nodePool,
+			}
+
+			configs, err := cg.getPlatformConfigs()
+			if tc.expectError {
+				g.Expect(err).To(HaveOccurred())
+				return
+			}
+			g.Expect(err).ToNot(HaveOccurred())
+
+			if tc.expectConfigs {
+				g.Expect(configs).ToNot(BeNil())
+				g.Expect(configs).To(HaveLen(1))
+				g.Expect(configs[0].Data).To(HaveKey(TokenSecretConfigKey))
+				g.Expect(configs[0].Data[TokenSecretConfigKey]).ToNot(BeEmpty())
+			} else {
+				g.Expect(configs).To(BeNil())
+			}
+		})
+	}
+}
+
+func TestKubevirtPlatformConfig(t *testing.T) {
+	// kubevirtPlatformConfig selects between the default-network nmstate config and
+	// the multus override. The per-network generation logic (default/multus/non-KubeVirt/
+	// nil spec) is covered by network_test.go's TestGenerateNetworkMachineConfig and
+	// TestGenerateNetworkOverrideMachineConfig, and the ConfigMap wiring is covered by
+	// TestGetPlatformConfigs (which calls this method). This test only asserts the
+	// selection: default network yields the default nmstate config, not the override.
+	g := NewWithT(t)
+
+	cg := &ConfigGenerator{
+		nodePool: &hyperv1.NodePool{
+			Spec: hyperv1.NodePoolSpec{
+				Platform: hyperv1.NodePoolPlatform{
+					Type: hyperv1.KubevirtPlatform,
+					Kubevirt: &hyperv1.KubevirtNodePoolPlatform{
+						AttachDefaultNetwork: boolPtr(true),
+					},
+				},
+			},
+		},
+	}
+
+	result, err := cg.kubevirtPlatformConfig()
+	g.Expect(err).ToNot(HaveOccurred())
+	// Default pod network: real nmstate config (autoconf disabled), not the no-op override.
+	g.Expect(result).To(ContainSubstring("autoconf"))
+	g.Expect(result).ToNot(ContainSubstring("desiredState: {}"))
+}
+
+func boolPtr(b bool) *bool {
+	return &b
+}
+
 func TestGlobalConfigString(t *testing.T) {
 	expectedGlobalConfigStringWhenEmpty := `{"metadata":{"name":"cluster","creationTimestamp":null},"spec":{"trustedCA":{"name":""}},"status":{}}
 {"metadata":{"name":"cluster","creationTimestamp":null},"spec":{"additionalTrustedCA":{"name":""},"registrySources":{}},"status":{}}
