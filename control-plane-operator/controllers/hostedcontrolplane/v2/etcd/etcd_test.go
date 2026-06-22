@@ -4,7 +4,9 @@ import (
 	"testing"
 
 	. "github.com/onsi/gomega"
+	"go.etcd.io/etcd/client/pkg/v3/tlsutil"
 
+	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 
@@ -211,6 +213,89 @@ func TestDefragControllerPredicate(t *testing.T) {
 			}
 
 			result := defragControllerPredicate(cpContext)
+			g.Expect(result).To(Equal(tc.expected))
+		})
+	}
+}
+
+func TestMinTLSVersion(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name     string
+		profile  *configv1.TLSSecurityProfile
+		expected string
+	}{
+		{
+			name:     "When TLS profile is nil, it should return TLS 1.2",
+			profile:  nil,
+			expected: string(tlsutil.TLSVersion12),
+		},
+		{
+			name: "When TLS profile is Modern, it should return TLS 1.3",
+			profile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileModernType,
+			},
+			expected: string(tlsutil.TLSVersion13),
+		},
+		{
+			name: "When TLS profile is Intermediate, it should return TLS 1.2",
+			profile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileIntermediateType,
+			},
+			expected: string(tlsutil.TLSVersion12),
+		},
+		{
+			name: "When TLS profile is Old, it should return TLS 1.2",
+			profile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileOldType,
+			},
+			expected: string(tlsutil.TLSVersion12),
+		},
+		{
+			name: "When TLS profile is Custom with TLS 1.3, it should return TLS 1.3",
+			profile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileCustomType,
+				Custom: &configv1.CustomTLSProfile{
+					TLSProfileSpec: configv1.TLSProfileSpec{
+						MinTLSVersion: configv1.VersionTLS13,
+					},
+				},
+			},
+			expected: string(tlsutil.TLSVersion13),
+		},
+		{
+			name: "When TLS profile is Custom with TLS 1.2, it should return TLS 1.2",
+			profile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileCustomType,
+				Custom: &configv1.CustomTLSProfile{
+					TLSProfileSpec: configv1.TLSProfileSpec{
+						MinTLSVersion: configv1.VersionTLS12,
+					},
+				},
+			},
+			expected: string(tlsutil.TLSVersion12),
+		},
+		{
+			name: "When TLS profile is Custom with unknown TLS version, it should return TLS 1.2",
+			profile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileCustomType,
+				Custom: &configv1.CustomTLSProfile{
+					TLSProfileSpec: configv1.TLSProfileSpec{
+						MinTLSVersion: "UnknownVersion",
+					},
+				},
+			},
+			expected: string(tlsutil.TLSVersion12),
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			result := minTLSVersion(tc.profile)
 			g.Expect(result).To(Equal(tc.expected))
 		})
 	}

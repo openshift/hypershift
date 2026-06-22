@@ -5,6 +5,7 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/library-go/pkg/crypto"
+	"go.etcd.io/etcd/client/pkg/v3/tlsutil"
 )
 
 // openSSLToIANACiphersMap maps OpenSSL cipher suite names to IANA names
@@ -71,6 +72,20 @@ func CipherSuites(securityProfile *configv1.TLSSecurityProfile) []string {
 		ciphers = configv1.TLSProfiles[securityProfile.Type].Ciphers
 	}
 	return OpenSSLToIANACipherSuites(ciphers)
+}
+
+// SupportedEtcdCipherSuites filters the input cipher suites to only those supported by etcd.
+// It validates each cipher against etcd's tlsutil.GetCipherSuite() and silently filters out
+// unsupported ciphers.
+func SupportedEtcdCipherSuites(cipherSuites []string) []string {
+	allowedCiphers := []string{}
+	for _, cipher := range cipherSuites {
+		if _, ok := tlsutil.GetCipherSuite(cipher); !ok {
+			continue
+		}
+		allowedCiphers = append(allowedCiphers, cipher)
+	}
+	return allowedCiphers
 }
 
 // SetMinTLSVersionUsingAPIServer returns a function capable of setting the min
