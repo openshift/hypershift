@@ -13,8 +13,10 @@ import (
 
 	. "github.com/onsi/gomega"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -34,16 +36,18 @@ import (
 )
 
 type KubeVirtAdvancedMultinetTest struct {
-	infra        e2eutil.KubeVirtInfra
-	ifaceName    string
-	nodePoolName string
+	infra               e2eutil.KubeVirtInfra
+	ifaceName           string
+	nodePoolName        string
+	hostedClusterClient crclient.Client
 }
 
-func NewKubeVirtAdvancedMultinetTest(ctx context.Context, mgmtClient crclient.Client, hc *hyperv1.HostedCluster) NodePoolTest {
+func NewKubeVirtAdvancedMultinetTest(ctx context.Context, mgmtClient crclient.Client, hc *hyperv1.HostedCluster, hcClient crclient.Client) NodePoolTest {
 	return KubeVirtAdvancedMultinetTest{
-		infra:        e2eutil.NewKubeVirtInfra(ctx, mgmtClient, hc),
-		ifaceName:    "net1",
-		nodePoolName: hc.Name + "-" + "test-kv-advance-multinet",
+		infra:               e2eutil.NewKubeVirtInfra(ctx, mgmtClient, hc),
+		ifaceName:           "net1",
+		nodePoolName:        hc.Name + "-" + "test-kv-advance-multinet",
+		hostedClusterClient: hcClient,
 	}
 }
 
@@ -58,7 +62,7 @@ func (k KubeVirtAdvancedMultinetTest) Setup(t *testing.T) {
 	t.Log("Starting test KubeVirtAdvancedMultinetTest")
 }
 
-func (k KubeVirtAdvancedMultinetTest) Run(t *testing.T, nodePool hyperv1.NodePool, _ []corev1.Node) {
+func (k KubeVirtAdvancedMultinetTest) Run(t *testing.T, nodePool hyperv1.NodePool, nodes []corev1.Node) {
 	g := NewWithT(t)
 
 	np := &hyperv1.NodePool{}
@@ -96,6 +100,19 @@ func (k KubeVirtAdvancedMultinetTest) Run(t *testing.T, nodePool hyperv1.NodePoo
 			},
 		},
 	}))
+
+	// Verify nmstate network config is NOT applied when using multus as primary network.
+	// When AttachDefaultNetwork=false, the pod-network-specific nmstate configuration
+	// (IPv6 autoconf disable, ARP proxy gateway) should not be present on the nodes.
+	t.Log("Verifying nmstate network configuration is NOT applied on multus primary network nodes")
+	// Capture nmstatectl output first so that a transient command failure fails the
+	// probe (pod stays NotReady and the test keeps waiting) instead of being treated
+	// as "config absent". Only then assert the pod-network nmstate config is absent.
+	ds := composeNmstateCheckerDaemonSet(`out=$(chroot /host nmstatectl show) || exit 1; ! printf '%s' "$out" | grep -q "autoconf: false"`)
+	dsName := "nmstate-checker-" + nodePool.Name
+	e2eutil.CorrelateDaemonSet(ds, &nodePool, dsName)
+	g.Expect(k.hostedClusterClient.Create(k.infra.Ctx(), ds)).To(Succeed())
+	eventuallyDaemonSetRollsOut(t, k.infra.Ctx(), k.hostedClusterClient, len(nodes), np, ds)
 }
 
 func (k KubeVirtAdvancedMultinetTest) BuildNodePoolManifest(defaultNodepool hyperv1.NodePool) (*hyperv1.NodePool, error) {
@@ -290,6 +307,80 @@ func (k KubeVirtAdvancedMultinetTest) firstMachineAddress() (string, error) {
 		return "", fmt.Errorf("missing IPv4 internal address at kubevirt machine")
 	}
 	return internalAddress, nil
+}
+
+// composeNmstateCheckerDaemonSet builds a privileged DaemonSet that mounts the host
+// filesystem and uses a readiness probe to verify the nmstate network configuration
+// via chroot /host nmstatectl show. The probeCommand should be a shell command that
+// returns 0 when the expected network state is found.
+func composeNmstateCheckerDaemonSet(probeCommand string) *appsv1.DaemonSet {
+	return &appsv1.DaemonSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "nmstate-checker",
+			Namespace: "kube-system",
+		},
+		Spec: appsv1.DaemonSetSpec{
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"name": "nmstate-checker",
+				},
+			},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						"name": "nmstate-checker",
+					},
+				},
+				Spec: corev1.PodSpec{
+					HostPID: true,
+					Tolerations: []corev1.Toleration{
+						{Operator: corev1.TolerationOpExists},
+					},
+					Containers: []corev1.Container{
+						{
+							Name:    "nmstate-checker",
+							Image:   "registry.access.redhat.com/ubi9/ubi:latest",
+							Command: []string{"/bin/sleep", "24h"},
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("100m"),
+									corev1.ResourceMemory: resource.MustParse("200Mi"),
+								},
+							},
+							ReadinessProbe: &corev1.Probe{
+								ProbeHandler: corev1.ProbeHandler{
+									Exec: &corev1.ExecAction{
+										Command: []string{"/bin/sh", "-c", probeCommand},
+									},
+								},
+							},
+							SecurityContext: &corev1.SecurityContext{
+								Privileged: ptr.To(true),
+							},
+							VolumeMounts: []corev1.VolumeMount{
+								{
+									Name:      "host",
+									MountPath: "/host",
+									ReadOnly:  true,
+								},
+							},
+						},
+					},
+					TerminationGracePeriodSeconds: ptr.To[int64](30),
+					Volumes: []corev1.Volume{
+						{
+							Name: "host",
+							VolumeSource: corev1.VolumeSource{
+								HostPath: &corev1.HostPathVolumeSource{
+									Path: "/",
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
 }
 
 func (k KubeVirtAdvancedMultinetTest) composeDNSMasqPod(t *testing.T) *corev1.Pod {
