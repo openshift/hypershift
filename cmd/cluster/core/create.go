@@ -65,6 +65,7 @@ func BindOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 }
 
 func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
+	flags.StringVar(&opts.Kubeconfig, "kubeconfig", opts.Kubeconfig, util.KubeconfigFlagHelp)
 	flags.StringVar(&opts.Namespace, "namespace", opts.Namespace, "A namespace to contain the generated resources")
 	flags.StringVar(&opts.Name, "name", opts.Name, "A name for the cluster")
 	flags.StringVar(&opts.BaseDomain, "base-domain", opts.BaseDomain, "The ingress base domain for the cluster. If omitted for an HCP KubeVirt cluster, this defaults to the management cluster's apps domain.")
@@ -141,6 +142,7 @@ type RawCreateOptions struct {
 	InfrastructureAvailabilityPolicy string
 	InfrastructureJSON               string
 	InfraID                          string
+	Kubeconfig                       string
 	Name                             string
 	Namespace                        string
 	BaseDomain                       string
@@ -359,7 +361,7 @@ func resolveReleaseImage(ctx context.Context, opts *CreateOptions) error {
 	if len(opts.ReleaseImage) != 0 || len(opts.ReleaseStream) == 0 {
 		return nil
 	}
-	client, err := util.GetClient()
+	client, err := util.GetClientWithKubeconfig(opts.Kubeconfig)
 	if err != nil {
 		return fmt.Errorf("failed to get client: %w", err)
 	}
@@ -617,8 +619,8 @@ func applyFeatureSet(cluster *hyperv1.HostedCluster, opts *CreateOptions) {
 	}
 }
 
-func apply(ctx context.Context, l logr.Logger, infraID string, objects []crclient.Object, waitForRollout bool, mutate func(crclient.Object)) error {
-	client, err := util.GetClient()
+func apply(ctx context.Context, l logr.Logger, infraID string, objects []crclient.Object, waitForRollout bool, kubeconfigPath string, mutate func(crclient.Object)) error {
+	client, err := util.GetClientWithKubeconfig(kubeconfigPath)
 	if err != nil {
 		return err
 	}
@@ -669,7 +671,7 @@ func apply(ctx context.Context, l logr.Logger, infraID string, objects []crclien
 	return nil
 }
 
-func GetAPIServerAddressByNode(ctx context.Context, l logr.Logger) (string, error) {
+func GetAPIServerAddressByNode(ctx context.Context, l logr.Logger, kubeconfigPath string) (string, error) {
 	// Fetch a single node and determine possible DNS or IP entries to use
 	// for external node-port communication.
 	// Possible values are considered with the following priority based on the address type:
@@ -677,7 +679,7 @@ func GetAPIServerAddressByNode(ctx context.Context, l logr.Logger) (string, erro
 	// - NodeExternalIP
 	// - NodeInternalIP
 	apiServerAddress := ""
-	config, err := util.GetConfig()
+	config, err := util.GetConfigWithKubeconfig(kubeconfigPath)
 	if err != nil {
 		return "", err
 	}
@@ -690,7 +692,7 @@ func GetAPIServerAddressByNode(ctx context.Context, l logr.Logger) (string, erro
 		return "", fmt.Errorf("unable to fetch node objects: %w", err)
 	}
 	if len(nodes.Items) < 1 {
-		return "", fmt.Errorf("no node objects found: %w", err)
+		return "", errors.New("no node objects found")
 	}
 	addresses := map[corev1.NodeAddressType]string{}
 	for _, address := range nodes.Items[0].Status.Addresses {
@@ -762,7 +764,7 @@ func (opts *RawCreateOptions) Validate(ctx context.Context) (*ValidatedCreateOpt
 func (opts *RawCreateOptions) validateVersionAndWait(ctx context.Context) error {
 	if opts.VersionCheck {
 		versionCLI := supportedversion.GetRevision()
-		client, err := util.GetClient()
+		client, err := util.GetClientWithKubeconfig(opts.Kubeconfig)
 		if err != nil {
 			return fmt.Errorf("failed to get client: %w", err)
 		}
@@ -780,7 +782,7 @@ func (opts *RawCreateOptions) validateClusterExistence(ctx context.Context) erro
 	if opts.Render {
 		return nil
 	}
-	client, err := util.GetClient()
+	client, err := util.GetClientWithKubeconfig(opts.Kubeconfig)
 	if err != nil {
 		return err
 	}
@@ -791,7 +793,7 @@ func (opts *RawCreateOptions) validateClusterExistence(ctx context.Context) erro
 		return fmt.Errorf("hostedcluster doesn't exist validation failed with error: %w", err)
 	}
 
-	kc, err := hyperutil.GetKubeClientSet()
+	kc, err := hyperutil.GetKubeClientSetWithKubeconfig(opts.Kubeconfig)
 	if err != nil {
 		return fmt.Errorf("could not retrieve kube clientset: %w", err)
 	}
@@ -1015,7 +1017,7 @@ func CreateCluster(ctx context.Context, rawOpts *RawCreateOptions, rawPlatform P
 	}
 
 	// Otherwise, apply the objects
-	return apply(ctx, opts.Log, resources.Cluster.Spec.InfraID, resources.asObjects(), opts.Wait, opts.BeforeApply)
+	return apply(ctx, opts.Log, resources.Cluster.Spec.InfraID, resources.asObjects(), opts.Wait, opts.Kubeconfig, opts.BeforeApply)
 }
 
 type DefaultNodePoolConstructor func(platformType hyperv1.PlatformType, suffix string) *hyperv1.NodePool

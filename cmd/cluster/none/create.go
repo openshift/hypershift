@@ -48,7 +48,7 @@ type CreateOptions struct {
 func (o *ValidatedCreateOptions) Complete(ctx context.Context, opts *core.CreateOptions) (core.Platform, error) {
 	var err error
 	if o.APIServerAddress == "" && !o.ExposeThroughLoadBalancer {
-		o.APIServerAddress, err = core.GetAPIServerAddressByNode(ctx, opts.Log)
+		o.APIServerAddress, err = core.GetAPIServerAddressByNode(ctx, opts.Log, opts.Kubeconfig)
 	}
 	return &CreateOptions{
 		completedCreateOptions: &completedCreateOptions{

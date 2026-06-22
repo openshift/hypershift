@@ -41,7 +41,7 @@ func Test_ValidateCredentialInfo(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
 			options := test.inputOptions
-			err := ValidateCredentialInfo(options.AWSPlatform.Credentials, options.CredentialSecretName, options.Namespace)
+			err := ValidateCredentialInfo(options.AWSPlatform.Credentials, options.CredentialSecretName, options.Namespace, options.Kubeconfig)
 			if test.expectError {
 				g.Expect(err).To(HaveOccurred())
 			} else {
