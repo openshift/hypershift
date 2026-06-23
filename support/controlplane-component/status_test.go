@@ -194,11 +194,13 @@ func TestReconcileComponentStatus(t *testing.T) {
 				WithObjects(tc.deployment).
 				Build()
 
+			var hcpGeneration int64 = 5
 			cpContext := ControlPlaneContext{
 				Client: client,
 				HCP: &hyperv1.HostedControlPlane{
 					ObjectMeta: metav1.ObjectMeta{
-						Namespace: namespace,
+						Namespace:  namespace,
+						Generation: hcpGeneration,
 					},
 				},
 				ReleaseImageProvider: testutil.FakeImageProvider(),
@@ -235,6 +237,9 @@ func TestReconcileComponentStatus(t *testing.T) {
 
 			// Check version
 			g.Expect(componentStatus.Status.Version).To(Equal(tc.expectedVersion))
+
+			// Check observedGeneration is always set to the HCP generation
+			g.Expect(componentStatus.Status.ObservedGeneration).To(Equal(hcpGeneration))
 		})
 	}
 }

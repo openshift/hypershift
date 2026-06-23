@@ -25,17 +25,17 @@ spec:
       jsonPath: .status.conditions[?(@.type=="Available")].status
       name: Available
       type: string
-    - description: Progressing
-      jsonPath: .status.conditions[?(@.type=="Progressing")].status
-      name: Progressing
+    - description: RolloutComplete
+      jsonPath: .status.conditions[?(@.type=="RolloutComplete")].status
+      name: RolloutComplete
       type: string
     - description: Message
       jsonPath: .status.conditions[?(@.type=="Available")].message
       name: Message
       type: string
-    - description: ProgressingMessage
-      jsonPath: .status.conditions[?(@.type=="Progressing")].message
-      name: ProgressingMessage
+    - description: RolloutCompleteMessage
+      jsonPath: .status.conditions[?(@.type=="RolloutComplete")].message
+      name: RolloutCompleteMessage
       priority: 1
       type: string
     name: v1beta1
@@ -71,7 +71,7 @@ spec:
                   conditions contains details for the current state of the ControlPlane Component.
                   If there is an error, then the Available condition will be false.
 
-                  Current condition types are: "Available"
+                  Current condition types are: "Available", "RolloutComplete"
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -131,6 +131,13 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              observedGeneration:
+                description: observedGeneration reports which generation of the HostedControlPlane
+                  spec has been reconciled by this component.
+                format: int64
+                maximum: 9007199254740992
+                minimum: 1
+                type: integer
               resources:
                 description: resources is a list of the resources reconciled by this
                   component.
