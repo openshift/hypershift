@@ -1,6 +1,6 @@
 ---
 title: June 2026 Progress Report
-description: CAPI v1.11, dual-stream RHEL, production reliability fixes, etcd re-encryption, CI improvements, and agentic automation — 297 PRs from 67 contributors.
+description: CAPI v1.11, dual-stream RHEL, production reliability fixes, etcd re-encryption, CI improvements, and agentic automation — 297 PRs from 43 contributors.
 ---
 
 # June 2026 Progress Report
@@ -8,7 +8,7 @@ description: CAPI v1.11, dual-stream RHEL, production reliability fixes, etcd re
 <div class="grid cards" markdown>
 
 -   :octicons-git-pull-request-24:{ .lg } **297** PRs merged
--   :octicons-people-24:{ .lg } **67** contributors
+-   :octicons-people-24:{ .lg } **43** contributors
 -   :octicons-alert-24:{ .lg } **18** breaking changes
 -   :octicons-clock-24:{ .lg } **213.6h** avg merge time
 
@@ -16,7 +16,7 @@ description: CAPI v1.11, dual-stream RHEL, production reliability fixes, etcd re
 
 If you follow HyperShift development, you know the project occupies a peculiar position in the Kubernetes ecosystem: it is simultaneously middleware, a platform, and an opinion about how control planes should work. It hosts OpenShift control planes as pods on a management cluster while workers run in separate infrastructure — a model that powers both ROSA HCP and ARO HCP at scale for Red Hat's managed services. What you might not appreciate from the outside is the sheer velocity required to keep that model working as the ground shifts underneath it: new Kubernetes releases, new OS versions, new cloud provider requirements, and the constant drumbeat of production incidents demanding immediate attention.
 
-Over the six weeks from May 14 to June 22, 2026, the HyperShift project merged 297 pull requests across the hypershift, release, enhancements, and ai-helpers repositories. Sixty-seven contributors participated. The average time from PR open to merge was 213.6 hours — about 8.9 days — reflecting the project's thorough review culture where critical changes routinely go through multiple rounds of CI validation. Thirty-one of those PRs were classified as high impact, 18 introduced breaking changes, and 11 modified the API surface. The themes that emerged were unmistakable: preparing for OCP 5.0's dual-stream OS future, hardening production reliability after real incidents, and investing in automation — both in CI infrastructure and in the emerging practice of AI-assisted development workflows.
+Over the six weeks from May 14 to June 22, 2026, the HyperShift project merged 297 pull requests across the hypershift, release, enhancements, and ai-helpers repositories. Forty-three contributors participated, plus bots that contributed 22 PRs to hypershift (cherry-picks, dependency updates, automated Jira fixes) and 4 to release. The average time from PR open to merge was 213.6 hours — about 8.9 days — reflecting the project's thorough review culture where critical changes routinely go through multiple rounds of CI validation. Thirty-one of those PRs were classified as high impact, 18 introduced breaking changes, and 11 modified the API surface. The themes that emerged were unmistakable: preparing for OCP 5.0's dual-stream OS future, hardening production reliability after real incidents, and investing in automation — both in CI infrastructure and in the emerging practice of AI-assisted development workflows.
 
 What follows are seven stories from this period, chosen not because they were the largest diffs but because they best illustrate the technical challenges and engineering judgment that define this project.
 
@@ -177,7 +177,8 @@ In the ai-helpers repository, 36 PRs were merged during this period. [@celebdor]
 | Metric | Value |
 |--------|-------|
 | Total PRs merged | 297 |
-| Unique contributors | 67 |
+| Unique contributors | 43 |
+| Bot PRs | 26 |
 | HyperShift repo PRs | 180 |
 | Release repo PRs | 71 |
 | AI-helpers repo PRs | 36 |
@@ -195,6 +196,58 @@ In the ai-helpers repository, 36 PRs were merged during this period. [@celebdor]
 | [@coderabbitai](https://github.com/apps/coderabbitai) | 164 |
 | [@bryan-cox](https://github.com/bryan-cox) | 78 |
 | [@jparrill](https://github.com/jparrill) | 41 |
+
+---
+
+## :octicons-people-24: Contributors
+
+Click any column header to sort. Each number links to the contributor's PRs in that repository.
+
+| Contributor | hypershift | release | ai-helpers | enhancements | Total |
+|------------|:-:|:-:|:-:|:-:|:-:|
+| [@bryan-cox](https://github.com/bryan-cox) | [45](https://github.com/openshift/hypershift/pulls?q=is%3Apr+is%3Amerged+author%3Abryan-cox+merged%3A2026-05-14..2026-06-22) | [11](https://github.com/openshift/release/pulls?q=is%3Apr+is%3Amerged+author%3Abryan-cox+merged%3A2026-05-14..2026-06-22+hypershift) | [1](https://github.com/openshift-eng/ai-helpers/pull/528) | [1](https://github.com/openshift/enhancements/pull/2016) | **58** |
+| [@enxebre](https://github.com/enxebre) | [17](https://github.com/openshift/hypershift/pulls?q=is%3Apr+is%3Amerged+author%3Aenxebre+merged%3A2026-05-14..2026-06-22) | [4](https://github.com/openshift/release/pulls?q=is%3Apr+is%3Amerged+author%3Aenxebre+merged%3A2026-05-14..2026-06-22+hypershift) | [2](https://github.com/openshift-eng/ai-helpers/pulls?q=is%3Apr+is%3Amerged+author%3Aenxebre+merged%3A2026-05-14..2026-06-22) | [1](https://github.com/openshift/enhancements/pull/2019) | **24** |
+| [@celebdor](https://github.com/celebdor) | [16](https://github.com/openshift/hypershift/pulls?q=is%3Apr+is%3Amerged+author%3Acelebdor+merged%3A2026-05-14..2026-06-22) |  | [2](https://github.com/openshift-eng/ai-helpers/pulls?q=is%3Apr+is%3Amerged+author%3Acelebdor+merged%3A2026-05-14..2026-06-22) |  | **18** |
+| [@mgencur](https://github.com/mgencur) | [3](https://github.com/openshift/hypershift/pulls?q=is%3Apr+is%3Amerged+author%3Amgencur+merged%3A2026-05-14..2026-06-22) | [15](https://github.com/openshift/release/pulls?q=is%3Apr+is%3Amerged+author%3Amgencur+merged%3A2026-05-14..2026-06-22+hypershift) |  |  | **18** |
+| [@jparrill](https://github.com/jparrill) | [10](https://github.com/openshift/hypershift/pulls?q=is%3Apr+is%3Amerged+author%3Ajparrill+merged%3A2026-05-14..2026-06-22) | [3](https://github.com/openshift/release/pulls?q=is%3Apr+is%3Amerged+author%3Ajparrill+merged%3A2026-05-14..2026-06-22+hypershift) | [2](https://github.com/openshift-eng/ai-helpers/pulls?q=is%3Apr+is%3Amerged+author%3Ajparrill+merged%3A2026-05-14..2026-06-22) |  | **15** |
+| [@cblecker](https://github.com/cblecker) | [4](https://github.com/openshift/hypershift/pulls?q=is%3Apr+is%3Amerged+author%3Acblecker+merged%3A2026-05-14..2026-06-22) | [3](https://github.com/openshift/release/pulls?q=is%3Apr+is%3Amerged+author%3Acblecker+merged%3A2026-05-14..2026-06-22+hypershift) | [3](https://github.com/openshift-eng/ai-helpers/pulls?q=is%3Apr+is%3Amerged+author%3Acblecker+merged%3A2026-05-14..2026-06-22) |  | **10** |
+| [@maxcao13](https://github.com/maxcao13) | [5](https://github.com/openshift/hypershift/pulls?q=is%3Apr+is%3Amerged+author%3Amaxcao13+merged%3A2026-05-14..2026-06-22) | [1](https://github.com/openshift/release/pull/79262) |  |  | **6** |
+| [@dhgautam99](https://github.com/dhgautam99) | [5](https://github.com/openshift/hypershift/pulls?q=is%3Apr+is%3Amerged+author%3Adhgautam99+merged%3A2026-05-14..2026-06-22) |  |  |  | **5** |
+| [@muraee](https://github.com/muraee) | [4](https://github.com/openshift/hypershift/pulls?q=is%3Apr+is%3Amerged+author%3Amuraee+merged%3A2026-05-14..2026-06-22) |  |  | [1](https://github.com/openshift/enhancements/pull/1969) | **5** |
+| [@sdminonne](https://github.com/sdminonne) | [5](https://github.com/openshift/hypershift/pulls?q=is%3Apr+is%3Amerged+author%3Asdminonne+merged%3A2026-05-14..2026-06-22) |  |  |  | **5** |
+| [@vsolanki12](https://github.com/vsolanki12) | [5](https://github.com/openshift/hypershift/pulls?q=is%3Apr+is%3Amerged+author%3Avsolanki12+merged%3A2026-05-14..2026-06-22) |  |  |  | **5** |
+| [@orenc1](https://github.com/orenc1) | [2](https://github.com/openshift/hypershift/pulls?q=is%3Apr+is%3Amerged+author%3Aorenc1+merged%3A2026-05-14..2026-06-22) | [2](https://github.com/openshift/release/pulls?q=is%3Apr+is%3Amerged+author%3Aorenc1+merged%3A2026-05-14..2026-06-22+hypershift) |  |  | **4** |
+| [@stephenfin](https://github.com/stephenfin) |  | [4](https://github.com/openshift/release/pulls?q=is%3Apr+is%3Amerged+author%3Astephenfin+merged%3A2026-05-14..2026-06-22+hypershift) |  |  | **4** |
+| [@cristianoveiga](https://github.com/cristianoveiga) | [1](https://github.com/openshift/hypershift/pull/8446) | [2](https://github.com/openshift/release/pulls?q=is%3Apr+is%3Amerged+author%3Acristianoveiga+merged%3A2026-05-14..2026-06-22+hypershift) |  |  | **3** |
+| [@csrwng](https://github.com/csrwng) | [2](https://github.com/openshift/hypershift/pulls?q=is%3Apr+is%3Amerged+author%3Acsrwng+merged%3A2026-05-14..2026-06-22) | [1](https://github.com/openshift/release/pull/78912) |  |  | **3** |
+| [@PoornimaSingour](https://github.com/PoornimaSingour) | [3](https://github.com/openshift/hypershift/pulls?q=is%3Apr+is%3Amerged+author%3APoornimaSingour+merged%3A2026-05-14..2026-06-22) |  |  |  | **3** |
+| [@shwetam2004](https://github.com/shwetam2004) |  | [3](https://github.com/openshift/release/pulls?q=is%3Apr+is%3Amerged+author%3Ashwetam2004+merged%3A2026-05-14..2026-06-22+hypershift) |  |  | **3** |
+| [@vismishr](https://github.com/vismishr) | [2](https://github.com/openshift/hypershift/pulls?q=is%3Apr+is%3Amerged+author%3Avismishr+merged%3A2026-05-14..2026-06-22) | [1](https://github.com/openshift/release/pull/80186) |  |  | **3** |
+| [@yiraeChristineKim](https://github.com/yiraeChristineKim) | [3](https://github.com/openshift/hypershift/pulls?q=is%3Apr+is%3Amerged+author%3AyiraeChristineKim+merged%3A2026-05-14..2026-06-22) |  |  |  | **3** |
+| [@clebs](https://github.com/clebs) | [1](https://github.com/openshift/hypershift/pull/8545) | [1](https://github.com/openshift/release/pull/73748) |  |  | **2** |
+| [@dustman9000](https://github.com/dustman9000) | [2](https://github.com/openshift/hypershift/pulls?q=is%3Apr+is%3Amerged+author%3Adustman9000+merged%3A2026-05-14..2026-06-22) |  |  |  | **2** |
+| [@galchammat](https://github.com/galchammat) | [2](https://github.com/openshift/hypershift/pulls?q=is%3Apr+is%3Amerged+author%3Agalchammat+merged%3A2026-05-14..2026-06-22) |  |  |  | **2** |
+| [@jkyros](https://github.com/jkyros) | [2](https://github.com/openshift/hypershift/pulls?q=is%3Apr+is%3Amerged+author%3Ajkyros+merged%3A2026-05-14..2026-06-22) |  |  |  | **2** |
+| [@mtulio](https://github.com/mtulio) |  | [2](https://github.com/openshift/release/pulls?q=is%3Apr+is%3Amerged+author%3Amtulio+merged%3A2026-05-14..2026-06-22+hypershift) |  |  | **2** |
+| [@Nirshal](https://github.com/Nirshal) | [1](https://github.com/openshift/hypershift/pull/8585) | [1](https://github.com/openshift/release/pull/80420) |  |  | **2** |
+| [@typeid](https://github.com/typeid) | [2](https://github.com/openshift/hypershift/pulls?q=is%3Apr+is%3Amerged+author%3Atypeid+merged%3A2026-05-14..2026-06-22) |  |  |  | **2** |
+| [@YamunadeviShanmugam](https://github.com/YamunadeviShanmugam) | [2](https://github.com/openshift/hypershift/pulls?q=is%3Apr+is%3Amerged+author%3AYamunadeviShanmugam+merged%3A2026-05-14..2026-06-22) |  |  |  | **2** |
+| [@Ajpantuso](https://github.com/Ajpantuso) | [1](https://github.com/openshift/hypershift/pull/8689) |  |  |  | **1** |
+| [@amasolov](https://github.com/amasolov) | [1](https://github.com/openshift/hypershift/pull/8311) |  |  |  | **1** |
+| [@ashishmax31](https://github.com/ashishmax31) | [1](https://github.com/openshift/hypershift/pull/8312) |  |  |  | **1** |
+| [@Atharva-Shinde](https://github.com/Atharva-Shinde) | [1](https://github.com/openshift/hypershift/pull/8443) |  |  |  | **1** |
+| [@ckandag](https://github.com/ckandag) | [1](https://github.com/openshift/hypershift/pull/8413) |  |  |  | **1** |
+| [@cssjr](https://github.com/cssjr) | [1](https://github.com/openshift/hypershift/pull/8703) |  |  |  | **1** |
+| [@ehearne-redhat](https://github.com/ehearne-redhat) | [1](https://github.com/openshift/hypershift/pull/8716) |  |  |  | **1** |
+| [@jiezhao16](https://github.com/jiezhao16) |  | [1](https://github.com/openshift/release/pull/79884) |  |  | **1** |
+| [@Joeavaikath](https://github.com/Joeavaikath) |  | [1](https://github.com/openshift/release/pull/80356) |  |  | **1** |
+| [@joshbranham](https://github.com/joshbranham) | [1](https://github.com/openshift/hypershift/pull/8504) |  |  |  | **1** |
+| [@raelga](https://github.com/raelga) | [1](https://github.com/openshift/hypershift/pull/8509) |  |  |  | **1** |
+| [@rafael-azevedo](https://github.com/rafael-azevedo) | [1](https://github.com/openshift/hypershift/pull/8352) |  |  |  | **1** |
+| [@reedcort](https://github.com/reedcort) | [1](https://github.com/openshift/hypershift/pull/8651) |  |  |  | **1** |
+| [@rutvik23](https://github.com/rutvik23) | [1](https://github.com/openshift/hypershift/pull/8331) |  |  |  | **1** |
+| [@smrtrfszm](https://github.com/smrtrfszm) | [1](https://github.com/openshift/hypershift/pull/8484) |  |  |  | **1** |
+| [@twolff-gh](https://github.com/twolff-gh) | [1](https://github.com/openshift/hypershift/pull/8472) |  |  |  | **1** |
 
 ---
 
