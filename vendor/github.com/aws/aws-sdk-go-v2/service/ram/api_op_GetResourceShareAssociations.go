@@ -13,6 +13,11 @@ import (
 
 // Retrieves the lists of resources and principals that associated for resource
 // shares that you own.
+//
+// Always check the NextToken response parameter for a null value when calling a
+// paginated operation. These operations can occasionally return an empty set of
+// results even when there are more results available. The NextToken response
+// parameter value is null only when there are no more results to display.
 func (c *Client) GetResourceShareAssociations(ctx context.Context, params *GetResourceShareAssociationsInput, optFns ...func(*Options)) (*GetResourceShareAssociationsOutput, error) {
 	if params == nil {
 		params = &GetResourceShareAssociationsInput{}
@@ -137,7 +142,7 @@ func (c *Client) addOperationGetResourceShareAssociationsMiddlewares(stack *midd
 	if err = addComputePayloadSHA256(stack); err != nil {
 		return err
 	}
-	if err = addRetry(stack, options); err != nil {
+	if err = addRetry(stack, options, c); err != nil {
 		return err
 	}
 	if err = addRawResponseToMetadata(stack); err != nil {
@@ -159,9 +164,6 @@ func (c *Client) addOperationGetResourceShareAssociationsMiddlewares(stack *midd
 		return err
 	}
 	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
-		return err
-	}
-	if err = addTimeOffsetBuild(stack, c); err != nil {
 		return err
 	}
 	if err = addUserAgentRetryMode(stack, options); err != nil {
@@ -197,40 +199,7 @@ func (c *Client) addOperationGetResourceShareAssociationsMiddlewares(stack *midd
 	if err = addInterceptAttempt(stack, options); err != nil {
 		return err
 	}
-	if err = addInterceptExecution(stack, options); err != nil {
-		return err
-	}
-	if err = addInterceptBeforeSerialization(stack, options); err != nil {
-		return err
-	}
-	if err = addInterceptAfterSerialization(stack, options); err != nil {
-		return err
-	}
-	if err = addInterceptBeforeSigning(stack, options); err != nil {
-		return err
-	}
-	if err = addInterceptAfterSigning(stack, options); err != nil {
-		return err
-	}
-	if err = addInterceptTransmit(stack, options); err != nil {
-		return err
-	}
-	if err = addInterceptBeforeDeserialization(stack, options); err != nil {
-		return err
-	}
-	if err = addInterceptAfterDeserialization(stack, options); err != nil {
-		return err
-	}
-	if err = addSpanInitializeStart(stack); err != nil {
-		return err
-	}
-	if err = addSpanInitializeEnd(stack); err != nil {
-		return err
-	}
-	if err = addSpanBuildRequestStart(stack); err != nil {
-		return err
-	}
-	if err = addSpanBuildRequestEnd(stack); err != nil {
+	if err = addInterceptors(stack, options); err != nil {
 		return err
 	}
 	return nil
