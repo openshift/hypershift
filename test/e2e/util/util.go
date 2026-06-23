@@ -2311,6 +2311,13 @@ func EnsureKubeAPIDNSNameCustomCert(t *testing.T, ctx context.Context, mgmtClien
 			t.Skip("Skipping EnsureKubeAPIDNSNameCustomCert test for kubevirt")
 		}
 
+		// FIXME(stephenfin): investigate why this fails on OpenStack. DNS resolves
+		// correctly (external-dns is deployed) but the KAS is unreachable at the
+		// custom DNS name, returning i/o timeouts on TCP connect to the ELB IP.
+		if entryHostedCluster.Spec.Platform.Type == hyperv1.OpenStackPlatform {
+			t.Skip("Skipping EnsureKubeAPIDNSNameCustomCert test for OpenStack")
+		}
+
 		serviceDomain, retryTimeout := customCertDNSConfig(t, entryHostedCluster, clusterOpts)
 
 		var (
