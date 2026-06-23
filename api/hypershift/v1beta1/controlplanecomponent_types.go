@@ -54,7 +54,7 @@ type ControlPlaneComponentStatus struct {
 	// conditions contains details for the current state of the ControlPlane Component.
 	// If there is an error, then the Available condition will be false.
 	//
-	// Current condition types are: "Available"
+	// Current condition types are: "Available", "RolloutComplete"
 	// +optional
 	// +listType=map
 	// +listMapKey=type
@@ -72,6 +72,12 @@ type ControlPlaneComponentStatus struct {
 	// +optional
 	// +kubebuilder:validation:MaxItems=100
 	Resources []ComponentResource `json:"resources,omitempty"`
+
+	// observedGeneration reports which generation of the HostedControlPlane spec has been reconciled by this component.
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=9007199254740992
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -80,9 +86,9 @@ type ControlPlaneComponentStatus struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Version",type="string",JSONPath=".status.version",description="Version"
 // +kubebuilder:printcolumn:name="Available",type="string",JSONPath=".status.conditions[?(@.type==\"Available\")].status",description="Available"
-// +kubebuilder:printcolumn:name="Progressing",type="string",JSONPath=".status.conditions[?(@.type==\"Progressing\")].status",description="Progressing"
+// +kubebuilder:printcolumn:name="RolloutComplete",type="string",JSONPath=".status.conditions[?(@.type==\"RolloutComplete\")].status",description="RolloutComplete"
 // +kubebuilder:printcolumn:name="Message",type="string",JSONPath=".status.conditions[?(@.type==\"Available\")].message",description="Message"
-// +kubebuilder:printcolumn:name="ProgressingMessage",type="string",priority=1,JSONPath=".status.conditions[?(@.type==\"Progressing\")].message",description="ProgressingMessage"
+// +kubebuilder:printcolumn:name="RolloutCompleteMessage",type="string",priority=1,JSONPath=".status.conditions[?(@.type==\"RolloutComplete\")].message",description="RolloutCompleteMessage"
 // ControlPlaneComponent specifies the state of a ControlPlane Component
 type ControlPlaneComponent struct {
 	metav1.TypeMeta `json:",inline"`
