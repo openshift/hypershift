@@ -48,6 +48,10 @@ type ReleaseImage struct {
 	// OSStreams holds per-stream metadata parsed from the ConfigMap "streams" key.
 	// Nil for single-stream payloads (OCP < 5.0).
 	OSStreams map[string]*stream.Stream `json:"-"`
+
+	// canonicalComponentImages holds component images before any registry
+	// overrides are applied. Set by RegistryMirrorProviderDecorator.
+	canonicalComponentImages map[string]string
 }
 
 // StreamForName returns stream metadata by name. If name is empty, returns
@@ -92,6 +96,21 @@ func (i *ReleaseImage) ComponentImages() map[string]string {
 		images[tag.Name] = tag.From.Name
 	}
 	return images
+}
+
+// CanonicalComponentImages returns the component images before any registry
+// overrides were applied. If no canonical images were captured (e.g. no
+// registry overrides are configured), it falls back to ComponentImages().
+func (i *ReleaseImage) CanonicalComponentImages() map[string]string {
+	if i.canonicalComponentImages != nil {
+		return i.canonicalComponentImages
+	}
+	return i.ComponentImages()
+}
+
+// SetCanonicalComponentImages stores the pre-override component images.
+func (i *ReleaseImage) SetCanonicalComponentImages(images map[string]string) {
+	i.canonicalComponentImages = images
 }
 
 func (i *ReleaseImage) ComponentVersions() (map[string]string, error) {
