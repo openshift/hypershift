@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"text/template"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
@@ -39,9 +40,10 @@ const (
 
 	azureWorkloadIdentityWebhookServingCertVolumeName = "azure-wi-webhook-serving-certs"
 	azureWorkloadIdentityWebhookKubeconfigVolumeName  = "azure-wi-webhook-kubeconfig"
+)
 
-	azureWorkloadIdentityWebhookWaitForKASVersionTemplate = `set -u
-until curl -kfsS "https://localhost:%d/version" >/dev/null; do
+var azureWorkloadIdentityWebhookWaitForKASVersionTemplate = template.Must(template.New("azure-workload-identity-webhook").Parse(`set -u
+until curl -kfsS "https://localhost:{{ .KASPodPort }}/version" >/dev/null; do
   echo "waiting for kube-apiserver /version endpoint to become available"
   sleep 2
 done
@@ -52,9 +54,11 @@ exec /usr/bin/azure-workload-identity-webhook \
   --kubeconfig=/var/run/app/kubeconfig/kubeconfig \
   --metrics-addr=:9441 \
   --log-level=info \
+{{- range $flag, $value := .ExtraCommandLineFlags }}
+  {{ $flag }}={{ $value }} \
+{{- end }}
   --disable-cert-rotation
-`
-)
+`))
 
 func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
 	hcp := cpContext.HCP
@@ -116,7 +120,9 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 		if hcp.Spec.Platform.Azure == nil {
 			return fmt.Errorf("azure platform type requires spec.platform.azure")
 		}
-		applyAzureWorkloadIdentityWebhookContainer(&deployment.Spec.Template.Spec, hcp)
+		if err := applyAzureWorkloadIdentityWebhookContainer(&deployment.Spec.Template.Spec, hcp); err != nil {
+			return fmt.Errorf("failed to create azure workload identity webhook container: %w", err)
+		}
 	}
 
 	if hcp.Spec.AuditWebhook != nil && len(hcp.Spec.AuditWebhook.Name) > 0 {
@@ -311,22 +317,31 @@ func updateBootstrapInitContainer(deployment *appsv1.Deployment, hcp *hyperv1.Ho
 }
 
 func applyAWSPodIdentityWebhookContainer(podSpec *corev1.PodSpec, hcp *hyperv1.HostedControlPlane) {
+	command := []string{
+		"/usr/bin/aws-pod-identity-webhook",
+		"--annotation-prefix=eks.amazonaws.com",
+		"--in-cluster=false",
+		"--kubeconfig=/var/run/app/kubeconfig/kubeconfig",
+		"--logtostderr",
+		"--port=4443",
+		fmt.Sprintf("--aws-default-region=%s", hcp.Spec.Platform.AWS.Region),
+		"--tls-cert=/var/run/app/certs/tls.crt",
+		"--tls-key=/var/run/app/certs/tls.key",
+		"--token-audience=openshift",
+	}
+
+	if tlsMinVersion := config.MinTLSVersion(hcp.Spec.Configuration.GetTLSSecurityProfile()); tlsMinVersion != "" {
+		command = append(command, fmt.Sprintf("--tls-min-version=%s", tlsMinVersion))
+	}
+	if cipherSuites := config.CipherSuites(hcp.Spec.Configuration.GetTLSSecurityProfile()); len(cipherSuites) != 0 {
+		command = append(command, fmt.Sprintf("--tls-cipher-suites=%s", strings.Join(cipherSuites, ",")))
+	}
+
 	podSpec.Containers = append(podSpec.Containers, corev1.Container{
 		Name:            "aws-pod-identity-webhook",
 		Image:           "aws-pod-identity-webhook",
 		ImagePullPolicy: corev1.PullIfNotPresent,
-		Command: []string{
-			"/usr/bin/aws-pod-identity-webhook",
-			"--annotation-prefix=eks.amazonaws.com",
-			"--in-cluster=false",
-			"--kubeconfig=/var/run/app/kubeconfig/kubeconfig",
-			"--logtostderr",
-			"--port=4443",
-			fmt.Sprintf("--aws-default-region=%s", hcp.Spec.Platform.AWS.Region),
-			"--tls-cert=/var/run/app/certs/tls.crt",
-			"--tls-key=/var/run/app/certs/tls.key",
-			"--token-audience=openshift",
-		},
+		Command:         command,
 		Resources: corev1.ResourceRequirements{
 			Requests: corev1.ResourceList{
 				corev1.ResourceCPU:    resource.MustParse("10m"),
@@ -355,15 +370,31 @@ func applyAWSPodIdentityWebhookContainer(podSpec *corev1.PodSpec, hcp *hyperv1.H
 	)
 }
 
-func applyAzureWorkloadIdentityWebhookContainer(podSpec *corev1.PodSpec, hcp *hyperv1.HostedControlPlane) {
-	waitForKASScript := fmt.Sprintf(azureWorkloadIdentityWebhookWaitForKASVersionTemplate, netutil.KASPodPort(hcp))
+func applyAzureWorkloadIdentityWebhookContainer(podSpec *corev1.PodSpec, hcp *hyperv1.HostedControlPlane) error {
+	extraCommandLineFlags := map[string]string{}
+	if tlsMinVersion := config.MinTLSVersion(hcp.Spec.Configuration.GetTLSSecurityProfile()); tlsMinVersion != "" {
+		extraCommandLineFlags["--tls-min-version"] = tlsMinVersion
+	}
+	if cipherSuites := config.CipherSuites(hcp.Spec.Configuration.GetTLSSecurityProfile()); len(cipherSuites) != 0 {
+		extraCommandLineFlags["--tls-cipher-suites"] = strings.Join(cipherSuites, ",")
+	}
+
+	templateData := map[string]any{
+		"KASPodPort":            netutil.KASPodPort(hcp),
+		"ExtraCommandLineFlags": extraCommandLineFlags,
+	}
+
+	containerArgs := bytes.NewBuffer(nil)
+	if err := azureWorkloadIdentityWebhookWaitForKASVersionTemplate.Execute(containerArgs, templateData); err != nil {
+		return fmt.Errorf("failed to execute azure-workload-identity-webhook command template: %w", err)
+	}
 
 	podSpec.Containers = append(podSpec.Containers, corev1.Container{
 		Name:            "azure-workload-identity-webhook",
 		Image:           "azure-workload-identity-webhook",
 		ImagePullPolicy: corev1.PullIfNotPresent,
 		Command:         []string{"/bin/sh", "-ec"},
-		Args:            []string{waitForKASScript},
+		Args:            []string{containerArgs.String()},
 		Env: []corev1.EnvVar{
 			{Name: "AZURE_TENANT_ID", Value: hcp.Spec.Platform.Azure.TenantID},
 			{Name: "AZURE_ENVIRONMENT", Value: hcp.Spec.Platform.Azure.Cloud},
@@ -426,6 +457,7 @@ func applyAzureWorkloadIdentityWebhookContainer(podSpec *corev1.PodSpec, hcp *hy
 			},
 		},
 	)
+	return nil
 }
 
 func buildKASAuditWebhookConfigFileVolume(auditWebhookRef *corev1.LocalObjectReference) corev1.Volume {
