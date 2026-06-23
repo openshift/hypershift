@@ -36,6 +36,28 @@ users:
 	return kubeconfigFile
 }
 
+func TestGetConfig(t *testing.T) {
+	t.Run("When KUBECONFIG env var points to a valid kubeconfig, it should create a config", func(t *testing.T) {
+		g := NewWithT(t)
+		t.Setenv("KUBECONFIG", writeTestKubeconfig(t))
+		cfg, err := GetConfig()
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(cfg).ToNot(BeNil())
+		g.Expect(cfg.QPS).To(Equal(float32(100)))
+		g.Expect(cfg.Burst).To(Equal(100))
+	})
+}
+
+func TestGetClient(t *testing.T) {
+	t.Run("When FAKE_CLIENT is true, it should return a fake client", func(t *testing.T) {
+		g := NewWithT(t)
+		t.Setenv("FAKE_CLIENT", "true")
+		client, err := GetClient()
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(client).ToNot(BeNil())
+	})
+}
+
 func TestGetConfigWithKubeconfig(t *testing.T) {
 	tests := []struct {
 		name             string

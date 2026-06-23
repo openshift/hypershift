@@ -54,6 +54,7 @@ func TestValidateCreateCredentialInfo(t *testing.T) {
 		credentials          awsutil.AWSCredentialsOptions
 		credentialSecretName string
 		pullSecretFile       string
+		kubeconfigPath       string
 		expectError          bool
 	}{
 		"when CredentialSecretName is blank and aws-creds is also blank": {
@@ -71,11 +72,18 @@ func TestValidateCreateCredentialInfo(t *testing.T) {
 			credentials:          awsutil.AWSCredentialsOptions{AWSCredentialsFile: "asdf"},
 			expectError:          false,
 		},
+		"when CredentialSecretName is set with invalid kubeconfig it should fail": {
+			credentialSecretName: "my-secret",
+			kubeconfigPath:       "/nonexistent/kubeconfig",
+			credentials:          awsutil.AWSCredentialsOptions{AWSCredentialsFile: "/some/creds"},
+			pullSecretFile:       "asdf",
+			expectError:          true,
+		},
 	}
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
-			err := ValidateCreateCredentialInfo(test.credentials, test.credentialSecretName, "", test.pullSecretFile, "")
+			err := ValidateCreateCredentialInfo(test.credentials, test.credentialSecretName, "", test.pullSecretFile, test.kubeconfigPath)
 			if test.expectError {
 				g.Expect(err).To(HaveOccurred())
 			} else {
