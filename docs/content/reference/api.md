@@ -6504,7 +6504,7 @@ ControlPlaneComponentStatus
 <em>(Optional)</em>
 <p>conditions contains details for the current state of the ControlPlane Component.
 If there is an error, then the Available condition will be false.</p>
-<p>Current condition types are: &ldquo;Available&rdquo;</p>
+<p>Current condition types are: &ldquo;Available&rdquo;, &ldquo;RolloutComplete&rdquo;</p>
 </td>
 </tr>
 <tr>
@@ -6531,6 +6531,18 @@ string
 <td>
 <em>(Optional)</em>
 <p>resources is a list of the resources reconciled by this component.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>observedGeneration</code></br>
+<em>
+int64
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>observedGeneration reports which generation of the HostedControlPlane spec has been reconciled by this component.</p>
 </td>
 </tr>
 </tbody>
