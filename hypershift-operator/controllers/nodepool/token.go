@@ -9,6 +9,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
+	ignserver "github.com/openshift/hypershift/ignition-server/controllers"
 	"github.com/openshift/hypershift/support/backwardcompat"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/k8sutil"
@@ -27,6 +28,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/blang/semver"
 	"github.com/clarketm/json"
 	ignitionapi "github.com/coreos/ignition/v2/config/v3_2/types"
 	"github.com/go-logr/logr"
@@ -42,6 +44,7 @@ const (
 	TokenSecretHCConfigurationHashKey    = "hc-configuration-hash"
 	TokenSecretAdditionalTrustBundleKey  = "additional-trust-bundle-hash"
 	TokenSecretConfigKey                 = "config"
+	TokenSecretOSStreamKey               = "os-stream"
 	TokenSecretAnnotation                = "hypershift.openshift.io/ignition-config"
 	TokenSecretIgnitionReachedAnnotation = "hypershift.openshift.io/ignition-reached"
 	TokenSecretNodePoolUpgradeType       = "hypershift.openshift.io/node-pool-upgrade-type"
@@ -61,7 +64,9 @@ type Token struct {
 	pullSecretHash            []byte
 	additionalTrustBundleHash []byte
 	globalConfigHash          []byte
-	userData                  *userData
+	// osStream is the resolved OS stream for this NodePool (e.g. "rhel-9", "rhel-10", or "" for legacy).
+	osStream string
+	userData *userData
 }
 
 // userData contains the input necessary to generate the user data secret
@@ -113,6 +118,17 @@ func NewToken(ctx context.Context, configGenerator *ConfigGenerator, cpoCapabili
 		return nil, fmt.Errorf("failed to hash HostedCluster configuration: %w", err)
 	}
 
+	// Resolve OS stream based on spec, release version, and runc usage.
+	var osStream string
+	releaseVersion, parseErr := semver.Parse(configGenerator.releaseImage.Version())
+	if parseErr != nil {
+		return nil, fmt.Errorf("failed to parse release version for OS stream resolution: %w", parseErr)
+	}
+	osStream, err = getRHELStream(configGenerator.nodePool.Spec.OSImageStream.Name, releaseVersion, configGenerator.usesRunc)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve OS stream: %w", err)
+	}
+
 	token := &Token{
 		CreateOrUpdateProvider:    upsert.New(false),
 		ConfigGenerator:           configGenerator,
@@ -120,6 +136,7 @@ func NewToken(ctx context.Context, configGenerator *ConfigGenerator, cpoCapabili
 		pullSecretHash:            []byte(supportutil.HashSimple(pullSecretBytes)),
 		additionalTrustBundleHash: []byte(supportutil.HashSimple(additionalTrustBundle)),
 		globalConfigHash:          []byte(hcConfigurationHash),
+		osStream:                  osStream,
 	}
 
 	// User data input.
@@ -348,12 +365,16 @@ func (t *Token) reconcileTokenSecret(tokenSecret *corev1.Secret) error {
 		tokenSecret.Data[TokenSecretReleaseKey] = []byte(t.nodePool.Spec.Release.Image)
 		tokenSecret.Data[TokenSecretReleaseVersionKey] = []byte(t.releaseImage.Version())
 		tokenSecret.Data[TokenSecretConfigKey] = compressedConfig.Bytes()
-
 		// Hash values that are used by the "token secret controller" / "local ignition provider"  to determine if this input
 		// have changed before generating a payload for it.
 		tokenSecret.Data[TokenSecretPullSecretHashKey] = t.pullSecretHash
 		tokenSecret.Data[TokenSecretAdditionalTrustBundleKey] = t.additionalTrustBundleHash
 		tokenSecret.Data[TokenSecretHCConfigurationHashKey] = t.globalConfigHash
+
+		// Store the resolved OS stream so the ignition server can generate the OSImageStream CR.
+		if t.osStream != "" {
+			tokenSecret.Data[ignserver.TokenSecretOSStreamKey] = []byte(t.osStream)
+		}
 	}
 	// TODO (alberto): Only apply this on creation and change the hash generation to only use triggering upgrade fields.
 	// We let this change to happen inplace now as the tokenSecret and the mcs config use the whole spec.Config for the comparing hash.
@@ -381,7 +402,7 @@ func (t *Token) reconcileUserDataSecret(log logr.Logger, userDataSecret *corev1.
 	if karpenterutil.IsKarpenterEnabled(t.hostedCluster.Spec.AutoNode) {
 		npLabels := t.nodePool.GetLabels()
 		if npLabels != nil && npLabels[karpenterutil.ManagedByKarpenterLabel] == "true" {
-			err := setKarpenterAMILabels(log, userDataSecret, t.hostedCluster.Spec.Platform.AWS.Region, t.releaseImage, t.hostedCluster.Spec.Platform.Type)
+			err := setKarpenterAMILabels(log, userDataSecret, t.hostedCluster.Spec.Platform.AWS.Region, t.releaseImage, t.hostedCluster.Spec.Platform.Type, t.ResolvedStream())
 			if err != nil {
 				return err
 			}
@@ -403,15 +424,14 @@ func (t *Token) reconcileUserDataSecret(log logr.Logger, userDataSecret *corev1.
 	return nil
 }
 
-func setKarpenterAMILabels(log logr.Logger, userDataSecret *corev1.Secret, region string, releaseImage *releaseinfo.ReleaseImage, platform hyperv1.PlatformType) error {
-	// TODO(CNTRLPLANE-3553): resolve streamName via GetRHELStream once osImageStream API field is available
+func setKarpenterAMILabels(log logr.Logger, userDataSecret *corev1.Secret, region string, releaseImage *releaseinfo.ReleaseImage, platform hyperv1.PlatformType, streamName string) error {
 	supportedArchitectures, err := karpenterutil.SupportedArchitectures(platform)
 	if err != nil {
 		return fmt.Errorf("failed to get supported architectures: %w", err)
 	}
 	supported := 0
 	for _, arch := range supportedArchitectures {
-		ami, err := defaultNodePoolAMI(region, arch, "", releaseImage)
+		ami, err := defaultNodePoolAMI(region, arch, streamName, releaseImage)
 		if err != nil {
 			// skip unavailable architectures gracefully
 			log.Error(err, "failed to get default NodePool AMI for architecture", "architecture", arch)

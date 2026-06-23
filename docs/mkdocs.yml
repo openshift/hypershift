@@ -80,6 +80,7 @@ nav:
   - 'Automated Machine Management':
     - how-to/automated-machine-management/index.md
     - how-to/automated-machine-management/configure-machines.md
+    - 'Dual-Stream RHEL OS': how-to/automated-machine-management/dual-stream-rhel.md
     - how-to/automated-machine-management/performance-profiling.md
     - how-to/automated-machine-management/node-tuning.md
     - how-to/automated-machine-management/nodepool-lifecycle.md

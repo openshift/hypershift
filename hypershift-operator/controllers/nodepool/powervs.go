@@ -48,10 +48,10 @@ func getImageRegion(region string) string {
 	}
 }
 
-func ibmPowerVSMachineTemplateSpec(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool, releaseImage *releaseinfo.ReleaseImage) (*capipowervs.IBMPowerVSMachineTemplateSpec, error) {
+func ibmPowerVSMachineTemplateSpec(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool, releaseImage *releaseinfo.ReleaseImage, streamName string) (*capipowervs.IBMPowerVSMachineTemplateSpec, error) {
 	// Validate PowerVS platform specific input
 	var coreOSPowerVSImage *stream.SingleObject
-	coreOSPowerVSImage, _, err := getPowerVSImage(hcluster.Spec.Platform.PowerVS.Region, releaseImage)
+	coreOSPowerVSImage, _, err := getPowerVSImage(hcluster.Spec.Platform.PowerVS.Region, releaseImage, streamName)
 	if err != nil {
 		return nil, fmt.Errorf("couldn't discover a PowerVS Image for release image: %w", err)
 	}
@@ -90,7 +90,7 @@ func ibmPowerVSMachineTemplateSpec(hcluster *hyperv1.HostedCluster, nodePool *hy
 }
 
 func (c *CAPI) ibmPowerVSMachineTemplate(templateNameGenerator func(spec any) (string, error)) (*capipowervs.IBMPowerVSMachineTemplate, error) {
-	spec, err := ibmPowerVSMachineTemplateSpec(c.hostedCluster, c.nodePool, c.releaseImage)
+	spec, err := ibmPowerVSMachineTemplateSpec(c.hostedCluster, c.nodePool, c.releaseImage, c.ResolvedStream())
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate PowerVSMachineTemplateSpec: %w", err)
 	}
@@ -110,10 +110,10 @@ func (c *CAPI) ibmPowerVSMachineTemplate(templateNameGenerator func(spec any) (s
 	return template, nil
 }
 
-func getPowerVSImage(region string, releaseImage *releaseinfo.ReleaseImage) (*stream.SingleObject, string, error) {
-	arch, foundArch := releaseImage.StreamMetadata.Architectures["ppc64le"]
-	if !foundArch {
-		return nil, "", fmt.Errorf("couldn't find OS metadata for architecture %q", "ppc64le")
+func getPowerVSImage(region string, releaseImage *releaseinfo.ReleaseImage, streamName string) (*stream.SingleObject, string, error) {
+	arch, err := releaseImage.ArchForStream(streamName, "ppc64le")
+	if err != nil {
+		return nil, "", err
 	}
 
 	if arch.Images.PowerVS == nil {
@@ -159,10 +159,10 @@ func reconcileIBMPowerVSImage(ibmPowerVSImage *capipowervs.IBMPowerVSImage, hclu
 	return nil
 }
 
-func (r *NodePoolReconciler) setPowerVSconditions(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string, releaseImage *releaseinfo.ReleaseImage) error {
+func (r *NodePoolReconciler) setPowerVSconditions(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string, releaseImage *releaseinfo.ReleaseImage, streamName string) error {
 	log := ctrl.LoggerFrom(ctx)
 	var coreOSPowerVSImage *stream.SingleObject
-	coreOSPowerVSImage, powervsImageRegion, err := getPowerVSImage(hcluster.Spec.Platform.PowerVS.Region, releaseImage)
+	coreOSPowerVSImage, powervsImageRegion, err := getPowerVSImage(hcluster.Spec.Platform.PowerVS.Region, releaseImage, streamName)
 	if err != nil {
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolValidPlatformImageType,

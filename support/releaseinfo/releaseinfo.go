@@ -82,6 +82,21 @@ func (i *ReleaseImage) StreamForName(name string) (*stream.Stream, error) {
 	return nil, fmt.Errorf("stream %q not found and no default stream metadata available", name)
 }
 
+// ArchForStream resolves stream metadata by name and looks up the given
+// architecture within it. This consolidates the common StreamForName +
+// architecture lookup pattern used across platform controllers.
+func (i *ReleaseImage) ArchForStream(streamName, archName string) (*stream.Arch, error) {
+	streamMeta, err := i.StreamForName(streamName)
+	if err != nil {
+		return nil, fmt.Errorf("couldn't resolve stream metadata: %w", err)
+	}
+	arch, found := streamMeta.Architectures[archName]
+	if !found {
+		return nil, fmt.Errorf("couldn't find OS metadata for architecture %q", archName)
+	}
+	return &arch, nil
+}
+
 func (i *ReleaseImage) Version() string {
 	return i.ImageStream.Name
 }

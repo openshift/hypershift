@@ -159,16 +159,16 @@ func generateReconciliationActiveCondition(pausedUntilField *string, objectGener
 
 // setPlatformConditions is a hook for platforms to implement custom logic/conditions freely
 // TODO: refactor signature to be inline with the rest of condition setters, and move common conditions like NodePoolValidPlatformImageType to a separate function.
-func (r *NodePoolReconciler) setPlatformConditions(ctx context.Context, hcluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool, controlPlaneNamespace string, releaseImage *releaseinfo.ReleaseImage) error {
+func (r *NodePoolReconciler) setPlatformConditions(ctx context.Context, hcluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool, controlPlaneNamespace string, releaseImage *releaseinfo.ReleaseImage, streamName string) error {
 	switch nodePool.Spec.Platform.Type {
 	case hyperv1.KubevirtPlatform:
-		return r.setKubevirtConditions(ctx, nodePool, hcluster, controlPlaneNamespace, releaseImage)
+		return r.setKubevirtConditions(ctx, nodePool, hcluster, controlPlaneNamespace, releaseImage, streamName)
 	case hyperv1.AWSPlatform:
-		return r.setAWSConditions(ctx, nodePool, hcluster, controlPlaneNamespace, releaseImage)
+		return r.setAWSConditions(ctx, nodePool, hcluster, controlPlaneNamespace, releaseImage, streamName)
 	case hyperv1.PowerVSPlatform:
-		return r.setPowerVSconditions(ctx, nodePool, hcluster, controlPlaneNamespace, releaseImage)
+		return r.setPowerVSconditions(ctx, nodePool, hcluster, controlPlaneNamespace, releaseImage, streamName)
 	case hyperv1.OpenStackPlatform:
-		return r.setOpenStackConditions(ctx, nodePool, hcluster, controlPlaneNamespace, releaseImage)
+		return r.setOpenStackConditions(ctx, nodePool, hcluster, controlPlaneNamespace, releaseImage, streamName)
 	default:
 		return nil
 	}
@@ -374,7 +374,7 @@ func (r *NodePoolReconciler) validMachineConfigCondition(ctx context.Context, no
 	}
 
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
-	_, err = NewConfigGenerator(ctx, r.Client, hcluster, nodePool, releaseImage, haproxyRawConfig, controlPlaneNamespace)
+	cg, err := NewConfigGenerator(ctx, r.Client, hcluster, nodePool, releaseImage, haproxyRawConfig, controlPlaneNamespace)
 	if err != nil {
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolValidMachineConfigConditionType,
@@ -385,12 +385,54 @@ func (r *NodePoolReconciler) validMachineConfigCondition(ctx context.Context, no
 		})
 		return &ctrl.Result{}, fmt.Errorf("failed to generate config: %w", err)
 	}
-	SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-		Type:               hyperv1.NodePoolValidMachineConfigConditionType,
-		Status:             corev1.ConditionTrue,
-		Reason:             hyperv1.AsExpectedReason,
-		ObservedGeneration: nodePool.Generation,
-	})
+
+	// Validate OS stream selection before proceeding with token creation.
+	// This catches errors like rhel-10 on pre-5.0 releases or runc+rhel-10 early.
+	releaseVersion, parseErr := semver.Parse(releaseImage.Version())
+	if parseErr != nil {
+		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+			Type:               hyperv1.NodePoolValidMachineConfigConditionType,
+			Status:             corev1.ConditionFalse,
+			Reason:             hyperv1.NodePoolValidationFailedReason,
+			Message:            fmt.Sprintf("failed to parse release version: %v", parseErr),
+			ObservedGeneration: nodePool.Generation,
+		})
+		log.Error(parseErr, "failed to parse release version")
+		return &ctrl.Result{}, nil
+	}
+
+	resolvedStream, streamErr := getRHELStream(nodePool.Spec.OSImageStream.Name, releaseVersion, cg.usesRunc)
+	if streamErr != nil {
+		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+			Type:               hyperv1.NodePoolValidMachineConfigConditionType,
+			Status:             corev1.ConditionFalse,
+			Reason:             hyperv1.NodePoolValidationFailedReason,
+			Message:            fmt.Sprintf("invalid OS stream configuration: %v", streamErr),
+			ObservedGeneration: nodePool.Generation,
+		})
+		// Return Result to short-circuit — an update event will trigger reconciliation
+		// when the user fixes their NodePool spec.
+		log.Error(streamErr, "OS stream validation failed")
+		return &ctrl.Result{}, nil
+	}
+
+	// If the stream was implicitly resolved to rhel-9 due to runc usage, surface as a condition.
+	if nodePool.Spec.OSImageStream.Name == "" && resolvedStream == RHELStreamRHEL9 && cg.usesRunc {
+		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+			Type:               hyperv1.NodePoolValidMachineConfigConditionType,
+			Status:             corev1.ConditionTrue,
+			Reason:             hyperv1.AsExpectedReason,
+			Message:            "OS stream defaulted to rhel-9: NodePool uses runc ContainerRuntimeConfig which is not supported on rhel-10",
+			ObservedGeneration: nodePool.Generation,
+		})
+	} else {
+		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+			Type:               hyperv1.NodePoolValidMachineConfigConditionType,
+			Status:             corev1.ConditionTrue,
+			Reason:             hyperv1.AsExpectedReason,
+			ObservedGeneration: nodePool.Generation,
+		})
+	}
 
 	return nil, nil
 }

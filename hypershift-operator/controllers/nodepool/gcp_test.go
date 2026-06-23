@@ -514,6 +514,7 @@ func TestGcpMachineTemplateSpec(t *testing.T) {
 				tc.hc,
 				tc.nodePool,
 				releaseImage,
+				"",
 			)
 
 			if tc.expectedErr {
@@ -598,7 +599,7 @@ func TestDefaultNodePoolGCPImage(t *testing.T) {
 				},
 			},
 			expectedErr:    true,
-			expectedErrMsg: "couldn't find OS metadata for architecture \"unsupported-arch\"",
+			expectedErrMsg: "couldn't find OS metadata for architecture",
 		},
 		{
 			name: "When GCP project and name are empty, it should return error",
@@ -657,11 +658,52 @@ func TestDefaultNodePoolGCPImage(t *testing.T) {
 		},
 	}
 
+	// Add a test case for a named stream (non-empty streamName) that uses OSStreams.
+	testCases = append(testCases, struct {
+		name           string
+		arch           string
+		releaseImage   *releaseinfo.ReleaseImage
+		expectedImage  string
+		expectedErr    bool
+		expectedErrMsg string
+	}{
+		name: "When a named stream is specified, it should resolve image from OSStreams",
+		arch: hyperv1.ArchitectureAMD64,
+		releaseImage: &releaseinfo.ReleaseImage{
+			ImageStream: &imageapi.ImageStream{
+				ObjectMeta: metav1.ObjectMeta{Name: "5.0.0"},
+			},
+			OSStreams: map[string]*stream.Stream{
+				"rhel-10": {
+					Architectures: map[string]stream.Arch{
+						"x86_64": {
+							Images: stream.Images{
+								Gcp: &stream.GcpImage{
+									Project: "rhcos-cloud",
+									Name:    "rhcos-10-0-20260101-0-gcp-x86-64",
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		expectedImage: "projects/rhcos-cloud/global/images/rhcos-10-0-20260101-0-gcp-x86-64",
+		expectedErr:   false,
+	})
+
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
 
-			image, err := defaultNodePoolGCPImage(tc.arch, tc.releaseImage)
+			streamName := ""
+			if tc.releaseImage.OSStreams != nil {
+				for name := range tc.releaseImage.OSStreams {
+					streamName = name
+					break
+				}
+			}
+			image, err := defaultNodePoolGCPImage(tc.arch, streamName, tc.releaseImage)
 
 			if tc.expectedErr {
 				g.Expect(err).To(HaveOccurred())

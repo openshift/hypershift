@@ -390,7 +390,7 @@ func (p *LocalIgnitionProvider) runFeatureGateRender(ctx context.Context, binDir
 	return nil
 }
 
-func (p *LocalIgnitionProvider) runMCO(ctx context.Context, dirs *payloadDirs, releaseImage string, pullSecret []byte, mcsConfig *corev1.ConfigMap, imageProvider *imageprovider.SimpleReleaseImageProvider, payloadVersion semver.Version) error {
+func (p *LocalIgnitionProvider) runMCO(ctx context.Context, dirs *payloadDirs, releaseImage string, pullSecret []byte, mcsConfig *corev1.ConfigMap, imageProvider *imageprovider.SimpleReleaseImageProvider, payloadVersion semver.Version, osStream string) error {
 	log := ctrl.Log.WithName("get-payload")
 	destDir := dirs.mcoDir
 	if err := os.MkdirAll(destDir, 0755); err != nil {
@@ -454,7 +454,12 @@ func (p *LocalIgnitionProvider) runMCO(ctx context.Context, dirs *payloadDirs, r
 	if err := p.copyMCOOutputToMCC(destDir, dirs.mccDir, dirs.configDir); err != nil {
 		return err
 	}
-	return nil
+
+	// Write the OSImageStream CR for dual-stream support.
+	// This must happen after copyMCOOutputToMCC and before runMCC
+	// so that MCC bootstrap discovers the available streams and renders MachineConfigs
+	// with the correct osImageURL. No-op when osStream is empty.
+	return writeOSImageStreamCR(dirs.mccDir, osStream)
 }
 
 func (p *LocalIgnitionProvider) copyMCOOutputToMCC(destDir, mccDir, configDir string) error {
@@ -607,7 +612,7 @@ func (p *LocalIgnitionProvider) runMCSAndFetchPayload(ctx context.Context, dirs 
 	return payload, err
 }
 
-func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage, customConfig, pullSecretHash, additionalTrustBundleHash, hcConfigurationHash string) ([]byte, error) {
+func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage, customConfig, pullSecretHash, additionalTrustBundleHash, hcConfigurationHash, osStream string) ([]byte, error) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
@@ -737,8 +742,20 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage, cu
 	}
 
 	// First, run the MCO using templates and image refs as input. This generates output for the MCC.
-	if err := p.runMCO(ctx, dirs, releaseImage, pullSecret, mcsConfig, imageProvider, payloadVersion); err != nil {
+	// Also writes the OSImageStream CR for dual-stream support when osStream is non-empty.
+	if err := p.runMCO(ctx, dirs, releaseImage, pullSecret, mcsConfig, imageProvider, payloadVersion, osStream); err != nil {
 		return nil, fmt.Errorf("failed to execute machine-config-operator: %w", err)
+	}
+
+	// Write the OSImageStream CR so the MCC bootstrap pipeline selects the correct
+	// OS image stream for dual-stream payloads (OCP 5.0+). When osStream is empty
+	// (pre-5.0 or feature gate disabled), no CR is written and the MCC uses the
+	// default BaseOSContainerImage from ControllerConfig.
+	if osStream != "" {
+		if err := writeOSImageStreamManifest(dirs.mccDir, osStream); err != nil {
+			return nil, fmt.Errorf("failed to write OSImageStream manifest: %w", err)
+		}
+		log.Info("wrote OSImageStream manifest", "stream", osStream)
 	}
 
 	// Next, run the MCC using templates and MCO output as input, producing output for the MCS.
@@ -786,6 +803,30 @@ func (r *LocalIgnitionProvider) reconcileValidReleaseInfoCondition(ctx context.C
 	}
 
 	return r.Client.Status().Patch(ctx, &hostedControlPlane, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{}))
+}
+
+// writeOSImageStreamCR writes an OSImageStream custom resource manifest to the MCC input directory.
+// The MCC bootstrap process reads this manifest to discover the desired OS stream and renders
+// MachineConfigs with the correct osImageURL. The file is written as 99_osimagestream.yaml
+// to ensure it is processed after other manifests.
+// When osStream is empty, this is a no-op (legacy behavior, no OSImageStream CR generated).
+func writeOSImageStreamCR(mccDir, osStream string) error {
+	if osStream == "" {
+		return nil
+	}
+	osImageStreamCR := fmt.Sprintf(`apiVersion: machineconfiguration.openshift.io/v1alpha1
+kind: OSImageStream
+metadata:
+  name: cluster
+spec:
+  defaultStream: %s
+`, osStream)
+
+	dest := filepath.Join(mccDir, "99_osimagestream.yaml")
+	if err := os.WriteFile(dest, []byte(osImageStreamCR), 0644); err != nil {
+		return fmt.Errorf("failed to write OSImageStream manifest to %s: %w", dest, err)
+	}
+	return nil
 }
 
 // copyFile copies a file named src to dst, preserving attributes.
@@ -912,6 +953,20 @@ func buildMCOVersionArgs(payloadVersion semver.Version, payloadVersionStr string
 		)
 	}
 	return args
+}
+
+// writeOSImageStreamManifest writes the 99_osimagestream.yaml manifest to the MCC
+// input directory. The MCC bootstrap pipeline reads this CR to determine which OS
+// image stream to use for dual-stream payloads (RHEL 9 vs RHEL 10).
+func writeOSImageStreamManifest(mccDir, osStream string) error {
+	manifest := fmt.Sprintf(`apiVersion: machineconfiguration.openshift.io/v1alpha1
+kind: OSImageStream
+metadata:
+  name: cluster
+spec:
+  defaultStream: %q
+`, osStream)
+	return os.WriteFile(filepath.Join(mccDir, "99_osimagestream.yaml"), []byte(manifest), 0644)
 }
 
 func (p *LocalIgnitionProvider) extractMCOBinaries(ctx context.Context, cpoOSReleaseFile string, mcoImage string, pullSecret []byte, binDir string) error {

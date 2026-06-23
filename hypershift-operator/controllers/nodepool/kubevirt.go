@@ -32,7 +32,7 @@ func (r *NodePoolReconciler) addKubeVirtCacheNameToStatus(kubevirtBootImage kube
 	}
 }
 
-func (r *NodePoolReconciler) setKubevirtConditions(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string, releaseImage *releaseinfo.ReleaseImage) error {
+func (r *NodePoolReconciler) setKubevirtConditions(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string, releaseImage *releaseinfo.ReleaseImage, streamName string) error {
 	// moved KubeVirt specific handling up here, so the caching of the boot image will start as early as possible
 	// in order to actually save time. Caching form the original location will take more time, because the VMs can't
 	// be created before the caching is 100% done. But moving this logic here, the caching will be done in parallel
@@ -65,7 +65,7 @@ func (r *NodePoolReconciler) setKubevirtConditions(ctx context.Context, nodePool
 
 		nodePool.Status.Platform.KubeVirt.Credentials = hcluster.Spec.Platform.Kubevirt.Credentials.DeepCopy()
 	}
-	kubevirtBootImage, err := kubevirt.GetImage(nodePool, releaseImage, infraNS)
+	kubevirtBootImage, err := kubevirt.GetImage(nodePool, releaseImage, infraNS, streamName)
 	if err != nil {
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolValidPlatformImageType,
@@ -166,7 +166,7 @@ func (r *NodePoolReconciler) setAllMachinesLMCondition(ctx context.Context, node
 
 func (c *CAPI) kubevirtMachineTemplate(templateNameGenerator func(spec any) (string, error)) (*capikubevirt.KubevirtMachineTemplate, error) {
 	nodePool := c.nodePool
-	spec, err := kubevirt.MachineTemplateSpec(nodePool, c.hostedCluster, c.releaseImage, nil)
+	spec, err := kubevirt.MachineTemplateSpec(nodePool, c.hostedCluster, c.releaseImage, nil, c.ResolvedStream())
 	if err != nil {
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolValidMachineTemplateConditionType,

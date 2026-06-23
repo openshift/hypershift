@@ -11,6 +11,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
+	ignserver "github.com/openshift/hypershift/ignition-server/controllers"
 	"github.com/openshift/hypershift/support/globalconfig"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	"github.com/openshift/hypershift/support/releaseinfo"
@@ -101,6 +102,13 @@ func TestNewToken(t *testing.T) {
 				},
 				nodePool:              &hyperv1.NodePool{},
 				controlplaneNamespace: controlplaneNamespace,
+				rolloutConfig: &rolloutConfig{
+					releaseImage: &releaseinfo.ReleaseImage{
+						ImageStream: &imageapi.ImageStream{
+							ObjectMeta: metav1.ObjectMeta{Name: "4.17.0"},
+						},
+					},
+				},
 			},
 			fakeObjects: []crclient.Object{
 				pullSecret,
@@ -132,6 +140,13 @@ func TestNewToken(t *testing.T) {
 				},
 				nodePool:              &hyperv1.NodePool{},
 				controlplaneNamespace: controlplaneNamespace,
+				rolloutConfig: &rolloutConfig{
+					releaseImage: &releaseinfo.ReleaseImage{
+						ImageStream: &imageapi.ImageStream{
+							ObjectMeta: metav1.ObjectMeta{Name: "4.17.0"},
+						},
+					},
+				},
 			},
 			fakeObjects: []crclient.Object{
 				pullSecret,
@@ -223,6 +238,13 @@ func TestNewToken(t *testing.T) {
 				},
 				nodePool:              &hyperv1.NodePool{},
 				controlplaneNamespace: controlplaneNamespace,
+				rolloutConfig: &rolloutConfig{
+					releaseImage: &releaseinfo.ReleaseImage{
+						ImageStream: &imageapi.ImageStream{
+							ObjectMeta: metav1.ObjectMeta{Name: "4.17.0"},
+						},
+					},
+				},
 			},
 			fakeObjects: []crclient.Object{
 				pullSecret,
@@ -614,7 +636,7 @@ func TestTokenReconcile(t *testing.T) {
 					releaseImage: &releaseinfo.ReleaseImage{
 						ImageStream: &imageapi.ImageStream{
 							ObjectMeta: metav1.ObjectMeta{
-								Name: "4.17",
+								Name: "4.17.0",
 							},
 						},
 					},
@@ -676,7 +698,7 @@ func TestTokenReconcile(t *testing.T) {
 					releaseImage: &releaseinfo.ReleaseImage{
 						ImageStream: &imageapi.ImageStream{
 							ObjectMeta: metav1.ObjectMeta{
-								Name: "4.17",
+								Name: "4.17.0",
 							},
 						},
 					},
@@ -824,6 +846,68 @@ func TestTokenReconcile(t *testing.T) {
 			g.Expect(gotIgnition).To(Equal(expectedIgnition))
 		})
 
+	}
+}
+
+func TestReconcileTokenSecretOSStreamKey(t *testing.T) {
+	testCases := []struct {
+		name             string
+		osStream         string
+		expectOSStreamIn bool
+	}{
+		{
+			name:             "When osStream is non-empty it should write os-stream key to token secret data",
+			osStream:         "rhel-10",
+			expectOSStreamIn: true,
+		},
+		{
+			name:             "When osStream is empty it should not write os-stream key to token secret data",
+			osStream:         "",
+			expectOSStreamIn: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			token := &Token{
+				ConfigGenerator: &ConfigGenerator{
+					hostedCluster: &hyperv1.HostedCluster{},
+					nodePool: &hyperv1.NodePool{
+						Spec: hyperv1.NodePoolSpec{
+							Management: hyperv1.NodePoolManagement{
+								UpgradeType: hyperv1.UpgradeTypeReplace,
+							},
+							Release: hyperv1.Release{Image: "image:5.0"},
+						},
+					},
+					rolloutConfig: &rolloutConfig{
+						releaseImage: &releaseinfo.ReleaseImage{
+							ImageStream: &imageapi.ImageStream{
+								ObjectMeta: metav1.ObjectMeta{Name: "5.0.0"},
+							},
+						},
+						mcoRawConfig: "raw-config",
+					},
+				},
+				cpoCapabilities: &CPOCapabilities{DecompressAndDecodeConfig: true},
+				osStream:        tc.osStream,
+			}
+
+			tokenSecret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-token"},
+			}
+			err := token.reconcileTokenSecret(tokenSecret)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			if tc.expectOSStreamIn {
+				g.Expect(tokenSecret.Data).To(HaveKey(ignserver.TokenSecretOSStreamKey))
+				g.Expect(string(tokenSecret.Data[ignserver.TokenSecretOSStreamKey])).To(Equal(tc.osStream))
+			} else {
+				g.Expect(tokenSecret.Data).ToNot(HaveKey(ignserver.TokenSecretOSStreamKey))
+			}
+		})
 	}
 }
 
@@ -1181,7 +1265,7 @@ func TestSetKarpenterAMILabels(t *testing.T) {
 			if ri == nil {
 				ri = testutils.InitReleaseImageOrDie("test-release")
 			}
-			err := setKarpenterAMILabels(log, tc.userDataSecret, tc.region, ri, tc.platform)
+			err := setKarpenterAMILabels(log, tc.userDataSecret, tc.region, ri, tc.platform, "")
 			if tc.expectedError != "" {
 				g.Expect(err).To(HaveOccurred())
 				g.Expect(err.Error()).To(Equal(tc.expectedError))

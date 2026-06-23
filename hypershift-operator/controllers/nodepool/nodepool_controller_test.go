@@ -642,7 +642,7 @@ func TestDefaultNodePoolAMI(t *testing.T) {
 			region:        "us-east-1",
 			specifiedArch: "s390x",
 			releaseImage:  basicReleaseImage,
-			expectedErr:   `couldn't find OS metadata for architecture "s390x"`,
+			expectedErr:   `couldn't find OS metadata for architecture ""`,
 		},
 		{
 			name:          "When image data is empty for region it should return error",

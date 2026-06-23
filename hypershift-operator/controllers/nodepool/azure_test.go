@@ -1273,11 +1273,87 @@ func TestDefaultAzureNodePoolImage(t *testing.T) {
 		},
 	}
 
+	// Add a test case for a named stream (non-empty streamName) that uses OSStreams.
+	testCases = append(testCases, struct {
+		name                     string
+		nodePool                 *hyperv1.NodePool
+		releaseImage             *releaseinfo.ReleaseImage
+		expectedImageType        hyperv1.AzureVMImageType
+		expectedMarketplaceImage *hyperv1.AzureMarketplaceImage
+		expectedError            bool
+		expectedErrorMsg         string
+	}{
+		name: "When a named stream is specified, it should resolve marketplace defaults from OSStreams",
+		nodePool: &hyperv1.NodePool{
+			Spec: hyperv1.NodePoolSpec{
+				Arch: hyperv1.ArchitectureAMD64,
+				Platform: hyperv1.NodePoolPlatform{
+					Type: hyperv1.AzurePlatform,
+					Azure: &hyperv1.AzureNodePoolPlatform{
+						Image: hyperv1.AzureVMImage{},
+					},
+				},
+			},
+		},
+		releaseImage: &releaseinfo.ReleaseImage{
+			ImageStream: &imageapi.ImageStream{
+				ObjectMeta: metav1.ObjectMeta{Name: "5.0.0"},
+			},
+			OSStreams: map[string]*stream.Stream{
+				"rhel-9": {
+					Architectures: map[string]stream.Arch{
+						"x86_64": {
+							RHELCoreOSExtensions: &rhcos.Extensions{
+								AzureDisk: &rhcos.AzureDisk{
+									Release: "9.6.20260101-0",
+									URL:     "https://rhcos.blob.core.windows.net/imagebucket/rhcos-9.6.20260101-0-azure.x86_64.vhd",
+								},
+								Marketplace: &rhcos.Marketplace{
+									Azure: &rhcos.AzureMarketplace{
+										NoPurchasePlan: &rhcos.AzureMarketplaceImages{
+											Gen1: &rhcos.AzureMarketplaceImage{
+												Publisher: "azureopenshift",
+												Offer:     "aro4",
+												SKU:       "aro_500",
+												Version:   "500.0.20260101",
+											},
+											Gen2: &rhcos.AzureMarketplaceImage{
+												Publisher: "azureopenshift",
+												Offer:     "aro4",
+												SKU:       "500-v2",
+												Version:   "500.0.20260101",
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		expectedImageType: hyperv1.AzureMarketplace,
+		expectedMarketplaceImage: &hyperv1.AzureMarketplaceImage{
+			Publisher:       "azureopenshift",
+			Offer:           "aro4",
+			SKU:             "500-v2",
+			Version:         "500.0.20260101",
+			ImageGeneration: ptr.To(hyperv1.Gen2),
+		},
+	})
+
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
 
-			err := defaultAzureNodePoolImage(tc.nodePool, tc.releaseImage)
+			streamName := ""
+			if tc.releaseImage.OSStreams != nil {
+				for name := range tc.releaseImage.OSStreams {
+					streamName = name
+					break
+				}
+			}
+			err := defaultAzureNodePoolImage(tc.nodePool, tc.releaseImage, streamName)
 
 			if tc.expectedError {
 				g.Expect(err).To(HaveOccurred())

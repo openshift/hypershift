@@ -199,6 +199,120 @@ func TestReleaseInfoKubeVirt(t *testing.T) {
 	}
 }
 
+func TestArchForStream(t *testing.T) {
+	x86Arch := stream.Arch{
+		Artifacts: map[string]stream.PlatformArtifacts{
+			"aws": {},
+		},
+	}
+	aarch64Arch := stream.Arch{
+		Artifacts: map[string]stream.PlatformArtifacts{
+			"gcp": {},
+		},
+	}
+
+	tests := []struct {
+		name         string
+		releaseImage *ReleaseImage
+		streamName   string
+		archName     string
+		expectError  bool
+		expectArch   *stream.Arch
+	}{
+		{
+			name: "When default stream has the architecture, it should return the arch data",
+			releaseImage: &ReleaseImage{
+				ImageStream: &imageapi.ImageStream{},
+				StreamMetadata: &stream.Stream{
+					Stream: "rhcos-4.10",
+					Architectures: map[string]stream.Arch{
+						"x86_64":  x86Arch,
+						"aarch64": aarch64Arch,
+					},
+				},
+			},
+			streamName: "",
+			archName:   "x86_64",
+			expectArch: &x86Arch,
+		},
+		{
+			name: "When a named stream has the architecture, it should return the arch data",
+			releaseImage: &ReleaseImage{
+				ImageStream: &imageapi.ImageStream{},
+				StreamMetadata: &stream.Stream{
+					Stream: "rhcos-4.21",
+					Architectures: map[string]stream.Arch{
+						"x86_64": x86Arch,
+					},
+				},
+				OSStreams: map[string]*stream.Stream{
+					"rhel-10": {
+						Stream: "rhcos-5.0",
+						Architectures: map[string]stream.Arch{
+							"aarch64": aarch64Arch,
+						},
+					},
+				},
+			},
+			streamName: "rhel-10",
+			archName:   "aarch64",
+			expectArch: &aarch64Arch,
+		},
+		{
+			name: "When architecture is not found, it should return an error",
+			releaseImage: &ReleaseImage{
+				ImageStream: &imageapi.ImageStream{},
+				StreamMetadata: &stream.Stream{
+					Stream: "rhcos-4.10",
+					Architectures: map[string]stream.Arch{
+						"x86_64": x86Arch,
+					},
+				},
+			},
+			streamName:  "",
+			archName:    "s390x",
+			expectError: true,
+		},
+		{
+			name: "When stream is not found, it should return an error",
+			releaseImage: &ReleaseImage{
+				ImageStream: &imageapi.ImageStream{},
+				StreamMetadata: &stream.Stream{
+					Stream: "rhcos-4.10",
+					Architectures: map[string]stream.Arch{
+						"x86_64": x86Arch,
+					},
+				},
+				OSStreams: map[string]*stream.Stream{
+					"rhel-9": {
+						Stream: "rhcos-4.21",
+						Architectures: map[string]stream.Arch{
+							"x86_64": x86Arch,
+						},
+					},
+				},
+			},
+			streamName:  "rhel-8",
+			archName:    "x86_64",
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			result, err := tt.releaseImage.ArchForStream(tt.streamName, tt.archName)
+			if tt.expectError {
+				g.Expect(err).To(HaveOccurred())
+				return
+			}
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(result).To(Equal(tt.expectArch))
+		})
+	}
+}
+
 func TestStreamForName(t *testing.T) {
 	rhel9Stream := &stream.Stream{
 		Stream: "rhcos-4.21",

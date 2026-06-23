@@ -148,6 +148,7 @@ spec:
 		client                     bool
 		expectedHash               string
 		expectedHashWithoutVersion string
+		expectedResolvedStream     string
 		error                      error
 	}{
 		{
@@ -293,6 +294,136 @@ spec:
 				},
 			},
 		},
+		{
+			name: "When OCP 5.x version has no explicit stream it should auto-resolve to rhel-10",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "test",
+				},
+			},
+			releaseImage: &releaseinfo.ReleaseImage{
+				ImageStream: &imageapi.ImageStream{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "5.0.0",
+					},
+				},
+			},
+			hostedCluster:          hostedCluster,
+			client:                 true,
+			error:                  nil,
+			expectedResolvedStream: RHELStreamRHEL10,
+		},
+		{
+			name: "When OCP 5.x version has explicit stream rhel-9 it should use the explicit stream",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "test",
+				},
+				Spec: hyperv1.NodePoolSpec{
+					OSImageStream: hyperv1.OSImageStreamReference{
+						Name: RHELStreamRHEL9,
+					},
+				},
+			},
+			releaseImage: &releaseinfo.ReleaseImage{
+				ImageStream: &imageapi.ImageStream{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "5.0.0",
+					},
+				},
+			},
+			hostedCluster:          hostedCluster,
+			client:                 true,
+			error:                  nil,
+			expectedResolvedStream: RHELStreamRHEL9,
+		},
+		{
+			name: "When OCP 5.x version has runc ContainerRuntimeConfig it should force stream to rhel-9",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "test",
+				},
+				Spec: hyperv1.NodePoolSpec{
+					Config: []corev1.LocalObjectReference{
+						{
+							Name: "runc-config",
+						},
+					},
+				},
+			},
+			config: []crclient.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "runc-config",
+						Namespace: "test",
+					},
+					Data: map[string]string{
+						TokenSecretConfigKey: `apiVersion: machineconfiguration.openshift.io/v1
+kind: ContainerRuntimeConfig
+metadata:
+  name: use-runc
+spec:
+  containerRuntimeConfig:
+    defaultRuntime: runc
+`,
+					},
+				},
+			},
+			releaseImage: &releaseinfo.ReleaseImage{
+				ImageStream: &imageapi.ImageStream{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "5.0.0",
+					},
+				},
+			},
+			hostedCluster:          hostedCluster,
+			client:                 true,
+			error:                  nil,
+			expectedResolvedStream: RHELStreamRHEL9,
+		},
+		{
+			name: "When version is unparsable with explicit stream rhel-10 it should honor the explicit choice",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "test",
+				},
+				Spec: hyperv1.NodePoolSpec{
+					OSImageStream: hyperv1.OSImageStreamReference{
+						Name: RHELStreamRHEL10,
+					},
+				},
+			},
+			releaseImage: &releaseinfo.ReleaseImage{
+				ImageStream: &imageapi.ImageStream{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "nightly-2025-06-01",
+					},
+				},
+			},
+			hostedCluster:          hostedCluster,
+			client:                 true,
+			error:                  nil,
+			expectedResolvedStream: RHELStreamRHEL10,
+		},
+		{
+			name: "When version is unparsable without explicit stream it should leave resolvedStream empty",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "test",
+				},
+			},
+			releaseImage: &releaseinfo.ReleaseImage{
+				ImageStream: &imageapi.ImageStream{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "nightly-2025-06-01",
+					},
+				},
+			},
+			hostedCluster:          hostedCluster,
+			client:                 true,
+			error:                  nil,
+			expectedResolvedStream: "",
+		},
 	}
 
 	for _, tc := range testCases {
@@ -329,8 +460,17 @@ spec:
 				}
 			}
 
-			g.Expect(cg.Hash()).To(Equal(tc.expectedHash))
-			g.Expect(cg.HashWithoutVersion()).To(Equal(tc.expectedHashWithoutVersion))
+			if tc.expectedHash != "" {
+				g.Expect(cg.Hash()).To(Equal(tc.expectedHash))
+			} else {
+				g.Expect(cg.Hash()).ToNot(BeEmpty())
+			}
+			if tc.expectedHashWithoutVersion != "" {
+				g.Expect(cg.HashWithoutVersion()).To(Equal(tc.expectedHashWithoutVersion))
+			} else {
+				g.Expect(cg.HashWithoutVersion()).ToNot(BeEmpty())
+			}
+			g.Expect(cg.ResolvedStream()).To(Equal(tc.expectedResolvedStream))
 		})
 	}
 }
@@ -434,6 +574,7 @@ func TestHash(t *testing.T) {
 		pullSecretName            string
 		additionalTrustBundleName string
 		globalConfig              string
+		rhelStream                string
 		expected                  string
 	}{
 		{
@@ -490,6 +631,16 @@ func TestHash(t *testing.T) {
 			globalConfig:              "different",
 			expected:                  "e916ddfe",
 		},
+		{
+			name:                      "A different rhelStream should change the hash",
+			mcoRawConfig:              baseCaseMCORawConfig,
+			releaseVersion:            baseCaseReleaseVersion,
+			pullSecretName:            baseCasePullSecretName,
+			additionalTrustBundleName: baseCaseAdditionalTrustBundleName,
+			globalConfig:              baseCaseGlobalConfig,
+			rhelStream:                "rhel-10",
+			expected:                  "2dbbd41b",
+		},
 	}
 
 	for _, tc := range testCases {
@@ -508,6 +659,7 @@ func TestHash(t *testing.T) {
 					pullSecretName:            tc.pullSecretName,
 					additionalTrustBundleName: tc.additionalTrustBundleName,
 					globalConfig:              tc.globalConfig,
+					rhelStream:                tc.rhelStream,
 					releaseImage:              releaseImage,
 				},
 			}
@@ -520,6 +672,39 @@ func TestHash(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("When rhelStream differs it should change the hash", func(t *testing.T) {
+		g := NewWithT(t)
+		releaseImage := &releaseinfo.ReleaseImage{
+			ImageStream: &imageapi.ImageStream{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: baseCaseReleaseVersion,
+				},
+			},
+		}
+		cgBase := &ConfigGenerator{
+			rolloutConfig: &rolloutConfig{
+				mcoRawConfig:              baseCaseMCORawConfig,
+				pullSecretName:            baseCasePullSecretName,
+				additionalTrustBundleName: baseCaseAdditionalTrustBundleName,
+				globalConfig:              baseCaseGlobalConfig,
+				rhelStream:                "",
+				releaseImage:              releaseImage,
+			},
+		}
+		cgWithStream := &ConfigGenerator{
+			rolloutConfig: &rolloutConfig{
+				mcoRawConfig:              baseCaseMCORawConfig,
+				pullSecretName:            baseCasePullSecretName,
+				additionalTrustBundleName: baseCaseAdditionalTrustBundleName,
+				globalConfig:              baseCaseGlobalConfig,
+				rhelStream:                "rhel-9",
+				releaseImage:              releaseImage,
+			},
+		}
+		g.Expect(cgBase.Hash()).To(Equal(baseCaseHash))
+		g.Expect(cgWithStream.Hash()).ToNot(Equal(baseCaseHash))
+	})
 }
 
 func TestHashWithoutVersion(t *testing.T) {
@@ -536,6 +721,7 @@ func TestHashWithoutVersion(t *testing.T) {
 		pullSecretName            string
 		additionalTrustBundleName string
 		globalConfig              string
+		rhelStream                string
 		expected                  string
 	}{
 		{
@@ -594,6 +780,16 @@ func TestHashWithoutVersion(t *testing.T) {
 			globalConfig:              "different",
 			expected:                  baseCaseHash,
 		},
+		{
+			name:                      "A different rhelStream should change the hash",
+			mcoRawConfig:              baseCaseMCORawConfig,
+			releaseVersion:            baseCaseReleaseVersion,
+			pullSecretName:            baseCasePullSecretName,
+			additionalTrustBundleName: baseCaseAdditionalTrustBundleName,
+			globalConfig:              baseCaseGlobalConfig,
+			rhelStream:                "rhel-10",
+			expected:                  "671fe083",
+		},
 	}
 
 	for _, tc := range testCases {
@@ -612,6 +808,7 @@ func TestHashWithoutVersion(t *testing.T) {
 					pullSecretName:            tc.pullSecretName,
 					additionalTrustBundleName: tc.additionalTrustBundleName,
 					globalConfig:              tc.globalConfig,
+					rhelStream:                tc.rhelStream,
 					releaseImage:              releaseImage,
 				},
 			}
@@ -621,6 +818,39 @@ func TestHashWithoutVersion(t *testing.T) {
 			g.Expect(hash).To(Equal(tc.expected))
 		})
 	}
+
+	t.Run("When rhelStream differs it should change the hash", func(t *testing.T) {
+		g := NewWithT(t)
+		releaseImage := &releaseinfo.ReleaseImage{
+			ImageStream: &imageapi.ImageStream{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: baseCaseReleaseVersion,
+				},
+			},
+		}
+		cgBase := &ConfigGenerator{
+			rolloutConfig: &rolloutConfig{
+				mcoRawConfig:              baseCaseMCORawConfig,
+				pullSecretName:            baseCasePullSecretName,
+				additionalTrustBundleName: baseCaseAdditionalTrustBundleName,
+				globalConfig:              baseCaseGlobalConfig,
+				rhelStream:                "",
+				releaseImage:              releaseImage,
+			},
+		}
+		cgWithStream := &ConfigGenerator{
+			rolloutConfig: &rolloutConfig{
+				mcoRawConfig:              baseCaseMCORawConfig,
+				pullSecretName:            baseCasePullSecretName,
+				additionalTrustBundleName: baseCaseAdditionalTrustBundleName,
+				globalConfig:              baseCaseGlobalConfig,
+				rhelStream:                "rhel-9",
+				releaseImage:              releaseImage,
+			},
+		}
+		g.Expect(cgBase.HashWithoutVersion()).To(Equal(baseCaseHash))
+		g.Expect(cgWithStream.HashWithoutVersion()).ToNot(Equal(baseCaseHash))
+	})
 }
 
 func TestGenerateMCORawConfig(t *testing.T) {
@@ -1448,6 +1678,52 @@ status:
 			if diff := cmp.Diff(got, tc.expect); diff != "" {
 				t.Errorf("actual config differs from expected: %s", diff)
 			}
+		})
+	}
+}
+
+func TestUsesRuncDetection(t *testing.T) {
+	containerRuntimeConfigRunc := `apiVersion: machineconfiguration.openshift.io/v1
+kind: ContainerRuntimeConfig
+metadata:
+  name: set-runc
+spec:
+  containerRuntimeConfig:
+    defaultRuntime: runc
+`
+	containerRuntimeConfigCrun := `apiVersion: machineconfiguration.openshift.io/v1
+kind: ContainerRuntimeConfig
+metadata:
+  name: set-crun
+spec:
+  containerRuntimeConfig:
+    defaultRuntime: crun
+`
+
+	testCases := []struct {
+		name       string
+		manifest   string
+		expectRunc bool
+	}{
+		{
+			name:       "When ContainerRuntimeConfig sets defaultRuntime to runc it should set usesRunc to true",
+			manifest:   containerRuntimeConfigRunc,
+			expectRunc: true,
+		},
+		{
+			name:       "When ContainerRuntimeConfig sets defaultRuntime to crun it should not set usesRunc",
+			manifest:   containerRuntimeConfigCrun,
+			expectRunc: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			cg := &ConfigGenerator{}
+			_, err := cg.defaultAndValidateConfigManifest([]byte(tc.manifest))
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(cg.usesRunc).To(Equal(tc.expectRunc))
 		})
 	}
 }

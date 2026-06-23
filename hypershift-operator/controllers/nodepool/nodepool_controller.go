@@ -346,10 +346,6 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		return ctrl.Result{}, fmt.Errorf("failed to look up release image metadata: %w", err)
 	}
 
-	if err := r.setPlatformConditions(ctx, hcluster, nodePool, controlPlaneNamespace, releaseImage); err != nil {
-		return ctrl.Result{}, err
-	}
-
 	if hcluster.Status.KubeConfig == nil {
 		log.Info("waiting on hostedCluster.status.kubeConfig to be set")
 		return ctrl.Result{}, nil
@@ -362,6 +358,20 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	configGenerator, err := NewConfigGenerator(ctx, r.Client, hcluster, nodePool, releaseImage, haproxyRawConfig, controlPlaneNamespace)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to generate config: %w", err)
+	}
+
+	if err := r.setPlatformConditions(ctx, hcluster, nodePool, controlPlaneNamespace, releaseImage, configGenerator.ResolvedStream()); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	// Report the resolved OS stream in status.
+	// Only populated when the user explicitly sets spec.osImageStream.
+	if nodePool.Spec.OSImageStream.Name != "" {
+		nodePool.Status.OSImageStream = hyperv1.OSImageStreamReference{
+			Name: configGenerator.ResolvedStream(),
+		}
+	} else {
+		nodePool.Status.OSImageStream = hyperv1.OSImageStreamReference{}
 	}
 
 	cpoCapabilities, err := r.detectCPOCapabilities(ctx, hcluster)
@@ -737,19 +747,15 @@ func isAutoscalingEnabled(nodePool *hyperv1.NodePool) bool {
 }
 
 // defaultNodePoolAMI resolves the default AWS AMI for a NodePool from release image stream metadata.
-// TODO(CNTRLPLANE-3553): once the osImageStream API field is available, callers should resolve
-// streamName via GetRHELStream and pass it here instead of hardcoding "".
+// streamName selects which OS stream's boot images to use (e.g. "rhel-9", "rhel-10").
+// An empty streamName falls back to the default/legacy single-stream metadata.
 func defaultNodePoolAMI(region string, specifiedArch string, streamName string, releaseImage *releaseinfo.ReleaseImage) (string, error) {
 	if releaseImage == nil {
 		return "", fmt.Errorf("release image is nil")
 	}
-	streamMeta, err := releaseImage.StreamForName(streamName)
+	arch, err := releaseImage.ArchForStream(streamName, hyperv1.ArchAliases[specifiedArch])
 	if err != nil {
-		return "", fmt.Errorf("couldn't resolve stream metadata: %w", err)
-	}
-	arch, foundArch := streamMeta.Architectures[hyperv1.ArchAliases[specifiedArch]]
-	if !foundArch {
-		return "", fmt.Errorf("couldn't find OS metadata for architecture %q", specifiedArch)
+		return "", err
 	}
 
 	if arch.Images.Aws == nil {
@@ -766,17 +772,15 @@ func defaultNodePoolAMI(region string, specifiedArch string, streamName string, 
 }
 
 // defaultNodePoolGCPImage returns the default GCP image for a given architecture from release metadata.
-func defaultNodePoolGCPImage(specifiedArch string, releaseImage *releaseinfo.ReleaseImage) (string, error) {
+// streamName selects which OS stream's boot images to use (e.g. "rhel-9", "rhel-10").
+// An empty streamName falls back to the default/legacy single-stream metadata.
+func defaultNodePoolGCPImage(specifiedArch string, streamName string, releaseImage *releaseinfo.ReleaseImage) (string, error) {
 	if releaseImage == nil {
 		return "", fmt.Errorf("release image is nil, cannot determine GCP image")
 	}
-	if releaseImage.StreamMetadata == nil {
-		return "", fmt.Errorf("release image stream metadata is nil, cannot determine GCP image for architecture %q", specifiedArch)
-	}
-
-	arch, foundArch := releaseImage.StreamMetadata.Architectures[hyperv1.ArchAliases[specifiedArch]]
-	if !foundArch {
-		return "", fmt.Errorf("couldn't find OS metadata for architecture %q", specifiedArch)
+	arch, err := releaseImage.ArchForStream(streamName, hyperv1.ArchAliases[specifiedArch])
+	if err != nil {
+		return "", err
 	}
 
 	if arch.Images.Gcp == nil || len(arch.Images.Gcp.Project) == 0 || len(arch.Images.Gcp.Name) == 0 {

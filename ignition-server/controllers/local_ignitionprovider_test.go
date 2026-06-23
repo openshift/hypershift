@@ -1335,6 +1335,54 @@ func TestWriteInitialFilesMultipleConfigEntries(t *testing.T) {
 	})
 }
 
+func TestWriteOSImageStreamManifest(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		osStream       string
+		expectContains []string
+	}{
+		{
+			name:     "When stream is rhel-9, it should write manifest with defaultStream rhel-9",
+			osStream: "rhel-9",
+			expectContains: []string{
+				"apiVersion: machineconfiguration.openshift.io/v1alpha1",
+				"kind: OSImageStream",
+				"name: cluster",
+				`defaultStream: "rhel-9"`,
+			},
+		},
+		{
+			name:     "When stream is rhel-10, it should write manifest with defaultStream rhel-10",
+			osStream: "rhel-10",
+			expectContains: []string{
+				"apiVersion: machineconfiguration.openshift.io/v1alpha1",
+				"kind: OSImageStream",
+				"name: cluster",
+				`defaultStream: "rhel-10"`,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			mccDir := t.TempDir()
+			err := writeOSImageStreamManifest(mccDir, tt.osStream)
+			g.Expect(err).NotTo(HaveOccurred())
+
+			content, err := os.ReadFile(filepath.Join(mccDir, "99_osimagestream.yaml"))
+			g.Expect(err).NotTo(HaveOccurred())
+			for _, substr := range tt.expectContains {
+				g.Expect(string(content)).To(ContainSubstring(substr))
+			}
+		})
+	}
+}
+
 func TestCopyMCOOutputToMCCMixedContent(t *testing.T) {
 	t.Parallel()
 
@@ -1387,4 +1435,53 @@ func TestCopyMCOOutputToMCCMixedContent(t *testing.T) {
 		_, err = os.Stat(filepath.Join(mccDir, "other.yaml"))
 		g.Expect(os.IsNotExist(err)).To(BeTrue())
 	})
+}
+
+func TestWriteOSImageStreamCR(t *testing.T) {
+	tests := []struct {
+		name     string
+		osStream string
+		wantErr  bool
+		noop     bool
+	}{
+		{
+			name:     "When osStream is empty it should be a no-op",
+			osStream: "",
+			noop:     true,
+		},
+		{
+			name:     "When osStream is rhel-9 it should write the CR with defaultStream rhel-9",
+			osStream: "rhel-9",
+		},
+		{
+			name:     "When osStream is rhel-10 it should write the CR with defaultStream rhel-10",
+			osStream: "rhel-10",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			mccDir := t.TempDir()
+
+			err := writeOSImageStreamCR(mccDir, tt.osStream)
+			if tt.wantErr {
+				g.Expect(err).To(HaveOccurred())
+				return
+			}
+			g.Expect(err).ToNot(HaveOccurred())
+
+			if tt.noop {
+				_, statErr := os.Stat(filepath.Join(mccDir, "99_osimagestream.yaml"))
+				g.Expect(os.IsNotExist(statErr)).To(BeTrue(), "expected no file to be written for empty osStream")
+				return
+			}
+
+			content, err := os.ReadFile(filepath.Join(mccDir, "99_osimagestream.yaml"))
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(string(content)).To(ContainSubstring("kind: OSImageStream"))
+			g.Expect(string(content)).To(ContainSubstring("name: cluster"))
+			g.Expect(string(content)).To(ContainSubstring(fmt.Sprintf("defaultStream: %s", tt.osStream)))
+		})
+	}
 }

@@ -325,3 +325,103 @@ func machineWithVersionAndConditions(name, kubeletVersion string, conditions v1b
 		},
 	}
 }
+
+func TestInferStreamFromOSImage(t *testing.T) {
+	tests := []struct {
+		name    string
+		osImage string
+		want    string
+	}{
+		{
+			name:    "When OSImage contains RHCOS 4.x version it should return rhel-9",
+			osImage: "Red Hat Enterprise Linux CoreOS 417.94.202501011234-0",
+			want:    RHELStreamRHEL9,
+		},
+		{
+			name:    "When OSImage contains RHCOS 5.x version it should return rhel-10",
+			osImage: "Red Hat Enterprise Linux CoreOS 500.94.202506011234-0",
+			want:    RHELStreamRHEL10,
+		},
+		{
+			name:    "When OSImage is empty it should return empty",
+			osImage: "",
+			want:    "",
+		},
+		{
+			name:    "When OSImage has no version number it should return empty",
+			osImage: "Unknown OS",
+			want:    "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := inferStreamFromOSImage(tt.osImage)
+			if got != tt.want {
+				t.Errorf("inferStreamFromOSImage(%q) = %v, want %v", tt.osImage, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestInferOSStreamFromMachines(t *testing.T) {
+	tests := []struct {
+		name     string
+		machines []*v1beta1.Machine
+		want     string
+	}{
+		{
+			name:     "When there are no machines it should return empty",
+			machines: nil,
+			want:     "",
+		},
+		{
+			name: "When all machines run RHEL 9 it should return rhel-9",
+			machines: []*v1beta1.Machine{
+				{Status: v1beta1.MachineStatus{NodeInfo: &corev1.NodeSystemInfo{OSImage: "Red Hat Enterprise Linux CoreOS 417.94.202501011234-0"}}},
+				{Status: v1beta1.MachineStatus{NodeInfo: &corev1.NodeSystemInfo{OSImage: "Red Hat Enterprise Linux CoreOS 418.94.202503011234-0"}}},
+			},
+			want: RHELStreamRHEL9,
+		},
+		{
+			name: "When all machines run RHEL 10 it should return rhel-10",
+			machines: []*v1beta1.Machine{
+				{Status: v1beta1.MachineStatus{NodeInfo: &corev1.NodeSystemInfo{OSImage: "Red Hat Enterprise Linux CoreOS 500.94.202506011234-0"}}},
+			},
+			want: RHELStreamRHEL10,
+		},
+		{
+			name: "When machines have no NodeInfo it should return empty",
+			machines: []*v1beta1.Machine{
+				{Status: v1beta1.MachineStatus{}},
+			},
+			want: "",
+		},
+		{
+			name: "When machines have mixed RHEL 9 and RHEL 10 with equal counts it should return rhel-10 (tie-break)",
+			machines: []*v1beta1.Machine{
+				{Status: v1beta1.MachineStatus{NodeInfo: &corev1.NodeSystemInfo{OSImage: "Red Hat Enterprise Linux CoreOS 417.94.202501011234-0"}}},
+				{Status: v1beta1.MachineStatus{NodeInfo: &corev1.NodeSystemInfo{OSImage: "Red Hat Enterprise Linux CoreOS 500.94.202506011234-0"}}},
+			},
+			want: RHELStreamRHEL10,
+		},
+		{
+			name: "When RHEL 9 machines outnumber RHEL 10 it should return rhel-9",
+			machines: []*v1beta1.Machine{
+				{Status: v1beta1.MachineStatus{NodeInfo: &corev1.NodeSystemInfo{OSImage: "Red Hat Enterprise Linux CoreOS 417.94.202501011234-0"}}},
+				{Status: v1beta1.MachineStatus{NodeInfo: &corev1.NodeSystemInfo{OSImage: "Red Hat Enterprise Linux CoreOS 418.94.202503011234-0"}}},
+				{Status: v1beta1.MachineStatus{NodeInfo: &corev1.NodeSystemInfo{OSImage: "Red Hat Enterprise Linux CoreOS 500.94.202506011234-0"}}},
+			},
+			want: RHELStreamRHEL9,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := inferOSStreamFromMachines(tt.machines)
+			if got != tt.want {
+				t.Errorf("inferOSStreamFromMachines() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

@@ -601,7 +601,7 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 			}
 
 			bootImage := newCachedBootImage(bootImageName, imageHash, hostedClusterNamespace, false, np)
-			result, err := MachineTemplateSpec(tc.nodePool, tc.hcluster, &releaseinfo.ReleaseImage{}, bootImage)
+			result, err := MachineTemplateSpec(tc.nodePool, tc.hcluster, &releaseinfo.ReleaseImage{}, bootImage, "")
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(result).To(Equal(tc.expected), "Comparison failed\n%v", cmp.Diff(tc.expected, result))
 		})
@@ -1189,7 +1189,7 @@ func TestJsonPatch(t *testing.T) {
 
 			bootImage := newCachedBootImage(bootImageName, imageHash, hostedClusterNamespace, false, nil)
 			bootImage.dvName = bootImageNamePrefix + "12345"
-			result, err := MachineTemplateSpec(tc.nodePool, tc.hcluster, &releaseinfo.ReleaseImage{}, bootImage)
+			result, err := MachineTemplateSpec(tc.nodePool, tc.hcluster, &releaseinfo.ReleaseImage{}, bootImage, "")
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(result).To(Equal(tc.expected), "Comparison failed\n%v", cmp.Diff(tc.expected, result))
 		})
@@ -1580,7 +1580,7 @@ func TestDefaultImage(t *testing.T) {
 			if testRI == nil {
 				testRI = ri
 			}
-			img, digest, err := defaultImage(tt.arch, testRI)
+			img, digest, err := defaultImage(tt.arch, testRI, "")
 			if tt.expectedError {
 				if err == nil {
 					t.Fatalf("expected error but got nil")
@@ -1598,4 +1598,32 @@ func TestDefaultImage(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("When a named stream is specified, it should resolve image from OSStreams", func(t *testing.T) {
+		namedRI := &releaseinfo.ReleaseImage{
+			OSStreams: map[string]*stream.Stream{
+				"rhel-10": {
+					Architectures: map[string]stream.Arch{
+						hyperv1.ArchAliases[hyperv1.ArchitectureAMD64]: {
+							Images: stream.Images{
+								KubeVirt: &stream.ContainerImage{
+									DigestRef: "quay.io/openshift/release@sha256:rhel10streamhash",
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+		img, digest, err := defaultImage(hyperv1.ArchitectureAMD64, namedRI, "rhel-10")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if img != "quay.io/openshift/release@sha256:rhel10streamhash" {
+			t.Errorf("got image %q, expected %q", img, "quay.io/openshift/release@sha256:rhel10streamhash")
+		}
+		if digest != "sha256:rhel10streamhash" {
+			t.Errorf("got digest %q, expected %q", digest, "sha256:rhel10streamhash")
+		}
+	})
 }

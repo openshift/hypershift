@@ -35,6 +35,7 @@ const (
 	TokenSecretPullSecretHashKey            = "pull-secret-hash"
 	TokenSecretHCConfigurationHashKey       = "hc-configuration-hash"
 	TokenSecretAdditionalTrustBundleHashKey = "additional-trust-bundle-hash"
+	TokenSecretOSStreamKey                  = "os-stream"
 	InvalidConfigReason                     = "InvalidConfig"
 	TokenSecretReasonKey                    = "reason"
 	TokenSecretAnnotation                   = "hypershift.openshift.io/ignition-config"
@@ -83,7 +84,9 @@ func NewPayloadStore() *ExpiringCache {
 type IgnitionProvider interface {
 	// GetPayload returns the ignition payload content for
 	// the provided release image and a config string containing 0..N MachineConfig yaml definitions.
-	GetPayload(ctx context.Context, payloadImage, config, pullSecretHash, additionalTrustBundleHash, hcConfigurationHash string) ([]byte, error)
+	// osStream specifies the RHEL OS stream (e.g. "rhel-9", "rhel-10") for dual-stream support.
+	// When empty, legacy behavior is used (no OSImageStream CR is generated).
+	GetPayload(ctx context.Context, payloadImage, config, pullSecretHash, additionalTrustBundleHash, hcConfigurationHash, osStream string) ([]byte, error)
 }
 
 // TokenSecretReconciler watches token Secrets
@@ -271,9 +274,10 @@ func (r *TokenSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	pullSecretHash := string(tokenSecret.Data[TokenSecretPullSecretHashKey])
 	hcConfigurationHash := string(tokenSecret.Data[TokenSecretHCConfigurationHashKey])
 	additionalTrustBundleHash := string(tokenSecret.Data[TokenSecretAdditionalTrustBundleHashKey])
+	osStream := string(tokenSecret.Data[TokenSecretOSStreamKey])
 	payload, err := func() ([]byte, error) {
 		start := time.Now()
-		payload, err := r.IgnitionProvider.GetPayload(ctx, releaseImage, config.String(), pullSecretHash, additionalTrustBundleHash, hcConfigurationHash)
+		payload, err := r.IgnitionProvider.GetPayload(ctx, releaseImage, config.String(), pullSecretHash, additionalTrustBundleHash, hcConfigurationHash, osStream)
 		if err != nil {
 			return nil, fmt.Errorf("error getting ignition payload: %w", err)
 		}

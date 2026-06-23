@@ -37,7 +37,7 @@ type azureMarketplaceImageInfo struct {
 
 // defaultAzureNodePoolImage applies Azure Marketplace image defaults for OCP >= 4.20
 // when Type is AzureMarketplace and azureMarketplace data is not provided and marketplace metadata is available in the release payload.
-func defaultAzureNodePoolImage(nodePool *hyperv1.NodePool, releaseImage *releaseinfo.ReleaseImage) error {
+func defaultAzureNodePoolImage(nodePool *hyperv1.NodePool, releaseImage *releaseinfo.ReleaseImage, streamName string) error {
 	// Skip if ImageID is explicitly set
 	if nodePool.Spec.Platform.Azure.Image.ImageID != nil {
 		return nil
@@ -82,7 +82,7 @@ func defaultAzureNodePoolImage(nodePool *hyperv1.NodePool, releaseImage *release
 	}
 
 	// Extract marketplace metadata from release payload
-	azureMarketplace, err := getAzureMarketplaceMetadata(releaseImage, streamArch)
+	azureMarketplace, err := getAzureMarketplaceMetadata(releaseImage, streamArch, streamName)
 	if err != nil {
 		return fmt.Errorf("failed to get Azure Marketplace metadata: %w", err)
 	}
@@ -121,14 +121,10 @@ func defaultAzureNodePoolImage(nodePool *hyperv1.NodePool, releaseImage *release
 }
 
 // getAzureMarketplaceMetadata extracts Azure Marketplace metadata from the release payload
-func getAzureMarketplaceMetadata(releaseImage *releaseinfo.ReleaseImage, arch string) (*azureMarketplaceMetadata, error) {
-	if releaseImage.StreamMetadata == nil {
-		return nil, nil // No stream metadata available
-	}
-
-	archData, foundArch := releaseImage.StreamMetadata.Architectures[arch]
-	if !foundArch {
-		return nil, fmt.Errorf("architecture %s not found in stream metadata", arch)
+func getAzureMarketplaceMetadata(releaseImage *releaseinfo.ReleaseImage, arch string, streamName string) (*azureMarketplaceMetadata, error) {
+	archData, err := releaseImage.ArchForStream(streamName, arch)
+	if err != nil {
+		return nil, err
 	}
 
 	// Extract marketplace metadata from the RHCOS extensions
@@ -268,7 +264,7 @@ func azureMachineTemplateSpec(nodePool *hyperv1.NodePool, acrIdentityResourceID 
 
 func (c *CAPI) azureMachineTemplate(_ context.Context, templateNameGenerator func(spec any) (string, error)) (*capiazure.AzureMachineTemplate, error) {
 	// Apply Azure Marketplace image defaults before generating machine template spec
-	if err := defaultAzureNodePoolImage(c.nodePool, c.ConfigGenerator.rolloutConfig.releaseImage); err != nil {
+	if err := defaultAzureNodePoolImage(c.nodePool, c.ConfigGenerator.rolloutConfig.releaseImage, c.ResolvedStream()); err != nil {
 		return nil, fmt.Errorf("failed to apply Azure image defaults: %w", err)
 	}
 

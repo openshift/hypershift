@@ -31,6 +31,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/yaml"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/blang/semver"
 )
 
 // ConfigGenerator knows how to:
@@ -42,6 +44,10 @@ type ConfigGenerator struct {
 	hostedCluster         *hyperv1.HostedCluster
 	nodePool              *hyperv1.NodePool
 	controlplaneNamespace string
+	// usesRunc indicates whether the NodePool configuration includes a ContainerRuntimeConfig
+	// that sets the default container runtime to runc. This is used for OS stream resolution
+	// since RHEL 10 does not support runc.
+	usesRunc bool
 	*rolloutConfig
 }
 
@@ -60,6 +66,14 @@ type rolloutConfig struct {
 	// TODO(alberto): consider let haproxyRawConfig be an implementation detail of ConfigGenerator.
 	// For now, it's a required input to keep the haproxy business logic and files outside the scope of this initial refactor.
 	haproxyRawConfig string
+	// rhelStream is the explicit OS stream from spec.osImageStream.name.
+	// This MUST be populated from the spec field directly, not from the resolved value,
+	// to prevent fleet-wide rollouts when the default stream changes across releases.
+	// Empty when the user hasn't explicitly selected a stream.
+	rhelStream string
+	// resolvedStream holds the RHEL stream resolved by getRHELStream. Unlike rhelStream (which is only
+	// the explicit API value), this is the effective stream to use for boot image resolution and token secrets.
+	resolvedStream string
 }
 
 // NewConfigGenerator is the contract to create a new ConfigGenerator.
@@ -77,6 +91,13 @@ func NewConfigGenerator(ctx context.Context, client client.Client, hostedCluster
 		return nil, err
 	}
 
+	// Populate rhelStream from the spec field directly (not the resolved value)
+	// to prevent fleet-wide rollouts when the default stream changes across releases.
+	var rhelStream string
+	if nodePool.Spec.OSImageStream.Name != "" {
+		rhelStream = nodePool.Spec.OSImageStream.Name
+	}
+
 	cg := &ConfigGenerator{
 		Client:                client,
 		hostedCluster:         hostedCluster,
@@ -87,6 +108,7 @@ func NewConfigGenerator(ctx context.Context, client client.Client, hostedCluster
 			pullSecretName:   hostedCluster.Spec.PullSecret.Name,
 			globalConfig:     globalConfig,
 			haproxyRawConfig: haproxyRawConfig,
+			rhelStream:       rhelStream,
 		},
 	}
 
@@ -94,11 +116,29 @@ func NewConfigGenerator(ctx context.Context, client client.Client, hostedCluster
 		cg.rolloutConfig.additionalTrustBundleName = hostedCluster.Spec.AdditionalTrustBundle.Name
 	}
 
+	// generateMCORawConfig must run before getRHELStream because it populates usesRunc
+	// via ContainerRuntimeConfig detection in defaultAndValidateConfigManifest.
 	mcoRawConfig, err := cg.generateMCORawConfig(ctx, hostedCluster.Spec.Capabilities)
 	if err != nil {
 		return nil, err
 	}
 	cg.rolloutConfig.mcoRawConfig = mcoRawConfig
+
+	cg.rolloutConfig.rhelStream = nodePool.Spec.OSImageStream.Name
+
+	// Resolve the effective stream using release version and runc detection.
+	// When the version string cannot be parsed (e.g. CI nightly tags), treat as
+	// pre-5.0 legacy and only resolve when the user has explicitly set a stream.
+	if releaseVersion, err := semver.Parse(releaseImage.Version()); err == nil {
+		resolvedStream, err := getRHELStream(nodePool.Spec.OSImageStream.Name, releaseVersion, cg.usesRunc)
+		if err != nil {
+			return nil, fmt.Errorf("invalid OS image stream configuration: %w", err)
+		}
+		cg.rolloutConfig.resolvedStream = resolvedStream
+	} else if nodePool.Spec.OSImageStream.Name != "" {
+		// Explicit stream set but version is unparsable — still honor the explicit choice.
+		cg.rolloutConfig.resolvedStream = nodePool.Spec.OSImageStream.Name
+	}
 
 	return cg, nil
 }
@@ -118,7 +158,13 @@ func (cg *ConfigGenerator) CompressedAndEncoded() (*bytes.Buffer, error) {
 // TODO(alberto): hash the struct directly instead of the string representation field by field.
 // This is kept like this for now to contain the scope of the refactor and avoid backward compatibility issues.
 func (cg *ConfigGenerator) Hash() string {
-	return supportutil.HashSimple(cg.mcoRawConfig + cg.releaseImage.Version() + cg.pullSecretName + cg.additionalTrustBundleName + cg.globalConfig)
+	return supportutil.HashSimple(cg.mcoRawConfig + cg.releaseImage.Version() + cg.pullSecretName + cg.additionalTrustBundleName + cg.globalConfig + cg.rhelStream)
+}
+
+// ResolvedStream returns the effective RHEL stream for this NodePool as resolved by getRHELStream.
+// Empty for OCP < 5.0 payloads without an explicit osImageStream setting.
+func (cg *ConfigGenerator) ResolvedStream() string {
+	return cg.resolvedStream
 }
 
 // HashWithOutVersion is like Hash but doesn't compute the release version.
@@ -126,7 +172,7 @@ func (cg *ConfigGenerator) Hash() string {
 // TODO(alberto): This was left inconsistent in https://github.com/openshift/hypershift/pull/3795/files. It should also contain cg.globalConfig.
 // This is kept like this for now to contain the scope of the refactor and avoid backward compatibility issues.
 func (cg *ConfigGenerator) HashWithoutVersion() string {
-	return supportutil.HashSimple(cg.mcoRawConfig + cg.pullSecretName + cg.additionalTrustBundleName)
+	return supportutil.HashSimple(cg.mcoRawConfig + cg.pullSecretName + cg.additionalTrustBundleName + cg.rhelStream)
 }
 
 func (cg *ConfigGenerator) Version() string {
@@ -312,6 +358,10 @@ func (cg *ConfigGenerator) defaultAndValidateConfigManifest(manifest []byte) ([]
 			MatchLabels: map[string]string{
 				"machineconfiguration.openshift.io/mco-built-in": "",
 			},
+		}
+		// Detect runc usage for OS stream resolution (RHEL 10 does not support runc).
+		if obj.Spec.ContainerRuntimeConfig.DefaultRuntime == mcfgv1.ContainerRuntimeDefaultRuntimeRunc {
+			cg.usesRunc = true
 		}
 		manifest, err = api.CompatibleYAMLEncode(cr, yamlSerializer)
 		if err != nil {
