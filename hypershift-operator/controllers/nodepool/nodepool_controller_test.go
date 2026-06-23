@@ -2519,11 +2519,13 @@ func TestResolveHAProxyImage(t *testing.T) {
 	)
 
 	testCases := []struct {
-		name                string
-		nodePoolAnnotations map[string]string
-		useSharedIngress    bool
-		envVarImage         string
-		expectedImage       string
+		name                     string
+		nodePoolAnnotations      map[string]string
+		useSharedIngress         bool
+		envVarImage              string
+		componentImage           string
+		dataPlaneComponentImage  string
+		expectedImage            string
 	}{
 		{
 			name: "When NodePool annotation is set it should use annotation image",
@@ -2577,6 +2579,13 @@ func TestResolveHAProxyImage(t *testing.T) {
 			},
 			useSharedIngress: false,
 			expectedImage:    testReleaseImage,
+		},
+		{
+			name:                    "When registry overrides are active it should use the canonical image from the data plane provider",
+			useSharedIngress:        false,
+			componentImage:          "mirror.mgmt.internal/openshift/haproxy-router:v4.16",
+			dataPlaneComponentImage: testReleaseImage,
+			expectedImage:           testReleaseImage,
 		},
 	}
 
@@ -2670,10 +2679,23 @@ kind: Config`),
 			c := fake.NewClientBuilder().WithObjects(objects...).Build()
 
 			// Create fake release provider with component images
+			haproxyImage := testReleaseImage
+			if tc.componentImage != "" {
+				haproxyImage = tc.componentImage
+			}
 			releaseProvider := &fakereleaseprovider.FakeReleaseProvider{
 				Components: map[string]string{
-					haproxy.HAProxyRouterImageName: testReleaseImage,
+					haproxy.HAProxyRouterImageName: haproxyImage,
 				},
+			}
+
+			var dataPlaneReleaseProvider *fakereleaseprovider.FakeReleaseProvider
+			if tc.dataPlaneComponentImage != "" {
+				dataPlaneReleaseProvider = &fakereleaseprovider.FakeReleaseProvider{
+					Components: map[string]string{
+						haproxy.HAProxyRouterImageName: tc.dataPlaneComponentImage,
+					},
+				}
 			}
 
 			// Create test HostedCluster
@@ -2735,6 +2757,9 @@ kind: Config`),
 						},
 					},
 				},
+			}
+			if dataPlaneReleaseProvider != nil {
+				reconciler.DataPlaneReleaseProvider = dataPlaneReleaseProvider
 			}
 
 			// Get release image using the fake provider

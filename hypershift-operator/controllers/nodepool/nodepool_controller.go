@@ -98,6 +98,11 @@ type NodePoolReconciler struct {
 	client.Client
 	recorder        record.EventRecorder
 	ReleaseProvider releaseinfo.Provider
+	// DataPlaneReleaseProvider looks up release images without applying
+	// management-cluster registry overrides. Images destined for the data plane
+	// ignition payload should be resolved through this provider so that CRI-O on
+	// the nodes can handle mirroring natively via registries.conf.
+	DataPlaneReleaseProvider releaseinfo.Provider
 	upsert.CreateOrUpdateProvider
 	HypershiftOperatorImage string
 	ImageMetadataProvider   supportutil.ImageMetadataProvider
@@ -1113,7 +1118,26 @@ func resolveHAProxyImage(nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedClu
 }
 
 func (r *NodePoolReconciler) generateHAProxyRawConfig(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, releaseImage *releaseinfo.ReleaseImage) (string, error) {
-	haProxyImage, err := resolveHAProxyImage(nodePool, hcluster, releaseImage)
+	// The HAProxy image is embedded in a static pod manifest in the ignition
+	// payload for data-plane nodes. Use the non-overridden release provider so
+	// the manifest contains the canonical image reference; CRI-O on the nodes
+	// handles mirroring natively via registries.conf.
+	dataPlaneReleaseImage := releaseImage
+	if r.DataPlaneReleaseProvider != nil {
+		pullSecretBytes, err := r.getPullSecretBytes(ctx, hcluster)
+		if err != nil {
+			return "", err
+		}
+		lookupCtx, lookupCancel := context.WithTimeout(ctx, 1*time.Minute)
+		defer lookupCancel()
+		dpImage, err := r.DataPlaneReleaseProvider.Lookup(lookupCtx, nodePool.Spec.Release.Image, pullSecretBytes)
+		if err != nil {
+			return "", fmt.Errorf("failed to look up data plane release image: %w", err)
+		}
+		dataPlaneReleaseImage = dpImage
+	}
+
+	haProxyImage, err := resolveHAProxyImage(nodePool, hcluster, dataPlaneReleaseImage)
 	if err != nil {
 		return "", err
 	}

@@ -220,6 +220,10 @@ type CommonRegistryProvider struct {
 	capChecker       capabilities.CapabiltyChecker
 	MetadataProvider *hyperutil.RegistryClientImageMetadataProvider
 	ReleaseProvider  *releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator
+	// DataPlaneReleaseProvider resolves release images without applying
+	// management-cluster registry overrides. Use this for image references
+	// embedded in data-plane ignition payloads where CRI-O handles mirroring.
+	DataPlaneReleaseProvider releaseinfo.Provider
 }
 
 // NewCommonRegistryProvider creates a CommonRegistryProvider
@@ -237,12 +241,14 @@ func NewCommonRegistryProvider(ctx context.Context, capChecker capabilities.Capa
 		}
 	}
 
+	cachedProvider := &releaseinfo.CachedProvider{
+		Inner: &releaseinfo.RegistryClientProvider{},
+		Cache: map[string]*releaseinfo.ReleaseImage{},
+	}
+
 	releaseProvider := &releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator{
 		Delegate: &releaseinfo.RegistryMirrorProviderDecorator{
-			Delegate: &releaseinfo.CachedProvider{
-				Inner: &releaseinfo.RegistryClientProvider{},
-				Cache: map[string]*releaseinfo.ReleaseImage{},
-			},
+			Delegate:          cachedProvider,
 			RegistryOverrides: registryOverrides,
 		},
 		OpenShiftImageRegistryOverrides: imageRegistryMirrors,
@@ -253,9 +259,10 @@ func NewCommonRegistryProvider(ctx context.Context, capChecker capabilities.Capa
 	}
 
 	provider := CommonRegistryProvider{
-		capChecker:       capChecker,
-		MetadataProvider: metadataProvider,
-		ReleaseProvider:  releaseProvider,
+		capChecker:               capChecker,
+		MetadataProvider:         metadataProvider,
+		ReleaseProvider:          releaseProvider,
+		DataPlaneReleaseProvider: cachedProvider,
 	}
 
 	return provider, nil

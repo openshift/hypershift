@@ -628,14 +628,15 @@ func setupNodePoolController(ctx context.Context, mgr ctrl.Manager, opts *StartO
 	}
 
 	if err := (&nodepool.NodePoolReconciler{
-		Client:                  mgr.GetClient(),
-		ReleaseProvider:         registryProvider.ReleaseProvider,
-		CreateOrUpdateProvider:  createOrUpdate,
-		HypershiftOperatorImage: operatorImage,
-		ImageMetadataProvider:   registryProvider.MetadataProvider,
-		KubevirtInfraClients:    kvinfra.NewKubevirtInfraClientMap(),
-		EC2Client:               ec2Client,
-		InstanceTypeProvider:    instanceTypeProvider,
+		Client:                   mgr.GetClient(),
+		ReleaseProvider:          registryProvider.ReleaseProvider,
+		DataPlaneReleaseProvider: registryProvider.DataPlaneReleaseProvider,
+		CreateOrUpdateProvider:   createOrUpdate,
+		HypershiftOperatorImage:  operatorImage,
+		ImageMetadataProvider:    registryProvider.MetadataProvider,
+		KubevirtInfraClients:     kvinfra.NewKubevirtInfraClientMap(),
+		EC2Client:                ec2Client,
+		InstanceTypeProvider:     instanceTypeProvider,
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create controller: %w", err)
 	}
