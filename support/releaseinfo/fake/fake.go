@@ -28,6 +28,9 @@ type FakeReleaseProvider struct {
 	// Allows image-based versioning
 	ImageVersion map[string]string
 	Components   map[string]string
+	// CanonicalComponents, when set, will be stored as canonical (pre-override)
+	// component images on the returned ReleaseImage.
+	CanonicalComponents map[string]string
 }
 
 func (f *FakeReleaseProvider) Lookup(_ context.Context, image string, _ []byte) (*releaseinfo.ReleaseImage, error) {
@@ -118,6 +121,10 @@ func (f *FakeReleaseProvider) Lookup(_ context.Context, image string, _ []byte) 
 			Name: name,
 			From: &corev1.ObjectReference{Name: image},
 		})
+	}
+
+	if f.CanonicalComponents != nil {
+		releaseImage.SetCanonicalComponentImages(f.CanonicalComponents)
 	}
 
 	if len(f.ImageVersion) == 0 {
