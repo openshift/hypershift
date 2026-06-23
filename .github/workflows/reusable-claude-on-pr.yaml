@@ -117,6 +117,9 @@ jobs:
           CLAUDE_PROMPT: ${{ inputs.claude-prompt }}
           MAX_TURNS: ${{ inputs.max-turns }}
           ALLOWED_TOOLS: ${{ inputs.allowed-tools }}
+          GIT_CONFIG_COUNT: "1"
+          GIT_CONFIG_KEY_0: "url.https://github.com/.insteadOf"
+          GIT_CONFIG_VALUE_0: "git@github.com:"
         run: |
           claude plugin marketplace add openshift-eng/ai-helpers
           claude plugin install openshift-developer@ai-helpers
