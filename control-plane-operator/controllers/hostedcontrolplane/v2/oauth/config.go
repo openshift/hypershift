@@ -12,6 +12,8 @@ import (
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/k8sutil"
 
+	pki "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
+
 	osinv1 "github.com/openshift/api/osin/v1"
 
 	corev1 "k8s.io/api/core/v1"
@@ -72,7 +74,11 @@ func adaptOAuthConfig(cpContext component.WorkloadContext, cfg *osinv1.OsinServe
 	controlPlaneEndpoint := cpContext.HCP.Status.ControlPlaneEndpoint
 	cfg.OAuthConfig.MasterURL = masterUrl
 	cfg.OAuthConfig.MasterPublicURL = masterUrl
-	cfg.OAuthConfig.LoginURL = fmt.Sprintf("https://%s:%d", controlPlaneEndpoint.Host, controlPlaneEndpoint.Port)
+	loginHost := controlPlaneEndpoint.Host
+	if hcp := cpContext.HCP; hcp.Spec.KubeAPIServerDNSName != "" {
+		loginHost = hcp.Spec.KubeAPIServerDNSName
+	}
+	cfg.OAuthConfig.LoginURL = fmt.Sprintf("https://%s:%d", pki.AddBracketsIfIPv6(loginHost), controlPlaneEndpoint.Port)
 	// loginURLOverride can be used to specify an override for the oauth config login url. The need for this arises
 	// when the login a provider uses doesn't conform to the standard login url in hypershift. The only supported use case
 	// for this is IBMCloud Red Hat Openshift
