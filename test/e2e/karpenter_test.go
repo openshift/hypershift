@@ -1738,7 +1738,10 @@ func baseNodePool(name, nodeClassName string) *karpenterv1.NodePool {
 		ObjectMeta: metav1.ObjectMeta{Name: name},
 		Spec: karpenterv1.NodePoolSpec{
 			Disruption: karpenterv1.Disruption{
-				ConsolidateAfter: karpenterv1.MustParseNillableDuration("0s"),
+				// 60s mitigates the risk of consolidation from racing with drift
+				// the default setting of 0s can cause replacement nodes to be deleted
+				// before the drift drain begins.
+				ConsolidateAfter: karpenterv1.MustParseNillableDuration("60s"),
 			},
 			Template: karpenterv1.NodeClaimTemplate{
 				ObjectMeta: karpenterv1.ObjectMeta{
