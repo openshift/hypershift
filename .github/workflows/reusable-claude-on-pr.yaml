@@ -119,9 +119,6 @@ jobs:
           ALLOWED_TOOLS: ${{ inputs.allowed-tools }}
         run: |
           claude plugin marketplace add openshift-eng/ai-helpers
-          claude plugin install utils@ai-helpers
-          claude plugin install golang@ai-helpers
-          claude plugin marketplace add enxebre/ai-scripts
-          claude plugin install git@enxebre
+          claude plugin install openshift-developer@ai-helpers
           claude --version
           claude -p "$CLAUDE_PROMPT" --model claude-opus-4-6 --max-turns "$MAX_TURNS" --allowedTools "$ALLOWED_TOOLS" --verbose --output-format stream-json
