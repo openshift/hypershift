@@ -36,6 +36,16 @@ users:
 	return kubeconfigFile
 }
 
+func TestGetKubeClientSet(t *testing.T) {
+	t.Run("When KUBECONFIG env var points to a valid kubeconfig, it should create a clientset", func(t *testing.T) {
+		g := NewWithT(t)
+		t.Setenv("KUBECONFIG", writeTestKubeconfig(t))
+		kc, err := GetKubeClientSet()
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(kc).ToNot(BeNil())
+	})
+}
+
 func TestGetKubeClientSetWithKubeconfig(t *testing.T) {
 	tests := []struct {
 		name             string
