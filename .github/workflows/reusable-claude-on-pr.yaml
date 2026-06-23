@@ -112,11 +112,15 @@ jobs:
           CLAUDE_CODE_USE_VERTEX: "1"
           CLOUD_ML_REGION: global
           ANTHROPIC_VERTEX_PROJECT_ID: hosted-control-planes
-          GH_TOKEN: ${{ steps.app-token.outputs.token || github.token }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.issue.number }}
           CLAUDE_PROMPT: ${{ inputs.claude-prompt }}
           MAX_TURNS: ${{ inputs.max-turns }}
           ALLOWED_TOOLS: ${{ inputs.allowed-tools }}
+          GIT_CONFIG_COUNT: "1"
+          GIT_CONFIG_KEY_0: "url.https://github.com/.insteadOf"
+          GIT_CONFIG_VALUE_0: "git@github.com:"
         run: |
           claude plugin marketplace add openshift-eng/ai-helpers
           claude plugin install openshift-developer@ai-helpers
