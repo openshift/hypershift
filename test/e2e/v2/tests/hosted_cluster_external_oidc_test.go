@@ -168,66 +168,76 @@ func ExternalOIDCKASConfigTest(getTestCtx internal.TestContextGetter) {
 			tc := getTestCtx()
 			hc := tc.GetHostedCluster()
 
-			cm := &corev1.ConfigMap{}
-			err := tc.MgmtClient.Get(tc.Context, crclient.ObjectKey{
-				Namespace: tc.ControlPlaneNamespace,
-				Name:      "auth-config",
-			}, cm)
-			Expect(err).NotTo(HaveOccurred(),
-				"auth-config ConfigMap should exist in %s", tc.ControlPlaneNamespace)
-
-			authJSON, ok := cm.Data["auth.json"]
-			Expect(ok).To(BeTrue(), "auth-config ConfigMap should have auth.json key")
-
-			var authConfig map[string]interface{}
-			Expect(json.Unmarshal([]byte(authJSON), &authConfig)).To(Succeed())
-
-			jwtArray, ok := authConfig["jwt"].([]interface{})
-			Expect(ok).To(BeTrue(), "auth.json should have jwt array")
-			Expect(jwtArray).NotTo(BeEmpty(), "jwt array should not be empty")
-
-			// Dynamic assertion: compare against HC spec, not hardcoded values
 			expectedIssuerURL := hc.Spec.Configuration.Authentication.OIDCProviders[0].Issuer.URL
 			Expect(expectedIssuerURL).NotTo(BeEmpty(),
 				"OIDC provider issuer URL should not be empty on hosted cluster %s/%s", hc.Namespace, hc.Name)
 
-			firstJWT, ok := jwtArray[0].(map[string]interface{})
-			Expect(ok).To(BeTrue(), "first jwt entry should be a map")
-			issuer, ok := firstJWT["issuer"].(map[string]interface{})
-			Expect(ok).To(BeTrue(), "jwt entry should have issuer")
-			Expect(issuer["url"]).To(Equal(expectedIssuerURL),
-				"JWT issuer URL should match OIDC provider from hosted cluster spec")
+			// The auth-config ConfigMap is reconciled by CPO after the OIDC
+			// configuration is patched onto the HostedCluster. Poll until the
+			// JWT authenticator array is populated.
+			Eventually(func(g Gomega) {
+				cm := &corev1.ConfigMap{}
+				err := tc.MgmtClient.Get(tc.Context, crclient.ObjectKey{
+					Namespace: tc.ControlPlaneNamespace,
+					Name:      "auth-config",
+				}, cm)
+				g.Expect(err).NotTo(HaveOccurred(),
+					"auth-config ConfigMap should exist in %s", tc.ControlPlaneNamespace)
+
+				authJSON, ok := cm.Data["auth.json"]
+				g.Expect(ok).To(BeTrue(), "auth-config ConfigMap should have auth.json key")
+
+				var authConfig map[string]interface{}
+				g.Expect(json.Unmarshal([]byte(authJSON), &authConfig)).To(Succeed())
+
+				jwtArray, ok := authConfig["jwt"].([]interface{})
+				g.Expect(ok).To(BeTrue(), "auth.json should have jwt array")
+				g.Expect(jwtArray).NotTo(BeEmpty(), "jwt array should not be empty")
+
+				firstJWT, ok := jwtArray[0].(map[string]interface{})
+				g.Expect(ok).To(BeTrue(), "first jwt entry should be a map")
+				issuer, ok := firstJWT["issuer"].(map[string]interface{})
+				g.Expect(ok).To(BeTrue(), "jwt entry should have issuer")
+				g.Expect(issuer["url"]).To(Equal(expectedIssuerURL),
+					"JWT issuer URL should match OIDC provider from hosted cluster spec")
+			}).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
 		})
 
 		It("should have correct audiences in JWT config", func() {
 			tc := getTestCtx()
 			hc := tc.GetHostedCluster()
 
-			cm := &corev1.ConfigMap{}
-			Expect(tc.MgmtClient.Get(tc.Context, crclient.ObjectKey{
-				Namespace: tc.ControlPlaneNamespace,
-				Name:      "auth-config",
-			}, cm)).To(Succeed())
-
-			var authConfig map[string]interface{}
-			Expect(json.Unmarshal([]byte(cm.Data["auth.json"]), &authConfig)).To(Succeed())
-
-			jwtArray, ok := authConfig["jwt"].([]interface{})
-			Expect(ok).To(BeTrue(), "auth.json should have jwt array")
-			Expect(jwtArray).NotTo(BeEmpty(), "jwt array should not be empty")
-			firstJWT, ok := jwtArray[0].(map[string]interface{})
-			Expect(ok).To(BeTrue(), "first jwt entry should be a map")
-			issuer, ok := firstJWT["issuer"].(map[string]interface{})
-			Expect(ok).To(BeTrue(), "jwt entry should have issuer")
-			audiences, ok := issuer["audiences"].([]interface{})
-			Expect(ok).To(BeTrue(), "JWT issuer should have audiences array")
-			Expect(audiences).NotTo(BeEmpty(), "JWT audiences should not be empty")
-
 			expectedAudiences := hc.Spec.Configuration.Authentication.OIDCProviders[0].Issuer.Audiences
-			for _, expected := range expectedAudiences {
-				Expect(audiences).To(ContainElement(string(expected)),
-					"JWT audiences should contain %s from hosted cluster spec", expected)
-			}
+			Expect(expectedAudiences).NotTo(BeEmpty(),
+				"OIDC provider audiences should not be empty on hosted cluster %s/%s", hc.Namespace, hc.Name)
+
+			Eventually(func(g Gomega) {
+				cm := &corev1.ConfigMap{}
+				g.Expect(tc.MgmtClient.Get(tc.Context, crclient.ObjectKey{
+					Namespace: tc.ControlPlaneNamespace,
+					Name:      "auth-config",
+				}, cm)).To(Succeed())
+
+				var authConfig map[string]interface{}
+				g.Expect(json.Unmarshal([]byte(cm.Data["auth.json"]), &authConfig)).To(Succeed())
+
+				jwtArray, ok := authConfig["jwt"].([]interface{})
+				g.Expect(ok).To(BeTrue(), "auth.json should have jwt array")
+				g.Expect(jwtArray).NotTo(BeEmpty(), "jwt array should not be empty")
+
+				firstJWT, ok := jwtArray[0].(map[string]interface{})
+				g.Expect(ok).To(BeTrue(), "first jwt entry should be a map")
+				issuer, ok := firstJWT["issuer"].(map[string]interface{})
+				g.Expect(ok).To(BeTrue(), "jwt entry should have issuer")
+				audiences, ok := issuer["audiences"].([]interface{})
+				g.Expect(ok).To(BeTrue(), "JWT issuer should have audiences array")
+				g.Expect(audiences).NotTo(BeEmpty(), "JWT audiences should not be empty")
+
+				for _, expected := range expectedAudiences {
+					g.Expect(audiences).To(ContainElement(string(expected)),
+						"JWT audiences should contain %s from hosted cluster spec", expected)
+				}
+			}).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
 		})
 
 		It("should not have OAuth webhook authentication config", func() {
