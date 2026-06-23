@@ -22,7 +22,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-pki-operator/certificates"
 	"github.com/openshift/hypershift/control-plane-pki-operator/manifests"
 	"github.com/openshift/hypershift/support/config"
-	"github.com/openshift/hypershift/support/podspec"
+	supportutil "github.com/openshift/hypershift/support/util"
 
 	"github.com/openshift/library-go/pkg/certs/cert-inspection/certgraphanalysis"
 	"github.com/openshift/library-go/pkg/certs/cert-inspection/certgraphapi"
@@ -594,9 +594,9 @@ func (c *CertificateRevocationController) verifyCertificateAgainstAllKASPods(
 		if pod.DeletionTimestamp != nil {
 			continue
 		}
-		if !podspec.IsPodReady(pod) || pod.Status.PodIP == "" {
+		if !supportutil.IsPodReady(pod) || pod.Status.PodIP == "" {
 			// a non-terminating pod that's not ready: we can't check it yet, requeue
-			klog.V(4).Infof("KAS pod %s/%s not ready for verification (ready=%v, podIP=%q), requeueing", pod.Namespace, pod.Name, podspec.IsPodReady(pod), pod.Status.PodIP)
+			klog.V(4).Infof("KAS pod %s/%s not ready for verification (ready=%v, podIP=%q), requeueing", pod.Namespace, pod.Name, supportutil.IsPodReady(pod), pod.Status.PodIP)
 			return false, nil
 		}
 		readyPods = append(readyPods, pod)
@@ -626,7 +626,7 @@ func (c *CertificateRevocationController) verifyCertificateAgainstAllKASPods(
 	}
 
 	for _, pod := range readyPods {
-		port := podspec.ContainerPort(pod, "client", config.KASPodDefaultPort)
+		port := supportutil.ContainerPort(pod, "client", config.KASPodDefaultPort)
 		podCfg := rest.AnonymousClientConfig(adminCfg)
 		podCfg.Timeout = perPodVerifyTimeout
 		podCfg.TLSClientConfig.CertData = certPEM
