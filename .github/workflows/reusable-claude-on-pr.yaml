@@ -119,6 +119,8 @@ jobs:
           ALLOWED_TOOLS: ${{ inputs.allowed-tools }}
         run: |
           claude plugin marketplace add openshift-eng/ai-helpers
+          claude plugin marketplace add anthropics/claude-plugins-official
+          claude plugin marketplace add RedHatProductSecurity/prodsec-skills
           claude plugin install openshift-developer@ai-helpers
           claude --version
           claude -p "$CLAUDE_PROMPT" --model claude-opus-4-6 --max-turns "$MAX_TURNS" --allowedTools "$ALLOWED_TOOLS" --verbose --output-format stream-json
