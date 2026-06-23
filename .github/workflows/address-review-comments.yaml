@@ -21,6 +21,6 @@ jobs:
     with:
       command-name: address-review-comments
       status-message: "Addressing review comments"
-      claude-prompt: "/utils:address-reviews ${{ github.event.issue.number }}"
+      claude-prompt: "/openshift-developer:address-review-pr ${{ github.event.issue.number }}"
       max-turns: 200
     secrets: inherit
