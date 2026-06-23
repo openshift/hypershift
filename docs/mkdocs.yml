@@ -409,5 +409,8 @@ nav:
   - 'CPO Overrides': contribute/cpo-overrides.md
   - 'Contribute to docs': contribute/contribute-docs.md
   - 'Retrospective Guidelines': contribute/retrospective-guidelines.md
+- 'Blog':
+  - blog/index.md
+  - 'June 2026 Progress Report': blog/2026-06-progress-report.md
 - 'Videos':
   - videos/index.md
