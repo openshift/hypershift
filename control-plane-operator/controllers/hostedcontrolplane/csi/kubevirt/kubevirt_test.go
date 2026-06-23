@@ -111,12 +111,49 @@ func TestReconcileDefaultTenantStorageClass(t *testing.T) {
 		test func(t *testing.T, g Gomega)
 	}{
 		{
-			name: "When called, it should set the is-default-class annotation to true",
+			name: "When annotation does not exist, it should set the is-default-class annotation to true",
 			test: func(t *testing.T, g Gomega) {
 				sc := &storagev1.StorageClass{}
 				err := reconcileDefaultTenantStorageClass(sc)
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(sc.Annotations).To(HaveKeyWithValue("storageclass.kubernetes.io/is-default-class", "true"))
+			},
+		},
+		{
+			name: "When is-default-class annotation is already set to false, it should preserve the user's choice",
+			test: func(t *testing.T, g Gomega) {
+				sc := &storagev1.StorageClass{}
+				sc.Annotations = map[string]string{
+					"storageclass.kubernetes.io/is-default-class": "false",
+				}
+				err := reconcileDefaultTenantStorageClass(sc)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(sc.Annotations).To(HaveKeyWithValue("storageclass.kubernetes.io/is-default-class", "false"))
+			},
+		},
+		{
+			name: "When is-default-class annotation is already set to true, it should preserve the value",
+			test: func(t *testing.T, g Gomega) {
+				sc := &storagev1.StorageClass{}
+				sc.Annotations = map[string]string{
+					"storageclass.kubernetes.io/is-default-class": "true",
+				}
+				err := reconcileDefaultTenantStorageClass(sc)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(sc.Annotations).To(HaveKeyWithValue("storageclass.kubernetes.io/is-default-class", "true"))
+			},
+		},
+		{
+			name: "When other annotations exist, it should preserve them and add is-default-class",
+			test: func(t *testing.T, g Gomega) {
+				sc := &storagev1.StorageClass{}
+				sc.Annotations = map[string]string{
+					"some-other-annotation": "some-value",
+				}
+				err := reconcileDefaultTenantStorageClass(sc)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(sc.Annotations).To(HaveKeyWithValue("storageclass.kubernetes.io/is-default-class", "true"))
+				g.Expect(sc.Annotations).To(HaveKeyWithValue("some-other-annotation", "some-value"))
 			},
 		},
 		{
