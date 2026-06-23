@@ -53,6 +53,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	errors2 "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -259,131 +260,143 @@ func TestHasBeenAvailable(t *testing.T) {
 	}
 }
 
-func TestReconcileWhenPullSecretMissing(t *testing.T) {
+func TestReconcileWhenPullSecretUnavailable(t *testing.T) {
 	t.Parallel()
-	g := NewWithT(t)
 
-	hcluster := &hyperv1.HostedCluster{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-cluster",
-			Namespace: "any",
-			Annotations: map[string]string{
-				hyperv1.RequestServingNodeAdditionalSelectorAnnotation: `{"node-role.kubernetes.io/worker": ""}`,
-			},
+	tests := []struct {
+		name         string
+		extraObjects []crclient.Object
+	}{
+		{
+			name: "When the pull secret is missing it should still reconcile the HCP",
 		},
-		Spec: hyperv1.HostedClusterSpec{
-			ClusterID: "id",
-			InfraID:   "infra-id",
-			Networking: hyperv1.ClusterNetworking{
-				ClusterNetwork: []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.1.0/24")}},
-			},
-			Services: []hyperv1.ServicePublishingStrategyMapping{
-				{
-					Service: hyperv1.Ignition,
-					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-						Type: hyperv1.LoadBalancer,
-					},
+		{
+			name: "When the pull secret is corrupted it should still reconcile the HCP",
+			extraObjects: []crclient.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "pull-secret", Namespace: "any"},
+					Data:       map[string][]byte{},
 				},
 			},
-			PullSecret: corev1.LocalObjectReference{
-				Name: "pull-secret",
-			},
-			Release: hyperv1.Release{Image: "quay.io/openshift-release-dev/ocp-release:4.15.0"},
-			Etcd:    hyperv1.EtcdSpec{ManagementType: hyperv1.Managed},
-			Platform: hyperv1.PlatformSpec{
-				Type: hyperv1.AWSPlatform,
-			},
-			NodeSelector: map[string]string{
-				"node-role.kubernetes.io/worker": "",
-			},
 		},
 	}
 
-	hcpNs := hcpmanifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
-	hcp := controlplaneoperator.HostedControlPlane(hcpNs, hcluster.Name)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
 
-	// Create the namespace so createOrUpdate can find it
-	ns := &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{Name: hcpNs},
+			hcluster := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: "any",
+					Annotations: map[string]string{
+						hyperv1.RequestServingNodeAdditionalSelectorAnnotation: `{"node-role.kubernetes.io/worker": ""}`,
+					},
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					ClusterID: "12345678-1234-1234-1234-123456789abc",
+					InfraID:   "infra-id",
+					Networking: hyperv1.ClusterNetworking{
+						ClusterNetwork: []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.1.0/24")}},
+						ServiceNetwork: []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.31.0.0/16")}},
+					},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.Ignition,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.Route,
+							},
+						},
+					},
+					PullSecret: corev1.LocalObjectReference{Name: "pull-secret"},
+					Release:    hyperv1.Release{Image: "quay.io/openshift-release-dev/ocp-release:4.15.0"},
+					Etcd:       hyperv1.EtcdSpec{ManagementType: hyperv1.Managed},
+					Platform:   hyperv1.PlatformSpec{Type: hyperv1.NonePlatform},
+					NodeSelector: map[string]string{
+						"node-role.kubernetes.io/worker": "",
+					},
+				},
+			}
+
+			hcpNs := hcpmanifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
+			hcp := controlplaneoperator.HostedControlPlane(hcpNs, hcluster.Name)
+			ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: hcpNs}}
+
+			objects := append([]crclient.Object{hcp, hcluster, ns}, tc.extraObjects...)
+			client := fake.NewClientBuilder().WithScheme(api.Scheme).
+				WithObjects(objects...).WithStatusSubresource(hcluster).Build()
+
+			mockCtrl := gomock.NewController(t)
+			defer mockCtrl.Finish()
+			mockedProvider := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(mockCtrl)
+
+			r := &HostedClusterReconciler{
+				Client:                        client,
+				Clock:                         clocktesting.NewFakeClock(time.Now()),
+				CertRotationScale:             24 * time.Hour,
+				createOrUpdate:                func(reconcile.Request) upsert.CreateOrUpdateFN { return ctrl.CreateOrUpdate },
+				ManagementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
+				RegistryProvider: fakeReleaseProvider{
+					releaseProvider: mockedProvider,
+					metadataProvider: fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
+						Result: &dockerv1client.DockerImageConfig{},
+					},
+				},
+				now: func() metav1.Time { return metav1.NewTime(time.Now()) },
+			}
+
+			ctx := t.Context()
+			_, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: crclient.ObjectKeyFromObject(hcluster)})
+
+			// Reconciliation should return an error for requeue via the error-collection
+			// framework (PullSecretSync and CPOImageAndNamespace record critical errors).
+			g.Expect(err).To(HaveOccurred(), "it should return an error")
+			g.Expect(err.Error()).To(ContainSubstring("pull secret"), "the error should mention pull secret")
+
+			// CoreHCPChain should still run — HCP spec fields must be propagated
+			// even during a pull secret outage.
+			updatedHCP := controlplaneoperator.HostedControlPlane(hcpNs, hcluster.Name)
+			err = client.Get(ctx, crclient.ObjectKeyFromObject(updatedHCP), updatedHCP)
+			g.Expect(err).ToNot(HaveOccurred(), "it should still be able to get the HCP")
+
+			g.Expect(updatedHCP.Spec.NodeSelector).To(Equal(hcluster.Spec.NodeSelector),
+				"it should still propagate NodeSelector to HCP")
+			g.Expect(updatedHCP.Annotations).To(HaveKeyWithValue(
+				hyperv1.RequestServingNodeAdditionalSelectorAnnotation,
+				hcluster.Annotations[hyperv1.RequestServingNodeAdditionalSelectorAnnotation]),
+				"it should still propagate RequestServingNodeAdditionalSelector to HCP")
+			g.Expect(updatedHCP.Spec.ReleaseImage).To(Equal(hcluster.Spec.Release.Image),
+				"it should still propagate ReleaseImage to HCP")
+			g.Expect(updatedHCP.Annotations).To(HaveKeyWithValue(
+				hyperv1.DisableClusterAutoscalerAnnotation, "true"),
+				"it should disable the cluster autoscaler when no NodePools exist")
+		})
 	}
-
-	// No pull secret in the fake client — this is the scenario we're testing
-	objects := []crclient.Object{
-		hcp,
-		hcluster,
-		ns,
-	}
-
-	client := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).WithStatusSubresource(hcluster).Build()
-
-	mockCtrl := gomock.NewController(t)
-	defer mockCtrl.Finish()
-	mockedProvider := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(mockCtrl)
-
-	r := &HostedClusterReconciler{
-		Client:                        client,
-		Clock:                         clocktesting.NewFakeClock(time.Now()),
-		CertRotationScale:             24 * time.Hour,
-		createOrUpdate:                func(reconcile.Request) upsert.CreateOrUpdateFN { return ctrl.CreateOrUpdate },
-		ManagementClusterCapabilities: &fakecapabilities.FakeSupportNoCapabilities{},
-		RegistryProvider: fakeReleaseProvider{
-			releaseProvider: mockedProvider,
-			metadataProvider: fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
-				Result: &dockerv1client.DockerImageConfig{},
-			},
-		},
-		now: func() metav1.Time { return metav1.NewTime(time.Now()) },
-	}
-
-	ctx := t.Context()
-	_, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: crclient.ObjectKeyFromObject(hcluster)})
-
-	// When the pull secret is missing, reconciliation should return an error for requeue
-	g.Expect(err).To(HaveOccurred(), "When pull secret is missing it should return an error")
-	g.Expect(err.Error()).To(ContainSubstring("failed to get pull secret"), "When pull secret is missing the error should mention pull secret")
-
-	// Verify reconcileHostedControlPlane still ran — the HCP should have the HostedCluster's spec fields
-	updatedHCP := controlplaneoperator.HostedControlPlane(hcpNs, hcluster.Name)
-	err = client.Get(ctx, crclient.ObjectKeyFromObject(updatedHCP), updatedHCP)
-	g.Expect(err).ToNot(HaveOccurred(), "When pull secret is missing it should still be able to get the HCP")
-
-	g.Expect(updatedHCP.Spec.NodeSelector).To(Equal(hcluster.Spec.NodeSelector),
-		"When pull secret is missing it should still propagate NodeSelector to HCP")
-	g.Expect(updatedHCP.Annotations).To(HaveKeyWithValue(
-		hyperv1.RequestServingNodeAdditionalSelectorAnnotation,
-		hcluster.Annotations[hyperv1.RequestServingNodeAdditionalSelectorAnnotation]),
-		"When pull secret is missing it should still propagate RequestServingNodeAdditionalSelector to HCP")
-	g.Expect(updatedHCP.Spec.ReleaseImage).To(Equal(hcluster.Spec.Release.Image),
-		"When pull secret is missing it should still propagate ReleaseImage to HCP")
-
-	// With no NodePools in the fake client, autoscaling is not needed so the
-	// autoscaler should be disabled. This validates the defaulting logic in the
-	// pull secret recovery path.
-	g.Expect(updatedHCP.Annotations).To(HaveKeyWithValue(
-		hyperv1.DisableClusterAutoscalerAnnotation, "true"),
-		"When pull secret is missing and no NodePools exist it should disable the cluster autoscaler")
 }
 
 func TestReconcileWhenPullSecretMissingAndNodePoolListFails(t *testing.T) {
 	t.Parallel()
 	g := NewWithT(t)
 
+	clusterID := "12345678-1234-1234-1234-123456789abc"
 	hcluster := &hyperv1.HostedCluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test-cluster",
 			Namespace: "any",
 		},
 		Spec: hyperv1.HostedClusterSpec{
-			ClusterID: "id",
+			ClusterID: clusterID,
 			InfraID:   "infra-id",
 			Networking: hyperv1.ClusterNetworking{
 				ClusterNetwork: []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.1.0/24")}},
+				ServiceNetwork: []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.31.0.0/16")}},
 			},
 			Services: []hyperv1.ServicePublishingStrategyMapping{
 				{
 					Service: hyperv1.Ignition,
 					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-						Type: hyperv1.LoadBalancer,
+						Type: hyperv1.Route,
 					},
 				},
 			},
@@ -393,7 +406,7 @@ func TestReconcileWhenPullSecretMissingAndNodePoolListFails(t *testing.T) {
 			Release: hyperv1.Release{Image: "quay.io/openshift-release-dev/ocp-release:4.15.0"},
 			Etcd:    hyperv1.EtcdSpec{ManagementType: hyperv1.Managed},
 			Platform: hyperv1.PlatformSpec{
-				Type: hyperv1.AWSPlatform,
+				Type: hyperv1.NonePlatform,
 			},
 		},
 	}
@@ -423,7 +436,7 @@ func TestReconcileWhenPullSecretMissingAndNodePoolListFails(t *testing.T) {
 		Clock:                         clocktesting.NewFakeClock(time.Now()),
 		CertRotationScale:             24 * time.Hour,
 		createOrUpdate:                func(reconcile.Request) upsert.CreateOrUpdateFN { return ctrl.CreateOrUpdate },
-		ManagementClusterCapabilities: &fakecapabilities.FakeSupportNoCapabilities{},
+		ManagementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
 		RegistryProvider: fakeReleaseProvider{
 			releaseProvider: mockedProvider,
 			metadataProvider: fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
@@ -2556,7 +2569,7 @@ func TestValidateReleaseImage(t *testing.T) {
 			releaseImageLoookup: func(_ context.Context, _ string, _ []byte) (*releaseinfo.ReleaseImage, error) {
 				return testutils.InitReleaseImageOrDie("4.15.0"), nil
 			},
-			expectedResult:        errors.New("failed to get pull secret: secrets \"pull-secret\" not found"),
+			expectedResult:        errors.New("pull secret unavailable: secrets \"pull-secret\" not found"),
 			expectedNotFoundError: true,
 		},
 		{
@@ -2580,7 +2593,7 @@ func TestValidateReleaseImage(t *testing.T) {
 			releaseImageLoookup: func(_ context.Context, _ string, _ []byte) (*releaseinfo.ReleaseImage, error) {
 				return testutils.InitReleaseImageOrDie("4.15.0"), nil
 			},
-			expectedResult: errors.New("expected .dockerconfigjson key in pull secret"),
+			expectedResult: errors.New("pull secret unavailable: expected .dockerconfigjson key in secret \"pull-secret\""),
 		},
 		{
 			name: "unable to pull release image, error",
@@ -7758,6 +7771,397 @@ func TestPropagateAzureResourceIDAnnotation(t *testing.T) {
 					g.Expect(ns.Annotations).To(HaveKeyWithValue(k, v))
 				}
 			}
+		})
+	}
+}
+
+func TestReconcileKubeconfigAndPasswordSync_WhenKubeconfigFails_ItShouldStillSyncKubeadminPassword(t *testing.T) {
+	const (
+		hcName       = "test-hc"
+		hcNamespace  = "test-ns"
+		hcpNamespace = "test-hcp-ns"
+	)
+
+	// HCP references a kubeconfig secret that does NOT exist (will cause kubeconfig sync to fail)
+	// but has a kubeadmin password secret that DOES exist (should succeed despite kubeconfig failure)
+	kubeadminSrc := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: hcpNamespace,
+			Name:      "kubeadmin-password",
+		},
+		Data: map[string][]byte{
+			"password": []byte("test-password"),
+		},
+	}
+
+	hcluster := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      hcName,
+			Namespace: hcNamespace,
+		},
+	}
+
+	hcp := &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      hcName,
+			Namespace: hcpNamespace,
+		},
+		Status: hyperv1.HostedControlPlaneStatus{
+			KubeConfig: &hyperv1.KubeconfigSecretRef{
+				Name: "nonexistent-kubeconfig", // this secret does NOT exist
+				Key:  "kubeconfig",
+			},
+			KubeadminPassword: &corev1.LocalObjectReference{
+				Name: "kubeadmin-password", // this secret exists
+			},
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(api.Scheme).
+		WithObjects(hcluster, kubeadminSrc).
+		Build()
+
+	r := &HostedClusterReconciler{
+		Client: fakeClient,
+	}
+	createOrUpdate := upsert.New(false).CreateOrUpdate
+
+	_, err := r.reconcileKubeconfigAndPasswordSync(t.Context(), createOrUpdate, hcluster, hcp, false)
+
+	// Kubeconfig sync should have failed
+	if err == nil || !strings.Contains(err.Error(), "kubeconfig") {
+		t.Errorf("expected kubeconfig sync to fail, but got: %v", err)
+	}
+
+	// Kubeadmin password sync should have succeeded — verify the destination secret was created
+	destSecret := &corev1.Secret{}
+	destKey := crclient.ObjectKey{
+		Namespace: hcNamespace,
+		Name:      fmt.Sprintf("%s-kubeadmin-password", hcName),
+	}
+	if err := fakeClient.Get(t.Context(), destKey, destSecret); err != nil {
+		t.Fatalf("kubeadmin password secret should have been synced despite kubeconfig failure, but got: %v", err)
+	}
+	if string(destSecret.Data["password"]) != "test-password" {
+		t.Errorf("expected kubeadmin password data to be synced, got: %v", destSecret.Data)
+	}
+}
+
+func TestReconcileRBACAndPolicies_WhenPKIRBACFails_ItShouldStillCreatePrometheusRBAC(t *testing.T) {
+	const (
+		hcName       = "test-hc"
+		hcNamespace  = "test-ns"
+		hcpNamespace = "test-hcp-ns"
+	)
+
+	hcluster := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      hcName,
+			Namespace: hcNamespace,
+		},
+		Spec: hyperv1.HostedClusterSpec{
+			Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.NonePlatform,
+			},
+			InfraID: "test-infra",
+		},
+	}
+
+	hcp := &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      hcName,
+			Namespace: hcpNamespace,
+		},
+		Spec: hyperv1.HostedControlPlaneSpec{
+			Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.NonePlatform,
+			},
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(api.Scheme).
+		WithObjects(hcluster, hcp).
+		Build()
+
+	r := &HostedClusterReconciler{
+		Client:                        fakeClient,
+		EnableOCPClusterMonitoring:    true,
+		ManagementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
+	}
+	createOrUpdate := upsert.New(false).CreateOrUpdate
+	log := zap.New(zap.UseDevMode(true), zap.Level(zapcore.InfoLevel))
+	releaseVersion := semver.MustParse("4.16.0")
+
+	_ = r.reconcileRBACAndPolicies(t.Context(), log, createOrUpdate, hcluster, hcp,
+		true, // controlPlanePKIOperatorSignsCSRs — enables PKI RBAC
+		false, releaseVersion)
+
+	// Regardless of PKI RBAC or network policies outcome, prometheus RBAC should have run.
+	// Verify the prometheus Role was created in the HCP namespace.
+	role := &rbacv1.Role{}
+	roleKey := crclient.ObjectKey{Namespace: hcpNamespace, Name: "openshift-prometheus"}
+	if err := fakeClient.Get(t.Context(), roleKey, role); err != nil {
+		t.Fatalf("prometheus RBAC Role should have been created despite other failures, but got: %v", err)
+	}
+	if len(role.Rules) == 0 {
+		t.Errorf("expected prometheus Role to have rules, got empty")
+	}
+
+	binding := &rbacv1.RoleBinding{}
+	bindingKey := crclient.ObjectKey{Namespace: hcpNamespace, Name: "openshift-prometheus"}
+	if err := fakeClient.Get(t.Context(), bindingKey, binding); err != nil {
+		t.Fatalf("prometheus RBAC RoleBinding should have been created, but got: %v", err)
+	}
+}
+
+// TestReconcileNonBlockingBehavior verifies that the error-collecting reconciliation
+// pattern works correctly: a failure in one phase or operation should not block
+// independent operations in other phases from running.
+func TestReconcileNonBlockingBehavior(t *testing.T) {
+	tests := []struct {
+		name string
+		// mutateHC applies the fault injection to the HostedCluster before reconcile runs.
+		mutateHC func(t *testing.T, hc *hyperv1.HostedCluster, client crclient.Client)
+		// createOrUpdateOverride optionally overrides the createOrUpdate function to inject failures
+		// for specific resource types. If nil, the default upsert.New(false).CreateOrUpdate is used.
+		createOrUpdateOverride func(reconcile.Request) upsert.CreateOrUpdateFN
+		// expectedErrSubstring is checked against the aggregated error returned by reconcile.
+		expectedErrSubstring string
+		// verifyResources asserts that specific resources were still created despite the failure.
+		verifyResources func(t *testing.T, client crclient.Client, hcpNamespace, hcName string)
+	}{
+		{
+			name: "When Phase 6 SSH key fails it should still create HCP and CPO deployment",
+			mutateHC: func(t *testing.T, hc *hyperv1.HostedCluster, client crclient.Client) {
+				hc.Spec.SSHKey = corev1.LocalObjectReference{Name: "nonexistent-ssh-key"}
+			},
+			expectedErrSubstring: "SSHKey",
+			verifyResources: func(t *testing.T, client crclient.Client, hcpNamespace, hcName string) {
+				// Phase 7: HCP object
+				hcpObj := &hyperv1.HostedControlPlane{}
+				if err := client.Get(t.Context(), crclient.ObjectKey{Namespace: hcpNamespace, Name: hcName}, hcpObj); err != nil {
+					t.Fatalf("HCP object should have been created in Phase 7, but got: %v", err)
+				}
+				// Phase 8: CPO Deployment
+				cpoDeployment := &appsv1.Deployment{}
+				if err := client.Get(t.Context(), crclient.ObjectKey{Namespace: hcpNamespace, Name: "control-plane-operator"}, cpoDeployment); err != nil {
+					t.Fatalf("CPO Deployment should have been created in Phase 8, but got: %v", err)
+				}
+				// Phase 8: Prometheus RBAC
+				role := &rbacv1.Role{}
+				if err := client.Get(t.Context(), crclient.ObjectKey{Namespace: hcpNamespace, Name: "openshift-prometheus"}, role); err != nil {
+					t.Fatalf("prometheus RBAC Role should have been created in Phase 8, but got: %v", err)
+				}
+			},
+		},
+		{
+			name: "When Phase 6a secret encryption fails (critical) it should still create HCP but block Phase 8",
+			mutateHC: func(t *testing.T, hc *hyperv1.HostedCluster, client crclient.Client) {
+				hc.Spec.SecretEncryption = &hyperv1.SecretEncryptionSpec{
+					Type: hyperv1.AESCBC,
+					AESCBC: &hyperv1.AESCBCSpec{
+						ActiveKey: corev1.LocalObjectReference{Name: "nonexistent-aescbc-key"},
+					},
+				}
+			},
+			expectedErrSubstring: "aescbc",
+			verifyResources: func(t *testing.T, client crclient.Client, hcpNamespace, hcName string) {
+				// Phase 7: HCP object should still be created (not blocked by Phase 6a)
+				hcpObj := &hyperv1.HostedControlPlane{}
+				if err := client.Get(t.Context(), crclient.ObjectKey{Namespace: hcpNamespace, Name: hcName}, hcpObj); err != nil {
+					t.Fatalf("HCP object should have been created in Phase 7, but got: %v", err)
+				}
+				// Phase 8: CPO Deployment should NOT exist (blocked by critical failure)
+				cpoDeployment := &appsv1.Deployment{}
+				err := client.Get(t.Context(), crclient.ObjectKey{Namespace: hcpNamespace, Name: "control-plane-operator"}, cpoDeployment)
+				if err == nil {
+					t.Fatal("CPO Deployment should NOT have been created (Phase 8 blocked by critical SecretEncryptionSync failure)")
+				}
+			},
+		},
+		{
+			name: "When Phase 6 audit webhook fails it should still sync SSH key and create HCP",
+			mutateHC: func(t *testing.T, hc *hyperv1.HostedCluster, client crclient.Client) {
+				// Provide a valid SSH key
+				hc.Spec.SSHKey = corev1.LocalObjectReference{Name: "test-ssh-key"}
+				sshKey := &corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: hc.Namespace,
+						Name:      "test-ssh-key",
+					},
+					Data: map[string][]byte{
+						"id_rsa.pub": []byte("ssh-rsa AAAA..."),
+					},
+				}
+				if err := client.Create(t.Context(), sshKey); err != nil {
+					t.Fatalf("failed to create SSH key: %v", err)
+				}
+				// Reference a nonexistent audit webhook to trigger Phase 6 failure
+				hc.Spec.AuditWebhook = &corev1.LocalObjectReference{Name: "nonexistent-audit-webhook"}
+			},
+			expectedErrSubstring: "audit webhook",
+			verifyResources: func(t *testing.T, client crclient.Client, hcpNamespace, hcName string) {
+				// Phase 6: SSH key should have been synced independently
+				sshKeyDst := controlplaneoperator.SSHKey(hcpNamespace)
+				if err := client.Get(t.Context(), crclient.ObjectKeyFromObject(sshKeyDst), sshKeyDst); err != nil {
+					t.Fatalf("SSH key should have been synced to HCP namespace, but got: %v", err)
+				}
+				// Phase 7: HCP object
+				hcpObj := &hyperv1.HostedControlPlane{}
+				if err := client.Get(t.Context(), crclient.ObjectKey{Namespace: hcpNamespace, Name: hcName}, hcpObj); err != nil {
+					t.Fatalf("HCP object should have been created in Phase 7, but got: %v", err)
+				}
+				// Phase 8: CPO Deployment
+				cpoDeployment := &appsv1.Deployment{}
+				if err := client.Get(t.Context(), crclient.ObjectKey{Namespace: hcpNamespace, Name: "control-plane-operator"}, cpoDeployment); err != nil {
+					t.Fatalf("CPO Deployment should have been created in Phase 8, but got: %v", err)
+				}
+			},
+		},
+		{
+			name:     "When Phase 7 HCP creation fails (critical) it should block Phase 8",
+			mutateHC: func(t *testing.T, hc *hyperv1.HostedCluster, client crclient.Client) {},
+			createOrUpdateOverride: func(req reconcile.Request) upsert.CreateOrUpdateFN {
+				delegate := upsert.New(false).CreateOrUpdate
+				return func(ctx context.Context, c crclient.Client, obj crclient.Object, f controllerutil.MutateFn) (controllerutil.OperationResult, error) {
+					if _, ok := obj.(*hyperv1.HostedControlPlane); ok {
+						return controllerutil.OperationResultNone, fmt.Errorf("injected HCP creation failure")
+					}
+					return delegate(ctx, c, obj, f)
+				}
+			},
+			expectedErrSubstring: "injected HCP creation failure",
+			verifyResources: func(t *testing.T, client crclient.Client, hcpNamespace, hcName string) {
+				// Phase 8: CPO Deployment should NOT exist (blocked by critical CoreHCPChain failure)
+				cpoDeployment := &appsv1.Deployment{}
+				err := client.Get(t.Context(), crclient.ObjectKey{Namespace: hcpNamespace, Name: "control-plane-operator"}, cpoDeployment)
+				if err == nil {
+					t.Fatal("CPO Deployment should NOT have been created (Phase 8 blocked by critical CoreHCPChain failure)")
+				}
+				// Phase 8: Prometheus RBAC should NOT exist (blocked)
+				role := &rbacv1.Role{}
+				err = client.Get(t.Context(), crclient.ObjectKey{Namespace: hcpNamespace, Name: "openshift-prometheus"}, role)
+				if err == nil {
+					t.Fatal("prometheus RBAC Role should NOT have been created (Phase 8 blocked by critical CoreHCPChain failure)")
+				}
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			const (
+				hcName      = "test-hc"
+				hcNamespace = "test-ns"
+			)
+			hcpNamespace := hcpmanifests.HostedControlPlaneNamespace(hcNamespace, hcName)
+
+			mockCtrl := gomock.NewController(t)
+			mockReleaseProvider := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(mockCtrl)
+			mockReleaseProvider.EXPECT().
+				Lookup(gomock.Any(), gomock.Any(), gomock.Any()).
+				Return(testutils.InitReleaseImageOrDie("4.16.0"), nil).AnyTimes()
+			mockReleaseProvider.EXPECT().GetRegistryOverrides().Return(nil).AnyTimes()
+			mockReleaseProvider.EXPECT().GetOpenShiftImageRegistryOverrides().Return(nil).AnyTimes()
+			mockReleaseProvider.EXPECT().GetMirroredReleaseImage().Return("").AnyTimes()
+
+			fakeMetadata := fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
+				Result: &dockerv1client.DockerImageConfig{Architecture: "amd64"},
+			}
+
+			pullSecret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Namespace: hcNamespace, Name: "pull-secret"},
+				Data:       map[string][]byte{".dockerconfigjson": []byte(`{"auths":{}}`)},
+			}
+			ingress := &configv1.Ingress{
+				ObjectMeta: metav1.ObjectMeta{Name: "cluster"},
+				Spec:       configv1.IngressSpec{Domain: "apps.test.example.com"},
+			}
+
+			hcluster := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      hcName,
+					Namespace: hcNamespace,
+					Annotations: map[string]string{
+						hyperv1.ControlPlaneOperatorImageAnnotation:       "test-cpo-image",
+						hyperv1.ControlPlaneOperatorImageLabelsAnnotation: "fake-label=true",
+						hyperv1.SkipReleaseImageValidation:                "true",
+					},
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform:   hyperv1.PlatformSpec{Type: hyperv1.NonePlatform},
+					Release:    hyperv1.Release{Image: "quay.io/openshift-release-dev/ocp-release:4.16.0-x86_64"},
+					PullSecret: corev1.LocalObjectReference{Name: "pull-secret"},
+					Etcd:       hyperv1.EtcdSpec{ManagementType: hyperv1.Managed},
+					InfraID:    "test-infra",
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.APIServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type:  hyperv1.Route,
+								Route: &hyperv1.RoutePublishingStrategy{Hostname: "api.test.example.com"},
+							},
+						},
+						{Service: hyperv1.Ignition, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.Route}},
+						{Service: hyperv1.Konnectivity, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.Route}},
+						{Service: hyperv1.OAuthServer, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.Route}},
+					},
+					Networking: hyperv1.ClusterNetworking{
+						ClusterNetwork: []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("10.132.0.0/14")}},
+						ServiceNetwork: []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.31.0.0/16")}},
+					},
+				},
+			}
+
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				WithObjects(hcluster, pullSecret, ingress).
+				WithStatusSubresource(hcluster).
+				Build()
+
+			// Apply test-specific mutations (fault injection)
+			tc.mutateHC(t, hcluster, fakeClient)
+			if err := fakeClient.Update(t.Context(), hcluster); err != nil {
+				t.Fatalf("failed to update hcluster: %v", err)
+			}
+
+			createOrUpdateFn := func(req reconcile.Request) upsert.CreateOrUpdateFN {
+				return upsert.New(false).CreateOrUpdate
+			}
+			if tc.createOrUpdateOverride != nil {
+				createOrUpdateFn = tc.createOrUpdateOverride
+			}
+
+			r := &HostedClusterReconciler{
+				Client:                        fakeClient,
+				Clock:                         clock.RealClock{},
+				ManagementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
+				EnableOCPClusterMonitoring:    true,
+				CertRotationScale:             24 * time.Hour,
+				HypershiftOperatorImage:       "test-hso-image",
+				RegistryProvider: fakeReleaseProvider{
+					releaseProvider:  mockReleaseProvider,
+					metadataProvider: fakeMetadata,
+				},
+				createOrUpdate: createOrUpdateFn,
+				now:            metav1.Now,
+			}
+
+			req := ctrl.Request{NamespacedName: crclient.ObjectKeyFromObject(hcluster)}
+			log := zap.New(zap.UseDevMode(true), zap.Level(zapcore.InfoLevel))
+
+			_, err := r.reconcile(t.Context(), req, log, hcluster)
+
+			if err == nil {
+				t.Fatalf("expected reconcile to return an error containing %q, but got nil", tc.expectedErrSubstring)
+			}
+			if !strings.Contains(err.Error(), tc.expectedErrSubstring) {
+				t.Errorf("expected aggregated error to contain %q, got: %v", tc.expectedErrSubstring, err)
+			}
+
+			tc.verifyResources(t, fakeClient, hcpNamespace, hcName)
 		})
 	}
 }

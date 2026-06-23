@@ -519,6 +519,7 @@ func setupHostedClusterController(ctx context.Context, mgr ctrl.Manager, opts *S
 	monitoringDashboards := (os.Getenv("MONITORING_DASHBOARDS") == "1")
 	enableCVOManagementClusterMetricsAccess := (os.Getenv(config.EnableCVOManagementClusterMetricsAccessEnvVar) == "1")
 	enableEtcdRecovery := os.Getenv(config.EnableEtcdRecoveryEnvVar) == "1"
+	reconcileLegacy := os.Getenv(config.ReconcileLegacyEnvVar) == "1"
 
 	certRotationScale, err := pkiconfig.GetCertRotationScale()
 	if err != nil {
@@ -541,6 +542,7 @@ func setupHostedClusterController(ctx context.Context, mgr ctrl.Manager, opts *S
 		CertRotationScale:                       certRotationScale,
 		EnableCVOManagementClusterMetricsAccess: enableCVOManagementClusterMetricsAccess,
 		EnableEtcdRecovery:                      enableEtcdRecovery,
+		ReconcileLegacy:                         reconcileLegacy,
 		FeatureSet:                              featuregate.FeatureSet(),
 		OpenShiftTrustedCAFilePath:              "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem",
 		HCPEgressBlockCIDRs:                     opts.HCPEgressBlockCIDRs,
