@@ -112,7 +112,8 @@ jobs:
           CLAUDE_CODE_USE_VERTEX: "1"
           CLOUD_ML_REGION: global
           ANTHROPIC_VERTEX_PROJECT_ID: hosted-control-planes
-          GH_TOKEN: ${{ steps.app-token.outputs.token || github.token }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.issue.number }}
           CLAUDE_PROMPT: ${{ inputs.claude-prompt }}
           MAX_TURNS: ${{ inputs.max-turns }}
