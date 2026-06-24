@@ -2,7 +2,6 @@ package nodepool
 
 import (
 	"context"
-	"encoding/json"
 	coreerrors "errors"
 	"fmt"
 	"os"
@@ -44,7 +43,6 @@ import (
 	capiopenstackv1beta1 "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
 	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
 	"sigs.k8s.io/cluster-api/util"
-	"sigs.k8s.io/cluster-api/util/conversion"
 	"sigs.k8s.io/cluster-api/util/patch"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -792,8 +790,8 @@ func defaultNodePoolGCPImage(specifiedArch string, releaseImage *releaseinfo.Rel
 // fields come from conversion. The converted v1beta1 fields (especially UpdatedReplicas,
 // which maps from deprecated.v1beta1.updatedReplicas rather than the native upToDateReplicas)
 // can transiently disagree with the v1beta2 native fields. To guard against this, when the
-// v1beta1 fields indicate completion we cross-check against the authoritative v1beta2 status
-// stored in the conversion-data annotation.
+// v1beta1 fields indicate completion we cross-check against the v1beta2 status stored in the
+// Status.V1Beta2 field, which is kept current on every status-subresource write.
 func MachineDeploymentComplete(deployment *capiv1.MachineDeployment) bool {
 	newStatus := &deployment.Status
 	v1beta1Complete := newStatus.UpdatedReplicas == *(deployment.Spec.Replicas) &&
@@ -803,39 +801,21 @@ func MachineDeploymentComplete(deployment *capiv1.MachineDeployment) bool {
 	if !v1beta1Complete {
 		return false
 	}
-	return machineDeploymentCompleteFromConversionData(deployment)
+	return machineDeploymentCompleteFromV1Beta2Status(deployment)
 }
 
-// machineDeploymentCompleteFromConversionData parses the v1beta2 conversion-data annotation
-// and verifies that the native v1beta2 status also indicates completion. If the annotation
-// is absent (e.g. CAPI < v1.11), returns true to preserve backwards compatibility.
-func machineDeploymentCompleteFromConversionData(deployment *capiv1.MachineDeployment) bool {
-	raw, ok := deployment.Annotations[conversion.DataAnnotation]
-	if !ok {
+// machineDeploymentCompleteFromV1Beta2Status verifies that the native v1beta2 status fields
+// also indicate completion. The v1beta1 Status.V1Beta2 field is populated by the v1beta2-to-v1beta1
+// conversion on every status-subresource write, so it is always current.
+// If V1Beta2 is nil (e.g. CAPI < v1.11), returns true to preserve backwards compatibility.
+func machineDeploymentCompleteFromV1Beta2Status(deployment *capiv1.MachineDeployment) bool {
+	v1beta2 := deployment.Status.V1Beta2
+	if v1beta2 == nil {
 		return true
 	}
-
-	var v1beta2MD struct {
-		Spec struct {
-			Replicas *int32 `json:"replicas"`
-		} `json:"spec"`
-		Status struct {
-			ObservedGeneration int64  `json:"observedGeneration"`
-			Replicas           *int32 `json:"replicas"`
-			AvailableReplicas  *int32 `json:"availableReplicas"`
-			UpToDateReplicas   *int32 `json:"upToDateReplicas"`
-		} `json:"status"`
-	}
-	if err := json.Unmarshal([]byte(raw), &v1beta2MD); err != nil {
-		ctrl.Log.WithName("nodepool").Error(err, "Failed to unmarshal conversion-data annotation, falling back to v1beta1 status")
-		return true
-	}
-
-	desired := ptr.Deref(v1beta2MD.Spec.Replicas, 0)
-	return ptr.Deref(v1beta2MD.Status.UpToDateReplicas, 0) == desired &&
-		ptr.Deref(v1beta2MD.Status.Replicas, 0) == desired &&
-		ptr.Deref(v1beta2MD.Status.AvailableReplicas, 0) == desired &&
-		v1beta2MD.Status.ObservedGeneration >= deployment.Generation
+	desired := ptr.Deref(deployment.Spec.Replicas, 0)
+	return ptr.Deref(v1beta2.UpToDateReplicas, 0) == desired &&
+		ptr.Deref(v1beta2.AvailableReplicas, 0) == desired
 }
 
 // GetHostedClusterByName finds and return a HostedCluster object using the specified params.
