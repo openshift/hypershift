@@ -7,7 +7,6 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/aws"
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/globalconfig"
@@ -15,6 +14,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -29,7 +29,7 @@ func TestReconcileCloudConfig_AWS(t *testing.T) {
 	fakeAWSCloudConfig := func() *corev1.ConfigMap {
 		cm := cpomanifests.AWSProviderConfig(hcpNamespace)
 		cm.Data = map[string]string{
-			aws.ProviderConfigKey: "[Global]\nZone = us-east-1a\nVPC = vpc-123\n",
+			globalconfig.AWSProviderConfigKey: "[Global]\nZone = us-east-1a\nVPC = vpc-123\n",
 		}
 		return cm
 	}
@@ -78,7 +78,7 @@ func TestReconcileCloudConfig_AWS(t *testing.T) {
 					Name:      CloudProviderCMName,
 				}, cm)
 				g.Expect(err).ToNot(HaveOccurred())
-				g.Expect(cm.Data).To(HaveKeyWithValue(aws.ProviderConfigKey, "[Global]\nZone = us-east-1a\nVPC = vpc-123\n"))
+				g.Expect(cm.Data).To(HaveKeyWithValue(globalconfig.AWSProviderConfigKey, "[Global]\nZone = us-east-1a\nVPC = vpc-123\n"))
 				g.Expect(cm.Data).To(HaveKeyWithValue(globalconfig.CABundleKey, "-----BEGIN CERTIFICATE-----\nfake-ca-bundle\n-----END CERTIFICATE-----\n"))
 			},
 		},
@@ -113,12 +113,12 @@ func TestReconcileCloudConfig_AWS(t *testing.T) {
 					Name:      CloudProviderCMName,
 				}, cm)
 				g.Expect(err).ToNot(HaveOccurred())
-				g.Expect(cm.Data).To(HaveKeyWithValue(aws.ProviderConfigKey, "[Global]\nZone = us-east-1a\nVPC = vpc-123\n"))
+				g.Expect(cm.Data).To(HaveKeyWithValue(globalconfig.AWSProviderConfigKey, "[Global]\nZone = us-east-1a\nVPC = vpc-123\n"))
 				g.Expect(cm.Data).To(HaveKeyWithValue(globalconfig.CABundleKey, "-----BEGIN CERTIFICATE-----\nproxy-ca-bundle\n-----END CERTIFICATE-----\n"))
 			},
 		},
 		{
-			name: "When AWS platform without any trust bundle, it should create cloud-provider-config without CA bundle",
+			name: "When AWS platform without any trust bundle, it should not create cloud-provider-config",
 			hcp: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test",
@@ -129,9 +129,6 @@ func TestReconcileCloudConfig_AWS(t *testing.T) {
 						Type: hyperv1.AWSPlatform,
 					},
 				},
-			},
-			cpObjects: []client.Object{
-				fakeAWSCloudConfig(),
 			},
 			verify: func(g Gomega, guestClient client.Client) {
 				cm := &corev1.ConfigMap{}
@@ -139,13 +136,11 @@ func TestReconcileCloudConfig_AWS(t *testing.T) {
 					Namespace: ConfigNamespace,
 					Name:      CloudProviderCMName,
 				}, cm)
-				g.Expect(err).ToNot(HaveOccurred())
-				g.Expect(cm.Data).To(HaveKeyWithValue(aws.ProviderConfigKey, "[Global]\nZone = us-east-1a\nVPC = vpc-123\n"))
-				g.Expect(cm.Data).ToNot(HaveKey(globalconfig.CABundleKey))
+				g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
 			},
 		},
 		{
-			name: "When trust bundle is removed, it should remove CA bundle key from cloud-provider-config",
+			name: "When trust bundle is removed, it should delete cloud-provider-config",
 			hcp: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test",
@@ -157,19 +152,15 @@ func TestReconcileCloudConfig_AWS(t *testing.T) {
 					},
 				},
 			},
-			cpObjects: []client.Object{
-				fakeAWSCloudConfig(),
-			},
 			guestObjects: []client.Object{
-				// Simulate a previously existing cloud-provider-config with CA bundle
 				&corev1.ConfigMap{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: ConfigNamespace,
 						Name:      CloudProviderCMName,
 					},
 					Data: map[string]string{
-						aws.ProviderConfigKey:    "[Global]\nZone = us-east-1a\nVPC = vpc-123\n",
-						globalconfig.CABundleKey: "old-ca-bundle",
+						globalconfig.AWSProviderConfigKey: "[Global]\nZone = us-east-1a\nVPC = vpc-123\n",
+						globalconfig.CABundleKey:          "old-ca-bundle",
 					},
 				},
 			},
@@ -179,13 +170,11 @@ func TestReconcileCloudConfig_AWS(t *testing.T) {
 					Namespace: ConfigNamespace,
 					Name:      CloudProviderCMName,
 				}, cm)
-				g.Expect(err).ToNot(HaveOccurred())
-				g.Expect(cm.Data).To(HaveKeyWithValue(aws.ProviderConfigKey, "[Global]\nZone = us-east-1a\nVPC = vpc-123\n"))
-				g.Expect(cm.Data).ToNot(HaveKey(globalconfig.CABundleKey))
+				g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
 			},
 		},
 		{
-			name: "When aws-cloud-config ConfigMap is missing, it should return an error",
+			name: "When aws-cloud-config ConfigMap is missing and trust bundle is set, it should return an error",
 			hcp: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test",
@@ -194,6 +183,9 @@ func TestReconcileCloudConfig_AWS(t *testing.T) {
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Platform: hyperv1.PlatformSpec{
 						Type: hyperv1.AWSPlatform,
+					},
+					AdditionalTrustBundle: &corev1.LocalObjectReference{
+						Name: "user-ca-bundle",
 					},
 				},
 			},
@@ -227,7 +219,7 @@ func TestReconcileCloudConfig_AWS(t *testing.T) {
 					Name:      CloudProviderCMName,
 				}, cm)
 				g.Expect(err).ToNot(HaveOccurred())
-				g.Expect(cm.Data).To(HaveKeyWithValue(aws.ProviderConfigKey, "[Global]\nZone = us-east-1a\nVPC = vpc-123\n"))
+				g.Expect(cm.Data).To(HaveKeyWithValue(globalconfig.AWSProviderConfigKey, "[Global]\nZone = us-east-1a\nVPC = vpc-123\n"))
 				g.Expect(cm.Data).ToNot(HaveKey(globalconfig.CABundleKey))
 			},
 		},
@@ -242,6 +234,9 @@ func TestReconcileCloudConfig_AWS(t *testing.T) {
 					Platform: hyperv1.PlatformSpec{
 						Type: hyperv1.AWSPlatform,
 					},
+					AdditionalTrustBundle: &corev1.LocalObjectReference{
+						Name: "user-ca-bundle",
+					},
 				},
 			},
 			cpObjects: []client.Object{
@@ -252,7 +247,7 @@ func TestReconcileCloudConfig_AWS(t *testing.T) {
 				}(),
 			},
 			expectError: true,
-			errContains: aws.ProviderConfigKey,
+			errContains: globalconfig.AWSProviderConfigKey,
 		},
 		{
 			name: "When aws-cloud-config ConfigMap has whitespace-only provider config, it should return an error",
@@ -265,19 +260,22 @@ func TestReconcileCloudConfig_AWS(t *testing.T) {
 					Platform: hyperv1.PlatformSpec{
 						Type: hyperv1.AWSPlatform,
 					},
+					AdditionalTrustBundle: &corev1.LocalObjectReference{
+						Name: "user-ca-bundle",
+					},
 				},
 			},
 			cpObjects: []client.Object{
 				func() *corev1.ConfigMap {
 					cm := cpomanifests.AWSProviderConfig(hcpNamespace)
 					cm.Data = map[string]string{
-						aws.ProviderConfigKey: "   \n\t",
+						globalconfig.AWSProviderConfigKey: "   \n\t",
 					}
 					return cm
 				}(),
 			},
 			expectError: true,
-			errContains: aws.ProviderConfigKey,
+			errContains: globalconfig.AWSProviderConfigKey,
 		},
 		{
 			name: "When proxy TrustedCA is set but managed trust bundle ConfigMap is missing, it should sync base config without CA bundle",
@@ -309,7 +307,7 @@ func TestReconcileCloudConfig_AWS(t *testing.T) {
 					Name:      CloudProviderCMName,
 				}, cm)
 				g.Expect(err).ToNot(HaveOccurred())
-				g.Expect(cm.Data).To(HaveKeyWithValue(aws.ProviderConfigKey, "[Global]\nZone = us-east-1a\nVPC = vpc-123\n"))
+				g.Expect(cm.Data).To(HaveKeyWithValue(globalconfig.AWSProviderConfigKey, "[Global]\nZone = us-east-1a\nVPC = vpc-123\n"))
 				g.Expect(cm.Data).ToNot(HaveKey(globalconfig.CABundleKey))
 			},
 		},
@@ -340,7 +338,7 @@ func TestReconcileCloudConfig_AWS(t *testing.T) {
 					Name:      CloudProviderCMName,
 				}, cm)
 				g.Expect(err).ToNot(HaveOccurred())
-				g.Expect(cm.Data).To(HaveKeyWithValue(aws.ProviderConfigKey, "[Global]\nZone = us-east-1a\nVPC = vpc-123\n"))
+				g.Expect(cm.Data).To(HaveKeyWithValue(globalconfig.AWSProviderConfigKey, "[Global]\nZone = us-east-1a\nVPC = vpc-123\n"))
 				g.Expect(cm.Data).ToNot(HaveKey(globalconfig.CABundleKey))
 			},
 		},

@@ -10,6 +10,7 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 )
@@ -193,12 +194,48 @@ func TestReconcileInfrastructure(t *testing.T) {
 			},
 		},
 		{
-			name:       "When AWS platform is specified, it should set CloudConfig name and key",
+			name:       "When AWS platform without trust bundle, it should not set CloudConfig",
 			inputInfra: InfrastructureConfig(),
 			inputHCP: func() *hyperv1.HostedControlPlane {
 				hcp := baseHCP(hyperv1.AWSPlatform)
 				hcp.Spec.Platform.AWS = &hyperv1.AWSPlatformSpec{
 					Region: "us-east-1",
+				}
+				return hcp
+			}(),
+			verify: func(g Gomega, infra *configv1.Infrastructure) {
+				g.Expect(infra.Spec.CloudConfig.Name).To(BeEmpty())
+				g.Expect(infra.Spec.CloudConfig.Key).To(BeEmpty())
+			},
+		},
+		{
+			name:       "When AWS platform with AdditionalTrustBundle, it should set CloudConfig",
+			inputInfra: InfrastructureConfig(),
+			inputHCP: func() *hyperv1.HostedControlPlane {
+				hcp := baseHCP(hyperv1.AWSPlatform)
+				hcp.Spec.Platform.AWS = &hyperv1.AWSPlatformSpec{
+					Region: "us-east-1",
+				}
+				hcp.Spec.AdditionalTrustBundle = &corev1.LocalObjectReference{Name: "user-ca-bundle"}
+				return hcp
+			}(),
+			verify: func(g Gomega, infra *configv1.Infrastructure) {
+				g.Expect(infra.Spec.CloudConfig.Name).To(Equal(CloudProviderCMName))
+				g.Expect(infra.Spec.CloudConfig.Key).To(Equal(AWSProviderConfigKey))
+			},
+		},
+		{
+			name:       "When AWS platform with proxy TrustedCA, it should set CloudConfig",
+			inputInfra: InfrastructureConfig(),
+			inputHCP: func() *hyperv1.HostedControlPlane {
+				hcp := baseHCP(hyperv1.AWSPlatform)
+				hcp.Spec.Platform.AWS = &hyperv1.AWSPlatformSpec{
+					Region: "us-east-1",
+				}
+				hcp.Spec.Configuration = &hyperv1.ClusterConfiguration{
+					Proxy: &configv1.ProxySpec{
+						TrustedCA: configv1.ConfigMapNameReference{Name: "proxy-ca"},
+					},
 				}
 				return hcp
 			}(),
