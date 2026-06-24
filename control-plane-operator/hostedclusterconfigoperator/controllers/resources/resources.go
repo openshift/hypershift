@@ -364,7 +364,7 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (result ctrl
 
 	defer func() {
 		if err := r.reconcileConfigOperatorReconciliationCondition(ctx, hcp, returnErr); err != nil {
-			log.Error(err, "failed to update ConfigOperatorReconciliationSucceeded condition")
+			returnErr = utilerrors.NewAggregate([]error{returnErr, fmt.Errorf("failed to update ConfigOperatorReconciliationSucceeded condition: %w", err)})
 		}
 	}()
 
