@@ -191,3 +191,90 @@ tests:
             subnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
           type: Azure
     expectedError: "publisher, offer, sku and version must either be all set, or all omitted"
+
+  # --- Azure Marketplace offer field character validation ---
+  - name: when marketplace offer contains invalid characters it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: NodePool
+      spec:
+        arch: amd64
+        clusterName: some-cluster
+        management:
+          autoRepair: false
+          upgradeType: Replace
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
+        replicas: 0
+        platform:
+          azure:
+            vmSize: Standard_D4s_v5
+            image:
+              type: AzureMarketplace
+              azureMarketplace:
+                publisher: azureopenshift
+                offer: "invalid offer!"
+                sku: aro_417_rhel8_gen2
+                version: "417.94.20240701"
+            osDisk:
+              diskStorageAccountType: Premium_LRS
+            subnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+          type: Azure
+    expectedError: "offer must consist of alphanumeric characters, hyphens, underscores, and periods, and must start with an alphanumeric character"
+
+  - name: when marketplace offer starts with a hyphen it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: NodePool
+      spec:
+        arch: amd64
+        clusterName: some-cluster
+        management:
+          autoRepair: false
+          upgradeType: Replace
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
+        replicas: 0
+        platform:
+          azure:
+            vmSize: Standard_D4s_v5
+            image:
+              type: AzureMarketplace
+              azureMarketplace:
+                publisher: azureopenshift
+                offer: "-invalid-start"
+                sku: aro_417_rhel8_gen2
+                version: "417.94.20240701"
+            osDisk:
+              diskStorageAccountType: Premium_LRS
+            subnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+          type: Azure
+    expectedError: "offer must consist of alphanumeric characters, hyphens, underscores, and periods, and must start with an alphanumeric character"
+
+  - name: when marketplace offer has valid characters with hyphens underscores and periods it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: NodePool
+      spec:
+        arch: amd64
+        clusterName: some-cluster
+        management:
+          autoRepair: false
+          upgradeType: Replace
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
+        replicas: 0
+        platform:
+          azure:
+            vmSize: Standard_D4s_v5
+            image:
+              type: AzureMarketplace
+              azureMarketplace:
+                publisher: azureopenshift
+                offer: "0001-com-ubuntu-server.jammy_2204"
+                sku: aro_417_rhel8_gen2
+                version: "417.94.20240701"
+            osDisk:
+              diskStorageAccountType: Premium_LRS
+            subnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+          type: Azure
