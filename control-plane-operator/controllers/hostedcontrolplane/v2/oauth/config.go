@@ -7,7 +7,6 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/oauth"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
@@ -25,6 +24,7 @@ const (
 	auditPolicyProfileMapKey = "profile"
 
 	defaultAccessTokenMaxAgeSeconds int32 = 86400
+	OAuthServerPort                 int32 = 6443
 )
 
 // ConfigOverride defines the oauth parameters that can be overridden in special use cases. The only supported
@@ -81,7 +81,7 @@ func adaptOAuthConfig(cpContext component.WorkloadContext, cfg *osinv1.OsinServe
 
 	masterUrl := fmt.Sprintf("https://%s:%d", cpContext.InfraStatus.OAuthHost, cpContext.InfraStatus.OAuthPort)
 	controlPlaneEndpoint := cpContext.HCP.Status.ControlPlaneEndpoint
-	cfg.OAuthConfig.MasterURL = fmt.Sprintf("https://%s:%d", getOAuthServiceDNS(cpContext.HCP.Namespace), oauth.OAuthServerPort)
+	cfg.OAuthConfig.MasterURL = fmt.Sprintf("https://%s:%d", getOAuthServiceDNS(cpContext.HCP.Namespace), OAuthServerPort)
 	cfg.OAuthConfig.MasterPublicURL = masterUrl
 	cfg.OAuthConfig.LoginURL = fmt.Sprintf("https://%s:%d", controlPlaneEndpoint.Host, controlPlaneEndpoint.Port)
 	// loginURLOverride can be used to specify an override for the oauth config login url. The need for this arises
