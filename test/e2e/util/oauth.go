@@ -428,7 +428,18 @@ func ValidateOAuthIdentityProviderFlow(t testing.TB, ctx context.Context, client
 	}
 	err = client.Create(ctx, &secret)
 	g.Expect(err).ToNot(HaveOccurred(), "failed to create htpasswd secret")
+	t.Cleanup(func() {
+		if err := client.Delete(context.Background(), &secret); err != nil && !apierrors.IsNotFound(err) {
+			t.Logf("Warning: failed to delete htpasswd secret: %v", err)
+		}
+	})
 
+	err = client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
+	g.Expect(err).ToNot(HaveOccurred(), "failed to get fresh hostedcluster state")
+	var originalOAuth *v1.OAuthSpec
+	if hostedCluster.Spec.Configuration != nil && hostedCluster.Spec.Configuration.OAuth != nil {
+		originalOAuth = hostedCluster.Spec.Configuration.OAuth.DeepCopy()
+	}
 	err = UpdateObject(t, ctx, client, hostedCluster, func(obj *hyperv1.HostedCluster) {
 		if obj.Spec.Configuration == nil {
 			obj.Spec.Configuration = &hyperv1.ClusterConfiguration{}
@@ -451,6 +462,18 @@ func ValidateOAuthIdentityProviderFlow(t testing.TB, ctx context.Context, client
 		}
 	})
 	g.Expect(err).ToNot(HaveOccurred(), "failed to update hostedcluster identity providers")
+	t.Cleanup(func() {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		if err := UpdateObject(t, cleanupCtx, client, hostedCluster, func(obj *hyperv1.HostedCluster) {
+			if obj.Spec.Configuration == nil {
+				obj.Spec.Configuration = &hyperv1.ClusterConfiguration{}
+			}
+			obj.Spec.Configuration.OAuth = originalOAuth
+		}); err != nil {
+			t.Logf("Warning: failed to restore OAuth config: %v", err)
+		}
+	})
 
 	WaitForOauthConfig(t, ctx, client, hostedCluster)
 
