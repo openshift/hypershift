@@ -3380,6 +3380,35 @@ func TestMachineDeploymentComplete(t *testing.T) {
 			},
 			expected: false,
 		},
+		{
+			name: "When v1beta2 availableReplicas is nil it should return false",
+			md: &capiv1.MachineDeployment{
+				ObjectMeta: metav1.ObjectMeta{Generation: 2},
+				Spec:       capiv1.MachineDeploymentSpec{Replicas: &two},
+				Status: capiv1.MachineDeploymentStatus{
+					Replicas: 2, UpdatedReplicas: 2, AvailableReplicas: 2, ObservedGeneration: 2,
+					V1Beta2: &capiv1.MachineDeploymentV1Beta2Status{
+						UpToDateReplicas: ptr.To(int32(2)),
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "When desired replicas is zero and v1beta2 fields are nil it should return false",
+			md: func() *capiv1.MachineDeployment {
+				zero := int32(0)
+				return &capiv1.MachineDeployment{
+					ObjectMeta: metav1.ObjectMeta{Generation: 2},
+					Spec:       capiv1.MachineDeploymentSpec{Replicas: &zero},
+					Status: capiv1.MachineDeploymentStatus{
+						Replicas: 0, UpdatedReplicas: 0, AvailableReplicas: 0, ObservedGeneration: 2,
+						V1Beta2: &capiv1.MachineDeploymentV1Beta2Status{},
+					},
+				}
+			}(),
+			expected: false,
+		},
 	}
 
 	for _, tc := range testCases {
