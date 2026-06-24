@@ -1,33 +1,65 @@
 # Contributing to HyperShift
+
 Thank you for your interest in contributing to HyperShift! HyperShift enables running multiple OpenShift control planes as lightweight, cost-effective hosted clusters. Your contributions help improve this critical infrastructure technology.
 
 The following guidelines will help ensure a smooth contribution process for both contributors and maintainers.
 
+## Code Conventions
+
+We largely follow the [Kubernetes Code Conventions](https://github.com/kubernetes/community/blob/main/contributors/guide/coding-conventions.md#code-conventions).
+
+Review both the Kubernetes Code Conventions and the ones specified here.
+There will be some overlap. If any conventions are at odds with one another, prefer the conventions explicitly documented here.
+
+### Bash
+
+- Follow the [shell styleguide](https://google.github.io/styleguide/shellguide.html).
+- Use `[shellcheck](https://github.com/koalaman/shellcheck)` to identify common mistakes or caveats.
+- Ensure that all scripts run consistently across Linux and MacOS.
+
+### Golang (Go)
+
+- Review [Effective Go](https://go.dev/doc/effective_go).
+- Review common [Go Code Review Comments](https://go.dev/wiki/CodeReviewComments).
+- Review and avoid [Go Landmines](https://gist.github.com/lavalamp/4bd23295a9f32706a48f)
+- Comment your code following the [Go comment conventions](https://go.dev/doc/comment).
+  - Comments should be meaningful and add context and/or explain choices that cannot be expressed through clear code.
+  - All exported types, functions, and methods must have descriptive comments.
+  - All unexported types, functions, and methods should have descriptive comments.
+- When adding command-line flags, use dashes/hyphens (`-`) and not underscores (`_`).
+- Naming
+  - Please consider package name when selecting an interface name, and avoid redundancy. For example, `storage.Interface` is better than `storage.StorageInterface`.
+  - Do not use uppercase characters, underscores, or dashes in package names.
+  - Please consider parent directory name when choosing a package name. For example, `pkg/controllers/autoscaler/foo.go` should say `package autoscaler` not `package autoscalercontroller`.
+    - Unless there's a good reason, the package foo line should match the name of the directory in which the .go file exists.
+    - Importers can use a different name if they need to disambiguate.
+  - Locks should be called `lock` and should never be embedded (always `lock sync.Mutex`). When multiple locks are present, give each lock a distinct name following Go conventions: `stateLock`, `mapLock` etc.
+- Error handling
+  - Wrap errors with meaningful context before returning or logging them.
+  - When logging, follow the [Kubernetes Logging Conventions](https://github.com/kubernetes/community/blob/main/contributors/devel/sig-instrumentation/logging.md).
+  - When patching OpenShift-maintained forks of "upstream" repositories, patches should be as small as reasonably possible and should minimize touch points with code that is likely to change and impact the rebasing process.
+
 ## Prior to Submitting a Pull Request
+
 1. **Keep changes focused**: Scope commits to one thing and keep them minimal. Separate refactoring from logic changes, and save additional improvements for separate PRs.
-
 2. **Test your changes**: Run `make pre-commit` to update dependencies, build code, verify formatting, and run tests. This prevents CI failures on your PR.
-
 3. **Review before submitting**: Look at your changes from a reviewer's perspective and explain anything that might not be immediately clear in your PR description.
-
-4. **Use proper commit format**: 
-    1. Write commit subjects in [imperative mood](https://en.wikipedia.org/wiki/Imperative_mood) (e.g., "Fix bug" not "Fixed bug")
-    2. Follow [conventional commit format](https://www.conventionalcommits.org/) and include "Why" and "How" in commit messages
+4. **Use proper commit format**:
+  1. Write commit subjects in [imperative mood](https://en.wikipedia.org/wiki/Imperative_mood) (e.g., "Fix bug" not "Fixed bug")
+  2. Follow [conventional commit format](https://www.conventionalcommits.org/) and include "Why" and "How" in commit messages
 
 > **Tip: Install pre-commit hooks**
 >
 > Install `pre-commit` to automatically catch issues before committing. This helps catch spelling mistakes, formatting issues, and test failures early in your development process.
 >
-> * [Installation instructions](https://pre-commit.com/#install)
-> * [HyperShift-specific tips](docs/content/contribute/precommit-hook-help.md)
+> - [Installation instructions](https://pre-commit.com/#install)
+> - [HyperShift-specific tips](docs/content/contribute/precommit-hook-help.md)
 
 ## Creating a Pull Request
+
 1. **For small changes** (under 200 lines): Create your change and submit a pull request directly.
-
 2. **For larger changes** (200+ lines): Get feedback on your approach first by opening a GitHub issue or posting in the #project-hypershift Slack channel. This prevents situations where large changes get declined after significant work.
-
 3. **Write a clear PR title**: Prefix with your Jira ticket number (e.g., "OCPBUGS-12345: Fix memory leak in controller"). See [example PR](https://github.com/openshift/hypershift/pull/2233).
-
 4. **Explain the value**: Always describe how your change improves the project in the PR description.
 
 ### CI
@@ -48,11 +80,12 @@ Useful Prow commands:
 - `approved` - From an approver via `/approve`
 - `lgtm` - From a reviewer via `/lgtm`
 - `jira/valid-reference` - PR title contains a valid Jira ticket reference (or NO-JIRA if no associated issue)
-    **Note:** NO-JIRA should be used sparingly. Please have a Jira issue associated with your PR whenever possible.
-- `area/*` - Area label (e.g., `area/documentation`, `area/control-plane`)
+  **Note:** NO-JIRA should be used sparingly. Please have a Jira issue associated with your PR whenever possible.
+- `area/`* - Area label (e.g., `area/documentation`, `area/control-plane`)
 - `verified` - QA verification passed (for more information refer to the [documentation](https://docs.ci.openshift.org/docs/architecture/jira/#the-verified-label))
 
 **Conditionally required:**
+
 - `jira/valid-bug` - Required for bug fixes
 - `backport-risk-assessed` - Required for backports
 
@@ -80,18 +113,25 @@ Use these Prow commands to manage assignments:
 **Common scenarios:**
 
 1. **Auto-assigned reviewers are not suitable**:
-   - Use `/un-cc @reviewer` to remove them
-   - Run `/auto-cc` again for different suggestions
-
+  - Use `/un-cc @reviewer` to remove them
+  - Run `/auto-cc` again for different suggestions
 2. **Approver was also selected as reviewer**:
-   - Use `/un-cc @approver` to remove the approver from reviewers
-   - Run `/auto-cc` again to get additional reviewers
-
+  - Use `/un-cc @approver` to remove the approver from reviewers
+  - Run `/auto-cc` again to get additional reviewers
 3. **Need to change the approver**:
-   - Use `/unassign @current-approver`
-   - Use `/assign @new-approver`
+  - Use `/unassign @current-approver`
+  - Use `/assign @new-approver`
 
 Remember: If the openshift-ci assistant assigns unsuitable reviewers or approvers, don't hesitate to adjust the assignments. Being proactive helps ensure your PR gets timely and appropriate review.
+
+When interacting with reviewers/approvers:
+
+- Be professional.
+- Be respectful of differing opinions, viewpoints, and experiences.
+- Gracefully give and receive constructive feedback.
+- Focus on what is best for the product/organization, not just us as individuals.
+
+A special note on the usage of AI - to respect the time of those that are reviewing your contribution, please do not use AI to respond to review comments.
 
 ## Agentic Software Development
 
