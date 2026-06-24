@@ -7,11 +7,15 @@ import (
 	"testing"
 
 	"github.com/openshift/hypershift/cmd/cluster/core"
+	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/testutil"
 	"github.com/openshift/hypershift/test/integration/framework"
 
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
+
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/assert"
@@ -47,7 +51,6 @@ func TestCreateCluster(t *testing.T) {
 	certs.UnsafeSeed(1234567890)
 	ctx := framework.InterruptableContext(t.Context())
 	tempDir := t.TempDir()
-	t.Setenv("FAKE_CLIENT", "true")
 
 	cloudsYAML := map[string]interface{}{
 		"clouds": map[string]interface{}{
@@ -110,6 +113,9 @@ func TestCreateCluster(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			flags := pflag.NewFlagSet(testCase.name, pflag.ContinueOnError)
 			coreOpts := core.DefaultOptions()
+			coreOpts.ClientFn = func() (crclient.Client, error) {
+				return fake.NewClientBuilder().WithScheme(hyperapi.Scheme).Build(), nil
+			}
 			core.BindDeveloperOptions(coreOpts, flags)
 			openstackOpts := DefaultOptions()
 			BindOptions(openstackOpts, flags)

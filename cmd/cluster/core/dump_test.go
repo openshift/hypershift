@@ -4,10 +4,17 @@ import (
 	"fmt"
 	"testing"
 
+	. "github.com/onsi/gomega"
+
+	hyperapi "github.com/openshift/hypershift/support/api"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	fakediscovery "k8s.io/client-go/discovery/fake"
 	clientgotesting "k8s.io/client-go/testing"
+
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 func TestIsResourceRegistered(t *testing.T) {
@@ -67,4 +74,19 @@ func TestIsResourceRegistered(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestDumpOptionsGetClient(t *testing.T) {
+	t.Run("When ClientFn is set it should use the provided function", func(t *testing.T) {
+		g := NewWithT(t)
+		expectedClient := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).Build()
+		opts := &DumpOptions{
+			ClientFn: func() (client.Client, error) {
+				return expectedClient, nil
+			},
+		}
+		c, err := opts.GetClient()
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(c).To(Equal(expectedClient))
+	})
 }
