@@ -7,6 +7,7 @@ Optimized version with parallel API calls and batch processing
 import argparse
 import asyncio
 import base64
+import html as html_mod
 import json
 import os
 import re
@@ -1194,6 +1195,272 @@ class PRReportGenerator:
 
         print(f"Report written to {output_path}")
 
+    def generate_html_report(self, output_path: str):
+        """Generate a deterministic HTML dashboard report from PR data."""
+        e = html_mod.escape
+
+        # --- Compute stats ---
+        total = len(self.prs)
+        hs_count = len([p for p in self.prs if p['repo'] == 'openshift/hypershift'])
+        ai_count = len([p for p in self.prs if p['repo'] == 'openshift-eng/ai-helpers'])
+        en_count = len([p for p in self.prs if p['repo'] == 'openshift/enhancements'])
+        rl_count = len([p for p in self.prs if p['repo'] == 'openshift/release'])
+
+        authors = set(p['author'] for p in self.prs)
+        all_reviewers: Dict[str, int] = {}
+        for pr in self.prs:
+            for r in pr.get('reviewers', []):
+                all_reviewers[r] = all_reviewers.get(r, 0) + 1
+        top_reviewers = sorted(all_reviewers.items(), key=lambda x: x[1], reverse=True)[:5]
+        max_reviews = top_reviewers[0][1] if top_reviewers else 1
+
+        merge_times = [p['readyToMergeHours'] for p in self.prs if p.get('readyToMergeHours')]
+        avg_merge = f"{sum(merge_times)/len(merge_times):.1f}" if merge_times else "N/A"
+        median_merge = f"{sorted(merge_times)[len(merge_times)//2]:.1f}" if merge_times else "N/A"
+        fastest = min(self.prs, key=lambda p: p.get('readyToMergeHours') or float('inf'))
+        fastest_h = f"{fastest.get('readyToMergeHours', 0):.1f}"
+
+        merge_days: Dict[str, int] = {}
+        for pr in self.prs:
+            day = pr['mergedAt'].split('T')[0]
+            merge_days[day] = merge_days.get(day, 0) + 1
+        sorted_days = sorted(merge_days.items(), key=lambda x: x[1], reverse=True)[:7]
+        max_day_count = sorted_days[0][1] if sorted_days else 1
+
+        # Categorise PRs
+        bug_prs = []
+        ai_prs = []
+        enhancement_prs = []
+        feature_prs = []
+        for pr in self.prs:
+            if pr['repo'] == 'openshift-eng/ai-helpers':
+                ai_prs.append(pr)
+            elif pr['repo'] == 'openshift/enhancements':
+                enhancement_prs.append(pr)
+            elif any(t.startswith('OCPBUGS') for t in pr.get('jiraTickets', [])):
+                bug_prs.append(pr)
+            else:
+                feature_prs.append(pr)
+
+        bug_prs.sort(key=lambda p: p.get('readyToMergeHours') or 0)
+        enhancement_prs.sort(key=lambda p: p['mergedAt'], reverse=True)
+        ai_prs.sort(key=lambda p: p['mergedAt'], reverse=True)
+        feature_prs.sort(key=lambda p: p['mergedAt'], reverse=True)
+
+        generated = datetime.now(tz=__import__('datetime').timezone.utc).strftime('%Y-%m-%d %H:%M UTC')
+
+        # --- Helper to build a PR table row ---
+        def _pr_row(pr: Dict, show_repo: bool = False) -> str:
+            title = e(pr['title'][:90])
+            merge_h = f"{pr.get('readyToMergeHours', 0):.1f}h"
+            repo_col = f"<td>{e(pr['repo'].split('/')[-1])}</td>" if show_repo else ""
+            return (
+                f"<tr>"
+                f"<td><a href=\"{e(pr['url'])}\">#{pr['number']}</a></td>"
+                f"<td>{e(title)}</td>"
+                f"<td>@{e(pr['author'])}</td>"
+                f"{repo_col}"
+                f"<td>{merge_h}</td>"
+                f"</tr>"
+            )
+
+        # --- Helper for PR bullet list ---
+        def _pr_bullet(pr: Dict) -> str:
+            title = e(pr['title'][:90])
+            return (
+                f"<li class=\"pr-item\">"
+                f"<span class=\"pr-num\"><a href=\"{e(pr['url'])}\">#{pr['number']}</a></span>"
+                f"<span class=\"pr-title\">{title}</span>"
+                f"<span class=\"pr-author\">@{e(pr['author'])}</span>"
+                f"</li>"
+            )
+
+        # --- Build merge-day bars ---
+        day_bars = ""
+        for day, count in sorted_days:
+            pct = count / max_day_count * 100
+            short_day = day[5:]  # MM-DD
+            day_bars += (
+                f"<div class=\"merge-day\">"
+                f"<span class=\"merge-label\">{short_day}</span>"
+                f"<div class=\"merge-bar\" style=\"width:{pct}%\"></div>"
+                f"<span class=\"merge-count\">{count} PRs</span>"
+                f"</div>"
+            )
+
+        # --- Build reviewer rows ---
+        reviewer_rows = ""
+        for reviewer, count in top_reviewers:
+            bot = " <span class=\"badge badge-purple\">bot</span>" if self.is_bot(reviewer) else ""
+            bar_w = int(count / max_reviews * 120)
+            reviewer_rows += (
+                f"<tr><td>@{e(reviewer)}{bot}</td>"
+                f"<td><div class=\"reviewer-bar-wrap\">"
+                f"<div class=\"reviewer-bar\" style=\"width:{bar_w}px\"></div>"
+                f"<span>{count}</span></div></td></tr>"
+            )
+
+        # --- Build bug table rows ---
+        bug_rows = "".join(_pr_row(pr) for pr in bug_prs)
+        if not bug_rows:
+            bug_rows = "<tr><td colspan='4' style='color:var(--text-dim)'>No bug fixes this period</td></tr>"
+
+        # --- Build enhancement items ---
+        enhancement_items = "".join(_pr_bullet(pr) for pr in enhancement_prs)
+        if not enhancement_items:
+            enhancement_items = "<li class='pr-item' style='color:var(--text-dim)'>No enhancements this period</li>"
+
+        # --- Build AI helpers items ---
+        ai_items = "".join(_pr_bullet(pr) for pr in ai_prs)
+        if not ai_items:
+            ai_items = "<li class='pr-item' style='color:var(--text-dim)'>No ai-helpers PRs this period</li>"
+
+        # --- Build features table rows ---
+        feature_rows = "".join(_pr_row(pr, show_repo=True) for pr in feature_prs)
+        if not feature_rows:
+            feature_rows = "<tr><td colspan='5' style='color:var(--text-dim)'>No feature PRs this period</td></tr>"
+
+        # --- Assemble HTML ---
+        html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HyperShift PR Report — {e(self.since_date)} to {e(self.end_date)}</title>
+<style>
+:root {{
+  --bg:#0f1117;--card:#181b24;--border:#2a2e3a;--text:#c9cdd5;--text-dim:#6b7280;
+  --accent:#3b82f6;--accent-dim:#1e3a5f;--green:#22c55e;--green-dim:#0d3320;
+  --amber:#f59e0b;--amber-dim:#3d2e05;--red:#ef4444;--red-dim:#3b1111;
+  --purple:#a855f7;--purple-dim:#2d1650;--cyan:#06b6d4;--cyan-dim:#0c3644;
+}}
+*{{margin:0;padding:0;box-sizing:border-box}}
+body{{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
+  background:var(--bg);color:var(--text);line-height:1.6;padding:2rem;max-width:1400px;margin:0 auto}}
+h1{{font-size:1.75rem;font-weight:700;color:#fff;margin-bottom:.25rem}}
+h2{{font-size:1.2rem;font-weight:600;color:#e5e7eb;margin-bottom:1rem;padding-bottom:.5rem;border-bottom:1px solid var(--border)}}
+h3{{font-size:.95rem;font-weight:600;color:#d1d5db;margin-bottom:.5rem}}
+.subtitle{{color:var(--text-dim);font-size:.85rem;margin-bottom:2rem}}
+.grid{{display:grid;gap:1rem;margin-bottom:1.5rem}}
+.grid-4{{grid-template-columns:repeat(4,1fr)}}
+.grid-2{{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:900px){{.grid-4{{grid-template-columns:repeat(2,1fr)}}}}
+@media(max-width:600px){{.grid-4,.grid-2{{grid-template-columns:1fr}}}}
+.card{{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:1.25rem}}
+.stat-card{{text-align:center}}
+.stat-value{{font-size:2rem;font-weight:700;color:#fff}}
+.stat-label{{font-size:.75rem;text-transform:uppercase;letter-spacing:.05em;color:var(--text-dim);margin-top:.25rem}}
+.stat-sub{{font-size:.7rem;color:var(--text-dim);margin-top:.15rem}}
+.badge{{display:inline-block;padding:.15rem .5rem;border-radius:999px;font-size:.7rem;font-weight:600;text-transform:uppercase;letter-spacing:.03em}}
+.badge-blue{{background:var(--accent-dim);color:var(--accent)}}
+.badge-red{{background:var(--red-dim);color:var(--red)}}
+.badge-amber{{background:var(--amber-dim);color:var(--amber)}}
+.badge-purple{{background:var(--purple-dim);color:var(--purple)}}
+.badge-cyan{{background:var(--cyan-dim);color:var(--cyan)}}
+.badge-green{{background:var(--green-dim);color:var(--green)}}
+a{{color:var(--accent);text-decoration:none}}
+a:hover{{text-decoration:underline}}
+.pr-list{{list-style:none}}
+.pr-item{{padding:.6rem 0;border-bottom:1px solid var(--border);display:flex;gap:.75rem;align-items:flex-start}}
+.pr-item:last-child{{border-bottom:none}}
+.pr-num{{font-family:'JetBrains Mono','Fira Code',monospace;font-size:.8rem;color:var(--accent);min-width:5rem;flex-shrink:0}}
+.pr-title{{font-size:.85rem;flex-grow:1}}
+.pr-author{{font-size:.75rem;color:var(--text-dim);min-width:7rem;text-align:right;flex-shrink:0}}
+.section{{margin-bottom:2rem}}
+.bar-chart{{display:flex;gap:4px;height:28px;border-radius:6px;overflow:hidden;margin:.75rem 0}}
+.bar-segment{{height:100%;display:flex;align-items:center;justify-content:center;font-size:.65rem;font-weight:600;color:#fff;min-width:20px}}
+.legend{{display:flex;gap:1rem;flex-wrap:wrap;font-size:.72rem;color:var(--text-dim)}}
+.legend-dot{{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:4px;vertical-align:middle}}
+.merge-day{{display:flex;align-items:center;gap:.5rem;margin-bottom:.4rem;font-size:.8rem}}
+.merge-bar{{height:18px;border-radius:3px;background:var(--accent);min-width:4px}}
+.merge-label{{min-width:3.5rem;color:var(--text-dim);font-size:.72rem}}
+.merge-count{{font-size:.72rem;color:var(--text-dim)}}
+table{{width:100%;border-collapse:collapse;font-size:.8rem}}
+th{{text-align:left;padding:.5rem .75rem;color:var(--text-dim);font-weight:500;font-size:.7rem;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--border)}}
+td{{padding:.5rem .75rem;border-bottom:1px solid var(--border)}}
+tr:last-child td{{border-bottom:none}}
+.reviewer-bar-wrap{{display:flex;align-items:center;gap:.5rem}}
+.reviewer-bar{{height:12px;background:var(--accent);border-radius:3px}}
+.highlight-box{{background:linear-gradient(135deg,var(--accent-dim),var(--card));border:1px solid var(--accent);border-radius:10px;padding:1.25rem;margin-bottom:1.5rem}}
+.highlight-box h2{{border-bottom:none;margin-bottom:.5rem}}
+.highlight-list{{list-style:none}}
+.highlight-list li{{padding:.3rem 0;font-size:.85rem}}
+.highlight-list li::before{{content:"-->";color:var(--accent);font-weight:600;margin-right:.5rem;font-family:monospace}}
+footer{{text-align:center;color:var(--text-dim);font-size:.7rem;margin-top:3rem;padding-top:1rem;border-top:1px solid var(--border)}}
+</style>
+</head>
+<body>
+
+<h1>HyperShift PR Report</h1>
+<div class="subtitle">{e(self.since_date)} to {e(self.end_date)} &middot; Generated {generated}</div>
+
+<!-- STATS -->
+<div class="grid grid-4">
+  <div class="card stat-card"><div class="stat-value">{total}</div><div class="stat-label">PRs Merged</div></div>
+  <div class="card stat-card"><div class="stat-value">{len(authors)}</div><div class="stat-label">Contributors</div></div>
+  <div class="card stat-card"><div class="stat-value">{len(all_reviewers)}</div><div class="stat-label">Reviewers</div></div>
+  <div class="card stat-card"><div class="stat-value" style="font-size:1.6rem">{avg_merge}h</div><div class="stat-label">Avg Time to Merge</div><div class="stat-sub">Median {median_merge}h &middot; Fastest {fastest_h}h</div></div>
+</div>
+
+<!-- REPO BREAKDOWN -->
+<div class="card section">
+  <h3>Repository Breakdown</h3>
+  <div class="bar-chart">
+    <div class="bar-segment" style="flex:{hs_count};background:#3b82f6">{hs_count}</div>
+    <div class="bar-segment" style="flex:{rl_count};background:#a855f7">{rl_count}</div>
+    <div class="bar-segment" style="flex:{ai_count};background:#06b6d4">{ai_count}</div>
+    <div class="bar-segment" style="flex:{en_count};background:#f59e0b">{en_count}</div>
+  </div>
+  <div class="legend">
+    <span><span class="legend-dot" style="background:#3b82f6"></span>hypershift ({hs_count})</span>
+    <span><span class="legend-dot" style="background:#a855f7"></span>release ({rl_count})</span>
+    <span><span class="legend-dot" style="background:#06b6d4"></span>ai-helpers ({ai_count})</span>
+    <span><span class="legend-dot" style="background:#f59e0b"></span>enhancements ({en_count})</span>
+  </div>
+</div>
+
+<!-- WEEK HIGHLIGHTS (populated by --inject-highlights) -->
+<div id="week-highlights"></div>
+
+<!-- MERGE DAYS + REVIEWERS -->
+<div class="grid grid-2">
+  <div class="card"><h3>Busiest Merge Days</h3><div style="margin-top:.5rem">{day_bars}</div></div>
+  <div class="card"><h3>Top Reviewers</h3><table>{reviewer_rows}</table></div>
+</div>
+
+<!-- BUG FIXES -->
+<div class="card section">
+  <h2>Bug Fixes <span class="badge badge-red">{len(bug_prs)} PRs</span></h2>
+  <table><thead><tr><th>PR</th><th>Title</th><th>Author</th><th>Merge Time</th></tr></thead><tbody>{bug_rows}</tbody></table>
+</div>
+
+<!-- ENHANCEMENTS -->
+<div class="card section">
+  <h2>Enhancement Proposals <span class="badge badge-amber">{len(enhancement_prs)} PRs</span></h2>
+  <ul class="pr-list">{enhancement_items}</ul>
+</div>
+
+<!-- FEATURES & CI -->
+<div class="card section">
+  <h2>Features &amp; Improvements <span class="badge badge-blue">{len(feature_prs)} PRs</span></h2>
+  <table><thead><tr><th>PR</th><th>Title</th><th>Author</th><th>Repo</th><th>Merge Time</th></tr></thead><tbody>{feature_rows}</tbody></table>
+</div>
+
+<!-- AI HELPERS -->
+<div class="card section">
+  <h2>AI Helpers <span class="badge badge-cyan">{len(ai_prs)} PRs</span></h2>
+  <ul class="pr-list">{ai_items}</ul>
+</div>
+
+<footer>Generated from {total} merged PRs across openshift/hypershift, openshift/release, openshift-eng/ai-helpers, openshift/enhancements &middot; Data via GitHub GraphQL API + Jira REST API</footer>
+
+</body>
+</html>"""
+
+        with open(output_path, 'w') as f:
+            f.write(html)
+        print(f"HTML report written to {output_path}")
+
     def _get_pr_sfdc_info(self, pr: Dict) -> Tuple[int, int, List[str]]:
         """Get SFDC case info for a PR from its Jira tickets.
 
@@ -1941,6 +2208,7 @@ async def main():
     start_time = time.time()
 
     args = parse_args()
+
     since_date = args.since_date
     end_date = args.end_date
     deep_prs = args.deep or []
@@ -1971,6 +2239,7 @@ async def main():
     generator.generate_report(os.path.join(output_dir, 'weekly_pr_report_fast.md'))
     generator.save_raw_data(os.path.join(output_dir, 'hypershift_pr_details_fast.json'))
     generator.save_summary_data(os.path.join(output_dir, 'hypershift_pr_summary.json'))
+    generator.generate_html_report(os.path.join(output_dir, 'weekly_pr_report.html'))
 
     # Score mode: output scored PR list
     if score_mode:

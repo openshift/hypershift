@@ -75,6 +75,7 @@ This command generates **two reports** (with two optional additions):
 | `$OUTPUT_DIR/weekly_pr_report_fast.md` | Data-focused report with metrics and PR listings |
 | `$OUTPUT_DIR/hypershift_pr_details_fast.json` | Raw PR data in JSON format |
 | `$OUTPUT_DIR/hypershift_pr_summary.json` | Compact summary data for LLM analysis |
+| `$OUTPUT_DIR/weekly_pr_report.html` | Visual HTML dashboard with metrics, charts, and PR listings |
 | `$OUTPUT_DIR/weekly_pr_report_impact.md` | LLM-generated impact analysis for contributors |
 | `$OUTPUT_DIR/pr_scored.json` | (--score) Ranked PR list for deep analysis |
 | `.work/pr_deep/*.json` | (--deep mode) Per-PR data with diffs for analysis |
@@ -147,6 +148,15 @@ Read `$OUTPUT_DIR/hypershift_pr_details_fast.json` and `$OUTPUT_DIR/jira_hierarc
 [2-3 paragraphs summarizing the week's progress across all repositories. Highlight major themes,
 significant changes, and overall project momentum. Write in a tone suitable for developers and
 community members following the project.]
+
+## Highlights
+
+[3-5 bullet points with the most impactful changes this week. Each bullet should be one concise
+sentence focused on what shipped and why it matters. These are injected into the HTML dashboard.]
+
+- [Highlight 1]
+- [Highlight 2]
+- [Highlight 3]
 
 ## Strategic Initiatives Progress
 
@@ -276,6 +286,25 @@ manual CI work). For each:]
 | "OCPBUGS-60707: Fix user-ca-bundle cleanup when additionalTrustBundle is removed" | Fixes a bug where custom CA certificates persisted in guest clusters after being removed from HostedCluster spec. Operators managing trust bundles will now see expected cleanup behavior. |
 | "GCP-216: feat(nodepool): add GCP platform support" | Adds foundational NodePool support for GCP platform, enabling cluster autoscaling and machine management. This is a key milestone for GCP HyperShift availability. |
 | "CNTRLPLANE-2082: hypershift: run conformance directly on the root cluster" | Simplifies CI architecture by running conformance tests on the management cluster instead of nested clusters. Reduces resource requirements and test complexity. |
+
+**After writing the impact report**, inject the highlights into the HTML dashboard:
+
+1. Read `$OUTPUT_DIR/weekly_pr_report.html`
+2. Take the bullet points from the `## Highlights` section you just wrote
+3. Replace `<div id="week-highlights"></div>` with:
+
+```html
+<div id="week-highlights" class="highlight-box">
+  <h2>Week Highlights</h2>
+  <ul class="highlight-list">
+    <li>First highlight bullet</li>
+    <li>Second highlight bullet</li>
+    ...
+  </ul>
+</div>
+```
+
+4. Write the updated HTML back using the Edit tool
 
 ### Step 4: Deep Code Analysis (--deep mode only)
 
@@ -698,6 +727,7 @@ After generating reports, provide the user with:
 5. (--progress-report mode) Mention the progress report location
 6. (--breaking-changes mode) Summarize breaking changes found and their severity
 7. (--deep mode) Mention the collaboration report location
+8. Location of the HTML dashboard report (`weekly_pr_report.html`)
 
 ## Script Features
 
