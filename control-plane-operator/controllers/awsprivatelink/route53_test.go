@@ -142,10 +142,11 @@ func TestFindRecord(t *testing.T) {
 
 func TestCreateRecord(t *testing.T) {
 	tests := []struct {
-		name          string
-		setupMock     func(*awsapi.MockROUTE53API)
-		expectError   bool
-		errorContains string
+		name           string
+		setupMock      func(*awsapi.MockROUTE53API)
+		expectError    bool
+		errorContains  string
+		checkErrorType func(*testing.T, error)
 	}{
 		{
 			name: "When ChangeResourceRecordSets succeeds it should return nil",
@@ -157,7 +158,7 @@ func TestCreateRecord(t *testing.T) {
 			expectError: false,
 		},
 		{
-			name: "When API returns a smithy error it should return the error code as the error message",
+			name: "When API returns a smithy error it should preserve the original error type",
 			setupMock: func(m *awsapi.MockROUTE53API) {
 				m.EXPECT().ChangeResourceRecordSets(gomock.Any(), gomock.Any(), gomock.Any()).Return(
 					nil, &testAPIError{code: "NoSuchHostedZone"},
@@ -165,6 +166,12 @@ func TestCreateRecord(t *testing.T) {
 			},
 			expectError:   true,
 			errorContains: "NoSuchHostedZone",
+			checkErrorType: func(t *testing.T, err error) {
+				var apiErr smithy.APIError
+				if !errors.As(err, &apiErr) {
+					t.Error("expected error to implement smithy.APIError for typed error detection")
+				}
+			},
 		},
 		{
 			name: "When API returns a non-smithy error it should propagate the original error",
@@ -192,6 +199,9 @@ func TestCreateRecord(t *testing.T) {
 				}
 				if tt.errorContains != "" && !strings.Contains(err.Error(), tt.errorContains) {
 					t.Errorf("expected error containing %q, got: %v", tt.errorContains, err)
+				}
+				if tt.checkErrorType != nil {
+					tt.checkErrorType(t, err)
 				}
 			} else {
 				if err != nil {

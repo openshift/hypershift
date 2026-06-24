@@ -58,6 +58,7 @@ import (
 const (
 	defaultResync               = 10 * time.Hour
 	externalPrivateServiceLabel = "hypershift.openshift.io/external-private-service"
+	throttleRequeueDelay        = 2 * time.Minute
 )
 
 // PrivateServiceObserver watches a given Service type LB and reconciles
@@ -531,6 +532,10 @@ func (r *AWSEndpointServiceReconciler) Reconcile(ctx context.Context, req ctrl.R
 				return ctrl.Result{}, err
 			}
 		}
+		if isAWSThrottleError(err) {
+			log.Info("AWS rate limit hit, backing off", "requeueAfter", throttleRequeueDelay)
+			return ctrl.Result{RequeueAfter: throttleRequeueDelay}, nil
+		}
 		return ctrl.Result{}, err
 	}
 
@@ -550,6 +555,14 @@ func (r *AWSEndpointServiceReconciler) Reconcile(ctx context.Context, req ctrl.R
 	// always requeue to catch and report out of band changes in AWS
 	// NOTICE: if the RequeueAfter interval is short enough, it could result in hitting some AWS request limits.
 	return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
+}
+
+func isAWSThrottleError(err error) bool {
+	switch supportawsutil.AWSErrorCode(err) {
+	case "Throttling", "ThrottlingException", "RequestLimitExceeded", "TooManyRequestsException":
+		return true
+	}
+	return false
 }
 
 func hasAWSConfig(platform *hyperv1.PlatformSpec) bool {
@@ -887,15 +900,19 @@ func (r *AWSEndpointServiceReconciler) reconcileEndpointDNSRecords(ctx context.C
 
 	zn := zoneName(hcp.Name)
 	var zoneID string
-	if r.awsClientBuilder.getLocalHostedZoneID() == "" {
+	if localZoneID := r.awsClientBuilder.getLocalHostedZoneID(); localZoneID != "" {
+		zoneID = localZoneID
+	} else if awsEndpointService.Status.DNSZoneID != "" {
+		zoneID = awsEndpointService.Status.DNSZoneID
+		r.awsClientBuilder.setLocalHostedZoneID(zoneID)
+		log.Info("using DNSZoneID from status", "zoneID", zoneID)
+	} else {
 		var err error
 		zoneID, err = lookupZoneID(ctx, route53Client, zn)
 		if err != nil {
 			return nil, "", err
 		}
 		r.awsClientBuilder.setLocalHostedZoneID(zoneID)
-	} else {
-		zoneID = r.awsClientBuilder.getLocalHostedZoneID()
 	}
 
 	var fqdns []string
@@ -904,6 +921,12 @@ func (r *AWSEndpointServiceReconciler) reconcileEndpointDNSRecords(ctx context.C
 		fqdns = append(fqdns, fqdn)
 		err := CreateRecord(ctx, route53Client, zoneID, fqdn, aws.ToString(endpointDNSEntries[0].DnsName), route53types.RRTypeCname)
 		if err != nil {
+			var noSuchZone *route53types.NoSuchHostedZone
+			if errors.As(err, &noSuchZone) {
+				r.awsClientBuilder.setLocalHostedZoneID("")
+				awsEndpointService.Status.DNSZoneID = ""
+				log.Info("hosted zone not found, clearing cached DNSZoneID", "zoneID", zoneID)
+			}
 			return nil, "", err
 		}
 		log.Info("DNS record created", "fqdn", fqdn)
