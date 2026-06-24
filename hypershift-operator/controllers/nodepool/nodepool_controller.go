@@ -813,9 +813,12 @@ func machineDeploymentCompleteFromV1Beta2Status(deployment *capiv1.MachineDeploy
 	if v1beta2 == nil {
 		return true
 	}
+	if v1beta2.UpToDateReplicas == nil || v1beta2.AvailableReplicas == nil {
+		return false
+	}
 	desired := ptr.Deref(deployment.Spec.Replicas, 0)
-	return ptr.Deref(v1beta2.UpToDateReplicas, 0) == desired &&
-		ptr.Deref(v1beta2.AvailableReplicas, 0) == desired
+	return *v1beta2.UpToDateReplicas == desired &&
+		*v1beta2.AvailableReplicas == desired
 }
 
 // GetHostedClusterByName finds and return a HostedCluster object using the specified params.
