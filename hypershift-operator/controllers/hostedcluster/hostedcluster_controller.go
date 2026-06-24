@@ -2815,6 +2815,18 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 		}
 	}
 
+	// N-1 compat: older CPOs (4.22) only read the annotation, not the spec field.
+	// Mirror the spec mode to the annotation so they can still deploy metrics forwarding.
+	switch hcp.Spec.Monitoring.MetricsForwarding.Mode {
+	case hyperv1.MetricsForwardingModeForward:
+		if hcp.Annotations == nil {
+			hcp.Annotations = map[string]string{}
+		}
+		hcp.Annotations[hyperv1.EnableMetricsForwarding] = "true"
+	case hyperv1.MetricsForwardingModeNone:
+		delete(hcp.Annotations, hyperv1.EnableMetricsForwarding)
+	}
+
 	return nil
 }
 
