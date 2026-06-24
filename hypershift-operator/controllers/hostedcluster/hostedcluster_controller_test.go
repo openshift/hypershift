@@ -609,13 +609,14 @@ func TestReconcileHostedControlPlaneMonitoring(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name               string
-		monitoring         hyperv1.MonitoringSpec
-		annotations        map[string]string
-		expectedMonitoring hyperv1.MonitoringSpec
+		name                  string
+		monitoring            hyperv1.MonitoringSpec
+		annotations           map[string]string
+		expectedMonitoring    hyperv1.MonitoringSpec
+		expectAnnotationOnHCP bool
 	}{
 		{
-			name: "When monitoring spec is set with mode Enabled, it should be copied to HCP",
+			name: "When monitoring spec is set with mode Forward, it should be copied to HCP and set annotation for N-1 compat",
 			monitoring: hyperv1.MonitoringSpec{
 				MetricsForwarding: hyperv1.MetricsForwardingSpec{
 					Mode: hyperv1.MetricsForwardingModeForward,
@@ -628,9 +629,10 @@ func TestReconcileHostedControlPlaneMonitoring(t *testing.T) {
 				},
 				MetricsSet: hyperv1.MetricsSetSRE,
 			},
+			expectAnnotationOnHCP: true,
 		},
 		{
-			name: "When monitoring spec is not set and annotation is present, it should enable forwarding on HCP",
+			name: "When monitoring spec is not set and annotation is present, it should enable forwarding on HCP and keep annotation",
 			annotations: map[string]string{
 				hyperv1.EnableMetricsForwarding: "true",
 			},
@@ -639,13 +641,14 @@ func TestReconcileHostedControlPlaneMonitoring(t *testing.T) {
 					Mode: hyperv1.MetricsForwardingModeForward,
 				},
 			},
+			expectAnnotationOnHCP: true,
 		},
 		{
 			name:               "When neither spec nor annotation is set, it should leave monitoring empty",
 			expectedMonitoring: hyperv1.MonitoringSpec{},
 		},
 		{
-			name: "When mode is Disabled and annotation is present, it should not override Disabled",
+			name: "When mode is None and annotation is present, it should not override None and should remove annotation",
 			monitoring: hyperv1.MonitoringSpec{
 				MetricsForwarding: hyperv1.MetricsForwardingSpec{
 					Mode: hyperv1.MetricsForwardingModeNone,
@@ -659,9 +662,10 @@ func TestReconcileHostedControlPlaneMonitoring(t *testing.T) {
 					Mode: hyperv1.MetricsForwardingModeNone,
 				},
 			},
+			expectAnnotationOnHCP: false,
 		},
 		{
-			name: "When mode is Enabled and annotation is absent, it should keep Enabled",
+			name: "When mode is Forward and annotation is absent, it should keep Forward and set annotation for N-1 compat",
 			monitoring: hyperv1.MonitoringSpec{
 				MetricsForwarding: hyperv1.MetricsForwardingSpec{
 					Mode: hyperv1.MetricsForwardingModeForward,
@@ -672,6 +676,7 @@ func TestReconcileHostedControlPlaneMonitoring(t *testing.T) {
 					Mode: hyperv1.MetricsForwardingModeForward,
 				},
 			},
+			expectAnnotationOnHCP: true,
 		},
 		{
 			name: "When metricsSet is set without forwarding mode, it should be copied",
@@ -700,6 +705,11 @@ func TestReconcileHostedControlPlaneMonitoring(t *testing.T) {
 			err := reconcileHostedControlPlane(hostedControlPlane, hostedCluster, true, true, func() (map[string]string, error) { return nil, nil })
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(hostedControlPlane.Spec.Monitoring).To(Equal(test.expectedMonitoring))
+			if test.expectAnnotationOnHCP {
+				g.Expect(hostedControlPlane.Annotations).To(HaveKeyWithValue(hyperv1.EnableMetricsForwarding, "true"))
+			} else {
+				g.Expect(hostedControlPlane.Annotations).ToNot(HaveKey(hyperv1.EnableMetricsForwarding))
+			}
 		})
 	}
 }
