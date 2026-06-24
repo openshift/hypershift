@@ -90,6 +90,45 @@ func TestReplace(t *testing.T) {
 			want:      "mirror.example.com/foo/bar:v1.2.3",
 		},
 		{
+			name:      "When source matches full repository with digest separator it should replace prefix",
+			image:     "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:abc123",
+			overrides: map[string]string{"quay.io/openshift-release-dev/ocp-v4.0-art-dev": "mirror.example.com/art-dev"},
+			want:      "mirror.example.com/art-dev@sha256:abc123",
+		},
+		{
+			name:      "When source matches full repository with tag separator it should replace prefix",
+			image:     "quay.io/openshift-release-dev/ocp-v4.0-art-dev:latest",
+			overrides: map[string]string{"quay.io/openshift-release-dev/ocp-v4.0-art-dev": "mirror.example.com/art-dev"},
+			want:      "mirror.example.com/art-dev:latest",
+		},
+		{
+			name:  "When multiple overrides match with digest it should pick longest prefix",
+			image: "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:abc123",
+			overrides: map[string]string{
+				"quay.io": "broad.example.com",
+				"quay.io/openshift-release-dev/ocp-v4.0-art-dev": "narrow.example.com/art-dev",
+			},
+			want: "narrow.example.com/art-dev@sha256:abc123",
+		},
+		{
+			name:      "When source has trailing dash it should not match similar prefix (no false positive)",
+			image:     "quay.io/openshift-release-dev/ocp-v4.0-art-dev-extra@sha256:abc",
+			overrides: map[string]string{"quay.io/openshift-release-dev/ocp-v4.0-art-dev": "mirror/art-dev"},
+			want:      "quay.io/openshift-release-dev/ocp-v4.0-art-dev-extra@sha256:abc",
+		},
+		{
+			name:      "When host-only source matches host:port image it should not match (port is not a tag)",
+			image:     "quay.io:5000/org/repo@sha256:abc",
+			overrides: map[string]string{"quay.io": "mirror.example.com"},
+			want:      "quay.io:5000/org/repo@sha256:abc",
+		},
+		{
+			name:      "When host:port source matches host:port image it should match via slash",
+			image:     "myregistry:5000/org/repo@sha256:abc",
+			overrides: map[string]string{"myregistry:5000": "mirror.example.com"},
+			want:      "mirror.example.com/org/repo@sha256:abc",
+		},
+		{
 			name:      "empty image returns empty",
 			image:     "",
 			overrides: map[string]string{"quay.io": "mirror.example.com"},
