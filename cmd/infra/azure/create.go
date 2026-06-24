@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/log"
@@ -339,6 +340,11 @@ func (o *CreateInfraOptions) Validate() error {
 	// base-domain is required for DNS operations
 	if o.BaseDomain == "" {
 		return fmt.Errorf("--base-domain is required")
+	}
+
+	// dns-zone-rg-name is required for role assignment scoping
+	if (o.AssignServicePrincipalRoles || o.AssignCustomHCPRoles) && strings.TrimSpace(o.DNSZoneRG) == "" {
+		return fmt.Errorf("--dns-zone-rg-name is required when --assign-identity-roles or --assign-custom-hcp-roles is set")
 	}
 
 	return nil
