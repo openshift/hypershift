@@ -1,6 +1,6 @@
 module github.com/openshift/hypershift
 
-go 1.25.7
+go 1.26.4
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.22.0
