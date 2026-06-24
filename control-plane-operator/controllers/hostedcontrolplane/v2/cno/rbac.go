@@ -88,6 +88,17 @@ func adaptRole(cpContext component.WorkloadContext, role *rbacv1.Role) error {
 			},
 			Verbs: []string{"*"},
 		},
+		{
+			APIGroups: []string{hyperv1.GroupVersion.Group},
+			Resources: []string{
+				"hostedclusters",
+			},
+			Verbs: []string{
+				"get",
+				"list",
+				"watch",
+			},
+		},
 	}
 
 	return nil
