@@ -5,13 +5,14 @@ import (
 	"testing"
 
 	. "github.com/onsi/gomega"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/infra"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 
 	osinv1 "github.com/openshift/api/osin/v1"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func TestGetOAuthServiceDNS(t *testing.T) {
@@ -50,8 +51,7 @@ func TestGetOAuthServiceDNS(t *testing.T) {
 func TestAdaptOAuthConfig(t *testing.T) {
 
 	const (
-		testNamespace           = "test-cluster"
-		testInternalServicePort = int32(6443)
+		testNamespace = "test-cluster"
 	)
 	testCases := []struct {
 		name                    string
@@ -72,7 +72,7 @@ func TestAdaptOAuthConfig(t *testing.T) {
 			cpEndpointHost:          "api.example.com",
 			cpEndpointPort:          6443,
 			expectedLoginURL:        "https://api.example.com:6443",
-			expectedMasterURL:       fmt.Sprintf("https://%s:%d", getOAuthServiceDNS(testNamespace), testInternalServicePort),
+			expectedMasterURL:       fmt.Sprintf("https://%s:%d", getOAuthServiceDNS(testNamespace), OAuthServerPort),
 			expectedMasterPublicURL: "https://oauth.example.com:443",
 		},
 		{
@@ -83,7 +83,7 @@ func TestAdaptOAuthConfig(t *testing.T) {
 			cpEndpointPort:          6443,
 			kasDNSName:              "api.custom.example.com",
 			expectedLoginURL:        "https://api.custom.example.com:6443",
-			expectedMasterURL:       fmt.Sprintf("https://%s:%d", getOAuthServiceDNS(testNamespace), testInternalServicePort),
+			expectedMasterURL:       fmt.Sprintf("https://%s:%d", getOAuthServiceDNS(testNamespace), OAuthServerPort),
 			expectedMasterPublicURL: "https://oauth.example.com:443",
 		},
 		{
@@ -93,7 +93,7 @@ func TestAdaptOAuthConfig(t *testing.T) {
 			cpEndpointHost:          "10.0.0.1",
 			cpEndpointPort:          6443,
 			expectedLoginURL:        "https://10.0.0.1:6443",
-			expectedMasterURL:       fmt.Sprintf("https://%s:%d", getOAuthServiceDNS(testNamespace), testInternalServicePort),
+			expectedMasterURL:       fmt.Sprintf("https://%s:%d", getOAuthServiceDNS(testNamespace), OAuthServerPort),
 			expectedMasterPublicURL: "https://10.0.0.2:443",
 		},
 		{
@@ -105,7 +105,7 @@ func TestAdaptOAuthConfig(t *testing.T) {
 			kasDNSName:              "api.custom.example.com",
 			loginURLOverride:        "https://ibm.override.example.com:6443",
 			expectedLoginURL:        "https://ibm.override.example.com:6443",
-			expectedMasterURL:       fmt.Sprintf("https://%s:%d", getOAuthServiceDNS(testNamespace), testInternalServicePort),
+			expectedMasterURL:       fmt.Sprintf("https://%s:%d", getOAuthServiceDNS(testNamespace), OAuthServerPort),
 			expectedMasterPublicURL: "https://oauth.example.com:443",
 		},
 		{
@@ -115,7 +115,7 @@ func TestAdaptOAuthConfig(t *testing.T) {
 			cpEndpointHost:          "2001:db8::1",
 			cpEndpointPort:          6443,
 			expectedLoginURL:        "https://[2001:db8::1]:6443",
-			expectedMasterURL:       fmt.Sprintf("https://%s:%d", getOAuthServiceDNS(testNamespace), testInternalServicePort),
+			expectedMasterURL:       fmt.Sprintf("https://%s:%d", getOAuthServiceDNS(testNamespace), OAuthServerPort),
 			expectedMasterPublicURL: "https://oauth.example.com:443",
 		},
 		{
@@ -125,7 +125,7 @@ func TestAdaptOAuthConfig(t *testing.T) {
 			cpEndpointHost:          "api.example.com",
 			cpEndpointPort:          6443,
 			expectedLoginURL:        "https://api.example.com:6443",
-			expectedMasterURL:       fmt.Sprintf("https://%s:%d", getOAuthServiceDNS(testNamespace), testInternalServicePort),
+			expectedMasterURL:       fmt.Sprintf("https://%s:%d", getOAuthServiceDNS(testNamespace), OAuthServerPort),
 			expectedMasterPublicURL: "https://[2001:db8::2]:443",
 		},
 	}
