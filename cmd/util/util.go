@@ -2,6 +2,7 @@ package util
 
 import (
 	"fmt"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -39,4 +40,29 @@ func ConfigMapResource(namespace, name string) *corev1.ConfigMap {
 			Namespace: namespace,
 		},
 	}
+}
+
+// ParseTolerationString parses a toleration string in the format "key=value:effect" or "key:effect"
+// and returns a corev1.Toleration object. Returns nil if the format is invalid.
+func ParseTolerationString(s string) *corev1.Toleration {
+	parts := strings.Split(s, ":")
+	if len(parts) != 2 {
+		return nil
+	}
+
+	toleration := corev1.Toleration{
+		Effect: corev1.TaintEffect(parts[1]),
+	}
+
+	if strings.Contains(parts[0], "=") {
+		kv := strings.SplitN(parts[0], "=", 2)
+		toleration.Key = kv[0]
+		toleration.Value = kv[1]
+		toleration.Operator = corev1.TolerationOpEqual
+	} else {
+		toleration.Key = parts[0]
+		toleration.Operator = corev1.TolerationOpExists
+	}
+
+	return &toleration
 }

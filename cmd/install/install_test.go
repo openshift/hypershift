@@ -360,6 +360,56 @@ func TestOptions_Validate(t *testing.T) {
 			},
 			expectError: false,
 		},
+		"when valid operator tolerations are set there is no error": {
+			inputOptions: Options{
+				PrivatePlatform:     string(hyperv1.NonePlatform),
+				OperatorTolerations: []string{"key1=value1:NoSchedule", "key2:PreferNoSchedule", "key3=value3:NoExecute"},
+			},
+			expectError: false,
+		},
+		"when invalid operator tolerations are set it errors": {
+			inputOptions: Options{
+				PrivatePlatform:     string(hyperv1.NonePlatform),
+				OperatorTolerations: []string{"invalidtolerationstring", "key2=value2"},
+			},
+			expectError: true,
+		},
+		"when toleration has too many colons it errors": {
+			inputOptions: Options{
+				PrivatePlatform:     string(hyperv1.NonePlatform),
+				OperatorTolerations: []string{"key1=value1:NoSchedule:3600"},
+			},
+			expectError: true,
+		},
+		"when mixed valid and invalid operator tolerations are set it errors": {
+			inputOptions: Options{
+				PrivatePlatform:     string(hyperv1.NonePlatform),
+				OperatorTolerations: []string{"key1=value1:NoSchedule", "invalidtolerationstring"},
+			},
+			expectError: true,
+		},
+		"when invalid node selector is set it errors": {
+			inputOptions: Options{
+				PrivatePlatform:       string(hyperv1.NonePlatform),
+				OperatorNodeSelectors: map[string]string{"&&invalidkey": "value"},
+			},
+			expectError: true,
+		},
+		"when valid node selector is set there is no error": {
+			inputOptions: Options{
+				PrivatePlatform:       string(hyperv1.NonePlatform),
+				OperatorNodeSelectors: map[string]string{"validkey": "value"},
+			},
+			expectError: false,
+		},
+		"when both valid operator tolerations and node selectors are set there is no error": {
+			inputOptions: Options{
+				PrivatePlatform:       string(hyperv1.NonePlatform),
+				OperatorTolerations:   []string{"key1=value1:NoSchedule", "key2:PreferNoSchedule"},
+				OperatorNodeSelectors: map[string]string{"validkey": "value", "anotherkey": ""},
+			},
+			expectError: false,
+		},
 	}
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {

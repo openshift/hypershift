@@ -504,6 +504,8 @@ type HyperShiftOperatorDeployment struct {
 	OIDCBucketRegion                        string
 	OIDCStorageProviderS3Secret             *corev1.Secret
 	OIDCStorageProviderS3SecretKey          string
+	OperatorTolerations                     []string
+	OperatorNodeSelectors                   map[string]string
 	MetricsSet                              metrics.MetricsSet
 	IncludeVersion                          bool
 	UWMTelemetry                            bool
@@ -536,6 +538,8 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 	var volumeMounts []corev1.VolumeMount
 	var initVolumeMounts []corev1.VolumeMount
 	var volumes []corev1.Volume
+	var tolerations []corev1.Toleration
+	var nodeSelectors map[string]string
 
 	o.addWebhookResources(&args, &volumeMounts, &volumes)
 	o.addOIDCResources(&args, &volumeMounts, &volumes)
@@ -548,6 +552,22 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 	image := o.resolveImage()
 	o.addImageTagEnvVars(&envVars)
 	o.addPrivatePlatformResources(&envVars, &volumeMounts, &volumes)
+
+	for _, tolerationStr := range o.OperatorTolerations {
+		toleration := cmdutil.ParseTolerationString(tolerationStr)
+		if toleration != nil {
+			tolerations = append(tolerations, *toleration)
+		}
+	}
+
+	for key, value := range o.OperatorNodeSelectors {
+		if key != "" {
+			if nodeSelectors == nil {
+				nodeSelectors = make(map[string]string)
+			}
+			nodeSelectors[key] = value
+		}
+	}
 
 	deployment := &appsv1.Deployment{
 		TypeMeta: metav1.TypeMeta{
@@ -696,6 +716,14 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 	// federated tokens (AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_FEDERATED_TOKEN_FILE).
 	if o.AzurePLSManagedIdentityClientID != "" {
 		deployment.Spec.Template.Labels["azure.workload.identity/use"] = "true"
+	}
+
+	if len(tolerations) > 0 {
+		deployment.Spec.Template.Spec.Tolerations = tolerations
+	}
+
+	if len(nodeSelectors) > 0 {
+		deployment.Spec.Template.Spec.NodeSelector = nodeSelectors
 	}
 
 	if o.IncludeVersion {
