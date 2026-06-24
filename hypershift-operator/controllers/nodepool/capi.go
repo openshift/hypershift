@@ -149,6 +149,7 @@ func (c *CAPI) Reconcile(ctx context.Context) error {
 		} else {
 			log.Info("Reconciled MachineDeployment", "result", result)
 		}
+		c.reconcileMachineDeploymentStatus(ctx, log, md, template)
 	}
 
 	mhc := c.machineHealthCheck()
@@ -473,12 +474,7 @@ func (c *CAPI) reconcileMachineDeployment(ctx context.Context, log logr.Logger,
 	}
 
 	setMachineDeploymentReplicas(nodePool, machineDeployment)
-
-	if updated := c.propagateVersionAndTemplate(log, machineDeployment, machineTemplateCR); updated {
-		return nil
-	}
-
-	c.reconcileMachineDeploymentStatus(log, machineDeployment, machineTemplateCR)
+	c.propagateVersionAndTemplate(log, machineDeployment, machineTemplateCR)
 
 	return nil
 }
@@ -563,12 +559,11 @@ func (c *CAPI) propagateLabelsAndTaintsToMachines(ctx context.Context, log logr.
 	return nil
 }
 
-func (c *CAPI) propagateVersionAndTemplate(log logr.Logger, machineDeployment *capiv1.MachineDeployment, machineTemplateCR client.Object) bool {
+func (c *CAPI) propagateVersionAndTemplate(log logr.Logger, machineDeployment *capiv1.MachineDeployment, machineTemplateCR client.Object) {
 	nodePool := c.nodePool
 	userDataSecret := c.UserDataSecret()
 	targetVersion := c.Version()
 	targetConfigHash := c.HashWithoutVersion()
-	isUpdating := false
 
 	if userDataSecret.Name != ptr.Deref(machineDeployment.Spec.Template.Spec.Bootstrap.DataSecretName, "") {
 		log.Info("New user data Secret has been generated",
@@ -586,7 +581,6 @@ func (c *CAPI) propagateVersionAndTemplate(log logr.Logger, machineDeployment *c
 		}
 		machineDeployment.Spec.Template.Spec.Version = &targetVersion
 		machineDeployment.Spec.Template.Spec.Bootstrap.DataSecretName = ptr.To(userDataSecret.Name)
-		isUpdating = true
 	}
 
 	if machineTemplateCR.GetName() != machineDeployment.Spec.Template.Spec.InfrastructureRef.Name {
@@ -594,13 +588,10 @@ func (c *CAPI) propagateVersionAndTemplate(log logr.Logger, machineDeployment *c
 			"current", machineDeployment.Spec.Template.Spec.InfrastructureRef.Name,
 			"target", machineTemplateCR.GetName())
 		machineDeployment.Spec.Template.Spec.InfrastructureRef.Name = machineTemplateCR.GetName()
-		isUpdating = true
 	}
-
-	return isUpdating
 }
 
-func (c *CAPI) reconcileMachineDeploymentStatus(log logr.Logger, machineDeployment *capiv1.MachineDeployment, machineTemplateCR client.Object) {
+func (c *CAPI) reconcileMachineDeploymentStatus(ctx context.Context, log logr.Logger, machineDeployment *capiv1.MachineDeployment, machineTemplateCR client.Object) {
 	nodePool := c.nodePool
 	targetVersion := c.Version()
 	targetConfigHash := c.HashWithoutVersion()
@@ -608,7 +599,7 @@ func (c *CAPI) reconcileMachineDeploymentStatus(log logr.Logger, machineDeployme
 
 	// If the MachineDeployment is now processing we know
 	// is at the expected version (spec.version) and config (userData Secret) so we reconcile status and annotation.
-	if MachineDeploymentComplete(machineDeployment) {
+	if MachineDeploymentComplete(ctx, c.Client, machineDeployment, machineTemplateCR.GetName()) {
 		if nodePool.Status.Version != targetVersion {
 			log.Info("Version update complete",
 				"previous", nodePool.Status.Version, "new", targetVersion)

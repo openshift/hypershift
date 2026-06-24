@@ -1,6 +1,7 @@
 package nodepool
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"testing"
@@ -27,7 +28,6 @@ import (
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
 	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
-	"sigs.k8s.io/cluster-api/util/conversion"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
@@ -1341,6 +1341,9 @@ func TestCAPIReconcile(t *testing.T) {
 					Annotations: map[string]string{
 						nodePoolAnnotation: "test-namespace/test-nodepool",
 					},
+					Labels: map[string]string{
+						capiv1.MachineDeploymentNameLabel: "test-nodepool",
+					},
 				},
 				Spec: capiv1.MachineSetSpec{
 					Template: capiv1.MachineTemplateSpec{
@@ -1436,6 +1439,9 @@ func TestCAPIReconcile(t *testing.T) {
 					Namespace: "test-namespace-test-cluster",
 					Annotations: map[string]string{
 						nodePoolAnnotation: "test-namespace/test-nodepool",
+					},
+					Labels: map[string]string{
+						capiv1.MachineDeploymentNameLabel: "test-nodepool",
 					},
 				},
 				Spec: capiv1.MachineSetSpec{
@@ -1543,6 +1549,9 @@ func TestCAPIReconcile(t *testing.T) {
 					Namespace: "test-namespace-test-cluster",
 					Annotations: map[string]string{
 						nodePoolAnnotation: "test-namespace/test-nodepool",
+					},
+					Labels: map[string]string{
+						capiv1.MachineDeploymentNameLabel: "test-nodepool",
 					},
 				},
 				Spec: capiv1.MachineSetSpec{
@@ -2517,45 +2526,40 @@ func TestPropagateVersionAndTemplate(t *testing.T) {
 		templateName         string
 		currentInfraRefName  string
 		useDifferentUserData bool
-		expectedUpdating     bool
 		expectedInfraRefName string
 	}{
 		{
-			name:                 "When user data secret name differs from current bootstrap, it should propagate version and return true",
+			name:                 "When user data secret name differs from current bootstrap, it should propagate version",
 			currentBootstrapName: "old-userdata",
 			currentVersion:       "4.16.0",
 			templateName:         "template-1",
 			currentInfraRefName:  "template-1",
 			useDifferentUserData: true,
-			expectedUpdating:     true,
 			expectedInfraRefName: "template-1",
 		},
 		{
-			name:                 "When machine template name differs from infra ref, it should propagate template and return true",
+			name:                 "When machine template name differs from infra ref, it should propagate template",
 			currentBootstrapName: "", // will be set to match computed name
 			currentVersion:       "4.17.0",
 			templateName:         "new-template",
 			currentInfraRefName:  "old-template",
-			expectedUpdating:     true,
 			expectedInfraRefName: "new-template",
 		},
 		{
-			name:                 "When both user data and template differ, it should propagate both and return true",
+			name:                 "When both user data and template differ, it should propagate both",
 			currentBootstrapName: "old-userdata",
 			currentVersion:       "4.16.0",
 			templateName:         "new-template",
 			currentInfraRefName:  "old-template",
 			useDifferentUserData: true,
-			expectedUpdating:     true,
 			expectedInfraRefName: "new-template",
 		},
 		{
-			name:                 "When nothing differs, it should not update and return false",
+			name:                 "When nothing differs, it should not update",
 			currentBootstrapName: "", // will be set to match computed name
 			currentVersion:       "4.17.0",
 			templateName:         "same-template",
 			currentInfraRefName:  "same-template",
-			expectedUpdating:     false,
 			expectedInfraRefName: "same-template",
 		},
 	}
@@ -2620,12 +2624,10 @@ func TestPropagateVersionAndTemplate(t *testing.T) {
 				},
 			}
 
-			result := capi.propagateVersionAndTemplate(logr.Discard(), md, templateCR)
-			g.Expect(result).To(Equal(tc.expectedUpdating))
+			capi.propagateVersionAndTemplate(logr.Discard(), md, templateCR)
 			g.Expect(md.Spec.Template.Spec.InfrastructureRef.Name).To(Equal(tc.expectedInfraRefName))
 
-			if tc.expectedUpdating && tc.useDifferentUserData {
-				// When updating, bootstrap should be set to the computed user data name.
+			if tc.useDifferentUserData {
 				g.Expect(*md.Spec.Template.Spec.Bootstrap.DataSecretName).To(Equal(computedUserDataName))
 				g.Expect(*md.Spec.Template.Spec.Version).To(Equal("4.17.0"))
 			}
@@ -2637,6 +2639,7 @@ func TestReconcileMachineDeploymentStatus(t *testing.T) {
 	testCases := []struct {
 		name                         string
 		machineDeployment            *capiv1.MachineDeployment
+		extraObjects                 []client.Object
 		nodePoolVersion              string
 		nodePoolAnnotations          map[string]string
 		targetVersion                string
@@ -2650,7 +2653,7 @@ func TestReconcileMachineDeploymentStatus(t *testing.T) {
 		{
 			name: "When MachineDeployment is complete, it should update nodePool version and annotations",
 			machineDeployment: &capiv1.MachineDeployment{
-				ObjectMeta: metav1.ObjectMeta{Generation: 1},
+				ObjectMeta: metav1.ObjectMeta{Name: "test-md", Namespace: "cp-ns", Generation: 1},
 				Spec: capiv1.MachineDeploymentSpec{
 					Replicas: ptr.To[int32](3),
 				},
@@ -2660,6 +2663,22 @@ func TestReconcileMachineDeploymentStatus(t *testing.T) {
 					ReadyReplicas:      3,
 					AvailableReplicas:  3,
 					ObservedGeneration: 1,
+				},
+			},
+			extraObjects: []client.Object{
+				&capiv1.MachineSet{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-ms",
+						Namespace: "cp-ns",
+						Labels:    map[string]string{capiv1.MachineDeploymentNameLabel: "test-md"},
+					},
+					Spec: capiv1.MachineSetSpec{
+						Template: capiv1.MachineTemplateSpec{
+							Spec: capiv1.MachineSpec{
+								InfrastructureRef: corev1.ObjectReference{Name: "template-name"},
+							},
+						},
+					},
 				},
 			},
 			nodePoolVersion:            "",
@@ -2737,9 +2756,15 @@ func TestReconcileMachineDeploymentStatus(t *testing.T) {
 				},
 			}
 
+			clientBuilder := fake.NewClientBuilder().WithScheme(api.Scheme)
+			if len(tc.extraObjects) > 0 {
+				clientBuilder = clientBuilder.WithObjects(tc.extraObjects...)
+			}
+
 			capi := &CAPI{
 				Token: &Token{
 					ConfigGenerator: &ConfigGenerator{
+						Client:                clientBuilder.Build(),
 						nodePool:              nodePool,
 						controlplaneNamespace: "cp-ns",
 						rolloutConfig: &rolloutConfig{
@@ -2761,7 +2786,7 @@ func TestReconcileMachineDeploymentStatus(t *testing.T) {
 				},
 			}
 
-			capi.reconcileMachineDeploymentStatus(logr.Discard(), tc.machineDeployment, templateCR)
+			capi.reconcileMachineDeploymentStatus(t.Context(), logr.Discard(), tc.machineDeployment, templateCR)
 
 			g.Expect(nodePool.Status.Replicas).To(Equal(tc.expectedReplicas))
 			g.Expect(nodePool.Status.Version).To(Equal(tc.expectedVersion))
@@ -3281,142 +3306,254 @@ func TestNewCAPI(t *testing.T) {
 }
 
 func TestMachineDeploymentComplete(t *testing.T) {
-	two := int32(2)
-	three := int32(3)
-
-	conversionData := func(replicas, upToDate, available int32, observedGen int64) string {
-		data := map[string]any{
-			"apiVersion": "cluster.x-k8s.io/v1beta2",
-			"kind":       "MachineDeployment",
-			"spec":       map[string]any{"replicas": replicas},
-			"status": map[string]any{
-				"observedGeneration": observedGen,
-				"replicas":           replicas,
-				"upToDateReplicas":   upToDate,
-				"availableReplicas":  available,
-			},
-		}
-		raw, _ := json.Marshal(data)
-		return string(raw)
-	}
-
 	testCases := []struct {
-		name     string
-		md       *capiv1.MachineDeployment
-		expected bool
+		name                  string
+		md                    *capiv1.MachineDeployment
+		targetMachineTemplate string
+		extraObjects          []client.Object
+		expected              bool
 	}{
 		{
-			name: "When all v1beta1 and v1beta2 fields agree it should return true",
+			name: "When all fields match spec replicas and generation it should return true",
 			md: &capiv1.MachineDeployment{
-				ObjectMeta: metav1.ObjectMeta{
-					Generation: 2,
-					Annotations: map[string]string{
-						conversion.DataAnnotation: conversionData(2, 2, 2, 2),
-					},
+				ObjectMeta: metav1.ObjectMeta{Generation: 2},
+				Spec:       capiv1.MachineDeploymentSpec{Replicas: ptr.To[int32](2)},
+				Status: capiv1.MachineDeploymentStatus{
+					Replicas:           2,
+					UpdatedReplicas:    2,
+					AvailableReplicas:  2,
+					ObservedGeneration: 2,
 				},
-				Spec:   capiv1.MachineDeploymentSpec{Replicas: &two},
-				Status: capiv1.MachineDeploymentStatus{Replicas: 2, UpdatedReplicas: 2, AvailableReplicas: 2, ObservedGeneration: 2},
 			},
 			expected: true,
 		},
 		{
-			name: "When v1beta1 looks complete but v1beta2 upToDateReplicas disagrees it should return false",
+			name: "When availableReplicas is zero it should return false",
 			md: &capiv1.MachineDeployment{
-				ObjectMeta: metav1.ObjectMeta{
-					Generation: 2,
-					Annotations: map[string]string{
-						conversion.DataAnnotation: conversionData(2, 0, 2, 2),
-					},
+				ObjectMeta: metav1.ObjectMeta{Generation: 2},
+				Spec:       capiv1.MachineDeploymentSpec{Replicas: ptr.To[int32](2)},
+				Status: capiv1.MachineDeploymentStatus{
+					Replicas:           2,
+					UpdatedReplicas:    2,
+					AvailableReplicas:  0,
+					ObservedGeneration: 2,
 				},
-				Spec:   capiv1.MachineDeploymentSpec{Replicas: &two},
-				Status: capiv1.MachineDeploymentStatus{Replicas: 2, UpdatedReplicas: 2, AvailableReplicas: 2, ObservedGeneration: 2},
 			},
 			expected: false,
 		},
 		{
-			name: "When v1beta1 looks complete but v1beta2 replicas shows surge it should return false",
+			name: "When replicas shows surge it should return false",
 			md: &capiv1.MachineDeployment{
-				ObjectMeta: metav1.ObjectMeta{
-					Generation: 2,
-					Annotations: map[string]string{
-						conversion.DataAnnotation: conversionData(3, 2, 2, 2),
-					},
+				ObjectMeta: metav1.ObjectMeta{Generation: 2},
+				Spec:       capiv1.MachineDeploymentSpec{Replicas: ptr.To[int32](2)},
+				Status: capiv1.MachineDeploymentStatus{
+					Replicas:           3,
+					UpdatedReplicas:    2,
+					AvailableReplicas:  2,
+					ObservedGeneration: 2,
 				},
-				Spec:   capiv1.MachineDeploymentSpec{Replicas: &two},
-				Status: capiv1.MachineDeploymentStatus{Replicas: 2, UpdatedReplicas: 2, AvailableReplicas: 2, ObservedGeneration: 2},
 			},
 			expected: false,
 		},
 		{
-			name: "When v1beta1 looks complete but v1beta2 observedGeneration is stale it should return false",
+			name: "When observedGeneration is stale it should return false",
 			md: &capiv1.MachineDeployment{
-				ObjectMeta: metav1.ObjectMeta{
-					Generation: 2,
-					Annotations: map[string]string{
-						conversion.DataAnnotation: conversionData(2, 2, 2, 1),
-					},
+				ObjectMeta: metav1.ObjectMeta{Generation: 2},
+				Spec:       capiv1.MachineDeploymentSpec{Replicas: ptr.To[int32](2)},
+				Status: capiv1.MachineDeploymentStatus{
+					Replicas:           2,
+					UpdatedReplicas:    2,
+					AvailableReplicas:  2,
+					ObservedGeneration: 1,
 				},
-				Spec:   capiv1.MachineDeploymentSpec{Replicas: &two},
-				Status: capiv1.MachineDeploymentStatus{Replicas: 2, UpdatedReplicas: 2, AvailableReplicas: 2, ObservedGeneration: 2},
 			},
 			expected: false,
 		},
 		{
-			name: "When v1beta1 is not complete it should return false without checking conversion data",
+			name: "When AvailableReplicas does not match it should return false",
 			md: &capiv1.MachineDeployment{
-				ObjectMeta: metav1.ObjectMeta{
-					Generation: 2,
+				ObjectMeta: metav1.ObjectMeta{Generation: 2},
+				Spec:       capiv1.MachineDeploymentSpec{Replicas: ptr.To[int32](2)},
+				Status: capiv1.MachineDeploymentStatus{
+					Replicas:           2,
+					UpdatedReplicas:    2,
+					AvailableReplicas:  1,
+					ObservedGeneration: 2,
 				},
-				Spec:   capiv1.MachineDeploymentSpec{Replicas: &two},
-				Status: capiv1.MachineDeploymentStatus{Replicas: 3, UpdatedReplicas: 1, AvailableReplicas: 2, ObservedGeneration: 2},
 			},
 			expected: false,
 		},
 		{
-			name: "When no conversion-data annotation exists it should fall back to v1beta1 only",
+			name: "When spec replicas is zero it should return true",
 			md: &capiv1.MachineDeployment{
-				ObjectMeta: metav1.ObjectMeta{
-					Generation: 1,
+				ObjectMeta: metav1.ObjectMeta{Generation: 1},
+				Spec:       capiv1.MachineDeploymentSpec{Replicas: ptr.To[int32](0)},
+				Status: capiv1.MachineDeploymentStatus{
+					Replicas:           0,
+					UpdatedReplicas:    0,
+					AvailableReplicas:  0,
+					ObservedGeneration: 1,
 				},
-				Spec:   capiv1.MachineDeploymentSpec{Replicas: &two},
-				Status: capiv1.MachineDeploymentStatus{Replicas: 2, UpdatedReplicas: 2, AvailableReplicas: 2, ObservedGeneration: 1},
 			},
 			expected: true,
 		},
 		{
-			name: "When conversion-data annotation is malformed it should fall back to v1beta1 result",
+			name: "When V1Beta2 is nil it should fall back to v1beta1 only",
 			md: &capiv1.MachineDeployment{
-				ObjectMeta: metav1.ObjectMeta{
-					Generation: 1,
-					Annotations: map[string]string{
-						conversion.DataAnnotation: "not-valid-json",
-					},
+				ObjectMeta: metav1.ObjectMeta{Generation: 2},
+				Spec:       capiv1.MachineDeploymentSpec{Replicas: ptr.To[int32](2)},
+				Status: capiv1.MachineDeploymentStatus{
+					Replicas:           2,
+					UpdatedReplicas:    2,
+					AvailableReplicas:  2,
+					ObservedGeneration: 2,
 				},
-				Spec:   capiv1.MachineDeploymentSpec{Replicas: &two},
-				Status: capiv1.MachineDeploymentStatus{Replicas: 2, UpdatedReplicas: 2, AvailableReplicas: 2, ObservedGeneration: 1},
 			},
 			expected: true,
 		},
 		{
-			name: "When v1beta1 replicas does not match spec it should return false",
+			name: "When V1Beta2 status matches it should return true",
 			md: &capiv1.MachineDeployment{
-				ObjectMeta: metav1.ObjectMeta{
-					Generation: 2,
-					Annotations: map[string]string{
-						conversion.DataAnnotation: conversionData(3, 2, 2, 2),
+				ObjectMeta: metav1.ObjectMeta{Generation: 2},
+				Spec:       capiv1.MachineDeploymentSpec{Replicas: ptr.To[int32](2)},
+				Status: capiv1.MachineDeploymentStatus{
+					Replicas:           2,
+					UpdatedReplicas:    2,
+					AvailableReplicas:  2,
+					ObservedGeneration: 2,
+					V1Beta2: &capiv1.MachineDeploymentV1Beta2Status{
+						AvailableReplicas: ptr.To[int32](2),
+						ReadyReplicas:     ptr.To[int32](2),
+						UpToDateReplicas:  ptr.To[int32](2),
 					},
 				},
-				Spec:   capiv1.MachineDeploymentSpec{Replicas: &three},
-				Status: capiv1.MachineDeploymentStatus{Replicas: 2, UpdatedReplicas: 2, AvailableReplicas: 2, ObservedGeneration: 2},
+			},
+			expected: true,
+		},
+		{
+			name: "When v1beta1 complete but V1Beta2 UpToDateReplicas disagrees it should return false",
+			md: &capiv1.MachineDeployment{
+				ObjectMeta: metav1.ObjectMeta{Generation: 2},
+				Spec:       capiv1.MachineDeploymentSpec{Replicas: ptr.To[int32](2)},
+				Status: capiv1.MachineDeploymentStatus{
+					Replicas:           2,
+					UpdatedReplicas:    2,
+					AvailableReplicas:  2,
+					ObservedGeneration: 2,
+					V1Beta2: &capiv1.MachineDeploymentV1Beta2Status{
+						AvailableReplicas: ptr.To[int32](2),
+						UpToDateReplicas:  ptr.To[int32](1),
+					},
+				},
 			},
 			expected: false,
+		},
+		{
+			name: "When v1beta1 complete but V1Beta2 AvailableReplicas disagrees it should return false",
+			md: &capiv1.MachineDeployment{
+				ObjectMeta: metav1.ObjectMeta{Generation: 2},
+				Spec:       capiv1.MachineDeploymentSpec{Replicas: ptr.To[int32](2)},
+				Status: capiv1.MachineDeploymentStatus{
+					Replicas:           2,
+					UpdatedReplicas:    2,
+					AvailableReplicas:  2,
+					ObservedGeneration: 2,
+					V1Beta2: &capiv1.MachineDeploymentV1Beta2Status{
+						AvailableReplicas: ptr.To[int32](1),
+						UpToDateReplicas:  ptr.To[int32](2),
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "When v1beta1 complete but V1Beta2 fields are nil it should return false",
+			md: &capiv1.MachineDeployment{
+				ObjectMeta: metav1.ObjectMeta{Generation: 2},
+				Spec:       capiv1.MachineDeploymentSpec{Replicas: ptr.To[int32](2)},
+				Status: capiv1.MachineDeploymentStatus{
+					Replicas:           2,
+					UpdatedReplicas:    2,
+					AvailableReplicas:  2,
+					ObservedGeneration: 2,
+					V1Beta2:            &capiv1.MachineDeploymentV1Beta2Status{},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "When status looks complete but no MachineSet has target template it should return false",
+			md: &capiv1.MachineDeployment{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-md", Namespace: "cp-ns", Generation: 2},
+				Spec:       capiv1.MachineDeploymentSpec{Replicas: ptr.To[int32](2)},
+				Status: capiv1.MachineDeploymentStatus{
+					Replicas:           2,
+					UpdatedReplicas:    2,
+					AvailableReplicas:  2,
+					ObservedGeneration: 2,
+				},
+			},
+			targetMachineTemplate: "new-template",
+			extraObjects: []client.Object{
+				&capiv1.MachineSet{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-ms-old",
+						Namespace: "cp-ns",
+						Labels:    map[string]string{capiv1.MachineDeploymentNameLabel: "test-md"},
+					},
+					Spec: capiv1.MachineSetSpec{
+						Template: capiv1.MachineTemplateSpec{
+							Spec: capiv1.MachineSpec{
+								InfrastructureRef: corev1.ObjectReference{Name: "old-template"},
+							},
+						},
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "When status is complete and MachineSet has target template it should return true",
+			md: &capiv1.MachineDeployment{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-md", Namespace: "cp-ns", Generation: 2},
+				Spec:       capiv1.MachineDeploymentSpec{Replicas: ptr.To[int32](2)},
+				Status: capiv1.MachineDeploymentStatus{
+					Replicas:           2,
+					UpdatedReplicas:    2,
+					AvailableReplicas:  2,
+					ObservedGeneration: 2,
+				},
+			},
+			targetMachineTemplate: "new-template",
+			extraObjects: []client.Object{
+				&capiv1.MachineSet{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-ms-new",
+						Namespace: "cp-ns",
+						Labels:    map[string]string{capiv1.MachineDeploymentNameLabel: "test-md"},
+					},
+					Spec: capiv1.MachineSetSpec{
+						Template: capiv1.MachineTemplateSpec{
+							Spec: capiv1.MachineSpec{
+								InfrastructureRef: corev1.ObjectReference{Name: "new-template"},
+							},
+						},
+					},
+				},
+			},
+			expected: true,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
-			g.Expect(MachineDeploymentComplete(tc.md)).To(Equal(tc.expected))
+			clientBuilder := fake.NewClientBuilder().WithScheme(api.Scheme)
+			if len(tc.extraObjects) > 0 {
+				clientBuilder = clientBuilder.WithObjects(tc.extraObjects...)
+			}
+			fakeClient := clientBuilder.Build()
+			g.Expect(MachineDeploymentComplete(context.Background(), fakeClient, tc.md, tc.targetMachineTemplate)).To(Equal(tc.expected))
 		})
 	}
 }
