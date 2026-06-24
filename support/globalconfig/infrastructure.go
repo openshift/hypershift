@@ -74,8 +74,13 @@ func ReconcileInfrastructure(infra *configv1.Infrastructure, hcp *hyperv1.Hosted
 
 	switch platformType {
 	case hyperv1.AWSPlatform:
-		infra.Spec.CloudConfig.Name = CloudProviderCMName
-		infra.Spec.CloudConfig.Key = AWSProviderConfigKey
+		if hcp.Spec.AdditionalTrustBundle != nil ||
+			(hcp.Spec.Configuration != nil && hcp.Spec.Configuration.Proxy != nil && hcp.Spec.Configuration.Proxy.TrustedCA.Name != "") {
+			infra.Spec.CloudConfig.Name = CloudProviderCMName
+			infra.Spec.CloudConfig.Key = AWSProviderConfigKey
+		} else {
+			infra.Spec.CloudConfig = configv1.ConfigMapFileReference{}
+		}
 		if infra.Spec.PlatformSpec.AWS == nil {
 			infra.Spec.PlatformSpec.AWS = &configv1.AWSPlatformSpec{}
 		}

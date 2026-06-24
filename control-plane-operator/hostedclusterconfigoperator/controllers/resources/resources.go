@@ -14,7 +14,6 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/aws"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/azure"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/openstack"
 	kubevirtcsi "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/csi/kubevirt"
@@ -2501,29 +2500,35 @@ func (r *reconciler) reconcileCloudConfig(ctx context.Context, hcp *hyperv1.Host
 
 	switch hcp.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
+		hasTrustBundle := hcp.Spec.AdditionalTrustBundle != nil ||
+			(hcp.Spec.Configuration != nil && hcp.Spec.Configuration.Proxy != nil && hcp.Spec.Configuration.Proxy.TrustedCA.Name != "")
+
+		if !hasTrustBundle {
+			cm := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: ConfigNamespace, Name: CloudProviderCMName}}
+			if err := r.client.Delete(ctx, cm); err != nil && !apierrors.IsNotFound(err) {
+				return fmt.Errorf("failed to clean up %s/%s configmap: %w", cm.Namespace, cm.Name, err)
+			}
+			return nil
+		}
+
 		reference := cpomanifests.AWSProviderConfig(hcp.Namespace)
 		if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(reference), reference); err != nil {
 			return fmt.Errorf("failed to fetch %s/%s configmap from management cluster: %w", reference.Namespace, reference.Name, err)
 		}
-		providerConfig, ok := reference.Data[aws.ProviderConfigKey]
+		providerConfig, ok := reference.Data[globalconfig.AWSProviderConfigKey]
 		if !ok || strings.TrimSpace(providerConfig) == "" {
-			return fmt.Errorf("source configmap %s/%s is missing required key %q", reference.Namespace, reference.Name, aws.ProviderConfigKey)
+			return fmt.Errorf("source configmap %s/%s is missing required key %q", reference.Namespace, reference.Name, globalconfig.AWSProviderConfigKey)
 		}
 
-		// Use the aggregated trust bundle that combines spec.AdditionalTrustBundle
-		// and spec.Configuration.Proxy.TrustedCA, managed by the HCP controller.
 		var caBundle string
-		if hcp.Spec.AdditionalTrustBundle != nil ||
-			(hcp.Spec.Configuration != nil && hcp.Spec.Configuration.Proxy != nil && hcp.Spec.Configuration.Proxy.TrustedCA.Name != "") {
-			managedTrustBundle := cpomanifests.TrustedCABundleConfigMap(hcp.Namespace)
-			if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(managedTrustBundle), managedTrustBundle); err != nil {
-				if !apierrors.IsNotFound(err) {
-					return fmt.Errorf("failed to fetch managed trusted CA bundle from management cluster: %w", err)
-				}
-				ctrl.LoggerFrom(ctx).Info("managed trusted CA bundle ConfigMap not found, skipping CA bundle sync", "configmap", client.ObjectKeyFromObject(managedTrustBundle))
-			} else {
-				caBundle = managedTrustBundle.Data[certs.UserCABundleMapKey]
+		managedTrustBundle := cpomanifests.TrustedCABundleConfigMap(hcp.Namespace)
+		if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(managedTrustBundle), managedTrustBundle); err != nil {
+			if !apierrors.IsNotFound(err) {
+				return fmt.Errorf("failed to fetch managed trusted CA bundle from management cluster: %w", err)
 			}
+			ctrl.LoggerFrom(ctx).Info("managed trusted CA bundle ConfigMap not found, skipping CA bundle sync", "configmap", client.ObjectKeyFromObject(managedTrustBundle))
+		} else {
+			caBundle = managedTrustBundle.Data[certs.UserCABundleMapKey]
 		}
 
 		cm := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: ConfigNamespace, Name: CloudProviderCMName}}
@@ -2531,7 +2536,7 @@ func (r *reconciler) reconcileCloudConfig(ctx context.Context, hcp *hyperv1.Host
 			if cm.Data == nil {
 				cm.Data = map[string]string{}
 			}
-			cm.Data[aws.ProviderConfigKey] = providerConfig
+			cm.Data[globalconfig.AWSProviderConfigKey] = providerConfig
 			if caBundle != "" {
 				cm.Data[globalconfig.CABundleKey] = caBundle
 			} else {
