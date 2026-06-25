@@ -204,6 +204,7 @@ func preparePayloadScript(platformType hyperv1.PlatformType, oauthEnabled bool, 
 		fmt.Sprintf("cp -R /manifests %s/", payloadDir),
 		fmt.Sprintf("rm -f %s/manifests/*_deployment.yaml", payloadDir),
 		fmt.Sprintf("rm -f %s/manifests/*_servicemonitor.yaml", payloadDir),
+		fmt.Sprintf("rm -f %s/manifests/0000_50_cluster-update-console-plugin_*", payloadDir),
 		fmt.Sprintf("cp -R /release-manifests %s/", payloadDir),
 	)
 
