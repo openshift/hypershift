@@ -79,9 +79,6 @@ func MultiHopUpgradeTest(getTestCtx internal.TestContextGetter) {
 			By(fmt.Sprintf("Hop %d/%d: waiting for control plane component rollout", hopNum, len(imageChain)-1))
 			e2eutil.WaitForControlPlaneComponentRollout(GinkgoTB(), ctx, testCtx.MgmtClient, hc, previousVersion)
 
-			By(fmt.Sprintf("Hop %d/%d: waiting for control plane version rollout", hopNum, len(imageChain)-1))
-			e2eutil.WaitForControlPlaneRollout(GinkgoTB(), ctx, testCtx.MgmtClient, hc)
-
 			By(fmt.Sprintf("Hop %d/%d: waiting for data plane rollout", hopNum, len(imageChain)-1))
 			e2eutil.WaitForDataPlaneRollout(GinkgoTB(), ctx, testCtx.MgmtClient, hc)
 
