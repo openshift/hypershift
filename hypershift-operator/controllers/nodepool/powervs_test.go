@@ -46,7 +46,7 @@ func TestGetPowerVSImage(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
-			_, _, err := getPowerVSImage(tc.region, tc.releaseImage)
+			_, _, err := getPowerVSImage(tc.region, tc.releaseImage, "")
 			g.Expect(err).To(HaveOccurred())
 			g.Expect(err.Error()).To(ContainSubstring(tc.expectedError))
 		})

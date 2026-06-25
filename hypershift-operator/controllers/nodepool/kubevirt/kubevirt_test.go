@@ -601,7 +601,7 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 			}
 
 			bootImage := newCachedBootImage(bootImageName, imageHash, hostedClusterNamespace, false, np)
-			result, err := MachineTemplateSpec(tc.nodePool, tc.hcluster, &releaseinfo.ReleaseImage{}, bootImage)
+			result, err := MachineTemplateSpec(tc.nodePool, tc.hcluster, &releaseinfo.ReleaseImage{}, bootImage, "")
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(result).To(Equal(tc.expected), "Comparison failed\n%v", cmp.Diff(tc.expected, result))
 		})
@@ -1189,7 +1189,7 @@ func TestJsonPatch(t *testing.T) {
 
 			bootImage := newCachedBootImage(bootImageName, imageHash, hostedClusterNamespace, false, nil)
 			bootImage.dvName = bootImageNamePrefix + "12345"
-			result, err := MachineTemplateSpec(tc.nodePool, tc.hcluster, &releaseinfo.ReleaseImage{}, bootImage)
+			result, err := MachineTemplateSpec(tc.nodePool, tc.hcluster, &releaseinfo.ReleaseImage{}, bootImage, "")
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(result).To(Equal(tc.expected), "Comparison failed\n%v", cmp.Diff(tc.expected, result))
 		})
@@ -1580,7 +1580,7 @@ func TestDefaultImage(t *testing.T) {
 			if testRI == nil {
 				testRI = ri
 			}
-			img, digest, err := defaultImage(tt.arch, testRI)
+			img, digest, err := defaultImage(tt.arch, testRI, "")
 			if tt.expectedError {
 				if err == nil {
 					t.Fatalf("expected error but got nil")

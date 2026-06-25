@@ -20,7 +20,7 @@ import (
 
 func (c *CAPI) openstackMachineTemplate(templateNameGenerator func(spec any) (string, error)) (*capiopenstackv1beta1.OpenStackMachineTemplate, error) {
 	nodePool := c.nodePool
-	spec, err := openstack.MachineTemplateSpec(c.hostedCluster, nodePool, c.releaseImage)
+	spec, err := openstack.MachineTemplateSpec(c.hostedCluster, nodePool, c.releaseImage, c.resolvedRHELStreamForBootImage)
 	if err != nil {
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolValidMachineTemplateConditionType,
@@ -50,8 +50,12 @@ func (c *CAPI) openstackMachineTemplate(templateNameGenerator func(spec any) (st
 	return template, nil
 }
 func (r *NodePoolReconciler) setOpenStackConditions(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, _ string, releaseImage *releaseinfo.ReleaseImage) error {
+	rhelStream, err := getRHELStreamForBootImage(nodePool, releaseImage)
+	if err != nil {
+		return fmt.Errorf("failed to resolve RHEL stream: %w", err)
+	}
 	if nodePool.Spec.Platform.OpenStack.ImageName == "" {
-		_, err := openstack.OpenStackReleaseImage(releaseImage)
+		_, err := openstack.OpenStackReleaseImage(releaseImage, rhelStream)
 		if err != nil {
 			SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 				Type:               hyperv1.NodePoolValidPlatformImageType,
@@ -62,7 +66,7 @@ func (r *NodePoolReconciler) setOpenStackConditions(ctx context.Context, nodePoo
 			})
 			return fmt.Errorf("couldn't discover an OpenStack Image for release image: %w", err)
 		}
-		imageName, err := r.reconcileOpenStackImageCR(ctx, r.Client, hcluster, releaseImage, nodePool)
+		imageName, err := r.reconcileOpenStackImageCR(ctx, r.Client, hcluster, releaseImage, nodePool, rhelStream)
 		if err != nil {
 			return err
 		}
@@ -88,8 +92,8 @@ func (r *NodePoolReconciler) setOpenStackConditions(ctx context.Context, nodePoo
 // reconcileOpenStackImageCR reconciles the OpenStack Image CR for the given NodePool.
 // An ORC object will be created or updated with the image spec.
 // The image name will be returned.
-func (r *NodePoolReconciler) reconcileOpenStackImageCR(ctx context.Context, client client.Client, hcluster *hyperv1.HostedCluster, release *releaseinfo.ReleaseImage, nodePool *hyperv1.NodePool) (string, error) {
-	releaseVersion, err := openstack.OpenStackReleaseImage(release)
+func (r *NodePoolReconciler) reconcileOpenStackImageCR(ctx context.Context, client client.Client, hcluster *hyperv1.HostedCluster, release *releaseinfo.ReleaseImage, nodePool *hyperv1.NodePool, streamName string) (string, error) {
+	releaseVersion, err := openstack.OpenStackReleaseImage(release, streamName)
 	if err != nil {
 		return "", err
 	}
@@ -119,7 +123,7 @@ func (r *NodePoolReconciler) reconcileOpenStackImageCR(ctx context.Context, clie
 	}
 
 	if _, err := r.CreateOrUpdate(ctx, client, &openStackImage, func() error {
-		err := openstack.ReconcileOpenStackImageSpec(hcluster, &openStackImage.Spec, release)
+		err := openstack.ReconcileOpenStackImageSpec(hcluster, &openStackImage.Spec, release, streamName)
 		if err != nil {
 			return err
 		}
