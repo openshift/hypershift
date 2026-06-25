@@ -169,7 +169,7 @@ func computeCatalogImages(releaseVersion func() (*semver.Version, error), imageE
 		"redhat-operators":    "",
 	}
 
-	maxCatalogVersion := semver.Version{Major: 4, Minor: 21}
+	maxCatalogVersion := semver.Version{Major: 4, Minor: 22}
 	for catalog := range catalogs {
 		catalogVersion := *version
 		// Cap catalog version to the latest known-good catalog images.
