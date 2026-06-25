@@ -4304,10 +4304,11 @@ func TestReconcileControlPlaneVersionStatus(t *testing.T) {
 
 func TestReconcileDeletion(t *testing.T) {
 	tests := []struct {
-		name           string
-		setupEC2Mock   func(*gomock.Controller) *awsapi.MockEC2API
-		wantErr        bool
-		wantCondStatus metav1.ConditionStatus
+		name             string
+		setupEC2Mock     func(*gomock.Controller) *awsapi.MockEC2API
+		wantErr          bool
+		wantCondStatus   metav1.ConditionStatus
+		wantRequeueAfter time.Duration
 	}{
 		{
 			name: "When destroyAWSDefaultSecurityGroup returns UnauthorizedOperation, it should skip gracefully and not return error",
@@ -4326,7 +4327,7 @@ func TestReconcileDeletion(t *testing.T) {
 			wantCondStatus: metav1.ConditionFalse,
 		},
 		{
-			name: "When destroyAWSDefaultSecurityGroup returns DependencyViolation, it should skip gracefully and not return error",
+			name: "When destroyAWSDefaultSecurityGroup returns DependencyViolation, it should requeue for retry",
 			setupEC2Mock: func(mockCtrl *gomock.Controller) *awsapi.MockEC2API {
 				m := awsapi.NewMockEC2API(mockCtrl)
 				m.EXPECT().DescribeSecurityGroups(gomock.Any(), gomock.Any()).Return(&ec2.DescribeSecurityGroupsOutput{
@@ -4338,8 +4339,9 @@ func TestReconcileDeletion(t *testing.T) {
 					&smithy.GenericAPIError{Code: "DependencyViolation", Message: "resource has dependent object"})
 				return m
 			},
-			wantErr:        false,
-			wantCondStatus: metav1.ConditionFalse,
+			wantErr:          false,
+			wantCondStatus:   metav1.ConditionFalse,
+			wantRequeueAfter: 5 * time.Second,
 		},
 		{
 			name: "When destroyAWSDefaultSecurityGroup returns unexpected error, it should propagate the error",
@@ -4361,14 +4363,51 @@ func TestReconcileDeletion(t *testing.T) {
 			name: "When destroyAWSDefaultSecurityGroup succeeds, it should set condition to true",
 			setupEC2Mock: func(mockCtrl *gomock.Controller) *awsapi.MockEC2API {
 				m := awsapi.NewMockEC2API(mockCtrl)
-				// First call: find the SG
 				m.EXPECT().DescribeSecurityGroups(gomock.Any(), gomock.Any()).Return(&ec2.DescribeSecurityGroupsOutput{
 					SecurityGroups: []ec2types.SecurityGroup{
 						{GroupId: aws.String("sg-123")},
 					},
 				}, nil)
 				m.EXPECT().DeleteSecurityGroup(gomock.Any(), gomock.Any()).Return(&ec2.DeleteSecurityGroupOutput{}, nil)
-				// Second call: verify SG is gone
+				m.EXPECT().DescribeSecurityGroups(gomock.Any(), gomock.Any()).Return(&ec2.DescribeSecurityGroupsOutput{
+					SecurityGroups: []ec2types.SecurityGroup{},
+				}, nil)
+				return m
+			},
+			wantErr:        false,
+			wantCondStatus: metav1.ConditionTrue,
+		},
+		{
+			name: "When DeleteSecurityGroup returns InvalidGroup.NotFound, it should treat as success",
+			setupEC2Mock: func(mockCtrl *gomock.Controller) *awsapi.MockEC2API {
+				m := awsapi.NewMockEC2API(mockCtrl)
+				m.EXPECT().DescribeSecurityGroups(gomock.Any(), gomock.Any()).Return(&ec2.DescribeSecurityGroupsOutput{
+					SecurityGroups: []ec2types.SecurityGroup{
+						{GroupId: aws.String("sg-123")},
+					},
+				}, nil)
+				m.EXPECT().DeleteSecurityGroup(gomock.Any(), gomock.Any()).Return(nil,
+					&smithy.GenericAPIError{Code: "InvalidGroup.NotFound", Message: "not found"})
+				return m
+			},
+			wantErr:        false,
+			wantCondStatus: metav1.ConditionTrue,
+		},
+		{
+			name: "When RevokeSecurityGroupIngress returns InvalidPermission.NotFound, it should continue with deletion",
+			setupEC2Mock: func(mockCtrl *gomock.Controller) *awsapi.MockEC2API {
+				m := awsapi.NewMockEC2API(mockCtrl)
+				m.EXPECT().DescribeSecurityGroups(gomock.Any(), gomock.Any()).Return(&ec2.DescribeSecurityGroupsOutput{
+					SecurityGroups: []ec2types.SecurityGroup{
+						{
+							GroupId:       aws.String("sg-123"),
+							IpPermissions: []ec2types.IpPermission{{IpProtocol: aws.String("-1")}},
+						},
+					},
+				}, nil)
+				m.EXPECT().RevokeSecurityGroupIngress(gomock.Any(), gomock.Any()).Return(nil,
+					&smithy.GenericAPIError{Code: "InvalidPermission.NotFound", Message: "not found"})
+				m.EXPECT().DeleteSecurityGroup(gomock.Any(), gomock.Any()).Return(&ec2.DeleteSecurityGroupOutput{}, nil)
 				m.EXPECT().DescribeSecurityGroups(gomock.Any(), gomock.Any()).Return(&ec2.DescribeSecurityGroupsOutput{
 					SecurityGroups: []ec2types.SecurityGroup{},
 				}, nil)
@@ -4418,7 +4457,6 @@ func TestReconcileDeletion(t *testing.T) {
 
 			ctx := ctrl.LoggerInto(t.Context(), ctrl.Log.WithName("test"))
 
-			// Re-read from fake client so the object has a ResourceVersion for OptimisticLock
 			g.Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(hcp), hcp)).To(Succeed())
 			originalHCP := hcp.DeepCopy()
 
@@ -4428,11 +4466,14 @@ func TestReconcileDeletion(t *testing.T) {
 				ec2Client: mockEC2,
 			}
 
-			_, err := r.reconcileDeletion(ctx, hcp, originalHCP)
+			result, err := r.reconcileDeletion(ctx, hcp, originalHCP)
 			if tt.wantErr {
 				g.Expect(err).To(HaveOccurred())
 			} else {
 				g.Expect(err).ToNot(HaveOccurred())
+			}
+			if tt.wantRequeueAfter > 0 {
+				g.Expect(result.RequeueAfter).To(Equal(tt.wantRequeueAfter))
 			}
 
 			cond := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.AWSDefaultSecurityGroupDeleted))
