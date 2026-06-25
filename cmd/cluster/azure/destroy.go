@@ -43,6 +43,7 @@ func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 	cmd.Flags().StringVar(&opts.AzurePlatform.ResourceGroupName, "resource-group-name", opts.AzurePlatform.ResourceGroupName, "The name of the resource group containing the HostedCluster infrastructure resources that need to be destroyed.")
 	cmd.Flags().BoolVar(&opts.AzurePlatform.PreserveResourceGroup, "preserve-resource-group", opts.AzurePlatform.PreserveResourceGroup, "When true, the managed/main resource group will not be deleted during cluster destroy. Only cluster-specific resources within the resource group will be cleaned up.")
 	cmd.Flags().StringVar(&opts.AzurePlatform.DNSZoneRGName, "dns-zone-rg-name", opts.AzurePlatform.DNSZoneRGName, util.DNSZoneRGNameDestroyDescription)
+	cmd.Flags().DurationVar(&opts.AzurePlatform.AzureInfraGracePeriod, "azure-infra-grace-period", azureinfra.DefaultInfraGracePeriod, util.AzureInfraGracePeriodDescription)
 
 	_ = cmd.MarkFlagRequired("azure-creds")
 	_ = cmd.MarkFlagRequired("dns-zone-rg-name")
@@ -176,6 +177,7 @@ func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error
 		Cloud:                 o.AzurePlatform.Cloud,
 		ResourceGroupName:     o.AzurePlatform.ResourceGroupName,
 		PreserveResourceGroup: o.AzurePlatform.PreserveResourceGroup,
+		AzureInfraGracePeriod: o.AzurePlatform.AzureInfraGracePeriod,
 	}
 	return destroyInfraOptions.Run(ctx, o.Log)
 }

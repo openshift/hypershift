@@ -66,6 +66,7 @@ type AzurePlatformDestroyOptions struct {
 	PreserveResourceGroup bool
 	Cloud                 string
 	DNSZoneRGName         string
+	AzureInfraGracePeriod time.Duration
 }
 
 type PowerVSPlatformDestroyOptions struct {
