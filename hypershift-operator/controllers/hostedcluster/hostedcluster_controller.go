@@ -99,6 +99,7 @@ import (
 	"k8s.io/utils/clock"
 	"k8s.io/utils/ptr"
 
+	capov1alpha1 "sigs.k8s.io/cluster-api-provider-openstack/api/v1alpha1"
 	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -3673,6 +3674,30 @@ func deleteOpenStackOrcImages(ctx context.Context, c client.Client, namespace st
 	return len(imageList.Items) != 0, nil
 }
 
+// deleteOpenStackCAPOServers deletes all CAPO OpenStackServer CRs in the control plane namespace and waits for
+// them to be fully removed. OpenStackServer objects have a finalizer managed by the CAPO controller, which runs
+// in the control plane namespace. This must complete before the namespace is deleted, because namespace deletion
+// terminates the CAPO pod, leaving the finalizer permanently stuck.
+func deleteOpenStackCAPOServers(ctx context.Context, c client.Client, namespace string) (bool, error) {
+	serverList := &capov1alpha1.OpenStackServerList{}
+	if err := c.List(ctx, serverList, &client.ListOptions{Namespace: namespace}); err != nil {
+		if apierrors.IsNotFound(err) || meta.IsNoMatchError(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("error listing OpenStackServers in namespace %s: %w", namespace, err)
+	}
+	for i := range serverList.Items {
+		srv := &serverList.Items[i]
+		if srv.DeletionTimestamp != nil {
+			continue
+		}
+		if err := c.Delete(ctx, srv); err != nil && !apierrors.IsNotFound(err) {
+			return false, fmt.Errorf("error deleting OpenStackServer %s in namespace %s: %w", srv.Name, namespace, err)
+		}
+	}
+	return len(serverList.Items) != 0, nil
+}
+
 func deleteControlPlaneOperatorRBAC(ctx context.Context, c client.Client, rbacNamespace string, controlPlaneNamespace string) error {
 	if _, err := k8sutil.DeleteIfNeeded(ctx, c, &rbacv1.Role{ObjectMeta: metav1.ObjectMeta{Name: "control-plane-operator-" + controlPlaneNamespace, Namespace: rbacNamespace}}); err != nil {
 		return err
@@ -3805,6 +3830,15 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.Hosted
 		}
 		if exists {
 			log.Info("Waiting for ORC Image deletion", "controlPlaneNamespace", controlPlaneNamespace)
+			return false, nil
+		}
+
+		exists, err = deleteOpenStackCAPOServers(ctx, r.Client, controlPlaneNamespace)
+		if err != nil {
+			return false, err
+		}
+		if exists {
+			log.Info("Waiting for OpenStackServer deletion", "controlPlaneNamespace", controlPlaneNamespace)
 			return false, nil
 		}
 	}

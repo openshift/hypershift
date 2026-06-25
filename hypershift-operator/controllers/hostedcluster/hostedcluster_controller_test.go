@@ -69,6 +69,7 @@ import (
 
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	capibmv1 "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2"
+	capov1alpha1 "sigs.k8s.io/cluster-api-provider-openstack/api/v1alpha1"
 	"sigs.k8s.io/cluster-api/api/core/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -7545,6 +7546,142 @@ func TestDeleteOpenStackOrcImages(t *testing.T) {
 				Build()
 
 			exists, err := deleteOpenStackOrcImages(context.Background(), c, namespace)
+
+			if tc.wantErr {
+				g.Expect(err).To(HaveOccurred())
+				if tc.wantErrSubstr != "" {
+					g.Expect(err.Error()).To(ContainSubstring(tc.wantErrSubstr))
+				}
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+			}
+			g.Expect(exists).To(Equal(tc.wantExists))
+		})
+	}
+}
+
+func TestDeleteOpenStackCAPOServers(t *testing.T) {
+	t.Parallel()
+
+	namespace := "test-cp-namespace"
+	now := metav1.Now()
+
+	testCases := []struct {
+		name              string
+		existingServers   []capov1alpha1.OpenStackServer
+		listInterceptor   func(ctx context.Context, client crclient.WithWatch, list crclient.ObjectList, opts ...crclient.ListOption) error
+		deleteInterceptor func(ctx context.Context, client crclient.WithWatch, obj crclient.Object, opts ...crclient.DeleteOption) error
+		wantExists        bool
+		wantErr           bool
+		wantErrSubstr     string
+	}{
+		{
+			name:            "When no servers exist, it should return false with no error",
+			existingServers: nil,
+			wantExists:      false,
+			wantErr:         false,
+		},
+		{
+			name: "When servers without deletion timestamp exist, it should delete them and return true",
+			existingServers: []capov1alpha1.OpenStackServer{
+				{ObjectMeta: metav1.ObjectMeta{Name: "srv-a", Namespace: namespace}},
+				{ObjectMeta: metav1.ObjectMeta{Name: "srv-b", Namespace: namespace}},
+			},
+			wantExists: true,
+			wantErr:    false,
+		},
+		{
+			name: "When servers with deletion timestamp exist, it should not re-delete them and return true",
+			existingServers: []capov1alpha1.OpenStackServer{
+				{ObjectMeta: metav1.ObjectMeta{Name: "srv-a", Namespace: namespace, DeletionTimestamp: &now, Finalizers: []string{capov1alpha1.OpenStackServerFinalizer}}},
+			},
+			wantExists: true,
+			wantErr:    false,
+		},
+		{
+			name: "When some servers have deletion timestamp and some do not, it should delete pending ones and return true",
+			existingServers: []capov1alpha1.OpenStackServer{
+				{ObjectMeta: metav1.ObjectMeta{Name: "srv-deleting", Namespace: namespace, DeletionTimestamp: &now, Finalizers: []string{capov1alpha1.OpenStackServerFinalizer}}},
+				{ObjectMeta: metav1.ObjectMeta{Name: "srv-pending", Namespace: namespace}},
+			},
+			wantExists: true,
+			wantErr:    false,
+		},
+		{
+			name: "When listing returns NotFound error, it should return false with no error",
+			listInterceptor: func(_ context.Context, _ crclient.WithWatch, _ crclient.ObjectList, _ ...crclient.ListOption) error {
+				return errors2.NewNotFound(capov1alpha1.SchemeGroupVersion.WithResource("openstackservers").GroupResource(), "")
+			},
+			wantExists: false,
+			wantErr:    false,
+		},
+		{
+			name: "When listing returns NoMatchError, it should return false with no error",
+			listInterceptor: func(_ context.Context, _ crclient.WithWatch, _ crclient.ObjectList, _ ...crclient.ListOption) error {
+				return &meta.NoKindMatchError{}
+			},
+			wantExists: false,
+			wantErr:    false,
+		},
+		{
+			name: "When listing returns an unexpected error, it should return the error",
+			listInterceptor: func(_ context.Context, _ crclient.WithWatch, _ crclient.ObjectList, _ ...crclient.ListOption) error {
+				return fmt.Errorf("internal server error")
+			},
+			wantExists:    false,
+			wantErr:       true,
+			wantErrSubstr: "error listing OpenStackServers",
+		},
+		{
+			name: "When deletion returns NotFound, it should treat it as success and return true",
+			existingServers: []capov1alpha1.OpenStackServer{
+				{ObjectMeta: metav1.ObjectMeta{Name: "srv-a", Namespace: namespace}},
+			},
+			deleteInterceptor: func(_ context.Context, _ crclient.WithWatch, obj crclient.Object, _ ...crclient.DeleteOption) error {
+				return errors2.NewNotFound(capov1alpha1.SchemeGroupVersion.WithResource("openstackservers").GroupResource(), obj.GetName())
+			},
+			wantExists: true,
+			wantErr:    false,
+		},
+		{
+			name: "When deletion returns an unexpected error, it should return the error",
+			existingServers: []capov1alpha1.OpenStackServer{
+				{ObjectMeta: metav1.ObjectMeta{Name: "srv-a", Namespace: namespace}},
+			},
+			deleteInterceptor: func(_ context.Context, _ crclient.WithWatch, _ crclient.Object, _ ...crclient.DeleteOption) error {
+				return fmt.Errorf("internal server error")
+			},
+			wantExists:    false,
+			wantErr:       true,
+			wantErrSubstr: "error deleting OpenStackServer",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			objs := make([]crclient.Object, len(tc.existingServers))
+			for i := range tc.existingServers {
+				objs[i] = &tc.existingServers[i]
+			}
+
+			funcs := interceptor.Funcs{}
+			if tc.listInterceptor != nil {
+				funcs.List = tc.listInterceptor
+			}
+			if tc.deleteInterceptor != nil {
+				funcs.Delete = tc.deleteInterceptor
+			}
+
+			c := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				WithObjects(objs...).
+				WithInterceptorFuncs(funcs).
+				Build()
+
+			exists, err := deleteOpenStackCAPOServers(context.Background(), c, namespace)
 
 			if tc.wantErr {
 				g.Expect(err).To(HaveOccurred())
