@@ -92,6 +92,11 @@ func findMarkdownFiles(root string) ([]string, error) {
 			return nil
 		}
 
+		// Skip blog posts — they are progress reports, not reference documentation
+		if strings.Contains(path, "/blog/") {
+			return nil
+		}
+
 		if !d.IsDir() && strings.HasSuffix(strings.ToLower(d.Name()), ".md") {
 			files = append(files, path)
 		}
