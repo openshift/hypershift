@@ -3673,6 +3673,34 @@ func deleteOpenStackOrcImages(ctx context.Context, c client.Client, namespace st
 	return len(imageList.Items) != 0, nil
 }
 
+// removeOpenStackOrcSecretFinalizers strips the ORC image finalizer from any Secrets in the control plane
+// namespace. ORC places a finalizer (openstack.k-orc.cloud/image) on the cloud-credentials Secret referenced
+// by Image CRs to prevent the Secret from being deleted while the Image still needs it. Once all ORC Image CRs
+// are gone, the finalizer serves no purpose but will block namespace deletion if it hasn't been removed — the
+// ORC controller that would normally remove it is killed when the HCP is torn down.
+func removeOpenStackOrcSecretFinalizers(ctx context.Context, c client.Client, namespace string) error {
+	const orcImageFinalizer = "openstack.k-orc.cloud/image"
+
+	secretList := &corev1.SecretList{}
+	if err := c.List(ctx, secretList, &client.ListOptions{Namespace: namespace}); err != nil {
+		return fmt.Errorf("error listing Secrets in namespace %s: %w", namespace, err)
+	}
+	for i := range secretList.Items {
+		secret := &secretList.Items[i]
+		if !controllerutil.ContainsFinalizer(secret, orcImageFinalizer) {
+			continue
+		}
+		controllerutil.RemoveFinalizer(secret, orcImageFinalizer)
+		if err := c.Update(ctx, secret); err != nil {
+			if apierrors.IsNotFound(err) {
+				continue
+			}
+			return fmt.Errorf("error removing ORC finalizer from Secret %s in namespace %s: %w", secret.Name, namespace, err)
+		}
+	}
+	return nil
+}
+
 // deleteOpenStackCAPOServers deletes all CAPO OpenStackServer CRs in the control plane namespace and waits for
 // them to be fully removed. OpenStackServer objects have a finalizer managed by the CAPO controller, which runs
 // in the control plane namespace. This must complete before the namespace is deleted, because namespace deletion
@@ -3830,6 +3858,10 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.Hosted
 		if exists {
 			log.Info("Waiting for ORC Image deletion", "controlPlaneNamespace", controlPlaneNamespace)
 			return false, nil
+		}
+
+		if err := removeOpenStackOrcSecretFinalizers(ctx, r.Client, controlPlaneNamespace); err != nil {
+			return false, err
 		}
 
 		exists, err = deleteOpenStackCAPOServers(ctx, r.Client, controlPlaneNamespace)
