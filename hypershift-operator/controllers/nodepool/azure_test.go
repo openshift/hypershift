@@ -1277,7 +1277,7 @@ func TestDefaultAzureNodePoolImage(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
 
-			err := defaultAzureNodePoolImage(tc.nodePool, tc.releaseImage)
+			err := defaultAzureNodePoolImage(tc.nodePool, tc.releaseImage, "")
 
 			if tc.expectedError {
 				g.Expect(err).To(HaveOccurred())
