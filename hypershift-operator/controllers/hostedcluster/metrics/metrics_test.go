@@ -1280,6 +1280,110 @@ func TestHostedClusterAzureInfo(t *testing.T) {
 	}
 }
 
+func TestAcrPullIdentityConfigured(t *testing.T) {
+	const (
+		zero float64 = 0
+		one  float64 = 1
+	)
+	testCases := []struct {
+		name               string
+		platformType       hyperv1.PlatformType
+		azureSpec          *hyperv1.AzurePlatformSpec
+		expectedMetricName string
+		expected           *dto.MetricFamily
+	}{
+		{
+			name:               "non-Azure platform, no metric",
+			platformType:       hyperv1.AWSPlatform,
+			expectedMetricName: AcrPullIdentityConfiguredMetricName,
+		},
+		{
+			name:               "Azure platform but nil spec, no metric",
+			platformType:       hyperv1.AzurePlatform,
+			azureSpec:          nil,
+			expectedMetricName: AcrPullIdentityConfiguredMetricName,
+		},
+		{
+			name:         "Azure, no containerRegistry configured",
+			platformType: hyperv1.AzurePlatform,
+			azureSpec: &hyperv1.AzurePlatformSpec{
+				Cloud:             "AzureCloud",
+				Location:          "eastus",
+				ResourceGroupName: "myRG",
+				SubscriptionID:    "mySub",
+			},
+			expectedMetricName: AcrPullIdentityConfiguredMetricName,
+			expected: &dto.MetricFamily{
+				Name: ptr.To(AcrPullIdentityConfiguredMetricName),
+				Help: ptr.To(acrPullIdentityConfiguredMetricHelp),
+				Type: func() *dto.MetricType { v := dto.MetricType(1); return &v }(),
+				Metric: []*dto.Metric{{
+					Label: []*dto.LabelPair{
+						{Name: ptr.To("_id"), Value: ptr.To("this-is-the-clusterID")},
+						{Name: ptr.To("name"), Value: ptr.To("hc-name")},
+						{Name: ptr.To("namespace"), Value: ptr.To("hc-ns")},
+					},
+					Gauge: &dto.Gauge{Value: ptr.To(zero)},
+				}},
+			},
+		},
+		{
+			name:         "Azure, containerRegistry configured",
+			platformType: hyperv1.AzurePlatform,
+			azureSpec: &hyperv1.AzurePlatformSpec{
+				Cloud:             "AzureCloud",
+				Location:          "eastus",
+				ResourceGroupName: "myRG",
+				SubscriptionID:    "mySub",
+				ContainerRegistry: hyperv1.AzureContainerRegistryConfig{
+					Credentials: hyperv1.AzureContainerRegistryCredentialConfig{
+						Type: hyperv1.AzureContainerRegistryCredentialManagedIdentity,
+						ManagedIdentity: hyperv1.UserAssignedManagedIdentity{
+							ResourceID: "/subscriptions/mySub/resourceGroups/myRG/providers/Microsoft.ManagedIdentity/userAssignedIdentities/acr-pull-mi",
+						},
+					},
+				},
+			},
+			expectedMetricName: AcrPullIdentityConfiguredMetricName,
+			expected: &dto.MetricFamily{
+				Name: ptr.To(AcrPullIdentityConfiguredMetricName),
+				Help: ptr.To(acrPullIdentityConfiguredMetricHelp),
+				Type: func() *dto.MetricType { v := dto.MetricType(1); return &v }(),
+				Metric: []*dto.Metric{{
+					Label: []*dto.LabelPair{
+						{Name: ptr.To("_id"), Value: ptr.To("this-is-the-clusterID")},
+						{Name: ptr.To("name"), Value: ptr.To("hc-name")},
+						{Name: ptr.To("namespace"), Value: ptr.To("hc-ns")},
+					},
+					Gauge: &dto.Gauge{Value: ptr.To(one)},
+				}},
+			},
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			hostedCluster := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "hc-name",
+					Namespace: "hc-ns",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					ClusterID: "this-is-the-clusterID",
+					Platform: hyperv1.PlatformSpec{
+						Type:  tc.platformType,
+						Azure: tc.azureSpec,
+					},
+				},
+			}
+			checkMetric(t,
+				fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hostedCluster).Build(),
+				clocktesting.NewFakeClock(now),
+				tc.expectedMetricName,
+				tc.expected)
+		})
+	}
+}
+
 func TestReportTransitionDurationForAWSEndpointConditions(t *testing.T) {
 	testCases := []struct {
 		name               string
