@@ -1181,7 +1181,7 @@ func TestSetKarpenterAMILabels(t *testing.T) {
 			if ri == nil {
 				ri = testutils.InitReleaseImageOrDie("test-release")
 			}
-			err := setKarpenterAMILabels(log, tc.userDataSecret, tc.region, ri, tc.platform)
+			err := setKarpenterAMILabels(log, tc.userDataSecret, tc.region, ri, tc.platform, "")
 			if tc.expectedError != "" {
 				g.Expect(err).To(HaveOccurred())
 				g.Expect(err.Error()).To(Equal(tc.expectedError))

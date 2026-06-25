@@ -36,7 +36,7 @@ var LocalStorageVolumes = []string{
 	"hotplug-disks",
 }
 
-func defaultImage(nodePoolArch string, releaseImage *releaseinfo.ReleaseImage) (string, string, error) {
+func defaultImage(nodePoolArch string, releaseImage *releaseinfo.ReleaseImage, streamName string) (string, string, error) {
 	var archName string
 	switch nodePoolArch {
 	case hyperv1.ArchitectureS390X:
@@ -44,7 +44,11 @@ func defaultImage(nodePoolArch string, releaseImage *releaseinfo.ReleaseImage) (
 	default:
 		archName = hyperv1.ArchAliases[hyperv1.ArchitectureAMD64]
 	}
-	arch, foundArch := releaseImage.StreamMetadata.Architectures[archName]
+	streamMeta, err := releaseImage.StreamForName(streamName)
+	if err != nil {
+		return "", "", fmt.Errorf("couldn't resolve stream metadata for stream %q: %w", streamName, err)
+	}
+	arch, foundArch := streamMeta.Architectures[archName]
 
 	if !foundArch {
 		return "", "", fmt.Errorf("couldn't find OS metadata for architecture %q", archName)
@@ -74,7 +78,7 @@ func allowUnsupportedRHCOSVariants(nodePool *hyperv1.NodePool) bool {
 	return false
 }
 
-func GetImage(nodePool *hyperv1.NodePool, releaseImage *releaseinfo.ReleaseImage, hostedNamespace string) (BootImage, error) {
+func GetImage(nodePool *hyperv1.NodePool, releaseImage *releaseinfo.ReleaseImage, hostedNamespace string, streamName string) (BootImage, error) {
 	var rootVolume *hyperv1.KubevirtRootVolume
 	isHTTP := false
 	if nodePool.Spec.Platform.Kubevirt != nil {
@@ -90,9 +94,9 @@ func GetImage(nodePool *hyperv1.NodePool, releaseImage *releaseinfo.ReleaseImage
 		return newBootImage(imageName, isHTTP), nil
 	}
 
-	imageName, imageHash, err := defaultImage(nodePool.Spec.Arch, releaseImage)
+	imageName, imageHash, err := defaultImage(nodePool.Spec.Arch, releaseImage, streamName)
 	if err != nil && allowUnsupportedRHCOSVariants(nodePool) {
-		imageName, imageHash, err = openstack.OpenstackDefaultImage(releaseImage)
+		imageName, imageHash, err = openstack.OpenstackDefaultImage(releaseImage, streamName)
 		if err != nil {
 			return nil, err
 		}
@@ -351,7 +355,7 @@ func shouldAttachDefaultNetwork(kvPlatform *hyperv1.KubevirtNodePoolPlatform) bo
 	return kvPlatform.AttachDefaultNetwork == nil || *kvPlatform.AttachDefaultNetwork
 }
 
-func MachineTemplateSpec(nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, releaseImage *releaseinfo.ReleaseImage, bootImage BootImage) (*capikubevirt.KubevirtMachineTemplateSpec, error) {
+func MachineTemplateSpec(nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, releaseImage *releaseinfo.ReleaseImage, bootImage BootImage, streamName string) (*capikubevirt.KubevirtMachineTemplateSpec, error) {
 	if bootImage == nil {
 		infraNS := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 		if hcluster.Spec.Platform.Kubevirt != nil &&
@@ -361,7 +365,7 @@ func MachineTemplateSpec(nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedClu
 			infraNS = hcluster.Spec.Platform.Kubevirt.Credentials.InfraNamespace
 		}
 		var err error
-		bootImage, err = GetImage(nodePool, releaseImage, infraNS)
+		bootImage, err = GetImage(nodePool, releaseImage, infraNS, streamName)
 		if err != nil {
 			return nil, fmt.Errorf("couldn't discover a KubeVirt Image in release payload image: %w", err)
 		}

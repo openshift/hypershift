@@ -37,6 +37,7 @@ func (c *CAPI) gcpMachineTemplate(_ context.Context, templateNameGenerator func(
 		hc,
 		nodePool,
 		c.releaseImage,
+		c.resolvedRHELStream,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate GCP machine template spec: %w", err)
@@ -81,12 +82,13 @@ func gcpMachineTemplateSpec(
 	hostedCluster *hyperv1.HostedCluster,
 	nodePool *hyperv1.NodePool,
 	releaseImage *releaseinfo.ReleaseImage,
+	rhelStream string,
 ) (*capigcp.GCPMachineSpec, error) {
 	gcpPlatform := nodePool.Spec.Platform.GCP
 	hcGCPPlatform := hostedCluster.Spec.Platform.GCP
 
 	// Resolve image
-	image, err := resolveGCPImage(nodePool, releaseImage)
+	image, err := resolveGCPImage(nodePool, releaseImage, rhelStream)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve GCP image: %w", err)
 	}
@@ -159,7 +161,7 @@ func gcpMachineTemplateSpec(
 }
 
 // resolveGCPImage determines the correct image to use based on NodePool configuration and release info.
-func resolveGCPImage(nodePool *hyperv1.NodePool, releaseImage *releaseinfo.ReleaseImage) (string, error) {
+func resolveGCPImage(nodePool *hyperv1.NodePool, releaseImage *releaseinfo.ReleaseImage, rhelStream string) (string, error) {
 	gcpPlatform := nodePool.Spec.Platform.GCP
 
 	// If user specified a custom image, use it
@@ -168,7 +170,7 @@ func resolveGCPImage(nodePool *hyperv1.NodePool, releaseImage *releaseinfo.Relea
 	}
 
 	// Resolve image from release metadata
-	image, err := defaultNodePoolGCPImage(nodePool.Spec.Arch, releaseImage)
+	image, err := defaultNodePoolGCPImage(nodePool.Spec.Arch, releaseImage, rhelStream)
 	if err != nil {
 		return "", fmt.Errorf("couldn't discover a GCP image for release image: %w", err)
 	}

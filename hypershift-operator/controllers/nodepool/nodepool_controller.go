@@ -288,6 +288,12 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		log.Error(err, "Failed to set NodesInfo status")
 	}
 
+	// Infer the observed RHEL stream from Machine NodeInfo.OSImage and set
+	// status.osImageStream when a majority of machines report a consistent stream.
+	if err := r.setOSImageStreamStatus(ctx, nodePool); err != nil {
+		log.Error(err, "Failed to set OSImageStream status")
+	}
+
 	// Loop over all conditions.
 	// Order matter as conditions might choose to short circuit returning ctrl.Result or error.
 	signalConditions := []func(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster) (*ctrl.Result, error){
@@ -742,8 +748,6 @@ func isAutoscalingEnabled(nodePool *hyperv1.NodePool) bool {
 }
 
 // defaultNodePoolAMI resolves the default AWS AMI for a NodePool from release image stream metadata.
-// TODO(CNTRLPLANE-3553): once the osImageStream API field is available, callers should resolve
-// streamName via GetRHELStream and pass it here instead of hardcoding "".
 func defaultNodePoolAMI(region string, specifiedArch string, streamName string, releaseImage *releaseinfo.ReleaseImage) (string, error) {
 	if releaseImage == nil {
 		return "", fmt.Errorf("release image is nil")
@@ -771,15 +775,16 @@ func defaultNodePoolAMI(region string, specifiedArch string, streamName string, 
 }
 
 // defaultNodePoolGCPImage returns the default GCP image for a given architecture from release metadata.
-func defaultNodePoolGCPImage(specifiedArch string, releaseImage *releaseinfo.ReleaseImage) (string, error) {
+func defaultNodePoolGCPImage(specifiedArch string, releaseImage *releaseinfo.ReleaseImage, rhelStream string) (string, error) {
 	if releaseImage == nil {
 		return "", fmt.Errorf("release image is nil, cannot determine GCP image")
 	}
-	if releaseImage.StreamMetadata == nil {
-		return "", fmt.Errorf("release image stream metadata is nil, cannot determine GCP image for architecture %q", specifiedArch)
+	streamMeta, err := releaseImage.StreamForName(rhelStream)
+	if err != nil {
+		return "", fmt.Errorf("couldn't resolve stream metadata: %w", err)
 	}
 
-	arch, foundArch := releaseImage.StreamMetadata.Architectures[hyperv1.ArchAliases[specifiedArch]]
+	arch, foundArch := streamMeta.Architectures[hyperv1.ArchAliases[specifiedArch]]
 	if !foundArch {
 		return "", fmt.Errorf("couldn't find OS metadata for architecture %q", specifiedArch)
 	}

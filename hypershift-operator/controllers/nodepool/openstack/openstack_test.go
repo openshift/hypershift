@@ -185,7 +185,7 @@ func TestOpenStackMachineTemplate(t *testing.T) {
 						Name: "tests",
 					},
 					Spec: tc.nodePool,
-				}, &releaseinfo.ReleaseImage{})
+				}, &releaseinfo.ReleaseImage{}, "")
 			if tc.checkError != nil {
 				tc.checkError(t, err)
 			} else {
@@ -290,7 +290,7 @@ func TestOpenstackDefaultImage(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			url, hash, err := OpenstackDefaultImage(tc.releaseImage)
+			url, hash, err := OpenstackDefaultImage(tc.releaseImage, "")
 			if tc.expectedError {
 				if err == nil {
 					t.Error("expected error but got nil")
@@ -355,7 +355,7 @@ func TestOpenStackReleaseImage(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			result, err := OpenStackReleaseImage(tc.releaseImage)
+			result, err := OpenStackReleaseImage(tc.releaseImage, "")
 			if tc.expectedError {
 				if err == nil {
 					t.Error("expected error but got nil")
@@ -469,7 +469,7 @@ func TestReconcileOpenStackImageSpec(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			imageSpec := &orc.ImageSpec{}
-			err := ReconcileOpenStackImageSpec(tc.hostedCluster, imageSpec, tc.releaseImage)
+			err := ReconcileOpenStackImageSpec(tc.hostedCluster, imageSpec, tc.releaseImage, "")
 
 			if tc.expectedError {
 				if err == nil {
@@ -564,7 +564,7 @@ func TestClusterImageName(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			result, err := PrefixedClusterImageName(tc.hostedCluster, tc.releaseImage)
+			result, err := PrefixedClusterImageName(tc.hostedCluster, tc.releaseImage, "")
 			if tc.expectedError {
 				if err == nil {
 					t.Error("expected error but got nil")
