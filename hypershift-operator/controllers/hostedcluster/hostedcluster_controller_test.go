@@ -7560,6 +7560,127 @@ func TestDeleteOpenStackOrcImages(t *testing.T) {
 	}
 }
 
+func TestRemoveOpenStackOrcSecretFinalizers(t *testing.T) {
+	t.Parallel()
+
+	namespace := "test-cp-namespace"
+	const orcImageFinalizer = "openstack.k-orc.cloud/image"
+
+	testCases := []struct {
+		name              string
+		existingSecrets   []corev1.Secret
+		updateInterceptor func(ctx context.Context, client crclient.WithWatch, obj crclient.Object, opts ...crclient.UpdateOption) error
+		wantErr           bool
+		wantErrSubstr     string
+		wantFinalizers    map[string][]string // secret name -> expected finalizers after the call
+	}{
+		{
+			name:            "When no secrets exist, it should return no error",
+			existingSecrets: nil,
+			wantErr:         false,
+		},
+		{
+			name: "When secrets without ORC finalizer exist, it should leave them unchanged",
+			existingSecrets: []corev1.Secret{
+				{ObjectMeta: metav1.ObjectMeta{Name: "unrelated", Namespace: namespace, Finalizers: []string{"other-finalizer"}}},
+			},
+			wantErr:        false,
+			wantFinalizers: map[string][]string{"unrelated": {"other-finalizer"}},
+		},
+		{
+			name: "When a secret has the ORC finalizer, it should remove it",
+			existingSecrets: []corev1.Secret{
+				{ObjectMeta: metav1.ObjectMeta{Name: "cloud-creds", Namespace: namespace, Finalizers: []string{orcImageFinalizer}}},
+			},
+			wantErr:        false,
+			wantFinalizers: map[string][]string{"cloud-creds": nil},
+		},
+		{
+			name: "When a secret has the ORC finalizer among others, it should remove only the ORC finalizer",
+			existingSecrets: []corev1.Secret{
+				{ObjectMeta: metav1.ObjectMeta{Name: "cloud-creds", Namespace: namespace, Finalizers: []string{"keep-me", orcImageFinalizer, "also-keep"}}},
+			},
+			wantErr:        false,
+			wantFinalizers: map[string][]string{"cloud-creds": {"keep-me", "also-keep"}},
+		},
+		{
+			name: "When multiple secrets have the ORC finalizer, it should remove it from all",
+			existingSecrets: []corev1.Secret{
+				{ObjectMeta: metav1.ObjectMeta{Name: "creds-a", Namespace: namespace, Finalizers: []string{orcImageFinalizer}}},
+				{ObjectMeta: metav1.ObjectMeta{Name: "creds-b", Namespace: namespace, Finalizers: []string{orcImageFinalizer}}},
+			},
+			wantErr:        false,
+			wantFinalizers: map[string][]string{"creds-a": nil, "creds-b": nil},
+		},
+		{
+			name: "When update returns NotFound, it should skip the secret",
+			existingSecrets: []corev1.Secret{
+				{ObjectMeta: metav1.ObjectMeta{Name: "gone", Namespace: namespace, Finalizers: []string{orcImageFinalizer}}},
+			},
+			updateInterceptor: func(_ context.Context, _ crclient.WithWatch, _ crclient.Object, _ ...crclient.UpdateOption) error {
+				return errors2.NewNotFound(corev1.SchemeGroupVersion.WithResource("secrets").GroupResource(), "gone")
+			},
+			wantErr: false,
+		},
+		{
+			name: "When update returns an unexpected error, it should return the error",
+			existingSecrets: []corev1.Secret{
+				{ObjectMeta: metav1.ObjectMeta{Name: "cloud-creds", Namespace: namespace, Finalizers: []string{orcImageFinalizer}}},
+			},
+			updateInterceptor: func(_ context.Context, _ crclient.WithWatch, _ crclient.Object, _ ...crclient.UpdateOption) error {
+				return fmt.Errorf("internal server error")
+			},
+			wantErr:       true,
+			wantErrSubstr: "error removing ORC finalizer from Secret",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			objs := make([]crclient.Object, len(tc.existingSecrets))
+			for i := range tc.existingSecrets {
+				objs[i] = &tc.existingSecrets[i]
+			}
+
+			funcs := interceptor.Funcs{}
+			if tc.updateInterceptor != nil {
+				funcs.Update = tc.updateInterceptor
+			}
+
+			c := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				WithObjects(objs...).
+				WithInterceptorFuncs(funcs).
+				Build()
+
+			err := removeOpenStackOrcSecretFinalizers(context.Background(), c, namespace)
+
+			if tc.wantErr {
+				g.Expect(err).To(HaveOccurred())
+				if tc.wantErrSubstr != "" {
+					g.Expect(err.Error()).To(ContainSubstring(tc.wantErrSubstr))
+				}
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+			}
+
+			for secretName, expectedFinalizers := range tc.wantFinalizers {
+				var secret corev1.Secret
+				err := c.Get(context.Background(), crclient.ObjectKey{Namespace: namespace, Name: secretName}, &secret)
+				g.Expect(err).ToNot(HaveOccurred())
+				if len(expectedFinalizers) == 0 {
+					g.Expect(secret.Finalizers).To(BeEmpty())
+				} else {
+					g.Expect(secret.Finalizers).To(Equal(expectedFinalizers))
+				}
+			}
+		})
+	}
+}
+
 func TestDeleteOpenStackCAPOServers(t *testing.T) {
 	t.Parallel()
 
