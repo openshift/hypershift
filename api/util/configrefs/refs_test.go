@@ -277,6 +277,9 @@ func TestKnownSecretRefs(t *testing.T) {
 		".Authentication.WebhookTokenAuthenticator.KubeConfig",
 		".Authentication.WebhookTokenAuthenticators.KubeConfig",
 		".Authentication.OIDCProviders.OIDCClients.ClientSecret",
+		// ComponentRoutes secrets are intentionally excluded from SecretRefs — they are
+		// consumed by the guest cluster's ingress operator from openshift-config, not by
+		// any control plane component on the management cluster.
 		".Ingress.ComponentRoutes.ServingCertKeyPairSecret",
 		".OAuth.IdentityProviders.IdentityProviderConfig.BasicAuth.OAuthRemoteConnectionInfo.TLSClientCert",
 		".OAuth.IdentityProviders.IdentityProviderConfig.BasicAuth.OAuthRemoteConnectionInfo.TLSClientKey",
@@ -366,7 +369,7 @@ func TestSecretRefs(t *testing.T) {
 			refs: []string{"kubeconfig-ref1", "kubeconfig-ref2"},
 		},
 		{
-			name: "ingress component serving cert",
+			name: "When ingress componentRoutes have serving certs it should not include them",
 			config: &hyperv1.ClusterConfiguration{
 				Ingress: &configv1.IngressSpec{
 					ComponentRoutes: []configv1.ComponentRouteSpec{
@@ -383,7 +386,7 @@ func TestSecretRefs(t *testing.T) {
 					},
 				},
 			},
-			refs: []string{"serving-cert1", "serving-cert2"},
+			refs: []string{},
 		},
 		{
 			name: "oidc client secret",
