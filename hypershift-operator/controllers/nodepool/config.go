@@ -96,7 +96,7 @@ func NewConfigGenerator(ctx context.Context, client client.Client, hostedCluster
 	}
 
 	// Resolve the explicit RHEL stream for image lookup and token plumbing.
-	resolvedRHELStream, err := getRHELStream(nodePool, releaseImage)
+	resolvedRHELStream, err := getRHELStream(ctx, client, nodePool, releaseImage)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve RHEL stream: %w", err)
 	}
@@ -110,8 +110,11 @@ func NewConfigGenerator(ctx context.Context, client client.Client, hostedCluster
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse release image version %q: %w", releaseImage.Version(), err)
 		}
-		// TODO(CNTRLPLANE-3553): pass actual usesRunc once container runtime detection is wired in.
-		defaultStream, err := GetRHELStream("", version, false)
+		usesRunc, err := usesRuncRuntime(ctx, client, nodePool)
+		if err != nil {
+			return nil, fmt.Errorf("failed to detect container runtime: %w", err)
+		}
+		defaultStream, err := GetRHELStream("", version, usesRunc)
 		if err != nil {
 			return nil, fmt.Errorf("failed to resolve default RHEL stream: %w", err)
 		}

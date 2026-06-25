@@ -331,7 +331,7 @@ func (c *CAPI) reconcileAWSMachines(ctx context.Context) error {
 	return errors.NewAggregate(errs)
 }
 
-func (r *NodePoolReconciler) setAWSConditions(_ context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, _ string, releaseImage *releaseinfo.ReleaseImage) error {
+func (r *NodePoolReconciler) setAWSConditions(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, _ string, releaseImage *releaseinfo.ReleaseImage) error {
 	if nodePool.Spec.Platform.Type == hyperv1.AWSPlatform {
 		if hcluster.Spec.Platform.AWS == nil {
 			return fmt.Errorf("the HostedCluster for this NodePool has no .Spec.Platform.AWS, this is unsupported")
@@ -363,7 +363,7 @@ func (r *NodePoolReconciler) setAWSConditions(_ context.Context, nodePool *hyper
 			// Default behavior for Linux/RHCOS AMIs.
 			// Use the resolved stream (via GetRHELStream) rather than the raw spec field,
 			// so that the AMI lookup is consistent with the CAPI path.
-			rhelStream, err := getRHELStream(nodePool, releaseImage)
+			rhelStream, err := getRHELStream(ctx, r.Client, nodePool, releaseImage)
 			if err != nil {
 				SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 					Type:               hyperv1.NodePoolValidPlatformImageType,
