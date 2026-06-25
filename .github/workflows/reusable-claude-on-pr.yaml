@@ -80,6 +80,13 @@ jobs:
           persist-credentials: true
           fetch-depth: 0
 
+      - name: Verify push credentials
+        run: |
+          echo "Remote URL: $(git remote get-url origin)"
+          echo "Credential helper configured by checkout — testing ls-remote..."
+          git ls-remote --exit-code origin HEAD > /dev/null 2>&1
+          echo "Push credentials verified."
+
       - name: Authenticate to GCP via WIF
         id: gcp-auth
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
@@ -114,6 +121,9 @@ jobs:
           ANTHROPIC_VERTEX_PROJECT_ID: hosted-control-planes
           GH_TOKEN: ${{ steps.app-token.outputs.token || github.token }}
           PR_NUMBER: ${{ github.event.issue.number }}
+          PR_REPO: ${{ steps.pr.outputs.repo }}
+          PR_BRANCH: ${{ steps.pr.outputs.branch }}
+          PUSH_TOKEN: ${{ steps.app-token.outputs.token || github.token }}
           CLAUDE_PROMPT: ${{ inputs.claude-prompt }}
           MAX_TURNS: ${{ inputs.max-turns }}
           ALLOWED_TOOLS: ${{ inputs.allowed-tools }}
