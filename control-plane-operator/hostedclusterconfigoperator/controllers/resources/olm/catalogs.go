@@ -41,8 +41,8 @@ func reconcileCatalogSource(cs *operatorsv1alpha1.CatalogSource, address string,
 		Priority:  priority,
 		UpdateStrategy: &operatorsv1alpha1.UpdateStrategy{
 			RegistryPoll: &operatorsv1alpha1.RegistryPoll{
-				RawInterval: "10m",
-				Interval:    &metav1.Duration{Duration: 10 * time.Minute},
+				RawInterval: "240m",
+				Interval:    &metav1.Duration{Duration: 240 * time.Minute},
 			},
 		},
 	}
