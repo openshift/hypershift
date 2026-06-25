@@ -1004,6 +1004,24 @@ Capabilities
 This field is optional and once set cannot be changed.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>monitoring,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.MonitoringSpec">
+MonitoringSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>monitoring configures monitoring for the hosted cluster, including
+forwarding of control plane metrics to the hosted cluster&rsquo;s monitoring stack.
+When omitted, metrics forwarding behavior is determined by the
+hypershift.openshift.io/enable-metrics-forwarding annotation for backward compatibility.
+If neither is set, metrics forwarding is disabled.</p>
+</td>
+</tr>
 </table>
 </td>
 </tr>
@@ -9753,6 +9771,24 @@ Capabilities
 This field is optional and once set cannot be changed.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>monitoring,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.MonitoringSpec">
+MonitoringSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>monitoring configures monitoring for the hosted cluster, including
+forwarding of control plane metrics to the hosted cluster&rsquo;s monitoring stack.
+When omitted, metrics forwarding behavior is determined by the
+hypershift.openshift.io/enable-metrics-forwarding annotation for backward compatibility.
+If neither is set, metrics forwarding is disabled.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###HostedClusterStatus { #hypershift.openshift.io/v1beta1.HostedClusterStatus }
@@ -10332,6 +10368,22 @@ OperatorConfiguration
 <td>
 <em>(Optional)</em>
 <p>operatorConfiguration specifies configuration for individual OCP operators in the cluster.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>monitoring,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.MonitoringSpec">
+MonitoringSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>monitoring configures monitoring for the hosted cluster, including
+forwarding of control plane metrics to the hosted cluster&rsquo;s monitoring stack.
+When omitted, metrics forwarding is not configured and will be inactive.</p>
 </td>
 </tr>
 <tr>
@@ -12949,6 +13001,180 @@ credentialsSecretName must also be unique within the Azure Key Vault. See more d
 Spot instances use spare EC2 capacity at reduced prices but may be interrupted.</p>
 </td>
 </tr></tbody>
+</table>
+###MetricsForwardingMode { #hypershift.openshift.io/v1beta1.MetricsForwardingMode }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.MetricsForwardingSpec">MetricsForwardingSpec</a>)
+</p>
+<p>
+<p>MetricsForwardingMode controls whether metrics forwarding is active for a hosted cluster.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;Forward&#34;</p></td>
+<td><p>MetricsForwardingModeForward indicates metrics forwarding is active.</p>
+</td>
+</tr><tr><td><p>&#34;None&#34;</p></td>
+<td><p>MetricsForwardingModeNone indicates metrics forwarding is inactive.</p>
+</td>
+</tr></tbody>
+</table>
+###MetricsForwardingSpec { #hypershift.openshift.io/v1beta1.MetricsForwardingSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.MonitoringSpec">MonitoringSpec</a>)
+</p>
+<p>
+<p>MetricsForwardingSpec configures metrics forwarding for the hosted cluster.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>mode</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.MetricsForwardingMode">
+MetricsForwardingMode
+</a>
+</em>
+</td>
+<td>
+<p>mode controls whether metrics forwarding is active for this hosted cluster.
+When set to &ldquo;Forward&rdquo;, metrics-proxy and endpoint-resolver are deployed in the
+control plane, and a metrics-forwarder is deployed in the hosted cluster.
+When set to &ldquo;None&rdquo;, metrics forwarding is inactive.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>metricsSet</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.MetricsSet">
+MetricsSet
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>metricsSet specifies which set of metrics to forward to the hosted
+cluster&rsquo;s monitoring stack. This controls only the metrics-proxy forwarding
+path and does not affect management-cluster-side ServiceMonitor/PodMonitor
+relabel configurations.
+When not specified, the value from monitoring.metricsSet is used, which itself
+falls back to the global METRICS_SET environment variable (default &ldquo;Telemetry&rdquo;).</p>
+<p>&ldquo;Telemetry&rdquo; forwards only the minimal set of metrics required for OpenShift Telemetry.
+&ldquo;SRE&rdquo; forwards the Telemetry set plus additional metrics defined in the sre-metric-set
+ConfigMap, needed for SRE dashboards and alerts.
+&ldquo;All&rdquo; forwards all metrics from control plane components without filtering,
+which produces significantly higher metrics volume.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###MetricsSet { #hypershift.openshift.io/v1beta1.MetricsSet }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.MetricsForwardingSpec">MetricsForwardingSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.MonitoringSpec">MonitoringSpec</a>)
+</p>
+<p>
+<p>MetricsSet specifies the set of metrics to collect and forward from hosted clusters.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;All&#34;</p></td>
+<td><p>MetricsSetAll collects all metrics from control plane components without
+any filtering. Use this for debugging or when full metric visibility is
+needed, but be aware it produces significantly higher metrics volume.</p>
+</td>
+</tr><tr><td><p>&#34;SRE&#34;</p></td>
+<td><p>MetricsSetSRE collects the metrics defined in the sre-metric-set ConfigMap,
+which includes the Telemetry set plus additional metrics needed for SRE
+monitoring dashboards and alerts. Use this for clusters that require
+SRE observability.</p>
+</td>
+</tr><tr><td><p>&#34;Telemetry&#34;</p></td>
+<td><p>MetricsSetTelemetry collects only the minimal set of metrics required for
+OpenShift Telemetry. Use this to minimize metrics volume while still
+satisfying cluster telemetry requirements.</p>
+</td>
+</tr></tbody>
+</table>
+###MonitoringSpec { #hypershift.openshift.io/v1beta1.MonitoringSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
+</p>
+<p>
+<p>MonitoringSpec configures monitoring for the hosted cluster.
+At least one field must be specified when this struct is present.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>metricsForwarding,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.MetricsForwardingSpec">
+MetricsForwardingSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>metricsForwarding configures forwarding of control plane metrics into
+the hosted cluster&rsquo;s monitoring stack.
+When omitted, metrics forwarding behavior is determined by the
+hypershift.openshift.io/enable-metrics-forwarding annotation for backward compatibility.
+If neither is set, metrics forwarding is disabled.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>metricsSet</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.MetricsSet">
+MetricsSet
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>metricsSet specifies which set of metrics to collect and forward.
+This overrides the global METRICS_SET environment variable configured on the HyperShift Operator.
+When not specified, the global METRICS_SET value is used, which defaults to &ldquo;Telemetry&rdquo;.</p>
+<p>&ldquo;Telemetry&rdquo; collects only the minimal set of metrics required for OpenShift Telemetry.
+&ldquo;SRE&rdquo; collects the Telemetry set plus additional metrics defined in the sre-metric-set ConfigMap,
+needed for SRE dashboards and alerts.
+&ldquo;All&rdquo; collects all metrics from control plane components without filtering,
+which produces significantly higher metrics volume.</p>
+</td>
+</tr>
+</tbody>
 </table>
 ###MultiQueueSetting { #hypershift.openshift.io/v1beta1.MultiQueueSetting }
 <p>

@@ -1683,6 +1683,7 @@ func (r *HostedClusterReconciler) reconcileOperatorDeployments(ctx context.Conte
 	imageProvider.ComponentImages()["token-minter"] = utilitiesImage
 	imageProvider.ComponentImages()[podspec.AvailabilityProberImageName] = utilitiesImage
 
+	metricsSet := r.effectiveMetricsSet(hcluster.Spec.Monitoring)
 	cpContext := controlplanecomponent.ControlPlaneContext{
 		Context:                   ctx,
 		Client:                    r.Client,
@@ -1691,7 +1692,7 @@ func (r *HostedClusterReconciler) reconcileOperatorDeployments(ctx context.Conte
 		SetDefaultSecurityContext: r.SetDefaultSecurityContext,
 		DefaultSecurityContextUID: securityContextUID,
 		EnableCIDebugOutput:       r.EnableCIDebugOutput,
-		MetricsSet:                r.MetricsSet,
+		MetricsSet:                metricsSet,
 		ReleaseImageProvider:      imageProvider,
 		OmitOwnerReference:        true,
 	}
@@ -2804,6 +2805,28 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 		hcp.Spec.OperatorConfiguration = nil
 	}
 
+	hcp.Spec.Monitoring = hcluster.Spec.Monitoring
+	// Backward compat: if the deprecated annotation is present and the spec mode is not explicitly set,
+	// enable metrics forwarding on the HCP so that downstream consumers (CPO, HCCO) use the spec field.
+	// An explicit None mode takes precedence over the annotation.
+	if hcp.Spec.Monitoring.MetricsForwarding.Mode == "" {
+		if _, hasAnnotation := hcluster.Annotations[hyperv1.EnableMetricsForwarding]; hasAnnotation {
+			hcp.Spec.Monitoring.MetricsForwarding.Mode = hyperv1.MetricsForwardingModeForward
+		}
+	}
+
+	// N-1 compat: older CPOs (4.22) only read the annotation, not the spec field.
+	// Mirror the spec mode to the annotation so they can still deploy metrics forwarding.
+	switch hcp.Spec.Monitoring.MetricsForwarding.Mode {
+	case hyperv1.MetricsForwardingModeForward:
+		if hcp.Annotations == nil {
+			hcp.Annotations = map[string]string{}
+		}
+		hcp.Annotations[hyperv1.EnableMetricsForwarding] = "true"
+	case hyperv1.MetricsForwardingModeNone:
+		delete(hcp.Annotations, hyperv1.EnableMetricsForwarding)
+	}
+
 	return nil
 }
 
@@ -3839,16 +3862,18 @@ func enqueueHostedClustersFunc(metricsSet metrics.MetricsSet, operatorNamespace 
 
 		switch typedObj := obj.(type) {
 		case *corev1.ConfigMap:
-			if metricsSet == metrics.MetricsSetSRE && typedObj.Name == metrics.SREConfigurationConfigMapName && typedObj.Namespace == operatorNamespace {
-				// A change has occurred to the SRE metrics set configuration. We should requeue all HostedClusters
+			if typedObj.Name == metrics.SREConfigurationConfigMapName && typedObj.Namespace == operatorNamespace {
 				hcList := &hyperv1.HostedClusterList{}
 				if err := c.List(ctx, hcList); err != nil {
-					// An error occurred, report it.
 					log.Error(err, "failed to list hosted clusters while processing SRE config event")
 				}
 				requests := make([]reconcile.Request, 0, len(hcList.Items))
 				for _, hc := range hcList.Items {
-					requests = append(requests, reconcile.Request{NamespacedName: types.NamespacedName{Name: hc.Name, Namespace: hc.Namespace}})
+					if metricsSet == metrics.MetricsSetSRE ||
+						hc.Spec.Monitoring.MetricsSet == hyperv1.MetricsSetSRE ||
+						hc.Spec.Monitoring.MetricsForwarding.MetricsSet == hyperv1.MetricsSetSRE {
+						requests = append(requests, reconcile.Request{NamespacedName: types.NamespacedName{Name: hc.Name, Namespace: hc.Namespace}})
+					}
 				}
 				return requests
 			}
@@ -5395,11 +5420,18 @@ func (r *HostedClusterReconciler) reconcileMonitoringDashboard(ctx context.Conte
 	return nil
 }
 
+func (r *HostedClusterReconciler) effectiveMetricsSet(monitoring hyperv1.MonitoringSpec) metrics.MetricsSet {
+	if monitoring.MetricsSet != "" {
+		return metrics.MetricsSet(monitoring.MetricsSet)
+	}
+	return r.MetricsSet
+}
+
 // reconcileSREMetricsConfig loads the SRE metrics configuration (avoids parsing if the content is the same)
 // and ensures that it is synced to the hosted control plane
 func (r *HostedClusterReconciler) reconcileSREMetricsConfig(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcp *hyperv1.HostedControlPlane) error {
 	log := ctrl.LoggerFrom(ctx)
-	if r.MetricsSet != metrics.MetricsSetSRE {
+	if r.effectiveMetricsSet(hcp.Spec.Monitoring) != metrics.MetricsSetSRE {
 		return nil
 	}
 	log.Info("Reconciling SRE metrics configuration")
