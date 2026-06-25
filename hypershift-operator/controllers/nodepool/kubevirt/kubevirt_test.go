@@ -1580,7 +1580,7 @@ func TestDefaultImage(t *testing.T) {
 			if testRI == nil {
 				testRI = ri
 			}
-			img, digest, err := defaultImage(tt.arch, testRI)
+			img, digest, err := defaultImage(tt.arch, testRI.StreamMetadata)
 			if tt.expectedError {
 				if err == nil {
 					t.Fatalf("expected error but got nil")

@@ -168,7 +168,11 @@ func resolveGCPImage(nodePool *hyperv1.NodePool, releaseImage *releaseinfo.Relea
 	}
 
 	// Resolve image from release metadata
-	image, err := defaultNodePoolGCPImage(nodePool.Spec.Arch, releaseImage)
+	streamMeta, err := releaseImage.StreamForName("")
+	if err != nil {
+		return "", fmt.Errorf("couldn't resolve stream metadata: %w", err)
+	}
+	image, err := DefaultNodePoolGCPImage(nodePool.Spec.Arch, streamMeta)
 	if err != nil {
 		return "", fmt.Errorf("couldn't discover a GCP image for release image: %w", err)
 	}

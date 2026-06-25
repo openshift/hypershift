@@ -535,7 +535,7 @@ func TestDefaultNodePoolGCPImage(t *testing.T) {
 	testCases := []struct {
 		name           string
 		arch           string
-		releaseImage   *releaseinfo.ReleaseImage
+		streamMeta     *stream.Stream
 		expectedImage  string
 		expectedErr    bool
 		expectedErrMsg string
@@ -543,55 +543,47 @@ func TestDefaultNodePoolGCPImage(t *testing.T) {
 		{
 			name: "When stream metadata has project and name for amd64, it should construct image path",
 			arch: hyperv1.ArchitectureAMD64,
-			releaseImage: &releaseinfo.ReleaseImage{
-				StreamMetadata: &stream.Stream{
-					Architectures: map[string]stream.Arch{
-						"x86_64": {
-							Images: stream.Images{
-								Gcp: &stream.GcpImage{
-									Project: "rhcos-cloud",
-									Name:    "rhcos-9-6-20251023-0-gcp-x86-64",
-								},
+			streamMeta: &stream.Stream{
+				Architectures: map[string]stream.Arch{
+					"x86_64": {
+						Images: stream.Images{
+							Gcp: &stream.GcpImage{
+								Project: "rhcos-cloud",
+								Name:    "rhcos-9-6-20251023-0-gcp-x86-64",
 							},
 						},
 					},
 				},
 			},
 			expectedImage: "projects/rhcos-cloud/global/images/rhcos-9-6-20251023-0-gcp-x86-64",
-			expectedErr:   false,
 		},
 		{
 			name: "When stream metadata has project and name for arm64, it should construct image path",
 			arch: hyperv1.ArchitectureARM64,
-			releaseImage: &releaseinfo.ReleaseImage{
-				StreamMetadata: &stream.Stream{
-					Architectures: map[string]stream.Arch{
-						"aarch64": {
-							Images: stream.Images{
-								Gcp: &stream.GcpImage{
-									Project: "rhcos-cloud",
-									Name:    "rhcos-9-6-20251023-0-gcp-aarch64",
-								},
+			streamMeta: &stream.Stream{
+				Architectures: map[string]stream.Arch{
+					"aarch64": {
+						Images: stream.Images{
+							Gcp: &stream.GcpImage{
+								Project: "rhcos-cloud",
+								Name:    "rhcos-9-6-20251023-0-gcp-aarch64",
 							},
 						},
 					},
 				},
 			},
 			expectedImage: "projects/rhcos-cloud/global/images/rhcos-9-6-20251023-0-gcp-aarch64",
-			expectedErr:   false,
 		},
 		{
-			name: "When architecture is not found in release metadata, it should return error",
+			name: "When architecture is not found in stream metadata, it should return error",
 			arch: "unsupported-arch",
-			releaseImage: &releaseinfo.ReleaseImage{
-				StreamMetadata: &stream.Stream{
-					Architectures: map[string]stream.Arch{
-						"x86_64": {
-							Images: stream.Images{
-								Gcp: &stream.GcpImage{
-									Project: "rhcos-cloud",
-									Name:    "rhcos-9-6-20251023-0-gcp-x86-64",
-								},
+			streamMeta: &stream.Stream{
+				Architectures: map[string]stream.Arch{
+					"x86_64": {
+						Images: stream.Images{
+							Gcp: &stream.GcpImage{
+								Project: "rhcos-cloud",
+								Name:    "rhcos-9-6-20251023-0-gcp-x86-64",
 							},
 						},
 					},
@@ -603,13 +595,11 @@ func TestDefaultNodePoolGCPImage(t *testing.T) {
 		{
 			name: "When GCP project and name are empty, it should return error",
 			arch: hyperv1.ArchitectureAMD64,
-			releaseImage: &releaseinfo.ReleaseImage{
-				StreamMetadata: &stream.Stream{
-					Architectures: map[string]stream.Arch{
-						"x86_64": {
-							Images: stream.Images{
-								Gcp: &stream.GcpImage{},
-							},
+			streamMeta: &stream.Stream{
+				Architectures: map[string]stream.Arch{
+					"x86_64": {
+						Images: stream.Images{
+							Gcp: &stream.GcpImage{},
 						},
 					},
 				},
@@ -620,14 +610,12 @@ func TestDefaultNodePoolGCPImage(t *testing.T) {
 		{
 			name: "When GCP project is empty but name is set, it should return error",
 			arch: hyperv1.ArchitectureAMD64,
-			releaseImage: &releaseinfo.ReleaseImage{
-				StreamMetadata: &stream.Stream{
-					Architectures: map[string]stream.Arch{
-						"x86_64": {
-							Images: stream.Images{
-								Gcp: &stream.GcpImage{
-									Name: "rhcos-x86-64",
-								},
+			streamMeta: &stream.Stream{
+				Architectures: map[string]stream.Arch{
+					"x86_64": {
+						Images: stream.Images{
+							Gcp: &stream.GcpImage{
+								Name: "rhcos-x86-64",
 							},
 						},
 					},
@@ -639,14 +627,12 @@ func TestDefaultNodePoolGCPImage(t *testing.T) {
 		{
 			name: "When GCP name is empty but project is set, it should return error",
 			arch: hyperv1.ArchitectureAMD64,
-			releaseImage: &releaseinfo.ReleaseImage{
-				StreamMetadata: &stream.Stream{
-					Architectures: map[string]stream.Arch{
-						"x86_64": {
-							Images: stream.Images{
-								Gcp: &stream.GcpImage{
-									Project: "rhcos-cloud",
-								},
+			streamMeta: &stream.Stream{
+				Architectures: map[string]stream.Arch{
+					"x86_64": {
+						Images: stream.Images{
+							Gcp: &stream.GcpImage{
+								Project: "rhcos-cloud",
 							},
 						},
 					},
@@ -655,13 +641,20 @@ func TestDefaultNodePoolGCPImage(t *testing.T) {
 			expectedErr:    true,
 			expectedErrMsg: "release image metadata has no GCP image for architecture \"amd64\"",
 		},
+		{
+			name:           "When stream metadata is nil, it should return error",
+			arch:           hyperv1.ArchitectureAMD64,
+			streamMeta:     nil,
+			expectedErr:    true,
+			expectedErrMsg: "stream metadata is nil",
+		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
 
-			image, err := defaultNodePoolGCPImage(tc.arch, tc.releaseImage)
+			image, err := DefaultNodePoolGCPImage(tc.arch, tc.streamMeta)
 
 			if tc.expectedErr {
 				g.Expect(err).To(HaveOccurred())
