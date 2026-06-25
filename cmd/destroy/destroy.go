@@ -4,6 +4,7 @@ import (
 	"github.com/openshift/hypershift/cmd/bastion"
 	"github.com/openshift/hypershift/cmd/cluster"
 	"github.com/openshift/hypershift/cmd/infra"
+	"github.com/openshift/hypershift/cmd/oadp"
 
 	"github.com/spf13/cobra"
 )
@@ -19,6 +20,9 @@ func NewCommand() *cobra.Command {
 	destroyCmd.AddCommand(infra.NewDestroyCommand())
 	destroyCmd.AddCommand(infra.NewDestroyIAMCommand())
 	destroyCmd.AddCommand(bastion.NewDestroyCommand())
+	destroyCmd.AddCommand(oadp.NewDestroyBackupCommand())
+	destroyCmd.AddCommand(oadp.NewDestroyRestoreCommand())
+	destroyCmd.AddCommand(oadp.NewDestroyScheduleCommand())
 
 	return destroyCmd
 }

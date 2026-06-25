@@ -87,6 +87,7 @@ https://hypershift.pages.dev/how-to/disaster-recovery/dr-cli/`,
 	cmd.Flags().BoolVar(&restorePVs, "restore-pvs", true, "Restore persistent volumes")
 	cmd.Flags().BoolVar(&preserveNodePorts, "preserve-node-ports", true, "Preserve NodePort assignments during restore")
 	cmd.Flags().BoolVar(&opts.UseEtcdSnapshot, "use-etcd-snapshot", false, "Use etcd snapshot mode: etcd is backed up via HCPEtcdBackup CRD snapshots instead of PV volume snapshots")
+	cmd.Flags().BoolVar(&opts.VerifyBackup, "verify", false, "Run backup integrity verification before creating the restore")
 
 	// Mark required flags - note that we'll validate backup OR schedule in Run()
 	_ = cmd.MarkFlagRequired("hc-name")
@@ -196,6 +197,28 @@ func (o *CreateOptions) RunRestore(ctx context.Context) error {
 	restore, restoreName, err := o.GenerateRestoreObject()
 	if err != nil {
 		return fmt.Errorf("restore generation failed: %w", err)
+	}
+
+	// Step 3.5: Run backup integrity verification if --verify is set
+	if o.VerifyBackup && o.BackupName != "" && o.Client != nil {
+		o.Log.Info("Running backup integrity verification...")
+		results, verifyErr := VerifyBackup(ctx, o.Client, o.BackupName, o.OADPNamespace, o.Log)
+		if verifyErr != nil {
+			return fmt.Errorf("backup verification failed: %w", verifyErr)
+		}
+		allPassed := true
+		for _, r := range results {
+			if r.Passed {
+				o.Log.Info("Backup verification", "check", r.Check, "result", "pass", "detail", r.Detail)
+			} else {
+				o.Log.Info("Backup verification", "check", r.Check, "result", "FAIL", "detail", r.Detail)
+				allPassed = false
+			}
+		}
+		if !allPassed {
+			return fmt.Errorf("backup verification failed for '%s' — restore aborted", o.BackupName)
+		}
+		o.Log.Info("Backup verification passed, proceeding with restore")
 	}
 
 	if o.Render {
