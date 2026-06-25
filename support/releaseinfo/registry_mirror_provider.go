@@ -33,16 +33,22 @@ func (p *RegistryMirrorProviderDecorator) Lookup(ctx context.Context, image stri
 		return nil, err
 	}
 
+	canonicalImages := releaseImage.CanonicalComponentImages()
+
 	imageStream := releaseImage.ImageStream.DeepCopy() // deepCopy so the cache is not overridden.
 	for i := range imageStream.Spec.Tags {
 		imageStream.Spec.Tags[i].From.Name = registryoverride.Replace(imageStream.Spec.Tags[i].From.Name, p.RegistryOverrides)
 	}
 
-	return &ReleaseImage{
+	result := &ReleaseImage{
 		ImageStream:    imageStream,
 		StreamMetadata: releaseImage.StreamMetadata,
 		OSStreams:      releaseImage.OSStreams,
-	}, nil
+	}
+	if len(canonicalImages) > 0 {
+		result.SetCanonicalComponentImages(canonicalImages)
+	}
+	return result, nil
 }
 
 func (p *RegistryMirrorProviderDecorator) GetRegistryOverrides() map[string]string {

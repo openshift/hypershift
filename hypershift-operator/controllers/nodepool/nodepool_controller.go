@@ -76,7 +76,12 @@ const (
 
 	nodePoolAnnotationPlatformMachineTemplate = "hypershift.openshift.io/nodePoolPlatformMachineTemplate"
 	nodePoolAnnotationTaints                  = "hypershift.openshift.io/nodePoolTaints"
-	nodePoolCoreIgnitionConfigLabel           = "hypershift.openshift.io/core-ignition-config"
+	// nodePoolAnnotationCanonicalDataPlaneImages gates the use of canonical
+	// (pre-override) image references for data plane static pods. Set automatically
+	// on new NodePools and during version upgrades to avoid triggering rollouts on
+	// existing stable NodePools.
+	nodePoolAnnotationCanonicalDataPlaneImages = "hypershift.openshift.io/canonical-data-plane-images"
+	nodePoolCoreIgnitionConfigLabel            = "hypershift.openshift.io/core-ignition-config"
 
 	tuningConfigKey                                      = "tuning"
 	tunedConfigMapLabel                                  = "hypershift.openshift.io/tuned-config"
@@ -1096,7 +1101,13 @@ func (r *NodePoolReconciler) getAdditionalTrustBundle(ctx context.Context, hoste
 // 1. NodePool annotation (highest priority)
 // 2. Shared ingress image (when cluster uses shared ingress for public endpoints)
 // 3. Release payload (default)
-func resolveHAProxyImage(nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, releaseImage *releaseinfo.ReleaseImage) (string, error) {
+//
+// When useCanonicalImages is true and the image comes from the release payload,
+// canonical (pre-override) component images are used. The HAProxy image is
+// embedded in a static pod manifest that runs on data plane nodes, where CRI-O
+// handles mirroring natively via IDMS/ICSP — so the canonical (non-overridden)
+// image reference must be used.
+func resolveHAProxyImage(nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, releaseImage *releaseinfo.ReleaseImage, useCanonicalImages bool) (string, error) {
 	if annotationImage := strings.TrimSpace(nodePool.Annotations[hyperv1.NodePoolHAProxyImageAnnotation]); annotationImage != "" {
 		return annotationImage, nil
 	}
@@ -1105,15 +1116,33 @@ func resolveHAProxyImage(nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedClu
 		return images.GetSharedIngressHAProxyImage(), nil
 	}
 
-	haProxyImage, ok := releaseImage.ComponentImages()[haproxy.HAProxyRouterImageName]
+	componentImages := releaseImage.ComponentImages()
+	if useCanonicalImages {
+		componentImages = releaseImage.CanonicalComponentImages()
+	}
+
+	haProxyImage, ok := componentImages[haproxy.HAProxyRouterImageName]
 	if !ok {
 		return "", fmt.Errorf("release image doesn't have a %s image", haproxy.HAProxyRouterImageName)
 	}
+
 	return haProxyImage, nil
 }
 
 func (r *NodePoolReconciler) generateHAProxyRawConfig(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, releaseImage *releaseinfo.ReleaseImage) (string, error) {
-	haProxyImage, err := resolveHAProxyImage(nodePool, hcluster, releaseImage)
+	useCanonicalImages := nodePool.Annotations[nodePoolAnnotationCanonicalDataPlaneImages] == "true"
+	if !useCanonicalImages {
+		isNewOrUpgrading := nodePool.Status.Version == "" || nodePool.Status.Version != releaseImage.Version()
+		if isNewOrUpgrading {
+			useCanonicalImages = true
+			if nodePool.Annotations == nil {
+				nodePool.Annotations = make(map[string]string)
+			}
+			nodePool.Annotations[nodePoolAnnotationCanonicalDataPlaneImages] = "true"
+		}
+	}
+
+	haProxyImage, err := resolveHAProxyImage(nodePool, hcluster, releaseImage, useCanonicalImages)
 	if err != nil {
 		return "", err
 	}

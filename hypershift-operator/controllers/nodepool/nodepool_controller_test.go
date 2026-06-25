@@ -2519,11 +2519,14 @@ func TestResolveHAProxyImage(t *testing.T) {
 	)
 
 	testCases := []struct {
-		name                string
-		nodePoolAnnotations map[string]string
-		useSharedIngress    bool
-		envVarImage         string
-		expectedImage       string
+		name                  string
+		nodePoolAnnotations   map[string]string
+		nodePoolStatusVersion string
+		useSharedIngress      bool
+		envVarImage           string
+		canonicalComponents   map[string]string
+		componentImage        string
+		expectedImage         string
 	}{
 		{
 			name: "When NodePool annotation is set it should use annotation image",
@@ -2578,6 +2581,49 @@ func TestResolveHAProxyImage(t *testing.T) {
 			useSharedIngress: false,
 			expectedImage:    testReleaseImage,
 		},
+		{
+			name:                "When registry overrides exist and NodePool is new it should use canonical image",
+			useSharedIngress:    false,
+			componentImage:      "mirror.example.com/openshift/haproxy-router:v4.16",
+			canonicalComponents: map[string]string{haproxy.HAProxyRouterImageName: "registry.test.io/openshift/haproxy-router:v4.16"},
+			expectedImage:       "registry.test.io/openshift/haproxy-router:v4.16",
+		},
+		{
+			name:                  "When registry overrides exist and NodePool is upgrading it should use canonical image",
+			nodePoolStatusVersion: "4.17.0",
+			useSharedIngress:      false,
+			componentImage:        "mirror.example.com/openshift/haproxy-router:v4.16",
+			canonicalComponents:   map[string]string{haproxy.HAProxyRouterImageName: "registry.test.io/openshift/haproxy-router:v4.16"},
+			expectedImage:         "registry.test.io/openshift/haproxy-router:v4.16",
+		},
+		{
+			name: "When registry overrides exist and canonical-data-plane-images annotation is set it should use canonical image",
+			nodePoolAnnotations: map[string]string{
+				nodePoolAnnotationCanonicalDataPlaneImages: "true",
+			},
+			nodePoolStatusVersion: "4.18.0",
+			useSharedIngress:      false,
+			componentImage:        "mirror.example.com/openshift/haproxy-router:v4.16",
+			canonicalComponents:   map[string]string{haproxy.HAProxyRouterImageName: "registry.test.io/openshift/haproxy-router:v4.16"},
+			expectedImage:         "registry.test.io/openshift/haproxy-router:v4.16",
+		},
+		{
+			name:                  "When registry overrides exist and NodePool is stable without annotation it should preserve overridden image",
+			nodePoolStatusVersion: "4.18.0",
+			useSharedIngress:      false,
+			componentImage:        "mirror.example.com/openshift/haproxy-router:v4.16",
+			canonicalComponents:   map[string]string{haproxy.HAProxyRouterImageName: "registry.test.io/openshift/haproxy-router:v4.16"},
+			expectedImage:         "mirror.example.com/openshift/haproxy-router:v4.16",
+		},
+		{
+			name: "When registry overrides exist it should not affect an annotation image",
+			nodePoolAnnotations: map[string]string{
+				hyperv1.NodePoolHAProxyImageAnnotation: "mirror.example.com/custom/haproxy:latest",
+			},
+			componentImage:      "mirror.example.com/openshift/haproxy-router:v4.16",
+			canonicalComponents: map[string]string{haproxy.HAProxyRouterImageName: "registry.test.io/openshift/haproxy-router:v4.16"},
+			expectedImage:       "mirror.example.com/custom/haproxy:latest",
+		},
 	}
 
 	for _, tc := range testCases {
@@ -2598,6 +2644,9 @@ func TestResolveHAProxyImage(t *testing.T) {
 					Name:        "test-nodepool",
 					Namespace:   "clusters",
 					Annotations: tc.nodePoolAnnotations,
+				},
+				Status: hyperv1.NodePoolStatus{
+					Version: tc.nodePoolStatusVersion,
 				},
 			}
 
@@ -2669,11 +2718,18 @@ kind: Config`),
 			// Create fake client
 			c := fake.NewClientBuilder().WithObjects(objects...).Build()
 
+			componentImage := testReleaseImage
+			if tc.componentImage != "" {
+				componentImage = tc.componentImage
+			}
+
 			// Create fake release provider with component images
 			releaseProvider := &fakereleaseprovider.FakeReleaseProvider{
+				Version: "4.18.0",
 				Components: map[string]string{
-					haproxy.HAProxyRouterImageName: testReleaseImage,
+					haproxy.HAProxyRouterImageName: componentImage,
 				},
+				CanonicalComponents: tc.canonicalComponents,
 			}
 
 			// Create test HostedCluster
