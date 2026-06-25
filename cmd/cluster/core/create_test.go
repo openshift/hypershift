@@ -41,12 +41,14 @@ func TestBindOptions(t *testing.T) {
 			"--base-domain=example.com",
 			"--name=my-cluster",
 			"--namespace=my-ns",
+			"--kubeconfig=/path/to/kubeconfig",
 		})
 
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(opts.BaseDomain).To(Equal("example.com"))
 		g.Expect(opts.Name).To(Equal("my-cluster"))
 		g.Expect(opts.Namespace).To(Equal("my-ns"))
+		g.Expect(opts.Kubeconfig).To(Equal("/path/to/kubeconfig"))
 	})
 
 	t.Run("When base-domain flag is omitted the pflag default should be empty", func(t *testing.T) {
