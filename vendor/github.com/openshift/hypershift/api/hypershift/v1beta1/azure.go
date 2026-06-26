@@ -168,7 +168,9 @@ type AzureMarketplaceImage struct {
 	// publisher is the name of the organization that created the image.
 	// It must be between 3 and 50 characters in length, and consist of only lowercase letters, numbers, and hyphens (-) and underscores (_).
 	// It must start with a lowercase letter or a number.
-	// TODO: Can we explain where a user might find this value, or provide an example of one they might want to use
+	// You can list available publishers using the Azure CLI:
+	//   az vm image list-publishers --location <location> --output table
+	// For example, "redhat" is the publisher for Red Hat images.
 	//
 	// +kubebuilder:validation:Pattern=`^[a-z0-9][a-z0-9-_]{2,49}$`
 	// +kubebuilder:validation:MinLength=3
@@ -177,7 +179,10 @@ type AzureMarketplaceImage struct {
 	Publisher string `json:"publisher,omitempty"`
 
 	// offer specifies the name of a group of related images created by the publisher.
-	// TODO: What is the valid character set for this field? What about minimum and maximum lengths?
+	// It must be between 1 and 255 characters in length.
+	// You can list available offers for a given publisher using the Azure CLI:
+	//   az vm image list-offers --publisher <publisher> --location <location> --output table
+	// For example, "rh-ocp-worker" is an offer by the "redhat" publisher for OpenShift worker node images.
 	//
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=255
@@ -186,8 +191,9 @@ type AzureMarketplaceImage struct {
 
 	// sku specifies an instance of an offer, such as a major release of a distribution.
 	// For example, 22_04-lts-gen2, 8-lvm-gen2.
-	// The value must consist only of lowercase letters, numbers, and hyphens (-) and underscores (_).
-	// TODO: What about length limits?
+	// The value must be between 1 and 255 characters in length, and consist only of lowercase letters, numbers, hyphens (-) and underscores (_).
+	// You can list available SKUs for a given publisher and offer using the Azure CLI:
+	//   az vm image list-skus --publisher <publisher> --offer <offer> --location <location> --output table
 	//
 	// +kubebuilder:validation:Pattern=`^[a-z0-9-_]+$`
 	// +kubebuilder:validation:MinLength=1
