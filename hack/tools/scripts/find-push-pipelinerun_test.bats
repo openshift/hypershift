@@ -58,15 +58,29 @@ setup() {
     [[ "$output" == *"https://example.com/run/abc"* ]]
 }
 
+@test "format_pipelineruns: shows IMAGE for completed runs with results" {
+    local json='{"items":[{"metadata":{"name":"my-plr","creationTimestamp":"2026-06-26T13:00:00Z","annotations":{}},"status":{"conditions":[{"reason":"Completed"}],"results":[{"name":"IMAGE_URL","value":"quay.io/org/img:tag"},{"name":"IMAGE_DIGEST","value":"sha256:abc123"}]}}]}'
+
+    output="$(printf '%s' "${json}" | format_pipelineruns)"
+    [[ "$output" == *"IMAGE: quay.io/org/img:tag@sha256:abc123"* ]]
+}
+
+@test "format_pipelineruns: no IMAGE line when no results" {
+    local json='{"items":[{"metadata":{"name":"my-plr","creationTimestamp":"2026-06-26T13:00:00Z","annotations":{}},"status":{"conditions":[{"reason":"Running"}]}}]}'
+
+    output="$(printf '%s' "${json}" | format_pipelineruns)"
+    [[ "$output" != *"IMAGE:"* ]]
+}
+
 @test "format_pipelineruns: sorts by creation timestamp" {
     local json='{"items":[{"metadata":{"name":"second","creationTimestamp":"2026-06-26T14:00:00Z","annotations":{}},"status":{"conditions":[{"reason":"Running"}]}},{"metadata":{"name":"first","creationTimestamp":"2026-06-26T13:00:00Z","annotations":{}},"status":{"conditions":[{"reason":"Completed"}]}}]}'
 
     output="$(printf '%s' "${json}" | format_pipelineruns)"
-    local first_line second_line
-    first_line="$(sed -n '2p' <<< "$output")"
-    second_line="$(sed -n '3p' <<< "$output")"
-    [[ "$first_line" == *"first"* ]]
-    [[ "$second_line" == *"second"* ]]
+    local first_data second_data
+    first_data="$(grep -n "first\|second" <<< "$output" | head -1)"
+    second_data="$(grep -n "first\|second" <<< "$output" | tail -1)"
+    [[ "$first_data" == *"first"* ]]
+    [[ "$second_data" == *"second"* ]]
 }
 
 @test "format_pipelineruns: returns 1 on empty items" {
@@ -86,6 +100,26 @@ setup() {
 
     output="$(printf '%s' "${json}" | format_pipelineruns)"
     [[ "$output" == *"<none>"* ]]
+}
+
+# --- has_pending ---
+
+@test "has_pending: returns 0 when runs are still in progress" {
+    local table
+    table="$(printf '%-50s %-20s %-25s %s\n' "NAME" "STATUS" "CREATED" "URL"
+             printf '%-50s %-20s %-25s %s\n' "plr-a" "Running" "2026-06-26T13:00:00Z" ""
+             printf '%-50s %-20s %-25s %s\n' "plr-b" "Completed" "2026-06-26T13:00:00Z" "")"
+    run has_pending "${table}"
+    [[ "$status" -eq 0 ]]
+}
+
+@test "has_pending: returns 1 when all runs are terminal" {
+    local table
+    table="$(printf '%-50s %-20s %-25s %s\n' "NAME" "STATUS" "CREATED" "URL"
+             printf '%-50s %-20s %-25s %s\n' "plr-a" "Failed" "2026-06-26T13:00:00Z" ""
+             printf '%-50s %-20s %-25s %s\n' "plr-b" "Completed" "2026-06-26T13:00:00Z" "")"
+    run has_pending "${table}"
+    [[ "$status" -ne 0 ]]
 }
 
 # --- filter_by_component ---

@@ -1,18 +1,22 @@
 #!/usr/bin/env bash
-set -euo pipefail
 
-readonly DEFAULT_NAMESPACE="crt-redhat-acm-tenant"
-readonly DEFAULT_KA_HOST="https://kubearchive-api-server-product-kubearchive.apps.stone-prd-rh01.pg1f.p1.openshiftapps.com"
-readonly LOG_URL_ANNOTATION="pipelinesascode.tekton.dev/log-url"
+# Guard readonly to allow re-sourcing (e.g. in tests)
+_set_default() { declare -g -r "$1"="$2" 2>/dev/null || true; }
+_set_default DEFAULT_NAMESPACE "crt-redhat-acm-tenant"
+_set_default DEFAULT_KA_HOST "https://kubearchive-api-server-product-kubearchive.apps.stone-prd-rh01.pg1f.p1.openshiftapps.com"
+_set_default LOG_URL_ANNOTATION "pipelinesascode.tekton.dev/log-url"
+_set_default WATCH_INTERVAL 15
 
 usage() {
     printf "Find Konflux on-push PipelineRun(s) triggered by a merged PR.\n\n"
-    printf "Usage: %s <PR> [COMPONENT]\n\n" "$(basename "$0")"
+    printf "Usage: %s [OPTIONS] <PR> [COMPONENT]\n\n" "$(basename "$0")"
     printf "  PR          One of:\n"
     printf "                - PR number (e.g., 8761) — repo inferred via gh\n"
     printf "                - Full URL (e.g., https://github.com/openshift/hypershift/pull/8761)\n"
     printf "                - owner/repo#number (e.g., openshift/hypershift#8761)\n"
     printf "  COMPONENT   Optional: filter by component name prefix (e.g., hypershift-release)\n\n"
+    printf "Options:\n"
+    printf "  -w, --watch   Poll until all PipelineRuns complete\n\n"
     printf "Environment variables:\n"
     printf "  KONFLUX_NAMESPACE  Konflux namespace (default: %s)\n" "${DEFAULT_NAMESPACE}"
     printf "  KUBEARCHIVE_HOST   KubeArchive API host (default: %s)\n" "${DEFAULT_KA_HOST}"
@@ -58,7 +62,7 @@ get_merge_sha() {
     local -r repo="$2"
     local pr_json state sha
 
-    pr_json="$(gh pr view "${pr_number}" --repo "${repo}" --json mergeCommit,state 2>&1)" || {
+    pr_json="$(gh pr view "${pr_number}" --repo "${repo}" --json mergeCommit,state)" || {
         printf "Error: could not fetch PR %s from %s\n" "${pr_number}" "${repo}" >&2
         return 1
     }
@@ -74,8 +78,10 @@ get_merge_sha() {
 }
 
 format_pipelineruns() {
-    local items
-    items="$(jq -r '
+    local input formatted images
+    input="$(cat)"
+
+    formatted="$(printf '%s' "${input}" | jq -r '
         [.items[] | {
             name: .metadata.name,
             status: (.status.conditions[0].reason // "<none>"),
@@ -83,18 +89,44 @@ format_pipelineruns() {
             url: (.metadata.annotations["'"${LOG_URL_ANNOTATION}"'"] // "")
         }]
         | sort_by(.created)
-        | .[]
-        | [.name, .status, .created, .url]
-        | @tsv')"
+        | if length == 0 then empty else . end
+        | (["NAME","STATUS","CREATED","URL"],
+           (.[] | [.name, .status, .created, .url]))
+        | @tsv
+    ')" || return 1
 
-    if [[ -z "${items}" ]]; then
+    if [[ -z "${formatted}" ]]; then
         return 1
     fi
 
-    printf "%-50s %-20s %-25s %s\n" "NAME" "STATUS" "CREATED" "URL"
-    while IFS=$'\t' read -r name status created url; do
-        printf "%-50s %-20s %-25s %s\n" "${name}" "${status}" "${created}" "${url}"
-    done <<< "${items}"
+    images="$(printf '%s' "${input}" | jq -r '
+        [.items[] | {
+            name: .metadata.name,
+            image: (
+                [.status.results[]? | select(.name == "IMAGE_URL") | .value][0]
+                + (
+                    [.status.results[]? | select(.name == "IMAGE_DIGEST") | .value][0]
+                    // empty
+                    | "@" + .
+                )
+            ) // ""
+        }]
+        | .[] | select(.image != "") | [.name, .image] | @tsv
+    ')"
+
+    printf '%s\n' "${formatted}" | column -t -s $'\t'
+
+    if [[ -n "${images}" ]]; then
+        printf '\n'
+        while IFS=$'\t' read -r name image; do
+            printf "  %s IMAGE: %s\n" "${name}" "${image}"
+        done <<< "${images}"
+    fi
+}
+
+has_pending() {
+    local -r formatted="$1"
+    printf '%s\n' "${formatted}" | tail -n +2 | awk '{print $2}' | grep -qvE '^(Completed|Failed|Succeeded|Error)$'
 }
 
 query_pipelineruns_live() {
@@ -103,7 +135,7 @@ query_pipelineruns_live() {
     local -r selector="pipelinesascode.tekton.dev/sha=${sha},pipelinesascode.tekton.dev/event-type=push"
     local output
 
-    output="$(oc get pipelineruns -n "${namespace}" -l "${selector}" -o json 2>&1)" || return 1
+    output="$(oc get pipelineruns -n "${namespace}" -l "${selector}" -o json 2>/dev/null)" || return 1
 
     printf '%s' "${output}" | format_pipelineruns
 }
@@ -169,24 +201,47 @@ query_pipelineruns() {
 }
 
 main() {
-    if [[ $# -lt 1 || "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+    set -euo pipefail
+
+    local watch=false
+    local positional=()
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -w|--watch) watch=true; shift ;;
+            -h|--help) usage; return 0 ;;
+            *) positional+=("$1"); shift ;;
+        esac
+    done
+
+    if [[ ${#positional[@]} -lt 1 ]]; then
         usage
         return 0
     fi
 
-    local -r component="${2:-}"
-    local resolved repo pr_number sha
+    local -r pr_ref="${positional[0]}"
+    local -r component="${positional[1]:-}"
+    local resolved repo pr_number sha output
 
     check_prerequisites
 
-    resolved="$(resolve_pr "$1")"
+    resolved="$(resolve_pr "${pr_ref}")"
     repo="$(printf '%s\n' "${resolved}" | sed -n '1p')"
     pr_number="$(printf '%s\n' "${resolved}" | sed -n '2p')"
 
     sha="$(get_merge_sha "${pr_number}" "${repo}")"
     printf "PR https://github.com/%s/pull/%s merged at commit %s\n\n" "${repo}" "${pr_number}" "${sha}" >&2
 
-    query_pipelineruns "${sha}" "${component}"
+    output="$(query_pipelineruns "${sha}" "${component}")"
+    printf '%s\n' "${output}"
+
+    if [[ "${watch}" == true ]]; then
+        while has_pending "${output}"; do
+            sleep "${WATCH_INTERVAL}"
+            printf "\n--- refreshing (%ss) ---\n\n" "${WATCH_INTERVAL}" >&2
+            output="$(query_pipelineruns "${sha}" "${component}")"
+            printf '%s\n' "${output}"
+        done
+    fi
 }
 
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
