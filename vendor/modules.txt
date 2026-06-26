@@ -1168,6 +1168,7 @@ github.com/openshift/library-go/pkg/network
 github.com/openshift/library-go/pkg/operator/apiserver/audit
 github.com/openshift/library-go/pkg/operator/certrotation
 github.com/openshift/library-go/pkg/operator/condition
+github.com/openshift/library-go/pkg/operator/encryption/controllers/migrators
 github.com/openshift/library-go/pkg/operator/events
 github.com/openshift/library-go/pkg/operator/management
 github.com/openshift/library-go/pkg/operator/resource/resourceapply
@@ -2796,6 +2797,11 @@ sigs.k8s.io/kube-storage-version-migrator/pkg/apis/migration/v1alpha1
 sigs.k8s.io/kube-storage-version-migrator/pkg/clients/clientset
 sigs.k8s.io/kube-storage-version-migrator/pkg/clients/clientset/scheme
 sigs.k8s.io/kube-storage-version-migrator/pkg/clients/clientset/typed/migration/v1alpha1
+sigs.k8s.io/kube-storage-version-migrator/pkg/clients/informer
+sigs.k8s.io/kube-storage-version-migrator/pkg/clients/informer/internalinterfaces
+sigs.k8s.io/kube-storage-version-migrator/pkg/clients/informer/migration
+sigs.k8s.io/kube-storage-version-migrator/pkg/clients/informer/migration/v1alpha1
+sigs.k8s.io/kube-storage-version-migrator/pkg/clients/lister/migration/v1alpha1
 # sigs.k8s.io/kustomize/api v0.20.1
 ## explicit; go 1.22.7
 sigs.k8s.io/kustomize/api/filters/annotations

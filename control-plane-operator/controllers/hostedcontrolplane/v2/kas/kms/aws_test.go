@@ -19,22 +19,23 @@ func TestNewAWSKMSProvider(t *testing.T) {
 
 	tests := []struct {
 		name             string
-		kmsSpec          *hyperv1.AWSKMSSpec
+		writeKey         hyperv1.AWSKMSKeyEntry
+		readKey          *hyperv1.AWSKMSKeyEntry
+		region           string
 		kmsImage         string
 		tokenMinterImage string
 		expectError      bool
 	}{
 		{
-			name:        "When kmsSpec is nil, it should return an error",
-			kmsSpec:     nil,
+			name:        "When write key ARN is empty, it should return an error",
+			writeKey:    hyperv1.AWSKMSKeyEntry{ARN: ""},
+			region:      "us-east-1",
 			expectError: true,
 		},
 		{
-			name: "When kmsSpec is valid, it should return a provider with the correct fields",
-			kmsSpec: &hyperv1.AWSKMSSpec{
-				ActiveKey: hyperv1.AWSKMSKeyEntry{ARN: "arn:aws:kms:us-east-1:123456789:key/test-key-id"},
-				Region:    "us-east-1",
-			},
+			name:             "When write key is valid, it should return a provider with the correct fields",
+			writeKey:         hyperv1.AWSKMSKeyEntry{ARN: "arn:aws:kms:us-east-1:123456789:key/test-key-id"},
+			region:           "us-east-1",
 			kmsImage:         "quay.io/test/kms:latest",
 			tokenMinterImage: "quay.io/test/token-minter:latest",
 			expectError:      false,
@@ -46,7 +47,7 @@ func TestNewAWSKMSProvider(t *testing.T) {
 			t.Parallel()
 			g := NewWithT(t)
 
-			provider, err := NewAWSKMSProvider(tc.kmsSpec, tc.kmsImage, tc.tokenMinterImage)
+			provider, err := NewAWSKMSProvider(tc.writeKey, tc.readKey, tc.region, tc.kmsImage, tc.tokenMinterImage)
 			if tc.expectError {
 				g.Expect(err).To(HaveOccurred())
 				g.Expect(provider).To(BeNil())
@@ -55,9 +56,9 @@ func TestNewAWSKMSProvider(t *testing.T) {
 
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(provider).ToNot(BeNil())
-			g.Expect(provider.activeKey).To(Equal(tc.kmsSpec.ActiveKey))
-			g.Expect(provider.backupKey).To(Equal(tc.kmsSpec.BackupKey))
-			g.Expect(provider.awsRegion).To(Equal(tc.kmsSpec.Region))
+			g.Expect(provider.activeKey).To(Equal(tc.writeKey))
+			g.Expect(provider.backupKey).To(Equal(tc.readKey))
+			g.Expect(provider.awsRegion).To(Equal(tc.region))
 			g.Expect(provider.kmsImage).To(Equal(tc.kmsImage))
 			g.Expect(provider.tokenMinterImage).To(Equal(tc.tokenMinterImage))
 		})
@@ -76,10 +77,10 @@ func TestGenerateKMSEncryptionConfig(t *testing.T) {
 		{
 			name: "When active key ARN is empty, it should return an error",
 			provider: func() (*awsKMSProvider, error) {
-				return NewAWSKMSProvider(&hyperv1.AWSKMSSpec{
-					ActiveKey: hyperv1.AWSKMSKeyEntry{ARN: ""},
-					Region:    "us-east-1",
-				}, "quay.io/test/kms:latest", "quay.io/test/token-minter:latest")
+				return NewAWSKMSProvider(
+					hyperv1.AWSKMSKeyEntry{ARN: ""},
+					nil, "us-east-1",
+					"quay.io/test/kms:latest", "quay.io/test/token-minter:latest")
 			},
 			apiVersion: "v2",
 			validate: func(g Gomega, config *v1.EncryptionConfiguration, err error) {
@@ -88,12 +89,12 @@ func TestGenerateKMSEncryptionConfig(t *testing.T) {
 			},
 		},
 		{
-			name: "When only active key is provided, it should generate config with 2 providers (KMS + identity)",
+			name: "When only write key is provided, it should generate config with 2 providers (KMS + identity)",
 			provider: func() (*awsKMSProvider, error) {
-				return NewAWSKMSProvider(&hyperv1.AWSKMSSpec{
-					ActiveKey: hyperv1.AWSKMSKeyEntry{ARN: "arn:aws:kms:us-east-1:123456789:key/test-key-id"},
-					Region:    "us-east-1",
-				}, "quay.io/test/kms:latest", "quay.io/test/token-minter:latest")
+				return NewAWSKMSProvider(
+					hyperv1.AWSKMSKeyEntry{ARN: "arn:aws:kms:us-east-1:123456789:key/test-key-id"},
+					nil, "us-east-1",
+					"quay.io/test/kms:latest", "quay.io/test/token-minter:latest")
 			},
 			apiVersion: "v2",
 			validate: func(g Gomega, config *v1.EncryptionConfiguration, err error) {
@@ -105,13 +106,13 @@ func TestGenerateKMSEncryptionConfig(t *testing.T) {
 			},
 		},
 		{
-			name: "When active and backup keys are provided, it should generate config with 3 providers (active KMS + backup KMS + identity)",
+			name: "When write and read keys are provided, it should generate config with 3 providers (write KMS + read KMS + identity)",
 			provider: func() (*awsKMSProvider, error) {
-				return NewAWSKMSProvider(&hyperv1.AWSKMSSpec{
-					ActiveKey: hyperv1.AWSKMSKeyEntry{ARN: "arn:aws:kms:us-east-1:123456789:key/active-key"},
-					BackupKey: &hyperv1.AWSKMSKeyEntry{ARN: "arn:aws:kms:us-east-1:123456789:key/backup-key"},
-					Region:    "us-east-1",
-				}, "quay.io/test/kms:latest", "quay.io/test/token-minter:latest")
+				return NewAWSKMSProvider(
+					hyperv1.AWSKMSKeyEntry{ARN: "arn:aws:kms:us-east-1:123456789:key/active-key"},
+					&hyperv1.AWSKMSKeyEntry{ARN: "arn:aws:kms:us-east-1:123456789:key/backup-key"},
+					"us-east-1",
+					"quay.io/test/kms:latest", "quay.io/test/token-minter:latest")
 			},
 			apiVersion: "v2",
 			validate: func(g Gomega, config *v1.EncryptionConfiguration, err error) {
@@ -124,13 +125,13 @@ func TestGenerateKMSEncryptionConfig(t *testing.T) {
 			},
 		},
 		{
-			name: "When backup key ARN is empty, it should only include active KMS provider",
+			name: "When read key ARN is empty, it should only include write KMS provider",
 			provider: func() (*awsKMSProvider, error) {
-				return NewAWSKMSProvider(&hyperv1.AWSKMSSpec{
-					ActiveKey: hyperv1.AWSKMSKeyEntry{ARN: "arn:aws:kms:us-east-1:123456789:key/test-key-id"},
-					BackupKey: &hyperv1.AWSKMSKeyEntry{ARN: ""},
-					Region:    "us-east-1",
-				}, "quay.io/test/kms:latest", "quay.io/test/token-minter:latest")
+				return NewAWSKMSProvider(
+					hyperv1.AWSKMSKeyEntry{ARN: "arn:aws:kms:us-east-1:123456789:key/test-key-id"},
+					&hyperv1.AWSKMSKeyEntry{ARN: ""},
+					"us-east-1",
+					"quay.io/test/kms:latest", "quay.io/test/token-minter:latest")
 			},
 			apiVersion: "v2",
 			validate: func(g Gomega, config *v1.EncryptionConfiguration, err error) {
@@ -144,10 +145,10 @@ func TestGenerateKMSEncryptionConfig(t *testing.T) {
 		{
 			name: "When called, it should set the correct API version on the encryption config",
 			provider: func() (*awsKMSProvider, error) {
-				return NewAWSKMSProvider(&hyperv1.AWSKMSSpec{
-					ActiveKey: hyperv1.AWSKMSKeyEntry{ARN: "arn:aws:kms:us-east-1:123456789:key/test-key-id"},
-					Region:    "us-east-1",
-				}, "quay.io/test/kms:latest", "quay.io/test/token-minter:latest")
+				return NewAWSKMSProvider(
+					hyperv1.AWSKMSKeyEntry{ARN: "arn:aws:kms:us-east-1:123456789:key/test-key-id"},
+					nil, "us-east-1",
+					"quay.io/test/kms:latest", "quay.io/test/token-minter:latest")
 			},
 			apiVersion: "v2",
 			validate: func(g Gomega, config *v1.EncryptionConfiguration, err error) {
@@ -159,11 +160,11 @@ func TestGenerateKMSEncryptionConfig(t *testing.T) {
 		{
 			name: "When called, it should set timeout to 35 seconds on KMS providers",
 			provider: func() (*awsKMSProvider, error) {
-				return NewAWSKMSProvider(&hyperv1.AWSKMSSpec{
-					ActiveKey: hyperv1.AWSKMSKeyEntry{ARN: "arn:aws:kms:us-east-1:123456789:key/active-key"},
-					BackupKey: &hyperv1.AWSKMSKeyEntry{ARN: "arn:aws:kms:us-east-1:123456789:key/backup-key"},
-					Region:    "us-east-1",
-				}, "quay.io/test/kms:latest", "quay.io/test/token-minter:latest")
+				return NewAWSKMSProvider(
+					hyperv1.AWSKMSKeyEntry{ARN: "arn:aws:kms:us-east-1:123456789:key/active-key"},
+					&hyperv1.AWSKMSKeyEntry{ARN: "arn:aws:kms:us-east-1:123456789:key/backup-key"},
+					"us-east-1",
+					"quay.io/test/kms:latest", "quay.io/test/token-minter:latest")
 			},
 			apiVersion: "v2",
 			validate: func(g Gomega, config *v1.EncryptionConfiguration, err error) {
@@ -179,10 +180,10 @@ func TestGenerateKMSEncryptionConfig(t *testing.T) {
 		{
 			name: "When called, the KMS provider name should be based on a hash of the ARN",
 			provider: func() (*awsKMSProvider, error) {
-				return NewAWSKMSProvider(&hyperv1.AWSKMSSpec{
-					ActiveKey: hyperv1.AWSKMSKeyEntry{ARN: "arn:aws:kms:us-east-1:123456789:key/test-key-id"},
-					Region:    "us-east-1",
-				}, "quay.io/test/kms:latest", "quay.io/test/token-minter:latest")
+				return NewAWSKMSProvider(
+					hyperv1.AWSKMSKeyEntry{ARN: "arn:aws:kms:us-east-1:123456789:key/test-key-id"},
+					nil, "us-east-1",
+					"quay.io/test/kms:latest", "quay.io/test/token-minter:latest")
 			},
 			apiVersion: "v2",
 			validate: func(g Gomega, config *v1.EncryptionConfiguration, err error) {
@@ -206,7 +207,11 @@ func TestGenerateKMSEncryptionConfig(t *testing.T) {
 			g := NewWithT(t)
 
 			provider, err := tc.provider()
-			g.Expect(err).ToNot(HaveOccurred())
+			if err != nil {
+				// Constructor-level validation error (e.g., empty write key ARN).
+				tc.validate(g, nil, err)
+				return
+			}
 
 			config, err := provider.GenerateKMSEncryptionConfig(tc.apiVersion)
 			tc.validate(g, config, err)
@@ -223,12 +228,12 @@ func TestGenerateKMSPodConfig(t *testing.T) {
 		validate func(g Gomega, podConfig *KMSPodConfig, err error)
 	}{
 		{
-			name: "When active key ARN is empty, it should return an error",
+			name: "When write key ARN is empty, it should return an error",
 			provider: func() (*awsKMSProvider, error) {
-				return NewAWSKMSProvider(&hyperv1.AWSKMSSpec{
-					ActiveKey: hyperv1.AWSKMSKeyEntry{ARN: ""},
-					Region:    "us-east-1",
-				}, "quay.io/test/kms:latest", "quay.io/test/token-minter:latest")
+				return NewAWSKMSProvider(
+					hyperv1.AWSKMSKeyEntry{ARN: ""},
+					nil, "us-east-1",
+					"quay.io/test/kms:latest", "quay.io/test/token-minter:latest")
 			},
 			validate: func(g Gomega, podConfig *KMSPodConfig, err error) {
 				g.Expect(err).To(HaveOccurred())
@@ -238,10 +243,10 @@ func TestGenerateKMSPodConfig(t *testing.T) {
 		{
 			name: "When kms image is empty, it should return an error",
 			provider: func() (*awsKMSProvider, error) {
-				return NewAWSKMSProvider(&hyperv1.AWSKMSSpec{
-					ActiveKey: hyperv1.AWSKMSKeyEntry{ARN: "arn:aws:kms:us-east-1:123456789:key/test-key-id"},
-					Region:    "us-east-1",
-				}, "", "quay.io/test/token-minter:latest")
+				return NewAWSKMSProvider(
+					hyperv1.AWSKMSKeyEntry{ARN: "arn:aws:kms:us-east-1:123456789:key/test-key-id"},
+					nil, "us-east-1",
+					"", "quay.io/test/token-minter:latest")
 			},
 			validate: func(g Gomega, podConfig *KMSPodConfig, err error) {
 				g.Expect(err).To(HaveOccurred())
@@ -249,12 +254,12 @@ func TestGenerateKMSPodConfig(t *testing.T) {
 			},
 		},
 		{
-			name: "When valid config is provided without backup key, it should return 2 containers (token-minter + active)",
+			name: "When valid config is provided without read key, it should return 2 containers (token-minter + active)",
 			provider: func() (*awsKMSProvider, error) {
-				return NewAWSKMSProvider(&hyperv1.AWSKMSSpec{
-					ActiveKey: hyperv1.AWSKMSKeyEntry{ARN: "arn:aws:kms:us-east-1:123456789:key/test-key-id"},
-					Region:    "us-east-1",
-				}, "quay.io/test/kms:latest", "quay.io/test/token-minter:latest")
+				return NewAWSKMSProvider(
+					hyperv1.AWSKMSKeyEntry{ARN: "arn:aws:kms:us-east-1:123456789:key/test-key-id"},
+					nil, "us-east-1",
+					"quay.io/test/kms:latest", "quay.io/test/token-minter:latest")
 			},
 			validate: func(g Gomega, podConfig *KMSPodConfig, err error) {
 				g.Expect(err).ToNot(HaveOccurred())
@@ -264,13 +269,13 @@ func TestGenerateKMSPodConfig(t *testing.T) {
 			},
 		},
 		{
-			name: "When valid config is provided with backup key, it should return 3 containers (token-minter + active + backup)",
+			name: "When valid config is provided with read key, it should return 3 containers (token-minter + active + backup)",
 			provider: func() (*awsKMSProvider, error) {
-				return NewAWSKMSProvider(&hyperv1.AWSKMSSpec{
-					ActiveKey: hyperv1.AWSKMSKeyEntry{ARN: "arn:aws:kms:us-east-1:123456789:key/active-key"},
-					BackupKey: &hyperv1.AWSKMSKeyEntry{ARN: "arn:aws:kms:us-east-1:123456789:key/backup-key"},
-					Region:    "us-east-1",
-				}, "quay.io/test/kms:latest", "quay.io/test/token-minter:latest")
+				return NewAWSKMSProvider(
+					hyperv1.AWSKMSKeyEntry{ARN: "arn:aws:kms:us-east-1:123456789:key/active-key"},
+					&hyperv1.AWSKMSKeyEntry{ARN: "arn:aws:kms:us-east-1:123456789:key/backup-key"},
+					"us-east-1",
+					"quay.io/test/kms:latest", "quay.io/test/token-minter:latest")
 			},
 			validate: func(g Gomega, podConfig *KMSPodConfig, err error) {
 				g.Expect(err).ToNot(HaveOccurred())
@@ -283,10 +288,10 @@ func TestGenerateKMSPodConfig(t *testing.T) {
 		{
 			name: "When valid config is provided, it should return 3 volumes",
 			provider: func() (*awsKMSProvider, error) {
-				return NewAWSKMSProvider(&hyperv1.AWSKMSSpec{
-					ActiveKey: hyperv1.AWSKMSKeyEntry{ARN: "arn:aws:kms:us-east-1:123456789:key/test-key-id"},
-					Region:    "us-east-1",
-				}, "quay.io/test/kms:latest", "quay.io/test/token-minter:latest")
+				return NewAWSKMSProvider(
+					hyperv1.AWSKMSKeyEntry{ARN: "arn:aws:kms:us-east-1:123456789:key/test-key-id"},
+					nil, "us-east-1",
+					"quay.io/test/kms:latest", "quay.io/test/token-minter:latest")
 			},
 			validate: func(g Gomega, podConfig *KMSPodConfig, err error) {
 				g.Expect(err).ToNot(HaveOccurred())
@@ -299,10 +304,10 @@ func TestGenerateKMSPodConfig(t *testing.T) {
 		{
 			name: "When valid config is provided, it should set KASContainerMutate function",
 			provider: func() (*awsKMSProvider, error) {
-				return NewAWSKMSProvider(&hyperv1.AWSKMSSpec{
-					ActiveKey: hyperv1.AWSKMSKeyEntry{ARN: "arn:aws:kms:us-east-1:123456789:key/test-key-id"},
-					Region:    "us-east-1",
-				}, "quay.io/test/kms:latest", "quay.io/test/token-minter:latest")
+				return NewAWSKMSProvider(
+					hyperv1.AWSKMSKeyEntry{ARN: "arn:aws:kms:us-east-1:123456789:key/test-key-id"},
+					nil, "us-east-1",
+					"quay.io/test/kms:latest", "quay.io/test/token-minter:latest")
 			},
 			validate: func(g Gomega, podConfig *KMSPodConfig, err error) {
 				g.Expect(err).ToNot(HaveOccurred())
@@ -317,7 +322,11 @@ func TestGenerateKMSPodConfig(t *testing.T) {
 			g := NewWithT(t)
 
 			provider, err := tc.provider()
-			g.Expect(err).ToNot(HaveOccurred())
+			if err != nil {
+				// Constructor-level validation error (e.g., empty write key ARN).
+				tc.validate(g, nil, err)
+				return
+			}
 
 			podConfig, err := provider.GenerateKMSPodConfig()
 			tc.validate(g, podConfig, err)

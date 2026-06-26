@@ -125,7 +125,16 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 		applyGenericSecretEncryptionConfig(&deployment.Spec.Template.Spec)
 		switch secretEncryption.Type {
 		case hyperv1.KMS:
-			if err := applyKMSConfig(&deployment.Spec.Template.Spec, secretEncryption, newKMSImages(hcp)); err != nil {
+			encConfigSecret := manifests.KASSecretEncryptionConfigFile(hcp.Namespace)
+			currentConfig, err := readCurrentEncryptionConfig(cpContext, encConfigSecret)
+			if err != nil {
+				return fmt.Errorf("failed to read current encryption config: %w", err)
+			}
+			kasReady, err := isKASConverged(cpContext)
+			if err != nil {
+				return fmt.Errorf("failed to check KAS convergence: %w", err)
+			}
+			if err := applyKMSConfig(&deployment.Spec.Template.Spec, secretEncryption, &hcp.Status.SecretEncryption, currentConfig, kasReady, newKMSImages(hcp), hcp); err != nil {
 				return err
 			}
 		}
@@ -211,7 +220,7 @@ func updateMainContainer(podSpec *corev1.PodSpec, hcp *hyperv1.HostedControlPlan
 						if hcp.Spec.SecretEncryption.KMS.AWS != nil {
 							// Always will have an active key
 							totalProviderInstances = 1
-							if hcp.Spec.SecretEncryption.KMS.AWS.BackupKey != nil && len(hcp.Spec.SecretEncryption.KMS.AWS.BackupKey.ARN) > 0 {
+							if hcp.Spec.SecretEncryption.KMS.AWS.BackupKey != nil && len(hcp.Spec.SecretEncryption.KMS.AWS.BackupKey.ARN) > 0 { //nolint:staticcheck
 								totalProviderInstances++
 							}
 						}
@@ -255,7 +264,10 @@ func applyGenericSecretEncryptionConfig(podSpec *corev1.PodSpec) {
 	podSpec.Volumes = append(podSpec.Volumes, buildVolumeSecretEncryptionConfigFile())
 
 	util.UpdateContainer(ComponentName, podSpec.Containers, func(c *corev1.Container) {
-		c.Args = append(c.Args, fmt.Sprintf("--encryption-provider-config=%s/%s", genericSecretEncryptionConfigFileVolumeMount.Path(ComponentName, secretEncryptionConfigFileVolumeName), secretEncryptionConfigurationKey))
+		c.Args = append(c.Args,
+			fmt.Sprintf("--encryption-provider-config=%s/%s", genericSecretEncryptionConfigFileVolumeMount.Path(ComponentName, secretEncryptionConfigFileVolumeName), secretEncryptionConfigurationKey),
+			"--encryption-provider-config-automatic-reload=false",
+		)
 
 		c.VolumeMounts = append(c.VolumeMounts, genericSecretEncryptionConfigFileVolumeMount.ContainerMounts(ComponentName)...)
 	})

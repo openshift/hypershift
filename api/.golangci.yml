@@ -2059,6 +2059,24 @@ linters:
         path: hypershift/v1beta1/hosted_controlplane.go
         text: 'statusoptional: status field "Ready" must be marked as optional, not required'
 
+      # requiredfields/optionalfields false positives on well-known k8s types (https://github.com/kubernetes-sigs/kube-api-linter/issues/249)
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'requiredfields: field EncryptionMigrationHistory.StartedTime has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'requiredfields: field EncryptionMigrationHistory.StartedTime should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'optionalfields: field EncryptionMigrationHistory.CompletionTime has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'optionalfields: field EncryptionMigrationHistory.CompletionTime should have the omitempty tag'
+
       # uniquemarkers (3 issues)
       - linters:
           - kubeapilinter
