@@ -1,6 +1,8 @@
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: 76adf03e0e9af700fc40e5733abc90fe838ed638f74a83ed7563ffeb9c56d5b5
   name: router
   namespace: hcp-namespace
   ownerReferences:

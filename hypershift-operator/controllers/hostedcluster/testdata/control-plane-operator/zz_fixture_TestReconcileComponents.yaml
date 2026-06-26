@@ -3,6 +3,7 @@ kind: Deployment
 metadata:
   annotations:
     hypershift.openshift.io/cluster: ""
+    hypershift.openshift.io/desired-state-hash: 844c6d9543448ed692ef0d3fc38f47e052accf6a174e7ea196c269be7eb6b8f5
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: control-plane-operator

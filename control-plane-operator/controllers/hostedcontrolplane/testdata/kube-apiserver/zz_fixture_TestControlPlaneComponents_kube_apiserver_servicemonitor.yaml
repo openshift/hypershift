@@ -2,6 +2,7 @@ apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
   annotations:
+    hypershift.openshift.io/desired-state-hash: 9dfb47601f7ccfbf7993377c20e2f1607ddab06797a2d3c379b5c152b9d4df67
     hypershift.openshift.io/metrics-endpoint: https
     hypershift.openshift.io/metrics-job: apiserver
     hypershift.openshift.io/metrics-namespace: default

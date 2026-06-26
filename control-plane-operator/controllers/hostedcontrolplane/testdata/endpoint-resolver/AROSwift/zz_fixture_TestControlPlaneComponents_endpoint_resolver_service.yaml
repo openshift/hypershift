@@ -1,6 +1,8 @@
 apiVersion: v1
 kind: Service
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: aacab454d86ef9f98eca77a2471a2a812f855a0f604d4934614ada0a29c62536
   name: endpoint-resolver
   namespace: hcp-namespace
   ownerReferences:

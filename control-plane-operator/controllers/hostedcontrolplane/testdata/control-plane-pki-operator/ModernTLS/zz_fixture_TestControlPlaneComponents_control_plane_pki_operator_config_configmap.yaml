@@ -19,6 +19,8 @@ data:
       requestTimeoutSeconds: 0
 kind: ConfigMap
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: 55764e0623dcd4a7ac2c5ff3858f95da39d182ebbadd37bf5563e15f1c4b2335
   name: control-plane-pki-operator-config
   namespace: hcp-namespace
   ownerReferences:

@@ -2,6 +2,7 @@ apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
   annotations:
+    hypershift.openshift.io/desired-state-hash: 78c71edcf83a4509912112f48048b42f706534f473cb4ba5c5bbdfadcb0cdea6
     hypershift.openshift.io/metrics-endpoint: etcd-metrics
     hypershift.openshift.io/metrics-job: etcd
     hypershift.openshift.io/metrics-namespace: openshift-etcd

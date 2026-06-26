@@ -22,6 +22,8 @@ data:
     kind: EgressSelectorConfiguration
 kind: ConfigMap
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: b6b3ee75d0ffc4b107c9142d4f5f0d6cd77393d74a98f91efe6547fbad36755f
   name: kas-egress-selector-config
   namespace: hcp-namespace
   ownerReferences:

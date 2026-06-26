@@ -1,6 +1,8 @@
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: 499670b77c8ba4f2d787eb1d307007817af3426ccc9a9c4814fde7e13b0eb813
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: etcd

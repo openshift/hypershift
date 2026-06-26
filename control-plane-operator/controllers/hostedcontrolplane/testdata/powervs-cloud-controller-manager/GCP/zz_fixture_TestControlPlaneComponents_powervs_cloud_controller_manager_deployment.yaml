@@ -1,6 +1,8 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: 46838ae410c8a597979b15bb09eff38ab841897b13d9defe8ac26a38aa49f0d0
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: powervs-cloud-controller-manager
