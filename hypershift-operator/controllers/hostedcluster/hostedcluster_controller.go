@@ -3579,7 +3579,12 @@ func deleteAWSEndpointServices(ctx context.Context, c client.Client, hc *hyperv1
 					return false, fmt.Errorf("failed to remove finalizer from awsendpointservice: %w", err)
 				}
 			}
-			log.Info("Removed CPO finalizer for awsendpointservice because the HC has no valid aws credentials", "name", ep.Name, "endpoint-id", ep.Status.EndpointID)
+			reason := "the HC has no valid aws credentials"
+			if platformaws.GetCredentialStatus(hc) == platformaws.CredentialStatusValid {
+				reason = "deletion grace period expired"
+			}
+
+			log.Info("Removed CPO finalizer for awsendpointservice because "+reason, "name", ep.Name, "endpoint-id", ep.Status.EndpointID)
 			continue
 		}
 
