@@ -3,7 +3,6 @@ package aws
 import (
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -17,10 +16,11 @@ import (
 	"k8s.io/utils/ptr"
 
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
-
-	"github.com/blang/semver"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	"github.com/blang/semver"
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestReconcileAWSCluster(t *testing.T) {
@@ -35,7 +35,7 @@ func TestReconcileAWSCluster(t *testing.T) {
 			name:              "When hosted cluster has resource tags it should copy them to the AWS cluster",
 			initialAWSCluster: &capiaws.AWSCluster{},
 			hostedCluster: &hyperv1.HostedCluster{Spec: hyperv1.HostedClusterSpec{Platform: hyperv1.PlatformSpec{AWS: &hyperv1.AWSPlatformSpec{
-				ResourceTags: []hyperv1.AWSResourceTag{
+				ResourceTags: []hyperv1.AWSClusterResourceTag{
 					{Key: "foo", Value: "bar"},
 				},
 			}}}},
@@ -58,7 +58,7 @@ func TestReconcileAWSCluster(t *testing.T) {
 				"to-be-removed": "value",
 			}}},
 			hostedCluster: &hyperv1.HostedCluster{Spec: hyperv1.HostedClusterSpec{Platform: hyperv1.PlatformSpec{AWS: &hyperv1.AWSPlatformSpec{
-				ResourceTags: []hyperv1.AWSResourceTag{
+				ResourceTags: []hyperv1.AWSClusterResourceTag{
 					{Key: "foo", Value: "bar"},
 				},
 			}}}},
