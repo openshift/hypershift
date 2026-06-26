@@ -1,6 +1,8 @@
 apiVersion: batch/v1
 kind: CronJob
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: 9acb53608071423f0a0b474970d72370d1b6eb32c4d7a90833bfd08f59480773
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: olm-collect-profiles

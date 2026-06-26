@@ -3,6 +3,8 @@ data:
   ca-bundle.pem: ""
 kind: ConfigMap
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: ca319fba8098fed15d7f843f0bfb23fa4e60caf1cb7f970a5712b84fd7c63ba4
   name: openstack-trusted-ca
   namespace: hcp-namespace
   ownerReferences:

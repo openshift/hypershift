@@ -1,6 +1,8 @@
 apiVersion: v1
 kind: Service
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: 4711bda7e8c91b5d61d7ab668a755896ef8bf683ae78af97a5a626a5b64839ce
   name: community-operators
   namespace: hcp-namespace
   ownerReferences:

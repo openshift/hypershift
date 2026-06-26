@@ -1,6 +1,8 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: d569d2e2cb5e624eb765979ff93b90696afc955c8e4d725ad490de43793a0eb0
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: gcp-cloud-controller-manager

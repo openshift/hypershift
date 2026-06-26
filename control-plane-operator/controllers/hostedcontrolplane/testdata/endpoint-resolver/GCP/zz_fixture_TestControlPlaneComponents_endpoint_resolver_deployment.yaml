@@ -1,6 +1,8 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: bb0dac8e9388c59d30ebd28b122ab2f5c44fca07ed47bbb38582c3c52f7f106e
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: endpoint-resolver
