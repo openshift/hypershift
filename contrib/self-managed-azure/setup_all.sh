@@ -27,4 +27,9 @@ fi
 "${SCRIPT_DIR}/setup_hypershift_operator.sh"
 "${SCRIPT_DIR}/create_hosted_cluster.sh"
 
+# Optional: etcd backup infrastructure (only when --setup-backup flag is provided)
+if [[ "$*" == *"--setup-backup"* ]]; then
+  "${SCRIPT_DIR}/setup_backup.sh"
+fi
+
 set +x

@@ -41,7 +41,9 @@ az aks create \
 --assign-kubelet-identity ${AKS_KUBELET_MI_ID} \
 --network-plugin azure \
 --network-policy azure \
---max-pods 250
+--max-pods 250 \
+--enable-oidc-issuer \
+--enable-workload-identity
 
 # Save the KV MI Info
 AZURE_KEY_VAULT_AUTHORIZED_OBJECT_ID=$(az aks show -n ${AKS_CLUSTER_NAME} -g ${AKS_RG} | jq .addonProfiles.azureKeyvaultSecretsProvider.identity.objectId -r)

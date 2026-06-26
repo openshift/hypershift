@@ -170,6 +170,7 @@ Begin your self-managed Azure HyperShift deployment by following the guides in o
 3. **[Create a Self-Managed Azure HostedCluster](create-self-managed-azure-cluster.md)** - Deploy your first hosted cluster
 4. **[Deploy Azure Private Clusters](deploy-azure-private-clusters.md)** (Optional) - Configure private endpoint access with Azure Private Link
 5. **[Autoscaling](autoscaling-self-managed.md)** - Configure node pool and cluster autoscaling
+6. **[Etcd Snapshot Backup](backup-and-restore-etcd-snapshot.md)** (Optional) - Configure etcd backup with Azure Blob Storage
 
 Each guide includes sections for both DNS approaches - simply follow the sections that match your choice.
 
