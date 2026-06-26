@@ -78,7 +78,7 @@ get_merge_sha() {
 }
 
 format_pipelineruns() {
-    local input formatted images
+    local input formatted
     input="$(cat)"
 
     formatted="$(printf '%s' "${input}" | jq -r '
@@ -86,12 +86,19 @@ format_pipelineruns() {
             name: .metadata.name,
             status: (.status.conditions[0].reason // "<none>"),
             created: .metadata.creationTimestamp,
-            url: (.metadata.annotations["'"${LOG_URL_ANNOTATION}"'"] // "")
+            url: (.metadata.annotations["'"${LOG_URL_ANNOTATION}"'"] // ""),
+            image: (
+                ([.status.results[]? | select(.name == "IMAGE_URL") | .value][0] // "") as $url
+                | ([.status.results[]? | select(.name == "IMAGE_DIGEST") | .value][0] // null) as $digest
+                | if $url != "" and $digest then $url + "@" + $digest
+                  elif $url != "" then $url
+                  else "" end
+            )
         }]
         | sort_by(.created)
         | if length == 0 then empty else . end
-        | (["NAME","STATUS","CREATED","URL"],
-           (.[] | [.name, .status, .created, .url]))
+        | (["NAME","STATUS","CREATED","URL","IMAGE"],
+           (.[] | [.name, .status, .created, .url, .image]))
         | @tsv
     ')" || return 1
 
@@ -99,29 +106,7 @@ format_pipelineruns() {
         return 1
     fi
 
-    images="$(printf '%s' "${input}" | jq -r '
-        [.items[] | {
-            name: .metadata.name,
-            image: (
-                [.status.results[]? | select(.name == "IMAGE_URL") | .value][0]
-                + (
-                    [.status.results[]? | select(.name == "IMAGE_DIGEST") | .value][0]
-                    // empty
-                    | "@" + .
-                )
-            ) // ""
-        }]
-        | .[] | select(.image != "") | [.name, .image] | @tsv
-    ')"
-
     printf '%s\n' "${formatted}" | column -t -s $'\t'
-
-    if [[ -n "${images}" ]]; then
-        printf '\n'
-        while IFS=$'\t' read -r name image; do
-            printf "  %s IMAGE: %s\n" "${name}" "${image}"
-        done <<< "${images}"
-    fi
 }
 
 has_pending() {
@@ -152,8 +137,9 @@ query_pipelineruns_archived() {
         return 1
     }
 
-    response="$(curl -sf -H "Authorization: Bearer ${token}" \
-        "${ka_host}/apis/tekton.dev/v1/namespaces/${namespace}/pipelineruns?labelSelector=${selector}")" || {
+    response="$(curl -sf --connect-timeout 5 --max-time 30 -G -H "Authorization: Bearer ${token}" \
+        --data-urlencode "labelSelector=${selector}" \
+        "${ka_host}/apis/tekton.dev/v1/namespaces/${namespace}/pipelineruns")" || {
         printf "Error: KubeArchive query failed (is %s reachable?)\n" "${ka_host}" >&2
         return 1
     }
@@ -168,7 +154,7 @@ filter_by_component() {
 
     output="$(cat)"
     header="$(printf '%s\n' "${output}" | head -1)"
-    filtered="$(printf '%s\n' "${output}" | tail -n +2 | grep "^${component}" || true)"
+    filtered="$(printf '%s\n' "${output}" | tail -n +2 | awk -v prefix="${component}" 'index($0, prefix) == 1' || true)"
     if [[ -z "${filtered}" ]]; then
         printf "No push PipelineRuns found for component '%s' at commit %s\n" "${component}" "${sha}" >&2
         return 1
@@ -215,7 +201,7 @@ main() {
 
     if [[ ${#positional[@]} -lt 1 ]]; then
         usage
-        return 0
+        return 1
     fi
 
     local -r pr_ref="${positional[0]}"
