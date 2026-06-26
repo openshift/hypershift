@@ -3,6 +3,7 @@ set -euo pipefail
 
 readonly DEFAULT_NAMESPACE="crt-redhat-acm-tenant"
 readonly DEFAULT_KA_HOST="https://kubearchive-api-server-product-kubearchive.apps.stone-prd-rh01.pg1f.p1.openshiftapps.com"
+readonly LOG_URL_ANNOTATION="pipelinesascode.tekton.dev/log-url"
 
 usage() {
     printf "Find Konflux on-push PipelineRun(s) triggered by a merged PR.\n\n"
@@ -72,23 +73,39 @@ get_merge_sha() {
     printf '%s' "${sha}"
 }
 
+format_pipelineruns() {
+    local items
+    items="$(jq -r '
+        [.items[] | {
+            name: .metadata.name,
+            status: (.status.conditions[0].reason // "<none>"),
+            created: .metadata.creationTimestamp,
+            url: (.metadata.annotations["'"${LOG_URL_ANNOTATION}"'"] // "")
+        }]
+        | sort_by(.created)
+        | .[]
+        | [.name, .status, .created, .url]
+        | @tsv')"
+
+    if [[ -z "${items}" ]]; then
+        return 1
+    fi
+
+    printf "%-50s %-20s %-25s %s\n" "NAME" "STATUS" "CREATED" "URL"
+    while IFS=$'\t' read -r name status created url; do
+        printf "%-50s %-20s %-25s %s\n" "${name}" "${status}" "${created}" "${url}"
+    done <<< "${items}"
+}
+
 query_pipelineruns_live() {
     local -r sha="$1"
     local -r namespace="$2"
     local -r selector="pipelinesascode.tekton.dev/sha=${sha},pipelinesascode.tekton.dev/event-type=push"
     local output
 
-    output="$(oc get pipelineruns -n "${namespace}" -l "${selector}" \
-        -o custom-columns="\
-NAME:.metadata.name,\
-STATUS:.status.conditions[0].reason,\
-CREATED:.metadata.creationTimestamp" \
-        --sort-by=.metadata.creationTimestamp 2>&1)" || return 1
+    output="$(oc get pipelineruns -n "${namespace}" -l "${selector}" -o json 2>&1)" || return 1
 
-    if [[ "$(printf '%s\n' "${output}" | wc -l)" -le 1 ]]; then
-        return 1
-    fi
-    printf '%s\n' "${output}"
+    printf '%s' "${output}" | format_pipelineruns
 }
 
 query_pipelineruns_archived() {
@@ -96,7 +113,7 @@ query_pipelineruns_archived() {
     local -r namespace="$2"
     local -r ka_host="${KUBEARCHIVE_HOST:-${DEFAULT_KA_HOST}}"
     local -r selector="pipelinesascode.tekton.dev/sha=${sha},pipelinesascode.tekton.dev/event-type=push"
-    local token response items
+    local token response
 
     token="$(oc whoami -t 2>/dev/null)" || {
         printf "Error: could not get auth token via 'oc whoami -t'\n" >&2
@@ -109,21 +126,7 @@ query_pipelineruns_archived() {
         return 1
     }
 
-    items="$(printf '%s' "${response}" | jq -r '
-        .items
-        | sort_by(.metadata.creationTimestamp)
-        | .[]
-        | [.metadata.name, (.status.conditions[0].reason // "<none>"), .metadata.creationTimestamp]
-        | @tsv')"
-
-    if [[ -z "${items}" ]]; then
-        return 1
-    fi
-
-    printf "%-50s %-20s %s\n" "NAME" "STATUS" "CREATED"
-    while IFS=$'\t' read -r name status created; do
-        printf "%-50s %-20s %s\n" "${name}" "${status}" "${created}"
-    done <<< "${items}"
+    printf '%s' "${response}" | format_pipelineruns
 }
 
 filter_by_component() {
