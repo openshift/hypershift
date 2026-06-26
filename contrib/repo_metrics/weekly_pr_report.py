@@ -400,7 +400,7 @@ class PRReportGenerator:
         self.repo_fetch_status: Dict[str, str] = {}  # repo -> "ok" | "failed"
 
     BOT_PATTERNS = ['-bot', '-robot', '[bot]']
-    BOT_LOGINS = {'coderabbitai', 'hypershift-jira-solve-ci'}
+    BOT_LOGINS = {'coderabbitai', 'hypershift-jira-solve-ci', 'dependabot'}
 
     @classmethod
     def is_bot(cls, login: str) -> bool:
@@ -1513,6 +1513,265 @@ class PRReportGenerator:
             json.dump(output, f, indent=2)
         print(f"Summary data saved to {output_path}")
 
+    @staticmethod
+    def _parse_owners_aliases(path: str = 'OWNERS_ALIASES') -> Dict[str, Set[str]]:
+        """Parse OWNERS_ALIASES YAML file into a dict of group -> set of logins."""
+        import yaml
+        aliases: Dict[str, Set[str]] = {}
+        if not os.path.exists(path):
+            return aliases
+        with open(path) as f:
+            data = yaml.safe_load(f)
+        for group, members in (data or {}).get('aliases', {}).items():
+            aliases[group] = set(members or [])
+        return aliases
+
+    @staticmethod
+    def _get_hs_team(aliases: Dict[str, Set[str]]) -> Set[str]:
+        """Compute the HyperShift team set from OWNERS_ALIASES groups.
+
+        Formula: (core-approvers ∪ core-reviewers ∪ konflux-approvers) - gcp-reviewers
+        """
+        return ((aliases.get('core-approvers', set())
+                 | aliases.get('core-reviewers', set())
+                 | aliases.get('konflux-approvers', set()))
+                - aliases.get('gcp-reviewers', set()))
+
+    def generate_blog_data(self, output_dir: str):
+        """Generate blog_data.json with contributor table, metrics, and pre-rendered markdown.
+
+        Produces all the deterministic data needed for a Material-styled blog post:
+        contributor counts per repo, bugfix counts, GitHub URLs, metrics summary,
+        and pre-rendered markdown fragments (stats cards, tables).
+        """
+        start = self.since_date
+        end = self.end_date
+
+        # Determine HyperShift team from OWNERS_ALIASES
+        aliases = self._parse_owners_aliases()
+        hs_team = self._get_hs_team(aliases)
+        if hs_team:
+            print(f"  HyperShift team ({len(hs_team)} members from OWNERS_ALIASES): "
+                  f"{', '.join(sorted(hs_team))}")
+        else:
+            print("  Warning: could not parse OWNERS_ALIASES, ai-helpers filtering disabled")
+
+        # --- Collect per-author, per-repo PR data ---
+        repo_map = {
+            'openshift/hypershift': 'hypershift',
+            'openshift/release': 'release',
+            'openshift-eng/ai-helpers': 'ai-helpers',
+            'openshift/enhancements': 'enhancements',
+        }
+        # author -> repo -> list of PR dicts
+        author_prs: Dict[str, Dict[str, List[Dict]]] = {}
+        for pr in self.prs:
+            author = pr['author']
+            if self.is_bot(author):
+                continue
+            repo = pr['repo']
+            if author not in author_prs:
+                author_prs[author] = {}
+            if repo not in author_prs[author]:
+                author_prs[author][repo] = []
+            author_prs[author][repo].append(pr)
+
+        # --- Contributor inclusion rules ---
+        hs_authors = {a for a, repos in author_prs.items() if 'openshift/hypershift' in repos}
+        release_authors = {a for a, repos in author_prs.items() if 'openshift/release' in repos}
+        enhancement_authors = {a for a, repos in author_prs.items() if 'openshift/enhancements' in repos}
+        ai_authors = {a for a, repos in author_prs.items() if 'openshift-eng/ai-helpers' in repos}
+
+        # ai-helpers PRs only count if the author is on the HyperShift team (from OWNERS_ALIASES)
+        included = hs_authors | release_authors | enhancement_authors | (ai_authors & hs_team)
+
+        # --- Bugfix detection ---
+        def is_bugfix(pr: Dict) -> bool:
+            return (any('OCPBUGS' in t for t in pr.get('jiraTickets', []))
+                    or 'OCPBUGS' in pr.get('title', ''))
+
+        # --- Build GitHub URL for a count ---
+        def make_url(repo: str, author: str, prs_list: List[Dict]) -> str:
+            if len(prs_list) == 1:
+                return prs_list[0]['url']
+            q = f"is%3Apr+is%3Amerged+author%3A{author}+merged%3A{start}..{end}"
+            if repo == 'openshift/release':
+                q += '+hypershift'
+            return f"https://github.com/{repo}/pulls?q={q}"
+
+        def make_bug_url(author: str, bug_prs: List[Dict]) -> str:
+            if len(bug_prs) == 1:
+                return bug_prs[0]['url']
+            return (f"https://github.com/search?q=org%3Aopenshift+is%3Apr+is%3Amerged+"
+                    f"author%3A{author}+merged%3A{start}..{end}+OCPBUGS&type=pullrequests")
+
+        # --- Build contributor records ---
+        contributors = []
+        for author in sorted(included):
+            repos_data = {}
+            total = 0
+            for full_repo in repo_map:
+                prs_in_repo = author_prs.get(author, {}).get(full_repo, [])
+                # Only include ai-helpers if author is on hs_team
+                if full_repo == 'openshift-eng/ai-helpers' and author not in hs_team:
+                    continue
+                count = len(prs_in_repo)
+                if count > 0:
+                    repos_data[full_repo] = {
+                        'count': count,
+                        'url': make_url(full_repo, author, prs_in_repo),
+                    }
+                    total += count
+
+            bug_prs_list = [pr for repo_prs in author_prs.get(author, {}).values()
+                            for pr in repo_prs if is_bugfix(pr)]
+            bug_count = len(bug_prs_list)
+
+            entry = {
+                'login': author,
+                'repos': repos_data,
+                'bugs': {'count': bug_count, 'url': make_bug_url(author, bug_prs_list)} if bug_count else {'count': 0},
+                'total': total,
+            }
+            # Flag release-only contributors for LLM spot-checking
+            if author in release_authors and author not in (hs_authors | enhancement_authors):
+                entry['release_only'] = True
+                # Include their release PR numbers for easy verification
+                release_prs = author_prs.get(author, {}).get('openshift/release', [])
+                entry['release_pr_numbers'] = [f"openshift/release#{pr['number']}" for pr in release_prs]
+
+            contributors.append(entry)
+
+        contributors.sort(key=lambda c: c['total'], reverse=True)
+
+        # --- Metrics ---
+        merge_times = [pr['readyToMergeHours'] for pr in self.prs
+                       if pr.get('readyToMergeHours') is not None and pr['readyToMergeHours'] > 0]
+        avg_merge = round(sum(merge_times) / len(merge_times), 1) if merge_times else 0
+        bot_prs = len([pr for pr in self.prs if self.is_bot(pr['author'])])
+
+        customer_fixes = 0
+        for pr in self.prs:
+            sfdc_total, _, _ = self._get_pr_sfdc_info(pr)
+            if sfdc_total > 0:
+                customer_fixes += 1
+
+        # Try to read breaking changes / API changes from deep analysis if available
+        breaking_changes = 0
+        api_changes = 0
+        high_impact = 0
+        for path in [os.path.join(output_dir, '.work', 'pr_deep_aggregated.json'),
+                     os.path.join('.work', 'pr_deep_aggregated.json')]:
+            if os.path.exists(path):
+                try:
+                    with open(path) as f:
+                        agg = json.load(f)
+                    summary = agg.get('summary', {})
+                    breaking_changes = summary.get('breaking_changes_count', 0)
+                    api_changes = summary.get('api_changes_count', 0)
+                    high_impact = summary.get('high_impact_count', 0)
+                    break
+                except (json.JSONDecodeError, KeyError):
+                    pass
+
+        by_repo = {}
+        for full_repo in repo_map:
+            by_repo[full_repo] = len([pr for pr in self.prs if pr['repo'] == full_repo])
+
+        reviewer_counts: Dict[str, int] = {}
+        for pr in self.prs:
+            for r in pr.get('reviewers', []):
+                reviewer_counts[r] = reviewer_counts.get(r, 0) + 1
+        top_reviewers = sorted(reviewer_counts.items(), key=lambda x: x[1], reverse=True)[:5]
+
+        stats = {
+            'total_prs': len(self.prs),
+            'contributor_count': len(contributors),
+            'bot_prs': bot_prs,
+            'breaking_changes': breaking_changes,
+            'api_changes': api_changes,
+            'avg_merge_hours': avg_merge,
+            'high_impact': high_impact,
+            'customer_reported_fixes': customer_fixes,
+            'by_repo': by_repo,
+        }
+
+        # --- Pre-render markdown fragments ---
+
+        lg = '{ .lg }'
+        stats_cards = (
+            '<div class="grid cards" markdown>\n\n'
+            f'-   :octicons-git-pull-request-24:{lg} **{stats["total_prs"]}** PRs merged\n'
+            f'-   :octicons-people-24:{lg} **{stats["contributor_count"]}** contributors\n'
+            f'-   :octicons-alert-24:{lg} **{stats["breaking_changes"]}** breaking changes\n'
+            f'-   :octicons-clock-24:{lg} **{stats["avg_merge_hours"]}h** avg merge time\n\n'
+            '</div>'
+        )
+
+        metrics_rows = [
+            ('Total PRs merged', stats['total_prs']),
+            ('Unique contributors', stats['contributor_count']),
+            ('Bot PRs', stats['bot_prs']),
+            ('HyperShift repo PRs', by_repo.get('openshift/hypershift', 0)),
+            ('Release repo PRs', by_repo.get('openshift/release', 0)),
+            ('AI-helpers repo PRs', by_repo.get('openshift-eng/ai-helpers', 0)),
+            ('Enhancement proposals', by_repo.get('openshift/enhancements', 0)),
+            ('Average merge time', f'{avg_merge} hours'),
+            ('High-impact PRs', high_impact),
+            ('Breaking changes', breaking_changes),
+            ('API changes', api_changes),
+            ('Customer-reported fixes', customer_fixes),
+        ]
+        metrics_table = '| Metric | Value |\n|--------|-------|\n'
+        for label, value in metrics_rows:
+            metrics_table += f'| {label} | {value} |\n'
+
+        reviewers_table = '| Reviewer | PRs Reviewed |\n|----------|-------------|\n'
+        for login, count in top_reviewers:
+            reviewers_table += f'| [@{login}](https://github.com/{login}) | {count} |\n'
+
+        contrib_header = ('| Contributor | hypershift | release | ai-helpers | enhancements '
+                          '| :material-bug: bugs | Total |\n'
+                          '|------------|:-:|:-:|:-:|:-:|:-:|:-:|\n')
+        contrib_rows = ''
+        for c in contributors:
+            row_cells = [f'| [@{c["login"]}](https://github.com/{c["login"]})']
+            for full_repo in ['openshift/hypershift', 'openshift/release',
+                              'openshift-eng/ai-helpers', 'openshift/enhancements']:
+                repo_data = c['repos'].get(full_repo)
+                if repo_data:
+                    row_cells.append(f'[{repo_data["count"]}]({repo_data["url"]})')
+                else:
+                    row_cells.append('')
+            if c['bugs']['count'] > 0:
+                row_cells.append(f'[{c["bugs"]["count"]}]({c["bugs"]["url"]})')
+            else:
+                row_cells.append('')
+            row_cells.append(f'**{c["total"]}**')
+            contrib_rows += ' | '.join(row_cells) + ' |\n'
+
+        contributor_table = contrib_header + contrib_rows
+
+        # --- Assemble output ---
+        output = {
+            'period': {'start': start, 'end': end},
+            'stats': stats,
+            'hs_team': sorted(hs_team),
+            'top_reviewers': [{'login': login, 'count': count} for login, count in top_reviewers],
+            'contributors': contributors,
+            'markdown': {
+                'stats_cards': stats_cards,
+                'metrics_table': metrics_table,
+                'top_reviewers_table': reviewers_table,
+                'contributor_table': contributor_table,
+            },
+        }
+
+        blog_data_path = os.path.join(output_dir, 'blog_data.json')
+        with open(blog_data_path, 'w') as f:
+            json.dump(output, f, indent=2)
+        print(f"Blog data saved to {blog_data_path}")
+
     def parse_pr_identifiers(self, pr_ids: List[str]) -> List[Tuple[str, int]]:
         """Parse PR identifiers in owner/repo#number format.
 
@@ -1934,6 +2193,11 @@ Scoring criteria (higher = more important):
         action='store_true',
         help='Resume a previous run: load existing data and re-fetch only repos that failed'
     )
+    parser.add_argument(
+        '--blog-data',
+        action='store_true',
+        help='Generate blog_data.json with contributor table, metrics, and pre-rendered markdown'
+    )
     return parser.parse_args()
 
 
@@ -1950,6 +2214,7 @@ async def main():
     os.makedirs(output_dir, exist_ok=True)
 
     resume = args.resume
+    blog_data = args.blog_data
 
     print(f"Generating PR report for: {since_date} to {end_date}")
     print(f"Using {'async (aiohttp)' if HAS_AIOHTTP else 'sync (requests)'} mode")
@@ -1959,6 +2224,8 @@ async def main():
         print(f"Deep mode: will fetch diffs for {len(deep_prs)} PRs")
     if score_mode:
         print(f"Score mode: will output top {score_limit} PRs by importance")
+    if blog_data:
+        print("Blog data mode: will generate blog_data.json")
     print()
 
     generator = PRReportGenerator(since_date, end_date, output_dir=output_dir)
@@ -1971,6 +2238,10 @@ async def main():
     generator.generate_report(os.path.join(output_dir, 'weekly_pr_report_fast.md'))
     generator.save_raw_data(os.path.join(output_dir, 'hypershift_pr_details_fast.json'))
     generator.save_summary_data(os.path.join(output_dir, 'hypershift_pr_summary.json'))
+
+    # Blog data mode: generate contributor table, metrics, and pre-rendered markdown
+    if blog_data:
+        generator.generate_blog_data(output_dir)
 
     # Score mode: output scored PR list
     if score_mode:
