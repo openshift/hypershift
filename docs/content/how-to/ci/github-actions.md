@@ -86,7 +86,7 @@ These workflows are triggered by posting a **slash command** as a comment on a p
 | `cpo-container-sync.yaml` | `cpo-container-sync-reusable.yaml` | Validate CPO container image references are in sync |
 | `dependabot-commit-fix.yaml` | `dependabot-commit-fix-reusable.yaml` | Rewrite dependabot commit messages to pass gitlint |
 | `gocacheprog-test.yaml` | `gocacheprog-test-reusable.yaml` | Tests for the `contrib/ci/gocacheprog` build cache tool (path-filtered) |
-| `validate-cpo-overrides.yaml` | — | Validate CPO override images exist and are pullable |
+| `validate-cpo-overrides.yaml` | — | Validate CPO override images contain the PRs claimed in the PR description |
 
 !!! note
     The `sync-community-fork.yaml` workflow runs on push to `main` only (not on PRs) and does not use the reusable pattern. See [Sync Community Fork](sync-community-fork.md) for details.
