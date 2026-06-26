@@ -2,6 +2,7 @@
 set -euo pipefail
 
 readonly DEFAULT_NAMESPACE="crt-redhat-acm-tenant"
+readonly DEFAULT_KA_HOST="https://kubearchive-api-server-product-kubearchive.apps.stone-prd-rh01.pg1f.p1.openshiftapps.com"
 
 usage() {
     printf "Find Konflux on-push PipelineRun(s) triggered by a merged PR.\n\n"
@@ -13,11 +14,12 @@ usage() {
     printf "  COMPONENT   Optional: filter by component name prefix (e.g., hypershift-release)\n\n"
     printf "Environment variables:\n"
     printf "  KONFLUX_NAMESPACE  Konflux namespace (default: %s)\n" "${DEFAULT_NAMESPACE}"
+    printf "  KUBEARCHIVE_HOST   KubeArchive API host (default: %s)\n" "${DEFAULT_KA_HOST}"
 }
 
 check_prerequisites() {
     local cmd
-    for cmd in gh oc jq; do
+    for cmd in gh oc jq curl; do
         if ! command -v "${cmd}" &>/dev/null; then
             printf "Error: %s is required but not found in PATH\n" "${cmd}" >&2
             return 1
@@ -70,36 +72,95 @@ get_merge_sha() {
     printf '%s' "${sha}"
 }
 
-query_pipelineruns() {
+query_pipelineruns_live() {
     local -r sha="$1"
-    local -r component="${2:-}"
-    local -r namespace="${KONFLUX_NAMESPACE:-${DEFAULT_NAMESPACE}}"
+    local -r namespace="$2"
     local -r selector="pipelinesascode.tekton.dev/sha=${sha},pipelinesascode.tekton.dev/event-type=push"
-    local output header filtered
+    local output
 
     output="$(oc get pipelineruns -n "${namespace}" -l "${selector}" \
         -o custom-columns="\
 NAME:.metadata.name,\
 STATUS:.status.conditions[0].reason,\
 CREATED:.metadata.creationTimestamp" \
-        --sort-by=.metadata.creationTimestamp 2>&1)" || {
-        printf "Error: failed to query PipelineRuns (are you logged in to the Konflux cluster?)\n" >&2
+        --sort-by=.metadata.creationTimestamp 2>&1)" || return 1
+
+    if [[ "$(printf '%s\n' "${output}" | wc -l)" -le 1 ]]; then
+        return 1
+    fi
+    printf '%s\n' "${output}"
+}
+
+query_pipelineruns_archived() {
+    local -r sha="$1"
+    local -r namespace="$2"
+    local -r ka_host="${KUBEARCHIVE_HOST:-${DEFAULT_KA_HOST}}"
+    local -r selector="pipelinesascode.tekton.dev/sha=${sha},pipelinesascode.tekton.dev/event-type=push"
+    local token response items
+
+    token="$(oc whoami -t 2>/dev/null)" || {
+        printf "Error: could not get auth token via 'oc whoami -t'\n" >&2
         return 1
     }
 
-    if [[ -n "${component}" ]]; then
-        header="$(printf '%s\n' "${output}" | head -1)"
-        filtered="$(printf '%s\n' "${output}" | tail -n +2 | grep "^${component}" || true)"
-        if [[ -z "${filtered}" ]]; then
-            printf "No push PipelineRuns found for component '%s' at commit %s\n" "${component}" "${sha}" >&2
-            return 1
-        fi
-        printf '%s\n%s\n' "${header}" "${filtered}"
+    response="$(curl -sf -H "Authorization: Bearer ${token}" \
+        "${ka_host}/apis/tekton.dev/v1/namespaces/${namespace}/pipelineruns?labelSelector=${selector}")" || {
+        printf "Error: KubeArchive query failed (is %s reachable?)\n" "${ka_host}" >&2
+        return 1
+    }
+
+    items="$(printf '%s' "${response}" | jq -r '
+        .items
+        | sort_by(.metadata.creationTimestamp)
+        | .[]
+        | [.metadata.name, (.status.conditions[0].reason // "<none>"), .metadata.creationTimestamp]
+        | @tsv')"
+
+    if [[ -z "${items}" ]]; then
+        return 1
+    fi
+
+    printf "%-50s %-20s %s\n" "NAME" "STATUS" "CREATED"
+    while IFS=$'\t' read -r name status created; do
+        printf "%-50s %-20s %s\n" "${name}" "${status}" "${created}"
+    done <<< "${items}"
+}
+
+filter_by_component() {
+    local -r component="$1"
+    local -r sha="$2"
+    local output header filtered
+
+    output="$(cat)"
+    header="$(printf '%s\n' "${output}" | head -1)"
+    filtered="$(printf '%s\n' "${output}" | tail -n +2 | grep "^${component}" || true)"
+    if [[ -z "${filtered}" ]]; then
+        printf "No push PipelineRuns found for component '%s' at commit %s\n" "${component}" "${sha}" >&2
+        return 1
+    fi
+    printf '%s\n%s\n' "${header}" "${filtered}"
+}
+
+query_pipelineruns() {
+    local -r sha="$1"
+    local -r component="${2:-}"
+    local -r namespace="${KONFLUX_NAMESPACE:-${DEFAULT_NAMESPACE}}"
+    local output
+
+    if output="$(query_pipelineruns_live "${sha}" "${namespace}" 2>/dev/null)"; then
+        :
     else
-        if [[ "$(printf '%s\n' "${output}" | wc -l)" -le 1 ]]; then
+        printf "No live PipelineRuns found, querying KubeArchive...\n" >&2
+        output="$(query_pipelineruns_archived "${sha}" "${namespace}")" || {
             printf "No push PipelineRuns found for commit %s\n" "${sha}" >&2
             return 1
-        fi
+        }
+        printf "(source: KubeArchive)\n\n" >&2
+    fi
+
+    if [[ -n "${component}" ]]; then
+        printf '%s\n' "${output}" | filter_by_component "${component}" "${sha}"
+    else
         printf '%s\n' "${output}"
     fi
 }
