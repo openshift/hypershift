@@ -15,7 +15,7 @@ import (
 
 	"github.com/coreos/stream-metadata-go/stream"
 	"github.com/google/go-cmp/cmp"
-	orc "github.com/k-orc/openstack-resource-controller/api/v1alpha1"
+	orc "github.com/k-orc/openstack-resource-controller/v2/api/v1alpha1"
 )
 
 const flavor = "m1.xlarge"
@@ -424,7 +424,7 @@ func TestReconcileOpenStackImageSpec(t *testing.T) {
 					CloudName:  "test-cloud",
 				},
 				Resource: &orc.ImageResourceSpec{
-					Name: "test-cluster-rhcos-4.9.0",
+					Name: ptr.To(orc.OpenStackName("test-cluster-rhcos-4.9.0")),
 					Content: &orc.ImageContent{
 						ContainerFormat: "bare",
 						DiskFormat:      "qcow2",
@@ -499,7 +499,7 @@ func TestClusterImageName(t *testing.T) {
 		name           string
 		hostedCluster  *hyperv1.HostedCluster
 		releaseImage   *releaseinfo.ReleaseImage
-		expectedResult string
+		expectedResult orc.OpenStackName
 		expectedError  bool
 	}{
 		{
@@ -523,7 +523,7 @@ func TestClusterImageName(t *testing.T) {
 					},
 				},
 			},
-			expectedResult: "test-cluster-rhcos-4.19.0",
+			expectedResult: orc.OpenStackName("test-cluster-rhcos-4.19.0"),
 			expectedError:  false,
 		},
 		{

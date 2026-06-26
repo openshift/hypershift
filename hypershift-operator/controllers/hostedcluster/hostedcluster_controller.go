@@ -99,6 +99,7 @@ import (
 	"k8s.io/utils/clock"
 	"k8s.io/utils/ptr"
 
+	capov1alpha1 "sigs.k8s.io/cluster-api-provider-openstack/api/v1alpha1"
 	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -113,6 +114,7 @@ import (
 	"github.com/blang/semver"
 	"github.com/go-logr/logr"
 	"github.com/google/uuid"
+	orcv1alpha1 "github.com/k-orc/openstack-resource-controller/v2/api/v1alpha1"
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	"gopkg.in/ini.v1"
 )
@@ -3648,6 +3650,82 @@ func deleteGCPPrivateServiceConnect(ctx context.Context, c client.Client, _ *hyp
 	return false, nil
 }
 
+// deleteOpenStackOrcImages deletes all ORC Image CRs in the control plane namespace and waits for
+// them to be fully removed. ORC Images have a finalizer that is only removed after the controller
+// has deleted the corresponding Glance image. This must complete before the namespace is deleted,
+// because namespace deletion terminates the CAPO/ORC pod, leaving the finalizer permanently stuck.
+func deleteOpenStackOrcImages(ctx context.Context, c client.Client, namespace string) (bool, error) {
+	imageList := &orcv1alpha1.ImageList{}
+	if err := c.List(ctx, imageList, &client.ListOptions{Namespace: namespace}); err != nil {
+		if apierrors.IsNotFound(err) || meta.IsNoMatchError(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("error listing ORC Images in namespace %s: %w", namespace, err)
+	}
+	for i := range imageList.Items {
+		img := &imageList.Items[i]
+		if img.DeletionTimestamp != nil {
+			continue
+		}
+		if err := c.Delete(ctx, img); err != nil && !apierrors.IsNotFound(err) {
+			return false, fmt.Errorf("error deleting ORC Image %s in namespace %s: %w", img.Name, namespace, err)
+		}
+	}
+	return len(imageList.Items) != 0, nil
+}
+
+// removeOpenStackOrcSecretFinalizers strips the ORC image finalizer from any Secrets in the control plane
+// namespace. ORC places a finalizer (openstack.k-orc.cloud/image) on the cloud-credentials Secret referenced
+// by Image CRs to prevent the Secret from being deleted while the Image still needs it. Once all ORC Image CRs
+// are gone, the finalizer serves no purpose but will block namespace deletion if it hasn't been removed — the
+// ORC controller that would normally remove it is killed when the HCP is torn down.
+func removeOpenStackOrcSecretFinalizers(ctx context.Context, c client.Client, namespace string) error {
+	const orcImageFinalizer = "openstack.k-orc.cloud/image"
+
+	secretList := &corev1.SecretList{}
+	if err := c.List(ctx, secretList, &client.ListOptions{Namespace: namespace}); err != nil {
+		return fmt.Errorf("error listing Secrets in namespace %s: %w", namespace, err)
+	}
+	for i := range secretList.Items {
+		secret := &secretList.Items[i]
+		if !controllerutil.ContainsFinalizer(secret, orcImageFinalizer) {
+			continue
+		}
+		controllerutil.RemoveFinalizer(secret, orcImageFinalizer)
+		if err := c.Update(ctx, secret); err != nil {
+			if apierrors.IsNotFound(err) {
+				continue
+			}
+			return fmt.Errorf("error removing ORC finalizer from Secret %s in namespace %s: %w", secret.Name, namespace, err)
+		}
+	}
+	return nil
+}
+
+// deleteOpenStackCAPOServers deletes all CAPO OpenStackServer CRs in the control plane namespace and waits for
+// them to be fully removed. OpenStackServer objects have a finalizer managed by the CAPO controller, which runs
+// in the control plane namespace. This must complete before the namespace is deleted, because namespace deletion
+// terminates the CAPO pod, leaving the finalizer permanently stuck.
+func deleteOpenStackCAPOServers(ctx context.Context, c client.Client, namespace string) (bool, error) {
+	serverList := &capov1alpha1.OpenStackServerList{}
+	if err := c.List(ctx, serverList, &client.ListOptions{Namespace: namespace}); err != nil {
+		if apierrors.IsNotFound(err) || meta.IsNoMatchError(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("error listing OpenStackServers in namespace %s: %w", namespace, err)
+	}
+	for i := range serverList.Items {
+		srv := &serverList.Items[i]
+		if srv.DeletionTimestamp != nil {
+			continue
+		}
+		if err := c.Delete(ctx, srv); err != nil && !apierrors.IsNotFound(err) {
+			return false, fmt.Errorf("error deleting OpenStackServer %s in namespace %s: %w", srv.Name, namespace, err)
+		}
+	}
+	return len(serverList.Items) != 0, nil
+}
+
 func deleteControlPlaneOperatorRBAC(ctx context.Context, c client.Client, rbacNamespace string, controlPlaneNamespace string) error {
 	if _, err := k8sutil.DeleteIfNeeded(ctx, c, &rbacv1.Role{ObjectMeta: metav1.ObjectMeta{Name: "control-plane-operator-" + controlPlaneNamespace, Namespace: rbacNamespace}}); err != nil {
 		return err
@@ -3769,6 +3847,30 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.Hosted
 		}
 		if exists {
 			log.Info("Waiting for gcpprivateserviceconnect deletion", "controlPlaneNamespace", controlPlaneNamespace)
+			return false, nil
+		}
+	}
+
+	if hc.Spec.Platform.Type == hyperv1.OpenStackPlatform {
+		exists, err := deleteOpenStackOrcImages(ctx, r.Client, controlPlaneNamespace)
+		if err != nil {
+			return false, err
+		}
+		if exists {
+			log.Info("Waiting for ORC Image deletion", "controlPlaneNamespace", controlPlaneNamespace)
+			return false, nil
+		}
+
+		if err := removeOpenStackOrcSecretFinalizers(ctx, r.Client, controlPlaneNamespace); err != nil {
+			return false, err
+		}
+
+		exists, err = deleteOpenStackCAPOServers(ctx, r.Client, controlPlaneNamespace)
+		if err != nil {
+			return false, err
+		}
+		if exists {
+			log.Info("Waiting for OpenStackServer deletion", "controlPlaneNamespace", controlPlaneNamespace)
 			return false, nil
 		}
 	}

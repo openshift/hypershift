@@ -225,6 +225,14 @@ func (a OpenStack) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _
 						"--namespace=$(MY_NAMESPACE)",
 						"--leader-elect",
 						"--v=2",
+						// HyperShift runs CAPO in a namespace-scoped deployment and manages CRDs
+						// itself. CAPO v0.14 introduced a crdmigrator controller that requires
+						// cluster-scoped RBAC (list openstackclusteridentities, patch
+						// customresourcedefinitions) that we do not and cannot grant. Skipping
+						// all phases causes crdmigrator.SetupWithManager to return early without
+						// registering the controller, eliminating the spurious RBAC errors.
+						"--skip-crd-migration-phases=StorageVersionMigration",
+						"--skip-crd-migration-phases=CleanupManagedFields",
 					},
 					Resources: corev1.ResourceRequirements{
 						Requests: corev1.ResourceList{
@@ -441,9 +449,10 @@ func (a OpenStack) CAPIProviderPolicyRules() []rbacv1.PolicyRule {
 		},
 		// We deploy ORC in the same namespace as the CAPI provider, so we need to create the
 		// necessary RBAC policy rules for ORC to manage the OpenStack resources.
+		// Note that we use a wildcard here ORC has a lot of resources.
 		{
 			APIGroups: []string{"openstack.k-orc.cloud"},
-			Resources: []string{"images", "images/status"},
+			Resources: []string{"*"},
 			Verbs:     []string{rbacv1.VerbAll},
 		},
 	}

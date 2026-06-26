@@ -48,6 +48,7 @@ func TestCreateCluster(t *testing.T) {
 	ctx := framework.InterruptableContext(t.Context())
 	tempDir := t.TempDir()
 	t.Setenv("FAKE_CLIENT", "true")
+	t.Setenv("OS_CLOUD", "")
 
 	cloudsYAML := map[string]interface{}{
 		"clouds": map[string]interface{}{

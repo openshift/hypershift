@@ -1,5 +1,5 @@
 /*
-Copyright 2024 The Kubernetes Authors.
+Copyright 2024 The ORC Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -23,17 +23,18 @@ const GlanceTag = "glance"
 // +kubebuilder:validation:MaxLength:=255
 type ImageTag string
 
-// +kubebuilder:validation:Enum:=ami;ari;aki;bare;ovf;ova;docker
+// +kubebuilder:validation:Enum:=ami;ari;aki;bare;ovf;ova;docker;compressed
 type ImageContainerFormat string
 
 const (
-	ImageContainerFormatAKI    ImageContainerFormat = "aki"
-	ImageContainerFormatAMI    ImageContainerFormat = "ami"
-	ImageContainerFormatARI    ImageContainerFormat = "ari"
-	ImageContainerFormatBare   ImageContainerFormat = "bare"
-	ImageContainerFormatDocker ImageContainerFormat = "docker"
-	ImageContainerFormatOVA    ImageContainerFormat = "ova"
-	ImageContainerFormatOVF    ImageContainerFormat = "ovf"
+	ImageContainerFormatAKI        ImageContainerFormat = "aki"
+	ImageContainerFormatAMI        ImageContainerFormat = "ami"
+	ImageContainerFormatARI        ImageContainerFormat = "ari"
+	ImageContainerFormatBare       ImageContainerFormat = "bare"
+	ImageContainerFormatCompressed ImageContainerFormat = "compressed"
+	ImageContainerFormatDocker     ImageContainerFormat = "docker"
+	ImageContainerFormatOVA        ImageContainerFormat = "ova"
+	ImageContainerFormatOVF        ImageContainerFormat = "ovf"
 )
 
 // +kubebuilder:validation:Enum:=ami;ari;aki;vhd;vhdx;vmdk;raw;qcow2;vdi;ploop;iso
@@ -86,19 +87,22 @@ const (
 type ImageHWBus string
 
 type ImagePropertiesHardware struct {
-	// CPUSockets is the preferred number of sockets to expose to the guest
+	// cpuSockets is the preferred number of sockets to expose to the guest
+	// +kubebuilder:validation:Minimum:=1
 	// +optional
-	CPUSockets *int `json:"cpuSockets,omitempty" glance:"hw_cpu_sockets"`
+	CPUSockets *int32 `json:"cpuSockets,omitempty" glance:"hw_cpu_sockets"`
 
-	// CPUCores is the preferred number of cores to expose to the guest
+	// cpuCores is the preferred number of cores to expose to the guest
+	// +kubebuilder:validation:Minimum:=1
 	// +optional
-	CPUCores *int `json:"cpuCores,omitempty" glance:"hw_cpu_cores"`
+	CPUCores *int32 `json:"cpuCores,omitempty" glance:"hw_cpu_cores"`
 
-	// CPUThreads is the preferred number of threads to expose to the guest
+	// cpuThreads is the preferred number of threads to expose to the guest
+	// +kubebuilder:validation:Minimum:=1
 	// +optional
-	CPUThreads *int `json:"cpuThreads,omitempty" glance:"hw_cpu_threads"`
+	CPUThreads *int32 `json:"cpuThreads,omitempty" glance:"hw_cpu_threads"`
 
-	// CPUPolicy is used to pin the virtual CPUs (vCPUs) of instances to the
+	// cpuPolicy is used to pin the virtual CPUs (vCPUs) of instances to the
 	// host's physical CPU cores (pCPUs). Host aggregates should be used to
 	// separate these pinned instances from unpinned instances as the latter
 	// will not respect the resourcing requirements of the former.
@@ -121,7 +125,7 @@ type ImagePropertiesHardware struct {
 	// +optional
 	CPUPolicy *string `json:"cpuPolicy,omitempty" glance:"hw_cpu_policy"`
 
-	// CPUThreadPolicy further refines a CPUPolicy of 'dedicated' by stating
+	// cpuThreadPolicy further refines a CPUPolicy of 'dedicated' by stating
 	// how hardware CPU threads in a simultaneous multithreading-based (SMT)
 	// architecture be used. SMT-based architectures include Intel
 	// processors with Hyper-Threading technology. In these architectures,
@@ -153,18 +157,18 @@ type ImagePropertiesHardware struct {
 	// +optional
 	CPUThreadPolicy *string `json:"cpuThreadPolicy,omitempty" glance:"hw_cpu_thread_policy"`
 
-	// CDROMBus specifies the type of disk controller to attach CD-ROM devices to.
+	// cdromBus specifies the type of disk controller to attach CD-ROM devices to.
 	// +optional
 	CDROMBus *ImageHWBus `json:"cdromBus,omitempty" glance:"hw_cdrom_bus"`
 
-	// DiskBus specifies the type of disk controller to attach disk devices to.
+	// diskBus specifies the type of disk controller to attach disk devices to.
 	// +optional
 	DiskBus *ImageHWBus `json:"diskBus,omitempty" glance:"hw_disk_bus"`
 
 	// TODO: hw_machine_type seems important to support early, but how to
 	// select a supported set?
 
-	// SCSIModel enables the use of VirtIO SCSI (virtio-scsi) to provide
+	// scsiModel enables the use of VirtIO SCSI (virtio-scsi) to provide
 	// block device access for compute instances; by default, instances use
 	// VirtIO Block (virtio-blk). VirtIO SCSI is a para-virtualized SCSI
 	// controller device that provides improved scalability and performance,
@@ -175,30 +179,67 @@ type ImagePropertiesHardware struct {
 	// +optional
 	SCSIModel *string `json:"scsiModel,omitempty" glance:"hw_scsi_model"`
 
-	// VIFModel specifies the model of virtual network interface device to use.
+	// vifModel specifies the model of virtual network interface device to use.
 	//
 	// Permitted values are e1000, e1000e, ne2k_pci, pcnet, rtl8139, virtio,
 	// and vmxnet3.
 	// +kubebuilder:validation:Enum:=e1000;e1000e;ne2k_pci;pcnet;rtl8139;virtio;vmxnet3
 	// +optional
 	VIFModel *string `json:"vifModel,omitempty" glance:"hw_vif_model"`
+
+	// rngModel adds a random-number generator device to the image’s instances.
+	// This image property by itself does not guarantee that a hardware RNG will be used;
+	// it expresses a preference that may or may not be satisfied depending upon Nova configuration.
+	// +kubebuilder:validation:MaxLength:=255
+	// +optional
+	RngModel *string `json:"rngModel,omitempty" glance:"hw_rng_model"`
+
+	// qemuGuestAgent enables QEMU guest agent.
+	// +optional
+	QemuGuestAgent *bool `json:"qemuGuestAgent,omitempty" glance:"hw_qemu_guest_agent"`
+}
+
+type ImagePropertiesOperatingSystem struct {
+	// distro is the common name of the operating system distribution in lowercase.
+	// +kubebuilder:validation:Enum:=arch;centos;debian;fedora;freebsd;gentoo;mandrake;mandriva;mes;msdos;netbsd;netware;openbsd;opensolaris;opensuse;rocky;rhel;sled;ubuntu;windows
+	// +optional
+	Distro *string `json:"distro,omitempty" glance:"os_distro"`
+	// version is the operating system version as specified by the distributor.
+	// +kubebuilder:validation:MaxLength:=255
+	// +optional
+	Version *string `json:"version,omitempty" glance:"os_version"`
 }
 
 type ImageProperties struct {
-	// MinDisk is the minimum amount of disk space in GB that is required to boot the image
+	// architecture is the CPU architecture that must be supported by the hypervisor.
+	// +kubebuilder:validation:Enum:=aarch64;alpha;armv7l;cris;i686;ia64;lm32;m68k;microblaze;microblazeel;mips;mipsel;mips64;mips64el;openrisc;parisc;parisc64;ppc;ppc64;ppcemb;s390;s390x;sh4;sh4eb;sparc;sparc64;unicore32;x86_64;xtensa;xtensaeb
+	// +optional
+	Architecture *string `json:"architecture,omitempty" glance:"architecture"`
+
+	// hypervisorType is the hypervisor type
+	// +kubebuilder:validation:Enum:=hyperv;ironic;lxc;qemu;uml;vmware;xen
+	// +optional
+	HypervisorType *string `json:"hypervisorType,omitempty" glance:"hypervisor_type"`
+
+	// minDiskGB is the minimum amount of disk space in GB that is required to boot the image
 	// +kubebuilder:validation:Minimum:=1
 	// +optional
-	MinDiskGB *int `json:"minDiskGB,omitempty"`
+	MinDiskGB *int32 `json:"minDiskGB,omitempty"`
 
-	// MinMemoryMB is the minimum amount of RAM in MB that is required to boot the image.
+	// minMemoryMB is the minimum amount of RAM in MB that is required to boot the image.
 	// +kubebuilder:validation:Minimum:=1
 	// +optional
-	MinMemoryMB *int `json:"minMemoryMB,omitempty"`
+	MinMemoryMB *int32 `json:"minMemoryMB,omitempty"`
 
-	// Hardware is a set of properties which control the virtual hardware
+	// hardware is a set of properties which control the virtual hardware
 	// created by Nova.
 	// +optional
 	Hardware *ImagePropertiesHardware `json:"hardware,omitempty"`
+
+	// operatingSystem is a set of properties that specify and influence the behavior
+	// of the operating system within the virtual machine.
+	// +optional
+	OperatingSystem *ImagePropertiesOperatingSystem `json:"operatingSystem,omitempty"`
 }
 
 // +kubebuilder:validation:Enum:=xz;gz;bz2
@@ -211,38 +252,39 @@ const (
 )
 
 type ImageContent struct {
-	// ContainerFormat is the format of the image container.
+	// containerFormat is the format of the image container.
 	// qcow2 and raw images do not usually have a container. This is specified as "bare", which is also the default.
-	// Permitted values are ami, ari, aki, bare, ovf, ova, and docker.
+	// Permitted values are ami, ari, aki, bare, compressed, ovf, ova, and docker.
 	// +kubebuilder:default:=bare
 	// +optional
 	ContainerFormat ImageContainerFormat `json:"containerFormat,omitempty"`
 
-	// DiskFormat is the format of the disk image.
+	// diskFormat is the format of the disk image.
 	// Normal values are "qcow2", or "raw". Glance may be configured to support others.
-	// +kubebuilder:validation:Required
-	DiskFormat ImageDiskFormat `json:"diskFormat"`
+	// +required
+	DiskFormat ImageDiskFormat `json:"diskFormat,omitempty"`
 
-	// Download describes how to obtain image data by downloading it from a URL.
+	// download describes how to obtain image data by downloading it from a URL.
 	// Must be set when creating a managed image.
-	// +kubebuilder:validation:Required
+	// +required
 	Download *ImageContentSourceDownload `json:"download,omitempty"`
 }
 
 type ImageContentSourceDownload struct {
-	// URL containing image data
+	// url containing image data
 	// +kubebuilder:validation:Format=uri
-	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MaxLength=2048
+	// +required
 	URL string `json:"url"`
 
-	// Decompress specifies that the source data must be decompressed with the
+	// decompress specifies that the source data must be decompressed with the
 	// given compression algorithm before being stored. Specifying Decompress
 	// will disable the use of Glance's web-download, as web-download cannot
 	// currently deterministically decompress downloaded content.
 	// +optional
 	Decompress *ImageCompression `json:"decompress,omitempty"`
 
-	// Hash is a hash which will be used to verify downloaded data, i.e.
+	// hash is a hash which will be used to verify downloaded data, i.e.
 	// before any decompression. If not specified, no hash verification will be
 	// performed. Specifying a Hash will disable the use of Glance's
 	// web-download, as web-download cannot currently deterministically verify
@@ -253,52 +295,46 @@ type ImageContentSourceDownload struct {
 }
 
 type ImageHash struct {
-	// Algorithm is the hash algorithm used to generate value.
-	// +kubebuilder:validation:Required
-	Algorithm ImageHashAlgorithm `json:"algorithm"`
+	// algorithm is the hash algorithm used to generate value.
+	// +required
+	Algorithm ImageHashAlgorithm `json:"algorithm,omitempty"`
 
-	// Value is the hash of the image data using Algorithm. It must be hex encoded using lowercase letters.
+	// value is the hash of the image data using Algorithm. It must be hex encoded using lowercase letters.
 	// +kubebuilder:validation:MinLength:=1
 	// +kubebuilder:validation:MaxLength:=1024
 	// +kubebuilder:validation:Pattern:=`^[0-9a-f]+$`
-	// +kubebuilder:validation:Required
-	Value string `json:"value"`
+	// +required
+	Value string `json:"value,omitempty"`
 }
 
 // ImageResourceSpec contains the desired state of a Glance image
-// +kubebuilder:validation:XValidation:rule="has(self.name) ? self.name == oldSelf.name : !has(oldSelf.name)",message="name is immutable"
-// +kubebuilder:validation:XValidation:rule="has(self.protected) ? self.protected == oldSelf.protected : !has(oldSelf.protected)",message="name is immutable"
-// +kubebuilder:validation:XValidation:rule="has(self.tags) ? self.tags == oldSelf.tags : !has(oldSelf.tags)",message="tags is immutable"
-// +kubebuilder:validation:XValidation:rule="has(self.visibility) ? self.visibility == oldSelf.visibility : !has(oldSelf.visibility)",message="visibility is immutable"
-// +kubebuilder:validation:XValidation:rule="has(self.properties) ? self.properties == oldSelf.properties : !has(oldSelf.properties)",message="properties is immutable"
 type ImageResourceSpec struct {
-	// Name will be the name of the created Glance image. If not specified, the
+	// name will be the name of the created Glance image. If not specified, the
 	// name of the Image object will be used.
-	// +kubebuilder:validation:MinLength:=1
-	// +kubebuilder:validation:MaxLength:=1000
 	// +optional
-	Name string `json:"name,omitempty"`
+	Name *OpenStackName `json:"name,omitempty"`
 
-	// Protected specifies that the image is protected from deletion.
+	// protected specifies that the image is protected from deletion.
 	// If not specified, the default is false.
 	// +optional
 	Protected *bool `json:"protected,omitempty"`
 
-	// Tags is a list of tags which will be applied to the image. A tag has a maximum length of 255 characters.
+	// tags is a list of tags which will be applied to the image. A tag has a maximum length of 255 characters.
+	// +kubebuilder:validation:MaxItems:=64
 	// +listType=set
 	// +optional
 	Tags []ImageTag `json:"tags,omitempty"`
 
-	// Visibility of the image
-	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="visibility is immutable"
+	// visibility of the image
 	// +optional
 	Visibility *ImageVisibility `json:"visibility,omitempty"`
 
-	// Properties is metadata available to consumers of the image
+	// properties is metadata available to consumers of the image
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="properties is immutable"
 	// +optional
 	Properties *ImageProperties `json:"properties,omitempty"`
 
-	// Content specifies how to obtain the image content.
+	// content specifies how to obtain the image content.
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="content is immutable"
 	// +optional
 	Content *ImageContent `json:"content,omitempty"`
@@ -307,20 +343,43 @@ type ImageResourceSpec struct {
 // ImageFilter defines a Glance query
 // +kubebuilder:validation:MinProperties:=1
 type ImageFilter struct {
-	// Name specifies the name of a Glance image
+	// name specifies the name of a Glance image
 	// +optional
-	// +kubebuilder:validation:MinLength:=1
-	// +kubebuilder:validation:MaxLength:=1000
-	Name *string `json:"name,omitempty"`
+	Name *OpenStackName `json:"name,omitempty"`
+
+	// visibility specifies the visibility of a Glance image.
+	// +optional
+	Visibility *ImageVisibility `json:"visibility,omitempty"`
+
+	// tags is the list of tags on the resource.
+	// +kubebuilder:validation:MaxItems:=64
+	// +listType=set
+	// +optional
+	Tags []ImageTag `json:"tags,omitempty"`
 }
 
 // ImageResourceStatus represents the observed state of a Glance image
 type ImageResourceStatus struct {
-	// Status is the image status as reported by Glance
+	// name is a Human-readable name for the image. Might not be unique.
+	// +kubebuilder:validation:MaxLength=1024
 	// +optional
-	Status *string `json:"status,omitempty"`
+	Name string `json:"name,omitempty"`
 
-	// Hash is the hash of the image data published by Glance. Note that this is
+	// status is the image status as reported by Glance
+	// +kubebuilder:validation:MaxLength=1024
+	// +optional
+	Status string `json:"status,omitempty"`
+
+	// protected specifies that the image is protected from deletion.
+	// +optional
+	Protected bool `json:"protected,omitempty"`
+
+	// visibility of the image
+	// +kubebuilder:validation:MaxLength=1024
+	// +optional
+	Visibility string `json:"visibility,omitempty"`
+
+	// hash is the hash of the image data published by Glance. Note that this is
 	// a hash of the data stored internally by Glance, which will have been
 	// decompressed and potentially format converted depending on server-side
 	// configuration which is not visible to clients. It is expected that this
@@ -328,17 +387,24 @@ type ImageResourceStatus struct {
 	// +optional
 	Hash *ImageHash `json:"hash,omitempty"`
 
-	// SizeB is the size of the image data, in bytes
+	// sizeB is the size of the image data, in bytes
 	// +optional
 	SizeB *int64 `json:"sizeB,omitempty"`
 
-	// VirtualSizeB is the size of the disk the image data represents, in bytes
+	// virtualSizeB is the size of the disk the image data represents, in bytes
 	// +optional
 	VirtualSizeB *int64 `json:"virtualSizeB,omitempty"`
+
+	// tags is the list of tags on the resource.
+	// +kubebuilder:validation:MaxItems:=64
+	// +kubebuilder:validation:items:MaxLength=1024
+	// +listType=atomic
+	// +optional
+	Tags []string `json:"tags,omitempty"`
 }
 
 type ImageStatusExtra struct {
-	// DownloadAttempts is the number of times the controller has attempted to download the image contents
+	// downloadAttempts is the number of times the controller has attempted to download the image contents
 	// +optional
-	DownloadAttempts *int `json:"downloadAttempts,omitempty"`
+	DownloadAttempts *int32 `json:"downloadAttempts,omitempty"`
 }

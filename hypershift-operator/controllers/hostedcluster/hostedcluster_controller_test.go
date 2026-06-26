@@ -69,6 +69,7 @@ import (
 
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	capibmv1 "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2"
+	capov1alpha1 "sigs.k8s.io/cluster-api-provider-openstack/api/v1alpha1"
 	"sigs.k8s.io/cluster-api/api/core/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -83,6 +84,7 @@ import (
 	"github.com/docker/distribution/manifest/manifestlist"
 	"github.com/go-logr/logr"
 	"github.com/google/go-cmp/cmp"
+	orcv1alpha1 "github.com/k-orc/openstack-resource-controller/v2/api/v1alpha1"
 	"go.uber.org/mock/gomock"
 	"go.uber.org/zap/zapcore"
 )
@@ -7418,6 +7420,472 @@ func TestReconcileCLISecretsErrors(t *testing.T) {
 			err := r.reconcileCLISecrets(t.Context(), createOrUpdate, hc)
 			g.Expect(err).To(HaveOccurred())
 			g.Expect(err.Error()).To(ContainSubstring(tt.wantErrSubstr))
+		})
+	}
+}
+
+func TestDeleteOpenStackOrcImages(t *testing.T) {
+	t.Parallel()
+
+	namespace := "test-cp-namespace"
+	now := metav1.Now()
+
+	testCases := []struct {
+		name              string
+		existingImages    []orcv1alpha1.Image
+		listInterceptor   func(ctx context.Context, client crclient.WithWatch, list crclient.ObjectList, opts ...crclient.ListOption) error
+		deleteInterceptor func(ctx context.Context, client crclient.WithWatch, obj crclient.Object, opts ...crclient.DeleteOption) error
+		wantExists        bool
+		wantErr           bool
+		wantErrSubstr     string
+	}{
+		{
+			name:           "When no images exist, it should return false with no error",
+			existingImages: nil,
+			wantExists:     false,
+			wantErr:        false,
+		},
+		{
+			name: "When images without deletion timestamp exist, it should delete them and return true",
+			existingImages: []orcv1alpha1.Image{
+				{ObjectMeta: metav1.ObjectMeta{Name: "img-a", Namespace: namespace}},
+				{ObjectMeta: metav1.ObjectMeta{Name: "img-b", Namespace: namespace}},
+			},
+			wantExists: true,
+			wantErr:    false,
+		},
+		{
+			name: "When images with deletion timestamp exist, it should not re-delete them and return true",
+			existingImages: []orcv1alpha1.Image{
+				{ObjectMeta: metav1.ObjectMeta{Name: "img-a", Namespace: namespace, DeletionTimestamp: &now, Finalizers: []string{"openstack.k-orc.cloud/image"}}},
+			},
+			wantExists: true,
+			wantErr:    false,
+		},
+		{
+			name: "When some images have deletion timestamp and some do not, it should delete pending ones and return true",
+			existingImages: []orcv1alpha1.Image{
+				{ObjectMeta: metav1.ObjectMeta{Name: "img-deleting", Namespace: namespace, DeletionTimestamp: &now, Finalizers: []string{"openstack.k-orc.cloud/image"}}},
+				{ObjectMeta: metav1.ObjectMeta{Name: "img-pending", Namespace: namespace}},
+			},
+			wantExists: true,
+			wantErr:    false,
+		},
+		{
+			name: "When listing returns NotFound error, it should return false with no error",
+			listInterceptor: func(_ context.Context, _ crclient.WithWatch, _ crclient.ObjectList, _ ...crclient.ListOption) error {
+				return errors2.NewNotFound(orcv1alpha1.SchemeGroupVersion.WithResource("images").GroupResource(), "")
+			},
+			wantExists: false,
+			wantErr:    false,
+		},
+		{
+			name: "When listing returns NoMatchError, it should return false with no error",
+			listInterceptor: func(_ context.Context, _ crclient.WithWatch, _ crclient.ObjectList, _ ...crclient.ListOption) error {
+				return &meta.NoKindMatchError{}
+			},
+			wantExists: false,
+			wantErr:    false,
+		},
+		{
+			name: "When listing returns an unexpected error, it should return the error",
+			listInterceptor: func(_ context.Context, _ crclient.WithWatch, _ crclient.ObjectList, _ ...crclient.ListOption) error {
+				return fmt.Errorf("internal server error")
+			},
+			wantExists:    false,
+			wantErr:       true,
+			wantErrSubstr: "error listing ORC Images",
+		},
+		{
+			name: "When deletion returns NotFound, it should treat it as success and return true",
+			existingImages: []orcv1alpha1.Image{
+				{ObjectMeta: metav1.ObjectMeta{Name: "img-a", Namespace: namespace}},
+			},
+			deleteInterceptor: func(_ context.Context, _ crclient.WithWatch, obj crclient.Object, _ ...crclient.DeleteOption) error {
+				return errors2.NewNotFound(orcv1alpha1.SchemeGroupVersion.WithResource("images").GroupResource(), obj.GetName())
+			},
+			wantExists: true,
+			wantErr:    false,
+		},
+		{
+			name: "When deletion returns an unexpected error, it should return the error",
+			existingImages: []orcv1alpha1.Image{
+				{ObjectMeta: metav1.ObjectMeta{Name: "img-a", Namespace: namespace}},
+			},
+			deleteInterceptor: func(_ context.Context, _ crclient.WithWatch, _ crclient.Object, _ ...crclient.DeleteOption) error {
+				return fmt.Errorf("internal server error")
+			},
+			wantExists:    false,
+			wantErr:       true,
+			wantErrSubstr: "error deleting ORC Image",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			objs := make([]crclient.Object, len(tc.existingImages))
+			for i := range tc.existingImages {
+				objs[i] = &tc.existingImages[i]
+			}
+
+			funcs := interceptor.Funcs{}
+			if tc.listInterceptor != nil {
+				funcs.List = tc.listInterceptor
+			}
+			if tc.deleteInterceptor != nil {
+				funcs.Delete = tc.deleteInterceptor
+			}
+
+			c := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				WithObjects(objs...).
+				WithInterceptorFuncs(funcs).
+				Build()
+
+			exists, err := deleteOpenStackOrcImages(context.Background(), c, namespace)
+
+			if tc.wantErr {
+				g.Expect(err).To(HaveOccurred())
+				if tc.wantErrSubstr != "" {
+					g.Expect(err.Error()).To(ContainSubstring(tc.wantErrSubstr))
+				}
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+			}
+			g.Expect(exists).To(Equal(tc.wantExists))
+		})
+	}
+}
+
+func TestRemoveOpenStackOrcSecretFinalizers(t *testing.T) {
+	t.Parallel()
+
+	namespace := "test-cp-namespace"
+	const orcImageFinalizer = "openstack.k-orc.cloud/image"
+
+	testCases := []struct {
+		name              string
+		existingSecrets   []corev1.Secret
+		updateInterceptor func(ctx context.Context, client crclient.WithWatch, obj crclient.Object, opts ...crclient.UpdateOption) error
+		wantErr           bool
+		wantErrSubstr     string
+		wantFinalizers    map[string][]string // secret name -> expected finalizers after the call
+	}{
+		{
+			name:            "When no secrets exist, it should return no error",
+			existingSecrets: nil,
+			wantErr:         false,
+		},
+		{
+			name: "When secrets without ORC finalizer exist, it should leave them unchanged",
+			existingSecrets: []corev1.Secret{
+				{ObjectMeta: metav1.ObjectMeta{Name: "unrelated", Namespace: namespace, Finalizers: []string{"other-finalizer"}}},
+			},
+			wantErr:        false,
+			wantFinalizers: map[string][]string{"unrelated": {"other-finalizer"}},
+		},
+		{
+			name: "When a secret has the ORC finalizer, it should remove it",
+			existingSecrets: []corev1.Secret{
+				{ObjectMeta: metav1.ObjectMeta{Name: "cloud-creds", Namespace: namespace, Finalizers: []string{orcImageFinalizer}}},
+			},
+			wantErr:        false,
+			wantFinalizers: map[string][]string{"cloud-creds": nil},
+		},
+		{
+			name: "When a secret has the ORC finalizer among others, it should remove only the ORC finalizer",
+			existingSecrets: []corev1.Secret{
+				{ObjectMeta: metav1.ObjectMeta{Name: "cloud-creds", Namespace: namespace, Finalizers: []string{"keep-me", orcImageFinalizer, "also-keep"}}},
+			},
+			wantErr:        false,
+			wantFinalizers: map[string][]string{"cloud-creds": {"keep-me", "also-keep"}},
+		},
+		{
+			name: "When multiple secrets have the ORC finalizer, it should remove it from all",
+			existingSecrets: []corev1.Secret{
+				{ObjectMeta: metav1.ObjectMeta{Name: "creds-a", Namespace: namespace, Finalizers: []string{orcImageFinalizer}}},
+				{ObjectMeta: metav1.ObjectMeta{Name: "creds-b", Namespace: namespace, Finalizers: []string{orcImageFinalizer}}},
+			},
+			wantErr:        false,
+			wantFinalizers: map[string][]string{"creds-a": nil, "creds-b": nil},
+		},
+		{
+			name: "When update returns NotFound, it should skip the secret",
+			existingSecrets: []corev1.Secret{
+				{ObjectMeta: metav1.ObjectMeta{Name: "gone", Namespace: namespace, Finalizers: []string{orcImageFinalizer}}},
+			},
+			updateInterceptor: func(_ context.Context, _ crclient.WithWatch, _ crclient.Object, _ ...crclient.UpdateOption) error {
+				return errors2.NewNotFound(corev1.SchemeGroupVersion.WithResource("secrets").GroupResource(), "gone")
+			},
+			wantErr: false,
+		},
+		{
+			name: "When update returns an unexpected error, it should return the error",
+			existingSecrets: []corev1.Secret{
+				{ObjectMeta: metav1.ObjectMeta{Name: "cloud-creds", Namespace: namespace, Finalizers: []string{orcImageFinalizer}}},
+			},
+			updateInterceptor: func(_ context.Context, _ crclient.WithWatch, _ crclient.Object, _ ...crclient.UpdateOption) error {
+				return fmt.Errorf("internal server error")
+			},
+			wantErr:       true,
+			wantErrSubstr: "error removing ORC finalizer from Secret",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			objs := make([]crclient.Object, len(tc.existingSecrets))
+			for i := range tc.existingSecrets {
+				objs[i] = &tc.existingSecrets[i]
+			}
+
+			funcs := interceptor.Funcs{}
+			if tc.updateInterceptor != nil {
+				funcs.Update = tc.updateInterceptor
+			}
+
+			c := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				WithObjects(objs...).
+				WithInterceptorFuncs(funcs).
+				Build()
+
+			err := removeOpenStackOrcSecretFinalizers(context.Background(), c, namespace)
+
+			if tc.wantErr {
+				g.Expect(err).To(HaveOccurred())
+				if tc.wantErrSubstr != "" {
+					g.Expect(err.Error()).To(ContainSubstring(tc.wantErrSubstr))
+				}
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+			}
+
+			for secretName, expectedFinalizers := range tc.wantFinalizers {
+				var secret corev1.Secret
+				err := c.Get(context.Background(), crclient.ObjectKey{Namespace: namespace, Name: secretName}, &secret)
+				g.Expect(err).ToNot(HaveOccurred())
+				if len(expectedFinalizers) == 0 {
+					g.Expect(secret.Finalizers).To(BeEmpty())
+				} else {
+					g.Expect(secret.Finalizers).To(Equal(expectedFinalizers))
+				}
+			}
+		})
+	}
+}
+
+func TestDeleteOpenStackCAPOServers(t *testing.T) {
+	t.Parallel()
+
+	namespace := "test-cp-namespace"
+	now := metav1.Now()
+
+	testCases := []struct {
+		name              string
+		existingServers   []capov1alpha1.OpenStackServer
+		listInterceptor   func(ctx context.Context, client crclient.WithWatch, list crclient.ObjectList, opts ...crclient.ListOption) error
+		deleteInterceptor func(ctx context.Context, client crclient.WithWatch, obj crclient.Object, opts ...crclient.DeleteOption) error
+		wantExists        bool
+		wantErr           bool
+		wantErrSubstr     string
+	}{
+		{
+			name:            "When no servers exist, it should return false with no error",
+			existingServers: nil,
+			wantExists:      false,
+			wantErr:         false,
+		},
+		{
+			name: "When servers without deletion timestamp exist, it should delete them and return true",
+			existingServers: []capov1alpha1.OpenStackServer{
+				{ObjectMeta: metav1.ObjectMeta{Name: "srv-a", Namespace: namespace}},
+				{ObjectMeta: metav1.ObjectMeta{Name: "srv-b", Namespace: namespace}},
+			},
+			wantExists: true,
+			wantErr:    false,
+		},
+		{
+			name: "When servers with deletion timestamp exist, it should not re-delete them and return true",
+			existingServers: []capov1alpha1.OpenStackServer{
+				{ObjectMeta: metav1.ObjectMeta{Name: "srv-a", Namespace: namespace, DeletionTimestamp: &now, Finalizers: []string{capov1alpha1.OpenStackServerFinalizer}}},
+			},
+			wantExists: true,
+			wantErr:    false,
+		},
+		{
+			name: "When some servers have deletion timestamp and some do not, it should delete pending ones and return true",
+			existingServers: []capov1alpha1.OpenStackServer{
+				{ObjectMeta: metav1.ObjectMeta{Name: "srv-deleting", Namespace: namespace, DeletionTimestamp: &now, Finalizers: []string{capov1alpha1.OpenStackServerFinalizer}}},
+				{ObjectMeta: metav1.ObjectMeta{Name: "srv-pending", Namespace: namespace}},
+			},
+			wantExists: true,
+			wantErr:    false,
+		},
+		{
+			name: "When listing returns NotFound error, it should return false with no error",
+			listInterceptor: func(_ context.Context, _ crclient.WithWatch, _ crclient.ObjectList, _ ...crclient.ListOption) error {
+				return errors2.NewNotFound(capov1alpha1.SchemeGroupVersion.WithResource("openstackservers").GroupResource(), "")
+			},
+			wantExists: false,
+			wantErr:    false,
+		},
+		{
+			name: "When listing returns NoMatchError, it should return false with no error",
+			listInterceptor: func(_ context.Context, _ crclient.WithWatch, _ crclient.ObjectList, _ ...crclient.ListOption) error {
+				return &meta.NoKindMatchError{}
+			},
+			wantExists: false,
+			wantErr:    false,
+		},
+		{
+			name: "When listing returns an unexpected error, it should return the error",
+			listInterceptor: func(_ context.Context, _ crclient.WithWatch, _ crclient.ObjectList, _ ...crclient.ListOption) error {
+				return fmt.Errorf("internal server error")
+			},
+			wantExists:    false,
+			wantErr:       true,
+			wantErrSubstr: "error listing OpenStackServers",
+		},
+		{
+			name: "When deletion returns NotFound, it should treat it as success and return true",
+			existingServers: []capov1alpha1.OpenStackServer{
+				{ObjectMeta: metav1.ObjectMeta{Name: "srv-a", Namespace: namespace}},
+			},
+			deleteInterceptor: func(_ context.Context, _ crclient.WithWatch, obj crclient.Object, _ ...crclient.DeleteOption) error {
+				return errors2.NewNotFound(capov1alpha1.SchemeGroupVersion.WithResource("openstackservers").GroupResource(), obj.GetName())
+			},
+			wantExists: true,
+			wantErr:    false,
+		},
+		{
+			name: "When deletion returns an unexpected error, it should return the error",
+			existingServers: []capov1alpha1.OpenStackServer{
+				{ObjectMeta: metav1.ObjectMeta{Name: "srv-a", Namespace: namespace}},
+			},
+			deleteInterceptor: func(_ context.Context, _ crclient.WithWatch, _ crclient.Object, _ ...crclient.DeleteOption) error {
+				return fmt.Errorf("internal server error")
+			},
+			wantExists:    false,
+			wantErr:       true,
+			wantErrSubstr: "error deleting OpenStackServer",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			objs := make([]crclient.Object, len(tc.existingServers))
+			for i := range tc.existingServers {
+				objs[i] = &tc.existingServers[i]
+			}
+
+			funcs := interceptor.Funcs{}
+			if tc.listInterceptor != nil {
+				funcs.List = tc.listInterceptor
+			}
+			if tc.deleteInterceptor != nil {
+				funcs.Delete = tc.deleteInterceptor
+			}
+
+			c := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				WithObjects(objs...).
+				WithInterceptorFuncs(funcs).
+				Build()
+
+			exists, err := deleteOpenStackCAPOServers(context.Background(), c, namespace)
+
+			if tc.wantErr {
+				g.Expect(err).To(HaveOccurred())
+				if tc.wantErrSubstr != "" {
+					g.Expect(err.Error()).To(ContainSubstring(tc.wantErrSubstr))
+				}
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+			}
+			g.Expect(exists).To(Equal(tc.wantExists))
+		})
+	}
+}
+
+func TestDeleteOrcImagesDuringHostedClusterDeletion(t *testing.T) {
+	t.Parallel()
+
+	const (
+		hcNamespace = "test-namespace"
+		hcName      = "test-cluster"
+	)
+	cpNamespace := hcpmanifests.HostedControlPlaneNamespace(hcNamespace, hcName)
+
+	testCases := []struct {
+		name         string
+		platformType hyperv1.PlatformType
+		orcImages    []orcv1alpha1.Image
+		wantDone     bool
+	}{
+		{
+			name:         "When platform is not OpenStack, it should proceed without waiting for ORC image deletion",
+			platformType: hyperv1.NonePlatform,
+			orcImages: []orcv1alpha1.Image{
+				{ObjectMeta: metav1.ObjectMeta{Name: "stale-image", Namespace: cpNamespace}},
+			},
+			wantDone: true,
+		},
+		{
+			name:         "When platform is OpenStack and ORC images still exist, it should return false to wait for their deletion",
+			platformType: hyperv1.OpenStackPlatform,
+			orcImages: []orcv1alpha1.Image{
+				{ObjectMeta: metav1.ObjectMeta{Name: "pending-image", Namespace: cpNamespace}},
+			},
+			wantDone: false,
+		},
+		{
+			name:         "When platform is OpenStack and no ORC images remain, it should proceed with deletion",
+			platformType: hyperv1.OpenStackPlatform,
+			orcImages:    nil,
+			wantDone:     true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			hc := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      hcName,
+					Namespace: hcNamespace,
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{Type: tc.platformType},
+				},
+			}
+
+			objs := []crclient.Object{hc}
+			for i := range tc.orcImages {
+				objs = append(objs, &tc.orcImages[i])
+			}
+
+			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objs...).Build()
+			r := &HostedClusterReconciler{
+				Client:                        fakeClient,
+				ManagementClusterCapabilities: &fakecapabilities.FakeSupportNoCapabilities{},
+				KubevirtInfraClients:          kvinfra.NewKubevirtInfraClientMap(),
+			}
+
+			done, err := r.delete(context.Background(), hc)
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(done).To(Equal(tc.wantDone))
 		})
 	}
 }
