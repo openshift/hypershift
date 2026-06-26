@@ -40,12 +40,22 @@ hypershift create cluster gcp \
   --external-dns-domain=<your-dns-domain> \
   --node-pool-replicas=2 \
   --feature-set=TechPreviewNoUpgrade \
-  --annotations=hypershift.openshift.io/capi-provider-gcp-image=<capg-image>
+  --annotations=hypershift.openshift.io/pod-security-admission-label-override=baseline
 ```
 
-!!! note "CAPG Image Override (GCP-426)"
+!!! note "Pod Security Admission Override Required"
 
-    Until HyperShift's CAPI CRDs serve v1beta2, you must pin the CAPG image via the annotation above. Use the CAPG image from the release payload:
+    GKE clusters enforce pod security policies that block some HyperShift control plane components from starting without the `baseline` override.
+
+!!! warning "CAPG Image Override Required for 4.22.x/4.23.x only ([GCP-841](https://redhat.atlassian.net/browse/GCP-841))"
+
+    The CAPG image in these releases crashes due to a removed `ClusterResourceSet` feature gate. Add the CAPG image annotation:
+
+    ```bash
+    --annotations="hypershift.openshift.io/pod-security-admission-label-override=baseline,hypershift.openshift.io/capi-provider-gcp-image=<capg-image>"
+    ```
+
+    Get the CAPG image from the release payload:
 
     ```bash
     oc adm release info <release-image> --image-for=cluster-api-provider-gcp
