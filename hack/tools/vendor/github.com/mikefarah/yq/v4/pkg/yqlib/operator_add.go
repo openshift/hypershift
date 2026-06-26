@@ -38,14 +38,23 @@ func toNodes(candidate *CandidateNode, lhs *CandidateNode) []*CandidateNode {
 
 func addOperator(d *dataTreeNavigator, context Context, expressionNode *ExpressionNode) (Context, error) {
 	log.Debugf("Add operator")
+	// only calculate when empty IF we are the root expression; OR
+	// calcWhenEmpty := expressionNode.Parent == nil || expressionNode.Parent.LHS == expressionNode
+	calcWhenEmpty := context.MatchingNodes.Len() > 0
 
-	return crossFunction(d, context.ReadOnlyClone(), expressionNode, add, false)
+	return crossFunction(d, context.ReadOnlyClone(), expressionNode, add, calcWhenEmpty)
 }
 
 func add(_ *dataTreeNavigator, context Context, lhs *CandidateNode, rhs *CandidateNode) (*CandidateNode, error) {
 	lhsNode := lhs
 
-	if lhsNode.Tag == "!!null" {
+	if lhs == nil && rhs == nil {
+		return nil, nil
+	} else if lhs == nil {
+		return rhs.Copy(), nil
+	} else if rhs == nil {
+		return lhs.Copy(), nil
+	} else if lhsNode.Tag == "!!null" {
 		return lhs.CopyAsReplacement(rhs), nil
 	}
 
@@ -186,9 +195,9 @@ func addMaps(target *CandidateNode, lhsC *CandidateNode, rhsC *CandidateNode) {
 	for index := 0; index < len(rhs.Content); index = index + 2 {
 		key := rhs.Content[index]
 		value := rhs.Content[index+1]
-		log.Debug("finding %v", key.Value)
+		log.Debugf("finding %v", key.Value)
 		indexInLHS := findKeyInMap(target, key)
-		log.Debug("indexInLhs %v", indexInLHS)
+		log.Debugf("indexInLhs %v", indexInLHS)
 		if indexInLHS < 0 {
 			// not in there, append it
 			target.AddKeyValueChild(key, value)
