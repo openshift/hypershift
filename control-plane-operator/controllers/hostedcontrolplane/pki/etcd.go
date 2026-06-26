@@ -45,6 +45,9 @@ func ReconcileEtcdPeerSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef
 	dnsNames := []string{
 		fmt.Sprintf("*.etcd-discovery.%s.svc", secret.Namespace),
 		fmt.Sprintf("*.etcd-discovery.%s.svc.cluster.local", secret.Namespace),
+		// etcd-client uses a ClusterIP service (not headless), so it does not create per-pod
+		// PTR records and cannot cause reverse DNS ambiguity during peer TLS verification.
+		// TODO(OCPBUGS-86648): move IPs to the ips parameter of reconcileSignedCertWithKeysAndAddresses.
 		"127.0.0.1",
 		"::1",
 	}
