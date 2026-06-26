@@ -58,18 +58,33 @@ setup() {
     [[ "$output" == *"https://example.com/run/abc"* ]]
 }
 
-@test "format_pipelineruns: shows IMAGE for completed runs with results" {
+@test "format_pipelineruns: shows image column for completed runs with results" {
     local json='{"items":[{"metadata":{"name":"my-plr","creationTimestamp":"2026-06-26T13:00:00Z","annotations":{}},"status":{"conditions":[{"reason":"Completed"}],"results":[{"name":"IMAGE_URL","value":"quay.io/org/img:tag"},{"name":"IMAGE_DIGEST","value":"sha256:abc123"}]}}]}'
 
     output="$(printf '%s' "${json}" | format_pipelineruns)"
-    [[ "$output" == *"IMAGE: quay.io/org/img:tag@sha256:abc123"* ]]
+    [[ "$output" == *"IMAGE"* ]]
+    [[ "$output" == *"quay.io/org/img:tag@sha256:abc123"* ]]
 }
 
-@test "format_pipelineruns: no IMAGE line when no results" {
+@test "format_pipelineruns: shows image URL when no digest present" {
+    local json='{"items":[{"metadata":{"name":"my-plr","creationTimestamp":"2026-06-26T13:00:00Z","annotations":{}},"status":{"conditions":[{"reason":"Completed"}],"results":[{"name":"IMAGE_URL","value":"quay.io/org/img:tag"}]}}]}'
+
+    output="$(printf '%s' "${json}" | format_pipelineruns)"
+    [[ "$output" == *"quay.io/org/img:tag"* ]]
+}
+
+@test "format_pipelineruns: image column empty when only digest present" {
+    local json='{"items":[{"metadata":{"name":"my-plr","creationTimestamp":"2026-06-26T13:00:00Z","annotations":{}},"status":{"conditions":[{"reason":"Completed"}],"results":[{"name":"IMAGE_DIGEST","value":"sha256:abc123"}]}}]}'
+
+    output="$(printf '%s' "${json}" | format_pipelineruns)"
+    [[ "$output" != *"sha256"* ]]
+}
+
+@test "format_pipelineruns: image column empty when no results" {
     local json='{"items":[{"metadata":{"name":"my-plr","creationTimestamp":"2026-06-26T13:00:00Z","annotations":{}},"status":{"conditions":[{"reason":"Running"}]}}]}'
 
     output="$(printf '%s' "${json}" | format_pipelineruns)"
-    [[ "$output" != *"IMAGE:"* ]]
+    [[ "$output" != *"quay.io"* ]]
 }
 
 @test "format_pipelineruns: sorts by creation timestamp" {
