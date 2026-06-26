@@ -130,7 +130,7 @@ func NewComponent() component.ControlPlaneComponent {
 
 func enableAzureKMSSecretProvider(cpContext component.WorkloadContext) bool {
 	if cpContext.HCP.Spec.SecretEncryption != nil && cpContext.HCP.Spec.SecretEncryption.KMS != nil && cpContext.HCP.Spec.SecretEncryption.Type == hyperv1.KMS {
-		return azureutil.IsAroHCP()
+		return azureutil.IsAroHCPByHCP(cpContext.HCP)
 	}
 	return false
 }

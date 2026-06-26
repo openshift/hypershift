@@ -78,7 +78,7 @@ func NewComponent() component.ControlPlaneComponent {
 }
 
 func isAroHCP(cpContext component.WorkloadContext) bool {
-	return azureutil.IsAroHCP()
+	return azureutil.IsAroHCPByHCP(cpContext.HCP)
 }
 
 func SetRestartAnnotationAndPatch(ctx context.Context, crclient client.Client, dep *appsv1.Deployment, restartAnnotation string) error {

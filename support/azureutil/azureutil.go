@@ -12,6 +12,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/upsert"
+	"github.com/openshift/hypershift/support/util"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -260,9 +261,21 @@ func IsPrivateKeyVault(hcp *hyperv1.HostedControlPlane) bool {
 	return hcp.Spec.SecretEncryption.KMS.Azure.KeyVaultAccess == hyperv1.AzureKeyVaultPrivate
 }
 
-// IsAroHCP returns true if the managed service environment variable is set to ARO-HCP
+// IsAroHCP returns true if the managed service environment variable is set to ARO-HCP.
+// Use this only for management-cluster-level decisions where no HC/HCP context is available.
+// For per-cluster decisions, use IsAroHCPByHCP or IsAroHCPByHC instead.
 func IsAroHCP() bool {
 	return os.Getenv("MANAGED_SERVICE") == hyperv1.AroHCP
+}
+
+// IsAroHCPByHCP returns true when this HCP belongs to an ARO-managed cluster.
+func IsAroHCPByHCP(hcp *hyperv1.HostedControlPlane) bool {
+	return util.IsAroHCPByHCP(hcp)
+}
+
+// IsAroHCPByHC returns true when this HostedCluster belongs to an ARO-managed cluster.
+func IsAroHCPByHC(hc *hyperv1.HostedCluster) bool {
+	return util.IsAroHCPByHC(hc)
 }
 
 // IsSelfManagedAzure returns true when the platform is Azure and the managed service is not ARO-HCP

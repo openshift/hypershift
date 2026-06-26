@@ -3,6 +3,8 @@ package util
 import (
 	"testing"
 
+	. "github.com/onsi/gomega"
+
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -103,8 +105,22 @@ func baseVisibilityCases() []visibilityCase {
 			wantPublic:  true,
 		},
 		{
-			name:         "When is ARO with Swift it should be public and private",
-			platformType: hyperv1.NonePlatform,
+			name:          "When Azure topology is PublicAndPrivate it should be public and private",
+			platformType:  hyperv1.AzurePlatform,
+			azureTopology: hyperv1.AzureTopologyPublicAndPrivate,
+			wantPrivate:   true,
+			wantPublic:    true,
+		},
+		{
+			name:          "When Azure topology is Private it should be private and not public",
+			platformType:  hyperv1.AzurePlatform,
+			azureTopology: hyperv1.AzureTopologyPrivate,
+			wantPrivate:   true,
+			wantPublic:    false,
+		},
+		{
+			name:         "When Azure topology is empty with Swift annotation fallback it should be private and public",
+			platformType: hyperv1.AzurePlatform,
 			setupEnv: func(t *testing.T) {
 				t.Setenv("MANAGED_SERVICE", hyperv1.AroHCP)
 			},
@@ -222,8 +238,41 @@ func TestLabelHCPRoutes(t *testing.T) {
 	}{
 		// Shared Ingress Tests
 		{
-			name: "When shared ingress is active (ARO HCP), it should always label routes regardless of platform",
+			name: "When Swift networking is active via API field, it should always label routes",
 			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							Topology: hyperv1.AzureTopologyPublicAndPrivate,
+							Private: hyperv1.AzurePrivateSpec{
+								Type: hyperv1.AzurePrivateTypeSwift,
+								Swift: hyperv1.AzureSwiftSpec{
+									PodNetworkInstance: "test-swift-instance",
+								},
+							},
+						},
+					},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.APIServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.LoadBalancer,
+							},
+						},
+					},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "When Swift networking is active via annotation fallback, it should always label routes",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						hyperv1.SwiftPodNetworkInstanceAnnotation: "test-swift-instance",
+					},
+				},
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Platform: hyperv1.PlatformSpec{
 						Type: hyperv1.AzurePlatform,
@@ -993,6 +1042,707 @@ func TestLabelHCPRoutes(t *testing.T) {
 			if got != tt.want {
 				t.Errorf("LabelHCPRoutes() = %v, want %v", got, tt.want)
 			}
+		})
+	}
+}
+
+func TestUseSwiftNetworkingHCP(t *testing.T) {
+	tests := []struct {
+		name     string
+		hcp      *hyperv1.HostedControlPlane
+		setupEnv func(t *testing.T)
+		want     bool
+	}{
+		{
+			name: "When Azure platform with Private.Type=Swift it should return true",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							Private: hyperv1.AzurePrivateSpec{
+								Type: hyperv1.AzurePrivateTypeSwift,
+								Swift: hyperv1.AzureSwiftSpec{
+									PodNetworkInstance: "test-pni",
+								},
+							},
+						},
+					},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "When Azure platform with annotation fallback it should return true",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						hyperv1.SwiftPodNetworkInstanceAnnotation: "test-pni",
+					},
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+					},
+				},
+			},
+			setupEnv: func(t *testing.T) {
+				t.Setenv("MANAGED_SERVICE", hyperv1.AroHCP)
+			},
+			want: true,
+		},
+		{
+			name: "When Azure platform with neither API field nor annotation it should return false",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type:  hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{},
+					},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "When AWS platform it should return false",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+						AWS:  &hyperv1.AWSPlatformSpec{},
+					},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "When Azure platform with Private.Type=PrivateLink it should return false",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							Private: hyperv1.AzurePrivateSpec{
+								Type: hyperv1.AzurePrivateTypePrivateLink,
+							},
+						},
+					},
+				},
+			},
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			if tt.setupEnv != nil {
+				tt.setupEnv(t)
+			}
+			g.Expect(UseSwiftNetworkingHCP(tt.hcp)).To(Equal(tt.want))
+		})
+	}
+}
+
+func TestUseSwiftNetworkingHC(t *testing.T) {
+	tests := []struct {
+		name     string
+		hc       *hyperv1.HostedCluster
+		setupEnv func(t *testing.T)
+		want     bool
+	}{
+		{
+			name: "When Azure platform with Private.Type=Swift it should return true",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							Private: hyperv1.AzurePrivateSpec{
+								Type: hyperv1.AzurePrivateTypeSwift,
+								Swift: hyperv1.AzureSwiftSpec{
+									PodNetworkInstance: "test-pni",
+								},
+							},
+						},
+					},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "When Azure platform with annotation fallback it should return true",
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						hyperv1.SwiftPodNetworkInstanceAnnotation: "test-pni",
+					},
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+					},
+				},
+			},
+			setupEnv: func(t *testing.T) {
+				t.Setenv("MANAGED_SERVICE", hyperv1.AroHCP)
+			},
+			want: true,
+		},
+		{
+			name: "When Azure platform with neither API field nor annotation it should return false",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type:  hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{},
+					},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "When AWS platform it should return false",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+						AWS:  &hyperv1.AWSPlatformSpec{},
+					},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "When Azure platform with Private.Type=PrivateLink it should return false",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							Private: hyperv1.AzurePrivateSpec{
+								Type: hyperv1.AzurePrivateTypePrivateLink,
+							},
+						},
+					},
+				},
+			},
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			if tt.setupEnv != nil {
+				tt.setupEnv(t)
+			}
+			g.Expect(UseSwiftNetworkingHC(tt.hc)).To(Equal(tt.want))
+		})
+	}
+}
+
+func TestUseSharedIngressHCP(t *testing.T) {
+	tests := []struct {
+		name string
+		hcp  *hyperv1.HostedControlPlane
+		want bool
+	}{
+		{
+			name: "When Swift with PublicAndPrivate topology it should return true",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							Topology: hyperv1.AzureTopologyPublicAndPrivate,
+							Private: hyperv1.AzurePrivateSpec{
+								Type: hyperv1.AzurePrivateTypeSwift,
+								Swift: hyperv1.AzureSwiftSpec{
+									PodNetworkInstance: "test-pni",
+								},
+							},
+							AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+								AzureAuthenticationConfigType: hyperv1.AzureAuthenticationTypeManagedIdentities,
+							},
+						},
+					},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "When Swift with Private topology it should return false",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							Topology: hyperv1.AzureTopologyPrivate,
+							Private: hyperv1.AzurePrivateSpec{
+								Type: hyperv1.AzurePrivateTypeSwift,
+								Swift: hyperv1.AzureSwiftSpec{
+									PodNetworkInstance: "test-pni",
+								},
+							},
+							AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+								AzureAuthenticationConfigType: hyperv1.AzureAuthenticationTypeManagedIdentities,
+							},
+						},
+					},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "When Swift with empty topology it should return true",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							Private: hyperv1.AzurePrivateSpec{
+								Type: hyperv1.AzurePrivateTypeSwift,
+								Swift: hyperv1.AzureSwiftSpec{
+									PodNetworkInstance: "test-pni",
+								},
+							},
+							AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+								AzureAuthenticationConfigType: hyperv1.AzureAuthenticationTypeManagedIdentities,
+							},
+						},
+					},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "When ManagedIdentities without Swift and empty topology it should return true",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+								AzureAuthenticationConfigType: hyperv1.AzureAuthenticationTypeManagedIdentities,
+							},
+						},
+					},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "When non-Swift it should return false",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							Topology: hyperv1.AzureTopologyPublicAndPrivate,
+							Private: hyperv1.AzurePrivateSpec{
+								Type: hyperv1.AzurePrivateTypePrivateLink,
+							},
+						},
+					},
+				},
+			},
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			g.Expect(UseSharedIngressHCP(tt.hcp)).To(Equal(tt.want))
+		})
+	}
+}
+
+func TestUseSharedIngressHC(t *testing.T) {
+	tests := []struct {
+		name string
+		hc   *hyperv1.HostedCluster
+		want bool
+	}{
+		{
+			name: "When Swift with PublicAndPrivate topology it should return true",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							Topology: hyperv1.AzureTopologyPublicAndPrivate,
+							Private: hyperv1.AzurePrivateSpec{
+								Type: hyperv1.AzurePrivateTypeSwift,
+								Swift: hyperv1.AzureSwiftSpec{
+									PodNetworkInstance: "test-pni",
+								},
+							},
+							AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+								AzureAuthenticationConfigType: hyperv1.AzureAuthenticationTypeManagedIdentities,
+							},
+						},
+					},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "When Swift with Private topology it should return false",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							Topology: hyperv1.AzureTopologyPrivate,
+							Private: hyperv1.AzurePrivateSpec{
+								Type: hyperv1.AzurePrivateTypeSwift,
+								Swift: hyperv1.AzureSwiftSpec{
+									PodNetworkInstance: "test-pni",
+								},
+							},
+							AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+								AzureAuthenticationConfigType: hyperv1.AzureAuthenticationTypeManagedIdentities,
+							},
+						},
+					},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "When Swift with empty topology it should return true",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							Private: hyperv1.AzurePrivateSpec{
+								Type: hyperv1.AzurePrivateTypeSwift,
+								Swift: hyperv1.AzureSwiftSpec{
+									PodNetworkInstance: "test-pni",
+								},
+							},
+							AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+								AzureAuthenticationConfigType: hyperv1.AzureAuthenticationTypeManagedIdentities,
+							},
+						},
+					},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "When ManagedIdentities without Swift and empty topology it should return true",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+								AzureAuthenticationConfigType: hyperv1.AzureAuthenticationTypeManagedIdentities,
+							},
+						},
+					},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "When non-Swift it should return false",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							Topology: hyperv1.AzureTopologyPublicAndPrivate,
+							Private: hyperv1.AzurePrivateSpec{
+								Type: hyperv1.AzurePrivateTypePrivateLink,
+							},
+						},
+					},
+				},
+			},
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			g.Expect(UseSharedIngressHC(tt.hc)).To(Equal(tt.want))
+		})
+	}
+}
+
+func TestSwiftPodNetworkInstanceHCP(t *testing.T) {
+	tests := []struct {
+		name string
+		hcp  *hyperv1.HostedControlPlane
+		want string
+	}{
+		{
+			name: "When Azure with Private.Type=Swift it should return PodNetworkInstance from API field",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							Private: hyperv1.AzurePrivateSpec{
+								Type: hyperv1.AzurePrivateTypeSwift,
+								Swift: hyperv1.AzureSwiftSpec{
+									PodNetworkInstance: "test-pni",
+								},
+							},
+						},
+					},
+				},
+			},
+			want: "test-pni",
+		},
+		{
+			name: "When Azure with annotation fallback it should return value from annotation",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						hyperv1.SwiftPodNetworkInstanceAnnotation: "annotation-pni",
+					},
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type:  hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{},
+					},
+				},
+			},
+			want: "annotation-pni",
+		},
+		{
+			name: "When Azure with neither API field nor annotation it should return empty string",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type:  hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{},
+					},
+				},
+			},
+			want: "",
+		},
+		{
+			name: "When non-Azure platform it should return empty string",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+						AWS:  &hyperv1.AWSPlatformSpec{},
+					},
+				},
+			},
+			want: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			g.Expect(SwiftPodNetworkInstanceHCP(tt.hcp)).To(Equal(tt.want))
+		})
+	}
+}
+
+func TestIsAroHCPByHCP(t *testing.T) {
+	tests := []struct {
+		name     string
+		hcp      *hyperv1.HostedControlPlane
+		setupEnv func(t *testing.T)
+		want     bool
+	}{
+		{
+			name: "When AzureAuthenticationConfigType is ManagedIdentities it should return true",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+								AzureAuthenticationConfigType: hyperv1.AzureAuthenticationTypeManagedIdentities,
+							},
+						},
+					},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "When AzureAuthenticationConfigType is WorkloadIdentities it should return false",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+								AzureAuthenticationConfigType: hyperv1.AzureAuthenticationTypeWorkloadIdentities,
+							},
+						},
+					},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "When platform is not Azure it should return false",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "When Azure spec is nil it should fall back to env var",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+					},
+				},
+			},
+			setupEnv: func(t *testing.T) {
+				t.Setenv("MANAGED_SERVICE", hyperv1.AroHCP)
+			},
+			want: true,
+		},
+		{
+			name: "When Azure spec is nil and env var is not set it should return false",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+					},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "When WorkloadIdentities with ARO HCP env var it should return false because API takes precedence",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+								AzureAuthenticationConfigType: hyperv1.AzureAuthenticationTypeWorkloadIdentities,
+							},
+						},
+					},
+				},
+			},
+			setupEnv: func(t *testing.T) {
+				t.Setenv("MANAGED_SERVICE", hyperv1.AroHCP)
+			},
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			if tt.setupEnv != nil {
+				tt.setupEnv(t)
+			}
+			g.Expect(IsAroHCPByHCP(tt.hcp)).To(Equal(tt.want))
+		})
+	}
+}
+
+func TestIsAroHCPByHC(t *testing.T) {
+	tests := []struct {
+		name     string
+		hc       *hyperv1.HostedCluster
+		setupEnv func(t *testing.T)
+		want     bool
+	}{
+		{
+			name: "When AzureAuthenticationConfigType is ManagedIdentities it should return true",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+								AzureAuthenticationConfigType: hyperv1.AzureAuthenticationTypeManagedIdentities,
+							},
+						},
+					},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "When AzureAuthenticationConfigType is WorkloadIdentities it should return false",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+								AzureAuthenticationConfigType: hyperv1.AzureAuthenticationTypeWorkloadIdentities,
+							},
+						},
+					},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "When platform is not Azure it should return false",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "When Azure spec is nil it should fall back to env var",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+					},
+				},
+			},
+			setupEnv: func(t *testing.T) {
+				t.Setenv("MANAGED_SERVICE", hyperv1.AroHCP)
+			},
+			want: true,
+		},
+		{
+			name: "When Azure spec is nil and env var is not set it should return false",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+					},
+				},
+			},
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			if tt.setupEnv != nil {
+				tt.setupEnv(t)
+			}
+			g.Expect(IsAroHCPByHC(tt.hc)).To(Equal(tt.want))
 		})
 	}
 }

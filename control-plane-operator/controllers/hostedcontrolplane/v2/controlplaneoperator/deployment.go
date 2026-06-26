@@ -212,7 +212,7 @@ func (cpo *ControlPlaneOperatorOptions) applyPlatformSpecificConfig(hcp *hyperv1
 				MountPath: "/etc/provider",
 			})
 	case hyperv1.AzurePlatform:
-		if azureutil.IsAroHCP() {
+		if azureutil.IsAroHCPByHCP(hcp) {
 			// Add the client ID of the managed Azure key vault as an environment variable on the CPO. This is used in
 			// configuring the SecretProviderClass CRs for OpenShift components on the HCP needing to authenticate with
 			// Azure cloud API.
@@ -243,7 +243,7 @@ func (cpo *ControlPlaneOperatorOptions) applyPlatformSpecificConfig(hcp *hyperv1
 					azureutil.CreateVolumeForAzureSecretStoreProviderClass(config.ManagedAzureKMSSecretStoreVolumeName, config.ManagedAzureKMSSecretProviderClassName),
 				)
 			}
-		} else if azureutil.IsSelfManagedAzure(hcp.Spec.Platform.Type) {
+		} else {
 			if hcp.Spec.Platform.Azure.AzureAuthenticationConfig.WorkloadIdentities != nil &&
 				hcp.Spec.Platform.Azure.AzureAuthenticationConfig.WorkloadIdentities.ControlPlaneOperator.ClientID != "" {
 				deployment.Spec.Template.Spec.Containers[0].Env = append(
