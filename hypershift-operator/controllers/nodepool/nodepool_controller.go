@@ -305,6 +305,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		r.reachedIgnitionEndpointCondition,
 		r.machineAndNodeConditions,
 		r.validPlatformConfigCondition,
+		r.spotTerminationHandlerConfiguredCondition,
 		// TODO(alberto): consider moving here:
 		// NodePoolUpdatingPlatformMachineTemplateConditionType,
 		// NodePoolAutorepairEnabledConditionType.
