@@ -3,6 +3,7 @@ package pki
 import (
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"net"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -32,7 +33,7 @@ func TestReconcileEtcdPeerSecret(t *testing.T) {
 		},
 	}
 
-	t.Run("When reconciling etcd peer secret it should include etcd-discovery SANs", func(t *testing.T) {
+	t.Run("When reconciling etcd peer secret it should place DNS names and IPs in correct cert fields", func(t *testing.T) {
 		g := NewWithT(t)
 		secret := &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
@@ -52,11 +53,15 @@ func TestReconcileEtcdPeerSecret(t *testing.T) {
 		g.Expect(cert.DNSNames).To(ContainElements(
 			"*.etcd-discovery.clusters-test.svc",
 			"*.etcd-discovery.clusters-test.svc.cluster.local",
-			// TODO(OCPBUGS-86648): assert on cert.IPAddresses instead once IPs are moved out of dnsNames.
-			"127.0.0.1",
-			"::1",
+		))
+
+		g.Expect(cert.IPAddresses).To(ContainElements(
+			net.IPv4(127, 0, 0, 1).To4(),
+			net.ParseIP("::1"),
 		))
 		g.Expect(cert.DNSNames).ToNot(ContainElement(ContainSubstring("etcd-client")))
+		g.Expect(cert.DNSNames).ToNot(ContainElement("127.0.0.1"))
+		g.Expect(cert.DNSNames).ToNot(ContainElement("::1"))
 	})
 
 	t.Run("When reconciling etcd peer secret it should have client and server auth usage", func(t *testing.T) {
