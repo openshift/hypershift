@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -528,6 +530,7 @@ type HyperShiftOperatorDeployment struct {
 	ScaleFromZeroSecretKey                  string
 	ScaleFromZeroProvider                   string
 	HCPEgressBlockCIDRs                     []string
+	PprofAddr                               string
 }
 
 func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
@@ -692,6 +695,12 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 		},
 	}
 
+	if port, ok := o.pprofContainerPort(); ok {
+		deployment.Spec.Template.Spec.Containers[0].Ports = append(
+			deployment.Spec.Template.Spec.Containers[0].Ports, port,
+		)
+	}
+
 	// Azure Workload Identity requires this pod label for the webhook to inject
 	// federated tokens (AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_FEDERATED_TOKEN_FILE).
 	if o.AzurePLSManagedIdentityClientID != "" {
@@ -762,6 +771,9 @@ func (o HyperShiftOperatorDeployment) buildArgs() []string {
 	}
 	if o.RegistryOverrides != "" {
 		args = append(args, fmt.Sprintf("--registry-overrides=%s", o.RegistryOverrides))
+	}
+	if _, ok := o.pprofContainerPort(); ok {
+		args = append(args, "--pprof-addr="+o.PprofAddr)
 	}
 	return args
 }
@@ -917,6 +929,28 @@ func (o HyperShiftOperatorDeployment) addScaleFromZeroResources(args *[]string, 
 			},
 		},
 	})
+}
+
+// pprofContainerPort parses o.PprofAddr and returns the corresponding
+// ContainerPort when the address is non-empty and valid. The installer
+// validates the address before Build is called, so errors here are a safety net.
+func (o HyperShiftOperatorDeployment) pprofContainerPort() (corev1.ContainerPort, bool) {
+	if o.PprofAddr == "" {
+		return corev1.ContainerPort{}, false
+	}
+	_, portStr, err := net.SplitHostPort(o.PprofAddr)
+	if err != nil {
+		return corev1.ContainerPort{}, false
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil || port < 1 || port > 65535 {
+		return corev1.ContainerPort{}, false
+	}
+	return corev1.ContainerPort{
+		Name:          "pprof",
+		ContainerPort: int32(port),
+		Protocol:      corev1.ProtocolTCP,
+	}, true
 }
 
 func (o HyperShiftOperatorDeployment) resolveImage() string {

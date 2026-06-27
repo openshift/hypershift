@@ -158,6 +158,7 @@ type StartOptions struct {
 	ScaleFromZeroCreds                     string
 	EtcdBackupMaxCount                     int
 	HCPEgressBlockCIDRs                    []string
+	PprofAddr                              string
 }
 
 func NewStartCommand() *cobra.Command {
@@ -199,6 +200,7 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.ScaleFromZeroCreds, "scale-from-zero-creds", opts.ScaleFromZeroCreds, "Path to credentials file for scale-from-zero instance type queries")
 	cmd.Flags().IntVar(&opts.EtcdBackupMaxCount, "etcd-backup-max-count", 5, "Maximum number of completed HCPEtcdBackup CRs to retain per HostedControlPlane")
 	cmd.Flags().StringArrayVar(&opts.HCPEgressBlockCIDRs, "hcp-egress-block-cidrs", nil, "Static CIDRs to block in HCP namespace egress NetworkPolicies instead of dynamically-discovered hosting cluster KAS endpoint IPs. When specified, eliminates NetworkPolicy churn during hosting cluster KAS rolling restarts and avoids OVN port-group reconciliation races that can drop traffic to HCP routers. May be specified multiple times (e.g. --hcp-egress-block-cidrs=10.0.0.0/16 --hcp-egress-block-cidrs=10.1.0.0/16).")
+	cmd.Flags().StringVar(&opts.PprofAddr, "pprof-addr", "", "The address the pprof endpoint binds to. Disabled when empty.")
 
 	// Attempt to determine featureset prior to adding featuregate flags.
 	// It is safe to get the empty string from this as the empty string is the default featureset.
@@ -426,7 +428,8 @@ func createManager(restConfig *rest.Config, webhookOptions webhook.Options, opts
 		Metrics: metricsserver.Options{
 			BindAddress: opts.MetricsAddr,
 		},
-		WebhookServer: webhook.NewServer(webhookOptions),
+		PprofBindAddress: opts.PprofAddr,
+		WebhookServer:    webhook.NewServer(webhookOptions),
 		Client: crclient.Options{
 			Cache: &crclient.CacheOptions{
 				Unstructured: true,
