@@ -2647,3 +2647,73 @@ func TestComplete(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateOperatorPprofAddr(t *testing.T) {
+	tests := []struct {
+		name        string
+		opts        Options
+		expectError bool
+	}{
+		{
+			name:        "When operator-pprof-addr is empty, it should pass",
+			opts:        Options{},
+			expectError: false,
+		},
+		{
+			name:        "When operator-pprof-addr is set with port only, it should pass",
+			opts:        Options{OperatorPprofAddr: ":6060"},
+			expectError: false,
+		},
+		{
+			name:        "When operator-pprof-addr is set with host and port, it should pass",
+			opts:        Options{OperatorPprofAddr: "0.0.0.0:6060"},
+			expectError: false,
+		},
+		{
+			name:        "When operator-pprof-addr is set with named host and port, it should pass",
+			opts:        Options{OperatorPprofAddr: "localhost:6060"},
+			expectError: false,
+		},
+		{
+			name:        "When operator-pprof-addr has no port separator, it should fail",
+			opts:        Options{OperatorPprofAddr: "6060"},
+			expectError: true,
+		},
+		{
+			name:        "When operator-pprof-addr has a non-numeric port, it should fail",
+			opts:        Options{OperatorPprofAddr: ":pprof"},
+			expectError: true,
+		},
+		{
+			name:        "When operator-pprof-addr has port 0, it should fail",
+			opts:        Options{OperatorPprofAddr: ":0"},
+			expectError: true,
+		},
+		{
+			name:        "When operator-pprof-addr has port greater than 65535, it should fail",
+			opts:        Options{OperatorPprofAddr: ":65536"},
+			expectError: true,
+		},
+		{
+			name:        "When operator-pprof-addr uses the metrics port, it should fail",
+			opts:        Options{OperatorPprofAddr: ":9000"},
+			expectError: true,
+		},
+		{
+			name:        "When operator-pprof-addr uses the manager port, it should fail",
+			opts:        Options{OperatorPprofAddr: ":9443"},
+			expectError: true,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			errs := tc.opts.validateOperatorPprofAddr()
+			if tc.expectError {
+				g.Expect(errs).NotTo(BeEmpty())
+			} else {
+				g.Expect(errs).To(BeEmpty())
+			}
+		})
+	}
+}

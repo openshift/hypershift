@@ -599,6 +599,85 @@ func TestHyperShiftOperatorDeployment_Build(t *testing.T) {
 	}
 }
 
+func TestHyperShiftOperatorDeployment_Build_PprofAddr(t *testing.T) {
+	testNamespace := "hypershift"
+	testOperatorImage := "myimage"
+	baseParams := func() HyperShiftOperatorDeployment {
+		return HyperShiftOperatorDeployment{
+			Namespace: &corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
+			},
+			OperatorImage: testOperatorImage,
+			ServiceAccount: &corev1.ServiceAccount{
+				ObjectMeta: metav1.ObjectMeta{Name: "hypershift"},
+			},
+			Replicas:        1,
+			PrivatePlatform: "None",
+		}
+	}
+
+	tests := []struct {
+		name             string
+		pprofAddr        string
+		expectArg        bool
+		expectedArgValue string
+		expectPort       bool
+		expectedPort     int32
+	}{
+		{
+			name:      "When pprof-addr is empty, it should not include pprof arg or container port",
+			pprofAddr: "",
+		},
+		{
+			name:             "When pprof-addr is set with port only, it should include pprof arg and container port",
+			pprofAddr:        ":6060",
+			expectArg:        true,
+			expectedArgValue: "--pprof-addr=:6060",
+			expectPort:       true,
+			expectedPort:     6060,
+		},
+		{
+			name:             "When pprof-addr is set with host and port, it should include pprof arg and container port",
+			pprofAddr:        "0.0.0.0:9999",
+			expectArg:        true,
+			expectedArgValue: "--pprof-addr=0.0.0.0:9999",
+			expectPort:       true,
+			expectedPort:     9999,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			params := baseParams()
+			params.PprofAddr = tc.pprofAddr
+			deployment := params.Build()
+			args := deployment.Spec.Template.Spec.Containers[0].Args
+			ports := deployment.Spec.Template.Spec.Containers[0].Ports
+
+			if tc.expectArg {
+				g.Expect(args).To(ContainElement(tc.expectedArgValue))
+			} else {
+				for _, arg := range args {
+					g.Expect(arg).NotTo(HavePrefix("--pprof-addr"))
+				}
+			}
+
+			if tc.expectPort {
+				g.Expect(ports).To(ContainElement(corev1.ContainerPort{
+					Name:          "pprof",
+					ContainerPort: tc.expectedPort,
+					Protocol:      corev1.ProtocolTCP,
+				}))
+			} else {
+				for _, p := range ports {
+					g.Expect(p.Name).NotTo(Equal("pprof"))
+				}
+			}
+		})
+	}
+}
+
 func TestExternalDNSDeployment_Build(t *testing.T) {
 	baseDeployment := func() ExternalDNSDeployment {
 		return ExternalDNSDeployment{
