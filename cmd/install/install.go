@@ -165,6 +165,7 @@ type Options struct {
 	RenderSensitive                           bool
 	HCPEgressBlockCIDRs                       []string
 	InstallScope                              string
+	OperatorPprofAddr                         string
 }
 
 func (o *Options) Complete() error {
@@ -198,6 +199,7 @@ func (o *Options) Validate() error {
 	errs = append(errs, o.validateMonitoringConfig()...)
 	errs = append(errs, o.validateMiscConfig()...)
 	errs = append(errs, o.validateHCPEgressBlockCIDRs()...)
+	errs = append(errs, o.validateOperatorPprofAddr()...)
 
 	return errors.NewAggregate(errs)
 }
@@ -210,6 +212,25 @@ func (o *Options) validateHCPEgressBlockCIDRs() []error {
 		}
 	}
 	return errs
+}
+
+func (o *Options) validateOperatorPprofAddr() []error {
+	if o.OperatorPprofAddr == "" {
+		return nil
+	}
+	_, portStr, err := net.SplitHostPort(o.OperatorPprofAddr)
+	if err != nil {
+		return []error{fmt.Errorf("invalid --operator-pprof-addr value %q: %w", o.OperatorPprofAddr, err)}
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil || port < 1 || port > 65535 {
+		return []error{fmt.Errorf("invalid --operator-pprof-addr port %q: must be an integer between 1 and 65535", portStr)}
+	}
+	switch port {
+	case 9000, 9443:
+		return []error{fmt.Errorf("invalid --operator-pprof-addr port %q: conflicts with an existing operator listener", portStr)}
+	}
+	return nil
 }
 
 func (o *Options) validatePlatformConfig() []error {
@@ -513,6 +534,7 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&opts.AWSRoleCredentialSource, "aws-role-credential-source", aws.CredentialSourceWebIdentity, "Credential source for AWS role ARN flags: 'web-identity' (uses projected SA token) or 'ec2-instance-metadata' (uses EC2 instance metadata)")
 	cmd.PersistentFlags().StringVar(&opts.AWSOperatorRolesFile, "aws-operator-roles-file", "", "Path to JSON output file from 'hypershift create operator-roles aws' (sets all three role ARN flags at once)")
 	cmd.Flags().StringVar(&opts.InstallScope, "install-scope", string(OutputAll), "Scope of installation: 'all' installs CRDs and resources (default), 'crds' installs only CRDs, 'resources' installs only resources assuming CRDs were installed previously (operator deployment and RBAC)")
+	cmd.PersistentFlags().StringVar(&opts.OperatorPprofAddr, "operator-pprof-addr", "", "The address the HyperShift Operator pprof endpoint binds to (e.g. :6060). Disabled when empty.")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		return InstallHyperShiftOperator(cmd.Context(), cmd.OutOrStdout(), opts)
@@ -1392,6 +1414,7 @@ func setupOperatorResources(opts Options, userCABundleCM *corev1.ConfigMap, trus
 		ScaleFromZeroSecretKey:                  opts.ScaleFromZeroCredentialsSecretKey,
 		ScaleFromZeroProvider:                   opts.ScaleFromZeroProvider,
 		HCPEgressBlockCIDRs:                     opts.HCPEgressBlockCIDRs,
+		PprofAddr:                               opts.OperatorPprofAddr,
 	}.Build()
 	operatorService := assets.HyperShiftOperatorService{
 		Namespace: operatorNamespace,
