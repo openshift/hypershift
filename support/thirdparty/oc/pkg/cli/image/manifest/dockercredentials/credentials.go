@@ -74,6 +74,15 @@ func BasicFromKeyring(keyring credentialprovider.DockerKeyring, target *url.URL)
 	configs, found := keyring.Lookup(value)
 
 	if !found || len(configs) == 0 {
+		// Walk up the path hierarchy to find credentials registered under a
+		// parent path or hostname-only key. This handles IDMS/ICSP mirrored
+		// registries where the pull-secret has a hostname-only entry (e.g.
+		// "harbor.example.com") but the token endpoint or challenge URL includes
+		// a sub-path (e.g. "harbor.example.com/service/token").
+		if user, pass := lookupByPathHierarchy(keyring, value); user != "" || pass != "" {
+			return user, pass
+		}
+
 		// do a special case check for docker.io to match historical lookups when we respond to a challenge
 		if value == "auth.docker.io/token" {
 			return BasicFromKeyring(keyring, &url.URL{Host: "index.docker.io", Path: "/v1"})
@@ -93,4 +102,28 @@ func BasicFromKeyring(keyring credentialprovider.DockerKeyring, target *url.URL)
 		return "", ""
 	}
 	return configs[0].Username, configs[0].Password
+}
+
+// lookupByPathHierarchy walks up the path components of value to find credentials.
+// For "harbor.example.com/v2/redhat/operator-index", it tries:
+//   - harbor.example.com/v2/redhat/operator-index (already tried by caller)
+//   - harbor.example.com/v2/redhat
+//   - harbor.example.com/v2
+//   - harbor.example.com
+//
+// This supports pull-secrets with hostname-only keys matching images with sub-paths,
+// which is the common case for IDMS/ICSP mirrored registries.
+func lookupByPathHierarchy(keyring credentialprovider.DockerKeyring, value string) (string, string) {
+	for {
+		lastSlash := strings.LastIndex(value, "/")
+		if lastSlash == -1 {
+			break
+		}
+		value = value[:lastSlash]
+		configs, found := keyring.Lookup(value)
+		if found && len(configs) > 0 {
+			return configs[0].Username, configs[0].Password
+		}
+	}
+	return "", ""
 }
