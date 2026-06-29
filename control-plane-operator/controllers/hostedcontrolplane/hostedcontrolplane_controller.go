@@ -1548,7 +1548,7 @@ func (r *HostedControlPlaneReconciler) reconcileOLMAndMiscCerts(ctx context.Cont
 		NodeTuningOperatorService := manifests.ClusterNodeTuningOperatorMetricsService(hcp.Namespace)
 		err := removeServiceCAAnnotationAndSecret(ctx, r.Client, NodeTuningOperatorService, NodeTuningOperatorServingCert)
 		if err != nil {
-			r.Log.Error(err, "failed to remove service ca annotation and secret: %w")
+			r.Log.Error(err, "failed to remove service ca annotation and secret", "service", client.ObjectKeyFromObject(NodeTuningOperatorService))
 		}
 		if _, err = createOrUpdate(ctx, r, NodeTuningOperatorServingCert, func() error {
 			return pki.ReconcileNodeTuningOperatorServingCertSecret(NodeTuningOperatorServingCert, rootCASecret, p.OwnerRef)
@@ -1629,8 +1629,8 @@ func (r *HostedControlPlaneReconciler) reconcileNetworkServingCerts(ctx context.
 		if hasServiceCAAnnotation := doesServiceHaveServiceCAAnnotation(multusAdmissionControllerService); !hasServiceCAAnnotation {
 			multusAdmissionControllerServingCertSecret := manifests.MultusAdmissionControllerServingCert(hcp.Namespace)
 
-			if err := removeServiceCASecret(ctx, r.Client, multusAdmissionControllerServingCertSecret); err != nil {
-				return err
+			if err := removeServiceCAAnnotationAndSecret(ctx, r.Client, multusAdmissionControllerService, multusAdmissionControllerServingCertSecret); err != nil {
+				return fmt.Errorf("failed to remove service ca annotation and secret for %s: %w", client.ObjectKeyFromObject(multusAdmissionControllerService), err)
 			}
 
 			if _, err := createOrUpdate(ctx, r, multusAdmissionControllerServingCertSecret, func() error {
@@ -1653,8 +1653,8 @@ func (r *HostedControlPlaneReconciler) reconcileNetworkServingCerts(ctx context.
 	if hasServiceCAAnnotation := doesServiceHaveServiceCAAnnotation(networkNodeIdentityService); !hasServiceCAAnnotation {
 		networkNodeIdentityServingCertSecret := manifests.NetworkNodeIdentityControllerServingCert(hcp.Namespace)
 
-		if err := removeServiceCASecret(ctx, r.Client, networkNodeIdentityServingCertSecret); err != nil {
-			return err
+		if err := removeServiceCAAnnotationAndSecret(ctx, r.Client, networkNodeIdentityService, networkNodeIdentityServingCertSecret); err != nil {
+			return fmt.Errorf("failed to remove service ca annotation and secret for %s: %w", client.ObjectKeyFromObject(networkNodeIdentityService), err)
 		}
 
 		if _, err := createOrUpdate(ctx, r, networkNodeIdentityServingCertSecret, func() error {
@@ -1676,8 +1676,8 @@ func (r *HostedControlPlaneReconciler) reconcileNetworkServingCerts(ctx context.
 	if hasServiceCAAnnotation := doesServiceHaveServiceCAAnnotation(ovnControlPlaneService); !hasServiceCAAnnotation {
 		ovnControlPlaneMetricsServingCertSecret := manifests.OVNControlPlaneMetricsServingCert(hcp.Namespace)
 
-		if err := removeServiceCASecret(ctx, r.Client, ovnControlPlaneMetricsServingCertSecret); err != nil {
-			return err
+		if err := removeServiceCAAnnotationAndSecret(ctx, r.Client, ovnControlPlaneService, ovnControlPlaneMetricsServingCertSecret); err != nil {
+			return fmt.Errorf("failed to remove service ca annotation and secret for %s: %w", client.ObjectKeyFromObject(ovnControlPlaneService), err)
 		}
 
 		if _, err := createOrUpdate(ctx, r, ovnControlPlaneMetricsServingCertSecret, func() error {
@@ -1708,8 +1708,8 @@ func (r *HostedControlPlaneReconciler) reconcileAWSPlatformCerts(ctx context.Con
 	if hasServiceCAAnnotation := doesServiceHaveServiceCAAnnotation(awsEBSCsiDriverOperatorMetricsService); !hasServiceCAAnnotation {
 		awsEBSCsiDriverOperatorServingCert := manifests.AWSEBSCsiDriverOperatorServingCert(hcp.Namespace)
 
-		if err := removeServiceCASecret(ctx, r.Client, awsEBSCsiDriverOperatorServingCert); err != nil {
-			return fmt.Errorf("failed to remove service CA secret for aws-ebs-csi-driver-operator: %w", err)
+		if err := removeServiceCAAnnotationAndSecret(ctx, r.Client, awsEBSCsiDriverOperatorMetricsService, awsEBSCsiDriverOperatorServingCert); err != nil {
+			return fmt.Errorf("failed to remove service ca annotation and secret for %s: %w", client.ObjectKeyFromObject(awsEBSCsiDriverOperatorMetricsService), err)
 		}
 
 		if _, err := createOrUpdate(ctx, r, awsEBSCsiDriverOperatorServingCert, func() error {
@@ -1729,8 +1729,8 @@ func (r *HostedControlPlaneReconciler) reconcileAWSPlatformCerts(ctx context.Con
 	if hasServiceCAAnnotation := doesServiceHaveServiceCAAnnotation(awsEBSCsiDriverControllerMetricsService); !hasServiceCAAnnotation {
 		awsEBSCsiDriverControllerMetricsServingCert := manifests.AWSEBSCsiDriverControllerMetricsServingCert(hcp.Namespace)
 
-		if err := removeServiceCASecret(ctx, r.Client, awsEBSCsiDriverControllerMetricsServingCert); err != nil {
-			return err
+		if err := removeServiceCAAnnotationAndSecret(ctx, r.Client, awsEBSCsiDriverControllerMetricsService, awsEBSCsiDriverControllerMetricsServingCert); err != nil {
+			return fmt.Errorf("failed to remove service ca annotation and secret for %s: %w", client.ObjectKeyFromObject(awsEBSCsiDriverControllerMetricsService), err)
 		}
 
 		if _, err := createOrUpdate(ctx, r, awsEBSCsiDriverControllerMetricsServingCert, func() error {
@@ -1754,7 +1754,7 @@ func (r *HostedControlPlaneReconciler) reconcileAzurePlatformCerts(ctx context.C
 	AzureDiskCsiDriverOperatorServingCert := manifests.AzureDiskCSIDriverOperatorServingCertSecret(hcp.Namespace)
 	AzureDiskCsiDriverOperatorService := manifests.AzureDiskCSIDriverOperatorMetricsService(hcp.Namespace)
 	if err := removeServiceCAAnnotationAndSecret(ctx, r.Client, AzureDiskCsiDriverOperatorService, AzureDiskCsiDriverOperatorServingCert); err != nil {
-		r.Log.Error(err, "failed to remove service ca annotation and secret: %w")
+		r.Log.Error(err, "failed to remove service ca annotation and secret", "service", client.ObjectKeyFromObject(AzureDiskCsiDriverOperatorService))
 	}
 	if _, err := createOrUpdate(ctx, r, AzureDiskCsiDriverOperatorServingCert, func() error {
 		z := pki.ReconcileAzureDiskCsiDriverOperatorMetricsServingCertSecret(AzureDiskCsiDriverOperatorServingCert, rootCASecret, p.OwnerRef)
@@ -1773,8 +1773,8 @@ func (r *HostedControlPlaneReconciler) reconcileAzurePlatformCerts(ctx context.C
 	if hasServiceCAAnnotation := doesServiceHaveServiceCAAnnotation(azureDiskCsiDriverControllerMetricsService); !hasServiceCAAnnotation {
 		azureDiskCsiDriverControllerMetricsServingCert := manifests.AzureDiskCsiDriverControllerMetricsServingCert(hcp.Namespace)
 
-		if err := removeServiceCASecret(ctx, r.Client, azureDiskCsiDriverControllerMetricsServingCert); err != nil {
-			return err
+		if err := removeServiceCAAnnotationAndSecret(ctx, r.Client, azureDiskCsiDriverControllerMetricsService, azureDiskCsiDriverControllerMetricsServingCert); err != nil {
+			return fmt.Errorf("failed to remove service ca annotation and secret for %s: %w", client.ObjectKeyFromObject(azureDiskCsiDriverControllerMetricsService), err)
 		}
 
 		if _, err := createOrUpdate(ctx, r, azureDiskCsiDriverControllerMetricsServingCert, func() error {
@@ -1787,7 +1787,7 @@ func (r *HostedControlPlaneReconciler) reconcileAzurePlatformCerts(ctx context.C
 	AzureFileCsiDriverOperatorServingCert := manifests.AzureFileCSIDriverOperatorServingCertSecret(hcp.Namespace)
 	AzureFileCsiDriverOperatorService := manifests.AzureFileCSIDriverOperatorMetricsService(hcp.Namespace)
 	if err := removeServiceCAAnnotationAndSecret(ctx, r.Client, AzureFileCsiDriverOperatorService, AzureFileCsiDriverOperatorServingCert); err != nil {
-		r.Log.Error(err, "failed to remove service ca annotation and secret: %w")
+		r.Log.Error(err, "failed to remove service ca annotation and secret", "service", client.ObjectKeyFromObject(AzureFileCsiDriverOperatorService))
 	}
 	if _, err := createOrUpdate(ctx, r, AzureFileCsiDriverOperatorServingCert, func() error {
 		z := pki.ReconcileAzureFileCsiDriverOperatorMetricsServingCertSecret(AzureFileCsiDriverOperatorServingCert, rootCASecret, p.OwnerRef)
@@ -1806,8 +1806,8 @@ func (r *HostedControlPlaneReconciler) reconcileAzurePlatformCerts(ctx context.C
 	if hasServiceCAAnnotation := doesServiceHaveServiceCAAnnotation(azureFileCsiDriverControllerMetricsService); !hasServiceCAAnnotation {
 		azureFileCsiDriverControllerMetricsServingCert := manifests.AzureFileCsiDriverControllerMetricsServingCert(hcp.Namespace)
 
-		if err := removeServiceCASecret(ctx, r.Client, azureFileCsiDriverControllerMetricsServingCert); err != nil {
-			return err
+		if err := removeServiceCAAnnotationAndSecret(ctx, r.Client, azureFileCsiDriverControllerMetricsService, azureFileCsiDriverControllerMetricsServingCert); err != nil {
+			return fmt.Errorf("failed to remove service ca annotation and secret for %s: %w", client.ObjectKeyFromObject(azureFileCsiDriverControllerMetricsService), err)
 		}
 
 		if _, err := createOrUpdate(ctx, r, azureFileCsiDriverControllerMetricsServingCert, func() error {
@@ -2256,52 +2256,75 @@ func (r *HostedControlPlaneReconciler) removeHCPIngressFromRoutes(ctx context.Co
 	return nil
 }
 
+const (
+	servingCertSecretNameAlpha  = "service.alpha.openshift.io/serving-cert-secret-name"
+	servingCertSecretNameBeta   = "service.beta.openshift.io/serving-cert-secret-name"
+	servingCertGenErrorAlpha    = "service.alpha.openshift.io/serving-cert-generation-error"
+	servingCertGenErrorNumAlpha = "service.alpha.openshift.io/serving-cert-generation-error-num"
+	servingCertGenErrorBeta     = "service.beta.openshift.io/serving-cert-generation-error"
+	servingCertGenErrorNumBeta  = "service.beta.openshift.io/serving-cert-generation-error-num"
+)
+
 // removeServiceCAAnnotationAndSecret will delete Secret 'secret' and
-// remove the annotation "service.beta.openshift.io/serving-cert-secret-name"
-// from Service 'service' if it contains this annotation.
-// This is used to remove Secrets generated by the service-ca in case
-// of upgrade, from a control-plane version using service-ca generated certs
-// to a version where the service uses HCP controller generated certs.
+// remove service-ca annotations from Service 'service'.
+// This cleans up both the cert-secret-name annotations and any
+// serving-cert-generation-error annotations left by service-ca,
+// preventing a dead state where no serving certificate is generated.
 func removeServiceCAAnnotationAndSecret(ctx context.Context, c client.Client, service *corev1.Service, secret *corev1.Secret) error {
 	if err := c.Get(ctx, client.ObjectKeyFromObject(service), service); err != nil {
 		if !apierrors.IsNotFound(err) {
 			return fmt.Errorf("failed to get service: %w", err)
 		}
 	} else {
-		_, ok := service.Annotations["service.alpha.openshift.io/serving-cert-secret-name"]
-		if ok {
-			delete(service.Annotations, "service.alpha.openshift.io/serving-cert-secret-name")
-			err := c.Update(ctx, service)
-			if err != nil {
-				return fmt.Errorf("failed to update service: %w", err)
+		serviceCAAnnotations := []string{
+			servingCertSecretNameAlpha,
+			servingCertSecretNameBeta,
+			servingCertGenErrorAlpha,
+			servingCertGenErrorNumAlpha,
+			servingCertGenErrorBeta,
+			servingCertGenErrorNumBeta,
+		}
+		needsUpdate := false
+		for _, key := range serviceCAAnnotations {
+			if _, ok := service.Annotations[key]; ok {
+				delete(service.Annotations, key)
+				needsUpdate = true
 			}
 		}
-
-		_, ok = service.Annotations["service.beta.openshift.io/serving-cert-secret-name"]
-		if ok {
-			delete(service.Annotations, "service.beta.openshift.io/serving-cert-secret-name")
-			err := c.Update(ctx, service)
-			if err != nil {
+		if needsUpdate {
+			if err := c.Update(ctx, service); err != nil {
 				return fmt.Errorf("failed to update service: %w", err)
 			}
 		}
 	}
 
-	err := removeServiceCASecret(ctx, c, secret)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return removeServiceCASecret(ctx, c, secret)
 }
 
 func doesServiceHaveServiceCAAnnotation(service *corev1.Service) bool {
-	_, ok := service.Annotations["service.alpha.openshift.io/serving-cert-secret-name"]
+	// If service-ca has recorded a generation error, treat the annotation as
+	// absent so the CPO falls through to create its own cert. service-ca
+	// will not self-heal from this state, so without this check the service
+	// remains stuck with no serving certificate indefinitely.
+	if _, hasErr := service.Annotations[servingCertGenErrorAlpha]; hasErr {
+		return false
+	}
+	if _, hasErr := service.Annotations[servingCertGenErrorBeta]; hasErr {
+		return false
+	}
+	if _, hasErr := service.Annotations[servingCertGenErrorNumAlpha]; hasErr {
+		return false
+	}
+	if _, hasErr := service.Annotations[servingCertGenErrorNumBeta]; hasErr {
+		return false
+	}
+
+	_, ok := service.Annotations[servingCertSecretNameAlpha]
 	if ok {
 		return true
 	}
 
-	_, ok = service.Annotations["service.beta.openshift.io/serving-cert-secret-name"]
+	_, ok = service.Annotations[servingCertSecretNameBeta]
 	return ok
 }
 
