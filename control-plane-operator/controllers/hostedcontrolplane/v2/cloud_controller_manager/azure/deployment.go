@@ -17,10 +17,14 @@ const (
 )
 
 func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
+	hcp := cpContext.HCP
+
 	podspec.UpdateContainer(containerName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
 		c.Args = append(c.Args,
 			fmt.Sprintf("--cluster-name=%s", cpContext.HCP.Spec.InfraID),
 		)
+		c.Args = append(c.Args, config.TLSArgs(hcp.Spec.Configuration.GetTLSSecurityProfile())...)
+
 		if azureutil.IsAroHCPByHCP(cpContext.HCP) {
 			c.VolumeMounts = append(c.VolumeMounts,
 				azureutil.CreateVolumeMountForAzureSecretStoreProviderClass(config.ManagedAzureCloudProviderSecretStoreVolumeName),

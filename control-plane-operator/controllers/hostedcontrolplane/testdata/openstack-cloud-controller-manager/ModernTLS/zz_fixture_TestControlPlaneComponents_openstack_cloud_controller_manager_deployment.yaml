@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: fd7854c32bc31069506e427704707cb4f218bb648d0171b51d54dd0103b59638
+    hypershift.openshift.io/desired-state-hash: 2ebed326a98fcba522dc4b6734d322559b454842270b9a52f2f06121323478e0
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: openstack-cloud-controller-manager
@@ -78,6 +78,7 @@ spec:
         - --leader-elect-renew-deadline=107s
         - --leader-elect-retry-period=26s
         - --leader-elect-resource-namespace=openshift-cloud-controller-manager
+        - --tls-min-version=VersionTLS13
         command:
         - /usr/bin/openstack-cloud-controller-manager
         env:

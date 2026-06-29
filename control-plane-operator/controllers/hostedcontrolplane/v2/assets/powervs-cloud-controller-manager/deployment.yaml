@@ -16,6 +16,7 @@ spec:
       containers:
       - command:
         - /bin/ibm-cloud-controller-manager
+        args:
         - --authentication-skip-lookup
         - --bind-address=$(POD_IP_ADDRESS)
         - --use-service-account-credentials=true
@@ -27,7 +28,6 @@ spec:
         - --leader-elect-lease-duration=137s
         - --leader-elect-renew-deadline=107s
         - --leader-elect-retry-period=26s
-        - --tls-cipher-suites=TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_AES_128_GCM_SHA256,TLS_CHACHA20_POLY1305_SHA256,TLS_AES_256_GCM_SHA384
         - --kubeconfig=/etc/kubernetes/kubeconfig
         - --use-service-account-credentials=false
         env:

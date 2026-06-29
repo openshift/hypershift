@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 1168ce43d310abd35750261e14bc9a21b165c9b4e4011641e4e67019bca6f4a5
+    hypershift.openshift.io/desired-state-hash: e8cd2c7426b899184616f0aa2755e1bab40cfaa28acdc4ea877c184896f58566
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: aws-cloud-controller-manager
@@ -74,6 +74,8 @@ spec:
         - --leader-elect-resource-namespace=openshift-cloud-controller-manager
         - --authentication-kubeconfig=/etc/kubernetes/kubeconfig/kubeconfig
         - --authorization-kubeconfig=/etc/kubernetes/kubeconfig/kubeconfig
+        - --tls-min-version=VersionTLS12
+        - --tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
         command:
         - /bin/aws-cloud-controller-manager
         env:
