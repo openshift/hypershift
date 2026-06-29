@@ -11,6 +11,7 @@ import (
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/certs"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 )
 
@@ -204,6 +205,122 @@ func TestGenerateCustomCertificate(t *testing.T) {
 			// Verify the private key can be parsed
 			_, err = certs.PemToPrivateKey(keyPEM)
 			g.Expect(err).NotTo(HaveOccurred())
+		})
+	}
+}
+
+func TestLogControlPlaneRolloutMetric(t *testing.T) {
+	t.Parallel()
+	now := time.Now()
+
+	testCases := []struct {
+		name          string
+		hostedCluster *hyperv1.HostedCluster
+	}{
+		{
+			name: "When Available condition is True it should not panic",
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace:         "test-ns",
+					Name:              "test-cluster",
+					CreationTimestamp: metav1.NewTime(now.Add(-3 * time.Minute)),
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:               string(hyperv1.HostedClusterAvailable),
+							Status:             metav1.ConditionTrue,
+							LastTransitionTime: metav1.NewTime(now),
+							Reason:             "AsExpected",
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "When Available condition is False it should not panic",
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace:         "test-ns",
+					Name:              "test-cluster",
+					CreationTimestamp: metav1.NewTime(now.Add(-3 * time.Minute)),
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:               string(hyperv1.HostedClusterAvailable),
+							Status:             metav1.ConditionFalse,
+							LastTransitionTime: metav1.NewTime(now),
+							Reason:             "NotReady",
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "When Available condition is missing it should not panic",
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace:         "test-ns",
+					Name:              "test-cluster",
+					CreationTimestamp: metav1.NewTime(now.Add(-3 * time.Minute)),
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+					},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Conditions: []metav1.Condition{},
+				},
+			},
+		},
+		{
+			name: "When platform is Azure it should not panic",
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace:         "aro-ns",
+					Name:              "aro-cluster",
+					CreationTimestamp: metav1.NewTime(now.Add(-5 * time.Minute)),
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+					},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:               string(hyperv1.HostedClusterAvailable),
+							Status:             metav1.ConditionTrue,
+							LastTransitionTime: metav1.NewTime(now),
+							Reason:             "AsExpected",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			// LogControlPlaneRolloutMetric should not panic for any input.
+			g.Expect(func() {
+				LogControlPlaneRolloutMetric(t, tc.hostedCluster)
+			}).NotTo(Panic())
 		})
 	}
 }
