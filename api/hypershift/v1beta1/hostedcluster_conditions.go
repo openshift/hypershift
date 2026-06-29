@@ -266,6 +266,12 @@ const (
 	// cluster's shared ingress. Status reflects observed state: True means
 	// public endpoints are reachable, False means they are not.
 	PublicEndpointExposed ConditionType = "PublicEndpointExposed"
+
+	// HostedClusterDeleting indicates whether the HostedCluster is being deleted and
+	// provides first-class visibility into which phase of deletion the cluster is in.
+	// **False / AsExpected** means the cluster is not being deleted.
+	// **True** means deletion is in progress; the Reason and Message indicate the current phase.
+	HostedClusterDeleting ConditionType = "HostedClusterDeleting"
 )
 
 // Reasons for PublicEndpointExposed condition.
@@ -370,6 +376,17 @@ const (
 	ReEncryptionCompletedReason     = "ReEncryptionCompleted"
 	ReEncryptionFailedReason        = "ReEncryptionFailed"
 	ReEncryptionWaitingForKASReason = "ReEncryptionWaitingForKASConvergence"
+
+	// HostedClusterDeleting reasons track progress through each phase of deletion.
+	DeletionWaitingForNodePoolDeletionReason        = "WaitingForNodePoolDeletion"
+	DeletionWaitingForCAPIClusterDeletionReason     = "WaitingForCAPIClusterDeletion"
+	DeletionWaitingForEndpointServiceDeletionReason = "WaitingForEndpointServiceDeletion"
+	DeletionWaitingForPrivateConnectDeletionReason  = "WaitingForPrivateConnectDeletion"
+	DeletionWaitingForControlPlaneDeletionReason    = "WaitingForControlPlaneDeletion"
+	DeletionWaitingForNamespaceDeletionReason       = "WaitingForNamespaceDeletion"
+	// DeletionCompletedReason indicates all hosted cluster resources have been torn down.
+	// The HostedCluster object itself may still exist briefly until the finalizer is removed.
+	DeletionCompletedReason = "DeletionCompleted"
 )
 
 // Messages.
