@@ -426,12 +426,18 @@ func (c *controlPlaneWorkload[T]) applyRequestsOverrides(podTemplate *corev1.Pod
 
 	for i, c := range podTemplate.Spec.InitContainers {
 		if res, ok := requestsOverrides[c.Name]; ok {
+			if podTemplate.Spec.InitContainers[i].Resources.Requests == nil {
+				podTemplate.Spec.InitContainers[i].Resources.Requests = corev1.ResourceList{}
+			}
 			maps.Copy(podTemplate.Spec.InitContainers[i].Resources.Requests, res)
 			applyNonOvercommitableResourceLimits(&podTemplate.Spec.InitContainers[i], res)
 		}
 	}
 	for i, c := range podTemplate.Spec.Containers {
 		if res, ok := requestsOverrides[c.Name]; ok {
+			if podTemplate.Spec.Containers[i].Resources.Requests == nil {
+				podTemplate.Spec.Containers[i].Resources.Requests = corev1.ResourceList{}
+			}
 			maps.Copy(podTemplate.Spec.Containers[i].Resources.Requests, res)
 			applyNonOvercommitableResourceLimits(&podTemplate.Spec.Containers[i], res)
 		}
