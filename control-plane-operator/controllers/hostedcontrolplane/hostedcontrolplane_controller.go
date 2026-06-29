@@ -775,6 +775,18 @@ func (r *HostedControlPlaneReconciler) reconcileExternalDNSStatusCondition(ctx c
 		Reason: hyperv1.StatusUnknownReason,
 	}
 
+	if hostedControlPlane.Annotations[hyperv1.DisableExternalDNSManagementAnnotation] == "true" {
+		newCondition = metav1.Condition{
+			Type:    string(hyperv1.ExternalDNSReachable),
+			Status:  metav1.ConditionTrue,
+			Reason:  hyperv1.ExternalDNSManagementDisabledReason,
+			Message: "External DNS management is disabled by annotation",
+		}
+		newCondition.ObservedGeneration = hostedControlPlane.Generation
+		meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, newCondition)
+		return
+	}
+
 	kasExternalHostname := netutil.ServiceExternalDNSHostname(hostedControlPlane, hyperv1.APIServer)
 	if kasExternalHostname != "" {
 		if err := netutil.ResolveDNSHostname(ctx, kasExternalHostname); err != nil {

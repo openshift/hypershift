@@ -77,7 +77,11 @@ func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingSt
 				svc.Annotations[AWSNLBAnnotation] = "nlb"
 			}
 			if strategy.LoadBalancer != nil && strategy.LoadBalancer.Hostname != "" {
-				svc.Annotations[hyperv1.ExternalDNSHostnameAnnotation] = strategy.LoadBalancer.Hostname
+				if hcp.Annotations[hyperv1.DisableExternalDNSManagementAnnotation] != "true" {
+					svc.Annotations[hyperv1.ExternalDNSHostnameAnnotation] = strategy.LoadBalancer.Hostname
+				} else {
+					delete(svc.Annotations, hyperv1.ExternalDNSHostnameAnnotation)
+				}
 			}
 			if !azureutil.IsAroHCPByHCP(hcp) {
 				svc.Spec.LoadBalancerSourceRanges = apiAllowedCIDRBlocks
@@ -309,7 +313,11 @@ func ReconcileKonnectivityServerService(svc *corev1.Service, ownerRef config.Own
 			if svc.Annotations == nil {
 				svc.Annotations = map[string]string{}
 			}
-			svc.Annotations[hyperv1.ExternalDNSHostnameAnnotation] = strategy.LoadBalancer.Hostname
+			if hcp.Annotations[hyperv1.DisableExternalDNSManagementAnnotation] != "true" {
+				svc.Annotations[hyperv1.ExternalDNSHostnameAnnotation] = strategy.LoadBalancer.Hostname
+			} else {
+				delete(svc.Annotations, hyperv1.ExternalDNSHostnameAnnotation)
+			}
 		}
 	case hyperv1.NodePort:
 		svc.Spec.Type = corev1.ServiceTypeNodePort
