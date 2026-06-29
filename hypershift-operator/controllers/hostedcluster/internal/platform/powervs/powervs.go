@@ -6,6 +6,7 @@ import (
 	"os"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/upsert"
 
@@ -75,7 +76,7 @@ func (p PowerVS) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, crea
 	return ibmCluster, nil
 }
 
-func (p PowerVS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
+func (p PowerVS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
 	defaultMode := int32(416)
 
 	providerImage := p.capiProviderImage
@@ -84,6 +85,15 @@ func (p PowerVS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *
 	}
 	if override, ok := hcluster.Annotations[hyperv1.ClusterAPIPowerVSProviderImage]; ok {
 		providerImage = override
+	}
+
+	args := []string{"--namespace", "$(MY_NAMESPACE)",
+		"--v=4",
+		"--leader-elect=true",
+		"--provider-id-fmt=v2",
+	}
+	if hcp != nil {
+		args = config.AppendTLSArgs(args, hcp.Spec.Configuration.GetTLSSecurityProfile())
 	}
 
 	deploymentSpec := &appsv1.DeploymentSpec{
@@ -146,11 +156,7 @@ func (p PowerVS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *
 							},
 						},
 						Command: []string{"/bin/cluster-api-provider-ibmcloud-controller-manager"},
-						Args: []string{"--namespace", "$(MY_NAMESPACE)",
-							"--v=4",
-							"--leader-elect=true",
-							"--provider-id-fmt=v2",
-						},
+						Args:    args,
 						Ports: []corev1.ContainerPort{
 							{
 								Name:          "healthz",

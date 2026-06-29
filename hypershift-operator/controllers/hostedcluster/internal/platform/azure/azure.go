@@ -93,7 +93,7 @@ func (a Azure) ReconcileCAPIInfraCR(
 	return azureCluster, nil
 }
 
-func (a Azure) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
+func (a Azure) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
 	image := a.capiProviderImage
 	if envImage := os.Getenv(images.AzureCAPIProviderEnvVar); len(envImage) > 0 {
 		image = envImage
@@ -101,6 +101,17 @@ func (a Azure) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hy
 	if override, ok := hcluster.Annotations[hyperv1.ClusterAPIAzureProviderImage]; ok {
 		image = override
 	}
+
+	args := []string{
+		"--namespace=$(MY_NAMESPACE)",
+		"--leader-elect=true",
+		"--feature-gates=MachinePool=false,ASOAPI=false",
+		"--disable-controllers-or-webhooks=DisableASOSecretController",
+	}
+	if hcp != nil {
+		args = config.AppendTLSArgs(args, hcp.Spec.Configuration.GetTLSSecurityProfile())
+	}
+
 	defaultMode := int32(0640)
 	deploymentSpec := &appsv1.DeploymentSpec{
 		Replicas: ptr.To[int32](1),
@@ -112,12 +123,7 @@ func (a Azure) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hy
 						Name:            "manager",
 						Image:           image,
 						ImagePullPolicy: corev1.PullIfNotPresent,
-						Args: []string{
-							"--namespace=$(MY_NAMESPACE)",
-							"--leader-elect=true",
-							"--feature-gates=MachinePool=false,ASOAPI=false",
-							"--disable-controllers-or-webhooks=DisableASOSecretController",
-						},
+						Args:            args,
 						Resources: corev1.ResourceRequirements{
 							Requests: corev1.ResourceList{
 								corev1.ResourceCPU:    resource.MustParse("10m"),

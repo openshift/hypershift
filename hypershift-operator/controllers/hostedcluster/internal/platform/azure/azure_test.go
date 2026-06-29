@@ -14,6 +14,8 @@ import (
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/config"
 
+	configv1 "github.com/openshift/api/config/v1"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -24,6 +26,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	"github.com/blang/semver"
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestReconcileAzureClusterIdentity(t *testing.T) {
@@ -720,6 +723,126 @@ func TestDeleteOrphanedMachines(t *testing.T) {
 				for _, machine := range azureMachineList.Items {
 					g.Expect(machine.Finalizers).To(Equal(tc.azureMachines[0].Finalizers), "finalizers should not be modified")
 				}
+			}
+		})
+	}
+}
+
+// Helper function to create a HostedControlPlane with TLS profile for testing
+func buildAzureHostedControlPlane(tlsProfile *configv1.TLSSecurityProfile) *hyperv1.HostedControlPlane {
+	return &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-cluster",
+			Namespace: "test-namespace",
+		},
+		Spec: hyperv1.HostedControlPlaneSpec{
+			Configuration: &hyperv1.ClusterConfiguration{
+				APIServer: &configv1.APIServerSpec{
+					TLSSecurityProfile: tlsProfile,
+				},
+			},
+		},
+	}
+}
+
+func TestCAPIProviderDeploymentSpec(t *testing.T) {
+	defaultArgs := []string{
+		"--namespace=$(MY_NAMESPACE)",
+		"--leader-elect=true",
+		"--feature-gates=MachinePool=false,ASOAPI=false",
+		"--disable-controllers-or-webhooks=DisableASOSecretController",
+	}
+
+	defaultImage := "test-capi-image"
+
+	customTLSProfile := &configv1.TLSSecurityProfile{
+		Type: configv1.TLSProfileCustomType,
+		Custom: &configv1.CustomTLSProfile{
+			TLSProfileSpec: configv1.TLSProfileSpec{
+				MinTLSVersion: configv1.VersionTLS12,
+				Ciphers: []string{
+					"ECDHE-ECDSA-AES128-GCM-SHA256",
+					"ECDHE-RSA-AES128-GCM-SHA256",
+				},
+			},
+		},
+	}
+
+	testCases := []struct {
+		name          string
+		hcp           *hyperv1.HostedControlPlane
+		expectedImage string
+		expectedArgs  []string
+	}{
+		{
+			name:          "When HostedControlPlane is nil it should not append TLS args",
+			expectedImage: defaultImage,
+			expectedArgs:  defaultArgs,
+		},
+		{
+			name: "When HostedControlPlane is provided with Modern TLS profile it should append min-version only",
+			hcp: buildAzureHostedControlPlane(&configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileModernType,
+			}),
+			expectedImage: defaultImage,
+			expectedArgs: append(defaultArgs,
+				"--tls-min-version=VersionTLS13",
+			),
+		},
+		{
+			name:          "When HostedControlPlane is provided with custom TLS profile it should append custom TLS args",
+			hcp:           buildAzureHostedControlPlane(customTLSProfile),
+			expectedImage: defaultImage,
+			expectedArgs: append(defaultArgs,
+				"--tls-min-version=VersionTLS12",
+				"--tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+			),
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			platform := Azure{
+				capiProviderImage: tc.expectedImage,
+			}
+			spec, err := platform.CAPIProviderDeploymentSpec(&hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+					},
+				},
+			}, tc.hcp)
+
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if spec == nil {
+				t.Fatal("expected deployment spec, got nil")
+			}
+			if len(spec.Template.Spec.Containers) == 0 {
+				t.Fatal("expected at least 1 container, got 0")
+			}
+
+			// Find the manager container
+			var managerContainer *corev1.Container
+			for i := range spec.Template.Spec.Containers {
+				if spec.Template.Spec.Containers[i].Name == "manager" {
+					managerContainer = &spec.Template.Spec.Containers[i]
+					break
+				}
+			}
+			if managerContainer == nil {
+				t.Fatal("manager container not found")
+			}
+
+			// Verify image
+			if managerContainer.Image != tc.expectedImage {
+				t.Errorf("expected image %s, got %s", tc.expectedImage, managerContainer.Image)
+			}
+
+			// Verify args
+			if diff := cmp.Diff(managerContainer.Args, tc.expectedArgs); diff != "" {
+				t.Errorf("args differ (-got +want):\n%s", diff)
 			}
 		})
 	}

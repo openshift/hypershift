@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/gcputil"
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/k8sutil"
@@ -177,7 +178,7 @@ func (p GCP) reconcileGCPCluster(gcpCluster *capigcp.GCPCluster, hcluster *hyper
 // CAPIProviderDeploymentSpec implements CAPG controller deployment specification.
 // This method creates a deployment spec for the CAPG (Cluster API Provider GCP)
 // controller with proper image handling, feature gates, and WIF preparation.
-func (p GCP) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
+func (p GCP) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
 	// Validate GCP platform configuration is present
 	if hcluster.Spec.Platform.GCP == nil {
 		return nil, fmt.Errorf("GCP platform configuration is missing")
@@ -207,6 +208,9 @@ func (p GCP) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hype
 		"--leader-elect=true",
 		fmt.Sprintf("--feature-gates=%s", strings.Join(featureGates, ",")),
 		"--v=2",
+	}
+	if hcp != nil {
+		args = config.AppendTLSArgs(args, hcp.Spec.Configuration.GetTLSSecurityProfile())
 	}
 
 	containers := []corev1.Container{
