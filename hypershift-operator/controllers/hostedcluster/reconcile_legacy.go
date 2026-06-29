@@ -220,13 +220,13 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 		}
 
 		if hcDestroyGracePeriod > 0 {
-			if hostedClusterDestroyedCondition == nil {
+			if hostedClusterDestroyedCondition == nil || hostedClusterDestroyedCondition.Status != metav1.ConditionTrue {
 				hostedClusterDestroyedCondition = &metav1.Condition{
 					Type:               string(hyperv1.HostedClusterDestroyed),
 					Status:             metav1.ConditionTrue,
 					Message:            fmt.Sprintf("Grace period set: %v", hcDestroyGracePeriod),
 					Reason:             hyperv1.WaitingForGracePeriodReason,
-					LastTransitionTime: metav1.NewTime(time.Now()),
+					LastTransitionTime: metav1.NewTime(r.Clock.Now()),
 					ObservedGeneration: hcluster.Generation,
 				}
 
@@ -238,9 +238,10 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 				return ctrl.Result{RequeueAfter: hcDestroyGracePeriod}, nil
 			}
 
-			if time.Since(hostedClusterDestroyedCondition.LastTransitionTime.Time) < hcDestroyGracePeriod {
+			elapsed := r.Clock.Since(hostedClusterDestroyedCondition.LastTransitionTime.Time)
+			if elapsed < hcDestroyGracePeriod {
 				log.Info("Waiting for grace period", "gracePeriod", hcDestroyGracePeriod)
-				return ctrl.Result{RequeueAfter: hcDestroyGracePeriod - time.Since(hostedClusterDestroyedCondition.LastTransitionTime.Time)}, nil
+				return ctrl.Result{RequeueAfter: hcDestroyGracePeriod - elapsed}, nil
 			}
 			log.Info("grace period finished", "gracePeriod", hcDestroyGracePeriod)
 		}
