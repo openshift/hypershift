@@ -147,6 +147,7 @@ spec:
           cp -R /manifests /var/payload/
           rm -f /var/payload/manifests/*_deployment.yaml
           rm -f /var/payload/manifests/*_servicemonitor.yaml
+          rm -f /var/payload/manifests/0000_50_cluster-update-console-plugin_*
           cp -R /release-manifests /var/payload/
           for file in $(find /var/payload/manifests/ -name "*.yaml"); do
               IFS=',' read -ra feature_sets <<< "$(cat $file | grep "release.openshift.io/feature-set:" | awk '{print $2}')"
