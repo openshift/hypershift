@@ -74,6 +74,7 @@ spec:
         - --leader-elect-resource-namespace=openshift-cloud-controller-manager
         - --v=4
         - --cluster-name=
+        - --tls-min-version=VersionTLS13
         command:
         - /bin/azure-cloud-controller-manager
         image: azure-cloud-controller-manager

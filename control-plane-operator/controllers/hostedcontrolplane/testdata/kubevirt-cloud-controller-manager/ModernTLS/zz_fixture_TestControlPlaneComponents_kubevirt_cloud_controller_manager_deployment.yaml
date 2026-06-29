@@ -85,6 +85,7 @@ spec:
         - --kubeconfig=/etc/kubernetes/kubeconfig/kubeconfig
         - --authentication-skip-lookup
         - --cluster-name=cluster_name
+        - --tls-min-version=VersionTLS13
         command:
         - /bin/kubevirt-cloud-controller-manager
         image: kubevirt-cloud-controller-manager

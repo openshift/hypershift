@@ -76,6 +76,7 @@ spec:
         - --leader-elect-renew-deadline=107s
         - --leader-elect-retry-period=26s
         - --leader-elect-resource-namespace=openshift-cloud-controller-manager
+        - --tls-min-version=VersionTLS13
         command:
         - /usr/bin/openstack-cloud-controller-manager
         env:
