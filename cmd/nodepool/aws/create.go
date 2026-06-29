@@ -149,7 +149,7 @@ func (o *CompletedAWSPlatformCreateOptions) UpdateNodePool(ctx context.Context, 
 		case "amd64":
 			instanceType = "m5.large"
 		case "arm64":
-			instanceType = "m6g.large"
+			instanceType = "m8g.large"
 		}
 	}
 

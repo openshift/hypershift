@@ -37,7 +37,7 @@ func (arm64np *NodePoolArm64CreateTest) BuildNodePoolManifest(defaultNodepool hy
 	nodePool.Spec.Replicas = &oneReplicas
 	nodePool.Spec.Arch = "arm64"
 	if nodePool.Spec.Platform.Type == hyperv1.AWSPlatform {
-		nodePool.Spec.Platform.AWS.InstanceType = "m6g.large"
+		nodePool.Spec.Platform.AWS.InstanceType = "m8g.large"
 	} else if nodePool.Spec.Platform.Type == hyperv1.AzurePlatform {
 		nodePool.Spec.Platform.Azure.VMSize = "Standard_D4ps_v5"
 		nodePool.Spec.Platform.Azure.Image.Type = hyperv1.AzureMarketplace
