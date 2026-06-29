@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/gcputil"
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/k8sutil"
@@ -177,7 +178,7 @@ func (p GCP) reconcileGCPCluster(gcpCluster *capigcp.GCPCluster, hcluster *hyper
 // CAPIProviderDeploymentSpec implements CAPG controller deployment specification.
 // This method creates a deployment spec for the CAPG (Cluster API Provider GCP)
 // controller with proper image handling, feature gates, and WIF preparation.
-func (p GCP) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
+func (p GCP) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
 	// Validate GCP platform configuration is present
 	if hcluster.Spec.Platform.GCP == nil {
 		return nil, fmt.Errorf("GCP platform configuration is missing")
@@ -202,11 +203,27 @@ func (p GCP) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hype
 		"MachinePool=false", // Disable for Phase 1
 	}
 
+	// Version-conditional feature gates (future-proofing)
+	if p.payloadVersion != nil && p.payloadVersion.Major == 4 && p.payloadVersion.Minor > 16 {
+		featureGates = append(featureGates, "ClusterResourceSet=false") // Example
+	}
+
+	// Build container args with TLS configuration
 	args := []string{
 		"--namespace=$(MY_NAMESPACE)",
 		"--leader-elect=true",
 		fmt.Sprintf("--feature-gates=%s", strings.Join(featureGates, ",")),
 		"--v=2",
+	}
+
+	// Add TLS configuration based on cluster TLS security profile
+	if hcp != nil {
+		if tlsMinVersion := config.MinTLSVersion(hcp.Spec.Configuration.GetTLSSecurityProfile()); tlsMinVersion != "" {
+			args = append(args, fmt.Sprintf("--tls-min-version=%s", tlsMinVersion))
+		}
+		if cipherSuites := config.CipherSuites(hcp.Spec.Configuration.GetTLSSecurityProfile()); len(cipherSuites) != 0 {
+			args = append(args, fmt.Sprintf("--tls-cipher-suites=%s", strings.Join(cipherSuites, ",")))
+		}
 	}
 
 	containers := []corev1.Container{

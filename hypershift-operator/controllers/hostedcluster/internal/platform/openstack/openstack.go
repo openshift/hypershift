@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/openstack"
+	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/openstackutil"
 	"github.com/openshift/hypershift/support/upsert"
@@ -174,7 +176,7 @@ func reconcileOpenStackClusterSpec(hcluster *hyperv1.HostedCluster, openStackClu
 	return nil
 }
 
-func (a OpenStack) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
+func (a OpenStack) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
 	capoImage := a.capiProviderImage
 	if envImage := os.Getenv(images.OpenStackCAPIProviderEnvVar); len(envImage) > 0 {
 		capoImage = envImage
@@ -189,6 +191,32 @@ func (a OpenStack) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _
 	if override, ok := hcluster.Annotations[hyperv1.OpenStackResourceControllerImage]; ok {
 		orcImage = override
 	}
+
+	// Build container args with TLS configuration
+	capoArgs := []string{
+		"--namespace=$(MY_NAMESPACE)",
+		"--leader-elect",
+		"--v=2",
+		// HyperShift runs CAPO in a namespace-scoped deployment and manages CRDs
+		// itself. CAPO v0.14 introduced a crdmigrator controller that requires
+		// cluster-scoped RBAC (list openstackclusteridentities, patch
+		// customresourcedefinitions) that we do not and cannot grant. Skipping
+		// all phases causes crdmigrator.SetupWithManager to return early without
+		// registering the controller, eliminating the spurious RBAC errors.
+		"--skip-crd-migration-phases=StorageVersionMigration",
+		"--skip-crd-migration-phases=CleanupManagedFields",
+	}
+
+	// Add TLS configuration based on cluster TLS security profile
+	if hcp != nil {
+		if tlsMinVersion := config.MinTLSVersion(hcp.Spec.Configuration.GetTLSSecurityProfile()); tlsMinVersion != "" {
+			capoArgs = append(capoArgs, fmt.Sprintf("--tls-min-version=%s", tlsMinVersion))
+		}
+		if cipherSuites := config.CipherSuites(hcp.Spec.Configuration.GetTLSSecurityProfile()); len(cipherSuites) != 0 {
+			capoArgs = append(capoArgs, fmt.Sprintf("--tls-cipher-suites=%s", strings.Join(cipherSuites, ",")))
+		}
+	}
+
 	allowPrivilegeEscalation := false
 	defaultMode := int32(0640)
 	deploymentSpec := appsv1.DeploymentSpec{
@@ -221,19 +249,7 @@ func (a OpenStack) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _
 					Image:           capoImage,
 					ImagePullPolicy: corev1.PullIfNotPresent,
 					Command:         []string{"/manager"},
-					Args: []string{
-						"--namespace=$(MY_NAMESPACE)",
-						"--leader-elect",
-						"--v=2",
-						// HyperShift runs CAPO in a namespace-scoped deployment and manages CRDs
-						// itself. CAPO v0.14 introduced a crdmigrator controller that requires
-						// cluster-scoped RBAC (list openstackclusteridentities, patch
-						// customresourcedefinitions) that we do not and cannot grant. Skipping
-						// all phases causes crdmigrator.SetupWithManager to return early without
-						// registering the controller, eliminating the spurious RBAC errors.
-						"--skip-crd-migration-phases=StorageVersionMigration",
-						"--skip-crd-migration-phases=CleanupManagedFields",
-					},
+					Args:            capoArgs,
 					Resources: corev1.ResourceRequirements{
 						Requests: corev1.ResourceList{
 							corev1.ResourceCPU:    resource.MustParse("10m"),
