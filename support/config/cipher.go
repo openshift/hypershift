@@ -2,6 +2,8 @@ package config
 
 import (
 	"crypto/tls"
+	"fmt"
+	"strings"
 
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/library-go/pkg/crypto"
@@ -102,4 +104,14 @@ func SetCipherSuitesUsingAPIServer(apiServerConfig *configv1.APIServer) (func(*t
 	return func(tlsConfig *tls.Config) {
 		tlsConfig.CipherSuites = suites
 	}, nil
+}
+
+func AppendTLSArgs(args []string, profile *configv1.TLSSecurityProfile) []string {
+	if tlsMinVersion := MinTLSVersion(profile); tlsMinVersion != "" {
+		args = append(args, fmt.Sprintf("--tls-min-version=%s", tlsMinVersion))
+	}
+	if cipherSuites := CipherSuites(profile); len(cipherSuites) != 0 {
+		args = append(args, fmt.Sprintf("--tls-cipher-suites=%s", strings.Join(cipherSuites, ",")))
+	}
+	return args
 }
