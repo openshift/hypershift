@@ -8949,6 +8949,23 @@ func TestDestroyGracePeriod(t *testing.T) {
 			expectFinalizer:       true,
 			expectCondition:       true,
 			expectConditionReason: hyperv1.WaitingForGracePeriodReason,
+			expectConditionStatus: metav1.ConditionTrue,
+			expectRequeueAfter:    120 * time.Second,
+		},
+		{
+			name:                  "When HostedClusterDestroyed condition has ConditionUnknown status, it should re-run delete and reset grace period",
+			gracePeriodAnnotation: "120s",
+			existingCondition: &metav1.Condition{
+				Type:               string(hyperv1.HostedClusterDestroyed),
+				Status:             metav1.ConditionUnknown,
+				Reason:             hyperv1.WaitingForGracePeriodReason,
+				Message:            "Grace period set: 2m0s",
+				LastTransitionTime: metav1.NewTime(now.Add(-30 * time.Second)),
+			},
+			expectFinalizer:       true,
+			expectCondition:       true,
+			expectConditionReason: hyperv1.WaitingForGracePeriodReason,
+			expectConditionStatus: metav1.ConditionTrue,
 			expectRequeueAfter:    120 * time.Second,
 		},
 		{
