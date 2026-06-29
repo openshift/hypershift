@@ -25,6 +25,9 @@ func (capi *CAPIManagerOptions) adaptDeployment(cpContext component.WorkloadCont
 		if version.GE(config.Version419) {
 			c.Args = append(c.Args, "--feature-gates=MachineSetPreflightChecks=false")
 		}
+		if version.Major >= 5 || (version.Major == 4 && version.Minor >= 23) {
+			c.Args = append(c.Args, config.TLSArgs(cpContext.HCP.Spec.Configuration.GetTLSSecurityProfile())...)
+		}
 
 		if len(capi.imageOverride) > 0 {
 			c.Image = capi.imageOverride
