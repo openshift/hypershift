@@ -6,6 +6,7 @@ import (
 	"os"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/upsert"
 
@@ -21,6 +22,7 @@ import (
 	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/blang/semver"
 	cdicore "kubevirt.io/containerized-data-importer-api/pkg/apis/core"
 )
 
@@ -28,7 +30,15 @@ const (
 	hostedClusterAnnotation = "hypershift.openshift.io/cluster"
 )
 
-type Kubevirt struct{}
+type Kubevirt struct {
+	payloadVersion *semver.Version
+}
+
+func New(payloadVersion *semver.Version) *Kubevirt {
+	return &Kubevirt{
+		payloadVersion: payloadVersion,
+	}
+}
 
 func (p Kubevirt) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
 	hcluster *hyperv1.HostedCluster,
@@ -68,7 +78,7 @@ func reconcileKubevirtCluster(kubevirtCluster *capikubevirt.KubevirtCluster, hcl
 	kubevirtCluster.Status.Ready = true
 }
 
-func (p Kubevirt) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
+func (p Kubevirt) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
 	providerImage := ""
 	if envImage := os.Getenv(images.KubevirtCAPIProviderEnvVar); len(envImage) > 0 {
 		providerImage = envImage
@@ -79,6 +89,16 @@ func (p Kubevirt) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ 
 	if providerImage == "" {
 		return nil, fmt.Errorf("kubevirt CAPI provider image not specified by environment variable %s or annotation %s", images.KubevirtCAPIProviderEnvVar, hyperv1.ClusterAPIKubeVirtProviderImage)
 	}
+
+	args := []string{
+		"--namespace", "$(MY_NAMESPACE)",
+		"--v=4",
+		"--leader-elect=true",
+	}
+	if hcp != nil && p.payloadVersion != nil && (p.payloadVersion.Major >= 5 || (p.payloadVersion.Major == 4 && p.payloadVersion.Minor >= 23)) {
+		args = append(args, config.TLSArgs(hcp.Spec.Configuration.GetTLSSecurityProfile())...)
+	}
+
 	defaultMode := int32(0640)
 	return &appsv1.DeploymentSpec{
 		Replicas: ptr.To[int32](1),
@@ -131,11 +151,7 @@ func (p Kubevirt) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ 
 							},
 						},
 						Command: []string{"/manager"},
-						Args: []string{
-							"--namespace", "$(MY_NAMESPACE)",
-							"--v=4",
-							"--leader-elect=true",
-						},
+						Args:    args,
 						Ports: []corev1.ContainerPort{
 							{
 								Name:          "healthz",

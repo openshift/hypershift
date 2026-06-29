@@ -10,21 +10,25 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	hyperapi "github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/upsert"
 
+	configv1 "github.com/openshift/api/config/v1"
 	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1beta1"
 
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/utils/ptr"
 
 	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
+	"github.com/blang/semver"
 	"github.com/google/go-cmp/cmp"
 )
 
@@ -358,11 +362,169 @@ func TestReconcileCAPIInfraCR(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
 			client := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).Build()
-			goInfraCR, err := Agent{}.ReconcileCAPIInfraCR(t.Context(), client, controllerutil.CreateOrUpdate, test.hostedCluster, test.controlPlaneNamespace, test.APIEndpoint)
+			goInfraCR, err := New(nil).ReconcileCAPIInfraCR(t.Context(), client, controllerutil.CreateOrUpdate, test.hostedCluster, test.controlPlaneNamespace, test.APIEndpoint)
 			g.Expect(err).To(Not(HaveOccurred()))
 			if diff := cmp.Diff(goInfraCR, test.expectedObject); diff != "" {
 				t.Errorf("got and expected differ: %s", diff)
 			}
+		})
+	}
+}
+
+func buildHostedCluster(agentNamespace string, annotations map[string]string) *hyperv1.HostedCluster {
+	hc := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-cluster",
+			Namespace: "test-namespace",
+		},
+		Spec: hyperv1.HostedClusterSpec{
+			Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.AgentPlatform,
+				Agent: &hyperv1.AgentPlatformSpec{
+					AgentNamespace: agentNamespace,
+				},
+			},
+		},
+	}
+	if annotations != nil {
+		hc.Annotations = annotations
+	}
+	return hc
+}
+
+func buildHostedControlPlane(tlsProfile *configv1.TLSSecurityProfile) *hyperv1.HostedControlPlane {
+	return &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-cluster",
+			Namespace: "test-namespace",
+		},
+		Spec: hyperv1.HostedControlPlaneSpec{
+			Configuration: &hyperv1.ClusterConfiguration{
+				APIServer: &configv1.APIServerSpec{
+					TLSSecurityProfile: tlsProfile,
+				},
+			},
+		},
+	}
+}
+
+func TestCAPIProviderDeploymentSpec(t *testing.T) {
+	defaultAgentNamespace := "agent-ns"
+
+	defaultArgs := []string{
+		"--namespace", "$(MY_NAMESPACE)",
+		"--health-probe-bind-address=:8081",
+		"--metrics-bind-address=127.0.0.1:8080",
+		"--leader-elect",
+	}
+
+	defaultArgsWithAgentNs := append(defaultArgs,
+		"--agent-namespace", defaultAgentNamespace,
+	)
+
+	customTLSProfile := &configv1.TLSSecurityProfile{
+		Type: configv1.TLSProfileCustomType,
+		Custom: &configv1.CustomTLSProfile{
+			TLSProfileSpec: configv1.TLSProfileSpec{
+				MinTLSVersion: configv1.VersionTLS12,
+				Ciphers: []string{
+					"ECDHE-ECDSA-AES128-GCM-SHA256",
+					"ECDHE-RSA-AES128-GCM-SHA256",
+				},
+			},
+		},
+	}
+
+	testCases := []struct {
+		name           string
+		hcluster       *hyperv1.HostedCluster
+		hcp            *hyperv1.HostedControlPlane
+		payloadVersion *semver.Version
+		envVars        map[string]string
+		expectedImage  string
+		expectedArgs   []string
+	}{
+		{
+			name:           "When default image is used with no overrides",
+			hcluster:       buildHostedCluster(defaultAgentNamespace, nil),
+			payloadVersion: ptr.To(semver.MustParse("4.23.0")),
+			expectedImage:  imageCAPAgent,
+			expectedArgs:   defaultArgsWithAgentNs,
+		},
+		{
+			name:     "When image is overridden by environment variable",
+			hcluster: buildHostedCluster(defaultAgentNamespace, nil),
+			envVars: map[string]string{
+				images.AgentCAPIProviderEnvVar: "custom-env-image:v1.0",
+			},
+			payloadVersion: ptr.To(semver.MustParse("4.23.0")),
+			expectedImage:  "custom-env-image:v1.0",
+			expectedArgs:   defaultArgsWithAgentNs,
+		},
+		{
+			name: "When image is overridden by annotation it should take precedence over env var",
+			hcluster: buildHostedCluster(defaultAgentNamespace, map[string]string{
+				hyperv1.ClusterAPIAgentProviderImage: "annotation-image:v2.0",
+			}),
+			envVars: map[string]string{
+				images.AgentCAPIProviderEnvVar: "custom-env-image:v1.0",
+			},
+			payloadVersion: ptr.To(semver.MustParse("4.23.0")),
+			expectedImage:  "annotation-image:v2.0",
+			expectedArgs:   defaultArgsWithAgentNs,
+		},
+		{
+			name:     "When version is 4.22 and HCP has TLS profile it should not append TLS args",
+			hcluster: buildHostedCluster(defaultAgentNamespace, nil),
+			hcp: buildHostedControlPlane(&configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileModernType,
+			}),
+			payloadVersion: ptr.To(semver.MustParse("4.22.0")),
+			expectedImage:  imageCAPAgent,
+			expectedArgs:   defaultArgsWithAgentNs,
+		},
+		{
+			name:     "When version is 4.23 and HCP has Modern TLS profile it should append min-version only",
+			hcluster: buildHostedCluster(defaultAgentNamespace, nil),
+			hcp: buildHostedControlPlane(&configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileModernType,
+			}),
+			payloadVersion: ptr.To(semver.MustParse("4.23.0")),
+			expectedImage:  imageCAPAgent,
+			expectedArgs: append(defaultArgsWithAgentNs,
+				"--tls-min-version=VersionTLS13",
+			),
+		},
+		{
+			name:           "When version is 5.0 and HCP has custom TLS profile it should append custom TLS args",
+			hcluster:       buildHostedCluster("custom-agent-namespace", nil),
+			hcp:            buildHostedControlPlane(customTLSProfile),
+			payloadVersion: ptr.To(semver.MustParse("5.0.0")),
+			expectedImage:  imageCAPAgent,
+			expectedArgs: append(defaultArgs,
+				"--agent-namespace", "custom-agent-namespace",
+				"--tls-min-version=VersionTLS12",
+				"--tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+			),
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			for key, value := range tc.envVars {
+				t.Setenv(key, value)
+			}
+
+			platform := New(tc.payloadVersion)
+			spec, err := platform.CAPIProviderDeploymentSpec(tc.hcluster, tc.hcp)
+
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(spec).ToNot(BeNil())
+			g.Expect(spec.Template.Spec.Containers).To(HaveLen(1))
+			g.Expect(spec.Template.Spec.Containers[0].Image).To(Equal(tc.expectedImage))
+			g.Expect(spec.Template.Spec.Containers[0].Args).To(Equal(tc.expectedArgs))
 		})
 	}
 }
