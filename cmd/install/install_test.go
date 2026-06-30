@@ -360,6 +360,34 @@ func TestOptions_Validate(t *testing.T) {
 			},
 			expectError: false,
 		},
+		"when install-scope is all there is no error": {
+			inputOptions: Options{
+				PrivatePlatform: string(hyperv1.NonePlatform),
+				InstallScope:    string(OutputAll),
+			},
+			expectError: false,
+		},
+		"when install-scope is crds there is no error": {
+			inputOptions: Options{
+				PrivatePlatform: string(hyperv1.NonePlatform),
+				InstallScope:    string(OutputCRDs),
+			},
+			expectError: false,
+		},
+		"when install-scope is resources there is no error": {
+			inputOptions: Options{
+				PrivatePlatform: string(hyperv1.NonePlatform),
+				InstallScope:    string(OutputResources),
+			},
+			expectError: false,
+		},
+		"when install-scope is invalid it errors": {
+			inputOptions: Options{
+				PrivatePlatform: string(hyperv1.NonePlatform),
+				InstallScope:    "bogus",
+			},
+			expectError: true,
+		},
 	}
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -744,6 +772,86 @@ func TestRenderHyperShiftOperator_RenderSensitive(t *testing.T) {
 		}
 		g.Expect(nonWebhookSecretCount).To(BeNumerically(">", 0), "expected at least one non-webhook secret to be rendered")
 	})
+}
+
+func TestRenderOutputsScope(t *testing.T) {
+	baseOpts := Options{
+		PrivatePlatform: string(hyperv1.NonePlatform),
+		Format:          RenderFormatYaml,
+		RenderSensitive: true,
+	}
+
+	tests := []struct {
+		name            string
+		outputs         string
+		expectCRDs      bool
+		expectResources bool
+	}{
+		{"all includes CRDs and resources", string(OutputAll), true, true},
+		{"crds includes only CRDs", string(OutputCRDs), true, false},
+		{"resources includes only resources", string(OutputResources), false, true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			opts := baseOpts
+			opts.OutputTypes = tc.outputs
+			var buf bytes.Buffer
+			err := RenderHyperShiftOperator(t.Context(), &buf, &opts)
+			g.Expect(err).NotTo(HaveOccurred(), "RenderHyperShiftOperator failed for --outputs=%s", tc.outputs)
+
+			var crdCount, resourceCount int
+			for doc := range strings.SplitSeq(buf.String(), "\n---\n") {
+				if strings.TrimSpace(doc) == "" {
+					continue
+				}
+				obj, _, err := hyperapi.YamlSerializer.Decode([]byte(doc), nil, nil)
+				g.Expect(err).NotTo(HaveOccurred(), "failed to decode rendered manifest")
+				if _, isCRD := obj.(*apiextensionsv1.CustomResourceDefinition); isCRD {
+					crdCount++
+				} else {
+					resourceCount++
+				}
+			}
+
+			if tc.expectCRDs {
+				g.Expect(crdCount).To(BeNumerically(">", 0), "expected CRDs in output for --outputs=%s", tc.outputs)
+			} else {
+				g.Expect(crdCount).To(Equal(0), "expected no CRDs in output for --outputs=%s, got %d", tc.outputs, crdCount)
+			}
+			if tc.expectResources {
+				g.Expect(resourceCount).To(BeNumerically(">", 0), "expected resources in output for --outputs=%s", tc.outputs)
+			} else {
+				g.Expect(resourceCount).To(Equal(0), "expected no resources in output for --outputs=%s, got %d", tc.outputs, resourceCount)
+			}
+		})
+	}
+}
+
+func TestOutputsHelpers(t *testing.T) {
+	tests := []struct {
+		name              string
+		output            Outputs
+		isValid           bool
+		includesCRDs      bool
+		includesResources bool
+	}{
+		{"all is valid and includes both", OutputAll, true, true, true},
+		{"crds is valid and includes only CRDs", OutputCRDs, true, true, false},
+		{"resources is valid and includes only resources", OutputResources, true, false, true},
+		{"empty string is invalid", Outputs(""), false, false, false},
+		{"bogus value is invalid", Outputs("bogus"), false, false, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			g.Expect(tc.output.IsValid()).To(Equal(tc.isValid))
+			g.Expect(tc.output.IncludesCRDs()).To(Equal(tc.includesCRDs))
+			g.Expect(tc.output.IncludesResources()).To(Equal(tc.includesResources))
+		})
+	}
 }
 
 func TestHyperShiftOperatorManifests_SharedIngress(t *testing.T) {
