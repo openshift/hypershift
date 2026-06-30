@@ -64,6 +64,7 @@ const (
 	nodePoolAnnotationCurrentConfig          = "hypershift.openshift.io/nodePoolCurrentConfig"
 	nodePoolAnnotationCurrentConfigVersion   = "hypershift.openshift.io/nodePoolCurrentConfigVersion"
 	nodePoolAnnotationTargetConfigVersion    = "hypershift.openshift.io/nodePoolTargetConfigVersion"
+	nodePoolAnnotationCurrentRolloutConfig   = "hypershift.openshift.io/nodePoolCurrentRolloutConfig"
 	nodePoolAnnotationUpgradeInProgressTrue  = "hypershift.openshift.io/nodePoolUpgradeInProgressTrue"
 	nodePoolAnnotationUpgradeInProgressFalse = "hypershift.openshift.io/nodePoolUpgradeInProgressFalse"
 	nodePoolAnnotationMaxUnavailable         = "hypershift.openshift.io/nodePoolMaxUnavailable"
@@ -401,10 +402,20 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		return ctrl.Result{}, err
 	}
 
+	// Seed the rollout config annotation on first reconcile after operator upgrade.
+	// This must happen before any rollout decision to prevent spurious rollouts.
+	if _, ok := nodePool.Annotations[nodePoolAnnotationCurrentRolloutConfig]; !ok {
+		if nodePool.Annotations == nil {
+			nodePool.Annotations = make(map[string]string)
+		}
+		nodePool.Annotations[nodePoolAnnotationCurrentRolloutConfig] = token.RolloutHashWithoutVersion()
+	}
+
 	// non automated infrastructure should not have any machine level cluster-api components
 	if !isAutomatedMachineManagement(nodePool) {
 		targetConfigHash := token.HashWithoutVersion()
 		targetPayloadConfigHash := token.Hash()
+		targetRolloutConfigHash := token.RolloutHashWithoutVersion()
 		nodePool.Status.Version = releaseImage.Version()
 		if nodePool.Annotations == nil {
 			nodePool.Annotations = make(map[string]string)
@@ -415,6 +426,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 			nodePool.Annotations[nodePoolAnnotationCurrentConfig] = targetConfigHash
 		}
 		nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion] = targetPayloadConfigHash
+		nodePool.Annotations[nodePoolAnnotationCurrentRolloutConfig] = targetRolloutConfigHash
 		return ctrl.Result{}, nil
 	}
 
@@ -728,7 +740,11 @@ func isUpdatingVersion(nodePool *hyperv1.NodePool, targetVersion string) bool {
 }
 
 func isUpdatingConfig(nodePool *hyperv1.NodePool, targetConfigHash string) bool {
-	return targetConfigHash != nodePool.GetAnnotations()[nodePoolAnnotationCurrentConfig]
+	currentHash := nodePool.GetAnnotations()[nodePoolAnnotationCurrentRolloutConfig]
+	if currentHash == "" {
+		return false
+	}
+	return targetConfigHash != currentHash
 }
 
 func isUpdatingMachineTemplate(nodePool *hyperv1.NodePool, targetMachineTemplate string) bool {
