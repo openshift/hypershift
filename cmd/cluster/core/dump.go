@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -70,9 +71,13 @@ import (
 	cdiv1beta1 "kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
 )
 
+type DumpGuestClusterPolicy string
+
 const (
-	hypershiftNamespace = "hypershift"
-	kubevirtNamespace   = "openshift-cnv"
+	hypershiftNamespace                               = "hypershift"
+	kubevirtNamespace                                 = "openshift-cnv"
+	directKubeApiServiceAccess DumpGuestClusterPolicy = "direct-kube-api-service-access"
+	failOnError                DumpGuestClusterPolicy = "fail-on-error"
 )
 
 var (
@@ -115,6 +120,11 @@ var (
 		&prometheusoperatorv1.ServiceMonitor{},
 		&prometheusoperatorv1.PodMonitor{},
 	}
+
+	allowedDumpGuestClusterPolicies = map[DumpGuestClusterPolicy]struct{}{
+		directKubeApiServiceAccess: {},
+		failOnError:                {},
+	}
 )
 
 type DumpOptions struct {
@@ -129,28 +139,36 @@ type DumpOptions struct {
 	// are located, when using the agent platform.
 	AgentNamespace string
 
-	DumpGuestCluster                   bool
-	DumpGuestClusterThroughKubeService bool
+	IsDumpingGuestCluster    bool
+	DumpGuestClusterPolicies map[DumpGuestClusterPolicy]struct{}
 
 	ImpersonateAs string
 
 	Log logr.Logger
 }
 
-func NewDumpCommand() *cobra.Command {
+type DumpCallback func(ctx context.Context, opts *DumpOptions) error
+
+func NewDumpCommand(dumpCallback DumpCallback) *cobra.Command {
+	const defaultDumpGuestClusterPolicy = "default-policy" // Not a real policy, placeholder to allow --dump-guest-cluster to be specified without a value
+	var dumpGuestClusterFlag string
+	var dumpGuestClusterThroughKubeService bool
+
 	cmd := &cobra.Command{
-		Use:          "cluster",
-		Short:        "Dumps hostedcluster diagnostic info",
-		SilenceUsage: true,
+		Use:           "cluster",
+		Short:         "Dumps hostedcluster diagnostic info",
+		SilenceUsage:  true,
+		SilenceErrors: true,
 	}
 
 	opts := &DumpOptions{
-		Namespace:      "clusters",
-		Name:           "example",
-		ArtifactDir:    "",
-		ArchiveDump:    true,
-		AgentNamespace: "",
-		Log:            log.Log,
+		Namespace:                "clusters",
+		Name:                     "example",
+		ArtifactDir:              "",
+		ArchiveDump:              true,
+		AgentNamespace:           "",
+		DumpGuestClusterPolicies: map[DumpGuestClusterPolicy]struct{}{},
+		Log:                      log.Log,
 	}
 
 	cmd.Flags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "The namespace of the hostedcluster to dump")
@@ -159,15 +177,45 @@ func NewDumpCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.ArtifactDir, "artifact-dir", opts.ArtifactDir, "Destination directory for dump files")
 	cmd.Flags().BoolVar(&opts.ArchiveDump, "archive-dump", opts.ArchiveDump, "Create a tar archive of the artifact directory")
 	cmd.Flags().StringVar(&opts.AgentNamespace, "agent-namespace", opts.AgentNamespace, "For agent platform, the namespace where the agents are located")
-	cmd.Flags().BoolVar(&opts.DumpGuestCluster, "dump-guest-cluster", opts.DumpGuestCluster, "Dump data plane content as well")
-	cmd.Flags().BoolVar(&opts.DumpGuestClusterThroughKubeService, "dump-guest-cluster-through-kube-service", opts.DumpGuestClusterThroughKubeService,
-		"Dump data plane content through the kube-apiserver service (to be used within MC clusters for which debug handlers are disabled)")
+	cmd.Flags().StringVar(&dumpGuestClusterFlag, "dump-guest-cluster", "", "Dump data plane content as well. "+
+		"Optionally takes an argument, a comma separated list of policies, here are the possible values: "+
+		"'"+string(directKubeApiServiceAccess)+"' tells the hypershift CLI to directly access the kube API service of the hosted cluster without port-forwarding it; "+
+		"this is only possible if the hypershift CLI is run from within a cluster; this is suitable if this (management) cluster has its debug handlers disabled. "+
+		"'"+string(failOnError)+"' makes the hypershift CLI exit in error if the dump fails instead of just logging a warning.")
+	// Deprecated, replaced by --dump-guest-cluster direct-kube-api-service-access
+	cmd.Flags().BoolVar(&dumpGuestClusterThroughKubeService, "dump-guest-cluster-through-kube-service", false, "")
 
 	_ = cmd.MarkFlagRequired("artifact-dir")
+	cmd.Flags().Lookup("dump-guest-cluster").NoOptDefVal = defaultDumpGuestClusterPolicy // allow to set --dump-guest-cluster without a value
 	cmd.MarkFlagsMutuallyExclusive("dump-guest-cluster", "dump-guest-cluster-through-kube-service")
+	_ = cmd.Flags().MarkHidden("dump-guest-cluster-through-kube-service")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		if err := DumpCluster(cmd.Context(), opts); err != nil {
+		isDumpingGuestCluster, err := strconv.ParseBool(dumpGuestClusterFlag)
+		if err == nil {
+			// Backward compatibility: when --dump-guest-cluster used to be a boolean flag
+			opts.IsDumpingGuestCluster = isDumpingGuestCluster
+		} else if len(dumpGuestClusterFlag) > 0 {
+			opts.IsDumpingGuestCluster = true
+
+			if dumpGuestClusterFlag != defaultDumpGuestClusterPolicy {
+				for _, policy := range strings.Split(dumpGuestClusterFlag, ",") {
+					if _, ok := allowedDumpGuestClusterPolicies[DumpGuestClusterPolicy(policy)]; !ok {
+						return fmt.Errorf("unsupported --dump-guest-cluster policy: %v", policy)
+					}
+					opts.DumpGuestClusterPolicies[DumpGuestClusterPolicy(policy)] = struct{}{}
+				}
+			}
+		}
+
+		if dumpGuestClusterThroughKubeService {
+			opts.Log.Info("--dump-guest-cluster-through-kube-service is deprecated; please use '--dump-guest-cluster=" + string(directKubeApiServiceAccess) + "' instead")
+
+			opts.IsDumpingGuestCluster = true
+			opts.DumpGuestClusterPolicies[directKubeApiServiceAccess] = struct{}{}
+		}
+
+		if err := dumpCallback(cmd.Context(), opts); err != nil {
 			opts.Log.Error(err, "Error")
 			return err
 		}
@@ -199,7 +247,7 @@ func dumpGuestCluster(ctx context.Context, opts *DumpOptions) error {
 	var localPort int
 	var forwarderStop chan struct{}
 
-	if opts.DumpGuestClusterThroughKubeService {
+	if _, ok := opts.DumpGuestClusterPolicies[directKubeApiServiceAccess]; ok {
 		localPort = -1 // Indicates connection via kube-apiserver service instead of port-forward
 	} else {
 		localPort = rand.IntN(45000-32767) + 32767
@@ -479,8 +527,11 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 
 	gatherNetworkLogs(ocCommand, controlPlaneNamespace, opts.ArtifactDir, ctx, c, opts.Log)
 
-	if opts.DumpGuestCluster || opts.DumpGuestClusterThroughKubeService {
+	if opts.IsDumpingGuestCluster {
 		if err = dumpGuestCluster(ctx, opts); err != nil {
+			if _, ok := opts.DumpGuestClusterPolicies[failOnError]; ok {
+				return fmt.Errorf("failed to dump guest cluster: %w", err)
+			}
 			opts.Log.Error(err, "Failed to dump guest cluster")
 		}
 	}
