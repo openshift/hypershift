@@ -14,11 +14,19 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          fetch-depth: 0
           persist-credentials: false
+      - run: |
+          if [ -n "${{ github.base_ref }}" ]; then
+            git fetch origin "${{ github.base_ref }}:${{ github.base_ref }}"
+          fi
       - run: make generate update
       - run: make staticcheck
       - run: make fmt
       - run: make vet
+      - run: make verify-api-deps
+      - run: make verify-crd-schema
+      - run: make verify-docs-nav
       - run: |
           git update-index --refresh
           git diff-index --cached --quiet --ignore-submodules HEAD --
