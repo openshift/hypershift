@@ -7,12 +7,20 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/instancetype"
 
 	azruntime "github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
+)
+
+const (
+	// defaultCacheTTL is how long the SKU cache is considered fresh before
+	// a reload is triggered. This balances API cost against picking up
+	// newly-available VM sizes.
+	defaultCacheTTL = 1 * time.Hour
 )
 
 // ResourceSKUsAPI defines the operations used from armcompute.ResourceSKUsClient.
@@ -25,10 +33,19 @@ var _ ResourceSKUsAPI = (*armcompute.ResourceSKUsClient)(nil)
 
 // Provider implements the instancetype.Provider interface for Azure.
 // It queries the Azure Resource SKUs API to get VM size specifications.
+//
+// Unlike the AWS provider (which queries EC2 DescribeInstanceTypes for a single
+// instance type per call), the Azure Resource SKUs API does not support
+// filtering by VM size — it returns all SKUs for a region in a paginated list.
+// This makes per-request lookups prohibitively expensive, so we cache the full
+// SKU list with a TTL to amortize the cost across NodePool reconciliations
+// while still picking up newly-available VM sizes.
 type Provider struct {
 	skuClient ResourceSKUsAPI
 	location  string
 	cache     map[string]*instancetype.InstanceTypeInfo
+	cachedAt  time.Time
+	cacheTTL  time.Duration
 	mu        sync.Mutex
 }
 
@@ -37,15 +54,19 @@ func NewProvider(skuClient ResourceSKUsAPI, location string) *Provider {
 	return &Provider{
 		skuClient: skuClient,
 		location:  location,
+		cacheTTL:  defaultCacheTTL,
 	}
 }
 
 // GetInstanceTypeInfo queries Azure Resource SKUs API for VM size specifications.
+// Results are cached with a TTL; a cache miss after a successful load is
+// treated as a permanent error (the VM size does not exist in this region)
+// rather than retried.
 func (p *Provider) GetInstanceTypeInfo(ctx context.Context, instanceType string) (*instancetype.InstanceTypeInfo, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	if p.cache == nil {
+	if p.cache == nil || time.Since(p.cachedAt) > p.cacheTTL {
 		if err := p.loadSKUs(ctx); err != nil {
 			return nil, fmt.Errorf("failed to load Azure Resource SKUs: %w", err)
 		}
@@ -53,11 +74,27 @@ func (p *Provider) GetInstanceTypeInfo(ctx context.Context, instanceType string)
 
 	info, ok := p.cache[instanceType]
 	if !ok {
-		return nil, fmt.Errorf("VM size %q not found in Azure Resource SKUs for location %q", instanceType, p.location)
+		return nil, &VMSizeNotFoundError{
+			VMSize:   instanceType,
+			Location: p.location,
+		}
 	}
 
 	copied := *info
 	return &copied, nil
+}
+
+// VMSizeNotFoundError is returned when a VM size is not present in the
+// Azure Resource SKUs for the configured location. This is a permanent
+// error — retrying will not help unless the SKU is added to the region.
+type VMSizeNotFoundError struct {
+	VMSize   string
+	Location string
+}
+
+func (e *VMSizeNotFoundError) Error() string {
+	return fmt.Sprintf("VM size %q not found in Azure Resource SKUs for location %q; "+
+		"verify the VM size is available in this region", e.VMSize, e.Location)
 }
 
 func (p *Provider) loadSKUs(ctx context.Context) error {
@@ -88,6 +125,7 @@ func (p *Provider) loadSKUs(ctx context.Context) error {
 	}
 
 	p.cache = nextCache
+	p.cachedAt = time.Now()
 	return nil
 }
 

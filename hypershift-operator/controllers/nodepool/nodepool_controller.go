@@ -15,6 +15,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	haproxy "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/apiserver-haproxy"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/instancetype"
+	azureinstancetype "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/instancetype/azure"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/kubevirt"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 	"github.com/openshift/hypershift/support/awsapi"
@@ -430,6 +431,14 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	// This works for both Replace (MachineDeployment) and InPlace (MachineSet) upgrade types
 	if isAutoscalingEnabled(nodePool) && r.InstanceTypeProvider != nil && r.ScaleFromZeroPlatform == nodePool.Spec.Platform.Type {
 		if err = r.reconcileScaleFromZeroAnnotations(ctx, nodePool, capi); err != nil {
+			// Distinguish permanent errors (VM size doesn't exist in this region)
+			// from transient errors (API failure, cache load error) to avoid
+			// retrying indefinitely for non-existent VM sizes.
+			var vmNotFound *azureinstancetype.VMSizeNotFoundError
+			if coreerrors.As(err, &vmNotFound) {
+				log.Error(err, "Permanent error setting scale-from-zero annotations; verify the VM size exists in this region")
+				return ctrl.Result{}, nil
+			}
 			log.Error(err, "Failed to set scale-from-zero annotations, will retry")
 			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 		}

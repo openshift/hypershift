@@ -2,8 +2,10 @@ package azure
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
+	"time"
 
 	. "github.com/onsi/gomega"
 
@@ -367,6 +369,61 @@ func TestGetInstanceTypeInfo(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestVMSizeNotFoundError(t *testing.T) {
+	g := NewGomegaWithT(t)
+	mock := &mockResourceSKUsAPI{
+		skus: []*armcompute.ResourceSKU{
+			makeSKU("Standard_D4s_v3", "virtualMachines", map[string]string{
+				"vCPUs": "4", "MemoryGB": "16", "CpuArchitectureType": "x64",
+			}),
+		},
+	}
+	provider := NewProvider(mock, "eastus")
+	_, err := provider.GetInstanceTypeInfo(context.Background(), "Standard_Nonexistent")
+	g.Expect(err).To(HaveOccurred())
+
+	var vmNotFound *VMSizeNotFoundError
+	g.Expect(errors.As(err, &vmNotFound)).To(BeTrue(), "error should be VMSizeNotFoundError")
+	g.Expect(vmNotFound.VMSize).To(Equal("Standard_Nonexistent"))
+	g.Expect(vmNotFound.Location).To(Equal("eastus"))
+}
+
+func TestCacheTTLRefresh(t *testing.T) {
+	g := NewGomegaWithT(t)
+
+	// Start with one SKU
+	mock := &mockResourceSKUsAPI{
+		skus: []*armcompute.ResourceSKU{
+			makeSKU("Standard_D4s_v3", "virtualMachines", map[string]string{
+				"vCPUs": "4", "MemoryGB": "16", "CpuArchitectureType": "x64",
+			}),
+		},
+	}
+	provider := NewProvider(mock, "eastus")
+	// Use a very short TTL for testing
+	provider.cacheTTL = 1 * time.Millisecond
+
+	// First call loads the cache
+	result, err := provider.GetInstanceTypeInfo(context.Background(), "Standard_D4s_v3")
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(result.VCPU).To(Equal(int32(4)))
+
+	// New SKU not yet visible
+	_, err = provider.GetInstanceTypeInfo(context.Background(), "Standard_E8s_v3")
+	g.Expect(err).To(HaveOccurred())
+
+	// Add a new SKU to the mock and wait for TTL to expire
+	mock.skus = append(mock.skus, makeSKU("Standard_E8s_v3", "virtualMachines", map[string]string{
+		"vCPUs": "8", "MemoryGB": "64", "CpuArchitectureType": "x64",
+	}))
+	time.Sleep(5 * time.Millisecond)
+
+	// After TTL expiry, the new SKU should be picked up
+	result, err = provider.GetInstanceTypeInfo(context.Background(), "Standard_E8s_v3")
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(result.VCPU).To(Equal(int32(8)))
 }
 
 func TestGetCapabilityValue(t *testing.T) {
