@@ -3418,3 +3418,249 @@ func TestMachineDeploymentComplete(t *testing.T) {
 		})
 	}
 }
+
+func TestSpotMHCCreatedIndependentlyOfAutoRepairIgnitionGate(t *testing.T) {
+	t.Parallel()
+
+	maxUnavailable := intstr.FromInt(0)
+	maxSurge := intstr.FromInt(1)
+	awsMachineTemplateName := "test-nodepool-28d5cf5a"
+	capiClusterName := "infra-id"
+
+	tests := []struct {
+		name                   string
+		autoRepair             bool
+		ignitionReached        bool
+		spotEnabled            bool
+		useAPISpec             bool
+		expectSpotMHC          bool
+		expectRegularMHC       bool
+		expectAutoRepairStatus *corev1.ConditionStatus
+	}{
+		{
+			name:             "When spot is enabled and autoRepair is true and ignition is NOT reached it should create spot MHC and not create regular MHC",
+			autoRepair:       true,
+			ignitionReached:  false,
+			spotEnabled:      true,
+			expectSpotMHC:    true,
+			expectRegularMHC: false,
+		},
+		{
+			name:                   "When spot is enabled and autoRepair is true and ignition is reached it should create both MHCs",
+			autoRepair:             true,
+			ignitionReached:        true,
+			spotEnabled:            true,
+			expectSpotMHC:          true,
+			expectRegularMHC:       true,
+			expectAutoRepairStatus: ptr.To(corev1.ConditionTrue),
+		},
+		{
+			// ignitionReached is irrelevant when autoRepair is false — the ignition gate only runs when autoRepair is true.
+			name:                   "When spot is enabled and autoRepair is false it should create spot MHC and not create regular MHC",
+			autoRepair:             false,
+			ignitionReached:        false,
+			spotEnabled:            true,
+			expectSpotMHC:          true,
+			expectRegularMHC:       false,
+			expectAutoRepairStatus: ptr.To(corev1.ConditionFalse),
+		},
+		{
+			name:             "When spot is NOT enabled and autoRepair is true and ignition is NOT reached it should not create any MHC",
+			autoRepair:       true,
+			ignitionReached:  false,
+			spotEnabled:      false,
+			expectSpotMHC:    false,
+			expectRegularMHC: false,
+		},
+		{
+			name:                   "When spot is enabled via API spec and autoRepair is true and ignition is reached it should create both MHCs",
+			autoRepair:             true,
+			ignitionReached:        true,
+			spotEnabled:            true,
+			useAPISpec:             true,
+			expectSpotMHC:          true,
+			expectRegularMHC:       true,
+			expectAutoRepairStatus: ptr.To(corev1.ConditionTrue),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			annotations := map[string]string{}
+			if tt.spotEnabled && !tt.useAPISpec {
+				annotations[AnnotationEnableSpot] = "true"
+			}
+
+			var conditions []hyperv1.NodePoolCondition
+			if tt.ignitionReached {
+				conditions = append(conditions, hyperv1.NodePoolCondition{
+					Type:   hyperv1.NodePoolReachedIgnitionEndpoint,
+					Status: corev1.ConditionTrue,
+				})
+			} else {
+				conditions = append(conditions, hyperv1.NodePoolCondition{
+					Type:   hyperv1.NodePoolReachedIgnitionEndpoint,
+					Status: corev1.ConditionFalse,
+				})
+			}
+
+			nodePool := &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        "test-nodepool",
+					Namespace:   "test-namespace",
+					Annotations: annotations,
+				},
+				Spec: hyperv1.NodePoolSpec{
+					ClusterName: "test-cluster",
+					Management: hyperv1.NodePoolManagement{
+						UpgradeType: hyperv1.UpgradeTypeReplace,
+						Replace: &hyperv1.ReplaceUpgrade{
+							Strategy: hyperv1.UpgradeStrategyRollingUpdate,
+							RollingUpdate: &hyperv1.RollingUpdate{
+								MaxUnavailable: &maxUnavailable,
+								MaxSurge:       &maxSurge,
+							},
+						},
+						AutoRepair: tt.autoRepair,
+					},
+					Replicas: ptr.To[int32](1),
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AWSPlatform,
+						AWS: &hyperv1.AWSNodePoolPlatform{
+							AMI: "an-ami",
+						},
+					},
+				},
+				Status: hyperv1.NodePoolStatus{
+					Conditions: conditions,
+				},
+			}
+
+			if tt.useAPISpec && tt.spotEnabled {
+				nodePool.Spec.Platform.AWS.Placement = &hyperv1.PlacementOptions{
+					MarketType: hyperv1.MarketTypeSpot,
+				}
+			}
+
+			hostedCluster := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "test-namespace"},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+						AWS: &hyperv1.AWSPlatformSpec{
+							Region:                      "",
+							CloudProviderConfig:         &hyperv1.AWSCloudProviderConfig{},
+							ServiceEndpoints:            []hyperv1.AWSServiceEndpoint{},
+							RolesRef:                    hyperv1.AWSRolesRef{},
+							ResourceTags:                []hyperv1.AWSResourceTag{},
+							EndpointAccess:              "",
+							AdditionalAllowedPrincipals: []string{},
+							MultiArch:                   false,
+						},
+					},
+				},
+			}
+
+			machineSet := &capiv1.MachineSet{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-machineset",
+					Namespace: "test-namespace-test-cluster",
+					Annotations: map[string]string{
+						nodePoolAnnotation: "test-namespace/test-nodepool",
+					},
+				},
+				Spec: capiv1.MachineSetSpec{
+					Template: capiv1.MachineTemplateSpec{
+						Spec: capiv1.MachineSpec{
+							InfrastructureRef: corev1.ObjectReference{
+								Kind:       "AWSMachineTemplate",
+								APIVersion: "infrastructure.cluster.x-k8s.io/v1beta2",
+								Namespace:  "test-namespace-test-cluster",
+								Name:       awsMachineTemplateName,
+							},
+						},
+					},
+				},
+			}
+
+			template := &capiaws.AWSMachineTemplate{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      awsMachineTemplateName,
+					Namespace: "test-namespace-test-cluster",
+					Annotations: map[string]string{
+						nodePoolAnnotation: "test-namespace/test-nodepool",
+					},
+				},
+			}
+
+			controlpaneNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+			c := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				WithObjects(nodePool, machineSet, template).
+				Build()
+
+			capi := &CAPI{
+				Token: &Token{
+					ConfigGenerator: &ConfigGenerator{
+						Client:                c,
+						hostedCluster:         hostedCluster,
+						nodePool:              nodePool,
+						controlplaneNamespace: controlpaneNamespace,
+						rolloutConfig: &rolloutConfig{
+							releaseImage: &releaseinfo.ReleaseImage{
+								ImageStream: &imageapi.ImageStream{
+									ObjectMeta: metav1.ObjectMeta{
+										Name: "target-version",
+									},
+								},
+							},
+						},
+					},
+					cpoCapabilities:        &CPOCapabilities{},
+					CreateOrUpdateProvider: upsert.New(false),
+				},
+				capiClusterName: capiClusterName,
+				ApplyProvider:   upsert.NewApplyProvider(false),
+			}
+
+			err := capi.Reconcile(t.Context())
+			g.Expect(err).NotTo(HaveOccurred())
+
+			spotMHC := &capiv1.MachineHealthCheck{}
+			spotMHCErr := c.Get(t.Context(), client.ObjectKey{
+				Namespace: controlpaneNamespace,
+				Name:      nodePool.GetName() + "-spot",
+			}, spotMHC)
+
+			if tt.expectSpotMHC {
+				g.Expect(spotMHCErr).NotTo(HaveOccurred(), "spot MHC should exist")
+				g.Expect(spotMHC.Spec.Selector.MatchLabels).To(HaveKeyWithValue(interruptibleInstanceLabel, ""))
+				g.Expect(spotMHC.Spec.MaxUnhealthy.String()).To(Equal("100%")) //nolint:staticcheck // MaxUnhealthy is deprecated in CAPI but still used by production code
+			} else {
+				g.Expect(apierrors.IsNotFound(spotMHCErr)).To(BeTrue(), "spot MHC should not exist")
+			}
+
+			regularMHC := &capiv1.MachineHealthCheck{}
+			regularMHCErr := c.Get(t.Context(), client.ObjectKey{
+				Namespace: controlpaneNamespace,
+				Name:      nodePool.GetName(),
+			}, regularMHC)
+
+			if tt.expectRegularMHC {
+				g.Expect(regularMHCErr).NotTo(HaveOccurred(), "regular MHC should exist")
+				g.Expect(regularMHC.Spec.ClusterName).To(Equal(capiClusterName))
+			} else {
+				g.Expect(apierrors.IsNotFound(regularMHCErr)).To(BeTrue(), "regular MHC should not exist")
+			}
+
+			if tt.expectAutoRepairStatus != nil {
+				cond := FindStatusCondition(nodePool.Status.Conditions, hyperv1.NodePoolAutorepairEnabledConditionType)
+				g.Expect(cond).NotTo(BeNil(), "autoRepair condition should exist")
+				g.Expect(cond.Status).To(Equal(*tt.expectAutoRepairStatus), "autoRepair condition status mismatch")
+			}
+		})
+	}
+}
