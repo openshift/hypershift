@@ -18,7 +18,6 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
-	"net"
 	"os"
 	"strings"
 	"time"
@@ -26,6 +25,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/cmd/install/assets"
+	cmdutil "github.com/openshift/hypershift/cmd/util"
 	pkiconfig "github.com/openshift/hypershift/control-plane-pki-operator/config"
 	etcdrecovery "github.com/openshift/hypershift/etcd-recovery"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/auditlogpersistence"
@@ -198,7 +198,7 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.ScaleFromZeroProvider, "scale-from-zero-provider", opts.ScaleFromZeroProvider, "Platform type for scale-from-zero autoscaling (aws)")
 	cmd.Flags().StringVar(&opts.ScaleFromZeroCreds, "scale-from-zero-creds", opts.ScaleFromZeroCreds, "Path to credentials file for scale-from-zero instance type queries")
 	cmd.Flags().IntVar(&opts.EtcdBackupMaxCount, "etcd-backup-max-count", 5, "Maximum number of completed HCPEtcdBackup CRs to retain per HostedControlPlane")
-	cmd.Flags().StringArrayVar(&opts.HCPEgressBlockCIDRs, "hcp-egress-block-cidrs", nil, "Static CIDRs to block in HCP namespace egress NetworkPolicies instead of dynamically-discovered hosting cluster KAS endpoint IPs. When specified, eliminates NetworkPolicy churn during hosting cluster KAS rolling restarts and avoids OVN port-group reconciliation races that can drop traffic to HCP routers. May be specified multiple times (e.g. --hcp-egress-block-cidrs=10.0.0.0/16 --hcp-egress-block-cidrs=10.1.0.0/16).")
+	cmd.Flags().StringArrayVar(&opts.HCPEgressBlockCIDRs, "hcp-egress-block-cidrs", nil, "Static CIDRs to block in HCP namespace egress NetworkPolicies instead of dynamically-discovered hosting cluster KAS endpoint IPs. When specified, eliminates NetworkPolicy churn during hosting cluster KAS rolling restarts and avoids OVN port-group reconciliation races that can drop traffic to HCP routers. Only IPv4 CIDRs are supported. May be specified multiple times (e.g. --hcp-egress-block-cidrs=10.0.0.0/16 --hcp-egress-block-cidrs=10.1.0.0/16).")
 
 	// Attempt to determine featureset prior to adding featuregate flags.
 	// It is safe to get the empty string from this as the empty string is the default featureset.
@@ -221,13 +221,6 @@ func NewStartCommand() *cobra.Command {
 		default:
 			fmt.Printf("Unsupported private platform: %q\n", opts.PrivatePlatform)
 			os.Exit(1)
-		}
-
-		for _, cidr := range opts.HCPEgressBlockCIDRs {
-			if _, _, err := net.ParseCIDR(cidr); err != nil {
-				fmt.Fprintf(os.Stderr, "invalid --hcp-egress-block-cidrs value %q: %v\n", cidr, err)
-				os.Exit(1)
-			}
 		}
 
 		if err := run(ctx, &opts, ctrl.Log.WithName("setup")); err != nil {
@@ -364,6 +357,13 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 func validateStartOptions(opts *StartOptions, log logr.Logger) error {
 	if opts.EtcdBackupMaxCount < 1 {
 		return fmt.Errorf("--etcd-backup-max-count must be at least 1, got %d", opts.EtcdBackupMaxCount)
+	}
+
+	if err := cmdutil.ValidateIPv4CIDRs(opts.HCPEgressBlockCIDRs); err != nil {
+		return fmt.Errorf("invalid --hcp-egress-block-cidrs: %w", err)
+	}
+	if len(opts.HCPEgressBlockCIDRs) > 0 {
+		log.Info("Static HCP egress block CIDRs configured", "cidrs", opts.HCPEgressBlockCIDRs)
 	}
 
 	supportedProviders := set.New("aws")
