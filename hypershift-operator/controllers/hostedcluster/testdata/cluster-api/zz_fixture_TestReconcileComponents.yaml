@@ -68,8 +68,6 @@ spec:
         - --leader-elect-lease-duration=137s
         - --leader-elect-retry-period=26s
         - --leader-elect-renew-deadline=107s
-        - --skip-crd-migration-phases=StorageVersionMigration
-        - --skip-crd-migration-phases=CleanupManagedFields
         env:
         - name: MY_NAMESPACE
           valueFrom:
