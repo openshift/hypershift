@@ -10,7 +10,7 @@ The following guidelines will help ensure a smooth contribution process for both
 
 3. **Review before submitting**: Look at your changes from a reviewer's perspective and explain anything that might not be immediately clear in your PR description.
 
-4. **Use proper commit format**: 
+4. **Use proper commit format**:
     1. Write commit subjects in [imperative mood](https://en.wikipedia.org/wiki/Imperative_mood) (e.g., "Fix bug" not "Fixed bug")
     2. Follow [conventional commit format](https://www.conventionalcommits.org/) and include "Why" and "How" in commit messages
 
@@ -33,6 +33,10 @@ The following guidelines will help ensure a smooth contribution process for both
 ### CI
 
 This project uses [Prow](https://docs.ci.openshift.org/) and [GitHub Actions](https://github.com/openshift/hypershift/actions) for CI. Lightweight checks (linting, unit tests, verification) run automatically on pushes and pull requests. E2E tests that consume real cloud infrastructure only run after a reviewer grants `/lgtm`, to avoid unnecessary resource usage on work-in-progress PRs.
+
+**Adding CI targets:** When you add a new `make` target to `verify-parallel` or any other CI-facing Makefile target, you must also add it to the corresponding GitHub Actions workflow (e.g., `.github/workflows/verify-reusable.yaml` for verify targets, or as a new "reusable" target). GitHub Actions provide fast feedback on PRs; Prow runs heavier e2e tests. Targets that only exist in the Makefile without a matching GH Actions step will not run in CI.
+
+See hack/github-actions-runner/README.md for details.
 
 Useful Prow commands:
 
