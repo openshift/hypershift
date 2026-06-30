@@ -1623,8 +1623,13 @@ class PRReportGenerator:
                     }
                     total += count
 
-            bug_prs_list = [pr for repo_prs in author_prs.get(author, {}).values()
-                            for pr in repo_prs if is_bugfix(pr)]
+            bug_prs_list = [
+                pr
+                for repo_name, repo_prs in author_prs.get(author, {}).items()
+                if not (repo_name == 'openshift-eng/ai-helpers' and author not in hs_team)
+                for pr in repo_prs
+                if is_bugfix(pr)
+            ]
             bug_count = len(bug_prs_list)
 
             entry = {
@@ -1681,6 +1686,8 @@ class PRReportGenerator:
         reviewer_counts: Dict[str, int] = {}
         for pr in self.prs:
             for r in pr.get('reviewers', []):
+                if self.is_bot(r):
+                    continue
                 reviewer_counts[r] = reviewer_counts.get(r, 0) + 1
         top_reviewers = sorted(reviewer_counts.items(), key=lambda x: x[1], reverse=True)[:5]
 
