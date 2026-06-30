@@ -34,10 +34,12 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/utils/ptr"
 
 	capigcp "sigs.k8s.io/cluster-api-provider-gcp/api/v1beta1"
 	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/blang/semver"
@@ -308,7 +310,7 @@ func (p GCP) ReconcileCredentials(ctx context.Context, c client.Client, createOr
 	}
 
 	// Validate Workload Identity Federation configuration (required)
-	if err := p.validateWorkloadIdentityConfiguration(hcluster); err != nil {
+	if err := validateWorkloadIdentityConfiguration(hcluster); err != nil {
 		setCondition(hcluster, hyperv1.ValidGCPWorkloadIdentity, metav1.ConditionFalse, "InvalidWIFConfiguration", fmt.Sprintf("Workload Identity Federation configuration is invalid: %v", err))
 		if updateErr := c.Status().Update(ctx, hcluster); updateErr != nil {
 			return fmt.Errorf("invalid workload identity configuration: %w (failed to update status: %w)", err, updateErr)
@@ -481,9 +483,15 @@ func ValidCredentials(hc *hyperv1.HostedCluster) bool {
 	return true
 }
 
+func SetValidGCPWorkloadIdentityAndCalidGCPCredentialsConditions(hc *hyperv1.HostedCluster) {
+	if hc.Spec.Platform.Type != hyperv1.GCPPlatform {
+		return
+	}
+}
+
 // validateWorkloadIdentityConfiguration validates the Workload Identity Federation configuration.
 // This ensures all required fields are present and properly formatted.
-func (p GCP) validateWorkloadIdentityConfiguration(hcluster *hyperv1.HostedCluster) error {
+func validateWorkloadIdentityConfiguration(hcluster *hyperv1.HostedCluster) error {
 	// Note: GCP platform configuration nil check is handled by caller
 	wif := hcluster.Spec.Platform.GCP.WorkloadIdentity
 
@@ -529,6 +537,34 @@ func (p GCP) validateWorkloadIdentityConfiguration(hcluster *hyperv1.HostedClust
 	}
 
 	return nil
+}
+
+func (GCP) DeleteOrphanedMachines(ctx context.Context, c client.Client, hc *hyperv1.HostedCluster, controlPlaneNamespace string) error {
+	if ValidCredentials(hc) {
+		return nil
+	}
+	gcpMachineList := capigcp.GCPMachineList{}
+	if err := c.List(ctx, &gcpMachineList, client.InNamespace(controlPlaneNamespace)); err != nil {
+		return fmt.Errorf("failed to list GCPMachines in %s: %w", controlPlaneNamespace, err)
+	}
+	logger := ctrl.LoggerFrom(ctx)
+	var errs []error
+	for i := range gcpMachineList.Items {
+		gcpMachine := &gcpMachineList.Items[i]
+		if gcpMachine.DeletionTimestamp.IsZero() ||
+			len(gcpMachine.Finalizers) == 0 {
+			continue
+		}
+
+		gcpMachine.Finalizers = []string{}
+		if err := c.Update(ctx, gcpMachine); err != nil {
+			errs = append(errs, fmt.Errorf("failed to delete machine %s/%s: %w", gcpMachine.Namespace, gcpMachine.Name, err))
+			continue
+		}
+		logger.Info("removed finalizers of gcpmachine because of invalid GCP credentials", "machine", client.ObjectKeyFromObject(gcpMachine))
+
+	}
+	return utilerrors.NewAggregate(errs)
 }
 
 // setCondition updates or creates a condition on the HostedCluster.

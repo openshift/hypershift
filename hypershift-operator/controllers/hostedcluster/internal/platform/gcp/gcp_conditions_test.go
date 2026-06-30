@@ -132,7 +132,6 @@ func TestValidCredentials(t *testing.T) {
 // This expands on the existing TestValidateWorkloadIdentityConfiguration with more comprehensive coverage.
 func TestWorkloadIdentityValidationScenarios(t *testing.T) {
 	g := NewWithT(t)
-	platform := New("test-utilities-image", "test-capg-image", nil)
 
 	tests := []struct {
 		name        string
@@ -213,7 +212,7 @@ func TestWorkloadIdentityValidationScenarios(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := platform.validateWorkloadIdentityConfiguration(tt.hcluster)
+			err := validateWorkloadIdentityConfiguration(tt.hcluster)
 			if tt.expectError {
 				g.Expect(err).ToNot(BeNil())
 				if tt.errorMsg != "" {
