@@ -193,9 +193,11 @@ In the ai-helpers repository, 36 PRs were merged during this period. [@celebdor]
 
 | Reviewer | PRs Reviewed |
 |----------|-------------|
-| [@coderabbitai](https://github.com/apps/coderabbitai) | 164 |
 | [@bryan-cox](https://github.com/bryan-cox) | 78 |
 | [@jparrill](https://github.com/jparrill) | 41 |
+| [@enxebre](https://github.com/enxebre) | 26 |
+| [@cblecker](https://github.com/cblecker) | 21 |
+| [@csrwng](https://github.com/csrwng) | 19 |
 
 ---
 
