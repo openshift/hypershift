@@ -413,6 +413,7 @@ nav:
   - 'Develop in Cluster': contribute/develop_in_cluster.md
   - 'Run hypershift-operator locally': contribute/run-hypershift-operator-locally.md
   - 'CPO Overrides': contribute/cpo-overrides.md
+  - 'Konflux CI Scripts': contribute/konflux-scripts.md
   - 'Contribute to docs': contribute/contribute-docs.md
   - 'Retrospective Guidelines': contribute/retrospective-guidelines.md
 - 'Blog':
