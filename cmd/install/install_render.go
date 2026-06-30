@@ -100,6 +100,9 @@ func (o *Options) ValidateRender() error {
 func RenderHyperShiftOperator(ctx context.Context, cmdOut io.Writer, opts *Options) error {
 	opts.ApplyDefaults()
 
+	if err := opts.Complete(); err != nil {
+		return err
+	}
 	var err error
 	if err = opts.ValidateRender(); err != nil {
 		return err
