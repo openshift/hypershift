@@ -658,7 +658,8 @@ func controlPlaneOperatorPolicy(hostedZone string, sharedVPC bool) policyBinding
 						"ec2:RevokeSecurityGroupIngress",
 						"ec2:RevokeSecurityGroupEgress",
 						"ec2:DescribeSecurityGroups",
-						"ec2:DescribeVpcs"
+						"ec2:DescribeVpcs",
+						"ec2:DescribeSubnets"
 					],
 					"Resource": "*"
 				}
@@ -684,7 +685,8 @@ func controlPlaneOperatorPolicy(hostedZone string, sharedVPC bool) policyBinding
 						"ec2:RevokeSecurityGroupIngress",
 						"ec2:RevokeSecurityGroupEgress",
 						"ec2:DescribeSecurityGroups",
-						"ec2:DescribeVpcs"
+						"ec2:DescribeVpcs",
+						"ec2:DescribeSubnets"
 					],
 					"Resource": "*"
 				},
@@ -758,7 +760,8 @@ func sharedVPCEndpointRole(controlPlaneRoleARN string) sharedVPCPolicyBinding {
 						"ec2:RevokeSecurityGroupIngress",
 						"ec2:RevokeSecurityGroupEgress",
 						"ec2:DescribeSecurityGroups",
-						"ec2:DescribeVpcs"
+						"ec2:DescribeVpcs",
+						"ec2:DescribeSubnets"
 					],
 					"Resource": "*"
 				}

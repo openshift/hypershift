@@ -1,6 +1,7 @@
 package awsprivatelink
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"testing"
@@ -10,7 +11,9 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -203,6 +206,133 @@ func TestDiffPermissions(t *testing.T) {
 			g := NewGomegaWithT(t)
 			result := diffPermissions(test.actual, test.required)
 			g.Expect(result).To(Equal(test.expected))
+		})
+	}
+}
+
+type mockEC2Client struct {
+	ec2iface.EC2API
+	describeSubnetsOutput *ec2.DescribeSubnetsOutput
+	describeSubnetsErr    error
+}
+
+func (m *mockEC2Client) DescribeSubnetsWithContext(_ context.Context, _ *ec2.DescribeSubnetsInput, _ ...request.Option) (*ec2.DescribeSubnetsOutput, error) {
+	return m.describeSubnetsOutput, m.describeSubnetsErr
+}
+
+func TestDeduplicateSubnetsByAZ(t *testing.T) {
+	tests := []struct {
+		name      string
+		subnetIDs []string
+		cachedAZs map[string]string
+		mock      *mockEC2Client
+		want      []string
+		wantErr   bool
+	}{
+		{
+			name:      "When the subnet list is empty it should return empty",
+			subnetIDs: []string{},
+			want:      []string{},
+		},
+		{
+			name:      "When there is a single subnet it should return it unchanged",
+			subnetIDs: []string{"subnet-1"},
+			want:      []string{"subnet-1"},
+		},
+		{
+			name:      "When subnets are in different AZs it should keep all",
+			subnetIDs: []string{"subnet-1", "subnet-2"},
+			mock: &mockEC2Client{
+				describeSubnetsOutput: &ec2.DescribeSubnetsOutput{
+					Subnets: []*ec2.Subnet{
+						{SubnetId: aws.String("subnet-1"), AvailabilityZone: aws.String("us-east-1a")},
+						{SubnetId: aws.String("subnet-2"), AvailabilityZone: aws.String("us-east-1b")},
+					},
+				},
+			},
+			want: []string{"subnet-1", "subnet-2"},
+		},
+		{
+			name:      "When subnets are in the same AZ it should pick the lexicographically first",
+			subnetIDs: []string{"subnet-b", "subnet-a"},
+			mock: &mockEC2Client{
+				describeSubnetsOutput: &ec2.DescribeSubnetsOutput{
+					Subnets: []*ec2.Subnet{
+						{SubnetId: aws.String("subnet-b"), AvailabilityZone: aws.String("us-east-1a")},
+						{SubnetId: aws.String("subnet-a"), AvailabilityZone: aws.String("us-east-1a")},
+					},
+				},
+			},
+			want: []string{"subnet-a"},
+		},
+		{
+			name:      "When subnets span mixed AZs it should deduplicate only the shared AZ",
+			subnetIDs: []string{"subnet-1", "subnet-2", "subnet-3"},
+			mock: &mockEC2Client{
+				describeSubnetsOutput: &ec2.DescribeSubnetsOutput{
+					Subnets: []*ec2.Subnet{
+						{SubnetId: aws.String("subnet-1"), AvailabilityZone: aws.String("us-east-1a")},
+						{SubnetId: aws.String("subnet-2"), AvailabilityZone: aws.String("us-east-1a")},
+						{SubnetId: aws.String("subnet-3"), AvailabilityZone: aws.String("us-east-1b")},
+					},
+				},
+			},
+			want: []string{"subnet-1", "subnet-3"},
+		},
+		{
+			name:      "When all subnets are cached it should not call AWS",
+			subnetIDs: []string{"subnet-1", "subnet-2"},
+			cachedAZs: map[string]string{
+				"subnet-1": "us-east-1a",
+				"subnet-2": "us-east-1b",
+			},
+			want: []string{"subnet-1", "subnet-2"},
+		},
+		{
+			name:      "When some subnets are cached it should only fetch uncached ones",
+			subnetIDs: []string{"subnet-1", "subnet-2"},
+			cachedAZs: map[string]string{
+				"subnet-1": "us-east-1a",
+			},
+			mock: &mockEC2Client{
+				describeSubnetsOutput: &ec2.DescribeSubnetsOutput{
+					Subnets: []*ec2.Subnet{
+						{SubnetId: aws.String("subnet-2"), AvailabilityZone: aws.String("us-east-1b")},
+					},
+				},
+			},
+			want: []string{"subnet-1", "subnet-2"},
+		},
+		{
+			name:      "When the DescribeSubnets API fails it should return an error",
+			subnetIDs: []string{"subnet-1", "subnet-2"},
+			mock: &mockEC2Client{
+				describeSubnetsErr: fmt.Errorf("access denied"),
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			r := &AWSEndpointServiceReconciler{
+				subnetAZCache: tt.cachedAZs,
+			}
+			var ec2Client ec2iface.EC2API
+			if tt.mock != nil {
+				ec2Client = tt.mock
+			} else {
+				ec2Client = &mockEC2Client{}
+			}
+
+			got, err := r.deduplicateSubnetsByAZ(context.Background(), ec2Client, tt.subnetIDs)
+			if tt.wantErr {
+				g.Expect(err).To(HaveOccurred())
+				return
+			}
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(got).To(Equal(tt.want))
 		})
 	}
 }
