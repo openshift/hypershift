@@ -35,6 +35,7 @@ import (
 	fakecapabilities "github.com/openshift/hypershift/support/capabilities/fake"
 	"github.com/openshift/hypershift/support/config"
 	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
 	"github.com/openshift/hypershift/support/releaseinfo/testutils"
@@ -65,6 +66,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -599,6 +601,105 @@ func TestReconcileHostedControlPlaneConfiguration(t *testing.T) {
 
 			// DeepEqual to check that all ClusterConfiguration fields are deep copied to HostedControlPlane
 			g.Expect(hostedControlPlane.Spec.Configuration).To(BeEquivalentTo(test.configuration))
+		})
+	}
+}
+
+func TestReconcileHostedControlPlaneMonitoring(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name               string
+		monitoring         hyperv1.MonitoringSpec
+		annotations        map[string]string
+		expectedMonitoring hyperv1.MonitoringSpec
+	}{
+		{
+			name: "When monitoring spec is set with mode Enabled, it should be copied to HCP",
+			monitoring: hyperv1.MonitoringSpec{
+				MetricsForwarding: hyperv1.MetricsForwardingSpec{
+					Mode: hyperv1.MetricsForwardingModeForward,
+				},
+				MetricsSet: hyperv1.MetricsSetSRE,
+			},
+			expectedMonitoring: hyperv1.MonitoringSpec{
+				MetricsForwarding: hyperv1.MetricsForwardingSpec{
+					Mode: hyperv1.MetricsForwardingModeForward,
+				},
+				MetricsSet: hyperv1.MetricsSetSRE,
+			},
+		},
+		{
+			name: "When monitoring spec is not set and annotation is present, it should enable forwarding on HCP",
+			annotations: map[string]string{
+				hyperv1.EnableMetricsForwarding: "true",
+			},
+			expectedMonitoring: hyperv1.MonitoringSpec{
+				MetricsForwarding: hyperv1.MetricsForwardingSpec{
+					Mode: hyperv1.MetricsForwardingModeForward,
+				},
+			},
+		},
+		{
+			name:               "When neither spec nor annotation is set, it should leave monitoring empty",
+			expectedMonitoring: hyperv1.MonitoringSpec{},
+		},
+		{
+			name: "When mode is Disabled and annotation is present, it should not override Disabled",
+			monitoring: hyperv1.MonitoringSpec{
+				MetricsForwarding: hyperv1.MetricsForwardingSpec{
+					Mode: hyperv1.MetricsForwardingModeNone,
+				},
+			},
+			annotations: map[string]string{
+				hyperv1.EnableMetricsForwarding: "true",
+			},
+			expectedMonitoring: hyperv1.MonitoringSpec{
+				MetricsForwarding: hyperv1.MetricsForwardingSpec{
+					Mode: hyperv1.MetricsForwardingModeNone,
+				},
+			},
+		},
+		{
+			name: "When mode is Enabled and annotation is absent, it should keep Enabled",
+			monitoring: hyperv1.MonitoringSpec{
+				MetricsForwarding: hyperv1.MetricsForwardingSpec{
+					Mode: hyperv1.MetricsForwardingModeForward,
+				},
+			},
+			expectedMonitoring: hyperv1.MonitoringSpec{
+				MetricsForwarding: hyperv1.MetricsForwardingSpec{
+					Mode: hyperv1.MetricsForwardingModeForward,
+				},
+			},
+		},
+		{
+			name: "When metricsSet is set without forwarding mode, it should be copied",
+			monitoring: hyperv1.MonitoringSpec{
+				MetricsSet: hyperv1.MetricsSetAll,
+			},
+			expectedMonitoring: hyperv1.MonitoringSpec{
+				MetricsSet: hyperv1.MetricsSetAll,
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewGomegaWithT(t)
+
+			hostedCluster := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: test.annotations,
+				},
+			}
+			hostedCluster.Spec.Monitoring = test.monitoring
+			hostedControlPlane := &hyperv1.HostedControlPlane{}
+
+			err := reconcileHostedControlPlane(hostedControlPlane, hostedCluster, true, true, func() (map[string]string, error) { return nil, nil })
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(hostedControlPlane.Spec.Monitoring).To(Equal(test.expectedMonitoring))
 		})
 	}
 }
@@ -6526,6 +6627,95 @@ func TestComputeEndpointServiceCondition(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			condition := computeEndpointServiceCondition(tc.resourceConditions, tc.conditionType, testErrorReason, testSuccessReason, testNotFoundMsg)
 			g.Expect(condition).To(Equal(tc.expected))
+		})
+	}
+}
+
+func TestReconcileSREMetricsConfig_EffectiveMetricsSet(t *testing.T) {
+	operatorNS := "hypershift"
+	hcpNS := "clusters-test"
+
+	sreConfigCM := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "sre-metric-set",
+			Namespace: operatorNS,
+		},
+		Data: map[string]string{
+			"config": "{}",
+		},
+	}
+
+	baseHCP := &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test",
+			Namespace: hcpNS,
+		},
+	}
+
+	noopCreateOrUpdate := func(ctx context.Context, c crclient.Client, obj crclient.Object, f controllerutil.MutateFn) (controllerutil.OperationResult, error) {
+		return controllerutil.OperationResultNone, nil
+	}
+
+	tests := []struct {
+		name               string
+		operatorMetricSet  metrics.MetricsSet
+		hcpMetricsSet      hyperv1.MetricsSet
+		expectSREReconcile bool
+	}{
+		{
+			name:               "When hcp.Spec.Monitoring.MetricsSet is SRE it should override operator default Telemetry",
+			operatorMetricSet:  metrics.MetricsSetTelemetry,
+			hcpMetricsSet:      hyperv1.MetricsSetSRE,
+			expectSREReconcile: true,
+		},
+		{
+			name:               "When hcp.Spec.Monitoring.MetricsSet is empty it should use operator default SRE",
+			operatorMetricSet:  metrics.MetricsSetSRE,
+			hcpMetricsSet:      "",
+			expectSREReconcile: true,
+		},
+		{
+			name:               "When hcp.Spec.Monitoring.MetricsSet is empty it should use operator default Telemetry and skip SRE",
+			operatorMetricSet:  metrics.MetricsSetTelemetry,
+			hcpMetricsSet:      "",
+			expectSREReconcile: false,
+		},
+		{
+			name:               "When hcp.Spec.Monitoring.MetricsSet is Telemetry it should override operator SRE and skip SRE reconcile",
+			operatorMetricSet:  metrics.MetricsSetSRE,
+			hcpMetricsSet:      hyperv1.MetricsSetTelemetry,
+			expectSREReconcile: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			hcp := baseHCP.DeepCopy()
+			hcp.Spec.Monitoring.MetricsSet = tt.hcpMetricsSet
+
+			objs := []crclient.Object{}
+			if tt.expectSREReconcile {
+				objs = append(objs, sreConfigCM.DeepCopy())
+			}
+			cli := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objs...).Build()
+
+			r := &HostedClusterReconciler{
+				Client:            cli,
+				MetricsSet:        tt.operatorMetricSet,
+				OperatorNamespace: operatorNS,
+			}
+
+			ctx := ctrl.LoggerInto(t.Context(), zap.New(zap.UseDevMode(true), zap.Level(zapcore.InfoLevel)))
+			err := r.reconcileSREMetricsConfig(ctx, noopCreateOrUpdate, hcp)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			if tt.expectSREReconcile {
+				g.Expect(r.SREConfigHash).ToNot(BeEmpty(), "SRE config hash should be set when SRE metrics are active")
+			} else {
+				g.Expect(r.SREConfigHash).To(BeEmpty(), "SRE config hash should not be set when SRE metrics are not active")
+			}
 		})
 	}
 }

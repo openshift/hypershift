@@ -2007,6 +2007,10 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			return ctrl.Result{}, fmt.Errorf("failed to parse SecurityContext UID: %w", err)
 		}
 	}
+	metricsSet := r.MetricsSet
+	if hcluster.Spec.Monitoring.MetricsSet != "" {
+		metricsSet = metrics.MetricsSet(hcluster.Spec.Monitoring.MetricsSet)
+	}
 	cpContext := controlplanecomponent.ControlPlaneContext{
 		Context:                   ctx,
 		Client:                    r.Client,
@@ -2015,7 +2019,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		SetDefaultSecurityContext: r.SetDefaultSecurityContext,
 		DefaultSecurityContextUID: securityContextUID,
 		EnableCIDebugOutput:       r.EnableCIDebugOutput,
-		MetricsSet:                r.MetricsSet,
+		MetricsSet:                metricsSet,
 		ReleaseImageProvider:      imageProvider,
 		OmitOwnerReference:        true,
 	}
@@ -2532,6 +2536,16 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 		hcp.Spec.OperatorConfiguration = hcluster.Spec.OperatorConfiguration.DeepCopy()
 	} else {
 		hcp.Spec.OperatorConfiguration = nil
+	}
+
+	hcp.Spec.Monitoring = hcluster.Spec.Monitoring
+	// Backward compat: if the deprecated annotation is present and the spec mode is not explicitly set,
+	// enable metrics forwarding on the HCP so that downstream consumers (CPO, HCCO) use the spec field.
+	// An explicit Disabled mode takes precedence over the annotation.
+	if hcp.Spec.Monitoring.MetricsForwarding.Mode == "" {
+		if _, hasAnnotation := hcluster.Annotations[hyperv1.EnableMetricsForwarding]; hasAnnotation {
+			hcp.Spec.Monitoring.MetricsForwarding.Mode = hyperv1.MetricsForwardingModeForward
+		}
 	}
 
 	return nil
@@ -5044,7 +5058,11 @@ func (r *HostedClusterReconciler) reconcileMonitoringDashboard(ctx context.Conte
 // and ensures that it is synced to the hosted control plane
 func (r *HostedClusterReconciler) reconcileSREMetricsConfig(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcp *hyperv1.HostedControlPlane) error {
 	log := ctrl.LoggerFrom(ctx)
-	if r.MetricsSet != metrics.MetricsSetSRE {
+	effectiveMetricsSet := r.MetricsSet
+	if hcp.Spec.Monitoring.MetricsSet != "" {
+		effectiveMetricsSet = metrics.MetricsSet(hcp.Spec.Monitoring.MetricsSet)
+	}
+	if effectiveMetricsSet != metrics.MetricsSetSRE {
 		return nil
 	}
 	log.Info("Reconciling SRE metrics configuration")

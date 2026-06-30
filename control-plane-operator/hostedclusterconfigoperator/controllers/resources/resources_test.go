@@ -3000,11 +3000,12 @@ func TestReconcileMetricsForwarder(t *testing.T) {
 	tests := []struct {
 		name            string
 		annotations     map[string]string
+		monitoring      hyperv1.MonitoringSpec
 		existingObjects []client.Object
 		expectCleanup   bool
 	}{
 		{
-			name:        "When EnableMetricsForwarding is not set, it should delete existing resources",
+			name:        "When metrics forwarding mode is not set, it should delete existing resources",
 			annotations: map[string]string{},
 			existingObjects: []client.Object{
 				manifests.MetricsForwarderDeployment(),
@@ -3017,6 +3018,11 @@ func TestReconcileMetricsForwarder(t *testing.T) {
 		{
 			name:        "When DisableMonitoringServices is set, it should delete existing resources",
 			annotations: map[string]string{hyperv1.DisableMonitoringServices: "true"},
+			monitoring: hyperv1.MonitoringSpec{
+				MetricsForwarding: hyperv1.MetricsForwardingSpec{
+					Mode: hyperv1.MetricsForwardingModeForward,
+				},
+			},
 			existingObjects: []client.Object{
 				manifests.MetricsForwarderDeployment(),
 				manifests.MetricsForwarderConfigMap(),
@@ -3026,10 +3032,25 @@ func TestReconcileMetricsForwarder(t *testing.T) {
 			expectCleanup: true,
 		},
 		{
-			name:            "When EnableMetricsForwarding is not set and no resources exist, it should succeed",
+			name:            "When metrics forwarding mode is not set and no resources exist, it should succeed",
 			annotations:     map[string]string{},
 			existingObjects: nil,
 			expectCleanup:   true,
+		},
+		{
+			name: "When metrics forwarding mode is Disabled, it should delete existing resources",
+			monitoring: hyperv1.MonitoringSpec{
+				MetricsForwarding: hyperv1.MetricsForwardingSpec{
+					Mode: hyperv1.MetricsForwardingModeNone,
+				},
+			},
+			existingObjects: []client.Object{
+				manifests.MetricsForwarderDeployment(),
+				manifests.MetricsForwarderConfigMap(),
+				manifests.MetricsForwarderServingCA(),
+				manifests.MetricsForwarderPodMonitor(),
+			},
+			expectCleanup: true,
 		},
 	}
 
@@ -3048,6 +3069,9 @@ func TestReconcileMetricsForwarder(t *testing.T) {
 					Name:        "test",
 					Namespace:   "test-ns",
 					Annotations: tt.annotations,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Monitoring: tt.monitoring,
 				},
 			}
 
