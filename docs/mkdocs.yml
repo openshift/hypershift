@@ -92,6 +92,7 @@ nav:
   - how-to/autoscaling.md
   - 'CI':
     - 'AI-Assisted CI Jobs': how-to/ci/ai-assisted-ci-jobs.md
+    - 'Jira Agent Onboarding': how-to/ci/jira-agent-onboarding.md
     - how-to/ci/ci-infrastructure.md
     - 'Documentation Preview': how-to/ci/docs-preview.md
     - 'GitHub Actions Workflows': how-to/ci/github-actions.md
