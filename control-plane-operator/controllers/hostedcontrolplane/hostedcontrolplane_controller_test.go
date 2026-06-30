@@ -1139,6 +1139,19 @@ func TestControlPlaneComponents(t *testing.T) {
 			setup:        azureutil.SetAsAroHCPTest,
 			subDirSuffix: "AROSwift",
 		},
+		{
+			name:         "Default feature set, Modern TLS profile",
+			featureSet:   configv1.Default,
+			platformType: nil,
+			mutateHCP: func(hcp *hyperv1.HostedControlPlane) {
+				hcp.Spec.Configuration.APIServer = &configv1.APIServerSpec{
+					TLSSecurityProfile: &configv1.TLSSecurityProfile{
+						Type: configv1.TLSProfileModernType,
+					},
+				}
+			},
+			subDirSuffix: "ModernTLS",
+		},
 	}
 
 	for _, tt := range tests {
