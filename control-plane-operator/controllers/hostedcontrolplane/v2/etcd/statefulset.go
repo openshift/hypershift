@@ -7,19 +7,36 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/podspec"
+
+	configv1 "github.com/openshift/api/config/v1"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
+
+	"go.etcd.io/etcd/client/pkg/v3/tlsutil"
 )
+
+// minTLSVersion assesses what is the minimum TLS version we should use. This
+// function takes into account that etcd supports only 1.2 and 1.3.
+func minTLSVersion(profile *configv1.TLSSecurityProfile) string {
+	switch config.MinTLSVersion(profile) {
+	case string(configv1.VersionTLS13):
+		return string(tlsutil.TLSVersion13)
+	default:
+		return string(tlsutil.TLSVersion12)
+	}
+}
 
 func adaptStatefulSet(cpContext component.WorkloadContext, sts *appsv1.StatefulSet) error {
 	hcp := cpContext.HCP
 	managedEtcdSpec := hcp.Spec.Etcd.Managed
+	profile := cpContext.HCP.Spec.Configuration.GetTLSSecurityProfile()
 
 	ipv4, err := netutil.IsIPv4CIDR(hcp.Spec.Networking.ClusterNetwork[0].CIDR.String())
 	if err != nil {
@@ -39,6 +56,23 @@ func adaptStatefulSet(cpContext component.WorkloadContext, sts *appsv1.StatefulS
 				Value: strings.Join(members, ","),
 			},
 		)
+
+		tlsMinVersion := minTLSVersion(profile)
+
+		podspec.UpsertEnvVar(c, corev1.EnvVar{
+			Name:  "ETCD_TLS_MIN_VERSION",
+			Value: tlsMinVersion,
+		})
+
+		// When TLS 1.3 is configured, etcd does not allow cipher suites to be specified
+		// as they are automatically selected. Only set ETCD_CIPHER_SUITES for TLS 1.2.
+		if tlsMinVersion != string(tlsutil.TLSVersion13) {
+			cipherSuites := config.SupportedEtcdCipherSuites(config.CipherSuites(profile))
+			podspec.UpsertEnvVar(c, corev1.EnvVar{
+				Name:  "ETCD_CIPHER_SUITES",
+				Value: strings.Join(cipherSuites, ","),
+			})
+		}
 
 		if !ipv4 {
 			podspec.UpsertEnvVar(c, corev1.EnvVar{
