@@ -5791,6 +5791,61 @@ spec:
                         - AzureGermanCloud
                         - AzureStackCloud
                         type: string
+                      containerRegistry:
+                        description: |-
+                          containerRegistry configures how worker nodes authenticate to Azure Container Registry (ACR).
+                          When set, the managed identity is attached to worker virtual machines and its resource ID is
+                          written into the worker cloud provider config so kubelet's ACR credential provider can
+                          authenticate without image pull secrets.
+                          Changing this value will trigger a rollout for all existing NodePools in the cluster.
+                        properties:
+                          credentials:
+                            description: |-
+                              credentials configures authentication for worker nodes pulling images from ACR
+                              using a user-assigned managed identity.
+                              The identity does not need to be in the same subscription or resource group as the
+                              HostedCluster, but it must be in the same Azure AD tenant. The management cluster's
+                              CAPZ identity must have Microsoft.ManagedIdentity/userAssignedIdentities/*/assign/action
+                              on the identity's scope to attach it to worker virtual machines at creation time.
+                            properties:
+                              managedIdentity:
+                                description: managedIdentity identifies the user-assigned
+                                  managed identity used for ACR image pulls.
+                                properties:
+                                  resourceID:
+                                    description: |-
+                                      resourceID is the ARM resource ID of the user-assigned managed identity
+                                      in the format /subscriptions/{subscriptionID}/resourceGroups/{resourceGroupName}/providers/Microsoft.ManagedIdentity/userAssignedIdentities/{identityName}.
+                                      The identity must have the AcrPull role on the target Azure Container Registry.
+                                      It does not need to be in the same subscription or resource group as the HostedCluster,
+                                      but it must be in the same Azure AD tenant.
+                                    maxLength: 345
+                                    minLength: 131
+                                    type: string
+                                    x-kubernetes-validations:
+                                    - message: must be a user-assigned managed identity
+                                        ARM resource ID in the format /subscriptions/{subscriptionID}/resourceGroups/{resourceGroupName}/providers/Microsoft.ManagedIdentity/userAssignedIdentities/{identityName}
+                                      rule: self.lowerAscii().matches('^/subscriptions/[^/]+/resourcegroups/[^/]+/providers/microsoft\\.managedidentity/userassignedidentities/[^/]+$')
+                                required:
+                                - resourceID
+                                type: object
+                              type:
+                                description: type specifies the credential type used
+                                  for ACR image pulls.
+                                enum:
+                                - ManagedIdentity
+                                type: string
+                            required:
+                            - type
+                            type: object
+                            x-kubernetes-validations:
+                            - message: managedIdentity is required when type is ManagedIdentity,
+                                and forbidden otherwise
+                              rule: 'self.type == ''ManagedIdentity'' ? has(self.managedIdentity)
+                                : !has(self.managedIdentity)'
+                        required:
+                        - credentials
+                        type: object
                       location:
                         description: |-
                           location is the Azure region in where all the cloud infrastructure resources will be created.

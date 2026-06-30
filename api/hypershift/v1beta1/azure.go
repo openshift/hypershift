@@ -469,6 +469,16 @@ type AzurePlatformSpec struct {
 	// +kubebuilder:validation:MaxLength=255
 	TenantID string `json:"tenantID"`
 
+	// containerRegistry configures how worker nodes authenticate to Azure Container Registry (ACR).
+	// When set, the managed identity is attached to worker virtual machines and its resource ID is
+	// written into the worker cloud provider config so kubelet's ACR credential provider can
+	// authenticate without image pull secrets.
+	// Changing this value will trigger a rollout for all existing NodePools in the cluster.
+	//
+	// +rollout
+	// +optional
+	ContainerRegistry AzureContainerRegistryConfig `json:"containerRegistry,omitzero"`
+
 	// topology specifies the network topology of the API server endpoint for the hosted cluster.
 	// - Public: The API server is accessible only via a public endpoint.
 	// - PublicAndPrivate: The API server is accessible via both public and private endpoints.
@@ -545,6 +555,67 @@ type AzureResourceManagedIdentities struct {
 // +kubebuilder:validation:MaxLength=36
 // +kubebuilder:validation:Pattern=`^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$`
 type AzureClientID string
+
+// AzureManagedIdentityResourceID is an ARM resource ID for a user-assigned managed identity
+// in the format /subscriptions/{sub}/resourceGroups/{rg}/providers/Microsoft.ManagedIdentity/userAssignedIdentities/{name}.
+//
+// +kubebuilder:validation:XValidation:rule="self.lowerAscii().matches('^/subscriptions/[^/]+/resourcegroups/[^/]+/providers/microsoft\\\\.managedidentity/userassignedidentities/[^/]+$')",message="must be a user-assigned managed identity ARM resource ID in the format /subscriptions/{subscriptionID}/resourceGroups/{resourceGroupName}/providers/Microsoft.ManagedIdentity/userAssignedIdentities/{identityName}"
+// +kubebuilder:validation:MinLength=131
+// +kubebuilder:validation:MaxLength=345
+type AzureManagedIdentityResourceID string
+
+// UserAssignedManagedIdentity identifies a user-assigned managed identity by its ARM resource ID.
+type UserAssignedManagedIdentity struct {
+	// resourceID is the ARM resource ID of the user-assigned managed identity
+	// in the format /subscriptions/{subscriptionID}/resourceGroups/{resourceGroupName}/providers/Microsoft.ManagedIdentity/userAssignedIdentities/{identityName}.
+	// The identity must have the AcrPull role on the target Azure Container Registry.
+	// It does not need to be in the same subscription or resource group as the HostedCluster,
+	// but it must be in the same Azure AD tenant.
+	//
+	// +required
+	ResourceID AzureManagedIdentityResourceID `json:"resourceID,omitempty"`
+}
+
+// AzureContainerRegistryConfig configures Azure Container Registry integration for a hosted cluster.
+type AzureContainerRegistryConfig struct {
+	// credentials configures authentication for worker nodes pulling images from ACR
+	// using a user-assigned managed identity.
+	// The identity does not need to be in the same subscription or resource group as the
+	// HostedCluster, but it must be in the same Azure AD tenant. The management cluster's
+	// CAPZ identity must have Microsoft.ManagedIdentity/userAssignedIdentities/*/assign/action
+	// on the identity's scope to attach it to worker virtual machines at creation time.
+	//
+	// +required
+	Credentials AzureContainerRegistryCredentialConfig `json:"credentials,omitzero"`
+}
+
+// AzureContainerRegistryCredentialType identifies the type of credential used for ACR image pulls.
+//
+// +kubebuilder:validation:Enum=ManagedIdentity
+type AzureContainerRegistryCredentialType string
+
+const (
+	// AzureContainerRegistryCredentialManagedIdentity uses a user-assigned managed identity for ACR authentication.
+	AzureContainerRegistryCredentialManagedIdentity AzureContainerRegistryCredentialType = "ManagedIdentity"
+)
+
+// AzureContainerRegistryCredentialConfig configures authentication credentials for Azure Container Registry.
+//
+// +kubebuilder:validation:XValidation:rule="self.type == 'ManagedIdentity' ? has(self.managedIdentity) : !has(self.managedIdentity)",message="managedIdentity is required when type is ManagedIdentity, and forbidden otherwise"
+// +union
+type AzureContainerRegistryCredentialConfig struct {
+	// type specifies the credential type used for ACR image pulls.
+	//
+	// +required
+	// +unionDiscriminator
+	Type AzureContainerRegistryCredentialType `json:"type,omitempty"`
+
+	// managedIdentity identifies the user-assigned managed identity used for ACR image pulls.
+	//
+	// +optional
+	// +unionMember
+	ManagedIdentity UserAssignedManagedIdentity `json:"managedIdentity,omitzero"`
+}
 
 // AzureWorkloadIdentities is a struct that contains the client IDs of all the managed identities in self-managed Azure
 // needing to authenticate with Azure's API.
