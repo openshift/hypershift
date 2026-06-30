@@ -8832,3 +8832,262 @@ func TestReconcileSREMetricsConfig_EffectiveMetricsSet(t *testing.T) {
 		})
 	}
 }
+
+func TestDestroyGracePeriod(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
+	deletionTime := metav1.NewTime(now.Add(-10 * time.Second))
+
+	baseHC := func() *hyperv1.HostedCluster {
+		return &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:              "test-cluster",
+				Namespace:         "test-ns",
+				DeletionTimestamp: &deletionTime,
+				Finalizers:        []string{HostedClusterFinalizer},
+				Annotations: map[string]string{
+					hyperv1.SkipControlPlaneNamespaceDeletionAnnotation: "true",
+				},
+			},
+			Spec: hyperv1.HostedClusterSpec{
+				ClusterID: "test-id",
+				InfraID:   "test-infra",
+				Platform:  hyperv1.PlatformSpec{Type: hyperv1.NonePlatform},
+				Release:   hyperv1.Release{Image: "quay.io/openshift-release-dev/ocp-release:4.15.0"},
+				Networking: hyperv1.ClusterNetworking{
+					ClusterNetwork: []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("10.128.0.0/14")}},
+					ServiceNetwork: []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.30.0.0/16")}},
+				},
+				Services: []hyperv1.ServicePublishingStrategyMapping{
+					{
+						Service:                   hyperv1.APIServer,
+						ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.LoadBalancer},
+					},
+					{
+						Service:                   hyperv1.Ignition,
+						ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.LoadBalancer},
+					},
+				},
+				PullSecret: corev1.LocalObjectReference{Name: "pull-secret"},
+			},
+		}
+	}
+
+	tests := []struct {
+		name                  string
+		gracePeriodAnnotation string
+		existingCondition     *metav1.Condition
+		expectError           bool
+		expectFinalizer       bool
+		expectCondition       bool
+		expectConditionReason string
+		expectConditionStatus metav1.ConditionStatus
+		expectRequeueAfter    time.Duration
+		additionalConditions  []metav1.Condition
+	}{
+		{
+			name:            "When no grace period annotation is set, it should remove the finalizer immediately",
+			expectFinalizer: false,
+		},
+		{
+			name:                  "When grace period annotation is invalid, it should return an error",
+			gracePeriodAnnotation: "not-a-duration",
+			expectError:           true,
+			expectFinalizer:       true,
+		},
+		{
+			name:                  "When grace period is set and no existing condition exists, it should set the condition and requeue",
+			gracePeriodAnnotation: "120s",
+			expectFinalizer:       true,
+			expectCondition:       true,
+			expectConditionReason: hyperv1.WaitingForGracePeriodReason,
+			expectRequeueAfter:    120 * time.Second,
+		},
+		{
+			name:                  "When still within the grace period, it should requeue with the remaining time",
+			gracePeriodAnnotation: "120s",
+			existingCondition: &metav1.Condition{
+				Type:               string(hyperv1.HostedClusterDestroyed),
+				Status:             metav1.ConditionTrue,
+				Reason:             hyperv1.WaitingForGracePeriodReason,
+				Message:            "Grace period set: 2m0s",
+				LastTransitionTime: metav1.NewTime(now.Add(-30 * time.Second)),
+			},
+			expectFinalizer:       true,
+			expectCondition:       true,
+			expectConditionReason: hyperv1.WaitingForGracePeriodReason,
+			expectRequeueAfter:    90 * time.Second,
+		},
+		{
+			name:                  "When the grace period has expired, it should remove the finalizer",
+			gracePeriodAnnotation: "120s",
+			existingCondition: &metav1.Condition{
+				Type:               string(hyperv1.HostedClusterDestroyed),
+				Status:             metav1.ConditionTrue,
+				Reason:             hyperv1.WaitingForGracePeriodReason,
+				Message:            "Grace period set: 2m0s",
+				LastTransitionTime: metav1.NewTime(now.Add(-121 * time.Second)),
+			},
+			expectFinalizer: false,
+		},
+		{
+			name:                  "When zero grace period is set, it should remove the finalizer immediately",
+			gracePeriodAnnotation: "0s",
+			expectFinalizer:       false,
+		},
+		{
+			name:                  "When HostedClusterDestroyed condition has ConditionFalse status, it should re-run delete and reset grace period",
+			gracePeriodAnnotation: "120s",
+			existingCondition: &metav1.Condition{
+				Type:               string(hyperv1.HostedClusterDestroyed),
+				Status:             metav1.ConditionFalse,
+				Reason:             hyperv1.WaitingForGracePeriodReason,
+				Message:            "Grace period set: 2m0s",
+				LastTransitionTime: metav1.NewTime(now.Add(-30 * time.Second)),
+			},
+			expectFinalizer:       true,
+			expectCondition:       true,
+			expectConditionReason: hyperv1.WaitingForGracePeriodReason,
+			expectConditionStatus: metav1.ConditionTrue,
+			expectRequeueAfter:    120 * time.Second,
+		},
+		{
+			name:                  "When HostedClusterDestroyed condition has ConditionUnknown status, it should re-run delete and reset grace period",
+			gracePeriodAnnotation: "120s",
+			existingCondition: &metav1.Condition{
+				Type:               string(hyperv1.HostedClusterDestroyed),
+				Status:             metav1.ConditionUnknown,
+				Reason:             hyperv1.WaitingForGracePeriodReason,
+				Message:            "Grace period set: 2m0s",
+				LastTransitionTime: metav1.NewTime(now.Add(-30 * time.Second)),
+			},
+			expectFinalizer:       true,
+			expectCondition:       true,
+			expectConditionReason: hyperv1.WaitingForGracePeriodReason,
+			expectConditionStatus: metav1.ConditionTrue,
+			expectRequeueAfter:    120 * time.Second,
+		},
+		{
+			name:                  "When the grace period has expired with CloudResourcesDestroyed false, it should still remove the finalizer",
+			gracePeriodAnnotation: "120s",
+			existingCondition: &metav1.Condition{
+				Type:               string(hyperv1.HostedClusterDestroyed),
+				Status:             metav1.ConditionTrue,
+				Reason:             hyperv1.WaitingForGracePeriodReason,
+				Message:            "Grace period set: 2m0s",
+				LastTransitionTime: metav1.NewTime(now.Add(-121 * time.Second)),
+			},
+			additionalConditions: []metav1.Condition{
+				{
+					Type:               string(hyperv1.CloudResourcesDestroyed),
+					Status:             metav1.ConditionFalse,
+					Reason:             "CloudResourcesPending",
+					Message:            "Cloud resources have not been fully destroyed",
+					LastTransitionTime: metav1.NewTime(now.Add(-60 * time.Second)),
+				},
+			},
+			expectFinalizer: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			hcluster := baseHC()
+			if tc.gracePeriodAnnotation != "" {
+				hcluster.Annotations[hyperv1.HCDestroyGracePeriodAnnotation] = tc.gracePeriodAnnotation
+			}
+			if tc.existingCondition != nil {
+				meta.SetStatusCondition(&hcluster.Status.Conditions, *tc.existingCondition)
+			}
+			for _, c := range tc.additionalConditions {
+				meta.SetStatusCondition(&hcluster.Status.Conditions, c)
+			}
+
+			pullSecret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: "pull-secret", Namespace: "test-ns"},
+				Data: map[string][]byte{
+					".dockerconfigjson": []byte("{}"),
+				},
+			}
+
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				WithObjects(hcluster, pullSecret).
+				WithStatusSubresource(hcluster).
+				Build()
+
+			mockCtrl := gomock.NewController(t)
+			defer mockCtrl.Finish()
+			mockedProvider := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(mockCtrl)
+			mockedProvider.EXPECT().
+				Lookup(gomock.Any(), gomock.Any(), gomock.Any()).
+				Return(testutils.InitReleaseImageOrDie("4.15.0"), nil).AnyTimes()
+
+			r := &HostedClusterReconciler{
+				Client:                        fakeClient,
+				Clock:                         clocktesting.NewFakeClock(now),
+				CertRotationScale:             24 * time.Hour,
+				createOrUpdate:                func(reconcile.Request) upsert.CreateOrUpdateFN { return ctrl.CreateOrUpdate },
+				ManagementClusterCapabilities: &fakecapabilities.FakeSupportNoCapabilities{},
+				KubevirtInfraClients:          kvinfra.NewKubevirtInfraClientMap(),
+				RegistryProvider: fakeReleaseProvider{
+					releaseProvider: mockedProvider,
+					metadataProvider: fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
+						Result: &dockerv1client.DockerImageConfig{},
+					},
+				},
+				now: func() metav1.Time { return metav1.NewTime(now) },
+			}
+
+			result, err := r.Reconcile(t.Context(), ctrl.Request{
+				NamespacedName: crclient.ObjectKeyFromObject(hcluster),
+			})
+
+			if tc.expectError {
+				g.Expect(err).To(HaveOccurred(), "should return error")
+				return
+			}
+
+			updatedHC := &hyperv1.HostedCluster{}
+			getErr := fakeClient.Get(t.Context(), crclient.ObjectKeyFromObject(hcluster), updatedHC)
+
+			if !tc.expectFinalizer {
+				// When the finalizer is removed, the fake client deletes the object
+				// (DeletionTimestamp is set and no finalizers remain). The Reconcile
+				// method then fails to update the ReconciliationSucceeded condition
+				// with a NotFound error, which is the expected outcome.
+				g.Expect(errors2.IsNotFound(getErr)).To(BeTrue(),
+					"HC should be deleted after finalizer removal")
+				g.Expect(err).To(HaveOccurred(),
+					"Reconcile should error from status update on deleted object")
+				return
+			}
+
+			g.Expect(err).ToNot(HaveOccurred(), "should not return error")
+			g.Expect(getErr).ToNot(HaveOccurred())
+
+			g.Expect(controllerutil.ContainsFinalizer(updatedHC, HostedClusterFinalizer)).To(BeTrue(),
+				"finalizer should still be present")
+
+			cond := meta.FindStatusCondition(updatedHC.Status.Conditions, string(hyperv1.HostedClusterDestroyed))
+			if tc.expectCondition {
+				g.Expect(cond).ToNot(BeNil(), "HostedClusterDestroyed condition should be set")
+				expectedStatus := metav1.ConditionTrue
+				if tc.expectConditionStatus != "" {
+					expectedStatus = tc.expectConditionStatus
+				}
+				g.Expect(cond.Status).To(Equal(expectedStatus))
+				g.Expect(cond.Reason).To(Equal(tc.expectConditionReason))
+			}
+
+			if tc.expectRequeueAfter > 0 {
+				g.Expect(result.RequeueAfter).To(Equal(tc.expectRequeueAfter),
+					"RequeueAfter should match expected grace period")
+			}
+		})
+	}
+}
