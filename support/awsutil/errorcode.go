@@ -9,6 +9,7 @@ import (
 const (
 	AuthFailure           = "AuthFailure"
 	DependencyViolation   = "DependencyViolation"
+	InvalidIdentityToken  = "InvalidIdentityToken"
 	UnauthorizedOperation = "UnauthorizedOperation"
 )
 
