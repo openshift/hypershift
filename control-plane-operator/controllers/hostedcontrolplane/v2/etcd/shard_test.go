@@ -108,42 +108,21 @@ func TestAdaptDiscoveryServiceForShard(t *testing.T) {
 func TestAdaptPDBForShard(t *testing.T) {
 	t.Parallel()
 
-	t.Run("multi-replica shard keeps MinAvailable", func(t *testing.T) {
-		t.Parallel()
-		g := NewWithT(t)
-		minAvail := intstr.FromInt32(2)
-		pdb := &policyv1.PodDisruptionBudget{
-			Spec: policyv1.PodDisruptionBudgetSpec{
-				Selector:     &metav1.LabelSelector{MatchLabels: map[string]string{"app": "etcd"}},
-				MinAvailable: &minAvail,
-			},
-		}
-		fn := adaptPDBForShard("etcd-events", 3)
-		err := fn(component.WorkloadContext{}, pdb)
-		g.Expect(err).ToNot(HaveOccurred())
-		g.Expect(pdb.Name).To(Equal("etcd-events"))
-		g.Expect(pdb.Spec.Selector.MatchLabels["app"]).To(Equal("etcd-events"))
-		g.Expect(pdb.Spec.MinAvailable).ToNot(BeNil())
-		g.Expect(pdb.Spec.MaxUnavailable).To(BeNil())
-	})
-
-	t.Run("single-replica shard sets MaxUnavailable=1 and clears MinAvailable", func(t *testing.T) {
-		t.Parallel()
-		g := NewWithT(t)
-		minAvail := intstr.FromInt32(1)
-		pdb := &policyv1.PodDisruptionBudget{
-			Spec: policyv1.PodDisruptionBudgetSpec{
-				Selector:     &metav1.LabelSelector{MatchLabels: map[string]string{"app": "etcd"}},
-				MinAvailable: &minAvail,
-			},
-		}
-		fn := adaptPDBForShard("etcd-events", 1)
-		err := fn(component.WorkloadContext{}, pdb)
-		g.Expect(err).ToNot(HaveOccurred())
-		g.Expect(pdb.Spec.MinAvailable).To(BeNil())
-		g.Expect(pdb.Spec.MaxUnavailable).ToNot(BeNil())
-		g.Expect(pdb.Spec.MaxUnavailable.IntVal).To(Equal(int32(1)))
-	})
+	g := NewWithT(t)
+	minAvail := intstr.FromInt32(2)
+	pdb := &policyv1.PodDisruptionBudget{
+		Spec: policyv1.PodDisruptionBudgetSpec{
+			Selector:     &metav1.LabelSelector{MatchLabels: map[string]string{"app": "etcd"}},
+			MinAvailable: &minAvail,
+		},
+	}
+	fn := adaptPDBForShard("etcd-events")
+	err := fn(component.WorkloadContext{}, pdb)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(pdb.Name).To(Equal("etcd-events"))
+	g.Expect(pdb.Spec.Selector.MatchLabels["app"]).To(Equal("etcd-events"))
+	g.Expect(pdb.Spec.MinAvailable).ToNot(BeNil())
+	g.Expect(pdb.Spec.MaxUnavailable).To(BeNil())
 }
 
 func TestAdaptShardStorage(t *testing.T) {
