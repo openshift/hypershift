@@ -13063,8 +13063,18 @@ ManagedEtcdShardStorageType
 </em>
 </td>
 <td>
-<p>type is the kind of storage implementation to use for this shard.
-PersistentVolume uses PVCs; EmptyDir uses ephemeral node storage (tmpfs).</p>
+<p>type is the kind of storage backend to use for this shard.
+Valid values are PersistentVolume and EmptyDir.
+When set to PersistentVolume, a PersistentVolumeClaim is created for
+each etcd replica via the StatefulSet volumeClaimTemplates. The
+optional persistentVolume field can override the StorageClass for
+this shard; when persistentVolume is omitted, the shard inherits
+the StorageClass and size from the parent spec.etcd.managed.storage
+configuration.
+When set to EmptyDir, the shard uses memory-backed ephemeral
+storage (tmpfs). Data is lost when the pod restarts. This is
+suitable for shards holding expendable, high-churn data such as
+events or leases.</p>
 </td>
 </tr>
 <tr>
@@ -13079,7 +13089,10 @@ ManagedEtcdShardPersistentVolumeSpec
 <td>
 <em>(Optional)</em>
 <p>persistentVolume configures PVC-based storage for this shard.
-Only valid when type is PersistentVolume.</p>
+Only valid when type is PersistentVolume.
+When omitted and type is PersistentVolume, the shard inherits the
+StorageClass and volume size from the parent
+spec.etcd.managed.storage.persistentVolume configuration.</p>
 </td>
 </tr>
 </tbody>
