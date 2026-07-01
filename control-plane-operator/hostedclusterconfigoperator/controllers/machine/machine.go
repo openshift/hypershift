@@ -129,9 +129,12 @@ func (r *reconciler) reconcileKubevirtPassthroughService(ctx context.Context, _ 
 				log.Info("Skipping link-local address for EndpointSlice", "address", machineAddress.Address, "machine", machine.Name)
 				continue
 			}
-			if parsedAddr.Is4() {
+			// Use only the first address per family. CAPK PR #366 exposes all VMI
+			// interface IPs (for dual-stack CSR approval), including ovn-k8s-mp0
+			// management port IPs that are not routable from the management cluster.
+			if parsedAddr.Is4() && len(ipv4MachineAddresses) == 0 {
 				ipv4MachineAddresses = append(ipv4MachineAddresses, machineAddress.Address)
-			} else {
+			} else if !parsedAddr.Is4() && len(ipv6MachineAddresses) == 0 {
 				ipv6MachineAddresses = append(ipv6MachineAddresses, machineAddress.Address)
 			}
 		}
