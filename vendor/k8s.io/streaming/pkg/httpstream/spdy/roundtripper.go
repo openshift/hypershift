@@ -21,6 +21,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -28,18 +29,13 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
 	"golang.org/x/net/proxy"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/serializer"
-	"k8s.io/apimachinery/pkg/util/httpstream"
-	utilnet "k8s.io/apimachinery/pkg/util/net"
-	apiproxy "k8s.io/apimachinery/pkg/util/proxy"
-	"k8s.io/apimachinery/third_party/forked/golang/netutil"
+	"k8s.io/streaming/pkg/httpstream"
+	utilnet "k8s.io/utils/net"
 )
 
 // SpdyRoundTripper knows how to upgrade an HTTP request to one that supports
@@ -62,7 +58,8 @@ type SpdyRoundTripper struct {
 	// Dialer is the dialer used to connect.  Used if non-nil.
 	Dialer *net.Dialer
 
-	// proxier knows which proxy to use given a request, defaults to http.ProxyFromEnvironment
+	// proxier knows which proxy to use given a request, defaults to a proxier that
+	// preserves NO_PROXY CIDR behavior while delegating to http.ProxyFromEnvironment.
 	// Used primarily for mocking the proxy discovery in tests.
 	proxier func(req *http.Request) (*url.URL, error)
 
@@ -75,9 +72,19 @@ type SpdyRoundTripper struct {
 	upgradeTransport http.RoundTripper
 }
 
-var _ utilnet.TLSClientConfigHolder = &SpdyRoundTripper{}
+type tlsClientConfigHolder interface {
+	TLSClientConfig() *tls.Config
+}
+
+type roundTripperWrapper interface {
+	http.RoundTripper
+	WrappedRoundTripper() http.RoundTripper
+}
+
+type dialFunc func(ctx context.Context, network, addr string) (net.Conn, error)
+
+var _ tlsClientConfigHolder = &SpdyRoundTripper{}
 var _ httpstream.UpgradeRoundTripper = &SpdyRoundTripper{}
-var _ utilnet.Dialer = &SpdyRoundTripper{}
 
 // NewRoundTripper creates a new SpdyRoundTripper that will use the specified
 // tlsConfig.
@@ -106,14 +113,14 @@ func NewRoundTripperWithConfig(cfg RoundTripperConfig) (*SpdyRoundTripper, error
 		if cfg.TLS != nil || cfg.Proxier != nil {
 			return nil, fmt.Errorf("SpdyRoundTripper: UpgradeTransport is mutually exclusive to TLSConfig or Proxier")
 		}
-		tlsConfig, err := utilnet.TLSClientConfig(cfg.UpgradeTransport)
+		tlsConfig, err := tlsConfigForTransport(cfg.UpgradeTransport)
 		if err != nil {
-			return nil, fmt.Errorf("SpdyRoundTripper: Unable to retrieve TLSConfig from  UpgradeTransport: %v", err)
+			return nil, fmt.Errorf("SpdyRoundTripper: unable to retrieve TLS config from UpgradeTransport: %w", err)
 		}
 		cfg.TLS = tlsConfig
 	}
 	if cfg.Proxier == nil {
-		cfg.Proxier = utilnet.NewProxierWithNoProxyCIDR(http.ProxyFromEnvironment)
+		cfg.Proxier = newProxierWithNoProxyCIDR(http.ProxyFromEnvironment)
 	}
 	return &SpdyRoundTripper{
 		tlsConfig:        cfg.TLS,
@@ -121,6 +128,47 @@ func NewRoundTripperWithConfig(cfg RoundTripperConfig) (*SpdyRoundTripper, error
 		pingPeriod:       cfg.PingPeriod,
 		upgradeTransport: cfg.UpgradeTransport,
 	}, nil
+}
+
+// newProxierWithNoProxyCIDR preserves CIDR matching in NO_PROXY/no_proxy while
+// delegating all other behavior to the supplied proxy function.
+func newProxierWithNoProxyCIDR(delegate func(req *http.Request) (*url.URL, error)) func(req *http.Request) (*url.URL, error) {
+	noProxyEnv := os.Getenv("NO_PROXY")
+	if noProxyEnv == "" {
+		noProxyEnv = os.Getenv("no_proxy")
+	}
+	noProxyRules := strings.Split(noProxyEnv, ",")
+
+	cidrs := make([]*net.IPNet, 0, len(noProxyRules))
+	for _, noProxyRule := range noProxyRules {
+		noProxyRule = strings.TrimSpace(noProxyRule)
+		if noProxyRule == "" {
+			continue
+		}
+		_, cidr, err := utilnet.ParseCIDRSloppy(noProxyRule)
+		if err == nil {
+			cidrs = append(cidrs, cidr)
+		}
+	}
+
+	if len(cidrs) == 0 {
+		return delegate
+	}
+
+	return func(req *http.Request) (*url.URL, error) {
+		ip := utilnet.ParseIPSloppy(req.URL.Hostname())
+		if ip == nil {
+			return delegate(req)
+		}
+
+		for _, cidr := range cidrs {
+			if cidr.Contains(ip) {
+				return nil, nil
+			}
+		}
+
+		return delegate(req)
+	}
 }
 
 // RoundTripperConfig is a set of options for an SpdyRoundTripper.
@@ -144,12 +192,12 @@ func (s *SpdyRoundTripper) TLSClientConfig() *tls.Config {
 	return s.tlsConfig
 }
 
-// Dial implements k8s.io/apimachinery/pkg/util/net.Dialer.
+// Dial opens a network connection for an upgrade request.
 func (s *SpdyRoundTripper) Dial(req *http.Request) (net.Conn, error) {
 	var conn net.Conn
 	var err error
 	if s.upgradeTransport != nil {
-		conn, err = apiproxy.DialURL(req.Context(), req.URL, s.upgradeTransport)
+		conn, err = dialURLWithTransport(req.Context(), req.URL, s.upgradeTransport)
 	} else {
 		conn, err = s.dial(req)
 	}
@@ -190,7 +238,7 @@ func (s *SpdyRoundTripper) dial(req *http.Request) (net.Conn, error) {
 // dialWithHttpProxy dials the host specified by url through an http or an https proxy.
 func (s *SpdyRoundTripper) dialWithHttpProxy(req *http.Request, proxyURL *url.URL) (net.Conn, error) {
 	// ensure we use a canonical host with proxyReq
-	targetHost := netutil.CanonicalAddr(req.URL)
+	targetHost := canonicalAddr(req.URL)
 
 	// proxying logic adapted from http://blog.h6t.eu/post/74098062923/golang-websocket-with-http-proxy-support
 	proxyReq := http.Request{
@@ -234,8 +282,8 @@ func (s *SpdyRoundTripper) dialWithHttpProxy(req *http.Request, proxyURL *url.UR
 // dialWithSocks5Proxy dials the host specified by url through a socks5 proxy.
 func (s *SpdyRoundTripper) dialWithSocks5Proxy(req *http.Request, proxyURL *url.URL) (net.Conn, error) {
 	// ensure we use a canonical host with proxyReq
-	targetHost := netutil.CanonicalAddr(req.URL)
-	proxyDialAddr := netutil.CanonicalAddr(proxyURL)
+	targetHost := canonicalAddr(req.URL)
+	proxyDialAddr := canonicalAddr(proxyURL)
 
 	var auth *proxy.Auth
 	if proxyURL.User != nil {
@@ -304,7 +352,7 @@ func (s *SpdyRoundTripper) tlsConn(ctx context.Context, rwc net.Conn, targetHost
 
 // dialWithoutProxy dials the host specified by url, using TLS if appropriate.
 func (s *SpdyRoundTripper) dialWithoutProxy(ctx context.Context, url *url.URL) (net.Conn, error) {
-	dialAddr := netutil.CanonicalAddr(url)
+	dialAddr := canonicalAddr(url)
 	dialer := s.Dialer
 	if dialer == nil {
 		dialer = &net.Dialer{}
@@ -336,7 +384,8 @@ func (s *SpdyRoundTripper) proxyAuth(proxyURL *url.URL) string {
 // clients may call SpdyRoundTripper.Connection() to retrieve the upgraded
 // connection.
 func (s *SpdyRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
-	req = utilnet.CloneRequest(req)
+	req = req.Clone(req.Context())
+	req.Header = req.Header.Clone()
 	req.Header.Add(httpstream.HeaderConnection, httpstream.HeaderUpgrade)
 	req.Header.Add(httpstream.HeaderUpgrade, HeaderSpdy31)
 
@@ -365,35 +414,159 @@ func (s *SpdyRoundTripper) NewConnection(resp *http.Response) (httpstream.Connec
 	upgradeHeader := strings.ToLower(resp.Header.Get(httpstream.HeaderUpgrade))
 	if (resp.StatusCode != http.StatusSwitchingProtocols) || !strings.Contains(connectionHeader, strings.ToLower(httpstream.HeaderUpgrade)) || !strings.Contains(upgradeHeader, strings.ToLower(HeaderSpdy31)) {
 		defer resp.Body.Close()
-		responseError := ""
 		responseErrorBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
-			responseError = "unable to read error from server response"
-		} else {
-			// TODO: I don't belong here, I should be abstracted from this class
-			if obj, _, err := statusCodecs.UniversalDecoder().Decode(responseErrorBytes, nil, &metav1.Status{}); err == nil {
-				if status, ok := obj.(*metav1.Status); ok {
-					return nil, &apierrors.StatusError{ErrStatus: *status}
-				}
-			}
-			responseError = string(responseErrorBytes)
-			responseError = strings.TrimSpace(responseError)
+			return nil, fmt.Errorf("unable to upgrade connection: unable to read error from server response")
 		}
-
-		return nil, fmt.Errorf("unable to upgrade connection: %s", responseError)
+		return nil, fmt.Errorf("unable to upgrade connection: %s", upgradeErrorMessage(responseErrorBytes))
 	}
 
 	return NewClientConnectionWithPings(s.conn, s.pingPeriod)
 }
 
-// statusScheme is private scheme for the decoding here until someone fixes the TODO in NewConnection
-var statusScheme = runtime.NewScheme()
+func tlsConfigForTransport(transport http.RoundTripper) (*tls.Config, error) {
+	if transport == nil {
+		return nil, nil
+	}
+	switch transport := transport.(type) {
+	case *http.Transport:
+		return transport.TLSClientConfig, nil
+	case tlsClientConfigHolder:
+		return transport.TLSClientConfig(), nil
+	case roundTripperWrapper:
+		return tlsConfigForTransport(transport.WrappedRoundTripper())
+	default:
+		return nil, fmt.Errorf("transport %T does not expose TLS client config", transport)
+	}
+}
 
-// ParameterCodec knows about query parameters used with the meta v1 API spec.
-var statusCodecs = serializer.NewCodecFactory(statusScheme)
+func canonicalAddr(url *url.URL) string {
+	host := url.Hostname()
+	port := url.Port()
+	if len(port) == 0 {
+		switch strings.ToLower(url.Scheme) {
+		case "http", "ws":
+			port = "80"
+		case "https", "wss":
+			port = "443"
+		}
+	}
+	return net.JoinHostPort(host, port)
+}
 
-func init() {
-	statusScheme.AddUnversionedTypes(metav1.SchemeGroupVersion,
-		&metav1.Status{},
-	)
+func upgradeErrorMessage(responseErrorBytes []byte) string {
+	type statusLike struct {
+		Message string `json:"message"`
+		Error   string `json:"error"`
+	}
+
+	var status statusLike
+	if err := json.Unmarshal(responseErrorBytes, &status); err == nil {
+		if msg := strings.TrimSpace(status.Message); msg != "" {
+			return msg
+		}
+		if msg := strings.TrimSpace(status.Error); msg != "" {
+			return msg
+		}
+	}
+
+	msg := strings.TrimSpace(string(responseErrorBytes))
+	if msg == "" {
+		return "empty server response"
+	}
+	return msg
+}
+
+func dialURLWithTransport(ctx context.Context, url *url.URL, transport http.RoundTripper) (net.Conn, error) {
+	dialAddr := canonicalAddr(url)
+
+	dialer, err := dialerFor(transport)
+	if err != nil {
+		dialer = nil
+	}
+
+	switch url.Scheme {
+	case "http":
+		if dialer != nil {
+			return dialer(ctx, "tcp", dialAddr)
+		}
+		var d net.Dialer
+		return d.DialContext(ctx, "tcp", dialAddr)
+	case "https":
+		tlsConfig, err := tlsConfigForTransport(transport)
+		if err != nil {
+			tlsConfig = nil
+		}
+
+		if dialer != nil {
+			netConn, err := dialer(ctx, "tcp", dialAddr)
+			if err != nil {
+				return nil, err
+			}
+
+			if tlsConfig == nil {
+				tlsConfig = &tls.Config{InsecureSkipVerify: true}
+			} else if len(tlsConfig.ServerName) == 0 && !tlsConfig.InsecureSkipVerify {
+				inferredHost := dialAddr
+				if host, _, err := net.SplitHostPort(dialAddr); err == nil {
+					inferredHost = host
+				}
+				tlsConfigCopy := tlsConfig.Clone()
+				tlsConfigCopy.ServerName = inferredHost
+				tlsConfig = tlsConfigCopy
+			}
+
+			if supportsHTTP11(tlsConfig.NextProtos) {
+				tlsConfig = tlsConfig.Clone()
+				tlsConfig.NextProtos = []string{"http/1.1"}
+			}
+
+			tlsConn := tls.Client(netConn, tlsConfig)
+			if err := tlsConn.HandshakeContext(ctx); err != nil {
+				netConn.Close()
+				return nil, err
+			}
+			return tlsConn, nil
+		}
+
+		tlsDialer := tls.Dialer{Config: tlsConfig}
+		return tlsDialer.DialContext(ctx, "tcp", dialAddr)
+	default:
+		return nil, fmt.Errorf("unknown scheme: %s", url.Scheme)
+	}
+}
+
+func dialerFor(transport http.RoundTripper) (dialFunc, error) {
+	if transport == nil {
+		return nil, nil
+	}
+
+	switch transport := transport.(type) {
+	case *http.Transport:
+		if transport.DialContext != nil {
+			return transport.DialContext, nil
+		}
+		if transport.Dial != nil {
+			return func(ctx context.Context, network, addr string) (net.Conn, error) {
+				return transport.Dial(network, addr)
+			}, nil
+		}
+		return nil, nil
+	case roundTripperWrapper:
+		return dialerFor(transport.WrappedRoundTripper())
+	default:
+		return nil, fmt.Errorf("unknown transport type: %T", transport)
+	}
+}
+
+func supportsHTTP11(nextProtos []string) bool {
+	if len(nextProtos) == 0 {
+		return true
+	}
+	for _, proto := range nextProtos {
+		if proto == "http/1.1" {
+			return true
+		}
+	}
+	return false
 }
