@@ -6,6 +6,7 @@ import (
 	"context"
 	"os"
 	"testing"
+	"time"
 
 	. "github.com/onsi/gomega"
 
@@ -17,6 +18,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kauthnv1typedclient "k8s.io/client-go/kubernetes/typed/authentication/v1"
+	"k8s.io/client-go/rest"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/openshift/hypershift/control-plane-operator/featuregates"
@@ -242,61 +244,66 @@ func TestExternalOIDC(t *testing.T) {
 				g.Expect(err).To(HaveOccurred())
 			})
 		}
-	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "external-oidc", globalOpts.ServiceAccountSigningKey)
 
-	// ExternalOIDCWithUpstreamParity tests - Tests CEL expressions and validation rules
-	// Auth config adds: CEL expressions for username/groups (NO prefixes)
-	// Auth config adds: Claim validation rules (email exists, email_verified)
-	// Auth config adds: User validation rules (no system: prefix, no 'forbidden' word)
-	if featuregates.Gate().Enabled(featuregates.ExternalOIDCWithUpstreamParity) {
-		upstreamParityOpts := clusterOpts
-		upstreamParityOpts.FeatureSet = string(configv1.TechPreviewNoUpgrade)
-		upstreamParityOpts.ExtOIDCConfig.CustomizeAuthSpec = func(spec *configv1.AuthenticationSpec) {
-			// Use CEL expression for username mapping instead of static claim
-			spec.OIDCProviders[0].ClaimMappings.Username = configv1.UsernameClaimMapping{
-				Expression: "claims.email.split('@')[0]",
-			}
+		// ExternalOIDCWithUpstreamParity tests - Tests CEL expressions and validation rules
+		// Auth config adds: CEL expressions for username/groups (NO prefixes)
+		// Auth config adds: Claim validation rules (email exists, email_verified)
+		// Auth config adds: User validation rules (no system: prefix, no 'forbidden' word)
+		if featuregates.Gate().Enabled(featuregates.ExternalOIDCWithUpstreamParity) {
+			upstreamParityOpts := clusterOpts
+			upstreamParityOpts.FeatureSet = string(configv1.TechPreviewNoUpgrade)
+			upstreamParityOpts.ExtOIDCConfig.CustomizeAuthSpec = func(spec *configv1.AuthenticationSpec) {
+				// Use CEL expression for username mapping instead of static claim
+				spec.OIDCProviders[0].ClaimMappings.Username = configv1.UsernameClaimMapping{
+					Expression: "claims.email.split('@')[0]",
+				}
 
-			// Use CEL expression for groups mapping instead of static claim
-			spec.OIDCProviders[0].ClaimMappings.Groups = configv1.PrefixedClaimMapping{
-				TokenClaimMapping: configv1.TokenClaimMapping{
-					Expression: "claims.?groups.orValue([])",
-				},
-			}
-
-			// Add claim validation rules
-			spec.OIDCProviders[0].ClaimValidationRules = []configv1.TokenClaimValidationRule{
-				{
-					Type: configv1.TokenValidationRuleTypeCEL,
-					CEL: configv1.TokenClaimValidationCELRule{
-						Expression: "claims.email_verified == true",
-						Message:    "email_verified claim must be true",
+				// Use CEL expression for groups mapping instead of static claim
+				spec.OIDCProviders[0].ClaimMappings.Groups = configv1.PrefixedClaimMapping{
+					TokenClaimMapping: configv1.TokenClaimMapping{
+						Expression: "claims.?groups.orValue([])",
 					},
-				},
+				}
+
+				// Add claim validation rules
+				spec.OIDCProviders[0].ClaimValidationRules = []configv1.TokenClaimValidationRule{
+					{
+						Type: configv1.TokenValidationRuleTypeCEL,
+						CEL: configv1.TokenClaimValidationCELRule{
+							Expression: "claims.email_verified == true",
+							Message:    "email_verified claim must be true",
+						},
+					},
+				}
+
+				// Add user validation rules
+				spec.OIDCProviders[0].UserValidationRules = []configv1.TokenUserValidationRule{
+					{
+						Expression: "!user.username.contains('forbidden')",
+						Message:    "username cannot contain the word 'forbidden'",
+					},
+				}
 			}
 
-			// Add user validation rules
-			spec.OIDCProviders[0].UserValidationRules = []configv1.TokenUserValidationRule{
-				{
-					Expression: "!user.username.contains('forbidden')",
-					Message:    "username cannot contain the word 'forbidden'",
-				},
-			}
-		}
+			featuregates.ConfigureFeatureSet(upstreamParityOpts.FeatureSet)
 
-		featuregates.ConfigureFeatureSet(upstreamParityOpts.FeatureSet)
+			t.Run("[OCPFeatureGate:ExternalOIDCWithUpstreamParity] Patch and validate upstream parity config", func(t *testing.T) {
+				g := NewWithT(t)
 
-		e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
-			g.Expect(hostedCluster.Spec.Configuration).NotTo(BeNil())
-			g.Expect(hostedCluster.Spec.Configuration.Authentication).NotTo(BeNil())
-			g.Expect(hostedCluster.Spec.Configuration.Authentication.OIDCProviders).NotTo(BeEmpty())
-			clientCfg := e2eutil.WaitForGuestRestConfig(t, ctx, mgtClient, hostedCluster)
+				t.Logf("Patching HostedCluster %s/%s with upstream parity OIDC config", hostedCluster.Namespace, hostedCluster.Name)
 
-			// Setup Keycloak admin client
-			kc, err := e2eutil.SetupKeycloakAdminClientFromCluster(ctx, t, mgtClient, upstreamParityOpts.ExtOIDCConfig)
-			if err != nil {
-				t.Skipf("Could not setup Keycloak admin client: %v", err)
-			}
+				// Build the new auth spec using CustomizeAuthSpec pattern (already exists!)
+				// Use upstreamParityOpts which has the CustomizeAuthSpec callback set
+				newAuthSpec := upstreamParityOpts.ExtOIDCConfig.GetAuthenticationConfig()
+
+				// Patch using the same pattern as postCreateExternalOIDC
+				patchHostedClusterAuth(ctx, g, mgtClient, hostedCluster, newAuthSpec)
+
+				// Wait for KAS to reload - reuse the Eventually pattern from v2 tests
+				waitForKASAuthReload(ctx, t, g, clientCfg, upstreamParityOpts.ExtOIDCConfig, kc)
+
+				t.Logf("Successfully patched and validated upstream parity OIDC config")
+			})
 
 			t.Run("[OCPFeatureGate:ExternalOIDCWithUpstreamParity] Token is valid + authn'd, username/groups mapped correctly", func(t *testing.T) {
 				g := NewWithT(t)
@@ -348,7 +355,63 @@ func TestExternalOIDC(t *testing.T) {
 				g.Expect(err).To(HaveOccurred(), "user should not be authenticated + able to do SelfSubjectReview")
 				g.Expect(apierrors.IsUnauthorized(err)).To(BeTrue(), "should receive an unauthorized error when trying to create SelfSubjectReview")
 			})
-		}).Execute(&upstreamParityOpts, globalOpts.Platform, globalOpts.ArtifactDir, "ext-oidc-upstream-parity", globalOpts.ServiceAccountSigningKey)
-	}
+		}
+	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "external-oidc", globalOpts.ServiceAccountSigningKey)
+}
 
+// patchHostedClusterAuth patches the HostedCluster's authentication configuration
+// Reuses the exact same pattern as azure.go:postCreateExternalOIDC (lines 305-313)
+func patchHostedClusterAuth(ctx context.Context, g Gomega, mgtClient crclient.Client, hc *hyperv1.HostedCluster, newAuthSpec *configv1.AuthenticationSpec) {
+	// Get the latest version
+	current := &hyperv1.HostedCluster{}
+	err := mgtClient.Get(ctx, crclient.ObjectKey{Namespace: hc.Namespace, Name: hc.Name}, current)
+	g.Expect(err).NotTo(HaveOccurred(), "should be able to get HostedCluster")
+
+	// Create patch
+	patch := crclient.MergeFrom(current.DeepCopy())
+
+	// Mutate
+	if current.Spec.Configuration == nil {
+		current.Spec.Configuration = &hyperv1.ClusterConfiguration{}
+	}
+	current.Spec.Configuration.Authentication = newAuthSpec
+
+	// Apply
+	err = mgtClient.Patch(ctx, current, patch)
+	g.Expect(err).NotTo(HaveOccurred(), "should be able to patch HostedCluster authentication config")
+}
+
+// waitForKASAuthReload waits for KAS to pick up the new authentication config
+// Reuses the Eventually pattern from hosted_cluster_external_oidc_test.go:310-325
+func waitForKASAuthReload(ctx context.Context, t *testing.T, g Gomega, clientCfg *rest.Config, authConfig *e2eutil.ExtOIDCConfig, kc *e2eutil.KeycloakAdminClient) {
+	t.Logf("Waiting for KAS to reload authentication config (timeout: 5 minutes)")
+
+	// Create a test user to validate the new config
+	username, _, password, _, err := createTestUserWithGroup(ctx, kc, "", true)
+	g.Expect(err).NotTo(HaveOccurred())
+
+	testAuthConfig := *authConfig
+	testAuthConfig.TestUsers = username + ":" + password
+
+	// This is the SAME pattern as v2 tests - Eventually + fresh token per attempt
+	Eventually(func(g Gomega) {
+		t.Logf("Attempting authentication with new OIDC config (user: %s)", username)
+
+		// Get fresh token each attempt (Keycloak tokens have short TTL)
+		testUserKubeConfig := e2eutil.ChangeUserForKeycloakExtOIDC(t, ctx, clientCfg, &testAuthConfig)
+		testAuthClient, err := kauthnv1typedclient.NewForConfig(testUserKubeConfig)
+		g.Expect(err).NotTo(HaveOccurred())
+
+		// Try SelfSubjectReview - fails until KAS reloads
+		selfSubjectReview, err := testAuthClient.SelfSubjectReviews().Create(ctx, &kauthnv1.SelfSubjectReview{}, metav1.CreateOptions{})
+		if err != nil {
+			t.Logf("Authentication attempt failed (expected during reload): %v", err)
+		}
+		g.Expect(err).NotTo(HaveOccurred(), "KAS should accept OIDC token after reload")
+
+		// Verify new config is active (username = email local part, NO prefix)
+		g.Expect(selfSubjectReview.Status.UserInfo.Username).To(Equal(username), "username should use CEL expression (no prefix)")
+
+		t.Logf("KAS has successfully reloaded authentication config")
+	}).WithTimeout(5 * time.Minute).WithPolling(15 * time.Second).Should(Succeed())
 }
