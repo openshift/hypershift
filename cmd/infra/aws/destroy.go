@@ -101,20 +101,17 @@ func (o *DelegatedAWSCredentialOptions) Validate() error {
 		}
 	}
 
-	// ensure that only one type of credential has been passed
-	globalCredentialsPresent := o.AWSCredentialsOpts.AWSCredentialsFile != "" || o.AWSCredentialsOpts.STSCredentialsFile != ""
-	if globalCredentialsPresent {
-		if !anyComponentCredentialsPresent {
-			return o.AWSCredentialsOpts.Validate()
-		} else {
+	if anyComponentCredentialsPresent {
+		if o.AWSCredentialsOpts.AWSCredentialsFile != "" || o.AWSCredentialsOpts.STSCredentialsFile != "" || o.AWSCredentialsOpts.RoleArn != "" {
 			return fmt.Errorf("cannot set any --aws-creds.component flags at the same time as other credentials")
 		}
-	} else {
 		if !allComponentCredentialsPresent {
-			return fmt.Errorf("either --aws-creds, --sts-creds, or all --aws-creds.component flags must be set")
+			return fmt.Errorf("all --aws-creds.component flags must be set when using per-component credentials")
 		}
+		return nil
 	}
-	return nil
+
+	return o.AWSCredentialsOpts.Validate()
 }
 
 func NewDestroyCommand() *cobra.Command {
@@ -199,7 +196,13 @@ func (o *DestroyInfraOptions) DestroyInfra(ctx context.Context) error {
 	var clusterRoute53Client, vpcOwnerRoute53Client, listRoute53Client, recordsRoute53Client awsapi.ROUTE53API
 	var s3Client awsapi.S3API
 	var ramClient *ram.Client
-	if o.AWSCredentialsOpts.AWSCredentialsOpts.AWSCredentialsFile != "" || o.AWSCredentialsOpts.AWSCredentialsOpts.STSCredentialsFile != "" {
+	useDelegatedCredentials := o.AWSEbsCsiDriverControllerCredentialsFile != "" ||
+		o.CloudControllerCredentialsFile != "" ||
+		o.CloudNetworkConfigControllerCredentialsFile != "" ||
+		o.ControlPlaneOperatorCredentialsFile != "" ||
+		o.NodePoolCredentialsFile != "" ||
+		o.OpenshiftImageRegistryCredentialsFile != ""
+	if !useDelegatedCredentials {
 		awsSession, err := o.AWSCredentialsOpts.AWSCredentialsOpts.GetSession(ctx, "cli-destroy-infra", o.CredentialsSecretData, o.Region)
 		if err != nil {
 			return err
@@ -265,6 +268,7 @@ func (o *DestroyInfraOptions) DestroyInfra(ctx context.Context) error {
 			return fmt.Errorf("failed to create delegating client: %w", err)
 		}
 		ec2Client = delegatingClent.EC2Client
+		vpcOwnerEC2Client = ec2Client
 		elbClient = delegatingClent.ELBClient
 		elbv2Client = delegatingClent.ELBV2Client
 		listRoute53Client = delegatingClent.ROUTE53Client
