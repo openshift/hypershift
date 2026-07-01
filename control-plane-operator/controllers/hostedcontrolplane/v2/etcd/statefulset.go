@@ -73,7 +73,7 @@ func adaptStatefulSet(cpContext component.WorkloadContext, sts *appsv1.StatefulS
 	})
 
 	if defragControllerPredicate(cpContext) {
-		sts.Spec.Template.Spec.Containers = append(sts.Spec.Template.Spec.Containers, buildEtcdDefragControllerContainer(hcp.Namespace))
+		sts.Spec.Template.Spec.Containers = append(sts.Spec.Template.Spec.Containers, buildEtcdDefragControllerContainer(hcp.Namespace, ""))
 		sts.Spec.Template.Spec.ServiceAccountName = manifests.EtcdDefragControllerServiceAccount("").Name
 	}
 
@@ -95,6 +95,21 @@ func adaptStatefulSet(cpContext component.WorkloadContext, sts *appsv1.StatefulS
 					},
 				}
 			}
+		}
+	}
+
+	// Apply scheduling constraints from ManagedEtcdSpec.Scheduling for the default shard.
+	if managedEtcdSpec != nil {
+		if len(managedEtcdSpec.Scheduling.NodeSelector) > 0 {
+			if sts.Spec.Template.Spec.NodeSelector == nil {
+				sts.Spec.Template.Spec.NodeSelector = map[string]string{}
+			}
+			for k, v := range managedEtcdSpec.Scheduling.NodeSelector {
+				sts.Spec.Template.Spec.NodeSelector[k] = v
+			}
+		}
+		if len(managedEtcdSpec.Scheduling.Tolerations) > 0 {
+			sts.Spec.Template.Spec.Tolerations = append(sts.Spec.Template.Spec.Tolerations, managedEtcdSpec.Scheduling.Tolerations...)
 		}
 	}
 
@@ -126,7 +141,10 @@ func buildEtcdInitContainer(restoreUrl string) corev1.Container {
 	return c
 }
 
-func buildEtcdDefragControllerContainer(namespace string) corev1.Container {
+// buildEtcdDefragControllerContainer builds the etcd-defrag sidecar container.
+// leaderElectionID overrides the default lease name when non-empty, allowing
+// multiple defrag controllers (one per shard) to each acquire their own lease.
+func buildEtcdDefragControllerContainer(namespace, leaderElectionID string) corev1.Container {
 	c := corev1.Container{
 		Name: "etcd-defrag",
 	}
@@ -147,6 +165,9 @@ func buildEtcdDefragControllerContainer(namespace string) corev1.Container {
 			Name:      "etcd-ca",
 			MountPath: "/etc/etcd/tls/etcd-ca",
 		},
+	}
+	if leaderElectionID != "" {
+		c.Args = append(c.Args, "--leader-election-id", leaderElectionID)
 	}
 	c.Resources = corev1.ResourceRequirements{
 		Requests: corev1.ResourceList{

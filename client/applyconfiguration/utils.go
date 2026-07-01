@@ -185,6 +185,10 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.EncryptionKeyReferenceApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("EncryptionMigrationHistory"):
 		return &hypershiftv1beta1.EncryptionMigrationHistoryApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("EtcdShardResource"):
+		return &hypershiftv1beta1.EtcdShardResourceApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("EtcdShardSchedulingSpec"):
+		return &hypershiftv1beta1.EtcdShardSchedulingSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("EtcdSpec"):
 		return &hypershiftv1beta1.EtcdSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("EtcdTLSConfig"):
@@ -317,6 +321,12 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.MachineNetworkEntryApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ManagedAzureKeyVault"):
 		return &hypershiftv1beta1.ManagedAzureKeyVaultApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("ManagedEtcdShardPersistentVolumeSpec"):
+		return &hypershiftv1beta1.ManagedEtcdShardPersistentVolumeSpecApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("ManagedEtcdShardSpec"):
+		return &hypershiftv1beta1.ManagedEtcdShardSpecApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("ManagedEtcdShardStorageSpec"):
+		return &hypershiftv1beta1.ManagedEtcdShardStorageSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ManagedEtcdSpec"):
 		return &hypershiftv1beta1.ManagedEtcdSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ManagedEtcdStorageSpec"):
@@ -427,6 +437,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.SubnetSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("Taint"):
 		return &hypershiftv1beta1.TaintApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("UnmanagedEtcdShardSpec"):
+		return &hypershiftv1beta1.UnmanagedEtcdShardSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("UnmanagedEtcdSpec"):
 		return &hypershiftv1beta1.UnmanagedEtcdSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("UserAssignedManagedIdentity"):

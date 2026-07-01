@@ -26,6 +26,13 @@ const (
 	controlPlaneOperatorComponentName = "control-plane-operator"
 )
 
+// isEtcdComponent returns true for the default etcd component and any etcd shard
+// component (e.g. "etcd-events"). It avoids matching unrelated components whose
+// names happen to start with "etcd" (e.g. a hypothetical "etcd-backup").
+func isEtcdComponent(name string) bool {
+	return name == etcdComponentName || strings.HasPrefix(name, etcdComponentName+"-")
+}
+
 var (
 	componentsExcludedFromKubeAPIServerDependency = sets.New(
 		etcdComponentName,
@@ -50,7 +57,7 @@ var (
 func (c *controlPlaneWorkload[T]) checkDependencies(cpContext ControlPlaneContext) ([]string, error) {
 	unavailableDependencies := sets.New(c.dependencies...)
 	// always add kube-apiserver as a dependency, except execluded components.
-	if !componentsExcludedFromKubeAPIServerDependency.Has(c.Name()) {
+	if !componentsExcludedFromKubeAPIServerDependency.Has(c.Name()) && !isEtcdComponent(c.Name()) {
 		unavailableDependencies.Insert(kubeAPIServerComponentName)
 	}
 	// we don't deploy etcd for unmanaged, therefore components can't have a dependency on it.
@@ -94,13 +101,13 @@ func (c *controlPlaneWorkload[T]) checkDependencies(cpContext ControlPlaneContex
 func (c *controlPlaneWorkload[T]) reconcileComponentStatus(cpContext ControlPlaneContext, component *hyperv1.ControlPlaneComponent, unavailableDependencies []string, reconcilationError error) error {
 	workloadContrext := cpContext.workloadContext()
 	component.Status.Resources = []hyperv1.ComponentResource{}
-	if err := assets.ForEachManifest(c.Name(), func(manifestName string) error {
+	if err := assets.ForEachManifest(c.AssetDirName(), func(manifestName string) error {
 		adapter, exist := c.manifestsAdapters[manifestName]
 		if exist && adapter.predicate != nil && !adapter.predicate(workloadContrext) {
 			return nil
 		}
 
-		obj, gvk, err := assets.LoadManifest(c.name, manifestName)
+		obj, gvk, err := assets.LoadManifest(c.AssetDirName(), manifestName)
 		if err != nil {
 			return err
 		}

@@ -37,6 +37,9 @@
                         "name": "HCPEtcdBackup"
                     },
                     {
+                        "name": "EtcdSharding"
+                    },
+                    {
                         "name": "OSStreams"
                     }
                 ],
