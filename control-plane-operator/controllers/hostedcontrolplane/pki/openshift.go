@@ -30,6 +30,17 @@ func ReconcileOpenShiftOAuthAPIServerCertSecret(secret, ca *corev1.Secret, owner
 	return reconcileSignedCertWithAddresses(secret, ca, ownerRef, "openshift-oauth-apiserver", []string{"openshift"}, X509UsageClientServerAuth, dnsNames, nil)
 }
 
+func ReconcileExternalOIDCWebhookCertSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
+	dnsNames := []string{
+		"external-oidc-webhook",
+		fmt.Sprintf("external-oidc-webhook.%s.svc", secret.Namespace),
+		fmt.Sprintf("external-oidc-webhook.%s.svc.cluster.local", secret.Namespace),
+		"external-oidc-webhook.default.svc",
+		"external-oidc-webhook.default.svc.cluster.local",
+	}
+	return reconcileSignedCertWithAddresses(secret, ca, ownerRef, "external-oidc-webhook", []string{"openshift"}, X509UsageClientServerAuth, dnsNames, nil)
+}
+
 func ReconcileOpenShiftAuthenticatorCertSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
 	return reconcileSignedCertWithAddresses(secret, ca, ownerRef, "system:serviceaccount:openshift-oauth-apiserver:openshift-authenticator", []string{"openshift"}, X509UsageClientAuth, nil, nil)
 }

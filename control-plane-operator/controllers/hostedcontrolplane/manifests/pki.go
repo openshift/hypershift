@@ -282,6 +282,10 @@ func OpenShiftOAuthAPIServerCertSecret(ns string) *corev1.Secret {
 	return secretFor(ns, "openshift-oauth-apiserver-cert")
 }
 
+func ExternalOIDCWebhookCertSecret(ns string) *corev1.Secret {
+	return secretFor(ns, "external-oidc-webhook-cert")
+}
+
 func OpenshiftAuthenticatorCertSecret(ns string) *corev1.Secret {
 	return secretFor(ns, "openshift-authenticator-cert")
 }

@@ -18,6 +18,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
+	"github.com/openshift/hypershift/control-plane-operator/featuregates"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ignition"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/infra"
@@ -1422,6 +1423,15 @@ func (r *HostedControlPlaneReconciler) reconcileOpenshiftCerts(ctx context.Conte
 			return pki.ReconcileOpenShiftOAuthAPIServerCertSecret(openshiftOAuthAPIServerCertSecret, rootCASecret, p.OwnerRef)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile openshift oauth apiserver cert: %w", err)
+		}
+	}
+
+	if util.HCPExternalOIDCEnabled(hcp) && featuregates.Gate().Enabled(featuregates.ExternalOIDCExternalClaimsSourcing) {
+		externalOIDCWebhookCertSecret := manifests.ExternalOIDCWebhookCertSecret(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, externalOIDCWebhookCertSecret, func() error {
+			return pki.ReconcileExternalOIDCWebhookCertSecret(externalOIDCWebhookCertSecret, rootCASecret, p.OwnerRef)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile external oidc webhook cert: %w", err)
 		}
 	}
 
