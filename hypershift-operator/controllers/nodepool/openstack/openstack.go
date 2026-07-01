@@ -132,6 +132,8 @@ func ReconcileOpenStackImageSpec(hcluster *hyperv1.HostedCluster, openStackImage
 // OpenstackDefaultImage returns the default RHCOS image for the given release.
 // The image URL and SHA256 hash are returned.
 func OpenstackDefaultImage(releaseImage *releaseinfo.ReleaseImage) (string, string, error) {
+	// TODO(CNTRLPLANE-3553): use releaseImage.StreamForName(rhelStream) instead of
+	// accessing StreamMetadata directly, to support dual-stream payloads.
 	arch, foundArch := releaseImage.StreamMetadata.Architectures["x86_64"]
 	if !foundArch {
 		return "", "", fmt.Errorf("couldn't find OS metadata for architecture %q", "x86_64")
@@ -154,6 +156,8 @@ func OpenstackDefaultImage(releaseImage *releaseinfo.ReleaseImage) (string, stri
 // OpenStackReleaseImage returns the release version for the OpenStack image.
 // The release version is extracted from the release metadata.
 func OpenStackReleaseImage(releaseImage *releaseinfo.ReleaseImage) (string, error) {
+	// TODO(CNTRLPLANE-3553): use releaseImage.StreamForName(rhelStream) instead of
+	// accessing StreamMetadata directly, to support dual-stream payloads.
 	arch, foundArch := releaseImage.StreamMetadata.Architectures["x86_64"]
 	if !foundArch {
 		return "", fmt.Errorf("couldn't find OS metadata for architecture %q", "x86_64")

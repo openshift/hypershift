@@ -152,13 +152,13 @@ spec:
 	}{
 		{
 			name:                       "When all input is given it should not return an error",
-			expectedHash:               "e1d8d58e",
+			expectedHash:               "83935368",
 			expectedHashWithoutVersion: "0db5756d",
 			nodePool:                   &hyperv1.NodePool{},
 			releaseImage: &releaseinfo.ReleaseImage{
 				ImageStream: &imageapi.ImageStream{
 					ObjectMeta: metav1.ObjectMeta{
-						Name: "latest",
+						Name: "4.18.0",
 					},
 				},
 			},
@@ -184,7 +184,7 @@ spec:
 		},
 		{
 			name:                       "When nodepool has configs it should populate mcoRawConfig ",
-			expectedHash:               "801aff6a",
+			expectedHash:               "af67f27c",
 			expectedHashWithoutVersion: "fef02451",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
@@ -213,7 +213,7 @@ spec:
 			releaseImage: &releaseinfo.ReleaseImage{
 				ImageStream: &imageapi.ImageStream{
 					ObjectMeta: metav1.ObjectMeta{
-						Name: "latest",
+						Name: "4.18.0",
 					},
 				},
 			},
@@ -236,14 +236,112 @@ spec:
 				},
 			},
 			expectedMCORawConfig: machineConfigDefaulted,
-			releaseImage:         &releaseinfo.ReleaseImage{},
-			hostedCluster:        hostedCluster,
-			client:               true,
-			error:                fmt.Errorf("configmaps \"does-not-exist\" not found"),
+			releaseImage: &releaseinfo.ReleaseImage{
+				ImageStream: &imageapi.ImageStream{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "4.18.0",
+					},
+				},
+			},
+			hostedCluster: hostedCluster,
+			client:        true,
+			error:         fmt.Errorf("configmaps \"does-not-exist\" not found"),
+		},
+		{
+			name:                       "When release version is 4.18.0 with no osImageStream it should produce baseline hash",
+			expectedHash:               "83935368",
+			expectedHashWithoutVersion: "0db5756d",
+			nodePool:                   &hyperv1.NodePool{},
+			releaseImage: &releaseinfo.ReleaseImage{
+				ImageStream: &imageapi.ImageStream{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "4.18.0",
+					},
+				},
+			},
+			hostedCluster: hostedCluster,
+			client:        true,
+			error:         nil,
+		},
+		{
+			name:                       "When osImageStream is set to version-derived default it should produce the same hash as no stream",
+			expectedHash:               "83935368",
+			expectedHashWithoutVersion: "0db5756d",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					OSImageStream: hyperv1.OSImageStreamReference{Name: "rhel-9"},
+				},
+			},
+			releaseImage: &releaseinfo.ReleaseImage{
+				ImageStream: &imageapi.ImageStream{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "4.18.0",
+					},
+				},
+			},
+			hostedCluster: hostedCluster,
+			client:        true,
+			error:         nil,
+		},
+		{
+			name:                       "When osImageStream is set to non-default it should produce a different hash",
+			expectedHash:               "ccd46cc1",
+			expectedHashWithoutVersion: "3a158178",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					OSImageStream: hyperv1.OSImageStreamReference{Name: "rhel-9"},
+				},
+			},
+			releaseImage: &releaseinfo.ReleaseImage{
+				ImageStream: &imageapi.ImageStream{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "5.0.0",
+					},
+				},
+			},
+			hostedCluster: hostedCluster,
+			client:        true,
+			error:         nil,
+		},
+		{
+			name:                       "When release version is 5.0.0 with no osImageStream it should normalize rhelStream to empty",
+			expectedHash:               "ff80e2c8",
+			expectedHashWithoutVersion: "0db5756d",
+			nodePool:                   &hyperv1.NodePool{},
+			releaseImage: &releaseinfo.ReleaseImage{
+				ImageStream: &imageapi.ImageStream{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "5.0.0",
+					},
+				},
+			},
+			hostedCluster: hostedCluster,
+			client:        true,
+			error:         nil,
+		},
+		{
+			name:                       "When osImageStream is rhel-10 on 5.0.0 it should normalize to empty and match unset hash",
+			expectedHash:               "ff80e2c8",
+			expectedHashWithoutVersion: "0db5756d",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					OSImageStream: hyperv1.OSImageStreamReference{Name: "rhel-10"},
+				},
+			},
+			releaseImage: &releaseinfo.ReleaseImage{
+				ImageStream: &imageapi.ImageStream{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "5.0.0",
+					},
+				},
+			},
+			hostedCluster: hostedCluster,
+			client:        true,
+			error:         nil,
 		},
 		{
 			name:                       "When additionalTrustBundle is specified it should be included in rolloutConfig",
-			expectedHash:               "dc74976e",
+			expectedHash:               "632801f8",
 			expectedHashWithoutVersion: "71375893",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
@@ -272,7 +370,7 @@ spec:
 			releaseImage: &releaseinfo.ReleaseImage{
 				ImageStream: &imageapi.ImageStream{
 					ObjectMeta: metav1.ObjectMeta{
-						Name: "latest",
+						Name: "4.18.0",
 					},
 				},
 			},
@@ -434,6 +532,7 @@ func TestHash(t *testing.T) {
 		pullSecretName            string
 		additionalTrustBundleName string
 		globalConfig              string
+		rhelStream                string
 		expected                  string
 	}{
 		{
@@ -490,6 +589,16 @@ func TestHash(t *testing.T) {
 			globalConfig:              "different",
 			expected:                  "e916ddfe",
 		},
+		{
+			name:                      "When rhelStream is a non-default stream, it should change the hash",
+			mcoRawConfig:              baseCaseMCORawConfig,
+			releaseVersion:            baseCaseReleaseVersion,
+			pullSecretName:            baseCasePullSecretName,
+			additionalTrustBundleName: baseCaseAdditionalTrustBundleName,
+			globalConfig:              baseCaseGlobalConfig,
+			rhelStream:                "rhel-10",
+			expected:                  "2dbbd41b",
+		},
 	}
 
 	for _, tc := range testCases {
@@ -508,6 +617,7 @@ func TestHash(t *testing.T) {
 					pullSecretName:            tc.pullSecretName,
 					additionalTrustBundleName: tc.additionalTrustBundleName,
 					globalConfig:              tc.globalConfig,
+					rhelStream:                tc.rhelStream,
 					releaseImage:              releaseImage,
 				},
 			}
@@ -536,6 +646,7 @@ func TestHashWithoutVersion(t *testing.T) {
 		pullSecretName            string
 		additionalTrustBundleName string
 		globalConfig              string
+		rhelStream                string
 		expected                  string
 	}{
 		{
@@ -594,6 +705,16 @@ func TestHashWithoutVersion(t *testing.T) {
 			globalConfig:              "different",
 			expected:                  baseCaseHash,
 		},
+		{
+			name:                      "When rhelStream is a non-default stream, it should change the hash",
+			mcoRawConfig:              baseCaseMCORawConfig,
+			releaseVersion:            baseCaseReleaseVersion,
+			pullSecretName:            baseCasePullSecretName,
+			additionalTrustBundleName: baseCaseAdditionalTrustBundleName,
+			globalConfig:              baseCaseGlobalConfig,
+			rhelStream:                "rhel-10",
+			expected:                  "671fe083",
+		},
 	}
 
 	for _, tc := range testCases {
@@ -612,6 +733,7 @@ func TestHashWithoutVersion(t *testing.T) {
 					pullSecretName:            tc.pullSecretName,
 					additionalTrustBundleName: tc.additionalTrustBundleName,
 					globalConfig:              tc.globalConfig,
+					rhelStream:                tc.rhelStream,
 					releaseImage:              releaseImage,
 				},
 			}

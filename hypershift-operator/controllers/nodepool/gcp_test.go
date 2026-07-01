@@ -514,6 +514,7 @@ func TestGcpMachineTemplateSpec(t *testing.T) {
 				tc.hc,
 				tc.nodePool,
 				releaseImage,
+				"",
 			)
 
 			if tc.expectedErr {
@@ -535,6 +536,7 @@ func TestDefaultNodePoolGCPImage(t *testing.T) {
 	testCases := []struct {
 		name           string
 		arch           string
+		rhelStream     string
 		releaseImage   *releaseinfo.ReleaseImage
 		expectedImage  string
 		expectedErr    bool
@@ -655,13 +657,56 @@ func TestDefaultNodePoolGCPImage(t *testing.T) {
 			expectedErr:    true,
 			expectedErrMsg: "release image metadata has no GCP image for architecture \"amd64\"",
 		},
+		{
+			name:       "When named stream is set, it should look up OSStreams map",
+			arch:       hyperv1.ArchitectureAMD64,
+			rhelStream: "rhel-10",
+			releaseImage: &releaseinfo.ReleaseImage{
+				StreamMetadata: &stream.Stream{
+					Architectures: map[string]stream.Arch{
+						"x86_64": {
+							Images: stream.Images{
+								Gcp: &stream.GcpImage{
+									Project: "rhcos-cloud",
+									Name:    "rhcos-9-6-default-gcp-x86-64",
+								},
+							},
+						},
+					},
+				},
+				OSStreams: map[string]*stream.Stream{
+					"rhel-10": {
+						Architectures: map[string]stream.Arch{
+							"x86_64": {
+								Images: stream.Images{
+									Gcp: &stream.GcpImage{
+										Project: "rhcos-cloud",
+										Name:    "rhcos-10-0-20251023-0-gcp-x86-64",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedImage: "projects/rhcos-cloud/global/images/rhcos-10-0-20251023-0-gcp-x86-64",
+			expectedErr:   false,
+		},
+		{
+			name:           "When stream metadata is nil with empty stream name, it should return error",
+			arch:           hyperv1.ArchitectureAMD64,
+			rhelStream:     "",
+			releaseImage:   &releaseinfo.ReleaseImage{},
+			expectedErr:    true,
+			expectedErrMsg: "couldn't resolve stream metadata",
+		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
 
-			image, err := defaultNodePoolGCPImage(tc.arch, tc.releaseImage)
+			image, err := defaultNodePoolGCPImage(tc.arch, tc.releaseImage, tc.rhelStream)
 
 			if tc.expectedErr {
 				g.Expect(err).To(HaveOccurred())
@@ -784,6 +829,190 @@ func TestConfigureGCPNetworkTags(t *testing.T) {
 			} else {
 				g.Expect(result).To(Equal(tc.expectedTags))
 			}
+		})
+	}
+}
+
+func TestGcpMachineTemplateSpecWithRHELStream(t *testing.T) {
+	baseHC := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-cluster",
+			Namespace: "test-namespace",
+		},
+		Spec: hyperv1.HostedClusterSpec{
+			InfraID: "test-infra-id",
+			Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.GCPPlatform,
+				GCP: &hyperv1.GCPPlatformSpec{
+					Project: "test-project",
+					Region:  "us-central1",
+					NetworkConfig: hyperv1.GCPNetworkConfig{
+						PrivateServiceConnectSubnet: hyperv1.GCPResourceReference{
+							Name: "test-psc-subnet",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	baseNodePool := &hyperv1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-nodepool",
+			Namespace: "test-namespace",
+		},
+		Spec: hyperv1.NodePoolSpec{
+			Arch: hyperv1.ArchitectureAMD64,
+			Platform: hyperv1.NodePoolPlatform{
+				Type: hyperv1.GCPPlatform,
+				GCP: &hyperv1.GCPNodePoolPlatform{
+					MachineType: "n1-standard-4",
+					Zone:        "us-central1-a",
+				},
+			},
+		},
+	}
+
+	testCases := []struct {
+		name          string
+		rhelStream    string
+		releaseImage  *releaseinfo.ReleaseImage
+		expectedImage string
+	}{
+		{
+			name:       "When rhelStream is empty with valid StreamMetadata, it should resolve GCP image",
+			rhelStream: "",
+			releaseImage: &releaseinfo.ReleaseImage{
+				ImageStream: &imageapi.ImageStream{
+					ObjectMeta: metav1.ObjectMeta{Name: "4.18.0"},
+				},
+				StreamMetadata: &stream.Stream{
+					Architectures: map[string]stream.Arch{
+						"x86_64": {
+							Images: stream.Images{
+								Gcp: &stream.GcpImage{
+									Project: "rhcos-cloud",
+									Name:    "rhcos-418-x86-64",
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedImage: "projects/rhcos-cloud/global/images/rhcos-418-x86-64",
+		},
+		{
+			name:       "When rhelStream is rhel-9 with single-stream payload, it should fall back to StreamMetadata",
+			rhelStream: "rhel-9",
+			releaseImage: &releaseinfo.ReleaseImage{
+				ImageStream: &imageapi.ImageStream{
+					ObjectMeta: metav1.ObjectMeta{Name: "4.17.0"},
+				},
+				StreamMetadata: &stream.Stream{
+					Architectures: map[string]stream.Arch{
+						"x86_64": {
+							Images: stream.Images{
+								Gcp: &stream.GcpImage{
+									Project: "rhcos-cloud",
+									Name:    "rhcos-417-fallback-x86-64",
+								},
+							},
+						},
+					},
+				},
+				OSStreams: nil,
+			},
+			expectedImage: "projects/rhcos-cloud/global/images/rhcos-417-fallback-x86-64",
+		},
+		{
+			name:       "When rhelStream is rhel-9 with multi-stream payload, it should use OSStreams rhel-9 image",
+			rhelStream: "rhel-9",
+			releaseImage: &releaseinfo.ReleaseImage{
+				ImageStream: &imageapi.ImageStream{
+					ObjectMeta: metav1.ObjectMeta{Name: "5.0.0"},
+				},
+				StreamMetadata: &stream.Stream{
+					Architectures: map[string]stream.Arch{
+						"x86_64": {
+							Images: stream.Images{
+								Gcp: &stream.GcpImage{
+									Project: "rhcos-cloud",
+									Name:    "rhcos-default-x86-64",
+								},
+							},
+						},
+					},
+				},
+				OSStreams: map[string]*stream.Stream{
+					"rhel-9": {
+						Architectures: map[string]stream.Arch{
+							"x86_64": {
+								Images: stream.Images{
+									Gcp: &stream.GcpImage{
+										Project: "rhcos-cloud",
+										Name:    "rhcos-96-rhel9-x86-64",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedImage: "projects/rhcos-cloud/global/images/rhcos-96-rhel9-x86-64",
+		},
+		{
+			name:       "When rhelStream is rhel-10 with multi-stream payload, it should use OSStreams rhel-10 image",
+			rhelStream: "rhel-10",
+			releaseImage: &releaseinfo.ReleaseImage{
+				ImageStream: &imageapi.ImageStream{
+					ObjectMeta: metav1.ObjectMeta{Name: "5.0.0"},
+				},
+				StreamMetadata: &stream.Stream{
+					Architectures: map[string]stream.Arch{
+						"x86_64": {
+							Images: stream.Images{
+								Gcp: &stream.GcpImage{
+									Project: "rhcos-cloud",
+									Name:    "rhcos-default-x86-64",
+								},
+							},
+						},
+					},
+				},
+				OSStreams: map[string]*stream.Stream{
+					"rhel-10": {
+						Architectures: map[string]stream.Arch{
+							"x86_64": {
+								Images: stream.Images{
+									Gcp: &stream.GcpImage{
+										Project: "rhcos-cloud",
+										Name:    "rhcos-100-rhel10-x86-64",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedImage: "projects/rhcos-cloud/global/images/rhcos-100-rhel10-x86-64",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			spec, err := gcpMachineTemplateSpec(
+				baseHC.Spec.InfraID,
+				baseHC,
+				baseNodePool,
+				tc.releaseImage,
+				tc.rhelStream,
+			)
+
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(spec).ToNot(BeNil())
+			g.Expect(*spec.Image).To(Equal(tc.expectedImage))
 		})
 	}
 }

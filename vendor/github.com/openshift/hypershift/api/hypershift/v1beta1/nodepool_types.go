@@ -264,8 +264,10 @@ type NodePoolSpec struct {
 
 const (
 	// OSImageStreamRHEL9 is the OS image stream name for RHEL 9.
+	// This value must match support/releaseinfo.StreamRHEL9.
 	OSImageStreamRHEL9 = "rhel-9"
 	// OSImageStreamRHEL10 is the OS image stream name for RHEL 10.
+	// This value must match support/releaseinfo.StreamRHEL10.
 	OSImageStreamRHEL10 = "rhel-10"
 )
 
