@@ -157,8 +157,18 @@ func DestroyCluster(ctx context.Context, o *core.DestroyOptions) error {
 // ValidateCredentialInfo validates if the credentials secret name is empty, the aws-creds or sts-creds mutually exclusive and are not empty; validates if
 // the credentials secret is not empty, that it can be retrieved.
 func ValidateCredentialInfo(opts awsutil.AWSCredentialsOptions, credentialSecretName, namespace, kubeconfigPath string) error {
+	return validateCredentialInfo(opts, credentialSecretName, namespace, kubeconfigPath, opts.Validate)
+}
+
+// ValidateProductCredentialInfo is like ValidateCredentialInfo but requires explicit --sts-creds and --role-arn
+// flags rather than allowing SDK default chain fallback.
+func ValidateProductCredentialInfo(opts awsutil.AWSCredentialsOptions, credentialSecretName, namespace, kubeconfigPath string) error {
+	return validateCredentialInfo(opts, credentialSecretName, namespace, kubeconfigPath, opts.ValidateProduct)
+}
+
+func validateCredentialInfo(opts awsutil.AWSCredentialsOptions, credentialSecretName, namespace, kubeconfigPath string, validate func() error) error {
 	if len(credentialSecretName) == 0 {
-		if err := opts.Validate(); err != nil {
+		if err := validate(); err != nil {
 			return err
 		}
 		return nil
