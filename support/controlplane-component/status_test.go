@@ -328,6 +328,14 @@ func TestCheckDependencies(t *testing.T) {
 			},
 		},
 		{
+			testName:        "When external OIDC webhook has no KAS component, it should have no unavailable dependencies",
+			mockComponents:  []hyperv1.ControlPlaneComponent{},
+			expectedMissing: []string{},
+			setup: func(cpContext *ControlPlaneContext) *controlPlaneWorkload[*appsv1.Deployment] {
+				return createMockWorkload("external-oidc-webhook", nil)
+			},
+		},
+		{
 			testName: "Should remove etcd from dependencies when etcd management type is unmanaged",
 			mockComponents: []hyperv1.ControlPlaneComponent{
 				createMockControlPlaneComponent(kubeAPIServerComponentName, true, true, testVersion),
