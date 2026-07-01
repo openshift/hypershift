@@ -23,9 +23,19 @@ jobs:
       - name: Use pre-built lint tools
         run: |
           if [ -d /opt/lint-tools ]; then
-            mkdir -p hack/tools/bin
-            cp /opt/lint-tools/golangci-lint hack/tools/bin/
-            cp /opt/lint-tools/kube-api-linter.so hack/tools/bin/
-            touch hack/tools/bin/golangci-lint hack/tools/bin/kube-api-linter.so
+            # Extract the Go version the project targets from go.mod
+            PROJECT_GO_VERSION=$(grep '^go ' go.mod | awk '{print $2}')
+            # Extract the Go version golangci-lint was built with
+            LINT_GO_VERSION=$(/opt/lint-tools/golangci-lint version --short 2>&1 | grep -oP 'go\K[0-9]+\.[0-9]+' || echo "unknown")
+            PROJECT_GO_MINOR=$(echo "$PROJECT_GO_VERSION" | cut -d. -f1-2)
+            if [ "$LINT_GO_VERSION" != "unknown" ] && [ "$(printf '%s\n' "$PROJECT_GO_MINOR" "$LINT_GO_VERSION" | sort -V | tail -1)" = "$LINT_GO_VERSION" ]; then
+              echo "Pre-built golangci-lint (Go $LINT_GO_VERSION) is compatible with project Go $PROJECT_GO_VERSION"
+              mkdir -p hack/tools/bin
+              cp /opt/lint-tools/golangci-lint hack/tools/bin/
+              cp /opt/lint-tools/kube-api-linter.so hack/tools/bin/
+              touch hack/tools/bin/golangci-lint hack/tools/bin/kube-api-linter.so
+            else
+              echo "Pre-built golangci-lint (Go $LINT_GO_VERSION) is incompatible with project Go $PROJECT_GO_VERSION, will rebuild from source"
+            fi
           fi
       - run: make lint
