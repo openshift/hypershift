@@ -227,7 +227,7 @@ func (r *TokenSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	token := string(tokenSecret.Data[TokenSecretTokenKey])
 	if value, ok := r.PayloadStore.Get(token); ok {
-		log.Info("Payload found in cache")
+		log.Info("Payload found in cache", "payloadSize", len(value.Payload))
 
 		if tokenNeedRotation(timeLived) {
 			log.Info("Rotating token ID")
@@ -278,7 +278,7 @@ func (r *TokenSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			return nil, fmt.Errorf("error getting ignition payload: %w", err)
 		}
 		duration := time.Since(start).Round(time.Second).Seconds()
-		log.Info("got ignition payload", "duration", duration)
+		log.Info("got ignition payload", "duration", duration, "payloadSize", len(payload))
 		PayloadGenerationSeconds.Observe(duration)
 		return payload, err
 	}()

@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"regexp"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -267,8 +268,13 @@ func run(ctx context.Context, opts Options) error {
 		}
 
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.Header().Set("Content-Length", strconv.Itoa(len(value.Payload)))
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write(value.Payload)
+		n, err = w.Write(value.Payload)
+		if err != nil {
+			log.Printf("Failed to write ignition payload: wrote %d/%d bytes: %v", n, len(value.Payload), err)
+		}
+		log.Printf("Served ignition payload: %d bytes", len(value.Payload))
 
 		eventRecorder.Event(tokenSecret, corev1.EventTypeNormal, "GetPayload", "")
 		getRequestsPerNodePool.WithLabelValues(r.Header.Get("NodePool")).Inc()

@@ -24,11 +24,16 @@ spec:
           set -e
           cat /etc/ssl/serving-cert/tls.crt /etc/ssl/serving-cert/tls.key > /tmp/tls.pem
           cat <<EOF > /tmp/haproxy.conf
+          global
+            log stdout local0
+
           defaults
             mode http
+            log global
+            option httplog
             timeout connect 5s
-            timeout client 30s
-            timeout server 30s
+            timeout client 300s
+            timeout server 300s
 
           frontend ignition-server
             bind :::8443 v4v6 ssl crt /tmp/tls.pem alpn http/1.1
@@ -60,6 +65,8 @@ spec:
           name: serving-cert
         - mountPath: /etc/ssl/root-ca
           name: root-ca
+        - mountPath: /tmp
+          name: tmp-dir
       volumes:
       - name: serving-cert
         secret:
@@ -69,3 +76,5 @@ spec:
           defaultMode: 420
           name: root-ca
         name: root-ca
+      - emptyDir: {}
+        name: tmp-dir
