@@ -30,7 +30,7 @@ func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 	opts.AWSPlatform.Credentials.BindProductFlags(cmd.Flags())
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		err := hypershiftaws.ValidateCredentialInfo(opts.AWSPlatform.Credentials, opts.CredentialSecretName, opts.Namespace, opts.Kubeconfig)
+		err := hypershiftaws.ValidateProductCredentialInfo(opts.AWSPlatform.Credentials, opts.CredentialSecretName, opts.Namespace, opts.Kubeconfig)
 		if err != nil {
 			return err
 		}

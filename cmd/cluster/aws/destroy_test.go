@@ -14,7 +14,7 @@ func Test_ValidateCredentialInfo(t *testing.T) {
 		inputOptions *core.DestroyOptions
 		expectError  bool
 	}{
-		"when CredentialSecretName is blank and aws-creds is also blank": {
+		"when CredentialSecretName is blank and aws-creds is also blank it should fall back to SDK default chain": {
 			inputOptions: &core.DestroyOptions{
 				CredentialSecretName: "",
 				AWSPlatform: core.AWSPlatformDestroyOptions{
@@ -23,7 +23,7 @@ func Test_ValidateCredentialInfo(t *testing.T) {
 					},
 				},
 			},
-			expectError: true,
+			expectError: false,
 		},
 		"when CredentialSecretName is blank and aws-creds is not blank": {
 			inputOptions: &core.DestroyOptions{

@@ -216,12 +216,11 @@ aws_secret_access_key = test-secret-key
 			expectError: false,
 		},
 		{
-			name:        "When no credentials provided, it should return error",
+			name:        "When no credentials provided, it should fall back to SDK default chain",
 			opts:        AWSCredentialsOptions{},
 			agent:       "test-agent",
 			region:      "us-east-1",
-			expectError: true,
-			errorMsg:    "could not create AWS session, no credentials were given",
+			expectError: false,
 		},
 	}
 
@@ -249,6 +248,109 @@ aws_secret_access_key = test-secret-key
 
 			if cfg == nil {
 				t.Error("Expected non-nil config")
+			}
+		})
+	}
+}
+
+func TestValidate(t *testing.T) {
+	testCases := []struct {
+		name        string
+		opts        AWSCredentialsOptions
+		expectError bool
+		errorMsg    string
+	}{
+		{
+			name:        "When no flags provided, it should succeed for SDK default chain",
+			opts:        AWSCredentialsOptions{},
+			expectError: false,
+		},
+		{
+			name:        "When only role-arn provided, it should succeed for default chain with role assumption",
+			opts:        AWSCredentialsOptions{RoleArn: "arn:aws:iam::123456789012:role/test-role"},
+			expectError: false,
+		},
+		{
+			name:        "When sts-creds and role-arn provided, it should succeed",
+			opts:        AWSCredentialsOptions{STSCredentialsFile: "/tmp/creds.json", RoleArn: "arn:aws:iam::123456789012:role/test-role"},
+			expectError: false,
+		},
+		{
+			name:        "When only sts-creds provided without role-arn, it should fail",
+			opts:        AWSCredentialsOptions{STSCredentialsFile: "/tmp/creds.json"},
+			expectError: true,
+			errorMsg:    "'role-arn' is required when 'sts-creds' is provided",
+		},
+		{
+			name:        "When aws-creds combined with sts-creds, it should fail",
+			opts:        AWSCredentialsOptions{AWSCredentialsFile: "/tmp/aws.ini", STSCredentialsFile: "/tmp/creds.json"},
+			expectError: true,
+		},
+		{
+			name:        "When aws-creds combined with role-arn, it should fail",
+			opts:        AWSCredentialsOptions{AWSCredentialsFile: "/tmp/aws.ini", RoleArn: "arn:aws:iam::123456789012:role/test-role"},
+			expectError: true,
+		},
+		{
+			name:        "When only aws-creds provided, it should succeed",
+			opts:        AWSCredentialsOptions{AWSCredentialsFile: "/tmp/aws.ini"},
+			expectError: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.opts.Validate()
+			if tc.expectError {
+				if err == nil {
+					t.Error("Expected error but got nil")
+				} else if tc.errorMsg != "" && err.Error() != tc.errorMsg {
+					t.Errorf("Expected error message %q, got %q", tc.errorMsg, err.Error())
+				}
+			} else if err != nil {
+				t.Errorf("Unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestValidateProduct(t *testing.T) {
+	testCases := []struct {
+		name        string
+		opts        AWSCredentialsOptions
+		expectError bool
+	}{
+		{
+			name:        "When no flags provided, it should fail",
+			opts:        AWSCredentialsOptions{},
+			expectError: true,
+		},
+		{
+			name:        "When only role-arn provided, it should fail",
+			opts:        AWSCredentialsOptions{RoleArn: "arn:aws:iam::123456789012:role/test-role"},
+			expectError: true,
+		},
+		{
+			name:        "When only sts-creds provided, it should fail",
+			opts:        AWSCredentialsOptions{STSCredentialsFile: "/tmp/creds.json"},
+			expectError: true,
+		},
+		{
+			name:        "When sts-creds and role-arn provided, it should succeed",
+			opts:        AWSCredentialsOptions{STSCredentialsFile: "/tmp/creds.json", RoleArn: "arn:aws:iam::123456789012:role/test-role"},
+			expectError: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.opts.ValidateProduct()
+			if tc.expectError {
+				if err == nil {
+					t.Error("Expected error but got nil")
+				}
+			} else if err != nil {
+				t.Errorf("Unexpected error: %v", err)
 			}
 		})
 	}

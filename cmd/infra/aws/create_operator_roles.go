@@ -126,18 +126,12 @@ func (o *CreateOperatorRolesOptions) Run(ctx context.Context, logger logr.Logger
 		return err
 	}
 
-	var awsSession *aws.Config
-	if o.AWSCredentialsOpts.AWSCredentialsFile != "" || o.AWSCredentialsOpts.STSCredentialsFile != "" {
-		if err := o.AWSCredentialsOpts.Validate(); err != nil {
-			return err
-		}
-		var err error
-		awsSession, err = o.AWSCredentialsOpts.GetSession(ctx, "cli-create-operator-roles", nil, o.Region)
-		if err != nil {
-			return err
-		}
-	} else {
-		awsSession = awsutil.NewSession(ctx, "cli-create-operator-roles", "", "", "", o.Region)
+	if err := o.AWSCredentialsOpts.Validate(); err != nil {
+		return err
+	}
+	awsSession, err := o.AWSCredentialsOpts.GetSession(ctx, "cli-create-operator-roles", nil, o.Region)
+	if err != nil {
+		return err
 	}
 	awsConfig := awsutil.NewConfig()
 	iamClient := iam.NewFromConfig(*awsSession, func(o *iam.Options) {
