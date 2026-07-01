@@ -1,0 +1,20 @@
+apiVersion: hypershift.openshift.io/v1beta1
+kind: ControlPlaneComponent
+metadata:
+  name: kube-storage-version-migrator
+  namespace: hcp-namespace
+  resourceVersion: "1"
+spec: {}
+status:
+  conditions:
+  - lastTransitionTime: null
+    message: kube-storage-version-migrator Deployment Available condition not found
+    reason: NotFound
+    status: "False"
+    type: Available
+  - lastTransitionTime: null
+    message: 'Waiting for deployment kube-storage-version-migrator rollout to finish:
+      0 out of 1 new replicas have been updated'
+    reason: WaitingForRolloutComplete
+    status: "False"
+    type: RolloutComplete

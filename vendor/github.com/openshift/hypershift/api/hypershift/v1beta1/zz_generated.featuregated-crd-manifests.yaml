@@ -213,6 +213,7 @@ hostedclusters.hypershift.openshift.io:
   - ExternalOIDCWithUpstreamParity
   - GCPPlatform
   - HCPEtcdBackup
+  - HCPUserFacingOperatorLogs
   - HyperShiftOnlyDynamicResourceAllocation
   - ImageStreamImportMode
   - IngressComponentRouteLabels
@@ -291,6 +292,7 @@ hostedcontrolplanes.hypershift.openshift.io:
   - ExternalOIDCWithUpstreamParity
   - GCPPlatform
   - HCPEtcdBackup
+  - HCPUserFacingOperatorLogs
   - HyperShiftOnlyDynamicResourceAllocation
   - ImageStreamImportMode
   - IngressComponentRouteLabels
