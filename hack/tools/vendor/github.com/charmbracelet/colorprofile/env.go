@@ -2,6 +2,7 @@ package colorprofile
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"os/exec"
 	"runtime"
@@ -83,8 +84,8 @@ func colorProfile(isatty bool, env environ) (p Profile) {
 	}
 
 	if envNoColor(env) && isatty {
-		if p > Ascii {
-			p = Ascii
+		if p > ASCII {
+			p = ASCII
 		}
 		return //nolint:nakedret
 	}
@@ -153,29 +154,29 @@ func envColorProfile(env environ) (p Profile) {
 		p = ANSI
 	}
 
-	parts := strings.Split(term, "-")
-	switch parts[0] {
-	case "alacritty",
-		"contour",
-		"foot",
-		"ghostty",
-		"kitty",
-		"rio",
-		"st",
-		"wezterm":
+	switch {
+	case strings.Contains(term, "alacritty"),
+		strings.Contains(term, "contour"),
+		strings.Contains(term, "foot"),
+		strings.Contains(term, "ghostty"),
+		strings.Contains(term, "kitty"),
+		strings.Contains(term, "rio"),
+		strings.Contains(term, "st"),
+		strings.Contains(term, "wezterm"):
 		return TrueColor
-	case "xterm":
-		if len(parts) > 1 {
-			switch parts[1] {
-			case "ghostty", "kitty":
-				// These terminals can be defined as xterm-TERMNAME
-				return TrueColor
-			}
-		}
-	case "tmux", "screen":
+	case strings.HasPrefix(term, "tmux"), strings.HasPrefix(term, "screen"):
 		if p < ANSI256 {
 			p = ANSI256
 		}
+	case strings.HasPrefix(term, "xterm"):
+		if p < ANSI {
+			p = ANSI
+		}
+	}
+
+	if len(env["WT_SESSION"]) > 0 {
+		// Windows Terminal supports TrueColor
+		return TrueColor
 	}
 
 	if isCloudShell, _ := strconv.ParseBool(env.get("GOOGLE_CLOUD_SHELL")); isCloudShell {
@@ -244,13 +245,13 @@ func tmux(env environ) (p Profile) {
 	// Check if tmux has either Tc or RGB capabilities. Otherwise, return
 	// ANSI256.
 	p = ANSI256
-	cmd := exec.Command("tmux", "info")
+	cmd := exec.CommandContext(context.Background(), "tmux", "info")
 	out, err := cmd.Output()
 	if err != nil {
 		return
 	}
 
-	for _, line := range bytes.Split(out, []byte("\n")) {
+	for line := range bytes.SplitSeq(out, []byte("\n")) {
 		if (bytes.Contains(line, []byte("Tc")) || bytes.Contains(line, []byte("RGB"))) &&
 			bytes.Contains(line, []byte("true")) {
 			return TrueColor

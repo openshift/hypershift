@@ -17,8 +17,11 @@ type envOpPreferences struct {
 }
 
 func envOperator(_ *dataTreeNavigator, context Context, expressionNode *ExpressionNode) (Context, error) {
+	if ConfiguredSecurityPreferences.DisableEnvOps {
+		return Context{}, fmt.Errorf("env operations have been disabled")
+	}
 	envName := expressionNode.Operation.CandidateNode.Value
-	log.Debug("EnvOperator, env name:", envName)
+	log.Debugf("EnvOperator, env name: %v", envName)
 
 	rawValue := os.Getenv(envName)
 
@@ -46,14 +49,17 @@ func envOperator(_ *dataTreeNavigator, context Context, expressionNode *Expressi
 		}
 
 	}
-	log.Debug("ENV tag", node.Tag)
-	log.Debug("ENV value", node.Value)
-	log.Debug("ENV Kind", node.Kind)
+	log.Debugf("ENV tag: %v", node.Tag)
+	log.Debugf("ENV value: %v", node.Value)
+	log.Debugf("ENV Kind: %v", node.Kind)
 
 	return context.SingleChildContext(node), nil
 }
 
 func envsubstOperator(_ *dataTreeNavigator, context Context, expressionNode *ExpressionNode) (Context, error) {
+	if ConfiguredSecurityPreferences.DisableEnvOps {
+		return Context{}, fmt.Errorf("env operations have been disabled")
+	}
 	var results = list.New()
 	preferences := envOpPreferences{}
 	if expressionNode.Operation.Preferences != nil {
@@ -72,7 +78,7 @@ func envsubstOperator(_ *dataTreeNavigator, context Context, expressionNode *Exp
 	for el := context.MatchingNodes.Front(); el != nil; el = el.Next() {
 		node := el.Value.(*CandidateNode)
 		if node.Tag != "!!str" {
-			log.Warning("EnvSubstOperator, env name:", node.Tag, node.Value)
+			log.Warningf("EnvSubstOperator, env name: %v %v", node.Tag, node.Value)
 			return Context{}, fmt.Errorf("cannot substitute with %v, can only substitute strings. Hint: Most often you'll want to use '|=' over '=' for this operation", node.Tag)
 		}
 
