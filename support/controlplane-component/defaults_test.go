@@ -409,6 +409,207 @@ func TestApplyRequestsOverrides(t *testing.T) {
 			},
 		},
 		{
+			name: "When overriding a container with nil resource requests it should initialize and apply",
+			annotations: map[string]string{
+				"resource-request-override.hypershift.openshift.io/router.router": "cpu=500m,memory=1Gi",
+			},
+			containers: []corev1.Container{
+				{
+					Name: "router",
+				},
+			},
+			expectedContainers: []corev1.Container{
+				{
+					Name: "router",
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("500m"),
+							corev1.ResourceMemory: resource.MustParse("1Gi"),
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "When overriding an init container with nil resource requests it should initialize and apply",
+			annotations: map[string]string{
+				"resource-request-override.hypershift.openshift.io/router.wait-for-etcd": "aro.openshift.io/swift-nic=1",
+			},
+			initContainers: []corev1.Container{
+				{
+					Name: "wait-for-etcd",
+				},
+			},
+			expectedInitContainers: []corev1.Container{
+				{
+					Name: "wait-for-etcd",
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							aroSwiftNICResource: resource.MustParse("1"),
+						},
+						Limits: corev1.ResourceList{
+							aroSwiftNICResource: resource.MustParse("1"),
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "When overriding both container and init container with nil resource requests it should initialize and apply both",
+			annotations: map[string]string{
+				"resource-request-override.hypershift.openshift.io/router.router":        "cpu=500m,memory=1Gi",
+				"resource-request-override.hypershift.openshift.io/router.wait-for-etcd": "aro.openshift.io/swift-nic=1",
+			},
+			containers: []corev1.Container{
+				{
+					Name: "router",
+				},
+			},
+			initContainers: []corev1.Container{
+				{
+					Name: "wait-for-etcd",
+				},
+			},
+			expectedContainers: []corev1.Container{
+				{
+					Name: "router",
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("500m"),
+							corev1.ResourceMemory: resource.MustParse("1Gi"),
+						},
+					},
+				},
+			},
+			expectedInitContainers: []corev1.Container{
+				{
+					Name: "wait-for-etcd",
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							aroSwiftNICResource: resource.MustParse("1"),
+						},
+						Limits: corev1.ResourceList{
+							aroSwiftNICResource: resource.MustParse("1"),
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "When overriding two init containers with nil resource requests it should initialize and apply both",
+			annotations: map[string]string{
+				"resource-request-override.hypershift.openshift.io/router.wait-for-etcd":    "aro.openshift.io/swift-nic=1",
+				"resource-request-override.hypershift.openshift.io/router.setup-networking": "cpu=100m,memory=64Mi",
+			},
+			initContainers: []corev1.Container{
+				{
+					Name: "wait-for-etcd",
+				},
+				{
+					Name: "setup-networking",
+				},
+			},
+			expectedInitContainers: []corev1.Container{
+				{
+					Name: "wait-for-etcd",
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							aroSwiftNICResource: resource.MustParse("1"),
+						},
+						Limits: corev1.ResourceList{
+							aroSwiftNICResource: resource.MustParse("1"),
+						},
+					},
+				},
+				{
+					Name: "setup-networking",
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("100m"),
+							corev1.ResourceMemory: resource.MustParse("64Mi"),
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "When overriding mixed containers and init containers with existing and nil requests it should handle both",
+			annotations: map[string]string{
+				"resource-request-override.hypershift.openshift.io/router.router":           "cpu=500m,memory=1Gi",
+				"resource-request-override.hypershift.openshift.io/router.sidecar":          "cpu=200m",
+				"resource-request-override.hypershift.openshift.io/router.wait-for-etcd":    "aro.openshift.io/swift-nic=1",
+				"resource-request-override.hypershift.openshift.io/router.setup-networking": "cpu=100m,memory=64Mi",
+			},
+			containers: []corev1.Container{
+				{
+					Name: "router",
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU: resource.MustParse("100m"),
+						},
+					},
+				},
+				{
+					Name: "sidecar",
+				},
+			},
+			initContainers: []corev1.Container{
+				{
+					Name: "wait-for-etcd",
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU: resource.MustParse("50m"),
+						},
+					},
+				},
+				{
+					Name: "setup-networking",
+				},
+			},
+			expectedContainers: []corev1.Container{
+				{
+					Name: "router",
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("500m"),
+							corev1.ResourceMemory: resource.MustParse("1Gi"),
+						},
+					},
+				},
+				{
+					Name: "sidecar",
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU: resource.MustParse("200m"),
+						},
+					},
+				},
+			},
+			expectedInitContainers: []corev1.Container{
+				{
+					Name: "wait-for-etcd",
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU:  resource.MustParse("50m"),
+							aroSwiftNICResource: resource.MustParse("1"),
+						},
+						Limits: corev1.ResourceList{
+							aroSwiftNICResource: resource.MustParse("1"),
+						},
+					},
+				},
+				{
+					Name: "setup-networking",
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("100m"),
+							corev1.ResourceMemory: resource.MustParse("64Mi"),
+						},
+					},
+				},
+			},
+		},
+		{
 			name: "When annotation targets a different deployment it should not apply overrides",
 			annotations: map[string]string{
 				"resource-request-override.hypershift.openshift.io/kube-apiserver.kube-apiserver": "cpu=500m",
@@ -431,6 +632,42 @@ func TestApplyRequestsOverrides(t *testing.T) {
 							corev1.ResourceCPU: resource.MustParse("100m"),
 						},
 					},
+				},
+			},
+		},
+		{
+			name: "When annotation targets a different deployment with swift-nic it should not apply overrides",
+			annotations: map[string]string{
+				"resource-request-override.hypershift.openshift.io/kube-apiserver.wait-for-etcd": "aro.openshift.io/swift-nic=1",
+			},
+			containers: []corev1.Container{
+				{
+					Name: "router",
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU: resource.MustParse("100m"),
+						},
+					},
+				},
+			},
+			initContainers: []corev1.Container{
+				{
+					Name: "wait-for-etcd",
+				},
+			},
+			expectedContainers: []corev1.Container{
+				{
+					Name: "router",
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU: resource.MustParse("100m"),
+						},
+					},
+				},
+			},
+			expectedInitContainers: []corev1.Container{
+				{
+					Name: "wait-for-etcd",
 				},
 			},
 		},
