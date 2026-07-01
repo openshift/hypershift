@@ -134,6 +134,8 @@ func (c *controlPlaneWorkload[T]) reconcileComponentStatus(cpContext ControlPlan
 		component.Status.Version = cpContext.ReleaseImageProvider.Version()
 	}
 
+	component.Status.ObservedGeneration = cpContext.HCP.Generation
+
 	return nil
 }
 

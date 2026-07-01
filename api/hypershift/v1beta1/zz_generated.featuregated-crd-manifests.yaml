@@ -103,17 +103,17 @@ controlplanecomponents.hypershift.openshift.io:
     jsonPath: .status.conditions[?(@.type=="Available")].status
     name: Available
     type: string
-  - description: Progressing
-    jsonPath: .status.conditions[?(@.type=="Progressing")].status
-    name: Progressing
+  - description: RolloutComplete
+    jsonPath: .status.conditions[?(@.type=="RolloutComplete")].status
+    name: RolloutComplete
     type: string
   - description: Message
     jsonPath: .status.conditions[?(@.type=="Available")].message
     name: Message
     type: string
-  - description: ProgressingMessage
-    jsonPath: .status.conditions[?(@.type=="Progressing")].message
-    name: ProgressingMessage
+  - description: RolloutCompleteMessage
+    jsonPath: .status.conditions[?(@.type=="RolloutComplete")].message
+    name: RolloutCompleteMessage
     priority: 1
     type: string
   Scope: Namespaced
