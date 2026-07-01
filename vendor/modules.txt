@@ -1137,7 +1137,7 @@ github.com/openshift/hypershift/api/scheduling
 github.com/openshift/hypershift/api/scheduling/v1alpha1
 github.com/openshift/hypershift/api/util/configrefs
 github.com/openshift/hypershift/api/util/ipnet
-# github.com/openshift/library-go v0.0.0-20251204132909-8814e976a023
+# github.com/openshift/library-go v0.0.0-20260309173530-9ed71ac3148f
 ## explicit; go 1.24.0
 github.com/openshift/library-go/pkg/apiserver/jsonpatch
 github.com/openshift/library-go/pkg/authorization/hardcodedauthorizer
@@ -1172,6 +1172,10 @@ github.com/openshift/library-go/test/library/metrics
 ## explicit; go 1.24.0
 github.com/openshift/multi-operator-manager/pkg/library/libraryinputresources
 github.com/openshift/multi-operator-manager/pkg/library/libraryoutputresources
+# github.com/openshift/oauth-apiserver v0.0.0-20260626184649-9e9722dd2f3f
+## explicit; go 1.24.0
+github.com/openshift/oauth-apiserver/pkg/externaloidc/apis/authentication
+github.com/openshift/oauth-apiserver/pkg/externaloidc/apis/authentication/v1alpha1
 # github.com/opentracing/opentracing-go v1.2.0
 ## explicit; go 1.14
 github.com/opentracing/opentracing-go
