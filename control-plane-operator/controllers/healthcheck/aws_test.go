@@ -149,11 +149,12 @@ func TestUpdateRunsAWSIdentityCheckDuringDeletion(t *testing.T) {
 		log:                ctrl.Log.WithName("test"),
 	}
 
-	// update() should not return nil silently (the old early-return behavior).
 	// With KAS unavailable and no EC2 client, awsHealthCheckIdentityProvider
 	// sets ValidAWSIdentityProvider to Unknown and returns nil, so update()
 	// itself succeeds but still patches the status.
-	_ = hcu.update(ctx)
+	if err := hcu.update(ctx); err != nil {
+		t.Fatalf("When HCP has a deletionTimestamp, update() should succeed when KAS is unavailable, got: %v", err)
+	}
 
 	updated := &hyperv1.HostedControlPlane{}
 	if err := fakeClient.Get(ctx, client.ObjectKeyFromObject(hcp), updated); err != nil {
