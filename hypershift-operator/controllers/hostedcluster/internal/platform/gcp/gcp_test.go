@@ -416,3 +416,57 @@ func TestReconcileGCPClusterPreservesServerDefaultedFields(t *testing.T) {
 	g.Expect(gcpCluster.Spec.Network.Subnets[0].Name).To(Equal("test-subnet"))
 	g.Expect(gcpCluster.Spec.Network.Subnets[0].Region).To(Equal("us-central1"))
 }
+
+func TestDeleteOrphanedMachines(t *testing.T) {
+	g := NewWithT(t)
+
+	platform := New("test-utilities-image", "test-capg-image", &semver.Version{Major: 4, Minor: 17, Patch: 0})
+	hc := validHostedCluster()
+
+	// Create a scheme with both HyperShift and CAPG types
+	scheme := runtime.NewScheme()
+	g.Expect(clientgoscheme.AddToScheme(scheme)).To(Succeed())
+	g.Expect(hyperv1.AddToScheme(scheme)).To(Succeed())
+	g.Expect(capigcp.AddToScheme(scheme)).To(Succeed())
+	fakeClient := fake.NewClientBuilder().
+		WithObjects(
+			&capigcp.GCPMachine{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "test-xl-1",
+					Namespace:         "test-control-plane-namespace",
+					DeletionTimestamp: ptr.To(metav1.Now()),
+					Finalizers:        []string{"test", "testz"},
+				},
+			},
+			// GCPMachines without deletionTimestamp should not get their finalizers removed.
+			&capigcp.GCPMachine{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "test-xl-2",
+					Namespace:  "test-control-plane-namespace",
+					Finalizers: []string{"test", "testz"},
+				},
+			},
+		).
+		WithScheme(scheme).
+		Build()
+
+	err := platform.DeleteOrphanedMachines(
+		t.Context(),
+		fakeClient,
+		hc,
+		"test-control-plane-namespace",
+	)
+	g.Expect(err).To(BeNil())
+
+	gcpMachineList := &capigcp.GCPMachineList{}
+	err = fakeClient.List(t.Context(), gcpMachineList)
+	g.Expect(err).To(BeNil())
+
+	for _, gcpMachine := range gcpMachineList.Items {
+		if !gcpMachine.DeletionTimestamp.IsZero() {
+			g.Expect(gcpMachine.Finalizers).To(BeEmpty())
+		} else {
+			g.Expect(gcpMachine.Finalizers).ToNot(BeEmpty())
+		}
+	}
+}
