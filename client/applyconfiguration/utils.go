@@ -355,6 +355,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.OperatorConfigurationApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("OVNIPv4Config"):
 		return &hypershiftv1beta1.OVNIPv4ConfigApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("OVNIPv6Config"):
+		return &hypershiftv1beta1.OVNIPv6ConfigApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("OVNKubernetesConfig"):
 		return &hypershiftv1beta1.OVNKubernetesConfigApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("PersistentVolumeEtcdStorageSpec"):
