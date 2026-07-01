@@ -61,17 +61,16 @@ require (
 	github.com/onsi/gomega v1.39.1
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.1
-	github.com/openshift/api v0.0.0-20260416105050-3c6b218b8a80
-	github.com/openshift/client-go v0.0.0-20260416131737-a19e91702ab5
+	github.com/openshift/api v0.0.0-20260701125932-bfd28b0f0ba1
+	github.com/openshift/client-go v0.0.0-20260622130833-df412d4d283e
 	github.com/openshift/cloud-credential-operator v0.0.0-20250225003505-216fd1a30ec3
 	github.com/openshift/cluster-api-provider-agent/api v0.0.0-20250624174747-899af6573f5f
 	github.com/openshift/cluster-autoscaler-operator v0.0.1-0.20241204142113-43631b045675
 	github.com/openshift/cluster-node-tuning-operator v0.0.0-20250225115807-f166846b7256
 	github.com/openshift/custom-resource-status v1.1.3-0.20220503160415-f2fdb4999d87
 	github.com/openshift/hypershift/api v0.0.0-20240604072534-cd2d5291e2b7
-	github.com/openshift/library-go v0.0.0-20260309173530-9ed71ac3148f
+	github.com/openshift/library-go v0.0.0-20260629134817-a64e9a6e21ca
 	github.com/openshift/multi-operator-manager v0.0.0-20260112172834-b64ebc8c627b
-	github.com/openshift/oauth-apiserver v0.0.0-20260626184649-9e9722dd2f3f
 	github.com/operator-framework/api v0.37.0
 	github.com/pkg/errors v0.9.1
 	github.com/ppc64le-cloud/powervs-utils v0.0.0-20250403153021-219b161805db
@@ -90,8 +89,8 @@ require (
 	go.etcd.io/etcd/server/v3 v3.6.11
 	go.uber.org/mock v0.6.0
 	go.uber.org/zap v1.28.0
-	golang.org/x/crypto v0.51.0
-	golang.org/x/net v0.54.0
+	golang.org/x/crypto v0.52.0
+	golang.org/x/net v0.55.1-0.20260602153038-42abb857022c
 	golang.org/x/oauth2 v0.36.0
 	golang.org/x/sync v0.20.0
 	golang.org/x/time v0.15.0
@@ -100,21 +99,21 @@ require (
 	gopkg.in/ini.v1 v1.67.2
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.1
-	k8s.io/api v0.35.1
-	k8s.io/apiextensions-apiserver v0.35.1
-	k8s.io/apimachinery v0.35.1
-	k8s.io/apiserver v0.35.1
+	k8s.io/api v0.35.2
+	k8s.io/apiextensions-apiserver v0.35.2
+	k8s.io/apimachinery v0.35.2
+	k8s.io/apiserver v0.35.2
 	k8s.io/autoscaler/vertical-pod-autoscaler v1.3.0
-	k8s.io/cli-runtime v0.35.1
-	k8s.io/client-go v0.35.1
-	k8s.io/component-base v0.35.1
+	k8s.io/cli-runtime v0.35.2
+	k8s.io/client-go v0.35.2
+	k8s.io/component-base v0.35.2
 	k8s.io/klog v1.0.0
-	k8s.io/klog/v2 v2.130.1
-	k8s.io/kube-aggregator v0.35.1
+	k8s.io/klog/v2 v2.140.0
+	k8s.io/kube-aggregator v0.35.2
 	k8s.io/kube-scheduler v0.35.1
 	k8s.io/kubectl v0.35.1
-	k8s.io/pod-security-admission v0.35.1
-	k8s.io/utils v0.0.0-20260108192941-914a6e750570
+	k8s.io/pod-security-admission v0.35.2
+	k8s.io/utils v0.0.0-20260210185600-b8788abfbbc2
 	kubevirt.io/api v1.8.2
 	kubevirt.io/containerized-data-importer-api v1.65.0
 	sigs.k8s.io/cluster-api v1.10.4
@@ -127,9 +126,11 @@ require (
 	sigs.k8s.io/controller-runtime v0.22.4
 	sigs.k8s.io/karpenter v1.9.0
 	sigs.k8s.io/secrets-store-csi-driver v1.4.8
-	sigs.k8s.io/structured-merge-diff/v6 v6.3.1
+	sigs.k8s.io/structured-merge-diff/v6 v6.3.2
 	sigs.k8s.io/yaml v1.6.0
 )
+
+require github.com/openshift/oauth-apiserver v0.0.0-20260626184649-9e9722dd2f3f // indirect
 
 require (
 	cel.dev/expr v0.25.1 // indirect
@@ -252,6 +253,7 @@ require (
 	github.com/mxk/go-flowrate v0.0.0-20140419014527-cca7078d478f // indirect
 	github.com/oklog/ulid v1.3.1 // indirect
 	github.com/opencontainers/selinux v1.13.0 // indirect
+	github.com/openshift/cluster-authentication-operator v0.0.0-20260701125614-283321a30b6c
 	github.com/opentracing/opentracing-go v1.2.0 // indirect
 	github.com/patrickmn/go-cache v2.1.0+incompatible // indirect
 	github.com/peterbourgon/diskv v2.0.1+incompatible // indirect
@@ -287,7 +289,7 @@ require (
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/exp v0.0.0-20250620022241-b7579e27df2b // indirect
 	golang.org/x/mod v0.35.0 // indirect
-	golang.org/x/sys v0.44.0 // indirect
+	golang.org/x/sys v0.45.0 // indirect
 	golang.org/x/term v0.43.0 // indirect
 	golang.org/x/text v0.37.0 // indirect
 	golang.org/x/tools v0.44.0 // indirect
@@ -301,8 +303,8 @@ require (
 	k8s.io/cloud-provider v0.35.0 // indirect
 	k8s.io/component-helpers v0.35.1 // indirect
 	k8s.io/csi-translation-lib v0.35.0 // indirect
-	k8s.io/kms v0.35.1 // indirect
-	k8s.io/kube-openapi v0.0.0-20251125145642-4e65d59e963e // indirect
+	k8s.io/kms v0.35.2 // indirect
+	k8s.io/kube-openapi v0.0.0-20260519202549-bbf5c5577288 // indirect
 	k8s.io/kubelet v0.32.2 // indirect
 	kubevirt.io/controller-lifecycle-operator-sdk/api v0.2.4 // indirect
 	sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.33.0 // indirect
@@ -331,3 +333,5 @@ replace sigs.k8s.io/controller-runtime => sigs.k8s.io/controller-runtime v0.19.7
 replace github.com/aws/karpenter-provider-aws => github.com/openshift/aws-karpenter-provider-aws v0.0.0-20260311064431-f0be9c72e5bf
 
 replace sigs.k8s.io/karpenter => github.com/openshift/kubernetes-sigs-karpenter v0.0.0-20260310165629-67e201b559d5
+
+replace github.com/openshift/cluster-authentication-operator => github.com/liouk/cluster-authentication-operator v0.0.0-20260701141633-2aaaa4cb9e22
