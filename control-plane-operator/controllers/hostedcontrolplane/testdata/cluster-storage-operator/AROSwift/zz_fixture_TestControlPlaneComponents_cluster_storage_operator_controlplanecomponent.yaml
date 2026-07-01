@@ -31,6 +31,9 @@ status:
   - group: secrets-store.csi.x-k8s.io
     kind: SecretProviderClass
     name: managed-azure-file-csi
+  - group: ""
+    kind: ConfigMap
+    name: cluster-storage-operator-config
   - group: rbac.authorization.k8s.io
     kind: Role
     name: cluster-storage-operator
