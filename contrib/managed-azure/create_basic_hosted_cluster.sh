@@ -42,7 +42,7 @@ az group create --name "${CUSTOMER_NSG_RG_NAME}" --location ${LOCATION}
 az network nsg create --resource-group "${CUSTOMER_NSG_RG_NAME}" --name "${CUSTOMER_NSG}"
 
 # Get customer nsg ID
-GetNsgID=$(az network nsg list --query "[?name=='${CUSTOMER_NSG}'].id" -o tsv)
+GetNsgID=$(az network nsg show --resource-group "${CUSTOMER_NSG_RG_NAME}" --name "${CUSTOMER_NSG}" --query id -o tsv)
 
 # Create customer vnet in customer resource group
 az network vnet create \
@@ -54,7 +54,7 @@ az network vnet create \
     --nsg "${GetNsgID}"
 
 # Get customer vnet ID
-GetVnetID=$(az network vnet list --query "[?name=='${CUSTOMER_VNET_NAME}'].id" -o tsv)
+GetVnetID=$(az network vnet show --resource-group "${CUSTOMER_VNET_RG_NAME}" --name "${CUSTOMER_VNET_NAME}" --query id -o tsv)
 
 # Get customer subnet ID
 GetSubnetID=$(az network vnet subnet show --vnet-name "${CUSTOMER_VNET_NAME}" --name "${CUSTOMER_VNET_SUBNET1}" --resource-group "${CUSTOMER_VNET_RG_NAME}" --query id --output tsv)
