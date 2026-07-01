@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/openshift/hypershift/cmd/log"
+	cmdutil "github.com/openshift/hypershift/cmd/util"
 
 	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
@@ -30,7 +30,7 @@ func NewDestroyIAMCommand() *cobra.Command {
 	_ = cmd.MarkFlagRequired(infraIDFlag)
 	_ = cmd.MarkFlagRequired(projectIDFlag)
 
-	logger := log.Log
+	logger := cmdutil.NewLogger()
 	cmd.PreRunE = func(cmd *cobra.Command, args []string) error {
 		return opts.ValidateInputs()
 	}

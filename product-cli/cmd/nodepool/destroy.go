@@ -5,8 +5,7 @@ import (
 	"fmt"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/cmd/log"
-	"github.com/openshift/hypershift/cmd/util"
+	cmdutil "github.com/openshift/hypershift/cmd/util"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
@@ -44,7 +43,7 @@ func NewDestroyCommand() *cobra.Command {
 }
 
 func (o *DestroyNodePoolOptions) Run(ctx context.Context) error {
-	client, err := util.GetClient()
+	client, err := cmdutil.GetClient()
 	if err != nil {
 		return err
 	}
@@ -59,12 +58,12 @@ func (o *DestroyNodePoolOptions) run(ctx context.Context, client crclient.Client
 
 	if err := client.Delete(ctx, nodePool); err != nil {
 		if apierrors.IsNotFound(err) {
-			log.Log.Info("NodePool already deleted or not found", "name", o.Name, "namespace", o.Namespace)
+			cmdutil.NewLogger().Info("NodePool already deleted or not found", "name", o.Name, "namespace", o.Namespace)
 			return nil
 		}
 		return fmt.Errorf("failed to delete NodePool %s/%s: %w", o.Namespace, o.Name, err)
 	}
 
-	log.Log.Info("NodePool deleted successfully", "name", o.Name, "namespace", o.Namespace)
+	cmdutil.NewLogger().Info("NodePool deleted successfully", "name", o.Name, "namespace", o.Namespace)
 	return nil
 }

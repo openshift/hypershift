@@ -40,6 +40,8 @@ const (
 // +kubebuilder:rbac:groups=hypershift.openshift.io,resources=gcpprivateserviceconnects/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=hypershift.openshift.io,resources=hostedclusters,verbs=get;list;watch
 
+const ControllerName = "gcpprivateserviceconnect"
+
 // GCPPrivateServiceConnectReconciler reconciles GCPPrivateServiceConnect resources
 type GCPPrivateServiceConnectReconciler struct {
 	client.Client
@@ -47,11 +49,10 @@ type GCPPrivateServiceConnectReconciler struct {
 	GcpClient *compute.Service // GCP Compute API client for ForwardingRules, ServiceAttachments, and Subnets
 	ProjectID string
 	Region    string
-	Log       logr.Logger
 }
 
 // SetupWithManager sets up the controller with the Manager.
-func (r *GCPPrivateServiceConnectReconciler) SetupWithManager(mgr ctrl.Manager) error {
+func (r *GCPPrivateServiceConnectReconciler) SetupWithManager(mgr ctrl.Manager, logger logr.Logger) error {
 	// Initialize GCP Compute Service client
 	gcpComputeService, err := InitGCPComputeService(context.Background())
 	if err != nil {
@@ -73,9 +74,10 @@ func (r *GCPPrivateServiceConnectReconciler) SetupWithManager(mgr ctrl.Manager) 
 	}
 	r.Region = region
 
-	r.Log.Info("Initialized GCP platform information", "projectID", r.ProjectID, "region", r.Region)
+	logger.Info("Initialized GCP platform information", "projectID", r.ProjectID, "region", r.Region)
 
 	return ctrl.NewControllerManagedBy(mgr).
+		Named(ControllerName).
 		For(&hyperv1.GCPPrivateServiceConnect{}).
 		// Note: Add HostedCluster watching if needed for network configuration changes
 		// Watches(&source.Kind{Type: &hyperv1.HostedCluster{}},
@@ -85,7 +87,7 @@ func (r *GCPPrivateServiceConnectReconciler) SetupWithManager(mgr ctrl.Manager) 
 
 // Reconcile reconciles GCPPrivateServiceConnect resources
 func (r *GCPPrivateServiceConnectReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	log := r.Log.WithValues("gcpprivateserviceconnect", req.NamespacedName)
+	log := ctrl.LoggerFrom(ctx)
 
 	// 1. Fetch GCPPrivateServiceConnect CR
 	obj := &hyperv1.GCPPrivateServiceConnect{}
@@ -175,7 +177,7 @@ func (r *GCPPrivateServiceConnectReconciler) reconcileGCPPrivateServiceConnectSp
 
 // lookupForwardingRuleName finds the ForwardingRule name by LoadBalancer IP
 func (r *GCPPrivateServiceConnectReconciler) lookupForwardingRuleName(ctx context.Context, gcpPSC *hyperv1.GCPPrivateServiceConnect) (string, error) {
-	log := r.Log.WithValues("gcpprivateserviceconnect", gcpPSC.Name, "loadBalancerIP", gcpPSC.Spec.LoadBalancerIP)
+	log := ctrl.LoggerFrom(ctx).WithValues("loadBalancerIP", gcpPSC.Spec.LoadBalancerIP)
 
 	// Use AIP-160 filter syntax for exact string matching
 	filter := fmt.Sprintf(`IPAddress = "%s"`, gcpPSC.Spec.LoadBalancerIP)
@@ -235,7 +237,7 @@ func (r *GCPPrivateServiceConnectReconciler) isSubnetInUse(ctx context.Context, 
 
 // discoverNATSubnet discovers available PRIVATE_SERVICE_CONNECT subnets
 func (r *GCPPrivateServiceConnectReconciler) discoverNATSubnet(ctx context.Context, gcpPSC *hyperv1.GCPPrivateServiceConnect) (string, error) {
-	log := r.Log.WithValues("gcpprivateserviceconnect", gcpPSC.Name)
+	log := ctrl.LoggerFrom(ctx)
 
 	// 1. Check if NATSubnet already specified in CR
 	if gcpPSC.Spec.NATSubnet != "" {
@@ -278,7 +280,7 @@ func (r *GCPPrivateServiceConnectReconciler) discoverNATSubnet(ctx context.Conte
 
 // reconcileServiceAttachment manages Service Attachment lifecycle
 func (r *GCPPrivateServiceConnectReconciler) reconcileServiceAttachment(ctx context.Context, gcpPSC *hyperv1.GCPPrivateServiceConnect, hc *hyperv1.HostedCluster) (ctrl.Result, error) {
-	log := r.Log.WithValues("gcpprivateserviceconnect", gcpPSC.Name)
+	log := ctrl.LoggerFrom(ctx)
 
 	// 1. Construct unique Service Attachment name using cluster ID
 	serviceAttachmentName := r.constructServiceAttachmentName(hc)
@@ -426,7 +428,7 @@ func (r *GCPPrivateServiceConnectReconciler) updateStatusFromServiceAttachment(c
 
 // delete handles deletion of GCPPrivateServiceConnect resources and returns completion status
 func (r *GCPPrivateServiceConnectReconciler) delete(ctx context.Context, gcpPSC *hyperv1.GCPPrivateServiceConnect) (bool, error) {
-	log := r.Log.WithValues("gcpprivateserviceconnect", gcpPSC.Name)
+	log := ctrl.LoggerFrom(ctx)
 
 	// Use Service Attachment name from status (set during creation)
 	serviceAttachmentName := gcpPSC.Status.ServiceAttachmentName
@@ -465,7 +467,7 @@ func (r *GCPPrivateServiceConnectReconciler) delete(ctx context.Context, gcpPSC 
 
 // handleGCPError handles GCP API errors with appropriate retry logic
 func (r *GCPPrivateServiceConnectReconciler) handleGCPError(ctx context.Context, gcpPSC *hyperv1.GCPPrivateServiceConnect, reason string, err error) (ctrl.Result, error) { //nolint:unparam // error return kept for API consistency
-	log := r.Log.WithValues("gcpprivateserviceconnect", gcpPSC.Name)
+	log := ctrl.LoggerFrom(ctx)
 
 	// Extract GCP error details
 	var requeueAfter time.Duration

@@ -106,11 +106,10 @@ func TestReconcileGCPPrivateServiceConnectSpec(t *testing.T) {
 		CreateOrUpdateProvider: upsert.New(false),
 		ProjectID:              "test-project",
 		Region:                 "us-central1",
-		Log:                    testr.New(t),
 	}
 
 	// Test with pre-populated spec fields to avoid GCP API calls
-	err := r.reconcileGCPPrivateServiceConnectSpec(context.Background(), gcpPSC, hc)
+	err := r.reconcileGCPPrivateServiceConnectSpec(ctrl.LoggerInto(context.Background(), testr.New(t)), gcpPSC, hc)
 
 	// Since ForwardingRuleName and NATSubnet are already set, this should succeed
 	if err != nil {
@@ -131,7 +130,6 @@ func TestReconcile_NotFound(t *testing.T) {
 
 	r := &GCPPrivateServiceConnectReconciler{
 		Client: client,
-		Log:    testr.New(t),
 	}
 
 	req := reconcile.Request{
@@ -141,7 +139,7 @@ func TestReconcile_NotFound(t *testing.T) {
 		},
 	}
 
-	result, err := r.Reconcile(context.Background(), req)
+	result, err := r.Reconcile(ctrl.LoggerInto(context.Background(), testr.New(t)), req)
 
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
@@ -206,7 +204,6 @@ func TestReconcile_PausedUntil(t *testing.T) {
 		CreateOrUpdateProvider: upsert.New(false),
 		ProjectID:              "test-project",
 		Region:                 "us-central1",
-		Log:                    testr.New(t),
 	}
 
 	req := reconcile.Request{
@@ -216,7 +213,7 @@ func TestReconcile_PausedUntil(t *testing.T) {
 		},
 	}
 
-	result, err := r.Reconcile(context.Background(), req)
+	result, err := r.Reconcile(ctrl.LoggerInto(context.Background(), testr.New(t)), req)
 
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)

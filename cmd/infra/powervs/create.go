@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	hypershiftLog "github.com/openshift/hypershift/cmd/log"
+	cmdutil "github.com/openshift/hypershift/cmd/util"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -227,8 +227,8 @@ func NewCreateCommand() *cobra.Command {
 	_ = cmd.MarkFlagRequired("resource-group")
 	_ = cmd.MarkFlagRequired("infra-id")
 
-	logger := hypershiftLog.Log.WithName(opts.InfraID)
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		logger := cmdutil.NewLogger().WithName(opts.InfraID)
 		if err := opts.Run(cmd.Context(), logger); err != nil {
 			logger.Error(err, "Failed to create infrastructure")
 			return err

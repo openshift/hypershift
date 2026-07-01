@@ -541,14 +541,13 @@ func TestMutatePod(t *testing.T) {
 				Build()
 
 			handler := &PodWebhookHandler{
-				log:    logr.Discard(),
 				client: fakeClient,
 			}
 
 			// Create a copy of the pod for mutation
 			podCopy := tt.pod.DeepCopy()
 
-			err := handler.mutatePod(context.Background(), podCopy, &tt.config.Spec)
+			err := handler.mutatePod(context.Background(), podCopy, &tt.config.Spec, logr.Discard())
 
 			if tt.expectedError {
 				g.Expect(err).To(HaveOccurred())

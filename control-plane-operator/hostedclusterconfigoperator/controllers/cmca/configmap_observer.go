@@ -17,8 +17,6 @@ import (
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-
-	"github.com/go-logr/logr"
 )
 
 const (
@@ -72,9 +70,6 @@ type ManagedCAObserver struct {
 	// hcpName is the name of the hostedcontrolplane resource in the
 	// control plane namespace
 	hcpName string
-
-	// log is the logger for this controller
-	log logr.Logger
 }
 
 // Reconcile periodically watches configmaps in the guest cluster and syncs them to the control plane side
@@ -94,7 +89,7 @@ func (r *ManagedCAObserver) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, nil
 	}
 
-	log := r.log.WithValues("configmap", req.NamespacedName)
+	log := ctrl.LoggerFrom(ctx)
 	log.Info("syncing configmap")
 
 	ownerRef := config.OwnerRefFrom(hcp)

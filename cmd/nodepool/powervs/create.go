@@ -7,8 +7,8 @@ import (
 	"syscall"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/nodepool/core"
+	cmdutil "github.com/openshift/hypershift/cmd/util"
 
 	"k8s.io/apimachinery/pkg/util/intstr"
 
@@ -52,7 +52,7 @@ func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
 		}()
 
 		if err := coreOpts.CreateNodePool(ctx, opts); err != nil {
-			log.Log.Error(err, "Failed to create nodepool")
+			cmdutil.NewLogger().Error(err, "Failed to create nodepool")
 			os.Exit(1)
 		}
 	}

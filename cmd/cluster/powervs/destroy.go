@@ -9,7 +9,7 @@ import (
 
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	powervsinfra "github.com/openshift/hypershift/cmd/infra/powervs"
-	"github.com/openshift/hypershift/cmd/log"
+	cmdutil "github.com/openshift/hypershift/cmd/util"
 
 	"k8s.io/apimachinery/pkg/util/errors"
 
@@ -48,7 +48,7 @@ func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 	_ = cmd.Flags().MarkHidden("vpc")
 	_ = cmd.Flags().MarkHidden("transit-gateway")
 
-	logger := log.Log
+	logger := cmdutil.NewLogger()
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()

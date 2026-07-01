@@ -19,6 +19,7 @@ import (
 const (
 	ManagedConfigNamespace                 = "openshift-config-managed"
 	ControllerManagerAdditionalCAConfigMap = "controller-manager-additional-ca"
+	ControllerName                         = "ca-configmap-observer"
 )
 
 func Setup(ctx context.Context, cfg *operator.HostedClusterConfigOperatorConfig) error {
@@ -48,10 +49,9 @@ func setupConfigMapObserver(cfg *operator.HostedClusterConfigOperatorConfig) err
 		cmLister:       configMaps.Lister(),
 		namespace:      cfg.Namespace,
 		hcpName:        cfg.HCPName,
-		log:            cfg.Logger.WithName("ManagedCAObserver"),
 		createOrUpdate: upsert.New(cfg.EnableCIDebugOutput).CreateOrUpdate,
 	}
-	c, err := controller.New("ca-configmap-observer", cfg.Manager, controller.Options{Reconciler: reconciler})
+	c, err := controller.New(ControllerName, cfg.Manager, controller.Options{Reconciler: reconciler})
 	if err != nil {
 		return err
 	}

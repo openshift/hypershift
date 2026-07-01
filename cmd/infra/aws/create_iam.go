@@ -9,8 +9,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
-	"github.com/openshift/hypershift/cmd/log"
-	"github.com/openshift/hypershift/cmd/util"
+	cmdutil "github.com/openshift/hypershift/cmd/util"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
@@ -43,7 +42,7 @@ type CreateIAMOptions struct {
 	VPCOwnerCredentialsOpts         awsutil.AWSCredentialsOptions
 	PrivateZonesInClusterAccount    bool
 
-	CredentialsSecretData *util.CredentialsSecretData
+	CredentialsSecretData *cmdutil.CredentialsSecretData
 
 	additionalIAMTags      []iamtypes.Tag
 	CreateKarpenterRoleARN bool
@@ -104,13 +103,13 @@ func NewCreateIAMCommand() *cobra.Command {
 	_ = cmd.MarkFlagRequired("oidc-bucket-name")
 	_ = cmd.MarkFlagRequired("oidc-bucket-region")
 
-	logger := log.Log
+	logger := cmdutil.NewLogger()
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		err := opts.AWSCredentialsOpts.Validate()
 		if err != nil {
 			return err
 		}
-		client, err := util.GetClient()
+		client, err := cmdutil.GetClient()
 		if err != nil {
 			logger.Error(err, "failed to create client")
 			return err
@@ -245,7 +244,7 @@ func (o *CreateIAMOptions) CreateIAM(ctx context.Context, client crclient.Client
 }
 
 func (o *CreateIAMOptions) ParseAdditionalTags() error {
-	parsed, err := util.ParseAWSTags(o.AdditionalTags)
+	parsed, err := cmdutil.ParseAWSTags(o.AdditionalTags)
 	if err != nil {
 		return err
 	}

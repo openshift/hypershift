@@ -5,8 +5,6 @@ import (
 
 	. "github.com/onsi/gomega"
 
-	"github.com/openshift/hypershift/cmd/log"
-
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 )
 
@@ -45,7 +43,7 @@ func Test_SetupAzureCredentials(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
-			subscriptionID, _, err := SetupAzureCredentials(log.Log, test.credentials, test.credentialsFile)
+			subscriptionID, _, err := SetupAzureCredentials(NewLogger(), test.credentials, test.credentialsFile)
 			if test.expectedError {
 				g.Expect(err).To(MatchError(test.expectedError))
 			} else {

@@ -23,6 +23,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
+const ControllerName = "supportedversion"
+
 type Reconciler struct {
 	client.Client
 	upsert.CreateOrUpdateProvider
@@ -41,6 +43,7 @@ func (r *Reconciler) SetupWithManager(mgr manager.Manager) error {
 	// Afterwards, the controller syncs on the ConfigMap.
 	initialSync := make(chan event.GenericEvent)
 	err := ctrl.NewControllerManagedBy(mgr).
+		Named(ControllerName).
 		For(&corev1.ConfigMap{}, builder.WithPredicates(predicate.NewPredicateFuncs(r.selectSupportedVersionsConfigMap))).
 		WatchesRawSource(source.Channel(initialSync, &handler.EnqueueRequestForObject{})).
 		Complete(r)

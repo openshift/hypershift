@@ -151,7 +151,6 @@ func TestReconcileKubeadminPassword(t *testing.T) {
 			fakeClient := fake.NewClientBuilder().Build()
 			r := &HostedControlPlaneReconciler{
 				Client: fakeClient,
-				Log:    ctrl.LoggerFrom(t.Context()),
 			}
 			err := r.reconcileKubeadminPassword(t.Context(), tc.hcp, tc.hcp.Spec.Configuration != nil && tc.hcp.Spec.Configuration.OAuth != nil, controllerutil.CreateOrUpdate)
 			g.Expect(err).NotTo(HaveOccurred())
@@ -546,7 +545,6 @@ func TestEtcdRestoredCondition(t *testing.T) {
 			fakeClient := fake.NewClientBuilder().WithLists(podList).Build()
 			r := &HostedControlPlaneReconciler{
 				Client: fakeClient,
-				Log:    ctrl.LoggerFrom(t.Context()),
 			}
 
 			conditionPtr := r.etcdRestoredCondition(t.Context(), tc.sts)
@@ -1789,7 +1787,6 @@ func TestControlPlaneComponentsAvailable(t *testing.T) {
 			// Create reconciler
 			r := &HostedControlPlaneReconciler{
 				Client: c,
-				Log:    zapr.NewLogger(zaptest.NewLogger(t)),
 			}
 
 			// Execute the function under test
@@ -2188,7 +2185,6 @@ func TestRemoveHCPIngressFromRoutes(t *testing.T) {
 
 			r := &HostedControlPlaneReconciler{
 				Client:                        fakeClient,
-				Log:                           ctrl.LoggerFrom(ctx),
 				ManagementClusterCapabilities: caps,
 			}
 
@@ -2647,7 +2643,6 @@ func TestEtcdStatefulSetCondition(t *testing.T) {
 
 			r := &HostedControlPlaneReconciler{
 				Client: fakeClient,
-				Log:    ctrl.LoggerFrom(t.Context()),
 			}
 
 			condition, err := r.etcdStatefulSetCondition(t.Context(), tc.sts)
@@ -3145,7 +3140,6 @@ func TestReconcileEtcdStatus(t *testing.T) {
 
 			r := &HostedControlPlaneReconciler{
 				Client: c,
-				Log:    zapr.NewLogger(zaptest.NewLogger(t)),
 			}
 
 			err := r.reconcileEtcdStatus(t.Context(), tc.hcp)
@@ -3363,7 +3357,6 @@ func TestReconcileKASStatus(t *testing.T) {
 
 			r := &HostedControlPlaneReconciler{
 				Client: c,
-				Log:    zapr.NewLogger(zaptest.NewLogger(t)),
 			}
 
 			err := r.reconcileKASStatus(t.Context(), tc.hcp)
@@ -3594,7 +3587,6 @@ func TestReconcileDegradedStatus(t *testing.T) {
 
 			r := &HostedControlPlaneReconciler{
 				Client: c,
-				Log:    zapr.NewLogger(zaptest.NewLogger(t)),
 			}
 
 			err := r.reconcileDegradedStatus(t.Context(), tc.hcp)
@@ -3712,7 +3704,6 @@ func TestReconcileInfrastructureStatusCondition(t *testing.T) {
 
 			r := &HostedControlPlaneReconciler{
 				Client: fake.NewClientBuilder().WithScheme(api.Scheme).Build(),
-				Log:    zapr.NewLogger(zaptest.NewLogger(t)),
 				reconcileInfrastructureStatus: func(ctx context.Context, hcp *hyperv1.HostedControlPlane) (infra.InfrastructureStatus, error) {
 					return tc.infraStatus, tc.infraErr
 				},
@@ -3810,7 +3801,6 @@ func TestReconcileExternalDNSStatusCondition(t *testing.T) {
 
 			r := &HostedControlPlaneReconciler{
 				Client: fake.NewClientBuilder().WithScheme(api.Scheme).Build(),
-				Log:    zapr.NewLogger(zaptest.NewLogger(t)),
 			}
 
 			r.reconcileExternalDNSStatusCondition(t.Context(), tc.hcp)
@@ -3943,7 +3933,6 @@ func TestReconcileAvailabilityAndReadyStatus(t *testing.T) {
 
 			r := &HostedControlPlaneReconciler{
 				Client: c,
-				Log:    zapr.NewLogger(zaptest.NewLogger(t)),
 			}
 
 			r.reconcileAvailabilityAndReadyStatus(t.Context(), tc.hcp)
@@ -4067,7 +4056,6 @@ func TestReconcileKubeadminPasswordStatus(t *testing.T) {
 
 			r := &HostedControlPlaneReconciler{
 				Client: c,
-				Log:    zapr.NewLogger(zaptest.NewLogger(t)),
 			}
 
 			err := r.reconcileKubeadminPasswordStatus(t.Context(), tc.hcp)
@@ -4274,7 +4262,6 @@ func TestReconcileControlPlaneVersionStatus(t *testing.T) {
 
 			r := &HostedControlPlaneReconciler{
 				Client:                c,
-				Log:                   zapr.NewLogger(zaptest.NewLogger(t)),
 				ImageMetadataProvider: imgProvider,
 				clock:                 fakeClock,
 			}
@@ -4424,7 +4411,6 @@ func TestReconcileDeletion(t *testing.T) {
 
 			r := &HostedControlPlaneReconciler{
 				Client:    fakeClient,
-				Log:       ctrl.Log.WithName("test"),
 				ec2Client: mockEC2,
 			}
 

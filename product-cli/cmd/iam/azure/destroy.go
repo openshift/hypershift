@@ -2,7 +2,7 @@ package azure
 
 import (
 	hypershiftazure "github.com/openshift/hypershift/cmd/infra/azure"
-	"github.com/openshift/hypershift/cmd/log"
+	cmdutil "github.com/openshift/hypershift/cmd/util"
 
 	"github.com/spf13/cobra"
 )
@@ -24,7 +24,7 @@ func NewDestroyCommand() *cobra.Command {
 	_ = cmd.MarkFlagRequired("azure-creds")
 	_ = cmd.MarkFlagRequired("resource-group-name")
 
-	l := log.Log
+	l := cmdutil.NewLogger()
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		if err := opts.Validate(); err != nil {
 			return err

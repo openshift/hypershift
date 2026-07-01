@@ -8,7 +8,6 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	assets "github.com/openshift/hypershift/cmd/install/assets"
-	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/capabilities"
@@ -138,6 +137,7 @@ func (r *SharedIngressReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpd
 }
 
 func (r *SharedIngressReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result, error) {
+	log := ctrl.LoggerFrom(ctx)
 	namespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: RouterNamespace}}
 	if _, err := r.createOrUpdate(ctx, r.Client, namespace, func() error {
 		if namespace.Labels == nil {
@@ -153,7 +153,7 @@ func (r *SharedIngressReconciler) Reconcile(ctx context.Context, _ ctrl.Request)
 	src := &corev1.Secret{}
 	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: r.Namespace, Name: assets.PullSecretName}, src); err != nil {
 		if errors.IsNotFound(err) {
-			log.Log.Info(fmt.Sprintf("pull secret was not found in %s namespace, will not create pullsecret for sharedingress", r.Namespace))
+			log.Info(fmt.Sprintf("pull secret was not found in %s namespace, will not create pullsecret for sharedingress", r.Namespace))
 		} else {
 			return ctrl.Result{}, fmt.Errorf("failed to get pull secret %s: %w", src, err)
 		}
@@ -185,6 +185,7 @@ func (r *SharedIngressReconciler) Reconcile(ctx context.Context, _ ctrl.Request)
 }
 
 func (r *SharedIngressReconciler) reconcileRouter(ctx context.Context, pullSecretPresent bool) error {
+	log := ctrl.LoggerFrom(ctx)
 	if err := r.reconcileDefaultServiceAccount(ctx, pullSecretPresent); err != nil {
 		return fmt.Errorf("failed to reconcile default service account: %w", err)
 	}
@@ -246,7 +247,7 @@ func (r *SharedIngressReconciler) reconcileRouter(ctx context.Context, pullSecre
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile etcd pdb: %w", err)
 	} else {
-		log.Log.Info("reconciled etcd pdb", "result", result)
+		log.Info("reconciled etcd pdb", "result", result)
 	}
 
 	// Reconcile KAS Network Policy
@@ -265,7 +266,7 @@ func (r *SharedIngressReconciler) reconcileRouter(ctx context.Context, pullSecre
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile router network policy: %w", err)
 	} else {
-		log.Log.Info("reconciled router network policy", "result", result)
+		log.Info("reconciled router network policy", "result", result)
 	}
 
 	return nil

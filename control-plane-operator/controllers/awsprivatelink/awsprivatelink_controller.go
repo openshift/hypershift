@@ -67,7 +67,6 @@ type PrivateServiceObserver struct {
 	client.Client
 
 	clientset *kubeclient.Clientset
-	log       logr.Logger
 
 	ControllerName   string
 	ServiceNamespace string
@@ -102,7 +101,6 @@ func ControllerName(name string) string {
 }
 
 func (r *PrivateServiceObserver) SetupWithManager(ctx context.Context, mgr ctrl.Manager) error {
-	r.log = ctrl.Log.WithName(r.ControllerName).WithValues("name", r.ServiceName, "namespace", r.ServiceNamespace)
 	var err error
 	r.clientset, err = kubeclient.NewForConfig(mgr.GetConfig())
 	if err != nil {
@@ -131,11 +129,13 @@ func (r *PrivateServiceObserver) SetupWithManager(ctx context.Context, mgr ctrl.
 }
 
 func (r *PrivateServiceObserver) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	log := ctrl.LoggerFrom(ctx)
+
 	// Fetch the Service
 	svc, err := r.clientset.CoreV1().Services(req.Namespace).Get(ctx, req.Name, metav1.GetOptions{})
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			r.log.Info("service not found")
+			log.Info("service not found")
 			return ctrl.Result{}, nil
 		}
 		return ctrl.Result{}, err
@@ -162,7 +162,7 @@ func (r *PrivateServiceObserver) Reconcile(ctx context.Context, req ctrl.Request
 	}
 
 	if len(svc.Status.LoadBalancer.Ingress) == 0 {
-		r.log.Info("load balancer not provisioned yet")
+		log.Info("load balancer not provisioned yet")
 		return ctrl.Result{}, nil
 	}
 	awsEndpointService := &hyperv1.AWSEndpointService{
@@ -220,6 +220,8 @@ const (
 	hypershiftLocalZone                    = "hypershift.local"
 	routerDomain                           = "apps"
 )
+
+const ReconcilerControllerName = "awsendpointservice"
 
 // AWSEndpointServiceReconciler watches AWSEndpointService resources and reconciles
 // the existence of AWS Endpoints for it in the guest cluster infrastructure.
@@ -366,6 +368,7 @@ func (r *AWSEndpointServiceReconciler) SetupWithManager(mgr ctrl.Manager) error 
 		r.awsClientBuilder = &clientBuilder{}
 	}
 	_, err := ctrl.NewControllerManagedBy(mgr).
+		Named(ReconcilerControllerName).
 		For(&hyperv1.AWSEndpointService{}).
 		WithOptions(controller.Options{
 			RateLimiter:             workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](3*time.Second, 30*time.Second),

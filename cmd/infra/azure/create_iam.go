@@ -8,8 +8,7 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/openshift/hypershift/cmd/log"
-	"github.com/openshift/hypershift/cmd/util"
+	cmdutil "github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
 
@@ -35,15 +34,15 @@ func NewCreateIAMCommand() *cobra.Command {
 
 	opts := DefaultCreateIAMOptions()
 
-	cmd.Flags().StringVar(&opts.Name, "name", opts.Name, util.NameDescription)
-	cmd.Flags().StringVar(&opts.InfraID, "infra-id", opts.InfraID, util.InfraIDDescription)
-	cmd.Flags().StringVar(&opts.CredentialsFile, "azure-creds", opts.CredentialsFile, util.AzureCredsDescription)
-	cmd.Flags().StringVar(&opts.Location, "location", opts.Location, util.LocationDescription)
-	cmd.Flags().StringVar(&opts.ResourceGroupName, "resource-group-name", opts.ResourceGroupName, util.ResourceGroupNameDescription)
-	cmd.Flags().StringVar(&opts.OIDCIssuerURL, "oidc-issuer-url", opts.OIDCIssuerURL, util.OIDCIssuerURLDescription)
-	cmd.Flags().StringVar(&opts.OutputFile, "output-file", opts.OutputFile, util.WorkloadIdentitiesOutputFileDescription)
-	cmd.Flags().StringVar(&opts.Cloud, "cloud", opts.Cloud, util.CloudDescription)
-	cmd.Flags().BoolVar(&opts.EnableKMS, "enable-kms", opts.EnableKMS, util.EnableKMSDescription)
+	cmd.Flags().StringVar(&opts.Name, "name", opts.Name, cmdutil.NameDescription)
+	cmd.Flags().StringVar(&opts.InfraID, "infra-id", opts.InfraID, cmdutil.InfraIDDescription)
+	cmd.Flags().StringVar(&opts.CredentialsFile, "azure-creds", opts.CredentialsFile, cmdutil.AzureCredsDescription)
+	cmd.Flags().StringVar(&opts.Location, "location", opts.Location, cmdutil.LocationDescription)
+	cmd.Flags().StringVar(&opts.ResourceGroupName, "resource-group-name", opts.ResourceGroupName, cmdutil.ResourceGroupNameDescription)
+	cmd.Flags().StringVar(&opts.OIDCIssuerURL, "oidc-issuer-url", opts.OIDCIssuerURL, cmdutil.OIDCIssuerURLDescription)
+	cmd.Flags().StringVar(&opts.OutputFile, "output-file", opts.OutputFile, cmdutil.WorkloadIdentitiesOutputFileDescription)
+	cmd.Flags().StringVar(&opts.Cloud, "cloud", opts.Cloud, cmdutil.CloudDescription)
+	cmd.Flags().BoolVar(&opts.EnableKMS, "enable-kms", opts.EnableKMS, cmdutil.EnableKMSDescription)
 
 	_ = cmd.MarkFlagRequired("name")
 	_ = cmd.MarkFlagRequired("infra-id")
@@ -52,7 +51,7 @@ func NewCreateIAMCommand() *cobra.Command {
 	_ = cmd.MarkFlagRequired("oidc-issuer-url")
 	_ = cmd.MarkFlagRequired("output-file")
 
-	l := log.Log
+	l := cmdutil.NewLogger()
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		if err := opts.Validate(); err != nil {
 			return err
@@ -78,15 +77,15 @@ func DefaultCreateIAMOptions() *CreateIAMOptions {
 
 // BindCreateIAMProductFlags binds flags for the product CLI (hcp) IAM create azure command
 func BindCreateIAMProductFlags(opts *CreateIAMOptions, flags *pflag.FlagSet) {
-	flags.StringVar(&opts.Name, "name", opts.Name, util.NameDescription)
-	flags.StringVar(&opts.InfraID, "infra-id", opts.InfraID, util.InfraIDDescription)
-	flags.StringVar(&opts.CredentialsFile, "azure-creds", opts.CredentialsFile, util.AzureCredsDescription)
-	flags.StringVar(&opts.Location, "location", opts.Location, util.LocationDescription)
-	flags.StringVar(&opts.ResourceGroupName, "resource-group-name", opts.ResourceGroupName, util.ResourceGroupNameDescription)
-	flags.StringVar(&opts.OIDCIssuerURL, "oidc-issuer-url", opts.OIDCIssuerURL, util.OIDCIssuerURLDescription)
-	flags.StringVar(&opts.OutputFile, "output-file", opts.OutputFile, util.WorkloadIdentitiesOutputFileDescription)
-	flags.StringVar(&opts.Cloud, "cloud", opts.Cloud, util.CloudDescription)
-	flags.BoolVar(&opts.EnableKMS, "enable-kms", opts.EnableKMS, util.EnableKMSDescription)
+	flags.StringVar(&opts.Name, "name", opts.Name, cmdutil.NameDescription)
+	flags.StringVar(&opts.InfraID, "infra-id", opts.InfraID, cmdutil.InfraIDDescription)
+	flags.StringVar(&opts.CredentialsFile, "azure-creds", opts.CredentialsFile, cmdutil.AzureCredsDescription)
+	flags.StringVar(&opts.Location, "location", opts.Location, cmdutil.LocationDescription)
+	flags.StringVar(&opts.ResourceGroupName, "resource-group-name", opts.ResourceGroupName, cmdutil.ResourceGroupNameDescription)
+	flags.StringVar(&opts.OIDCIssuerURL, "oidc-issuer-url", opts.OIDCIssuerURL, cmdutil.OIDCIssuerURLDescription)
+	flags.StringVar(&opts.OutputFile, "output-file", opts.OutputFile, cmdutil.WorkloadIdentitiesOutputFileDescription)
+	flags.StringVar(&opts.Cloud, "cloud", opts.Cloud, cmdutil.CloudDescription)
+	flags.BoolVar(&opts.EnableKMS, "enable-kms", opts.EnableKMS, cmdutil.EnableKMSDescription)
 }
 
 // Validate validates the CreateIAMOptions
@@ -115,7 +114,7 @@ func (o *CreateIAMOptions) Validate() error {
 // Run creates the Azure IAM resources (managed identities and federated credentials)
 func (o *CreateIAMOptions) Run(ctx context.Context, l logr.Logger) error {
 	// Setup Azure credentials
-	subscriptionID, azureCreds, err := util.SetupAzureCredentials(l, o.Credentials, o.CredentialsFile)
+	subscriptionID, azureCreds, err := cmdutil.SetupAzureCredentials(l, o.Credentials, o.CredentialsFile)
 	if err != nil {
 		return fmt.Errorf("failed to setup Azure credentials: %w", err)
 	}

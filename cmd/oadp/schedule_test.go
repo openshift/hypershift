@@ -10,7 +10,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/cmd/log"
+	cmdutil "github.com/openshift/hypershift/cmd/util"
 
 	appsv1 "k8s.io/api/apps/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -1127,7 +1127,7 @@ func TestRunSchedule(t *testing.T) {
 				StorageLocation: "default",
 				TTL:             2 * time.Hour,
 				Schedule:        "0 2 * * *",
-				Log:             log.Log,
+				Log:             cmdutil.NewLogger(),
 			}
 
 			tt.setup(t, opts)

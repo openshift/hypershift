@@ -8,7 +8,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
-	"github.com/openshift/hypershift/cmd/log"
+	cmdutil "github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/support/config"
 )
 
@@ -71,7 +71,7 @@ func TestDestroyClusterSetsCloudFromHostedCluster(t *testing.T) {
 			g := NewGomegaWithT(t)
 			opts := &core.DestroyOptions{
 				ClusterGracePeriod: 10 * time.Minute,
-				Log:                log.Log,
+				Log:                cmdutil.NewLogger(),
 				AzurePlatform: core.AzurePlatformDestroyOptions{
 					CredentialsFile: "/fake/creds",
 					Location:        "eastus",
@@ -141,7 +141,7 @@ func TestDestroyClusterSetsGracePeriodFromTopology(t *testing.T) {
 			g := NewGomegaWithT(t)
 			opts := &core.DestroyOptions{
 				ClusterGracePeriod: test.initialGracePeriod,
-				Log:                log.Log,
+				Log:                cmdutil.NewLogger(),
 				AzurePlatform: core.AzurePlatformDestroyOptions{
 					CredentialsFile: "/fake/creds",
 					Location:        "eastus",

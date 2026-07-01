@@ -7,8 +7,7 @@ import (
 	"os"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/cmd/log"
-	"github.com/openshift/hypershift/cmd/util"
+	cmdutil "github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
 
@@ -55,16 +54,16 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.WorkloadIdentitiesFile, "workload-identities-file", opts.WorkloadIdentitiesFile, "Path to file containing self-managed Azure workload identities JSON")
 
 	// RBAC and identity role assignment flags
-	cmd.Flags().BoolVar(&opts.AssignServicePrincipalRoles, "assign-identity-roles", opts.AssignServicePrincipalRoles, util.AssignIdentityRolesDescription)
-	cmd.Flags().StringVar(&opts.DNSZoneRG, "dns-zone-rg-name", opts.DNSZoneRG, util.DNSZoneRGNameDescription)
-	cmd.Flags().BoolVar(&opts.AssignCustomHCPRoles, "assign-custom-hcp-roles", opts.AssignCustomHCPRoles, util.AssignCustomHCPRolesDescription)
-	cmd.Flags().StringSliceVar(&opts.DisableClusterCapabilities, "disable-cluster-capabilities", opts.DisableClusterCapabilities, util.DisableClusterCapabilitiesDescription)
+	cmd.Flags().BoolVar(&opts.AssignServicePrincipalRoles, "assign-identity-roles", opts.AssignServicePrincipalRoles, cmdutil.AssignIdentityRolesDescription)
+	cmd.Flags().StringVar(&opts.DNSZoneRG, "dns-zone-rg-name", opts.DNSZoneRG, cmdutil.DNSZoneRGNameDescription)
+	cmd.Flags().BoolVar(&opts.AssignCustomHCPRoles, "assign-custom-hcp-roles", opts.AssignCustomHCPRoles, cmdutil.AssignCustomHCPRolesDescription)
+	cmd.Flags().StringSliceVar(&opts.DisableClusterCapabilities, "disable-cluster-capabilities", opts.DisableClusterCapabilities, cmdutil.DisableClusterCapabilitiesDescription)
 
 	_ = cmd.MarkFlagRequired("infra-id")
 	_ = cmd.MarkFlagRequired("azure-creds")
 	_ = cmd.MarkFlagRequired("name")
 
-	l := log.Log
+	l := cmdutil.NewLogger()
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		if err := opts.Validate(); err != nil {
 			return err
@@ -92,35 +91,35 @@ func DefaultOptions() *CreateInfraOptions {
 // This exposes only the self-managed Azure flags relevant for the productized CLI.
 func BindProductFlags(opts *CreateInfraOptions, flags *pflag.FlagSet) {
 	// Required flags
-	flags.StringVar(&opts.InfraID, "infra-id", opts.InfraID, util.InfraIDDescription)
-	flags.StringVar(&opts.CredentialsFile, "azure-creds", opts.CredentialsFile, util.AzureCredsDescription)
+	flags.StringVar(&opts.InfraID, "infra-id", opts.InfraID, cmdutil.InfraIDDescription)
+	flags.StringVar(&opts.CredentialsFile, "azure-creds", opts.CredentialsFile, cmdutil.AzureCredsDescription)
 	flags.StringVar(&opts.Name, "name", opts.Name, "A name for the HostedCluster")
 
 	// Location and cloud
-	flags.StringVar(&opts.Location, "location", opts.Location, util.LocationDescription)
+	flags.StringVar(&opts.Location, "location", opts.Location, cmdutil.LocationDescription)
 	flags.StringVar(&opts.Cloud, "cloud", opts.Cloud, "Azure cloud environment (AzurePublicCloud, AzureUSGovernmentCloud, AzureChinaCloud)")
-	flags.StringVar(&opts.BaseDomain, "base-domain", opts.BaseDomain, util.BaseDomainInfraDescription)
+	flags.StringVar(&opts.BaseDomain, "base-domain", opts.BaseDomain, cmdutil.BaseDomainInfraDescription)
 
 	// Resource group and tags
-	flags.StringVar(&opts.ResourceGroupName, "resource-group-name", opts.ResourceGroupName, util.ResourceGroupNameDescription)
-	flags.StringToStringVarP(&opts.ResourceGroupTags, "resource-group-tags", "t", opts.ResourceGroupTags, util.ResourceGroupTagsDescription)
+	flags.StringVar(&opts.ResourceGroupName, "resource-group-name", opts.ResourceGroupName, cmdutil.ResourceGroupNameDescription)
+	flags.StringToStringVarP(&opts.ResourceGroupTags, "resource-group-tags", "t", opts.ResourceGroupTags, cmdutil.ResourceGroupTagsDescription)
 
 	// Networking
-	flags.StringVar(&opts.VnetID, "vnet-id", opts.VnetID, util.VnetIDDescription)
-	flags.StringVar(&opts.SubnetID, "subnet-id", opts.SubnetID, util.SubnetIDDescription)
-	flags.StringVar(&opts.NetworkSecurityGroupID, "network-security-group-id", opts.NetworkSecurityGroupID, util.NetworkSecurityGroupIDDescription)
+	flags.StringVar(&opts.VnetID, "vnet-id", opts.VnetID, cmdutil.VnetIDDescription)
+	flags.StringVar(&opts.SubnetID, "subnet-id", opts.SubnetID, cmdutil.SubnetIDDescription)
+	flags.StringVar(&opts.NetworkSecurityGroupID, "network-security-group-id", opts.NetworkSecurityGroupID, cmdutil.NetworkSecurityGroupIDDescription)
 
 	// Self-managed Azure identity flags
-	flags.StringVar(&opts.WorkloadIdentitiesFile, "workload-identities-file", opts.WorkloadIdentitiesFile, util.WorkloadIdentitiesFileDescription)
+	flags.StringVar(&opts.WorkloadIdentitiesFile, "workload-identities-file", opts.WorkloadIdentitiesFile, cmdutil.WorkloadIdentitiesFileDescription)
 
 	// RBAC and role assignment
-	flags.BoolVar(&opts.AssignServicePrincipalRoles, "assign-identity-roles", opts.AssignServicePrincipalRoles, util.AssignIdentityRolesDescription)
-	flags.StringVar(&opts.DNSZoneRG, "dns-zone-rg-name", opts.DNSZoneRG, util.DNSZoneRGNameDescription)
-	flags.BoolVar(&opts.AssignCustomHCPRoles, "assign-custom-hcp-roles", opts.AssignCustomHCPRoles, util.AssignCustomHCPRolesDescription)
-	flags.StringSliceVar(&opts.DisableClusterCapabilities, "disable-cluster-capabilities", opts.DisableClusterCapabilities, util.DisableClusterCapabilitiesDescription)
+	flags.BoolVar(&opts.AssignServicePrincipalRoles, "assign-identity-roles", opts.AssignServicePrincipalRoles, cmdutil.AssignIdentityRolesDescription)
+	flags.StringVar(&opts.DNSZoneRG, "dns-zone-rg-name", opts.DNSZoneRG, cmdutil.DNSZoneRGNameDescription)
+	flags.BoolVar(&opts.AssignCustomHCPRoles, "assign-custom-hcp-roles", opts.AssignCustomHCPRoles, cmdutil.AssignCustomHCPRolesDescription)
+	flags.StringSliceVar(&opts.DisableClusterCapabilities, "disable-cluster-capabilities", opts.DisableClusterCapabilities, cmdutil.DisableClusterCapabilitiesDescription)
 
 	// Output
-	flags.StringVar(&opts.OutputFile, "output-file", opts.OutputFile, util.InfraOutputFileDescription)
+	flags.StringVar(&opts.OutputFile, "output-file", opts.OutputFile, cmdutil.InfraOutputFileDescription)
 }
 
 // Run is the main function responsible for creating the Azure infrastructure resources for a HostedCluster.
@@ -135,7 +134,7 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 		BaseDomain: o.BaseDomain,
 	}
 
-	subscriptionID, azureCreds, err := util.SetupAzureCredentials(l, o.Credentials, o.CredentialsFile)
+	subscriptionID, azureCreds, err := cmdutil.SetupAzureCredentials(l, o.Credentials, o.CredentialsFile)
 	if err != nil {
 		return nil, fmt.Errorf("failed to setup Azure credentials: %w", err)
 	}
