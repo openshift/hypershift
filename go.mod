@@ -265,6 +265,9 @@ replace github.com/k-orc/openstack-resource-controller => sigs.k8s.io/cluster-ap
 // CVE-2025-30204
 replace github.com/golang-jwt/jwt/v4 => github.com/golang-jwt/jwt/v4 v4.5.2
 
+// CVE-2026-39830
+replace golang.org/x/crypto => github.com/yiraeChristineKim/crypto v0.39.1-sec.1
+
 // CVE-2026-33186
 replace google.golang.org/grpc => github.com/openshift-sustaining/grpc-go v1.75.1-sec.1
 
