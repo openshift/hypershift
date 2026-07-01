@@ -109,10 +109,11 @@ func (cvo *clusterVersionOperator) adaptDeployment(cpContext component.WorkloadC
 			Value: dataPlaneReleaseImage,
 		})
 
-		if tlsMinVersion := config.MinTLSVersion(configuration.GetTLSSecurityProfile()); tlsMinVersion != "" {
+		tlsProfile := configuration.GetTLSSecurityProfile()
+		if tlsMinVersion := config.MinTLSVersion(tlsProfile); tlsMinVersion != "" {
 			c.Args = append(c.Args, fmt.Sprintf("--tls-min-version=%s", tlsMinVersion))
 		}
-		if cipherSuites := config.CipherSuites(configuration.GetTLSSecurityProfile()); len(cipherSuites) != 0 {
+		if cipherSuites := config.CipherSuites(tlsProfile); len(cipherSuites) != 0 {
 			c.Args = append(c.Args, fmt.Sprintf("--tls-cipher-suites=%s", strings.Join(cipherSuites, ",")))
 		}
 
