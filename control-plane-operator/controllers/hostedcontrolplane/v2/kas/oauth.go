@@ -4,9 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/control-plane-operator/featuregates"
 	"github.com/openshift/hypershift/support/certs"
 	component "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/util"
 
 	corev1 "k8s.io/api/core/v1"
 	clientcmd "k8s.io/client-go/tools/clientcmd"
@@ -73,13 +76,21 @@ func adaptAuthenticationTokenWebhookConfigSecret(cpContext component.WorkloadCon
 	if key, ok = authenticatorCertSecret.Data[corev1.TLSPrivateKeyKey]; !ok {
 		return fmt.Errorf("expected %s key in authenticator secret", corev1.TLSPrivateKeyKey)
 	}
-	url := fmt.Sprintf("https://openshift-oauth-apiserver.%s.svc:443/apis/oauth.openshift.io/v1/tokenreviews", secret.GetNamespace())
+	url := tokenReviewURL(cpContext.HCP, secret.GetNamespace())
 	kubeConfigBytes, err := generateAuthenticationTokenWebhookConfig(url, crt, key, ca)
 	if err != nil {
 		return err
 	}
 	secret.Data[KubeconfigKey] = kubeConfigBytes
 	return nil
+}
+
+func tokenReviewURL(hcp *hyperv1.HostedControlPlane, namespace string) string {
+	serviceName := "openshift-oauth-apiserver"
+	if util.HCPExternalOIDCEnabled(hcp) && featuregates.Gate().Enabled(featuregates.ExternalOIDCExternalClaimsSourcing) {
+		serviceName = "external-oidc-webhook"
+	}
+	return fmt.Sprintf("https://%s.%s.svc:443/apis/oauth.openshift.io/v1/tokenreviews", serviceName, namespace)
 }
 
 func generateAuthenticationTokenWebhookConfig(url string, crtBytes, keyBytes, caBytes []byte) ([]byte, error) {
