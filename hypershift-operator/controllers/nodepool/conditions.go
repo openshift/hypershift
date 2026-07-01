@@ -20,7 +20,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
-	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -100,17 +100,17 @@ func FindStatusCondition(conditions []hyperv1.NodePoolCondition, conditionType s
 
 // machineConditionResult normalizes a CAPI Machine condition into a common struct.
 type machineConditionResult struct {
-	Status  corev1.ConditionStatus
+	Status  metav1.ConditionStatus
 	Reason  string
 	Message string
 }
 
 // findMachineStatusCondition looks up a condition on a CAPI Machine from
-// Machine.Status.Conditions ([]capiv1.Condition).
+// Machine.Status.Conditions ([]metav1.Condition).
 // Returns nil if the condition is not found.
 func findMachineStatusCondition(machine *capiv1.Machine, conditionType string) *machineConditionResult {
 	for i := range machine.Status.Conditions {
-		if string(machine.Status.Conditions[i].Type) == conditionType {
+		if machine.Status.Conditions[i].Type == conditionType {
 			return &machineConditionResult{
 				Status:  machine.Status.Conditions[i].Status,
 				Reason:  machine.Status.Conditions[i].Reason,
@@ -635,10 +635,10 @@ func (r *NodePoolReconciler) setAllNodesHealthyCondition(nodePool *hyperv1.NodeP
 				// NodeHealthy condition not yet reported; treat as not healthy.
 				status = corev1.ConditionFalse
 				numNotHealthy++
-				mapReason := capiv1.WaitingForNodeRefReason
+				mapReason := capiv1.WaitingForNodeRefV1Beta1Reason
 				mapMessage := fmt.Sprintf("Machine %s: %s\n", machine.Name, mapReason)
 				messageMap[mapReason] = append(messageMap[mapReason], mapMessage)
-			} else if condition.Status != corev1.ConditionTrue {
+			} else if condition.Status != metav1.ConditionTrue {
 				status = corev1.ConditionFalse
 				numNotHealthy++
 				mapReason := condition.Reason
@@ -698,10 +698,10 @@ func (r *NodePoolReconciler) setAllMachinesReadyCondition(nodePool *hyperv1.Node
 				// Ready condition not yet reported; treat as not ready.
 				status = corev1.ConditionFalse
 				numNotReady++
-				mapReason := capiv1.WaitingForInfrastructureFallbackReason
+				mapReason := capiv1.WaitingForInfrastructureFallbackV1Beta1Reason
 				mapMessage := fmt.Sprintf("Machine %s: %s\n", machine.Name, mapReason)
 				messageMap[mapReason] = append(messageMap[mapReason], mapMessage)
-			} else if readyCond.Status != corev1.ConditionTrue {
+			} else if readyCond.Status != metav1.ConditionTrue {
 				status = corev1.ConditionFalse
 				numNotReady++
 				infraReadyCond := findMachineStatusCondition(machine, string(capiv1.InfrastructureReadyCondition))
@@ -714,7 +714,7 @@ func (r *NodePoolReconciler) setAllMachinesReadyCondition(nodePool *hyperv1.Node
 				//		status: "False"
 				//		type: Ready
 				var mapReason, mapMessage string
-				if infraReadyCond != nil && infraReadyCond.Status != corev1.ConditionTrue && !isSetupCounterCondMessage.MatchString(infraReadyCond.Message) {
+				if infraReadyCond != nil && infraReadyCond.Status != metav1.ConditionTrue && !isSetupCounterCondMessage.MatchString(infraReadyCond.Message) {
 					mapReason = infraReadyCond.Reason
 					mapMessage = fmt.Sprintf("Machine %s: %s: %s\n", machine.Name, infraReadyCond.Reason, infraReadyCond.Message)
 				} else {
@@ -778,7 +778,6 @@ func (r *NodePoolReconciler) setCIDRConflictCondition(nodePool *hyperv1.NodePool
 	if len(messages) > 0 {
 		message := ""
 		for _, entry := range messages {
-
 			if len(message) == 0 {
 				message = entry
 			} else if len(entry)+len(message) < maxMessageLength {

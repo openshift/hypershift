@@ -26,7 +26,7 @@ import (
 	"k8s.io/client-go/util/retry"
 	"k8s.io/utils/ptr"
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
-	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -779,7 +779,7 @@ func testScaleFromZero(ctx context.Context, mgtClient crclient.Client, hostedClu
 					// Get the AWSMachineTemplate to check for Status.Capacity
 					awsMachineTemplate := &capiaws.AWSMachineTemplate{}
 					err = mgtClient.Get(ctx, crclient.ObjectKey{
-						Namespace: md.Spec.Template.Spec.InfrastructureRef.Namespace,
+						Namespace: md.Namespace,
 						Name:      md.Spec.Template.Spec.InfrastructureRef.Name,
 					}, awsMachineTemplate)
 					if err != nil {
@@ -830,7 +830,7 @@ func testScaleFromZero(ctx context.Context, mgtClient crclient.Client, hostedClu
 			// Get the AWSMachineTemplate again to display capacity info
 			awsMachineTemplate := &capiaws.AWSMachineTemplate{}
 			err = mgtClient.Get(ctx, crclient.ObjectKey{
-				Namespace: md.Spec.Template.Spec.InfrastructureRef.Namespace,
+				Namespace: md.Namespace,
 				Name:      md.Spec.Template.Spec.InfrastructureRef.Name,
 			}, awsMachineTemplate)
 			g.Expect(err).NotTo(HaveOccurred(), "failed to get AWSMachineTemplate for logging")

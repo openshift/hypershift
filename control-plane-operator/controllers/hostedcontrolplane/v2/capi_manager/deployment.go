@@ -23,7 +23,9 @@ func (capi *CAPIManagerOptions) adaptDeployment(cpContext component.WorkloadCont
 
 	podspec.UpdateContainer("manager", deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
 		if version.GE(config.Version419) {
-			c.Args = append(c.Args, "--feature-gates=MachineSetPreflightChecks=false")
+			// ReconcilerRateLimiting: rate-limits CAPI reconcilers to 1 request/second per object (hardcoded, not configurable).
+			// Requires PriorityQueue. Default in CAPI 1.13+, opt-in in 1.12.
+			c.Args = append(c.Args, "--feature-gates=MachineSetPreflightChecks=false,PriorityQueue=true,ReconcilerRateLimiting=true")
 		}
 
 		if len(capi.imageOverride) > 0 {

@@ -14,7 +14,7 @@ import (
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
-	"sigs.k8s.io/cluster-api/api/core/v1beta1"
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -38,7 +38,7 @@ func TestUpgradeHyperShiftOperator(t *testing.T) {
 	var hostedCluster *hyperv1.HostedCluster
 	var hcpNameSpace string
 	var nodePoolsMap map[string]*hyperv1.NodePool
-	var machineDeploymentMap map[string]*v1beta1.MachineDeployment
+	var machineDeploymentMap map[string]*capiv1.MachineDeployment
 
 	hyperShiftOperatorLatestImage := globalOpts.HyperShiftOperatorLatestImage
 
@@ -110,7 +110,7 @@ func TestUpgradeHyperShiftOperator(t *testing.T) {
 			}
 
 			// Get the MachineDeployments
-			machineDeployments := &v1beta1.MachineDeploymentList{}
+			machineDeployments := &capiv1.MachineDeploymentList{}
 			hcpNameSpace = manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
 
 			err = mgmtClient.List(ctx, machineDeployments, crclient.InNamespace(hcpNameSpace))
@@ -122,7 +122,7 @@ func TestUpgradeHyperShiftOperator(t *testing.T) {
 			g.Expect(len(machineDeployments.Items)).To(gomega.BeEquivalentTo(len(nodepools.Items)),
 				"Number of MachineDeployments and NodePools should match")
 
-			machineDeploymentMap = make(map[string]*v1beta1.MachineDeployment)
+			machineDeploymentMap = make(map[string]*capiv1.MachineDeployment)
 			t.Logf("Found %d MachineDeployments", len(machineDeployments.Items))
 			for i := range machineDeployments.Items {
 				t.Logf("Found MachineDeployment %s", machineDeployments.Items[i].Name)
@@ -202,7 +202,7 @@ func TestUpgradeHyperShiftOperator(t *testing.T) {
 					}
 				}
 
-				postUpgradeMachineDeployments := &v1beta1.MachineDeploymentList{}
+				postUpgradeMachineDeployments := &capiv1.MachineDeploymentList{}
 				err = mgmtClient.List(ctx, postUpgradeMachineDeployments, crclient.InNamespace(hcpNameSpace))
 				if err != nil {
 					gomega.StopTrying(fmt.Sprintf("Error listing MachineDeployments: %v", err)).Now()
@@ -213,7 +213,7 @@ func TestUpgradeHyperShiftOperator(t *testing.T) {
 				}
 				for _, machineDeployment := range postUpgradeMachineDeployments.Items {
 					t.Logf("Verifying MachineDeployment %s", machineDeployment.Name)
-					var preUpgradeMachineDeployment *v1beta1.MachineDeployment
+					var preUpgradeMachineDeployment *capiv1.MachineDeployment
 					var ok bool
 					if preUpgradeMachineDeployment, ok = machineDeploymentMap[machineDeployment.Name]; !ok {
 						gomega.StopTrying(fmt.Sprintf("MachineDeployment %s not found", machineDeployment.Name)).Now()

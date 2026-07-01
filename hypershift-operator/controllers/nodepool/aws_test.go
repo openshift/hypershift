@@ -23,7 +23,7 @@ import (
 	"k8s.io/utils/ptr"
 
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
-	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -517,7 +517,7 @@ func TestAWSMachineTemplate(t *testing.T) {
 					md := &capiv1.MachineDeployment{
 						ObjectMeta: metav1.ObjectMeta{Name: tc.nodePool.GetName(), Namespace: namespace},
 						Spec: capiv1.MachineDeploymentSpec{Template: capiv1.MachineTemplateSpec{Spec: capiv1.MachineSpec{
-							InfrastructureRef: corev1.ObjectReference{Name: tc.existingTemplate.Name},
+							InfrastructureRef: capiv1.ContractVersionedObjectReference{Name: tc.existingTemplate.Name},
 						}}},
 					}
 					existingObjs = append(existingObjs, md)
@@ -525,7 +525,7 @@ func TestAWSMachineTemplate(t *testing.T) {
 					ms := &capiv1.MachineSet{
 						ObjectMeta: metav1.ObjectMeta{Name: tc.nodePool.GetName(), Namespace: namespace},
 						Spec: capiv1.MachineSetSpec{Template: capiv1.MachineTemplateSpec{Spec: capiv1.MachineSpec{
-							InfrastructureRef: corev1.ObjectReference{Name: tc.existingTemplate.Name},
+							InfrastructureRef: capiv1.ContractVersionedObjectReference{Name: tc.existingTemplate.Name},
 						}}},
 					}
 					existingObjs = append(existingObjs, ms)

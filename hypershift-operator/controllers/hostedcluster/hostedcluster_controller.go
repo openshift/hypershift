@@ -100,7 +100,7 @@ import (
 	"k8s.io/utils/ptr"
 
 	capov1alpha1 "sigs.k8s.io/cluster-api-provider-openstack/api/v1alpha1"
-	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -3229,7 +3229,7 @@ func reconcileCAPICluster(cluster *capiv1.Cluster, hcluster *hyperv1.HostedClust
 	// We only create this resource once and then let CAPI own it
 	if !cluster.CreationTimestamp.IsZero() {
 		// make sure cluster is not paused.
-		cluster.Spec.Paused = false
+		cluster.Spec.Paused = ptr.To(false)
 		return nil
 	}
 	infraCRGVK, err := apiutil.GVKForObject(infraCR, api.Scheme)
@@ -3242,17 +3242,15 @@ func reconcileCAPICluster(cluster *capiv1.Cluster, hcluster *hyperv1.HostedClust
 	}
 	cluster.Spec = capiv1.ClusterSpec{
 		ControlPlaneEndpoint: capiv1.APIEndpoint{},
-		ControlPlaneRef: &corev1.ObjectReference{
-			APIVersion: "hypershift.openshift.io/v1beta1",
-			Kind:       "HostedControlPlane",
-			Namespace:  hcp.Namespace,
-			Name:       hcp.Name,
+		ControlPlaneRef: capiv1.ContractVersionedObjectReference{
+			APIGroup: "hypershift.openshift.io",
+			Kind:     "HostedControlPlane",
+			Name:     hcp.Name,
 		},
-		InfrastructureRef: &corev1.ObjectReference{
-			APIVersion: infraCRGVK.GroupVersion().String(),
-			Kind:       infraCRGVK.Kind,
-			Namespace:  infraCR.GetNamespace(),
-			Name:       infraCR.GetName(),
+		InfrastructureRef: capiv1.ContractVersionedObjectReference{
+			APIGroup: infraCRGVK.Group,
+			Kind:     infraCRGVK.Kind,
+			Name:     infraCR.GetName(),
 		},
 	}
 
@@ -3274,8 +3272,8 @@ func pauseCAPICluster(ctx context.Context, c client.Client, hc *hyperv1.HostedCl
 		return nil
 	}
 
-	if capiCluster.Spec.Paused != paused {
-		capiCluster.Spec.Paused = paused
+	if ptr.Deref(capiCluster.Spec.Paused, false) != paused {
+		capiCluster.Spec.Paused = ptr.To(paused)
 		if err := c.Update(ctx, capiCluster); err != nil {
 			return fmt.Errorf("failed to update CAPI Cluster: %w", err)
 		}
@@ -3288,7 +3286,7 @@ func reconcileCAPIManagerClusterRole(role *rbacv1.ClusterRole) error {
 		{
 			APIGroups: []string{"apiextensions.k8s.io"},
 			Resources: []string{"customresourcedefinitions"},
-			Verbs:     []string{"get", "list", "watch"},
+			Verbs:     []string{"get", "list", "patch", "watch"},
 		},
 	}
 	return nil

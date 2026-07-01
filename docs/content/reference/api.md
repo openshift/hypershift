@@ -10049,6 +10049,41 @@ SecretEncryptionStatus
 </tr>
 </tbody>
 </table>
+###HostedControlPlaneInitializationStatus { #hypershift.openshift.io/v1beta1.HostedControlPlaneInitializationStatus }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneStatus">HostedControlPlaneStatus</a>)
+</p>
+<p>
+<p>HostedControlPlaneInitializationStatus provides observations of the HostedControlPlane initialization process.
+This satisfies the CAPI v1beta2 ControlPlane provider contract:
+<a href="https://github.com/kubernetes-sigs/cluster-api/blob/v1.11.5/api/core/v1beta2/cluster_types.go#L1361-L1379">https://github.com/kubernetes-sigs/cluster-api/blob/v1.11.5/api/core/v1beta2/cluster_types.go#L1361-L1379</a></p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>controlPlaneInitialized</code></br>
+<em>
+bool
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>controlPlaneInitialized is true when the control plane is functional enough to accept requests.
+Once this condition is marked true, its value is never changed. See the Ready condition for an
+indication of the current readiness of the cluster&rsquo;s control plane.
+This satisfies CAPI contract <a href="https://github.com/kubernetes-sigs/cluster-api/blob/v1.11.5/api/core/v1beta2/cluster_types.go#L1371-L1379">https://github.com/kubernetes-sigs/cluster-api/blob/v1.11.5/api/core/v1beta2/cluster_types.go#L1371-L1379</a></p>
+</td>
+</tr>
+</tbody>
+</table>
 ###HostedControlPlaneSpec { #hypershift.openshift.io/v1beta1.HostedControlPlaneSpec }
 <p>
 <p>HostedControlPlaneSpec defines the desired state of HostedControlPlane</p>
@@ -10863,6 +10898,20 @@ SecretEncryptionStatus
 <td>
 <em>(Optional)</em>
 <p>secretEncryption tracks the state of secret encryption key rotation and re-encryption.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>initialization,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneInitializationStatus">
+HostedControlPlaneInitializationStatus
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>initialization contains fields that track the status of the initialization of the HostedControlPlane.</p>
 </td>
 </tr>
 </tbody>
