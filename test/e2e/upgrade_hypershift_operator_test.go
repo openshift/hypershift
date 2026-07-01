@@ -49,6 +49,13 @@ func TestUpgradeHyperShiftOperator(t *testing.T) {
 
 	clusterOpts := globalOpts.DefaultClusterOptions(t)
 
+	// The HO map-to-slice fix for shared role credential reconciliation
+	// (https://github.com/openshift/hypershift/pull/7331) only landed on 4.21+.
+	// The upgrade test installs the pre-upgrade HO which on 4.20 still has the bug.
+	if e2eutil.IsLessThan(e2eutil.Version421) {
+		clusterOpts.AWSPlatform.SharedRole = false
+	}
+
 	t.Log("Starting HyperShift Operator upgrade test")
 	g := gomega.NewWithT(t)
 	client, err := e2eutil.GetClient()
