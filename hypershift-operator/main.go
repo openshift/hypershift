@@ -17,6 +17,7 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
 	"net"
 	"os"
@@ -36,6 +37,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/instancetype"
 	awsinstancetype "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/instancetype/aws"
+	azureinstancetype "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/instancetype/azure"
 	npmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/metrics"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/platform/aws"
 	azureplatform "github.com/openshift/hypershift/hypershift-operator/controllers/platform/azure"
@@ -72,6 +74,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v5"
 
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
@@ -366,7 +369,7 @@ func validateStartOptions(opts *StartOptions, log logr.Logger) error {
 		return fmt.Errorf("--etcd-backup-max-count must be at least 1, got %d", opts.EtcdBackupMaxCount)
 	}
 
-	supportedProviders := set.New("aws")
+	supportedProviders := set.New("aws", "azure")
 	if opts.ScaleFromZeroCreds != "" {
 		if opts.ScaleFromZeroProvider == "" {
 			return fmt.Errorf("--scale-from-zero-provider is required when using --scale-from-zero-creds")
@@ -614,6 +617,8 @@ func setupEC2Client(ctx context.Context, opts *StartOptions) awsapi.EC2API {
 
 func setupNodePoolController(ctx context.Context, mgr ctrl.Manager, opts *StartOptions, operatorImage string, createOrUpdate upsert.CreateOrUpdateProvider, registryProvider globalconfig.CommonRegistryProvider, ec2Client awsapi.EC2API, log logr.Logger) error {
 	var instanceTypeProvider instancetype.Provider
+	var scaleFromZeroPlatform hyperv1.PlatformType
+
 	if opts.ScaleFromZeroCreds != "" && opts.ScaleFromZeroProvider != "" {
 		switch strings.ToLower(opts.ScaleFromZeroProvider) {
 		case "aws":
@@ -623,7 +628,65 @@ func setupNodePoolController(ctx context.Context, mgr ctrl.Manager, opts *StartO
 				o.Retryer = awsConfig()
 			})
 			instanceTypeProvider = awsinstancetype.NewProvider(scaleFromZeroEC2Client)
+			scaleFromZeroPlatform = hyperv1.AWSPlatform
 			log.Info("Instance type provider initialized", "provider", opts.ScaleFromZeroProvider)
+		case "azure":
+			raw, err := os.ReadFile(opts.ScaleFromZeroCreds)
+			if err != nil {
+				return fmt.Errorf("failed to read Azure scale-from-zero credentials: %w", err)
+			}
+			var azureCreds struct {
+				SubscriptionID string `json:"subscriptionId"`
+				ClientID       string `json:"clientId"`
+				ClientSecret   string `json:"clientSecret"`
+				TenantID       string `json:"tenantId"`
+				Location       string `json:"location"`
+			}
+			if err := json.Unmarshal(raw, &azureCreds); err != nil {
+				return fmt.Errorf("failed to parse Azure scale-from-zero credentials: %w", err)
+			}
+			var missing []string
+			if azureCreds.SubscriptionID == "" {
+				missing = append(missing, "subscriptionId")
+			}
+			if azureCreds.ClientID == "" {
+				missing = append(missing, "clientId")
+			}
+			if azureCreds.ClientSecret == "" {
+				missing = append(missing, "clientSecret")
+			}
+			if azureCreds.TenantID == "" {
+				missing = append(missing, "tenantId")
+			}
+			if azureCreds.Location == "" {
+				missing = append(missing, "location")
+			}
+			if len(missing) > 0 {
+				return fmt.Errorf("azure scale-from-zero credentials missing required fields: %s", strings.Join(missing, ", "))
+			}
+			azureCloudName := os.Getenv("AZURE_CLOUD_NAME")
+			if azureCloudName == "" {
+				azureCloudName = config.DefaultAzureCloud
+			}
+			cloudConfig, err := azureutil.GetAzureCloudConfiguration(azureCloudName)
+			if err != nil {
+				return fmt.Errorf("failed to get Azure cloud configuration for scale-from-zero: %w", err)
+			}
+			cred, err := azidentity.NewClientSecretCredential(azureCreds.TenantID, azureCreds.ClientID, azureCreds.ClientSecret,
+				&azidentity.ClientSecretCredentialOptions{
+					ClientOptions: azcore.ClientOptions{Cloud: cloudConfig},
+				},
+			)
+			if err != nil {
+				return fmt.Errorf("failed to create Azure credentials for scale-from-zero: %w", err)
+			}
+			skuClient, err := armcompute.NewResourceSKUsClient(azureCreds.SubscriptionID, cred, azureutil.NewARMClientOptions(cloudConfig))
+			if err != nil {
+				return fmt.Errorf("failed to create Azure ResourceSKUs client: %w", err)
+			}
+			instanceTypeProvider = azureinstancetype.NewProvider(skuClient, azureCreds.Location)
+			scaleFromZeroPlatform = hyperv1.AzurePlatform
+			log.Info("Instance type provider initialized", "provider", opts.ScaleFromZeroProvider, "location", azureCreds.Location)
 		default:
 			log.Info("WARNING: Unsupported scale-from-zero provider", "provider", opts.ScaleFromZeroProvider)
 		}
@@ -638,6 +701,7 @@ func setupNodePoolController(ctx context.Context, mgr ctrl.Manager, opts *StartO
 		KubevirtInfraClients:    kvinfra.NewKubevirtInfraClientMap(),
 		EC2Client:               ec2Client,
 		InstanceTypeProvider:    instanceTypeProvider,
+		ScaleFromZeroPlatform:   scaleFromZeroPlatform,
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create controller: %w", err)
 	}

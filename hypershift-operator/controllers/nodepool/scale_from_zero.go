@@ -27,6 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 
 	infrav1 "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
+	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -80,10 +81,9 @@ func setScaleFromZeroAnnotationsOnObject(ctx context.Context, provider instancet
 	case *infrav1.AWSMachineTemplate:
 		instanceType = template.Spec.Template.Spec.InstanceType
 		statusCapacity = template.Status.Capacity
-	// Future platform support can be added here:
-	// case *capiazure.AzureMachineTemplate:
-	//     instanceType = template.Spec.Template.Spec.VMSize
-	//     statusCapacity = template.Status.Capacity
+	case *capiazure.AzureMachineTemplate:
+		instanceType = template.Spec.Template.Spec.VMSize
+		statusCapacity = template.Status.Capacity
 	default:
 		return fmt.Errorf("unsupported machine template type: %T", machineTemplate)
 	}
