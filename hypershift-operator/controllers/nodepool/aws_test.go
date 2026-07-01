@@ -298,6 +298,7 @@ func TestAWSMachineTemplateSpec(t *testing.T) {
 				},
 				true,
 				releaseImage,
+				"",
 			)
 			if tc.checkError != nil {
 				tc.checkError(t, err)
@@ -1340,7 +1341,7 @@ func TestResolveAWSAMI(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
-			ami, err := resolveAWSAMI(tc.hostedCluster, tc.nodePool, tc.releaseImage)
+			ami, err := resolveAWSAMI(tc.hostedCluster, tc.nodePool, tc.releaseImage, "")
 			if tc.expectError {
 				g.Expect(err).To(HaveOccurred())
 			} else {

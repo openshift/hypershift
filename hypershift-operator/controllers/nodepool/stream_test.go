@@ -19,17 +19,17 @@ func TestGetRHELStream(t *testing.T) {
 	}{
 		// --- Implicit stream (explicitStream = "") ---
 		{
-			name:           "When no explicit stream and release is 4.x it should return empty string",
+			name:           "When no explicit stream and release is 4.x it should return rhel-9",
 			explicitStream: "",
 			releaseVersion: semver.MustParse("4.18.0"),
-			expectResult:   "",
+			expectResult:   "rhel-9",
 		},
 		{
-			name:           "When no explicit stream and release is 4.x with runc it should return empty string",
+			name:           "When no explicit stream and release is 4.x with runc it should return rhel-9",
 			explicitStream: "",
 			releaseVersion: semver.MustParse("4.19.0"),
 			usesRunc:       true,
-			expectResult:   "",
+			expectResult:   "rhel-9",
 		},
 		{
 			name:           "When no explicit stream and release is 5.0 it should return rhel-10",

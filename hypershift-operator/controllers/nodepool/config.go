@@ -31,6 +31,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/yaml"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/blang/semver"
 )
 
 // ConfigGenerator knows how to:
@@ -42,6 +44,15 @@ type ConfigGenerator struct {
 	hostedCluster         *hyperv1.HostedCluster
 	nodePool              *hyperv1.NodePool
 	controlplaneNamespace string
+	// resolvedRHELStream is the explicit RHEL stream name resolved via
+	// getRHELStream. Unlike rhelStream (which may be empty after normalization
+	// for hash stability), this always holds a concrete stream name (e.g.
+	// "rhel-9", "rhel-10"). It must be used by CAPI/Token paths that pass
+	// the stream to StreamForName, which requires an explicit value once
+	// the legacy DefaultStream is removed (OCP > 5.3).
+	// This field is intentionally outside rolloutConfig because it does not
+	// participate in the config hash that drives rollouts.
+	resolvedRHELStream string
 	*rolloutConfig
 }
 
@@ -60,6 +71,13 @@ type rolloutConfig struct {
 	// TODO(alberto): consider let haproxyRawConfig be an implementation detail of ConfigGenerator.
 	// For now, it's a required input to keep the haproxy business logic and files outside the scope of this initial refactor.
 	haproxyRawConfig string
+	// rhelStream is the OS image stream name used for hash computation.
+	// It is set from spec.osImageStream.Name but normalized: if the explicit
+	// value matches the version-derived default it is kept empty so that
+	// setting the default stream does not change the hash.
+	// Only a non-default stream (e.g. "rhel-10" on a 4.x release) produces
+	// a non-empty value here and triggers a rollout.
+	rhelStream string
 }
 
 // NewConfigGenerator is the contract to create a new ConfigGenerator.
@@ -77,16 +95,46 @@ func NewConfigGenerator(ctx context.Context, client client.Client, hostedCluster
 		return nil, err
 	}
 
+	// Resolve the explicit RHEL stream for image lookup and token plumbing.
+	resolvedRHELStream, err := getRHELStream(ctx, client, nodePool, releaseImage)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve RHEL stream: %w", err)
+	}
+
+	// Normalize rhelStream for the config hash: when the resolved stream
+	// matches the version-derived default, keep it empty so that setting the
+	// default explicitly does not change the hash and trigger a spurious rollout.
+	rhelStream := nodePool.Spec.OSImageStream.Name
+	if rhelStream != "" {
+		version, err := semver.Parse(releaseImage.Version())
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse release image version %q: %w", releaseImage.Version(), err)
+		}
+		usesRunc, err := usesRuncRuntime(ctx, client, nodePool)
+		if err != nil {
+			return nil, fmt.Errorf("failed to detect container runtime: %w", err)
+		}
+		defaultStream, err := GetRHELStream("", version, usesRunc)
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve default RHEL stream: %w", err)
+		}
+		if rhelStream == defaultStream {
+			rhelStream = ""
+		}
+	}
+
 	cg := &ConfigGenerator{
 		Client:                client,
 		hostedCluster:         hostedCluster,
 		nodePool:              nodePool,
 		controlplaneNamespace: controlPlaneNamespace,
+		resolvedRHELStream:    resolvedRHELStream,
 		rolloutConfig: &rolloutConfig{
 			releaseImage:     releaseImage,
 			pullSecretName:   hostedCluster.Spec.PullSecret.Name,
 			globalConfig:     globalConfig,
 			haproxyRawConfig: haproxyRawConfig,
+			rhelStream:       rhelStream,
 		},
 	}
 
@@ -118,7 +166,7 @@ func (cg *ConfigGenerator) CompressedAndEncoded() (*bytes.Buffer, error) {
 // TODO(alberto): hash the struct directly instead of the string representation field by field.
 // This is kept like this for now to contain the scope of the refactor and avoid backward compatibility issues.
 func (cg *ConfigGenerator) Hash() string {
-	return supportutil.HashSimple(cg.mcoRawConfig + cg.releaseImage.Version() + cg.pullSecretName + cg.additionalTrustBundleName + cg.globalConfig)
+	return supportutil.HashSimple(cg.mcoRawConfig + cg.releaseImage.Version() + cg.pullSecretName + cg.additionalTrustBundleName + cg.globalConfig + cg.rhelStream)
 }
 
 // HashWithOutVersion is like Hash but doesn't compute the release version.
@@ -126,7 +174,7 @@ func (cg *ConfigGenerator) Hash() string {
 // TODO(alberto): This was left inconsistent in https://github.com/openshift/hypershift/pull/3795/files. It should also contain cg.globalConfig.
 // This is kept like this for now to contain the scope of the refactor and avoid backward compatibility issues.
 func (cg *ConfigGenerator) HashWithoutVersion() string {
-	return supportutil.HashSimple(cg.mcoRawConfig + cg.pullSecretName + cg.additionalTrustBundleName)
+	return supportutil.HashSimple(cg.mcoRawConfig + cg.pullSecretName + cg.additionalTrustBundleName + cg.rhelStream)
 }
 
 func (cg *ConfigGenerator) Version() string {
