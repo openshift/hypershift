@@ -20,8 +20,10 @@ spec:
       - args:
         - start
         - -v=2
+        - --config=/var/run/configmaps/config/config.yaml
         - --terminate-on-files=/var/run/secrets/serving-cert/tls.crt
         - --terminate-on-files=/var/run/secrets/serving-cert/tls.key
+        - --terminate-on-files=/var/run/configmaps/config/config.yaml
         - --guest-kubeconfig=/etc/guest-kubeconfig/kubeconfig
         command:
         - cluster-storage-operator
@@ -132,6 +134,11 @@ spec:
         volumeMounts:
         - mountPath: /etc/guest-kubeconfig
           name: guest-kubeconfig
+        - mountPath: /var/run/secrets/serving-cert
+          name: cluster-storage-operator-serving-cert
+        - mountPath: /var/run/configmaps/config
+          name: config
+          readOnly: true
       securityContext:
         runAsNonRoot: true
         seccompProfile:
@@ -141,3 +148,9 @@ spec:
       - name: guest-kubeconfig
         secret:
           secretName: service-network-admin-kubeconfig
+      - name: cluster-storage-operator-serving-cert
+        secret:
+          secretName: cluster-storage-operator-serving-cert
+      - configMap:
+          name: cluster-storage-operator-config
+        name: config
