@@ -205,3 +205,52 @@ func TestSetCipherSuitesUsingAPIServer(t *testing.T) {
 		})
 	}
 }
+
+func TestSupportedEtcdCipherSuites(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name     string
+		input    []string
+		expected []string
+	}{
+		{
+			name: "When all ciphers are supported, it should return all",
+			input: []string{
+				"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+				"TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256",
+			},
+			expected: []string{
+				"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+				"TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256",
+			},
+		},
+		{
+			name: "When cipher is unsupported, it should filter it out",
+			input: []string{
+				"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+				"TLS_UNSUPPORTED_CIPHER",
+				"TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256",
+			},
+			expected: []string{
+				"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+				"TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256",
+			},
+		},
+		{
+			name:     "When all ciphers are unsupported, it should return empty",
+			input:    []string{"INVALID_1", "INVALID_2"},
+			expected: []string{},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			result := SupportedEtcdCipherSuites(tc.input)
+			g.Expect(result).To(Equal(tc.expected))
+		})
+	}
+}
