@@ -388,6 +388,9 @@ const (
 	RecommendedClusterSizeAnnotation = "hypershift.openshift.io/recommended-cluster-size"
 
 	// KubeAPIServerVerbosityLevelAnnotation allows specifying the log verbosity of kube-apiserver.
+	// Deprecated: Use OperatorConfiguration.KubeAPIServer.LogLevel instead.
+	// When both are set, the OperatorConfiguration field takes precedence.
+	// This annotation will be removed in a future release.
 	KubeAPIServerVerbosityLevelAnnotation = "hypershift.openshift.io/kube-apiserver-verbosity-level"
 
 	// NodePoolSupportsKubevirtTopologySpreadConstraintsAnnotation indicates if the NodePool currently supports
@@ -2628,6 +2631,13 @@ type OperatorConfiguration struct {
 	//
 	// +optional
 	IngressOperator *IngressOperatorSpec `json:"ingressOperator,omitempty"`
+
+	// kubeAPIServer configures the kube-apiserver component.
+	// Setting the logLevel field triggers a rolling restart of the component.
+	// kube-apiserver runs with 3 replicas (HA) — 2 continue serving while 1 restarts.
+	// +optional
+	// +openshift:enable:FeatureGate=HCPUserFacingOperatorLogs
+	KubeAPIServer KubeAPIServerOperatorSpec `json:"kubeAPIServer,omitzero"`
 }
 
 // +genclient

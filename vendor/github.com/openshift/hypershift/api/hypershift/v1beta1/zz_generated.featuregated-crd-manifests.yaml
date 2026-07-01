@@ -211,6 +211,7 @@ hostedclusters.hypershift.openshift.io:
   - ExternalOIDCWithUpstreamParity
   - GCPPlatform
   - HCPEtcdBackup
+  - HCPUserFacingOperatorLogs
   - HyperShiftOnlyDynamicResourceAllocation
   - ImageStreamImportMode
   - KMSEncryptionProvider
@@ -284,6 +285,7 @@ hostedcontrolplanes.hypershift.openshift.io:
   - ExternalOIDCWithUpstreamParity
   - GCPPlatform
   - HCPEtcdBackup
+  - HCPUserFacingOperatorLogs
   - HyperShiftOnlyDynamicResourceAllocation
   - ImageStreamImportMode
   - KMSEncryptionProvider

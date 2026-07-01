@@ -4219,6 +4219,28 @@ spec:
                         - TraceAll
                         type: string
                     type: object
+                  etcd:
+                    allOf:
+                    - minProperties: 1
+                    - minProperties: 1
+                    description: |-
+                      etcd configures the Etcd component.
+                      Setting the logLevel field triggers a rolling restart of the component.
+                      Etcd runs with 3 replicas (HA) — 2 continue serving while 1 restarts.
+                    properties:
+                      logLevel:
+                        description: |-
+                          logLevel sets the log verbosity for the component.
+                          Valid values are: "Normal", "Debug", "Trace", "TraceAll".
+                          When omitted, this means the user has no opinion and the platform defaults to Normal, which is subject to change over time.
+                        enum:
+                        - ""
+                        - Normal
+                        - Debug
+                        - Trace
+                        - TraceAll
+                        type: string
+                    type: object
                   ingressOperator:
                     description: |-
                       ingressOperator specifies the configuration for the Ingress Operator in the hosted cluster.
@@ -4912,6 +4934,160 @@ spec:
                         - type
                         type: object
                         x-kubernetes-preserve-unknown-fields: true
+                    type: object
+                  kubeAPIServer:
+                    allOf:
+                    - minProperties: 1
+                    - minProperties: 1
+                    description: |-
+                      kubeAPIServer configures the kube-apiserver component.
+                      Setting the logLevel field triggers a rolling restart of the component.
+                      kube-apiserver runs with 3 replicas (HA) — 2 continue serving while 1 restarts.
+                    properties:
+                      logLevel:
+                        description: |-
+                          logLevel sets the log verbosity for the component.
+                          Valid values are: "Normal", "Debug", "Trace", "TraceAll".
+                          When omitted, this means the user has no opinion and the platform defaults to Normal, which is subject to change over time.
+                        enum:
+                        - ""
+                        - Normal
+                        - Debug
+                        - Trace
+                        - TraceAll
+                        type: string
+                    type: object
+                  kubeControllerManager:
+                    allOf:
+                    - minProperties: 1
+                    - minProperties: 1
+                    description: |-
+                      kubeControllerManager configures the kube-controller-manager component.
+                      Setting the logLevel field triggers a rolling restart of the component.
+                      kube-controller-manager runs with 3 replicas (HA) — 2 continue serving while 1 restarts.
+                    properties:
+                      logLevel:
+                        description: |-
+                          logLevel sets the log verbosity for the component.
+                          Valid values are: "Normal", "Debug", "Trace", "TraceAll".
+                          When omitted, this means the user has no opinion and the platform defaults to Normal, which is subject to change over time.
+                        enum:
+                        - ""
+                        - Normal
+                        - Debug
+                        - Trace
+                        - TraceAll
+                        type: string
+                    type: object
+                  kubeScheduler:
+                    allOf:
+                    - minProperties: 1
+                    - minProperties: 1
+                    description: |-
+                      kubeScheduler configures the kube-scheduler component.
+                      Setting the logLevel field triggers a rolling restart of the component.
+                      kube-scheduler runs with 3 replicas (HA) — 2 continue serving while 1 restarts.
+                    properties:
+                      logLevel:
+                        description: |-
+                          logLevel sets the log verbosity for the component.
+                          Valid values are: "Normal", "Debug", "Trace", "TraceAll".
+                          When omitted, this means the user has no opinion and the platform defaults to Normal, which is subject to change over time.
+                        enum:
+                        - ""
+                        - Normal
+                        - Debug
+                        - Trace
+                        - TraceAll
+                        type: string
+                    type: object
+                  oauthServer:
+                    allOf:
+                    - minProperties: 1
+                    - minProperties: 1
+                    description: |-
+                      oauthServer configures the oauth-server component.
+                      Setting the logLevel field triggers a rolling restart of the component.
+                      oauth-server runs with 3 replicas (HA) — 2 continue serving while 1 restarts.
+                    properties:
+                      logLevel:
+                        description: |-
+                          logLevel sets the log verbosity for the component.
+                          Valid values are: "Normal", "Debug", "Trace", "TraceAll".
+                          When omitted, this means the user has no opinion and the platform defaults to Normal, which is subject to change over time.
+                        enum:
+                        - ""
+                        - Normal
+                        - Debug
+                        - Trace
+                        - TraceAll
+                        type: string
+                    type: object
+                  openShiftAPIServer:
+                    allOf:
+                    - minProperties: 1
+                    - minProperties: 1
+                    description: |-
+                      openShiftAPIServer configures the openshift-apiserver component.
+                      Setting the logLevel field triggers a rolling restart of the component.
+                      openshift-apiserver runs with 3 replicas (HA) — 2 continue serving while 1 restarts.
+                    properties:
+                      logLevel:
+                        description: |-
+                          logLevel sets the log verbosity for the component.
+                          Valid values are: "Normal", "Debug", "Trace", "TraceAll".
+                          When omitted, this means the user has no opinion and the platform defaults to Normal, which is subject to change over time.
+                        enum:
+                        - ""
+                        - Normal
+                        - Debug
+                        - Trace
+                        - TraceAll
+                        type: string
+                    type: object
+                  openShiftControllerManager:
+                    allOf:
+                    - minProperties: 1
+                    - minProperties: 1
+                    description: |-
+                      openShiftControllerManager configures the openshift-controller-manager component.
+                      Setting the logLevel field triggers a rolling restart of the component.
+                      openshift-controller-manager runs with 3 replicas (HA) — 2 continue serving while 1 restarts.
+                    properties:
+                      logLevel:
+                        description: |-
+                          logLevel sets the log verbosity for the component.
+                          Valid values are: "Normal", "Debug", "Trace", "TraceAll".
+                          When omitted, this means the user has no opinion and the platform defaults to Normal, which is subject to change over time.
+                        enum:
+                        - ""
+                        - Normal
+                        - Debug
+                        - Trace
+                        - TraceAll
+                        type: string
+                    type: object
+                  openShiftOAuthAPIServer:
+                    allOf:
+                    - minProperties: 1
+                    - minProperties: 1
+                    description: |-
+                      openShiftOAuthAPIServer configures the openshift-oauth-apiserver component.
+                      Setting the logLevel field triggers a rolling restart of the component.
+                      openshift-oauth-apiserver runs with 3 replicas (HA) — 2 continue serving while 1 restarts.
+                    properties:
+                      logLevel:
+                        description: |-
+                          logLevel sets the log verbosity for the component.
+                          Valid values are: "Normal", "Debug", "Trace", "TraceAll".
+                          When omitted, this means the user has no opinion and the platform defaults to Normal, which is subject to change over time.
+                        enum:
+                        - ""
+                        - Normal
+                        - Debug
+                        - Trace
+                        - TraceAll
+                        type: string
                     type: object
                 type: object
               pausedUntil:

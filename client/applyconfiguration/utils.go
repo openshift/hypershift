@@ -165,6 +165,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.ClusterVersionOperatorSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ClusterVersionStatus"):
 		return &hypershiftv1beta1.ClusterVersionStatusApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("ComponentLogLevelSpec"):
+		return &hypershiftv1beta1.ComponentLogLevelSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ConfigurationStatus"):
 		return &hypershiftv1beta1.ConfigurationStatusApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ControlPlaneManagedIdentities"):
@@ -277,6 +279,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.KarpenterConfigApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("KMSSpec"):
 		return &hypershiftv1beta1.KMSSpecApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("KubeAPIServerOperatorSpec"):
+		return &hypershiftv1beta1.KubeAPIServerOperatorSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("KubeconfigSecretRef"):
 		return &hypershiftv1beta1.KubeconfigSecretRefApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("KubevirtCachingStrategy"):
