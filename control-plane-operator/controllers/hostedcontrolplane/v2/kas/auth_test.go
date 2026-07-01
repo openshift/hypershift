@@ -1734,7 +1734,7 @@ func TestAdaptAuthConfig(t *testing.T) {
 			shouldError: true,
 		},
 		{
-			name:   "valid discovery URL - different host from issuer URL",
+			name:   "When discovery URL has a different host from issuer URL, it should generate valid authentication configuration",
 			client: fake.NewClientBuilder().Build(),
 			featureGates: []featuregate.Feature{
 				featuregates.ExternalOIDCWithUpstreamParity,
@@ -1790,7 +1790,7 @@ func TestAdaptAuthConfig(t *testing.T) {
 			shouldError: false,
 		},
 		{
-			name:   "valid discovery URL - different path from issuer URL",
+			name:   "When discovery URL has a different path from issuer URL, it should generate valid authentication configuration",
 			client: fake.NewClientBuilder().Build(),
 			featureGates: []featuregate.Feature{
 				featuregates.ExternalOIDCWithUpstreamParity,
@@ -1846,7 +1846,7 @@ func TestAdaptAuthConfig(t *testing.T) {
 			shouldError: false,
 		},
 		{
-			name:   "valid userValidationRule - single expression",
+			name:   "When a valid userValidationRule with single expression is provided, it should generate valid authentication configuration",
 			client: fake.NewClientBuilder().Build(),
 			featureGates: []featuregate.Feature{
 				featuregates.ExternalOIDCWithUpstreamParity,
@@ -1911,7 +1911,7 @@ func TestAdaptAuthConfig(t *testing.T) {
 			shouldError: false,
 		},
 		{
-			name:   "valid userValidationRule - multiple expressions ANDed together",
+			name:   "When valid userValidationRules with multiple expressions ANDed together are provided, it should generate valid authentication configuration",
 			client: fake.NewClientBuilder().Build(),
 			featureGates: []featuregate.Feature{
 				featuregates.ExternalOIDCWithUpstreamParity,
@@ -1992,7 +1992,7 @@ func TestAdaptAuthConfig(t *testing.T) {
 			shouldError: false,
 		},
 		{
-			name:   "valid claimValidationRule with CEL - multiple expressions",
+			name:   "When valid claimValidationRules with CEL and multiple expressions are provided, it should generate valid authentication configuration",
 			client: fake.NewClientBuilder().Build(),
 			featureGates: []featuregate.Feature{
 				featuregates.ExternalOIDCWithUpstreamParity,
@@ -2071,7 +2071,7 @@ func TestAdaptAuthConfig(t *testing.T) {
 			shouldError: false,
 		},
 		{
-			name:   "full feature parity - discoveryURL, CEL claim mappings, claim validation, and user validation",
+			name:   "When full feature parity with discoveryURL, CEL claim mappings, claim validation, and user validation is configured, it should generate valid authentication configuration",
 			client: fake.NewClientBuilder().Build(),
 			featureGates: []featuregate.Feature{
 				featuregates.ExternalOIDCWithUpstreamParity,
@@ -2173,7 +2173,7 @@ func TestAdaptAuthConfig(t *testing.T) {
 			shouldError: false,
 		},
 		{
-			name:   "claimValidationRule with CEL - empty expression, error",
+			name:   "When claimValidationRule with CEL has an empty expression, it should return an error",
 			client: fake.NewClientBuilder().Build(),
 			featureGates: []featuregate.Feature{
 				featuregates.ExternalOIDCWithUpstreamParity,
@@ -2207,7 +2207,7 @@ func TestAdaptAuthConfig(t *testing.T) {
 			shouldError: true,
 		},
 		{
-			name:   "username expression with complex CEL - extracting from nested claims",
+			name:   "When username expression uses complex CEL to extract from nested claims, it should generate valid authentication configuration",
 			client: fake.NewClientBuilder().Build(),
 			featureGates: []featuregate.Feature{
 				featuregates.ExternalOIDCWithUpstreamParity,
@@ -2259,7 +2259,7 @@ func TestAdaptAuthConfig(t *testing.T) {
 			shouldError: false,
 		},
 		{
-			name:   "groups expression with complex CEL - conditional based on claim type",
+			name:   "When groups expression uses complex CEL with conditionals based on claim type, it should generate valid authentication configuration",
 			client: fake.NewClientBuilder().Build(),
 			featureGates: []featuregate.Feature{
 				featuregates.ExternalOIDCWithUpstreamParity,
@@ -2317,7 +2317,7 @@ func TestAdaptAuthConfig(t *testing.T) {
 			shouldError: false,
 		},
 		{
-			name:   "multiple claimValidationRules - CEL type with complex expressions",
+			name:   "When multiple claimValidationRules with CEL type and complex expressions are provided, it should generate valid authentication configuration",
 			client: fake.NewClientBuilder().Build(),
 			featureGates: []featuregate.Feature{
 				featuregates.ExternalOIDCWithUpstreamParity,
@@ -2407,7 +2407,7 @@ func TestAdaptAuthConfig(t *testing.T) {
 			shouldError: false,
 		},
 		{
-			name:   "CEL expression username and groups with filtering - omitting prefix/prefixPolicy",
+			name:   "When CEL expression for username and groups with filtering omits prefix and prefixPolicy, it should generate valid authentication configuration",
 			client: fake.NewClientBuilder().Build(),
 			featureGates: []featuregate.Feature{
 				featuregates.ExternalOIDCWithUpstreamParity,
@@ -2498,7 +2498,7 @@ func TestAdaptAuthConfig(t *testing.T) {
 			shouldError: false,
 		},
 		{
-			name:   "combined claim and user validation with CEL expressions",
+			name:   "When combined claim and user validation with CEL expressions is configured, it should generate valid authentication configuration",
 			client: fake.NewClientBuilder().Build(),
 			featureGates: []featuregate.Feature{
 				featuregates.ExternalOIDCWithUpstreamParity,
@@ -2606,7 +2606,7 @@ func TestAdaptAuthConfig(t *testing.T) {
 			shouldError: false,
 		},
 		{
-			name:   "username expression with conditional logic and fallback",
+			name:   "When username expression uses conditional logic with fallback, it should generate valid authentication configuration",
 			client: fake.NewClientBuilder().Build(),
 			featureGates: []featuregate.Feature{
 				featuregates.ExternalOIDCWithUpstreamParity,
@@ -2672,7 +2672,7 @@ func TestAdaptAuthConfig(t *testing.T) {
 			shouldError: false,
 		},
 		{
-			name:   "groups expression with map and filter operations - using orValue for type safety",
+			name:   "When groups expression uses map and filter operations with orValue for type safety, it should generate valid authentication configuration",
 			client: fake.NewClientBuilder().Build(),
 			featureGates: []featuregate.Feature{
 				featuregates.ExternalOIDCWithUpstreamParity,
