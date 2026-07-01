@@ -1,0 +1,58 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: external-oidc-webhook
+spec:
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app: external-oidc-webhook
+  strategy:
+    rollingUpdate:
+      maxSurge: 3
+      maxUnavailable: 1
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: external-oidc-webhook
+    spec:
+      containers:
+      - command:
+        - /usr/bin/oauth-apiserver
+        args:
+        - external-oidc
+        - --config=/etc/kubernetes/config/auth-config/auth-config.json
+        - --secure-port=8443
+        - --tls-private-key-file=/etc/kubernetes/certs/serving/tls.key
+        - --tls-cert-file=/etc/kubernetes/certs/serving/tls.crt
+        - --v=2
+        env:
+        - name: HTTP_PROXY
+          value: socks5://127.0.0.1:8090
+        - name: HTTPS_PROXY
+          value: socks5://127.0.0.1:8090
+        - name: NO_PROXY
+          value: kube-apiserver
+        image: oauth-apiserver
+        imagePullPolicy: IfNotPresent
+        name: external-oidc-webhook
+        resources:
+          requests:
+            cpu: 150m
+            memory: 80Mi
+        volumeMounts:
+        - mountPath: /etc/kubernetes/certs/serving
+          name: serving-cert
+        - mountPath: /etc/kubernetes/config/auth-config
+          name: auth-config
+      terminationGracePeriodSeconds: 120
+      volumes:
+      - name: serving-cert
+        secret:
+          defaultMode: 416
+          secretName: external-oidc-webhook-cert
+      - name: auth-config
+        configMap:
+          name: external-oidc-webhook-auth-config
+          defaultMode: 420

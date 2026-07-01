@@ -10,6 +10,11 @@ func HCPOAuthEnabled(hcp *hyperv1.HostedControlPlane) bool {
 	return hcp.Spec.Configuration == nil || ConfigOAuthEnabled(hcp.Spec.Configuration.Authentication)
 }
 
+func HCPExternalOIDCEnabled(hcp *hyperv1.HostedControlPlane) bool {
+	config := hcp.Spec.Configuration
+	return config != nil && config.Authentication != nil && config.Authentication.Type == configv1.AuthenticationTypeOIDC
+}
+
 func ConfigOAuthEnabled(authentication *configv1.AuthenticationSpec) bool {
 	if authentication == nil {
 		return true
