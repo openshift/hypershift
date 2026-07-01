@@ -255,6 +255,7 @@ func ConvertOpenShiftImageRegistryOverridesToCommandLineFlag(registryOverrides m
 
 	for _, registrySource := range sortedRegistrySources {
 		registryReplacements := registryOverrides[registrySource]
+		sort.Strings(registryReplacements)
 		for _, registryReplacement := range registryReplacements {
 			commandLineFlagArray = append(commandLineFlagArray, fmt.Sprintf("%s=%s", registrySource, registryReplacement))
 		}
