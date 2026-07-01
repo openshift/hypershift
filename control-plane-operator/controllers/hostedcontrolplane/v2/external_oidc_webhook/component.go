@@ -36,7 +36,7 @@ func (e *externalOIDCWebhook) NeedsManagementKASAccess() bool {
 func NewComponent() component.ControlPlaneComponent {
 	return component.NewDeploymentComponent(ComponentName, &externalOIDCWebhook{}).
 		WithAdaptFunction(adaptDeployment).
-		WithPredicate(predicate).
+		WithPredicate(Predicate).
 		WithManifestAdapter(
 			"pdb.yaml",
 			component.AdaptPodDisruptionBudget(),
@@ -51,7 +51,7 @@ func NewComponent() component.ControlPlaneComponent {
 		Build()
 }
 
-func predicate(cpContext component.WorkloadContext) (bool, error) {
+func Predicate(cpContext component.WorkloadContext) (bool, error) {
 	return util.HCPExternalOIDCEnabled(cpContext.HCP) &&
 		featuregates.Gate().Enabled(featuregates.ExternalOIDCExternalClaimsSourcing), nil
 

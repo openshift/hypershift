@@ -129,7 +129,7 @@ func TestPredicate(t *testing.T) {
 				HCP: tc.hcp,
 			}
 
-			result, err := predicate(cpContext)
+			result, err := Predicate(cpContext)
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(result).To(Equal(tc.expectedValue))
 		})

@@ -37,7 +37,7 @@ func (k *openshiftOAuthAPIServer) NeedsManagementKASAccess() bool {
 func NewComponent() component.ControlPlaneComponent {
 	return component.NewDeploymentComponent(ComponentName, &openshiftOAuthAPIServer{}).
 		WithAdaptFunction(adaptDeployment).
-		WithPredicate(predicate).
+		WithPredicate(Predicate).
 		WithManifestAdapter(
 			"audit-config.yaml",
 			component.WithAdaptFunction(kasv2.AdaptAuditConfig),
@@ -57,6 +57,6 @@ func NewComponent() component.ControlPlaneComponent {
 		Build()
 }
 
-func predicate(cpContext component.WorkloadContext) (bool, error) {
+func Predicate(cpContext component.WorkloadContext) (bool, error) {
 	return util.HCPOAuthEnabled(cpContext.HCP), nil
 }
