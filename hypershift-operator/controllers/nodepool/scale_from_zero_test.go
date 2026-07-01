@@ -15,6 +15,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	infrav1 "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
+	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
 )
 
@@ -85,6 +86,16 @@ func TestSetScaleFromZeroAnnotationsOnObject(t *testing.T) {
 			Spec: infrav1.AWSMachineTemplateSpec{
 				Template: infrav1.AWSMachineTemplateResource{
 					Spec: infrav1.AWSMachineSpec{InstanceType: instanceType},
+				},
+			},
+		}
+	}
+
+	newAzureTemplate := func(vmSize string) *capiazure.AzureMachineTemplate {
+		return &capiazure.AzureMachineTemplate{
+			Spec: capiazure.AzureMachineTemplateSpec{
+				Template: capiazure.AzureMachineTemplateResource{
+					Spec: capiazure.AzureMachineSpec{VMSize: vmSize},
 				},
 			},
 		}
@@ -198,6 +209,66 @@ func TestSetScaleFromZeroAnnotationsOnObject(t *testing.T) {
 				g.Expect(a).To(HaveKeyWithValue(labelsKey, "kubernetes.io/arch=amd64"))
 				g.Expect(a).ToNot(HaveKey(gpuKey))
 				g.Expect(a).ToNot(HaveKey(taintsKey))
+			},
+		},
+		{
+			name: "When Azure template with valid VMSize and no GPU it should set basic annotations",
+			provider: &mockProvider{info: &instancetype.InstanceTypeInfo{
+				VCPU: 4, MemoryMb: 16384, GPU: 0, CPUArchitecture: "amd64",
+			}},
+			nodePool:        &hyperv1.NodePool{},
+			object:          &capiv1.MachineDeployment{},
+			machineTemplate: newAzureTemplate("Standard_D4s_v3"),
+			expectErr:       false,
+			validate: func(g Gomega, md *capiv1.MachineDeployment) {
+				a := md.GetAnnotations()
+				g.Expect(a).To(HaveKeyWithValue(cpuKey, "4"))
+				g.Expect(a).To(HaveKeyWithValue(memoryKey, "16384"))
+				g.Expect(a).To(HaveKeyWithValue(labelsKey, "kubernetes.io/arch=amd64"))
+				g.Expect(a).ToNot(HaveKey(gpuKey))
+			},
+		},
+		{
+			name:            "When Azure template with empty VMSize it should return error",
+			provider:        &mockProvider{},
+			nodePool:        &hyperv1.NodePool{},
+			object:          &capiv1.MachineDeployment{},
+			machineTemplate: newAzureTemplate(""),
+			expectErr:       true,
+			errSubstring:    "instanceType is empty",
+		},
+		{
+			name:            "When Azure template with nil provider it should skip annotations",
+			provider:        nil,
+			nodePool:        &hyperv1.NodePool{},
+			object:          &capiv1.MachineDeployment{},
+			machineTemplate: newAzureTemplate("Standard_D4s_v3"),
+			expectErr:       false,
+			validate: func(g Gomega, md *capiv1.MachineDeployment) {
+				g.Expect(md.GetAnnotations()).ToNot(HaveKey(cpuKey))
+			},
+		},
+		{
+			name: "When Azure template with GPU and taints it should set all annotations",
+			provider: &mockProvider{info: &instancetype.InstanceTypeInfo{
+				VCPU: 6, MemoryMb: 114688, GPU: 1, CPUArchitecture: "amd64",
+			}},
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Taints: []hyperv1.Taint{
+						{Key: "dedicated", Value: "gpu", Effect: corev1.TaintEffectNoSchedule},
+					},
+				},
+			},
+			object:          &capiv1.MachineDeployment{},
+			machineTemplate: newAzureTemplate("Standard_NC6s_v3"),
+			expectErr:       false,
+			validate: func(g Gomega, md *capiv1.MachineDeployment) {
+				a := md.GetAnnotations()
+				g.Expect(a).To(HaveKeyWithValue(cpuKey, "6"))
+				g.Expect(a).To(HaveKeyWithValue(memoryKey, "114688"))
+				g.Expect(a).To(HaveKeyWithValue(gpuKey, "1"))
+				g.Expect(a).To(HaveKeyWithValue(taintsKey, "dedicated=gpu:NoSchedule"))
 			},
 		},
 		{

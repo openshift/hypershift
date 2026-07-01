@@ -19,6 +19,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
@@ -35,12 +36,69 @@ import (
 	"github.com/go-logr/logr"
 )
 
+func TestHasStatusCapacity(t *testing.T) {
+	t.Parallel()
+	testCases := []struct {
+		name     string
+		template client.Object
+		expect   bool
+	}{
+		{
+			name: "When AWSMachineTemplate has Status.Capacity, it should return true",
+			template: &capiaws.AWSMachineTemplate{
+				Status: capiaws.AWSMachineTemplateStatus{
+					Capacity: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("4"),
+						corev1.ResourceMemory: resource.MustParse("16Gi"),
+					},
+				},
+			},
+			expect: true,
+		},
+		{
+			name:     "When AWSMachineTemplate has empty Status.Capacity, it should return false",
+			template: &capiaws.AWSMachineTemplate{},
+			expect:   false,
+		},
+		{
+			name: "When AzureMachineTemplate has Status.Capacity, it should return true",
+			template: &capiazure.AzureMachineTemplate{
+				Status: capiazure.AzureMachineTemplateStatus{
+					Capacity: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("4"),
+						corev1.ResourceMemory: resource.MustParse("16Gi"),
+					},
+				},
+			},
+			expect: true,
+		},
+		{
+			name:     "When AzureMachineTemplate has empty Status.Capacity, it should return false",
+			template: &capiazure.AzureMachineTemplate{},
+			expect:   false,
+		},
+		{
+			name:     "When template is an unsupported type, it should return false",
+			template: &capikubevirt.KubevirtMachineTemplate{},
+			expect:   false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			g.Expect(hasStatusCapacity(tc.template)).To(Equal(tc.expect))
+		})
+	}
+}
+
 func TestSetMachineSetReplicas(t *testing.T) {
 	t.Parallel()
 	testCases := []struct {
 		name                        string
 		nodePool                    *hyperv1.NodePool
 		machineSet                  *capiv1.MachineSet
+		scaleFromZeroSupported      bool
 		expectReplicas              int32
 		expectAutoscalerAnnotations map[string]string
 	}{
@@ -149,13 +207,10 @@ func TestSetMachineSetReplicas(t *testing.T) {
 			},
 		},
 		{
-			name: "it allows min=0 for AWS platform (scale-from-zero)",
+			name: "When scale-from-zero is supported, it should allow min=0",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{},
 				Spec: hyperv1.NodePoolSpec{
-					Platform: hyperv1.NodePoolPlatform{
-						Type: hyperv1.AWSPlatform,
-					},
 					AutoScaling: &hyperv1.NodePoolAutoScaling{
 						Min: ptr.To[int32](0),
 						Max: 5,
@@ -170,20 +225,18 @@ func TestSetMachineSetReplicas(t *testing.T) {
 					Replicas: nil,
 				},
 			},
-			expectReplicas: 0,
+			scaleFromZeroSupported: true,
+			expectReplicas:         0,
 			expectAutoscalerAnnotations: map[string]string{
 				autoscalerMinAnnotation: "0",
 				autoscalerMaxAnnotation: "5",
 			},
 		},
 		{
-			name: "it enforces min=1 for Azure platform even when NodePool specifies min=0",
+			name: "When scale-from-zero is not supported, it should enforce min=1 even when NodePool specifies min=0",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{},
 				Spec: hyperv1.NodePoolSpec{
-					Platform: hyperv1.NodePoolPlatform{
-						Type: hyperv1.AzurePlatform,
-					},
 					AutoScaling: &hyperv1.NodePoolAutoScaling{
 						Min: ptr.To[int32](0),
 						Max: 5,
@@ -195,7 +248,7 @@ func TestSetMachineSetReplicas(t *testing.T) {
 					CreationTimestamp: metav1.Now(),
 				},
 				Spec: capiv1.MachineSetSpec{
-					Replicas: nil,
+					Replicas: ptr.To[int32](0),
 				},
 			},
 			expectReplicas: 1,
@@ -265,7 +318,7 @@ func TestSetMachineSetReplicas(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
-			setMachineSetReplicas(tc.nodePool, tc.machineSet)
+			setMachineSetReplicas(tc.nodePool, tc.machineSet, tc.scaleFromZeroSupported)
 			g.Expect(*tc.machineSet.Spec.Replicas).To(Equal(tc.expectReplicas))
 			g.Expect(tc.machineSet.Annotations).To(Equal(tc.expectAutoscalerAnnotations))
 		})
@@ -278,6 +331,7 @@ func TestSetMachineDeploymentReplicas(t *testing.T) {
 		name                        string
 		nodePool                    *hyperv1.NodePool
 		machineDeployment           *capiv1.MachineDeployment
+		scaleFromZeroSupported      bool
 		expectReplicas              int32
 		expectAutoscalerAnnotations map[string]string
 	}{
@@ -475,13 +529,10 @@ func TestSetMachineDeploymentReplicas(t *testing.T) {
 			},
 		},
 		{
-			name: "it allows min=0 for AWS platform (scale-from-zero)",
+			name: "When scale-from-zero is supported, it should allow min=0",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{},
 				Spec: hyperv1.NodePoolSpec{
-					Platform: hyperv1.NodePoolPlatform{
-						Type: hyperv1.AWSPlatform,
-					},
 					AutoScaling: &hyperv1.NodePoolAutoScaling{
 						Min: ptr.To[int32](0),
 						Max: 5,
@@ -496,20 +547,18 @@ func TestSetMachineDeploymentReplicas(t *testing.T) {
 					Replicas: nil,
 				},
 			},
-			expectReplicas: 0,
+			scaleFromZeroSupported: true,
+			expectReplicas:         0,
 			expectAutoscalerAnnotations: map[string]string{
 				autoscalerMinAnnotation: "0",
 				autoscalerMaxAnnotation: "5",
 			},
 		},
 		{
-			name: "it enforces min=1 for Azure platform even when NodePool specifies min=0",
+			name: "When scale-from-zero is not supported, it should enforce min=1 even when NodePool specifies min=0",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{},
 				Spec: hyperv1.NodePoolSpec{
-					Platform: hyperv1.NodePoolPlatform{
-						Type: hyperv1.AzurePlatform,
-					},
 					AutoScaling: &hyperv1.NodePoolAutoScaling{
 						Min: ptr.To[int32](0),
 						Max: 5,
@@ -521,7 +570,7 @@ func TestSetMachineDeploymentReplicas(t *testing.T) {
 					CreationTimestamp: metav1.Now(),
 				},
 				Spec: capiv1.MachineDeploymentSpec{
-					Replicas: nil,
+					Replicas: ptr.To[int32](0),
 				},
 			},
 			expectReplicas: 1,
@@ -591,7 +640,7 @@ func TestSetMachineDeploymentReplicas(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
-			setMachineDeploymentReplicas(tc.nodePool, tc.machineDeployment)
+			setMachineDeploymentReplicas(tc.nodePool, tc.machineDeployment, tc.scaleFromZeroSupported)
 			g.Expect(*tc.machineDeployment.Spec.Replicas).To(Equal(tc.expectReplicas))
 			g.Expect(tc.machineDeployment.Annotations).To(Equal(tc.expectAutoscalerAnnotations))
 		})
@@ -3447,9 +3496,13 @@ func TestPauseUnpauseCycle(t *testing.T) {
 				},
 			}
 
-			// For non-AWS platforms, effectiveMin is clamped to 1 when autoscalingMin is 0.
+			// When the platform matches scaleFromZeroPlatform, effectiveMin=0 is allowed.
+			// For platforms without scale-from-zero support, effectiveMin is clamped to 1.
+			capiObj.scaleFromZeroPlatform = tc.platformType
 			expectedMinAnnotation := tc.autoscalingMin
-			if tc.autoscalingMin == 0 && tc.platformType != hyperv1.AWSPlatform {
+			if tc.autoscalingMin == 0 && tc.platformType == hyperv1.KubevirtPlatform {
+				// Simulate no scale-from-zero provider configured for KubeVirt
+				capiObj.scaleFromZeroPlatform = ""
 				expectedMinAnnotation = 1
 			}
 

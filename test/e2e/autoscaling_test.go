@@ -675,8 +675,8 @@ func testAutoscalerRespectsNodePoolPause(ctx context.Context, mgtClient crclient
 }
 
 func TestNodePoolAutoscalingScaleFromZero(t *testing.T) {
-	if globalOpts.Platform != hyperv1.AWSPlatform {
-		t.Skip("test only supported on platform AWS")
+	if globalOpts.Platform != hyperv1.AWSPlatform && globalOpts.Platform != hyperv1.AzurePlatform {
+		t.Skip("test only supported on AWS and Azure platforms")
 	}
 
 	// Get management client to check for scale-from-zero secret

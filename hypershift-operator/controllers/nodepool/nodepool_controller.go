@@ -14,6 +14,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	haproxy "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/apiserver-haproxy"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/instancetype"
+	azureinstancetype "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/instancetype/azure"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/kubevirt"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 	"github.com/openshift/hypershift/support/awsapi"
@@ -107,6 +108,7 @@ type NodePoolReconciler struct {
 	KubevirtInfraClients    kvinfra.KubevirtInfraClientMap
 	EC2Client               awsapi.EC2API
 	InstanceTypeProvider    instancetype.Provider
+	ScaleFromZeroPlatform   hyperv1.PlatformType
 }
 
 type NotReadyError struct {
@@ -388,6 +390,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	if err != nil {
 		return ctrl.Result{}, err
 	}
+	capi.scaleFromZeroPlatform = r.ScaleFromZeroPlatform
 	if isPaused, duration := supportutil.IsReconciliationPaused(log, nodePool.Spec.PausedUntil); isPaused {
 		if err := capi.Pause(ctx); err != nil {
 			return ctrl.Result{}, fmt.Errorf("error pausing CAPI: %w", err)
@@ -429,19 +432,22 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 
 	// Set scale-from-zero annotations if provider is configured and platform is supported
 	// This works for both Replace (MachineDeployment) and InPlace (MachineSet) upgrade types
-	if isAutoscalingEnabled(nodePool) && r.InstanceTypeProvider != nil && supportedScaleFromZeroPlatform(nodePool.Spec.Platform.Type) {
+	if isAutoscalingEnabled(nodePool) && r.InstanceTypeProvider != nil && r.ScaleFromZeroPlatform == nodePool.Spec.Platform.Type {
 		if err = r.reconcileScaleFromZeroAnnotations(ctx, nodePool, capi); err != nil {
+			// Distinguish permanent errors (VM size doesn't exist in this region)
+			// from transient errors (API failure, cache load error) to avoid
+			// retrying indefinitely for non-existent VM sizes.
+			var vmNotFound *azureinstancetype.VMSizeNotFoundError
+			if coreerrors.As(err, &vmNotFound) {
+				log.Error(err, "Permanent error setting scale-from-zero annotations; verify the VM size exists in this region")
+				return ctrl.Result{}, nil
+			}
 			log.Error(err, "Failed to set scale-from-zero annotations, will retry")
 			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 		}
 	}
 
 	return ctrl.Result{}, nil
-}
-
-// supportedScaleFromZeroPlatform checks if the platform supports scale-from-zero functionality.
-func supportedScaleFromZeroPlatform(platform hyperv1.PlatformType) bool {
-	return platform == hyperv1.AWSPlatform
 }
 
 func (r *NodePoolReconciler) token(ctx context.Context, hcluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool) (*Token, error) {
@@ -1278,16 +1284,15 @@ func (r *NodePoolReconciler) reconcileScaleFromZeroAnnotations(ctx context.Conte
 		}
 		machineTemplate = awsMachineTemplate
 
-	// Future platform support can be added here:
-	// case hyperv1.AzurePlatform:
-	//     azureTemplate := &capiazure.AzureMachineTemplate{}
-	//     if err := capi.getExistingMachineTemplate(ctx, azureTemplate); err != nil {
-	//         if apierrors.IsNotFound(err) {
-	//             return nil
-	//         }
-	//         return fmt.Errorf("failed to get AzureMachineTemplate: %w", err)
-	//     }
-	//     machineTemplate = azureTemplate
+	case hyperv1.AzurePlatform:
+		azureTemplate := &capiazure.AzureMachineTemplate{}
+		if err := capi.getExistingMachineTemplate(ctx, azureTemplate); err != nil {
+			if apierrors.IsNotFound(err) {
+				return nil
+			}
+			return fmt.Errorf("failed to get AzureMachineTemplate: %w", err)
+		}
+		machineTemplate = azureTemplate
 
 	default:
 		return fmt.Errorf("unsupported platform for scale-from-zero: %s", nodePool.Spec.Platform.Type)
