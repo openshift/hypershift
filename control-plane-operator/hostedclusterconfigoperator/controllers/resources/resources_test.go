@@ -1649,13 +1649,21 @@ func TestReconcileKubeletConfig(t *testing.T) {
 			},
 		},
 		{
-			name:                      "When source CM is transiently absent, it should not delete the mirrored guest-side CM",
-			hostedControlPlaneObjects: []client.Object{},
+			// NodePool still active (another CM exists in HCP namespace with the same NodePoolLabel),
+			// but this particular source CM is transiently absent — preserve the guest copy.
+			name: "When source CM is transiently absent, it should not delete the mirrored guest-side CM",
+			hostedControlPlaneObjects: []client.Object{
+				// Another CM for the same NodePool proves it is still active.
+				makeMirroredKubeletConfigConfigMap(netutil.ShortenName("baz", npName1, validation.LabelValueMaxLength), hcpNamespace, npName1, kubeletConfig1),
+			},
 			existHostedControlPlaneObjects: []client.Object{
 				makeMirroredKubeletConfigConfigMap(netutil.ShortenName("bar", npName1, validation.LabelValueMaxLength), hcNamespace, npName1, kubeletConfig1),
+				// The "baz" CM is expected on the guest side too (reconciled from the HCP-namespace source above).
+				makeMirroredKubeletConfigConfigMap(netutil.ShortenName("baz", npName1, validation.LabelValueMaxLength), hcNamespace, npName1, kubeletConfig1),
 			},
 			expectedHostedClusterObjects: []client.Object{
 				makeMirroredKubeletConfigConfigMap(netutil.ShortenName("bar", npName1, validation.LabelValueMaxLength), hcNamespace, npName1, kubeletConfig1),
+				makeMirroredKubeletConfigConfigMap(netutil.ShortenName("baz", npName1, validation.LabelValueMaxLength), hcNamespace, npName1, kubeletConfig1),
 			},
 		},
 		{
@@ -1666,6 +1674,63 @@ func TestReconcileKubeletConfig(t *testing.T) {
 				makeKubeletConfigConfigMap(netutil.ShortenName("bar", npName1, validation.LabelValueMaxLength), hcNamespace, kubeletConfig1),
 			},
 			expectedHostedClusterObjects: []client.Object{},
+		},
+		{
+			// NodePool deleted: its finalizer has removed all CMs from the HCP namespace,
+			// so the orphaned guest-side mirrored CM should be cleaned up.
+			name:                      "When NodePool is deleted, it should delete orphaned mirrored guest-side CM",
+			hostedControlPlaneObjects: []client.Object{},
+			existHostedControlPlaneObjects: []client.Object{
+				makeMirroredKubeletConfigConfigMap(netutil.ShortenName("bar", npName1, validation.LabelValueMaxLength), hcNamespace, npName1, kubeletConfig1),
+			},
+			expectedHostedClusterObjects: []client.Object{},
+		},
+		{
+			// Two NodePools: npName1 deleted (zero CMs in HCP namespace), npName2 still active.
+			// Only npName1's orphaned guest CM should be deleted; npName2's should be preserved.
+			name: "When one NodePool is deleted and another is active, only the deleted NodePool's orphaned CM is removed",
+			hostedControlPlaneObjects: []client.Object{
+				makeMirroredKubeletConfigConfigMap(netutil.ShortenName("foo", npName2, validation.LabelValueMaxLength), hcpNamespace, npName2, kubeletConfig1),
+			},
+			existHostedControlPlaneObjects: []client.Object{
+				makeMirroredKubeletConfigConfigMap(netutil.ShortenName("bar", npName1, validation.LabelValueMaxLength), hcNamespace, npName1, kubeletConfig1),
+				makeMirroredKubeletConfigConfigMap(netutil.ShortenName("foo", npName2, validation.LabelValueMaxLength), hcNamespace, npName2, kubeletConfig1),
+			},
+			expectedHostedClusterObjects: []client.Object{
+				makeMirroredKubeletConfigConfigMap(netutil.ShortenName("foo", npName2, validation.LabelValueMaxLength), hcNamespace, npName2, kubeletConfig1),
+			},
+		},
+		{
+			// Defensive: mirrored CM without NodePoolLabel cannot be attributed to any NodePool,
+			// so preserve it to avoid spurious MCO rollouts.
+			name:                      "When mirrored CM has no NodePoolLabel, it should be preserved",
+			hostedControlPlaneObjects: []client.Object{},
+			existHostedControlPlaneObjects: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "orphan-no-np-label",
+						Namespace: hcNamespace,
+						Labels: map[string]string{
+							nodepool.KubeletConfigConfigMapLabel: "true",
+							nodepool.NTOMirroredConfigLabel:      "true",
+						},
+					},
+					Data: map[string]string{"config": kubeletConfig1},
+				},
+			},
+			expectedHostedClusterObjects: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "orphan-no-np-label",
+						Namespace: hcNamespace,
+						Labels: map[string]string{
+							nodepool.KubeletConfigConfigMapLabel: "true",
+							nodepool.NTOMirroredConfigLabel:      "true",
+						},
+					},
+					Data: map[string]string{"config": kubeletConfig1},
+				},
+			},
 		},
 		{
 			name: "When guest CM is immutable but not a KubeletConfig, it should not be deleted",
