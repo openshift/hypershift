@@ -122,6 +122,8 @@ func defaultAzureNodePoolImage(nodePool *hyperv1.NodePool, releaseImage *release
 
 // getAzureMarketplaceMetadata extracts Azure Marketplace metadata from the release payload
 func getAzureMarketplaceMetadata(releaseImage *releaseinfo.ReleaseImage, arch string) (*azureMarketplaceMetadata, error) {
+	// TODO(CNTRLPLANE-3553): use releaseImage.StreamForName(rhelStream) instead of
+	// accessing StreamMetadata directly, to support dual-stream payloads.
 	if releaseImage.StreamMetadata == nil {
 		return nil, nil // No stream metadata available
 	}

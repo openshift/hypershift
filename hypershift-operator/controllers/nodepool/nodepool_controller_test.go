@@ -578,7 +578,7 @@ func TestDefaultNodePoolAMI(t *testing.T) {
 		name          string
 		region        string
 		specifiedArch string
-		streamName    string
+		rhelStream    string
 		releaseImage  *releaseinfo.ReleaseImage
 		expectedImage string
 		expectedErr   string
@@ -602,7 +602,7 @@ func TestDefaultNodePoolAMI(t *testing.T) {
 			name:          "When resolving rhel-9 stream it should return the rhel-9 AMI",
 			region:        "us-east-1",
 			specifiedArch: "amd64",
-			streamName:    "rhel-9",
+			rhelStream:    "rhel-9",
 			releaseImage:  multiStreamReleaseImage,
 			expectedImage: "ami-06a6b025350ff1e23",
 		},
@@ -610,7 +610,7 @@ func TestDefaultNodePoolAMI(t *testing.T) {
 			name:          "When resolving rhel-10 stream it should return the rhel-10 AMI",
 			region:        "us-east-1",
 			specifiedArch: "amd64",
-			streamName:    "rhel-10",
+			rhelStream:    "rhel-10",
 			releaseImage:  multiStreamReleaseImage,
 			expectedImage: "ami-04b3d999e39d62c5b",
 		},
@@ -618,7 +618,7 @@ func TestDefaultNodePoolAMI(t *testing.T) {
 			name:          "When resolving rhel-10 arm64 stream it should return the rhel-10 arm64 AMI",
 			region:        "us-east-1",
 			specifiedArch: "arm64",
-			streamName:    "rhel-10",
+			rhelStream:    "rhel-10",
 			releaseImage:  multiStreamReleaseImage,
 			expectedImage: "ami-0d7237e6b04d9a9e1",
 		},
@@ -672,7 +672,7 @@ func TestDefaultNodePoolAMI(t *testing.T) {
 			t.Parallel()
 			g := NewWithT(t)
 
-			image, err := defaultNodePoolAMI(tc.region, tc.specifiedArch, tc.streamName, tc.releaseImage)
+			image, err := defaultNodePoolAMI(tc.region, tc.specifiedArch, tc.rhelStream, tc.releaseImage)
 			if tc.expectedErr != "" {
 				g.Expect(err).To(HaveOccurred())
 				g.Expect(err.Error()).To(Equal(tc.expectedErr))
