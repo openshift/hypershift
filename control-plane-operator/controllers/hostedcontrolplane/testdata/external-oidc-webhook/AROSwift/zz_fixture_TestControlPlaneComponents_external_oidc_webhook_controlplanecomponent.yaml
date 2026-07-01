@@ -1,0 +1,36 @@
+apiVersion: hypershift.openshift.io/v1beta1
+kind: ControlPlaneComponent
+metadata:
+  name: external-oidc-webhook
+  namespace: hcp-namespace
+  resourceVersion: "1"
+spec: {}
+status:
+  conditions:
+  - lastTransitionTime: null
+    message: external-oidc-webhook Deployment Available condition not found
+    reason: NotFound
+    status: "False"
+    type: Available
+  - lastTransitionTime: null
+    message: 'Waiting for deployment external-oidc-webhook rollout to finish: 0 out
+      of 2 new replicas have been updated'
+    reason: WaitingForRolloutComplete
+    status: "False"
+    type: RolloutComplete
+  resources:
+  - group: ""
+    kind: ConfigMap
+    name: external-oidc-webhook-auth-config
+  - group: ""
+    kind: Secret
+    name: external-oidc-webhook-ca
+  - group: policy
+    kind: PodDisruptionBudget
+    name: external-oidc-webhook
+  - group: ""
+    kind: Service
+    name: external-oidc-webhook
+  - group: ""
+    kind: Secret
+    name: external-oidc-webhook-cert

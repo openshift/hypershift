@@ -16,6 +16,12 @@ func HCOAuthEnabled(hc *hyperv1.HostedCluster) bool {
 	return oauthEnabled(hc.Spec.Configuration)
 }
 
+// HCPExternalOIDCEnabled returns whether external OIDC is configured for the HostedControlPlane.
+func HCPExternalOIDCEnabled(hcp *hyperv1.HostedControlPlane) bool {
+	config := hcp.Spec.Configuration
+	return config != nil && config.Authentication != nil && config.Authentication.Type == configv1.AuthenticationTypeOIDC
+}
+
 // ConfigOAuthEnabled returns whether OAuth is enabled for the authentication configuration.
 func ConfigOAuthEnabled(authentication *configv1.AuthenticationSpec) bool {
 	if authentication != nil &&

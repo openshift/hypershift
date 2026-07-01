@@ -107,6 +107,8 @@ var (
 
 	configMapsToExcludeFromHash = []string{
 		"client-ca",
+		// The webhook hot-reloads authentication configuration without a pod rollout.
+		"external-oidc-webhook-auth-config",
 	}
 )
 

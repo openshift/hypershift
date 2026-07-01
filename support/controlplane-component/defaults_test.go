@@ -173,6 +173,18 @@ func TestPodConfigMapNames(t *testing.T) {
 			exclude: []string{"cm2"},
 			expect:  []string{"cm1", "pcm3", "pcm4"},
 		},
+		{
+			name: "volumes with global exclusions",
+			podSpec: corev1.PodSpec{
+				Volumes: []corev1.Volume{
+					cmVolume("client-ca"),
+					cmVolume("external-oidc-webhook-auth-config"),
+					cmVolume("included-config"),
+				},
+			},
+			exclude: configMapsToExcludeFromHash,
+			expect:  []string{"included-config"},
+		},
 	}
 
 	for _, test := range tests {

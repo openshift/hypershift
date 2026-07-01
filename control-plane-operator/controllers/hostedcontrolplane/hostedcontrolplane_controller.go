@@ -47,6 +47,7 @@ import (
 	dnsoperatorv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/dnsoperator"
 	endpointresolverv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/endpoint_resolver"
 	etcdv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/etcd"
+	extoidcv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/external_oidc_webhook"
 	fgv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/fg"
 	ignitionserverv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/ignitionserver"
 	ignitionproxyv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/ignitionserver_proxy"
@@ -274,6 +275,7 @@ func (r *HostedControlPlaneReconciler) registerComponents(hcp *hyperv1.HostedCon
 		schedulerv2.NewComponent(),
 		oapiv2.NewComponent(),
 		oauthapiv2.NewComponent(),
+		extoidcv2.NewComponent(),
 		autoscalerv2.NewComponent(),
 		cvov2.NewComponent(r.EnableCVOManagementClusterMetricsAccess),
 		ocmv2.NewComponent(),
