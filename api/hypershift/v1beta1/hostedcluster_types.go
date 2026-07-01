@@ -273,6 +273,8 @@ const (
 
 	// EnableMetricsForwarding enables metrics forwarding from the management cluster to hosted clusters.
 	// When present, components like the endpoint-resolver and metrics-proxy will be deployed.
+	// Deprecated: Use spec.monitoring.metricsForwarding instead. This annotation is preserved
+	// for backward compatibility and will be honored when spec.monitoring is not set.
 	EnableMetricsForwarding = "hypershift.openshift.io/enable-metrics-forwarding"
 
 	// JSONPatchAnnotation allow modifying the kubevirt VM template using jsonpatch
@@ -835,6 +837,15 @@ type HostedClusterSpec struct {
 	// +kubebuilder:default={}
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="Capabilities is immutable. Changes might result in unpredictable and disruptive behavior."
 	Capabilities *Capabilities `json:"capabilities,omitempty"`
+
+	// monitoring configures monitoring for the hosted cluster, including
+	// forwarding of control plane metrics to the hosted cluster's monitoring stack.
+	// When omitted, metrics forwarding behavior is determined by the
+	// hypershift.openshift.io/enable-metrics-forwarding annotation for backward compatibility.
+	// If neither is set, metrics forwarding is disabled.
+	//
+	// +optional
+	Monitoring MonitoringSpec `json:"monitoring,omitzero"`
 }
 
 // OLMCatalogPlacement is an enum specifying the placement of OLM catalog components.
@@ -869,6 +880,97 @@ func (olm *OLMCatalogPlacement) Set(s string) error {
 
 func (olm *OLMCatalogPlacement) Type() string {
 	return "OLMCatalogPlacement"
+}
+
+// MetricsForwardingMode controls whether metrics forwarding is active for a hosted cluster.
+//
+// +kubebuilder:validation:Enum=Forward;None
+type MetricsForwardingMode string
+
+const (
+	// MetricsForwardingModeForward indicates metrics forwarding is active.
+	MetricsForwardingModeForward MetricsForwardingMode = "Forward"
+
+	// MetricsForwardingModeNone indicates metrics forwarding is inactive.
+	MetricsForwardingModeNone MetricsForwardingMode = "None"
+)
+
+// MetricsSet specifies the set of metrics to collect and forward from hosted clusters.
+//
+// +kubebuilder:validation:Enum=Telemetry;SRE;All
+type MetricsSet string
+
+const (
+	// MetricsSetTelemetry collects only the minimal set of metrics required for
+	// OpenShift Telemetry. Use this to minimize metrics volume while still
+	// satisfying cluster telemetry requirements.
+	MetricsSetTelemetry MetricsSet = "Telemetry"
+
+	// MetricsSetSRE collects the metrics defined in the sre-metric-set ConfigMap,
+	// which includes the Telemetry set plus additional metrics needed for SRE
+	// monitoring dashboards and alerts. Use this for clusters that require
+	// SRE observability.
+	MetricsSetSRE MetricsSet = "SRE"
+
+	// MetricsSetAll collects all metrics from control plane components without
+	// any filtering. Use this for debugging or when full metric visibility is
+	// needed, but be aware it produces significantly higher metrics volume.
+	MetricsSetAll MetricsSet = "All"
+)
+
+// MonitoringSpec configures monitoring for the hosted cluster.
+// At least one field must be specified when this struct is present.
+//
+// +kubebuilder:validation:MinProperties=1
+type MonitoringSpec struct {
+	// metricsForwarding configures forwarding of control plane metrics into
+	// the hosted cluster's monitoring stack.
+	// When omitted, metrics forwarding behavior is determined by the
+	// hypershift.openshift.io/enable-metrics-forwarding annotation for backward compatibility.
+	// If neither is set, metrics forwarding is disabled.
+	//
+	// +optional
+	MetricsForwarding MetricsForwardingSpec `json:"metricsForwarding,omitzero"`
+
+	// metricsSet specifies which set of metrics to collect and forward.
+	// This overrides the global METRICS_SET environment variable configured on the HyperShift Operator.
+	// When not specified, the global METRICS_SET value is used, which defaults to "Telemetry".
+	//
+	// "Telemetry" collects only the minimal set of metrics required for OpenShift Telemetry.
+	// "SRE" collects the Telemetry set plus additional metrics defined in the sre-metric-set ConfigMap,
+	// needed for SRE dashboards and alerts.
+	// "All" collects all metrics from control plane components without filtering,
+	// which produces significantly higher metrics volume.
+	//
+	// +optional
+	MetricsSet MetricsSet `json:"metricsSet,omitempty"`
+}
+
+// MetricsForwardingSpec configures metrics forwarding for the hosted cluster.
+type MetricsForwardingSpec struct {
+	// mode controls whether metrics forwarding is active for this hosted cluster.
+	// When set to "Forward", metrics-proxy and endpoint-resolver are deployed in the
+	// control plane, and a metrics-forwarder is deployed in the hosted cluster.
+	// When set to "None", metrics forwarding is inactive.
+	//
+	// +required
+	Mode MetricsForwardingMode `json:"mode,omitempty"`
+
+	// metricsSet specifies which set of metrics to forward to the hosted
+	// cluster's monitoring stack. This controls only the metrics-proxy forwarding
+	// path and does not affect management-cluster-side ServiceMonitor/PodMonitor
+	// relabel configurations.
+	// When not specified, the value from monitoring.metricsSet is used, which itself
+	// falls back to the global METRICS_SET environment variable (default "Telemetry").
+	//
+	// "Telemetry" forwards only the minimal set of metrics required for OpenShift Telemetry.
+	// "SRE" forwards the Telemetry set plus additional metrics defined in the sre-metric-set
+	// ConfigMap, needed for SRE dashboards and alerts.
+	// "All" forwards all metrics from control plane components without filtering,
+	// which produces significantly higher metrics volume.
+	//
+	// +optional
+	MetricsSet MetricsSet `json:"metricsSet,omitempty"`
 }
 
 // ImageContentSource specifies image mirrors that can be used by cluster nodes

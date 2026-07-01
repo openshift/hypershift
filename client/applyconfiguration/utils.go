@@ -319,6 +319,10 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.ManagedEtcdStorageSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ManagedIdentity"):
 		return &hypershiftv1beta1.ManagedIdentityApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("MetricsForwardingSpec"):
+		return &hypershiftv1beta1.MetricsForwardingSpecApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("MonitoringSpec"):
+		return &hypershiftv1beta1.MonitoringSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("NetworkFilter"):
 		return &hypershiftv1beta1.NetworkFilterApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("NetworkParam"):

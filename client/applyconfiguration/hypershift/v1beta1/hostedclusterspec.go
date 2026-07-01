@@ -59,6 +59,7 @@ type HostedClusterSpecApplyConfiguration struct {
 	Tolerations                      []corev1.Toleration                                  `json:"tolerations,omitempty"`
 	Labels                           map[string]string                                    `json:"labels,omitempty"`
 	Capabilities                     *CapabilitiesApplyConfiguration                      `json:"capabilities,omitempty"`
+	Monitoring                       *MonitoringSpecApplyConfiguration                    `json:"monitoring,omitempty"`
 }
 
 // HostedClusterSpecApplyConfiguration constructs a declarative configuration of the HostedClusterSpec type for use with
@@ -352,5 +353,13 @@ func (b *HostedClusterSpecApplyConfiguration) WithLabels(entries map[string]stri
 // If called multiple times, the Capabilities field is set to the value of the last call.
 func (b *HostedClusterSpecApplyConfiguration) WithCapabilities(value *CapabilitiesApplyConfiguration) *HostedClusterSpecApplyConfiguration {
 	b.Capabilities = value
+	return b
+}
+
+// WithMonitoring sets the Monitoring field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the Monitoring field is set to the value of the last call.
+func (b *HostedClusterSpecApplyConfiguration) WithMonitoring(value *MonitoringSpecApplyConfiguration) *HostedClusterSpecApplyConfiguration {
+	b.Monitoring = value
 	return b
 }
