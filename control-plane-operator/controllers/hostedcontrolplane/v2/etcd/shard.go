@@ -15,7 +15,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/apimachinery/pkg/util/intstr"
 
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 )
@@ -62,20 +61,29 @@ func NewShardComponent(shard hyperv1.ManagedEtcdShardSpec) component.ControlPlan
 		WithManifestAdapter(
 			"service.yaml",
 			component.WithAdaptFunction(adaptServiceForShard(shardName)),
+			component.WithIdentityAdaptFunction(adaptServiceForShard(shardName)),
 		).
 		WithManifestAdapter(
 			"discovery-service.yaml",
 			component.WithAdaptFunction(adaptDiscoveryServiceForShard(shardName)),
+			component.WithIdentityAdaptFunction(adaptDiscoveryServiceForShard(shardName)),
 		).
 		WithManifestAdapter(
 			"servicemonitor.yaml",
 			component.WithAdaptFunction(func(cpContext component.WorkloadContext, sm *prometheusoperatorv1.ServiceMonitor) error {
 				return adaptServiceMonitorForShard(cpContext, sm, shardName)
 			}),
+			component.WithIdentityAdaptFunction(func(cpContext component.WorkloadContext, sm *prometheusoperatorv1.ServiceMonitor) error {
+				return adaptServiceMonitorForShard(cpContext, sm, shardName)
+			}),
 		).
 		WithManifestAdapter(
 			"pdb.yaml",
-			component.WithAdaptFunction(adaptPDBForShard(shardName, shard.Replicas)),
+			component.WithAdaptFunction(adaptPDBForShard(shardName)),
+			component.WithIdentityAdaptFunction(adaptPDBForShard(shardName)),
+			// Skip PDB entirely for single-replica shards; replicas is immutable
+			// so there is no lifecycle concern about needing to add it later.
+			component.WithPredicate(func(_ component.WorkloadContext) bool { return shard.Replicas >= 3 }),
 		).
 		WithManifestAdapter(
 			"defrag-role.yaml",
@@ -109,16 +117,10 @@ func adaptDiscoveryServiceForShard(shardName string) func(component.WorkloadCont
 	}
 }
 
-func adaptPDBForShard(shardName string, replicas int32) func(component.WorkloadContext, *policyv1.PodDisruptionBudget) error {
+func adaptPDBForShard(shardName string) func(component.WorkloadContext, *policyv1.PodDisruptionBudget) error {
 	return func(_ component.WorkloadContext, pdb *policyv1.PodDisruptionBudget) error {
 		pdb.Name = shardName
 		pdb.Spec.Selector.MatchLabels["app"] = shardName
-		// For single-replica shards, allow voluntary eviction so node drains aren't blocked.
-		if replicas <= 1 {
-			pdb.Spec.MinAvailable = nil
-			maxUnavailable := intstr.FromInt32(1)
-			pdb.Spec.MaxUnavailable = &maxUnavailable
-		}
 		return nil
 	}
 }
