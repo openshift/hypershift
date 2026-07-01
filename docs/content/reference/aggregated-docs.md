@@ -33728,6 +33728,107 @@ This is only valid for self-managed Azure.</p>
 <p>
 <p>AzureClientID is a string that represents the client ID of a managed identity.</p>
 </p>
+###AzureContainerRegistryConfig { #hypershift.openshift.io/v1beta1.AzureContainerRegistryConfig }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzurePlatformSpec">AzurePlatformSpec</a>)
+</p>
+<p>
+<p>AzureContainerRegistryConfig configures Azure Container Registry integration for a hosted cluster.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>credentials,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureContainerRegistryCredentialConfig">
+AzureContainerRegistryCredentialConfig
+</a>
+</em>
+</td>
+<td>
+<p>credentials configures authentication for worker nodes pulling images from ACR
+using a user-assigned managed identity.
+The identity does not need to be in the same subscription or resource group as the
+HostedCluster, but it must be in the same Azure AD tenant. The management cluster&rsquo;s
+CAPZ identity must have Microsoft.ManagedIdentity/userAssignedIdentities/*/assign/action
+on the identity&rsquo;s scope to attach it to worker virtual machines at creation time.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###AzureContainerRegistryCredentialConfig { #hypershift.openshift.io/v1beta1.AzureContainerRegistryCredentialConfig }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzureContainerRegistryConfig">AzureContainerRegistryConfig</a>)
+</p>
+<p>
+<p>AzureContainerRegistryCredentialConfig configures authentication credentials for Azure Container Registry.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>type</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureContainerRegistryCredentialType">
+AzureContainerRegistryCredentialType
+</a>
+</em>
+</td>
+<td>
+<p>type specifies the credential type used for ACR image pulls.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>managedIdentity,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.UserAssignedManagedIdentity">
+UserAssignedManagedIdentity
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>managedIdentity identifies the user-assigned managed identity used for ACR image pulls.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###AzureContainerRegistryCredentialType { #hypershift.openshift.io/v1beta1.AzureContainerRegistryCredentialType }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzureContainerRegistryCredentialConfig">AzureContainerRegistryCredentialConfig</a>)
+</p>
+<p>
+<p>AzureContainerRegistryCredentialType identifies the type of credential used for ACR image pulls.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;ManagedIdentity&#34;</p></td>
+<td><p>AzureContainerRegistryCredentialManagedIdentity uses a user-assigned managed identity for ACR authentication.</p>
+</td>
+</tr></tbody>
+</table>
 ###AzureDiagnosticsStorageAccountType { #hypershift.openshift.io/v1beta1.AzureDiagnosticsStorageAccountType }
 <p>
 (<em>Appears on:</em>
@@ -33906,7 +34007,7 @@ The system automatically manages the previous key via the status field.</p>
 </tr>
 <tr>
 <td>
-<code>kms</code></br>
+<code>kms,omitzero</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.ManagedIdentity">
 ManagedIdentity
@@ -33960,6 +34061,15 @@ and traffic must be routed through the private router (Swift).</p>
 </td>
 </tr></tbody>
 </table>
+###AzureManagedIdentityResourceID { #hypershift.openshift.io/v1beta1.AzureManagedIdentityResourceID }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.UserAssignedManagedIdentity">UserAssignedManagedIdentity</a>)
+</p>
+<p>
+<p>AzureManagedIdentityResourceID is an ARM resource ID for a user-assigned managed identity
+in the format /subscriptions/{sub}/resourceGroups/{rg}/providers/Microsoft.ManagedIdentity/userAssignedIdentities/{name}.</p>
+</p>
 ###AzureMarketplaceImage { #hypershift.openshift.io/v1beta1.AzureMarketplaceImage }
 <p>
 (<em>Appears on:</em>
@@ -34424,6 +34534,24 @@ string
 </td>
 <td>
 <p>tenantID is a unique identifier for the tenant where Azure resources will be created and managed in.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>containerRegistry,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureContainerRegistryConfig">
+AzureContainerRegistryConfig
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>containerRegistry configures how worker nodes authenticate to Azure Container Registry (ACR).
+When set, the managed identity is attached to worker virtual machines and its resource ID is
+written into the worker cloud provider config so kubelet&rsquo;s ACR credential provider can
+authenticate without image pull secrets.
+Changing this value will trigger a rollout for all existing NodePools in the cluster.</p>
 </td>
 </tr>
 <tr>
@@ -47299,6 +47427,41 @@ additional node capacity requirements.</p>
 capacity.</p>
 </td>
 </tr></tbody>
+</table>
+###UserAssignedManagedIdentity { #hypershift.openshift.io/v1beta1.UserAssignedManagedIdentity }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzureContainerRegistryCredentialConfig">AzureContainerRegistryCredentialConfig</a>)
+</p>
+<p>
+<p>UserAssignedManagedIdentity identifies a user-assigned managed identity by its ARM resource ID.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>resourceID</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureManagedIdentityResourceID">
+AzureManagedIdentityResourceID
+</a>
+</em>
+</td>
+<td>
+<p>resourceID is the ARM resource ID of the user-assigned managed identity
+in the format /subscriptions/{subscriptionID}/resourceGroups/{resourceGroupName}/providers/Microsoft.ManagedIdentity/userAssignedIdentities/{identityName}.
+The identity must have the AcrPull role on the target Azure Container Registry.
+It does not need to be in the same subscription or resource group as the HostedCluster,
+but it must be in the same Azure AD tenant.</p>
+</td>
+</tr>
+</tbody>
 </table>
 ###UserManagedDiagnostics { #hypershift.openshift.io/v1beta1.UserManagedDiagnostics }
 <p>

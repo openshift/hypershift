@@ -111,6 +111,10 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.AWSSharedVPCRolesRefApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AzureAuthenticationConfiguration"):
 		return &hypershiftv1beta1.AzureAuthenticationConfigurationApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("AzureContainerRegistryConfig"):
+		return &hypershiftv1beta1.AzureContainerRegistryConfigApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("AzureContainerRegistryCredentialConfig"):
+		return &hypershiftv1beta1.AzureContainerRegistryCredentialConfigApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AzureKMSKey"):
 		return &hypershiftv1beta1.AzureKMSKeyApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AzureKMSSpec"):
@@ -417,6 +421,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.TaintApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("UnmanagedEtcdSpec"):
 		return &hypershiftv1beta1.UnmanagedEtcdSpecApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("UserAssignedManagedIdentity"):
+		return &hypershiftv1beta1.UserAssignedManagedIdentityApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("UserManagedDiagnostics"):
 		return &hypershiftv1beta1.UserManagedDiagnosticsApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("Volume"):
