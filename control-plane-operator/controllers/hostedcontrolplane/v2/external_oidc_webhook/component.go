@@ -38,6 +38,10 @@ func NewComponent() component.ControlPlaneComponent {
 		WithAdaptFunction(adaptDeployment).
 		WithPredicate(Predicate).
 		WithManifestAdapter(
+			"auth-config.yaml",
+			component.WithAdaptFunction(adaptAuthConfig),
+		).
+		WithManifestAdapter(
 			"pdb.yaml",
 			component.AdaptPodDisruptionBudget(),
 		).

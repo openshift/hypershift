@@ -69,7 +69,7 @@ func NewConfigParams(hcp *hyperv1.HostedControlPlane, featureGates []string) Kub
 		ExternalRegistryHostNames:    externalRegistryHostNames(hcp.Spec.Configuration),
 		DefaultNodeSelector:          defaultNodeSelector(hcp.Spec.Configuration),
 		AdvertiseAddress:             netutil.GetAdvertiseAddress(hcp, config.DefaultAdvertiseIPv4Address, config.DefaultAdvertiseIPv6Address),
-		ServiceAccountIssuerURL:      serviceAccountIssuerURL(hcp),
+		ServiceAccountIssuerURL:      ServiceAccountIssuerURL(hcp),
 		FeatureGates:                 featureGates,
 		NodePortRange:                serviceNodePortRange(hcp.Spec.Configuration),
 		ConsolePublicURL:             fmt.Sprintf("https://console-openshift-console.%s", dns.Spec.BaseDomain),
@@ -176,7 +176,7 @@ func defaultNodeSelector(configuration *hyperv1.ClusterConfiguration) string {
 	}
 }
 
-func serviceAccountIssuerURL(hcp *hyperv1.HostedControlPlane) string {
+func ServiceAccountIssuerURL(hcp *hyperv1.HostedControlPlane) string {
 	if hcp.Spec.IssuerURL != "" {
 		return hcp.Spec.IssuerURL
 	} else {

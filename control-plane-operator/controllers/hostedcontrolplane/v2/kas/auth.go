@@ -41,7 +41,7 @@ func adaptAuthConfig(cpContext component.WorkloadContext, config *corev1.ConfigM
 		return fmt.Errorf("failed to generate authentication config: %w", err)
 	}
 
-	err = validateAuthConfig(authConfig, []string{serviceAccountIssuerURL(cpContext.HCP)})
+	err = validateAuthConfig(authConfig, []string{ServiceAccountIssuerURL(cpContext.HCP)})
 	if err != nil {
 		return fmt.Errorf("validating generated authentication config: %w", err)
 	}
