@@ -394,7 +394,7 @@ func waitForKASAuthReload(ctx context.Context, t *testing.T, g Gomega, clientCfg
 	testAuthConfig.TestUsers = username + ":" + password
 
 	// This is the SAME pattern as v2 tests - Eventually + fresh token per attempt
-	Eventually(func(g Gomega) {
+	g.Eventually(func(g Gomega) {
 		t.Logf("Attempting authentication with new OIDC config (user: %s)", username)
 
 		// Get fresh token each attempt (Keycloak tokens have short TTL)
