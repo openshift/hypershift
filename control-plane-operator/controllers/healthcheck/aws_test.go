@@ -4,9 +4,14 @@ import (
 	"testing"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/api"
 
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 // TestAWSHealthCheckIdentityProviderConditionLogic tests the condition setting logic
@@ -107,4 +112,63 @@ func TestAWSHealthCheckIdentityProviderConditionLogic(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestUpdateRunsAWSIdentityCheckDuringDeletion(t *testing.T) {
+	now := metav1.Now()
+	hcp := &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "test-hcp",
+			Namespace:         "test-namespace",
+			Generation:        1,
+			DeletionTimestamp: &now,
+			Finalizers:        []string{"test-finalizer"},
+		},
+		Spec: hyperv1.HostedControlPlaneSpec{
+			Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.AWSPlatform,
+				AWS:  &hyperv1.AWSPlatformSpec{},
+			},
+		},
+		Status: hyperv1.HostedControlPlaneStatus{
+			Conditions: []metav1.Condition{},
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(api.Scheme).
+		WithObjects(hcp).
+		WithStatusSubresource(&hyperv1.HostedControlPlane{}).
+		Build()
+
+	ctx := ctrl.LoggerInto(t.Context(), ctrl.Log.WithName("test"))
+
+	hcu := &HealthCheckUpdater{
+		Client:             fakeClient,
+		HostedControlPlane: client.ObjectKeyFromObject(hcp),
+		log:                ctrl.Log.WithName("test"),
+	}
+
+	// With KAS unavailable and no EC2 client, awsHealthCheckIdentityProvider
+	// sets ValidAWSIdentityProvider to Unknown and returns nil, so update()
+	// itself succeeds but still patches the status.
+	if err := hcu.update(ctx); err != nil {
+		t.Fatalf("When HCP has a deletionTimestamp, update() should succeed when KAS is unavailable, got: %v", err)
+	}
+
+	updated := &hyperv1.HostedControlPlane{}
+	if err := fakeClient.Get(ctx, client.ObjectKeyFromObject(hcp), updated); err != nil {
+		t.Fatalf("failed to get updated HCP: %v", err)
+	}
+
+	condition := meta.FindStatusCondition(updated.Status.Conditions, string(hyperv1.ValidAWSIdentityProvider))
+	if condition == nil {
+		t.Fatal("When HCP has a deletionTimestamp, it should still evaluate ValidAWSIdentityProvider, but the condition was not set")
+	}
+
+	// KAS is not available, so the check sets Unknown status
+	if condition.Status != metav1.ConditionUnknown {
+		t.Errorf("Expected condition status %v, got %v", metav1.ConditionUnknown, condition.Status)
+	}
+
 }

@@ -4342,6 +4342,17 @@ func TestReconcileDeletion(t *testing.T) {
 			wantCondStatus: metav1.ConditionFalse,
 		},
 		{
+			name: "When DescribeSecurityGroups returns InvalidIdentityToken it should extract the error code and skip gracefully",
+			setupEC2Mock: func(mockCtrl *gomock.Controller) *awsapi.MockEC2API {
+				m := awsapi.NewMockEC2API(mockCtrl)
+				m.EXPECT().DescribeSecurityGroups(gomock.Any(), gomock.Any()).Return(nil,
+					&smithy.GenericAPIError{Code: "InvalidIdentityToken", Message: "No OpenIDConnect provider found in your account"})
+				return m
+			},
+			wantErr:        false,
+			wantCondStatus: metav1.ConditionFalse,
+		},
+		{
 			name: "When destroyAWSDefaultSecurityGroup returns unexpected error, it should propagate the error",
 			setupEC2Mock: func(mockCtrl *gomock.Controller) *awsapi.MockEC2API {
 				m := awsapi.NewMockEC2API(mockCtrl)
