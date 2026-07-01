@@ -129,7 +129,7 @@ func TestBuildEtcdDefragControllerContainer(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			g := NewWithT(t)
-			c := buildEtcdDefragControllerContainer(tc.namespace, "")
+			c := buildEtcdDefragControllerContainer(tc.namespace)
 			tc.validate(g, c)
 		})
 	}

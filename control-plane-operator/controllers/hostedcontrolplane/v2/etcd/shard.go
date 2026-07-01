@@ -61,26 +61,20 @@ func NewShardComponent(shard hyperv1.ManagedEtcdShardSpec) component.ControlPlan
 		WithManifestAdapter(
 			"service.yaml",
 			component.WithAdaptFunction(adaptServiceForShard(shardName)),
-			component.WithIdentityAdaptFunction(adaptServiceForShard(shardName)),
 		).
 		WithManifestAdapter(
 			"discovery-service.yaml",
 			component.WithAdaptFunction(adaptDiscoveryServiceForShard(shardName)),
-			component.WithIdentityAdaptFunction(adaptDiscoveryServiceForShard(shardName)),
 		).
 		WithManifestAdapter(
 			"servicemonitor.yaml",
 			component.WithAdaptFunction(func(cpContext component.WorkloadContext, sm *prometheusoperatorv1.ServiceMonitor) error {
 				return adaptServiceMonitorForShard(cpContext, sm, shardName)
 			}),
-			component.WithIdentityAdaptFunction(func(cpContext component.WorkloadContext, sm *prometheusoperatorv1.ServiceMonitor) error {
-				return adaptServiceMonitorForShard(cpContext, sm, shardName)
-			}),
 		).
 		WithManifestAdapter(
 			"pdb.yaml",
 			component.WithAdaptFunction(adaptPDBForShard(shardName)),
-			component.WithIdentityAdaptFunction(adaptPDBForShard(shardName)),
 			// Skip PDB entirely for single-replica shards; replicas is immutable
 			// so there is no lifecycle concern about needing to add it later.
 			component.WithPredicate(func(_ component.WorkloadContext) bool { return shard.Replicas >= 3 }),
