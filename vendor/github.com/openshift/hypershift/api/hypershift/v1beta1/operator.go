@@ -40,6 +40,22 @@ var (
 	TraceAll LogLevel = "TraceAll"
 )
 
+// ComponentLogLevelSpec configures the log verbosity for a hosted control plane component.
+// +kubebuilder:validation:MinProperties=1
+type ComponentLogLevelSpec struct {
+	// logLevel sets the log verbosity for the component.
+	// Valid values are: "Normal", "Debug", "Trace", "TraceAll".
+	// When omitted, this means the user has no opinion and the platform defaults to Normal, which is subject to change over time.
+	// +optional
+	LogLevel *LogLevel `json:"logLevel,omitempty"`
+}
+
+// KubeAPIServerConfiguration specifies the configuration for the Kube API Server.
+// +kubebuilder:validation:MinProperties=1
+type KubeAPIServerOperatorSpec struct {
+	ComponentLogLevelSpec `json:",inline"`
+}
+
 // ClusterVersionOperatorSpec is the specification of the desired behavior of the Cluster Version Operator.
 type ClusterVersionOperatorSpec struct {
 	// operatorLogLevel is an intent based logging for the operator itself. It does not give fine-grained control,
