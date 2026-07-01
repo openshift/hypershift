@@ -118,6 +118,7 @@ const (
 					"iam:DeleteOpenIDConnectProvider",
 					"iam:GetRolePolicy",
 					"iam:ListAttachedRolePolicies",
+					"iam:ListRolePolicies",
 					"iam:DetachRolePolicy"
 				],
 				"Resource": "*"
@@ -173,8 +174,6 @@ func NewCreateCLIRoleCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.AWSCredentialsFile, "aws-creds", opts.AWSCredentialsFile, "Path to an AWS credentials file (required)")
 	cmd.Flags().StringVar(&opts.RoleName, "name", opts.RoleName, "Role name")
 	cmd.Flags().StringToStringVarP(&opts.AdditionalTags, "additional-tags", "t", opts.AdditionalTags, "Additional tags to apply to the role created (e.g. 'key1=value1,key2=value2')")
-
-	_ = cmd.MarkFlagRequired("aws-creds")
 
 	logger := log.Log
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
