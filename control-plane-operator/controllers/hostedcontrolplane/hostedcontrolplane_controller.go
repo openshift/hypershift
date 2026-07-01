@@ -2787,15 +2787,20 @@ func createAWSDefaultSecurityGroup(ctx context.Context, ec2Client awsapi.EC2API,
 	}
 
 	ingressPermissions := supportawsutil.DefaultWorkerSGIngressRules(machineCIDRs, sgID, aws.ToString(sg.OwnerId))
-	_, err = ec2Client.AuthorizeSecurityGroupIngress(ctx, &ec2.AuthorizeSecurityGroupIngressInput{
-		GroupId:       aws.String(sgID),
-		IpPermissions: ingressPermissions,
-	})
-	if err != nil {
-		if supportawsutil.AWSErrorCode(err) != "InvalidPermission.Duplicate" {
-			return "", nil, fmt.Errorf("failed to set security group ingress rules, code: %s", supportawsutil.AWSErrorCode(err))
+	missingPermissions := supportawsutil.DiffPermissions(sg.IpPermissions, ingressPermissions)
+	if len(missingPermissions) > 0 {
+		_, err = ec2Client.AuthorizeSecurityGroupIngress(ctx, &ec2.AuthorizeSecurityGroupIngressInput{
+			GroupId:       aws.String(sgID),
+			IpPermissions: missingPermissions,
+		})
+		if err != nil {
+			if supportawsutil.AWSErrorCode(err) != "InvalidPermission.Duplicate" {
+				return "", nil, fmt.Errorf("failed to set security group ingress rules, code: %s", supportawsutil.AWSErrorCode(err))
+			}
+			logger.Info("WARNING: got duplicate permissions error when setting security group ingress permissions", "sgID", sgID)
 		}
-		logger.Info("WARNING: got duplicate permissions error when setting security group ingress permissions", "sgID", sgID)
+	} else {
+		logger.Info("security group already has required ingress permissions", "sgID", sgID)
 	}
 	return sgID, tags, nil
 }
