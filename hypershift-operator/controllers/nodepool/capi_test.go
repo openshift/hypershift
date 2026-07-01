@@ -804,6 +804,10 @@ func RunTestMachineTemplateBuilders(t *testing.T, preCreateMachineTemplate bool)
 	gotMachineTemplate := &capiaws.AWSMachineTemplate{}
 	g.Expect(r.Client.Get(t.Context(), client.ObjectKeyFromObject(template), gotMachineTemplate)).To(Succeed())
 	g.Expect(expectedMachineTemplate.Spec).To(BeEquivalentTo(gotMachineTemplate.Spec))
+	// ApplyManifest adds a desired-state-hash annotation; copy it so the assertion compares the rest of the annotations.
+	if hash, ok := gotMachineTemplate.Annotations[upsert.DesiredStateHashAnnotation]; ok {
+		expectedMachineTemplate.Annotations[upsert.DesiredStateHashAnnotation] = hash
+	}
 	g.Expect(expectedMachineTemplate.ObjectMeta.Annotations).To(BeEquivalentTo(gotMachineTemplate.ObjectMeta.Annotations))
 }
 

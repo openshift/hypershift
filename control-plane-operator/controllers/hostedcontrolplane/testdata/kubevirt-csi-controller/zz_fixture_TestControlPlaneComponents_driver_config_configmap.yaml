@@ -7,6 +7,8 @@ data:
     allowAll: false
 kind: ConfigMap
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: 388111c053ea867c9d28d637996e1121cbf3db543dd71f006c1ea4508e0dd8b6
   name: driver-config
   namespace: hcp-namespace
   ownerReferences:

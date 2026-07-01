@@ -1,6 +1,8 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: 18472d367b088859730caed173f02a63d8c14b6f6d7a137fd42b97a4ba336c8a
   name: ignition-server
   namespace: hcp-namespace
   ownerReferences:

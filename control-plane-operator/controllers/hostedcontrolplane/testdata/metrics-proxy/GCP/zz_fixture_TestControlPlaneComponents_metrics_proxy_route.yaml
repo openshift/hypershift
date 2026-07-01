@@ -1,6 +1,8 @@
 apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: 854f50a70f18c92835410cc08d18ad16c221b56ebf9cfdf81e0037493a9ac44a
   labels:
     hypershift.openshift.io/hosted-control-plane: hcp-namespace
   name: metrics-proxy
