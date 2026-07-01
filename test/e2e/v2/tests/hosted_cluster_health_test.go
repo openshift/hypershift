@@ -62,6 +62,9 @@ func ValidateHostedClusterConditionsTest(getTestCtx internal.TestContextGetter) 
 				delete(expectedConditions, hyperv1.ControlPlaneConnectionAvailable)
 				delete(expectedConditions, hyperv1.ValidKubeVirtInfraNetworkPolicyRBAC)
 			}
+			if e2eutil.IsLessThan(e2eutil.Version423) {
+				delete(expectedConditions, hyperv1.ConfigOperatorReconciliationSucceeded)
+			}
 
 			Eventually(func(g Gomega) {
 				hc := &hyperv1.HostedCluster{}
