@@ -113,7 +113,7 @@ func TestNodePool(t *testing.T) {
 					},
 					{
 						name: "KubeVirtNodeMultinetTest",
-						test: NewKubeVirtMultinetTest(ctx, mgtClient, hostedCluster),
+						test: NewKubeVirtMultinetTest(ctx, mgtClient, hostedCluster, hostedClusterClient),
 					},
 					{
 						name: "OpenStackAdvancedTest",
@@ -160,7 +160,7 @@ func TestNodePool(t *testing.T) {
 			build: func(ctx context.Context, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster, hostedClusterClient crclient.Client, clusterOpts e2eutil.PlatformAgnosticOptions) []NodePoolTestCase {
 				return []NodePoolTestCase{{
 					name: "KubeVirtNodeAdvancedMultinetTest",
-					test: NewKubeVirtAdvancedMultinetTest(ctx, mgtClient, hostedCluster),
+					test: NewKubeVirtAdvancedMultinetTest(ctx, mgtClient, hostedCluster, hostedClusterClient),
 				}}
 			},
 		},
@@ -221,11 +221,14 @@ func executeNodePoolTests(t *testing.T, nodePoolTestCasesPerHostedCluster []Host
 				clusterOpts.AWSPlatform.SharedRole = false
 			}
 
-			// On OpenStack, we need to create at least one replica of the default nodepool
-			// so we can create the Route53 record for the ingress router. If we don't do that,
-			// the HostedCluster conditions won't be met and the test will fail as some operators
-			// will be marked as degraded.
-			if globalOpts.Platform == hyperv1.OpenStackPlatform {
+			// On OpenStack and KubeVirt, we need to create at least one replica of the default nodepool.
+			// On OpenStack, this is needed to create the Route53 record for the ingress router.
+			// On KubeVirt, CNO requires worker nodes to probe the network MTU before it can
+			// deploy its operands (ovnkube-control-plane, network-node-identity, multus-admission-controller),
+			// without which controlPlaneVersion never reaches Completed.
+			// If we don't do that, the HostedCluster conditions won't be met and the test will
+			// fail as some operators will be marked as degraded.
+			if globalOpts.Platform == hyperv1.OpenStackPlatform || globalOpts.Platform == hyperv1.KubevirtPlatform {
 				clusterOpts.NodePoolReplicas = 1
 			}
 
