@@ -79,31 +79,19 @@ func ShouldRunOverrideTests(platform string) bool {
 }
 
 func overrideTestReleases(platform string, o *CPOOverrides) (string, string) {
-	switch strings.ToLower(platform) {
-	case "aws":
-		if o.Platforms.AWS != nil && o.Platforms.AWS.Testing != nil {
-			return o.Platforms.AWS.Testing.Latest, o.Platforms.AWS.Testing.Previous
-		}
-	case "azure":
-		if o.Platforms.Azure != nil && o.Platforms.Azure.Testing != nil {
-			return o.Platforms.Azure.Testing.Latest, o.Platforms.Azure.Testing.Previous
-		}
+	p, ok := o.activePlatforms()[strings.ToLower(platform)]
+	if !ok || p.Testing == nil {
+		return "", ""
 	}
-	return "", ""
+	return p.Testing.Latest, p.Testing.Previous
 }
 
 func shouldRunOverrideTests(platform string, o *CPOOverrides) bool {
-	switch strings.ToLower(platform) {
-	case "aws":
-		if o.Platforms.AWS != nil && o.Platforms.AWS.Testing != nil {
-			return o.Platforms.AWS.Testing.RunTests
-		}
-	case "azure":
-		if o.Platforms.Azure != nil && o.Platforms.Azure.Testing != nil {
-			return o.Platforms.Azure.Testing.RunTests
-		}
+	p, ok := o.activePlatforms()[strings.ToLower(platform)]
+	if !ok || p.Testing == nil {
+		return false
 	}
-	return false
+	return p.Testing.RunTests
 }
 
 func mustLoadOverrides() *CPOOverrides {
@@ -128,17 +116,46 @@ func initOverridesByPlatformAndVersion() {
 
 func getOverridesByPlatformAndVersion(o *CPOOverrides) map[string]map[string]*CPOOverride {
 	result := map[string]map[string]*CPOOverride{}
-	if o.Platforms.AWS != nil {
-		result["aws"] = map[string]*CPOOverride{}
-		for i, override := range o.Platforms.AWS.Overrides {
-			result["aws"][override.Version] = &o.Platforms.AWS.Overrides[i]
-		}
-	}
-	if o.Platforms.Azure != nil {
-		result["azure"] = map[string]*CPOOverride{}
-		for i, override := range o.Platforms.Azure.Overrides {
-			result["azure"][override.Version] = &o.Platforms.Azure.Overrides[i]
+	for name, p := range o.activePlatforms() {
+		result[name] = map[string]*CPOOverride{}
+		for i, override := range p.Overrides {
+			result[name][override.Version] = &p.Overrides[i]
 		}
 	}
 	return result
+}
+
+// AllOverrideImages returns all unique CPO override images along with the
+// platform/version entries that reference each image. This enables validation
+// of override images without inspecting duplicates, since many version entries
+// share the same image digest.
+func AllOverrideImages() map[string][]string {
+	return allOverrideImages(overrides)
+}
+
+func allOverrideImages(o *CPOOverrides) map[string][]string {
+	result := make(map[string][]string)
+	for name, p := range o.activePlatforms() {
+		for _, override := range p.Overrides {
+			if override.CPOImage == "" {
+				continue
+			}
+			result[override.CPOImage] = append(result[override.CPOImage], fmt.Sprintf("%s/%s", name, override.Version))
+		}
+	}
+	return result
+}
+
+// activePlatforms returns a map of platform name to platform overrides for all
+// non-nil platforms. This centralizes platform enumeration to reduce the risk
+// of missing a platform when new ones are added.
+func (o *CPOOverrides) activePlatforms() map[string]*CPOPlatformOverrides {
+	platforms := make(map[string]*CPOPlatformOverrides)
+	if o.Platforms.AWS != nil {
+		platforms["aws"] = o.Platforms.AWS
+	}
+	if o.Platforms.Azure != nil {
+		platforms["azure"] = o.Platforms.Azure
+	}
+	return platforms
 }
