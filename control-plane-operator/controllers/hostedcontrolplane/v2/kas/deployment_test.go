@@ -1,6 +1,7 @@
 package kas
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -8,9 +9,12 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	component "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/testutil"
 
 	configv1 "github.com/openshift/api/config/v1"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 )
 
@@ -286,6 +290,140 @@ func TestApplyAWSPodIdentityWebhookContainer(t *testing.T) {
 			podSpec := &corev1.PodSpec{}
 			applyAWSPodIdentityWebhookContainer(podSpec, tc.hcp)
 			tc.validatePod(g, podSpec)
+		})
+	}
+}
+
+func TestKonnectivityServerTLSMinVersion(t *testing.T) {
+	testCases := []struct {
+		name           string
+		hcp            *hyperv1.HostedControlPlane
+		expectedMinTLS string
+	}{
+		{
+			name:           "When TLS security profile is nil it should use default Intermediate profile for konnectivity-server",
+			expectedMinTLS: "VersionTLS12",
+			hcp:            &hyperv1.HostedControlPlane{},
+		},
+		{
+			name:           "When TLS security profile is Old it should set TLS 1.0 for konnectivity-server",
+			expectedMinTLS: "VersionTLS10",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						APIServer: &configv1.APIServerSpec{
+							TLSSecurityProfile: &configv1.TLSSecurityProfile{
+								Type: configv1.TLSProfileOldType,
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name:           "When TLS security profile is Intermediate it should set TLS 1.2 for konnectivity-server",
+			expectedMinTLS: "VersionTLS12",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						APIServer: &configv1.APIServerSpec{
+							TLSSecurityProfile: &configv1.TLSSecurityProfile{
+								Type: configv1.TLSProfileIntermediateType,
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name:           "When TLS security profile is Modern it should set TLS 1.3 for konnectivity-server",
+			expectedMinTLS: "VersionTLS13",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						APIServer: &configv1.APIServerSpec{
+							TLSSecurityProfile: &configv1.TLSSecurityProfile{
+								Type: configv1.TLSProfileModernType,
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name:           "When TLS security profile is Custom with TLS 1.2 it should set TLS 1.2 for konnectivity-server",
+			expectedMinTLS: "VersionTLS12",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						APIServer: &configv1.APIServerSpec{
+							TLSSecurityProfile: &configv1.TLSSecurityProfile{
+								Type: configv1.TLSProfileCustomType,
+								Custom: &configv1.CustomTLSProfile{
+									TLSProfileSpec: configv1.TLSProfileSpec{
+										MinTLSVersion: configv1.VersionTLS12,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name:           "When TLS security profile is Custom with TLS 1.3 it should set TLS 1.3 for konnectivity-server",
+			expectedMinTLS: "VersionTLS13",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						APIServer: &configv1.APIServerSpec{
+							TLSSecurityProfile: &configv1.TLSSecurityProfile{
+								Type: configv1.TLSProfileCustomType,
+								Custom: &configv1.CustomTLSProfile{
+									TLSProfileSpec: configv1.TLSProfileSpec{
+										MinTLSVersion: configv1.VersionTLS13,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			cpContext := component.WorkloadContext{
+				HCP:                      tc.hcp,
+				UserReleaseImageProvider: testutil.FakeImageProvider(),
+			}
+
+			deployment := &appsv1.Deployment{
+				Spec: appsv1.DeploymentSpec{
+					Template: corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{
+								{
+									Name:  "konnectivity-server",
+									Image: "konnectivity-server:latest",
+									Args:  []string{},
+								},
+							},
+						},
+					},
+				},
+			}
+
+			err := adaptDeployment(cpContext, deployment)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			container := findContainerByNameInPod(&deployment.Spec.Template.Spec, "konnectivity-server")
+			g.Expect(container).NotTo(BeNil())
+			expected := fmt.Sprintf("--tls-min-version=%s", tc.expectedMinTLS)
+			g.Expect(container.Args).To(ContainElement(expected))
 		})
 	}
 }

@@ -71,10 +71,16 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 			strconv.Itoa(int(serverCount)),
 		)
 
+		minTLSVersion := config.MinTLSVersion(hcp.Spec.Configuration.GetTLSSecurityProfile())
+		if len(minTLSVersion) != 0 {
+			c.Args = append(c.Args, fmt.Sprintf("--tls-min-version=%s", minTLSVersion))
+		}
+
 		cipherSuites := config.CipherSuites(hcp.Spec.Configuration.GetTLSSecurityProfile())
 		if len(cipherSuites) != 0 {
 			c.Args = append(c.Args, fmt.Sprintf("--cipher-suites=%s", strings.Join(cipherSuites, ",")))
 		}
+
 	})
 
 	payloadVersion := cpContext.UserReleaseImageProvider.Version()
