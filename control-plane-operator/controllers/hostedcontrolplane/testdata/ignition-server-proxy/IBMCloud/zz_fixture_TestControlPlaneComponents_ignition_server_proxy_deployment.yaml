@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: aa2504e70335653815da6bacf8787512cbe375c54508292c0a7f1d8b7b785334
+    hypershift.openshift.io/desired-state-hash: cb62d90b55c528ca5ff2447b93f7235f3f2cee7c3b7ec3889f9dc06e7fc327e3
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: ignition-server-proxy
@@ -30,7 +30,7 @@ spec:
     metadata:
       annotations:
         cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: tmp-dir
-        component.hypershift.openshift.io/config-hash: 208be704
+        component.hypershift.openshift.io/config-hash: ea88d9fc
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       labels:
         app: ignition-server-proxy

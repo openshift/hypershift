@@ -8,15 +8,15 @@ data:
       timeout server 30s
 
     frontend ignition-server
-      bind :::8443 v4v6 ssl crt /tmp/tls.pem alpn http/1.1
+      bind :::8443 v4v6 ssl crt /tmp/tls.pem ssl-min-ver TLSv1.3 alpn http/1.1
       default_backend ignition_servers
 
     backend ignition_servers
-      server ignition-server ignition-server:443 check ssl ca-file /etc/ssl/root-ca/ca.crt alpn http/1.1
+      server ignition-server ignition-server:443 check ssl ca-file /etc/ssl/root-ca/ca.crt ssl-min-ver TLSv1.3 alpn http/1.1
 kind: ConfigMap
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 0e6844cd629f2aafb4bb4f76832422933ebabf1ee339b0e57b29e1735ec3b791
+    hypershift.openshift.io/desired-state-hash: f3fd874c67643ca88f47dda6033477b9fe89093348da117556c4b57e97775826
   name: ignition-server-proxy-config
   namespace: hcp-namespace
   ownerReferences:
