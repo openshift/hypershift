@@ -64,6 +64,10 @@ func NewComponent() component.ControlPlaneComponent {
 			component.WithAdaptFunction(adaptAzureCSIFileSecretProvider),
 			component.WithPredicate(isAroHCP),
 		).
+		WithManifestAdapter(
+			"controller-config.yaml",
+			component.WithAdaptFunction(adaptControllerConfig),
+		).
 		WithDependencies(oapiv2.ComponentName).
 		InjectAvailabilityProberContainer(podspec.AvailabilityProberOpts{
 			KubeconfigVolumeName: "guest-kubeconfig",
