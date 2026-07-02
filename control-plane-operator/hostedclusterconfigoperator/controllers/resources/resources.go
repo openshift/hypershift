@@ -54,6 +54,7 @@ import (
 	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/releaseinfo"
+	"github.com/openshift/hypershift/support/statuspatching"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
 
@@ -1733,18 +1734,10 @@ func getKASHealthCheckEndpoint(platformType hyperv1.PlatformType) string {
 }
 
 // patchHCPStatusCondition patches the HostedControlPlane status with the provided condition.
-// It only performs the API call if the condition actually changed.
+// Delegates to statuspatching.PatchStatusCondition which re-fetches the HCP on each attempt,
+// avoiding stale resourceVersion conflicts when concurrent controllers update HCP status.
 func (r *reconciler) patchHCPStatusCondition(ctx context.Context, hcp *hyperv1.HostedControlPlane, condition *metav1.Condition) error {
-	log := ctrl.LoggerFrom(ctx)
-	originalHCP := hcp.DeepCopy()
-	if !meta.SetStatusCondition(&hcp.Status.Conditions, *condition) {
-		return nil // No status change; avoid unnecessary API call.
-	}
-	if err := r.cpClient.Status().Patch(ctx, hcp, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{})); err != nil {
-		return fmt.Errorf("failed to patch HostedControlPlane status with %s condition: %w", condition.Type, err)
-	}
-	log.Info(string(condition.Type) + " condition updated")
-	return nil
+	return statuspatching.PatchStatusCondition(ctx, r.cpClient, hcp, &hcp.Status.Conditions, *condition)
 }
 
 func (r *reconciler) reconcileKASConnectionCheckerDeployment(ctx context.Context, hcp *hyperv1.HostedControlPlane, cliImage string) error {
