@@ -2,6 +2,7 @@ package capimanager
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
@@ -24,6 +25,13 @@ func (capi *CAPIManagerOptions) adaptDeployment(cpContext component.WorkloadCont
 	podspec.UpdateContainer("manager", deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
 		if version.GE(config.Version419) {
 			c.Args = append(c.Args, "--feature-gates=MachineSetPreflightChecks=false")
+		}
+
+		if tlsMinVersion := config.MinTLSVersion(cpContext.HCP.Spec.Configuration.GetTLSSecurityProfile()); tlsMinVersion != "" {
+			c.Args = append(c.Args, fmt.Sprintf("--tls-min-version=%s", tlsMinVersion))
+		}
+		if cipherSuites := config.CipherSuites(cpContext.HCP.Spec.Configuration.GetTLSSecurityProfile()); len(cipherSuites) != 0 {
+			c.Args = append(c.Args, fmt.Sprintf("--tls-cipher-suites=%s", strings.Join(cipherSuites, ",")))
 		}
 
 		if len(capi.imageOverride) > 0 {

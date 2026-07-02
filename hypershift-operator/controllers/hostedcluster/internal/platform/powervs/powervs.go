@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/upsert"
 
@@ -75,7 +77,7 @@ func (p PowerVS) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, crea
 	return ibmCluster, nil
 }
 
-func (p PowerVS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
+func (p PowerVS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
 	defaultMode := int32(416)
 
 	providerImage := p.capiProviderImage
@@ -84,6 +86,23 @@ func (p PowerVS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *
 	}
 	if override, ok := hcluster.Annotations[hyperv1.ClusterAPIPowerVSProviderImage]; ok {
 		providerImage = override
+	}
+
+	// Build container args with TLS configuration
+	args := []string{"--namespace", "$(MY_NAMESPACE)",
+		"--v=4",
+		"--leader-elect=true",
+		"--provider-id-fmt=v2",
+	}
+
+	// Add TLS configuration based on cluster TLS security profile
+	if hcp != nil {
+		if tlsMinVersion := config.MinTLSVersion(hcp.Spec.Configuration.GetTLSSecurityProfile()); tlsMinVersion != "" {
+			args = append(args, fmt.Sprintf("--tls-min-version=%s", tlsMinVersion))
+		}
+		if cipherSuites := config.CipherSuites(hcp.Spec.Configuration.GetTLSSecurityProfile()); len(cipherSuites) != 0 {
+			args = append(args, fmt.Sprintf("--tls-cipher-suites=%s", strings.Join(cipherSuites, ",")))
+		}
 	}
 
 	deploymentSpec := &appsv1.DeploymentSpec{
@@ -146,11 +165,7 @@ func (p PowerVS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *
 							},
 						},
 						Command: []string{"/bin/cluster-api-provider-ibmcloud-controller-manager"},
-						Args: []string{"--namespace", "$(MY_NAMESPACE)",
-							"--v=4",
-							"--leader-elect=true",
-							"--provider-id-fmt=v2",
-						},
+						Args:    args,
 						Ports: []corev1.ContainerPort{
 							{
 								Name:          "healthz",
