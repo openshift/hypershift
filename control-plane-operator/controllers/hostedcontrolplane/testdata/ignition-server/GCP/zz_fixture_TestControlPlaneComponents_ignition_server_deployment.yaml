@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 572a7c26908fd03a1ec02547cd7a96261b6338330fd8155a3f27a28ea0659fc0
+    hypershift.openshift.io/desired-state-hash: 9ae4f6c7c41819b41b576aa4f67788be7728d244cce19c256ed83ae7755882dc
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: ignition-server
@@ -91,6 +91,10 @@ spec:
         - registry=override
         - --platform
         - GCP
+        - --tls-min-version
+        - VersionTLS12
+        - --tls-cipher-suites
+        - TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
         command:
         - /usr/bin/control-plane-operator
         - ignition-server
