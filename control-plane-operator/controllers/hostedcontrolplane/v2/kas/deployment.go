@@ -179,20 +179,31 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 	return nil
 }
 
+func resolveKASVerbosity(hcp *hyperv1.HostedControlPlane) int {
+	// 1. New API field takes precedence
+	if hcp.Spec.OperatorConfiguration != nil &&
+		hcp.Spec.OperatorConfiguration.KubeAPIServer.LogLevel != nil {
+		return util.LogLevelToKlogVerbosity(
+			hcp.Spec.OperatorConfiguration.KubeAPIServer.LogLevel)
+	}
+
+	// 2. Fallback: deprecated annotation (raw integer)
+	if v := hcp.Annotations[hyperv1.KubeAPIServerVerbosityLevelAnnotation]; v != "" {
+		if parsed, err := strconv.Atoi(v); err == nil {
+			// TODO: emit deprecation warning condition on HCP status
+			return parsed
+		}
+	}
+
+	// 3. Default
+	return 2
+}
+
 func updateMainContainer(podSpec *corev1.PodSpec, hcp *hyperv1.HostedControlPlane) {
 	podspec.UpdateContainer(ComponentName, podSpec.Containers, func(c *corev1.Container) {
 		c.Ports[0].ContainerPort = netutil.KASPodPort(hcp)
 
-		kasVerbosityLevel := 2
-		if hcp.Annotations[hyperv1.KubeAPIServerVerbosityLevelAnnotation] != "" {
-			parsedKASVerbosityValue, err := strconv.Atoi(hcp.Annotations[hyperv1.KubeAPIServerVerbosityLevelAnnotation])
-			if err == nil {
-				kasVerbosityLevel = parsedKASVerbosityValue
-			}
-		}
-		c.Args = append(c.Args,
-			fmt.Sprintf("--v=%d", kasVerbosityLevel),
-		)
+		c.Args = append(c.Args, fmt.Sprintf("--v=%d", resolveKASVerbosity(hcp)))
 
 		// We have to exempt the pod and service CIDR, otherwise the proxy will get respected by the transport inside
 		// the egress transport and that breaks the egress selection/konnektivity usage.

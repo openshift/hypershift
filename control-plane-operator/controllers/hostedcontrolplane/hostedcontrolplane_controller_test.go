@@ -1061,6 +1061,19 @@ func TestControlPlaneComponents(t *testing.T) {
 			platformType: nil,
 		},
 		{
+			name:       "Default feature set, KAS Debug log level",
+			featureSet: configv1.Default,
+			mutateHCP: func(hcp *hyperv1.HostedControlPlane) {
+				debug := hyperv1.Debug
+				hcp.Spec.OperatorConfiguration = &hyperv1.OperatorConfiguration{
+					KubeAPIServer: hyperv1.ComponentLogLevelSpec{
+						LogLevel: &debug,
+					},
+				}
+			},
+			subDirSuffix: "KASDebugLogLevel",
+		},
+		{
 			name:         "TechPreviewNoUpgrade feature set, default platform type",
 			featureSet:   configv1.TechPreviewNoUpgrade,
 			platformType: nil,
