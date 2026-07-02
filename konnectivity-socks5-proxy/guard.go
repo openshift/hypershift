@@ -64,8 +64,8 @@ var (
 // runWithCoreGuard keeps the process alive while konnectivity infrastructure becomes
 // reachable, retrying transient failures with exponential backoff instead of exiting.
 func runWithCoreGuard(ctx context.Context, log logr.Logger, opts konnectivityproxy.Options, servingPort uint32, serve func(dialer konnectivityproxy.ProxyDialer) error) error {
+	delay := coreGuardBackoff.waitBackoff().DelayFunc()
 	for {
-		delay := coreGuardBackoff.waitBackoff().DelayFunc()
 		if err := ctx.Err(); err != nil {
 			return err
 		}
