@@ -1,7 +1,24 @@
-FROM registry.access.redhat.com/ubi10/ubi:10.0-1753787353
+FROM registry.access.redhat.com/ubi10/ubi@sha256:ceba546c5876f319e9dfa9beb4dd5ada6f33bd0f017bbaa4cb3974d626442a08 AS builder
 
-RUN dnf install -y haproxy-3.0.5-4.el10_1.1 socat-1.7.4.4-8.el10 \
-  && dnf clean all
+# Konflux injects checksum-verified local RPM repos for hermetic builds, but the
+# generated repo definitions do not carry an importable gpgkey.
+RUN rm -rf /rootfs \
+  && mkdir -p /rootfs/usr \
+  && ln -s usr/lib64 /rootfs/lib64 \
+  && dnf install -y \
+    --nogpgcheck \
+    --installroot /rootfs \
+    --releasever 10 \
+    --setopt=install_weak_deps=False \
+    --setopt=tsflags=nodocs \
+    haproxy-3.0.5-4.el10_1.1 \
+  && dnf clean all \
+  && rm -rf /rootfs/var/cache/dnf \
+  && rm -rf /rootfs/usr/share/doc /rootfs/usr/share/info /rootfs/usr/share/man
+
+FROM registry.access.redhat.com/ubi10/ubi-micro@sha256:2a820c70ceee2588618f4b1b6116eaa38952b455e1f9fd3a91f7d8afb21c0873
+
+COPY --from=builder /rootfs /
 
 ENTRYPOINT [ "/usr/sbin/haproxy" ]
 CMD ["-W", "-f", "/config/haproxy.cfg"]

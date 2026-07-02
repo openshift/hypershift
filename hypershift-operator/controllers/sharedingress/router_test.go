@@ -1,10 +1,12 @@
 package sharedingress
 
 import (
-	"reflect"
 	"testing"
 
+	. "github.com/onsi/gomega"
+
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/podspec"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -15,37 +17,15 @@ import (
 )
 
 func TestReconcileRouterDeployment(t *testing.T) {
-	type args struct {
-		deployment *appsv1.Deployment
-	}
 	tests := []struct {
-		name    string
-		args    args
-		wantErr bool
+		name   string
+		assert func(*WithT, *appsv1.Deployment)
 	}{
 		{
-			name: "Valid config map and deployment",
-			args: args{
-				deployment: &appsv1.Deployment{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "test-deployment",
-						Namespace: "test-namespace",
-					},
-				},
-			},
-			wantErr: false,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := ReconcileRouterDeployment(tt.args.deployment, "test-hypershift-operator-image")
-			if (err != nil) != tt.wantErr {
-				t.Errorf("ReconcileRouterDeployment() error = %v, wantErr %v", err, tt.wantErr)
-			}
-			if !tt.wantErr {
-				if *tt.args.deployment.Spec.Replicas != 2 {
-					t.Errorf("Expected replicas to be 2, got %d", *tt.args.deployment.Spec.Replicas)
-				}
+			name: "When reconciling a valid deployment it should set the default scheduling configuration",
+			assert: func(g *WithT, deployment *appsv1.Deployment) {
+				g.Expect(deployment.Spec.Replicas).ToNot(BeNil())
+				g.Expect(*deployment.Spec.Replicas).To(Equal(int32(2)))
 
 				expectedAffinity := &corev1.Affinity{
 					NodeAffinity: &corev1.NodeAffinity{
@@ -75,9 +55,7 @@ func TestReconcileRouterDeployment(t *testing.T) {
 						},
 					},
 				}
-				if !reflect.DeepEqual(tt.args.deployment.Spec.Template.Spec.Affinity, expectedAffinity) {
-					t.Errorf("Expected affinity to be %v, got %v", expectedAffinity, tt.args.deployment.Spec.Template.Spec.Affinity)
-				}
+				g.Expect(deployment.Spec.Template.Spec.Affinity).To(Equal(expectedAffinity))
 
 				expectedTolerations := []corev1.Toleration{
 					{
@@ -87,56 +65,90 @@ func TestReconcileRouterDeployment(t *testing.T) {
 						Operator: corev1.TolerationOpEqual,
 					},
 				}
-				if !reflect.DeepEqual(tt.args.deployment.Spec.Template.Spec.Tolerations, expectedTolerations) {
-					t.Errorf("Expected tolerations to be %v, got %v", expectedTolerations, tt.args.deployment.Spec.Template.Spec.Tolerations)
-				}
+				g.Expect(deployment.Spec.Template.Spec.Tolerations).To(Equal(expectedTolerations))
+			},
+		},
+		{
+			name: "When reconciling router deployment it should harden the HAProxy container security context",
+			assert: func(g *WithT, deployment *appsv1.Deployment) {
+				routerContainer := podspec.FindContainer("private-router", deployment.Spec.Template.Spec.Containers)
+				g.Expect(routerContainer).ToNot(BeNil())
+				g.Expect(routerContainer.SecurityContext).ToNot(BeNil())
+				g.Expect(routerContainer.SecurityContext.AllowPrivilegeEscalation).ToNot(BeNil())
+				g.Expect(*routerContainer.SecurityContext.AllowPrivilegeEscalation).To(BeFalse())
+				g.Expect(routerContainer.SecurityContext.ReadOnlyRootFilesystem).ToNot(BeNil())
+				g.Expect(*routerContainer.SecurityContext.ReadOnlyRootFilesystem).To(BeTrue())
+				g.Expect(routerContainer.SecurityContext.SeccompProfile).ToNot(BeNil())
+				g.Expect(routerContainer.SecurityContext.SeccompProfile.Type).To(Equal(corev1.SeccompProfileTypeRuntimeDefault))
+				g.Expect(routerContainer.SecurityContext.Capabilities).ToNot(BeNil())
+				g.Expect(routerContainer.SecurityContext.Capabilities.Drop).To(Equal([]corev1.Capability{"ALL"}))
+				g.Expect(routerContainer.SecurityContext.Capabilities.Add).To(BeEmpty())
+			},
+		},
+		{
+			name: "When reconciling router deployment it should harden the config-generator container security context",
+			assert: func(g *WithT, deployment *appsv1.Deployment) {
+				configGeneratorContainer := podspec.FindContainer("config-generator", deployment.Spec.Template.Spec.Containers)
+				g.Expect(configGeneratorContainer).ToNot(BeNil())
+				g.Expect(configGeneratorContainer.SecurityContext).ToNot(BeNil())
+				g.Expect(configGeneratorContainer.SecurityContext.AllowPrivilegeEscalation).ToNot(BeNil())
+				g.Expect(*configGeneratorContainer.SecurityContext.AllowPrivilegeEscalation).To(BeFalse())
+				g.Expect(configGeneratorContainer.SecurityContext.Capabilities).ToNot(BeNil())
+				g.Expect(configGeneratorContainer.SecurityContext.Capabilities.Drop).To(Equal([]corev1.Capability{"ALL"}))
+				g.Expect(configGeneratorContainer.SecurityContext.Capabilities.Add).To(BeEmpty())
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			deployment := &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-deployment",
+					Namespace: "test-namespace",
+				},
 			}
+
+			g.Expect(ReconcileRouterDeployment(deployment, "test-hypershift-operator-image")).To(Succeed())
+			tc.assert(g, deployment)
 		})
 	}
 }
 
 func TestReconcileRouterPodDisruptionBudget(t *testing.T) {
-	t.Run("When reconciling a new PDB it should set unhealthyPodEvictionPolicy to AlwaysAllow", func(t *testing.T) {
-		pdb := &policyv1.PodDisruptionBudget{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "router",
-				Namespace: "test-namespace",
-			},
-		}
-		ownerRef := config.OwnerRef{}
+	tests := []struct {
+		name                              string
+		initialUnhealthyPodEvictionPolicy *policyv1.UnhealthyPodEvictionPolicyType
+	}{
+		{
+			name: "When reconciling a new PDB it should set unhealthyPodEvictionPolicy to AlwaysAllow",
+		},
+		{
+			name:                              "When a PDB already has unhealthyPodEvictionPolicy set to IfHealthyBudget it should overwrite it to AlwaysAllow",
+			initialUnhealthyPodEvictionPolicy: ptr.To(policyv1.IfHealthyBudget),
+		},
+	}
 
-		ReconcileRouterPodDisruptionBudget(pdb, ownerRef)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			pdb := &policyv1.PodDisruptionBudget{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "router",
+					Namespace: "test-namespace",
+				},
+				Spec: policyv1.PodDisruptionBudgetSpec{
+					UnhealthyPodEvictionPolicy: tc.initialUnhealthyPodEvictionPolicy,
+				},
+			}
+			ownerRef := config.OwnerRef{}
 
-		if !reflect.DeepEqual(pdb.Spec.MinAvailable, ptr.To(intstr.FromInt32(1))) {
-			t.Errorf("Expected minAvailable to be 1, got %v", pdb.Spec.MinAvailable)
-		}
-		if pdb.Spec.UnhealthyPodEvictionPolicy == nil {
-			t.Fatal("Expected unhealthyPodEvictionPolicy to be set, got nil")
-		}
-		if *pdb.Spec.UnhealthyPodEvictionPolicy != policyv1.AlwaysAllow {
-			t.Errorf("Expected unhealthyPodEvictionPolicy to be AlwaysAllow, got %v", *pdb.Spec.UnhealthyPodEvictionPolicy)
-		}
-	})
+			ReconcileRouterPodDisruptionBudget(pdb, ownerRef)
 
-	t.Run("When PDB already has unhealthyPodEvictionPolicy set to IfHealthyBudget it should overwrite to AlwaysAllow", func(t *testing.T) {
-		pdb := &policyv1.PodDisruptionBudget{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "router",
-				Namespace: "test-namespace",
-			},
-			Spec: policyv1.PodDisruptionBudgetSpec{
-				UnhealthyPodEvictionPolicy: ptr.To(policyv1.IfHealthyBudget),
-			},
-		}
-		ownerRef := config.OwnerRef{}
-
-		ReconcileRouterPodDisruptionBudget(pdb, ownerRef)
-
-		if pdb.Spec.UnhealthyPodEvictionPolicy == nil {
-			t.Fatal("Expected unhealthyPodEvictionPolicy to be set, got nil")
-		}
-		if *pdb.Spec.UnhealthyPodEvictionPolicy != policyv1.AlwaysAllow {
-			t.Errorf("Expected unhealthyPodEvictionPolicy to be AlwaysAllow, got %v", *pdb.Spec.UnhealthyPodEvictionPolicy)
-		}
-	})
+			g.Expect(pdb.Spec.MinAvailable).To(Equal(ptr.To(intstr.FromInt32(1))))
+			g.Expect(pdb.Spec.UnhealthyPodEvictionPolicy).ToNot(BeNil())
+			g.Expect(*pdb.Spec.UnhealthyPodEvictionPolicy).To(Equal(policyv1.AlwaysAllow))
+		})
+	}
 }
