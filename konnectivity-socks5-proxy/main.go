@@ -1,18 +1,18 @@
 package konnectivitysocks5proxy
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
 
 	"github.com/openshift/hypershift/support/konnectivityproxy"
 	"github.com/openshift/hypershift/support/supportedversion"
 
-	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	"sigs.k8s.io/controller-runtime/pkg/manager/signals"
 
-	"github.com/armon/go-socks5"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap/zapcore"
 )
@@ -51,32 +51,21 @@ func NewStartCommand() *cobra.Command {
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		l.Info("Starting proxy", "version", supportedversion.String())
-		client, err := client.New(ctrl.GetConfigOrDie(), client.Options{})
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: cannot get client: %v", err)
-			os.Exit(1)
-		}
-
-		opts.Client = client
 		opts.Log = l
 
-		dialer, err := konnectivityproxy.NewKonnectivityDialer(opts)
+		ctx := signals.SetupSignalHandler()
+
+		err := runWithCoreGuard(ctx, l, opts, servingPort, func(dialer konnectivityproxy.ProxyDialer) error {
+			return serveWithGracefulShutdown(ctx, dialer, servingPort, l)
+		})
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: cannot initialize konnectivity dialer: %v", err)
+			// Treat context cancellation/timeout as clean shutdown (triggered by signals)
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				l.Info("Shutting down gracefully")
+				return
+			}
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
-		}
-
-		conf := &socks5.Config{
-			Dial:     dialer.DialContext,
-			Resolver: dialer,
-		}
-		server, err := socks5.New(conf)
-		if err != nil {
-			panic(err)
-		}
-
-		if err := server.ListenAndServe("tcp", fmt.Sprintf(":%d", servingPort)); err != nil {
-			panic(err)
 		}
 	}
 
