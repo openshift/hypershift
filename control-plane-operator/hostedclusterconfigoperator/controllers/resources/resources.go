@@ -3016,6 +3016,20 @@ func (r *reconciler) reconcileKubeletConfig(ctx context.Context) error {
 	for _, cm := range wantCMList.Items {
 		want.Insert(cm.Name)
 	}
+	// Derive which NodePools are still active from CMs in the HCP namespace.
+	// When a NodePool is deleted, its finalizer removes all its CMs from the HCP namespace,
+	// so zero CMs for a given NodePool means it has been deleted.
+	// Note: a narrow race exists for a NodePool with exactly one immutable kubelet-config CM
+	// during the one-time immutable-to-mutable migration — the NodePool controller briefly
+	// deletes the CM before recreating it. If HCCO reconciles in that window the NodePool
+	// appears inactive. This is acceptable: the window is milliseconds, the migration is a
+	// one-time event, and the guest CM would be recreated on the next reconcile.
+	activeNodePools := set.Set[string]{}
+	for _, cm := range wantCMList.Items {
+		if npName := cm.Labels[hyperv1.NodePoolLabel]; npName != "" {
+			activeNodePools.Insert(npName)
+		}
+	}
 	for _, cm := range wantCMList.Items {
 		hostedClusterCM := &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
@@ -3059,16 +3073,21 @@ func (r *reconciler) reconcileKubeletConfig(ctx context.Context) error {
 		}
 		// Mirrored CMs have a source in the HCP namespace managed by the NodePool controller.
 		// During delete+recreate migrations or transient API errors the source can be briefly
-		// absent. Deleting the guest copy here would cause NTO to regenerate MachineConfigs
-		// without it, triggering MCO node rollouts. If the source is permanently removed
-		// (e.g. NodePool deletion), the orphaned guest CM is harmless and will be cleaned up
-		// when the HostedCluster is deleted.
-		// TODO(OCPBUGS-88738): check whether the owning NodePool (via NodePoolLabel) still exists
-		// before unconditionally skipping, to allow cleanup of truly orphaned CMs.
+		// absent. Deleting the guest copy would cause NTO to regenerate MachineConfigs
+		// without it, triggering MCO node rollouts. However, if the owning NodePool has been
+		// deleted, its finalizer has already removed all its CMs from the HCP namespace, so
+		// the guest copy is orphaned and safe to delete.
 		if cm.Labels[nodepool.NTOMirroredConfigLabel] == "true" {
-			log.Info("skipping deletion of mirrored ConfigMap; source may be transiently absent or permanently removed after NodePool deletion",
-				"configMap", client.ObjectKeyFromObject(cm).String())
-			continue
+			npName := cm.Labels[hyperv1.NodePoolLabel]
+			// Defensive: if the CM has no NodePoolLabel, we cannot determine whether
+			// its owning NodePool still exists; preserve it to avoid spurious rollouts.
+			if npName == "" || activeNodePools.Has(npName) {
+				log.Info("skipping deletion of mirrored ConfigMap; source transiently absent but owning NodePool still active",
+					"configMap", client.ObjectKeyFromObject(cm).String())
+				continue
+			}
+			log.Info("deleting orphaned mirrored ConfigMap; owning NodePool no longer exists",
+				"configMap", client.ObjectKeyFromObject(cm).String(), "nodePool", npName)
 		}
 		log.Info("delete mirror config ConfigMap", "config", client.ObjectKeyFromObject(cm).String())
 		if _, err := k8sutil.DeleteIfNeeded(ctx, r.client, cm); err != nil {
