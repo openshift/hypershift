@@ -54,6 +54,7 @@ import (
 	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/releaseinfo"
+	"github.com/openshift/hypershift/support/statuspatching"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
 
@@ -581,13 +582,9 @@ func (r *reconciler) reconcileClusterRecovery(ctx context.Context, log logr.Logg
 		condition.Message = "Hosted cluster recovery finished"
 	}
 
-	originalHCP := hcp.DeepCopy()
-	meta.SetStatusCondition(&hcp.Status.Conditions, *condition)
-	log.Info("setting condition", "type", condition.Type, "status", condition.Status, "message", condition.Message)
-	if err := r.cpClient.Status().Patch(ctx, hcp, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{})); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to patch status on hcp for hosted cluster recovery: %w. Condition error message: %v", err, condition.Message)
+	if err := r.patchHCPStatusCondition(ctx, hcp, condition); err != nil {
+		return ctrl.Result{}, err
 	}
-	log.Info("successfully patched hcp status with recovery condition")
 
 	if !finished {
 		return ctrl.Result{RequeueAfter: 120 * time.Second}, nil
@@ -1733,17 +1730,12 @@ func getKASHealthCheckEndpoint(platformType hyperv1.PlatformType) string {
 }
 
 // patchHCPStatusCondition patches the HostedControlPlane status with the provided condition.
-// It only performs the API call if the condition actually changed.
+// Delegates to statuspatching.PatchStatusCondition which re-fetches the HCP on each attempt,
+// avoiding stale resourceVersion conflicts when concurrent controllers update HCP status.
 func (r *reconciler) patchHCPStatusCondition(ctx context.Context, hcp *hyperv1.HostedControlPlane, condition *metav1.Condition) error {
-	log := ctrl.LoggerFrom(ctx)
-	originalHCP := hcp.DeepCopy()
-	if !meta.SetStatusCondition(&hcp.Status.Conditions, *condition) {
-		return nil // No status change; avoid unnecessary API call.
+	if err := statuspatching.PatchStatusCondition(ctx, r.cpClient, hcp, &hcp.Status.Conditions, *condition); err != nil {
+		return fmt.Errorf("failed to patch HCP status with %s condition: %w", condition.Type, err)
 	}
-	if err := r.cpClient.Status().Patch(ctx, hcp, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{})); err != nil {
-		return fmt.Errorf("failed to patch HostedControlPlane status with %s condition: %w", condition.Type, err)
-	}
-	log.Info(string(condition.Type) + " condition updated")
 	return nil
 }
 
