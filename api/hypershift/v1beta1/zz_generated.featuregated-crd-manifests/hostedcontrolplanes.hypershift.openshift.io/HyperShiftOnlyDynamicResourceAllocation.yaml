@@ -3247,6 +3247,68 @@ spec:
                             x-kubernetes-validations:
                             - message: mtu is immutable once set
                               rule: self == oldSelf
+                          v4InternalSubnet:
+                            description: |-
+                              v4InternalSubnet configures the IPv4 subnet used by OVN-Kubernetes for gateway
+                              router logical router port (LRP) addresses and masquerade/SNAT traffic within
+                              the OVN logical topology. It must not overlap with any other subnet being used
+                              by OpenShift or by the node network. The size of the subnet must be larger than
+                              the number of nodes.
+                              This field is distinct from ipv4.internalJoinSubnet, which configures the subnet
+                              for the join switch that interconnects per-node gateway routers with the cluster
+                              router. Both default to 100.64.0.0/16 but control different OVN-Kubernetes
+                              internal networks and can be configured independently to avoid overlaps with
+                              existing network infrastructure.
+                              Once set, the value is immutable and cannot be modified in subsequent updates.
+                              The default is 100.64.0.0/16.
+                              The value must be in IPv4 CIDR notation (e.g., 192.168.0.0/16), consisting of
+                              four decimal octets (0-255) separated by dots, followed by a slash and a prefix
+                              length. The prefix length must be between 0 and 30 inclusive, and the first
+                              octet must not be 0.
+                              The value must be between 9 and 18 characters in length.
+                              This field is immutable once set.
+                            maxLength: 18
+                            minLength: 9
+                            type: string
+                            x-kubernetes-validations:
+                            - message: v4InternalSubnet is immutable once set
+                              rule: self == oldSelf
+                            - message: Subnet must be in a valid IPv4 CIDR format
+                              rule: isCIDR(self) && cidr(self).ip().family() == 4
+                            - message: subnet must be in the range /0 to /30 inclusive
+                              rule: isCIDR(self) && cidr(self).prefixLength() <= 30
+                            - message: first IP address octet must not be 0
+                              rule: isCIDR(self) && cidr(self).ip().family() == 4
+                                && int(self.split('.')[0]) > 0
+                          v6InternalSubnet:
+                            description: |-
+                              v6InternalSubnet configures the IPv6 subnet used by OVN-Kubernetes for gateway
+                              router logical router port (LRP) addresses and masquerade/SNAT traffic within
+                              the OVN logical topology. It must not overlap with any other subnet being used
+                              by OpenShift or by the node network. The size of the subnet must be larger than
+                              the number of nodes.
+                              This field is distinct from ipv6.internalJoinSubnet, which configures the subnet
+                              for the join switch that interconnects per-node gateway routers with the cluster
+                              router. Both default to fd98::/64 but control different OVN-Kubernetes internal
+                              networks and can be configured independently to avoid overlaps with existing
+                              network infrastructure.
+                              Once set, the value is immutable and cannot be modified in subsequent updates.
+                              The default is fd98::/64.
+                              The value must be in IPv6 CIDR notation (e.g., fd98::/64), consisting of an
+                              IPv6 address followed by a slash and a prefix length. The prefix length must
+                              be between 0 and 125 inclusive.
+                              The value must be between 4 and 48 characters in length.
+                              This field is immutable once set.
+                            maxLength: 48
+                            minLength: 4
+                            type: string
+                            x-kubernetes-validations:
+                            - message: v6InternalSubnet is immutable once set
+                              rule: self == oldSelf
+                            - message: Subnet must be in valid IPv6 CIDR format
+                              rule: isCIDR(self) && cidr(self).ip().family() == 6
+                            - message: subnet must be in the range /0 to /125 inclusive
+                              rule: isCIDR(self) && cidr(self).prefixLength() <= 125
                         type: object
                         x-kubernetes-validations:
                         - message: internalJoinSubnet and internalTransitSwitchSubnet
@@ -3271,6 +3333,12 @@ spec:
                             once set
                           rule: '!has(oldSelf.ipv6) || !has(oldSelf.ipv6.internalTransitSwitchSubnet)
                             || (has(self.ipv6) && has(self.ipv6.internalTransitSwitchSubnet))'
+                        - message: v4InternalSubnet is immutable once set and cannot
+                            be removed
+                          rule: '!has(oldSelf.v4InternalSubnet) || has(self.v4InternalSubnet)'
+                        - message: v6InternalSubnet is immutable once set and cannot
+                            be removed
+                          rule: '!has(oldSelf.v6InternalSubnet) || has(self.v6InternalSubnet)'
                     type: object
                     x-kubernetes-validations:
                     - message: ovnKubernetesConfig is immutable once set and cannot

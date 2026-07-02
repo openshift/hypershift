@@ -601,6 +601,170 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 				},
 			},
 		},
+		{
+			name:                "When v4InternalSubnet is specified, it should propagate to network operator",
+			inputNetwork:        NetworkOperator(),
+			inputNetworkType:    hyperv1.OVNKubernetes,
+			inputPlatformType:   hyperv1.AWSPlatform,
+			disableMultiNetwork: false,
+			ovnConfig: &hyperv1.OVNKubernetesConfig{
+				V4InternalSubnet: "10.128.0.0/16",
+			},
+			expectedNetwork: &operatorv1.Network{
+				ObjectMeta: NetworkOperator().ObjectMeta,
+				Spec: operatorv1.NetworkSpec{
+					OperatorSpec: operatorv1.OperatorSpec{
+						ManagementState: "Managed",
+					},
+					DefaultNetwork: operatorv1.DefaultNetworkDefinition{
+						OVNKubernetesConfig: &operatorv1.OVNKubernetesConfig{
+							V4InternalSubnet: "10.128.0.0/16",
+						},
+					},
+				},
+			},
+		},
+		{
+			name:                "When v6InternalSubnet is specified, it should propagate to network operator",
+			inputNetwork:        NetworkOperator(),
+			inputNetworkType:    hyperv1.OVNKubernetes,
+			inputPlatformType:   hyperv1.AWSPlatform,
+			disableMultiNetwork: false,
+			ovnConfig: &hyperv1.OVNKubernetesConfig{
+				V6InternalSubnet: "fd99::/64",
+			},
+			expectedNetwork: &operatorv1.Network{
+				ObjectMeta: NetworkOperator().ObjectMeta,
+				Spec: operatorv1.NetworkSpec{
+					OperatorSpec: operatorv1.OperatorSpec{
+						ManagementState: "Managed",
+					},
+					DefaultNetwork: operatorv1.DefaultNetworkDefinition{
+						OVNKubernetesConfig: &operatorv1.OVNKubernetesConfig{
+							V6InternalSubnet: "fd99::/64",
+						},
+					},
+				},
+			},
+		},
+		{
+			name:                "When KubeVirt with OVNKubernetes has user-specified v4InternalSubnet, it should override platform default",
+			inputNetwork:        NetworkOperator(),
+			inputNetworkType:    hyperv1.OVNKubernetes,
+			inputPlatformType:   hyperv1.KubevirtPlatform,
+			disableMultiNetwork: false,
+			ovnConfig: &hyperv1.OVNKubernetesConfig{
+				V4InternalSubnet: "10.200.0.0/16",
+			},
+			expectedNetwork: &operatorv1.Network{
+				ObjectMeta: NetworkOperator().ObjectMeta,
+				Spec: operatorv1.NetworkSpec{
+					OperatorSpec: operatorv1.OperatorSpec{
+						ManagementState: "Managed",
+					},
+					DefaultNetwork: operatorv1.DefaultNetworkDefinition{
+						OVNKubernetesConfig: &operatorv1.OVNKubernetesConfig{
+							GenevePort:       &genevePort,
+							V4InternalSubnet: "10.200.0.0/16",
+						},
+					},
+				},
+			},
+		},
+		{
+			name:                "When KubeVirt with OVNKubernetes has user-specified v6InternalSubnet only, it should retain platform defaults and apply V6",
+			inputNetwork:        NetworkOperator(),
+			inputNetworkType:    hyperv1.OVNKubernetes,
+			inputPlatformType:   hyperv1.KubevirtPlatform,
+			disableMultiNetwork: false,
+			ovnConfig: &hyperv1.OVNKubernetesConfig{
+				V6InternalSubnet: "fd99::/64",
+			},
+			expectedNetwork: &operatorv1.Network{
+				ObjectMeta: NetworkOperator().ObjectMeta,
+				Spec: operatorv1.NetworkSpec{
+					OperatorSpec: operatorv1.OperatorSpec{
+						ManagementState: "Managed",
+					},
+					DefaultNetwork: operatorv1.DefaultNetworkDefinition{
+						OVNKubernetesConfig: &operatorv1.OVNKubernetesConfig{
+							GenevePort:       &genevePort,
+							V4InternalSubnet: v4InternalSubnet,
+							V6InternalSubnet: "fd99::/64",
+						},
+					},
+				},
+			},
+		},
+		{
+			name:                "When v4InternalSubnet is specified with IPv4 subnets and MTU, it should propagate all",
+			inputNetwork:        NetworkOperator(),
+			inputNetworkType:    hyperv1.OVNKubernetes,
+			inputPlatformType:   hyperv1.AWSPlatform,
+			disableMultiNetwork: false,
+			ovnConfig: &hyperv1.OVNKubernetesConfig{
+				MTU:              8901,
+				V4InternalSubnet: "10.200.0.0/16",
+				V6InternalSubnet: "fd99::/64",
+				IPv4: &hyperv1.OVNIPv4Config{
+					InternalJoinSubnet: "192.168.1.0/24",
+				},
+			},
+			expectedNetwork: &operatorv1.Network{
+				ObjectMeta: NetworkOperator().ObjectMeta,
+				Spec: operatorv1.NetworkSpec{
+					OperatorSpec: operatorv1.OperatorSpec{
+						ManagementState: "Managed",
+					},
+					DefaultNetwork: operatorv1.DefaultNetworkDefinition{
+						OVNKubernetesConfig: &operatorv1.OVNKubernetesConfig{
+							MTU:              ptr.To(uint32(8901)),
+							V4InternalSubnet: "10.200.0.0/16",
+							V6InternalSubnet: "fd99::/64",
+							IPv4: &operatorv1.IPv4OVNKubernetesConfig{
+								InternalJoinSubnet: "192.168.1.0/24",
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name:                "When v4InternalSubnet is specified with non-OVN network type, it should be ignored",
+			inputNetwork:        NetworkOperator(),
+			inputNetworkType:    hyperv1.OpenShiftSDN,
+			inputPlatformType:   hyperv1.AWSPlatform,
+			disableMultiNetwork: false,
+			ovnConfig: &hyperv1.OVNKubernetesConfig{
+				V4InternalSubnet: "10.200.0.0/16",
+			},
+			expectedNetwork: &operatorv1.Network{
+				ObjectMeta: NetworkOperator().ObjectMeta,
+				Spec: operatorv1.NetworkSpec{
+					OperatorSpec: operatorv1.OperatorSpec{
+						ManagementState: "Managed",
+					},
+				},
+			},
+		},
+		{
+			name:                "When v6InternalSubnet is specified with non-OVN network type, it should be ignored",
+			inputNetwork:        NetworkOperator(),
+			inputNetworkType:    hyperv1.OpenShiftSDN,
+			inputPlatformType:   hyperv1.AWSPlatform,
+			disableMultiNetwork: false,
+			ovnConfig: &hyperv1.OVNKubernetesConfig{
+				V6InternalSubnet: "fd99::/64",
+			},
+			expectedNetwork: &operatorv1.Network{
+				ObjectMeta: NetworkOperator().ObjectMeta,
+				Spec: operatorv1.NetworkSpec{
+					OperatorSpec: operatorv1.OperatorSpec{
+						ManagementState: "Managed",
+					},
+				},
+			},
+		},
 	}
 
 	for _, tc := range testsCases {

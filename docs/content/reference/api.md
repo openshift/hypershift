@@ -14557,6 +14557,63 @@ The minimum is 576, which is the minimum IPv4 MTU per RFC 791.
 This field is immutable once set.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>v4InternalSubnet</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>v4InternalSubnet configures the IPv4 subnet used by OVN-Kubernetes for gateway
+router logical router port (LRP) addresses and masquerade/SNAT traffic within
+the OVN logical topology. It must not overlap with any other subnet being used
+by OpenShift or by the node network. The size of the subnet must be larger than
+the number of nodes.
+This field is distinct from ipv4.internalJoinSubnet, which configures the subnet
+for the join switch that interconnects per-node gateway routers with the cluster
+router. Both default to 100.64.0.0/16 but control different OVN-Kubernetes
+internal networks and can be configured independently to avoid overlaps with
+existing network infrastructure.
+Once set, the value is immutable and cannot be modified in subsequent updates.
+The default is 100.64.0.0/16.
+The value must be in IPv4 CIDR notation (e.g., 192.168.0.0/16), consisting of
+four decimal octets (0-255) separated by dots, followed by a slash and a prefix
+length. The prefix length must be between 0 and 30 inclusive, and the first
+octet must not be 0.
+The value must be between 9 and 18 characters in length.
+This field is immutable once set.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>v6InternalSubnet</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>v6InternalSubnet configures the IPv6 subnet used by OVN-Kubernetes for gateway
+router logical router port (LRP) addresses and masquerade/SNAT traffic within
+the OVN logical topology. It must not overlap with any other subnet being used
+by OpenShift or by the node network. The size of the subnet must be larger than
+the number of nodes.
+This field is distinct from ipv6.internalJoinSubnet, which configures the subnet
+for the join switch that interconnects per-node gateway routers with the cluster
+router. Both default to fd98::/64 but control different OVN-Kubernetes internal
+networks and can be configured independently to avoid overlaps with existing
+network infrastructure.
+Once set, the value is immutable and cannot be modified in subsequent updates.
+The default is fd98::/64.
+The value must be in IPv6 CIDR notation (e.g., fd98::/64), consisting of an
+IPv6 address followed by a slash and a prefix length. The prefix length must
+be between 0 and 125 inclusive.
+The value must be between 4 and 48 characters in length.
+This field is immutable once set.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###ObjectEncodingFormat { #hypershift.openshift.io/v1beta1.ObjectEncodingFormat }
