@@ -1,6 +1,9 @@
 package azure
 
 import (
+	"context"
+	"fmt"
+	"net/http"
 	"testing"
 	"time"
 
@@ -10,6 +13,9 @@ import (
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/support/config"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 )
 
 func TestDestroyClusterSetsCloudFromHostedCluster(t *testing.T) {
@@ -167,6 +173,77 @@ func TestDestroyClusterSetsGracePeriodFromTopology(t *testing.T) {
 			g.Expect(err).ToNot(HaveOccurred())
 
 			g.Expect(opts.ClusterGracePeriod).To(Equal(test.expectedGracePeriod))
+		})
+	}
+}
+
+func TestIsResourceGroupNotFound(t *testing.T) {
+	tests := map[string]struct {
+		err      error
+		expected bool
+	}{
+		"When err is an azcore.ResponseError with 404 status, it should return true": {
+			err:      &azcore.ResponseError{StatusCode: http.StatusNotFound},
+			expected: true,
+		},
+		"When err is an azcore.ResponseError with a non-404 status, it should return false": {
+			err:      &azcore.ResponseError{StatusCode: http.StatusForbidden},
+			expected: false,
+		},
+		"When err is a generic error, it should return false": {
+			err:      fmt.Errorf("some unrelated failure"),
+			expected: false,
+		},
+		"When err wraps an azcore.ResponseError with 404 status, it should return true": {
+			err:      fmt.Errorf("wrapped: %w", &azcore.ResponseError{StatusCode: http.StatusNotFound}),
+			expected: true,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			g.Expect(isResourceGroupNotFound(test.err)).To(Equal(test.expected))
+		})
+	}
+}
+
+type fakeResourceGroupClient struct {
+	err error
+}
+
+func (f fakeResourceGroupClient) Get(context.Context, string, *armresources.ResourceGroupsClientGetOptions) (armresources.ResourceGroupsClientGetResponse, error) {
+	return armresources.ResourceGroupsClientGetResponse{}, f.err
+}
+
+func TestCheckResourceGroup(t *testing.T) {
+	tests := map[string]struct {
+		err         error
+		expectError bool
+	}{
+		"When the resource group returns 404, it should continue": {
+			err: &azcore.ResponseError{StatusCode: http.StatusNotFound},
+		},
+		"When the resource group returns a wrapped 404, it should continue": {
+			err: fmt.Errorf("wrapped: %w", &azcore.ResponseError{StatusCode: http.StatusNotFound}),
+		},
+		"When the resource group returns a non-404 error, it should return an error": {
+			err:         &azcore.ResponseError{StatusCode: http.StatusForbidden},
+			expectError: true,
+		},
+		"When the resource group lookup succeeds, it should continue": {},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			err := checkResourceGroup(context.Background(), fakeResourceGroupClient{err: test.err}, "test-resource-group", log.Log)
+			if test.expectError {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring("failed to get resource group name, 'test-resource-group'"))
+				return
+			}
+			g.Expect(err).ToNot(HaveOccurred())
 		})
 	}
 }
