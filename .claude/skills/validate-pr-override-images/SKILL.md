@@ -14,7 +14,9 @@ validate-pr-override-images
 ## Description
 Validates that CPO override images in a PR actually contain the claimed fix PRs.
 
-The PR description must include a structured contract:
+The PR description must include a structured validation contract as documented
+in [docs/content/contribute/cpo-overrides.md](../../docs/content/contribute/cpo-overrides.md)
+under "Validating Override Images Contain Claimed PRs". Example:
 ```
 branch: 4.20 wants: https://github.com/openshift/hypershift/pull/8593
 branch: 4.21 wants: https://github.com/openshift/hypershift/pull/8593, https://github.com/openshift/hypershift/pull/8565
