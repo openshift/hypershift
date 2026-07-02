@@ -214,6 +214,7 @@ var (
         "elasticloadbalancing:ModifyTargetGroup",
         "elasticloadbalancing:RegisterTargets",
         "elasticloadbalancing:SetLoadBalancerPoliciesOfListener",
+        "elasticloadbalancing:SetSecurityGroups",
         "iam:CreateServiceLinkedRole",
         "kms:DescribeKey"
       ],
@@ -939,6 +940,7 @@ func (o *CreateIAMOptions) CreateOIDCResources(ctx context.Context, iamClient aw
 		// The permissions are:
 		// - elasticloadbalancing:DescribeTargetGroupAttributes
 		// - elasticloadbalancing:ModifyTargetGroupAttributes
+		// - elasticloadbalancing:SetSecurityGroups
 		//
 		// https://issues.redhat.com/browse/OCPBUGS-65885
 		//
@@ -949,7 +951,8 @@ func (o *CreateIAMOptions) CreateOIDCResources(ctx context.Context, iamClient aw
 				"Effect": "Allow",
 				"Action": [
 					"elasticloadbalancing:DescribeTargetGroupAttributes",
-					"elasticloadbalancing:ModifyTargetGroupAttributes"
+					"elasticloadbalancing:ModifyTargetGroupAttributes",
+					"elasticloadbalancing:SetSecurityGroups"
 				],
 				"Resource": "*"
 			}`

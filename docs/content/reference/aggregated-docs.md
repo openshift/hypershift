@@ -57415,6 +57415,7 @@ And these are samples for each one of the roles Hypershift uses:
                     "elasticloadbalancing:ModifyTargetGroupAttributes",
                     "elasticloadbalancing:RegisterTargets",
                     "elasticloadbalancing:SetLoadBalancerPoliciesOfListener",
+                    "elasticloadbalancing:SetSecurityGroups",
                     "iam:CreateServiceLinkedRole",
                     "kms:DescribeKey"
                 ],

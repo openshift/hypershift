@@ -309,6 +309,7 @@ func adjustAPIs(delegates aws.ServicesByDelegate) aws.ServicesByDelegate {
 			"ModifyListener",
 			"ModifyTargetGroup",
 			"ModifyTargetGroupAttributes",
+			"SetSecurityGroups",
 		),
 		"elasticloadbalancingv2": sets.New(
 			"ApplySecurityGroupsToLoadBalancer",
