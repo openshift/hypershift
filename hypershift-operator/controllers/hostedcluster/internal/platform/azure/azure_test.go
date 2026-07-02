@@ -533,18 +533,6 @@ func TestReconcileKMSConfigSecret(t *testing.T) {
 func TestDeleteOrphanedMachines(t *testing.T) {
 	controlPlaneNamespace := "test-cp-namespace"
 
-	managedIdentitiesHC := &hyperv1.HostedCluster{
-		Spec: hyperv1.HostedClusterSpec{
-			Platform: hyperv1.PlatformSpec{
-				Azure: &hyperv1.AzurePlatformSpec{
-					AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
-						ManagedIdentities: &hyperv1.AzureResourceManagedIdentities{},
-					},
-				},
-			},
-		},
-	}
-
 	// staleDeletionTimestamp simulates a machine that has been pending deletion beyond the threshold.
 	staleDeletionTimestamp := metav1.NewTime(time.Now().Add(-(deletionFailedThreshold + time.Minute)))
 	recentDeletionTimestamp := metav1.NewTime(time.Now())
@@ -559,48 +547,18 @@ func TestDeleteOrphanedMachines(t *testing.T) {
 
 	testCases := []struct {
 		name                      string
-		hostedCluster             *hyperv1.HostedCluster
 		azureMachines             []capiazure.AzureMachine
 		expectedFinalizersRemoved bool
 		expectedError             bool
 	}{
 		{
-			name: "when ManagedIdentities is nil it should return early without modifying machines",
-			hostedCluster: &hyperv1.HostedCluster{
-				Spec: hyperv1.HostedClusterSpec{
-					Platform: hyperv1.PlatformSpec{
-						Azure: &hyperv1.AzurePlatformSpec{
-							AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{},
-						},
-					},
-				},
-			},
-			azureMachines: []capiazure.AzureMachine{
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:              "machine-1",
-						Namespace:         controlPlaneNamespace,
-						Finalizers:        []string{capiazure.MachineFinalizer},
-						DeletionTimestamp: &staleDeletionTimestamp,
-					},
-					Status: capiazure.AzureMachineStatus{
-						Conditions: deletionFailedConditions,
-					},
-				},
-			},
-			expectedFinalizersRemoved: false,
-			expectedError:             false,
-		},
-		{
 			name:                      "when there are no machines it should succeed",
-			hostedCluster:             managedIdentitiesHC,
 			azureMachines:             []capiazure.AzureMachine{},
 			expectedFinalizersRemoved: false,
 			expectedError:             false,
 		},
 		{
-			name:          "when a machine has a stale DeletionTimestamp with DeletionFailed condition it should remove finalizers",
-			hostedCluster: managedIdentitiesHC,
+			name: "when a machine has a stale DeletionTimestamp with DeletionFailed condition it should remove finalizers",
 			azureMachines: []capiazure.AzureMachine{
 				{
 					ObjectMeta: metav1.ObjectMeta{
@@ -618,8 +576,7 @@ func TestDeleteOrphanedMachines(t *testing.T) {
 			expectedError:             false,
 		},
 		{
-			name:          "when a machine has a recent DeletionTimestamp with DeletionFailed condition it should not remove finalizers",
-			hostedCluster: managedIdentitiesHC,
+			name: "when a machine has a recent DeletionTimestamp with DeletionFailed condition it should not remove finalizers",
 			azureMachines: []capiazure.AzureMachine{
 				{
 					ObjectMeta: metav1.ObjectMeta{
@@ -637,8 +594,7 @@ func TestDeleteOrphanedMachines(t *testing.T) {
 			expectedError:             false,
 		},
 		{
-			name:          "when a machine has a stale DeletionTimestamp without DeletionFailed condition it should not remove finalizers",
-			hostedCluster: managedIdentitiesHC,
+			name: "when a machine has a stale DeletionTimestamp without DeletionFailed condition it should not remove finalizers",
 			azureMachines: []capiazure.AzureMachine{
 				{
 					ObjectMeta: metav1.ObjectMeta{
@@ -661,8 +617,7 @@ func TestDeleteOrphanedMachines(t *testing.T) {
 			expectedError:             false,
 		},
 		{
-			name:          "when a machine is not pending deletion it should not remove finalizers regardless of conditions",
-			hostedCluster: managedIdentitiesHC,
+			name: "when a machine is not pending deletion it should not remove finalizers regardless of conditions",
 			azureMachines: []capiazure.AzureMachine{
 				{
 					ObjectMeta: metav1.ObjectMeta{
@@ -698,8 +653,9 @@ func TestDeleteOrphanedMachines(t *testing.T) {
 				Build()
 
 			azure := Azure{}
+			hc := &hyperv1.HostedCluster{}
 
-			err := azure.DeleteOrphanedMachines(ctx, fakeClient, tc.hostedCluster, controlPlaneNamespace)
+			err := azure.DeleteOrphanedMachines(ctx, fakeClient, hc, controlPlaneNamespace)
 
 			if tc.expectedError {
 				g.Expect(err).To(HaveOccurred())
@@ -721,6 +677,71 @@ func TestDeleteOrphanedMachines(t *testing.T) {
 					g.Expect(machine.Finalizers).To(Equal(tc.azureMachines[0].Finalizers), "finalizers should not be modified")
 				}
 			}
+		})
+	}
+}
+
+func TestHasDeletionFailedCondition(t *testing.T) {
+	testCases := []struct {
+		name     string
+		machine  capiazure.AzureMachine
+		expected bool
+	}{
+		{
+			name: "Ready=False with DeletionFailed reason — true",
+			machine: capiazure.AzureMachine{
+				Status: capiazure.AzureMachineStatus{
+					Conditions: capiv1.Conditions{
+						{
+							Type:   capiv1.ReadyCondition,
+							Status: corev1.ConditionFalse,
+							Reason: capiazure.DeletionFailedReason,
+						},
+					},
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "Ready=True — false",
+			machine: capiazure.AzureMachine{
+				Status: capiazure.AzureMachineStatus{
+					Conditions: capiv1.Conditions{
+						{
+							Type:   capiv1.ReadyCondition,
+							Status: corev1.ConditionTrue,
+						},
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "Ready=False with different reason — false",
+			machine: capiazure.AzureMachine{
+				Status: capiazure.AzureMachineStatus{
+					Conditions: capiv1.Conditions{
+						{
+							Type:   capiv1.ReadyCondition,
+							Status: corev1.ConditionFalse,
+							Reason: "SomeOtherReason",
+						},
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name:     "No conditions — false",
+			machine:  capiazure.AzureMachine{},
+			expected: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			g.Expect(hasDeletionFailedCondition(&tc.machine)).To(Equal(tc.expected))
 		})
 	}
 }

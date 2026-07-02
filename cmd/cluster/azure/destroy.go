@@ -2,7 +2,9 @@ package azure
 
 import (
 	"context"
+	stderrors "errors"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -140,7 +142,12 @@ func DestroyCluster(ctx context.Context, o *core.DestroyOptions) error {
 		}
 
 		if _, err = resourceGroupClient.Get(ctx, o.AzurePlatform.ResourceGroupName, nil); err != nil {
-			return fmt.Errorf("failed to get resource group name, '%s': %w", o.AzurePlatform.ResourceGroupName, err)
+			var respErr *azcore.ResponseError
+			if stderrors.As(err, &respErr) && respErr.StatusCode == http.StatusNotFound {
+				o.Log.Info("Resource group not found, continuing with cluster deletion", "resourceGroup", o.AzurePlatform.ResourceGroupName)
+			} else {
+				return fmt.Errorf("failed to get resource group name, '%s': %w", o.AzurePlatform.ResourceGroupName, err)
+			}
 		}
 	} else {
 		o.AzurePlatform.ResourceGroupName = o.Name + "-" + o.InfraID
