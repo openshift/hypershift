@@ -155,6 +155,11 @@ func createCluster(ctx context.Context, hc *hyperv1.HostedCluster, opts *Platfor
 			return fmt.Errorf("failed to create infra: %w", err)
 		}
 
+		// Role assignments were applied during infra creation above;
+		// clear the flags so the render pass doesn't reject them alongside InfrastructureJSON
+		opts.AzurePlatform.AssignServicePrincipalRoles = false
+		opts.AzurePlatform.AssignCustomHCPRoles = false
+
 		opts.InfrastructureJSON = infraFile
 		return renderCreate(ctx, &opts.RawCreateOptions, &opts.AzurePlatform, manifestsFile, renderLogFile, createLogFile)
 	case hyperv1.PowerVSPlatform:

@@ -65,7 +65,7 @@ func TestValidateEndpointAccess(t *testing.T) {
 			opts.EndpointAccessPrivateNATSubnetID = test.endpointAccessPrivateNATSubnetID
 			opts.EndpointAccessPrivateAdditionalAllowedSubscriptions = test.endpointAccessPrivateAdditionalAllowedSubscriptions
 
-			_, err := opts.Validate(context.Background(), &core.CreateOptions{})
+			_, err := opts.Validate(context.Background(), nil)
 			if test.expectError {
 				if err == nil {
 					t.Fatalf("expected error but got nil")
@@ -82,12 +82,72 @@ func TestValidateEndpointAccess(t *testing.T) {
 	}
 }
 
-func TestCreateCluster(t *testing.T) {
+func TestDNSZoneRGValidation(t *testing.T) {
 	utilrand.Seed(1234567890)
 	certs.UnsafeSeed(1234567890)
 	ctx := framework.InterruptableContext(t.Context())
-	tempDir := t.TempDir()
 	t.Setenv("FAKE_CLIENT", "true")
+
+	credentialsFile, _, pullSecretFile := setupAzureTestFixtures(t)
+	tempDir := t.TempDir()
+
+	tests := map[string]struct {
+		extraArgs   []string
+		expectError bool
+		errContains string
+	}{
+		"When assign-service-principal-roles is set without dns-zone-rg-name it should return an error": {
+			extraArgs: []string{
+				"--assign-service-principal-roles",
+			},
+			expectError: true,
+			errContains: "--dns-zone-rg-name is required when --assign-service-principal-roles or --assign-custom-hcp-roles is set",
+		},
+		"When assign-custom-hcp-roles is set without dns-zone-rg-name it should return an error": {
+			extraArgs: []string{
+				"--assign-custom-hcp-roles",
+			},
+			expectError: true,
+			errContains: "--dns-zone-rg-name is required when --assign-service-principal-roles or --assign-custom-hcp-roles is set",
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			flags := pflag.NewFlagSet("test", pflag.ContinueOnError)
+			coreOpts := core.DefaultOptions()
+			core.BindDeveloperOptions(coreOpts, flags)
+			azureOpts := DefaultOptions()
+			azurenodepool.BindOptions(azureOpts.NodePoolOpts, flags)
+			BindDeveloperOptions(azureOpts, flags)
+
+			args := []string{
+				"--azure-creds=" + credentialsFile,
+				"--name=test-dns-zone",
+				"--pull-secret=" + pullSecretFile,
+				"--managed-identities-file", filepath.Join(tempDir, "managedIdentities.json"),
+				"--data-plane-identities-file", filepath.Join(tempDir, "dataPlaneIdentities.json"),
+			}
+			args = append(args, tc.extraArgs...)
+
+			err := flags.Parse(args)
+			g.Expect(err).NotTo(HaveOccurred())
+
+			coreOpts.Render = true
+			coreOpts.RenderInto = filepath.Join(t.TempDir(), "manifests.yaml")
+
+			err = core.CreateCluster(ctx, coreOpts, azureOpts)
+			g.Expect(err).To(HaveOccurred())
+			g.Expect(err.Error()).To(ContainSubstring(tc.errContains))
+		})
+	}
+}
+
+func setupAzureTestFixtures(t *testing.T) (credentialsFile, infraFile, pullSecretFile string) {
+	t.Helper()
+	tempDir := t.TempDir()
 
 	rawCreds, err := yaml.Marshal(&util.AzureCreds{
 		SubscriptionID: "fakeSubscriptionID",
@@ -98,7 +158,7 @@ func TestCreateCluster(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to marshal creds: %v", err)
 	}
-	credentialsFile := filepath.Join(tempDir, "credentials.yaml")
+	credentialsFile = filepath.Join(tempDir, "credentials.yaml")
 	if err := os.WriteFile(credentialsFile, rawCreds, 0600); err != nil {
 		t.Fatalf("failed to write creds: %v", err)
 	}
@@ -119,16 +179,100 @@ func TestCreateCluster(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to marshal infra: %v", err)
 	}
-	infraFile := filepath.Join(tempDir, "infra.json")
+	infraFile = filepath.Join(tempDir, "infra.json")
 	if err := os.WriteFile(infraFile, rawInfra, 0600); err != nil {
 		t.Fatalf("failed to write infra: %v", err)
 	}
 
-	pullSecretFile := filepath.Join(tempDir, "pull-secret.json")
-
+	pullSecretFile = filepath.Join(tempDir, "pull-secret.json")
 	if err := os.WriteFile(pullSecretFile, []byte(`fake`), 0600); err != nil {
 		t.Fatalf("failed to write pullSecret: %v", err)
 	}
+
+	return credentialsFile, infraFile, pullSecretFile
+}
+
+func TestRoleAssignmentWithInfraJSON(t *testing.T) {
+	utilrand.Seed(1234567890)
+	certs.UnsafeSeed(1234567890)
+	ctx := framework.InterruptableContext(t.Context())
+	t.Setenv("FAKE_CLIENT", "true")
+
+	credentialsFile, infraFile, pullSecretFile := setupAzureTestFixtures(t)
+	tempDir := t.TempDir()
+
+	tests := map[string]struct {
+		extraArgs   []string
+		expectError bool
+		errContains string
+	}{
+		"When assign-custom-hcp-roles is set with infra-json it should return an error": {
+			extraArgs: []string{
+				"--assign-custom-hcp-roles",
+			},
+			expectError: true,
+			errContains: "role assignment flags cannot be used with --infra-json",
+		},
+		"When assign-service-principal-roles is set with infra-json it should return an error": {
+			extraArgs: []string{
+				"--assign-service-principal-roles",
+				"--dns-zone-rg-name=my-dns-rg",
+			},
+			expectError: true,
+			errContains: "role assignment flags cannot be used with --infra-json",
+		},
+		"When role assignment flags are not set with infra-json it should succeed": {
+			extraArgs:   nil,
+			expectError: false,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			flags := pflag.NewFlagSet("test", pflag.ContinueOnError)
+			coreOpts := core.DefaultOptions()
+			core.BindDeveloperOptions(coreOpts, flags)
+			azureOpts := DefaultOptions()
+			azurenodepool.BindOptions(azureOpts.NodePoolOpts, flags)
+			BindDeveloperOptions(azureOpts, flags)
+
+			args := []string{
+				"--azure-creds=" + credentialsFile,
+				"--infra-json=" + infraFile,
+				"--name=test-role-assignment",
+				"--pull-secret=" + pullSecretFile,
+				"--managed-identities-file", filepath.Join(tempDir, "managedIdentities.json"),
+				"--data-plane-identities-file", filepath.Join(tempDir, "dataPlaneIdentities.json"),
+			}
+			args = append(args, tc.extraArgs...)
+
+			err := flags.Parse(args)
+			g.Expect(err).NotTo(HaveOccurred())
+
+			coreOpts.Render = true
+			coreOpts.RenderInto = filepath.Join(t.TempDir(), "manifests.yaml")
+
+			err = core.CreateCluster(ctx, coreOpts, azureOpts)
+			if tc.expectError {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring(tc.errContains))
+			} else {
+				g.Expect(err).NotTo(HaveOccurred())
+			}
+		})
+	}
+}
+
+func TestCreateCluster(t *testing.T) {
+	utilrand.Seed(1234567890)
+	certs.UnsafeSeed(1234567890)
+	ctx := framework.InterruptableContext(t.Context())
+	t.Setenv("FAKE_CLIENT", "true")
+
+	credentialsFile, infraFile, pullSecretFile := setupAzureTestFixtures(t)
+	tempDir := t.TempDir()
 
 	for _, testCase := range []struct {
 		name string
@@ -375,7 +519,7 @@ func TestValidateOAuthPublishingStrategy(t *testing.T) {
 			opts.ManagedIdentitiesFile = test.managedIdentitiesFile
 			opts.DataPlaneIdentitiesFile = test.dataPlaneIdentitiesFile
 
-			_, err := opts.Validate(context.Background(), &core.CreateOptions{})
+			_, err := opts.Validate(context.Background(), nil)
 			if test.expectError {
 				g.Expect(err).To(HaveOccurred())
 				g.Expect(err).To(MatchError(test.expectedErrorMsg))
