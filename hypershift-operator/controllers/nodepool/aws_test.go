@@ -298,6 +298,7 @@ func TestAWSMachineTemplateSpec(t *testing.T) {
 				},
 				true,
 				releaseImage,
+				"",
 			)
 			if tc.checkError != nil {
 				tc.checkError(t, err)
@@ -1090,19 +1091,7 @@ func TestSetAWSConditions(t *testing.T) {
 		ImageStream: &v1.ImageStream{
 			ObjectMeta: metav1.ObjectMeta{Name: "4.17.0"},
 		},
-		StreamMetadata: &stream.Stream{
-			Architectures: map[string]stream.Arch{
-				"x86_64": {
-					Images: stream.Images{
-						Aws: &stream.AwsImage{
-							Regions: map[string]stream.SingleImage{
-								"us-east-1": {Release: "4.17.0", Image: "ami-linux-us-east-1"},
-							},
-						},
-					},
-				},
-			},
-		},
+		StreamMetadata: testAWSStreamWithRelease("x86_64", "us-east-1", "ami-linux-us-east-1", "4.17.0"),
 	}
 
 	testCases := []struct {
@@ -1171,6 +1160,28 @@ func TestSetAWSConditions(t *testing.T) {
 				},
 			},
 			releaseImage:      releaseImageWithStreams,
+			expectError:       true,
+			expectedCondType:  string(hyperv1.NodePoolValidPlatformImageType),
+			expectedCondValue: corev1.ConditionFalse,
+		},
+		{
+			name: "When osImageStream is invalid for the release version it should set ValidPlatformImage to false",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Arch:          hyperv1.ArchitectureAMD64,
+					Platform:      hyperv1.NodePoolPlatform{Type: hyperv1.AWSPlatform, AWS: &hyperv1.AWSNodePoolPlatform{}},
+					OSImageStream: hyperv1.OSImageStreamReference{Name: "rhel-10"},
+				},
+			},
+			hostedCluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{AWS: &hyperv1.AWSPlatformSpec{Region: "us-east-1"}},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Platform: &hyperv1.PlatformStatus{AWS: &hyperv1.AWSPlatformStatus{DefaultWorkerSecurityGroupID: "sg-123"}},
+				},
+			},
+			releaseImage:      releaseImageWithStreams, // 4.17.0 — rhel-10 is not valid
 			expectError:       true,
 			expectedCondType:  string(hyperv1.NodePoolValidPlatformImageType),
 			expectedCondValue: corev1.ConditionFalse,
@@ -1250,6 +1261,7 @@ func TestResolveAWSAMI(t *testing.T) {
 		hostedCluster *hyperv1.HostedCluster
 		nodePool      *hyperv1.NodePool
 		releaseImage  *releaseinfo.ReleaseImage
+		rhelStream    string
 		expectedAMI   string
 		expectError   bool
 	}{
@@ -1335,12 +1347,100 @@ func TestResolveAWSAMI(t *testing.T) {
 			},
 			expectError: true,
 		},
+		{
+			name: "When rhelStream is rhel-9 with single-stream payload (OSStreams nil), it should fall back to StreamMetadata",
+			hostedCluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{AWS: &hyperv1.AWSPlatformSpec{Region: "us-east-1"}},
+				},
+			},
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Arch:     hyperv1.ArchitectureAMD64,
+					Platform: hyperv1.NodePoolPlatform{AWS: &hyperv1.AWSNodePoolPlatform{}},
+				},
+			},
+			rhelStream: "rhel-9",
+			releaseImage: &releaseinfo.ReleaseImage{
+				ImageStream:    &v1.ImageStream{ObjectMeta: metav1.ObjectMeta{Name: "4.17.0"}},
+				StreamMetadata: testAWSStreamWithRelease("x86_64", "us-east-1", "ami-fallback-stream-metadata", "4.17.0"),
+				OSStreams:      nil,
+			},
+			expectedAMI: "ami-fallback-stream-metadata",
+		},
+		{
+			name: "When rhelStream is rhel-9 with multi-stream payload, it should use OSStreams rhel-9",
+			hostedCluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{AWS: &hyperv1.AWSPlatformSpec{Region: "us-east-1"}},
+				},
+			},
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Arch:     hyperv1.ArchitectureAMD64,
+					Platform: hyperv1.NodePoolPlatform{AWS: &hyperv1.AWSNodePoolPlatform{}},
+				},
+			},
+			rhelStream: "rhel-9",
+			releaseImage: &releaseinfo.ReleaseImage{
+				ImageStream:    &v1.ImageStream{ObjectMeta: metav1.ObjectMeta{Name: "5.0.0"}},
+				StreamMetadata: testAWSStreamWithRelease("x86_64", "us-east-1", "ami-default-stream", "5.0.0"),
+				OSStreams: map[string]*stream.Stream{
+					"rhel-9": testAWSStreamWithRelease("x86_64", "us-east-1", "ami-rhel9-osstreams", "5.0.0"),
+				},
+			},
+			expectedAMI: "ami-rhel9-osstreams",
+		},
+		{
+			name: "When rhelStream is rhel-10 with multi-stream payload, it should use OSStreams rhel-10",
+			hostedCluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{AWS: &hyperv1.AWSPlatformSpec{Region: "us-east-1"}},
+				},
+			},
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Arch:     hyperv1.ArchitectureAMD64,
+					Platform: hyperv1.NodePoolPlatform{AWS: &hyperv1.AWSNodePoolPlatform{}},
+				},
+			},
+			rhelStream: "rhel-10",
+			releaseImage: &releaseinfo.ReleaseImage{
+				ImageStream:    &v1.ImageStream{ObjectMeta: metav1.ObjectMeta{Name: "5.0.0"}},
+				StreamMetadata: testAWSStreamWithRelease("x86_64", "us-east-1", "ami-default-stream", "5.0.0"),
+				OSStreams: map[string]*stream.Stream{
+					"rhel-10": testAWSStreamWithRelease("x86_64", "us-east-1", "ami-rhel10-osstreams", "5.0.0"),
+				},
+			},
+			expectedAMI: "ami-rhel10-osstreams",
+		},
+		{
+			name: "When rhelStream is rhel-10 with single-stream payload (OSStreams nil), it should fall back to StreamMetadata",
+			hostedCluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{AWS: &hyperv1.AWSPlatformSpec{Region: "us-east-1"}},
+				},
+			},
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Arch:     hyperv1.ArchitectureAMD64,
+					Platform: hyperv1.NodePoolPlatform{AWS: &hyperv1.AWSNodePoolPlatform{}},
+				},
+			},
+			rhelStream: "rhel-10",
+			releaseImage: &releaseinfo.ReleaseImage{
+				ImageStream:    &v1.ImageStream{ObjectMeta: metav1.ObjectMeta{Name: "4.18.0"}},
+				StreamMetadata: testAWSStreamWithRelease("x86_64", "us-east-1", "ami-legacy-fallback", "4.18.0"),
+				OSStreams:      nil,
+			},
+			expectedAMI: "ami-legacy-fallback",
+		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
-			ami, err := resolveAWSAMI(tc.hostedCluster, tc.nodePool, tc.releaseImage)
+			ami, err := resolveAWSAMI(tc.hostedCluster, tc.nodePool, tc.releaseImage, tc.rhelStream)
 			if tc.expectError {
 				g.Expect(err).To(HaveOccurred())
 			} else {
@@ -1863,4 +1963,72 @@ func TestApplyAWSPlacementOptions(t *testing.T) {
 			g.Expect(spec.Template.Spec.CapacityReservationPreference).To(Equal(tc.expectedCapReservationPreference))
 		})
 	}
+}
+
+// TestAWSMachineTemplateSpec_StreamSelection verifies that on a multi-stream
+// OCP 5.0+ payload, passing different rhelStream values to awsMachineTemplateSpec
+// selects different AMIs and produces different machine template name hashes,
+// confirming that a stream switch triggers a CAPI node rollout.
+func TestAWSMachineTemplateSpec_StreamSelection(t *testing.T) {
+	g := NewWithT(t)
+
+	const (
+		legacyAMI = "ami-legacy-rhel9"
+		rhel10AMI = "ami-rhel10-new"
+		region    = "us-east-1"
+	)
+
+	releaseImage := &releaseinfo.ReleaseImage{
+		ImageStream:    &v1.ImageStream{ObjectMeta: metav1.ObjectMeta{Name: "5.0.0"}},
+		StreamMetadata: testAWSStreamWithRelease("x86_64", region, legacyAMI, "5.0.0"),
+		OSStreams: map[string]*stream.Stream{
+			"rhel-9":  testAWSStreamWithRelease("x86_64", region, legacyAMI, "5.0.0"),
+			"rhel-10": testAWSStreamWithRelease("x86_64", region, rhel10AMI, "5.0.0"),
+		},
+	}
+
+	hostedCluster := &hyperv1.HostedCluster{
+		Spec: hyperv1.HostedClusterSpec{
+			Platform: hyperv1.PlatformSpec{
+				AWS: &hyperv1.AWSPlatformSpec{Region: region},
+			},
+		},
+		Status: hyperv1.HostedClusterStatus{
+			Platform: &hyperv1.PlatformStatus{
+				AWS: &hyperv1.AWSPlatformStatus{DefaultWorkerSecurityGroupID: "sg-default"},
+			},
+		},
+	}
+
+	nodePool := &hyperv1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-nodepool"},
+		Spec: hyperv1.NodePoolSpec{
+			Arch: hyperv1.ArchitectureAMD64,
+			Platform: hyperv1.NodePoolPlatform{
+				Type: hyperv1.AWSPlatform,
+				AWS:  &hyperv1.AWSNodePoolPlatform{},
+			},
+		},
+	}
+
+	// Legacy path (empty stream) should select the RHEL-9 AMI from StreamMetadata.
+	legacySpec, err := awsMachineTemplateSpec(infraName, hostedCluster, nodePool, true, releaseImage, "")
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(*legacySpec.Template.Spec.AMI.ID).To(Equal(legacyAMI))
+
+	// Concrete "rhel-10" stream should select the RHEL-10 AMI from OSStreams.
+	rhel10Spec, err := awsMachineTemplateSpec(infraName, hostedCluster, nodePool, true, releaseImage, "rhel-10")
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(*rhel10Spec.Template.Spec.AMI.ID).To(Equal(rhel10AMI))
+
+	// Different AMIs should produce different machine template name hashes,
+	// causing CAPI to create a new infrastructure ref and trigger node replacement.
+	legacyJSON, err := json.Marshal(legacySpec)
+	g.Expect(err).ToNot(HaveOccurred())
+	rhel10JSON, err := json.Marshal(rhel10Spec)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	g.Expect(generateMachineTemplateName(nodePool, legacyJSON)).
+		ToNot(Equal(generateMachineTemplateName(nodePool, rhel10JSON)),
+			"different streams should produce different machine template names")
 }

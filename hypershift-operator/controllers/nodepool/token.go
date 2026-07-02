@@ -45,6 +45,7 @@ const (
 	TokenSecretAnnotation                = "hypershift.openshift.io/ignition-config"
 	TokenSecretIgnitionReachedAnnotation = "hypershift.openshift.io/ignition-reached"
 	TokenSecretNodePoolUpgradeType       = "hypershift.openshift.io/node-pool-upgrade-type"
+	TokenSecretOSStreamKey               = "os-stream"
 )
 
 // Token knows how to create an UUUID token for a unique configGenerator Hash.
@@ -354,6 +355,9 @@ func (t *Token) reconcileTokenSecret(tokenSecret *corev1.Secret) error {
 		tokenSecret.Data[TokenSecretPullSecretHashKey] = t.pullSecretHash
 		tokenSecret.Data[TokenSecretAdditionalTrustBundleKey] = t.additionalTrustBundleHash
 		tokenSecret.Data[TokenSecretHCConfigurationHashKey] = t.globalConfigHash
+		// TODO(CNTRLPLANE-3553): consumed by the ignition-server's TokenSecretReconciler once
+		// multi-stream ignition support lands. Until then this key is written but not read downstream.
+		tokenSecret.Data[TokenSecretOSStreamKey] = []byte(t.resolvedRHELStreamForBootImage)
 	}
 	// TODO (alberto): Only apply this on creation and change the hash generation to only use triggering upgrade fields.
 	// We let this change to happen inplace now as the tokenSecret and the mcs config use the whole spec.Config for the comparing hash.
@@ -381,7 +385,7 @@ func (t *Token) reconcileUserDataSecret(log logr.Logger, userDataSecret *corev1.
 	if karpenterutil.IsKarpenterEnabled(t.hostedCluster.Spec.AutoNode) {
 		npLabels := t.nodePool.GetLabels()
 		if npLabels != nil && npLabels[karpenterutil.ManagedByKarpenterLabel] == "true" {
-			err := setKarpenterAMILabels(log, userDataSecret, t.hostedCluster.Spec.Platform.AWS.Region, t.releaseImage, t.hostedCluster.Spec.Platform.Type)
+			err := setKarpenterAMILabels(log, userDataSecret, t.hostedCluster.Spec.Platform.AWS.Region, t.releaseImage, t.hostedCluster.Spec.Platform.Type, t.resolvedRHELStreamForBootImage)
 			if err != nil {
 				return err
 			}
@@ -403,15 +407,14 @@ func (t *Token) reconcileUserDataSecret(log logr.Logger, userDataSecret *corev1.
 	return nil
 }
 
-func setKarpenterAMILabels(log logr.Logger, userDataSecret *corev1.Secret, region string, releaseImage *releaseinfo.ReleaseImage, platform hyperv1.PlatformType) error {
-	// TODO(CNTRLPLANE-3553): resolve streamName via GetRHELStream once osImageStream API field is available
+func setKarpenterAMILabels(log logr.Logger, userDataSecret *corev1.Secret, region string, releaseImage *releaseinfo.ReleaseImage, platform hyperv1.PlatformType, rhelStream string) error {
 	supportedArchitectures, err := karpenterutil.SupportedArchitectures(platform)
 	if err != nil {
 		return fmt.Errorf("failed to get supported architectures: %w", err)
 	}
 	supported := 0
 	for _, arch := range supportedArchitectures {
-		ami, err := defaultNodePoolAMI(region, arch, "", releaseImage)
+		ami, err := defaultNodePoolAMI(region, arch, rhelStream, releaseImage)
 		if err != nil {
 			// skip unavailable architectures gracefully
 			log.Error(err, "failed to get default NodePool AMI for architecture", "architecture", arch)
