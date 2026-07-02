@@ -1497,6 +1497,18 @@ func (r *reconciler) reconcileIngressController(ctx context.Context, hcp *hyperv
 		}); err != nil {
 			errs = append(errs, fmt.Errorf("failed to reconcile kubevirt ingress passthrough route: %w", err))
 		}
+
+		// Manifests for infra/mgmt cluster plain HTTP passthrough route (enables insecure routes)
+		cpHTTPRoute := manifests.IngressDefaultIngressPassthroughHTTPRoute(namespace)
+		cpHTTPRoute.Name = fmt.Sprintf("%s-%s",
+			manifests.IngressDefaultIngressPassthroughHTTPRouteName,
+			hcp.Spec.Platform.Kubevirt.GenerateID)
+
+		if _, err := r.CreateOrUpdate(ctx, r.kubevirtInfraClient, cpHTTPRoute, func() error {
+			return ingress.ReconcileDefaultIngressPassthroughHTTPRoute(cpHTTPRoute, cpService, hcp)
+		}); err != nil {
+			errs = append(errs, fmt.Errorf("failed to reconcile kubevirt ingress passthrough HTTP route: %w", err))
+		}
 	}
 
 	return utilerrors.NewAggregate(errs)
@@ -3261,6 +3273,15 @@ func (r *reconciler) ensureIngressControllersRemoved(ctx context.Context, hcp *h
 			err = r.kubevirtInfraClient.Delete(ctx, cpPassthroughRoute)
 			if err != nil && !apierrors.IsNotFound(err) {
 				errs = append(errs, fmt.Errorf("failed to delete %s: %w", client.ObjectKeyFromObject(cpPassthroughRoute).String(), err))
+			}
+
+			cpHTTPRoute := manifests.IngressDefaultIngressPassthroughHTTPRoute(namespace)
+			cpHTTPRoute.Name = fmt.Sprintf("%s-%s",
+				manifests.IngressDefaultIngressPassthroughHTTPRouteName,
+				hcp.Spec.Platform.Kubevirt.GenerateID)
+			err = r.kubevirtInfraClient.Delete(ctx, cpHTTPRoute)
+			if err != nil && !apierrors.IsNotFound(err) {
+				errs = append(errs, fmt.Errorf("failed to delete %s: %w", client.ObjectKeyFromObject(cpHTTPRoute).String(), err))
 			}
 		}
 	}

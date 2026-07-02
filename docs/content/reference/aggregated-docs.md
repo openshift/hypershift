@@ -25773,10 +25773,21 @@ be `*.apps.guest.apps.mgmt-cluster.example.com`.
 
 !!! note
 
-    When using the default guest cluster ingress, connectivity is limited to HTTPS
-    traffic over port 443. Plain HTTP traffic over port 80 will be rejected. This
-    limitation only applies to the default ingress behavior and not the custom ingress
-    behavior where manual creation of an ingress LoadBalancer and DNS is performed.
+    The default guest cluster ingress supports both HTTPS traffic over port 443
+    and plain HTTP traffic over port 80. A wildcard HTTP route is automatically
+    created on the infra cluster alongside the HTTPS passthrough route, enabling
+    insecure (non-TLS) routes created in the guest cluster to be accessible from
+    outside. Edge routes (which redirect HTTP to HTTPS at the guest router) are
+    also supported.
+
+!!! warning
+
+    Enabling `baseDomainPassthrough` makes **plain HTTP (insecure) guest cluster
+    routes externally reachable**. Prior to this feature, only HTTPS routes were
+    accessible; plain HTTP routes returned "Application Not Found". Cluster
+    administrators who relied on the previous behavior of HTTP being rejected
+    should be aware of this change and apply appropriate network policies or
+    route admission controls if plain HTTP access is not desired.
 
 ## Customized Ingress and DNS Behavior
 
