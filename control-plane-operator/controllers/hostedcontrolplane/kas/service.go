@@ -95,6 +95,11 @@ func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingSt
 			}
 		} else {
 			svc.Spec.Type = corev1.ServiceTypeClusterIP
+			// Enable topology aware routing so that callers (KCM, scheduler, operators, etc.)
+			// are routed to a KAS pod in their own AZ, avoiding cross-AZ data transfer charges.
+			// KAS pods are spread across zones via requiredDuringScheduling anti-affinity,
+			// satisfying the >=1 endpoint per zone precondition for TAR to activate.
+			svc.Annotations["service.kubernetes.io/topology-mode"] = "Auto"
 		}
 	case hyperv1.NodePort:
 		svc.Spec.Type = corev1.ServiceTypeNodePort
@@ -104,6 +109,7 @@ func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingSt
 	case hyperv1.Route:
 		if hcp.Spec.Platform.Type != hyperv1.IBMCloudPlatform || svc.Spec.Type != corev1.ServiceTypeNodePort {
 			svc.Spec.Type = corev1.ServiceTypeClusterIP
+			svc.Annotations["service.kubernetes.io/topology-mode"] = "Auto"
 		}
 	default:
 		return fmt.Errorf("invalid publishing strategy for Kube API server service: %s", strategy.Type)
@@ -140,6 +146,9 @@ func ReconcileServiceClusterIP(svc *corev1.Service, owner *metav1.OwnerReference
 	if svc.Annotations == nil {
 		svc.Annotations = map[string]string{}
 	}
+	// Enable topology aware routing so that callers are routed to a KAS pod in their
+	// own AZ, avoiding cross-AZ data transfer charges.
+	svc.Annotations["service.kubernetes.io/topology-mode"] = "Auto"
 	svc.Spec.Type = corev1.ServiceTypeClusterIP
 	svc.Spec.Ports[0] = portSpec
 	return nil

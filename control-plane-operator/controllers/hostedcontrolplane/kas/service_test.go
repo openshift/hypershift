@@ -125,6 +125,81 @@ func TestReconcileService(t *testing.T) {
 	}
 }
 
+func TestReconcileServiceTopologyAwareRouting(t *testing.T) {
+	const topologyModeAnnotation = "service.kubernetes.io/topology-mode"
+
+	testCases := []struct {
+		name                string
+		hcp                 *hyperv1.HostedControlPlane
+		strategy            hyperv1.ServicePublishingStrategy
+		expectTARAnnotation bool
+	}{
+		{
+			name: "When Route strategy it should set topology-mode annotation on ClusterIP service",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+				},
+			},
+			strategy:            hyperv1.ServicePublishingStrategy{Type: hyperv1.Route},
+			expectTARAnnotation: true,
+		},
+		{
+			name: "When private-only AWS LoadBalancer strategy it should set topology-mode annotation on ClusterIP service",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+						AWS: &hyperv1.AWSPlatformSpec{
+							EndpointAccess: hyperv1.Private,
+						},
+					},
+				},
+			},
+			strategy:            hyperv1.ServicePublishingStrategy{Type: hyperv1.LoadBalancer},
+			expectTARAnnotation: true,
+		},
+		{
+			name: "When public AWS LoadBalancer strategy it should not set topology-mode annotation on LB service",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+						AWS: &hyperv1.AWSPlatformSpec{
+							EndpointAccess: hyperv1.Public,
+						},
+					},
+				},
+			},
+			strategy:            hyperv1.ServicePublishingStrategy{Type: hyperv1.LoadBalancer},
+			expectTARAnnotation: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			svc := &corev1.Service{}
+			err := ReconcileService(svc, &tc.strategy, &v1.OwnerReference{}, 6443, []string{}, tc.hcp)
+			g.Expect(err).To(BeNil())
+			if tc.expectTARAnnotation {
+				g.Expect(svc.Annotations).To(HaveKeyWithValue(topologyModeAnnotation, "Auto"))
+			} else {
+				g.Expect(svc.Annotations).ToNot(HaveKey(topologyModeAnnotation))
+			}
+		})
+	}
+}
+
+func TestReconcileServiceClusterIPTopologyAwareRouting(t *testing.T) {
+	g := NewWithT(t)
+	svc := &corev1.Service{}
+	err := ReconcileServiceClusterIP(svc, &v1.OwnerReference{})
+	g.Expect(err).To(BeNil())
+	g.Expect(svc.Annotations).To(HaveKeyWithValue("service.kubernetes.io/topology-mode", "Auto"))
+	g.Expect(svc.Spec.Type).To(Equal(corev1.ServiceTypeClusterIP))
+}
+
 func TestReconcileServiceAzureInternalLB(t *testing.T) {
 	// The main KAS service (kube-apiserver-azure-lb) should never have the internal LB
 	// annotation. For Azure Private, this service becomes ClusterIP because isPublic=false.
