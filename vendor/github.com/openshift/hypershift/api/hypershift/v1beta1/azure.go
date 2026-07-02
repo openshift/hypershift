@@ -469,6 +469,16 @@ type AzurePlatformSpec struct {
 	// +kubebuilder:validation:MaxLength=255
 	TenantID string `json:"tenantID"`
 
+	// containerRegistry configures how worker nodes authenticate to Azure Container Registry (ACR).
+	// When set, the managed identity is attached to worker virtual machines and its resource ID is
+	// written into the worker cloud provider config so kubelet's ACR credential provider can
+	// authenticate without image pull secrets.
+	// Changing this value will trigger a rollout for all existing NodePools in the cluster.
+	//
+	// +rollout
+	// +optional
+	ContainerRegistry AzureContainerRegistryConfig `json:"containerRegistry,omitzero"`
+
 	// topology specifies the network topology of the API server endpoint for the hosted cluster.
 	// - Public: The API server is accessible only via a public endpoint.
 	// - PublicAndPrivate: The API server is accessible via both public and private endpoints.
@@ -545,6 +555,67 @@ type AzureResourceManagedIdentities struct {
 // +kubebuilder:validation:MaxLength=36
 // +kubebuilder:validation:Pattern=`^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$`
 type AzureClientID string
+
+// AzureManagedIdentityResourceID is an ARM resource ID for a user-assigned managed identity
+// in the format /subscriptions/{sub}/resourceGroups/{rg}/providers/Microsoft.ManagedIdentity/userAssignedIdentities/{name}.
+//
+// +kubebuilder:validation:XValidation:rule="self.lowerAscii().matches('^/subscriptions/[^/]+/resourcegroups/[^/]+/providers/microsoft\\\\.managedidentity/userassignedidentities/[^/]+$')",message="must be a user-assigned managed identity ARM resource ID in the format /subscriptions/{subscriptionID}/resourceGroups/{resourceGroupName}/providers/Microsoft.ManagedIdentity/userAssignedIdentities/{identityName}"
+// +kubebuilder:validation:MinLength=131
+// +kubebuilder:validation:MaxLength=345
+type AzureManagedIdentityResourceID string
+
+// UserAssignedManagedIdentity identifies a user-assigned managed identity by its ARM resource ID.
+type UserAssignedManagedIdentity struct {
+	// resourceID is the ARM resource ID of the user-assigned managed identity
+	// in the format /subscriptions/{subscriptionID}/resourceGroups/{resourceGroupName}/providers/Microsoft.ManagedIdentity/userAssignedIdentities/{identityName}.
+	// The identity must have the AcrPull role on the target Azure Container Registry.
+	// It does not need to be in the same subscription or resource group as the HostedCluster,
+	// but it must be in the same Azure AD tenant.
+	//
+	// +required
+	ResourceID AzureManagedIdentityResourceID `json:"resourceID,omitempty"`
+}
+
+// AzureContainerRegistryConfig configures Azure Container Registry integration for a hosted cluster.
+type AzureContainerRegistryConfig struct {
+	// credentials configures authentication for worker nodes pulling images from ACR
+	// using a user-assigned managed identity.
+	// The identity does not need to be in the same subscription or resource group as the
+	// HostedCluster, but it must be in the same Azure AD tenant. The management cluster's
+	// CAPZ identity must have Microsoft.ManagedIdentity/userAssignedIdentities/*/assign/action
+	// on the identity's scope to attach it to worker virtual machines at creation time.
+	//
+	// +required
+	Credentials AzureContainerRegistryCredentialConfig `json:"credentials,omitzero"`
+}
+
+// AzureContainerRegistryCredentialType identifies the type of credential used for ACR image pulls.
+//
+// +kubebuilder:validation:Enum=ManagedIdentity
+type AzureContainerRegistryCredentialType string
+
+const (
+	// AzureContainerRegistryCredentialManagedIdentity uses a user-assigned managed identity for ACR authentication.
+	AzureContainerRegistryCredentialManagedIdentity AzureContainerRegistryCredentialType = "ManagedIdentity"
+)
+
+// AzureContainerRegistryCredentialConfig configures authentication credentials for Azure Container Registry.
+//
+// +kubebuilder:validation:XValidation:rule="self.type == 'ManagedIdentity' ? has(self.managedIdentity) : !has(self.managedIdentity)",message="managedIdentity is required when type is ManagedIdentity, and forbidden otherwise"
+// +union
+type AzureContainerRegistryCredentialConfig struct {
+	// type specifies the credential type used for ACR image pulls.
+	//
+	// +required
+	// +unionDiscriminator
+	Type AzureContainerRegistryCredentialType `json:"type,omitempty"`
+
+	// managedIdentity identifies the user-assigned managed identity used for ACR image pulls.
+	//
+	// +optional
+	// +unionMember
+	ManagedIdentity UserAssignedManagedIdentity `json:"managedIdentity,omitzero"`
+}
 
 // AzureWorkloadIdentities is a struct that contains the client IDs of all the managed identities in self-managed Azure
 // needing to authenticate with Azure's API.
@@ -653,7 +724,7 @@ const (
 // AzurePrivateType specifies the type of private connectivity mechanism used for the Azure
 // hosted cluster's API server. This acts as the discriminator for the AzurePrivateSpec union.
 //
-// +kubebuilder:validation:Enum=PrivateLink
+// +kubebuilder:validation:Enum=PrivateLink;Swift
 type AzurePrivateType string
 
 const (
@@ -661,23 +732,30 @@ const (
 	// In this mode, the operator creates a Private Link Service backed by the management cluster's
 	// internal load balancer, and a Private Endpoint in the guest VNet for private API server access.
 	AzurePrivateTypePrivateLink AzurePrivateType = "PrivateLink"
+
+	// AzurePrivateTypeSwift specifies private connectivity using Azure Swift pod networking.
+	// In this mode, Azure Swift assigns a private IP from the customer VNet directly
+	// to the hosted cluster's router pods, providing private API server access without a
+	// separate Private Link Service. This is used by ARO HCP managed clusters.
+	AzurePrivateTypeSwift AzurePrivateType = "Swift"
 )
 
 // AzurePrivateSpec configures private connectivity to an Azure hosted cluster's API server.
 // It is a discriminated union keyed on the type field, which selects the private connectivity
-// mechanism. Currently only PrivateLink is supported; additional mechanisms (e.g., Swift) may
-// be added in the future.
+// mechanism.
 //
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.type) || self.type == oldSelf.type",message="type is immutable"
 // +kubebuilder:validation:XValidation:rule="self.type == 'PrivateLink' ? has(self.privateLink) : !has(self.privateLink)",message="privateLink is required when type is PrivateLink, and forbidden otherwise"
+// +kubebuilder:validation:XValidation:rule="self.type == 'Swift' ? has(self.swift) : !has(self.swift)",message="swift is required when type is Swift, and forbidden otherwise"
 // +union
 type AzurePrivateSpec struct {
 	// type specifies the private connectivity mechanism used for the hosted cluster's API server.
 	// "PrivateLink" selects Azure Private Link Service for private API server access.
+	// "Swift" selects Azure Swift pod networking for private API server access, used by ARO HCP.
 	// This field is immutable once set.
 	//
 	// +unionDiscriminator
 	// +required
-	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="type is immutable"
 	Type AzurePrivateType `json:"type,omitempty"`
 
 	// privateLink configures Azure Private Link Service for private API server access.
@@ -686,6 +764,15 @@ type AzurePrivateSpec struct {
 	// +optional
 	// +unionMember
 	PrivateLink AzurePrivateLinkSpec `json:"privateLink,omitzero"`
+
+	// swift configures Azure Swift pod networking for private API server access.
+	// Swift networking requires the management cluster to be pre-configured with
+	// Azure Swift support; this is not provisioned by HyperShift automatically.
+	// This field is required when type is "Swift" and must not be set otherwise.
+	//
+	// +optional
+	// +unionMember
+	Swift AzureSwiftSpec `json:"swift,omitzero"`
 }
 
 // AzurePrivateLinkSpec configures Azure Private Link Service connectivity.
@@ -714,6 +801,26 @@ type AzurePrivateLinkSpec struct {
 	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:MaxItems=50
 	AdditionalAllowedSubscriptions []AzureSubscriptionID `json:"additionalAllowedSubscriptions,omitempty"`
+}
+
+// AzureSwiftSpec configures Azure Swift pod networking for private API server access.
+// Swift assigns a private IP from the customer VNet directly to the hosted cluster's
+// router pods, providing private connectivity without a separate Private Link Service.
+//
+// +kubebuilder:validation:XValidation:rule="self.podNetworkInstance == oldSelf.podNetworkInstance",message="podNetworkInstance is immutable"
+type AzureSwiftSpec struct {
+	// podNetworkInstance is the name of a PodNetworkInstance custom resource in the
+	// hosted control plane namespace. This resource configures Azure Swift pod networking
+	// for private connectivity to the hosted cluster's router pods.
+	// The value must be a valid Kubernetes object name (RFC 1123 DNS label): lowercase
+	// alphanumeric characters or hyphens, must start and end with an alphanumeric character.
+	// This field is immutable once set.
+	//
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=63
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?$')",message="podNetworkInstance must be a valid DNS label: lowercase alphanumeric characters or hyphens, must start and end with an alphanumeric character"
+	PodNetworkInstance string `json:"podNetworkInstance,omitempty"`
 }
 
 // ControlPlaneManagedIdentities contains the managed identities on the HCP control plane needing to authenticate with
@@ -820,6 +927,9 @@ type AzureKMSSpec struct {
 	ActiveKey AzureKMSKey `json:"activeKey"`
 	// backupKey defines the old key during the rotation process so previously created
 	// secrets can continue to be decrypted until they are all re-encrypted with the active key.
+	//
+	// Deprecated: This field will be ignored when status.secretEncryption.activeKey is set.
+	// The system automatically manages the previous key via the status field.
 	// +optional
 	BackupKey *AzureKMSKey `json:"backupKey,omitempty"`
 
@@ -851,19 +961,22 @@ type AzureKMSKey struct {
 	// keyVaultName is the name of the keyvault. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
 	// Your Microsoft Entra application used to create the cluster must be authorized to access this keyvault, e.g using the AzureCLI:
 	// `az keyvault set-policy -n $KEYVAULT_NAME --key-permissions decrypt encrypt --spn <YOUR APPLICATION CLIENT ID>`
+	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=255
 	// +required
-	KeyVaultName string `json:"keyVaultName"`
+	KeyVaultName string `json:"keyVaultName,omitempty"`
 
 	// keyName is the name of the keyvault key used for encrypt/decrypt
+	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=255
 	// +required
-	KeyName string `json:"keyName"`
+	KeyName string `json:"keyName,omitempty"`
 
 	// keyVersion contains the version of the key to use
+	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=255
 	// +required
-	KeyVersion string `json:"keyVersion"`
+	KeyVersion string `json:"keyVersion,omitempty"`
 }
 
 // AzureAuthenticationType is a discriminated union type that contains the Azure authentication configuration for an

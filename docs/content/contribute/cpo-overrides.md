@@ -210,6 +210,38 @@ To run override tests:
    - Verify platform name spelling
 
 
+## Validating Override Images Contain Claimed PRs
+
+When reviewing a PR that sets CPO override images and claims "includes
+fix from PR #8500 and PR #8512", you can verify the claimed PRs are
+actually present in the image's git history using the
+`/validate-pr-override-images` Claude Code skill.
+
+The PR description must include a structured contract:
+
+```
+branch: 4.20 wants: https://github.com/openshift/hypershift/pull/8593
+branch: 4.21 wants: https://github.com/openshift/hypershift/pull/8593, https://github.com/openshift/hypershift/pull/8565
+```
+
+```
+# In Claude Code, pass the PR number or URL:
+/validate-pr-override-images 8610
+/validate-pr-override-images https://github.com/openshift/hypershift/pull/8610
+```
+
+The skill reads the `vcs-ref` label from each override image via
+`skopeo inspect` to get the commit SHA the image was built from, then
+uses `git merge-base --is-ancestor` to check whether each claimed PR's
+merge commit is an ancestor of that image commit.
+
+Prerequisites: `skopeo`, `gh`, relevant release branches fetched locally
+
+!!! note
+    The `validate-cpo-overrides.yaml`
+    [GitHub Action](../how-to/ci/github-actions.md) runs this same
+    validation automatically on PRs that touch `overrides.yaml`.
+
 ## Security/Production Considerations
 
 - Only use trusted image registries for CPO overrides

@@ -1,0 +1,26 @@
+name: Restructure Commits
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  id-token: write
+  contents: write
+  pull-requests: write
+
+jobs:
+  restructure-commits:
+    if: >-
+      github.event.issue.pull_request &&
+      startsWith(github.event.comment.body, '/restructure-commits') &&
+      (github.event.comment.author_association == 'MEMBER' ||
+       github.event.comment.author_association == 'OWNER' ||
+       github.event.comment.author_association == 'COLLABORATOR')
+    uses: ./.github/workflows/reusable-claude-on-pr.yaml
+    with:
+      command-name: restructure-commits
+      status-message: "Restructuring commits"
+      claude-prompt: "/restructure-commits -- You are running in CI. Force push with --force-with-lease when done without asking for confirmation."
+      max-turns: 200
+    secrets: inherit

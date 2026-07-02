@@ -28,7 +28,7 @@ spec:
     metadata:
       annotations:
         cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: tmp-dir
-        component.hypershift.openshift.io/config-hash: ""
+        component.hypershift.openshift.io/config-hash: 1a4fc37c
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       labels:
         app: control-plane-pki-operator
@@ -67,6 +67,8 @@ spec:
         - operator
         - --namespace
         - $(HOSTED_CONTROL_PLANE_NAMESPACE)
+        - --config=/var/run/configmaps/control-plane-pki-operator-config/config.yaml
+        - --terminate-on-files=/var/run/configmaps/control-plane-pki-operator-config/config.yaml
         command:
         - /usr/bin/control-plane-pki-operator
         env:
@@ -102,6 +104,9 @@ spec:
         - mountPath: /etc/pki/ca-trust/extracted/pem
           name: openshift-config-managed-trusted-ca-bundle
           readOnly: true
+        - mountPath: /var/run/configmaps/control-plane-pki-operator-config
+          name: control-plane-pki-operator-config
+          readOnly: true
         - mountPath: /tmp
           name: tmp-dir
       priorityClassName: hypershift-control-plane
@@ -125,6 +130,10 @@ spec:
           name: openshift-config-managed-trusted-ca-bundle
           optional: true
         name: openshift-config-managed-trusted-ca-bundle
+      - configMap:
+          defaultMode: 420
+          name: control-plane-pki-operator-config
+        name: control-plane-pki-operator-config
       - emptyDir: {}
         name: tmp-dir
 status: {}

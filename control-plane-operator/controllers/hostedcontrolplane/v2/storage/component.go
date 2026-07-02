@@ -83,7 +83,7 @@ func isStorageAndCSIManaged(cpContext component.WorkloadContext) (bool, error) {
 }
 
 func isAroHCP(cpContext component.WorkloadContext) bool {
-	return azureutil.IsAroHCP()
+	return azureutil.IsAroHCPByHCP(cpContext.HCP)
 }
 
 type operand struct {

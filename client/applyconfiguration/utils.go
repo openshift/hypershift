@@ -65,6 +65,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		// Group=hypershift.openshift.io, Version=v1beta1
 	case v1beta1.SchemeGroupVersion.WithKind("AddressPair"):
 		return &hypershiftv1beta1.AddressPairApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("AESCBCKeyStatus"):
+		return &hypershiftv1beta1.AESCBCKeyStatusApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AESCBCSpec"):
 		return &hypershiftv1beta1.AESCBCSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AgentNodePoolPlatform"):
@@ -109,6 +111,10 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.AWSSharedVPCRolesRefApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AzureAuthenticationConfiguration"):
 		return &hypershiftv1beta1.AzureAuthenticationConfigurationApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("AzureContainerRegistryConfig"):
+		return &hypershiftv1beta1.AzureContainerRegistryConfigApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("AzureContainerRegistryCredentialConfig"):
+		return &hypershiftv1beta1.AzureContainerRegistryCredentialConfigApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AzureKMSKey"):
 		return &hypershiftv1beta1.AzureKMSKeyApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AzureKMSSpec"):
@@ -133,6 +139,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.AzurePrivateSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AzureResourceManagedIdentities"):
 		return &hypershiftv1beta1.AzureResourceManagedIdentitiesApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("AzureSwiftSpec"):
+		return &hypershiftv1beta1.AzureSwiftSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AzureVMImage"):
 		return &hypershiftv1beta1.AzureVMImageApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AzureWorkloadIdentities"):
@@ -173,6 +181,10 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.DNSSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("DNSZoneStatus"):
 		return &hypershiftv1beta1.DNSZoneStatusApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("EncryptionKeyReference"):
+		return &hypershiftv1beta1.EncryptionKeyReferenceApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("EncryptionMigrationHistory"):
+		return &hypershiftv1beta1.EncryptionMigrationHistoryApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("EtcdSpec"):
 		return &hypershiftv1beta1.EtcdSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("EtcdTLSConfig"):
@@ -311,6 +323,10 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.ManagedEtcdStorageSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ManagedIdentity"):
 		return &hypershiftv1beta1.ManagedIdentityApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("MetricsForwardingSpec"):
+		return &hypershiftv1beta1.MetricsForwardingSpecApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("MonitoringSpec"):
+		return &hypershiftv1beta1.MonitoringSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("NetworkFilter"):
 		return &hypershiftv1beta1.NetworkFilterApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("NetworkParam"):
@@ -345,6 +361,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.OpenStackPlatformSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("OperatorConfiguration"):
 		return &hypershiftv1beta1.OperatorConfigurationApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("OSImageStreamReference"):
+		return &hypershiftv1beta1.OSImageStreamReferenceApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("OVNIPv4Config"):
 		return &hypershiftv1beta1.OVNIPv4ConfigApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("OVNIPv6Config"):
@@ -385,8 +403,12 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.RouterParamApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ScaleDownConfig"):
 		return &hypershiftv1beta1.ScaleDownConfigApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("SecretEncryptionKeyStatus"):
+		return &hypershiftv1beta1.SecretEncryptionKeyStatusApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("SecretEncryptionSpec"):
 		return &hypershiftv1beta1.SecretEncryptionSpecApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("SecretEncryptionStatus"):
+		return &hypershiftv1beta1.SecretEncryptionStatusApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("SecretReference"):
 		return &hypershiftv1beta1.SecretReferenceApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ServiceNetworkEntry"):
@@ -407,6 +429,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.TaintApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("UnmanagedEtcdSpec"):
 		return &hypershiftv1beta1.UnmanagedEtcdSpecApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("UserAssignedManagedIdentity"):
+		return &hypershiftv1beta1.UserAssignedManagedIdentityApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("UserManagedDiagnostics"):
 		return &hypershiftv1beta1.UserManagedDiagnosticsApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("Volume"):

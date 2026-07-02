@@ -1610,6 +1610,7 @@ func TestReconcileKubeletConfig(t *testing.T) {
 		hostedControlPlaneObjects      []client.Object
 		existHostedControlPlaneObjects []client.Object
 		expectedHostedClusterObjects   []client.Object
+		preservedObjects               []client.Object
 	}{
 		{
 			name: "copy kubelet config from control plane NS",
@@ -1647,6 +1648,66 @@ func TestReconcileKubeletConfig(t *testing.T) {
 				makeKubeletConfigConfigMap(netutil.ShortenName("bar", npName1, validation.LabelValueMaxLength), hcNamespace, kubeletConfig1),
 			},
 		},
+		{
+			name:                      "When source CM is transiently absent, it should not delete the mirrored guest-side CM",
+			hostedControlPlaneObjects: []client.Object{},
+			existHostedControlPlaneObjects: []client.Object{
+				makeMirroredKubeletConfigConfigMap(netutil.ShortenName("bar", npName1, validation.LabelValueMaxLength), hcNamespace, npName1, kubeletConfig1),
+			},
+			expectedHostedClusterObjects: []client.Object{
+				makeMirroredKubeletConfigConfigMap(netutil.ShortenName("bar", npName1, validation.LabelValueMaxLength), hcNamespace, npName1, kubeletConfig1),
+			},
+		},
+		{
+			// Defensive: this path is only reachable for CMs created before NTOMirroredConfigLabel was introduced.
+			name:                      "When source CM is absent and guest CM is not mirrored, it should be deleted",
+			hostedControlPlaneObjects: []client.Object{},
+			existHostedControlPlaneObjects: []client.Object{
+				makeKubeletConfigConfigMap(netutil.ShortenName("bar", npName1, validation.LabelValueMaxLength), hcNamespace, kubeletConfig1),
+			},
+			expectedHostedClusterObjects: []client.Object{},
+		},
+		{
+			name: "When guest CM is immutable but not a KubeletConfig, it should not be deleted",
+			hostedControlPlaneObjects: []client.Object{
+				makeKubeletConfigConfigMap(netutil.ShortenName("bar", npName1, validation.LabelValueMaxLength), hcpNamespace, kubeletConfig1),
+			},
+			existHostedControlPlaneObjects: []client.Object{
+				// Immutable CM without KubeletConfigConfigMapLabel — should be left alone.
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "unrelated-immutable-cm",
+						Namespace: hcNamespace,
+						Labels:    map[string]string{"some-other-label": "true"},
+					},
+					Immutable: ptr.To(true),
+					Data:      map[string]string{"key": "value"},
+				},
+			},
+			expectedHostedClusterObjects: []client.Object{
+				makeKubeletConfigConfigMap(netutil.ShortenName("bar", npName1, validation.LabelValueMaxLength), hcNamespace, kubeletConfig1),
+			},
+			preservedObjects: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "unrelated-immutable-cm",
+						Namespace: hcNamespace,
+					},
+				},
+			},
+		},
+		{
+			name: "When guest CM is immutable, it should be deleted and recreated as mutable",
+			hostedControlPlaneObjects: []client.Object{
+				makeKubeletConfigConfigMap(netutil.ShortenName("bar", npName1, validation.LabelValueMaxLength), hcpNamespace, kubeletConfig1),
+			},
+			existHostedControlPlaneObjects: []client.Object{
+				makeImmutableKubeletConfigConfigMap(netutil.ShortenName("bar", npName1, validation.LabelValueMaxLength), hcNamespace, kubeletConfig1),
+			},
+			expectedHostedClusterObjects: []client.Object{
+				makeKubeletConfigConfigMap(netutil.ShortenName("bar", npName1, validation.LabelValueMaxLength), hcNamespace, kubeletConfig1),
+			},
+		},
 	}
 
 	for _, tc := range testCases {
@@ -1661,7 +1722,14 @@ func TestReconcileKubeletConfig(t *testing.T) {
 			}
 			g.Expect(r.reconcileKubeletConfig(t.Context())).To(Succeed())
 			for _, obj := range tc.expectedHostedClusterObjects {
-				g.Expect(r.client.Get(t.Context(), client.ObjectKeyFromObject(obj), obj)).To(Succeed(), "failed to get %s", client.ObjectKeyFromObject(obj))
+				actual := &corev1.ConfigMap{}
+				g.Expect(r.client.Get(t.Context(), client.ObjectKeyFromObject(obj), actual)).To(Succeed(), "failed to get %s", client.ObjectKeyFromObject(obj))
+				g.Expect(actual.Immutable).To(BeNil(), "recreated ConfigMap %s should be mutable", client.ObjectKeyFromObject(obj))
+			}
+			for _, obj := range tc.preservedObjects {
+				actual := &corev1.ConfigMap{}
+				g.Expect(r.client.Get(t.Context(), client.ObjectKeyFromObject(obj), actual)).To(Succeed(),
+					"preserved object %s should still exist after reconcile", client.ObjectKeyFromObject(obj))
 			}
 			listOpts := []client.ListOption{
 				client.InNamespace(hcNamespace),
@@ -1744,6 +1812,39 @@ func makeKubeletConfigConfigMap(name, namespace, data string) *corev1.ConfigMap 
 				nodepool.KubeletConfigConfigMapLabel: "true",
 			},
 		},
+		Data: map[string]string{
+			"config": data,
+		},
+	}
+}
+
+func makeMirroredKubeletConfigConfigMap(name, namespace, nodePoolName, data string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+			Labels: map[string]string{
+				nodepool.KubeletConfigConfigMapLabel: "true",
+				nodepool.NTOMirroredConfigLabel:      "true",
+				hyperv1.NodePoolLabel:                nodePoolName,
+			},
+		},
+		Data: map[string]string{
+			"config": data,
+		},
+	}
+}
+
+func makeImmutableKubeletConfigConfigMap(name, namespace, data string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+			Labels: map[string]string{
+				nodepool.KubeletConfigConfigMapLabel: "true",
+			},
+		},
+		Immutable: ptr.To(true),
 		Data: map[string]string{
 			"config": data,
 		},
@@ -2033,6 +2134,20 @@ func TestReconcileAuthOIDC(t *testing.T) {
 					Namespace: testNamespace,
 				},
 				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							Private: hyperv1.AzurePrivateSpec{
+								Type: hyperv1.AzurePrivateTypeSwift,
+								Swift: hyperv1.AzureSwiftSpec{
+									PodNetworkInstance: "test-pni",
+								},
+							},
+							AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+								AzureAuthenticationConfigType: hyperv1.AzureAuthenticationTypeManagedIdentities,
+							},
+						},
+					},
 					Configuration: &hyperv1.ClusterConfiguration{
 						Authentication: &configv1.AuthenticationSpec{
 							Type: configv1.AuthenticationTypeOIDC,
@@ -3073,11 +3188,12 @@ func TestReconcileMetricsForwarder(t *testing.T) {
 	tests := []struct {
 		name            string
 		annotations     map[string]string
+		monitoring      hyperv1.MonitoringSpec
 		existingObjects []client.Object
 		expectCleanup   bool
 	}{
 		{
-			name:        "When EnableMetricsForwarding is not set, it should delete existing resources",
+			name:        "When metrics forwarding mode is not set, it should delete existing resources",
 			annotations: map[string]string{},
 			existingObjects: []client.Object{
 				manifests.MetricsForwarderDeployment(),
@@ -3090,6 +3206,11 @@ func TestReconcileMetricsForwarder(t *testing.T) {
 		{
 			name:        "When DisableMonitoringServices is set, it should delete existing resources",
 			annotations: map[string]string{hyperv1.DisableMonitoringServices: "true"},
+			monitoring: hyperv1.MonitoringSpec{
+				MetricsForwarding: hyperv1.MetricsForwardingSpec{
+					Mode: hyperv1.MetricsForwardingModeForward,
+				},
+			},
 			existingObjects: []client.Object{
 				manifests.MetricsForwarderDeployment(),
 				manifests.MetricsForwarderConfigMap(),
@@ -3099,10 +3220,40 @@ func TestReconcileMetricsForwarder(t *testing.T) {
 			expectCleanup: true,
 		},
 		{
-			name:            "When EnableMetricsForwarding is not set and no resources exist, it should succeed",
+			name:            "When metrics forwarding mode is not set and no resources exist, it should succeed",
 			annotations:     map[string]string{},
 			existingObjects: nil,
 			expectCleanup:   true,
+		},
+		{
+			name: "When metrics forwarding mode is None, it should delete existing resources",
+			monitoring: hyperv1.MonitoringSpec{
+				MetricsForwarding: hyperv1.MetricsForwardingSpec{
+					Mode: hyperv1.MetricsForwardingModeNone,
+				},
+			},
+			existingObjects: []client.Object{
+				manifests.MetricsForwarderDeployment(),
+				manifests.MetricsForwarderConfigMap(),
+				manifests.MetricsForwarderServingCA(),
+				manifests.MetricsForwarderPodMonitor(),
+			},
+			expectCleanup: true,
+		},
+		{
+			name: "When metrics forwarding mode is Forward, it should not delete resources",
+			monitoring: hyperv1.MonitoringSpec{
+				MetricsForwarding: hyperv1.MetricsForwardingSpec{
+					Mode: hyperv1.MetricsForwardingModeForward,
+				},
+			},
+			existingObjects: []client.Object{
+				manifests.MetricsForwarderDeployment(),
+				manifests.MetricsForwarderConfigMap(),
+				manifests.MetricsForwarderServingCA(),
+				manifests.MetricsForwarderPodMonitor(),
+			},
+			expectCleanup: false,
 		},
 	}
 
@@ -3111,8 +3262,11 @@ func TestReconcileMetricsForwarder(t *testing.T) {
 			g := NewGomegaWithT(t)
 
 			guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tt.existingObjects...).Build()
+			cpClient := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
 			r := &reconciler{
 				client:                 guestClient,
+				cpClient:               cpClient,
+				hcpNamespace:           "test-ns",
 				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
 			}
 
@@ -3121,6 +3275,9 @@ func TestReconcileMetricsForwarder(t *testing.T) {
 					Name:        "test",
 					Namespace:   "test-ns",
 					Annotations: tt.annotations,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Monitoring: tt.monitoring,
 				},
 			}
 
@@ -3139,6 +3296,18 @@ func TestReconcileMetricsForwarder(t *testing.T) {
 
 				podMonitor := manifests.MetricsForwarderPodMonitor()
 				g.Expect(apierrors.IsNotFound(guestClient.Get(t.Context(), client.ObjectKeyFromObject(podMonitor), podMonitor))).To(BeTrue(), "pod monitor should be deleted")
+			} else {
+				deployment := manifests.MetricsForwarderDeployment()
+				g.Expect(guestClient.Get(t.Context(), client.ObjectKeyFromObject(deployment), deployment)).To(Succeed(), "deployment should be preserved")
+
+				cm := manifests.MetricsForwarderConfigMap()
+				g.Expect(guestClient.Get(t.Context(), client.ObjectKeyFromObject(cm), cm)).To(Succeed(), "configmap should be preserved")
+
+				servingCA := manifests.MetricsForwarderServingCA()
+				g.Expect(guestClient.Get(t.Context(), client.ObjectKeyFromObject(servingCA), servingCA)).To(Succeed(), "serving CA should be preserved")
+
+				podMonitor := manifests.MetricsForwarderPodMonitor()
+				g.Expect(guestClient.Get(t.Context(), client.ObjectKeyFromObject(podMonitor), podMonitor)).To(Succeed(), "pod monitor should be preserved")
 			}
 		})
 	}
@@ -4205,6 +4374,104 @@ func TestReconcileRegistryAndIngress_ServiceAccountPullSecretsController(t *test
 				g.Expect(err).ToNot(HaveOccurred(), "failed to deserialize OCM config")
 				g.Expect(config.Controllers).To(Equal(tt.expectedControllers))
 			}
+		})
+	}
+}
+
+func TestReconcileConfigOperatorReconciliationCondition(t *testing.T) {
+	testCases := []struct {
+		name                   string
+		reconcileErr           error
+		existingCondition      *metav1.Condition
+		expectedConditionState metav1.ConditionStatus
+		expectedReason         string
+		expectedMessage        string
+	}{
+		{
+			name:                   "When reconciliation succeeds it should set condition to True",
+			reconcileErr:           nil,
+			expectedConditionState: metav1.ConditionTrue,
+			expectedReason:         hyperv1.AsExpectedReason,
+			expectedMessage:        hyperv1.AllIsWellMessage,
+		},
+		{
+			name:                   "When reconciliation fails it should set condition to False with error message",
+			reconcileErr:           fmt.Errorf("failed to reconcile crds: connection refused"),
+			expectedConditionState: metav1.ConditionFalse,
+			expectedReason:         hyperv1.ReconcileErrorReason,
+			expectedMessage:        "failed to reconcile crds: connection refused",
+		},
+		{
+			name:         "When reconciliation recovers from error it should transition condition to True",
+			reconcileErr: nil,
+			existingCondition: &metav1.Condition{
+				Type:    string(hyperv1.ConfigOperatorReconciliationSucceeded),
+				Status:  metav1.ConditionFalse,
+				Reason:  hyperv1.ReconcileErrorReason,
+				Message: "previous error",
+			},
+			expectedConditionState: metav1.ConditionTrue,
+			expectedReason:         hyperv1.AsExpectedReason,
+			expectedMessage:        hyperv1.AllIsWellMessage,
+		},
+		{
+			name:         "When reconciliation fails after success it should transition condition to False",
+			reconcileErr: fmt.Errorf("failed to reconcile namespaces: context deadline exceeded"),
+			existingCondition: &metav1.Condition{
+				Type:    string(hyperv1.ConfigOperatorReconciliationSucceeded),
+				Status:  metav1.ConditionTrue,
+				Reason:  hyperv1.AsExpectedReason,
+				Message: hyperv1.AllIsWellMessage,
+			},
+			expectedConditionState: metav1.ConditionFalse,
+			expectedReason:         hyperv1.ReconcileErrorReason,
+			expectedMessage:        "failed to reconcile namespaces: context deadline exceeded",
+		},
+		{
+			name:                   "When error message exceeds max length it should be truncated",
+			reconcileErr:           fmt.Errorf("%s", strings.Repeat("a", 2000)),
+			expectedConditionState: metav1.ConditionFalse,
+			expectedReason:         hyperv1.ReconcileErrorReason,
+			expectedMessage:        strings.Repeat("a", maxConditionMessageLength-3) + "...",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			hcp := fakeHCP()
+			hcp.Generation = 7
+			if tc.existingCondition != nil {
+				meta.SetStatusCondition(&hcp.Status.Conditions, *tc.existingCondition)
+			}
+
+			cpClient := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				WithObjects(hcp).
+				WithStatusSubresource(&hyperv1.HostedControlPlane{}).
+				Build()
+
+			r := &reconciler{
+				cpClient:     cpClient,
+				hcpName:      hcp.Name,
+				hcpNamespace: hcp.Namespace,
+			}
+
+			ctx := logr.NewContext(t.Context(), zapr.NewLogger(zaptest.NewLogger(t)))
+			err := r.reconcileConfigOperatorReconciliationCondition(ctx, hcp, tc.reconcileErr)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			updatedHCP := &hyperv1.HostedControlPlane{}
+			err = cpClient.Get(ctx, client.ObjectKeyFromObject(hcp), updatedHCP)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			condition := meta.FindStatusCondition(updatedHCP.Status.Conditions, string(hyperv1.ConfigOperatorReconciliationSucceeded))
+			g.Expect(condition).ToNot(BeNil(), "ConfigOperatorReconciliationSucceeded condition should be present")
+			g.Expect(condition.Status).To(Equal(tc.expectedConditionState))
+			g.Expect(condition.Reason).To(Equal(tc.expectedReason))
+			g.Expect(condition.Message).To(Equal(tc.expectedMessage))
+			g.Expect(condition.ObservedGeneration).To(Equal(hcp.Generation))
 		})
 	}
 }

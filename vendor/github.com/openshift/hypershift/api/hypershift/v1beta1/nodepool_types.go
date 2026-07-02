@@ -101,12 +101,13 @@ type NodePool struct {
 }
 
 // NodePoolSpec is the desired behavior of a NodePool.
+// +openshift:validation:FeatureGateAwareXValidation:featureGate=OSStreams,rule="!has(oldSelf.osImageStream) || has(self.osImageStream)",message="osImageStream cannot be removed once set; create a new NodePool instead"
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.arch) || has(self.arch)", message="Arch is required once set"
 // +kubebuilder:validation:XValidation:rule="self.arch != 'arm64' || has(self.platform.aws) || has(self.platform.azure) || has(self.platform.agent) || self.platform.type == 'GCP' || self.platform.type == 'None'", message="Setting Arch to arm64 is only supported for AWS, Azure, Agent, GCP and None"
 // +kubebuilder:validation:XValidation:rule="!has(self.replicas) || !has(self.autoScaling)", message="Both replicas or autoScaling should not be set"
 // +kubebuilder:validation:XValidation:rule="self.arch != 's390x' || has(self.platform.kubevirt)", message="s390x is only supported on KubeVirt platform"
 // +kubebuilder:validation:XValidation:rule="!has(self.platform.aws) || !has(self.platform.aws.imageType) || self.platform.aws.imageType != 'Windows' || self.arch == 'amd64'", message="ImageType 'Windows' requires arch 'amd64' (AWS only)"
-// +kubebuilder:validation:XValidation:rule="!has(self.autoScaling) || self.autoScaling.min > 0 || self.platform.type == 'AWS'", message="Scale-from-zero (autoScaling.min=0) is currently only supported for AWS platform"
+// +kubebuilder:validation:XValidation:rule="!has(self.autoScaling) || self.autoScaling.min > 0 || self.platform.type == 'AWS' || self.platform.type == 'Azure'", message="Scale-from-zero (autoScaling.min=0) is currently only supported for AWS and Azure platforms"
 type NodePoolSpec struct {
 	// clusterName is the name of the HostedCluster this NodePool belongs to.
 	// If a HostedCluster with this name doesn't exist, the controller will no-op until it exists.
@@ -238,6 +239,43 @@ type NodePoolSpec struct {
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="Arch is immutable"
 	// +optional
 	Arch string `json:"arch,omitempty"`
+
+	// osImageStream specifies an OS stream to be used for nodes in this pool.
+	//
+	// This field can be optionally set to a known OSImageStream name to change
+	// the OS and Extension images with a well-known, tested, release-provided
+	// set of images. This enables a streamlined way of switching the pool's
+	// node OS to a different version than the cluster default, such as
+	// transitioning to a major RHEL version.
+	//
+	// When set, the referenced stream overrides the default OS images for the
+	// pool. When omitted, the pool uses the release version's default stream
+	// (rhel-9 for OCP < 5.0, rhel-10 for OCP >= 5.0).
+	// Changing this field triggers a rollout. Forward transitions
+	// (rhel-9 -> rhel-10) are allowed; backward transitions
+	// (rhel-10 -> rhel-9) are rejected by CEL validation because
+	// in-place OS downgrades are not supported.
+	//
+	// +openshift:enable:FeatureGate=OSStreams
+	// +kubebuilder:validation:XValidation:rule="!has(oldSelf.name) || oldSelf.name != 'rhel-10' || (has(self.name) && self.name != 'rhel-9')",message="OS stream downgrade from rhel-10 to rhel-9 is not allowed; create a new NodePool instead"
+	// +optional
+	OSImageStream OSImageStreamReference `json:"osImageStream,omitzero"`
+}
+
+const (
+	// OSImageStreamRHEL9 is the OS image stream name for RHEL 9.
+	OSImageStreamRHEL9 = "rhel-9"
+	// OSImageStreamRHEL10 is the OS image stream name for RHEL 10.
+	OSImageStreamRHEL10 = "rhel-10"
+)
+
+// OSImageStreamReference references an OSImageStream by name.
+type OSImageStreamReference struct {
+	// name is a required reference to an OSImageStream to be used for the pool.
+	//
+	// +required
+	// +kubebuilder:validation:Enum=rhel-9;rhel-10
+	Name string `json:"name,omitempty"`
 }
 
 // NodePoolStatus is the latest observed status of a NodePool.
@@ -262,6 +300,13 @@ type NodePoolStatus struct {
 	// platform holds the specific statuses
 	// +optional
 	Platform *NodePoolPlatformStatus `json:"platform,omitempty"`
+
+	// osImageStream reports the OS stream observed on the nodes in this pool.
+	//
+	// When omitted, the pool is using the release version's default OS images.
+	// +openshift:enable:FeatureGate=OSStreams
+	// +optional
+	OSImageStream OSImageStreamReference `json:"osImageStream,omitzero"`
 
 	// conditions represents the latest available observations of the node pool's
 	// current state.
@@ -501,7 +546,7 @@ type NodePoolManagement struct {
 // +kubebuilder:validation:XValidation:rule="self.max >= self.min", message="max must be equal or greater than min"
 type NodePoolAutoScaling struct {
 	// min is the minimum number of nodes to maintain in the pool.
-	// Can be set to 0 for scale-from-zero for AWS platform.
+	// Can be set to 0 for scale-from-zero for AWS and Azure platforms.
 	// Must be >= 0 and <= .Max.
 	//
 	// +kubebuilder:validation:Minimum=0

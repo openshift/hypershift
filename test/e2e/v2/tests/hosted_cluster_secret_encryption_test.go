@@ -149,7 +149,7 @@ func RegisterHostedClusterSecretEncryptionTests(getTestCtx internal.TestContextG
 	KMSFunctionalValidationTest(getTestCtx)
 }
 
-var _ = Describe("Hosted Cluster Secret Encryption", Label("secret-encryption"), func() {
+var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:SecretEncryption] Hosted Cluster Secret Encryption", Label("secret-encryption"), func() {
 	var testCtx *internal.TestContext
 
 	BeforeEach(func() {

@@ -302,6 +302,8 @@ func TestCAPIProviderDeploymentSpec(t *testing.T) {
 								"--namespace=$(MY_NAMESPACE)",
 								"--leader-elect",
 								"--v=2",
+								"--skip-crd-migration-phases=StorageVersionMigration",
+								"--skip-crd-migration-phases=CleanupManagedFields",
 							},
 							Resources: corev1.ResourceRequirements{
 								Requests: corev1.ResourceList{
@@ -411,6 +413,8 @@ func TestCAPIProviderDeploymentSpec(t *testing.T) {
 									"--namespace=$(MY_NAMESPACE)",
 									"--leader-elect",
 									"--v=2",
+									"--skip-crd-migration-phases=StorageVersionMigration",
+									"--skip-crd-migration-phases=CleanupManagedFields",
 								},
 								Resources: corev1.ResourceRequirements{
 									Requests: corev1.ResourceList{

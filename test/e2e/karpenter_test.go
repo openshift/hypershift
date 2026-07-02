@@ -1325,13 +1325,19 @@ func testKubeletPropagation(ctx context.Context, mgtClient, guestClient crclient
 			g.Expect(p.Status.Phase).To(BeElementOf(corev1.PodSucceeded, corev1.PodFailed))
 		}).WithTimeout(5 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
 
-		// Always fetch and log the pod output so it's visible in the test run
-		logReq := guestClientset.CoreV1().Pods(checkerPod.Namespace).GetLogs(checkerPod.Name, &corev1.PodLogOptions{Container: "checker"})
-		logStream, err := logReq.Stream(ctx)
-		g.Expect(err).NotTo(HaveOccurred())
-		defer logStream.Close()
-		logBytes, err := io.ReadAll(logStream)
-		g.Expect(err).NotTo(HaveOccurred())
+		// Fetch pod output with retries — the kubelet serving cert on freshly
+		// provisioned Karpenter nodes may not be ready immediately after the
+		// node is marked Ready, causing transient TLS or HTTP/2 errors on the
+		// proxied log request.
+		var logBytes []byte
+		g.Eventually(func(g Gomega) {
+			logReq := guestClientset.CoreV1().Pods(checkerPod.Namespace).GetLogs(checkerPod.Name, &corev1.PodLogOptions{Container: "checker"})
+			logStream, err := logReq.Stream(ctx)
+			g.Expect(err).NotTo(HaveOccurred())
+			defer logStream.Close()
+			logBytes, err = io.ReadAll(logStream)
+			g.Expect(err).NotTo(HaveOccurred())
+		}).WithTimeout(2 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
 		t.Logf("kubelet-config-checker output:\n%s", string(logBytes))
 
 		// Assert the pod succeeded (grep chain exited 0 = all fields found)
@@ -1738,7 +1744,10 @@ func baseNodePool(name, nodeClassName string) *karpenterv1.NodePool {
 		ObjectMeta: metav1.ObjectMeta{Name: name},
 		Spec: karpenterv1.NodePoolSpec{
 			Disruption: karpenterv1.Disruption{
-				ConsolidateAfter: karpenterv1.MustParseNillableDuration("0s"),
+				// 60s mitigates the risk of consolidation from racing with drift
+				// the default setting of 0s can cause replacement nodes to be deleted
+				// before the drift drain begins.
+				ConsolidateAfter: karpenterv1.MustParseNillableDuration("60s"),
 			},
 			Template: karpenterv1.NodeClaimTemplate{
 				ObjectMeta: karpenterv1.ObjectMeta{

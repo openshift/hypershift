@@ -3,3 +3,17 @@
     max-width: 90%; /* Adjust this percentage as needed */
     margin: 0 auto;
 }
+
+/* Swap tablesort arrows: first click = descending (biggest first) */
+th[aria-sort="ascending"] {
+    background-image: none !important;
+}
+th[aria-sort="descending"] {
+    background-image: none !important;
+}
+th[aria-sort="ascending"]::after {
+    content: " ▼" !important;
+}
+th[aria-sort="descending"]::after {
+    content: " ▲" !important;
+}

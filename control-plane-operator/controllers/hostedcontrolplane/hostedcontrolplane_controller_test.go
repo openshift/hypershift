@@ -731,6 +731,8 @@ func TestEventHandling(t *testing.T) {
 	mockedProviderWithOpenshiftImageRegistryOverrides.EXPECT().
 		Lookup(gomock.Any(), gomock.Any(), gomock.Any()).
 		Return(testutils.InitReleaseImageOrDie("4.15.0"), nil).AnyTimes()
+	mockedProviderWithOpenshiftImageRegistryOverrides.EXPECT().
+		GetRegistryOverrides().Return(map[string]string{"registry": "override"}).AnyTimes()
 	mockEC2 := awsapi.NewMockEC2API(mockCtrl)
 	mockEC2.EXPECT().DescribeVpcEndpoints(gomock.Any(), gomock.Any()).Return(&ec2.DescribeVpcEndpointsOutput{}, fmt.Errorf("not ready")).AnyTimes()
 
@@ -814,6 +816,8 @@ func TestNonReadyInfraTriggersRequeueAfter(t *testing.T) {
 	mockedProviderWithOpenshiftImageRegistryOverrides.EXPECT().
 		Lookup(gomock.Any(), gomock.Any(), gomock.Any()).
 		Return(testutils.InitReleaseImageOrDie("4.15.0"), nil).AnyTimes()
+	mockedProviderWithOpenshiftImageRegistryOverrides.EXPECT().
+		GetRegistryOverrides().Return(map[string]string{"registry": "override"}).AnyTimes()
 	mockEC2 := awsapi.NewMockEC2API(mockCtrl)
 	mockEC2.EXPECT().DescribeVpcEndpoints(gomock.Any(), gomock.Any()).Return(&ec2.DescribeVpcEndpointsOutput{}, fmt.Errorf("not ready")).AnyTimes()
 	hcp := sampleHCP(t)
@@ -1079,6 +1083,14 @@ func TestControlPlaneComponents(t *testing.T) {
 				hyperv1.SwiftPodNetworkInstanceAnnotation: "swift-network-instance",
 			},
 			mutateHCP: func(hcp *hyperv1.HostedControlPlane) {
+				// Configure Swift API fields for ARO-HCP
+				hcp.Spec.Platform.Azure.Private = hyperv1.AzurePrivateSpec{
+					Type: hyperv1.AzurePrivateTypeSwift,
+					Swift: hyperv1.AzureSwiftSpec{
+						PodNetworkInstance: "swift-network-instance",
+					},
+				}
+				hcp.Spec.Platform.Azure.Topology = hyperv1.AzureTopologyPublicAndPrivate
 				// Configure Azure KMS for ARO-HCP
 				hcp.Spec.Platform.Azure.Cloud = "AzurePublicCloud"
 				hcp.Spec.SecretEncryption = &hyperv1.SecretEncryptionSpec{

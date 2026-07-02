@@ -10,6 +10,8 @@ plugins:
 - mermaid2:
     version: 11.2.0
     javascript: https://unpkg.com/mermaid@11.2.0/dist/mermaid.min.js
+    arguments:
+      securityLevel: loose
 - glightbox:
     touchNavigation: true
     loop: false
@@ -56,6 +58,10 @@ validation:
     omitted_files: ignore
 extra_css:
   - custom.css
+extra_javascript:
+  - https://unpkg.com/tablesort@5.3.0/dist/tablesort.min.js
+  - https://unpkg.com/tablesort@5.3.0/dist/sorts/tablesort.number.min.js
+  - javascripts/tablesort.js
 nav:
 - Home: index.md
 - 'Getting Started':
@@ -87,16 +93,20 @@ nav:
   - 'CI':
     - 'AI-Assisted CI Jobs': how-to/ci/ai-assisted-ci-jobs.md
     - how-to/ci/ci-infrastructure.md
-    - how-to/ci/checking-ci.md
     - 'Documentation Preview': how-to/ci/docs-preview.md
     - 'GitHub Actions Workflows': how-to/ci/github-actions.md
     - 'Sync Community Fork': how-to/ci/sync-community-fork.md
+    - 'Triage':
+      - how-to/ci/triage/index.md
+      - 'Presubmit Failures': how-to/ci/triage/presubmit-failures.md
+      - 'Daily CI Health': how-to/ci/triage/daily-health.md
     - 'V2 E2E Testing':
       - how-to/ci/v2-testing/index.md
       - 'Writing V2 Tests': how-to/ci/v2-testing/writing-tests.md
       - 'CI Pipeline Configuration': how-to/ci/v2-testing/ci-pipeline.md
       - 'Debugging CI Failures': how-to/ci/v2-testing/debugging.md
       - 'Migrating from V1': how-to/ci/v2-testing/migration.md
+  - 'Cluster Capabilities': how-to/cluster-capabilities.md
   - 'Common':
     - how-to/common/exposing-services-from-hcp.md
     - 'Global Pull Secret': how-to/common/global-pull-secret.md
@@ -338,6 +348,7 @@ nav:
     - 'Replace the default CRI-O runtime': recipes/common/replace-crio-runtime.md
     - 'Configure SPO with Audit Logging and Seccomp': recipes/common/spo-audit-logging-seccomp.md
     - 'ACM/MCE HyperShift Operator Overrides': recipes/common/acm-mce-hypershift-operator-overrides.md
+    - 'Control Plane Metrics Forwarding': recipes/common/control-plane-metrics-forwarding.md
 - 'Reference':
   - 'Architecture':
     - reference/architecture/index.md
@@ -345,6 +356,7 @@ nav:
       - 'PrivateLink': reference/architecture/aws/privatelink.md
     - 'Azure':
       - 'PrivateLink': reference/architecture/azure/privatelink.md
+    - 'Private Topology DNS': reference/architecture/private-topology-dns.md
     - 'Multicluster Engine and Agent': reference/architecture/mce-and-agent.md
     - 'Managed Azure':
         - reference/architecture/managed-azure/secrets-csi.md
@@ -395,11 +407,17 @@ nav:
   - 'HO/CPO Release Process': contribute/release-process.md
   - 'OCP Branching Tasks': contribute/branch-process.md
   - 'Custom Images': contribute/custom-images.md
+  - 'Add a Capability': contribute/add-a-capability.md
   - 'Onboard a Platform': contribute/onboard-a-platform.md
   - 'Run Tests': contribute/run-tests.md
   - 'Develop in Cluster': contribute/develop_in_cluster.md
   - 'Run hypershift-operator locally': contribute/run-hypershift-operator-locally.md
   - 'CPO Overrides': contribute/cpo-overrides.md
+  - 'Konflux CI Scripts': contribute/konflux-scripts.md
   - 'Contribute to docs': contribute/contribute-docs.md
+  - 'Retrospective Guidelines': contribute/retrospective-guidelines.md
+- 'Blog':
+  - blog/index.md
+  - 'June 2026 Progress Report': blog/2026-06-progress-report.md
 - 'Videos':
   - videos/index.md

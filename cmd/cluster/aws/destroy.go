@@ -40,7 +40,7 @@ func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 
 	logger := log.Log
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		err := ValidateCredentialInfo(opts.AWSPlatform.Credentials, opts.CredentialSecretName, opts.Namespace)
+		err := ValidateCredentialInfo(opts.AWSPlatform.Credentials, opts.CredentialSecretName, opts.Namespace, opts.Kubeconfig)
 		if err != nil {
 			return err
 		}
@@ -69,7 +69,11 @@ func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error
 	var err error
 	var secretData *util.CredentialsSecretData
 	if len(o.AWSPlatform.Credentials.AWSCredentialsFile) == 0 && len(o.CredentialSecretName) > 0 {
-		secretData, err = util.ExtractOptionsFromSecret(nil, o.CredentialSecretName, o.Namespace, "")
+		c, clientErr := util.GetClientWithKubeconfig(o.Kubeconfig)
+		if clientErr != nil {
+			return clientErr
+		}
+		secretData, err = util.ExtractOptionsFromSecret(c, o.CredentialSecretName, o.Namespace, "")
 		if err != nil {
 			return err
 		}
@@ -152,7 +156,7 @@ func DestroyCluster(ctx context.Context, o *core.DestroyOptions) error {
 
 // ValidateCredentialInfo validates if the credentials secret name is empty, the aws-creds or sts-creds mutually exclusive and are not empty; validates if
 // the credentials secret is not empty, that it can be retrieved.
-func ValidateCredentialInfo(opts awsutil.AWSCredentialsOptions, credentialSecretName, namespace string) error {
+func ValidateCredentialInfo(opts awsutil.AWSCredentialsOptions, credentialSecretName, namespace, kubeconfigPath string) error {
 	if len(credentialSecretName) == 0 {
 		if err := opts.Validate(); err != nil {
 			return err
@@ -166,7 +170,11 @@ func ValidateCredentialInfo(opts awsutil.AWSCredentialsOptions, credentialSecret
 		}
 	}
 	// Check the secret exists now, otherwise stop
-	if _, err := util.GetSecret(credentialSecretName, namespace); err != nil {
+	client, err := util.GetClientWithKubeconfig(kubeconfigPath)
+	if err != nil {
+		return err
+	}
+	if _, err := util.GetSecretWithClient(client, credentialSecretName, namespace); err != nil {
 		return err
 	}
 

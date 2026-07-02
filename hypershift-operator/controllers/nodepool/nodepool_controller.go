@@ -2,7 +2,6 @@ package nodepool
 
 import (
 	"context"
-	"encoding/json"
 	coreerrors "errors"
 	"fmt"
 	"os"
@@ -15,13 +14,14 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	haproxy "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/apiserver-haproxy"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/instancetype"
+	azureinstancetype "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/instancetype/azure"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/kubevirt"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 	"github.com/openshift/hypershift/support/awsapi"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/k8sutil"
+	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/supportedversion"
 	"github.com/openshift/hypershift/support/upsert"
@@ -44,7 +44,6 @@ import (
 	capiopenstackv1beta1 "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
 	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
 	"sigs.k8s.io/cluster-api/util"
-	"sigs.k8s.io/cluster-api/util/conversion"
 	"sigs.k8s.io/cluster-api/util/patch"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -76,7 +75,12 @@ const (
 
 	nodePoolAnnotationPlatformMachineTemplate = "hypershift.openshift.io/nodePoolPlatformMachineTemplate"
 	nodePoolAnnotationTaints                  = "hypershift.openshift.io/nodePoolTaints"
-	nodePoolCoreIgnitionConfigLabel           = "hypershift.openshift.io/core-ignition-config"
+	// nodePoolAnnotationCanonicalDataPlaneImages gates the use of canonical
+	// (pre-override) image references for data plane static pods. Set automatically
+	// on new NodePools and during version upgrades to avoid triggering rollouts on
+	// existing stable NodePools.
+	nodePoolAnnotationCanonicalDataPlaneImages = "hypershift.openshift.io/canonical-data-plane-images"
+	nodePoolCoreIgnitionConfigLabel            = "hypershift.openshift.io/core-ignition-config"
 
 	tuningConfigKey                                      = "tuning"
 	tunedConfigMapLabel                                  = "hypershift.openshift.io/tuned-config"
@@ -104,6 +108,7 @@ type NodePoolReconciler struct {
 	KubevirtInfraClients    kvinfra.KubevirtInfraClientMap
 	EC2Client               awsapi.EC2API
 	InstanceTypeProvider    instancetype.Provider
+	ScaleFromZeroPlatform   hyperv1.PlatformType
 }
 
 type NotReadyError struct {
@@ -385,6 +390,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	if err != nil {
 		return ctrl.Result{}, err
 	}
+	capi.scaleFromZeroPlatform = r.ScaleFromZeroPlatform
 	if isPaused, duration := supportutil.IsReconciliationPaused(log, nodePool.Spec.PausedUntil); isPaused {
 		if err := capi.Pause(ctx); err != nil {
 			return ctrl.Result{}, fmt.Errorf("error pausing CAPI: %w", err)
@@ -426,19 +432,22 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 
 	// Set scale-from-zero annotations if provider is configured and platform is supported
 	// This works for both Replace (MachineDeployment) and InPlace (MachineSet) upgrade types
-	if isAutoscalingEnabled(nodePool) && r.InstanceTypeProvider != nil && supportedScaleFromZeroPlatform(nodePool.Spec.Platform.Type) {
+	if isAutoscalingEnabled(nodePool) && r.InstanceTypeProvider != nil && r.ScaleFromZeroPlatform == nodePool.Spec.Platform.Type {
 		if err = r.reconcileScaleFromZeroAnnotations(ctx, nodePool, capi); err != nil {
+			// Distinguish permanent errors (VM size doesn't exist in this region)
+			// from transient errors (API failure, cache load error) to avoid
+			// retrying indefinitely for non-existent VM sizes.
+			var vmNotFound *azureinstancetype.VMSizeNotFoundError
+			if coreerrors.As(err, &vmNotFound) {
+				log.Error(err, "Permanent error setting scale-from-zero annotations; verify the VM size exists in this region")
+				return ctrl.Result{}, nil
+			}
 			log.Error(err, "Failed to set scale-from-zero annotations, will retry")
 			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 		}
 	}
 
 	return ctrl.Result{}, nil
-}
-
-// supportedScaleFromZeroPlatform checks if the platform supports scale-from-zero functionality.
-func supportedScaleFromZeroPlatform(platform hyperv1.PlatformType) bool {
-	return platform == hyperv1.AWSPlatform
 }
 
 func (r *NodePoolReconciler) token(ctx context.Context, hcluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool) (*Token, error) {
@@ -736,16 +745,26 @@ func isAutoscalingEnabled(nodePool *hyperv1.NodePool) bool {
 	return nodePool.Spec.AutoScaling != nil
 }
 
-func defaultNodePoolAMI(region string, specifiedArch string, releaseImage *releaseinfo.ReleaseImage) (string, error) {
-	if releaseImage.StreamMetadata == nil {
-		return "", fmt.Errorf("release image stream metadata is nil")
+// defaultNodePoolAMI resolves the default AWS AMI for a NodePool from release image stream metadata.
+// TODO(CNTRLPLANE-3553): once the osImageStream API field is available, callers should resolve
+// streamName via GetRHELStream and pass it here instead of hardcoding "".
+func defaultNodePoolAMI(region string, specifiedArch string, streamName string, releaseImage *releaseinfo.ReleaseImage) (string, error) {
+	if releaseImage == nil {
+		return "", fmt.Errorf("release image is nil")
 	}
-	arch, foundArch := releaseImage.StreamMetadata.Architectures[hyperv1.ArchAliases[specifiedArch]]
+	streamMeta, err := releaseImage.StreamForName(streamName)
+	if err != nil {
+		return "", fmt.Errorf("couldn't resolve stream metadata: %w", err)
+	}
+	arch, foundArch := streamMeta.Architectures[hyperv1.ArchAliases[specifiedArch]]
 	if !foundArch {
 		return "", fmt.Errorf("couldn't find OS metadata for architecture %q", specifiedArch)
 	}
 
-	regionData, hasRegionData := arch.Images.AWS.Regions[region]
+	if arch.Images.Aws == nil {
+		return "", fmt.Errorf("release image metadata has no AWS images")
+	}
+	regionData, hasRegionData := arch.Images.Aws.Regions[region]
 	if !hasRegionData {
 		return "", fmt.Errorf("couldn't find AWS image for region %q", region)
 	}
@@ -769,10 +788,10 @@ func defaultNodePoolGCPImage(specifiedArch string, releaseImage *releaseinfo.Rel
 		return "", fmt.Errorf("couldn't find OS metadata for architecture %q", specifiedArch)
 	}
 
-	if len(arch.Images.GCP.Project) == 0 || len(arch.Images.GCP.Name) == 0 {
+	if arch.Images.Gcp == nil || len(arch.Images.Gcp.Project) == 0 || len(arch.Images.Gcp.Name) == 0 {
 		return "", fmt.Errorf("release image metadata has no GCP image for architecture %q", specifiedArch)
 	}
-	return fmt.Sprintf("projects/%s/global/images/%s", arch.Images.GCP.Project, arch.Images.GCP.Name), nil
+	return fmt.Sprintf("projects/%s/global/images/%s", arch.Images.Gcp.Project, arch.Images.Gcp.Name), nil
 }
 
 // MachineDeploymentComplete considers a MachineDeployment to be complete once all of its desired replicas
@@ -782,8 +801,8 @@ func defaultNodePoolGCPImage(specifiedArch string, releaseImage *releaseinfo.Rel
 // fields come from conversion. The converted v1beta1 fields (especially UpdatedReplicas,
 // which maps from deprecated.v1beta1.updatedReplicas rather than the native upToDateReplicas)
 // can transiently disagree with the v1beta2 native fields. To guard against this, when the
-// v1beta1 fields indicate completion we cross-check against the authoritative v1beta2 status
-// stored in the conversion-data annotation.
+// v1beta1 fields indicate completion we cross-check against the v1beta2 status stored in the
+// Status.V1Beta2 field, which is kept current on every status-subresource write.
 func MachineDeploymentComplete(deployment *capiv1.MachineDeployment) bool {
 	newStatus := &deployment.Status
 	v1beta1Complete := newStatus.UpdatedReplicas == *(deployment.Spec.Replicas) &&
@@ -793,39 +812,24 @@ func MachineDeploymentComplete(deployment *capiv1.MachineDeployment) bool {
 	if !v1beta1Complete {
 		return false
 	}
-	return machineDeploymentCompleteFromConversionData(deployment)
+	return machineDeploymentCompleteFromV1Beta2Status(deployment)
 }
 
-// machineDeploymentCompleteFromConversionData parses the v1beta2 conversion-data annotation
-// and verifies that the native v1beta2 status also indicates completion. If the annotation
-// is absent (e.g. CAPI < v1.11), returns true to preserve backwards compatibility.
-func machineDeploymentCompleteFromConversionData(deployment *capiv1.MachineDeployment) bool {
-	raw, ok := deployment.Annotations[conversion.DataAnnotation]
-	if !ok {
+// machineDeploymentCompleteFromV1Beta2Status verifies that the native v1beta2 status fields
+// also indicate completion. The v1beta1 Status.V1Beta2 field is populated by the v1beta2-to-v1beta1
+// conversion on every status-subresource write, so it is always current.
+// If V1Beta2 is nil (e.g. CAPI < v1.11), returns true to preserve backwards compatibility.
+func machineDeploymentCompleteFromV1Beta2Status(deployment *capiv1.MachineDeployment) bool {
+	v1beta2 := deployment.Status.V1Beta2
+	if v1beta2 == nil {
 		return true
 	}
-
-	var v1beta2MD struct {
-		Spec struct {
-			Replicas *int32 `json:"replicas"`
-		} `json:"spec"`
-		Status struct {
-			ObservedGeneration int64  `json:"observedGeneration"`
-			Replicas           *int32 `json:"replicas"`
-			AvailableReplicas  *int32 `json:"availableReplicas"`
-			UpToDateReplicas   *int32 `json:"upToDateReplicas"`
-		} `json:"status"`
+	if v1beta2.UpToDateReplicas == nil || v1beta2.AvailableReplicas == nil {
+		return false
 	}
-	if err := json.Unmarshal([]byte(raw), &v1beta2MD); err != nil {
-		ctrl.Log.WithName("nodepool").Error(err, "Failed to unmarshal conversion-data annotation, falling back to v1beta1 status")
-		return true
-	}
-
-	desired := ptr.Deref(v1beta2MD.Spec.Replicas, 0)
-	return ptr.Deref(v1beta2MD.Status.UpToDateReplicas, 0) == desired &&
-		ptr.Deref(v1beta2MD.Status.Replicas, 0) == desired &&
-		ptr.Deref(v1beta2MD.Status.AvailableReplicas, 0) == desired &&
-		v1beta2MD.Status.ObservedGeneration >= deployment.Generation
+	desired := ptr.Deref(deployment.Spec.Replicas, 0)
+	return *v1beta2.UpToDateReplicas == desired &&
+		*v1beta2.AvailableReplicas == desired
 }
 
 // GetHostedClusterByName finds and return a HostedCluster object using the specified params.
@@ -1084,30 +1088,50 @@ func (r *NodePoolReconciler) getAdditionalTrustBundle(ctx context.Context, hoste
 
 // resolveHAProxyImage determines which HAProxy image to use based on priority:
 // 1. NodePool annotation (highest priority)
-// 2. Environment variable override (when shared ingress enabled)
-// 3. Hardcoded default (when shared ingress enabled)
-// 4. Release payload (default)
-func resolveHAProxyImage(nodePool *hyperv1.NodePool, releaseImage *releaseinfo.ReleaseImage) (string, error) {
-	// Check NodePool annotation first (highest priority)
+// 2. Shared ingress image (when cluster uses shared ingress for public endpoints)
+// 3. Release payload (default)
+//
+// When useCanonicalImages is true and the image comes from the release payload,
+// canonical (pre-override) component images are used. The HAProxy image is
+// embedded in a static pod manifest that runs on data plane nodes, where CRI-O
+// handles mirroring natively via IDMS/ICSP — so the canonical (non-overridden)
+// image reference must be used.
+func resolveHAProxyImage(nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, releaseImage *releaseinfo.ReleaseImage, useCanonicalImages bool) (string, error) {
 	if annotationImage := strings.TrimSpace(nodePool.Annotations[hyperv1.NodePoolHAProxyImageAnnotation]); annotationImage != "" {
 		return annotationImage, nil
 	}
 
-	// Check if shared ingress is enabled
-	if sharedingress.UseSharedIngress() {
+	if netutil.UseSharedIngressHC(hcluster) {
 		return images.GetSharedIngressHAProxyImage(), nil
 	}
 
-	// Fall back to release payload image
-	haProxyImage, ok := releaseImage.ComponentImages()[haproxy.HAProxyRouterImageName]
+	componentImages := releaseImage.ComponentImages()
+	if useCanonicalImages {
+		componentImages = releaseImage.CanonicalComponentImages()
+	}
+
+	haProxyImage, ok := componentImages[haproxy.HAProxyRouterImageName]
 	if !ok {
 		return "", fmt.Errorf("release image doesn't have a %s image", haproxy.HAProxyRouterImageName)
 	}
+
 	return haProxyImage, nil
 }
 
 func (r *NodePoolReconciler) generateHAProxyRawConfig(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, releaseImage *releaseinfo.ReleaseImage) (string, error) {
-	haProxyImage, err := resolveHAProxyImage(nodePool, releaseImage)
+	useCanonicalImages := nodePool.Annotations[nodePoolAnnotationCanonicalDataPlaneImages] == "true"
+	if !useCanonicalImages {
+		isNewOrUpgrading := nodePool.Status.Version == "" || nodePool.Status.Version != releaseImage.Version()
+		if isNewOrUpgrading {
+			useCanonicalImages = true
+			if nodePool.Annotations == nil {
+				nodePool.Annotations = make(map[string]string)
+			}
+			nodePool.Annotations[nodePoolAnnotationCanonicalDataPlaneImages] = "true"
+		}
+	}
+
+	haProxyImage, err := resolveHAProxyImage(nodePool, hcluster, releaseImage, useCanonicalImages)
 	if err != nil {
 		return "", err
 	}
@@ -1260,16 +1284,15 @@ func (r *NodePoolReconciler) reconcileScaleFromZeroAnnotations(ctx context.Conte
 		}
 		machineTemplate = awsMachineTemplate
 
-	// Future platform support can be added here:
-	// case hyperv1.AzurePlatform:
-	//     azureTemplate := &capiazure.AzureMachineTemplate{}
-	//     if err := capi.getExistingMachineTemplate(ctx, azureTemplate); err != nil {
-	//         if apierrors.IsNotFound(err) {
-	//             return nil
-	//         }
-	//         return fmt.Errorf("failed to get AzureMachineTemplate: %w", err)
-	//     }
-	//     machineTemplate = azureTemplate
+	case hyperv1.AzurePlatform:
+		azureTemplate := &capiazure.AzureMachineTemplate{}
+		if err := capi.getExistingMachineTemplate(ctx, azureTemplate); err != nil {
+			if apierrors.IsNotFound(err) {
+				return nil
+			}
+			return fmt.Errorf("failed to get AzureMachineTemplate: %w", err)
+		}
+		machineTemplate = azureTemplate
 
 	default:
 		return fmt.Errorf("unsupported platform for scale-from-zero: %s", nodePool.Spec.Platform.Type)

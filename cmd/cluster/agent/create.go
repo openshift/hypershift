@@ -58,7 +58,7 @@ type CreateOptions struct {
 func (o *ValidatedCreateOptions) Complete(ctx context.Context, opts *core.CreateOptions) (core.Platform, error) {
 	var err error
 	if o.APIServerAddress == "" {
-		o.APIServerAddress, err = core.GetAPIServerAddressByNode(ctx, opts.Log)
+		o.APIServerAddress, err = core.GetAPIServerAddressByNode(ctx, opts.Log, opts.Kubeconfig)
 	}
 	if opts.DefaultDual {
 		// Using this AgentNamespace field because I cannot infer the Provider we are using at this point

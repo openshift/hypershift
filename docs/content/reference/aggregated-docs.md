@@ -5,6 +5,148 @@ for use with AI tools like NotebookLM.
 
 ---
 
+## Source: docs/content/contribute/add-a-capability.md
+
+# Adding a New Cluster Capability
+
+This guide describes how to add support for a new optional capability to the HostedCluster API, following the pattern established by the existing capabilities (ImageRegistry, Console, NodeTuning, etc.).
+
+For user-facing documentation on how capabilities work, see Cluster Capabilities.
+
+## Background: OpenShift Capabilities
+
+HyperShift's capability system builds on top of OpenShift's `ClusterVersionCapability` type defined in the openshift/api module. The full set of known capabilities is defined in `config/v1/types_cluster_version.go` as the `KnownClusterVersionCapabilities` list and includes:
+
+| OpenShift Capability | Supported in HyperShift |
+|---|---|
+| `openshift-samples` | Yes |
+| `baremetal` | Yes |
+| `marketplace` | No |
+| `Console` | Yes |
+| `Insights` | Yes |
+| `Storage` | No |
+| `CSISnapshot` | No |
+| `NodeTuning` | Yes |
+| `MachineAPI` | No |
+| `Build` | No |
+| `DeploymentConfig` | No |
+| `ImageRegistry` | Yes |
+| `OperatorLifecycleManager` | No |
+| `OperatorLifecycleManagerV1` | No |
+| `CloudCredential` | No |
+| `Ingress` | Yes |
+| `CloudControllerManager` | No |
+
+When adding a new capability to HyperShift, the value **must** correspond to an existing `ClusterVersionCapability` constant from that upstream list. HyperShift's `CalculateEnabledCapabilities` function uses the upstream `ClusterVersionCapabilitySetCurrent` as the default set and then applies the explicitly enabled/disabled overrides. See `support/capabilities/hosted_control_plane_capabilities.go:68-90`.
+
+## Implementation Checklist
+
+### 1. Define the Capability Constant
+
+Add a new `OptionalCapability` constant in `api/hypershift/v1beta1/hostedcluster_types.go` alongside the existing ones (lines 477-483). The value must reference the corresponding `configv1.ClusterVersionCapability`:
+
+```go
+const MyCapability OptionalCapability = OptionalCapability(configv1.ClusterVersionCapabilityMyCapability)
+```
+
+Update the `// +kubebuilder:validation:Enum=...` tag on the `OptionalCapability` type (line 474) to include the new value.
+
+### 2. Add a Capability Helper Function
+
+Add an `Is<Name>CapabilityEnabled` function in `support/capabilities/hosted_control_plane_capabilities.go`. Follow the existing pattern:
+
+```go
+func IsMyCapabilityEnabled(capabilities *hyperv1.Capabilities) bool {
+    if capabilities == nil {
+        return true
+    }
+    for _, disabledCap := range capabilities.Disabled {
+        if disabledCap == hyperv1.MyCapability {
+            return false
+        }
+    }
+    return true
+}
+```
+
+### 3. Wire It Into the Controllers
+
+Depending on where the component's resources are reconciled, add checks to skip reconciliation when the capability is disabled. Common integration points:
+
+- **Control Plane Operator (CPO)** controllers under `control-plane-operator/controllers/hostedcontrolplane/` for control-plane-side operator deployments.
+- **Hosted Cluster Config Operator (HCCO)** controllers under `control-plane-operator/hostedclusterconfigoperator/controllers/resources/` for guest-cluster-side resources.
+- **CPOv2 components** under `control-plane-operator/controllers/hostedcontrolplane/v2/` for components using the new control plane component framework. Use the `IsDisabled()` method on the component to gate reconciliation based on capability state.
+
+Look at how existing capabilities gate their resources. For example:
+
+- `IsImageRegistryCapabilityEnabled` is checked in the registry operator component, nodepool controller, and KAS params.
+- `IsNodeTuningCapabilityEnabled` is checked in the NTO component and config operator.
+- `IsIngressCapabilityEnabled` is checked in the ingress operator component and config operator.
+
+### 4. Update the CLI Help Text
+
+Update the `--disable-cluster-capabilities` flag description in `cmd/cluster/core/create.go` (line 111) to include the new value in the supported values list.
+
+### 5. Regenerate CRDs and Vendored API
+
+Since `api/` is a separate Go module, you must run:
+
+```shell
+make update
+```
+
+This regenerates CRDs, revendors the API module, and updates generated clients.
+
+### 6. Add Tests
+
+Add test cases for the new helper function in `support/capabilities/hosted_control_plane_capabilities_test.go`. Cover:
+
+- Capability enabled by default (nil `Capabilities`).
+- Capability explicitly disabled.
+- Capability not in the disabled list (still enabled).
+
+### 7. Add CEL Validation (If Needed)
+
+If the new capability has cross-capability dependencies (like Ingress requiring Console to also be disabled), add a CEL validation rule on the `Disabled` field in the `Capabilities` struct (line 514 area). See the existing Ingress/Console constraint as an example:
+
+```go
+// +kubebuilder:validation:XValidation:rule="!self.exists(cap, cap == 'Ingress') || self.exists(cap, cap == 'Console')",message="Ingress capability can only be disabled if Console capability is also disabled"
+```
+
+## Reference PRs
+
+These PRs show the full implementation pattern for each capability that has been added:
+
+| Capability | PR | Description |
+|---|---|---|
+| ImageRegistry | #5456, #5964 | Initial implementation behind feature gate, then GA and backport to main |
+| openshift-samples | #6197 | Disabling the Samples operator |
+| Insights | #6246 | Disabling the Insights operator |
+| Console | #6183 | Disabling the Console operator (generic disable framework) |
+| NodeTuning | #6356 | Disabling the Node Tuning Operator |
+| Ingress | #6319 | Disabling the Ingress operator (with Console dependency constraint) |
+| baremetal | #6158 | Enable field support and baremetal default exclusion |
+
+The best PRs to use as a template are the simpler single-capability additions like #6197 (openshift-samples) or #6246 (Insights).
+
+## Key Code Locations
+
+| What | Path |
+|---|---|
+| `OptionalCapability` type and constants | `api/hypershift/v1beta1/hostedcluster_types.go:474-483` |
+| `Capabilities` struct and CEL rules | `api/hypershift/v1beta1/hostedcluster_types.go:485-516` |
+| `HostedClusterSpec.Capabilities` field | `api/hypershift/v1beta1/hostedcluster_types.go:829-835` |
+| `HostedControlPlaneSpec.Capabilities` field | `api/hypershift/v1beta1/hosted_controlplane.go:265-266` |
+| Capability helper functions | `support/capabilities/hosted_control_plane_capabilities.go` |
+| Capability helper tests | `support/capabilities/hosted_control_plane_capabilities_test.go` |
+| `CalculateEnabledCapabilities` (net capability set) | `support/capabilities/hosted_control_plane_capabilities.go:68-90` |
+| CLI flag definition | `cmd/cluster/core/create.go:111` |
+| CLI capability wiring | `cmd/cluster/core/create.go:361-368, 767-779` |
+| OpenShift `ClusterVersionCapability` definitions | `openshift/api` `config/v1/types_cluster_version.go` |
+
+
+---
+
 ## Source: docs/content/contribute/branch-process.md
 
 ## OCP Branching Tasks for the HyperShift Team
@@ -15,6 +157,7 @@ These are a set of tasks we need to perform on every OCP branching. We need to:
 1. Update the Renovate configuration to include the new release branch - Update Renovate
 1. Update the OpenShift Release repository to fix the step registry configuration files - OpenShift/Release
 1. Update TestGrid to include the new OCP version tests - TestGrid
+1. Add upgrade-from-.0 periodic jobs for ROSA and ARO HCP once the new version is GA - Upgrade-from-.0 Periodics
 
 !!! danger
     If test platform are testing new OCP releases before the release is cut the hypershift test will fail and block payloads until:
@@ -103,6 +246,29 @@ Example Release Branch PR (4.22)
 We need to update TestGrid to include the new OCP version tests. 
 
 Here is an Example PR to do that.
+
+---
+
+### Add Upgrade-from-.0 Periodic Jobs
+
+Once a new OCP minor version goes GA, we need to add upgrade-from-.0 periodic jobs for both AWS (ROSA) and Azure (ARO HCP) platforms in the openshift/release repository. These jobs validate that clusters can upgrade from CPO version 4.Y.0 to 4.Y.latest without triggering NodePool rollouts.
+
+Jobs to create for each new GA version:
+
+- **AWS (ROSA):** `periodic-ci-openshift-hypershift-release-4.Y-periodics-hcm-upgrade-dot-zero-to-latest-aws-ovn`
+- **Azure (ARO HCP):** `periodic-ci-openshift-hypershift-release-4.Y-periodics-hcm-upgrade-dot-zero-to-latest-azure`
+
+The CI operator configs live at:
+
+- `ci-operator/config/openshift/hypershift/openshift-hypershift-release-4.Y__periodics-hcm-upgrade.yaml` (AWS)
+- `ci-operator/config/openshift/hypershift/openshift-hypershift-release-4.Y__periodics-hcm-azure.yaml` (Azure)
+
+Use the existing job configurations from the prior OCP version as a template. Both jobs run the `TestUpgradeControlPlane` test with `PREVIOUS_RELEASE_IMAGE` set to 4.Y.0 and `LATEST_RELEASE_IMAGE` set to 4.Y.latest.
+
+For detailed requirements and job specifications, see:
+
+- CNTRLPLANE-1852 — AWS (ROSA) upgrade-from-.0 periodic job spec
+- CNTRLPLANE-1854 — Azure (ARO HCP) upgrade-from-.0 periodic job spec
 
 
 ---
@@ -420,6 +586,38 @@ To run override tests:
    - Check platform configuration in YAML
    - Verify platform name spelling
 
+
+## Validating Override Images Contain Claimed PRs
+
+When reviewing a PR that sets CPO override images and claims "includes
+fix from PR #8500 and PR #8512", you can verify the claimed PRs are
+actually present in the image's git history using the
+`/validate-pr-override-images` Claude Code skill.
+
+The PR description must include a structured contract:
+
+```
+branch: 4.20 wants: https://github.com/openshift/hypershift/pull/8593
+branch: 4.21 wants: https://github.com/openshift/hypershift/pull/8593, https://github.com/openshift/hypershift/pull/8565
+```
+
+```
+# In Claude Code, pass the PR number or URL:
+/validate-pr-override-images 8610
+/validate-pr-override-images https://github.com/openshift/hypershift/pull/8610
+```
+
+The skill reads the `vcs-ref` label from each override image via
+`skopeo inspect` to get the commit SHA the image was built from, then
+uses `git merge-base --is-ancestor` to check whether each claimed PR's
+merge commit is an ancestor of that image commit.
+
+Prerequisites: `skopeo`, `gh`, relevant release branches fetched locally
+
+!!! note
+    The `validate-cpo-overrides.yaml`
+    GitHub Action runs this same
+    validation automatically on PRs that touch `overrides.yaml`.
 
 ## Security/Production Considerations
 
@@ -843,6 +1041,197 @@ Use these resources to contribute to HyperShift.
 
 ---
 
+## Source: docs/content/contribute/konflux-scripts.md
+
+# Konflux CI Tools
+
+Tools for working with Konflux pipelines and builds. Several tasks are
+available both as Claude Code skills (automated) and as standalone scripts
+(manual). The standalone scripts live under `hack/tools/` and require `oc`
+access to the Konflux cluster (`api.stone-prd-rh01.pg1f.p1.openshiftapps.com:6443`)
+in namespace `crt-redhat-acm-tenant`.
+
+## Predict which pipelines a PR triggers
+
+You've changed a Containerfile and some Go code, and want to know which
+Konflux pipelines will fire before you push.
+
+**Tool:** `hack/tools/check-konflux-triggers/`
+
+Evaluates Pipelines-as-Code CEL expressions from `.tekton/*pull-request*`
+files against the current branch's changed files. Uses the same `gobwas/glob`
+and `google/cel-go` libraries as Pipelines as Code.
+
+```bash
+# Check which pipelines would trigger for your current changes:
+(cd hack/tools && go run ./check-konflux-triggers/)
+
+# Compare against a different base (e.g., your upstream remote):
+(cd hack/tools && go run ./check-konflux-triggers/ upstream/main)
+```
+
+## Build an image from a PR
+
+**Scenario 1:** You opened a PR with an OCPBUGS fix and need the built
+image to deploy in a staging cluster for manual validation — but the PR
+hasn't merged yet.
+
+**Scenario 2:** A colleague asks you to test their PR, but it was opened
+a week ago and the 5-day image expiry has already garbage-collected it
+from the registry. You need a fresh build with a longer TTL.
+
+**Skill:** `/konflux-build` — creates a manual Konflux PipelineRun from a
+PR with configurable image expiry (default 30 days).
+
+```
+# In Claude Code:
+/konflux-build 8761
+/konflux-build https://github.com/openshift/hypershift/pull/8761
+```
+
+## Investigate Enterprise Contract failures
+
+Your PR shows a red "enterprise-contract" check on GitHub. The check output
+says something about untrusted tasks or policy violations, but the details
+are sparse. The PipelineRun has already been archived and `oc get` returns
+nothing.
+
+**Skill:** `/konflux-ec-violations` — accesses archived PipelineRuns via
+the KubeArchive REST API, retrieves the EC verify task's JSON report, and
+summarises violations grouped by rule.
+
+```
+# In Claude Code, pass the PR number or URL:
+/konflux-ec-violations 8761
+```
+
+The skill fetches the archived PipelineRun from KubeArchive, finds the
+EC verify task pod, reads the `step-report-json` container logs, and
+presents the violations with rule codes, descriptions, and suggested fixes.
+
+## Update outdated Tekton tasks
+
+Enterprise Contract checks are failing with `trusted_task.trusted` — your
+`.tekton/` pipeline files reference task bundle digests that are no longer
+in the trusted list.
+
+**Skill:** `/update-konflux-tasks` — parses EC violation logs, identifies
+outdated tasks, fetches migration notes from the
+build-definitions repo,
+and applies the digest updates.
+
+```
+# In Claude Code:
+/update-konflux-tasks
+```
+
+### Standalone scripts
+
+The skill uses two scripts that can also be run directly:
+
+**`hack/tools/scripts/update_trusted_task_bundles.py`** — fetches the
+trusted tasks data from the Konflux `data-acceptable-bundles` OCI artifact
+and updates pipeline YAML files to the latest trusted digests.
+
+```bash
+# Update all .tekton/ pipeline files at once:
+hack/tools/scripts/update_trusted_task_bundles.py
+
+# Update only the operator push pipeline:
+hack/tools/scripts/update_trusted_task_bundles.py .tekton/hypershift-operator-main-push.yaml
+```
+
+Prerequisites: `python3`, `oras`
+
+**`hack/tools/scripts/find_task_version_by_digest.sh`** — maps a task
+container image digest to its semantic version tag. Useful when an EC
+violation message gives you a digest like `sha256:a7cc...` and you need
+to know "is this version 0.8 or 0.9?".
+
+```bash
+# Find which version of clair-scan corresponds to a digest:
+hack/tools/scripts/find_task_version_by_digest.sh clair-scan \
+  sha256:a7cc183967f89c4ac100d04ab8f81e54733beee60a0528208107c9a22d3c43af
+```
+
+Prerequisites: `skopeo`, `jq`
+
+## Test tag pipeline changes
+
+You're modifying the tag pipeline definition in `.tekton/` (e.g., adding a
+new build step or changing the multi-arch platforms). You need to verify
+the changes actually work before merging — but tag pipelines only trigger
+on `git tag` pushes, so normal PR CI won't exercise them.
+
+**Skill:** `/test-tag-pipeline` — creates a manual PipelineRun from a tag
+commit using your branch's pipeline definition, waits for it to complete,
+and optionally triggers EC validation via a Snapshot.
+
+```
+# In Claude Code, from your branch with tag pipeline changes:
+/test-tag-pipeline v0.1.69
+```
+
+### Standalone scripts
+
+The skill orchestrates two scripts that can be used independently:
+
+**`hack/tools/scripts/create-manual-tag-pipelinerun.sh`** — creates the
+manual PipelineRun by patching the tag pipeline YAML with your branch's
+commit SHA and submitting it.
+
+```bash
+# Test the tag pipeline from main against tag v0.1.69:
+hack/tools/scripts/create-manual-tag-pipelinerun.sh v0.1.69
+
+# Test using the pipeline definition from your fork branch:
+hack/tools/scripts/create-manual-tag-pipelinerun.sh v0.1.69 celebdor:fix-tag-pipeline
+
+# Then watch the PipelineRun until it finishes:
+oc get pipelinerun -n crt-redhat-acm-tenant -w -l pipelinesascode.tekton.dev/event-type=push
+```
+
+Prerequisites: `oc`, `yq`
+
+**`hack/tools/scripts/create-snapshot-from-pipelinerun.sh`** — after the
+build completes, creates an `appstudio.redhat.com/v1alpha1` Snapshot
+resource to trigger Enterprise Contract (EC) validation on the resulting
+image. The Snapshot links the built container image back to its source
+commit and target branch, which is exactly the metadata EC needs to run
+its policy checks.
+
+The script has two modes:
+
+1. **From a live PipelineRun** — extracts `IMAGE_URL`, `IMAGE_DIGEST`,
+   commit SHA, and target branch directly from the PipelineRun's
+   `status.results` and annotations.
+2. **Direct image parameters** — useful when the PipelineRun has already
+   been garbage-collected. You provide the image coordinates and commit
+   metadata explicitly.
+
+```bash
+# Mode 1: From a completed PipelineRun (extracts image details automatically):
+hack/tools/scripts/create-snapshot-from-pipelinerun.sh \
+  hypershift-operator-main-manual-v0.1.69-abc12
+
+# Mode 2: Direct parameters (e.g., after PipelineRun was garbage-collected):
+hack/tools/scripts/create-snapshot-from-pipelinerun.sh \
+  --image-url quay.io/redhat-user-workloads/crt-redhat-acm-tenant/hypershift-operator-main:v0.1.69 \
+  --image-digest sha256:016e754d... \
+  --pipelinerun hypershift-operator-main-manual-v0.1.69-gb49w \
+  --commit 6e6ecadc61361e4fe359af34dcdee17df06c664e \
+  --target-branch refs/tags/v0.1.69
+
+# Monitor the resulting EC IntegrationTestScenario run:
+oc get snapshot <snapshot-name> -n crt-redhat-acm-tenant -w
+oc get pipelinerun -n crt-redhat-acm-tenant -l appstudio.openshift.io/snapshot=<snapshot-name>
+```
+
+Prerequisites: `oc`, `jq`
+
+
+---
+
 ## Source: docs/content/contribute/onboard-a-platform.md
 
 ---
@@ -993,6 +1382,79 @@ The HyperShift team owns and maintains the following repositories.
 | openshift/azure-kubernetes-kms | Azure Key Vault KMS plugin for the Kubernetes API server. | Azure/kubernetes-kms |
 | openshift/apiserver-network-proxy | Konnectivity proxy enabling secure communication between the API server and cluster nodes. | kubernetes-sigs/apiserver-network-proxy |
 | openshift/aws-node-termination-handler | Gracefully handles EC2 instance shutdown within Kubernetes. | aws/aws-node-termination-handler |
+
+
+---
+
+## Source: docs/content/contribute/retrospective-guidelines.md
+
+# :material-refresh: Retrospective Guidelines
+
+## :thinking: What is a Retrospective?
+
+A retrospective is a recurring team ceremony held at the end of a sprint or milestone. Its purpose is to reflect on how the team worked together — not what was delivered, but **how** it was delivered — and to identify concrete improvements.
+
+!!! tip "The Goal"
+    Continuous improvement: small, actionable changes each cycle that compound over time.
+
+## :clipboard: Board Columns & What Goes Where
+
+Our retro uses a **Start / Stop / Continue** format with two additional columns:
+
+| Column | Prompt | What to Add |
+| :---- | :---- | :---- |
+| :rocket: **Start** | "What should we start doing?" | New practices, processes, or habits the team isn't doing yet but should try. |
+| :octagonal_sign: **Stop / What could have gone better?** | "What should we stop doing? What could have gone better?" | Pain points, inefficiencies, or practices that aren't working. Things that slowed the team down or caused frustration. |
+| :white_check_mark: **Continue** | "What should we continue doing?" | Things that worked well and should keep happening. Recognizing what's going right is just as important as identifying problems. |
+| :hammer_and_wrench: **Action** | "What actions can be taken?" | Concrete, assignable action items that come out of the discussion. These should have an owner and ideally a linked Jira ticket. |
+| :hourglass: **Incomplete actions** | (Carried forward) | Unfinished action items from previous retros. Reviewed at the start of each session. |
+
+## :pencil2: Writing Good Retro Cards
+
+Be specific and actionable. The best cards explain the *what* and hint at the *why*.
+
+!!! example ":rocket: Start Examples"
+    * "Define how to proceed if unrelated E2E tests fail on a PR" — clear gap in process
+    * "Get the skill/Claude evals up and running so we have a baseline on what model works better (to help reduce costs)" — ties the action to a goal
+    * "Choose the best IC model for our team… align on a preferred model so we can present it to Toni" — includes next step and stakeholder
+
+!!! example ":octagonal_sign: Stop / Could Have Gone Better Examples"
+    * "A lot of pain from CI (due release image). Still struggling" — honest about ongoing pain
+    * "The process to get IT approved things is quite complicated these days — CMDB ID and PIA needed for more things than the past" — identifies the specific friction
+    * "e2e v2 tests story could've gone better" — good start, even better with specifics on *what* could've gone better
+
+!!! example ":white_check_mark: Continue Examples"
+    * "Using chai-bot as helper during IC rotation was very effective and actually lowered the weight quite a bit" — specific about the impact
+    * "Sharing things at the tech discussion" — short but clear
+    * "Migrating e2e tests from v1 to v2 ginkgo so we can have CR/Sippy coverage" — recognizes ongoing work worth sustaining
+
+!!! example ":hammer_and_wrench: Action Examples"
+    * "Make a flow chart in the upstream docs — 'my e2e is failing, what do I do'" (CNTRLPLANE-3633) — concrete deliverable with a Jira ticket and owner
+
+## :busts_in_silhouette: What's Expected from Each Team Member
+
+### :calendar: Before the Retro
+
+* Reflect on the past sprint. Think about what went well, what was painful, and what you'd change.
+* Add your cards to Start, Stop, and Continue columns **before** the meeting. This gives everyone time to think and makes the discussion more productive.
+* Use the voting/reactions (:+1:, :bulb:, etc.) on other people's cards to signal agreement before the meeting starts.
+
+### :speech_balloon: During the Retro
+
+* **Review incomplete actions first.** Check whether last retro's actions were completed. The target state is zero incomplete actions.
+* **Be honest and blameless.** Focus on processes and systems, not individuals.
+* **Discuss and group related items.** Use "Add group" to cluster similar cards.
+* **Turn problems into actions.** Every significant pain point in "Stop" should produce a card in "Action" with an owner.
+
+!!! warning "Keep it achievable"
+    Keep actions small and achievable. One completed action is worth five ambitious ones that carry forward forever.
+
+### :dart: After the Retro
+
+* **Own your action items.** Follow through before the next retro.
+
+!!! info "Don't wait"
+    Check in mid-sprint. If an action is blocked, raise it early — don't wait for the next retro to surface it.
 
 
 ---
@@ -13440,87 +13902,6 @@ The HyperShift team conducts monthly reviews:
 
 ---
 
-## Source: docs/content/how-to/ci/checking-ci.md
-
-# Daily CI Health Check Procedures
-This document outlines the daily checks that should be performed each morning to ensure the health and stability of our CI systems.
-
-!!! tip
-
-    Daily CI checks help identify issues early and ensure that our development pipeline remains stable. These checks should be performed at the start of each workday.
-
-## 1. OCP Release Payload Controllers
-Check the status of OpenShift Container Platform release payload controllers for the **current** and **previous** OCP versions to ensure they are functioning properly.
-
-- Review amd64 release payload controller to make sure HyperShift AWS and AKS jobs are passing, thus they are not blocking the CI and nightly payloads (both OCP versions)
-- Review multi-arch release payload controller to make sure HyperShift AKS job is passing, thus it is not blocking the nightly payload (both OCP versions)
-- Alternatively, you can view the same info on the Sippy Payload streams dashboard. Here is an example for OCP 4.21.
-
-!!! warning - "HyperShift job is failing and blocking a payload release"
-
-    When either HyperShift job is blocking a payload release:
-    
-    - Open a chat thread in #team-ocp-hypershift to start a dialogue on what is happening and to begin root causing the problem.
-    - In addition, alert #forum-ocp-oversight we are aware of the issue and working to root cause the problem.
-
----
-
-## 2. Periodic & Conformance Jobs
-Review periodic job status for the **current** and **previous** OCP versions to ensure long-running validation and maintenance tasks are healthy. We want to be passing 70% or higher.
-
-For each OCP version, click on the Jobs link on the left hand side of the screen in Sippy. Here is an example for OCP 4.21 with the jobs filtered on *hypershift*.
-
-We care about the following jobs (you can filter by these names if desired):
-
-- AWS
-    - periodic-ci-openshift-hypershift-release-*-periodics-e2e-aws-ovn-conformance
-    - periodic-ci-openshift-hypershift-release-*-periodics-e2e-aws-upgrade
-    - periodic-ci-openshift-hypershift-release-*-periodics-e2e-aws-multi
-    - periodic-ci-openshift-hypershift-release-*-periodics-e2e-aws-ovn
-- Azure / ARO HCP
-    - periodic-ci-openshift-hypershift-release-*-periodics-e2e-aks
-    - periodic-ci-openshift-hypershift-release-*-periodics-e2e-aks-multi-x-ax
-    - periodic-ci-openshift-hypershift-release-*-periodics-e2e-azure-aks-ovn-conformance
-
-!!! tip - "Tip - How to check the job test results"
-
-    For any of these jobs, if you click on the running man emblem, Sippy will show you all the test runs. 
-    For each of the test runs, you can click the Prow ship emblem to see the test results of the individual run.
-
-!!! warning - "What to do when a job is permafailing"
-
-    Open a chat thread in #team-ocp-hypershift to start a dialogue on what is happening and to begin root causing the problem.
-
-Alternatively, you can view the job runs in TestGrid.
-
----
-
-## 3. Presubmit Jobs
-Monitor presubmit job health for the **current OCP version only** to catch any systemic issues that could block development.
-
-The best way to check to make sure the presubmit jobs are not permafailing are to look at a recent PR in the HyperShift repo and go to the job history of the specific job you want to review.
-
-The presubmit jobs we most care about are:
-
-- pull-ci-openshift-hypershift-main-e2e-aws
-- pull-ci-openshift-hypershift-main-e2e-aws-upgrade-hypershift-operator
-- pull-ci-openshift-hypershift-main-e2e-aks
-- pull-ci-openshift-hypershift-main-e2e-aks-4-20
-- pull-ci-openshift-hypershift-main-e2e-kubevirt-aws-ovn-reduced
-- pull-ci-openshift-hypershift-main-verify
-- pull-ci-openshift-hypershift-main-unit
-
-!!! tip
-
-    If the job is not solid red, the job is not permafailing.
-
-!!! warning - "What to do when a job is permafailing"
-
-    Open a chat thread in #team-ocp-hypershift to start a dialogue on what is happening and to begin root causing the problem.
-
-
----
-
 ## Source: docs/content/how-to/ci/ci-infrastructure.md
 
 # CI Infrastructure
@@ -13687,11 +14068,11 @@ Then open http://127.0.0.1:8000.
 
 ## Source: docs/content/how-to/ci/github-actions.md
 
-# GitHub Actions Workflows
+# 🔄 GitHub Actions Workflows
 
 HyperShift uses GitHub Actions for lightweight CI checks that run on every pull request. These workflows complement the heavier Prow-based e2e tests by providing fast feedback on code quality, formatting, and documentation.
 
-## Reusable Workflow Architecture
+## 🏗️ Reusable Workflow Architecture
 
 All GHA workflows follow a **caller + reusable** pattern:
 
@@ -13712,15 +14093,15 @@ flowchart LR
 
 This pattern provides:
 
-- **Consistency** — all PR and push workflows share the same job definitions.
-- **Maintainability** — job logic is defined once in the reusable workflow and updated in a single place.
-- **Security** — callers pin reusable workflows to `@main`, reducing the risk of PRs altering reusable job logic. Caller workflows are protected by branch protection rules and CODEOWNERS.
+- ✅ **Consistency** — all PR and push workflows share the same job definitions.
+- 🔧 **Maintainability** — job logic is defined once in the reusable workflow and updated in a single place.
+- 🔒 **Security** — callers pin reusable workflows to `@main`, reducing the risk of PRs altering reusable job logic. Caller workflows are protected by branch protection rules and CODEOWNERS.
 
-## Workflows
+## 📋 Workflows
 
 All workflows run on self-hosted ARC runners and target the `main` and `release-4.22` branches.
 
-### Code Quality
+### 🧹 Code Quality
 
 | Caller | Reusable | Purpose |
 |--------|----------|---------|
@@ -13729,7 +14110,7 @@ All workflows run on self-hosted ARC runners and target the `main` and `release-
 | `lint.yaml` | `lint-reusable.yaml` | Go linting via `golangci-lint` |
 | `verify.yaml` | `verify-reusable.yaml` | Full verification (`make verify`) |
 
-### Testing
+### 🧪 Testing
 
 | Caller | Reusable | Purpose |
 |--------|----------|---------|
@@ -13737,49 +14118,111 @@ All workflows run on self-hosted ARC runners and target the `main` and `release-
 | `envtest-ocp.yaml` | `envtest-ocp-reusable.yaml` | CRD validation tests against OpenShift k8s versions |
 | `envtest-kube.yaml` | `envtest-kube-reusable.yaml` | CRD validation tests against vanilla k8s versions |
 
-### Documentation
+### 📖 Documentation
 
 | Caller | Reusable | Purpose |
 |--------|----------|---------|
 | `docs-build.yaml` | `docs-build-reusable.yaml` | Build MkDocs site in strict mode |
 
-The `docs-deploy.yaml` workflow is not a reusable workflow pair — it triggers via `workflow_run` after the Docs Build completes to deploy the preview. See Documentation Preview for details.
+!!! info
+    The `docs-deploy.yaml` workflow is not a reusable workflow pair — it triggers via `workflow_run` after the Docs Build completes to deploy the preview. See Documentation Preview for details.
 
-### Other
+### 🤖 PR Slash Commands
+
+These workflows are triggered by posting a **slash command** as a comment on a pull request. They are powered by Claude Code via the shared `reusable-claude-on-pr.yaml` workflow, which handles checking out the PR branch, authenticating to GCP (for Vertex AI), and running Claude with the appropriate prompt.
+
+!!! warning "Permissions"
+    Only organization **members**, **owners**, and **collaborators** can trigger these commands. Comments from external contributors are ignored.
+
+| Command | Workflow | What it does |
+|---------|----------|--------------|
+| `/address-review-comments` | `address-review-comments.yaml` | Reads open review comments on the PR and pushes commits to address them |
+| `/rebase` | `rebase.yaml` | Rebases the PR branch onto the latest `main` and force-pushes |
+| `/restructure-commits` | `restructure-commits.yaml` | Reorganizes the PR's commits into logical units with conventional commit messages |
+
+**How it works:**
+
+1. Post the slash command (e.g., `/rebase`) as a comment on a PR.
+2. The workflow posts a 🔗 reply comment linking to the Actions run so you can follow progress.
+3. Claude checks out the PR branch, performs the requested operation, and pushes the result.
+
+!!! tip
+    Each command uses concurrency groups scoped to the PR number — re-triggering a command automatically cancels the previous run for that PR.
+
+### 🔧 Other
 
 | Caller | Reusable | Purpose |
 |--------|----------|---------|
 | `cpo-container-sync.yaml` | `cpo-container-sync-reusable.yaml` | Validate CPO container image references are in sync |
 | `dependabot-commit-fix.yaml` | `dependabot-commit-fix-reusable.yaml` | Rewrite dependabot commit messages to pass gitlint |
+| `gocacheprog-test.yaml` | `gocacheprog-test-reusable.yaml` | Tests for the `contrib/ci/gocacheprog` build cache tool (path-filtered) |
+| `validate-cpo-overrides.yaml` | — | Validate CPO override images contain the PRs claimed in the PR description |
 
-The `sync-community-fork.yaml` workflow runs on push to `main` only (not on PRs) and does not use the reusable pattern. See Sync Community Fork for details.
+!!! note
+    The `sync-community-fork.yaml` workflow runs on push to `main` only (not on PRs) and does not use the reusable pattern. See Sync Community Fork for details.
 
-## Adding a New Workflow
+## ➕ Adding a New Workflow
 
 To add a new GHA workflow:
 
-1. Create the reusable workflow (e.g., `my-check-reusable.yaml`) with `on: workflow_call`.
-2. Create the caller workflow (e.g., `my-check.yaml`) that uses the reusable workflow pinned at `@main`.
-3. Add branch filters for `main` and any active release branches.
+1. **Create the reusable workflow** (e.g., `my-check-reusable.yaml`) with `on: workflow_call`. This is where all the job logic lives.
+2. **Create the caller workflow** (e.g., `my-check.yaml`) that uses the reusable workflow pinned at `@main`.
+3. Add **branch filters** for `main` and any active release branches (e.g., `release-4.22`).
 4. Use `arc-runner-set` as the runner.
 
-Example caller:
+### Post-merge runs
 
-```yaml
-name: My Check
+If your workflow should also run after PRs merge to `main` (e.g., for Codecov baseline uploads or post-merge validation), add `on: push` triggers **to the reusable workflow**, not the caller. This lets the reusable workflow run directly on push events without needing a separate caller.
 
-on:
-  pull_request:
-    branches:
-      - main
-      - release-4.22
+### Why callers pin to `@main`
 
-jobs:
-  my-check:
-    uses: openshift/hypershift/.github/workflows/my-check-reusable.yaml@main
+Callers reference the reusable workflow at `@main` (e.g., `uses: openshift/hypershift/.github/workflows/my-check-reusable.yaml@main`). This means a PR **cannot modify the reusable workflow logic that runs against itself** — it always executes the version from `main`. This is a deliberate security measure: it prevents a PR from weakening checks to make itself pass.
+
+!!! warning "Implication for new workflows"
+    When you add a new reusable workflow, the caller in the same PR will **not** be able to reference it until it lands on `main`. You'll need to merge the reusable workflow first (or together with the caller, accepting that the first PR run will use a stale/missing reference).
+
+??? example "Example caller workflow"
+    ```yaml
+    name: My Check
+
+    on:
+      pull_request:
+        branches:
+          - main
+          - release-4.22
+
+    jobs:
+      my-check:
+        uses: openshift/hypershift/.github/workflows/my-check-reusable.yaml@main
+        permissions:
+          contents: read
+    ```
+
+??? example "Example reusable workflow with post-merge support"
+    ```yaml
+    name: My Check (Reusable)
+
+    on:
+      workflow_call:
+      push:
+        branches:
+          - main
+          - release-4.22
+
     permissions:
       contents: read
-```
+
+    jobs:
+      my-check:
+        name: My Check
+        runs-on: arc-runner-set
+        timeout-minutes: 60
+        steps:
+          - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+            with:
+              persist-credentials: false
+          - run: echo "Run your check here"
+    ```
 
 
 ---
@@ -13835,6 +14278,410 @@ The workflow requires one secret configured at the repository level:
 
 3. Verify the workflow runs successfully on the next push to `main`.
 4. Delete the old token from your GitHub account.
+
+
+---
+
+## Source: docs/content/how-to/ci/triage/daily-health.md
+
+# Daily CI Health Check Procedures
+This document outlines the daily checks that should be performed each morning to ensure the health and stability of our CI systems.
+
+!!! tip
+
+    Daily CI checks help identify issues early and ensure that our development pipeline remains stable. These checks should be performed at the start of each workday.
+
+## 1. OCP Release Payload Controllers
+Check the status of OpenShift Container Platform release payload controllers for the **current** and **previous** OCP versions to ensure they are functioning properly.
+
+- Review amd64 release payload controller to make sure HyperShift AWS and AKS jobs are passing, thus they are not blocking the CI and nightly payloads (both OCP versions)
+- Review multi-arch release payload controller to make sure HyperShift AKS job is passing, thus it is not blocking the nightly payload (both OCP versions)
+- Alternatively, you can view the same info on the Sippy Payload streams dashboard. Here is an example for OCP 4.21.
+
+!!! warning - "HyperShift job is failing and blocking a payload release"
+
+    When either HyperShift job is blocking a payload release:
+    
+    - Open a chat thread in #team-ocp-hypershift to start a dialogue on what is happening and to begin root causing the problem.
+    - In addition, alert #forum-ocp-oversight we are aware of the issue and working to root cause the problem.
+
+---
+
+## 2. Periodic & Conformance Jobs
+Review periodic job status for the **current** and **previous** OCP versions to ensure long-running validation and maintenance tasks are healthy. We want to be passing 70% or higher.
+
+For each OCP version, click on the Jobs link on the left hand side of the screen in Sippy. Here is an example for OCP 4.21 with the jobs filtered on *hypershift*.
+
+We care about the following jobs (you can filter by these names if desired):
+
+- AWS
+    - periodic-ci-openshift-hypershift-release-*-periodics-e2e-aws-ovn-conformance
+    - periodic-ci-openshift-hypershift-release-*-periodics-e2e-aws-upgrade
+    - periodic-ci-openshift-hypershift-release-*-periodics-e2e-aws-multi
+    - periodic-ci-openshift-hypershift-release-*-periodics-e2e-aws-ovn
+- Azure / ARO HCP
+    - periodic-ci-openshift-hypershift-release-*-periodics-e2e-aks
+    - periodic-ci-openshift-hypershift-release-*-periodics-e2e-aks-multi-x-ax
+    - periodic-ci-openshift-hypershift-release-*-periodics-e2e-azure-aks-ovn-conformance
+
+!!! tip - "Tip - How to check the job test results"
+
+    For any of these jobs, if you click on the running man emblem, Sippy will show you all the test runs. 
+    For each of the test runs, you can click the Prow ship emblem to see the test results of the individual run.
+
+!!! warning - "What to do when a job is permafailing"
+
+    Open a chat thread in #team-ocp-hypershift to start a dialogue on what is happening and to begin root causing the problem.
+
+Alternatively, you can view the job runs in TestGrid.
+
+---
+
+## 3. Presubmit Jobs
+Monitor presubmit job health for the **current OCP version only** to catch any systemic issues that could block development.
+
+The best way to check to make sure the presubmit jobs are not permafailing are to look at a recent PR in the HyperShift repo and go to the job history of the specific job you want to review.
+
+The presubmit jobs we most care about are:
+
+- pull-ci-openshift-hypershift-main-e2e-aws
+- pull-ci-openshift-hypershift-main-e2e-aws-upgrade-hypershift-operator
+- pull-ci-openshift-hypershift-main-e2e-aks
+- pull-ci-openshift-hypershift-main-e2e-aks-4-20
+- pull-ci-openshift-hypershift-main-e2e-kubevirt-aws-ovn-reduced
+- pull-ci-openshift-hypershift-main-verify
+- pull-ci-openshift-hypershift-main-unit
+
+!!! tip
+
+    If the job is not solid red, the job is not permafailing.
+
+!!! warning - "What to do when a job is permafailing"
+
+    Open a chat thread in #team-ocp-hypershift to start a dialogue on what is happening and to begin root causing the problem.
+
+
+---
+
+## Source: docs/content/how-to/ci/triage/index.md
+
+# CI Triage
+
+Guides for diagnosing and resolving CI failures in the HyperShift project.
+
+- **Presubmit Failures** — Your PR's e2e check failed. Start here.
+- **Daily CI Health** — Monitoring CI health across periodic and presubmit jobs.
+
+
+---
+
+## Source: docs/content/how-to/ci/triage/presubmit-failures.md
+
+# Triaging Presubmit Failures
+
+Your PR has a failing check. Use the flowchart below to figure out what's going on and what to do about it.
+
+!!! tip "Automated analysis with Claude Code"
+
+    If you use Claude Code, the openshift-eng/ai-helpers CI plugin can automate most of the investigation below:
+
+    - `ci:analyze-prow-job-test-failure` — Analyzes test failures from a Prow job.
+    - `ci:analyze-prow-job-install-failure` — Analyzes install/cluster-creation failures from a Prow job.
+
+---
+
+## Triage flowchart
+
+On your PR, click **Details** on the failing check. The check name tells you which CI system it belongs to.
+
+!!! info "Interactive flowchart"
+
+    Click any box in the flowchart to jump to the relevant section on this page.
+
+```mermaid
+flowchart TD
+    start["PR check failed ❌"] --> which_type{"Which CI system?"}
+
+    which_type -->|"GitHub Actions<br/>(verify, unit, lint, envtest, docs)"| gha["<b>GHA workflow log</b>"]
+    which_type -->|"Prow non-e2e<br/>(images, security, verify-deps)"| prow_other_history{"Failing on<br/>other PRs too?"}
+    which_type -->|"Konflux<br/>(Red Hat Konflux / ...)"| konflux["Image build or<br/>enterprise contract check"]
+    which_type -->|"Prow e2e job<br/>(ci/prow/e2e-*)"| e2e_history{"Failing on<br/>other PRs too?"}
+
+    gha --> gha_fix["Expand the failing job<br/>See GHA section below"]
+
+    prow_other_history -->|"Yes — failing everywhere"| ping_ic["🚨 Escalate"]
+    prow_other_history -->|"No — only your PR"| prow_other_fix["Fix and push"]
+
+    konflux --> konflux_fix["See Konflux section below"]
+
+    e2e_history -->|"Yes — failing everywhere"| escalate["🚨 Escalate"]
+    e2e_history -->|"No — only your PR"| prow_e2e{"What kind of failure?"}
+
+    prow_e2e -->|"Cluster creation<br/>failed"| create["Check Artifacts for JUnit XML<br/>or search log for the error"]
+    prow_e2e -->|"Test failed"| tests["Find failed test name in<br/>JUnit XML or Ginkgo output"]
+    prow_e2e -->|"Teardown failed"| destroy["/retest — rarely your code"]
+    tests ~~~ destroy
+
+    create --> trace["Trace the failure back<br/>to your code changes"]
+    tests --> trace
+
+    trace -->|"Not obviously related"| retest_once["<b>/retest</b> once"]
+    trace -->|"Related to your change"| fix["<b>Fix and push</b>"]
+    retest_once -->|"Same failure again"| escalate
+    retest_once -->|"Passes"| done["Done — was a flake"]
+    destroy -->|"Same failure again"| escalate
+    destroy -->|"Passes"| done
+    click gha href "#github-actions-failures" "Go to GHA failures"
+    click gha_fix href "#github-actions-failures" "Go to GHA failures"
+    click prow_other_fix href "#prow-non-e2e-jobs" "Go to non-e2e Prow jobs"
+    click prow_other_history href "#non-e2e-job-history" "Check non-e2e job history"
+    click ping_ic href "#escalate" "Go to escalation"
+    click konflux href "#konflux-failures" "Go to Konflux failures"
+    click konflux_fix href "#konflux-failures" "Go to Konflux failures"
+    click e2e_history href "#e2e-job-history" "Check e2e job history"
+    click create href "#create-guests-failures" "Go to create-guests failures"
+    click tests href "#run-tests-failures" "Go to run-tests failures"
+    click trace href "#tracing-the-failure-to-your-change" "Trace to your change"
+    click escalate href "#escalate" "Go to escalation"
+
+    style start fill:#ff6b6b,color:#fff
+    style gha_fix fill:#51cf66,color:#fff
+    style prow_other_fix fill:#51cf66,color:#fff
+    style fix fill:#51cf66,color:#fff
+    style done fill:#51cf66,color:#fff
+    style destroy fill:#74c0fc,color:#fff
+    style konflux_fix fill:#339af0,color:#fff
+    style ping_ic fill:#ffd43b,color:#333
+    style escalate fill:#ffd43b,color:#333
+```
+
+The rest of this page gives details for each branch in the flowchart.
+
+---
+
+## GitHub Actions failures
+
+Click **Details** on the failing check — it takes you to the GitHub Actions workflow run. On that page:
+
+1. Look at the left sidebar for the job name with a red ❌.
+2. Click it to expand the job's steps.
+3. Find the red step and click it to see the log output.
+
+These checks run on every PR:
+
+| Check name | What it runs | What to look for when it fails |
+|------------|--------------|-------------------------------|
+| **Unit Tests** | `make test` — Go unit tests, sharded across parallel jobs | `--- FAIL:` followed by the test name and assertion |
+| **Verify** | `make generate update`, `make staticcheck`, `make fmt`, `make vet`, then checks for uncommitted diffs | If it fails on the diff check, run `make generate fmt` locally and commit the result |
+| **Lint** | `make lint` — golangci-lint | Linter name and file path (e.g., `govet: ...`, `staticcheck: ...`) |
+| **Codespell** | `make verify-codespell` — spell checker | The misspelled word, the file, and the suggested fix |
+| **Gitlint** | `make run-gitlint` — commit message format checker | The rule that was violated (e.g., `title-max-length`) |
+| **CPO Container Sync** | `make cpo-container-sync` — validates CPO container image references are in sync | The container name or image reference that's out of sync |
+
+These checks only run when relevant files change:
+
+| Check name | Triggers on | What to look for |
+|------------|-------------|-----------------|
+| **Envtest OCP API Validation** | `api/`, `test/envtest/`, CRD test assets | `FAIL` with the test name — see `test/envtest/README.md` for details |
+| **Envtest Vanilla Kube API Validation** | Same as above | Same as above |
+| **Docs Build** | `docs/**` changes | MkDocs build errors — usually a broken link or YAML syntax error |
+| **Validate CPO Overrides** | `hypershift-operator/controlplaneoperator-overrides/assets/overrides.yaml` changes | Validation error for the CPO overrides file |
+| **gocacheprog Tests** | `contrib/ci/gocacheprog/**` changes | `FAIL` with the test name |
+
+GHA failures are almost always caused by your code changes. Fix and push.
+
+To see all runs of a particular workflow (useful for checking if a failure is widespread), go to the GitHub Actions page and select the workflow from the left sidebar.
+
+---
+
+## Prow jobs
+
+Prow checks appear on your PR as `ci/prow/<job-name>`. Click **Details** to open the Prow job page.
+
+### Prow non-e2e jobs
+
+These jobs don't run e2e tests. They build images or run static checks.
+
+| Job | What it does | What to look for |
+|-----|-------------|-----------------|
+| `images` | Builds all HyperShift container images | `error:` — compilation or Dockerfile failure |
+| `okd-scos-images` | Builds OKD/SCOS image variants | Same as `images` |
+| `security` | Runs security scanning | Security policy violations |
+| `verify-deps` | Verifies dependency consistency | Dependency mismatch errors |
+
+If `images` fails, it usually means your code doesn't compile. Search the log for `error:` and fix. If you're unsure whether it's your code, check the job history — if the same job is red on other PRs, it's not you.
+
+---
+
+### Prow e2e jobs
+
+These jobs create real clusters and run tests against them. They are the most common source of failures.
+
+| Job | Platform | What it tests | Trigger |
+|-----|----------|---------------|---------|
+| `e2e-aws` | AWS | Core v1 e2e tests | Auto |
+| `e2e-v2-aws` | AWS | V2 e2e tests | Auto |
+| `e2e-aws-4-22` | AWS | E2e tests against OCP 4.22 | `/test` only |
+| `e2e-aws-upgrade-hypershift-operator` | AWS | HyperShift operator upgrade | Auto |
+| `e2e-aks` | Azure (AKS) | AKS-managed e2e tests | Auto |
+| `e2e-aks-4-22` | Azure (AKS) | AKS with OCP 4.22 | `/test` only |
+| `e2e-azure-v2-self-managed` | Azure (self-managed) | Self-managed Azure v2 tests | Auto |
+| `e2e-v2-gke` | GKE | V2 e2e tests on GKE | Auto |
+| `e2e-kubevirt-aws-ovn-reduced` | KubeVirt on AWS | KubeVirt e2e tests | Auto |
+
+Jobs marked **Auto** run when the PR receives `/lgtm` but can also be triggered manually with `/test <job-name>`. Jobs marked **`/test` only** must always be triggered manually.
+
+### Finding the failed e2e step
+
+On the Prow job page, look at the step list on the left. The e2e pipeline runs in this order:
+
+1. **`create-guests`** — Creates hosted clusters in parallel
+2. **`run-tests`** — Runs Ginkgo test suites against the clusters
+3. **`dump-guests`** — Collects diagnostic artifacts (always runs)
+4. **`destroy-guests`** — Tears down clusters
+
+Find the step that failed and click it to see the log.
+
+---
+
+### `create-guests` failures
+
+A hosted cluster failed to come up. To find out why:
+
+1. Open the **Artifacts** tab and look for `junit_hosted_cluster_*.xml` files. These contain the `HostedCluster` and `NodePool` conditions at the time of failure.
+2. If no JUnit file exists, the failure happened before the cluster reached the version rollout phase — check the `create-guests` step log directly.
+
+Common causes:
+
+| Phase | What failed | Typical cause |
+|-------|-------------|---------------|
+| Phase 1 | `hypershift create cluster` | Invalid flags or missing credentials |
+| Phase 2 | Platform post-create hooks | Platform-specific setup failure |
+| Phase 3 | Wait for Available | Control plane startup failure |
+| Phase 4 | Platform post-available hooks | Day-2 config transition failure |
+| Phase 5 | Version rollout | Cluster came up but couldn't roll out target version |
+
+After identifying the error, check the job history to determine if this is specific to your PR.
+
+---
+
+### `run-tests` failures
+
+A test assertion failed. To find which test:
+
+1. Open the **Artifacts** tab and look for JUnit XML files (e.g., `junit_self_managed_azure_public.xml`). The failed test name and assertion message are in the XML.
+2. Alternatively, search the `run-tests` step log for `[FAIL]` to find the Ginkgo failure output, which includes the test description, the failed assertion, and the source file and line number.
+
+After identifying the failing test, check the job history to determine if this is specific to your PR.
+
+For more details on reading test artifacts and Ginkgo output, see Debugging CI Failures.
+
+---
+
+### `destroy-guests` failures
+
+Cluster teardown failed. This is rarely caused by your PR — it usually means a cloud API issue or a resource stuck in a deleting state. `/retest` is almost always the right move.
+
+---
+
+## Konflux failures
+
+Konflux checks appear as `Red Hat Konflux / <component>-on-pull-request` or `Red Hat Konflux / enterprise-contract-*`. Click **Details** to open the Konflux pipeline run in the Konflux UI.
+
+| Check pattern | What it does |
+|---------------|-------------|
+| `hypershift-operator-main-on-pull-request` | Builds the hypershift-operator image via Konflux |
+| `control-plane-operator-main-on-pull-request` | Builds the control-plane-operator image |
+| `hypershift-cli-mce-50-on-pull-request` | Builds the hypershift CLI image |
+| `hypershift-release-mce-50-on-pull-request` | Builds the release image |
+| `enterprise-contract-*` | Validates image provenance and policy compliance |
+
+Common causes:
+
+- **Compilation error** — Same as `images` failures. Your code doesn't compile. Fix and push.
+- **Stale or retired Tekton pipeline images** — Konflux pipelines reference specific Tekton task images that get retired over time. When this happens, every PR fails on Konflux until the pipeline definitions are updated. The fix is to update the Tekton pipelines in the repo, merge that fix, and then rebase your PR onto the updated main branch.
+- **Enterprise contract failures** — Policy violations on image provenance or signing. Usually not your code — `/retest` once.
+- If the failure persists or you're unsure, escalate.
+
+---
+
+## Checking Prow job history
+
+This is the key step for determining whether a failure is your fault. Check whether the same job is failing on other PRs.
+
+### Non-e2e job history
+
+| Job | History link |
+|-----|-------------|
+| images | job history |
+| okd-scos-images | job history |
+| security | job history |
+| verify-deps | job history |
+
+### E2e job history
+
+| Job | History link |
+|-----|-------------|
+| e2e-aws | job history |
+| e2e-v2-aws | job history |
+| e2e-aws-4-22 | job history |
+| e2e-aws-upgrade | job history |
+| e2e-aks | job history |
+| e2e-aks-4-22 | job history |
+| e2e-azure-v2-self-managed | job history |
+| e2e-v2-gke | job history |
+| e2e-kubevirt | job history |
+
+Look at the last 10-20 runs:
+
+- **Mostly red** → The job is failing for everyone. It's not your code. 🚨 Escalate.
+- **Mostly green, yours is red** → The failure is likely related to your change. Continue to tracing the failure.
+- **Mixed** → Could be a flaky test. Check if the same test is failing in the red runs.
+
+---
+
+## Tracing the failure to your change
+
+If the failure appears specific to your PR:
+
+1. **Find the test file.** Search for the failing test name in `test/e2e/`:
+
+    ```bash
+    grep -r "test description from the failure" test/e2e/
+    ```
+
+2. **Read the test.** Understand what it's checking and what code paths it exercises.
+
+3. **Trace back to your changes.** Common relationships:
+    - Changed a controller → tests that verify that controller's behavior
+    - Changed API types → tests that create or validate those resources
+    - Changed a CPO component → compliance tests that check all control plane workloads
+
+If your change clearly relates to the test, **fix and push** — the test is catching a real problem.
+
+If it's not obvious, **`/retest` once**. If the same test fails again, escalate.
+
+---
+
+## 🚨 Escalate
+
+If you've already retested and got the same failure, don't keep retesting — escalate.
+
+Post in #forum-ocp-hypershift and tag `@hypershift-engineering-ic` with:
+
+- The Prow job link
+- The failing test or job name
+- A one-line summary of what your PR changes
+- Whether `/retest` produced the same failure
+
+---
+
+## Further reading
+
+- Debugging CI Failures — Reading JUnit XML, Ginkgo output, and dump-guests artifacts
+- V2 E2E Testing Overview — Architecture of the v2 test framework
+- CI Pipeline Configuration — How presubmit jobs are configured
+- Daily CI Health — Monitoring periodic and presubmit job health
 
 
 ---
@@ -14699,7 +15546,7 @@ func DeploymentGenerationTest(getTestCtx internal.TestContextGetter) {
     })
 }
 
-var _ = Describe("Control Plane Workloads", Label("control-plane-workloads"), func() {
+var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:ControlPlaneWorkloads] Control Plane Workloads", Label("control-plane-workloads"), func() {
     var testCtx *internal.TestContext
     BeforeEach(func() {
         testCtx = internal.GetTestContext()
@@ -14766,6 +15613,52 @@ Sequential: []SequentialGroup{
 
 !!! tip "Adding a test with an existing label"
     If your test uses a label already in a filter expression (e.g., `hosted-cluster-health`), it runs automatically in the appropriate CI jobs. If you introduce a new label, you must add it to existing filter expressions in the TestMatrix configuration in the hypershift repository (not the release repository).
+
+## Sippy/CR test name annotations
+
+All test name strings must include annotations for Sippy Component Readiness (CR) mapping. These are parsed from the full Ginkgo test path and enable automatic Jira component assignment and per-feature regression tracking.
+
+**Required annotations:**
+
+1. **`[sig-hypershift][Jira:Hypershift]`** — on every top-level `Describe` block. Maps all tests to the Hypershift Jira component.
+2. **`[Feature:XYZ]`** — maps to a specific feature/capability. Placement depends on the file:
+    - **On the `Describe`** when the entire file tests one cohesive feature (most files).
+    - **On individual `Context`/`When` blocks** when a file covers multiple distinct capabilities.
+
+Feature names use PascalCase with no spaces (e.g., `BackupRestore`, `AzurePrivateLink`, `NodePoolLifecycle`).
+
+**Single-feature file:**
+
+```go
+var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:Health] Hosted Cluster Health", Label("hosted-cluster-health"), func() {
+    // all tests in this file map to Feature:Health
+})
+```
+
+**Multi-feature file** (e.g., platform-specific files covering multiple capabilities):
+
+```go
+var _ = Describe("[sig-hypershift][Jira:Hypershift] Hosted Cluster Azure", Label("hosted-cluster-azure"), func() {
+    // Jira component set at Describe level, Feature set per Context
+})
+
+Context("[Feature:AzureWorkloadIdentity] Azure Public Cluster", Label("Azure"), func() {
+    It("should mutate pods with workload identity federated credentials", func() { ... })
+})
+
+Context("[Feature:AzurePrivateLink] Azure Private Topology", Label("Azure"), func() {
+    It("should create AzurePrivateLinkService CR with PLS alias", func() { ... })
+})
+```
+
+!!! warning "Do not rename tests after Sippy import"
+    Renaming tests after Sippy imports them loses historical data and requires manual re-mapping. Add annotations before tests are imported.
+
+Check existing Feature names before adding new ones:
+
+```bash
+grep -r '\Feature:' test/e2e/v2/tests/
+```
 
 ## Platform guards
 
@@ -14854,7 +15747,7 @@ Eventually(func() bool {
 }).WithTimeout(5*time.Minute).WithPolling(10*time.Second).Should(BeTrue())
 ```
 
-For pointer safety, vacuous pass prevention, IPv6 URL construction, and the non-lifecycle vs. lifecycle mutation rule, see AGENTS.md conventions #11, #13, #15, #16.
+For pointer safety, vacuous pass prevention, IPv6 URL construction, and the non-lifecycle vs. lifecycle mutation rule, see [AGENTS.md conventions #11, #13, #15, #16.
 
 ## Lifecycle vs non-lifecycle tests
 
@@ -14871,7 +15764,7 @@ Lifecycle tests may modify cluster state but must:
 - Check `IsNotFound()` in cleanup to handle missing resources gracefully
 
 ```go
-var _ = Describe("NodePool Lifecycle", Label("lifecycle", "nodepool-lifecycle"), func() {
+var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:NodePoolLifecycle] NodePool Lifecycle", Label("lifecycle", "nodepool-lifecycle"), func() {
     var originalReplicas int32
     BeforeEach(func() {
         // Capture original state
@@ -14944,6 +15837,97 @@ Use `--ginkgo.label-filter` to run specific test categories. Use `--ginkgo.v` fo
 ```bash
 # Run a single test by name (regex match against the full description path)
 bin/test-e2e-v2 --ginkgo.focus="should not indicate rapid rollouts" --ginkgo.v
+```
+
+
+---
+
+## Source: docs/content/how-to/cluster-capabilities.md
+
+# Cluster Capabilities
+
+HyperShift allows administrators to enable or disable optional OpenShift components at cluster creation time through the **capabilities** API. This reduces resource consumption and attack surface by preventing unnecessary operators and operands from being deployed.
+
+## Default Behavior
+
+When `spec.capabilities` is not set on a HostedCluster, the cluster uses the OpenShift version's `DefaultCapabilitySet` with the `baremetal` capability excluded. This means most optional components are enabled by default.
+
+!!! important
+    Capabilities are **immutable** after cluster creation. They cannot be changed once the HostedCluster is created.
+
+## Supported Capabilities
+
+| Capability | Description |
+|---|---|
+| `ImageRegistry` | OpenShift Image Registry operator and its operands, including cloud storage infrastructure (S3 buckets, IAM users, etc.) |
+| `openshift-samples` | OpenShift Samples operator, which manages example ImageStreams and Templates |
+| `Insights` | Insights operator, which collects and uploads cluster telemetry data |
+| `baremetal` | Bare metal infrastructure operator. Excluded from the default set; must be explicitly enabled if needed |
+| `Console` | OpenShift web console operator and its operands |
+| `NodeTuning` | Node Tuning Operator (NTO), which manages node-level performance tuning via TuneD and PerformanceProfiles |
+| `Ingress` | OpenShift Ingress operator, which manages the cluster's default router |
+
+## Constraints
+
+The following rules apply when combining capability settings:
+
+- **No overlap**: A capability cannot appear in both `enabled` and `disabled` lists simultaneously.
+- **Console requires Ingress**: The `Ingress` capability can only be disabled if `Console` is also disabled, because the console depends on Ingress (OCPBUGS-58422).
+- **Version requirement**: Disabling `openshift-samples`, `Insights`, `Console`, `NodeTuning`, or `Ingress` requires OpenShift 4.20 or later. `ImageRegistry` and `baremetal` can be disabled on earlier versions.
+- **Baremetal default exclusion**: The `baremetal` capability is already excluded from the default set. Explicitly disabling it is a no-op; explicitly enabling it will add it to the cluster.
+
+## Usage
+
+### CLI
+
+Use the `--disable-cluster-capabilities` flag when creating a cluster:
+
+```shell
+hypershift create cluster aws \
+  --name my-cluster \
+  --disable-cluster-capabilities=ImageRegistry,Console,Ingress
+```
+
+Multiple capabilities can be specified as a comma-separated list. The supported values are: `ImageRegistry`, `openshift-samples`, `Insights`, `baremetal`, `Console`, `NodeTuning`, `Ingress`.
+
+### HostedCluster Manifest
+
+To disable capabilities via the HostedCluster resource directly, set `spec.capabilities.disabled`:
+
+```yaml
+apiVersion: hypershift.openshift.io/v1beta1
+kind: HostedCluster
+metadata:
+  name: my-cluster
+  namespace: clusters
+spec:
+  capabilities:
+    disabled:
+      - ImageRegistry
+      - Console
+      - Ingress
+  # ... rest of spec
+```
+
+To explicitly enable a capability that is not in the default set (e.g., `baremetal`):
+
+```yaml
+spec:
+  capabilities:
+    enabled:
+      - baremetal
+```
+
+Both `enabled` and `disabled` can be used together, as long as no capability appears in both lists:
+
+```yaml
+spec:
+  capabilities:
+    enabled:
+      - baremetal
+    disabled:
+      - ImageRegistry
+      - openshift-samples
 ```
 
 
@@ -22048,12 +23032,22 @@ hypershift create cluster gcp \
   --external-dns-domain=<your-dns-domain> \
   --node-pool-replicas=2 \
   --feature-set=TechPreviewNoUpgrade \
-  --annotations=hypershift.openshift.io/capi-provider-gcp-image=<capg-image>
+  --annotations=hypershift.openshift.io/pod-security-admission-label-override=baseline
 ```
 
-!!! note "CAPG Image Override (GCP-426)"
+!!! note "Pod Security Admission Override Required"
 
-    Until HyperShift's CAPI CRDs serve v1beta2, you must pin the CAPG image via the annotation above. Use the CAPG image from the release payload:
+    GKE clusters enforce pod security policies that block some HyperShift control plane components from starting without the `baseline` override.
+
+!!! warning "CAPG Image Override Required for 4.22.x/4.23.x only (GCP-841)"
+
+    The CAPG image in these releases crashes due to a removed `ClusterResourceSet` feature gate. Add the CAPG image annotation:
+
+    ```bash
+    --annotations="hypershift.openshift.io/pod-security-admission-label-override=baseline,hypershift.openshift.io/capi-provider-gcp-image=<capg-image>"
+    ```
+
+    Get the CAPG image from the release payload:
 
     ```bash
     oc adm release info <release-image> --image-for=cluster-api-provider-gcp
@@ -22890,6 +23884,149 @@ the following flag in your HO install command:
     Limiting the CAPI CRDs installed means the HO will only be able to manage HostedClusters of the same platform.
     For example, in the above example, if you limit the CRDs to AWS and Azure, the HO will only be able to manage 
     AWS and Azure HostedClusters.
+
+## AWS operator IAM roles
+
+When installing the HyperShift operator on AWS, the operator and its external-dns
+component need AWS credentials. Instead of providing long-lived credential files,
+you can create least-privilege IAM roles and pass their ARNs to the install
+command. The `hypershift create operator-roles aws` command automates role
+creation, and the `hypershift install` command accepts role ARN flags as
+alternatives to credential file flags.
+
+### Creating operator roles
+
+The `hypershift create operator-roles aws` command creates three IAM roles:
+
+| Role | Purpose |
+|------|---------|
+| `<prefix>-operator-ec2` | EC2 VPC endpoint service management, ELB discovery, and instance type queries |
+| `<prefix>-operator-oidc-s3` | Upload and delete OIDC discovery documents in the S3 bucket |
+| `<prefix>-external-dns` | Route53 DNS record management for external-dns |
+
+The command supports two trust modes, depending on whether the management
+cluster has an OIDC provider registered in AWS IAM:
+
+- **OIDC web identity** (default): The roles trust the management cluster's OIDC
+  provider and are scoped to specific service accounts. If `--oidc-issuer-url` is
+  not specified, the command auto-discovers it from the management cluster's
+  `Authentication` CR.
+- **Instance role assumption**: For clusters without an OIDC provider, use
+  `--instance-role-arn` to trust an existing instance role via `sts:AssumeRole`.
+
+#### Usage
+
+```bash
+hypershift create operator-roles aws \
+  --oidc-storage-provider-s3-bucket-name <bucket-name> \
+  [--region <aws-region>] \
+  [--name-prefix <prefix>] \
+  [--oidc-issuer-url <url> | --instance-role-arn <arn>] \
+  [--route53-hosted-zone-id <zone-id>] \
+  [--operator-namespace <namespace>] \
+  [--output-file <path>] \
+  [--additional-tags key=value,...]
+```
+
+#### Flags
+
+| Flag | Required | Default | Description |
+|------|----------|---------|-------------|
+| `--oidc-storage-provider-s3-bucket-name` | Yes | | S3 bucket name for OIDC documents (scopes the S3 policy) |
+| `--region` | No | `AWS_REGION`, `AWS_DEFAULT_REGION`, or `~/.aws/config` | AWS region |
+| `--name-prefix` | No | `hypershift` | Prefix for IAM role names |
+| `--oidc-issuer-url` | No | Auto-discovered from cluster | Management cluster OIDC issuer URL for web identity trust. Mutually exclusive with `--instance-role-arn` |
+| `--instance-role-arn` | No | | ARN of an instance role to trust via `sts:AssumeRole`. Mutually exclusive with `--oidc-issuer-url` |
+| `--route53-hosted-zone-id` | No | All zones | Route53 hosted zone ID to scope the external-dns policy |
+| `--operator-namespace` | No | `hypershift` | Namespace where the HyperShift operator is installed |
+| `--output-file` | No | stdout | Path to write JSON output |
+| `--additional-tags` | No | | Additional tags to set on IAM resources (`key=value`) |
+
+#### Output
+
+The command outputs a JSON object with the ARNs of the created roles:
+
+```json
+{
+  "operatorEC2RoleARN": "arn:aws:iam::123456789012:role/hypershift-operator-ec2",
+  "operatorOIDCS3RoleARN": "arn:aws:iam::123456789012:role/hypershift-operator-oidc-s3",
+  "externalDNSRoleARN": "arn:aws:iam::123456789012:role/hypershift-external-dns"
+}
+```
+
+#### Example: OIDC web identity (auto-discovered)
+
+```bash
+hypershift create operator-roles aws \
+  --oidc-storage-provider-s3-bucket-name my-oidc-bucket \
+  --route53-hosted-zone-id Z0123456789ABCDEF \
+  --output-file operator-roles.json
+```
+
+#### Example: Instance role trust
+
+```bash
+hypershift create operator-roles aws \
+  --oidc-storage-provider-s3-bucket-name my-oidc-bucket \
+  --instance-role-arn arn:aws:iam::123456789012:role/my-instance-role \
+  --output-file operator-roles.json
+```
+
+### Installing with role ARNs
+
+The `hypershift install` command accepts IAM role ARNs as alternatives to
+credential file flags. When a role ARN is provided, the installer generates
+a credential file automatically based on `--aws-role-credential-source`.
+
+#### Role ARN install flags
+
+| Flag | Replaces | Description |
+|------|----------|-------------|
+| `--aws-private-role-arn` | `--aws-private-creds` | IAM role ARN for EC2/ELBv2 credentials |
+| `--oidc-storage-provider-s3-role-arn` | `--oidc-storage-provider-s3-credentials` | IAM role ARN for OIDC S3 access |
+| `--external-dns-role-arn` | `--external-dns-credentials` | IAM role ARN for external-dns Route53 access |
+| `--aws-role-credential-source` | | Credential source: `web-identity` (default) or `ec2-instance-metadata` |
+| `--aws-operator-roles-file` | | Path to JSON output from `create operator-roles aws` (sets all three role ARN flags at once) |
+
+!!! note
+
+    Each role ARN flag is mutually exclusive with its corresponding credential
+    file flag. You cannot combine `--aws-private-role-arn` with
+    `--aws-private-creds`, for example.
+
+#### Credential source modes
+
+The `--aws-role-credential-source` flag controls how the operator assumes the
+IAM roles:
+
+- **`web-identity`** (default): Uses a projected service account token mounted
+  at `/var/run/secrets/openshift/serviceaccount/token`. Requires the management
+  cluster's OIDC provider to be registered in AWS IAM.
+- **`ec2-instance-metadata`**: Uses the EC2 instance metadata service to assume
+  the role. Suitable for clusters running on EC2 instances that have an instance
+  profile attached.
+
+#### Example: Install using the roles file
+
+The simplest workflow combines `create operator-roles aws` with `install`:
+
+```bash
+# Step 1: Create the IAM roles
+hypershift create operator-roles aws \
+  --oidc-storage-provider-s3-bucket-name my-oidc-bucket \
+  --output-file operator-roles.json
+
+# Step 2: Install using the roles file
+hypershift install \
+  --oidc-storage-provider-s3-bucket-name my-oidc-bucket \
+  --oidc-storage-provider-s3-region us-east-1 \
+  --private-platform AWS \
+  --aws-private-region us-east-1 \
+  --external-dns-provider aws \
+  --external-dns-domain-filter example.com \
+  --aws-operator-roles-file operator-roles.json
+```
+
 
 ---
 
@@ -35079,6 +36216,328 @@ The addon will detect the removal and redeploy the HyperShift Operator with the 
 
 ---
 
+## Source: docs/content/recipes/common/control-plane-metrics-forwarding.md
+
+## Enable Control Plane Metrics Forwarding to Hosted Clusters
+
+!!! important
+    This feature requires OpenShift 4.22 or later and is currently gated behind an opt-in annotation.
+
+By default, hosted cluster users cannot see control plane metrics (kube-apiserver, etcd, kube-controller-manager, etc.) from within their cluster's monitoring stack. This recipe enables forwarding those metrics from the management cluster's control plane into the hosted cluster's data plane Prometheus.
+
+### How it works
+
+When enabled, three components are deployed:
+
+1. **endpoint-resolver** (management cluster): resolves pod IPs for control plane components in the HCP namespace.
+2. **metrics-proxy** (management cluster): scrapes control plane pods, applies per-component metric filters, injects OCP-compatible labels, and serves aggregated metrics at `/metrics/<component>` behind a TLS-passthrough Route.
+3. **metrics-forwarder** (guest cluster): an HAProxy deployment in `openshift-monitoring` that TCP-proxies scrape requests to the management cluster's metrics-proxy Route. A PodMonitor tells the guest Prometheus to scrape it.
+
+The full data path is:
+
+```mermaid
+flowchart LR
+    subgraph guest["Data Plane (Guest Cluster)"]
+        prom["Prometheus"]
+        pm["PodMonitor"]
+        fwd["metrics-forwarder<br>(HAProxy)"]
+        prom -->|discovers| pm
+        prom -->|"scrapes /metrics/‹component›<br>(mTLS)"| fwd
+    end
+
+    subgraph mgmt["Management Plane (HCP Namespace)"]
+        route["Route<br>(TLS passthrough)"]
+        proxy["metrics-proxy<br>(filter + label)"]
+        resolver["endpoint-resolver"]
+        proxy -->|pod discovery| resolver
+
+        subgraph targets["Control Plane Pods"]
+            kas["kube-apiserver"]
+            etcd["etcd"]
+            kcm["kube-controller-manager"]
+            cvo["CVO"]
+            other["..."]
+        end
+
+        proxy -->|scrape| targets
+    end
+
+    fwd -->|"TCP passthrough<br>:443"| route
+    route --> proxy
+```
+
+mTLS is enforced end-to-end. The guest Prometheus presents a client certificate via the `tls-client-certificate-auth` scrape class, and HAProxy passes TLS through transparently to the metrics-proxy, which verifies it against the cluster-signer CA.
+
+### Prerequisites
+
+- A running HostedCluster on OpenShift 4.22+.
+- The cluster must have worker nodes so the Cluster Monitoring Operator (CMO) and Prometheus can run in the data plane.
+
+### Enable metrics forwarding
+
+Add the `hypershift.openshift.io/enable-metrics-forwarding` annotation to your HostedCluster:
+
+```shell
+oc annotate hostedcluster -n <HOSTED_CLUSTER_NAMESPACE> <HOSTED_CLUSTER_NAME> \
+  hypershift.openshift.io/enable-metrics-forwarding=true
+```
+
+This triggers the CPO to deploy the `endpoint-resolver` and `metrics-proxy` in the HCP namespace, and the HCCO to deploy the `metrics-forwarder` and its PodMonitor in the guest cluster's `openshift-monitoring` namespace.
+
+### Verify the deployment
+
+1. Confirm the management-side components are running:
+
+    ```shell
+    HCP_NAMESPACE="<HOSTED_CLUSTER_NAMESPACE>-<HOSTED_CLUSTER_NAME>"
+
+    oc get deployment endpoint-resolver -n "$HCP_NAMESPACE"
+    oc get deployment metrics-proxy -n "$HCP_NAMESPACE"
+    oc get route metrics-proxy -n "$HCP_NAMESPACE"
+    ```
+
+2. Confirm the guest-side metrics-forwarder is running:
+
+    ```shell
+    oc get deployment control-plane-metrics-forwarder \
+      -n openshift-monitoring --kubeconfig <GUEST_KUBECONFIG>
+    ```
+
+3. Confirm the PodMonitor was created:
+
+    ```shell
+    oc get podmonitor control-plane-metrics-forwarder \
+      -n openshift-monitoring --kubeconfig <GUEST_KUBECONFIG>
+    ```
+
+### Verify metrics are flowing
+
+Once deployed, wait a few minutes for Prometheus to start scraping, then verify:
+
+1. Check the Prometheus targets in the guest cluster:
+
+    ```shell
+    oc exec -n openshift-monitoring prometheus-k8s-0 \
+      -c prometheus --kubeconfig <GUEST_KUBECONFIG> -- \
+      curl -s http://localhost:9090/api/v1/targets \
+      | jq '.data.activeTargets[] | select(.scrapePool | contains("control-plane-metrics-forwarder")) | {scrapePool, scrapeUrl: .scrapeUrl, health}'
+    ```
+
+    You should see targets with `"health": "up"` for each component.
+
+2. Query a sample metric to confirm data is being ingested:
+
+    ```shell
+    oc exec -n openshift-monitoring prometheus-k8s-0 \
+      -c prometheus --kubeconfig <GUEST_KUBECONFIG> -- \
+      curl -gs 'http://localhost:9090/api/v1/query?query=apiserver_request_total{job="apiserver"}' \
+      | jq '.data.result | length'
+    ```
+
+    A non-zero result confirms kube-apiserver metrics are available.
+
+### Exposed components
+
+The metrics-proxy dynamically discovers all ServiceMonitors and PodMonitors in the HCP namespace. The following components are currently forwarded:
+
+**ServiceMonitor-based** (with per-component metric filtering):
+
+| Component | Metrics port | Example metrics |
+|---|---|---|
+| kube-apiserver | 6443 | `apiserver_request_total`, `apiserver_request_duration_seconds` |
+| etcd | 2381 | `etcd_server_has_leader`, `etcd_disk_wal_fsync_duration_seconds` |
+| kube-controller-manager | 10257 | `workqueue_depth`, `node_collector_evictions_total` |
+| openshift-apiserver | 8443 | `apiserver_request_total` (OpenShift API) |
+| openshift-controller-manager | 8443 | Controller workqueue and sync metrics |
+| openshift-route-controller-manager | 8443 | Route controller metrics |
+| cluster-version-operator | 8443 | `cluster_version`, `cluster_operator_conditions` |
+| node-tuning-operator | 60000 | Tuning operator health metrics |
+| olm-operator | 8443 | `csv_succeeded`, operator lifecycle metrics |
+| catalog-operator | 8443 | Catalog source sync metrics |
+
+**PodMonitor-based** (all metrics passed through, no filtering):
+
+| Component | Metrics port |
+|---|---|
+| cluster-autoscaler | 8085 |
+| control-plane-operator | 8080 |
+| hosted-cluster-config-operator | 8080 |
+| ignition-server | 8080 |
+| ingress-operator | 60000 |
+| karpenter | 8080 |
+| karpenter-operator | 8080 |
+| cluster-image-registry-operator | 60000 |
+
+### Controlling which metrics are forwarded
+
+The metrics-proxy applies the same per-component metric filtering used by the management cluster's monitoring stack. Which metrics are included or excluded is controlled by the **metrics set** configured on the HyperShift Operator. See Configure Metrics Sets for full details.
+
+Three metrics sets are available:
+
+| Metrics set | Behaviour | Use case |
+|---|---|---|
+| `Telemetry` (default) | Only a small curated subset of metrics per component | Minimal resource usage |
+| `SRE` | Configurable via a `sre-metric-set` ConfigMap with custom RelabelConfigs per component | Fine-grained control for alerting and troubleshooting |
+| `All` | All metrics from each component (some legacy metrics are still dropped) | Full observability |
+
+The metrics set is configured globally on the HyperShift Operator deployment:
+
+```shell
+oc set env -n hypershift deployment/operator METRICS_SET=All
+```
+
+!!! note
+    The metrics-proxy defaults to `All` when no metrics set is explicitly configured. This means that if the HyperShift Operator does not have `METRICS_SET` set, all metrics will be forwarded to the guest cluster.
+
+#### Example: Telemetry metrics set
+
+With `METRICS_SET=Telemetry`, only these kube-apiserver metrics are forwarded:
+
+- `apiserver_storage_objects`
+- `apiserver_request_total`
+- `apiserver_current_inflight_requests`
+
+And for etcd:
+
+- `etcd_disk_wal_fsync_duration_seconds_bucket`
+- `etcd_mvcc_db_total_size_in_bytes`
+- `etcd_network_peer_round_trip_time_seconds_bucket`
+- `etcd_mvcc_db_total_size_in_use_in_bytes`
+- `etcd_disk_backend_commit_duration_seconds_bucket`
+- `etcd_server_leader_changes_seen_total`
+
+Similar curated subsets apply to each of the other ServiceMonitor-based components.
+
+#### Example: SRE metrics set with custom configuration
+
+With `METRICS_SET=SRE`, you can define exactly which metrics to forward per component by creating a ConfigMap named `sre-metric-set` in each control plane namespace. Each key in the ConfigMap's `config` field maps a component name to a list of Prometheus RelabelConfigs (typically `action: keep` with a regex on `__name__`). See the dashboard example below for a complete ConfigMap.
+
+The configurable components are:
+
+- `etcd`
+- `kubeAPIServer`
+- `kubeControllerManager`
+- `openshiftAPIServer`
+- `openshiftControllerManager`
+- `openshiftRouteControllerManager`
+- `cvo`
+- `olm`
+- `catalogOperator`
+- `registryOperator`
+- `nodeTuningOperator`
+- `controlPlaneOperator`
+- `hostedClusterConfigOperator`
+
+!!! note
+    PodMonitor-based components (cluster-autoscaler, ignition-server, karpenter, etc.) are not subject to metric filtering and always forward all their metrics regardless of the configured metrics set.
+
+### Label compatibility
+
+The metrics-proxy injects OCP-compatible labels (`job`, `namespace`, `service`, `pod`, `instance`, `endpoint`) so that standard OpenShift dashboards and recording rules work identically to standalone clusters. The guest-side PodMonitor uses `honorLabels: true` to preserve these injected labels.
+
+### Example: Grafana dashboard for control plane metrics
+
+A sample Grafana dashboard JSON is available at `contrib/metrics/guest-control-plane-dashboard.json` in this repository. It is designed to run inside the hosted cluster's monitoring stack using the forwarded metrics and includes the following panels:
+
+| Section | Panels | Key metrics |
+|---|---|---|
+| **API Server** | Request rate by verb, error rate by resource, inflight requests, request latency (p50/p99), storage objects | `apiserver_request_total`, `apiserver_request_duration_seconds_bucket`, `apiserver_current_inflight_requests`, `apiserver_storage_objects` |
+| **etcd** | Database size, WAL fsync / backend commit latency (p99), peer RTT (p99), leader changes, has-leader status | `etcd_mvcc_db_total_size_in_bytes`, `etcd_disk_wal_fsync_duration_seconds_bucket`, `etcd_disk_backend_commit_duration_seconds_bucket`, `etcd_network_peer_round_trip_time_seconds_bucket`, `etcd_server_leader_changes_seen_total`, `etcd_server_has_leader` |
+| **Cluster Operators & CVO** | Operator up/down status, operator conditions table, cluster version | `cluster_operator_up`, `cluster_operator_conditions`, `cluster_version` |
+| **Scheduler** | Scheduling rate & results, pending pods by queue | `scheduler_schedule_attempts_total`, `scheduler_pending_pods` |
+| **Controller Manager** | Work queue depth, work queue add rate | `workqueue_depth`, `workqueue_adds_total` |
+| **OLM** | ClusterServiceVersion status | `csv_succeeded` |
+
+!!! note
+    This dashboard requires `METRICS_SET=All` or `METRICS_SET=SRE` with the matching configuration shown below. With the default `Telemetry` set, most panels will be empty because the required metrics are not forwarded.
+
+#### Using the dashboard with the SRE metrics set
+
+Using `METRICS_SET=SRE` lets you forward exactly the metrics the dashboard needs — nothing more. This keeps the monitoring footprint small while giving hosted cluster users a complete dashboard experience.
+
+1. Set the metrics set on the HyperShift Operator:
+
+    ```shell
+    oc set env -n hypershift deployment/operator METRICS_SET=SRE
+    ```
+
+2. Create the `sre-metric-set` ConfigMap in the HCP namespace with the relabel configs that match the dashboard panels:
+
+    ```yaml
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: sre-metric-set
+      namespace: <HCP_NAMESPACE>
+    data:
+      config: |
+        kubeAPIServer:
+          - action: keep
+            sourceLabels: ["__name__"]
+            regex: "(apiserver_request_total|apiserver_request_duration_seconds_bucket|apiserver_current_inflight_requests|apiserver_storage_objects)"
+        etcd:
+          - action: keep
+            sourceLabels: ["__name__"]
+            regex: "(etcd_mvcc_db_total_size_in_bytes|etcd_mvcc_db_total_size_in_use_in_bytes|etcd_disk_wal_fsync_duration_seconds_bucket|etcd_disk_backend_commit_duration_seconds_bucket|etcd_network_peer_round_trip_time_seconds_bucket|etcd_server_leader_changes_seen_total|etcd_server_has_leader)"
+        kubeControllerManager:
+          - action: keep
+            sourceLabels: ["__name__"]
+            regex: "(workqueue_depth|workqueue_adds_total|scheduler_e2e_scheduling_duration_seconds_count|scheduler_schedule_attempts_total|scheduler_pending_pods)"
+        cvo:
+          - action: keep
+            sourceLabels: ["__name__"]
+            regex: "(cluster_version|cluster_operator_up|cluster_operator_conditions)"
+        olm:
+          - action: keep
+            sourceLabels: ["__name__"]
+            regex: "(csv_succeeded)"
+    ```
+
+    This forwards only the 20 metric names used by the dashboard across 5 components. Components not listed (openshift-apiserver, openshift-controller-manager, etc.) will have no metrics forwarded, which is fine since the dashboard doesn't use them.
+
+    !!! tip
+        You can extend this ConfigMap over time. For example, to add etcd proposal metrics for a new panel, append `|etcd_server_proposals_.*` to the etcd regex. The dashboard will pick up the new metrics on the next scrape cycle.
+
+3. Apply the ConfigMap:
+
+    ```shell
+    oc apply -f sre-metric-set.yaml
+    ```
+
+    The CPO will detect the ConfigMap change and update the metrics-proxy configuration automatically.
+
+#### Loading the dashboard into the hosted cluster
+
+You can load the dashboard as a ConfigMap in the guest cluster's `openshift-config-managed` namespace, which makes it available in the OpenShift console under Observe > Dashboards:
+
+```shell
+oc create configmap guest-control-plane-dashboard \
+  --from-file=guest-control-plane-dashboard.json=contrib/metrics/guest-control-plane-dashboard.json \
+  -n openshift-config-managed \
+  --kubeconfig <GUEST_KUBECONFIG>
+
+oc label configmap guest-control-plane-dashboard \
+  console.openshift.io/dashboard=true \
+  -n openshift-config-managed \
+  --kubeconfig <GUEST_KUBECONFIG>
+```
+
+Alternatively, if you have the Grafana Operator deployed in the guest cluster, import the JSON file directly as a GrafanaDashboard CR.
+
+### Disable metrics forwarding
+
+Remove the annotation to disable metrics forwarding and clean up all related resources:
+
+```shell
+oc annotate hostedcluster -n <HOSTED_CLUSTER_NAMESPACE> <HOSTED_CLUSTER_NAME> \
+  hypershift.openshift.io/enable-metrics-forwarding-
+```
+
+This deletes the `endpoint-resolver` and `metrics-proxy` from the management cluster, and the `metrics-forwarder`, its ConfigMap, serving CA, and PodMonitor from the guest cluster.
+
+
+---
+
 ## Source: docs/content/recipes/common/exposing-dataplane-with-metallb.md
 
 ## Configure MetalLB for HostedCluster's Data Plane
@@ -36689,6 +38148,24 @@ Capabilities
 This field is optional and once set cannot be changed.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>monitoring,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.MonitoringSpec">
+MonitoringSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>monitoring configures monitoring for the hosted cluster, including
+forwarding of control plane metrics to the hosted cluster&rsquo;s monitoring stack.
+When omitted, metrics forwarding behavior is determined by the
+hypershift.openshift.io/enable-metrics-forwarding annotation for backward compatibility.
+If neither is set, metrics forwarding is disabled.</p>
+</td>
+</tr>
 </table>
 </td>
 </tr>
@@ -37002,6 +38479,32 @@ TODO: This is set as optional to prevent validation from failing due to a limita
 <a href="https://github.com/kubernetes/kubernetes/issues/108768#issuecomment-1253912215">https://github.com/kubernetes/kubernetes/issues/108768#issuecomment-1253912215</a></p>
 </td>
 </tr>
+<tr>
+<td>
+<code>osImageStream,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.OSImageStreamReference">
+OSImageStreamReference
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>osImageStream specifies an OS stream to be used for nodes in this pool.</p>
+<p>This field can be optionally set to a known OSImageStream name to change
+the OS and Extension images with a well-known, tested, release-provided
+set of images. This enables a streamlined way of switching the pool&rsquo;s
+node OS to a different version than the cluster default, such as
+transitioning to a major RHEL version.</p>
+<p>When set, the referenced stream overrides the default OS images for the
+pool. When omitted, the pool uses the release version&rsquo;s default stream
+(rhel-9 for OCP &lt; 5.0, rhel-10 for OCP &gt;= 5.0).
+Changing this field triggers a rollout. Forward transitions
+(rhel-9 -&gt; rhel-10) are allowed; backward transitions
+(rhel-10 -&gt; rhel-9) are rejected by CEL validation because
+in-place OS downgrades are not supported.</p>
+</td>
+</tr>
 </table>
 </td>
 </tr>
@@ -37017,6 +38520,50 @@ NodePoolStatus
 <td>
 <em>(Optional)</em>
 <p>status is the latest observed status of the NodePool.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###AESCBCKeyStatus { #hypershift.openshift.io/v1beta1.AESCBCKeyStatus }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.SecretEncryptionKeyStatus">SecretEncryptionKeyStatus</a>)
+</p>
+<p>
+<p>AESCBCKeyStatus contains a reference to the AESCBC key secret and a SHA-256 hash
+of its contents for fingerprinting.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>secret,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.SecretReference">
+SecretReference
+</a>
+</em>
+</td>
+<td>
+<p>secret is a reference to the secret containing the AESCBC key.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>dataHash</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>dataHash is the hex-encoded SHA-256 hash of the secret&rsquo;s &ldquo;key&rdquo; data field
+at the time re-encryption completed.</p>
 </td>
 </tr>
 </tbody>
@@ -37063,6 +38610,8 @@ Kubernetes core/v1.LocalObjectReference
 <em>(Optional)</em>
 <p>backupKey defines the old key during the rotation process so previously created
 secrets can continue to be decrypted until they are all re-encrypted with the active key.</p>
+<p>Deprecated: This field will be ignored when status.secretEncryption.activeKey is set.
+The system automatically manages the previous key via the status field.</p>
 </td>
 </tr>
 </tbody>
@@ -37293,7 +38842,8 @@ string
 ###AWSKMSKeyEntry { #hypershift.openshift.io/v1beta1.AWSKMSKeyEntry }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.AWSKMSSpec">AWSKMSSpec</a>)
+<a href="#hypershift.openshift.io/v1beta1.AWSKMSSpec">AWSKMSSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.SecretEncryptionKeyStatus">SecretEncryptionKeyStatus</a>)
 </p>
 <p>
 <p>AWSKMSKeyEntry defines metadata to locate the encryption key in AWS</p>
@@ -37372,6 +38922,8 @@ AWSKMSKeyEntry
 <em>(Optional)</em>
 <p>backupKey defines the old key during the rotation process so previously created
 secrets can continue to be decrypted until they are all re-encrypted with the active key.</p>
+<p>Deprecated: This field will be ignored when status.secretEncryption.activeKey is set.
+The system automatically manages the previous key via the status field.</p>
 </td>
 </tr>
 <tr>
@@ -38929,6 +40481,107 @@ This is only valid for self-managed Azure.</p>
 <p>
 <p>AzureClientID is a string that represents the client ID of a managed identity.</p>
 </p>
+###AzureContainerRegistryConfig { #hypershift.openshift.io/v1beta1.AzureContainerRegistryConfig }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzurePlatformSpec">AzurePlatformSpec</a>)
+</p>
+<p>
+<p>AzureContainerRegistryConfig configures Azure Container Registry integration for a hosted cluster.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>credentials,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureContainerRegistryCredentialConfig">
+AzureContainerRegistryCredentialConfig
+</a>
+</em>
+</td>
+<td>
+<p>credentials configures authentication for worker nodes pulling images from ACR
+using a user-assigned managed identity.
+The identity does not need to be in the same subscription or resource group as the
+HostedCluster, but it must be in the same Azure AD tenant. The management cluster&rsquo;s
+CAPZ identity must have Microsoft.ManagedIdentity/userAssignedIdentities/*/assign/action
+on the identity&rsquo;s scope to attach it to worker virtual machines at creation time.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###AzureContainerRegistryCredentialConfig { #hypershift.openshift.io/v1beta1.AzureContainerRegistryCredentialConfig }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzureContainerRegistryConfig">AzureContainerRegistryConfig</a>)
+</p>
+<p>
+<p>AzureContainerRegistryCredentialConfig configures authentication credentials for Azure Container Registry.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>type</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureContainerRegistryCredentialType">
+AzureContainerRegistryCredentialType
+</a>
+</em>
+</td>
+<td>
+<p>type specifies the credential type used for ACR image pulls.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>managedIdentity,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.UserAssignedManagedIdentity">
+UserAssignedManagedIdentity
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>managedIdentity identifies the user-assigned managed identity used for ACR image pulls.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###AzureContainerRegistryCredentialType { #hypershift.openshift.io/v1beta1.AzureContainerRegistryCredentialType }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzureContainerRegistryCredentialConfig">AzureContainerRegistryCredentialConfig</a>)
+</p>
+<p>
+<p>AzureContainerRegistryCredentialType identifies the type of credential used for ACR image pulls.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;ManagedIdentity&#34;</p></td>
+<td><p>AzureContainerRegistryCredentialManagedIdentity uses a user-assigned managed identity for ACR authentication.</p>
+</td>
+</tr></tbody>
+</table>
 ###AzureDiagnosticsStorageAccountType { #hypershift.openshift.io/v1beta1.AzureDiagnosticsStorageAccountType }
 <p>
 (<em>Appears on:</em>
@@ -39009,7 +40662,8 @@ applications and dev/test.</p>
 ###AzureKMSKey { #hypershift.openshift.io/v1beta1.AzureKMSKey }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.AzureKMSSpec">AzureKMSSpec</a>)
+<a href="#hypershift.openshift.io/v1beta1.AzureKMSSpec">AzureKMSSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.SecretEncryptionKeyStatus">SecretEncryptionKeyStatus</a>)
 </p>
 <p>
 </p>
@@ -39100,6 +40754,8 @@ AzureKMSKey
 <em>(Optional)</em>
 <p>backupKey defines the old key during the rotation process so previously created
 secrets can continue to be decrypted until they are all re-encrypted with the active key.</p>
+<p>Deprecated: This field will be ignored when status.secretEncryption.activeKey is set.
+The system automatically manages the previous key via the status field.</p>
 </td>
 </tr>
 <tr>
@@ -39178,6 +40834,15 @@ and traffic must be routed through the private router (Swift).</p>
 </td>
 </tr></tbody>
 </table>
+###AzureManagedIdentityResourceID { #hypershift.openshift.io/v1beta1.AzureManagedIdentityResourceID }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.UserAssignedManagedIdentity">UserAssignedManagedIdentity</a>)
+</p>
+<p>
+<p>AzureManagedIdentityResourceID is an ARM resource ID for a user-assigned managed identity
+in the format /subscriptions/{sub}/resourceGroups/{rg}/providers/Microsoft.ManagedIdentity/userAssignedIdentities/{name}.</p>
+</p>
 ###AzureMarketplaceImage { #hypershift.openshift.io/v1beta1.AzureMarketplaceImage }
 <p>
 (<em>Appears on:</em>
@@ -39646,6 +41311,24 @@ string
 </tr>
 <tr>
 <td>
+<code>containerRegistry,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureContainerRegistryConfig">
+AzureContainerRegistryConfig
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>containerRegistry configures how worker nodes authenticate to Azure Container Registry (ACR).
+When set, the managed identity is attached to worker virtual machines and its resource ID is
+written into the worker cloud provider config so kubelet&rsquo;s ACR credential provider can
+authenticate without image pull secrets.
+Changing this value will trigger a rollout for all existing NodePools in the cluster.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>topology</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.AzureTopologyType">
@@ -40066,8 +41749,7 @@ in the format xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 <p>
 <p>AzurePrivateSpec configures private connectivity to an Azure hosted cluster&rsquo;s API server.
 It is a discriminated union keyed on the type field, which selects the private connectivity
-mechanism. Currently only PrivateLink is supported; additional mechanisms (e.g., Swift) may
-be added in the future.</p>
+mechanism.</p>
 </p>
 <table>
 <thead>
@@ -40089,6 +41771,7 @@ AzurePrivateType
 <td>
 <p>type specifies the private connectivity mechanism used for the hosted cluster&rsquo;s API server.
 &ldquo;PrivateLink&rdquo; selects Azure Private Link Service for private API server access.
+&ldquo;Swift&rdquo; selects Azure Swift pod networking for private API server access, used by ARO HCP.
 This field is immutable once set.</p>
 </td>
 </tr>
@@ -40105,6 +41788,23 @@ AzurePrivateLinkSpec
 <em>(Optional)</em>
 <p>privateLink configures Azure Private Link Service for private API server access.
 This field is required when type is &ldquo;PrivateLink&rdquo; and must not be set otherwise.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>swift,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureSwiftSpec">
+AzureSwiftSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>swift configures Azure Swift pod networking for private API server access.
+Swift networking requires the management cluster to be pre-configured with
+Azure Swift support; this is not provisioned by HyperShift automatically.
+This field is required when type is &ldquo;Swift&rdquo; and must not be set otherwise.</p>
 </td>
 </tr>
 </tbody>
@@ -40129,6 +41829,12 @@ hosted cluster&rsquo;s API server. This acts as the discriminator for the AzureP
 <td><p>AzurePrivateTypePrivateLink specifies private connectivity using Azure Private Link Service.
 In this mode, the operator creates a Private Link Service backed by the management cluster&rsquo;s
 internal load balancer, and a Private Endpoint in the guest VNet for private API server access.</p>
+</td>
+</tr><tr><td><p>&#34;Swift&#34;</p></td>
+<td><p>AzurePrivateTypeSwift specifies private connectivity using Azure Swift pod networking.
+In this mode, Azure Swift assigns a private IP from the customer VNet directly
+to the hosted cluster&rsquo;s router pods, providing private API server access without a
+separate Private Link Service. This is used by ARO HCP managed clusters.</p>
 </td>
 </tr></tbody>
 </table>
@@ -40202,6 +41908,42 @@ The expected format is:</p>
 Must be exactly 36 characters consisting of hexadecimal digits [0-9a-fA-F] and hyphens
 in the format xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx (e.g., &ldquo;550e8400-e29b-41d4-a716-446655440000&rdquo;).</p>
 </p>
+###AzureSwiftSpec { #hypershift.openshift.io/v1beta1.AzureSwiftSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzurePrivateSpec">AzurePrivateSpec</a>)
+</p>
+<p>
+<p>AzureSwiftSpec configures Azure Swift pod networking for private API server access.
+Swift assigns a private IP from the customer VNet directly to the hosted cluster&rsquo;s
+router pods, providing private connectivity without a separate Private Link Service.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>podNetworkInstance</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>podNetworkInstance is the name of a PodNetworkInstance custom resource in the
+hosted control plane namespace. This resource configures Azure Swift pod networking
+for private connectivity to the hosted cluster&rsquo;s router pods.
+The value must be a valid Kubernetes object name (RFC 1123 DNS label): lowercase
+alphanumeric characters or hyphens, must start and end with an alphanumeric character.
+This field is immutable once set.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###AzureTopologyType { #hypershift.openshift.io/v1beta1.AzureTopologyType }
 <p>
 (<em>Appears on:</em>
@@ -41522,6 +43264,14 @@ underlying cluster&rsquo;s ClusterVersion.</p>
 <td><p>ClusterVersionUpgradeable indicates the Upgradeable condition in the
 underlying cluster&rsquo;s ClusterVersion.</p>
 </td>
+</tr><tr><td><p>&#34;ConfigOperatorReconciliationSucceeded&#34;</p></td>
+<td><p>ConfigOperatorReconciliationSucceeded indicates if the HostedCluster Config
+Operator (HCCO) reconciliation succeeded. The HCCO is responsible for
+reconciling resources inside the hosted cluster (e.g. global configuration,
+CRDs, RBAC, and connectivity checks).
+A failure here often means a software bug, a non-stable cluster, or
+connectivity issues between the control plane and the hosted cluster.</p>
+</td>
 </tr><tr><td><p>&#34;Available&#34;</p></td>
 <td><p>ControlPlaneComponentAvailable indicates whether the ControlPlaneComponent is available.</p>
 </td>
@@ -41558,6 +43308,13 @@ A failure here often means a software bug or a non-stable cluster.</p>
 <td><p>EtcdBackupSucceeded bubbles up from HCP. It indicates the result of the
 most recent etcd backup. True means the last backup completed successfully;
 False means a backup is in progress or the last backup failed.</p>
+</td>
+</tr><tr><td><p>&#34;EtcdDataEncryptionUpToDate&#34;</p></td>
+<td><p>EtcdDataEncryptionUpToDate indicates whether all etcd data is encrypted with the
+currently active encryption key.
+True: all data confirmed encrypted with the active key.
+False: re-encryption is in progress or has failed.
+Absent: encryption is not configured.</p>
 </td>
 </tr><tr><td><p>&#34;EtcdRecoveryActive&#34;</p></td>
 <td><p>EtcdRecoveryActive indicates that the Etcd cluster is failing and the
@@ -41639,6 +43396,12 @@ hosted cluster can be live migrated without experiencing a node restart</p>
 <td><p>PlatformCredentialsFound indicates that credentials required for the
 desired platform are valid.
 A failure here is unlikely to resolve without the changing user input.</p>
+</td>
+</tr><tr><td><p>&#34;PublicEndpointExposed&#34;</p></td>
+<td><p>PublicEndpointExposed indicates whether public API server endpoints are
+currently configured and exposed for this cluster via the management
+cluster&rsquo;s shared ingress. Status reflects observed state: True means
+public endpoints are reachable, False means they are not.</p>
 </td>
 </tr><tr><td><p>&#34;ReconciliationActive&#34;</p></td>
 <td><p>ReconciliationActive indicates if reconciliation of the HostedCluster is
@@ -41885,7 +43648,7 @@ ControlPlaneComponentStatus
 <em>(Optional)</em>
 <p>conditions contains details for the current state of the ControlPlane Component.
 If there is an error, then the Available condition will be false.</p>
-<p>Current condition types are: &ldquo;Available&rdquo;</p>
+<p>Current condition types are: &ldquo;Available&rdquo;, &ldquo;RolloutComplete&rdquo;</p>
 </td>
 </tr>
 <tr>
@@ -41912,6 +43675,18 @@ string
 <td>
 <em>(Optional)</em>
 <p>resources is a list of the resources reconciled by this component.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>observedGeneration</code></br>
+<em>
+int64
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>observedGeneration reports which generation of the HostedControlPlane spec has been reconciled by this component.</p>
 </td>
 </tr>
 </tbody>
@@ -42437,6 +44212,168 @@ UserManagedDiagnostics
 </td>
 </tr>
 </tbody>
+</table>
+###EncryptionKeyReference { #hypershift.openshift.io/v1beta1.EncryptionKeyReference }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.EncryptionMigrationHistory">EncryptionMigrationHistory</a>)
+</p>
+<p>
+<p>EncryptionKeyReference identifies an encryption key by its provider and fingerprint.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>provider</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.SecretEncryptionProvider">
+SecretEncryptionProvider
+</a>
+</em>
+</td>
+<td>
+<p>provider identifies the encryption provider.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>fingerprint</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>fingerprint is the hex-encoded SHA-256 hash of the key&rsquo;s identity fields.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###EncryptionMigrationHistory { #hypershift.openshift.io/v1beta1.EncryptionMigrationHistory }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.SecretEncryptionStatus">SecretEncryptionStatus</a>)
+</p>
+<p>
+<p>EncryptionMigrationHistory records a key rotation, including in-progress rotations.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>from,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.EncryptionKeyReference">
+EncryptionKeyReference
+</a>
+</em>
+</td>
+<td>
+<p>from is the key that data was migrated from (the previous active key).</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>to,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.EncryptionKeyReference">
+EncryptionKeyReference
+</a>
+</em>
+</td>
+<td>
+<p>to is the key that data was migrated to (the target key).</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>state</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.EncryptionMigrationState">
+EncryptionMigrationState
+</a>
+</em>
+</td>
+<td>
+<p>state tracks the current phase of this rotation.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>startedTime,omitzero</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#time-v1-meta">
+Kubernetes meta/v1.Time
+</a>
+</em>
+</td>
+<td>
+<p>startedTime is when the rotation was initiated.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>completionTime,omitzero</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#time-v1-meta">
+Kubernetes meta/v1.Time
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>completionTime is when the rotation finished. Not set while the rotation is in progress.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###EncryptionMigrationState { #hypershift.openshift.io/v1beta1.EncryptionMigrationState }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.EncryptionMigrationHistory">EncryptionMigrationHistory</a>)
+</p>
+<p>
+<p>EncryptionMigrationState tracks the lifecycle of a key rotation.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;Completed&#34;</p></td>
+<td><p>EncryptionMigrationStateCompleted means all data was successfully re-encrypted with the target key.</p>
+</td>
+</tr><tr><td><p>&#34;Interrupted&#34;</p></td>
+<td><p>EncryptionMigrationStateInterrupted means the rotation was abandoned before data was encrypted
+with the target key (e.g., targetKey replaced during ReadOnlyDeploy).</p>
+</td>
+</tr><tr><td><p>&#34;Migrating&#34;</p></td>
+<td><p>EncryptionMigrationStateMigrating means all KAS replicas have converged on the new write
+provider and re-encryption (StorageVersionMigration) is in progress.</p>
+</td>
+</tr><tr><td><p>&#34;ReadOnlyDeploy&#34;</p></td>
+<td><p>EncryptionMigrationStateReadOnlyDeploy means the new key is being deployed as a read-only
+provider. The old key remains the write provider.</p>
+</td>
+</tr><tr><td><p>&#34;WritePromote&#34;</p></td>
+<td><p>EncryptionMigrationStateWritePromote means the new key is being promoted to write provider.
+The old key becomes read-only.</p>
+</td>
+</tr></tbody>
 </table>
 ###EtcdManagementType { #hypershift.openshift.io/v1beta1.EtcdManagementType }
 <p>
@@ -44998,6 +46935,24 @@ Capabilities
 This field is optional and once set cannot be changed.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>monitoring,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.MonitoringSpec">
+MonitoringSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>monitoring configures monitoring for the hosted cluster, including
+forwarding of control plane metrics to the hosted cluster&rsquo;s monitoring stack.
+When omitted, metrics forwarding behavior is determined by the
+hypershift.openshift.io/enable-metrics-forwarding annotation for backward compatibility.
+If neither is set, metrics forwarding is disabled.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###HostedClusterStatus { #hypershift.openshift.io/v1beta1.HostedClusterStatus }
@@ -45220,6 +47175,20 @@ string
 <p>lastSuccessfulEtcdBackupURL is the cloud storage URL of the most recent
 successful etcd backup snapshot. Persisted here because HCPEtcdBackup CRs
 are ephemeral and may be deleted by retention policies.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>secretEncryption,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.SecretEncryptionStatus">
+SecretEncryptionStatus
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>secretEncryption tracks the state of secret encryption key rotation and re-encryption.</p>
 </td>
 </tr>
 </tbody>
@@ -45563,6 +47532,22 @@ OperatorConfiguration
 <td>
 <em>(Optional)</em>
 <p>operatorConfiguration specifies configuration for individual OCP operators in the cluster.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>monitoring,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.MonitoringSpec">
+MonitoringSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>monitoring configures monitoring for the hosted cluster, including
+forwarding of control plane metrics to the hosted cluster&rsquo;s monitoring stack.
+When omitted, metrics forwarding is not configured and will be inactive.</p>
 </td>
 </tr>
 <tr>
@@ -46010,6 +47995,20 @@ ConfigurationStatus
 <p>configuration contains the cluster configuration status of the HostedCluster</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>secretEncryption,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.SecretEncryptionStatus">
+SecretEncryptionStatus
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>secretEncryption tracks the state of secret encryption key rotation and re-encryption.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###IBMCloudKMSAuthSpec { #hypershift.openshift.io/v1beta1.IBMCloudKMSAuthSpec }
@@ -46100,7 +48099,8 @@ authentication to interact with IBM Cloud KMS APIs</p>
 ###IBMCloudKMSKeyEntry { #hypershift.openshift.io/v1beta1.IBMCloudKMSKeyEntry }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.IBMCloudKMSSpec">IBMCloudKMSSpec</a>)
+<a href="#hypershift.openshift.io/v1beta1.IBMCloudKMSSpec">IBMCloudKMSSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.SecretEncryptionKeyStatus">SecretEncryptionKeyStatus</a>)
 </p>
 <p>
 <p>IBMCloudKMSKeyEntry defines metadata for an IBM Cloud KMS encryption key</p>
@@ -48166,6 +50166,180 @@ Spot instances use spare EC2 capacity at reduced prices but may be interrupted.<
 </td>
 </tr></tbody>
 </table>
+###MetricsForwardingMode { #hypershift.openshift.io/v1beta1.MetricsForwardingMode }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.MetricsForwardingSpec">MetricsForwardingSpec</a>)
+</p>
+<p>
+<p>MetricsForwardingMode controls whether metrics forwarding is active for a hosted cluster.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;Forward&#34;</p></td>
+<td><p>MetricsForwardingModeForward indicates metrics forwarding is active.</p>
+</td>
+</tr><tr><td><p>&#34;None&#34;</p></td>
+<td><p>MetricsForwardingModeNone indicates metrics forwarding is inactive.</p>
+</td>
+</tr></tbody>
+</table>
+###MetricsForwardingSpec { #hypershift.openshift.io/v1beta1.MetricsForwardingSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.MonitoringSpec">MonitoringSpec</a>)
+</p>
+<p>
+<p>MetricsForwardingSpec configures metrics forwarding for the hosted cluster.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>mode</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.MetricsForwardingMode">
+MetricsForwardingMode
+</a>
+</em>
+</td>
+<td>
+<p>mode controls whether metrics forwarding is active for this hosted cluster.
+When set to &ldquo;Forward&rdquo;, metrics-proxy and endpoint-resolver are deployed in the
+control plane, and a metrics-forwarder is deployed in the hosted cluster.
+When set to &ldquo;None&rdquo;, metrics forwarding is inactive.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>metricsSet</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.MetricsSet">
+MetricsSet
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>metricsSet specifies which set of metrics to forward to the hosted
+cluster&rsquo;s monitoring stack. This controls only the metrics-proxy forwarding
+path and does not affect management-cluster-side ServiceMonitor/PodMonitor
+relabel configurations.
+When not specified, the value from monitoring.metricsSet is used, which itself
+falls back to the global METRICS_SET environment variable (default &ldquo;Telemetry&rdquo;).</p>
+<p>&ldquo;Telemetry&rdquo; forwards only the minimal set of metrics required for OpenShift Telemetry.
+&ldquo;SRE&rdquo; forwards the Telemetry set plus additional metrics defined in the sre-metric-set
+ConfigMap, needed for SRE dashboards and alerts.
+&ldquo;All&rdquo; forwards all metrics from control plane components without filtering,
+which produces significantly higher metrics volume.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###MetricsSet { #hypershift.openshift.io/v1beta1.MetricsSet }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.MetricsForwardingSpec">MetricsForwardingSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.MonitoringSpec">MonitoringSpec</a>)
+</p>
+<p>
+<p>MetricsSet specifies the set of metrics to collect and forward from hosted clusters.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;All&#34;</p></td>
+<td><p>MetricsSetAll collects all metrics from control plane components without
+any filtering. Use this for debugging or when full metric visibility is
+needed, but be aware it produces significantly higher metrics volume.</p>
+</td>
+</tr><tr><td><p>&#34;SRE&#34;</p></td>
+<td><p>MetricsSetSRE collects the metrics defined in the sre-metric-set ConfigMap,
+which includes the Telemetry set plus additional metrics needed for SRE
+monitoring dashboards and alerts. Use this for clusters that require
+SRE observability.</p>
+</td>
+</tr><tr><td><p>&#34;Telemetry&#34;</p></td>
+<td><p>MetricsSetTelemetry collects only the minimal set of metrics required for
+OpenShift Telemetry. Use this to minimize metrics volume while still
+satisfying cluster telemetry requirements.</p>
+</td>
+</tr></tbody>
+</table>
+###MonitoringSpec { #hypershift.openshift.io/v1beta1.MonitoringSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
+</p>
+<p>
+<p>MonitoringSpec configures monitoring for the hosted cluster.
+At least one field must be specified when this struct is present.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>metricsForwarding,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.MetricsForwardingSpec">
+MetricsForwardingSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>metricsForwarding configures forwarding of control plane metrics into
+the hosted cluster&rsquo;s monitoring stack.
+When omitted, metrics forwarding behavior is determined by the
+hypershift.openshift.io/enable-metrics-forwarding annotation for backward compatibility.
+If neither is set, metrics forwarding is disabled.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>metricsSet</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.MetricsSet">
+MetricsSet
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>metricsSet specifies which set of metrics to collect and forward.
+This overrides the global METRICS_SET environment variable configured on the HyperShift Operator.
+When not specified, the global METRICS_SET value is used, which defaults to &ldquo;Telemetry&rdquo;.</p>
+<p>&ldquo;Telemetry&rdquo; collects only the minimal set of metrics required for OpenShift Telemetry.
+&ldquo;SRE&rdquo; collects the Telemetry set plus additional metrics defined in the sre-metric-set ConfigMap,
+needed for SRE dashboards and alerts.
+&ldquo;All&rdquo; collects all metrics from control plane components without filtering,
+which produces significantly higher metrics volume.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###MultiQueueSetting { #hypershift.openshift.io/v1beta1.MultiQueueSetting }
 <p>
 (<em>Appears on:</em>
@@ -48365,7 +50539,7 @@ int32
 </td>
 <td>
 <p>min is the minimum number of nodes to maintain in the pool.
-Can be set to 0 for scale-from-zero for AWS platform.
+Can be set to 0 for scale-from-zero for AWS and Azure platforms.
 Must be &gt;= 0 and &lt;= .Max.</p>
 </td>
 </tr>
@@ -49033,6 +51207,32 @@ TODO: This is set as optional to prevent validation from failing due to a limita
 <a href="https://github.com/kubernetes/kubernetes/issues/108768#issuecomment-1253912215">https://github.com/kubernetes/kubernetes/issues/108768#issuecomment-1253912215</a></p>
 </td>
 </tr>
+<tr>
+<td>
+<code>osImageStream,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.OSImageStreamReference">
+OSImageStreamReference
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>osImageStream specifies an OS stream to be used for nodes in this pool.</p>
+<p>This field can be optionally set to a known OSImageStream name to change
+the OS and Extension images with a well-known, tested, release-provided
+set of images. This enables a streamlined way of switching the pool&rsquo;s
+node OS to a different version than the cluster default, such as
+transitioning to a major RHEL version.</p>
+<p>When set, the referenced stream overrides the default OS images for the
+pool. When omitted, the pool uses the release version&rsquo;s default stream
+(rhel-9 for OCP &lt; 5.0, rhel-10 for OCP &gt;= 5.0).
+Changing this field triggers a rollout. Forward transitions
+(rhel-9 -&gt; rhel-10) are allowed; backward transitions
+(rhel-10 -&gt; rhel-9) are rejected by CEL validation because
+in-place OS downgrades are not supported.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###NodePoolStatus { #hypershift.openshift.io/v1beta1.NodePoolStatus }
@@ -49103,6 +51303,21 @@ NodePoolPlatformStatus
 <td>
 <em>(Optional)</em>
 <p>platform holds the specific statuses</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>osImageStream,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.OSImageStreamReference">
+OSImageStreamReference
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>osImageStream reports the OS stream observed on the nodes in this pool.</p>
+<p>When omitted, the pool is using the release version&rsquo;s default OS images.</p>
 </td>
 </tr>
 <tr>
@@ -49256,6 +51471,36 @@ the guest cluster.</p>
 the management cluster.</p>
 </td>
 </tr></tbody>
+</table>
+###OSImageStreamReference { #hypershift.openshift.io/v1beta1.OSImageStreamReference }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.NodePoolSpec">NodePoolSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.NodePoolStatus">NodePoolStatus</a>)
+</p>
+<p>
+<p>OSImageStreamReference references an OSImageStream by name.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>name</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>name is a required reference to an OSImageStream to be used for the pool.</p>
+</td>
+</tr>
+</tbody>
 </table>
 ###OVNIPv4Config { #hypershift.openshift.io/v1beta1.OVNIPv4Config }
 <p>
@@ -51501,6 +53746,120 @@ When omitted, the autoscaler defaults to 50%.</p>
 </td>
 </tr></tbody>
 </table>
+###SecretEncryptionKeyStatus { #hypershift.openshift.io/v1beta1.SecretEncryptionKeyStatus }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.SecretEncryptionStatus">SecretEncryptionStatus</a>)
+</p>
+<p>
+<p>SecretEncryptionKeyStatus records the active key identity using the same types as the spec.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>provider</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.SecretEncryptionProvider">
+SecretEncryptionProvider
+</a>
+</em>
+</td>
+<td>
+<p>provider identifies the encryption provider.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>azure,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureKMSKey">
+AzureKMSKey
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>azure holds the Azure KMS key identity fields.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>aws,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AWSKMSKeyEntry">
+AWSKMSKeyEntry
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>aws holds the AWS KMS key identity fields.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>ibmCloud,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.IBMCloudKMSKeyEntry">
+IBMCloudKMSKeyEntry
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>ibmCloud holds the IBM Cloud KMS key identity fields.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>aescbc,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AESCBCKeyStatus">
+AESCBCKeyStatus
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>aescbc holds a reference to the AESCBC key secret.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###SecretEncryptionProvider { #hypershift.openshift.io/v1beta1.SecretEncryptionProvider }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.EncryptionKeyReference">EncryptionKeyReference</a>, 
+<a href="#hypershift.openshift.io/v1beta1.SecretEncryptionKeyStatus">SecretEncryptionKeyStatus</a>)
+</p>
+<p>
+<p>SecretEncryptionProvider identifies the encryption provider recorded in status.
+This is a separate type from KMSProvider because the KMSProvider enum does not include AESCBC.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;AESCBC&#34;</p></td>
+<td></td>
+</tr><tr><td><p>&#34;AWS&#34;</p></td>
+<td></td>
+</tr><tr><td><p>&#34;Azure&#34;</p></td>
+<td></td>
+</tr><tr><td><p>&#34;IBMCloud&#34;</p></td>
+<td></td>
+</tr></tbody>
+</table>
 ###SecretEncryptionSpec { #hypershift.openshift.io/v1beta1.SecretEncryptionSpec }
 <p>
 (<em>Appears on:</em>
@@ -51562,6 +53921,74 @@ AESCBCSpec
 </tr>
 </tbody>
 </table>
+###SecretEncryptionStatus { #hypershift.openshift.io/v1beta1.SecretEncryptionStatus }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.HostedClusterStatus">HostedClusterStatus</a>, 
+<a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneStatus">HostedControlPlaneStatus</a>)
+</p>
+<p>
+<p>SecretEncryptionStatus tracks the state of secret encryption key rotation and re-encryption.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>activeKey,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.SecretEncryptionKeyStatus">
+SecretEncryptionKeyStatus
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>activeKey is the encryption key specification that all etcd data is confirmed encrypted with.
+Updated after successful re-encryption.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>targetKey,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.SecretEncryptionKeyStatus">
+SecretEncryptionKeyStatus
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>targetKey is the key being rolled out during an active rotation. Snapshot from
+spec.secretEncryption&rsquo;s active key when the rotation starts. The CPO uses this
+(not the current spec) during the rotation, so mid-rotation spec changes are
+safely queued until the current rotation completes. Cleared when rotation completes.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>history</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.EncryptionMigrationHistory">
+[]EncryptionMigrationHistory
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>history contains a list of key rotations applied to this cluster. The newest
+entry is first in the list. Entries have state Completed when re-encryption
+has finished. The current rotation phase is always history[0].state when
+history[0] is not Completed or Interrupted.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###SecretEncryptionType { #hypershift.openshift.io/v1beta1.SecretEncryptionType }
 <p>
 (<em>Appears on:</em>
@@ -51588,6 +54015,7 @@ AESCBCSpec
 ###SecretReference { #hypershift.openshift.io/v1beta1.SecretReference }
 <p>
 (<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AESCBCKeyStatus">AESCBCKeyStatus</a>, 
 <a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupAzureBlob">HCPEtcdBackupAzureBlob</a>, 
 <a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupS3">HCPEtcdBackupS3</a>)
 </p>
@@ -52194,6 +54622,41 @@ additional node capacity requirements.</p>
 capacity.</p>
 </td>
 </tr></tbody>
+</table>
+###UserAssignedManagedIdentity { #hypershift.openshift.io/v1beta1.UserAssignedManagedIdentity }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzureContainerRegistryCredentialConfig">AzureContainerRegistryCredentialConfig</a>)
+</p>
+<p>
+<p>UserAssignedManagedIdentity identifies a user-assigned managed identity by its ARM resource ID.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>resourceID</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureManagedIdentityResourceID">
+AzureManagedIdentityResourceID
+</a>
+</em>
+</td>
+<td>
+<p>resourceID is the ARM resource ID of the user-assigned managed identity
+in the format /subscriptions/{subscriptionID}/resourceGroups/{resourceGroupName}/providers/Microsoft.ManagedIdentity/userAssignedIdentities/{identityName}.
+The identity must have the AcrPull role on the target Azure Container Registry.
+It does not need to be in the same subscription or resource group as the HostedCluster,
+but it must be in the same Azure AD tenant.</p>
+</td>
+</tr>
+</tbody>
 </table>
 ###UserManagedDiagnostics { #hypershift.openshift.io/v1beta1.UserManagedDiagnostics }
 <p>
@@ -53854,6 +56317,194 @@ The diagram above provides an overview of the environment and how the workflow f
 8. Once the worker nodes of the HostedCluster have successfully booted up, an __Agent__ container will be initiated. This __Agent__ will establish contact with the Assisted Service, which will orchestrate the necessary actions to complete the deployment. Initially, you will need to scale the NodePool to the desired number of worker nodes for your HostedCluster, after which the AssistedService will manage the remaining tasks.
 
 9. At this point, you need to patiently await the completion of the deployment process.
+
+
+---
+
+## Source: docs/content/reference/architecture/private-topology-dns.md
+
+---
+title: Private Topology DNS
+---
+
+# Private Topology DNS Architecture in HyperShift
+
+## Overview
+
+When HyperShift creates a hosted control plane with `EndpointAccess` set to `Private` or `PublicAndPrivate`, each cloud platform uses a different mechanism to provide private connectivity and DNS resolution between the guest cluster VPC/VNet and the hosted control plane in the management cluster.
+
+This document describes how DNS resolution works for private topologies across AWS, GCP, and Azure, with a focus on:
+
+- How each platform resolves control plane endpoints (API server, OAuth) from within the guest network
+- The role of ExternalName services and external-dns in enabling public DNS records for private endpoints
+- How DNS-authenticated certificate workflows (e.g. Let's Encrypt DNS challenges used by ROSA) are enabled
+- Known issues and troubleshooting guidance
+
+For platform-specific PrivateLink/PSC architecture details, see:
+
+- AWS PrivateLink
+- Azure Private Link
+
+## Private Connectivity Summary
+
+Each cloud platform uses a different private connectivity technology, but they all follow the same high-level pattern: the control plane operator (CPO) in the management cluster creates a private endpoint in the guest network that routes traffic through a cloud-specific private link to the hosted control plane.
+
+| Platform | Private Connectivity | DNS Zone Type | ExternalName Target |
+|----------|---------------------|---------------|---------------------|
+| AWS | PrivateLink (VPC Endpoint Service) | Route53 Private Hosted Zone | VPC Endpoint DNS name (CNAME) |
+| GCP | Private Service Connect (PSC) | Cloud DNS Private Zone | PSC Endpoint IP (A record) |
+| Azure | Private Link Service (PLS) | Azure Private DNS Zone | Private Endpoint IP (A record) |
+
+## Per-Platform DNS Architecture
+
+### AWS
+
+AWS uses PrivateLink with VPC Endpoint Services for private connectivity. DNS resolution is handled through Route53 private hosted zones.
+
+**DNS records created by CPO:**
+
+- `api.<clusterName>.hypershift.local` → VPC Endpoint DNS name
+- `*.<routerDomain>.<clusterName>.hypershift.local` → VPC Endpoint DNS name (for CP-resident services exposed as routes: OAuth, Ignition, Konnectivity)
+
+The Route53 private hosted zone is associated with the guest VPC so that worker nodes can resolve control plane endpoints.
+
+**ExternalName services:** When the cluster is not public and services are configured with `Route` publishing strategy with a custom hostname, the AWS PrivateLink controller creates ExternalName services annotated with `hypershift.openshift.io/external-dns-hostname`. The `spec.externalName` is set to the VPC Endpoint's DNS name (a CNAME target). This enables external-dns to create CNAME records in a public DNS zone.
+
+**Code reference:** `control-plane-operator/controllers/awsprivatelink/awsprivatelink_controller.go`
+
+### GCP
+
+GCP uses Private Service Connect (PSC) for private connectivity. The PSC endpoint receives a private IP address within the guest VPC subnet.
+
+**DNS records created by CPO:**
+
+- Cloud DNS private zones with A records pointing the API server and OAuth hostnames to the PSC endpoint IP
+
+**ExternalName services:** When the cluster is not public and services are configured with `Route` publishing strategy with a custom hostname, the GCP PSC controller creates ExternalName services annotated with `hypershift.openshift.io/external-dns-hostname`. The `spec.externalName` is set to the PSC endpoint IP. This enables external-dns to create A records in a public DNS zone pointing to the private IP.
+
+**Code reference:** `control-plane-operator/controllers/gcpprivateserviceconnect/psc_endpoint_controller.go`
+
+### Azure
+
+Azure uses Private Link Service (PLS) with NAT IP translation for private connectivity. The CPO creates a Private Endpoint in the guest VNet, which receives a private IP.
+
+**DNS records created by CPO (two private DNS zones):**
+
+1. `<clusterName>.hypershift.local` — synthetic internal zone:
+    - `api` → Private Endpoint IP
+    - `*.apps` → Private Endpoint IP (for CP-resident services, not guest cluster application traffic)
+2. `<baseDomain>` — base domain zone:
+    - `api-<clusterName>` → Private Endpoint IP
+    - `oauth-<clusterName>` → Private Endpoint IP
+
+Both zones are linked to the guest VNet so that worker nodes can resolve control plane endpoints.
+
+**ExternalName services:** Azure creates ExternalName services following the same pattern as GCP, enabling external-dns to publish public DNS records for private endpoint IPs. This supports DNS-authenticated certificate workflows.
+
+**Code reference:** `control-plane-operator/controllers/azureprivatelinkservice/controller.go`
+
+## ExternalName Services and external-dns
+
+### The Pattern
+
+Across all three platforms, HyperShift uses the same pattern to bridge private endpoints with public DNS:
+
+1. The platform's private link controller creates Kubernetes Services of type `ExternalName` in the HCP namespace
+2. Each service is annotated with `hypershift.openshift.io/external-dns-hostname` set to the desired public hostname
+3. The `spec.externalName` field points to the private endpoint's DNS name (AWS) or IP address (GCP, Azure)
+4. external-dns watches for these annotated services and creates DNS records in the configured public DNS zone
+
+```mermaid
+flowchart TD
+    subgraph MC["Management Cluster — HCP Namespace"]
+        CPO["Platform Private Link Controller
+        (AWS / GCP / Azure)"]
+        SVC_API["ExternalName Svc: api
+        dns-hostname: api-cluster.example.com
+        externalName: private-endpoint-addr"]
+        SVC_OAUTH["ExternalName Svc: oauth
+        dns-hostname: oauth-cluster.example.com
+        externalName: private-endpoint-addr"]
+        EDNS["external-dns
+        Watches annotated Services"]
+    end
+
+    subgraph DNS["Public DNS Zone (example.com)"]
+        A_API["api-cluster.example.com
+        → private endpoint"]
+        A_OAUTH["oauth-cluster.example.com
+        → private endpoint"]
+    end
+
+    subgraph GUEST["Guest VPC / VNet"]
+        PE["Private Endpoint
+        (VPC Endpoint / PSC / Azure PE)"]
+        WORKERS["Worker Nodes"]
+    end
+
+    CPO --> SVC_API
+    CPO --> SVC_OAUTH
+    EDNS -- "reads annotations" --> SVC_API
+    EDNS -- "reads annotations" --> SVC_OAUTH
+    EDNS -- "creates records" --> A_API
+    EDNS -- "creates records" --> A_OAUTH
+    A_API -. "resolves to" .-> PE
+    A_OAUTH -. "resolves to" .-> PE
+    WORKERS -- "traffic via private link" --> PE
+```
+
+### Why This Matters
+
+This pattern enables two important capabilities:
+
+1. **DNS-authenticated certificate issuance**: Services like ROSA use Let's Encrypt DNS-01 challenges to issue TLS certificates. The certificate authority needs to verify domain ownership by querying public DNS. By creating publicly-resolvable records that point to private IPs, the DNS challenge can succeed even though the endpoints are not publicly accessible.
+
+2. **Kubeconfig resolution for authorized clients**: Clients with VPC/VNet access (or access through VPN gateways, peering, etc.) can resolve the API server and OAuth endpoints from the hostnames in the kubeconfig. The public DNS records resolve to private IPs, which are reachable from within the private network.
+
+### When ExternalName Services Are Created
+
+ExternalName services are only created when **all** of the following conditions are met:
+
+- The cluster's `EndpointAccess` is `Private` or `PublicAndPrivate` (i.e. the cluster is not public-only)
+- The service publishing strategy for APIServer and/or OAuthServer is set to `Route`
+- The Route strategy specifies a custom `hostname`
+
+If the cluster is public-only, any existing ExternalName services are cleaned up.
+
+## Known Issues
+
+### Azure DNS Zone Shadowing (OCPBUGS-85351)
+
+When `--external-dns-domain` is set to a value that matches the cluster's base domain, the Azure Private DNS zone created by the PLS reconciler for the base domain can **shadow** the `*.apps` wildcard DNS zone used for guest cluster application ingress.
+
+**Problem:** Azure Private DNS zones linked to a VNet take precedence over public DNS for resolution within that VNet. If the PLS reconciler creates a private DNS zone for `example.com` (the base domain), and guest cluster application ingress also uses `*.apps.cluster.example.com`, the private DNS zone shadows the public `*.apps` wildcard. Worker nodes and pods within the guest VNet will fail to resolve application routes.
+
+**Recommendation:** Use a distinct prefix for `--external-dns-domain` that does not overlap with the cluster's base domain. For example, if the base domain is `example.com`, use `dns.example.com` or `service.example.com` as the external DNS domain.
+
+## Platform Comparison
+
+| Capability | AWS | GCP | Azure |
+|-----------|-----|-----|-------|
+| Private connectivity | VPC Endpoint Service | Private Service Connect | Private Link Service |
+| Private DNS zone | Route53 Private Hosted Zone | Cloud DNS Private Zone | Azure Private DNS Zone |
+| Synthetic `.hypershift.local` zone | Yes | No | Yes |
+| Base domain private DNS zone | No | No | Yes |
+| ExternalName target type | CNAME (VPC Endpoint DNS) | IP address (PSC Endpoint) | IP address (Private Endpoint) |
+| ExternalName services for external-dns | Yes | Yes | Yes |
+| DNS-auth cert flow support | Yes | Yes | Yes |
+
+## Code References
+
+| Component | File |
+|-----------|------|
+| AWS PrivateLink controller (CPO) | `control-plane-operator/controllers/awsprivatelink/awsprivatelink_controller.go` |
+| GCP PSC controller (CPO) | `control-plane-operator/controllers/gcpprivateserviceconnect/psc_endpoint_controller.go` |
+| Azure PLS observer (CPO) | `control-plane-operator/controllers/azureprivatelinkservice/observer.go` |
+| Azure PLS reconciler (CPO) | `control-plane-operator/controllers/azureprivatelinkservice/controller.go` |
+| Azure PLS controller (HO) | `hypershift-operator/controllers/platform/azure/controller.go` |
+| GCP PSC controller (HO) | `hypershift-operator/controllers/platform/gcp/privateserviceconnect_controller.go` |
+| AWS platform controller (HO) | `hypershift-operator/controllers/platform/aws/controller.go` |
+| GCP PSC DNS helpers | `control-plane-operator/controllers/gcpprivateserviceconnect/dns.go` |
 
 
 ---

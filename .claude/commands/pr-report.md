@@ -1,6 +1,6 @@
 ---
 description: "PR Report Generator"
-argument-hint: "[--start YYYY-MM-DD] [--end YYYY-MM-DD] [--deep] [--progress-report] - Date range with optional deep analysis and progress report"
+argument-hint: "[--start YYYY-MM-DD] [--end YYYY-MM-DD] [--deep] [--progress-report] [--blog] - Date range with optional deep analysis, progress report, and blog post"
 ---
 
 # PR Report Generator
@@ -16,6 +16,7 @@ Generate comprehensive PR reports for openshift/hypershift, openshift-eng/ai-hel
 /pr-report --start 2026-02-05 --end 2026-02-12 --deep  # With deep code analysis
 /pr-report --start 2026-02-05 --end 2026-02-12 --deep --progress-report # Deep analysis + progress report
 /pr-report --start 2026-02-05 --end 2026-02-12 --deep --breaking-changes # Deep analysis + breaking change report
+/pr-report --start 2026-05-14 --end 2026-06-22 --deep --progress-report --blog # Deep + progress report + blog post
 ```
 
 **Parameters:**
@@ -25,6 +26,7 @@ Generate comprehensive PR reports for openshift/hypershift, openshift-eng/ai-hel
 - `--deep` (optional): Enable deep analysis mode that fetches and analyzes actual code diffs.
 - `--progress-report` (optional): Generate a narrative blog-style progress report (Dolphin Emulator style). **Requires `--deep`.**
 - `--breaking-changes` (optional): Generate a detailed breaking change assessment report for management cluster operators and senior SREs. **Requires `--deep`.**
+- `--blog` (optional): Generate a Material-styled blog post in `docs/content/blog/` and update `docs/mkdocs.yml` nav. **Requires `--progress-report`.**
 - `--output-dir` (optional): Directory for output files. If not specified, ask the user with AskUserQuestion.
 
 ## What This Command Does
@@ -68,6 +70,14 @@ This command generates **two reports** (with two optional additions):
 - Identifies bridge nodes who connect clusters
 - Super short format: one paragraph per cluster
 
+### 7. Blog Post (--blog, docs-ready Material-styled post)
+- Converts progress report to MkDocs Material blog post with grid stat cards, admonitions, and icons
+- Generates sortable contributor table with per-repo linked PR counts and bugfix column
+- Creates/updates `docs/content/blog/index.md` landing page
+- Updates `docs/mkdocs.yml` nav with new post entry
+- Runs `make docs-aggregate` for verification
+- Applies sensitive content filtering for public blog (no S360/SFDC references)
+
 ## Output Files
 
 | File | Description |
@@ -83,6 +93,7 @@ This command generates **two reports** (with two optional additions):
 | `$OUTPUT_DIR/hypershift_progress_report_YYYY-MM-DD.md` | (--progress-report) Narrative progress report (blog-style) |
 | `$OUTPUT_DIR/breaking_changes_report_YYYY-MM-DD.md` | (--breaking-changes) Breaking change assessment for SREs |
 | `$OUTPUT_DIR/collaboration_report_YYYY-MM-DD.md` | (--deep) Contributor collaboration clusters |
+| `docs/content/blog/YYYY-MM-progress-report.md` | (--blog) Material-styled blog post for docs site |
 
 ## Implementation
 
@@ -90,6 +101,9 @@ This command generates **two reports** (with two optional additions):
 
 If `--progress-report` is specified without `--deep`, stop and inform the user:
 `--progress-report requires --deep mode for code-level analysis. Please add --deep to your command.`
+
+If `--blog` is specified without `--progress-report`, stop and inform the user:
+`--blog requires --progress-report mode to generate the blog source content. Please add --progress-report (and --deep) to your command.`
 
 ### Step 1: Run the Python script to fetch PRs
 
@@ -100,6 +114,7 @@ Parse the arguments and run the script. The script accepts:
 ```bash
 # Parse ARGUMENTS which may contain: --start YYYY-MM-DD --end YYYY-MM-DD --deep --output-dir DIR
 # Example: python3 contrib/repo_metrics/weekly_pr_report.py 2026-02-05 --end 2026-02-12 --output-dir /tmp
+# If --blog is specified, also pass --blog-data to generate blog_data.json
 
 python3 contrib/repo_metrics/weekly_pr_report.py $ARGUMENTS --output-dir $OUTPUT_DIR
 ```
@@ -107,6 +122,8 @@ python3 contrib/repo_metrics/weekly_pr_report.py $ARGUMENTS --output-dir $OUTPUT
 Note: The script's positional argument is the start date. The `--start` flag in the skill
 is mapped to this positional argument when invoking the script. `$OUTPUT_DIR` is the
 directory chosen by the user. All output file paths below use this directory.
+When `--blog` is active, include `--blog-data` in the script arguments to generate
+`$OUTPUT_DIR/blog_data.json` with contributor table, metrics, and pre-rendered markdown.
 
 ### Step 2: Jira Enrichment (Conditional)
 
@@ -687,6 +704,104 @@ bridge nodes (people who connect clusters).
 4. List the members in bold, then one sentence describing what they worked on together
 5. End with a "Bridge nodes" line identifying contributors who span multiple clusters
 
+### Step 5d: Generate Blog Post (--blog mode only)
+
+If `--blog` flag is specified, generate a Material-styled blog post from the progress report.
+Use `docs/content/blog/2026-06-progress-report.md` as the canonical template reference for
+styling decisions.
+
+#### Step 5d-1: Generate blog data
+
+The Python script handles all the deterministic work (contributor counting, URL generation,
+table rendering, metrics). It was already invoked with `--blog-data` alongside the other flags
+in Step 1. Verify `$OUTPUT_DIR/blog_data.json` exists. If not, re-run:
+
+```bash
+python3 contrib/repo_metrics/weekly_pr_report.py $SINCE_DATE --end $END_DATE \
+    --blog-data --resume --output-dir $OUTPUT_DIR
+```
+
+The script uses `OWNERS_ALIASES` to determine the HyperShift team for ai-helpers inclusion
+(formula: `(core-approvers ∪ core-reviewers ∪ konflux-approvers) - gcp-reviewers`).
+
+**Spot-check release-only contributors:** `blog_data.json` flags contributors with
+`"release_only": true` and includes their PR numbers in `"release_pr_numbers"`. For each,
+verify their release PRs touch HyperShift-specific paths:
+
+```bash
+gh pr view openshift/release#NNNNN --json files --jq '.files[].path'
+```
+
+If their PRs are broad CI sweeps (not HyperShift-specific), exclude them from the
+contributor table by removing their entry before generating the blog post.
+
+#### Step 5d-2: Transform progress report to blog post
+
+Read `$OUTPUT_DIR/hypershift_progress_report_YYYY-MM-DD.md` and apply Material styling.
+Write to `docs/content/blog/YYYY-MM-progress-report.md`.
+
+**Pre-rendered markdown from `blog_data.json`** — insert these directly:
+- `markdown.stats_cards` → after the H1 title
+- `markdown.metrics_table` → in the "By the Numbers" section
+- `markdown.top_reviewers_table` → after the metrics table
+- `markdown.contributor_table` → in the "Contributors" section
+
+**Content preservation rules (do NOT alter these):**
+- Preserve all existing PR links (`[PR #NNNN](url)` and `[#NNNN](url)`) — do not strip URLs
+- Preserve em dashes (`—`). If the source uses `--`, convert to `—`
+- Preserve the intro paragraph's detailed statistics (merge time, high-impact count, etc.)
+  but update contributor count to match `blog_data.json → stats.contributor_count`
+- Preserve enhancement proposal links and Jira links that are already in the source
+
+**Title format:** Use `{Month} {Year} Progress Report` (e.g., "June 2026 Progress Report"),
+not "HyperShift Progress Report: June 2026". Keep it short. No quotes in YAML frontmatter
+values unless they contain special characters.
+
+**LLM styling transforms:**
+- Add YAML frontmatter (`title`, `description` with PR count and contributor count)
+- Remove "Story N:" prefixes from section headings
+- Add Material icons to section headings (choose contextually: `:material-swap-horizontal:`
+  for migrations, `:material-linux:` for OS, `:material-lan-disconnect:` for networking, etc.)
+- Convert only clearly-marked callout paragraphs to admonitions — look for explicit
+  "Key Takeaway", "Production Impact", "Lesson Learned" markers in the source. Do NOT
+  wrap regular narrative paragraphs in admonitions. When in doubt, leave as prose.
+- Ensure `@username` mentions use `[@username](https://github.com/username)` linking
+- Add "By the Numbers" section (`:material-chart-bar:`) with pre-rendered metrics and
+  top reviewers tables
+- Add "Contributors" section (`:octicons-people-24:`) with header text "Click any column
+  header to sort. Each number links to the contributor's PRs in that repository."
+  and the pre-rendered contributor table
+- Add "What's Next" section from the progress report with `:material-crystal-ball:` icon
+
+**Sensitive content filtering (blog is public):**
+- S360 references → "compliance"
+- Remove SFDC case count/link references
+- Don't include internal-only Jira links for non-public tickets
+- Don't mention specific customer names
+
+#### Step 5d-3: Update blog index and mkdocs.yml nav
+
+Read `docs/content/blog/index.md`. Add a new card entry at the TOP of the grid cards div
+(newest first). Create the file if it doesn't exist. Card template:
+
+```markdown
+-   :material-newspaper-variant-outline:{ .lg .middle } **{Month} {Year} Progress Report**
+
+    ---
+
+    {description}. {total_prs} PRs from {contributor_count} contributors.
+
+    [:octicons-arrow-right-24: Read the report]({filename})
+```
+
+Read `docs/mkdocs.yml`, find `- 'Blog':` section, add new entry. If no Blog section
+exists, create one before `- 'Videos':`.
+
+#### Step 5d-4: Verify and preview
+
+Run `make docs-aggregate` (blog excluded by `/blog/` filter in `hack/tools/docs-aggregator/main.go`).
+Start `mkdocs serve` from `docs/` for user preview before committing.
+
 ### Step 6: Present Results
 
 After generating reports, provide the user with:
@@ -698,6 +813,9 @@ After generating reports, provide the user with:
 5. (--progress-report mode) Mention the progress report location
 6. (--breaking-changes mode) Summarize breaking changes found and their severity
 7. (--deep mode) Mention the collaboration report location
+8. (--blog mode) Mention the blog post at `docs/content/blog/YYYY-MM-progress-report.md`,
+   suggest running `cd docs && mkdocs serve` to preview, and note that `make docs-aggregate`
+   was run successfully
 
 ## Script Features
 

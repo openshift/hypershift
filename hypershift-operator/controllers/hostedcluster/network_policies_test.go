@@ -232,7 +232,7 @@ func TestGCPPrivateRouterNetworkPolicy_IngressOnly(t *testing.T) {
 	policy := networkpolicy.PrivateRouterNetworkPolicy("test-namespace")
 
 	// Test with ingressOnly = true
-	err := reconcilePrivateRouterNetworkPolicy(policy, hcluster, kubernetesEndpoint, false, nil, true)
+	err := reconcilePrivateRouterNetworkPolicy(policy, hcluster, kasEndpointsToCIDRs(kubernetesEndpoint), false, nil, true)
 	if err != nil {
 		t.Fatalf("reconcilePrivateRouterNetworkPolicy with ingressOnly=true failed: %v", err)
 	}
@@ -266,14 +266,12 @@ func TestGCPPrivateRouterNetworkPolicy_IngressOnly(t *testing.T) {
 }
 
 func TestReconcileNetworkPolicies_OpenshiftIngressPolicy(t *testing.T) {
-	// The openshift-ingress NetworkPolicy must always be created regardless of
-	// platform, endpoint access mode, or KAS publishing strategy.
-	// Removing it triggers an OVN-Kubernetes bug where port group references
-	// become stale during MC KAS rollouts. See OCPBUGS-87018.
 	tests := []struct {
-		name     string
-		hcluster *hyperv1.HostedCluster
-		hcp      *hyperv1.HostedControlPlane
+		name          string
+		hcluster      *hyperv1.HostedCluster
+		hcp           *hyperv1.HostedControlPlane
+		expectCreated bool
+		expectDeleted bool
 	}{
 		{
 			name: "When AWS public cluster uses KAS LoadBalancer it should create policy",
@@ -294,9 +292,10 @@ func TestReconcileNetworkPolicies_OpenshiftIngressPolicy(t *testing.T) {
 					},
 				},
 			},
+			expectCreated: true,
 		},
 		{
-			name: "When AWS private cluster uses KAS LoadBalancer it should create policy",
+			name: "When AWS private cluster uses KAS LoadBalancer it should delete policy",
 			hcluster: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "test-ns"},
 				Spec: hyperv1.HostedClusterSpec{
@@ -314,9 +313,31 @@ func TestReconcileNetworkPolicies_OpenshiftIngressPolicy(t *testing.T) {
 					},
 				},
 			},
+			expectDeleted: true,
 		},
 		{
-			name: "When AWS public cluster uses KAS Route with hostname it should create policy",
+			name: "When AWS PublicAndPrivate cluster uses KAS LoadBalancer it should create policy",
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "test-ns"},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform, AWS: &hyperv1.AWSPlatformSpec{EndpointAccess: hyperv1.PublicAndPrivate}},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{Service: hyperv1.APIServer, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.LoadBalancer}},
+					},
+				},
+			},
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform, AWS: &hyperv1.AWSPlatformSpec{EndpointAccess: hyperv1.PublicAndPrivate}},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{Service: hyperv1.APIServer, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.LoadBalancer}},
+					},
+				},
+			},
+			expectCreated: true,
+		},
+		{
+			name: "When AWS public cluster uses KAS Route with hostname it should delete policy",
 			hcluster: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "test-ns"},
 				Spec: hyperv1.HostedClusterSpec{
@@ -340,9 +361,31 @@ func TestReconcileNetworkPolicies_OpenshiftIngressPolicy(t *testing.T) {
 					},
 				},
 			},
+			expectDeleted: true,
 		},
 		{
-			name: "When GCP private cluster uses KAS LoadBalancer it should create policy",
+			name: "When GCP PublicAndPrivate cluster uses KAS LoadBalancer it should create policy",
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "test-ns"},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.GCPPlatform, GCP: &hyperv1.GCPPlatformSpec{EndpointAccess: hyperv1.GCPEndpointAccessPublicAndPrivate}},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{Service: hyperv1.APIServer, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.LoadBalancer}},
+					},
+				},
+			},
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.GCPPlatform, GCP: &hyperv1.GCPPlatformSpec{EndpointAccess: hyperv1.GCPEndpointAccessPublicAndPrivate}},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{Service: hyperv1.APIServer, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.LoadBalancer}},
+					},
+				},
+			},
+			expectCreated: true,
+		},
+		{
+			name: "When GCP private cluster uses KAS LoadBalancer it should delete policy",
 			hcluster: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "test-ns"},
 				Spec: hyperv1.HostedClusterSpec{
@@ -360,9 +403,52 @@ func TestReconcileNetworkPolicies_OpenshiftIngressPolicy(t *testing.T) {
 					},
 				},
 			},
+			expectDeleted: true,
 		},
 		{
-			name: "When Agent cluster uses KAS Route with hostname it should create policy",
+			name: "When IBM Cloud cluster uses KAS Route it should create policy",
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "test-ns"},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.IBMCloudPlatform},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{Service: hyperv1.APIServer, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.Route}},
+					},
+				},
+			},
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.IBMCloudPlatform},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{Service: hyperv1.APIServer, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.Route}},
+					},
+				},
+			},
+			expectCreated: true,
+		},
+		{
+			name: "When Agent cluster uses KAS LoadBalancer it should create policy",
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "test-ns"},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AgentPlatform},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{Service: hyperv1.APIServer, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.LoadBalancer}},
+					},
+				},
+			},
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AgentPlatform},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{Service: hyperv1.APIServer, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.LoadBalancer}},
+					},
+				},
+			},
+			expectCreated: true,
+		},
+		{
+			name: "When Agent cluster uses KAS Route with hostname it should delete policy",
 			hcluster: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "test-ns"},
 				Spec: hyperv1.HostedClusterSpec{
@@ -386,6 +472,28 @@ func TestReconcileNetworkPolicies_OpenshiftIngressPolicy(t *testing.T) {
 					},
 				},
 			},
+			expectDeleted: true,
+		},
+		{
+			name: "When KubeVirt cluster uses KAS LoadBalancer it should create policy",
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "test-ns"},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.KubevirtPlatform, Kubevirt: &hyperv1.KubevirtPlatformSpec{}},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{Service: hyperv1.APIServer, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.LoadBalancer}},
+					},
+				},
+			},
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.KubevirtPlatform, Kubevirt: &hyperv1.KubevirtPlatformSpec{}},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{Service: hyperv1.APIServer, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.LoadBalancer}},
+					},
+				},
+			},
+			expectCreated: true,
 		},
 	}
 
@@ -427,6 +535,15 @@ func TestReconcileNetworkPolicies_OpenshiftIngressPolicy(t *testing.T) {
 			}
 
 			objs := []client.Object{kubernetesEndpoint, managementClusterNetwork}
+
+			// For deletion tests, pre-create the openshift-ingress NetworkPolicy
+			if tc.expectDeleted {
+				existingPolicy := networkpolicy.OpenshiftIngressNetworkPolicy(controlPlaneNamespaceName)
+				existingPolicy.Spec.PodSelector = metav1.LabelSelector{}
+				existingPolicy.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}
+				objs = append(objs, existingPolicy)
+			}
+
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...).Build()
 
 			reconciler := &HostedClusterReconciler{
@@ -454,8 +571,20 @@ func TestReconcileNetworkPolicies_OpenshiftIngressPolicy(t *testing.T) {
 				t.Fatalf("reconcileNetworkPolicies failed: %v", err)
 			}
 
-			if _, policyCreated := createdNetworkPolicies["openshift-ingress"]; !policyCreated {
+			_, policyCreated := createdNetworkPolicies["openshift-ingress"]
+			if tc.expectCreated && !policyCreated {
 				t.Error("Expected openshift-ingress NetworkPolicy to be created, but it was not")
+			}
+			if !tc.expectCreated && policyCreated {
+				t.Error("Expected openshift-ingress NetworkPolicy to NOT be created, but it was")
+			}
+
+			if tc.expectDeleted {
+				policyObj := networkpolicy.OpenshiftIngressNetworkPolicy(controlPlaneNamespaceName)
+				err := fakeClient.Get(ctx, client.ObjectKeyFromObject(policyObj), policyObj)
+				if !apierrors.IsNotFound(err) {
+					t.Error("Expected openshift-ingress NetworkPolicy to be deleted from the cluster, but it still exists")
+				}
 			}
 		})
 	}
@@ -672,7 +801,7 @@ func TestReconcileManagementKASPolicies(t *testing.T) {
 				return controllerutil.OperationResultCreated, nil
 			})
 
-			err := reconciler.reconcileManagementKASPolicies(t.Context(), createOrUpdate, hcluster, hcp, controlPlaneNamespaceName, managementClusterNetwork, kubernetesEndpoint, tc.controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel)
+			err := reconciler.reconcileManagementKASPolicies(t.Context(), createOrUpdate, hcluster, hcp, controlPlaneNamespaceName, managementClusterNetwork, kasEndpointsToCIDRs(kubernetesEndpoint), tc.controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel)
 			g.Expect(err).ToNot(HaveOccurred())
 
 			_, hasManagementKAS := createdPolicies["management-kas"]
@@ -805,7 +934,7 @@ func TestReconcilePlatformNetworkPolicies(t *testing.T) {
 			log := ctrl.Log.WithName("test")
 			version := semver.MustParse(tc.version)
 
-			err := reconciler.reconcilePlatformNetworkPolicies(t.Context(), log, createOrUpdate, hcluster, kubernetesEndpoint, managementClusterNetwork, version, controlPlaneNamespaceName)
+			err := reconciler.reconcilePlatformNetworkPolicies(t.Context(), log, createOrUpdate, hcluster, kasEndpointsToCIDRs(kubernetesEndpoint), managementClusterNetwork, version, controlPlaneNamespaceName)
 			g.Expect(err).ToNot(HaveOccurred())
 
 			_, hasPrivateRouter := createdPolicies["private-router"]
@@ -1469,4 +1598,197 @@ func findConditionByType(conditions []metav1.Condition, condType string) *metav1
 		}
 	}
 	return nil
+}
+
+func TestKasEndpointsToCIDRs(t *testing.T) {
+	tests := []struct {
+		name          string
+		addresses     []string
+		expectedCIDRs []string
+	}{
+		{
+			name:          "When the endpoint has a single address it should return a single /32 CIDR",
+			addresses:     []string{"10.0.0.1"},
+			expectedCIDRs: []string{"10.0.0.1/32"},
+		},
+		{
+			name:          "When the endpoint has multiple addresses it should return a /32 CIDR for each",
+			addresses:     []string{"10.0.0.1", "10.0.0.2"},
+			expectedCIDRs: []string{"10.0.0.1/32", "10.0.0.2/32"},
+		},
+		{
+			name:          "When the endpoint has no addresses it should return an empty slice",
+			addresses:     []string{},
+			expectedCIDRs: []string{},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			addresses := make([]corev1.EndpointAddress, 0, len(tc.addresses))
+			for _, ip := range tc.addresses {
+				addresses = append(addresses, corev1.EndpointAddress{IP: ip})
+			}
+			//nolint:staticcheck // SA1019: corev1.Endpoints is intentionally used for backward compatibility
+			kubernetesEndpoint := &corev1.Endpoints{
+				ObjectMeta: metav1.ObjectMeta{Name: "kubernetes", Namespace: "default"},
+				//nolint:staticcheck // SA1019: corev1.EndpointSubset is intentionally used for backward compatibility
+				Subsets: []corev1.EndpointSubset{
+					{Addresses: addresses},
+				},
+			}
+
+			result := kasEndpointsToCIDRs(kubernetesEndpoint)
+
+			g.Expect(result).To(ConsistOf(tc.expectedCIDRs))
+		})
+	}
+}
+
+func TestReconcileNetworkPolicies_HCPEgressBlockCIDRs(t *testing.T) {
+	// Build a minimal AWS hosted cluster that triggers both the private-router
+	// and management-kas NetworkPolicies.
+	newAWSCluster := func() (*hyperv1.HostedCluster, *hyperv1.HostedControlPlane) {
+		hcluster := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "test-ns"},
+			Spec: hyperv1.HostedClusterSpec{
+				Platform: hyperv1.PlatformSpec{
+					Type: hyperv1.AWSPlatform,
+					AWS:  &hyperv1.AWSPlatformSpec{EndpointAccess: hyperv1.Private},
+				},
+			},
+		}
+		hcp := &hyperv1.HostedControlPlane{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test",
+				Namespace: manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name),
+			},
+			Spec: hyperv1.HostedControlPlaneSpec{
+				Platform: hyperv1.PlatformSpec{
+					Type: hyperv1.AWSPlatform,
+					AWS:  &hyperv1.AWSPlatformSpec{EndpointAccess: hyperv1.Private},
+				},
+			},
+		}
+		return hcluster, hcp
+	}
+
+	kasEndpointIP := "10.0.0.1"
+	machineNetworkCIDR := "10.100.0.0/16"
+
+	tests := []struct {
+		name                 string
+		hcpEgressBlockCIDRs  []string
+		expectedExceptCIDRs  []string
+		expectCIDRNotPresent []string
+	}{
+		{
+			name:                 "When HCPEgressBlockCIDRs is empty it should use KAS endpoint /32 CIDRs in private-router egress exceptions",
+			expectedExceptCIDRs:  []string{kasEndpointIP + "/32"},
+			expectCIDRNotPresent: []string{machineNetworkCIDR},
+		},
+		{
+			name:                 "When HCPEgressBlockCIDRs is set it should use static CIDRs in private-router egress exceptions",
+			hcpEgressBlockCIDRs:  []string{machineNetworkCIDR},
+			expectedExceptCIDRs:  []string{machineNetworkCIDR},
+			expectCIDRNotPresent: []string{kasEndpointIP + "/32"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			scheme := runtime.NewScheme()
+			g.Expect(hyperv1.AddToScheme(scheme)).To(Succeed())
+			g.Expect(corev1.AddToScheme(scheme)).To(Succeed())
+			g.Expect(configv1.AddToScheme(scheme)).To(Succeed())
+			g.Expect(networkingv1.AddToScheme(scheme)).To(Succeed())
+
+			//nolint:staticcheck // SA1019: corev1.Endpoints is intentionally used for backward compatibility
+			kubernetesEndpoint := &corev1.Endpoints{
+				ObjectMeta: metav1.ObjectMeta{Name: "kubernetes", Namespace: "default"},
+				//nolint:staticcheck // SA1019: corev1.EndpointSubset is intentionally used for backward compatibility
+				Subsets: []corev1.EndpointSubset{
+					{Addresses: []corev1.EndpointAddress{{IP: kasEndpointIP}}},
+				},
+			}
+			managementClusterNetwork := &configv1.Network{
+				ObjectMeta: metav1.ObjectMeta{Name: "cluster"},
+				Spec: configv1.NetworkSpec{
+					ClusterNetwork: []configv1.ClusterNetworkEntry{{CIDR: "10.128.0.0/14"}},
+					ServiceNetwork: []string{"172.30.0.0/16"},
+				},
+			}
+
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(kubernetesEndpoint, managementClusterNetwork).Build()
+			reconciler := &HostedClusterReconciler{
+				Client:                        fakeClient,
+				ManagementClusterCapabilities: fakecapabilities.NewSupportAllExcept(),
+				HCPEgressBlockCIDRs:           tc.hcpEgressBlockCIDRs,
+			}
+
+			createdNetworkPolicies := make(map[string]*networkingv1.NetworkPolicy)
+			createOrUpdate := upsert.CreateOrUpdateFN(func(_ context.Context, _ client.Client, obj client.Object, f controllerutil.MutateFn) (controllerutil.OperationResult, error) {
+				if np, ok := obj.(*networkingv1.NetworkPolicy); ok {
+					if err := f(); err != nil {
+						return controllerutil.OperationResultNone, err
+					}
+					createdNetworkPolicies[np.Name] = np
+				}
+				return controllerutil.OperationResultCreated, nil
+			})
+
+			hcluster, hcp := newAWSCluster()
+			ctx := context.Background()
+			log := ctrl.Log.WithName("test")
+			version := semver.MustParse("4.15.0")
+
+			err := reconciler.reconcileNetworkPolicies(ctx, log, createOrUpdate, hcluster, hcp, version, true)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			// Verify the private-router policy egress exceptions.
+			privateRouterPolicy, exists := createdNetworkPolicies["private-router"]
+			g.Expect(exists).To(BeTrue(), "private-router NetworkPolicy should be created")
+
+			exceptCIDRs := collectExceptCIDRs(privateRouterPolicy)
+			g.Expect(exceptCIDRs).To(ContainElement("10.128.0.0/14"), "private-router Except list should always retain management cluster pod CIDR")
+			for _, cidr := range tc.expectedExceptCIDRs {
+				g.Expect(exceptCIDRs).To(ContainElement(cidr), "private-router Except list should contain %s", cidr)
+			}
+			for _, cidr := range tc.expectCIDRNotPresent {
+				g.Expect(exceptCIDRs).NotTo(ContainElement(cidr), "private-router Except list should NOT contain %s", cidr)
+			}
+
+			// Verify the management-kas policy egress exceptions use the same kasBlock.
+			managementKASPolicy, exists := createdNetworkPolicies["management-kas"]
+			g.Expect(exists).To(BeTrue(), "management-kas NetworkPolicy should be created")
+
+			managementKASExceptCIDRs := collectExceptCIDRs(managementKASPolicy)
+			g.Expect(managementKASExceptCIDRs).To(ContainElement("10.128.0.0/14"), "management-kas Except list should always retain management cluster pod CIDR")
+			for _, cidr := range tc.expectedExceptCIDRs {
+				g.Expect(managementKASExceptCIDRs).To(ContainElement(cidr), "management-kas Except list should contain %s", cidr)
+			}
+			for _, cidr := range tc.expectCIDRNotPresent {
+				g.Expect(managementKASExceptCIDRs).NotTo(ContainElement(cidr), "management-kas Except list should NOT contain %s", cidr)
+			}
+		})
+	}
+}
+
+// collectExceptCIDRs returns all CIDRs in IPBlock.Except entries across all egress rules.
+func collectExceptCIDRs(policy *networkingv1.NetworkPolicy) []string {
+	var cidrs []string
+	for _, rule := range policy.Spec.Egress {
+		for _, peer := range rule.To {
+			if peer.IPBlock != nil {
+				cidrs = append(cidrs, peer.IPBlock.Except...)
+			}
+		}
+	}
+	return cidrs
 }

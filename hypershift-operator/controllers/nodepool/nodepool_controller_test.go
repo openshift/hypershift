@@ -18,6 +18,7 @@ import (
 	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
+	"github.com/openshift/hypershift/support/releaseinfo/fixtures"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
 	"github.com/openshift/hypershift/support/upsert"
 	fakeimagemetadataprovider "github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
@@ -42,6 +43,7 @@ import (
 	"sigs.k8s.io/yaml"
 
 	ignitionapi "github.com/coreos/ignition/v2/config/v3_2/types"
+	"github.com/coreos/stream-metadata-go/stream"
 	"github.com/google/go-cmp/cmp"
 	"github.com/vincent-petithory/dataurl"
 )
@@ -539,65 +541,129 @@ func TestCreateValidGeneratedPayloadCondition(t *testing.T) {
 
 func TestDefaultNodePoolAMI(t *testing.T) {
 	t.Parallel()
+
+	basicReleaseImage := &releaseinfo.ReleaseImage{
+		StreamMetadata: &stream.Stream{
+			Architectures: map[string]stream.Arch{
+				"x86_64": {
+					Images: stream.Images{
+						Aws: &stream.AwsImage{
+							Regions: map[string]stream.SingleImage{
+								"us-east-1": {Release: "4.12.0", Image: "us-east-1-x86_64-image"},
+							},
+						},
+					},
+				},
+				"aarch64": {
+					Images: stream.Images{
+						Aws: &stream.AwsImage{
+							Regions: map[string]stream.SingleImage{
+								"us-east-1": {Release: "4.12.0", Image: "us-east-1-aarch64-image"},
+								"us-west-1": {Release: "4.12.0", Image: ""},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	defaultStream, osStreams, err := releaseinfo.DeserializeImageMetadata(fixtures.CoreOSBootImagesYAML_5_0)
+	if err != nil {
+		t.Fatalf("failed to parse multi-stream fixture: %v", err)
+	}
+	multiStreamReleaseImage := &releaseinfo.ReleaseImage{StreamMetadata: defaultStream, OSStreams: osStreams}
+
 	testCases := []struct {
 		name          string
 		region        string
 		specifiedArch string
+		streamName    string
 		releaseImage  *releaseinfo.ReleaseImage
-		image         string
-		err           error
 		expectedImage string
+		expectedErr   string
 	}{
+		// --- Happy paths ---
 		{
-			name:          "successfully pull amd64 AMI",
+			name:          "When resolving amd64 AMI it should return the correct image",
 			region:        "us-east-1",
 			specifiedArch: "amd64",
+			releaseImage:  basicReleaseImage,
 			expectedImage: "us-east-1-x86_64-image",
 		},
 		{
-			name:          "successfully pull arm64 AMI",
+			name:          "When resolving arm64 AMI it should return the correct image",
 			region:        "us-east-1",
 			specifiedArch: "arm64",
+			releaseImage:  basicReleaseImage,
 			expectedImage: "us-east-1-aarch64-image",
 		},
 		{
-			name:          "fail to pull amd64 AMI because region can't be found",
-			region:        "us-east-2",
-			specifiedArch: "amd64",
-			expectedImage: "",
-		},
-		{
-			name:          "fail to pull arm64 AMI because region can't be found",
-			region:        "us-east-2",
-			specifiedArch: "arm64",
-			expectedImage: "",
-		},
-		{
-			name:          "fail because architecture can't be found",
-			region:        "us-east-2",
-			specifiedArch: "arm644",
-			expectedImage: "",
-		},
-		{
-			name:          "fail because architecture can't be found",
-			region:        "us-east-2",
-			specifiedArch: "s390x",
-			expectedImage: "",
-		},
-		{
-			name:          "fail because no image data is defined",
-			region:        "us-west-1",
-			specifiedArch: "arm64",
-			expectedImage: "",
-		},
-		{
-			name:          "fail because stream metadata is nil",
+			name:          "When resolving rhel-9 stream it should return the rhel-9 AMI",
 			region:        "us-east-1",
 			specifiedArch: "amd64",
-			releaseImage: &releaseinfo.ReleaseImage{
-				StreamMetadata: nil,
-			},
-			expectedImage: "",
+			streamName:    "rhel-9",
+			releaseImage:  multiStreamReleaseImage,
+			expectedImage: "ami-06a6b025350ff1e23",
+		},
+		{
+			name:          "When resolving rhel-10 stream it should return the rhel-10 AMI",
+			region:        "us-east-1",
+			specifiedArch: "amd64",
+			streamName:    "rhel-10",
+			releaseImage:  multiStreamReleaseImage,
+			expectedImage: "ami-04b3d999e39d62c5b",
+		},
+		{
+			name:          "When resolving rhel-10 arm64 stream it should return the rhel-10 arm64 AMI",
+			region:        "us-east-1",
+			specifiedArch: "arm64",
+			streamName:    "rhel-10",
+			releaseImage:  multiStreamReleaseImage,
+			expectedImage: "ami-0d7237e6b04d9a9e1",
+		},
+		{
+			name:          "When using default stream it should return the default AMI",
+			region:        "us-east-1",
+			specifiedArch: "amd64",
+			releaseImage:  multiStreamReleaseImage,
+			expectedImage: "ami-06a6b025350ff1e23",
+		},
+		// --- Sad paths ---
+		{
+			name:          "When region is not found it should return error",
+			region:        "us-east-2",
+			specifiedArch: "amd64",
+			releaseImage:  basicReleaseImage,
+			expectedErr:   `couldn't find AWS image for region "us-east-2"`,
+		},
+		{
+			name:          "When architecture is not found it should return error",
+			region:        "us-east-1",
+			specifiedArch: "s390x",
+			releaseImage:  basicReleaseImage,
+			expectedErr:   `couldn't find OS metadata for architecture "s390x"`,
+		},
+		{
+			name:          "When image data is empty for region it should return error",
+			region:        "us-west-1",
+			specifiedArch: "arm64",
+			releaseImage:  basicReleaseImage,
+			expectedErr:   `release image metadata has no image for region "us-west-1"`,
+		},
+		{
+			name:          "When stream metadata is nil it should return error",
+			region:        "us-east-1",
+			specifiedArch: "amd64",
+			releaseImage:  &releaseinfo.ReleaseImage{StreamMetadata: nil},
+			expectedErr:   "couldn't resolve stream metadata: no default stream metadata available",
+		},
+		{
+			name:          "When release image is nil it should return error",
+			region:        "us-east-1",
+			specifiedArch: "amd64",
+			releaseImage:  nil,
+			expectedErr:   "release image is nil",
 		},
 	}
 
@@ -606,49 +672,14 @@ func TestDefaultNodePoolAMI(t *testing.T) {
 			t.Parallel()
 			g := NewWithT(t)
 
-			other := []client.Object{
-				&corev1.Secret{
-					ObjectMeta: metav1.ObjectMeta{Name: "pull-secret"},
-					Data: map[string][]byte{
-						corev1.DockerConfigJsonKey: nil,
-					},
-				},
-			}
-
-			client := fake.NewClientBuilder().WithObjects(other...).Build()
-			releaseProvider := &fakereleaseprovider.FakeReleaseProvider{}
-			hc := &hyperv1.HostedCluster{
-				Spec: hyperv1.HostedClusterSpec{
-					PullSecret: corev1.LocalObjectReference{
-						Name: "pull-secret",
-					},
-					Release: hyperv1.Release{
-						Image: "image-4.12.0",
-					},
-				},
-			}
-
-			ctx := t.Context()
-			if tc.releaseImage == nil {
-				tc.releaseImage = fakereleaseprovider.GetReleaseImage(ctx, hc, client, releaseProvider)
-			}
-
-			tc.image, tc.err = defaultNodePoolAMI(tc.region, tc.specifiedArch, tc.releaseImage)
-			if strings.Contains(tc.name, "successfully") {
-				g.Expect(tc.image).To(Equal(tc.expectedImage))
-				g.Expect(tc.err).To(BeNil())
-			} else if strings.Contains(tc.name, "fail to pull") {
-				g.Expect(tc.image).To(BeEmpty())
-				g.Expect(tc.err.Error()).To(Equal("couldn't find AWS image for region \"" + tc.region + "\""))
-			} else if strings.Contains(tc.name, "fail because architecture") {
-				g.Expect(tc.image).To(BeEmpty())
-				g.Expect(tc.err.Error()).To(Equal("couldn't find OS metadata for architecture \"" + tc.specifiedArch + "\""))
-			} else if strings.Contains(tc.name, "stream metadata is nil") {
-				g.Expect(tc.image).To(BeEmpty())
-				g.Expect(tc.err.Error()).To(Equal("release image stream metadata is nil"))
+			image, err := defaultNodePoolAMI(tc.region, tc.specifiedArch, tc.streamName, tc.releaseImage)
+			if tc.expectedErr != "" {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(Equal(tc.expectedErr))
+				g.Expect(image).To(BeEmpty())
 			} else {
-				g.Expect(tc.image).To(BeEmpty())
-				g.Expect(tc.err.Error()).To(Equal("release image metadata has no image for region \"" + tc.region + "\""))
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(image).To(Equal(tc.expectedImage))
 			}
 		})
 	}
@@ -2488,11 +2519,14 @@ func TestResolveHAProxyImage(t *testing.T) {
 	)
 
 	testCases := []struct {
-		name                string
-		nodePoolAnnotations map[string]string
-		useSharedIngress    bool
-		envVarImage         string
-		expectedImage       string
+		name                  string
+		nodePoolAnnotations   map[string]string
+		nodePoolStatusVersion string
+		useSharedIngress      bool
+		envVarImage           string
+		canonicalComponents   map[string]string
+		componentImage        string
+		expectedImage         string
 	}{
 		{
 			name: "When NodePool annotation is set it should use annotation image",
@@ -2547,6 +2581,49 @@ func TestResolveHAProxyImage(t *testing.T) {
 			useSharedIngress: false,
 			expectedImage:    testReleaseImage,
 		},
+		{
+			name:                "When registry overrides exist and NodePool is new it should use canonical image",
+			useSharedIngress:    false,
+			componentImage:      "mirror.example.com/openshift/haproxy-router:v4.16",
+			canonicalComponents: map[string]string{haproxy.HAProxyRouterImageName: "registry.test.io/openshift/haproxy-router:v4.16"},
+			expectedImage:       "registry.test.io/openshift/haproxy-router:v4.16",
+		},
+		{
+			name:                  "When registry overrides exist and NodePool is upgrading it should use canonical image",
+			nodePoolStatusVersion: "4.17.0",
+			useSharedIngress:      false,
+			componentImage:        "mirror.example.com/openshift/haproxy-router:v4.16",
+			canonicalComponents:   map[string]string{haproxy.HAProxyRouterImageName: "registry.test.io/openshift/haproxy-router:v4.16"},
+			expectedImage:         "registry.test.io/openshift/haproxy-router:v4.16",
+		},
+		{
+			name: "When registry overrides exist and canonical-data-plane-images annotation is set it should use canonical image",
+			nodePoolAnnotations: map[string]string{
+				nodePoolAnnotationCanonicalDataPlaneImages: "true",
+			},
+			nodePoolStatusVersion: "4.18.0",
+			useSharedIngress:      false,
+			componentImage:        "mirror.example.com/openshift/haproxy-router:v4.16",
+			canonicalComponents:   map[string]string{haproxy.HAProxyRouterImageName: "registry.test.io/openshift/haproxy-router:v4.16"},
+			expectedImage:         "registry.test.io/openshift/haproxy-router:v4.16",
+		},
+		{
+			name:                  "When registry overrides exist and NodePool is stable without annotation it should preserve overridden image",
+			nodePoolStatusVersion: "4.18.0",
+			useSharedIngress:      false,
+			componentImage:        "mirror.example.com/openshift/haproxy-router:v4.16",
+			canonicalComponents:   map[string]string{haproxy.HAProxyRouterImageName: "registry.test.io/openshift/haproxy-router:v4.16"},
+			expectedImage:         "mirror.example.com/openshift/haproxy-router:v4.16",
+		},
+		{
+			name: "When registry overrides exist it should not affect an annotation image",
+			nodePoolAnnotations: map[string]string{
+				hyperv1.NodePoolHAProxyImageAnnotation: "mirror.example.com/custom/haproxy:latest",
+			},
+			componentImage:      "mirror.example.com/openshift/haproxy-router:v4.16",
+			canonicalComponents: map[string]string{haproxy.HAProxyRouterImageName: "registry.test.io/openshift/haproxy-router:v4.16"},
+			expectedImage:       "mirror.example.com/custom/haproxy:latest",
+		},
 	}
 
 	for _, tc := range testCases {
@@ -2567,6 +2644,9 @@ func TestResolveHAProxyImage(t *testing.T) {
 					Name:        "test-nodepool",
 					Namespace:   "clusters",
 					Annotations: tc.nodePoolAnnotations,
+				},
+				Status: hyperv1.NodePoolStatus{
+					Version: tc.nodePoolStatusVersion,
 				},
 			}
 
@@ -2638,11 +2718,18 @@ kind: Config`),
 			// Create fake client
 			c := fake.NewClientBuilder().WithObjects(objects...).Build()
 
+			componentImage := testReleaseImage
+			if tc.componentImage != "" {
+				componentImage = tc.componentImage
+			}
+
 			// Create fake release provider with component images
 			releaseProvider := &fakereleaseprovider.FakeReleaseProvider{
+				Version: "4.18.0",
 				Components: map[string]string{
-					haproxy.HAProxyRouterImageName: testReleaseImage,
+					haproxy.HAProxyRouterImageName: componentImage,
 				},
+				CanonicalComponents: tc.canonicalComponents,
 			}
 
 			// Create test HostedCluster
@@ -2652,12 +2739,29 @@ kind: Config`),
 					Namespace: "clusters",
 				},
 				Spec: hyperv1.HostedClusterSpec{
-					Platform: hyperv1.PlatformSpec{
-						Type: hyperv1.AWSPlatform,
-						AWS: &hyperv1.AWSPlatformSpec{
-							EndpointAccess: hyperv1.Public,
-						},
-					},
+					Platform: func() hyperv1.PlatformSpec {
+						if tc.useSharedIngress {
+							return hyperv1.PlatformSpec{
+								Type: hyperv1.AzurePlatform,
+								Azure: &hyperv1.AzurePlatformSpec{
+									Topology: hyperv1.AzureTopologyPublicAndPrivate,
+									Private: hyperv1.AzurePrivateSpec{
+										Type:  hyperv1.AzurePrivateTypeSwift,
+										Swift: hyperv1.AzureSwiftSpec{PodNetworkInstance: "test-pni"},
+									},
+									AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+										AzureAuthenticationConfigType: hyperv1.AzureAuthenticationTypeManagedIdentities,
+									},
+								},
+							}
+						}
+						return hyperv1.PlatformSpec{
+							Type: hyperv1.AWSPlatform,
+							AWS: &hyperv1.AWSPlatformSpec{
+								EndpointAccess: hyperv1.Public,
+							},
+						}
+					}(),
 					Networking: hyperv1.ClusterNetworking{
 						ServiceNetwork: []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}},
 					},

@@ -138,6 +138,7 @@ func TestReconcile(t *testing.T) {
 		hcp                    *hyperv1.HostedControlPlane
 		existingPLS            *hyperv1.AzurePrivateLinkService
 		expectError            bool
+		expectRequeueAfter     time.Duration
 		expectPLSCreated       bool
 		expectedLoadBalancerIP string
 	}{
@@ -173,9 +174,10 @@ func TestReconcile(t *testing.T) {
 				svc.Status.LoadBalancer.Ingress = []corev1.LoadBalancerIngress{}
 				return svc
 			}(),
-			hcp:              defaultHCP(),
-			expectError:      false,
-			expectPLSCreated: false,
+			hcp:                defaultHCP(),
+			expectError:        false,
+			expectRequeueAfter: 30 * time.Second,
+			expectPLSCreated:   false,
 		},
 		{
 			name:        "When HCP is being deleted, it should not create CR",
@@ -318,7 +320,7 @@ func TestReconcile(t *testing.T) {
 				g.Expect(err).ToNot(HaveOccurred())
 			}
 
-			g.Expect(result.Requeue).To(BeFalse())
+			g.Expect(result.RequeueAfter).To(Equal(tt.expectRequeueAfter))
 
 			// Check if AzurePrivateLinkService CR was created/updated
 			if tt.expectPLSCreated {

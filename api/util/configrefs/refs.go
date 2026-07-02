@@ -25,7 +25,6 @@ func SecretRefs(cfg ClusterConfiguration) []string {
 	result := sets.NewString()
 	result = result.Union(apiServerSecretRefs(cfg.GetAPIServer()))
 	result = result.Union(authenticationSecretRefs(cfg.GetAuthentication()))
-	result = result.Union(ingressSecretRefs(cfg.GetIngress()))
 	result = result.Union(oauthSecretRefs(cfg.GetOAuth()))
 	return result.List()
 }
@@ -110,18 +109,6 @@ func authenticationConfigMapRefs(spec *configv1.AuthenticationSpec) sets.String 
 	return refs
 }
 
-func ingressSecretRefs(spec *configv1.IngressSpec) sets.String {
-	refs := sets.NewString()
-	if spec == nil {
-		return refs
-	}
-	for _, componentRoute := range spec.ComponentRoutes {
-		if len(componentRoute.ServingCertKeyPairSecret.Name) > 0 {
-			refs.Insert(componentRoute.ServingCertKeyPairSecret.Name)
-		}
-	}
-	return refs
-}
 
 func imageConfigMapRefs(spec *configv1.ImageSpec) sets.String {
 	refs := sets.NewString()

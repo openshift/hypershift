@@ -1,0 +1,18 @@
+# crdify configuration for HyperShift CRD schema checks.
+# See https://sigs.k8s.io/crdify for configuration reference.
+#
+# crdify checks the following by default (no configuration needed):
+#   - Field removals (removing an existing field from the schema)
+#   - Type changes (changing a field's type, e.g. string → integer)
+#   - New required fields (adding a field to the required list)
+#   - Scope changes (changing between Namespaced and Cluster)
+#   - Stored version removal (removing a version that is marked as stored)
+#
+# This mirrors the policy used in openshift/api: adding new enum values
+# is technically a breaking change but is allowed in practice because
+# clients should tolerate unknown enum values.
+validations:
+  - name: enum
+    enforcement: Error
+    configuration:
+      additionPolicy: Allow

@@ -19,6 +19,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
@@ -27,7 +28,6 @@ import (
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
 	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
-	"sigs.k8s.io/cluster-api/util/conversion"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
@@ -36,12 +36,69 @@ import (
 	"github.com/go-logr/logr"
 )
 
+func TestHasStatusCapacity(t *testing.T) {
+	t.Parallel()
+	testCases := []struct {
+		name     string
+		template client.Object
+		expect   bool
+	}{
+		{
+			name: "When AWSMachineTemplate has Status.Capacity, it should return true",
+			template: &capiaws.AWSMachineTemplate{
+				Status: capiaws.AWSMachineTemplateStatus{
+					Capacity: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("4"),
+						corev1.ResourceMemory: resource.MustParse("16Gi"),
+					},
+				},
+			},
+			expect: true,
+		},
+		{
+			name:     "When AWSMachineTemplate has empty Status.Capacity, it should return false",
+			template: &capiaws.AWSMachineTemplate{},
+			expect:   false,
+		},
+		{
+			name: "When AzureMachineTemplate has Status.Capacity, it should return true",
+			template: &capiazure.AzureMachineTemplate{
+				Status: capiazure.AzureMachineTemplateStatus{
+					Capacity: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("4"),
+						corev1.ResourceMemory: resource.MustParse("16Gi"),
+					},
+				},
+			},
+			expect: true,
+		},
+		{
+			name:     "When AzureMachineTemplate has empty Status.Capacity, it should return false",
+			template: &capiazure.AzureMachineTemplate{},
+			expect:   false,
+		},
+		{
+			name:     "When template is an unsupported type, it should return false",
+			template: &capikubevirt.KubevirtMachineTemplate{},
+			expect:   false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			g.Expect(hasStatusCapacity(tc.template)).To(Equal(tc.expect))
+		})
+	}
+}
+
 func TestSetMachineSetReplicas(t *testing.T) {
 	t.Parallel()
 	testCases := []struct {
 		name                        string
 		nodePool                    *hyperv1.NodePool
 		machineSet                  *capiv1.MachineSet
+		scaleFromZeroSupported      bool
 		expectReplicas              int32
 		expectAutoscalerAnnotations map[string]string
 	}{
@@ -150,13 +207,10 @@ func TestSetMachineSetReplicas(t *testing.T) {
 			},
 		},
 		{
-			name: "it allows min=0 for AWS platform (scale-from-zero)",
+			name: "When scale-from-zero is supported, it should allow min=0",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{},
 				Spec: hyperv1.NodePoolSpec{
-					Platform: hyperv1.NodePoolPlatform{
-						Type: hyperv1.AWSPlatform,
-					},
 					AutoScaling: &hyperv1.NodePoolAutoScaling{
 						Min: ptr.To[int32](0),
 						Max: 5,
@@ -171,20 +225,18 @@ func TestSetMachineSetReplicas(t *testing.T) {
 					Replicas: nil,
 				},
 			},
-			expectReplicas: 0,
+			scaleFromZeroSupported: true,
+			expectReplicas:         0,
 			expectAutoscalerAnnotations: map[string]string{
 				autoscalerMinAnnotation: "0",
 				autoscalerMaxAnnotation: "5",
 			},
 		},
 		{
-			name: "it enforces min=1 for Azure platform even when NodePool specifies min=0",
+			name: "When scale-from-zero is not supported, it should enforce min=1 even when NodePool specifies min=0",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{},
 				Spec: hyperv1.NodePoolSpec{
-					Platform: hyperv1.NodePoolPlatform{
-						Type: hyperv1.AzurePlatform,
-					},
 					AutoScaling: &hyperv1.NodePoolAutoScaling{
 						Min: ptr.To[int32](0),
 						Max: 5,
@@ -196,7 +248,7 @@ func TestSetMachineSetReplicas(t *testing.T) {
 					CreationTimestamp: metav1.Now(),
 				},
 				Spec: capiv1.MachineSetSpec{
-					Replicas: nil,
+					Replicas: ptr.To[int32](0),
 				},
 			},
 			expectReplicas: 1,
@@ -266,7 +318,7 @@ func TestSetMachineSetReplicas(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
-			setMachineSetReplicas(tc.nodePool, tc.machineSet)
+			setMachineSetReplicas(tc.nodePool, tc.machineSet, tc.scaleFromZeroSupported)
 			g.Expect(*tc.machineSet.Spec.Replicas).To(Equal(tc.expectReplicas))
 			g.Expect(tc.machineSet.Annotations).To(Equal(tc.expectAutoscalerAnnotations))
 		})
@@ -279,6 +331,7 @@ func TestSetMachineDeploymentReplicas(t *testing.T) {
 		name                        string
 		nodePool                    *hyperv1.NodePool
 		machineDeployment           *capiv1.MachineDeployment
+		scaleFromZeroSupported      bool
 		expectReplicas              int32
 		expectAutoscalerAnnotations map[string]string
 	}{
@@ -476,13 +529,10 @@ func TestSetMachineDeploymentReplicas(t *testing.T) {
 			},
 		},
 		{
-			name: "it allows min=0 for AWS platform (scale-from-zero)",
+			name: "When scale-from-zero is supported, it should allow min=0",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{},
 				Spec: hyperv1.NodePoolSpec{
-					Platform: hyperv1.NodePoolPlatform{
-						Type: hyperv1.AWSPlatform,
-					},
 					AutoScaling: &hyperv1.NodePoolAutoScaling{
 						Min: ptr.To[int32](0),
 						Max: 5,
@@ -497,20 +547,18 @@ func TestSetMachineDeploymentReplicas(t *testing.T) {
 					Replicas: nil,
 				},
 			},
-			expectReplicas: 0,
+			scaleFromZeroSupported: true,
+			expectReplicas:         0,
 			expectAutoscalerAnnotations: map[string]string{
 				autoscalerMinAnnotation: "0",
 				autoscalerMaxAnnotation: "5",
 			},
 		},
 		{
-			name: "it enforces min=1 for Azure platform even when NodePool specifies min=0",
+			name: "When scale-from-zero is not supported, it should enforce min=1 even when NodePool specifies min=0",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{},
 				Spec: hyperv1.NodePoolSpec{
-					Platform: hyperv1.NodePoolPlatform{
-						Type: hyperv1.AzurePlatform,
-					},
 					AutoScaling: &hyperv1.NodePoolAutoScaling{
 						Min: ptr.To[int32](0),
 						Max: 5,
@@ -522,7 +570,7 @@ func TestSetMachineDeploymentReplicas(t *testing.T) {
 					CreationTimestamp: metav1.Now(),
 				},
 				Spec: capiv1.MachineDeploymentSpec{
-					Replicas: nil,
+					Replicas: ptr.To[int32](0),
 				},
 			},
 			expectReplicas: 1,
@@ -592,7 +640,7 @@ func TestSetMachineDeploymentReplicas(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
-			setMachineDeploymentReplicas(tc.nodePool, tc.machineDeployment)
+			setMachineDeploymentReplicas(tc.nodePool, tc.machineDeployment, tc.scaleFromZeroSupported)
 			g.Expect(*tc.machineDeployment.Spec.Replicas).To(Equal(tc.expectReplicas))
 			g.Expect(tc.machineDeployment.Annotations).To(Equal(tc.expectAutoscalerAnnotations))
 		})
@@ -1696,6 +1744,98 @@ func TestCAPIReconcile(t *testing.T) {
 			},
 			expectedError: false,
 		},
+		{
+			name: "When NodeDrainTimeout and NodeVolumeDetachTimeout are set, they should propagate to MachineDeployment",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-nodepool",
+					Namespace: "test-namespace",
+				},
+				Spec: hyperv1.NodePoolSpec{
+					ClusterName: "test-cluster",
+					Management: hyperv1.NodePoolManagement{
+						UpgradeType: hyperv1.UpgradeTypeReplace,
+						Replace: &hyperv1.ReplaceUpgrade{
+							Strategy: hyperv1.UpgradeStrategyRollingUpdate,
+							RollingUpdate: &hyperv1.RollingUpdate{
+								MaxUnavailable: &maxUnavailable,
+								MaxSurge:       &maxSurge,
+							},
+						},
+						AutoRepair: false,
+					},
+					Replicas:                ptr.To[int32](3),
+					NodeDrainTimeout:        &metav1.Duration{Duration: 10 * time.Minute},
+					NodeVolumeDetachTimeout: &metav1.Duration{Duration: 5 * time.Minute},
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AWSPlatform,
+						AWS: &hyperv1.AWSNodePoolPlatform{
+							AMI: "an-ami",
+						},
+					},
+				},
+			},
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "test-namespace"},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+						AWS: &hyperv1.AWSPlatformSpec{
+							Region:                      "",
+							CloudProviderConfig:         &hyperv1.AWSCloudProviderConfig{},
+							ServiceEndpoints:            []hyperv1.AWSServiceEndpoint{},
+							RolesRef:                    hyperv1.AWSRolesRef{},
+							ResourceTags:                []hyperv1.AWSResourceTag{},
+							EndpointAccess:              "",
+							AdditionalAllowedPrincipals: []string{},
+							MultiArch:                   false,
+						},
+					},
+				},
+			},
+			machineSet: &capiv1.MachineSet{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-machineset",
+					Namespace: "test-namespace-test-cluster",
+					Annotations: map[string]string{
+						nodePoolAnnotation: "test-namespace/test-nodepool",
+					},
+				},
+				Spec: capiv1.MachineSetSpec{
+					Template: capiv1.MachineTemplateSpec{
+						Spec: capiv1.MachineSpec{
+							InfrastructureRef: corev1.ObjectReference{
+								Kind:       "AWSMachineTemplate",
+								APIVersion: "infrastructure.cluster.x-k8s.io/v1beta2",
+								Namespace:  "test-namespace-test-cluster",
+								Name:       awsMachineTemplateName,
+							},
+						},
+					},
+				},
+			},
+			templates: []client.Object{
+				&capiaws.AWSMachineTemplate{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "does-not-match-infra-ref-name",
+						Namespace: "test-namespace-test-cluster",
+						Annotations: map[string]string{
+							nodePoolAnnotation: "test-namespace/test-nodepool",
+						},
+					},
+				},
+				&capiaws.AWSMachineTemplate{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      awsMachineTemplateName,
+						Namespace: "test-namespace-test-cluster",
+						Annotations: map[string]string{
+							nodePoolAnnotation: "test-namespace/test-nodepool",
+						},
+					},
+				},
+			},
+			expectedError: false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -1872,6 +2012,167 @@ func TestCAPIReconcile(t *testing.T) {
 					g.Expect(tt.nodePool.Status.Version).To(BeEmpty())
 				}
 			}
+		})
+	}
+}
+
+// TestCAPIReconcile_machineset is specific for UpgradeTypeInPlace.
+func TestCAPIReconcile_machineset(t *testing.T) {
+	t.Parallel()
+	awsMachineTemplateName := "test-nodepool-28d5cf5a"
+	capiClusterName := "infra-id"
+
+	tests := []struct {
+		name     string
+		nodePool *hyperv1.NodePool
+	}{
+		{
+			name: "When NodeDrainTimeout and NodeVolumeDetachTimeout are set, they should propagate to MachineSet",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-nodepool",
+					Namespace: "test-namespace",
+				},
+				Spec: hyperv1.NodePoolSpec{
+					ClusterName: "test-cluster",
+					Management: hyperv1.NodePoolManagement{
+						UpgradeType: hyperv1.UpgradeTypeInPlace,
+						InPlace:     &hyperv1.InPlaceUpgrade{},
+					},
+					Replicas:                ptr.To[int32](3),
+					NodeDrainTimeout:        &metav1.Duration{Duration: 10 * time.Minute},
+					NodeVolumeDetachTimeout: &metav1.Duration{Duration: 5 * time.Minute},
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AWSPlatform,
+						AWS: &hyperv1.AWSNodePoolPlatform{
+							AMI: "an-ami",
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "When NodeDrainTimeout and NodeVolumeDetachTimeout are nil, they should propagate as nil to MachineSet",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-nodepool",
+					Namespace: "test-namespace",
+				},
+				Spec: hyperv1.NodePoolSpec{
+					ClusterName: "test-cluster",
+					Management: hyperv1.NodePoolManagement{
+						UpgradeType: hyperv1.UpgradeTypeInPlace,
+						InPlace:     &hyperv1.InPlaceUpgrade{},
+					},
+					Replicas: ptr.To[int32](3),
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AWSPlatform,
+						AWS: &hyperv1.AWSNodePoolPlatform{
+							AMI: "an-ami",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			hostedCluster := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "test-namespace"},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+						AWS: &hyperv1.AWSPlatformSpec{
+							Region:                      "",
+							CloudProviderConfig:         &hyperv1.AWSCloudProviderConfig{},
+							ServiceEndpoints:            []hyperv1.AWSServiceEndpoint{},
+							RolesRef:                    hyperv1.AWSRolesRef{},
+							ResourceTags:                []hyperv1.AWSResourceTag{},
+							EndpointAccess:              "",
+							AdditionalAllowedPrincipals: []string{},
+							MultiArch:                   false,
+						},
+					},
+				},
+			}
+
+			existingMachineSet := &capiv1.MachineSet{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      tt.nodePool.GetName(),
+					Namespace: "test-namespace-test-cluster",
+					Annotations: map[string]string{
+						nodePoolAnnotation: "test-namespace/test-nodepool",
+					},
+				},
+				Spec: capiv1.MachineSetSpec{
+					Template: capiv1.MachineTemplateSpec{
+						Spec: capiv1.MachineSpec{
+							InfrastructureRef: corev1.ObjectReference{
+								Kind:       "AWSMachineTemplate",
+								APIVersion: "infrastructure.cluster.x-k8s.io/v1beta2",
+								Namespace:  "test-namespace-test-cluster",
+								Name:       awsMachineTemplateName,
+							},
+						},
+					},
+				},
+			}
+
+			templates := []client.Object{
+				&capiaws.AWSMachineTemplate{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      awsMachineTemplateName,
+						Namespace: "test-namespace-test-cluster",
+						Annotations: map[string]string{
+							nodePoolAnnotation: "test-namespace/test-nodepool",
+						},
+					},
+				},
+			}
+
+			c := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				WithObjects(tt.nodePool, existingMachineSet).
+				WithObjects(templates...).
+				Build()
+
+			controlplaneNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+			capi := &CAPI{
+				Token: &Token{
+					ConfigGenerator: &ConfigGenerator{
+						Client:                c,
+						hostedCluster:         hostedCluster,
+						nodePool:              tt.nodePool,
+						controlplaneNamespace: controlplaneNamespace,
+						rolloutConfig: &rolloutConfig{
+							releaseImage: &releaseinfo.ReleaseImage{
+								ImageStream: &imageapi.ImageStream{
+									ObjectMeta: metav1.ObjectMeta{
+										Name: "target-version",
+									},
+								},
+							},
+						},
+					},
+					cpoCapabilities:        &CPOCapabilities{},
+					CreateOrUpdateProvider: upsert.New(false),
+				},
+				capiClusterName: capiClusterName,
+				ApplyProvider:   upsert.NewApplyProvider(false),
+			}
+
+			err := capi.Reconcile(t.Context())
+			g.Expect(err).NotTo(HaveOccurred())
+
+			ms := &capiv1.MachineSet{}
+			err = capi.Client.Get(t.Context(), client.ObjectKey{Namespace: controlplaneNamespace, Name: tt.nodePool.GetName()}, ms)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(ms.Spec.Template.Spec.NodeDrainTimeout).To(Equal(tt.nodePool.Spec.NodeDrainTimeout))
+			g.Expect(ms.Spec.Template.Spec.NodeVolumeDetachTimeout).To(Equal(tt.nodePool.Spec.NodeVolumeDetachTimeout))
 		})
 	}
 }
@@ -3195,9 +3496,13 @@ func TestPauseUnpauseCycle(t *testing.T) {
 				},
 			}
 
-			// For non-AWS platforms, effectiveMin is clamped to 1 when autoscalingMin is 0.
+			// When the platform matches scaleFromZeroPlatform, effectiveMin=0 is allowed.
+			// For platforms without scale-from-zero support, effectiveMin is clamped to 1.
+			capiObj.scaleFromZeroPlatform = tc.platformType
 			expectedMinAnnotation := tc.autoscalingMin
-			if tc.autoscalingMin == 0 && tc.platformType != hyperv1.AWSPlatform {
+			if tc.autoscalingMin == 0 && tc.platformType == hyperv1.KubevirtPlatform {
+				// Simulate no scale-from-zero provider configured for KubeVirt
+				capiObj.scaleFromZeroPlatform = ""
 				expectedMinAnnotation = 1
 			}
 
@@ -3284,22 +3589,6 @@ func TestMachineDeploymentComplete(t *testing.T) {
 	two := int32(2)
 	three := int32(3)
 
-	conversionData := func(replicas, upToDate, available int32, observedGen int64) string {
-		data := map[string]any{
-			"apiVersion": "cluster.x-k8s.io/v1beta2",
-			"kind":       "MachineDeployment",
-			"spec":       map[string]any{"replicas": replicas},
-			"status": map[string]any{
-				"observedGeneration": observedGen,
-				"replicas":           replicas,
-				"upToDateReplicas":   upToDate,
-				"availableReplicas":  available,
-			},
-		}
-		raw, _ := json.Marshal(data)
-		return string(raw)
-	}
-
 	testCases := []struct {
 		name     string
 		md       *capiv1.MachineDeployment
@@ -3308,107 +3597,122 @@ func TestMachineDeploymentComplete(t *testing.T) {
 		{
 			name: "When all v1beta1 and v1beta2 fields agree it should return true",
 			md: &capiv1.MachineDeployment{
-				ObjectMeta: metav1.ObjectMeta{
-					Generation: 2,
-					Annotations: map[string]string{
-						conversion.DataAnnotation: conversionData(2, 2, 2, 2),
+				ObjectMeta: metav1.ObjectMeta{Generation: 2},
+				Spec:       capiv1.MachineDeploymentSpec{Replicas: &two},
+				Status: capiv1.MachineDeploymentStatus{
+					Replicas: 2, UpdatedReplicas: 2, AvailableReplicas: 2, ObservedGeneration: 2,
+					V1Beta2: &capiv1.MachineDeploymentV1Beta2Status{
+						UpToDateReplicas:  ptr.To(int32(2)),
+						AvailableReplicas: ptr.To(int32(2)),
 					},
 				},
-				Spec:   capiv1.MachineDeploymentSpec{Replicas: &two},
-				Status: capiv1.MachineDeploymentStatus{Replicas: 2, UpdatedReplicas: 2, AvailableReplicas: 2, ObservedGeneration: 2},
 			},
 			expected: true,
 		},
 		{
 			name: "When v1beta1 looks complete but v1beta2 upToDateReplicas disagrees it should return false",
 			md: &capiv1.MachineDeployment{
-				ObjectMeta: metav1.ObjectMeta{
-					Generation: 2,
-					Annotations: map[string]string{
-						conversion.DataAnnotation: conversionData(2, 0, 2, 2),
+				ObjectMeta: metav1.ObjectMeta{Generation: 2},
+				Spec:       capiv1.MachineDeploymentSpec{Replicas: &two},
+				Status: capiv1.MachineDeploymentStatus{
+					Replicas: 2, UpdatedReplicas: 2, AvailableReplicas: 2, ObservedGeneration: 2,
+					V1Beta2: &capiv1.MachineDeploymentV1Beta2Status{
+						UpToDateReplicas:  ptr.To(int32(0)),
+						AvailableReplicas: ptr.To(int32(2)),
 					},
 				},
-				Spec:   capiv1.MachineDeploymentSpec{Replicas: &two},
-				Status: capiv1.MachineDeploymentStatus{Replicas: 2, UpdatedReplicas: 2, AvailableReplicas: 2, ObservedGeneration: 2},
 			},
 			expected: false,
 		},
 		{
-			name: "When v1beta1 looks complete but v1beta2 replicas shows surge it should return false",
+			name: "When v1beta1 looks complete but v1beta2 availableReplicas disagrees it should return false",
 			md: &capiv1.MachineDeployment{
-				ObjectMeta: metav1.ObjectMeta{
-					Generation: 2,
-					Annotations: map[string]string{
-						conversion.DataAnnotation: conversionData(3, 2, 2, 2),
+				ObjectMeta: metav1.ObjectMeta{Generation: 2},
+				Spec:       capiv1.MachineDeploymentSpec{Replicas: &two},
+				Status: capiv1.MachineDeploymentStatus{
+					Replicas: 2, UpdatedReplicas: 2, AvailableReplicas: 2, ObservedGeneration: 2,
+					V1Beta2: &capiv1.MachineDeploymentV1Beta2Status{
+						UpToDateReplicas:  ptr.To(int32(2)),
+						AvailableReplicas: ptr.To(int32(1)),
 					},
 				},
-				Spec:   capiv1.MachineDeploymentSpec{Replicas: &two},
-				Status: capiv1.MachineDeploymentStatus{Replicas: 2, UpdatedReplicas: 2, AvailableReplicas: 2, ObservedGeneration: 2},
 			},
 			expected: false,
 		},
 		{
-			name: "When v1beta1 looks complete but v1beta2 observedGeneration is stale it should return false",
+			name: "When v1beta1 is not complete it should return false without checking v1beta2",
 			md: &capiv1.MachineDeployment{
-				ObjectMeta: metav1.ObjectMeta{
-					Generation: 2,
-					Annotations: map[string]string{
-						conversion.DataAnnotation: conversionData(2, 2, 2, 1),
-					},
-				},
-				Spec:   capiv1.MachineDeploymentSpec{Replicas: &two},
-				Status: capiv1.MachineDeploymentStatus{Replicas: 2, UpdatedReplicas: 2, AvailableReplicas: 2, ObservedGeneration: 2},
+				ObjectMeta: metav1.ObjectMeta{Generation: 2},
+				Spec:       capiv1.MachineDeploymentSpec{Replicas: &two},
+				Status:     capiv1.MachineDeploymentStatus{Replicas: 3, UpdatedReplicas: 1, AvailableReplicas: 2, ObservedGeneration: 2},
 			},
 			expected: false,
 		},
 		{
-			name: "When v1beta1 is not complete it should return false without checking conversion data",
+			name: "When v1beta2 status is nil it should fall back to v1beta1 only",
 			md: &capiv1.MachineDeployment{
-				ObjectMeta: metav1.ObjectMeta{
-					Generation: 2,
-				},
-				Spec:   capiv1.MachineDeploymentSpec{Replicas: &two},
-				Status: capiv1.MachineDeploymentStatus{Replicas: 3, UpdatedReplicas: 1, AvailableReplicas: 2, ObservedGeneration: 2},
-			},
-			expected: false,
-		},
-		{
-			name: "When no conversion-data annotation exists it should fall back to v1beta1 only",
-			md: &capiv1.MachineDeployment{
-				ObjectMeta: metav1.ObjectMeta{
-					Generation: 1,
-				},
-				Spec:   capiv1.MachineDeploymentSpec{Replicas: &two},
-				Status: capiv1.MachineDeploymentStatus{Replicas: 2, UpdatedReplicas: 2, AvailableReplicas: 2, ObservedGeneration: 1},
-			},
-			expected: true,
-		},
-		{
-			name: "When conversion-data annotation is malformed it should fall back to v1beta1 result",
-			md: &capiv1.MachineDeployment{
-				ObjectMeta: metav1.ObjectMeta{
-					Generation: 1,
-					Annotations: map[string]string{
-						conversion.DataAnnotation: "not-valid-json",
-					},
-				},
-				Spec:   capiv1.MachineDeploymentSpec{Replicas: &two},
-				Status: capiv1.MachineDeploymentStatus{Replicas: 2, UpdatedReplicas: 2, AvailableReplicas: 2, ObservedGeneration: 1},
+				ObjectMeta: metav1.ObjectMeta{Generation: 1},
+				Spec:       capiv1.MachineDeploymentSpec{Replicas: &two},
+				Status:     capiv1.MachineDeploymentStatus{Replicas: 2, UpdatedReplicas: 2, AvailableReplicas: 2, ObservedGeneration: 1},
 			},
 			expected: true,
 		},
 		{
 			name: "When v1beta1 replicas does not match spec it should return false",
 			md: &capiv1.MachineDeployment{
-				ObjectMeta: metav1.ObjectMeta{
-					Generation: 2,
-					Annotations: map[string]string{
-						conversion.DataAnnotation: conversionData(3, 2, 2, 2),
+				ObjectMeta: metav1.ObjectMeta{Generation: 2},
+				Spec:       capiv1.MachineDeploymentSpec{Replicas: &three},
+				Status: capiv1.MachineDeploymentStatus{
+					Replicas: 2, UpdatedReplicas: 2, AvailableReplicas: 2, ObservedGeneration: 2,
+					V1Beta2: &capiv1.MachineDeploymentV1Beta2Status{
+						UpToDateReplicas:  ptr.To(int32(2)),
+						AvailableReplicas: ptr.To(int32(2)),
 					},
 				},
-				Spec:   capiv1.MachineDeploymentSpec{Replicas: &three},
-				Status: capiv1.MachineDeploymentStatus{Replicas: 2, UpdatedReplicas: 2, AvailableReplicas: 2, ObservedGeneration: 2},
 			},
+			expected: false,
+		},
+		{
+			name: "When v1beta2 upToDateReplicas is nil it should return false",
+			md: &capiv1.MachineDeployment{
+				ObjectMeta: metav1.ObjectMeta{Generation: 2},
+				Spec:       capiv1.MachineDeploymentSpec{Replicas: &two},
+				Status: capiv1.MachineDeploymentStatus{
+					Replicas: 2, UpdatedReplicas: 2, AvailableReplicas: 2, ObservedGeneration: 2,
+					V1Beta2: &capiv1.MachineDeploymentV1Beta2Status{
+						AvailableReplicas: ptr.To(int32(2)),
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "When v1beta2 availableReplicas is nil it should return false",
+			md: &capiv1.MachineDeployment{
+				ObjectMeta: metav1.ObjectMeta{Generation: 2},
+				Spec:       capiv1.MachineDeploymentSpec{Replicas: &two},
+				Status: capiv1.MachineDeploymentStatus{
+					Replicas: 2, UpdatedReplicas: 2, AvailableReplicas: 2, ObservedGeneration: 2,
+					V1Beta2: &capiv1.MachineDeploymentV1Beta2Status{
+						UpToDateReplicas: ptr.To(int32(2)),
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "When desired replicas is zero and v1beta2 fields are nil it should return false",
+			md: func() *capiv1.MachineDeployment {
+				zero := int32(0)
+				return &capiv1.MachineDeployment{
+					ObjectMeta: metav1.ObjectMeta{Generation: 2},
+					Spec:       capiv1.MachineDeploymentSpec{Replicas: &zero},
+					Status: capiv1.MachineDeploymentStatus{
+						Replicas: 0, UpdatedReplicas: 0, AvailableReplicas: 0, ObservedGeneration: 2,
+						V1Beta2: &capiv1.MachineDeploymentV1Beta2Status{},
+					},
+				}
+			}(),
 			expected: false,
 		},
 	}

@@ -33,6 +33,10 @@ func (r *packageServer) NeedsManagementKASAccess() bool {
 func NewComponent() component.ControlPlaneComponent {
 	return component.NewDeploymentComponent(ComponentName, &packageServer{}).
 		WithAdaptFunction(adaptDeployment).
+		WithManifestAdapter(
+			"pdb.yaml",
+			component.AdaptPodDisruptionBudget(),
+		).
 		InjectKonnectivityContainer(component.KonnectivityContainerOptions{
 			Mode: component.Socks5,
 		}).

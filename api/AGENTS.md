@@ -69,7 +69,7 @@ When graduating a field from overflow to a typed struct field:
 
 ### Best Practices and Patterns
 
-Use api/karpenter/v1beta1/karpenter_types.go and api/hypershift/v1beta1/etcdbackup_types.go as examples of best practices and patterns.
+Use api/karpenter/v1/karpenter_types.go and api/hypershift/v1beta1/etcdbackup_types.go as examples of best practices and patterns.
 
 Don't use the other existing APIs as examples as they might have many legacy constraints.
 
@@ -105,7 +105,7 @@ See `api/hypershift/v1beta1/nodepool_types_test.go` for an example of this patte
 
 All API CEL validations must be covered with envtests, see test/envtest/README.md for details
 
-#### Key make targets for API work:
+#### Key make targets for API work
 
 ```bash
 make api               # Regenerate all CRDs, deepcopy, clients
@@ -118,3 +118,7 @@ make test-envtest-ocp  # Run envtest for CEL validations
 ```
 
 All these must pass for any change before creating a PR
+
+## Cluster Capabilities
+
+The `OptionalCapability` type and `Capabilities` struct in `api/hypershift/v1beta1/hostedcluster_types.go` control which OpenShift operators are deployed in the hosted control plane. When adding a new capability constant or modifying CEL validation rules on the `Capabilities` struct, see [Adding a New Cluster Capability](../docs/content/contribute/add-a-capability.md) for the full implementation checklist and reference PRs.

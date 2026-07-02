@@ -7,6 +7,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -521,27 +522,195 @@ func TestApplyNonOvercommitableResourceLimits(t *testing.T) {
 }
 
 func TestSetDefaultOptions(t *testing.T) {
-	g := NewGomegaWithT(t)
 	scheme := runtime.NewScheme()
-	_ = hyperv1.AddToScheme(scheme)
-	_ = corev1.AddToScheme(scheme)
-	_ = appsv1.AddToScheme(scheme)
-
-	// Test case for etcd SecurityContext.
-	controlPlaneWorkload := &controlPlaneWorkload[*appsv1.StatefulSet]{
-		name:             "etcd",
-		workloadProvider: &statefulSetProvider{},
-		ComponentOptions: &testComponent{},
+	if err := hyperv1.AddToScheme(scheme); err != nil {
+		t.Fatalf("failed to add hyperv1 to scheme: %v", err)
 	}
-	workloadObject := &appsv1.StatefulSet{}
+	if err := corev1.AddToScheme(scheme); err != nil {
+		t.Fatalf("failed to add corev1 to scheme: %v", err)
+	}
+	if err := appsv1.AddToScheme(scheme); err != nil {
+		t.Fatalf("failed to add appsv1 to scheme: %v", err)
+	}
 
-	err := controlPlaneWorkload.setDefaultOptions(ControlPlaneContext{
-		HCP:                       &hyperv1.HostedControlPlane{},
-		SetDefaultSecurityContext: true,
-		DefaultSecurityContextUID: int64(1002),
-		Client:                    fake.NewClientBuilder().WithScheme(scheme).Build(),
-	}, workloadObject, nil)
-	g.Expect(err).NotTo(HaveOccurred())
-	g.Expect(workloadObject.Spec.Template.Spec.SecurityContext.RunAsUser).To(Equal(ptr.To(int64(1002))))
-	g.Expect(workloadObject.Spec.Template.Spec.SecurityContext.FSGroup).To(Equal(ptr.To(int64(1002))))
+	t.Run("When SetDefaultSecurityContext is true it should set RunAsUser and FSGroup", func(t *testing.T) {
+		t.Parallel()
+		g := NewGomegaWithT(t)
+
+		workload := &controlPlaneWorkload[*appsv1.StatefulSet]{
+			name:             "etcd",
+			workloadProvider: &statefulSetProvider{},
+			ComponentOptions: &testComponent{},
+		}
+		workloadObject := &appsv1.StatefulSet{}
+
+		err := workload.setDefaultOptions(ControlPlaneContext{
+			HCP:                       &hyperv1.HostedControlPlane{},
+			SetDefaultSecurityContext: true,
+			DefaultSecurityContextUID: int64(1002),
+			Client:                    fake.NewClientBuilder().WithScheme(scheme).Build(),
+		}, workloadObject, nil)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(workloadObject.Spec.Template.Spec.SecurityContext.RunAsUser).To(Equal(ptr.To(int64(1002))))
+		g.Expect(workloadObject.Spec.Template.Spec.SecurityContext.FSGroup).To(Equal(ptr.To(int64(1002))))
+	})
+
+	releaseProvider := imageprovider.NewFromImages(map[string]string{
+		"hyperkube": "quay.io/test/hyperkube:latest",
+	})
+
+	resourceTests := []struct {
+		name               string
+		annotations        map[string]string
+		containerResources corev1.ResourceRequirements
+		existingResources  map[string]corev1.ResourceRequirements
+		expectedResources  corev1.ResourceRequirements
+	}{
+		{
+			name: "When existing resources have both requests and limits it should fully preserve them",
+			containerResources: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("100m"),
+					corev1.ResourceMemory: resource.MustParse("256Mi"),
+				},
+			},
+			existingResources: map[string]corev1.ResourceRequirements{
+				"kube-apiserver": {
+					Requests: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("200m"),
+						corev1.ResourceMemory: resource.MustParse("1700Mi"),
+					},
+					Limits: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("2"),
+						corev1.ResourceMemory: resource.MustParse("4Gi"),
+					},
+				},
+			},
+			expectedResources: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("200m"),
+					corev1.ResourceMemory: resource.MustParse("1700Mi"),
+				},
+				Limits: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("2"),
+					corev1.ResourceMemory: resource.MustParse("4Gi"),
+				},
+			},
+		},
+		{
+			name: "When no existing resources are set it should keep the manifest defaults",
+			containerResources: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("100m"),
+					corev1.ResourceMemory: resource.MustParse("256Mi"),
+				},
+			},
+			existingResources: nil,
+			expectedResources: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("100m"),
+					corev1.ResourceMemory: resource.MustParse("256Mi"),
+				},
+			},
+		},
+	}
+
+	for _, test := range resourceTests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewGomegaWithT(t)
+
+			workload := &controlPlaneWorkload[*appsv1.Deployment]{
+				name:             "kube-apiserver",
+				workloadProvider: &deploymentProvider{},
+				ComponentOptions: &testComponent{},
+			}
+
+			deployment := &appsv1.Deployment{
+				Spec: appsv1.DeploymentSpec{
+					Template: corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{
+								{
+									Name:      "kube-apiserver",
+									Image:     "hyperkube",
+									Resources: test.containerResources,
+								},
+							},
+						},
+					},
+				},
+			}
+
+			hcp := &hyperv1.HostedControlPlane{}
+			hcp.Annotations = test.annotations
+
+			err := workload.setDefaultOptions(ControlPlaneContext{
+				HCP:                  hcp,
+				Client:               fake.NewClientBuilder().WithScheme(scheme).Build(),
+				ReleaseImageProvider: releaseProvider,
+			}, deployment, test.existingResources)
+			g.Expect(err).NotTo(HaveOccurred())
+
+			g.Expect(deployment.Spec.Template.Spec.Containers[0].Resources).To(Equal(test.expectedResources))
+		})
+	}
+
+	annotationTests := []struct {
+		name           string
+		hcpAnnotations map[string]string
+		expectSet      bool
+	}{
+		{
+			name: "When HCP has RestartDateAnnotation it should propagate it to the pod template",
+			hcpAnnotations: map[string]string{
+				hyperv1.RestartDateAnnotation: "2024-01-15T12:00:00Z",
+			},
+			expectSet: true,
+		},
+		{
+			name:      "When HCP has no RestartDateAnnotation it should not set it on the pod template",
+			expectSet: false,
+		},
+	}
+
+	for _, test := range annotationTests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewGomegaWithT(t)
+
+			workload := &controlPlaneWorkload[*appsv1.Deployment]{
+				name:             "kube-apiserver",
+				workloadProvider: &deploymentProvider{},
+				ComponentOptions: &testComponent{},
+			}
+			deployment := &appsv1.Deployment{
+				Spec: appsv1.DeploymentSpec{
+					Template: corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{
+								{Name: "kube-apiserver", Image: "hyperkube"},
+							},
+						},
+					},
+				},
+			}
+			hcp := &hyperv1.HostedControlPlane{}
+			hcp.Annotations = test.hcpAnnotations
+
+			err := workload.setDefaultOptions(ControlPlaneContext{
+				HCP:                  hcp,
+				Client:               fake.NewClientBuilder().WithScheme(scheme).Build(),
+				ReleaseImageProvider: releaseProvider,
+			}, deployment, nil)
+			g.Expect(err).NotTo(HaveOccurred())
+
+			if test.expectSet {
+				g.Expect(deployment.Spec.Template.Annotations).To(HaveKeyWithValue(
+					hyperv1.RestartDateAnnotation, test.hcpAnnotations[hyperv1.RestartDateAnnotation]))
+			} else {
+				g.Expect(deployment.Spec.Template.Annotations).NotTo(HaveKey(hyperv1.RestartDateAnnotation))
+			}
+		})
+	}
 }

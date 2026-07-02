@@ -258,6 +258,7 @@ type ExternalDNSDeployment struct {
 	GoogleProject         string
 	Interval              string
 	AWSZonesCacheDuration string
+	UseWebIdentity        bool
 }
 
 func (o ExternalDNSDeployment) Build() *appsv1.Deployment {
@@ -394,6 +395,36 @@ func (o ExternalDNSDeployment) Build() *appsv1.Deployment {
 				// thus we can assume us-east-1 without having to request it on the command line
 				Value: "us-east-1",
 			})
+		if o.UseWebIdentity {
+			deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env,
+				corev1.EnvVar{Name: "AWS_SDK_LOAD_CONFIG", Value: "1"},
+			)
+			deployment.Spec.Template.Spec.Containers[0].VolumeMounts = append(
+				deployment.Spec.Template.Spec.Containers[0].VolumeMounts,
+				corev1.VolumeMount{
+					Name:      "token",
+					MountPath: "/var/run/secrets/openshift/serviceaccount",
+				},
+			)
+			deployment.Spec.Template.Spec.Volumes = append(
+				deployment.Spec.Template.Spec.Volumes,
+				corev1.Volume{
+					Name: "token",
+					VolumeSource: corev1.VolumeSource{
+						Projected: &corev1.ProjectedVolumeSource{
+							Sources: []corev1.VolumeProjection{
+								{
+									ServiceAccountToken: &corev1.ServiceAccountTokenProjection{
+										Audience: "openshift",
+										Path:     "token",
+									},
+								},
+							},
+						},
+					},
+				},
+			)
+		}
 		deployment.Spec.Template.Spec.Containers[0].Args = append(deployment.Spec.Template.Spec.Containers[0].Args,
 			"--aws-zone-type=public",
 			"--aws-batch-change-interval=10s",
@@ -527,6 +558,7 @@ type HyperShiftOperatorDeployment struct {
 	ScaleFromZeroSecret                     *corev1.Secret
 	ScaleFromZeroSecretKey                  string
 	ScaleFromZeroProvider                   string
+	HCPEgressBlockCIDRs                     []string
 }
 
 func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
@@ -755,6 +787,9 @@ func (o HyperShiftOperatorDeployment) buildArgs() []string {
 		fmt.Sprintf("--enable-ocp-cluster-monitoring=%t", o.EnableOCPClusterMonitoring),
 		fmt.Sprintf("--enable-ci-debug-output=%t", o.EnableCIDebugOutput),
 		fmt.Sprintf("--private-platform=%s", o.PrivatePlatform),
+	}
+	for _, cidr := range o.HCPEgressBlockCIDRs {
+		args = append(args, fmt.Sprintf("--hcp-egress-block-cidrs=%s", cidr))
 	}
 	if o.RegistryOverrides != "" {
 		args = append(args, fmt.Sprintf("--registry-overrides=%s", o.RegistryOverrides))
@@ -1389,9 +1424,10 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 				Verbs:     []string{"create", "delete", "get", "list", "update", "watch"},
 			},
 			// This allows hypershift operator to grant RBAC permissions for ORC to the capi-provider.
+			// We use a wildcard since ORC has a lot of resources.
 			{
 				APIGroups: []string{"openstack.k-orc.cloud"},
-				Resources: []string{"images", "images/status"},
+				Resources: []string{"*"},
 				Verbs:     []string{rbacv1.VerbAll},
 			},
 			{ // This allows the kubevirt csi driver to hotplug volumes to KubeVirt VMs.

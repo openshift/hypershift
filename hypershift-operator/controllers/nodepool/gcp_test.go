@@ -14,6 +14,8 @@ import (
 	"k8s.io/utils/ptr"
 
 	capigcp "sigs.k8s.io/cluster-api-provider-gcp/api/v1beta1"
+
+	"github.com/coreos/stream-metadata-go/stream"
 )
 
 func TestGcpMachineTemplateSpec(t *testing.T) {
@@ -493,11 +495,11 @@ func TestGcpMachineTemplateSpec(t *testing.T) {
 				ImageStream: &imageapi.ImageStream{
 					ObjectMeta: metav1.ObjectMeta{Name: "4.18.0"},
 				},
-				StreamMetadata: &releaseinfo.CoreOSStreamMetadata{
-					Architectures: map[string]releaseinfo.CoreOSArchitecture{
+				StreamMetadata: &stream.Stream{
+					Architectures: map[string]stream.Arch{
 						"x86_64": {
-							Images: releaseinfo.CoreOSImages{
-								GCP: releaseinfo.CoreOSGCPImage{
+							Images: stream.Images{
+								Gcp: &stream.GcpImage{
 									Project: "rhcos-cloud",
 									Name:    "rhcos-x86-64-418",
 								},
@@ -542,11 +544,11 @@ func TestDefaultNodePoolGCPImage(t *testing.T) {
 			name: "When stream metadata has project and name for amd64, it should construct image path",
 			arch: hyperv1.ArchitectureAMD64,
 			releaseImage: &releaseinfo.ReleaseImage{
-				StreamMetadata: &releaseinfo.CoreOSStreamMetadata{
-					Architectures: map[string]releaseinfo.CoreOSArchitecture{
+				StreamMetadata: &stream.Stream{
+					Architectures: map[string]stream.Arch{
 						"x86_64": {
-							Images: releaseinfo.CoreOSImages{
-								GCP: releaseinfo.CoreOSGCPImage{
+							Images: stream.Images{
+								Gcp: &stream.GcpImage{
 									Project: "rhcos-cloud",
 									Name:    "rhcos-9-6-20251023-0-gcp-x86-64",
 								},
@@ -562,11 +564,11 @@ func TestDefaultNodePoolGCPImage(t *testing.T) {
 			name: "When stream metadata has project and name for arm64, it should construct image path",
 			arch: hyperv1.ArchitectureARM64,
 			releaseImage: &releaseinfo.ReleaseImage{
-				StreamMetadata: &releaseinfo.CoreOSStreamMetadata{
-					Architectures: map[string]releaseinfo.CoreOSArchitecture{
+				StreamMetadata: &stream.Stream{
+					Architectures: map[string]stream.Arch{
 						"aarch64": {
-							Images: releaseinfo.CoreOSImages{
-								GCP: releaseinfo.CoreOSGCPImage{
+							Images: stream.Images{
+								Gcp: &stream.GcpImage{
 									Project: "rhcos-cloud",
 									Name:    "rhcos-9-6-20251023-0-gcp-aarch64",
 								},
@@ -582,11 +584,11 @@ func TestDefaultNodePoolGCPImage(t *testing.T) {
 			name: "When architecture is not found in release metadata, it should return error",
 			arch: "unsupported-arch",
 			releaseImage: &releaseinfo.ReleaseImage{
-				StreamMetadata: &releaseinfo.CoreOSStreamMetadata{
-					Architectures: map[string]releaseinfo.CoreOSArchitecture{
+				StreamMetadata: &stream.Stream{
+					Architectures: map[string]stream.Arch{
 						"x86_64": {
-							Images: releaseinfo.CoreOSImages{
-								GCP: releaseinfo.CoreOSGCPImage{
+							Images: stream.Images{
+								Gcp: &stream.GcpImage{
 									Project: "rhcos-cloud",
 									Name:    "rhcos-9-6-20251023-0-gcp-x86-64",
 								},
@@ -602,11 +604,11 @@ func TestDefaultNodePoolGCPImage(t *testing.T) {
 			name: "When GCP project and name are empty, it should return error",
 			arch: hyperv1.ArchitectureAMD64,
 			releaseImage: &releaseinfo.ReleaseImage{
-				StreamMetadata: &releaseinfo.CoreOSStreamMetadata{
-					Architectures: map[string]releaseinfo.CoreOSArchitecture{
+				StreamMetadata: &stream.Stream{
+					Architectures: map[string]stream.Arch{
 						"x86_64": {
-							Images: releaseinfo.CoreOSImages{
-								GCP: releaseinfo.CoreOSGCPImage{},
+							Images: stream.Images{
+								Gcp: &stream.GcpImage{},
 							},
 						},
 					},
@@ -619,11 +621,11 @@ func TestDefaultNodePoolGCPImage(t *testing.T) {
 			name: "When GCP project is empty but name is set, it should return error",
 			arch: hyperv1.ArchitectureAMD64,
 			releaseImage: &releaseinfo.ReleaseImage{
-				StreamMetadata: &releaseinfo.CoreOSStreamMetadata{
-					Architectures: map[string]releaseinfo.CoreOSArchitecture{
+				StreamMetadata: &stream.Stream{
+					Architectures: map[string]stream.Arch{
 						"x86_64": {
-							Images: releaseinfo.CoreOSImages{
-								GCP: releaseinfo.CoreOSGCPImage{
+							Images: stream.Images{
+								Gcp: &stream.GcpImage{
 									Name: "rhcos-x86-64",
 								},
 							},
@@ -638,11 +640,11 @@ func TestDefaultNodePoolGCPImage(t *testing.T) {
 			name: "When GCP name is empty but project is set, it should return error",
 			arch: hyperv1.ArchitectureAMD64,
 			releaseImage: &releaseinfo.ReleaseImage{
-				StreamMetadata: &releaseinfo.CoreOSStreamMetadata{
-					Architectures: map[string]releaseinfo.CoreOSArchitecture{
+				StreamMetadata: &stream.Stream{
+					Architectures: map[string]stream.Arch{
 						"x86_64": {
-							Images: releaseinfo.CoreOSImages{
-								GCP: releaseinfo.CoreOSGCPImage{
+							Images: stream.Images{
+								Gcp: &stream.GcpImage{
 									Project: "rhcos-cloud",
 								},
 							},

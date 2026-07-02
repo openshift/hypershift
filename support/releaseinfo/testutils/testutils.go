@@ -9,6 +9,8 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"github.com/coreos/stream-metadata-go/stream"
 )
 
 // InitReleaseImageOrDie returns a ptr to releaseinfo.ReleaseImage,
@@ -58,28 +60,28 @@ func InitReleaseImageOrDie(version string) *releaseinfo.ReleaseImage {
 				},
 			},
 		},
-		StreamMetadata: &releaseinfo.CoreOSStreamMetadata{
-			Architectures: map[string]releaseinfo.CoreOSArchitecture{
+		StreamMetadata: &stream.Stream{
+			Architectures: map[string]stream.Arch{
 				"x86_64": {
-					Images: releaseinfo.CoreOSImages{
-						AWS: releaseinfo.CoreOSAWSImages{
-							Regions: map[string]releaseinfo.CoreOSAWSImage{
+					Images: stream.Images{
+						Aws: &stream.AwsImage{
+							Regions: map[string]stream.SingleImage{
 								"us-east-1": {
 									Release: "us-east-1-x86_64-release",
 									Image:   "us-east-1-x86_64-image",
 								},
 							},
 						},
-						GCP: releaseinfo.CoreOSGCPImage{
+						Gcp: &stream.GcpImage{
 							Project: "rhcos-cloud",
 							Name:    "rhcos-x86-64-test",
 						},
 					},
 				},
 				"aarch64": {
-					Images: releaseinfo.CoreOSImages{
-						AWS: releaseinfo.CoreOSAWSImages{
-							Regions: map[string]releaseinfo.CoreOSAWSImage{
+					Images: stream.Images{
+						Aws: &stream.AwsImage{
+							Regions: map[string]stream.SingleImage{
 								"us-east-1": {
 									Release: "us-east-1-aarch64-release",
 									Image:   "us-east-1-aarch64-image",
@@ -90,7 +92,7 @@ func InitReleaseImageOrDie(version string) *releaseinfo.ReleaseImage {
 								},
 							},
 						},
-						GCP: releaseinfo.CoreOSGCPImage{
+						Gcp: &stream.GcpImage{
 							Project: "rhcos-cloud",
 							Name:    "rhcos-aarch64-test",
 						},

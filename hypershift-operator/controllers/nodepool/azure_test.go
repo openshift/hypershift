@@ -16,12 +16,16 @@ import (
 
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+
+	"github.com/coreos/stream-metadata-go/stream"
+	"github.com/coreos/stream-metadata-go/stream/rhcos"
 )
 
 func TestAzureMachineTemplateSpec(t *testing.T) {
 	testCases := []struct {
 		name                             string
 		nodePool                         *hyperv1.NodePool
+		acrIdentityResourceID            string
 		expectedAzureMachineTemplateSpec *capiazure.AzureMachineTemplateSpec
 		expectedErr                      bool
 		expectedErrMsg                   string
@@ -507,12 +511,164 @@ func TestAzureMachineTemplateSpec(t *testing.T) {
 			expectedErr:    true,
 			expectedErrMsg: "failed to determine subnet name for Azure machine: failed to parse subnet name from \"/subscriptions/testSubscriptionID/resourceGroups/testResourceGroupName/providers/Microsoft.Network/virtualNetworks/testVnetName/subnets/\"",
 		},
+		{
+			name: "When HostedCluster has containerRegistry credentials set it should set UserAssigned identity",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzureNodePoolPlatform{
+							Image: hyperv1.AzureVMImage{
+								Type:    hyperv1.ImageID,
+								ImageID: ptr.To("testImageID"),
+							},
+							SubnetID: "/subscriptions/testSubscriptionID/resourceGroups/testResourceGroupName/providers/Microsoft.Network/virtualNetworks/testVnetName/subnets/testSubnetName",
+							VMSize:   "Standard_D2_v2",
+							OSDisk: hyperv1.AzureNodePoolOSDisk{
+								SizeGiB:                30,
+								DiskStorageAccountType: "Standard_LRS",
+							},
+						},
+					},
+				},
+			},
+			acrIdentityResourceID: "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/test-mi",
+			expectedAzureMachineTemplateSpec: &capiazure.AzureMachineTemplateSpec{
+				Template: capiazure.AzureMachineTemplateResource{
+					ObjectMeta: clusterv1.ObjectMeta{Labels: nil, Annotations: nil},
+					Spec: capiazure.AzureMachineSpec{
+						ProviderID:    nil,
+						VMSize:        "Standard_D2_v2",
+						FailureDomain: nil,
+						Image: &capiazure.Image{
+							ID:             ptr.To("testImageID"),
+							SharedGallery:  nil,
+							Marketplace:    nil,
+							ComputeGallery: nil,
+						},
+						Identity: capiazure.VMIdentityUserAssigned,
+						UserAssignedIdentities: []capiazure.UserAssignedIdentity{
+							{ProviderID: "azure:///subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/test-mi"},
+						},
+						SystemAssignedIdentityRole: nil,
+						RoleAssignmentName:         "",
+						OSDisk: capiazure.OSDisk{
+							OSType:     "",
+							DiskSizeGB: ptr.To[int32](30),
+							ManagedDisk: &capiazure.ManagedDiskParameters{
+								StorageAccountType: "Standard_LRS",
+								DiskEncryptionSet:  nil,
+								SecurityProfile:    nil,
+							},
+							DiffDiskSettings: nil,
+							CachingType:      "",
+						},
+						DataDisks:              nil,
+						SSHPublicKey:           dummySSHKey,
+						AdditionalTags:         nil,
+						AdditionalCapabilities: nil,
+						AllocatePublicIP:       false,
+						EnableIPForwarding:     false,
+						AcceleratedNetworking:  nil,
+						Diagnostics:            nil,
+						SpotVMOptions:          nil,
+						SecurityProfile:        nil,
+						SubnetName:             "",
+						DNSServers:             nil,
+						VMExtensions:           nil,
+						NetworkInterfaces: []capiazure.NetworkInterface{
+							{
+								SubnetName:            "testSubnetName",
+								PrivateIPConfigs:      0,
+								AcceleratedNetworking: nil,
+							},
+						},
+						CapacityReservationGroupID: nil,
+					},
+				},
+			},
+			expectedErr: false,
+		},
+		{
+			name: "When HostedCluster has no containerRegistry credentials it should not set UserAssigned identity",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzureNodePoolPlatform{
+							Image: hyperv1.AzureVMImage{
+								Type:    hyperv1.ImageID,
+								ImageID: ptr.To("testImageID"),
+							},
+							SubnetID: "/subscriptions/testSubscriptionID/resourceGroups/testResourceGroupName/providers/Microsoft.Network/virtualNetworks/testVnetName/subnets/testSubnetName",
+							VMSize:   "Standard_D2_v2",
+							OSDisk: hyperv1.AzureNodePoolOSDisk{
+								SizeGiB:                30,
+								DiskStorageAccountType: "Standard_LRS",
+							},
+						},
+					},
+				},
+			},
+			expectedAzureMachineTemplateSpec: &capiazure.AzureMachineTemplateSpec{
+				Template: capiazure.AzureMachineTemplateResource{
+					ObjectMeta: clusterv1.ObjectMeta{Labels: nil, Annotations: nil},
+					Spec: capiazure.AzureMachineSpec{
+						ProviderID:    nil,
+						VMSize:        "Standard_D2_v2",
+						FailureDomain: nil,
+						Image: &capiazure.Image{
+							ID:             ptr.To("testImageID"),
+							SharedGallery:  nil,
+							Marketplace:    nil,
+							ComputeGallery: nil,
+						},
+						UserAssignedIdentities:     nil,
+						SystemAssignedIdentityRole: nil,
+						RoleAssignmentName:         "",
+						OSDisk: capiazure.OSDisk{
+							OSType:     "",
+							DiskSizeGB: ptr.To[int32](30),
+							ManagedDisk: &capiazure.ManagedDiskParameters{
+								StorageAccountType: "Standard_LRS",
+								DiskEncryptionSet:  nil,
+								SecurityProfile:    nil,
+							},
+							DiffDiskSettings: nil,
+							CachingType:      "",
+						},
+						DataDisks:              nil,
+						SSHPublicKey:           dummySSHKey,
+						AdditionalTags:         nil,
+						AdditionalCapabilities: nil,
+						AllocatePublicIP:       false,
+						EnableIPForwarding:     false,
+						AcceleratedNetworking:  nil,
+						Diagnostics:            nil,
+						SpotVMOptions:          nil,
+						SecurityProfile:        nil,
+						SubnetName:             "",
+						DNSServers:             nil,
+						VMExtensions:           nil,
+						NetworkInterfaces: []capiazure.NetworkInterface{
+							{
+								SubnetName:            "testSubnetName",
+								PrivateIPConfigs:      0,
+								AcceleratedNetworking: nil,
+							},
+						},
+						CapacityReservationGroupID: nil,
+					},
+				},
+			},
+			expectedErr: false,
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
 
-			azureSpec, err := azureMachineTemplateSpec(tc.nodePool)
+			azureSpec, err := azureMachineTemplateSpec(tc.nodePool, tc.acrIdentityResourceID)
 			if tc.expectedErr {
 				g.Expect(err.Error()).To(ContainSubstring(tc.expectedErrMsg))
 			} else {
@@ -947,6 +1103,34 @@ func TestDefaultAzureNodePoolImage(t *testing.T) {
 			expectedMarketplaceImage: nil,
 		},
 		{
+			name: "skip defaulting when RHELCoreOSExtensions is nil",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Arch: hyperv1.ArchitectureAMD64,
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzureNodePoolPlatform{
+							Image: hyperv1.AzureVMImage{},
+						},
+					},
+				},
+			},
+			releaseImage: &releaseinfo.ReleaseImage{
+				ImageStream: &imageapi.ImageStream{
+					ObjectMeta: metav1.ObjectMeta{Name: "4.20.0"},
+				},
+				StreamMetadata: &stream.Stream{
+					Architectures: map[string]stream.Arch{
+						"x86_64": {
+							Images: stream.Images{},
+						},
+					},
+				},
+			},
+			expectedImageType:        "",
+			expectedMarketplaceImage: nil,
+		},
+		{
 			name: "skip defaulting when no marketplace metadata available",
 			nodePool: &hyperv1.NodePool{
 				Spec: hyperv1.NodePoolSpec{
@@ -1113,11 +1297,11 @@ func TestDefaultAzureNodePoolImage(t *testing.T) {
 
 // createMockReleaseImage creates a mock release image for testing
 func createMockReleaseImage(version string, hasMarketplaceMetadata bool) *releaseinfo.ReleaseImage {
-	architecture := releaseinfo.CoreOSArchitecture{
-		Artifacts: map[string]releaseinfo.CoreOSArtifact{},
-		Images:    releaseinfo.CoreOSImages{},
-		RHCOS: releaseinfo.CoreRHCOSImage{
-			AzureDisk: releaseinfo.CoreAzureDisk{
+	architecture := stream.Arch{
+		Artifacts: map[string]stream.PlatformArtifacts{},
+		Images:    stream.Images{},
+		RHELCoreOSExtensions: &rhcos.Extensions{
+			AzureDisk: &rhcos.AzureDisk{
 				Release: "9.6.20250701-0",
 				URL:     "https://rhcos.blob.core.windows.net/imagebucket/rhcos-9.6.20250701-0-azure.x86_64.vhd",
 			},
@@ -1125,16 +1309,16 @@ func createMockReleaseImage(version string, hasMarketplaceMetadata bool) *releas
 	}
 
 	if hasMarketplaceMetadata {
-		architecture.RHCOS.Marketplace = releaseinfo.CoreMarketplace{
-			Azure: releaseinfo.CoreAzureMarketplace{
-				NoPurchasePlan: releaseinfo.CoreAzureMarketplaceNoPurchasePlan{
-					HyperVGen1: &releaseinfo.CoreAzureMarketplaceImage{
+		architecture.RHELCoreOSExtensions.Marketplace = &rhcos.Marketplace{
+			Azure: &rhcos.AzureMarketplace{
+				NoPurchasePlan: &rhcos.AzureMarketplaceImages{
+					Gen1: &rhcos.AzureMarketplaceImage{
 						Publisher: "azureopenshift",
 						Offer:     "aro4",
 						SKU:       "aro_419",
 						Version:   "419.6.20250523",
 					},
-					HyperVGen2: &releaseinfo.CoreAzureMarketplaceImage{
+					Gen2: &rhcos.AzureMarketplaceImage{
 						Publisher: "azureopenshift",
 						Offer:     "aro4",
 						SKU:       "419-v2",
@@ -1145,12 +1329,12 @@ func createMockReleaseImage(version string, hasMarketplaceMetadata bool) *releas
 		}
 	}
 
-	architectures := map[string]releaseinfo.CoreOSArchitecture{
+	architectures := map[string]stream.Arch{
 		"x86_64":  architecture,
 		"aarch64": architecture, // ARM64 uses the same marketplace metadata
 	}
 
-	streamMetadata := &releaseinfo.CoreOSStreamMetadata{
+	streamMetadata := &stream.Stream{
 		Stream:        "test-stream",
 		Architectures: architectures,
 	}

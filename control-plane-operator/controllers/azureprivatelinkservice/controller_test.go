@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"testing"
+	"time"
 
 	. "github.com/onsi/gomega"
 
@@ -224,6 +225,7 @@ func newTestScheme(t *testing.T, g Gomega) *runtime.Scheme {
 	t.Helper()
 	scheme := runtime.NewScheme()
 	g.Expect(hyperv1.AddToScheme(scheme)).ToNot(HaveOccurred())
+	g.Expect(corev1.AddToScheme(scheme)).ToNot(HaveOccurred())
 	return scheme
 }
 
@@ -3426,7 +3428,7 @@ func TestReconcile_WhenFinalizerAddConflicts_ItShouldRequeue(t *testing.T) {
 	})
 
 	g.Expect(err).ToNot(HaveOccurred())
-	g.Expect(result.Requeue).To(BeTrue(), "should requeue on conflict")
+	g.Expect(result.RequeueAfter).To(Equal(time.Second), "should requeue on conflict")
 }
 
 func TestEnsureHCPFinalizer_WhenPatchConflicts_ItShouldRequeue(t *testing.T) {
@@ -3457,7 +3459,7 @@ func TestEnsureHCPFinalizer_WhenPatchConflicts_ItShouldRequeue(t *testing.T) {
 
 	result, err := r.ensureHCPFinalizer(t.Context(), hcp, testr.New(t))
 	g.Expect(err).ToNot(HaveOccurred())
-	g.Expect(result.Requeue).To(BeTrue(), "should requeue on conflict")
+	g.Expect(result.RequeueAfter).To(Equal(time.Second), "should requeue on conflict")
 }
 
 func TestReconcileHCPDeletion_WhenPatchConflicts_ItShouldRequeue(t *testing.T) {
@@ -3499,7 +3501,7 @@ func TestReconcileHCPDeletion_WhenPatchConflicts_ItShouldRequeue(t *testing.T) {
 
 	result, err := r.reconcileHCPDeletion(t.Context(), azPLS, hcp, testr.New(t))
 	g.Expect(err).ToNot(HaveOccurred())
-	g.Expect(result.Requeue).To(BeTrue(), "should requeue on conflict")
+	g.Expect(result.RequeueAfter).To(Equal(time.Second), "should requeue on conflict")
 }
 
 func TestUpdatePrivateEndpointStatus_WhenStatusPatchFails_ItShouldReturnError(t *testing.T) {
@@ -3805,4 +3807,350 @@ func TestReconcile_WhenAvailableConditionPatchFails_ItShouldReturnError(t *testi
 
 	g.Expect(err).To(HaveOccurred())
 	g.Expect(err).To(MatchError(ContainSubstring("failed to update Available condition")))
+}
+
+// --- ExternalPrivateService tests ---
+
+func TestHcpExternalPrivateServices_WhenBothRouteHostnamesConfigured_ItShouldReturnBoth(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+
+	hcp := newTestHCP(t, "test-hcp", "test-ns", "api.example.com")
+	hcp.Spec.Platform.Type = hyperv1.AzurePlatform
+	hcp.Spec.Platform.Azure = &hyperv1.AzurePlatformSpec{
+		Topology: hyperv1.AzureTopologyPrivate,
+	}
+	hcp.Spec.Services = []hyperv1.ServicePublishingStrategyMapping{
+		{
+			Service: hyperv1.APIServer,
+			ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+				Type:  hyperv1.Route,
+				Route: &hyperv1.RoutePublishingStrategy{Hostname: "api.custom.example.com"},
+			},
+		},
+		{
+			Service: hyperv1.OAuthServer,
+			ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+				Type:  hyperv1.Route,
+				Route: &hyperv1.RoutePublishingStrategy{Hostname: "oauth.custom.example.com"},
+			},
+		},
+	}
+
+	entries := hcpExternalPrivateServices(hcp)
+	g.Expect(entries).To(HaveLen(2))
+	g.Expect(entries[0].service.Name).To(Equal("kube-apiserver-private-external"))
+	g.Expect(entries[0].hostname).To(Equal("api.custom.example.com"))
+	g.Expect(entries[1].service.Name).To(Equal("oauth-private-external"))
+	g.Expect(entries[1].hostname).To(Equal("oauth.custom.example.com"))
+}
+
+func TestHcpExternalPrivateServices_WhenNoRouteStrategy_ItShouldReturnEmpty(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+
+	hcp := newTestHCP(t, "test-hcp", "test-ns", "api.example.com")
+	hcp.Spec.Platform.Type = hyperv1.AzurePlatform
+	hcp.Spec.Services = []hyperv1.ServicePublishingStrategyMapping{
+		{
+			Service: hyperv1.APIServer,
+			ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.LoadBalancer,
+			},
+		},
+	}
+
+	entries := hcpExternalPrivateServices(hcp)
+	g.Expect(entries).To(BeEmpty())
+}
+
+func TestHcpExternalPrivateServices_WhenRouteHasNoHostname_ItShouldSkipIt(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+
+	hcp := newTestHCP(t, "test-hcp", "test-ns", "api.example.com")
+	hcp.Spec.Platform.Type = hyperv1.AzurePlatform
+	hcp.Spec.Services = []hyperv1.ServicePublishingStrategyMapping{
+		{
+			Service: hyperv1.APIServer,
+			ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+				Type:  hyperv1.Route,
+				Route: &hyperv1.RoutePublishingStrategy{Hostname: ""},
+			},
+		},
+		{
+			Service: hyperv1.OAuthServer,
+			ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+				Type:  hyperv1.Route,
+				Route: &hyperv1.RoutePublishingStrategy{Hostname: "oauth.custom.example.com"},
+			},
+		},
+	}
+
+	entries := hcpExternalPrivateServices(hcp)
+	g.Expect(entries).To(HaveLen(1))
+	g.Expect(entries[0].service.Name).To(Equal("oauth-private-external"))
+	g.Expect(entries[0].hostname).To(Equal("oauth.custom.example.com"))
+}
+
+func TestReconcileExternalService_ItShouldSetAllRequiredFields(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+
+	hcp := newTestHCP(t, "test-hcp", "test-ns", "api.example.com")
+	svc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "kube-apiserver-private",
+			Namespace: "test-ns",
+		},
+	}
+
+	err := reconcileExternalService(svc, hcp, "api.custom.example.com", "10.0.1.5")
+	g.Expect(err).ToNot(HaveOccurred())
+
+	g.Expect(svc.Labels).To(HaveKeyWithValue(externalPrivateServiceLabelAzure, "true"))
+	g.Expect(svc.Annotations).To(HaveKeyWithValue(hyperv1.ExternalDNSHostnameAnnotation, "api.custom.example.com"))
+	g.Expect(svc.Spec.Type).To(Equal(corev1.ServiceTypeExternalName))
+	g.Expect(svc.Spec.ExternalName).To(Equal("10.0.1.5"))
+	g.Expect(svc.OwnerReferences).To(HaveLen(1))
+	g.Expect(svc.OwnerReferences[0].Name).To(Equal("test-hcp"))
+}
+
+func TestReconcileExternalServices_WhenPrivateWithExternalNames_ItShouldCreateServices(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+	scheme := newTestScheme(t, g)
+
+	hcp := newTestHCP(t, "test-hcp", "test-ns", "api.example.com")
+	hcp.Spec.Platform.Type = hyperv1.AzurePlatform
+	hcp.Spec.Platform.Azure = &hyperv1.AzurePlatformSpec{
+		Topology: hyperv1.AzureTopologyPrivate,
+	}
+	hcp.Spec.Services = []hyperv1.ServicePublishingStrategyMapping{
+		{
+			Service: hyperv1.APIServer,
+			ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+				Type:  hyperv1.Route,
+				Route: &hyperv1.RoutePublishingStrategy{Hostname: "api.custom.example.com"},
+			},
+		},
+		{
+			Service: hyperv1.OAuthServer,
+			ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+				Type:  hyperv1.Route,
+				Route: &hyperv1.RoutePublishingStrategy{Hostname: "oauth.custom.example.com"},
+			},
+		},
+	}
+
+	azPLS := newTestAzurePLS(t, "private-router", "test-ns")
+	azPLS.Status.PrivateEndpointIP = "10.0.1.5"
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(hcp, azPLS).
+		Build()
+
+	r := &AzurePrivateLinkServiceReconciler{Client: fakeClient}
+
+	err := r.reconcileExternalServices(t.Context(), azPLS, hcp, testr.New(t))
+	g.Expect(err).ToNot(HaveOccurred())
+
+	kasSvc := &corev1.Service{}
+	g.Expect(fakeClient.Get(t.Context(), types.NamespacedName{
+		Name:      "kube-apiserver-private-external",
+		Namespace: "test-ns",
+	}, kasSvc)).To(Succeed())
+	g.Expect(kasSvc.Spec.Type).To(Equal(corev1.ServiceTypeExternalName))
+	g.Expect(kasSvc.Spec.ExternalName).To(Equal("10.0.1.5"))
+	g.Expect(kasSvc.Annotations[hyperv1.ExternalDNSHostnameAnnotation]).To(Equal("api.custom.example.com"))
+	g.Expect(kasSvc.Labels[externalPrivateServiceLabelAzure]).To(Equal("true"))
+
+	oauthSvc := &corev1.Service{}
+	g.Expect(fakeClient.Get(t.Context(), types.NamespacedName{
+		Name:      "oauth-private-external",
+		Namespace: "test-ns",
+	}, oauthSvc)).To(Succeed())
+	g.Expect(oauthSvc.Spec.Type).To(Equal(corev1.ServiceTypeExternalName))
+	g.Expect(oauthSvc.Spec.ExternalName).To(Equal("10.0.1.5"))
+	g.Expect(oauthSvc.Annotations[hyperv1.ExternalDNSHostnameAnnotation]).To(Equal("oauth.custom.example.com"))
+	g.Expect(oauthSvc.Labels[externalPrivateServiceLabelAzure]).To(Equal("true"))
+}
+
+func TestReconcileExternalServices_WhenPublic_ItShouldDeleteExistingServices(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+	scheme := newTestScheme(t, g)
+
+	hcp := newTestHCP(t, "test-hcp", "test-ns", "api.example.com")
+	hcp.Spec.Platform.Type = hyperv1.AzurePlatform
+	hcp.Spec.Platform.Azure = &hyperv1.AzurePlatformSpec{
+		Topology: hyperv1.AzureTopologyPublicAndPrivate,
+	}
+	hcp.Spec.Services = []hyperv1.ServicePublishingStrategyMapping{
+		{
+			Service: hyperv1.APIServer,
+			ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+				Type:  hyperv1.Route,
+				Route: &hyperv1.RoutePublishingStrategy{Hostname: "api.custom.example.com"},
+			},
+		},
+		{
+			Service: hyperv1.OAuthServer,
+			ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+				Type:  hyperv1.Route,
+				Route: &hyperv1.RoutePublishingStrategy{Hostname: "oauth.custom.example.com"},
+			},
+		},
+	}
+
+	azPLS := newTestAzurePLS(t, "private-router", "test-ns")
+
+	existingKasSvc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "kube-apiserver-private-external",
+			Namespace: "test-ns",
+			Labels:    map[string]string{externalPrivateServiceLabelAzure: "true"},
+		},
+		Spec: corev1.ServiceSpec{
+			Type:         corev1.ServiceTypeExternalName,
+			ExternalName: "10.0.1.5",
+		},
+	}
+	existingOauthSvc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "oauth-private-external",
+			Namespace: "test-ns",
+			Labels:    map[string]string{externalPrivateServiceLabelAzure: "true"},
+		},
+		Spec: corev1.ServiceSpec{
+			Type:         corev1.ServiceTypeExternalName,
+			ExternalName: "10.0.1.5",
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(hcp, azPLS, existingKasSvc, existingOauthSvc).
+		Build()
+
+	r := &AzurePrivateLinkServiceReconciler{Client: fakeClient}
+
+	err := r.reconcileExternalServices(t.Context(), azPLS, hcp, testr.New(t))
+	g.Expect(err).ToNot(HaveOccurred())
+
+	kasSvc := &corev1.Service{}
+	g.Expect(apierrors.IsNotFound(fakeClient.Get(t.Context(), types.NamespacedName{
+		Name: "kube-apiserver-private-external", Namespace: "test-ns",
+	}, kasSvc))).To(BeTrue(), "KAS ExternalPrivateService should be deleted")
+
+	oauthSvc := &corev1.Service{}
+	g.Expect(apierrors.IsNotFound(fakeClient.Get(t.Context(), types.NamespacedName{
+		Name: "oauth-private-external", Namespace: "test-ns",
+	}, oauthSvc))).To(BeTrue(), "OAuth ExternalPrivateService should be deleted")
+}
+
+func TestReconcileExternalService_WhenServiceHasExistingLabelsAndAnnotations_ItShouldPreserveThem(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+
+	hcp := newTestHCP(t, "test-hcp", "test-ns", "api.example.com")
+	svc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        "kube-apiserver-private",
+			Namespace:   "test-ns",
+			Labels:      map[string]string{"existing-label": "value"},
+			Annotations: map[string]string{"existing-annotation": "value"},
+		},
+	}
+
+	err := reconcileExternalService(svc, hcp, "api.custom.example.com", "10.0.1.5")
+	g.Expect(err).ToNot(HaveOccurred())
+
+	g.Expect(svc.Labels).To(HaveKeyWithValue("existing-label", "value"))
+	g.Expect(svc.Labels).To(HaveKeyWithValue(externalPrivateServiceLabelAzure, "true"))
+	g.Expect(svc.Annotations).To(HaveKeyWithValue("existing-annotation", "value"))
+	g.Expect(svc.Annotations).To(HaveKeyWithValue(hyperv1.ExternalDNSHostnameAnnotation, "api.custom.example.com"))
+	g.Expect(svc.Spec.Type).To(Equal(corev1.ServiceTypeExternalName))
+	g.Expect(svc.Spec.ExternalName).To(Equal("10.0.1.5"))
+}
+
+func TestReconcileExternalServices_WhenCreateOrUpdateFails_ItShouldReturnAggregateError(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+	scheme := newTestScheme(t, g)
+
+	hcp := newTestHCP(t, "test-hcp", "test-ns", "api.example.com")
+	hcp.Spec.Platform.Type = hyperv1.AzurePlatform
+	hcp.Spec.Platform.Azure = &hyperv1.AzurePlatformSpec{
+		Topology: hyperv1.AzureTopologyPrivate,
+	}
+	hcp.Spec.Services = []hyperv1.ServicePublishingStrategyMapping{
+		{
+			Service: hyperv1.APIServer,
+			ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+				Type:  hyperv1.Route,
+				Route: &hyperv1.RoutePublishingStrategy{Hostname: "api.custom.example.com"},
+			},
+		},
+	}
+
+	azPLS := newTestAzurePLS(t, "private-router", "test-ns")
+	azPLS.Status.PrivateEndpointIP = "10.0.1.5"
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(hcp, azPLS).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+				if _, ok := obj.(*corev1.Service); ok {
+					return fmt.Errorf("simulated create failure")
+				}
+				return c.Create(ctx, obj, opts...)
+			},
+		}).
+		Build()
+
+	r := &AzurePrivateLinkServiceReconciler{Client: fakeClient}
+
+	err := r.reconcileExternalServices(t.Context(), azPLS, hcp, testr.New(t))
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(err).To(MatchError(ContainSubstring("failed to create external services for private endpoints")))
+	g.Expect(err).To(MatchError(ContainSubstring("failed to reconcile kube-apiserver-private-external external service")))
+}
+
+func TestReconcileExternalServices_WhenPrivateWithNoExternalNames_ItShouldNotCreateServices(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+	scheme := newTestScheme(t, g)
+
+	hcp := newTestHCP(t, "test-hcp", "test-ns", "api.example.com")
+	hcp.Spec.Platform.Type = hyperv1.AzurePlatform
+	hcp.Spec.Platform.Azure = &hyperv1.AzurePlatformSpec{
+		Topology: hyperv1.AzureTopologyPrivate,
+	}
+	hcp.Spec.Services = []hyperv1.ServicePublishingStrategyMapping{
+		{
+			Service: hyperv1.APIServer,
+			ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.LoadBalancer,
+			},
+		},
+	}
+
+	azPLS := newTestAzurePLS(t, "private-router", "test-ns")
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(hcp, azPLS).
+		Build()
+
+	r := &AzurePrivateLinkServiceReconciler{Client: fakeClient}
+
+	err := r.reconcileExternalServices(t.Context(), azPLS, hcp, testr.New(t))
+	g.Expect(err).ToNot(HaveOccurred())
+
+	svcList := &corev1.ServiceList{}
+	g.Expect(fakeClient.List(t.Context(), svcList, client.InNamespace("test-ns"), client.HasLabels{externalPrivateServiceLabelAzure})).To(Succeed())
+	g.Expect(svcList.Items).To(BeEmpty(), "no ExternalPrivateService should be created when no Route hostnames configured")
 }

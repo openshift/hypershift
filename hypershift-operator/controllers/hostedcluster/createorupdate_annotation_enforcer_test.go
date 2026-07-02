@@ -43,10 +43,6 @@ func TestCreateOrUpdateWithAnnotationFactory(t *testing.T) {
 				return func() error { return nil }
 			},
 			expected: &corev1.ConfigMap{
-				TypeMeta: metav1.TypeMeta{
-					Kind:       "ConfigMap",
-					APIVersion: "v1",
-				},
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "foo",
 					Namespace: "bar",
@@ -77,10 +73,6 @@ func TestCreateOrUpdateWithAnnotationFactory(t *testing.T) {
 				}
 			},
 			expected: &corev1.ConfigMap{
-				TypeMeta: metav1.TypeMeta{
-					Kind:       "ConfigMap",
-					APIVersion: "v1",
-				},
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "foo",
 					Namespace: "bar",
@@ -106,10 +98,6 @@ func TestCreateOrUpdateWithAnnotationFactory(t *testing.T) {
 				return func() error { return nil }
 			},
 			expected: &corev1.Namespace{
-				TypeMeta: metav1.TypeMeta{
-					Kind:       "Namespace",
-					APIVersion: "v1",
-				},
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "foo",
 				},

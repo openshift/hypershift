@@ -52,6 +52,7 @@ import (
 	kcmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kcm"
 	konnectivityv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/konnectivity_agent"
 	schedulerv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kube_scheduler"
+	kubestorageversionmigratorv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kube_storage_version_migrator"
 	machineapproverv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/machine_approver"
 	metricsproxyv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/metrics_proxy"
 	ntov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/nto"
@@ -276,6 +277,7 @@ func (r *HostedControlPlaneReconciler) registerComponents(hcp *hyperv1.HostedCon
 		ignitionproxyv2.NewComponent(r.DefaultIngressDomain),
 		endpointresolverv2.NewComponent(),
 		metricsproxyv2.NewComponent(r.DefaultIngressDomain),
+		kubestorageversionmigratorv2.NewComponent(),
 	)
 	r.components = append(r.components,
 		olmv2.NewComponents(r.ManagementClusterCapabilities.Has(capabilities.CapabilityImageStream))...,
@@ -1108,7 +1110,7 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 	}
 
 	userReleaseImageProvider := imageprovider.New(userReleaseImage)
-	releaseImageProvider := imageprovider.New(releaseImage)
+	releaseImageProvider := imageprovider.NewWithRegistryOverrides(releaseImage, r.ReleaseProvider.GetRegistryOverrides())
 
 	var errs []error
 	if err := r.reconcileCPOV2(ctx, hostedControlPlane, infraStatus, releaseImageProvider, userReleaseImageProvider); err != nil {
@@ -1590,6 +1592,13 @@ func (r *HostedControlPlaneReconciler) reconcileOLMAndMiscCerts(ctx context.Cont
 		return pki.ReconcileKCMServerSecret(kcmServerSecret, rootCASecret, p.OwnerRef)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile olm operator serving cert: %w", err)
+	}
+
+	schedulerServerSecret := manifests.SchedulerServerCertSecret(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, schedulerServerSecret, func() error {
+		return pki.ReconcileSchedulerServerSecret(schedulerServerSecret, rootCASecret, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile scheduler serving cert: %w", err)
 	}
 
 	cvoServerCert := manifests.ClusterVersionOperatorServerCertSecret(hcp.Namespace)
@@ -3029,7 +3038,7 @@ func (r *HostedControlPlaneReconciler) validateAzureKMSConfig(ctx context.Contex
 	}
 	azureKmsSpec := hcp.Spec.SecretEncryption.KMS.Azure
 
-	if hyperazureutil.IsAroHCP() {
+	if hyperazureutil.IsAroHCPByHCP(hcp) {
 		key := hcp.Namespace + kmsAzureCredentials
 
 		// We need to only store the Azure credentials once and reuse them after that.

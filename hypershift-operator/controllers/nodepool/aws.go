@@ -134,7 +134,8 @@ func resolveAWSAMI(hostedCluster *hyperv1.HostedCluster, nodePool *hyperv1.NodeP
 		return ami, nil
 	}
 	// Default behavior for Linux/RHCOS AMIs
-	ami, err := defaultNodePoolAMI(region, arch, releaseImage)
+	// TODO(CNTRLPLANE-3553): resolve streamName via GetRHELStream once osImageStream API field is available
+	ami, err := defaultNodePoolAMI(region, arch, "", releaseImage)
 	if err != nil {
 		return "", fmt.Errorf("couldn't discover an AMI for release image: %w", err)
 	}
@@ -361,7 +362,8 @@ func (r *NodePoolReconciler) setAWSConditions(_ context.Context, nodePool *hyper
 			})
 		} else {
 			// Default behavior for Linux/RHCOS AMIs
-			ami, err := defaultNodePoolAMI(hcluster.Spec.Platform.AWS.Region, nodePool.Spec.Arch, releaseImage)
+			// TODO(CNTRLPLANE-3553): resolve streamName via GetRHELStream once osImageStream API field is available
+			ami, err := defaultNodePoolAMI(hcluster.Spec.Platform.AWS.Region, nodePool.Spec.Arch, "", releaseImage)
 			if err != nil {
 				SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 					Type:               hyperv1.NodePoolValidPlatformImageType,
@@ -437,12 +439,14 @@ func getWindowsAMI(region string, specifiedArch string, releaseImage *releaseinf
 	}
 
 	// Access the rhel-coreos-extensions aws-winli data
-	winliData := archData.RHCOS.AWSWinLi
-	if winliData.Regions == nil {
+	if archData.RHELCoreOSExtensions == nil {
+		return "", fmt.Errorf("no rhel-coreos-extensions data found in release image metadata")
+	}
+	if archData.RHELCoreOSExtensions.AwsWinLi == nil || archData.RHELCoreOSExtensions.AwsWinLi.Regions == nil {
 		return "", fmt.Errorf("no aws-winli regions data found in release image metadata")
 	}
 
-	regionData, exists := winliData.Regions[region]
+	regionData, exists := archData.RHELCoreOSExtensions.AwsWinLi.Regions[region]
 	if !exists {
 		return "", fmt.Errorf("no Windows AMI found for region %s in release image metadata", region)
 	}

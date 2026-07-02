@@ -20,7 +20,7 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 		// For managed Azure, we need to supply a couple of environment variables for CSO to pass on to the CSI controllers for disk and file.
 		// CSO passes those on to the CSI deployment here - https://github.com/openshift/cluster-storage-operator/pull/517/files.
 		// CSI then mounts the Secrets Provider Class here - https://github.com/openshift/csi-operator/pull/309/files.
-		if azureutil.IsAroHCP() {
+		if azureutil.IsAroHCPByHCP(cpContext.HCP) {
 			c.Env = append(c.Env,
 				corev1.EnvVar{
 					Name:  "ARO_HCP_SECRET_PROVIDER_CLASS_FOR_DISK",

@@ -197,14 +197,9 @@ func (p GCP) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hype
 		return nil, fmt.Errorf("no GCP CAPI provider image specified")
 	}
 
-	// GCP-specific feature gates based on payload version
+	// GCP-specific feature gates
 	featureGates := []string{
 		"MachinePool=false", // Disable for Phase 1
-	}
-
-	// Version-conditional feature gates (future-proofing)
-	if p.payloadVersion != nil && p.payloadVersion.Major == 4 && p.payloadVersion.Minor > 16 {
-		featureGates = append(featureGates, "ClusterResourceSet=false") // Example
 	}
 
 	args := []string{

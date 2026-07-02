@@ -33,12 +33,22 @@ func validAzureKMSSpec() *hyperv1.AzureKMSSpec {
 
 func validAzureKMSSpecWithBackup() *hyperv1.AzureKMSSpec {
 	spec := validAzureKMSSpec()
-	spec.BackupKey = &hyperv1.AzureKMSKey{
+	spec.BackupKey = &hyperv1.AzureKMSKey{ //nolint:staticcheck
 		KeyVaultName: "test-vault",
 		KeyName:      "backup-key",
 		KeyVersion:   "1",
 	}
 	return spec
+}
+
+func newTestAzureKMSProvider(spec *hyperv1.AzureKMSSpec, image string, opts AzureKMSProviderOptions) (*azureKMSProvider, error) {
+	var writeKey hyperv1.AzureKMSKey
+	var readKey *hyperv1.AzureKMSKey
+	if spec != nil {
+		writeKey = spec.ActiveKey
+		readKey = spec.BackupKey //nolint:staticcheck
+	}
+	return NewAzureKMSProvider(writeKey, readKey, spec, image, opts)
 }
 
 func TestNewAzureKMSProvider(t *testing.T) {
@@ -122,7 +132,7 @@ func TestNewAzureKMSProvider(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
 
-			provider, err := NewAzureKMSProvider(tc.kmsSpec, tc.image, tc.opts)
+			provider, err := newTestAzureKMSProvider(tc.kmsSpec, tc.image, tc.opts)
 			if tc.expectError {
 				g.Expect(err).To(HaveOccurred())
 				g.Expect(err.Error()).To(ContainSubstring(tc.errContains))
@@ -240,7 +250,7 @@ func TestGenerateKMSPodConfig_SelfManaged(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
 
-			provider, err := NewAzureKMSProvider(validAzureKMSSpec(), "test-kms-image:latest", AzureKMSProviderOptions{
+			provider, err := newTestAzureKMSProvider(validAzureKMSSpec(), "test-kms-image:latest", AzureKMSProviderOptions{
 				IsSelfManaged:    true,
 				KMSClientID:      "test-client-id",
 				TenantID:         "test-tenant-id",
@@ -321,7 +331,7 @@ func TestGenerateKMSPodConfig_Managed(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
 
-			provider, err := NewAzureKMSProvider(validAzureKMSSpec(), "test-kms-image:latest", AzureKMSProviderOptions{
+			provider, err := newTestAzureKMSProvider(validAzureKMSSpec(), "test-kms-image:latest", AzureKMSProviderOptions{
 				IsSelfManaged: false,
 			})
 			g.Expect(err).NotTo(HaveOccurred())
@@ -339,7 +349,7 @@ func TestGenerateKMSPodConfig_BackupKey(t *testing.T) {
 	t.Run("When self-managed backup key is specified it should include backup KMS container with env vars", func(t *testing.T) {
 		g := NewWithT(t)
 
-		provider, err := NewAzureKMSProvider(validAzureKMSSpecWithBackup(), "test-kms-image:latest", AzureKMSProviderOptions{
+		provider, err := newTestAzureKMSProvider(validAzureKMSSpecWithBackup(), "test-kms-image:latest", AzureKMSProviderOptions{
 			IsSelfManaged:    true,
 			KMSClientID:      "test-client-id",
 			TenantID:         "test-tenant-id",
@@ -371,7 +381,7 @@ func TestGenerateKMSPodConfig_BackupKey(t *testing.T) {
 	t.Run("When managed backup key is specified it should include backup container with secret-store mount", func(t *testing.T) {
 		g := NewWithT(t)
 
-		provider, err := NewAzureKMSProvider(validAzureKMSSpecWithBackup(), "test-kms-image:latest", AzureKMSProviderOptions{
+		provider, err := newTestAzureKMSProvider(validAzureKMSSpecWithBackup(), "test-kms-image:latest", AzureKMSProviderOptions{
 			IsSelfManaged: false,
 		})
 		g.Expect(err).NotTo(HaveOccurred())
@@ -415,7 +425,7 @@ func findContainer(containers []corev1.Container, name string) *corev1.Container
 func TestGenerateKMSPodConfig_ActiveContainerArgs(t *testing.T) {
 	g := NewWithT(t)
 
-	provider, err := NewAzureKMSProvider(validAzureKMSSpec(), "test-kms-image:latest", AzureKMSProviderOptions{
+	provider, err := newTestAzureKMSProvider(validAzureKMSSpec(), "test-kms-image:latest", AzureKMSProviderOptions{
 		IsSelfManaged: false,
 	})
 	g.Expect(err).NotTo(HaveOccurred())
@@ -479,7 +489,7 @@ func TestGenerateKMSPodConfig_ActiveContainerArgs(t *testing.T) {
 func TestGenerateKMSPodConfig_BackupContainerArgs(t *testing.T) {
 	g := NewWithT(t)
 
-	provider, err := NewAzureKMSProvider(validAzureKMSSpecWithBackup(), "test-kms-image:latest", AzureKMSProviderOptions{
+	provider, err := newTestAzureKMSProvider(validAzureKMSSpecWithBackup(), "test-kms-image:latest", AzureKMSProviderOptions{
 		IsSelfManaged: false,
 	})
 	g.Expect(err).NotTo(HaveOccurred())
@@ -550,7 +560,7 @@ func TestGenerateKMSPodConfig_LivenessProbe(t *testing.T) {
 		t.Run(fmt.Sprintf("When %s is created it should have a correctly configured liveness probe", tc.name), func(t *testing.T) {
 			g := NewWithT(t)
 
-			provider, err := NewAzureKMSProvider(validAzureKMSSpecWithBackup(), "test-kms-image:latest", AzureKMSProviderOptions{
+			provider, err := newTestAzureKMSProvider(validAzureKMSSpecWithBackup(), "test-kms-image:latest", AzureKMSProviderOptions{
 				IsSelfManaged: false,
 			})
 			g.Expect(err).NotTo(HaveOccurred())
@@ -577,7 +587,7 @@ func TestGenerateKMSPodConfig_LivenessProbe(t *testing.T) {
 func TestGenerateKMSPodConfig_ResourceRequests(t *testing.T) {
 	g := NewWithT(t)
 
-	provider, err := NewAzureKMSProvider(validAzureKMSSpec(), "test-kms-image:latest", AzureKMSProviderOptions{
+	provider, err := newTestAzureKMSProvider(validAzureKMSSpec(), "test-kms-image:latest", AzureKMSProviderOptions{
 		IsSelfManaged:    true,
 		KMSClientID:      "test-client-id",
 		TenantID:         "test-tenant-id",
@@ -690,7 +700,7 @@ func TestGenerateKMSPodConfig_VolumeMountPaths(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
-			provider, err := NewAzureKMSProvider(validAzureKMSSpec(), "test-kms-image:latest", tc.opts)
+			provider, err := newTestAzureKMSProvider(validAzureKMSSpec(), "test-kms-image:latest", tc.opts)
 			g.Expect(err).NotTo(HaveOccurred())
 			podConfig, err := provider.GenerateKMSPodConfig()
 			g.Expect(err).NotTo(HaveOccurred())
@@ -703,7 +713,7 @@ func TestGenerateKMSPodConfig_KASContainerMutation(t *testing.T) {
 	t.Run("When KAS container mutation is applied it should mount the KMS socket volume at /opt", func(t *testing.T) {
 		g := NewWithT(t)
 
-		provider, err := NewAzureKMSProvider(validAzureKMSSpec(), "test-kms-image:latest", AzureKMSProviderOptions{
+		provider, err := newTestAzureKMSProvider(validAzureKMSSpec(), "test-kms-image:latest", AzureKMSProviderOptions{
 			IsSelfManaged: false,
 		})
 		g.Expect(err).NotTo(HaveOccurred())
@@ -725,7 +735,7 @@ func TestGenerateKMSPodConfig_KASContainerMutation(t *testing.T) {
 func TestGenerateKMSPodConfig_ContainerPorts(t *testing.T) {
 	g := NewWithT(t)
 
-	provider, err := NewAzureKMSProvider(validAzureKMSSpecWithBackup(), "test-kms-image:latest", AzureKMSProviderOptions{
+	provider, err := newTestAzureKMSProvider(validAzureKMSSpecWithBackup(), "test-kms-image:latest", AzureKMSProviderOptions{
 		IsSelfManaged: false,
 	})
 	g.Expect(err).NotTo(HaveOccurred())
@@ -766,7 +776,7 @@ func TestGenerateKMSPodConfig_ContainerPorts(t *testing.T) {
 func TestGenerateKMSPodConfig_ImagePullPolicy(t *testing.T) {
 	g := NewWithT(t)
 
-	provider, err := NewAzureKMSProvider(validAzureKMSSpec(), "test-kms-image:latest", AzureKMSProviderOptions{
+	provider, err := newTestAzureKMSProvider(validAzureKMSSpec(), "test-kms-image:latest", AzureKMSProviderOptions{
 		IsSelfManaged:    true,
 		KMSClientID:      "test-client-id",
 		TenantID:         "test-tenant-id",
@@ -805,7 +815,7 @@ func TestGenerateKMSPodConfig_NoBackupContainerWithoutBackupKey(t *testing.T) {
 	t.Run("When no backup key is specified it should not create a backup container", func(t *testing.T) {
 		g := NewWithT(t)
 
-		provider, err := NewAzureKMSProvider(validAzureKMSSpec(), "test-kms-image:latest", AzureKMSProviderOptions{
+		provider, err := newTestAzureKMSProvider(validAzureKMSSpec(), "test-kms-image:latest", AzureKMSProviderOptions{
 			IsSelfManaged: false,
 		})
 		g.Expect(err).NotTo(HaveOccurred())
@@ -838,7 +848,7 @@ func TestGenerateKMSEncryptionConfig_Azure(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
 
-			provider, err := NewAzureKMSProvider(tc.spec, "test-kms-image:latest", AzureKMSProviderOptions{
+			provider, err := newTestAzureKMSProvider(tc.spec, "test-kms-image:latest", AzureKMSProviderOptions{
 				IsSelfManaged: false,
 			})
 			g.Expect(err).NotTo(HaveOccurred())
@@ -852,7 +862,7 @@ func TestGenerateKMSEncryptionConfig_Azure(t *testing.T) {
 			g.Expect(encConfig.Resources[0].Resources).To(Equal(config.KMSEncryptedObjects()))
 
 			providers := encConfig.Resources[0].Providers
-			if tc.spec.BackupKey != nil {
+			if tc.spec.BackupKey != nil { //nolint:staticcheck
 				g.Expect(providers).To(HaveLen(3), "expected active KMS + backup KMS + Identity")
 			} else {
 				g.Expect(providers).To(HaveLen(2), "expected active KMS + Identity")
@@ -867,9 +877,9 @@ func TestGenerateKMSEncryptionConfig_Azure(t *testing.T) {
 			g.Expect(providers[0].KMS.Endpoint).To(Equal(azureActiveKMSUnixSocket))
 			g.Expect(providers[0].KMS.Timeout).To(Equal(&metav1.Duration{Duration: 35 * time.Second}))
 
-			if tc.spec.BackupKey != nil {
+			if tc.spec.BackupKey != nil { //nolint:staticcheck
 				g.Expect(providers[1].KMS).NotTo(BeNil())
-				backupKeyHash, err := util.HashStruct(tc.spec.BackupKey)
+				backupKeyHash, err := util.HashStruct(tc.spec.BackupKey) //nolint:staticcheck
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(providers[1].KMS.Name).To(Equal(fmt.Sprintf("azure-%s", backupKeyHash)))
 				g.Expect(providers[1].KMS.Endpoint).To(Equal(azureBackupKMSUnixSocket))

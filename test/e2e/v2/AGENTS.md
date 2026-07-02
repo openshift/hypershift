@@ -39,7 +39,7 @@ func RegisterControlPlaneWorkloadsTests(getTestCtx internal.TestContextGetter) {
     // ...
 }
 
-var _ = Describe("Control Plane Workloads", Label("control-plane-workloads"), func() {
+var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:ControlPlaneWorkloads] Control Plane Workloads", Label("control-plane-workloads"), func() {
     // BeforeEach gets TestContext, then calls RegisterControlPlaneWorkloadsTests
 })
 ```
@@ -202,6 +202,47 @@ g.Expect(ic.Spec.EndpointPublishingStrategy.Type).To(Equal(operatorv1.LoadBalanc
 // RIGHT — compare against the extracted expectation
 g.Expect(ic.Spec.EndpointPublishingStrategy.Type).To(Equal(expectedStrategy.Type))
 ```
+
+### 19. Sippy/CR Test Name Annotations
+
+All test name strings must include annotations for Sippy Component Readiness (CR) mapping. These annotations are parsed from the full Ginkgo test path and enable automatic Jira component assignment and per-feature regression tracking.
+
+**Required annotations:**
+
+1. **`[sig-hypershift][Jira:Hypershift]`** — on every top-level `Describe` block. Maps all tests to the Hypershift Jira component.
+
+2. **`[Feature:XYZ]`** — maps to a specific feature/capability. Placement depends on the file:
+   - **On the `Describe`** when the entire file tests one cohesive feature (most files).
+   - **On individual `Context`/`When` blocks** when a file covers multiple distinct capabilities.
+
+Feature names use PascalCase with no spaces (e.g., `BackupRestore`, `AzurePrivateLink`, `NodePoolLifecycle`).
+
+**Single-feature file example:**
+
+```go
+var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:Health] Hosted Cluster Health", Label("hosted-cluster-health"), func() {
+    // all tests in this file map to Feature:Health
+})
+```
+
+**Multi-feature file example:**
+
+```go
+var _ = Describe("[sig-hypershift][Jira:Hypershift] Hosted Cluster Azure", Label("hosted-cluster-azure"), func() {
+    // Jira component set at Describe level, Feature set per Context
+})
+
+// In the registration function:
+Context("[Feature:AzureWorkloadIdentity] Azure Public Cluster", Label("Azure", "self-managed-azure-public"), func() {
+    It("should mutate pods with workload identity federated credentials", func() { ... })
+})
+
+Context("[Feature:AzurePrivateLink] Azure Private Topology", Label("Azure", "self-managed-azure-private"), func() {
+    It("should create AzurePrivateLinkService CR with PLS alias", func() { ... })
+})
+```
+
+**When adding new test files:** Choose a Feature name that maps to a distinct capability. Check existing Feature names in the codebase (`grep -r '\[Feature:' test/e2e/v2/tests/`) to avoid duplicates.
 
 ## Expanding v2
 

@@ -2,8 +2,9 @@ package releaseinfo
 
 import (
 	"context"
-	"strings"
 	"sync"
+
+	"github.com/openshift/hypershift/support/util/registryoverride"
 )
 
 var _ ProviderWithRegistryOverrides = (*RegistryMirrorProviderDecorator)(nil)
@@ -32,17 +33,22 @@ func (p *RegistryMirrorProviderDecorator) Lookup(ctx context.Context, image stri
 		return nil, err
 	}
 
+	canonicalImages := releaseImage.CanonicalComponentImages()
+
 	imageStream := releaseImage.ImageStream.DeepCopy() // deepCopy so the cache is not overridden.
 	for i := range imageStream.Spec.Tags {
-		for registrySource, registryDest := range p.RegistryOverrides {
-			imageStream.Spec.Tags[i].From.Name = strings.Replace(imageStream.Spec.Tags[i].From.Name, registrySource, registryDest, 1)
-		}
+		imageStream.Spec.Tags[i].From.Name = registryoverride.Replace(imageStream.Spec.Tags[i].From.Name, p.RegistryOverrides)
 	}
 
-	return &ReleaseImage{
+	result := &ReleaseImage{
 		ImageStream:    imageStream,
 		StreamMetadata: releaseImage.StreamMetadata,
-	}, nil
+		OSStreams:      releaseImage.OSStreams,
+	}
+	if len(canonicalImages) > 0 {
+		result.SetCanonicalComponentImages(canonicalImages)
+	}
+	return result, nil
 }
 
 func (p *RegistryMirrorProviderDecorator) GetRegistryOverrides() map[string]string {

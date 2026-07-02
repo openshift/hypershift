@@ -157,7 +157,7 @@ func (r *HAProxy) reconcileHAProxyIgnitionConfig(ctx context.Context, hcluster *
 	}
 
 	// This is true for ARO in CI while swift is not available.
-	if sharedingress.UseSharedIngress() && !netutil.IsPrivateHC(hcluster) {
+	if netutil.UseSharedIngressHC(hcluster) && !netutil.IsPrivateHC(hcluster) {
 		sharedIngressRouteSVC := &corev1.Service{
 			TypeMeta: metav1.TypeMeta{},
 			ObjectMeta: metav1.ObjectMeta{
@@ -175,7 +175,7 @@ func (r *HAProxy) reconcileHAProxyIgnitionConfig(ctx context.Context, hcluster *
 		apiServerExternalPort = sharedingress.KASSVCLBPort
 	}
 
-	useProxyProtocol := sharedingress.UseSharedIngress() && !netutil.IsPrivateHC(hcluster)
+	useProxyProtocol := netutil.UseSharedIngressHC(hcluster) && !netutil.IsPrivateHC(hcluster)
 	serializedConfig, err := apiServerProxyConfig(r.HAProxyImage, controlPlaneOperatorImage, hcluster.Spec.ClusterID,
 		apiServerExternalAddress, apiServerInternalAddress,
 		apiServerExternalPort, apiServerInternalPort,

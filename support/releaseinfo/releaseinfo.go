@@ -14,6 +14,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 
 	"github.com/blang/semver"
+	"github.com/coreos/stream-metadata-go/stream"
 )
 
 // Provider knows how to find the release image metadata for an image referred
@@ -34,124 +35,55 @@ type ProviderWithOpenShiftImageRegistryOverrides interface {
 	GetMirroredReleaseImage() string
 }
 
+const (
+	StreamRHEL9  = "rhel-9"
+	StreamRHEL10 = "rhel-10"
+)
+
 // ReleaseImage wraps an ImageStream with some utilities that help the user
 // discover constituent component image information.
 type ReleaseImage struct {
 	*imageapi.ImageStream `json:",inline"`
-	StreamMetadata        *CoreOSStreamMetadata `json:"streamMetadata"`
+	StreamMetadata        *stream.Stream `json:"streamMetadata"`
+	// OSStreams holds per-stream metadata parsed from the ConfigMap "streams" key.
+	// Nil for single-stream payloads (OCP < 5.0).
+	OSStreams map[string]*stream.Stream `json:"-"`
+
+	// canonicalComponentImages holds component images before any registry
+	// overrides are applied. Set by RegistryMirrorProviderDecorator.
+	canonicalComponentImages map[string]string
 }
 
-type CoreOSStreamMetadata struct {
-	Stream        string                        `json:"stream"`
-	Architectures map[string]CoreOSArchitecture `json:"architectures"`
-}
-
-type CoreOSArchitecture struct {
-	// Artifacts is a map of platform name to Artifacts
-	Artifacts map[string]CoreOSArtifact `json:"artifacts"`
-	Images    CoreOSImages              `json:"images"`
-	RHCOS     CoreRHCOSImage            `json:"rhel-coreos-extensions"`
-}
-
-type CoreOSArtifact struct {
-	Release string                             `json:"release"`
-	Formats map[string]map[string]CoreOSFormat `json:"formats"`
-}
-
-type CoreOSFormat struct {
-	Location           string `json:"location"`
-	Signature          string `json:"signature"`
-	SHA256             string `json:"sha256"`
-	UncompressedSHA256 string `json:"uncompressed-sha256"`
-}
-
-type CoreOSImages struct {
-	AWS      CoreOSAWSImages      `json:"aws"`
-	GCP      CoreOSGCPImage       `json:"gcp"`
-	PowerVS  CoreOSPowerVSImages  `json:"powervs"`
-	Kubevirt CoreOSKubevirtImages `json:"kubevirt"`
-}
-
-// CoreOSGCPImage contains GCP image information from stream metadata.
-// GCP images are global (not regional like AWS), so there's a single image reference.
-// The image path is constructed as projects/{Project}/global/images/{Name}.
-type CoreOSGCPImage struct {
-	// Project is the GCP project hosting the image (e.g., rhcos-cloud)
-	Project string `json:"project"`
-	// Name is the image name within the project
-	Name string `json:"name"`
-	// Family is the image family (optional, used for latest image lookups)
-	Family string `json:"family"`
-}
-
-type CoreRHCOSImage struct {
-	AzureDisk   CoreAzureDisk   `json:"azure-disk"`
-	Marketplace CoreMarketplace `json:"marketplace"`
-	AWSWinLi    CoreAWSWinLi    `json:"aws-winli"`
-}
-
-type CoreAzureDisk struct {
-	Release string `json:"release"`
-	URL     string `json:"url"`
-}
-
-// CoreMarketplace represents marketplace information for different cloud providers
-type CoreMarketplace struct {
-	Azure CoreAzureMarketplace `json:"azure"`
-}
-
-// CoreAzureMarketplace contains Azure marketplace image information
-type CoreAzureMarketplace struct {
-	NoPurchasePlan CoreAzureMarketplaceNoPurchasePlan `json:"no-purchase-plan"`
-}
-
-// CoreAzureMarketplaceNoPurchasePlan contains marketplace images that don't require a purchase plan
-type CoreAzureMarketplaceNoPurchasePlan struct {
-	HyperVGen1 *CoreAzureMarketplaceImage `json:"hyperVGen1,omitempty"`
-	HyperVGen2 *CoreAzureMarketplaceImage `json:"hyperVGen2,omitempty"`
-}
-
-// CoreAzureMarketplaceImage represents an Azure marketplace image specification
-type CoreAzureMarketplaceImage struct {
-	Publisher string `json:"publisher"`
-	Offer     string `json:"offer"`
-	SKU       string `json:"sku"`
-	Version   string `json:"version"`
-}
-
-type CoreAWSWinLi struct {
-	Regions map[string]CoreAWSWinLiRegion `json:"regions"`
-}
-
-type CoreAWSWinLiRegion struct {
-	Release string `json:"release"`
-	Image   string `json:"image"`
-}
-
-type CoreOSAWSImages struct {
-	Regions map[string]CoreOSAWSImage `json:"regions"`
-}
-
-type CoreOSAWSImage struct {
-	Release string `json:"release"`
-	Image   string `json:"image"`
-}
-
-type CoreOSKubevirtImages struct {
-	Release   string `json:"release"`
-	Image     string `json:"image"`
-	DigestRef string `json:"digest-ref"`
-}
-
-type CoreOSPowerVSImages struct {
-	Regions map[string]CoreOSPowerVSImage `json:"regions"`
-}
-
-type CoreOSPowerVSImage struct {
-	Release string `json:"release"`
-	Object  string `json:"object"`
-	Bucket  string `json:"bucket"`
-	URL     string `json:"url"`
+// StreamForName returns stream metadata by name. If name is empty, returns
+// the default stream (StreamMetadata). If name is non-empty, looks up
+// OSStreams and returns an error if the named stream is not found.
+func (i *ReleaseImage) StreamForName(name string) (*stream.Stream, error) {
+	if name == "" {
+		if i.StreamMetadata == nil {
+			return nil, fmt.Errorf("no default stream metadata available")
+		}
+		return i.StreamMetadata, nil
+	}
+	if i.OSStreams != nil {
+		meta, ok := i.OSStreams[name]
+		if !ok || meta == nil {
+			available := make([]string, 0, len(i.OSStreams))
+			for k, v := range i.OSStreams {
+				if v != nil {
+					available = append(available, k)
+				}
+			}
+			sort.Strings(available)
+			return nil, fmt.Errorf("stream %q not found; available streams: %v", name, available)
+		}
+		return meta, nil
+	}
+	// Fallback to legacy StreamMetadata for single-stream payloads (OCP < 5.0)
+	// where OSStreams is nil but StreamMetadata carries the data.
+	if i.StreamMetadata != nil {
+		return i.StreamMetadata, nil
+	}
+	return nil, fmt.Errorf("stream %q not found and no default stream metadata available", name)
 }
 
 func (i *ReleaseImage) Version() string {
@@ -164,6 +96,21 @@ func (i *ReleaseImage) ComponentImages() map[string]string {
 		images[tag.Name] = tag.From.Name
 	}
 	return images
+}
+
+// CanonicalComponentImages returns the component images before any registry
+// overrides were applied. If no canonical images were captured (e.g. no
+// registry overrides are configured), it falls back to ComponentImages().
+func (i *ReleaseImage) CanonicalComponentImages() map[string]string {
+	if i.canonicalComponentImages != nil {
+		return i.canonicalComponentImages
+	}
+	return i.ComponentImages()
+}
+
+// SetCanonicalComponentImages stores the pre-override component images.
+func (i *ReleaseImage) SetCanonicalComponentImages(images map[string]string) {
+	i.canonicalComponentImages = images
 }
 
 func (i *ReleaseImage) ComponentVersions() (map[string]string, error) {

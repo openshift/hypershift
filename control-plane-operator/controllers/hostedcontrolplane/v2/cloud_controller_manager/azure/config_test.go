@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	. "github.com/onsi/gomega"
+
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	assets "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
@@ -16,30 +18,60 @@ import (
 )
 
 func TestConfig(t *testing.T) {
-	hcp := newTestHCP(map[string]string{
-		hyperv1.SharedLoadBalancerHealthProbePathAnnotation: "/healthz",
-		hyperv1.SharedLoadBalancerHealthProbePortAnnotation: "10256",
+	t.Run("When health probe annotations are set it should generate valid config", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+
+		hcp := newTestHCP(map[string]string{
+			hyperv1.SharedLoadBalancerHealthProbePathAnnotation: "/healthz",
+			hyperv1.SharedLoadBalancerHealthProbePortAnnotation: "10256",
+		})
+		hcp.Namespace = "HCP_NAMESPACE"
+
+		cm := &corev1.ConfigMap{}
+		_, _, err := assets.LoadManifestInto(ComponentName, "config.yaml", cm)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		cpContext := component.WorkloadContext{
+			HCP: hcp,
+		}
+		err = adaptConfig(cpContext, cm)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		yaml, err := k8sutil.SerializeResource(cm, api.Scheme)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		testutil.CompareWithFixture(t, yaml)
 	})
-	hcp.Namespace = "HCP_NAMESPACE"
 
-	cm := &corev1.ConfigMap{}
-	_, _, err := assets.LoadManifestInto(ComponentName, "config.yaml", cm)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	cpContext := component.WorkloadContext{
-		HCP: hcp,
-	}
-	err = adaptConfig(cpContext, cm)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	t.Run("When containerRegistry is set it should include userAssignedIdentityID", func(t *testing.T) {
+		g := NewGomegaWithT(t)
 
-	yaml, err := k8sutil.SerializeResource(cm, api.Scheme)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	testutil.CompareWithFixture(t, yaml)
+		hcp := newTestHCP(nil)
+		hcp.Namespace = "HCP_NAMESPACE"
+		hcp.Spec.Platform.Azure.ContainerRegistry = hyperv1.AzureContainerRegistryConfig{
+			Credentials: hyperv1.AzureContainerRegistryCredentialConfig{
+				Type: hyperv1.AzureContainerRegistryCredentialManagedIdentity,
+				ManagedIdentity: hyperv1.UserAssignedManagedIdentity{
+					ResourceID: "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/test-mi",
+				},
+			},
+		}
+
+		cm := &corev1.ConfigMap{}
+		_, _, err := assets.LoadManifestInto(ComponentName, "config.yaml", cm)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		cpContext := component.WorkloadContext{
+			HCP: hcp,
+		}
+		err = adaptConfig(cpContext, cm)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		yaml, err := k8sutil.SerializeResource(cm, api.Scheme)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		testutil.CompareWithFixture(t, yaml)
+	})
 }
 
 // newTestHCP creates a HostedControlPlane with default Azure configuration for testing.
@@ -75,6 +107,34 @@ func newTestHCP(annotations map[string]string) *hyperv1.HostedControlPlane {
 			InfraID: "my-infra-ID",
 		},
 	}
+}
+
+func TestConfigSecretDoesNotContainAcrMI(t *testing.T) {
+	g := NewGomegaWithT(t)
+
+	hcp := newTestHCP(nil)
+	hcp.Namespace = "HCP_NAMESPACE"
+	hcp.Spec.Platform.Azure.ContainerRegistry = hyperv1.AzureContainerRegistryConfig{
+		Credentials: hyperv1.AzureContainerRegistryCredentialConfig{
+			Type: hyperv1.AzureContainerRegistryCredentialManagedIdentity,
+			ManagedIdentity: hyperv1.UserAssignedManagedIdentity{
+				ResourceID: "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/test-mi",
+			},
+		},
+	}
+
+	secret := &corev1.Secret{
+		Data: map[string][]byte{},
+	}
+	cpContext := component.WorkloadContext{
+		HCP: hcp,
+	}
+	err := adaptConfigSecret(cpContext, secret)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	cloudConf := string(secret.Data[ConfigKey])
+	g.Expect(cloudConf).ToNot(ContainSubstring("userAssignedIdentityID"),
+		"CP secret should NOT contain userAssignedIdentityID")
 }
 
 func TestConfigErrorStates(t *testing.T) {

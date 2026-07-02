@@ -87,5 +87,5 @@ func isIngressCapabilityEnabled(cpContext component.WorkloadContext) (bool, erro
 }
 
 func isAroHCP(cpContext component.WorkloadContext) bool {
-	return azureutil.IsAroHCP()
+	return azureutil.IsAroHCPByHCP(cpContext.HCP)
 }

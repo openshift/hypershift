@@ -1,0 +1,27 @@
+name: Rebase PR
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  id-token: write
+  contents: write
+  pull-requests: write
+
+jobs:
+  rebase:
+    if: >-
+      github.event.issue.pull_request &&
+      startsWith(github.event.comment.body, '/rebase') &&
+      (github.event.comment.author_association == 'MEMBER' ||
+       github.event.comment.author_association == 'OWNER' ||
+       github.event.comment.author_association == 'COLLABORATOR')
+    uses: ./.github/workflows/reusable-claude-on-pr.yaml
+    with:
+      command-name: rebase
+      status-message: "Rebasing PR onto main"
+      claude-prompt: "Rebase this branch onto the latest main and force push. You are running in CI. Force push with --force-with-lease when done without asking for confirmation. Steps: 1) git fetch origin main 2) git rebase origin/main 3) If there are conflicts, resolve them while preserving the intent of the PR changes 4) git push --force-with-lease. Report what was done."
+      max-turns: 50
+      allowed-tools: "Bash Read Write Edit Grep Glob"
+    secrets: inherit

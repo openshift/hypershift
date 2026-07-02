@@ -17,7 +17,9 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
+	"net"
 	"os"
 	"strings"
 	"time"
@@ -35,6 +37,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/instancetype"
 	awsinstancetype "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/instancetype/aws"
+	azureinstancetype "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/instancetype/azure"
 	npmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/metrics"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/platform/aws"
 	azureplatform "github.com/openshift/hypershift/hypershift-operator/controllers/platform/azure"
@@ -71,6 +74,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v5"
 
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
@@ -156,6 +160,7 @@ type StartOptions struct {
 	ScaleFromZeroProvider                  string
 	ScaleFromZeroCreds                     string
 	EtcdBackupMaxCount                     int
+	HCPEgressBlockCIDRs                    []string
 }
 
 func NewStartCommand() *cobra.Command {
@@ -196,6 +201,7 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.ScaleFromZeroProvider, "scale-from-zero-provider", opts.ScaleFromZeroProvider, "Platform type for scale-from-zero autoscaling (aws)")
 	cmd.Flags().StringVar(&opts.ScaleFromZeroCreds, "scale-from-zero-creds", opts.ScaleFromZeroCreds, "Path to credentials file for scale-from-zero instance type queries")
 	cmd.Flags().IntVar(&opts.EtcdBackupMaxCount, "etcd-backup-max-count", 5, "Maximum number of completed HCPEtcdBackup CRs to retain per HostedControlPlane")
+	cmd.Flags().StringArrayVar(&opts.HCPEgressBlockCIDRs, "hcp-egress-block-cidrs", nil, "Static CIDRs to block in HCP namespace egress NetworkPolicies instead of dynamically-discovered hosting cluster KAS endpoint IPs. When specified, eliminates NetworkPolicy churn during hosting cluster KAS rolling restarts and avoids OVN port-group reconciliation races that can drop traffic to HCP routers. May be specified multiple times (e.g. --hcp-egress-block-cidrs=10.0.0.0/16 --hcp-egress-block-cidrs=10.1.0.0/16).")
 
 	// Attempt to determine featureset prior to adding featuregate flags.
 	// It is safe to get the empty string from this as the empty string is the default featureset.
@@ -218,6 +224,13 @@ func NewStartCommand() *cobra.Command {
 		default:
 			fmt.Printf("Unsupported private platform: %q\n", opts.PrivatePlatform)
 			os.Exit(1)
+		}
+
+		for _, cidr := range opts.HCPEgressBlockCIDRs {
+			if _, _, err := net.ParseCIDR(cidr); err != nil {
+				fmt.Fprintf(os.Stderr, "invalid --hcp-egress-block-cidrs value %q: %v\n", cidr, err)
+				os.Exit(1)
+			}
 		}
 
 		if err := run(ctx, &opts, ctrl.Log.WithName("setup")); err != nil {
@@ -283,6 +296,11 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 
 	if err := reconcileDeprecationValidatingAdmissionPolicy(ctx, apiReadingClient, mgmtClusterCaps, log); err != nil {
 		return fmt.Errorf("failed to reconcile deprecation ValidatingAdmissionPolicy: %w", err)
+	}
+
+	// Reconcile encryption rotation guard ValidatingAdmissionPolicy if supported
+	if err := reconcileEncryptionRotationGuardVAP(ctx, apiReadingClient, mgmtClusterCaps, log); err != nil {
+		return fmt.Errorf("failed to reconcile encryption rotation guard ValidatingAdmissionPolicy: %w", err)
 	}
 
 	registryProvider, err := globalconfig.NewCommonRegistryProvider(ctx, mgmtClusterCaps, apiReadingClient, opts.RegistryOverrides)
@@ -351,7 +369,7 @@ func validateStartOptions(opts *StartOptions, log logr.Logger) error {
 		return fmt.Errorf("--etcd-backup-max-count must be at least 1, got %d", opts.EtcdBackupMaxCount)
 	}
 
-	supportedProviders := set.New("aws")
+	supportedProviders := set.New("aws", "azure")
 	if opts.ScaleFromZeroCreds != "" {
 		if opts.ScaleFromZeroProvider == "" {
 			return fmt.Errorf("--scale-from-zero-provider is required when using --scale-from-zero-creds")
@@ -504,6 +522,7 @@ func setupHostedClusterController(ctx context.Context, mgr ctrl.Manager, opts *S
 	monitoringDashboards := (os.Getenv("MONITORING_DASHBOARDS") == "1")
 	enableCVOManagementClusterMetricsAccess := (os.Getenv(config.EnableCVOManagementClusterMetricsAccessEnvVar) == "1")
 	enableEtcdRecovery := os.Getenv(config.EnableEtcdRecoveryEnvVar) == "1"
+	reconcileLegacy := os.Getenv(config.ReconcileLegacyEnvVar) == "1"
 
 	certRotationScale, err := pkiconfig.GetCertRotationScale()
 	if err != nil {
@@ -526,8 +545,10 @@ func setupHostedClusterController(ctx context.Context, mgr ctrl.Manager, opts *S
 		CertRotationScale:                       certRotationScale,
 		EnableCVOManagementClusterMetricsAccess: enableCVOManagementClusterMetricsAccess,
 		EnableEtcdRecovery:                      enableEtcdRecovery,
+		ReconcileLegacy:                         reconcileLegacy,
 		FeatureSet:                              featuregate.FeatureSet(),
 		OpenShiftTrustedCAFilePath:              "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem",
+		HCPEgressBlockCIDRs:                     opts.HCPEgressBlockCIDRs,
 	}
 	if opts.OIDCStorageProviderS3BucketName != "" {
 		awsSession := awsutil.NewSession(ctx, "hypershift-operator-oidc-bucket", opts.OIDCStorageProviderS3Credentials, "", "", opts.OIDCStorageProviderS3Region)
@@ -596,6 +617,8 @@ func setupEC2Client(ctx context.Context, opts *StartOptions) awsapi.EC2API {
 
 func setupNodePoolController(ctx context.Context, mgr ctrl.Manager, opts *StartOptions, operatorImage string, createOrUpdate upsert.CreateOrUpdateProvider, registryProvider globalconfig.CommonRegistryProvider, ec2Client awsapi.EC2API, log logr.Logger) error {
 	var instanceTypeProvider instancetype.Provider
+	var scaleFromZeroPlatform hyperv1.PlatformType
+
 	if opts.ScaleFromZeroCreds != "" && opts.ScaleFromZeroProvider != "" {
 		switch strings.ToLower(opts.ScaleFromZeroProvider) {
 		case "aws":
@@ -605,7 +628,65 @@ func setupNodePoolController(ctx context.Context, mgr ctrl.Manager, opts *StartO
 				o.Retryer = awsConfig()
 			})
 			instanceTypeProvider = awsinstancetype.NewProvider(scaleFromZeroEC2Client)
+			scaleFromZeroPlatform = hyperv1.AWSPlatform
 			log.Info("Instance type provider initialized", "provider", opts.ScaleFromZeroProvider)
+		case "azure":
+			raw, err := os.ReadFile(opts.ScaleFromZeroCreds)
+			if err != nil {
+				return fmt.Errorf("failed to read Azure scale-from-zero credentials: %w", err)
+			}
+			var azureCreds struct {
+				SubscriptionID string `json:"subscriptionId"`
+				ClientID       string `json:"clientId"`
+				ClientSecret   string `json:"clientSecret"`
+				TenantID       string `json:"tenantId"`
+				Location       string `json:"location"`
+			}
+			if err := json.Unmarshal(raw, &azureCreds); err != nil {
+				return fmt.Errorf("failed to parse Azure scale-from-zero credentials: %w", err)
+			}
+			var missing []string
+			if azureCreds.SubscriptionID == "" {
+				missing = append(missing, "subscriptionId")
+			}
+			if azureCreds.ClientID == "" {
+				missing = append(missing, "clientId")
+			}
+			if azureCreds.ClientSecret == "" {
+				missing = append(missing, "clientSecret")
+			}
+			if azureCreds.TenantID == "" {
+				missing = append(missing, "tenantId")
+			}
+			if azureCreds.Location == "" {
+				missing = append(missing, "location")
+			}
+			if len(missing) > 0 {
+				return fmt.Errorf("azure scale-from-zero credentials missing required fields: %s", strings.Join(missing, ", "))
+			}
+			azureCloudName := os.Getenv("AZURE_CLOUD_NAME")
+			if azureCloudName == "" {
+				azureCloudName = config.DefaultAzureCloud
+			}
+			cloudConfig, err := azureutil.GetAzureCloudConfiguration(azureCloudName)
+			if err != nil {
+				return fmt.Errorf("failed to get Azure cloud configuration for scale-from-zero: %w", err)
+			}
+			cred, err := azidentity.NewClientSecretCredential(azureCreds.TenantID, azureCreds.ClientID, azureCreds.ClientSecret,
+				&azidentity.ClientSecretCredentialOptions{
+					ClientOptions: azcore.ClientOptions{Cloud: cloudConfig},
+				},
+			)
+			if err != nil {
+				return fmt.Errorf("failed to create Azure credentials for scale-from-zero: %w", err)
+			}
+			skuClient, err := armcompute.NewResourceSKUsClient(azureCreds.SubscriptionID, cred, azureutil.NewARMClientOptions(cloudConfig))
+			if err != nil {
+				return fmt.Errorf("failed to create Azure ResourceSKUs client: %w", err)
+			}
+			instanceTypeProvider = azureinstancetype.NewProvider(skuClient, azureCreds.Location)
+			scaleFromZeroPlatform = hyperv1.AzurePlatform
+			log.Info("Instance type provider initialized", "provider", opts.ScaleFromZeroProvider, "location", azureCreds.Location)
 		default:
 			log.Info("WARNING: Unsupported scale-from-zero provider", "provider", opts.ScaleFromZeroProvider)
 		}
@@ -620,6 +701,7 @@ func setupNodePoolController(ctx context.Context, mgr ctrl.Manager, opts *StartO
 		KubevirtInfraClients:    kvinfra.NewKubevirtInfraClientMap(),
 		EC2Client:               ec2Client,
 		InstanceTypeProvider:    instanceTypeProvider,
+		ScaleFromZeroPlatform:   scaleFromZeroPlatform,
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create controller: %w", err)
 	}
@@ -1011,5 +1093,73 @@ func reconcileDeprecationValidatingAdmissionPolicy(ctx context.Context, client c
 	}
 
 	log.Info("Successfully reconciled deprecation ValidatingAdmissionPolicy")
+	return nil
+}
+
+// reconcileEncryptionRotationGuardVAP reconciles a ValidatingAdmissionPolicy that blocks
+// encryption key rotation while re-encryption is in progress (EtcdDataEncryptionUpToDate=False).
+func reconcileEncryptionRotationGuardVAP(ctx context.Context, client crclient.Client, mgmtClusterCaps *capabilities.ManagementClusterCapabilities, log logr.Logger) error {
+	if !mgmtClusterCaps.Has(capabilities.CapabilityValidatingAdmissionPolicy) {
+		log.Info("ValidatingAdmissionPolicy not supported, skipping encryption rotation guard policy reconciliation")
+		return nil
+	}
+
+	log.Info("Reconciling encryption rotation guard ValidatingAdmissionPolicy")
+
+	policy := &admissionregistrationv1.ValidatingAdmissionPolicy{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "hostedcluster-block-key-rotation-during-reencryption",
+		},
+	}
+	if _, err := controllerutil.CreateOrUpdate(ctx, client, policy, func() error {
+		policy.Spec.FailurePolicy = ptr.To(admissionregistrationv1.Ignore)
+		if policy.Spec.MatchConstraints == nil {
+			policy.Spec.MatchConstraints = &admissionregistrationv1.MatchResources{}
+		}
+		policy.Spec.MatchConstraints.ResourceRules = []admissionregistrationv1.NamedRuleWithOperations{
+			{
+				RuleWithOperations: admissionregistrationv1.RuleWithOperations{
+					Operations: []admissionregistrationv1.OperationType{
+						admissionregistrationv1.Update,
+					},
+					Rule: admissionregistrationv1.Rule{
+						APIGroups:   []string{"hypershift.openshift.io"},
+						APIVersions: []string{"v1beta1"},
+						Resources:   []string{"hostedclusters"},
+					},
+				},
+			},
+		}
+		// Allow the update if any of:
+		//   1. No conditions exist yet (new cluster)
+		//   2. EtcdDataEncryptionUpToDate is not False (no re-encryption in progress)
+		//   3. secretEncryption spec is unchanged between old and new object
+		policy.Spec.Validations = []admissionregistrationv1.Validation{
+			{
+				Expression: `!has(object.status.conditions) || !object.status.conditions.exists(c, c.type == 'EtcdDataEncryptionUpToDate' && c.status == 'False') || (!has(object.spec.secretEncryption) && !has(oldObject.spec.secretEncryption)) || (has(object.spec.secretEncryption) && has(oldObject.spec.secretEncryption) && object.spec.secretEncryption == oldObject.spec.secretEncryption)`,
+				Message:    "Cannot change the active encryption key while re-encryption is in progress (EtcdDataEncryptionUpToDate=False). Wait for re-encryption to complete before rotating again.",
+			},
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile encryption rotation guard ValidatingAdmissionPolicy: %w", err)
+	}
+
+	binding := &admissionregistrationv1.ValidatingAdmissionPolicyBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: policy.Name,
+		},
+	}
+	if _, err := controllerutil.CreateOrUpdate(ctx, client, binding, func() error {
+		binding.Spec.PolicyName = policy.Name
+		binding.Spec.ValidationActions = []admissionregistrationv1.ValidationAction{
+			admissionregistrationv1.Deny,
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile encryption rotation guard ValidatingAdmissionPolicyBinding: %w", err)
+	}
+
+	log.Info("Successfully reconciled encryption rotation guard ValidatingAdmissionPolicy")
 	return nil
 }

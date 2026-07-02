@@ -30,11 +30,15 @@ ignore:
   - "**/Dockerfile*"
   - "*.mod"
   - "*.sum"
-  # Generated mock files
+  # Generated files
   - "**/*_mock.go"
   - "**/*mock*.go"
+  - "cmd/infra/aws/delegating_client.go"
+  - "cmd/infra/aws/delegatingclientgenerator/**"
   # Test fakes and helpers
   - "**/fake*/*.go"
+  # Legacy reconciler preserved as rollback mechanism (verbatim copy of pre-refactor code)
+  - "hypershift-operator/controllers/hostedcluster/reconcile_legacy.go"
   # Files containing only types, structs, or constants (no executable code)
   - "control-plane-operator/controllers/hostedcontrolplane/cloud/azure/providerconfig.go"
   - "control-plane-operator/controllers/hostedcontrolplane/ocm/config.go"

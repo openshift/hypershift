@@ -28,6 +28,10 @@ func adaptConfig(cpContext component.WorkloadContext, cm *corev1.ConfigMap) erro
 		return err
 	}
 
+	if cpContext.HCP.Spec.Platform.Azure != nil && cpContext.HCP.Spec.Platform.Azure.ContainerRegistry.Credentials.ManagedIdentity.ResourceID != "" {
+		cfg.UserAssignedIdentityID = string(cpContext.HCP.Spec.Platform.Azure.ContainerRegistry.Credentials.ManagedIdentity.ResourceID)
+	}
+
 	serializedConfig, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to serialize cloudconfig: %w", err)
@@ -43,7 +47,7 @@ func adaptConfigSecret(cpContext component.WorkloadContext, secret *corev1.Secre
 		return err
 	}
 
-	if azureutil.IsAroHCP() {
+	if azureutil.IsAroHCPByHCP(cpContext.HCP) {
 		cfg.UseManagedIdentityExtension = false
 		cfg.UseInstanceMetadata = false
 	}
@@ -58,7 +62,7 @@ func adaptConfigSecret(cpContext component.WorkloadContext, secret *corev1.Secre
 }
 
 func adaptSecretProvider(cpContext component.WorkloadContext, secretProvider *secretsstorev1.SecretProviderClass) error {
-	if azureutil.IsAroHCP() {
+	if azureutil.IsAroHCPByHCP(cpContext.HCP) {
 		secretproviderclass.ReconcileManagedAzureSecretProviderClass(secretProvider, cpContext.HCP, cpContext.HCP.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.CloudProvider)
 	}
 	return nil
@@ -146,10 +150,10 @@ func azureConfig(cpContext component.WorkloadContext, withCredentials bool) (Azu
 	}
 
 	// Configure authentication method based on platform type
-	if azureutil.IsAroHCP() {
+	if azureutil.IsAroHCPByHCP(hcp) {
 		// ARO HCP uses managed identity
 		azureConfig.UseManagedIdentityExtension = true
-	} else if azureutil.IsSelfManagedAzure(hcp.Spec.Platform.Type) {
+	} else {
 		// Self-managed Azure uses workload identity
 		azureConfig.UseFederatedWorkloadIdentityExtension = true
 		azureConfig.AADClientID = string(azureplatform.AzureAuthenticationConfig.WorkloadIdentities.CloudProvider.ClientID)
@@ -157,7 +161,7 @@ func azureConfig(cpContext component.WorkloadContext, withCredentials bool) (Azu
 	}
 
 	if withCredentials {
-		if azureutil.IsAroHCP() {
+		if azureutil.IsAroHCPByHCP(hcp) {
 			azureConfig.AADMSIDataPlaneIdentityPath = config.ManagedAzureCertificatePath + hcp.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.CloudProvider.CredentialsSecretName
 		}
 	}
@@ -199,4 +203,5 @@ type AzureConfig struct {
 	ClusterServiceLoadBalancerHealthProbeMode       string `json:"clusterServiceLoadBalancerHealthProbeMode"`
 	ClusterServiceSharedLoadBalancerHealthProbePath string `json:"clusterServiceSharedLoadBalancerHealthProbePath,omitempty"`
 	ClusterServiceSharedLoadBalancerHealthProbePort int32  `json:"clusterServiceSharedLoadBalancerHealthProbePort,omitempty"`
+	UserAssignedIdentityID                          string `json:"userAssignedIdentityID,omitempty"`
 }

@@ -55,9 +55,6 @@ spec:
                     description: port is the port on which the API server is serving.
                     format: int32
                     type: integer
-                required:
-                - host
-                - port
                 type: object
               resources:
                 description: Resources are embedded ASO resources to be managed by

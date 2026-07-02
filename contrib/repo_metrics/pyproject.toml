@@ -3,7 +3,9 @@ name = "repo-metrics"
 version = "0.1.0"
 description = "Repository metrics and analysis tools"
 requires-python = ">=3.9"
-dependencies = []
+dependencies = [
+    "PyYAML>=6.0",
+]
 
 [project.optional-dependencies]
 dev = [

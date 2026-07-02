@@ -7,6 +7,7 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"io"
@@ -33,6 +34,9 @@ import (
 	"github.com/blang/semver"
 	ignitionapi "github.com/coreos/ignition/v2/config/v3_2/types"
 )
+
+// ErrPullSecretUnavailable indicates the pull secret is missing or malformed.
+var ErrPullSecretUnavailable = errors.New("pull secret unavailable")
 
 type JSONMapper func(jsonData []byte) []byte
 
@@ -293,14 +297,20 @@ func ConvertImageRegistryOverrideStringToMap(envVar string) map[string][]string 
 }
 
 func GetKubeClientSet() (kubeclient.Interface, error) {
-	cfg, err := cmdutil.GetConfig()
+	return GetKubeClientSetWithKubeconfig("")
+}
+
+// GetKubeClientSetWithKubeconfig creates a Kubernetes clientset using the specified kubeconfig
+// file path. If kubeconfigPath is empty, it falls back to the default kubeconfig resolution.
+func GetKubeClientSetWithKubeconfig(kubeconfigPath string) (kubeclient.Interface, error) {
+	cfg, err := cmdutil.GetConfigWithKubeconfig(kubeconfigPath)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("unable to get kubernetes config: %w", err)
 	}
 
 	kc, err := kubeclient.NewForConfig(cfg)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("unable to create kubernetes clientset: %w", err)
 	}
 
 	return kc, nil
@@ -328,13 +338,9 @@ func GetMgmtClusterCPUArch(kc kubeclient.Interface) (string, error) {
 
 // DetermineHostedClusterPayloadArch returns the HostedCluster payload's CPU architecture type
 func DetermineHostedClusterPayloadArch(ctx context.Context, c client.Client, hc *hyperv1.HostedCluster, imageMetadataProvider ImageMetadataProvider) (hyperv1.PayloadArchType, error) {
-	var pullSecret corev1.Secret
-	if err := c.Get(ctx, types.NamespacedName{Namespace: hc.Namespace, Name: hc.Spec.PullSecret.Name}, &pullSecret); err != nil {
-		return "", fmt.Errorf("failed to get pull secret: %w", err)
-	}
-	pullSecretBytes, ok := pullSecret.Data[corev1.DockerConfigJsonKey]
-	if !ok {
-		return "", fmt.Errorf("expected %s key in pull secret", corev1.DockerConfigJsonKey)
+	pullSecretBytes, err := GetPullSecretBytes(ctx, c, hc)
+	if err != nil {
+		return "", err
 	}
 
 	isMultiArchReleaseImage, err := registryclient.IsMultiArchManifestList(ctx, hc.Spec.Release.Image, pullSecretBytes, imageMetadataProvider)
@@ -449,12 +455,12 @@ func SanitizeIgnitionPayload(payload []byte) error {
 func GetPullSecretBytes(ctx context.Context, c client.Client, hc *hyperv1.HostedCluster) ([]byte, error) {
 	pullSecret := corev1.Secret{}
 	if err := c.Get(ctx, types.NamespacedName{Namespace: hc.Namespace, Name: hc.Spec.PullSecret.Name}, &pullSecret); err != nil {
-		return nil, fmt.Errorf("failed to get pull secret: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrPullSecretUnavailable, err)
 	}
 
 	pullSecretBytes, ok := pullSecret.Data[corev1.DockerConfigJsonKey]
 	if !ok {
-		return nil, fmt.Errorf("expected %s key in pull secret", corev1.DockerConfigJsonKey)
+		return nil, fmt.Errorf("%w: expected %s key in secret %q", ErrPullSecretUnavailable, corev1.DockerConfigJsonKey, hc.Spec.PullSecret.Name)
 	}
 
 	return pullSecretBytes, nil

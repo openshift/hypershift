@@ -101,11 +101,12 @@ import (
 )
 
 const (
-	ControllerName         = "resources"
-	ConfigNamespace        = "openshift-config"
-	ConfigManagedNamespace = "openshift-config-managed"
-	CloudProviderCMName    = "cloud-provider-config"
-	awsCredentialsTemplate = `[default]
+	ControllerName            = "resources"
+	ConfigNamespace           = "openshift-config"
+	ConfigManagedNamespace    = "openshift-config-managed"
+	CloudProviderCMName       = "cloud-provider-config"
+	maxConditionMessageLength = 1024
+	awsCredentialsTemplate    = `[default]
 role_arn = %s
 web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 sts_regional_endpoints = regional
@@ -340,7 +341,7 @@ func namespacedNamePredicateFunc(namespace, name string) func(client.Object) boo
 	}
 }
 
-func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result, error) {
+func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (result ctrl.Result, returnErr error) {
 	log := ctrl.LoggerFrom(ctx)
 
 	hcp := manifests.HostedControlPlane(r.hcpNamespace, r.hcpName)
@@ -360,6 +361,12 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 		log.Info("releaseImage is " + hcp.Spec.ReleaseImage + ", but this operator is configured for " + r.operateOnReleaseImage + ", skipping reconciliation")
 		return ctrl.Result{}, nil
 	}
+
+	defer func() {
+		if err := r.reconcileConfigOperatorReconciliationCondition(ctx, hcp, returnErr); err != nil {
+			returnErr = utilerrors.NewAggregate([]error{returnErr, fmt.Errorf("failed to update ConfigOperatorReconciliationSucceeded condition: %w", err)})
+		}
+	}()
 
 	pullSecret := manifests.PullSecret(hcp.Namespace)
 	if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
@@ -962,6 +969,27 @@ func (r *reconciler) reconcileNetworkingAndSecrets(ctx context.Context, hcp *hyp
 	return errs
 }
 
+func (r *reconciler) reconcileConfigOperatorReconciliationCondition(ctx context.Context, hcp *hyperv1.HostedControlPlane, reconcileErr error) error {
+	condition := &metav1.Condition{
+		Type:               string(hyperv1.ConfigOperatorReconciliationSucceeded),
+		ObservedGeneration: hcp.Generation,
+	}
+	if reconcileErr != nil {
+		condition.Status = metav1.ConditionFalse
+		condition.Reason = hyperv1.ReconcileErrorReason
+		msg := reconcileErr.Error()
+		if len(msg) > maxConditionMessageLength {
+			msg = msg[:maxConditionMessageLength-3] + "..."
+		}
+		condition.Message = msg
+	} else {
+		condition.Status = metav1.ConditionTrue
+		condition.Reason = hyperv1.AsExpectedReason
+		condition.Message = hyperv1.AllIsWellMessage
+	}
+	return r.patchHCPStatusCondition(ctx, hcp, condition)
+}
+
 func (r *reconciler) reconcileMetricsForwarder(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) error {
 	deployment := manifests.MetricsForwarderDeployment()
 	cm := manifests.MetricsForwarderConfigMap()
@@ -971,7 +999,7 @@ func (r *reconciler) reconcileMetricsForwarder(ctx context.Context, hcp *hyperv1
 	if _, disabled := hcp.Annotations[hyperv1.DisableMonitoringServices]; disabled {
 		return k8sutil.DeleteAllIfNeeded(ctx, r.client, deployment, cm, servingCA, podMonitor)
 	}
-	if _, enabled := hcp.Annotations[hyperv1.EnableMetricsForwarding]; !enabled {
+	if hcp.Spec.Monitoring.MetricsForwarding.Mode != hyperv1.MetricsForwardingModeForward {
 		return k8sutil.DeleteAllIfNeeded(ctx, r.client, deployment, cm, servingCA, podMonitor)
 	}
 
@@ -1333,6 +1361,8 @@ func (r *reconciler) reconcileRBAC(ctx context.Context, hcp *hyperv1.HostedContr
 		manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: manifests.NodeBootstrapperClusterRoleBinding, reconcile: rbac.ReconcileNodeBootstrapperClusterRoleBinding},
 		manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: manifests.CSRRenewalClusterRoleBinding, reconcile: rbac.ReconcileCSRRenewalClusterRoleBinding},
 		manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: manifests.MetricsClientClusterRoleBinding, reconcile: rbac.ReconcileGenericMetricsClusterRoleBinding("system:serviceaccount:hypershift:prometheus")},
+		manifestAndReconcile[*rbacv1.ClusterRole]{manifest: manifests.MetricsResourcesClusterRole, reconcile: rbac.ReconcileMetricsResourcesClusterRole},
+		manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: manifests.MetricsResourcesClusterRoleBinding, reconcile: rbac.ReconcileMetricsResourcesClusterRoleBinding},
 
 		manifestAndReconcile[*rbacv1.RoleBinding]{manifest: manifests.IngressToRouteControllerRoleBinding, reconcile: rbac.ReconcileIngressToRouteControllerRoleBinding},
 
@@ -1362,7 +1392,7 @@ func (r *reconciler) reconcileRBAC(ctx context.Context, hcp *hyperv1.HostedContr
 		manifestAndReconcile[*rbacv1.RoleBinding]{manifest: manifests.KASConnectionCheckerRoleBinding, reconcile: rbac.ReconcileKASConnectionCheckerRoleBinding},
 	}
 
-	if azureutil.IsAroHCP() {
+	if azureutil.IsAroHCPByHCP(hcp) {
 		rbacReconciler = append(rbacReconciler,
 			manifestAndReconcile[*rbacv1.ClusterRole]{manifest: manifests.AzureDiskCSIDriverNodeServiceAccountRole, reconcile: rbac.ReconcileAzureDiskCSIDriverNodeServiceAccountClusterRole},
 			manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: manifests.AzureDiskCSIDriverNodeServiceAccountRoleBinding, reconcile: rbac.ReconcileAzureDiskCSIDriverNodeServiceAccountClusterRoleBinding},
@@ -1515,7 +1545,7 @@ func (r *reconciler) reconcileAuthOIDC(ctx context.Context, hcp *hyperv1.HostedC
 						errs = append(errs, fmt.Errorf("failed to get OIDCClient secret %s: %w", oidcClient.ClientSecret.Name, err))
 						continue
 					}
-					if azureutil.IsAroHCP() && k8sutil.HasAnnotationWithValue(&src, hyperv1.HostedClusterSourcedAnnotation, "true") {
+					if azureutil.IsAroHCPByHCP(hcp) && k8sutil.HasAnnotationWithValue(&src, hyperv1.HostedClusterSourcedAnnotation, "true") {
 						// This is a day-2 secret. We shouldn't copy it, instead it'll be provided by the end-user on the hosted cluster.
 						continue
 					}
@@ -2187,7 +2217,7 @@ func (r *reconciler) reconcileCloudCredentialSecrets(ctx context.Context, hcp *h
 		}
 
 		// Set up the operand credentials for either managed or self-managed Azure environments
-		errs = azureresources.SetupOperandCredentials(ctx, r.client, r.CreateOrUpdateProvider, hcp, secretData, azureutil.IsAroHCP())
+		errs = azureresources.SetupOperandCredentials(ctx, r.client, r.CreateOrUpdateProvider, hcp, secretData, azureutil.IsAroHCPByHCP(hcp))
 		if len(errs) > 0 {
 			return errs
 		}
@@ -2997,6 +3027,14 @@ func (r *reconciler) reconcileKubeletConfig(ctx context.Context) error {
 		if err := r.deleteImmutableConfigMapIfNeeded(ctx, log, hostedClusterCM); err != nil {
 			return err
 		}
+		// DeleteIfNeededWithPredicate populates hostedClusterCM via Get with all server-side
+		// fields. Reinitialize to avoid leaking stale fields into the subsequent CreateOrUpdate.
+		hostedClusterCM = &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      cm.Name,
+				Namespace: ConfigManagedNamespace,
+			},
+		}
 
 		if result, err := r.CreateOrUpdate(ctx, r.client, hostedClusterCM, func() error {
 			return mutateKubeletConfig(&cm, hostedClusterCM)
@@ -3019,6 +3057,19 @@ func (r *reconciler) reconcileKubeletConfig(ctx context.Context) error {
 		if want.Has(cm.Name) {
 			continue
 		}
+		// Mirrored CMs have a source in the HCP namespace managed by the NodePool controller.
+		// During delete+recreate migrations or transient API errors the source can be briefly
+		// absent. Deleting the guest copy here would cause NTO to regenerate MachineConfigs
+		// without it, triggering MCO node rollouts. If the source is permanently removed
+		// (e.g. NodePool deletion), the orphaned guest CM is harmless and will be cleaned up
+		// when the HostedCluster is deleted.
+		// TODO(OCPBUGS-88738): check whether the owning NodePool (via NodePoolLabel) still exists
+		// before unconditionally skipping, to allow cleanup of truly orphaned CMs.
+		if cm.Labels[nodepool.NTOMirroredConfigLabel] == "true" {
+			log.Info("skipping deletion of mirrored ConfigMap; source may be transiently absent or permanently removed after NodePool deletion",
+				"configMap", client.ObjectKeyFromObject(cm).String())
+			continue
+		}
 		log.Info("delete mirror config ConfigMap", "config", client.ObjectKeyFromObject(cm).String())
 		if _, err := k8sutil.DeleteIfNeeded(ctx, r.client, cm); err != nil {
 			return fmt.Errorf("failed to delete ConfigMap %s: %w", client.ObjectKeyFromObject(cm).String(), err)
@@ -3027,26 +3078,22 @@ func (r *reconciler) reconcileKubeletConfig(ctx context.Context) error {
 	return nil
 }
 
-// deleteImmutableConfigMapIfNeeded checks if a ConfigMap exists and is immutable,
-// and deletes it if necessary to allow recreation as a mutable ConfigMap.
-// This handles migration from immutable ConfigMaps to mutable ones.
+// deleteImmutableConfigMapIfNeeded deletes an existing immutable ConfigMap only if it
+// carries the KubeletConfigConfigMapLabel ownership label, allowing it to be recreated
+// as mutable by the subsequent CreateOrUpdate.
 func (r *reconciler) deleteImmutableConfigMapIfNeeded(ctx context.Context, log logr.Logger, cm *corev1.ConfigMap) error {
-	existingCM := &corev1.ConfigMap{}
-	if err := r.client.Get(ctx, client.ObjectKeyFromObject(cm), existingCM); err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil
+	_, err := k8sutil.DeleteIfNeededWithPredicate(ctx, r.client, cm, func(existing *corev1.ConfigMap) bool {
+		if existing.Labels[nodepool.KubeletConfigConfigMapLabel] != "true" {
+			return false
 		}
-		return fmt.Errorf("failed to get ConfigMap %s: %w", client.ObjectKeyFromObject(cm).String(), err)
-	}
-
-	if existingCM.Immutable != nil && *existingCM.Immutable {
-		log.Info("deleting immutable KubeletConfig ConfigMap to recreate as mutable", "configMap", client.ObjectKeyFromObject(existingCM).String())
-		if _, err := k8sutil.DeleteIfNeeded(ctx, r.client, existingCM); err != nil {
-			return fmt.Errorf("failed to delete immutable ConfigMap %s: %w", client.ObjectKeyFromObject(existingCM).String(), err)
+		if existing.Immutable != nil && *existing.Immutable {
+			log.Info("deleting immutable KubeletConfig ConfigMap to recreate as mutable",
+				"configMap", client.ObjectKeyFromObject(existing).String())
+			return true
 		}
-	}
-
-	return nil
+		return false
+	})
+	return err
 }
 
 func mutateKubeletConfig(controlPlaneConfigMap, hostedClusterConfigMap *corev1.ConfigMap) error {
@@ -3465,7 +3512,7 @@ func (r *reconciler) reconcileStorage(ctx context.Context, hcp *hyperv1.HostedCo
 			operatorv1.ManilaCSIDriver,
 		}
 	case hyperv1.AzurePlatform:
-		if azureutil.IsSelfManagedAzure(hcp.Spec.Platform.Type) {
+		if !azureutil.IsAroHCPByHCP(hcp) {
 			driverNames = []operatorv1.CSIDriverName{
 				operatorv1.AzureDiskCSIDriver,
 				operatorv1.AzureFileCSIDriver,

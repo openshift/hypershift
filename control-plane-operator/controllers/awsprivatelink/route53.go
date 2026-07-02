@@ -2,7 +2,6 @@ package awsprivatelink
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -12,7 +11,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/route53"
 	route53types "github.com/aws/aws-sdk-go-v2/service/route53/types"
-	"github.com/aws/smithy-go"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 )
@@ -75,11 +73,7 @@ func CreateRecord(ctx context.Context, client awsapi.ROUTE53API, zoneID, name, v
 
 	_, err := client.ChangeResourceRecordSets(ctx, input)
 	if err != nil {
-		var apiErr smithy.APIError
-		if errors.As(err, &apiErr) {
-			log.Error(err, "failed to create records in hosted zone", "zone", zoneID)
-			return fmt.Errorf("%s", apiErr.ErrorCode())
-		}
+		log.Error(err, "failed to create records in hosted zone", "zone", zoneID)
 	}
 	return err
 }

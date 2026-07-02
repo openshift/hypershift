@@ -11,69 +11,16 @@ permissions:
 
 jobs:
   address-review-comments:
-    concurrency:
-      group: address-review-comments-${{ github.event.issue.number }}
-      cancel-in-progress: true
     if: >-
       github.event.issue.pull_request &&
       startsWith(github.event.comment.body, '/address-review-comments') &&
       (github.event.comment.author_association == 'MEMBER' ||
        github.event.comment.author_association == 'OWNER' ||
        github.event.comment.author_association == 'COLLABORATOR')
-    runs-on: arc-runner-set
-    timeout-minutes: 30
-    env:
-      HOME: /tmp
-    steps:
-      - name: Link to run
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh pr comment "${{ github.event.issue.number }}" \
-            --repo "${{ github.repository }}" \
-            --body "🤖 Addressing review comments: [workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
-
-      - name: Get PR ref
-        id: pr
-        run: |
-          curl -fsSL -H "Authorization: token ${{ github.token }}" \
-            "https://api.github.com/repos/${{ github.repository }}/pulls/${{ github.event.issue.number }}" > /tmp/pr.json
-          echo "branch=$(jq -r '.head.ref' /tmp/pr.json)" >> "$GITHUB_OUTPUT"
-          echo "repo=$(jq -r '.head.repo.full_name' /tmp/pr.json)" >> "$GITHUB_OUTPUT"
-
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          ref: ${{ steps.pr.outputs.branch }}
-          repository: ${{ steps.pr.outputs.repo }}
-          persist-credentials: true
-          fetch-depth: 0
-
-      - name: Authenticate to GCP via WIF
-        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
-        with:
-          project_id: hosted-control-planes
-          service_account: claude-gha@hosted-control-planes.iam.gserviceaccount.com
-          workload_identity_provider: projects/21066242673/locations/global/workloadIdentityPools/itpc-identity-pool/providers/github-com
-
-      - name: Install Claude Code
-        run: |
-          curl -fsSL https://claude.ai/install.sh | bash
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
-
-      - name: Set up ai-helpers plugins
-        run: |
-          git clone --depth 1 https://github.com/openshift-eng/ai-helpers.git "$GITHUB_WORKSPACE/ai-helpers"
-          mkdir -p "$HOME/.claude/plugins"
-          printf '%s\n' '{"enabledPlugins":{"utils@ai-helpers":true}}' > "$HOME/.claude/settings.json"
-          printf '%s\n' "{\"ai-helpers\":{\"source\":{\"source\":\"directory\",\"path\":\"$GITHUB_WORKSPACE/ai-helpers\"},\"installLocation\":\"$GITHUB_WORKSPACE/ai-helpers\",\"lastUpdated\":\"2025-10-27T12:00:00.000Z\"}}" > "$HOME/.claude/plugins/known_marketplaces.json"
-
-      - name: Address PR review comments
-        env:
-          CLAUDE_CODE_USE_VERTEX: "1"
-          CLOUD_ML_REGION: global
-          ANTHROPIC_VERTEX_PROJECT_ID: hosted-control-planes
-          GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.issue.number }}
-        run: |
-          claude --version
-          claude -p "/utils:address-reviews $PR_NUMBER" --model claude-opus-4-6 --max-turns 100 --allowedTools "Bash Read Write Edit Grep Glob WebFetch"
+    uses: ./.github/workflows/reusable-claude-on-pr.yaml
+    with:
+      command-name: address-review-comments
+      status-message: "Addressing review comments"
+      claude-prompt: "/openshift-developer:address-review-pr ${{ github.event.issue.number }}"
+      max-turns: 200
+    secrets: inherit

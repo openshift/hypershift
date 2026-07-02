@@ -91,7 +91,7 @@ func VerifyCPOOverrideImageTest(getTestCtx internal.TestContextGetter) {
 	})
 }
 
-var _ = Describe("Hosted Cluster CPO", Label("hosted-cluster-cpo"), func() {
+var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:ControlPlaneOperator] Hosted Cluster CPO", Label("hosted-cluster-cpo"), func() {
 	var testCtx *internal.TestContext
 
 	BeforeEach(func() {

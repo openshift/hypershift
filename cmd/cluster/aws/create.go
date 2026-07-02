@@ -126,7 +126,7 @@ func (o *ValidatedCreateOptions) Complete(ctx context.Context, opts *core.Create
 		opts.EtcdStorageClass = "gp3-csi"
 	}
 
-	client, err := util.GetClient()
+	client, err := util.GetClientWithKubeconfig(opts.Kubeconfig)
 	if err != nil {
 		return nil, err
 	}
@@ -195,7 +195,7 @@ func (o *ValidatedCreateOptions) Complete(ctx context.Context, opts *core.Create
 	// TODO: drop support for this flag, it's really muddying the waters for the CLI
 	if len(o.CredentialSecretName) > 0 {
 		var secret *corev1.Secret
-		secret, err = util.GetSecret(o.CredentialSecretName, opts.Namespace)
+		secret, err = util.GetSecretWithClient(client, o.CredentialSecretName, opts.Namespace)
 		if err != nil {
 			return nil, err
 		}
@@ -590,8 +590,8 @@ func CreateIAMOptions(awsOpts *ValidatedCreateOptions, infra *awsinfra.CreateInf
 
 // ValidateCreateCredentialInfo validates if the credentials secret name is empty that the aws-creds and pull-secret flags are
 // not empty; validates if the credentials secret is not empty, that it can be retrieved
-func ValidateCreateCredentialInfo(opts awsutil.AWSCredentialsOptions, credentialSecretName, namespace, pullSecretFile string) error {
-	if err := ValidateCredentialInfo(opts, credentialSecretName, namespace); err != nil {
+func ValidateCreateCredentialInfo(opts awsutil.AWSCredentialsOptions, credentialSecretName, namespace, pullSecretFile, kubeconfigPath string) error {
+	if err := ValidateCredentialInfo(opts, credentialSecretName, namespace, kubeconfigPath); err != nil {
 		return err
 	}
 
@@ -605,7 +605,7 @@ func ValidateCreateCredentialInfo(opts awsutil.AWSCredentialsOptions, credential
 
 // validateAWSOptions validates different AWS flag parameters
 func validateAWSOptions(_ context.Context, opts *core.CreateOptions, awsOpts *RawCreateOptions) error {
-	if err := ValidateCreateCredentialInfo(awsOpts.Credentials, awsOpts.CredentialSecretName, opts.Namespace, opts.PullSecretFile); err != nil {
+	if err := ValidateCreateCredentialInfo(awsOpts.Credentials, awsOpts.CredentialSecretName, opts.Namespace, opts.PullSecretFile, opts.Kubeconfig); err != nil {
 		return err
 	}
 

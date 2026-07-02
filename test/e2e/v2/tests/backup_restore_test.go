@@ -99,7 +99,7 @@ var backupRestorePlatforms = map[hyperv1.PlatformType]backupRestorePlatformConfi
 	},
 }
 
-var _ = Describe("BackupRestore", Label("backup-restore"), Ordered, Serial, func() {
+var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:BackupRestore] BackupRestore", Label("backup-restore"), Ordered, Serial, func() {
 
 	var (
 		platformCfg        backupRestorePlatformConfig
@@ -380,7 +380,7 @@ func validatePostRestoreControlPlane(testCtx *internal.TestContext, excludeWorkl
 	}
 }
 
-var _ = Describe("BackupRestoreEtcdSnapshot", Label("backup-restore", "etcd-snapshot"), Ordered, Serial, func() {
+var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:EtcdSnapshot] BackupRestoreEtcdSnapshot", Label("backup-restore", "etcd-snapshot"), Ordered, Serial, func() {
 
 	var (
 		platformCfg        backupRestorePlatformConfig

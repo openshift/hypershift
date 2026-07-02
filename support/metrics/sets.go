@@ -52,6 +52,8 @@ type MetricsSetConfig struct {
 	OLM                             []prometheusoperatorv1.RelabelConfig `json:"olm,omitempty"`
 	CatalogOperator                 []prometheusoperatorv1.RelabelConfig `json:"catalogOperator,omitempty"`
 	RegistryOperator                []prometheusoperatorv1.RelabelConfig `json:"registryOperator,omitempty"`
+	KubeScheduler                   []prometheusoperatorv1.RelabelConfig `json:"kubeScheduler,omitempty"`
+	KubeSchedulerResourceMetrics    []prometheusoperatorv1.RelabelConfig `json:"kubeSchedulerResourceMetrics,omitempty"`
 	NodeTuningOperator              []prometheusoperatorv1.RelabelConfig `json:"nodeTuningOperator,omitempty"`
 
 	// HyperShift components
@@ -222,6 +224,40 @@ func KASRelabelConfigs(set MetricsSet) []prometheusoperatorv1.RelabelConfig {
 				SourceLabels: []prometheusoperatorv1.LabelName{"__name__", "le"},
 			},
 		}
+	}
+}
+
+func SchedulerRelabelConfigs(set MetricsSet) []prometheusoperatorv1.RelabelConfig {
+	switch set {
+	case MetricsSetTelemetry:
+		return []prometheusoperatorv1.RelabelConfig{
+			{
+				Action:       "drop",
+				Regex:        ".*",
+				SourceLabels: []prometheusoperatorv1.LabelName{"__name__"},
+			},
+		}
+	case MetricsSetSRE:
+		return sreMetricsSetConfig.KubeScheduler
+	default:
+		return nil
+	}
+}
+
+func SchedulerResourceRelabelConfigs(set MetricsSet) []prometheusoperatorv1.RelabelConfig {
+	switch set {
+	case MetricsSetTelemetry:
+		return []prometheusoperatorv1.RelabelConfig{
+			{
+				Action:       "drop",
+				Regex:        ".*",
+				SourceLabels: []prometheusoperatorv1.LabelName{"__name__"},
+			},
+		}
+	case MetricsSetSRE:
+		return sreMetricsSetConfig.KubeSchedulerResourceMetrics
+	default:
+		return nil
 	}
 }
 

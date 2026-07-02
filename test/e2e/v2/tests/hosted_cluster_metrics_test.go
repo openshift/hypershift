@@ -143,8 +143,8 @@ func EnsureMetricsForwarderWorkingTest(getTestCtx internal.TestContextGetter) {
 				Skip("metrics forwarder requires version >= 4.22")
 			}
 
-			if hostedCluster.Annotations[hyperv1.EnableMetricsForwarding] != "true" {
-				Skip("metrics forwarding annotation not set on hosted cluster; skipping verification test")
+			if hostedCluster.Spec.Monitoring.MetricsForwarding.Mode != hyperv1.MetricsForwardingModeForward {
+				Skip("metrics forwarding not enabled on hosted cluster; skipping verification test")
 			}
 
 			By("Waiting for management-side metrics deployments")
@@ -308,7 +308,7 @@ func EnsureNodeTuningOperatorMetricsEndpointTest(getTestCtx internal.TestContext
 	})
 }
 
-var _ = Describe("Hosted Cluster Metrics", Label("hosted-cluster-metrics"), func() {
+var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:Metrics] Hosted Cluster Metrics", Label("hosted-cluster-metrics"), func() {
 	var testCtx *internal.TestContext
 
 	BeforeEach(func() {

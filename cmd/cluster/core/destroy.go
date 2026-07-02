@@ -34,6 +34,7 @@ type DestroyPlatformSpecifics = func(ctx context.Context, options *DestroyOption
 
 type DestroyOptions struct {
 	ClusterGracePeriod    time.Duration
+	Kubeconfig            string
 	Name                  string
 	Namespace             string
 	AWSPlatform           AWSPlatformDestroyOptions
@@ -85,7 +86,7 @@ type PowerVSPlatformDestroyOptions struct {
 }
 
 func GetCluster(ctx context.Context, o *DestroyOptions) (*hyperv1.HostedCluster, error) {
-	c, err := util.GetClient()
+	c, err := util.GetClientWithKubeconfig(o.Kubeconfig)
 	if err != nil {
 		return nil, err
 	}
@@ -106,7 +107,7 @@ func GetCluster(ctx context.Context, o *DestroyOptions) (*hyperv1.HostedCluster,
 func DestroyCluster(ctx context.Context, hostedCluster *hyperv1.HostedCluster, o *DestroyOptions, destroyPlatformSpecifics DestroyPlatformSpecifics) error {
 	hostedClusterExists := hostedCluster != nil
 	shouldDestroyPlatformSpecifics := destroyPlatformSpecifics != nil
-	c, err := util.GetClient()
+	c, err := util.GetClientWithKubeconfig(o.Kubeconfig)
 	if err != nil {
 		return err
 	}
