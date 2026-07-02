@@ -4,13 +4,17 @@ import (
 	"testing"
 	"time"
 
+	. "github.com/onsi/gomega"
+
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/netutil"
 
 	routev1 "github.com/openshift/api/route/v1"
 
 	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
@@ -254,6 +258,433 @@ func TestApplyManifestLabelRemovalWithEmptyLabels(t *testing.T) {
 	if len(updatedRoute.Labels) != 0 {
 		t.Errorf("expected empty labels, got %d labels: %v", len(updatedRoute.Labels), updatedRoute.Labels)
 	}
+}
+
+// TestApplyManifestNodeSelectorRemoval proves that removing nodeSelector from a
+// cpov2 workload (Deployment, StatefulSet, Job, or CronJob) triggers an update
+// even though DeepDerivative treats nil/empty nodeSelector as "don't care".
+// Without the getNodeSelectorCount check in update(), this removal would be
+// silently ignored, leaving pods Pending on nodes that no longer exist.
+func TestApplyManifestNodeSelectorRemoval(t *testing.T) {
+	t.Run("When nodeSelector is removed from a Deployment, it should trigger an update and clear the nodeSelector", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		existingDeployment := &appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-dep",
+				Namespace: "test-ns",
+				Labels: map[string]string{
+					"app": "test",
+				},
+			},
+			Spec: appsv1.DeploymentSpec{
+				Template: corev1.PodTemplateSpec{
+					Spec: corev1.PodSpec{
+						NodeSelector: map[string]string{
+							"node-role": "infra",
+						},
+					},
+				},
+			},
+		}
+
+		desiredDeployment := &appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-dep",
+				Namespace: "test-ns",
+				Labels: map[string]string{
+					"app": "test",
+				},
+			},
+			Spec: appsv1.DeploymentSpec{
+				Template: corev1.PodTemplateSpec{
+					Spec: corev1.PodSpec{},
+				},
+			},
+		}
+
+		c := fake.NewClientBuilder().WithObjects(existingDeployment).Build()
+		provider := &applyProvider{}
+
+		result, err := provider.ApplyManifest(t.Context(), c, desiredDeployment)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(result).To(Equal(controllerutil.OperationResultUpdated))
+
+		var updated appsv1.Deployment
+		err = c.Get(t.Context(), types.NamespacedName{Name: "test-dep", Namespace: "test-ns"}, &updated)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(updated.Spec.Template.Spec.NodeSelector).To(BeEmpty())
+	})
+
+	t.Run("When nodeSelector is removed from a StatefulSet, it should trigger an update and clear the nodeSelector", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		existingStatefulSet := &appsv1.StatefulSet{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-sts",
+				Namespace: "test-ns",
+				Labels: map[string]string{
+					"app": "test",
+				},
+			},
+			Spec: appsv1.StatefulSetSpec{
+				Template: corev1.PodTemplateSpec{
+					Spec: corev1.PodSpec{
+						NodeSelector: map[string]string{
+							"node-role": "infra",
+						},
+					},
+				},
+			},
+		}
+
+		desiredStatefulSet := &appsv1.StatefulSet{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-sts",
+				Namespace: "test-ns",
+				Labels: map[string]string{
+					"app": "test",
+				},
+			},
+			Spec: appsv1.StatefulSetSpec{
+				Template: corev1.PodTemplateSpec{
+					Spec: corev1.PodSpec{},
+				},
+			},
+		}
+
+		c := fake.NewClientBuilder().WithObjects(existingStatefulSet).Build()
+		provider := &applyProvider{}
+
+		result, err := provider.ApplyManifest(t.Context(), c, desiredStatefulSet)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(result).To(Equal(controllerutil.OperationResultUpdated))
+
+		var updated appsv1.StatefulSet
+		err = c.Get(t.Context(), types.NamespacedName{Name: "test-sts", Namespace: "test-ns"}, &updated)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(updated.Spec.Template.Spec.NodeSelector).To(BeEmpty())
+	})
+
+	t.Run("When nodeSelector is removed from a Job, it should delete the Job so it gets recreated", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		existingJob := &batchv1.Job{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-job",
+				Namespace: "test-ns",
+				Labels: map[string]string{
+					"app": "test",
+				},
+			},
+			Spec: batchv1.JobSpec{
+				Template: corev1.PodTemplateSpec{
+					Spec: corev1.PodSpec{
+						NodeSelector: map[string]string{
+							"node-role": "infra",
+						},
+					},
+				},
+			},
+		}
+
+		desiredJob := &batchv1.Job{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-job",
+				Namespace: "test-ns",
+				Labels: map[string]string{
+					"app": "test",
+				},
+			},
+			Spec: batchv1.JobSpec{
+				Template: corev1.PodTemplateSpec{
+					Spec: corev1.PodSpec{},
+				},
+			},
+		}
+
+		c := fake.NewClientBuilder().WithObjects(existingJob).Build()
+		provider := &applyProvider{}
+
+		// Jobs are immutable; when a change is detected the old Job is deleted
+		// and will be recreated on the next reconcile.
+		_, err := provider.ApplyManifest(t.Context(), c, desiredJob)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		var deleted batchv1.Job
+		err = c.Get(t.Context(), types.NamespacedName{Name: "test-job", Namespace: "test-ns"}, &deleted)
+		g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "Job should have been deleted")
+	})
+
+	t.Run("When nodeSelector is removed from a CronJob, it should trigger an update and clear the nodeSelector", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		existingCronJob := &batchv1.CronJob{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-cronjob",
+				Namespace: "test-ns",
+				Labels: map[string]string{
+					"app": "test",
+				},
+			},
+			Spec: batchv1.CronJobSpec{
+				Schedule: "*/5 * * * *",
+				JobTemplate: batchv1.JobTemplateSpec{
+					Spec: batchv1.JobSpec{
+						Template: corev1.PodTemplateSpec{
+							Spec: corev1.PodSpec{
+								NodeSelector: map[string]string{
+									"node-role": "infra",
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+
+		desiredCronJob := &batchv1.CronJob{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-cronjob",
+				Namespace: "test-ns",
+				Labels: map[string]string{
+					"app": "test",
+				},
+			},
+			Spec: batchv1.CronJobSpec{
+				Schedule: "*/5 * * * *",
+				JobTemplate: batchv1.JobTemplateSpec{
+					Spec: batchv1.JobSpec{
+						Template: corev1.PodTemplateSpec{
+							Spec: corev1.PodSpec{},
+						},
+					},
+				},
+			},
+		}
+
+		c := fake.NewClientBuilder().WithObjects(existingCronJob).Build()
+		provider := &applyProvider{}
+
+		result, err := provider.ApplyManifest(t.Context(), c, desiredCronJob)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(result).To(Equal(controllerutil.OperationResultUpdated))
+
+		var updated batchv1.CronJob
+		err = c.Get(t.Context(), types.NamespacedName{Name: "test-cronjob", Namespace: "test-ns"}, &updated)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(updated.Spec.JobTemplate.Spec.Template.Spec.NodeSelector).To(BeEmpty())
+	})
+
+	t.Run("When nodeSelector is partially removed from a Deployment, it should trigger an update and keep only the remaining entries", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		existingDeployment := &appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-dep",
+				Namespace: "test-ns",
+				Labels: map[string]string{
+					"app": "test",
+				},
+			},
+			Spec: appsv1.DeploymentSpec{
+				Template: corev1.PodTemplateSpec{
+					Spec: corev1.PodSpec{
+						NodeSelector: map[string]string{
+							"node-role":     "infra",
+							"topology-zone": "us-east-1a",
+						},
+					},
+				},
+			},
+		}
+
+		desiredDeployment := &appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-dep",
+				Namespace: "test-ns",
+				Labels: map[string]string{
+					"app": "test",
+				},
+			},
+			Spec: appsv1.DeploymentSpec{
+				Template: corev1.PodTemplateSpec{
+					Spec: corev1.PodSpec{
+						NodeSelector: map[string]string{
+							"node-role": "infra",
+						},
+					},
+				},
+			},
+		}
+
+		c := fake.NewClientBuilder().WithObjects(existingDeployment).Build()
+		provider := &applyProvider{}
+
+		result, err := provider.ApplyManifest(t.Context(), c, desiredDeployment)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(result).To(Equal(controllerutil.OperationResultUpdated))
+
+		var updated appsv1.Deployment
+		err = c.Get(t.Context(), types.NamespacedName{Name: "test-dep", Namespace: "test-ns"}, &updated)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(updated.Spec.Template.Spec.NodeSelector).To(Equal(map[string]string{
+			"node-role": "infra",
+		}))
+	})
+}
+
+// TestApplyManifestLabelValueChange proves that maps.Clone in preserveOriginalMetadata
+// prevents the existing object's labels from being mutated in-place. Without the clone,
+// changing a label value (same key count) would be invisible to DeepDerivative because
+// both existing and desired would share the same underlying map.
+func TestApplyManifestLabelValueChange(t *testing.T) {
+	t.Run("When a label value changes without key count change, it should trigger an update", func(t *testing.T) {
+		g := NewWithT(t)
+
+		existingDeployment := &appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-dep",
+				Namespace: "test-ns",
+				Labels: map[string]string{
+					"app":     "test",
+					"version": "v1",
+				},
+			},
+		}
+
+		desiredDeployment := &appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-dep",
+				Namespace: "test-ns",
+				Labels: map[string]string{
+					"app":     "test",
+					"version": "v2",
+				},
+			},
+		}
+
+		c := fake.NewClientBuilder().WithObjects(existingDeployment).Build()
+		provider := &applyProvider{}
+
+		result, err := provider.ApplyManifest(t.Context(), c, desiredDeployment)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(result).To(Equal(controllerutil.OperationResultUpdated))
+
+		var updated appsv1.Deployment
+		err = c.Get(t.Context(), types.NamespacedName{Name: "test-dep", Namespace: "test-ns"}, &updated)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(updated.Labels["version"]).To(Equal("v2"))
+	})
+}
+
+// TestApplyManifestAnnotationValueChange proves that maps.Clone in preserveOriginalMetadata
+// prevents the existing object's annotations from being mutated in-place. Without the clone,
+// changing an annotation value (same key count) would be invisible to DeepDerivative because
+// both existing and desired would share the same underlying map.
+func TestApplyManifestAnnotationValueChange(t *testing.T) {
+	t.Run("When an annotation value changes without key count change, it should trigger an update", func(t *testing.T) {
+		g := NewWithT(t)
+
+		existingDeployment := &appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-dep",
+				Namespace: "test-ns",
+				Annotations: map[string]string{
+					"config": "old-value",
+				},
+			},
+		}
+
+		desiredDeployment := &appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-dep",
+				Namespace: "test-ns",
+				Annotations: map[string]string{
+					"config": "new-value",
+				},
+			},
+		}
+
+		c := fake.NewClientBuilder().WithObjects(existingDeployment).Build()
+		provider := &applyProvider{}
+
+		result, err := provider.ApplyManifest(t.Context(), c, desiredDeployment)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(result).To(Equal(controllerutil.OperationResultUpdated))
+
+		var updated appsv1.Deployment
+		err = c.Get(t.Context(), types.NamespacedName{Name: "test-dep", Namespace: "test-ns"}, &updated)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(updated.Annotations["config"]).To(Equal("new-value"))
+	})
+}
+
+// TestApplyManifestNodeSelectorValueChange proves that changing a nodeSelector value
+// (with constant key count) is detected via DeepDerivative, not getNodeSelectorCount.
+// This path is different from nodeSelector removal and relies on preserveOriginalMetadata
+// not mutating the existing object's pod template.
+func TestApplyManifestNodeSelectorValueChange(t *testing.T) {
+	t.Run("When a nodeSelector value changes without key count change, it should trigger an update", func(t *testing.T) {
+		g := NewWithT(t)
+
+		existingDeployment := &appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-dep",
+				Namespace: "test-ns",
+				Labels: map[string]string{
+					"app": "test",
+				},
+			},
+			Spec: appsv1.DeploymentSpec{
+				Template: corev1.PodTemplateSpec{
+					Spec: corev1.PodSpec{
+						NodeSelector: map[string]string{
+							"node-role": "infra",
+						},
+					},
+				},
+			},
+		}
+
+		desiredDeployment := &appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-dep",
+				Namespace: "test-ns",
+				Labels: map[string]string{
+					"app": "test",
+				},
+			},
+			Spec: appsv1.DeploymentSpec{
+				Template: corev1.PodTemplateSpec{
+					Spec: corev1.PodSpec{
+						NodeSelector: map[string]string{
+							"node-role": "worker",
+						},
+					},
+				},
+			},
+		}
+
+		c := fake.NewClientBuilder().WithObjects(existingDeployment).Build()
+		provider := &applyProvider{}
+
+		result, err := provider.ApplyManifest(t.Context(), c, desiredDeployment)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(result).To(Equal(controllerutil.OperationResultUpdated))
+
+		var updated appsv1.Deployment
+		err = c.Get(t.Context(), types.NamespacedName{Name: "test-dep", Namespace: "test-ns"}, &updated)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(updated.Spec.Template.Spec.NodeSelector).To(Equal(map[string]string{
+			"node-role": "worker",
+		}))
+	})
 }
 
 // TestApplyManifestLabelRemovalOnCreate tests that removal markers are cleaned up

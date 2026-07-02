@@ -83,7 +83,9 @@ func (p *applyProvider) ApplyManifest(ctx context.Context, c crclient.Client, ob
 			existingTyped := existing.(*batchv1.Job)
 			failed := k8sutil.FindJobCondition(existingTyped, batchv1.JobFailed)
 			if failed == nil || failed.Status == corev1.ConditionFalse {
-				if equality.Semantic.DeepDerivative(typedObj.Spec, existingTyped.Spec) {
+				specEqual := equality.Semantic.DeepDerivative(typedObj.Spec, existingTyped.Spec)
+				nodeSelectorRemoved := getNodeSelectorCount(typedObj) < getNodeSelectorCount(existingTyped)
+				if specEqual && !nodeSelectorRemoved {
 					return controllerutil.OperationResultNone, nil
 				}
 			}
@@ -104,9 +106,11 @@ func (p *applyProvider) ApplyManifest(ctx context.Context, c crclient.Client, ob
 func (p *applyProvider) update(ctx context.Context, c crclient.Client, obj crclient.Object, existing crclient.Object) (controllerutil.OperationResult, error) {
 	key := crclient.ObjectKeyFromObject(obj)
 
-	// Save original labels before preserveOriginalMetadata modifies them
+	// Save original labels and nodeSelector count before preserveOriginalMetadata
+	// modifies them, so removal detection compares against the true originals.
 	originalLabels := existing.GetLabels()
 	originalLabelCount := len(originalLabels)
+	originalNodeSelectorCount := getNodeSelectorCount(existing)
 
 	switch existingTyped := existing.(type) {
 	case *corev1.ServiceAccount:
@@ -138,6 +142,14 @@ func (p *applyProvider) update(ctx context.Context, c crclient.Client, obj crcli
 	labelsRemoved := len(mutatedLabels) < originalLabelCount
 	if labelsRemoved {
 		// Force an update even though DeepDerivative says they're equal
+		isEqual = false
+	}
+
+	// Special handling for nodeSelector removal: DeepDerivative treats nil/empty
+	// nodeSelector as "don't care", so removing nodeSelector entries from a
+	// Deployment or StatefulSet would otherwise be silently ignored.
+	mutatedNodeSelectorCount := getNodeSelectorCount(obj)
+	if mutatedNodeSelectorCount < originalNodeSelectorCount {
 		isEqual = false
 	}
 
@@ -192,7 +204,11 @@ func cleanupRemovalMarkers(obj crclient.Object) {
 }
 
 func preserveOriginalMetadata(original, mutated crclient.Object) {
-	labels := original.GetLabels()
+	// Clone the maps so we don't mutate the original object's metadata.
+	// Without cloning, the comparison in update() between 'existing' (serialized
+	// after this function runs) and 'obj' would see identical labels/annotations,
+	// hiding value changes when the key count stays the same.
+	labels := maps.Clone(original.GetLabels())
 	if labels == nil {
 		labels = make(map[string]string)
 	}
@@ -207,7 +223,7 @@ func preserveOriginalMetadata(original, mutated crclient.Object) {
 	}
 	mutated.SetLabels(labels)
 
-	annotations := original.GetAnnotations()
+	annotations := maps.Clone(original.GetAnnotations())
 	if annotations == nil {
 		annotations = make(map[string]string)
 	}
@@ -241,6 +257,24 @@ var (
 		"creationTimestamp",
 	}
 )
+
+// getNodeSelectorCount returns the number of nodeSelector entries for
+// workload pod templates managed by the cpov2 (control-plane-component)
+// framework, or 0 for other types.
+func getNodeSelectorCount(obj crclient.Object) int {
+	switch typed := obj.(type) {
+	case *appsv1.Deployment:
+		return len(typed.Spec.Template.Spec.NodeSelector)
+	case *appsv1.StatefulSet:
+		return len(typed.Spec.Template.Spec.NodeSelector)
+	case *batchv1.Job:
+		return len(typed.Spec.Template.Spec.NodeSelector)
+	case *batchv1.CronJob:
+		return len(typed.Spec.JobTemplate.Spec.Template.Spec.NodeSelector)
+	default:
+		return 0
+	}
+}
 
 func toUnstructured(obj crclient.Object) (map[string]any, error) {
 	// Create a copy of the original object as well as converting that copy to
