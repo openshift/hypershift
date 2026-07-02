@@ -484,7 +484,7 @@ func TestShouldKeepOldUserData(t *testing.T) {
 		expected             bool
 	}{
 		{
-			name: "when hosted cluster is not aws it should NOT keep old user data",
+			name: "when hosted cluster is not aws or kubevirt it should NOT keep old user data",
 			hc: &hyperv1.HostedCluster{
 				TypeMeta: metav1.TypeMeta{},
 				ObjectMeta: metav1.ObjectMeta{
@@ -505,6 +505,29 @@ func TestShouldKeepOldUserData(t *testing.T) {
 			},
 			releaseProvider: releaseinfo.NewMockProviderWithRegistryOverrides(mockCtrl),
 			expected:        false,
+		},
+		{
+			name: "when hosted cluster is kubevirt it should keep old user data",
+			hc: &hyperv1.HostedCluster{
+				TypeMeta: metav1.TypeMeta{},
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: pullSecret.Namespace,
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					PullSecret: corev1.LocalObjectReference{
+						Name: pullSecret.Name,
+					},
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.KubevirtPlatform,
+					},
+					Release: hyperv1.Release{
+						Image: "fake-release-image",
+					},
+				},
+				Status: hyperv1.HostedClusterStatus{},
+			},
+			releaseProvider: releaseinfo.NewMockProviderWithRegistryOverrides(mockCtrl),
+			expected:        true,
 		},
 		{
 			name: "when hosted cluster is less than 4.16 it should keep user data",
