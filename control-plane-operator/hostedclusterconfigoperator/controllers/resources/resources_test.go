@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
-	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -2981,35 +2980,33 @@ func verifyKASCheckerPodSpec(t *testing.T, dep *appsv1.Deployment) {
 	}
 }
 
-func verifyKASCheckerTolerations(t *testing.T, dep *appsv1.Deployment) {
+func verifyKASCheckerNoTolerations(t *testing.T, dep *appsv1.Deployment) {
 	t.Helper()
-	expectedTolerations := []corev1.Toleration{
-		{
-			Operator: corev1.TolerationOpExists,
-			Effect:   corev1.TaintEffectNoSchedule,
-		},
-		{
-			Key:               "node.kubernetes.io/unreachable",
-			Operator:          corev1.TolerationOpExists,
-			Effect:            corev1.TaintEffectNoExecute,
-			TolerationSeconds: ptr.To[int64](120),
-		},
-		{
-			Key:               "node.kubernetes.io/not-ready",
-			Operator:          corev1.TolerationOpExists,
-			Effect:            corev1.TaintEffectNoExecute,
-			TolerationSeconds: ptr.To[int64](120),
-		},
+	// No custom tolerations — the previous blanket NoSchedule toleration
+	// matched the cordon taint, causing pods to be scheduled back onto
+	// cordoned nodes during drain.
+	if len(dep.Spec.Template.Spec.Tolerations) != 0 {
+		t.Errorf("Expected no tolerations, got %d", len(dep.Spec.Template.Spec.Tolerations))
 	}
-	if len(dep.Spec.Template.Spec.Tolerations) != len(expectedTolerations) {
-		t.Fatalf("Expected %d tolerations, got %d", len(expectedTolerations), len(dep.Spec.Template.Spec.Tolerations))
+}
+
+func verifyKASCheckerTopologySpread(t *testing.T, dep *appsv1.Deployment) {
+	t.Helper()
+	if len(dep.Spec.Template.Spec.TopologySpreadConstraints) != 1 {
+		t.Fatalf("Expected 1 topology spread constraint, got %d", len(dep.Spec.Template.Spec.TopologySpreadConstraints))
 	}
-	for i, expected := range expectedTolerations {
-		actual := dep.Spec.Template.Spec.Tolerations[i]
-		if actual.Operator != expected.Operator || actual.Effect != expected.Effect || actual.Key != expected.Key || !reflect.DeepEqual(actual.TolerationSeconds, expected.TolerationSeconds) {
-			t.Errorf("Toleration[%d] mismatch: got {Key:%q, Operator:%q, Effect:%q, TolerationSeconds:%v}, want {Key:%q, Operator:%q, Effect:%q, TolerationSeconds:%v}",
-				i, actual.Key, actual.Operator, actual.Effect, actual.TolerationSeconds, expected.Key, expected.Operator, expected.Effect, expected.TolerationSeconds)
-		}
+	tsc := dep.Spec.Template.Spec.TopologySpreadConstraints[0]
+	if tsc.MaxSkew != 1 {
+		t.Errorf("Expected MaxSkew 1, got %d", tsc.MaxSkew)
+	}
+	if tsc.TopologyKey != "kubernetes.io/hostname" {
+		t.Errorf("Expected TopologyKey kubernetes.io/hostname, got %s", tsc.TopologyKey)
+	}
+	if tsc.WhenUnsatisfiable != corev1.ScheduleAnyway {
+		t.Errorf("Expected WhenUnsatisfiable ScheduleAnyway, got %s", tsc.WhenUnsatisfiable)
+	}
+	if tsc.LabelSelector == nil || tsc.LabelSelector.MatchLabels["app"] != manifests.KASConnectionCheckerName {
+		t.Error("Expected LabelSelector to match app=kas-connection-checker")
 	}
 }
 
@@ -3017,6 +3014,9 @@ func verifyKASCheckerAnnotations(t *testing.T, dep *appsv1.Deployment) {
 	t.Helper()
 	if dep.Spec.Template.ObjectMeta.Annotations["openshift.io/required-scc"] != "restricted-v2" {
 		t.Errorf("Expected openshift.io/required-scc annotation 'restricted-v2', got %s", dep.Spec.Template.ObjectMeta.Annotations["openshift.io/required-scc"])
+	}
+	if dep.Spec.Template.ObjectMeta.Annotations["cluster-autoscaler.kubernetes.io/safe-to-evict"] != "true" {
+		t.Error("Expected safe-to-evict annotation to be set to 'true'")
 	}
 }
 
@@ -3036,7 +3036,7 @@ func getKASCheckerDeployment(t *testing.T, c client.Client) *appsv1.Deployment {
 	return dep
 }
 
-func Test_reconciler_reconcileKASConnectionCheckerDeployment(t *testing.T) {
+func Test_reconciler_reconcileKASConnectionChecker(t *testing.T) {
 	t.Parallel()
 	const testCLIImage = "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:cli-test"
 
@@ -3063,8 +3063,9 @@ func Test_reconciler_reconcileKASConnectionCheckerDeployment(t *testing.T) {
 				}
 				verifyKASCheckerPodSpec(t, dep)
 				verifyKASCheckerResources(t, container)
-				verifyKASCheckerTolerations(t, dep)
+				verifyKASCheckerNoTolerations(t, dep)
 				verifyKASCheckerAnnotations(t, dep)
+				verifyKASCheckerTopologySpread(t, dep)
 
 				cm := &corev1.ConfigMap{}
 				if err := c.Get(context.Background(), client.ObjectKey{Name: manifests.KASConnectionCheckerConfigMapName, Namespace: manifests.KASConnectionCheckerNamespace}, cm); err != nil {
@@ -3141,7 +3142,9 @@ func Test_reconciler_reconcileKASConnectionCheckerDeployment(t *testing.T) {
 				if dep.Spec.Template.Spec.ServiceAccountName != manifests.KASConnectionCheckerName {
 					t.Errorf("Expected ServiceAccountName %s, got %s", manifests.KASConnectionCheckerName, dep.Spec.Template.Spec.ServiceAccountName)
 				}
+				verifyKASCheckerNoTolerations(t, dep)
 				verifyKASCheckerAnnotations(t, dep)
+				verifyKASCheckerTopologySpread(t, dep)
 			},
 		},
 	}
@@ -3150,7 +3153,7 @@ func Test_reconciler_reconcileKASConnectionCheckerDeployment(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var r reconciler
 
-			// Setup fake client with existing Deployment if provided
+			// Setup fake client with existing objects if provided
 			var objects []client.Object
 			if tt.existingDeployment != nil {
 				objects = append(objects, tt.existingDeployment)
@@ -3159,10 +3162,10 @@ func Test_reconciler_reconcileKASConnectionCheckerDeployment(t *testing.T) {
 			r.CreateOrUpdateProvider = &simpleCreateOrUpdater{}
 
 			ctx := context.Background()
-			err := r.reconcileKASConnectionCheckerDeployment(ctx, tt.hcp, testCLIImage)
+			err := r.reconcileKASConnectionChecker(ctx, tt.hcp, testCLIImage)
 
 			if (err != nil) != tt.wantErr {
-				t.Errorf("reconcileKASConnectionCheckerDeployment() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("reconcileKASConnectionChecker() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 
