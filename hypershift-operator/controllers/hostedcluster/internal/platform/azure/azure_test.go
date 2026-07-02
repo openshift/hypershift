@@ -1054,3 +1054,68 @@ func TestCAPIProviderDeploymentSpec(t *testing.T) {
 		})
 	}
 }
+
+func TestHasDeletionFailedCondition(t *testing.T) {
+	testCases := []struct {
+		name     string
+		machine  capiazure.AzureMachine
+		expected bool
+	}{
+		{
+			name: "When Ready is False with DeletionFailed reason, it should return true",
+			machine: capiazure.AzureMachine{
+				Status: capiazure.AzureMachineStatus{
+					Conditions: capiv1.Conditions{
+						{
+							Type:   capiv1.ReadyCondition,
+							Status: corev1.ConditionFalse,
+							Reason: capiazure.DeletionFailedReason,
+						},
+					},
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "When Ready is True, it should return false",
+			machine: capiazure.AzureMachine{
+				Status: capiazure.AzureMachineStatus{
+					Conditions: capiv1.Conditions{
+						{
+							Type:   capiv1.ReadyCondition,
+							Status: corev1.ConditionTrue,
+						},
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "When Ready is False with a different reason, it should return false",
+			machine: capiazure.AzureMachine{
+				Status: capiazure.AzureMachineStatus{
+					Conditions: capiv1.Conditions{
+						{
+							Type:   capiv1.ReadyCondition,
+							Status: corev1.ConditionFalse,
+							Reason: "SomeOtherReason",
+						},
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name:     "When there are no conditions, it should return false",
+			machine:  capiazure.AzureMachine{},
+			expected: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			g.Expect(hasDeletionFailedCondition(&tc.machine)).To(Equal(tc.expected))
+		})
+	}
+}
