@@ -108,7 +108,14 @@ func createCluster(ctx context.Context, hc *hyperv1.HostedCluster, opts *Platfor
 		}
 		validOpts := completer.(*aws.ValidatedCreateOptions)
 
+		e2eTags := E2ETagsFromEnvironment()
+		var e2eTagsList []string
+		for k, v := range e2eTags {
+			e2eTagsList = append(e2eTagsList, k+"="+v)
+		}
+
 		infraOpts := aws.CreateInfraOptions(validOpts, coreOpts)
+		infraOpts.AdditionalTags = append(infraOpts.AdditionalTags, e2eTagsList...)
 		infraOpts.OutputFile = infraFile
 		infra, err := infraOpts.CreateInfra(ctx, zapr.NewLogger(infraLogger))
 		if err != nil {
@@ -123,6 +130,7 @@ func createCluster(ctx context.Context, hc *hyperv1.HostedCluster, opts *Platfor
 			return err
 		}
 		iamOpts := aws.CreateIAMOptions(validOpts, infra)
+		iamOpts.AdditionalTags = append(iamOpts.AdditionalTags, e2eTagsList...)
 		iamOpts.OutputFile = iamFile
 		iam, err := iamOpts.CreateIAM(ctx, client, zapr.NewLogger(iamLogger))
 		if err != nil {

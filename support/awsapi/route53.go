@@ -20,6 +20,7 @@ import (
 type ROUTE53API interface {
 	AssociateVPCWithHostedZone(ctx context.Context, input *route53.AssociateVPCWithHostedZoneInput, optFns ...func(*route53.Options)) (*route53.AssociateVPCWithHostedZoneOutput, error)
 	ChangeResourceRecordSets(ctx context.Context, input *route53.ChangeResourceRecordSetsInput, optFns ...func(*route53.Options)) (*route53.ChangeResourceRecordSetsOutput, error)
+	ChangeTagsForResource(ctx context.Context, input *route53.ChangeTagsForResourceInput, optFns ...func(*route53.Options)) (*route53.ChangeTagsForResourceOutput, error)
 	CreateHostedZone(ctx context.Context, input *route53.CreateHostedZoneInput, optFns ...func(*route53.Options)) (*route53.CreateHostedZoneOutput, error)
 	CreateVPCAssociationAuthorization(ctx context.Context, input *route53.CreateVPCAssociationAuthorizationInput, optFns ...func(*route53.Options)) (*route53.CreateVPCAssociationAuthorizationOutput, error)
 	DeleteHostedZone(ctx context.Context, input *route53.DeleteHostedZoneInput, optFns ...func(*route53.Options)) (*route53.DeleteHostedZoneOutput, error)

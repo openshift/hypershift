@@ -7,6 +7,7 @@ import (
 	stderrors "errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -14,11 +15,13 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	supportawsutil "github.com/openshift/hypershift/support/awsutil"
 	"github.com/openshift/hypershift/support/infraid"
 	"github.com/openshift/hypershift/support/oidc"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
+	iamtypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/smithy-go"
@@ -756,6 +759,19 @@ func (o *DrOidcIamOptions) ensureOIDCBucket(ctx context.Context, s3Client *s3.Cl
 		return fmt.Errorf("failed to create S3 bucket: %w", err)
 	}
 
+	_, err = s3Client.PutBucketTagging(ctx, &s3.PutBucketTaggingInput{
+		Bucket: aws.String(o.OIDCStorageProviderS3Bucket),
+		Tagging: &s3types.Tagging{
+			TagSet: []s3types.Tag{
+				{Key: aws.String(supportawsutil.HypershiftInfraIDTagKey), Value: aws.String(o.InfraID)},
+				{Key: aws.String(supportawsutil.HypershiftClusterNameTagKey), Value: aws.String(o.HostedClusterName)},
+			},
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to tag S3 bucket: %w", err)
+	}
+
 	return configureBucketPublicAccess(ctx, s3Client, o.OIDCStorageProviderS3Bucket)
 }
 
@@ -798,6 +814,7 @@ func (o *DrOidcIamOptions) generateAndUploadOIDCDocuments(ctx context.Context, k
 			Key:         aws.String(o.InfraID + path),
 			Body:        bodyReader,
 			ContentType: aws.String("application/json"),
+			Tagging:     aws.String(supportawsutil.HypershiftInfraIDTagKey + "=" + url.QueryEscape(o.InfraID) + "&" + supportawsutil.HypershiftClusterNameTagKey + "=" + url.QueryEscape(o.HostedClusterName)),
 		})
 		if err != nil {
 			return fmt.Errorf("failed to upload OIDC document %s: %w", path, err)
@@ -889,6 +906,10 @@ func (o *DrOidcIamOptions) createOIDCProvider(ctx context.Context, iamClient *ia
 		},
 		ThumbprintList: []string{
 			thumbprint,
+		},
+		Tags: []iamtypes.Tag{
+			{Key: aws.String(supportawsutil.HypershiftInfraIDTagKey), Value: aws.String(o.InfraID)},
+			{Key: aws.String(supportawsutil.HypershiftClusterNameTagKey), Value: aws.String(o.HostedClusterName)},
 		},
 		Url: aws.String(o.Issuer),
 	}

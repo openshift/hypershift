@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	supportawsutil "github.com/openshift/hypershift/support/awsutil"
 	"github.com/openshift/hypershift/support/podspec"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	appsv1 "k8s.io/api/apps/v1"
@@ -146,8 +147,12 @@ func (s *SpotTerminationHandlerTest) Run(t *testing.T, nodePool hyperv1.NodePool
 		sqsClient := e2eutil.GetSQSClient(s.ctx, s.clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile, s.clusterOpts.AWSPlatform.Region)
 		sqsQueueName := s.hostedCluster.Name + "-nth-queue"
 		t.Logf("Creating SQS queue %s", sqsQueueName)
+		sqsTags := e2eutil.E2ETagsFromEnvironment()
+		sqsTags[supportawsutil.HypershiftInfraIDTagKey] = s.hostedCluster.Spec.InfraID
+		sqsTags[supportawsutil.HypershiftClusterNameTagKey] = s.hostedCluster.Name
 		createQueueResult, err := sqsClient.CreateQueue(s.ctx, &sqs.CreateQueueInput{
 			QueueName: aws.String(sqsQueueName),
+			Tags:      sqsTags,
 		})
 		if err != nil {
 			t.Fatalf("failed to create SQS queue %s: %v", sqsQueueName, err)
