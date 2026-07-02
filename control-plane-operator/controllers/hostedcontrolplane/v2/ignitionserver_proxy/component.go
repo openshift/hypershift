@@ -40,6 +40,9 @@ func NewComponent(defaultIngressDomain string) component.ControlPlaneComponent {
 		WithAdaptFunction(adaptDeployment).
 		WithPredicate(predicate).
 		WithManifestAdapter(
+			"haproxy-config.yaml",
+		).
+		WithManifestAdapter(
 			"service.yaml",
 			component.WithAdaptFunction(adaptService),
 		).
