@@ -409,6 +409,47 @@ func TestApplyRequestsOverrides(t *testing.T) {
 			},
 		},
 		{
+			name: "When overriding containers with nil resource requests it should initialize the map and apply overrides",
+			annotations: map[string]string{
+				"resource-request-override.hypershift.openshift.io/router.router":      "cpu=500m,memory=1Gi",
+				"resource-request-override.hypershift.openshift.io/router.init-router": "aro.openshift.io/swift-nic=1",
+			},
+			containers: []corev1.Container{
+				{
+					Name: "router",
+				},
+			},
+			initContainers: []corev1.Container{
+				{
+					Name: "init-router",
+				},
+			},
+			expectedContainers: []corev1.Container{
+				{
+					Name: "router",
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("500m"),
+							corev1.ResourceMemory: resource.MustParse("1Gi"),
+						},
+					},
+				},
+			},
+			expectedInitContainers: []corev1.Container{
+				{
+					Name: "init-router",
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							aroSwiftNICResource: resource.MustParse("1"),
+						},
+						Limits: corev1.ResourceList{
+							aroSwiftNICResource: resource.MustParse("1"),
+						},
+					},
+				},
+			},
+		},
+		{
 			name: "When annotation targets a different deployment it should not apply overrides",
 			annotations: map[string]string{
 				"resource-request-override.hypershift.openshift.io/kube-apiserver.kube-apiserver": "cpu=500m",
