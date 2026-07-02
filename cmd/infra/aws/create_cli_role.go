@@ -118,6 +118,7 @@ const (
 					"iam:DeleteOpenIDConnectProvider",
 					"iam:GetRolePolicy",
 					"iam:ListAttachedRolePolicies",
+					"iam:ListRolePolicies",
 					"iam:DetachRolePolicy"
 				],
 				"Resource": "*"
