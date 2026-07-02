@@ -8,15 +8,15 @@ data:
       timeout server 30s
 
     frontend ignition-server
-      bind :::8443 v4v6 ssl crt /tmp/tls.pem alpn http/1.1
+      bind :::8443 v4v6 ssl crt /tmp/tls.pem ssl-min-ver TLSv1.2 ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305 alpn http/1.1
       default_backend ignition_servers
 
     backend ignition_servers
-      server ignition-server ignition-server:443 check ssl ca-file /etc/ssl/root-ca/ca.crt alpn http/1.1
+      server ignition-server ignition-server:443 check ssl ca-file /etc/ssl/root-ca/ca.crt ssl-min-ver TLSv1.2 ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305 alpn http/1.1
 kind: ConfigMap
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 0e6844cd629f2aafb4bb4f76832422933ebabf1ee339b0e57b29e1735ec3b791
+    hypershift.openshift.io/desired-state-hash: bad9f3f8ecab6ebbf72b0d19bb0c7b313b4e84138ceb20f02929d821b0e08527
   name: ignition-server-proxy-config
   namespace: hcp-namespace
   ownerReferences:
