@@ -27,6 +27,7 @@ spec:
         cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: apiserver-token,tmp-dir
         component.hypershift.openshift.io/config-hash: 7ab93c6087ecf31a
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
+        openshift.io/required-scc: restricted-v2
       labels:
         app: cluster-image-registry-operator
         hypershift.openshift.io/control-plane-component: cluster-image-registry-operator

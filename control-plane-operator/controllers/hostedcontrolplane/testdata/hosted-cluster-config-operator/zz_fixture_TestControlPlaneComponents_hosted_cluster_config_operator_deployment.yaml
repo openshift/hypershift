@@ -27,6 +27,7 @@ spec:
         cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: tmp-dir
         component.hypershift.openshift.io/config-hash: ""
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
+        openshift.io/required-scc: restricted-v2
       labels:
         app: hosted-cluster-config-operator
         hypershift.openshift.io/control-plane-component: hosted-cluster-config-operator
