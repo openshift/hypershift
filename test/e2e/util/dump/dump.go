@@ -24,7 +24,7 @@ import (
 // DumpHostedCluster dumps the contents of the hosted cluster to the given artifact
 // directory, and returns an error if any aspect of that operation fails. The loop
 // detector is configured to return an error when any warnings are detected.
-func DumpHostedCluster(ctx context.Context, t *testing.T, hc *hyperv1.HostedCluster, dumpGuestCluster bool, artifactDir string) error {
+func DumpHostedCluster(ctx context.Context, t *testing.T, hc *hyperv1.HostedCluster, dumpGuestClusterPolicy string, artifactDir string) error {
 	dumpLogFile := filepath.Join(artifactDir, "dump.log")
 	dumpLog, err := os.Create(dumpLogFile)
 	if err != nil {
@@ -44,12 +44,12 @@ func DumpHostedCluster(ctx context.Context, t *testing.T, hc *hyperv1.HostedClus
 		}
 	}
 	err = core.DumpCluster(ctx, &core.DumpOptions{
-		Namespace:        hc.Namespace,
-		Name:             hc.Name,
-		ArtifactDir:      artifactDir,
-		LogCheckers:      []core.LogChecker{findKubeObjectUpdateLoops},
-		DumpGuestCluster: dumpGuestCluster,
-		Log:              zapr.NewLogger(dumpLogger),
+		Namespace:              hc.Namespace,
+		Name:                   hc.Name,
+		ArtifactDir:            artifactDir,
+		LogCheckers:            []core.LogChecker{findKubeObjectUpdateLoops},
+		DumpGuestClusterPolicy: dumpGuestClusterPolicy,
+		Log:                    zapr.NewLogger(dumpLogger),
 	})
 	if err != nil {
 		allErrors = append(allErrors, fmt.Errorf("failed to dump cluster: %w", err))

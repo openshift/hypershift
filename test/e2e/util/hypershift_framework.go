@@ -554,7 +554,7 @@ func teardownHostedCluster(t *testing.T, ctx context.Context, hc *hyperv1.Hosted
 
 	// First, do a dump of the cluster before tearing it down
 	// Save off any error so that we can continue with the teardown
-	dumpErr := dumpCluster(ctx, t, true)
+	dumpErr := dumpCluster(ctx, t, "default-policy")
 
 	// Try repeatedly to destroy the cluster gracefully. For each failure, dump
 	// the current cluster to help debug teardown lifecycle issues.
@@ -576,7 +576,7 @@ func teardownHostedCluster(t *testing.T, ctx context.Context, hc *hyperv1.Hosted
 				t.Logf("Failed to destroy cluster, will retry: %v", err)
 				previousError = err.Error()
 			}
-			err := dumpCluster(ctx, t, false)
+			err := dumpCluster(ctx, t, "")
 			if err != nil {
 				t.Logf("Failed to dump cluster during destroy; this is nonfatal: %v", err)
 			}
@@ -603,7 +603,7 @@ func teardownHostedCluster(t *testing.T, ctx context.Context, hc *hyperv1.Hosted
 	err = DeleteNamespace(t, deleteTimeout, client, hc.Namespace)
 	if err != nil {
 		t.Errorf("Failed to delete test namespace: %v", err)
-		err := dumpCluster(ctx, t, false)
+		err := dumpCluster(ctx, t, "")
 		if err != nil {
 			t.Errorf("Failed to dump cluster: %v", err)
 		}
