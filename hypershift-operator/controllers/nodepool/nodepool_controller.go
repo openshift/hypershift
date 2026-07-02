@@ -294,6 +294,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		r.autoscalerEnabledCondition,
 		r.updateManagementEnabledCondition,
 		r.releaseImageCondition,
+		r.validOSImageStreamCondition,
 		r.ignitionEndpointAvailableCondition,
 		r.validArchPlatformCondition,
 		r.reconciliationActiveCondition,

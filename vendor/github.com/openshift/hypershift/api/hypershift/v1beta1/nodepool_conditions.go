@@ -31,6 +31,10 @@ const (
 	// A failure here is unlikely to resolve without changing user input.
 	NodePoolValidPlatformConfigConditionType = "ValidPlatformConfig"
 
+	// NodePoolValidOSImageStreamConditionType signals if the osImageStream specified in nodePool.spec.osImageStream is valid.
+	// A failure here is unlikely to resolve without changing user input.
+	NodePoolValidOSImageStreamConditionType = "ValidOSImageStream"
+
 	// NodePoolUpdateManagementEnabledConditionType signals if the nodePool.spec.management input is valid.
 	// A failure here is unlikely to resolve without the changing user input.
 	NodePoolUpdateManagementEnabledConditionType = "UpdateManagementEnabled"
@@ -129,4 +133,5 @@ const (
 	CIDRConflictReason                    = "CIDRConflict"
 	NodePoolKubeVirtLiveMigratableReason  = "KubeVirtNodesNotLiveMigratable"
 	NodePoolUnsupportedSkewReason         = "UnsupportedSkew"
+	NodePoolInvalidOSImageStreamReason    = "InvalidOSImageStream"
 )

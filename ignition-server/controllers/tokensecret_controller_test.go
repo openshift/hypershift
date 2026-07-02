@@ -30,7 +30,7 @@ var (
 
 type fakeIgnitionProvider struct{}
 
-func (p *fakeIgnitionProvider) GetPayload(ctx context.Context, releaseImage, config, pullSecretHash, additionalTrustBundleHash, hcConfigurationHash string) (payload []byte, err error) {
+func (p *fakeIgnitionProvider) GetPayload(ctx context.Context, releaseImage, config, pullSecretHash, additionalTrustBundleHash, hcConfigurationHash, osStream string) (payload []byte, err error) {
 	return []byte(fakePayload), nil
 }
 
@@ -685,6 +685,91 @@ func TestHasSameReasonAndMessage(t *testing.T) {
 			g := NewWithT(t)
 			result := hasSameReasonAndMessage(tc.secret, tc.reason, tc.message)
 			g.Expect(result).To(Equal(tc.expected))
+		})
+	}
+}
+
+// osStreamCapturingProvider captures the osStream parameter passed to GetPayload.
+type osStreamCapturingProvider struct {
+	capturedOSStream string
+}
+
+func (p *osStreamCapturingProvider) GetPayload(_ context.Context, _, _, _, _, _, osStream string) ([]byte, error) {
+	p.capturedOSStream = osStream
+	return []byte(fakePayload), nil
+}
+
+func TestReconcileOSStreamPropagation(t *testing.T) {
+	compressedConfig, err := util.CompressAndEncode([]byte("compressedConfig"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	testCases := []struct {
+		name               string
+		osStream           string
+		includeOSStreamKey bool
+		expectedOSStream   string
+	}{
+		{
+			name:               "When os-stream is set to rhel-10 it should pass rhel-10 to GetPayload",
+			osStream:           "rhel-10",
+			includeOSStreamKey: true,
+			expectedOSStream:   "rhel-10",
+		},
+		{
+			name:               "When os-stream is set to rhel-9 it should pass rhel-9 to GetPayload",
+			osStream:           "rhel-9",
+			includeOSStreamKey: true,
+			expectedOSStream:   "rhel-9",
+		},
+		{
+			name:               "When os-stream is empty it should pass empty string to GetPayload",
+			osStream:           "",
+			includeOSStreamKey: true,
+			expectedOSStream:   "",
+		},
+		{
+			name:               "When os-stream key is absent it should pass empty string to GetPayload",
+			includeOSStreamKey: false,
+			expectedOSStream:   "",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			provider := &osStreamCapturingProvider{}
+			data := map[string][]byte{
+				TokenSecretTokenKey:                     []byte(uuid.New().String()),
+				TokenSecretReleaseKey:                   []byte("release"),
+				TokenSecretConfigKey:                    compressedConfig.Bytes(),
+				TokenSecretPullSecretHashKey:            []byte("pull-hash"),
+				TokenSecretHCConfigurationHashKey:       []byte("hc-hash"),
+				TokenSecretAdditionalTrustBundleHashKey: []byte("bundle-hash"),
+			}
+			if tc.includeOSStreamKey {
+				data[TokenSecretOSStreamKey] = []byte(tc.osStream)
+			}
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test",
+					Namespace: "test",
+					Annotations: map[string]string{
+						TokenSecretAnnotation: "true",
+					},
+					CreationTimestamp: metav1.Now(),
+				},
+				Data: data,
+			}
+			r := TokenSecretReconciler{
+				Client:           fake.NewClientBuilder().WithObjects(secret).Build(),
+				IgnitionProvider: provider,
+				PayloadStore:     NewPayloadStore(),
+			}
+			_, err := r.Reconcile(t.Context(), ctrl.Request{NamespacedName: client.ObjectKeyFromObject(secret)})
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(provider.capturedOSStream).To(Equal(tc.expectedOSStream))
 		})
 	}
 }
