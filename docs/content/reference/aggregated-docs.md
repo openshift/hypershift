@@ -587,6 +587,51 @@ To run override tests:
    - Verify platform name spelling
 
 
+## Creating Override PRs with Claude Code
+
+The `/create-cpo-override` Claude Code skill automates the entire process of
+creating a CPO override PR:
+
+1. **Gathers inputs** — platform(s), branches, version ranges, required fix
+   PRs, and optionally specific images
+2. **Detects pull secret** — probes whether the container runtime can access
+   authenticated registries; falls back to `$PULL_SECRET` or asks for a path
+3. **Auto-resolves images** — for each branch, tries (in order): the latest
+   OCP stable payload, the latest fast payload, and Konflux push builds.
+   Stops at the first image that contains all required fix PRs
+4. **Verifies fixes** — runs `verify-pr-in-image.sh` (same script used by
+   the validation skill) against every (branch, image, PR) tuple
+5. **Tests pullability** — confirms each image is accessible via `skopeo`
+6. **Presents a summary** — shows branches, version ranges, images, sources,
+   and verification results for user confirmation
+7. **Edits `overrides.yaml`** — adds entries matching the existing file
+   conventions
+8. **Prepares the commit and PR** — generates the validation contract lines
+   that `/validate-pr-override-images` expects, then runs the validator
+   against the PR after creation
+
+```
+# In Claude Code:
+/create-cpo-override
+```
+
+The skill queries the Cincinnati API to resolve version ranges (including
+z-streams that Cincinnati skips but clusters can still run) and uses
+`oc adm release info` to extract the `hypershift` image from OCP payloads.
+
+### Image source priority
+
+| Priority | Source | Registry pattern |
+|----------|--------|-----------------|
+| 1 | Latest stable payload | `quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:...` |
+| 2 | Latest fast payload | same |
+| 3 | Konflux push build | `quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-X-Y@sha256:...` |
+| 4 | User-provided image | any |
+
+If no automatically discovered image contains the required fixes, the skill
+points to the `build-cpo-image` dev skill and the Konflux hotfix process
+documented in `contrib/konflux/README.md`.
+
 ## Validating Override Images Contain Claimed PRs
 
 When reviewing a PR that sets CPO override images and claims "includes
