@@ -310,7 +310,8 @@ spec:
             echo "Checking if cluster is functional"
             if etcdctl member list; then
               echo "Cluster is functional"
-              MEMBER_ID=$(etcdctl member list -w simple | grep "${HOSTNAME}" | awk -F, '{ print $1 }')
+              MEMBER_LIST=$(etcdctl member list -w simple)
+              MEMBER_ID=$(echo "${MEMBER_LIST}" | grep "${HOSTNAME}" | awk -F, '{ print $1 }')
               if [[ -n "${MEMBER_ID}" ]]; then
                 echo "A member with this name (${HOSTNAME}) already exists, removing"
                 etcdctl member remove "${MEMBER_ID}"
@@ -318,7 +319,21 @@ spec:
                 etcdctl member add ${HOSTNAME} --peer-urls https://${HOSTNAME}.etcd-discovery.${NAMESPACE}.svc:2380
                 echo "existing" > /etc/etcd/clusterstate/state
               else
-                echo "A member does not exist with name (${HOSTNAME}), nothing to do"
+                echo "A member does not exist with name (${HOSTNAME}), evaluating straggler join"
+                if [[ -n "${ETCD_EXPECTED_MEMBER_COUNT:-}" && -n "${ETCD_QUORUM_MIN_MEMBERS:-}" ]]; then
+                  MEMBER_COUNT=$(echo "${MEMBER_LIST}" | grep -c . || true)
+                  if [[ "${MEMBER_COUNT}" -ge "${ETCD_QUORUM_MIN_MEMBERS}" && "${MEMBER_COUNT}" -lt "${ETCD_EXPECTED_MEMBER_COUNT}" ]]; then
+                    echo "Cluster reports at least quorum members (${MEMBER_COUNT} >= ${ETCD_QUORUM_MIN_MEMBERS} for size ${ETCD_EXPECTED_MEMBER_COUNT}); adding this member dynamically"
+                    etcdctl member add ${HOSTNAME} --peer-urls https://${HOSTNAME}.etcd-discovery.${NAMESPACE}.svc:2380
+                    echo "existing" > /etc/etcd/clusterstate/state
+                  elif [[ "${MEMBER_COUNT}" -ge "${ETCD_EXPECTED_MEMBER_COUNT}" ]]; then
+                    echo "Cluster already has the expected member count (${MEMBER_COUNT}/${ETCD_EXPECTED_MEMBER_COUNT}); refusing to grow membership dynamically"
+                  else
+                    echo "Cluster membership (${MEMBER_COUNT}) is below quorum (${ETCD_QUORUM_MIN_MEMBERS}); static bootstrap (new) path"
+                  fi
+                else
+                  echo "Skipping straggler join: ETCD_EXPECTED_MEMBER_COUNT and ETCD_QUORUM_MIN_MEMBERS must both be set; not adding member dynamically"
+                fi
               fi
             else
               echo "Cannot list members in cluster, so likely not up yet"
@@ -334,6 +349,10 @@ spec:
             fieldRef:
               apiVersion: v1
               fieldPath: metadata.namespace
+        - name: ETCD_EXPECTED_MEMBER_COUNT
+          value: "3"
+        - name: ETCD_QUORUM_MIN_MEMBERS
+          value: "2"
         image: etcd
         imagePullPolicy: IfNotPresent
         name: reset-member
