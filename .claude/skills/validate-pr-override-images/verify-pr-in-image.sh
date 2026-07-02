@@ -19,8 +19,14 @@ if ! command -v skopeo &>/dev/null; then
   exit 1
 fi
 
+AUTHFILE_PATH="${AUTHFILE:-${PULL_SECRET:-}}"
+AUTHFILE_ARGS=()
+if [[ -n "$AUTHFILE_PATH" && -f "$AUTHFILE_PATH" ]]; then
+  AUTHFILE_ARGS=(--authfile "$AUTHFILE_PATH")
+fi
+
 echo "Inspecting image..."
-INSPECT=$(skopeo inspect --override-os linux --override-arch amd64 "docker://$IMAGE") || {
+INSPECT=$(skopeo inspect --no-tags --override-os linux --override-arch amd64 "${AUTHFILE_ARGS[@]}" "docker://$IMAGE") || {
   echo "ERROR: Could not inspect image $IMAGE"
   exit 1
 }
