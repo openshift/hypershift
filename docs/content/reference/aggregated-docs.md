@@ -43452,6 +43452,13 @@ A failure here indicates that the role or the key are invalid, or the role doesn
 <td><p>ValidAzureKMSConfig indicates whether the given KMS input for the Azure platform is valid and operational
 A failure here indicates that the input is invalid, or permissions are missing to use the encryption key.</p>
 </td>
+</tr><tr><td><p>&#34;ValidAzureWorkloadIdentity&#34;</p></td>
+<td><p>ValidAzureWorkloadIdentity indicates whether the required Azure Workload Identity
+configuration is present and valid in the HostedCluster spec. This validates that
+all mandatory managed identity client IDs are specified for self-managed Azure clusters
+using WorkloadIdentities authentication. A failure here indicates the cluster was
+created without running &ldquo;hypershift create iam azure&rdquo; or the spec is incomplete.</p>
+</td>
 </tr><tr><td><p>&#34;ValidGCPCredentials&#34;</p></td>
 <td><p>ValidGCPCredentials indicates if GCP credentials are valid and operational
 for the HostedCluster. This includes service account authentication and

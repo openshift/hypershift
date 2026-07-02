@@ -260,6 +260,12 @@ func TestReconcileCredentials(t *testing.T) {
 			name:           "self-managed Azure with workload identities creates all credential secrets",
 			managedService: "",
 			hcluster: createTestHostedCluster(true, &hyperv1.AzureWorkloadIdentities{
+				CloudProvider: hyperv1.WorkloadIdentity{
+					ClientID: "cloud-provider-client-id",
+				},
+				NodePoolManagement: hyperv1.WorkloadIdentity{
+					ClientID: "nodepool-mgmt-client-id",
+				},
 				Ingress: hyperv1.WorkloadIdentity{
 					ClientID: "ingress-client-id",
 				},
@@ -315,6 +321,12 @@ func TestReconcileCredentials(t *testing.T) {
 			managedService: "",
 			hcluster: func() *hyperv1.HostedCluster {
 				hc := createTestHostedCluster(true, &hyperv1.AzureWorkloadIdentities{
+					CloudProvider: hyperv1.WorkloadIdentity{
+						ClientID: "cloud-provider-client-id",
+					},
+					NodePoolManagement: hyperv1.WorkloadIdentity{
+						ClientID: "nodepool-mgmt-client-id",
+					},
 					Ingress: hyperv1.WorkloadIdentity{
 						ClientID: "ingress-client-id",
 					},
@@ -524,6 +536,207 @@ func TestReconcileKMSConfigSecret(t *testing.T) {
 			g.Expect(cfg.LoadBalancerSku).To(Equal("standard"))
 
 			tc.validate(g, cfg)
+		})
+	}
+}
+
+func TestValidateWorkloadIdentityConfig(t *testing.T) {
+	tests := []struct {
+		name           string
+		hcluster       *hyperv1.HostedCluster
+		expectNil      bool
+		expectStatus   metav1.ConditionStatus
+		expectReason   string
+		expectContains string
+	}{
+		{
+			name: "non-Azure platform returns nil",
+			hcluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
+				},
+			},
+			expectNil: true,
+		},
+		{
+			name: "Azure with ManagedIdentities auth returns nil",
+			hcluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+								AzureAuthenticationConfigType: hyperv1.AzureAuthenticationTypeManagedIdentities,
+							},
+						},
+					},
+				},
+			},
+			expectNil: true,
+		},
+		{
+			name: "WorkloadIdentities auth with nil WorkloadIdentities returns not configured",
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Generation: 3},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+								AzureAuthenticationConfigType: hyperv1.AzureAuthenticationTypeWorkloadIdentities,
+							},
+						},
+					},
+				},
+			},
+			expectNil:      false,
+			expectStatus:   metav1.ConditionFalse,
+			expectReason:   hyperv1.AzureWorkloadIdentityNotConfiguredReason,
+			expectContains: "not configured",
+		},
+		{
+			name: "WorkloadIdentities with missing clientIDs returns incomplete",
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Generation: 5},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+								AzureAuthenticationConfigType: hyperv1.AzureAuthenticationTypeWorkloadIdentities,
+								WorkloadIdentities: &hyperv1.AzureWorkloadIdentities{
+									CloudProvider:      hyperv1.WorkloadIdentity{ClientID: "client-1"},
+									NodePoolManagement: hyperv1.WorkloadIdentity{ClientID: "client-2"},
+									Ingress:            hyperv1.WorkloadIdentity{ClientID: ""},
+									ImageRegistry:      hyperv1.WorkloadIdentity{ClientID: "client-4"},
+									Disk:               hyperv1.WorkloadIdentity{ClientID: "client-5"},
+									File:               hyperv1.WorkloadIdentity{ClientID: ""},
+									Network:            hyperv1.WorkloadIdentity{ClientID: "client-7"},
+								},
+							},
+						},
+					},
+				},
+			},
+			expectNil:      false,
+			expectStatus:   metav1.ConditionFalse,
+			expectReason:   hyperv1.AzureWorkloadIdentityIncompleteReason,
+			expectContains: "ingress, file",
+		},
+		{
+			name: "When Private Link is configured without controlPlaneOperator clientID, it should report incomplete",
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Generation: 6},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							Private: hyperv1.AzurePrivateSpec{
+								Type: hyperv1.AzurePrivateTypePrivateLink,
+							},
+							AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+								AzureAuthenticationConfigType: hyperv1.AzureAuthenticationTypeWorkloadIdentities,
+								WorkloadIdentities: &hyperv1.AzureWorkloadIdentities{
+									CloudProvider:      hyperv1.WorkloadIdentity{ClientID: "client-1"},
+									NodePoolManagement: hyperv1.WorkloadIdentity{ClientID: "client-2"},
+									Ingress:            hyperv1.WorkloadIdentity{ClientID: "client-3"},
+									ImageRegistry:      hyperv1.WorkloadIdentity{ClientID: "client-4"},
+									Disk:               hyperv1.WorkloadIdentity{ClientID: "client-5"},
+									File:               hyperv1.WorkloadIdentity{ClientID: "client-6"},
+									Network:            hyperv1.WorkloadIdentity{ClientID: "client-7"},
+								},
+							},
+						},
+					},
+				},
+			},
+			expectNil:      false,
+			expectStatus:   metav1.ConditionFalse,
+			expectReason:   hyperv1.AzureWorkloadIdentityIncompleteReason,
+			expectContains: "controlPlaneOperator",
+		},
+		{
+			name: "When Private Link is configured with controlPlaneOperator clientID, it should return valid",
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Generation: 6},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							Private: hyperv1.AzurePrivateSpec{
+								Type: hyperv1.AzurePrivateTypePrivateLink,
+							},
+							AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+								AzureAuthenticationConfigType: hyperv1.AzureAuthenticationTypeWorkloadIdentities,
+								WorkloadIdentities: &hyperv1.AzureWorkloadIdentities{
+									CloudProvider:        hyperv1.WorkloadIdentity{ClientID: "client-1"},
+									NodePoolManagement:   hyperv1.WorkloadIdentity{ClientID: "client-2"},
+									Ingress:              hyperv1.WorkloadIdentity{ClientID: "client-3"},
+									ImageRegistry:        hyperv1.WorkloadIdentity{ClientID: "client-4"},
+									Disk:                 hyperv1.WorkloadIdentity{ClientID: "client-5"},
+									File:                 hyperv1.WorkloadIdentity{ClientID: "client-6"},
+									Network:              hyperv1.WorkloadIdentity{ClientID: "client-7"},
+									ControlPlaneOperator: hyperv1.WorkloadIdentity{ClientID: "client-8"},
+								},
+							},
+						},
+					},
+				},
+			},
+			expectNil:      false,
+			expectStatus:   metav1.ConditionTrue,
+			expectReason:   hyperv1.AzureWorkloadIdentityValidReason,
+			expectContains: "All required",
+		},
+		{
+			name: "WorkloadIdentities with all clientIDs returns valid",
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Generation: 7},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+								AzureAuthenticationConfigType: hyperv1.AzureAuthenticationTypeWorkloadIdentities,
+								WorkloadIdentities: &hyperv1.AzureWorkloadIdentities{
+									CloudProvider:      hyperv1.WorkloadIdentity{ClientID: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"},
+									NodePoolManagement: hyperv1.WorkloadIdentity{ClientID: "aaaaaaaa-bbbb-cccc-dddd-ffffffffffff"},
+									Ingress:            hyperv1.WorkloadIdentity{ClientID: "aaaaaaaa-bbbb-cccc-dddd-111111111111"},
+									ImageRegistry:      hyperv1.WorkloadIdentity{ClientID: "aaaaaaaa-bbbb-cccc-dddd-222222222222"},
+									Disk:               hyperv1.WorkloadIdentity{ClientID: "aaaaaaaa-bbbb-cccc-dddd-333333333333"},
+									File:               hyperv1.WorkloadIdentity{ClientID: "aaaaaaaa-bbbb-cccc-dddd-444444444444"},
+									Network:            hyperv1.WorkloadIdentity{ClientID: "aaaaaaaa-bbbb-cccc-dddd-555555555555"},
+								},
+							},
+						},
+					},
+				},
+			},
+			expectNil:      false,
+			expectStatus:   metav1.ConditionTrue,
+			expectReason:   hyperv1.AzureWorkloadIdentityValidReason,
+			expectContains: "All required",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			condition := validateWorkloadIdentityConfig(tc.hcluster)
+
+			if tc.expectNil {
+				g.Expect(condition).To(BeNil())
+				return
+			}
+
+			g.Expect(condition).NotTo(BeNil())
+			g.Expect(condition.Type).To(Equal(string(hyperv1.ValidAzureWorkloadIdentity)))
+			g.Expect(condition.Status).To(Equal(tc.expectStatus))
+			g.Expect(condition.Reason).To(Equal(tc.expectReason))
+			g.Expect(condition.Message).To(ContainSubstring(tc.expectContains))
+			g.Expect(condition.ObservedGeneration).To(Equal(tc.hcluster.Generation))
 		})
 	}
 }
