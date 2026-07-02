@@ -27,6 +27,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/cmd/install/assets"
+	cpofeaturegate "github.com/openshift/hypershift/control-plane-operator/featuregates"
 	pkiconfig "github.com/openshift/hypershift/control-plane-pki-operator/config"
 	etcdrecovery "github.com/openshift/hypershift/etcd-recovery"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/auditlogpersistence"
@@ -214,6 +215,9 @@ func NewStartCommand() *cobra.Command {
 	// by the featureset.
 	featuregate.ConfigureFeatureSet(featureSet)
 	featuregate.Gate().AddFlag(cmd.Flags())
+
+	// Configure feature set from CPO (needed to propagate feature gates like TechPreviewNoUpgrade)
+	cpofeaturegate.ConfigureFeatureSet(featureSet)
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctx, cancel := context.WithCancel(ctrl.SetupSignalHandler())
