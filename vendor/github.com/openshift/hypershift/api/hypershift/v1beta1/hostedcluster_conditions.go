@@ -164,6 +164,11 @@ const (
 	// A failure here indicates that the input is invalid, or permissions are missing to use the encryption key.
 	ValidAzureKMSConfig ConditionType = "ValidAzureKMSConfig"
 
+	// ValidAzureIdentityProvider indicates if the Identity Provider is used by the Azure Platform credentials is
+	// healthy. The check makes a harmless Resource Group GET call to verify credentials work and infrastructure is available.
+	// A failure here may require external user intervention to resolve.
+	ValidAzureIdentityProvider ConditionType = "ValidAzureIdentityProvider"
+
 	// ValidGCPCredentials indicates if GCP credentials are valid and operational
 	// for the HostedCluster. This includes service account authentication and
 	// proper IAM permissions for CAPG controllers.

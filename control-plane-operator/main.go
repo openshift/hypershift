@@ -53,6 +53,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v5"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/privatedns/armprivatedns"
+	"github.com/Azure/msi-dataplane/pkg/dataplane"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -538,9 +539,15 @@ func NewStartCommand() *cobra.Command {
 			os.Exit(1)
 		}
 
+		var azureHealthCheckCreds azcore.TokenCredential
+		if hcp.Spec.Platform.Type == hyperv1.AzurePlatform {
+			azureHealthCheckCreds = resolveAzureHealthCheckCredentials(hcp)
+		}
+
 		if err := (&healthcheck.HealthCheckUpdater{
 			Client:             mgr.GetClient(),
 			HostedControlPlane: crclient.ObjectKey{Namespace: hcp.Namespace, Name: hcp.Name},
+			AzureCreds:         azureHealthCheckCreds,
 		}).SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "health-check-updater")
 			os.Exit(1)
@@ -728,4 +735,44 @@ func setupAzurePrivateControllers(ctx context.Context, mgr ctrl.Manager, hcp *hy
 		setupLog.Error(err, "unable to create controller", "controller", azureReconcilerName)
 		os.Exit(1)
 	}
+}
+
+// resolveAzureHealthCheckCredentials returns Azure credentials for the credential
+// validation health check. Handles both credential paths:
+//   - Self-managed: workload identity via DefaultAzureCredential (uses env vars
+//     AZURE_CLIENT_ID/AZURE_TENANT_ID/AZURE_FEDERATED_TOKEN_FILE)
+//   - ARO HCP (managed): user-assigned managed identity via CSI-mounted certificate
+//
+// Returns nil if credentials cannot be obtained — the health check will set the
+// condition to Unknown, which still unblocks orphaned machine deletion.
+func resolveAzureHealthCheckCredentials(hcp *hyperv1.HostedControlPlane) azcore.TokenCredential {
+	if hcp.Spec.Platform.Azure == nil {
+		return nil
+	}
+	cloudConfig, err := azureutil.GetAzureCloudConfiguration(hcp.Spec.Platform.Azure.Cloud)
+	if err != nil {
+		setupLog.Error(err, "failed to get Azure cloud config for health check")
+		return nil
+	}
+	if netutil.IsAroHCPByHCP(hcp) {
+		certPath := config.ManagedAzureCertificatePath +
+			hcp.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.ControlPlaneOperator.CredentialsSecretName
+		cred, err := dataplane.NewUserAssignedIdentityCredential(
+			context.Background(), certPath,
+			dataplane.WithClientOpts(azcore.ClientOptions{Cloud: cloudConfig}))
+		if err != nil {
+			setupLog.Error(err, "failed to create managed identity credentials for Azure health check")
+			return nil
+		}
+		return cred
+	}
+	cred, err := azidentity.NewDefaultAzureCredential(
+		&azidentity.DefaultAzureCredentialOptions{
+			ClientOptions: azcore.ClientOptions{Cloud: cloudConfig},
+		})
+	if err != nil {
+		setupLog.Error(err, "failed to create default Azure credentials for health check")
+		return nil
+	}
+	return cred
 }

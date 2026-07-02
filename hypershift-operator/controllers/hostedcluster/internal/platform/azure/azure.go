@@ -22,12 +22,15 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/utils/ptr"
 
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/blang/semver"
@@ -353,6 +356,59 @@ func (a Azure) CAPIProviderPolicyRules() []rbacv1.PolicyRule {
 
 func (a Azure) DeleteCredentials(ctx context.Context, c client.Client, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error {
 	return nil
+}
+
+// CredentialStatus represents the status of Azure credentials for a hosted cluster.
+type CredentialStatus int
+
+const (
+	CredentialStatusValid   CredentialStatus = 0
+	CredentialStatusInvalid CredentialStatus = 1
+	CredentialStatusUnknown CredentialStatus = 2
+)
+
+// GetCredentialStatus returns the Azure credential status based on the
+// ValidAzureIdentityProvider condition. Unlike AWS, Azure doesn't reconcile
+// OIDC documents, so we only check the single Identity provider condition.
+func GetCredentialStatus(hc *hyperv1.HostedCluster) CredentialStatus {
+	validIdentityProvider := meta.FindStatusCondition(hc.Status.Conditions, string(hyperv1.ValidAzureIdentityProvider))
+	if validIdentityProvider == nil {
+		return CredentialStatusUnknown
+	}
+	switch validIdentityProvider.Status {
+	case metav1.ConditionTrue:
+		return CredentialStatusValid
+	case metav1.ConditionFalse:
+		return CredentialStatusInvalid
+	default:
+		return CredentialStatusUnknown
+	}
+}
+
+// DeleteOrphanedMachines removes finalizers from any AzureMachines that are being
+// deleted when the Azure identity provider is invalid or unknown.
+func (Azure) DeleteOrphanedMachines(ctx context.Context, c client.Client, hc *hyperv1.HostedCluster, controlPlaneNamespace string) error {
+	if GetCredentialStatus(hc) == CredentialStatusValid {
+		return nil
+	}
+	azureMachineList := &capiazure.AzureMachineList{}
+	if err := c.List(ctx, azureMachineList, client.InNamespace(controlPlaneNamespace)); err != nil {
+		return fmt.Errorf("failed to list AzureMachine in %s: %w", controlPlaneNamespace, err)
+	}
+	logger := ctrl.LoggerFrom(ctx)
+	var errs []error
+	for i := range azureMachineList.Items {
+		azureMachine := &azureMachineList.Items[i]
+		if !azureMachine.DeletionTimestamp.IsZero() {
+			azureMachine.Finalizers = []string{}
+			if err := c.Update(ctx, azureMachine); err != nil {
+				errs = append(errs, fmt.Errorf("failed to delete AzureMachine %s/%s: %w", azureMachine.Namespace, azureMachine.Name, err))
+				continue
+			}
+			logger.Info("cleared finalizer on AzureMachine to unblock deletion because of invalid Azure identity provider", "machine", client.ObjectKeyFromObject(azureMachine))
+		}
+	}
+	return utilerrors.NewAggregate(errs)
 }
 
 func reconcileAzureCluster(azureCluster *capiazure.AzureCluster, hcluster *hyperv1.HostedCluster, apiEndpoint hyperv1.APIEndpoint, azureClusterIdentity *capiazure.AzureClusterIdentity, _ string) error {

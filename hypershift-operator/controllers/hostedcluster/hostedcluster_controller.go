@@ -449,6 +449,36 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
+	// Bubble up ValidAzureIdentityProvider condition from the hostedControlPlane.
+	// We set this condition even if the HC is being deleted. Otherwise, a hostedCluster with a conflicted identity provider
+	// would fail to complete deletion forever with no clear signal for consumers.
+	if hcluster.Spec.Platform.Type == hyperv1.AzurePlatform {
+		updated := false
+		var validIdentityProviderCondition *metav1.Condition
+		if hcp != nil {
+			validIdentityProviderCondition = meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ValidAzureIdentityProvider))
+		}
+
+		if validIdentityProviderCondition == nil {
+			updated = meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
+				Type:               string(hyperv1.ValidAzureIdentityProvider),
+				Status:             metav1.ConditionUnknown,
+				Reason:             hyperv1.StatusUnknownReason,
+				ObservedGeneration: hcluster.Generation,
+			})
+		} else {
+			validIdentityProviderCondition.ObservedGeneration = hcluster.Generation
+			updated = meta.SetStatusCondition(&hcluster.Status.Conditions, *validIdentityProviderCondition)
+		}
+
+		if updated {
+			// Persist status updates
+			if err := r.Client.Status().Update(ctx, hcluster); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
+			}
+		}
+	}
+
 	// Bubble up AWSDefaultSecurityGroupDeleted condition from the hostedControlPlane to report blocking objects on deletion.
 	if condition, changed := computeAWSDefaultSGDeletedCondition(hcluster, hcp); changed {
 		meta.SetStatusCondition(&hcluster.Status.Conditions, *condition)

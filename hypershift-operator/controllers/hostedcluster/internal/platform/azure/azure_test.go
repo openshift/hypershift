@@ -14,6 +14,7 @@ import (
 	"github.com/openshift/hypershift/support/config"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
@@ -524,6 +525,153 @@ func TestReconcileKMSConfigSecret(t *testing.T) {
 			g.Expect(cfg.LoadBalancerSku).To(Equal("standard"))
 
 			tc.validate(g, cfg)
+		})
+	}
+}
+
+func TestDeleteOrphanedMachines(t *testing.T) {
+	now := metav1.Now()
+	testCases := []struct {
+		name                   string
+		conditionStatus        *metav1.ConditionStatus
+		machines               []capiazure.AzureMachine
+		expectedFinalizerCount int
+	}{
+		{
+			name:            "Valid credentials — no finalizers cleared",
+			conditionStatus: &[]metav1.ConditionStatus{metav1.ConditionTrue}[0],
+			machines: []capiazure.AzureMachine{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "machine-1", Namespace: "test-ns",
+						DeletionTimestamp: &now,
+						Finalizers:        []string{"azuremachine.infrastructure.cluster.x-k8s.io"},
+					},
+				},
+			},
+			expectedFinalizerCount: 1,
+		},
+		{
+			name:            "Invalid credentials — finalizers cleared on deleting machines",
+			conditionStatus: &[]metav1.ConditionStatus{metav1.ConditionFalse}[0],
+			machines: []capiazure.AzureMachine{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "machine-1", Namespace: "test-ns",
+						DeletionTimestamp: &now,
+						Finalizers:        []string{"azuremachine.infrastructure.cluster.x-k8s.io"},
+					},
+				},
+			},
+			expectedFinalizerCount: 0,
+		},
+		{
+			name:            "Unknown credentials — finalizers cleared on deleting machines",
+			conditionStatus: nil,
+			machines: []capiazure.AzureMachine{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "machine-1", Namespace: "test-ns",
+						DeletionTimestamp: &now,
+						Finalizers:        []string{"azuremachine.infrastructure.cluster.x-k8s.io"},
+					},
+				},
+			},
+			expectedFinalizerCount: 0,
+		},
+		{
+			name:            "Invalid credentials — non-deleting machines untouched",
+			conditionStatus: &[]metav1.ConditionStatus{metav1.ConditionFalse}[0],
+			machines: []capiazure.AzureMachine{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "machine-1", Namespace: "test-ns",
+						Finalizers: []string{"azuremachine.infrastructure.cluster.x-k8s.io"},
+					},
+				},
+			},
+			expectedFinalizerCount: 1,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			hc := &hyperv1.HostedCluster{}
+			if tc.conditionStatus != nil {
+				meta.SetStatusCondition(&hc.Status.Conditions, metav1.Condition{
+					Type:   string(hyperv1.ValidAzureIdentityProvider),
+					Status: *tc.conditionStatus,
+				})
+			}
+
+			objs := []client.Object{}
+			for i := range tc.machines {
+				objs = append(objs, &tc.machines[i])
+			}
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				WithObjects(objs...).
+				WithStatusSubresource(&hyperv1.HostedCluster{}).
+				Build()
+
+			a := Azure{}
+			err := a.DeleteOrphanedMachines(context.Background(), fakeClient, hc, "test-ns")
+			g.Expect(err).ToNot(HaveOccurred())
+
+			updatedList := &capiazure.AzureMachineList{}
+			g.Expect(fakeClient.List(context.Background(), updatedList, client.InNamespace("test-ns"))).To(Succeed())
+			for _, m := range updatedList.Items {
+				g.Expect(len(m.Finalizers)).To(Equal(tc.expectedFinalizerCount),
+					"machine %s/%s has %d finalizers, expected %d", m.Namespace, m.Name, len(m.Finalizers), tc.expectedFinalizerCount)
+			}
+		})
+	}
+}
+
+func TestGetCredentialStatus(t *testing.T) {
+	testCases := []struct {
+		name                                      string
+		ValidAzureIdentityProviderConditionStatus *metav1.ConditionStatus
+		expectedResult                            CredentialStatus
+	}{
+		{
+			name: "When condition is True, return Valid",
+			ValidAzureIdentityProviderConditionStatus: &[]metav1.ConditionStatus{metav1.ConditionTrue}[0],
+			expectedResult: CredentialStatusValid,
+		},
+		{
+			name: "When condition is False, return Invalid",
+			ValidAzureIdentityProviderConditionStatus: &[]metav1.ConditionStatus{metav1.ConditionFalse}[0],
+			expectedResult: CredentialStatusInvalid,
+		},
+		{
+			name: "When condition is Unknown, return Unknown",
+			ValidAzureIdentityProviderConditionStatus: &[]metav1.ConditionStatus{metav1.ConditionUnknown}[0],
+			expectedResult: CredentialStatusUnknown,
+		},
+		{
+			name: "When condition is missing, return Unknown",
+			ValidAzureIdentityProviderConditionStatus: nil,
+			expectedResult: CredentialStatusUnknown,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			hc := hyperv1.HostedCluster{}
+
+			if tc.ValidAzureIdentityProviderConditionStatus != nil {
+				meta.SetStatusCondition(&hc.Status.Conditions, metav1.Condition{
+					Type:   string(hyperv1.ValidAzureIdentityProvider),
+					Status: *tc.ValidAzureIdentityProviderConditionStatus,
+				})
+			}
+
+			result := GetCredentialStatus(&hc)
+			if tc.expectedResult != result {
+				t.Errorf("GetCredentialStatus returned %v, expected %v", result, tc.expectedResult)
+			}
 		})
 	}
 }
