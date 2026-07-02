@@ -26,7 +26,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/config v1.32.25
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.24
 	github.com/aws/aws-sdk-go-v2/feature/s3/transfermanager v0.2.11
-	github.com/aws/aws-sdk-go-v2/service/ec2 v1.307.1
+	github.com/aws/aws-sdk-go-v2/service/ec2 v1.308.0
 	github.com/aws/aws-sdk-go-v2/service/elasticloadbalancing v1.34.6
 	github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2 v1.55.4
 	github.com/aws/aws-sdk-go-v2/service/iam v1.54.5
@@ -38,7 +38,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sqs v1.44.0
 	github.com/aws/aws-sdk-go-v2/service/sts v1.43.3
 	github.com/aws/karpenter-provider-aws v1.8.6
-	github.com/aws/smithy-go v1.27.1
+	github.com/aws/smithy-go v1.27.2
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/clarketm/json v1.17.1
 	github.com/coreos/go-systemd v0.0.0-20191104093116-d3cd4ed1dbcf
@@ -59,8 +59,8 @@ require (
 	github.com/grpc-ecosystem/go-grpc-prometheus v1.2.0
 	github.com/k-orc/openstack-resource-controller/v2 v2.6.0
 	github.com/kubernetes-csi/external-snapshotter/client/v6 v6.3.0
-	github.com/onsi/ginkgo/v2 v2.31.0
-	github.com/onsi/gomega v1.41.0
+	github.com/onsi/ginkgo/v2 v2.32.0
+	github.com/onsi/gomega v1.42.1
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.1
 	github.com/openshift/api v0.0.0-20260416105050-3c6b218b8a80
