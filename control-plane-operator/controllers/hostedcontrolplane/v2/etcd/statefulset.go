@@ -72,9 +72,14 @@ func adaptStatefulSet(cpContext component.WorkloadContext, sts *appsv1.StatefulS
 		)
 	})
 
+	// Use etcd SA for self-registration (all topologies) or etcd-defrag-controller SA for defrag (HA-only).
+	// The etcd SA is always created and has RBAC for EndpointSlice self-registration.
+	// The etcd-defrag-controller SA is only created in HA mode and has RBAC for defragmentation.
 	if defragControllerPredicate(cpContext) {
-		sts.Spec.Template.Spec.Containers = append(sts.Spec.Template.Spec.Containers, buildEtcdDefragControllerContainer(hcp.Namespace))
 		sts.Spec.Template.Spec.ServiceAccountName = manifests.EtcdDefragControllerServiceAccount("").Name
+		sts.Spec.Template.Spec.Containers = append(sts.Spec.Template.Spec.Containers, buildEtcdDefragControllerContainer(hcp.Namespace))
+	} else {
+		sts.Spec.Template.Spec.ServiceAccountName = manifests.EtcdServiceAccount("").Name
 	}
 
 	snapshotRestored := meta.IsStatusConditionTrue(hcp.Status.Conditions, string(hyperv1.EtcdSnapshotRestored))
