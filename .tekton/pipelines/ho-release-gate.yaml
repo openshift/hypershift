@@ -1,0 +1,759 @@
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: ho-release-gate
+spec:
+  params:
+  - name: SNAPSHOT
+    type: string
+    description: JSON payload of the Konflux Snapshot (injected by Integration Service)
+  - name: e2e-blocking-job-names
+    type: string
+    description: JSON array of blocking Prow periodic job names (gate fails if any fail)
+    default: '[]'
+  - name: e2e-informing-job-names
+    type: string
+    description: JSON array of informing Prow periodic job names (reported but do not block the gate)
+    default: '[]'
+  - name: gate-label
+    type: string
+    description: Label identifying which service release gate this is (e.g. ARO HCP)
+    default: "ARO HCP"
+  - name: release-plan-name
+    type: string
+    description: Name of the ReleasePlan to reference when creating the Release CR
+
+  tasks:
+  - name: extract-image
+    taskSpec:
+      params:
+      - name: SNAPSHOT
+        type: string
+      results:
+      - name: ho-image
+        description: Validated HO image reference
+      - name: snapshot-name
+        description: Snapshot name (from PipelineRun label)
+      steps:
+      - name: validate
+        image: quay.io/konflux-ci/appstudio-utils:latest
+        env:
+        - name: HOME
+          value: /tekton/home
+        - name: SNAPSHOT_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.labels['appstudio.openshift.io/snapshot']
+        script: |
+          #!/bin/bash
+          set -euo pipefail
+
+          echo -n "unknown" > $(results.snapshot-name.path)
+          echo -n "unknown" > $(results.ho-image.path)
+
+          SNAPSHOT_JSON='$(params.SNAPSHOT)'
+
+          echo "=== extract-image ==="
+          echo "Snapshot:  ${SNAPSHOT_NAME}"
+
+          HO_IMAGE=$(echo "${SNAPSHOT_JSON}" | jq -r '.components[] | select(.name=="hypershift-operator-main") | .containerImage')
+
+          if [[ -z "${HO_IMAGE}" || "${HO_IMAGE}" == "null" ]]; then
+            echo "ERROR: could not extract HO image from SNAPSHOT JSON"
+            echo "SNAPSHOT JSON: ${SNAPSHOT_JSON}"
+            exit 1
+          fi
+
+          echo "HO image:  ${HO_IMAGE}"
+
+          DIGEST=$(echo "${HO_IMAGE}" | grep -oP 'sha256:[a-f0-9]+' || echo "N/A")
+          echo "Digest:    ${DIGEST}"
+
+          REVISION=$(echo "${SNAPSHOT_JSON}" | jq -r '.components[] | select(.name=="hypershift-operator-main") | .source.git.revision' || echo "N/A")
+          echo "Commit:    ${REVISION}"
+
+          echo "=== validation passed ==="
+
+          echo -n "${HO_IMAGE}" > $(results.ho-image.path)
+          echo -n "${SNAPSHOT_NAME}" > $(results.snapshot-name.path)
+    params:
+    - name: SNAPSHOT
+      value: $(params.SNAPSHOT)
+
+  - name: run-e2e
+    runAfter: [extract-image]
+    timeout: "5h30m0s"
+    taskSpec:
+      params:
+      - name: ho-image
+        type: string
+      - name: e2e-blocking-job-names
+        type: string
+      - name: e2e-informing-job-names
+        type: string
+      results:
+      - name: results-json
+        description: "JSON array of per-job results: [{job, result, url}, ...]"
+      steps:
+      - name: trigger-and-poll
+        image: quay.io/konflux-ci/appstudio-utils:latest
+        env:
+        - name: GANGWAY_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: gangway-token
+              key: token
+        script: |
+          #!/bin/bash
+          set -euo pipefail
+
+          echo -n "[]" > $(results.results-json.path)
+
+          GANGWAY_URL="https://gangway-ci.apps.ci.l2s4.p1.openshiftapps.com/v1/executions"
+          HO_IMAGE="$(params.ho-image)"
+          BLOCKING_JSON='$(params.e2e-blocking-job-names)'
+          INFORMING_JSON='$(params.e2e-informing-job-names)'
+          POLL_INTERVAL=600
+          TIMEOUT=14400
+          TRIGGER_DELAY=60
+          RATE_LIMIT_BACKOFF=120
+          MAX_RETRIES=3
+          INITIAL_DELAY=2700
+          POLL_STAGGER=30
+
+          echo "=== run-e2e: setup ==="
+          echo "HO image:       ${HO_IMAGE}"
+          echo "Blocking jobs:  ${BLOCKING_JSON}"
+          echo "Informing jobs: ${INFORMING_JSON}"
+          echo "Poll interval: ${POLL_INTERVAL}s | Timeout: ${TIMEOUT}s"
+          echo "Trigger delay: ${TRIGGER_DELAY}s | Rate limit backoff: ${RATE_LIMIT_BACKOFF}s"
+          echo "Initial delay: ${INITIAL_DELAY}s | Poll stagger: ${POLL_STAGGER}s"
+
+          NUM_BLOCKING=$(echo "${BLOCKING_JSON}" | jq -r 'length')
+          NUM_INFORMING=$(echo "${INFORMING_JSON}" | jq -r 'length')
+          NUM_TOTAL=$((NUM_BLOCKING + NUM_INFORMING))
+
+          if [[ "${NUM_BLOCKING}" -eq 0 ]]; then
+            echo "ERROR: e2e-blocking-job-names is empty - at least one blocking job is required"
+            exit 1
+          fi
+          echo "Blocking: ${NUM_BLOCKING} | Informing: ${NUM_INFORMING} | Total: ${NUM_TOTAL}"
+          echo ""
+
+          declare -A JOB_IDS
+          declare -A JOB_URLS
+          declare -A JOB_RESULTS
+          declare -A JOB_TYPES
+
+          trigger_job() {
+            local JOB_NAME="$1"
+            local JOB_TYPE="$2"
+            local SHORT_NAME
+            SHORT_NAME=$(echo "${JOB_NAME}" | sed 's/periodic-ci-openshift-hypershift-release-5.0-periodics-//')
+            echo ""
+            echo "--- [${JOB_TYPE}] Triggering [${SHORT_NAME}] ---"
+            echo "  Full name: ${JOB_NAME}"
+
+            local TRIGGERED=false
+            for retry in $(seq 1 ${MAX_RETRIES}); do
+              local RESPONSE
+              RESPONSE=$(curl -s -w '\n%{http_code}' -X POST \
+                -H "Authorization: Bearer ${GANGWAY_TOKEN}" \
+                -H "Content-Type: application/json" \
+                -d "{
+                  \"job_name\": \"${JOB_NAME}\",
+                  \"job_execution_type\": \"1\",
+                  \"pod_spec_options\": {
+                    \"envs\": {
+                      \"OVERRIDE_IMAGE_HYPERSHIFT_OPERATOR\": \"${HO_IMAGE}\",
+                      \"OVERRIDE_IMAGE_HYPERSHIFT_TESTS\": \"registry.ci.openshift.org/hypershift/hypershift-tests:latest\"
+                    }
+                  }
+                }" \
+                "${GANGWAY_URL}")
+
+              local HTTP_CODE
+              HTTP_CODE=$(echo "${RESPONSE}" | tail -1)
+              local BODY
+              BODY=$(echo "${RESPONSE}" | sed '$d')
+
+              if [[ "${HTTP_CODE}" == "200" ]]; then
+                TRIGGERED=true
+                break
+              elif [[ "${HTTP_CODE}" == "429" || "${HTTP_CODE}" -ge 500 ]]; then
+                echo "  WARN: HTTP ${HTTP_CODE} (attempt ${retry}/${MAX_RETRIES}) - retrying in ${RATE_LIMIT_BACKOFF}s"
+                sleep ${RATE_LIMIT_BACKOFF}
+              else
+                echo "  ERROR: Trigger failed - HTTP ${HTTP_CODE}"
+                echo "  Raw response: ${BODY}"
+                break
+              fi
+            done
+
+            if [[ "${TRIGGERED}" != "true" ]]; then
+              echo "  ERROR: Trigger failed after ${MAX_RETRIES} attempts"
+              JOB_RESULTS["${JOB_NAME}"]="error"
+              JOB_URLS["${JOB_NAME}"]=""
+              JOB_TYPES["${JOB_NAME}"]="${JOB_TYPE}"
+              return
+            fi
+
+            if ! echo "${BODY}" | jq empty 2>/dev/null; then
+              echo "  ERROR: Response is not valid JSON"
+              echo "  Raw response: ${BODY}"
+              JOB_RESULTS["${JOB_NAME}"]="error"
+              JOB_URLS["${JOB_NAME}"]=""
+              JOB_TYPES["${JOB_NAME}"]="${JOB_TYPE}"
+              return
+            fi
+
+            local JOB_ID
+            JOB_ID=$(echo "${BODY}" | jq -r '.id')
+            if [[ -z "${JOB_ID}" || "${JOB_ID}" == "null" ]]; then
+              echo "  ERROR: Failed to parse job ID"
+              echo "  Raw response: ${BODY}"
+              JOB_RESULTS["${JOB_NAME}"]="error"
+              JOB_URLS["${JOB_NAME}"]=""
+              JOB_TYPES["${JOB_NAME}"]="${JOB_TYPE}"
+              return
+            fi
+
+            echo "  Job ID: ${JOB_ID}"
+            JOB_IDS["${JOB_NAME}"]="${JOB_ID}"
+            JOB_RESULTS["${JOB_NAME}"]="pending"
+            JOB_URLS["${JOB_NAME}"]=""
+            JOB_TYPES["${JOB_NAME}"]="${JOB_TYPE}"
+          }
+
+          echo "=== run-e2e: triggering ${NUM_BLOCKING} blocking job(s) ==="
+          for i in $(seq 0 $((NUM_BLOCKING - 1))); do
+            JOB_NAME=$(echo "${BLOCKING_JSON}" | jq -r ".[$i]")
+            trigger_job "${JOB_NAME}" "blocking"
+            if [[ $i -lt $((NUM_BLOCKING - 1)) || ${NUM_INFORMING} -gt 0 ]]; then
+              sleep ${TRIGGER_DELAY}
+            fi
+          done
+
+          if [[ ${NUM_INFORMING} -gt 0 ]]; then
+            echo ""
+            echo "=== run-e2e: triggering ${NUM_INFORMING} informing job(s) ==="
+            for i in $(seq 0 $((NUM_INFORMING - 1))); do
+              JOB_NAME=$(echo "${INFORMING_JSON}" | jq -r ".[$i]")
+              trigger_job "${JOB_NAME}" "informing"
+              if [[ $i -lt $((NUM_INFORMING - 1)) ]]; then
+                sleep ${TRIGGER_DELAY}
+              fi
+            done
+          fi
+
+          echo ""
+          echo "=== run-e2e: resolving Prow URLs ==="
+          for JOB_NAME in "${!JOB_IDS[@]}"; do
+            JOB_ID="${JOB_IDS[$JOB_NAME]}"
+            SHORT_NAME=$(echo "${JOB_NAME}" | sed 's/periodic-ci-openshift-hypershift-release-5.0-periodics-//')
+            for attempt in $(seq 1 10); do
+              POLL_RESPONSE=$(curl -s -w '\n%{http_code}' -H "Authorization: Bearer ${GANGWAY_TOKEN}" "${GANGWAY_URL}/${JOB_ID}")
+              POLL_CODE=$(echo "${POLL_RESPONSE}" | tail -1)
+              POLL_BODY=$(echo "${POLL_RESPONSE}" | sed '$d')
+              if [[ "${POLL_CODE}" == "200" ]]; then
+                URL=$(echo "${POLL_BODY}" | jq -r '.job_url // empty')
+                if [[ -n "${URL}" ]]; then
+                  JOB_URLS["${JOB_NAME}"]="${URL}"
+                  echo "  [${JOB_TYPES[$JOB_NAME]}] [${SHORT_NAME}] ${URL}"
+                  break
+                fi
+              fi
+              sleep 15
+            done
+            if [[ -z "${JOB_URLS[$JOB_NAME]}" ]]; then
+              echo "  [${JOB_TYPES[$JOB_NAME]}] [${SHORT_NAME}] WARN: could not resolve URL"
+            fi
+          done
+
+          echo ""
+          echo "=== run-e2e: waiting ${INITIAL_DELAY}s before first poll ==="
+          sleep ${INITIAL_DELAY}
+          ELAPSED=${INITIAL_DELAY}
+
+          echo "=== run-e2e: polling all jobs ==="
+          POLL_COUNT=0
+          while [[ ${ELAPSED} -lt ${TIMEOUT} ]]; do
+            PENDING=0
+            for JOB_NAME in "${!JOB_IDS[@]}"; do
+              [[ "${JOB_RESULTS[$JOB_NAME]}" != "pending" ]] && continue
+              PENDING=$((PENDING + 1))
+            done
+            [[ ${PENDING} -eq 0 ]] && break
+
+            POLL_COUNT=$((POLL_COUNT + 1))
+            TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+            echo ""
+            echo "[${TIMESTAMP}] Poll #${POLL_COUNT} (${ELAPSED}s) - ${PENDING} job(s) pending"
+
+            POLL_IDX=0
+            for JOB_NAME in "${!JOB_IDS[@]}"; do
+              [[ "${JOB_RESULTS[$JOB_NAME]}" != "pending" ]] && continue
+
+              if [[ ${POLL_IDX} -gt 0 ]]; then
+                sleep ${POLL_STAGGER}
+              fi
+              POLL_IDX=$((POLL_IDX + 1))
+
+              JOB_ID="${JOB_IDS[$JOB_NAME]}"
+              JOB_TYPE="${JOB_TYPES[$JOB_NAME]}"
+              SHORT_NAME=$(echo "${JOB_NAME}" | sed 's/periodic-ci-openshift-hypershift-release-5.0-periodics-//')
+
+              POLL_RESPONSE=$(curl -s -w '\n%{http_code}' -H "Authorization: Bearer ${GANGWAY_TOKEN}" "${GANGWAY_URL}/${JOB_ID}")
+              POLL_CODE=$(echo "${POLL_RESPONSE}" | tail -1)
+              POLL_BODY=$(echo "${POLL_RESPONSE}" | sed '$d')
+
+              if [[ "${POLL_CODE}" == "429" || "${POLL_CODE}" -ge 500 ]]; then
+                echo "  [${JOB_TYPE}] [${SHORT_NAME}] HTTP ${POLL_CODE} - rate limited, will retry next cycle"
+                continue
+              elif [[ "${POLL_CODE}" != "200" ]]; then
+                echo "  [${JOB_TYPE}] [${SHORT_NAME}] HTTP ${POLL_CODE} - auth error or unexpected failure"
+                echo "  Raw response: ${POLL_BODY}"
+                JOB_RESULTS["${JOB_NAME}"]="error"
+                continue
+              fi
+
+              if ! echo "${POLL_BODY}" | jq empty 2>/dev/null; then
+                echo "  [${JOB_TYPE}] [${SHORT_NAME}] response is not valid JSON"
+                JOB_RESULTS["${JOB_NAME}"]="error"
+                continue
+              fi
+
+              STATUS=$(echo "${POLL_BODY}" | jq -r '.job_status')
+              echo "  [${JOB_TYPE}] [${SHORT_NAME}] ${STATUS}"
+
+              case "${STATUS}" in
+                SUCCESS)
+                  JOB_RESULTS["${JOB_NAME}"]="passed"
+                  echo "  [${JOB_TYPE}] [${SHORT_NAME}] PASSED"
+                  ;;
+                FAILURE|ABORTED|ERROR)
+                  JOB_RESULTS["${JOB_NAME}"]="failed"
+                  echo "  [${JOB_TYPE}] [${SHORT_NAME}] FAILED (${STATUS})"
+                  ;;
+              esac
+            done
+
+            PENDING_AFTER=0
+            for JOB_NAME in "${!JOB_IDS[@]}"; do
+              [[ "${JOB_RESULTS[$JOB_NAME]}" == "pending" ]] && PENDING_AFTER=$((PENDING_AFTER + 1))
+            done
+            [[ ${PENDING_AFTER} -eq 0 ]] && break
+
+            sleep ${POLL_INTERVAL}
+            ELAPSED=$((ELAPSED + POLL_INTERVAL))
+          done
+
+          for JOB_NAME in "${!JOB_RESULTS[@]}"; do
+            if [[ "${JOB_RESULTS[$JOB_NAME]}" == "pending" ]]; then
+              JOB_RESULTS["${JOB_NAME}"]="error"
+              SHORT_NAME=$(echo "${JOB_NAME}" | sed 's/periodic-ci-openshift-hypershift-release-5.0-periodics-//')
+              echo "  [${JOB_TYPES[$JOB_NAME]}] [${SHORT_NAME}] TIMEOUT"
+            fi
+          done
+
+          echo ""
+          echo "=== run-e2e: results summary ==="
+          echo ""
+          echo "--- BLOCKING TESTS ---"
+          for i in $(seq 0 $((NUM_BLOCKING - 1))); do
+            JOB_NAME=$(echo "${BLOCKING_JSON}" | jq -r ".[$i]")
+            SHORT_NAME=$(echo "${JOB_NAME}" | sed 's/periodic-ci-openshift-hypershift-release-5.0-periodics-//')
+            echo "  ${SHORT_NAME}: ${JOB_RESULTS[$JOB_NAME]} (${JOB_URLS[$JOB_NAME]:-})"
+          done
+          if [[ ${NUM_INFORMING} -gt 0 ]]; then
+            echo ""
+            echo "--- INFORMING TESTS ---"
+            for i in $(seq 0 $((NUM_INFORMING - 1))); do
+              JOB_NAME=$(echo "${INFORMING_JSON}" | jq -r ".[$i]")
+              SHORT_NAME=$(echo "${JOB_NAME}" | sed 's/periodic-ci-openshift-hypershift-release-5.0-periodics-//')
+              echo "  ${SHORT_NAME}: ${JOB_RESULTS[$JOB_NAME]} (${JOB_URLS[$JOB_NAME]:-})"
+            done
+          fi
+
+          echo ""
+          echo "=== run-e2e: building results JSON ==="
+          RESULTS_JSON="["
+          FIRST=true
+          for JOB_TYPE in blocking informing; do
+            if [[ "${JOB_TYPE}" == "blocking" ]]; then
+              SRC_JSON="${BLOCKING_JSON}"
+              SRC_COUNT=${NUM_BLOCKING}
+            else
+              SRC_JSON="${INFORMING_JSON}"
+              SRC_COUNT=${NUM_INFORMING}
+            fi
+            for i in $(seq 0 $((SRC_COUNT - 1))); do
+              JOB_NAME=$(echo "${SRC_JSON}" | jq -r ".[$i]")
+              RESULT="${JOB_RESULTS[$JOB_NAME]}"
+              URL="${JOB_URLS[$JOB_NAME]:-}"
+              if [[ "${FIRST}" == "true" ]]; then
+                FIRST=false
+              else
+                RESULTS_JSON+=","
+              fi
+              RESULTS_JSON+="{\"job\":\"${JOB_NAME}\",\"result\":\"${RESULT}\",\"url\":\"${URL}\",\"type\":\"${JOB_TYPE}\"}"
+            done
+          done
+          RESULTS_JSON+="]"
+
+          echo "Results JSON: ${RESULTS_JSON}"
+          echo -n "${RESULTS_JSON}" > $(results.results-json.path)
+    params:
+    - name: ho-image
+      value: $(tasks.extract-image.results.ho-image)
+    - name: e2e-blocking-job-names
+      value: $(params.e2e-blocking-job-names)
+    - name: e2e-informing-job-names
+      value: $(params.e2e-informing-job-names)
+
+  - name: evaluate-results
+    runAfter: [run-e2e]
+    taskSpec:
+      params:
+      - name: results-json
+        type: string
+      results:
+      - name: gate-passed
+        description: Whether the release gate passed (true/false)
+      steps:
+      - name: evaluate
+        image: quay.io/konflux-ci/appstudio-utils:latest
+        script: |
+          #!/bin/bash
+          set -euo pipefail
+
+          echo -n "false" > $(results.gate-passed.path)
+
+          RESULTS_JSON='$(params.results-json)'
+
+          echo "=== evaluate-results ==="
+          echo ""
+
+          GATE_PASSED="true"
+
+          BLOCKING_COUNT=$(echo "${RESULTS_JSON}" | jq '[.[] | select(.type == "blocking")] | length')
+          INFORMING_COUNT=$(echo "${RESULTS_JSON}" | jq '[.[] | select(.type == "informing")] | length')
+
+          echo "--- BLOCKING TESTS (${BLOCKING_COUNT}) ---"
+          printf "%-50s %-10s %s\n" "JOB" "RESULT" "URL"
+          printf "%-50s %-10s %s\n" "---" "------" "---"
+          for i in $(seq 0 $((BLOCKING_COUNT - 1))); do
+            JOB=$(echo "${RESULTS_JSON}" | jq -r "[.[] | select(.type == \"blocking\")][$i].job" | sed 's/periodic-ci-openshift-hypershift-release-5.0-periodics-//')
+            RESULT=$(echo "${RESULTS_JSON}" | jq -r "[.[] | select(.type == \"blocking\")][$i].result")
+            URL=$(echo "${RESULTS_JSON}" | jq -r "[.[] | select(.type == \"blocking\")][$i].url")
+            printf "%-50s %-10s %s\n" "${JOB}" "${RESULT}" "${URL}"
+            if [[ "${RESULT}" != "passed" ]]; then
+              GATE_PASSED="false"
+            fi
+          done
+
+          if [[ ${INFORMING_COUNT} -gt 0 ]]; then
+            echo ""
+            echo "--- INFORMING TESTS (${INFORMING_COUNT}) ---"
+            printf "%-50s %-10s %s\n" "JOB" "RESULT" "URL"
+            printf "%-50s %-10s %s\n" "---" "------" "---"
+            INFORMING_WARNINGS=0
+            for i in $(seq 0 $((INFORMING_COUNT - 1))); do
+              JOB=$(echo "${RESULTS_JSON}" | jq -r "[.[] | select(.type == \"informing\")][$i].job" | sed 's/periodic-ci-openshift-hypershift-release-5.0-periodics-//')
+              RESULT=$(echo "${RESULTS_JSON}" | jq -r "[.[] | select(.type == \"informing\")][$i].result")
+              URL=$(echo "${RESULTS_JSON}" | jq -r "[.[] | select(.type == \"informing\")][$i].url")
+              printf "%-50s %-10s %s\n" "${JOB}" "${RESULT}" "${URL}"
+              if [[ "${RESULT}" != "passed" ]]; then
+                INFORMING_WARNINGS=$((INFORMING_WARNINGS + 1))
+              fi
+            done
+            if [[ ${INFORMING_WARNINGS} -gt 0 ]]; then
+              echo ""
+              echo "WARN: ${INFORMING_WARNINGS} informing test(s) failed (does not affect gate verdict)"
+            fi
+          fi
+
+          echo ""
+          echo "Gate verdict: ${GATE_PASSED} (${BLOCKING_COUNT} blocking, AND logic)"
+          echo -n "${GATE_PASSED}" > $(results.gate-passed.path)
+
+          if [[ "${GATE_PASSED}" == "false" ]]; then
+            echo ""
+            echo "=== GATE FAILED - image will NOT be promoted ==="
+          else
+            echo ""
+            echo "=== GATE PASSED - create-release will create the Release CR ==="
+          fi
+    params:
+    - name: results-json
+      value: $(tasks.run-e2e.results.results-json)
+
+  - name: create-release
+    runAfter: [evaluate-results]
+    taskSpec:
+      params:
+      - name: gate-passed
+        type: string
+      - name: snapshot-name
+        type: string
+      - name: release-plan-name
+        type: string
+      results:
+      - name: release-name
+        description: Name of the created Release CR (or N/A if gate failed)
+      steps:
+      - name: create
+        image: quay.io/konflux-ci/appstudio-utils:latest
+        script: |
+          #!/bin/bash
+          set -euo pipefail
+
+          echo -n "N/A" > $(results.release-name.path)
+
+          GATE_PASSED="$(params.gate-passed)"
+          SNAPSHOT="$(params.snapshot-name)"
+          RELEASE_PLAN="$(params.release-plan-name)"
+
+          if [[ "${GATE_PASSED}" != "true" ]]; then
+            echo "=== create-release: gate did not pass - skipping ==="
+            echo -n "N/A" > $(results.release-name.path)
+            exit 1
+          fi
+
+          echo "=== create-release ==="
+          echo "Snapshot:     ${SNAPSHOT}"
+          echo "ReleasePlan:  ${RELEASE_PLAN}"
+
+          set +e
+          RELEASE_NAME=$(oc create -f - -o jsonpath='{.metadata.name}' <<EOFRELEASE
+          apiVersion: appstudio.redhat.com/v1alpha1
+          kind: Release
+          metadata:
+            generateName: ${RELEASE_PLAN}-
+            labels:
+              release.appstudio.openshift.io/author: rh-ee-alesross
+          spec:
+            releasePlan: ${RELEASE_PLAN}
+            snapshot: ${SNAPSHOT}
+          EOFRELEASE
+          )
+          CREATE_RC=$?
+          set -e
+
+          if [[ ${CREATE_RC} -ne 0 ]]; then
+            echo "ERROR: Failed to create Release CR (exit code ${CREATE_RC})"
+            echo -n "N/A" > $(results.release-name.path)
+            exit 1
+          fi
+
+          echo "Release created: ${RELEASE_NAME}"
+          echo -n "${RELEASE_NAME}" > $(results.release-name.path)
+    params:
+    - name: gate-passed
+      value: $(tasks.evaluate-results.results.gate-passed)
+    - name: snapshot-name
+      value: $(tasks.extract-image.results.snapshot-name)
+    - name: release-plan-name
+      value: $(params.release-plan-name)
+
+  finally:
+  - name: notify-slack
+    taskSpec:
+      params:
+      - name: snapshot-name
+        type: string
+      - name: results-json
+        type: string
+      - name: gate-passed
+        type: string
+      - name: gate-label
+        type: string
+      - name: release-name
+        type: string
+      steps:
+      - name: send-notification
+        image: quay.io/konflux-ci/appstudio-utils:latest
+        env:
+        - name: SLACK_WEBHOOK_URL
+          valueFrom:
+            secretKeyRef:
+              name: slack-webhook
+              key: url
+        script: |
+          #!/bin/bash
+          set -euo pipefail
+
+          SNAPSHOT="$(params.snapshot-name)"
+          RESULTS_JSON='$(params.results-json)'
+          GATE_PASSED="$(params.gate-passed)"
+          GATE_LABEL="$(params.gate-label)"
+          RELEASE_NAME="$(params.release-name)"
+          PIPELINE_RUN="$(context.pipelineRun.name)"
+
+          echo "=== notify-slack ==="
+          echo "Snapshot:     ${SNAPSHOT}"
+          echo "PipelineRun:  ${PIPELINE_RUN}"
+          echo "Gate passed:  ${GATE_PASSED}"
+          echo "Gate label:   ${GATE_LABEL}"
+          echo "Release:      ${RELEASE_NAME}"
+
+          KONFLUX_BASE="https://konflux-ui.apps.stone-prd-rh01.pg1f.p1.openshiftapps.com/ns/crt-redhat-acm-tenant/applications/hypershift-operator"
+
+          if [[ "${RELEASE_NAME}" != "N/A" && -n "${RELEASE_NAME}" ]]; then
+            RELEASE_FIELD="<${KONFLUX_BASE}/releases/${RELEASE_NAME}/|${RELEASE_NAME}>"
+          else
+            RELEASE_FIELD="N/A"
+          fi
+
+          if [[ "${GATE_PASSED}" == "true" ]]; then
+            COLOR="#2E7D32"
+            HEADER=":white_check_mark: *HO Release Gate [${GATE_LABEL}] PASSED*"
+          else
+            COLOR="#D32F2F"
+            HEADER=":x: *HO Release Gate [${GATE_LABEL}] FAILED*"
+          fi
+
+          format_results() {
+            local TYPE="$1"
+            local LABEL="$2"
+            local LINES=""
+            local COUNT
+            COUNT=$(echo "${RESULTS_JSON}" | jq "[.[] | select(.type == \"${TYPE}\")] | length")
+            if [[ ${COUNT} -eq 0 ]]; then
+              return
+            fi
+            LINES="\\n*${LABEL}:*"
+            for i in $(seq 0 $((COUNT - 1))); do
+              JOB=$(echo "${RESULTS_JSON}" | jq -r "[.[] | select(.type == \"${TYPE}\")][$i].job" | sed 's/periodic-ci-openshift-hypershift-release-5.0-periodics-//')
+              RESULT=$(echo "${RESULTS_JSON}" | jq -r "[.[] | select(.type == \"${TYPE}\")][$i].result")
+              URL=$(echo "${RESULTS_JSON}" | jq -r "[.[] | select(.type == \"${TYPE}\")][$i].url")
+              if [[ "${RESULT}" == "passed" ]]; then
+                EMOJI=":white_check_mark:"
+              else
+                EMOJI=":red_circle:"
+              fi
+              if [[ -n "${URL}" && "${URL}" != "null" ]]; then
+                LINES="${LINES}\\n${EMOJI} \`${JOB}\` - ${RESULT} (<${URL}|Prow>)"
+              else
+                LINES="${LINES}\\n${EMOJI} \`${JOB}\` - ${RESULT}"
+              fi
+            done
+            echo -n "${LINES}"
+          }
+
+          RESULT_LINES=""
+          if [[ -n "${RESULTS_JSON}" ]] && echo "${RESULTS_JSON}" | jq empty 2>/dev/null; then
+            RESULT_LINES+=$(format_results "blocking" "Blocking Tests")
+            INFORMING_LINES=$(format_results "informing" "Informing Tests")
+            if [[ -n "${INFORMING_LINES}" ]]; then
+              RESULT_LINES+="\\n${INFORMING_LINES}"
+            fi
+          else
+            RESULT_LINES="\\n:x: Pipeline failed before tests started. Check PipelineRun logs."
+          fi
+
+          PAYLOAD=$(cat <<EOFPAYLOAD
+          {
+            "attachments": [{
+              "color": "${COLOR}",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {"type": "mrkdwn", "text": "${HEADER}"}
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    {"type": "mrkdwn", "text": "*Snapshot:*\n${SNAPSHOT}"},
+                    {"type": "mrkdwn", "text": "*PipelineRun:*\n<${KONFLUX_BASE}/pipelineruns/${PIPELINE_RUN}/|${PIPELINE_RUN}>"},
+                    {"type": "mrkdwn", "text": "*Release:*\n${RELEASE_FIELD}"}
+                  ]
+                },
+                {"type": "divider"},
+                {
+                  "type": "section",
+                  "text": {"type": "mrkdwn", "text": "${RESULT_LINES}"}
+                }
+              ]
+            }]
+          }
+          EOFPAYLOAD
+          )
+
+          HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+            -H 'Content-type: application/json' \
+            --data "${PAYLOAD}" \
+            "${SLACK_WEBHOOK_URL}")
+
+          echo "Slack response: HTTP ${HTTP_CODE}"
+          if [[ "${HTTP_CODE}" != "200" ]]; then
+            echo "WARN: Slack notification failed"
+          fi
+          echo "=== notify-slack: done ==="
+    params:
+    - name: snapshot-name
+      value: $(tasks.extract-image.results.snapshot-name)
+    - name: results-json
+      value: $(tasks.run-e2e.results.results-json)
+    - name: gate-passed
+      value: $(tasks.evaluate-results.results.gate-passed)
+    - name: gate-label
+      value: $(params.gate-label)
+    - name: release-name
+      value: $(tasks.create-release.results.release-name)
+
+  - name: notify-slack-error
+    when:
+    - input: $(tasks.create-release.status)
+      operator: in
+      values: ["None"]
+    taskSpec:
+      steps:
+      - name: send-error-notification
+        image: quay.io/konflux-ci/appstudio-utils:latest
+        env:
+        - name: SLACK_WEBHOOK_URL
+          valueFrom:
+            secretKeyRef:
+              name: slack-webhook
+              key: url
+        script: |
+          #!/bin/bash
+          set -euo pipefail
+
+          PIPELINE_RUN="$(context.pipelineRun.name)"
+          KONFLUX_BASE="https://konflux-ui.apps.stone-prd-rh01.pg1f.p1.openshiftapps.com/ns/crt-redhat-acm-tenant/applications/hypershift-operator"
+
+          echo "=== notify-slack-error ==="
+          echo "Pipeline failed before reaching the release gate evaluation."
+          echo "PipelineRun: ${PIPELINE_RUN}"
+
+          PAYLOAD=$(cat <<EOFPAYLOAD
+          {
+            "attachments": [{
+              "color": "#D32F2F",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {"type": "mrkdwn", "text": ":x: *HO Release Gate - Pipeline Error*\nPipeline failed before reaching the evaluation phase. Check PipelineRun logs."}
+                },
+                {
+                  "type": "section",
+                  "text": {"type": "mrkdwn", "text": "*PipelineRun:*\n<${KONFLUX_BASE}/pipelineruns/${PIPELINE_RUN}/|${PIPELINE_RUN}>"}
+                }
+              ]
+            }]
+          }
+          EOFPAYLOAD
+          )
+
+          HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+            -H 'Content-type: application/json' \
+            --data "${PAYLOAD}" \
+            "${SLACK_WEBHOOK_URL}")
+
+          echo "Slack response: HTTP ${HTTP_CODE}"
+          if [[ "${HTTP_CODE}" != "200" ]]; then
+            echo "WARN: Slack error notification failed"
+          fi
+          echo "=== notify-slack-error: done ==="
