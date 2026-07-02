@@ -49182,7 +49182,12 @@ string
 <td>
 <p>name specify the network attached to the nodes
 it is a value with the format &ldquo;[namespace]/[name]&rdquo; to reference the
-multus network attachment definition</p>
+multus network attachment definition, where namespace and name consist
+only of lowercase alphanumeric characters and hyphens, and start and
+end with alphanumeric characters
+MaxLength=55: KubeVirt requires Interface.Name to be a DNS label (max 63 chars).
+The generated name is &ldquo;iface{N}<em>{namespace}-{name}&rdquo; where N≤20 (MaxItems),
+giving a max prefix of &ldquo;iface20</em>&rdquo; (8 chars), leaving 55 chars for namespace/name.</p>
 </td>
 </tr>
 </tbody>
