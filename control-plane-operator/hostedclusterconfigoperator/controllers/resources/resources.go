@@ -49,6 +49,7 @@ import (
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/capabilities"
+	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/k8sutil"
@@ -1174,6 +1175,13 @@ func (r *reconciler) reconcileConfig(ctx context.Context, hcp *hyperv1.HostedCon
 	proxy := globalconfig.ProxyConfig()
 	if _, err := r.CreateOrUpdate(ctx, r.client, proxy, func() error {
 		globalconfig.ReconcileInClusterProxyConfig(proxy, hcp.Spec.Configuration)
+		// When no proxy.trustedCA is set but additionalTrustBundle is, point the
+		// Proxy object at openshift-config/user-ca-bundle (already written by
+		// reconcileUserCertCABundle) so CNO merges it into
+		// openshift-config-managed/trusted-ca-bundle.
+		if proxy.Spec.TrustedCA.Name == "" && hcp.Spec.AdditionalTrustBundle != nil {
+			proxy.Spec.TrustedCA.Name = manifests.UserCABundle().Name
+		}
 		return nil
 	}); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile proxy config: %w", err))
@@ -1234,19 +1242,23 @@ func (r *reconciler) reconcileProxyTrustedCAConfigMap(ctx context.Context, hcp *
 
 	currentConfigMapRef := proxy.Spec.TrustedCA.Name
 	if currentConfigMapRef != "" && currentConfigMapRef != configMapRef {
-		// cleanup old configMaps
-		cm := &corev1.ConfigMap{}
-		cm.Name = currentConfigMapRef
+		// Do not clean up user-ca-bundle when it is being managed via additionalTrustBundle;
+		// reconcileConfig sets proxy.Spec.TrustedCA.Name to user-ca-bundle in that case.
+		if !(currentConfigMapRef == manifests.UserCABundle().Name && hcp.Spec.AdditionalTrustBundle != nil) {
+			// cleanup old configMaps
+			cm := &corev1.ConfigMap{}
+			cm.Name = currentConfigMapRef
 
-		// log and ignore deletion errors, should not disrupt normal workflow
-		cm.Namespace = hcp.Namespace
-		if err := r.cpClient.Delete(ctx, cm); err != nil {
-			log.Error(err, "failed to delete configmap", "name", cm.Name, "namespace", cm.Namespace)
-		}
+			// log and ignore deletion errors, should not disrupt normal workflow
+			cm.Namespace = hcp.Namespace
+			if err := r.cpClient.Delete(ctx, cm); err != nil {
+				log.Error(err, "failed to delete configmap", "name", cm.Name, "namespace", cm.Namespace)
+			}
 
-		cm.Namespace = manifests.ProxyTrustedCAConfigMap("").Namespace
-		if err := r.client.Delete(ctx, cm); err != nil {
-			log.Error(err, "failed to delete configmap in hosted cluster", "name", cm.Name, "namespace", cm.Namespace)
+			cm.Namespace = manifests.ProxyTrustedCAConfigMap("").Namespace
+			if err := r.client.Delete(ctx, cm); err != nil {
+				log.Error(err, "failed to delete configmap in hosted cluster", "name", cm.Name, "namespace", cm.Namespace)
+			}
 		}
 	}
 
@@ -1261,7 +1273,26 @@ func (r *reconciler) reconcileProxyTrustedCAConfigMap(ctx context.Context, hcp *
 
 	destCM := manifests.ProxyTrustedCAConfigMap(sourceCM.Name)
 	if _, err := r.CreateOrUpdate(ctx, r.client, destCM, func() error {
-		destCM.Data = sourceCM.Data
+		destCM.Data = make(map[string]string)
+		for k, v := range sourceCM.Data {
+			destCM.Data[k] = v
+		}
+		// Also merge additionalTrustBundle so that CNO writes both CAs into
+		// openshift-config-managed/trusted-ca-bundle, benefiting all consumers
+		// (including CVO's update service TLS verification).
+		if hcp.Spec.AdditionalTrustBundle != nil {
+			atbCM := &corev1.ConfigMap{}
+			if err := r.cpClient.Get(ctx, client.ObjectKey{Namespace: hcp.Namespace, Name: hcp.Spec.AdditionalTrustBundle.Name}, atbCM); err != nil {
+				return fmt.Errorf("failed to get additionalTrustBundle configmap %s/%s: %w", hcp.Namespace, hcp.Spec.AdditionalTrustBundle.Name, err)
+			}
+			if v := atbCM.Data[certs.UserCABundleMapKey]; v != "" {
+				existing := destCM.Data[certs.UserCABundleMapKey]
+				if existing != "" && !strings.HasSuffix(existing, "\n") {
+					existing += "\n"
+				}
+				destCM.Data[certs.UserCABundleMapKey] = existing + v
+			}
+		}
 		return nil
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile referenced TrustedCA config map %s/%s: %w", destCM.Namespace, destCM.Name, err)
