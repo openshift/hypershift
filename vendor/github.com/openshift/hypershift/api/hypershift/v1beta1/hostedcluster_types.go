@@ -709,6 +709,7 @@ type HostedClusterSpec struct {
 	// validation.
 	// If the platform is AWS and this value is set, the controller will update an s3 object with the appropriate OIDC documents (using the serviceAccountSigningKey info) into that issuerURL.
 	// The expectation is for this s3 url to be backed by an OIDC provider in the AWS IAM.
+	// Once set, this value is immutable.
 	// +kubebuilder:default:="https://kubernetes.default.svc"
 	// +immutable
 	// +optional
@@ -2551,6 +2552,8 @@ type ClusterConfiguration struct {
 
 	// authentication specifies cluster-wide settings for authentication (like OAuth and
 	// webhook token authenticators).
+	// Note: the serviceAccountIssuer field within this configuration is ignored; the
+	// HostedCluster's spec.issuerURL is always used as the service account issuer instead.
 	// +optional
 	Authentication *configv1.AuthenticationSpec `json:"authentication,omitempty"`
 
