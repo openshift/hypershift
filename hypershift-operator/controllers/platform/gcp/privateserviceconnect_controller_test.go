@@ -291,3 +291,26 @@ func TestConstructServiceAttachmentName(t *testing.T) {
 		})
 	}
 }
+
+func TestNATSubnetFilterFormat(t *testing.T) {
+	tests := []struct {
+		name       string
+		networkURL string
+		expected   string
+	}{
+		{
+			name:       "When given a network URL it should include both purpose and network in the filter",
+			networkURL: "https://www.googleapis.com/compute/v1/projects/my-project/global/networks/my-vpc",
+			expected:   `purpose = "PRIVATE_SERVICE_CONNECT" AND network = "https://www.googleapis.com/compute/v1/projects/my-project/global/networks/my-vpc"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			filter := fmt.Sprintf(`purpose = "PRIVATE_SERVICE_CONNECT" AND network = "%s"`, tt.networkURL)
+			if filter != tt.expected {
+				t.Errorf("expected %s, got %s", tt.expected, filter)
+			}
+		})
+	}
+}

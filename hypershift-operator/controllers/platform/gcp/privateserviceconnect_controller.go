@@ -152,18 +152,28 @@ func (r *GCPPrivateServiceConnectReconciler) Reconcile(ctx context.Context, req 
 
 // reconcileGCPPrivateServiceConnectSpec reconciles the GCPPrivateServiceConnect spec fields
 func (r *GCPPrivateServiceConnectReconciler) reconcileGCPPrivateServiceConnectSpec(ctx context.Context, gcpPSC *hyperv1.GCPPrivateServiceConnect, _ *hyperv1.HostedCluster) error {
-	// Set ForwardingRuleName if not already populated
-	if gcpPSC.Spec.ForwardingRuleName == "" {
-		forwardingRuleName, err := r.lookupForwardingRuleName(ctx, gcpPSC)
-		if err != nil {
-			return fmt.Errorf("failed to lookup ForwardingRule: %w", err)
-		}
-		gcpPSC.Spec.ForwardingRuleName = hyperv1.GCPResourceName(forwardingRuleName)
+	if gcpPSC.Spec.ForwardingRuleName != "" && gcpPSC.Spec.NATSubnet != "" {
+		return nil
 	}
 
-	// Set NAT Subnet if not already populated
+	// NAT subnet discovery requires the forwarding rule's Network field to scope subnets to the
+	// management cluster's VPC. Look up the forwarding rule unconditionally so we always have the
+	// network URL, even when ForwardingRuleName is already set but NATSubnet is not.
+	rule, err := r.lookupForwardingRule(ctx, gcpPSC)
+	if err != nil {
+		return fmt.Errorf("failed to lookup ForwardingRule: %w", err)
+	}
+	if rule == nil {
+		// ILB not yet provisioned; requeue without writing to spec.
+		return nil
+	}
+	if rule.Network == "" {
+		return fmt.Errorf("ForwardingRule %q has no Network field; cannot scope NAT subnet discovery to the correct VPC", rule.Name)
+	}
+	gcpPSC.Spec.ForwardingRuleName = hyperv1.GCPResourceName(rule.Name)
+
 	if gcpPSC.Spec.NATSubnet == "" {
-		natSubnet, err := r.discoverNATSubnet(ctx, gcpPSC)
+		natSubnet, err := r.discoverNATSubnet(ctx, gcpPSC, rule.Network)
 		if err != nil {
 			return fmt.Errorf("failed to discover NAT subnet: %w", err)
 		}
@@ -173,8 +183,9 @@ func (r *GCPPrivateServiceConnectReconciler) reconcileGCPPrivateServiceConnectSp
 	return nil
 }
 
-// lookupForwardingRuleName finds the ForwardingRule name by LoadBalancer IP
-func (r *GCPPrivateServiceConnectReconciler) lookupForwardingRuleName(ctx context.Context, gcpPSC *hyperv1.GCPPrivateServiceConnect) (string, error) {
+// lookupForwardingRule finds the ForwardingRule for the LoadBalancer IP and returns the full object.
+// Returns nil (no error) when the ILB is not yet provisioned.
+func (r *GCPPrivateServiceConnectReconciler) lookupForwardingRule(ctx context.Context, gcpPSC *hyperv1.GCPPrivateServiceConnect) (*compute.ForwardingRule, error) {
 	log := r.Log.WithValues("gcpprivateserviceconnect", gcpPSC.Name, "loadBalancerIP", gcpPSC.Spec.LoadBalancerIP)
 
 	// Use AIP-160 filter syntax for exact string matching
@@ -183,27 +194,23 @@ func (r *GCPPrivateServiceConnectReconciler) lookupForwardingRuleName(ctx contex
 	apiCtx, cancel := context.WithTimeout(ctx, gcpAPITimeout)
 	defer cancel()
 
-	req := r.GcpClient.ForwardingRules.List(r.ProjectID, r.Region).Filter(filter)
-	resp, err := req.Context(apiCtx).Do()
+	resp, err := r.GcpClient.ForwardingRules.List(r.ProjectID, r.Region).Filter(filter).Context(apiCtx).Do()
 	if err != nil {
-		return "", fmt.Errorf("failed to list forwarding rules: %w", err)
+		return nil, fmt.Errorf("failed to list forwarding rules: %w", err)
 	}
 
 	if len(resp.Items) == 0 {
 		log.V(1).Info("ForwardingRule not found for LoadBalancer IP, will retry later")
-		// LoadBalancer might not be fully provisioned yet
-		return "", nil // Return empty string, not an error
+		return nil, nil
 	}
 
 	if len(resp.Items) > 1 {
-		// This shouldn't happen, but handle gracefully
 		log.Info("Multiple ForwardingRules found for LoadBalancer IP, using first one", "count", len(resp.Items))
 	}
 
-	forwardingRule := resp.Items[0]
-	log.Info("Found ForwardingRule for LoadBalancer IP", "forwardingRule", forwardingRule.Name)
-
-	return forwardingRule.Name, nil
+	rule := resp.Items[0]
+	log.Info("Found ForwardingRule for LoadBalancer IP", "forwardingRule", rule.Name)
+	return rule, nil
 }
 
 // isSubnetInUse checks if a subnet is already being used by existing Service Attachments
@@ -233,44 +240,39 @@ func (r *GCPPrivateServiceConnectReconciler) isSubnetInUse(ctx context.Context, 
 	return false, nil
 }
 
-// discoverNATSubnet discovers available PRIVATE_SERVICE_CONNECT subnets
-func (r *GCPPrivateServiceConnectReconciler) discoverNATSubnet(ctx context.Context, gcpPSC *hyperv1.GCPPrivateServiceConnect) (string, error) {
+// discoverNATSubnet finds an available PRIVATE_SERVICE_CONNECT subnet scoped to the given VPC network.
+// networkURL is the full GCP network URL from the forwarding rule (e.g.
+// "https://www.googleapis.com/compute/v1/projects/…/global/networks/my-vpc").
+func (r *GCPPrivateServiceConnectReconciler) discoverNATSubnet(ctx context.Context, gcpPSC *hyperv1.GCPPrivateServiceConnect, networkURL string) (string, error) {
 	log := r.Log.WithValues("gcpprivateserviceconnect", gcpPSC.Name)
 
-	// 1. Check if NATSubnet already specified in CR
-	if gcpPSC.Spec.NATSubnet != "" {
-		log.Info("Using specified NAT subnet", "subnet", gcpPSC.Spec.NATSubnet)
-		return string(gcpPSC.Spec.NATSubnet), nil
-	}
+	// Filter server-side to only subnets with PSC purpose in the management cluster's VPC,
+	// preventing cross-VPC selection when multiple management clusters share a GCP project.
+	filter := fmt.Sprintf(`purpose = "PRIVATE_SERVICE_CONNECT" AND network = "%s"`, networkURL)
 
-	// 2. List subnets with PRIVATE_SERVICE_CONNECT purpose
 	apiCtx, cancel := context.WithTimeout(ctx, gcpAPITimeout)
 	defer cancel()
 
-	req := r.GcpClient.Subnetworks.List(r.ProjectID, r.Region)
+	req := r.GcpClient.Subnetworks.List(r.ProjectID, r.Region).Filter(filter)
 	resp, err := req.Context(apiCtx).Do()
 	if err != nil {
 		return "", fmt.Errorf("failed to list subnets: %w", err)
 	}
 
-	// Find first available PRIVATE_SERVICE_CONNECT subnet not already in use.
-	// Race conditions are not a concern since we use a single management cluster per GCP project.
+	// Find the first available PSC subnet in the MC's VPC not already in use by another Service Attachment.
 	for _, subnet := range resp.Items {
-		if subnet.Purpose == "PRIVATE_SERVICE_CONNECT" {
-			// Check if this subnet is already in use by another Service Attachment
-			inUse, err := r.isSubnetInUse(ctx, subnet.Name)
-			if err != nil {
-				log.Error(err, "Failed to check subnet usage", "subnet", subnet.Name)
-				continue // Skip this subnet and try the next one
-			}
-
-			if !inUse {
-				log.Info("Found available PSC subnet", "subnet", subnet.Name)
-				return subnet.Name, nil
-			}
-
-			log.V(1).Info("Subnet already in use, trying next", "subnet", subnet.Name)
+		inUse, err := r.isSubnetInUse(ctx, subnet.Name)
+		if err != nil {
+			log.Error(err, "Failed to check subnet usage", "subnet", subnet.Name)
+			continue
 		}
+
+		if !inUse {
+			log.Info("Found available PSC subnet", "subnet", subnet.Name)
+			return subnet.Name, nil
+		}
+
+		log.V(1).Info("Subnet already in use, trying next", "subnet", subnet.Name)
 	}
 
 	return "", fmt.Errorf("no available PRIVATE_SERVICE_CONNECT subnet found in region %s", r.Region)
