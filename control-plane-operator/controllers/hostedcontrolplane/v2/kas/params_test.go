@@ -18,7 +18,6 @@ import (
 	"k8s.io/utils/ptr"
 )
 
-// TODO (cewong): Add tests for other params
 func TestNewAPIServerParamsAPIAdvertiseAddressAndPort(t *testing.T) {
 	tests := []struct {
 		apiServiceMapping  hyperv1.ServicePublishingStrategyMapping
@@ -353,6 +352,151 @@ func TestNewConfigParams(t *testing.T) {
 				params.FeatureGates = featureGates
 				params.NodePortRange = "30000-32767"
 				params.Authentication = &configv1.AuthenticationSpec{Type: configv1.AuthenticationTypeIntegratedOAuth}
+				return params
+			},
+		},
+		{
+			name: "when image registry is disabled, it should clear internal registry hostname",
+			hcp: func() *hyperv1.HostedControlPlane {
+				hcp := createDefaultHostedControlPlane()
+				hcp.Spec.Capabilities = &hyperv1.Capabilities{
+					Disabled: []hyperv1.OptionalCapability{hyperv1.ImageRegistryCapability},
+				}
+				return hcp
+			}(),
+			expected: func(hcp *hyperv1.HostedControlPlane, featureGates []string) KubeAPIServerConfigParams {
+				params := defaultKubeAPIServerConfigParams()
+				params.FeatureGates = featureGates
+				params.InternalRegistryHostName = ""
+				return params
+			},
+		},
+		{
+			name: "when service network is IPv6, it should use IPv6 advertise address",
+			hcp: func() *hyperv1.HostedControlPlane {
+				hcp := createDefaultHostedControlPlane()
+				hcp.Spec.Networking.ServiceNetwork = []hyperv1.ServiceNetworkEntry{
+					{CIDR: *ipnet.MustParseCIDR("fd01::/112")},
+				}
+				hcp.Spec.Networking.ClusterNetwork = []hyperv1.ClusterNetworkEntry{
+					{CIDR: *ipnet.MustParseCIDR("fd02::/48")},
+				}
+				return hcp
+			}(),
+			expected: func(hcp *hyperv1.HostedControlPlane, featureGates []string) KubeAPIServerConfigParams {
+				params := defaultKubeAPIServerConfigParams()
+				params.FeatureGates = featureGates
+				params.ClusterNetwork = []string{"fd02::/48"}
+				params.ServiceNetwork = []string{"fd01::/112"}
+				params.AdvertiseAddress = config.DefaultAdvertiseIPv6Address
+				return params
+			},
+		},
+		{
+			name: "when networks are dual-stack, it should include all CIDRs",
+			hcp: func() *hyperv1.HostedControlPlane {
+				hcp := createDefaultHostedControlPlane()
+				hcp.Spec.Networking.ClusterNetwork = []hyperv1.ClusterNetworkEntry{
+					{CIDR: *ipnet.MustParseCIDR("10.132.0.0/14")},
+					{CIDR: *ipnet.MustParseCIDR("fd02::/48")},
+				}
+				hcp.Spec.Networking.ServiceNetwork = []hyperv1.ServiceNetworkEntry{
+					{CIDR: *ipnet.MustParseCIDR("172.31.0.0/16")},
+					{CIDR: *ipnet.MustParseCIDR("fd01::/112")},
+				}
+				return hcp
+			}(),
+			expected: func(hcp *hyperv1.HostedControlPlane, featureGates []string) KubeAPIServerConfigParams {
+				params := defaultKubeAPIServerConfigParams()
+				params.FeatureGates = featureGates
+				params.ClusterNetwork = []string{"10.132.0.0/14", "fd02::/48"}
+				params.ServiceNetwork = []string{"172.31.0.0/16", "fd01::/112"}
+				return params
+			},
+		},
+		{
+			name: "when named certificates are configured, it should set them on params",
+			hcp: func() *hyperv1.HostedControlPlane {
+				hcp := createDefaultHostedControlPlane()
+				hcp.Spec.Configuration = &hyperv1.ClusterConfiguration{
+					APIServer: &configv1.APIServerSpec{
+						ServingCerts: configv1.APIServerServingCerts{
+							NamedCertificates: []configv1.APIServerNamedServingCert{
+								{
+									Names: []string{"api.example.com"},
+								},
+							},
+						},
+					},
+				}
+				return hcp
+			}(),
+			expected: func(hcp *hyperv1.HostedControlPlane, featureGates []string) KubeAPIServerConfigParams {
+				params := defaultKubeAPIServerConfigParams()
+				params.FeatureGates = featureGates
+				params.NamedCertificates = []configv1.APIServerNamedServingCert{
+					{
+						Names: []string{"api.example.com"},
+					},
+				}
+				params.TLSSecurityProfile = nil
+				params.AdditionalCORSAllowedOrigins = nil
+				return params
+			},
+		},
+		{
+			name: "when audit webhook name is empty, it should not enable audit webhook",
+			hcp: func() *hyperv1.HostedControlPlane {
+				hcp := createDefaultHostedControlPlane()
+				hcp.Spec.AuditWebhook = &corev1.LocalObjectReference{Name: ""}
+				return hcp
+			}(),
+			expected: func(hcp *hyperv1.HostedControlPlane, featureGates []string) KubeAPIServerConfigParams {
+				params := defaultKubeAPIServerConfigParams()
+				params.FeatureGates = featureGates
+				return params
+			},
+		},
+		{
+			name: "when disable profiling targets non-KAS component, it should not disable profiling",
+			hcp: func() *hyperv1.HostedControlPlane {
+				hcp := createDefaultHostedControlPlane()
+				hcp.Annotations = map[string]string{
+					hyperv1.DisableProfilingAnnotation: "kube-controller-manager",
+				}
+				return hcp
+			}(),
+			expected: func(hcp *hyperv1.HostedControlPlane, featureGates []string) KubeAPIServerConfigParams {
+				params := defaultKubeAPIServerConfigParams()
+				params.FeatureGates = featureGates
+				return params
+			},
+		},
+		{
+			name: "when custom DNS base domain prefix is set, it should use it in console URL",
+			hcp: func() *hyperv1.HostedControlPlane {
+				hcp := createDefaultHostedControlPlane()
+				hcp.Spec.DNS.BaseDomainPrefix = ptr.To("custom-prefix")
+				return hcp
+			}(),
+			expected: func(hcp *hyperv1.HostedControlPlane, featureGates []string) KubeAPIServerConfigParams {
+				params := defaultKubeAPIServerConfigParams()
+				params.FeatureGates = featureGates
+				params.ConsolePublicURL = "https://console-openshift-console.custom-prefix.example.com"
+				return params
+			},
+		},
+		{
+			name: "when DNS base domain prefix is empty, it should omit prefix from console URL",
+			hcp: func() *hyperv1.HostedControlPlane {
+				hcp := createDefaultHostedControlPlane()
+				hcp.Spec.DNS.BaseDomainPrefix = ptr.To("")
+				return hcp
+			}(),
+			expected: func(hcp *hyperv1.HostedControlPlane, featureGates []string) KubeAPIServerConfigParams {
+				params := defaultKubeAPIServerConfigParams()
+				params.FeatureGates = featureGates
+				params.ConsolePublicURL = "https://console-openshift-console.example.com"
 				return params
 			},
 		},
