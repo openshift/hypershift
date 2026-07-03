@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/support/awsapi"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -20,6 +21,107 @@ import (
 	"github.com/go-logr/logr"
 	"go.uber.org/mock/gomock"
 )
+
+func TestDelegatedAWSCredentialOptionsValidate(t *testing.T) {
+	allComponentCreds := DelegatedAWSCredentialOptions{
+		AWSCredentialsOpts:                          &awsutil.AWSCredentialsOptions{},
+		AWSEbsCsiDriverControllerCredentialsFile:    "/tmp/ebs.ini",
+		CloudControllerCredentialsFile:              "/tmp/cloud.ini",
+		CloudNetworkConfigControllerCredentialsFile: "/tmp/net.ini",
+		ControlPlaneOperatorCredentialsFile:         "/tmp/cpo.ini",
+		NodePoolCredentialsFile:                     "/tmp/np.ini",
+		OpenshiftImageRegistryCredentialsFile:       "/tmp/registry.ini",
+	}
+
+	testCases := []struct {
+		name          string
+		opts          DelegatedAWSCredentialOptions
+		expectError   bool
+		errorContains string
+	}{
+		{
+			name:        "When all component credentials provided, it should succeed",
+			opts:        allComponentCreds,
+			expectError: false,
+		},
+		{
+			name: "When component credentials mixed with aws-creds, it should fail",
+			opts: DelegatedAWSCredentialOptions{
+				AWSCredentialsOpts: &awsutil.AWSCredentialsOptions{
+					AWSCredentialsFile: "/tmp/global.ini",
+				},
+				AWSEbsCsiDriverControllerCredentialsFile:    "/tmp/ebs.ini",
+				CloudControllerCredentialsFile:              "/tmp/cloud.ini",
+				CloudNetworkConfigControllerCredentialsFile: "/tmp/net.ini",
+				ControlPlaneOperatorCredentialsFile:         "/tmp/cpo.ini",
+				NodePoolCredentialsFile:                     "/tmp/np.ini",
+				OpenshiftImageRegistryCredentialsFile:       "/tmp/registry.ini",
+			},
+			expectError:   true,
+			errorContains: "cannot set any --aws-creds.component flags at the same time as other credentials",
+		},
+		{
+			name: "When component credentials mixed with role-arn, it should fail",
+			opts: DelegatedAWSCredentialOptions{
+				AWSCredentialsOpts: &awsutil.AWSCredentialsOptions{
+					RoleArn: "arn:aws:iam::123456789012:role/test-role",
+				},
+				AWSEbsCsiDriverControllerCredentialsFile:    "/tmp/ebs.ini",
+				CloudControllerCredentialsFile:              "/tmp/cloud.ini",
+				CloudNetworkConfigControllerCredentialsFile: "/tmp/net.ini",
+				ControlPlaneOperatorCredentialsFile:         "/tmp/cpo.ini",
+				NodePoolCredentialsFile:                     "/tmp/np.ini",
+				OpenshiftImageRegistryCredentialsFile:       "/tmp/registry.ini",
+			},
+			expectError:   true,
+			errorContains: "cannot set any --aws-creds.component flags at the same time as other credentials",
+		},
+		{
+			name: "When partial component credentials provided, it should fail",
+			opts: DelegatedAWSCredentialOptions{
+				AWSCredentialsOpts:                          &awsutil.AWSCredentialsOptions{},
+				AWSEbsCsiDriverControllerCredentialsFile:    "/tmp/ebs.ini",
+				CloudControllerCredentialsFile:              "/tmp/cloud.ini",
+				CloudNetworkConfigControllerCredentialsFile: "/tmp/net.ini",
+			},
+			expectError:   true,
+			errorContains: "all --aws-creds.component flags must be set when using per-component credentials",
+		},
+		{
+			name: "When no component credentials provided, it should fall back to AWSCredentialsOpts.Validate",
+			opts: DelegatedAWSCredentialOptions{
+				AWSCredentialsOpts: &awsutil.AWSCredentialsOptions{},
+			},
+			expectError: false,
+		},
+		{
+			name: "When no component credentials and invalid AWSCredentialsOpts, it should propagate validation error",
+			opts: DelegatedAWSCredentialOptions{
+				AWSCredentialsOpts: &awsutil.AWSCredentialsOptions{
+					STSCredentialsFile: "/tmp/creds.json",
+				},
+			},
+			expectError:   true,
+			errorContains: "'role-arn' is required when 'sts-creds' is provided",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.opts.Validate()
+			if tc.expectError {
+				if err == nil {
+					t.Fatal("Expected error but got nil")
+				}
+				if tc.errorContains != "" && !strings.Contains(err.Error(), tc.errorContains) {
+					t.Errorf("Expected error containing %q, got %q", tc.errorContains, err.Error())
+				}
+			} else if err != nil {
+				t.Errorf("Unexpected error: %v", err)
+			}
+		})
+	}
+}
 
 func TestEmptyBucket(t *testing.T) {
 	tests := []struct {

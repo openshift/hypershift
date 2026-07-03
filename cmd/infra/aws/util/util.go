@@ -2,13 +2,13 @@ package util
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net"
 	"os"
 	"time"
 
 	"github.com/openshift/hypershift/cmd/util"
+	supportawsutil "github.com/openshift/hypershift/support/awsutil"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
@@ -19,6 +19,8 @@ import (
 
 	"github.com/spf13/pflag"
 )
+
+var assumeRoleFn = supportawsutil.AssumeRole
 
 type AWSCredentialsOptions struct {
 	AWSCredentialsFile string
@@ -32,15 +34,22 @@ func (opts *AWSCredentialsOptions) Validate() error {
 		if opts.STSCredentialsFile != "" || opts.RoleArn != "" {
 			return fmt.Errorf("only one of 'aws-creds' or 'role-arn' and 'sts-creds' can be provided")
 		}
-
 		return nil
 	}
 
-	if err := util.ValidateRequiredOption("sts-creds", opts.STSCredentialsFile); err != nil {
+	if opts.STSCredentialsFile != "" && opts.RoleArn == "" {
+		return fmt.Errorf("'role-arn' is required when 'sts-creds' is provided")
+	}
+
+	return nil
+}
+
+func (opts *AWSCredentialsOptions) ValidateProduct() error {
+	if err := opts.Validate(); err != nil {
 		return err
 	}
-	if err := util.ValidateRequiredOption("role-arn", opts.RoleArn); err != nil {
-		return err
+	if opts.STSCredentialsFile == "" || opts.RoleArn == "" {
+		return fmt.Errorf("'sts-creds' and 'role-arn' are required")
 	}
 	return nil
 }
@@ -49,7 +58,7 @@ func (opts *AWSCredentialsOptions) BindFlags(flags *pflag.FlagSet) {
 	opts.BindProductFlags(flags)
 
 	flags.StringVar(&opts.AWSCredentialsFile, "aws-creds", opts.AWSCredentialsFile, "Path to an AWS credentials file")
-	_ = flags.MarkDeprecated("aws-creds", "please use '--sts-creds' with '--role-arn' instead")
+	_ = flags.MarkDeprecated("aws-creds", "the AWS SDK default credential chain is used when no explicit credentials are provided; use '--role-arn' to assume a specific role")
 }
 
 func (opts *AWSCredentialsOptions) BindVPCOwnerFlags(flags *pflag.FlagSet) {
@@ -86,7 +95,30 @@ func (opts *AWSCredentialsOptions) GetSession(ctx context.Context, agent string,
 		return NewSTSSession(ctx, agent, opts.RoleArn, region, &v2Creds)
 	}
 
-	return nil, errors.New("could not create AWS session, no credentials were given")
+	// Fall back to the SDK default credential chain (env vars, AWS_PROFILE, instance profile, etc.)
+	cfg := NewSession(ctx, agent, "", "", "", region)
+	if opts.RoleArn != "" {
+		assumedCreds, err := assumeRoleFn(ctx, *cfg, agent, opts.RoleArn)
+		if err != nil {
+			return nil, err
+		}
+		var loadOptions []func(*config.LoadOptions) error
+		loadOptions = append(loadOptions, config.WithCredentialsProvider(
+			credentials.StaticCredentialsProvider{Value: *assumedCreds},
+		))
+		if region != "" {
+			loadOptions = append(loadOptions, config.WithRegion(region))
+		}
+		loadOptions = append(loadOptions, config.WithAPIOptions([]func(*middleware.Stack) error{
+			awsmiddleware.AddUserAgentKeyValue("openshift.io hypershift", agent),
+		}))
+		finalCfg, err := config.LoadDefaultConfig(ctx, loadOptions...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load config after assuming role: %w", err)
+		}
+		return &finalCfg, nil
+	}
+	return cfg, nil
 }
 
 func NewSession(ctx context.Context, agent, credentialsFile, credKey, credSecretKey, region string) *aws.Config {
