@@ -45,13 +45,10 @@ type ConfigGenerator struct {
 	nodePool              *hyperv1.NodePool
 	controlplaneNamespace string
 	// resolvedRHELStreamForBootImage is the RHEL stream name used for boot
-	// image resolution via StreamForName. It is set by
-	// getRHELStreamForBootImage, which delegates to GetRHELStream for
-	// version-aware default resolution: rhel-9 for OCP < 5.0, rhel-10
-	// for OCP >= 5.0 when spec.osImageStream.Name is unset. When the
-	// field is explicitly set, the user's choice is validated and returned.
-	// See the dual-stream RHEL NodePool enhancement:
-	// https://github.com/openshift/enhancements/blob/master/enhancements/hypershift/dual-stream-rhel-nodepool.md
+	// image resolution via StreamForName.
+	// TODO(CNTRLPLANE-3553): currently hardcoded to rhel-9 until the MCO
+	// can install rhel-10 OS images. Once MCO support lands, this should
+	// be set by getRHELStreamForBootImage for version-aware resolution.
 	//
 	// This field is intentionally outside rolloutConfig because it does not
 	// participate in the config hash that drives rollouts.
@@ -98,12 +95,6 @@ func NewConfigGenerator(ctx context.Context, client client.Client, hostedCluster
 		return nil, err
 	}
 
-	// Resolve the RHEL stream for boot image lookup (AMI, VHD, etc.).
-	resolvedRHELStreamForBootImage, err := getRHELStreamForBootImage(nodePool, releaseImage)
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve RHEL stream for boot image: %w", err)
-	}
-
 	// Normalize rhelStream for the config hash: when the resolved stream
 	// matches the version-derived default, keep it empty so that setting the
 	// default explicitly does not change the hash and trigger a spurious rollout.
@@ -124,11 +115,16 @@ func NewConfigGenerator(ctx context.Context, client client.Client, hostedCluster
 	}
 
 	cg := &ConfigGenerator{
-		Client:                         client,
-		hostedCluster:                  hostedCluster,
-		nodePool:                       nodePool,
-		controlplaneNamespace:          controlPlaneNamespace,
-		resolvedRHELStreamForBootImage: resolvedRHELStreamForBootImage,
+		Client:                client,
+		hostedCluster:         hostedCluster,
+		nodePool:              nodePool,
+		controlplaneNamespace: controlPlaneNamespace,
+		// TODO(CNTRLPLANE-3553): hardcode to rhel-9 until the MCO can install
+		// rhel-10 OS images. Otherwise NodePools pointing to a 5.x release image
+		// will boot with a rhel-10 AMI while the MCO installs rhel-9, which is a
+		// path we don't need to exercise for replace upgrades. In-place upgrades
+		// from rhel-9 to rhel-10 should have their own dedicated e2e.
+		resolvedRHELStreamForBootImage: StreamRHEL9,
 		rolloutConfig: &rolloutConfig{
 			releaseImage:     releaseImage,
 			pullSecretName:   hostedCluster.Spec.PullSecret.Name,

@@ -361,22 +361,9 @@ func (r *NodePoolReconciler) setAWSConditions(_ context.Context, nodePool *hyper
 			})
 		} else {
 			// Default behavior for Linux/RHCOS AMIs.
-			// Use getRHELStreamForBootImage so that the AMI lookup is consistent
-			// with the CAPI path: version-derived default (rhel-9 for OCP < 5.0,
-			// rhel-10 for OCP >= 5.0) for unset osImageStream, or a validated
-			// stream name for explicit osImageStream.
-			rhelStream, err := getRHELStreamForBootImage(nodePool, releaseImage)
-			if err != nil {
-				SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-					Type:               hyperv1.NodePoolValidPlatformImageType,
-					Status:             corev1.ConditionFalse,
-					Reason:             hyperv1.NodePoolValidationFailedReason,
-					Message:            fmt.Sprintf("Couldn't resolve RHEL stream for release image %q: %s", nodePool.Spec.Release.Image, err.Error()),
-					ObservedGeneration: nodePool.Generation,
-				})
-				return fmt.Errorf("couldn't resolve RHEL stream for release image: %w", err)
-			}
-			ami, err := defaultNodePoolAMI(hcluster.Spec.Platform.AWS.Region, nodePool.Spec.Arch, rhelStream, releaseImage)
+			// TODO(CNTRLPLANE-3553): hardcode to rhel-9 until the MCO can install
+			// rhel-10 OS images. Use getRHELStreamForBootImage once MCO support lands.
+			ami, err := defaultNodePoolAMI(hcluster.Spec.Platform.AWS.Region, nodePool.Spec.Arch, StreamRHEL9, releaseImage)
 			if err != nil {
 				SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 					Type:               hyperv1.NodePoolValidPlatformImageType,
