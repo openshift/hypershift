@@ -27,10 +27,8 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	configv1typedclient "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1"
 
-	kauthnv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	kauthnv1typedclient "k8s.io/client-go/kubernetes/typed/authentication/v1"
 	"k8s.io/client-go/rest"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 
@@ -68,6 +66,10 @@ type ExtOIDCConfig struct {
 	// for oidcProviders.issuer.issuerCertificateAuthority
 	IssuerCAConfigmapName string
 	IssuerCABundleFile    string
+
+	// CustomizeAuthSpec allows tests to modify the baseline auth configuration
+	// The function receives the generated baseline spec and can modify it in place
+	CustomizeAuthSpec func(*configv1.AuthenticationSpec)
 }
 
 func GetExtOIDCConfig(provider, cliClientID, consoleClientID, issuerURL, consoleSecret, issuerCABundleFile, testUsers string) *ExtOIDCConfig {
@@ -156,6 +158,11 @@ func (config *ExtOIDCConfig) GetAuthenticationConfig() *configv1.AuthenticationS
 		)
 	}
 
+	// Apply custom modifications if provided
+	if config.CustomizeAuthSpec != nil {
+		config.CustomizeAuthSpec(authnSpec)
+	}
+
 	return authnSpec
 }
 
@@ -220,15 +227,6 @@ func IsExternalOIDCCluster(t testing.TB, ctx context.Context, clientCfg *rest.Co
 	return authConfig.Spec.Type == configv1.AuthenticationTypeOIDC, nil
 }
 
-// ChangeClientForKeycloakExtOIDC changes the guest client using a keycloak user config
-func ChangeClientForKeycloakExtOIDC(t testing.TB, ctx context.Context, clientCfg *rest.Config, authConfig *ExtOIDCConfig) crclient.Client {
-	g := NewWithT(t)
-	newConfig := ChangeUserForKeycloakExtOIDC(t, ctx, clientCfg, authConfig)
-	client, err := crclient.New(newConfig, crclient.Options{Scheme: scheme})
-	g.Expect(err).NotTo(HaveOccurred(), "could not create guest client using the new config")
-	return client
-}
-
 // ChangeUserForKeycloakExtOIDC changes the user of current CLI session for a Keycloak external OIDC cluster
 func ChangeUserForKeycloakExtOIDC(t testing.TB, ctx context.Context, clientCfg *rest.Config, authConfig *ExtOIDCConfig) *rest.Config {
 	g := NewWithT(t)
@@ -282,7 +280,7 @@ func ChangeUserForKeycloakExtOIDC(t testing.TB, ctx context.Context, clientCfg *
 	body, err := io.ReadAll(response.Body)
 	g.Expect(err).NotTo(HaveOccurred())
 
-	var respMap map[string]interface{}
+	var respMap map[string]any
 	err = json.Unmarshal(body, &respMap)
 	g.Expect(err).NotTo(HaveOccurred())
 	idToken, ok := respMap["id_token"].(string)
@@ -317,15 +315,7 @@ func ChangeUserForKeycloakExtOIDC(t testing.TB, ctx context.Context, clientCfg *
 	err = os.WriteFile(filepath.Join(tokenCacheDir, "oc", tokenCacheFile), []byte(tokenCache), 0600)
 	g.Expect(err).NotTo(HaveOccurred())
 
-	clientConfigForExtOIDCUser := GetClientConfigForKeycloakOIDCUser(clientCfg, authConfig, tokenCacheDir)
-	authClient, err := kauthnv1typedclient.NewForConfig(clientConfigForExtOIDCUser)
-	g.Expect(err).NotTo(HaveOccurred())
-
-	selfSubjectReview, err := authClient.SelfSubjectReviews().Create(ctx, &kauthnv1.SelfSubjectReview{}, metav1.CreateOptions{})
-	g.Expect(err).NotTo(HaveOccurred())
-
-	t.Logf("Detected external OIDC cluster using Keycloak as the provider. The user is now %q", selfSubjectReview.Status.UserInfo.Username)
-	return clientConfigForExtOIDCUser
+	return GetClientConfigForKeycloakOIDCUser(clientCfg, authConfig, tokenCacheDir)
 }
 
 // GetClientConfigForKeycloakOIDCUser gets a client config for an external OIDC cluster

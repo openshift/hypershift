@@ -1733,6 +1733,1004 @@ func TestAdaptAuthConfig(t *testing.T) {
 			},
 			shouldError: true,
 		},
+		{
+			name:   "When discovery URL has a different host from issuer URL, it should generate valid authentication configuration",
+			client: fake.NewClientBuilder().Build(),
+			featureGates: []featuregate.Feature{
+				featuregates.ExternalOIDCWithUpstreamParity,
+			},
+			expectedAuthenticationConfiguration: &AuthenticationConfiguration{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "apiserver.config.k8s.io/v1alpha1",
+					Kind:       "AuthenticationConfiguration",
+				},
+				JWT: []JWTAuthenticator{
+					{
+						Issuer: Issuer{
+							URL:                 "https://issuer.example.com",
+							DiscoveryURL:        "https://discovery.example.com/.well-known/openid-configuration",
+							AudienceMatchPolicy: AudienceMatchPolicyMatchAny,
+							Audiences:           []string{"one", "two"},
+						},
+						ClaimMappings: ClaimMappings{
+							Username: PrefixedClaimOrExpression{
+								Prefix: ptr.To("https://issuer.example.com#"),
+								Claim:  "username",
+							},
+							Groups: PrefixedClaimOrExpression{
+								Prefix: ptr.To(""),
+								Claim:  "",
+							},
+							UID:   ClaimOrExpression{Claim: "sub"},
+							Extra: []ExtraMapping{},
+						},
+						ClaimValidationRules: []ClaimValidationRule{},
+						UserValidationRules:  []UserValidationRule{},
+					},
+				},
+			},
+			hcpAuthenticationSpec: &configv1.AuthenticationSpec{
+				OIDCProviders: []configv1.OIDCProvider{
+					{
+						Name: "test",
+						Issuer: configv1.TokenIssuer{
+							URL:          "https://issuer.example.com",
+							DiscoveryURL: "https://discovery.example.com/.well-known/openid-configuration",
+							Audiences:    []configv1.TokenAudience{"one", "two"},
+						},
+						ClaimMappings: configv1.TokenClaimMappings{
+							Username: configv1.UsernameClaimMapping{
+								PrefixPolicy: configv1.NoOpinion,
+								Claim:        "username",
+							},
+						},
+					},
+				},
+			},
+			shouldError: false,
+		},
+		{
+			name:   "When discovery URL has a different path from issuer URL, it should generate valid authentication configuration",
+			client: fake.NewClientBuilder().Build(),
+			featureGates: []featuregate.Feature{
+				featuregates.ExternalOIDCWithUpstreamParity,
+			},
+			expectedAuthenticationConfiguration: &AuthenticationConfiguration{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "apiserver.config.k8s.io/v1alpha1",
+					Kind:       "AuthenticationConfiguration",
+				},
+				JWT: []JWTAuthenticator{
+					{
+						Issuer: Issuer{
+							URL:                 "https://example.com/issuer",
+							DiscoveryURL:        "https://example.com/discovery/.well-known/openid-configuration",
+							AudienceMatchPolicy: AudienceMatchPolicyMatchAny,
+							Audiences:           []string{"one", "two"},
+						},
+						ClaimMappings: ClaimMappings{
+							Username: PrefixedClaimOrExpression{
+								Prefix: ptr.To("https://example.com/issuer#"),
+								Claim:  "username",
+							},
+							Groups: PrefixedClaimOrExpression{
+								Prefix: ptr.To(""),
+								Claim:  "",
+							},
+							UID:   ClaimOrExpression{Claim: "sub"},
+							Extra: []ExtraMapping{},
+						},
+						ClaimValidationRules: []ClaimValidationRule{},
+						UserValidationRules:  []UserValidationRule{},
+					},
+				},
+			},
+			hcpAuthenticationSpec: &configv1.AuthenticationSpec{
+				OIDCProviders: []configv1.OIDCProvider{
+					{
+						Name: "test",
+						Issuer: configv1.TokenIssuer{
+							URL:          "https://example.com/issuer",
+							DiscoveryURL: "https://example.com/discovery/.well-known/openid-configuration",
+							Audiences:    []configv1.TokenAudience{"one", "two"},
+						},
+						ClaimMappings: configv1.TokenClaimMappings{
+							Username: configv1.UsernameClaimMapping{
+								PrefixPolicy: configv1.NoOpinion,
+								Claim:        "username",
+							},
+						},
+					},
+				},
+			},
+			shouldError: false,
+		},
+		{
+			name:   "When a valid userValidationRule with single expression is provided, it should generate valid authentication configuration",
+			client: fake.NewClientBuilder().Build(),
+			featureGates: []featuregate.Feature{
+				featuregates.ExternalOIDCWithUpstreamParity,
+			},
+			expectedAuthenticationConfiguration: &AuthenticationConfiguration{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "apiserver.config.k8s.io/v1alpha1",
+					Kind:       "AuthenticationConfiguration",
+				},
+				JWT: []JWTAuthenticator{
+					{
+						Issuer: Issuer{
+							URL:                 "https://test.com",
+							AudienceMatchPolicy: AudienceMatchPolicyMatchAny,
+							Audiences:           []string{"one", "two"},
+						},
+						ClaimMappings: ClaimMappings{
+							Username: PrefixedClaimOrExpression{
+								Prefix: ptr.To("https://test.com#"),
+								Claim:  "username",
+							},
+							Groups: PrefixedClaimOrExpression{
+								Prefix: ptr.To(""),
+								Claim:  "",
+							},
+							UID:   ClaimOrExpression{Claim: "sub"},
+							Extra: []ExtraMapping{},
+						},
+						ClaimValidationRules: []ClaimValidationRule{},
+						UserValidationRules: []UserValidationRule{
+							{
+								Expression: "!user.username.startsWith('system:')",
+								Message:    "username cannot use reserved system: prefix",
+							},
+						},
+					},
+				},
+			},
+			hcpAuthenticationSpec: &configv1.AuthenticationSpec{
+				OIDCProviders: []configv1.OIDCProvider{
+					{
+						Name: "test",
+						Issuer: configv1.TokenIssuer{
+							URL:       "https://test.com",
+							Audiences: []configv1.TokenAudience{"one", "two"},
+						},
+						ClaimMappings: configv1.TokenClaimMappings{
+							Username: configv1.UsernameClaimMapping{
+								PrefixPolicy: configv1.NoOpinion,
+								Claim:        "username",
+							},
+						},
+						UserValidationRules: []configv1.TokenUserValidationRule{
+							{
+								Expression: "!user.username.startsWith('system:')",
+								Message:    "username cannot use reserved system: prefix",
+							},
+						},
+					},
+				},
+			},
+			shouldError: false,
+		},
+		{
+			name:   "When valid userValidationRules with multiple expressions ANDed together are provided, it should generate valid authentication configuration",
+			client: fake.NewClientBuilder().Build(),
+			featureGates: []featuregate.Feature{
+				featuregates.ExternalOIDCWithUpstreamParity,
+			},
+			expectedAuthenticationConfiguration: &AuthenticationConfiguration{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "apiserver.config.k8s.io/v1alpha1",
+					Kind:       "AuthenticationConfiguration",
+				},
+				JWT: []JWTAuthenticator{
+					{
+						Issuer: Issuer{
+							URL:                 "https://test.com",
+							AudienceMatchPolicy: AudienceMatchPolicyMatchAny,
+							Audiences:           []string{"one", "two"},
+						},
+						ClaimMappings: ClaimMappings{
+							Username: PrefixedClaimOrExpression{
+								Prefix: ptr.To("https://test.com#"),
+								Claim:  "username",
+							},
+							Groups: PrefixedClaimOrExpression{
+								Prefix: ptr.To(""),
+								Claim:  "",
+							},
+							UID:   ClaimOrExpression{Claim: "sub"},
+							Extra: []ExtraMapping{},
+						},
+						ClaimValidationRules: []ClaimValidationRule{},
+						UserValidationRules: []UserValidationRule{
+							{
+								Expression: "!user.username.startsWith('system:')",
+								Message:    "username cannot use reserved system: prefix",
+							},
+							{
+								Expression: "user.groups.size() > 0",
+								Message:    "user must have at least one group",
+							},
+							{
+								Expression: "user.username.contains('@')",
+								Message:    "username must be an email address",
+							},
+						},
+					},
+				},
+			},
+			hcpAuthenticationSpec: &configv1.AuthenticationSpec{
+				OIDCProviders: []configv1.OIDCProvider{
+					{
+						Name: "test",
+						Issuer: configv1.TokenIssuer{
+							URL:       "https://test.com",
+							Audiences: []configv1.TokenAudience{"one", "two"},
+						},
+						ClaimMappings: configv1.TokenClaimMappings{
+							Username: configv1.UsernameClaimMapping{
+								PrefixPolicy: configv1.NoOpinion,
+								Claim:        "username",
+							},
+						},
+						UserValidationRules: []configv1.TokenUserValidationRule{
+							{
+								Expression: "!user.username.startsWith('system:')",
+								Message:    "username cannot use reserved system: prefix",
+							},
+							{
+								Expression: "user.groups.size() > 0",
+								Message:    "user must have at least one group",
+							},
+							{
+								Expression: "user.username.contains('@')",
+								Message:    "username must be an email address",
+							},
+						},
+					},
+				},
+			},
+			shouldError: false,
+		},
+		{
+			name:   "When valid claimValidationRules with CEL and multiple expressions are provided, it should generate valid authentication configuration",
+			client: fake.NewClientBuilder().Build(),
+			featureGates: []featuregate.Feature{
+				featuregates.ExternalOIDCWithUpstreamParity,
+			},
+			expectedAuthenticationConfiguration: &AuthenticationConfiguration{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "apiserver.config.k8s.io/v1alpha1",
+					Kind:       "AuthenticationConfiguration",
+				},
+				JWT: []JWTAuthenticator{
+					{
+						Issuer: Issuer{
+							URL:                 "https://test.com",
+							AudienceMatchPolicy: AudienceMatchPolicyMatchAny,
+							Audiences:           []string{"one", "two"},
+						},
+						ClaimMappings: ClaimMappings{
+							Username: PrefixedClaimOrExpression{
+								Prefix: ptr.To("https://test.com#"),
+								Claim:  "username",
+							},
+							Groups: PrefixedClaimOrExpression{
+								Prefix: ptr.To(""),
+								Claim:  "",
+							},
+							UID:   ClaimOrExpression{Claim: "sub"},
+							Extra: []ExtraMapping{},
+						},
+						ClaimValidationRules: []ClaimValidationRule{
+							{
+								Expression: "has(claims.email) && claims.email.endsWith('@example.com')",
+								Message:    "email must be from example.com domain",
+							},
+							{
+								Expression: "claims.email_verified == true",
+								Message:    "email must be verified",
+							},
+						},
+						UserValidationRules: []UserValidationRule{},
+					},
+				},
+			},
+			hcpAuthenticationSpec: &configv1.AuthenticationSpec{
+				OIDCProviders: []configv1.OIDCProvider{
+					{
+						Name: "test",
+						Issuer: configv1.TokenIssuer{
+							URL:       "https://test.com",
+							Audiences: []configv1.TokenAudience{"one", "two"},
+						},
+						ClaimMappings: configv1.TokenClaimMappings{
+							Username: configv1.UsernameClaimMapping{
+								PrefixPolicy: configv1.NoOpinion,
+								Claim:        "username",
+							},
+						},
+						ClaimValidationRules: []configv1.TokenClaimValidationRule{
+							{
+								Type: configv1.TokenValidationRuleTypeCEL,
+								CEL: configv1.TokenClaimValidationCELRule{
+									Expression: "has(claims.email) && claims.email.endsWith('@example.com')",
+									Message:    "email must be from example.com domain",
+								},
+							},
+							{
+								Type: configv1.TokenValidationRuleTypeCEL,
+								CEL: configv1.TokenClaimValidationCELRule{
+									Expression: "claims.email_verified == true",
+									Message:    "email must be verified",
+								},
+							},
+						},
+					},
+				},
+			},
+			shouldError: false,
+		},
+		{
+			name:   "When full feature parity with discoveryURL, CEL claim mappings, claim validation, and user validation is configured, it should generate valid authentication configuration",
+			client: fake.NewClientBuilder().Build(),
+			featureGates: []featuregate.Feature{
+				featuregates.ExternalOIDCWithUpstreamParity,
+			},
+			expectedAuthenticationConfiguration: &AuthenticationConfiguration{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "apiserver.config.k8s.io/v1alpha1",
+					Kind:       "AuthenticationConfiguration",
+				},
+				JWT: []JWTAuthenticator{
+					{
+						Issuer: Issuer{
+							URL:                 "https://issuer.example.com",
+							DiscoveryURL:        "https://discovery.example.com/.well-known/openid-configuration",
+							AudienceMatchPolicy: AudienceMatchPolicyMatchAny,
+							Audiences:           []string{"my-app"},
+						},
+						ClaimMappings: ClaimMappings{
+							Username: PrefixedClaimOrExpression{
+								Expression: "claims.email.split('@')[0]",
+							},
+							Groups: PrefixedClaimOrExpression{
+								Expression: "type(claims.groups) == list ? claims.groups : []",
+							},
+							UID:   ClaimOrExpression{Claim: "sub"},
+							Extra: []ExtraMapping{},
+						},
+						ClaimValidationRules: []ClaimValidationRule{
+							{
+								Expression: "has(claims.email) && claims.email.endsWith('@example.com')",
+								Message:    "email must be from example.com domain",
+							},
+							{
+								Expression: "claims.email_verified == true",
+								Message:    "email must be verified",
+							},
+						},
+						UserValidationRules: []UserValidationRule{
+							{
+								Expression: "!user.username.startsWith('system:')",
+								Message:    "username cannot use reserved system: prefix",
+							},
+							{
+								Expression: "user.groups.size() > 0",
+								Message:    "user must have at least one group",
+							},
+						},
+					},
+				},
+			},
+			hcpAuthenticationSpec: &configv1.AuthenticationSpec{
+				OIDCProviders: []configv1.OIDCProvider{
+					{
+						Name: "test",
+						Issuer: configv1.TokenIssuer{
+							URL:          "https://issuer.example.com",
+							DiscoveryURL: "https://discovery.example.com/.well-known/openid-configuration",
+							Audiences:    []configv1.TokenAudience{"my-app"},
+						},
+						ClaimMappings: configv1.TokenClaimMappings{
+							Username: configv1.UsernameClaimMapping{
+								Expression: "claims.email.split('@')[0]",
+							},
+							Groups: configv1.PrefixedClaimMapping{
+								TokenClaimMapping: configv1.TokenClaimMapping{
+									Expression: "type(claims.groups) == list ? claims.groups : []",
+								},
+							},
+						},
+						ClaimValidationRules: []configv1.TokenClaimValidationRule{
+							{
+								Type: configv1.TokenValidationRuleTypeCEL,
+								CEL: configv1.TokenClaimValidationCELRule{
+									Expression: "has(claims.email) && claims.email.endsWith('@example.com')",
+									Message:    "email must be from example.com domain",
+								},
+							},
+							{
+								Type: configv1.TokenValidationRuleTypeCEL,
+								CEL: configv1.TokenClaimValidationCELRule{
+									Expression: "claims.email_verified == true",
+									Message:    "email must be verified",
+								},
+							},
+						},
+						UserValidationRules: []configv1.TokenUserValidationRule{
+							{
+								Expression: "!user.username.startsWith('system:')",
+								Message:    "username cannot use reserved system: prefix",
+							},
+							{
+								Expression: "user.groups.size() > 0",
+								Message:    "user must have at least one group",
+							},
+						},
+					},
+				},
+			},
+			shouldError: false,
+		},
+		{
+			name:   "When claimValidationRule with CEL has an empty expression, it should return an error",
+			client: fake.NewClientBuilder().Build(),
+			featureGates: []featuregate.Feature{
+				featuregates.ExternalOIDCWithUpstreamParity,
+			},
+			hcpAuthenticationSpec: &configv1.AuthenticationSpec{
+				OIDCProviders: []configv1.OIDCProvider{
+					{
+						Name: "test",
+						Issuer: configv1.TokenIssuer{
+							URL:       "https://test.com",
+							Audiences: []configv1.TokenAudience{"one", "two"},
+						},
+						ClaimMappings: configv1.TokenClaimMappings{
+							Username: configv1.UsernameClaimMapping{
+								PrefixPolicy: configv1.NoOpinion,
+								Claim:        "username",
+							},
+						},
+						ClaimValidationRules: []configv1.TokenClaimValidationRule{
+							{
+								Type: configv1.TokenValidationRuleTypeCEL,
+								CEL: configv1.TokenClaimValidationCELRule{
+									Expression: "", // empty expression
+									Message:    "validation failed",
+								},
+							},
+						},
+					},
+				},
+			},
+			shouldError: true,
+		},
+		{
+			name:   "When username expression uses complex CEL to extract from nested claims, it should generate valid authentication configuration",
+			client: fake.NewClientBuilder().Build(),
+			featureGates: []featuregate.Feature{
+				featuregates.ExternalOIDCWithUpstreamParity,
+			},
+			expectedAuthenticationConfiguration: &AuthenticationConfiguration{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "apiserver.config.k8s.io/v1alpha1",
+					Kind:       "AuthenticationConfiguration",
+				},
+				JWT: []JWTAuthenticator{
+					{
+						Issuer: Issuer{
+							URL:                 "https://test.com",
+							AudienceMatchPolicy: AudienceMatchPolicyMatchAny,
+							Audiences:           []string{"one", "two"},
+						},
+						ClaimMappings: ClaimMappings{
+							Username: PrefixedClaimOrExpression{
+								Expression: "has(claims.preferred_username) ? claims.preferred_username : claims.sub",
+							},
+							Groups: PrefixedClaimOrExpression{
+								Prefix: ptr.To(""),
+								Claim:  "",
+							},
+							UID:   ClaimOrExpression{Claim: "sub"},
+							Extra: []ExtraMapping{},
+						},
+						ClaimValidationRules: []ClaimValidationRule{},
+						UserValidationRules:  []UserValidationRule{},
+					},
+				},
+			},
+			hcpAuthenticationSpec: &configv1.AuthenticationSpec{
+				OIDCProviders: []configv1.OIDCProvider{
+					{
+						Name: "test",
+						Issuer: configv1.TokenIssuer{
+							URL:       "https://test.com",
+							Audiences: []configv1.TokenAudience{"one", "two"},
+						},
+						ClaimMappings: configv1.TokenClaimMappings{
+							Username: configv1.UsernameClaimMapping{
+								Expression: "has(claims.preferred_username) ? claims.preferred_username : claims.sub",
+							},
+						},
+					},
+				},
+			},
+			shouldError: false,
+		},
+		{
+			name:   "When groups expression uses complex CEL with conditionals based on claim type, it should generate valid authentication configuration",
+			client: fake.NewClientBuilder().Build(),
+			featureGates: []featuregate.Feature{
+				featuregates.ExternalOIDCWithUpstreamParity,
+			},
+			expectedAuthenticationConfiguration: &AuthenticationConfiguration{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "apiserver.config.k8s.io/v1alpha1",
+					Kind:       "AuthenticationConfiguration",
+				},
+				JWT: []JWTAuthenticator{
+					{
+						Issuer: Issuer{
+							URL:                 "https://test.com",
+							AudienceMatchPolicy: AudienceMatchPolicyMatchAny,
+							Audiences:           []string{"one", "two"},
+						},
+						ClaimMappings: ClaimMappings{
+							Username: PrefixedClaimOrExpression{
+								Prefix: ptr.To("https://test.com#"),
+								Claim:  "username",
+							},
+							Groups: PrefixedClaimOrExpression{
+								Expression: "claims.?groups.orValue([])",
+							},
+							UID:   ClaimOrExpression{Claim: "sub"},
+							Extra: []ExtraMapping{},
+						},
+						ClaimValidationRules: []ClaimValidationRule{},
+						UserValidationRules:  []UserValidationRule{},
+					},
+				},
+			},
+			hcpAuthenticationSpec: &configv1.AuthenticationSpec{
+				OIDCProviders: []configv1.OIDCProvider{
+					{
+						Name: "test",
+						Issuer: configv1.TokenIssuer{
+							URL:       "https://test.com",
+							Audiences: []configv1.TokenAudience{"one", "two"},
+						},
+						ClaimMappings: configv1.TokenClaimMappings{
+							Username: configv1.UsernameClaimMapping{
+								PrefixPolicy: configv1.NoOpinion,
+								Claim:        "username",
+							},
+							Groups: configv1.PrefixedClaimMapping{
+								TokenClaimMapping: configv1.TokenClaimMapping{
+									Expression: "claims.?groups.orValue([])",
+								},
+							},
+						},
+					},
+				},
+			},
+			shouldError: false,
+		},
+		{
+			name:   "When multiple claimValidationRules with CEL type and complex expressions are provided, it should generate valid authentication configuration",
+			client: fake.NewClientBuilder().Build(),
+			featureGates: []featuregate.Feature{
+				featuregates.ExternalOIDCWithUpstreamParity,
+			},
+			expectedAuthenticationConfiguration: &AuthenticationConfiguration{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "apiserver.config.k8s.io/v1alpha1",
+					Kind:       "AuthenticationConfiguration",
+				},
+				JWT: []JWTAuthenticator{
+					{
+						Issuer: Issuer{
+							URL:                 "https://test.com",
+							AudienceMatchPolicy: AudienceMatchPolicyMatchAny,
+							Audiences:           []string{"one", "two"},
+						},
+						ClaimMappings: ClaimMappings{
+							Username: PrefixedClaimOrExpression{
+								Prefix: ptr.To("https://test.com#"),
+								Claim:  "username",
+							},
+							Groups: PrefixedClaimOrExpression{
+								Prefix: ptr.To(""),
+								Claim:  "",
+							},
+							UID:   ClaimOrExpression{Claim: "sub"},
+							Extra: []ExtraMapping{},
+						},
+						ClaimValidationRules: []ClaimValidationRule{
+							{
+								Expression: "has(claims.email) && claims.email.contains('@')",
+								Message:    "token must have valid email claim",
+							},
+							{
+								Expression: "claims.email_verified == true",
+								Message:    "email must be verified",
+							},
+							{
+								Expression: "has(claims.groups) && type(claims.groups) == list",
+								Message:    "groups claim must be a list",
+							},
+						},
+						UserValidationRules: []UserValidationRule{},
+					},
+				},
+			},
+			hcpAuthenticationSpec: &configv1.AuthenticationSpec{
+				OIDCProviders: []configv1.OIDCProvider{
+					{
+						Name: "test",
+						Issuer: configv1.TokenIssuer{
+							URL:       "https://test.com",
+							Audiences: []configv1.TokenAudience{"one", "two"},
+						},
+						ClaimMappings: configv1.TokenClaimMappings{
+							Username: configv1.UsernameClaimMapping{
+								PrefixPolicy: configv1.NoOpinion,
+								Claim:        "username",
+							},
+						},
+						ClaimValidationRules: []configv1.TokenClaimValidationRule{
+							{
+								Type: configv1.TokenValidationRuleTypeCEL,
+								CEL: configv1.TokenClaimValidationCELRule{
+									Expression: "has(claims.email) && claims.email.contains('@')",
+									Message:    "token must have valid email claim",
+								},
+							},
+							{
+								Type: configv1.TokenValidationRuleTypeCEL,
+								CEL: configv1.TokenClaimValidationCELRule{
+									Expression: "claims.email_verified == true",
+									Message:    "email must be verified",
+								},
+							},
+							{
+								Type: configv1.TokenValidationRuleTypeCEL,
+								CEL: configv1.TokenClaimValidationCELRule{
+									Expression: "has(claims.groups) && type(claims.groups) == list",
+									Message:    "groups claim must be a list",
+								},
+							},
+						},
+					},
+				},
+			},
+			shouldError: false,
+		},
+		{
+			name:   "When CEL expression for username and groups with filtering omits prefix and prefixPolicy, it should generate valid authentication configuration",
+			client: fake.NewClientBuilder().Build(),
+			featureGates: []featuregate.Feature{
+				featuregates.ExternalOIDCWithUpstreamParity,
+			},
+			expectedAuthenticationConfiguration: &AuthenticationConfiguration{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "apiserver.config.k8s.io/v1alpha1",
+					Kind:       "AuthenticationConfiguration",
+				},
+				JWT: []JWTAuthenticator{
+					{
+						Issuer: Issuer{
+							URL:                 "https://test.com",
+							AudienceMatchPolicy: AudienceMatchPolicyMatchAny,
+							Audiences:           []string{"one", "two"},
+						},
+						ClaimMappings: ClaimMappings{
+							Username: PrefixedClaimOrExpression{
+								Expression: "claims.email.split('@')[0]",
+							},
+							Groups: PrefixedClaimOrExpression{
+								Expression: "claims.?groups.orValue(dyn([])).filter(g, g.startsWith('ocp-'))",
+							},
+							UID:   ClaimOrExpression{Claim: "sub"},
+							Extra: []ExtraMapping{},
+						},
+						ClaimValidationRules: []ClaimValidationRule{
+							{
+								Expression: "claims.email_verified == true",
+								Message:    "email must be verified",
+							},
+						},
+						UserValidationRules: []UserValidationRule{
+							{
+								Expression: "user.username.size() > 5",
+								Message:    "username must be longer than 5 characters",
+							},
+							{
+								Expression: "user.groups.size() > 0",
+								Message:    "user must belong to at least one group after filtering",
+							},
+						},
+					},
+				},
+			},
+			hcpAuthenticationSpec: &configv1.AuthenticationSpec{
+				OIDCProviders: []configv1.OIDCProvider{
+					{
+						Name: "test",
+						Issuer: configv1.TokenIssuer{
+							URL:       "https://test.com",
+							Audiences: []configv1.TokenAudience{"one", "two"},
+						},
+						ClaimMappings: configv1.TokenClaimMappings{
+							Username: configv1.UsernameClaimMapping{
+								// Omitting prefixPolicy when using expression - should be allowed
+								Expression: "claims.email.split('@')[0]",
+							},
+							Groups: configv1.PrefixedClaimMapping{
+								TokenClaimMapping: configv1.TokenClaimMapping{
+									// Omitting prefix when using expression - should be allowed
+									Expression: "claims.?groups.orValue(dyn([])).filter(g, g.startsWith('ocp-'))",
+								},
+							},
+						},
+						ClaimValidationRules: []configv1.TokenClaimValidationRule{
+							{
+								Type: configv1.TokenValidationRuleTypeCEL,
+								CEL: configv1.TokenClaimValidationCELRule{
+									Expression: "claims.email_verified == true",
+									Message:    "email must be verified",
+								},
+							},
+						},
+						UserValidationRules: []configv1.TokenUserValidationRule{
+							{
+								Expression: "user.username.size() > 5",
+								Message:    "username must be longer than 5 characters",
+							},
+							{
+								Expression: "user.groups.size() > 0",
+								Message:    "user must belong to at least one group after filtering",
+							},
+						},
+					},
+				},
+			},
+			shouldError: false,
+		},
+		{
+			name:   "When combined claim and user validation with CEL expressions is configured, it should generate valid authentication configuration",
+			client: fake.NewClientBuilder().Build(),
+			featureGates: []featuregate.Feature{
+				featuregates.ExternalOIDCWithUpstreamParity,
+			},
+			expectedAuthenticationConfiguration: &AuthenticationConfiguration{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "apiserver.config.k8s.io/v1alpha1",
+					Kind:       "AuthenticationConfiguration",
+				},
+				JWT: []JWTAuthenticator{
+					{
+						Issuer: Issuer{
+							URL:                 "https://test.com",
+							AudienceMatchPolicy: AudienceMatchPolicyMatchAny,
+							Audiences:           []string{"one", "two"},
+						},
+						ClaimMappings: ClaimMappings{
+							Username: PrefixedClaimOrExpression{
+								Expression: "claims.email.split('@')[0]",
+							},
+							Groups: PrefixedClaimOrExpression{
+								Expression: "claims.?groups.orValue(dyn([])).filter(g, g.startsWith('ocp-'))",
+							},
+							UID:   ClaimOrExpression{Claim: "sub"},
+							Extra: []ExtraMapping{},
+						},
+						ClaimValidationRules: []ClaimValidationRule{
+							{
+								Expression: "has(claims.email) && claims.email.contains('@')",
+								Message:    "token must have valid email claim",
+							},
+							{
+								Expression: "claims.email_verified == true",
+								Message:    "email must be verified",
+							},
+						},
+						UserValidationRules: []UserValidationRule{
+							{
+								Expression: "user.username.size() > 5",
+								Message:    "mapped username must be longer than 5 characters",
+							},
+							{
+								Expression: "user.groups.size() > 0",
+								Message:    "user must have at least one group after filtering",
+							},
+							{
+								Expression: "!user.username.startsWith('system:')",
+								Message:    "username cannot use reserved system: prefix",
+							},
+						},
+					},
+				},
+			},
+			hcpAuthenticationSpec: &configv1.AuthenticationSpec{
+				OIDCProviders: []configv1.OIDCProvider{
+					{
+						Name: "test",
+						Issuer: configv1.TokenIssuer{
+							URL:       "https://test.com",
+							Audiences: []configv1.TokenAudience{"one", "two"},
+						},
+						ClaimMappings: configv1.TokenClaimMappings{
+							Username: configv1.UsernameClaimMapping{
+								Expression: "claims.email.split('@')[0]",
+							},
+							Groups: configv1.PrefixedClaimMapping{
+								TokenClaimMapping: configv1.TokenClaimMapping{
+									Expression: "claims.?groups.orValue(dyn([])).filter(g, g.startsWith('ocp-'))",
+								},
+							},
+						},
+						ClaimValidationRules: []configv1.TokenClaimValidationRule{
+							{
+								Type: configv1.TokenValidationRuleTypeCEL,
+								CEL: configv1.TokenClaimValidationCELRule{
+									Expression: "has(claims.email) && claims.email.contains('@')",
+									Message:    "token must have valid email claim",
+								},
+							},
+							{
+								Type: configv1.TokenValidationRuleTypeCEL,
+								CEL: configv1.TokenClaimValidationCELRule{
+									Expression: "claims.email_verified == true",
+									Message:    "email must be verified",
+								},
+							},
+						},
+						UserValidationRules: []configv1.TokenUserValidationRule{
+							{
+								Expression: "user.username.size() > 5",
+								Message:    "mapped username must be longer than 5 characters",
+							},
+							{
+								Expression: "user.groups.size() > 0",
+								Message:    "user must have at least one group after filtering",
+							},
+							{
+								Expression: "!user.username.startsWith('system:')",
+								Message:    "username cannot use reserved system: prefix",
+							},
+						},
+					},
+				},
+			},
+			shouldError: false,
+		},
+		{
+			name:   "When username expression uses conditional logic with fallback, it should generate valid authentication configuration",
+			client: fake.NewClientBuilder().Build(),
+			featureGates: []featuregate.Feature{
+				featuregates.ExternalOIDCWithUpstreamParity,
+			},
+			expectedAuthenticationConfiguration: &AuthenticationConfiguration{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "apiserver.config.k8s.io/v1alpha1",
+					Kind:       "AuthenticationConfiguration",
+				},
+				JWT: []JWTAuthenticator{
+					{
+						Issuer: Issuer{
+							URL:                 "https://test.com",
+							AudienceMatchPolicy: AudienceMatchPolicyMatchAny,
+							Audiences:           []string{"one", "two"},
+						},
+						ClaimMappings: ClaimMappings{
+							Username: PrefixedClaimOrExpression{
+								Expression: "has(claims.preferred_username) && claims.preferred_username != '' ? claims.preferred_username : claims.email.split('@')[0]",
+							},
+							Groups: PrefixedClaimOrExpression{
+								Prefix: ptr.To(""),
+								Claim:  "",
+							},
+							UID:   ClaimOrExpression{Claim: "sub"},
+							Extra: []ExtraMapping{},
+						},
+						ClaimValidationRules: []ClaimValidationRule{
+							{
+								Expression: "claims.email_verified == true",
+								Message:    "email must be verified when used for username",
+							},
+						},
+						UserValidationRules: []UserValidationRule{},
+					},
+				},
+			},
+			hcpAuthenticationSpec: &configv1.AuthenticationSpec{
+				OIDCProviders: []configv1.OIDCProvider{
+					{
+						Name: "test",
+						Issuer: configv1.TokenIssuer{
+							URL:       "https://test.com",
+							Audiences: []configv1.TokenAudience{"one", "two"},
+						},
+						ClaimMappings: configv1.TokenClaimMappings{
+							Username: configv1.UsernameClaimMapping{
+								Expression: "has(claims.preferred_username) && claims.preferred_username != '' ? claims.preferred_username : claims.email.split('@')[0]",
+							},
+						},
+						ClaimValidationRules: []configv1.TokenClaimValidationRule{
+							{
+								Type: configv1.TokenValidationRuleTypeCEL,
+								CEL: configv1.TokenClaimValidationCELRule{
+									Expression: "claims.email_verified == true",
+									Message:    "email must be verified when used for username",
+								},
+							},
+						},
+					},
+				},
+			},
+			shouldError: false,
+		},
+		{
+			name:   "When groups expression uses map and filter operations with orValue for type safety, it should generate valid authentication configuration",
+			client: fake.NewClientBuilder().Build(),
+			featureGates: []featuregate.Feature{
+				featuregates.ExternalOIDCWithUpstreamParity,
+			},
+			expectedAuthenticationConfiguration: &AuthenticationConfiguration{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "apiserver.config.k8s.io/v1alpha1",
+					Kind:       "AuthenticationConfiguration",
+				},
+				JWT: []JWTAuthenticator{
+					{
+						Issuer: Issuer{
+							URL:                 "https://test.com",
+							AudienceMatchPolicy: AudienceMatchPolicyMatchAny,
+							Audiences:           []string{"one", "two"},
+						},
+						ClaimMappings: ClaimMappings{
+							Username: PrefixedClaimOrExpression{
+								Prefix: ptr.To("https://test.com#"),
+								Claim:  "username",
+							},
+							Groups: PrefixedClaimOrExpression{
+								// Use optional access (?) and dyn([]) to handle optional 'roles' claim and provide type-safe default for filter/map
+								Expression: "claims.?roles.orValue(dyn([])).filter(r, r.startsWith('openshift-')).map(r, r.substring(10))",
+							},
+							UID:   ClaimOrExpression{Claim: "sub"},
+							Extra: []ExtraMapping{},
+						},
+						ClaimValidationRules: []ClaimValidationRule{},
+						UserValidationRules:  []UserValidationRule{},
+					},
+				},
+			},
+			hcpAuthenticationSpec: &configv1.AuthenticationSpec{
+				OIDCProviders: []configv1.OIDCProvider{
+					{
+						Name: "test",
+						Issuer: configv1.TokenIssuer{
+							URL:       "https://test.com",
+							Audiences: []configv1.TokenAudience{"one", "two"},
+						},
+						ClaimMappings: configv1.TokenClaimMappings{
+							Username: configv1.UsernameClaimMapping{
+								PrefixPolicy: configv1.NoOpinion,
+								Claim:        "username",
+							},
+							Groups: configv1.PrefixedClaimMapping{
+								TokenClaimMapping: configv1.TokenClaimMapping{
+									// Use optional access (?) and dyn([]) to handle optional 'roles' claim and provide type-safe default for filter/map
+									Expression: "claims.?roles.orValue(dyn([])).filter(r, r.startsWith('openshift-')).map(r, r.substring(10))",
+								},
+							},
+						},
+					},
+				},
+			},
+			shouldError: false,
+		},
 	}
 
 	for _, tc := range testCases {
