@@ -23,10 +23,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
 
-	"golang.org/x/oauth2/google"
-	"google.golang.org/api/compute/v1"
-	"google.golang.org/api/option"
-
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -41,16 +38,17 @@ func GCPPrivateServiceConnectTest(getTestCtx internal.TestContextGetter) {
 			}
 		})
 
-		It("should select a NAT subnet from the same VPC as the forwarding rule", func() {
+		// GCP enforces that the NAT subnet and the forwarding rule must belong to the same VPC
+		// when creating a Service Attachment. A True GCPServiceAttachmentAvailable condition
+		// is therefore proof that the controller selected a subnet from the correct VPC.
+		It("should have GCPServiceAttachmentAvailable condition set to True", func() {
 			testCtx := getTestCtx()
 			hc := testCtx.GetHostedCluster()
 			Expect(hc.Spec.Platform.GCP).NotTo(BeNil(),
 				"GCP platform spec must be set for GCP HostedCluster %s/%s", hc.Namespace, hc.Name)
 
-			project := hc.Spec.Platform.GCP.Project
-			region := hc.Spec.Platform.GCP.Region
-
 			// Find the GCPPrivateServiceConnect CR in the control plane namespace.
+			// There is exactly one GCPPrivateServiceConnect per hosted cluster.
 			pscList := &hyperv1.GCPPrivateServiceConnectList{}
 			Expect(testCtx.MgmtClient.List(testCtx.Context, pscList,
 				crclient.InNamespace(testCtx.ControlPlaneNamespace),
@@ -59,37 +57,30 @@ func GCPPrivateServiceConnectTest(getTestCtx internal.TestContextGetter) {
 				"expected at least one GCPPrivateServiceConnect in namespace %s", testCtx.ControlPlaneNamespace)
 
 			psc := pscList.Items[0]
+
+			// Assert both spec fields are populated — the controller successfully resolved
+			// the forwarding rule and the VPC-scoped NAT subnet.
 			Expect(string(psc.Spec.ForwardingRuleName)).NotTo(BeEmpty(),
 				"GCPPrivateServiceConnect %s should have ForwardingRuleName set", psc.Name)
 			Expect(string(psc.Spec.NATSubnet)).NotTo(BeEmpty(),
 				"GCPPrivateServiceConnect %s should have NATSubnet set", psc.Name)
 
-			// Build a GCP compute client using Application Default Credentials.
-			httpClient, err := google.DefaultClient(testCtx.Context, compute.ComputeScope)
-			Expect(err).NotTo(HaveOccurred(), "failed to create GCP HTTP client")
-			gcpClient, err := compute.NewService(testCtx.Context, option.WithHTTPClient(httpClient))
-			Expect(err).NotTo(HaveOccurred(), "failed to create GCP compute client")
-
-			// Fetch the forwarding rule to get its VPC network URL.
-			forwardingRule, err := gcpClient.ForwardingRules.Get(project, region, string(psc.Spec.ForwardingRuleName)).
-				Context(testCtx.Context).Do()
-			Expect(err).NotTo(HaveOccurred(),
-				"failed to get ForwardingRule %s", psc.Spec.ForwardingRuleName)
-			Expect(forwardingRule.Network).NotTo(BeEmpty(),
-				"ForwardingRule %s should have a Network field", psc.Spec.ForwardingRuleName)
-
-			// Fetch the NAT subnet to get its VPC network URL.
-			subnet, err := gcpClient.Subnetworks.Get(project, region, string(psc.Spec.NATSubnet)).
-				Context(testCtx.Context).Do()
-			Expect(err).NotTo(HaveOccurred(),
-				"failed to get Subnetwork %s", psc.Spec.NATSubnet)
-			Expect(subnet.Network).NotTo(BeEmpty(),
-				"Subnetwork %s should have a Network field", psc.Spec.NATSubnet)
-
-			// The core assertion: the NAT subnet must be in the same VPC as the forwarding rule.
-			Expect(subnet.Network).To(Equal(forwardingRule.Network),
-				"NAT subnet %s (network %s) must be in the same VPC as forwarding rule %s (network %s)",
-				psc.Spec.NATSubnet, subnet.Network, psc.Spec.ForwardingRuleName, forwardingRule.Network)
+			// Assert GCP accepted the Service Attachment. GCP rejects a Service Attachment
+			// whose NAT subnet is not in the same VPC as the forwarding rule, so a True
+			// condition here implicitly validates VPC correctness without requiring GCP
+			// credentials in the test binary.
+			found := false
+			for _, cond := range psc.Status.Conditions {
+				if cond.Type == string(hyperv1.GCPServiceAttachmentAvailable) {
+					found = true
+					Expect(cond.Status).To(Equal(metav1.ConditionTrue),
+						"GCPServiceAttachmentAvailable condition should be True on GCPPrivateServiceConnect %s: %s",
+						psc.Name, cond.Message)
+					break
+				}
+			}
+			Expect(found).To(BeTrue(),
+				"expected GCPServiceAttachmentAvailable condition on GCPPrivateServiceConnect %s", psc.Name)
 		})
 	})
 }

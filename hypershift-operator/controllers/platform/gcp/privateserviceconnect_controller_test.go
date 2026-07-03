@@ -307,7 +307,7 @@ func TestNATSubnetFilterFormat(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			filter := fmt.Sprintf(`purpose = "PRIVATE_SERVICE_CONNECT" AND network = "%s"`, tt.networkURL)
+			filter := buildNATSubnetFilter(tt.networkURL)
 			if filter != tt.expected {
 				t.Errorf("expected %s, got %s", tt.expected, filter)
 			}

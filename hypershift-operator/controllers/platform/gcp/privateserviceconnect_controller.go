@@ -170,7 +170,9 @@ func (r *GCPPrivateServiceConnectReconciler) reconcileGCPPrivateServiceConnectSp
 	if rule.Network == "" {
 		return fmt.Errorf("ForwardingRule %q has no Network field; cannot scope NAT subnet discovery to the correct VPC", rule.Name)
 	}
-	gcpPSC.Spec.ForwardingRuleName = hyperv1.GCPResourceName(rule.Name)
+	if gcpPSC.Spec.ForwardingRuleName == "" {
+		gcpPSC.Spec.ForwardingRuleName = hyperv1.GCPResourceName(rule.Name)
+	}
 
 	if gcpPSC.Spec.NATSubnet == "" {
 		natSubnet, err := r.discoverNATSubnet(ctx, gcpPSC, rule.Network)
@@ -248,7 +250,7 @@ func (r *GCPPrivateServiceConnectReconciler) discoverNATSubnet(ctx context.Conte
 
 	// Filter server-side to only subnets with PSC purpose in the management cluster's VPC,
 	// preventing cross-VPC selection when multiple management clusters share a GCP project.
-	filter := fmt.Sprintf(`purpose = "PRIVATE_SERVICE_CONNECT" AND network = "%s"`, networkURL)
+	filter := buildNATSubnetFilter(networkURL)
 
 	apiCtx, cancel := context.WithTimeout(ctx, gcpAPITimeout)
 	defer cancel()
@@ -511,6 +513,12 @@ func (r *GCPPrivateServiceConnectReconciler) handleGCPError(ctx context.Context,
 	}
 
 	return ctrl.Result{RequeueAfter: requeueAfter}, nil
+}
+
+// buildNATSubnetFilter returns an AIP-160 filter that restricts Subnetworks.List to
+// PSC-purpose subnets in the given VPC network, used by discoverNATSubnet.
+func buildNATSubnetFilter(networkURL string) string {
+	return fmt.Sprintf(`purpose = "PRIVATE_SERVICE_CONNECT" AND network = "%s"`, networkURL)
 }
 
 // Helper functions
