@@ -1,3 +1,12 @@
+# v1.44.2 (2026-07-01)
+
+* **Bug Fix**: Bump smithy-go to 1.27.3, fix JSON encorder for document.Number, endpoint host label format validation and CBOR union serialization on new serde
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v1.44.1 (2026-06-29)
+
+* No change notes available for this release.
+
 # v1.44.0 (2026-06-08)
 
 * **Feature**: Add preview of standard retry changes behind AWS_NEW_RETRIES_2026 flag
