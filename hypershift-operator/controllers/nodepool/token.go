@@ -56,10 +56,8 @@ type Token struct {
 	upsert.CreateOrUpdateProvider
 	cpoCapabilities *CPOCapabilities
 	*ConfigGenerator
-	// TODO(alberto): we don't really support content inplace changes for fields like pull secret and AdditionalTrustBundle.
-	// In fact we only trigger a rollout if the .Name referenced in the field changes.
-	// Consider removing these hash checks and consolidate with the rolloutConfig struct input.
-	// This is kept like this for now to contain the scope of the refactor and avoid backward compatibility issues.
+	// Content hashes for trust bundle ConfigMaps referenced by the HostedCluster are included in the
+	// rollout config hash so in-place updates trigger a NodePool rollout.
 	pullSecretHash            []byte
 	additionalTrustBundleHash []byte
 	globalConfigHash          []byte
