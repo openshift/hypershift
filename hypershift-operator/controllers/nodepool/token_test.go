@@ -852,7 +852,7 @@ func TestTokenUserDataSecret(t *testing.T) {
 							},
 						},
 						pullSecretName:            "test-pull-secret",
-						additionalTrustBundleName: "test-trust-bundle",
+						additionalTrustBundleHash: "test-trust-bundle-hash",
 						globalConfig:              "test-global-config",
 						mcoRawConfig:              "test-mco-raw-config",
 					},

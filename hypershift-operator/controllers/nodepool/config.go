@@ -14,6 +14,7 @@ import (
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/backwardcompat"
 	"github.com/openshift/hypershift/support/capabilities"
+	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	supportutil "github.com/openshift/hypershift/support/util"
@@ -47,12 +48,13 @@ type ConfigGenerator struct {
 
 // rolloutConfig is the canonical source for input that produces a unique hash id and causes a NodePool rollout.
 // This can be grouped by two categories of input based on how it's consumed by the MCO:
-// - Some fields from spec like hostedCluster.Spec.Config, pullSecretName, additionalTrustBundleName...
+// - Some fields from spec like hostedCluster.Spec.Config, pullSecretName, additionalTrustBundleHash, proxyTrustedCAHash...
 // - The mcoRawConfig, which is an MCO consumable version of NodePool.spec.config, tuneConfig and any hypershift core machineConfig.
 type rolloutConfig struct {
 	releaseImage              *releaseinfo.ReleaseImage
 	pullSecretName            string
-	additionalTrustBundleName string
+	additionalTrustBundleHash string
+	proxyTrustedCAHash        string
 	// globalConfig represents input from hostedCluster.spec.config that requires a NodePool rollout.
 	globalConfig string
 	// rawConfig is an mco consumable version of NodePool.spec.config, tuneConfig and any hypershift core machine config.
@@ -90,9 +92,12 @@ func NewConfigGenerator(ctx context.Context, client client.Client, hostedCluster
 		},
 	}
 
-	if hostedCluster.Spec.AdditionalTrustBundle != nil {
-		cg.rolloutConfig.additionalTrustBundleName = hostedCluster.Spec.AdditionalTrustBundle.Name
+	additionalTrustBundleHash, proxyTrustedCAHash, err := rolloutTrustBundleHashes(ctx, client, hostedCluster)
+	if err != nil {
+		return nil, err
 	}
+	cg.rolloutConfig.additionalTrustBundleHash = additionalTrustBundleHash
+	cg.rolloutConfig.proxyTrustedCAHash = proxyTrustedCAHash
 
 	mcoRawConfig, err := cg.generateMCORawConfig(ctx, hostedCluster.Spec.Capabilities)
 	if err != nil {
@@ -118,7 +123,7 @@ func (cg *ConfigGenerator) CompressedAndEncoded() (*bytes.Buffer, error) {
 // TODO(alberto): hash the struct directly instead of the string representation field by field.
 // This is kept like this for now to contain the scope of the refactor and avoid backward compatibility issues.
 func (cg *ConfigGenerator) Hash() string {
-	return supportutil.HashSimple(cg.mcoRawConfig + cg.releaseImage.Version() + cg.pullSecretName + cg.additionalTrustBundleName + cg.globalConfig)
+	return supportutil.HashSimple(cg.mcoRawConfig + cg.releaseImage.Version() + cg.pullSecretName + cg.additionalTrustBundleHash + cg.proxyTrustedCAHash + cg.globalConfig)
 }
 
 // HashWithOutVersion is like Hash but doesn't compute the release version.
@@ -126,7 +131,45 @@ func (cg *ConfigGenerator) Hash() string {
 // TODO(alberto): This was left inconsistent in https://github.com/openshift/hypershift/pull/3795/files. It should also contain cg.globalConfig.
 // This is kept like this for now to contain the scope of the refactor and avoid backward compatibility issues.
 func (cg *ConfigGenerator) HashWithoutVersion() string {
-	return supportutil.HashSimple(cg.mcoRawConfig + cg.pullSecretName + cg.additionalTrustBundleName)
+	return supportutil.HashSimple(cg.mcoRawConfig + cg.pullSecretName + cg.additionalTrustBundleHash + cg.proxyTrustedCAHash)
+}
+
+func rolloutTrustBundleHashes(ctx context.Context, c client.Client, hc *hyperv1.HostedCluster) (additionalTrustBundleHash, proxyTrustedCAHash string, err error) {
+	if hc.Spec.AdditionalTrustBundle != nil {
+		additionalTrustBundleHash, err = configMapCABundleHash(ctx, c, hc.Namespace, hc.Spec.AdditionalTrustBundle.Name)
+		if err != nil {
+			return "", "", err
+		}
+	}
+	if hc.Spec.Configuration != nil && hc.Spec.Configuration.Proxy != nil && hc.Spec.Configuration.Proxy.TrustedCA.Name != "" {
+		proxyTrustedCAHash, err = configMapCABundleHash(ctx, c, hc.Namespace, hc.Spec.Configuration.Proxy.TrustedCA.Name)
+		if err != nil {
+			return "", "", err
+		}
+	}
+	return additionalTrustBundleHash, proxyTrustedCAHash, nil
+}
+
+func configMapCABundleHash(ctx context.Context, c client.Client, namespace, name string) (string, error) {
+	cm := &corev1.ConfigMap{}
+	if err := c.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, cm); err != nil {
+		return "", fmt.Errorf("cannot get ConfigMap %s/%s: %w", namespace, name, err)
+	}
+	data, ok := cm.Data[certs.UserCABundleMapKey]
+	if !ok {
+		return "", fmt.Errorf("ConfigMap %s/%s missing %q key", namespace, name, certs.UserCABundleMapKey)
+	}
+	return supportutil.HashSimple(data), nil
+}
+
+func hostedClusterReferencesConfigMap(hc *hyperv1.HostedCluster, configMapName string) bool {
+	if hc.Spec.AdditionalTrustBundle != nil && hc.Spec.AdditionalTrustBundle.Name == configMapName {
+		return true
+	}
+	if hc.Spec.Configuration != nil && hc.Spec.Configuration.Proxy != nil && hc.Spec.Configuration.Proxy.TrustedCA.Name == configMapName {
+		return true
+	}
+	return false
 }
 
 func (cg *ConfigGenerator) Version() string {
