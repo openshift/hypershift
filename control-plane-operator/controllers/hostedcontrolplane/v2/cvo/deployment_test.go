@@ -369,6 +369,25 @@ func TestAdaptDeployment(t *testing.T) {
 			expectedTLSMinVersion: "--tls-min-version=VersionTLS13",
 			expectedCipherSuites:  "--tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384",
 		},
+		{
+			name: "When TLS profile type is Modern, it should set min version to TLS 1.3 and not add cipher suites flag",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-hcp", Namespace: "test-ns"},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+					Configuration: &hyperv1.ClusterConfiguration{
+						APIServer: &configv1.APIServerSpec{
+							TLSSecurityProfile: &configv1.TLSSecurityProfile{
+								Type:   configv1.TLSProfileModernType,
+								Modern: &configv1.ModernTLSProfile{},
+							},
+						},
+					},
+				},
+			},
+			expectedTLSMinVersion: "--tls-min-version=VersionTLS13",
+			expectedCipherSuites:  "",
+		},
 	}
 
 	for _, tc := range testCases {
