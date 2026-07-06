@@ -26,11 +26,14 @@ import (
 
 // fakeComputeClient implements ComputeClient for unit tests.
 // Each field holds the canned return values for the corresponding method.
+// capturedSubnetFilter records the filter string passed to ListSubnetworks so
+// tests can assert that the VPC-scoped filter reaches the API call site.
 type fakeComputeClient struct {
 	forwardingRules         []*compute.ForwardingRule
 	forwardingRulesErr      error
 	subnetworks             []*compute.Subnetwork
 	subnetworksErr          error
+	capturedSubnetFilter    string
 	serviceAttachments      []*compute.ServiceAttachment
 	serviceAttachmentsErr   error
 	getServiceAttachment    *compute.ServiceAttachment
@@ -45,7 +48,8 @@ func (f *fakeComputeClient) ListForwardingRules(_ context.Context, _, _, _ strin
 	return f.forwardingRules, f.forwardingRulesErr
 }
 
-func (f *fakeComputeClient) ListSubnetworks(_ context.Context, _, _, _ string) ([]*compute.Subnetwork, error) {
+func (f *fakeComputeClient) ListSubnetworks(_ context.Context, _, _, filter string) ([]*compute.Subnetwork, error) {
+	f.capturedSubnetFilter = filter
 	return f.subnetworks, f.subnetworksErr
 }
 
@@ -491,24 +495,36 @@ func TestReconcileSpec_SetsForwardingRuleNameAndNATSubnet(t *testing.T) {
 // --- discoverNATSubnet ---
 
 func TestDiscoverNATSubnet_APIError(t *testing.T) {
-	r := newReconciler(t, &fakeComputeClient{subnetworksErr: errors.New("api error")})
-	_, err := r.discoverNATSubnet(context.Background(), newGCPPSC("", ""), "https://example.com/network")
+	networkURL := "https://example.com/network"
+	fc := &fakeComputeClient{subnetworksErr: errors.New("api error")}
+	r := newReconciler(t, fc)
+	_, err := r.discoverNATSubnet(context.Background(), newGCPPSC("", ""), networkURL)
 	if err == nil {
 		t.Error("expected error, got nil")
+	}
+	wantFilter := buildNATSubnetFilter(networkURL)
+	if fc.capturedSubnetFilter != wantFilter {
+		t.Errorf("ListSubnetworks filter = %q, want %q", fc.capturedSubnetFilter, wantFilter)
 	}
 }
 
 func TestDiscoverNATSubnet_NoSubnets(t *testing.T) {
-	r := newReconciler(t, &fakeComputeClient{subnetworks: nil})
-	_, err := r.discoverNATSubnet(context.Background(), newGCPPSC("", ""), "https://example.com/network")
+	networkURL := "https://example.com/network"
+	fc := &fakeComputeClient{subnetworks: nil}
+	r := newReconciler(t, fc)
+	_, err := r.discoverNATSubnet(context.Background(), newGCPPSC("", ""), networkURL)
 	if err == nil {
 		t.Error("expected error for no available subnets, got nil")
+	}
+	wantFilter := buildNATSubnetFilter(networkURL)
+	if fc.capturedSubnetFilter != wantFilter {
+		t.Errorf("ListSubnetworks filter = %q, want %q", fc.capturedSubnetFilter, wantFilter)
 	}
 }
 
 func TestDiscoverNATSubnet_SubnetInUse_SkipsToNext(t *testing.T) {
 	networkURL := "https://example.com/network"
-	r := newReconciler(t, &fakeComputeClient{
+	fc := &fakeComputeClient{
 		subnetworks: []*compute.Subnetwork{
 			{Name: "subnet-in-use"},
 			{Name: "subnet-available"},
@@ -517,7 +533,8 @@ func TestDiscoverNATSubnet_SubnetInUse_SkipsToNext(t *testing.T) {
 		serviceAttachments: []*compute.ServiceAttachment{
 			{NatSubnets: []string{"projects/p/regions/r/subnetworks/subnet-in-use"}},
 		},
-	})
+	}
+	r := newReconciler(t, fc)
 	name, err := r.discoverNATSubnet(context.Background(), newGCPPSC("", ""), networkURL)
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
@@ -525,18 +542,27 @@ func TestDiscoverNATSubnet_SubnetInUse_SkipsToNext(t *testing.T) {
 	if name != "subnet-available" {
 		t.Errorf("expected %q, got %q", "subnet-available", name)
 	}
+	wantFilter := buildNATSubnetFilter(networkURL)
+	if fc.capturedSubnetFilter != wantFilter {
+		t.Errorf("ListSubnetworks filter = %q, want %q", fc.capturedSubnetFilter, wantFilter)
+	}
 }
 
 func TestDiscoverNATSubnet_AllSubnetsInUse(t *testing.T) {
 	networkURL := "https://example.com/network"
-	r := newReconciler(t, &fakeComputeClient{
+	fc := &fakeComputeClient{
 		subnetworks: []*compute.Subnetwork{{Name: "only-subnet"}},
 		serviceAttachments: []*compute.ServiceAttachment{
 			{NatSubnets: []string{"projects/p/regions/r/subnetworks/only-subnet"}},
 		},
-	})
+	}
+	r := newReconciler(t, fc)
 	_, err := r.discoverNATSubnet(context.Background(), newGCPPSC("", ""), networkURL)
 	if err == nil {
 		t.Error("expected error when all subnets are in use, got nil")
+	}
+	wantFilter := buildNATSubnetFilter(networkURL)
+	if fc.capturedSubnetFilter != wantFilter {
+		t.Errorf("ListSubnetworks filter = %q, want %q", fc.capturedSubnetFilter, wantFilter)
 	}
 }
