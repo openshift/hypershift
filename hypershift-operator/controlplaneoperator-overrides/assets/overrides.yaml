@@ -103,6 +103,18 @@ platforms:
       # End of OCPBUGS-86416 overrides 4.21 section
       # 4.22 does not need an override: the fix (PR #8564) landed before rc.5
       # (SOURCE_GIT_COMMIT=d6c72d15350752e315c198f7a68558ae4086e3c7) and GA will include it.
+      # Beginning of CNTRLPLANE-3619/CNTRLPLANE-3656 overrides 4.22 section
+      - version: 4.22.0
+        cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-22@sha256:9584e156f938121c050c2373583998ec78068013d1a94d97913bea3e6416c427
+      - version: 4.22.1
+        cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-22@sha256:9584e156f938121c050c2373583998ec78068013d1a94d97913bea3e6416c427
+      - version: 4.22.2
+        cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-22@sha256:9584e156f938121c050c2373583998ec78068013d1a94d97913bea3e6416c427
+      - version: 4.22.3
+        cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-22@sha256:9584e156f938121c050c2373583998ec78068013d1a94d97913bea3e6416c427
+      # 4.22.4 does not need an override: both PRs (#8721, #8790) merged 2026-06-26,
+      # before the 4.22.4 development cutoff (2026-07-01).
+      # End of CNTRLPLANE-3619/CNTRLPLANE-3656 overrides 4.22 section
     testing:
       # Update the image refs below to indicate which images should be used for CPO override
       # testing. Currently, we only test one latest/previous combination. In the future, we
