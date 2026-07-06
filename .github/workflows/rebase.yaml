@@ -21,7 +21,22 @@ jobs:
     with:
       command-name: rebase
       status-message: "Rebasing PR onto main"
-      claude-prompt: "Rebase this branch onto the latest main and force push. You are running in CI. Force push with --force-with-lease when done without asking for confirmation. Steps: 1) git fetch origin main 2) git rebase origin/main 3) If there are conflicts, resolve them while preserving the intent of the PR changes 4) git push --force-with-lease. Report what was done."
+      claude-prompt: >-
+        Rebase this branch onto the latest upstream main and force push.
+        You are running in CI. Force push with --force-with-lease when done without asking for confirmation.
+        The 'origin' remote may point to a fork; the workflow has already added an 'upstream' remote for fork PRs.
+        Steps:
+        1) Run 'git remote -v' to identify remotes
+        2) Determine the main-branch remote: if 'upstream' remote exists use 'upstream', otherwise use 'origin'
+        3) git fetch <chosen-remote> main
+        4) git rebase <chosen-remote>/main
+        5) If there are conflicts, resolve them while preserving the intent of the PR changes
+        6) git push --force-with-lease origin
+        If the push fails with a permission or authentication error, post a PR comment using
+        'gh pr comment' explaining that the rebase succeeded locally but the push failed because
+        the PR does not allow maintainer edits, and ask the author to enable 'Allow edits from
+        maintainers' and retry /rebase. Do NOT report success if the push failed.
+        Report what was done.
       max-turns: 50
       allowed-tools: "Bash Read Write Edit Grep Glob"
     secrets: inherit

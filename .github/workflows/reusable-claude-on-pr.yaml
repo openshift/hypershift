@@ -80,6 +80,16 @@ jobs:
           persist-credentials: true
           fetch-depth: 0
 
+      - name: Add upstream remote
+        env:
+          PR_REPO: ${{ steps.pr.outputs.repo }}
+        run: |
+          if [[ "$PR_REPO" != "${{ github.repository }}" ]]; then
+            git remote add upstream "https://github.com/${{ github.repository }}.git"
+            git fetch upstream main
+            git branch -f main upstream/main
+          fi
+
       - name: Authenticate to GCP via WIF
         id: gcp-auth
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
