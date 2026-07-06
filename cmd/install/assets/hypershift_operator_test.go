@@ -990,6 +990,15 @@ func TestBuildEnvVars(t *testing.T) {
 			},
 		},
 		{
+			name: "When CAPI migration is enabled, it should include CAPI_STORAGE_VERSION env var",
+			deployment: HyperShiftOperatorDeployment{
+				CAPIStorageVersion: "v1beta2",
+			},
+			expectContains: []corev1.EnvVar{
+				{Name: "CAPI_STORAGE_VERSION", Value: "v1beta2"},
+			},
+		},
+		{
 			name: "When no optional features are enabled, it should not include optional env vars",
 			deployment: HyperShiftOperatorDeployment{
 				CertRotationScale: 24 * time.Hour,
@@ -1000,6 +1009,7 @@ func TestBuildEnvVars(t *testing.T) {
 				"MANAGED_SERVICE",
 				"ENABLE_SIZE_TAGGING",
 				"MONITORING_DASHBOARDS",
+				"CAPI_STORAGE_VERSION",
 			},
 		},
 	}

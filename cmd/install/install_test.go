@@ -30,6 +30,7 @@ import (
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/set"
 
@@ -38,6 +39,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestOptions_Validate(t *testing.T) {
@@ -2416,7 +2419,7 @@ func TestHyperShiftOperatorManifests_WebhookFlags(t *testing.T) {
 				if !ok {
 					continue
 				}
-				override, isCAPICRD := crdassets.CAPICRDOverrides[crd.Name]
+				override, isCAPICRD := crdassets.CAPICRDOverrides()[crd.Name]
 				if !isCAPICRD || !override.NeedsConversion {
 					continue
 				}
@@ -2643,6 +2646,78 @@ func TestComplete(t *testing.T) {
 				if test.validate != nil {
 					test.validate(g, opts)
 				}
+			}
+		})
+	}
+}
+
+func TestSetupCRDs_CAPIStorageVersionMigrationGuard(t *testing.T) {
+	makeCAPICRD := func(name string, storedVersions ...string) *apiextensionsv1.CustomResourceDefinition {
+		return &apiextensionsv1.CustomResourceDefinition{
+			ObjectMeta: metav1.ObjectMeta{Name: name},
+			Spec: apiextensionsv1.CustomResourceDefinitionSpec{
+				Versions: []apiextensionsv1.CustomResourceDefinitionVersion{
+					{Name: "v1beta1"},
+					{Name: "v1beta2"},
+				},
+			},
+			Status: apiextensionsv1.CustomResourceDefinitionStatus{
+				StoredVersions: storedVersions,
+			},
+		}
+	}
+	tests := []struct {
+		name        string
+		opts        Options
+		existing    []crclient.Object
+		expectError string
+	}{
+		{
+			name: "When installing with default options and no existing CRDs, it should set v1beta2 as storage version",
+			opts: Options{},
+		},
+		{
+			name: "When installing with default options and existing v1beta1 CRDs, it should set v1beta2 as storage version",
+			opts: Options{},
+			existing: []crclient.Object{
+				makeCAPICRD("clusters.cluster.x-k8s.io", "v1beta1"),
+			},
+		},
+		{
+			name: "When installing with default options and already-migrated CRDs, it should succeed without error",
+			opts: Options{},
+			existing: []crclient.Object{
+				makeCAPICRD("clusters.cluster.x-k8s.io", "v1beta2"),
+			},
+		},
+		{
+			name: "When installing with disable-capi-migration flag, it should not override storage version",
+			opts: Options{DisableCAPIMigration: true},
+		},
+		{
+			name: "When installing with disable-capi-migration on already-migrated cluster, it should succeed as no-op",
+			opts: Options{DisableCAPIMigration: true},
+			existing: []crclient.Object{
+				makeCAPICRD("clusters.cluster.x-k8s.io", "v1beta2"),
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			scheme := runtime.NewScheme()
+			require.NoError(t, apiextensionsv1.AddToScheme(scheme))
+			clientBuilder := fake.NewClientBuilder().WithScheme(scheme)
+			if tc.existing != nil {
+				clientBuilder = clientBuilder.WithObjects(tc.existing...)
+			}
+			fakeClient := clientBuilder.Build()
+			_, err := setupCRDs(context.Background(), fakeClient, tc.opts, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "hypershift"}}, &corev1.Service{})
+			if tc.expectError != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tc.expectError)
+			} else {
+				require.NoError(t, err)
 			}
 		})
 	}
