@@ -556,13 +556,23 @@ func (p *LocalIgnitionProvider) runMCSAndFetchPayload(ctx context.Context, dirs 
 		)
 	}
 
-	// Spin up the MCS process and ensure it's signaled to terminate when the function returns
+	// Spin up the MCS process and ensure it's signaled to terminate when the function returns.
+	// Output is captured in a buffer so it can be included in error messages for troubleshooting.
 	mcsCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	cmd := exec.CommandContext(mcsCtx, filepath.Join(dirs.binDir, "machine-config-server"), args...)
+
+	var mcsOutput bytes.Buffer
+	cmd.Stdout = &mcsOutput
+	cmd.Stderr = &mcsOutput
+
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("failed to start machine-config-server: %w", err)
+	}
+
+	mcsDone := make(chan error, 1)
 	go func() {
-		out, err := cmd.CombinedOutput()
-		log.Info("machine-config-server process exited", "output", string(out), "error", err)
+		mcsDone <- cmd.Wait()
 	}()
 
 	httpclient := &http.Client{
@@ -604,7 +614,17 @@ func (p *LocalIgnitionProvider) runMCSAndFetchPayload(ctx context.Context, dirs 
 		log.Info("got mcs payload", "time", time.Since(start).Round(time.Second).String())
 		return true, nil
 	})
-	return payload, err
+
+	// Stop MCS and wait for process exit so all output is flushed to the buffer.
+	cancel()
+	mcsErr := <-mcsDone
+	log.Info("machine-config-server process exited", "output", mcsOutput.String(), "error", mcsErr)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get payload from mcs (mcs logs: %s): %w", mcsOutput.String(), err)
+	}
+
+	return payload, nil
 }
 
 func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage, customConfig, pullSecretHash, additionalTrustBundleHash, hcConfigurationHash, osStream string) ([]byte, error) {
