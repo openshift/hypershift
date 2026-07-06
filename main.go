@@ -47,6 +47,7 @@ func main() {
 	cmd := &cobra.Command{
 		Use:              "hypershift",
 		SilenceUsage:     true,
+		SilenceErrors:    true,
 		TraverseChildren: true,
 
 		Run: func(cmd *cobra.Command, args []string) {
