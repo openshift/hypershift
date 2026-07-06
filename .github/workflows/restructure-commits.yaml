@@ -21,6 +21,11 @@ jobs:
     with:
       command-name: restructure-commits
       status-message: "Restructuring commits"
-      claude-prompt: "/restructure-commits -- You are running in CI. Force push with --force-with-lease when done without asking for confirmation."
+      claude-prompt: >-
+        /restructure-commits -- You are running in CI. Force push with --force-with-lease when done without asking for confirmation.
+        If the push fails with a permission or authentication error, post a PR comment using
+        'gh pr comment' explaining that the restructuring succeeded locally but the push failed because
+        the PR does not allow maintainer edits, and ask the author to enable 'Allow edits from
+        maintainers' and retry /restructure-commits.
       max-turns: 200
     secrets: inherit
