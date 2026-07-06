@@ -119,6 +119,7 @@ type HyperShiftOperatorInstallOptions struct {
 	EnableDedicatedRequestServingIsolation bool
 	EnableCPOOverrides                     bool
 	EnableEtcdRecovery                     bool
+	DisableCAPIMigration                   bool
 	DryRun                                 bool
 	DryRunDir                              string
 }
@@ -472,7 +473,6 @@ func (o *Options) DefaultGCPOptions() hypershiftgcp.RawCreateOptions {
 // Complete is intended to be called after flags have been bound and sets
 // up additional contextual defaulting.
 func (o *Options) Complete() error {
-
 	if shouldTestCPOOverride() {
 		o.LatestReleaseImage, o.PreviousReleaseImage = controlplaneoperatoroverrides.LatestOverrideTestReleases(string(o.Platform))
 	}
