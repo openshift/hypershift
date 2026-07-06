@@ -83,6 +83,8 @@ type Options struct {
 	HOInstallationOptions HyperShiftOperatorInstallOptions
 	// RunUpgradeTest is set to run HyperShift Operator upgrade test
 	RunUpgradeTest bool
+	// RunCAPIMigrationTest is set to run CAPI storage version migration test
+	RunCAPIMigrationTest bool
 
 	// external oidc for authentication in spec.configurations
 	ExternalOIDCProvider        string
@@ -473,6 +475,7 @@ func (o *Options) DefaultGCPOptions() hypershiftgcp.RawCreateOptions {
 // Complete is intended to be called after flags have been bound and sets
 // up additional contextual defaulting.
 func (o *Options) Complete() error {
+
 	if shouldTestCPOOverride() {
 		o.LatestReleaseImage, o.PreviousReleaseImage = controlplaneoperatoroverrides.LatestOverrideTestReleases(string(o.Platform))
 	}
