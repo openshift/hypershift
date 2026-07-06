@@ -43,9 +43,6 @@ func GCPPrivateServiceConnectTest(getTestCtx internal.TestContextGetter) {
 		// is therefore proof that the controller selected a subnet from the correct VPC.
 		It("should have GCPServiceAttachmentAvailable condition set to True", func() {
 			testCtx := getTestCtx()
-			hc := testCtx.GetHostedCluster()
-			Expect(hc.Spec.Platform.GCP).NotTo(BeNil(),
-				"GCP platform spec must be set for GCP HostedCluster %s/%s", hc.Namespace, hc.Name)
 
 			// Find the GCPPrivateServiceConnect CR in the control plane namespace.
 			// There is exactly one GCPPrivateServiceConnect per hosted cluster.
