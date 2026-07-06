@@ -49,12 +49,8 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 		c.Args = append(c.Args,
 			fmt.Sprintf("--api-audiences=%s", cpContext.HCP.Spec.IssuerURL),
 			fmt.Sprintf("--etcd-servers=%s", etcdURL),
-			fmt.Sprintf("--tls-min-version=%s", config.MinTLSVersion(configuration.GetTLSSecurityProfile())),
 		)
-
-		if cipherSuites := config.CipherSuites(configuration.GetTLSSecurityProfile()); len(cipherSuites) != 0 {
-			c.Args = append(c.Args, fmt.Sprintf("--tls-cipher-suites=%s", strings.Join(cipherSuites, ",")))
-		}
+		c.Args = config.AppendTLSArgs(c.Args, configuration.GetTLSSecurityProfile())
 
 		if cpContext.HCP.Spec.AuditWebhook != nil && len(cpContext.HCP.Spec.AuditWebhook.Name) > 0 {
 			c.Args = append(c.Args, fmt.Sprintf("--audit-webhook-config-file=%s", path.Join("/etc/kubernetes/auditwebhook", hyperv1.AuditWebhookKubeconfigKey)))
