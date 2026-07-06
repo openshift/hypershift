@@ -66,7 +66,6 @@ These workflows are triggered by posting a **slash command** as a comment on a p
 
 | Command | Workflow | What it does |
 |---------|----------|--------------|
-| `/address-review-comments` | `address-review-comments.yaml` | Reads open review comments on the PR and pushes commits to address them |
 | `/rebase` | `rebase.yaml` | Rebases the PR branch onto the latest `main` and force-pushes |
 | `/restructure-commits` | `restructure-commits.yaml` | Reorganizes the PR's commits into logical units with conventional commit messages |
 

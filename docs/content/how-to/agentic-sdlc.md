@@ -116,7 +116,6 @@ flowchart LR
     subgraph "Code Review"
         D1["CodeRabbit — automated review"] --> D3["Address feedback"]
         D2["/code-review:pr — /code-review:pre-commit-review"] --> D3
-        D3 --> D4["/utils:address-reviews"]
     end
 
     subgraph "QE & Testing"
@@ -126,7 +125,7 @@ flowchart LR
 
     C1 --> D1
     C2 --> D1
-    D4 --> E2
+    D3 --> E2
 ```
 
 
@@ -148,7 +147,6 @@ flowchart LR
 | Automated review  | [CodeRabbit](https://coderabbit.ai) | AI-powered code review bot running on every PR        |
 | On-demand review  | `/code-review:pr`                   | Trigger a full PR review with language-aware analysis |
 | Pre-commit review | `/code-review:pre-commit-review`    | Review staged changes before committing               |
-| Address feedback  | `/utils:address-reviews`            | Automatically address PR review comments              |
 
 
 #### QE & Testing
@@ -210,13 +208,11 @@ flowchart TD
     B --> C["Agent generates code, reviews, addresses and creates PR"]
     C --> D["Agent review on published PR"]
     D --> E["Human review"]
-    E --> F["/address-pr-review"]
-    F --> E
     E --> G["Human lgtm"]
     G --> H["/agentic-qe"]
     H --> I["Presubmit e2e runs"]
     I --> J["Auto-analysis on failures"]
-    J -->|"Failures found"| F
+    J -->|"Failures found"| E
     I -->|"Pass"| K["Merge"]
 ```
 
