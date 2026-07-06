@@ -14,7 +14,6 @@ import (
 // InstallHyperShiftOperator generates and applies the manifests needed to install the HyperShift Operator starting
 // with the all the HyperShift CRDs. It will wait for the HyperShift Operator to be ready before it returns.
 func InstallHyperShiftOperator(ctx context.Context, opts HyperShiftOperatorInstallOptions) error {
-
 	installOpts := getInstallOptions(opts)
 
 	if opts.DryRun {
@@ -32,7 +31,6 @@ func GetHyperShiftOperatorImage(ctx context.Context, client crclient.Client, opt
 	var image string
 	installOpts := getInstallOptions(opts)
 	deployment, err := install.WaitUntilAvailable(ctx, installOpts)
-
 	if err != nil {
 		return image, err
 	}
@@ -66,6 +64,7 @@ func getInstallOptions(opts HyperShiftOperatorInstallOptions) install.Options {
 	installOpts.EnableDedicatedRequestServingIsolation = opts.EnableDedicatedRequestServingIsolation
 	installOpts.EnableCPOOverrides = opts.EnableCPOOverrides
 	installOpts.EnableEtcdRecovery = opts.EnableEtcdRecovery
+	installOpts.DisableCAPIMigration = opts.DisableCAPIMigration
 
 	return installOpts
 }

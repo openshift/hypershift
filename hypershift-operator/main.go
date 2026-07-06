@@ -58,6 +58,7 @@ import (
 	"github.com/openshift/hypershift/support/awsapi"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/capabilities"
+	capicrdmigrator "github.com/openshift/hypershift/support/capi-crdmigrator"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/gcpapi"
 	"github.com/openshift/hypershift/support/globalconfig"
@@ -91,8 +92,12 @@ import (
 	"k8s.io/utils/ptr"
 	"k8s.io/utils/set"
 
+	capiaddonsv1beta2 "sigs.k8s.io/cluster-api/api/addons/v1beta2"
+	capiv1beta2 "sigs.k8s.io/cluster-api/api/core/v1beta2"
+	ipamv1beta2 "sigs.k8s.io/cluster-api/api/ipam/v1beta2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
@@ -344,7 +349,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		return err
 	}
 
-	if err := setupSupportControllers(mgr, opts, mgmtClusterCaps, operatorImage, createOrUpdate, registryProvider, log); err != nil {
+	if err := setupSupportControllers(ctx, mgr, opts, mgmtClusterCaps, operatorImage, createOrUpdate, registryProvider, log); err != nil {
 		return err
 	}
 
@@ -837,7 +842,7 @@ func resolveAzureCredentials(cloudConfig cloud.Configuration, log logr.Logger) (
 	return creds, nil
 }
 
-func setupSupportControllers(mgr ctrl.Manager, opts *StartOptions, mgmtClusterCaps *capabilities.ManagementClusterCapabilities, operatorImage string, createOrUpdate upsert.CreateOrUpdateProvider, registryProvider globalconfig.CommonRegistryProvider, log logr.Logger) error {
+func setupSupportControllers(ctx context.Context, mgr ctrl.Manager, opts *StartOptions, mgmtClusterCaps *capabilities.ManagementClusterCapabilities, operatorImage string, createOrUpdate upsert.CreateOrUpdateProvider, registryProvider globalconfig.CommonRegistryProvider, log logr.Logger) error {
 	if err := hosupportedversion.New(mgr.GetClient(), createOrUpdate, opts.Namespace).
 		SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create supported version controller: %w", err)
@@ -869,6 +874,42 @@ func setupSupportControllers(mgr ctrl.Manager, opts *StartOptions, mgmtClusterCa
 		if err := etcdBackupReconciler.SetupWithManager(mgr); err != nil {
 			return fmt.Errorf("unable to create etcd backup controller: %w", err)
 		}
+	}
+
+	// TODO(bclement): Once all management clusters have completed the CAPI storage migration,
+	// remove the CAPI storage version migration scaffolding:
+	//   - CAPI_STORAGE_VERSION env var check and CRDMigrator setup (this block)
+	//   - support/capi-crdmigrator/ package
+	//   - CAPICRDOverridesWithStorageVersion, CAPICRDOverrides, CAPICRDNames (cmd/install/assets/crds/assets.go) — default to v1beta2
+	//   - --disable-capi-migration flag and capiStorageVersionForOpts() (cmd/install/install.go)
+	//   - CAPI_STORAGE_VERSION env var plumbing (cmd/install/assets/hypershift_operator.go, cmd/install/install.go)
+	//   - --skip-crd-migration-phases args on CAPI manager (control-plane-operator/controllers/hostedcontrolplane/v2/capi_manager/deployment.go)
+	//   - IPAM skip override in setupCRDs() (cmd/install/install.go)
+	if os.Getenv(capicrdmigrator.CAPIStorageVersionEnvVar) == capicrdmigrator.TargetStorageVersion {
+		capicrdmigrator.RegisterMigrationMetrics(mgr.GetAPIReader(), opts.Namespace)
+		migrator := &capicrdmigrator.CRDMigrator{
+			Client:    mgr.GetClient(),
+			APIReader: mgr.GetAPIReader(),
+			Namespace: opts.Namespace,
+			Config: map[crclient.Object]capicrdmigrator.ByObjectConfig{
+				&capiv1beta2.Cluster{}:                         {},
+				&capiv1beta2.ClusterClass{}:                    {},
+				&capiv1beta2.MachineDeployment{}:               {},
+				&capiv1beta2.MachineDrainRule{}:                {},
+				&capiv1beta2.MachineHealthCheck{}:              {},
+				&capiv1beta2.MachinePool{}:                     {},
+				&capiv1beta2.Machine{}:                         {},
+				&capiv1beta2.MachineSet{}:                      {},
+				&ipamv1beta2.IPAddressClaim{}:                  {},
+				&ipamv1beta2.IPAddress{}:                       {},
+				&capiaddonsv1beta2.ClusterResourceSetBinding{}: {},
+				&capiaddonsv1beta2.ClusterResourceSet{}:        {},
+			},
+		}
+		if err := migrator.SetupWithManager(ctx, mgr, controller.Options{MaxConcurrentReconciles: 1}); err != nil {
+			return fmt.Errorf("unable to create CRD migrator controller: %w", err)
+		}
+		log.Info("CAPI CRD storage version migrator controller enabled")
 	}
 
 	if sharedingress.UseSharedIngress() {
