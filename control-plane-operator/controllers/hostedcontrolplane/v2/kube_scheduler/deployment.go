@@ -2,7 +2,6 @@ package scheduler
 
 import (
 	"fmt"
-	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/config"
@@ -21,12 +20,7 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 	}
 	configuration := cpContext.HCP.Spec.Configuration
 	podspec.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
-		if tlsMinVersion := config.MinTLSVersion(configuration.GetTLSSecurityProfile()); tlsMinVersion != "" {
-			c.Args = append(c.Args, fmt.Sprintf("--tls-min-version=%s", tlsMinVersion))
-		}
-		if cipherSuites := config.CipherSuites(configuration.GetTLSSecurityProfile()); len(cipherSuites) != 0 {
-			c.Args = append(c.Args, fmt.Sprintf("--tls-cipher-suites=%s", strings.Join(cipherSuites, ",")))
-		}
+		c.Args = config.AppendTLSArgs(c.Args, configuration.GetTLSSecurityProfile())
 		if util.StringListContains(cpContext.HCP.Annotations[hyperv1.DisableProfilingAnnotation], ComponentName) {
 			c.Args = append(c.Args, "--profiling=false")
 		}
