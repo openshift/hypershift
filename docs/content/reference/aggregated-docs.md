@@ -13538,6 +13538,7 @@ HyperShift uses AI-assisted CI jobs powered by Claude Code to help with developm
 | Job | Purpose | Schedule |
 |-----|---------|----------|
 | `periodic-jira-agent` | Analyzes Jira issues and creates draft PRs with fixes | Weekly on Mondays at 8:30 AM UTC |
+| `address-review-comments` | On-demand job to address review comments on a single PR | Triggered via `/test address-review-comments` |
 | `periodic-hypershift-dependabot-triage` | Consolidates open dependabot PRs into a single weekly PR | Weekly on Fridays at 12:00 UTC |
 
 ### Usage Scope
@@ -13622,6 +13623,82 @@ flowchart TD
 |----------|---------|-------------|
 | `JIRA_AGENT_MAX_ISSUES` | 1 | Maximum issues to process per run |
 | Rate limit | 60 seconds | Delay between processing issues |
+
+---
+
+## Review Agent
+
+### Overview
+
+The Review Agent (`address-review-comments`) addresses PR review comments on PRs created by the Jira Agent.
+
+- **Job name**: `address-review-comments`
+- **Trigger**: On-demand via `/test address-review-comments` on a PR
+- **Max agentic turns**: 100 per PR
+
+### How It Works
+
+1. **Analyzes review threads** to identify comments needing attention
+2. **Runs Claude Code** with the `/utils:address-reviews` command
+3. **Pushes changes** back to the PR branch
+
+### Comment Analysis Logic
+
+The agent uses a Python-based comment analyzer to intelligently determine which review threads need attention. This prevents duplicate responses and ensures only actionable feedback is processed.
+
+#### What Gets Processed
+
+| Condition | Action |
+|-----------|--------|
+| No bot reply in thread | Process (first response needed) |
+| Human replied after bot's last comment | Process (follow-up needed) |
+| Bot already replied, no human follow-up | Skip (already addressed) |
+| Thread is resolved | Skip (marked complete by reviewer) |
+| Thread is outdated (code changed) | Skip (likely addressed by code change) |
+
+#### What Counts as an Unresolved Review Thread
+
+A review thread is considered **unresolved** when:
+
+- **Inline code comments**: A reviewer left a comment on a specific line of code in the "Files changed" tab, and no one has clicked "Resolve conversation"
+- **Review comments with suggestions**: Comments that include suggested code changes that haven't been resolved
+- **Threaded discussions**: Any reply chain started from a code review that remains open
+
+A review thread is **NOT** created by:
+
+- General PR comments (comments in the main "Conversation" tab that aren't attached to code)
+- PR reviews that only contain an approval/request changes without inline comments
+- Commit comments
+
+#### Author Authorization
+
+The review agent only responds to feedback from authorized authors:
+
+| Author Type | Example |
+|-------------|---------|
+| OpenShift org members | Members of the `openshift` GitHub organization |
+| OWNERS file entries | Users listed in `OWNERS` or `OWNERS_ALIASES` |
+| Approved bots | `coderabbitai[bot]` |
+
+Comments from unauthorized users are ignored to prevent abuse.
+
+#### Response Rules
+
+When addressing feedback, the bot follows these rules:
+
+1. **One response per feedback**: Never responds to the same feedback via both inline reply AND general PR comment
+2. **Code changes only when requested**: Only modifies code when explicitly asked (imperative language like "change", "fix", "update")
+3. **Explanations for questions**: Replies with explanation only for clarifying questions, without code changes
+
+### Triggering On-Demand
+
+For a single PR, trigger the review agent with:
+
+```
+/test address-review-comments
+```
+
+This runs the review agent for that specific PR only.
 
 ---
 
@@ -13758,7 +13835,7 @@ To have an issue reprocessed:
 - **Rate limited**: 1 issue per weekly run (jira-agent), all non-k8s dependabot PRs per run (dependabot-triage)
 - **Cannot access private resources** - no access to internal systems beyond Jira/GitHub
 - **Cannot execute destructive operations** - no ability to delete resources or force-push
-- **Maximum agentic turns**: 100 per issue (jira-agent)
+- **Maximum agentic turns**: 100 per issue (jira-agent), 100 per PR (review-agent)
 
 ---
 
