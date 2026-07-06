@@ -169,19 +169,26 @@ func (r *secretJanitor) Reconcile(ctx context.Context, req reconcile.Request) (r
 }
 
 // shouldKeepOldUserData determines if the old user data should be kept.
-// For KubeVirt, we always keep the old userdata Secret: it is shared by all VMs in the
-// NodePool generation and must not be removed while any of them are still running.
-// For AWS < 4.16, we keep the old userdata Secret so old Machines during rolled out can be deleted.
-// Otherwise, deletion fails because of https://github.com/kubernetes-sigs/cluster-api-provider-aws/pull/3805.
-// TODO (alberto): Drop this check when support for old versions without the fix is not needed anymore.
+// KubeVirt: the Secret is shared by all VMs in the NodePool generation and must
+// survive until the rollout completes and all old VMs are gone. This is an
+// architectural requirement, not a temporary workaround.
+// AWS: deletion fails on CAPA < v2.2.0 (OCP < 4.16) because of
+// https://github.com/kubernetes-sigs/cluster-api-provider-aws/pull/3805.
+// TODO (Alberto): remove the AWS guard when OCP < 4.16 support is dropped.
 func (r *NodePoolReconciler) shouldKeepOldUserData(ctx context.Context, hc *hyperv1.HostedCluster) (bool, error) {
-	if hc.Spec.Platform.Type == hyperv1.KubevirtPlatform {
+	switch hc.Spec.Platform.Type {
+	case hyperv1.KubevirtPlatform:
 		return true, nil
-	}
-	if hc.Spec.Platform.Type != hyperv1.AWSPlatform {
+	case hyperv1.AWSPlatform:
+		return r.shouldKeepOldUserDataAWS(ctx, hc)
+	default:
 		return false, nil
 	}
+}
 
+// shouldKeepOldUserDataAWS checks whether the AWS hosted cluster version is old
+// enough to require preserving the previous userdata Secret during rollout.
+func (r *NodePoolReconciler) shouldKeepOldUserDataAWS(ctx context.Context, hc *hyperv1.HostedCluster) (bool, error) {
 	// If there's a current version in status, be conservative and assume that one is the one running CAPA.
 	releaseImage := hc.Spec.Release.Image
 	if hc.Status.Version != nil {
