@@ -855,7 +855,7 @@ func hyperShiftOperatorManifests(ctx context.Context, client crclient.Client, op
 
 	// Setup ExternalDNS resources
 	if len(opts.ExternalDNSProvider) > 0 {
-		extDNSObjs, err := setupExternalDNS(opts, operatorNamespace)
+		extDNSObjs, err := setupExternalDNS(ctx, opts, operatorNamespace)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -1380,7 +1380,7 @@ func setupOperatorResources(opts Options, userCABundleCM *corev1.ConfigMap, trus
 // - Secret for external-dns credentials
 // - Deployment for external-dns
 // - PodMonitor for external-dns
-func setupExternalDNS(opts Options, operatorNamespace *corev1.Namespace) ([]crclient.Object, error) {
+func setupExternalDNS(ctx context.Context, opts Options, operatorNamespace *corev1.Namespace) ([]crclient.Object, error) {
 	var objects []crclient.Object
 
 	// Setting the proxy for external-dns is best-effort, ignore errors
@@ -1390,7 +1390,7 @@ func setupExternalDNS(opts Options, operatorNamespace *corev1.Namespace) ([]crcl
 		if err != nil {
 			return nil, err
 		}
-		if err := client.Get(context.TODO(), crclient.ObjectKey{Name: "cluster"}, proxy); err != nil {
+		if err := client.Get(ctx, crclient.ObjectKey{Name: "cluster"}, proxy); err != nil {
 			return nil, err
 		}
 		return proxy, nil
