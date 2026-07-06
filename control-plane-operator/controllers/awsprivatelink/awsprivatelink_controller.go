@@ -46,8 +46,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
@@ -219,6 +219,16 @@ const (
 	endpointServiceDeletionRequeueDuration = 5 * time.Second
 	hypershiftLocalZone                    = "hypershift.local"
 	routerDomain                           = "apps"
+
+	// hcpAWSPrivateLinkFinalizerName is a finalizer placed on the HostedControlPlane by
+	// the AWSEndpointService reconciler. It blocks HCP deletion until all AWS PrivateLink
+	// resources (VPC endpoints, security groups, DNS records) are cleaned up.
+	//
+	// Without this finalizer, the AWSEndpointService CR's own finalizer runs during CR
+	// deletion, but the controller may not be able to construct valid AWS clients if the
+	// HCP has already been deleted — particularly for SharedVPC clusters where cross-account
+	// role ARNs are sourced from the HCP spec. This would orphan AWS resources.
+	hcpAWSPrivateLinkFinalizerName = "hypershift.openshift.io/aws-private-link-endpoint-cleanup"
 )
 
 // AWSEndpointServiceReconciler watches AWSEndpointService resources and reconciles
@@ -358,6 +368,7 @@ func (b *clientBuilder) setFromHCP(hcp *hyperv1.HostedControlPlane) {
 	} else {
 		b.assumeSharedVPCEndpointRoleARN = ""
 		b.assumeSharedVPCRoute53RoleARN = ""
+		b.localZoneID = ""
 	}
 }
 
@@ -371,7 +382,9 @@ func (r *AWSEndpointServiceReconciler) SetupWithManager(mgr ctrl.Manager) error 
 			RateLimiter:             workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](3*time.Second, 30*time.Second),
 			MaxConcurrentReconciles: 10,
 		}).
-		Watches(&hyperv1.HostedControlPlane{}, handler.Funcs{UpdateFunc: r.enqueueOnAccessChange(mgr)}).
+		Watches(&hyperv1.HostedControlPlane{}, handler.EnqueueRequestsFromMapFunc(
+			r.mapHCPToAWSEndpointService(),
+		)).
 		Build(r)
 	if err != nil {
 		return fmt.Errorf("failed setting up with a controller manager: %w", err)
@@ -381,30 +394,42 @@ func (r *AWSEndpointServiceReconciler) SetupWithManager(mgr ctrl.Manager) error 
 	return nil
 }
 
-func (r *AWSEndpointServiceReconciler) enqueueOnAccessChange(mgr ctrl.Manager) func(context.Context, event.UpdateEvent, workqueue.TypedRateLimitingInterface[reconcile.Request]) {
-	return func(ctx context.Context, e event.UpdateEvent, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
-		logger := mgr.GetLogger()
-		newHCP, isOk := e.ObjectNew.(*hyperv1.HostedControlPlane)
-		if !isOk {
-			logger.Info("WARNING: enqueueOnAccessChange: new resource is not of type HostedControlPlane")
-			return
+// mapHCPToAWSEndpointService maps HostedControlPlane events to the AWSEndpointService CRs
+// in the same namespace. This uses EnqueueRequestsFromMapFunc (instead of handler.Funcs)
+// so that all event types — Create, Update, Delete — trigger the mapping. This is critical
+// for controller restarts: if the CPO restarts while an HCP is being deleted (DeletionTimestamp
+// already set), the informer cache sync generates a Create event, not an Update. Using
+// handler.Funcs{UpdateFunc: ...} would miss this, defeating the purpose of the HCP finalizer.
+//
+// The function only enqueues CRs when the HCP has our finalizer, avoiding unnecessary
+// reconciliations for unrelated HCPs. EndpointAccess changes (previously detected via
+// old/new comparison) are picked up by the reconciler's periodic 5-minute requeue.
+func (r *AWSEndpointServiceReconciler) mapHCPToAWSEndpointService() handler.MapFunc {
+	return func(ctx context.Context, obj client.Object) []reconcile.Request {
+		hcp, ok := obj.(*hyperv1.HostedControlPlane)
+		if !ok {
+			return nil
 		}
-		oldHCP, isOk := e.ObjectOld.(*hyperv1.HostedControlPlane)
-		if !isOk {
-			logger.Info("WARNING: enqueueOnAccessChange: old resource is not of type HostedControlPlane")
-			return
+
+		// Only trigger reconciliation when the HCP has our finalizer; this avoids
+		// unnecessary reconciliations for HCPs that are not related to AWS PrivateLink.
+		if !controllerutil.ContainsFinalizer(hcp, hcpAWSPrivateLinkFinalizerName) {
+			return nil
 		}
-		// Only enqueue awsendpointservices when there is a change in the endpointaccess value, otherwise ignore changes
-		if newHCP.Spec.Platform.AWS != nil && oldHCP.Spec.Platform.AWS != nil && newHCP.Spec.Platform.AWS.EndpointAccess != oldHCP.Spec.Platform.AWS.EndpointAccess {
-			awsEndpointServiceList := &hyperv1.AWSEndpointServiceList{}
-			if err := r.List(context.Background(), awsEndpointServiceList, client.InNamespace(newHCP.Namespace)); err != nil {
-				logger.Error(err, "enqueueOnAccessChange: cannot list awsendpointservices")
-				return
-			}
-			for i := range awsEndpointServiceList.Items {
-				q.Add(reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&awsEndpointServiceList.Items[i])})
-			}
+
+		awsEndpointServiceList := &hyperv1.AWSEndpointServiceList{}
+		if err := r.List(ctx, awsEndpointServiceList, client.InNamespace(hcp.Namespace)); err != nil {
+			log.FromContext(ctx).Error(err, "mapHCPToAWSEndpointService: cannot list AWSEndpointService resources", "namespace", hcp.Namespace)
+			return nil
 		}
+
+		var requests []reconcile.Request
+		for i := range awsEndpointServiceList.Items {
+			requests = append(requests, reconcile.Request{
+				NamespacedName: client.ObjectKeyFromObject(&awsEndpointServiceList.Items[i]),
+			})
+		}
+		return requests
 	}
 }
 
@@ -433,57 +458,7 @@ func (r *AWSEndpointServiceReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	// Return early if deleted
 	if !awsEndpointService.DeletionTimestamp.IsZero() {
-		if !controllerutil.ContainsFinalizer(awsEndpointService, finalizer) {
-			// If we previously removed our finalizer, don't delete again and return early
-			return ctrl.Result{}, nil
-		}
-
-		// Best-effort initialization for deletion reconciles: after a controller restart
-		// the clientBuilder is uninitialized because initializeWithHCP is only called in
-		// the non-deletion path. If the HCP still exists, initialize from it so that
-		// getClients can succeed and deletion can proceed.
-		//
-		// Known issue (SharedVPC): when the HCP is already deleted, the SharedVPC role
-		// ARNs (needed for cross-account EC2/Route53 access) are lost. Initialization
-		// cannot happen, getClients will fail, and the finalizer will be preserved until
-		// the hypershift-operator force-removes it after the grace period — orphaning
-		// AWS resources in the shared VPC account. A proper fix requires persisting the
-		// SharedVPC role ARNs in the AWSEndpointService status. See
-		// TestReconcileDeletionSharedVPC for details.
-		hcpList := &hyperv1.HostedControlPlaneList{}
-		if err := r.List(ctx, hcpList, &client.ListOptions{Namespace: req.Namespace}); err == nil && len(hcpList.Items) == 1 {
-			r.awsClientBuilder.initializeWithHCP(log, &hcpList.Items[0])
-		}
-
-		ec2Client, route53Client, err := r.awsClientBuilder.getClients(ctx)
-		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to get AWS clients for endpoint service cleanup: %w", err)
-		}
-		completed, err := r.delete(ctx, awsEndpointService, ec2Client, route53Client)
-		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to delete resource: %w", err)
-		}
-		if !completed {
-			return ctrl.Result{RequeueAfter: endpointServiceDeletionRequeueDuration}, nil
-		}
-		if controllerutil.ContainsFinalizer(awsEndpointService, finalizer) {
-			controllerutil.RemoveFinalizer(awsEndpointService, finalizer)
-			if err := r.Update(ctx, awsEndpointService); err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to remove finalizer: %w", err)
-			}
-		}
-		return ctrl.Result{}, nil
-	}
-
-	// Ensure the awsEndpointService has a finalizer for cleanup
-	if !controllerutil.ContainsFinalizer(awsEndpointService, finalizer) {
-		controllerutil.AddFinalizer(awsEndpointService, finalizer)
-		if err := r.Update(ctx, awsEndpointService); err != nil {
-			if apierrors.IsConflict(err) {
-				return ctrl.Result{Requeue: true}, nil
-			}
-			return ctrl.Result{}, fmt.Errorf("failed to add finalizer: %w", err)
-		}
+		return r.reconcileCRDeletion(ctx, awsEndpointService, req.Namespace, log)
 	}
 
 	serviceName := awsEndpointService.Status.EndpointServiceName
@@ -493,19 +468,36 @@ func (r *AWSEndpointServiceReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, nil
 	}
 
-	// Fetch the HostedControlPlane
-	hcpList := &hyperv1.HostedControlPlaneList{}
-	if err := r.List(ctx, hcpList, &client.ListOptions{Namespace: req.Namespace}); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to get resource: %w", err)
+	hcp, err := r.getHostedControlPlane(ctx, req.Namespace)
+	if err != nil {
+		return ctrl.Result{}, err
 	}
-	if len(hcpList.Items) == 0 {
-		// Return early if HostedControlPlane is deleted
+	if hcp == nil {
+		log.Info("WARNING: HostedControlPlane not found, AWS PrivateLink resources may be orphaned if the HCP was deleted before the finalizer was placed")
 		return ctrl.Result{}, nil
 	}
-	if len(hcpList.Items) > 1 {
-		return ctrl.Result{}, fmt.Errorf("unexpected number of HostedControlPlanes in namespace, expected: 1, actual: %d", len(hcpList.Items))
+
+	// Handle HCP deletion: clean up AWS resources while HCP credentials are still valid.
+	// This check is before the CR finalizer addition so that during HCP deletion,
+	// reconcileHCPDeletion does not re-add the CR finalizer after removing it.
+	if !hcp.DeletionTimestamp.IsZero() {
+		return r.reconcileHCPDeletion(ctx, awsEndpointService, hcp, log)
 	}
-	hcp := &hcpList.Items[0]
+
+	// Ensure the awsEndpointService has a finalizer for cleanup.
+	// This is placed after the serviceName check so that CRs not yet populated
+	// by hypershift-operator don't get a finalizer that would block HCP deletion,
+	// and after the HCP deletion check to avoid re-adding the finalizer during
+	// HCP deletion cleanup cycles.
+	if !controllerutil.ContainsFinalizer(awsEndpointService, finalizer) {
+		controllerutil.AddFinalizer(awsEndpointService, finalizer)
+		if err := r.Update(ctx, awsEndpointService); err != nil {
+			if apierrors.IsConflict(err) {
+				return ctrl.Result{RequeueAfter: time.Second}, nil
+			}
+			return ctrl.Result{}, fmt.Errorf("failed to add finalizer: %w", err)
+		}
+	}
 
 	if isPaused, duration := util.IsReconciliationPaused(log, hcp.Spec.PausedUntil); isPaused {
 		log.Info("Reconciliation paused", "pausedUntil", *hcp.Spec.PausedUntil)
@@ -515,7 +507,14 @@ func (r *AWSEndpointServiceReconciler) Reconcile(ctx context.Context, req ctrl.R
 	r.awsClientBuilder.initializeWithHCP(log, hcp)
 	ec2Client, route53Client, err := r.awsClientBuilder.getClients(ctx)
 	if err != nil {
-		return ctrl.Result{}, err
+		return ctrl.Result{}, fmt.Errorf("failed to get AWS clients for endpoint reconciliation: %w", err)
+	}
+
+	// Add HCP finalizer to block HCP deletion until AWS PrivateLink cleanup is done.
+	// This is done after initializing clients, ensuring the reconciler is operational
+	// and there are actually resources to protect.
+	if result, err := r.ensureHCPFinalizer(ctx, hcp, log); err != nil || !result.IsZero() {
+		return result, err
 	}
 
 	// Reconcile the AWSEndpointService
@@ -563,6 +562,189 @@ func isAWSThrottleError(err error) bool {
 		return true
 	}
 	return false
+}
+
+// reconcileCRDeletion handles the AWSEndpointService CR deletion path.
+// It initializes AWS clients (best-effort from HCP if available), cleans up
+// AWS resources, and removes the CR finalizer.
+func (r *AWSEndpointServiceReconciler) reconcileCRDeletion(ctx context.Context, awsEndpointService *hyperv1.AWSEndpointService, namespace string, log logr.Logger) (ctrl.Result, error) {
+	if !controllerutil.ContainsFinalizer(awsEndpointService, finalizer) {
+		return ctrl.Result{}, nil
+	}
+
+	// Best-effort initialization for deletion reconciles: after a controller restart
+	// the clientBuilder is uninitialized because initializeWithHCP is only called in
+	// the non-deletion path. If the HCP still exists, initialize from it so that
+	// getClients can succeed and deletion can proceed.
+	//
+	// The HCP finalizer (hcpAWSPrivateLinkFinalizerName), when present, blocks HCP
+	// deletion so the HCP remains available during this cleanup. Note: the finalizer
+	// is only added after a successful normal reconciliation. If the controller has
+	// not yet reconciled (e.g., controller was down since cluster creation), the HCP
+	// may be deleted before the finalizer is placed, and this best-effort initialization
+	// is the only protection. See reconcileHCPDeletion for the HCP-deletion cleanup path.
+	hcpList := &hyperv1.HostedControlPlaneList{}
+	if err := r.List(ctx, hcpList, &client.ListOptions{Namespace: namespace}); err == nil && len(hcpList.Items) == 1 {
+		r.awsClientBuilder.initializeWithHCP(log, &hcpList.Items[0])
+	}
+
+	ec2Client, route53Client, err := r.awsClientBuilder.getClients(ctx)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to get AWS clients for endpoint service cleanup: %w", err)
+	}
+	completed, err := r.delete(ctx, awsEndpointService, ec2Client, route53Client)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to delete resource: %w", err)
+	}
+	if !completed {
+		return ctrl.Result{RequeueAfter: endpointServiceDeletionRequeueDuration}, nil
+	}
+	originalAES := awsEndpointService.DeepCopy()
+	controllerutil.RemoveFinalizer(awsEndpointService, finalizer)
+	if err := r.Patch(ctx, awsEndpointService, client.MergeFromWithOptions(originalAES, client.MergeFromWithOptimisticLock{})); err != nil {
+		if apierrors.IsConflict(err) {
+			return ctrl.Result{RequeueAfter: time.Second}, nil
+		}
+		return ctrl.Result{}, fmt.Errorf("failed to remove finalizer: %w", err)
+	}
+	return ctrl.Result{}, nil
+}
+
+// ensureHCPFinalizer adds the HCP finalizer if not already present.
+// Uses optimistic locking via MergeFromWithOptimisticLock to safely update the HCP.
+func (r *AWSEndpointServiceReconciler) ensureHCPFinalizer(ctx context.Context, hcp *hyperv1.HostedControlPlane, log logr.Logger) (ctrl.Result, error) {
+	if controllerutil.ContainsFinalizer(hcp, hcpAWSPrivateLinkFinalizerName) {
+		return ctrl.Result{}, nil
+	}
+
+	log.Info("Adding HCP finalizer for AWS PrivateLink cleanup")
+	originalHCP := hcp.DeepCopy()
+	controllerutil.AddFinalizer(hcp, hcpAWSPrivateLinkFinalizerName)
+	if err := r.Patch(ctx, hcp, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{})); err != nil {
+		if apierrors.IsConflict(err) {
+			// Use RequeueAfter to avoid a tight retry loop when multiple AWSEndpointService
+			// reconcilers concurrently try to patch the same HCP.
+			return ctrl.Result{RequeueAfter: time.Second}, nil
+		}
+		return ctrl.Result{}, fmt.Errorf("failed to add HCP finalizer: %w", err)
+	}
+	return ctrl.Result{}, nil
+}
+
+func (r *AWSEndpointServiceReconciler) getHostedControlPlane(ctx context.Context, namespace string) (*hyperv1.HostedControlPlane, error) {
+	hcpList := &hyperv1.HostedControlPlaneList{}
+	if err := r.List(ctx, hcpList, &client.ListOptions{Namespace: namespace}); err != nil {
+		return nil, fmt.Errorf("failed to get resource: %w", err)
+	}
+	if len(hcpList.Items) == 0 {
+		return nil, nil
+	}
+	if len(hcpList.Items) > 1 {
+		return nil, fmt.Errorf("unexpected number of HostedControlPlanes in namespace, expected: 1, actual: %d", len(hcpList.Items))
+	}
+	return &hcpList.Items[0], nil
+}
+
+// reconcileHCPDeletion handles HCP deletion by cleaning up AWS PrivateLink resources
+// and removing the HCP finalizer. This ensures AWS credentials remain valid during
+// the cleanup process, which is critical for SharedVPC clusters where the cross-account
+// role ARNs are sourced from the HCP spec.
+//
+// Convergent multi-CR coordination:
+// With MaxConcurrentReconciles: 10 and the HCP watch enqueuing ALL CRs on HCP deletion,
+// multiple reconcilers run this function concurrently — one per AWSEndpointService CR.
+// Each reconciler cleans up its own CR's AWS resources, then checks whether all CRs in
+// the namespace are done. Only the last reconciler to finish (the one that finds no pending
+// CRs) removes the HCP finalizer. Earlier reconcilers see pending CRs and return
+// RequeueAfter to retry; when they re-enter, they find the HCP finalizer already removed
+// and return early at the top of this function. This convergent pattern produces a small
+// number of no-op requeues but is correct and self-healing.
+func (r *AWSEndpointServiceReconciler) reconcileHCPDeletion(ctx context.Context, awsEndpointService *hyperv1.AWSEndpointService, hcp *hyperv1.HostedControlPlane, log logr.Logger) (ctrl.Result, error) {
+	if hcp.DeletionTimestamp.IsZero() {
+		return ctrl.Result{}, nil
+	}
+
+	if !controllerutil.ContainsFinalizer(hcp, hcpAWSPrivateLinkFinalizerName) {
+		return ctrl.Result{}, nil
+	}
+
+	// If the AWSEndpointService itself is being deleted, let the existing CR deletion
+	// path (which returns early at the top of Reconcile) handle cleanup. This prevents
+	// the two deletion paths from racing under MaxConcurrentReconciles > 1, where the
+	// CR deletion path and HCP deletion path could both try to clean up the same CR.
+	if !awsEndpointService.DeletionTimestamp.IsZero() {
+		return ctrl.Result{}, nil
+	}
+
+	log.Info("HCP is being deleted, cleaning up AWS PrivateLink resources before removing HCP finalizer")
+
+	// Clean up this AWSEndpointService's AWS resources.
+	// Client initialization is inside the finalizer check so that already-cleaned-up
+	// CRs (no finalizer) proceed straight to the pending-CRs check without needing
+	// AWS API calls. This prevents transient STS/credential issues from blocking
+	// HCP finalizer removal when all CRs are already cleaned up.
+	if controllerutil.ContainsFinalizer(awsEndpointService, finalizer) {
+		r.awsClientBuilder.initializeWithHCP(log, hcp)
+		ec2Client, route53Client, err := r.awsClientBuilder.getClients(ctx)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to get AWS clients during HCP deletion cleanup: %w", err)
+		}
+
+		completed, err := r.delete(ctx, awsEndpointService, ec2Client, route53Client)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to clean up AWS resources during HCP deletion: %w", err)
+		}
+		if !completed {
+			return ctrl.Result{RequeueAfter: endpointServiceDeletionRequeueDuration}, nil
+		}
+
+		originalAES := awsEndpointService.DeepCopy()
+		controllerutil.RemoveFinalizer(awsEndpointService, finalizer)
+		if err := r.Patch(ctx, awsEndpointService, client.MergeFromWithOptions(originalAES, client.MergeFromWithOptimisticLock{})); err != nil {
+			if apierrors.IsConflict(err) {
+				return ctrl.Result{RequeueAfter: time.Second}, nil
+			}
+			return ctrl.Result{}, fmt.Errorf("failed to remove AWSEndpointService finalizer during HCP deletion: %w", err)
+		}
+		log.Info("Removed AWSEndpointService finalizer after AWS resource cleanup")
+	}
+
+	// Check if all AWSEndpointService CRs in this namespace have been cleaned up.
+	// Only remove the HCP finalizer once all CRs no longer have our CR finalizer,
+	// meaning all AWS resources have been cleaned up.
+	awsEndpointServiceList := &hyperv1.AWSEndpointServiceList{}
+	if err := r.List(ctx, awsEndpointServiceList, client.InNamespace(hcp.Namespace)); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to list AWSEndpointService resources: %w", err)
+	}
+	for i := range awsEndpointServiceList.Items {
+		aes := &awsEndpointServiceList.Items[i]
+		if aes.Name == awsEndpointService.Name {
+			// Skip self: the informer cache may not yet reflect our Patch that just
+			// removed the CR finalizer, causing a spurious extra requeue.
+			continue
+		}
+		if controllerutil.ContainsFinalizer(aes, finalizer) {
+			log.Info("Other AWSEndpointService resources still have finalizers, keeping HCP finalizer",
+				"pendingResource", aes.Name)
+			return ctrl.Result{RequeueAfter: endpointServiceDeletionRequeueDuration}, nil
+		}
+	}
+
+	// All AWSEndpointService resources are cleaned up — remove the HCP finalizer
+	// to unblock HCP deletion.
+	log.Info("All AWS PrivateLink resources cleaned up, removing HCP finalizer")
+	originalHCP := hcp.DeepCopy()
+	controllerutil.RemoveFinalizer(hcp, hcpAWSPrivateLinkFinalizerName)
+	if err := r.Patch(ctx, hcp, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{})); err != nil {
+		if apierrors.IsConflict(err) {
+			// Use RequeueAfter to avoid a tight retry loop when multiple AWSEndpointService
+			// reconcilers concurrently try to patch the same HCP.
+			return ctrl.Result{RequeueAfter: time.Second}, nil
+		}
+		return ctrl.Result{}, fmt.Errorf("failed to remove HCP finalizer: %w", err)
+	}
+
+	return ctrl.Result{}, nil
 }
 
 func hasAWSConfig(platform *hyperv1.PlatformSpec) bool {
