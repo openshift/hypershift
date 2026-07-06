@@ -40,11 +40,63 @@ const (
 // +kubebuilder:rbac:groups=hypershift.openshift.io,resources=gcpprivateserviceconnects/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=hypershift.openshift.io,resources=hostedclusters,verbs=get;list;watch
 
+// ComputeClient abstracts the GCP Compute API calls used by the PSC controller.
+// Using an interface instead of *compute.Service enables unit testing with fakes.
+type ComputeClient interface {
+	ListForwardingRules(ctx context.Context, project, region, filter string) ([]*compute.ForwardingRule, error)
+	ListSubnetworks(ctx context.Context, project, region, filter string) ([]*compute.Subnetwork, error)
+	ListServiceAttachments(ctx context.Context, project, region string) ([]*compute.ServiceAttachment, error)
+	GetServiceAttachment(ctx context.Context, project, region, name string) (*compute.ServiceAttachment, error)
+	InsertServiceAttachment(ctx context.Context, project, region string, sa *compute.ServiceAttachment) (*compute.Operation, error)
+	DeleteServiceAttachment(ctx context.Context, project, region, name string) (*compute.Operation, error)
+}
+
+// computeServiceAdapter adapts *compute.Service to ComputeClient.
+type computeServiceAdapter struct {
+	svc *compute.Service
+}
+
+func (a *computeServiceAdapter) ListForwardingRules(ctx context.Context, project, region, filter string) ([]*compute.ForwardingRule, error) {
+	resp, err := a.svc.ForwardingRules.List(project, region).Filter(filter).Context(ctx).Do()
+	if err != nil {
+		return nil, err
+	}
+	return resp.Items, nil
+}
+
+func (a *computeServiceAdapter) ListSubnetworks(ctx context.Context, project, region, filter string) ([]*compute.Subnetwork, error) {
+	resp, err := a.svc.Subnetworks.List(project, region).Filter(filter).Context(ctx).Do()
+	if err != nil {
+		return nil, err
+	}
+	return resp.Items, nil
+}
+
+func (a *computeServiceAdapter) ListServiceAttachments(ctx context.Context, project, region string) ([]*compute.ServiceAttachment, error) {
+	resp, err := a.svc.ServiceAttachments.List(project, region).Context(ctx).Do()
+	if err != nil {
+		return nil, err
+	}
+	return resp.Items, nil
+}
+
+func (a *computeServiceAdapter) GetServiceAttachment(ctx context.Context, project, region, name string) (*compute.ServiceAttachment, error) {
+	return a.svc.ServiceAttachments.Get(project, region, name).Context(ctx).Do()
+}
+
+func (a *computeServiceAdapter) InsertServiceAttachment(ctx context.Context, project, region string, sa *compute.ServiceAttachment) (*compute.Operation, error) {
+	return a.svc.ServiceAttachments.Insert(project, region, sa).Context(ctx).Do()
+}
+
+func (a *computeServiceAdapter) DeleteServiceAttachment(ctx context.Context, project, region, name string) (*compute.Operation, error) {
+	return a.svc.ServiceAttachments.Delete(project, region, name).Context(ctx).Do()
+}
+
 // GCPPrivateServiceConnectReconciler reconciles GCPPrivateServiceConnect resources
 type GCPPrivateServiceConnectReconciler struct {
 	client.Client
 	upsert.CreateOrUpdateProvider
-	GcpClient *compute.Service // GCP Compute API client for ForwardingRules, ServiceAttachments, and Subnets
+	GcpClient ComputeClient
 	ProjectID string
 	Region    string
 	Log       logr.Logger
@@ -57,7 +109,7 @@ func (r *GCPPrivateServiceConnectReconciler) SetupWithManager(mgr ctrl.Manager) 
 	if err != nil {
 		return fmt.Errorf("failed to initialize GCP Compute service: %w", err)
 	}
-	r.GcpClient = gcpComputeService
+	r.GcpClient = &computeServiceAdapter{svc: gcpComputeService}
 
 	// Extract GCP project ID from GCP_PROJECT environment variable
 	projectID, err := r.extractGCPProjectFromEnv()
@@ -196,21 +248,21 @@ func (r *GCPPrivateServiceConnectReconciler) lookupForwardingRule(ctx context.Co
 	apiCtx, cancel := context.WithTimeout(ctx, gcpAPITimeout)
 	defer cancel()
 
-	resp, err := r.GcpClient.ForwardingRules.List(r.ProjectID, r.Region).Filter(filter).Context(apiCtx).Do()
+	rules, err := r.GcpClient.ListForwardingRules(apiCtx, r.ProjectID, r.Region, filter)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list forwarding rules: %w", err)
 	}
 
-	if len(resp.Items) == 0 {
+	if len(rules) == 0 {
 		log.V(1).Info("ForwardingRule not found for LoadBalancer IP, will retry later")
 		return nil, nil
 	}
 
-	if len(resp.Items) > 1 {
-		log.Info("Multiple ForwardingRules found for LoadBalancer IP, using first one", "count", len(resp.Items))
+	if len(rules) > 1 {
+		log.Info("Multiple ForwardingRules found for LoadBalancer IP, using first one", "count", len(rules))
 	}
 
-	rule := resp.Items[0]
+	rule := rules[0]
 	log.Info("Found ForwardingRule for LoadBalancer IP", "forwardingRule", rule.Name)
 	return rule, nil
 }
@@ -220,15 +272,13 @@ func (r *GCPPrivateServiceConnectReconciler) isSubnetInUse(ctx context.Context, 
 	apiCtx, cancel := context.WithTimeout(ctx, gcpAPITimeout)
 	defer cancel()
 
-	// List all Service Attachments in the region
-	req := r.GcpClient.ServiceAttachments.List(r.ProjectID, r.Region)
-	resp, err := req.Context(apiCtx).Do()
+	serviceAttachments, err := r.GcpClient.ListServiceAttachments(apiCtx, r.ProjectID, r.Region)
 	if err != nil {
 		return false, fmt.Errorf("failed to list service attachments: %w", err)
 	}
 
 	// Check if any Service Attachment is using this subnet
-	for _, sa := range resp.Items {
+	for _, sa := range serviceAttachments {
 		for _, natSubnet := range sa.NatSubnets {
 			// NatSubnets contains full URLs like:
 			// "projects/PROJECT_ID/regions/REGION/subnetworks/SUBNET_NAME"
@@ -255,14 +305,13 @@ func (r *GCPPrivateServiceConnectReconciler) discoverNATSubnet(ctx context.Conte
 	apiCtx, cancel := context.WithTimeout(ctx, gcpAPITimeout)
 	defer cancel()
 
-	req := r.GcpClient.Subnetworks.List(r.ProjectID, r.Region).Filter(filter)
-	resp, err := req.Context(apiCtx).Do()
+	subnets, err := r.GcpClient.ListSubnetworks(apiCtx, r.ProjectID, r.Region, filter)
 	if err != nil {
 		return "", fmt.Errorf("failed to list subnets: %w", err)
 	}
 
 	// Find the first available PSC subnet in the MC's VPC not already in use by another Service Attachment.
-	for _, subnet := range resp.Items {
+	for _, subnet := range subnets {
 		inUse, err := r.isSubnetInUse(ctx, subnet.Name)
 		if err != nil {
 			log.Error(err, "Failed to check subnet usage", "subnet", subnet.Name)
@@ -291,7 +340,7 @@ func (r *GCPPrivateServiceConnectReconciler) reconcileServiceAttachment(ctx cont
 	getCtx, getCancel := context.WithTimeout(ctx, gcpAPITimeout)
 	defer getCancel()
 
-	existingServiceAttachment, err := r.GcpClient.ServiceAttachments.Get(r.ProjectID, r.Region, serviceAttachmentName).Context(getCtx).Do()
+	existingServiceAttachment, err := r.GcpClient.GetServiceAttachment(getCtx, r.ProjectID, r.Region, serviceAttachmentName)
 	if err != nil && !isNotFoundError(err) {
 		return ctrl.Result{}, fmt.Errorf("failed to get Service Attachment: %w", err)
 	}
@@ -324,7 +373,7 @@ func (r *GCPPrivateServiceConnectReconciler) reconcileServiceAttachment(ctx cont
 	insertCtx, insertCancel := context.WithTimeout(ctx, gcpAPITimeout)
 	defer insertCancel()
 
-	op, err := r.GcpClient.ServiceAttachments.Insert(r.ProjectID, r.Region, serviceAttachment).Context(insertCtx).Do()
+	op, err := r.GcpClient.InsertServiceAttachment(insertCtx, r.ProjectID, r.Region, serviceAttachment)
 	if err != nil {
 		return r.handleGCPError(ctx, gcpPSC, "ServiceAttachmentCreationFailed", err)
 	}
@@ -344,7 +393,7 @@ func (r *GCPPrivateServiceConnectReconciler) reconcileServiceAttachment(ctx cont
 	fetchCtx, fetchCancel := context.WithTimeout(ctx, gcpAPITimeout)
 	defer fetchCancel()
 
-	createdServiceAttachment, err := r.GcpClient.ServiceAttachments.Get(r.ProjectID, r.Region, serviceAttachmentName).Context(fetchCtx).Do()
+	createdServiceAttachment, err := r.GcpClient.GetServiceAttachment(fetchCtx, r.ProjectID, r.Region, serviceAttachmentName)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to get newly created Service Attachment: %w", err)
 	}
@@ -443,7 +492,7 @@ func (r *GCPPrivateServiceConnectReconciler) delete(ctx context.Context, gcpPSC 
 	deleteCtx, deleteCancel := context.WithTimeout(ctx, gcpAPITimeout)
 	defer deleteCancel()
 
-	op, err := r.GcpClient.ServiceAttachments.Delete(r.ProjectID, r.Region, serviceAttachmentName).Context(deleteCtx).Do()
+	op, err := r.GcpClient.DeleteServiceAttachment(deleteCtx, r.ProjectID, r.Region, serviceAttachmentName)
 	if err != nil {
 		if isNotFoundError(err) {
 			// Service Attachment already deleted, consider it completed

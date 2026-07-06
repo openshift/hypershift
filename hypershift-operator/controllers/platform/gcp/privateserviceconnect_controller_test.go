@@ -20,8 +20,50 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/go-logr/logr/testr"
+	"google.golang.org/api/compute/v1"
 	"google.golang.org/api/googleapi"
 )
+
+// fakeComputeClient implements ComputeClient for unit tests.
+// Each field holds the canned return values for the corresponding method.
+type fakeComputeClient struct {
+	forwardingRules         []*compute.ForwardingRule
+	forwardingRulesErr      error
+	subnetworks             []*compute.Subnetwork
+	subnetworksErr          error
+	serviceAttachments      []*compute.ServiceAttachment
+	serviceAttachmentsErr   error
+	getServiceAttachment    *compute.ServiceAttachment
+	getServiceAttachmentErr error
+	insertOperation         *compute.Operation
+	insertErr               error
+	deleteOperation         *compute.Operation
+	deleteErr               error
+}
+
+func (f *fakeComputeClient) ListForwardingRules(_ context.Context, _, _, _ string) ([]*compute.ForwardingRule, error) {
+	return f.forwardingRules, f.forwardingRulesErr
+}
+
+func (f *fakeComputeClient) ListSubnetworks(_ context.Context, _, _, _ string) ([]*compute.Subnetwork, error) {
+	return f.subnetworks, f.subnetworksErr
+}
+
+func (f *fakeComputeClient) ListServiceAttachments(_ context.Context, _, _ string) ([]*compute.ServiceAttachment, error) {
+	return f.serviceAttachments, f.serviceAttachmentsErr
+}
+
+func (f *fakeComputeClient) GetServiceAttachment(_ context.Context, _, _, _ string) (*compute.ServiceAttachment, error) {
+	return f.getServiceAttachment, f.getServiceAttachmentErr
+}
+
+func (f *fakeComputeClient) InsertServiceAttachment(_ context.Context, _, _ string, _ *compute.ServiceAttachment) (*compute.Operation, error) {
+	return f.insertOperation, f.insertErr
+}
+
+func (f *fakeComputeClient) DeleteServiceAttachment(_ context.Context, _, _, _ string) (*compute.Operation, error) {
+	return f.deleteOperation, f.deleteErr
+}
 
 func TestIsNotFoundError(t *testing.T) {
 	tests := []struct {
@@ -312,5 +354,189 @@ func TestNATSubnetFilterFormat(t *testing.T) {
 				t.Errorf("expected %s, got %s", tt.expected, filter)
 			}
 		})
+	}
+}
+
+func newReconciler(t *testing.T, gcpClient ComputeClient) *GCPPrivateServiceConnectReconciler {
+	t.Helper()
+	return &GCPPrivateServiceConnectReconciler{
+		GcpClient: gcpClient,
+		ProjectID: "test-project",
+		Region:    "us-central1",
+		Log:       testr.New(t),
+	}
+}
+
+func newGCPPSC(forwardingRuleName, natSubnet string) *hyperv1.GCPPrivateServiceConnect {
+	return &hyperv1.GCPPrivateServiceConnect{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-psc", Namespace: "test-namespace"},
+		Spec: hyperv1.GCPPrivateServiceConnectSpec{
+			LoadBalancerIP:     "10.0.0.1",
+			ForwardingRuleName: hyperv1.GCPResourceName(forwardingRuleName),
+			NATSubnet:          hyperv1.GCPResourceName(natSubnet),
+		},
+	}
+}
+
+// --- lookupForwardingRule ---
+
+func TestLookupForwardingRule_APIError(t *testing.T) {
+	r := newReconciler(t, &fakeComputeClient{forwardingRulesErr: errors.New("GCP unavailable")})
+	rule, err := r.lookupForwardingRule(context.Background(), newGCPPSC("", ""))
+	if err == nil {
+		t.Error("expected error, got nil")
+	}
+	if rule != nil {
+		t.Errorf("expected nil rule, got %v", rule)
+	}
+}
+
+func TestLookupForwardingRule_NoResults(t *testing.T) {
+	r := newReconciler(t, &fakeComputeClient{forwardingRules: nil})
+	rule, err := r.lookupForwardingRule(context.Background(), newGCPPSC("", ""))
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	if rule != nil {
+		t.Errorf("expected nil rule, got %v", rule)
+	}
+}
+
+func TestLookupForwardingRule_SingleResult(t *testing.T) {
+	expected := &compute.ForwardingRule{Name: "fr-1", Network: "https://www.googleapis.com/compute/v1/projects/p/global/networks/my-vpc"}
+	r := newReconciler(t, &fakeComputeClient{forwardingRules: []*compute.ForwardingRule{expected}})
+	rule, err := r.lookupForwardingRule(context.Background(), newGCPPSC("", ""))
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	if rule == nil || rule.Name != expected.Name {
+		t.Errorf("expected rule %q, got %v", expected.Name, rule)
+	}
+}
+
+func TestLookupForwardingRule_MultipleResults_UsesFirst(t *testing.T) {
+	rules := []*compute.ForwardingRule{
+		{Name: "fr-first", Network: "https://www.googleapis.com/compute/v1/projects/p/global/networks/my-vpc"},
+		{Name: "fr-second", Network: "https://www.googleapis.com/compute/v1/projects/p/global/networks/my-vpc"},
+	}
+	r := newReconciler(t, &fakeComputeClient{forwardingRules: rules})
+	rule, err := r.lookupForwardingRule(context.Background(), newGCPPSC("", ""))
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	if rule == nil || rule.Name != "fr-first" {
+		t.Errorf("expected first rule, got %v", rule)
+	}
+}
+
+// --- reconcileGCPPrivateServiceConnectSpec ---
+
+func TestReconcileSpec_BothFieldsSet_EarlyReturn(t *testing.T) {
+	// GcpClient is nil — proves no GCP call is made when both fields are already set.
+	r := newReconciler(t, nil)
+	gcpPSC := newGCPPSC("existing-rule", "existing-subnet")
+	if err := r.reconcileGCPPrivateServiceConnectSpec(context.Background(), gcpPSC, nil); err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestReconcileSpec_ForwardingRuleLookupError(t *testing.T) {
+	r := newReconciler(t, &fakeComputeClient{forwardingRulesErr: errors.New("api error")})
+	err := r.reconcileGCPPrivateServiceConnectSpec(context.Background(), newGCPPSC("", ""), nil)
+	if err == nil {
+		t.Error("expected error, got nil")
+	}
+}
+
+func TestReconcileSpec_ForwardingRuleNotYetProvisioned(t *testing.T) {
+	// nil result from lookupForwardingRule — ILB not yet ready, should return nil (requeue).
+	r := newReconciler(t, &fakeComputeClient{forwardingRules: nil})
+	err := r.reconcileGCPPrivateServiceConnectSpec(context.Background(), newGCPPSC("", ""), nil)
+	if err != nil {
+		t.Errorf("expected nil, got error: %v", err)
+	}
+}
+
+func TestReconcileSpec_ForwardingRuleEmptyNetwork(t *testing.T) {
+	// Forwarding rule exists but has no Network field — cannot scope subnet discovery.
+	r := newReconciler(t, &fakeComputeClient{
+		forwardingRules: []*compute.ForwardingRule{{Name: "fr-1", Network: ""}},
+	})
+	err := r.reconcileGCPPrivateServiceConnectSpec(context.Background(), newGCPPSC("", ""), nil)
+	if err == nil {
+		t.Error("expected error for empty Network, got nil")
+	}
+}
+
+func TestReconcileSpec_SetsForwardingRuleNameAndNATSubnet(t *testing.T) {
+	networkURL := "https://www.googleapis.com/compute/v1/projects/p/global/networks/my-vpc"
+	r := newReconciler(t, &fakeComputeClient{
+		forwardingRules: []*compute.ForwardingRule{{Name: "fr-1", Network: networkURL}},
+		subnetworks:     []*compute.Subnetwork{{Name: "psc-subnet-1"}},
+		// No existing service attachments — subnet is available.
+		serviceAttachments: nil,
+	})
+	gcpPSC := newGCPPSC("", "")
+	if err := r.reconcileGCPPrivateServiceConnectSpec(context.Background(), gcpPSC, nil); err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	if gcpPSC.Spec.ForwardingRuleName != "fr-1" {
+		t.Errorf("expected ForwardingRuleName %q, got %q", "fr-1", gcpPSC.Spec.ForwardingRuleName)
+	}
+	if gcpPSC.Spec.NATSubnet != "psc-subnet-1" {
+		t.Errorf("expected NATSubnet %q, got %q", "psc-subnet-1", gcpPSC.Spec.NATSubnet)
+	}
+}
+
+// --- discoverNATSubnet ---
+
+func TestDiscoverNATSubnet_APIError(t *testing.T) {
+	r := newReconciler(t, &fakeComputeClient{subnetworksErr: errors.New("api error")})
+	_, err := r.discoverNATSubnet(context.Background(), newGCPPSC("", ""), "https://example.com/network")
+	if err == nil {
+		t.Error("expected error, got nil")
+	}
+}
+
+func TestDiscoverNATSubnet_NoSubnets(t *testing.T) {
+	r := newReconciler(t, &fakeComputeClient{subnetworks: nil})
+	_, err := r.discoverNATSubnet(context.Background(), newGCPPSC("", ""), "https://example.com/network")
+	if err == nil {
+		t.Error("expected error for no available subnets, got nil")
+	}
+}
+
+func TestDiscoverNATSubnet_SubnetInUse_SkipsToNext(t *testing.T) {
+	networkURL := "https://example.com/network"
+	r := newReconciler(t, &fakeComputeClient{
+		subnetworks: []*compute.Subnetwork{
+			{Name: "subnet-in-use"},
+			{Name: "subnet-available"},
+		},
+		// First subnet is in use by an existing service attachment.
+		serviceAttachments: []*compute.ServiceAttachment{
+			{NatSubnets: []string{"projects/p/regions/r/subnetworks/subnet-in-use"}},
+		},
+	})
+	name, err := r.discoverNATSubnet(context.Background(), newGCPPSC("", ""), networkURL)
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	if name != "subnet-available" {
+		t.Errorf("expected %q, got %q", "subnet-available", name)
+	}
+}
+
+func TestDiscoverNATSubnet_AllSubnetsInUse(t *testing.T) {
+	networkURL := "https://example.com/network"
+	r := newReconciler(t, &fakeComputeClient{
+		subnetworks: []*compute.Subnetwork{{Name: "only-subnet"}},
+		serviceAttachments: []*compute.ServiceAttachment{
+			{NatSubnets: []string{"projects/p/regions/r/subnetworks/only-subnet"}},
+		},
+	})
+	_, err := r.discoverNATSubnet(context.Background(), newGCPPSC("", ""), networkURL)
+	if err == nil {
+		t.Error("expected error when all subnets are in use, got nil")
 	}
 }
