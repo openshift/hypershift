@@ -1834,6 +1834,69 @@ func TestSetupCA(t *testing.T) {
 	})
 }
 
+func TestSetupExternalDNS(t *testing.T) {
+	tests := []struct {
+		name             string
+		opts             Options
+		minResourceCount int
+		expectGCPRules   bool
+	}{
+		{
+			name: "When AWS provider is set with role ARN, it should return base resources with credentials secret",
+			opts: Options{
+				ExternalDNSProvider:     "aws",
+				ExternalDNSDomainFilter: "example.com",
+				ExternalDNSRoleARN:      "arn:aws:iam::123456789012:role/external-dns",
+			},
+			minResourceCount: 6,
+		},
+		{
+			name: "When google provider is set, it should include additional ClusterRole rules",
+			opts: Options{
+				ExternalDNSProvider:     "google",
+				ExternalDNSDomainFilter: "example.com",
+			},
+			minResourceCount: 5,
+			expectGCPRules:   true,
+		},
+		{
+			name: "When credentials secret name is set, it should return base resources without creating a new secret",
+			opts: Options{
+				ExternalDNSProvider:          "aws",
+				ExternalDNSDomainFilter:      "example.com",
+				ExternalDNSCredentialsSecret: "my-dns-secret",
+			},
+			minResourceCount: 5,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "hypershift"}}
+			objects, err := setupExternalDNS(context.Background(), tc.opts, ns)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(len(objects)).To(BeNumerically(">=", tc.minResourceCount))
+
+			if tc.expectGCPRules {
+				for _, obj := range objects {
+					if cr, ok := obj.(*rbacv1.ClusterRole); ok {
+						foundDNSEndpoints := false
+						for _, rule := range cr.Rules {
+							for _, res := range rule.Resources {
+								if res == "dnsendpoints" {
+									foundDNSEndpoints = true
+								}
+							}
+						}
+						g.Expect(foundDNSEndpoints).To(BeTrue(), "expected dnsendpoints rule for google provider")
+					}
+				}
+			}
+		})
+	}
+}
+
 func TestValidateImageConfig(t *testing.T) {
 	tests := []struct {
 		name        string
