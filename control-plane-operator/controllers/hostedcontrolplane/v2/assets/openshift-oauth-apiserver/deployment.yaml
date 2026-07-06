@@ -126,6 +126,23 @@ spec:
         volumeMounts:
         - mountPath: /var/log/openshift-oauth-apiserver
           name: work-logs
+      initContainers:
+      - args:
+        - -c
+        - |
+          #!/bin/sh
+          while ! nslookup etcd-client.$(POD_NAMESPACE).svc; do sleep 1; done
+        command:
+        - /bin/bash
+        env:
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+        image: cli
+        imagePullPolicy: IfNotPresent
+        name: wait-for-etcd
       terminationGracePeriodSeconds: 120
       volumes:
       - emptyDir: {}

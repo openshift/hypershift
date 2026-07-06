@@ -32,7 +32,9 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 		if err != nil {
 			return err
 		}
+		podspec.RemoveInitContainer("wait-for-etcd", &deployment.Spec.Template.Spec)
 	}
+
 	noProxy := []string{
 		manifests.KubeAPIServerService("").Name,
 		etcdHostname,
