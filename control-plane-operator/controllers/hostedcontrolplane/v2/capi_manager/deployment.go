@@ -26,6 +26,13 @@ func (capi *CAPIManagerOptions) adaptDeployment(cpContext component.WorkloadCont
 			c.Args = append(c.Args, "--feature-gates=MachineSetPreflightChecks=false")
 		}
 
+		if version.GE(config.Version420) {
+			c.Args = append(c.Args,
+				"--skip-crd-migration-phases=StorageVersionMigration",
+				"--skip-crd-migration-phases=CleanupManagedFields",
+			)
+		}
+
 		if len(capi.imageOverride) > 0 {
 			c.Image = capi.imageOverride
 		}

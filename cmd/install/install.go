@@ -33,6 +33,7 @@ import (
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	hyperapi "github.com/openshift/hypershift/support/api"
+	capicrdmigrator "github.com/openshift/hypershift/support/capi-crdmigrator"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/rhobsmonitoring"
@@ -165,6 +166,7 @@ type Options struct {
 	RenderSensitive                           bool
 	HCPEgressBlockCIDRs                       []string
 	InstallScope                              string
+	DisableCAPIMigration                      bool
 }
 
 func (o *Options) Complete() error {
@@ -445,6 +447,7 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().BoolVar(&opts.EnableValidatingWebhook, "enable-validating-webhook", opts.EnableValidatingWebhook, "Enable webhook for validating hypershift API types")
 	cmd.PersistentFlags().BoolVar(&opts.EnableConversionWebhook, "enable-conversion-webhook", opts.EnableConversionWebhook, "Enable webhook for converting hypershift API types")
 	cmd.PersistentFlags().BoolVar(&opts.DisableCAPIConversionWebhook, "disable-capi-conversion-webhook", opts.DisableCAPIConversionWebhook, "Disable conversion webhook for CAPI CRDs during v1beta1/v1beta2 transition")
+	cmd.PersistentFlags().BoolVar(&opts.DisableCAPIMigration, "disable-capi-migration", opts.DisableCAPIMigration, "Disable automatic CAPI CRD storage version migration from v1beta1 to v1beta2")
 	cmd.PersistentFlags().BoolVar(&opts.ExcludeEtcdManifests, "exclude-etcd", opts.ExcludeEtcdManifests, "Leave out etcd manifests")
 	cmd.PersistentFlags().Var(&opts.PlatformMonitoring, "platform-monitoring", "Select an option for enabling platform cluster monitoring. Valid values are: None, OperatorOnly, All")
 	cmd.PersistentFlags().BoolVar(&opts.EnableCIDebugOutput, "enable-ci-debug-output", opts.EnableCIDebugOutput, "If extra CI debug output should be enabled")
@@ -1008,24 +1011,39 @@ func crdIncludeFilter(opts Options, existingIPAMCRDs set.Set[string]) func(strin
 	}
 }
 
+func capiStorageVersionForOpts(opts Options) string {
+	if opts.DisableCAPIMigration {
+		return capicrdmigrator.CurrentStorageVersion
+	}
+	return capicrdmigrator.TargetStorageVersion
+}
+
 func setupCRDs(ctx context.Context, client crclient.Client, opts Options, operatorNamespace *corev1.Namespace, operatorService *corev1.Service) ([]crclient.Object, error) {
 	existingIPAMCRDs := set.New[string]()
 	if client != nil {
-		for crdName := range ipamCRDNames {
-			existing := &apiextensionsv1.CustomResourceDefinition{}
-			err := client.Get(ctx, crclient.ObjectKey{Name: crdName}, existing)
-			if err == nil {
-				existingIPAMCRDs.Insert(crdName)
-				fmt.Printf("Skipping existing IPAM CRD %s\n", crdName)
-			} else if !apierrors.IsNotFound(err) {
-				return nil, fmt.Errorf("failed to check if CRD %s exists: %w", crdName, err)
+		// Skip IPAM CRDs only when migration is disabled.
+		// During migration, IPAM CRDs must be updated to set v1beta2 as the storage version.
+		if opts.DisableCAPIMigration {
+			for crdName := range ipamCRDNames {
+				existing := &apiextensionsv1.CustomResourceDefinition{}
+				err := client.Get(ctx, crclient.ObjectKey{Name: crdName}, existing)
+				if err == nil {
+					existingIPAMCRDs.Insert(crdName)
+					fmt.Printf("Skipping existing IPAM CRD %s\n", crdName)
+				} else if !apierrors.IsNotFound(err) {
+					return nil, fmt.Errorf("failed to check if CRD %s exists: %w", crdName, err)
+				}
 			}
 		}
 	}
 
+	capiStorageVersion := capiStorageVersionForOpts(opts)
+	capiOverrides := crdassets.CAPICRDOverridesWithStorageVersion(capiStorageVersion)
+
 	var crds []crclient.Object
 	crds = append(
 		crds, crdassets.CustomResourceDefinitions(
+			capiStorageVersion,
 			crdIncludeFilter(opts, existingIPAMCRDs),
 			func(crd *apiextensionsv1.CustomResourceDefinition) {
 				// Check if this CRD needs a conversion webhook
@@ -1039,7 +1057,7 @@ func setupCRDs(ctx context.Context, client crclient.Client, opts Options, operat
 
 					// CAPI conversion is required during v1beta1 -> v1beta2 transition period
 				} else if !opts.DisableCAPIConversionWebhook {
-					if override, ok := crdassets.CAPICRDOverrides[crd.Name]; ok && override.NeedsConversion {
+					if override, ok := capiOverrides[crd.Name]; ok && override.NeedsConversion {
 						needsConversion = true
 						conversionReviewVersions = []string{"v1beta1", "v1beta2"}
 					}
@@ -1391,6 +1409,7 @@ func setupOperatorResources(opts Options, userCABundleCM *corev1.ConfigMap, trus
 		ScaleFromZeroSecret:                     scaleFromZeroSecret,
 		ScaleFromZeroSecretKey:                  opts.ScaleFromZeroCredentialsSecretKey,
 		ScaleFromZeroProvider:                   opts.ScaleFromZeroProvider,
+		CAPIStorageVersion:                      capiStorageVersionForOpts(opts),
 		HCPEgressBlockCIDRs:                     opts.HCPEgressBlockCIDRs,
 	}.Build()
 	operatorService := assets.HyperShiftOperatorService{

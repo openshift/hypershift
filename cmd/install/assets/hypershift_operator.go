@@ -15,6 +15,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	cmdutil "github.com/openshift/hypershift/cmd/util"
 	controlplaneoperatoroverrides "github.com/openshift/hypershift/hypershift-operator/controlplaneoperator-overrides"
+	capicrdmigrator "github.com/openshift/hypershift/support/capi-crdmigrator"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/metrics"
@@ -558,6 +559,7 @@ type HyperShiftOperatorDeployment struct {
 	ScaleFromZeroSecret                     *corev1.Secret
 	ScaleFromZeroSecretKey                  string
 	ScaleFromZeroProvider                   string
+	CAPIStorageVersion                      string
 	HCPEgressBlockCIDRs                     []string
 }
 
@@ -864,6 +866,9 @@ func (o HyperShiftOperatorDeployment) buildEnvVars() []corev1.EnvVar {
 	}
 	if o.EnableCPOOverrides {
 		envVars = append(envVars, corev1.EnvVar{Name: controlplaneoperatoroverrides.CPOOverridesEnvVar, Value: "1"})
+	}
+	if len(o.CAPIStorageVersion) > 0 {
+		envVars = append(envVars, corev1.EnvVar{Name: capicrdmigrator.CAPIStorageVersionEnvVar, Value: o.CAPIStorageVersion})
 	}
 	if len(o.PlatformsInstalled) > 0 {
 		envVars = append(envVars, corev1.EnvVar{Name: "PLATFORMS_INSTALLED", Value: o.PlatformsInstalled})
@@ -1271,7 +1276,7 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 			},
 			{
 				APIGroups: []string{"apiextensions.k8s.io"},
-				Resources: []string{"customresourcedefinitions"},
+				Resources: []string{"customresourcedefinitions", "customresourcedefinitions/status"},
 				Verbs:     []string{rbacv1.VerbAll},
 			},
 			{
