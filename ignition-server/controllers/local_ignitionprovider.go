@@ -561,6 +561,7 @@ func (p *LocalIgnitionProvider) runMCSAndFetchPayload(ctx context.Context, dirs 
 	mcsCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	cmd := exec.CommandContext(mcsCtx, filepath.Join(dirs.binDir, "machine-config-server"), args...)
+	cmd.WaitDelay = 10 * time.Second
 
 	var mcsOutput bytes.Buffer
 	cmd.Stdout = &mcsOutput
@@ -621,7 +622,7 @@ func (p *LocalIgnitionProvider) runMCSAndFetchPayload(ctx context.Context, dirs 
 	log.Info("machine-config-server process exited", "output", mcsOutput.String(), "error", mcsErr)
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to get payload from mcs (mcs logs: %s): %w", mcsOutput.String(), err)
+		return nil, fmt.Errorf("mcs logs: %s: %w", mcsOutput.String(), err)
 	}
 
 	return payload, nil
