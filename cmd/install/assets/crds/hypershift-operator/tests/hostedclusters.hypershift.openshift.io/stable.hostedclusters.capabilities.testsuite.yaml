@@ -373,8 +373,8 @@ tests:
             route: {}
     expectedError: "Capabilities can not be both enabled and disabled at once."
 
-  # --- Ingress/Console capability dependency ---
-  - name: When Ingress capability is disabled but Console capability is enabled it should fail
+  # --- Ingress/Console capability independence ---
+  - name: When Ingress capability is disabled but Console capability is enabled it should pass
     initial: |
       apiVersion: hypershift.openshift.io/v1beta1
       kind: HostedCluster
@@ -414,7 +414,6 @@ tests:
           servicePublishingStrategy:
             type: Route
             route: {}
-    expectedError: "Ingress capability can only be disabled if Console capability is also disabled"
 
   - name: When both Ingress and Console capabilities are disabled it should pass
     initial: |
