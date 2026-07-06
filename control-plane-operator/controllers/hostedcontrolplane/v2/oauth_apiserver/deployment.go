@@ -33,6 +33,10 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 			return err
 		}
 	}
+	if cpContext.HCP.Spec.Etcd.ManagementType == hyperv1.Unmanaged {
+		podspec.RemoveInitContainer("wait-for-etcd", &deployment.Spec.Template.Spec)
+	}
+
 	noProxy := []string{
 		manifests.KubeAPIServerService("").Name,
 		etcdHostname,
