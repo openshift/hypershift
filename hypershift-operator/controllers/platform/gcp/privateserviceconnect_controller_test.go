@@ -492,6 +492,38 @@ func TestReconcileSpec_SetsForwardingRuleNameAndNATSubnet(t *testing.T) {
 	}
 }
 
+func TestReconcileSpec_PartialWrite_ForwardingRuleNamePreservedNATSubnetDiscovered(t *testing.T) {
+	// Partial-write edge case: ForwardingRuleName was already written in a previous reconcile
+	// but NATSubnet was not (e.g. discoverNATSubnet failed transiently). The controller must
+	// preserve the existing ForwardingRuleName rather than overwriting it, and still use the
+	// forwarding rule's Network field to scope NAT subnet discovery to the correct VPC.
+	networkURL := "https://www.googleapis.com/compute/v1/projects/p/global/networks/my-vpc"
+	fc := &fakeComputeClient{
+		// GCP returns a different rule name than the one already stored in the spec.
+		forwardingRules:    []*compute.ForwardingRule{{Name: "fr-new", Network: networkURL}},
+		subnetworks:        []*compute.Subnetwork{{Name: "psc-subnet-1"}},
+		serviceAttachments: nil,
+	}
+	r := newReconciler(t, fc)
+	gcpPSC := newGCPPSC("fr-original", "")
+	if err := r.reconcileGCPPrivateServiceConnectSpec(context.Background(), gcpPSC, nil); err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	// ForwardingRuleName must not be overwritten.
+	if gcpPSC.Spec.ForwardingRuleName != "fr-original" {
+		t.Errorf("ForwardingRuleName should be preserved; got %q", gcpPSC.Spec.ForwardingRuleName)
+	}
+	// NATSubnet must be discovered using the forwarding rule's network URL.
+	if gcpPSC.Spec.NATSubnet != "psc-subnet-1" {
+		t.Errorf("expected NATSubnet %q, got %q", "psc-subnet-1", gcpPSC.Spec.NATSubnet)
+	}
+	// The subnet filter must be scoped to the forwarding rule's VPC — the core invariant of this PR.
+	wantFilter := buildNATSubnetFilter(networkURL)
+	if fc.capturedSubnetFilter != wantFilter {
+		t.Errorf("ListSubnetworks filter = %q, want %q", fc.capturedSubnetFilter, wantFilter)
+	}
+}
+
 // --- discoverNATSubnet ---
 
 func TestDiscoverNATSubnet_APIError(t *testing.T) {
