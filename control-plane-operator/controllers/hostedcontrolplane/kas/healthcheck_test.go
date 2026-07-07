@@ -46,6 +46,7 @@ func TestGetHealthcheckEndpoint(t *testing.T) {
 				"clusters-test/kube-apiserver",
 				"api.test.example.com",
 				"route has no ingress status",
+				"last status writer:",
 			},
 		},
 		{
