@@ -85,6 +85,7 @@ func TestGetHealthcheckEndpoint(t *testing.T) {
 				"Admitted=False",
 				"HostAlreadyClaimed",
 				"route foo already exposes",
+				"last status writer:",
 			},
 		},
 		{
