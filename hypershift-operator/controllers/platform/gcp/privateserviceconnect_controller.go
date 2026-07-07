@@ -311,10 +311,12 @@ func (r *GCPPrivateServiceConnectReconciler) discoverNATSubnet(ctx context.Conte
 	}
 
 	// Find the first available PSC subnet in the MC's VPC not already in use by another Service Attachment.
+	var checkErrors int
 	for _, subnet := range subnets {
 		inUse, err := r.isSubnetInUse(ctx, subnet.Name)
 		if err != nil {
 			log.Error(err, "Failed to check subnet usage", "subnet", subnet.Name)
+			checkErrors++
 			continue
 		}
 
@@ -326,6 +328,9 @@ func (r *GCPPrivateServiceConnectReconciler) discoverNATSubnet(ctx context.Conte
 		log.V(1).Info("Subnet already in use, trying next", "subnet", subnet.Name)
 	}
 
+	if checkErrors > 0 {
+		return "", fmt.Errorf("no available PRIVATE_SERVICE_CONNECT subnet found in region %s (failed to check %d of %d candidates due to API errors)", r.Region, checkErrors, len(subnets))
+	}
 	return "", fmt.Errorf("no available PRIVATE_SERVICE_CONNECT subnet found in region %s", r.Region)
 }
 
