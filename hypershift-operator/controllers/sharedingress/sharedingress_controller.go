@@ -222,8 +222,15 @@ func (r *SharedIngressReconciler) reconcileRouter(ctx context.Context, pullSecre
 	// and causes the CPO health check to report "route not admitted", flapping the
 	// HostedCluster Available condition.
 	if canonicalHostname == "" {
-		log.Log.Info("shared ingress LB has no hostname or IP; skipping route status reconciliation",
-			"service", client.ObjectKeyFromObject(svc))
+		if len(svc.Status.LoadBalancer.Ingress) == 0 {
+			log.Log.Info("shared ingress LB is not provisioned; skipping route status reconciliation",
+				"service", client.ObjectKeyFromObject(svc),
+				"serviceSince", svc.CreationTimestamp.Time)
+		} else {
+			log.Log.Info("shared ingress LB has ingress entry with no hostname or IP; skipping route status reconciliation",
+				"service", client.ObjectKeyFromObject(svc),
+				"ingressEntries", len(svc.Status.LoadBalancer.Ingress))
+		}
 		return nil
 	}
 
