@@ -20,9 +20,10 @@ func GetHealthcheckEndpointForRoute(externalRoute *routev1.Route, hcp *hyperv1.H
 			externalRoute.Namespace, externalRoute.Name, externalRoute.Spec.Host)
 	}
 	if externalRoute.Status.Ingress[0].RouterCanonicalHostname == "" {
-		return "", 0, fmt.Errorf("APIServer external route %s/%s (host: %s) not admitted: %s",
+		return "", 0, fmt.Errorf("APIServer external route %s/%s (host: %s) not admitted: %s; last status writer: %s",
 			externalRoute.Namespace, externalRoute.Name, externalRoute.Spec.Host,
-			routeIngressDiagnostic(externalRoute.Status.Ingress[0]))
+			routeIngressDiagnostic(externalRoute.Status.Ingress[0]),
+			externalRoute.Annotations[netutil.RouteStatusWriterAnnotation])
 	}
 
 	endpoint = externalRoute.Status.Ingress[0].RouterCanonicalHostname
