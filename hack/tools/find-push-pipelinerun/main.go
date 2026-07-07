@@ -133,7 +133,7 @@ func loadConfig() AppConfig {
 
 func watchInterval() time.Duration {
 	if s := os.Getenv("WATCH_INTERVAL"); s != "" {
-		if n, err := strconv.Atoi(s); err == nil {
+		if n, err := strconv.Atoi(s); err == nil && n > 0 {
 			return time.Duration(n) * time.Second
 		}
 	}

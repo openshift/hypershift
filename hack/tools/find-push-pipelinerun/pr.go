@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 )
 
 var githubAPIBase = "https://api.github.com" //nolint:gochecknoglobals
@@ -75,7 +76,7 @@ func inferRepo() (string, error) {
 // private repos or to avoid rate limits.
 func GetMergeSHA(client *http.Client, ref *PRRef) (string, error) {
 	url := fmt.Sprintf("%s/repos/%s/pulls/%d", githubAPIBase, ref.Repo, ref.Number)
-	req, err := http.NewRequest("GET", url, nil) //nolint:noctx
+	req, err := http.NewRequest(http.MethodGet, url, nil) //nolint:noctx
 	if err != nil {
 		return "", err
 	}
@@ -114,9 +115,10 @@ func GetMergeSHA(client *http.Client, ref *PRRef) (string, error) {
 // If GITHUB_TOKEN is set, requests include authorization.
 func newGitHubClient(token string) *http.Client {
 	if token == "" {
-		return http.DefaultClient
+		return &http.Client{Timeout: 30 * time.Second}
 	}
 	return &http.Client{
+		Timeout:   30 * time.Second,
 		Transport: &tokenTransport{token: token, base: http.DefaultTransport},
 	}
 }

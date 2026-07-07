@@ -168,8 +168,9 @@ func FormatReleasePipelineRuns(w io.Writer, prs []PipelineRun) bool {
 // the release plan mapping and snapshot data.
 func ResolveDestImages(q Querier, releases []Release) map[string]string {
 	images := make(map[string]string)
+	mappingCache := make(map[string]*Mapping)
 	for _, rel := range releases {
-		img := resolveDestImage(q, rel)
+		img := resolveDestImage(q, rel, mappingCache)
 		if img != "" {
 			images[rel.Metadata.Name] = img
 		}
@@ -177,8 +178,12 @@ func ResolveDestImages(q Querier, releases []Release) map[string]string {
 	return images
 }
 
-func resolveDestImage(q Querier, rel Release) string {
-	mapping := getMappingForRelease(q, rel.Spec.ReleasePlan)
+func resolveDestImage(q Querier, rel Release, cache map[string]*Mapping) string {
+	mapping, ok := cache[rel.Spec.ReleasePlan]
+	if !ok {
+		mapping = getMappingForRelease(q, rel.Spec.ReleasePlan)
+		cache[rel.Spec.ReleasePlan] = mapping
+	}
 	if mapping == nil {
 		return ""
 	}

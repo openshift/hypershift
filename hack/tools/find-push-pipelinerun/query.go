@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"time"
 
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -51,6 +52,9 @@ func newHTTPQuerier(cfg AppConfig, stderr io.Writer) (*httpQuerier, error) {
 	httpClient, err := rest.HTTPClientFor(restConfig)
 	if err != nil {
 		return nil, fmt.Errorf("building HTTP client: %w", err)
+	}
+	if httpClient.Timeout == 0 {
+		httpClient.Timeout = 30 * time.Second
 	}
 
 	return &httpQuerier{
@@ -134,7 +138,7 @@ func listResource[T any](q *httpQuerier, host, path, labelSelector string) ([]T,
 	params.Set("labelSelector", labelSelector)
 	u.RawQuery = params.Encode()
 
-	req, err := http.NewRequest("GET", u.String(), nil) //nolint:noctx
+	req, err := http.NewRequest(http.MethodGet, u.String(), nil) //nolint:noctx
 	if err != nil {
 		return nil, err
 	}
@@ -164,7 +168,7 @@ func getResource[T any](q *httpQuerier, host, path string) (*T, error) {
 	}
 	u.Path = path
 
-	req, err := http.NewRequest("GET", u.String(), nil) //nolint:noctx
+	req, err := http.NewRequest(http.MethodGet, u.String(), nil) //nolint:noctx
 	if err != nil {
 		return nil, err
 	}

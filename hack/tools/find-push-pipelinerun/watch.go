@@ -51,27 +51,31 @@ func WatchReleasePipeline(q Querier, cfg WatchConfig) error {
 		}
 		FormatPipelineRuns(cfg.Stdout, prs)
 
-		printReleasePipeline(q, cfg.SHA, cfg.Component, cfg.Stdout, cfg.Stderr)
-
 		if HasPending(prs) {
 			continue
 		}
 
 		releases, err := q.ListReleases(cfg.SHA)
-		if err != nil || len(releases) == 0 {
-			// No releases yet — keep polling
+		if err != nil {
+			fmt.Fprintf(cfg.Stderr, "Warning: failed to query Releases: %v\n", err)
+			continue
+		}
+		if len(releases) == 0 {
 			continue
 		}
 		if cfg.Component != "" {
 			releases = FilterReleasesByComponent(releases, cfg.Component)
 		}
+
+		printReleasePipelineFromReleases(q, releases, cfg.Stdout, cfg.Stderr)
+
 		if !HasPendingReleases(releases) {
 			return nil
 		}
 	}
 }
 
-// printReleasePipeline queries and displays release information.
+// printReleasePipeline queries releases and displays release information.
 func printReleasePipeline(q Querier, sha, component string, stdout, stderr io.Writer) {
 	releases, err := q.ListReleases(sha)
 	if err != nil || len(releases) == 0 {
@@ -82,6 +86,11 @@ func printReleasePipeline(q Querier, sha, component string, stdout, stderr io.Wr
 		releases = FilterReleasesByComponent(releases, component)
 	}
 
+	printReleasePipelineFromReleases(q, releases, stdout, stderr)
+}
+
+// printReleasePipelineFromReleases displays release information from an already-fetched list.
+func printReleasePipelineFromReleases(q Querier, releases []Release, stdout, stderr io.Writer) {
 	images := ResolveDestImages(q, releases)
 	fmt.Fprintln(stdout)
 	FormatReleasesWithImages(stdout, releases, images)
