@@ -61,7 +61,6 @@ spec:
       - args:
         - --authentication-skip-lookup
         - --bind-address=$(POD_IP_ADDRESS)
-        - --use-service-account-credentials=true
         - --configure-cloud-routes=false
         - --cloud-provider=ibm
         - --cloud-config=/etc/ibm/ccm-config
@@ -71,7 +70,6 @@ spec:
         - --leader-elect-renew-deadline=107s
         - --leader-elect-retry-period=26s
         - --kubeconfig=/etc/kubernetes/kubeconfig
-        - --use-service-account-credentials=false
         - --tls-min-version=VersionTLS12
         - --tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
         command:
