@@ -1983,12 +1983,12 @@ func TestApplyAWSMachineOptions(t *testing.T) {
 			spec := &capiaws.AWSMachineTemplateSpec{}
 			applyAWSMachineOptions(tc.nodePool, spec)
 
-			g.Expect(spec.Template.Spec.CPUOptions.NestedVirtualization).To(Equal(tc.expectedNestedVirtualization))
-			g.Expect(spec.Template.Spec.SpotMarketOptions).To(Equal(tc.expectedSpotMarketOptions))
-			g.Expect(spec.Template.Spec.MarketType).To(Equal(tc.expectedMarketType))
-			g.Expect(spec.Template.Spec.Tenancy).To(Equal(tc.expectedTenancy))
-			g.Expect(spec.Template.Spec.CapacityReservationID).To(Equal(tc.expectedCapacityReservationID))
-			g.Expect(spec.Template.Spec.CapacityReservationPreference).To(Equal(tc.expectedCapReservationPreference))
+			g.Expect(spec.Template.Spec.CPUOptions.NestedVirtualization).To(Equal(tc.expectedNestedVirtualization), "CPUOptions.NestedVirtualization mismatch")
+			g.Expect(spec.Template.Spec.SpotMarketOptions).To(Equal(tc.expectedSpotMarketOptions), "SpotMarketOptions mismatch")
+			g.Expect(spec.Template.Spec.MarketType).To(Equal(tc.expectedMarketType), "MarketType mismatch")
+			g.Expect(spec.Template.Spec.Tenancy).To(Equal(tc.expectedTenancy), "Tenancy mismatch")
+			g.Expect(spec.Template.Spec.CapacityReservationID).To(Equal(tc.expectedCapacityReservationID), "CapacityReservationID mismatch")
+			g.Expect(spec.Template.Spec.CapacityReservationPreference).To(Equal(tc.expectedCapReservationPreference), "CapacityReservationPreference mismatch")
 		})
 	}
 }

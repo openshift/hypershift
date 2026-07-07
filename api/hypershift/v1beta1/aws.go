@@ -73,7 +73,7 @@ type AWSNodePoolPlatform struct {
 	// Supported on C8i, M8i, and R8i instance families.
 	//
 	// +optional
-	CpuOptions CpuOptions `json:"cpuOptions,omitzero,omitempty"`
+	CpuOptions CpuOptions `json:"cpuOptions,omitzero"`
 }
 
 // PlacementOptions specifies the placement options for the EC2 instances.
