@@ -63,7 +63,6 @@ spec:
       - args:
         - --authentication-skip-lookup
         - --bind-address=$(POD_IP_ADDRESS)
-        - --use-service-account-credentials=true
         - --configure-cloud-routes=false
         - --cloud-provider=ibm
         - --cloud-config=/etc/ibm/ccm-config
@@ -73,7 +72,6 @@ spec:
         - --leader-elect-renew-deadline=107s
         - --leader-elect-retry-period=26s
         - --kubeconfig=/etc/kubernetes/kubeconfig
-        - --use-service-account-credentials=false
         - --tls-min-version=VersionTLS13
         command:
         - /bin/ibm-cloud-controller-manager
