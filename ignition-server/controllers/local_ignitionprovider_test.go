@@ -1396,6 +1396,115 @@ func TestWriteOSImageStreamManifest(t *testing.T) {
 	}
 }
 
+func TestTruncateTail(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		input  string
+		max    int
+		expect string
+	}{
+		{
+			name:   "When input is shorter than max, it should return the full string",
+			input:  "short",
+			max:    100,
+			expect: "short",
+		},
+		{
+			name:   "When input is exactly max length, it should return the full string",
+			input:  "exact",
+			max:    5,
+			expect: "exact",
+		},
+		{
+			name:   "When input is longer than max, it should return the tail",
+			input:  "abcdefghij",
+			max:    4,
+			expect: "ghij",
+		},
+		{
+			name:   "When input is empty, it should return empty string",
+			input:  "",
+			max:    10,
+			expect: "",
+		},
+		{
+			name:   "When max is zero, it should return empty string",
+			input:  "anything",
+			max:    0,
+			expect: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+			g.Expect(truncateTail(tt.input, tt.max)).To(Equal(tt.expect))
+		})
+	}
+}
+
+func TestSyncBuffer(t *testing.T) {
+	t.Parallel()
+
+	t.Run("When writing data, it should be readable via String", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		var b syncBuffer
+		n, err := b.Write([]byte("hello "))
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(n).To(Equal(6))
+
+		n, err = b.Write([]byte("world"))
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(n).To(Equal(5))
+
+		g.Expect(b.String()).To(Equal("hello world"))
+	})
+
+	t.Run("When data exceeds maxMCSLogBytes, String should return truncated tail", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		var b syncBuffer
+		// Write more than maxMCSLogBytes (8 KiB)
+		large := make([]byte, maxMCSLogBytes+100)
+		for i := range large {
+			large[i] = byte('a' + (i % 26))
+		}
+		_, err := b.Write(large)
+		g.Expect(err).NotTo(HaveOccurred())
+
+		result := b.String()
+		g.Expect(len(result)).To(Equal(maxMCSLogBytes))
+		g.Expect(result).To(Equal(string(large[100:])))
+	})
+
+	t.Run("When writing from multiple goroutines, it should not panic", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		var b syncBuffer
+		done := make(chan struct{})
+		for i := 0; i < 10; i++ {
+			go func() {
+				defer func() { done <- struct{}{} }()
+				for j := 0; j < 100; j++ {
+					_, _ = b.Write([]byte("x"))
+					_ = b.String()
+				}
+			}()
+		}
+		for i := 0; i < 10; i++ {
+			<-done
+		}
+		g.Expect(len(b.String())).To(BeNumerically("<=", maxMCSLogBytes))
+	})
+}
+
 func TestCopyMCOOutputToMCCMixedContent(t *testing.T) {
 	t.Parallel()
 

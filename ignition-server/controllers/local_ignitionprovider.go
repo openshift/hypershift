@@ -97,6 +97,34 @@ var _ IgnitionProvider = (*LocalIgnitionProvider)(nil)
 // at which we regenerate a new certificate. This ensures we never serve an expired cert.
 const mcsCertRefreshMargin = 1 * time.Hour
 
+const maxMCSLogBytes = 8 << 10 // 8 KiB
+
+// syncBuffer is a thread-safe buffer for capturing MCS process stdout/stderr
+// while the polling loop reads snapshots for error logging.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return truncateTail(b.buf.String(), maxMCSLogBytes)
+}
+
+func truncateTail(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	return s[len(s)-max:]
+}
+
 // getOrGenerateMCSCert returns cached PEM-encoded MCS TLS certificate and key,
 // generating a new self-signed certificate if the cache is empty, partially
 // populated, or the cached certificate is about to expire. This avoids redundant
@@ -563,7 +591,7 @@ func (p *LocalIgnitionProvider) runMCSAndFetchPayload(ctx context.Context, dirs 
 	cmd := exec.CommandContext(mcsCtx, filepath.Join(dirs.binDir, "machine-config-server"), args...)
 	cmd.WaitDelay = 10 * time.Second
 
-	var mcsOutput bytes.Buffer
+	var mcsOutput syncBuffer
 	cmd.Stdout = &mcsOutput
 	cmd.Stderr = &mcsOutput
 
@@ -596,16 +624,15 @@ func (p *LocalIgnitionProvider) runMCSAndFetchPayload(ctx context.Context, dirs 
 			log.Error(err, "mcs request failed")
 			return false, nil
 		}
-		if res.StatusCode != http.StatusOK {
-			log.Error(err, "mcs returned unexpected response code", "code", res.StatusCode)
-			return false, nil
-		}
-
 		defer func() {
 			if err := res.Body.Close(); err != nil {
 				log.Error(err, "failed to close mcs response body")
 			}
 		}()
+		if res.StatusCode != http.StatusOK {
+			log.Error(fmt.Errorf("unexpected status code %d", res.StatusCode), "mcs returned unexpected response code", "code", res.StatusCode, "mcsOutput", mcsOutput.String())
+			return false, nil
+		}
 		body, err := io.ReadAll(res.Body)
 		if err != nil {
 			log.Error(err, "failed to read mcs response body")
