@@ -217,6 +217,16 @@ func (r *SharedIngressReconciler) reconcileRouter(ctx context.Context, pullSecre
 		}
 	}
 
+	// When the LB has no hostname or IP, we must not write route status with an
+	// empty RouterCanonicalHostname. Doing so overwrites a previously-valid value
+	// and causes the CPO health check to report "route not admitted", flapping the
+	// HostedCluster Available condition.
+	if canonicalHostname == "" {
+		log.Log.Info("shared ingress LB has no hostname or IP; skipping route status reconciliation",
+			"service", client.ObjectKeyFromObject(svc))
+		return nil
+	}
+
 	routeList := &routev1.RouteList{}
 	// If the hypershift.openshift.io/hosted-control-plane label is not present,
 	// then it means the route should be fulfilled by the management cluster's router.
