@@ -205,6 +205,9 @@ type ec2Client struct {
 func (c *ec2Client) AttachVolume(ctx context.Context, input *ec2.AttachVolumeInput, optFns ...func(*ec2.Options)) (*ec2.AttachVolumeOutput, error) {
 	return c.awsEbsCsiDriverController.ec2Client.AttachVolume(ctx, input, optFns...)
 }
+func (c *ec2Client) CopyVolumes(ctx context.Context, input *ec2.CopyVolumesInput, optFns ...func(*ec2.Options)) (*ec2.CopyVolumesOutput, error) {
+	return c.awsEbsCsiDriverController.ec2Client.CopyVolumes(ctx, input, optFns...)
+}
 func (c *ec2Client) CreateSnapshot(ctx context.Context, input *ec2.CreateSnapshotInput, optFns ...func(*ec2.Options)) (*ec2.CreateSnapshotOutput, error) {
 	return c.awsEbsCsiDriverController.ec2Client.CreateSnapshot(ctx, input, optFns...)
 }
@@ -223,14 +226,20 @@ func (c *ec2Client) DeleteTags(ctx context.Context, input *ec2.DeleteTagsInput, 
 func (c *ec2Client) DeleteVolume(ctx context.Context, input *ec2.DeleteVolumeInput, optFns ...func(*ec2.Options)) (*ec2.DeleteVolumeOutput, error) {
 	return c.awsEbsCsiDriverController.ec2Client.DeleteVolume(ctx, input, optFns...)
 }
+func (c *ec2Client) DescribeAvailabilityZones(ctx context.Context, input *ec2.DescribeAvailabilityZonesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeAvailabilityZonesOutput, error) {
+	return c.awsEbsCsiDriverController.ec2Client.DescribeAvailabilityZones(ctx, input, optFns...)
+}
+func (c *ec2Client) DescribeInstanceTypes(ctx context.Context, input *ec2.DescribeInstanceTypesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstanceTypesOutput, error) {
+	return c.awsEbsCsiDriverController.ec2Client.DescribeInstanceTypes(ctx, input, optFns...)
+}
 func (c *ec2Client) DescribeInstances(ctx context.Context, input *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
 	return c.awsEbsCsiDriverController.ec2Client.DescribeInstances(ctx, input, optFns...)
 }
 func (c *ec2Client) DescribeSnapshots(ctx context.Context, input *ec2.DescribeSnapshotsInput, optFns ...func(*ec2.Options)) (*ec2.DescribeSnapshotsOutput, error) {
 	return c.awsEbsCsiDriverController.ec2Client.DescribeSnapshots(ctx, input, optFns...)
 }
-func (c *ec2Client) DescribeTags(ctx context.Context, input *ec2.DescribeTagsInput, optFns ...func(*ec2.Options)) (*ec2.DescribeTagsOutput, error) {
-	return c.awsEbsCsiDriverController.ec2Client.DescribeTags(ctx, input, optFns...)
+func (c *ec2Client) DescribeVolumeStatus(ctx context.Context, input *ec2.DescribeVolumeStatusInput, optFns ...func(*ec2.Options)) (*ec2.DescribeVolumeStatusOutput, error) {
+	return c.awsEbsCsiDriverController.ec2Client.DescribeVolumeStatus(ctx, input, optFns...)
 }
 func (c *ec2Client) DescribeVolumes(ctx context.Context, input *ec2.DescribeVolumesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeVolumesOutput, error) {
 	return c.awsEbsCsiDriverController.ec2Client.DescribeVolumes(ctx, input, optFns...)
@@ -240,6 +249,12 @@ func (c *ec2Client) DescribeVolumesModifications(ctx context.Context, input *ec2
 }
 func (c *ec2Client) DetachVolume(ctx context.Context, input *ec2.DetachVolumeInput, optFns ...func(*ec2.Options)) (*ec2.DetachVolumeOutput, error) {
 	return c.awsEbsCsiDriverController.ec2Client.DetachVolume(ctx, input, optFns...)
+}
+func (c *ec2Client) EnableFastSnapshotRestores(ctx context.Context, input *ec2.EnableFastSnapshotRestoresInput, optFns ...func(*ec2.Options)) (*ec2.EnableFastSnapshotRestoresOutput, error) {
+	return c.awsEbsCsiDriverController.ec2Client.EnableFastSnapshotRestores(ctx, input, optFns...)
+}
+func (c *ec2Client) LockSnapshot(ctx context.Context, input *ec2.LockSnapshotInput, optFns ...func(*ec2.Options)) (*ec2.LockSnapshotOutput, error) {
+	return c.awsEbsCsiDriverController.ec2Client.LockSnapshot(ctx, input, optFns...)
 }
 func (c *ec2Client) ModifyVolume(ctx context.Context, input *ec2.ModifyVolumeInput, optFns ...func(*ec2.Options)) (*ec2.ModifyVolumeOutput, error) {
 	return c.awsEbsCsiDriverController.ec2Client.ModifyVolume(ctx, input, optFns...)
@@ -259,9 +274,6 @@ func (c *ec2Client) DeleteRoute(ctx context.Context, input *ec2.DeleteRouteInput
 }
 func (c *ec2Client) DeleteSecurityGroup(ctx context.Context, input *ec2.DeleteSecurityGroupInput, optFns ...func(*ec2.Options)) (*ec2.DeleteSecurityGroupOutput, error) {
 	return c.cloudController.ec2Client.DeleteSecurityGroup(ctx, input, optFns...)
-}
-func (c *ec2Client) DescribeAvailabilityZones(ctx context.Context, input *ec2.DescribeAvailabilityZonesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeAvailabilityZonesOutput, error) {
-	return c.cloudController.ec2Client.DescribeAvailabilityZones(ctx, input, optFns...)
 }
 func (c *ec2Client) DescribeImages(ctx context.Context, input *ec2.DescribeImagesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeImagesOutput, error) {
 	return c.cloudController.ec2Client.DescribeImages(ctx, input, optFns...)
@@ -296,9 +308,6 @@ func (c *ec2Client) AssignPrivateIpAddresses(ctx context.Context, input *ec2.Ass
 }
 func (c *ec2Client) DescribeInstanceStatus(ctx context.Context, input *ec2.DescribeInstanceStatusInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstanceStatusOutput, error) {
 	return c.cloudNetworkConfigController.ec2Client.DescribeInstanceStatus(ctx, input, optFns...)
-}
-func (c *ec2Client) DescribeInstanceTypes(ctx context.Context, input *ec2.DescribeInstanceTypesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstanceTypesOutput, error) {
-	return c.cloudNetworkConfigController.ec2Client.DescribeInstanceTypes(ctx, input, optFns...)
 }
 func (c *ec2Client) DescribeNetworkInterfaces(ctx context.Context, input *ec2.DescribeNetworkInterfacesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeNetworkInterfacesOutput, error) {
 	return c.cloudNetworkConfigController.ec2Client.DescribeNetworkInterfaces(ctx, input, optFns...)
