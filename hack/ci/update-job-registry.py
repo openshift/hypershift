@@ -9,6 +9,8 @@ PR when the registry changes.
 Usage:
     python3 hack/ci/update-job-registry.py [--versions N] [--output PATH]
 
+Output defaults to stdout. Use --output to write directly to a file.
+
 The script does a sparse checkout of openshift/release (tree:0 filter) to fetch
 only the periodic job config files for openshift/hypershift.
 """
@@ -33,7 +35,7 @@ except ImportError:
 
 RELEASE_REPO = "https://github.com/openshift/release.git"
 JOBS_DIR = "ci-operator/jobs/openshift/hypershift"
-DEFAULT_OUTPUT = ".chai-bot/ci-status-jobs.yaml"
+DEFAULT_OUTPUT = None
 DEFAULT_NUM_VERSIONS = 3
 
 # ---------------------------------------------------------------------------
@@ -231,13 +233,13 @@ def main() -> None:
     )
     parser.add_argument(
         "--output", default=DEFAULT_OUTPUT,
-        help=f"Output file path (default: {DEFAULT_OUTPUT})",
+        help="Output file path (default: stdout)",
     )
     args = parser.parse_args()
 
     with tempfile.TemporaryDirectory() as tmpdir:
         clone_dir = os.path.join(tmpdir, "release")
-        print("Sparse-checkout of openshift/release (tree:0 filter)...")
+        print("Sparse-checkout of openshift/release (tree:0 filter)...", file=sys.stderr)
         release_sha = sparse_checkout(clone_dir)
 
         periodic_files = discover_periodic_files(clone_dir)
@@ -252,8 +254,8 @@ def main() -> None:
         all_versions = sorted(set(all_versions), key=version_sort_key, reverse=True)
 
         selected: set[str] = set(all_versions[:args.versions])
-        print(f"Versions available: {', '.join(all_versions)}")
-        print(f"Selected (latest {args.versions}): {', '.join(sorted(selected, key=version_sort_key, reverse=True))}")
+        print(f"Versions available: {', '.join(all_versions)}", file=sys.stderr)
+        print(f"Selected (latest {args.versions}): {', '.join(sorted(selected, key=version_sort_key, reverse=True))}", file=sys.stderr)
 
         all_jobs: list[str] = []
         for f in periodic_files:
@@ -261,25 +263,28 @@ def main() -> None:
             if v not in selected:
                 continue
             jobs = extract_job_names(f)
-            print(f"  {os.path.basename(f)}: {len(jobs)} jobs")
+            print(f"  {os.path.basename(f)}: {len(jobs)} jobs", file=sys.stderr)
             all_jobs.extend(jobs)
 
-    print(f"Total jobs discovered: {len(all_jobs)}")
+    print(f"Total jobs discovered: {len(all_jobs)}", file=sys.stderr)
 
     categories = build_categories(all_jobs, selected)
     output = render_yaml(categories)
 
     total_categorized = sum(len(c["jobs"]) for c in categories)
-    print(f"Categorized {total_categorized} jobs into {len(categories)} categories")
+    print(f"Categorized {total_categorized} jobs into {len(categories)} categories", file=sys.stderr)
 
     uncategorized = len(all_jobs) - total_categorized
     if uncategorized > 0:
         sys.exit(f"::error::{uncategorized} uncategorized jobs — update PLATFORM_RULES")
 
-    with open(args.output, "w") as f:
-        f.write(output)
-    print(f"Wrote {args.output}")
-    print(f"release_sha={release_sha}")
+    if args.output:
+        with open(args.output, "w") as f:
+            f.write(output)
+        print(f"Wrote {args.output}", file=sys.stderr)
+    else:
+        sys.stdout.write(output)
+    print(f"release_sha={release_sha}", file=sys.stderr)
 
 
 if __name__ == "__main__":

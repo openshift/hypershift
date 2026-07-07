@@ -22,7 +22,7 @@ jobs:
       - name: Regenerate job registry
         id: generate
         run: |
-          python3 hack/ci/update-job-registry.py | tee /dev/stderr | grep '^release_sha=' >> "$GITHUB_OUTPUT"
+          python3 hack/ci/update-job-registry.py --output .chai-bot/ci-status-jobs.yaml 2>&1 | grep '^release_sha=' >> "$GITHUB_OUTPUT"
 
       - name: Check for changes
         id: diff
