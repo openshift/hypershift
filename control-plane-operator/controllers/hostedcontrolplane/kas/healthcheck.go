@@ -16,8 +16,9 @@ import (
 // GetHealthcheckEndpoint determines the appropriate endpoint and port for healthcheck based on the route and configuration
 func GetHealthcheckEndpointForRoute(externalRoute *routev1.Route, hcp *hyperv1.HostedControlPlane) (endpoint string, port int, err error) {
 	if len(externalRoute.Status.Ingress) == 0 {
-		return "", 0, fmt.Errorf("APIServer external route %s/%s (host: %s) not admitted: route has no ingress status",
-			externalRoute.Namespace, externalRoute.Name, externalRoute.Spec.Host)
+		return "", 0, fmt.Errorf("APIServer external route %s/%s (host: %s) not admitted: route has no ingress status; last status writer: %s",
+			externalRoute.Namespace, externalRoute.Name, externalRoute.Spec.Host,
+			externalRoute.Annotations[netutil.RouteStatusWriterAnnotation])
 	}
 	if externalRoute.Status.Ingress[0].RouterCanonicalHostname == "" {
 		return "", 0, fmt.Errorf("APIServer external route %s/%s (host: %s) not admitted: %s; last status writer: %s",
