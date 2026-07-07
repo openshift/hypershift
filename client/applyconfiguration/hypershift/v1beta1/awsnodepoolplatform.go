@@ -24,15 +24,16 @@ import (
 // AWSNodePoolPlatformApplyConfiguration represents a declarative configuration of the AWSNodePoolPlatform type for use
 // with apply.
 type AWSNodePoolPlatformApplyConfiguration struct {
-	InstanceType    *string                                    `json:"instanceType,omitempty"`
-	InstanceProfile *string                                    `json:"instanceProfile,omitempty"`
-	Subnet          *AWSResourceReferenceApplyConfiguration    `json:"subnet,omitempty"`
-	AMI             *string                                    `json:"ami,omitempty"`
-	ImageType       *hypershiftv1beta1.ImageType               `json:"imageType,omitempty"`
-	SecurityGroups  []AWSResourceReferenceApplyConfiguration   `json:"securityGroups,omitempty"`
-	RootVolume      *VolumeApplyConfiguration                  `json:"rootVolume,omitempty"`
-	ResourceTags    []AWSNodePoolResourceTagApplyConfiguration `json:"resourceTags,omitempty"`
-	Placement       *PlacementOptionsApplyConfiguration        `json:"placement,omitempty"`
+	InstanceType    *string                                     `json:"instanceType,omitempty"`
+	InstanceProfile *string                                     `json:"instanceProfile,omitempty"`
+	Subnet          *AWSResourceReferenceApplyConfiguration     `json:"subnet,omitempty"`
+	AMI             *string                                     `json:"ami,omitempty"`
+	ImageType       *hypershiftv1beta1.ImageType                `json:"imageType,omitempty"`
+	SecurityGroups  []AWSResourceReferenceApplyConfiguration    `json:"securityGroups,omitempty"`
+	RootVolume      *VolumeApplyConfiguration                   `json:"rootVolume,omitempty"`
+	ResourceTags    []AWSNodePoolResourceTagApplyConfiguration  `json:"resourceTags,omitempty"`
+	Placement       *PlacementOptionsApplyConfiguration         `json:"placement,omitempty"`
+	CpuOptions      *CpuOptionsApplyConfiguration               `json:"cpuOptions,omitempty"`
 }
 
 // AWSNodePoolPlatformApplyConfiguration constructs a declarative configuration of the AWSNodePoolPlatform type for use with
@@ -120,5 +121,13 @@ func (b *AWSNodePoolPlatformApplyConfiguration) WithResourceTags(values ...*AWSN
 // If called multiple times, the Placement field is set to the value of the last call.
 func (b *AWSNodePoolPlatformApplyConfiguration) WithPlacement(value *PlacementOptionsApplyConfiguration) *AWSNodePoolPlatformApplyConfiguration {
 	b.Placement = value
+	return b
+}
+
+// WithCpuOptions sets the CpuOptions field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the CpuOptions field is set to the value of the last call.
+func (b *AWSNodePoolPlatformApplyConfiguration) WithCpuOptions(value *CpuOptionsApplyConfiguration) *AWSNodePoolPlatformApplyConfiguration {
+	b.CpuOptions = value
 	return b
 }
