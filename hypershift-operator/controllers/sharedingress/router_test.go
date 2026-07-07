@@ -4,6 +4,9 @@ import (
 	"reflect"
 	"testing"
 
+	. "github.com/onsi/gomega"
+
+	routev1 "github.com/openshift/api/route/v1"
 	"github.com/openshift/hypershift/support/config"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -139,4 +142,73 @@ func TestReconcileRouterPodDisruptionBudget(t *testing.T) {
 			t.Errorf("Expected unhealthyPodEvictionPolicy to be AlwaysAllow, got %v", *pdb.Spec.UnhealthyPodEvictionPolicy)
 		}
 	})
+}
+
+func TestReconcileRouteStatus(t *testing.T) {
+	tests := []struct {
+		name              string
+		route             *routev1.Route
+		canonicalHostname string
+		expectUpdate      bool
+		expectedHostname  string
+	}{
+		{
+			name: "When canonical hostname is set, it should update route ingress",
+			route: &routev1.Route{
+				Spec: routev1.RouteSpec{Host: "api.test.example.com"},
+			},
+			canonicalHostname: "lb.example.com",
+			expectUpdate:      true,
+			expectedHostname:  "lb.example.com",
+		},
+		{
+			name: "When canonical hostname matches existing, it should not update",
+			route: &routev1.Route{
+				Spec: routev1.RouteSpec{Host: "api.test.example.com"},
+				Status: routev1.RouteStatus{
+					Ingress: []routev1.RouteIngress{
+						{
+							RouterCanonicalHostname: "lb.example.com",
+							RouterName:              "router",
+						},
+					},
+				},
+			},
+			canonicalHostname: "lb.example.com",
+			expectUpdate:      false,
+			expectedHostname:  "lb.example.com",
+		},
+		{
+			name: "When canonical hostname changes, it should update route ingress",
+			route: &routev1.Route{
+				Spec: routev1.RouteSpec{Host: "api.test.example.com"},
+				Status: routev1.RouteStatus{
+					Ingress: []routev1.RouteIngress{
+						{
+							RouterCanonicalHostname: "old-lb.example.com",
+							RouterName:              "router",
+						},
+					},
+				},
+			},
+			canonicalHostname: "new-lb.example.com",
+			expectUpdate:      true,
+			expectedHostname:  "new-lb.example.com",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			original := tc.route.DeepCopy()
+			ReconcileRouteStatus(tc.route, tc.canonicalHostname)
+			if tc.expectUpdate {
+				g.Expect(tc.route.Status.Ingress).To(HaveLen(1))
+				g.Expect(tc.route.Status.Ingress[0].RouterCanonicalHostname).To(Equal(tc.expectedHostname))
+				g.Expect(tc.route.Status.Ingress[0].RouterName).To(Equal("router"))
+			} else {
+				g.Expect(tc.route.Status).To(Equal(original.Status))
+			}
+		})
+	}
 }
