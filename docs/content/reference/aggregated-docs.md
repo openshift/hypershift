@@ -5365,7 +5365,6 @@ flowchart LR
     subgraph "Code Review"
         D1["CodeRabbit — automated review"] --> D3["Address feedback"]
         D2["/code-review:pr — /code-review:pre-commit-review"] --> D3
-        D3 --> D4["/utils:address-reviews"]
     end
 
     subgraph "QE & Testing"
@@ -5375,7 +5374,7 @@ flowchart LR
 
     C1 --> D1
     C2 --> D1
-    D4 --> E2
+    D3 --> E2
 ```
 
 
@@ -5397,7 +5396,6 @@ flowchart LR
 | Automated review  | CodeRabbit | AI-powered code review bot running on every PR        |
 | On-demand review  | `/code-review:pr`                   | Trigger a full PR review with language-aware analysis |
 | Pre-commit review | `/code-review:pre-commit-review`    | Review staged changes before committing               |
-| Address feedback  | `/utils:address-reviews`            | Automatically address PR review comments              |
 
 
 #### QE & Testing
@@ -5459,13 +5457,11 @@ flowchart TD
     B --> C["Agent generates code, reviews, addresses and creates PR"]
     C --> D["Agent review on published PR"]
     D --> E["Human review"]
-    E --> F["/address-pr-review"]
-    F --> E
     E --> G["Human lgtm"]
     G --> H["/agentic-qe"]
     H --> I["Presubmit e2e runs"]
     I --> J["Auto-analysis on failures"]
-    J -->|"Failures found"| F
+    J -->|"Failures found"| E
     I -->|"Pass"| K["Merge"]
 ```
 
@@ -13542,7 +13538,6 @@ HyperShift uses AI-assisted CI jobs powered by Claude Code to help with developm
 | Job | Purpose | Schedule |
 |-----|---------|----------|
 | `periodic-jira-agent` | Analyzes Jira issues and creates draft PRs with fixes | Weekly on Mondays at 8:30 AM UTC |
-| `periodic-review-agent` | Addresses PR review comments on agent-created PRs | Every 3 hours (8:00-23:00 UTC) daily |
 | `address-review-comments` | On-demand job to address review comments on a single PR | Triggered via `/test address-review-comments` |
 | `periodic-hypershift-dependabot-triage` | Consolidates open dependabot PRs into a single weekly PR | Weekly on Fridays at 12:00 UTC |
 
@@ -13635,20 +13630,17 @@ flowchart TD
 
 ### Overview
 
-The Review Agent (`periodic-review-agent`) automatically addresses PR review comments on PRs created by the Jira Agent.
+The Review Agent (`address-review-comments`) addresses PR review comments on PRs created by the Jira Agent.
 
-- **Job name**: `periodic-review-agent`
-- **Schedule**: Every 3 hours (8:00-23:00 UTC) daily (`0 8-23/3 * * *`)
-- **Max PRs per run**: 10 (configurable via `REVIEW_AGENT_MAX_PRS`)
+- **Job name**: `address-review-comments`
+- **Trigger**: On-demand via `/test address-review-comments` on a PR
 - **Max agentic turns**: 100 per PR
-- **On-demand job**: `address-review-comments` (trigger with `/test address-review-comments`)
 
 ### How It Works
 
-1. **Queries GitHub** for open PRs authored by `app/hypershift-jira-solve-ci`
-2. **Analyzes review threads** to identify comments needing attention
-3. **Runs Claude Code** with the `/utils:address-reviews` command
-4. **Pushes changes** back to the PR branch
+1. **Analyzes review threads** to identify comments needing attention
+2. **Runs Claude Code** with the `/utils:address-reviews` command
+3. **Pushes changes** back to the PR branch
 
 ### Comment Analysis Logic
 
@@ -13698,43 +13690,15 @@ When addressing feedback, the bot follows these rules:
 2. **Code changes only when requested**: Only modifies code when explicitly asked (imperative language like "change", "fix", "update")
 3. **Explanations for questions**: Replies with explanation only for clarifying questions, without code changes
 
-### Data Flow
+### Triggering On-Demand
 
-```mermaid
-flowchart TD
-    subgraph "Prow CI Environment"
-        A[Periodic Job Trigger<br/>Every 3 hours 8:00-23:00 UTC] --> B[Setup Step]
-        B --> C[Process Step]
+For a single PR, trigger the review agent with:
 
-        subgraph "Process Step"
-            C --> D[Query GitHub API<br/>for Agent PRs]
-            D --> E{PRs Found?}
-            E -->|No| F[Exit Successfully]
-            E -->|Yes| G[For Each PR]
-            G --> H[Analyze Review Threads]
-            H --> I{Threads Need<br/>Attention?}
-            I -->|No| J{More PRs?}
-            I -->|Yes| K[Checkout PR Branch]
-            K --> L[Run Claude Code<br/>/utils:address-reviews]
-            L --> M[Push Changes]
-            M --> J
-            J -->|Yes| G
-            J -->|No| F
-        end
-    end
-
-    subgraph "External Systems"
-        D <--> GH[(GitHub API<br/>github.com)]
-        L <--> CLAUDE[Claude API<br/>via Vertex AI]
-        M <--> FORK[(GitHub Fork<br/>hypershift-community)]
-    end
+```
+/test address-review-comments
 ```
 
-### Configuration
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `REVIEW_AGENT_MAX_PRS` | 10 | Maximum PRs to process per run |
+This runs the review agent for that specific PR only.
 
 ---
 
@@ -13862,23 +13826,13 @@ To have an issue reprocessed:
 1. Remove the **`agent-processed`** label from the Jira issue
 2. The issue will be picked up on the next weekly run
 
-### Triggering Review Agent On-Demand
-
-For a single PR, you can trigger the review agent manually:
-
-```
-/test address-review-comments
-```
-
-This runs the review agent for that specific PR only.
-
 ---
 
 ## Limitations
 
 - **AI may produce incorrect or incomplete solutions** - always review carefully
 - **Complex issues may not be fully addressed** - multi-faceted problems may need human intervention
-- **Rate limited**: 1 issue per weekly run (jira-agent), 10 PRs per run (review-agent), all non-k8s dependabot PRs per run (dependabot-triage)
+- **Rate limited**: 1 issue per weekly run (jira-agent), all non-k8s dependabot PRs per run (dependabot-triage)
 - **Cannot access private resources** - no access to internal systems beyond Jira/GitHub
 - **Cannot execute destructive operations** - no ability to delete resources or force-push
 - **Maximum agentic turns**: 100 per issue (jira-agent), 100 per PR (review-agent)
@@ -14181,7 +14135,6 @@ These workflows are triggered by posting a **slash command** as a comment on a p
 
 | Command | Workflow | What it does |
 |---------|----------|--------------|
-| `/address-review-comments` | `address-review-comments.yaml` | Reads open review comments on the PR and pushes commits to address them |
 | `/rebase` | `rebase.yaml` | Rebases the PR branch onto the latest `main` and force-pushes |
 | `/restructure-commits` | `restructure-commits.yaml` | Reorganizes the PR's commits into logical units with conventional commit messages |
 
