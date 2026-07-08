@@ -58,6 +58,14 @@ func (b *controlPlaneWorkloadBuilder[T]) WithAssetDir(dir string) *controlPlaneW
 	return b
 }
 
+// WithTemplateData sets template data that will be used to render asset YAMLs as Go templates
+// before decoding. When set, all manifest loading (update, delete, status) will process YAMLs
+// through text/template with the provided data map. When nil, manifests are loaded as raw YAML.
+func (b *controlPlaneWorkloadBuilder[T]) WithTemplateData(data map[string]string) *controlPlaneWorkloadBuilder[T] {
+	b.workload.templateData = data
+	return b
+}
+
 func (b *controlPlaneWorkloadBuilder[T]) WithAdaptFunction(adapt func(cpContext WorkloadContext, obj T) error) *controlPlaneWorkloadBuilder[T] {
 	b.workload.adapt = adapt
 	return b

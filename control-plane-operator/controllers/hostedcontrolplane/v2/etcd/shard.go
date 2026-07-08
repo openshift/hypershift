@@ -13,7 +13,6 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	policyv1 "k8s.io/api/policy/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
@@ -42,6 +41,16 @@ func (e *etcdShard) NeedsManagementKASAccess() bool {
 	return e.needsManagementKASAccess
 }
 
+// etcdTemplateData builds the template data map for rendering etcd asset YAMLs.
+// The map keys correspond to Go template placeholders in the YAML files.
+func etcdTemplateData(name string) map[string]string {
+	return map[string]string{
+		"Name":                 name,
+		"ClientServiceName":    etcdutil.ClientServiceName(name),
+		"DiscoveryServiceName": etcdutil.DiscoveryServiceName(name),
+	}
+}
+
 func NewShardComponent(shard hyperv1.ManagedEtcdShardSpec) component.ControlPlaneComponent {
 	shardName := fmt.Sprintf("etcd-%s", shard.Name)
 	s := &etcdShard{
@@ -54,31 +63,26 @@ func NewShardComponent(shard hyperv1.ManagedEtcdShardSpec) component.ControlPlan
 
 	return component.NewStatefulSetComponent(shardName, s).
 		WithAssetDir("etcd").
+		WithTemplateData(etcdTemplateData(shardName)).
 		WithAdaptFunction(func(cpContext component.WorkloadContext, sts *appsv1.StatefulSet) error {
 			return adaptStatefulSetForShard(cpContext, sts, shard)
 		}).
 		WithPredicate(isManagedETCD).
 		WithManifestAdapter(
-			"service.yaml",
-			component.WithAdaptFunction(adaptServiceForShard(shardName)),
-		).
-		WithManifestAdapter(
-			"discovery-service.yaml",
-			component.WithAdaptFunction(adaptDiscoveryServiceForShard(shardName)),
-		).
-		WithManifestAdapter(
 			"servicemonitor.yaml",
 			component.WithAdaptFunction(func(cpContext component.WorkloadContext, sm *prometheusoperatorv1.ServiceMonitor) error {
-				return adaptServiceMonitorForShard(cpContext, sm, shardName)
+				return adaptServiceMonitor(cpContext, sm)
 			}),
 		).
 		WithManifestAdapter(
 			"pdb.yaml",
-			component.WithAdaptFunction(adaptPDBForShard(shardName)),
 			// Skip PDB entirely for single-replica shards; replicas is immutable
 			// so there is no lifecycle concern about needing to add it later.
 			component.WithPredicate(func(_ component.WorkloadContext) bool { return shard.Replicas >= 3 }),
 		).
+		// Suppress RBAC and ServiceAccount manifests for shards. These resources
+		// are shared with the default etcd component — shards reuse its defrag SA
+		// and self-register RBAC rather than creating per-shard duplicates.
 		WithManifestAdapter(
 			"defrag-role.yaml",
 			component.WithPredicate(func(_ component.WorkloadContext) bool { return false }),
@@ -91,44 +95,37 @@ func NewShardComponent(shard hyperv1.ManagedEtcdShardSpec) component.ControlPlan
 			"defrag-serviceaccount.yaml",
 			component.WithPredicate(func(_ component.WorkloadContext) bool { return false }),
 		).
+		WithManifestAdapter(
+			"etcd-serviceaccount.yaml",
+			component.WithPredicate(func(_ component.WorkloadContext) bool { return false }),
+		).
+		WithManifestAdapter(
+			"etcd-self-register-role.yaml",
+			component.WithPredicate(func(_ component.WorkloadContext) bool { return false }),
+		).
+		WithManifestAdapter(
+			"etcd-self-register-rolebinding.yaml",
+			component.WithPredicate(func(_ component.WorkloadContext) bool { return false }),
+		).
+		WithManifestAdapter(
+			"etcd-self-register-rolebinding-defrag.yaml",
+			component.WithPredicate(func(_ component.WorkloadContext) bool { return false }),
+		).
 		Build()
 }
 
-func adaptServiceForShard(shardName string) func(component.WorkloadContext, *corev1.Service) error {
-	return func(_ component.WorkloadContext, svc *corev1.Service) error {
-		svc.Name = etcdutil.ClientServiceName(shardName)
-		svc.Labels["app"] = shardName
-		svc.Spec.Selector["app"] = shardName
-		return nil
-	}
-}
-
-func adaptDiscoveryServiceForShard(shardName string) func(component.WorkloadContext, *corev1.Service) error {
-	return func(_ component.WorkloadContext, svc *corev1.Service) error {
-		svc.Name = etcdutil.DiscoveryServiceName(shardName)
-		svc.Spec.Selector["app"] = shardName
-		return nil
-	}
-}
-
-func adaptPDBForShard(shardName string) func(component.WorkloadContext, *policyv1.PodDisruptionBudget) error {
-	return func(_ component.WorkloadContext, pdb *policyv1.PodDisruptionBudget) error {
-		pdb.Name = shardName
-		pdb.Spec.Selector.MatchLabels["app"] = shardName
-		return nil
-	}
-}
-
+// adaptStatefulSetForShard applies shard-specific domain logic that cannot be expressed
+// as simple template substitutions. Template rendering (via WithTemplateData) handles
+// static naming — metadata.name, labels, selectors, serviceName, and discovery/client
+// service names in the YAML. This function handles dynamic values that depend on runtime
+// state: replica count, member list construction, env var overrides, init container
+// scripts (complex bash that's easier to override wholesale in Go), volume secret
+// remapping, IPv6 adaptation, defrag sidecar injection, storage, and scheduling.
 func adaptStatefulSetForShard(cpContext component.WorkloadContext, sts *appsv1.StatefulSet, shard hyperv1.ManagedEtcdShardSpec) error {
 	hcp := cpContext.HCP
 	shardName := fmt.Sprintf("etcd-%s", shard.Name)
 	discoveryService := etcdutil.DiscoveryServiceName(shardName)
 	clientService := etcdutil.ClientServiceName(shardName)
-
-	sts.Spec.ServiceName = discoveryService
-
-	sts.Spec.Selector.MatchLabels["app"] = shardName
-	sts.Spec.Template.Labels["app"] = shardName
 
 	// Use the explicit per-shard replica count from the API.
 	replicas := shard.Replicas
@@ -309,19 +306,18 @@ func adaptShardStorage(sts *appsv1.StatefulSet, shard hyperv1.ManagedEtcdShardSp
 		// Memory limit must account for both the tmpfs (which counts against the
 		// container's cgroup) and etcd's own working-set memory. Without headroom
 		// the pod OOMs before the "disk" is full.
+		// Only the limit is set — tmpfs does not pre-allocate memory, so the
+		// actual usage at rest is small. The request stays at the base asset
+		// value (600Mi) so the scheduler can place the pod without requiring
+		// the full tmpfs ceiling to be free.
 		etcdHeadroom := resource.MustParse("512Mi")
 		memLimit := sizeLimit.DeepCopy()
 		memLimit.Add(etcdHeadroom)
 		podspec.UpdateContainer(ComponentName, sts.Spec.Template.Spec.Containers, func(c *corev1.Container) {
-			c.Resources.Limits = corev1.ResourceList{
-				corev1.ResourceMemory: memLimit,
+			if c.Resources.Limits == nil {
+				c.Resources.Limits = corev1.ResourceList{}
 			}
-			// Bump memory request to match the limit so the pod is Guaranteed QoS
-			// for the memory dimension — tmpfs usage counts against the cgroup.
-			if c.Resources.Requests == nil {
-				c.Resources.Requests = corev1.ResourceList{}
-			}
-			c.Resources.Requests[corev1.ResourceMemory] = memLimit
+			c.Resources.Limits[corev1.ResourceMemory] = memLimit
 		})
 
 	}
@@ -339,15 +335,4 @@ func adaptShardScheduling(sts *appsv1.StatefulSet, shard hyperv1.ManagedEtcdShar
 	if len(shard.Scheduling.Tolerations) > 0 {
 		sts.Spec.Template.Spec.Tolerations = append(sts.Spec.Template.Spec.Tolerations, shard.Scheduling.Tolerations...)
 	}
-}
-
-func adaptServiceMonitorForShard(cpContext component.WorkloadContext, sm *prometheusoperatorv1.ServiceMonitor, shardName string) error {
-	if err := adaptServiceMonitor(cpContext, sm); err != nil {
-		return err
-	}
-	sm.Name = shardName
-	sm.Spec.Selector.MatchLabels["app"] = shardName
-	clientSvc := etcdutil.ClientServiceName(shardName)
-	sm.Spec.Endpoints[0].TLSConfig.ServerName = &clientSvc
-	return nil
 }

@@ -58,16 +58,34 @@ func TestLoadStatefulSetManifest(t *testing.T) {
 	testCases := []struct {
 		name          string
 		componentName string
+		templateData  map[string]string
 		validate      func(g Gomega, sts *appsv1.StatefulSet, err error)
 	}{
 		{
-			name:          "When loading a valid statefulset manifest, it should decode successfully",
+			name:          "When loading a templated statefulset manifest with Name=etcd, it should decode successfully",
 			componentName: "etcd",
+			templateData:  map[string]string{"Name": "etcd", "ClientServiceName": "etcd-client", "DiscoveryServiceName": "etcd-discovery"},
 			validate: func(g Gomega, sts *appsv1.StatefulSet, err error) {
 				g.Expect(err).ToNot(HaveOccurred())
 				g.Expect(sts).ToNot(BeNil())
 				g.Expect(sts.Kind).To(Equal("StatefulSet"))
 				g.Expect(sts.Name).To(Equal("etcd"))
+				g.Expect(sts.Spec.Selector.MatchLabels["app"]).To(Equal("etcd"))
+				g.Expect(sts.Spec.Template.Labels["app"]).To(Equal("etcd"))
+				g.Expect(sts.Spec.ServiceName).To(Equal("etcd-discovery"))
+			},
+		},
+		{
+			name:          "When loading a templated statefulset manifest with shard name, it should produce shard-specific names",
+			componentName: "etcd",
+			templateData:  map[string]string{"Name": "etcd-events", "ClientServiceName": "etcd-client-events", "DiscoveryServiceName": "etcd-discovery-events"},
+			validate: func(g Gomega, sts *appsv1.StatefulSet, err error) {
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(sts).ToNot(BeNil())
+				g.Expect(sts.Name).To(Equal("etcd-events"))
+				g.Expect(sts.Spec.Selector.MatchLabels["app"]).To(Equal("etcd-events"))
+				g.Expect(sts.Spec.Template.Labels["app"]).To(Equal("etcd-events"))
+				g.Expect(sts.Spec.ServiceName).To(Equal("etcd-discovery-events"))
 			},
 		},
 		{
@@ -85,7 +103,7 @@ func TestLoadStatefulSetManifest(t *testing.T) {
 			t.Parallel()
 			g := NewWithT(t)
 
-			sts, err := LoadStatefulSetManifest(tc.componentName)
+			sts, err := LoadStatefulSetManifestTemplated(tc.componentName, tc.templateData)
 			tc.validate(g, sts, err)
 		})
 	}
@@ -382,4 +400,107 @@ type testError struct {
 
 func (e *testError) Error() string {
 	return e.msg
+}
+
+func TestLoadManifestTemplated(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name          string
+		componentName string
+		fileName      string
+		templateData  map[string]string
+		validate      func(g Gomega, obj client.Object, gvk *schema.GroupVersionKind, err error)
+	}{
+		{
+			name:          "When Name=etcd, service.yaml should render to original hardcoded values",
+			componentName: "etcd",
+			fileName:      "service.yaml",
+			templateData:  map[string]string{"Name": "etcd", "ClientServiceName": "etcd-client", "DiscoveryServiceName": "etcd-discovery"},
+			validate: func(g Gomega, obj client.Object, gvk *schema.GroupVersionKind, err error) {
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(obj.GetName()).To(Equal("etcd-client"))
+				svc := obj.(*corev1.Service)
+				g.Expect(svc.Labels["app"]).To(Equal("etcd"))
+				g.Expect(svc.Spec.Selector["app"]).To(Equal("etcd"))
+			},
+		},
+		{
+			name:          "When Name=etcd-events, service.yaml should render shard-specific names",
+			componentName: "etcd",
+			fileName:      "service.yaml",
+			templateData:  map[string]string{"Name": "etcd-events", "ClientServiceName": "etcd-client-events", "DiscoveryServiceName": "etcd-discovery-events"},
+			validate: func(g Gomega, obj client.Object, gvk *schema.GroupVersionKind, err error) {
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(obj.GetName()).To(Equal("etcd-client-events"))
+				svc := obj.(*corev1.Service)
+				g.Expect(svc.Labels["app"]).To(Equal("etcd-events"))
+				g.Expect(svc.Spec.Selector["app"]).To(Equal("etcd-events"))
+			},
+		},
+		{
+			name:          "When Name=etcd, discovery-service.yaml should render to original values",
+			componentName: "etcd",
+			fileName:      "discovery-service.yaml",
+			templateData:  map[string]string{"Name": "etcd", "ClientServiceName": "etcd-client", "DiscoveryServiceName": "etcd-discovery"},
+			validate: func(g Gomega, obj client.Object, gvk *schema.GroupVersionKind, err error) {
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(obj.GetName()).To(Equal("etcd-discovery"))
+				svc := obj.(*corev1.Service)
+				g.Expect(svc.Spec.Selector["app"]).To(Equal("etcd"))
+			},
+		},
+		{
+			name:          "When Name=etcd-events, discovery-service.yaml should render shard names",
+			componentName: "etcd",
+			fileName:      "discovery-service.yaml",
+			templateData:  map[string]string{"Name": "etcd-events", "ClientServiceName": "etcd-client-events", "DiscoveryServiceName": "etcd-discovery-events"},
+			validate: func(g Gomega, obj client.Object, gvk *schema.GroupVersionKind, err error) {
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(obj.GetName()).To(Equal("etcd-discovery-events"))
+				svc := obj.(*corev1.Service)
+				g.Expect(svc.Spec.Selector["app"]).To(Equal("etcd-events"))
+			},
+		},
+		{
+			name:          "When Name=etcd, pdb.yaml should render to original values",
+			componentName: "etcd",
+			fileName:      "pdb.yaml",
+			templateData:  map[string]string{"Name": "etcd", "ClientServiceName": "etcd-client", "DiscoveryServiceName": "etcd-discovery"},
+			validate: func(g Gomega, obj client.Object, gvk *schema.GroupVersionKind, err error) {
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(obj.GetName()).To(Equal("etcd"))
+			},
+		},
+		{
+			name:          "When Name=etcd-events, pdb.yaml should render shard name",
+			componentName: "etcd",
+			fileName:      "pdb.yaml",
+			templateData:  map[string]string{"Name": "etcd-events", "ClientServiceName": "etcd-client-events", "DiscoveryServiceName": "etcd-discovery-events"},
+			validate: func(g Gomega, obj client.Object, gvk *schema.GroupVersionKind, err error) {
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(obj.GetName()).To(Equal("etcd-events"))
+			},
+		},
+		{
+			name:          "When templateData is nil, it should fall through to raw decode",
+			componentName: "cluster-autoscaler",
+			fileName:      "serviceaccount.yaml",
+			templateData:  nil,
+			validate: func(g Gomega, obj client.Object, gvk *schema.GroupVersionKind, err error) {
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(obj.GetName()).To(Equal("cluster-autoscaler"))
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			obj, gvk, err := LoadManifestTemplated(tc.componentName, tc.fileName, tc.templateData)
+			tc.validate(g, obj, gvk, err)
+		})
+	}
 }

@@ -1,6 +1,8 @@
 package controlplanecomponent
 
 import (
+	"fmt"
+
 	assets "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
 	"github.com/openshift/hypershift/support/k8sutil"
 
@@ -27,6 +29,22 @@ func (d *jobProvider) SetReplicasAndStrategy(object *batchv1.Job, replicas int32
 // LoadManifest implements WorkloadProvider.
 func (c *jobProvider) LoadManifest(componentName string) (*batchv1.Job, error) {
 	return assets.LoadJobManifest(componentName)
+}
+
+// LoadManifestTemplated implements WorkloadProvider.
+func (c *jobProvider) LoadManifestTemplated(componentName string, templateData map[string]string) (*batchv1.Job, error) {
+	if templateData == nil {
+		return c.LoadManifest(componentName)
+	}
+	obj, _, err := assets.LoadManifestTemplated(componentName, "job.yaml", templateData)
+	if err != nil {
+		return nil, err
+	}
+	job, ok := obj.(*batchv1.Job)
+	if !ok {
+		return nil, fmt.Errorf("expected Job but got %T", obj)
+	}
+	return job, nil
 }
 
 // PodTemplateSpec implements WorkloadProvider.

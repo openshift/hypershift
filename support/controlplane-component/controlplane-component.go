@@ -20,6 +20,7 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -143,6 +144,9 @@ type controlPlaneWorkload[T client.Object] struct {
 	// predicate is called at the beginning, the component is disabled if it returns false.
 	predicate func(cpContext WorkloadContext) (bool, error)
 
+	// templateData, when non-nil, causes asset YAMLs to be rendered as Go templates before decoding.
+	templateData map[string]string
+
 	// if provided, konnectivity proxy container and required volumes will be injected into the deployment/statefulset.
 	konnectivityContainerOpts *KonnectivityContainerOptions
 	// if provided, availabilityProber container and required volumes will be injected into the deployment/statefulset.
@@ -210,6 +214,11 @@ func (c *controlPlaneWorkload[T]) Reconcile(cpContext ControlPlaneContext) error
 	return reconcilationError
 }
 
+// loadManifest loads a manifest, applying template rendering if templateData is set.
+func (c *controlPlaneWorkload[T]) loadManifest(fileName string) (client.Object, *schema.GroupVersionKind, error) {
+	return assets.LoadManifestTemplated(c.AssetDirName(), fileName, c.templateData)
+}
+
 func (c *controlPlaneWorkload[T]) delete(cpContext ControlPlaneContext) error {
 	workloadObj := c.workloadProvider.NewObject()
 	// make sure that the Deployment/Statefulset name matches the component name.
@@ -223,24 +232,17 @@ func (c *controlPlaneWorkload[T]) delete(cpContext ControlPlaneContext) error {
 
 	// delete all resources.
 	// When using WithAssetDir, the raw manifest names may not match the
-	// component's actual resource names (manifest adapters rename them).
-	// Run each adapter's adapt function so the object has the correct name
-	// before deletion.
+	// When using WithTemplateData, template rendering produces correctly-named
+	// objects at load time. Do NOT call adapt functions during delete — the
+	// delete path runs when a component's predicate returns false (e.g. Azure
+	// CCM on an AWS cluster), and adapt functions may assume platform-specific
+	// config exists, causing nil pointer panics.
 	if err := assets.ForEachManifest(c.AssetDirName(), func(manifestName string) error {
-		obj, _, err := assets.LoadManifest(c.AssetDirName(), manifestName)
+		obj, _, err := c.loadManifest(manifestName)
 		if err != nil {
 			return err
 		}
 		obj.SetNamespace(cpContext.HCP.Namespace)
-
-		// Apply manifest adapter renames so we delete the right resource.
-		if adapter, exists := c.manifestsAdapters[manifestName]; exists {
-			if adapter.adapt != nil {
-				if err := adapter.adapt(cpContext.workloadContext(), obj); err != nil {
-					return err
-				}
-			}
-		}
 
 		if cpContext.GVKAccessChecker != nil {
 			accessible, err := cpContext.GVKAccessChecker.GetOrProbe(cpContext, obj)
@@ -274,7 +276,7 @@ func (c *controlPlaneWorkload[T]) update(cpContext ControlPlaneContext) error {
 	ownerRef := config.OwnerRefFrom(hcp)
 	// reconcile resources such as ConfigMaps and Secrets first, as the deployment might depend on them.
 	if err := assets.ForEachManifest(c.AssetDirName(), func(manifestName string) error {
-		obj, _, err := assets.LoadManifest(c.AssetDirName(), manifestName)
+		obj, _, err := c.loadManifest(manifestName)
 		if err != nil {
 			return err
 		}
@@ -332,7 +334,7 @@ func (c *controlPlaneWorkload[T]) update(cpContext ControlPlaneContext) error {
 }
 
 func (c *controlPlaneWorkload[T]) reconcileWorkload(cpContext ControlPlaneContext) error {
-	workloadObj, err := c.workloadProvider.LoadManifest(c.AssetDirName())
+	workloadObj, err := c.workloadProvider.LoadManifestTemplated(c.AssetDirName(), c.templateData)
 	if err != nil {
 		return fmt.Errorf("failed loading workload manifest: %w", err)
 	}

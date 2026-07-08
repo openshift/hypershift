@@ -109,7 +109,7 @@ func (c *controlPlaneWorkload[T]) reconcileComponentStatus(cpContext ControlPlan
 			return nil
 		}
 
-		obj, gvk, err := assets.LoadManifest(c.AssetDirName(), manifestName)
+		obj, gvk, err := c.loadManifest(manifestName)
 		if err != nil {
 			return err
 		}

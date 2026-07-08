@@ -8,16 +8,11 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/api/util/ipnet"
 	component "github.com/openshift/hypershift/support/controlplane-component"
-	"github.com/openshift/hypershift/support/metrics"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	policyv1 "k8s.io/api/policy/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/intstr"
-
-	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 )
 
 func TestEtcdShardInterface(t *testing.T) {
@@ -67,62 +62,26 @@ func TestNewShardComponent(t *testing.T) {
 	})
 }
 
-func TestAdaptServiceForShard(t *testing.T) {
-	t.Parallel()
-	g := NewWithT(t)
-
-	svc := &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{
-			Labels: map[string]string{"app": "etcd"},
-		},
-		Spec: corev1.ServiceSpec{
-			Selector: map[string]string{"app": "etcd"},
-		},
-	}
-
-	fn := adaptServiceForShard("etcd-events")
-	err := fn(component.WorkloadContext{}, svc)
-	g.Expect(err).ToNot(HaveOccurred())
-	g.Expect(svc.Name).To(Equal("etcd-client-events"))
-	g.Expect(svc.Labels["app"]).To(Equal("etcd-events"))
-	g.Expect(svc.Spec.Selector["app"]).To(Equal("etcd-events"))
-}
-
-func TestAdaptDiscoveryServiceForShard(t *testing.T) {
-	t.Parallel()
-	g := NewWithT(t)
-
-	svc := &corev1.Service{
-		Spec: corev1.ServiceSpec{
-			Selector: map[string]string{"app": "etcd"},
-		},
-	}
-
-	fn := adaptDiscoveryServiceForShard("etcd-events")
-	err := fn(component.WorkloadContext{}, svc)
-	g.Expect(err).ToNot(HaveOccurred())
-	g.Expect(svc.Name).To(Equal("etcd-discovery-events"))
-	g.Expect(svc.Spec.Selector["app"]).To(Equal("etcd-events"))
-}
-
-func TestAdaptPDBForShard(t *testing.T) {
+func TestEtcdTemplateData(t *testing.T) {
 	t.Parallel()
 
-	g := NewWithT(t)
-	minAvail := intstr.FromInt32(2)
-	pdb := &policyv1.PodDisruptionBudget{
-		Spec: policyv1.PodDisruptionBudgetSpec{
-			Selector:     &metav1.LabelSelector{MatchLabels: map[string]string{"app": "etcd"}},
-			MinAvailable: &minAvail,
-		},
-	}
-	fn := adaptPDBForShard("etcd-events")
-	err := fn(component.WorkloadContext{}, pdb)
-	g.Expect(err).ToNot(HaveOccurred())
-	g.Expect(pdb.Name).To(Equal("etcd-events"))
-	g.Expect(pdb.Spec.Selector.MatchLabels["app"]).To(Equal("etcd-events"))
-	g.Expect(pdb.Spec.MinAvailable).ToNot(BeNil())
-	g.Expect(pdb.Spec.MaxUnavailable).To(BeNil())
+	t.Run("When name is etcd, it should produce correct template data", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+		data := etcdTemplateData("etcd")
+		g.Expect(data["Name"]).To(Equal("etcd"))
+		g.Expect(data["ClientServiceName"]).To(Equal("etcd-client"))
+		g.Expect(data["DiscoveryServiceName"]).To(Equal("etcd-discovery"))
+	})
+
+	t.Run("When name is a shard, it should produce correct template data", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+		data := etcdTemplateData("etcd-events")
+		g.Expect(data["Name"]).To(Equal("etcd-events"))
+		g.Expect(data["ClientServiceName"]).To(Equal("etcd-client-events"))
+		g.Expect(data["DiscoveryServiceName"]).To(Equal("etcd-discovery-events"))
+	})
 }
 
 func TestAdaptShardStorage(t *testing.T) {
@@ -377,11 +336,13 @@ func TestAdaptStatefulSetForShard(t *testing.T) {
 		t.Parallel()
 		g := NewWithT(t)
 
+		// Simulate template-rendered STS: labels and serviceName already set for shard.
 		sts := &appsv1.StatefulSet{
 			Spec: appsv1.StatefulSetSpec{
-				Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "etcd"}},
+				Selector:    &metav1.LabelSelector{MatchLabels: map[string]string{"app": "etcd-events"}},
+				ServiceName: "etcd-discovery-events",
 				Template: corev1.PodTemplateSpec{
-					ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": "etcd"}},
+					ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": "etcd-events"}},
 					Spec: corev1.PodSpec{
 						Containers: []corev1.Container{
 							{Name: ComponentName, Env: []corev1.EnvVar{}},
@@ -463,11 +424,13 @@ func TestAdaptStatefulSetForShard_IPv6WithDefrag(t *testing.T) {
 	t.Parallel()
 	g := NewWithT(t)
 
+	// Simulate template-rendered STS for shard.
 	sts := &appsv1.StatefulSet{
 		Spec: appsv1.StatefulSetSpec{
-			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "etcd"}},
+			Selector:    &metav1.LabelSelector{MatchLabels: map[string]string{"app": "etcd-events"}},
+			ServiceName: "etcd-discovery-events",
 			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": "etcd"}},
+				ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": "etcd-events"}},
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{
 						{Name: ComponentName, Env: []corev1.EnvVar{}},
@@ -546,48 +509,6 @@ func TestAdaptStatefulSetForShard_IPv6WithDefrag(t *testing.T) {
 		}
 	}
 	g.Expect(hasDefrag).To(BeTrue())
-}
-
-func TestAdaptServiceMonitorForShard(t *testing.T) {
-	t.Parallel()
-	g := NewWithT(t)
-
-	cpContext := component.WorkloadContext{
-		HCP: &hyperv1.HostedControlPlane{
-			Spec: hyperv1.HostedControlPlaneSpec{
-				ClusterID: "test-cluster",
-			},
-		},
-		MetricsSet: metrics.MetricsSetTelemetry,
-	}
-
-	svcName := "etcd-client"
-	sm := &prometheusoperatorv1.ServiceMonitor{
-		Spec: prometheusoperatorv1.ServiceMonitorSpec{
-			Selector: metav1.LabelSelector{
-				MatchLabels: map[string]string{"app": "etcd"},
-			},
-			Endpoints: []prometheusoperatorv1.Endpoint{
-				{
-					HTTPConfigWithProxyAndTLSFiles: prometheusoperatorv1.HTTPConfigWithProxyAndTLSFiles{
-						HTTPConfigWithTLSFiles: prometheusoperatorv1.HTTPConfigWithTLSFiles{
-							TLSConfig: &prometheusoperatorv1.TLSConfig{
-								SafeTLSConfig: prometheusoperatorv1.SafeTLSConfig{
-									ServerName: &svcName,
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-	}
-
-	err := adaptServiceMonitorForShard(cpContext, sm, "etcd-events")
-	g.Expect(err).ToNot(HaveOccurred())
-	g.Expect(sm.Name).To(Equal("etcd-events"))
-	g.Expect(sm.Spec.Selector.MatchLabels["app"]).To(Equal("etcd-events"))
-	g.Expect(*sm.Spec.Endpoints[0].TLSConfig.ServerName).To(Equal("etcd-client-events"))
 }
 
 // mustParseCIDR parses a CIDR string for test use.
