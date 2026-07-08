@@ -8,7 +8,6 @@ import (
 
 const (
 	redhatOperatorsCatalogComponentName    = "redhat-operators-catalog"
-	redhatMarketplaceCatalogComponentName  = "redhat-marketplace-catalog"
 	communityOperatorsCatalogComponentName = "community-operators-catalog"
 	certifiedOperatorsCatalogComponentName = "certified-operators-catalog"
 )
@@ -48,11 +47,6 @@ func NewCatalogComponents(capabilityImageStream bool) []component.ControlPlaneCo
 				component.WithAdaptFunction(adaptImageStream),
 				component.WithPredicate(catalog.imageStreamPredicate),
 			).
-			WithDependencies(oapiv2.ComponentName).
-			Build(),
-		component.NewDeploymentComponent(redhatMarketplaceCatalogComponentName, catalog).
-			WithAdaptFunction(catalog.adaptCatalogDeployment).
-			WithPredicate(catalogsPredicate).
 			WithDependencies(oapiv2.ComponentName).
 			Build(),
 		component.NewDeploymentComponent(communityOperatorsCatalogComponentName, catalog).

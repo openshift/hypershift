@@ -146,14 +146,14 @@ func TestNewCatalogComponents(t *testing.T) {
 		expectedCount         int
 	}{
 		{
-			name:                  "When creating catalog components, it should return 4 components",
+			name:                  "When creating catalog components, it should return 3 components",
 			capabilityImageStream: false,
-			expectedCount:         4,
+			expectedCount:         3,
 		},
 		{
-			name:                  "When creating catalog components with image stream capability, it should return 4 components",
+			name:                  "When creating catalog components with image stream capability, it should return 3 components",
 			capabilityImageStream: true,
-			expectedCount:         4,
+			expectedCount:         3,
 		},
 	}
 
