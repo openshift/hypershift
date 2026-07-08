@@ -490,8 +490,9 @@ func (r *AWSEndpointServiceReconciler) Reconcile(ctx context.Context, req ctrl.R
 	// and after the HCP deletion check to avoid re-adding the finalizer during
 	// HCP deletion cleanup cycles.
 	if !controllerutil.ContainsFinalizer(awsEndpointService, finalizer) {
+		originalAES := awsEndpointService.DeepCopy()
 		controllerutil.AddFinalizer(awsEndpointService, finalizer)
-		if err := r.Update(ctx, awsEndpointService); err != nil {
+		if err := r.Patch(ctx, awsEndpointService, client.MergeFromWithOptions(originalAES, client.MergeFromWithOptimisticLock{})); err != nil {
 			if apierrors.IsConflict(err) {
 				return ctrl.Result{RequeueAfter: time.Second}, nil
 			}

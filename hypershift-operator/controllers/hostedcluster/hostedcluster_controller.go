@@ -39,7 +39,6 @@ import (
 	cpov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/controlplaneoperator"
 	"github.com/openshift/hypershift/control-plane-pki-operator/certificates"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform"
-	platformaws "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/aws"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/proxy"
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
 	validations "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/validations"
@@ -144,8 +143,6 @@ const (
 	jobHostedClusterNamespaceLabel = "hypershift.openshift.io/cluster-namespace"
 
 	etcdCheckRequeueInterval = 10 * time.Second
-
-	awsEndpointDeletionGracePeriod = 10 * time.Minute
 
 	previouslySyncedRestartDateAnnotation = "hypershift.openshift.io/previous-restart-date"
 	kasServingCertHashAnnotation          = "hypershift.openshift.io/kas-serving-cert-hash"
@@ -3583,47 +3580,6 @@ func (r *HostedClusterReconciler) deleteNodePools(ctx context.Context, c client.
 	return nil
 }
 
-// deleteAWSEndpointServices loops over AWSEndpointServiceList items and sends a delete request for each.
-// If the HC has no valid aws credentials it removes the CPO finalizer for each AWSEndpointService.
-// It returns true if len(awsEndpointServiceList.Items) != 0.
-func deleteAWSEndpointServices(ctx context.Context, c client.Client, hc *hyperv1.HostedCluster, namespace string) (bool, error) {
-	log := ctrl.LoggerFrom(ctx)
-	var awsEndpointServiceList hyperv1.AWSEndpointServiceList
-	if err := c.List(ctx, &awsEndpointServiceList, &client.ListOptions{Namespace: namespace}); err != nil && !apierrors.IsNotFound(err) {
-		return false, fmt.Errorf("error listing awsendpointservices in namespace %s: %w", namespace, err)
-	}
-	for _, ep := range awsEndpointServiceList.Items {
-		if ep.DeletionTimestamp != nil {
-			if platformaws.GetCredentialStatus(hc) == platformaws.CredentialStatusValid && time.Since(ep.DeletionTimestamp.Time) < awsEndpointDeletionGracePeriod {
-				continue
-			}
-
-			// We remove the CPO finalizer if there's no valid credentials so deletion can proceed.
-			cpoFinalizer := "hypershift.openshift.io/control-plane-operator-finalizer"
-			if controllerutil.ContainsFinalizer(&ep, cpoFinalizer) {
-				controllerutil.RemoveFinalizer(&ep, cpoFinalizer)
-				if err := c.Update(ctx, &ep); err != nil {
-					return false, fmt.Errorf("failed to remove finalizer from awsendpointservice: %w", err)
-				}
-			}
-			log.Info("Removed CPO finalizer for awsendpointservice because the HC has no valid aws credentials", "name", ep.Name, "endpoint-id", ep.Status.EndpointID)
-			continue
-		}
-
-		if err := c.Delete(ctx, &ep); err != nil && !apierrors.IsNotFound(err) {
-			return false, fmt.Errorf("error deleting awsendpointservices %s in namespace %s: %w", ep.Name, namespace, err)
-		}
-	}
-
-	if len(awsEndpointServiceList.Items) != 0 {
-		// The CPO puts a finalizer on AWSEndpointService resources and should
-		// not be terminated until the resources are removed from the API server
-		return true, nil
-	}
-
-	return false, nil
-}
-
 // deleteGCPPrivateServiceConnect loops over GCPPrivateServiceConnectList items and sends a delete request for each.
 // It returns true if len(gcpPrivateServiceConnectList.Items) != 0.
 func deleteGCPPrivateServiceConnect(ctx context.Context, c client.Client, _ *hyperv1.HostedCluster, namespace string) (bool, error) {
@@ -3828,17 +3784,6 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.Hosted
 	if err = p.DeleteCredentials(ctx, r.Client, hc,
 		controlPlaneNamespace); err != nil {
 		return false, err
-	}
-
-	if hc.Spec.Platform.Type == hyperv1.AWSPlatform {
-		exists, err := deleteAWSEndpointServices(ctx, r.Client, hc, controlPlaneNamespace)
-		if err != nil {
-			return false, err
-		}
-		if exists {
-			log.Info("Waiting for awsendpointservice deletion", "controlPlaneNamespace", controlPlaneNamespace)
-			return false, nil
-		}
 	}
 
 	if hc.Spec.Platform.Type == hyperv1.GCPPlatform {
