@@ -28,15 +28,6 @@ func CommunityOperatorsCatalogSource() *operatorsv1alpha1.CatalogSource {
 	}
 }
 
-func RedHatMarketplaceCatalogSource() *operatorsv1alpha1.CatalogSource {
-	return &operatorsv1alpha1.CatalogSource{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "redhat-marketplace",
-			Namespace: "openshift-marketplace",
-		},
-	}
-}
-
 func RedHatOperatorsCatalogSource() *operatorsv1alpha1.CatalogSource {
 	return &operatorsv1alpha1.CatalogSource{
 		ObjectMeta: metav1.ObjectMeta{

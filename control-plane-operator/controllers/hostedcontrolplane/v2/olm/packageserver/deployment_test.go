@@ -34,7 +34,7 @@ func TestAdaptDeployment(t *testing.T) {
 			platformType:                 hyperv1.AWSPlatform,
 			olmCatalogPlacement:          hyperv1.ManagementOLMCatalogPlacement,
 			controllerAvailabilityPolicy: hyperv1.SingleReplica,
-			expectedNoProxyHosts:         []string{"kube-apiserver", "certified-operators", "community-operators", "redhat-operators", "redhat-marketplace"},
+			expectedNoProxyHosts:         []string{"kube-apiserver", "certified-operators", "community-operators", "redhat-operators"},
 			expectedReleaseVersion:       "4.15.0",
 			expectedReplicas:             nil,
 			expectedKASReadinessCheck:    true,

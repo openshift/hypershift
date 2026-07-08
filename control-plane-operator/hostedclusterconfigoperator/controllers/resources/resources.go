@@ -2407,7 +2407,6 @@ func (r *reconciler) reconcileOLM(ctx context.Context, hcp *hyperv1.HostedContro
 	}{
 		{manifest: manifests.CertifiedOperatorsCatalogSource, reconcile: olm.ReconcileCertifiedOperatorsCatalogSource},
 		{manifest: manifests.CommunityOperatorsCatalogSource, reconcile: olm.ReconcileCommunityOperatorsCatalogSource},
-		{manifest: manifests.RedHatMarketplaceCatalogSource, reconcile: olm.ReconcileRedHatMarketplaceCatalogSource},
 		{manifest: manifests.RedHatOperatorsCatalogSource, reconcile: olm.ReconcileRedHatOperatorsCatalogSource},
 	}
 
@@ -2431,6 +2430,17 @@ func (r *reconciler) reconcileOLM(ctx context.Context, hcp *hyperv1.HostedContro
 				errs = append(errs, fmt.Errorf("failed to reconcile catalog source %s/%s: %w", cs.Namespace, cs.Name, err))
 			}
 		}
+	}
+
+	// Cleanup: delete the deprecated redhat-marketplace CatalogSource if it still exists from a previous version.
+	deprecatedMarketplaceCatalog := &operatorsv1alpha1.CatalogSource{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "redhat-marketplace",
+			Namespace: "openshift-marketplace",
+		},
+	}
+	if _, err := k8sutil.DeleteIfNeeded(ctx, r.client, deprecatedMarketplaceCatalog); err != nil {
+		errs = append(errs, fmt.Errorf("failed to delete deprecated redhat-marketplace CatalogSource: %w", err))
 	}
 
 	rootCA := cpomanifests.RootCASecret(hcp.Namespace)

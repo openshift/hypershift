@@ -15,14 +15,14 @@ func TestNewComponents(t *testing.T) {
 		expectedCount         int
 	}{
 		{
-			name:                  "When capabilityImageStream is false, it should return 8 components",
+			name:                  "When capabilityImageStream is false, it should return 7 components",
 			capabilityImageStream: false,
-			expectedCount:         8,
+			expectedCount:         7,
 		},
 		{
-			name:                  "When capabilityImageStream is true, it should return 8 components",
+			name:                  "When capabilityImageStream is true, it should return 7 components",
 			capabilityImageStream: true,
-			expectedCount:         8,
+			expectedCount:         7,
 		},
 	}
 

@@ -28,7 +28,7 @@ func TestAdaptDeployment(t *testing.T) {
 		{
 			name:                   "When OLMCatalogPlacement is Management, it should set NO_PROXY with catalog services",
 			olmCatalogPlacement:    hyperv1.ManagementOLMCatalogPlacement,
-			expectedNoProxyHosts:   []string{"kube-apiserver", "certified-operators", "community-operators", "redhat-operators", "redhat-marketplace"},
+			expectedNoProxyHosts:   []string{"kube-apiserver", "certified-operators", "community-operators", "redhat-operators"},
 			expectedReleaseVersion: "4.15.0",
 		},
 		{

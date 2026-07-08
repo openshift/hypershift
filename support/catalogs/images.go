@@ -158,14 +158,12 @@ func computeCatalogImages(releaseVersion func() (*semver.Version, error), imageE
 	catalogImageNames := map[string]string{
 		"certified-operators": "certified-operator-index",
 		"community-operators": "community-operator-index",
-		"redhat-marketplace":  "redhat-marketplace-index",
 		"redhat-operators":    "redhat-operator-index",
 	}
 
 	catalogs := map[string]string{
 		"certified-operators": "",
 		"community-operators": "",
-		"redhat-marketplace":  "",
 		"redhat-operators":    "",
 	}
 
