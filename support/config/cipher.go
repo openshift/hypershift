@@ -3,11 +3,14 @@ package config
 import (
 	"context"
 	"crypto/tls"
+	"encoding/json"
+	"fmt"
 
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/library-go/pkg/crypto"
 
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/yaml"
 
 	"go.etcd.io/etcd/client/pkg/v3/tlsutil"
 )
@@ -123,4 +126,40 @@ func SetCipherSuitesUsingAPIServer(apiServerConfig *configv1.APIServer) (func(*t
 	return func(tlsConfig *tls.Config) {
 		tlsConfig.CipherSuites = suites
 	}, nil
+}
+
+// BuildGenericControllerConfigData builds a GenericControllerConfig YAML string
+// with the specified bind address, bind network, and TLS security profile.
+// This is used by various control plane operators to configure their serving info.
+func BuildGenericControllerConfigData(bindAddress, bindNetwork string, profile *configv1.TLSSecurityProfile) (string, error) {
+	controllerConfig := configv1.GenericControllerConfig{
+		ServingInfo: configv1.HTTPServingInfo{
+			ServingInfo: configv1.ServingInfo{
+				BindAddress:   bindAddress,
+				BindNetwork:   bindNetwork,
+				CipherSuites:  CipherSuites(profile),
+				MinTLSVersion: MinTLSVersion(profile),
+			},
+		},
+	}
+
+	asJSON, err := json.Marshal(controllerConfig)
+	if err != nil {
+		return "", fmt.Errorf("failed to json marshal config: %w", err)
+	}
+
+	asMap := map[string]any{}
+	if err := json.Unmarshal(asJSON, &asMap); err != nil {
+		return "", fmt.Errorf("failed to json unmarshal config: %w", err)
+	}
+
+	asMap["apiVersion"] = configv1.GroupVersion.String()
+	asMap["kind"] = "GenericControllerConfig"
+
+	data, err := yaml.Marshal(asMap)
+	if err != nil {
+		return "", fmt.Errorf("failed to yaml marshal config: %w", err)
+	}
+
+	return string(data), nil
 }

@@ -7,6 +7,8 @@ import (
 	. "github.com/onsi/gomega"
 
 	configv1 "github.com/openshift/api/config/v1"
+
+	"sigs.k8s.io/yaml"
 )
 
 func TestSetMinTLSVersionUsingAPIServer(t *testing.T) {
@@ -251,6 +253,161 @@ func TestSupportedEtcdCipherSuites(t *testing.T) {
 
 			result := SupportedEtcdCipherSuites(t.Context(), tc.input)
 			g.Expect(result).To(Equal(tc.expected))
+		})
+	}
+}
+
+func TestBuildGenericControllerConfigData(t *testing.T) {
+	t.Parallel()
+
+	intermediateCiphers := []string{
+		"TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256",
+		"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+		"TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384",
+		"TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384",
+		"TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256",
+		"TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256",
+	}
+
+	oldCiphers := []string{
+		"TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256",
+		"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+		"TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384",
+		"TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384",
+		"TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256",
+		"TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256",
+		"TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA",
+		"TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA",
+		"TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA",
+		"TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA",
+	}
+
+	customCiphers := []string{
+		"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+		"TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384",
+	}
+
+	testCases := []struct {
+		name                 string
+		bindAddress          string
+		bindNetwork          string
+		profile              *configv1.TLSSecurityProfile
+		expectedMinTLS       string
+		expectedCipherSuites []string
+	}{
+		{
+			name:                 "Nil profile uses intermediate defaults",
+			bindAddress:          "0.0.0.0:8443",
+			bindNetwork:          "tcp",
+			expectedMinTLS:       "VersionTLS12",
+			expectedCipherSuites: intermediateCiphers,
+		},
+		{
+			name:        "Modern profile has TLS13 and no ciphers",
+			bindAddress: "127.0.0.1:8443",
+			bindNetwork: "tcp",
+			profile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileModernType,
+			},
+			expectedMinTLS: "VersionTLS13",
+		},
+		{
+			name:        "Intermediate profile has TLS12 and intermediate ciphers",
+			bindAddress: "0.0.0.0:6443",
+			bindNetwork: "tcp4",
+			profile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileIntermediateType,
+			},
+			expectedMinTLS:       "VersionTLS12",
+			expectedCipherSuites: intermediateCiphers,
+		},
+		{
+			name:        "Old profile has TLS10 and old ciphers",
+			bindAddress: "0.0.0.0:8443",
+			bindNetwork: "tcp",
+			profile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileOldType,
+			},
+			expectedMinTLS:       "VersionTLS10",
+			expectedCipherSuites: oldCiphers,
+		},
+		{
+			name:        "Custom profile uses custom TLS version and ciphers",
+			bindAddress: "0.0.0.0:8080",
+			bindNetwork: "tcp",
+			profile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileCustomType,
+				Custom: &configv1.CustomTLSProfile{
+					TLSProfileSpec: configv1.TLSProfileSpec{
+						MinTLSVersion: configv1.VersionTLS12,
+						Ciphers: []string{
+							"ECDHE-RSA-AES128-GCM-SHA256",
+							"ECDHE-RSA-AES256-GCM-SHA384",
+						},
+					},
+				},
+			},
+			expectedMinTLS:       "VersionTLS12",
+			expectedCipherSuites: customCiphers,
+		},
+		{
+			name:                 "Different bind address and network",
+			bindAddress:          "192.168.1.1:9443",
+			bindNetwork:          "unix",
+			expectedMinTLS:       "VersionTLS12",
+			expectedCipherSuites: intermediateCiphers,
+		},
+		{
+			name:        "Custom profile with unknown ciphers results in empty list",
+			bindAddress: "0.0.0.0:8443",
+			bindNetwork: "tcp",
+			profile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileCustomType,
+				Custom: &configv1.CustomTLSProfile{
+					TLSProfileSpec: configv1.TLSProfileSpec{
+						MinTLSVersion: configv1.VersionTLS12,
+						Ciphers: []string{
+							"INVALID_CIPHER_SUITE",
+							"UNKNOWN_CIPHER",
+						},
+					},
+				},
+			},
+			expectedMinTLS: "VersionTLS12",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			yamlStr, err := BuildGenericControllerConfigData(tc.bindAddress, tc.bindNetwork, tc.profile)
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(yamlStr).ToNot(BeEmpty())
+
+			var config map[string]interface{}
+			err = yaml.Unmarshal([]byte(yamlStr), &config)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			g.Expect(config["apiVersion"]).To(Equal("config.openshift.io/v1"))
+			g.Expect(config["kind"]).To(Equal("GenericControllerConfig"))
+
+			servingInfo := config["servingInfo"].(map[string]interface{})
+			g.Expect(servingInfo["bindAddress"]).To(Equal(tc.bindAddress))
+			g.Expect(servingInfo["bindNetwork"]).To(Equal(tc.bindNetwork))
+			g.Expect(servingInfo["minTLSVersion"]).To(Equal(tc.expectedMinTLS))
+
+			if len(tc.expectedCipherSuites) == 0 {
+				cipherSuites := servingInfo["cipherSuites"]
+				g.Expect(cipherSuites).To(BeNil())
+			} else {
+				cipherSuites := servingInfo["cipherSuites"].([]interface{})
+				g.Expect(cipherSuites).To(HaveLen(len(tc.expectedCipherSuites)))
+				for i, expectedCipher := range tc.expectedCipherSuites {
+					g.Expect(cipherSuites[i]).To(Equal(expectedCipher))
+				}
+			}
 		})
 	}
 }
