@@ -2628,6 +2628,29 @@ func TestReconcileHCPDeletionClientErrors(t *testing.T) {
 			},
 			expectRequeue: true,
 		},
+		{
+			name: "When removing HCP finalizer returns NotFound it should return nil",
+			awsEndpointSvcs: []*hyperv1.AWSEndpointService{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "private-router",
+						Namespace: "clusters-test",
+					},
+					Status: hyperv1.AWSEndpointServiceStatus{},
+				},
+			},
+			setupMocks: func(mockCtrl *gomock.Controller) *MockawsClientProvider {
+				return NewMockawsClientProvider(mockCtrl)
+			},
+			clientInterceptors: interceptor.Funcs{
+				Patch: func(ctx context.Context, c crclient.WithWatch, obj crclient.Object, patch crclient.Patch, opts ...crclient.PatchOption) error {
+					if _, ok := obj.(*hyperv1.HostedControlPlane); ok {
+						return apierrors.NewNotFound(schema.GroupResource{Resource: "hostedcontrolplanes"}, "test-hcp")
+					}
+					return c.Patch(ctx, obj, patch, opts...)
+				},
+			},
+		},
 	}
 
 	for _, tc := range testCases {

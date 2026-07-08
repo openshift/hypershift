@@ -740,9 +740,10 @@ func (r *AWSEndpointServiceReconciler) reconcileHCPDeletion(ctx context.Context,
 	controllerutil.RemoveFinalizer(hcp, hcpAWSPrivateLinkFinalizerName)
 	if err := r.Patch(ctx, hcp, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{})); err != nil {
 		if apierrors.IsConflict(err) {
-			// Use RequeueAfter to avoid a tight retry loop when multiple AWSEndpointService
-			// reconcilers concurrently try to patch the same HCP.
 			return ctrl.Result{RequeueAfter: time.Second}, nil
+		}
+		if apierrors.IsNotFound(err) {
+			return ctrl.Result{}, nil
 		}
 		return ctrl.Result{}, fmt.Errorf("failed to remove HCP finalizer: %w", err)
 	}
