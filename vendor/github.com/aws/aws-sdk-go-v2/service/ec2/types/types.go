@@ -135,6 +135,69 @@ type AccountAttributeValue struct {
 	noSmithyDocumentSerde
 }
 
+// Describes the account-level VPC Encryption Control configuration, including its
+// mode, state, and exclusions.
+//
+// For more information, see [Enforce VPC encryption in transit] in the Amazon VPC User Guide.
+//
+// [Enforce VPC encryption in transit]: https://docs.aws.amazon.com/vpc/latest/userguide/vpc-encryption-controls.html
+type AccountVpcEncryptionControl struct {
+
+	// Information about the traffic exclusions for the account-level VPC Encryption
+	// Control configuration.
+	Exclusions *AccountVpcEncryptionControlExclusions
+
+	// The date and time when the account-level VPC Encryption Control configuration
+	// was last updated.
+	LastUpdateTimestamp *time.Time
+
+	// The entity that manages the account-level VPC Encryption Control configuration.
+	ManagedBy ManagedBy
+
+	// The encryption mode for the account-level VPC Encryption Control configuration.
+	Mode AccountVpcEncryptionControlMode
+
+	// The current state of the account-level VPC Encryption Control configuration.
+	State AccountVpcEncryptionControlState
+
+	noSmithyDocumentSerde
+}
+
+// Describes the exclusion configurations for the various resource types in the
+// account-level VPC Encryption Control configuration.
+//
+// For more information, see [Enforce VPC encryption in transit] in the Amazon VPC User Guide.
+//
+// [Enforce VPC encryption in transit]: https://docs.aws.amazon.com/vpc/latest/userguide/vpc-encryption-controls.html
+type AccountVpcEncryptionControlExclusions struct {
+
+	// The exclusion configuration for egress-only internet gateway resource.
+	EgressOnlyInternetGateway VpcEncryptionControlExclusionState
+
+	// The exclusion configuration for Elastic File System service.
+	ElasticFileSystem VpcEncryptionControlExclusionState
+
+	// The exclusion configuration for internet gateway resource.
+	InternetGateway VpcEncryptionControlExclusionState
+
+	// The exclusion configuration for Lambda service.
+	Lambda VpcEncryptionControlExclusionState
+
+	// The exclusion configuration for NAT gateway resource.
+	NatGateway VpcEncryptionControlExclusionState
+
+	// The exclusion configuration for virtual private gateway resource.
+	VirtualPrivateGateway VpcEncryptionControlExclusionState
+
+	// The exclusion configuration for VPC Lattice service.
+	VpcLattice VpcEncryptionControlExclusionState
+
+	// The exclusion configuration for VPC peering connection resource.
+	VpcPeering VpcEncryptionControlExclusionState
+
+	noSmithyDocumentSerde
+}
+
 // Describes a running instance in a Spot Fleet.
 type ActiveInstance struct {
 
@@ -7306,6 +7369,10 @@ type Host struct {
 	// [Ensuring Idempotency]: https://docs.aws.amazon.com/AWSEC2/latest/APIReference/Run_Instance_Idempotency.html
 	ClientToken *string
 
+	// The CPU options for the Dedicated Host, including AMD Secure Encrypted
+	// Virtualization-Secure Nested Paging (AMD SEV-SNP) settings.
+	CpuOptions *HostCpuOptions
+
 	// The ID of the Dedicated Host.
 	HostId *string
 
@@ -7346,6 +7413,31 @@ type Host struct {
 
 	// Any tags assigned to the Dedicated Host.
 	Tags []Tag
+
+	noSmithyDocumentSerde
+}
+
+// Contains the CPU options for a Dedicated Host, including AMD Secure Encrypted
+// Virtualization-Secure Nested Paging (AMD SEV-SNP) settings.
+type HostCpuOptions struct {
+
+	// Specifies whether AMD Secure Encrypted Virtualization-Secure Nested Paging (AMD
+	// SEV-SNP) is enabled or disabled for the Dedicated Host. If you don't specify a
+	// value, AMD SEV-SNP is disabled .
+	AmdSevSnp AmdSevSnp
+
+	noSmithyDocumentSerde
+}
+
+// Contains the CPU configuration options for a Dedicated Host allocation request.
+// Options include AMD Secure Encrypted Virtualization-Secure Nested Paging (AMD
+// SEV-SNP) settings.
+type HostCpuOptionsRequest struct {
+
+	// Specifies whether AMD Secure Encrypted Virtualization-Secure Nested Paging (AMD
+	// SEV-SNP) is enabled or disabled for the Dedicated Host. If you don't specify a
+	// value, AMD SEV-SNP is disabled .
+	AmdSevSnp AmdSevSnp
 
 	noSmithyDocumentSerde
 }
@@ -7671,6 +7763,10 @@ type Image struct {
 	// this image has public launch permissions or false if it has only implicit and
 	// explicit launch permissions.
 	Public *bool
+
+	// The name of the public Systems Manager parameter that resolves to this AMI,
+	// under the aws/service/ namespace.
+	PublicSsmParameterName *string
 
 	// The RAM disk associated with the image, if any. Only applicable for machine
 	// images.
@@ -16963,6 +17059,18 @@ type PathStatementRequest struct {
 	noSmithyDocumentSerde
 }
 
+// Describes a payer responsibility setting for a VPC endpoint.
+type PayerResponsibilityEntry struct {
+
+	// The Amazon Web Services account to which the usage is charged.
+	PayerResponsibilityType PayerResponsibilityType
+
+	// The scope of usage/charges.
+	Scope PayerResponsibilityScope
+
+	noSmithyDocumentSerde
+}
+
 // Describes the data that identifies an Amazon FPGA image (AFI) on the PCI bus.
 type PciId struct {
 
@@ -17365,6 +17473,9 @@ type PlacementGroup struct {
 
 	// The service provider that manages the Placement Group.
 	Operator *OperatorResponse
+
+	// The ID of the parent placement group.
+	ParentGroupId *string
 
 	// The number of partitions. Valid only if strategy is set to partition .
 	PartitionCount *int32
@@ -25241,6 +25352,9 @@ type VolumeModification struct {
 	// The current modification state.
 	ModificationState VolumeModificationState
 
+	// The service provider that manages the resource.
+	Operator *OperatorResponse
+
 	// The original IOPS rate of the volume.
 	OriginalIops *int32
 
@@ -25868,6 +25982,9 @@ type VpcEndpoint struct {
 	// The ID of the Amazon Web Services account that owns the endpoint.
 	OwnerId *string
 
+	// The payer responsibility settings for the endpoint.
+	PayerResponsibilities []PayerResponsibilityEntry
+
 	// The policy document associated with the endpoint, if applicable.
 	PolicyDocument *string
 
@@ -25976,6 +26093,9 @@ type VpcEndpointConnection struct {
 
 	// The Amazon Resource Names (ARNs) of the network load balancers for the service.
 	NetworkLoadBalancerArns []string
+
+	// The payer responsibility settings for the endpoint.
+	PayerResponsibilities []PayerResponsibilityEntry
 
 	// The ID of the service to which the endpoint is connected.
 	ServiceId *string
