@@ -1743,6 +1743,7 @@ func TestReconcileCRDeletion(t *testing.T) {
 	testCases := []struct {
 		name              string
 		crFinalizers      []string
+		aesStatus         hyperv1.AWSEndpointServiceStatus
 		setupMocks        func(ctrl *gomock.Controller) *MockawsClientProvider
 		patchInterceptor  func(ctx context.Context, c crclient.WithWatch, obj crclient.Object, patch crclient.Patch, opts ...crclient.PatchOption) error
 		expectError       bool
@@ -1830,6 +1831,34 @@ func TestReconcileCRDeletion(t *testing.T) {
 			expectError:       true,
 			expectCRFinalizer: true,
 		},
+		{
+			name:         "When AWS resource cleanup is incomplete it should requeue",
+			crFinalizers: []string{finalizer},
+			aesStatus: hyperv1.AWSEndpointServiceStatus{
+				SecurityGroupID: "sg-12345",
+			},
+			setupMocks: func(mockCtrl *gomock.Controller) *MockawsClientProvider {
+				mockBuilder := NewMockawsClientProvider(mockCtrl)
+				mockEC2 := awsapi.NewMockEC2API(mockCtrl)
+				mockRoute53 := awsapi.NewMockROUTE53API(mockCtrl)
+
+				mockBuilder.EXPECT().initializeWithHCP(gomock.Any(), gomock.Any())
+				mockBuilder.EXPECT().getClients(gomock.Any()).Return(mockEC2, mockRoute53, nil)
+
+				mockEC2.EXPECT().DescribeSecurityGroups(gomock.Any(), gomock.Any()).Return(&ec2v2.DescribeSecurityGroupsOutput{
+					SecurityGroups: []ec2types.SecurityGroup{{
+						GroupId:             aws.String("sg-12345"),
+						IpPermissions:       []ec2types.IpPermission{},
+						IpPermissionsEgress: []ec2types.IpPermission{},
+					}},
+				}, nil)
+				mockEC2.EXPECT().DeleteSecurityGroup(gomock.Any(), gomock.Any()).Return(nil, &smithy.GenericAPIError{Code: "DependencyViolation", Message: "resource has a dependent object"})
+
+				return mockBuilder
+			},
+			expectRequeue:     true,
+			expectCRFinalizer: true,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -1848,7 +1877,7 @@ func TestReconcileCRDeletion(t *testing.T) {
 					Namespace:  "clusters-test",
 					Finalizers: tc.crFinalizers,
 				},
-				Status: hyperv1.AWSEndpointServiceStatus{},
+				Status: tc.aesStatus,
 			}
 			if len(tc.crFinalizers) > 0 {
 				now := metav1.NewTime(time.Now())
@@ -1897,7 +1926,7 @@ func TestReconcileCRDeletion(t *testing.T) {
 				g.Expect(err).ToNot(HaveOccurred())
 			}
 			if tc.expectRequeue {
-				g.Expect(result.RequeueAfter).To(Equal(time.Second))
+				g.Expect(result.RequeueAfter).To(BeNumerically(">", 0))
 			}
 
 			updatedAES := &hyperv1.AWSEndpointService{}

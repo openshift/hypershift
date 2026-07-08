@@ -712,6 +712,8 @@ func (r *AWSEndpointServiceReconciler) reconcileHCPDeletion(ctx context.Context,
 	// Check if all AWSEndpointService CRs in this namespace have been cleaned up.
 	// Only remove the HCP finalizer once all CRs no longer have our CR finalizer,
 	// meaning all AWS resources have been cleaned up.
+	// Note: the CR finalizer is only added after serviceName is set (see Reconcile),
+	// so CRs that were never populated by hypershift-operator won't block this check.
 	awsEndpointServiceList := &hyperv1.AWSEndpointServiceList{}
 	if err := r.List(ctx, awsEndpointServiceList, client.InNamespace(hcp.Namespace)); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to list AWSEndpointService resources: %w", err)
