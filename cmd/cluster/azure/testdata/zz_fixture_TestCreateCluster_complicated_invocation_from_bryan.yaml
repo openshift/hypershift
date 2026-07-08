@@ -21,6 +21,8 @@ data:
   AZURE_TENANT_ID: ZmFrZVRlbmFudElE
 kind: Secret
 metadata:
+  labels:
+    hypershift.openshift.io/safe-to-delete-with-cluster: "true"
   name: bryans-cluster-cloud-credentials
   namespace: clusters
 ---

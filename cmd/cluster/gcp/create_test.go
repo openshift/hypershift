@@ -10,6 +10,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
+	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/testutil"
 	"github.com/openshift/hypershift/test/integration/framework"
@@ -211,4 +212,10 @@ func TestCreateCluster(t *testing.T) {
 			testutil.CompareWithFixture(t, manifests)
 		})
 	}
+}
+
+func TestServiceAccountTokenIssuerSecret(t *testing.T) {
+	g := NewGomegaWithT(t)
+	secret := serviceAccountTokenIssuerSecret("test-ns", "test")
+	g.Expect(secret.Labels).To(HaveKeyWithValue(util.DeleteWithClusterLabelName, "true"))
 }

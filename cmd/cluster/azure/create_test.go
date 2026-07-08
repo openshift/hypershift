@@ -385,3 +385,15 @@ func TestValidateOAuthPublishingStrategy(t *testing.T) {
 		})
 	}
 }
+
+func TestCredentialSecretHasDeleteWithClusterLabel(t *testing.T) {
+	g := NewGomegaWithT(t)
+	secret := credentialSecret("test-ns", "test")
+	g.Expect(secret.Labels).To(HaveKeyWithValue(util.DeleteWithClusterLabelName, "true"))
+}
+
+func TestServiceAccountTokenIssuerSecret(t *testing.T) {
+	g := NewGomegaWithT(t)
+	secret := serviceAccountTokenIssuerSecret("test-ns", "test")
+	g.Expect(secret.Labels).To(HaveKeyWithValue(util.DeleteWithClusterLabelName, "true"))
+}
