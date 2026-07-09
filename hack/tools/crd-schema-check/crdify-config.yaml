@@ -11,6 +11,11 @@
 # This mirrors the policy used in openshift/api: adding new enum values
 # is technically a breaking change but is allowed in practice because
 # clients should tolerate unknown enum values.
+# Match openshift/api policy: crdify doesn't have comparators for all schema
+# fields yet (e.g. XValidations/CEL rules), so unhandled diffs are warnings
+# rather than errors. Reviewers catch actual breaking changes.
+unhandledEnforcement: Warn
+
 validations:
   - name: enum
     enforcement: Error
