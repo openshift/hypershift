@@ -4432,9 +4432,8 @@ func TestReconcileDeletion(t *testing.T) {
 
 			ctx := ctrl.LoggerInto(t.Context(), ctrl.Log.WithName("test"))
 
-			// Re-read from fake client so the object has a ResourceVersion for OptimisticLock
+			// Re-read from fake client so the object has a ResourceVersion for PatchStatusCondition
 			g.Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(hcp), hcp)).To(Succeed())
-			originalHCP := hcp.DeepCopy()
 
 			r := &HostedControlPlaneReconciler{
 				Client:    fakeClient,
@@ -4442,7 +4441,7 @@ func TestReconcileDeletion(t *testing.T) {
 				ec2Client: mockEC2,
 			}
 
-			_, err := r.reconcileDeletion(ctx, hcp, originalHCP)
+			_, err := r.reconcileDeletion(ctx, hcp)
 			if tt.wantErr {
 				g.Expect(err).To(HaveOccurred())
 			} else {
@@ -4452,6 +4451,123 @@ func TestReconcileDeletion(t *testing.T) {
 			cond := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.AWSDefaultSecurityGroupDeleted))
 			g.Expect(cond).ToNot(BeNil())
 			g.Expect(cond.Status).To(Equal(tt.wantCondStatus))
+		})
+	}
+}
+
+func TestReconcileDefaultSecurityGroup(t *testing.T) {
+	tests := []struct {
+		name           string
+		setupEC2Mock   func(*gomock.Controller) *awsapi.MockEC2API
+		wantCondStatus metav1.ConditionStatus
+		wantCondReason string
+		wantPlatform   bool
+		wantErr        bool
+	}{
+		{
+			name: "When creation fails it should set error condition via PatchStatus and not touch platform",
+			setupEC2Mock: func(mockCtrl *gomock.Controller) *awsapi.MockEC2API {
+				m := awsapi.NewMockEC2API(mockCtrl)
+				m.EXPECT().DescribeVpcs(gomock.Any(), gomock.Any()).Return(nil,
+					&smithy.GenericAPIError{Code: "VpcNotFound", Message: "vpc not found"})
+				return m
+			},
+			wantCondStatus: metav1.ConditionFalse,
+			wantCondReason: hyperv1.AWSErrorReason,
+			wantPlatform:   false,
+			wantErr:        true,
+		},
+		{
+			name: "When identity provider is not ready it should skip without error",
+			setupEC2Mock: func(mockCtrl *gomock.Controller) *awsapi.MockEC2API {
+				return awsapi.NewMockEC2API(mockCtrl)
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			mockCtrl := gomock.NewController(t)
+			mockEC2 := tt.setupEC2Mock(mockCtrl)
+
+			conditions := []metav1.Condition{}
+			if tt.wantCondStatus != "" {
+				// Only add ValidAWSIdentityProvider=True for tests that should reach creation.
+				conditions = append(conditions, metav1.Condition{
+					Type:   string(hyperv1.ValidAWSIdentityProvider),
+					Status: metav1.ConditionTrue,
+					Reason: hyperv1.AsExpectedReason,
+				})
+			}
+
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-hcp",
+					Namespace: "test-ns",
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					InfraID: "test-infra",
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+						AWS: &hyperv1.AWSPlatformSpec{
+							CloudProviderConfig: &hyperv1.AWSCloudProviderConfig{
+								VPC: "vpc-123",
+							},
+						},
+					},
+					Networking: hyperv1.ClusterNetworking{
+						MachineNetwork: []hyperv1.MachineNetworkEntry{
+							{CIDR: *ipnet.MustParseCIDR("10.0.0.0/16")},
+						},
+					},
+				},
+				Status: hyperv1.HostedControlPlaneStatus{
+					Conditions: conditions,
+				},
+			}
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				WithObjects(hcp).
+				WithStatusSubresource(&hyperv1.HostedControlPlane{}).
+				Build()
+
+			ctx := ctrl.LoggerInto(t.Context(), ctrl.Log.WithName("test"))
+			g.Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(hcp), hcp)).To(Succeed())
+
+			r := &HostedControlPlaneReconciler{
+				Client:    fakeClient,
+				Log:       ctrl.Log.WithName("test"),
+				ec2Client: mockEC2,
+			}
+
+			err := r.reconcileDefaultSecurityGroup(ctx, hcp)
+			if tt.wantErr {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+			}
+
+			if tt.wantCondStatus == "" {
+				return
+			}
+
+			// Re-read from server to verify persisted status.
+			updated := &hyperv1.HostedControlPlane{}
+			g.Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(hcp), updated)).To(Succeed())
+
+			cond := meta.FindStatusCondition(updated.Status.Conditions, string(hyperv1.AWSDefaultSecurityGroupCreated))
+			g.Expect(cond).ToNot(BeNil(), "condition should be set")
+			g.Expect(cond.Status).To(Equal(tt.wantCondStatus))
+			g.Expect(cond.Reason).To(Equal(tt.wantCondReason))
+
+			if tt.wantPlatform {
+				g.Expect(updated.Status.Platform).ToNot(BeNil())
+			} else {
+				g.Expect(updated.Status.Platform).To(BeNil(),
+					"platform status should remain nil when creation fails")
+			}
 		})
 	}
 }
