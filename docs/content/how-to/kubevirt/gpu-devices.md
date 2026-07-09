@@ -78,6 +78,7 @@ spec:
       hostDevices:
       - count: 2
         deviceName: nvidia-a100
+      evictionStrategy: External
       networkInterfaceMultiqueue: Enable
       rootVolume:
         persistent:
@@ -86,4 +87,35 @@ spec:
     type: KubeVirt
   replicas: 3
 ```
+
+## Eviction Strategy for GPU NodePools
+
+VMs with GPU passthrough devices are not live-migratable. When
+`hostDevices` are configured on a NodePool and no explicit
+`evictionStrategy` is set, HyperShift automatically defaults to
+`External`. This ensures that draining an infrastructure node does not
+stall waiting for a live migration that can never succeed.
+
+With `External`, the Cluster API Provider for KubeVirt (CAPK) gracefully
+drains the guest node inside the hosted cluster before deleting the VM.
+KubeVirt then recreates the VM on another available node.
+
+If an explicit `evictionStrategy` is set on a NodePool that has
+`hostDevices`, the explicit value takes precedence over the automatic
+default.
+
+For NodePools **without** `hostDevices`, when no `evictionStrategy` is
+set the cluster-level KubeVirt default applies (`LiveMigrate` on HA
+clusters managed by HCO, `None` on single-node OpenShift).
+
+The supported values for `evictionStrategy` are:
+
+| Value | Behavior |
+|-------|----------|
+| *(not set, no hostDevices)* | Uses the cluster-level KubeVirt default (`LiveMigrate` on HA clusters, `None` on single-node). Best for migratable VMs. |
+| *(not set, with hostDevices)* | Automatically defaults to `External` (see above). |
+| `LiveMigrate` | KubeVirt live-migrates the VM on node drain. If the VM is not migratable, the drain stalls. |
+| `LiveMigrateIfPossible` | Live-migrates if possible, otherwise allows the VM to be killed without graceful guest drain. |
+| `External` | CAPK drains the guest node, then deletes the VM. Recommended for non-migratable VMs (GPU, SR-IOV). |
+| `None` | The VM is killed immediately on eviction with no migration or graceful drain. |
 

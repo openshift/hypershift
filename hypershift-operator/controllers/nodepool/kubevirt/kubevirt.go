@@ -180,8 +180,7 @@ func virtualMachineTemplateBase(nodePool *hyperv1.NodePool, bootImage BootImage)
 							Interfaces: virtualMachineInterfaces(kvPlatform),
 						},
 					},
-					EvictionStrategy: ptr.To(kubevirtv1.EvictionStrategyExternal),
-					Networks:         virtualMachineNetworks(kvPlatform),
+					Networks: virtualMachineNetworks(kvPlatform),
 				},
 			},
 		},
@@ -298,6 +297,13 @@ func virtualMachineTemplateBase(nodePool *hyperv1.NodePool, bootImage BootImage)
 			}
 		}
 		template.Spec.Template.Spec.Domain.Devices.HostDevices = hostDevices
+	}
+
+	if kvPlatform.EvictionStrategy != "" {
+		strategy := kubevirtv1.EvictionStrategy(kvPlatform.EvictionStrategy)
+		template.Spec.Template.Spec.EvictionStrategy = &strategy
+	} else if len(kvPlatform.KubevirtHostDevices) > 0 {
+		template.Spec.Template.Spec.EvictionStrategy = ptr.To(kubevirtv1.EvictionStrategyExternal)
 	}
 
 	return template, nil
