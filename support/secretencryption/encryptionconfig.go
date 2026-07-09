@@ -5,6 +5,8 @@ import (
 	"crypto/sha256"
 	"fmt"
 
+	"github.com/go-logr/logr"
+
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/podspec"
 
@@ -79,17 +81,20 @@ func KASDeploymentConvergedWithEncryptionConfig(ctx context.Context, c client.Re
 // have a non-nil DeletionTimestamp (i.e. are still shutting down). Returns true
 // on error to fail closed.
 func hasTerminatingPods(ctx context.Context, c client.Reader, deployment *appsv1.Deployment) bool {
+	logger := logr.FromContextOrDiscard(ctx)
 	if deployment.Spec.Selector == nil {
 		return false
 	}
 	selector, err := metav1.LabelSelectorAsSelector(deployment.Spec.Selector)
 	if err != nil {
+		logger.Error(err, "Failed to parse deployment selector, failing closed")
 		return true
 	}
 	podList := &corev1.PodList{}
 	if err := c.List(ctx, podList,
 		client.InNamespace(deployment.Namespace),
 		client.MatchingLabelsSelector{Selector: selector}); err != nil {
+		logger.Error(err, "Failed to list pods for termination check, failing closed")
 		return true
 	}
 	for i := range podList.Items {
