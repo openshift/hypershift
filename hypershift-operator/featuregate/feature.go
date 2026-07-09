@@ -34,6 +34,12 @@ const (
 	// alpha: v0.1.49
 	// beta: x.y.z
 	HCPEtcdBackup featuregate.Feature = "HCPEtcdBackup"
+
+	// KarpenterOperator gates deploying the karpenter-operator as a standalone component instead of using the embedded karpenter-operator code in HyperShift.
+	// owner: openshift-autoscaling
+	// alpha: v0.1.79
+	// beta: x.y.z
+	KarpenterOperator featuregate.Feature = "KarpenterOperator"
 )
 
 // Initialize new features here
@@ -44,6 +50,7 @@ var (
 	openStackFeature               = featuregates.NewFeature(OpenStack, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
 	gcpHCPFeature                  = featuregates.NewFeature(GCPPlatform, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
 	hcpEtcdBackupFeature           = featuregates.NewFeature(HCPEtcdBackup, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
+	karpenterOperatorFeature       = featuregates.NewFeature(KarpenterOperator, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
 )
 
 func init() {
@@ -52,6 +59,7 @@ func init() {
 	allFeatures.AddFeature(openStackFeature)
 	allFeatures.AddFeature(gcpHCPFeature)
 	allFeatures.AddFeature(hcpEtcdBackupFeature)
+	allFeatures.AddFeature(karpenterOperatorFeature)
 
 	// Default to configuring the Default featureset
 	ConfigureFeatureSet(string(configv1.Default))
