@@ -10,6 +10,7 @@ import (
 	karpenterv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/karpenter"
 	karpenteroperatorv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/karpenteroperator"
 	"github.com/openshift/hypershift/support/api"
+	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -456,6 +457,75 @@ func TestReconcileAutoNodeEnabledCondition(t *testing.T) {
 			if progressing != tc.wantProgessing {
 				t.Errorf("progressing: expected %v, got %v", tc.wantProgessing, progressing)
 			}
+		})
+	}
+}
+
+func TestReconcileKarpenterOperator(t *testing.T) {
+	tests := []struct {
+		name          string
+		staleAutoNode hyperv1.AutoNodeStatus
+		wantAutoNode  hyperv1.AutoNodeStatus
+	}{
+		{
+			name:          "When karpenter is disabled and AutoNode status is stale, it should clear the status",
+			staleAutoNode: hyperv1.AutoNodeStatus{NodeCount: ptr.To[int32](5)},
+			wantAutoNode:  hyperv1.AutoNodeStatus{},
+		},
+		{
+			name:          "When karpenter is disabled and AutoNode status is already empty, it should no-op",
+			staleAutoNode: hyperv1.AutoNodeStatus{},
+			wantAutoNode:  hyperv1.AutoNodeStatus{},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			ctx := context.Background()
+
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-hcp",
+					Namespace: "test-ns",
+				},
+			}
+
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				WithObjects(hcp).
+				WithStatusSubresource(hcp).
+				Build()
+
+			// Set stale AutoNode status after creation (WithObjects doesn't persist status).
+			hcp.Status.AutoNode = tc.staleAutoNode
+			g.Expect(fakeClient.Status().Update(ctx, hcp)).To(Succeed())
+
+			r := &HostedClusterReconciler{
+				Client: fakeClient,
+			}
+
+			hcluster := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: "clusters",
+				},
+				// Spec.AutoNode is zero value — karpenter disabled.
+			}
+
+			cpContext := controlplanecomponent.ControlPlaneContext{
+				Context: ctx,
+				Client:  fakeClient,
+				HCP:     hcp,
+			}
+
+			err := r.reconcileKarpenterOperator(cpContext, hcluster, "image", "image")
+			g.Expect(err).ToNot(HaveOccurred())
+
+			updated := &hyperv1.HostedControlPlane{}
+			g.Expect(fakeClient.Get(ctx, crclient.ObjectKeyFromObject(hcp), updated)).To(Succeed())
+			g.Expect(updated.Status.AutoNode).To(Equal(tc.wantAutoNode),
+				"stale AutoNode status should be cleared when karpenter is disabled")
 		})
 	}
 }
