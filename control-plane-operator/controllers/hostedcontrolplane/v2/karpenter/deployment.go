@@ -41,6 +41,12 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 		if exists {
 			c.Image = karpenterProviderAWSOverride
 		}
+		if clusterNameTagKey, exists := hcp.Annotations[hyperkarpenterv1.KarpenterProviderAWSClusterNameTagKey]; exists {
+			c.Env = append(c.Env, corev1.EnvVar{
+				Name:  "CLUSTER_NAME_TAG_KEY",
+				Value: clusterNameTagKey,
+			})
+		}
 	})
 
 	deployment.Spec.Template.Spec.InitContainers = append(deployment.Spec.Template.Spec.InitContainers,
