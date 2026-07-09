@@ -3107,6 +3107,13 @@ func (r *HostedControlPlaneReconciler) validateAzureKMSConfig(ctx context.Contex
 	azureKmsSpec := hcp.Spec.SecretEncryption.KMS.Azure
 
 	if hyperazureutil.IsAroHCPByHCP(hcp) {
+		// CPO cannot reach private Key Vault endpoints; KAS pods access them
+		// through the private router (HAProxy TCP passthrough via hostAlias).
+		if hyperazureutil.IsPrivateKeyVault(hcp) {
+			setValidKMSSkipCondition(hcp, "KMS configuration accepted; Key Vault access is validated at runtime through the private router")
+			return
+		}
+
 		key := hcp.Namespace + kmsAzureCredentials
 
 		// We need to only store the Azure credentials once and reuse them after that.
@@ -3142,14 +3149,7 @@ func (r *HostedControlPlaneReconciler) validateAzureKMSConfig(ctx context.Contex
 		// minted inside the KAS pod. The CPO cannot validate Key Vault access directly because
 		// it does not have the KMS workload identity credentials. Key Vault access is validated
 		// at runtime by the azure-kms-provider container.
-		condition := metav1.Condition{
-			Type:               string(hyperv1.ValidAzureKMSConfig),
-			ObservedGeneration: hcp.Generation,
-			Status:             metav1.ConditionTrue,
-			Message:            "KMS configuration accepted; Key Vault access is validated at runtime by the KMS provider",
-			Reason:             hyperv1.AsExpectedReason,
-		}
-		meta.SetStatusCondition(&hcp.Status.Conditions, condition)
+		setValidKMSSkipCondition(hcp, "KMS configuration accepted; Key Vault access is validated at runtime by the KMS provider")
 		return
 	}
 
@@ -3205,6 +3205,18 @@ func (r *HostedControlPlaneReconciler) validateAzureKMSConfig(ctx context.Contex
 	}
 
 	meta.SetStatusCondition(&hcp.Status.Conditions, condition)
+}
+
+// setValidKMSSkipCondition sets ValidAzureKMSConfig to True when CPO defers
+// Key Vault validation to runtime (private Key Vault or self-managed Azure).
+func setValidKMSSkipCondition(hcp *hyperv1.HostedControlPlane, message string) {
+	meta.SetStatusCondition(&hcp.Status.Conditions, metav1.Condition{
+		Type:               string(hyperv1.ValidAzureKMSConfig),
+		ObservedGeneration: hcp.Generation,
+		Status:             metav1.ConditionTrue,
+		Message:            message,
+		Reason:             hyperv1.AsExpectedReason,
+	})
 }
 
 func (r *HostedControlPlaneReconciler) GetGuestClusterClient(ctx context.Context, hcp *hyperv1.HostedControlPlane) (*kubernetes.Clientset, error) {
