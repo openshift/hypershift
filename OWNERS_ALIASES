@@ -21,7 +21,6 @@ aliases:
   core-reviewers:
     - enxebre
     - csrwng
-    - sjenning
     - muraee
     - bryan-cox
     - cblecker
@@ -30,6 +29,7 @@ aliases:
     - sdminonne
     - clebs
     - Nirshal
+    - ironcladlou
   karpenter-approvers:
     - elmiko
     - enxebre
