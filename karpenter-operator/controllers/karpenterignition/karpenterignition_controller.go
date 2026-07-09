@@ -120,13 +120,20 @@ func (r *KarpenterIgnitionReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return r.reconcileDeletedNodeClass(ctx, hcp, openshiftEC2NodeClass)
 	}
 
+	// Guard: if the CPO hasn't populated VersionStatus yet, we can't reliably
+	// determine the completed release image. Falling back to Spec.ReleaseImage
+	// would use the desired (new) image during an upgrade, causing premature drift.
+	if hcp.Status.VersionStatus == nil {
+		log.Info("HCP VersionStatus not yet available, requeueing")
+		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+	}
+
 	hostedCluster, err := hostedClusterFromHCP(hcp, r.IgnitionEndpoint)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to get HostedCluster: %w", err)
 	}
 
-	releaseImage := hcp.Spec.ReleaseImage
-	version := currentClusterVersion(hostedCluster)
+	releaseImage, version := currentClusterReleaseImage(hostedCluster)
 
 	// When the user requests a version for the OpenshiftEC2NodeClass we perform further validation and lookup of the release image.
 	// We only detect skew and if the version is valid in this case, as under normal circumstances we can assume the release image
@@ -341,14 +348,16 @@ func (r *KarpenterIgnitionReconciler) createInMemoryNodePool(
 	}
 }
 
-// currentClusterVersion returns the version of the most recently completed update from the
-// HostedCluster's version history. It searches history entries for the one with state=Completed
-// and the most recent CompletionTime. If no completed entries exist and there is exactly one
-// history entry, it falls back to the desired version. This handles the case where a cluster
-// is still rolling out its initial version.
-func currentClusterVersion(hostedCluster *hyperv1.HostedCluster) string {
+// currentClusterReleaseImage returns the release image and version of the most recently
+// completed update from the HostedCluster's version history. It searches history entries
+// for the one with state=Completed and the most recent CompletionTime.
+// If no completed entries exist, it falls back to the Spec release image and Desired version.
+// This ensures that during a control plane upgrade, unpinned Karpenter NodeClaims use the
+// completed version's release image rather than the desired version, preventing premature
+// drift detection and worker node replacement before the control plane is ready.
+func currentClusterReleaseImage(hostedCluster *hyperv1.HostedCluster) (string, string) {
 	if hostedCluster.Status.Version == nil {
-		return ""
+		return hostedCluster.Spec.Release.Image, ""
 	}
 
 	var latest *configv1.UpdateHistory
@@ -367,16 +376,12 @@ func currentClusterVersion(hostedCluster *hyperv1.HostedCluster) string {
 	}
 
 	if latest != nil {
-		return latest.Version
+		return latest.Image, latest.Version
 	}
 
-	// If there are no completed entries but exactly one history entry exists, the cluster
-	// is likely still rolling out its first version. Fall back to the desired version.
-	if len(hostedCluster.Status.Version.History) == 1 {
-		return hostedCluster.Status.Version.Desired.Version
-	}
-
-	return hostedCluster.Status.Version.Desired.Version
+	// If there are no completed entries, the cluster is likely still rolling out its
+	// first version. Fall back to the spec release image and desired version.
+	return hostedCluster.Spec.Release.Image, hostedCluster.Status.Version.Desired.Version
 }
 
 // validateVersion checks whether the requested version is valid for the given HostedCluster.
