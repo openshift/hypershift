@@ -164,6 +164,7 @@ type Options struct {
 	AWSOperatorRolesFile                      string
 	RenderSensitive                           bool
 	HCPEgressBlockCIDRs                       []string
+	InstallScope                              string
 }
 
 func (o *Options) Complete() error {
@@ -181,6 +182,13 @@ func (o *Options) Complete() error {
 
 func (o *Options) Validate() error {
 	var errs []error
+
+	if o.InstallScope != "" && !Outputs(o.InstallScope).IsValid() {
+		errs = append(errs, fmt.Errorf("invalid --install-scope value %q: must be '%s', '%s', or '%s'", o.InstallScope, OutputAll, OutputCRDs, OutputResources))
+	}
+	if Outputs(o.InstallScope) == OutputCRDs && o.WaitUntilAvailable {
+		errs = append(errs, fmt.Errorf("--wait-until-available has no effect with --install-scope=crds"))
+	}
 
 	errs = append(errs, o.validatePlatformConfig()...)
 	errs = append(errs, o.validateOIDCConfig()...)
@@ -504,6 +512,7 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().StringArrayVar(&opts.HCPEgressBlockCIDRs, "hcp-egress-block-cidrs", nil, "Static CIDRs to block in HCP namespace egress NetworkPolicies instead of dynamically-discovered hosting cluster KAS endpoint IPs. When specified, eliminates NetworkPolicy churn during hosting cluster KAS rolling restarts and avoids OVN port-group reconciliation races that can drop traffic to HCP routers. May be specified multiple times.")
 	cmd.PersistentFlags().StringVar(&opts.AWSRoleCredentialSource, "aws-role-credential-source", aws.CredentialSourceWebIdentity, "Credential source for AWS role ARN flags: 'web-identity' (uses projected SA token) or 'ec2-instance-metadata' (uses EC2 instance metadata)")
 	cmd.PersistentFlags().StringVar(&opts.AWSOperatorRolesFile, "aws-operator-roles-file", "", "Path to JSON output file from 'hypershift create operator-roles aws' (sets all three role ARN flags at once)")
+	cmd.Flags().StringVar(&opts.InstallScope, "install-scope", string(OutputAll), "Scope of installation: 'all' installs CRDs and resources (default), 'crds' installs only CRDs, 'resources' installs only resources assuming CRDs were installed previously (operator deployment and RBAC)")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		return InstallHyperShiftOperator(cmd.Context(), cmd.OutOrStdout(), opts)
@@ -537,61 +546,80 @@ func InstallHyperShiftOperator(ctx context.Context, out io.Writer, opts Options)
 		return err
 	}
 
-	// Validate all CRDs via dry-run before applying
-	if err := dryRunValidateCRDs(ctx, out, crds); err != nil {
-		return err
-	}
+	scope := Outputs(opts.InstallScope)
+	crdsToApply, objectsToApply := filterManifestsByScope(crds, objects, scope)
 
-	// Coordinate with Cluster CAPI Operator if the ClusterAPI API is available.
-	// This is done after dry-run so the ClusterAPI config is not mutated if CRDs
-	// cannot be applied.
-	config, err := util.GetConfig()
-	if err != nil {
-		return fmt.Errorf("failed to get kubernetes config: %w", err)
-	}
-	discoveryClient, err := discovery.NewDiscoveryClientForConfig(config)
-	if err != nil {
-		return fmt.Errorf("failed to create discovery client: %w", err)
-	}
-	registered, err := isClusterAPIRegistered(discoveryClient)
-	if err != nil {
-		return err
-	}
-	if registered {
-		fmt.Fprintf(out, "ClusterAPI API detected, coordinating with Cluster CAPI Operator\n")
-		generation, err := ensureUnmanagedCRDs(ctx, out, client, crds)
+	if len(crdsToApply) > 0 {
+		// Validate all CRDs via dry-run before applying
+		if err := dryRunValidateCRDs(ctx, out, crdsToApply); err != nil {
+			return err
+		}
+
+		// Coordinate with Cluster CAPI Operator if the ClusterAPI API is available.
+		// This is done after dry-run so the ClusterAPI config is not mutated if CRDs
+		// cannot be applied.
+		config, err := util.GetConfig()
+		if err != nil {
+			return fmt.Errorf("failed to get kubernetes config: %w", err)
+		}
+		discoveryClient, err := discovery.NewDiscoveryClientForConfig(config)
+		if err != nil {
+			return fmt.Errorf("failed to create discovery client: %w", err)
+		}
+		registered, err := isClusterAPIRegistered(discoveryClient)
 		if err != nil {
 			return err
 		}
-		if generation > 0 {
-			if err := waitForCAPIOperatorSync(ctx, out, client, generation); err != nil {
+		if registered {
+			fmt.Fprintf(out, "ClusterAPI API detected, coordinating with Cluster CAPI Operator\n")
+			generation, err := ensureUnmanagedCRDs(ctx, out, client, crdsToApply)
+			if err != nil {
+				return err
+			}
+			if generation > 0 {
+				if err := waitForCAPIOperatorSync(ctx, out, client, generation); err != nil {
+					return err
+				}
+			}
+		}
+
+		err = apply(ctx, out, crdsToApply)
+		if err != nil {
+			return err
+		}
+
+		if opts.WaitUntilAvailable || opts.WaitUntilEstablished {
+			if err := waitUntilEstablished(ctx, crdsToApply); err != nil {
 				return err
 			}
 		}
 	}
 
-	err = apply(ctx, out, crds)
-	if err != nil {
-		return err
-	}
-
-	if opts.WaitUntilAvailable || opts.WaitUntilEstablished {
-		if err := waitUntilEstablished(ctx, crds); err != nil {
+	if len(objectsToApply) > 0 {
+		err = apply(ctx, out, objectsToApply)
+		if err != nil {
 			return err
 		}
-	}
 
-	err = apply(ctx, out, objects)
-	if err != nil {
-		return err
-	}
-
-	if opts.WaitUntilAvailable {
-		if _, err := WaitUntilAvailable(ctx, opts); err != nil {
-			return err
+		if opts.WaitUntilAvailable {
+			if _, err := WaitUntilAvailable(ctx, opts); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
+}
+
+// filterManifestsByScope returns the CRDs and resources that should be applied
+// based on the given install scope.
+func filterManifestsByScope(crds, objects []crclient.Object, scope Outputs) (crdsToApply, objectsToApply []crclient.Object) {
+	if scope.IncludesCRDs() {
+		crdsToApply = crds
+	}
+	if scope.IncludesResources() {
+		objectsToApply = objects
+	}
+	return
 }
 
 // NewInstallOptionsWithDefaults returns an Options instance with the default values sets.
@@ -617,6 +645,7 @@ func NewInstallOptionsWithDefaults() Options {
 	opts.PrivatePlatform = string(hyperv1.NonePlatform)
 	opts.ImagePullPolicy = "IfNotPresent"
 	opts.AdditionalOperatorEnvVars = map[string]string{}
+	opts.InstallScope = string(OutputAll)
 
 	return opts
 }
