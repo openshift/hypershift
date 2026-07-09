@@ -80,6 +80,15 @@ func TestReconcileCloudConfig_AWS(t *testing.T) {
 				g.Expect(err).ToNot(HaveOccurred())
 				g.Expect(cm.Data).To(HaveKeyWithValue(globalconfig.AWSProviderConfigKey, "[Global]\nZone = us-east-1a\nVPC = vpc-123\n"))
 				g.Expect(cm.Data).To(HaveKeyWithValue(globalconfig.CABundleKey, "-----BEGIN CERTIFICATE-----\nfake-ca-bundle\n-----END CERTIFICATE-----\n"))
+
+				kcc := &corev1.ConfigMap{}
+				err = guestClient.Get(context.Background(), client.ObjectKey{
+					Namespace: ConfigManagedNamespace,
+					Name:      "kube-cloud-config",
+				}, kcc)
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(kcc.Data).To(HaveKeyWithValue(globalconfig.AWSProviderConfigKey, "[Global]\nZone = us-east-1a\nVPC = vpc-123\n"))
+				g.Expect(kcc.Data).To(HaveKeyWithValue(globalconfig.CABundleKey, "-----BEGIN CERTIFICATE-----\nfake-ca-bundle\n-----END CERTIFICATE-----\n"))
 			},
 		},
 		{
@@ -115,6 +124,15 @@ func TestReconcileCloudConfig_AWS(t *testing.T) {
 				g.Expect(err).ToNot(HaveOccurred())
 				g.Expect(cm.Data).To(HaveKeyWithValue(globalconfig.AWSProviderConfigKey, "[Global]\nZone = us-east-1a\nVPC = vpc-123\n"))
 				g.Expect(cm.Data).To(HaveKeyWithValue(globalconfig.CABundleKey, "-----BEGIN CERTIFICATE-----\nproxy-ca-bundle\n-----END CERTIFICATE-----\n"))
+
+				kcc := &corev1.ConfigMap{}
+				err = guestClient.Get(context.Background(), client.ObjectKey{
+					Namespace: ConfigManagedNamespace,
+					Name:      "kube-cloud-config",
+				}, kcc)
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(kcc.Data).To(HaveKeyWithValue(globalconfig.AWSProviderConfigKey, "[Global]\nZone = us-east-1a\nVPC = vpc-123\n"))
+				g.Expect(kcc.Data).To(HaveKeyWithValue(globalconfig.CABundleKey, "-----BEGIN CERTIFICATE-----\nproxy-ca-bundle\n-----END CERTIFICATE-----\n"))
 			},
 		},
 		{
@@ -136,6 +154,13 @@ func TestReconcileCloudConfig_AWS(t *testing.T) {
 					Namespace: ConfigNamespace,
 					Name:      CloudProviderCMName,
 				}, cm)
+				g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+
+				kcc := &corev1.ConfigMap{}
+				err = guestClient.Get(context.Background(), client.ObjectKey{
+					Namespace: ConfigManagedNamespace,
+					Name:      "kube-cloud-config",
+				}, kcc)
 				g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
 			},
 		},
@@ -163,6 +188,16 @@ func TestReconcileCloudConfig_AWS(t *testing.T) {
 						globalconfig.CABundleKey:          "old-ca-bundle",
 					},
 				},
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: ConfigManagedNamespace,
+						Name:      "kube-cloud-config",
+					},
+					Data: map[string]string{
+						globalconfig.AWSProviderConfigKey: "[Global]\nZone = us-east-1a\nVPC = vpc-123\n",
+						globalconfig.CABundleKey:          "old-ca-bundle",
+					},
+				},
 			},
 			verify: func(g Gomega, guestClient client.Client) {
 				cm := &corev1.ConfigMap{}
@@ -170,6 +205,13 @@ func TestReconcileCloudConfig_AWS(t *testing.T) {
 					Namespace: ConfigNamespace,
 					Name:      CloudProviderCMName,
 				}, cm)
+				g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+
+				kcc := &corev1.ConfigMap{}
+				err = guestClient.Get(context.Background(), client.ObjectKey{
+					Namespace: ConfigManagedNamespace,
+					Name:      "kube-cloud-config",
+				}, kcc)
 				g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
 			},
 		},
@@ -221,6 +263,15 @@ func TestReconcileCloudConfig_AWS(t *testing.T) {
 				g.Expect(err).ToNot(HaveOccurred())
 				g.Expect(cm.Data).To(HaveKeyWithValue(globalconfig.AWSProviderConfigKey, "[Global]\nZone = us-east-1a\nVPC = vpc-123\n"))
 				g.Expect(cm.Data).ToNot(HaveKey(globalconfig.CABundleKey))
+
+				kcc := &corev1.ConfigMap{}
+				err = guestClient.Get(context.Background(), client.ObjectKey{
+					Namespace: ConfigManagedNamespace,
+					Name:      "kube-cloud-config",
+				}, kcc)
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(kcc.Data).To(HaveKeyWithValue(globalconfig.AWSProviderConfigKey, "[Global]\nZone = us-east-1a\nVPC = vpc-123\n"))
+				g.Expect(kcc.Data).ToNot(HaveKey(globalconfig.CABundleKey))
 			},
 		},
 		{
@@ -309,6 +360,15 @@ func TestReconcileCloudConfig_AWS(t *testing.T) {
 				g.Expect(err).ToNot(HaveOccurred())
 				g.Expect(cm.Data).To(HaveKeyWithValue(globalconfig.AWSProviderConfigKey, "[Global]\nZone = us-east-1a\nVPC = vpc-123\n"))
 				g.Expect(cm.Data).ToNot(HaveKey(globalconfig.CABundleKey))
+
+				kcc := &corev1.ConfigMap{}
+				err = guestClient.Get(context.Background(), client.ObjectKey{
+					Namespace: ConfigManagedNamespace,
+					Name:      "kube-cloud-config",
+				}, kcc)
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(kcc.Data).To(HaveKeyWithValue(globalconfig.AWSProviderConfigKey, "[Global]\nZone = us-east-1a\nVPC = vpc-123\n"))
+				g.Expect(kcc.Data).ToNot(HaveKey(globalconfig.CABundleKey))
 			},
 		},
 		{
@@ -340,6 +400,15 @@ func TestReconcileCloudConfig_AWS(t *testing.T) {
 				g.Expect(err).ToNot(HaveOccurred())
 				g.Expect(cm.Data).To(HaveKeyWithValue(globalconfig.AWSProviderConfigKey, "[Global]\nZone = us-east-1a\nVPC = vpc-123\n"))
 				g.Expect(cm.Data).ToNot(HaveKey(globalconfig.CABundleKey))
+
+				kcc := &corev1.ConfigMap{}
+				err = guestClient.Get(context.Background(), client.ObjectKey{
+					Namespace: ConfigManagedNamespace,
+					Name:      "kube-cloud-config",
+				}, kcc)
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(kcc.Data).To(HaveKeyWithValue(globalconfig.AWSProviderConfigKey, "[Global]\nZone = us-east-1a\nVPC = vpc-123\n"))
+				g.Expect(kcc.Data).ToNot(HaveKey(globalconfig.CABundleKey))
 			},
 		},
 	}

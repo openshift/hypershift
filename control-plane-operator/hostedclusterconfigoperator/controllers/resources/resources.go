@@ -2535,8 +2535,12 @@ func (r *reconciler) reconcileCloudConfig(ctx context.Context, hcp *hyperv1.Host
 
 		if !hasTrustBundle {
 			cm := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: ConfigNamespace, Name: CloudProviderCMName}}
-			if err := r.client.Delete(ctx, cm); err != nil && !apierrors.IsNotFound(err) {
+			if _, err := k8sutil.DeleteIfNeeded(ctx, r.client, cm); err != nil {
 				return fmt.Errorf("failed to clean up %s/%s configmap: %w", cm.Namespace, cm.Name, err)
+			}
+			cmKCC := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: ConfigManagedNamespace, Name: "kube-cloud-config"}}
+			if _, err := k8sutil.DeleteIfNeeded(ctx, r.client, cmKCC); err != nil {
+				return fmt.Errorf("failed to clean up %s/%s configmap: %w", cmKCC.Namespace, cmKCC.Name, err)
 			}
 			return nil
 		}
@@ -2556,25 +2560,30 @@ func (r *reconciler) reconcileCloudConfig(ctx context.Context, hcp *hyperv1.Host
 			if !apierrors.IsNotFound(err) {
 				return fmt.Errorf("failed to fetch managed trusted CA bundle from management cluster: %w", err)
 			}
-			ctrl.LoggerFrom(ctx).Info("managed trusted CA bundle ConfigMap not found, skipping CA bundle sync", "configmap", client.ObjectKeyFromObject(managedTrustBundle))
+			ctrl.LoggerFrom(ctx).Info("managed trusted CA bundle ConfigMap not found, proceeding without CA bundle", "configmap", client.ObjectKeyFromObject(managedTrustBundle))
 		} else {
 			caBundle = managedTrustBundle.Data[certs.UserCABundleMapKey]
 		}
 
-		cm := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: ConfigNamespace, Name: CloudProviderCMName}}
-		if _, err := r.CreateOrUpdate(ctx, r.client, cm, func() error {
-			if cm.Data == nil {
-				cm.Data = map[string]string{}
+		for _, target := range []struct{ namespace, name string }{
+			{ConfigNamespace, CloudProviderCMName},
+			{ConfigManagedNamespace, "kube-cloud-config"},
+		} {
+			cm := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: target.namespace, Name: target.name}}
+			if _, err := r.CreateOrUpdate(ctx, r.client, cm, func() error {
+				if cm.Data == nil {
+					cm.Data = map[string]string{}
+				}
+				cm.Data[globalconfig.AWSProviderConfigKey] = providerConfig
+				if caBundle != "" {
+					cm.Data[globalconfig.CABundleKey] = caBundle
+				} else {
+					delete(cm.Data, globalconfig.CABundleKey)
+				}
+				return nil
+			}); err != nil {
+				return fmt.Errorf("failed to reconcile the %s/%s configmap: %w", cm.Namespace, cm.Name, err)
 			}
-			cm.Data[globalconfig.AWSProviderConfigKey] = providerConfig
-			if caBundle != "" {
-				cm.Data[globalconfig.CABundleKey] = caBundle
-			} else {
-				delete(cm.Data, globalconfig.CABundleKey)
-			}
-			return nil
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile the %s/%s configmap: %w", cm.Namespace, cm.Name, err)
 		}
 	case hyperv1.AzurePlatform:
 		// This is needed for the e2e tests and only for Azure: https://github.com/openshift/origin/blob/625733dd1ce7ebf40c3dd0abd693f7bb54f2d580/test/extended/util/cluster/cluster.go#L186
