@@ -1,6 +1,7 @@
 package nodepool
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"testing"
@@ -27,7 +28,7 @@ import (
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
-	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
@@ -863,11 +864,10 @@ func TestCleanupMachineTemplates(t *testing.T) {
 		Spec: capiv1.MachineSetSpec{
 			Template: capiv1.MachineTemplateSpec{
 				Spec: capiv1.MachineSpec{
-					InfrastructureRef: corev1.ObjectReference{
-						Kind:       gvk.Kind,
-						APIVersion: gvk.GroupVersion().String(),
-						Name:       template1.Name,
-						Namespace:  template1.Namespace,
+					InfrastructureRef: capiv1.ContractVersionedObjectReference{
+						Kind:     gvk.Kind,
+						APIGroup: gvk.Group,
+						Name:     template1.Name,
 					},
 				},
 			},
@@ -1148,6 +1148,8 @@ func TestReconcileMachineHealthCheck(t *testing.T) {
 	healthcheck := func(opts ...func(*capiv1.MachineHealthCheck)) *capiv1.MachineHealthCheck {
 		mhc := &capiv1.MachineHealthCheck{ObjectMeta: metav1.ObjectMeta{Namespace: "ns-cluster", Name: "nodepool"}}
 		resName := generateName("cluster", "cluster", "nodepool")
+		timeoutSeconds := int32(480)
+		nodeStartupTimeoutSeconds := int32(1200)
 		mhc.Spec = capiv1.MachineHealthCheckSpec{
 			ClusterName: "cluster",
 			Selector: metav1.LabelSelector{
@@ -1155,25 +1157,25 @@ func TestReconcileMachineHealthCheck(t *testing.T) {
 					resName: resName,
 				},
 			},
-			UnhealthyConditions: []capiv1.UnhealthyCondition{
-				{
-					Type:   corev1.NodeReady,
-					Status: corev1.ConditionFalse,
-					Timeout: metav1.Duration{
-						Duration: time.Duration(8 * time.Minute),
+			Checks: capiv1.MachineHealthCheckChecks{
+				UnhealthyNodeConditions: []capiv1.UnhealthyNodeCondition{
+					{
+						Type:           corev1.NodeReady,
+						Status:         corev1.ConditionFalse,
+						TimeoutSeconds: &timeoutSeconds,
+					},
+					{
+						Type:           corev1.NodeReady,
+						Status:         corev1.ConditionUnknown,
+						TimeoutSeconds: &timeoutSeconds,
 					},
 				},
-				{
-					Type:   corev1.NodeReady,
-					Status: corev1.ConditionUnknown,
-					Timeout: metav1.Duration{
-						Duration: time.Duration(8 * time.Minute),
-					},
-				},
+				NodeStartupTimeoutSeconds: &nodeStartupTimeoutSeconds,
 			},
-			MaxUnhealthy: &defaultMaxUnhealthy,
-			NodeStartupTimeout: &metav1.Duration{
-				Duration: 20 * time.Minute,
+			Remediation: capiv1.MachineHealthCheckRemediation{
+				TriggerIf: capiv1.MachineHealthCheckRemediationTriggerIf{
+					UnhealthyLessThanOrEqualTo: &defaultMaxUnhealthy,
+				},
 			},
 		}
 		for _, o := range opts {
@@ -1205,8 +1207,9 @@ func TestReconcileMachineHealthCheck(t *testing.T) {
 	}
 	withTimeout := func(d time.Duration) func(*capiv1.MachineHealthCheck) {
 		return func(mhc *capiv1.MachineHealthCheck) {
-			for i := range mhc.Spec.UnhealthyConditions {
-				mhc.Spec.UnhealthyConditions[i].Timeout = metav1.Duration{Duration: d}
+			s := int32(d.Seconds())
+			for i := range mhc.Spec.Checks.UnhealthyNodeConditions {
+				mhc.Spec.Checks.UnhealthyNodeConditions[i].TimeoutSeconds = &s
 			}
 		}
 	}
@@ -1222,7 +1225,8 @@ func TestReconcileMachineHealthCheck(t *testing.T) {
 	}
 	withNodeStartupTimeout := func(d time.Duration) func(*capiv1.MachineHealthCheck) {
 		return func(mhc *capiv1.MachineHealthCheck) {
-			mhc.Spec.NodeStartupTimeout = &metav1.Duration{Duration: d}
+			s := int32(d.Seconds())
+			mhc.Spec.Checks.NodeStartupTimeoutSeconds = &s
 		}
 	}
 
@@ -1389,14 +1393,16 @@ func TestCAPIReconcile(t *testing.T) {
 					Annotations: map[string]string{
 						nodePoolAnnotation: "test-namespace/test-nodepool",
 					},
+					Labels: map[string]string{
+						capiv1.MachineDeploymentNameLabel: "test-nodepool",
+					},
 				},
 				Spec: capiv1.MachineSetSpec{
 					Template: capiv1.MachineTemplateSpec{
 						Spec: capiv1.MachineSpec{
-							InfrastructureRef: corev1.ObjectReference{
-								Kind:       "AWSMachineTemplate",
-								APIVersion: "infrastructure.cluster.x-k8s.io/v1beta2",
-								Namespace:  "test-namespace-test-cluster",
+							InfrastructureRef: capiv1.ContractVersionedObjectReference{
+								Kind:     "AWSMachineTemplate",
+								APIGroup: "infrastructure.cluster.x-k8s.io",
 								// This is the generated name by machineTemplateBuilders.
 								// So reconciliation doesn't create a new AWSMachineTemplate but reconcile this one.
 								Name: awsMachineTemplateName,
@@ -1485,14 +1491,16 @@ func TestCAPIReconcile(t *testing.T) {
 					Annotations: map[string]string{
 						nodePoolAnnotation: "test-namespace/test-nodepool",
 					},
+					Labels: map[string]string{
+						capiv1.MachineDeploymentNameLabel: "test-nodepool",
+					},
 				},
 				Spec: capiv1.MachineSetSpec{
 					Template: capiv1.MachineTemplateSpec{
 						Spec: capiv1.MachineSpec{
-							InfrastructureRef: corev1.ObjectReference{
-								Kind:       "AWSMachineTemplate",
-								APIVersion: "infrastructure.cluster.x-k8s.io/v1beta2",
-								Namespace:  "test-namespace-test-cluster",
+							InfrastructureRef: capiv1.ContractVersionedObjectReference{
+								Kind:     "AWSMachineTemplate",
+								APIGroup: "infrastructure.cluster.x-k8s.io",
 								// This is the generated name by machineTemplateBuilders.
 								// So reconciliation doesn't create a new AWSMachineTemplate but reconcile this one.
 								Name: awsMachineTemplateName,
@@ -1592,14 +1600,16 @@ func TestCAPIReconcile(t *testing.T) {
 					Annotations: map[string]string{
 						nodePoolAnnotation: "test-namespace/test-nodepool",
 					},
+					Labels: map[string]string{
+						capiv1.MachineDeploymentNameLabel: "test-nodepool",
+					},
 				},
 				Spec: capiv1.MachineSetSpec{
 					Template: capiv1.MachineTemplateSpec{
 						Spec: capiv1.MachineSpec{
-							InfrastructureRef: corev1.ObjectReference{
-								Kind:       "AWSMachineTemplate",
-								APIVersion: "infrastructure.cluster.x-k8s.io/v1beta2",
-								Namespace:  "test-namespace-test-cluster",
+							InfrastructureRef: capiv1.ContractVersionedObjectReference{
+								Kind:     "AWSMachineTemplate",
+								APIGroup: "infrastructure.cluster.x-k8s.io",
 								// This is the generated name by machineTemplateBuilders.
 								// So reconciliation doesn't create a new AWSMachineTemplate but reconcile this one.
 								Name: awsMachineTemplateName,
@@ -1710,11 +1720,10 @@ func TestCAPIReconcile(t *testing.T) {
 				Spec: capiv1.MachineSetSpec{
 					Template: capiv1.MachineTemplateSpec{
 						Spec: capiv1.MachineSpec{
-							InfrastructureRef: corev1.ObjectReference{
-								Kind:       "AWSMachineTemplate",
-								APIVersion: "infrastructure.cluster.x-k8s.io/v1beta2",
-								Namespace:  "test-namespace-test-cluster",
-								Name:       awsMachineTemplateName,
+							InfrastructureRef: capiv1.ContractVersionedObjectReference{
+								Kind:     "AWSMachineTemplate",
+								APIGroup: "infrastructure.cluster.x-k8s.io",
+								Name:     awsMachineTemplateName,
 							},
 						},
 					},
@@ -1804,11 +1813,10 @@ func TestCAPIReconcile(t *testing.T) {
 				Spec: capiv1.MachineSetSpec{
 					Template: capiv1.MachineTemplateSpec{
 						Spec: capiv1.MachineSpec{
-							InfrastructureRef: corev1.ObjectReference{
-								Kind:       "AWSMachineTemplate",
-								APIVersion: "infrastructure.cluster.x-k8s.io/v1beta2",
-								Namespace:  "test-namespace-test-cluster",
-								Name:       awsMachineTemplateName,
+							InfrastructureRef: capiv1.ContractVersionedObjectReference{
+								Kind:     "AWSMachineTemplate",
+								APIGroup: "infrastructure.cluster.x-k8s.io",
+								Name:     awsMachineTemplateName,
 							},
 						},
 					},
@@ -1905,9 +1913,9 @@ func TestCAPIReconcile(t *testing.T) {
 				g.Expect(md.Annotations).To(HaveKeyWithValue(nodePoolAnnotation, "test-namespace/test-nodepool"))
 
 				// Check MachineDeployment spec.
-				g.Expect(md.Spec.Strategy.Type).To(Equal(capiv1.MachineDeploymentStrategyType("RollingUpdate")))
-				g.Expect(md.Spec.Strategy.RollingUpdate.MaxUnavailable.IntValue()).To(Equal(0))
-				g.Expect(md.Spec.Strategy.RollingUpdate.MaxSurge.IntValue()).To(Equal(1))
+				g.Expect(md.Spec.Rollout.Strategy.Type).To(Equal(capiv1.MachineDeploymentRolloutStrategyType("RollingUpdate")))
+				g.Expect(md.Spec.Rollout.Strategy.RollingUpdate.MaxUnavailable.IntValue()).To(Equal(0))
+				g.Expect(md.Spec.Rollout.Strategy.RollingUpdate.MaxSurge.IntValue()).To(Equal(1))
 
 				// Check MachineDeployment labels.
 				g.Expect(md.Labels).To(HaveKeyWithValue(capiv1.ClusterNameLabel, capiClusterName))
@@ -1920,14 +1928,13 @@ func TestCAPIReconcile(t *testing.T) {
 
 				// Check MachineDeployment template spec
 				g.Expect(md.Spec.Template.Spec.ClusterName).To(Equal(capiClusterName))
-				g.Expect(md.Spec.Template.Spec.InfrastructureRef.APIVersion).To(Equal("infrastructure.cluster.x-k8s.io/v1beta2"))
+				g.Expect(md.Spec.Template.Spec.InfrastructureRef.APIGroup).To(Equal("infrastructure.cluster.x-k8s.io"))
 				g.Expect(md.Spec.Template.Spec.InfrastructureRef.Kind).To(Equal("AWSMachineTemplate"))
-				g.Expect(md.Spec.Template.Spec.InfrastructureRef.Namespace).To(Equal(controlpaneNamespace))
 				g.Expect(md.Spec.Template.Spec.InfrastructureRef.Name).To(Equal(awsMachineTemplateName))
 
-				g.Expect(*md.Spec.Template.Spec.Version).To(Equal("target-version"))
-				g.Expect(md.Spec.Template.Spec.NodeDrainTimeout).To(Equal(tt.nodePool.Spec.NodeDrainTimeout))
-				g.Expect(md.Spec.Template.Spec.NodeVolumeDetachTimeout).To(Equal(tt.nodePool.Spec.NodeVolumeDetachTimeout))
+				g.Expect(md.Spec.Template.Spec.Version).To(Equal("target-version"))
+				g.Expect(md.Spec.Template.Spec.Deletion.NodeDrainTimeoutSeconds).To(Equal(durationToSeconds(tt.nodePool.Spec.NodeDrainTimeout)))
+				g.Expect(md.Spec.Template.Spec.Deletion.NodeVolumeDetachTimeoutSeconds).To(Equal(durationToSeconds(tt.nodePool.Spec.NodeVolumeDetachTimeout)))
 
 				// Check Bootstrap DataSecretName.
 				g.Expect(md.Spec.Template.Spec.Bootstrap.DataSecretName).NotTo(BeNil())
@@ -1982,10 +1989,10 @@ func TestCAPIReconcile(t *testing.T) {
 					g.Expect(err).NotTo(HaveOccurred())
 
 					// Update MachineDeployment status to indicate rollout is complete.
-					md.Status.Replicas = *tt.nodePool.Spec.Replicas
-					md.Status.UpdatedReplicas = *tt.nodePool.Spec.Replicas
-					md.Status.ReadyReplicas = *tt.nodePool.Spec.Replicas
-					md.Status.AvailableReplicas = *tt.nodePool.Spec.Replicas
+					md.Status.Replicas = tt.nodePool.Spec.Replicas
+					md.Status.ReadyReplicas = tt.nodePool.Spec.Replicas
+					md.Status.AvailableReplicas = tt.nodePool.Spec.Replicas
+					md.Status.UpToDateReplicas = tt.nodePool.Spec.Replicas
 					md.Status.ObservedGeneration = md.Generation
 					err = capi.Client.Update(t.Context(), md)
 					g.Expect(err).NotTo(HaveOccurred())
@@ -2111,11 +2118,10 @@ func TestCAPIReconcile_machineset(t *testing.T) {
 				Spec: capiv1.MachineSetSpec{
 					Template: capiv1.MachineTemplateSpec{
 						Spec: capiv1.MachineSpec{
-							InfrastructureRef: corev1.ObjectReference{
-								Kind:       "AWSMachineTemplate",
-								APIVersion: "infrastructure.cluster.x-k8s.io/v1beta2",
-								Namespace:  "test-namespace-test-cluster",
-								Name:       awsMachineTemplateName,
+							InfrastructureRef: capiv1.ContractVersionedObjectReference{
+								Kind:     "AWSMachineTemplate",
+								APIGroup: "infrastructure.cluster.x-k8s.io",
+								Name:     awsMachineTemplateName,
 							},
 						},
 					},
@@ -2171,8 +2177,8 @@ func TestCAPIReconcile_machineset(t *testing.T) {
 			ms := &capiv1.MachineSet{}
 			err = capi.Client.Get(t.Context(), client.ObjectKey{Namespace: controlplaneNamespace, Name: tt.nodePool.GetName()}, ms)
 			g.Expect(err).NotTo(HaveOccurred())
-			g.Expect(ms.Spec.Template.Spec.NodeDrainTimeout).To(Equal(tt.nodePool.Spec.NodeDrainTimeout))
-			g.Expect(ms.Spec.Template.Spec.NodeVolumeDetachTimeout).To(Equal(tt.nodePool.Spec.NodeVolumeDetachTimeout))
+			g.Expect(ms.Spec.Template.Spec.Deletion.NodeDrainTimeoutSeconds).To(Equal(durationToSeconds(tt.nodePool.Spec.NodeDrainTimeout)))
+			g.Expect(ms.Spec.Template.Spec.Deletion.NodeVolumeDetachTimeoutSeconds).To(Equal(durationToSeconds(tt.nodePool.Spec.NodeVolumeDetachTimeout)))
 		})
 	}
 }
@@ -2251,11 +2257,10 @@ func TestGlobalPSManagedLabelOnMachines(t *testing.T) {
 					Spec: capiv1.MachineSetSpec{
 						Template: capiv1.MachineTemplateSpec{
 							Spec: capiv1.MachineSpec{
-								InfrastructureRef: corev1.ObjectReference{
-									Kind:       "AWSMachineTemplate",
-									APIVersion: "infrastructure.cluster.x-k8s.io/v1beta2",
-									Namespace:  controlPlaneNamespace,
-									Name:       awsMachineTemplateName,
+								InfrastructureRef: capiv1.ContractVersionedObjectReference{
+									Kind:     "AWSMachineTemplate",
+									APIGroup: "infrastructure.cluster.x-k8s.io",
+									Name:     awsMachineTemplateName,
 								},
 							},
 						},
@@ -2399,11 +2404,10 @@ func TestGlobalPSManagedLabelOnMachines(t *testing.T) {
 					Spec: capiv1.MachineSetSpec{
 						Template: capiv1.MachineTemplateSpec{
 							Spec: capiv1.MachineSpec{
-								InfrastructureRef: corev1.ObjectReference{
-									Kind:       "AWSMachineTemplate",
-									APIVersion: "infrastructure.cluster.x-k8s.io/v1beta2",
-									Namespace:  controlPlaneNamespace,
-									Name:       awsMachineTemplateName,
+								InfrastructureRef: capiv1.ContractVersionedObjectReference{
+									Kind:     "AWSMachineTemplate",
+									APIGroup: "infrastructure.cluster.x-k8s.io",
+									Name:     awsMachineTemplateName,
 								},
 							},
 						},
@@ -2706,7 +2710,7 @@ func TestSetMachineDeploymentFailureDomain(t *testing.T) {
 	testCases := []struct {
 		name                  string
 		nodePool              *hyperv1.NodePool
-		expectedFailureDomain *string
+		expectedFailureDomain string
 	}{
 		{
 			name: "When platform is OpenStack with AvailabilityZone set, it should set failure domain",
@@ -2720,7 +2724,7 @@ func TestSetMachineDeploymentFailureDomain(t *testing.T) {
 					},
 				},
 			},
-			expectedFailureDomain: ptr.To("az-1"),
+			expectedFailureDomain: "az-1",
 		},
 		{
 			name: "When platform is OpenStack with empty AvailabilityZone, it should not set failure domain",
@@ -2734,7 +2738,7 @@ func TestSetMachineDeploymentFailureDomain(t *testing.T) {
 					},
 				},
 			},
-			expectedFailureDomain: nil,
+			expectedFailureDomain: "",
 		},
 		{
 			name: "When platform is GCP with Zone set, it should set failure domain",
@@ -2748,7 +2752,7 @@ func TestSetMachineDeploymentFailureDomain(t *testing.T) {
 					},
 				},
 			},
-			expectedFailureDomain: ptr.To("us-central1-a"),
+			expectedFailureDomain: "us-central1-a",
 		},
 		{
 			name: "When platform is GCP with empty Zone, it should not set failure domain",
@@ -2762,7 +2766,7 @@ func TestSetMachineDeploymentFailureDomain(t *testing.T) {
 					},
 				},
 			},
-			expectedFailureDomain: nil,
+			expectedFailureDomain: "",
 		},
 		{
 			name: "When platform is AWS, it should not set failure domain",
@@ -2774,7 +2778,7 @@ func TestSetMachineDeploymentFailureDomain(t *testing.T) {
 					},
 				},
 			},
-			expectedFailureDomain: nil,
+			expectedFailureDomain: "",
 		},
 		{
 			name: "When platform is OpenStack but spec is nil, it should not set failure domain",
@@ -2785,7 +2789,7 @@ func TestSetMachineDeploymentFailureDomain(t *testing.T) {
 					},
 				},
 			},
-			expectedFailureDomain: nil,
+			expectedFailureDomain: "",
 		},
 		{
 			name: "When platform is GCP but spec is nil, it should not set failure domain",
@@ -2796,7 +2800,7 @@ func TestSetMachineDeploymentFailureDomain(t *testing.T) {
 					},
 				},
 			},
-			expectedFailureDomain: nil,
+			expectedFailureDomain: "",
 		},
 	}
 
@@ -2818,45 +2822,40 @@ func TestPropagateVersionAndTemplate(t *testing.T) {
 		templateName         string
 		currentInfraRefName  string
 		useDifferentUserData bool
-		expectedUpdating     bool
 		expectedInfraRefName string
 	}{
 		{
-			name:                 "When user data secret name differs from current bootstrap, it should propagate version and return true",
+			name:                 "When user data secret name differs from current bootstrap, it should propagate version",
 			currentBootstrapName: "old-userdata",
 			currentVersion:       "4.16.0",
 			templateName:         "template-1",
 			currentInfraRefName:  "template-1",
 			useDifferentUserData: true,
-			expectedUpdating:     true,
 			expectedInfraRefName: "template-1",
 		},
 		{
-			name:                 "When machine template name differs from infra ref, it should propagate template and return true",
+			name:                 "When machine template name differs from infra ref, it should propagate template",
 			currentBootstrapName: "", // will be set to match computed name
 			currentVersion:       "4.17.0",
 			templateName:         "new-template",
 			currentInfraRefName:  "old-template",
-			expectedUpdating:     true,
 			expectedInfraRefName: "new-template",
 		},
 		{
-			name:                 "When both user data and template differ, it should propagate both and return true",
+			name:                 "When both user data and template differ, it should propagate both",
 			currentBootstrapName: "old-userdata",
 			currentVersion:       "4.16.0",
 			templateName:         "new-template",
 			currentInfraRefName:  "old-template",
 			useDifferentUserData: true,
-			expectedUpdating:     true,
 			expectedInfraRefName: "new-template",
 		},
 		{
-			name:                 "When nothing differs, it should not update and return false",
+			name:                 "When nothing differs, it should not update",
 			currentBootstrapName: "", // will be set to match computed name
 			currentVersion:       "4.17.0",
 			templateName:         "same-template",
 			currentInfraRefName:  "same-template",
-			expectedUpdating:     false,
 			expectedInfraRefName: "same-template",
 		},
 	}
@@ -2906,10 +2905,10 @@ func TestPropagateVersionAndTemplate(t *testing.T) {
 							Bootstrap: capiv1.Bootstrap{
 								DataSecretName: ptr.To(bootstrapName),
 							},
-							InfrastructureRef: corev1.ObjectReference{
+							InfrastructureRef: capiv1.ContractVersionedObjectReference{
 								Name: tc.currentInfraRefName,
 							},
-							Version: ptr.To(tc.currentVersion),
+							Version: tc.currentVersion,
 						},
 					},
 				},
@@ -2921,14 +2920,12 @@ func TestPropagateVersionAndTemplate(t *testing.T) {
 				},
 			}
 
-			result := capi.propagateVersionAndTemplate(logr.Discard(), md, templateCR)
-			g.Expect(result).To(Equal(tc.expectedUpdating))
+			capi.propagateVersionAndTemplate(logr.Discard(), md, templateCR)
 			g.Expect(md.Spec.Template.Spec.InfrastructureRef.Name).To(Equal(tc.expectedInfraRefName))
 
-			if tc.expectedUpdating && tc.useDifferentUserData {
-				// When updating, bootstrap should be set to the computed user data name.
+			if tc.useDifferentUserData {
 				g.Expect(*md.Spec.Template.Spec.Bootstrap.DataSecretName).To(Equal(computedUserDataName))
-				g.Expect(*md.Spec.Template.Spec.Version).To(Equal("4.17.0"))
+				g.Expect(md.Spec.Template.Spec.Version).To(Equal("4.17.0"))
 			}
 		})
 	}
@@ -2938,6 +2935,7 @@ func TestReconcileMachineDeploymentStatus(t *testing.T) {
 	testCases := []struct {
 		name                         string
 		machineDeployment            *capiv1.MachineDeployment
+		extraObjects                 []client.Object
 		nodePoolVersion              string
 		nodePoolAnnotations          map[string]string
 		targetVersion                string
@@ -2951,16 +2949,32 @@ func TestReconcileMachineDeploymentStatus(t *testing.T) {
 		{
 			name: "When MachineDeployment is complete, it should update nodePool version and annotations",
 			machineDeployment: &capiv1.MachineDeployment{
-				ObjectMeta: metav1.ObjectMeta{Generation: 1},
+				ObjectMeta: metav1.ObjectMeta{Name: "test-md", Namespace: "cp-ns", Generation: 1},
 				Spec: capiv1.MachineDeploymentSpec{
 					Replicas: ptr.To[int32](3),
 				},
 				Status: capiv1.MachineDeploymentStatus{
-					Replicas:           3,
-					UpdatedReplicas:    3,
-					ReadyReplicas:      3,
-					AvailableReplicas:  3,
+					Replicas:           ptr.To[int32](3),
+					UpToDateReplicas:   ptr.To[int32](3),
+					ReadyReplicas:      ptr.To[int32](3),
+					AvailableReplicas:  ptr.To[int32](3),
 					ObservedGeneration: 1,
+				},
+			},
+			extraObjects: []client.Object{
+				&capiv1.MachineSet{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-ms",
+						Namespace: "cp-ns",
+						Labels:    map[string]string{capiv1.MachineDeploymentNameLabel: "test-md"},
+					},
+					Spec: capiv1.MachineSetSpec{
+						Template: capiv1.MachineTemplateSpec{
+							Spec: capiv1.MachineSpec{
+								InfrastructureRef: capiv1.ContractVersionedObjectReference{Name: "template-name"},
+							},
+						},
+					},
 				},
 			},
 			nodePoolVersion:            "",
@@ -2979,10 +2993,10 @@ func TestReconcileMachineDeploymentStatus(t *testing.T) {
 					Replicas: ptr.To[int32](3),
 				},
 				Status: capiv1.MachineDeploymentStatus{
-					Replicas:           3,
-					UpdatedReplicas:    1,
-					ReadyReplicas:      1,
-					AvailableReplicas:  2,
+					Replicas:           ptr.To[int32](3),
+					UpToDateReplicas:   ptr.To[int32](1),
+					ReadyReplicas:      ptr.To[int32](1),
+					AvailableReplicas:  ptr.To[int32](2),
 					ObservedGeneration: 1,
 				},
 			},
@@ -3002,11 +3016,11 @@ func TestReconcileMachineDeploymentStatus(t *testing.T) {
 					Replicas: ptr.To[int32](3),
 				},
 				Status: capiv1.MachineDeploymentStatus{
-					AvailableReplicas: 2,
-					Conditions: capiv1.Conditions{
+					AvailableReplicas: ptr.To[int32](2),
+					Conditions: []metav1.Condition{
 						{
-							Type:    capiv1.ReadyCondition,
-							Status:  corev1.ConditionTrue,
+							Type:    string(capiv1.MachinesReadyCondition),
+							Status:  metav1.ConditionTrue,
 							Reason:  "SomeReason",
 							Message: "all good",
 						},
@@ -3038,9 +3052,14 @@ func TestReconcileMachineDeploymentStatus(t *testing.T) {
 				},
 			}
 
+			clientBuilder := fake.NewClientBuilder().WithScheme(api.Scheme)
+			if len(tc.extraObjects) > 0 {
+				clientBuilder = clientBuilder.WithObjects(tc.extraObjects...)
+			}
 			capi := &CAPI{
 				Token: &Token{
 					ConfigGenerator: &ConfigGenerator{
+						Client:                clientBuilder.Build(),
 						nodePool:              nodePool,
 						controlplaneNamespace: "cp-ns",
 						rolloutConfig: &rolloutConfig{
@@ -3062,7 +3081,7 @@ func TestReconcileMachineDeploymentStatus(t *testing.T) {
 				},
 			}
 
-			capi.reconcileMachineDeploymentStatus(logr.Discard(), tc.machineDeployment, templateCR)
+			capi.reconcileMachineDeploymentStatus(context.Background(), logr.Discard(), tc.machineDeployment, templateCR)
 
 			g.Expect(nodePool.Status.Replicas).To(Equal(tc.expectedReplicas))
 			g.Expect(nodePool.Status.Version).To(Equal(tc.expectedVersion))
@@ -3587,39 +3606,38 @@ func TestNewCAPI(t *testing.T) {
 
 func TestMachineDeploymentComplete(t *testing.T) {
 	two := int32(2)
-	three := int32(3)
 
 	testCases := []struct {
-		name     string
-		md       *capiv1.MachineDeployment
-		expected bool
+		name                  string
+		md                    *capiv1.MachineDeployment
+		targetMachineTemplate string
+		extraObjects          []client.Object
+		expected              bool
 	}{
 		{
-			name: "When all v1beta1 and v1beta2 fields agree it should return true",
+			name: "When all fields match spec replicas and generation it should return true",
 			md: &capiv1.MachineDeployment{
 				ObjectMeta: metav1.ObjectMeta{Generation: 2},
 				Spec:       capiv1.MachineDeploymentSpec{Replicas: &two},
 				Status: capiv1.MachineDeploymentStatus{
-					Replicas: 2, UpdatedReplicas: 2, AvailableReplicas: 2, ObservedGeneration: 2,
-					V1Beta2: &capiv1.MachineDeploymentV1Beta2Status{
-						UpToDateReplicas:  ptr.To(int32(2)),
-						AvailableReplicas: ptr.To(int32(2)),
-					},
+					Replicas:           ptr.To(int32(2)),
+					UpToDateReplicas:   ptr.To(int32(2)),
+					AvailableReplicas:  ptr.To(int32(2)),
+					ObservedGeneration: 2,
 				},
 			},
 			expected: true,
 		},
 		{
-			name: "When v1beta1 looks complete but v1beta2 upToDateReplicas disagrees it should return false",
+			name: "When availableReplicas is zero it should return false",
 			md: &capiv1.MachineDeployment{
 				ObjectMeta: metav1.ObjectMeta{Generation: 2},
 				Spec:       capiv1.MachineDeploymentSpec{Replicas: &two},
 				Status: capiv1.MachineDeploymentStatus{
-					Replicas: 2, UpdatedReplicas: 2, AvailableReplicas: 2, ObservedGeneration: 2,
-					V1Beta2: &capiv1.MachineDeploymentV1Beta2Status{
-						UpToDateReplicas:  ptr.To(int32(0)),
-						AvailableReplicas: ptr.To(int32(2)),
-					},
+					Replicas:           ptr.To[int32](2),
+					UpToDateReplicas:   ptr.To[int32](2),
+					AvailableReplicas:  ptr.To[int32](0),
+					ObservedGeneration: 2,
 				},
 			},
 			expected: false,
@@ -3630,11 +3648,10 @@ func TestMachineDeploymentComplete(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{Generation: 2},
 				Spec:       capiv1.MachineDeploymentSpec{Replicas: &two},
 				Status: capiv1.MachineDeploymentStatus{
-					Replicas: 2, UpdatedReplicas: 2, AvailableReplicas: 2, ObservedGeneration: 2,
-					V1Beta2: &capiv1.MachineDeploymentV1Beta2Status{
-						UpToDateReplicas:  ptr.To(int32(2)),
-						AvailableReplicas: ptr.To(int32(1)),
-					},
+					Replicas:           ptr.To(int32(2)),
+					UpToDateReplicas:   ptr.To(int32(2)),
+					AvailableReplicas:  ptr.To(int32(1)),
+					ObservedGeneration: 2,
 				},
 			},
 			expected: false,
@@ -3644,83 +3661,92 @@ func TestMachineDeploymentComplete(t *testing.T) {
 			md: &capiv1.MachineDeployment{
 				ObjectMeta: metav1.ObjectMeta{Generation: 2},
 				Spec:       capiv1.MachineDeploymentSpec{Replicas: &two},
-				Status:     capiv1.MachineDeploymentStatus{Replicas: 3, UpdatedReplicas: 1, AvailableReplicas: 2, ObservedGeneration: 2},
+				Status:     capiv1.MachineDeploymentStatus{Replicas: ptr.To(int32(3)), AvailableReplicas: ptr.To(int32(2)), ObservedGeneration: 2},
 			},
 			expected: false,
 		},
 		{
-			name: "When v1beta2 status is nil it should fall back to v1beta1 only",
+			name: "When v1beta2 status is nil it should fail",
 			md: &capiv1.MachineDeployment{
 				ObjectMeta: metav1.ObjectMeta{Generation: 1},
 				Spec:       capiv1.MachineDeploymentSpec{Replicas: &two},
-				Status:     capiv1.MachineDeploymentStatus{Replicas: 2, UpdatedReplicas: 2, AvailableReplicas: 2, ObservedGeneration: 1},
+				Status:     capiv1.MachineDeploymentStatus{Replicas: ptr.To(int32(2)), AvailableReplicas: ptr.To(int32(2)), ObservedGeneration: 1},
+			},
+			expected: false,
+		},
+		{
+			name: "When status looks complete but no MachineSet has target template it should return false",
+			md: &capiv1.MachineDeployment{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-md", Namespace: "cp-ns", Generation: 2},
+				Spec:       capiv1.MachineDeploymentSpec{Replicas: ptr.To[int32](2)},
+				Status: capiv1.MachineDeploymentStatus{
+					Replicas:           ptr.To[int32](2),
+					UpToDateReplicas:   ptr.To[int32](2),
+					AvailableReplicas:  ptr.To[int32](2),
+					ObservedGeneration: 2,
+				},
+			},
+			targetMachineTemplate: "new-template",
+			extraObjects: []client.Object{
+				&capiv1.MachineSet{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-ms-old",
+						Namespace: "cp-ns",
+						Labels:    map[string]string{capiv1.MachineDeploymentNameLabel: "test-md"},
+					},
+					Spec: capiv1.MachineSetSpec{
+						Template: capiv1.MachineTemplateSpec{
+							Spec: capiv1.MachineSpec{
+								InfrastructureRef: capiv1.ContractVersionedObjectReference{Name: "old-template"},
+							},
+						},
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "When status is complete and MachineSet has target template it should return true",
+			md: &capiv1.MachineDeployment{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-md", Namespace: "cp-ns", Generation: 2},
+				Spec:       capiv1.MachineDeploymentSpec{Replicas: ptr.To[int32](2)},
+				Status: capiv1.MachineDeploymentStatus{
+					Replicas:           ptr.To[int32](2),
+					UpToDateReplicas:   ptr.To[int32](2),
+					AvailableReplicas:  ptr.To[int32](2),
+					ObservedGeneration: 2,
+				},
+			},
+			targetMachineTemplate: "new-template",
+			extraObjects: []client.Object{
+				&capiv1.MachineSet{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-ms-new",
+						Namespace: "cp-ns",
+						Labels:    map[string]string{capiv1.MachineDeploymentNameLabel: "test-md"},
+					},
+					Spec: capiv1.MachineSetSpec{
+						Template: capiv1.MachineTemplateSpec{
+							Spec: capiv1.MachineSpec{
+								InfrastructureRef: capiv1.ContractVersionedObjectReference{Name: "new-template"},
+							},
+						},
+					},
+				},
 			},
 			expected: true,
-		},
-		{
-			name: "When v1beta1 replicas does not match spec it should return false",
-			md: &capiv1.MachineDeployment{
-				ObjectMeta: metav1.ObjectMeta{Generation: 2},
-				Spec:       capiv1.MachineDeploymentSpec{Replicas: &three},
-				Status: capiv1.MachineDeploymentStatus{
-					Replicas: 2, UpdatedReplicas: 2, AvailableReplicas: 2, ObservedGeneration: 2,
-					V1Beta2: &capiv1.MachineDeploymentV1Beta2Status{
-						UpToDateReplicas:  ptr.To(int32(2)),
-						AvailableReplicas: ptr.To(int32(2)),
-					},
-				},
-			},
-			expected: false,
-		},
-		{
-			name: "When v1beta2 upToDateReplicas is nil it should return false",
-			md: &capiv1.MachineDeployment{
-				ObjectMeta: metav1.ObjectMeta{Generation: 2},
-				Spec:       capiv1.MachineDeploymentSpec{Replicas: &two},
-				Status: capiv1.MachineDeploymentStatus{
-					Replicas: 2, UpdatedReplicas: 2, AvailableReplicas: 2, ObservedGeneration: 2,
-					V1Beta2: &capiv1.MachineDeploymentV1Beta2Status{
-						AvailableReplicas: ptr.To(int32(2)),
-					},
-				},
-			},
-			expected: false,
-		},
-		{
-			name: "When v1beta2 availableReplicas is nil it should return false",
-			md: &capiv1.MachineDeployment{
-				ObjectMeta: metav1.ObjectMeta{Generation: 2},
-				Spec:       capiv1.MachineDeploymentSpec{Replicas: &two},
-				Status: capiv1.MachineDeploymentStatus{
-					Replicas: 2, UpdatedReplicas: 2, AvailableReplicas: 2, ObservedGeneration: 2,
-					V1Beta2: &capiv1.MachineDeploymentV1Beta2Status{
-						UpToDateReplicas: ptr.To(int32(2)),
-					},
-				},
-			},
-			expected: false,
-		},
-		{
-			name: "When desired replicas is zero and v1beta2 fields are nil it should return false",
-			md: func() *capiv1.MachineDeployment {
-				zero := int32(0)
-				return &capiv1.MachineDeployment{
-					ObjectMeta: metav1.ObjectMeta{Generation: 2},
-					Spec:       capiv1.MachineDeploymentSpec{Replicas: &zero},
-					Status: capiv1.MachineDeploymentStatus{
-						Replicas: 0, UpdatedReplicas: 0, AvailableReplicas: 0, ObservedGeneration: 2,
-						V1Beta2: &capiv1.MachineDeploymentV1Beta2Status{},
-					},
-				}
-			}(),
-			expected: false,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
-			g.Expect(MachineDeploymentComplete(tc.md)).To(Equal(tc.expected))
+			clientBuilder := fake.NewClientBuilder().WithScheme(api.Scheme)
+			if len(tc.extraObjects) > 0 {
+				clientBuilder = clientBuilder.WithObjects(tc.extraObjects...)
+			}
+			fakeClient := clientBuilder.Build()
+			g.Expect(MachineDeploymentComplete(context.Background(), fakeClient, tc.md, tc.targetMachineTemplate)).To(Equal(tc.expected))
 		})
 	}
 }

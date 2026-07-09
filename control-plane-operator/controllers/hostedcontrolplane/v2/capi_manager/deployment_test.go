@@ -29,29 +29,29 @@ func TestAdaptDeployment(t *testing.T) {
 		expectedAnnotKey string
 	}{
 		{
-			name:          "When version is 4.19.0, it should add MachineSetPreflightChecks feature gate",
+			name:          "When version is 4.19.0, it should add feature gates",
 			version:       "4.19.0",
-			expectedArgs:  []string{"--feature-gates=MachineSetPreflightChecks=false"},
+			expectedArgs:  []string{"--feature-gates=MachineSetPreflightChecks=false,PriorityQueue=true,ReconcilerRateLimiting=true"},
 			expectedImage: "cluster-capi-controllers",
 		},
 		{
-			name:          "When version is 4.20.0, it should add MachineSetPreflightChecks feature gate",
+			name:          "When version is 4.20.0, it should add feature gates",
 			version:       "4.20.0",
-			expectedArgs:  []string{"--feature-gates=MachineSetPreflightChecks=false"},
+			expectedArgs:  []string{"--feature-gates=MachineSetPreflightChecks=false,PriorityQueue=true,ReconcilerRateLimiting=true"},
 			expectedImage: "cluster-capi-controllers",
 		},
 		{
-			name:           "When version is 4.18.0, it should not add MachineSetPreflightChecks feature gate",
+			name:           "When version is 4.18.0, it should not add feature gates",
 			version:        "4.18.0",
 			expectedArgs:   []string{},
-			unexpectedArgs: []string{"--feature-gates=MachineSetPreflightChecks=false"},
+			unexpectedArgs: []string{"--feature-gates=MachineSetPreflightChecks=false,PriorityQueue=true,ReconcilerRateLimiting=true"},
 			expectedImage:  "cluster-capi-controllers",
 		},
 		{
 			name:          "When imageOverride is set, it should use the override image",
 			version:       "4.19.0",
 			imageOverride: "quay.io/custom/capi:v1.0.0",
-			expectedArgs:  []string{"--feature-gates=MachineSetPreflightChecks=false"},
+			expectedArgs:  []string{"--feature-gates=MachineSetPreflightChecks=false,PriorityQueue=true,ReconcilerRateLimiting=true"},
 			expectedImage: "quay.io/custom/capi:v1.0.0",
 		},
 		{
@@ -60,7 +60,7 @@ func TestAdaptDeployment(t *testing.T) {
 			hcpAnnotations: map[string]string{
 				k8sutil.HostedClusterAnnotation: "test-namespace/test-cluster",
 			},
-			expectedArgs:     []string{"--feature-gates=MachineSetPreflightChecks=false"},
+			expectedArgs:     []string{"--feature-gates=MachineSetPreflightChecks=false,PriorityQueue=true,ReconcilerRateLimiting=true"},
 			expectedImage:    "cluster-capi-controllers",
 			expectedAnnotKey: k8sutil.HostedClusterAnnotation,
 		},

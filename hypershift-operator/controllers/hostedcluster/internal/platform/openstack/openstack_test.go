@@ -15,7 +15,7 @@ import (
 	"k8s.io/utils/ptr"
 
 	capo "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
-	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	capiv1beta1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
 
 	"github.com/blang/semver"
 	"github.com/google/go-cmp/cmp"
@@ -54,9 +54,11 @@ func TestReconcileOpenStackCluster(t *testing.T) {
 								AllocationPools: []hyperv1.AllocationPool{{
 									Start: "10.0.0.1",
 									End:   "10.0.0.10",
-								}}}},
+								}},
+							}},
 							NetworkMTU: ptr.To(1500),
-						}},
+						},
+					},
 				},
 			},
 			expectedOpenStackClusterSpec: capo.OpenStackClusterSpec{
@@ -64,16 +66,18 @@ func TestReconcileOpenStackCluster(t *testing.T) {
 					Name:      "openstack-credentials",
 					CloudName: "openstack",
 				},
-				ManagedSubnets: []capo.SubnetSpec{{
-					CIDR:           "10.0.0.0/24",
-					DNSNameservers: []string{"1.1.1.1"},
-					AllocationPools: []capo.AllocationPool{{
-						Start: "10.0.0.1",
-						End:   "10.0.0.10",
-					}}},
+				ManagedSubnets: []capo.SubnetSpec{
+					{
+						CIDR:           "10.0.0.0/24",
+						DNSNameservers: []string{"1.1.1.1"},
+						AllocationPools: []capo.AllocationPool{{
+							Start: "10.0.0.1",
+							End:   "10.0.0.10",
+						}},
+					},
 				},
 				NetworkMTU: ptr.To(1500),
-				ControlPlaneEndpoint: &capiv1.APIEndpoint{
+				ControlPlaneEndpoint: &capiv1beta1.APIEndpoint{
 					Host: "api-endpoint",
 					Port: 6443,
 				},
@@ -108,7 +112,10 @@ func TestReconcileOpenStackCluster(t *testing.T) {
 							Subnets: []hyperv1.SubnetParam{
 								{ID: ptr.To(subnetID)},
 							},
-						}}}},
+						},
+					},
+				},
+			},
 			expectedOpenStackClusterSpec: capo.OpenStackClusterSpec{
 				IdentityRef: capo.OpenStackIdentityReference{
 					Name:      "openstack-credentials",
@@ -119,7 +126,7 @@ func TestReconcileOpenStackCluster(t *testing.T) {
 				},
 				Subnets: []capo.SubnetParam{{ID: ptr.To(subnetID)}},
 				Network: &capo.NetworkParam{ID: ptr.To(networkID)},
-				ControlPlaneEndpoint: &capiv1.APIEndpoint{
+				ControlPlaneEndpoint: &capiv1beta1.APIEndpoint{
 					Host: "api-endpoint",
 					Port: 6443,
 				},
@@ -149,7 +156,8 @@ func TestReconcileOpenStackCluster(t *testing.T) {
 								Filter: &hyperv1.NetworkFilter{
 									FilterByNeutronTags: hyperv1.FilterByNeutronTags{
 										Tags: []hyperv1.NeutronTag{"test"},
-									}},
+									},
+								},
 							},
 							Subnets: []hyperv1.SubnetParam{
 								{Filter: &hyperv1.SubnetFilter{
@@ -159,7 +167,10 @@ func TestReconcileOpenStackCluster(t *testing.T) {
 								}},
 							},
 							Tags: []string{"hcp-id=123"},
-						}}}},
+						},
+					},
+				},
+			},
 			expectedOpenStackClusterSpec: capo.OpenStackClusterSpec{
 				IdentityRef: capo.OpenStackIdentityReference{
 					Name:      "openstack-credentials",
@@ -176,9 +187,10 @@ func TestReconcileOpenStackCluster(t *testing.T) {
 					Filter: &capo.NetworkFilter{
 						FilterByNeutronTags: capo.FilterByNeutronTags{
 							Tags: []capo.NeutronTag{"test"},
-						}},
+						},
+					},
 				},
-				ControlPlaneEndpoint: &capiv1.APIEndpoint{
+				ControlPlaneEndpoint: &capiv1beta1.APIEndpoint{
 					Host: "api-endpoint",
 					Port: 6443,
 				},
@@ -204,7 +216,8 @@ func TestReconcileOpenStackCluster(t *testing.T) {
 								Filter: &hyperv1.NetworkFilter{
 									FilterByNeutronTags: hyperv1.FilterByNeutronTags{
 										Tags: []hyperv1.NeutronTag{"test"},
-									}},
+									},
+								},
 							},
 							Subnets: []hyperv1.SubnetParam{
 								{Filter: &hyperv1.SubnetFilter{
@@ -213,7 +226,10 @@ func TestReconcileOpenStackCluster(t *testing.T) {
 									},
 								}},
 							},
-						}}}},
+						},
+					},
+				},
+			},
 			expectedOpenStackClusterSpec: capo.OpenStackClusterSpec{
 				IdentityRef: capo.OpenStackIdentityReference{
 					Name:      "openstack-credentials",
@@ -278,7 +294,7 @@ func TestCAPIProviderDeploymentSpec(t *testing.T) {
 								Name: "capi-webhooks-tls",
 								VolumeSource: corev1.VolumeSource{
 									Secret: &corev1.SecretVolumeSource{
-										DefaultMode: ptr.To[int32](0640),
+										DefaultMode: ptr.To[int32](0o640),
 										SecretName:  "capi-webhooks-tls",
 									},
 								},
@@ -287,7 +303,7 @@ func TestCAPIProviderDeploymentSpec(t *testing.T) {
 								Name: "svc-kubeconfig",
 								VolumeSource: corev1.VolumeSource{
 									Secret: &corev1.SecretVolumeSource{
-										DefaultMode: ptr.To[int32](0640),
+										DefaultMode: ptr.To[int32](0o640),
 										SecretName:  "service-network-admin-kubeconfig",
 									},
 								},
@@ -388,7 +404,7 @@ func TestCAPIProviderDeploymentSpec(t *testing.T) {
 								Name: "capi-webhooks-tls",
 								VolumeSource: corev1.VolumeSource{
 									Secret: &corev1.SecretVolumeSource{
-										DefaultMode: ptr.To[int32](0640),
+										DefaultMode: ptr.To[int32](0o640),
 										SecretName:  "capi-webhooks-tls",
 									},
 								},
@@ -397,7 +413,7 @@ func TestCAPIProviderDeploymentSpec(t *testing.T) {
 								Name: "svc-kubeconfig",
 								VolumeSource: corev1.VolumeSource{
 									Secret: &corev1.SecretVolumeSource{
-										DefaultMode: ptr.To[int32](0640),
+										DefaultMode: ptr.To[int32](0o640),
 										SecretName:  "service-network-admin-kubeconfig",
 									},
 								},

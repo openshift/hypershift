@@ -27,7 +27,8 @@ import (
 	"k8s.io/utils/ptr"
 
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
-	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	capiv1beta1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/blang/semver"
@@ -97,7 +98,7 @@ func (a Azure) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hy
 	if override, ok := hcluster.Annotations[hyperv1.ClusterAPIAzureProviderImage]; ok {
 		image = override
 	}
-	defaultMode := int32(0640)
+	defaultMode := int32(0o640)
 	deploymentSpec := &appsv1.DeploymentSpec{
 		Replicas: ptr.To[int32](1),
 		Template: corev1.PodTemplateSpec{
@@ -376,7 +377,7 @@ func reconcileAzureCluster(azureCluster *capiazure.AzureCluster, hcluster *hyper
 	azureCluster.Spec.NetworkSpec.NodeOutboundLB.Name = hcluster.Spec.InfraID
 	azureCluster.Spec.NetworkSpec.NodeOutboundLB.BackendPool.Name = hcluster.Spec.InfraID
 
-	azureCluster.Spec.ControlPlaneEndpoint = capiv1.APIEndpoint{
+	azureCluster.Spec.ControlPlaneEndpoint = capiv1beta1.APIEndpoint{
 		Host: apiEndpoint.Host,
 		Port: apiEndpoint.Port,
 	}

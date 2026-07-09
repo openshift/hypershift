@@ -22,7 +22,8 @@ import (
 	"k8s.io/utils/ptr"
 
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
-	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	capiv1beta1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -119,7 +120,7 @@ func (p AWS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hype
 		featureGates = append(featureGates, "ROSA=false")
 	}
 
-	defaultMode := int32(0640)
+	defaultMode := int32(0o640)
 	deploymentSpec := &appsv1.DeploymentSpec{
 		Replicas: ptr.To[int32](1),
 		Template: corev1.PodTemplateSpec{
@@ -211,7 +212,8 @@ func (p AWS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hype
 								Value: "true",
 							},
 						},
-						Args: []string{"--namespace", "$(MY_NAMESPACE)",
+						Args: []string{
+							"--namespace", "$(MY_NAMESPACE)",
 							"--v=4",
 							"--leader-elect=true",
 							fmt.Sprintf("--feature-gates=%s", strings.Join(featureGates, ",")),
@@ -288,7 +290,8 @@ func buildAWSWebIdentityCredentials(roleArn, region string) (string, error) {
 
 func (p AWS) ReconcileCredentials(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
 	hcluster *hyperv1.HostedCluster,
-	controlPlaneNamespace string) error {
+	controlPlaneNamespace string,
+) error {
 	// TODO (alberto): consider moving this reconciliation logic down to the CPO.
 	// this is not trivial as the CPO deployment itself needs the secret with the ControlPlaneOperatorARN
 	var errs []error
@@ -340,7 +343,8 @@ func (p AWS) ReconcileCredentials(ctx context.Context, c client.Client, createOr
 
 func (AWS) ReconcileSecretEncryption(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
 	hcluster *hyperv1.HostedCluster,
-	controlPlaneNamespace string) error {
+	controlPlaneNamespace string,
+) error {
 	return nil
 }
 
@@ -425,7 +429,7 @@ func reconcileAWSCluster(awsCluster *capiaws.AWSCluster, hcluster *hyperv1.Hoste
 
 	// Set the values for upper level controller
 	awsCluster.Status.Ready = true
-	awsCluster.Spec.ControlPlaneEndpoint = capiv1.APIEndpoint{
+	awsCluster.Spec.ControlPlaneEndpoint = capiv1beta1.APIEndpoint{
 		Host: apiEndpoint.Host,
 		Port: apiEndpoint.Port,
 	}

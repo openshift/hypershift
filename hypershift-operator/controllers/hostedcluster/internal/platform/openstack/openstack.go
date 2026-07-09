@@ -20,7 +20,7 @@ import (
 	"k8s.io/utils/ptr"
 
 	capo "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
-	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	capiv1beta1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/blang/semver"
@@ -51,7 +51,8 @@ func New(capiProviderImage string, orcImage string, payloadVersion *semver.Versi
 }
 
 func (a OpenStack) ReconcileCAPIInfraCR(ctx context.Context, client client.Client, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster,
-	controlPlaneNamespace string, apiEndpoint hyperv1.APIEndpoint) (client.Object, error) {
+	controlPlaneNamespace string, apiEndpoint hyperv1.APIEndpoint,
+) (client.Object, error) {
 	openStackCluster := &capo.OpenStackCluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      hcluster.Name,
@@ -87,7 +88,7 @@ func reconcileOpenStackClusterSpec(hcluster *hyperv1.HostedCluster, openStackClu
 
 	openStackPlatform := hcluster.Spec.Platform.OpenStack
 
-	openStackClusterSpec.ControlPlaneEndpoint = &capiv1.APIEndpoint{
+	openStackClusterSpec.ControlPlaneEndpoint = &capiv1beta1.APIEndpoint{
 		Host: apiEndpoint.Host,
 		Port: apiEndpoint.Port,
 	}
@@ -190,7 +191,7 @@ func (a OpenStack) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _
 		orcImage = override
 	}
 	allowPrivilegeEscalation := false
-	defaultMode := int32(0640)
+	defaultMode := int32(0o640)
 	deploymentSpec := appsv1.DeploymentSpec{
 		Replicas: ptr.To[int32](1),
 		Template: corev1.PodTemplateSpec{
@@ -285,7 +286,8 @@ func (a OpenStack) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _
 						},
 					},
 				}},
-			}},
+			},
+		},
 	}
 
 	// Add the ORC manager container if the payload version is 4.19 or later
