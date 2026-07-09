@@ -78,6 +78,7 @@ spec:
       hostDevices:
       - count: 2
         deviceName: nvidia-a100
+      evictionStrategy: External
       networkInterfaceMultiqueue: Enable
       rootVolume:
         persistent:
@@ -86,4 +87,29 @@ spec:
     type: KubeVirt
   replicas: 3
 ```
+
+## Eviction Strategy for GPU NodePools
+
+VMs with GPU passthrough devices are not live-migratable. By default, when
+no `evictionStrategy` is set on a NodePool, the cluster-level KubeVirt
+default applies. On multi-node HA clusters managed by HCO this is
+`LiveMigrate`; on single-node OpenShift (SNO) it is `None`. With
+`LiveMigrate`, draining an infrastructure node that hosts a non-migratable
+VM will stall indefinitely because KubeVirt cannot migrate the VM and
+refuses to evict it.
+
+Setting `evictionStrategy: External` on GPU NodePools delegates eviction
+handling to the Cluster API Provider for KubeVirt (CAPK), which gracefully
+drains the guest node inside the hosted cluster before deleting the VM.
+KubeVirt then recreates the VM on another available node.
+
+The supported values for `evictionStrategy` are:
+
+| Value | Behavior |
+|-------|----------|
+| *(not set)* | Uses the cluster-level KubeVirt default (`LiveMigrate` on HA clusters, `None` on single-node). Best for migratable VMs. |
+| `LiveMigrate` | KubeVirt live-migrates the VM on node drain. If the VM is not migratable, the drain stalls. |
+| `LiveMigrateIfPossible` | Live-migrates if possible, otherwise allows the VM to be killed without graceful guest drain. |
+| `External` | CAPK drains the guest node, then deletes the VM. Recommended for non-migratable VMs (GPU, SR-IOV). |
+| `None` | The VM is killed immediately on eviction with no migration or graceful drain. |
 

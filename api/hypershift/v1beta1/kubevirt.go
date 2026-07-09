@@ -143,6 +143,18 @@ const (
 	MultiQueueDisable MultiQueueSetting = "Disable"
 )
 
+// KubevirtEvictionStrategy defines the eviction behavior for KubeVirt VMs.
+//
+// +kubebuilder:validation:Enum=LiveMigrate;LiveMigrateIfPossible;External;None
+type KubevirtEvictionStrategy string
+
+const (
+	EvictionStrategyLiveMigrate           KubevirtEvictionStrategy = "LiveMigrate"
+	EvictionStrategyLiveMigrateIfPossible KubevirtEvictionStrategy = "LiveMigrateIfPossible"
+	EvictionStrategyExternal              KubevirtEvictionStrategy = "External"
+	EvictionStrategyNone                  KubevirtEvictionStrategy = "None"
+)
+
 // KubevirtNodePoolPlatform specifies the configuration of a NodePool when operating
 // on KubeVirt platform.
 type KubevirtNodePoolPlatform struct {
@@ -191,6 +203,24 @@ type KubevirtNodePoolPlatform struct {
 	// +optional
 	// +kubebuilder:validation:MaxItems=10
 	KubevirtHostDevices []KubevirtHostDevice `json:"hostDevices,omitempty"`
+
+	// evictionStrategy defines the eviction behavior for KubeVirt VMs during
+	// infrastructure node drain. If not set, the cluster-level default from the
+	// KubeVirt configuration applies (typically LiveMigrate on HA clusters when
+	// managed by HCO).
+	//
+	// - LiveMigrate: KubeVirt live-migrates the VM to another node (zero guest
+	//   disruption). If the VM is not migratable, the node drain stalls.
+	// - LiveMigrateIfPossible: live-migrates if possible, otherwise allows the
+	//   VMI pod to be killed (no graceful guest drain).
+	// - External: delegates eviction handling to CAPK, which drains the guest
+	//   node before deleting the VMI. Use this for non-migratable VMs (e.g.,
+	//   with GPU passthrough or SR-IOV) that need graceful guest node drain.
+	// - None: the VM is killed immediately on eviction with no migration or
+	//   graceful guest drain. This is the HCO default on single-node OpenShift.
+	//
+	// +optional
+	EvictionStrategy KubevirtEvictionStrategy `json:"evictionStrategy,omitempty"`
 }
 
 // KubevirtNetwork specifies the configuration for a virtual machine
