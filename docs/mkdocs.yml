@@ -97,6 +97,13 @@ nav:
     - 'Documentation Preview': how-to/ci/docs-preview.md
     - 'GitHub Actions Workflows': how-to/ci/github-actions.md
     - 'Sync Community Fork': how-to/ci/sync-community-fork.md
+    - 'HO Konflux Release Gating':
+      - how-to/ci/ho-release-gating/index.md
+      - 'Release Strategy': how-to/ci/ho-release-gating/strategy.md
+      - 'Architecture': how-to/ci/ho-release-gating/architecture.md
+      - 'Adding E2E Tests': how-to/ci/ho-release-gating/extending-tests.md
+      - 'Extending to Other Services': how-to/ci/ho-release-gating/extending-services.md
+      - 'Operations and Troubleshooting': how-to/ci/ho-release-gating/troubleshooting.md
     - 'Triage':
       - how-to/ci/triage/index.md
       - 'Presubmit Failures': how-to/ci/triage/presubmit-failures.md
