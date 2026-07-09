@@ -26,6 +26,44 @@ func TestValidate(t *testing.T) {
 			errorContains: "--base-domain is required",
 			description:   "Should require base domain",
 		},
+		"When assign-identity-roles is set without dns-zone-rg-name it should return an error": {
+			opts: CreateInfraOptions{
+				BaseDomain:                  "example.com",
+				AssignServicePrincipalRoles: true,
+				DNSZoneRG:                   "",
+			},
+			expectedError: true,
+			errorContains: "--dns-zone-rg-name is required when --assign-identity-roles or --assign-custom-hcp-roles is set",
+			description:   "Should require dns-zone-rg-name when assign-identity-roles is set",
+		},
+		"When assign-custom-hcp-roles is set without dns-zone-rg-name it should return an error": {
+			opts: CreateInfraOptions{
+				BaseDomain:           "example.com",
+				AssignCustomHCPRoles: true,
+				DNSZoneRG:            "",
+			},
+			expectedError: true,
+			errorContains: "--dns-zone-rg-name is required when --assign-identity-roles or --assign-custom-hcp-roles is set",
+			description:   "Should require dns-zone-rg-name when assign-custom-hcp-roles is set",
+		},
+		"When assign-identity-roles is set with dns-zone-rg-name it should pass validation": {
+			opts: CreateInfraOptions{
+				BaseDomain:                  "example.com",
+				AssignServicePrincipalRoles: true,
+				DNSZoneRG:                   "my-dns-rg",
+			},
+			expectedError: false,
+			description:   "Should pass when both assign-identity-roles and dns-zone-rg-name are set",
+		},
+		"When assign-identity-roles is not set and dns-zone-rg-name is empty it should pass validation": {
+			opts: CreateInfraOptions{
+				BaseDomain:                  "example.com",
+				AssignServicePrincipalRoles: false,
+				DNSZoneRG:                   "",
+			},
+			expectedError: false,
+			description:   "Should pass when assign-identity-roles is not set regardless of dns-zone-rg-name",
+		},
 	}
 
 	for name, test := range tests {
@@ -35,10 +73,10 @@ func TestValidate(t *testing.T) {
 			err := test.opts.Validate()
 
 			if test.expectedError {
-				g.Expect(err).ToNot(BeNil(), test.description)
+				g.Expect(err).To(HaveOccurred(), test.description)
 				g.Expect(err.Error()).To(ContainSubstring(test.errorContains), test.description)
 			} else {
-				g.Expect(err).To(BeNil(), test.description)
+				g.Expect(err).ToNot(HaveOccurred(), test.description)
 			}
 		})
 	}
@@ -104,14 +142,14 @@ func TestValidateDeploymentModelFlags(t *testing.T) {
 			err := test.opts.validateDeploymentModelFlags()
 
 			if test.expectedError {
-				g.Expect(err).To(Not(BeNil()), test.description)
+				g.Expect(err).To(HaveOccurred(), test.description)
 				// Verify the error mentions either mutual exclusion or missing configuration
 				g.Expect(err.Error()).To(SatisfyAny(
 					ContainSubstring("mutually exclusive"),
 					ContainSubstring("--workload-identities-file is required"),
 				), "Error should mention validation failure: %s", test.description)
 			} else {
-				g.Expect(err).To(BeNil(), test.description)
+				g.Expect(err).ToNot(HaveOccurred(), test.description)
 			}
 		})
 	}
