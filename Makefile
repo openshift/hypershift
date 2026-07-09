@@ -186,7 +186,7 @@ $(CRD_SCHEMA_CHECK): $(TOOLS_DIR)/go.mod # Build crd-schema-check tool
 .PHONY: generate
 generate: $(MOCKGEN)
 	@echo "Cleaning stale mock files..."
-	git clean -fx -- '*_mock.go'
+	find . -name '*_mock.go' -not -path '*/vendor/*' -delete
 	$(GO) generate ./...
 
 # Compile all tests
