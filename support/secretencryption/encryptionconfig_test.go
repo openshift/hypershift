@@ -2,12 +2,18 @@ package secretencryption
 
 import (
 	"testing"
+	"time"
 
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	apiserverv1 "k8s.io/apiserver/pkg/apis/apiserver/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 func TestDecodeEncryptionConfiguration(t *testing.T) {
@@ -87,6 +93,119 @@ func aescbcProvider(keys ...apiserverv1.Key) apiserverv1.ProviderConfiguration {
 
 func aescbcKey(name string) apiserverv1.Key {
 	return apiserverv1.Key{Name: name, Secret: "dW51c2Vk"}
+}
+
+func TestEncryptionConfigHash(t *testing.T) {
+	t.Parallel()
+
+	t.Run("When config bytes are empty it should return an empty hash", func(t *testing.T) {
+		g := NewWithT(t)
+		g.Expect(EncryptionConfigHash(nil)).To(BeEmpty())
+	})
+
+	t.Run("When config bytes are provided it should return a stable sha256 hash", func(t *testing.T) {
+		g := NewWithT(t)
+		data := []byte("apiVersion: apiserver.config.k8s.io/v1\nkind: EncryptionConfiguration\n")
+		hash := EncryptionConfigHash(data)
+		g.Expect(hash).To(HavePrefix("sha256:"))
+		g.Expect(EncryptionConfigHash(data)).To(Equal(hash))
+	})
+}
+
+func TestKASDeploymentConvergedWithEncryptionConfig(t *testing.T) {
+	t.Parallel()
+
+	configBytes := []byte("config")
+	configHash := EncryptionConfigHash(configBytes)
+	replicas := int32(1)
+
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+	_ = appsv1.AddToScheme(scheme)
+
+	kasLabels := map[string]string{"app": "kube-apiserver"}
+
+	readyDeployment := func() *appsv1.Deployment {
+		return &appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "kube-apiserver",
+				Namespace: "clusters-test",
+			},
+			Spec: appsv1.DeploymentSpec{
+				Replicas: &replicas,
+				Selector: &metav1.LabelSelector{MatchLabels: kasLabels},
+				Template: corev1.PodTemplateSpec{
+					ObjectMeta: metav1.ObjectMeta{
+						Annotations: map[string]string{
+							EncryptionConfigHashAnnotation: configHash,
+						},
+					},
+				},
+			},
+			Status: appsv1.DeploymentStatus{
+				Replicas:          1,
+				UpdatedReplicas:   1,
+				ReadyReplicas:     1,
+				AvailableReplicas: 1,
+			},
+		}
+	}
+
+	t.Run("When deployment is ready, hash matches, and no terminating pods it should report converged", func(t *testing.T) {
+		g := NewWithT(t)
+		deployment := readyDeployment()
+		activePod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "kube-apiserver-abc123",
+				Namespace: "clusters-test",
+				Labels:    kasLabels,
+			},
+			Status: corev1.PodStatus{Phase: corev1.PodRunning},
+		}
+		c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(activePod).Build()
+		g.Expect(KASDeploymentConvergedWithEncryptionConfig(t.Context(), c, deployment, configHash)).To(BeTrue())
+	})
+
+	t.Run("When deployment is ready but hash mismatches it should not report converged", func(t *testing.T) {
+		g := NewWithT(t)
+		deployment := readyDeployment()
+		deployment.Spec.Template.Annotations = nil
+		c := fake.NewClientBuilder().WithScheme(scheme).Build()
+		g.Expect(KASDeploymentConvergedWithEncryptionConfig(t.Context(), c, deployment, configHash)).To(BeFalse())
+	})
+
+	t.Run("When deployment is ready and hash matches but a terminating pod exists it should not report converged", func(t *testing.T) {
+		g := NewWithT(t)
+		deployment := readyDeployment()
+		now := metav1.NewTime(time.Now())
+		terminatingPod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:              "kube-apiserver-old",
+				Namespace:         "clusters-test",
+				Labels:            kasLabels,
+				DeletionTimestamp: &now,
+				Finalizers:        []string{"test-finalizer"},
+			},
+			Status: corev1.PodStatus{Phase: corev1.PodRunning},
+		}
+		activePod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "kube-apiserver-new",
+				Namespace: "clusters-test",
+				Labels:    kasLabels,
+			},
+			Status: corev1.PodStatus{Phase: corev1.PodRunning},
+		}
+		c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(terminatingPod, activePod).Build()
+		g.Expect(KASDeploymentConvergedWithEncryptionConfig(t.Context(), c, deployment, configHash)).To(BeFalse())
+	})
+
+	t.Run("When expected config hash is empty it should not report converged", func(t *testing.T) {
+		g := NewWithT(t)
+		deployment := readyDeployment()
+		c := fake.NewClientBuilder().WithScheme(scheme).Build()
+		g.Expect(KASDeploymentConvergedWithEncryptionConfig(t.Context(), c, deployment, "")).To(BeFalse())
+	})
 }
 
 func TestFindKeyRole(t *testing.T) {
