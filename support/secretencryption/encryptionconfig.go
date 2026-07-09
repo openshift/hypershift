@@ -5,8 +5,6 @@ import (
 	"crypto/sha256"
 	"fmt"
 
-	"github.com/go-logr/logr"
-
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/util"
 
@@ -16,7 +14,10 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer/json"
 	apiserverv1 "k8s.io/apiserver/pkg/apis/apiserver/v1"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/go-logr/logr"
 )
 
 const (

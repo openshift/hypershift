@@ -201,7 +201,6 @@ func getKMSAPIVersion(currentConfig *apiserverv1.EncryptionConfiguration) string
 	return "v2"
 }
 
-
 func buildVolumeSecretEncryptionConfigFile() corev1.Volume {
 	v := corev1.Volume{
 		Name: secretEncryptionConfigFileVolumeName,
