@@ -4418,9 +4418,8 @@ func TestReconcileDeletion(t *testing.T) {
 
 			ctx := ctrl.LoggerInto(t.Context(), ctrl.Log.WithName("test"))
 
-			// Re-read from fake client so the object has a ResourceVersion for OptimisticLock
+			// Re-read from fake client so the object has a ResourceVersion for PatchStatusCondition
 			g.Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(hcp), hcp)).To(Succeed())
-			originalHCP := hcp.DeepCopy()
 
 			r := &HostedControlPlaneReconciler{
 				Client:    fakeClient,
@@ -4428,7 +4427,7 @@ func TestReconcileDeletion(t *testing.T) {
 				ec2Client: mockEC2,
 			}
 
-			_, err := r.reconcileDeletion(ctx, hcp, originalHCP)
+			_, err := r.reconcileDeletion(ctx, hcp)
 			if tt.wantErr {
 				g.Expect(err).To(HaveOccurred())
 			} else {
