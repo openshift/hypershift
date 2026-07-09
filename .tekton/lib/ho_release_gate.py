@@ -680,8 +680,13 @@ def check_and_build_stale_payload(token, its_scenario, threshold_days,
               " - skipping stale check", flush=True)
         return None
 
-    oldest_dt = datetime.fromisoformat(
-        oldest_created.replace("Z", "+00:00"))
+    try:
+        oldest_dt = datetime.fromisoformat(
+            oldest_created.replace("Z", "+00:00"))
+    except ValueError:
+        print(f"  WARN: cannot parse timestamp '{oldest_created}'"
+              " - skipping stale check", flush=True)
+        return None
     streak_days = (datetime.now(timezone.utc) - oldest_dt).days + 1
 
     print(f"  Failure streak: {len(streak)} run(s)"

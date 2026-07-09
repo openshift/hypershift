@@ -263,7 +263,8 @@ def fetch_pipelineruns_mock_stale(token, namespace, label_selector):
 
     Each generated run is spaced one day apart, with the most recent
     run placed yesterday (relative to now) and the oldest run placed
-    threshold_days ago. All runs have status=False and reason="Failed".
+    threshold_days + 1 days ago. All runs have status=False and
+    reason="Failed".
 
     Use this when testing the stale alert notification (tests 3 and 4).
     Patch into ho_release_gate before calling check_and_build_stale_payload::

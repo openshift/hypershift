@@ -1,6 +1,7 @@
 """KubeArchive REST API utilities (stdlib only)."""
 
 import json
+from datetime import datetime, timezone, timedelta
 from urllib.parse import quote
 
 from http_utils import http_request_with_retry
@@ -11,6 +12,15 @@ KUBEARCHIVE_API_BASE = (
     "https://kubearchive-api-server-product-kubearchive"
     ".apps.stone-prd-rh01.pg1f.p1.openshiftapps.com"
 )
+
+# KubeArchive does not guarantee server-side sort order, so the first
+# page of results may contain arbitrarily old runs rather than the most
+# recent ones.  We use a time filter + high limit to ensure all recent
+# runs fit in a single response without pagination.
+# Stale promotion is a condition that should be resolved within days,
+# so 60 days is deliberately oversized to never cut off relevant data.
+STALE_LOOKBACK_DAYS = 60
+STALE_QUERY_LIMIT = STALE_LOOKBACK_DAYS * 2  # ~1 run/day + margin for retriggers
 
 
 def fetch_pipelineruns(token, namespace, label_selector):
@@ -37,9 +47,15 @@ def fetch_pipelineruns(token, namespace, label_selector):
         Sorted most-recent-first.
         Returns an empty list on any error (non-200, parse failure).
     """
+    cutoff = (datetime.now(timezone.utc)
+              - timedelta(days=STALE_LOOKBACK_DAYS))
+    cutoff_ts = cutoff.strftime("%Y-%m-%dT00:00:00Z")
+
     url = (f"{KUBEARCHIVE_API_BASE}/apis/tekton.dev/v1"
            f"/namespaces/{namespace}"
-           f"/pipelineruns?labelSelector={quote(label_selector)}")
+           f"/pipelineruns?labelSelector={quote(label_selector)}"
+           f"&limit={STALE_QUERY_LIMIT}"
+           f"&creationTimestampAfter={quote(cutoff_ts)}")
 
     headers = {"Authorization": f"Bearer {token}"}
 

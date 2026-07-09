@@ -157,7 +157,7 @@ def get_prow_job_status(gangway_url, token, job_id):
         f"{gangway_url}/{job_id}", method="GET", headers=headers
     )
 
-    if status == 429 or (500 <= status < 600):
+    if status == 0 or status == 429 or (500 <= status < 600):
         return "rate_limited", f"HTTP {status}"
 
     if status != 200:

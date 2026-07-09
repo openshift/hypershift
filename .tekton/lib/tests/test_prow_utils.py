@@ -101,9 +101,11 @@ class TestTriggerProwJob(unittest.TestCase):
             "tok", "periodic-job", {"K": "V"}, max_retries=5, backoff=60)
 
         _, kwargs = mock_req.call_args
-        body = kwargs.get("body") or mock_req.call_args[0][3] if len(mock_req.call_args[0]) > 3 else kwargs.get("body")
         self.assertEqual(kwargs["retries"], 5)
         self.assertEqual(kwargs["backoff"], 60)
+        body = kwargs["body"]
+        self.assertEqual(body["job_name"], "periodic-job")
+        self.assertEqual(body["pod_spec_options"]["envs"], {"K": "V"})
 
 
 class TestResolveProwUrl(unittest.TestCase):
@@ -226,6 +228,16 @@ class TestGetProwJobStatus(unittest.TestCase):
             "https://gangway.example.com/v1/executions", "tok", "123")
 
         self.assertEqual(mapped, "rate_limited")
+
+    @patch("prow_utils.http_request")
+    def test_connection_failure_is_retryable(self, mock_req):
+        mock_req.return_value = (0, "Connection refused")
+
+        mapped, raw = get_prow_job_status(
+            "https://gangway.example.com/v1/executions", "tok", "123")
+
+        self.assertEqual(mapped, "rate_limited")
+        self.assertIn("0", raw)
 
     @patch("prow_utils.http_request")
     def test_auth_error(self, mock_req):

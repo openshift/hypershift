@@ -8,7 +8,8 @@ from unittest.mock import patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from kubearchive_utils import fetch_pipelineruns, build_pipelinerun_url
+from kubearchive_utils import (fetch_pipelineruns, build_pipelinerun_url,
+                               STALE_QUERY_LIMIT)
 
 
 class TestFetchPipelineruns(unittest.TestCase):
@@ -147,6 +148,16 @@ class TestFetchPipelineruns(unittest.TestCase):
 
         self.assertFalse(result[0]["status"])
         self.assertEqual(result[0]["reason"], "Unknown")
+
+    @patch("kubearchive_utils.http_request_with_retry")
+    def test_query_includes_limit_and_time_filter(self, mock_req):
+        mock_req.return_value = (200, json.dumps({"items": []}))
+
+        fetch_pipelineruns("tok", "ns", "label=val")
+
+        url = mock_req.call_args[0][0]
+        self.assertIn(f"limit={STALE_QUERY_LIMIT}", url)
+        self.assertIn("creationTimestampAfter=", url)
 
     @patch("kubearchive_utils.http_request_with_retry")
     def test_sort_order(self, mock_req):
