@@ -33,6 +33,7 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
@@ -961,6 +962,38 @@ func TestReconcile(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestReconcile_PatchStatusError(t *testing.T) {
+	g := NewWithT(t)
+	ctx := context.Background()
+
+	// A stale TargetKey with encryption unconfigured guarantees reconcile() produces
+	// a real status change (handleEncryptionNotConfigured clears it), so PatchStatus
+	// attempts an actual Status().Patch call rather than a no-op skip.
+	hcp := newHCP(withTargetKey(aescbcKeyStatus("aescbc-key-1", "stale-hash")))
+
+	cpClient := fake.NewClientBuilder().
+		WithScheme(testScheme).
+		WithObjects(hcp, convergedKASDeployment(testNamespace)).
+		WithStatusSubresource(&hyperv1.HostedControlPlane{}).
+		WithInterceptorFuncs(interceptor.Funcs{
+			SubResourcePatch: func(ctx context.Context, c client.Client, subResourceName string, obj client.Object, patch client.Patch, opts ...client.SubResourcePatchOption) error {
+				if subResourceName == "status" {
+					return fmt.Errorf("simulated status patch failure")
+				}
+				return c.SubResource(subResourceName).Patch(ctx, obj, patch, opts...)
+			},
+		}).
+		Build()
+
+	r := newReconciler(cpClient, nil, newFakeMigrator())
+
+	_, err := r.Reconcile(ctx, reconcile.Request{
+		NamespacedName: types.NamespacedName{Namespace: testNamespace, Name: testHCPName},
+	})
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(err.Error()).To(ContainSubstring("failed to patch HCP status"))
 }
 
 func TestParseGroupResource(t *testing.T) {
