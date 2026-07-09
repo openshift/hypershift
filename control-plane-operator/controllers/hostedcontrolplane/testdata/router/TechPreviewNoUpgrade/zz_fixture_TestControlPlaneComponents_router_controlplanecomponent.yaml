@@ -8,14 +8,13 @@ spec: {}
 status:
   conditions:
   - lastTransitionTime: null
-    message: router Deployment Available condition not found
+    message: deployments.apps "router" not found
     reason: NotFound
     status: "False"
     type: Available
   - lastTransitionTime: null
-    message: 'Waiting for deployment router rollout to finish: 0 out of 3 new replicas
-      have been updated'
-    reason: WaitingForRolloutComplete
+    message: 'Waiting for Dependencies: ignition-server, metrics-proxy'
+    reason: WaitingForDependencies
     status: "False"
     type: RolloutComplete
   resources:
