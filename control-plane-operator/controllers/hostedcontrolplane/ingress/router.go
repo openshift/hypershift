@@ -113,6 +113,14 @@ func ReconcileRouteStatus(route *routev1.Route, externalHostname, internalHostna
 		canonicalHostName = externalHostname
 	}
 
+	// When the router host is not yet known, we must not write route status with
+	// an empty RouterCanonicalHostname. Doing so overwrites a previously-valid
+	// value and causes health checks to report "route not admitted", flapping the
+	// HostedCluster Available condition.
+	if canonicalHostName == "" {
+		return
+	}
+
 	// Skip reconciliation if ingress status.ingress has already been populated and canonical hostname is the same
 	if len(route.Status.Ingress) > 0 && route.Status.Ingress[0].RouterCanonicalHostname == canonicalHostName {
 		return

@@ -253,11 +253,12 @@ func (r *SharedIngressReconciler) reconcileRouter(ctx context.Context, pullSecre
 			}
 		}
 		if route.Annotations[netutil.RouteStatusWriterAnnotation] != "shared-ingress" {
+			routeBeforeAnnotation := route.DeepCopy()
 			if route.Annotations == nil {
 				route.Annotations = map[string]string{}
 			}
 			route.Annotations[netutil.RouteStatusWriterAnnotation] = "shared-ingress"
-			if err := r.Client.Patch(ctx, &route, client.MergeFrom(originalRoute)); err != nil {
+			if err := r.Client.Patch(ctx, &route, client.MergeFrom(routeBeforeAnnotation)); err != nil {
 				return fmt.Errorf("failed to update route %s status-writer annotation: %w", route.Name, err)
 			}
 		}
