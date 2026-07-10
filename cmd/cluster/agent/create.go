@@ -17,14 +17,22 @@ import (
 	"github.com/spf13/pflag"
 )
 
+const (
+	NodePortServicePublishingStrategy     = "NodePort"
+	LoadBalancerServicePublishingStrategy = "LoadBalancer"
+)
+
 func DefaultOptions() *RawCreateOptions {
-	return &RawCreateOptions{}
+	return &RawCreateOptions{
+		ServicePublishingStrategy: NodePortServicePublishingStrategy,
+	}
 }
 
 type RawCreateOptions struct {
-	APIServerAddress   string
-	AgentNamespace     string
-	AgentLabelSelector string
+	ServicePublishingStrategy string
+	APIServerAddress          string
+	AgentNamespace            string
+	AgentLabelSelector        string
 }
 
 // validatedCreateOptions is a private wrapper that enforces a call of Validate() before Complete() can be invoked.
@@ -38,6 +46,19 @@ type ValidatedCreateOptions struct {
 }
 
 func (o *RawCreateOptions) Validate(ctx context.Context, opts *core.CreateOptions) (core.PlatformCompleter, error) {
+	if o.ServicePublishingStrategy != NodePortServicePublishingStrategy && o.ServicePublishingStrategy != LoadBalancerServicePublishingStrategy {
+		return nil, fmt.Errorf("service publishing strategy %s is not supported, supported options: %s, %s", o.ServicePublishingStrategy, NodePortServicePublishingStrategy, LoadBalancerServicePublishingStrategy)
+	}
+	if o.ServicePublishingStrategy != NodePortServicePublishingStrategy && o.APIServerAddress != "" {
+		return nil, fmt.Errorf("--api-server-address is supported only for NodePort service publishing strategy, service publishing strategy %s is used", o.ServicePublishingStrategy)
+	}
+	if o.APIServerAddress == "" && o.ServicePublishingStrategy == NodePortServicePublishingStrategy && !opts.Render {
+		var err error
+		if o.APIServerAddress, err = core.GetAPIServerAddressByNode(ctx, opts.Log, opts.Kubeconfig); err != nil {
+			return nil, err
+		}
+	}
+
 	return &ValidatedCreateOptions{
 		validatedCreateOptions: &validatedCreateOptions{
 			RawCreateOptions: o,
@@ -48,6 +69,8 @@ func (o *RawCreateOptions) Validate(ctx context.Context, opts *core.CreateOption
 // completedCreateOptions is a private wrapper that enforces a call of Complete() before cluster creation can be invoked.
 type completedCreateOptions struct {
 	*ValidatedCreateOptions
+
+	externalDNSDomain string
 }
 
 type CreateOptions struct {
@@ -56,10 +79,6 @@ type CreateOptions struct {
 }
 
 func (o *ValidatedCreateOptions) Complete(ctx context.Context, opts *core.CreateOptions) (core.Platform, error) {
-	var err error
-	if o.APIServerAddress == "" {
-		o.APIServerAddress, err = core.GetAPIServerAddressByNode(ctx, opts.Log, opts.Kubeconfig)
-	}
 	if opts.DefaultDual {
 		// Using this AgentNamespace field because I cannot infer the Provider we are using at this point
 		// TODO (jparrill): Refactor this to use a 'forward' instead of a 'backward' logic flow
@@ -72,8 +91,9 @@ func (o *ValidatedCreateOptions) Complete(ctx context.Context, opts *core.Create
 	return &CreateOptions{
 		completedCreateOptions: &completedCreateOptions{
 			ValidatedCreateOptions: o,
+			externalDNSDomain:      opts.ExternalDNSDomain,
 		},
-	}, err
+	}, nil
 }
 
 func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) error {
@@ -86,7 +106,16 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 			AgentNamespace: o.AgentNamespace,
 		},
 	}
-	cluster.Spec.Services = core.GetServicePublishingStrategyMappingByAPIServerAddress(o.APIServerAddress, cluster.Spec.Networking.NetworkType)
+
+	switch o.ServicePublishingStrategy {
+	case NodePortServicePublishingStrategy:
+		cluster.Spec.Services = core.GetServicePublishingStrategyMappingByAPIServerAddress(o.APIServerAddress, cluster.Spec.Networking.NetworkType)
+	case LoadBalancerServicePublishingStrategy:
+		cluster.Spec.Services = core.GetIngressServicePublishingStrategyMapping(cluster.Spec.Networking.NetworkType, o.externalDNSDomain != "")
+	default:
+		return fmt.Errorf("service publishing strategy %s is not supported", o.ServicePublishingStrategy)
+	}
+
 	return nil
 }
 
@@ -131,7 +160,8 @@ func (o *CreateOptions) GenerateResources() ([]crclient.Object, error) {
 var _ core.Platform = (*CreateOptions)(nil)
 
 func BindOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
-	flags.StringVar(&opts.APIServerAddress, "api-server-address", opts.APIServerAddress, "The IP address to be used for the hosted cluster's Kubernetes API communication. Requires management cluster connectivity if left unset.")
+	flags.StringVar(&opts.ServicePublishingStrategy, "service-publishing-strategy", opts.ServicePublishingStrategy, fmt.Sprintf("Define how to expose the cluster services. Supported options: %s (Use LoadBalancer and Route to expose services), %s (Select a random node to expose service access through NodePort)", LoadBalancerServicePublishingStrategy, NodePortServicePublishingStrategy))
+	flags.StringVar(&opts.APIServerAddress, "api-server-address", opts.APIServerAddress, "The IP address to be used for the hosted cluster's Kubernetes API communication. Only used with NodePort service publishing strategy. Requires management cluster connectivity if left unset.")
 	flags.StringVar(&opts.AgentNamespace, "agent-namespace", opts.AgentNamespace, "The namespace in which to search for Agents")
 	flags.StringVar(&opts.AgentLabelSelector, "agentLabelSelector", opts.AgentLabelSelector, "A LabelSelector for selecting Agents according to their labels, e.g., 'size=large,zone notin (az1,az2)'")
 }
