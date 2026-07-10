@@ -12,12 +12,58 @@ import (
 
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/spf13/pflag"
 )
 
+func TestRawCreateOptions_Validate(t *testing.T) {
+	for _, test := range []struct {
+		name          string
+		input         RawCreateOptions
+		expectedError string
+	}{
+		{
+			name: "When service-publishing-strategy is unsupported, it should return an error",
+			input: RawCreateOptions{
+				ServicePublishingStrategy: "whatever",
+			},
+			expectedError: "service publishing strategy whatever is not supported, supported options: NodePort, LoadBalancer",
+		},
+		{
+			name: "When api-server-address is set with LoadBalancer strategy, it should return an error",
+			input: RawCreateOptions{
+				ServicePublishingStrategy: LoadBalancerServicePublishingStrategy,
+				APIServerAddress:          "1.2.3.4",
+			},
+			expectedError: "--api-server-address is supported only for NodePort service publishing strategy, service publishing strategy LoadBalancer is used",
+		},
+		{
+			name: "When service-publishing-strategy is NodePort, it should pass validation",
+			input: RawCreateOptions{
+				ServicePublishingStrategy: NodePortServicePublishingStrategy,
+				APIServerAddress:          "1.2.3.4",
+			},
+		},
+		{
+			name: "When service-publishing-strategy is LoadBalancer, it should pass validation",
+			input: RawCreateOptions{
+				ServicePublishingStrategy: LoadBalancerServicePublishingStrategy,
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var errString string
+			if _, err := test.input.Validate(t.Context(), nil); err != nil {
+				errString = err.Error()
+			}
+			if diff := cmp.Diff(test.expectedError, errString); diff != "" {
+				t.Errorf("got incorrect error: %v", diff)
+			}
+		})
+	}
+}
+
 func TestCreateCluster(t *testing.T) {
-	utilrand.Seed(1234567890)
-	certs.UnsafeSeed(1234567890)
 	ctx := framework.InterruptableContext(t.Context())
 
 	tempDir := t.TempDir()
@@ -41,8 +87,20 @@ func TestCreateCluster(t *testing.T) {
 				"--pull-secret=" + pullSecretFile,
 			},
 		},
+		{
+			name: "When service-publishing-strategy is LoadBalancer, it should render LoadBalancer services",
+			args: []string{
+				"--service-publishing-strategy=LoadBalancer",
+				"--render-sensitive",
+				"--name=example",
+				"--pull-secret=" + pullSecretFile,
+			},
+		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
+			utilrand.Seed(1234567890)
+			certs.UnsafeSeed(1234567890)
+
 			flags := pflag.NewFlagSet(testCase.name, pflag.ContinueOnError)
 			coreOpts := core.DefaultOptions()
 			core.BindDeveloperOptions(coreOpts, flags)
