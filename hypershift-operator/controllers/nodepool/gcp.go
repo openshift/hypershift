@@ -8,6 +8,7 @@ import (
 	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/releaseinfo"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
@@ -15,6 +16,40 @@ import (
 	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+func (r *NodePoolReconciler) setGCPConditions(
+	_ context.Context, nodePool *hyperv1.NodePool,
+	hcluster *hyperv1.HostedCluster, _ string,
+	releaseImage *releaseinfo.ReleaseImage,
+) error {
+	if nodePool.Spec.Platform.Type != hyperv1.GCPPlatform ||
+		nodePool.Spec.Platform.GCP == nil {
+		return nil
+	}
+	if hcluster.Spec.Platform.GCP == nil {
+		return fmt.Errorf("the HostedCluster for this NodePool has no .Spec.Platform.GCP, this is unsupported")
+	}
+
+	if img, err := resolveGCPImage(nodePool, releaseImage); err != nil {
+		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+			Type:               hyperv1.NodePoolValidPlatformImageType,
+			Status:             corev1.ConditionFalse,
+			Reason:             hyperv1.NodePoolValidationFailedReason,
+			Message:            fmt.Sprintf("Couldn't discover a GCP machine image for release image %q: %s", nodePool.Spec.Release.Image, err.Error()),
+			ObservedGeneration: nodePool.Generation,
+		})
+		return fmt.Errorf("couldn't discover a GCP machine image for release image: %w", err)
+	} else {
+		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+			Type:               hyperv1.NodePoolValidPlatformImageType,
+			Status:             corev1.ConditionTrue,
+			Reason:             hyperv1.AsExpectedReason,
+			Message:            fmt.Sprintf("Bootstrap GCP machine image is %q", img),
+			ObservedGeneration: nodePool.Generation,
+		})
+	}
+	return nil
+}
 
 // gcpMachineTemplate creates a GCPMachineTemplate for the given NodePool.
 // This follows the AWS and Azure patterns for CAPI machine template generation.

@@ -169,6 +169,8 @@ func (r *NodePoolReconciler) setPlatformConditions(ctx context.Context, hcluster
 		return r.setPowerVSconditions(ctx, nodePool, hcluster, controlPlaneNamespace, releaseImage)
 	case hyperv1.OpenStackPlatform:
 		return r.setOpenStackConditions(ctx, nodePool, hcluster, controlPlaneNamespace, releaseImage)
+	case hyperv1.GCPPlatform:
+		return r.setGCPConditions(ctx, nodePool, hcluster, controlPlaneNamespace, releaseImage)
 	default:
 		return nil
 	}
@@ -827,7 +829,6 @@ func (r *NodePoolReconciler) setCIDRConflictCondition(ctx context.Context, nodeP
 	if len(messages) > 0 {
 		message := ""
 		for _, entry := range messages {
-
 			if len(message) == 0 {
 				message = entry
 			} else if len(entry)+len(message) < maxMessageLength {

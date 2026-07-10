@@ -10,6 +10,7 @@ import (
 
 	imageapi "github.com/openshift/api/image/v1"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
@@ -784,6 +785,141 @@ func TestConfigureGCPNetworkTags(t *testing.T) {
 			} else {
 				g.Expect(result).To(Equal(tc.expectedTags))
 			}
+		})
+	}
+}
+
+func TestNodePoolReconciler_setGCPConditions(t *testing.T) {
+	testCases := []struct {
+		name         string
+		nodePool     *hyperv1.NodePool
+		hcluster     *hyperv1.HostedCluster
+		releaseImage *releaseinfo.ReleaseImage
+		check        func(t *testing.T, nodePool *hyperv1.NodePool, err error)
+	}{
+		{
+			name: "Not a GCP NodePool",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AWSPlatform,
+					},
+				},
+			},
+			check: func(t *testing.T, nodePool *hyperv1.NodePool, err error) {
+				t.Helper()
+				g := NewWithT(t)
+				g.Expect(err).ToNot(HaveOccurred())
+				cond := FindStatusCondition(nodePool.Status.Conditions, hyperv1.NodePoolValidPlatformImageType)
+				g.Expect(cond).To(BeNil())
+			},
+		},
+		{
+			name: "Missing GCP config in NodePool",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.GCPPlatform,
+					},
+				},
+			},
+			check: func(t *testing.T, nodePool *hyperv1.NodePool, err error) {
+				t.Helper()
+				g := NewWithT(t)
+				g.Expect(err).ToNot(HaveOccurred())
+				cond := FindStatusCondition(nodePool.Status.Conditions, hyperv1.NodePoolValidPlatformImageType)
+				g.Expect(cond).To(BeNil())
+			},
+		},
+		{
+			name: "Missing GCP config in HostedCluster",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.GCPPlatform,
+						GCP:  &hyperv1.GCPNodePoolPlatform{},
+					},
+				},
+			},
+			hcluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{},
+				},
+			},
+			check: func(t *testing.T, nodePool *hyperv1.NodePool, err error) {
+				t.Helper()
+				g := NewWithT(t)
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(Equal("the HostedCluster for this NodePool has no .Spec.Platform.GCP, this is unsupported"))
+
+				cond := FindStatusCondition(nodePool.Status.Conditions, hyperv1.NodePoolValidPlatformImageType)
+				g.Expect(cond).To(BeNil())
+			},
+		},
+		{
+			name: "Could not discover release image",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.GCPPlatform,
+						GCP:  &hyperv1.GCPNodePoolPlatform{},
+					},
+				},
+			},
+			hcluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						GCP: &hyperv1.GCPPlatformSpec{},
+					},
+				},
+			},
+			check: func(t *testing.T, nodePool *hyperv1.NodePool, err error) {
+				t.Helper()
+				g := NewWithT(t)
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(Equal("couldn't discover a GCP machine image for release image: couldn't discover a GCP image for release image: release image is nil, cannot determine GCP image"))
+
+				cond := FindStatusCondition(nodePool.Status.Conditions, hyperv1.NodePoolValidPlatformImageType)
+				g.Expect(cond).ToNot(BeNil())
+				g.Expect(cond.Status).To(Equal(corev1.ConditionFalse))
+			},
+		},
+		{
+			name: "success",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.GCPPlatform,
+						GCP: &hyperv1.GCPNodePoolPlatform{
+							Image: "i-am-a-gcp-image!",
+						},
+					},
+				},
+			},
+			hcluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						GCP: &hyperv1.GCPPlatformSpec{},
+					},
+				},
+			},
+			check: func(t *testing.T, nodePool *hyperv1.NodePool, err error) {
+				t.Helper()
+				g := NewWithT(t)
+				g.Expect(err).ToNot(HaveOccurred())
+
+				cond := FindStatusCondition(nodePool.Status.Conditions, hyperv1.NodePoolValidPlatformImageType)
+				g.Expect(cond).ToNot(BeNil())
+				g.Expect(cond.Status).To(Equal(corev1.ConditionTrue))
+			},
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			npr := &NodePoolReconciler{}
+			err := npr.setGCPConditions(t.Context(), testCase.nodePool, testCase.hcluster, "test", testCase.releaseImage)
+			testCase.check(t, testCase.nodePool, err)
 		})
 	}
 }
