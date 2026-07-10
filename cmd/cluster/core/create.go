@@ -824,6 +824,7 @@ func (opts *RawCreateOptions) validateClusterExistenceWithClient(ctx context.Con
 		if err := c.Get(ctx, crclient.ObjectKeyFromObject(cluster), cluster); err == nil {
 			return fmt.Errorf("hostedcluster %s already exists", crclient.ObjectKeyFromObject(cluster))
 		} else if !apierrors.IsNotFound(err) {
+			opts.Log.Error(err, "error checking hostedcluster existence", "namespace", opts.Namespace, "name", opts.Name)
 			return err
 		}
 		return nil

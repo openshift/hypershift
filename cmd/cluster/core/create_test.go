@@ -1844,10 +1844,7 @@ func TestValidateClusterExistence(t *testing.T) {
 			},
 			client: &timeoutThenExistsClient{
 				callsBeforeTerminal: 2,
-				existingCluster: &hyperv1.HostedCluster{
-					ObjectMeta: metav1.ObjectMeta{Namespace: "test-ns", Name: "test-cluster"},
-				},
-				scheme: scheme,
+				scheme:              scheme,
 			},
 			expectError: true,
 			errorMsg:    "already exists",
@@ -1912,7 +1909,6 @@ func (c *nonTransientErrorClient) Scheme() *runtime.Scheme {
 type timeoutThenExistsClient struct {
 	crclient.Client
 	callsBeforeTerminal int
-	existingCluster     *hyperv1.HostedCluster
 	calls               int
 	scheme              *runtime.Scheme
 }
