@@ -64,6 +64,8 @@ const (
 	// upgrade is in progress, closing the gap when a force-deleted pod's
 	// deletion event is missed.
 	upgradeRequeueInterval = 30 * time.Second
+
+	machineConfigDaemonPodNameFormat = "machine-config-daemon-%s"
 )
 
 type Reconciler struct {
@@ -738,7 +740,7 @@ func inPlaceUpgradePod(namespace, nodeName string) *corev1.Pod {
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace,
-			Name:      fmt.Sprintf("machine-config-daemon-%s", nodeName),
+			Name:      fmt.Sprintf(machineConfigDaemonPodNameFormat, nodeName),
 		},
 	}
 }
