@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
+	"time"
 
 	"github.com/openshift/hypershift/support/azureutil"
 
@@ -14,6 +16,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v5"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/privatedns/armprivatedns"
 
+	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/util/retry"
 	"k8s.io/utils/ptr"
 
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -281,8 +285,22 @@ func NewPublicIPAddress(name string, location string) armnetwork.PublicIPAddress
 	}
 }
 
+// isAzureConflictError returns true for Azure 409 Conflict errors that the SDK's
+// default retry policy does not cover (the SDK already retries 408/429/500/502/503/504).
+func isAzureConflictError(err error) bool {
+	if err == nil {
+		return false
+	}
+	var respErr *azcore.ResponseError
+	if !errors.As(err, &respErr) {
+		return false
+	}
+	return respErr.StatusCode == http.StatusConflict
+}
+
 // CreatePublicIPAddressForLB creates a public IP address to use for the outbound rule in the load balancer
 func (n *NetworkManager) CreatePublicIPAddressForLB(ctx context.Context, resourceGroupName string, infraID string, location string) (*armnetwork.PublicIPAddress, error) {
+	log := ctrl.LoggerFrom(ctx)
 	cloudConfig, err := azureutil.GetAzureCloudConfiguration(n.cloud)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get Azure cloud configuration: %w", err)
@@ -293,22 +311,47 @@ func (n *NetworkManager) CreatePublicIPAddressForLB(ctx context.Context, resourc
 	}
 
 	publicIPAddress := NewPublicIPAddress(infraID, location)
-	pollerResp, err := publicIPAddressClient.BeginCreateOrUpdate(
-		ctx,
-		resourceGroupName,
-		infraID,
-		publicIPAddress,
-		nil,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create public IP address, %w", err)
+
+	// Max total retry wait ~155s (5+10+20+40+80), suitable for infra provisioning.
+	backoff := wait.Backoff{
+		Steps:    5,
+		Duration: 5 * time.Second,
+		Factor:   2.0,
+		Jitter:   0.1,
 	}
 
-	resp, err := pollerResp.PollUntilDone(ctx, nil)
+	var result *armnetwork.PublicIPAddress
+	// BeginCreateOrUpdate is idempotent (CreateOrUpdate), so retries that re-submit
+	// the creation request after a transient failure on PollUntilDone are safe.
+	err = retry.OnError(backoff, isAzureConflictError, func() error {
+		pollerResp, err := publicIPAddressClient.BeginCreateOrUpdate(
+			ctx,
+			resourceGroupName,
+			infraID,
+			publicIPAddress,
+			nil,
+		)
+		if err != nil {
+			if isAzureConflictError(err) {
+				log.Info("Transient error creating public IP address, will retry", "error", err)
+			}
+			return err
+		}
+
+		resp, err := pollerResp.PollUntilDone(ctx, nil)
+		if err != nil {
+			if isAzureConflictError(err) {
+				log.Info("Transient error waiting for public IP address creation, will retry", "error", err)
+			}
+			return err
+		}
+		result = &resp.PublicIPAddress
+		return nil
+	})
 	if err != nil {
-		return nil, fmt.Errorf("failed while waiting create public IP address, %w", err)
+		return nil, fmt.Errorf("failed to create public IP address: %w", err)
 	}
-	return &resp.PublicIPAddress, nil
+	return result, nil
 }
 
 // newFrontendIPConfiguration creates a frontend IP configuration for a load balancer.

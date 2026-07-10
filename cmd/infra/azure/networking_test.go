@@ -1,10 +1,14 @@
 package azure
 
 import (
+	"errors"
+	"fmt"
+	"net/http"
 	"testing"
 
 	. "github.com/onsi/gomega"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v5"
 )
 
@@ -165,4 +169,79 @@ func TestNewLoadBalancer(t *testing.T) {
 
 func stringPtr(s string) *string {
 	return &s
+}
+
+func TestIsAzureConflictError(t *testing.T) {
+	tests := map[string]struct {
+		err      error
+		expected bool
+	}{
+		"When the error is a 409 ConflictingConcurrentWriteNotAllowed it should be retryable": {
+			err: &azcore.ResponseError{
+				StatusCode: http.StatusConflict,
+				ErrorCode:  "ConflictingConcurrentWriteNotAllowed",
+			},
+			expected: true,
+		},
+		"When the error is a 409 with different error code it should be retryable": {
+			err: &azcore.ResponseError{
+				StatusCode: http.StatusConflict,
+				ErrorCode:  "AnotherConflict",
+			},
+			expected: true,
+		},
+		"When the error is a 429 too many requests it should not be retryable": {
+			err: &azcore.ResponseError{
+				StatusCode: http.StatusTooManyRequests,
+			},
+			expected: false,
+		},
+		"When the error is a 500 internal server error it should not be retryable": {
+			err: &azcore.ResponseError{
+				StatusCode: http.StatusInternalServerError,
+			},
+			expected: false,
+		},
+		"When the error is a 400 bad request it should not be retryable": {
+			err: &azcore.ResponseError{
+				StatusCode: http.StatusBadRequest,
+			},
+			expected: false,
+		},
+		"When the error is not an Azure ResponseError it should not be retryable": {
+			err:      fmt.Errorf("some random error"),
+			expected: false,
+		},
+		"When the error wraps a 409 Azure ResponseError it should be retryable": {
+			err: fmt.Errorf("wrapped: %w", &azcore.ResponseError{
+				StatusCode: http.StatusConflict,
+				ErrorCode:  "ConflictingConcurrentWriteNotAllowed",
+			}),
+			expected: true,
+		},
+		"When the error is nil it should not be retryable": {
+			err:      nil,
+			expected: false,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			g.Expect(isAzureConflictError(test.err)).To(Equal(test.expected))
+		})
+	}
+}
+
+// Verify that errors.As works with our test helper errors
+func TestErrorsAsAzureResponseError(t *testing.T) {
+	g := NewGomegaWithT(t)
+	wrappedErr := fmt.Errorf("operation failed: %w", &azcore.ResponseError{
+		StatusCode: http.StatusConflict,
+		ErrorCode:  "ConflictingConcurrentWriteNotAllowed",
+	})
+
+	var respErr *azcore.ResponseError
+	g.Expect(errors.As(wrappedErr, &respErr)).To(BeTrue())
+	g.Expect(respErr.StatusCode).To(Equal(http.StatusConflict))
 }
