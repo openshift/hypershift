@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	bastionaws "github.com/openshift/hypershift/cmd/bastion/aws"
@@ -161,13 +162,17 @@ func setupBastion(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluster, 
 	if err != nil {
 		return "", err
 	}
+	infraID := hc.Spec.InfraID
+	region := hc.Spec.Platform.AWS.Region
 	t.Cleanup(func() {
+		destroyCtx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel()
 		destroyBastion := bastionaws.DestroyBastionOpts{
-			Namespace:          hc.Namespace,
-			Name:               hc.Name,
+			InfraID:            infraID,
+			Region:             region,
 			AWSCredentialsFile: awsCreds,
 		}
-		if err := destroyBastion.Run(ctx, zapr.NewLoggerWithOptions(destroyLogger)); err != nil {
+		if err := destroyBastion.Run(destroyCtx, zapr.NewLoggerWithOptions(destroyLogger)); err != nil {
 			t.Logf("error destroying bastion: %v", err)
 		}
 	})
