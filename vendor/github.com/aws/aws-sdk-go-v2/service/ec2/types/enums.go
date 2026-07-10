@@ -122,6 +122,54 @@ func (AccountAttributeName) Values() []AccountAttributeName {
 	}
 }
 
+type AccountVpcEncryptionControlMode string
+
+// Enum values for AccountVpcEncryptionControlMode
+const (
+	AccountVpcEncryptionControlModeUnmanaged      AccountVpcEncryptionControlMode = "unmanaged"
+	AccountVpcEncryptionControlModeAttemptMonitor AccountVpcEncryptionControlMode = "attempt-monitor"
+	AccountVpcEncryptionControlModeAttemptEnforce AccountVpcEncryptionControlMode = "attempt-enforce"
+)
+
+// Values returns all known values for AccountVpcEncryptionControlMode. Note that
+// this can be expanded in the future, and so it is only as up to date as the
+// client.
+//
+// The ordering of this slice is not guaranteed to be stable across updates.
+func (AccountVpcEncryptionControlMode) Values() []AccountVpcEncryptionControlMode {
+	return []AccountVpcEncryptionControlMode{
+		"unmanaged",
+		"attempt-monitor",
+		"attempt-enforce",
+	}
+}
+
+type AccountVpcEncryptionControlState string
+
+// Enum values for AccountVpcEncryptionControlState
+const (
+	AccountVpcEncryptionControlStateDefaultState                   AccountVpcEncryptionControlState = "default-state"
+	AccountVpcEncryptionControlStateTransitionsInProgress          AccountVpcEncryptionControlState = "transitions-in-progress"
+	AccountVpcEncryptionControlStateTransitionsPartiallySuccessful AccountVpcEncryptionControlState = "transitions-partially-successful"
+	AccountVpcEncryptionControlStateTransitionsSuccessful          AccountVpcEncryptionControlState = "transitions-successful"
+	AccountVpcEncryptionControlStateTransitionsFailed              AccountVpcEncryptionControlState = "transitions-failed"
+)
+
+// Values returns all known values for AccountVpcEncryptionControlState. Note that
+// this can be expanded in the future, and so it is only as up to date as the
+// client.
+//
+// The ordering of this slice is not guaranteed to be stable across updates.
+func (AccountVpcEncryptionControlState) Values() []AccountVpcEncryptionControlState {
+	return []AccountVpcEncryptionControlState{
+		"default-state",
+		"transitions-in-progress",
+		"transitions-partially-successful",
+		"transitions-successful",
+		"transitions-failed",
+	}
+}
+
 type ActivityStatus string
 
 // Enum values for ActivityStatus
@@ -231,6 +279,7 @@ const (
 	AllocationStateReleased                 AllocationState = "released"
 	AllocationStateReleasedPermanentFailure AllocationState = "released-permanent-failure"
 	AllocationStatePending                  AllocationState = "pending"
+	AllocationStateConfiguring              AllocationState = "configuring"
 )
 
 // Values returns all known values for AllocationState. Note that this can be
@@ -245,6 +294,7 @@ func (AllocationState) Values() []AllocationState {
 		"released",
 		"released-permanent-failure",
 		"pending",
+		"configuring",
 	}
 }
 
@@ -348,6 +398,25 @@ func (AllowsMultipleInstanceTypes) Values() []AllowsMultipleInstanceTypes {
 	return []AllowsMultipleInstanceTypes{
 		"on",
 		"off",
+	}
+}
+
+type AmdSevSnp string
+
+// Enum values for AmdSevSnp
+const (
+	AmdSevSnpEnabled  AmdSevSnp = "enabled"
+	AmdSevSnpDisabled AmdSevSnp = "disabled"
+)
+
+// Values returns all known values for AmdSevSnp. Note that this can be expanded
+// in the future, and so it is only as up to date as the client.
+//
+// The ordering of this slice is not guaranteed to be stable across updates.
+func (AmdSevSnp) Values() []AmdSevSnp {
+	return []AmdSevSnp{
+		"enabled",
+		"disabled",
 	}
 }
 
@@ -2891,6 +2960,25 @@ func (FleetExcessCapacityTerminationPolicy) Values() []FleetExcessCapacityTermin
 	}
 }
 
+type FleetHttpTokensState string
+
+// Enum values for FleetHttpTokensState
+const (
+	FleetHttpTokensStateOptional FleetHttpTokensState = "optional"
+	FleetHttpTokensStateRequired FleetHttpTokensState = "required"
+)
+
+// Values returns all known values for FleetHttpTokensState. Note that this can be
+// expanded in the future, and so it is only as up to date as the client.
+//
+// The ordering of this slice is not guaranteed to be stable across updates.
+func (FleetHttpTokensState) Values() []FleetHttpTokensState {
+	return []FleetHttpTokensState{
+		"optional",
+		"required",
+	}
+}
+
 type FleetInstanceMatchCriteria string
 
 // Enum values for FleetInstanceMatchCriteria
@@ -2905,6 +2993,26 @@ const (
 func (FleetInstanceMatchCriteria) Values() []FleetInstanceMatchCriteria {
 	return []FleetInstanceMatchCriteria{
 		"open",
+	}
+}
+
+type FleetInstanceMetadataEndpointState string
+
+// Enum values for FleetInstanceMetadataEndpointState
+const (
+	FleetInstanceMetadataEndpointStateDisabled FleetInstanceMetadataEndpointState = "disabled"
+	FleetInstanceMetadataEndpointStateEnabled  FleetInstanceMetadataEndpointState = "enabled"
+)
+
+// Values returns all known values for FleetInstanceMetadataEndpointState. Note
+// that this can be expanded in the future, and so it is only as up to date as the
+// client.
+//
+// The ordering of this slice is not guaranteed to be stable across updates.
+func (FleetInstanceMetadataEndpointState) Values() []FleetInstanceMetadataEndpointState {
+	return []FleetInstanceMetadataEndpointState{
+		"disabled",
+		"enabled",
 	}
 }
 
@@ -8948,6 +9056,42 @@ func (PayerResponsibility) Values() []PayerResponsibility {
 	}
 }
 
+type PayerResponsibilityScope string
+
+// Enum values for PayerResponsibilityScope
+const (
+	PayerResponsibilityScopeVpcEndpointCharges PayerResponsibilityScope = "vpc-endpoint-charges"
+)
+
+// Values returns all known values for PayerResponsibilityScope. Note that this
+// can be expanded in the future, and so it is only as up to date as the client.
+//
+// The ordering of this slice is not guaranteed to be stable across updates.
+func (PayerResponsibilityScope) Values() []PayerResponsibilityScope {
+	return []PayerResponsibilityScope{
+		"vpc-endpoint-charges",
+	}
+}
+
+type PayerResponsibilityType string
+
+// Enum values for PayerResponsibilityType
+const (
+	PayerResponsibilityTypeVpcEndpointAccount        PayerResponsibilityType = "vpc-endpoint-account"
+	PayerResponsibilityTypeVpcEndpointServiceAccount PayerResponsibilityType = "vpc-endpoint-service-account"
+)
+
+// Values returns all known values for PayerResponsibilityType. Note that this can
+// be expanded in the future, and so it is only as up to date as the client.
+//
+// The ordering of this slice is not guaranteed to be stable across updates.
+func (PayerResponsibilityType) Values() []PayerResponsibilityType {
+	return []PayerResponsibilityType{
+		"vpc-endpoint-account",
+		"vpc-endpoint-service-account",
+	}
+}
+
 type PaymentOption string
 
 // Enum values for PaymentOption
@@ -9080,9 +9224,10 @@ type PlacementStrategy string
 
 // Enum values for PlacementStrategy
 const (
-	PlacementStrategyCluster   PlacementStrategy = "cluster"
-	PlacementStrategySpread    PlacementStrategy = "spread"
-	PlacementStrategyPartition PlacementStrategy = "partition"
+	PlacementStrategyCluster       PlacementStrategy = "cluster"
+	PlacementStrategySpread        PlacementStrategy = "spread"
+	PlacementStrategyPartition     PlacementStrategy = "partition"
+	PlacementStrategyPrecisionTime PlacementStrategy = "precision-time"
 )
 
 // Values returns all known values for PlacementStrategy. Note that this can be
@@ -9094,6 +9239,7 @@ func (PlacementStrategy) Values() []PlacementStrategy {
 		"cluster",
 		"spread",
 		"partition",
+		"precision-time",
 	}
 }
 
