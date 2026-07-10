@@ -13,7 +13,7 @@ status:
     status: "False"
     type: Available
   - lastTransitionTime: null
-    message: 'Waiting for Dependencies: ignition-server, metrics-proxy'
+    message: 'Waiting for Dependencies: ignition-server'
     reason: WaitingForDependencies
     status: "False"
     type: RolloutComplete
