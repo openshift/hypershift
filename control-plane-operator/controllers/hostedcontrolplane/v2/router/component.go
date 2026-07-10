@@ -7,7 +7,6 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	endpointresolverv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/endpoint_resolver"
 	ignitionserverv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/ignitionserver"
-	metricsproxyv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/metrics_proxy"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/router/util"
 	"github.com/openshift/hypershift/support/azureutil"
 	component "github.com/openshift/hypershift/support/controlplane-component"
@@ -54,7 +53,7 @@ func NewComponent() component.ControlPlaneComponent {
 			"pdb.yaml",
 			component.AdaptPodDisruptionBudget(),
 		).
-		WithDependencies(ignitionserverv2.ComponentName, metricsproxyv2.ComponentName).
+		WithDependencies(ignitionserverv2.ComponentName).
 		Build()
 }
 
