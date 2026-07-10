@@ -125,6 +125,38 @@ func truncateTail(s string, max int) string {
 	return s[len(s)-max:]
 }
 
+// fetchMCSIgnitionPayload performs a single HTTP request to the MCS endpoint.
+// It returns the payload on HTTP 200, nil with done=false for retryable failures,
+// or a non-nil error for fatal errors that should stop polling.
+func fetchMCSIgnitionPayload(ctx context.Context, httpclient *http.Client, url string, mcsOutput *syncBuffer) (payload []byte, done bool, err error) {
+	log := ctrl.Log.WithName("get-payload")
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, false, fmt.Errorf("error building http request: %w", err)
+	}
+	req.Header.Add("Accept", "application/vnd.coreos.ignition+json;version=3.2.0, */*;q=0.1")
+	res, err := httpclient.Do(req)
+	if err != nil {
+		log.Error(err, "mcs request failed")
+		return nil, false, nil
+	}
+	defer func() {
+		if err := res.Body.Close(); err != nil {
+			log.Error(err, "failed to close mcs response body")
+		}
+	}()
+	if res.StatusCode != http.StatusOK {
+		log.Error(fmt.Errorf("unexpected status code %d", res.StatusCode), "mcs returned unexpected response code", "code", res.StatusCode, "mcsOutput", mcsOutput.String())
+		return nil, false, nil
+	}
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		log.Error(err, "failed to read mcs response body")
+		return nil, false, nil
+	}
+	return body, true, nil
+}
+
 // getOrGenerateMCSCert returns cached PEM-encoded MCS TLS certificate and key,
 // generating a new self-signed certificate if the cache is empty, partially
 // populated, or the cached certificate is about to expire. This avoids redundant
@@ -608,39 +640,18 @@ func (p *LocalIgnitionProvider) runMCSAndFetchPayload(ctx context.Context, dirs 
 		Timeout: 5 * time.Second,
 	}
 	var payload []byte
-	// Try connecting to the server until we get a response or the context is closed
+	// Try connecting to the server until we get a response or the context is closed.
+	// We pass expected Headers to return the right config version.
+	// https://www.iana.org/assignments/media-types/application/vnd.coreos.ignition+json
+	// https://github.com/coreos/ignition/blob/0cbe33fee45d012515479a88f0fe94ef58d5102b/internal/resource/url.go#L61-L64
+	// https://github.com/openshift/machine-config-operator/blob/9c6c2bfd7ed498bfbc296d530d1839bd6a177b0b/pkg/server/api.go#L269
 	err = wait.PollUntilContextCancel(ctx, 1*time.Second, true, func(ctx context.Context) (bool, error) {
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://localhost:22626/config/master", nil)
-		if err != nil {
-			return false, fmt.Errorf("error building http request: %w", err)
+		body, done, pollErr := fetchMCSIgnitionPayload(ctx, httpclient, "http://localhost:22626/config/master", &mcsOutput)
+		if done {
+			payload = body
+			log.Info("got mcs payload", "time", time.Since(start).Round(time.Second).String())
 		}
-		// We pass expected Headers to return the right config version.
-		// https://www.iana.org/assignments/media-types/application/vnd.coreos.ignition+json
-		// https://github.com/coreos/ignition/blob/0cbe33fee45d012515479a88f0fe94ef58d5102b/internal/resource/url.go#L61-L64
-		// https://github.com/openshift/machine-config-operator/blob/9c6c2bfd7ed498bfbc296d530d1839bd6a177b0b/pkg/server/api.go#L269
-		req.Header.Add("Accept", "application/vnd.coreos.ignition+json;version=3.2.0, */*;q=0.1")
-		res, err := httpclient.Do(req)
-		if err != nil {
-			log.Error(err, "mcs request failed")
-			return false, nil
-		}
-		defer func() {
-			if err := res.Body.Close(); err != nil {
-				log.Error(err, "failed to close mcs response body")
-			}
-		}()
-		if res.StatusCode != http.StatusOK {
-			log.Error(fmt.Errorf("unexpected status code %d", res.StatusCode), "mcs returned unexpected response code", "code", res.StatusCode, "mcsOutput", mcsOutput.String())
-			return false, nil
-		}
-		body, err := io.ReadAll(res.Body)
-		if err != nil {
-			log.Error(err, "failed to read mcs response body")
-			return false, nil
-		}
-		payload = body
-		log.Info("got mcs payload", "time", time.Since(start).Round(time.Second).String())
-		return true, nil
+		return done, pollErr
 	})
 
 	// Stop MCS and wait for process exit so all output is flushed to the buffer.
