@@ -428,6 +428,7 @@ func serviceAccountTokenIssuerSecret(namespace, name string) *corev1.Secret {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      fmt.Sprintf("%s-%s", name, SATokenIssuerSecret),
 			Namespace: namespace,
+			Labels:    map[string]string{util.DeleteWithClusterLabelName: "true"},
 		},
 	}
 }
@@ -447,6 +448,10 @@ func (o *CreateOptions) GenerateResources() ([]client.Object, error) {
 			return nil, fmt.Errorf("failed to decode proxy private ssh key: %w", err)
 		}
 		secret := util.SecretResource(o.namespace, o.proxyPrivateSSHKeySecretName())
+		if secret.Labels == nil {
+			secret.Labels = make(map[string]string)
+		}
+		secret.Labels[util.DeleteWithClusterLabelName] = "true"
 		secret.Data = map[string][]byte{
 			"privatekey": decodedKey,
 		}
