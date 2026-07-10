@@ -60,8 +60,8 @@ func isSpotEnabled(nodePool *hyperv1.NodePool) bool {
 	return false
 }
 
-func awsMachineTemplateSpec(infraName string, hostedCluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool, defaultSG bool, releaseImage *releaseinfo.ReleaseImage) (*capiaws.AWSMachineTemplateSpec, error) {
-	ami, err := resolveAWSAMI(hostedCluster, nodePool, releaseImage)
+func awsMachineTemplateSpec(infraName string, hostedCluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool, defaultSG bool, releaseImage *releaseinfo.ReleaseImage, rhelStream string) (*capiaws.AWSMachineTemplateSpec, error) {
+	ami, err := resolveAWSAMI(hostedCluster, nodePool, releaseImage, rhelStream)
 	if err != nil {
 		return nil, err
 	}
@@ -118,7 +118,7 @@ func awsMachineTemplateSpec(infraName string, hostedCluster *hyperv1.HostedClust
 	return awsMachineTemplateSpec, nil
 }
 
-func resolveAWSAMI(hostedCluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool, releaseImage *releaseinfo.ReleaseImage) (string, error) {
+func resolveAWSAMI(hostedCluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool, releaseImage *releaseinfo.ReleaseImage, rhelStream string) (string, error) {
 	// TODO: Should the region be included in the NodePool platform information?
 	region := hostedCluster.Spec.Platform.AWS.Region
 	arch := nodePool.Spec.Arch
@@ -134,8 +134,7 @@ func resolveAWSAMI(hostedCluster *hyperv1.HostedCluster, nodePool *hyperv1.NodeP
 		return ami, nil
 	}
 	// Default behavior for Linux/RHCOS AMIs
-	// TODO(CNTRLPLANE-3553): resolve streamName via GetRHELStream once osImageStream API field is available
-	ami, err := defaultNodePoolAMI(region, arch, "", releaseImage)
+	ami, err := defaultNodePoolAMI(region, arch, rhelStream, releaseImage)
 	if err != nil {
 		return "", fmt.Errorf("couldn't discover an AMI for release image: %w", err)
 	}
@@ -271,7 +270,7 @@ func awsAdditionalTags(nodePool *hyperv1.NodePool, hostedCluster *hyperv1.Hosted
 }
 
 func (c *CAPI) awsMachineTemplate(ctx context.Context, templateNameGenerator func(spec any) (string, error)) (*capiaws.AWSMachineTemplate, error) {
-	desiredSpec, err := awsMachineTemplateSpec(c.capiClusterName, c.hostedCluster, c.nodePool, c.cpoCapabilities.CreateDefaultAWSSecurityGroup, c.releaseImage)
+	desiredSpec, err := awsMachineTemplateSpec(c.capiClusterName, c.hostedCluster, c.nodePool, c.cpoCapabilities.CreateDefaultAWSSecurityGroup, c.releaseImage, c.resolvedRHELStreamForBootImage)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate AWSMachineTemplateSpec: %w", err)
 	}
@@ -361,9 +360,10 @@ func (r *NodePoolReconciler) setAWSConditions(_ context.Context, nodePool *hyper
 				ObservedGeneration: nodePool.Generation,
 			})
 		} else {
-			// Default behavior for Linux/RHCOS AMIs
-			// TODO(CNTRLPLANE-3553): resolve streamName via GetRHELStream once osImageStream API field is available
-			ami, err := defaultNodePoolAMI(hcluster.Spec.Platform.AWS.Region, nodePool.Spec.Arch, "", releaseImage)
+			// Default behavior for Linux/RHCOS AMIs.
+			// TODO(CNTRLPLANE-3553): hardcode to rhel-9 until the MCO can install
+			// rhel-10 OS images. Use getRHELStreamForBootImage once MCO support lands.
+			ami, err := defaultNodePoolAMI(hcluster.Spec.Platform.AWS.Region, nodePool.Spec.Arch, StreamRHEL9, releaseImage)
 			if err != nil {
 				SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 					Type:               hyperv1.NodePoolValidPlatformImageType,

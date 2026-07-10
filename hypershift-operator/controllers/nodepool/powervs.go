@@ -111,6 +111,8 @@ func (c *CAPI) ibmPowerVSMachineTemplate(templateNameGenerator func(spec any) (s
 }
 
 func getPowerVSImage(region string, releaseImage *releaseinfo.ReleaseImage) (*stream.SingleObject, string, error) {
+	// TODO(CNTRLPLANE-3553): use releaseImage.StreamForName(rhelStream) instead of
+	// accessing StreamMetadata directly, to support dual-stream payloads.
 	arch, foundArch := releaseImage.StreamMetadata.Architectures["ppc64le"]
 	if !foundArch {
 		return nil, "", fmt.Errorf("couldn't find OS metadata for architecture %q", "ppc64le")

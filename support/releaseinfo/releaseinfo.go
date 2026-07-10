@@ -36,7 +36,11 @@ type ProviderWithOpenShiftImageRegistryOverrides interface {
 }
 
 const (
-	StreamRHEL9  = "rhel-9"
+	// StreamRHEL9 is the canonical stream name for RHEL 9.
+	// This value must match api/hypershift/v1beta1.OSImageStreamRHEL9.
+	StreamRHEL9 = "rhel-9"
+	// StreamRHEL10 is the canonical stream name for RHEL 10.
+	// This value must match api/hypershift/v1beta1.OSImageStreamRHEL10.
 	StreamRHEL10 = "rhel-10"
 )
 
