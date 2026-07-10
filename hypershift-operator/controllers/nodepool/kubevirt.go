@@ -65,11 +65,9 @@ func (r *NodePoolReconciler) setKubevirtConditions(ctx context.Context, nodePool
 
 		nodePool.Status.Platform.KubeVirt.Credentials = hcluster.Spec.Platform.Kubevirt.Credentials.DeepCopy()
 	}
-	rhelStream, err := getRHELStreamForBootImage(nodePool, releaseImage)
-	if err != nil {
-		return fmt.Errorf("failed to resolve RHEL stream: %w", err)
-	}
-	kubevirtBootImage, err := kubevirt.GetImage(nodePool, releaseImage, infraNS, rhelStream)
+	// TODO(CNTRLPLANE-3553): hardcode to rhel-9 until the MCO can install
+	// rhel-10 OS images. Use getRHELStreamForBootImage once MCO support lands.
+	kubevirtBootImage, err := kubevirt.GetImage(nodePool, releaseImage, infraNS, StreamRHEL9)
 	if err != nil {
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolValidPlatformImageType,

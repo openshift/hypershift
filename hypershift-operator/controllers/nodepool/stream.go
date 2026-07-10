@@ -3,6 +3,7 @@ package nodepool
 import (
 	"fmt"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/releaseinfo"
 
 	"github.com/blang/semver"
@@ -12,6 +13,20 @@ const (
 	StreamRHEL9  = releaseinfo.StreamRHEL9
 	StreamRHEL10 = releaseinfo.StreamRHEL10
 )
+
+func init() {
+	// Go does not support compile-time string assertions. These init checks
+	// are the next best thing: they run before any controller code and will
+	// crash immediately if the API and releaseinfo stream constants diverge.
+	if hyperv1.OSImageStreamRHEL9 != releaseinfo.StreamRHEL9 {
+		panic(fmt.Sprintf("hyperv1.OSImageStreamRHEL9 (%q) != releaseinfo.StreamRHEL9 (%q)",
+			hyperv1.OSImageStreamRHEL9, releaseinfo.StreamRHEL9))
+	}
+	if hyperv1.OSImageStreamRHEL10 != releaseinfo.StreamRHEL10 {
+		panic(fmt.Sprintf("hyperv1.OSImageStreamRHEL10 (%q) != releaseinfo.StreamRHEL10 (%q)",
+			hyperv1.OSImageStreamRHEL10, releaseinfo.StreamRHEL10))
+	}
+}
 
 // GetRHELStream resolves which RHEL CoreOS stream a NodePool should use.
 // Returns the resolved stream name, or an error for invalid combinations.

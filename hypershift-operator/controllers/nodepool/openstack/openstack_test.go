@@ -206,6 +206,7 @@ func TestOpenstackDefaultImage(t *testing.T) {
 	testCases := []struct {
 		name          string
 		releaseImage  *releaseinfo.ReleaseImage
+		streamName    string
 		expectedURL   string
 		expectedHash  string
 		expectedError bool
@@ -286,11 +287,39 @@ func TestOpenstackDefaultImage(t *testing.T) {
 			},
 			expectedError: true,
 		},
+		{
+			name: "When named stream is used with multi-stream ReleaseImage it should resolve from the named stream",
+			releaseImage: &releaseinfo.ReleaseImage{
+				OSStreams: map[string]*stream.Stream{
+					"rhel-9": {
+						Architectures: map[string]stream.Arch{
+							"x86_64": {
+								Artifacts: map[string]stream.PlatformArtifacts{
+									"openstack": {
+										Formats: map[string]stream.ImageFormat{
+											"qcow2.gz": {
+												Disk: &stream.Artifact{
+													Location: "https://example.com/rhel9-image.qcow2.gz",
+													Sha256:   "rhel9hash1234",
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			streamName:   "rhel-9",
+			expectedURL:  "https://example.com/rhel9-image.qcow2.gz",
+			expectedHash: "rhel9hash1234",
+		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			url, hash, err := OpenstackDefaultImage(tc.releaseImage, "")
+			url, hash, err := OpenstackDefaultImage(tc.releaseImage, tc.streamName)
 			if tc.expectedError {
 				if err == nil {
 					t.Error("expected error but got nil")
@@ -314,6 +343,7 @@ func TestOpenStackReleaseImage(t *testing.T) {
 	testCases := []struct {
 		name           string
 		releaseImage   *releaseinfo.ReleaseImage
+		streamName     string
 		expectedResult string
 		expectedError  bool
 	}{
@@ -351,11 +381,31 @@ func TestOpenStackReleaseImage(t *testing.T) {
 			},
 			expectedError: true,
 		},
+		{
+			name: "When named stream is used with multi-stream ReleaseImage it should resolve from the named stream",
+			releaseImage: &releaseinfo.ReleaseImage{
+				OSStreams: map[string]*stream.Stream{
+					"rhel-9": {
+						Architectures: map[string]stream.Arch{
+							"x86_64": {
+								Artifacts: map[string]stream.PlatformArtifacts{
+									"openstack": {
+										Release: "9.6.20250701",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			streamName:     "rhel-9",
+			expectedResult: "9.6.20250701",
+		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			result, err := OpenStackReleaseImage(tc.releaseImage, "")
+			result, err := OpenStackReleaseImage(tc.releaseImage, tc.streamName)
 			if tc.expectedError {
 				if err == nil {
 					t.Error("expected error but got nil")

@@ -1535,6 +1535,7 @@ func TestDefaultImage(t *testing.T) {
 	tests := []struct {
 		name           string
 		arch           string
+		streamName     string
 		releaseImage   *releaseinfo.ReleaseImage
 		expectedImage  string
 		expectedDigest string
@@ -1572,6 +1573,28 @@ func TestDefaultImage(t *testing.T) {
 			expectedImage:  "quay.io/openshift/release@sha256:x86_641234",
 			expectedDigest: "sha256:x86_641234",
 		},
+		{
+			name:       "When named stream is used with multi-stream ReleaseImage it should resolve from the named stream",
+			arch:       hyperv1.ArchitectureAMD64,
+			streamName: "rhel-9",
+			releaseImage: &releaseinfo.ReleaseImage{
+				OSStreams: map[string]*stream.Stream{
+					"rhel-9": {
+						Architectures: map[string]stream.Arch{
+							hyperv1.ArchAliases[hyperv1.ArchitectureAMD64]: {
+								Images: stream.Images{
+									KubeVirt: &stream.ContainerImage{
+										DigestRef: "quay.io/openshift/release@sha256:rhel9kubevirt",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedImage:  "quay.io/openshift/release@sha256:rhel9kubevirt",
+			expectedDigest: "sha256:rhel9kubevirt",
+		},
 	}
 
 	for _, tt := range tests {
@@ -1580,7 +1603,7 @@ func TestDefaultImage(t *testing.T) {
 			if testRI == nil {
 				testRI = ri
 			}
-			img, digest, err := defaultImage(tt.arch, testRI, "")
+			img, digest, err := defaultImage(tt.arch, testRI, tt.streamName)
 			if tt.expectedError {
 				if err == nil {
 					t.Fatalf("expected error but got nil")

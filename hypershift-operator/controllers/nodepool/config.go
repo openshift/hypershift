@@ -77,6 +77,9 @@ type rolloutConfig struct {
 	// setting the default stream does not change the hash.
 	// Only a non-default stream (e.g. "rhel-9" on a ≥5.0 release) produces
 	// a non-empty value here and triggers a rollout.
+	//
+	// See also ConfigGenerator.resolvedRHELStreamForBootImage, which controls
+	// boot image resolution and is intentionally separate from the hash.
 	rhelStream string
 }
 

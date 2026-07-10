@@ -165,10 +165,9 @@ func reconcileIBMPowerVSImage(ibmPowerVSImage *capipowervs.IBMPowerVSImage, hclu
 
 func (r *NodePoolReconciler) setPowerVSconditions(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string, releaseImage *releaseinfo.ReleaseImage) error {
 	log := ctrl.LoggerFrom(ctx)
-	rhelStream, err := getRHELStreamForBootImage(nodePool, releaseImage)
-	if err != nil {
-		return fmt.Errorf("failed to resolve RHEL stream: %w", err)
-	}
+	// TODO(CNTRLPLANE-3553): hardcode to rhel-9 until the MCO can install
+	// rhel-10 OS images. Use getRHELStreamForBootImage once MCO support lands.
+	rhelStream := StreamRHEL9
 	var coreOSPowerVSImage *stream.SingleObject
 	coreOSPowerVSImage, powervsImageRegion, err := getPowerVSImage(hcluster.Spec.Platform.PowerVS.Region, releaseImage, rhelStream)
 	if err != nil {

@@ -969,6 +969,7 @@ func TestDefaultAzureNodePoolImage(t *testing.T) {
 		name                     string
 		nodePool                 *hyperv1.NodePool
 		releaseImage             *releaseinfo.ReleaseImage
+		streamName               string
 		expectedImageType        hyperv1.AzureVMImageType
 		expectedMarketplaceImage *hyperv1.AzureMarketplaceImage
 		expectedError            bool
@@ -1271,13 +1272,67 @@ func TestDefaultAzureNodePoolImage(t *testing.T) {
 				ImageGeneration: ptr.To(hyperv1.Gen1),
 			},
 		},
+		{
+			name: "When named stream is used with multi-stream ReleaseImage it should resolve marketplace from the named stream",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Arch: hyperv1.ArchitectureAMD64,
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzureNodePoolPlatform{
+							Image: hyperv1.AzureVMImage{},
+						},
+					},
+				},
+			},
+			releaseImage: &releaseinfo.ReleaseImage{
+				ImageStream: &imageapi.ImageStream{
+					ObjectMeta: metav1.ObjectMeta{Name: "4.20.0"},
+				},
+				OSStreams: map[string]*stream.Stream{
+					"rhel-9": {
+						Architectures: map[string]stream.Arch{
+							"x86_64": {
+								RHELCoreOSExtensions: &rhcos.Extensions{
+									AzureDisk: &rhcos.AzureDisk{
+										Release: "9.6.20250701-0",
+										URL:     "https://rhcos.blob.core.windows.net/imagebucket/rhcos-9.6.20250701-0-azure.x86_64.vhd",
+									},
+									Marketplace: &rhcos.Marketplace{
+										Azure: &rhcos.AzureMarketplace{
+											NoPurchasePlan: &rhcos.AzureMarketplaceImages{
+												Gen2: &rhcos.AzureMarketplaceImage{
+													Publisher: "azureopenshift",
+													Offer:     "aro4",
+													SKU:       "aro_rhel9_420-v2",
+													Version:   "420.9.20250701",
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			streamName:        "rhel-9",
+			expectedImageType: hyperv1.AzureMarketplace,
+			expectedMarketplaceImage: &hyperv1.AzureMarketplaceImage{
+				Publisher:       "azureopenshift",
+				Offer:           "aro4",
+				SKU:             "aro_rhel9_420-v2",
+				Version:         "420.9.20250701",
+				ImageGeneration: ptr.To(hyperv1.Gen2),
+			},
+		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
 
-			err := defaultAzureNodePoolImage(tc.nodePool, tc.releaseImage, "")
+			err := defaultAzureNodePoolImage(tc.nodePool, tc.releaseImage, tc.streamName)
 
 			if tc.expectedError {
 				g.Expect(err).To(HaveOccurred())

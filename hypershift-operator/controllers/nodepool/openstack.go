@@ -50,10 +50,9 @@ func (c *CAPI) openstackMachineTemplate(templateNameGenerator func(spec any) (st
 	return template, nil
 }
 func (r *NodePoolReconciler) setOpenStackConditions(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, _ string, releaseImage *releaseinfo.ReleaseImage) error {
-	rhelStream, err := getRHELStreamForBootImage(nodePool, releaseImage)
-	if err != nil {
-		return fmt.Errorf("failed to resolve RHEL stream: %w", err)
-	}
+	// TODO(CNTRLPLANE-3553): hardcode to rhel-9 until the MCO can install
+	// rhel-10 OS images. Use getRHELStreamForBootImage once MCO support lands.
+	rhelStream := StreamRHEL9
 	if nodePool.Spec.Platform.OpenStack.ImageName == "" {
 		_, err := openstack.OpenStackReleaseImage(releaseImage, rhelStream)
 		if err != nil {
