@@ -7,6 +7,8 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 
@@ -24,8 +26,10 @@ const (
 type HealthCheckUpdater struct {
 	client.Client
 	HostedControlPlane client.ObjectKey
-
-	log logr.Logger
+	// AzureCreds holds pre-resolved Azure credentials for the identity provider
+	// health check. May be nil when CPO has no Azure identity configured.
+	AzureCreds azcore.TokenCredential
+	log        logr.Logger
 }
 
 func (hcu *HealthCheckUpdater) SetupWithManager(mgr ctrl.Manager) error {
@@ -84,7 +88,14 @@ func (hcu *HealthCheckUpdater) update(ctx context.Context) error {
 		if err := awsHealthCheckIdentityProvider(ctx, hostedControlPlane); err != nil {
 			errs = append(errs, err)
 		}
+	}
 
+	if hostedControlPlane.Spec.Platform.Type == hyperv1.AzurePlatform {
+		// This is best effort ping to the Azure identity provider
+		// that enables access from the operator to the Azure resources.
+		if err := azureHealthCheckCredentials(ctx, hostedControlPlane, hcu.AzureCreds); err != nil {
+			errs = append(errs, err)
+		}
 	}
 
 	// Update the status
