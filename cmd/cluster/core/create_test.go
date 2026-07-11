@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -18,7 +19,9 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	apiversion "k8s.io/apimachinery/pkg/version"
 	fakediscovery "k8s.io/client-go/discovery/fake"
 	fakekubeclient "k8s.io/client-go/kubernetes/fake"
@@ -1762,4 +1765,162 @@ func TestEnsureClusterNetworkOperatorSpec(t *testing.T) {
 
 		g.Expect(cluster.Spec.OperatorConfiguration.ClusterNetworkOperator).NotTo(BeNil())
 	})
+}
+
+func TestValidateClusterExistence(t *testing.T) {
+	scheme := fake.NewClientBuilder().Build().Scheme()
+	if err := hyperv1.AddToScheme(scheme); err != nil {
+		t.Fatalf("failed to add hyperv1 to scheme: %v", err)
+	}
+
+	tests := map[string]struct {
+		opts        *RawCreateOptions
+		client      crclient.Client
+		expectError bool
+		errorMsg    string
+	}{
+		"When the cluster does not exist it should succeed": {
+			opts: &RawCreateOptions{
+				Namespace: "test-ns",
+				Name:      "test-cluster",
+			},
+			client:      fake.NewClientBuilder().WithScheme(scheme).Build(),
+			expectError: false,
+		},
+		"When the cluster already exists it should return an error": {
+			opts: &RawCreateOptions{
+				Namespace: "test-ns",
+				Name:      "test-cluster",
+			},
+			client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(
+				&hyperv1.HostedCluster{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: "test-ns",
+						Name:      "test-cluster",
+					},
+				},
+			).Build(),
+			expectError: true,
+			errorMsg:    "already exists",
+		},
+		"When the API server returns a transient timeout it should retry and succeed": {
+			opts: &RawCreateOptions{
+				Namespace: "test-ns",
+				Name:      "test-cluster",
+			},
+			client:      &transientErrorClient{callsBeforeSuccess: 2, scheme: scheme},
+			expectError: false,
+		},
+		"When the API server returns persistent timeouts it should eventually fail": {
+			opts: &RawCreateOptions{
+				Namespace: "test-ns",
+				Name:      "test-cluster",
+			},
+			client:      &transientErrorClient{callsBeforeSuccess: 100, scheme: scheme},
+			expectError: true,
+			errorMsg:    "hostedcluster doesn't exist validation failed",
+		},
+		"When the API server returns a forbidden error it should fail immediately without retry": {
+			opts: &RawCreateOptions{
+				Namespace: "test-ns",
+				Name:      "test-cluster",
+			},
+			client:      &nonTransientErrorClient{err: apierrors.NewForbidden(hyperv1.Resource("hostedclusters"), "test-cluster", fmt.Errorf("forbidden")), scheme: scheme},
+			expectError: true,
+			errorMsg:    "forbidden",
+		},
+		"When the API server returns a service unavailable error it should retry and succeed": {
+			opts: &RawCreateOptions{
+				Namespace: "test-ns",
+				Name:      "test-cluster",
+			},
+			client:      &transientErrorClient{callsBeforeSuccess: 2, scheme: scheme, errFunc: func() error { return apierrors.NewServiceUnavailable("service unavailable") }},
+			expectError: false,
+		},
+		"When the API server times out then finds the cluster exists it should return already exists": {
+			opts: &RawCreateOptions{
+				Namespace: "test-ns",
+				Name:      "test-cluster",
+			},
+			client: &timeoutThenExistsClient{
+				callsBeforeTerminal: 2,
+				scheme:              scheme,
+			},
+			expectError: true,
+			errorMsg:    "already exists",
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			g := NewWithT(t)
+			ctx := t.Context()
+
+			err := test.opts.validateClusterExistenceWithClient(ctx, test.client)
+			if test.expectError {
+				g.Expect(err).To(HaveOccurred())
+				if test.errorMsg != "" {
+					g.Expect(err.Error()).To(ContainSubstring(test.errorMsg))
+				}
+			} else {
+				g.Expect(err).NotTo(HaveOccurred())
+			}
+		})
+	}
+}
+
+type transientErrorClient struct {
+	crclient.Client
+	callsBeforeSuccess int
+	calls              int
+	scheme             *runtime.Scheme
+	errFunc            func() error
+}
+
+func (c *transientErrorClient) Get(ctx context.Context, key crclient.ObjectKey, obj crclient.Object, opts ...crclient.GetOption) error {
+	c.calls++
+	if c.calls <= c.callsBeforeSuccess {
+		if c.errFunc != nil {
+			return c.errFunc()
+		}
+		return apierrors.NewTimeoutError("the server was unable to return a response in the time allotted", 0)
+	}
+	return apierrors.NewNotFound(hyperv1.Resource("hostedclusters"), key.Name)
+}
+
+func (c *transientErrorClient) Scheme() *runtime.Scheme {
+	return c.scheme
+}
+
+type nonTransientErrorClient struct {
+	crclient.Client
+	err    error
+	scheme *runtime.Scheme
+}
+
+func (c *nonTransientErrorClient) Get(ctx context.Context, key crclient.ObjectKey, obj crclient.Object, opts ...crclient.GetOption) error {
+	return c.err
+}
+
+func (c *nonTransientErrorClient) Scheme() *runtime.Scheme {
+	return c.scheme
+}
+
+type timeoutThenExistsClient struct {
+	crclient.Client
+	callsBeforeTerminal int
+	calls               int
+	scheme              *runtime.Scheme
+}
+
+func (c *timeoutThenExistsClient) Get(ctx context.Context, key crclient.ObjectKey, obj crclient.Object, opts ...crclient.GetOption) error {
+	c.calls++
+	if c.calls <= c.callsBeforeTerminal {
+		return apierrors.NewTimeoutError("the server was unable to return a response in the time allotted", 0)
+	}
+	return nil
+}
+
+func (c *timeoutThenExistsClient) Scheme() *runtime.Scheme {
+	return c.scheme
 }

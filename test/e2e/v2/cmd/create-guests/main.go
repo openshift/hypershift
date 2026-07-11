@@ -179,7 +179,8 @@ func run(ctx context.Context, cfg envConfig) error {
 
 	// Phase 3: Watch for Available condition on all clusters.
 	log.Println("Phase 3: Waiting for all clusters to become Available")
-	availableErrors := waitForClustersAvailable(ctx, mgmtClient, cfg.namespace, named, 30*time.Minute)
+	// Use cfg.waitTimeout (45m) to match the version rollout timeout at line 352.
+	availableErrors := waitForClustersAvailable(ctx, mgmtClient, cfg.namespace, named, cfg.waitTimeout)
 	for _, ns := range named {
 		if err := availableErrors[ns.Variant]; err != nil {
 			log.Printf("ERROR: cluster %s (%s) did not become Available: %v", ns.name, ns.Variant, err)
