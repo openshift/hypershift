@@ -14,6 +14,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
@@ -26,22 +27,22 @@ const (
 )
 
 type ConfigMapWebhookHandler struct {
-	log     logr.Logger
 	client  client.Client
 	decoder admission.Decoder
 }
 
 var _ admission.Handler = &ConfigMapWebhookHandler{}
 
-func NewConfigMapWebhookHandler(log logr.Logger, c client.Client, decoder admission.Decoder) *ConfigMapWebhookHandler {
+func NewConfigMapWebhookHandler(c client.Client, decoder admission.Decoder) *ConfigMapWebhookHandler {
 	return &ConfigMapWebhookHandler{
-		log:     log.WithName("audit-log-persistence-configmap-webhook"),
 		client:  c,
 		decoder: decoder,
 	}
 }
 
 func (h *ConfigMapWebhookHandler) Handle(ctx context.Context, req admission.Request) admission.Response {
+	log := ctrl.LoggerFrom(ctx).WithName("audit-log-persistence-configmap-webhook")
+
 	// Only handle ConfigMap resources
 	if req.Kind.Group != "" || req.Kind.Kind != "ConfigMap" {
 		return admission.Allowed("")
@@ -63,7 +64,7 @@ func (h *ConfigMapWebhookHandler) Handle(ctx context.Context, req admission.Requ
 		if apierrors.IsNotFound(err) {
 			return admission.Allowed("")
 		}
-		h.log.Error(err, "Failed to get namespace", "namespace", req.Namespace)
+		log.Error(err, "Failed to get namespace", "namespace", req.Namespace)
 		return admission.Errored(http.StatusInternalServerError, fmt.Errorf("failed to get namespace %s: %w", req.Namespace, err))
 	}
 
@@ -74,7 +75,7 @@ func (h *ConfigMapWebhookHandler) Handle(ctx context.Context, req admission.Requ
 	// Decode the ConfigMap
 	configMap := &corev1.ConfigMap{}
 	if err := h.decoder.Decode(req, configMap); err != nil {
-		h.log.Error(err, "Failed to decode ConfigMap")
+		log.Error(err, "Failed to decode ConfigMap")
 		return admission.Errored(http.StatusBadRequest, err)
 	}
 
@@ -84,7 +85,7 @@ func (h *ConfigMapWebhookHandler) Handle(ctx context.Context, req admission.Requ
 		if apierrors.IsNotFound(err) {
 			return admission.Allowed("")
 		}
-		h.log.Error(err, "Failed to get AuditLogPersistenceConfig")
+		log.Error(err, "Failed to get AuditLogPersistenceConfig")
 		return admission.Errored(http.StatusInternalServerError, fmt.Errorf("failed to get AuditLogPersistenceConfig: %w", err))
 	}
 
@@ -99,14 +100,14 @@ func (h *ConfigMapWebhookHandler) Handle(ctx context.Context, req admission.Requ
 
 	// Mutate the ConfigMap
 	mutated := configMap.DeepCopy()
-	if err := h.mutateConfigMap(mutated, spec); err != nil {
-		h.log.Error(err, "Failed to mutate ConfigMap")
+	if err := h.mutateConfigMap(mutated, spec, log); err != nil {
+		log.Error(err, "Failed to mutate ConfigMap")
 		return admission.Errored(http.StatusInternalServerError, fmt.Errorf("failed to mutate ConfigMap: %w", err))
 	}
 
 	mutatedRaw, err := json.Marshal(mutated)
 	if err != nil {
-		h.log.Error(err, "Failed to marshal mutated ConfigMap")
+		log.Error(err, "Failed to marshal mutated ConfigMap")
 		return admission.Errored(http.StatusInternalServerError, fmt.Errorf("failed to marshal mutated ConfigMap: %w", err))
 	}
 
@@ -118,11 +119,11 @@ func (h *ConfigMapWebhookHandler) Handle(ctx context.Context, req admission.Requ
 	if spec.AuditLog.MaxBackup != nil {
 		maxBackupVal = *spec.AuditLog.MaxBackup
 	}
-	h.log.Info("Successfully mutated ConfigMap for audit log persistence", "configmap", configMap.Name, "namespace", configMap.Namespace, "maxSize", maxSizeVal, "maxBackup", maxBackupVal)
+	log.Info("Successfully mutated ConfigMap for audit log persistence", "configmap", configMap.Name, "namespace", configMap.Namespace, "maxSize", maxSizeVal, "maxBackup", maxBackupVal)
 	return admission.PatchResponseFromRaw(req.Object.Raw, mutatedRaw)
 }
 
-func (h *ConfigMapWebhookHandler) mutateConfigMap(configMap *corev1.ConfigMap, spec *auditlogpersistencev1alpha1.AuditLogPersistenceConfigSpec) error {
+func (h *ConfigMapWebhookHandler) mutateConfigMap(configMap *corev1.ConfigMap, spec *auditlogpersistencev1alpha1.AuditLogPersistenceConfigSpec, log logr.Logger) error {
 	if configMap.Data == nil {
 		configMap.Data = make(map[string]string)
 	}
@@ -135,14 +136,14 @@ func (h *ConfigMapWebhookHandler) mutateConfigMap(configMap *corev1.ConfigMap, s
 	// Parse the JSON config into unstructured map
 	var kasConfigMap map[string]interface{}
 	if err := json.Unmarshal([]byte(configJSON), &kasConfigMap); err != nil {
-		h.log.Error(err, "Failed to unmarshal kube-apiserver config")
+		log.Error(err, "Failed to unmarshal kube-apiserver config")
 		return fmt.Errorf("failed to unmarshal kube-apiserver config: %w", err)
 	}
 
 	// Ensure apiServerArguments exists
 	apiServerArgs, exists, err := unstructured.NestedMap(kasConfigMap, "apiServerArguments")
 	if err != nil {
-		h.log.Error(err, "Failed to get apiServerArguments")
+		log.Error(err, "Failed to get apiServerArguments")
 		return fmt.Errorf("failed to get apiServerArguments: %w", err)
 	}
 	if !exists || apiServerArgs == nil {
@@ -163,14 +164,14 @@ func (h *ConfigMapWebhookHandler) mutateConfigMap(configMap *corev1.ConfigMap, s
 
 	// Set the updated apiServerArguments back
 	if err := unstructured.SetNestedField(kasConfigMap, apiServerArgs, "apiServerArguments"); err != nil {
-		h.log.Error(err, "Failed to set apiServerArguments")
+		log.Error(err, "Failed to set apiServerArguments")
 		return fmt.Errorf("failed to set apiServerArguments: %w", err)
 	}
 
 	// Serialize back to JSON
 	updatedConfigJSON, err := json.Marshal(kasConfigMap)
 	if err != nil {
-		h.log.Error(err, "Failed to marshal updated kube-apiserver config")
+		log.Error(err, "Failed to marshal updated kube-apiserver config")
 		return fmt.Errorf("failed to marshal updated kube-apiserver config: %w", err)
 	}
 

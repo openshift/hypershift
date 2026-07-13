@@ -788,7 +788,6 @@ func TestSnapshotReconciler_Reconcile(t *testing.T) {
 
 			reconciler := &SnapshotReconciler{
 				client: fakeClient,
-				log:    logr.Discard(),
 			}
 
 			req := reconcile.Request{
@@ -1084,7 +1083,6 @@ func TestSnapshotReconciler_manageRetention(t *testing.T) {
 
 			reconciler := &SnapshotReconciler{
 				client: fakeClient,
-				log:    logr.Discard(),
 			}
 
 			err := reconciler.manageRetention(context.Background(), tt.pod, tt.pvc, &tt.config.Spec)
@@ -1360,7 +1358,6 @@ func TestGetLastObservedRestartCount(t *testing.T) {
 
 			reconciler := &SnapshotReconciler{
 				client: fakeClient,
-				log:    logr.Discard(),
 			}
 
 			// Save original annotation value before calling function to avoid checking mutated map
@@ -1455,7 +1452,6 @@ func TestCheckSnapshotInterval(t *testing.T) {
 
 			reconciler := &SnapshotReconciler{
 				client: fakeClient,
-				log:    logr.Discard(),
 			}
 
 			spec := &auditlogpersistencev1alpha1.AuditLogPersistenceConfigSpec{
@@ -1540,7 +1536,6 @@ func TestGetSnapshotConfig(t *testing.T) {
 
 			reconciler := &SnapshotReconciler{
 				client: fakeClient,
-				log:    logr.Discard(),
 			}
 
 			spec, err := reconciler.getSnapshotConfig(context.Background())
@@ -1648,7 +1643,6 @@ func TestSnapshotReconciler_createSnapshot(t *testing.T) {
 
 			reconciler := &SnapshotReconciler{
 				client: fakeClient,
-				log:    logr.Discard(),
 			}
 
 			err := reconciler.createSnapshot(context.Background(), tt.pod, tt.pvc, &tt.config.Spec)

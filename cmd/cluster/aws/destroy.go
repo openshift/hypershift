@@ -7,7 +7,6 @@ import (
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	awsinfra "github.com/openshift/hypershift/cmd/infra/aws"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
-	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
 
 	"k8s.io/apimachinery/pkg/util/errors"
@@ -38,7 +37,7 @@ func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 	opts.AWSPlatform.Credentials.BindFlags(cmd.Flags())
 	opts.AWSPlatform.VPCOwnerCredentials.BindVPCOwnerFlags(cmd.Flags())
 
-	logger := log.Log
+	logger := util.NewLogger()
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		err := ValidateCredentialInfo(opts.AWSPlatform.Credentials, opts.CredentialSecretName, opts.Namespace, opts.Kubeconfig)
 		if err != nil {

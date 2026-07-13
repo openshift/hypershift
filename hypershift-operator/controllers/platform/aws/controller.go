@@ -55,6 +55,8 @@ const (
 	lbNotActiveRequeueDuration             = 20 * time.Second
 )
 
+const ControllerName = "awsendpointservice"
+
 // AWSEndpointServiceReconciler watches HC/NodePools/awsEndpointService and reconcile the awsEndpointService
 // CRs existing for the KubeAPIServerPrivateService and the PrivateRouterService.
 // It creates the endpoint service in AWS and keeps the SubnetIDs up to date so NodePools are able to attach to the service endpoint.
@@ -96,6 +98,7 @@ func awsEndpointServicesByName(ns string) []reconcile.Request {
 
 func (r *AWSEndpointServiceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	_, err := ctrl.NewControllerManagedBy(mgr).
+		Named(ControllerName).
 		For(&hyperv1.AWSEndpointService{}).
 		Watches(&hyperv1.NodePool{}, handler.Funcs{
 			CreateFunc: r.enqueueOnNodePoolCreate(mgr),

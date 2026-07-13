@@ -6,8 +6,7 @@ import (
 	"os"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/cmd/log"
-	"github.com/openshift/hypershift/cmd/util"
+	cmdutil "github.com/openshift/hypershift/cmd/util"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/supportedversion"
@@ -66,7 +65,7 @@ type NodePoolPlatformCompleter interface {
 func (o *CreateNodePoolOptions) CreateRunFunc(platformOpts PlatformOptions) func(cmd *cobra.Command, args []string) error {
 	return func(cmd *cobra.Command, args []string) error {
 		if err := o.CreateNodePool(cmd.Context(), platformOpts); err != nil {
-			log.Log.Error(err, "Failed to create nodepool")
+			cmdutil.NewLogger().Error(err, "Failed to create nodepool")
 			return err
 		}
 		return nil
@@ -87,7 +86,7 @@ func (o *CreateNodePoolOptions) Validate(ctx context.Context, c crclient.Client)
 }
 
 func (o *CreateNodePoolOptions) CreateNodePool(ctx context.Context, platformOpts PlatformOptions) error {
-	client, err := util.GetClient()
+	client, err := cmdutil.GetClient()
 	if err != nil {
 		return err
 	}

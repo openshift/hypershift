@@ -7,7 +7,7 @@ import (
 
 	. "github.com/onsi/gomega"
 
-	"github.com/openshift/hypershift/cmd/log"
+	cmdutil "github.com/openshift/hypershift/cmd/util"
 )
 
 func TestDestroyCluster(t *testing.T) {
@@ -28,7 +28,7 @@ func TestDestroyCluster(t *testing.T) {
 			Name:               "test-cluster",
 			Namespace:          "clusters",
 			InfraID:            "test-infra",
-			Log:                log.Log,
+			Log:                cmdutil.NewLogger(),
 			AzurePlatform: AzurePlatformDestroyOptions{
 				Cloud:    "AzurePublicCloud",
 				Location: "eastus",
@@ -59,7 +59,7 @@ func TestDestroyCluster(t *testing.T) {
 			Name:               "test-cluster",
 			Namespace:          "clusters",
 			InfraID:            "test-infra",
-			Log:                log.Log,
+			Log:                cmdutil.NewLogger(),
 		}
 
 		err := DestroyCluster(context.Background(), nil, opts, mockPlatformSpecifics)

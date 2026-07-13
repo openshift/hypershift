@@ -6,8 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/openshift/hypershift/cmd/log"
-	"github.com/openshift/hypershift/cmd/util"
+	cmdutil "github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/support/config"
 
 	"github.com/go-logr/logr"
@@ -26,13 +25,13 @@ func NewDestroyIAMCommand() *cobra.Command {
 
 	opts := DefaultDestroyIAMOptions()
 
-	cmd.Flags().StringVar(&opts.WorkloadIdentitiesFile, "workload-identities-file", opts.WorkloadIdentitiesFile, util.WorkloadIdentitiesFileDescription)
-	cmd.Flags().StringVar(&opts.CredentialsFile, "azure-creds", opts.CredentialsFile, util.AzureCredsDestroyDescription)
-	cmd.Flags().StringVar(&opts.ResourceGroupName, "resource-group-name", opts.ResourceGroupName, util.ResourceGroupNameDestroyDescription)
-	cmd.Flags().StringVar(&opts.Cloud, "cloud", opts.Cloud, util.CloudDescription)
-	cmd.Flags().StringVar(&opts.Name, "name", opts.Name, util.NameDescription)
-	cmd.Flags().StringVar(&opts.InfraID, "infra-id", opts.InfraID, util.InfraIDDescription)
-	cmd.Flags().StringVar(&opts.DNSZoneRG, "dns-zone-rg-name", opts.DNSZoneRG, util.DNSZoneRGNameDestroyDescription)
+	cmd.Flags().StringVar(&opts.WorkloadIdentitiesFile, "workload-identities-file", opts.WorkloadIdentitiesFile, cmdutil.WorkloadIdentitiesFileDescription)
+	cmd.Flags().StringVar(&opts.CredentialsFile, "azure-creds", opts.CredentialsFile, cmdutil.AzureCredsDestroyDescription)
+	cmd.Flags().StringVar(&opts.ResourceGroupName, "resource-group-name", opts.ResourceGroupName, cmdutil.ResourceGroupNameDestroyDescription)
+	cmd.Flags().StringVar(&opts.Cloud, "cloud", opts.Cloud, cmdutil.CloudDescription)
+	cmd.Flags().StringVar(&opts.Name, "name", opts.Name, cmdutil.NameDescription)
+	cmd.Flags().StringVar(&opts.InfraID, "infra-id", opts.InfraID, cmdutil.InfraIDDescription)
+	cmd.Flags().StringVar(&opts.DNSZoneRG, "dns-zone-rg-name", opts.DNSZoneRG, cmdutil.DNSZoneRGNameDestroyDescription)
 
 	_ = cmd.MarkFlagRequired("workload-identities-file")
 	_ = cmd.MarkFlagRequired("azure-creds")
@@ -41,7 +40,7 @@ func NewDestroyIAMCommand() *cobra.Command {
 	_ = cmd.MarkFlagRequired("infra-id")
 	_ = cmd.MarkFlagRequired("dns-zone-rg-name")
 
-	l := log.Log
+	l := cmdutil.NewLogger()
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		if err := opts.Validate(); err != nil {
 			return err
@@ -66,12 +65,12 @@ func DefaultDestroyIAMOptions() *DestroyIAMOptions {
 
 // BindDestroyIAMProductFlags binds flags for the product CLI (hcp) IAM destroy azure command
 func BindDestroyIAMProductFlags(opts *DestroyIAMOptions, flags *pflag.FlagSet) {
-	flags.StringVar(&opts.WorkloadIdentitiesFile, "workload-identities-file", opts.WorkloadIdentitiesFile, util.WorkloadIdentitiesFileDescription)
-	flags.StringVar(&opts.CredentialsFile, "azure-creds", opts.CredentialsFile, util.AzureCredsDestroyDescription)
-	flags.StringVar(&opts.ResourceGroupName, "resource-group-name", opts.ResourceGroupName, util.ResourceGroupNameDestroyDescription)
-	flags.StringVar(&opts.Cloud, "cloud", opts.Cloud, util.CloudDescription)
-	flags.StringVar(&opts.Name, "name", opts.Name, util.NameDescription)
-	flags.StringVar(&opts.InfraID, "infra-id", opts.InfraID, util.InfraIDDescription)
+	flags.StringVar(&opts.WorkloadIdentitiesFile, "workload-identities-file", opts.WorkloadIdentitiesFile, cmdutil.WorkloadIdentitiesFileDescription)
+	flags.StringVar(&opts.CredentialsFile, "azure-creds", opts.CredentialsFile, cmdutil.AzureCredsDestroyDescription)
+	flags.StringVar(&opts.ResourceGroupName, "resource-group-name", opts.ResourceGroupName, cmdutil.ResourceGroupNameDestroyDescription)
+	flags.StringVar(&opts.Cloud, "cloud", opts.Cloud, cmdutil.CloudDescription)
+	flags.StringVar(&opts.Name, "name", opts.Name, cmdutil.NameDescription)
+	flags.StringVar(&opts.InfraID, "infra-id", opts.InfraID, cmdutil.InfraIDDescription)
 	flags.StringVar(&opts.DNSZoneRG, "dns-zone-rg-name", opts.DNSZoneRG, "The resource group name where the DNS zone resides (used to clean up role assignments)")
 }
 
@@ -106,7 +105,7 @@ func (o *DestroyIAMOptions) Run(ctx context.Context, l logr.Logger) error {
 	}
 
 	// Setup Azure credentials
-	subscriptionID, azureCreds, err := util.SetupAzureCredentials(l, o.Credentials, o.CredentialsFile)
+	subscriptionID, azureCreds, err := cmdutil.SetupAzureCredentials(l, o.Credentials, o.CredentialsFile)
 	if err != nil {
 		return fmt.Errorf("failed to setup Azure credentials: %w", err)
 	}

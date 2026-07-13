@@ -155,6 +155,8 @@ const (
 	kmsAzureCredentials = "KMSAzureCredentials"
 )
 
+const ControllerName = "hostedcontrolplane"
+
 type HostedControlPlaneReconciler struct {
 	client.Client
 
@@ -173,7 +175,6 @@ type HostedControlPlaneReconciler struct {
 	// CertRotationScale determines how quickly we rotate certificates - should only be set faster in testing
 	CertRotationScale time.Duration
 
-	Log                                     logr.Logger
 	ReleaseProvider                         releaseinfo.ProviderWithOpenShiftImageRegistryOverrides
 	UserReleaseProvider                     releaseinfo.Provider
 	createOrUpdate                          func(hcp *hyperv1.HostedControlPlane) upsert.CreateOrUpdateFN
@@ -192,12 +193,13 @@ type HostedControlPlaneReconciler struct {
 	clock                                   clock.Clock
 }
 
-func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpdate upsert.CreateOrUpdateFN, hcp *hyperv1.HostedControlPlane) error {
+func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpdate upsert.CreateOrUpdateFN, hcp *hyperv1.HostedControlPlane, logger logr.Logger) error {
 	if r.clock == nil {
 		r.clock = clock.RealClock{}
 	}
 	r.setup(createOrUpdate)
 	b := ctrl.NewControllerManagedBy(mgr).
+		Named(ControllerName).
 		For(&hyperv1.HostedControlPlane{}).
 		WithOptions(controller.Options{
 			RateLimiter: workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](1*time.Second, 10*time.Second),
@@ -222,7 +224,7 @@ func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager, create
 
 	uidInput := os.Getenv(controlplaneoperator.DefaultSecurityContextUIDEnvVar)
 	if uidInput == "" {
-		r.Log.Info("DEFAULT_SECURITY_CONTEXT_UID is not set. This should never happen, unless you are running a HO which doesn't support this CPO")
+		logger.Info("DEFAULT_SECURITY_CONTEXT_UID is not set. This should never happen, unless you are running a HO which doesn't support this CPO")
 		r.DefaultSecurityContextUID = component.DefaultSecurityContextUID
 		return nil
 	}
@@ -370,10 +372,11 @@ func (r *HostedControlPlaneReconciler) eventHandlers(scheme *runtime.Scheme, res
 }
 
 func (r *HostedControlPlaneReconciler) reconcileDeletion(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane, originalHostedControlPlane *hyperv1.HostedControlPlane) (ctrl.Result, error) {
+	log := ctrl.LoggerFrom(ctx)
 	condition := &metav1.Condition{
 		Type: string(hyperv1.AWSDefaultSecurityGroupDeleted),
 	}
-	if shouldCleanupCloudResources(r.Log, hostedControlPlane) {
+	if shouldCleanupCloudResources(log, hostedControlPlane) {
 		if code, destroyErr := r.destroyAWSDefaultSecurityGroup(ctx, hostedControlPlane); destroyErr != nil {
 			condition.Message = "failed to delete AWS default security group"
 			if code == "DependencyViolation" {
@@ -389,9 +392,9 @@ func (r *HostedControlPlaneReconciler) reconcileDeletion(ctx context.Context, ho
 
 			switch code {
 			case "UnauthorizedOperation":
-				r.Log.Error(destroyErr, "Skipping AWS default security group deletion because of unauthorized operation.")
+				log.Error(destroyErr, "Skipping AWS default security group deletion because of unauthorized operation.")
 			case "DependencyViolation":
-				r.Log.Error(destroyErr, "Skipping AWS default security group deletion because of dependency violation.")
+				log.Error(destroyErr, "Skipping AWS default security group deletion because of dependency violation.")
 			default:
 				return ctrl.Result{}, fmt.Errorf("failed to delete AWS default security group: %w", destroyErr)
 			}
@@ -426,6 +429,7 @@ func (r *HostedControlPlaneReconciler) reconcileDeletion(ctx context.Context, ho
 }
 
 func (r *HostedControlPlaneReconciler) reconcileEtcdStatus(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane) error {
+	log := ctrl.LoggerFrom(ctx)
 	newCondition := metav1.Condition{
 		Type:   string(hyperv1.EtcdAvailable),
 		Status: metav1.ConditionUnknown,
@@ -433,7 +437,7 @@ func (r *HostedControlPlaneReconciler) reconcileEtcdStatus(ctx context.Context, 
 	}
 	switch hostedControlPlane.Spec.Etcd.ManagementType {
 	case hyperv1.Managed:
-		r.Log.Info("Reconciling etcd cluster status for managed strategy")
+		log.Info("Reconciling etcd cluster status for managed strategy")
 		sts := manifests.EtcdStatefulSet(hostedControlPlane.Namespace)
 		if err := r.Get(ctx, client.ObjectKeyFromObject(sts), sts); err != nil {
 			if apierrors.IsNotFound(err) {
@@ -453,7 +457,7 @@ func (r *HostedControlPlaneReconciler) reconcileEtcdStatus(ctx context.Context, 
 			newCondition = *conditionPtr
 		}
 	case hyperv1.Unmanaged:
-		r.Log.Info("Assuming Etcd cluster is running in unmanaged etcd strategy")
+		log.Info("Assuming Etcd cluster is running in unmanaged etcd strategy")
 		newCondition = metav1.Condition{
 			Type:    string(hyperv1.EtcdAvailable),
 			Status:  metav1.ConditionTrue,
@@ -468,7 +472,7 @@ func (r *HostedControlPlaneReconciler) reconcileEtcdStatus(ctx context.Context, 
 		hostedControlPlane.Spec.Etcd.Managed != nil && len(hostedControlPlane.Spec.Etcd.Managed.Storage.RestoreSnapshotURL) > 0 {
 		restoreCondition := meta.FindStatusCondition(hostedControlPlane.Status.Conditions, string(hyperv1.EtcdSnapshotRestored))
 		if restoreCondition == nil {
-			r.Log.Info("Reconciling etcd cluster restore status")
+			log.Info("Reconciling etcd cluster restore status")
 			sts := manifests.EtcdStatefulSet(hostedControlPlane.Namespace)
 			if err := r.Get(ctx, client.ObjectKeyFromObject(sts), sts); err == nil {
 				rc := metav1.Condition{}
@@ -571,8 +575,8 @@ func (r *HostedControlPlaneReconciler) reconcileDegradedStatus(ctx context.Conte
 }
 
 func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	r.Log = ctrl.LoggerFrom(ctx)
-	r.Log.Info("Reconciling")
+	log := ctrl.LoggerFrom(ctx)
+	log.Info("Reconciling")
 
 	hostedControlPlane := &hyperv1.HostedControlPlane{}
 	err := r.Client.Get(ctx, req.NamespacedName, hostedControlPlane)
@@ -598,7 +602,7 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	if r.OperateOnReleaseImage != "" && r.OperateOnReleaseImage != util.HCPControlPlaneReleaseImage(hostedControlPlane) {
-		r.Log.Info("releaseImage is " + util.HCPControlPlaneReleaseImage(hostedControlPlane) + ", but this operator is configured for " + r.OperateOnReleaseImage + ", skipping reconciliation")
+		log.Info("releaseImage is " + util.HCPControlPlaneReleaseImage(hostedControlPlane) + ", but this operator is configured for " + r.OperateOnReleaseImage + ", skipping reconciliation")
 		return ctrl.Result{}, nil
 	}
 
@@ -686,8 +690,8 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 	if err := r.Client.Status().Patch(ctx, hostedControlPlane, client.MergeFromWithOptions(originalHostedControlPlane, client.MergeFromWithOptimisticLock{})); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
 	}
-	if isPaused, duration := util.IsReconciliationPaused(r.Log, hostedControlPlane.Spec.PausedUntil); isPaused {
-		r.Log.Info("Reconciliation paused", "pausedUntil", *hostedControlPlane.Spec.PausedUntil)
+	if isPaused, duration := util.IsReconciliationPaused(log, hostedControlPlane.Spec.PausedUntil); isPaused {
+		log.Info("Reconciliation paused", "pausedUntil", *hostedControlPlane.Spec.PausedUntil)
 		return ctrl.Result{
 			RequeueAfter: duration,
 		}, nil
@@ -697,7 +701,7 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 	{
 		validConfig := meta.FindStatusCondition(hostedControlPlane.Status.Conditions, string(hyperv1.ValidHostedControlPlaneConfiguration))
 		if validConfig != nil && validConfig.Status == metav1.ConditionFalse {
-			r.Log.Info("Configuration is invalid, reconciliation is blocked")
+			log.Info("Configuration is invalid, reconciliation is blocked")
 			return reconcile.Result{}, nil
 		}
 	}
@@ -708,7 +712,7 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, fmt.Errorf("failed to update control plane: %w", err)
 	}
 
-	r.Log.Info("Successfully reconciled")
+	log.Info("Successfully reconciled")
 
 	if !result.IsZero() {
 		return result, nil
@@ -722,7 +726,8 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 }
 
 func (r *HostedControlPlaneReconciler) reconcileInfrastructureStatusCondition(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane) {
-	r.Log.Info("Reconciling infrastructure status")
+	log := ctrl.LoggerFrom(ctx)
+	log.Info("Reconciling infrastructure status")
 	newCondition := metav1.Condition{
 		Type:   string(hyperv1.InfrastructureReady),
 		Status: metav1.ConditionUnknown,
@@ -736,7 +741,7 @@ func (r *HostedControlPlaneReconciler) reconcileInfrastructureStatusCondition(ct
 			Reason:  hyperv1.InfraStatusFailureReason,
 			Message: err.Error(),
 		}
-		r.Log.Error(err, "failed to determine infrastructure status")
+		log.Error(err, "failed to determine infrastructure status")
 	} else if infraStatus.IsReady() {
 		hostedControlPlane.Status.ControlPlaneEndpoint = hyperv1.APIEndpoint{
 			Host: infraStatus.APIHost,
@@ -762,7 +767,7 @@ func (r *HostedControlPlaneReconciler) reconcileInfrastructureStatusCondition(ct
 			Reason:  hyperv1.WaitingOnInfrastructureReadyReason,
 			Message: message,
 		}
-		r.Log.Info("Infrastructure is not yet ready")
+		log.Info("Infrastructure is not yet ready")
 	}
 	newCondition.ObservedGeneration = hostedControlPlane.Generation
 	meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, newCondition)
@@ -1078,9 +1083,10 @@ func (r *HostedControlPlaneReconciler) LookupReleaseImage(ctx context.Context, h
 }
 
 func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) (reconcile.Result, error) {
+	log := ctrl.LoggerFrom(ctx)
 	createOrUpdate := r.createOrUpdate(hostedControlPlane)
 
-	r.Log.Info("Reconciling infrastructure services")
+	log.Info("Reconciling infrastructure services")
 	if err := r.reconcileInfrastructure(ctx, hostedControlPlane, createOrUpdate); err != nil {
 		return reconcile.Result{}, fmt.Errorf("failed to ensure infrastructure: %w", err)
 	}
@@ -1093,7 +1099,7 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 		return reconcile.Result{}, fmt.Errorf("failed to look up infra status: %w", err)
 	}
 	if !infraStatus.IsReady() {
-		r.Log.Info("Waiting for infrastructure to be ready before proceeding")
+		log.Info("Waiting for infrastructure to be ready before proceeding")
 		return reconcile.Result{RequeueAfter: time.Minute}, nil
 	}
 
@@ -1150,6 +1156,7 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 }
 
 func (r *HostedControlPlaneReconciler) reconcileCPOV2(ctx context.Context, hcp *hyperv1.HostedControlPlane, infraStatus infra.InfrastructureStatus, releaseImageProvider, userReleaseImageProvider imageprovider.ReleaseImageProvider) error {
+	log := ctrl.LoggerFrom(ctx)
 	if err := r.cleanupOldKonnectivityServerDeployment(ctx, hcp); err != nil {
 		return err
 	}
@@ -1165,21 +1172,21 @@ func (r *HostedControlPlaneReconciler) reconcileCPOV2(ctx context.Context, hcp *
 
 		for _, resource := range []client.Object{role, sa, roleBinding} {
 			if _, err := k8sutil.DeleteIfNeeded(ctx, r.Client, resource); err != nil {
-				r.Log.Error(err, "Failed to delete deprecated resource", "resource", client.ObjectKeyFromObject(resource).String())
+				log.Error(err, "Failed to delete deprecated resource", "resource", client.ObjectKeyFromObject(resource).String())
 			}
 		}
 	}
 
 	createOrUpdate := r.createOrUpdate(hcp)
 	// Reconcile default service account
-	r.Log.Info("Reconciling default service account")
+	log.Info("Reconciling default service account")
 	if err := r.reconcileDefaultServiceAccount(ctx, hcp, createOrUpdate); err != nil {
 		return fmt.Errorf("failed to reconcile default service account: %w", err)
 	}
 
 	// Reconcile PKI
 	if _, exists := hcp.Annotations[hyperv1.DisablePKIReconciliationAnnotation]; !exists {
-		r.Log.Info("Reconciling PKI")
+		log.Info("Reconciling PKI")
 		if err := r.reconcilePKI(ctx, hcp, infraStatus, createOrUpdate); err != nil {
 			return fmt.Errorf("failed to reconcile PKI: %w", err)
 		}
@@ -1187,7 +1194,7 @@ func (r *HostedControlPlaneReconciler) reconcileCPOV2(ctx context.Context, hcp *
 
 	// Reconcile unmanaged etcd
 	if hcp.Spec.Etcd.ManagementType == hyperv1.Unmanaged {
-		r.Log.Info("Reconciling unmanaged Etcd")
+		log.Info("Reconciling unmanaged Etcd")
 		if err := r.reconcileUnmanagedEtcd(ctx, hcp, createOrUpdate); err != nil {
 			return fmt.Errorf("failed to reconcile etcd: %w", err)
 		}
@@ -1213,7 +1220,7 @@ func (r *HostedControlPlaneReconciler) reconcileCPOV2(ctx context.Context, hcp *
 
 	if _, exists := hcp.Annotations[hyperv1.DisableIgnitionServerAnnotation]; !exists {
 		// Reconcile Ignition-server configs
-		r.Log.Info("Reconciling ignition-server configs")
+		log.Info("Reconciling ignition-server configs")
 		if err := r.reconcileIgnitionServerConfigs(ctx, hcp, createOrUpdate); err != nil {
 			return fmt.Errorf("failed to reconcile ignition-server configs: %w", err)
 		}
@@ -1221,7 +1228,7 @@ func (r *HostedControlPlaneReconciler) reconcileCPOV2(ctx context.Context, hcp *
 
 	if util.HCPOAuthEnabled(hcp) {
 		// Reconcile kubeadmin password
-		r.Log.Info("Reconciling kubeadmin password secret")
+		log.Info("Reconciling kubeadmin password secret")
 		explicitOauthConfig := hcp.Spec.Configuration != nil && hcp.Spec.Configuration.OAuth != nil
 		if err := r.reconcileKubeadminPassword(ctx, hcp, explicitOauthConfig, createOrUpdate); err != nil {
 			return fmt.Errorf("failed to ensure control plane: %w", err)
@@ -1237,7 +1244,7 @@ func (r *HostedControlPlaneReconciler) reconcileCPOV2(ctx context.Context, hcp *
 		return fmt.Errorf("failed to reconcile cluster network operator operands: %w", err)
 	}
 
-	r.Log.Info("Reconciling default security group")
+	log.Info("Reconciling default security group")
 	if err := r.reconcileDefaultSecurityGroup(ctx, hcp); err != nil {
 		return fmt.Errorf("failed to reconcile default security group: %w", err)
 	}
@@ -1261,7 +1268,7 @@ func (r *HostedControlPlaneReconciler) reconcileCPOV2(ctx context.Context, hcp *
 
 	var errs []error
 	for _, c := range r.components {
-		r.Log.Info("Reconciling component", "component_name", c.Name())
+		log.Info("Reconciling component", "component_name", c.Name())
 		if err := c.Reconcile(cpContext); err != nil {
 			errs = append(errs, err)
 		}
@@ -1543,12 +1550,13 @@ func (r *HostedControlPlaneReconciler) reconcileOAuthCerts(ctx context.Context, 
 }
 
 func (r *HostedControlPlaneReconciler) reconcileOLMAndMiscCerts(ctx context.Context, hcp *hyperv1.HostedControlPlane, p *pki.PKIParams, createOrUpdate upsert.CreateOrUpdateFN, rootCASecret *corev1.Secret) error {
+	log := ctrl.LoggerFrom(ctx)
 	if capabilities.IsNodeTuningCapabilityEnabled(hcp.Spec.Capabilities) {
 		NodeTuningOperatorServingCert := manifests.ClusterNodeTuningOperatorServingCertSecret(hcp.Namespace)
 		NodeTuningOperatorService := manifests.ClusterNodeTuningOperatorMetricsService(hcp.Namespace)
 		err := removeServiceCAAnnotationAndSecret(ctx, r.Client, NodeTuningOperatorService, NodeTuningOperatorServingCert)
 		if err != nil {
-			r.Log.Error(err, "failed to remove service ca annotation and secret: %w")
+			log.Error(err, "failed to remove service ca annotation and secret")
 		}
 		if _, err = createOrUpdate(ctx, r, NodeTuningOperatorServingCert, func() error {
 			return pki.ReconcileNodeTuningOperatorServingCertSecret(NodeTuningOperatorServingCert, rootCASecret, p.OwnerRef)
@@ -1744,6 +1752,7 @@ func (r *HostedControlPlaneReconciler) reconcileAWSPlatformCerts(ctx context.Con
 }
 
 func (r *HostedControlPlaneReconciler) reconcileAzurePlatformCerts(ctx context.Context, hcp *hyperv1.HostedControlPlane, p *pki.PKIParams, createOrUpdate upsert.CreateOrUpdateFN, rootCASecret *corev1.Secret) error {
+	log := ctrl.LoggerFrom(ctx)
 	azureWorkloadIdentityWebhookServingCert := manifests.AzureWorkloadIdentityWebhookServingCert(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, azureWorkloadIdentityWebhookServingCert, func() error {
 		return pki.ReconcileAzureWorkloadIdentityWebhookServingCert(azureWorkloadIdentityWebhookServingCert, rootCASecret, p.OwnerRef)
@@ -1754,7 +1763,7 @@ func (r *HostedControlPlaneReconciler) reconcileAzurePlatformCerts(ctx context.C
 	AzureDiskCsiDriverOperatorServingCert := manifests.AzureDiskCSIDriverOperatorServingCertSecret(hcp.Namespace)
 	AzureDiskCsiDriverOperatorService := manifests.AzureDiskCSIDriverOperatorMetricsService(hcp.Namespace)
 	if err := removeServiceCAAnnotationAndSecret(ctx, r.Client, AzureDiskCsiDriverOperatorService, AzureDiskCsiDriverOperatorServingCert); err != nil {
-		r.Log.Error(err, "failed to remove service ca annotation and secret: %w")
+		log.Error(err, "failed to remove service ca annotation and secret")
 	}
 	if _, err := createOrUpdate(ctx, r, AzureDiskCsiDriverOperatorServingCert, func() error {
 		z := pki.ReconcileAzureDiskCsiDriverOperatorMetricsServingCertSecret(AzureDiskCsiDriverOperatorServingCert, rootCASecret, p.OwnerRef)
@@ -1787,7 +1796,7 @@ func (r *HostedControlPlaneReconciler) reconcileAzurePlatformCerts(ctx context.C
 	AzureFileCsiDriverOperatorServingCert := manifests.AzureFileCSIDriverOperatorServingCertSecret(hcp.Namespace)
 	AzureFileCsiDriverOperatorService := manifests.AzureFileCSIDriverOperatorMetricsService(hcp.Namespace)
 	if err := removeServiceCAAnnotationAndSecret(ctx, r.Client, AzureFileCsiDriverOperatorService, AzureFileCsiDriverOperatorServingCert); err != nil {
-		r.Log.Error(err, "failed to remove service ca annotation and secret: %w")
+		log.Error(err, "failed to remove service ca annotation and secret")
 	}
 	if _, err := createOrUpdate(ctx, r, AzureFileCsiDriverOperatorServingCert, func() error {
 		z := pki.ReconcileAzureFileCsiDriverOperatorMetricsServingCertSecret(AzureFileCsiDriverOperatorServingCert, rootCASecret, p.OwnerRef)
@@ -1936,11 +1945,12 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 }
 
 func (r *HostedControlPlaneReconciler) reconcileUnmanagedEtcd(ctx context.Context, hcp *hyperv1.HostedControlPlane, createOrUpdate upsert.CreateOrUpdateFN) error {
+	log := ctrl.LoggerFrom(ctx)
 	// reconcile client secret over
 	if hcp.Spec.Etcd.Unmanaged == nil || len(hcp.Spec.Etcd.Unmanaged.TLS.ClientSecret.Name) == 0 || len(hcp.Spec.Etcd.Unmanaged.Endpoint) == 0 {
 		return fmt.Errorf("etcd metadata not specified for unmanaged deployment")
 	}
-	r.Log.Info("Retrieving tls secret", "name", hcp.Spec.Etcd.Unmanaged.TLS.ClientSecret.Name)
+	log.Info("Retrieving tls secret", "name", hcp.Spec.Etcd.Unmanaged.TLS.ClientSecret.Name)
 	var src corev1.Secret
 	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hcp.GetNamespace(), Name: hcp.Spec.Etcd.Unmanaged.TLS.ClientSecret.Name}, &src); err != nil {
 		return fmt.Errorf("failed to get etcd client cert %s: %w", hcp.Spec.Etcd.Unmanaged.TLS.ClientSecret.Name, err)
@@ -1955,7 +1965,7 @@ func (r *HostedControlPlaneReconciler) reconcileUnmanagedEtcd(ctx context.Contex
 		return fmt.Errorf("etcd secret %s does not have client ca", hcp.Spec.Etcd.Unmanaged.TLS.ClientSecret.Name)
 	}
 	kubeComponentEtcdClientSecret := manifests.EtcdClientSecret(hcp.GetNamespace())
-	r.Log.Info("Reconciling openshift control plane etcd client tls secret", "name", kubeComponentEtcdClientSecret.Name)
+	log.Info("Reconciling openshift control plane etcd client tls secret", "name", kubeComponentEtcdClientSecret.Name)
 	_, err := createOrUpdate(ctx, r.Client, kubeComponentEtcdClientSecret, func() error {
 		if kubeComponentEtcdClientSecret.Data == nil {
 			kubeComponentEtcdClientSecret.Data = map[string][]byte{}
@@ -1993,6 +2003,7 @@ func (r *HostedControlPlaneReconciler) cleanupOldPKIOperatorDeployment(ctx conte
 }
 
 func (r *HostedControlPlaneReconciler) reconcileValidIDPConfigurationCondition(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, oauthHost string, oauthPort int32) error {
+	log := ctrl.LoggerFrom(ctx)
 	p := oauth.NewOAuthServerParams(hcp, releaseImageProvider, oauthHost, oauthPort, r.SetDefaultSecurityContext)
 
 	// Report any IDP configuration errors as a condition on the HCP
@@ -2004,7 +2015,7 @@ func (r *HostedControlPlaneReconciler) reconcileValidIDPConfigurationCondition(c
 	}
 	if _, _, err := oauth.ConvertIdentityProviders(ctx, p.IdentityProviders(), p.OauthConfigOverrides, r, hcp.Namespace); err != nil {
 		// Report the error in a condition on the HCP
-		r.Log.Error(err, "failed to initialize identity providers")
+		log.Error(err, "failed to initialize identity providers")
 		new = metav1.Condition{
 			Type:    string(hyperv1.ValidIDPConfiguration),
 			Status:  metav1.ConditionFalse,
@@ -2068,14 +2079,15 @@ func (r *HostedControlPlaneReconciler) cleanupClusterNetworkOperatorResources(ct
 }
 
 func (r *HostedControlPlaneReconciler) reconcileIgnitionServerConfigs(ctx context.Context, hcp *hyperv1.HostedControlPlane, createOrUpdate upsert.CreateOrUpdateFN) error {
+	log := ctrl.LoggerFrom(ctx)
 	// Reconcile core ignition config
-	r.Log.Info("Reconciling core ignition config")
+	log.Info("Reconciling core ignition config")
 	if err := r.reconcileCoreIgnitionConfig(ctx, hcp, createOrUpdate); err != nil {
 		return fmt.Errorf("failed to reconcile core ignition config: %w", err)
 	}
 
 	// Reconcile machine config server config
-	r.Log.Info("Reconciling machine config server config")
+	log.Info("Reconciling machine config server config")
 	if err := r.reconcileMachineConfigServerConfig(ctx, hcp, createOrUpdate); err != nil {
 		return fmt.Errorf("failed to reconcile mcs config: %w", err)
 	}
@@ -2139,6 +2151,7 @@ func (r *HostedControlPlaneReconciler) reconcileManagedTrustedCABundle(ctx conte
 }
 
 func (r *HostedControlPlaneReconciler) reconcileCoreIgnitionConfig(ctx context.Context, hcp *hyperv1.HostedControlPlane, createOrUpdate upsert.CreateOrUpdateFN) error {
+	log := ctrl.LoggerFrom(ctx)
 	sshKey := ""
 	if len(hcp.Spec.SSHKey.Name) > 0 {
 		var sshKeySecret corev1.Secret
@@ -2181,7 +2194,7 @@ func (r *HostedControlPlaneReconciler) reconcileCoreIgnitionConfig(ctx context.C
 	}
 
 	// ImageDigestMirrorSet is only applicable for release image versions >= 4.13
-	r.Log.Info("Reconciling ImageDigestMirrorSet")
+	log.Info("Reconciling ImageDigestMirrorSet")
 	imageDigestMirrorSet := globalconfig.ImageDigestMirrorSet()
 	if err := globalconfig.ReconcileImageDigestMirrors(imageDigestMirrorSet, hcp); err != nil {
 		return fmt.Errorf("failed to reconcile image content policy: %w", err)
@@ -2383,15 +2396,16 @@ func reconcileKubeadminPasswordSecret(secret *corev1.Secret, hcp *hyperv1.Hosted
 }
 
 func (r *HostedControlPlaneReconciler) hostedControlPlaneInNamespace(ctx context.Context, resource client.Object) []reconcile.Request {
+	log := ctrl.LoggerFrom(ctx)
 	hcpList := &hyperv1.HostedControlPlaneList{}
 	if err := r.List(ctx, hcpList, &client.ListOptions{
 		Namespace: resource.GetNamespace(),
 	}); err != nil {
-		r.Log.Error(err, "failed to list hosted control planes in namespace", "namespace", resource.GetNamespace())
+		log.Error(err, "failed to list hosted control planes in namespace", "namespace", resource.GetNamespace())
 		return nil
 	}
 	if len(hcpList.Items) > 1 {
-		r.Log.Error(fmt.Errorf("more than one HostedControlPlane resource found in namespace %s", resource.GetNamespace()), "unexpected number of HostedControlPlane resources")
+		log.Error(fmt.Errorf("more than one HostedControlPlane resource found in namespace %s", resource.GetNamespace()), "unexpected number of HostedControlPlane resources")
 		return nil
 	}
 	var result []reconcile.Request

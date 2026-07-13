@@ -41,6 +41,8 @@ const (
 	telemetryRemoteWriteURL = "https://infogw.api.openshift.com/metrics/v1/receive"
 )
 
+const ControllerName = "uwmtelemetry"
+
 type Reconciler struct {
 	client.Client
 	upsert.CreateOrUpdateProvider
@@ -52,6 +54,7 @@ type Reconciler struct {
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	// Reconcile on the HyperShift operator deployment and watch monitoring namespaces
 	_, err := ctrl.NewControllerManagedBy(mgr).
+		Named(ControllerName).
 		For(&appsv1.Deployment{}, builder.WithPredicates(predicateForNamespacedName(manifests.OperatorDeployment(r.Namespace)))).
 		Watches(&corev1.Namespace{}, handler.EnqueueRequestsFromMapFunc(mapRequestTo(manifests.OperatorDeployment(r.Namespace))),
 			builder.WithPredicates(predicateForNames(monitoring.MonitoringNamespace().Name, monitoring.UWMNamespace().Name))).

@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
-	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/support/awsapi"
 
@@ -78,7 +77,7 @@ func NewCreateOperatorRolesCommand() *cobra.Command {
 
 	_ = cmd.MarkFlagRequired("oidc-storage-provider-s3-bucket-name")
 
-	logger := log.Log
+	logger := util.NewLogger()
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		if err := opts.Validate(cmd.Context()); err != nil {
 			return err

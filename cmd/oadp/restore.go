@@ -5,8 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/openshift/hypershift/cmd/log"
-	"github.com/openshift/hypershift/cmd/util"
+	cmdutil "github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/oadp"
 
@@ -22,7 +21,7 @@ import (
 
 func NewCreateRestoreCommand() *cobra.Command {
 	opts := &CreateOptions{
-		Log: log.Log,
+		Log: cmdutil.NewLogger(),
 	}
 
 	// CLI flag variables for boolean fields
@@ -123,7 +122,7 @@ func (o *CreateOptions) RunRestore(ctx context.Context) error {
 	// Client is needed for validations and actual creation
 	if o.Client == nil {
 		var err error
-		o.Client, err = util.GetClient()
+		o.Client, err = cmdutil.GetClient()
 		if err != nil {
 			if o.Render {
 				// In render mode, if we can't connect to cluster, we'll still render but skip validations
