@@ -36,6 +36,7 @@ var (
 		"karpenter-operator",
 		"karpenter",
 		"router",
+		"ignition-server",
 	)
 )
 
