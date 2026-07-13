@@ -11,6 +11,7 @@ import (
 	"github.com/openshift/hypershift/support/azureutil"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 
+	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -319,12 +320,11 @@ func TestUseHCPRouter(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
 			if tt.setupEnv != nil {
 				tt.setupEnv(t)
 			}
-			if got := util.UseHCPRouter(tt.hcp); got != tt.want {
-				t.Errorf("UseHCPRouter() = %v, want %v", got, tt.want)
-			}
+			g.Expect(util.UseHCPRouter(tt.hcp)).To(Equal(tt.want))
 		})
 	}
 }
@@ -366,13 +366,30 @@ func TestAroExpectedHCPRouterRouteNames(t *testing.T) {
 			expected: nil,
 		},
 		{
-			name: "When ARO HCP has no metrics forwarding, it should return base routes",
+			name: "When ARO HCP has OAuth disabled via OIDC, it should exclude oauth-internal",
+			hcp: func() *hyperv1.HostedControlPlane {
+				hcp := aroHCP()
+				hcp.Spec.Configuration = &hyperv1.ClusterConfiguration{
+					Authentication: &configv1.AuthenticationSpec{
+						Type: configv1.AuthenticationTypeOIDC,
+					},
+				}
+				return hcp
+			}(),
+			expected: []string{
+				"kube-apiserver-internal",
+				"konnectivity-server",
+				"ignition-server",
+			},
+		},
+		{
+			name: "When ARO HCP has no metrics forwarding, it should return base routes plus oauth",
 			hcp:  aroHCP(),
 			expected: []string{
 				"kube-apiserver-internal",
 				"konnectivity-server",
-				"oauth-internal",
 				"ignition-server",
+				"oauth-internal",
 			},
 		},
 		{
@@ -385,8 +402,8 @@ func TestAroExpectedHCPRouterRouteNames(t *testing.T) {
 			expected: []string{
 				"kube-apiserver-internal",
 				"konnectivity-server",
-				"oauth-internal",
 				"ignition-server",
+				"oauth-internal",
 				"metrics-proxy",
 			},
 		},
@@ -403,8 +420,8 @@ func TestAroExpectedHCPRouterRouteNames(t *testing.T) {
 			expected: []string{
 				"kube-apiserver-internal",
 				"konnectivity-server",
-				"oauth-internal",
 				"ignition-server",
+				"oauth-internal",
 			},
 		},
 	}
@@ -568,7 +585,7 @@ func TestEnsureHCPRouterRoutesExist(t *testing.T) {
 			name:        "When all routes are missing, it should return an error listing all",
 			hcp:         aroHCP(),
 			routes:      []runtime.Object{},
-			expectedErr: "waiting for HCP router routes: kube-apiserver-internal, konnectivity-server, oauth-internal, ignition-server",
+			expectedErr: "waiting for HCP router routes: kube-apiserver-internal, konnectivity-server, ignition-server, oauth-internal",
 		},
 		{
 			name: "When metrics forwarding is enabled and metrics-proxy is missing, it should return an error",
