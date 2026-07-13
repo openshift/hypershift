@@ -7,10 +7,14 @@ import (
 	kcpv1 "github.com/openshift/api/kubecontrolplane/v1"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/component-base/featuregate"
+	fgtesting "k8s.io/component-base/featuregate/testing"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	podsecurityadmissionv1 "k8s.io/pod-security-admission/admission/api/v1"
+
+	featuregates "github.com/openshift/hypershift/control-plane-operator/featuregates"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/require"
@@ -18,9 +22,10 @@ import (
 
 func TestGenerateConfig(t *testing.T) {
 	type testcase struct {
-		name     string
-		params   KubeAPIServerConfigParams
-		expected *kcpv1.KubeAPIServerConfig
+		name         string
+		params       KubeAPIServerConfigParams
+		featureGates []featuregate.Feature
+		expected     *kcpv1.KubeAPIServerConfig
 	}
 
 	testcases := []testcase{
@@ -458,6 +463,104 @@ func TestGenerateConfig(t *testing.T) {
 			),
 		},
 		{
+			name: "with ExternalOIDCExternalClaimsSourcing enabled and auth type OIDC",
+			featureGates: []featuregate.Feature{
+				featuregates.ExternalOIDCExternalClaimsSourcing,
+			},
+			params: KubeAPIServerConfigParams{
+				Authentication: &configv1.AuthenticationSpec{
+					Type: configv1.AuthenticationTypeOIDC,
+					OIDCProviders: []configv1.OIDCProvider{
+						{},
+					},
+				},
+			},
+			expected: modifyKasConfig(defaultKASConfig(),
+				func(kasc *kcpv1.KubeAPIServerConfig) {
+					kasc.APIServerArguments["enable-admission-plugins"] = kcpv1.Arguments{
+						"CertificateApproval",
+						"CertificateSigning",
+						"CertificateSubjectRestriction",
+						"DefaultIngressClass",
+						"DefaultStorageClass",
+						"DefaultTolerationSeconds",
+						"LimitRanger",
+						"MutatingAdmissionWebhook",
+						"NamespaceLifecycle",
+						"NodeRestriction",
+						"OwnerReferencesPermissionEnforcement",
+						"PersistentVolumeClaimResize",
+						"PodNodeSelector",
+						"PodTolerationRestriction",
+						"Priority",
+						"ResourceQuota",
+						"RuntimeClass",
+						"ServiceAccount",
+						"StorageObjectInUseProtection",
+						"TaintNodesByCondition",
+						"ValidatingAdmissionPolicy",
+						"ValidatingAdmissionWebhook",
+						"config.openshift.io/DenyDeleteClusterConfiguration",
+						"config.openshift.io/ValidateAPIServer",
+						"config.openshift.io/ValidateAuthentication",
+						"config.openshift.io/ValidateConsole",
+						"config.openshift.io/ValidateFeatureGate",
+						"config.openshift.io/ValidateImage",
+						"config.openshift.io/ValidateOAuth",
+						"config.openshift.io/ValidateProject",
+						"config.openshift.io/ValidateScheduler",
+						"image.openshift.io/ImagePolicy",
+						"network.openshift.io/ExternalIPRanger",
+						"network.openshift.io/RestrictedEndpointsAdmission",
+						"quota.openshift.io/ClusterResourceQuota",
+						"quota.openshift.io/ValidateClusterResourceQuota",
+						"route.openshift.io/IngressAdmission",
+						"scheduling.openshift.io/OriginPodNodeEnvironment",
+						"security.openshift.io/DefaultSecurityContextConstraints",
+						"security.openshift.io/SCCExecRestrictions",
+						"security.openshift.io/SecurityContextConstraint",
+						"security.openshift.io/ValidateSecurityContextConstraints",
+						"storage.openshift.io/CSIInlineVolumeSecurity",
+					}
+
+					kasc.APIServerArguments["disable-admission-plugins"] = kcpv1.Arguments{
+						"authorization.openshift.io/RestrictSubjectBindings",
+						"authorization.openshift.io/ValidateRoleBindingRestriction",
+					}
+
+					kasc.AuthConfig.OAuthMetadataFile = ""
+				},
+			),
+		},
+		{
+			name: "with ExternalOIDCExternalClaimsSourcing enabled and auth type None",
+			featureGates: []featuregate.Feature{
+				featuregates.ExternalOIDCExternalClaimsSourcing,
+			},
+			params: KubeAPIServerConfigParams{
+				Authentication: &configv1.AuthenticationSpec{
+					Type: configv1.AuthenticationTypeNone,
+				},
+			},
+			expected: modifyKasConfig(defaultKASConfig(),
+				func(kasc *kcpv1.KubeAPIServerConfig) {
+					kasc.AuthConfig.OAuthMetadataFile = ""
+				},
+			),
+		},
+		{
+			name: "with ExternalOIDCExternalClaimsSourcing enabled and auth type IntegratedOAuth",
+			featureGates: []featuregate.Feature{
+				featuregates.ExternalOIDCExternalClaimsSourcing,
+			},
+			params: KubeAPIServerConfigParams{
+				Authentication: &configv1.AuthenticationSpec{
+					Type: configv1.AuthenticationTypeIntegratedOAuth,
+				},
+			},
+			expected: defaultKASConfig(),
+		},
+		{
 			name: "with etcd URL",
 			params: KubeAPIServerConfigParams{
 				EtcdURL: "https://etcd.io",
@@ -585,6 +688,9 @@ func TestGenerateConfig(t *testing.T) {
 
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
+			for _, fg := range tc.featureGates {
+				fgtesting.SetFeatureGateDuringTest(t, featuregates.Gate(), fg, true)
+			}
 			kasConfig, _ := generateConfig(tc.params)
 
 			diff := cmp.Diff(tc.expected, kasConfig)

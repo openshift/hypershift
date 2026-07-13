@@ -1,30 +1,30 @@
 package util
 
 import (
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-
 	configv1 "github.com/openshift/api/config/v1"
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 )
 
 func HCPOAuthEnabled(hcp *hyperv1.HostedControlPlane) bool {
-	return oauthEnabled(hcp.Spec.Configuration)
+	return hcp.Spec.Configuration == nil || ConfigOAuthEnabled(hcp.Spec.Configuration.Authentication)
 }
 
-func HCOAuthEnabled(hc *hyperv1.HostedCluster) bool {
-	return oauthEnabled(hc.Spec.Configuration)
+func HCPExternalOIDCEnabled(hcp *hyperv1.HostedControlPlane) bool {
+	config := hcp.Spec.Configuration
+	return config != nil &&
+		config.Authentication != nil &&
+		config.Authentication.Type == configv1.AuthenticationTypeOIDC
 }
 
 func ConfigOAuthEnabled(authentication *configv1.AuthenticationSpec) bool {
-	if authentication != nil &&
-		authentication.Type == configv1.AuthenticationTypeOIDC {
+	if authentication == nil {
+		return true
+	}
+
+	switch authentication.Type {
+	case configv1.AuthenticationTypeIntegratedOAuth, configv1.AuthenticationTypeNone, "":
+		return true
+	default:
 		return false
 	}
-	return true
-}
-
-func oauthEnabled(config *hyperv1.ClusterConfiguration) bool {
-	if config != nil {
-		return ConfigOAuthEnabled(config.Authentication)
-	}
-	return true
 }

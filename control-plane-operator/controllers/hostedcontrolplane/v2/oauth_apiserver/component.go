@@ -3,10 +3,12 @@ package oapi
 import (
 	kasv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kas"
 	oapiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oapi"
+	"github.com/openshift/hypershift/control-plane-operator/featuregates"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/util"
 
+	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/utils/ptr"
 )
 
@@ -57,6 +59,14 @@ func NewComponent() component.ControlPlaneComponent {
 		Build()
 }
 
+func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
+	if util.HCPExternalOIDCEnabled(cpContext.HCP) && featuregates.Gate().Enabled(featuregates.ExternalOIDCExternalClaimsSourcing) {
+		return adaptForExternalOIDC(cpContext, deployment)
+	}
+
+	return adaptForOAuth(cpContext, deployment)
+}
+
 func predicate(cpContext component.WorkloadContext) (bool, error) {
-	return util.HCPOAuthEnabled(cpContext.HCP), nil
+	return util.HCPOAuthEnabled(cpContext.HCP) || featuregates.Gate().Enabled(featuregates.ExternalOIDCExternalClaimsSourcing), nil
 }

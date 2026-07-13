@@ -19,6 +19,9 @@
                         "name": "ExternalOIDCWithUpstreamParity"
                     },
                     {
+                        "name": "ExternalOIDCExternalClaimsSourcing"
+                    },
+                    {
                       "name": "AROHCPManagedIdentities"
                     },
                     {

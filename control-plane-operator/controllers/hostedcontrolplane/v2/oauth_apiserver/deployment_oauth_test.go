@@ -6,13 +6,12 @@ import (
 
 	. "github.com/onsi/gomega"
 
+	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
 	"github.com/openshift/hypershift/support/api"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/podspec"
-
-	configv1 "github.com/openshift/api/config/v1"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -55,7 +54,7 @@ func TestAdaptDeployment(t *testing.T) {
 					HCP:    hcp,
 				}
 
-				err := adaptDeployment(cpContext, deployment)
+				err := adaptForOAuth(cpContext, deployment)
 				g.Expect(err).ToNot(HaveOccurred())
 
 				container := podspec.FindContainer(ComponentName, deployment.Spec.Template.Spec.Containers)
@@ -94,7 +93,7 @@ func TestAdaptDeployment(t *testing.T) {
 					HCP:    hcp,
 				}
 
-				err := adaptDeployment(cpContext, deployment)
+				err := adaptForOAuth(cpContext, deployment)
 				g.Expect(err).ToNot(HaveOccurred())
 
 				container := podspec.FindContainer(ComponentName, deployment.Spec.Template.Spec.Containers)
@@ -142,7 +141,7 @@ func TestAdaptDeployment(t *testing.T) {
 					HCP:    hcp,
 				}
 
-				err := adaptDeployment(cpContext, deployment)
+				err := adaptForOAuth(cpContext, deployment)
 				g.Expect(err).ToNot(HaveOccurred())
 
 				container := podspec.FindContainer(ComponentName, deployment.Spec.Template.Spec.Containers)
@@ -186,7 +185,7 @@ func TestAdaptDeployment(t *testing.T) {
 					HCP:    hcp,
 				}
 
-				err := adaptDeployment(cpContext, deployment)
+				err := adaptForOAuth(cpContext, deployment)
 				g.Expect(err).ToNot(HaveOccurred())
 
 				container := podspec.FindContainer(ComponentName, deployment.Spec.Template.Spec.Containers)
@@ -225,7 +224,7 @@ func TestAdaptDeployment(t *testing.T) {
 					HCP:    hcp,
 				}
 
-				err := adaptDeployment(cpContext, deployment)
+				err := adaptForOAuth(cpContext, deployment)
 				g.Expect(err).ToNot(HaveOccurred())
 
 				container := podspec.FindContainer(ComponentName, deployment.Spec.Template.Spec.Containers)
@@ -273,7 +272,7 @@ func TestAdaptDeployment(t *testing.T) {
 					HCP:    hcp,
 				}
 
-				err := adaptDeployment(cpContext, deployment)
+				err := adaptForOAuth(cpContext, deployment)
 				g.Expect(err).ToNot(HaveOccurred())
 
 				container := podspec.FindContainer(ComponentName, deployment.Spec.Template.Spec.Containers)
@@ -326,7 +325,7 @@ func TestAdaptDeployment(t *testing.T) {
 					HCP:    hcp,
 				}
 
-				err := adaptDeployment(cpContext, deployment)
+				err := adaptForOAuth(cpContext, deployment)
 				g.Expect(err).ToNot(HaveOccurred())
 
 				container := podspec.FindContainer(ComponentName, deployment.Spec.Template.Spec.Containers)
@@ -366,7 +365,7 @@ func TestAdaptDeployment(t *testing.T) {
 					HCP:    hcp,
 				}
 
-				err := adaptDeployment(cpContext, deployment)
+				err := adaptForOAuth(cpContext, deployment)
 				g.Expect(err).ToNot(HaveOccurred())
 
 				container := podspec.FindContainer(ComponentName, deployment.Spec.Template.Spec.Containers)
@@ -375,7 +374,41 @@ func TestAdaptDeployment(t *testing.T) {
 			},
 		},
 		{
-			name: "When audit profile is None, it should remove audit-logs container",
+			name: "When audit profile is not None, it should add audit-logs container",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-hcp",
+					Namespace: "test-ns",
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
+					IssuerURL: "https://test-issuer.example.com",
+					Etcd: hyperv1.EtcdSpec{
+						ManagementType: hyperv1.Managed,
+					},
+				},
+			},
+			validate: func(t *testing.T, g *GomegaWithT, hcp *hyperv1.HostedControlPlane) {
+
+				deployment, loadErr := assets.LoadDeploymentManifest(ComponentName)
+				g.Expect(loadErr).ToNot(HaveOccurred())
+
+				cpContext := component.WorkloadContext{
+					Client: fake.NewClientBuilder().WithScheme(api.Scheme).Build(),
+					HCP:    hcp,
+				}
+
+				err := adaptForOAuth(cpContext, deployment)
+				g.Expect(err).ToNot(HaveOccurred())
+
+				container := podspec.FindContainer("audit-logs", deployment.Spec.Template.Spec.Containers)
+				g.Expect(container).ToNot(BeNil(), "audit-logs container should be present after adaptation")
+			},
+		},
+		{
+			name: "When audit profile is None, it should not add audit-logs container",
 			hcp: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-hcp",
@@ -403,20 +436,16 @@ func TestAdaptDeployment(t *testing.T) {
 				deployment, loadErr := assets.LoadDeploymentManifest(ComponentName)
 				g.Expect(loadErr).ToNot(HaveOccurred())
 
-				// Verify audit-logs container exists in base manifest before adaptation
-				preContainer := podspec.FindContainer("audit-logs", deployment.Spec.Template.Spec.Containers)
-				g.Expect(preContainer).ToNot(BeNil(), "audit-logs container should exist in base manifest")
-
 				cpContext := component.WorkloadContext{
 					Client: fake.NewClientBuilder().WithScheme(api.Scheme).Build(),
 					HCP:    hcp,
 				}
 
-				err := adaptDeployment(cpContext, deployment)
+				err := adaptForOAuth(cpContext, deployment)
 				g.Expect(err).ToNot(HaveOccurred())
 
 				container := podspec.FindContainer("audit-logs", deployment.Spec.Template.Spec.Containers)
-				g.Expect(container).To(BeNil(), "audit-logs container should be removed after adaptation")
+				g.Expect(container).To(BeNil(), "audit-logs container should not be added when audit profile is None")
 			},
 		},
 		{
@@ -446,7 +475,7 @@ func TestAdaptDeployment(t *testing.T) {
 					HCP:    hcp,
 				}
 
-				err := adaptDeployment(cpContext, deployment)
+				err := adaptForOAuth(cpContext, deployment)
 				g.Expect(err).ToNot(HaveOccurred())
 
 				container := podspec.FindContainer(ComponentName, deployment.Spec.Template.Spec.Containers)
@@ -480,18 +509,14 @@ func TestAdaptDeployment(t *testing.T) {
 				deployment, loadErr := assets.LoadDeploymentManifest(ComponentName)
 				g.Expect(loadErr).ToNot(HaveOccurred())
 
-				originalContainerCount := len(deployment.Spec.Template.Spec.Containers)
-
 				cpContext := component.WorkloadContext{
 					Client: fake.NewClientBuilder().WithScheme(api.Scheme).Build(),
 					HCP:    hcp,
 				}
 
-				err := adaptDeployment(cpContext, deployment)
+				err := adaptForOAuth(cpContext, deployment)
 				g.Expect(err).ToNot(HaveOccurred())
 
-				// KAS readiness check container should be added
-				g.Expect(deployment.Spec.Template.Spec.Containers).To(HaveLen(originalContainerCount + 1))
 				kasReadinessContainer := podspec.FindContainer("kas-readiness-check", deployment.Spec.Template.Spec.Containers)
 				g.Expect(kasReadinessContainer).ToNot(BeNil(), "kas-readiness-check container should be present")
 			},
@@ -523,7 +548,7 @@ func TestAdaptDeployment(t *testing.T) {
 					HCP:    hcp,
 				}
 
-				err := adaptDeployment(cpContext, deployment)
+				err := adaptForOAuth(cpContext, deployment)
 				g.Expect(err).ToNot(HaveOccurred())
 
 				// Verify KAS readiness check container was added with /livez URL
@@ -634,7 +659,7 @@ func TestAdaptDeploymentWithInvalidEtcdURL(t *testing.T) {
 			HCP:    hcp,
 		}
 
-		err = adaptDeployment(cpContext, deployment)
+		err = adaptForOAuth(cpContext, deployment)
 		g.Expect(err).To(HaveOccurred())
 	})
 }
@@ -691,7 +716,7 @@ func TestAdaptDeploymentMultipleConfigurations(t *testing.T) {
 			HCP:    hcp,
 		}
 
-		err = adaptDeployment(cpContext, deployment)
+		err = adaptForOAuth(cpContext, deployment)
 		g.Expect(err).ToNot(HaveOccurred())
 
 		container := podspec.FindContainer(ComponentName, deployment.Spec.Template.Spec.Containers)
