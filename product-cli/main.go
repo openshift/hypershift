@@ -25,10 +25,25 @@ import (
 	"github.com/openshift/hypershift/product-cli/cmd/create"
 	"github.com/openshift/hypershift/product-cli/cmd/destroy"
 
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+
+	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
+	"go.uber.org/zap/zapcore"
 )
 
+func newLogger(extraOpts ...zap.Opts) logr.Logger {
+	opts := []zap.Opts{zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
+		o.EncodeTime = zapcore.RFC3339TimeEncoder
+	})}
+	opts = append(opts, extraOpts...)
+	return zap.New(opts...)
+}
+
 func main() {
+	ctrl.SetLogger(newLogger())
+
 	cmd := &cobra.Command{
 		Use:              "hcp",
 		SilenceUsage:     true,
