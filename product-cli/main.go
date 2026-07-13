@@ -28,14 +28,19 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
+	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap/zapcore"
 )
 
-func main() {
-	ctrl.SetLogger(zap.New(zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
+func newLogger(opts ...zap.Opts) logr.Logger {
+	return zap.New(append([]zap.Opts{zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
 		o.EncodeTime = zapcore.RFC3339TimeEncoder
-	})))
+	})}, opts...)...)
+}
+
+func main() {
+	ctrl.SetLogger(newLogger())
 	cmd := &cobra.Command{
 		Use:              "hcp",
 		SilenceUsage:     true,
