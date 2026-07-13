@@ -208,6 +208,92 @@ func TestNewIngressParams(t *testing.T) {
 			},
 		},
 		{
+			name: "When ARO HCP Azure topology is PublicAndPrivate it should set external load balancer scope",
+			args: args{
+				hcp: &hyperv1.HostedControlPlane{
+					Spec: hyperv1.HostedControlPlaneSpec{
+						Platform: hyperv1.PlatformSpec{
+							Type: hyperv1.AzurePlatform,
+							Azure: &hyperv1.AzurePlatformSpec{
+								Topology: hyperv1.AzureTopologyPublicAndPrivate,
+								AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+									AzureAuthenticationConfigType: hyperv1.AzureAuthenticationTypeManagedIdentities,
+								},
+							},
+						},
+					},
+				},
+			},
+			want: &IngressParams{
+				IngressSubdomain:  "apps.",
+				Replicas:          1,
+				PlatformType:      hyperv1.AzurePlatform,
+				IsPrivate:         false,
+				IBMCloudUPI:       false,
+				AWSNLB:            false,
+				LoadBalancerScope: v1.ExternalLoadBalancer,
+			},
+		},
+		{
+			name: "When ARO HCP Azure topology is Private it should set external load balancer scope",
+			args: args{
+				hcp: &hyperv1.HostedControlPlane{
+					Spec: hyperv1.HostedControlPlaneSpec{
+						Platform: hyperv1.PlatformSpec{
+							Type: hyperv1.AzurePlatform,
+							Azure: &hyperv1.AzurePlatformSpec{
+								Topology: hyperv1.AzureTopologyPrivate,
+								AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+									AzureAuthenticationConfigType: hyperv1.AzureAuthenticationTypeManagedIdentities,
+								},
+							},
+						},
+					},
+				},
+			},
+			want: &IngressParams{
+				IngressSubdomain:  "apps.",
+				Replicas:          1,
+				PlatformType:      hyperv1.AzurePlatform,
+				IsPrivate:         false,
+				IBMCloudUPI:       false,
+				AWSNLB:            false,
+				LoadBalancerScope: v1.ExternalLoadBalancer,
+			},
+		},
+		{
+			name: "When ARO HCP has IngressControllerLoadBalancerScope annotation set to Internal it should respect it",
+			args: args{
+				hcp: &hyperv1.HostedControlPlane{
+					ObjectMeta: metav1.ObjectMeta{
+						Annotations: map[string]string{
+							hyperv1.IngressControllerLoadBalancerScope: string(v1.InternalLoadBalancer),
+						},
+					},
+					Spec: hyperv1.HostedControlPlaneSpec{
+						Platform: hyperv1.PlatformSpec{
+							Type: hyperv1.AzurePlatform,
+							Azure: &hyperv1.AzurePlatformSpec{
+								Topology: hyperv1.AzureTopologyPublicAndPrivate,
+								AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+									AzureAuthenticationConfigType: hyperv1.AzureAuthenticationTypeManagedIdentities,
+								},
+							},
+						},
+					},
+				},
+			},
+			want: &IngressParams{
+				IngressSubdomain:  "apps.",
+				Replicas:          1,
+				PlatformType:      hyperv1.AzurePlatform,
+				IsPrivate:         false,
+				IBMCloudUPI:       false,
+				AWSNLB:            false,
+				LoadBalancerScope: v1.InternalLoadBalancer,
+			},
+		},
+		{
 			name: "When Azure endpoint access is Public it should set external load balancer scope",
 			args: args{
 				hcp: &hyperv1.HostedControlPlane{
