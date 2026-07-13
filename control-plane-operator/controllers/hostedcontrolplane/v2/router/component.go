@@ -11,6 +11,7 @@ import (
 	"github.com/openshift/hypershift/support/azureutil"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/netutil"
+	supportutil "github.com/openshift/hypershift/support/util"
 
 	routev1 "github.com/openshift/api/route/v1"
 
@@ -104,7 +105,6 @@ func ensureHCPRouterRoutesExist(cpContext component.WorkloadContext) error {
 var aroBaseHCPRouterRouteNames = []string{
 	"kube-apiserver-internal",
 	"konnectivity-server",
-	"oauth-internal",
 	"ignition-server",
 }
 
@@ -114,6 +114,9 @@ func aroExpectedHCPRouterRouteNames(hcp *hyperv1.HostedControlPlane) []string {
 	}
 
 	names := append([]string(nil), aroBaseHCPRouterRouteNames...)
+	if supportutil.HCPOAuthEnabled(hcp) {
+		names = append(names, "oauth-internal")
+	}
 	if metricsProxyRouteRequired(hcp) {
 		names = append(names, "metrics-proxy")
 	}
