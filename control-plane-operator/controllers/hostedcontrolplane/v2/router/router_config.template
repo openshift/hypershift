@@ -20,6 +20,12 @@ resolvers azure_dns
   nameserver azure 168.63.129.16:53
 {{- end }}
 
+frontend prometheus
+  bind :::8405 v4v6
+  mode http
+  http-request use-service prometheus-exporter if { path /metrics }
+  no log
+
 frontend main
   bind :::8443 v4v6
   tcp-request inspect-delay 5s
