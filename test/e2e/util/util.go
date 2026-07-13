@@ -2015,34 +2015,38 @@ func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclie
 
 		// Verify that in-place management-cluster pull secret updates propagate to the guest cluster
 		// without triggering a NodePool rollout.
+		// Read the original pull secret and register cleanup on the parent test
+		// so the restore runs AFTER all subtests complete. This keeps the dummy
+		// entry in place while the verifier DS checks it reached disk.
+		mgmtSecret := &corev1.Secret{}
+		g.Expect(mgmtClient.Get(ctx, crclient.ObjectKey{
+			Namespace: entryHostedCluster.Namespace,
+			Name:      entryHostedCluster.Spec.PullSecret.Name,
+		}, mgmtSecret)).To(Succeed(), "failed to get management-cluster pull secret")
+
+		originalData := make([]byte, len(mgmtSecret.Data[corev1.DockerConfigJsonKey]))
+		copy(originalData, mgmtSecret.Data[corev1.DockerConfigJsonKey])
+
+		t.Cleanup(func() {
+			t.Log("Restoring original management-cluster pull secret data")
+			fresh := &corev1.Secret{}
+			if err := mgmtClient.Get(ctx, crclient.ObjectKey{
+				Namespace: entryHostedCluster.Namespace,
+				Name:      entryHostedCluster.Spec.PullSecret.Name,
+			}, fresh); err != nil {
+				t.Logf("Warning: failed to re-read pull secret for cleanup: %v", err)
+				return
+			}
+			fresh.Data[corev1.DockerConfigJsonKey] = originalData
+			if err := mgmtClient.Update(ctx, fresh); err != nil {
+				t.Logf("Warning: failed to restore pull secret: %v", err)
+			}
+		})
+
 		t.Run("When management-cluster hostedCluster.Spec.PullSecret is updated in-place it should propagate to guest without rollout", func(t *testing.T) {
 			CPOAtLeast(t, Version422, entryHostedCluster)
 			g := NewWithT(t)
 			t.Logf("Reading management-cluster pull secret %s/%s", entryHostedCluster.Namespace, entryHostedCluster.Spec.PullSecret.Name)
-			mgmtSecret := &corev1.Secret{}
-			g.Expect(mgmtClient.Get(ctx, crclient.ObjectKey{
-				Namespace: entryHostedCluster.Namespace,
-				Name:      entryHostedCluster.Spec.PullSecret.Name,
-			}, mgmtSecret)).To(Succeed(), "failed to get management-cluster pull secret")
-
-			originalData := make([]byte, len(mgmtSecret.Data[corev1.DockerConfigJsonKey]))
-			copy(originalData, mgmtSecret.Data[corev1.DockerConfigJsonKey])
-
-			t.Cleanup(func() {
-				t.Log("Restoring original management-cluster pull secret data")
-				fresh := &corev1.Secret{}
-				if err := mgmtClient.Get(ctx, crclient.ObjectKey{
-					Namespace: entryHostedCluster.Namespace,
-					Name:      entryHostedCluster.Spec.PullSecret.Name,
-				}, fresh); err != nil {
-					t.Logf("Warning: failed to re-read pull secret for cleanup: %v", err)
-					return
-				}
-				fresh.Data[corev1.DockerConfigJsonKey] = originalData
-				if err := mgmtClient.Update(ctx, fresh); err != nil {
-					t.Logf("Warning: failed to restore pull secret: %v", err)
-				}
-			})
 
 			// Merge a dummy auth entry into the pull secret without removing existing auths
 			type dockerConfigJSON struct {
@@ -2058,14 +2062,28 @@ func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclie
 			mgmtSecret.Data[corev1.DockerConfigJsonKey] = modifiedData
 			g.Expect(mgmtClient.Update(ctx, mgmtSecret)).To(Succeed(), "failed to update management-cluster pull secret")
 
-			// Wait for openshift-config/pull-secret in the guest cluster to pick up the change
+			// Wait for openshift-config/pull-secret in the guest cluster to pick up the change.
+			// Propagation path: mgmt Secret → HO syncs to CP namespace → HCCO reconciles to guest.
+			// Log each stage so failures can be triaged (OCPBUGS-98465).
+			cpNamespace := manifests.HostedControlPlaneNamespace(entryHostedCluster.Namespace, entryHostedCluster.Name)
 			t.Log("Waiting for openshift-config/pull-secret to update in guest cluster")
 			g.Eventually(func() bool {
-				secret := &corev1.Secret{}
-				if err := guestClient.Get(ctx, crclient.ObjectKey{Name: "pull-secret", Namespace: "openshift-config"}, secret); err != nil {
+				// Stage 1: check if HO synced the pull secret to the CP namespace
+				cpSecret := &corev1.Secret{}
+				if err := mgmtClient.Get(ctx, crclient.ObjectKey{Name: "pull-secret", Namespace: cpNamespace}, cpSecret); err != nil {
+					t.Logf("CP namespace pull-secret not readable: %v", err)
+				} else {
+					cpHasDummy := bytes.Contains(cpSecret.Data[corev1.DockerConfigJsonKey], []byte("e2e-dummy.example.com"))
+					t.Logf("CP namespace %s/pull-secret has dummy entry: %v", cpNamespace, cpHasDummy)
+				}
+
+				// Stage 2: check if HCCO propagated to the guest cluster
+				guestSecret := &corev1.Secret{}
+				if err := guestClient.Get(ctx, crclient.ObjectKey{Name: "pull-secret", Namespace: "openshift-config"}, guestSecret); err != nil {
+					t.Logf("guest openshift-config/pull-secret not readable: %v", err)
 					return false
 				}
-				return bytes.Contains(secret.Data[corev1.DockerConfigJsonKey], []byte("e2e-dummy.example.com"))
+				return bytes.Contains(guestSecret.Data[corev1.DockerConfigJsonKey], []byte("e2e-dummy.example.com"))
 			}, 150*time.Second, 5*time.Second).Should(BeTrue(), "openshift-config/pull-secret did not propagate dummy entry")
 
 			// Wait for kube-system/original-pull-secret to pick up the change (globalps controller path)
@@ -2073,6 +2091,7 @@ func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclie
 			g.Eventually(func() bool {
 				secret := hccomanifests.OriginalPullSecret()
 				if err := guestClient.Get(ctx, crclient.ObjectKey{Name: secret.Name, Namespace: secret.Namespace}, secret); err != nil {
+					t.Logf("guest kube-system/original-pull-secret not readable: %v", err)
 					return false
 				}
 				return bytes.Contains(secret.Data[corev1.DockerConfigJsonKey], []byte("e2e-dummy.example.com"))
@@ -2096,13 +2115,14 @@ func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclie
 			})).To(Succeed(), "failed to list nodes")
 			g.Expect(len(nodeList.Items)).To(Equal(int(nodeCount)), "node count changed — unexpected rollout")
 
-			// Verify the on-disk kubelet config.json reflects the updated pull secret.
-			// The global-pull-secret-syncer DaemonSet polls every 30s, so wait for it
-			// to sync original-pull-secret → /var/lib/kubelet/config.json, then deploy
-			// a verifier DaemonSet that compares the on-disk file against the cluster pull secret.
-			VerifyKubeletConfigWithDaemonSet(t, ctx, guestClient, dsImage, nodeCount)
+			t.Log("Pull secret propagated to guest cluster without triggering rollout")
+		})
 
-			t.Log("Pull secret propagated to guest cluster and on-disk kubelet config.json without triggering rollout")
+		// Verify the on-disk kubelet config.json reflects the updated pull secret.
+		// Separated from the propagation subtest so DS readiness failures are
+		// attributed correctly and don't mask propagation issues (OCPBUGS-98465).
+		t.Run("Check if the on-disk kubelet config.json matches the cluster pull secret", func(t *testing.T) {
+			VerifyKubeletConfigWithDaemonSet(t, ctx, guestClient, dsImage, nodeCount)
 		})
 
 		// Verify that nodes from Replace NodePools have the globalPS label applied via CAPI propagation.
@@ -2285,13 +2305,20 @@ func waitForDaemonSetReady(t *testing.T, ctx context.Context, client crclient.Cl
 			return false, nil
 		}
 
+		// Wait for rollout to complete (all pods updated with latest template)
+		updated := daemonSet.Status.UpdatedNumberScheduled
+		if updated != desired {
+			t.Logf("DaemonSet %s rollout in progress: %d/%d pods updated", name, updated, desired)
+			return false, nil
+		}
+
 		// Wait for all desired pods to be ready
 		if ready != desired {
 			t.Logf("DaemonSet %s not ready: %d/%d pods ready", name, ready, desired)
 			return false, nil
 		}
 
-		t.Logf("DaemonSet %s ready: %d/%d pods", name, ready, desired)
+		t.Logf("DaemonSet %s ready: %d/%d pods (all updated)", name, ready, desired)
 		return true, nil
 	})
 
