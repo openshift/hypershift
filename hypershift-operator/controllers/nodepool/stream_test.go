@@ -5,6 +5,9 @@ import (
 
 	. "github.com/onsi/gomega"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/releaseinfo"
+
 	"github.com/blang/semver"
 )
 
@@ -168,4 +171,14 @@ func TestGetRHELStream(t *testing.T) {
 			g.Expect(result).To(Equal(tt.expectResult))
 		})
 	}
+}
+
+// TestStreamConstantsMatch ensures the API and releaseinfo stream constants
+// stay in sync so the cross-reference comments don't silently diverge.
+func TestStreamConstantsMatch(t *testing.T) {
+	g := NewWithT(t)
+	g.Expect(hyperv1.OSImageStreamRHEL9).To(Equal(releaseinfo.StreamRHEL9),
+		"API constant OSImageStreamRHEL9 must match releaseinfo.StreamRHEL9")
+	g.Expect(hyperv1.OSImageStreamRHEL10).To(Equal(releaseinfo.StreamRHEL10),
+		"API constant OSImageStreamRHEL10 must match releaseinfo.StreamRHEL10")
 }

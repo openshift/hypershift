@@ -17,7 +17,7 @@ import (
 	orc "github.com/k-orc/openstack-resource-controller/v2/api/v1alpha1"
 )
 
-func MachineTemplateSpec(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool, releaseImage *releaseinfo.ReleaseImage) (*capiopenstackv1beta1.OpenStackMachineTemplateSpec, error) {
+func MachineTemplateSpec(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool, releaseImage *releaseinfo.ReleaseImage, streamName string) (*capiopenstackv1beta1.OpenStackMachineTemplateSpec, error) {
 	openStackMachineTemplate := &capiopenstackv1beta1.OpenStackMachineTemplateSpec{Template: capiopenstackv1beta1.OpenStackMachineTemplateResource{Spec: capiopenstackv1beta1.OpenStackMachineSpec{
 		Flavor: ptr.To(nodePool.Spec.Platform.OpenStack.Flavor),
 	}}}
@@ -27,7 +27,7 @@ func MachineTemplateSpec(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.Node
 			Name: ptr.To(nodePool.Spec.Platform.OpenStack.ImageName),
 		}
 	} else {
-		releaseVersion, err := OpenStackReleaseImage(releaseImage)
+		releaseVersion, err := OpenStackReleaseImage(releaseImage, streamName)
 		if err != nil {
 			return nil, err
 		}
@@ -94,8 +94,8 @@ func GetOpenStackClusterForHostedCluster(ctx context.Context, c client.Client, h
 
 // ReconcileOpenStackImageSpec reconciles the OpenStack ImageSpec for the given HostedCluster.
 // The image spec will be set to the default RHCOS image for the given release.
-func ReconcileOpenStackImageSpec(hcluster *hyperv1.HostedCluster, openStackImageSpec *orc.ImageSpec, release *releaseinfo.ReleaseImage) error {
-	imageURL, imageHash, err := OpenstackDefaultImage(release)
+func ReconcileOpenStackImageSpec(hcluster *hyperv1.HostedCluster, openStackImageSpec *orc.ImageSpec, release *releaseinfo.ReleaseImage, streamName string) error {
+	imageURL, imageHash, err := OpenstackDefaultImage(release, streamName)
 	if err != nil {
 		return fmt.Errorf("failed to lookup RHCOS image: %w", err)
 	}
@@ -105,7 +105,7 @@ func ReconcileOpenStackImageSpec(hcluster *hyperv1.HostedCluster, openStackImage
 		CloudName:  hcluster.Spec.Platform.OpenStack.IdentityRef.CloudName,
 	}
 
-	imageName, err := PrefixedClusterImageName(hcluster, release)
+	imageName, err := PrefixedClusterImageName(hcluster, release, streamName)
 	if err != nil {
 		return fmt.Errorf("failed to get image name: %w", err)
 	}
@@ -131,10 +131,12 @@ func ReconcileOpenStackImageSpec(hcluster *hyperv1.HostedCluster, openStackImage
 
 // OpenstackDefaultImage returns the default RHCOS image for the given release.
 // The image URL and SHA256 hash are returned.
-func OpenstackDefaultImage(releaseImage *releaseinfo.ReleaseImage) (string, string, error) {
-	// TODO(CNTRLPLANE-3553): use releaseImage.StreamForName(rhelStream) instead of
-	// accessing StreamMetadata directly, to support dual-stream payloads.
-	arch, foundArch := releaseImage.StreamMetadata.Architectures["x86_64"]
+func OpenstackDefaultImage(releaseImage *releaseinfo.ReleaseImage, streamName string) (string, string, error) {
+	streamMeta, err := releaseImage.StreamForName(streamName)
+	if err != nil {
+		return "", "", fmt.Errorf("couldn't resolve stream metadata for stream %q: %w", streamName, err)
+	}
+	arch, foundArch := streamMeta.Architectures["x86_64"]
 	if !foundArch {
 		return "", "", fmt.Errorf("couldn't find OS metadata for architecture %q", "x86_64")
 	}
@@ -155,10 +157,12 @@ func OpenstackDefaultImage(releaseImage *releaseinfo.ReleaseImage) (string, stri
 
 // OpenStackReleaseImage returns the release version for the OpenStack image.
 // The release version is extracted from the release metadata.
-func OpenStackReleaseImage(releaseImage *releaseinfo.ReleaseImage) (string, error) {
-	// TODO(CNTRLPLANE-3553): use releaseImage.StreamForName(rhelStream) instead of
-	// accessing StreamMetadata directly, to support dual-stream payloads.
-	arch, foundArch := releaseImage.StreamMetadata.Architectures["x86_64"]
+func OpenStackReleaseImage(releaseImage *releaseinfo.ReleaseImage, streamName string) (string, error) {
+	streamMeta, err := releaseImage.StreamForName(streamName)
+	if err != nil {
+		return "", fmt.Errorf("couldn't resolve stream metadata for stream %q: %w", streamName, err)
+	}
+	arch, foundArch := streamMeta.Architectures["x86_64"]
 	if !foundArch {
 		return "", fmt.Errorf("couldn't find OS metadata for architecture %q", "x86_64")
 	}
@@ -170,8 +174,8 @@ func OpenStackReleaseImage(releaseImage *releaseinfo.ReleaseImage) (string, erro
 }
 
 // PrefixedClusterImageName returns a prefixed name of the image for the given HostedCluster.
-func PrefixedClusterImageName(hcluster *hyperv1.HostedCluster, releaseImage *releaseinfo.ReleaseImage) (orc.OpenStackName, error) {
-	releaseVersion, err := OpenStackReleaseImage(releaseImage)
+func PrefixedClusterImageName(hcluster *hyperv1.HostedCluster, releaseImage *releaseinfo.ReleaseImage, streamName string) (orc.OpenStackName, error) {
+	releaseVersion, err := OpenStackReleaseImage(releaseImage, streamName)
 	if err != nil {
 		return "", err
 	}

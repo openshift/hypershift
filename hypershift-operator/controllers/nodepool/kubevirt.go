@@ -65,7 +65,9 @@ func (r *NodePoolReconciler) setKubevirtConditions(ctx context.Context, nodePool
 
 		nodePool.Status.Platform.KubeVirt.Credentials = hcluster.Spec.Platform.Kubevirt.Credentials.DeepCopy()
 	}
-	kubevirtBootImage, err := kubevirt.GetImage(nodePool, releaseImage, infraNS)
+	// TODO(CNTRLPLANE-3553): hardcode to rhel-9 until the MCO can install
+	// rhel-10 OS images. Use getRHELStreamForBootImage once MCO support lands.
+	kubevirtBootImage, err := kubevirt.GetImage(nodePool, releaseImage, infraNS, StreamRHEL9)
 	if err != nil {
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolValidPlatformImageType,
@@ -166,7 +168,7 @@ func (r *NodePoolReconciler) setAllMachinesLMCondition(ctx context.Context, node
 
 func (c *CAPI) kubevirtMachineTemplate(templateNameGenerator func(spec any) (string, error)) (*capikubevirt.KubevirtMachineTemplate, error) {
 	nodePool := c.nodePool
-	spec, err := kubevirt.MachineTemplateSpec(nodePool, c.hostedCluster, c.releaseImage, nil)
+	spec, err := kubevirt.MachineTemplateSpec(nodePool, c.hostedCluster, c.releaseImage, nil, c.resolvedRHELStreamForBootImage)
 	if err != nil {
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolValidMachineTemplateConditionType,

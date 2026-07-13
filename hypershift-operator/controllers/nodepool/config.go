@@ -77,6 +77,9 @@ type rolloutConfig struct {
 	// setting the default stream does not change the hash.
 	// Only a non-default stream (e.g. "rhel-9" on a ≥5.0 release) produces
 	// a non-empty value here and triggers a rollout.
+	//
+	// See also ConfigGenerator.resolvedRHELStreamForBootImage, which controls
+	// boot image resolution and is intentionally separate from the hash.
 	rhelStream string
 }
 
@@ -100,12 +103,16 @@ func NewConfigGenerator(ctx context.Context, client client.Client, hostedCluster
 	// default explicitly does not change the hash and trigger a spurious rollout.
 	rhelStream := nodePool.Spec.OSImageStream.Name
 	if rhelStream != "" {
-		version, err := semver.Parse(releaseImage.Version())
+		var version semver.Version
+		version, err = semver.Parse(releaseImage.Version())
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse release image version %q: %w", releaseImage.Version(), err)
 		}
-		// TODO(CNTRLPLANE-3553): pass actual usesRunc once container runtime detection is wired in.
-		defaultStream, err := GetRHELStream("", version, false)
+		usesRunc, err := usesRuncRuntime(ctx, client, nodePool)
+		if err != nil {
+			return nil, fmt.Errorf("failed to detect container runtime: %w", err)
+		}
+		defaultStream, err := GetRHELStream("", version, usesRunc)
 		if err != nil {
 			return nil, fmt.Errorf("failed to resolve default RHEL stream: %w", err)
 		}
