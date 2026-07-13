@@ -116,7 +116,7 @@ func (o *CreateOptions) RunBackup(ctx context.Context) error {
 	if o.Client != nil {
 		// Step 1: Validate HostedCluster exists and get platform
 		o.Log.Info("Validating HostedCluster...")
-		detectedPlatform, err := oadp.ValidateAndGetHostedClusterPlatform(ctx, o.Client, o.HCName, o.HCNamespace)
+		platformInfo, err := oadp.ValidateAndGetHostedClusterPlatformInfo(ctx, o.Client, o.HCName, o.HCNamespace)
 		if err != nil {
 			if o.Render {
 				o.Log.Info("Warning: HostedCluster validation failed, using default platform (AWS)", "error", err.Error())
@@ -125,7 +125,8 @@ func (o *CreateOptions) RunBackup(ctx context.Context) error {
 				return fmt.Errorf("HostedCluster validation failed: %w", err)
 			}
 		} else {
-			platform = detectedPlatform
+			platform = platformInfo.Type
+			autoIncludeAgentNamespace(o, platformInfo)
 		}
 
 		if !o.Render {

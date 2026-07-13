@@ -106,9 +106,24 @@ func VerifyDPAStatus(ctx context.Context, c client.Client, namespace string) err
 	return fmt.Errorf("no ready DataProtectionApplication found in namespace %s", namespace)
 }
 
+// PlatformInfo contains platform metadata extracted from a HostedCluster.
+type PlatformInfo struct {
+	Type           string
+	AgentNamespace string
+}
+
 // ValidateAndGetHostedClusterPlatform validates that the HostedCluster exists and returns its platform
 func ValidateAndGetHostedClusterPlatform(ctx context.Context, c client.Client, hcName, hcNamespace string) (string, error) {
-	// Get the HostedCluster resource using typed API
+	info, err := ValidateAndGetHostedClusterPlatformInfo(ctx, c, hcName, hcNamespace)
+	if err != nil {
+		return "", err
+	}
+	return info.Type, nil
+}
+
+// ValidateAndGetHostedClusterPlatformInfo validates that the HostedCluster exists and returns
+// platform metadata including the agent namespace for Agent platform clusters.
+func ValidateAndGetHostedClusterPlatformInfo(ctx context.Context, c client.Client, hcName, hcNamespace string) (*PlatformInfo, error) {
 	hostedCluster := &hypershiftv1beta1.HostedCluster{}
 
 	err := c.Get(ctx, types.NamespacedName{
@@ -116,17 +131,23 @@ func ValidateAndGetHostedClusterPlatform(ctx context.Context, c client.Client, h
 		Namespace: hcNamespace,
 	}, hostedCluster)
 	if err != nil {
-		return "", fmt.Errorf("HostedCluster '%s' not found in namespace '%s': %w", hcName, hcNamespace, err)
+		return nil, fmt.Errorf("HostedCluster '%s' not found in namespace '%s': %w", hcName, hcNamespace, err)
 	}
 
-	// Extract the platform from the spec
 	platformSpec := hostedCluster.Spec.Platform
 	if platformSpec.Type == "" {
-		return "", fmt.Errorf("platform type not found in HostedCluster '%s' spec", hcName)
+		return nil, fmt.Errorf("platform type not found in HostedCluster '%s' spec", hcName)
 	}
 
-	// Normalize platform name to uppercase for consistency
-	return strings.ToUpper(string(platformSpec.Type)), nil
+	info := &PlatformInfo{
+		Type: strings.ToUpper(string(platformSpec.Type)),
+	}
+
+	if platformSpec.Type == hypershiftv1beta1.AgentPlatform && platformSpec.Agent != nil {
+		info.AgentNamespace = platformSpec.Agent.AgentNamespace
+	}
+
+	return info, nil
 }
 
 // CheckDPAHypershiftPlugin checks if the hypershift plugin is configured in DataProtectionApplication resources
