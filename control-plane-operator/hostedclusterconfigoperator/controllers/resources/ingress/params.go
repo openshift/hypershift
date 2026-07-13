@@ -2,6 +2,7 @@ package ingress
 
 import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/globalconfig"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -47,7 +48,12 @@ func NewIngressParams(hcp *hyperv1.HostedControlPlane) *IngressParams {
 			loadBalancerScope = v1.InternalLoadBalancer
 		}
 	}
+	// For self-managed Azure clusters, set internal LB scope when topology
+	// requires private connectivity. ARO HCP clusters are excluded because
+	// they use shared ingress — the guest cluster's ingress operator should
+	// not create a per-cluster internal LB that bypasses the shared router.
 	if hcp.Spec.Platform.Type == hyperv1.AzurePlatform && hcp.Spec.Platform.Azure != nil &&
+		!azureutil.IsAroHCPByHCP(hcp) &&
 		(hcp.Spec.Platform.Azure.Topology == hyperv1.AzureTopologyPrivate ||
 			hcp.Spec.Platform.Azure.Topology == hyperv1.AzureTopologyPublicAndPrivate) {
 		loadBalancerScope = v1.InternalLoadBalancer
