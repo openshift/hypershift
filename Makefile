@@ -372,10 +372,11 @@ setup-envtest: $(SETUP_ENVTEST) ## Setup envtest binaries (etcd, kube-apiserver)
 
 # Determine the number of CPU cores
 NUM_CORES := $(shell getconf _NPROCESSORS_ONLN || echo 1)
+GO_TEST_FLAGS ?= -race
 
 test: generate
 	@echo "Running tests with $(NUM_CORES) parallel jobs..."
-	$(GO) test -race -parallel=$(NUM_CORES) -count=1 -timeout=30m ./... -coverprofile cover.out
+	$(GO) test $(GO_TEST_FLAGS) -parallel=$(NUM_CORES) -count=1 -timeout=30m ./... -coverprofile cover.out
 
 # Run a subset of unit tests (used by CI sharding).
 # Usage: make test-shard TEST_PACKAGES="./cmd/... ./support/..." COVER_PROFILE="cover-shard.out"
@@ -384,7 +385,7 @@ COVER_PROFILE ?= cover.out
 .PHONY: test-shard
 test-shard: generate
 	@echo "Running shard tests for packages: $(TEST_PACKAGES)"
-	$(GO) test -race -parallel=$(NUM_CORES) -count=1 -timeout=30m $(TEST_PACKAGES) -coverprofile $(COVER_PROFILE)
+	$(GO) test $(GO_TEST_FLAGS) -parallel=$(NUM_CORES) -count=1 -timeout=30m $(TEST_PACKAGES) -coverprofile $(COVER_PROFILE)
 
 # OCP envtest index for downstream kubebuilder assets
 ENVTEST_OCP_INDEX := https://raw.githubusercontent.com/openshift/api/master/envtest-releases.yaml
