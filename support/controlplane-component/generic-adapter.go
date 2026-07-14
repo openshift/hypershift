@@ -17,6 +17,7 @@ type genericAdapter struct {
 	adapt             func(cpContext WorkloadContext, resource client.Object) error
 	predicate         Predicate
 	reconcileExisting bool // if true, causes the existing resource to be fetched before adapting
+	skip              bool // if true, the manifest is neither created nor deleted
 }
 
 type option func(*genericAdapter)
@@ -35,6 +36,15 @@ func WithPredicate(predicate Predicate) option {
 	}
 }
 
+// SkipManifest causes the adapter to neither create nor delete the manifest.
+// Use this when multiple components share an asset directory and a manifest is
+// owned by one component but must be ignored (not cleaned up) by the others.
+func SkipManifest() option {
+	return func(ga *genericAdapter) {
+		ga.skip = true
+	}
+}
+
 // ReconcileExisting can be used as an option when the existing resource should be fetched
 // and passed to the adapt function. This is necessary for resources such as certificates that
 // can result in a change every time we reconcile if we don't load the existing one first.
@@ -45,6 +55,10 @@ func ReconcileExisting() option {
 }
 
 func (ga *genericAdapter) reconcile(cpContext ControlPlaneContext, obj client.Object) error {
+	if ga.skip {
+		return nil
+	}
+
 	workloadContext := cpContext.workloadContext()
 
 	if ga.predicate != nil && !ga.predicate(workloadContext) {

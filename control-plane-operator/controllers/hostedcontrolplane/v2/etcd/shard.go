@@ -80,36 +80,39 @@ func NewShardComponent(shard hyperv1.ManagedEtcdShardSpec) component.ControlPlan
 			// so there is no lifecycle concern about needing to add it later.
 			component.WithPredicate(func(_ component.WorkloadContext) bool { return shard.Replicas >= 3 }),
 		).
-		// Suppress RBAC and ServiceAccount manifests for shards. These resources
+		// Skip RBAC and ServiceAccount manifests for shards. These resources
 		// are shared with the default etcd component — shards reuse its defrag SA
 		// and self-register RBAC rather than creating per-shard duplicates.
+		// SkipManifest() is used instead of a false predicate because predicate-false
+		// deletes existing HCP-owned resources, which would race with the default
+		// etcd component that creates them.
 		WithManifestAdapter(
 			"defrag-role.yaml",
-			component.WithPredicate(func(_ component.WorkloadContext) bool { return false }),
+			component.SkipManifest(),
 		).
 		WithManifestAdapter(
 			"defrag-rolebinding.yaml",
-			component.WithPredicate(func(_ component.WorkloadContext) bool { return false }),
+			component.SkipManifest(),
 		).
 		WithManifestAdapter(
 			"defrag-serviceaccount.yaml",
-			component.WithPredicate(func(_ component.WorkloadContext) bool { return false }),
+			component.SkipManifest(),
 		).
 		WithManifestAdapter(
 			"etcd-serviceaccount.yaml",
-			component.WithPredicate(func(_ component.WorkloadContext) bool { return false }),
+			component.SkipManifest(),
 		).
 		WithManifestAdapter(
 			"etcd-self-register-role.yaml",
-			component.WithPredicate(func(_ component.WorkloadContext) bool { return false }),
+			component.SkipManifest(),
 		).
 		WithManifestAdapter(
 			"etcd-self-register-rolebinding.yaml",
-			component.WithPredicate(func(_ component.WorkloadContext) bool { return false }),
+			component.SkipManifest(),
 		).
 		WithManifestAdapter(
 			"etcd-self-register-rolebinding-defrag.yaml",
-			component.WithPredicate(func(_ component.WorkloadContext) bool { return false }),
+			component.SkipManifest(),
 		).
 		Build()
 }
