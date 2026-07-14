@@ -26,7 +26,8 @@ const (
 )
 
 // CreateKubeletConfigVerifierDaemonSet creates a DaemonSet that verifies the config.json file
-// on all nodes of the cluster, comparing it with the cluster's pull secret
+// on all nodes of the cluster, comparing it with the cluster's pull secret.
+// Stale resources from a previous failed run are cleaned up before creation.
 func CreateKubeletConfigVerifierDaemonSet(ctx context.Context, guestClient crclient.Client, dsImage string) error {
 	// Get the cluster's pull secret for comparison
 	pullSecret := &corev1.Secret{}
@@ -48,6 +49,17 @@ func CreateKubeletConfigVerifierDaemonSet(ctx context.Context, guestClient crcli
 		if !apierrors.IsAlreadyExists(err) {
 			return fmt.Errorf("failed to create pull secret: %w", err)
 		}
+	}
+
+	// Clean up any stale DaemonSet left by a previous failed run
+	staleDS := &appsv1.DaemonSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      KubeletConfigVerifierDaemonSetName,
+			Namespace: KubeletConfigVerifierNamespace,
+		},
+	}
+	if err := guestClient.Delete(ctx, staleDS); err != nil && !apierrors.IsNotFound(err) {
+		return fmt.Errorf("failed to delete stale DaemonSet: %w", err)
 	}
 
 	daemonSet := &appsv1.DaemonSet{
@@ -205,6 +217,29 @@ func CreateKubeletConfigVerifierDaemonSet(ctx context.Context, guestClient crcli
 func VerifyKubeletConfigWithDaemonSet(t *testing.T, ctx context.Context, guestClient crclient.Client, dsImage string, expectedNodeCount int32) {
 	g := NewWithT(t)
 
+	// Register cleanup first so it runs even if the test fails or times out
+	t.Cleanup(func() {
+		t.Log("Cleaning up kubelet config verifier resources")
+		ds := &appsv1.DaemonSet{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      KubeletConfigVerifierDaemonSetName,
+				Namespace: KubeletConfigVerifierNamespace,
+			},
+		}
+		if err := guestClient.Delete(ctx, ds); err != nil && !apierrors.IsNotFound(err) {
+			t.Logf("Warning: failed to clean up DaemonSet: %v", err)
+		}
+		secret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "pull-secret",
+				Namespace: KubeletConfigVerifierNamespace,
+			},
+		}
+		if err := guestClient.Delete(ctx, secret); err != nil && !apierrors.IsNotFound(err) {
+			t.Logf("Warning: failed to clean up pull secret: %v", err)
+		}
+	})
+
 	// Create the DaemonSet
 	t.Log("Creating kubelet config verifier DaemonSet")
 	err := CreateKubeletConfigVerifierDaemonSet(ctx, guestClient, dsImage)
@@ -218,23 +253,4 @@ func VerifyKubeletConfigWithDaemonSet(t *testing.T, ctx context.Context, guestCl
 	konnectivityDS := hccomanifests.KonnectivityAgentDaemonSet()
 	g.Expect(waitForDaemonSetReady(t, ctx, guestClient, konnectivityDS.Name, konnectivityDS.Namespace, expectedNodeCount)).To(Succeed())
 	g.Expect(waitForDaemonSetReady(t, ctx, guestClient, KubeletConfigVerifierDaemonSetName, KubeletConfigVerifierNamespace, expectedNodeCount)).To(Succeed())
-
-	// Clean up the DaemonSet after verification
-	t.Log("Cleaning up kubelet config verifier DaemonSet")
-	daemonSet := &appsv1.DaemonSet{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      KubeletConfigVerifierDaemonSetName,
-			Namespace: KubeletConfigVerifierNamespace,
-		},
-	}
-	g.Expect(guestClient.Delete(ctx, daemonSet)).To(Succeed())
-
-	// Clean up pull-secret secret in kube-system namespace
-	pullSecret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "pull-secret",
-			Namespace: KubeletConfigVerifierNamespace,
-		},
-	}
-	g.Expect(guestClient.Delete(ctx, pullSecret)).To(Succeed())
 }
