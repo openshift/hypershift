@@ -6631,7 +6631,7 @@ spec:
                   This includes those components running management side like the Kube API Server and the CVO but also the operands which land in the hosted cluster data plane like the ingress controller, ovn agents, etc.
                   The maximum and minimum supported release versions are determined by the running Hypersfhit Operator.
                   Attempting to use an unsupported version will result in the HostedCluster being degraded and the validateReleaseImage condition being false.
-                  Attempting to use a release with a skew against a NodePool release bigger than N-2 for the y-stream will result in leaving the NodePool in an unsupported state.
+                  Attempting to use a release with a skew against a NodePool release bigger than N-3 for the y-stream will result in leaving the NodePool in an unsupported state.
                   Changing this field will trigger a rollout of the control plane components.
                   The behavior of the rollout will be driven by the ControllerAvailabilityPolicy and InfrastructureAvailabilityPolicy for PDBs and maxUnavailable and surce policies.
                 properties:
