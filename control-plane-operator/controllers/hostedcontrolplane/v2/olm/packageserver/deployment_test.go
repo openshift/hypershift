@@ -1,6 +1,7 @@
 package packageserver
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -11,6 +12,8 @@ import (
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/testutil"
+
+	configv1 "github.com/openshift/api/config/v1"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -24,10 +27,13 @@ func TestAdaptDeployment(t *testing.T) {
 		platformType                 hyperv1.PlatformType
 		olmCatalogPlacement          hyperv1.OLMCatalogPlacement
 		controllerAvailabilityPolicy hyperv1.AvailabilityPolicy
+		tlsSecurityProfile           *configv1.TLSSecurityProfile
 		expectedNoProxyHosts         []string
 		expectedReleaseVersion       string
 		expectedReplicas             *int32
 		expectedKASReadinessCheck    bool
+		expectedTLSMinVersion        string
+		expectedTLSCipherSuites      string
 	}{
 		{
 			name:                         "When OLMCatalogPlacement is Management, it should set NO_PROXY with catalog services",
@@ -69,6 +75,42 @@ func TestAdaptDeployment(t *testing.T) {
 			expectedReplicas:             nil,
 			expectedKASReadinessCheck:    true,
 		},
+		{
+			name:                      "When TLS security profile is Modern, it should set --tls-min-version=VersionTLS13",
+			platformType:              hyperv1.AWSPlatform,
+			olmCatalogPlacement:       hyperv1.GuestOLMCatalogPlacement,
+			expectedNoProxyHosts:      []string{"kube-apiserver"},
+			expectedReleaseVersion:    "4.15.0",
+			expectedKASReadinessCheck: true,
+			tlsSecurityProfile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileModernType,
+			},
+			expectedTLSMinVersion: "VersionTLS13",
+		},
+		{
+			name:                      "When TLS security profile is Intermediate, it should set --tls-min-version=VersionTLS12 with cipher suites",
+			platformType:              hyperv1.AWSPlatform,
+			olmCatalogPlacement:       hyperv1.GuestOLMCatalogPlacement,
+			expectedNoProxyHosts:      []string{"kube-apiserver"},
+			expectedReleaseVersion:    "4.15.0",
+			expectedKASReadinessCheck: true,
+			tlsSecurityProfile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileIntermediateType,
+			},
+			expectedTLSMinVersion:   "VersionTLS12",
+			expectedTLSCipherSuites: "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256",
+		},
+		{
+			name:                      "When TLS security profile is nil, it should default to Intermediate and set VersionTLS12 with cipher suites",
+			platformType:              hyperv1.AWSPlatform,
+			olmCatalogPlacement:       hyperv1.GuestOLMCatalogPlacement,
+			expectedNoProxyHosts:      []string{"kube-apiserver"},
+			expectedReleaseVersion:    "4.15.0",
+			expectedKASReadinessCheck: true,
+			tlsSecurityProfile:        nil,
+			expectedTLSMinVersion:     "VersionTLS12",
+			expectedTLSCipherSuites:   "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256",
+		},
 	}
 
 	for _, tc := range testCases {
@@ -87,6 +129,11 @@ func TestAdaptDeployment(t *testing.T) {
 					},
 					OLMCatalogPlacement:          tc.olmCatalogPlacement,
 					ControllerAvailabilityPolicy: tc.controllerAvailabilityPolicy,
+					Configuration: &hyperv1.ClusterConfiguration{
+						APIServer: &configv1.APIServerSpec{
+							TLSSecurityProfile: tc.tlsSecurityProfile,
+						},
+					},
 				},
 			}
 
@@ -144,6 +191,18 @@ func TestAdaptDeployment(t *testing.T) {
 			if tc.expectedKASReadinessCheck {
 				kasReadinessContainer := podspec.FindContainer("kas-readiness-check", deployment.Spec.Template.Spec.Containers)
 				g.Expect(kasReadinessContainer).ToNot(BeNil(), "KAS readiness check container should be present")
+			}
+
+			// Verify TLS flags when expected
+			if tc.expectedTLSMinVersion != "" {
+				g.Expect(packageServerContainer.Args).To(ContainElement(
+					fmt.Sprintf("--tls-min-version=%s", tc.expectedTLSMinVersion),
+				), "expected --tls-min-version flag")
+			}
+			if tc.expectedTLSCipherSuites != "" {
+				g.Expect(packageServerContainer.Args).To(ContainElement(
+					fmt.Sprintf("--tls-cipher-suites=%s", tc.expectedTLSCipherSuites),
+				), "expected --tls-cipher-suites flag")
 			}
 		})
 	}
