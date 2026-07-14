@@ -104,8 +104,8 @@ func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingSt
 		}
 	case hyperv1.NodePort:
 		svc.Spec.Type = corev1.ServiceTypeNodePort
-		if portSpec.NodePort == 0 && strategy.NodePort != nil {
-			portSpec.NodePort = strategy.NodePort.Port
+		if portSpec.NodePort == 0 && strategy.NodePort != nil && strategy.NodePort.Port != nil {
+			portSpec.NodePort = *strategy.NodePort.Port
 		}
 	case hyperv1.Route:
 		if hcp.Spec.Platform.Type != hyperv1.IBMCloudPlatform || svc.Spec.Type != corev1.ServiceTypeNodePort {
@@ -331,8 +331,8 @@ func ReconcileKonnectivityServerService(svc *corev1.Service, ownerRef config.Own
 		}
 	case hyperv1.NodePort:
 		svc.Spec.Type = corev1.ServiceTypeNodePort
-		if portSpec.NodePort == 0 && strategy.NodePort != nil {
-			portSpec.NodePort = strategy.NodePort.Port
+		if portSpec.NodePort == 0 && strategy.NodePort != nil && strategy.NodePort.Port != nil {
+			portSpec.NodePort = *strategy.NodePort.Port
 		}
 	case hyperv1.Route:
 		if hcp.Spec.Platform.Type != hyperv1.IBMCloudPlatform || svc.Spec.Type != corev1.ServiceTypeNodePort {
