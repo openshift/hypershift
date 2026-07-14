@@ -18,6 +18,7 @@ import (
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/proxy"
+	"github.com/openshift/hypershift/support/secretencryption"
 	"github.com/openshift/hypershift/support/util"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -137,14 +138,20 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 
 	if secretEncryption := hcp.Spec.SecretEncryption; secretEncryption != nil {
 		applyGenericSecretEncryptionConfig(&deployment.Spec.Template.Spec)
+		encConfigSecret := manifests.KASSecretEncryptionConfigFile(hcp.Namespace)
+		currentConfig, configBytes, err := readCurrentEncryptionConfig(cpContext, encConfigSecret)
+		if err != nil {
+			return fmt.Errorf("failed to read current encryption config: %w", err)
+		}
+		// Record a dedicated encryption-config hash on the pod template. The CPO v2
+		// framework already computes a composite config-hash from all mounted secrets,
+		// but that hash mixes multiple secrets together. This separate annotation lets
+		// the HCCO verify that KAS has rolled out with a specific encryption config.
+		secretencryption.SetEncryptionConfigHashAnnotation(&deployment.Spec.Template, configBytes)
 		switch secretEncryption.Type {
 		case hyperv1.KMS:
-			encConfigSecret := manifests.KASSecretEncryptionConfigFile(hcp.Namespace)
-			currentConfig, err := readCurrentEncryptionConfig(cpContext, encConfigSecret)
-			if err != nil {
-				return fmt.Errorf("failed to read current encryption config: %w", err)
-			}
-			kasReady, err := isKASConverged(cpContext)
+			configHash := secretencryption.EncryptionConfigHash(configBytes)
+			kasReady, err := isKASConverged(cpContext, configHash)
 			if err != nil {
 				return fmt.Errorf("failed to check KAS convergence: %w", err)
 			}

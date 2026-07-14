@@ -298,8 +298,12 @@ func encryptionConfigSecret(namespace string, encType hyperv1.SecretEncryptionTy
 	}
 }
 
-func convergedKASDeployment(namespace string) *appsv1.Deployment {
+func convergedKASDeployment(namespace string, encSecret ...*corev1.Secret) *appsv1.Deployment {
 	replicas := int32(3)
+	template := corev1.PodTemplateSpec{}
+	if len(encSecret) > 0 && encSecret[0] != nil {
+		secretencryption.SetEncryptionConfigHashAnnotation(&template, encSecret[0].Data[secretencryption.EncryptionConfigurationKey])
+	}
 	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:       "kube-apiserver",
@@ -308,6 +312,7 @@ func convergedKASDeployment(namespace string) *appsv1.Deployment {
 		},
 		Spec: appsv1.DeploymentSpec{
 			Replicas: &replicas,
+			Template: template,
 		},
 		Status: appsv1.DeploymentStatus{
 			ObservedGeneration:  1,
@@ -503,12 +508,15 @@ func TestReconcile(t *testing.T) {
 			},
 		},
 		{
-			name: "When in ReadOnlyDeploy phase and KAS is converged it should advance to WritePromote",
+			name: "When in ReadOnlyDeploy phase and KAS deployment is ready but config hash mismatches it should wait",
 			cpObjects: func() []client.Object {
 				oldHash := secretencryption.DataHash([]byte("old-key-data"))
 				newHash := secretencryption.DataHash([]byte("new-key-data"))
 				oldKS := aescbcKeyStatus("aescbc-key-1", oldHash)
 				newKS := aescbcKeyStatus("aescbc-key-1", newHash)
+				encSecret := encryptionConfigSecret(testNamespace, hyperv1.AESCBC,
+					aescbcProviderKeyName("old-key-data"),
+					aescbcProviderKeyName("new-key-data"))
 				return []client.Object{
 					newHCP(
 						withAESCBCEncryption("aescbc-key-1"),
@@ -523,10 +531,46 @@ func TestReconcile(t *testing.T) {
 					),
 					aescbcKeySecret("aescbc-key-1", testNamespace, "new-key-data"),
 					convergedKASDeployment(testNamespace),
-					// Target key is read-only (second), old key is write (first).
-					encryptionConfigSecret(testNamespace, hyperv1.AESCBC,
-						aescbcProviderKeyName("old-key-data"),
-						aescbcProviderKeyName("new-key-data")),
+					encSecret,
+				}
+			}(),
+			migrator:     newFakeMigrator,
+			expectResult: reconcile.Result{RequeueAfter: 30 * time.Second},
+			validate: func(t *testing.T, g Gomega, cl client.Client, _ *fakeMigrator) {
+				hcp := getHCP(context.Background(), g, cl)
+				g.Expect(hcp.Status.SecretEncryption.History[0].State).To(Equal(hyperv1.EncryptionMigrationStateReadOnlyDeploy))
+
+				cond := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.EtcdDataEncryptionUpToDate))
+				g.Expect(cond).ToNot(BeNil())
+				g.Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+				g.Expect(cond.Reason).To(Equal(hyperv1.ReEncryptionWaitingForKASReason))
+			},
+		},
+		{
+			name: "When in ReadOnlyDeploy phase and KAS is converged it should advance to WritePromote",
+			cpObjects: func() []client.Object {
+				oldHash := secretencryption.DataHash([]byte("old-key-data"))
+				newHash := secretencryption.DataHash([]byte("new-key-data"))
+				oldKS := aescbcKeyStatus("aescbc-key-1", oldHash)
+				newKS := aescbcKeyStatus("aescbc-key-1", newHash)
+				encSecret := encryptionConfigSecret(testNamespace, hyperv1.AESCBC,
+					aescbcProviderKeyName("old-key-data"),
+					aescbcProviderKeyName("new-key-data"))
+				return []client.Object{
+					newHCP(
+						withAESCBCEncryption("aescbc-key-1"),
+						withActiveKey(oldKS),
+						withTargetKey(newKS),
+						withHistory(hyperv1.EncryptionMigrationHistory{
+							From:        secretencryption.KeyReferenceFromStatus(oldKS),
+							To:          secretencryption.KeyReferenceFromStatus(newKS),
+							State:       hyperv1.EncryptionMigrationStateReadOnlyDeploy,
+							StartedTime: metav1.Time{Time: fixedTime},
+						}),
+					),
+					aescbcKeySecret("aescbc-key-1", testNamespace, "new-key-data"),
+					convergedKASDeployment(testNamespace, encSecret),
+					encSecret,
 				}
 			}(),
 			migrator: newFakeMigrator,
@@ -547,6 +591,9 @@ func TestReconcile(t *testing.T) {
 				newHash := secretencryption.DataHash([]byte("new-key-data"))
 				oldKS := aescbcKeyStatus("aescbc-key-1", oldHash)
 				newKS := aescbcKeyStatus("aescbc-key-1", newHash)
+				encSecret := encryptionConfigSecret(testNamespace, hyperv1.AESCBC,
+					aescbcProviderKeyName("new-key-data"),
+					aescbcProviderKeyName("old-key-data"))
 				return []client.Object{
 					newHCP(
 						withAESCBCEncryption("aescbc-key-1"),
@@ -560,11 +607,8 @@ func TestReconcile(t *testing.T) {
 						}),
 					),
 					aescbcKeySecret("aescbc-key-1", testNamespace, "new-key-data"),
-					convergedKASDeployment(testNamespace),
-					// Target key promoted to write (first), old key demoted to read-only (second).
-					encryptionConfigSecret(testNamespace, hyperv1.AESCBC,
-						aescbcProviderKeyName("new-key-data"),
-						aescbcProviderKeyName("old-key-data")),
+					convergedKASDeployment(testNamespace, encSecret),
+					encSecret,
 				}
 			}(),
 			migrator: newFakeMigrator,
@@ -588,6 +632,9 @@ func TestReconcile(t *testing.T) {
 				newHash := secretencryption.DataHash([]byte("new-key-data"))
 				oldKS := aescbcKeyStatus("aescbc-key-1", oldHash)
 				newKS := aescbcKeyStatus("aescbc-key-1", newHash)
+				encSecret := encryptionConfigSecret(testNamespace, hyperv1.AESCBC,
+					aescbcProviderKeyName("new-key-data"),
+					aescbcProviderKeyName("old-key-data"))
 				return []client.Object{
 					newHCP(
 						withAESCBCEncryption("aescbc-key-1"),
@@ -601,11 +648,8 @@ func TestReconcile(t *testing.T) {
 						}),
 					),
 					aescbcKeySecret("aescbc-key-1", testNamespace, "new-key-data"),
-					convergedKASDeployment(testNamespace),
-					// Target key is write (first), old key is read-only (second).
-					encryptionConfigSecret(testNamespace, hyperv1.AESCBC,
-						aescbcProviderKeyName("new-key-data"),
-						aescbcProviderKeyName("old-key-data")),
+					convergedKASDeployment(testNamespace, encSecret),
+					encSecret,
 				}
 			}(),
 			migrator:     newFakeMigrator,
@@ -622,6 +666,9 @@ func TestReconcile(t *testing.T) {
 				newHash := secretencryption.DataHash([]byte("new-key-data"))
 				oldKS := aescbcKeyStatus("aescbc-key-1", oldHash)
 				newKS := aescbcKeyStatus("aescbc-key-1", newHash)
+				encSecret := encryptionConfigSecret(testNamespace, hyperv1.AESCBC,
+					aescbcProviderKeyName("new-key-data"),
+					aescbcProviderKeyName("old-key-data"))
 				return []client.Object{
 					newHCP(
 						withAESCBCEncryption("aescbc-key-1"),
@@ -635,11 +682,8 @@ func TestReconcile(t *testing.T) {
 						}),
 					),
 					aescbcKeySecret("aescbc-key-1", testNamespace, "new-key-data"),
-					convergedKASDeployment(testNamespace),
-					// Target key is write (first), old key is read-only (second).
-					encryptionConfigSecret(testNamespace, hyperv1.AESCBC,
-						aescbcProviderKeyName("new-key-data"),
-						aescbcProviderKeyName("old-key-data")),
+					convergedKASDeployment(testNamespace, encSecret),
+					encSecret,
 				}
 			}(),
 			migrator: func() *fakeMigrator {
@@ -675,6 +719,9 @@ func TestReconcile(t *testing.T) {
 				newHash := secretencryption.DataHash([]byte("new-key-data"))
 				oldKS := aescbcKeyStatus("aescbc-key-1", oldHash)
 				newKS := aescbcKeyStatus("aescbc-key-1", newHash)
+				encSecret := encryptionConfigSecret(testNamespace, hyperv1.AESCBC,
+					aescbcProviderKeyName("new-key-data"),
+					aescbcProviderKeyName("old-key-data"))
 				return []client.Object{
 					newHCP(
 						withAESCBCEncryption("aescbc-key-1"),
@@ -688,11 +735,8 @@ func TestReconcile(t *testing.T) {
 						}),
 					),
 					aescbcKeySecret("aescbc-key-1", testNamespace, "new-key-data"),
-					convergedKASDeployment(testNamespace),
-					// Target key is write (first), old key is read-only (second).
-					encryptionConfigSecret(testNamespace, hyperv1.AESCBC,
-						aescbcProviderKeyName("new-key-data"),
-						aescbcProviderKeyName("old-key-data")),
+					convergedKASDeployment(testNamespace, encSecret),
+					encSecret,
 				}
 			}(),
 			migrator: func() *fakeMigrator {
@@ -742,6 +786,9 @@ func TestReconcile(t *testing.T) {
 			cpObjects: func() []client.Object {
 				oldKS := awsKeyStatus("arn:aws:kms:us-east-1:123456789012:key/old-key")
 				newKS := awsKeyStatus("arn:aws:kms:us-east-1:123456789012:key/test-key-1")
+				encSecret := encryptionConfigSecret(testNamespace, hyperv1.KMS,
+					awsProviderKeyName("arn:aws:kms:us-east-1:123456789012:key/test-key-1"),
+					awsProviderKeyName("arn:aws:kms:us-east-1:123456789012:key/old-key"))
 				return []client.Object{
 					newHCP(
 						withKMSEncryption(),
@@ -754,11 +801,8 @@ func TestReconcile(t *testing.T) {
 							StartedTime: metav1.Time{Time: fixedTime},
 						}),
 					),
-					convergedKASDeployment(testNamespace),
-					// Target key is write (first KMS provider), old key is read-only (second).
-					encryptionConfigSecret(testNamespace, hyperv1.KMS,
-						awsProviderKeyName("arn:aws:kms:us-east-1:123456789012:key/test-key-1"),
-						awsProviderKeyName("arn:aws:kms:us-east-1:123456789012:key/old-key")),
+					convergedKASDeployment(testNamespace, encSecret),
+					encSecret,
 				}
 			}(),
 			migrator: func() *fakeMigrator {
@@ -813,15 +857,15 @@ func TestReconcile(t *testing.T) {
 						ActiveKey: corev1.LocalObjectReference{Name: "aescbc-key-3"},
 					},
 				}
+				encSecret := encryptionConfigSecret(testNamespace, hyperv1.AESCBC,
+					aescbcProviderKeyName("mid-key-data"),
+					aescbcProviderKeyName("old-key-data"))
 				return []client.Object{
 					hcp,
 					aescbcKeySecret("aescbc-key-2", testNamespace, "mid-key-data"),
 					aescbcKeySecret("aescbc-key-3", testNamespace, "third-key-data"),
-					convergedKASDeployment(testNamespace),
-					// Target (mid) key is write (first), old key is read-only (second).
-					encryptionConfigSecret(testNamespace, hyperv1.AESCBC,
-						aescbcProviderKeyName("mid-key-data"),
-						aescbcProviderKeyName("old-key-data")),
+					convergedKASDeployment(testNamespace, encSecret),
+					encSecret,
 				}
 			}(),
 			migrator: newFakeMigrator,
@@ -841,6 +885,9 @@ func TestReconcile(t *testing.T) {
 			cpObjects: func() []client.Object {
 				oldKS := awsKeyStatus("arn:aws:kms:us-east-1:123456789012:key/old-key")
 				newKS := awsKeyStatus("arn:aws:kms:us-east-1:123456789012:key/test-key-1")
+				encSecret := encryptionConfigSecret(testNamespace, hyperv1.KMS,
+					awsProviderKeyName("arn:aws:kms:us-east-1:123456789012:key/test-key-1"),
+					awsProviderKeyName("arn:aws:kms:us-east-1:123456789012:key/old-key"))
 				return []client.Object{
 					newHCP(
 						withKMSEncryption(),
@@ -853,10 +900,8 @@ func TestReconcile(t *testing.T) {
 							StartedTime: metav1.Time{Time: fixedTime},
 						}),
 					),
-					convergedKASDeployment(testNamespace),
-					encryptionConfigSecret(testNamespace, hyperv1.KMS,
-						awsProviderKeyName("arn:aws:kms:us-east-1:123456789012:key/test-key-1"),
-						awsProviderKeyName("arn:aws:kms:us-east-1:123456789012:key/old-key")),
+					convergedKASDeployment(testNamespace, encSecret),
+					encSecret,
 				}
 			}(),
 			migrator: func() *fakeMigrator {
