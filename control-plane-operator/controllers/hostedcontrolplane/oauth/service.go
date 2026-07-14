@@ -49,8 +49,8 @@ func ReconcileService(svc *corev1.Service, ownerRef config.OwnerRef, strategy *h
 	switch strategy.Type {
 	case hyperv1.NodePort:
 		svc.Spec.Type = corev1.ServiceTypeNodePort
-		if portSpec.NodePort == 0 && strategy.NodePort != nil {
-			portSpec.NodePort = strategy.NodePort.Port
+		if portSpec.NodePort == 0 && strategy.NodePort != nil && strategy.NodePort.Port != nil {
+			portSpec.NodePort = *strategy.NodePort.Port
 		}
 	case hyperv1.Route:
 		if ((platformType == hyperv1.IBMCloudPlatform) && (svc.Spec.Type != corev1.ServiceTypeNodePort)) || (platformType != hyperv1.IBMCloudPlatform) {

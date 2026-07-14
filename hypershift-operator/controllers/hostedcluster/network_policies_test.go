@@ -24,6 +24,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/utils/ptr"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -1652,7 +1653,7 @@ func TestReconcileNetworkPolicies_LoadBalancerOauth(t *testing.T) {
 						{Service: hyperv1.APIServer, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.Route}},
 						{Service: hyperv1.OAuthServer, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
 							Type:     hyperv1.NodePort,
-							NodePort: &hyperv1.NodePortPublishingStrategy{Address: "10.0.0.1", Port: 31000},
+							NodePort: &hyperv1.NodePortPublishingStrategy{Address: "10.0.0.1", Port: ptr.To(int32(31000))},
 						}},
 					},
 				},
@@ -1664,7 +1665,7 @@ func TestReconcileNetworkPolicies_LoadBalancerOauth(t *testing.T) {
 						{Service: hyperv1.APIServer, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.Route}},
 						{Service: hyperv1.OAuthServer, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
 							Type:     hyperv1.NodePort,
-							NodePort: &hyperv1.NodePortPublishingStrategy{Address: "10.0.0.1", Port: 31000},
+							NodePort: &hyperv1.NodePortPublishingStrategy{Address: "10.0.0.1", Port: ptr.To(int32(31000))},
 						}},
 					},
 				},
