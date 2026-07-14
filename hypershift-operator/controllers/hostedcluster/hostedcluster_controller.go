@@ -4721,7 +4721,7 @@ func validateNodePortPortRange(hc *hyperv1.HostedCluster) field.ErrorList {
 	// Validate NodePort.Port against the configured range
 	for idx, svc := range hc.Spec.Services {
 		if svc.Service == hyperv1.APIServer && svc.Type == hyperv1.NodePort && svc.NodePort != nil {
-			port := svc.NodePort.Port
+			port := ptr.Deref(svc.NodePort.Port, 0)
 			if port > 0 && (port < minPort || port > maxPort) {
 				errs = append(errs, field.Invalid(
 					field.NewPath(fmt.Sprintf("spec.services[%d].nodePort.port", idx)),
