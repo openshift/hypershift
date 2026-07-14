@@ -340,6 +340,63 @@ spec:
 			error:         nil,
 		},
 		{
+			name:                       "When runc ContainerRuntimeConfig on 5.0.0 with explicit rhel-9, it should normalize rhelStream to empty",
+			expectedHash:               "72ea1773",
+			expectedHashWithoutVersion: "6d5a7b66",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "test",
+				},
+				Spec: hyperv1.NodePoolSpec{
+					OSImageStream: hyperv1.OSImageStreamReference{Name: "rhel-9"},
+					Config: []corev1.LocalObjectReference{
+						{Name: "runc-ctrcfg"},
+					},
+				},
+			},
+			config: []crclient.Object{
+				runcContainerRuntimeConfigMap("test", "runc-ctrcfg"),
+			},
+			releaseImage: &releaseinfo.ReleaseImage{
+				ImageStream: &imageapi.ImageStream{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "5.0.0",
+					},
+				},
+			},
+			hostedCluster: hostedCluster,
+			client:        true,
+			error:         nil,
+		},
+		{
+			name:                       "When runc ContainerRuntimeConfig on 5.0.0 with no osImageStream, it should match explicit rhel-9 hash",
+			expectedHash:               "72ea1773",
+			expectedHashWithoutVersion: "6d5a7b66",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "test",
+				},
+				Spec: hyperv1.NodePoolSpec{
+					Config: []corev1.LocalObjectReference{
+						{Name: "runc-ctrcfg"},
+					},
+				},
+			},
+			config: []crclient.Object{
+				runcContainerRuntimeConfigMap("test", "runc-ctrcfg"),
+			},
+			releaseImage: &releaseinfo.ReleaseImage{
+				ImageStream: &imageapi.ImageStream{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "5.0.0",
+					},
+				},
+			},
+			hostedCluster: hostedCluster,
+			client:        true,
+			error:         nil,
+		},
+		{
 			name:                       "When additionalTrustBundle is specified it should be included in rolloutConfig",
 			expectedHash:               "632801f8",
 			expectedHashWithoutVersion: "71375893",

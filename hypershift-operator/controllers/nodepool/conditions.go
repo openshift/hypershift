@@ -367,9 +367,7 @@ func (r *NodePoolReconciler) validMachineConfigCondition(ctx context.Context, no
 	}
 
 	// Validate osImageStream before expensive config generation to fail fast.
-	// TODO(CNTRLPLANE-3553): add integration test covering this condition path
-	// (invalid osImageStream.Name → ValidMachineConfig condition False + error return).
-	if err := validateOSImageStream(nodePool, releaseImage); err != nil {
+	if err := validateOSImageStream(ctx, r.Client, nodePool, releaseImage); err != nil {
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolValidMachineConfigConditionType,
 			Status:             corev1.ConditionFalse,
