@@ -191,6 +191,22 @@ const (
 	// A failure here often means a software bug or a non-stable cluster.
 	ReconciliationSucceeded ConditionType = "ReconciliationSucceeded"
 
+	// ConfigOperatorReconciliationSucceeded indicates if the HostedCluster Config
+	// Operator (HCCO) reconciliation succeeded. The HCCO is responsible for
+	// reconciling resources inside the hosted cluster (e.g. global configuration,
+	// CRDs, RBAC, and connectivity checks).
+	// A failure here often means a software bug, a non-stable cluster, or
+	// connectivity issues between the control plane and the hosted cluster.
+	ConfigOperatorReconciliationSucceeded ConditionType = "ConfigOperatorReconciliationSucceeded"
+
+	// ValidHostedClusterStatus indicates whether status information propagated
+	// from the hosted cluster (e.g. ConsoleURL from the console operator) is
+	// valid and was accepted. A False value means the hosted cluster reported
+	// data that could not be propagated — for example, a ConsoleURL that
+	// exceeds the maximum allowed length. This condition is set by HCCO and
+	// bubbled up to the HostedCluster.
+	ValidHostedClusterStatus ConditionType = "ValidHostedClusterStatus"
+
 	// EtcdRecoveryActive indicates that the Etcd cluster is failing and the
 	// recovery job was triggered.
 	EtcdRecoveryActive ConditionType = "EtcdRecoveryActive"
@@ -323,6 +339,8 @@ const (
 	ControlPlaneConnectionConfigMapNotFoundReason = "ConfigMapNotFound"
 
 	ControlPlaneConnectionNoWorkerNodesAvailableReason = "NoWorkerNodesAvailable"
+
+	InvalidHostedClusterStatusReason = "InvalidHostedClusterStatus"
 
 	ControlPlaneComponentsNotAvailable = "ComponentsNotAvailable"
 

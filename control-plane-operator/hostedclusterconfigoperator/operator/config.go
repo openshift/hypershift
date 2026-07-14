@@ -146,6 +146,10 @@ func Mgr(ctx context.Context, cfg, cpConfig *rest.Config, namespace string, hcpN
 		byObject[&operatorv1.IngressController{}] = allSelector
 	}
 
+	if capabilities.IsConsoleCapabilityEnabled(hcp.Spec.Capabilities) {
+		byObject[&configv1.Console{}] = allSelector
+	}
+
 	leaseDuration := time.Second * 60
 	renewDeadline := time.Second * 40
 	retryPeriod := time.Second * 15
@@ -192,6 +196,19 @@ func Mgr(ctx context.Context, cfg, cpConfig *rest.Config, namespace string, hcpN
 	}
 
 	return mgr
+}
+
+// GetHCPCapabilities reads the HostedControlPlane and returns its capabilities.
+func GetHCPCapabilities(ctx context.Context, cpConfig *rest.Config, namespace, hcpName string) (*hyperv1.Capabilities, error) {
+	ct, err := client.New(cpConfig, client.Options{Scheme: hyperapi.Scheme})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create client: %w", err)
+	}
+	hcp := resourcemanifests.HostedControlPlane(namespace, hcpName)
+	if err := ct.Get(ctx, client.ObjectKeyFromObject(hcp), hcp); err != nil {
+		return nil, fmt.Errorf("failed to get HCP: %w", err)
+	}
+	return hcp.Spec.Capabilities, nil
 }
 
 func CfgFromFile(path string) *rest.Config {

@@ -354,6 +354,15 @@ type HostedControlPlaneStatus struct {
 	// +kubebuilder:validation:MaxLength=255
 	OAuthCallbackURLTemplate string `json:"oauthCallbackURLTemplate,omitempty"`
 
+	// consoleURL is the URL of the OpenShift web console for this hosted cluster.
+	// This is populated from the console.config.openshift.io/cluster resource
+	// in the guest cluster once the console operator has reconciled.
+	// +optional
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=4096
+	// +kubebuilder:validation:XValidation:rule="isURL(self)",message="consoleURL must be a valid URL"
+	ConsoleURL string `json:"consoleURL,omitempty"`
+
 	// controlPlaneVersion tracks the rollout status of the control plane
 	// components running on the management cluster, independently from
 	// the data-plane version reported in the version field.

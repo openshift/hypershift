@@ -831,6 +831,8 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			hyperv1.DataPlaneConnectionAvailable,
 			hyperv1.ControlPlaneConnectionAvailable,
 			hyperv1.EtcdBackupSucceeded,
+			hyperv1.ConfigOperatorReconciliationSucceeded,
+			hyperv1.ValidHostedClusterStatus,
 		}
 
 		for _, conditionType := range hcpConditions {
@@ -1143,6 +1145,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 				hcluster.Status.ControlPlaneEndpoint.Port = 443
 			}
 			hcluster.Status.OAuthCallbackURLTemplate = hcp.Status.OAuthCallbackURLTemplate
+			hcluster.Status.ConsoleURL = hcp.Status.ConsoleURL
 		}
 	}
 

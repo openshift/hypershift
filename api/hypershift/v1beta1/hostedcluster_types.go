@@ -2302,6 +2302,15 @@ type HostedClusterStatus struct {
 	// +kubebuilder:validation:MaxLength=1024
 	OAuthCallbackURLTemplate string `json:"oauthCallbackURLTemplate,omitempty"`
 
+	// consoleURL is the URL of the OpenShift web console for this hosted cluster.
+	// This is populated from the console.config.openshift.io/cluster resource
+	// in the guest cluster once the console operator has reconciled.
+	// +optional
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=4096
+	// +kubebuilder:validation:XValidation:rule="isURL(self)",message="consoleURL must be a valid URL"
+	ConsoleURL string `json:"consoleURL,omitempty"`
+
 	// payloadArch represents the CPU architecture type of the HostedCluster.Spec.Release.Image. The valid values are:
 	// Multi, ARM64, AMD64, S390X, or PPC64LE.
 	// +kubebuilder:validation:Enum=Multi;ARM64;AMD64;PPC64LE;S390X

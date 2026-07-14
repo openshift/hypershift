@@ -36553,6 +36553,14 @@ A failure here may require external user intervention to resolve.</p>
 supported by the underlying management cluster.
 A failure here is unlikely to resolve without the changing user input.</p>
 </td>
+</tr><tr><td><p>&#34;ValidHostedClusterStatus&#34;</p></td>
+<td><p>ValidHostedClusterStatus indicates whether status information propagated
+from the hosted cluster (e.g. ConsoleURL from the console operator) is
+valid and was accepted. A False value means the hosted cluster reported
+data that could not be propagated — for example, a ConsoleURL that
+exceeds the maximum allowed length. This condition is set by HCCO and
+bubbled up to the HostedCluster.</p>
+</td>
 </tr><tr><td><p>&#34;ValidHostedControlPlaneConfiguration&#34;</p></td>
 <td><p>ValidHostedControlPlaneConfiguration bubbles up the same condition from HCP. It signals if the hostedControlPlane input is valid and
 supported by the underlying management cluster.
@@ -40144,6 +40152,20 @@ This is populated after the infrastructure is ready.</p>
 </tr>
 <tr>
 <td>
+<code>consoleURL</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>consoleURL is the URL of the OpenShift web console for this hosted cluster.
+This is populated from the console.config.openshift.io/cluster resource
+in the guest cluster once the console operator has reconciled.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>payloadArch</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.PayloadArchType">
@@ -40836,6 +40858,20 @@ string
 for identity providers. The [identity-provider-name] placeholder must be replaced
 with the name of an identity provider defined on the HostedCluster.
 This is populated after the infrastructure is ready.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>consoleURL</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>consoleURL is the URL of the OpenShift web console for this hosted cluster.
+This is populated from the console.config.openshift.io/cluster resource
+in the guest cluster once the console operator has reconciled.</p>
 </td>
 </tr>
 <tr>

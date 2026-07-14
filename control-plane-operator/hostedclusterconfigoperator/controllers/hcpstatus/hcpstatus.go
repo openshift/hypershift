@@ -8,11 +8,13 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/operator"
+	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/releaseinfo"
 
 	configv1 "github.com/openshift/api/config/v1"
 
 	"k8s.io/apimachinery/pkg/api/equality"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -27,36 +29,47 @@ import (
 
 const ControllerName = "hcpstatus"
 
-func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig) error {
-	r := &hcpStatusReconciler{
-		mgtClusterClient:    opts.CPCluster.GetClient(),
-		hostedClusterClient: opts.Manager.GetClient(),
-		releaseProvider:     opts.ReleaseProvider,
-	}
-	c, err := controller.New(ControllerName, opts.Manager, controller.Options{Reconciler: r})
-	if err != nil {
-		return fmt.Errorf("failed to construct controller: %w", err)
-	}
-	if err := c.Watch(source.Kind(opts.CPCluster.GetCache(), &hyperv1.HostedControlPlane{}, &handler.TypedEnqueueRequestForObject[*hyperv1.HostedControlPlane]{})); err != nil {
-		return fmt.Errorf("failed to watch HCP: %w", err)
-	}
+func Setup(hcpCapabilities *hyperv1.Capabilities) func(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig) error {
+	return func(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig) error {
+		r := &hcpStatusReconciler{
+			mgtClusterClient:    opts.CPCluster.GetClient(),
+			hostedClusterClient: opts.Manager.GetClient(),
+			releaseProvider:     opts.ReleaseProvider,
+		}
+		c, err := controller.New(ControllerName, opts.Manager, controller.Options{Reconciler: r})
+		if err != nil {
+			return fmt.Errorf("failed to construct controller: %w", err)
+		}
+		if err := c.Watch(source.Kind(opts.CPCluster.GetCache(), &hyperv1.HostedControlPlane{}, &handler.TypedEnqueueRequestForObject[*hyperv1.HostedControlPlane]{})); err != nil {
+			return fmt.Errorf("failed to watch HCP: %w", err)
+		}
 
-	clusterVersionMapper := func(context.Context, crclient.Object) []reconcile.Request {
-		return []reconcile.Request{{NamespacedName: types.NamespacedName{Namespace: opts.Namespace, Name: opts.HCPName}}}
-	}
-	if err := c.Watch(source.Kind[crclient.Object](opts.Manager.GetCache(), &configv1.ClusterVersion{}, handler.EnqueueRequestsFromMapFunc(clusterVersionMapper))); err != nil {
-		return fmt.Errorf("failed to watch clusterversion: %w", err)
-	}
+		clusterVersionMapper := func(context.Context, crclient.Object) []reconcile.Request {
+			return []reconcile.Request{{NamespacedName: types.NamespacedName{Namespace: opts.Namespace, Name: opts.HCPName}}}
+		}
+		if err := c.Watch(source.Kind[crclient.Object](opts.Manager.GetCache(), &configv1.ClusterVersion{}, handler.EnqueueRequestsFromMapFunc(clusterVersionMapper))); err != nil {
+			return fmt.Errorf("failed to watch clusterversion: %w", err)
+		}
 
-	clusterAuthenticationMapper := func(context.Context, crclient.Object) []reconcile.Request {
-		return []reconcile.Request{{NamespacedName: types.NamespacedName{Namespace: opts.Namespace, Name: opts.HCPName}}}
-	}
+		clusterAuthenticationMapper := func(context.Context, crclient.Object) []reconcile.Request {
+			return []reconcile.Request{{NamespacedName: types.NamespacedName{Namespace: opts.Namespace, Name: opts.HCPName}}}
+		}
 
-	if err := c.Watch(source.Kind[crclient.Object](opts.Manager.GetCache(), &configv1.Authentication{}, handler.EnqueueRequestsFromMapFunc(clusterAuthenticationMapper))); err != nil {
-		return fmt.Errorf("failed to watch authentication: %w", err)
-	}
+		if err := c.Watch(source.Kind[crclient.Object](opts.Manager.GetCache(), &configv1.Authentication{}, handler.EnqueueRequestsFromMapFunc(clusterAuthenticationMapper))); err != nil {
+			return fmt.Errorf("failed to watch authentication: %w", err)
+		}
 
-	return nil
+		if capabilities.IsConsoleCapabilityEnabled(hcpCapabilities) {
+			consoleMapper := func(context.Context, crclient.Object) []reconcile.Request {
+				return []reconcile.Request{{NamespacedName: types.NamespacedName{Namespace: opts.Namespace, Name: opts.HCPName}}}
+			}
+			if err := c.Watch(source.Kind[crclient.Object](opts.Manager.GetCache(), &configv1.Console{}, handler.EnqueueRequestsFromMapFunc(consoleMapper))); err != nil {
+				return fmt.Errorf("failed to watch console: %w", err)
+			}
+		}
+
+		return nil
+	}
 }
 
 type hcpStatusReconciler struct {
@@ -233,6 +246,54 @@ func (h *hcpStatusReconciler) reconcile(ctx context.Context, hcp *hyperv1.Hosted
 		}
 
 		meta.SetStatusCondition(&hcp.Status.Conditions, hcpCVOCondition)
+	}
+
+	if !capabilities.IsConsoleCapabilityEnabled(hcp.Spec.Capabilities) {
+		meta.SetStatusCondition(&hcp.Status.Conditions, metav1.Condition{
+			Type:               string(hyperv1.ValidHostedClusterStatus),
+			Status:             metav1.ConditionTrue,
+			Reason:             hyperv1.AsExpectedReason,
+			ObservedGeneration: hcp.Generation,
+		})
+	} else {
+		var console configv1.Console
+		if err := h.hostedClusterClient.Get(ctx, crclient.ObjectKey{Name: "cluster"}, &console); err != nil {
+			if apierrors.IsNotFound(err) {
+				hcp.Status.ConsoleURL = ""
+				meta.SetStatusCondition(&hcp.Status.Conditions, metav1.Condition{
+					Type:               string(hyperv1.ValidHostedClusterStatus),
+					Status:             metav1.ConditionFalse,
+					Reason:             hyperv1.InvalidHostedClusterStatusReason,
+					Message:            "Console resource not found in the hosted cluster",
+					ObservedGeneration: hcp.Generation,
+				})
+			} else {
+				// Log and continue — a transient Console fetch failure should not
+				// block Authentication and ConfigurationStatus updates below.
+				// ConsoleURL stays unchanged until the next successful reconcile.
+				log.Error(err, "Failed to get Console resource, skipping ConsoleURL update")
+			}
+		} else {
+			const maxConsoleURLLength = 4096
+			if len(console.Status.ConsoleURL) > maxConsoleURLLength {
+				log.Info("Ignoring oversized ConsoleURL from hosted cluster", "length", len(console.Status.ConsoleURL), "max", maxConsoleURLLength)
+				meta.SetStatusCondition(&hcp.Status.Conditions, metav1.Condition{
+					Type:               string(hyperv1.ValidHostedClusterStatus),
+					Status:             metav1.ConditionFalse,
+					Reason:             hyperv1.InvalidHostedClusterStatusReason,
+					Message:            fmt.Sprintf("ConsoleURL from hosted cluster exceeds maximum length (%d > %d); value was not propagated", len(console.Status.ConsoleURL), maxConsoleURLLength),
+					ObservedGeneration: hcp.Generation,
+				})
+			} else {
+				hcp.Status.ConsoleURL = console.Status.ConsoleURL
+				meta.SetStatusCondition(&hcp.Status.Conditions, metav1.Condition{
+					Type:               string(hyperv1.ValidHostedClusterStatus),
+					Status:             metav1.ConditionTrue,
+					Reason:             hyperv1.AsExpectedReason,
+					ObservedGeneration: hcp.Generation,
+				})
+			}
+		}
 	}
 
 	var authentication configv1.Authentication

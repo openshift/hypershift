@@ -71,7 +71,6 @@ var controllerFuncs = map[string]operator.ControllerSetupFunc{
 	nodecount.ControllerName:       nodecount.Setup,
 	"machine":                      machine.Setup,
 	"drainer":                      drainer.Setup,
-	hcpstatus.ControllerName:       hcpstatus.Setup,
 	spotremediation.ControllerName: spotremediation.Setup,
 	reencryption.ControllerName:    reencryption.Setup,
 }
@@ -240,6 +239,10 @@ func (o *HostedClusterConfigOperator) Run(ctx context.Context) error {
 	}
 
 	mgr := operator.Mgr(ctx, cfg, cpConfig, o.Namespace, o.HostedControlPlaneName)
+	hcpCapabilities, err := operator.GetHCPCapabilities(ctx, cpConfig, o.Namespace, o.HostedControlPlaneName)
+	if err != nil {
+		return fmt.Errorf("failed to get HCP capabilities: %w", err)
+	}
 	mgr.GetLogger().Info("Starting hosted-cluster-config-operator", "version", supportedversion.String())
 	cpCluster, err := cluster.New(cpConfig, func(opt *cluster.Options) {
 		opt.Cache = cache.Options{
@@ -306,6 +309,10 @@ func (o *HostedClusterConfigOperator) Run(ctx context.Context) error {
 	}
 
 	for _, controllerName := range o.Controllers {
+		if controllerName == hcpstatus.ControllerName {
+			controllersToRun[hcpstatus.ControllerName] = hcpstatus.Setup(hcpCapabilities)
+			continue
+		}
 		if setup, registered := controllerFuncs[controllerName]; !registered {
 			return fmt.Errorf("requested to run unknown controller %q", controllerName)
 		} else {

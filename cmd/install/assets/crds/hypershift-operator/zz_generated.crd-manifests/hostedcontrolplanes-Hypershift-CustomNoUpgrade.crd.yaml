@@ -8395,6 +8395,17 @@ spec:
                         x-kubernetes-list-type: map
                     type: object
                 type: object
+              consoleURL:
+                description: |-
+                  consoleURL is the URL of the OpenShift web console for this hosted cluster.
+                  This is populated from the console.config.openshift.io/cluster resource
+                  in the guest cluster once the console operator has reconciled.
+                maxLength: 4096
+                minLength: 1
+                type: string
+                x-kubernetes-validations:
+                - message: consoleURL must be a valid URL
+                  rule: isURL(self)
               controlPlaneEndpoint:
                 description: |-
                   controlPlaneEndpoint contains the endpoint information by which
