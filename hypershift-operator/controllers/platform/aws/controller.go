@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/rand"
 	"strings"
 	"time"
 
@@ -52,8 +53,13 @@ import (
 const (
 	finalizer                              = "hypershift.openshift.io/hypershift-operator-finalizer"
 	endpointServiceDeletionRequeueDuration = 5 * time.Second
-	lbNotActiveRequeueDuration             = 20 * time.Second
+	lbNotActiveRequeueBase                 = 15 * time.Second
+	lbNotActiveJitterMax                   = 10
 )
+
+func lbNotActiveRequeueDelay() time.Duration {
+	return lbNotActiveRequeueBase + time.Duration(rand.Intn(lbNotActiveJitterMax)+1)*time.Second
+}
 
 // AWSEndpointServiceReconciler watches HC/NodePools/awsEndpointService and reconcile the awsEndpointService
 // CRs existing for the KubeAPIServerPrivateService and the PrivateRouterService.
@@ -354,8 +360,9 @@ func (r *AWSEndpointServiceReconciler) Reconcile(ctx context.Context, req ctrl.R
 		}
 		// Most likely cause of error here is the NLB is not yet active.  This can take ~2m so
 		// a longer requeue time is warranted.  This ratelimits AWS calls and updates to the CR.
-		log.Info("reconciliation failed, retrying in 20s", "err", err)
-		return ctrl.Result{RequeueAfter: lbNotActiveRequeueDuration}, nil
+		requeueAfter := lbNotActiveRequeueDelay()
+		log.Info("reconciliation failed, retrying with jitter", "err", err, "requeueAfter", requeueAfter)
+		return ctrl.Result{RequeueAfter: requeueAfter}, nil
 	}
 
 	meta.SetStatusCondition(&awsEndpointService.Status.Conditions, metav1.Condition{
