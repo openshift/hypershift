@@ -7,7 +7,6 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/secretencryption"
-	"github.com/openshift/hypershift/support/util"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -35,13 +34,14 @@ func adaptSecretEncryptionConfig(cpContext component.WorkloadContext, secret *co
 	encStatus := &cpContext.HCP.Status.SecretEncryption
 
 	// Read the live encryption config from the cluster to derive the two-stage rollout state.
-	currentConfig, err := readCurrentEncryptionConfig(cpContext, secret)
+	currentConfig, configBytes, err := readCurrentEncryptionConfig(cpContext, secret)
 	if err != nil {
 		return fmt.Errorf("failed to read current encryption config: %w", err)
 	}
 
 	// Check KAS convergence — needed to decide whether to promote the target key.
-	kasConverged, err := isKASConverged(cpContext)
+	configHash := secretencryption.EncryptionConfigHash(configBytes)
+	kasConverged, err := isKASConverged(cpContext, configHash)
 	if err != nil {
 		return fmt.Errorf("failed to check KAS convergence: %w", err)
 	}
@@ -67,9 +67,10 @@ func adaptSecretEncryptionConfig(cpContext component.WorkloadContext, secret *co
 	return nil
 }
 
-// isKASConverged checks if the KAS Deployment has fully rolled out.
+// isKASConverged checks if the KAS Deployment has fully rolled out with the
+// encryption config snapshot identified by expectedConfigHash.
 // Returns false (not error) if the deployment doesn't exist yet.
-func isKASConverged(cpContext component.WorkloadContext) (bool, error) {
+func isKASConverged(cpContext component.WorkloadContext, expectedConfigHash string) (bool, error) {
 	kasDeployment := &appsv1.Deployment{}
 	kasRef := manifests.KASDeployment(cpContext.HCP.Namespace)
 	if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(kasRef), kasDeployment); err != nil {
@@ -78,27 +79,31 @@ func isKASConverged(cpContext component.WorkloadContext) (bool, error) {
 		}
 		return false, fmt.Errorf("failed to get KAS deployment: %w", err)
 	}
-	return util.IsDeploymentReady(cpContext, kasDeployment), nil
+	return secretencryption.KASDeploymentConvergedWithEncryptionConfig(cpContext, cpContext.Client, kasDeployment, expectedConfigHash), nil
 }
 
 // readCurrentEncryptionConfig reads the live encryption config secret from the
 // cluster and parses its EncryptionConfiguration. Returns nil (not an error)
 // if the secret does not exist yet.
-func readCurrentEncryptionConfig(cpContext component.WorkloadContext, templateSecret *corev1.Secret) (*apiserverv1.EncryptionConfiguration, error) {
+func readCurrentEncryptionConfig(cpContext component.WorkloadContext, templateSecret *corev1.Secret) (*apiserverv1.EncryptionConfiguration, []byte, error) {
 	existingSecret := &corev1.Secret{}
 	if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(templateSecret), existingSecret); err != nil {
 		if apierrors.IsNotFound(err) {
-			return nil, nil
+			return nil, nil, nil
 		}
-		return nil, err
+		return nil, nil, err
 	}
 
 	configBytes := existingSecret.Data[secretEncryptionConfigurationKey]
 	if len(configBytes) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
 
-	return secretencryption.DecodeEncryptionConfiguration(configBytes)
+	currentConfig, err := secretencryption.DecodeEncryptionConfiguration(configBytes)
+	if err != nil {
+		return nil, configBytes, err
+	}
+	return currentConfig, configBytes, nil
 }
 
 // deriveAESCBCEncryptionConfig determines the AESCBC write and read keys using

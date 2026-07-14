@@ -1,13 +1,23 @@
 package secretencryption
 
 import (
+	"context"
+	"crypto/sha256"
 	"fmt"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/util"
 
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer/json"
 	apiserverv1 "k8s.io/apiserver/pkg/apis/apiserver/v1"
+
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/go-logr/logr"
 )
 
 const (
@@ -16,6 +26,10 @@ const (
 
 	// EncryptionConfigurationKind is the Kind used in EncryptionConfiguration manifests.
 	EncryptionConfigurationKind = "EncryptionConfiguration"
+
+	// EncryptionConfigHashAnnotation is set on the KAS pod template to record the
+	// encryption config content that triggered the current rollout.
+	EncryptionConfigHashAnnotation = "kube-apiserver.hypershift.openshift.io/encryption-config-hash"
 )
 
 var (
@@ -26,6 +40,70 @@ var (
 func init() {
 	_ = apiserverv1.AddToScheme(encScheme)
 	yamlDecoder = json.NewSerializerWithOptions(json.DefaultMetaFactory, encScheme, encScheme, json.SerializerOptions{Yaml: true})
+}
+
+// EncryptionConfigHash returns a stable hash of encryption config bytes.
+// The format matches the kube-apiserver encryption config controller.
+func EncryptionConfigHash(data []byte) string {
+	if len(data) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("sha256:%x", sha256.Sum256(data))
+}
+
+// SetEncryptionConfigHashAnnotation records the encryption config hash on a pod template.
+func SetEncryptionConfigHashAnnotation(podTemplate *corev1.PodTemplateSpec, configBytes []byte) {
+	hash := EncryptionConfigHash(configBytes)
+	if hash == "" {
+		return
+	}
+	if podTemplate.Annotations == nil {
+		podTemplate.Annotations = map[string]string{}
+	}
+	podTemplate.Annotations[EncryptionConfigHashAnnotation] = hash
+}
+
+// KASDeploymentConvergedWithEncryptionConfig reports whether the KAS deployment
+// has fully rolled out with the given encryption config hash and all old pods
+// have finished terminating. Kubernetes deployment status fields exclude
+// terminating pods, so IsDeploymentReady alone returns true while old pods are
+// still running — this function additionally checks for their absence.
+func KASDeploymentConvergedWithEncryptionConfig(ctx context.Context, c client.Reader, deployment *appsv1.Deployment, expectedConfigHash string) bool {
+	if expectedConfigHash == "" || !util.IsDeploymentReady(ctx, deployment) {
+		return false
+	}
+	if deployment.Spec.Template.Annotations[EncryptionConfigHashAnnotation] != expectedConfigHash {
+		return false
+	}
+	return !hasTerminatingPods(ctx, c, deployment)
+}
+
+// hasTerminatingPods returns true if any pods matching the deployment's selector
+// have a non-nil DeletionTimestamp (i.e. are still shutting down). Returns true
+// on error to fail closed.
+func hasTerminatingPods(ctx context.Context, c client.Reader, deployment *appsv1.Deployment) bool {
+	logger := logr.FromContextOrDiscard(ctx)
+	if deployment.Spec.Selector == nil {
+		return false
+	}
+	selector, err := metav1.LabelSelectorAsSelector(deployment.Spec.Selector)
+	if err != nil {
+		logger.Error(err, "Failed to parse deployment selector, failing closed")
+		return true
+	}
+	podList := &corev1.PodList{}
+	if err := c.List(ctx, podList,
+		client.InNamespace(deployment.Namespace),
+		client.MatchingLabelsSelector{Selector: selector}); err != nil {
+		logger.Error(err, "Failed to list pods for termination check, failing closed")
+		return true
+	}
+	for i := range podList.Items {
+		if podList.Items[i].DeletionTimestamp != nil {
+			return true
+		}
+	}
+	return false
 }
 
 // DecodeEncryptionConfiguration parses raw YAML bytes into an EncryptionConfiguration.
