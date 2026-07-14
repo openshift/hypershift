@@ -37,6 +37,7 @@ var (
 		"karpenter",
 		"router",
 		"ignition-server",
+		"ignition-server-proxy",
 	)
 )
 
