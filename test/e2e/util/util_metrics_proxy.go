@@ -117,15 +117,36 @@ func EnsureMetricsForwarderWorking(t *testing.T, ctx context.Context, mgtClient 
 		g.Expect(err).NotTo(HaveOccurred(), "kube-apiserver target via metrics-forwarder should be UP in guest cluster Prometheus")
 
 		// 7. Query Prometheus for actual kube-apiserver metrics to confirm data was scraped.
+		// Retry because the exec goes through the konnectivity proxy, which can
+		// return transient 502 Bad Gateway errors (OCPBUGS-98466).
 		t.Log("Querying Prometheus for kube-apiserver metrics scraped via the metrics-forwarder")
-		output, err := execInGuestPod(ctx, guestRestConfig, monitoringNamespace, promPodName, "prometheus",
-			[]string{"curl", "-gs", "http://localhost:9090/api/v1/query?query=apiserver_request_total{job=\"apiserver\"}"})
-		g.Expect(err).NotTo(HaveOccurred(), "failed to query Prometheus for apiserver_request_total")
-
 		var queryResp queryAPIResponse
-		g.Expect(json.Unmarshal([]byte(output), &queryResp)).To(Succeed(), "failed to parse Prometheus query response")
-		g.Expect(queryResp.Status).To(Equal("success"), "Prometheus query should succeed")
-		g.Expect(queryResp.Data.Result).NotTo(BeEmpty(), "should have apiserver_request_total metrics from kube-apiserver")
+		err = wait.PollUntilContextTimeout(ctx, 15*time.Second, 2*time.Minute, true, func(ctx context.Context) (bool, error) {
+			output, execErr := execInGuestPod(ctx, guestRestConfig, monitoringNamespace, promPodName, "prometheus",
+				[]string{"curl", "-gs", "http://localhost:9090/api/v1/query?query=apiserver_request_total{job=\"apiserver\"}"})
+			if execErr != nil {
+				t.Logf("failed to query Prometheus (will retry): %v", execErr)
+				return false, nil
+			}
+
+			if err := json.Unmarshal([]byte(output), &queryResp); err != nil {
+				t.Logf("failed to parse Prometheus query response (will retry): %v", err)
+				return false, nil
+			}
+
+			if queryResp.Status != "success" {
+				t.Logf("Prometheus query returned status %q (will retry)", queryResp.Status)
+				return false, nil
+			}
+
+			if len(queryResp.Data.Result) == 0 {
+				t.Log("no apiserver_request_total metrics yet (will retry)")
+				return false, nil
+			}
+
+			return true, nil
+		})
+		g.Expect(err).NotTo(HaveOccurred(), "should have apiserver_request_total metrics from kube-apiserver")
 
 		t.Logf("Found %d apiserver_request_total time series in guest cluster Prometheus", len(queryResp.Data.Result))
 	})
