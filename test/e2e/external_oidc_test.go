@@ -249,7 +249,11 @@ func TestExternalOIDC(t *testing.T) {
 		// Auth config adds: CEL expressions for username/groups (NO prefixes)
 		// Auth config adds: Claim validation rules (email exists, email_verified)
 		// Auth config adds: User validation rules (no system: prefix, no 'forbidden' word)
+		// KAS in releases before 4.23 does not support CEL-based OIDC claim mapping;
+		// patching the auth config has no effect and the legacy prefix-based mapping persists,
+		// causing these subtests to timeout waiting for a config reload that never happens.
 		if featuregates.Gate().Enabled(featuregates.ExternalOIDCWithUpstreamParity) {
+			e2eutil.AtLeast(t, e2eutil.Version423)
 			upstreamParityOpts := clusterOpts
 			upstreamParityOpts.FeatureSet = string(configv1.TechPreviewNoUpgrade)
 			upstreamParityOpts.ExtOIDCConfig.CustomizeAuthSpec = func(spec *configv1.AuthenticationSpec) {

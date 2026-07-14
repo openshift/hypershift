@@ -13,7 +13,6 @@ import (
 	kasaescbc "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kas/kms"
 	"github.com/openshift/hypershift/support/config"
-	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/secretencryption"
 	"github.com/openshift/hypershift/support/util"
 
@@ -214,12 +213,12 @@ func (r *Reconciler) handleInProgressRotation(ctx context.Context, log logr.Logg
 	}
 
 	// Derive the current phase from observable state.
-	role, err := r.deriveTargetKeyRole(ctx, hcp)
+	role, configHash, err := r.deriveTargetKeyRole(ctx, hcp)
 	if err != nil {
 		return reconcile.Result{}, fmt.Errorf("failed to derive target key role from EncryptionConfiguration: %w", err)
 	}
 
-	converged, err := r.isKASConverged(ctx, log, hcp)
+	converged, err := r.isKASConverged(ctx, log, hcp, configHash)
 	if err != nil {
 		return reconcile.Result{}, fmt.Errorf("failed to check KAS convergence: %w", err)
 	}
@@ -290,7 +289,9 @@ func (r *Reconciler) handleInProgressRotation(ctx context.Context, log logr.Logg
 
 // deriveTargetKeyRole reads the kas-secret-encryption-config Secret, parses the
 // EncryptionConfiguration, and determines where the target key appears.
-func (r *Reconciler) deriveTargetKeyRole(ctx context.Context, hcp *hyperv1.HostedControlPlane) (secretencryption.TargetKeyRole, error) {
+// It also returns a hash of the config bytes it read so callers can verify that
+// KAS has rolled out with that exact config snapshot.
+func (r *Reconciler) deriveTargetKeyRole(ctx context.Context, hcp *hyperv1.HostedControlPlane) (secretencryption.TargetKeyRole, string, error) {
 	secret := &corev1.Secret{}
 	secretKey := crclient.ObjectKey{
 		Namespace: hcp.Namespace,
@@ -298,27 +299,29 @@ func (r *Reconciler) deriveTargetKeyRole(ctx context.Context, hcp *hyperv1.Hoste
 	}
 	if err := r.cpClient.Get(ctx, secretKey, secret); err != nil {
 		if apierrors.IsNotFound(err) {
-			return secretencryption.TargetKeyAbsent, nil
+			return secretencryption.TargetKeyAbsent, "", nil
 		}
-		return secretencryption.TargetKeyAbsent, fmt.Errorf("failed to get encryption config secret: %w", err)
+		return secretencryption.TargetKeyAbsent, "", fmt.Errorf("failed to get encryption config secret: %w", err)
 	}
 
 	configBytes := secret.Data[secretencryption.EncryptionConfigurationKey]
 	if len(configBytes) == 0 {
-		return secretencryption.TargetKeyAbsent, nil
+		return secretencryption.TargetKeyAbsent, "", nil
 	}
+
+	configHash := secretencryption.EncryptionConfigHash(configBytes)
 
 	currentConfig, err := secretencryption.DecodeEncryptionConfiguration(configBytes)
 	if err != nil {
-		return secretencryption.TargetKeyAbsent, err
+		return secretencryption.TargetKeyAbsent, configHash, err
 	}
 
 	targetName, err := r.computeTargetKeyProviderName(ctx, hcp)
 	if err != nil {
-		return secretencryption.TargetKeyAbsent, fmt.Errorf("failed to compute target key provider name: %w", err)
+		return secretencryption.TargetKeyAbsent, configHash, fmt.Errorf("failed to compute target key provider name: %w", err)
 	}
 
-	return secretencryption.FindKeyRole(currentConfig, targetName, hcp.Spec.SecretEncryption.Type), nil
+	return secretencryption.FindKeyRole(currentConfig, targetName, hcp.Spec.SecretEncryption.Type), configHash, nil
 }
 
 // computeTargetKeyProviderName computes the provider name that the CPO would
@@ -465,8 +468,9 @@ func (r *Reconciler) completeRotation(log logr.Logger, hcp *hyperv1.HostedContro
 	return reconcile.Result{}, nil
 }
 
-// isKASConverged checks if the KAS Deployment has fully rolled out.
-func (r *Reconciler) isKASConverged(ctx context.Context, log logr.Logger, hcp *hyperv1.HostedControlPlane) (bool, error) {
+// isKASConverged checks if the KAS Deployment has fully rolled out with the
+// encryption config snapshot identified by expectedConfigHash.
+func (r *Reconciler) isKASConverged(ctx context.Context, log logr.Logger, hcp *hyperv1.HostedControlPlane, expectedConfigHash string) (bool, error) {
 	deployment := &appsv1.Deployment{}
 	kasRef := manifests.KASDeployment(hcp.Namespace)
 	if err := r.cpClient.Get(ctx, crclient.ObjectKeyFromObject(kasRef), deployment); err != nil {
@@ -476,11 +480,13 @@ func (r *Reconciler) isKASConverged(ctx context.Context, log logr.Logger, hcp *h
 		return false, fmt.Errorf("failed to get KAS deployment: %w", err)
 	}
 
-	ready := podspec.IsDeploymentReady(ctx, deployment)
-	if !ready {
-		log.V(2).Info("KAS not converged")
+	converged := secretencryption.KASDeploymentConvergedWithEncryptionConfig(ctx, r.cpClient, deployment, expectedConfigHash)
+	if !converged {
+		log.V(2).Info("KAS not converged with encryption config",
+			"expectedConfigHash", expectedConfigHash,
+			"deploymentConfigHash", deployment.Spec.Template.Annotations[secretencryption.EncryptionConfigHashAnnotation])
 	}
-	return ready, nil
+	return converged, nil
 }
 
 // keyStatusFromSpec computes a SecretEncryptionKeyStatus from the HCP spec.

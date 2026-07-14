@@ -55,7 +55,9 @@ func run() error {
 		return fmt.Errorf("finding repository root: %w", err)
 	}
 
-	repo, err := gogit.PlainOpen(repoRoot)
+	repo, err := gogit.PlainOpenWithOptions(repoRoot, &gogit.PlainOpenOptions{
+		EnableDotGitCommonDir: true,
+	})
 	if err != nil {
 		return fmt.Errorf("opening git repository at %s: %w", repoRoot, err)
 	}

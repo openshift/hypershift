@@ -106,7 +106,7 @@ $(KUBEAPILINTER_PLUGIN): $(TOOLS_DIR)/go.mod # Build kube-api-linter as Go plugi
 # When not otherwise set, diff/lint against the upstream main branch.
 # This is always set in OpenShift CI.
 UPSTREAM_REMOTE ?= $(shell git remote -v 2>/dev/null | grep 'openshift/hypershift.*fetch' | head -1 | cut -f1)
-PULL_BASE_SHA ?= $(if $(UPSTREAM_REMOTE),$(UPSTREAM_REMOTE)/main,main)
+PULL_BASE_SHA ?= $(if $(UPSTREAM_REMOTE),$(shell git rev-parse $(UPSTREAM_REMOTE)/main), $(shell git rev-parse main))
 
 .PHONY: api-lint
 api-lint: $(GOLANGCI_LINT) $(KUBEAPILINTER_PLUGIN)
@@ -186,7 +186,7 @@ $(CRD_SCHEMA_CHECK): $(TOOLS_DIR)/go.mod # Build crd-schema-check tool
 .PHONY: generate
 generate: $(MOCKGEN)
 	@echo "Cleaning stale mock files..."
-	git clean -fx -- '*_mock.go'
+	find . -name '*_mock.go' -not -path '*/vendor/*' -delete
 	$(GO) generate ./...
 
 # Compile all tests

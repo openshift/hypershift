@@ -1,6 +1,7 @@
 package aws
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -265,4 +266,34 @@ func TestCreateCluster(t *testing.T) {
 			testutil.CompareWithFixture(t, manifests)
 		})
 	}
+}
+
+func TestServiceAccountTokenIssuerSecret(t *testing.T) {
+	g := NewGomegaWithT(t)
+	secret := serviceAccountTokenIssuerSecret("test-ns", "test")
+	g.Expect(secret.Labels).To(HaveKeyWithValue(util.DeleteWithClusterLabelName, "true"))
+}
+
+func TestGenerateResources(t *testing.T) {
+	t.Run("ProxySSHKeySecretHasDeleteWithClusterLabel", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		opts := &CreateOptions{
+			completedCreateOptions: &completedCreateOptions{
+				ValidatedCreateOptions: &ValidatedCreateOptions{
+					validatedCreateOptions: &validatedCreateOptions{
+						RawCreateOptions: &RawCreateOptions{},
+					},
+				},
+				infra: &awsinfra.CreateInfraOutput{
+					Name:               "test",
+					ProxyPrivateSSHKey: base64.StdEncoding.EncodeToString([]byte("fake-key")),
+				},
+				namespace: "test-ns",
+			},
+		}
+		resources, err := opts.GenerateResources()
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(resources).To(HaveLen(1))
+		g.Expect(resources[0].GetLabels()).To(HaveKeyWithValue(util.DeleteWithClusterLabelName, "true"))
+	})
 }

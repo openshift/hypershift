@@ -1,16 +1,27 @@
 package cvo
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
+	"github.com/openshift/hypershift/support/api"
+	component "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/podspec"
+	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
 
 	configv1 "github.com/openshift/api/config/v1"
 
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 func TestPreparePayloadScript(t *testing.T) {
@@ -208,4 +219,216 @@ func extractResourceNames(objects []client.Object) []string {
 		names = append(names, obj.GetName())
 	}
 	return names
+}
+
+func createTestContext(hcp *hyperv1.HostedControlPlane) component.WorkloadContext {
+	pullSecret := common.PullSecret(hcp.Namespace)
+	pullSecret.Data = map[string][]byte{
+		corev1.DockerConfigJsonKey: []byte(`{"auths":{"test.registry":{"auth":"dGVzdDp0ZXN0"}}}`),
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(api.Scheme).
+		WithObjects(pullSecret).
+		Build()
+
+	fakeImageProvider := &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
+		Digest: "sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+	}
+
+	if hcp.Spec.ReleaseImage == "" {
+		hcp.Spec.ReleaseImage = "quay.io/openshift-release-dev/ocp-release:4.18.0-x86_64"
+	}
+
+	return component.WorkloadContext{
+		Context:               context.Background(),
+		Client:                fakeClient,
+		HCP:                   hcp,
+		ImageMetadataProvider: fakeImageProvider,
+	}
+}
+
+func TestAdaptDeployment(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name                  string
+		hcp                   *hyperv1.HostedControlPlane
+		expectedTLSMinVersion string
+		expectedCipherSuites  string
+	}{
+		{
+			name: "When TLS profile has empty cipher suites list, it should not add tls-cipher-suites flag",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-hcp", Namespace: "test-ns"},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+					Configuration: &hyperv1.ClusterConfiguration{
+						APIServer: &configv1.APIServerSpec{
+							TLSSecurityProfile: &configv1.TLSSecurityProfile{
+								Type: configv1.TLSProfileCustomType,
+								Custom: &configv1.CustomTLSProfile{
+									TLSProfileSpec: configv1.TLSProfileSpec{
+										Ciphers:       []string{},
+										MinTLSVersion: configv1.VersionTLS12,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedTLSMinVersion: "--tls-min-version=VersionTLS12",
+			expectedCipherSuites:  "",
+		},
+		{
+			name: "When TLS profile has empty MinTLSVersion, it should not add tls-min-version flag",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-hcp", Namespace: "test-ns"},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+					Configuration: &hyperv1.ClusterConfiguration{
+						APIServer: &configv1.APIServerSpec{
+							TLSSecurityProfile: &configv1.TLSSecurityProfile{
+								Type: configv1.TLSProfileCustomType,
+								Custom: &configv1.CustomTLSProfile{
+									TLSProfileSpec: configv1.TLSProfileSpec{
+										Ciphers:       []string{"ECDHE-RSA-AES128-GCM-SHA256"},
+										MinTLSVersion: "",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedTLSMinVersion: "",
+			expectedCipherSuites:  "--tls-cipher-suites=TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+		},
+		{
+			name: "When TLS profile has both fields empty, it should not add any TLS flags",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-hcp", Namespace: "test-ns"},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+					Configuration: &hyperv1.ClusterConfiguration{
+						APIServer: &configv1.APIServerSpec{
+							TLSSecurityProfile: &configv1.TLSSecurityProfile{
+								Type: configv1.TLSProfileCustomType,
+								Custom: &configv1.CustomTLSProfile{
+									TLSProfileSpec: configv1.TLSProfileSpec{
+										Ciphers:       []string{},
+										MinTLSVersion: "",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedTLSMinVersion: "",
+			expectedCipherSuites:  "",
+		},
+		{
+			name: "When TLS profile has both fields set and a single cipher suite, it should add both flags and a single cipher",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-hcp", Namespace: "test-ns"},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+					Configuration: &hyperv1.ClusterConfiguration{
+						APIServer: &configv1.APIServerSpec{
+							TLSSecurityProfile: &configv1.TLSSecurityProfile{
+								Type: configv1.TLSProfileCustomType,
+								Custom: &configv1.CustomTLSProfile{
+									TLSProfileSpec: configv1.TLSProfileSpec{
+										Ciphers:       []string{"ECDHE-RSA-AES128-GCM-SHA256"},
+										MinTLSVersion: configv1.VersionTLS12,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedTLSMinVersion: "--tls-min-version=VersionTLS12",
+			expectedCipherSuites:  "--tls-cipher-suites=TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+		},
+		{
+			name: "When TLS profile has both fields set and multiple cipher suites, it should add both flags and a comma-separated cipher list",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-hcp", Namespace: "test-ns"},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+					Configuration: &hyperv1.ClusterConfiguration{
+						APIServer: &configv1.APIServerSpec{
+							TLSSecurityProfile: &configv1.TLSSecurityProfile{
+								Type: configv1.TLSProfileCustomType,
+								Custom: &configv1.CustomTLSProfile{
+									TLSProfileSpec: configv1.TLSProfileSpec{
+										Ciphers: []string{
+											"ECDHE-ECDSA-AES128-GCM-SHA256",
+											"ECDHE-RSA-AES256-GCM-SHA384",
+										},
+										MinTLSVersion: configv1.VersionTLS13,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedTLSMinVersion: "--tls-min-version=VersionTLS13",
+			expectedCipherSuites:  "--tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384",
+		},
+		{
+			name: "When TLS profile type is Modern, it should set min version to TLS 1.3 and not add cipher suites flag",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-hcp", Namespace: "test-ns"},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+					Configuration: &hyperv1.ClusterConfiguration{
+						APIServer: &configv1.APIServerSpec{
+							TLSSecurityProfile: &configv1.TLSSecurityProfile{
+								Type:   configv1.TLSProfileModernType,
+								Modern: &configv1.ModernTLSProfile{},
+							},
+						},
+					},
+				},
+			},
+			expectedTLSMinVersion: "--tls-min-version=VersionTLS13",
+			expectedCipherSuites:  "",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			deployment, err := assets.LoadDeploymentManifest(ComponentName)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			cpContext := createTestContext(tc.hcp)
+
+			cvo := &clusterVersionOperator{}
+			err = cvo.adaptDeployment(cpContext, deployment)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			container := podspec.FindContainer(ComponentName, deployment.Spec.Template.Spec.Containers)
+			g.Expect(container).ToNot(BeNil())
+
+			if tc.expectedTLSMinVersion != "" {
+				g.Expect(container.Args).To(ContainElement(tc.expectedTLSMinVersion))
+			} else {
+				g.Expect(container.Args).ToNot(ContainElement(ContainSubstring("--tls-min-version")))
+			}
+
+			if tc.expectedCipherSuites != "" {
+				g.Expect(container.Args).To(ContainElement(tc.expectedCipherSuites))
+			} else {
+				g.Expect(container.Args).ToNot(ContainElement(ContainSubstring("--tls-cipher-suites")))
+			}
+		})
+	}
 }

@@ -161,7 +161,7 @@ func BindProductCoreFlags(opts *core.RawCreateOptions, flags *pflag.FlagSet) {
 }
 
 // Validate validates the Azure create cluster command options
-func (o *RawCreateOptions) Validate(ctx context.Context, _ *core.CreateOptions) (core.PlatformCompleter, error) {
+func (o *RawCreateOptions) Validate(ctx context.Context, coreOpts *core.CreateOptions) (core.PlatformCompleter, error) {
 	var err error
 
 	// Check if the network security group is set and the resource group is not
@@ -169,26 +169,12 @@ func (o *RawCreateOptions) Validate(ctx context.Context, _ *core.CreateOptions) 
 		return nil, fmt.Errorf("flag --resource-group-name is required when using --network-security-group-id")
 	}
 
-	// The DNS zone resource group name is required when assigning azure roles to the control plane components
-	// since several will need to be scoped to this resource group.
-	if o.AssignServicePrincipalRoles && o.DNSZoneRGName == "" {
-		return nil, fmt.Errorf("flag --dns-zone-rg-name is required")
+	if err := o.validateRoleAssignmentFlags(coreOpts); err != nil {
+		return nil, err
 	}
 
-	// Validate that workload identities file and managed identities files are mutually exclusive
-	if o.WorkloadIdentitiesFile != "" && o.ManagedIdentitiesFile != "" {
-		return nil, fmt.Errorf("flags --workload-identities-file and --managed-identities-file are mutually exclusive")
-	}
-	if o.WorkloadIdentitiesFile != "" && o.DataPlaneIdentitiesFile != "" {
-		return nil, fmt.Errorf("flags --workload-identities-file and --data-plane-identities-file are mutually exclusive")
-	}
-
-	// Validate that data plane identities file requires managed identities file
-	if o.DataPlaneIdentitiesFile != "" && o.ManagedIdentitiesFile == "" {
-		return nil, fmt.Errorf("--data-plane-identities-file requires --managed-identities-file")
-	}
-	if o.ManagedIdentitiesFile != "" && o.DataPlaneIdentitiesFile == "" {
-		return nil, fmt.Errorf("--managed-identities-file requires --data-plane-identities-file")
+	if err := o.validateIdentitiesFiles(); err != nil {
+		return nil, err
 	}
 
 	// Validate the endpoint access value if provided
@@ -222,6 +208,11 @@ func (o *RawCreateOptions) Validate(ctx context.Context, _ *core.CreateOptions) 
 		}
 	}
 
+	if coreOpts != nil {
+		if err := validateExternalDNSDomain(coreOpts.ExternalDNSDomain, coreOpts.Name, coreOpts.BaseDomain); err != nil {
+			return nil, err
+		}
+	}
 	validOpts := &ValidatedCreateOptions{
 		validatedCreateOptions: &validatedCreateOptions{
 			RawCreateOptions: o,
@@ -250,6 +241,74 @@ func (o *RawCreateOptions) Validate(ctx context.Context, _ *core.CreateOptions) 
 	}
 
 	return validOpts, nil
+}
+
+// validateRoleAssignmentFlags validates that role assignment flags (--assign-service-principal-roles,
+// --assign-custom-hcp-roles) are not used with --infra-json and that --dns-zone-rg-name is provided
+// when role assignment is requested.
+func (o *RawCreateOptions) validateRoleAssignmentFlags(coreOpts *core.CreateOptions) error {
+	wantsRoleAssignment := o.AssignServicePrincipalRoles || o.AssignCustomHCPRoles
+	if !wantsRoleAssignment {
+		return nil
+	}
+
+	if coreOpts != nil && coreOpts.InfrastructureJSON != "" {
+		return fmt.Errorf("role assignment flags cannot be used with --infra-json; use --assign-identity-roles on 'create infra azure' instead")
+	}
+
+	if strings.TrimSpace(o.DNSZoneRGName) == "" {
+		return fmt.Errorf("--dns-zone-rg-name is required when --assign-service-principal-roles or --assign-custom-hcp-roles is set")
+	}
+
+	return nil
+}
+
+// validateIdentitiesFiles validates that workload identities and managed identities files are
+// mutually exclusive, and that data plane identities files are only used with managed identities.
+func (o *RawCreateOptions) validateIdentitiesFiles() error {
+	if o.WorkloadIdentitiesFile != "" && o.ManagedIdentitiesFile != "" {
+		return fmt.Errorf("flags --workload-identities-file and --managed-identities-file are mutually exclusive")
+	}
+	if o.WorkloadIdentitiesFile != "" && o.DataPlaneIdentitiesFile != "" {
+		return fmt.Errorf("flags --workload-identities-file and --data-plane-identities-file are mutually exclusive")
+	}
+	if o.DataPlaneIdentitiesFile != "" && o.ManagedIdentitiesFile == "" {
+		return fmt.Errorf("--data-plane-identities-file requires --managed-identities-file")
+	}
+	if o.ManagedIdentitiesFile != "" && o.DataPlaneIdentitiesFile == "" {
+		return fmt.Errorf("--managed-identities-file requires --data-plane-identities-file")
+	}
+	return nil
+}
+
+// validateExternalDNSDomain checks that the external DNS domain does not conflict with the cluster
+// domain. When a private Azure HostedCluster uses an externalDNSDomain that matches or is a parent
+// of the cluster domain (clusterName.baseDomain), the PLS controller creates an Azure Private DNS
+// zone that shadows *.apps DNS resolution.
+func validateExternalDNSDomain(externalDNSDomain, clusterName, baseDomain string) error {
+	if externalDNSDomain == "" {
+		return nil
+	}
+
+	if clusterName == "" || baseDomain == "" {
+		return nil
+	}
+
+	clusterDomain := clusterName + "." + baseDomain
+
+	extLower := strings.ToLower(strings.TrimSuffix(externalDNSDomain, "."))
+	clusterLower := strings.ToLower(strings.TrimSuffix(clusterDomain, "."))
+
+	// Check if the externalDNSDomain matches or is a parent of the cluster domain.
+	// An exact match means the Private DNS zone would directly shadow *.apps.
+	// A suffix match (with dot boundary) means the zone is a parent that would also shadow.
+	if extLower == clusterLower || strings.HasSuffix(clusterLower, "."+extLower) {
+		return fmt.Errorf("external DNS domain %q conflicts with cluster domain %q: "+
+			"this would create an Azure Private DNS zone that shadows *.apps DNS resolution. "+
+			"Use a different --external-dns-domain value", externalDNSDomain, clusterDomain)
+	}
+
+	return nil
 }
 
 // Complete completes the Azure create cluster command options

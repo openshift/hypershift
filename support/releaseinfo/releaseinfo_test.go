@@ -356,6 +356,30 @@ func TestStreamForName(t *testing.T) {
 			expectError:    true,
 			expectContains: "rhel-9",
 		},
+		{
+			name: "When it is a pre-5.0 release image (has StreamMetadata, OSStreams empty) it should return that stream",
+			releaseImage: &ReleaseImage{
+				ImageStream: &imageapi.ImageStream{},
+				StreamMetadata: &stream.Stream{
+					Stream:        "rhcos-4.18",
+					Architectures: map[string]stream.Arch{"x86_64": {}},
+				},
+			},
+			streamName:   "",
+			expectStream: "rhcos-4.18",
+		},
+		{
+			name: "When it is a 5.0+ release image (has OSStreams, StreamMetadata nil) it should return that stream",
+			releaseImage: &ReleaseImage{
+				ImageStream: &imageapi.ImageStream{},
+				OSStreams: map[string]*stream.Stream{
+					"rhel-9":  rhel9Stream,
+					"rhel-10": rhel10Stream,
+				},
+			},
+			streamName:   "rhel-10",
+			expectStream: "rhcos-5.0",
+		},
 	}
 
 	for _, tt := range tests {

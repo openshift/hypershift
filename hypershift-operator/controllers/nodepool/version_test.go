@@ -1,13 +1,11 @@
 package nodepool
 
 import (
-	"context"
 	"testing"
 
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/support/api"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -15,7 +13,6 @@ import (
 
 	"sigs.k8s.io/cluster-api/api/core/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 func TestNodeVersionsFromMachines(t *testing.T) {
@@ -169,13 +166,8 @@ func TestNodeVersionsFromMachines(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
 
-			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
-			r := &NodePoolReconciler{
-				Client: fakeClient,
-			}
-
-			ctx := context.Background()
-			result := r.nodeVersionsFromMachines(ctx, tc.machines, tc.nodePool)
+			r := &NodePoolReconciler{}
+			result := r.nodeVersionsFromMachines(tc.machines, tc.nodePool)
 			g.Expect(result).To(Equal(tc.expected))
 		})
 	}
@@ -288,18 +280,326 @@ func TestSetNodesInfoStatus(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
 
-			objs := make([]client.Object, 0, len(tc.machines))
-			objs = append(objs, tc.machines...)
-
-			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objs...).Build()
-			r := &NodePoolReconciler{
-				Client: fakeClient,
+			machines := make([]*v1beta1.Machine, 0, len(tc.machines))
+			for _, obj := range tc.machines {
+				machines = append(machines, obj.(*v1beta1.Machine))
 			}
 
-			err := r.setNodesInfoStatus(t.Context(), tc.nodePool)
-			g.Expect(err).ToNot(HaveOccurred())
+			r := &NodePoolReconciler{}
+			r.setNodesInfoStatus(tc.nodePool, machines)
 			g.Expect(tc.nodePool.Status.NodesInfo).To(Equal(tc.expectedNodesInfo))
 		})
+	}
+}
+
+func TestRhcosStreamFromOSImage(t *testing.T) {
+	testCases := []struct {
+		name     string
+		osImage  string
+		expected string
+	}{
+		{
+			name:     "When OSImage is RHCOS 4xx it should return rhel-9",
+			osImage:  "Red Hat Enterprise Linux CoreOS 419.97.202505081234-0 (Plow)",
+			expected: StreamRHEL9,
+		},
+		{
+			name:     "When OSImage is RHCOS 5xx it should return rhel-10",
+			osImage:  "Red Hat Enterprise Linux CoreOS 510.97.202506011200-0 (Plow)",
+			expected: StreamRHEL10,
+		},
+		{
+			name:     "When OSImage has different 4xx version it should return rhel-9",
+			osImage:  "Red Hat Enterprise Linux CoreOS 418.94.202501011200-0 (Plow)",
+			expected: StreamRHEL9,
+		},
+		{
+			name:     "When OSImage is empty it should return empty string",
+			osImage:  "",
+			expected: "",
+		},
+		{
+			name:     "When OSImage is unrecognized it should return empty string",
+			osImage:  "Ubuntu 22.04 LTS",
+			expected: "",
+		},
+		{
+			name:     "When OSImage has unknown major version it should return empty string",
+			osImage:  "Red Hat Enterprise Linux CoreOS 300.97.202505081234-0 (Plow)",
+			expected: "",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			g.Expect(rhcosStreamFromOSImage(tc.osImage)).To(Equal(tc.expected))
+		})
+	}
+}
+
+func TestOsImageStreamFromMachines(t *testing.T) {
+	testCases := []struct {
+		name     string
+		machines []*v1beta1.Machine
+		expected string
+	}{
+		{
+			name:     "When there are no machines it should return empty string",
+			machines: nil,
+			expected: "",
+		},
+		{
+			name: "When a single machine reports RHEL 9 it should return rhel-9",
+			machines: []*v1beta1.Machine{
+				machineWithOSImage("m1", "Red Hat Enterprise Linux CoreOS 419.97.202505081234-0 (Plow)"),
+			},
+			expected: StreamRHEL9,
+		},
+		{
+			name: "When all machines report RHEL 9 it should return rhel-9",
+			machines: []*v1beta1.Machine{
+				machineWithOSImage("m1", "Red Hat Enterprise Linux CoreOS 419.97.202505081234-0 (Plow)"),
+				machineWithOSImage("m2", "Red Hat Enterprise Linux CoreOS 419.97.202505081234-0 (Plow)"),
+				machineWithOSImage("m3", "Red Hat Enterprise Linux CoreOS 419.97.202505081234-0 (Plow)"),
+			},
+			expected: StreamRHEL9,
+		},
+		{
+			name: "When all machines report RHEL 10 it should return rhel-10",
+			machines: []*v1beta1.Machine{
+				machineWithOSImage("m1", "Red Hat Enterprise Linux CoreOS 510.97.202506011200-0 (Plow)"),
+				machineWithOSImage("m2", "Red Hat Enterprise Linux CoreOS 510.97.202506011200-0 (Plow)"),
+			},
+			expected: StreamRHEL10,
+		},
+		{
+			name: "When a majority reports RHEL 10 during rolling upgrade it should return rhel-10",
+			machines: []*v1beta1.Machine{
+				machineWithOSImage("m1", "Red Hat Enterprise Linux CoreOS 419.97.202505081234-0 (Plow)"),
+				machineWithOSImage("m2", "Red Hat Enterprise Linux CoreOS 510.97.202506011200-0 (Plow)"),
+				machineWithOSImage("m3", "Red Hat Enterprise Linux CoreOS 510.97.202506011200-0 (Plow)"),
+			},
+			expected: StreamRHEL10,
+		},
+		{
+			name: "When streams are evenly split it should return empty string",
+			machines: []*v1beta1.Machine{
+				machineWithOSImage("m1", "Red Hat Enterprise Linux CoreOS 419.97.202505081234-0 (Plow)"),
+				machineWithOSImage("m2", "Red Hat Enterprise Linux CoreOS 510.97.202506011200-0 (Plow)"),
+			},
+			expected: "",
+		},
+		{
+			name: "When machines have no NodeInfo it should return empty string",
+			machines: []*v1beta1.Machine{
+				{ObjectMeta: metav1.ObjectMeta{Name: "m1"}, Status: v1beta1.MachineStatus{}},
+			},
+			expected: "",
+		},
+		{
+			name: "When machines have unrecognized OSImage it should return empty string",
+			machines: []*v1beta1.Machine{
+				machineWithOSImage("m1", "Ubuntu 22.04 LTS"),
+			},
+			expected: "",
+		},
+		{
+			name: "When some machines have no NodeInfo it should count only those with NodeInfo",
+			machines: []*v1beta1.Machine{
+				machineWithOSImage("m1", "Red Hat Enterprise Linux CoreOS 510.97.202506011200-0 (Plow)"),
+				{ObjectMeta: metav1.ObjectMeta{Name: "m2"}, Status: v1beta1.MachineStatus{}},
+				{ObjectMeta: metav1.ObjectMeta{Name: "m3"}, Status: v1beta1.MachineStatus{}},
+			},
+			expected: StreamRHEL10,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			g.Expect(osImageStreamFromMachines(tc.machines)).To(Equal(tc.expected))
+		})
+	}
+}
+
+func TestSetOSImageStreamStatus(t *testing.T) {
+	testCases := []struct {
+		name                  string
+		machines              []client.Object
+		nodePool              *hyperv1.NodePool
+		expectedOSImageStream hyperv1.OSImageStreamReference
+	}{
+		{
+			name:     "When no machines exist it should not change OSImageStream status",
+			machines: nil,
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-nodepool",
+					Namespace: "clusters",
+				},
+				Spec: hyperv1.NodePoolSpec{
+					ClusterName: "test-cluster",
+				},
+			},
+			expectedOSImageStream: hyperv1.OSImageStreamReference{},
+		},
+		{
+			name: "When all machines report RHEL 9 it should set status to rhel-9",
+			machines: []client.Object{
+				&v1beta1.Machine{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "m1",
+						Namespace: "clusters-test-cluster",
+						Annotations: map[string]string{
+							nodePoolAnnotation: "clusters/test-nodepool",
+						},
+					},
+					Status: v1beta1.MachineStatus{
+						NodeInfo: &corev1.NodeSystemInfo{
+							OSImage: "Red Hat Enterprise Linux CoreOS 419.97.202505081234-0 (Plow)",
+						},
+					},
+				},
+				&v1beta1.Machine{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "m2",
+						Namespace: "clusters-test-cluster",
+						Annotations: map[string]string{
+							nodePoolAnnotation: "clusters/test-nodepool",
+						},
+					},
+					Status: v1beta1.MachineStatus{
+						NodeInfo: &corev1.NodeSystemInfo{
+							OSImage: "Red Hat Enterprise Linux CoreOS 419.97.202505081234-0 (Plow)",
+						},
+					},
+				},
+			},
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-nodepool",
+					Namespace: "clusters",
+				},
+				Spec: hyperv1.NodePoolSpec{
+					ClusterName: "test-cluster",
+				},
+			},
+			expectedOSImageStream: hyperv1.OSImageStreamReference{Name: StreamRHEL9},
+		},
+		{
+			name: "When majority reports RHEL 10 it should set status to rhel-10",
+			machines: []client.Object{
+				&v1beta1.Machine{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "m1",
+						Namespace: "clusters-test-cluster",
+						Annotations: map[string]string{
+							nodePoolAnnotation: "clusters/test-nodepool",
+						},
+					},
+					Status: v1beta1.MachineStatus{
+						NodeInfo: &corev1.NodeSystemInfo{
+							OSImage: "Red Hat Enterprise Linux CoreOS 419.97.202505081234-0 (Plow)",
+						},
+					},
+				},
+				&v1beta1.Machine{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "m2",
+						Namespace: "clusters-test-cluster",
+						Annotations: map[string]string{
+							nodePoolAnnotation: "clusters/test-nodepool",
+						},
+					},
+					Status: v1beta1.MachineStatus{
+						NodeInfo: &corev1.NodeSystemInfo{
+							OSImage: "Red Hat Enterprise Linux CoreOS 510.97.202506011200-0 (Plow)",
+						},
+					},
+				},
+				&v1beta1.Machine{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "m3",
+						Namespace: "clusters-test-cluster",
+						Annotations: map[string]string{
+							nodePoolAnnotation: "clusters/test-nodepool",
+						},
+					},
+					Status: v1beta1.MachineStatus{
+						NodeInfo: &corev1.NodeSystemInfo{
+							OSImage: "Red Hat Enterprise Linux CoreOS 510.97.202506011200-0 (Plow)",
+						},
+					},
+				},
+			},
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-nodepool",
+					Namespace: "clusters",
+				},
+				Spec: hyperv1.NodePoolSpec{
+					ClusterName: "test-cluster",
+				},
+			},
+			expectedOSImageStream: hyperv1.OSImageStreamReference{Name: StreamRHEL10},
+		},
+		{
+			name: "When previous status exists and no machines have NodeInfo it should preserve previous status",
+			machines: []client.Object{
+				&v1beta1.Machine{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "m1",
+						Namespace: "clusters-test-cluster",
+						Annotations: map[string]string{
+							nodePoolAnnotation: "clusters/test-nodepool",
+						},
+					},
+					Status: v1beta1.MachineStatus{},
+				},
+			},
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-nodepool",
+					Namespace: "clusters",
+				},
+				Spec: hyperv1.NodePoolSpec{
+					ClusterName: "test-cluster",
+				},
+				Status: hyperv1.NodePoolStatus{
+					OSImageStream: hyperv1.OSImageStreamReference{Name: StreamRHEL9},
+				},
+			},
+			expectedOSImageStream: hyperv1.OSImageStreamReference{Name: StreamRHEL9},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			machines := make([]*v1beta1.Machine, 0, len(tc.machines))
+			for _, obj := range tc.machines {
+				machines = append(machines, obj.(*v1beta1.Machine))
+			}
+
+			r := &NodePoolReconciler{}
+			r.setOSImageStreamStatus(tc.nodePool, machines)
+			g.Expect(tc.nodePool.Status.OSImageStream).To(Equal(tc.expectedOSImageStream))
+		})
+	}
+}
+
+func machineWithOSImage(name, osImage string) *v1beta1.Machine {
+	return &v1beta1.Machine{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: name,
+		},
+		Status: v1beta1.MachineStatus{
+			NodeInfo: &corev1.NodeSystemInfo{
+				OSImage: osImage,
+			},
+		},
 	}
 }
 

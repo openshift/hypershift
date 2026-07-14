@@ -103,11 +103,20 @@ func (cvo *clusterVersionOperator) adaptDeployment(cpContext component.WorkloadC
 		})
 	})
 
+	configuration := cpContext.HCP.Spec.Configuration
 	podspec.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
 		podspec.UpsertEnvVar(c, corev1.EnvVar{
 			Name:  "RELEASE_IMAGE",
 			Value: dataPlaneReleaseImage,
 		})
+
+		tlsProfile := configuration.GetTLSSecurityProfile()
+		if tlsMinVersion := config.MinTLSVersion(tlsProfile); tlsMinVersion != "" {
+			c.Args = append(c.Args, fmt.Sprintf("--tls-min-version=%s", tlsMinVersion))
+		}
+		if cipherSuites := config.CipherSuites(tlsProfile); len(cipherSuites) != 0 {
+			c.Args = append(c.Args, fmt.Sprintf("--tls-cipher-suites=%s", strings.Join(cipherSuites, ",")))
+		}
 
 		if updateService := cpContext.HCP.Spec.UpdateService; updateService != "" {
 			c.Args = append(c.Args, "--update-service", string(updateService))

@@ -15,7 +15,8 @@ const (
 
 // GetRHELStream resolves which RHEL CoreOS stream a NodePool should use.
 // Returns the resolved stream name, or an error for invalid combinations.
-// An empty return means "use legacy single-stream behavior" (OCP 4.x).
+// For OCP < 5.0 with no explicit stream it returns StreamRHEL9 (the only
+// stream available on those releases).
 // Exported for use by integration tests and future Phase 2 consumers
 // (token secret plumbing, validMachineConfigCondition).
 func GetRHELStream(explicitStream string, releaseVersion semver.Version, usesRunc bool) (string, error) {
@@ -39,7 +40,7 @@ func GetRHELStream(explicitStream string, releaseVersion semver.Version, usesRun
 	}
 
 	if !isOCP5Plus {
-		return "", nil
+		return StreamRHEL9, nil
 	}
 
 	if usesRunc {

@@ -33,6 +33,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/apimachinery/pkg/util/wait"
 	kubeclient "k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/util/retry"
 	"k8s.io/utils/ptr"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -786,11 +787,9 @@ func (opts *RawCreateOptions) validateClusterExistence(ctx context.Context) erro
 	if err != nil {
 		return err
 	}
-	cluster := &hyperv1.HostedCluster{ObjectMeta: metav1.ObjectMeta{Namespace: opts.Namespace, Name: opts.Name}}
-	if err := client.Get(ctx, crclient.ObjectKeyFromObject(cluster), cluster); err == nil {
-		return fmt.Errorf("hostedcluster %s already exists", crclient.ObjectKeyFromObject(cluster))
-	} else if !apierrors.IsNotFound(err) {
-		return fmt.Errorf("hostedcluster doesn't exist validation failed with error: %w", err)
+
+	if err := opts.validateClusterExistenceWithClient(ctx, client); err != nil {
+		return err
 	}
 
 	kc, err := hyperutil.GetKubeClientSetWithKubeconfig(opts.Kubeconfig)
@@ -803,6 +802,38 @@ func (opts *RawCreateOptions) validateClusterExistence(ctx context.Context) erro
 		} else {
 			return err
 		}
+	}
+	return nil
+}
+
+func isTransientAPIError(err error) bool {
+	return apierrors.IsTimeout(err) || apierrors.IsServerTimeout(err) || apierrors.IsInternalError(err) || apierrors.IsTooManyRequests(err) || apierrors.IsServiceUnavailable(err)
+}
+
+func (opts *RawCreateOptions) validateClusterExistenceWithClient(ctx context.Context, c crclient.Client) error {
+	// Max total retry wait ~31s (1+2+4+8+16), acceptable for a CLI pre-flight check.
+	backoff := wait.Backoff{
+		Steps:    5,
+		Duration: 1 * time.Second,
+		Factor:   2.0,
+		Jitter:   0.1,
+	}
+
+	err := retry.OnError(backoff, isTransientAPIError, func() error {
+		cluster := &hyperv1.HostedCluster{ObjectMeta: metav1.ObjectMeta{Namespace: opts.Namespace, Name: opts.Name}}
+		if err := c.Get(ctx, crclient.ObjectKeyFromObject(cluster), cluster); err == nil {
+			return fmt.Errorf("hostedcluster %s already exists", crclient.ObjectKeyFromObject(cluster))
+		} else if !apierrors.IsNotFound(err) {
+			opts.Log.Error(err, "error checking hostedcluster existence", "namespace", opts.Namespace, "name", opts.Name)
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		if isTransientAPIError(err) {
+			return fmt.Errorf("hostedcluster doesn't exist validation failed with error: %w", err)
+		}
+		return err
 	}
 	return nil
 }

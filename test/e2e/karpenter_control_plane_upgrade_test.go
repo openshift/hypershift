@@ -42,6 +42,12 @@ func TestKarpenterUpgradeControlPlane(t *testing.T) {
 		guestClient := e2eutil.WaitForGuestClient(t, ctx, mgtClient, hostedCluster)
 
 		karpenterNodePool := baseNodePool("on-demand", "default")
+		// TODO(maxcao13): We disable consolidation as a hack to prevent flakiness in this blocking test.
+		// Erroneous consolidation can cause the test to fail where the new Node is consolidated due to Empty or
+		// Underutilized before the old node's pods get scheduled to it. The proper fix should come from upstream
+		// Karpenter's disruption ordering/budgeting logic. Ref: https://redhat.atlassian.net/browse/OCPBUGS-91966
+		karpenterNodePool.Spec.Disruption.ConsolidateAfter = karpenterv1.MustParseNillableDuration("Never")
+
 		replicas := 1
 		nodeLabels := map[string]string{
 			karpenterv1.NodePoolLabelKey: karpenterNodePool.Name,
