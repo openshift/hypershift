@@ -548,6 +548,9 @@ func (c *elasticloadbalancingv2Client) ModifyTargetGroupAttributes(ctx context.C
 func (c *elasticloadbalancingv2Client) RegisterTargets(ctx context.Context, input *elasticloadbalancingv2.RegisterTargetsInput, optFns ...func(*elasticloadbalancingv2.Options)) (*elasticloadbalancingv2.RegisterTargetsOutput, error) {
 	return c.cloudController.elasticloadbalancingv2Client.RegisterTargets(ctx, input, optFns...)
 }
+func (c *elasticloadbalancingv2Client) SetSecurityGroups(ctx context.Context, input *elasticloadbalancingv2.SetSecurityGroupsInput, optFns ...func(*elasticloadbalancingv2.Options)) (*elasticloadbalancingv2.SetSecurityGroupsOutput, error) {
+	return c.cloudController.elasticloadbalancingv2Client.SetSecurityGroups(ctx, input, optFns...)
+}
 
 // route53Client delegates to individual component clients for API calls we know those components will have privileges to make.
 type route53Client struct {
