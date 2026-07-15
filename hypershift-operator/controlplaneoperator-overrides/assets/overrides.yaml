@@ -103,25 +103,33 @@ platforms:
       # End of OCPBUGS-86416 overrides 4.21 section
       # 4.22 does not need an override: the fix (PR #8564) landed before rc.5
       # (SOURCE_GIT_COMMIT=d6c72d15350752e315c198f7a68558ae4086e3c7) and GA will include it.
-      # Beginning of CNTRLPLANE-3619/CNTRLPLANE-3656 overrides 4.22 section
+      # Beginning of CNTRLPLANE-3619/CNTRLPLANE-3656/OCPBUGS-98627/OCPBUGS-98220 overrides 4.22 section
+      # Supersedes the previous CNTRLPLANE-3619/3656 image: this build (commit fb3b1a355476)
+      # includes PRs #8721, #8790, #8972, and #8998.
       - version: 4.22.0
-        cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-22@sha256:9584e156f938121c050c2373583998ec78068013d1a94d97913bea3e6416c427
+        cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-22@sha256:9b53131cd8ac0760388e5d25464aae45aea4dc593607f3840713a4056418b930
       - version: 4.22.1
-        cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-22@sha256:9584e156f938121c050c2373583998ec78068013d1a94d97913bea3e6416c427
+        cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-22@sha256:9b53131cd8ac0760388e5d25464aae45aea4dc593607f3840713a4056418b930
       - version: 4.22.2
-        cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-22@sha256:9584e156f938121c050c2373583998ec78068013d1a94d97913bea3e6416c427
+        cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-22@sha256:9b53131cd8ac0760388e5d25464aae45aea4dc593607f3840713a4056418b930
       - version: 4.22.3
-        cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-22@sha256:9584e156f938121c050c2373583998ec78068013d1a94d97913bea3e6416c427
-      # 4.22.4 does not need an override: both PRs (#8721, #8790) merged 2026-06-26,
-      # before the 4.22.4 development cutoff (2026-07-01).
-      # End of CNTRLPLANE-3619/CNTRLPLANE-3656 overrides 4.22 section
+        cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-22@sha256:9b53131cd8ac0760388e5d25464aae45aea4dc593607f3840713a4056418b930
+      - version: 4.22.4
+        cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-22@sha256:9b53131cd8ac0760388e5d25464aae45aea4dc593607f3840713a4056418b930
+      - version: 4.22.5
+        cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-22@sha256:9b53131cd8ac0760388e5d25464aae45aea4dc593607f3840713a4056418b930
+      - version: 4.22.6
+        cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-22@sha256:9b53131cd8ac0760388e5d25464aae45aea4dc593607f3840713a4056418b930
+      # 4.22.7 does not need an override: all four PRs (#8721, #8790, #8972, #8998)
+      # merged before the 4.22.7 development cutoff (2026-07-22).
+      # End of CNTRLPLANE-3619/CNTRLPLANE-3656/OCPBUGS-98627/OCPBUGS-98220 overrides 4.22 section
     testing:
       # Update the image refs below to indicate which images should be used for CPO override
       # testing. Currently, we only test one latest/previous combination. In the future, we
       # may be able to test multiple combinations at a time. To test more than one, update
       # the referenced images before each e2e test run.
-      latest: quay.io/openshift-release-dev/ocp-release:4.19.10-x86_64
-      previous: quay.io/openshift-release-dev/ocp-release:4.19.9-x86_64
+      latest: quay.io/openshift-release-dev/ocp-release:4.22.5-x86_64
+      previous: quay.io/openshift-release-dev/ocp-release:4.21.24-x86_64
       runTests: true
   aws:
     overrides:
