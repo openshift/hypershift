@@ -28,6 +28,7 @@ import (
 	kasv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kas"
 	metricsproxyv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/metrics_proxy"
 	oapiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oapi"
+	routerv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/router"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/awsapi"
 	"github.com/openshift/hypershift/support/azureutil"
@@ -4512,6 +4513,81 @@ func TestHealthCheckKASEndpoint(t *testing.T) {
 		g.Expect(err).To(HaveOccurred())
 		g.Expect(err.Error()).To(ContainSubstring("invalid control character"))
 	})
+}
+
+// TestRouterComponentComesAfterRouteCreatingComponents verifies that the router
+// component is registered after all components that create Route objects.
+// The router's adaptConfig reads existing Routes to generate the HAProxy config;
+// if a route-creating component (e.g. ignition-server) is registered after the
+// router, the route won't exist during the first reconcile and the HAProxy config
+// will be missing that backend. See OCPBUGS-98213.
+func TestRouterComponentComesAfterRouteCreatingComponents(t *testing.T) {
+	t.Parallel()
+
+	mockCtrl := gomock.NewController(t)
+	mockedProvider := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(mockCtrl)
+	mockedProvider.EXPECT().GetRegistryOverrides().Return(map[string]string{}).AnyTimes()
+	mockedProvider.EXPECT().GetOpenShiftImageRegistryOverrides().Return(map[string][]string{}).AnyTimes()
+
+	reconciler := &HostedControlPlaneReconciler{
+		ReleaseProvider:               mockedProvider,
+		ManagementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
+	}
+
+	hcp := &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-hcp",
+			Namespace: "test-ns",
+		},
+		Spec: hyperv1.HostedControlPlaneSpec{
+			Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.AWSPlatform,
+			},
+			Etcd: hyperv1.EtcdSpec{
+				ManagementType: hyperv1.Managed,
+			},
+			Services: []hyperv1.ServicePublishingStrategyMapping{
+				{
+					Service: hyperv1.Ignition,
+					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+						Type: hyperv1.Route,
+					},
+				},
+			},
+		},
+	}
+
+	reconciler.registerComponents(hcp)
+
+	// Build a map of component name -> position in the list.
+	positions := make(map[string]int, len(reconciler.components))
+	for i, c := range reconciler.components {
+		positions[c.Name()] = i
+	}
+
+	routerPos, ok := positions[routerv2.ComponentName]
+	if !ok {
+		t.Fatal("router component not found in registered components")
+	}
+
+	// These components create Route objects via their manifest adapters.
+	// The router must come after all of them so its HAProxy config includes
+	// every route on the first reconcile pass.
+	routeCreatingComponents := []string{
+		ignitionserverv2.ComponentName,
+		metricsproxyv2.ComponentName,
+	}
+	for _, name := range routeCreatingComponents {
+		pos, ok := positions[name]
+		if !ok {
+			t.Fatalf("route-creating component %q not found in registered components", name)
+		}
+		if routerPos < pos {
+			t.Errorf("router component (position %d) must be registered after %s (position %d) "+
+				"so that the HAProxy config includes %s's route on the first reconcile pass",
+				routerPos, name, pos, name)
+		}
+	}
 }
 
 // Compile-time assertion that fakeVersionImageMetadataProvider satisfies the interface.
