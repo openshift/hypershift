@@ -261,6 +261,24 @@ spec:
         name: availability-prober
         resources: {}
         terminationMessagePolicy: FallbackToLogsOnError
+      - args:
+        - -c
+        - |
+          #!/bin/sh
+          while ! nslookup etcd-client.$(POD_NAMESPACE).svc; do sleep 1; done
+        command:
+        - /bin/bash
+        env:
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+        image: cli
+        imagePullPolicy: IfNotPresent
+        name: wait-for-etcd
+        resources: {}
+        terminationMessagePolicy: FallbackToLogsOnError
       priorityClassName: hypershift-api-critical
       terminationGracePeriodSeconds: 120
       tolerations:
