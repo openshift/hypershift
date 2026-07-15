@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -93,7 +94,7 @@ func TestGetCluster(t *testing.T) {
 }
 
 func TestForceCleanupFinalizers(t *testing.T) {
-	t.Run("should remove finalizers from child resources and preserve destroyFinalizer on HostedCluster", func(t *testing.T) {
+	t.Run("When child resources have finalizers, it should remove them and preserve destroyFinalizer on HostedCluster", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 		ctx := context.Background()
 
@@ -184,7 +185,7 @@ func TestForceCleanupFinalizers(t *testing.T) {
 		g.Expect(updatedMachine.Finalizers).To(BeEmpty())
 	})
 
-	t.Run("should remove finalizers from NodePools belonging to the cluster", func(t *testing.T) {
+	t.Run("When NodePools belong to the cluster, it should remove their finalizers", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 		ctx := context.Background()
 
@@ -241,7 +242,7 @@ func TestForceCleanupFinalizers(t *testing.T) {
 		g.Expect(updatedUnrelated.Finalizers).To(ConsistOf("hypershift.openshift.io/finalizer"))
 	})
 
-	t.Run("should skip resources without finalizers", func(t *testing.T) {
+	t.Run("When resources have no finalizers, it should skip them", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 		ctx := context.Background()
 
@@ -278,7 +279,7 @@ func TestForceCleanupFinalizers(t *testing.T) {
 		g.Expect(updatedHC.Finalizers).To(BeEmpty())
 	})
 
-	t.Run("should handle empty control plane namespace gracefully", func(t *testing.T) {
+	t.Run("When the control plane namespace is empty, it should handle it gracefully", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 		ctx := context.Background()
 
@@ -311,7 +312,7 @@ func TestForceCleanupFinalizers(t *testing.T) {
 }
 
 func TestRemoveFinalizersFromObject(t *testing.T) {
-	t.Run("should remove all finalizers from object", func(t *testing.T) {
+	t.Run("When an object has finalizers, it should remove all of them", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 		ctx := context.Background()
 
@@ -336,7 +337,7 @@ func TestRemoveFinalizersFromObject(t *testing.T) {
 		g.Expect(updated.Finalizers).To(BeEmpty())
 	})
 
-	t.Run("should preserve specified finalizers", func(t *testing.T) {
+	t.Run("When preserve list is specified, it should keep those finalizers", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 		ctx := context.Background()
 
@@ -361,7 +362,7 @@ func TestRemoveFinalizersFromObject(t *testing.T) {
 		g.Expect(updated.Finalizers).To(ConsistOf("keep-me", "also-keep"))
 	})
 
-	t.Run("should be a no-op when object has no finalizers", func(t *testing.T) {
+	t.Run("When the object has no finalizers, it should be a no-op", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 		ctx := context.Background()
 
@@ -385,7 +386,7 @@ func TestRemoveFinalizersFromObject(t *testing.T) {
 		g.Expect(updated.Finalizers).To(BeEmpty())
 	})
 
-	t.Run("should be a no-op when only preserved finalizers remain", func(t *testing.T) {
+	t.Run("When only preserved finalizers remain, it should be a no-op", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 		ctx := context.Background()
 
@@ -408,5 +409,126 @@ func TestRemoveFinalizersFromObject(t *testing.T) {
 		var updated hyperv1.HostedCluster
 		g.Expect(c.Get(ctx, client.ObjectKeyFromObject(obj), &updated)).To(Succeed())
 		g.Expect(updated.Finalizers).To(ConsistOf(destroyFinalizer))
+	})
+}
+
+func TestDestroyClusterForceCleanup(t *testing.T) {
+	t.Run("When ForceCleanupOnTimeout is enabled and grace period expires, it should force-remove finalizers and continue cleanup", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		ctx := context.Background()
+
+		hc := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       "test-cluster",
+				Namespace:  "clusters",
+				Finalizers: []string{"hypershift.openshift.io/finalizer", destroyFinalizer},
+			},
+		}
+
+		hcp := &hyperv1.HostedControlPlane{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       "test-cluster",
+				Namespace:  "clusters-test-cluster",
+				Finalizers: []string{"hypershift.openshift.io/finalizer"},
+			},
+		}
+
+		c := fake.NewClientBuilder().
+			WithScheme(hyperapi.Scheme).
+			WithObjects(hc, hcp).
+			Build()
+
+		platformSpecificsCalled := false
+		mockPlatformSpecifics := func(ctx context.Context, o *DestroyOptions) error {
+			platformSpecificsCalled = true
+			return nil
+		}
+
+		opts := &DestroyOptions{
+			ClusterGracePeriod:    time.Millisecond,
+			ForceCleanupOnTimeout: true,
+			Name:                  "test-cluster",
+			Namespace:             "clusters",
+			Log:                   log.Log,
+		}
+
+		err := destroyCluster(ctx, hc, opts, mockPlatformSpecifics, c)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(platformSpecificsCalled).To(BeTrue())
+	})
+
+	t.Run("When ForceCleanupOnTimeout is enabled and context is canceled, it should return error without force cleanup", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		hc := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       "test-cluster",
+				Namespace:  "clusters",
+				Finalizers: []string{"hypershift.openshift.io/finalizer", destroyFinalizer},
+			},
+		}
+
+		c := fake.NewClientBuilder().
+			WithScheme(hyperapi.Scheme).
+			WithObjects(hc).
+			Build()
+
+		platformSpecificsCalled := false
+		mockPlatformSpecifics := func(ctx context.Context, o *DestroyOptions) error {
+			platformSpecificsCalled = true
+			return nil
+		}
+
+		opts := &DestroyOptions{
+			ClusterGracePeriod:    5 * time.Second,
+			ForceCleanupOnTimeout: true,
+			Name:                  "test-cluster",
+			Namespace:             "clusters",
+			Log:                   log.Log,
+		}
+
+		err := destroyCluster(ctx, hc, opts, mockPlatformSpecifics, c)
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(errors.Is(err, context.Canceled)).To(BeTrue())
+		g.Expect(platformSpecificsCalled).To(BeFalse())
+	})
+
+	t.Run("When ForceCleanupOnTimeout is disabled and grace period expires, it should return error without force cleanup", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		ctx := context.Background()
+
+		hc := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       "test-cluster",
+				Namespace:  "clusters",
+				Finalizers: []string{"hypershift.openshift.io/finalizer", destroyFinalizer},
+			},
+		}
+
+		c := fake.NewClientBuilder().
+			WithScheme(hyperapi.Scheme).
+			WithObjects(hc).
+			Build()
+
+		platformSpecificsCalled := false
+		mockPlatformSpecifics := func(ctx context.Context, o *DestroyOptions) error {
+			platformSpecificsCalled = true
+			return nil
+		}
+
+		opts := &DestroyOptions{
+			ClusterGracePeriod:    time.Millisecond,
+			ForceCleanupOnTimeout: false,
+			Name:                  "test-cluster",
+			Namespace:             "clusters",
+			Log:                   log.Log,
+		}
+
+		err := destroyCluster(ctx, hc, opts, mockPlatformSpecifics, c)
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(errors.Is(err, context.DeadlineExceeded)).To(BeTrue())
+		g.Expect(platformSpecificsCalled).To(BeFalse())
 	})
 }

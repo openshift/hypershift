@@ -109,12 +109,17 @@ func GetCluster(ctx context.Context, o *DestroyOptions) (*hyperv1.HostedCluster,
 }
 
 func DestroyCluster(ctx context.Context, hostedCluster *hyperv1.HostedCluster, o *DestroyOptions, destroyPlatformSpecifics DestroyPlatformSpecifics) error {
-	hostedClusterExists := hostedCluster != nil
-	shouldDestroyPlatformSpecifics := destroyPlatformSpecifics != nil
 	c, err := util.GetClientWithKubeconfig(o.Kubeconfig)
 	if err != nil {
 		return err
 	}
+	return destroyCluster(ctx, hostedCluster, o, destroyPlatformSpecifics, c)
+}
+
+func destroyCluster(ctx context.Context, hostedCluster *hyperv1.HostedCluster, o *DestroyOptions, destroyPlatformSpecifics DestroyPlatformSpecifics, c client.Client) error {
+	hostedClusterExists := hostedCluster != nil
+	shouldDestroyPlatformSpecifics := destroyPlatformSpecifics != nil
+	var forceCleanupErr error
 
 	// If the hosted cluster exists, add a finalizer, delete it, and wait for
 	// the cluster to be cleaned up before destroying its infrastructure.
@@ -143,7 +148,7 @@ func DestroyCluster(ctx context.Context, hostedCluster *hyperv1.HostedCluster, o
 		}
 
 		o.Log.Info("Deleting hosted cluster", "namespace", o.Namespace, "name", o.Name)
-		if err = c.Delete(ctx, hostedCluster); err != nil {
+		if err := c.Delete(ctx, hostedCluster); err != nil {
 			if apierrors.IsNotFound(err) {
 				o.Log.Info("Hosted not found, skipping delete", "namespace", o.Namespace, "name", o.Name)
 			} else {
@@ -152,11 +157,12 @@ func DestroyCluster(ctx context.Context, hostedCluster *hyperv1.HostedCluster, o
 		}
 
 		if shouldDestroyPlatformSpecifics {
-			if err = waitForRestOfFinalizers(ctx, hostedCluster, o, c); err != nil {
+			if err := waitForRestOfFinalizers(ctx, hostedCluster, o, c); err != nil {
 				if o.ForceCleanupOnTimeout && errors.Is(err, context.DeadlineExceeded) {
 					o.Log.Info("Grace period expired, force-removing finalizers", "error", err)
-					if cleanupErr := forceCleanupFinalizers(ctx, hostedCluster, o, c); cleanupErr != nil {
-						o.Log.Error(cleanupErr, "Force cleanup encountered errors, some resources may need manual cleanup")
+					forceCleanupErr = forceCleanupFinalizers(ctx, hostedCluster, o, c)
+					if forceCleanupErr != nil {
+						o.Log.Error(forceCleanupErr, "Force cleanup encountered errors, some resources may need manual cleanup")
 					}
 				} else {
 					return err
@@ -166,23 +172,26 @@ func DestroyCluster(ctx context.Context, hostedCluster *hyperv1.HostedCluster, o
 	}
 
 	if shouldDestroyPlatformSpecifics {
-		// Destroy additional resources which are specific to the current platform
-		if err = destroyPlatformSpecifics(ctx, o); err != nil {
+		if err := destroyPlatformSpecifics(ctx, o); err != nil {
 			return err
 		}
-	} else if err = waitForClusterDeletion(ctx, hostedCluster, o, c); err != nil {
+	} else if err := waitForClusterDeletion(ctx, hostedCluster, o, c); err != nil {
 		return err
 	}
 
 	// clean up CLI generated secrets
-	if err = deleteCLISecrets(ctx, o, c); err != nil {
+	if err := deleteCLISecrets(ctx, o, c); err != nil {
 		return err
 	}
 
 	if shouldDestroyPlatformSpecifics && hostedClusterExists {
-		if err = removeFinalizer(ctx, hostedCluster, o, c); err != nil {
+		if err := removeFinalizer(ctx, hostedCluster, o, c); err != nil {
 			return err
 		}
+	}
+
+	if forceCleanupErr != nil {
+		return fmt.Errorf("force cleanup finalizers: %w", forceCleanupErr)
 	}
 
 	o.Log.Info("Successfully destroyed cluster and infrastructure", "namespace", o.Namespace, "name", o.Name, "infraID", o.InfraID)
