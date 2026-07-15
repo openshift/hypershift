@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/openshift/hypershift/support/awsapi"
+	supportawsutil "github.com/openshift/hypershift/support/awsutil"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/route53"
@@ -113,6 +114,22 @@ func (o *CreateInfraOptions) CreatePrivateZone(ctx context.Context, logger logr.
 	}
 	id = cleanZoneID(aws.ToString(res.HostedZone.Id))
 	logger.Info("Created private zone", "name", name, "id", id)
+
+	r53Tags := []route53types.Tag{
+		{Key: aws.String(clusterTag(o.InfraID)), Value: aws.String(clusterTagValue)},
+		{Key: aws.String(supportawsutil.HypershiftInfraIDTagKey), Value: aws.String(o.InfraID)},
+		{Key: aws.String(supportawsutil.HypershiftClusterNameTagKey), Value: aws.String(o.Name)},
+	}
+	for _, t := range o.additionalEC2Tags {
+		r53Tags = append(r53Tags, route53types.Tag{Key: t.Key, Value: t.Value})
+	}
+	if _, err := client.ChangeTagsForResource(ctx, &route53.ChangeTagsForResourceInput{
+		ResourceId:   aws.String(id),
+		ResourceType: route53types.TagResourceTypeHostedzone,
+		AddTags:      r53Tags,
+	}); err != nil {
+		return "", fmt.Errorf("failed to tag hosted zone: %w", err)
+	}
 
 	err = setSOAMinimum(ctx, client, id, name)
 	if err != nil {

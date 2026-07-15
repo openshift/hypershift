@@ -14,6 +14,7 @@ import (
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/support/awsapi"
+	supportawsutil "github.com/openshift/hypershift/support/awsutil"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
@@ -138,6 +139,7 @@ func NewCreateCommand() *cobra.Command {
 		if err = opts.Validate(); err != nil {
 			return err
 		}
+		opts.AdditionalTags = append(opts.AdditionalTags, supportawsutil.HypershiftSourceTagKey+"=cli")
 		if err := opts.Run(cmd.Context(), l); err != nil {
 			l.Error(err, "Failed to create infrastructure")
 			return err
@@ -674,6 +676,14 @@ func (o *CreateInfraOptions) shareSubnets(ctx context.Context, l logr.Logger, vp
 			{
 				Key:   aws.String(clusterTag(o.InfraID)),
 				Value: aws.String(clusterTagValue),
+			},
+			{
+				Key:   aws.String(supportawsutil.HypershiftInfraIDTagKey),
+				Value: aws.String(o.InfraID),
+			},
+			{
+				Key:   aws.String(supportawsutil.HypershiftClusterNameTagKey),
+				Value: aws.String(o.Name),
 			},
 		},
 	}); err != nil {

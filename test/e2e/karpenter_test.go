@@ -772,6 +772,9 @@ func testCapacityReservation(ctx context.Context, mgtClient, guestClient crclien
 			"t3.xlarge",
 			targetAZ,
 			1,
+			hc.Spec.InfraID,
+			hc.Name,
+			e2eutil.E2ETagsFromEnvironment(),
 		)
 		g.Expect(err).NotTo(HaveOccurred(), "failed to create capacity reservation")
 		t.Logf("Created capacity reservation %s in %s", crID, targetAZ)
@@ -955,7 +958,7 @@ func testArbitrarySubnet(ctx context.Context, mgtClient, guestClient crclient.Cl
 		t.Logf("Selected AZ %s for test subnet (supported by endpoint service, not in VPC)", az)
 
 		// Create a small test subnet in the VPC.
-		subnetID, cleanupSubnet := e2eutil.CreateTestSubnet(ctx, t, ec2client, vpcID, az, hc.Spec.InfraID)
+		subnetID, cleanupSubnet := e2eutil.CreateTestSubnet(ctx, t, ec2client, vpcID, az, hc.Spec.InfraID, hc.Name, e2eutil.E2ETagsFromEnvironment())
 		t.Logf("Created test subnet %s in AZ %s", subnetID, az)
 
 		// Create an OpenshiftEC2NodeClass that selects the subnet by ID.

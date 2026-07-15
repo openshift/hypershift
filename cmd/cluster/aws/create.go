@@ -14,6 +14,7 @@ import (
 	awsinfra "github.com/openshift/hypershift/cmd/infra/aws"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/cmd/util"
+	supportawsutil "github.com/openshift/hypershift/support/awsutil"
 
 	configv1 "github.com/openshift/api/config/v1"
 
@@ -560,7 +561,7 @@ func CreateInfraOptions(awsOpts *ValidatedCreateOptions, opts *core.CreateOption
 		BaseDomain:                   opts.BaseDomain,
 		BaseDomainPrefix:             opts.BaseDomainPrefix,
 		RedactBaseDomain:             opts.RedactBaseDomain,
-		AdditionalTags:               awsOpts.AdditionalTags,
+		AdditionalTags:               append(awsOpts.AdditionalTags, supportawsutil.HypershiftSourceTagKey+"=cli"),
 		Zones:                        awsOpts.Zones,
 		EnableProxy:                  awsOpts.EnableProxy,
 		EnableSecureProxy:            awsOpts.EnableSecureProxy,
@@ -579,7 +580,7 @@ func CreateIAMOptions(awsOpts *ValidatedCreateOptions, infra *awsinfra.CreateInf
 		AWSCredentialsOpts:           awsOpts.Credentials,
 		InfraID:                      infra.InfraID,
 		IssuerURL:                    awsOpts.IssuerURL,
-		AdditionalTags:               awsOpts.AdditionalTags,
+		AdditionalTags:               append(awsOpts.AdditionalTags, supportawsutil.HypershiftSourceTagKey+"=cli", supportawsutil.HypershiftClusterNameTagKey+"="+infra.Name),
 		PrivateZoneID:                infra.PrivateZoneID,
 		PublicZoneID:                 infra.PublicZoneID,
 		LocalZoneID:                  infra.LocalZoneID,

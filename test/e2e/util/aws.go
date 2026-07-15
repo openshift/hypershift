@@ -6,12 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/support/awsapi"
+	supportawsutil "github.com/openshift/hypershift/support/awsutil"
 	"github.com/openshift/hypershift/support/oidc"
 	"github.com/openshift/hypershift/support/util"
 
@@ -30,6 +32,19 @@ import (
 
 	"github.com/go-logr/logr"
 )
+
+// E2ETagsFromEnvironment returns a tag map with e2e provenance tags.
+// It reads PROW_JOB_ID from the environment once; callers pass the result
+// to resource-creation helpers so they don't read os.Getenv themselves.
+func E2ETagsFromEnvironment() map[string]string {
+	tags := map[string]string{
+		supportawsutil.HypershiftSourceTagKey: "e2e",
+	}
+	if prowJobID := os.Getenv("PROW_JOB_ID"); prowJobID != "" {
+		tags[supportawsutil.HypershiftProwJobIDTagKey] = prowJobID
+	}
+	return tags
+}
 
 func GetKMSKeyArn(ctx context.Context, awsCreds, awsRegion, alias string) (*string, error) {
 	if alias == "" {
@@ -168,7 +183,7 @@ func DestroyOIDCProvider(ctx context.Context, log logr.Logger, iamClient awsapi.
 // associates it with an existing private route table (one with a NAT gateway route),
 // and returns the subnet ID plus a cleanup function that disassociates and deletes it.
 // The subnet CIDR is chosen dynamically to avoid overlapping with any existing subnets.
-func CreateTestSubnet(ctx context.Context, t *testing.T, client *ec2v2.Client, vpcID, az, infraID string) (string, func()) {
+func CreateTestSubnet(ctx context.Context, t *testing.T, client *ec2v2.Client, vpcID, az, infraID, clusterName string, additionalTags map[string]string) (string, func()) {
 	t.Helper()
 
 	// Fetch all existing subnets in the VPC to find a non-overlapping CIDR.
@@ -200,6 +215,15 @@ func CreateTestSubnet(ctx context.Context, t *testing.T, client *ec2v2.Client, v
 	}
 
 	subnetName := fmt.Sprintf("%s-karpenter-test-subnet", infraID)
+	subnetTags := []ec2types.Tag{
+		{Key: awsv2.String("Name"), Value: awsv2.String(subnetName)},
+		{Key: awsv2.String(fmt.Sprintf("kubernetes.io/cluster/%s", infraID)), Value: awsv2.String("owned")},
+		{Key: awsv2.String(supportawsutil.HypershiftInfraIDTagKey), Value: awsv2.String(infraID)},
+		{Key: awsv2.String(supportawsutil.HypershiftClusterNameTagKey), Value: awsv2.String(clusterName)},
+	}
+	for k, v := range additionalTags {
+		subnetTags = append(subnetTags, ec2types.Tag{Key: awsv2.String(k), Value: awsv2.String(v)})
+	}
 	createOut, err := client.CreateSubnet(ctx, &ec2v2.CreateSubnetInput{
 		VpcId:            awsv2.String(vpcID),
 		CidrBlock:        awsv2.String(candidateCIDR),
@@ -207,10 +231,7 @@ func CreateTestSubnet(ctx context.Context, t *testing.T, client *ec2v2.Client, v
 		TagSpecifications: []ec2types.TagSpecification{
 			{
 				ResourceType: ec2types.ResourceTypeSubnet,
-				Tags: []ec2types.Tag{
-					{Key: awsv2.String("Name"), Value: awsv2.String(subnetName)},
-					{Key: awsv2.String(fmt.Sprintf("kubernetes.io/cluster/%s", infraID)), Value: awsv2.String("owned")},
-				},
+				Tags:         subnetTags,
 			},
 		},
 	})
@@ -348,13 +369,20 @@ func CleanupOIDCBucketObjects(ctx context.Context, log logr.Logger, s3Client aws
 
 // CreateCapacityReservation creates an EC2 capacity reservation and returns its ID and a cleanup function
 // that cancels the reservation. The caller is responsible for calling the cleanup function.
-func CreateCapacityReservation(ctx context.Context, awsCreds, awsRegion, instanceType, availabilityZone string, instanceCount int32) (string, func() error, error) {
+func CreateCapacityReservation(ctx context.Context, awsCreds, awsRegion, instanceType, availabilityZone string, instanceCount int32, infraID, clusterName string, additionalTags map[string]string) (string, func() error, error) {
 	awsSession := awsutil.NewSession(ctx, "e2e-capacity-reservation", awsCreds, "", "", awsRegion)
 	awsConfig := awsutil.NewConfig()
 	ec2Client := ec2v2.NewFromConfig(*awsSession, func(o *ec2v2.Options) {
 		o.Retryer = awsConfig()
 	})
 
+	crTags := []ec2types.Tag{
+		{Key: awsv2.String(supportawsutil.HypershiftInfraIDTagKey), Value: awsv2.String(infraID)},
+		{Key: awsv2.String(supportawsutil.HypershiftClusterNameTagKey), Value: awsv2.String(clusterName)},
+	}
+	for k, v := range additionalTags {
+		crTags = append(crTags, ec2types.Tag{Key: awsv2.String(k), Value: awsv2.String(v)})
+	}
 	result, err := ec2Client.CreateCapacityReservation(ctx, &ec2v2.CreateCapacityReservationInput{
 		InstanceType:          awsv2.String(instanceType),
 		InstancePlatform:      ec2types.CapacityReservationInstancePlatformLinuxUnix,
@@ -363,6 +391,12 @@ func CreateCapacityReservation(ctx context.Context, awsCreds, awsRegion, instanc
 		InstanceMatchCriteria: ec2types.InstanceMatchCriteriaTargeted,
 		EndDateType:           ec2types.EndDateTypeLimited,
 		EndDate:               awsv2.Time(time.Now().Add(2 * time.Hour)),
+		TagSpecifications: []ec2types.TagSpecification{
+			{
+				ResourceType: ec2types.ResourceTypeCapacityReservation,
+				Tags:         crTags,
+			},
+		},
 	})
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to create capacity reservation: %w", err)

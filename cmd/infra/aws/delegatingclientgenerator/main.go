@@ -397,6 +397,7 @@ var extendedAPIs = map[string][]string{
 	},
 	"route53": {
 		"AssociateVPCWithHostedZone",
+		"ChangeTagsForResource",
 		"CreateHostedZone",
 		"CreateVPCAssociationAuthorization",
 		"DeleteHostedZone",

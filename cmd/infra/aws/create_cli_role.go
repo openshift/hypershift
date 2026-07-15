@@ -131,6 +131,7 @@ const (
 					"route53:CreateHostedZone",
 					"route53:ListHostedZones",
 					"route53:ChangeResourceRecordSets",
+					"route53:ChangeTagsForResource",
 					"route53:ListResourceRecordSets",
 					"route53:DeleteHostedZone",
 					"route53:AssociateVPCWithHostedZone",

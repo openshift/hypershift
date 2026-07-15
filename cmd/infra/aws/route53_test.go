@@ -208,6 +208,8 @@ func TestCreatePrivateZone(t *testing.T) {
 							Name: aws.String(testZoneName + "."),
 						},
 					}, nil)
+				m.EXPECT().ChangeTagsForResource(gomock.Any(), gomock.Any(), gomock.Any()).
+					Return(&route53.ChangeTagsForResourceOutput{}, nil)
 				// setSOAMinimum: findRecord + update
 				m.EXPECT().ListResourceRecordSets(gomock.Any(), gomock.Any(), gomock.Any()).
 					Return(soaRecordFor(testZoneName), nil)
@@ -233,6 +235,8 @@ func TestCreatePrivateZone(t *testing.T) {
 							Name: aws.String(testZoneName + "."),
 						},
 					}, nil)
+				m.EXPECT().ChangeTagsForResource(gomock.Any(), gomock.Any(), gomock.Any()).
+					Return(&route53.ChangeTagsForResourceOutput{}, nil)
 				m.EXPECT().ListResourceRecordSets(gomock.Any(), gomock.Any(), gomock.Any()).
 					Return(soaRecordFor(testZoneName), nil)
 				m.EXPECT().ChangeResourceRecordSets(gomock.Any(), gomock.Any(), gomock.Any()).
