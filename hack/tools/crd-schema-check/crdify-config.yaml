@@ -8,6 +8,7 @@
 #   - Scope changes (changing between Namespaced and Cluster)
 #   - Stored version removal (removing a version that is marked as stored)
 #
+<<<<<<< HEAD
 # This mirrors the policy used in openshift/api: adding new enum values
 # is technically a breaking change but is allowed in practice because
 # clients should tolerate unknown enum values.
@@ -16,8 +17,19 @@
 # rather than errors. Reviewers catch actual breaking changes.
 unhandledEnforcement: Warn
 
+=======
+# Policy mirrors openshift/api (tools/codegen/pkg/crdify/generator.go):
+# enum additions allowed, description changes ignored, and schema deltas
+# without dedicated validators (e.g. listType, XValidations) warned for
+# API reviewer review rather than failing presubmit.
+>>>>>>> 6f137cf7f (fix(kubevirt): validate additionalNetworks name format via CEL)
 validations:
   - name: enum
     enforcement: Error
     configuration:
       additionPolicy: Allow
+  - name: description
+    enforcement: None
+  - name: maxLength
+    enforcement: Warn
+unhandledEnforcement: Warn
