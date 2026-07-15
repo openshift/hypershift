@@ -329,6 +329,7 @@ const (
 
 	MissingReleaseImagesReason = "MissingReleaseImages"
 
+	ReconciliationActiveConditionReason             = "ReconciliationActive"
 	ReconciliationPausedConditionReason             = "ReconciliationPaused"
 	ReconciliationInvalidPausedUntilConditionReason = "InvalidPausedUntilValue"
 
