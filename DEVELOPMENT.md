@@ -63,7 +63,7 @@ make pre-commit               # Full pre-PR gate (build, e2e compile, verify, te
 ```bash
 make api                      # Regenerate all CRDs, deepcopy, clients
 make api-lint-fix             # Run API linter and auto-fix violations
-make generate                 # Run go generate (cleans stale *_mock.go files first)
+make generate                 # Run go generate (regenerates *_mock.go files in place)
 make clients                  # Update generated clients
 make update                   # Full update (api-deps, workspace-sync, deps, api, api-docs, clients, docs-aggregate)
 ```
@@ -112,7 +112,7 @@ The minimum Go version is declared in [`go.mod`](go.mod). The `api/` module uses
 - Use `make verify` before submitting PRs to catch formatting/generation issues.
 - Platform-specific controllers require their respective cloud credentials for testing.
 - E2E tests need proper cloud infrastructure setup (S3 buckets, DNS zones, etc.).
-- `make generate` cleans stale `*_mock.go` files via `git clean -fx` before regenerating — don't hand-edit mock files.
+- `make generate` regenerates `*_mock.go` files in place via `go generate` — don't hand-edit mock files.
 - **No unrelated changes in PRs**: Do not include cosmetic formatting, whitespace, or import reordering changes in files unrelated to the PR's purpose. Unrelated changes increase review surface and make PRs harder to revert cleanly. If you notice something worth cleaning up, do it in a separate PR.
 - **Follow existing codebase patterns**: Before implementing a new approach (e.g., using service-ca operator for TLS), search the codebase for how similar problems are already solved (e.g., `reconcileSelfSignedCA`). HyperShift self-signs certificates — use the existing self-signing pattern instead of relying on external certificate operators.
 
