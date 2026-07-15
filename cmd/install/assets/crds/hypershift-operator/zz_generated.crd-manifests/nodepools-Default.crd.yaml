@@ -1084,14 +1084,28 @@ spec:
                               description: |-
                                 name specify the network attached to the nodes
                                 it is a value with the format "[namespace]/[name]" to reference the
-                                multus network attachment definition
-                              maxLength: 255
+                                multus network attachment definition, where namespace and name consist
+                                only of lowercase alphanumeric characters and hyphens, and start and
+                                end with alphanumeric characters
+                                MaxLength=55: KubeVirt requires Interface.Name to be a DNS label (max 63 chars).
+                                The generated name is "iface{N}_{namespace}-{name}" where N≤20 (MaxItems),
+                                giving a max prefix of "iface20_" (8 chars), leaving 55 chars for namespace/name.
+                              maxLength: 55
                               type: string
+                              x-kubernetes-validations:
+                              - message: name must be in the format <namespace>/<name>
+                                  where namespace and name consist only of lowercase
+                                  alphanumeric characters and hyphens, and start and
+                                  end with alphanumeric characters
+                                rule: self.matches('^[a-z0-9]([a-z0-9-]*[a-z0-9])?/[a-z0-9]([a-z0-9-]*[a-z0-9])?$')
                           required:
                           - name
                           type: object
                         maxItems: 20
                         type: array
+                        x-kubernetes-list-map-keys:
+                        - name
+                        x-kubernetes-list-type: map
                       attachDefaultNetwork:
                         default: true
                         description: |-
