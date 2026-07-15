@@ -27,16 +27,9 @@ import (
 	"github.com/blang/semver"
 )
 
-const (
-	reconciliationActiveConditionReason             = "ReconciliationActive"
-	reconciliationPausedConditionReason             = "ReconciliationPaused"
-	reconciliationInvalidPausedUntilConditionReason = "InvalidPausedUntilValue"
-)
-
-// These are copies pf metav1.Condition to accept hyperv1.NodePoolCondition
+// These are copies of metav1.Condition to accept hyperv1.NodePoolCondition.
 // We use different conditions struct to relax metav1 input validation.
 // We want to relax validation to ease bubbling up from CAPI which uses their own type not honoring metav1 validations, particularly "Reason" accepts pretty much free string.
-// TODO (alberto): work upstream towards consolidation and programmatic Reasons.
 
 // SetStatusCondition sets the corresponding condition in conditions to newCondition.
 // conditions must be non-nil.
@@ -137,15 +130,15 @@ func generateReconciliationActiveCondition(pausedUntilField *string, objectGener
 		return hyperv1.NodePoolCondition{
 			Type:               string(hyperv1.NodePoolReconciliationActiveConditionType),
 			Status:             corev1.ConditionFalse,
-			Reason:             reconciliationPausedConditionReason,
+			Reason:             hyperv1.ReconciliationPausedConditionReason,
 			Message:            msgString,
 			ObservedGeneration: objectGeneration,
 		}
 	}
 	msgString = "Reconciliation active on resource"
-	reasonString := reconciliationActiveConditionReason
+	reasonString := hyperv1.ReconciliationActiveConditionReason
 	if err != nil {
-		reasonString = reconciliationInvalidPausedUntilConditionReason
+		reasonString = hyperv1.ReconciliationInvalidPausedUntilConditionReason
 		msgString = "Invalid value provided for PausedUntil field"
 	}
 	return hyperv1.NodePoolCondition{

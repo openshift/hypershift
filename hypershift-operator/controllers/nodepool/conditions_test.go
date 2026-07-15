@@ -41,7 +41,7 @@ func TestGenerateReconciliationPausedCondition(t *testing.T) {
 			expectedCondition: hyperv1.NodePoolCondition{
 				Type:               string(hyperv1.NodePoolReconciliationActiveConditionType),
 				Status:             corev1.ConditionTrue,
-				Reason:             reconciliationActiveConditionReason,
+				Reason:             hyperv1.ReconciliationActiveConditionReason,
 				Message:            "Reconciliation active on resource",
 				ObservedGeneration: fakeInputGeneration,
 			},
@@ -52,7 +52,7 @@ func TestGenerateReconciliationPausedCondition(t *testing.T) {
 			expectedCondition: hyperv1.NodePoolCondition{
 				Type:               string(hyperv1.NodePoolReconciliationActiveConditionType),
 				Status:             corev1.ConditionFalse,
-				Reason:             reconciliationPausedConditionReason,
+				Reason:             hyperv1.ReconciliationPausedConditionReason,
 				Message:            fmt.Sprintf("Reconciliation paused until: %s", *fakeFutureDate),
 				ObservedGeneration: fakeInputGeneration,
 			},
@@ -63,7 +63,7 @@ func TestGenerateReconciliationPausedCondition(t *testing.T) {
 			expectedCondition: hyperv1.NodePoolCondition{
 				Type:               string(hyperv1.NodePoolReconciliationActiveConditionType),
 				Status:             corev1.ConditionTrue,
-				Reason:             reconciliationActiveConditionReason,
+				Reason:             hyperv1.ReconciliationActiveConditionReason,
 				Message:            "Reconciliation active on resource",
 				ObservedGeneration: fakeInputGeneration,
 			},
@@ -74,7 +74,7 @@ func TestGenerateReconciliationPausedCondition(t *testing.T) {
 			expectedCondition: hyperv1.NodePoolCondition{
 				Type:               string(hyperv1.NodePoolReconciliationActiveConditionType),
 				Status:             corev1.ConditionFalse,
-				Reason:             reconciliationPausedConditionReason,
+				Reason:             hyperv1.ReconciliationPausedConditionReason,
 				Message:            "Reconciliation paused until field removed",
 				ObservedGeneration: fakeInputGeneration,
 			},
@@ -85,7 +85,7 @@ func TestGenerateReconciliationPausedCondition(t *testing.T) {
 			expectedCondition: hyperv1.NodePoolCondition{
 				Type:               string(hyperv1.NodePoolReconciliationActiveConditionType),
 				Status:             corev1.ConditionTrue,
-				Reason:             reconciliationInvalidPausedUntilConditionReason,
+				Reason:             hyperv1.ReconciliationInvalidPausedUntilConditionReason,
 				Message:            "Invalid value provided for PausedUntil field",
 				ObservedGeneration: fakeInputGeneration,
 			},
