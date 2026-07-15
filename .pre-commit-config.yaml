@@ -55,8 +55,8 @@ repos:
         require_serial: true
       - id: make-test
         name: Run make test
-        description: Runs `make test`.
-        entry: make test
+        description: Runs `make test` without race detection for faster hook feedback.
+        entry: make test GO_TEST_FLAGS=
         language: system
         stages: [ pre-push ]
 exclude: '^vendor/|^hack/tools/vendor/|^api/vendor/'
