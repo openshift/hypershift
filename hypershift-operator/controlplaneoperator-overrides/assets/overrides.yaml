@@ -388,6 +388,24 @@ platforms:
       cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/hypershift-cert-hotfix-416-multi:2d2e6071841bb12ff1f41c457889bb44b6fb1cf7
     # End of OCPBUGS-58837 overrides 4.15 section
     # End of OCPBUGS-58837 overrides
+    # Beginning of OCPBUGS-98627/OCPBUGS-98220 overrides 4.22 section
+    - version: 4.22.0
+      cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-22@sha256:9b53131cd8ac0760388e5d25464aae45aea4dc593607f3840713a4056418b930
+    - version: 4.22.1
+      cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-22@sha256:9b53131cd8ac0760388e5d25464aae45aea4dc593607f3840713a4056418b930
+    - version: 4.22.2
+      cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-22@sha256:9b53131cd8ac0760388e5d25464aae45aea4dc593607f3840713a4056418b930
+    - version: 4.22.3
+      cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-22@sha256:9b53131cd8ac0760388e5d25464aae45aea4dc593607f3840713a4056418b930
+    - version: 4.22.4
+      cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-22@sha256:9b53131cd8ac0760388e5d25464aae45aea4dc593607f3840713a4056418b930
+    - version: 4.22.5
+      cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-22@sha256:9b53131cd8ac0760388e5d25464aae45aea4dc593607f3840713a4056418b930
+    - version: 4.22.6
+      cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-22@sha256:9b53131cd8ac0760388e5d25464aae45aea4dc593607f3840713a4056418b930
+    # 4.22.7 does not need an override: both PRs (#8972, #8998) merged before the
+    # 4.22.7 development cutoff (2026-07-22).
+    # End of OCPBUGS-98627/OCPBUGS-98220 overrides 4.22 section
     testing:
     # Update the image refs below to indicate which images should be used for CPO override
     # testing. Currently, we only test one latest/previous combination. In the future, we
