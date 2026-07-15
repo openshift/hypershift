@@ -1990,7 +1990,91 @@ tests:
           servicePublishingStrategy:
             type: Route
             route: {}
-
+    expected: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        capabilities: {}
+        controllerAvailabilityPolicy: HighlyAvailable
+        dns:
+          baseDomain: example.com
+        etcd:
+          managed:
+            storage:
+              persistentVolume:
+                size: 8Gi
+              type: PersistentVolume
+          managementType: Managed
+        infrastructureAvailabilityPolicy: SingleReplica
+        issuerURL: https://kubernetes.default.svc
+        networking:
+          clusterNetwork:
+          - cidr: 10.132.0.0/14
+          networkType: OVNKubernetes
+          serviceNetwork:
+          - cidr: 172.31.0.0/16
+        olmCatalogPlacement: management
+        platform:
+          azure:
+            azureAuthenticationConfig:
+              azureAuthenticationConfigType: WorkloadIdentities
+              workloadIdentities:
+                cloudProvider:
+                  clientID: 12345678-1234-5678-9012-123456789012
+                controlPlaneOperator:
+                  clientID: 12345678-1234-5678-9012-123456789012
+                disk:
+                  clientID: 12345678-1234-5678-9012-123456789012
+                file:
+                  clientID: 12345678-1234-5678-9012-123456789012
+                imageRegistry:
+                  clientID: 12345678-1234-5678-9012-123456789012
+                ingress:
+                  clientID: 12345678-1234-5678-9012-123456789012
+                network:
+                  clientID: 12345678-1234-5678-9012-123456789012
+                nodePoolManagement:
+                  clientID: 12345678-1234-5678-9012-123456789012
+            cloud: AzurePublicCloud
+            location: eastus
+            private:
+              swift:
+                podNetworkInstance: test-pni
+              type: Swift
+            resourceGroup: default
+            securityGroupID: /subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg
+            subnetID: /subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet
+            subscriptionID: 12345678-1234-5678-9012-123456789012
+            tenantID: 87654321-4321-8765-2109-876543210987
+            topology: Private
+            vnetID: /subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet
+          type: Azure
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        - service: OAuthServer
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        - service: Konnectivity
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        - service: Ignition
+          servicePublishingStrategy:
+            route: {}
+            type: Route
   - name: When Topology changes from Private to PublicAndPrivate it should pass
     initial: |
       apiVersion: hypershift.openshift.io/v1beta1
@@ -2124,7 +2208,91 @@ tests:
           servicePublishingStrategy:
             type: Route
             route: {}
-
+    expected: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        capabilities: {}
+        controllerAvailabilityPolicy: HighlyAvailable
+        dns:
+          baseDomain: example.com
+        etcd:
+          managed:
+            storage:
+              persistentVolume:
+                size: 8Gi
+              type: PersistentVolume
+          managementType: Managed
+        infrastructureAvailabilityPolicy: SingleReplica
+        issuerURL: https://kubernetes.default.svc
+        networking:
+          clusterNetwork:
+          - cidr: 10.132.0.0/14
+          networkType: OVNKubernetes
+          serviceNetwork:
+          - cidr: 172.31.0.0/16
+        olmCatalogPlacement: management
+        platform:
+          azure:
+            azureAuthenticationConfig:
+              azureAuthenticationConfigType: WorkloadIdentities
+              workloadIdentities:
+                cloudProvider:
+                  clientID: 12345678-1234-5678-9012-123456789012
+                controlPlaneOperator:
+                  clientID: 12345678-1234-5678-9012-123456789012
+                disk:
+                  clientID: 12345678-1234-5678-9012-123456789012
+                file:
+                  clientID: 12345678-1234-5678-9012-123456789012
+                imageRegistry:
+                  clientID: 12345678-1234-5678-9012-123456789012
+                ingress:
+                  clientID: 12345678-1234-5678-9012-123456789012
+                network:
+                  clientID: 12345678-1234-5678-9012-123456789012
+                nodePoolManagement:
+                  clientID: 12345678-1234-5678-9012-123456789012
+            cloud: AzurePublicCloud
+            location: eastus
+            private:
+              swift:
+                podNetworkInstance: test-pni
+              type: Swift
+            resourceGroup: default
+            securityGroupID: /subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg
+            subnetID: /subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet
+            subscriptionID: 12345678-1234-5678-9012-123456789012
+            tenantID: 87654321-4321-8765-2109-876543210987
+            topology: PublicAndPrivate
+            vnetID: /subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet
+          type: Azure
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        - service: OAuthServer
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        - service: Konnectivity
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        - service: Ignition
+          servicePublishingStrategy:
+            route: {}
+            type: Route
   - name: When Topology changes from Private to Public it should fail
     initial: |
       apiVersion: hypershift.openshift.io/v1beta1
@@ -2432,4 +2600,107 @@ tests:
           servicePublishingStrategy:
             type: Route
             route: {}
-    expectedError: ""
+    expected: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        capabilities: {}
+        controllerAvailabilityPolicy: HighlyAvailable
+        dns:
+          baseDomain: example.com
+        etcd:
+          managed:
+            storage:
+              persistentVolume:
+                size: 8Gi
+              type: PersistentVolume
+          managementType: Managed
+        infrastructureAvailabilityPolicy: SingleReplica
+        issuerURL: https://kubernetes.default.svc
+        networking:
+          clusterNetwork:
+          - cidr: 10.132.0.0/14
+          networkType: OVNKubernetes
+          serviceNetwork:
+          - cidr: 172.31.0.0/16
+        olmCatalogPlacement: management
+        platform:
+          azure:
+            azureAuthenticationConfig:
+              azureAuthenticationConfigType: ManagedIdentities
+              managedIdentities:
+                controlPlane:
+                  cloudProvider:
+                    clientID: 12345678-1234-5678-9012-123456789012
+                    credentialsSecretName: cloud-provider-secret
+                    objectEncoding: utf-8
+                  controlPlaneOperator:
+                    clientID: 12345678-1234-5678-9012-123456789012
+                    credentialsSecretName: cpo-secret
+                    objectEncoding: utf-8
+                  disk:
+                    clientID: 12345678-1234-5678-9012-123456789012
+                    credentialsSecretName: disk-secret
+                    objectEncoding: utf-8
+                  file:
+                    clientID: 12345678-1234-5678-9012-123456789012
+                    credentialsSecretName: file-secret
+                    objectEncoding: utf-8
+                  imageRegistry:
+                    clientID: 12345678-1234-5678-9012-123456789012
+                    credentialsSecretName: image-registry-secret
+                    objectEncoding: utf-8
+                  ingress:
+                    clientID: 12345678-1234-5678-9012-123456789012
+                    credentialsSecretName: ingress-secret
+                    objectEncoding: utf-8
+                  managedIdentitiesKeyVault:
+                    name: test-kv
+                    tenantID: 87654321-4321-8765-2109-876543210987
+                  network:
+                    clientID: 12345678-1234-5678-9012-123456789012
+                    credentialsSecretName: network-secret
+                    objectEncoding: utf-8
+                  nodePoolManagement:
+                    clientID: 12345678-1234-5678-9012-123456789012
+                    credentialsSecretName: node-pool-secret
+                    objectEncoding: utf-8
+                dataPlane:
+                  diskMSIClientID: 12345678-1234-5678-9012-123456789012
+                  fileMSIClientID: 12345678-1234-5678-9012-123456789012
+                  imageRegistryMSIClientID: 12345678-1234-5678-9012-123456789012
+            cloud: AzurePublicCloud
+            location: eastus
+            resourceGroup: default
+            securityGroupID: /subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg
+            subnetID: /subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet
+            subscriptionID: 12345678-1234-5678-9012-123456789012
+            tenantID: 87654321-4321-8765-2109-876543210987
+            vnetID: /subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet
+          type: Azure
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        - service: OAuthServer
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        - service: Konnectivity
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        - service: Ignition
+          servicePublishingStrategy:
+            route: {}
+            type: Route

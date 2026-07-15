@@ -75,6 +75,26 @@ tests:
           reason: BackupSucceeded
           message: Backup completed
           lastTransitionTime: "2024-01-01T00:00:00Z"
+    expected: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: S3
+          s3:
+            bucket: my-backup-bucket
+            region: us-east-1
+            keyPrefix: backups/etcd
+            credentials:
+              name: aws-credentials
+      status:
+        snapshotURL: "https://bucket.s3.amazonaws.com/snapshot.db"
+        conditions:
+        - type: BackupCompleted
+          status: "True"
+          reason: BackupSucceeded
+          message: Backup completed
+          lastTransitionTime: "2024-01-01T00:00:00Z"
 
   - name: When snapshotURL has valid s3 scheme it should pass
     initial: |
@@ -90,6 +110,26 @@ tests:
             credentials:
               name: aws-credentials
     updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: S3
+          s3:
+            bucket: my-backup-bucket
+            region: us-east-1
+            keyPrefix: backups/etcd
+            credentials:
+              name: aws-credentials
+      status:
+        snapshotURL: "s3://my-backup-bucket/backups/etcd/snapshot.db"
+        conditions:
+        - type: BackupCompleted
+          status: "True"
+          reason: BackupSucceeded
+          message: Backup completed
+          lastTransitionTime: "2024-01-01T00:00:00Z"
+    expected: |
       apiVersion: hypershift.openshift.io/v1beta1
       kind: HCPEtcdBackup
       spec:
@@ -220,6 +260,28 @@ tests:
         encryptionMetadata:
           aws:
             kmsKeyARN: "arn:aws:kms:us-east-1:123456789012:key/12345678-1234-1234-1234-123456789012"
+    expected: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: S3
+          s3:
+            bucket: my-backup-bucket
+            region: us-east-1
+            keyPrefix: backups/etcd
+            credentials:
+              name: aws-credentials
+      status:
+        conditions:
+        - type: BackupCompleted
+          status: "True"
+          reason: BackupSucceeded
+          message: Backup completed
+          lastTransitionTime: "2024-01-01T00:00:00Z"
+        encryptionMetadata:
+          aws:
+            kmsKeyARN: "arn:aws:kms:us-east-1:123456789012:key/12345678-1234-1234-1234-123456789012"
 
   - name: When encryptionMetadata has only azure it should pass
     initial: |
@@ -235,6 +297,28 @@ tests:
             credentials:
               name: azure-credentials
     updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: AzureBlob
+          azureBlob:
+            container: my-backup-container
+            storageAccount: mystorageaccount
+            keyPrefix: backups/etcd
+            credentials:
+              name: azure-credentials
+      status:
+        conditions:
+        - type: BackupCompleted
+          status: "True"
+          reason: BackupSucceeded
+          message: Backup completed
+          lastTransitionTime: "2024-01-01T00:00:00Z"
+        encryptionMetadata:
+          azure:
+            encryptionKeyURL: "https://my-vault.vault.azure.net/keys/my-key/abc123"
+    expected: |
       apiVersion: hypershift.openshift.io/v1beta1
       kind: HCPEtcdBackup
       spec:

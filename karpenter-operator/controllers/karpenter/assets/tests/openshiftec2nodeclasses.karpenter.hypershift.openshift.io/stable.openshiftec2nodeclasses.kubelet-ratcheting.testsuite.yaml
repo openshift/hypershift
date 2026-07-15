@@ -79,3 +79,32 @@ tests:
           imageGCHighThresholdPercent: 85
           imageGCLowThresholdPercent: 80
           cpuCFSQuota: true
+    expected: |
+      apiVersion: karpenter.hypershift.openshift.io/v1
+      kind: OpenshiftEC2NodeClass
+      spec:
+        subnetSelectorTerms:
+        - tags:
+            env: test
+        securityGroupSelectorTerms:
+        - id: sg-0123456789abcdef0
+        kubelet:
+          maxPods: 110
+          podsPerCore: 10
+          systemReserved:
+            cpu: "100m"
+            memory: "256Mi"
+          kubeReserved:
+            cpu: "200m"
+            memory: "512Mi"
+          evictionHard:
+            memory.available: "100Mi"
+            nodefs.available: "10%"
+          evictionSoft:
+            memory.available: "200Mi"
+          evictionSoftGracePeriod:
+            memory.available: "30s"
+          evictionMaxPodGracePeriod: 60
+          imageGCHighThresholdPercent: 85
+          imageGCLowThresholdPercent: 80
+          cpuCFSQuota: true
