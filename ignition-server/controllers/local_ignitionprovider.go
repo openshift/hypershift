@@ -607,7 +607,7 @@ func (p *LocalIgnitionProvider) runMCSAndFetchPayload(ctx context.Context, dirs 
 	return payload, err
 }
 
-func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage, customConfig, pullSecretHash, additionalTrustBundleHash, hcConfigurationHash string) ([]byte, error) {
+func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage, customConfig, pullSecretHash, additionalTrustBundleHash, hcConfigurationHash, osStream string) ([]byte, error) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
@@ -644,16 +644,11 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage, cu
 		return nil, err
 	}
 
-	imageProvider, err := func() (*imageprovider.SimpleReleaseImageProvider, error) {
-		img, err := p.ReleaseProvider.Lookup(ctx, releaseImage, pullSecret)
-		if err != nil {
-			return nil, fmt.Errorf("failed to look up release image metadata: %w", err)
-		}
-		return imageprovider.New(img), nil
-	}()
+	img, err := p.ReleaseProvider.Lookup(ctx, releaseImage, pullSecret)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get component images: %w", err)
+		return nil, fmt.Errorf("failed to look up release image metadata: %w", err)
 	}
+	imageProvider := imageprovider.New(img)
 
 	mcoImage, err := p.resolveMCOImage(ctx, imageProvider, pullSecret)
 	if err != nil {
@@ -691,17 +686,11 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage, cu
 		return nil, err
 	}
 
-	err = func() error {
-		start := time.Now()
-		if err := registryclient.ExtractImageFilesToDir(ctx, mcoImage, pullSecret, "etc/mcc/templates/*", dirs.mccDir); err != nil {
-			return fmt.Errorf("failed to extract mcc templates: %w", err)
-		}
-		log.Info("extracted templates", "time", time.Since(start).Round(time.Second).String())
-		return nil
-	}()
-	if err != nil {
-		return nil, fmt.Errorf("failed to extract templates from image: %w", err)
+	templateStart := time.Now()
+	if err := registryclient.ExtractImageFilesToDir(ctx, mcoImage, pullSecret, "etc/mcc/templates/*", dirs.mccDir); err != nil {
+		return nil, fmt.Errorf("failed to extract mcc templates from image: %w", err)
 	}
+	log.Info("extracted templates", "time", time.Since(templateStart).Round(time.Second).String())
 
 	payloadVersion, err := semver.Parse(imageProvider.Version())
 	if err != nil {
@@ -739,6 +728,17 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage, cu
 	// First, run the MCO using templates and image refs as input. This generates output for the MCC.
 	if err := p.runMCO(ctx, dirs, releaseImage, pullSecret, mcsConfig, imageProvider, payloadVersion); err != nil {
 		return nil, fmt.Errorf("failed to execute machine-config-operator: %w", err)
+	}
+
+	// Write the OSImageStream CR to mccDir so the MCC bootstrap can discover
+	// and select the requested RHEL stream. When osStream is empty (feature
+	// gate disabled or pre-5.0 payload), skip — the MCC uses the default
+	// BaseOSContainerImage from ControllerConfig.
+	if osStream != "" {
+		if err := writeOSImageStreamManifest(dirs.mccDir, osStream); err != nil {
+			return nil, fmt.Errorf("failed to write OSImageStream manifest: %w", err)
+		}
+		log.Info("wrote OSImageStream manifest", "stream", osStream)
 	}
 
 	// Next, run the MCC using templates and MCO output as input, producing output for the MCS.
@@ -786,6 +786,20 @@ func (r *LocalIgnitionProvider) reconcileValidReleaseInfoCondition(ctx context.C
 	}
 
 	return r.Client.Status().Patch(ctx, &hostedControlPlane, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{}))
+}
+
+// writeOSImageStreamManifest writes a 99_osimagestream.yaml manifest to mccDir.
+// The MCC bootstrap reads this CR to discover available RHEL streams from OCI
+// labels and select the requested stream for OS image resolution.
+func writeOSImageStreamManifest(mccDir, osStream string) error {
+	manifest := fmt.Sprintf(`apiVersion: machineconfiguration.openshift.io/v1alpha1
+kind: OSImageStream
+metadata:
+  name: cluster
+spec:
+  defaultStream: %q
+`, osStream)
+	return os.WriteFile(filepath.Join(mccDir, "99_osimagestream.yaml"), []byte(manifest), 0644)
 }
 
 // copyFile copies a file named src to dst, preserving attributes.
