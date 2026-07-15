@@ -93,7 +93,7 @@ func TestGetCluster(t *testing.T) {
 }
 
 func TestForceCleanupFinalizers(t *testing.T) {
-	t.Run("should remove finalizers from HostedCluster and all child resources", func(t *testing.T) {
+	t.Run("should remove finalizers from child resources and preserve destroyFinalizer on HostedCluster", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 		ctx := context.Background()
 
@@ -156,11 +156,12 @@ func TestForceCleanupFinalizers(t *testing.T) {
 			Log:       log.Log,
 		}
 
-		forceCleanupFinalizers(ctx, hc, opts, c)
+		err := forceCleanupFinalizers(ctx, hc, opts, c)
+		g.Expect(err).ToNot(HaveOccurred())
 
 		var updatedHC hyperv1.HostedCluster
 		g.Expect(c.Get(ctx, client.ObjectKeyFromObject(hc), &updatedHC)).To(Succeed())
-		g.Expect(updatedHC.Finalizers).To(BeEmpty())
+		g.Expect(updatedHC.Finalizers).To(ConsistOf(destroyFinalizer))
 
 		var updatedHCP hyperv1.HostedControlPlane
 		g.Expect(c.Get(ctx, client.ObjectKeyFromObject(hcp), &updatedHCP)).To(Succeed())
@@ -181,6 +182,63 @@ func TestForceCleanupFinalizers(t *testing.T) {
 		var updatedMachine capiv1.Machine
 		g.Expect(c.Get(ctx, client.ObjectKeyFromObject(machine), &updatedMachine)).To(Succeed())
 		g.Expect(updatedMachine.Finalizers).To(BeEmpty())
+	})
+
+	t.Run("should remove finalizers from NodePools belonging to the cluster", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		ctx := context.Background()
+
+		hc := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       "test-cluster",
+				Namespace:  "clusters",
+				Finalizers: []string{destroyFinalizer},
+			},
+		}
+
+		ownedNodePool := &hyperv1.NodePool{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       "test-np",
+				Namespace:  "clusters",
+				Finalizers: []string{"hypershift.openshift.io/finalizer"},
+			},
+			Spec: hyperv1.NodePoolSpec{
+				ClusterName: "test-cluster",
+			},
+		}
+
+		unrelatedNodePool := &hyperv1.NodePool{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       "other-np",
+				Namespace:  "clusters",
+				Finalizers: []string{"hypershift.openshift.io/finalizer"},
+			},
+			Spec: hyperv1.NodePoolSpec{
+				ClusterName: "other-cluster",
+			},
+		}
+
+		c := fake.NewClientBuilder().
+			WithScheme(hyperapi.Scheme).
+			WithObjects(hc, ownedNodePool, unrelatedNodePool).
+			Build()
+
+		opts := &DestroyOptions{
+			Name:      "test-cluster",
+			Namespace: "clusters",
+			Log:       log.Log,
+		}
+
+		err := forceCleanupFinalizers(ctx, hc, opts, c)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		var updatedOwned hyperv1.NodePool
+		g.Expect(c.Get(ctx, client.ObjectKeyFromObject(ownedNodePool), &updatedOwned)).To(Succeed())
+		g.Expect(updatedOwned.Finalizers).To(BeEmpty())
+
+		var updatedUnrelated hyperv1.NodePool
+		g.Expect(c.Get(ctx, client.ObjectKeyFromObject(unrelatedNodePool), &updatedUnrelated)).To(Succeed())
+		g.Expect(updatedUnrelated.Finalizers).To(ConsistOf("hypershift.openshift.io/finalizer"))
 	})
 
 	t.Run("should skip resources without finalizers", func(t *testing.T) {
@@ -212,7 +270,8 @@ func TestForceCleanupFinalizers(t *testing.T) {
 			Log:       log.Log,
 		}
 
-		forceCleanupFinalizers(ctx, hc, opts, c)
+		err := forceCleanupFinalizers(ctx, hc, opts, c)
+		g.Expect(err).ToNot(HaveOccurred())
 
 		var updatedHC hyperv1.HostedCluster
 		g.Expect(c.Get(ctx, client.ObjectKeyFromObject(hc), &updatedHC)).To(Succeed())
@@ -242,11 +301,12 @@ func TestForceCleanupFinalizers(t *testing.T) {
 			Log:       log.Log,
 		}
 
-		forceCleanupFinalizers(ctx, hc, opts, c)
+		err := forceCleanupFinalizers(ctx, hc, opts, c)
+		g.Expect(err).ToNot(HaveOccurred())
 
 		var updatedHC hyperv1.HostedCluster
 		g.Expect(c.Get(ctx, client.ObjectKeyFromObject(hc), &updatedHC)).To(Succeed())
-		g.Expect(updatedHC.Finalizers).To(BeEmpty())
+		g.Expect(updatedHC.Finalizers).To(ConsistOf(destroyFinalizer))
 	})
 }
 
@@ -268,11 +328,37 @@ func TestRemoveFinalizersFromObject(t *testing.T) {
 			WithObjects(obj).
 			Build()
 
-		removeFinalizersFromObject(ctx, log.Log, c, obj)
+		err := removeFinalizersFromObject(ctx, log.Log, c, obj)
+		g.Expect(err).ToNot(HaveOccurred())
 
 		var updated hyperv1.HostedCluster
 		g.Expect(c.Get(ctx, client.ObjectKeyFromObject(obj), &updated)).To(Succeed())
 		g.Expect(updated.Finalizers).To(BeEmpty())
+	})
+
+	t.Run("should preserve specified finalizers", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		ctx := context.Background()
+
+		obj := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       "test",
+				Namespace:  "clusters",
+				Finalizers: []string{"keep-me", "remove-me", "also-keep"},
+			},
+		}
+
+		c := fake.NewClientBuilder().
+			WithScheme(hyperapi.Scheme).
+			WithObjects(obj).
+			Build()
+
+		err := removeFinalizersFromObject(ctx, log.Log, c, obj, "keep-me", "also-keep")
+		g.Expect(err).ToNot(HaveOccurred())
+
+		var updated hyperv1.HostedCluster
+		g.Expect(c.Get(ctx, client.ObjectKeyFromObject(obj), &updated)).To(Succeed())
+		g.Expect(updated.Finalizers).To(ConsistOf("keep-me", "also-keep"))
 	})
 
 	t.Run("should be a no-op when object has no finalizers", func(t *testing.T) {
@@ -291,10 +377,36 @@ func TestRemoveFinalizersFromObject(t *testing.T) {
 			WithObjects(obj).
 			Build()
 
-		removeFinalizersFromObject(ctx, log.Log, c, obj)
+		err := removeFinalizersFromObject(ctx, log.Log, c, obj)
+		g.Expect(err).ToNot(HaveOccurred())
 
 		var updated hyperv1.HostedCluster
 		g.Expect(c.Get(ctx, client.ObjectKeyFromObject(obj), &updated)).To(Succeed())
 		g.Expect(updated.Finalizers).To(BeEmpty())
+	})
+
+	t.Run("should be a no-op when only preserved finalizers remain", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		ctx := context.Background()
+
+		obj := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       "test",
+				Namespace:  "clusters",
+				Finalizers: []string{destroyFinalizer},
+			},
+		}
+
+		c := fake.NewClientBuilder().
+			WithScheme(hyperapi.Scheme).
+			WithObjects(obj).
+			Build()
+
+		err := removeFinalizersFromObject(ctx, log.Log, c, obj, destroyFinalizer)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		var updated hyperv1.HostedCluster
+		g.Expect(c.Get(ctx, client.ObjectKeyFromObject(obj), &updated)).To(Succeed())
+		g.Expect(updated.Finalizers).To(ConsistOf(destroyFinalizer))
 	})
 }

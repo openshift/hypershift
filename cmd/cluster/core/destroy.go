@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -152,9 +153,11 @@ func DestroyCluster(ctx context.Context, hostedCluster *hyperv1.HostedCluster, o
 
 		if shouldDestroyPlatformSpecifics {
 			if err = waitForRestOfFinalizers(ctx, hostedCluster, o, c); err != nil {
-				if o.ForceCleanupOnTimeout {
+				if o.ForceCleanupOnTimeout && errors.Is(err, context.DeadlineExceeded) {
 					o.Log.Info("Grace period expired, force-removing finalizers", "error", err)
-					forceCleanupFinalizers(ctx, hostedCluster, o, c)
+					if cleanupErr := forceCleanupFinalizers(ctx, hostedCluster, o, c); cleanupErr != nil {
+						o.Log.Error(cleanupErr, "Force cleanup encountered errors, some resources may need manual cleanup")
+					}
 				} else {
 					return err
 				}
@@ -252,80 +255,115 @@ func waitForRestOfFinalizers(ctx context.Context, hostedCluster *hyperv1.HostedC
 	return nil
 }
 
-func forceCleanupFinalizers(ctx context.Context, hostedCluster *hyperv1.HostedCluster, o *DestroyOptions, c client.Client) {
+func forceCleanupFinalizers(ctx context.Context, hostedCluster *hyperv1.HostedCluster, o *DestroyOptions, c client.Client) error {
 	cpNamespace := manifests.HostedControlPlaneNamespace(o.Namespace, o.Name)
 	o.Log.Info("Force-removing finalizers from HostedCluster and child resources",
 		"namespace", o.Namespace, "name", o.Name, "controlPlaneNamespace", cpNamespace)
 
-	removeFinalizersFromObject(ctx, o.Log, c, hostedCluster)
+	var errs []error
 
-	var hcpList hyperv1.HostedControlPlaneList
-	if err := c.List(ctx, &hcpList, client.InNamespace(cpNamespace)); err != nil {
-		o.Log.Error(err, "Failed to list HostedControlPlanes for finalizer cleanup", "namespace", cpNamespace)
+	// Preserve the CLI's destroyFinalizer on the HostedCluster so it is not
+	// garbage-collected before destroyPlatformSpecifics completes.
+	if err := removeFinalizersFromObject(ctx, o.Log, c, hostedCluster, destroyFinalizer); err != nil {
+		errs = append(errs, fmt.Errorf("HostedCluster %s/%s: %w", hostedCluster.GetNamespace(), hostedCluster.GetName(), err))
+	}
+
+	// Clean up NodePools in the management namespace — they carry
+	// hypershift.openshift.io/finalizer and are not in the CP namespace.
+	var nodePoolList hyperv1.NodePoolList
+	if err := c.List(ctx, &nodePoolList, client.InNamespace(o.Namespace)); err != nil {
+		o.Log.Error(err, "Failed to list NodePools for finalizer cleanup", "namespace", o.Namespace)
+		errs = append(errs, fmt.Errorf("listing NodePools: %w", err))
 	} else {
-		for i := range hcpList.Items {
-			removeFinalizersFromObject(ctx, o.Log, c, &hcpList.Items[i])
+		for i := range nodePoolList.Items {
+			if nodePoolList.Items[i].Spec.ClusterName == o.Name {
+				if err := removeFinalizersFromObject(ctx, o.Log, c, &nodePoolList.Items[i]); err != nil {
+					errs = append(errs, fmt.Errorf("NodePool %s/%s: %w", nodePoolList.Items[i].GetNamespace(), nodePoolList.Items[i].GetName(), err))
+				}
+			}
 		}
 	}
 
-	var clusterList capiv1.ClusterList
-	if err := c.List(ctx, &clusterList, client.InNamespace(cpNamespace)); err != nil {
-		o.Log.Error(err, "Failed to list Clusters for finalizer cleanup", "namespace", cpNamespace)
-	} else {
-		for i := range clusterList.Items {
-			removeFinalizersFromObject(ctx, o.Log, c, &clusterList.Items[i])
+	type listTarget struct {
+		list client.ObjectList
+		desc string
+	}
+	targets := []listTarget{
+		{&hyperv1.HostedControlPlaneList{}, "HostedControlPlanes"},
+		{&capiv1.ClusterList{}, "Clusters"},
+		{&capiv1.MachineDeploymentList{}, "MachineDeployments"},
+		{&capiv1.MachineSetList{}, "MachineSets"},
+		{&capiv1.MachineList{}, "Machines"},
+	}
+	for _, t := range targets {
+		if err := c.List(ctx, t.list, client.InNamespace(cpNamespace)); err != nil {
+			o.Log.Error(err, "Failed to list "+t.desc+" for finalizer cleanup", "namespace", cpNamespace)
+			errs = append(errs, fmt.Errorf("listing %s: %w", t.desc, err))
+			continue
+		}
+		items, _ := meta.ExtractList(t.list)
+		for _, item := range items {
+			obj := item.(client.Object)
+			if err := removeFinalizersFromObject(ctx, o.Log, c, obj); err != nil {
+				errs = append(errs, fmt.Errorf("%s %s/%s: %w", t.desc, obj.GetNamespace(), obj.GetName(), err))
+			}
 		}
 	}
 
-	var machineDeploymentList capiv1.MachineDeploymentList
-	if err := c.List(ctx, &machineDeploymentList, client.InNamespace(cpNamespace)); err != nil {
-		o.Log.Error(err, "Failed to list MachineDeployments for finalizer cleanup", "namespace", cpNamespace)
-	} else {
-		for i := range machineDeploymentList.Items {
-			removeFinalizersFromObject(ctx, o.Log, c, &machineDeploymentList.Items[i])
-		}
-	}
-
-	var machineSetList capiv1.MachineSetList
-	if err := c.List(ctx, &machineSetList, client.InNamespace(cpNamespace)); err != nil {
-		o.Log.Error(err, "Failed to list MachineSets for finalizer cleanup", "namespace", cpNamespace)
-	} else {
-		for i := range machineSetList.Items {
-			removeFinalizersFromObject(ctx, o.Log, c, &machineSetList.Items[i])
-		}
-	}
-
-	var machineList capiv1.MachineList
-	if err := c.List(ctx, &machineList, client.InNamespace(cpNamespace)); err != nil {
-		o.Log.Error(err, "Failed to list Machines for finalizer cleanup", "namespace", cpNamespace)
-	} else {
-		for i := range machineList.Items {
-			removeFinalizersFromObject(ctx, o.Log, c, &machineList.Items[i])
-		}
-	}
+	return errors.Join(errs...)
 }
 
-func removeFinalizersFromObject(ctx context.Context, log logr.Logger, c client.Client, obj client.Object) {
-	if len(obj.GetFinalizers()) == 0 {
-		return
-	}
+// removeFinalizersFromObject strips all finalizers from obj except those listed
+// in preserve. It re-fetches and retries on conflict to handle concurrent
+// controller updates.
+func removeFinalizersFromObject(ctx context.Context, log logr.Logger, c client.Client, obj client.Object, preserve ...string) error {
+	key := client.ObjectKeyFromObject(obj)
+	preserveSet := sets.New[string](preserve...)
 
-	log.Info("Force-removing finalizers",
-		"kind", fmt.Sprintf("%T", obj),
-		"namespace", obj.GetNamespace(),
-		"name", obj.GetName(),
-		"finalizers", obj.GetFinalizers())
-
-	original := obj.DeepCopyObject().(client.Object)
-	obj.SetFinalizers(nil)
-	if err := c.Patch(ctx, obj, client.MergeFrom(original)); err != nil {
-		if !apierrors.IsNotFound(err) {
-			log.Error(err, "Failed to force-remove finalizers",
-				"kind", fmt.Sprintf("%T", obj),
-				"namespace", obj.GetNamespace(),
-				"name", obj.GetName())
+	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		if err := c.Get(ctx, key, obj); err != nil {
+			if apierrors.IsNotFound(err) {
+				return nil
+			}
+			return err
 		}
-	}
+
+		if len(obj.GetFinalizers()) == 0 {
+			return nil
+		}
+
+		var kept []string
+		for _, f := range obj.GetFinalizers() {
+			if preserveSet.Has(f) {
+				kept = append(kept, f)
+			}
+		}
+		if len(kept) == len(obj.GetFinalizers()) {
+			return nil
+		}
+
+		gvk := obj.GetObjectKind().GroupVersionKind()
+		kind := gvk.Kind
+		if kind == "" {
+			kind = fmt.Sprintf("%T", obj)
+		}
+		log.Info("Force-removing finalizers",
+			"kind", kind,
+			"namespace", obj.GetNamespace(),
+			"name", obj.GetName(),
+			"finalizers", obj.GetFinalizers(),
+			"preserving", kept)
+
+		original := obj.DeepCopyObject().(client.Object)
+		obj.SetFinalizers(kept)
+		if err := c.Patch(ctx, obj, client.MergeFromWithOptions(original, client.MergeFromWithOptimisticLock{})); err != nil {
+			if apierrors.IsNotFound(err) {
+				return nil
+			}
+			return err
+		}
+		return nil
+	})
 }
 
 func setDestroyCloudResourcesAnnotation(hostedCluster *hyperv1.HostedCluster, o *DestroyOptions) {
