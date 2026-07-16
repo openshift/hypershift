@@ -1916,19 +1916,137 @@ func makeImmutableKubeletConfigConfigMap(name, namespace, data string) *corev1.C
 	}
 }
 
+type reconcileAuthOIDCTestCase struct {
+	inputHCP                *hyperv1.HostedControlPlane
+	inputCPObjects          []client.Object
+	existingGuestObjects    []client.Object
+	expectIssuerCAConfigMap bool
+	expectOIDCClientSecrets []string
+	expectErrors            bool
+	expectedErrorMessages   []string
+	setAROHCP               bool
+	expectDeletedConfigMaps []string
+	expectDeletedSecrets    []string
+}
+
+func verifyOIDCReconcileResult(t *testing.T, g Gomega, ctx context.Context,
+	hcClient client.Client, test reconcileAuthOIDCTestCase, err error) {
+	t.Helper()
+
+	if test.expectErrors {
+		g.Expect(err).To(HaveOccurred())
+		errorStr := err.Error()
+		for _, expectedMsg := range test.expectedErrorMessages {
+			g.Expect(errorStr).To(ContainSubstring(expectedMsg))
+		}
+	} else {
+		g.Expect(err).ToNot(HaveOccurred())
+	}
+
+	if test.expectIssuerCAConfigMap {
+		if test.inputHCP.Spec.Configuration != nil &&
+			test.inputHCP.Spec.Configuration.Authentication != nil &&
+			len(test.inputHCP.Spec.Configuration.Authentication.OIDCProviders) > 0 {
+			provider := test.inputHCP.Spec.Configuration.Authentication.OIDCProviders[0]
+			caConfigMap := &corev1.ConfigMap{}
+			err := hcClient.Get(ctx, client.ObjectKey{
+				Namespace: ConfigNamespace,
+				Name:      provider.Issuer.CertificateAuthority.Name,
+			}, caConfigMap)
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(caConfigMap.Labels).To(HaveKeyWithValue(oidcConfigResourceLabel, "true"))
+			expectedCA := ""
+			for _, obj := range test.inputCPObjects {
+				if cm, ok := obj.(*corev1.ConfigMap); ok && cm.Name == provider.Issuer.CertificateAuthority.Name {
+					expectedCA = cm.Data["ca-bundle.crt"]
+					break
+				}
+			}
+			g.Expect(caConfigMap.Data["ca-bundle.crt"]).To(Equal(expectedCA))
+		}
+	}
+
+	for _, secretName := range test.expectOIDCClientSecrets {
+		clientSecret := &corev1.Secret{}
+		err := hcClient.Get(ctx, client.ObjectKey{
+			Namespace: ConfigNamespace,
+			Name:      secretName,
+		}, clientSecret)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(clientSecret.Labels).To(HaveKeyWithValue(oidcConfigResourceLabel, "true"))
+		g.Expect(clientSecret.Data["clientSecret"]).ToNot(BeEmpty())
+	}
+
+	if !test.expectIssuerCAConfigMap &&
+		test.inputHCP.Spec.Configuration != nil &&
+		test.inputHCP.Spec.Configuration.Authentication != nil &&
+		len(test.inputHCP.Spec.Configuration.Authentication.OIDCProviders) > 0 {
+		provider := test.inputHCP.Spec.Configuration.Authentication.OIDCProviders[0]
+		if provider.Issuer.CertificateAuthority.Name != "" {
+			caConfigMap := &corev1.ConfigMap{}
+			err := hcClient.Get(ctx, client.ObjectKey{
+				Namespace: ConfigNamespace,
+				Name:      provider.Issuer.CertificateAuthority.Name,
+			}, caConfigMap)
+			g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+		}
+	}
+
+	secretList := &corev1.SecretList{}
+	err = hcClient.List(ctx, secretList, client.InNamespace(ConfigNamespace),
+		client.MatchingLabels{oidcConfigResourceLabel: "true"})
+	g.Expect(err).ToNot(HaveOccurred())
+
+	expectedSecrets := sets.New(test.expectOIDCClientSecrets...)
+	for _, secret := range secretList.Items {
+		g.Expect(expectedSecrets.Has(secret.Name)).To(BeTrue(), "unexpected OIDC client secret exists: %s", secret.Name)
+	}
+
+	cmList := &corev1.ConfigMapList{}
+	err = hcClient.List(ctx, cmList, client.InNamespace(ConfigNamespace),
+		client.MatchingLabels{oidcConfigResourceLabel: "true"})
+	g.Expect(err).ToNot(HaveOccurred())
+
+	expectedConfigMaps := sets.New[string]()
+	if test.expectIssuerCAConfigMap &&
+		len(test.inputHCP.Spec.Configuration.Authentication.OIDCProviders) > 0 {
+		expectedConfigMaps.Insert(test.inputHCP.Spec.Configuration.Authentication.OIDCProviders[0].Issuer.CertificateAuthority.Name)
+	}
+	for _, cm := range cmList.Items {
+		g.Expect(expectedConfigMaps.Has(cm.Name)).To(BeTrue(), "unexpected OIDC configmap exists: %s", cm.Name)
+	}
+
+	for _, cmName := range test.expectDeletedConfigMaps {
+		cm := &corev1.ConfigMap{}
+		err := hcClient.Get(ctx, client.ObjectKey{Namespace: ConfigNamespace, Name: cmName}, cm)
+		g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "configmap %s should have been deleted", cmName)
+	}
+	for _, secretName := range test.expectDeletedSecrets {
+		s := &corev1.Secret{}
+		err := hcClient.Get(ctx, client.ObjectKey{Namespace: ConfigNamespace, Name: secretName}, s)
+		g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "secret %s should have been deleted", secretName)
+	}
+
+	for _, obj := range test.existingGuestObjects {
+		hasOIDCLabel := false
+		switch o := obj.(type) {
+		case *corev1.ConfigMap:
+			hasOIDCLabel = o.Labels[oidcConfigResourceLabel] == "true"
+		case *corev1.Secret:
+			hasOIDCLabel = o.Labels[oidcConfigResourceLabel] == "true"
+		}
+		if !hasOIDCLabel {
+			err := hcClient.Get(ctx, client.ObjectKeyFromObject(obj), obj)
+			g.Expect(err).ToNot(HaveOccurred(), "unlabeled resource %s should not be deleted", obj.GetName())
+		}
+	}
+}
+
 func TestReconcileAuthOIDC(t *testing.T) {
 	testNamespace := "master-cluster1"
 	testHCPName := "cluster1"
 
-	tests := map[string]struct {
-		inputHCP                *hyperv1.HostedControlPlane
-		inputCPObjects          []client.Object
-		expectIssuerCAConfigMap bool
-		expectOIDCClientSecrets []string
-		expectErrors            bool
-		expectedErrorMessages   []string
-		setAROHCP               bool
-	}{
+	tests := map[string]reconcileAuthOIDCTestCase{
 		"when OAuth is enabled, should not copy OIDC resources": {
 			inputHCP: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
@@ -2374,6 +2492,250 @@ func TestReconcileAuthOIDC(t *testing.T) {
 			expectErrors:            true,
 			expectedErrorMessages:   []string{"failed to get OIDCClient secret missing-client-secret"},
 		},
+		"when source secret is deleted but spec still references it, should clean up labeled guest copy": {
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testHCPName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						Authentication: &configv1.AuthenticationSpec{
+							Type: configv1.AuthenticationTypeOIDC,
+							OIDCProviders: []configv1.OIDCProvider{{
+								Name:   "test-oidc-provider",
+								Issuer: configv1.TokenIssuer{URL: "https://example.com"},
+								OIDCClients: []configv1.OIDCClientConfig{{
+									ComponentName:      "console",
+									ComponentNamespace: "openshift-console",
+									ClientID:           "console-client",
+									ClientSecret:       configv1.SecretNameReference{Name: "deleted-secret"},
+								}},
+							}},
+						},
+					},
+				},
+			},
+			inputCPObjects: []client.Object{},
+			existingGuestObjects: []client.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "deleted-secret",
+						Namespace: ConfigNamespace,
+						Labels:    map[string]string{oidcConfigResourceLabel: "true"},
+					},
+					Data: map[string][]byte{"clientSecret": []byte("old-value")},
+				},
+			},
+			expectOIDCClientSecrets: []string{},
+			expectErrors:            true,
+			expectedErrorMessages:   []string{"failed to get OIDCClient secret deleted-secret"},
+			expectDeletedSecrets:    []string{"deleted-secret"},
+		},
+		"when OIDC providers are removed, should clean up all labeled resources": {
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testHCPName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						Authentication: &configv1.AuthenticationSpec{
+							Type: configv1.AuthenticationTypeOIDC,
+						},
+					},
+				},
+			},
+			existingGuestObjects: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "oidc-ca-bundle",
+						Namespace: ConfigNamespace,
+						Labels:    map[string]string{oidcConfigResourceLabel: "true"},
+					},
+					Data: map[string]string{
+						"ca-bundle.crt": "old-ca-cert",
+					},
+				},
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "console-client-secret",
+						Namespace: ConfigNamespace,
+						Labels:    map[string]string{oidcConfigResourceLabel: "true"},
+					},
+					Data: map[string][]byte{
+						"clientSecret": []byte("old-secret"),
+					},
+				},
+			},
+			inputCPObjects:          []client.Object{},
+			expectIssuerCAConfigMap: false,
+			expectOIDCClientSecrets: []string{},
+			expectErrors:            false,
+			expectDeletedConfigMaps: []string{"oidc-ca-bundle"},
+			expectDeletedSecrets:    []string{"console-client-secret"},
+		},
+		"when OAuth is re-enabled, should clean up all labeled resources": {
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testHCPName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Configuration: &hyperv1.ClusterConfiguration{},
+				},
+			},
+			existingGuestObjects: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "oidc-ca-bundle",
+						Namespace: ConfigNamespace,
+						Labels:    map[string]string{oidcConfigResourceLabel: "true"},
+					},
+					Data: map[string]string{
+						"ca-bundle.crt": "old-ca-cert",
+					},
+				},
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "console-client-secret",
+						Namespace: ConfigNamespace,
+						Labels:    map[string]string{oidcConfigResourceLabel: "true"},
+					},
+					Data: map[string][]byte{
+						"clientSecret": []byte("old-secret"),
+					},
+				},
+			},
+			inputCPObjects:          []client.Object{},
+			expectIssuerCAConfigMap: false,
+			expectOIDCClientSecrets: []string{},
+			expectErrors:            false,
+			expectDeletedConfigMaps: []string{"oidc-ca-bundle"},
+			expectDeletedSecrets:    []string{"console-client-secret"},
+		},
+		"when provider config changes, should clean up stale resources": {
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testHCPName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						Authentication: &configv1.AuthenticationSpec{
+							Type: configv1.AuthenticationTypeOIDC,
+							OIDCProviders: []configv1.OIDCProvider{
+								{
+									Name: "test-oidc-provider",
+									Issuer: configv1.TokenIssuer{
+										URL: "https://example.com",
+										CertificateAuthority: configv1.ConfigMapNameReference{
+											Name: "new-ca-bundle",
+										},
+									},
+									OIDCClients: []configv1.OIDCClientConfig{
+										{
+											ComponentName:      "console",
+											ComponentNamespace: "openshift-console",
+											ClientID:           "console-client",
+											ClientSecret: configv1.SecretNameReference{
+												Name: "new-console-secret",
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			existingGuestObjects: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "old-ca-bundle",
+						Namespace: ConfigNamespace,
+						Labels:    map[string]string{oidcConfigResourceLabel: "true"},
+					},
+					Data: map[string]string{
+						"ca-bundle.crt": "old-ca-cert",
+					},
+				},
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "old-console-secret",
+						Namespace: ConfigNamespace,
+						Labels:    map[string]string{oidcConfigResourceLabel: "true"},
+					},
+					Data: map[string][]byte{
+						"clientSecret": []byte("old-secret"),
+					},
+				},
+			},
+			inputCPObjects: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "new-ca-bundle",
+						Namespace: testNamespace,
+					},
+					Data: map[string]string{
+						"ca-bundle.crt": "new-ca-certificate",
+					},
+				},
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "new-console-secret",
+						Namespace: testNamespace,
+					},
+					Data: map[string][]byte{
+						"clientSecret": []byte("new-secret-value"),
+					},
+				},
+			},
+			expectIssuerCAConfigMap: true,
+			expectOIDCClientSecrets: []string{"new-console-secret"},
+			expectErrors:            false,
+			expectDeletedConfigMaps: []string{"old-ca-bundle"},
+			expectDeletedSecrets:    []string{"old-console-secret"},
+		},
+		"should not delete resources without the OIDC label": {
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testHCPName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						Authentication: &configv1.AuthenticationSpec{
+							Type: configv1.AuthenticationTypeOIDC,
+						},
+					},
+				},
+			},
+			existingGuestObjects: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "unrelated-configmap",
+						Namespace: ConfigNamespace,
+					},
+					Data: map[string]string{
+						"key": "value",
+					},
+				},
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "unrelated-secret",
+						Namespace: ConfigNamespace,
+					},
+					Data: map[string][]byte{
+						"key": []byte("value"),
+					},
+				},
+			},
+			inputCPObjects:          []client.Object{},
+			expectIssuerCAConfigMap: false,
+			expectOIDCClientSecrets: []string{},
+			expectErrors:            false,
+		},
 		"when OAuth is disabled with multiple OIDC providers, should handle first provider only": {
 			inputHCP: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
@@ -2482,9 +2844,12 @@ func TestReconcileAuthOIDC(t *testing.T) {
 				WithObjects(test.inputCPObjects...).
 				Build()
 
-			hcClient := fake.NewClientBuilder().
-				WithScheme(api.Scheme).
-				Build()
+			hcClientBuilder := fake.NewClientBuilder().
+				WithScheme(api.Scheme)
+			if len(test.existingGuestObjects) > 0 {
+				hcClientBuilder = hcClientBuilder.WithObjects(test.existingGuestObjects...)
+			}
+			hcClient := hcClientBuilder.Build()
 
 			r := &reconciler{
 				client:                 hcClient,
@@ -2519,79 +2884,7 @@ func TestReconcileAuthOIDC(t *testing.T) {
 			}
 
 			err := r.reconcileAuthOIDC(ctx, test.inputHCP)
-
-			if test.expectErrors {
-				g.Expect(err).To(HaveOccurred())
-				errorStr := err.Error()
-				for _, expectedMsg := range test.expectedErrorMessages {
-					g.Expect(errorStr).To(ContainSubstring(expectedMsg))
-				}
-			} else {
-				g.Expect(err).ToNot(HaveOccurred())
-			}
-
-			// Check if issuer CA configmap was copied to openshift-config namespace
-			if test.expectIssuerCAConfigMap {
-				if test.inputHCP.Spec.Configuration != nil &&
-					test.inputHCP.Spec.Configuration.Authentication != nil &&
-					len(test.inputHCP.Spec.Configuration.Authentication.OIDCProviders) > 0 {
-					provider := test.inputHCP.Spec.Configuration.Authentication.OIDCProviders[0]
-					caConfigMap := &corev1.ConfigMap{}
-					err := hcClient.Get(ctx, client.ObjectKey{
-						Namespace: ConfigNamespace,
-						Name:      provider.Issuer.CertificateAuthority.Name,
-					}, caConfigMap)
-					g.Expect(err).ToNot(HaveOccurred())
-					// Get expected CA certificate from the test case input objects
-					expectedCA := ""
-					for _, obj := range test.inputCPObjects {
-						if cm, ok := obj.(*corev1.ConfigMap); ok && cm.Name == provider.Issuer.CertificateAuthority.Name {
-							expectedCA = cm.Data["ca-bundle.crt"]
-							break
-						}
-					}
-					g.Expect(caConfigMap.Data["ca-bundle.crt"]).To(Equal(expectedCA))
-				}
-			}
-
-			// Check if OIDC client secrets were copied to openshift-config namespace
-			for _, secretName := range test.expectOIDCClientSecrets {
-				clientSecret := &corev1.Secret{}
-				err := hcClient.Get(ctx, client.ObjectKey{
-					Namespace: ConfigNamespace,
-					Name:      secretName,
-				}, clientSecret)
-				g.Expect(err).ToNot(HaveOccurred())
-				g.Expect(clientSecret.Data["clientSecret"]).ToNot(BeEmpty())
-			}
-
-			// Verify that unexpected resources were not created
-			if !test.expectIssuerCAConfigMap &&
-				test.inputHCP.Spec.Configuration != nil &&
-				test.inputHCP.Spec.Configuration.Authentication != nil &&
-				len(test.inputHCP.Spec.Configuration.Authentication.OIDCProviders) > 0 {
-				provider := test.inputHCP.Spec.Configuration.Authentication.OIDCProviders[0]
-				if provider.Issuer.CertificateAuthority.Name != "" {
-					caConfigMap := &corev1.ConfigMap{}
-					err := hcClient.Get(ctx, client.ObjectKey{
-						Namespace: ConfigNamespace,
-						Name:      provider.Issuer.CertificateAuthority.Name,
-					}, caConfigMap)
-					g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
-				}
-			}
-			// Verify that no unexpected client secrets were copied
-			secretList := &corev1.SecretList{}
-			err = hcClient.List(ctx, secretList, client.InNamespace(ConfigNamespace))
-			g.Expect(err).ToNot(HaveOccurred())
-
-			expectedSecrets := sets.New(test.expectOIDCClientSecrets...)
-
-			for _, secret := range secretList.Items {
-				if !expectedSecrets.Has(secret.Name) {
-					t.Errorf("unexpected OIDC client secret copied: %s", secret.Name)
-				}
-			}
+			verifyOIDCReconcileResult(t, g, ctx, hcClient, test, err)
 		})
 	}
 }
