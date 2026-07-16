@@ -18,9 +18,7 @@ import (
 )
 
 const (
-	testBinary          = "bin/test-e2e-v2"
-	clusterNS           = "clusters"
-	defaultVerbose      = "false"
+	defaultVerbose       = "false"
 	defaultGinkgoTimeout = "3h"
 )
 
@@ -37,6 +35,11 @@ func main() {
 	artifactDir := requireEnv("ARTIFACT_DIR")
 	releaseImage := os.Getenv("RELEASE_IMAGE_LATEST")
 
+	testBinary := "bin/test-e2e-v2"
+	if binDir := os.Getenv("E2EV2_BIN_DIR"); binDir != "" {
+		testBinary = filepath.Join(binDir, "test-e2e-v2")
+	}
+
 	eventuallyVerbose := os.Getenv("EVENTUALLY_VERBOSE")
 	if eventuallyVerbose == "" {
 		eventuallyVerbose = defaultVerbose
@@ -51,7 +54,22 @@ func main() {
 	// Let the platform set up any env vars it needs for tests.
 	platform.SetupTestEnv(sharedDir)
 
-	matrix := platform.TestMatrix(releaseImage)
+	variants := os.Getenv("HYPERSHIFT_VARIANTS")
+	specs := lifecycle.FilterClusterSpecs(platform.ClusterSpecs(releaseImage, os.Getenv("OCP_IMAGE_N1")), variants)
+	matrix := lifecycle.FilterTestMatrix(platform.TestMatrix(releaseImage), specs)
+
+	// Allow overriding the label filter for all test groups.
+	if override := os.Getenv("GINKGO_LABEL_FILTER"); override != "" {
+		log.Printf("Overriding label filters with GINKGO_LABEL_FILTER=%s", override)
+		for i := range matrix.Parallel {
+			matrix.Parallel[i].LabelFilter = override
+		}
+		for i := range matrix.Sequential {
+			for j := range matrix.Sequential[i].Steps {
+				matrix.Sequential[i].Steps[j].LabelFilter = override
+			}
+		}
+	}
 
 	var (
 		mu      sync.Mutex
@@ -67,7 +85,7 @@ func main() {
 			defer wg.Done()
 			clusterName := readClusterName(sharedDir, g.ClusterFile)
 			log.Printf("Running %s tests against %s...", g.Name, clusterName)
-			err := runTestBinary(clusterName, g.LabelFilter, g.Skip,
+			err := runTestBinary(testBinary, clusterName, g.LabelFilter, g.Skip,
 				filepath.Join(artifactDir, g.JUnitFile), g.ExtraEnv)
 			mu.Lock()
 			results = append(results, testResult{name: g.Name, err: err})
@@ -90,7 +108,7 @@ func main() {
 			for i, step := range sg.Steps {
 				clusterName := readClusterName(sharedDir, step.ClusterFile)
 				log.Printf("Running %s tests against %s...", step.Name, clusterName)
-				err := runTestBinary(clusterName, step.LabelFilter, step.Skip,
+				err := runTestBinary(testBinary, clusterName, step.LabelFilter, step.Skip,
 					filepath.Join(artifactDir, step.JUnitFile), step.ExtraEnv)
 				mu.Lock()
 				results = append(results, testResult{name: step.Name, err: err})
@@ -126,7 +144,7 @@ func main() {
 	log.Println("All test groups passed")
 }
 
-func runTestBinary(clusterName, labelFilter, skip, junitPath string, extraEnv []string) error {
+func runTestBinary(testBinary, clusterName, labelFilter, skip, junitPath string, extraEnv []string) error {
 	ginkgoTimeout := os.Getenv("GINKGO_TIMEOUT")
 	if ginkgoTimeout == "" {
 		ginkgoTimeout = defaultGinkgoTimeout
@@ -146,6 +164,10 @@ func runTestBinary(clusterName, labelFilter, skip, junitPath string, extraEnv []
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
+	clusterNS := os.Getenv("HYPERSHIFT_NAMESPACE")
+	if clusterNS == "" {
+		clusterNS = lifecycle.DefaultNamespace
+	}
 	cmd.Env = append(os.Environ(),
 		fmt.Sprintf("E2E_HOSTED_CLUSTER_NAME=%s", clusterName),
 		fmt.Sprintf("E2E_HOSTED_CLUSTER_NAMESPACE=%s", clusterNS),
