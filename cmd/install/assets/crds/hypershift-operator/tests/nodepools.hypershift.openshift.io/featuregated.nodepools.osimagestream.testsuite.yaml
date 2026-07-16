@@ -186,6 +186,35 @@ tests:
           type: AWS
         osImageStream:
           name: "rhel-10"
+    expected: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: NodePool
+      spec:
+        arch: amd64
+        clusterName: some-cluster
+        management:
+          autoRepair: false
+          upgradeType: Replace
+          replace:
+            strategy: RollingUpdate
+            rollingUpdate:
+              maxSurge: 1
+              maxUnavailable: 0
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
+        replicas: 0
+        platform:
+          aws:
+            instanceProfile: a-profile
+            instanceType: m6a.2xlarge
+            rootVolume:
+              size: 120
+              type: gp3
+            subnet:
+              id: "subnet-any"
+          type: AWS
+        osImageStream:
+          name: "rhel-10"
 
   - name: When removing osImageStream from an existing NodePool it should fail
     initial: |
@@ -268,6 +297,35 @@ tests:
         management:
           autoRepair: false
           upgradeType: Replace
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
+        replicas: 0
+        platform:
+          aws:
+            instanceProfile: a-profile
+            instanceType: m6a.2xlarge
+            rootVolume:
+              size: 120
+              type: gp3
+            subnet:
+              id: "subnet-any"
+          type: AWS
+        osImageStream:
+          name: "rhel-10"
+    expected: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: NodePool
+      spec:
+        arch: amd64
+        clusterName: some-cluster
+        management:
+          autoRepair: false
+          upgradeType: Replace
+          replace:
+            strategy: RollingUpdate
+            rollingUpdate:
+              maxSurge: 1
+              maxUnavailable: 0
         release:
           image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
         replicas: 0

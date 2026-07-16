@@ -398,7 +398,20 @@ func generateOnUpdateTable(onUpdateTests []OnUpdateTestSpec, crdFileName string)
 		expectedStatusError string
 	}
 
+	validateOnUpdateTableInput := func(in onUpdateTableInput) {
+		boolToInt := func(b bool) int {
+			if b {
+				return 1
+			}
+			return 0
+		}
+		// Exactly one of the "expected" fields should be non-empty.
+		Expect(boolToInt(len(in.expected) > 0)+boolToInt(in.expectedError != "")+boolToInt(in.expectedStatusError != "")).To(Equal(1), "exactly one of the 'expected', 'expectedError', or 'expectedStatusError' fields should be non-empty")
+	}
+
 	var assertOnUpdate interface{} = func(in onUpdateTableInput) {
+		validateOnUpdateTableInput(in)
+
 		var originalCRDObjectKey client.ObjectKey
 		var originalCRDSpec apiextensionsv1.CustomResourceDefinitionSpec
 

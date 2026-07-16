@@ -100,6 +100,20 @@ tests:
           {{.Name}}:{{if .IsMap}}
             {{.Value}}{{else}} {{.Value}}{{end}}
 {{- end}}
+    expected: |
+      apiVersion: karpenter.hypershift.openshift.io/v1
+      kind: OpenshiftEC2NodeClass
+      spec:
+        subnetSelectorTerms:
+        - tags:
+            env: test
+        securityGroupSelectorTerms:
+        - id: sg-0123456789abcdef0
+        kubelet:
+{{- range .Fields}}
+          {{.Name}}:{{if .IsMap}}
+            {{.Value}}{{else}} {{.Value}}{{end}}
+{{- end}}
 `
 
 type field struct {

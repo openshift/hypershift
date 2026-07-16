@@ -609,3 +609,87 @@ tests:
           servicePublishingStrategy:
             type: Route
             route: {}
+    expected: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        capabilities: {}
+        controllerAvailabilityPolicy: HighlyAvailable
+        dns:
+          baseDomain: example.com
+        etcd:
+          managed:
+            storage:
+              persistentVolume:
+                size: 8Gi
+              type: PersistentVolume
+          managementType: Managed
+        infrastructureAvailabilityPolicy: SingleReplica
+        issuerURL: https://kubernetes.default.svc
+        networking:
+          clusterNetwork:
+          - cidr: 10.132.0.0/14
+          networkType: OVNKubernetes
+          serviceNetwork:
+          - cidr: 172.31.0.0/16
+        olmCatalogPlacement: management
+        platform:
+          azure:
+            azureAuthenticationConfig:
+              azureAuthenticationConfigType: WorkloadIdentities
+              workloadIdentities:
+                cloudProvider:
+                  clientID: 11111111-1111-1111-1111-111111111111
+                disk:
+                  clientID: 11111111-1111-1111-1111-111111111111
+                file:
+                  clientID: 11111111-1111-1111-1111-111111111111
+                imageRegistry:
+                  clientID: 11111111-1111-1111-1111-111111111111
+                ingress:
+                  clientID: 11111111-1111-1111-1111-111111111111
+                network:
+                  clientID: 11111111-1111-1111-1111-111111111111
+                nodePoolManagement:
+                  clientID: 11111111-1111-1111-1111-111111111111
+            cloud: AzurePublicCloud
+            location: eastus
+            resourceGroup: default
+            securityGroupID: /subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg
+            subnetID: /subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet
+            subscriptionID: 12345678-1234-5678-9012-123456789012
+            tenantID: 87654321-4321-8765-2109-876543210987
+            vnetID: /subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet
+          type: Azure
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          kms:
+            azure:
+              activeKey:
+                keyName: test-key
+                keyVaultName: test-vault
+                keyVersion: '2'
+              workloadIdentity:
+                clientID: 22222222-2222-2222-2222-222222222222
+            provider: Azure
+          type: kms
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        - service: OAuthServer
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        - service: Konnectivity
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        - service: Ignition
+          servicePublishingStrategy:
+            route: {}
+            type: Route
