@@ -16,6 +16,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
+	"github.com/openshift/hypershift/support/util"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -1105,11 +1106,12 @@ func TestWriteCloudProviderConfig(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name          string
-		cloudProvider hyperv1.PlatformType
-		objects       []client.Object
-		expectFile    bool
-		expectError   string
+		name            string
+		cloudProvider   hyperv1.PlatformType
+		objects         []client.Object
+		cloudConfigHash string
+		expectFile      bool
+		expectError     string
 	}{
 		{
 			name:          "When cloud provider is AWS, it should return nil without writing any file",
@@ -1149,6 +1151,30 @@ func TestWriteCloudProviderConfig(t *testing.T) {
 			objects:       []client.Object{},
 			expectError:   "failed to get cloud provider configmap",
 		},
+		{
+			name:          "When cloud provider is Azure and hash matches, it should write cloud config file",
+			cloudProvider: hyperv1.AzurePlatform,
+			objects: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{Name: "azure-cloud-config", Namespace: "test-ns"},
+					Data:       map[string]string{"cloud.conf": "azure-config-data"},
+				},
+			},
+			cloudConfigHash: util.HashConfigMapData(map[string]string{"cloud.conf": "azure-config-data"}),
+			expectFile:      true,
+		},
+		{
+			name:          "When cloud provider is Azure and hash does not match, it should return an error",
+			cloudProvider: hyperv1.AzurePlatform,
+			objects: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{Name: "azure-cloud-config", Namespace: "test-ns"},
+					Data:       map[string]string{"cloud.conf": "azure-config-data"},
+				},
+			},
+			cloudConfigHash: "wrong-hash",
+			expectError:     "hash mismatch",
+		},
 	}
 
 	for _, tt := range tests {
@@ -1165,7 +1191,7 @@ func TestWriteCloudProviderConfig(t *testing.T) {
 				CloudProvider: tt.cloudProvider,
 			}
 
-			err := provider.writeCloudProviderConfig(t.Context(), mcoDir)
+			err := provider.writeCloudProviderConfig(t.Context(), mcoDir, tt.cloudConfigHash)
 			if tt.expectError != "" {
 				g.Expect(err).To(HaveOccurred())
 				g.Expect(err.Error()).To(ContainSubstring(tt.expectError))
