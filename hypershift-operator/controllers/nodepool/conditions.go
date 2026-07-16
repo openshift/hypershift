@@ -157,22 +157,12 @@ func generateReconciliationActiveCondition(pausedUntilField *string, objectGener
 	}
 }
 
-func (r *NodePoolReconciler) platformConditions(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster) (*ctrl.Result, error) {
-	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
-	releaseImage, err := r.getReleaseImage(ctx, hcluster, nodePool.Status.Version, nodePool.Spec.Release.Image)
-	if err != nil {
-		return &ctrl.Result{}, fmt.Errorf("failed to look up release image metadata: %w", err)
-	}
-
+func (r *NodePoolReconciler) platformConditions(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string, releaseImage *releaseinfo.ReleaseImage) error {
 	if err := r.setValidPlatformImageCondition(ctx, nodePool, hcluster, controlPlaneNamespace, releaseImage); err != nil {
-		return &ctrl.Result{}, err
+		return err
 	}
 
-	if err := r.setPlatformSpecificConditions(nodePool, hcluster); err != nil {
-		return &ctrl.Result{}, err
-	}
-
-	return nil, nil
+	return r.setPlatformSpecificConditions(nodePool, hcluster)
 }
 
 // setValidPlatformImageCondition handles the NodePoolValidPlatformImageType condition common across all platforms.
@@ -185,7 +175,7 @@ func (r *NodePoolReconciler) setValidPlatformImageCondition(ctx context.Context,
 	case hyperv1.PowerVSPlatform:
 		return r.setPowerVSValidPlatformImage(ctx, nodePool, hcluster, controlPlaneNamespace, releaseImage)
 	case hyperv1.OpenStackPlatform:
-		return r.setOpenStackValidPlatformImage(ctx, nodePool, hcluster, controlPlaneNamespace, releaseImage)
+		return r.setOpenStackValidPlatformImage(ctx, nodePool, hcluster, releaseImage)
 	default:
 		return nil
 	}
