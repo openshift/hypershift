@@ -186,7 +186,7 @@ spec:
           print(f"Informing jobs: {informing}", flush=True)
 
           env_overrides = {
-              "OVERRIDE_IMAGE_HYPERSHIFT_OPERATOR": ho_image,
+              "MULTISTAGE_PARAM_OVERRIDE_OVERRIDE_HYPERSHIFT_OPERATOR_IMAGE": ho_image,
               "OVERRIDE_IMAGE_HYPERSHIFT_TESTS": "registry.ci.openshift.org/hypershift/hypershift-tests:latest"
           }
 
