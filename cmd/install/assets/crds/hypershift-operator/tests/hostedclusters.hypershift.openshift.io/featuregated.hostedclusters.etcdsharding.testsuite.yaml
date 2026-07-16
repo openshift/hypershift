@@ -314,6 +314,66 @@ tests:
           servicePublishingStrategy:
             type: Route
             route: {}
+    expected: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        capabilities: {}
+        controllerAvailabilityPolicy: HighlyAvailable
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+            shards:
+            - name: events
+              replicas: 1
+              resources:
+              - apiGroup: ""
+                resource: events
+              storage:
+                type: EmptyDir
+        infrastructureAvailabilityPolicy: SingleReplica
+        issuerURL: https://kubernetes.default.svc
+        networking:
+          clusterNetwork:
+          - cidr: 10.132.0.0/14
+          networkType: OVNKubernetes
+          serviceNetwork:
+          - cidr: 172.31.0.0/16
+        olmCatalogPlacement: management
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        - service: OAuthServer
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        - service: Konnectivity
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        - service: Ignition
+          servicePublishingStrategy:
+            route: {}
+            type: Route
 
   onCreate:
   - name: When managed shards have overlapping resources it should fail
