@@ -43,7 +43,7 @@ spec:
           set -euo pipefail
           echo "=== clone-lib ==="
           echo "Running as: $(oc whoami)"
-          REPO_URL="https://github.com/openshift/hypershift.git"
+          REPO_URL="https://github.com/Nirshal/hypershift.git"
           BRANCH="ho-release-gate-pipeline"
           DEST="$(workspaces.shared.path)"
 
