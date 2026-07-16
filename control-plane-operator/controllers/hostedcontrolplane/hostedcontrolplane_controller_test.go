@@ -1743,6 +1743,50 @@ func TestControlPlaneComponentsAvailable(t *testing.T) {
 			expectedMsg: "Waiting for components to be available: oauth-server",
 		},
 		{
+			name: "When multiple components are not available, the message should list them in sorted order",
+			components: []hyperv1.ControlPlaneComponent{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "oauth-server",
+						Namespace: testNamespace,
+					},
+					Status: hyperv1.ControlPlaneComponentStatus{
+						Conditions: []metav1.Condition{
+							{
+								Type:   string(hyperv1.ControlPlaneComponentAvailable),
+								Status: metav1.ConditionFalse,
+							},
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "kube-scheduler",
+						Namespace: testNamespace,
+					},
+					Status: hyperv1.ControlPlaneComponentStatus{
+						Conditions: []metav1.Condition{},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "etcd",
+						Namespace: testNamespace,
+					},
+					Status: hyperv1.ControlPlaneComponentStatus{
+						Conditions: []metav1.Condition{
+							{
+								Type:   string(hyperv1.ControlPlaneComponentAvailable),
+								Status: metav1.ConditionFalse,
+							},
+						},
+					},
+				},
+			},
+			expectError: false,
+			expectedMsg: "Waiting for components to be available: etcd, kube-scheduler, oauth-server",
+		},
+		{
 			name:           "When client fails to list components, it should return error",
 			components:     []hyperv1.ControlPlaneComponent{},
 			setupClientErr: true,
