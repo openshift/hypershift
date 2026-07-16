@@ -19,6 +19,7 @@ import (
 )
 
 func TestGetRHELStreamForBootImage(t *testing.T) {
+	t.Parallel()
 	testCases := []struct {
 		name           string
 		nodePool       *hyperv1.NodePool
@@ -246,6 +247,7 @@ func TestGetRHELStreamForBootImage(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			g := NewWithT(t)
 
 			objs := make([]client.Object, 0, len(tc.configs))
@@ -265,6 +267,7 @@ func TestGetRHELStreamForBootImage(t *testing.T) {
 }
 
 func TestValidateOSImageStream(t *testing.T) {
+	t.Parallel()
 	testCases := []struct {
 		name         string
 		nodePool     *hyperv1.NodePool
@@ -374,6 +377,7 @@ func TestValidateOSImageStream(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			g := NewWithT(t)
 
 			objs := make([]client.Object, 0, len(tc.configs))

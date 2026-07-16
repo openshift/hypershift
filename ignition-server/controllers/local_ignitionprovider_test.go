@@ -24,6 +24,7 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	sigs_yaml "sigs.k8s.io/yaml"
 
 	"github.com/blang/semver"
 )
@@ -1333,6 +1334,66 @@ func TestWriteInitialFilesMultipleConfigEntries(t *testing.T) {
 		_, err = os.Stat(filepath.Join(dirs.configDir, "configuration-hash"))
 		g.Expect(os.IsNotExist(err)).To(BeTrue())
 	})
+}
+
+func TestWriteOSImageStreamManifest(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name                  string
+		osStream              string
+		expectedAPIVersion    string
+		expectedKind          string
+		expectedName          string
+		expectedDefaultStream string
+	}{
+		{
+			name:                  "When osStream is rhel-10 it should write a valid OSImageStream CR with defaultStream rhel-10",
+			osStream:              "rhel-10",
+			expectedAPIVersion:    "machineconfiguration.openshift.io/v1alpha1",
+			expectedKind:          "OSImageStream",
+			expectedName:          "cluster",
+			expectedDefaultStream: "rhel-10",
+		},
+		{
+			name:                  "When osStream is rhel-9 it should write a valid OSImageStream CR with defaultStream rhel-9",
+			osStream:              "rhel-9",
+			expectedAPIVersion:    "machineconfiguration.openshift.io/v1alpha1",
+			expectedKind:          "OSImageStream",
+			expectedName:          "cluster",
+			expectedDefaultStream: "rhel-9",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			mccDir := t.TempDir()
+			err := writeOSImageStreamManifest(mccDir, tt.osStream)
+			g.Expect(err).NotTo(HaveOccurred())
+
+			content, err := os.ReadFile(filepath.Join(mccDir, "99_osimagestream.yaml"))
+			g.Expect(err).NotTo(HaveOccurred())
+
+			// Parse the YAML to verify structure.
+			var obj map[string]any
+			err = sigs_yaml.Unmarshal(content, &obj)
+			g.Expect(err).NotTo(HaveOccurred())
+
+			g.Expect(obj["apiVersion"]).To(Equal(tt.expectedAPIVersion))
+			g.Expect(obj["kind"]).To(Equal(tt.expectedKind))
+
+			metadata, ok := obj["metadata"].(map[string]any)
+			g.Expect(ok).To(BeTrue())
+			g.Expect(metadata["name"]).To(Equal(tt.expectedName))
+
+			spec, ok := obj["spec"].(map[string]any)
+			g.Expect(ok).To(BeTrue())
+			g.Expect(spec["defaultStream"]).To(Equal(tt.expectedDefaultStream))
+		})
+	}
 }
 
 func TestCopyMCOOutputToMCCMixedContent(t *testing.T) {
