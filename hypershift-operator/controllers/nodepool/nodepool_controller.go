@@ -565,6 +565,9 @@ func (r *NodePoolReconciler) delete(ctx context.Context, nodePool *hyperv1.NodeP
 	}
 
 	// Delete any ConfigMap belonging to this NodePool i.e. TunedConfig ConfigMaps.
+	// NOTE: HCCO's reconcileKubeletConfig infers NodePool liveness from the
+	// presence of CMs in this namespace. This cleanup must complete before
+	// the finalizer is removed.
 	err = r.DeleteAllOf(ctx, &corev1.ConfigMap{},
 		client.InNamespace(controlPlaneNamespace),
 		client.MatchingLabels{nodePoolAnnotation: nodePool.GetName()},
