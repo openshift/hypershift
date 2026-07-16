@@ -173,7 +173,7 @@ func TestInPlaceUpgradeComplete(t *testing.T) {
 			currentConfig: currentConfigHash,
 			desiredConfig: currentConfigHash,
 			nodes: []*corev1.Node{
-				&corev1.Node{
+				{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:        "node1",
 						Annotations: map[string]string{},
@@ -187,7 +187,7 @@ func TestInPlaceUpgradeComplete(t *testing.T) {
 			currentConfig: currentConfigHash,
 			desiredConfig: desiredConfigHash,
 			nodes: []*corev1.Node{
-				&corev1.Node{
+				{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:        "node1",
 						Annotations: map[string]string{},
@@ -201,13 +201,13 @@ func TestInPlaceUpgradeComplete(t *testing.T) {
 			currentConfig: currentConfigHash,
 			desiredConfig: desiredConfigHash,
 			nodes: []*corev1.Node{
-				&corev1.Node{
+				{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:        "node1",
 						Annotations: map[string]string{},
 					},
 				},
-				&corev1.Node{
+				{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "node2",
 						Annotations: map[string]string{
@@ -223,7 +223,7 @@ func TestInPlaceUpgradeComplete(t *testing.T) {
 			currentConfig: currentConfigHash,
 			desiredConfig: desiredConfigHash,
 			nodes: []*corev1.Node{
-				&corev1.Node{
+				{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "node1",
 						Annotations: map[string]string{
@@ -232,7 +232,7 @@ func TestInPlaceUpgradeComplete(t *testing.T) {
 						},
 					},
 				},
-				&corev1.Node{
+				{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "node2",
 						Annotations: map[string]string{
@@ -251,7 +251,7 @@ func TestInPlaceUpgradeComplete(t *testing.T) {
 			currentConfig: currentConfigHash,
 			desiredConfig: desiredConfigHash,
 			nodes: []*corev1.Node{
-				&corev1.Node{
+				{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "node1",
 						Annotations: map[string]string{
@@ -263,7 +263,7 @@ func TestInPlaceUpgradeComplete(t *testing.T) {
 						},
 					},
 				},
-				&corev1.Node{
+				{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "node2",
 						Annotations: map[string]string{
@@ -631,7 +631,7 @@ func TestReconcileUpgradePods(t *testing.T) {
 			existingPod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: namespace.Name,
-					Name:      "machine-config-daemon-node1",
+					Name:      fmt.Sprintf(machineConfigDaemonPodNameFormat, "node1"),
 				},
 				Status: corev1.PodStatus{
 					Phase: corev1.PodSucceeded,
@@ -653,7 +653,7 @@ func TestReconcileUpgradePods(t *testing.T) {
 			existingPod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: namespace.Name,
-					Name:      "machine-config-daemon-node1",
+					Name:      fmt.Sprintf(machineConfigDaemonPodNameFormat, "node1"),
 				},
 				Status: corev1.PodStatus{
 					Phase: corev1.PodFailed,
@@ -675,7 +675,7 @@ func TestReconcileUpgradePods(t *testing.T) {
 			existingPod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: namespace.Name,
-					Name:      "machine-config-daemon-node1",
+					Name:      fmt.Sprintf(machineConfigDaemonPodNameFormat, "node1"),
 				},
 				Status: corev1.PodStatus{
 					Phase: corev1.PodRunning,
@@ -711,7 +711,7 @@ func TestReconcileUpgradePods(t *testing.T) {
 			existingPod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace:         namespace.Name,
-					Name:              "machine-config-daemon-node1",
+					Name:              fmt.Sprintf(machineConfigDaemonPodNameFormat, "node1"),
 					DeletionTimestamp: &metav1.Time{Time: time.Now()},
 					Finalizers:        []string{"test-finalizer"},
 				},
@@ -738,7 +738,7 @@ func TestReconcileUpgradePods(t *testing.T) {
 			existingPod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: namespace.Name,
-					Name:      "machine-config-daemon-node1",
+					Name:      fmt.Sprintf(machineConfigDaemonPodNameFormat, "node1"),
 				},
 				Status: corev1.PodStatus{
 					Phase: corev1.PodSucceeded,
@@ -760,7 +760,7 @@ func TestReconcileUpgradePods(t *testing.T) {
 			existingPod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: namespace.Name,
-					Name:      "machine-config-daemon-node1",
+					Name:      fmt.Sprintf(machineConfigDaemonPodNameFormat, "node1"),
 				},
 				Status: corev1.PodStatus{
 					Phase: corev1.PodPending,
@@ -785,7 +785,7 @@ func TestReconcileUpgradePods(t *testing.T) {
 			existingPod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: namespace.Name,
-					Name:      "machine-config-daemon-node1",
+					Name:      fmt.Sprintf(machineConfigDaemonPodNameFormat, "node1"),
 				},
 				Status: corev1.PodStatus{
 					Phase: corev1.PodFailed,
@@ -1266,7 +1266,7 @@ func TestReconcileUpgradePodsReturnsErrorWhenDeleteFails(t *testing.T) {
 	existingPod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace.Name,
-			Name:      "machine-config-daemon-node1",
+			Name:      fmt.Sprintf(machineConfigDaemonPodNameFormat, "node1"),
 		},
 		Status: corev1.PodStatus{
 			Phase: corev1.PodFailed,
@@ -1326,7 +1326,7 @@ func TestReconcileUpgradePodsMultiNodeMixedStates(t *testing.T) {
 	terminatedPod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace.Name,
-			Name:      "machine-config-daemon-node1",
+			Name:      fmt.Sprintf(machineConfigDaemonPodNameFormat, "node1"),
 		},
 		Status: corev1.PodStatus{
 			Phase: corev1.PodFailed,
@@ -1335,7 +1335,7 @@ func TestReconcileUpgradePodsMultiNodeMixedStates(t *testing.T) {
 	runningPod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace.Name,
-			Name:      "machine-config-daemon-node2",
+			Name:      fmt.Sprintf(machineConfigDaemonPodNameFormat, "node2"),
 		},
 		Status: corev1.PodStatus{
 			Phase: corev1.PodRunning,
@@ -1384,7 +1384,7 @@ func TestReconcileUpgradePodsDeleteNotFoundContinues(t *testing.T) {
 	existingPod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace.Name,
-			Name:      "machine-config-daemon-node1",
+			Name:      fmt.Sprintf(machineConfigDaemonPodNameFormat, "node1"),
 		},
 		Status: corev1.PodStatus{
 			Phase: corev1.PodFailed,
