@@ -937,21 +937,11 @@ func (o *CreateIAMOptions) CreateOIDCResources(ctx context.Context, iamClient aw
 		ingressRoleName := output.Roles.IngressARN[strings.LastIndex(output.Roles.IngressARN, "/")+1:]
 
 		// Cloud Controller Manager's (CCM) managed policy needs to be updated on ROSA to allow new permissions downstream controllers to work.
-		// The permissions are:
-		// - elasticloadbalancing:DescribeTargetGroupAttributes
-		// - elasticloadbalancing:ModifyTargetGroupAttributes
-		// - elasticloadbalancing:SetSecurityGroups
-		//
-		// https://issues.redhat.com/browse/OCPBUGS-65885
-		//
 		// This inline policy must be removed when the following issue is resolved:
-		// https://issues.redhat.com/browse/SREP-2895
-		// https://redhat-internal.slack.com/archives/C03SZLX3A10/p1765396356482459
+		// elasticloadbalancing:SetSecurityGroups: https://redhat.atlassian.net/browse/SPLAT-2742
 		ccmPolicyStatement := `{
 				"Effect": "Allow",
 				"Action": [
-					"elasticloadbalancing:DescribeTargetGroupAttributes",
-					"elasticloadbalancing:ModifyTargetGroupAttributes",
 					"elasticloadbalancing:SetSecurityGroups"
 				],
 				"Resource": "*"
