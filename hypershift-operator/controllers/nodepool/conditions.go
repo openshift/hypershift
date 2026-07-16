@@ -157,18 +157,45 @@ func generateReconciliationActiveCondition(pausedUntilField *string, objectGener
 	}
 }
 
-// setPlatformConditions is a hook for platforms to implement custom logic/conditions freely
-// TODO: refactor signature to be inline with the rest of condition setters, and move common conditions like NodePoolValidPlatformImageType to a separate function.
-func (r *NodePoolReconciler) setPlatformConditions(ctx context.Context, hcluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool, controlPlaneNamespace string, releaseImage *releaseinfo.ReleaseImage) error {
+func (r *NodePoolReconciler) platformConditions(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster) (*ctrl.Result, error) {
+	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
+	releaseImage, err := r.getReleaseImage(ctx, hcluster, nodePool.Status.Version, nodePool.Spec.Release.Image)
+	if err != nil {
+		return &ctrl.Result{}, fmt.Errorf("failed to look up release image metadata: %w", err)
+	}
+
+	if err := r.setValidPlatformImageCondition(ctx, nodePool, hcluster, controlPlaneNamespace, releaseImage); err != nil {
+		return &ctrl.Result{}, err
+	}
+
+	if err := r.setPlatformSpecificConditions(nodePool, hcluster); err != nil {
+		return &ctrl.Result{}, err
+	}
+
+	return nil, nil
+}
+
+// setValidPlatformImageCondition handles the NodePoolValidPlatformImageType condition common across all platforms.
+func (r *NodePoolReconciler) setValidPlatformImageCondition(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string, releaseImage *releaseinfo.ReleaseImage) error {
 	switch nodePool.Spec.Platform.Type {
 	case hyperv1.KubevirtPlatform:
-		return r.setKubevirtConditions(ctx, nodePool, hcluster, controlPlaneNamespace, releaseImage)
+		return r.setKubevirtValidPlatformImage(ctx, nodePool, hcluster, controlPlaneNamespace, releaseImage)
 	case hyperv1.AWSPlatform:
-		return r.setAWSConditions(ctx, nodePool, hcluster, controlPlaneNamespace, releaseImage)
+		return r.setAWSValidPlatformImage(nodePool, hcluster, releaseImage)
 	case hyperv1.PowerVSPlatform:
-		return r.setPowerVSconditions(ctx, nodePool, hcluster, controlPlaneNamespace, releaseImage)
+		return r.setPowerVSValidPlatformImage(ctx, nodePool, hcluster, controlPlaneNamespace, releaseImage)
 	case hyperv1.OpenStackPlatform:
-		return r.setOpenStackConditions(ctx, nodePool, hcluster, controlPlaneNamespace, releaseImage)
+		return r.setOpenStackValidPlatformImage(ctx, nodePool, hcluster, controlPlaneNamespace, releaseImage)
+	default:
+		return nil
+	}
+}
+
+// setPlatformSpecificConditions handles conditions unique to specific platforms.
+func (r *NodePoolReconciler) setPlatformSpecificConditions(nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster) error {
+	switch nodePool.Spec.Platform.Type {
+	case hyperv1.AWSPlatform:
+		return r.setAWSSecurityGroupCondition(nodePool, hcluster)
 	default:
 		return nil
 	}

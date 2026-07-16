@@ -359,8 +359,13 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		return ctrl.Result{}, fmt.Errorf("failed to look up release image metadata: %w", err)
 	}
 
-	if err := r.setPlatformConditions(ctx, hcluster, nodePool, controlPlaneNamespace, releaseImage); err != nil {
+	if result, err := r.platformConditions(ctx, nodePool, hcluster); err != nil {
+		if result != nil {
+			return *result, err
+		}
 		return ctrl.Result{}, err
+	} else if result != nil {
+		return *result, nil
 	}
 
 	if hcluster.Status.KubeConfig == nil {

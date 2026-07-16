@@ -49,7 +49,7 @@ func (c *CAPI) openstackMachineTemplate(templateNameGenerator func(spec any) (st
 
 	return template, nil
 }
-func (r *NodePoolReconciler) setOpenStackConditions(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, _ string, releaseImage *releaseinfo.ReleaseImage) error {
+func (r *NodePoolReconciler) setOpenStackValidPlatformImage(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, _ string, releaseImage *releaseinfo.ReleaseImage) error {
 	// TODO(CNTRLPLANE-3553): hardcode to rhel-9 until the MCO can install
 	// rhel-10 OS images. Use getRHELStreamForBootImage once MCO support lands.
 	rhelStream := StreamRHEL9

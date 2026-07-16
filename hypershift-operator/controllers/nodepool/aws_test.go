@@ -1165,7 +1165,7 @@ func TestSetAWSConditions(t *testing.T) {
 			expectedCondValue: corev1.ConditionFalse,
 		},
 		// TODO(CNTRLPLANE-3553): re-enable once getRHELStreamForBootImage is
-		// wired back into setAWSConditions after MCO rhel-10 support lands.
+		// wired back into setAWSValidPlatformImage after MCO rhel-10 support lands.
 		// Currently the stream is hardcoded to rhel-9 so this validation
 		// path is not exercised.
 		// {
@@ -1196,7 +1196,7 @@ func TestSetAWSConditions(t *testing.T) {
 			g := NewWithT(t)
 
 			r := &NodePoolReconciler{}
-			err := r.setAWSConditions(t.Context(), tc.nodePool, tc.hostedCluster, "", tc.releaseImage)
+			err := r.setAWSValidPlatformImage(tc.nodePool, tc.hostedCluster, tc.releaseImage)
 			if tc.expectError {
 				g.Expect(err).To(HaveOccurred())
 			} else {

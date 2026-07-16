@@ -32,7 +32,7 @@ func (r *NodePoolReconciler) addKubeVirtCacheNameToStatus(kubevirtBootImage kube
 	}
 }
 
-func (r *NodePoolReconciler) setKubevirtConditions(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string, releaseImage *releaseinfo.ReleaseImage) error {
+func (r *NodePoolReconciler) setKubevirtValidPlatformImage(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string, releaseImage *releaseinfo.ReleaseImage) error {
 	// moved KubeVirt specific handling up here, so the caching of the boot image will start as early as possible
 	// in order to actually save time. Caching form the original location will take more time, because the VMs can't
 	// be created before the caching is 100% done. But moving this logic here, the caching will be done in parallel
