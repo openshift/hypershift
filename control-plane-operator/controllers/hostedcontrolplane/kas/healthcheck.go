@@ -2,6 +2,7 @@ package kas
 
 import (
 	"fmt"
+	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
@@ -14,8 +15,20 @@ import (
 
 // GetHealthcheckEndpoint determines the appropriate endpoint and port for healthcheck based on the route and configuration
 func GetHealthcheckEndpointForRoute(externalRoute *routev1.Route, hcp *hyperv1.HostedControlPlane) (endpoint string, port int, err error) {
-	if len(externalRoute.Status.Ingress) == 0 || externalRoute.Status.Ingress[0].RouterCanonicalHostname == "" {
-		return "", 0, fmt.Errorf("APIServer external route not admitted")
+	statusWriter := externalRoute.Annotations[netutil.RouteStatusWriterAnnotation]
+	if statusWriter == "" {
+		statusWriter = "(none)"
+	}
+	if len(externalRoute.Status.Ingress) == 0 {
+		return "", 0, fmt.Errorf("APIServer external route %s/%s (host: %s) not admitted: route has no ingress status; last status writer: %s",
+			externalRoute.Namespace, externalRoute.Name, externalRoute.Spec.Host,
+			statusWriter)
+	}
+	if externalRoute.Status.Ingress[0].RouterCanonicalHostname == "" {
+		return "", 0, fmt.Errorf("APIServer external route %s/%s (host: %s) not admitted: %s; last status writer: %s",
+			externalRoute.Namespace, externalRoute.Name, externalRoute.Spec.Host,
+			routeIngressDiagnostic(externalRoute.Status.Ingress[0]),
+			statusWriter)
 	}
 
 	endpoint = externalRoute.Status.Ingress[0].RouterCanonicalHostname
@@ -35,4 +48,23 @@ func GetHealthcheckEndpointForRoute(externalRoute *routev1.Route, hcp *hyperv1.H
 	}
 
 	return endpoint, port, nil
+}
+
+// routeIngressDiagnostic produces a human-readable summary of a RouteIngress
+// entry that has been populated but lacks a RouterCanonicalHostname.
+func routeIngressDiagnostic(ingress routev1.RouteIngress) string {
+	parts := []string{
+		fmt.Sprintf("router %q has not set a canonical hostname", ingress.RouterName),
+	}
+	for _, cond := range ingress.Conditions {
+		detail := fmt.Sprintf("%s=%s", cond.Type, cond.Status)
+		if cond.Reason != "" {
+			detail += fmt.Sprintf(" reason=%s", cond.Reason)
+		}
+		if cond.Message != "" {
+			detail += fmt.Sprintf(" message=%q", cond.Message)
+		}
+		parts = append(parts, detail)
+	}
+	return strings.Join(parts, "; ")
 }

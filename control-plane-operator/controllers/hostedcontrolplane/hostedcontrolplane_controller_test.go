@@ -4459,12 +4459,24 @@ func TestHealthCheckKASEndpoint(t *testing.T) {
 			},
 		},
 		{
-			name: "When endpoint returns 503, it should return an unhealthy error",
+			name: "When endpoint returns 503, it should return an unhealthy error with status code",
 			handler: func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusServiceUnavailable)
 			},
 			wantErr:   true,
-			errSubstr: "is not healthy",
+			errSubstr: "is not healthy (status 503)",
+		},
+		{
+			name: "When endpoint returns 503 with failing checks, it should include check names",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				fmt.Fprintln(w, "[+]ping ok")
+				fmt.Fprintln(w, "[-]etcd failed: reason withheld")
+				fmt.Fprintln(w, "[-]kms-provider-0 failed: reason withheld")
+				fmt.Fprintln(w, "healthz check failed")
+			},
+			wantErr:   true,
+			errSubstr: "failing health checks: etcd, kms-provider-0",
 		},
 		{
 			name: "When context is canceled, it should return an error",

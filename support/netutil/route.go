@@ -17,6 +17,12 @@ import (
 const HCPRouteLabel = "hypershift.openshift.io/hosted-control-plane"
 const InternalRouteLabel = "hypershift.openshift.io/internal-route"
 
+// RouteStatusWriterAnnotation identifies which controller last wrote a route's
+// Status.Ingress. Both the shared ingress controller and the CPO's HCP router
+// use RouterName "router", making their writes indistinguishable from the route
+// object alone. This annotation resolves that ambiguity for diagnosis.
+const RouteStatusWriterAnnotation = "hypershift.openshift.io/route-status-writer"
+
 // RemoveLabelMarker is a sentinel value that can be set on a label to indicate
 // that the label should be removed during metadata preservation in ApplyManifest.
 // This allows adapt functions to explicitly request label removal even when using

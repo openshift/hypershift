@@ -1,11 +1,13 @@
 package hostedcontrolplane
 
 import (
+	"bufio"
 	"context"
 	crand "crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math/big"
 	"net/http"
 	"os"
@@ -978,9 +980,16 @@ func (r *HostedControlPlaneReconciler) healthCheckKASLoadBalancers(ctx context.C
 		if err := r.Get(ctx, client.ObjectKeyFromObject(svc), svc); err != nil {
 			return fmt.Errorf("failed to get kube apiserver service: %w", err)
 		}
-		if len(svc.Status.LoadBalancer.Ingress) == 0 ||
-			svc.Status.LoadBalancer.Ingress[0].Hostname == "" && svc.Status.LoadBalancer.Ingress[0].IP == "" {
-			return fmt.Errorf("APIServer load balancer is not provisioned")
+		if len(svc.Status.LoadBalancer.Ingress) == 0 {
+			msg, err := k8sutil.CollectLBMessageIfNotProvisioned(svc, events.NewMessageCollector(ctx, r.Client))
+			if err != nil {
+				return fmt.Errorf("%s; additionally: %w", msg, err)
+			}
+			return fmt.Errorf("%s", msg)
+		}
+		if svc.Status.LoadBalancer.Ingress[0].Hostname == "" && svc.Status.LoadBalancer.Ingress[0].IP == "" {
+			return fmt.Errorf("APIServer load balancer %s/%s has ingress entry with no hostname or IP",
+				svc.Namespace, svc.Name)
 		}
 		LBIngress := svc.Status.LoadBalancer.Ingress[0]
 		ingressPoint := ""
@@ -995,7 +1004,7 @@ func (r *HostedControlPlaneReconciler) healthCheckKASLoadBalancers(ctx context.C
 }
 
 func healthCheckKASEndpoint(ctx context.Context, ingressPoint string, port int) error {
-	healthEndpoint := fmt.Sprintf("https://%s:%d/healthz", ingressPoint, port)
+	healthEndpoint := fmt.Sprintf("https://%s:%d/healthz?verbose", ingressPoint, port)
 
 	httpClient := util.InsecureHTTPClient()
 	httpClient.Timeout = 10 * time.Second
@@ -1005,14 +1014,41 @@ func healthCheckKASEndpoint(ctx context.Context, ingressPoint string, port int) 
 	}
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return err
+		return fmt.Errorf("health check to APIServer endpoint %s failed: %w", ingressPoint, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("APIServer endpoint %s is not healthy", ingressPoint)
+		failingChecks := parseFailingHealthChecks(resp.Body)
+		if len(failingChecks) > 0 {
+			return fmt.Errorf("APIServer endpoint %s is not healthy (status %d): failing health checks: %s",
+				ingressPoint, resp.StatusCode, strings.Join(failingChecks, ", "))
+		}
+		return fmt.Errorf("APIServer endpoint %s is not healthy (status %d)", ingressPoint, resp.StatusCode)
 	}
 	return nil
+}
+
+// parseFailingHealthChecks reads a verbose /healthz response body and returns
+// the names of checks that are marked as failing (lines starting with "[-]").
+func parseFailingHealthChecks(body io.Reader) []string {
+	var failing []string
+	scanner := bufio.NewScanner(body)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, "[-]") {
+			// Format: "[-]<name> failed: reason withheld"
+			name := strings.TrimPrefix(line, "[-]")
+			if idx := strings.Index(name, " failed:"); idx > 0 {
+				name = name[:idx]
+			}
+			failing = append(failing, name)
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		failing = append(failing, fmt.Sprintf("(error reading response: %v)", err))
+	}
+	return failing
 }
 
 // controlPlaneComponentsAvailable checks that all ControlPlaneComponents in the namespace

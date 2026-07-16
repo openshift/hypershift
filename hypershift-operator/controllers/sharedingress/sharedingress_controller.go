@@ -217,6 +217,23 @@ func (r *SharedIngressReconciler) reconcileRouter(ctx context.Context, pullSecre
 		}
 	}
 
+	// When the LB has no hostname or IP, we must not write route status with an
+	// empty RouterCanonicalHostname. Doing so overwrites a previously-valid value
+	// and causes the CPO health check to report "route not admitted", flapping the
+	// HostedCluster Available condition.
+	if canonicalHostname == "" {
+		if len(svc.Status.LoadBalancer.Ingress) == 0 {
+			log.Log.Info("shared ingress LB is not provisioned; skipping route status reconciliation",
+				"service", client.ObjectKeyFromObject(svc),
+				"serviceSince", svc.CreationTimestamp.Time)
+		} else {
+			log.Log.Info("shared ingress LB has ingress entry with no hostname or IP; skipping route status reconciliation",
+				"service", client.ObjectKeyFromObject(svc),
+				"ingressEntries", len(svc.Status.LoadBalancer.Ingress))
+		}
+		return nil
+	}
+
 	routeList := &routev1.RouteList{}
 	// If the hypershift.openshift.io/hosted-control-plane label is not present,
 	// then it means the route should be fulfilled by the management cluster's router.
@@ -233,6 +250,16 @@ func (r *SharedIngressReconciler) reconcileRouter(ctx context.Context, pullSecre
 		if !equality.Semantic.DeepEqual(originalRoute.Status, route.Status) {
 			if err := r.Client.Status().Patch(ctx, &route, client.MergeFrom(originalRoute)); err != nil {
 				return fmt.Errorf("failed to update route %s status: %w", route.Name, err)
+			}
+		}
+		if route.Annotations[netutil.RouteStatusWriterAnnotation] != "shared-ingress" {
+			routeBeforeAnnotation := route.DeepCopy()
+			if route.Annotations == nil {
+				route.Annotations = map[string]string{}
+			}
+			route.Annotations[netutil.RouteStatusWriterAnnotation] = "shared-ingress"
+			if err := r.Client.Patch(ctx, &route, client.MergeFrom(routeBeforeAnnotation)); err != nil {
+				return fmt.Errorf("failed to update route %s status-writer annotation: %w", route.Name, err)
 			}
 		}
 	}
