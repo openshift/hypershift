@@ -39,6 +39,7 @@ type CreateBastionOpts struct {
 	AWSKey             string
 	AWSSecretKey       string
 	Wait               bool
+	AdditionalTags     []string
 }
 
 func NewCreateCommand() *cobra.Command {
@@ -59,6 +60,7 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.SSHKeyFile, "ssh-key-file", opts.SSHKeyFile, "File with public SSH key to use for bastion instance")
 	cmd.Flags().StringVar(&opts.AWSCredentialsFile, "aws-creds", opts.AWSCredentialsFile, "File with AWS credentials")
 	cmd.Flags().BoolVar(&opts.Wait, "wait", opts.Wait, "Wait for instance to be running")
+	cmd.Flags().StringSliceVar(&opts.AdditionalTags, "additional-tags", opts.AdditionalTags, "Additional tags to set on AWS resources (key=value)")
 
 	_ = cmd.MarkFlagRequired("aws-creds")
 
@@ -157,19 +159,31 @@ func (o *CreateBastionOpts) Run(ctx context.Context, logger logr.Logger) (string
 		o.Retryer = awsConfig()
 	})
 
+	tagMap, err := util.ParseAWSTags(o.AdditionalTags)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to parse additional tags: %w", err)
+	}
+	var additionalTags []ec2types.Tag
+	for k, v := range tagMap {
+		additionalTags = append(additionalTags, ec2types.Tag{
+			Key:   aws.String(k),
+			Value: aws.String(v),
+		})
+	}
+
 	// Ensure security group exists
-	sgID, err := ensureBastionSecurityGroup(ctx, logger, ec2Client, infraID, o.Name)
+	sgID, err := ensureBastionSecurityGroup(ctx, logger, ec2Client, infraID, o.Name, additionalTags)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to ensure security group for bastion: %w", err)
 	}
 
 	// Ensure keypair exists
-	if err := ensureBastionKeyPair(ctx, logger, ec2Client, infraID, o.Name, sshPublicKey); err != nil {
+	if err := ensureBastionKeyPair(ctx, logger, ec2Client, infraID, o.Name, sshPublicKey, additionalTags); err != nil {
 		return "", "", fmt.Errorf("failed to ensure bastion keypair: %w", err)
 	}
 
 	// Create ec2 instance
-	instanceID, err := runEC2BastionInstance(ctx, logger, ec2Client, sgID, infraID, o.Name)
+	instanceID, err := runEC2BastionInstance(ctx, logger, ec2Client, sgID, infraID, o.Name, additionalTags)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to run bastion machine instance: %w", err)
 	}
@@ -186,7 +200,7 @@ func (o *CreateBastionOpts) Run(ctx context.Context, logger logr.Logger) (string
 	return instanceID, publicIP, nil
 }
 
-func ensureBastionSecurityGroup(ctx context.Context, logger logr.Logger, ec2Client *ec2.Client, infraID, clusterName string) (string, error) {
+func ensureBastionSecurityGroup(ctx context.Context, logger logr.Logger, ec2Client *ec2.Client, infraID, clusterName string, additionalTags []ec2types.Tag) (string, error) {
 	// find VPC
 	vpcID, err := existingVPC(ctx, ec2Client, infraID)
 	if err != nil {
@@ -210,7 +224,7 @@ func ensureBastionSecurityGroup(ctx context.Context, logger logr.Logger, ec2Clie
 			TagSpecifications: []ec2types.TagSpecification{
 				{
 					ResourceType: ec2types.ResourceTypeSecurityGroup,
-					Tags: []ec2types.Tag{
+					Tags: append([]ec2types.Tag{
 						{
 							Key:   aws.String(fmt.Sprintf("kubernetes.io/cluster/%s", infraID)),
 							Value: aws.String("owned"),
@@ -227,7 +241,7 @@ func ensureBastionSecurityGroup(ctx context.Context, logger logr.Logger, ec2Clie
 							Key:   aws.String(supportawsutil.HypershiftClusterNameTagKey),
 							Value: aws.String(clusterName),
 						},
-					},
+					}, additionalTags...),
 				},
 			},
 		})
@@ -349,7 +363,7 @@ func existingVPC(ctx context.Context, ec2Client *ec2.Client, infraID string) (st
 	return vpcID, nil
 }
 
-func ensureBastionKeyPair(ctx context.Context, logger logr.Logger, ec2Client *ec2.Client, infraID, clusterName string, publicKey []byte) error {
+func ensureBastionKeyPair(ctx context.Context, logger logr.Logger, ec2Client *ec2.Client, infraID, clusterName string, publicKey []byte, additionalTags []ec2types.Tag) error {
 	keyPairID, err := existingKeyPair(ctx, ec2Client, infraID)
 	if err != nil {
 		return fmt.Errorf("failed to check for existing keypair: %w", err)
@@ -366,7 +380,7 @@ func ensureBastionKeyPair(ctx context.Context, logger logr.Logger, ec2Client *ec
 		TagSpecifications: []ec2types.TagSpecification{
 			{
 				ResourceType: ec2types.ResourceTypeKeyPair,
-				Tags: []ec2types.Tag{
+				Tags: append([]ec2types.Tag{
 					{
 						Key:   aws.String(fmt.Sprintf("kubernetes.io/cluster/%s", infraID)),
 						Value: aws.String("owned"),
@@ -383,7 +397,7 @@ func ensureBastionKeyPair(ctx context.Context, logger logr.Logger, ec2Client *ec
 						Key:   aws.String(supportawsutil.HypershiftClusterNameTagKey),
 						Value: aws.String(clusterName),
 					},
-				},
+				}, additionalTags...),
 			},
 		},
 	})
@@ -454,7 +468,7 @@ func getLatestAmazonLinux2AMI(ctx context.Context, ec2Client *ec2.Client) (strin
 	return aws.ToString(latestAMI.ImageId), nil
 }
 
-func runEC2BastionInstance(ctx context.Context, logger logr.Logger, ec2Client *ec2.Client, sgID, infraID, clusterName string) (string, error) {
+func runEC2BastionInstance(ctx context.Context, logger logr.Logger, ec2Client *ec2.Client, sgID, infraID, clusterName string, additionalTags []ec2types.Tag) (string, error) {
 	// find existing instance
 	instanceID, err := existingInstance(ctx, ec2Client, infraID)
 	if err != nil {
@@ -501,7 +515,7 @@ func runEC2BastionInstance(ctx context.Context, logger logr.Logger, ec2Client *e
 		TagSpecifications: []ec2types.TagSpecification{
 			{
 				ResourceType: ec2types.ResourceTypeInstance,
-				Tags: []ec2types.Tag{
+				Tags: append([]ec2types.Tag{
 					{
 						Key:   aws.String(fmt.Sprintf("kubernetes.io/cluster/%s", infraID)),
 						Value: aws.String("owned"),
@@ -518,7 +532,7 @@ func runEC2BastionInstance(ctx context.Context, logger logr.Logger, ec2Client *e
 						Key:   aws.String(supportawsutil.HypershiftClusterNameTagKey),
 						Value: aws.String(clusterName),
 					},
-				},
+				}, additionalTags...),
 			},
 		},
 	})

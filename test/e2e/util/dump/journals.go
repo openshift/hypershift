@@ -15,6 +15,7 @@ import (
 	bastionaws "github.com/openshift/hypershift/cmd/bastion/aws"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	cmdutil "github.com/openshift/hypershift/cmd/util"
+	supportawsutil "github.com/openshift/hypershift/support/awsutil"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
@@ -151,11 +152,19 @@ func setupBastion(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluster, 
 	if hc.Annotations[hyperv1.AWSMachinePublicIPs] == "true" {
 		return "", nil
 	}
+	additionalTags := []string{
+		supportawsutil.HypershiftSourceTagKey + "=e2e",
+	}
+	if prowJobID := os.Getenv("PROW_JOB_ID"); prowJobID != "" {
+		additionalTags = append(additionalTags, supportawsutil.HypershiftProwJobIDTagKey+"="+prowJobID)
+	}
+
 	createBastion := bastionaws.CreateBastionOpts{
 		Namespace:          hc.Namespace,
 		Name:               hc.Name,
 		AWSCredentialsFile: awsCreds,
 		Wait:               true,
+		AdditionalTags:     additionalTags,
 	}
 	_, bastionIP, err := createBastion.Run(ctx, zapr.NewLoggerWithOptions(createLogger))
 	if err != nil {
