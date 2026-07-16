@@ -807,3 +807,52 @@ func TestCountAvailableNodes(t *testing.T) {
 		})
 	}
 }
+
+func TestHashConfigMapData(t *testing.T) {
+	testCases := []struct {
+		name string
+		data map[string]string
+	}{
+		{
+			name: "When data is nil it should return empty string",
+			data: nil,
+		},
+		{
+			name: "When data is empty it should return empty string",
+			data: map[string]string{},
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			g.Expect(HashConfigMapData(tc.data)).To(Equal(""))
+		})
+	}
+
+	t.Run("When data has entries it should return a non-empty hash", func(t *testing.T) {
+		g := NewWithT(t)
+		hash := HashConfigMapData(map[string]string{"key": "value"})
+		g.Expect(hash).NotTo(BeEmpty())
+	})
+
+	t.Run("When same keys are inserted in different order it should return the same hash", func(t *testing.T) {
+		g := NewWithT(t)
+		h1 := HashConfigMapData(map[string]string{"a": "1", "b": "2", "c": "3"})
+		h2 := HashConfigMapData(map[string]string{"c": "3", "a": "1", "b": "2"})
+		g.Expect(h1).To(Equal(h2))
+	})
+
+	t.Run("When keys and values could collide without delimiters it should produce different hashes", func(t *testing.T) {
+		g := NewWithT(t)
+		h1 := HashConfigMapData(map[string]string{"ab": "c"})
+		h2 := HashConfigMapData(map[string]string{"a": "bc"})
+		g.Expect(h1).NotTo(Equal(h2))
+	})
+
+	t.Run("When data differs it should return different hashes", func(t *testing.T) {
+		g := NewWithT(t)
+		h1 := HashConfigMapData(map[string]string{"key": "value1"})
+		h2 := HashConfigMapData(map[string]string{"key": "value2"})
+		g.Expect(h1).NotTo(Equal(h2))
+	})
+}

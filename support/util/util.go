@@ -178,6 +178,28 @@ func InsecureHTTPClient() *http.Client {
 	}
 }
 
+// HashConfigMapData hashes the key-value pairs of a ConfigMap's Data field
+// deterministically, using null-byte delimiters to prevent key/value collisions.
+// Returns an empty string for nil or empty maps.
+func HashConfigMapData(data map[string]string) string {
+	if len(data) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(data))
+	for k := range data {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	var b strings.Builder
+	for _, k := range keys {
+		b.WriteString(k)
+		b.WriteByte(0)
+		b.WriteString(data[k])
+		b.WriteByte(0)
+	}
+	return HashSimple(b.String())
+}
+
 // HashSimple takes a value, typically a string, and returns a 32-bit FNV-1a hashed version of the value as a string
 func HashSimple(o interface{}) string {
 	hash := fnv.New32a()

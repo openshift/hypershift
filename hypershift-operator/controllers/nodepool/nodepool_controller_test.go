@@ -3747,3 +3747,128 @@ func TestNodePoolReconciler_reconcile(t *testing.T) {
 		})
 	}
 }
+
+func TestEnqueueNodePoolsForCloudConfig(t *testing.T) {
+	t.Parallel()
+	hcNamespace := "clusters"
+	hcName := "my-cluster"
+	cpNamespace := "clusters-my-cluster"
+
+	hcp := &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      hcName,
+			Namespace: cpNamespace,
+			Annotations: map[string]string{
+				k8sutil.HostedClusterAnnotation: hcNamespace + "/" + hcName,
+			},
+		},
+	}
+
+	matchingNodePool := &hyperv1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "np-1",
+			Namespace: hcNamespace,
+		},
+		Spec: hyperv1.NodePoolSpec{
+			ClusterName: hcName,
+		},
+	}
+
+	unrelatedNodePool := &hyperv1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "np-other",
+			Namespace: hcNamespace,
+		},
+		Spec: hyperv1.NodePoolSpec{
+			ClusterName: "other-cluster",
+		},
+	}
+
+	testCases := []struct {
+		name     string
+		cm       *corev1.ConfigMap
+		objects  []client.Object
+		expected []reconcile.Request
+	}{
+		{
+			name: "When azure-cloud-config changes, it should enqueue matching NodePools",
+			cm: &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "azure-cloud-config",
+					Namespace: cpNamespace,
+				},
+			},
+			objects: []client.Object{hcp, matchingNodePool, unrelatedNodePool},
+			expected: []reconcile.Request{
+				{NamespacedName: types.NamespacedName{Name: "np-1", Namespace: hcNamespace}},
+			},
+		},
+		{
+			name: "When openstack-cloud-config changes, it should enqueue matching NodePools",
+			cm: &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "openstack-cloud-config",
+					Namespace: cpNamespace,
+				},
+			},
+			objects: []client.Object{hcp, matchingNodePool},
+			expected: []reconcile.Request{
+				{NamespacedName: types.NamespacedName{Name: "np-1", Namespace: hcNamespace}},
+			},
+		},
+		{
+			name: "When no HostedControlPlane exists in the namespace, it should return nil",
+			cm: &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "azure-cloud-config",
+					Namespace: cpNamespace,
+				},
+			},
+			objects:  []client.Object{matchingNodePool},
+			expected: nil,
+		},
+		{
+			name: "When HostedControlPlane has no cluster annotation, it should return nil",
+			cm: &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "azure-cloud-config",
+					Namespace: cpNamespace,
+				},
+			},
+			objects: []client.Object{
+				&hyperv1.HostedControlPlane{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      hcName,
+						Namespace: cpNamespace,
+					},
+				},
+				matchingNodePool,
+			},
+			expected: nil,
+		},
+		{
+			name: "When no NodePools match the HostedCluster, it should return empty",
+			cm: &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "azure-cloud-config",
+					Namespace: cpNamespace,
+				},
+			},
+			objects:  []client.Object{hcp, unrelatedNodePool},
+			expected: nil,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.objects...).Build()
+			r := &NodePoolReconciler{Client: c}
+
+			result := r.enqueueNodePoolsForCloudConfig(context.Background(), tc.cm)
+			g.Expect(result).To(Equal(tc.expected))
+		})
+	}
+}

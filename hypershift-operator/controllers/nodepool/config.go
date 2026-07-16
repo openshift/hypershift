@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/backwardcompat"
 	"github.com/openshift/hypershift/support/capabilities"
@@ -24,6 +25,7 @@ import (
 	"github.com/openshift/api/operator/v1alpha1"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	serializer "k8s.io/apimachinery/pkg/runtime/serializer/json"
@@ -404,4 +406,27 @@ func globalConfigString(hcluster *hyperv1.HostedCluster) (string, error) {
 
 	// Some fields in the ClusterConfiguration have changes that are not backwards compatible with older versions of the CPO.
 	return backwardcompat.GetBackwardCompatibleConfigString(rawConfig), nil
+}
+
+// GetCloudConfigHash returns a hash of the platform-specific cloud config ConfigMap content.
+// For platforms without a cloud config ConfigMap (e.g. AWS), it returns an empty string.
+func (cg *ConfigGenerator) GetCloudConfigHash(ctx context.Context) (string, error) {
+	var cm *corev1.ConfigMap
+	switch cg.hostedCluster.Spec.Platform.Type {
+	case hyperv1.AzurePlatform:
+		cm = cpomanifests.AzureProviderConfig(cg.controlplaneNamespace)
+	case hyperv1.OpenStackPlatform:
+		cm = cpomanifests.OpenStackProviderConfig(cg.controlplaneNamespace)
+	default:
+		return "", nil
+	}
+
+	if err := cg.Get(ctx, client.ObjectKeyFromObject(cm), cm); err != nil {
+		if apierrors.IsNotFound(err) {
+			return "", nil
+		}
+		return "", fmt.Errorf("failed to get cloud config ConfigMap %s/%s: %w", cm.Namespace, cm.Name, err)
+	}
+
+	return supportutil.HashConfigMapData(cm.Data), nil
 }
