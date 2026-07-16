@@ -101,6 +101,7 @@ func TestAllHypershiftOperatorFeatureGates(t *testing.T) {
 				"OpenStack":               false,
 				"GCPPlatform":             false,
 				"HCPEtcdBackup":           false,
+				"KarpenterOperator":       false,
 			},
 		},
 		{
@@ -111,6 +112,7 @@ func TestAllHypershiftOperatorFeatureGates(t *testing.T) {
 				"OpenStack":               true,
 				"GCPPlatform":             true,
 				"HCPEtcdBackup":           true,
+				"KarpenterOperator":       true,
 			},
 		},
 		{
@@ -121,6 +123,7 @@ func TestAllHypershiftOperatorFeatureGates(t *testing.T) {
 				"OpenStack":               false,
 				"GCPPlatform":             false,
 				"HCPEtcdBackup":           false,
+				"KarpenterOperator":       false,
 			},
 		},
 	}
@@ -153,6 +156,12 @@ func TestAllHypershiftOperatorFeatureGates(t *testing.T) {
 			assert.Equal(t, tc.expected["HCPEtcdBackup"], actualHCPEtcdBackup,
 				"HCPEtcdBackup should be %v for feature set %s",
 				tc.expected["HCPEtcdBackup"], tc.featureSet)
+
+			// Test KarpenterOperator
+			actualKarpenterOperator := featuregate.Gate().Enabled(featuregate.KarpenterOperator)
+			assert.Equal(t, tc.expected["KarpenterOperator"], actualKarpenterOperator,
+				"KarpenterOperator should be %v for feature set %s",
+				tc.expected["KarpenterOperator"], tc.featureSet)
 		})
 	}
 }
@@ -163,4 +172,5 @@ func TestFeatureGateConstants(t *testing.T) {
 	assert.Equal(t, "OpenStack", string(featuregate.OpenStack))
 	assert.Equal(t, "GCPPlatform", string(featuregate.GCPPlatform))
 	assert.Equal(t, "HCPEtcdBackup", string(featuregate.HCPEtcdBackup))
+	assert.Equal(t, "KarpenterOperator", string(featuregate.KarpenterOperator))
 }
