@@ -12,6 +12,7 @@ import (
 	supportawsutil "github.com/openshift/hypershift/support/awsutil"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	awsretry "github.com/aws/aws-sdk-go-v2/aws/retry"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/smithy-go"
@@ -131,13 +132,7 @@ func (o *CreateInfraOptions) CreateVPCS3Endpoint(ctx context.Context, l logr.Log
 		l.Info("Found existing s3 VPC endpoint", "id", existingEndpoint)
 		return nil
 	}
-	isRetriable := func(err error) bool {
-		var apiErr smithy.APIError
-		if errors.As(err, &apiErr) {
-			return strings.EqualFold(apiErr.ErrorCode(), invalidRouteTableID)
-		}
-		return false
-	}
+	isRetriable := isRetriableVPCEndpointError
 	if err = retry.OnError(retryBackoff, isRetriable, func() error {
 		result, err := client.CreateVpcEndpoint(ctx, &ec2.CreateVpcEndpointInput{
 			VpcId:             aws.String(vpcID),
@@ -688,4 +683,17 @@ func ec2Tags(infraID, clusterName, name string) []ec2types.Tag {
 		})
 	}
 	return tags
+}
+
+func isRetriableVPCEndpointError(err error) bool {
+	var apiErr smithy.APIError
+	if errors.As(err, &apiErr) {
+		code := apiErr.ErrorCode()
+		if strings.EqualFold(code, invalidRouteTableID) {
+			return true
+		}
+		_, isThrottle := awsretry.DefaultThrottleErrorCodes[code]
+		return isThrottle
+	}
+	return false
 }
