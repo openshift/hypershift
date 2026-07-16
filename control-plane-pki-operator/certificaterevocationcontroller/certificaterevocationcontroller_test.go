@@ -2025,4 +2025,89 @@ func TestEnsureOldSignerCertificateRevoked_KASVerification(t *testing.T) {
 		}
 		g.Expect(foundRevoked).To(BeTrue(), "should have set PreviousCertificatesRevokedType condition to True")
 	})
+
+	t.Run("When trust bundle ConfigMap is transiently unavailable during revocation it should requeue", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		kubeconfigData := makeKubeconfig(t)
+		crr := newRevokedCRR()
+		secrets := newRevokedSecrets(kubeconfigData)
+		// No ConfigMaps — trust bundle not yet available
+		c := newRevokedController(crr, secrets, nil)
+
+		_, requeue, err := c.processCertificateRevocationRequest(t.Context(), "crr-ns", "crr-name", postRevocationClock.Now)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(requeue).To(BeTrue(), "should requeue when trust bundle ConfigMap is transiently unavailable")
+	})
+
+	// Direct function tests for transient nil resource paths that cannot be
+	// reached via processCertificateRevocationRequest because earlier state
+	// machine steps panic on missing resources.
+	propagationCRR := &certificatesv1alpha1.CertificateRevocationRequest{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "crr-ns", Name: "crr-name"},
+		Spec:       certificatesv1alpha1.CertificateRevocationRequestSpec{SignerClass: string(certificates.CustomerBreakGlassSigner)},
+		Status: certificatesv1alpha1.CertificateRevocationRequestStatus{
+			RevocationTimestamp: ptr.To(metav1.NewTime(revocationTime)),
+			PreviousSigner:      &corev1.LocalObjectReference{Name: "1pfcydcz358pa1glirkmc72sdkf5zw21uam4jbnj03pw"},
+			Conditions: []metav1.Condition{{
+				Type:               certificatesv1alpha1.RootCertificatesRegeneratedType,
+				Status:             metav1.ConditionTrue,
+				LastTransitionTime: metav1.NewTime(postRevocationClock.Now()),
+				Reason:             hypershiftv1beta1.AsExpectedReason,
+				Message:            `Signer certificate crr-ns/customer-system-admin-signer regenerated.`,
+			}},
+		},
+	}
+
+	for _, tt := range []struct {
+		name    string
+		fn      func(c *CertificateRevocationController) (bool, *actions, bool, error)
+		secrets []*corev1.Secret
+		cms     []*corev1.ConfigMap
+		crr     *certificatesv1alpha1.CertificateRevocationRequest
+	}{
+		{
+			name: "When signer secret is transiently unavailable during revocation it should requeue",
+			crr:  newRevokedCRR(),
+			secrets: []*corev1.Secret{{
+				ObjectMeta: metav1.ObjectMeta{Namespace: "crr-ns", Name: "1pfcydcz358pa1glirkmc72sdkf5zw21uam4jbnj03pw"},
+				Data:       map[string][]byte{corev1.TLSCertKey: data.original.raw.signerCert, corev1.TLSPrivateKeyKey: data.original.raw.signerKey},
+			}},
+			cms: newRevokedCMs(),
+			fn: func(c *CertificateRevocationController) (bool, *actions, bool, error) {
+				return c.ensureOldSignerCertificateRevoked(context.Background(), "crr-ns", "crr-name", postRevocationClock.Now, newRevokedCRR())
+			},
+		},
+		{
+			name: "When signer secret is transiently unavailable during propagation it should requeue",
+			crr:  propagationCRR,
+			fn: func(c *CertificateRevocationController) (bool, *actions, bool, error) {
+				return c.ensureNewSignerCertificatePropagated(context.Background(), "crr-ns", "crr-name", postRevocationClock.Now, propagationCRR)
+			},
+		},
+		{
+			name: "When trust bundle ConfigMap is transiently unavailable during propagation it should requeue",
+			crr:  propagationCRR,
+			secrets: []*corev1.Secret{{
+				ObjectMeta: metav1.ObjectMeta{Namespace: "crr-ns", Name: manifests.CustomerSystemAdminSigner("").Name},
+				Data:       map[string][]byte{corev1.TLSCertKey: data.future.raw.signerCert, corev1.TLSPrivateKeyKey: data.future.raw.signerKey},
+			}},
+			fn: func(c *CertificateRevocationController) (bool, *actions, bool, error) {
+				return c.ensureNewSignerCertificatePropagated(context.Background(), "crr-ns", "crr-name", postRevocationClock.Now, propagationCRR)
+			},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			c := newRevokedController(tt.crr, tt.secrets, tt.cms)
+
+			done, _, requeue, err := tt.fn(c)
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(done).To(BeTrue())
+			g.Expect(requeue).To(BeTrue())
+		})
+	}
 }
