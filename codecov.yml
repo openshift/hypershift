@@ -18,6 +18,7 @@ flags:
 ignore:
   - "test/**"
   - "hack/**"
+  - "contrib/aws-leaked-resources/**"
   - "client/**"
   - "vendor/**"
   - "support/thirdparty/**"
