@@ -1881,7 +1881,7 @@ func TestCAPIReconcile(t *testing.T) {
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(templateList.Items).To(HaveLen(2))
 
-			err = capi.Reconcile(t.Context())
+			_, err = capi.Reconcile(t.Context())
 			if tt.expectedError {
 				g.Expect(err).To(HaveOccurred())
 			} else {
@@ -1995,7 +1995,7 @@ func TestCAPIReconcile(t *testing.T) {
 					g.Expect(err).NotTo(HaveOccurred())
 
 					// Re-run reconcile.
-					err = capi.Reconcile(t.Context())
+					_, err = capi.Reconcile(t.Context())
 					g.Expect(err).NotTo(HaveOccurred())
 
 					// Check for the expected annotations.
@@ -2165,7 +2165,7 @@ func TestCAPIReconcile_machineset(t *testing.T) {
 				ApplyProvider:   upsert.NewApplyProvider(false),
 			}
 
-			err := capi.Reconcile(t.Context())
+			_, err := capi.Reconcile(t.Context())
 			g.Expect(err).NotTo(HaveOccurred())
 
 			ms := &capiv1.MachineSet{}
@@ -2190,7 +2190,7 @@ func TestGlobalPSManagedLabelOnMachines(t *testing.T) {
 		nodePool      *hyperv1.NodePool
 		hostedCluster *hyperv1.HostedCluster
 		objects       []client.Object
-		reconcile     func(t *testing.T, capi *CAPI) error
+		reconcile     func(t *testing.T, capi *CAPI) (*CAPIResult, error)
 		expectLabel   bool
 	}{
 		{
@@ -2332,10 +2332,10 @@ func TestGlobalPSManagedLabelOnMachines(t *testing.T) {
 					},
 				},
 			},
-			reconcile: func(t *testing.T, capi *CAPI) error {
+			reconcile: func(t *testing.T, capi *CAPI) (*CAPIResult, error) {
 				md := &capiv1.MachineDeployment{}
 				if err := capi.Client.Get(t.Context(), client.ObjectKey{Namespace: controlPlaneNamespace, Name: "test-nodepool"}, md); err != nil {
-					return err
+					return nil, err
 				}
 				template := &capiazure.AzureMachineTemplate{
 					ObjectMeta: metav1.ObjectMeta{
@@ -2344,7 +2344,7 @@ func TestGlobalPSManagedLabelOnMachines(t *testing.T) {
 					},
 				}
 				log := ctrl.LoggerFrom(t.Context())
-				return capi.reconcileMachineDeployment(t.Context(), log, md, template)
+				return &CAPIResult{Conditions: capi.conditions}, capi.reconcileMachineDeployment(t.Context(), log, md, template)
 			},
 			expectLabel: true,
 		},
@@ -2481,10 +2481,10 @@ func TestGlobalPSManagedLabelOnMachines(t *testing.T) {
 			},
 			// Call reconcileMachineDeployment directly to test the label logic
 			// without requiring full KubeVirt machine template setup.
-			reconcile: func(t *testing.T, capi *CAPI) error {
+			reconcile: func(t *testing.T, capi *CAPI) (*CAPIResult, error) {
 				md := &capiv1.MachineDeployment{}
 				if err := capi.Client.Get(t.Context(), client.ObjectKey{Namespace: controlPlaneNamespace, Name: "test-nodepool"}, md); err != nil {
-					return err
+					return nil, err
 				}
 				kvTemplate := &capikubevirt.KubevirtMachineTemplate{
 					ObjectMeta: metav1.ObjectMeta{
@@ -2493,7 +2493,7 @@ func TestGlobalPSManagedLabelOnMachines(t *testing.T) {
 					},
 				}
 				log := ctrl.LoggerFrom(t.Context())
-				return capi.reconcileMachineDeployment(t.Context(), log, md, kvTemplate)
+				return &CAPIResult{Conditions: capi.conditions}, capi.reconcileMachineDeployment(t.Context(), log, md, kvTemplate)
 			},
 		},
 	}
@@ -2535,11 +2535,11 @@ func TestGlobalPSManagedLabelOnMachines(t *testing.T) {
 
 			reconcile := tt.reconcile
 			if reconcile == nil {
-				reconcile = func(t *testing.T, capi *CAPI) error {
+				reconcile = func(t *testing.T, capi *CAPI) (*CAPIResult, error) {
 					return capi.Reconcile(t.Context())
 				}
 			}
-			err := reconcile(t, capi)
+			_, err := reconcile(t, capi)
 			g.Expect(err).NotTo(HaveOccurred())
 
 			globalPSManagedLabelKey := fmt.Sprintf("%s.%s", labelManagedPrefix, globalPSNodeLabel)
