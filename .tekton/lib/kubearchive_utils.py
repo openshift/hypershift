@@ -8,11 +8,6 @@ from http_utils import http_request_with_retry
 
 __all__ = ["fetch_pipelineruns", "build_pipelinerun_url"]
 
-KUBEARCHIVE_API_BASE = (
-    "https://kubearchive-api-server-product-kubearchive"
-    ".apps.stone-prd-rh01.pg1f.p1.openshiftapps.com"
-)
-
 # KubeArchive does not guarantee server-side sort order, so the first
 # page of results may contain arbitrarily old runs rather than the most
 # recent ones.  We use a time filter + high limit to ensure all recent
@@ -23,7 +18,8 @@ STALE_LOOKBACK_DAYS = 60
 STALE_QUERY_LIMIT = STALE_LOOKBACK_DAYS * 2  # ~1 run/day + margin for retriggers
 
 
-def fetch_pipelineruns(token, namespace, label_selector):
+def fetch_pipelineruns(token, namespace, label_selector,
+                       kubearchive_api_base):
     """Fetch PipelineRun records from the KubeArchive REST API.
 
     Queries the KubeArchive API for PipelineRuns matching the given
@@ -36,6 +32,7 @@ def fetch_pipelineruns(token, namespace, label_selector):
         namespace: Kubernetes namespace to query.
         label_selector: Kubernetes label selector string
             (e.g. ``test.appstudio.openshift.io/scenario=my-its``).
+        kubearchive_api_base: Base URL of the KubeArchive API server.
 
     Returns:
         List of dicts with keys: name, created, status, reason.
@@ -51,7 +48,7 @@ def fetch_pipelineruns(token, namespace, label_selector):
               - timedelta(days=STALE_LOOKBACK_DAYS))
     cutoff_ts = cutoff.strftime("%Y-%m-%dT00:00:00Z")
 
-    url = (f"{KUBEARCHIVE_API_BASE}/apis/tekton.dev/v1"
+    url = (f"{kubearchive_api_base}/apis/tekton.dev/v1"
            f"/namespaces/{namespace}"
            f"/pipelineruns?labelSelector={quote(label_selector)}"
            f"&limit={STALE_QUERY_LIMIT}"

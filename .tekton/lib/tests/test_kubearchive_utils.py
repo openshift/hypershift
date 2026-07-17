@@ -37,7 +37,7 @@ class TestFetchPipelineruns(unittest.TestCase):
         ]
         mock_req.return_value = (200, json.dumps({"items": items}))
 
-        result = fetch_pipelineruns("tok", "ns", "label=val")
+        result = fetch_pipelineruns("tok", "ns", "label=val", "https://kubearchive.example.com")
 
         self.assertEqual(len(result), 2)
         self.assertEqual(result[0]["name"], "run-b")
@@ -55,7 +55,7 @@ class TestFetchPipelineruns(unittest.TestCase):
         ]
         mock_req.return_value = (200, json.dumps({"items": items}))
 
-        result = fetch_pipelineruns("tok", "ns", "label=val")
+        result = fetch_pipelineruns("tok", "ns", "label=val", "https://kubearchive.example.com")
 
         self.assertTrue(result[0]["status"])
         self.assertEqual(result[0]["reason"], "Succeeded")
@@ -68,7 +68,7 @@ class TestFetchPipelineruns(unittest.TestCase):
         ]
         mock_req.return_value = (200, json.dumps({"items": items}))
 
-        result = fetch_pipelineruns("tok", "ns", "label=val")
+        result = fetch_pipelineruns("tok", "ns", "label=val", "https://kubearchive.example.com")
 
         self.assertFalse(result[0]["status"])
         self.assertEqual(result[0]["reason"], "PipelineRunTimeout")
@@ -81,7 +81,7 @@ class TestFetchPipelineruns(unittest.TestCase):
         ]
         mock_req.return_value = (200, json.dumps({"items": items}))
 
-        result = fetch_pipelineruns("tok", "ns", "label=val")
+        result = fetch_pipelineruns("tok", "ns", "label=val", "https://kubearchive.example.com")
 
         self.assertFalse(result[0]["status"])
         self.assertEqual(result[0]["reason"], "CouldntGetPipeline")
@@ -90,7 +90,7 @@ class TestFetchPipelineruns(unittest.TestCase):
     def test_empty_items(self, mock_req):
         mock_req.return_value = (200, json.dumps({"items": []}))
 
-        result = fetch_pipelineruns("tok", "ns", "label=val")
+        result = fetch_pipelineruns("tok", "ns", "label=val", "https://kubearchive.example.com")
 
         self.assertEqual(result, [])
 
@@ -98,7 +98,7 @@ class TestFetchPipelineruns(unittest.TestCase):
     def test_non_200_response(self, mock_req):
         mock_req.return_value = (503, "unavailable")
 
-        result = fetch_pipelineruns("tok", "ns", "label=val")
+        result = fetch_pipelineruns("tok", "ns", "label=val", "https://kubearchive.example.com")
 
         self.assertEqual(result, [])
 
@@ -106,7 +106,7 @@ class TestFetchPipelineruns(unittest.TestCase):
     def test_malformed_json(self, mock_req):
         mock_req.return_value = (200, "not json at all")
 
-        result = fetch_pipelineruns("tok", "ns", "label=val")
+        result = fetch_pipelineruns("tok", "ns", "label=val", "https://kubearchive.example.com")
 
         self.assertEqual(result, [])
 
@@ -118,7 +118,7 @@ class TestFetchPipelineruns(unittest.TestCase):
         }
         mock_req.return_value = (200, json.dumps({"items": [item]}))
 
-        result = fetch_pipelineruns("tok", "ns", "label=val")
+        result = fetch_pipelineruns("tok", "ns", "label=val", "https://kubearchive.example.com")
 
         self.assertEqual(len(result), 1)
         self.assertFalse(result[0]["status"])
@@ -130,7 +130,7 @@ class TestFetchPipelineruns(unittest.TestCase):
             {"reason": "OK", "status": "True"}]}}
         mock_req.return_value = (200, json.dumps({"items": [item]}))
 
-        result = fetch_pipelineruns("tok", "ns", "label=val")
+        result = fetch_pipelineruns("tok", "ns", "label=val", "https://kubearchive.example.com")
 
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0]["name"], "")
@@ -144,7 +144,7 @@ class TestFetchPipelineruns(unittest.TestCase):
         }
         mock_req.return_value = (200, json.dumps({"items": [item]}))
 
-        result = fetch_pipelineruns("tok", "ns", "label=val")
+        result = fetch_pipelineruns("tok", "ns", "label=val", "https://kubearchive.example.com")
 
         self.assertFalse(result[0]["status"])
         self.assertEqual(result[0]["reason"], "Unknown")
@@ -153,7 +153,7 @@ class TestFetchPipelineruns(unittest.TestCase):
     def test_query_includes_limit_and_time_filter(self, mock_req):
         mock_req.return_value = (200, json.dumps({"items": []}))
 
-        fetch_pipelineruns("tok", "ns", "label=val")
+        fetch_pipelineruns("tok", "ns", "label=val", "https://kubearchive.example.com")
 
         url = mock_req.call_args[0][0]
         self.assertIn(f"limit={STALE_QUERY_LIMIT}", url)
@@ -168,7 +168,7 @@ class TestFetchPipelineruns(unittest.TestCase):
         ]
         mock_req.return_value = (200, json.dumps({"items": items}))
 
-        result = fetch_pipelineruns("tok", "ns", "label=val")
+        result = fetch_pipelineruns("tok", "ns", "label=val", "https://kubearchive.example.com")
 
         self.assertEqual(result[0]["name"], "newest")
         self.assertEqual(result[1]["name"], "middle")

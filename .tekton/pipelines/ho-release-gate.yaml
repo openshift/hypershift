@@ -26,6 +26,14 @@ spec:
     type: string
     description: Number of consecutive failure days before triggering a stale promotion alert
     default: "3"
+  - name: gangway-url
+    type: string
+    description: Base URL of the Gangway executions endpoint
+    default: "https://gangway-ci.apps.ci.l2s4.p1.openshiftapps.com/v1/executions"
+  - name: kubearchive-api-base
+    type: string
+    description: Base URL of the KubeArchive API server
+    default: "https://kubearchive-api-server-product-kubearchive.apps.stone-prd-rh01.pg1f.p1.openshiftapps.com"
 
   workspaces:
   - name: shared
@@ -135,6 +143,8 @@ spec:
         type: string
       - name: e2e-informing-job-names
         type: string
+      - name: gangway-url
+        type: string
       workspaces:
       - name: shared
       results:
@@ -149,6 +159,8 @@ spec:
             secretKeyRef:
               name: gangway-token
               key: token
+        - name: GANGWAY_URL
+          value: $(params.gangway-url)
         - name: HO_IMAGE
           value: $(params.ho-image)
         - name: BLOCKING_JSON
@@ -171,7 +183,7 @@ spec:
           with open("$(results.results-json.path)", "w") as f:
               f.write("[]")
 
-          gangway_url = "https://gangway-ci.apps.ci.l2s4.p1.openshiftapps.com/v1/executions"
+          gangway_url = os.environ["GANGWAY_URL"]
           token = os.environ["GANGWAY_TOKEN"]
           ho_image = os.environ["HO_IMAGE"]
           blocking = json.loads(os.environ["BLOCKING_JSON"])
@@ -185,6 +197,9 @@ spec:
           print(f"Blocking jobs:  {blocking}", flush=True)
           print(f"Informing jobs: {informing}", flush=True)
 
+          # :latest for hypershift-tests is intentional: the test image is built
+          # by OpenShift CI, not Konflux, so it is not part of the Snapshot and
+          # there is no straightforward way to extract a matching version.
           env_overrides = {
               "MULTISTAGE_PARAM_OVERRIDE_OVERRIDE_HYPERSHIFT_OPERATOR_IMAGE": ho_image,
               "OVERRIDE_IMAGE_HYPERSHIFT_TESTS": "registry.ci.openshift.org/hypershift/hypershift-tests:latest"
@@ -207,6 +222,8 @@ spec:
       value: $(params.e2e-blocking-job-names)
     - name: e2e-informing-job-names
       value: $(params.e2e-informing-job-names)
+    - name: gangway-url
+      value: $(params.gangway-url)
     workspaces:
     - name: shared
       workspace: shared
@@ -323,6 +340,14 @@ spec:
     - name: release-plan-name
       value: $(params.release-plan-name)
 
+  # Finally tasks: notify-slack and notify-slack-error are mutually exclusive.
+  # Tekton skips a finally task whose param bindings reference results from
+  # a task that was skipped (unresolved results).
+  # - notify-slack binds params to results of create-release, run-e2e,
+  #   evaluate-results, and extract-image. It fires only when all ran.
+  # - notify-slack-error uses a when clause (create-release.status == None)
+  #   and fires when create-release was skipped, meaning a task before
+  #   evaluate-results failed.
   finally:
   - name: notify-slack
     taskSpec:
@@ -339,6 +364,8 @@ spec:
         type: string
       - name: stale-threshold-days
         type: string
+      - name: kubearchive-api-base
+        type: string
       workspaces:
       - name: shared
       steps:
@@ -350,6 +377,8 @@ spec:
             secretKeyRef:
               name: slack-webhook
               key: url
+        - name: KUBEARCHIVE_API_BASE
+          value: $(params.kubearchive-api-base)
         - name: SNAPSHOT_NAME
           value: $(params.snapshot-name)
         - name: RESULTS_JSON
@@ -399,9 +428,11 @@ spec:
                   ["oc", "whoami", "-t"], capture_output=True, text=True)
               token = token_result.stdout.strip()
               threshold = int(os.environ["STALE_THRESHOLD_DAYS"])
+              kubearchive_api_base = os.environ["KUBEARCHIVE_API_BASE"]
               stale = check_and_build_stale_payload(
                   token, its_scenario, threshold, pipeline_run,
-                  konflux_base, "crt-redhat-acm-tenant", gate_label)
+                  konflux_base, "crt-redhat-acm-tenant", gate_label,
+                  kubearchive_api_base)
               if stale:
                   payload = stale
               else:
@@ -430,6 +461,8 @@ spec:
       value: $(tasks.create-release.results.release-name)
     - name: stale-threshold-days
       value: $(params.stale-threshold-days)
+    - name: kubearchive-api-base
+      value: $(params.kubearchive-api-base)
     workspaces:
     - name: shared
       workspace: shared
@@ -445,6 +478,8 @@ spec:
         type: string
       - name: stale-threshold-days
         type: string
+      - name: kubearchive-api-base
+        type: string
       workspaces:
       - name: shared
       steps:
@@ -456,6 +491,8 @@ spec:
             secretKeyRef:
               name: slack-webhook
               key: url
+        - name: KUBEARCHIVE_API_BASE
+          value: $(params.kubearchive-api-base)
         - name: GATE_LABEL
           value: $(params.gate-label)
         - name: STALE_THRESHOLD_DAYS
@@ -490,9 +527,11 @@ spec:
               ["oc", "whoami", "-t"], capture_output=True, text=True)
           token = token_result.stdout.strip()
           threshold = int(os.environ["STALE_THRESHOLD_DAYS"])
+          kubearchive_api_base = os.environ["KUBEARCHIVE_API_BASE"]
           stale = check_and_build_stale_payload(
               token, its_scenario, threshold, pipeline_run,
-              konflux_base, "crt-redhat-acm-tenant", gate_label)
+              konflux_base, "crt-redhat-acm-tenant", gate_label,
+              kubearchive_api_base)
           payload = stale if stale else build_error_notification(
               pipeline_run, konflux_base, gate_label)
 
@@ -505,6 +544,8 @@ spec:
       value: $(params.gate-label)
     - name: stale-threshold-days
       value: $(params.stale-threshold-days)
+    - name: kubearchive-api-base
+      value: $(params.kubearchive-api-base)
     workspaces:
     - name: shared
       workspace: shared

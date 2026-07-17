@@ -578,6 +578,7 @@ class TestCheckAndBuildStalePayload(unittest.TestCase):
             "konflux_base_url": "https://konflux-ui.example.com/base",
             "namespace": "ns",
             "gate_label": "ARO HCP",
+            "kubearchive_api_base": "https://kubearchive.example.com",
         }
 
     def _make_run(self, name, created, status=False, reason="Failed"):

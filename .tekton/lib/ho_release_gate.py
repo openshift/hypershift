@@ -629,7 +629,8 @@ def build_stale_notification(streak, gate_label, threshold_days,
 
 def check_and_build_stale_payload(token, its_scenario, threshold_days,
                                   current_run_name, konflux_base_url,
-                                  namespace, gate_label):
+                                  namespace, gate_label,
+                                  kubearchive_api_base):
     """Check for a stale promotion streak and build the alert payload.
 
     Queries KubeArchive for historical PipelineRuns matching the ITS
@@ -648,6 +649,7 @@ def check_and_build_stale_payload(token, its_scenario, threshold_days,
         konflux_base_url: Base URL of the Konflux UI for building links.
         namespace: Kubernetes namespace for the KubeArchive query.
         gate_label: Human-readable gate label (e.g. "ARO HCP").
+        kubearchive_api_base: Base URL of the KubeArchive API server.
 
     Returns:
         Dict payload for send_slack_message if stale (streak days >=
@@ -661,7 +663,8 @@ def check_and_build_stale_payload(token, its_scenario, threshold_days,
     print(f"  Label selector:  {label_selector}", flush=True)
     print(f"  Threshold:       {threshold_days} day(s)", flush=True)
 
-    runs = fetch_pipelineruns(token, namespace, label_selector)
+    runs = fetch_pipelineruns(token, namespace, label_selector,
+                              kubearchive_api_base)
     runs = [r for r in runs if r["name"] != current_run_name]
     if not runs:
         print("  No historical runs found - skipping stale check",
