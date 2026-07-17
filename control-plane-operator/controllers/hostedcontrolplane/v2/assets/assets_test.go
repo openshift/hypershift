@@ -1,6 +1,7 @@
 package assets
 
 import (
+	"slices"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -57,7 +58,12 @@ func TestKonnectivityServerAuthenticatesAgents(t *testing.T) {
 	g := NewWithT(t)
 
 	deployment, err := LoadDeploymentManifest("kube-apiserver")
-	g.Expect(err).ToNot(HaveOccurred())
+	if err != nil {
+		t.Fatalf("failed to load kube-apiserver deployment manifest: %v", err)
+	}
+	if deployment == nil {
+		t.Fatal("kube-apiserver deployment manifest is nil")
+	}
 
 	var konnectivityServer *corev1.Container
 	for i := range deployment.Spec.Template.Spec.Containers {
@@ -67,11 +73,15 @@ func TestKonnectivityServerAuthenticatesAgents(t *testing.T) {
 		}
 	}
 
-	g.Expect(konnectivityServer).ToNot(BeNil())
-	g.Expect(konnectivityServer.Args).To(ContainElements(
-		"--cluster-ca-cert",
-		"/etc/konnectivity/ca/ca.crt",
-	))
+	if konnectivityServer == nil {
+		t.Fatal("konnectivity-server container not found")
+	}
+
+	clusterCAFlagIndex := slices.Index(konnectivityServer.Args, "--cluster-ca-cert")
+	if clusterCAFlagIndex == -1 || clusterCAFlagIndex+1 >= len(konnectivityServer.Args) {
+		t.Fatal("--cluster-ca-cert flag or its value not found")
+	}
+	g.Expect(konnectivityServer.Args[clusterCAFlagIndex+1]).To(Equal("/etc/konnectivity/ca/ca.crt"))
 }
 
 func TestLoadStatefulSetManifest(t *testing.T) {
