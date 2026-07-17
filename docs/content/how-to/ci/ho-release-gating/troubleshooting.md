@@ -91,6 +91,10 @@ for item in data.get('items',[]):
 "
 ```
 
+!!! note
+
+    The KubeArchive URL in the curl command above corresponds to the default value of the `kubearchive-api-base` pipeline parameter. If the pipeline has been reconfigured to point at a different KubeArchive instance, use that URL instead.
+
 Replace `<ITS_NAME>` with the target service gate name (e.g. `hypershift-ho-release-gate-aro-hcp`). You must be logged in to the stone-prd-rh01 cluster (`oc login`).
 
 The output lists all archived PipelineRuns for that ITS with their completion status and reason. To inspect a specific PipelineRun from the results, build the Konflux UI URL from its name:

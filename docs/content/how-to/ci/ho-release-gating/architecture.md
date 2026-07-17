@@ -164,7 +164,9 @@ flowchart LR
     style KA stroke-dasharray: 5 5
 ```
 
-`notify-slack` and `notify-slack-error` are `finally` tasks: they run regardless of pipeline success. `notify-slack-error` fires only when `create-release` was never reached (status `None`), acting as a catch-all for early DAG failures. Both finally tasks query KubeArchive for historical PipelineRun data and check for stale promotion streaks.
+`notify-slack` and `notify-slack-error` are `finally` tasks that are mutually exclusive. Tekton skips a finally task whose parameter bindings reference results from a task that was skipped (unresolved results). `notify-slack` binds parameters to results of `create-release`, `evaluate-results`, and `extract-image`, so it fires only when all of them ran. `notify-slack-error` uses a `when` clause (`create-release.status == None`) and fires when `create-release` was skipped, meaning a task before `evaluate-results` failed. Both finally tasks query KubeArchive for historical PipelineRun data and check for stale promotion streaks.
+
+The per-job results JSON produced by `run-e2e` is written to a file on the shared workspace (`results.json`) rather than to a Tekton task result. This is a deliberate choice: Tekton task results have a hard 4 KB size limit, which can be exceeded when the pipeline runs many blocking and informing jobs, each carrying a full Prow URL. Both `evaluate-results` and `notify-slack` read the results directly from the workspace file.
 
 ### Python Module Dependency Graph
 
@@ -254,6 +256,14 @@ flowchart LR
 
 The `run-e2e` task uses the Gangway REST API to trigger Prow periodic jobs with custom environment overrides (HO image, test image). It then polls job status until all jobs complete or a 4-hour timeout is reached.
 
+#### Image Override Mechanism
+
+The candidate HO image is injected into the Prow job via `MULTISTAGE_PARAM_OVERRIDE_OVERRIDE_HYPERSHIFT_OPERATOR_IMAGE`. This is a Gangway transport variable: the `MULTISTAGE_PARAM_OVERRIDE_` prefix tells Gangway to pass the value as a multi-stage step parameter (`OVERRIDE_HYPERSHIFT_OPERATOR_IMAGE`) rather than as a ci-operator ImageStream override. The direct ImageStream mechanism (`OVERRIDE_IMAGE_HYPERSHIFT_OPERATOR`) cannot be used here because ci-operator resolves ImageStream overrides during the `base-images` phase, which may race with steps that consume the image before the override is applied. The transport variable bypasses this by injecting the value directly into the step's environment.
+
+The receiving step ([`hypershift-install-commands.sh`](https://github.com/openshift/release/blob/master/ci-operator/step-registry/hypershift/install/hypershift-install-commands.sh)) reads this parameter and uses it to install the HO from the candidate image.
+
+The test image (`hypershift-tests`) is overridden separately via `OVERRIDE_IMAGE_HYPERSHIFT_TESTS` using `:latest`. This is intentional: the test image is built by OpenShift CI, not by Konflux, so it is not part of the Snapshot and there is no straightforward way to extract a matching version.
+
 Timing parameters can be adjusted by modifying the corresponding constants in the `run-e2e` task script:
 
 | Parameter | Value | Purpose |
@@ -266,9 +276,11 @@ Timing parameters can be adjusted by modifying the corresponding constants in th
 | `POLL_STAGGER` | 30s | Delay between polling individual jobs |
 | `TIMEOUT` | 14400s (4h) | Maximum total polling time |
 
+The Gangway endpoint URL is exposed as a pipeline parameter (`gangway-url`) with the current production URL as default. This allows updating the endpoint without a code change if the CI cluster migrates (as happened in the `app.ci` to `build0x` migration).
+
 ### KubeArchive
 
-Both `notify-slack` and `notify-slack-error` query the KubeArchive REST API to retrieve archived PipelineRun data for stale promotion detection. KubeArchive is a cluster-internal service on stone-prd-rh01 that archives Kubernetes resources after they are garbage-collected.
+Both `notify-slack` and `notify-slack-error` query the KubeArchive REST API to retrieve archived PipelineRun data for stale promotion detection. KubeArchive is a cluster-internal service on stone-prd-rh01 that archives Kubernetes resources after they are garbage-collected. The KubeArchive API URL is exposed as a pipeline parameter (`kubearchive-api-base`) with the current production URL as default, following the same rationale as `gangway-url`.
 
 The pipeline authenticates to KubeArchive using a projected ServiceAccount token (audience: `kubearchive`), which is automatically available to the PipelineRun's SA. No additional secrets or configuration are required.
 
