@@ -21,7 +21,7 @@ Project documentation is published via MkDocs. The site structure and navigation
 | **E2E v2 test framework** | [test/e2e/v2/AGENTS.md](test/e2e/v2/AGENTS.md) |
 | **Envtest (CEL validation tests)** | [test/envtest/README.md](test/envtest/README.md) — YAML-driven, runs across k8s 1.30–1.35, supports feature gate filtering |
 | **CEL over webhooks** | [.claude/rules/webhook-validation.md](.claude/rules/webhook-validation.md) |
-| **Code formatting and unit test conventions** | `.claude/skills/code-formatting` and [DEVELOPMENT.md#code-conventions](DEVELOPMENT.md#code-conventions) |
+| **Unit test conventions** | [TESTING.md](TESTING.md) and [DEVELOPMENT.md#code-conventions](DEVELOPMENT.md#code-conventions) |
 | **Design invariants** | [docs/content/reference/goals-and-design-invariants.md](docs/content/reference/goals-and-design-invariants.md) |
 | **Versioning and support** | [docs/content/reference/versioning-support.md](docs/content/reference/versioning-support.md) |
 | **Upgrades lifecycle** | [docs/content/how-to/upgrades.md](docs/content/how-to/upgrades.md) |

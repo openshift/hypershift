@@ -171,14 +171,10 @@ After addressing review feedback, use the `restructure-commits` skill again to r
 
 ## Code Conventions
 
-For test naming and formatting rules, see `.claude/skills/code-formatting`.
+For unit test creation requirements, naming conventions, and placement rules, see [TESTING.md](TESTING.md).
 
 Additional review-derived rules:
 
-- Do not export functions that are only used in tests. Use unexported helpers or keep them in `_test.go` files.
 - Do not leave dead code (functions defined but never called). Remove unused code before submitting.
-- When adding new exported functions or methods, cover them with unit tests. For controller reconciliation methods, test at minimum: happy path, missing/empty input, disabled capability, and the primary error path.
 - Do not leave TODO comments in validation regex patterns or CEL rules — resolve them before submitting. Reviewers have blocked PRs for shipping regex patterns with placeholder character classes (e.g., allowing `{` and `}` in UUID fields, or missing anchoring constraints).
 - When writing regex for API validation, match the upstream format exactly. For UUIDs, use `[0-9a-f]{8}-...`; for Azure resource names, verify the allowed character set against Azure documentation. Do not over-broaden patterns with catch-all classes like `[a-zA-Z0-9-_().{}]`.
-- Use real-world values in test fixtures when possible (e.g., `quay.io/openshift-release-dev/ocp-release:4.21.10-x86_64` instead of `example.com/image:latest`). Real values catch edge cases that synthetic values miss.
-- When adding test assertions for OwnerReferences, check that they were actually set during reconciliation — not just that the object exists.
