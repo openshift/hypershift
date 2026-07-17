@@ -52,6 +52,28 @@ func TestLoadDeploymentManifest(t *testing.T) {
 	}
 }
 
+func TestKonnectivityServerAuthenticatesAgents(t *testing.T) {
+	t.Parallel()
+	g := NewWithT(t)
+
+	deployment, err := LoadDeploymentManifest("kube-apiserver")
+	g.Expect(err).ToNot(HaveOccurred())
+
+	var konnectivityServer *corev1.Container
+	for i := range deployment.Spec.Template.Spec.Containers {
+		if deployment.Spec.Template.Spec.Containers[i].Name == "konnectivity-server" {
+			konnectivityServer = &deployment.Spec.Template.Spec.Containers[i]
+			break
+		}
+	}
+
+	g.Expect(konnectivityServer).ToNot(BeNil())
+	g.Expect(konnectivityServer.Args).To(ContainElements(
+		"--cluster-ca-cert",
+		"/etc/konnectivity/ca/ca.crt",
+	))
+}
+
 func TestLoadStatefulSetManifest(t *testing.T) {
 	t.Parallel()
 
