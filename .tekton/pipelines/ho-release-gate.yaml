@@ -147,9 +147,6 @@ spec:
         type: string
       workspaces:
       - name: shared
-      results:
-      - name: results-json
-        description: "JSON array of per-job results: [{job, result, url}, ...]"
       steps:
       - name: trigger-and-poll
         image: quay.io/konflux-ci/appstudio-utils:latest@sha256:32cda04122ee0a5d5b4307e121d192d1265c3bff727c9d894f36b6772da53d8c
@@ -180,7 +177,8 @@ spec:
           whoami = subprocess.run(["oc", "whoami"], capture_output=True, text=True)
           print(f"Running as: {whoami.stdout.strip()}", flush=True)
 
-          with open("$(results.results-json.path)", "w") as f:
+          results_file = "$(workspaces.shared.path)/results.json"
+          with open(results_file, "w") as f:
               f.write("[]")
 
           gangway_url = os.environ["GANGWAY_URL"]
@@ -213,7 +211,7 @@ spec:
           print("\n=== run-e2e: building results JSON ===", flush=True)
           results = build_results_json(jobs)
           print(f"Results JSON: {results}", flush=True)
-          with open("$(results.results-json.path)", "w") as f:
+          with open(results_file, "w") as f:
               f.write(results)
     params:
     - name: ho-image
@@ -231,9 +229,6 @@ spec:
   - name: evaluate-results
     runAfter: [run-e2e]
     taskSpec:
-      params:
-      - name: results-json
-        type: string
       workspaces:
       - name: shared
       results:
@@ -242,12 +237,9 @@ spec:
       steps:
       - name: evaluate
         image: quay.io/konflux-ci/appstudio-utils:latest@sha256:32cda04122ee0a5d5b4307e121d192d1265c3bff727c9d894f36b6772da53d8c
-        env:
-        - name: RESULTS_JSON
-          value: $(params.results-json)
         script: |
           #!/usr/bin/env python3
-          import os, subprocess, sys
+          import subprocess, sys
 
           sys.path.insert(0, "$(workspaces.shared.path)")
           from ho_release_gate import evaluate_gate
@@ -260,13 +252,12 @@ spec:
           print(f"Running as: {whoami.stdout.strip()}", flush=True)
           print(flush=True)
 
-          gate_passed = evaluate_gate(os.environ["RESULTS_JSON"])
+          with open("$(workspaces.shared.path)/results.json") as f:
+              results_json = f.read()
+          gate_passed = evaluate_gate(results_json)
 
           with open("$(results.gate-passed.path)", "w") as f:
               f.write("true" if gate_passed else "false")
-    params:
-    - name: results-json
-      value: $(tasks.run-e2e.results.results-json)
     workspaces:
     - name: shared
       workspace: shared
@@ -343,7 +334,7 @@ spec:
   # Finally tasks: notify-slack and notify-slack-error are mutually exclusive.
   # Tekton skips a finally task whose param bindings reference results from
   # a task that was skipped (unresolved results).
-  # - notify-slack binds params to results of create-release, run-e2e,
+  # - notify-slack binds params to results of create-release,
   #   evaluate-results, and extract-image. It fires only when all ran.
   # - notify-slack-error uses a when clause (create-release.status == None)
   #   and fires when create-release was skipped, meaning a task before
@@ -353,8 +344,6 @@ spec:
     taskSpec:
       params:
       - name: snapshot-name
-        type: string
-      - name: results-json
         type: string
       - name: gate-passed
         type: string
@@ -381,8 +370,6 @@ spec:
           value: $(params.kubearchive-api-base)
         - name: SNAPSHOT_NAME
           value: $(params.snapshot-name)
-        - name: RESULTS_JSON
-          value: $(params.results-json)
         - name: GATE_PASSED
           value: $(params.gate-passed)
         - name: GATE_LABEL
@@ -409,7 +396,8 @@ spec:
           gate_label = os.environ["GATE_LABEL"]
           release_name = os.environ["RELEASE_NAME"]
           pipeline_run = "$(context.pipelineRun.name)"
-          results_json = os.environ["RESULTS_JSON"]
+          with open("$(workspaces.shared.path)/results.json") as f:
+              results_json = f.read()
           webhook_url = os.environ["SLACK_WEBHOOK_URL"]
           konflux_base = "https://konflux-ui.apps.stone-prd-rh01.pg1f.p1.openshiftapps.com/ns/crt-redhat-acm-tenant/applications/hypershift-operator"
 
@@ -451,8 +439,6 @@ spec:
     params:
     - name: snapshot-name
       value: $(tasks.extract-image.results.snapshot-name)
-    - name: results-json
-      value: $(tasks.run-e2e.results.results-json)
     - name: gate-passed
       value: $(tasks.evaluate-results.results.gate-passed)
     - name: gate-label
