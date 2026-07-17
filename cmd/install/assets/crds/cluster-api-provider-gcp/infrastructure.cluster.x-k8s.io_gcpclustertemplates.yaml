@@ -198,7 +198,8 @@ spec:
                               Defaults to true.
                             type: boolean
                           firewall:
-                            description: Firewall configuration.
+                            description: Firewall contains the firewall configuration
+                              associated with this network.
                             properties:
                               defaultRulesManagement:
                                 default: Managed
@@ -216,6 +217,224 @@ spec:
                                 - Managed
                                 - Unmanaged
                                 type: string
+                              firewallRules:
+                                description: |-
+                                  FirewallRules is a list of additional firewall rules to create. FirewallRules has no effect
+                                  when a HostProject is specified.
+                                items:
+                                  description: FirewallRule describes a GCP firewall
+                                    rule.
+                                  properties:
+                                    allowed:
+                                      description: |-
+                                        Allowed is the list of ALLOW rules specified by this firewall. Each rule
+                                        specifies a protocol and port-range tuple that describes a permitted
+                                        connection.
+                                      items:
+                                        description: FirewallDescriptor describes
+                                          a GCP firewall rule.
+                                        properties:
+                                          IPProtocol:
+                                            description: |-
+                                              IPProtocol is the IP protocol to which this rule applies. The protocol type is
+                                              required when creating a firewall rule. This value can either be one of the
+                                              following well known protocol strings (tcp, udp, icmp, esp, ah, ipip, sctp)
+                                              or the IP protocol number.
+                                            enum:
+                                            - TCP
+                                            - UDP
+                                            - ICMP
+                                            - ESP
+                                            - AH
+                                            - IPIP
+                                            - SCTP
+                                            type: string
+                                          ports:
+                                            description: |-
+                                              Ports is an optional list of ports to which this rule applies. This field is
+                                              only applicable for the UDP or TCP protocol. Each entry must be either an
+                                              integer or a range. If not specified, this rule applies to connections
+                                              through any port. Example inputs include: ["22"], ["80","443"], and
+                                              ["12345-12349"].
+                                            items:
+                                              pattern: ^[0-9]+(-[0-9]+)?$
+                                              type: string
+                                            maxItems: 500
+                                            type: array
+                                        required:
+                                        - IPProtocol
+                                        type: object
+                                      maxItems: 1024
+                                      minItems: 0
+                                      type: array
+                                    denied:
+                                      description: |-
+                                        Denied is the list of DENY rules specified by this firewall. Each rule
+                                        specifies a protocol and port-range tuple that describes a denied
+                                        connection. When a conflict applies between the Denied and Allowed fields,
+                                        the Denied field will take precedent.
+                                      items:
+                                        description: FirewallDescriptor describes
+                                          a GCP firewall rule.
+                                        properties:
+                                          IPProtocol:
+                                            description: |-
+                                              IPProtocol is the IP protocol to which this rule applies. The protocol type is
+                                              required when creating a firewall rule. This value can either be one of the
+                                              following well known protocol strings (tcp, udp, icmp, esp, ah, ipip, sctp)
+                                              or the IP protocol number.
+                                            enum:
+                                            - TCP
+                                            - UDP
+                                            - ICMP
+                                            - ESP
+                                            - AH
+                                            - IPIP
+                                            - SCTP
+                                            type: string
+                                          ports:
+                                            description: |-
+                                              Ports is an optional list of ports to which this rule applies. This field is
+                                              only applicable for the UDP or TCP protocol. Each entry must be either an
+                                              integer or a range. If not specified, this rule applies to connections
+                                              through any port. Example inputs include: ["22"], ["80","443"], and
+                                              ["12345-12349"].
+                                            items:
+                                              pattern: ^[0-9]+(-[0-9]+)?$
+                                              type: string
+                                            maxItems: 500
+                                            type: array
+                                        required:
+                                        - IPProtocol
+                                        type: object
+                                      maxItems: 1024
+                                      minItems: 0
+                                      type: array
+                                    description:
+                                      description: |-
+                                        Description is an optional description of this resource. Provide this field
+                                        when you create the resource.
+                                      maxLength: 2000
+                                      minLength: 0
+                                      type: string
+                                    destinationRanges:
+                                      description: |-
+                                        DestinationRanges is the list of IP addresses where traffic applies. An empty
+                                        list means all destinations. These ranges must be expressed in CIDR format.
+                                        Both IPv4 and IPv6 are supported.
+                                      items:
+                                        maxLength: 43
+                                        minLength: 1
+                                        type: string
+                                      maxItems: 1024
+                                      minItems: 0
+                                      type: array
+                                      x-kubernetes-validations:
+                                      - message: must be a valid IPv4/IPv6 address
+                                          or CIDR/Prefix
+                                        rule: self.all(i, isIP(i) || isCIDR(i))
+                                    direction:
+                                      allOf:
+                                      - enum:
+                                        - Ingress
+                                        - Egress
+                                      - enum:
+                                        - Ingress
+                                        - Egress
+                                      default: Ingress
+                                      description: |-
+                                        Direction is the direction of traffic to which this firewall applies, either
+                                        `Ingress` or `Egress`. The default is `Ingress`. For `Egress` traffic, you
+                                        cannot specify the sourceTags fields.
+
+                                        Possible values:
+                                          "Egress" - Indicates that firewall should apply to outgoing traffic.
+                                          "Ingress" - Indicates that firewall should apply to incoming traffic.
+                                      type: string
+                                    name:
+                                      description: |-
+                                        Name is the name of the resource; provided by the client when the resource is
+                                        created. The name must be 1-63 characters long, and comply with RFC1035.
+                                        Specifically, the name must be 1-63 characters long and match the regular
+                                        expression `[a-z]([-a-z0-9]*[a-z0-9])?`. The first character must be a
+                                        lowercase letter, and all following characters (except for the last
+                                        character) must be a dash, lowercase letter, or digit. The last character
+                                        must be a lowercase letter or digit.
+                                        If the firewall does not begin with the cluster name, then the cluster name
+                                        will be prepended during the creation of the firewall rule.
+                                      type: string
+                                    priority:
+                                      default: 1000
+                                      description: |-
+                                        Priority is the priority for this rule. This is an integer between `0` and
+                                        `65535`, both inclusive. The default value is `1000`. Relative priorities
+                                        determine which rule takes effect if multiple rules apply. Lower values
+                                        indicate higher priority. For example, a rule with priority `0` has higher
+                                        precedence than a rule with priority `1`. DENY rules take precedence over
+                                        ALLOW rules if they have equal priority. Note that VPC networks have implied
+                                        rules with a priority of `65535`. To avoid conflicts with the implied rules,
+                                        use a priority number less than `65535`.
+                                      maximum: 65535
+                                      minimum: 1
+                                      type: integer
+                                    sourceRanges:
+                                      description: |-
+                                        SourceRanges: If source ranges are specified, the firewall rule applies only
+                                        to traffic that has a source IP address in these ranges. These ranges must
+                                        be expressed in CIDR format. One or both of sourceRanges and sourceTags may
+                                        be set. If both fields are set, the rule applies to traffic that has a
+                                        source IP address within sourceRanges OR a source IP from a resource with a
+                                        matching tag listed in the sourceTags field. The connection does not need to
+                                        match both fields for the rule to apply. Both IPv4 and IPv6 are supported.
+                                      items:
+                                        maxLength: 43
+                                        minLength: 1
+                                        type: string
+                                      maxItems: 1024
+                                      minItems: 0
+                                      type: array
+                                      x-kubernetes-validations:
+                                      - message: must be a valid IPv4/IPv6 address
+                                          or CIDR/Prefix
+                                        rule: self.all(i, isIP(i) || isCIDR(i))
+                                    sourceTags:
+                                      description: |-
+                                        SourceTags are the rules applies only to traffic with source IPs that
+                                        match the primary network interfaces of VM instances that have the tag and
+                                        are in the same VPC network. Source tags cannot be used to control traffic
+                                        to an instance's external IP address, it only applies to traffic between
+                                        instances in the same virtual network. Because tags are associated with
+                                        instances, not IP addresses. One or both of sourceRanges and sourceTags may be
+                                        set. If both fields are set, the firewall applies to traffic that has a source
+                                        IP address within sourceRanges OR a source IP from a resource with a matching
+                                        tag listed in the sourceTags field. The connection does not need to match both
+                                        fields for the firewall to apply.
+                                      items:
+                                        maxLength: 63
+                                        minLength: 1
+                                        pattern: ^([a-z0-9]+-)*[a-z0-9]+$
+                                        type: string
+                                      maxItems: 30
+                                      minItems: 0
+                                      type: array
+                                    targetTags:
+                                      description: |-
+                                        TargetTags is a list of tags that controls which instances the firewall rule
+                                        applies to. If targetTags are specified, then the firewall rule applies only
+                                        to instances in the VPC network that have one of those tags. If no
+                                        targetTags are specified, the firewall rule applies to all instances on the
+                                        specified network.
+                                      items:
+                                        maxLength: 63
+                                        minLength: 1
+                                        pattern: ^([a-z0-9]+-)*[a-z0-9]+$
+                                        type: string
+                                      maxItems: 70
+                                      minItems: 0
+                                      type: array
+                                  type: object
+                                maxItems: 50
+                                type: array
                             type: object
                           hostProject:
                             description: HostProject is the name of the project hosting
