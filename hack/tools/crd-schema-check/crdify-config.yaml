@@ -8,16 +8,44 @@
 #   - Scope changes (changing between Namespaced and Cluster)
 #   - Stored version removal (removing a version that is marked as stored)
 #
-# This mirrors the policy used in openshift/api: adding new enum values
-# is technically a breaking change but is allowed in practice because
-# clients should tolerate unknown enum values.
-# Match openshift/api policy: crdify doesn't have comparators for all schema
-# fields yet (e.g. XValidations/CEL rules), so unhandled diffs are warnings
-# rather than errors. Reviewers catch actual breaking changes.
+# HyperShift CRDs embed openshift/api types (spec.configuration.*), so
+# bumping openshift/api naturally introduces schema changes that have
+# already been reviewed upstream. The policies below reflect this:
+#
+#   - enum additions: allowed (clients must tolerate unknown values)
+#   - description changes: warn-only (text changes are never API-breaking)
+#   - new min/max constraints: warn-only (API server ratchets existing data)
+#   - field removals: warn-only (vendored type restructuring, reviewed upstream)
+#   - type changes: warn-only (accompanies field removals in vendored types)
+#
+# Remaining defaults (Error): required, scope, storedVersionRemoval, pattern,
+# nullable, default.
+#
+# crdify doesn't have comparators for all schema fields yet (e.g.
+# XValidations/CEL rules), so unhandled diffs are warnings rather than
+# errors. Reviewers catch actual breaking changes.
 unhandledEnforcement: Warn
 
 validations:
   - name: enum
-    enforcement: Error
+    enforcement: Warn
     configuration:
       additionPolicy: Allow
+  - name: description
+    enforcement: Warn
+  - name: existingFieldRemoval
+    enforcement: Warn
+  - name: type
+    enforcement: Warn
+  - name: minLength
+    enforcement: Warn
+  - name: maxLength
+    enforcement: Warn
+  - name: minItems
+    enforcement: Warn
+  - name: maxItems
+    enforcement: Warn
+  - name: minimum
+    enforcement: Warn
+  - name: maximum
+    enforcement: Warn

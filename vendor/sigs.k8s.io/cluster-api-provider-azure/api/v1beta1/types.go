@@ -416,6 +416,7 @@ type IPTag struct {
 }
 
 // VMState describes the state of an Azure virtual machine.
+//
 // Deprecated: use ProvisioningState.
 type VMState string
 
@@ -451,6 +452,7 @@ type Image struct {
 	ID *string `json:"id,omitempty"`
 
 	// SharedGallery specifies an image to use from an Azure Shared Image Gallery
+	//
 	// Deprecated: use ComputeGallery instead.
 	// +optional
 	SharedGallery *AzureSharedGalleryImage `json:"sharedGallery,omitempty"`
@@ -946,7 +948,6 @@ type SecurityProfile struct {
 
 // UefiSettings specifies the security settings like secure boot and vTPM used while creating the virtual
 // machine.
-// +optional
 type UefiSettings struct {
 	// SecureBootEnabled specifies whether secure boot should be enabled on the virtual machine.
 	// Secure Boot verifies the digital signature of all boot components and halts the boot process if signature verification fails.
@@ -964,8 +965,8 @@ type UefiSettings struct {
 
 // AddressRecord specifies a DNS record mapping a hostname to an IPV4 or IPv6 address.
 type AddressRecord struct {
-	Hostname string
-	IP       string
+	Hostname string `json:"hostname"`
+	IP       string `json:"ip"`
 }
 
 // CloudProviderConfigOverrides represents the fields that can be overridden in azure cloud provider config.
