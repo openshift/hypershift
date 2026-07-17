@@ -1881,11 +1881,13 @@ func TestCAPIReconcile(t *testing.T) {
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(templateList.Items).To(HaveLen(2))
 
-			_, err = capi.Reconcile(t.Context())
+			capiResult, err := capi.Reconcile(t.Context())
 			if tt.expectedError {
 				g.Expect(err).To(HaveOccurred())
 			} else {
 				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(capiResult).NotTo(BeNil())
+				g.Expect(capiResult.Conditions).NotTo(BeEmpty())
 
 				// Check that old machine templates are deleted.
 				templateList := &capiaws.AWSMachineTemplateList{}
@@ -1995,8 +1997,10 @@ func TestCAPIReconcile(t *testing.T) {
 					g.Expect(err).NotTo(HaveOccurred())
 
 					// Re-run reconcile.
-					_, err = capi.Reconcile(t.Context())
+					capiResult, err = capi.Reconcile(t.Context())
 					g.Expect(err).NotTo(HaveOccurred())
+					g.Expect(capiResult).NotTo(BeNil())
+					g.Expect(capiResult.Conditions).NotTo(BeEmpty())
 
 					// Check for the expected annotations.
 					// TODO(alberto): reconcileMachineDeployment mutate the NodePool with this annotations and status.version.
@@ -2165,7 +2169,7 @@ func TestCAPIReconcile_machineset(t *testing.T) {
 				ApplyProvider:   upsert.NewApplyProvider(false),
 			}
 
-			_, err := capi.Reconcile(t.Context())
+			capiResult, err := capi.Reconcile(t.Context())
 			g.Expect(err).NotTo(HaveOccurred())
 
 			ms := &capiv1.MachineSet{}
@@ -2173,6 +2177,9 @@ func TestCAPIReconcile_machineset(t *testing.T) {
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(ms.Spec.Template.Spec.NodeDrainTimeout).To(Equal(tt.nodePool.Spec.NodeDrainTimeout))
 			g.Expect(ms.Spec.Template.Spec.NodeVolumeDetachTimeout).To(Equal(tt.nodePool.Spec.NodeVolumeDetachTimeout))
+
+			g.Expect(capiResult).NotTo(BeNil())
+			g.Expect(capiResult.Conditions).NotTo(BeEmpty())
 		})
 	}
 }
@@ -3063,6 +3070,9 @@ func TestReconcileMachineDeploymentStatus(t *testing.T) {
 			}
 
 			capi.reconcileMachineDeploymentStatus(logr.Discard(), tc.machineDeployment, templateCR)
+			for _, cond := range capi.conditions {
+				SetStatusCondition(&nodePool.Status.Conditions, cond)
+			}
 
 			g.Expect(nodePool.Status.Replicas).To(Equal(tc.expectedReplicas))
 			g.Expect(nodePool.Status.Version).To(Equal(tc.expectedVersion))
