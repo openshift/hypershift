@@ -687,7 +687,7 @@ func (c *CertificateRevocationController) ensureNewSignerCertificatePropagated(c
 	signer, ok := secretForSignerClass(namespace, certificates.SignerClass(crr.Spec.SignerClass))
 	if !ok {
 		// we should never reach this case as we validate the class before transitioning states, and it's immutable
-		return true, nil, true, nil
+		return true, nil, false, nil
 	}
 
 	signerSecert, signers, err := c.loadCertificateSecret(signer.Namespace, signer.Name)
@@ -695,7 +695,7 @@ func (c *CertificateRevocationController) ensureNewSignerCertificatePropagated(c
 		return true, nil, false, err
 	}
 	if signers == nil {
-		return true, nil, true, nil
+		return true, nil, false, nil
 	}
 
 	currentCertPEM, ok := signerSecert.Data[corev1.TLSCertKey]
@@ -714,7 +714,7 @@ func (c *CertificateRevocationController) ensureNewSignerCertificatePropagated(c
 		return true, nil, false, err
 	}
 	if totalClientTrustBundle == nil {
-		return true, nil, true, nil
+		return true, nil, false, nil
 	}
 
 	var recorded bool
@@ -1008,14 +1008,14 @@ func (c *CertificateRevocationController) ensureOldSignerCertificateRevoked(ctx 
 	// Load the current (new) signer cert/key for cross-checking during per-pod verification.
 	signer, ok := secretForSignerClass(namespace, certificates.SignerClass(crr.Spec.SignerClass))
 	if !ok {
-		return true, nil, true, nil
+		return true, nil, false, nil
 	}
 	signerSecret, _, err := c.loadCertificateSecret(signer.Namespace, signer.Name)
 	if err != nil {
 		return true, nil, false, err
 	}
 	if signerSecret == nil {
-		return true, nil, true, nil
+		return true, nil, false, nil
 	}
 	currentCertPEM := signerSecret.Data[corev1.TLSCertKey]
 	currentKeyPEM := signerSecret.Data[corev1.TLSPrivateKeyKey]
@@ -1026,7 +1026,7 @@ func (c *CertificateRevocationController) ensureOldSignerCertificateRevoked(ctx 
 		return true, nil, false, err
 	}
 	if totalClientTrustBundle == nil {
-		return true, nil, true, nil
+		return true, nil, false, nil
 	}
 	// the real gate for this phase is that KAS has loaded the updated trust bundle and no longer
 	// authorizes clients using certificates signed by the revoked signer - it is difficult to unit-test
