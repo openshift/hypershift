@@ -82,6 +82,18 @@ linters:
       - linters:
           - staticcheck
         text: 'SA1019: "github.com/aws/aws-sdk-go'
+      # GetEventRecorderFor is deprecated in controller-runtime v0.24 but migration to events.EventRecorder is a separate effort
+      - linters:
+          - staticcheck
+        text: 'SA1019: mgr.GetEventRecorderFor is deprecated'
+      # client.Apply is deprecated in controller-runtime v0.24 but migration to client.Client.Apply() is a separate effort
+      - linters:
+          - staticcheck
+        text: 'SA1019: (.*)\.Apply is deprecated'
+      # ibmCluster.Spec.ServiceInstanceID is deprecated but migration is a separate effort
+      - linters:
+          - staticcheck
+        text: 'SA1019: ibmCluster.Spec.ServiceInstanceID is deprecated'
       # cluster-api v1beta1 is deprecated but migration to v1beta2 is a separate effort
       - linters:
           - staticcheck
